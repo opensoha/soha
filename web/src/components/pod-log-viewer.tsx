@@ -12,6 +12,7 @@ const { Text } = Typography
 const DEFAULT_HISTORY_LINES = 100
 const HISTORY_INCREMENT = 100
 const POLLING_INTERVAL_MS = 3000
+const RECONNECT_DELAYS_MS = [1000, 2000, 5000, 10000, 15000]
 
 interface LogMessage {
   type: string
@@ -87,19 +88,25 @@ function mergeLogLines(current: string[], incoming: string[]) {
 function getEmptyLogMessage({
   hasFilter,
   previous,
+  sinceSeconds,
   localeCode,
 }: {
   hasFilter: boolean
   previous: boolean
+  sinceSeconds: number
   localeCode: 'zh_CN' | 'en_US'
 }) {
   if (hasFilter) {
     return localeCode === 'zh_CN' ? '当前筛选条件下没有匹配的日志内容' : 'No log lines match the current filter'
   }
   if (previous) {
-    return localeCode === 'zh_CN' ? '当前范围内没有可用的历史日志' : 'No historical logs are available for the current range'
+    return sinceSeconds > 0
+      ? (localeCode === 'zh_CN' ? '当前时间范围内没有可用的历史日志' : 'No historical logs are available for the selected time range')
+      : (localeCode === 'zh_CN' ? '当前没有可用的历史日志' : 'No historical logs are available')
   }
-  return localeCode === 'zh_CN' ? '当前范围内没有可用的实时日志内容' : 'No current log lines are available for the selected range'
+  return sinceSeconds > 0
+    ? (localeCode === 'zh_CN' ? '当前时间范围内没有可用的实时日志内容' : 'No current log lines are available for the selected time range')
+    : (localeCode === 'zh_CN' ? '当前没有可用的实时日志内容' : 'No current log lines are available')
 }
 
 export function PodLogViewer({
@@ -132,6 +139,8 @@ export function PodLogViewer({
   const [loadingOlder, setLoadingOlder] = useState(false)
   const socketRef = useRef<WebSocket | null>(null)
   const pollingTimerRef = useRef<number | null>(null)
+  const reconnectTimerRef = useRef<number | null>(null)
+  const reconnectAttemptRef = useRef(0)
   const scrollerRef = useRef<HTMLDivElement | null>(null)
   const restoreScrollRef = useRef<{ previousHeight: number; previousTop: number } | null>(null)
 
@@ -166,6 +175,10 @@ export function PodLogViewer({
     if (pollingTimerRef.current != null) {
       window.clearInterval(pollingTimerRef.current)
       pollingTimerRef.current = null
+    }
+    if (reconnectTimerRef.current != null) {
+      window.clearTimeout(reconnectTimerRef.current)
+      reconnectTimerRef.current = null
     }
   }, [])
 
@@ -208,6 +221,22 @@ export function PodLogViewer({
     }, POLLING_INTERVAL_MS)
   }, [localeCode, logsPath, previous, t])
 
+  const scheduleReconnect = useCallback(() => {
+    if (previous || !active || reconnectTimerRef.current != null) return
+    const attempt = reconnectAttemptRef.current
+    const delay = RECONNECT_DELAYS_MS[Math.min(attempt, RECONNECT_DELAYS_MS.length - 1)]
+    reconnectAttemptRef.current += 1
+    setStatusMessage(
+      localeCode === 'zh_CN'
+        ? `日志流已断开，${Math.round(delay / 1000)} 秒后自动重连（第 ${reconnectAttemptRef.current} 次）`
+        : `Log stream disconnected. Reconnecting in ${Math.round(delay / 1000)}s (attempt ${reconnectAttemptRef.current})`,
+    )
+    reconnectTimerRef.current = window.setTimeout(() => {
+      reconnectTimerRef.current = null
+      connect()
+    }, delay)
+  }, [active, localeCode, previous])
+
   const connect = useCallback(() => {
     if (!streamURL) return
     disconnect()
@@ -217,8 +246,11 @@ export function PodLogViewer({
     socketRef.current = socket
 
     socket.onopen = () => {
+      reconnectAttemptRef.current = 0
       setConnectionState('connected')
-      setStatusMessage(t('podLogViewer.connected', 'Log stream connected'))
+      setStatusMessage(previous
+        ? (localeCode === 'zh_CN' ? '当前查看历史日志' : 'Viewing historical logs')
+        : (localeCode === 'zh_CN' ? '当前跟随实时日志' : 'Following live logs'))
     }
 
     socket.onmessage = (event) => {
@@ -241,12 +273,15 @@ export function PodLogViewer({
       setConnectionState('error')
       setStatusMessage(t('podLogViewer.failed', 'Log stream connection failed'))
       startPollingSync()
+      scheduleReconnect()
     }
 
     socket.onclose = () => {
       setConnectionState((current) => current === 'error' ? 'error' : 'closed')
+      startPollingSync()
+      scheduleReconnect()
     }
-  }, [disconnect, startPollingSync, streamURL, t])
+  }, [disconnect, localeCode, previous, scheduleReconnect, startPollingSync, streamURL, t])
 
   useEffect(() => {
     if (!clusterId || !namespace || !active) return
@@ -263,6 +298,7 @@ export function PodLogViewer({
           connect()
         } else {
           disconnect()
+          reconnectAttemptRef.current = 0
           setConnectionState('closed')
           setStatusMessage(localeCode === 'zh_CN' ? '当前查看历史日志' : 'Viewing historical logs')
         }
@@ -292,8 +328,32 @@ export function PodLogViewer({
   const emptyLogMessage = getEmptyLogMessage({
     hasFilter: keyword.trim().length > 0,
     previous,
+    sinceSeconds,
     localeCode,
   })
+
+  const timeRangeLabel = sinceSeconds === 0
+    ? t('podLogViewer.timeAll', 'All available')
+    : sinceSeconds === 300
+      ? t('podLogViewer.time5m', 'Last 5 min')
+      : sinceSeconds === 900
+        ? t('podLogViewer.time15m', 'Last 15 min')
+        : sinceSeconds === 3600
+          ? t('podLogViewer.time1h', 'Last 1 hour')
+          : sinceSeconds === 21600
+            ? t('podLogViewer.time6h', 'Last 6 hours')
+            : `${sinceSeconds}s`
+
+  const exportLogContent = useMemo(() => [
+    `Pod: ${podName}`,
+    `Namespace: ${namespace}`,
+    `Container: ${container || 'default'}`,
+    `Mode: ${previous ? (localeCode === 'zh_CN' ? '历史日志' : 'historical') : (localeCode === 'zh_CN' ? '当前日志' : 'current')}`,
+    `Time Range: ${timeRangeLabel}`,
+    `Exported At: ${new Date().toISOString()}`,
+    '',
+    ...filteredLines,
+  ].join('\n'), [container, filteredLines, localeCode, namespace, podName, previous, timeRangeLabel])
 
   useEffect(() => {
     if (!autoScroll || filteredLines.length === 0 || !scrollerRef.current) return
@@ -375,7 +435,7 @@ export function PodLogViewer({
             theme="borderless"
             onClick={() => downloadText(
               `${podName}-${previous ? 'historical' : 'current'}-logs.txt`,
-              filteredLines.join('\n'),
+              exportLogContent,
             )}
             disabled={filteredLines.length === 0}
           >
