@@ -1,0 +1,179 @@
+package copilot
+
+import (
+	"context"
+	"time"
+)
+
+type Session struct {
+	ID        string         `json:"id"`
+	Title     string         `json:"title"`
+	CreatedBy string         `json:"createdBy"`
+	Metadata  map[string]any `json:"metadata,omitempty"`
+	CreatedAt time.Time      `json:"createdAt"`
+	UpdatedAt time.Time      `json:"updatedAt"`
+}
+
+type Message struct {
+	ID        string         `json:"id"`
+	SessionID string         `json:"sessionId"`
+	Role      string         `json:"role"`
+	Content   string         `json:"content"`
+	Metadata  map[string]any `json:"metadata,omitempty"`
+	CreatedAt time.Time      `json:"createdAt"`
+}
+
+type Insight struct {
+	Title       string   `json:"title"`
+	Description string   `json:"description"`
+	Severity    string   `json:"severity"`
+	Actions     []string `json:"actions,omitempty"`
+}
+
+type RootCauseRun struct {
+	ID                 string                `json:"id"`
+	Title              string                `json:"title"`
+	CreatedBy          string                `json:"createdBy"`
+	AnalysisProfileID  string                `json:"analysisProfileId,omitempty"`
+	TriggerType        string                `json:"triggerType,omitempty"`
+	Status             string                `json:"status"`
+	Severity           string                `json:"severity"`
+	Summary            string                `json:"summary"`
+	ClusterID          string                `json:"clusterId,omitempty"`
+	Namespace          string                `json:"namespace,omitempty"`
+	WorkloadKind       string                `json:"workloadKind,omitempty"`
+	WorkloadName       string                `json:"workloadName,omitempty"`
+	AlertID            string                `json:"alertId,omitempty"`
+	TimeRangeMinutes   int                   `json:"timeRangeMinutes"`
+	Question           string                `json:"question,omitempty"`
+	Evidence           []RootCauseEvidence   `json:"evidence,omitempty"`
+	Hypotheses         []RootCauseHypothesis `json:"hypotheses,omitempty"`
+	Recommendations    []string              `json:"recommendations,omitempty"`
+	DataSourceSnapshot map[string]any        `json:"dataSourceSnapshot,omitempty"`
+	PlaybookResults    map[string]any        `json:"playbookResults,omitempty"`
+	RemediationPlan    map[string]any        `json:"remediationPlan,omitempty"`
+	DedupKey           string                `json:"dedupKey,omitempty"`
+	CreatedAt          time.Time             `json:"createdAt"`
+	UpdatedAt          time.Time             `json:"updatedAt"`
+}
+
+type RootCauseRunInput struct {
+	Title             string `json:"title"`
+	AnalysisProfileID string `json:"analysisProfileId,omitempty"`
+	TriggerType       string `json:"triggerType,omitempty"`
+	ClusterID         string `json:"clusterId,omitempty"`
+	Namespace         string `json:"namespace,omitempty"`
+	WorkloadKind      string `json:"workloadKind,omitempty"`
+	WorkloadName      string `json:"workloadName,omitempty"`
+	AlertID           string `json:"alertId,omitempty"`
+	TimeRangeMinutes  int    `json:"timeRangeMinutes"`
+	Question          string `json:"question,omitempty"`
+}
+
+type RootCauseRunFilter struct {
+	ClusterID string
+	AlertID   string
+	DedupKey  string
+	Limit     int
+}
+
+type RootCauseEvidence struct {
+	ID         string         `json:"id"`
+	Kind       string         `json:"kind"`
+	Title      string         `json:"title"`
+	Summary    string         `json:"summary"`
+	Severity   string         `json:"severity,omitempty"`
+	ClusterID  string         `json:"clusterId,omitempty"`
+	Namespace  string         `json:"namespace,omitempty"`
+	Timestamp  *time.Time     `json:"timestamp,omitempty"`
+	Attributes map[string]any `json:"attributes,omitempty"`
+}
+
+type RootCauseHypothesis struct {
+	ID              string   `json:"id"`
+	Title           string   `json:"title"`
+	Summary         string   `json:"summary"`
+	Confidence      int      `json:"confidence"`
+	EvidenceIDs     []string `json:"evidenceIds,omitempty"`
+	Recommendations []string `json:"recommendations,omitempty"`
+}
+
+type InspectionTask struct {
+	ID              string         `json:"id"`
+	Title           string         `json:"title"`
+	ScopeType       string         `json:"scopeType"`
+	ClusterID       string         `json:"clusterId,omitempty"`
+	Namespace       string         `json:"namespace,omitempty"`
+	Checks          []string       `json:"checks,omitempty"`
+	Enabled         bool           `json:"enabled"`
+	IntervalMinutes int            `json:"intervalMinutes"`
+	Metadata        map[string]any `json:"metadata,omitempty"`
+	CreatedBy       string         `json:"createdBy"`
+	LastRunAt       *time.Time     `json:"lastRunAt,omitempty"`
+	CreatedAt       time.Time      `json:"createdAt"`
+	UpdatedAt       time.Time      `json:"updatedAt"`
+}
+
+type InspectionTaskInput struct {
+	ID              string         `json:"id"`
+	Title           string         `json:"title"`
+	ScopeType       string         `json:"scopeType"`
+	ClusterID       string         `json:"clusterId,omitempty"`
+	Namespace       string         `json:"namespace,omitempty"`
+	Checks          []string       `json:"checks,omitempty"`
+	Enabled         bool           `json:"enabled"`
+	IntervalMinutes int            `json:"intervalMinutes"`
+	Metadata        map[string]any `json:"metadata,omitempty"`
+}
+
+type InspectionFinding struct {
+	ID             string         `json:"id"`
+	Title          string         `json:"title"`
+	Severity       string         `json:"severity"`
+	Summary        string         `json:"summary"`
+	Recommendation string         `json:"recommendation,omitempty"`
+	Source         string         `json:"source"`
+	Data           map[string]any `json:"data,omitempty"`
+}
+
+type InspectionRun struct {
+	ID          string              `json:"id"`
+	TaskID      string              `json:"taskId"`
+	TriggeredBy string              `json:"triggeredBy"`
+	Status      string              `json:"status"`
+	Severity    string              `json:"severity"`
+	Summary     string              `json:"summary"`
+	Findings    []InspectionFinding `json:"findings,omitempty"`
+	Report      map[string]any      `json:"report,omitempty"`
+	StartedAt   time.Time           `json:"startedAt"`
+	CompletedAt *time.Time          `json:"completedAt,omitempty"`
+	CreatedAt   time.Time           `json:"createdAt"`
+}
+
+type InspectionRunFilter struct {
+	TaskID     string
+	ClusterID  string
+	Namespace  string
+	Check      string
+	LatestOnly bool
+	Limit      int
+}
+
+type Repository interface {
+	ListSessions(context.Context, string, int) ([]Session, error)
+	CreateSession(context.Context, Session) (Session, error)
+	ListMessages(context.Context, string, int) ([]Message, error)
+	CreateMessage(context.Context, Message) (Message, error)
+	ListRootCauseRuns(context.Context, string, RootCauseRunFilter) ([]RootCauseRun, error)
+	GetRootCauseRun(context.Context, string, string) (RootCauseRun, error)
+	CreateRootCauseRun(context.Context, RootCauseRun) (RootCauseRun, error)
+	GetAnalysisProfile(context.Context, string) (AnalysisProfile, error)
+	ListInspectionTasks(context.Context, string, int) ([]InspectionTask, error)
+	GetInspectionTask(context.Context, string, string) (InspectionTask, error)
+	ListDueInspectionTasks(context.Context, time.Time, int) ([]InspectionTask, error)
+	CreateInspectionTask(context.Context, InspectionTask) (InspectionTask, error)
+	UpdateInspectionTask(context.Context, string, string, InspectionTaskInput) (InspectionTask, error)
+	TouchInspectionTaskRun(context.Context, string, time.Time) error
+	ListInspectionRuns(context.Context, string, InspectionRunFilter) ([]InspectionRun, error)
+	CreateInspectionRun(context.Context, InspectionRun) (InspectionRun, error)
+}

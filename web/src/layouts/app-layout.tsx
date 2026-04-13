@@ -1,0 +1,319 @@
+import { useMemo } from 'react'
+import { Outlet, useNavigate, useLocation } from 'react-router-dom'
+import {
+  Layout,
+  Nav,
+  Avatar,
+  Dropdown,
+  Breadcrumb,
+  Button,
+  Select,
+} from '@douyinfe/semi-ui'
+import {
+  IconDesktop,
+  IconGlobe,
+  IconGridView,
+  IconServer,
+  IconPuzzle,
+  IconAppCenter,
+  IconSend,
+  IconInbox,
+  IconPulse,
+  IconAlertTriangle,
+  IconBell,
+  IconUserCircle,
+  IconComment,
+  IconShield,
+  IconUser,
+  IconUserGroup,
+  IconSetting,
+  IconMenu,
+  IconFile,
+  IconList,
+  IconLock,
+  IconHelpCircle,
+} from '@douyinfe/semi-icons'
+import type { ReactNode } from 'react'
+import { useI18n } from '@/i18n'
+import { getSidebarNav, getRouteMeta, getParentRouteMeta } from '@/routes/meta'
+import { useAuthStore } from '@/stores/auth-store'
+import { usePreferencesStore } from '@/stores/preferences-store'
+import { getSemiThemeLabel, semiThemeOptions, themeModeOptions } from '@/theme/semi-theme'
+
+const { Sider, Header, Content } = Layout
+
+const iconMap: Record<string, ReactNode> = {
+  IconDesktop: <IconDesktop />,
+  IconGlobe: <IconGlobe />,
+  IconGridView: <IconGridView />,
+  IconConnection: <IconServer />,
+  IconServer: <IconServer />,
+  IconPuzzle: <IconPuzzle />,
+  IconAppCenter: <IconAppCenter />,
+  IconFlow: <IconSend />,
+  IconSend: <IconSend />,
+  IconInbox: <IconInbox />,
+  IconPulse: <IconPulse />,
+  IconAlertTriangle: <IconAlertTriangle />,
+  IconBell: <IconBell />,
+  IconUserCircle: <IconUserCircle />,
+  IconComment: <IconComment />,
+  IconShield: <IconShield />,
+  IconUser: <IconUser />,
+  IconUserGroup: <IconUserGroup />,
+  IconSetting: <IconSetting />,
+  IconMenu: <IconMenu />,
+  IconFile: <IconFile />,
+  IconList: <IconList />,
+  IconBookOpen: <IconFile />,
+  IconLock: <IconLock />,
+}
+
+const groupOrder = ['overview', 'platform', 'delivery', 'observe', 'access', 'system', 'settings']
+
+function buildNavItems(t: (key: string, fallback?: string) => string) {
+  const sidebarNav = getSidebarNav()
+  const grouped = new Map<string, typeof sidebarNav>()
+
+  for (const item of sidebarNav) {
+    const group = item.route.group
+    if (!grouped.has(group)) {
+      grouped.set(group, [])
+    }
+    grouped.get(group)!.push(item)
+  }
+
+  const items: any[] = []
+
+  for (const group of groupOrder) {
+    const groupItems = grouped.get(group)
+    if (!groupItems || groupItems.length === 0) continue
+
+    const navItems = groupItems.map((item) => {
+      if (item.children && item.children.length > 0) {
+        return {
+          itemKey: item.route.id,
+          text: t(`route.${item.route.id}.title`, item.route.title),
+          icon: iconMap[item.route.icon],
+          items: item.children.map((child) => ({
+            itemKey: child.id,
+            text: t(`route.${child.id}.title`, child.title),
+          })),
+        }
+      }
+      return {
+        itemKey: item.route.id,
+        text: t(`route.${item.route.id}.title`, item.route.title),
+        icon: iconMap[item.route.icon],
+      }
+    })
+
+    items.push({
+      itemKey: `group-${group}`,
+      text: t(`layout.group.${group}`, group),
+      items: navItems,
+    })
+  }
+
+  return items
+}
+
+function buildItemKeyToPath(): Record<string, string> {
+  const sidebarNav = getSidebarNav()
+  const map: Record<string, string> = {}
+  for (const item of sidebarNav) {
+    map[item.route.id] = item.route.redirectTo ?? item.route.path
+    if (item.children) {
+      for (const child of item.children) {
+        map[child.id] = child.path
+      }
+    }
+  }
+  return map
+}
+
+export function AppLayout() {
+  const navigate = useNavigate()
+  const location = useLocation()
+  const { user, clearAuth } = useAuthStore()
+  const themeId = usePreferencesStore((state) => state.themeId)
+  const themeMode = usePreferencesStore((state) => state.themeMode)
+  const setThemeId = usePreferencesStore((state) => state.setThemeId)
+  const setThemeMode = usePreferencesStore((state) => state.setThemeMode)
+  const localeCode = usePreferencesStore((state) => state.localeCode)
+  const setLocaleCode = usePreferencesStore((state) => state.setLocaleCode)
+  const { t } = useI18n()
+
+  const navItems = useMemo(() => buildNavItems(t), [t])
+  const itemKeyToPath = useMemo(() => buildItemKeyToPath(), [])
+
+  const currentMeta = getRouteMeta(location.pathname)
+  const parentMeta = getParentRouteMeta(currentMeta)
+
+  const selectedKeys = useMemo(() => {
+    const keys: string[] = [currentMeta.id]
+    if (currentMeta.parentId && currentMeta.tabbar) {
+      keys.push(currentMeta.parentId)
+    }
+    return keys
+  }, [currentMeta])
+
+  const openKeys = useMemo(() => {
+    const keys: string[] = [`group-${currentMeta.group}`]
+    if (currentMeta.parentId) {
+      keys.push(currentMeta.parentId)
+    } else if (currentMeta.navVisible) {
+      keys.push(currentMeta.id)
+    }
+    return keys
+  }, [currentMeta])
+
+  const handleNavSelect = (data: { itemKey: string; selectedKeys: string[] }) => {
+    const path = itemKeyToPath[data.itemKey]
+    if (path) {
+      navigate(path)
+    }
+  }
+
+  const handleLogout = () => {
+    clearAuth()
+    navigate('/login')
+  }
+
+  const breadcrumbRoutes = useMemo(() => {
+    const routes: { name: string; path?: string }[] = []
+    if (parentMeta) {
+      routes.push({ name: t(`route.${parentMeta.id}.title`, parentMeta.title), path: parentMeta.redirectTo ?? parentMeta.path })
+    }
+    routes.push({ name: t(`route.${currentMeta.id}.title`, currentMeta.title) })
+    return routes
+  }, [currentMeta, parentMeta, t])
+
+  const userDisplayName = user?.userName ?? user?.email ?? 'User'
+  const currentThemeLabel = getSemiThemeLabel(themeId)
+
+  return (
+    <Layout className="kc-shell">
+      <Sider className="kc-sider" style={{ backgroundColor: 'transparent' }}>
+        <Nav
+          className="kc-nav"
+          style={{ height: '100%' }}
+          items={navItems}
+          selectedKeys={selectedKeys}
+          defaultOpenKeys={openKeys}
+          onSelect={handleNavSelect as any}
+          header={{
+            logo: (
+              <div className="kc-brand-mark">
+                  KC
+              </div>
+            ),
+            text: 'KubeCrux',
+          }}
+          footer={{
+            collapseButton: true,
+          }}
+        />
+      </Sider>
+
+      <Layout className="kc-main">
+        <Header className="kc-header">
+          <div className="kc-header-main">
+            <Breadcrumb>
+              {breadcrumbRoutes.map((route, index) => (
+                <Breadcrumb.Item
+                  key={index}
+                  href={route.path}
+                  onClick={(e) => {
+                    if (route.path) {
+                      e?.preventDefault()
+                      navigate(route.path)
+                    }
+                  }}
+                >
+                  {route.name}
+                </Breadcrumb.Item>
+              ))}
+            </Breadcrumb>
+          </div>
+
+          <div className="kc-header-right">
+            <Button
+              theme="light"
+              icon={<IconHelpCircle />}
+              onClick={() => window.open('/docs/', '_blank', 'noopener,noreferrer')}
+            >
+              {t('layout.docs', 'Docs')}
+            </Button>
+            <span className="kc-header-pill">{currentThemeLabel}</span>
+            <Select
+              className="kc-theme-select"
+              size="small"
+              insetLabel={t('layout.language', 'Language')}
+              value={localeCode}
+              optionList={[
+                { value: 'zh_CN', label: '简体中文' },
+                { value: 'en_US', label: 'English' },
+              ]}
+              onChange={(value) => setLocaleCode(value as 'zh_CN' | 'en_US')}
+            />
+            <Select
+              className="kc-theme-select"
+              size="small"
+              insetLabel={t('layout.theme', 'Theme')}
+              value={themeId}
+              optionList={semiThemeOptions.map((option) => ({
+                value: option.id,
+                label: option.label,
+              }))}
+              onChange={(value) => setThemeId(value as any)}
+            />
+            <Select
+              className="kc-mode-select"
+              size="small"
+              insetLabel={t('layout.mode', 'Mode')}
+              value={themeMode}
+              optionList={themeModeOptions.map((option) => ({
+                value: option.value,
+                label: option.label,
+              }))}
+              onChange={(value) => setThemeMode(value as any)}
+            />
+            <Dropdown
+              position="bottomRight"
+              render={
+                <Dropdown.Menu>
+                  <Dropdown.Item disabled>
+                    {userDisplayName}
+                  </Dropdown.Item>
+                  <Dropdown.Divider />
+                  <Dropdown.Item onClick={handleLogout}>
+                    {t('layout.logout', 'Sign out')}
+                  </Dropdown.Item>
+                </Dropdown.Menu>
+              }
+            >
+              <Button
+                className="kc-user-trigger"
+                theme="borderless"
+                icon={
+                  <Avatar className="kc-user-avatar" size="small">
+                    {userDisplayName.charAt(0).toUpperCase()}
+                  </Avatar>
+                }
+              >
+                {userDisplayName}
+              </Button>
+            </Dropdown>
+          </div>
+        </Header>
+
+        <Content className="kc-content">
+          <div className="kc-content-inner">
+            <Outlet />
+          </div>
+        </Content>
+      </Layout>
+    </Layout>
+  )
+}

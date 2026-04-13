@@ -1,0 +1,14 @@
+{
+  "name": "kubecrux-docs",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "docs:dev": "vitepress dev . --port 5174",
+    "docs:build": "vitepress build .",
+    "docs:preview": "vitepress preview . --port 4174"
+  },
+  "devDependencies": {
+    "vitepress": "^2.0.0-alpha.17"
+  }
+}

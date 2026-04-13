@@ -1,0 +1,278 @@
+package copilot
+
+import (
+	"context"
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/google/uuid"
+	domaincopilot "github.com/kubecrux/kubecrux/internal/domain/copilot"
+	domainidentity "github.com/kubecrux/kubecrux/internal/domain/identity"
+	domainmcp "github.com/kubecrux/kubecrux/internal/domain/mcp"
+	mcplogs "github.com/kubecrux/kubecrux/internal/infrastructure/mcp/logs"
+	aperrors "github.com/kubecrux/kubecrux/internal/platform/apperrors"
+)
+
+func (s *Service) ListDataSourceCapabilities(_ context.Context) ([]domainmcp.Adapter, error) {
+	if s.mcpRegistry == nil {
+		return []domainmcp.Adapter{}, nil
+	}
+	return s.mcpRegistry.List(), nil
+}
+
+func (s *Service) ListDataSources(ctx context.Context, _ domainidentity.Principal) ([]domaincopilot.DataSource, error) {
+	return s.repo.ListDataSources(ctx)
+}
+
+func (s *Service) CreateDataSource(ctx context.Context, _ domainidentity.Principal, input domaincopilot.DataSourceInput) (domaincopilot.DataSource, error) {
+	item, err := s.normalizeDataSourceInput(input)
+	if err != nil {
+		return domaincopilot.DataSource{}, err
+	}
+	now := time.Now().UTC()
+	return s.repo.CreateDataSource(ctx, domaincopilot.DataSource{
+		ID:              item.ID,
+		Name:            item.Name,
+		SourceKind:      item.SourceKind,
+		BackendType:     item.BackendType,
+		Enabled:         item.Enabled,
+		CredentialRef:   item.CredentialRef,
+		Scope:           item.Scope,
+		QueryBudget:     item.QueryBudget,
+		RedactionPolicy: item.RedactionPolicy,
+		MCPAdapter:      item.MCPAdapter,
+		Config:          item.Config,
+		CreatedAt:       now,
+		UpdatedAt:       now,
+	})
+}
+
+func (s *Service) UpdateDataSource(ctx context.Context, _ domainidentity.Principal, dataSourceID string, input domaincopilot.DataSourceInput) (domaincopilot.DataSource, error) {
+	input.ID = strings.TrimSpace(dataSourceID)
+	item, err := s.normalizeDataSourceInput(input)
+	if err != nil {
+		return domaincopilot.DataSource{}, err
+	}
+	return s.repo.UpdateDataSource(ctx, item.ID, item)
+}
+
+func (s *Service) ValidateDataSource(ctx context.Context, _ domainidentity.Principal, dataSourceID string) (domaincopilot.DataSource, error) {
+	item, err := s.repo.GetDataSource(ctx, strings.TrimSpace(dataSourceID))
+	if err != nil {
+		return domaincopilot.DataSource{}, err
+	}
+	validatedAt := time.Now().UTC()
+	_, err = s.normalizeDataSourceInput(domaincopilot.DataSourceInput{
+		ID:              item.ID,
+		Name:            item.Name,
+		SourceKind:      item.SourceKind,
+		BackendType:     item.BackendType,
+		Enabled:         item.Enabled,
+		CredentialRef:   item.CredentialRef,
+		Scope:           item.Scope,
+		QueryBudget:     item.QueryBudget,
+		RedactionPolicy: item.RedactionPolicy,
+		MCPAdapter:      item.MCPAdapter,
+		Config:          item.Config,
+	})
+	if err != nil {
+		updated, updateErr := s.repo.UpdateDataSourceValidation(ctx, item.ID, "error", err.Error(), validatedAt)
+		if updateErr != nil {
+			return domaincopilot.DataSource{}, updateErr
+		}
+		return updated, err
+	}
+	return s.repo.UpdateDataSourceValidation(ctx, item.ID, "success", "", validatedAt)
+}
+
+func (s *Service) ListAnalysisProfiles(ctx context.Context, _ domainidentity.Principal) ([]domaincopilot.AnalysisProfile, error) {
+	return s.repo.ListAnalysisProfiles(ctx)
+}
+
+func (s *Service) CreateAnalysisProfile(ctx context.Context, _ domainidentity.Principal, input domaincopilot.AnalysisProfileInput) (domaincopilot.AnalysisProfile, error) {
+	item, err := normalizeAnalysisProfileInput(input)
+	if err != nil {
+		return domaincopilot.AnalysisProfile{}, err
+	}
+	now := time.Now().UTC()
+	return s.repo.CreateAnalysisProfile(ctx, domaincopilot.AnalysisProfile{
+		ID:                      item.ID,
+		Name:                    item.Name,
+		Mode:                    item.Mode,
+		EnabledSources:          item.EnabledSources,
+		EnabledPlaybooks:        item.EnabledPlaybooks,
+		QueryBudgets:            item.QueryBudgets,
+		OutputStyle:             item.OutputStyle,
+		RemediationPolicy:       item.RemediationPolicy,
+		DefaultTimeRangeMinutes: item.DefaultTimeRangeMinutes,
+		TimeoutSeconds:          item.TimeoutSeconds,
+		Enabled:                 item.Enabled,
+		CreatedAt:               now,
+		UpdatedAt:               now,
+	})
+}
+
+func (s *Service) UpdateAnalysisProfile(ctx context.Context, _ domainidentity.Principal, profileID string, input domaincopilot.AnalysisProfileInput) (domaincopilot.AnalysisProfile, error) {
+	input.ID = strings.TrimSpace(profileID)
+	item, err := normalizeAnalysisProfileInput(input)
+	if err != nil {
+		return domaincopilot.AnalysisProfile{}, err
+	}
+	return s.repo.UpdateAnalysisProfile(ctx, item.ID, item)
+}
+
+func (s *Service) ListAutomationPolicies(ctx context.Context, _ domainidentity.Principal) ([]domaincopilot.AutomationPolicy, error) {
+	return s.repo.ListAutomationPolicies(ctx)
+}
+
+func (s *Service) CreateAutomationPolicy(ctx context.Context, _ domainidentity.Principal, input domaincopilot.AutomationPolicyInput) (domaincopilot.AutomationPolicy, error) {
+	item, err := normalizeAutomationPolicyInput(input)
+	if err != nil {
+		return domaincopilot.AutomationPolicy{}, err
+	}
+	now := time.Now().UTC()
+	return s.repo.CreateAutomationPolicy(ctx, domaincopilot.AutomationPolicy{
+		ID:                 item.ID,
+		Name:               item.Name,
+		Enabled:            item.Enabled,
+		TriggerType:        item.TriggerType,
+		TriggerConditions:  item.TriggerConditions,
+		DedupWindowSeconds: item.DedupWindowSeconds,
+		AnalysisProfileID:  item.AnalysisProfileID,
+		RemediationPolicy:  item.RemediationPolicy,
+		ApprovalPolicy:     item.ApprovalPolicy,
+		CooldownSeconds:    item.CooldownSeconds,
+		CreatedAt:          now,
+		UpdatedAt:          now,
+	})
+}
+
+func (s *Service) UpdateAutomationPolicy(ctx context.Context, _ domainidentity.Principal, policyID string, input domaincopilot.AutomationPolicyInput) (domaincopilot.AutomationPolicy, error) {
+	input.ID = strings.TrimSpace(policyID)
+	item, err := normalizeAutomationPolicyInput(input)
+	if err != nil {
+		return domaincopilot.AutomationPolicy{}, err
+	}
+	return s.repo.UpdateAutomationPolicy(ctx, item.ID, item)
+}
+
+func (s *Service) normalizeDataSourceInput(input domaincopilot.DataSourceInput) (domaincopilot.DataSourceInput, error) {
+	input.ID = strings.TrimSpace(input.ID)
+	input.Name = strings.TrimSpace(input.Name)
+	input.SourceKind = strings.TrimSpace(input.SourceKind)
+	input.BackendType = strings.TrimSpace(input.BackendType)
+	input.CredentialRef = strings.TrimSpace(input.CredentialRef)
+	input.MCPAdapter = strings.TrimSpace(input.MCPAdapter)
+	if input.ID == "" {
+		input.ID = "ds:" + uuid.NewString()
+	}
+	if input.Name == "" {
+		return domaincopilot.DataSourceInput{}, fmt.Errorf("%w: data source name is required", aperrors.ErrInvalidArgument)
+	}
+	if input.SourceKind == "" {
+		return domaincopilot.DataSourceInput{}, fmt.Errorf("%w: sourceKind is required", aperrors.ErrInvalidArgument)
+	}
+	if input.BackendType == "" {
+		return domaincopilot.DataSourceInput{}, fmt.Errorf("%w: backendType is required", aperrors.ErrInvalidArgument)
+	}
+	if input.MCPAdapter == "" {
+		return domaincopilot.DataSourceInput{}, fmt.Errorf("%w: mcpAdapter is required", aperrors.ErrInvalidArgument)
+	}
+	if s.mcpRegistry == nil {
+		return domaincopilot.DataSourceInput{}, fmt.Errorf("%w: MCP registry is not configured", aperrors.ErrInvalidArgument)
+	}
+	adapter, ok := s.mcpRegistry.Get(input.MCPAdapter)
+	if !ok {
+		return domaincopilot.DataSourceInput{}, fmt.Errorf("%w: unsupported mcp adapter %s", aperrors.ErrInvalidArgument, input.MCPAdapter)
+	}
+	if adapter.SourceKind != "" && adapter.SourceKind != input.SourceKind {
+		return domaincopilot.DataSourceInput{}, fmt.Errorf("%w: adapter %s only supports source kind %s", aperrors.ErrInvalidArgument, input.MCPAdapter, adapter.SourceKind)
+	}
+	if len(adapter.SupportedBackends) > 0 && !containsString(adapter.SupportedBackends, input.BackendType) {
+		return domaincopilot.DataSourceInput{}, fmt.Errorf("%w: adapter %s does not support backend %s", aperrors.ErrInvalidArgument, input.MCPAdapter, input.BackendType)
+	}
+	if input.SourceKind == "logs" {
+		if err := mcplogs.DefaultRegistry().Validate(input.BackendType, input.Config); err != nil {
+			return domaincopilot.DataSourceInput{}, fmt.Errorf("%w: %v", aperrors.ErrInvalidArgument, err)
+		}
+	}
+	if input.Scope == nil {
+		input.Scope = map[string]any{}
+	}
+	if input.QueryBudget == nil {
+		input.QueryBudget = map[string]any{}
+	}
+	if input.RedactionPolicy == nil {
+		input.RedactionPolicy = map[string]any{}
+	}
+	if input.Config == nil {
+		input.Config = map[string]any{}
+	}
+	return input, nil
+}
+
+func normalizeAnalysisProfileInput(input domaincopilot.AnalysisProfileInput) (domaincopilot.AnalysisProfileInput, error) {
+	input.ID = strings.TrimSpace(input.ID)
+	input.Name = strings.TrimSpace(input.Name)
+	input.Mode = strings.TrimSpace(input.Mode)
+	input.RemediationPolicy = strings.TrimSpace(input.RemediationPolicy)
+	if input.ID == "" {
+		input.ID = "profile:" + uuid.NewString()
+	}
+	if input.Name == "" {
+		return domaincopilot.AnalysisProfileInput{}, fmt.Errorf("%w: profile name is required", aperrors.ErrInvalidArgument)
+	}
+	if input.Mode != "root_cause" && input.Mode != "inspection" {
+		return domaincopilot.AnalysisProfileInput{}, fmt.Errorf("%w: mode must be root_cause or inspection", aperrors.ErrInvalidArgument)
+	}
+	if input.RemediationPolicy == "" {
+		input.RemediationPolicy = "suggest_only"
+	}
+	if input.DefaultTimeRangeMinutes <= 0 {
+		input.DefaultTimeRangeMinutes = 60
+	}
+	if input.TimeoutSeconds <= 0 {
+		input.TimeoutSeconds = 90
+	}
+	if input.QueryBudgets == nil {
+		input.QueryBudgets = map[string]any{}
+	}
+	if input.OutputStyle == nil {
+		input.OutputStyle = map[string]any{}
+	}
+	return input, nil
+}
+
+func normalizeAutomationPolicyInput(input domaincopilot.AutomationPolicyInput) (domaincopilot.AutomationPolicyInput, error) {
+	input.ID = strings.TrimSpace(input.ID)
+	input.Name = strings.TrimSpace(input.Name)
+	input.TriggerType = strings.TrimSpace(input.TriggerType)
+	input.AnalysisProfileID = strings.TrimSpace(input.AnalysisProfileID)
+	input.RemediationPolicy = strings.TrimSpace(input.RemediationPolicy)
+	if input.ID == "" {
+		input.ID = "policy:" + uuid.NewString()
+	}
+	if input.Name == "" {
+		return domaincopilot.AutomationPolicyInput{}, fmt.Errorf("%w: automation policy name is required", aperrors.ErrInvalidArgument)
+	}
+	if input.TriggerType == "" {
+		return domaincopilot.AutomationPolicyInput{}, fmt.Errorf("%w: triggerType is required", aperrors.ErrInvalidArgument)
+	}
+	if input.AnalysisProfileID == "" {
+		return domaincopilot.AutomationPolicyInput{}, fmt.Errorf("%w: analysisProfileId is required", aperrors.ErrInvalidArgument)
+	}
+	if input.RemediationPolicy == "" {
+		input.RemediationPolicy = "suggest_only"
+	}
+	if input.DedupWindowSeconds <= 0 {
+		input.DedupWindowSeconds = 900
+	}
+	if input.TriggerConditions == nil {
+		input.TriggerConditions = map[string]any{}
+	}
+	if input.ApprovalPolicy == nil {
+		input.ApprovalPolicy = map[string]any{}
+	}
+	return input, nil
+}

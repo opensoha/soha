@@ -1,0 +1,187 @@
+# Configuration
+
+## Source Of Truth
+
+Backend configuration is file-first.
+
+- primary file: `configs/config.yaml`
+- loader: `internal/infrastructure/config`
+- override mechanism: environment variables through Viper when needed
+
+Frontend runtime is currently code-first rather than env-first.
+
+- API base path is fixed to `/api/v1` in `web/src/services/api-client.ts`
+- local development proxies `/api` to `http://localhost:8080` in `web/vite.config.ts`
+- the docs surface inside the console points to `/docs/`
+- there are no checked-in `web/.env.*` templates at the moment
+
+## Backend Config Shape
+
+```yaml
+app:
+http:
+logger:
+runtime:
+database:
+redis:
+auth:
+gitlab:
+swagger:
+mcp:
+bootstrap:
+kubernetes:
+monitoring:
+```
+
+Key backend fields now used by the runtime:
+
+- `http.cors_allowed_origins`: allowed browser origins for the frontend console
+- `auth.jwt.secret`, `auth.jwt.access_ttl`, `auth.jwt.refresh_ttl`
+- `auth.dev_principal.*`: bootstrap local account seed and optional development fallback principal
+- `auth.oidc.*`: issuer, client, callback, frontend redirect, and default role mapping
+- `gitlab.enabled`, `gitlab.base_url`, `gitlab.token`, `gitlab.group_id`, `gitlab.per_page`, `gitlab.timeout`
+- `runtime.workflow_workers`, `runtime.workflow_queue_size`, `runtime.workflow_node_parallelism`
+- `runtime.cluster_sync_parallelism`, `runtime.copilot_inspection_parallelism`, `runtime.alert_upsert_batch_size`
+- `database.migration_path`: migration root directory (runtime resolves `migrations/<driver>/0001_init.sql`)
+- `database.migration_file`: explicit SQL bootstrap file override
+- `kubernetes.clusters[*].kubeconfig`: direct cluster file path for bootstrapped clusters
+- `kubernetes.clusters[*].kubeconfig_data`: inline kubeconfig support when file paths are not used
+- `mcp.default_timeout`: default timeout reused by MCP and agent HTTP integrations
+- `monitoring.enabled`: toggles monitoring ingress endpoints
+- `monitoring.webhook_token`: shared token accepted by the alert webhook endpoint
+
+## Local Development Defaults
+
+### PostgreSQL
+
+- host: `localhost`
+- port: `5432`
+- database: `kubecrux`
+- user: `pgsql`
+- password: `pgsql`
+
+### Redis
+
+- addr: `localhost:6379`
+- password: empty
+- db: `0`
+
+## Identity Defaults
+
+The default local bootstrap account comes from `auth.dev_principal` inside `config.yaml`.
+
+- username: `local-admin`
+- email: `admin@kubecrux.local`
+- password: `change-me-please`
+
+When `auth.enable_dev_auth` is `false`, this account is still seeded into PostgreSQL for real password login. The flag only controls whether the backend accepts an automatic development principal when no bearer token is present.
+
+## Operational Conventions
+
+- request ID header: `X-Request-Id`
+- health check: `GET /healthz`
+- readiness check: `GET /readyz`
+- versioned API base path: `/api/v1`
+- swagger route reservation: `/swagger/*any`
+- config override file: `KC_CONFIG_FILE=/abs/path/to/config.yaml`
+- frontend local dev port: `5173`
+- docs local dev port: `5174`
+
+## Database Bootstrap
+
+On startup the backend can:
+
+1. run SQL migration file
+2. seed bootstrap user
+3. seed password hash and role bindings for the bootstrap account
+4. seed default RBAC roles
+5. seed default ABAC policies
+6. seed configured clusters into `clusters`
+7. seed file-configured direct cluster metadata into `cluster_credentials_meta`
+
+## Cluster Registration API
+
+The runtime now supports two persisted cluster connection modes:
+
+- `direct_kubeconfig`
+  - request payload includes `kubeconfig` and optional `context`
+  - kubeconfig is validated before the cluster is registered into `cluster-manager`
+  - informer/cache is started dynamically for the new cluster
+- `agent`
+  - request payload includes `agentEndpoint` and optional `agentToken`
+  - Gin uses the stored endpoint and token to pull summary, list resources, and send execution actions
+
+Relevant routes:
+
+- `POST /api/v1/clusters`
+- `POST /api/v1/clusters/:clusterID/workloads/deployments/restart`
+- `POST /api/v1/clusters/:clusterID/workloads/deployments/scale`
+
+## Monitoring Runtime
+
+The monitoring runtime currently expects file-configured values under:
+
+```yaml
+monitoring:
+  enabled: true
+  webhook_token: dev-alert-webhook-token
+```
+
+Current persistence layout:
+
+- `alert_instances`: normalized inbound alert inventory
+- `notification_channels`: downstream channel definitions
+- `event_stream`: normalized alert activity for the unified event center
+
+Current public or protected routes:
+
+- `POST /api/v1/integrations/alerts/webhook`
+- `GET /api/v1/monitoring/summary`
+- `GET /api/v1/alerts`
+- `GET /api/v1/notification-channels`
+- `POST /api/v1/notification-channels`
+- `PUT /api/v1/notification-channels/:channelID`
+
+## Application Registry And GitLab
+
+Application management now uses one PostgreSQL-backed registry table:
+
+- `applications`
+- `build_records`
+- `ai_sessions`
+- `ai_messages`
+
+GitLab integration is configured in `config.yaml`:
+
+```yaml
+gitlab:
+  enabled: false
+  base_url: https://gitlab.com/api/v4
+  token: ""
+  group_id: ""
+  per_page: 50
+  timeout: 10s
+```
+
+When enabled, kubecrux serves these routes from the backend:
+
+- `GET /api/v1/applications`
+- `POST /api/v1/applications`
+- `GET /api/v1/applications/:applicationID`
+- `PUT /api/v1/applications/:applicationID`
+- `DELETE /api/v1/applications/:applicationID`
+- `GET /api/v1/integrations/gitlab/projects`
+- `GET /api/v1/integrations/gitlab/branches`
+- `GET /api/v1/integrations/gitlab/tags`
+
+Build and AI routes now also exist:
+
+- `GET /api/v1/builds`
+- `POST /api/v1/builds/trigger`
+- `GET /api/v1/copilot/insights`
+- `GET /api/v1/copilot/sessions`
+- `POST /api/v1/copilot/sessions`
+- `GET /api/v1/copilot/sessions/:sessionID/messages`
+- `POST /api/v1/copilot/sessions/:sessionID/messages`
+
+The browser never talks to GitLab directly. Tokens stay in backend configuration.

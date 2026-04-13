@@ -1,0 +1,27 @@
+app:
+  name: kubecrux-agent
+  env: development
+
+http:
+  addr: :18080
+  base_path: /api/v1
+  read_timeout: 15s
+  write_timeout: 15s
+
+logger:
+  level: debug
+  format: console
+
+auth:
+  bearer_token: demo-agent-token
+
+kubernetes:
+  id: local-agent
+  name: Local Agent
+  kubeconfig: $HOME/.kube/config
+  context: ""
+  region: local
+  environment: development
+  labels:
+    provider: agent
+    owner: platform

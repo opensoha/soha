@@ -1,0 +1,95 @@
+name: frontend
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+
+jobs:
+  web:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: kubecrux
+          POSTGRES_USER: pgsql
+          POSTGRES_PASSWORD: pgsql
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U pgsql -d kubecrux"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    env:
+      VITE_API_BASE_URL: http://127.0.0.1:8080/api/v1
+      VITE_DOCS_BASE_URL: http://127.0.0.1:5174/
+      PLAYWRIGHT_BASE_URL: http://127.0.0.1:3000
+      KC_E2E_LOGIN: local-admin
+      KC_E2E_PASSWORD: change-me-please
+      KC_CONFIG_FILE: configs/config.ci.yaml
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.1'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+
+      - name: Verify frontend
+        run: npm run verify:web
+
+      - name: Run Go tests
+        working-directory: apps/api
+        run: go test ./...
+
+      - name: Start API
+        working-directory: apps/api
+        run: |
+          go run ./cmd/server > /tmp/kubecrux-api.log 2>&1 &
+          echo $! > /tmp/kubecrux-api.pid
+
+      - name: Wait for API readiness
+        run: |
+          for i in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:8080/healthz >/dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+          cat /tmp/kubecrux-api.log
+          exit 1
+
+      - name: Run Playwright smoke
+        run: npm run test:web:e2e
+
+      - name: Dump API log on failure
+        if: failure()
+        run: cat /tmp/kubecrux-api.log
