@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Button, Modal, Form, Toast, Popconfirm, Space } from '@douyinfe/semi-ui'
+import { Button, Modal, Form, Toast, Popconfirm, Space, Tag } from '@douyinfe/semi-ui'
 import { IconPlus, IconEdit, IconDelete } from '@douyinfe/semi-icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { AdminTable } from '@/components/admin-table'
@@ -26,6 +26,15 @@ interface OnlineUser {
   source?: string
   sourceIp?: string
   userAgent?: string
+}
+
+function SourceTag({ value }: { value?: string }) {
+  const normalized = (value || '').toLowerCase()
+  if (!normalized) return <>-</>
+  if (normalized === 'console') return <Tag color="blue">Console</Tag>
+  if (normalized === 'oidc') return <Tag color="green">OIDC</Tag>
+  if (normalized === 'api') return <Tag color="orange">API</Tag>
+  return <Tag>{value}</Tag>
 }
 
 export function OnlineUsersPage() {
@@ -88,7 +97,7 @@ export function OnlineUsersPage() {
     { title: '用户名', dataIndex: 'userName' },
     { title: '邮箱', dataIndex: 'email' },
     { title: '登录方式', dataIndex: 'providerType' },
-    { title: '来源', dataIndex: 'source', render: (value: string) => value || '-' },
+    { title: '来源', dataIndex: 'source', render: (value: string) => <SourceTag value={value} /> },
     { title: 'IP', dataIndex: 'sourceIp', render: (value: string) => value || '-' },
     { title: '设备', dataIndex: 'userAgent', ellipsis: true, render: (value: string) => value || '-' },
     {
