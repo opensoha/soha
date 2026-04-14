@@ -50,6 +50,7 @@ type ResourceService interface {
 	DeleteNode(context.Context, domainidentity.Principal, string, string) error
 	ListPods(context.Context, domainidentity.Principal, string, string) ([]domainresource.PodView, error)
 	GetPodDetail(context.Context, domainidentity.Principal, string, string, string) (domainresource.PodDetailView, error)
+	DeletePod(context.Context, domainidentity.Principal, string, string, string) error
 	GetPodLogs(context.Context, domainidentity.Principal, string, string, string, string, int64, int64, bool) (domainresource.PodLogsView, error)
 	StreamPodLogs(context.Context, domainidentity.Principal, string, string, string, string, int64, int64, io.Writer) error
 	GetPodYAML(context.Context, domainidentity.Principal, string, string, string) (domainresource.ResourceYAMLView, error)
@@ -359,6 +360,16 @@ func (h *PlatformHandler) GetPodDetail(c *gin.Context) {
 		return
 	}
 	apiresponse.Item(c, http.StatusOK, item)
+}
+
+func (h *PlatformHandler) DeletePod(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	namespace := c.DefaultQuery("namespace", "default")
+	if err := h.resources.DeletePod(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("podName")); err != nil {
+		writeError(c, err)
+		return
+	}
+	c.Status(http.StatusNoContent)
 }
 
 func (h *PlatformHandler) GetPodLogs(c *gin.Context) {

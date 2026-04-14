@@ -339,6 +339,26 @@ func (s *Service) GetPodDetail(ctx context.Context, principal domainidentity.Pri
 	return item, nil
 }
 
+func (s *Service) DeletePod(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, name string) error {
+	connection, _, err := s.authorize(ctx, principal, clusterID, namespace, "Pod", domainaccess.ActionDelete)
+	if err != nil {
+		return err
+	}
+
+	switch connection.Summary.ConnectionMode {
+	case domaincluster.ConnectionModeAgent:
+		return fmt.Errorf("%w: pod deletion is not supported for agent-connected clusters yet", apperrors.ErrInvalidArgument)
+	default:
+		if err := s.deleteDirectPod(ctx, clusterID, namespace, name); err != nil {
+			_ = s.recordAudit(ctx, principal, clusterID, namespace, "Pod", name, string(domainaccess.ActionDelete), "failure", err.Error())
+			return err
+		}
+	}
+
+	_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, "Pod", name, string(domainaccess.ActionDelete), "success", "deleted pod for rebuild")
+	return nil
+}
+
 func (s *Service) GetPodLogs(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, name, container string, tailLines, sinceSeconds int64, previous bool) (domainresource.PodLogsView, error) {
 	connection, _, err := s.authorize(ctx, principal, clusterID, namespace, "Pod", domainaccess.ActionLogs)
 	if err != nil {
@@ -1530,6 +1550,16 @@ func (s *Service) getDirectPod(ctx context.Context, clusterID, namespace, name s
 	return item, nil
 }
 
+func (s *Service) deleteDirectPod(ctx context.Context, clusterID, namespace, name string) error {
+	bundle, err := s.clusters.Bundle(ctx, clusterID)
+	if err != nil {
+		return fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
+	}
+	queryCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
+	defer cancel()
+	return bundle.Typed.CoreV1().Pods(namespace).Delete(queryCtx, name, metav1.DeleteOptions{})
+}
+
 func (s *Service) getDirectNode(ctx context.Context, clusterID, name string) (*corev1.Node, error) {
 	bundle, err := s.clusters.Bundle(ctx, clusterID)
 	if err != nil {
@@ -2453,7 +2483,7 @@ func shouldUseInformerCache(namespace string) bool {
 }
 
 func shouldPopulatePodUsageSummaries(namespace string) bool {
-	return strings.TrimSpace(namespace) != ""
+	return false
 }
 
 func (s *Service) listDirectPersistentVolumeClaims(ctx context.Context, clusterID, namespace string) ([]corev1.PersistentVolumeClaim, error) {
