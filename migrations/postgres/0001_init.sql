@@ -1,3 +1,6 @@
+-- Schema only. The bootstrap account is seeded by backend startup from auth.dev_principal
+-- and the repository baseline is admin / kubecrux with no legacy migration path.
+
 CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,
     username TEXT NOT NULL UNIQUE,

@@ -407,9 +407,6 @@ func seedUser(ctx context.Context, db *gorm.DB, cfg cfgpkg.Config) error {
 	if strings.TrimSpace(cfg.Auth.DevPrincipal.UserID) == "" {
 		return nil
 	}
-	if err := migrateLegacyBootstrapUser(ctx, db, cfg); err != nil {
-		return err
-	}
 	now := time.Now().UTC()
 	if err := db.WithContext(ctx).Exec(`
 		INSERT INTO users (id, username, email, display_name, status, tags, preferences, created_at, updated_at)
@@ -461,93 +458,6 @@ func seedUser(ctx context.Context, db *gorm.DB, cfg cfgpkg.Config) error {
 		if err := insertUserRoleBindings(ctx, db, roleBindingValues, now); err != nil {
 			return err
 		}
-	}
-	return nil
-}
-
-func migrateLegacyBootstrapUser(ctx context.Context, db *gorm.DB, cfg cfgpkg.Config) error {
-	const legacyUserID = "local-admin"
-	targetUserID := strings.TrimSpace(cfg.Auth.DevPrincipal.UserID)
-	if targetUserID == "" || targetUserID == legacyUserID {
-		return nil
-	}
-
-	var legacyCount int64
-	if err := db.WithContext(ctx).Table("users").Where("id = ?", legacyUserID).Count(&legacyCount).Error; err != nil {
-		return err
-	}
-	if legacyCount == 0 {
-		return nil
-	}
-
-	var targetCount int64
-	if err := db.WithContext(ctx).Table("users").Where("id = ?", targetUserID).Count(&targetCount).Error; err != nil {
-		return err
-	}
-	if targetCount == 0 {
-		now := time.Now().UTC()
-		tempEmail := fmt.Sprintf("%s+migrating@kubecrux.local", targetUserID)
-		if err := db.WithContext(ctx).Exec(`
-			INSERT INTO users (id, username, email, display_name, status, tags, preferences, created_at, updated_at)
-			SELECT ?, ?, ?, display_name, status, tags, preferences, ?, ?
-			FROM users
-			WHERE id = ?
-		`, targetUserID, targetUserID, tempEmail, now, now, legacyUserID).Error; err != nil {
-			return err
-		}
-	}
-
-	steps := []string{
-		`UPDATE sessions SET user_id = ? WHERE user_id = ?`,
-		`UPDATE user_identities SET user_id = ? WHERE user_id = ?`,
-		`UPDATE audit_logs SET actor_id = ? WHERE actor_id = ?`,
-		`UPDATE operation_logs SET actor_id = ? WHERE actor_id = ?`,
-		`UPDATE ai_sessions SET created_by = ? WHERE created_by = ?`,
-		`UPDATE ai_inspection_tasks SET created_by = ? WHERE created_by = ?`,
-		`UPDATE ai_inspection_runs SET triggered_by = ? WHERE triggered_by = ?`,
-		`UPDATE ai_root_cause_runs SET created_by = ? WHERE created_by = ?`,
-		`UPDATE announcements SET created_by = ? WHERE created_by = ?`,
-		`UPDATE announcements SET updated_by = ? WHERE updated_by = ?`,
-		`UPDATE app_settings SET updated_by = ? WHERE updated_by = ?`,
-	}
-	for _, query := range steps {
-		if err := db.WithContext(ctx).Exec(query, targetUserID, legacyUserID).Error; err != nil {
-			return err
-		}
-	}
-
-	dedupQueries := []string{
-		`DELETE FROM user_role_bindings n USING user_role_bindings o WHERE n.user_id = ? AND o.user_id = ? AND n.role_id = o.role_id`,
-		`DELETE FROM user_team_bindings n USING user_team_bindings o WHERE n.user_id = ? AND o.user_id = ? AND n.team_id = o.team_id`,
-		`DELETE FROM user_project_bindings n USING user_project_bindings o WHERE n.user_id = ? AND o.user_id = ? AND n.project_id = o.project_id`,
-		`DELETE FROM user_preferences n USING user_preferences o WHERE n.user_id = ? AND o.user_id = ? AND n.category = o.category`,
-	}
-	for _, query := range dedupQueries {
-		if err := db.WithContext(ctx).Exec(query, targetUserID, legacyUserID).Error; err != nil {
-			return err
-		}
-	}
-
-	if err := db.WithContext(ctx).Exec(`DELETE FROM user_password_credentials WHERE user_id = ?`, targetUserID).Error; err != nil {
-		return err
-	}
-	if err := db.WithContext(ctx).Exec(`UPDATE user_password_credentials SET user_id = ? WHERE user_id = ?`, targetUserID, legacyUserID).Error; err != nil {
-		return err
-	}
-	if err := db.WithContext(ctx).Exec(`UPDATE user_preferences SET user_id = ? WHERE user_id = ?`, targetUserID, legacyUserID).Error; err != nil {
-		return err
-	}
-	if err := db.WithContext(ctx).Exec(`UPDATE user_role_bindings SET user_id = ? WHERE user_id = ?`, targetUserID, legacyUserID).Error; err != nil {
-		return err
-	}
-	if err := db.WithContext(ctx).Exec(`UPDATE user_team_bindings SET user_id = ? WHERE user_id = ?`, targetUserID, legacyUserID).Error; err != nil {
-		return err
-	}
-	if err := db.WithContext(ctx).Exec(`UPDATE user_project_bindings SET user_id = ? WHERE user_id = ?`, targetUserID, legacyUserID).Error; err != nil {
-		return err
-	}
-	if err := db.WithContext(ctx).Exec(`DELETE FROM users WHERE id = ?`, legacyUserID).Error; err != nil {
-		return err
 	}
 	return nil
 }

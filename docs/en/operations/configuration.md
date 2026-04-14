@@ -37,7 +37,7 @@ Key backend fields now used by the runtime:
 
 - `http.cors_allowed_origins`: allowed browser origins for the frontend console
 - `auth.jwt.secret`, `auth.jwt.access_ttl`, `auth.jwt.refresh_ttl`
-- `auth.dev_principal.*`: bootstrap local account seed and optional development fallback principal
+- `auth.dev_principal.*`: bootstrap local account seed and, when enabled, the no-token development principal
 - `auth.oidc.*`: issuer, client, callback, frontend redirect, and default role mapping
 - `gitlab.enabled`, `gitlab.base_url`, `gitlab.token`, `gitlab.group_id`, `gitlab.per_page`, `gitlab.timeout`
 - `runtime.workflow_workers`, `runtime.workflow_queue_size`, `runtime.workflow_node_parallelism`
@@ -74,7 +74,7 @@ The default local bootstrap account comes from `auth.dev_principal` inside `conf
 - email: `admin@kubecrux.local`
 - password: `kubecrux`
 
-When `auth.enable_dev_auth` is `false`, this account is still seeded into PostgreSQL for real password login. The flag only controls whether the backend accepts an automatic development principal when no bearer token is present.
+When `auth.enable_dev_auth` is `false`, this account is still seeded into PostgreSQL for real password login. The flag only controls whether the backend accepts an automatic development principal when no bearer token is present. The runtime no longer keeps a legacy bootstrap migration or password-login fallback path.
 
 ## Operational Conventions
 
@@ -92,12 +92,13 @@ When `auth.enable_dev_auth` is `false`, this account is still seeded into Postgr
 On startup the backend can:
 
 1. run SQL migration file
-2. seed bootstrap user
-3. seed password hash and role bindings for the bootstrap account
-4. seed default RBAC roles
-5. seed default ABAC policies
-6. seed configured clusters into `clusters`
-7. seed file-configured direct cluster metadata into `cluster_credentials_meta`
+2. create schema only from the migration file
+3. seed bootstrap user from `auth.dev_principal`
+4. seed password hash and role bindings for the bootstrap account
+5. seed default RBAC roles
+6. seed default ABAC policies
+7. seed configured clusters into `clusters`
+8. seed file-configured direct cluster metadata into `cluster_credentials_meta`
 
 ## Cluster Registration API
 

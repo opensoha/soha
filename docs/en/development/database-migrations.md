@@ -20,3 +20,5 @@ The bootstrap migration creates:
 - cluster registry tables
 - audit and event tables
 - future build, deploy, notification, and preference tables
+
+It does not seed the default login account. The bootstrap user is created by backend startup from `auth.dev_principal`, and the current repository baseline is `admin / kubecrux` only.

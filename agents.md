@@ -304,6 +304,7 @@ The repository has already converged on these rules:
 - one shared platform scope model drives platform resource pages
 - platform collection pages should use shared scoped path construction
 - backend all-namespaces aggregation is preferred over frontend namespace fan-out
+- identity bootstrap baseline is a single `admin / kubecrux` seed from `auth.dev_principal`; legacy bootstrap migration and login fallback are removed
 - pod detail is now expected to be an operational workspace, not only a static detail page
 - workload list pages should support search/filter first, then batch action surfaces where backend capability already exists
 - platform overview should expose cluster-aware pod runtime cards instead of only fleet and alert counters
