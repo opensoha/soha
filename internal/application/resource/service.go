@@ -280,7 +280,8 @@ func (s *Service) ListPods(ctx context.Context, principal domainidentity.Princip
 			items = append(items, mapPod(item, decision))
 		}
 		if shouldPopulatePodUsageSummaries(namespace) {
-			if metrics := s.listPodUsageSummaries(ctx, clusterID, namespace, items); len(metrics) > 0 {
+			metricsCtx, metricsCancel := context.WithTimeout(ctx, 1200*time.Millisecond)
+			if metrics := s.listPodUsageSummaries(metricsCtx, clusterID, namespace, items); len(metrics) > 0 {
 				for index := range items {
 					if usage, ok := metrics[podMetricsKey(items[index].Namespace, items[index].Name)]; ok {
 						items[index].CPU = usage.CPU
@@ -288,10 +289,17 @@ func (s *Service) ListPods(ctx context.Context, principal domainidentity.Princip
 					}
 				}
 			}
+			metricsCancel()
 		}
 		source = rawSource
 	}
 	items = filterScopedNamespaceItems(items, decision, func(item domainresource.PodView) string { return item.Namespace })
+	sort.SliceStable(items, func(i, j int) bool {
+		if items[i].Name != items[j].Name {
+			return items[i].Name < items[j].Name
+		}
+		return items[i].Namespace < items[j].Namespace
+	})
 	populateAllowedActionsPods(items, decision)
 	_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, "Pod", "", string(domainaccess.ActionList), "success", fmt.Sprintf("listed pods via %s in namespace %s", source, displayNamespace(namespace)))
 	return items, nil
@@ -1491,7 +1499,13 @@ func (s *Service) listDirectNodes(ctx context.Context, clusterID string) ([]core
 
 func (s *Service) listDirectPods(ctx context.Context, clusterID, namespace string) ([]corev1.Pod, string, error) {
 	if strings.TrimSpace(namespace) == "" {
-		items, err := s.listPodsAcrossNamespaces(ctx, clusterID)
+		bundle, err := s.clusters.Bundle(ctx, clusterID)
+		if err != nil {
+			return nil, "live", fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
+		}
+		queryCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
+		defer cancel()
+		items, err := listPodsLive(queryCtx, bundle, "")
 		if err != nil {
 			return nil, "live", err
 		}

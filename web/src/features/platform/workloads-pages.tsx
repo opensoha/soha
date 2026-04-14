@@ -1222,6 +1222,71 @@ function getPodHealth(pod: Pod) {
   return 'unknown'
 }
 
+function parseReadyContainers(value: string) {
+  const [ready = '0', total = '0'] = value.split('/')
+  return {
+    ready: Number(ready) || 0,
+    total: Number(total) || 0,
+  }
+}
+
+function parseCpuValue(value?: string) {
+  if (!value) return -1
+  const normalized = value.trim().toLowerCase()
+  if (!normalized) return -1
+  if (normalized.endsWith('m')) {
+    return Number.parseFloat(normalized.slice(0, -1)) / 1000
+  }
+  return Number.parseFloat(normalized)
+}
+
+function parseMemoryValue(value?: string) {
+  if (!value) return -1
+  const normalized = value.trim()
+  const match = normalized.match(/^([\d.]+)\s*(Ki|Mi|Gi|Ti|Pi|Ei|B)?$/i)
+  if (!match) return -1
+  const amount = Number.parseFloat(match[1])
+  if (Number.isNaN(amount)) return -1
+  const unit = (match[2] || 'B').toUpperCase()
+  const factors: Record<string, number> = {
+    B: 1,
+    KI: 1024,
+    MI: 1024 ** 2,
+    GI: 1024 ** 3,
+    TI: 1024 ** 4,
+    PI: 1024 ** 5,
+    EI: 1024 ** 6,
+  }
+  return amount * (factors[unit] || 1)
+}
+
+function compareStrings(left?: string, right?: string) {
+  return (left || '').localeCompare(right || '')
+}
+
+function podSorter(compareFn: (left: Pod, right: Pod) => number) {
+  return (left?: Pod, right?: Pod) => {
+    if (!left && !right) return 0
+    if (!left) return -1
+    if (!right) return 1
+    return compareFn(left, right)
+  }
+}
+
+function WorkloadListSkeleton({ blocks = 4 }: { blocks?: number }) {
+  return (
+    <div className="kc-page-section">
+      <Card loading className="kc-detail-card" />
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+        {Array.from({ length: blocks }).map((_, index) => (
+          <Card key={index} loading className="kc-detail-card" />
+        ))}
+      </div>
+      <Card loading className="kc-detail-card" />
+    </div>
+  )
+}
+
 export function WorkloadsPodsPage() {
   const { t, localeCode } = useI18n()
   const navigate = useNavigate()
@@ -1265,6 +1330,14 @@ export function WorkloadsPodsPage() {
       return includesSearch([item.name, item.namespace, item.nodeName, item.podIp], normalizedKeyword)
     })
   ), [nodeFilter, normalizedKeyword, phaseFilter, pods, pvcFilter, restartFilter])
+
+  const orderedPods = useMemo(() => (
+    [...filteredPods].sort((left, right) => {
+      const nameCompare = compareStrings(left.name, right.name)
+      if (nameCompare !== 0) return nameCompare
+      return compareStrings(left.namespace, right.namespace)
+    })
+  ), [filteredPods])
 
   const selectedPods = useMemo(
     () => pods.filter((item) => selectedPodKeys.includes(`${item.namespace}/${item.name}`)),
@@ -1328,33 +1401,63 @@ export function WorkloadsPodsPage() {
     {
       title: t('common.name', 'Name'),
       dataIndex: 'name',
+      sorter: podSorter((left, right) => {
+        const nameCompare = compareStrings(left.name, right.name)
+        if (nameCompare !== 0) return nameCompare
+        return compareStrings(left.namespace, right.namespace)
+      }),
+      defaultSortOrder: 'ascend',
       render: (name: string, record: Pod) => (
         <Button theme="borderless" type="primary" onClick={() => navigate(buildWorkloadDetailPath('pods', name, namespace, record.namespace))}>
           {name}
         </Button>
       ),
     },
-    { title: t('common.namespace', 'Namespace'), dataIndex: 'namespace' },
+    { title: t('common.namespace', 'Namespace'), dataIndex: 'namespace', sorter: podSorter((left, right) => compareStrings(left.namespace, right.namespace)) },
     {
       ...tableColumnPresets.status,
       title: t('common.status', 'Status'),
       dataIndex: 'phase',
+      sorter: podSorter((left, right) => compareStrings(left.phase, right.phase)),
       render: (s: string) => <StatusTag value={s} />,
     },
     {
       ...tableColumnPresets.status,
       title: localeCode === 'zh_CN' ? '健康度' : 'Health',
       dataIndex: 'name',
+      sorter: podSorter((left, right) => compareStrings(getPodHealth(left), getPodHealth(right))),
       render: (_: string, record: Pod) => <StatusTag value={getPodHealth(record)} />,
     },
-    { title: 'Ready', dataIndex: 'readyContainers' },
-    { title: localeCode === 'zh_CN' ? '重启次数' : 'Restarts', dataIndex: 'restarts' },
+    {
+      title: 'Ready',
+      dataIndex: 'readyContainers',
+      sorter: podSorter((left, right) => {
+        const leftReady = parseReadyContainers(left.readyContainers)
+        const rightReady = parseReadyContainers(right.readyContainers)
+        if (leftReady.ready !== rightReady.ready) return leftReady.ready - rightReady.ready
+        return leftReady.total - rightReady.total
+      }),
+    },
+    { title: localeCode === 'zh_CN' ? '重启次数' : 'Restarts', dataIndex: 'restarts', sorter: podSorter((left, right) => left.restarts - right.restarts) },
     { title: 'Pod IP', dataIndex: 'podIp', render: (value: string) => value || '-' },
-    { title: localeCode === 'zh_CN' ? '节点' : 'Node', dataIndex: 'nodeName' },
-    { title: 'CPU', dataIndex: 'cpu', render: (value: string) => value || '-' },
-    { title: localeCode === 'zh_CN' ? '内存' : 'Memory', dataIndex: 'memory', render: (value: string) => value || '-' },
-    { ...tableColumnPresets.datetime, title: 'Age', dataIndex: 'ageSeconds', render: (value: number) => formatAgeSeconds(value) },
+    { title: localeCode === 'zh_CN' ? '节点' : 'Node', dataIndex: 'nodeName', sorter: podSorter((left, right) => compareStrings(left.nodeName, right.nodeName)) },
+    { title: 'CPU', dataIndex: 'cpu', sorter: podSorter((left, right) => parseCpuValue(left.cpu) - parseCpuValue(right.cpu)), render: (value: string) => value || '-' },
+    { title: localeCode === 'zh_CN' ? '内存' : 'Memory', dataIndex: 'memory', sorter: podSorter((left, right) => parseMemoryValue(left.memory) - parseMemoryValue(right.memory)), render: (value: string) => value || '-' },
+    { ...tableColumnPresets.datetime, title: 'Age', dataIndex: 'ageSeconds', sorter: podSorter((left, right) => left.ageSeconds - right.ageSeconds), render: (value: number) => formatAgeSeconds(value) },
   ]
+
+  if (isLoading && !data) {
+    return (
+      <div className="kc-page">
+        <PageHeader
+          title={t('page.workloads.pods.title', 'Pods')}
+          description={t('page.workloads.pods.desc', 'Inspect pod state, node placement, container count, and restart totals.')}
+        />
+        <PlatformScopeToolbar />
+        <WorkloadListSkeleton blocks={5} />
+      </div>
+    )
+  }
 
   return (
     <div className="kc-page">
@@ -1438,7 +1541,7 @@ export function WorkloadsPodsPage() {
       </Card>
       <AdminTable
         columns={columns}
-        dataSource={filteredPods}
+        dataSource={orderedPods}
         rowKey={(record) => `${record.namespace}/${record.name}`}
         loading={isLoading}
         pageSize={20}
