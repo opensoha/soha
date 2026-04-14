@@ -277,6 +277,7 @@ function WorkloadDetailShell({
   actions,
   activeTabKey,
   onTabChange,
+  showScopeToolbar = true,
 }: {
   title: string
   resource: string
@@ -286,6 +287,7 @@ function WorkloadDetailShell({
   actions?: React.ReactNode
   activeTabKey?: string
   onTabChange?: (activeKey: string) => void
+  showScopeToolbar?: boolean
 }) {
   const { t, localeCode } = useI18n()
   const params = useParams()
@@ -352,7 +354,7 @@ function WorkloadDetailShell({
         description={localeCode === 'zh_CN' ? `查看 ${title} 的资源概览、标签、注解与 YAML 等详情信息。` : `Inspect ${title} overview, labels, annotations, and YAML details.`}
         actions={actions}
       />
-      <PlatformScopeToolbar />
+      {showScopeToolbar ? <PlatformScopeToolbar /> : null}
       <Tabs type="line" activeKey={activeTabKey} onChange={onTabChange}>
         <TabPane tab={t('common.overview', 'Overview')} itemKey="overview">
           <Card className="kc-detail-card">
@@ -1273,20 +1275,6 @@ function podSorter(compareFn: (left: Pod, right: Pod) => number) {
   }
 }
 
-function WorkloadListSkeleton({ blocks = 4 }: { blocks?: number }) {
-  return (
-    <div className="kc-page-section">
-      <Card loading className="kc-detail-card" />
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-        {Array.from({ length: blocks }).map((_, index) => (
-          <Card key={index} loading className="kc-detail-card" />
-        ))}
-      </div>
-      <Card loading className="kc-detail-card" />
-    </div>
-  )
-}
-
 export function WorkloadsPodsPage() {
   const { t, localeCode } = useI18n()
   const navigate = useNavigate()
@@ -1445,19 +1433,6 @@ export function WorkloadsPodsPage() {
     { title: localeCode === 'zh_CN' ? '内存' : 'Memory', dataIndex: 'memory', sorter: podSorter((left, right) => parseMemoryValue(left.memory) - parseMemoryValue(right.memory)), render: (value: string) => value || '-' },
     { ...tableColumnPresets.datetime, title: 'Age', dataIndex: 'ageSeconds', sorter: podSorter((left, right) => left.ageSeconds - right.ageSeconds), render: (value: number) => formatAgeSeconds(value) },
   ]
-
-  if (isLoading && !data) {
-    return (
-      <div className="kc-page">
-        <PageHeader
-          title={t('page.workloads.pods.title', 'Pods')}
-          description={t('page.workloads.pods.desc', 'Inspect pod state, node placement, container count, and restart totals.')}
-        />
-        <PlatformScopeToolbar />
-        <WorkloadListSkeleton blocks={5} />
-      </div>
-    )
-  }
 
   return (
     <div className="kc-page">
@@ -1778,6 +1753,7 @@ export function PodDetailPage() {
         loading={podMetricsQuery.isLoading}
         rangeMinutes={metricsRangeMinutes}
         onRangeChange={setMetricsRangeMinutes}
+        errorMessage={podMetricsQuery.error instanceof Error ? podMetricsQuery.error.message : undefined}
       />
     </TabPane>
   )
@@ -1815,12 +1791,13 @@ export function PodDetailPage() {
         title="Pod"
         resource="pods"
         paramKey="podName"
-        extraOverview={runtimeOverview}
-        extraTabPanes={[metricsTab, eventsTab, logsTab]}
-        activeTabKey={activeTabKey}
-        onTabChange={setActiveTabKey}
-        actions={(
-          <Space>
+      extraOverview={runtimeOverview}
+      extraTabPanes={[metricsTab, eventsTab, logsTab]}
+      activeTabKey={activeTabKey}
+      onTabChange={setActiveTabKey}
+      showScopeToolbar={false}
+      actions={(
+        <Space>
             <Button theme="light" onClick={() => setTerminalVisible(true)}>
               {localeCode === 'zh_CN' ? '打开终端' : 'Open Terminal'}
             </Button>

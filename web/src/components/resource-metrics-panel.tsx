@@ -141,17 +141,27 @@ export function ResourceMetricsPanel({
   loading,
   rangeMinutes,
   onRangeChange,
+  errorMessage,
 }: {
   title: string
   data?: MetricsSnapshot
   loading?: boolean
   rangeMinutes?: number
   onRangeChange?: (rangeMinutes: number) => void
+  errorMessage?: string
 }) {
   const { localeCode } = useI18n()
 
   if (loading) {
     return <Card className="kc-detail-card" loading />
+  }
+
+  if (errorMessage) {
+    return (
+      <Card className="kc-detail-card" title={title}>
+        <Empty description={errorMessage} />
+      </Card>
+    )
   }
 
   if (!data) {

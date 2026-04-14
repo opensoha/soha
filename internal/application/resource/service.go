@@ -1498,25 +1498,10 @@ func (s *Service) listDirectNodes(ctx context.Context, clusterID string) ([]core
 }
 
 func (s *Service) listDirectPods(ctx context.Context, clusterID, namespace string) ([]corev1.Pod, string, error) {
-	if strings.TrimSpace(namespace) == "" {
-		bundle, err := s.clusters.Bundle(ctx, clusterID)
-		if err != nil {
-			return nil, "live", fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
-		}
-		queryCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
-		defer cancel()
-		items, err := listPodsLive(queryCtx, bundle, "")
-		if err != nil {
-			return nil, "live", err
-		}
-		return items, "live", nil
-	}
-	if shouldUseInformerCache(namespace) {
-		if items, err := s.cache.ListPods(clusterID, namespace); err == nil {
-			return items, "cache", nil
-		} else if !errors.Is(err, informerinfra.ErrCacheNotReady) {
-			return nil, "cache", err
-		}
+	if items, err := s.cache.ListPods(clusterID, namespace); err == nil {
+		return items, "cache", nil
+	} else if !errors.Is(err, informerinfra.ErrCacheNotReady) {
+		return nil, "cache", err
 	}
 	bundle, err := s.clusters.Bundle(ctx, clusterID)
 	if err != nil {
