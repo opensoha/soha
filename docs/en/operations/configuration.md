@@ -70,9 +70,9 @@ Key backend fields now used by the runtime:
 
 The default local bootstrap account comes from `auth.dev_principal` inside `config.yaml`.
 
-- username: `local-admin`
+- username: `admin`
 - email: `admin@kubecrux.local`
-- password: `change-me-please`
+- password: `kubecrux`
 
 When `auth.enable_dev_auth` is `false`, this account is still seeded into PostgreSQL for real password login. The flag only controls whether the backend accepts an automatic development principal when no bearer token is present.
 

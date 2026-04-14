@@ -40,10 +40,10 @@ database:
 auth:
   enable_dev_auth: false
   dev_principal:
-    user_id: local-admin
-    name: Local Admin
+    user_id: admin
+    name: Admin
     email: admin@kubecrux.local
-    password: change-me-please
+    password: kubecrux
     roles:
       - admin
       - ops
