@@ -8,6 +8,7 @@ type Metadata struct {
 	Method    string
 	SourceIP  string
 	Source    string
+	UserAgent string
 }
 
 type ctxKey string

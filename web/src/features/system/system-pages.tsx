@@ -23,6 +23,9 @@ interface OnlineUser {
   loginTime: string
   lastSeenAt: string
   expiry: string
+  source?: string
+  sourceIp?: string
+  userAgent?: string
 }
 
 export function OnlineUsersPage() {
@@ -42,6 +45,9 @@ export function OnlineUsersPage() {
         loginTime: item.createdAt,
         lastSeenAt: item.lastSeenAt,
         expiry: item.expiresAt,
+        source: item.metadata?.source,
+        sourceIp: item.metadata?.sourceIp,
+        userAgent: item.metadata?.userAgent,
       })),
     }),
     refetchInterval: 10000,
@@ -61,6 +67,9 @@ export function OnlineUsersPage() {
     { title: '用户名', dataIndex: 'userName' },
     { title: '邮箱', dataIndex: 'email' },
     { title: '登录方式', dataIndex: 'providerType' },
+    { title: '来源', dataIndex: 'source', render: (value: string) => value || '-' },
+    { title: 'IP', dataIndex: 'sourceIp', render: (value: string) => value || '-' },
+    { title: '设备', dataIndex: 'userAgent', ellipsis: true, render: (value: string) => value || '-' },
     {
       ...tableColumnPresets.status,
       title: '状态',

@@ -118,7 +118,7 @@ func (s *Service) LoginWithPassword(ctx context.Context, login, password string)
 		return domainidentity.AuthResult{}, fmt.Errorf("%w: login and password are required", apperrors.ErrInvalidArgument)
 	}
 
-	user, err := s.users.FindByLogin(ctx, login)
+	user, err := s.findPasswordLoginUser(ctx, login)
 	if err != nil {
 		_ = s.recordAudit(ctx, domainidentity.Principal{UserName: login}, "login", "deny", "password login failed: user not found", map[string]any{"provider": "password"})
 		return domainidentity.AuthResult{}, fmt.Errorf("%w: invalid username or password", apperrors.ErrUnauthorized)
@@ -402,6 +402,7 @@ func (s *Service) ConsumeOIDCExchange(ctx context.Context, code string) (domaini
 }
 
 func (s *Service) issueAuthResult(ctx context.Context, principal domainidentity.Principal, providerType string) (domainidentity.AuthResult, error) {
+	meta := requestctx.FromContext(ctx)
 	sessionID := uuid.NewString()
 	refreshID := uuid.NewString()
 	accessToken, accessClaims, err := s.signAccessToken(principal, sessionID)
@@ -421,7 +422,10 @@ func (s *Service) issueAuthResult(ctx context.Context, principal domainidentity.
 		ExpiresAt:      refreshClaims.ExpiresAt.Time,
 		LastSeenAt:     time.Now().UTC(),
 		Metadata: map[string]any{
-			"roles": principal.Roles,
+			"roles":     principal.Roles,
+			"source":    meta.Source,
+			"sourceIp":  meta.SourceIP,
+			"userAgent": meta.UserAgent,
 		},
 	}
 	if err := s.users.CreateSession(ctx, session); err != nil {
@@ -437,6 +441,21 @@ func (s *Service) issueAuthResult(ctx context.Context, principal domainidentity.
 			ExpiresAt:    accessClaims.ExpiresAt.Time,
 		},
 	}, nil
+}
+
+func (s *Service) findPasswordLoginUser(ctx context.Context, login string) (userrepo.User, error) {
+	user, err := s.users.FindByLogin(ctx, login)
+	if err == nil || !errors.Is(err, userrepo.ErrNotFound) {
+		return user, err
+	}
+
+	configuredBootstrapID := strings.TrimSpace(s.cfg.DevPrincipal.UserID)
+	if login == configuredBootstrapID && configuredBootstrapID != "" && configuredBootstrapID != "local-admin" {
+		if legacyUser, legacyErr := s.users.FindByLogin(ctx, "local-admin"); legacyErr == nil {
+			return legacyUser, nil
+		}
+	}
+	return userrepo.User{}, err
 }
 
 func (s *Service) loadPrincipal(ctx context.Context, userID string) (domainidentity.Principal, error) {

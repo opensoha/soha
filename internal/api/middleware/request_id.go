@@ -11,7 +11,14 @@ func RequestID() gin.HandlerFunc {
 		requestID := uuid.NewString()
 		c.Set("request_id", requestID)
 		c.Writer.Header().Set("X-Request-Id", requestID)
-		meta := requestctx.Metadata{RequestID: requestID, Path: c.Request.URL.Path, Method: c.Request.Method, SourceIP: c.ClientIP(), Source: c.GetHeader("X-Source")}
+		meta := requestctx.Metadata{
+			RequestID: requestID,
+			Path:      c.Request.URL.Path,
+			Method:    c.Request.Method,
+			SourceIP:  c.ClientIP(),
+			Source:    c.GetHeader("X-Source"),
+			UserAgent: c.Request.UserAgent(),
+		}
 		if meta.Source == "" {
 			meta.Source = "console"
 		}
