@@ -15,36 +15,73 @@ import type { ColumnProps } from '@douyinfe/semi-ui/lib/es/table'
 
 interface OnlineUser {
   id: string
+  userId: string
   userName: string
   email: string
   providerType: string
+  status: string
   loginTime: string
+  lastSeenAt: string
   expiry: string
 }
 
 export function OnlineUsersPage() {
+  const queryClient = useQueryClient()
+
   const { data, isLoading } = useQuery({
     queryKey: ['online-users'],
     queryFn: () => api.get<ApiResponse<OnlineUser[]>>('/auth/sessions'),
     select: (response: any) => ({
       data: (response.data ?? []).map((item: any) => ({
         id: item.id,
+        userId: item.userId,
         userName: item.userName,
         email: item.email,
         providerType: item.providerType,
+        status: item.status,
         loginTime: item.createdAt,
+        lastSeenAt: item.lastSeenAt,
         expiry: item.expiresAt,
       })),
     }),
     refetchInterval: 10000,
   })
 
+  const revokeMutation = useMutation({
+    mutationFn: (sessionId: string) => api.post(`/auth/sessions/${sessionId}/revoke`),
+    onSuccess: () => {
+      Toast.success('用户会话已下线')
+      queryClient.invalidateQueries({ queryKey: ['online-users'] })
+    },
+    onError: (err: Error) => Toast.error(err.message),
+  })
+
   const columns: ColumnProps<OnlineUser>[] = [
+    { title: '用户 ID', dataIndex: 'userId' },
     { title: '用户名', dataIndex: 'userName' },
     { title: '邮箱', dataIndex: 'email' },
     { title: '登录方式', dataIndex: 'providerType' },
+    {
+      ...tableColumnPresets.status,
+      title: '状态',
+      dataIndex: 'status',
+      render: (value: string) => <StatusTag value={value} />,
+    },
     { ...tableColumnPresets.datetime, title: '登录时间', dataIndex: 'loginTime', render: (_: string, record: OnlineUser) => formatDateTime(record.loginTime) },
+    { ...tableColumnPresets.datetime, title: '最近活跃', dataIndex: 'lastSeenAt', render: (_: string, record: OnlineUser) => formatDateTime(record.lastSeenAt) },
     { ...tableColumnPresets.datetime, title: '过期时间', dataIndex: 'expiry', render: (_: string, record: OnlineUser) => formatDateTime(record.expiry) },
+    {
+      ...tableColumnPresets.action,
+      title: '操作',
+      dataIndex: 'id',
+      render: (_: string, record: OnlineUser) => (
+        <Popconfirm title="确认下线该用户会话？" onConfirm={() => revokeMutation.mutate(record.id)}>
+          <Button size="small" theme="borderless" type="danger" loading={revokeMutation.isPending}>
+            下线用户
+          </Button>
+        </Popconfirm>
+      ),
+    },
   ]
 
   return (
