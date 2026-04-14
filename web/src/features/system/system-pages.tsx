@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Button, Modal, Form, Toast, Popconfirm, Space } from '@douyinfe/semi-ui'
 import { IconPlus, IconEdit, IconDelete } from '@douyinfe/semi-icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -6,7 +6,7 @@ import { AdminTable } from '@/components/admin-table'
 import { PageHeader } from '@/components/page-header'
 import { BooleanTag, StatusTag } from '@/components/status-tag'
 import { api } from '@/services/api-client'
-import { formatDateTime } from '@/utils/time'
+import { formatDateTime, formatRelativeTime } from '@/utils/time'
 import { tableColumnPresets } from '@/utils/table-columns'
 import type { ApiResponse } from '@/types'
 import type { ColumnProps } from '@douyinfe/semi-ui/lib/es/table'
@@ -30,6 +30,7 @@ interface OnlineUser {
 
 export function OnlineUsersPage() {
   const queryClient = useQueryClient()
+  const [selectedSessionIds, setSelectedSessionIds] = useState<string[]>([])
 
   const { data, isLoading } = useQuery({
     queryKey: ['online-users'],
@@ -55,12 +56,32 @@ export function OnlineUsersPage() {
 
   const revokeMutation = useMutation({
     mutationFn: (sessionId: string) => api.post(`/auth/sessions/${sessionId}/revoke`),
-    onSuccess: () => {
+    onSuccess: (_result, sessionId) => {
       Toast.success('用户会话已下线')
+      queryClient.invalidateQueries({ queryKey: ['online-users'] })
+      setSelectedSessionIds((current) => current.filter((id) => id !== sessionId))
+    },
+    onError: (err: Error) => Toast.error(err.message),
+  })
+
+  const batchRevokeMutation = useMutation({
+    mutationFn: async (sessionIds: string[]) =>
+      Promise.allSettled(sessionIds.map((sessionId) => api.post(`/auth/sessions/${sessionId}/revoke`))),
+    onSuccess: (results) => {
+      const successCount = results.filter((item) => item.status === 'fulfilled').length
+      const failureCount = results.length - successCount
+      Toast.success(failureCount > 0 ? `批量下线完成，成功 ${successCount}，失败 ${failureCount}` : `已批量下线 ${successCount} 个会话`)
+      setSelectedSessionIds([])
       queryClient.invalidateQueries({ queryKey: ['online-users'] })
     },
     onError: (err: Error) => Toast.error(err.message),
   })
+
+  const sessions = data?.data ?? []
+  const selectedSessions = useMemo(
+    () => sessions.filter((item: OnlineUser) => selectedSessionIds.includes(item.id)),
+    [selectedSessionIds, sessions],
+  )
 
   const columns: ColumnProps<OnlineUser>[] = [
     { title: '用户 ID', dataIndex: 'userId' },
@@ -78,6 +99,7 @@ export function OnlineUsersPage() {
     },
     { ...tableColumnPresets.datetime, title: '登录时间', dataIndex: 'loginTime', render: (_: string, record: OnlineUser) => formatDateTime(record.loginTime) },
     { ...tableColumnPresets.datetime, title: '最近活跃', dataIndex: 'lastSeenAt', render: (_: string, record: OnlineUser) => formatDateTime(record.lastSeenAt) },
+    { title: '活跃时长', dataIndex: 'lastSeenAt', render: (_: string, record: OnlineUser) => formatRelativeTime(record.lastSeenAt) },
     { ...tableColumnPresets.datetime, title: '过期时间', dataIndex: 'expiry', render: (_: string, record: OnlineUser) => formatDateTime(record.expiry) },
     {
       ...tableColumnPresets.action,
@@ -95,8 +117,32 @@ export function OnlineUsersPage() {
 
   return (
     <div className="kc-page">
-      <PageHeader title="在线用户" description="查看当前在线会话、登录时间与会话到期信息。" />
-      <AdminTable columns={columns} dataSource={data?.data ?? []} rowKey="id" loading={isLoading} pageSize={20} />
+      <PageHeader
+        title="在线用户"
+        description="查看当前在线会话、登录来源、最后活跃时间与会话到期信息。"
+        actions={
+          <Button
+            theme="light"
+            type="danger"
+            disabled={selectedSessions.length === 0}
+            loading={batchRevokeMutation.isPending}
+            onClick={() => batchRevokeMutation.mutate(selectedSessions.map((item: OnlineUser) => item.id))}
+          >
+            {`批量下线 (${selectedSessions.length})`}
+          </Button>
+        }
+      />
+      <AdminTable
+        columns={columns}
+        dataSource={sessions}
+        rowKey="id"
+        loading={isLoading}
+        pageSize={20}
+        rowSelection={{
+          selectedRowKeys: selectedSessionIds,
+          onChange: (selectedRowKeys: string[]) => setSelectedSessionIds(selectedRowKeys),
+        }}
+      />
     </div>
   )
 }
