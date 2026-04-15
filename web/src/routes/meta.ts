@@ -82,7 +82,7 @@ export const routeMeta: RouteMeta[] = [
 
 export function getSidebarNav(): SidebarNavItem[] {
   return routeMeta
-    .filter((r) => r.navVisible)
+    .filter((r) => r.navVisible && !r.parentId)
     .map((route) => ({
       route,
       children: routeMeta.filter((child) => child.parentId === route.id && child.navVisible),
