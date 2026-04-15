@@ -157,22 +157,27 @@ export function AppLayout() {
   const parentMeta = getParentRouteMeta(currentMeta)
 
   const selectedKeys = useMemo(() => {
-    const keys: string[] = [currentMeta.id]
+    const primaryKey = (!currentMeta.navVisible && currentMeta.menuId && itemKeyToPath[currentMeta.menuId])
+      ? currentMeta.menuId
+      : currentMeta.id
+    const keys: string[] = [primaryKey]
     if (currentMeta.parentId && currentMeta.tabbar) {
       keys.push(currentMeta.parentId)
     }
     return keys
-  }, [currentMeta])
+  }, [currentMeta, itemKeyToPath])
 
   const openKeys = useMemo(() => {
     const keys: string[] = [`group-${currentMeta.group}`]
     if (currentMeta.parentId) {
       keys.push(currentMeta.parentId)
+    } else if (!currentMeta.navVisible && currentMeta.menuId && itemKeyToPath[currentMeta.menuId]) {
+      keys.push(currentMeta.menuId)
     } else if (currentMeta.navVisible) {
       keys.push(currentMeta.id)
     }
     return keys
-  }, [currentMeta])
+  }, [currentMeta, itemKeyToPath])
 
   const handleNavSelect = (data: { itemKey: string; selectedKeys: string[] }) => {
     const path = itemKeyToPath[data.itemKey]

@@ -74,6 +74,12 @@ RBAC answers one question first: does the principal's role set ever permit this 
 - system-management routes such as online users, announcements, menus, audit logs, and operation logs use `system.*.view` permissions for route access
 - mutable operations such as session revocation, announcement maintenance, and menu maintenance use dedicated `system.*.manage` permissions
 
+## Console Navigation Notes
+
+- access control remains a first-level console entry so administrators can discover permission configuration directly from the sidebar
+- settings center is presented as a single first-level entry with tabbed identity and AI sections inside the page
+- cluster monitoring connection details are expected to be managed with cluster configuration, not as a separate global settings-center submenu
+
 ## Result Structure
 
 ```json

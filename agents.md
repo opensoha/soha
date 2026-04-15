@@ -322,6 +322,8 @@ The repository has already converged on these rules:
 - AI settings now split into `settings.ai.view` and `settings.ai.manage`; the provider form and copilot control-plane sections must stay consistent with those keys
 - settings center should consistently use `settings.<domain>.view` for route visibility and `settings.<domain>.manage` for save/update actions instead of mixing permission keys with legacy admin-only checks
 - system management should follow the same split: `system.<module>.view` for page access and `system.<module>.manage` for destructive or mutable actions such as session revocation, announcements, and menus
+- access control should remain visible as a top-level console menu entry for admins, while its child pages can stay as nested routes beneath that entry
+- settings center is a single top-level menu with in-page tabs for identity and AI; cluster-level monitoring configuration should not remain as a separate settings-center submenu
 
 ## 9. Change Rules
 

@@ -1,6 +1,7 @@
-import { Card, Form, Button, Toast, Spin, Modal, Tag, Space } from '@douyinfe/semi-ui'
+import { Card, Form, Button, Toast, Spin, Modal, Tag, Space, Tabs, TabPane } from '@douyinfe/semi-ui'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { AdminTable } from '@/components/admin-table'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth/permission-snapshot'
 import { PageHeader } from '@/components/page-header'
@@ -25,7 +26,11 @@ interface OIDCSettings {
   defaultRoles: string[]
 }
 
-export function IdentitySettingsPage() {
+interface SettingsPageProps {
+  embedded?: boolean
+}
+
+export function IdentitySettingsPage({ embedded = false }: SettingsPageProps = {}) {
   const queryClient = useQueryClient()
   const permissionSnapshotQuery = usePermissionSnapshot()
   const canViewIdentitySettings = hasPermission(permissionSnapshotQuery.data?.data, 'settings.identity.view')
@@ -59,34 +64,41 @@ export function IdentitySettingsPage() {
   }
 
   const settings = data?.data
+  const content = (
+    <Card>
+      <Form
+        onSubmit={(values) => {
+          if (!canManageIdentitySettings) return
+          saveMutation.mutate(values as Record<string, unknown>)
+        }}
+        initValues={settings ?? {}}
+        labelPosition="left"
+        labelWidth={140}
+      >
+        <Form.Switch field="enabled" label="启用 OIDC" />
+        <Form.Input field="providerName" label="Provider Name" />
+        <Form.Input field="issuer" label="Issuer URL" placeholder="https://accounts.example.com" rules={[{ required: true, message: '请输入 Issuer URL' }]} />
+        <Form.Input field="clientId" label="Client ID" rules={[{ required: true, message: '请输入 Client ID' }]} />
+        <Form.Input field="clientSecret" label="Client Secret" mode="password" rules={[{ required: true, message: '请输入 Client Secret' }]} />
+        <Form.Input field="redirectUrl" label="Redirect URL" placeholder="https://your-app.com/auth/oidc/callback" />
+        <Form.Input field="frontendRedirectUrl" label="Frontend Redirect URL" />
+        <Form.TagInput field="scopes" label="Scopes" placeholder="openid / profile / email" />
+        <Form.TagInput field="defaultRoles" label="Default Roles" placeholder="readonly / admin" />
+        <div className="kc-form-actions">
+          {canManageIdentitySettings ? <Button htmlType="submit" theme="solid" loading={saveMutation.isPending}>保存设置</Button> : null}
+        </div>
+      </Form>
+    </Card>
+  )
+
+  if (embedded) {
+    return content
+  }
 
   return (
     <div className="kc-page">
       <PageHeader title="身份设置" description="配置 OIDC 身份提供商、客户端凭证和回调信息。" />
-      <Card>
-        <Form
-          onSubmit={(values) => {
-            if (!canManageIdentitySettings) return
-            saveMutation.mutate(values as Record<string, unknown>)
-          }}
-          initValues={settings ?? {}}
-          labelPosition="left"
-          labelWidth={140}
-        >
-          <Form.Switch field="enabled" label="启用 OIDC" />
-          <Form.Input field="providerName" label="Provider Name" />
-          <Form.Input field="issuer" label="Issuer URL" placeholder="https://accounts.example.com" rules={[{ required: true, message: '请输入 Issuer URL' }]} />
-          <Form.Input field="clientId" label="Client ID" rules={[{ required: true, message: '请输入 Client ID' }]} />
-          <Form.Input field="clientSecret" label="Client Secret" mode="password" rules={[{ required: true, message: '请输入 Client Secret' }]} />
-          <Form.Input field="redirectUrl" label="Redirect URL" placeholder="https://your-app.com/auth/oidc/callback" />
-          <Form.Input field="frontendRedirectUrl" label="Frontend Redirect URL" />
-          <Form.TagInput field="scopes" label="Scopes" placeholder="openid / profile / email" />
-          <Form.TagInput field="defaultRoles" label="Default Roles" placeholder="readonly / admin" />
-          <div className="kc-form-actions">
-            {canManageIdentitySettings ? <Button htmlType="submit" theme="solid" loading={saveMutation.isPending}>保存设置</Button> : null}
-          </div>
-        </Form>
-      </Card>
+      {content}
     </div>
   )
 }
@@ -432,7 +444,7 @@ function buildPolicyPayload(values: Record<string, unknown>) {
   }
 }
 
-export function AISettingsPage() {
+export function AISettingsPage({ embedded = false }: SettingsPageProps = {}) {
   const queryClient = useQueryClient()
   const permissionSnapshotQuery = usePermissionSnapshot()
   const [dataSourceModalVisible, setDataSourceModalVisible] = useState(false)
@@ -633,9 +645,8 @@ export function AISettingsPage() {
     { ...tableColumnPresets.action, title: '操作', dataIndex: 'id', render: (_: unknown, record: AutomationPolicy) => canManageAISettings ? <Button size="small" theme="borderless" onClick={() => { setEditingPolicy(record); setPolicyModalVisible(true) }}>编辑</Button> : '-' },
   ]
 
-  return (
-    <div className="kc-page">
-      <PageHeader title="AI 设置" description="配置 AI 提供商、模型、API Key 与基础接入地址。" />
+  const content = (
+    <>
       <Card>
         <Form
           onSubmit={(values) => {
@@ -773,7 +784,6 @@ export function AISettingsPage() {
           </div>
         </Form>
       </Modal>
-
       <Modal title={editingPolicy ? '编辑自动化策略' : '新增自动化策略'} visible={policyModalVisible} footer={null} onCancel={() => { setPolicyModalVisible(false); setEditingPolicy(null) }}>
         <Form
           initValues={buildPolicyFormValues(editingPolicy)}
@@ -805,6 +815,41 @@ export function AISettingsPage() {
           </div>
         </Form>
       </Modal>
+    </>
+  )
+
+  if (embedded) {
+    return content
+  }
+
+  return (
+    <div className="kc-page">
+      <PageHeader title="AI 设置" description="配置 AI 提供商、模型、API Key 与基础接入地址。" />
+      {content}
+    </div>
+  )
+}
+
+export function SettingsCenterPage() {
+  const location = useLocation()
+  const navigate = useNavigate()
+  const activeKey = location.pathname.endsWith('/ai') ? 'ai' : 'identity'
+
+  return (
+    <div className="kc-page">
+      <PageHeader title="设置中心" description="集中配置身份与 AI 能力。" />
+      <Tabs
+        type="line"
+        activeKey={activeKey}
+        onChange={(key) => navigate(key === 'ai' ? '/settings/ai' : '/settings')}
+      >
+        <TabPane tab="身份设置" itemKey="identity">
+          <IdentitySettingsPage embedded />
+        </TabPane>
+        <TabPane tab="AI 设置" itemKey="ai">
+          <AISettingsPage embedded />
+        </TabPane>
+      </Tabs>
     </div>
   )
 }

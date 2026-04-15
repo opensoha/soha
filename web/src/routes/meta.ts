@@ -56,11 +56,11 @@ export const routeMeta: RouteMeta[] = [
   { id: 'ai-inspection', path: '/ai-observe/inspection', title: '智能巡检', description: 'AI 巡检任务与执行记录', icon: 'IconComment', group: 'observe', requiresAuth: true, tabbar: true, navVisible: false, parentId: 'ai-observe', permissionKey: 'observe.ai.view' },
   { id: 'chat', path: '/chat', title: 'AI Chat', description: '兼容旧入口', icon: 'IconComment', group: 'observe', requiresAuth: true, tabbar: false, navVisible: false, parentId: 'ai-observe', permissionKey: 'observe.ai.chat' },
 
-  { id: 'access', path: '/access', title: '访问控制', description: '身份、角色、用户组与策略', icon: 'IconShield', group: 'access', requiresAuth: true, tabbar: false, navVisible: false, redirectTo: '/access/users' },
-  { id: 'access-users', path: '/access/users', title: '用户', description: '用户管理', icon: 'IconUser', group: 'access', requiresAuth: true, tabbar: true, navVisible: true, menuId: 'access-users', permissionKey: 'access.users.view' },
-  { id: 'access-roles', path: '/access/roles', title: '角色', description: '角色管理', icon: 'IconUserCircle', group: 'access', requiresAuth: true, tabbar: true, navVisible: true, menuId: 'access-roles', permissionKey: 'access.roles.view' },
-  { id: 'access-teams', path: '/access/teams', title: '用户组', description: '用户组管理', icon: 'IconUserGroup', group: 'access', requiresAuth: true, tabbar: true, navVisible: true, menuId: 'access-teams', permissionKey: 'access.groups.view' },
-  { id: 'access-policies', path: '/access/policies', title: '策略', description: '策略管理', icon: 'IconShield', group: 'access', requiresAuth: true, tabbar: true, navVisible: true, menuId: 'access-policies', permissionKey: 'access.policies.view' },
+  { id: 'access', path: '/access', title: '访问控制', description: '身份、角色、用户组与策略', icon: 'IconShield', group: 'access', requiresAuth: true, tabbar: false, navVisible: true, redirectTo: '/access/users', menuId: 'access' },
+  { id: 'access-users', path: '/access/users', title: '用户', description: '用户管理', icon: 'IconUser', group: 'access', requiresAuth: true, tabbar: true, navVisible: false, parentId: 'access', menuId: 'access-users', permissionKey: 'access.users.view' },
+  { id: 'access-roles', path: '/access/roles', title: '角色', description: '角色管理', icon: 'IconUserCircle', group: 'access', requiresAuth: true, tabbar: true, navVisible: false, parentId: 'access', menuId: 'access-roles', permissionKey: 'access.roles.view' },
+  { id: 'access-teams', path: '/access/teams', title: '用户组', description: '用户组管理', icon: 'IconUserGroup', group: 'access', requiresAuth: true, tabbar: true, navVisible: false, parentId: 'access', menuId: 'access-teams', permissionKey: 'access.groups.view' },
+  { id: 'access-policies', path: '/access/policies', title: '策略', description: '策略管理', icon: 'IconShield', group: 'access', requiresAuth: true, tabbar: true, navVisible: false, parentId: 'access', menuId: 'access-policies', permissionKey: 'access.policies.view' },
   { id: 'access-scope-grants', path: '/access/scope-grants', title: '授权范围', description: '业务线环境应用授权', icon: 'IconShield', group: 'access', requiresAuth: true, tabbar: false, navVisible: false, permissionKey: 'access.users.view' },
 
   { id: 'system', path: '/system', title: '系统管理', description: '公告、菜单、审计与操作记录', icon: 'IconSetting', group: 'system', requiresAuth: true, tabbar: false, navVisible: false, redirectTo: '/system/online-users' },
@@ -70,10 +70,10 @@ export const routeMeta: RouteMeta[] = [
   { id: 'audit', path: '/system/audit', title: '审计日志', description: '审计记录', icon: 'IconFile', group: 'system', requiresAuth: true, tabbar: true, navVisible: true, menuId: 'audit', permissionKey: 'system.audit.view' },
   { id: 'operations', path: '/system/operations', title: '操作日志', description: '操作记录', icon: 'IconList', group: 'system', requiresAuth: true, tabbar: true, navVisible: true, menuId: 'operations', permissionKey: 'system.operations.view' },
 
-  { id: 'settings', path: '/settings', title: '设置中心', description: '身份、监控与 AI 配置', icon: 'IconSetting', group: 'settings', requiresAuth: true, tabbar: false, navVisible: false, redirectTo: '/settings/identity' },
-  { id: 'settings-identity', path: '/settings/identity', title: '身份设置', description: 'OIDC 配置', icon: 'IconSetting', group: 'settings', requiresAuth: true, tabbar: true, navVisible: true, permissionKey: 'settings.identity.view' },
-  { id: 'settings-monitoring', path: '/settings/monitoring', title: '监控设置', description: 'Prometheus 配置', icon: 'IconSetting', group: 'settings', requiresAuth: true, tabbar: true, navVisible: true, permissionKey: 'settings.monitoring.view' },
-  { id: 'settings-ai', path: '/settings/ai', title: 'AI 设置', description: 'AI 提供商配置', icon: 'IconSetting', group: 'settings', requiresAuth: true, tabbar: true, navVisible: true, permissionKey: 'settings.ai.view' },
+  { id: 'settings', path: '/settings', title: '设置中心', description: '身份与 AI 配置', icon: 'IconSetting', group: 'settings', requiresAuth: true, tabbar: false, navVisible: true, menuId: 'settings' },
+  { id: 'settings-identity', path: '/settings/identity', title: '身份设置', description: 'OIDC 配置', icon: 'IconSetting', group: 'settings', requiresAuth: true, tabbar: false, navVisible: false, menuId: 'settings', permissionKey: 'settings.identity.view' },
+  { id: 'settings-monitoring', path: '/settings/monitoring', title: '监控设置', description: 'Prometheus 配置', icon: 'IconSetting', group: 'settings', requiresAuth: true, tabbar: false, navVisible: false, menuId: 'settings', permissionKey: 'settings.monitoring.view' },
+  { id: 'settings-ai', path: '/settings/ai', title: 'AI 设置', description: 'AI 提供商配置', icon: 'IconSetting', group: 'settings', requiresAuth: true, tabbar: false, navVisible: false, menuId: 'settings', permissionKey: 'settings.ai.view' },
 
   { id: 'login', path: '/login', title: '登录', description: '用户登录', icon: 'IconLock', group: 'auth', requiresAuth: false, tabbar: false, navVisible: false },
   { id: 'oidc-callback', path: '/auth/oidc/callback', title: 'OIDC Callback', description: 'OIDC 回调', icon: 'IconLock', group: 'auth', requiresAuth: false, tabbar: false, navVisible: false },

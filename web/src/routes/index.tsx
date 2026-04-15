@@ -83,9 +83,7 @@ const MenusPage = lazyNamed(() => import('@/features/system/system-pages'), 'Men
 const AuditLogsPage = lazyNamed(() => import('@/features/system/system-pages'), 'AuditLogsPage')
 const OperationLogsPage = lazyNamed(() => import('@/features/system/system-pages'), 'OperationLogsPage')
 
-const IdentitySettingsPage = lazyNamed(() => import('@/features/settings/settings-pages'), 'IdentitySettingsPage')
-const MonitoringSettingsPage = lazyNamed(() => import('@/features/settings/settings-pages'), 'MonitoringSettingsPage')
-const AISettingsPage = lazyNamed(() => import('@/features/settings/settings-pages'), 'AISettingsPage')
+const SettingsCenterPage = lazyNamed(() => import('@/features/settings/settings-pages'), 'SettingsCenterPage')
 
 function LazyPage({ children }: { children: React.ReactNode }) {
   return (
@@ -180,10 +178,10 @@ export function AppRouter() {
           <Route path="/system/audit" element={<LazyPage><AuditLogsPage /></LazyPage>} />
           <Route path="/system/operations" element={<LazyPage><OperationLogsPage /></LazyPage>} />
 
-          <Route path="/settings" element={<Navigate to="/settings/identity" replace />} />
-          <Route path="/settings/identity" element={<LazyPage><IdentitySettingsPage /></LazyPage>} />
-          <Route path="/settings/monitoring" element={<LazyPage><MonitoringSettingsPage /></LazyPage>} />
-          <Route path="/settings/ai" element={<LazyPage><AISettingsPage /></LazyPage>} />
+          <Route path="/settings" element={<LazyPage><SettingsCenterPage /></LazyPage>} />
+          <Route path="/settings/identity" element={<LazyPage><SettingsCenterPage /></LazyPage>} />
+          <Route path="/settings/monitoring" element={<Navigate to="/settings" replace />} />
+          <Route path="/settings/ai" element={<LazyPage><SettingsCenterPage /></LazyPage>} />
 
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
