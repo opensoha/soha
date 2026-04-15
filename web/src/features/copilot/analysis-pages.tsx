@@ -13,6 +13,7 @@ import {
 import { IconPlay, IconPulse, IconSearch, IconPlus } from '@douyinfe/semi-icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AdminTable } from '@/components/admin-table'
+import { hasPermission, usePermissionSnapshot } from '@/features/auth/permission-snapshot'
 import { PageHeader } from '@/components/page-header'
 import { StatGrid } from '@/components/stat-grid'
 import { BooleanTag, StatusTag } from '@/components/status-tag'
@@ -231,9 +232,11 @@ function buildPerformanceSignals(summary?: AlertSummary, clusters: Cluster[] = [
 export function RootCauseAnalysisPage() {
   const { localeCode } = useI18n()
   const queryClient = useQueryClient()
+  const permissionSnapshotQuery = usePermissionSnapshot()
   const [selectedRunID, setSelectedRunID] = useState<string>()
   const [evidenceKindFilter, setEvidenceKindFilter] = useState<string>('all')
   const [logsOnly, setLogsOnly] = useState(false)
+  const canRunRootCause = hasPermission(permissionSnapshotQuery.data?.data, 'observe.ai.root-cause.run')
   const insightsQuery = useQuery({
     queryKey: ['copilot-insights'],
     queryFn: () => api.get<ApiResponse<Insight[]>>('/copilot/insights'),
@@ -307,7 +310,10 @@ export function RootCauseAnalysisPage() {
       <Card title={localeCode === 'zh_CN' ? '发起根因分析' : 'Start Root Cause Analysis'}>
         <Form
           initValues={{ timeRangeMinutes: 60, workloadKind: 'Deployment' }}
-          onSubmit={(values) => createRunMutation.mutate(values as Record<string, unknown>)}
+          onSubmit={(values) => {
+            if (!canRunRootCause) return
+            createRunMutation.mutate(values as Record<string, unknown>)
+          }}
           labelPosition="left"
           labelWidth={140}
         >
@@ -318,11 +324,13 @@ export function RootCauseAnalysisPage() {
           <Form.Select field="alertId" label={localeCode === 'zh_CN' ? '关联告警' : 'Alert'} optionList={activeAlerts.map((item) => ({ value: item.id, label: item.title || item.name || item.id }))} />
           <Form.InputNumber field="timeRangeMinutes" label={localeCode === 'zh_CN' ? '时间范围(分钟)' : 'Time Range (min)'} min={5} />
           <Form.Input field="question" label={localeCode === 'zh_CN' ? '补充问题' : 'Question'} />
-          <div className="kc-form-actions">
-            <Button htmlType="submit" theme="solid" loading={createRunMutation.isPending}>
-              {localeCode === 'zh_CN' ? '开始分析' : 'Run Analysis'}
-            </Button>
-          </div>
+          {canRunRootCause ? (
+            <div className="kc-form-actions">
+              <Button htmlType="submit" theme="solid" loading={createRunMutation.isPending}>
+                {localeCode === 'zh_CN' ? '开始分析' : 'Run Analysis'}
+              </Button>
+            </div>
+          ) : null}
         </Form>
       </Card>
       <Card title={localeCode === 'zh_CN' ? 'AI 根因洞察' : 'AI Root Cause Insights'}>
@@ -576,8 +584,11 @@ export function PerformanceAnalysisPage() {
 export function InspectionCenterPage() {
   const { localeCode } = useI18n()
   const queryClient = useQueryClient()
+  const permissionSnapshotQuery = usePermissionSnapshot()
   const [modalVisible, setModalVisible] = useState(false)
   const [editing, setEditing] = useState<InspectionTask | null>(null)
+  const canManageInspection = hasPermission(permissionSnapshotQuery.data?.data, 'observe.ai.inspection.manage')
+  const canRunInspection = hasPermission(permissionSnapshotQuery.data?.data, 'observe.ai.inspection.run')
 
   const clustersQuery = useQuery({
     queryKey: ['clusters', 'inspection-center'],
@@ -659,18 +670,23 @@ export function InspectionCenterPage() {
       dataIndex: 'id',
       render: (_: unknown, record: InspectionTask) => (
         <Space>
-          <Button size="small" theme="borderless" onClick={() => { setEditing(record); setModalVisible(true) }}>
-            {localeCode === 'zh_CN' ? '编辑' : 'Edit'}
-          </Button>
-          <Button
-            size="small"
-            theme="borderless"
-            icon={<IconPlay />}
-            loading={executeMutation.isPending}
-            onClick={() => executeMutation.mutate(record.id)}
-          >
-            {localeCode === 'zh_CN' ? '执行' : 'Run'}
-          </Button>
+          {canManageInspection ? (
+            <Button size="small" theme="borderless" onClick={() => { setEditing(record); setModalVisible(true) }}>
+              {localeCode === 'zh_CN' ? '编辑' : 'Edit'}
+            </Button>
+          ) : null}
+          {canRunInspection ? (
+            <Button
+              size="small"
+              theme="borderless"
+              icon={<IconPlay />}
+              loading={executeMutation.isPending}
+              onClick={() => executeMutation.mutate(record.id)}
+            >
+              {localeCode === 'zh_CN' ? '执行' : 'Run'}
+            </Button>
+          ) : null}
+          {!canManageInspection && !canRunInspection ? '-' : null}
         </Space>
       ),
     },
@@ -692,9 +708,11 @@ export function InspectionCenterPage() {
         title={localeCode === 'zh_CN' ? '智能巡检' : 'Inspection Center'}
         description={localeCode === 'zh_CN' ? '维护巡检任务，按平台 / 集群 / 命名空间范围定时执行 AI 巡检。' : 'Manage inspection tasks and run AI inspections on platform, cluster, or namespace scopes.'}
         actions={
-          <Button icon={<IconPlus />} theme="solid" onClick={() => { setEditing(null); setModalVisible(true) }}>
-            {localeCode === 'zh_CN' ? '新建任务' : 'New Task'}
-          </Button>
+          canManageInspection ? (
+            <Button icon={<IconPlus />} theme="solid" onClick={() => { setEditing(null); setModalVisible(true) }}>
+              {localeCode === 'zh_CN' ? '新建任务' : 'New Task'}
+            </Button>
+          ) : null
         }
       />
       <Card title={localeCode === 'zh_CN' ? '巡检任务' : 'Inspection Tasks'}>
@@ -747,14 +765,16 @@ export function InspectionCenterPage() {
           />
           <Form.InputNumber field="intervalMinutes" label={localeCode === 'zh_CN' ? '执行间隔(分钟)' : 'Interval (min)'} min={5} />
           <Form.Switch field="enabled" label={localeCode === 'zh_CN' ? '启用' : 'Enabled'} />
-          <div className="kc-form-actions">
-            <Button onClick={() => { setModalVisible(false); setEditing(null) }}>
-              {localeCode === 'zh_CN' ? '取消' : 'Cancel'}
-            </Button>
-            <Button htmlType="submit" theme="solid" loading={createMutation.isPending || updateMutation.isPending}>
-              {editing ? (localeCode === 'zh_CN' ? '更新' : 'Update') : (localeCode === 'zh_CN' ? '创建' : 'Create')}
-            </Button>
-          </div>
+          {canManageInspection ? (
+            <div className="kc-form-actions">
+              <Button onClick={() => { setModalVisible(false); setEditing(null) }}>
+                {localeCode === 'zh_CN' ? '取消' : 'Cancel'}
+              </Button>
+              <Button htmlType="submit" theme="solid" loading={createMutation.isPending || updateMutation.isPending}>
+                {editing ? (localeCode === 'zh_CN' ? '更新' : 'Update') : (localeCode === 'zh_CN' ? '创建' : 'Create')}
+              </Button>
+            </div>
+          ) : null}
         </Form>
       </Modal>
     </div>

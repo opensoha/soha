@@ -230,6 +230,7 @@ func New(cfg cfgpkg.Config, logger *zap.Logger, deps Dependencies) *http.Server 
 		protected.PUT("/access/roles/:roleID", deps.Access.UpdateRole)
 		protected.DELETE("/access/roles/:roleID", deps.Access.DeleteRole)
 		protected.GET("/access/teams", deps.Access.ListTeams)
+		protected.GET("/access/permission-snapshot", deps.Access.PermissionSnapshot)
 		protected.POST("/access/teams", deps.Access.CreateTeam)
 		protected.PUT("/access/teams/:teamID", deps.Access.UpdateTeam)
 		protected.DELETE("/access/teams/:teamID", deps.Access.DeleteTeam)

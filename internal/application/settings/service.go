@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	appaccess "github.com/kubecrux/kubecrux/internal/application/access"
 	domainidentity "github.com/kubecrux/kubecrux/internal/domain/identity"
 	domainsettings "github.com/kubecrux/kubecrux/internal/domain/settings"
 	cfgpkg "github.com/kubecrux/kubecrux/internal/infrastructure/config"
@@ -12,8 +13,8 @@ import (
 )
 
 type Service struct {
-	store domainsettings.Store
-	auth  cfgpkg.AuthConfig
+	store      domainsettings.Store
+	auth       cfgpkg.AuthConfig
 	monitoring cfgpkg.MonitoringConfig
 }
 
@@ -22,14 +23,14 @@ func New(store domainsettings.Store, auth cfgpkg.AuthConfig, monitoring cfgpkg.M
 }
 
 func (s *Service) GetIdentitySettings(ctx context.Context, principal domainidentity.Principal) (domainsettings.IdentitySettings, error) {
-	if err := ensureAdmin(principal); err != nil {
+	if err := authorizePrincipal(principal, appaccess.PermSettingsIdentityView); err != nil {
 		return domainsettings.IdentitySettings{}, err
 	}
 	return s.identitySettings(ctx)
 }
 
 func (s *Service) UpdateOIDCSettings(ctx context.Context, principal domainidentity.Principal, input domainsettings.OIDCSettings) (domainsettings.IdentitySettings, error) {
-	if err := ensureAdmin(principal); err != nil {
+	if err := authorizePrincipal(principal, appaccess.PermSettingsIdentityManage); err != nil {
 		return domainsettings.IdentitySettings{}, err
 	}
 	input.ProviderName = strings.TrimSpace(input.ProviderName)
@@ -75,21 +76,21 @@ func (s *Service) UpdateOIDCSettings(ctx context.Context, principal domainidenti
 }
 
 func (s *Service) GetMonitoringSettings(ctx context.Context, principal domainidentity.Principal) (domainsettings.MonitoringSettings, error) {
-	if err := ensureAdmin(principal); err != nil {
+	if err := authorizePrincipal(principal, appaccess.PermSettingsMonitoringView); err != nil {
 		return domainsettings.MonitoringSettings{}, err
 	}
 	return s.monitoringSettings(ctx)
 }
 
 func (s *Service) GetAISettings(ctx context.Context, principal domainidentity.Principal) (domainsettings.AISettings, error) {
-	if err := ensureAdmin(principal); err != nil {
+	if err := authorizePrincipal(principal, appaccess.PermSettingsAIView); err != nil {
 		return domainsettings.AISettings{}, err
 	}
 	return s.aiSettings(ctx)
 }
 
 func (s *Service) UpdateAISettings(ctx context.Context, principal domainidentity.Principal, input domainsettings.AIProviderSettings) (domainsettings.AISettings, error) {
-	if err := ensureAdmin(principal); err != nil {
+	if err := authorizePrincipal(principal, appaccess.PermSettingsAIManage); err != nil {
 		return domainsettings.AISettings{}, err
 	}
 	input.BaseURL = strings.TrimSpace(input.BaseURL)
@@ -119,7 +120,7 @@ func (s *Service) UpdateAISettings(ctx context.Context, principal domainidentity
 }
 
 func (s *Service) UpdatePrometheusSettings(ctx context.Context, principal domainidentity.Principal, input domainsettings.PrometheusSettings) (domainsettings.MonitoringSettings, error) {
-	if err := ensureAdmin(principal); err != nil {
+	if err := authorizePrincipal(principal, appaccess.PermSettingsMonitoringManage); err != nil {
 		return domainsettings.MonitoringSettings{}, err
 	}
 	input.BaseURL = strings.TrimSpace(input.BaseURL)
@@ -337,4 +338,11 @@ func ensureAdmin(principal domainidentity.Principal) error {
 		}
 	}
 	return fmt.Errorf("%w: admin role required", apperrors.ErrAccessDenied)
+}
+
+func authorizePrincipal(principal domainidentity.Principal, permissionKey string) error {
+	if appaccess.HasPermission(principal.Roles, permissionKey) {
+		return nil
+	}
+	return fmt.Errorf("%w: missing permission %s", apperrors.ErrAccessDenied, permissionKey)
 }

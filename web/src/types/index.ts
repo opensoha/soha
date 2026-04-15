@@ -10,6 +10,8 @@ export interface RouteMeta {
   navVisible: boolean
   parentId?: string
   redirectTo?: string
+  menuId?: string
+  permissionKey?: string
 }
 
 export interface SidebarNavItem {
@@ -50,6 +52,18 @@ export interface AuthResult {
     expiresIn: number
     expiresAt: string
   }
+}
+
+export interface VisibleMenu {
+  id: string
+  parentId?: string
+  path: string
+}
+
+export interface PermissionSnapshot {
+  permissionKeys: string[]
+  visibleMenuIds: string[]
+  visibleMenus: VisibleMenu[]
 }
 
 export interface PaginatedResponse<T = unknown> {

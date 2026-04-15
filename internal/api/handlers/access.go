@@ -23,6 +23,7 @@ type AccessCatalogService interface {
 	ListRoles(context.Context, domainidentity.Principal) ([]domainaccess.RoleRecord, error)
 	ListTeams(context.Context, domainidentity.Principal) ([]domainaccess.TeamRecord, error)
 	ListPolicies(context.Context, domainidentity.Principal) ([]domainaccess.Policy, error)
+	PermissionSnapshot(context.Context, domainidentity.Principal) (domainaccess.PermissionSnapshot, error)
 	CreateRole(context.Context, domainidentity.Principal, domainaccess.RoleInput) (domainaccess.RoleRecord, error)
 	UpdateRole(context.Context, domainidentity.Principal, string, domainaccess.RoleInput) (domainaccess.RoleRecord, error)
 	DeleteRole(context.Context, domainidentity.Principal, string) error
@@ -68,6 +69,8 @@ func (h *AccessHandler) CreateUser(c *gin.Context) {
 		DisplayName: req.DisplayName,
 		Status:      req.Status,
 		Tags:        req.Tags,
+		RoleIDs:     req.RoleIDs,
+		TeamIDs:     req.TeamIDs,
 		Preferences: req.Preferences,
 		Password:    req.Password,
 	})
@@ -92,6 +95,8 @@ func (h *AccessHandler) UpdateUser(c *gin.Context) {
 		DisplayName: req.DisplayName,
 		Status:      req.Status,
 		Tags:        req.Tags,
+		RoleIDs:     req.RoleIDs,
+		TeamIDs:     req.TeamIDs,
 		Preferences: req.Preferences,
 		Password:    req.Password,
 	})
@@ -148,6 +153,16 @@ func (h *AccessHandler) ListPolicies(c *gin.Context) {
 		return
 	}
 	apiresponse.Items(c, http.StatusOK, items)
+}
+
+func (h *AccessHandler) PermissionSnapshot(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	item, err := h.service.PermissionSnapshot(c.Request.Context(), principal)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
 }
 
 func (h *AccessHandler) CreateRole(c *gin.Context) {

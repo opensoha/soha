@@ -7,6 +7,7 @@ import { IconRefresh } from '@douyinfe/semi-icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { AdminTable } from '@/components/admin-table'
+import { hasAllowedAction } from '@/features/auth/permission-snapshot'
 import { useI18n } from '@/i18n'
 import { PageHeader } from '@/components/page-header'
 import { PlatformScopeToolbar } from '@/components/platform-scope-toolbar'
@@ -427,6 +428,7 @@ interface Deployment {
   updatedReplicas: number
   available: number
   ageSeconds: number
+  allowedActions?: string[]
 }
 
 interface DeploymentDetailMeta {
@@ -651,6 +653,9 @@ export function WorkloadsDeploymentsPage() {
     () => deployments.filter((item) => selectedDeploymentKeys.includes(`${item.namespace}/${item.name}`)),
     [deployments, selectedDeploymentKeys],
   )
+  const canBatchRestart = selectedDeployments.length > 0 && selectedDeployments.every((item) => hasAllowedAction(item.allowedActions, 'restart'))
+  const canBatchScale = selectedDeployments.length > 0 && selectedDeployments.every((item) => hasAllowedAction(item.allowedActions, 'scale'))
+  const canBatchRollback = selectedDeployments.length > 0 && selectedDeployments.every((item) => hasAllowedAction(item.allowedActions, 'update'))
 
   const openBatchRollbackModal = async () => {
     if (!clusterId || selectedDeployments.length === 0) return
@@ -713,9 +718,16 @@ export function WorkloadsDeploymentsPage() {
       dataIndex: 'name',
       render: (name: string, record: Deployment) => (
         <Space>
-          <Button size="small" theme="borderless" onClick={() => restartMutation.mutate({ name, namespace: record.namespace })}>{localeCode === 'zh_CN' ? '重启' : 'Restart'}</Button>
-          <Button size="small" theme="borderless" onClick={() => setScaleTarget({ name, namespace: record.namespace, replicas: record.desiredReplicas })}>{localeCode === 'zh_CN' ? '扩缩' : 'Scale'}</Button>
-          <Button size="small" theme="borderless" onClick={() => rollbackMutation.mutate({ name, namespace: record.namespace })}>{localeCode === 'zh_CN' ? '回滚' : 'Rollback'}</Button>
+          {hasAllowedAction(record.allowedActions, 'restart') ? (
+            <Button size="small" theme="borderless" onClick={() => restartMutation.mutate({ name, namespace: record.namespace })}>{localeCode === 'zh_CN' ? '重启' : 'Restart'}</Button>
+          ) : null}
+          {hasAllowedAction(record.allowedActions, 'scale') ? (
+            <Button size="small" theme="borderless" onClick={() => setScaleTarget({ name, namespace: record.namespace, replicas: record.desiredReplicas })}>{localeCode === 'zh_CN' ? '扩缩' : 'Scale'}</Button>
+          ) : null}
+          {hasAllowedAction(record.allowedActions, 'update') ? (
+            <Button size="small" theme="borderless" onClick={() => rollbackMutation.mutate({ name, namespace: record.namespace })}>{localeCode === 'zh_CN' ? '回滚' : 'Rollback'}</Button>
+          ) : null}
+          {!hasAllowedAction(record.allowedActions, 'restart') && !hasAllowedAction(record.allowedActions, 'scale') && !hasAllowedAction(record.allowedActions, 'update') ? '-' : null}
         </Space>
       ),
     },
@@ -730,7 +742,7 @@ export function WorkloadsDeploymentsPage() {
           <Space>
             <Button
               theme="light"
-              disabled={selectedDeployments.length === 0}
+              disabled={!canBatchRestart}
               loading={batchRestartMutation.isPending}
               onClick={() => batchRestartMutation.mutate(selectedDeployments)}
             >
@@ -738,7 +750,7 @@ export function WorkloadsDeploymentsPage() {
             </Button>
             <Button
               theme="light"
-              disabled={selectedDeployments.length === 0}
+              disabled={!canBatchRollback}
               loading={batchRollbackLoading}
               onClick={openBatchRollbackModal}
             >
@@ -746,7 +758,7 @@ export function WorkloadsDeploymentsPage() {
             </Button>
             <Button
               theme="light"
-              disabled={selectedDeployments.length === 0}
+              disabled={!canBatchScale}
               onClick={() => {
                 setBatchScaleReplicas(selectedDeployments[0]?.desiredReplicas ?? 1)
                 setBatchScaleVisible(true)

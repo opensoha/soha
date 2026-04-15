@@ -75,6 +75,8 @@ type UpsertUserRequest struct {
 	DisplayName string         `json:"displayName"`
 	Status      string         `json:"status"`
 	Tags        []string       `json:"tags"`
+	RoleIDs     []string       `json:"roleIds"`
+	TeamIDs     []string       `json:"teamIds"`
 	Preferences map[string]any `json:"preferences"`
 	Password    string         `json:"password"`
 }

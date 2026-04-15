@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	appaccess "github.com/kubecrux/kubecrux/internal/application/access"
 	domaincopilot "github.com/kubecrux/kubecrux/internal/domain/copilot"
 	domainidentity "github.com/kubecrux/kubecrux/internal/domain/identity"
 	domainmcp "github.com/kubecrux/kubecrux/internal/domain/mcp"
@@ -14,18 +15,27 @@ import (
 	aperrors "github.com/kubecrux/kubecrux/internal/platform/apperrors"
 )
 
-func (s *Service) ListDataSourceCapabilities(_ context.Context) ([]domainmcp.Adapter, error) {
+func (s *Service) ListDataSourceCapabilities(_ context.Context, principal domainidentity.Principal) ([]domainmcp.Adapter, error) {
+	if err := authorizePrincipal(principal, appaccess.PermSettingsAIView); err != nil {
+		return nil, err
+	}
 	if s.mcpRegistry == nil {
 		return []domainmcp.Adapter{}, nil
 	}
 	return s.mcpRegistry.List(), nil
 }
 
-func (s *Service) ListDataSources(ctx context.Context, _ domainidentity.Principal) ([]domaincopilot.DataSource, error) {
+func (s *Service) ListDataSources(ctx context.Context, principal domainidentity.Principal) ([]domaincopilot.DataSource, error) {
+	if err := authorizePrincipal(principal, appaccess.PermSettingsAIView); err != nil {
+		return nil, err
+	}
 	return s.repo.ListDataSources(ctx)
 }
 
-func (s *Service) CreateDataSource(ctx context.Context, _ domainidentity.Principal, input domaincopilot.DataSourceInput) (domaincopilot.DataSource, error) {
+func (s *Service) CreateDataSource(ctx context.Context, principal domainidentity.Principal, input domaincopilot.DataSourceInput) (domaincopilot.DataSource, error) {
+	if err := authorizePrincipal(principal, appaccess.PermSettingsAIManage); err != nil {
+		return domaincopilot.DataSource{}, err
+	}
 	item, err := s.normalizeDataSourceInput(input)
 	if err != nil {
 		return domaincopilot.DataSource{}, err
@@ -48,7 +58,10 @@ func (s *Service) CreateDataSource(ctx context.Context, _ domainidentity.Princip
 	})
 }
 
-func (s *Service) UpdateDataSource(ctx context.Context, _ domainidentity.Principal, dataSourceID string, input domaincopilot.DataSourceInput) (domaincopilot.DataSource, error) {
+func (s *Service) UpdateDataSource(ctx context.Context, principal domainidentity.Principal, dataSourceID string, input domaincopilot.DataSourceInput) (domaincopilot.DataSource, error) {
+	if err := authorizePrincipal(principal, appaccess.PermSettingsAIManage); err != nil {
+		return domaincopilot.DataSource{}, err
+	}
 	input.ID = strings.TrimSpace(dataSourceID)
 	item, err := s.normalizeDataSourceInput(input)
 	if err != nil {
@@ -57,7 +70,10 @@ func (s *Service) UpdateDataSource(ctx context.Context, _ domainidentity.Princip
 	return s.repo.UpdateDataSource(ctx, item.ID, item)
 }
 
-func (s *Service) ValidateDataSource(ctx context.Context, _ domainidentity.Principal, dataSourceID string) (domaincopilot.DataSource, error) {
+func (s *Service) ValidateDataSource(ctx context.Context, principal domainidentity.Principal, dataSourceID string) (domaincopilot.DataSource, error) {
+	if err := authorizePrincipal(principal, appaccess.PermSettingsAIManage); err != nil {
+		return domaincopilot.DataSource{}, err
+	}
 	item, err := s.repo.GetDataSource(ctx, strings.TrimSpace(dataSourceID))
 	if err != nil {
 		return domaincopilot.DataSource{}, err
@@ -86,11 +102,17 @@ func (s *Service) ValidateDataSource(ctx context.Context, _ domainidentity.Princ
 	return s.repo.UpdateDataSourceValidation(ctx, item.ID, "success", "", validatedAt)
 }
 
-func (s *Service) ListAnalysisProfiles(ctx context.Context, _ domainidentity.Principal) ([]domaincopilot.AnalysisProfile, error) {
+func (s *Service) ListAnalysisProfiles(ctx context.Context, principal domainidentity.Principal) ([]domaincopilot.AnalysisProfile, error) {
+	if err := authorizePrincipal(principal, appaccess.PermSettingsAIView); err != nil {
+		return nil, err
+	}
 	return s.repo.ListAnalysisProfiles(ctx)
 }
 
-func (s *Service) CreateAnalysisProfile(ctx context.Context, _ domainidentity.Principal, input domaincopilot.AnalysisProfileInput) (domaincopilot.AnalysisProfile, error) {
+func (s *Service) CreateAnalysisProfile(ctx context.Context, principal domainidentity.Principal, input domaincopilot.AnalysisProfileInput) (domaincopilot.AnalysisProfile, error) {
+	if err := authorizePrincipal(principal, appaccess.PermSettingsAIManage); err != nil {
+		return domaincopilot.AnalysisProfile{}, err
+	}
 	item, err := normalizeAnalysisProfileInput(input)
 	if err != nil {
 		return domaincopilot.AnalysisProfile{}, err
@@ -113,7 +135,10 @@ func (s *Service) CreateAnalysisProfile(ctx context.Context, _ domainidentity.Pr
 	})
 }
 
-func (s *Service) UpdateAnalysisProfile(ctx context.Context, _ domainidentity.Principal, profileID string, input domaincopilot.AnalysisProfileInput) (domaincopilot.AnalysisProfile, error) {
+func (s *Service) UpdateAnalysisProfile(ctx context.Context, principal domainidentity.Principal, profileID string, input domaincopilot.AnalysisProfileInput) (domaincopilot.AnalysisProfile, error) {
+	if err := authorizePrincipal(principal, appaccess.PermSettingsAIManage); err != nil {
+		return domaincopilot.AnalysisProfile{}, err
+	}
 	input.ID = strings.TrimSpace(profileID)
 	item, err := normalizeAnalysisProfileInput(input)
 	if err != nil {
@@ -122,11 +147,17 @@ func (s *Service) UpdateAnalysisProfile(ctx context.Context, _ domainidentity.Pr
 	return s.repo.UpdateAnalysisProfile(ctx, item.ID, item)
 }
 
-func (s *Service) ListAutomationPolicies(ctx context.Context, _ domainidentity.Principal) ([]domaincopilot.AutomationPolicy, error) {
+func (s *Service) ListAutomationPolicies(ctx context.Context, principal domainidentity.Principal) ([]domaincopilot.AutomationPolicy, error) {
+	if err := authorizePrincipal(principal, appaccess.PermSettingsAIView); err != nil {
+		return nil, err
+	}
 	return s.repo.ListAutomationPolicies(ctx)
 }
 
-func (s *Service) CreateAutomationPolicy(ctx context.Context, _ domainidentity.Principal, input domaincopilot.AutomationPolicyInput) (domaincopilot.AutomationPolicy, error) {
+func (s *Service) CreateAutomationPolicy(ctx context.Context, principal domainidentity.Principal, input domaincopilot.AutomationPolicyInput) (domaincopilot.AutomationPolicy, error) {
+	if err := authorizePrincipal(principal, appaccess.PermSettingsAIManage); err != nil {
+		return domaincopilot.AutomationPolicy{}, err
+	}
 	item, err := normalizeAutomationPolicyInput(input)
 	if err != nil {
 		return domaincopilot.AutomationPolicy{}, err
@@ -148,7 +179,10 @@ func (s *Service) CreateAutomationPolicy(ctx context.Context, _ domainidentity.P
 	})
 }
 
-func (s *Service) UpdateAutomationPolicy(ctx context.Context, _ domainidentity.Principal, policyID string, input domaincopilot.AutomationPolicyInput) (domaincopilot.AutomationPolicy, error) {
+func (s *Service) UpdateAutomationPolicy(ctx context.Context, principal domainidentity.Principal, policyID string, input domaincopilot.AutomationPolicyInput) (domaincopilot.AutomationPolicy, error) {
+	if err := authorizePrincipal(principal, appaccess.PermSettingsAIManage); err != nil {
+		return domaincopilot.AutomationPolicy{}, err
+	}
 	input.ID = strings.TrimSpace(policyID)
 	item, err := normalizeAutomationPolicyInput(input)
 	if err != nil {

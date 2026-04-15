@@ -311,6 +311,17 @@ The repository has already converged on these rules:
 - service pages should evolve from plain tables to operational workspaces when selector, metrics, and event context already exist
 - page bundles may export multiple route-level pages until reuse pressure justifies further splitting
 - frontend consumes aggregated platform views only
+- access control pages must bind to backend's real role/user/group/policy schema instead of placeholder table columns or fake form fields
+- user create/update must persist role bindings and user-group bindings in the same submission so RBAC/scope decisions take effect immediately
+- user-facing terminology under access control is `用户组` while persistence and policy matcher internals may continue using `team/teams`
+- authenticated frontend navigation must consume a backend permission snapshot instead of relying on static route visibility alone
+- menu visibility is now a conjunction of backend visible menu bindings and frontend route permission keys, while page buttons should progressively consume either permission keys or backend `allowedActions`
+- monitoring and copilot APIs are no longer implicitly open to any authenticated user; user-facing reads and writes must check permission keys before hitting repository operations
+- observability and AI pages should treat route visibility, button visibility, and backend API authorization as three separate gates that must stay aligned
+- delivery catalog writes such as business lines, environments, application-environment bindings, workflow templates, and registry connections must enforce backend permission keys, not just frontend button hiding
+- AI settings now split into `settings.ai.view` and `settings.ai.manage`; the provider form and copilot control-plane sections must stay consistent with those keys
+- settings center should consistently use `settings.<domain>.view` for route visibility and `settings.<domain>.manage` for save/update actions instead of mixing permission keys with legacy admin-only checks
+- system management should follow the same split: `system.<module>.view` for page access and `system.<module>.manage` for destructive or mutable actions such as session revocation, announcements, and menus
 
 ## 9. Change Rules
 

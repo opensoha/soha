@@ -3,6 +3,7 @@ import { Button, Modal, Form, Tag, Toast, Popconfirm, Space, Card, Typography } 
 import { IconPlus, IconEdit, IconDelete, IconPlay } from '@douyinfe/semi-icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { AdminTable } from '@/components/admin-table'
+import { hasPermission, usePermissionSnapshot } from '@/features/auth/permission-snapshot'
 import { useI18n } from '@/i18n'
 import { PageHeader } from '@/components/page-header'
 import { StatusTag } from '@/components/status-tag'
@@ -37,6 +38,7 @@ interface Application {
 export function ApplicationsPage() {
   const { t } = useI18n()
   const queryClient = useQueryClient()
+  const permissionSnapshotQuery = usePermissionSnapshot()
   const [modalVisible, setModalVisible] = useState(false)
   const [editing, setEditing] = useState<Application | null>(null)
 
@@ -51,6 +53,10 @@ export function ApplicationsPage() {
   })
 
   const businessLineMap = Object.fromEntries((businessLinesQuery.data?.data ?? []).map((item) => [item.id, item.name]))
+  const permissionSnapshot = permissionSnapshotQuery.data?.data
+  const canCreateApplication = hasPermission(permissionSnapshot, 'delivery.application.create')
+  const canUpdateApplication = hasPermission(permissionSnapshot, 'delivery.application.update')
+  const canDeleteApplication = hasPermission(permissionSnapshot, 'delivery.application.delete')
 
   const createMutation = useMutation({
     mutationFn: (values: Record<string, unknown>) => api.post('/applications', values),
@@ -112,10 +118,13 @@ export function ApplicationsPage() {
       dataIndex: 'id',
       render: (_: unknown, record: Application) => (
         <Space>
-          <Button icon={<IconEdit />} theme="borderless" size="small" onClick={() => { setEditing(record); setModalVisible(true) }} />
-          <Popconfirm title="确认删除？" onConfirm={() => deleteMutation.mutate(record.id)}>
-            <Button icon={<IconDelete />} theme="borderless" type="danger" size="small" />
-          </Popconfirm>
+          {canUpdateApplication ? <Button icon={<IconEdit />} theme="borderless" size="small" onClick={() => { setEditing(record); setModalVisible(true) }} /> : null}
+          {canDeleteApplication ? (
+            <Popconfirm title="确认删除？" onConfirm={() => deleteMutation.mutate(record.id)}>
+              <Button icon={<IconDelete />} theme="borderless" type="danger" size="small" />
+            </Popconfirm>
+          ) : null}
+          {!canUpdateApplication && !canDeleteApplication ? '-' : null}
         </Space>
       ),
     },
@@ -126,7 +135,7 @@ export function ApplicationsPage() {
       <PageHeader
         title={t('page.delivery.applications.title', 'Applications')}
         description={t('page.delivery.applications.desc', 'Manage application repositories, Dockerfile build parameters, and recent deployment state.')}
-        actions={<Button icon={<IconPlus />} theme="solid" onClick={() => { setEditing(null); setModalVisible(true) }}>新建应用</Button>}
+        actions={canCreateApplication ? <Button icon={<IconPlus />} theme="solid" onClick={() => { setEditing(null); setModalVisible(true) }}>新建应用</Button> : null}
       />
       <Card className="kc-scope-hint-card">
         <Text type="tertiary">
@@ -222,6 +231,8 @@ interface Workflow {
 export function WorkflowsPage() {
   const { t, localeCode } = useI18n()
   const queryClient = useQueryClient()
+  const permissionSnapshotQuery = usePermissionSnapshot()
+  const canTriggerWorkflow = hasPermission(permissionSnapshotQuery.data?.data, 'delivery.workflows.trigger')
 
   const { data, isLoading } = useQuery({
     queryKey: ['workflows'],
@@ -278,9 +289,11 @@ export function WorkflowsPage() {
       title: t('common.actions', 'Actions'),
       dataIndex: 'id',
       render: (_: unknown, record: Workflow) => (
-        <Button icon={<IconPlay />} size="small" theme="borderless" onClick={() => triggerMutation.mutate(record)}>
-          {localeCode === 'zh_CN' ? '触发' : 'Trigger'}
-        </Button>
+        canTriggerWorkflow ? (
+          <Button icon={<IconPlay />} size="small" theme="borderless" onClick={() => triggerMutation.mutate(record)}>
+            {localeCode === 'zh_CN' ? '触发' : 'Trigger'}
+          </Button>
+        ) : '-'
       ),
     },
   ]
@@ -310,6 +323,8 @@ interface Release {
 export function ReleasesPage() {
   const { t } = useI18n()
   const queryClient = useQueryClient()
+  const permissionSnapshotQuery = usePermissionSnapshot()
+  const canTriggerRelease = hasPermission(permissionSnapshotQuery.data?.data, 'delivery.releases.trigger')
 
   const { data, isLoading } = useQuery({
     queryKey: ['releases'],
@@ -352,9 +367,11 @@ export function ReleasesPage() {
       title: '操作',
       dataIndex: 'id',
       render: (_: unknown, record: Release) => (
-        <Button icon={<IconPlay />} size="small" theme="borderless" onClick={() => triggerMutation.mutate(record)}>
-          部署
-        </Button>
+        canTriggerRelease ? (
+          <Button icon={<IconPlay />} size="small" theme="borderless" onClick={() => triggerMutation.mutate(record)}>
+            部署
+          </Button>
+        ) : '-'
       ),
     },
   ]
@@ -381,8 +398,10 @@ interface Registry {
 export function RegistriesPage() {
   const { t } = useI18n()
   const queryClient = useQueryClient()
+  const permissionSnapshotQuery = usePermissionSnapshot()
   const [modalVisible, setModalVisible] = useState(false)
   const [editing, setEditing] = useState<Registry | null>(null)
+  const canManageRegistry = hasPermission(permissionSnapshotQuery.data?.data, 'delivery.registries.manage')
 
   const { data, isLoading } = useQuery({
     queryKey: ['registries'],
@@ -445,10 +464,13 @@ export function RegistriesPage() {
       dataIndex: 'id',
       render: (_: unknown, record: Registry) => (
         <Space>
-          <Button icon={<IconEdit />} theme="borderless" size="small" onClick={() => { setEditing(record); setModalVisible(true) }} />
-          <Popconfirm title="确认删除？" onConfirm={() => deleteMutation.mutate(record.id)}>
-            <Button icon={<IconDelete />} theme="borderless" type="danger" size="small" />
-          </Popconfirm>
+          {canManageRegistry ? <Button icon={<IconEdit />} theme="borderless" size="small" onClick={() => { setEditing(record); setModalVisible(true) }} /> : null}
+          {canManageRegistry ? (
+            <Popconfirm title="确认删除？" onConfirm={() => deleteMutation.mutate(record.id)}>
+              <Button icon={<IconDelete />} theme="borderless" type="danger" size="small" />
+            </Popconfirm>
+          ) : null}
+          {!canManageRegistry ? '-' : null}
         </Space>
       ),
     },
@@ -459,7 +481,7 @@ export function RegistriesPage() {
       <PageHeader
         title={t('page.delivery.registries.title', 'Registries')}
         description={t('page.delivery.registries.desc', 'Manage registry connections, credentials, and connectivity status.')}
-        actions={<Button icon={<IconPlus />} theme="solid" onClick={() => { setEditing(null); setModalVisible(true) }}>添加仓库</Button>}
+        actions={canManageRegistry ? <Button icon={<IconPlus />} theme="solid" onClick={() => { setEditing(null); setModalVisible(true) }}>添加仓库</Button> : null}
       />
       <AdminTable columns={columns} dataSource={data?.data ?? []} rowKey="id" loading={isLoading} />
       <Modal

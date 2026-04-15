@@ -18,8 +18,8 @@ type CopilotService interface {
 	CreateSession(context.Context, domainidentity.Principal, string, string) (domaincopilot.Session, error)
 	ListMessages(context.Context, domainidentity.Principal, string) ([]domaincopilot.Message, error)
 	SendMessage(context.Context, domainidentity.Principal, string, string, string) ([]domaincopilot.Message, error)
-	Insights(context.Context, string) ([]domaincopilot.Insight, error)
-	ListDataSourceCapabilities(context.Context) ([]domainmcp.Adapter, error)
+	Insights(context.Context, domainidentity.Principal, string) ([]domaincopilot.Insight, error)
+	ListDataSourceCapabilities(context.Context, domainidentity.Principal) ([]domainmcp.Adapter, error)
 	ListDataSources(context.Context, domainidentity.Principal) ([]domaincopilot.DataSource, error)
 	CreateDataSource(context.Context, domainidentity.Principal, domaincopilot.DataSourceInput) (domaincopilot.DataSource, error)
 	UpdateDataSource(context.Context, domainidentity.Principal, string, domaincopilot.DataSourceInput) (domaincopilot.DataSource, error)
@@ -49,7 +49,8 @@ func NewCopilotHandler(service CopilotService) *CopilotHandler {
 }
 
 func (h *CopilotHandler) ListInsights(c *gin.Context) {
-	items, err := h.service.Insights(c.Request.Context(), localeFromRequest(c.GetHeader("Accept-Language")))
+	principal := apiMiddleware.PrincipalFromContext(c)
+	items, err := h.service.Insights(c.Request.Context(), principal, localeFromRequest(c.GetHeader("Accept-Language")))
 	if err != nil {
 		writeError(c, err)
 		return
@@ -58,7 +59,8 @@ func (h *CopilotHandler) ListInsights(c *gin.Context) {
 }
 
 func (h *CopilotHandler) ListDataSourceCapabilities(c *gin.Context) {
-	items, err := h.service.ListDataSourceCapabilities(c.Request.Context())
+	principal := apiMiddleware.PrincipalFromContext(c)
+	items, err := h.service.ListDataSourceCapabilities(c.Request.Context(), principal)
 	if err != nil {
 		writeError(c, err)
 		return

@@ -2,6 +2,7 @@ import { Card, Tag, Tabs, TabPane, Button, Toast, Typography } from '@douyinfe/s
 import { IconPulse, IconAlertTriangle } from '@douyinfe/semi-icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { AdminTable } from '@/components/admin-table'
+import { hasPermission, usePermissionSnapshot } from '@/features/auth/permission-snapshot'
 import { PageHeader } from '@/components/page-header'
 import { StatGrid } from '@/components/stat-grid'
 import { BooleanTag, StatusTag } from '@/components/status-tag'
@@ -90,6 +91,8 @@ interface Alert {
 
 export function AlertsPage() {
   const queryClient = useQueryClient()
+  const permissionSnapshotQuery = usePermissionSnapshot()
+  const canAcknowledge = hasPermission(permissionSnapshotQuery.data?.data, 'observe.alerts.ack')
 
   const { data, isLoading } = useQuery({
     queryKey: ['alerts'],
@@ -128,10 +131,12 @@ export function AlertsPage() {
       title: '操作',
       dataIndex: 'id',
       render: (_: unknown, record: Alert) =>
-        record.status !== 'acknowledged' ? (
+        canAcknowledge && record.status !== 'acknowledged' ? (
           <Button size="small" theme="borderless" onClick={() => ackMutation.mutate(record.id)}>
             确认
           </Button>
+        ) : record.status !== 'acknowledged' ? (
+          <Text type="tertiary" size="small">-</Text>
         ) : (
           <Text type="tertiary" size="small">已确认</Text>
         ),

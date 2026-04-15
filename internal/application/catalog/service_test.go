@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	domaincatalog "github.com/kubecrux/kubecrux/internal/domain/catalog"
+	domainidentity "github.com/kubecrux/kubecrux/internal/domain/identity"
 )
 
 type stubCatalogRepository struct {
@@ -87,8 +88,9 @@ func (s *stubCatalogRepository) DeleteWorkflowTemplate(context.Context, string) 
 func TestCreateWorkflowTemplateRejectsUnsupportedStepType(t *testing.T) {
 	repo := &stubCatalogRepository{}
 	service := New(repo)
+	principal := domainidentity.Principal{Roles: []string{"admin"}}
 
-	_, err := service.CreateWorkflowTemplate(context.Background(), domaincatalog.WorkflowTemplateInput{
+	_, err := service.CreateWorkflowTemplate(context.Background(), principal, domaincatalog.WorkflowTemplateInput{
 		Key:  "release-flow",
 		Name: "release-flow",
 		Definition: map[string]any{
@@ -110,8 +112,9 @@ func TestCreateWorkflowTemplateRejectsUnsupportedStepType(t *testing.T) {
 func TestCreateWorkflowTemplateDefaultsReleaseDefinition(t *testing.T) {
 	repo := &stubCatalogRepository{}
 	service := New(repo)
+	principal := domainidentity.Principal{Roles: []string{"admin"}}
 
-	_, err := service.CreateWorkflowTemplate(context.Background(), domaincatalog.WorkflowTemplateInput{
+	_, err := service.CreateWorkflowTemplate(context.Background(), principal, domaincatalog.WorkflowTemplateInput{
 		Key:  "release-flow",
 		Name: "release-flow",
 	})
@@ -129,8 +132,9 @@ func TestCreateWorkflowTemplateDefaultsReleaseDefinition(t *testing.T) {
 func TestCreateWorkflowTemplateRejectsGraphCycle(t *testing.T) {
 	repo := &stubCatalogRepository{}
 	service := New(repo)
+	principal := domainidentity.Principal{Roles: []string{"admin"}}
 
-	_, err := service.CreateWorkflowTemplate(context.Background(), domaincatalog.WorkflowTemplateInput{
+	_, err := service.CreateWorkflowTemplate(context.Background(), principal, domaincatalog.WorkflowTemplateInput{
 		Key:  "release-flow",
 		Name: "release-flow",
 		Definition: map[string]any{

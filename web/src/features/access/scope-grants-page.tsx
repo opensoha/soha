@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { Button, Modal, Form, Tag, Toast, Popconfirm, Space } from '@douyinfe/semi-ui'
 import { IconPlus, IconEdit, IconDelete } from '@douyinfe/semi-icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -11,6 +11,10 @@ import { tableColumnPresets } from '@/utils/table-columns'
 import type { ApiResponse, BusinessLine, DeliveryEnvironment, ScopeGrant } from '@/types'
 import type { ColumnProps } from '@douyinfe/semi-ui/lib/es/table'
 
+type ModalFormApi = {
+  validate: () => Promise<Record<string, unknown>>
+}
+
 function parseCSV(value: unknown) {
   return String(value ?? '')
     .split(',')
@@ -20,6 +24,7 @@ function parseCSV(value: unknown) {
 
 export function AccessScopeGrantsPage() {
   const queryClient = useQueryClient()
+  const formApiRef = useRef<ModalFormApi | null>(null)
   const [modalVisible, setModalVisible] = useState(false)
   const [editing, setEditing] = useState<ScopeGrant | null>(null)
 
@@ -82,7 +87,7 @@ export function AccessScopeGrantsPage() {
   })
 
   const columns: ColumnProps<ScopeGrant>[] = [
-    { title: '主体类型', dataIndex: 'subjectType' },
+    { title: '主体类型', dataIndex: 'subjectType', render: (value: string) => value === 'team' ? '用户组' : '用户' },
     { title: '主体 ID', dataIndex: 'subjectId' },
     { title: '业务线', dataIndex: 'businessLineId', render: (value: string) => businessLineMap[value] || value },
     {
@@ -118,13 +123,16 @@ export function AccessScopeGrantsPage() {
     <div className="kc-page">
       <PageHeader
         title="授权范围"
-        description="按 user 或 team 维护业务线、环境、应用级别的可管理范围。"
+        description="按用户或用户组维护业务线、环境、应用级别的可管理范围。"
         actions={<Button icon={<IconPlus />} theme="solid" onClick={() => { setEditing(null); setModalVisible(true) }}>新建授权项</Button>}
       />
       <AdminTable columns={columns} dataSource={grantsQuery.data?.data ?? []} rowKey="id" loading={grantsQuery.isLoading} />
-      <Modal title={editing ? '编辑授权项' : '新建授权项'} visible={modalVisible} onCancel={() => { setModalVisible(false); setEditing(null) }} footer={null} width={760}>
-        <Form
-          onSubmit={(values) => {
+      <Modal
+        title={editing ? '编辑授权项' : '新建授权项'}
+        visible={modalVisible}
+        onCancel={() => { setModalVisible(false); setEditing(null) }}
+        onOk={() => {
+          formApiRef.current?.validate().then((values) => {
             const payload = {
               ...values,
               environmentIds: parseCSV(values.environmentIds),
@@ -132,17 +140,28 @@ export function AccessScopeGrantsPage() {
             }
             if (editing) {
               updateMutation.mutate({ id: editing.id, values: payload })
-            } else {
-              createMutation.mutate(payload)
+              return
             }
-          }}
+            createMutation.mutate(payload)
+          }).catch(() => undefined)
+        }}
+        okText={editing ? '更新' : '创建'}
+        cancelText="取消"
+        confirmLoading={createMutation.isPending || updateMutation.isPending}
+        width={760}
+        maskClosable={false}
+        bodyStyle={{ maxHeight: '65vh', overflow: 'auto' }}
+      >
+        <Form
+          key={editing?.id ?? 'create-scope-grant'}
+          getFormApi={(formApi) => { formApiRef.current = formApi as ModalFormApi }}
           initValues={editing ? {
             ...editing,
             environmentIds: editing.environmentIds.join(', '),
             applicationIds: editing.applicationIds.join(', '),
           } : { enabled: true, effect: 'allow', subjectType: 'team' }}
         >
-          <Form.Select field="subjectType" label="主体类型" optionList={[{ value: 'team', label: 'Team' }, { value: 'user', label: 'User' }]} />
+          <Form.Select field="subjectType" label="主体类型" optionList={[{ value: 'team', label: '用户组' }, { value: 'user', label: '用户' }]} />
           <Form.Input field="subjectId" label="主体 ID" rules={[{ required: true, message: '请输入主体 ID' }]} />
           <Form.Select
             field="businessLineId"
@@ -153,14 +172,8 @@ export function AccessScopeGrantsPage() {
           <Form.Input field="environmentIds" label="环境 IDs" placeholder="留空表示全部环境，多个以逗号分隔" />
           <Form.Input field="applicationIds" label="应用 IDs" placeholder="留空表示全部应用，多个以逗号分隔" />
           <Form.Input field="role" label="角色" rules={[{ required: true, message: '请输入角色' }]} />
-          <Form.Select field="effect" label="效果" optionList={[{ value: 'allow', label: 'Allow' }]} />
+          <Form.Select field="effect" label="效果" optionList={[{ value: 'allow', label: '允许' }]} />
           <Form.Switch field="enabled" label="启用" />
-          <div className="kc-form-actions">
-            <Button onClick={() => setModalVisible(false)}>取消</Button>
-            <Button htmlType="submit" theme="solid" loading={createMutation.isPending || updateMutation.isPending}>
-              {editing ? '更新' : '创建'}
-            </Button>
-          </div>
         </Form>
       </Modal>
     </div>

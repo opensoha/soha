@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	appaccess "github.com/kubecrux/kubecrux/internal/application/access"
 	domainalert "github.com/kubecrux/kubecrux/internal/domain/alert"
 	domainapp "github.com/kubecrux/kubecrux/internal/domain/application"
 	domainaudit "github.com/kubecrux/kubecrux/internal/domain/audit"
@@ -53,10 +54,16 @@ func (s *Service) Start(ctx context.Context) {
 }
 
 func (s *Service) ListInspectionTasks(ctx context.Context, principal domainidentity.Principal) ([]domaincopilot.InspectionTask, error) {
+	if err := authorizePrincipal(principal, appaccess.PermObserveAIView); err != nil {
+		return nil, err
+	}
 	return s.repo.ListInspectionTasks(ctx, principal.UserID, 50)
 }
 
 func (s *Service) CreateInspectionTask(ctx context.Context, principal domainidentity.Principal, input domaincopilot.InspectionTaskInput, locale string) (domaincopilot.InspectionTask, error) {
+	if err := authorizePrincipal(principal, appaccess.PermObserveAIInspectionManage); err != nil {
+		return domaincopilot.InspectionTask{}, err
+	}
 	title := strings.TrimSpace(input.Title)
 	if title == "" {
 		return domaincopilot.InspectionTask{}, fmt.Errorf("inspection title is required")
@@ -83,6 +90,9 @@ func (s *Service) CreateInspectionTask(ctx context.Context, principal domainiden
 }
 
 func (s *Service) UpdateInspectionTask(ctx context.Context, principal domainidentity.Principal, taskID string, input domaincopilot.InspectionTaskInput, locale string) (domaincopilot.InspectionTask, error) {
+	if err := authorizePrincipal(principal, appaccess.PermObserveAIInspectionManage); err != nil {
+		return domaincopilot.InspectionTask{}, err
+	}
 	task, err := s.repo.GetInspectionTask(ctx, principal.UserID, strings.TrimSpace(taskID))
 	if err != nil {
 		return domaincopilot.InspectionTask{}, err
@@ -109,6 +119,9 @@ func (s *Service) UpdateInspectionTask(ctx context.Context, principal domainiden
 }
 
 func (s *Service) ListInspectionRuns(ctx context.Context, principal domainidentity.Principal, filter domaincopilot.InspectionRunFilter) ([]domaincopilot.InspectionRun, error) {
+	if err := authorizePrincipal(principal, appaccess.PermObserveAIView); err != nil {
+		return nil, err
+	}
 	filter.TaskID = strings.TrimSpace(filter.TaskID)
 	filter.ClusterID = strings.TrimSpace(filter.ClusterID)
 	filter.Namespace = strings.TrimSpace(filter.Namespace)
@@ -120,11 +133,14 @@ func (s *Service) ListInspectionRuns(ctx context.Context, principal domainidenti
 }
 
 func (s *Service) ExecuteInspectionTask(ctx context.Context, principal domainidentity.Principal, taskID, locale string) (domaincopilot.InspectionRun, error) {
+	if err := authorizePrincipal(principal, appaccess.PermObserveAIInspectionRun); err != nil {
+		return domaincopilot.InspectionRun{}, err
+	}
 	task, err := s.repo.GetInspectionTask(ctx, principal.UserID, strings.TrimSpace(taskID))
 	if err != nil {
 		return domaincopilot.InspectionRun{}, err
 	}
-	run, err := s.executeInspection(ctx, task, principal.UserID, localeFromInspectionMetadata(task.Metadata, locale))
+	run, err := s.executeInspection(ctx, principal, task, principal.UserID, localeFromInspectionMetadata(task.Metadata, locale))
 	if err == nil {
 		_ = s.repo.TouchInspectionTaskRun(ctx, task.ID, time.Now().UTC())
 	}
@@ -157,7 +173,7 @@ func (s *Service) runDueInspectionTasks(ctx context.Context) (int, error) {
 		go func() {
 			defer wait.Done()
 			for task := range jobs {
-				if _, err := s.executeInspection(ctx, task, "system:inspection", localeFromInspectionMetadata(task.Metadata, "")); err != nil {
+				if _, err := s.executeInspection(ctx, systemPrincipal(), task, "system:inspection", localeFromInspectionMetadata(task.Metadata, "")); err != nil {
 					s.logWarn("copilot inspection task failed", zap.String("taskID", task.ID), zap.Error(err))
 					errCh <- err
 					continue
@@ -195,12 +211,12 @@ func (s *Service) runDueInspectionTasks(ctx context.Context) (int, error) {
 	return len(tasks), cycleErr
 }
 
-func (s *Service) executeInspection(ctx context.Context, task domaincopilot.InspectionTask, triggeredBy, locale string) (domaincopilot.InspectionRun, error) {
+func (s *Service) executeInspection(ctx context.Context, principal domainidentity.Principal, task domaincopilot.InspectionTask, triggeredBy, locale string) (domaincopilot.InspectionRun, error) {
 	startedAt := time.Now().UTC()
 	if s.metrics != nil {
 		s.metrics.RecordStart(runtimeobs.ComponentCopilotInspection, task.ID, 0, 1)
 	}
-	findings, report := s.collectInspectionFindings(ctx, task, locale)
+	findings, report := s.collectInspectionFindings(ctx, principal, task, locale)
 	severity := summarizeSeverity(findings)
 	status := "completed"
 	if len(findings) == 0 {
@@ -239,7 +255,7 @@ func (s *Service) executeInspection(ctx context.Context, task domaincopilot.Insp
 	return savedRun, nil
 }
 
-func (s *Service) collectInspectionFindings(ctx context.Context, task domaincopilot.InspectionTask, locale string) ([]domaincopilot.InspectionFinding, map[string]any) {
+func (s *Service) collectInspectionFindings(ctx context.Context, principal domainidentity.Principal, task domaincopilot.InspectionTask, locale string) ([]domaincopilot.InspectionFinding, map[string]any) {
 	checks, profile, platformNativeEnabled := s.resolveInspectionChecksProfile(ctx, task)
 	if !platformNativeEnabled {
 		report := map[string]any{
@@ -252,9 +268,9 @@ func (s *Service) collectInspectionFindings(ctx context.Context, task domaincopi
 		return nil, report
 	}
 	clusters, _ := s.clusters.List(ctx)
-	alertSummary, _ := s.alerts.Summary(ctx)
-	alerts, _ := s.alerts.ListAlerts(ctx, domainalert.Filter{ClusterID: task.ClusterID, Limit: 20})
-	channels, _ := s.alerts.ListChannels(ctx)
+	alertSummary, _ := s.alerts.Summary(ctx, principal)
+	alerts, _ := s.alerts.ListAlerts(ctx, principal, domainalert.Filter{ClusterID: task.ClusterID, Limit: 20})
+	channels, _ := s.alerts.ListChannels(ctx, principal)
 	audits, _ := s.audits.List(ctx, domainaudit.Filter{Limit: 20})
 	builds, _ := s.builds.List(ctx, domainbuild.Filter{Limit: 20})
 	releases, _ := s.releases.List(ctx, domainrelease.Filter{ClusterID: task.ClusterID, Limit: 20})

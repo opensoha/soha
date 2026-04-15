@@ -2,6 +2,7 @@ import { Card, Form, Button, Toast, Spin, Modal, Tag, Space } from '@douyinfe/se
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
 import { AdminTable } from '@/components/admin-table'
+import { hasPermission, usePermissionSnapshot } from '@/features/auth/permission-snapshot'
 import { PageHeader } from '@/components/page-header'
 import { api } from '@/services/api-client'
 import { StatusTag } from '@/components/status-tag'
@@ -26,6 +27,9 @@ interface OIDCSettings {
 
 export function IdentitySettingsPage() {
   const queryClient = useQueryClient()
+  const permissionSnapshotQuery = usePermissionSnapshot()
+  const canViewIdentitySettings = hasPermission(permissionSnapshotQuery.data?.data, 'settings.identity.view')
+  const canManageIdentitySettings = hasPermission(permissionSnapshotQuery.data?.data, 'settings.identity.manage')
 
   const { data, isLoading } = useQuery({
     queryKey: ['settings-identity'],
@@ -46,6 +50,14 @@ export function IdentitySettingsPage() {
     return <div className="flex items-center justify-center h-64"><Spin size="large" /></div>
   }
 
+  if (!canViewIdentitySettings) {
+    return (
+      <div className="kc-page">
+        <Card>当前账号没有查看身份设置的权限。</Card>
+      </div>
+    )
+  }
+
   const settings = data?.data
 
   return (
@@ -53,7 +65,10 @@ export function IdentitySettingsPage() {
       <PageHeader title="身份设置" description="配置 OIDC 身份提供商、客户端凭证和回调信息。" />
       <Card>
         <Form
-          onSubmit={(values) => saveMutation.mutate(values as Record<string, unknown>)}
+          onSubmit={(values) => {
+            if (!canManageIdentitySettings) return
+            saveMutation.mutate(values as Record<string, unknown>)
+          }}
           initValues={settings ?? {}}
           labelPosition="left"
           labelWidth={140}
@@ -68,7 +83,7 @@ export function IdentitySettingsPage() {
           <Form.TagInput field="scopes" label="Scopes" placeholder="openid / profile / email" />
           <Form.TagInput field="defaultRoles" label="Default Roles" placeholder="readonly / admin" />
           <div className="kc-form-actions">
-            <Button htmlType="submit" theme="solid" loading={saveMutation.isPending}>保存设置</Button>
+            {canManageIdentitySettings ? <Button htmlType="submit" theme="solid" loading={saveMutation.isPending}>保存设置</Button> : null}
           </div>
         </Form>
       </Card>
@@ -90,6 +105,9 @@ interface PrometheusSettings {
 
 export function MonitoringSettingsPage() {
   const queryClient = useQueryClient()
+  const permissionSnapshotQuery = usePermissionSnapshot()
+  const canViewMonitoringSettings = hasPermission(permissionSnapshotQuery.data?.data, 'settings.monitoring.view')
+  const canManageMonitoringSettings = hasPermission(permissionSnapshotQuery.data?.data, 'settings.monitoring.manage')
 
   const { data, isLoading } = useQuery({
     queryKey: ['settings-monitoring'],
@@ -110,6 +128,14 @@ export function MonitoringSettingsPage() {
     return <div className="flex items-center justify-center h-64"><Spin size="large" /></div>
   }
 
+  if (!canViewMonitoringSettings) {
+    return (
+      <div className="kc-page">
+        <Card>当前账号没有查看监控设置的权限。</Card>
+      </div>
+    )
+  }
+
   const settings = data?.data
 
   return (
@@ -117,7 +143,10 @@ export function MonitoringSettingsPage() {
       <PageHeader title="监控设置" description="配置 Prometheus 地址、默认查询范围和访问凭证。" />
       <Card>
         <Form
-          onSubmit={(values) => saveMutation.mutate(values as Record<string, string>)}
+          onSubmit={(values) => {
+            if (!canManageMonitoringSettings) return
+            saveMutation.mutate(values as Record<string, string>)
+          }}
           initValues={settings ?? {}}
           labelPosition="left"
           labelWidth={140}
@@ -130,7 +159,7 @@ export function MonitoringSettingsPage() {
           <Form.Input field="clusterLabel" label="Cluster Label" />
           <Form.Input field="grafanaBaseUrl" label="Grafana URL" />
           <div className="kc-form-actions">
-            <Button htmlType="submit" theme="solid" loading={saveMutation.isPending}>保存设置</Button>
+            {canManageMonitoringSettings ? <Button htmlType="submit" theme="solid" loading={saveMutation.isPending}>保存设置</Button> : null}
           </div>
         </Form>
       </Card>
@@ -405,6 +434,7 @@ function buildPolicyPayload(values: Record<string, unknown>) {
 
 export function AISettingsPage() {
   const queryClient = useQueryClient()
+  const permissionSnapshotQuery = usePermissionSnapshot()
   const [dataSourceModalVisible, setDataSourceModalVisible] = useState(false)
   const [profileModalVisible, setProfileModalVisible] = useState(false)
   const [policyModalVisible, setPolicyModalVisible] = useState(false)
@@ -413,6 +443,8 @@ export function AISettingsPage() {
   const [editingPolicy, setEditingPolicy] = useState<AutomationPolicy | null>(null)
   const [dataSourceSourceKind, setDataSourceSourceKind] = useState('logs')
   const [dataSourceBackendType, setDataSourceBackendType] = useState('es')
+  const canViewAISettings = hasPermission(permissionSnapshotQuery.data?.data, 'settings.ai.view')
+  const canManageAISettings = hasPermission(permissionSnapshotQuery.data?.data, 'settings.ai.manage')
 
   useEffect(() => {
     if (dataSourceModalVisible && editingDataSource) {
@@ -507,6 +539,14 @@ export function AISettingsPage() {
     return <div className="flex items-center justify-center h-64"><Spin size="large" /></div>
   }
 
+  if (!canViewAISettings) {
+    return (
+      <div className="kc-page">
+        <Card>当前账号没有查看 AI 设置的权限。</Card>
+      </div>
+    )
+  }
+
   const settings = data?.data
   const dataSources = dataSourcesQuery.data?.data ?? []
   const profiles = profilesQuery.data?.data ?? []
@@ -557,15 +597,18 @@ export function AISettingsPage() {
       dataIndex: 'id',
       render: (_: unknown, record: DataSource) => (
         <Space>
-          <Button
-            size="small"
-            theme="light"
-            loading={validateDataSourceMutation.isPending && validateDataSourceMutation.variables === record.id}
-            onClick={() => validateDataSourceMutation.mutate(record.id)}
-          >
-            校验连接
-          </Button>
-          <Button size="small" theme="borderless" onClick={() => { setEditingDataSource(record); setDataSourceSourceKind(record.sourceKind); setDataSourceBackendType(record.backendType); setDataSourceModalVisible(true) }}>编辑</Button>
+          {canManageAISettings ? (
+            <Button
+              size="small"
+              theme="light"
+              loading={validateDataSourceMutation.isPending && validateDataSourceMutation.variables === record.id}
+              onClick={() => validateDataSourceMutation.mutate(record.id)}
+            >
+              校验连接
+            </Button>
+          ) : null}
+          {canManageAISettings ? <Button size="small" theme="borderless" onClick={() => { setEditingDataSource(record); setDataSourceSourceKind(record.sourceKind); setDataSourceBackendType(record.backendType); setDataSourceModalVisible(true) }}>编辑</Button> : null}
+          {!canManageAISettings ? '-' : null}
         </Space>
       ),
     },
@@ -577,7 +620,7 @@ export function AISettingsPage() {
     { title: '数据源', dataIndex: 'enabledSources', render: (value: string[]) => <div className="flex flex-wrap gap-1">{(value ?? []).map((item) => <Tag key={item}>{item}</Tag>)}</div> },
     { title: 'Playbooks', dataIndex: 'enabledPlaybooks', render: (value: string[]) => <div className="flex flex-wrap gap-1">{(value ?? []).map((item) => <Tag key={item}>{item}</Tag>)}</div> },
     { title: '策略', dataIndex: 'remediationPolicy' },
-    { ...tableColumnPresets.action, title: '操作', dataIndex: 'id', render: (_: unknown, record: AnalysisProfile) => <Button size="small" theme="borderless" onClick={() => { setEditingProfile(record); setProfileModalVisible(true) }}>编辑</Button> },
+    { ...tableColumnPresets.action, title: '操作', dataIndex: 'id', render: (_: unknown, record: AnalysisProfile) => canManageAISettings ? <Button size="small" theme="borderless" onClick={() => { setEditingProfile(record); setProfileModalVisible(true) }}>编辑</Button> : '-' },
   ]
 
   const policyColumns: ColumnProps<AutomationPolicy>[] = [
@@ -587,7 +630,7 @@ export function AISettingsPage() {
     { title: 'Dedup(s)', dataIndex: 'dedupWindowSeconds' },
     { title: '策略', dataIndex: 'remediationPolicy' },
     { title: '启用', dataIndex: 'enabled', render: (value: boolean) => <StatusTag value={value ? 'success' : 'default'} /> },
-    { ...tableColumnPresets.action, title: '操作', dataIndex: 'id', render: (_: unknown, record: AutomationPolicy) => <Button size="small" theme="borderless" onClick={() => { setEditingPolicy(record); setPolicyModalVisible(true) }}>编辑</Button> },
+    { ...tableColumnPresets.action, title: '操作', dataIndex: 'id', render: (_: unknown, record: AutomationPolicy) => canManageAISettings ? <Button size="small" theme="borderless" onClick={() => { setEditingPolicy(record); setPolicyModalVisible(true) }}>编辑</Button> : '-' },
   ]
 
   return (
@@ -595,7 +638,10 @@ export function AISettingsPage() {
       <PageHeader title="AI 设置" description="配置 AI 提供商、模型、API Key 与基础接入地址。" />
       <Card>
         <Form
-          onSubmit={(values) => saveMutation.mutate(values as Record<string, unknown>)}
+          onSubmit={(values) => {
+            if (!canManageAISettings) return
+            saveMutation.mutate(values as Record<string, unknown>)
+          }}
           initValues={settings ?? {}}
           labelPosition="left"
           labelWidth={140}
@@ -605,24 +651,27 @@ export function AISettingsPage() {
           <Form.Input field="model" label="模型" placeholder="gpt-4o / claude-sonnet-4-20250514" />
           <Form.Input field="baseUrl" label="Base URL" placeholder="https://api.openai.com/v1 (可选)" />
           <div className="kc-form-actions">
-            <Button htmlType="submit" theme="solid" loading={saveMutation.isPending}>保存设置</Button>
+            {canManageAISettings ? <Button htmlType="submit" theme="solid" loading={saveMutation.isPending}>保存设置</Button> : null}
           </div>
         </Form>
       </Card>
-      <Card title="Data Sources" headerExtraContent={<Button theme="solid" onClick={() => { setEditingDataSource(null); setDataSourceSourceKind('logs'); setDataSourceBackendType('es'); setDataSourceModalVisible(true) }}>新增</Button>}>
+      <Card title="Data Sources" headerExtraContent={canManageAISettings ? <Button theme="solid" onClick={() => { setEditingDataSource(null); setDataSourceSourceKind('logs'); setDataSourceBackendType('es'); setDataSourceModalVisible(true) }}>新增</Button> : null}>
         <AdminTable columns={dataSourceColumns} dataSource={dataSources} rowKey="id" loading={dataSourcesQuery.isLoading} />
       </Card>
-      <Card title="Analysis Profiles" headerExtraContent={<Button theme="solid" onClick={() => { setEditingProfile(null); setProfileModalVisible(true) }}>新增</Button>}>
+      <Card title="Analysis Profiles" headerExtraContent={canManageAISettings ? <Button theme="solid" onClick={() => { setEditingProfile(null); setProfileModalVisible(true) }}>新增</Button> : null}>
         <AdminTable columns={profileColumns} dataSource={profiles} rowKey="id" loading={profilesQuery.isLoading} />
       </Card>
-      <Card title="Automation Policies" headerExtraContent={<Button theme="solid" onClick={() => { setEditingPolicy(null); setPolicyModalVisible(true) }}>新增</Button>}>
+      <Card title="Automation Policies" headerExtraContent={canManageAISettings ? <Button theme="solid" onClick={() => { setEditingPolicy(null); setPolicyModalVisible(true) }}>新增</Button> : null}>
         <AdminTable columns={policyColumns} dataSource={policies} rowKey="id" loading={policiesQuery.isLoading} />
       </Card>
 
       <Modal title={editingDataSource ? '编辑数据源' : '新增数据源'} visible={dataSourceModalVisible} footer={null} onCancel={() => { setDataSourceModalVisible(false); setEditingDataSource(null); setDataSourceSourceKind('logs'); setDataSourceBackendType('es') }}>
         <Form
           initValues={buildDataSourceFormValues(editingDataSource)}
-          onSubmit={(values) => dataSourceMutation.mutate({ id: editingDataSource?.id, values })}
+          onSubmit={(values) => {
+            if (!canManageAISettings) return
+            dataSourceMutation.mutate({ id: editingDataSource?.id, values })
+          }}
           labelPosition="left"
           labelWidth={140}
         >
@@ -688,7 +737,7 @@ export function AISettingsPage() {
           <Form.Switch field="enabled" label="启用" />
           <div className="kc-form-actions">
             <Button onClick={() => { setDataSourceModalVisible(false); setEditingDataSource(null); setDataSourceSourceKind('logs'); setDataSourceBackendType('es') }}>取消</Button>
-            <Button htmlType="submit" theme="solid" loading={dataSourceMutation.isPending}>保存</Button>
+            {canManageAISettings ? <Button htmlType="submit" theme="solid" loading={dataSourceMutation.isPending}>保存</Button> : null}
           </div>
         </Form>
       </Modal>
@@ -696,7 +745,10 @@ export function AISettingsPage() {
       <Modal title={editingProfile ? '编辑分析模板' : '新增分析模板'} visible={profileModalVisible} footer={null} onCancel={() => { setProfileModalVisible(false); setEditingProfile(null) }}>
         <Form
           initValues={buildProfileFormValues(editingProfile)}
-          onSubmit={(values) => profileMutation.mutate({ id: editingProfile?.id, values })}
+          onSubmit={(values) => {
+            if (!canManageAISettings) return
+            profileMutation.mutate({ id: editingProfile?.id, values })
+          }}
           labelPosition="left"
           labelWidth={140}
         >
@@ -717,7 +769,7 @@ export function AISettingsPage() {
           <Form.Switch field="enabled" label="启用" />
           <div className="kc-form-actions">
             <Button onClick={() => { setProfileModalVisible(false); setEditingProfile(null) }}>取消</Button>
-            <Button htmlType="submit" theme="solid" loading={profileMutation.isPending}>保存</Button>
+            {canManageAISettings ? <Button htmlType="submit" theme="solid" loading={profileMutation.isPending}>保存</Button> : null}
           </div>
         </Form>
       </Modal>
@@ -725,7 +777,10 @@ export function AISettingsPage() {
       <Modal title={editingPolicy ? '编辑自动化策略' : '新增自动化策略'} visible={policyModalVisible} footer={null} onCancel={() => { setPolicyModalVisible(false); setEditingPolicy(null) }}>
         <Form
           initValues={buildPolicyFormValues(editingPolicy)}
-          onSubmit={(values) => policyMutation.mutate({ id: editingPolicy?.id, values })}
+          onSubmit={(values) => {
+            if (!canManageAISettings) return
+            policyMutation.mutate({ id: editingPolicy?.id, values })
+          }}
           labelPosition="left"
           labelWidth={140}
         >
@@ -746,7 +801,7 @@ export function AISettingsPage() {
           <Form.Switch field="enabled" label="启用" />
           <div className="kc-form-actions">
             <Button onClick={() => { setPolicyModalVisible(false); setEditingPolicy(null) }}>取消</Button>
-            <Button htmlType="submit" theme="solid" loading={policyMutation.isPending}>保存</Button>
+            {canManageAISettings ? <Button htmlType="submit" theme="solid" loading={policyMutation.isPending}>保存</Button> : null}
           </div>
         </Form>
       </Modal>

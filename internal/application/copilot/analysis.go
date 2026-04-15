@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	appaccess "github.com/kubecrux/kubecrux/internal/application/access"
 	domainalert "github.com/kubecrux/kubecrux/internal/domain/alert"
 	domainaudit "github.com/kubecrux/kubecrux/internal/domain/audit"
 	domainbuild "github.com/kubecrux/kubecrux/internal/domain/build"
@@ -20,15 +21,24 @@ import (
 )
 
 func (s *Service) ListRootCauseRuns(ctx context.Context, principal domainidentity.Principal, filter domaincopilot.RootCauseRunFilter) ([]domaincopilot.RootCauseRun, error) {
+	if err := authorizePrincipal(principal, appaccess.PermObserveAIView); err != nil {
+		return nil, err
+	}
 	return s.repo.ListRootCauseRuns(ctx, principal.UserID, filter)
 }
 
 func (s *Service) GetRootCauseRun(ctx context.Context, principal domainidentity.Principal, runID string) (domaincopilot.RootCauseRun, error) {
+	if err := authorizePrincipal(principal, appaccess.PermObserveAIView); err != nil {
+		return domaincopilot.RootCauseRun{}, err
+	}
 	return s.repo.GetRootCauseRun(ctx, principal.UserID, strings.TrimSpace(runID))
 }
 
 func (s *Service) RunRootCauseAnalysis(ctx context.Context, principal domainidentity.Principal, input domaincopilot.RootCauseRunInput, locale string) (domaincopilot.RootCauseRun, error) {
-	return s.executeRootCauseRun(ctx, principal.UserID, input, "", locale)
+	if err := authorizePrincipal(principal, appaccess.PermObserveAIRootCauseRun); err != nil {
+		return domaincopilot.RootCauseRun{}, err
+	}
+	return s.executeRootCauseRun(ctx, principal, principal.UserID, input, "", locale)
 }
 
 type rootCauseAnalysis struct {
@@ -40,7 +50,7 @@ type rootCauseAnalysis struct {
 	playbookResults map[string]any
 }
 
-func (s *Service) executeRootCauseRun(ctx context.Context, createdBy string, input domaincopilot.RootCauseRunInput, dedupKey, locale string) (domaincopilot.RootCauseRun, error) {
+func (s *Service) executeRootCauseRun(ctx context.Context, principal domainidentity.Principal, createdBy string, input domaincopilot.RootCauseRunInput, dedupKey, locale string) (domaincopilot.RootCauseRun, error) {
 	input = normalizeRootCauseInput(input)
 	if strings.TrimSpace(input.AlertID) == "" && strings.TrimSpace(input.ClusterID) == "" && strings.TrimSpace(input.WorkloadName) == "" {
 		return domaincopilot.RootCauseRun{}, fmt.Errorf("%w: clusterId, alertId, or workloadName is required", aperrors.ErrInvalidArgument)
@@ -56,7 +66,7 @@ func (s *Service) executeRootCauseRun(ctx context.Context, createdBy string, inp
 			input.TimeRangeMinutes = 60
 		}
 	}
-	analysis := s.collectRootCauseAnalysis(ctx, input, profile, locale)
+	analysis := s.collectRootCauseAnalysis(ctx, principal, input, profile, locale)
 	startedAt := time.Now().UTC()
 	dataSourceSnapshot, remediationPlan := s.buildRootCauseExecutionMetadata(ctx, profile, analysis)
 	run := domaincopilot.RootCauseRun{
@@ -201,12 +211,12 @@ func sourceEnabled(enabledSources []string, expected string) bool {
 	return false
 }
 
-func (s *Service) collectRootCauseAnalysis(ctx context.Context, input domaincopilot.RootCauseRunInput, profile domaincopilot.AnalysisProfile, locale string) rootCauseAnalysis {
+func (s *Service) collectRootCauseAnalysis(ctx context.Context, principal domainidentity.Principal, input domaincopilot.RootCauseRunInput, profile domaincopilot.AnalysisProfile, locale string) rootCauseAnalysis {
 	now := time.Now().UTC()
 	playbooks := enabledPlaybooks(profile.EnabledPlaybooks)
 	platformNativeEnabled := sourceEnabled(profile.EnabledSources, "platform-native")
 	clusters, _ := s.clusters.List(ctx)
-	alerts, _ := s.alerts.ListAlerts(ctx, domainalert.Filter{ClusterID: input.ClusterID, Limit: 30})
+	alerts, _ := s.alerts.ListAlerts(ctx, principal, domainalert.Filter{ClusterID: input.ClusterID, Limit: 30})
 	events, _ := s.events.List(ctx, 50)
 	audits, _ := s.audits.List(ctx, domainaudit.Filter{Limit: 50})
 	releases, _ := s.releases.List(ctx, domainrelease.Filter{ClusterID: input.ClusterID, Limit: 20})

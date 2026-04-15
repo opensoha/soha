@@ -3,6 +3,7 @@ import { Button, Modal, Form, Toast, Popconfirm, Space, Tag } from '@douyinfe/se
 import { IconPlus, IconEdit, IconDelete } from '@douyinfe/semi-icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { AdminTable } from '@/components/admin-table'
+import { hasPermission, usePermissionSnapshot } from '@/features/auth/permission-snapshot'
 import { PageHeader } from '@/components/page-header'
 import { BooleanTag, StatusTag } from '@/components/status-tag'
 import { api } from '@/services/api-client'
@@ -39,7 +40,9 @@ function SourceTag({ value }: { value?: string }) {
 
 export function OnlineUsersPage() {
   const queryClient = useQueryClient()
+  const permissionSnapshotQuery = usePermissionSnapshot()
   const [selectedSessionIds, setSelectedSessionIds] = useState<string[]>([])
+  const canManageOnlineUsers = hasPermission(permissionSnapshotQuery.data?.data, 'system.online-users.manage')
 
   const { data, isLoading } = useQuery({
     queryKey: ['online-users'],
@@ -115,11 +118,13 @@ export function OnlineUsersPage() {
       title: '操作',
       dataIndex: 'id',
       render: (_: string, record: OnlineUser) => (
-        <Popconfirm title="确认下线该用户会话？" onConfirm={() => revokeMutation.mutate(record.id)}>
-          <Button size="small" theme="borderless" type="danger" loading={revokeMutation.isPending}>
-            下线用户
-          </Button>
-        </Popconfirm>
+        canManageOnlineUsers ? (
+          <Popconfirm title="确认下线该用户会话？" onConfirm={() => revokeMutation.mutate(record.id)}>
+            <Button size="small" theme="borderless" type="danger" loading={revokeMutation.isPending}>
+              下线用户
+            </Button>
+          </Popconfirm>
+        ) : '-'
       ),
     },
   ]
@@ -130,15 +135,17 @@ export function OnlineUsersPage() {
         title="在线用户"
         description="查看当前在线会话、登录来源、最后活跃时间与会话到期信息。"
         actions={
-          <Button
-            theme="light"
-            type="danger"
-            disabled={selectedSessions.length === 0}
-            loading={batchRevokeMutation.isPending}
-            onClick={() => batchRevokeMutation.mutate(selectedSessions.map((item: OnlineUser) => item.id))}
-          >
-            {`批量下线 (${selectedSessions.length})`}
-          </Button>
+          canManageOnlineUsers ? (
+            <Button
+              theme="light"
+              type="danger"
+              disabled={selectedSessions.length === 0}
+              loading={batchRevokeMutation.isPending}
+              onClick={() => batchRevokeMutation.mutate(selectedSessions.map((item: OnlineUser) => item.id))}
+            >
+              {`批量下线 (${selectedSessions.length})`}
+            </Button>
+          ) : null
         }
       />
       <AdminTable
@@ -147,10 +154,10 @@ export function OnlineUsersPage() {
         rowKey="id"
         loading={isLoading}
         pageSize={20}
-        rowSelection={{
+        rowSelection={canManageOnlineUsers ? {
           selectedRowKeys: selectedSessionIds,
           onChange: (selectedRowKeys: string[]) => setSelectedSessionIds(selectedRowKeys),
-        }}
+        } : undefined}
       />
     </div>
   )
@@ -170,8 +177,10 @@ interface Announcement {
 
 export function AnnouncementsPage() {
   const queryClient = useQueryClient()
+  const permissionSnapshotQuery = usePermissionSnapshot()
   const [modalVisible, setModalVisible] = useState(false)
   const [editing, setEditing] = useState<Announcement | null>(null)
+  const canManageAnnouncements = hasPermission(permissionSnapshotQuery.data?.data, 'system.announcements.manage')
 
   const { data, isLoading } = useQuery({
     queryKey: ['announcements'],
@@ -234,10 +243,13 @@ export function AnnouncementsPage() {
       dataIndex: 'id',
       render: (_: unknown, record: Announcement) => (
         <Space>
-          <Button icon={<IconEdit />} theme="borderless" size="small" onClick={() => { setEditing(record); setModalVisible(true) }} />
-          <Popconfirm title="确认删除？" onConfirm={() => deleteMutation.mutate(record.id)}>
-            <Button icon={<IconDelete />} theme="borderless" type="danger" size="small" />
-          </Popconfirm>
+          {canManageAnnouncements ? <Button icon={<IconEdit />} theme="borderless" size="small" onClick={() => { setEditing(record); setModalVisible(true) }} /> : null}
+          {canManageAnnouncements ? (
+            <Popconfirm title="确认删除？" onConfirm={() => deleteMutation.mutate(record.id)}>
+              <Button icon={<IconDelete />} theme="borderless" type="danger" size="small" />
+            </Popconfirm>
+          ) : null}
+          {!canManageAnnouncements ? '-' : null}
         </Space>
       ),
     },
@@ -248,11 +260,11 @@ export function AnnouncementsPage() {
       <PageHeader
         title="公告管理"
         description="维护系统公告内容、发布状态与创建时间。"
-        actions={<Button icon={<IconPlus />} theme="solid" onClick={() => { setEditing(null); setModalVisible(true) }}>新建公告</Button>}
+        actions={canManageAnnouncements ? <Button icon={<IconPlus />} theme="solid" onClick={() => { setEditing(null); setModalVisible(true) }}>新建公告</Button> : null}
       />
       <AdminTable columns={columns} dataSource={data?.data ?? []} rowKey="id" loading={isLoading} />
       <Modal title={editing ? '编辑公告' : '新建公告'} visible={modalVisible} onCancel={() => { setModalVisible(false); setEditing(null) }} footer={null}>
-        <Form onSubmit={handleSubmit} initValues={editing ? { title: editing.title, summary: editing.summary, content: editing.content, level: editing.level, status: editing.status } : { level: 'info', status: 'draft' }}>
+        <Form onSubmit={(values) => { if (!canManageAnnouncements) return; handleSubmit(values) }} initValues={editing ? { title: editing.title, summary: editing.summary, content: editing.content, level: editing.level, status: editing.status } : { level: 'info', status: 'draft' }}>
           <Form.Input field="title" label="标题" rules={[{ required: true, message: '请输入标题' }]} />
           <Form.Input field="summary" label="摘要" />
           <Form.TextArea field="content" label="内容" rules={[{ required: true, message: '请输入内容' }]} rows={4} />
@@ -267,9 +279,11 @@ export function AnnouncementsPage() {
           ]} />
           <div className="kc-form-actions">
             <Button onClick={() => setModalVisible(false)}>取消</Button>
-            <Button htmlType="submit" theme="solid" loading={createMutation.isPending || updateMutation.isPending}>
-              {editing ? '更新' : '创建'}
-            </Button>
+            {canManageAnnouncements ? (
+              <Button htmlType="submit" theme="solid" loading={createMutation.isPending || updateMutation.isPending}>
+                {editing ? '更新' : '创建'}
+              </Button>
+            ) : null}
           </div>
         </Form>
       </Modal>
@@ -292,8 +306,10 @@ interface MenuItem {
 
 export function MenusPage() {
   const queryClient = useQueryClient()
+  const permissionSnapshotQuery = usePermissionSnapshot()
   const [modalVisible, setModalVisible] = useState(false)
   const [editing, setEditing] = useState<MenuItem | null>(null)
+  const canManageMenus = hasPermission(permissionSnapshotQuery.data?.data, 'system.menus.manage')
 
   const { data, isLoading } = useQuery({
     queryKey: ['menus'],
@@ -357,10 +373,13 @@ export function MenusPage() {
       dataIndex: 'id',
       render: (_: unknown, record: MenuItem) => (
         <Space>
-          <Button icon={<IconEdit />} theme="borderless" size="small" onClick={() => { setEditing(record); setModalVisible(true) }} />
-          <Popconfirm title="确认删除？" onConfirm={() => deleteMutation.mutate(record.id)}>
-            <Button icon={<IconDelete />} theme="borderless" type="danger" size="small" />
-          </Popconfirm>
+          {canManageMenus ? <Button icon={<IconEdit />} theme="borderless" size="small" onClick={() => { setEditing(record); setModalVisible(true) }} /> : null}
+          {canManageMenus ? (
+            <Popconfirm title="确认删除？" onConfirm={() => deleteMutation.mutate(record.id)}>
+              <Button icon={<IconDelete />} theme="borderless" type="danger" size="small" />
+            </Popconfirm>
+          ) : null}
+          {!canManageMenus ? '-' : null}
         </Space>
       ),
     },
@@ -371,11 +390,11 @@ export function MenusPage() {
       <PageHeader
         title="菜单管理"
         description="维护菜单路径、可见性、排序和图标信息。"
-        actions={<Button icon={<IconPlus />} theme="solid" onClick={() => { setEditing(null); setModalVisible(true) }}>新建菜单</Button>}
+        actions={canManageMenus ? <Button icon={<IconPlus />} theme="solid" onClick={() => { setEditing(null); setModalVisible(true) }}>新建菜单</Button> : null}
       />
       <AdminTable columns={columns} dataSource={data?.data ?? []} rowKey="id" loading={isLoading} pageSize={20} />
       <Modal title={editing ? '编辑菜单' : '新建菜单'} visible={modalVisible} onCancel={() => { setModalVisible(false); setEditing(null) }} footer={null}>
-        <Form onSubmit={handleSubmit} initValues={editing ? { labelZh: editing.labelZh, labelEn: editing.labelEn, path: editing.path, iconKey: editing.iconKey, section: editing.section, sortOrder: editing.sortOrder, enabled: editing.enabled } : { enabled: true, sortOrder: 0, section: 'system' }}>
+        <Form onSubmit={(values) => { if (!canManageMenus) return; handleSubmit(values) }} initValues={editing ? { labelZh: editing.labelZh, labelEn: editing.labelEn, path: editing.path, iconKey: editing.iconKey, section: editing.section, sortOrder: editing.sortOrder, enabled: editing.enabled } : { enabled: true, sortOrder: 0, section: 'system' }}>
           <Form.Input field="labelZh" label="中文名称" rules={[{ required: true, message: '请输入中文名称' }]} />
           <Form.Input field="labelEn" label="英文名称" />
           <Form.Input field="path" label="路径" rules={[{ required: true, message: '请输入路径' }]} />
@@ -385,9 +404,11 @@ export function MenusPage() {
           <Form.Switch field="enabled" label="是否启用" />
           <div className="kc-form-actions">
             <Button onClick={() => setModalVisible(false)}>取消</Button>
-            <Button htmlType="submit" theme="solid" loading={createMutation.isPending || updateMutation.isPending}>
-              {editing ? '更新' : '创建'}
-            </Button>
+            {canManageMenus ? (
+              <Button htmlType="submit" theme="solid" loading={createMutation.isPending || updateMutation.isPending}>
+                {editing ? '更新' : '创建'}
+              </Button>
+            ) : null}
           </div>
         </Form>
       </Modal>

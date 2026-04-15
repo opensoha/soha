@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { Input, Button, Empty, Spin, Typography, Avatar } from '@douyinfe/semi-ui'
 import { IconSend, IconPlus, IconComment } from '@douyinfe/semi-icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { hasPermission, usePermissionSnapshot } from '@/features/auth/permission-snapshot'
 import { PageHeader } from '@/components/page-header'
 import { useI18n } from '@/i18n'
 import { api } from '@/services/api-client'
@@ -25,9 +26,11 @@ interface ChatMessage {
 export function ChatPage() {
   const { t, localeCode } = useI18n()
   const queryClient = useQueryClient()
+  const permissionSnapshotQuery = usePermissionSnapshot()
   const [activeSession, setActiveSession] = useState<string | null>(null)
   const [inputValue, setInputValue] = useState('')
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const canUseChat = hasPermission(permissionSnapshotQuery.data?.data, 'observe.ai.chat')
 
   const sessionsQuery = useQuery({
     queryKey: ['copilot-sessions'],
@@ -83,14 +86,16 @@ export function ChatPage() {
         title={t('page.ai.chat.title', 'AI Chat')}
         description={t('page.ai.chat.desc', 'Run context-aware analysis conversations to investigate issues, validate hypotheses, and capture conclusions.')}
         actions={
-          <Button
-            icon={<IconPlus />}
-            theme="solid"
-            onClick={() => createSessionMutation.mutate()}
-            loading={createSessionMutation.isPending}
-          >
-            {localeCode === 'zh_CN' ? '新对话' : 'New Session'}
-          </Button>
+          canUseChat ? (
+            <Button
+              icon={<IconPlus />}
+              theme="solid"
+              onClick={() => createSessionMutation.mutate()}
+              loading={createSessionMutation.isPending}
+            >
+              {localeCode === 'zh_CN' ? '新对话' : 'New Session'}
+            </Button>
+          ) : null
         }
       />
 
@@ -183,7 +188,7 @@ export function ChatPage() {
                     value={inputValue}
                     onChange={setInputValue}
                     onKeyDown={handleKeyDown}
-                    disabled={sendMessageMutation.isPending}
+                    disabled={!canUseChat || sendMessageMutation.isPending}
                     size="large"
                   />
                   <Button
@@ -192,7 +197,7 @@ export function ChatPage() {
                     size="large"
                     onClick={handleSend}
                     loading={sendMessageMutation.isPending}
-                    disabled={!inputValue.trim()}
+                    disabled={!canUseChat || !inputValue.trim()}
                   />
                 </div>
               </div>

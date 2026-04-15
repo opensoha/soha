@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+	appaccess "github.com/kubecrux/kubecrux/internal/application/access"
 	domainidentity "github.com/kubecrux/kubecrux/internal/domain/identity"
 	domainmenu "github.com/kubecrux/kubecrux/internal/domain/menu"
 	"github.com/kubecrux/kubecrux/internal/platform/apperrors"
@@ -22,7 +23,7 @@ func New(repo domainmenu.Repository) *Service {
 }
 
 func (s *Service) ListAll(ctx context.Context, principal domainidentity.Principal) ([]domainmenu.Record, error) {
-	if err := ensureAdmin(principal); err != nil {
+	if err := authorizePrincipal(principal, appaccess.PermSystemMenusView); err != nil {
 		return nil, err
 	}
 	items, err := s.repo.List(ctx)
@@ -33,7 +34,7 @@ func (s *Service) ListAll(ctx context.Context, principal domainidentity.Principa
 }
 
 func (s *Service) Get(ctx context.Context, principal domainidentity.Principal, menuID string) (domainmenu.Record, error) {
-	if err := ensureAdmin(principal); err != nil {
+	if err := authorizePrincipal(principal, appaccess.PermSystemMenusView); err != nil {
 		return domainmenu.Record{}, err
 	}
 	item, err := s.repo.Get(ctx, strings.TrimSpace(menuID))
@@ -77,7 +78,7 @@ func (s *Service) ListVisible(ctx context.Context, principal domainidentity.Prin
 }
 
 func (s *Service) Create(ctx context.Context, principal domainidentity.Principal, input domainmenu.Input) (domainmenu.Record, error) {
-	if err := ensureAdmin(principal); err != nil {
+	if err := authorizePrincipal(principal, appaccess.PermSystemMenusManage); err != nil {
 		return domainmenu.Record{}, err
 	}
 	item, err := normalizeInput(input)
@@ -88,7 +89,7 @@ func (s *Service) Create(ctx context.Context, principal domainidentity.Principal
 }
 
 func (s *Service) Update(ctx context.Context, principal domainidentity.Principal, menuID string, input domainmenu.Input) (domainmenu.Record, error) {
-	if err := ensureAdmin(principal); err != nil {
+	if err := authorizePrincipal(principal, appaccess.PermSystemMenusManage); err != nil {
 		return domainmenu.Record{}, err
 	}
 	item, err := normalizeInput(input)
@@ -107,7 +108,7 @@ func (s *Service) Update(ctx context.Context, principal domainidentity.Principal
 }
 
 func (s *Service) Delete(ctx context.Context, principal domainidentity.Principal, menuID string) error {
-	if err := ensureAdmin(principal); err != nil {
+	if err := authorizePrincipal(principal, appaccess.PermSystemMenusManage); err != nil {
 		return err
 	}
 	if strings.TrimSpace(menuID) == "" {
@@ -226,11 +227,9 @@ func uniqueStrings(items []string) []string {
 	return unique
 }
 
-func ensureAdmin(principal domainidentity.Principal) error {
-	for _, role := range principal.Roles {
-		if role == "admin" {
-			return nil
-		}
+func authorizePrincipal(principal domainidentity.Principal, permissionKey string) error {
+	if appaccess.HasPermission(principal.Roles, permissionKey) {
+		return nil
 	}
-	return fmt.Errorf("%w: admin role required", apperrors.ErrAccessDenied)
+	return fmt.Errorf("%w: missing permission %s", apperrors.ErrAccessDenied, permissionKey)
 }

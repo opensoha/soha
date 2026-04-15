@@ -34,11 +34,14 @@ import {
   IconHelpCircle,
 } from '@douyinfe/semi-icons'
 import type { ReactNode } from 'react'
+import { Spin } from '@douyinfe/semi-ui'
 import { useI18n } from '@/i18n'
-import { getSidebarNav, getRouteMeta, getParentRouteMeta } from '@/routes/meta'
+import { getAccessibleSidebarNav, getRouteMeta, getParentRouteMeta } from '@/routes/meta'
+import { usePermissionSnapshot } from '@/features/auth/permission-snapshot'
 import { useAuthStore } from '@/stores/auth-store'
 import { usePreferencesStore } from '@/stores/preferences-store'
 import { getSemiThemeLabel, semiThemeOptions, themeModeOptions } from '@/theme/semi-theme'
+import type { SidebarNavItem } from '@/types'
 
 const { Sider, Header, Content } = Layout
 
@@ -71,8 +74,7 @@ const iconMap: Record<string, ReactNode> = {
 
 const groupOrder = ['overview', 'platform', 'delivery', 'observe', 'access', 'system', 'settings']
 
-function buildNavItems(t: (key: string, fallback?: string) => string) {
-  const sidebarNav = getSidebarNav()
+function buildNavItems(sidebarNav: SidebarNavItem[], t: (key: string, fallback?: string) => string) {
   const grouped = new Map<string, typeof sidebarNav>()
 
   for (const item of sidebarNav) {
@@ -118,8 +120,7 @@ function buildNavItems(t: (key: string, fallback?: string) => string) {
   return items
 }
 
-function buildItemKeyToPath(): Record<string, string> {
-  const sidebarNav = getSidebarNav()
+function buildItemKeyToPath(sidebarNav: SidebarNavItem[]): Record<string, string> {
   const map: Record<string, string> = {}
   for (const item of sidebarNav) {
     map[item.route.id] = item.route.redirectTo ?? item.route.path
@@ -136,6 +137,7 @@ export function AppLayout() {
   const navigate = useNavigate()
   const location = useLocation()
   const { user, clearAuth } = useAuthStore()
+  const permissionSnapshotQuery = usePermissionSnapshot()
   const themeId = usePreferencesStore((state) => state.themeId)
   const themeMode = usePreferencesStore((state) => state.themeMode)
   const setThemeId = usePreferencesStore((state) => state.setThemeId)
@@ -144,8 +146,12 @@ export function AppLayout() {
   const setLocaleCode = usePreferencesStore((state) => state.setLocaleCode)
   const { t } = useI18n()
 
-  const navItems = useMemo(() => buildNavItems(t), [t])
-  const itemKeyToPath = useMemo(() => buildItemKeyToPath(), [])
+  const sidebarNav = useMemo(
+    () => getAccessibleSidebarNav(permissionSnapshotQuery.data?.data),
+    [permissionSnapshotQuery.data?.data],
+  )
+  const navItems = useMemo(() => buildNavItems(sidebarNav, t), [sidebarNav, t])
+  const itemKeyToPath = useMemo(() => buildItemKeyToPath(sidebarNav), [sidebarNav])
 
   const currentMeta = getRouteMeta(location.pathname)
   const parentMeta = getParentRouteMeta(currentMeta)
@@ -191,6 +197,14 @@ export function AppLayout() {
 
   const userDisplayName = user?.userName ?? user?.email ?? 'User'
   const currentThemeLabel = getSemiThemeLabel(themeId)
+
+  if (permissionSnapshotQuery.isLoading) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <Spin size="large" />
+      </div>
+    )
+  }
 
   return (
     <Layout className="kc-shell">

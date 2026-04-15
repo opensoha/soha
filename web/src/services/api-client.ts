@@ -29,7 +29,7 @@ class ApiError extends Error {
 }
 
 async function refreshToken(): Promise<boolean> {
-  const { refreshToken: token, setTokens, clearAuth } = useAuthStore.getState()
+  const { refreshToken: token, setTokens, setUser, clearAuth } = useAuthStore.getState()
   if (!token) return false
 
   try {
@@ -49,6 +49,9 @@ async function refreshToken(): Promise<boolean> {
       return false
     }
     setTokens(tokens.accessToken, tokens.refreshToken)
+    if (body?.data?.user) {
+      setUser(body.data.user)
+    }
     return true
   } catch {
     clearAuth()

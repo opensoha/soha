@@ -34,7 +34,7 @@ func (s *Service) HandleAlertAutomation(ctx context.Context, instance domainaler
 		if err == nil && withinDedupWindow(existing, policy.DedupWindowSeconds) {
 			continue
 		}
-		_, err = s.executeRootCauseRun(ctx, automationRootCauseCreatedBy, domaincopilot.RootCauseRunInput{
+		_, err = s.executeRootCauseRun(ctx, systemPrincipal(), automationRootCauseCreatedBy, domaincopilot.RootCauseRunInput{
 			Title:             instance.Title,
 			AnalysisProfileID: policy.AnalysisProfileID,
 			TriggerType:       "alert_webhook",

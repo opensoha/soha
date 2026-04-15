@@ -6,28 +6,29 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	apiMiddleware "github.com/kubecrux/kubecrux/internal/api/middleware"
 	"github.com/kubecrux/kubecrux/internal/api/dto"
+	apiMiddleware "github.com/kubecrux/kubecrux/internal/api/middleware"
 	apiresponse "github.com/kubecrux/kubecrux/internal/api/response"
 	domainalert "github.com/kubecrux/kubecrux/internal/domain/alert"
+	domainidentity "github.com/kubecrux/kubecrux/internal/domain/identity"
 )
 
 type MonitoringService interface {
-	Summary(context.Context) (domainalert.Summary, error)
-	ListAlerts(context.Context, domainalert.Filter) ([]domainalert.Instance, error)
-	GetAlert(context.Context, string) (domainalert.Instance, error)
-	UpdateOwnership(context.Context, string, domainalert.OwnershipInput) (domainalert.Instance, error)
-	Acknowledge(context.Context, string, string, string) (domainalert.Instance, error)
-	ListChannels(context.Context) ([]domainalert.NotificationChannel, error)
-	CreateChannel(context.Context, domainalert.ChannelInput) (domainalert.NotificationChannel, error)
-	UpdateChannel(context.Context, string, domainalert.ChannelInput) (domainalert.NotificationChannel, error)
-	ListRoutes(context.Context) ([]domainalert.AlertRoute, error)
-	CreateRoute(context.Context, domainalert.RouteInput) (domainalert.AlertRoute, error)
-	UpdateRoute(context.Context, string, domainalert.RouteInput) (domainalert.AlertRoute, error)
-	ListSilences(context.Context) ([]domainalert.AlertSilence, error)
-	CreateSilence(context.Context, domainalert.SilenceInput) (domainalert.AlertSilence, error)
-	UpdateSilence(context.Context, string, domainalert.SilenceInput) (domainalert.AlertSilence, error)
-	ListDeliveryLogs(context.Context, domainalert.DeliveryFilter) ([]domainalert.DeliveryLog, error)
+	Summary(context.Context, domainidentity.Principal) (domainalert.Summary, error)
+	ListAlerts(context.Context, domainidentity.Principal, domainalert.Filter) ([]domainalert.Instance, error)
+	GetAlert(context.Context, domainidentity.Principal, string) (domainalert.Instance, error)
+	UpdateOwnership(context.Context, domainidentity.Principal, string, domainalert.OwnershipInput) (domainalert.Instance, error)
+	Acknowledge(context.Context, domainidentity.Principal, string, string, string) (domainalert.Instance, error)
+	ListChannels(context.Context, domainidentity.Principal) ([]domainalert.NotificationChannel, error)
+	CreateChannel(context.Context, domainidentity.Principal, domainalert.ChannelInput) (domainalert.NotificationChannel, error)
+	UpdateChannel(context.Context, domainidentity.Principal, string, domainalert.ChannelInput) (domainalert.NotificationChannel, error)
+	ListRoutes(context.Context, domainidentity.Principal) ([]domainalert.AlertRoute, error)
+	CreateRoute(context.Context, domainidentity.Principal, domainalert.RouteInput) (domainalert.AlertRoute, error)
+	UpdateRoute(context.Context, domainidentity.Principal, string, domainalert.RouteInput) (domainalert.AlertRoute, error)
+	ListSilences(context.Context, domainidentity.Principal) ([]domainalert.AlertSilence, error)
+	CreateSilence(context.Context, domainidentity.Principal, domainalert.SilenceInput) (domainalert.AlertSilence, error)
+	UpdateSilence(context.Context, domainidentity.Principal, string, domainalert.SilenceInput) (domainalert.AlertSilence, error)
+	ListDeliveryLogs(context.Context, domainidentity.Principal, domainalert.DeliveryFilter) ([]domainalert.DeliveryLog, error)
 	ValidateWebhookToken(string) error
 	Ingest(context.Context, domainalert.IngestRequest) (int, error)
 }
@@ -41,7 +42,8 @@ func NewMonitoringHandler(service MonitoringService) *MonitoringHandler {
 }
 
 func (h *MonitoringHandler) Summary(c *gin.Context) {
-	item, err := h.service.Summary(c.Request.Context())
+	principal := apiMiddleware.PrincipalFromContext(c)
+	item, err := h.service.Summary(c.Request.Context(), principal)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -50,7 +52,8 @@ func (h *MonitoringHandler) Summary(c *gin.Context) {
 }
 
 func (h *MonitoringHandler) ListAlerts(c *gin.Context) {
-	items, err := h.service.ListAlerts(c.Request.Context(), domainalert.Filter{
+	principal := apiMiddleware.PrincipalFromContext(c)
+	items, err := h.service.ListAlerts(c.Request.Context(), principal, domainalert.Filter{
 		Status:    c.Query("status"),
 		ClusterID: c.Query("clusterId"),
 		Limit:     parseLimit(c.Query("limit"), 50),
@@ -63,7 +66,8 @@ func (h *MonitoringHandler) ListAlerts(c *gin.Context) {
 }
 
 func (h *MonitoringHandler) GetAlert(c *gin.Context) {
-	item, err := h.service.GetAlert(c.Request.Context(), c.Param("alertID"))
+	principal := apiMiddleware.PrincipalFromContext(c)
+	item, err := h.service.GetAlert(c.Request.Context(), principal, c.Param("alertID"))
 	if err != nil {
 		writeError(c, err)
 		return
@@ -77,7 +81,8 @@ func (h *MonitoringHandler) UpdateAlertOwnership(c *gin.Context) {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid alert ownership payload")
 		return
 	}
-	item, err := h.service.UpdateOwnership(c.Request.Context(), c.Param("alertID"), domainalert.OwnershipInput{
+	principal := apiMiddleware.PrincipalFromContext(c)
+	item, err := h.service.UpdateOwnership(c.Request.Context(), principal, c.Param("alertID"), domainalert.OwnershipInput{
 		OwnerTeam: req.OwnerTeam,
 		Assignee:  req.Assignee,
 	})
@@ -90,7 +95,7 @@ func (h *MonitoringHandler) UpdateAlertOwnership(c *gin.Context) {
 
 func (h *MonitoringHandler) AcknowledgeAlert(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.service.Acknowledge(c.Request.Context(), c.Param("alertID"), principal.UserID, principal.UserName)
+	item, err := h.service.Acknowledge(c.Request.Context(), principal, c.Param("alertID"), principal.UserID, principal.UserName)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -99,7 +104,8 @@ func (h *MonitoringHandler) AcknowledgeAlert(c *gin.Context) {
 }
 
 func (h *MonitoringHandler) ListChannels(c *gin.Context) {
-	items, err := h.service.ListChannels(c.Request.Context())
+	principal := apiMiddleware.PrincipalFromContext(c)
+	items, err := h.service.ListChannels(c.Request.Context(), principal)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -113,7 +119,8 @@ func (h *MonitoringHandler) CreateChannel(c *gin.Context) {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid notification channel payload")
 		return
 	}
-	item, err := h.service.CreateChannel(c.Request.Context(), domainalert.ChannelInput{
+	principal := apiMiddleware.PrincipalFromContext(c)
+	item, err := h.service.CreateChannel(c.Request.Context(), principal, domainalert.ChannelInput{
 		ID:          req.ID,
 		Name:        req.Name,
 		ChannelType: req.ChannelType,
@@ -133,7 +140,8 @@ func (h *MonitoringHandler) UpdateChannel(c *gin.Context) {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid notification channel payload")
 		return
 	}
-	item, err := h.service.UpdateChannel(c.Request.Context(), c.Param("channelID"), domainalert.ChannelInput{
+	principal := apiMiddleware.PrincipalFromContext(c)
+	item, err := h.service.UpdateChannel(c.Request.Context(), principal, c.Param("channelID"), domainalert.ChannelInput{
 		ID:          req.ID,
 		Name:        req.Name,
 		ChannelType: req.ChannelType,
@@ -148,7 +156,8 @@ func (h *MonitoringHandler) UpdateChannel(c *gin.Context) {
 }
 
 func (h *MonitoringHandler) ListRoutes(c *gin.Context) {
-	items, err := h.service.ListRoutes(c.Request.Context())
+	principal := apiMiddleware.PrincipalFromContext(c)
+	items, err := h.service.ListRoutes(c.Request.Context(), principal)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -162,7 +171,8 @@ func (h *MonitoringHandler) CreateRoute(c *gin.Context) {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid alert route payload")
 		return
 	}
-	item, err := h.service.CreateRoute(c.Request.Context(), domainalert.RouteInput{
+	principal := apiMiddleware.PrincipalFromContext(c)
+	item, err := h.service.CreateRoute(c.Request.Context(), principal, domainalert.RouteInput{
 		ID:         req.ID,
 		Name:       req.Name,
 		Matchers:   req.Matchers,
@@ -182,7 +192,8 @@ func (h *MonitoringHandler) UpdateRoute(c *gin.Context) {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid alert route payload")
 		return
 	}
-	item, err := h.service.UpdateRoute(c.Request.Context(), c.Param("routeID"), domainalert.RouteInput{
+	principal := apiMiddleware.PrincipalFromContext(c)
+	item, err := h.service.UpdateRoute(c.Request.Context(), principal, c.Param("routeID"), domainalert.RouteInput{
 		ID:         req.ID,
 		Name:       req.Name,
 		Matchers:   req.Matchers,
@@ -197,7 +208,8 @@ func (h *MonitoringHandler) UpdateRoute(c *gin.Context) {
 }
 
 func (h *MonitoringHandler) ListSilences(c *gin.Context) {
-	items, err := h.service.ListSilences(c.Request.Context())
+	principal := apiMiddleware.PrincipalFromContext(c)
+	items, err := h.service.ListSilences(c.Request.Context(), principal)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -211,7 +223,8 @@ func (h *MonitoringHandler) CreateSilence(c *gin.Context) {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid alert silence payload")
 		return
 	}
-	item, err := h.service.CreateSilence(c.Request.Context(), domainalert.SilenceInput{
+	principal := apiMiddleware.PrincipalFromContext(c)
+	item, err := h.service.CreateSilence(c.Request.Context(), principal, domainalert.SilenceInput{
 		ID:       req.ID,
 		Name:     req.Name,
 		Matchers: req.Matchers,
@@ -233,7 +246,8 @@ func (h *MonitoringHandler) UpdateSilence(c *gin.Context) {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid alert silence payload")
 		return
 	}
-	item, err := h.service.UpdateSilence(c.Request.Context(), c.Param("silenceID"), domainalert.SilenceInput{
+	principal := apiMiddleware.PrincipalFromContext(c)
+	item, err := h.service.UpdateSilence(c.Request.Context(), principal, c.Param("silenceID"), domainalert.SilenceInput{
 		ID:       req.ID,
 		Name:     req.Name,
 		Matchers: req.Matchers,
@@ -250,7 +264,8 @@ func (h *MonitoringHandler) UpdateSilence(c *gin.Context) {
 }
 
 func (h *MonitoringHandler) ListDeliveryLogs(c *gin.Context) {
-	items, err := h.service.ListDeliveryLogs(c.Request.Context(), domainalert.DeliveryFilter{
+	principal := apiMiddleware.PrincipalFromContext(c)
+	items, err := h.service.ListDeliveryLogs(c.Request.Context(), principal, domainalert.DeliveryFilter{
 		AlertID: c.Query("alertId"),
 		Status:  c.Query("status"),
 		Limit:   parseLimit(c.Query("limit"), 100),

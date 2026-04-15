@@ -13,6 +13,7 @@ import (
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
+	appaccess "github.com/kubecrux/kubecrux/internal/application/access"
 	domainaudit "github.com/kubecrux/kubecrux/internal/domain/audit"
 	domainidentity "github.com/kubecrux/kubecrux/internal/domain/identity"
 	cfgpkg "github.com/kubecrux/kubecrux/internal/infrastructure/config"
@@ -236,8 +237,8 @@ func (s *Service) ParseAccessToken(ctx context.Context, accessToken string) (dom
 }
 
 func (s *Service) ListActiveSessions(ctx context.Context, principal domainidentity.Principal, limit int) ([]domainidentity.SessionRecord, error) {
-	if !hasAdminRole(principal.Roles) {
-		return nil, fmt.Errorf("%w: admin role required", apperrors.ErrAccessDenied)
+	if !appaccess.HasPermission(principal.Roles, appaccess.PermSystemOnlineUsersView) {
+		return nil, fmt.Errorf("%w: missing permission %s", apperrors.ErrAccessDenied, appaccess.PermSystemOnlineUsersView)
 	}
 	if limit <= 0 {
 		limit = 100
@@ -257,8 +258,8 @@ func (s *Service) ListActiveSessions(ctx context.Context, principal domainidenti
 }
 
 func (s *Service) RevokeSessionByID(ctx context.Context, principal domainidentity.Principal, sessionID string) error {
-	if !hasAdminRole(principal.Roles) {
-		return fmt.Errorf("%w: admin role required", apperrors.ErrAccessDenied)
+	if !appaccess.HasPermission(principal.Roles, appaccess.PermSystemOnlineUsersManage) {
+		return fmt.Errorf("%w: missing permission %s", apperrors.ErrAccessDenied, appaccess.PermSystemOnlineUsersManage)
 	}
 	session, err := s.users.GetSessionByID(ctx, strings.TrimSpace(sessionID))
 	if err != nil {
@@ -460,9 +461,13 @@ func (s *Service) loadPrincipal(ctx context.Context, userID string) (domainident
 	if err != nil {
 		return domainidentity.Principal{}, fmt.Errorf("list user projects: %w", err)
 	}
+	userName := strings.TrimSpace(user.DisplayName)
+	if userName == "" {
+		userName = user.Username
+	}
 	return domainidentity.Principal{
 		UserID:   user.ID,
-		UserName: user.DisplayName,
+		UserName: userName,
 		Email:    user.Email,
 		Roles:    roles,
 		Teams:    teams,

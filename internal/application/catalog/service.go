@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"strings"
 
+	appaccess "github.com/kubecrux/kubecrux/internal/application/access"
 	domaincatalog "github.com/kubecrux/kubecrux/internal/domain/catalog"
+	domainidentity "github.com/kubecrux/kubecrux/internal/domain/identity"
 	"github.com/kubecrux/kubecrux/internal/platform/apperrors"
 	catalogrepo "github.com/kubecrux/kubecrux/internal/repository/catalog"
 )
@@ -19,18 +21,27 @@ func New(repo domaincatalog.Repository) *Service {
 	return &Service{repo: repo}
 }
 
-func (s *Service) ListBusinessLines(ctx context.Context) ([]domaincatalog.BusinessLine, error) {
+func (s *Service) ListBusinessLines(ctx context.Context, principal domainidentity.Principal) ([]domaincatalog.BusinessLine, error) {
+	if err := authorizePrincipal(principal, appaccess.PermDeliveryBusinessLinesView); err != nil {
+		return nil, err
+	}
 	return s.repo.ListBusinessLines(ctx)
 }
 
-func (s *Service) CreateBusinessLine(ctx context.Context, input domaincatalog.BusinessLineInput) (domaincatalog.BusinessLine, error) {
+func (s *Service) CreateBusinessLine(ctx context.Context, principal domainidentity.Principal, input domaincatalog.BusinessLineInput) (domaincatalog.BusinessLine, error) {
+	if err := authorizePrincipal(principal, appaccess.PermDeliveryBusinessLinesManage); err != nil {
+		return domaincatalog.BusinessLine{}, err
+	}
 	if strings.TrimSpace(input.Key) == "" || strings.TrimSpace(input.Name) == "" {
 		return domaincatalog.BusinessLine{}, fmt.Errorf("%w: key and name are required", apperrors.ErrInvalidArgument)
 	}
 	return s.repo.CreateBusinessLine(ctx, input)
 }
 
-func (s *Service) UpdateBusinessLine(ctx context.Context, id string, input domaincatalog.BusinessLineInput) (domaincatalog.BusinessLine, error) {
+func (s *Service) UpdateBusinessLine(ctx context.Context, principal domainidentity.Principal, id string, input domaincatalog.BusinessLineInput) (domaincatalog.BusinessLine, error) {
+	if err := authorizePrincipal(principal, appaccess.PermDeliveryBusinessLinesManage); err != nil {
+		return domaincatalog.BusinessLine{}, err
+	}
 	if strings.TrimSpace(input.Key) == "" || strings.TrimSpace(input.Name) == "" {
 		return domaincatalog.BusinessLine{}, fmt.Errorf("%w: key and name are required", apperrors.ErrInvalidArgument)
 	}
@@ -38,22 +49,34 @@ func (s *Service) UpdateBusinessLine(ctx context.Context, id string, input domai
 	return item, normalizeRepoError(err)
 }
 
-func (s *Service) DeleteBusinessLine(ctx context.Context, id string) error {
+func (s *Service) DeleteBusinessLine(ctx context.Context, principal domainidentity.Principal, id string) error {
+	if err := authorizePrincipal(principal, appaccess.PermDeliveryBusinessLinesManage); err != nil {
+		return err
+	}
 	return normalizeRepoError(s.repo.DeleteBusinessLine(ctx, id))
 }
 
-func (s *Service) ListEnvironments(ctx context.Context) ([]domaincatalog.Environment, error) {
+func (s *Service) ListEnvironments(ctx context.Context, principal domainidentity.Principal) ([]domaincatalog.Environment, error) {
+	if err := authorizePrincipal(principal, appaccess.PermDeliveryEnvironmentsView); err != nil {
+		return nil, err
+	}
 	return s.repo.ListEnvironments(ctx)
 }
 
-func (s *Service) CreateEnvironment(ctx context.Context, input domaincatalog.EnvironmentInput) (domaincatalog.Environment, error) {
+func (s *Service) CreateEnvironment(ctx context.Context, principal domainidentity.Principal, input domaincatalog.EnvironmentInput) (domaincatalog.Environment, error) {
+	if err := authorizePrincipal(principal, appaccess.PermDeliveryEnvironmentsManage); err != nil {
+		return domaincatalog.Environment{}, err
+	}
 	if strings.TrimSpace(input.Key) == "" || strings.TrimSpace(input.Name) == "" {
 		return domaincatalog.Environment{}, fmt.Errorf("%w: key and name are required", apperrors.ErrInvalidArgument)
 	}
 	return s.repo.CreateEnvironment(ctx, input)
 }
 
-func (s *Service) UpdateEnvironment(ctx context.Context, id string, input domaincatalog.EnvironmentInput) (domaincatalog.Environment, error) {
+func (s *Service) UpdateEnvironment(ctx context.Context, principal domainidentity.Principal, id string, input domaincatalog.EnvironmentInput) (domaincatalog.Environment, error) {
+	if err := authorizePrincipal(principal, appaccess.PermDeliveryEnvironmentsManage); err != nil {
+		return domaincatalog.Environment{}, err
+	}
 	if strings.TrimSpace(input.Key) == "" || strings.TrimSpace(input.Name) == "" {
 		return domaincatalog.Environment{}, fmt.Errorf("%w: key and name are required", apperrors.ErrInvalidArgument)
 	}
@@ -61,27 +84,42 @@ func (s *Service) UpdateEnvironment(ctx context.Context, id string, input domain
 	return item, normalizeRepoError(err)
 }
 
-func (s *Service) DeleteEnvironment(ctx context.Context, id string) error {
+func (s *Service) DeleteEnvironment(ctx context.Context, principal domainidentity.Principal, id string) error {
+	if err := authorizePrincipal(principal, appaccess.PermDeliveryEnvironmentsManage); err != nil {
+		return err
+	}
 	return normalizeRepoError(s.repo.DeleteEnvironment(ctx, id))
 }
 
-func (s *Service) ListApplicationEnvironments(ctx context.Context) ([]domaincatalog.ApplicationEnvironment, error) {
+func (s *Service) ListApplicationEnvironments(ctx context.Context, principal domainidentity.Principal) ([]domaincatalog.ApplicationEnvironment, error) {
+	if err := authorizePrincipal(principal, appaccess.PermDeliveryApplicationEnvView); err != nil {
+		return nil, err
+	}
 	return s.repo.ListApplicationEnvironments(ctx)
 }
 
-func (s *Service) GetApplicationEnvironment(ctx context.Context, id string) (domaincatalog.ApplicationEnvironment, error) {
+func (s *Service) GetApplicationEnvironment(ctx context.Context, principal domainidentity.Principal, id string) (domaincatalog.ApplicationEnvironment, error) {
+	if err := authorizePrincipal(principal, appaccess.PermDeliveryApplicationEnvView); err != nil {
+		return domaincatalog.ApplicationEnvironment{}, err
+	}
 	item, err := s.repo.GetApplicationEnvironment(ctx, id)
 	return item, normalizeRepoError(err)
 }
 
-func (s *Service) CreateApplicationEnvironment(ctx context.Context, input domaincatalog.ApplicationEnvironmentInput) (domaincatalog.ApplicationEnvironment, error) {
+func (s *Service) CreateApplicationEnvironment(ctx context.Context, principal domainidentity.Principal, input domaincatalog.ApplicationEnvironmentInput) (domaincatalog.ApplicationEnvironment, error) {
+	if err := authorizePrincipal(principal, appaccess.PermDeliveryApplicationEnvManage); err != nil {
+		return domaincatalog.ApplicationEnvironment{}, err
+	}
 	if strings.TrimSpace(input.ApplicationID) == "" || strings.TrimSpace(input.EnvironmentID) == "" {
 		return domaincatalog.ApplicationEnvironment{}, fmt.Errorf("%w: applicationId and environmentId are required", apperrors.ErrInvalidArgument)
 	}
 	return s.repo.CreateApplicationEnvironment(ctx, input)
 }
 
-func (s *Service) UpdateApplicationEnvironment(ctx context.Context, id string, input domaincatalog.ApplicationEnvironmentInput) (domaincatalog.ApplicationEnvironment, error) {
+func (s *Service) UpdateApplicationEnvironment(ctx context.Context, principal domainidentity.Principal, id string, input domaincatalog.ApplicationEnvironmentInput) (domaincatalog.ApplicationEnvironment, error) {
+	if err := authorizePrincipal(principal, appaccess.PermDeliveryApplicationEnvManage); err != nil {
+		return domaincatalog.ApplicationEnvironment{}, err
+	}
 	if strings.TrimSpace(input.ApplicationID) == "" || strings.TrimSpace(input.EnvironmentID) == "" {
 		return domaincatalog.ApplicationEnvironment{}, fmt.Errorf("%w: applicationId and environmentId are required", apperrors.ErrInvalidArgument)
 	}
@@ -89,15 +127,24 @@ func (s *Service) UpdateApplicationEnvironment(ctx context.Context, id string, i
 	return item, normalizeRepoError(err)
 }
 
-func (s *Service) DeleteApplicationEnvironment(ctx context.Context, id string) error {
+func (s *Service) DeleteApplicationEnvironment(ctx context.Context, principal domainidentity.Principal, id string) error {
+	if err := authorizePrincipal(principal, appaccess.PermDeliveryApplicationEnvManage); err != nil {
+		return err
+	}
 	return normalizeRepoError(s.repo.DeleteApplicationEnvironment(ctx, id))
 }
 
-func (s *Service) ListWorkflowTemplates(ctx context.Context) ([]domaincatalog.WorkflowTemplate, error) {
+func (s *Service) ListWorkflowTemplates(ctx context.Context, principal domainidentity.Principal) ([]domaincatalog.WorkflowTemplate, error) {
+	if err := authorizePrincipal(principal, appaccess.PermDeliveryWorkflowTemplatesView); err != nil {
+		return nil, err
+	}
 	return s.repo.ListWorkflowTemplates(ctx)
 }
 
-func (s *Service) CreateWorkflowTemplate(ctx context.Context, input domaincatalog.WorkflowTemplateInput) (domaincatalog.WorkflowTemplate, error) {
+func (s *Service) CreateWorkflowTemplate(ctx context.Context, principal domainidentity.Principal, input domaincatalog.WorkflowTemplateInput) (domaincatalog.WorkflowTemplate, error) {
+	if err := authorizePrincipal(principal, appaccess.PermDeliveryWorkflowTemplatesManage); err != nil {
+		return domaincatalog.WorkflowTemplate{}, err
+	}
 	input = normalizeWorkflowTemplateInput(input)
 	if strings.TrimSpace(input.Key) == "" || strings.TrimSpace(input.Name) == "" {
 		return domaincatalog.WorkflowTemplate{}, fmt.Errorf("%w: key and name are required", apperrors.ErrInvalidArgument)
@@ -108,7 +155,10 @@ func (s *Service) CreateWorkflowTemplate(ctx context.Context, input domaincatalo
 	return s.repo.CreateWorkflowTemplate(ctx, input)
 }
 
-func (s *Service) UpdateWorkflowTemplate(ctx context.Context, id string, input domaincatalog.WorkflowTemplateInput) (domaincatalog.WorkflowTemplate, error) {
+func (s *Service) UpdateWorkflowTemplate(ctx context.Context, principal domainidentity.Principal, id string, input domaincatalog.WorkflowTemplateInput) (domaincatalog.WorkflowTemplate, error) {
+	if err := authorizePrincipal(principal, appaccess.PermDeliveryWorkflowTemplatesManage); err != nil {
+		return domaincatalog.WorkflowTemplate{}, err
+	}
 	input = normalizeWorkflowTemplateInput(input)
 	if strings.TrimSpace(input.Key) == "" || strings.TrimSpace(input.Name) == "" {
 		return domaincatalog.WorkflowTemplate{}, fmt.Errorf("%w: key and name are required", apperrors.ErrInvalidArgument)
@@ -120,7 +170,10 @@ func (s *Service) UpdateWorkflowTemplate(ctx context.Context, id string, input d
 	return item, normalizeRepoError(err)
 }
 
-func (s *Service) DeleteWorkflowTemplate(ctx context.Context, id string) error {
+func (s *Service) DeleteWorkflowTemplate(ctx context.Context, principal domainidentity.Principal, id string) error {
+	if err := authorizePrincipal(principal, appaccess.PermDeliveryWorkflowTemplatesManage); err != nil {
+		return err
+	}
 	return normalizeRepoError(s.repo.DeleteWorkflowTemplate(ctx, id))
 }
 
@@ -253,6 +306,13 @@ func validateWorkflowTemplateDefinition(definition map[string]any) error {
 		return validateWorkflowTemplateSteps(legacySteps)
 	}
 	return fmt.Errorf("%w: definition must contain stages", apperrors.ErrInvalidArgument)
+}
+
+func authorizePrincipal(principal domainidentity.Principal, permissionKey string) error {
+	if appaccess.HasPermission(principal.Roles, permissionKey) {
+		return nil
+	}
+	return fmt.Errorf("%w: missing permission %s", apperrors.ErrAccessDenied, permissionKey)
 }
 
 func validateWorkflowTemplateGraph(nodes []any, rawEdges any) error {

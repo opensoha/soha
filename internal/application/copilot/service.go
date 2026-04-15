@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	appaccess "github.com/kubecrux/kubecrux/internal/application/access"
 	domainalert "github.com/kubecrux/kubecrux/internal/domain/alert"
 	domainapp "github.com/kubecrux/kubecrux/internal/domain/application"
 	domainaudit "github.com/kubecrux/kubecrux/internal/domain/audit"
@@ -60,9 +61,9 @@ type ClusterReader interface {
 }
 
 type AlertReader interface {
-	Summary(context.Context) (domainalert.Summary, error)
-	ListAlerts(context.Context, domainalert.Filter) ([]domainalert.Instance, error)
-	ListChannels(context.Context) ([]domainalert.NotificationChannel, error)
+	Summary(context.Context, domainidentity.Principal) (domainalert.Summary, error)
+	ListAlerts(context.Context, domainidentity.Principal, domainalert.Filter) ([]domainalert.Instance, error)
+	ListChannels(context.Context, domainidentity.Principal) ([]domainalert.NotificationChannel, error)
 }
 
 type EventReader interface {
@@ -155,10 +156,16 @@ func (s *Service) logDebug(message string, fields ...zap.Field) {
 }
 
 func (s *Service) ListSessions(ctx context.Context, principal domainidentity.Principal) ([]domaincopilot.Session, error) {
+	if err := authorizePrincipal(principal, appaccess.PermObserveAIChatUse); err != nil {
+		return nil, err
+	}
 	return s.repo.ListSessions(ctx, principal.UserID, 20)
 }
 
 func (s *Service) CreateSession(ctx context.Context, principal domainidentity.Principal, title, locale string) (domaincopilot.Session, error) {
+	if err := authorizePrincipal(principal, appaccess.PermObserveAIChatUse); err != nil {
+		return domaincopilot.Session{}, err
+	}
 	if strings.TrimSpace(title) == "" {
 		title = localize(locale, "新的调查会话", "New Investigation")
 	}
@@ -172,11 +179,17 @@ func (s *Service) CreateSession(ctx context.Context, principal domainidentity.Pr
 	})
 }
 
-func (s *Service) ListMessages(ctx context.Context, _ domainidentity.Principal, sessionID string) ([]domaincopilot.Message, error) {
+func (s *Service) ListMessages(ctx context.Context, principal domainidentity.Principal, sessionID string) ([]domaincopilot.Message, error) {
+	if err := authorizePrincipal(principal, appaccess.PermObserveAIChatUse); err != nil {
+		return nil, err
+	}
 	return s.repo.ListMessages(ctx, sessionID, 100)
 }
 
 func (s *Service) SendMessage(ctx context.Context, principal domainidentity.Principal, sessionID, content, locale string) ([]domaincopilot.Message, error) {
+	if err := authorizePrincipal(principal, appaccess.PermObserveAIChatUse); err != nil {
+		return nil, err
+	}
 	locale = detectMessageLocale(content, locale)
 	userMessage, err := s.repo.CreateMessage(ctx, domaincopilot.Message{
 		ID:        uuid.NewString(),
@@ -189,7 +202,7 @@ func (s *Service) SendMessage(ctx context.Context, principal domainidentity.Prin
 	if err != nil {
 		return nil, err
 	}
-	reply := s.generateReply(ctx, content, locale)
+	reply := s.generateReply(ctx, principal, content, locale)
 	assistantMessage, err := s.repo.CreateMessage(ctx, domaincopilot.Message{
 		ID:        uuid.NewString(),
 		SessionID: sessionID,
@@ -204,9 +217,12 @@ func (s *Service) SendMessage(ctx context.Context, principal domainidentity.Prin
 	return []domaincopilot.Message{userMessage, assistantMessage}, nil
 }
 
-func (s *Service) Insights(ctx context.Context, locale string) ([]domaincopilot.Insight, error) {
+func (s *Service) Insights(ctx context.Context, principal domainidentity.Principal, locale string) ([]domaincopilot.Insight, error) {
+	if err := authorizePrincipal(principal, appaccess.PermObserveAIView); err != nil {
+		return nil, err
+	}
 	clusters, _ := s.clusters.List(ctx)
-	alertSummary, _ := s.alerts.Summary(ctx)
+	alertSummary, _ := s.alerts.Summary(ctx, principal)
 	builds, _ := s.builds.List(ctx, domainbuild.Filter{Limit: 5})
 	apps, _ := s.apps.List(ctx, domainapp.Filter{Limit: 200})
 
@@ -252,9 +268,9 @@ func (s *Service) Insights(ctx context.Context, locale string) ([]domaincopilot.
 	return insights, nil
 }
 
-func (s *Service) composeReply(ctx context.Context, prompt, locale string) string {
+func (s *Service) composeReply(ctx context.Context, principal domainidentity.Principal, prompt, locale string) string {
 	locale = detectMessageLocale(prompt, locale)
-	alertSummary, _ := s.alerts.Summary(ctx)
+	alertSummary, _ := s.alerts.Summary(ctx, principal)
 	clusters, _ := s.clusters.List(ctx)
 	events, _ := s.events.List(ctx, 5)
 	audits, _ := s.audits.List(ctx, domainaudit.Filter{Limit: 5})
@@ -309,13 +325,13 @@ func (s *Service) composeReply(ctx context.Context, prompt, locale string) strin
 	)
 }
 
-func (s *Service) generateReply(ctx context.Context, prompt, locale string) string {
+func (s *Service) generateReply(ctx context.Context, principal domainidentity.Principal, prompt, locale string) string {
 	if settings, err := s.resolveAISettings(ctx); err == nil && settings.Provider.Enabled && strings.TrimSpace(settings.Provider.BaseURL) != "" && strings.TrimSpace(settings.Provider.APIKey) != "" {
 		if reply, err := s.externalAIReply(ctx, settings.Provider, prompt, locale); err == nil && strings.TrimSpace(reply) != "" {
 			return strings.TrimSpace(reply)
 		}
 	}
-	return s.composeReply(ctx, prompt, locale)
+	return s.composeReply(ctx, principal, prompt, locale)
 }
 
 func (s *Service) resolveAISettings(ctx context.Context) (domainsettings.AISettings, error) {

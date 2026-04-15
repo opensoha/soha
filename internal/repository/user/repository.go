@@ -577,6 +577,18 @@ func (r *Repository) CreateUser(ctx context.Context, input domainaccess.UserInpu
 			return domainaccess.UserRecord{}, err
 		}
 	}
+	if input.RoleIDs != nil && len(input.RoleIDs) > 0 {
+		if err := insertUserRoleBindings(tx, input.ID, input.RoleIDs, now); err != nil {
+			tx.Rollback()
+			return domainaccess.UserRecord{}, err
+		}
+	}
+	if input.TeamIDs != nil && len(input.TeamIDs) > 0 {
+		if err := insertUserTeamBindings(tx, input.ID, input.TeamIDs, now); err != nil {
+			tx.Rollback()
+			return domainaccess.UserRecord{}, err
+		}
+	}
 	if err := tx.Commit().Error; err != nil {
 		return domainaccess.UserRecord{}, err
 	}
@@ -587,8 +599,8 @@ func (r *Repository) CreateUser(ctx context.Context, input domainaccess.UserInpu
 		DisplayName: input.DisplayName,
 		Status:      input.Status,
 		Tags:        append([]string(nil), input.Tags...),
-		Roles:       []string{},
-		Teams:       []string{},
+		Roles:       append([]string(nil), input.RoleIDs...),
+		Teams:       append([]string(nil), input.TeamIDs...),
 		Projects:    []string{},
 	}, nil
 }
@@ -634,6 +646,18 @@ func (r *Repository) UpdateUser(ctx context.Context, userID string, input domain
 				password_updated_at = EXCLUDED.password_updated_at,
 				updated_at = EXCLUDED.updated_at
 		`, userID, string(hash), now, now, now).Error; err != nil {
+			tx.Rollback()
+			return domainaccess.UserRecord{}, err
+		}
+	}
+	if input.RoleIDs != nil {
+		if err := replaceUserRoleBindingsTx(tx, userID, input.RoleIDs, now); err != nil {
+			tx.Rollback()
+			return domainaccess.UserRecord{}, err
+		}
+	}
+	if input.TeamIDs != nil {
+		if err := replaceUserTeamBindingsTx(tx, userID, input.TeamIDs, now); err != nil {
 			tx.Rollback()
 			return domainaccess.UserRecord{}, err
 		}
@@ -955,6 +979,26 @@ func insertUserTeamBindings(tx *gorm.DB, userID string, teamIDs []string, now ti
 		args = append(args, fmt.Sprintf("%s:%s", userID, teamID), userID, teamID, now, now)
 	}
 	return tx.Exec(builder.String(), args...).Error
+}
+
+func replaceUserRoleBindingsTx(tx *gorm.DB, userID string, roleIDs []string, now time.Time) error {
+	if err := tx.Exec(`DELETE FROM user_role_bindings WHERE user_id = ?`, userID).Error; err != nil {
+		return err
+	}
+	if len(roleIDs) == 0 {
+		return nil
+	}
+	return insertUserRoleBindings(tx, userID, roleIDs, now)
+}
+
+func replaceUserTeamBindingsTx(tx *gorm.DB, userID string, teamIDs []string, now time.Time) error {
+	if err := tx.Exec(`DELETE FROM user_team_bindings WHERE user_id = ?`, userID).Error; err != nil {
+		return err
+	}
+	if len(teamIDs) == 0 {
+		return nil
+	}
+	return insertUserTeamBindings(tx, userID, teamIDs, now)
 }
 
 func compactSortedStrings(items []string) []string {

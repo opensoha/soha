@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	appaccess "github.com/kubecrux/kubecrux/internal/application/access"
 	domainannouncement "github.com/kubecrux/kubecrux/internal/domain/announcement"
 	domainidentity "github.com/kubecrux/kubecrux/internal/domain/identity"
 	"github.com/kubecrux/kubecrux/internal/platform/apperrors"
@@ -22,14 +23,14 @@ func New(repo domainannouncement.Repository) *Service {
 }
 
 func (s *Service) List(ctx context.Context, principal domainidentity.Principal, limit int) ([]domainannouncement.Record, error) {
-	if err := ensureAdmin(principal); err != nil {
+	if err := authorizePrincipal(principal, appaccess.PermSystemAnnouncementsView); err != nil {
 		return nil, err
 	}
 	return s.repo.List(ctx, limit)
 }
 
 func (s *Service) Get(ctx context.Context, principal domainidentity.Principal, announcementID string) (domainannouncement.Record, error) {
-	if err := ensureAdmin(principal); err != nil {
+	if err := authorizePrincipal(principal, appaccess.PermSystemAnnouncementsView); err != nil {
 		return domainannouncement.Record{}, err
 	}
 	item, err := s.repo.Get(ctx, strings.TrimSpace(announcementID))
@@ -43,7 +44,7 @@ func (s *Service) Get(ctx context.Context, principal domainidentity.Principal, a
 }
 
 func (s *Service) Create(ctx context.Context, principal domainidentity.Principal, input domainannouncement.Input) (domainannouncement.Record, error) {
-	if err := ensureAdmin(principal); err != nil {
+	if err := authorizePrincipal(principal, appaccess.PermSystemAnnouncementsManage); err != nil {
 		return domainannouncement.Record{}, err
 	}
 	item, err := normalizeInput(input)
@@ -63,7 +64,7 @@ func (s *Service) Create(ctx context.Context, principal domainidentity.Principal
 }
 
 func (s *Service) Update(ctx context.Context, principal domainidentity.Principal, announcementID string, input domainannouncement.Input) (domainannouncement.Record, error) {
-	if err := ensureAdmin(principal); err != nil {
+	if err := authorizePrincipal(principal, appaccess.PermSystemAnnouncementsManage); err != nil {
 		return domainannouncement.Record{}, err
 	}
 	item, err := normalizeInput(input)
@@ -88,7 +89,7 @@ func (s *Service) Update(ctx context.Context, principal domainidentity.Principal
 }
 
 func (s *Service) Delete(ctx context.Context, principal domainidentity.Principal, announcementID string) error {
-	if err := ensureAdmin(principal); err != nil {
+	if err := authorizePrincipal(principal, appaccess.PermSystemAnnouncementsManage); err != nil {
 		return err
 	}
 	if strings.TrimSpace(announcementID) == "" {
@@ -150,11 +151,9 @@ func normalizeID(value, fallback string) string {
 	return strings.ToLower(strings.ReplaceAll(strings.ReplaceAll(fallback, " ", "-"), "_", "-"))
 }
 
-func ensureAdmin(principal domainidentity.Principal) error {
-	for _, role := range principal.Roles {
-		if role == "admin" {
-			return nil
-		}
+func authorizePrincipal(principal domainidentity.Principal, permissionKey string) error {
+	if appaccess.HasPermission(principal.Roles, permissionKey) {
+		return nil
 	}
-	return fmt.Errorf("%w: admin role required", apperrors.ErrAccessDenied)
+	return fmt.Errorf("%w: missing permission %s", apperrors.ErrAccessDenied, permissionKey)
 }

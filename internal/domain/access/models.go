@@ -160,6 +160,8 @@ type UserInput struct {
 	DisplayName string         `json:"displayName"`
 	Status      string         `json:"status"`
 	Tags        []string       `json:"tags"`
+	RoleIDs     []string       `json:"roleIds,omitempty"`
+	TeamIDs     []string       `json:"teamIds,omitempty"`
 	Preferences map[string]any `json:"preferences"`
 	Password    string         `json:"password,omitempty"`
 }
@@ -206,6 +208,18 @@ type PolicyInput struct {
 	Actions    []Action         `json:"actions"`
 	Conditions Conditions       `json:"conditions"`
 	Reason     string           `json:"reason"`
+}
+
+type VisibleMenu struct {
+	ID       string `json:"id"`
+	ParentID string `json:"parentId,omitempty"`
+	Path     string `json:"path"`
+}
+
+type PermissionSnapshot struct {
+	PermissionKeys []string      `json:"permissionKeys"`
+	VisibleMenuIDs []string      `json:"visibleMenuIds"`
+	VisibleMenus   []VisibleMenu `json:"visibleMenus"`
 }
 
 type Authorizer interface {

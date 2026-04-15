@@ -144,7 +144,7 @@ func New(ctx context.Context) (*App, error) {
 	}
 	policyEngine := policy.NewEngine()
 	accessService := appaccess.New(policyEngine, policyRepository, scopeGrantRepository, catalogRepository)
-	accessCatalogService := appaccess.NewCatalog(identityRepository, policyRepository, accessService)
+	accessCatalogService := appaccess.NewCatalog(identityRepository, policyRepository, accessService, menuService)
 	accessManagementService := appaccess.NewManagement(identityRepository, policyRepository)
 	accessConsoleService := appaccess.NewConsole(accessCatalogService, accessManagementService)
 	gitlabClient := gitlabinfra.New(cfg.GitLab)

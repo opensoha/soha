@@ -3,6 +3,7 @@ package access
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/google/uuid"
@@ -218,6 +219,8 @@ func (s *ManagementService) CreateUser(ctx context.Context, principal domainiden
 	if input.Status == "" {
 		input.Status = "active"
 	}
+	input.RoleIDs = uniqueTrimmedStrings(input.RoleIDs)
+	input.TeamIDs = uniqueTrimmedStrings(input.TeamIDs)
 	if input.Preferences == nil {
 		input.Preferences = map[string]any{}
 	}
@@ -243,6 +246,8 @@ func (s *ManagementService) UpdateUser(ctx context.Context, principal domainiden
 	if input.Status == "" {
 		input.Status = "active"
 	}
+	input.RoleIDs = uniqueTrimmedStrings(input.RoleIDs)
+	input.TeamIDs = uniqueTrimmedStrings(input.TeamIDs)
 	if input.Preferences == nil {
 		input.Preferences = map[string]any{}
 	}
@@ -292,6 +297,21 @@ func normalizeID(value string, fallback string) string {
 		return uuid.NewString()
 	}
 	return strings.ToLower(strings.ReplaceAll(strings.ReplaceAll(fallback, " ", "-"), "_", "-"))
+}
+
+func uniqueTrimmedStrings(items []string) []string {
+	if items == nil {
+		return nil
+	}
+	unique := make([]string, 0, len(items))
+	for _, item := range items {
+		value := strings.TrimSpace(item)
+		if value == "" || slices.Contains(unique, value) {
+			continue
+		}
+		unique = append(unique, value)
+	}
+	return unique
 }
 
 func normalizeWriteError(err error) error {

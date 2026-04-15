@@ -3,10 +3,12 @@ package access
 import (
 	"context"
 	"fmt"
+	"slices"
 	"time"
 
 	domainaccess "github.com/kubecrux/kubecrux/internal/domain/access"
 	domainidentity "github.com/kubecrux/kubecrux/internal/domain/identity"
+	domainmenu "github.com/kubecrux/kubecrux/internal/domain/menu"
 	"github.com/kubecrux/kubecrux/internal/platform/apperrors"
 	"github.com/kubecrux/kubecrux/internal/platform/requestctx"
 )
@@ -21,14 +23,19 @@ type PolicyReader interface {
 	ListRoles(context.Context) ([]domainaccess.RoleRecord, error)
 }
 
+type VisibleMenuReader interface {
+	ListVisible(context.Context, domainidentity.Principal) ([]domainmenu.Record, error)
+}
+
 type CatalogService struct {
 	users      UserReader
 	policies   PolicyReader
 	authorizer domainaccess.Authorizer
+	menus      VisibleMenuReader
 }
 
-func NewCatalog(users UserReader, policies PolicyReader, authorizer domainaccess.Authorizer) *CatalogService {
-	return &CatalogService{users: users, policies: policies, authorizer: authorizer}
+func NewCatalog(users UserReader, policies PolicyReader, authorizer domainaccess.Authorizer, menus VisibleMenuReader) *CatalogService {
+	return &CatalogService{users: users, policies: policies, authorizer: authorizer, menus: menus}
 }
 
 func (s *CatalogService) ListUsers(ctx context.Context, principal domainidentity.Principal) ([]domainaccess.UserRecord, error) {
@@ -57,6 +64,23 @@ func (s *CatalogService) ListPolicies(ctx context.Context, principal domainident
 		return nil, err
 	}
 	return s.policies.ListPolicies(ctx)
+}
+
+func (s *CatalogService) PermissionSnapshot(ctx context.Context, principal domainidentity.Principal) (domainaccess.PermissionSnapshot, error) {
+	snapshot := domainaccess.PermissionSnapshot{
+		PermissionKeys: PermissionKeysForRoles(principal.Roles),
+		VisibleMenuIDs: []string{},
+		VisibleMenus:   []domainaccess.VisibleMenu{},
+	}
+	if s.menus == nil {
+		return snapshot, nil
+	}
+	visibleMenus, err := s.menus.ListVisible(ctx, principal)
+	if err != nil {
+		return domainaccess.PermissionSnapshot{}, err
+	}
+	flattenVisibleMenus(visibleMenus, &snapshot)
+	return snapshot, nil
 }
 
 func (s *CatalogService) authorize(ctx context.Context, principal domainidentity.Principal, resourceName string) error {
@@ -89,4 +113,20 @@ func (s *CatalogService) authorize(ctx context.Context, principal domainidentity
 		return fmt.Errorf("%w: %s", apperrors.ErrAccessDenied, decision.Reason)
 	}
 	return nil
+}
+
+func flattenVisibleMenus(items []domainmenu.Record, snapshot *domainaccess.PermissionSnapshot) {
+	for _, item := range items {
+		if item.ID != "" && !slices.Contains(snapshot.VisibleMenuIDs, item.ID) {
+			snapshot.VisibleMenuIDs = append(snapshot.VisibleMenuIDs, item.ID)
+			snapshot.VisibleMenus = append(snapshot.VisibleMenus, domainaccess.VisibleMenu{
+				ID:       item.ID,
+				ParentID: item.ParentID,
+				Path:     item.Path,
+			})
+		}
+		if len(item.Children) > 0 {
+			flattenVisibleMenus(item.Children, snapshot)
+		}
+	}
 }

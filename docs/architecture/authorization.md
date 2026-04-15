@@ -35,6 +35,45 @@ RBAC answers one question first: does the principal's role set ever permit this 
 8. Resource service either performs the operation or returns deny
 9. Audit service records the allow or deny result
 
+## Access Management Surfaces
+
+- the console exposes `users`, `roles`, `user groups`, `policies`, and `scope grants` as the access management surface
+- user-facing `user groups` map to the persisted `teams` relation so existing policy matchers and scope grants remain stable
+- user create and update operations persist base profile fields together with role bindings and user-group bindings in the same request, so permission changes become effective on the next principal load or token refresh
+
+## Frontend Permission Projection
+
+- the frontend now consumes a permission snapshot for authenticated sessions
+- the snapshot contains role-derived `permissionKeys` and backend-filtered `visibleMenuIds`
+- route visibility must not rely on static route metadata alone; route access is determined by both required permission keys and visible menu bindings when a route is bound to a managed menu
+- page-level destructive or mutable buttons should progressively switch from unconditional rendering to either:
+  - role-derived permission keys for delivery/management surfaces
+  - backend-returned `allowedActions` for scoped platform resource rows
+
+## Observability And AI
+
+- observability APIs such as alert summary, alerts, acknowledgements, ownership assignment, notification channel management, routes, and silences must perform backend permission checks instead of relying on frontend button visibility
+- copilot APIs are split into:
+  - `observe.ai.*` for user-facing chat, root-cause runs, and inspection actions
+  - `settings.ai.*` for control-plane configuration such as data sources, analysis profiles, and automation policies
+- scheduled automation or inspection jobs may execute with a system principal internally, but interactive user requests must always be evaluated against the caller's permission keys
+
+## Delivery Management
+
+- delivery master-data APIs such as business lines, environments, application-environment bindings, workflow templates, and registry connections must enforce backend permission keys for write operations
+- workflow and release triggering are separate permissions from page visibility; a user may view release records without being allowed to trigger new workflow or release runs
+
+## Settings Center
+
+- settings routes use `settings.<domain>.view` to control page access
+- mutable operations such as saving OIDC, Prometheus, or AI provider/control-plane settings use `settings.<domain>.manage`
+- frontend forms must hide submit actions and block submit handlers when the manage permission is absent, but backend services remain the final enforcement point
+
+## System Management
+
+- system-management routes such as online users, announcements, menus, audit logs, and operation logs use `system.*.view` permissions for route access
+- mutable operations such as session revocation, announcement maintenance, and menu maintenance use dedicated `system.*.manage` permissions
+
 ## Result Structure
 
 ```json

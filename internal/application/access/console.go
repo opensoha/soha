@@ -48,6 +48,10 @@ func (s *ConsoleService) ListPolicies(ctx context.Context, principal domainident
 	return s.catalog.ListPolicies(ctx, principal)
 }
 
+func (s *ConsoleService) PermissionSnapshot(ctx context.Context, principal domainidentity.Principal) (domainaccess.PermissionSnapshot, error) {
+	return s.catalog.PermissionSnapshot(ctx, principal)
+}
+
 func (s *ConsoleService) CreateRole(ctx context.Context, principal domainidentity.Principal, input domainaccess.RoleInput) (domainaccess.RoleRecord, error) {
 	return s.management.CreateRole(ctx, principal, input)
 }

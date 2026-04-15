@@ -4,6 +4,7 @@ import { IconPlus, IconEdit, IconDelete, IconArrowRight, IconPlay, IconRefresh, 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams } from 'react-router-dom'
 import { AdminTable } from '@/components/admin-table'
+import { hasPermission, usePermissionSnapshot } from '@/features/auth/permission-snapshot'
 import { PageHeader } from '@/components/page-header'
 import { useI18n } from '@/i18n'
 import {
@@ -184,8 +185,10 @@ function summarizeLatestActivity(localeCode: 'zh_CN' | 'en_US', build?: BuildRec
 export function BusinessLinesPage() {
   const { t } = useI18n()
   const queryClient = useQueryClient()
+  const permissionSnapshotQuery = usePermissionSnapshot()
   const [modalVisible, setModalVisible] = useState(false)
   const [editing, setEditing] = useState<BusinessLine | null>(null)
+  const canManageBusinessLines = hasPermission(permissionSnapshotQuery.data?.data, 'delivery.business-lines.manage')
 
   const { data, isLoading } = useQuery({
     queryKey: ['business-lines'],
@@ -240,10 +243,13 @@ export function BusinessLinesPage() {
       dataIndex: 'id',
       render: (_: unknown, record: BusinessLine) => (
         <Space>
-          <Button icon={<IconEdit />} theme="borderless" size="small" onClick={() => { setEditing(record); setModalVisible(true) }} />
-          <Popconfirm title="确认删除？" onConfirm={() => deleteMutation.mutate(record.id)}>
-            <Button icon={<IconDelete />} theme="borderless" type="danger" size="small" />
-          </Popconfirm>
+          {canManageBusinessLines ? <Button icon={<IconEdit />} theme="borderless" size="small" onClick={() => { setEditing(record); setModalVisible(true) }} /> : null}
+          {canManageBusinessLines ? (
+            <Popconfirm title="确认删除？" onConfirm={() => deleteMutation.mutate(record.id)}>
+              <Button icon={<IconDelete />} theme="borderless" type="danger" size="small" />
+            </Popconfirm>
+          ) : null}
+          {!canManageBusinessLines ? '-' : null}
         </Space>
       ),
     },
@@ -254,7 +260,7 @@ export function BusinessLinesPage() {
       <PageHeader
         title={t('page.delivery.businessLines.title', 'Business Lines')}
         description={t('page.delivery.businessLines.desc', 'Maintain business-line master data used by applications, environment bindings, and scope grants.')}
-        actions={<Button icon={<IconPlus />} theme="solid" onClick={() => { setEditing(null); setModalVisible(true) }}>新建业务线</Button>}
+        actions={canManageBusinessLines ? <Button icon={<IconPlus />} theme="solid" onClick={() => { setEditing(null); setModalVisible(true) }}>新建业务线</Button> : null}
       />
       <AdminTable columns={columns} dataSource={data?.data ?? []} rowKey="id" loading={isLoading} />
       <Modal title={editing ? '编辑业务线' : '新建业务线'} visible={modalVisible} onCancel={() => { setModalVisible(false); setEditing(null) }} footer={null}>
@@ -293,8 +299,10 @@ export function BusinessLinesPage() {
 export function DeliveryEnvironmentsPage() {
   const { t } = useI18n()
   const queryClient = useQueryClient()
+  const permissionSnapshotQuery = usePermissionSnapshot()
   const [modalVisible, setModalVisible] = useState(false)
   const [editing, setEditing] = useState<DeliveryEnvironment | null>(null)
+  const canManageEnvironments = hasPermission(permissionSnapshotQuery.data?.data, 'delivery.environments.manage')
 
   const { data, isLoading } = useQuery({
     queryKey: ['delivery-environments'],
@@ -346,10 +354,13 @@ export function DeliveryEnvironmentsPage() {
       dataIndex: 'id',
       render: (_: unknown, record: DeliveryEnvironment) => (
         <Space>
-          <Button icon={<IconEdit />} theme="borderless" size="small" onClick={() => { setEditing(record); setModalVisible(true) }} />
-          <Popconfirm title="确认删除？" onConfirm={() => deleteMutation.mutate(record.id)}>
-            <Button icon={<IconDelete />} theme="borderless" type="danger" size="small" />
-          </Popconfirm>
+          {canManageEnvironments ? <Button icon={<IconEdit />} theme="borderless" size="small" onClick={() => { setEditing(record); setModalVisible(true) }} /> : null}
+          {canManageEnvironments ? (
+            <Popconfirm title="确认删除？" onConfirm={() => deleteMutation.mutate(record.id)}>
+              <Button icon={<IconDelete />} theme="borderless" type="danger" size="small" />
+            </Popconfirm>
+          ) : null}
+          {!canManageEnvironments ? '-' : null}
         </Space>
       ),
     },
@@ -360,7 +371,7 @@ export function DeliveryEnvironmentsPage() {
       <PageHeader
         title={t('page.delivery.environments.title', 'Environments')}
         description={t('page.delivery.environments.desc', 'Maintain delivery environment master data, including ordering, production flags, and approval requirements.')}
-        actions={<Button icon={<IconPlus />} theme="solid" onClick={() => { setEditing(null); setModalVisible(true) }}>新建环境</Button>}
+        actions={canManageEnvironments ? <Button icon={<IconPlus />} theme="solid" onClick={() => { setEditing(null); setModalVisible(true) }}>新建环境</Button> : null}
       />
       <AdminTable columns={columns} dataSource={data?.data ?? []} rowKey="id" loading={isLoading} />
       <Modal title={editing ? '编辑环境' : '新建环境'} visible={modalVisible} onCancel={() => { setModalVisible(false); setEditing(null) }} footer={null}>
@@ -394,8 +405,10 @@ export function DeliveryEnvironmentsPage() {
 export function ApplicationEnvironmentsPage() {
   const { t } = useI18n()
   const queryClient = useQueryClient()
+  const permissionSnapshotQuery = usePermissionSnapshot()
   const [modalVisible, setModalVisible] = useState(false)
   const [editing, setEditing] = useState<ApplicationEnvironment | null>(null)
+  const canManageBindings = hasPermission(permissionSnapshotQuery.data?.data, 'delivery.application-environments.manage')
 
   const bindingsQuery = useQuery({
     queryKey: ['application-environments'],
@@ -465,10 +478,13 @@ export function ApplicationEnvironmentsPage() {
       dataIndex: 'id',
       render: (_: unknown, record: ApplicationEnvironment) => (
         <Space>
-          <Button icon={<IconEdit />} theme="borderless" size="small" onClick={() => { setEditing(record); setModalVisible(true) }} />
-          <Popconfirm title="确认删除？" onConfirm={() => deleteMutation.mutate(record.id)}>
-            <Button icon={<IconDelete />} theme="borderless" type="danger" size="small" />
-          </Popconfirm>
+          {canManageBindings ? <Button icon={<IconEdit />} theme="borderless" size="small" onClick={() => { setEditing(record); setModalVisible(true) }} /> : null}
+          {canManageBindings ? (
+            <Popconfirm title="确认删除？" onConfirm={() => deleteMutation.mutate(record.id)}>
+              <Button icon={<IconDelete />} theme="borderless" type="danger" size="small" />
+            </Popconfirm>
+          ) : null}
+          {!canManageBindings ? '-' : null}
         </Space>
       ),
     },
@@ -479,7 +495,7 @@ export function ApplicationEnvironmentsPage() {
       <PageHeader
         title={t('page.delivery.bindings.title', 'Application Environment Bindings')}
         description={t('page.delivery.bindings.desc', 'Bind applications, environments, and release targets so workflows and deployments can be linked.')}
-        actions={<Button icon={<IconPlus />} theme="solid" onClick={() => { setEditing(null); setModalVisible(true) }}>新建绑定</Button>}
+        actions={canManageBindings ? <Button icon={<IconPlus />} theme="solid" onClick={() => { setEditing(null); setModalVisible(true) }}>新建绑定</Button> : null}
       />
       <AdminTable columns={columns} dataSource={bindingsQuery.data?.data ?? []} rowKey="id" loading={bindingsQuery.isLoading} />
       <Modal title={editing ? '编辑应用环境绑定' : '新建应用环境绑定'} visible={modalVisible} onCancel={() => { setModalVisible(false); setEditing(null) }} footer={null} width={760}>
@@ -659,11 +675,15 @@ export function ApplicationEnvironmentDetailPage() {
   const { applicationEnvironmentId } = useParams()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const permissionSnapshotQuery = usePermissionSnapshot()
   const [selectedTargetId, setSelectedTargetId] = useState<string>('')
   const [imageTag, setImageTag] = useState('')
   const [releaseName, setReleaseName] = useState('')
   const [containerName, setContainerName] = useState('')
   const [rollbackRevision, setRollbackRevision] = useState('')
+  const canTriggerWorkflow = hasPermission(permissionSnapshotQuery.data?.data, 'delivery.workflows.trigger')
+  const canTriggerRelease = hasPermission(permissionSnapshotQuery.data?.data, 'delivery.releases.trigger')
+  const canRollbackDeployment = hasPermission(permissionSnapshotQuery.data?.data, 'platform.deployment.rollback')
 
   const bindingQuery = useQuery({
     queryKey: ['application-environment', applicationEnvironmentId],
@@ -935,7 +955,7 @@ export function ApplicationEnvironmentDetailPage() {
               theme="solid"
               onClick={() => workflowMutation.mutate()}
               loading={workflowMutation.isPending}
-              disabled={!selectedTarget}
+              disabled={!canTriggerWorkflow || !selectedTarget}
             >
               {localeCode === 'zh_CN' ? '触发工作流' : 'Trigger Workflow'}
             </Button>
@@ -953,7 +973,7 @@ export function ApplicationEnvironmentDetailPage() {
               type="primary"
               onClick={() => releaseMutation.mutate()}
               loading={releaseMutation.isPending}
-              disabled={!selectedTarget || !selectedTargetIsDeployment}
+              disabled={!canTriggerRelease || !selectedTarget || !selectedTargetIsDeployment}
             >
               {localeCode === 'zh_CN' ? '触发发布' : 'Trigger Release'}
             </Button>
@@ -981,7 +1001,7 @@ export function ApplicationEnvironmentDetailPage() {
               type="danger"
               onClick={() => rollbackMutation.mutate()}
               loading={rollbackMutation.isPending}
-              disabled={!selectedTarget || !selectedTargetIsDeployment || !rollbackRevision}
+              disabled={!canRollbackDeployment || !selectedTarget || !selectedTargetIsDeployment || !rollbackRevision}
             >
               {localeCode === 'zh_CN' ? '回滚到所选版本' : 'Rollback to Selected Revision'}
             </Button>
@@ -1011,9 +1031,11 @@ export function ApplicationEnvironmentDetailPage() {
 export function WorkflowTemplatesPage() {
   const { t, localeCode } = useI18n()
   const queryClient = useQueryClient()
+  const permissionSnapshotQuery = usePermissionSnapshot()
   const [modalVisible, setModalVisible] = useState(false)
   const [editing, setEditing] = useState<WorkflowTemplate | null>(null)
   const [editorDefinition, setEditorDefinition] = useState<ReleaseDagDefinition>(createDefaultReleaseDagDefinition())
+  const canManageWorkflowTemplates = hasPermission(permissionSnapshotQuery.data?.data, 'delivery.workflow-templates.manage')
 
   const { data, isLoading } = useQuery({
     queryKey: ['workflow-templates'],
@@ -1077,10 +1099,13 @@ export function WorkflowTemplatesPage() {
       dataIndex: 'id',
       render: (_: unknown, record: WorkflowTemplate) => (
         <Space>
-          <Button icon={<IconEdit />} theme="borderless" size="small" onClick={() => { setEditing(record); setModalVisible(true) }} />
-          <Popconfirm title="确认删除？" onConfirm={() => deleteMutation.mutate(record.id)}>
-            <Button icon={<IconDelete />} theme="borderless" type="danger" size="small" />
-          </Popconfirm>
+          {canManageWorkflowTemplates ? <Button icon={<IconEdit />} theme="borderless" size="small" onClick={() => { setEditing(record); setModalVisible(true) }} /> : null}
+          {canManageWorkflowTemplates ? (
+            <Popconfirm title="确认删除？" onConfirm={() => deleteMutation.mutate(record.id)}>
+              <Button icon={<IconDelete />} theme="borderless" type="danger" size="small" />
+            </Popconfirm>
+          ) : null}
+          {!canManageWorkflowTemplates ? '-' : null}
         </Space>
       ),
     },
@@ -1091,7 +1116,7 @@ export function WorkflowTemplatesPage() {
       <PageHeader
         title={t('page.workflowTemplates.title', 'Release Flow Templates')}
         description={t('page.workflowTemplates.desc', 'Maintain reusable DAG-based release flow templates with the React Flow canvas, including serial, parallel, and auto-layout patterns.')}
-        actions={<Button icon={<IconPlus />} theme="solid" onClick={() => { setEditing(null); setModalVisible(true) }}>{localeCode === 'zh_CN' ? '新建模板' : 'New Template'}</Button>}
+        actions={canManageWorkflowTemplates ? <Button icon={<IconPlus />} theme="solid" onClick={() => { setEditing(null); setModalVisible(true) }}>{localeCode === 'zh_CN' ? '新建模板' : 'New Template'}</Button> : null}
       />
       <Card className="kc-scope-hint-card">
         <Text type="tertiary">

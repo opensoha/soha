@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	appaccess "github.com/kubecrux/kubecrux/internal/application/access"
 	domainidentity "github.com/kubecrux/kubecrux/internal/domain/identity"
 	domainregistry "github.com/kubecrux/kubecrux/internal/domain/registry"
 	"github.com/kubecrux/kubecrux/internal/platform/apperrors"
@@ -22,14 +23,14 @@ func New(repo domainregistry.Repository) *Service {
 }
 
 func (s *Service) List(ctx context.Context, principal domainidentity.Principal, limit int) ([]domainregistry.Connection, error) {
-	if err := ensureAdmin(principal); err != nil {
+	if err := authorizePrincipal(principal, appaccess.PermDeliveryRegistriesView); err != nil {
 		return nil, err
 	}
 	return s.repo.List(ctx, limit)
 }
 
 func (s *Service) Create(ctx context.Context, principal domainidentity.Principal, input domainregistry.Input) (domainregistry.Connection, error) {
-	if err := ensureAdmin(principal); err != nil {
+	if err := authorizePrincipal(principal, appaccess.PermDeliveryRegistriesManage); err != nil {
 		return domainregistry.Connection{}, err
 	}
 	item, err := normalizeInput(input)
@@ -44,7 +45,7 @@ func (s *Service) Create(ctx context.Context, principal domainidentity.Principal
 }
 
 func (s *Service) Update(ctx context.Context, principal domainidentity.Principal, id string, input domainregistry.Input) (domainregistry.Connection, error) {
-	if err := ensureAdmin(principal); err != nil {
+	if err := authorizePrincipal(principal, appaccess.PermDeliveryRegistriesManage); err != nil {
 		return domainregistry.Connection{}, err
 	}
 	item, err := normalizeInput(input)
@@ -63,7 +64,7 @@ func (s *Service) Update(ctx context.Context, principal domainidentity.Principal
 }
 
 func (s *Service) Delete(ctx context.Context, principal domainidentity.Principal, id string) error {
-	if err := ensureAdmin(principal); err != nil {
+	if err := authorizePrincipal(principal, appaccess.PermDeliveryRegistriesManage); err != nil {
 		return err
 	}
 	if strings.TrimSpace(id) == "" {
@@ -120,11 +121,9 @@ func normalizeID(value, fallback string) string {
 	return strings.ToLower(strings.ReplaceAll(strings.ReplaceAll(fallback, " ", "-"), "_", "-"))
 }
 
-func ensureAdmin(principal domainidentity.Principal) error {
-	for _, role := range principal.Roles {
-		if role == "admin" {
-			return nil
-		}
+func authorizePrincipal(principal domainidentity.Principal, permissionKey string) error {
+	if appaccess.HasPermission(principal.Roles, permissionKey) {
+		return nil
 	}
-	return fmt.Errorf("%w: admin role required", apperrors.ErrAccessDenied)
+	return fmt.Errorf("%w: missing permission %s", apperrors.ErrAccessDenied, permissionKey)
 }

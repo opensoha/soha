@@ -10,8 +10,10 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	appaccess "github.com/kubecrux/kubecrux/internal/application/access"
 	domainalert "github.com/kubecrux/kubecrux/internal/domain/alert"
 	domainevent "github.com/kubecrux/kubecrux/internal/domain/event"
+	domainidentity "github.com/kubecrux/kubecrux/internal/domain/identity"
 	"github.com/kubecrux/kubecrux/internal/platform/apperrors"
 )
 
@@ -60,21 +62,30 @@ func (s *Service) SetAutomation(handler AlertAutomationHandler) {
 	s.automation = handler
 }
 
-func (s *Service) Summary(ctx context.Context) (domainalert.Summary, error) {
+func (s *Service) Summary(ctx context.Context, principal domainidentity.Principal) (domainalert.Summary, error) {
+	if err := authorize(principal, appaccess.PermObserveMonitoringView); err != nil {
+		return domainalert.Summary{}, err
+	}
 	if s.repo == nil {
 		return domainalert.Summary{}, nil
 	}
 	return s.repo.Summary(ctx)
 }
 
-func (s *Service) ListAlerts(ctx context.Context, filter domainalert.Filter) ([]domainalert.Instance, error) {
+func (s *Service) ListAlerts(ctx context.Context, principal domainidentity.Principal, filter domainalert.Filter) ([]domainalert.Instance, error) {
+	if err := authorize(principal, appaccess.PermObserveAlertsView); err != nil {
+		return nil, err
+	}
 	if s.repo == nil {
 		return []domainalert.Instance{}, nil
 	}
 	return s.repo.List(ctx, filter)
 }
 
-func (s *Service) GetAlert(ctx context.Context, alertID string) (domainalert.Instance, error) {
+func (s *Service) GetAlert(ctx context.Context, principal domainidentity.Principal, alertID string) (domainalert.Instance, error) {
+	if err := authorize(principal, appaccess.PermObserveAlertsView); err != nil {
+		return domainalert.Instance{}, err
+	}
 	if s.repo == nil {
 		return domainalert.Instance{}, fmt.Errorf("%w: alert repository is not configured", apperrors.ErrInvalidArgument)
 	}
@@ -88,7 +99,10 @@ func (s *Service) GetAlert(ctx context.Context, alertID string) (domainalert.Ins
 	return item, nil
 }
 
-func (s *Service) UpdateOwnership(ctx context.Context, alertID string, input domainalert.OwnershipInput) (domainalert.Instance, error) {
+func (s *Service) UpdateOwnership(ctx context.Context, principal domainidentity.Principal, alertID string, input domainalert.OwnershipInput) (domainalert.Instance, error) {
+	if err := authorize(principal, appaccess.PermObserveAlertsAssign); err != nil {
+		return domainalert.Instance{}, err
+	}
 	if s.repo == nil {
 		return domainalert.Instance{}, fmt.Errorf("%w: alert repository is not configured", apperrors.ErrInvalidArgument)
 	}
@@ -105,7 +119,10 @@ func (s *Service) UpdateOwnership(ctx context.Context, alertID string, input dom
 	return item, nil
 }
 
-func (s *Service) Acknowledge(ctx context.Context, alertID, userID, userName string) (domainalert.Instance, error) {
+func (s *Service) Acknowledge(ctx context.Context, principal domainidentity.Principal, alertID, userID, userName string) (domainalert.Instance, error) {
+	if err := authorize(principal, appaccess.PermObserveAlertsAcknowledge); err != nil {
+		return domainalert.Instance{}, err
+	}
 	if s.repo == nil {
 		return domainalert.Instance{}, fmt.Errorf("%w: alert repository is not configured", apperrors.ErrInvalidArgument)
 	}
@@ -122,14 +139,20 @@ func (s *Service) Acknowledge(ctx context.Context, alertID, userID, userName str
 	return item, nil
 }
 
-func (s *Service) ListChannels(ctx context.Context) ([]domainalert.NotificationChannel, error) {
+func (s *Service) ListChannels(ctx context.Context, principal domainidentity.Principal) ([]domainalert.NotificationChannel, error) {
+	if err := authorize(principal, appaccess.PermObserveNotificationsView); err != nil {
+		return nil, err
+	}
 	if s.repo == nil {
 		return []domainalert.NotificationChannel{}, nil
 	}
 	return s.repo.ListChannels(ctx)
 }
 
-func (s *Service) CreateChannel(ctx context.Context, input domainalert.ChannelInput) (domainalert.NotificationChannel, error) {
+func (s *Service) CreateChannel(ctx context.Context, principal domainidentity.Principal, input domainalert.ChannelInput) (domainalert.NotificationChannel, error) {
+	if err := authorize(principal, appaccess.PermObserveNotificationsManage); err != nil {
+		return domainalert.NotificationChannel{}, err
+	}
 	if s.repo == nil {
 		return domainalert.NotificationChannel{}, fmt.Errorf("%w: alert repository is not configured", apperrors.ErrInvalidArgument)
 	}
@@ -139,7 +162,10 @@ func (s *Service) CreateChannel(ctx context.Context, input domainalert.ChannelIn
 	return s.repo.CreateChannel(ctx, input)
 }
 
-func (s *Service) UpdateChannel(ctx context.Context, channelID string, input domainalert.ChannelInput) (domainalert.NotificationChannel, error) {
+func (s *Service) UpdateChannel(ctx context.Context, principal domainidentity.Principal, channelID string, input domainalert.ChannelInput) (domainalert.NotificationChannel, error) {
+	if err := authorize(principal, appaccess.PermObserveNotificationsManage); err != nil {
+		return domainalert.NotificationChannel{}, err
+	}
 	if s.repo == nil {
 		return domainalert.NotificationChannel{}, fmt.Errorf("%w: alert repository is not configured", apperrors.ErrInvalidArgument)
 	}
@@ -159,21 +185,30 @@ func (s *Service) UpdateChannel(ctx context.Context, channelID string, input dom
 	return item, nil
 }
 
-func (s *Service) ListRoutes(ctx context.Context) ([]domainalert.AlertRoute, error) {
+func (s *Service) ListRoutes(ctx context.Context, principal domainidentity.Principal) ([]domainalert.AlertRoute, error) {
+	if err := authorize(principal, appaccess.PermObserveNotificationsView); err != nil {
+		return nil, err
+	}
 	if s.repo == nil {
 		return []domainalert.AlertRoute{}, nil
 	}
 	return s.repo.ListRoutes(ctx)
 }
 
-func (s *Service) ListSilences(ctx context.Context) ([]domainalert.AlertSilence, error) {
+func (s *Service) ListSilences(ctx context.Context, principal domainidentity.Principal) ([]domainalert.AlertSilence, error) {
+	if err := authorize(principal, appaccess.PermObserveNotificationsView); err != nil {
+		return nil, err
+	}
 	if s.repo == nil {
 		return []domainalert.AlertSilence{}, nil
 	}
 	return s.repo.ListSilences(ctx)
 }
 
-func (s *Service) CreateSilence(ctx context.Context, input domainalert.SilenceInput) (domainalert.AlertSilence, error) {
+func (s *Service) CreateSilence(ctx context.Context, principal domainidentity.Principal, input domainalert.SilenceInput) (domainalert.AlertSilence, error) {
+	if err := authorize(principal, appaccess.PermObserveNotificationsManage); err != nil {
+		return domainalert.AlertSilence{}, err
+	}
 	if s.repo == nil {
 		return domainalert.AlertSilence{}, fmt.Errorf("%w: alert repository is not configured", apperrors.ErrInvalidArgument)
 	}
@@ -183,7 +218,10 @@ func (s *Service) CreateSilence(ctx context.Context, input domainalert.SilenceIn
 	return s.repo.CreateSilence(ctx, input)
 }
 
-func (s *Service) UpdateSilence(ctx context.Context, silenceID string, input domainalert.SilenceInput) (domainalert.AlertSilence, error) {
+func (s *Service) UpdateSilence(ctx context.Context, principal domainidentity.Principal, silenceID string, input domainalert.SilenceInput) (domainalert.AlertSilence, error) {
+	if err := authorize(principal, appaccess.PermObserveNotificationsManage); err != nil {
+		return domainalert.AlertSilence{}, err
+	}
 	if s.repo == nil {
 		return domainalert.AlertSilence{}, fmt.Errorf("%w: alert repository is not configured", apperrors.ErrInvalidArgument)
 	}
@@ -203,14 +241,20 @@ func (s *Service) UpdateSilence(ctx context.Context, silenceID string, input dom
 	return item, nil
 }
 
-func (s *Service) ListDeliveryLogs(ctx context.Context, filter domainalert.DeliveryFilter) ([]domainalert.DeliveryLog, error) {
+func (s *Service) ListDeliveryLogs(ctx context.Context, principal domainidentity.Principal, filter domainalert.DeliveryFilter) ([]domainalert.DeliveryLog, error) {
+	if err := authorize(principal, appaccess.PermObserveAlertsView); err != nil {
+		return nil, err
+	}
 	if s.repo == nil {
 		return []domainalert.DeliveryLog{}, nil
 	}
 	return s.repo.ListDeliveryLogs(ctx, filter)
 }
 
-func (s *Service) CreateRoute(ctx context.Context, input domainalert.RouteInput) (domainalert.AlertRoute, error) {
+func (s *Service) CreateRoute(ctx context.Context, principal domainidentity.Principal, input domainalert.RouteInput) (domainalert.AlertRoute, error) {
+	if err := authorize(principal, appaccess.PermObserveNotificationsManage); err != nil {
+		return domainalert.AlertRoute{}, err
+	}
 	if s.repo == nil {
 		return domainalert.AlertRoute{}, fmt.Errorf("%w: alert repository is not configured", apperrors.ErrInvalidArgument)
 	}
@@ -220,7 +264,10 @@ func (s *Service) CreateRoute(ctx context.Context, input domainalert.RouteInput)
 	return s.repo.CreateRoute(ctx, input)
 }
 
-func (s *Service) UpdateRoute(ctx context.Context, routeID string, input domainalert.RouteInput) (domainalert.AlertRoute, error) {
+func (s *Service) UpdateRoute(ctx context.Context, principal domainidentity.Principal, routeID string, input domainalert.RouteInput) (domainalert.AlertRoute, error) {
+	if err := authorize(principal, appaccess.PermObserveNotificationsManage); err != nil {
+		return domainalert.AlertRoute{}, err
+	}
 	if s.repo == nil {
 		return domainalert.AlertRoute{}, fmt.Errorf("%w: alert repository is not configured", apperrors.ErrInvalidArgument)
 	}
@@ -299,6 +346,13 @@ func (s *Service) Ingest(ctx context.Context, req domainalert.IngestRequest) (in
 		}
 	}
 	return len(instances), nil
+}
+
+func authorize(principal domainidentity.Principal, permissionKey string) error {
+	if appaccess.HasPermission(principal.Roles, permissionKey) {
+		return nil
+	}
+	return fmt.Errorf("%w: missing permission %s", apperrors.ErrAccessDenied, permissionKey)
 }
 
 func validateChannelInput(input domainalert.ChannelInput) error {
