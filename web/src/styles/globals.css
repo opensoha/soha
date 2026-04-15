@@ -53,7 +53,26 @@ a {
 .kc-nav {
   height: 100%;
   background: var(--semi-color-bg-1) !important;
-  overflow: auto;
+  overflow: hidden;
+}
+
+.kc-nav .semi-navigation-inner {
+  height: 100%;
+}
+
+.kc-nav .semi-navigation-list-wrapper {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.kc-nav .semi-navigation-list {
+  padding-bottom: 12px;
+}
+
+.kc-nav .semi-navigation-footer {
+  flex: 0 0 auto;
 }
 
 .kc-brand-mark {
@@ -84,12 +103,6 @@ a {
   margin-top: 2px;
   font-size: 11px;
   font-weight: 500;
-  color: var(--semi-color-text-2);
-}
-
-.kc-sider .semi-navigation-item-group-title {
-  font-size: 12px;
-  font-weight: 600;
   color: var(--semi-color-text-2);
 }
 

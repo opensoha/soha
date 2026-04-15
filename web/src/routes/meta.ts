@@ -71,9 +71,9 @@ export const routeMeta: RouteMeta[] = [
   { id: 'operations', path: '/system/operations', title: '操作日志', description: '操作记录', icon: 'IconList', group: 'system', requiresAuth: true, tabbar: true, navVisible: true, menuId: 'operations', permissionKey: 'system.operations.view' },
 
   { id: 'settings', path: '/settings', title: '设置中心', description: '身份与 AI 配置', icon: 'IconSetting', group: 'settings', requiresAuth: true, tabbar: false, navVisible: true, menuId: 'settings' },
-  { id: 'settings-identity', path: '/settings/identity', title: '身份设置', description: 'OIDC 配置', icon: 'IconSetting', group: 'settings', requiresAuth: true, tabbar: false, navVisible: false, menuId: 'settings', permissionKey: 'settings.identity.view' },
+  { id: 'settings-identity', path: '/settings/identity', title: '身份设置', description: 'OIDC 配置', icon: 'IconSetting', group: 'settings', requiresAuth: true, tabbar: false, navVisible: false, parentId: 'settings', menuId: 'settings', permissionKey: 'settings.identity.view' },
   { id: 'settings-monitoring', path: '/settings/monitoring', title: '监控设置', description: 'Prometheus 配置', icon: 'IconSetting', group: 'settings', requiresAuth: true, tabbar: false, navVisible: false, menuId: 'settings', permissionKey: 'settings.monitoring.view' },
-  { id: 'settings-ai', path: '/settings/ai', title: 'AI 设置', description: 'AI 提供商配置', icon: 'IconSetting', group: 'settings', requiresAuth: true, tabbar: false, navVisible: false, menuId: 'settings', permissionKey: 'settings.ai.view' },
+  { id: 'settings-ai', path: '/settings/ai', title: 'AI 设置', description: 'AI 提供商配置', icon: 'IconSetting', group: 'settings', requiresAuth: true, tabbar: false, navVisible: false, parentId: 'settings', menuId: 'settings', permissionKey: 'settings.ai.view' },
 
   { id: 'login', path: '/login', title: '登录', description: '用户登录', icon: 'IconLock', group: 'auth', requiresAuth: false, tabbar: false, navVisible: false },
   { id: 'oidc-callback', path: '/auth/oidc/callback', title: 'OIDC Callback', description: 'OIDC 回调', icon: 'IconLock', group: 'auth', requiresAuth: false, tabbar: false, navVisible: false },
@@ -85,7 +85,7 @@ export function getSidebarNav(): SidebarNavItem[] {
     .filter((r) => r.navVisible)
     .map((route) => ({
       route,
-      children: routeMeta.filter((child) => child.parentId === route.id),
+      children: routeMeta.filter((child) => child.parentId === route.id && child.navVisible),
     }))
     .map((item) => ({
       ...item,

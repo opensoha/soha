@@ -72,52 +72,25 @@ const iconMap: Record<string, ReactNode> = {
   IconLock: <IconLock />,
 }
 
-const groupOrder = ['overview', 'platform', 'delivery', 'observe', 'access', 'system', 'settings']
-
 function buildNavItems(sidebarNav: SidebarNavItem[], t: (key: string, fallback?: string) => string) {
-  const grouped = new Map<string, typeof sidebarNav>()
-
-  for (const item of sidebarNav) {
-    const group = item.route.group
-    if (!grouped.has(group)) {
-      grouped.set(group, [])
-    }
-    grouped.get(group)!.push(item)
-  }
-
-  const items: any[] = []
-
-  for (const group of groupOrder) {
-    const groupItems = grouped.get(group)
-    if (!groupItems || groupItems.length === 0) continue
-
-    const navItems = groupItems.map((item) => {
-      if (item.children && item.children.length > 0) {
-        return {
-          itemKey: item.route.id,
-          text: t(`route.${item.route.id}.title`, item.route.title),
-          icon: iconMap[item.route.icon],
-          items: item.children.map((child) => ({
-            itemKey: child.id,
-            text: t(`route.${child.id}.title`, child.title),
-          })),
-        }
-      }
+  return sidebarNav.map((item) => {
+    if (item.children && item.children.length > 0) {
       return {
         itemKey: item.route.id,
         text: t(`route.${item.route.id}.title`, item.route.title),
         icon: iconMap[item.route.icon],
+        items: item.children.map((child) => ({
+          itemKey: child.id,
+          text: t(`route.${child.id}.title`, child.title),
+        })),
       }
-    })
-
-    items.push({
-      itemKey: `group-${group}`,
-      text: t(`layout.group.${group}`, group),
-      items: navItems,
-    })
-  }
-
-  return items
+    }
+    return {
+      itemKey: item.route.id,
+      text: t(`route.${item.route.id}.title`, item.route.title),
+      icon: iconMap[item.route.icon],
+    }
+  })
 }
 
 function buildItemKeyToPath(sidebarNav: SidebarNavItem[]): Record<string, string> {
@@ -157,26 +130,20 @@ export function AppLayout() {
   const parentMeta = getParentRouteMeta(currentMeta)
 
   const selectedKeys = useMemo(() => {
-    const primaryKey = (!currentMeta.navVisible && currentMeta.menuId && itemKeyToPath[currentMeta.menuId])
-      ? currentMeta.menuId
-      : currentMeta.id
-    const keys: string[] = [primaryKey]
-    if (currentMeta.parentId && currentMeta.tabbar) {
-      keys.push(currentMeta.parentId)
+    let primaryKey = currentMeta.id
+    if (!currentMeta.navVisible && parentMeta?.navVisible && itemKeyToPath[parentMeta.id]) {
+      primaryKey = parentMeta.id
+    } else if (!currentMeta.navVisible && currentMeta.menuId && itemKeyToPath[currentMeta.menuId]) {
+      primaryKey = currentMeta.menuId
     }
-    return keys
-  }, [currentMeta, itemKeyToPath])
+    return [primaryKey]
+  }, [currentMeta, itemKeyToPath, parentMeta])
 
   const openKeys = useMemo(() => {
-    const keys: string[] = [`group-${currentMeta.group}`]
-    if (currentMeta.parentId) {
-      keys.push(currentMeta.parentId)
-    } else if (!currentMeta.navVisible && currentMeta.menuId && itemKeyToPath[currentMeta.menuId]) {
-      keys.push(currentMeta.menuId)
-    } else if (currentMeta.navVisible) {
-      keys.push(currentMeta.id)
+    if (currentMeta.parentId && itemKeyToPath[currentMeta.parentId]) {
+      return [currentMeta.parentId]
     }
-    return keys
+    return []
   }, [currentMeta, itemKeyToPath])
 
   const handleNavSelect = (data: { itemKey: string; selectedKeys: string[] }) => {

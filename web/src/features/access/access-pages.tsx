@@ -1,9 +1,11 @@
 import { useMemo, useRef, useState } from 'react'
-import { Avatar, Button, Col, Form, Modal, Popconfirm, Row, Space, Tag, Toast, Typography } from '@douyinfe/semi-ui'
+import { Avatar, Button, Col, Form, Modal, Popconfirm, Row, Space, TabPane, Tabs, Tag, Toast, Typography } from '@douyinfe/semi-ui'
 import { IconDelete, IconEdit, IconPlus } from '@douyinfe/semi-icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useLocation, useNavigate } from 'react-router-dom'
 import type { ColumnProps } from '@douyinfe/semi-ui/lib/es/table'
 import { AdminTable } from '@/components/admin-table'
+import { hasPermission, usePermissionSnapshot } from '@/features/auth/permission-snapshot'
 import { PageHeader } from '@/components/page-header'
 import { StatusTag } from '@/components/status-tag'
 import { api } from '@/services/api-client'
@@ -1114,6 +1116,51 @@ export function AccessPoliciesPage() {
           <Form.TextArea field="reason" label="原因说明" rows={3} placeholder="说明该策略的意图和生效边界" />
         </Form>
       </Modal>
+    </div>
+  )
+}
+
+export function AccessCenterPage() {
+  const location = useLocation()
+  const navigate = useNavigate()
+  const permissionSnapshotQuery = usePermissionSnapshot()
+  const snapshot = permissionSnapshotQuery.data?.data
+  const tabs = [
+    { key: 'users', path: '/access/users', label: '用户', visible: hasPermission(snapshot, 'access.users.view') },
+    { key: 'roles', path: '/access/roles', label: '角色', visible: hasPermission(snapshot, 'access.roles.view') },
+    { key: 'groups', path: '/access/teams', label: '用户组', visible: hasPermission(snapshot, 'access.groups.view') },
+    { key: 'policies', path: '/access/policies', label: '策略', visible: hasPermission(snapshot, 'access.policies.view') },
+  ].filter((item) => item.visible)
+
+  const activeKey = location.pathname.startsWith('/access/roles')
+    ? 'roles'
+    : location.pathname.startsWith('/access/teams')
+      ? 'groups'
+      : location.pathname.startsWith('/access/policies')
+        ? 'policies'
+        : 'users'
+
+  return (
+    <div className="kc-page">
+      <Tabs
+        type="line"
+        activeKey={activeKey}
+        onChange={(key) => {
+          const next = tabs.find((item) => item.key === key)
+          if (next) {
+            navigate(next.path)
+          }
+        }}
+      >
+        {tabs.map((tab) => (
+          <TabPane tab={tab.label} itemKey={tab.key} key={tab.key}>
+            {tab.key === 'users' ? <AccessUsersPage /> : null}
+            {tab.key === 'roles' ? <AccessRolesPage /> : null}
+            {tab.key === 'groups' ? <AccessTeamsPage /> : null}
+            {tab.key === 'policies' ? <AccessPoliciesPage /> : null}
+          </TabPane>
+        ))}
+      </Tabs>
     </div>
   )
 }
