@@ -37,6 +37,41 @@ type PodView struct {
 	AllowedActions         []string          `json:"allowedActions,omitempty"`
 }
 
+type WorkloadOverviewNamespaceView struct {
+	Namespace      string `json:"namespace"`
+	TotalPods      int    `json:"totalPods"`
+	RunningPods    int    `json:"runningPods"`
+	AtRiskPods     int    `json:"atRiskPods"`
+	RestartingPods int    `json:"restartingPods"`
+}
+
+type WorkloadOverviewPodView struct {
+	Name            string `json:"name"`
+	Namespace       string `json:"namespace"`
+	Phase           string `json:"phase"`
+	ReadyContainers string `json:"readyContainers"`
+	Restarts        int32  `json:"restarts"`
+	NodeName        string `json:"nodeName,omitempty"`
+	AgeSeconds      int64  `json:"ageSeconds"`
+}
+
+type WorkloadOverviewView struct {
+	ClusterID          string                          `json:"clusterId"`
+	Namespace          string                          `json:"namespace,omitempty"`
+	Source             string                          `json:"source"`
+	GeneratedAt        string                          `json:"generatedAt"`
+	TotalPods          int                             `json:"totalPods"`
+	RunningPods        int                             `json:"runningPods"`
+	PendingPods        int                             `json:"pendingPods"`
+	SucceededPods      int                             `json:"succeededPods"`
+	FailedPods         int                             `json:"failedPods"`
+	UnknownPods        int                             `json:"unknownPods"`
+	RestartingPods     int                             `json:"restartingPods"`
+	AtRiskPods         int                             `json:"atRiskPods"`
+	NamespaceBreakdown []WorkloadOverviewNamespaceView `json:"namespaceBreakdown,omitempty"`
+	ProblematicPods    []WorkloadOverviewPodView       `json:"problematicPods,omitempty"`
+}
+
 type WorkloadConditionView struct {
 	Type               string `json:"type"`
 	Status             string `json:"status"`

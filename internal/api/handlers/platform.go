@@ -49,6 +49,7 @@ type ResourceService interface {
 	UpdateNode(context.Context, domainidentity.Principal, string, string, domainresource.NodeUpdateInput) (domainresource.NodeDetailView, error)
 	DeleteNode(context.Context, domainidentity.Principal, string, string) error
 	ListPods(context.Context, domainidentity.Principal, string, string) ([]domainresource.PodView, error)
+	GetWorkloadOverview(context.Context, domainidentity.Principal, string, string) (domainresource.WorkloadOverviewView, error)
 	GetPodDetail(context.Context, domainidentity.Principal, string, string, string) (domainresource.PodDetailView, error)
 	DeletePod(context.Context, domainidentity.Principal, string, string, string) error
 	GetPodLogs(context.Context, domainidentity.Principal, string, string, string, string, int64, int64, bool) (domainresource.PodLogsView, error)
@@ -349,6 +350,17 @@ func (h *PlatformHandler) ListPods(c *gin.Context) {
 		return
 	}
 	apiresponse.Items(c, http.StatusOK, items)
+}
+
+func (h *PlatformHandler) GetWorkloadOverview(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	namespace := c.Query("namespace")
+	item, err := h.resources.GetWorkloadOverview(c.Request.Context(), principal, c.Param("clusterID"), namespace)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
 }
 
 func (h *PlatformHandler) GetPodDetail(c *gin.Context) {

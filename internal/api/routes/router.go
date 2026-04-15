@@ -95,6 +95,7 @@ func New(cfg cfgpkg.Config, logger *zap.Logger, deps Dependencies) *http.Server 
 		protected.GET("/clusters/:clusterID/infrastructure/nodes/:nodeName/detail", deps.Platform.GetNodeDetail)
 		protected.PUT("/clusters/:clusterID/infrastructure/nodes/:nodeName", deps.Platform.UpdateNode)
 		protected.DELETE("/clusters/:clusterID/infrastructure/nodes/:nodeName", deps.Platform.DeleteNode)
+		protected.GET("/clusters/:clusterID/workloads/overview", deps.Platform.GetWorkloadOverview)
 		protected.GET("/clusters/:clusterID/workloads/pods", deps.Platform.ListPods)
 		protected.GET("/clusters/:clusterID/workloads/pods/:podName/detail", deps.Platform.GetPodDetail)
 		protected.DELETE("/clusters/:clusterID/workloads/pods/:podName", deps.Platform.DeletePod)

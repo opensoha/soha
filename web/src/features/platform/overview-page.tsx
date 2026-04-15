@@ -1,15 +1,18 @@
-import { Card, Spin, Empty, Typography } from '@douyinfe/semi-ui'
-import { IconServer, IconGridView, IconAlertTriangle, IconTick } from '@douyinfe/semi-icons'
+import { useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { Button, Card, Empty, Spin, Typography } from '@douyinfe/semi-ui'
+import { IconAlertTriangle, IconGridView, IconServer, IconTick } from '@douyinfe/semi-icons'
 import { useQuery } from '@tanstack/react-query'
 import { PageHeader } from '@/components/page-header'
+import { PlatformScopeToolbar } from '@/components/platform-scope-toolbar'
 import { StatGrid } from '@/components/stat-grid'
 import { StatusTag } from '@/components/status-tag'
 import { buildClusterScopedPath } from '@/features/platform/platform-scope-query'
 import { useI18n } from '@/i18n'
 import { api } from '@/services/api-client'
 import { usePlatformScopeStore } from '@/stores/platform-scope-store'
-import { formatDateTime } from '@/utils/time'
-import type { Cluster, ApiResponse } from '@/types'
+import { formatAgeSeconds, formatDateTime } from '@/utils/time'
+import type { ApiResponse, Cluster } from '@/types'
 
 const { Text } = Typography
 
@@ -24,19 +27,60 @@ interface AlertSummary {
   lastReceivedAt?: string
 }
 
-interface PodOverview {
+interface WorkloadOverviewNamespace {
+  namespace: string
+  totalPods: number
+  runningPods: number
+  atRiskPods: number
+  restartingPods: number
+}
+
+interface WorkloadOverviewPod {
   name: string
   namespace: string
   phase: string
   readyContainers: string
   restarts: number
-  nodeName: string
-  podIp?: string
+  nodeName?: string
+  ageSeconds: number
+}
+
+interface WorkloadOverview {
+  clusterId: string
+  namespace?: string
+  source: string
+  generatedAt: string
+  totalPods: number
+  runningPods: number
+  pendingPods: number
+  succeededPods: number
+  failedPods: number
+  unknownPods: number
+  restartingPods: number
+  atRiskPods: number
+  namespaceBreakdown: WorkloadOverviewNamespace[]
+  problematicPods: WorkloadOverviewPod[]
+}
+
+function buildPodDetailPath(name: string, namespace: string) {
+  const params = new URLSearchParams()
+  if (namespace) {
+    params.set('namespace', namespace)
+  }
+  const query = params.toString()
+  return query ? `/workloads/pods/${name}?${query}` : `/workloads/pods/${name}`
 }
 
 export function OverviewPage() {
-  const { t } = useI18n()
-  const preferredClusterId = usePlatformScopeStore((state) => state.clusterId)
+  const { t, localeCode } = useI18n()
+  const navigate = useNavigate()
+  const {
+    clusterId: preferredClusterId,
+    namespace,
+    setClusterId,
+    setNamespace,
+  } = usePlatformScopeStore()
+
   const clustersQuery = useQuery({
     queryKey: ['clusters'],
     queryFn: () => api.get<ApiResponse<Cluster[]>>('/clusters'),
@@ -55,9 +99,18 @@ export function OverviewPage() {
     : clusters[0]?.id
   const effectiveCluster = clusters.find((cluster) => cluster.id === effectiveClusterId)
 
-  const podsQuery = useQuery({
-    queryKey: ['overview-pods', effectiveClusterId],
-    queryFn: () => api.get<ApiResponse<PodOverview[]>>(buildClusterScopedPath(effectiveClusterId!, 'workloads/pods')),
+  useEffect(() => {
+    if (!clusters.length) return
+    if (preferredClusterId && clusters.some((cluster) => cluster.id === preferredClusterId)) return
+    setClusterId(clusters[0].id)
+  }, [clusters, preferredClusterId, setClusterId])
+
+  const workloadOverviewQuery = useQuery({
+    queryKey: ['overview-workload', effectiveClusterId, namespace],
+    queryFn: () =>
+      api.get<ApiResponse<WorkloadOverview>>(
+        buildClusterScopedPath(effectiveClusterId!, 'workloads/overview', namespace),
+      ),
     enabled: !!effectiveClusterId,
   })
 
@@ -78,22 +131,23 @@ export function OverviewPage() {
     { label: '通知渠道', value: summary?.channelCount ?? 0, icon: <IconGridView size="extra-large" /> },
   ]
 
-  const pods = podsQuery.data?.data ?? []
+  const workloadOverview = workloadOverviewQuery.data?.data
+  const scopeLabel = effectiveCluster
+    ? `${effectiveCluster.name} / ${namespace && namespace !== '' ? namespace : t('platformScope.allNamespaces', 'All namespaces')}`
+    : '-'
   const podStats = [
-    { label: 'Pod 总数', value: pods.length, icon: <IconGridView size="extra-large" /> },
-    { label: 'Running', value: pods.filter((item) => item.phase === 'Running').length, icon: <IconTick size="extra-large" /> },
-    { label: 'Pending', value: pods.filter((item) => item.phase === 'Pending').length, icon: <IconAlertTriangle size="extra-large" /> },
-    { label: '异常 Pod', value: pods.filter((item) => item.phase !== 'Running' || item.restarts > 0).length, icon: <IconAlertTriangle size="extra-large" /> },
-    { label: '发生重启', value: pods.filter((item) => item.restarts > 0).length, icon: <IconAlertTriangle size="extra-large" /> },
+    { label: localeCode === 'zh_CN' ? 'Pod 总数' : 'Pods', value: workloadOverview?.totalPods ?? 0, icon: <IconGridView size="extra-large" /> },
+    { label: 'Running', value: workloadOverview?.runningPods ?? 0, icon: <IconTick size="extra-large" /> },
+    { label: 'Pending', value: workloadOverview?.pendingPods ?? 0, icon: <IconAlertTriangle size="extra-large" /> },
+    { label: localeCode === 'zh_CN' ? '已完成' : 'Completed', value: workloadOverview?.succeededPods ?? 0, icon: <IconTick size="extra-large" /> },
+    { label: localeCode === 'zh_CN' ? '需关注 Pod' : 'At-risk Pods', value: workloadOverview?.atRiskPods ?? 0, icon: <IconAlertTriangle size="extra-large" /> },
+    { label: localeCode === 'zh_CN' ? '发生重启' : 'Restarting', value: workloadOverview?.restartingPods ?? 0, icon: <IconAlertTriangle size="extra-large" /> },
   ]
-  const problematicPods = pods
-    .filter((item) => item.phase !== 'Running' || item.restarts > 0)
-    .sort((a, b) => b.restarts - a.restarts)
-    .slice(0, 8)
 
   return (
     <div className="kc-page">
       <PageHeader title={t('page.overview.title', 'Platform Overview')} description={t('page.overview.desc', 'Inspect fleet size, cluster health, and alert pressure from one console view.')} />
+      <PlatformScopeToolbar />
 
       <StatGrid items={stats} />
 
@@ -124,17 +178,17 @@ export function OverviewPage() {
           <Empty description={t('page.overview.noClusters', 'No clusters')} />
         ) : (
           <div className="kc-list-panel">
-            {clusters.map((c) => (
-              <div key={c.id} className="kc-list-row">
+            {clusters.map((cluster) => (
+              <div key={cluster.id} className="kc-list-row">
                 <div className="kc-list-row-meta">
-                  <Text strong>{c.name}</Text>
-                  <StatusTag value={c.health?.status ?? 'unknown'} />
+                  <Text strong>{cluster.name}</Text>
+                  <StatusTag value={cluster.health?.status ?? 'unknown'} />
                 </div>
                 <div className="kc-list-row-extra">
-                  <Text type="tertiary" size="small">Region: {c.region || '-'}</Text>
-                  <Text type="tertiary" size="small">Env: {c.environment || '-'}</Text>
-                  <Text type="tertiary" size="small">Mode: {c.connectionMode || '-'}</Text>
-                  <Text type="tertiary" size="small">Version: {c.version || '-'}</Text>
+                  <Text type="tertiary" size="small">Region: {cluster.region || '-'}</Text>
+                  <Text type="tertiary" size="small">Env: {cluster.environment || '-'}</Text>
+                  <Text type="tertiary" size="small">Mode: {cluster.connectionMode || '-'}</Text>
+                  <Text type="tertiary" size="small">Version: {cluster.version || '-'}</Text>
                 </div>
               </div>
             ))}
@@ -142,36 +196,116 @@ export function OverviewPage() {
         )}
       </Card>
 
-      <Card title={effectiveCluster ? `Pod 运行态势 / ${effectiveCluster.name}` : 'Pod 运行态势'}>
+      <Card
+        title={localeCode === 'zh_CN' ? 'Pod 运行态势' : 'Pod Runtime'}
+        headerExtraContent={effectiveCluster ? (
+          <div className="flex items-center gap-3">
+            <Text type="tertiary" size="small">
+              {localeCode === 'zh_CN' ? '当前范围' : 'Scope'}: {scopeLabel}
+            </Text>
+            <Button theme="borderless" type="primary" onClick={() => navigate('/workloads/pods')}>
+              {localeCode === 'zh_CN' ? '查看 Pod 列表' : 'Open Pods'}
+            </Button>
+          </div>
+        ) : null}
+      >
         {!effectiveCluster ? (
-          <Empty description="暂无可用集群" />
-        ) : podsQuery.isLoading ? (
+          <Empty description={localeCode === 'zh_CN' ? '暂无可用集群' : 'No cluster available'} />
+        ) : workloadOverviewQuery.isLoading ? (
           <Spin size="large" />
+        ) : !workloadOverview ? (
+          <Empty description={localeCode === 'zh_CN' ? '当前范围暂无运行态势摘要' : 'No workload runtime summary for the current scope'} />
         ) : (
           <div className="kc-page-section">
             <StatGrid items={podStats} />
-            <Card className="kc-detail-card" title="异常 Pod">
-              {problematicPods.length === 0 ? (
-                <Empty description="当前集群下暂无异常 Pod" />
-              ) : (
-                <div className="kc-list-panel">
-                  {problematicPods.map((item) => (
-                    <div key={`${item.namespace}/${item.name}`} className="kc-list-row">
-                      <div className="kc-list-row-meta">
-                        <Text strong>{item.name}</Text>
-                        <StatusTag value={item.phase} />
+
+            <div className="grid gap-4 xl:grid-cols-2">
+              <Card
+                className="kc-detail-card"
+                title={
+                  namespace && namespace !== ''
+                    ? (localeCode === 'zh_CN' ? '当前命名空间摘要' : 'Namespace Snapshot')
+                    : (localeCode === 'zh_CN' ? '命名空间热点' : 'Namespace Hotspots')
+                }
+                headerExtraContent={
+                  namespace && namespace !== '' ? (
+                    <Button theme="borderless" type="primary" onClick={() => setNamespace(null)}>
+                      {localeCode === 'zh_CN' ? '查看全部命名空间' : 'All Namespaces'}
+                    </Button>
+                  ) : null
+                }
+              >
+                {workloadOverview.namespaceBreakdown.length === 0 ? (
+                  <Empty description={localeCode === 'zh_CN' ? '当前范围暂无 Pod 分布数据' : 'No namespace distribution in the current scope'} />
+                ) : (
+                  <div className="kc-list-panel">
+                    {workloadOverview.namespaceBreakdown.map((item) => (
+                      <div key={item.namespace} className="kc-list-row">
+                        <div className="kc-list-row-meta">
+                          <Text strong>{item.namespace}</Text>
+                        </div>
+                        <div className="kc-list-row-extra">
+                          <Text type="tertiary" size="small">Pods: {item.totalPods}</Text>
+                          <Text type="tertiary" size="small">Running: {item.runningPods}</Text>
+                          <Text type="tertiary" size="small">{localeCode === 'zh_CN' ? '需关注' : 'At-risk'}: {item.atRiskPods}</Text>
+                          <Text type="tertiary" size="small">{localeCode === 'zh_CN' ? '重启' : 'Restarts'}: {item.restartingPods}</Text>
+                          {namespace && namespace !== '' ? null : (
+                            <Button
+                              theme="borderless"
+                              type="primary"
+                              onClick={() => {
+                                setNamespace(item.namespace)
+                                navigate('/workloads/pods')
+                              }}
+                            >
+                              {localeCode === 'zh_CN' ? '查看 Pod' : 'Open Pods'}
+                            </Button>
+                          )}
+                        </div>
                       </div>
-                      <div className="kc-list-row-extra">
-                        <Text type="tertiary" size="small">NS: {item.namespace}</Text>
-                        <Text type="tertiary" size="small">Node: {item.nodeName || '-'}</Text>
-                        <Text type="tertiary" size="small">Ready: {item.readyContainers}</Text>
-                        <Text type="tertiary" size="small">Restarts: {item.restarts}</Text>
+                    ))}
+                  </div>
+                )}
+              </Card>
+
+              <Card
+                className="kc-detail-card"
+                title={localeCode === 'zh_CN' ? '需关注的 Pod' : 'Pods Requiring Attention'}
+                headerExtraContent={
+                  <Text type="tertiary" size="small">
+                    {localeCode === 'zh_CN' ? '更新时间' : 'Updated'}: {formatDateTime(workloadOverview.generatedAt)}
+                  </Text>
+                }
+              >
+                {workloadOverview.problematicPods.length === 0 ? (
+                  <Empty description={localeCode === 'zh_CN' ? '当前范围内没有需要关注的 Pod' : 'No pods require attention in the current scope'} />
+                ) : (
+                  <div className="kc-list-panel">
+                    {workloadOverview.problematicPods.map((item) => (
+                      <div key={`${item.namespace}/${item.name}`} className="kc-list-row">
+                        <div className="kc-list-row-meta">
+                          <Button
+                            theme="borderless"
+                            type="primary"
+                            onClick={() => navigate(buildPodDetailPath(item.name, item.namespace))}
+                          >
+                            {item.name}
+                          </Button>
+                          <StatusTag value={item.phase} />
+                        </div>
+                        <div className="kc-list-row-extra">
+                          <Text type="tertiary" size="small">NS: {item.namespace}</Text>
+                          <Text type="tertiary" size="small">Node: {item.nodeName || '-'}</Text>
+                          <Text type="tertiary" size="small">Ready: {item.readyContainers}</Text>
+                          <Text type="tertiary" size="small">Restarts: {item.restarts}</Text>
+                          <Text type="tertiary" size="small">Age: {formatAgeSeconds(item.ageSeconds)}</Text>
+                        </div>
                       </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </Card>
+                    ))}
+                  </div>
+                )}
+              </Card>
+            </div>
           </div>
         )}
       </Card>

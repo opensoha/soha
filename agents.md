@@ -308,6 +308,7 @@ The repository has already converged on these rules:
 - pod detail is now expected to be an operational workspace, not only a static detail page
 - workload list pages should support search/filter first, then batch action surfaces where backend capability already exists
 - platform overview should expose cluster-aware pod runtime cards instead of only fleet and alert counters
+- platform overview runtime cards must consume a backend workload overview aggregation endpoint and keep the active cluster/namespace scope visible; frontend should not fetch all Pod rows just to render dashboard summaries
 - service pages should evolve from plain tables to operational workspaces when selector, metrics, and event context already exist
 - page bundles may export multiple route-level pages until reuse pressure justifies further splitting
 - frontend consumes aggregated platform views only

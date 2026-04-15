@@ -255,54 +255,28 @@ func (s *Service) ListPods(ctx context.Context, principal domainidentity.Princip
 		return nil, err
 	}
 
-	var (
-		items  []domainresource.PodView
-		source string
-	)
-	switch connection.Summary.ConnectionMode {
-	case domaincluster.ConnectionModeAgent:
-		client, err := s.agentClient(connection)
-		if err != nil {
-			return nil, err
-		}
-		items, err = client.ListPods(ctx, namespace)
-		if err != nil {
-			return nil, fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
-		}
-		source = "agent"
-	default:
-		rawItems, rawSource, err := s.listDirectPods(ctx, clusterID, namespace)
-		if err != nil {
-			return nil, err
-		}
-		items = make([]domainresource.PodView, 0, len(rawItems))
-		for _, item := range rawItems {
-			items = append(items, mapPod(item, decision))
-		}
-		if shouldPopulatePodUsageSummaries(namespace) {
-			metricsCtx, metricsCancel := context.WithTimeout(ctx, 1200*time.Millisecond)
-			if metrics := s.listPodUsageSummaries(metricsCtx, clusterID, namespace, items); len(metrics) > 0 {
-				for index := range items {
-					if usage, ok := metrics[podMetricsKey(items[index].Namespace, items[index].Name)]; ok {
-						items[index].CPU = usage.CPU
-						items[index].Memory = usage.Memory
-					}
-				}
-			}
-			metricsCancel()
-		}
-		source = rawSource
+	items, source, err := s.listPodViews(ctx, clusterID, namespace, connection, decision, true)
+	if err != nil {
+		return nil, err
 	}
-	items = filterScopedNamespaceItems(items, decision, func(item domainresource.PodView) string { return item.Namespace })
-	sort.SliceStable(items, func(i, j int) bool {
-		if items[i].Name != items[j].Name {
-			return items[i].Name < items[j].Name
-		}
-		return items[i].Namespace < items[j].Namespace
-	})
 	populateAllowedActionsPods(items, decision)
 	_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, "Pod", "", string(domainaccess.ActionList), "success", fmt.Sprintf("listed pods via %s in namespace %s", source, displayNamespace(namespace)))
 	return items, nil
+}
+
+func (s *Service) GetWorkloadOverview(ctx context.Context, principal domainidentity.Principal, clusterID, namespace string) (domainresource.WorkloadOverviewView, error) {
+	connection, decision, err := s.authorize(ctx, principal, clusterID, namespace, "Pod", domainaccess.ActionList)
+	if err != nil {
+		return domainresource.WorkloadOverviewView{}, err
+	}
+
+	items, source, err := s.listPodViews(ctx, clusterID, namespace, connection, decision, false)
+	if err != nil {
+		return domainresource.WorkloadOverviewView{}, err
+	}
+	view := buildWorkloadOverview(clusterID, namespace, source, items)
+	_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, "Pod", "", string(domainaccess.ActionList), "success", fmt.Sprintf("summarized pod runtime via %s in namespace %s", source, displayNamespace(namespace)))
+	return view, nil
 }
 
 func (s *Service) GetPodDetail(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, name string) (domainresource.PodDetailView, error) {
@@ -2813,6 +2787,141 @@ func mapPod(item corev1.Pod, decision domainaccess.Decision) domainresource.PodV
 	}
 }
 
+func buildWorkloadOverview(clusterID, namespace, source string, items []domainresource.PodView) domainresource.WorkloadOverviewView {
+	view := domainresource.WorkloadOverviewView{
+		ClusterID:   clusterID,
+		Namespace:   strings.TrimSpace(namespace),
+		Source:      source,
+		GeneratedAt: time.Now().UTC().Format(time.RFC3339),
+	}
+	namespaceSummary := make(map[string]*domainresource.WorkloadOverviewNamespaceView, len(items))
+	problematicPods := make([]domainresource.WorkloadOverviewPodView, 0)
+
+	for _, item := range items {
+		view.TotalPods++
+		phase := normalizedPodPhase(item.Phase)
+		switch phase {
+		case "Running":
+			view.RunningPods++
+		case "Pending":
+			view.PendingPods++
+		case "Succeeded":
+			view.SucceededPods++
+		case "Failed":
+			view.FailedPods++
+		default:
+			view.UnknownPods++
+		}
+		if item.Restarts > 0 {
+			view.RestartingPods++
+		}
+		if podNeedsAttention(item) {
+			view.AtRiskPods++
+			problematicPods = append(problematicPods, domainresource.WorkloadOverviewPodView{
+				Name:            item.Name,
+				Namespace:       item.Namespace,
+				Phase:           phase,
+				ReadyContainers: item.ReadyContainers,
+				Restarts:        item.Restarts,
+				NodeName:        item.NodeName,
+				AgeSeconds:      item.AgeSeconds,
+			})
+		}
+
+		summary, ok := namespaceSummary[item.Namespace]
+		if !ok {
+			summary = &domainresource.WorkloadOverviewNamespaceView{Namespace: item.Namespace}
+			namespaceSummary[item.Namespace] = summary
+		}
+		summary.TotalPods++
+		if phase == "Running" {
+			summary.RunningPods++
+		}
+		if item.Restarts > 0 {
+			summary.RestartingPods++
+		}
+		if podNeedsAttention(item) {
+			summary.AtRiskPods++
+		}
+	}
+
+	view.NamespaceBreakdown = make([]domainresource.WorkloadOverviewNamespaceView, 0, len(namespaceSummary))
+	for _, item := range namespaceSummary {
+		view.NamespaceBreakdown = append(view.NamespaceBreakdown, *item)
+	}
+	sort.SliceStable(view.NamespaceBreakdown, func(i, j int) bool {
+		if view.NamespaceBreakdown[i].AtRiskPods != view.NamespaceBreakdown[j].AtRiskPods {
+			return view.NamespaceBreakdown[i].AtRiskPods > view.NamespaceBreakdown[j].AtRiskPods
+		}
+		if view.NamespaceBreakdown[i].RestartingPods != view.NamespaceBreakdown[j].RestartingPods {
+			return view.NamespaceBreakdown[i].RestartingPods > view.NamespaceBreakdown[j].RestartingPods
+		}
+		if view.NamespaceBreakdown[i].TotalPods != view.NamespaceBreakdown[j].TotalPods {
+			return view.NamespaceBreakdown[i].TotalPods > view.NamespaceBreakdown[j].TotalPods
+		}
+		return view.NamespaceBreakdown[i].Namespace < view.NamespaceBreakdown[j].Namespace
+	})
+	if len(view.NamespaceBreakdown) > 6 {
+		view.NamespaceBreakdown = view.NamespaceBreakdown[:6]
+	}
+
+	sort.SliceStable(problematicPods, func(i, j int) bool {
+		if problematicPods[i].Restarts != problematicPods[j].Restarts {
+			return problematicPods[i].Restarts > problematicPods[j].Restarts
+		}
+		if podPhaseSeverity(problematicPods[i].Phase) != podPhaseSeverity(problematicPods[j].Phase) {
+			return podPhaseSeverity(problematicPods[i].Phase) > podPhaseSeverity(problematicPods[j].Phase)
+		}
+		if problematicPods[i].AgeSeconds != problematicPods[j].AgeSeconds {
+			return problematicPods[i].AgeSeconds > problematicPods[j].AgeSeconds
+		}
+		if problematicPods[i].Namespace != problematicPods[j].Namespace {
+			return problematicPods[i].Namespace < problematicPods[j].Namespace
+		}
+		return problematicPods[i].Name < problematicPods[j].Name
+	})
+	if len(problematicPods) > 8 {
+		problematicPods = problematicPods[:8]
+	}
+	view.ProblematicPods = problematicPods
+	return view
+}
+
+func normalizedPodPhase(phase string) string {
+	trimmed := strings.TrimSpace(phase)
+	if trimmed == "" {
+		return "Unknown"
+	}
+	return trimmed
+}
+
+func podNeedsAttention(item domainresource.PodView) bool {
+	if item.Restarts > 0 {
+		return true
+	}
+	switch normalizedPodPhase(item.Phase) {
+	case "Pending", "Failed", "Unknown":
+		return true
+	default:
+		return false
+	}
+}
+
+func podPhaseSeverity(phase string) int {
+	switch normalizedPodPhase(phase) {
+	case "Failed":
+		return 4
+	case "Pending":
+		return 3
+	case "Unknown":
+		return 2
+	case "Running":
+		return 1
+	default:
+		return 0
+	}
+}
+
 func mapPodDetail(item corev1.Pod, decision domainaccess.Decision) domainresource.PodDetailView {
 	containers := make([]domainresource.WorkloadContainerView, 0, len(item.Spec.Containers))
 	statusMap := make(map[string]corev1.ContainerStatus, len(item.Status.ContainerStatuses))
@@ -3416,6 +3525,55 @@ func ownedByDeployment(owners []metav1.OwnerReference, uid types.UID) bool {
 		}
 	}
 	return false
+}
+
+func (s *Service) listPodViews(ctx context.Context, clusterID, namespace string, connection domaincluster.Connection, decision domainaccess.Decision, includeUsage bool) ([]domainresource.PodView, string, error) {
+	var (
+		items  []domainresource.PodView
+		source string
+	)
+	switch connection.Summary.ConnectionMode {
+	case domaincluster.ConnectionModeAgent:
+		client, err := s.agentClient(connection)
+		if err != nil {
+			return nil, "", err
+		}
+		items, err = client.ListPods(ctx, namespace)
+		if err != nil {
+			return nil, "", fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
+		}
+		source = "agent"
+	default:
+		rawItems, rawSource, err := s.listDirectPods(ctx, clusterID, namespace)
+		if err != nil {
+			return nil, "", err
+		}
+		items = make([]domainresource.PodView, 0, len(rawItems))
+		for _, item := range rawItems {
+			items = append(items, mapPod(item, decision))
+		}
+		if includeUsage && shouldPopulatePodUsageSummaries(namespace) {
+			metricsCtx, metricsCancel := context.WithTimeout(ctx, 1200*time.Millisecond)
+			if metrics := s.listPodUsageSummaries(metricsCtx, clusterID, namespace, items); len(metrics) > 0 {
+				for index := range items {
+					if usage, ok := metrics[podMetricsKey(items[index].Namespace, items[index].Name)]; ok {
+						items[index].CPU = usage.CPU
+						items[index].Memory = usage.Memory
+					}
+				}
+			}
+			metricsCancel()
+		}
+		source = rawSource
+	}
+	items = filterScopedNamespaceItems(items, decision, func(item domainresource.PodView) string { return item.Namespace })
+	sort.SliceStable(items, func(i, j int) bool {
+		if items[i].Name != items[j].Name {
+			return items[i].Name < items[j].Name
+		}
+		return items[i].Namespace < items[j].Namespace
+	})
+	return items, source, nil
 }
 
 func populateAllowedActionsNamespaces(items []domainresource.NamespaceView, decision domainaccess.Decision) {
