@@ -166,15 +166,21 @@ func buildTree(items []domainmenu.Record) []domainmenu.Record {
 		copyItem.Children = nil
 		nodes[item.ID] = &copyItem
 	}
-	roots := make([]domainmenu.Record, 0)
+	rootIDs := make([]string, 0)
 	for _, item := range items {
 		node := nodes[item.ID]
 		if item.ParentID == "" || nodes[item.ParentID] == nil {
-			roots = append(roots, *node)
+			rootIDs = append(rootIDs, item.ID)
 			continue
 		}
 		parent := nodes[item.ParentID]
 		parent.Children = append(parent.Children, *node)
+	}
+	roots := make([]domainmenu.Record, 0, len(rootIDs))
+	for _, rootID := range rootIDs {
+		if node := nodes[rootID]; node != nil {
+			roots = append(roots, *node)
+		}
 	}
 	for index := range roots {
 		sortChildren(&roots[index])
