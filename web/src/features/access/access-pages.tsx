@@ -1140,6 +1140,14 @@ export function AccessCenterPage() {
         ? 'policies'
         : 'users'
 
+  if (permissionSnapshotQuery.isLoading) {
+    return <div className="kc-page"><div className="flex items-center justify-center h-32">加载中...</div></div>
+  }
+
+  if (tabs.length === 0) {
+    return <div className="kc-page"><div className="text-[var(--semi-color-text-2)]">当前账号没有访问控制页面权限。</div></div>
+  }
+
   return (
     <div className="kc-page">
       <Tabs
