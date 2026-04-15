@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Outlet, useNavigate, useLocation } from 'react-router-dom'
 import {
   Layout,
@@ -143,6 +143,7 @@ export function AppLayout() {
   const setLocaleCode = usePreferencesStore((state) => state.setLocaleCode)
   const { t } = useI18n()
   const [isNavCollapsed, setIsNavCollapsed] = useState(false)
+  const [navOpenKeys, setNavOpenKeys] = useState<string[]>([])
 
   const sidebarNav = useMemo(
     () => getAccessibleSidebarNav(permissionSnapshotQuery.data?.data),
@@ -164,7 +165,7 @@ export function AppLayout() {
     return [primaryKey]
   }, [currentMeta, itemKeyToPath, parentMeta])
 
-  const openKeys = useMemo(() => {
+  const routeOpenKeys = useMemo(() => {
     if (currentMeta.parentId && itemKeyToPath[currentMeta.parentId]) {
       return [currentMeta.parentId]
     }
@@ -173,6 +174,20 @@ export function AppLayout() {
     }
     return []
   }, [currentMeta, itemKeyToPath, sidebarNav])
+
+  useEffect(() => {
+    if (isNavCollapsed) {
+      setNavOpenKeys([])
+      return
+    }
+    if (routeOpenKeys.length === 0) {
+      return
+    }
+    setNavOpenKeys((current) => {
+      const next = [...new Set([...current, ...routeOpenKeys])]
+      return next
+    })
+  }, [isNavCollapsed, routeOpenKeys])
 
   const handleNavClick = (data: { itemKey: string }) => {
     const path = itemKeyToPath[data.itemKey]
@@ -214,8 +229,9 @@ export function AppLayout() {
           style={{ height: '100%' }}
           items={navItems}
           selectedKeys={selectedKeys}
-          openKeys={openKeys}
+          openKeys={navOpenKeys}
           onClick={handleNavClick as any}
+          onOpenChange={(data) => setNavOpenKeys((data.openKeys ?? []) as string[])}
           onCollapseChange={(collapsed) => setIsNavCollapsed(Boolean(collapsed))}
           header={{
             logo: (

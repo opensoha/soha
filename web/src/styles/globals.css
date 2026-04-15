@@ -57,7 +57,18 @@ a {
 }
 
 .kc-nav .semi-navigation-inner {
+  display: flex;
+  flex-direction: column;
   height: 100%;
+  min-height: 0;
+}
+
+.kc-nav .semi-navigation-header-list-outer {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .kc-nav .semi-navigation-list-wrapper {
@@ -95,6 +106,7 @@ a {
 
 .kc-nav .semi-navigation-footer {
   flex: 0 0 auto;
+  margin-top: auto;
 }
 
 .kc-brand-mark {
