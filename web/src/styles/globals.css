@@ -71,6 +71,28 @@ a {
   padding-bottom: 12px;
 }
 
+.kc-nav-section-title {
+  display: block;
+  width: 100%;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--semi-color-text-2);
+  text-transform: none;
+}
+
+.kc-nav .semi-navigation-item-disabled:has(.kc-nav-section-title) {
+  margin-bottom: 2px;
+  padding-top: 0;
+  padding-bottom: 2px;
+  cursor: default;
+  background: transparent !important;
+}
+
+.kc-nav .semi-navigation-item-disabled:has(.kc-nav-section-title) .semi-navigation-item-inner {
+  align-items: flex-end;
+}
+
 .kc-nav .semi-navigation-footer {
   flex: 0 0 auto;
 }

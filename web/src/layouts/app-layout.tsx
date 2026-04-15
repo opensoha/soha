@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { Outlet, useNavigate, useLocation } from 'react-router-dom'
 import {
   Layout,
@@ -73,9 +73,30 @@ const iconMap: Record<string, ReactNode> = {
 }
 
 function buildNavItems(sidebarNav: SidebarNavItem[], t: (key: string, fallback?: string) => string) {
-  return sidebarNav.map((item) => {
+  const groupLabels: Record<string, string> = {
+    overview: '概览',
+    platform: '平台管理',
+    delivery: '应用交付',
+    observe: '运维智能',
+    access: '访问控制',
+    system: '系统管理',
+    settings: '设置中心',
+  }
+
+  const items: any[] = []
+  let previousGroup = ''
+
+  for (const item of sidebarNav) {
+    if (item.route.group !== previousGroup) {
+      previousGroup = item.route.group
+      items.push({
+        itemKey: `section-${item.route.group}`,
+        text: <span className="kc-nav-section-title">{groupLabels[item.route.group] || t(`layout.group.${item.route.group}`, item.route.group)}</span>,
+        disabled: true,
+      })
+    }
     if (item.children && item.children.length > 0) {
-      return {
+      items.push({
         itemKey: item.route.id,
         text: t(`route.${item.route.id}.title`, item.route.title),
         icon: iconMap[item.route.icon],
@@ -83,14 +104,17 @@ function buildNavItems(sidebarNav: SidebarNavItem[], t: (key: string, fallback?:
           itemKey: child.id,
           text: t(`route.${child.id}.title`, child.title),
         })),
-      }
+      })
+      continue
     }
-    return {
+    items.push({
       itemKey: item.route.id,
       text: t(`route.${item.route.id}.title`, item.route.title),
       icon: iconMap[item.route.icon],
-    }
-  })
+    })
+  }
+
+  return items
 }
 
 function buildItemKeyToPath(sidebarNav: SidebarNavItem[]): Record<string, string> {
@@ -118,12 +142,13 @@ export function AppLayout() {
   const localeCode = usePreferencesStore((state) => state.localeCode)
   const setLocaleCode = usePreferencesStore((state) => state.setLocaleCode)
   const { t } = useI18n()
+  const [isNavCollapsed, setIsNavCollapsed] = useState(false)
 
   const sidebarNav = useMemo(
     () => getAccessibleSidebarNav(permissionSnapshotQuery.data?.data),
     [permissionSnapshotQuery.data?.data],
   )
-  const navItems = useMemo(() => buildNavItems(sidebarNav, t), [sidebarNav, t])
+  const navItems = useMemo(() => isNavCollapsed ? buildNavItems(sidebarNav, t).filter((item) => !String(item.itemKey).startsWith('section-')) : buildNavItems(sidebarNav, t), [isNavCollapsed, sidebarNav, t])
   const itemKeyToPath = useMemo(() => buildItemKeyToPath(sidebarNav), [sidebarNav])
 
   const currentMeta = getRouteMeta(location.pathname)
@@ -143,10 +168,13 @@ export function AppLayout() {
     if (currentMeta.parentId && itemKeyToPath[currentMeta.parentId]) {
       return [currentMeta.parentId]
     }
+    if (currentMeta.navVisible && sidebarNav.some((item) => item.route.id === currentMeta.id && item.children?.length)) {
+      return [currentMeta.id]
+    }
     return []
-  }, [currentMeta, itemKeyToPath])
+  }, [currentMeta, itemKeyToPath, sidebarNav])
 
-  const handleNavSelect = (data: { itemKey: string; selectedKeys: string[] }) => {
+  const handleNavClick = (data: { itemKey: string }) => {
     const path = itemKeyToPath[data.itemKey]
     if (path) {
       navigate(path)
@@ -186,8 +214,9 @@ export function AppLayout() {
           style={{ height: '100%' }}
           items={navItems}
           selectedKeys={selectedKeys}
-          defaultOpenKeys={openKeys}
-          onSelect={handleNavSelect as any}
+          openKeys={openKeys}
+          onClick={handleNavClick as any}
+          onCollapseChange={(collapsed) => setIsNavCollapsed(Boolean(collapsed))}
           header={{
             logo: (
               <div className="kc-brand-mark">
