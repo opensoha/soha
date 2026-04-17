@@ -2,8 +2,10 @@ import type { PermissionSnapshot, RouteMeta, SidebarNavItem } from '@/types'
 
 export const routeMeta: RouteMeta[] = [
   { id: 'overview', path: '/', title: '概览', description: '平台总览', icon: 'IconDesktop', group: 'overview', requiresAuth: true, tabbar: true, navVisible: true, menuId: 'dashboard', permissionKey: 'overview.view' },
+
   { id: 'cluster-resources-nodes', path: '/cluster-resources/nodes', title: '节点', description: '节点管理', icon: 'IconServer', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, menuId: 'cluster-resources-nodes', permissionKey: 'platform.nodes.view' },
   { id: 'cluster-resources-node-detail', path: '/cluster-resources/nodes/:nodeName', title: '节点详情', description: '节点详情', icon: 'IconServer', group: 'platform', requiresAuth: true, tabbar: false, navVisible: false, parentId: 'cluster-resources-nodes' },
+
   { id: 'workloads', path: '/workloads', title: '工作负载', description: '工作负载管理', icon: 'IconGridView', group: 'platform', requiresAuth: true, tabbar: false, navVisible: true, redirectTo: '/workloads/overview', menuId: 'workloads', permissionKey: 'platform.workloads.view' },
   { id: 'workloads-overview', path: '/workloads/overview', title: 'Overview', description: '资源概览与事件', icon: 'IconGridView', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'workloads' },
   { id: 'workloads-deployments', path: '/workloads/deployments', title: 'Deployments', description: '部署管理', icon: 'IconGridView', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'workloads' },
@@ -42,15 +44,18 @@ export const routeMeta: RouteMeta[] = [
   { id: 'storage-pvc', path: '/storage/persistentvolumeclaims', title: 'PVC', description: '持久卷声明', icon: 'IconServer', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'storage' },
   { id: 'storage-pv', path: '/storage/persistentvolumes', title: 'PV', description: '持久卷', icon: 'IconServer', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'storage' },
   { id: 'storage-classes', path: '/storage/storageclasses', title: 'StorageClasses', description: '存储类', icon: 'IconServer', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'storage' },
+
   { id: 'platform-access-control', path: '/platform-access-control', title: 'RBAC', description: 'Kubernetes RBAC 资源', icon: 'IconShield', group: 'platform', requiresAuth: true, tabbar: false, navVisible: true, redirectTo: '/platform-access-control/serviceaccounts', menuId: 'platform-access-control' },
   { id: 'platform-access-control-serviceaccounts', path: '/platform-access-control/serviceaccounts', title: 'ServiceAccounts', description: '服务账户', icon: 'IconShield', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'platform-access-control' },
   { id: 'platform-access-control-clusterroles', path: '/platform-access-control/clusterroles', title: 'ClusterRoles', description: '集群角色', icon: 'IconShield', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'platform-access-control' },
   { id: 'platform-access-control-roles', path: '/platform-access-control/roles', title: 'Roles', description: '命名空间角色', icon: 'IconShield', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'platform-access-control' },
   { id: 'platform-access-control-clusterrolebindings', path: '/platform-access-control/clusterrolebindings', title: 'ClusterRoleBindings', description: '集群角色绑定', icon: 'IconShield', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'platform-access-control' },
   { id: 'platform-access-control-rolebindings', path: '/platform-access-control/rolebindings', title: 'RoleBindings', description: '命名空间角色绑定', icon: 'IconShield', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'platform-access-control' },
+
   { id: 'helm', path: '/helm', title: 'Helm', description: 'Helm 管理', icon: 'IconPuzzle', group: 'platform', requiresAuth: true, tabbar: false, navVisible: true, redirectTo: '/helm/releases', menuId: 'helm', permissionKey: 'platform.helm.view' },
   { id: 'helm-releases', path: '/helm/releases', title: 'Helm Releases', description: 'Helm 发布', icon: 'IconPuzzle', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'helm' },
   { id: 'helm-charts', path: '/helm/charts', title: 'Helm Charts', description: 'Helm 图表', icon: 'IconPuzzle', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'helm' },
+
   { id: 'extensions', path: '/extensions', title: 'CRD', description: 'CRD 管理', icon: 'IconPuzzle', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, menuId: 'extensions', permissionKey: 'platform.extensions.view' },
   { id: 'cluster-resources-namespaces', path: '/cluster-resources/namespaces', title: '命名空间', description: '命名空间管理', icon: 'IconServer', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, menuId: 'cluster-resources-namespaces', permissionKey: 'platform.namespaces.view' },
   { id: 'clusters', path: '/clusters', title: '集群管理', description: '集群生命周期管理', icon: 'IconGlobe', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, menuId: 'clusters', permissionKey: 'platform.clusters.view' },
@@ -138,6 +143,14 @@ function getVisibleMenuOrder(snapshot?: PermissionSnapshot | null) {
   return order
 }
 
+function getExplicitRouteOrder() {
+  const order = new Map<string, number>()
+  routeMeta.forEach((route, index) => {
+    order.set(route.id, index)
+  })
+  return order
+}
+
 function getRouteMenuOrder(route: RouteMeta, order: Map<string, number>) {
   return order.get(`id:${route.menuId ?? route.id}`) ?? order.get(`path:${route.path}`) ?? Number.MAX_SAFE_INTEGER
 }
@@ -193,6 +206,7 @@ export function getAccessibleSidebarNav(snapshot?: PermissionSnapshot | null): S
   const sidebarNav = getSidebarNav()
   const groupOrder = getGroupOrder(sidebarNav)
   const visibleMenuOrder = getVisibleMenuOrder(snapshot)
+  const explicitRouteOrder = getExplicitRouteOrder()
 
   return sidebarNav
     .filter((item) => canAccessRoute(item.route, snapshot))
@@ -201,6 +215,10 @@ export function getAccessibleSidebarNav(snapshot?: PermissionSnapshot | null): S
       children: item.children
         ?.filter((child) => canAccessRoute(child, snapshot))
         .sort((left, right) => {
+          const explicitCompare = (explicitRouteOrder.get(left.id) ?? Number.MAX_SAFE_INTEGER) - (explicitRouteOrder.get(right.id) ?? Number.MAX_SAFE_INTEGER)
+          if (explicitCompare !== 0) {
+            return explicitCompare
+          }
           const orderCompare = getRouteMenuOrder(left, visibleMenuOrder) - getRouteMenuOrder(right, visibleMenuOrder)
           if (orderCompare !== 0) {
             return orderCompare
@@ -212,6 +230,10 @@ export function getAccessibleSidebarNav(snapshot?: PermissionSnapshot | null): S
       const groupCompare = (groupOrder.get(left.route.group) ?? Number.MAX_SAFE_INTEGER) - (groupOrder.get(right.route.group) ?? Number.MAX_SAFE_INTEGER)
       if (groupCompare !== 0) {
         return groupCompare
+      }
+      const explicitCompare = (explicitRouteOrder.get(left.route.id) ?? Number.MAX_SAFE_INTEGER) - (explicitRouteOrder.get(right.route.id) ?? Number.MAX_SAFE_INTEGER)
+      if (explicitCompare !== 0) {
+        return explicitCompare
       }
       const orderCompare = getRouteMenuOrder(left.route, visibleMenuOrder) - getRouteMenuOrder(right.route, visibleMenuOrder)
       if (orderCompare !== 0) {

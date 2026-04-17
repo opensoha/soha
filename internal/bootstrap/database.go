@@ -231,7 +231,6 @@ func seedMenus(ctx context.Context, db *gorm.DB) error {
 		{ID: "storage-pvc", ParentID: "storage", Path: "/storage/persistentvolumeclaims", LabelZH: "PVC", LabelEN: "PVC", IconKey: "waves", Section: "observe", SortOrder: 51, Enabled: true},
 		{ID: "storage-pv", ParentID: "storage", Path: "/storage/persistentvolumes", LabelZH: "PV", LabelEN: "PV", IconKey: "waves", Section: "observe", SortOrder: 52, Enabled: true},
 		{ID: "storage-classes", ParentID: "storage", Path: "/storage/storageclasses", LabelZH: "StorageClasses", LabelEN: "StorageClasses", IconKey: "waves", Section: "observe", SortOrder: 53, Enabled: true},
-		{ID: "cluster-resources-namespaces", Path: "/cluster-resources/namespaces", LabelZH: "命名空间", LabelEN: "Namespaces", IconKey: "server", Section: "observe", SortOrder: 95, Enabled: true},
 		{ID: "clusters", Path: "/clusters", LabelZH: "集群", LabelEN: "Clusters", IconKey: "globe", Section: "observe", SortOrder: 99, Enabled: true},
 		{ID: "observability", Path: "/observability", LabelZH: "告警中心", LabelEN: "Alert Center", IconKey: "gauge", Section: "observe", SortOrder: 60, Enabled: true},
 		{ID: "monitoring", ParentID: "observability", Path: "/observability/monitoring", LabelZH: "中心概览", LabelEN: "Overview", IconKey: "gauge", Section: "observe", SortOrder: 61, Enabled: true},
