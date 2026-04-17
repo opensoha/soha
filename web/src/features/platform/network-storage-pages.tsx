@@ -61,7 +61,6 @@ function useScopedQuery<T>(resource: string) {
     services: 'network/services',
     ingresses: 'network/ingresses',
     gateways: 'network/gateways',
-    httproutes: 'network/http-routes',
     persistentvolumeclaims: 'storage/persistentvolumeclaims',
   }
 
@@ -385,41 +384,6 @@ export function NetworkGatewaysPage() {
   return (
     <div className="kc-page">
       <PageHeader title={t('page.network.gateways.title', 'Gateways')} description={t('page.network.gateways.desc', 'Review gateway entry points, gateway classes, and programmed status.')} />
-      <PlatformScopeToolbar />
-      <AdminTable columns={columns} dataSource={data?.data ?? []} rowKey="name" loading={isLoading} />
-    </div>
-  )
-}
-
-/* ─── HTTP Routes ─── */
-
-interface HttpRoute {
-  name: string
-  namespace: string
-  hostnames: string[]
-  parentRefs: string
-  createdAt: string
-}
-
-export function NetworkHttpRoutesPage() {
-  const { t } = useI18n()
-  const { data, isLoading } = useScopedQuery<HttpRoute>('httproutes')
-
-  const columns: ColumnProps<HttpRoute>[] = [
-    { title: '名称', dataIndex: 'name' },
-    { title: '命名空间', dataIndex: 'namespace' },
-    {
-      title: 'Hostnames',
-      dataIndex: 'hostnames',
-      render: (hosts: string[]) => hosts?.join(', ') ?? '-',
-    },
-    { title: 'Parent Refs', dataIndex: 'parentRefs' },
-    { title: 'Age', dataIndex: 'createdAt', render: (t: string) => formatRelativeTime(t) },
-  ]
-
-  return (
-    <div className="kc-page">
-      <PageHeader title={t('page.network.httproutes.title', 'HTTP Routes')} description={t('page.network.httproutes.desc', 'Inspect route rules, hostname matching, and parent gateway references.')} />
       <PlatformScopeToolbar />
       <AdminTable columns={columns} dataSource={data?.data ?? []} rowKey="name" loading={isLoading} />
     </div>

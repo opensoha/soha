@@ -2,6 +2,7 @@ package resource
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"sort"
@@ -16,6 +17,7 @@ import (
 	domaincluster "github.com/kubecrux/kubecrux/internal/domain/cluster"
 	domainidentity "github.com/kubecrux/kubecrux/internal/domain/identity"
 	domainresource "github.com/kubecrux/kubecrux/internal/domain/resource"
+	domainsettings "github.com/kubecrux/kubecrux/internal/domain/settings"
 	"github.com/kubecrux/kubecrux/internal/platform/apperrors"
 )
 
@@ -33,6 +35,8 @@ type nodeAggregate struct {
 	usage    resourceTotals
 	pods     []domainresource.NodePodView
 }
+
+const nodePodUsageTimeout = 1200 * time.Millisecond
 
 func (s *Service) GetNodeDetail(ctx context.Context, principal domainidentity.Principal, clusterID, nodeName string) (domainresource.NodeDetailView, error) {
 	connection, decision, err := s.authorize(ctx, principal, clusterID, "", "Node", domainaccess.ActionView)
@@ -94,7 +98,7 @@ func (s *Service) applyNodeUsageMetrics(ctx context.Context, clusterID string, i
 		rawPods = append(rawPods, corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: pod.Name, Namespace: pod.Namespace}})
 	}
 
-	values, err := s.listPodUsageValues(ctx, settings, clusterID, rawPods)
+	values, err := s.listNodePodUsageValues(ctx, settings, clusterID, rawPods)
 	item.MetricsConfigured = true
 	if err != nil {
 		item.MetricsMessage = err.Error()
@@ -155,7 +159,7 @@ func (s *Service) buildNodeDetail(ctx context.Context, clusterID string, node co
 		metricsMessage = "prometheus is not configured"
 	default:
 		metricsConfigured = true
-		values, err := s.listPodUsageValues(ctx, settings, clusterID, nodePods)
+		values, err := s.listNodePodUsageValues(ctx, settings, clusterID, nodePods)
 		if err != nil {
 			metricsMessage = err.Error()
 		} else {
@@ -186,6 +190,20 @@ func (s *Service) buildNodeDetail(ctx context.Context, clusterID string, node co
 		AllowedActions:    stringifyActions(decision.AllowedActions),
 	}
 	return item
+}
+
+func (s *Service) listNodePodUsageValues(ctx context.Context, settings domainsettings.PrometheusSettings, clusterID string, pods []corev1.Pod) (map[string]podUsageValue, error) {
+	metricsCtx, cancel := context.WithTimeout(ctx, nodePodUsageTimeout)
+	defer cancel()
+
+	values, err := s.listPodUsageValues(metricsCtx, settings, clusterID, pods)
+	if err == nil {
+		return values, nil
+	}
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(metricsCtx.Err(), context.DeadlineExceeded) {
+		return nil, fmt.Errorf("timed out while querying prometheus pod metrics")
+	}
+	return nil, err
 }
 
 func mapNodeTaints(items []corev1.Taint) []domainresource.NodeTaintView {

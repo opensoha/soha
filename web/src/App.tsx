@@ -1,21 +1,21 @@
 import { useLayoutEffect } from 'react'
 import { AppRouter } from './routes'
 import { usePreferencesStore } from './stores/preferences-store'
-import { applySemiTheme, watchSystemThemeMode } from './theme/semi-theme'
+import { applySemiTheme, DEFAULT_SEMI_THEME_ID, watchSystemThemeMode } from './theme/semi-theme'
 
 export default function App() {
-  const themeId = usePreferencesStore((state) => state.themeId)
   const themeMode = usePreferencesStore((state) => state.themeMode)
 
   useLayoutEffect(() => {
-    applySemiTheme(themeId, themeMode)
+    applySemiTheme(DEFAULT_SEMI_THEME_ID, themeMode)
+  }, [themeMode])
 
+  useLayoutEffect(() => {
     if (themeMode !== 'system') {
-      return
+      return undefined
     }
-
-    return watchSystemThemeMode(() => applySemiTheme(themeId, 'system'))
-  }, [themeId, themeMode])
+    return watchSystemThemeMode(() => applySemiTheme(DEFAULT_SEMI_THEME_ID, themeMode))
+  }, [themeMode])
 
   return <AppRouter />
 }

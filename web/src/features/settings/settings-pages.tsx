@@ -1,4 +1,4 @@
-import { Card, Form, Button, Toast, Spin, Modal, Tag, Space, Tabs, TabPane } from '@douyinfe/semi-ui'
+import { Card, Form, Button, Toast, Spin, Modal, Tag, Space, Tabs, TabPane, useFormApi, useFormState } from '@douyinfe/semi-ui'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
@@ -9,7 +9,7 @@ import { api } from '@/services/api-client'
 import { StatusTag } from '@/components/status-tag'
 import { formatDateTime } from '@/utils/time'
 import { tableColumnPresets } from '@/utils/table-columns'
-import type { ApiResponse } from '@/types'
+import type { ApiResponse, BrandingSettings } from '@/types'
 import type { ColumnProps } from '@douyinfe/semi-ui/lib/es/table'
 
 /* ─── Identity Settings (OIDC) ─── */
@@ -28,6 +28,225 @@ interface OIDCSettings {
 
 interface SettingsPageProps {
   embedded?: boolean
+}
+
+export function BrandingSettingsPage({ embedded = false }: SettingsPageProps = {}) {
+  const queryClient = useQueryClient()
+  const permissionSnapshotQuery = usePermissionSnapshot()
+  const canViewBrandingSettings = hasPermission(permissionSnapshotQuery.data?.data, 'settings.branding.view')
+  const canManageBrandingSettings = hasPermission(permissionSnapshotQuery.data?.data, 'settings.branding.manage')
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['settings-branding'],
+    queryFn: () => api.get<ApiResponse<BrandingSettings>>('/settings/branding'),
+  })
+
+  const saveMutation = useMutation({
+    mutationFn: (values: Record<string, unknown>) => api.put('/settings/branding', values),
+    onSuccess: () => {
+      Toast.success('品牌设置已保存')
+      queryClient.invalidateQueries({ queryKey: ['settings-branding'] })
+    },
+    onError: (err: Error) => Toast.error(err.message),
+  })
+
+  if (isLoading) {
+    return <div className="flex items-center justify-center h-64"><Spin size="large" /></div>
+  }
+
+  if (!canViewBrandingSettings) {
+    return (
+      <div className="kc-page">
+        <Card>当前账号没有查看品牌设置的权限。</Card>
+      </div>
+    )
+  }
+
+  const settings = data?.data
+  const content = (
+    <Card>
+      <Form
+        onSubmit={(values) => {
+          if (!canManageBrandingSettings) return
+          saveMutation.mutate(values as Record<string, unknown>)
+        }}
+        initValues={settings ?? { appTitle: 'KubeCrux', sidebarTitle: 'KubeCrux' }}
+        labelPosition="left"
+        labelWidth={160}
+      >
+        <Form.Input field="appTitle" label="网页标题" placeholder="浏览器标签页标题" />
+        <Form.Input field="sidebarTitle" label="侧边栏标题" placeholder="左侧品牌栏文字" />
+
+        <div className="kc-branding-section-title">企业 Logo</div>
+        <div className="kc-branding-upload-grid">
+          <BrandingUploadField
+            field="loginLogoUrl"
+            label="登录页面使用的图标（浅色）"
+            hint="格式: JPG/PNG/SVG，推荐大小: 200px * 60px"
+            previewWidth={200}
+            previewHeight={60}
+            disabled={!canManageBrandingSettings}
+          />
+          <BrandingUploadField
+            field="expandedLogoUrl"
+            label="登录页左上角使用的图标（深色）以及侧边栏展开后左上角使用的图标（深色）"
+            hint="格式: JPG/PNG/SVG，推荐大小: 200px * 60px"
+            previewWidth={200}
+            previewHeight={60}
+            disabled={!canManageBrandingSettings}
+          />
+          <BrandingUploadField
+            field="collapsedLogoUrl"
+            label="侧边栏收缩后左上角使用的图标"
+            hint="格式: JPG/PNG/SVG，推荐大小: 60px * 60px"
+            previewWidth={60}
+            previewHeight={60}
+            disabled={!canManageBrandingSettings}
+          />
+          <BrandingUploadField
+            field="faviconUrl"
+            label="Favicon 图标"
+            hint="格式: JPG/PNG/SVG/ICO，推荐大小: 16px*16px、32px*32px、64px*64px"
+            previewWidth={64}
+            previewHeight={64}
+            disabled={!canManageBrandingSettings}
+          />
+        </div>
+
+        <div className="kc-form-actions">
+          {canManageBrandingSettings ? <Button htmlType="submit" theme="solid" loading={saveMutation.isPending}>保存设置</Button> : null}
+        </div>
+      </Form>
+    </Card>
+  )
+
+  if (embedded) {
+    return content
+  }
+
+  return (
+    <div className="kc-page">
+      <PageHeader title="品牌设置" description="配置品牌 Logo、Favicon 与网页标题。" />
+      {content}
+    </div>
+  )
+}
+
+/* ─── Branding Upload Field Component ─── */
+
+interface BrandingUploadFieldProps {
+  field: string
+  label: string
+  hint: string
+  previewWidth: number
+  previewHeight: number
+  disabled?: boolean
+}
+
+function BrandingUploadField({ field, label, hint, previewWidth, previewHeight, disabled }: BrandingUploadFieldProps) {
+  const [uploading, setUploading] = useState(false)
+  const formApi = useFormApi()
+
+  const handleUploadClick = () => {
+    if (disabled || uploading) return
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.accept = '.jpg,.jpeg,.png,.svg,.ico,.webp'
+    input.onchange = async () => {
+      const file = input.files?.[0]
+      if (!file) return
+      if (file.size > 2 * 1024 * 1024) {
+        Toast.error('文件大小不能超过 2MB')
+        return
+      }
+      setUploading(true)
+      try {
+        const formData = new FormData()
+        formData.append('file', file)
+        const res = await api.upload<ApiResponse<{ url: string }>>('/settings/branding/upload', formData)
+        formApi.setValue(field, res.data.url)
+        Toast.success('图片上传成功')
+      } catch (err: any) {
+        Toast.error(err?.message ?? '上传失败')
+      } finally {
+        setUploading(false)
+      }
+    }
+    input.click()
+  }
+
+  const handleRemove = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    formApi.setValue(field, '')
+  }
+
+  return (
+    <div className="kc-branding-upload-zone">
+      <div className="kc-branding-upload-label">{label}</div>
+      {/* Hidden input to keep value in form state */}
+      <Form.Input field={field} noLabel style={{ display: 'none' }} />
+      <BrandingUploadArea
+        field={field}
+        label={label}
+        previewWidth={previewWidth}
+        previewHeight={previewHeight}
+        disabled={!!disabled}
+        uploading={uploading}
+        onUploadClick={handleUploadClick}
+        onRemove={handleRemove}
+      />
+      <div className="kc-branding-upload-hint">{hint}</div>
+    </div>
+  )
+}
+
+function BrandingUploadArea({
+  field, label, previewWidth, previewHeight, disabled, uploading, onUploadClick, onRemove,
+}: {
+  field: string
+  label: string
+  previewWidth: number
+  previewHeight: number
+  disabled: boolean
+  uploading: boolean
+  onUploadClick: () => void
+  onRemove: (e: React.MouseEvent) => void
+}) {
+  const formState = useFormState()
+  const currentValue = (formState?.values as Record<string, string> | undefined)?.[field] || ''
+  return (
+    <div className="kc-branding-upload-area-wrap">
+      <div
+        className={`kc-branding-upload-area ${disabled ? 'is-disabled' : ''}`}
+        style={{ width: Math.max(previewWidth + 40, 160), height: Math.max(previewHeight + 40, 100) }}
+        onClick={onUploadClick}
+      >
+        {currentValue ? (
+          <img
+            src={currentValue}
+            alt={label}
+            className="kc-branding-upload-preview"
+            style={{ maxWidth: previewWidth, maxHeight: previewHeight }}
+          />
+        ) : (
+          <div className="kc-branding-upload-placeholder">
+            {uploading ? <Spin size="middle" /> : <span className="kc-branding-upload-plus">+</span>}
+          </div>
+        )}
+      </div>
+      {currentValue && !disabled ? (
+        <Button
+          size="small"
+          type="danger"
+          theme="light"
+          className="kc-branding-upload-remove"
+          onClick={onRemove}
+        >
+          移除
+        </Button>
+      ) : null}
+    </div>
+  )
 }
 
 export function IdentitySettingsPage({ embedded = false }: SettingsPageProps = {}) {
@@ -833,7 +1052,11 @@ export function AISettingsPage({ embedded = false }: SettingsPageProps = {}) {
 export function SettingsCenterPage() {
   const location = useLocation()
   const navigate = useNavigate()
-  const activeKey = location.pathname.endsWith('/ai') ? 'ai' : 'identity'
+  const activeKey = location.pathname.endsWith('/ai')
+    ? 'ai'
+    : location.pathname.endsWith('/branding')
+      ? 'branding'
+      : 'identity'
 
   return (
     <div className="kc-page">
@@ -841,10 +1064,13 @@ export function SettingsCenterPage() {
       <Tabs
         type="line"
         activeKey={activeKey}
-        onChange={(key) => navigate(key === 'ai' ? '/settings/ai' : '/settings')}
+        onChange={(key) => navigate(key === 'ai' ? '/settings/ai' : key === 'branding' ? '/settings/branding' : '/settings')}
       >
         <TabPane tab="身份设置" itemKey="identity">
           <IdentitySettingsPage embedded />
+        </TabPane>
+        <TabPane tab="品牌设置" itemKey="branding">
+          <BrandingSettingsPage embedded />
         </TabPane>
         <TabPane tab="AI 设置" itemKey="ai">
           <AISettingsPage embedded />

@@ -364,6 +364,94 @@ func (c *Client) ListCronJobs(ctx context.Context, namespace string) ([]domainre
 	return payload.Items, nil
 }
 
+func (c *Client) ListReplicaSets(ctx context.Context, namespace string) ([]domainresource.ReplicaSetView, error) {
+	var payload struct {
+		Items []domainresource.ReplicaSetView `json:"items"`
+	}
+	path := withNamespace("/api/v1/platform/workloads/replicasets", namespace)
+	if err := c.request(ctx, http.MethodGet, path, nil, &payload); err != nil {
+		return nil, err
+	}
+	return payload.Items, nil
+}
+
+func (c *Client) ListConfigMaps(ctx context.Context, namespace string) ([]domainresource.ConfigMapView, error) {
+	var payload struct {
+		Items []domainresource.ConfigMapView `json:"items"`
+	}
+	path := withNamespace("/api/v1/platform/configuration/configmaps", namespace)
+	if err := c.request(ctx, http.MethodGet, path, nil, &payload); err != nil {
+		return nil, err
+	}
+	return payload.Items, nil
+}
+
+func (c *Client) ListSecrets(ctx context.Context, namespace string) ([]domainresource.SecretView, error) {
+	var payload struct {
+		Items []domainresource.SecretView `json:"items"`
+	}
+	path := withNamespace("/api/v1/platform/configuration/secrets", namespace)
+	if err := c.request(ctx, http.MethodGet, path, nil, &payload); err != nil {
+		return nil, err
+	}
+	return payload.Items, nil
+}
+
+func (c *Client) ListServiceAccounts(ctx context.Context, namespace string) ([]domainresource.ServiceAccountView, error) {
+	var payload struct {
+		Items []domainresource.ServiceAccountView `json:"items"`
+	}
+	path := withNamespace("/api/v1/platform/access-control/serviceaccounts", namespace)
+	if err := c.request(ctx, http.MethodGet, path, nil, &payload); err != nil {
+		return nil, err
+	}
+	return payload.Items, nil
+}
+
+func (c *Client) ListRoles(ctx context.Context, namespace string) ([]domainresource.RoleView, error) {
+	var payload struct {
+		Items []domainresource.RoleView `json:"items"`
+	}
+	path := withNamespace("/api/v1/platform/access-control/roles", namespace)
+	if err := c.request(ctx, http.MethodGet, path, nil, &payload); err != nil {
+		return nil, err
+	}
+	return payload.Items, nil
+}
+
+func (c *Client) ListRoleBindings(ctx context.Context, namespace string) ([]domainresource.RoleBindingView, error) {
+	var payload struct {
+		Items []domainresource.RoleBindingView `json:"items"`
+	}
+	path := withNamespace("/api/v1/platform/access-control/rolebindings", namespace)
+	if err := c.request(ctx, http.MethodGet, path, nil, &payload); err != nil {
+		return nil, err
+	}
+	return payload.Items, nil
+}
+
+func (c *Client) ListHorizontalPodAutoscalers(ctx context.Context, namespace string) ([]domainresource.HorizontalPodAutoscalerView, error) {
+	var payload struct {
+		Items []domainresource.HorizontalPodAutoscalerView `json:"items"`
+	}
+	path := withNamespace("/api/v1/platform/configuration/hpas", namespace)
+	if err := c.request(ctx, http.MethodGet, path, nil, &payload); err != nil {
+		return nil, err
+	}
+	return payload.Items, nil
+}
+
+func (c *Client) ListPodDisruptionBudgets(ctx context.Context, namespace string) ([]domainresource.PodDisruptionBudgetView, error) {
+	var payload struct {
+		Items []domainresource.PodDisruptionBudgetView `json:"items"`
+	}
+	path := withNamespace("/api/v1/platform/configuration/poddisruptionbudgets", namespace)
+	if err := c.request(ctx, http.MethodGet, path, nil, &payload); err != nil {
+		return nil, err
+	}
+	return payload.Items, nil
+}
+
 func (c *Client) GetCronJobDetail(ctx context.Context, namespace, name string) (domainresource.CronJobDetailView, error) {
 	var payload struct {
 		Data domainresource.CronJobDetailView `json:"data"`
@@ -429,22 +517,33 @@ func (c *Client) ListIngresses(ctx context.Context, namespace string) ([]domainr
 	return payload.Items, nil
 }
 
-func (c *Client) ListGateways(ctx context.Context, namespace string) ([]domainresource.GatewayView, error) {
+func (c *Client) ListEndpointSlices(ctx context.Context, namespace string) ([]domainresource.EndpointSliceView, error) {
 	var payload struct {
-		Items []domainresource.GatewayView `json:"items"`
+		Items []domainresource.EndpointSliceView `json:"items"`
 	}
-	path := withNamespace("/api/v1/platform/network/gateways", namespace)
+	path := withNamespace("/api/v1/platform/network/endpointslices", namespace)
 	if err := c.request(ctx, http.MethodGet, path, nil, &payload); err != nil {
 		return nil, err
 	}
 	return payload.Items, nil
 }
 
-func (c *Client) ListHTTPRoutes(ctx context.Context, namespace string) ([]domainresource.HTTPRouteView, error) {
+func (c *Client) ListNetworkPolicies(ctx context.Context, namespace string) ([]domainresource.NetworkPolicyView, error) {
 	var payload struct {
-		Items []domainresource.HTTPRouteView `json:"items"`
+		Items []domainresource.NetworkPolicyView `json:"items"`
 	}
-	path := withNamespace("/api/v1/platform/network/http-routes", namespace)
+	path := withNamespace("/api/v1/platform/network/networkpolicies", namespace)
+	if err := c.request(ctx, http.MethodGet, path, nil, &payload); err != nil {
+		return nil, err
+	}
+	return payload.Items, nil
+}
+
+func (c *Client) ListGateways(ctx context.Context, namespace string) ([]domainresource.GatewayView, error) {
+	var payload struct {
+		Items []domainresource.GatewayView `json:"items"`
+	}
+	path := withNamespace("/api/v1/platform/network/gateways", namespace)
 	if err := c.request(ctx, http.MethodGet, path, nil, &payload); err != nil {
 		return nil, err
 	}

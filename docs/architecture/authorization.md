@@ -77,7 +77,7 @@ RBAC answers one question first: does the principal's role set ever permit this 
 ## Console Navigation Notes
 
 - access control remains a first-level console entry so administrators can discover permission configuration directly from the sidebar
-- settings center is presented as a single first-level entry with tabbed identity and AI sections inside the page
+- settings center is presented as a single first-level entry with tabbed identity, branding, and AI sections inside the page
 - cluster monitoring connection details are expected to be managed with cluster configuration, not as a separate global settings-center submenu
 
 ## Result Structure

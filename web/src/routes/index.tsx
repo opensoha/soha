@@ -19,8 +19,10 @@ const OIDCCallbackPage = lazyNamed(() => import('@/features/auth/oidc-callback-p
 
 const OverviewPage = lazyNamed(() => import('@/features/platform/overview-page'), 'OverviewPage')
 const ClustersPage = lazyNamed(() => import('@/features/platform/clusters-page'), 'ClustersPage')
+const ClusterDetailPage = lazyNamed(() => import('@/features/platform/clusters-page'), 'ClusterDetailPage')
 const ClusterNodesPage = lazyNamed(() => import('@/features/platform/cluster-resources-pages'), 'ClusterNodesPage')
 const ClusterNamespacesPage = lazyNamed(() => import('@/features/platform/cluster-resources-pages'), 'ClusterNamespacesPage')
+const NodeDetailPage = lazyNamed(() => import('@/features/platform/node-detail-page'), 'NodeDetailPage')
 
 const WorkloadsOverviewPage = lazyNamed(() => import('@/features/platform/workloads-pages'), 'WorkloadsOverviewPage')
 const WorkloadsDeploymentsPage = lazyNamed(() => import('@/features/platform/workloads-pages'), 'WorkloadsDeploymentsPage')
@@ -29,6 +31,8 @@ const WorkloadsStatefulSetsPage = lazyNamed(() => import('@/features/platform/wo
 const WorkloadsDaemonSetsPage = lazyNamed(() => import('@/features/platform/workloads-pages'), 'WorkloadsDaemonSetsPage')
 const WorkloadsJobsPage = lazyNamed(() => import('@/features/platform/workloads-pages'), 'WorkloadsJobsPage')
 const WorkloadsCronJobsPage = lazyNamed(() => import('@/features/platform/workloads-pages'), 'WorkloadsCronJobsPage')
+const WorkloadsReplicaSetsPage = lazyNamed(() => import('@/features/platform/platform-management-pages'), 'WorkloadsReplicaSetsPage')
+const WorkloadsReplicationControllersPage = lazyNamed(() => import('@/features/platform/platform-management-pages'), 'WorkloadsReplicationControllersPage')
 const PodDetailPage = lazyNamed(() => import('@/features/platform/workloads-pages'), 'PodDetailPage')
 const DeploymentDetailPage = lazyNamed(() => import('@/features/platform/workloads-pages'), 'DeploymentDetailPage')
 const StatefulSetDetailPage = lazyNamed(() => import('@/features/platform/workloads-pages'), 'StatefulSetDetailPage')
@@ -36,11 +40,31 @@ const DaemonSetDetailPage = lazyNamed(() => import('@/features/platform/workload
 const JobDetailPage = lazyNamed(() => import('@/features/platform/workloads-pages'), 'JobDetailPage')
 const CronJobDetailPage = lazyNamed(() => import('@/features/platform/workloads-pages'), 'CronJobDetailPage')
 
+const ConfigurationConfigMapsPage = lazyNamed(() => import('@/features/platform/platform-management-pages'), 'ConfigurationConfigMapsPage')
+const ConfigurationSecretsPage = lazyNamed(() => import('@/features/platform/platform-management-pages'), 'ConfigurationSecretsPage')
+const ConfigurationResourceQuotasPage = lazyNamed(() => import('@/features/platform/platform-management-pages'), 'ConfigurationResourceQuotasPage')
+const ConfigurationLimitRangesPage = lazyNamed(() => import('@/features/platform/platform-management-pages'), 'ConfigurationLimitRangesPage')
+const ConfigurationHPAPage = lazyNamed(() => import('@/features/platform/platform-management-pages'), 'ConfigurationHPAPage')
+const ConfigurationPodDisruptionBudgetsPage = lazyNamed(() => import('@/features/platform/platform-management-pages'), 'ConfigurationPodDisruptionBudgetsPage')
+const ConfigurationPriorityClassesPage = lazyNamed(() => import('@/features/platform/platform-management-pages'), 'ConfigurationPriorityClassesPage')
+const ConfigurationRuntimeClassesPage = lazyNamed(() => import('@/features/platform/platform-management-pages'), 'ConfigurationRuntimeClassesPage')
+const ConfigurationLeasesPage = lazyNamed(() => import('@/features/platform/platform-management-pages'), 'ConfigurationLeasesPage')
+const ConfigurationMutatingWebhooksPage = lazyNamed(() => import('@/features/platform/platform-management-pages'), 'ConfigurationMutatingWebhooksPage')
+const ConfigurationValidatingWebhooksPage = lazyNamed(() => import('@/features/platform/platform-management-pages'), 'ConfigurationValidatingWebhooksPage')
+const PlatformAccessControlServiceAccountsPage = lazyNamed(() => import('@/features/platform/platform-management-pages'), 'PlatformAccessControlServiceAccountsPage')
+const PlatformAccessControlClusterRolesPage = lazyNamed(() => import('@/features/platform/platform-management-pages'), 'PlatformAccessControlClusterRolesPage')
+const PlatformAccessControlRolesPage = lazyNamed(() => import('@/features/platform/platform-management-pages'), 'PlatformAccessControlRolesPage')
+const PlatformAccessControlClusterRoleBindingsPage = lazyNamed(() => import('@/features/platform/platform-management-pages'), 'PlatformAccessControlClusterRoleBindingsPage')
+const PlatformAccessControlRoleBindingsPage = lazyNamed(() => import('@/features/platform/platform-management-pages'), 'PlatformAccessControlRoleBindingsPage')
+
 const NetworkServicesPage = lazyNamed(() => import('@/features/platform/network-storage-pages'), 'NetworkServicesPage')
 const ServiceDetailPage = lazyNamed(() => import('@/features/platform/network-storage-pages'), 'ServiceDetailPage')
 const NetworkIngressesPage = lazyNamed(() => import('@/features/platform/network-storage-pages'), 'NetworkIngressesPage')
 const NetworkGatewaysPage = lazyNamed(() => import('@/features/platform/network-storage-pages'), 'NetworkGatewaysPage')
-const NetworkHttpRoutesPage = lazyNamed(() => import('@/features/platform/network-storage-pages'), 'NetworkHttpRoutesPage')
+const NetworkEndpointSlicesPage = lazyNamed(() => import('@/features/platform/platform-management-pages'), 'NetworkEndpointSlicesPage')
+const NetworkIngressClassesPage = lazyNamed(() => import('@/features/platform/platform-management-pages'), 'NetworkIngressClassesPage')
+const NetworkPoliciesPage = lazyNamed(() => import('@/features/platform/platform-management-pages'), 'NetworkPoliciesPage')
+const NetworkPortForwardPage = lazyNamed(() => import('@/features/platform/platform-management-pages'), 'NetworkPortForwardPage')
 const StoragePvcPage = lazyNamed(() => import('@/features/platform/network-storage-pages'), 'StoragePvcPage')
 const StoragePvPage = lazyNamed(() => import('@/features/platform/network-storage-pages'), 'StoragePvPage')
 const StorageClassesPage = lazyNamed(() => import('@/features/platform/network-storage-pages'), 'StorageClassesPage')
@@ -100,8 +124,10 @@ export function AppRouter() {
         <Route element={<AppLayout />}>
           <Route path="/" element={<LazyPage><OverviewPage /></LazyPage>} />
           <Route path="/clusters" element={<LazyPage><ClustersPage /></LazyPage>} />
+          <Route path="/clusters/:clusterId" element={<LazyPage><ClusterDetailPage /></LazyPage>} />
           <Route path="/cluster-resources" element={<Navigate to="/cluster-resources/nodes" replace />} />
           <Route path="/cluster-resources/nodes" element={<LazyPage><ClusterNodesPage /></LazyPage>} />
+          <Route path="/cluster-resources/nodes/:nodeName" element={<LazyPage><NodeDetailPage /></LazyPage>} />
           <Route path="/cluster-resources/namespaces" element={<LazyPage><ClusterNamespacesPage /></LazyPage>} />
 
           <Route path="/workloads" element={<Navigate to="/workloads/overview" replace />} />
@@ -112,6 +138,8 @@ export function AppRouter() {
           <Route path="/workloads/daemonsets" element={<LazyPage><WorkloadsDaemonSetsPage /></LazyPage>} />
           <Route path="/workloads/jobs" element={<LazyPage><WorkloadsJobsPage /></LazyPage>} />
           <Route path="/workloads/cronjobs" element={<LazyPage><WorkloadsCronJobsPage /></LazyPage>} />
+          <Route path="/workloads/replicasets" element={<LazyPage><WorkloadsReplicaSetsPage /></LazyPage>} />
+          <Route path="/workloads/replicationcontrollers" element={<LazyPage><WorkloadsReplicationControllersPage /></LazyPage>} />
           <Route path="/workloads/pods/:podName" element={<LazyPage><PodDetailPage /></LazyPage>} />
           <Route path="/workloads/deployments/:deploymentName" element={<LazyPage><DeploymentDetailPage /></LazyPage>} />
           <Route path="/workloads/statefulsets/:statefulSetName" element={<LazyPage><StatefulSetDetailPage /></LazyPage>} />
@@ -119,12 +147,35 @@ export function AppRouter() {
           <Route path="/workloads/jobs/:jobName" element={<LazyPage><JobDetailPage /></LazyPage>} />
           <Route path="/workloads/cronjobs/:cronJobName" element={<LazyPage><CronJobDetailPage /></LazyPage>} />
 
+          <Route path="/configuration" element={<Navigate to="/configuration/configmaps" replace />} />
+          <Route path="/configuration/configmaps" element={<LazyPage><ConfigurationConfigMapsPage /></LazyPage>} />
+          <Route path="/configuration/secrets" element={<LazyPage><ConfigurationSecretsPage /></LazyPage>} />
+          <Route path="/configuration/resourcequotas" element={<LazyPage><ConfigurationResourceQuotasPage /></LazyPage>} />
+          <Route path="/configuration/limitranges" element={<LazyPage><ConfigurationLimitRangesPage /></LazyPage>} />
+          <Route path="/configuration/hpas" element={<LazyPage><ConfigurationHPAPage /></LazyPage>} />
+          <Route path="/configuration/poddisruptionbudgets" element={<LazyPage><ConfigurationPodDisruptionBudgetsPage /></LazyPage>} />
+          <Route path="/configuration/priorityclasses" element={<LazyPage><ConfigurationPriorityClassesPage /></LazyPage>} />
+          <Route path="/configuration/runtimeclasses" element={<LazyPage><ConfigurationRuntimeClassesPage /></LazyPage>} />
+          <Route path="/configuration/leases" element={<LazyPage><ConfigurationLeasesPage /></LazyPage>} />
+          <Route path="/configuration/mutatingwebhookconfigurations" element={<LazyPage><ConfigurationMutatingWebhooksPage /></LazyPage>} />
+          <Route path="/configuration/validatingwebhookconfigurations" element={<LazyPage><ConfigurationValidatingWebhooksPage /></LazyPage>} />
+
+          <Route path="/platform-access-control" element={<Navigate to="/platform-access-control/serviceaccounts" replace />} />
+          <Route path="/platform-access-control/serviceaccounts" element={<LazyPage><PlatformAccessControlServiceAccountsPage /></LazyPage>} />
+          <Route path="/platform-access-control/clusterroles" element={<LazyPage><PlatformAccessControlClusterRolesPage /></LazyPage>} />
+          <Route path="/platform-access-control/roles" element={<LazyPage><PlatformAccessControlRolesPage /></LazyPage>} />
+          <Route path="/platform-access-control/clusterrolebindings" element={<LazyPage><PlatformAccessControlClusterRoleBindingsPage /></LazyPage>} />
+          <Route path="/platform-access-control/rolebindings" element={<LazyPage><PlatformAccessControlRoleBindingsPage /></LazyPage>} />
+
           <Route path="/network" element={<Navigate to="/network/services" replace />} />
           <Route path="/network/services" element={<LazyPage><NetworkServicesPage /></LazyPage>} />
           <Route path="/network/services/:serviceName" element={<LazyPage><ServiceDetailPage /></LazyPage>} />
           <Route path="/network/ingresses" element={<LazyPage><NetworkIngressesPage /></LazyPage>} />
           <Route path="/network/gateways" element={<LazyPage><NetworkGatewaysPage /></LazyPage>} />
-          <Route path="/network/http-routes" element={<LazyPage><NetworkHttpRoutesPage /></LazyPage>} />
+          <Route path="/network/endpointslices" element={<LazyPage><NetworkEndpointSlicesPage /></LazyPage>} />
+          <Route path="/network/ingressclasses" element={<LazyPage><NetworkIngressClassesPage /></LazyPage>} />
+          <Route path="/network/networkpolicies" element={<LazyPage><NetworkPoliciesPage /></LazyPage>} />
+          <Route path="/network/port-forward" element={<LazyPage><NetworkPortForwardPage /></LazyPage>} />
 
           <Route path="/storage" element={<Navigate to="/storage/persistentvolumeclaims" replace />} />
           <Route path="/storage/persistentvolumeclaims" element={<LazyPage><StoragePvcPage /></LazyPage>} />
@@ -178,6 +229,7 @@ export function AppRouter() {
           <Route path="/settings" element={<LazyPage><SettingsCenterPage /></LazyPage>} />
           <Route path="/settings/identity" element={<LazyPage><SettingsCenterPage /></LazyPage>} />
           <Route path="/settings/monitoring" element={<Navigate to="/settings" replace />} />
+          <Route path="/settings/branding" element={<LazyPage><SettingsCenterPage /></LazyPage>} />
           <Route path="/settings/ai" element={<LazyPage><SettingsCenterPage /></LazyPage>} />
 
           <Route path="*" element={<Navigate to="/" replace />} />

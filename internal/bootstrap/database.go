@@ -72,8 +72,36 @@ type clusterCredentialSeed struct {
 	Metadata  string
 }
 
-func seedDefaults(ctx context.Context, store *dbinfra.Store, cfg cfgpkg.Config) error {
+// bootstrapSeedVersion identifies the current set of built-in seeds. When the
+// code introduces new menus/roles/policies or changes structural defaults, bump
+// this string so the next startup replays the idempotent seed helpers:
+//   - roles/policies keep using UPSERT so code changes propagate
+//   - menus/environments keep using ON CONFLICT DO NOTHING so user edits survive
+//
+// While the stored version matches this constant, the static seed block is
+// skipped entirely. Config-driven sync (admin user, clusters) runs separately
+// during startup so runtime config updates do not depend on replaying defaults.
+const bootstrapSeedVersion = "2026-04-18-2"
+
+const bootstrapSeedVersionKey = "bootstrap.seed_version"
+
+func seedDefaults(ctx context.Context, store *dbinfra.Store) error {
+	storedVersion, err := readBootstrapSeedVersion(ctx, store.DB())
+	if err != nil {
+		return err
+	}
+	if storedVersion == bootstrapSeedVersion {
+		return nil
+	}
+
 	return store.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		storedVersion, err := readBootstrapSeedVersion(ctx, tx)
+		if err != nil {
+			return err
+		}
+		if storedVersion == bootstrapSeedVersion {
+			return nil
+		}
 		if err := seedRoles(ctx, tx); err != nil {
 			return err
 		}
@@ -89,6 +117,15 @@ func seedDefaults(ctx context.Context, store *dbinfra.Store, cfg cfgpkg.Config) 
 		if err := seedWorkflowTemplates(ctx, tx); err != nil {
 			return err
 		}
+		if err := writeBootstrapSeedVersion(ctx, tx, bootstrapSeedVersion); err != nil {
+			return err
+		}
+		return nil
+	})
+}
+
+func syncBootstrapRuntime(ctx context.Context, store *dbinfra.Store, cfg cfgpkg.Config) error {
+	return store.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := seedUser(ctx, tx, cfg); err != nil {
 			return err
 		}
@@ -100,6 +137,35 @@ func seedDefaults(ctx context.Context, store *dbinfra.Store, cfg cfgpkg.Config) 
 		}
 		return nil
 	})
+}
+
+func readBootstrapSeedVersion(ctx context.Context, db *gorm.DB) (string, error) {
+	var value string
+	row := db.WithContext(ctx).Raw(
+		`SELECT value #>> '{version}' FROM app_settings WHERE setting_key = ?`,
+		bootstrapSeedVersionKey,
+	).Row()
+	if err := row.Scan(&value); err != nil {
+		if strings.Contains(err.Error(), "no rows") {
+			return "", nil
+		}
+		return "", err
+	}
+	return value, nil
+}
+
+func writeBootstrapSeedVersion(ctx context.Context, db *gorm.DB, version string) error {
+	payload, err := json.Marshal(map[string]string{"version": version})
+	if err != nil {
+		return err
+	}
+	return db.WithContext(ctx).Exec(`
+		INSERT INTO app_settings (setting_key, category, value, updated_by, created_at, updated_at)
+		VALUES (?, 'bootstrap', ?::jsonb, 'system', NOW(), NOW())
+		ON CONFLICT (setting_key) DO UPDATE SET
+			value = EXCLUDED.value,
+			updated_at = EXCLUDED.updated_at
+	`, bootstrapSeedVersionKey, string(payload)).Error
 }
 
 func pruneDemoClusters(ctx context.Context, db *gorm.DB, clusters []cfgpkg.ClusterConfig) error {
@@ -120,10 +186,53 @@ func seedMenus(ctx context.Context, db *gorm.DB) error {
 	now := time.Now().UTC()
 	items := []menuSeed{
 		{ID: "dashboard", Path: "/", LabelZH: "总览", LabelEN: "Dashboard", IconKey: "gauge", Section: "observe", SortOrder: 10, Enabled: true},
-		{ID: "clusters", Path: "/clusters", LabelZH: "集群", LabelEN: "Clusters", IconKey: "globe", Section: "observe", SortOrder: 20, Enabled: true},
-		{ID: "workloads", Path: "/workloads/deployments", LabelZH: "工作负载", LabelEN: "Workloads", IconKey: "boxes", Section: "observe", SortOrder: 30, Enabled: true},
-		{ID: "network", Path: "/network/services", LabelZH: "网络", LabelEN: "Network", IconKey: "network", Section: "observe", SortOrder: 40, Enabled: true},
-		{ID: "storage", Path: "/storage/pvcs", LabelZH: "存储", LabelEN: "Storage", IconKey: "waves", Section: "observe", SortOrder: 50, Enabled: true},
+		{ID: "cluster-resources-nodes", Path: "/cluster-resources/nodes", LabelZH: "节点", LabelEN: "Nodes", IconKey: "server", Section: "observe", SortOrder: 20, Enabled: true},
+		{ID: "extensions", Path: "/extensions", LabelZH: "CRD", LabelEN: "CRD", IconKey: "puzzle", Section: "observe", SortOrder: 90, Enabled: true},
+		{ID: "helm", Path: "/helm", LabelZH: "Helm", LabelEN: "Helm", IconKey: "puzzle", Section: "observe", SortOrder: 80, Enabled: true},
+		{ID: "helm-releases", ParentID: "helm", Path: "/helm/releases", LabelZH: "Releases", LabelEN: "Releases", IconKey: "puzzle", Section: "observe", SortOrder: 20, Enabled: true},
+		{ID: "helm-charts", ParentID: "helm", Path: "/helm/charts", LabelZH: "Charts", LabelEN: "Charts", IconKey: "puzzle", Section: "observe", SortOrder: 21, Enabled: true},
+		{ID: "platform-access-control", Path: "/platform-access-control", LabelZH: "RBAC", LabelEN: "RBAC", IconKey: "shield", Section: "observe", SortOrder: 70, Enabled: true},
+		{ID: "platform-access-control-serviceaccounts", ParentID: "platform-access-control", Path: "/platform-access-control/serviceaccounts", LabelZH: "ServiceAccounts", LabelEN: "ServiceAccounts", IconKey: "shield", Section: "observe", SortOrder: 23, Enabled: true},
+		{ID: "platform-access-control-clusterroles", ParentID: "platform-access-control", Path: "/platform-access-control/clusterroles", LabelZH: "ClusterRoles", LabelEN: "ClusterRoles", IconKey: "shield", Section: "observe", SortOrder: 24, Enabled: true},
+		{ID: "platform-access-control-roles", ParentID: "platform-access-control", Path: "/platform-access-control/roles", LabelZH: "Roles", LabelEN: "Roles", IconKey: "shield", Section: "observe", SortOrder: 25, Enabled: true},
+		{ID: "platform-access-control-clusterrolebindings", ParentID: "platform-access-control", Path: "/platform-access-control/clusterrolebindings", LabelZH: "ClusterRoleBindings", LabelEN: "ClusterRoleBindings", IconKey: "shield", Section: "observe", SortOrder: 26, Enabled: true},
+		{ID: "platform-access-control-rolebindings", ParentID: "platform-access-control", Path: "/platform-access-control/rolebindings", LabelZH: "RoleBindings", LabelEN: "RoleBindings", IconKey: "shield", Section: "observe", SortOrder: 27, Enabled: true},
+		{ID: "workloads", Path: "/workloads", LabelZH: "工作负载", LabelEN: "Workloads", IconKey: "boxes", Section: "observe", SortOrder: 30, Enabled: true},
+		{ID: "workloads-overview", ParentID: "workloads", Path: "/workloads/overview", LabelZH: "概览", LabelEN: "Overview", IconKey: "boxes", Section: "observe", SortOrder: 31, Enabled: true},
+		{ID: "workloads-deployments", ParentID: "workloads", Path: "/workloads/deployments", LabelZH: "Deployments", LabelEN: "Deployments", IconKey: "boxes", Section: "observe", SortOrder: 32, Enabled: true},
+		{ID: "workloads-pods", ParentID: "workloads", Path: "/workloads/pods", LabelZH: "Pods", LabelEN: "Pods", IconKey: "boxes", Section: "observe", SortOrder: 33, Enabled: true},
+		{ID: "workloads-statefulsets", ParentID: "workloads", Path: "/workloads/statefulsets", LabelZH: "StatefulSets", LabelEN: "StatefulSets", IconKey: "boxes", Section: "observe", SortOrder: 34, Enabled: true},
+		{ID: "workloads-daemonsets", ParentID: "workloads", Path: "/workloads/daemonsets", LabelZH: "DaemonSets", LabelEN: "DaemonSets", IconKey: "boxes", Section: "observe", SortOrder: 35, Enabled: true},
+		{ID: "workloads-jobs", ParentID: "workloads", Path: "/workloads/jobs", LabelZH: "Jobs", LabelEN: "Jobs", IconKey: "boxes", Section: "observe", SortOrder: 36, Enabled: true},
+		{ID: "workloads-cronjobs", ParentID: "workloads", Path: "/workloads/cronjobs", LabelZH: "CronJobs", LabelEN: "CronJobs", IconKey: "boxes", Section: "observe", SortOrder: 37, Enabled: true},
+		{ID: "workloads-replicasets", ParentID: "workloads", Path: "/workloads/replicasets", LabelZH: "ReplicaSets", LabelEN: "ReplicaSets", IconKey: "boxes", Section: "observe", SortOrder: 38, Enabled: true},
+		{ID: "workloads-replicationcontrollers", ParentID: "workloads", Path: "/workloads/replicationcontrollers", LabelZH: "ReplicationControllers", LabelEN: "ReplicationControllers", IconKey: "boxes", Section: "observe", SortOrder: 39, Enabled: true},
+		{ID: "configuration", Path: "/configuration", LabelZH: "配置", LabelEN: "Configuration", IconKey: "cog", Section: "observe", SortOrder: 40, Enabled: true},
+		{ID: "configuration-configmaps", ParentID: "configuration", Path: "/configuration/configmaps", LabelZH: "ConfigMaps", LabelEN: "ConfigMaps", IconKey: "cog", Section: "observe", SortOrder: 41, Enabled: true},
+		{ID: "configuration-secrets", ParentID: "configuration", Path: "/configuration/secrets", LabelZH: "Secrets", LabelEN: "Secrets", IconKey: "cog", Section: "observe", SortOrder: 42, Enabled: true},
+		{ID: "configuration-resourcequotas", ParentID: "configuration", Path: "/configuration/resourcequotas", LabelZH: "ResourceQuotas", LabelEN: "ResourceQuotas", IconKey: "cog", Section: "observe", SortOrder: 43, Enabled: true},
+		{ID: "configuration-limitranges", ParentID: "configuration", Path: "/configuration/limitranges", LabelZH: "LimitRanges", LabelEN: "LimitRanges", IconKey: "cog", Section: "observe", SortOrder: 44, Enabled: true},
+		{ID: "configuration-hpas", ParentID: "configuration", Path: "/configuration/hpas", LabelZH: "HorizontalPodAutoscalers", LabelEN: "HorizontalPodAutoscalers", IconKey: "cog", Section: "observe", SortOrder: 45, Enabled: true},
+		{ID: "configuration-poddisruptionbudgets", ParentID: "configuration", Path: "/configuration/poddisruptionbudgets", LabelZH: "PodDisruptionBudgets", LabelEN: "PodDisruptionBudgets", IconKey: "cog", Section: "observe", SortOrder: 46, Enabled: true},
+		{ID: "configuration-priorityclasses", ParentID: "configuration", Path: "/configuration/priorityclasses", LabelZH: "PriorityClasses", LabelEN: "PriorityClasses", IconKey: "cog", Section: "observe", SortOrder: 47, Enabled: true},
+		{ID: "configuration-runtimeclasses", ParentID: "configuration", Path: "/configuration/runtimeclasses", LabelZH: "RuntimeClasses", LabelEN: "RuntimeClasses", IconKey: "cog", Section: "observe", SortOrder: 48, Enabled: true},
+		{ID: "configuration-leases", ParentID: "configuration", Path: "/configuration/leases", LabelZH: "Leases", LabelEN: "Leases", IconKey: "cog", Section: "observe", SortOrder: 49, Enabled: true},
+		{ID: "configuration-mutatingwebhookconfigurations", ParentID: "configuration", Path: "/configuration/mutatingwebhookconfigurations", LabelZH: "MutatingWebhookConfigurations", LabelEN: "MutatingWebhookConfigurations", IconKey: "cog", Section: "observe", SortOrder: 50, Enabled: true},
+		{ID: "configuration-validatingwebhookconfigurations", ParentID: "configuration", Path: "/configuration/validatingwebhookconfigurations", LabelZH: "ValidatingWebhookConfigurations", LabelEN: "ValidatingWebhookConfigurations", IconKey: "cog", Section: "observe", SortOrder: 51, Enabled: true},
+		{ID: "network", Path: "/network", LabelZH: "网络", LabelEN: "Network", IconKey: "network", Section: "observe", SortOrder: 50, Enabled: true},
+		{ID: "network-services", ParentID: "network", Path: "/network/services", LabelZH: "Services", LabelEN: "Services", IconKey: "network", Section: "observe", SortOrder: 41, Enabled: true},
+		{ID: "network-ingresses", ParentID: "network", Path: "/network/ingresses", LabelZH: "Ingresses", LabelEN: "Ingresses", IconKey: "network", Section: "observe", SortOrder: 42, Enabled: true},
+		{ID: "network-gateways", ParentID: "network", Path: "/network/gateways", LabelZH: "Gateways", LabelEN: "Gateways", IconKey: "network", Section: "observe", SortOrder: 43, Enabled: true},
+		{ID: "network-endpointslices", ParentID: "network", Path: "/network/endpointslices", LabelZH: "EndpointSlices", LabelEN: "EndpointSlices", IconKey: "network", Section: "observe", SortOrder: 53, Enabled: true},
+		{ID: "network-ingressclasses", ParentID: "network", Path: "/network/ingressclasses", LabelZH: "IngressClasses", LabelEN: "IngressClasses", IconKey: "network", Section: "observe", SortOrder: 54, Enabled: true},
+		{ID: "network-networkpolicies", ParentID: "network", Path: "/network/networkpolicies", LabelZH: "NetworkPolicies", LabelEN: "NetworkPolicies", IconKey: "network", Section: "observe", SortOrder: 55, Enabled: true},
+		{ID: "network-port-forward", ParentID: "network", Path: "/network/port-forward", LabelZH: "端口转发", LabelEN: "Port Forward", IconKey: "network", Section: "observe", SortOrder: 56, Enabled: true},
+		{ID: "storage", Path: "/storage", LabelZH: "存储", LabelEN: "Storage", IconKey: "waves", Section: "observe", SortOrder: 60, Enabled: true},
+		{ID: "storage-pvc", ParentID: "storage", Path: "/storage/persistentvolumeclaims", LabelZH: "PVC", LabelEN: "PVC", IconKey: "waves", Section: "observe", SortOrder: 51, Enabled: true},
+		{ID: "storage-pv", ParentID: "storage", Path: "/storage/persistentvolumes", LabelZH: "PV", LabelEN: "PV", IconKey: "waves", Section: "observe", SortOrder: 52, Enabled: true},
+		{ID: "storage-classes", ParentID: "storage", Path: "/storage/storageclasses", LabelZH: "StorageClasses", LabelEN: "StorageClasses", IconKey: "waves", Section: "observe", SortOrder: 53, Enabled: true},
+		{ID: "cluster-resources-namespaces", Path: "/cluster-resources/namespaces", LabelZH: "命名空间", LabelEN: "Namespaces", IconKey: "server", Section: "observe", SortOrder: 95, Enabled: true},
+		{ID: "clusters", Path: "/clusters", LabelZH: "集群", LabelEN: "Clusters", IconKey: "globe", Section: "observe", SortOrder: 99, Enabled: true},
 		{ID: "observability", Path: "/observability", LabelZH: "告警中心", LabelEN: "Alert Center", IconKey: "gauge", Section: "observe", SortOrder: 60, Enabled: true},
 		{ID: "monitoring", ParentID: "observability", Path: "/observability/monitoring", LabelZH: "中心概览", LabelEN: "Overview", IconKey: "gauge", Section: "observe", SortOrder: 61, Enabled: true},
 		{ID: "alerts", ParentID: "observability", Path: "/observability/alerts", LabelZH: "活跃告警", LabelEN: "Active Alerts", IconKey: "siren", Section: "observe", SortOrder: 62, Enabled: true},
@@ -199,16 +308,7 @@ func upsertMenus(ctx context.Context, db *gorm.DB, items []menuSeed, now time.Ti
 		args = append(args, item.ID, nullableMenu(item.ParentID), item.Path, item.LabelZH, item.LabelEN, item.IconKey, item.Section, item.SortOrder, item.Enabled, now, now)
 	}
 	builder.WriteString(`
-		ON CONFLICT (id) DO UPDATE SET
-			parent_id = EXCLUDED.parent_id,
-			path = EXCLUDED.path,
-			label_zh = EXCLUDED.label_zh,
-			label_en = EXCLUDED.label_en,
-			icon_key = EXCLUDED.icon_key,
-			section = EXCLUDED.section,
-			sort_order = EXCLUDED.sort_order,
-			enabled = EXCLUDED.enabled,
-			updated_at = EXCLUDED.updated_at
+		ON CONFLICT (id) DO NOTHING
 	`)
 	return db.WithContext(ctx).Exec(builder.String(), args...).Error
 }

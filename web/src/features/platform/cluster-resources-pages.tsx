@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Button, Card, Empty, Form, Modal, Progress, Space, Spin, Tag, Toast, Typography } from '@douyinfe/semi-ui'
+import { Button, Card, Empty, Form, Modal, Space, Spin, Tag, Toast, Typography } from '@douyinfe/semi-ui'
 import { IconDelete, IconEdit, IconPlus, IconSend } from '@douyinfe/semi-icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
@@ -13,222 +13,21 @@ import { api } from '@/services/api-client'
 import { usePlatformScopeStore } from '@/stores/platform-scope-store'
 import { formatAgeSeconds } from '@/utils/time'
 import { tableColumnPresets } from '@/utils/table-columns'
-import type { ApiResponse, Namespace } from '@/types'
+import {
+  NodeResourcePanel,
+  parseStringMap,
+  parseTaints,
+  stringifyMap,
+  stringifyTaints,
+} from '@/features/platform/node-resource-utils'
+import type { ApiResponse, Namespace, Node, NodeDetail } from '@/types'
 import type { ColumnProps } from '@douyinfe/semi-ui/lib/es/table'
 
 const { Text } = Typography
 
-interface Node {
-  name: string
-  status: string
-  roles: string[]
-  version?: string
-  internalIp?: string
-  podCount: number
-  ageSeconds: number
-  resources?: {
-    allocatable?: {
-      cpu?: string
-      memory?: string
-      ephemeralStorage?: string
-      pods?: string
-    }
-    requests?: {
-      cpu?: string
-      memory?: string
-      ephemeralStorage?: string
-    }
-    requestPercentages?: {
-      cpu?: number
-      memory?: number
-      ephemeralStorage?: number
-      pods?: number
-    }
-    usagePercentages?: {
-      pods?: number
-    }
-  }
-}
-
-interface NodeDetail extends Node {
-  labels?: Record<string, string>
-  annotations?: Record<string, string>
-  taints?: Array<{
-    key: string
-    value?: string
-    effect: string
-  }>
-}
-
-function stringifyMap(value?: Record<string, string>) {
-  return JSON.stringify(value ?? {}, null, 2)
-}
-
-function parseStringMap(raw: unknown, field: string) {
-  const value = typeof raw === 'string' ? raw.trim() : ''
-  if (!value) return {}
-  try {
-    const parsed = JSON.parse(value)
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-      throw new Error('invalid')
-    }
-    return Object.fromEntries(
-      Object.entries(parsed as Record<string, unknown>).map(([key, item]) => [key, String(item ?? '')]),
-    )
-  } catch {
-    throw new Error(`${field} 需要是合法 JSON 对象`)
-  }
-}
-
-function stringifyTaints(value?: Array<{ key: string; value?: string; effect: string }>) {
-  return JSON.stringify(value ?? [], null, 2)
-}
-
-function parseTaints(raw: unknown) {
-  const value = typeof raw === 'string' ? raw.trim() : ''
-  if (!value) return []
-  try {
-    const parsed = JSON.parse(value)
-    if (!Array.isArray(parsed)) {
-      throw new Error('invalid')
-    }
-    return parsed
-      .filter((item) => item && typeof item === 'object')
-      .map((item) => ({
-        key: String((item as Record<string, unknown>).key ?? '').trim(),
-        value: String((item as Record<string, unknown>).value ?? '').trim(),
-        effect: String((item as Record<string, unknown>).effect ?? '').trim(),
-      }))
-      .filter((item) => item.key && item.effect)
-  } catch {
-    throw new Error('污点需要是合法 JSON 数组')
-  }
-}
-
-function clampPercent(value?: number) {
-  if (value == null || Number.isNaN(value)) return 0
-  return Math.max(0, Math.min(100, Number(value.toFixed(1))))
-}
-
-function parseCpuCores(value?: string) {
-  if (!value) return null
-  const normalized = value.trim()
-  if (!normalized) return null
-  if (normalized.endsWith('m')) {
-    const parsed = Number.parseFloat(normalized.slice(0, -1))
-    return Number.isNaN(parsed) ? null : parsed / 1000
-  }
-  const parsed = Number.parseFloat(normalized)
-  return Number.isNaN(parsed) ? null : parsed
-}
-
-function formatCpu(value?: string) {
-  const cores = parseCpuCores(value)
-  if (cores == null) return '-'
-  if (cores >= 10) return `${cores.toFixed(0)} Core`
-  if (cores >= 1) return `${cores.toFixed(1)} Core`
-  return `${cores.toFixed(2)} Core`
-}
-
-function parseBytes(value?: string) {
-  if (!value) return null
-  const normalized = value.trim()
-  if (!normalized) return null
-  const match = normalized.match(/^([\d.]+)(Ki|Mi|Gi|Ti|Pi|Ei)?$/)
-  if (!match) return null
-  const amount = Number.parseFloat(match[1])
-  if (Number.isNaN(amount)) return null
-  const unit = match[2] ?? ''
-  const factors: Record<string, number> = {
-    '': 1,
-    Ki: 1024,
-    Mi: 1024 ** 2,
-    Gi: 1024 ** 3,
-    Ti: 1024 ** 4,
-    Pi: 1024 ** 5,
-    Ei: 1024 ** 6,
-  }
-  return amount * factors[unit]
-}
-
-function formatBytesAsG(value?: string) {
-  const bytes = parseBytes(value)
-  if (bytes == null) return '-'
-  const gib = bytes / 1024 ** 3
-  if (gib >= 10) return `${gib.toFixed(0)}G`
-  if (gib >= 1) return `${gib.toFixed(1)}G`
-  return `${gib.toFixed(2)}G`
-}
-
-function resolveProgressStroke(percent: number) {
-  if (percent >= 85) return 'var(--semi-color-danger)'
-  if (percent >= 60) return 'var(--semi-color-warning)'
-  return 'var(--semi-color-success)'
-}
-
-function ResourceProgressCell({
-  primary,
-  secondary,
-  percent,
-  ariaLabel,
-}: {
-  primary: string
-  secondary: string
-  percent: number
-  ariaLabel: string
-}) {
-  const value = clampPercent(percent)
-  return (
-    <div className="kc-resource-cell">
-      <div className="kc-resource-cell-copy">
-        <Text strong>{primary}</Text>
-        <Text type="tertiary" size="small">{secondary}</Text>
-      </div>
-      <Progress
-        percent={value}
-        showInfo
-        size="large"
-        stroke={resolveProgressStroke(value)}
-        format={(current) => `${current}%`}
-        aria-label={ariaLabel}
-      />
-    </div>
-  )
-}
-
-function NodeResourcePanel({ node }: { node: Node }) {
-  return (
-    <div className="kc-node-expand-grid">
-      <ResourceProgressCell
-        primary={`${formatCpu(node.resources?.requests?.cpu)} / ${formatCpu(node.resources?.allocatable?.cpu)}`}
-        secondary="CPU 已分配 / 总量"
-        percent={node.resources?.requestPercentages?.cpu ?? 0}
-        ariaLabel={`cpu allocation for ${node.name}`}
-      />
-      <ResourceProgressCell
-        primary={`${formatBytesAsG(node.resources?.requests?.memory)} / ${formatBytesAsG(node.resources?.allocatable?.memory)}`}
-        secondary="内存已分配 / 总量"
-        percent={node.resources?.requestPercentages?.memory ?? 0}
-        ariaLabel={`memory allocation for ${node.name}`}
-      />
-      <ResourceProgressCell
-        primary={`${formatBytesAsG(node.resources?.requests?.ephemeralStorage)} / ${formatBytesAsG(node.resources?.allocatable?.ephemeralStorage)}`}
-        secondary="磁盘已分配 / 总量"
-        percent={node.resources?.requestPercentages?.ephemeralStorage ?? 0}
-        ariaLabel={`disk allocation for ${node.name}`}
-      />
-      <ResourceProgressCell
-        primary={`${node.podCount} / ${node.resources?.allocatable?.pods || '-'}`}
-        secondary="Pods 已用 / 总量"
-        percent={node.resources?.usagePercentages?.pods ?? 0}
-        ariaLabel={`pod allocation for ${node.name}`}
-      />
-    </div>
-  )
-}
-
 export function ClusterNodesPage() {
   const { t } = useI18n()
+  const navigate = useNavigate()
   const queryClient = useQueryClient()
   const { clusterId } = usePlatformScopeStore()
   const [editingNodeName, setEditingNodeName] = useState<string | null>(null)
@@ -284,7 +83,15 @@ export function ClusterNodesPage() {
   }, [nodeDetail])
 
   const nodeColumns: ColumnProps<Node>[] = [
-    { title: '名称', dataIndex: 'name' },
+    {
+      title: '名称',
+      dataIndex: 'name',
+      render: (name: string) => (
+        <Button theme="borderless" type="primary" onClick={() => navigate(`/cluster-resources/nodes/${encodeURIComponent(name)}?clusterId=${encodeURIComponent(clusterId || '')}`)}>
+          {name}
+        </Button>
+      ),
+    },
     {
       ...tableColumnPresets.status,
       title: '状态',
@@ -306,6 +113,14 @@ export function ClusterNodesPage() {
       dataIndex: 'name',
       render: (name: string) => (
         <Space>
+          <Button
+            size="small"
+            theme="borderless"
+            type="primary"
+            onClick={() => navigate(`/cluster-resources/nodes/${encodeURIComponent(name)}?clusterId=${encodeURIComponent(clusterId || '')}`)}
+          >
+            详情
+          </Button>
           <Button size="small" theme="borderless" icon={<IconEdit />} onClick={() => setEditingNodeName(name)}>
             编辑
           </Button>
@@ -490,6 +305,16 @@ export function ClusterNamespacesPage() {
             }}
           >
             查看资源
+          </Button>
+          <Button
+            size="small"
+            theme="borderless"
+            onClick={() => {
+              setNamespace(name)
+              navigate('/helm/releases')
+            }}
+          >
+            Helm
           </Button>
           <Button
             size="small"

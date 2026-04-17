@@ -66,6 +66,15 @@ export interface PermissionSnapshot {
   visibleMenus: VisibleMenu[]
 }
 
+export interface BrandingSettings {
+  appTitle: string
+  sidebarTitle: string
+  loginLogoUrl: string
+  expandedLogoUrl: string
+  collapsedLogoUrl: string
+  faviconUrl: string
+}
+
 export interface PaginatedResponse<T = unknown> {
   items: T[]
   total: number
@@ -127,6 +136,74 @@ export interface ClusterDetail {
   diagnostics: ClusterDiagnostics
   connection: ClusterConnectionDetail
   monitoring: ClusterMonitoringDetail
+}
+
+export interface ResourceQuantity {
+  cpu?: string
+  memory?: string
+  ephemeralStorage?: string
+  pods?: string
+}
+
+export interface ResourcePercentage {
+  cpu?: number
+  memory?: number
+  ephemeralStorage?: number
+  pods?: number
+}
+
+export interface NodeResourceSummary {
+  capacity?: ResourceQuantity
+  allocatable?: ResourceQuantity
+  requests?: ResourceQuantity
+  limits?: ResourceQuantity
+  usage?: ResourceQuantity
+  requestPercentages?: ResourcePercentage
+  limitPercentages?: ResourcePercentage
+  usagePercentages?: ResourcePercentage
+}
+
+export interface Node {
+  name: string
+  status: string
+  roles: string[]
+  version?: string
+  internalIp?: string
+  podCount: number
+  ageSeconds: number
+  resources?: NodeResourceSummary
+  allowedActions?: string[]
+}
+
+export interface NodeTaint {
+  key: string
+  value?: string
+  effect: string
+}
+
+export interface NodePod {
+  name: string
+  namespace: string
+  phase: string
+  podIp?: string
+  readyContainers: string
+  restarts: number
+  cpu?: string
+  memory?: string
+  labels?: Record<string, string>
+  requests?: ResourceQuantity
+  limits?: ResourceQuantity
+  ageSeconds: number
+}
+
+export interface NodeDetail extends Node {
+  labels?: Record<string, string>
+  annotations?: Record<string, string>
+  taints?: NodeTaint[]
+  conditions?: WorkloadCondition[]
+  metricsConfigured?: boolean
+  metricsMessage?: string
+  pods?: NodePod[]
 }
 
 export interface Namespace {
@@ -250,6 +327,8 @@ export interface PodDetail {
   serviceAccountName?: string
   qosClass?: string
   startTime?: string
+  requests?: ResourceQuantity
+  limits?: ResourceQuantity
   labels?: Record<string, string>
   annotations?: Record<string, string>
   containers?: WorkloadContainer[]

@@ -21,20 +21,22 @@ type NamespaceUpsertInput struct {
 }
 
 type PodView struct {
-	Name                   string            `json:"name"`
-	Namespace              string            `json:"namespace"`
-	Phase                  string            `json:"phase"`
-	NodeName               string            `json:"nodeName,omitempty"`
-	PodIP                  string            `json:"podIp,omitempty"`
-	CreatedAt              string            `json:"createdAt,omitempty"`
-	CPU                    string            `json:"cpu,omitempty"`
-	Memory                 string            `json:"memory,omitempty"`
-	Labels                 map[string]string `json:"labels,omitempty"`
-	PersistentVolumeClaims []string          `json:"persistentVolumeClaims,omitempty"`
-	ReadyContainers        string            `json:"readyContainers"`
-	Restarts               int32             `json:"restarts"`
-	AgeSeconds             int64             `json:"ageSeconds"`
-	AllowedActions         []string          `json:"allowedActions,omitempty"`
+	Name                   string               `json:"name"`
+	Namespace              string               `json:"namespace"`
+	Phase                  string               `json:"phase"`
+	NodeName               string               `json:"nodeName,omitempty"`
+	PodIP                  string               `json:"podIp,omitempty"`
+	CreatedAt              string               `json:"createdAt,omitempty"`
+	CPU                    string               `json:"cpu,omitempty"`
+	Memory                 string               `json:"memory,omitempty"`
+	Requests               ResourceQuantityView `json:"requests,omitempty"`
+	Limits                 ResourceQuantityView `json:"limits,omitempty"`
+	Labels                 map[string]string    `json:"labels,omitempty"`
+	PersistentVolumeClaims []string             `json:"persistentVolumeClaims,omitempty"`
+	ReadyContainers        string               `json:"readyContainers"`
+	Restarts               int32                `json:"restarts"`
+	AgeSeconds             int64                `json:"ageSeconds"`
+	AllowedActions         []string             `json:"allowedActions,omitempty"`
 }
 
 type WorkloadOverviewNamespaceView struct {
@@ -124,6 +126,8 @@ type PodDetailView struct {
 	ServiceAccountName string                  `json:"serviceAccountName,omitempty"`
 	QOSClass           string                  `json:"qosClass,omitempty"`
 	StartTime          string                  `json:"startTime,omitempty"`
+	Requests           ResourceQuantityView    `json:"requests,omitempty"`
+	Limits             ResourceQuantityView    `json:"limits,omitempty"`
 	Labels             map[string]string       `json:"labels,omitempty"`
 	Annotations        map[string]string       `json:"annotations,omitempty"`
 	Containers         []WorkloadContainerView `json:"containers,omitempty"`
@@ -407,17 +411,6 @@ type GatewayView struct {
 	AllowedActions []string `json:"allowedActions,omitempty"`
 }
 
-type HTTPRouteView struct {
-	Name            string   `json:"name"`
-	Namespace       string   `json:"namespace"`
-	Hostnames       []string `json:"hostnames,omitempty"`
-	ParentRefs      []string `json:"parentRefs,omitempty"`
-	BackendServices []string `json:"backendServices,omitempty"`
-	RuleCount       int32    `json:"ruleCount"`
-	AgeSeconds      int64    `json:"ageSeconds"`
-	AllowedActions  []string `json:"allowedActions,omitempty"`
-}
-
 type NodeView struct {
 	Name           string                  `json:"name"`
 	Status         string                  `json:"status"`
@@ -545,4 +538,105 @@ type HelmReleaseView struct {
 	StorageDriver  string   `json:"storageDriver,omitempty"`
 	AgeSeconds     int64    `json:"ageSeconds"`
 	AllowedActions []string `json:"allowedActions,omitempty"`
+}
+
+type ConfigMapView struct {
+	Name           string   `json:"name"`
+	Namespace      string   `json:"namespace"`
+	DataEntries    int      `json:"dataEntries"`
+	BinaryEntries  int      `json:"binaryEntries"`
+	Immutable      bool     `json:"immutable"`
+	AgeSeconds     int64    `json:"ageSeconds"`
+	AllowedActions []string `json:"allowedActions,omitempty"`
+}
+
+type SecretView struct {
+	Name           string   `json:"name"`
+	Namespace      string   `json:"namespace"`
+	Type           string   `json:"type"`
+	DataEntries    int      `json:"dataEntries"`
+	Immutable      bool     `json:"immutable"`
+	AgeSeconds     int64    `json:"ageSeconds"`
+	AllowedActions []string `json:"allowedActions,omitempty"`
+}
+
+type ServiceAccountView struct {
+	Name             string   `json:"name"`
+	Namespace        string   `json:"namespace"`
+	Secrets          int      `json:"secrets"`
+	ImagePullSecrets int      `json:"imagePullSecrets"`
+	AutomountSAToken bool     `json:"automountServiceAccountToken"`
+	AgeSeconds       int64    `json:"ageSeconds"`
+	AllowedActions   []string `json:"allowedActions,omitempty"`
+}
+
+type RoleView struct {
+	Name           string   `json:"name"`
+	Namespace      string   `json:"namespace"`
+	Rules          int      `json:"rules"`
+	AgeSeconds     int64    `json:"ageSeconds"`
+	AllowedActions []string `json:"allowedActions,omitempty"`
+}
+
+type RoleBindingView struct {
+	Name           string   `json:"name"`
+	Namespace      string   `json:"namespace"`
+	RoleRef        string   `json:"roleRef"`
+	Subjects       []string `json:"subjects,omitempty"`
+	AgeSeconds     int64    `json:"ageSeconds"`
+	AllowedActions []string `json:"allowedActions,omitempty"`
+}
+
+type ReplicaSetView struct {
+	Name              string   `json:"name"`
+	Namespace         string   `json:"namespace"`
+	DesiredReplicas   int32    `json:"desiredReplicas"`
+	ReadyReplicas     int32    `json:"readyReplicas"`
+	AvailableReplicas int32    `json:"availableReplicas"`
+	AgeSeconds        int64    `json:"ageSeconds"`
+	AllowedActions    []string `json:"allowedActions,omitempty"`
+}
+
+type EndpointSliceView struct {
+	Name           string   `json:"name"`
+	Namespace      string   `json:"namespace"`
+	AddressType    string   `json:"addressType"`
+	Endpoints      int      `json:"endpoints"`
+	Ports          []string `json:"ports,omitempty"`
+	AgeSeconds     int64    `json:"ageSeconds"`
+	AllowedActions []string `json:"allowedActions,omitempty"`
+}
+
+type NetworkPolicyView struct {
+	Name           string   `json:"name"`
+	Namespace      string   `json:"namespace"`
+	PolicyTypes    []string `json:"policyTypes,omitempty"`
+	IngressRules   int      `json:"ingressRules"`
+	EgressRules    int      `json:"egressRules"`
+	AgeSeconds     int64    `json:"ageSeconds"`
+	AllowedActions []string `json:"allowedActions,omitempty"`
+}
+
+type HorizontalPodAutoscalerView struct {
+	Name            string   `json:"name"`
+	Namespace       string   `json:"namespace"`
+	TargetRef       string   `json:"targetRef"`
+	MinReplicas     int32    `json:"minReplicas"`
+	MaxReplicas     int32    `json:"maxReplicas"`
+	CurrentReplicas int32    `json:"currentReplicas"`
+	DesiredReplicas int32    `json:"desiredReplicas"`
+	AgeSeconds      int64    `json:"ageSeconds"`
+	AllowedActions  []string `json:"allowedActions,omitempty"`
+}
+
+type PodDisruptionBudgetView struct {
+	Name               string   `json:"name"`
+	Namespace          string   `json:"namespace"`
+	MinAvailable       string   `json:"minAvailable,omitempty"`
+	MaxUnavailable     string   `json:"maxUnavailable,omitempty"`
+	CurrentHealthy     int32    `json:"currentHealthy"`
+	DesiredHealthy     int32    `json:"desiredHealthy"`
+	DisruptionsAllowed int32    `json:"disruptionsAllowed"`
+	AgeSeconds         int64    `json:"ageSeconds"`
+	AllowedActions     []string `json:"allowedActions,omitempty"`
 }

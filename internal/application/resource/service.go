@@ -11,14 +11,19 @@ import (
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
+	autoscalingv2 "k8s.io/api/autoscaling/v2"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	discoveryv1 "k8s.io/api/discovery/v1"
 	networkingv1 "k8s.io/api/networking/v1"
+	policyv1 "k8s.io/api/policy/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/remotecommand"
 	"sigs.k8s.io/yaml"
@@ -228,6 +233,33 @@ func (s *Service) UpdateNode(ctx context.Context, principal domainidentity.Princ
 		_ = s.recordAudit(ctx, principal, clusterID, "", "Node", nodeName, string(domainaccess.ActionUpdate), "success", "updated node labels and taints")
 		return view, nil
 	}
+}
+
+func (s *Service) GetNodeYAML(ctx context.Context, principal domainidentity.Principal, clusterID, name string) (domainresource.ResourceYAMLView, error) {
+	connection, _, err := s.authorize(ctx, principal, clusterID, "", "Node", domainaccess.ActionView)
+	if err != nil {
+		return domainresource.ResourceYAMLView{}, err
+	}
+	var (
+		item   domainresource.ResourceYAMLView
+		source string
+	)
+	switch connection.Summary.ConnectionMode {
+	case domaincluster.ConnectionModeAgent:
+		return domainresource.ResourceYAMLView{}, fmt.Errorf("%w: node yaml is not supported for agent-connected clusters yet", apperrors.ErrInvalidArgument)
+	default:
+		item, err = s.getDirectNodeYAML(ctx, clusterID, name)
+		if err != nil {
+			return domainresource.ResourceYAMLView{}, err
+		}
+		source = "live"
+	}
+	_ = s.recordAudit(ctx, principal, connection.Summary.ID, "", "Node", name, string(domainaccess.ActionView), "success", fmt.Sprintf("viewed node yaml via %s", source))
+	return item, nil
+}
+
+func (s *Service) ApplyNodeYAML(ctx context.Context, principal domainidentity.Principal, clusterID, name, content string) (domainresource.ResourceYAMLView, error) {
+	return s.applyResourceYAML(ctx, principal, clusterID, "", "Node", name, content)
 }
 
 func (s *Service) DeleteNode(ctx context.Context, principal domainidentity.Principal, clusterID, nodeName string) error {
@@ -1112,6 +1144,302 @@ func (s *Service) ListCronJobs(ctx context.Context, principal domainidentity.Pri
 	return items, nil
 }
 
+func (s *Service) ListReplicaSets(ctx context.Context, principal domainidentity.Principal, clusterID, namespace string) ([]domainresource.ReplicaSetView, error) {
+	connection, decision, err := s.authorize(ctx, principal, clusterID, namespace, "ReplicaSet", domainaccess.ActionList)
+	if err != nil {
+		return nil, err
+	}
+	var (
+		items  []domainresource.ReplicaSetView
+		source string
+	)
+	switch connection.Summary.ConnectionMode {
+	case domaincluster.ConnectionModeAgent:
+		client, err := s.agentClient(connection)
+		if err != nil {
+			return nil, err
+		}
+		items, err = client.ListReplicaSets(ctx, namespace)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
+		}
+		source = "agent"
+	default:
+		rawItems, err := s.listDirectReplicaSets(ctx, clusterID, namespace)
+		if err != nil {
+			return nil, err
+		}
+		items = make([]domainresource.ReplicaSetView, 0, len(rawItems))
+		for _, item := range rawItems {
+			items = append(items, mapReplicaSet(item, decision))
+		}
+		source = "live"
+	}
+	items = filterScopedNamespaceItems(items, decision, func(item domainresource.ReplicaSetView) string { return item.Namespace })
+	populateAllowedActionsReplicaSets(items, decision)
+	_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, "ReplicaSet", "", string(domainaccess.ActionList), "success", fmt.Sprintf("listed replicasets via %s in namespace %s", source, displayNamespace(namespace)))
+	return items, nil
+}
+
+func (s *Service) ListConfigMaps(ctx context.Context, principal domainidentity.Principal, clusterID, namespace string) ([]domainresource.ConfigMapView, error) {
+	connection, decision, err := s.authorize(ctx, principal, clusterID, namespace, "ConfigMap", domainaccess.ActionList)
+	if err != nil {
+		return nil, err
+	}
+	var (
+		items  []domainresource.ConfigMapView
+		source string
+	)
+	switch connection.Summary.ConnectionMode {
+	case domaincluster.ConnectionModeAgent:
+		client, err := s.agentClient(connection)
+		if err != nil {
+			return nil, err
+		}
+		items, err = client.ListConfigMaps(ctx, namespace)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
+		}
+		source = "agent"
+	default:
+		rawItems, err := s.listDirectConfigMaps(ctx, clusterID, namespace)
+		if err != nil {
+			return nil, err
+		}
+		items = make([]domainresource.ConfigMapView, 0, len(rawItems))
+		for _, item := range rawItems {
+			items = append(items, mapConfigMap(item, decision))
+		}
+		source = "live"
+	}
+	items = filterScopedNamespaceItems(items, decision, func(item domainresource.ConfigMapView) string { return item.Namespace })
+	populateAllowedActionsConfigMaps(items, decision)
+	_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, "ConfigMap", "", string(domainaccess.ActionList), "success", fmt.Sprintf("listed configmaps via %s in namespace %s", source, displayNamespace(namespace)))
+	return items, nil
+}
+
+func (s *Service) ListSecrets(ctx context.Context, principal domainidentity.Principal, clusterID, namespace string) ([]domainresource.SecretView, error) {
+	connection, decision, err := s.authorize(ctx, principal, clusterID, namespace, "Secret", domainaccess.ActionList)
+	if err != nil {
+		return nil, err
+	}
+	var (
+		items  []domainresource.SecretView
+		source string
+	)
+	switch connection.Summary.ConnectionMode {
+	case domaincluster.ConnectionModeAgent:
+		client, err := s.agentClient(connection)
+		if err != nil {
+			return nil, err
+		}
+		items, err = client.ListSecrets(ctx, namespace)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
+		}
+		source = "agent"
+	default:
+		rawItems, err := s.listDirectSecrets(ctx, clusterID, namespace)
+		if err != nil {
+			return nil, err
+		}
+		items = make([]domainresource.SecretView, 0, len(rawItems))
+		for _, item := range rawItems {
+			items = append(items, mapSecret(item, decision))
+		}
+		source = "live"
+	}
+	items = filterScopedNamespaceItems(items, decision, func(item domainresource.SecretView) string { return item.Namespace })
+	populateAllowedActionsSecrets(items, decision)
+	_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, "Secret", "", string(domainaccess.ActionList), "success", fmt.Sprintf("listed secrets via %s in namespace %s", source, displayNamespace(namespace)))
+	return items, nil
+}
+
+func (s *Service) ListServiceAccounts(ctx context.Context, principal domainidentity.Principal, clusterID, namespace string) ([]domainresource.ServiceAccountView, error) {
+	connection, decision, err := s.authorize(ctx, principal, clusterID, namespace, "ServiceAccount", domainaccess.ActionList)
+	if err != nil {
+		return nil, err
+	}
+	var (
+		items  []domainresource.ServiceAccountView
+		source string
+	)
+	switch connection.Summary.ConnectionMode {
+	case domaincluster.ConnectionModeAgent:
+		client, err := s.agentClient(connection)
+		if err != nil {
+			return nil, err
+		}
+		items, err = client.ListServiceAccounts(ctx, namespace)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
+		}
+		source = "agent"
+	default:
+		rawItems, err := s.listDirectServiceAccounts(ctx, clusterID, namespace)
+		if err != nil {
+			return nil, err
+		}
+		items = make([]domainresource.ServiceAccountView, 0, len(rawItems))
+		for _, item := range rawItems {
+			items = append(items, mapServiceAccount(item, decision))
+		}
+		source = "live"
+	}
+	items = filterScopedNamespaceItems(items, decision, func(item domainresource.ServiceAccountView) string { return item.Namespace })
+	populateAllowedActionsServiceAccounts(items, decision)
+	_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, "ServiceAccount", "", string(domainaccess.ActionList), "success", fmt.Sprintf("listed serviceaccounts via %s in namespace %s", source, displayNamespace(namespace)))
+	return items, nil
+}
+
+func (s *Service) ListRoles(ctx context.Context, principal domainidentity.Principal, clusterID, namespace string) ([]domainresource.RoleView, error) {
+	connection, decision, err := s.authorize(ctx, principal, clusterID, namespace, "Role", domainaccess.ActionList)
+	if err != nil {
+		return nil, err
+	}
+	var (
+		items  []domainresource.RoleView
+		source string
+	)
+	switch connection.Summary.ConnectionMode {
+	case domaincluster.ConnectionModeAgent:
+		client, err := s.agentClient(connection)
+		if err != nil {
+			return nil, err
+		}
+		items, err = client.ListRoles(ctx, namespace)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
+		}
+		source = "agent"
+	default:
+		rawItems, err := s.listDirectRoles(ctx, clusterID, namespace)
+		if err != nil {
+			return nil, err
+		}
+		items = make([]domainresource.RoleView, 0, len(rawItems))
+		for _, item := range rawItems {
+			items = append(items, mapRole(item, decision))
+		}
+		source = "live"
+	}
+	items = filterScopedNamespaceItems(items, decision, func(item domainresource.RoleView) string { return item.Namespace })
+	populateAllowedActionsRoles(items, decision)
+	_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, "Role", "", string(domainaccess.ActionList), "success", fmt.Sprintf("listed roles via %s in namespace %s", source, displayNamespace(namespace)))
+	return items, nil
+}
+
+func (s *Service) ListRoleBindings(ctx context.Context, principal domainidentity.Principal, clusterID, namespace string) ([]domainresource.RoleBindingView, error) {
+	connection, decision, err := s.authorize(ctx, principal, clusterID, namespace, "RoleBinding", domainaccess.ActionList)
+	if err != nil {
+		return nil, err
+	}
+	var (
+		items  []domainresource.RoleBindingView
+		source string
+	)
+	switch connection.Summary.ConnectionMode {
+	case domaincluster.ConnectionModeAgent:
+		client, err := s.agentClient(connection)
+		if err != nil {
+			return nil, err
+		}
+		items, err = client.ListRoleBindings(ctx, namespace)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
+		}
+		source = "agent"
+	default:
+		rawItems, err := s.listDirectRoleBindings(ctx, clusterID, namespace)
+		if err != nil {
+			return nil, err
+		}
+		items = make([]domainresource.RoleBindingView, 0, len(rawItems))
+		for _, item := range rawItems {
+			items = append(items, mapRoleBinding(item, decision))
+		}
+		source = "live"
+	}
+	items = filterScopedNamespaceItems(items, decision, func(item domainresource.RoleBindingView) string { return item.Namespace })
+	populateAllowedActionsRoleBindings(items, decision)
+	_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, "RoleBinding", "", string(domainaccess.ActionList), "success", fmt.Sprintf("listed rolebindings via %s in namespace %s", source, displayNamespace(namespace)))
+	return items, nil
+}
+
+func (s *Service) ListHorizontalPodAutoscalers(ctx context.Context, principal domainidentity.Principal, clusterID, namespace string) ([]domainresource.HorizontalPodAutoscalerView, error) {
+	connection, decision, err := s.authorize(ctx, principal, clusterID, namespace, "HorizontalPodAutoscaler", domainaccess.ActionList)
+	if err != nil {
+		return nil, err
+	}
+	var (
+		items  []domainresource.HorizontalPodAutoscalerView
+		source string
+	)
+	switch connection.Summary.ConnectionMode {
+	case domaincluster.ConnectionModeAgent:
+		client, err := s.agentClient(connection)
+		if err != nil {
+			return nil, err
+		}
+		items, err = client.ListHorizontalPodAutoscalers(ctx, namespace)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
+		}
+		source = "agent"
+	default:
+		rawItems, err := s.listDirectHorizontalPodAutoscalers(ctx, clusterID, namespace)
+		if err != nil {
+			return nil, err
+		}
+		items = make([]domainresource.HorizontalPodAutoscalerView, 0, len(rawItems))
+		for _, item := range rawItems {
+			items = append(items, mapHorizontalPodAutoscaler(item, decision))
+		}
+		source = "live"
+	}
+	items = filterScopedNamespaceItems(items, decision, func(item domainresource.HorizontalPodAutoscalerView) string { return item.Namespace })
+	populateAllowedActionsHorizontalPodAutoscalers(items, decision)
+	_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, "HorizontalPodAutoscaler", "", string(domainaccess.ActionList), "success", fmt.Sprintf("listed hpas via %s in namespace %s", source, displayNamespace(namespace)))
+	return items, nil
+}
+
+func (s *Service) ListPodDisruptionBudgets(ctx context.Context, principal domainidentity.Principal, clusterID, namespace string) ([]domainresource.PodDisruptionBudgetView, error) {
+	connection, decision, err := s.authorize(ctx, principal, clusterID, namespace, "PodDisruptionBudget", domainaccess.ActionList)
+	if err != nil {
+		return nil, err
+	}
+	var (
+		items  []domainresource.PodDisruptionBudgetView
+		source string
+	)
+	switch connection.Summary.ConnectionMode {
+	case domaincluster.ConnectionModeAgent:
+		client, err := s.agentClient(connection)
+		if err != nil {
+			return nil, err
+		}
+		items, err = client.ListPodDisruptionBudgets(ctx, namespace)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
+		}
+		source = "agent"
+	default:
+		rawItems, err := s.listDirectPodDisruptionBudgets(ctx, clusterID, namespace)
+		if err != nil {
+			return nil, err
+		}
+		items = make([]domainresource.PodDisruptionBudgetView, 0, len(rawItems))
+		for _, item := range rawItems {
+			items = append(items, mapPodDisruptionBudget(item, decision))
+		}
+		source = "live"
+	}
+	items = filterScopedNamespaceItems(items, decision, func(item domainresource.PodDisruptionBudgetView) string { return item.Namespace })
+	populateAllowedActionsPodDisruptionBudgets(items, decision)
+	_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, "PodDisruptionBudget", "", string(domainaccess.ActionList), "success", fmt.Sprintf("listed pod disruption budgets via %s in namespace %s", source, displayNamespace(namespace)))
+	return items, nil
+}
+
 func (s *Service) ListServices(ctx context.Context, principal domainidentity.Principal, clusterID, namespace string) ([]domainresource.ServiceView, error) {
 	connection, decision, err := s.authorize(ctx, principal, clusterID, namespace, "Service", domainaccess.ActionList)
 	if err != nil {
@@ -1183,6 +1511,80 @@ func (s *Service) ListIngresses(ctx context.Context, principal domainidentity.Pr
 	items = filterScopedNamespaceItems(items, decision, func(item domainresource.IngressView) string { return item.Namespace })
 	populateAllowedActionsIngresses(items, decision)
 	_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, "Ingress", "", string(domainaccess.ActionList), "success", fmt.Sprintf("listed ingresses via %s in namespace %s", source, displayNamespace(namespace)))
+	return items, nil
+}
+
+func (s *Service) ListEndpointSlices(ctx context.Context, principal domainidentity.Principal, clusterID, namespace string) ([]domainresource.EndpointSliceView, error) {
+	connection, decision, err := s.authorize(ctx, principal, clusterID, namespace, "EndpointSlice", domainaccess.ActionList)
+	if err != nil {
+		return nil, err
+	}
+	var (
+		items  []domainresource.EndpointSliceView
+		source string
+	)
+	switch connection.Summary.ConnectionMode {
+	case domaincluster.ConnectionModeAgent:
+		client, err := s.agentClient(connection)
+		if err != nil {
+			return nil, err
+		}
+		items, err = client.ListEndpointSlices(ctx, namespace)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
+		}
+		source = "agent"
+	default:
+		rawItems, err := s.listDirectEndpointSlices(ctx, clusterID, namespace)
+		if err != nil {
+			return nil, err
+		}
+		items = make([]domainresource.EndpointSliceView, 0, len(rawItems))
+		for _, item := range rawItems {
+			items = append(items, mapEndpointSlice(item, decision))
+		}
+		source = "live"
+	}
+	items = filterScopedNamespaceItems(items, decision, func(item domainresource.EndpointSliceView) string { return item.Namespace })
+	populateAllowedActionsEndpointSlices(items, decision)
+	_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, "EndpointSlice", "", string(domainaccess.ActionList), "success", fmt.Sprintf("listed endpoint slices via %s in namespace %s", source, displayNamespace(namespace)))
+	return items, nil
+}
+
+func (s *Service) ListNetworkPolicies(ctx context.Context, principal domainidentity.Principal, clusterID, namespace string) ([]domainresource.NetworkPolicyView, error) {
+	connection, decision, err := s.authorize(ctx, principal, clusterID, namespace, "NetworkPolicy", domainaccess.ActionList)
+	if err != nil {
+		return nil, err
+	}
+	var (
+		items  []domainresource.NetworkPolicyView
+		source string
+	)
+	switch connection.Summary.ConnectionMode {
+	case domaincluster.ConnectionModeAgent:
+		client, err := s.agentClient(connection)
+		if err != nil {
+			return nil, err
+		}
+		items, err = client.ListNetworkPolicies(ctx, namespace)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
+		}
+		source = "agent"
+	default:
+		rawItems, err := s.listDirectNetworkPolicies(ctx, clusterID, namespace)
+		if err != nil {
+			return nil, err
+		}
+		items = make([]domainresource.NetworkPolicyView, 0, len(rawItems))
+		for _, item := range rawItems {
+			items = append(items, mapNetworkPolicy(item, decision))
+		}
+		source = "live"
+	}
+	items = filterScopedNamespaceItems(items, decision, func(item domainresource.NetworkPolicyView) string { return item.Namespace })
+	populateAllowedActionsNetworkPolicies(items, decision)
+	_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, "NetworkPolicy", "", string(domainaccess.ActionList), "success", fmt.Sprintf("listed network policies via %s in namespace %s", source, displayNamespace(namespace)))
 	return items, nil
 }
 
@@ -1732,6 +2134,24 @@ func (s *Service) getDirectPodYAML(ctx context.Context, clusterID, namespace, na
 	}, nil
 }
 
+func (s *Service) getDirectNodeYAML(ctx context.Context, clusterID, name string) (domainresource.ResourceYAMLView, error) {
+	item, err := s.getDirectNode(ctx, clusterID, name)
+	if err != nil {
+		return domainresource.ResourceYAMLView{}, err
+	}
+	copyItem := item.DeepCopy()
+	copyItem.ManagedFields = nil
+	content, err := yaml.Marshal(copyItem)
+	if err != nil {
+		return domainresource.ResourceYAMLView{}, err
+	}
+	return domainresource.ResourceYAMLView{
+		Kind:    "Node",
+		Name:    name,
+		Content: string(content),
+	}, nil
+}
+
 func (s *Service) listDirectDeployments(ctx context.Context, clusterID, namespace string) ([]appsv1.Deployment, string, error) {
 	if strings.TrimSpace(namespace) == "" {
 		items, err := s.listDeploymentsAcrossNamespaces(ctx, clusterID)
@@ -1955,16 +2375,28 @@ func (s *Service) applyDirectResourceYAML(ctx context.Context, clusterID, namesp
 	if item.GetName() != name {
 		return domainresource.ResourceYAMLView{}, fmt.Errorf("%w: yaml metadata.name does not match target resource", apperrors.ErrInvalidArgument)
 	}
-	if item.GetNamespace() != namespace {
-		return domainresource.ResourceYAMLView{}, fmt.Errorf("%w: yaml metadata.namespace does not match target resource", apperrors.ErrInvalidArgument)
-	}
-	gvr, err := resourceGVRForKind(kind)
+	gvr, namespaceScoped, err := resourceGVRForKind(kind)
 	if err != nil {
 		return domainresource.ResourceYAMLView{}, err
 	}
 	queryCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
-	resource := bundle.Dynamic.Resource(gvr).Namespace(namespace)
+	var resource dynamic.ResourceInterface
+	if namespaceScoped {
+		if item.GetNamespace() == "" {
+			item.SetNamespace(namespace)
+		}
+		if item.GetNamespace() != namespace {
+			return domainresource.ResourceYAMLView{}, fmt.Errorf("%w: yaml metadata.namespace does not match target resource", apperrors.ErrInvalidArgument)
+		}
+		resource = bundle.Dynamic.Resource(gvr).Namespace(namespace)
+	} else {
+		if strings.TrimSpace(item.GetNamespace()) != "" {
+			return domainresource.ResourceYAMLView{}, fmt.Errorf("%w: yaml metadata.namespace must be empty for cluster-scoped resource", apperrors.ErrInvalidArgument)
+		}
+		item.SetNamespace("")
+		resource = bundle.Dynamic.Resource(gvr)
+	}
 	if item.GetResourceVersion() == "" {
 		current, err := resource.Get(queryCtx, name, metav1.GetOptions{})
 		if err != nil {
@@ -1983,27 +2415,29 @@ func (s *Service) applyDirectResourceYAML(ctx context.Context, clusterID, namesp
 	return domainresource.ResourceYAMLView{
 		Kind:      kind,
 		Name:      name,
-		Namespace: namespace,
+		Namespace: item.GetNamespace(),
 		Content:   string(rendered),
 	}, nil
 }
 
-func resourceGVRForKind(kind string) (schema.GroupVersionResource, error) {
+func resourceGVRForKind(kind string) (schema.GroupVersionResource, bool, error) {
 	switch strings.ToLower(strings.TrimSpace(kind)) {
 	case "pod":
-		return schema.GroupVersionResource{Group: "", Version: "v1", Resource: "pods"}, nil
+		return schema.GroupVersionResource{Group: "", Version: "v1", Resource: "pods"}, true, nil
+	case "node":
+		return schema.GroupVersionResource{Group: "", Version: "v1", Resource: "nodes"}, false, nil
 	case "deployment":
-		return schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "deployments"}, nil
+		return schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "deployments"}, true, nil
 	case "statefulset":
-		return schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "statefulsets"}, nil
+		return schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "statefulsets"}, true, nil
 	case "daemonset":
-		return schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "daemonsets"}, nil
+		return schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "daemonsets"}, true, nil
 	case "job":
-		return schema.GroupVersionResource{Group: "batch", Version: "v1", Resource: "jobs"}, nil
+		return schema.GroupVersionResource{Group: "batch", Version: "v1", Resource: "jobs"}, true, nil
 	case "cronjob":
-		return schema.GroupVersionResource{Group: "batch", Version: "v1", Resource: "cronjobs"}, nil
+		return schema.GroupVersionResource{Group: "batch", Version: "v1", Resource: "cronjobs"}, true, nil
 	default:
-		return schema.GroupVersionResource{}, fmt.Errorf("%w: yaml apply does not support kind %s", apperrors.ErrInvalidArgument, kind)
+		return schema.GroupVersionResource{}, false, fmt.Errorf("%w: yaml apply does not support kind %s", apperrors.ErrInvalidArgument, kind)
 	}
 }
 
@@ -2167,6 +2601,190 @@ func (s *Service) listDirectCronJobs(ctx context.Context, clusterID, namespace s
 		return nil, err
 	}
 	return items, nil
+}
+
+func (s *Service) listDirectReplicaSets(ctx context.Context, clusterID, namespace string) ([]appsv1.ReplicaSet, error) {
+	if strings.TrimSpace(namespace) == "" {
+		return listAcrossNamespaces(ctx, s, clusterID, func(queryCtx context.Context, bundle *k8sinfra.Bundle, namespace string) ([]appsv1.ReplicaSet, error) {
+			items, err := bundle.Typed.AppsV1().ReplicaSets(namespace).List(queryCtx, metav1.ListOptions{})
+			if err != nil {
+				return nil, err
+			}
+			return items.Items, nil
+		})
+	}
+	bundle, err := s.clusters.Bundle(ctx, clusterID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
+	}
+	queryCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
+	defer cancel()
+	items, err := bundle.Typed.AppsV1().ReplicaSets(namespace).List(queryCtx, metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	return items.Items, nil
+}
+
+func (s *Service) listDirectConfigMaps(ctx context.Context, clusterID, namespace string) ([]corev1.ConfigMap, error) {
+	if strings.TrimSpace(namespace) == "" {
+		return listAcrossNamespaces(ctx, s, clusterID, func(queryCtx context.Context, bundle *k8sinfra.Bundle, namespace string) ([]corev1.ConfigMap, error) {
+			items, err := bundle.Typed.CoreV1().ConfigMaps(namespace).List(queryCtx, metav1.ListOptions{})
+			if err != nil {
+				return nil, err
+			}
+			return items.Items, nil
+		})
+	}
+	bundle, err := s.clusters.Bundle(ctx, clusterID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
+	}
+	queryCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
+	defer cancel()
+	items, err := bundle.Typed.CoreV1().ConfigMaps(namespace).List(queryCtx, metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	return items.Items, nil
+}
+
+func (s *Service) listDirectSecrets(ctx context.Context, clusterID, namespace string) ([]corev1.Secret, error) {
+	if strings.TrimSpace(namespace) == "" {
+		return listAcrossNamespaces(ctx, s, clusterID, func(queryCtx context.Context, bundle *k8sinfra.Bundle, namespace string) ([]corev1.Secret, error) {
+			items, err := bundle.Typed.CoreV1().Secrets(namespace).List(queryCtx, metav1.ListOptions{})
+			if err != nil {
+				return nil, err
+			}
+			return items.Items, nil
+		})
+	}
+	bundle, err := s.clusters.Bundle(ctx, clusterID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
+	}
+	queryCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
+	defer cancel()
+	items, err := bundle.Typed.CoreV1().Secrets(namespace).List(queryCtx, metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	return items.Items, nil
+}
+
+func (s *Service) listDirectServiceAccounts(ctx context.Context, clusterID, namespace string) ([]corev1.ServiceAccount, error) {
+	if strings.TrimSpace(namespace) == "" {
+		return listAcrossNamespaces(ctx, s, clusterID, func(queryCtx context.Context, bundle *k8sinfra.Bundle, namespace string) ([]corev1.ServiceAccount, error) {
+			items, err := bundle.Typed.CoreV1().ServiceAccounts(namespace).List(queryCtx, metav1.ListOptions{})
+			if err != nil {
+				return nil, err
+			}
+			return items.Items, nil
+		})
+	}
+	bundle, err := s.clusters.Bundle(ctx, clusterID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
+	}
+	queryCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
+	defer cancel()
+	items, err := bundle.Typed.CoreV1().ServiceAccounts(namespace).List(queryCtx, metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	return items.Items, nil
+}
+
+func (s *Service) listDirectRoles(ctx context.Context, clusterID, namespace string) ([]rbacv1.Role, error) {
+	if strings.TrimSpace(namespace) == "" {
+		return listAcrossNamespaces(ctx, s, clusterID, func(queryCtx context.Context, bundle *k8sinfra.Bundle, namespace string) ([]rbacv1.Role, error) {
+			items, err := bundle.Typed.RbacV1().Roles(namespace).List(queryCtx, metav1.ListOptions{})
+			if err != nil {
+				return nil, err
+			}
+			return items.Items, nil
+		})
+	}
+	bundle, err := s.clusters.Bundle(ctx, clusterID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
+	}
+	queryCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
+	defer cancel()
+	items, err := bundle.Typed.RbacV1().Roles(namespace).List(queryCtx, metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	return items.Items, nil
+}
+
+func (s *Service) listDirectRoleBindings(ctx context.Context, clusterID, namespace string) ([]rbacv1.RoleBinding, error) {
+	if strings.TrimSpace(namespace) == "" {
+		return listAcrossNamespaces(ctx, s, clusterID, func(queryCtx context.Context, bundle *k8sinfra.Bundle, namespace string) ([]rbacv1.RoleBinding, error) {
+			items, err := bundle.Typed.RbacV1().RoleBindings(namespace).List(queryCtx, metav1.ListOptions{})
+			if err != nil {
+				return nil, err
+			}
+			return items.Items, nil
+		})
+	}
+	bundle, err := s.clusters.Bundle(ctx, clusterID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
+	}
+	queryCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
+	defer cancel()
+	items, err := bundle.Typed.RbacV1().RoleBindings(namespace).List(queryCtx, metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	return items.Items, nil
+}
+
+func (s *Service) listDirectHorizontalPodAutoscalers(ctx context.Context, clusterID, namespace string) ([]autoscalingv2.HorizontalPodAutoscaler, error) {
+	if strings.TrimSpace(namespace) == "" {
+		return listAcrossNamespaces(ctx, s, clusterID, func(queryCtx context.Context, bundle *k8sinfra.Bundle, namespace string) ([]autoscalingv2.HorizontalPodAutoscaler, error) {
+			items, err := bundle.Typed.AutoscalingV2().HorizontalPodAutoscalers(namespace).List(queryCtx, metav1.ListOptions{})
+			if err != nil {
+				return nil, err
+			}
+			return items.Items, nil
+		})
+	}
+	bundle, err := s.clusters.Bundle(ctx, clusterID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
+	}
+	queryCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
+	defer cancel()
+	items, err := bundle.Typed.AutoscalingV2().HorizontalPodAutoscalers(namespace).List(queryCtx, metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	return items.Items, nil
+}
+
+func (s *Service) listDirectPodDisruptionBudgets(ctx context.Context, clusterID, namespace string) ([]policyv1.PodDisruptionBudget, error) {
+	if strings.TrimSpace(namespace) == "" {
+		return listAcrossNamespaces(ctx, s, clusterID, func(queryCtx context.Context, bundle *k8sinfra.Bundle, namespace string) ([]policyv1.PodDisruptionBudget, error) {
+			items, err := bundle.Typed.PolicyV1().PodDisruptionBudgets(namespace).List(queryCtx, metav1.ListOptions{})
+			if err != nil {
+				return nil, err
+			}
+			return items.Items, nil
+		})
+	}
+	bundle, err := s.clusters.Bundle(ctx, clusterID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
+	}
+	queryCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
+	defer cancel()
+	items, err := bundle.Typed.PolicyV1().PodDisruptionBudgets(namespace).List(queryCtx, metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	return items.Items, nil
 }
 
 func (s *Service) listPodsAcrossNamespaces(ctx context.Context, clusterID string) ([]corev1.Pod, error) {
@@ -2398,6 +3016,52 @@ func (s *Service) listDirectIngresses(ctx context.Context, clusterID, namespace 
 	return items.Items, "live", nil
 }
 
+func (s *Service) listDirectEndpointSlices(ctx context.Context, clusterID, namespace string) ([]discoveryv1.EndpointSlice, error) {
+	if strings.TrimSpace(namespace) == "" {
+		return listAcrossNamespaces(ctx, s, clusterID, func(queryCtx context.Context, bundle *k8sinfra.Bundle, namespace string) ([]discoveryv1.EndpointSlice, error) {
+			items, err := bundle.Typed.DiscoveryV1().EndpointSlices(namespace).List(queryCtx, metav1.ListOptions{})
+			if err != nil {
+				return nil, err
+			}
+			return items.Items, nil
+		})
+	}
+	bundle, err := s.clusters.Bundle(ctx, clusterID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
+	}
+	queryCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
+	defer cancel()
+	items, err := bundle.Typed.DiscoveryV1().EndpointSlices(namespace).List(queryCtx, metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	return items.Items, nil
+}
+
+func (s *Service) listDirectNetworkPolicies(ctx context.Context, clusterID, namespace string) ([]networkingv1.NetworkPolicy, error) {
+	if strings.TrimSpace(namespace) == "" {
+		return listAcrossNamespaces(ctx, s, clusterID, func(queryCtx context.Context, bundle *k8sinfra.Bundle, namespace string) ([]networkingv1.NetworkPolicy, error) {
+			items, err := bundle.Typed.NetworkingV1().NetworkPolicies(namespace).List(queryCtx, metav1.ListOptions{})
+			if err != nil {
+				return nil, err
+			}
+			return items.Items, nil
+		})
+	}
+	bundle, err := s.clusters.Bundle(ctx, clusterID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
+	}
+	queryCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
+	defer cancel()
+	items, err := bundle.Typed.NetworkingV1().NetworkPolicies(namespace).List(queryCtx, metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	return items.Items, nil
+}
+
 func (s *Service) listDirectClusterEvents(ctx context.Context, clusterID, namespace string, limit int) ([]domainresource.ClusterEventView, string, error) {
 	var (
 		rawItems []corev1.Event
@@ -2457,7 +3121,7 @@ func shouldUseInformerCache(namespace string) bool {
 }
 
 func shouldPopulatePodUsageSummaries(namespace string) bool {
-	return false
+	return strings.TrimSpace(namespace) != ""
 }
 
 func (s *Service) listDirectPersistentVolumeClaims(ctx context.Context, clusterID, namespace string) ([]corev1.PersistentVolumeClaim, error) {
@@ -2760,6 +3424,7 @@ func mapPod(item corev1.Pod, decision domainaccess.Decision) domainresource.PodV
 	ready := 0
 	restarts := int32(0)
 	claims := make([]string, 0)
+	requests, limits := podResourceTotals(item)
 	for _, status := range item.Status.ContainerStatuses {
 		if status.Ready {
 			ready++
@@ -2778,6 +3443,8 @@ func mapPod(item corev1.Pod, decision domainaccess.Decision) domainresource.PodV
 		NodeName:               item.Spec.NodeName,
 		PodIP:                  item.Status.PodIP,
 		CreatedAt:              item.CreationTimestamp.Time.Format(time.RFC3339),
+		Requests:               formatResourceTotals(requests),
+		Limits:                 formatResourceTotals(limits),
 		Labels:                 item.Labels,
 		PersistentVolumeClaims: claims,
 		ReadyContainers:        fmt.Sprintf("%d/%d", ready, len(item.Status.ContainerStatuses)),
@@ -2924,6 +3591,7 @@ func podPhaseSeverity(phase string) int {
 
 func mapPodDetail(item corev1.Pod, decision domainaccess.Decision) domainresource.PodDetailView {
 	containers := make([]domainresource.WorkloadContainerView, 0, len(item.Spec.Containers))
+	requests, limits := podResourceTotals(item)
 	statusMap := make(map[string]corev1.ContainerStatus, len(item.Status.ContainerStatuses))
 	for _, status := range item.Status.ContainerStatuses {
 		statusMap[status.Name] = status
@@ -2963,6 +3631,8 @@ func mapPodDetail(item corev1.Pod, decision domainaccess.Decision) domainresourc
 		ServiceAccountName: item.Spec.ServiceAccountName,
 		QOSClass:           string(item.Status.QOSClass),
 		StartTime:          startTime,
+		Requests:           formatResourceTotals(requests),
+		Limits:             formatResourceTotals(limits),
 		Labels:             item.Labels,
 		Annotations:        item.Annotations,
 		Containers:         containers,
@@ -3227,6 +3897,127 @@ func mapCronJobDetail(item batchv1.CronJob, decision domainaccess.Decision) doma
 	}
 }
 
+func mapReplicaSet(item appsv1.ReplicaSet, decision domainaccess.Decision) domainresource.ReplicaSetView {
+	desired := int32(0)
+	if item.Spec.Replicas != nil {
+		desired = *item.Spec.Replicas
+	}
+	return domainresource.ReplicaSetView{
+		Name:              item.Name,
+		Namespace:         item.Namespace,
+		DesiredReplicas:   desired,
+		ReadyReplicas:     item.Status.ReadyReplicas,
+		AvailableReplicas: item.Status.AvailableReplicas,
+		AgeSeconds:        secondsSince(item.CreationTimestamp.Time),
+		AllowedActions:    stringifyActions(decision.AllowedActions),
+	}
+}
+
+func mapConfigMap(item corev1.ConfigMap, decision domainaccess.Decision) domainresource.ConfigMapView {
+	return domainresource.ConfigMapView{
+		Name:           item.Name,
+		Namespace:      item.Namespace,
+		DataEntries:    len(item.Data),
+		BinaryEntries:  len(item.BinaryData),
+		Immutable:      item.Immutable != nil && *item.Immutable,
+		AgeSeconds:     secondsSince(item.CreationTimestamp.Time),
+		AllowedActions: stringifyActions(decision.AllowedActions),
+	}
+}
+
+func mapSecret(item corev1.Secret, decision domainaccess.Decision) domainresource.SecretView {
+	return domainresource.SecretView{
+		Name:           item.Name,
+		Namespace:      item.Namespace,
+		Type:           string(item.Type),
+		DataEntries:    len(item.Data),
+		Immutable:      item.Immutable != nil && *item.Immutable,
+		AgeSeconds:     secondsSince(item.CreationTimestamp.Time),
+		AllowedActions: stringifyActions(decision.AllowedActions),
+	}
+}
+
+func mapServiceAccount(item corev1.ServiceAccount, decision domainaccess.Decision) domainresource.ServiceAccountView {
+	return domainresource.ServiceAccountView{
+		Name:             item.Name,
+		Namespace:        item.Namespace,
+		Secrets:          len(item.Secrets),
+		ImagePullSecrets: len(item.ImagePullSecrets),
+		AutomountSAToken: item.AutomountServiceAccountToken != nil && *item.AutomountServiceAccountToken,
+		AgeSeconds:       secondsSince(item.CreationTimestamp.Time),
+		AllowedActions:   stringifyActions(decision.AllowedActions),
+	}
+}
+
+func mapRole(item rbacv1.Role, decision domainaccess.Decision) domainresource.RoleView {
+	return domainresource.RoleView{
+		Name:           item.Name,
+		Namespace:      item.Namespace,
+		Rules:          len(item.Rules),
+		AgeSeconds:     secondsSince(item.CreationTimestamp.Time),
+		AllowedActions: stringifyActions(decision.AllowedActions),
+	}
+}
+
+func mapRoleBinding(item rbacv1.RoleBinding, decision domainaccess.Decision) domainresource.RoleBindingView {
+	subjects := make([]string, 0, len(item.Subjects))
+	for _, subject := range item.Subjects {
+		if strings.TrimSpace(subject.Namespace) != "" {
+			subjects = append(subjects, fmt.Sprintf("%s:%s/%s", subject.Kind, subject.Namespace, subject.Name))
+			continue
+		}
+		subjects = append(subjects, fmt.Sprintf("%s:%s", subject.Kind, subject.Name))
+	}
+	return domainresource.RoleBindingView{
+		Name:           item.Name,
+		Namespace:      item.Namespace,
+		RoleRef:        fmt.Sprintf("%s/%s", item.RoleRef.Kind, item.RoleRef.Name),
+		Subjects:       subjects,
+		AgeSeconds:     secondsSince(item.CreationTimestamp.Time),
+		AllowedActions: stringifyActions(decision.AllowedActions),
+	}
+}
+
+func mapHorizontalPodAutoscaler(item autoscalingv2.HorizontalPodAutoscaler, decision domainaccess.Decision) domainresource.HorizontalPodAutoscalerView {
+	minReplicas := int32(1)
+	if item.Spec.MinReplicas != nil {
+		minReplicas = *item.Spec.MinReplicas
+	}
+	return domainresource.HorizontalPodAutoscalerView{
+		Name:            item.Name,
+		Namespace:       item.Namespace,
+		TargetRef:       fmt.Sprintf("%s/%s", item.Spec.ScaleTargetRef.Kind, item.Spec.ScaleTargetRef.Name),
+		MinReplicas:     minReplicas,
+		MaxReplicas:     item.Spec.MaxReplicas,
+		CurrentReplicas: item.Status.CurrentReplicas,
+		DesiredReplicas: item.Status.DesiredReplicas,
+		AgeSeconds:      secondsSince(item.CreationTimestamp.Time),
+		AllowedActions:  stringifyActions(decision.AllowedActions),
+	}
+}
+
+func mapPodDisruptionBudget(item policyv1.PodDisruptionBudget, decision domainaccess.Decision) domainresource.PodDisruptionBudgetView {
+	minAvailable := ""
+	if item.Spec.MinAvailable != nil {
+		minAvailable = item.Spec.MinAvailable.String()
+	}
+	maxUnavailable := ""
+	if item.Spec.MaxUnavailable != nil {
+		maxUnavailable = item.Spec.MaxUnavailable.String()
+	}
+	return domainresource.PodDisruptionBudgetView{
+		Name:               item.Name,
+		Namespace:          item.Namespace,
+		MinAvailable:       minAvailable,
+		MaxUnavailable:     maxUnavailable,
+		CurrentHealthy:     item.Status.CurrentHealthy,
+		DesiredHealthy:     item.Status.DesiredHealthy,
+		DisruptionsAllowed: item.Status.DisruptionsAllowed,
+		AgeSeconds:         secondsSince(item.CreationTimestamp.Time),
+		AllowedActions:     stringifyActions(decision.AllowedActions),
+	}
+}
+
 func mapService(item corev1.Service, decision domainaccess.Decision) domainresource.ServiceView {
 	ports := make([]string, 0, len(item.Spec.Ports))
 	for _, port := range item.Spec.Ports {
@@ -3269,6 +4060,33 @@ func mapIngress(item networkingv1.Ingress, decision domainaccess.Decision) domai
 		BackendServices: extractIngressBackendServices(item),
 		AgeSeconds:      secondsSince(item.CreationTimestamp.Time),
 		AllowedActions:  stringifyActions(decision.AllowedActions),
+	}
+}
+
+func mapEndpointSlice(item discoveryv1.EndpointSlice, decision domainaccess.Decision) domainresource.EndpointSliceView {
+	ports := make([]string, 0, len(item.Ports))
+	for _, port := range item.Ports {
+		if port.Port == nil {
+			continue
+		}
+		name := ""
+		if port.Name != nil && strings.TrimSpace(*port.Name) != "" {
+			name = *port.Name + ":"
+		}
+		protocol := ""
+		if port.Protocol != nil {
+			protocol = strings.ToLower(string(*port.Protocol))
+		}
+		ports = append(ports, fmt.Sprintf("%s%d/%s", name, *port.Port, protocol))
+	}
+	return domainresource.EndpointSliceView{
+		Name:           item.Name,
+		Namespace:      item.Namespace,
+		AddressType:    string(item.AddressType),
+		Endpoints:      len(item.Endpoints),
+		Ports:          ports,
+		AgeSeconds:     secondsSince(item.CreationTimestamp.Time),
+		AllowedActions: stringifyActions(decision.AllowedActions),
 	}
 }
 
@@ -3351,6 +4169,22 @@ func mapStorageClass(item storagev1.StorageClass, decision domainaccess.Decision
 		Parameters:           item.Parameters,
 		AgeSeconds:           secondsSince(item.CreationTimestamp.Time),
 		AllowedActions:       stringifyActions(decision.AllowedActions),
+	}
+}
+
+func mapNetworkPolicy(item networkingv1.NetworkPolicy, decision domainaccess.Decision) domainresource.NetworkPolicyView {
+	policyTypes := make([]string, 0, len(item.Spec.PolicyTypes))
+	for _, policyType := range item.Spec.PolicyTypes {
+		policyTypes = append(policyTypes, string(policyType))
+	}
+	return domainresource.NetworkPolicyView{
+		Name:           item.Name,
+		Namespace:      item.Namespace,
+		PolicyTypes:    policyTypes,
+		IngressRules:   len(item.Spec.Ingress),
+		EgressRules:    len(item.Spec.Egress),
+		AgeSeconds:     secondsSince(item.CreationTimestamp.Time),
+		AllowedActions: stringifyActions(decision.AllowedActions),
 	}
 }
 
@@ -3632,6 +4466,70 @@ func populateAllowedActionsCronJobs(items []domainresource.CronJobView, decision
 	}
 }
 
+func populateAllowedActionsReplicaSets(items []domainresource.ReplicaSetView, decision domainaccess.Decision) {
+	for i := range items {
+		if len(items[i].AllowedActions) == 0 {
+			items[i].AllowedActions = stringifyActions(decision.AllowedActions)
+		}
+	}
+}
+
+func populateAllowedActionsConfigMaps(items []domainresource.ConfigMapView, decision domainaccess.Decision) {
+	for i := range items {
+		if len(items[i].AllowedActions) == 0 {
+			items[i].AllowedActions = stringifyActions(decision.AllowedActions)
+		}
+	}
+}
+
+func populateAllowedActionsSecrets(items []domainresource.SecretView, decision domainaccess.Decision) {
+	for i := range items {
+		if len(items[i].AllowedActions) == 0 {
+			items[i].AllowedActions = stringifyActions(decision.AllowedActions)
+		}
+	}
+}
+
+func populateAllowedActionsServiceAccounts(items []domainresource.ServiceAccountView, decision domainaccess.Decision) {
+	for i := range items {
+		if len(items[i].AllowedActions) == 0 {
+			items[i].AllowedActions = stringifyActions(decision.AllowedActions)
+		}
+	}
+}
+
+func populateAllowedActionsRoles(items []domainresource.RoleView, decision domainaccess.Decision) {
+	for i := range items {
+		if len(items[i].AllowedActions) == 0 {
+			items[i].AllowedActions = stringifyActions(decision.AllowedActions)
+		}
+	}
+}
+
+func populateAllowedActionsRoleBindings(items []domainresource.RoleBindingView, decision domainaccess.Decision) {
+	for i := range items {
+		if len(items[i].AllowedActions) == 0 {
+			items[i].AllowedActions = stringifyActions(decision.AllowedActions)
+		}
+	}
+}
+
+func populateAllowedActionsHorizontalPodAutoscalers(items []domainresource.HorizontalPodAutoscalerView, decision domainaccess.Decision) {
+	for i := range items {
+		if len(items[i].AllowedActions) == 0 {
+			items[i].AllowedActions = stringifyActions(decision.AllowedActions)
+		}
+	}
+}
+
+func populateAllowedActionsPodDisruptionBudgets(items []domainresource.PodDisruptionBudgetView, decision domainaccess.Decision) {
+	for i := range items {
+		if len(items[i].AllowedActions) == 0 {
+			items[i].AllowedActions = stringifyActions(decision.AllowedActions)
+		}
+	}
+}
+
 func populateAllowedActionsServices(items []domainresource.ServiceView, decision domainaccess.Decision) {
 	for i := range items {
 		if len(items[i].AllowedActions) == 0 {
@@ -3641,6 +4539,22 @@ func populateAllowedActionsServices(items []domainresource.ServiceView, decision
 }
 
 func populateAllowedActionsIngresses(items []domainresource.IngressView, decision domainaccess.Decision) {
+	for i := range items {
+		if len(items[i].AllowedActions) == 0 {
+			items[i].AllowedActions = stringifyActions(decision.AllowedActions)
+		}
+	}
+}
+
+func populateAllowedActionsEndpointSlices(items []domainresource.EndpointSliceView, decision domainaccess.Decision) {
+	for i := range items {
+		if len(items[i].AllowedActions) == 0 {
+			items[i].AllowedActions = stringifyActions(decision.AllowedActions)
+		}
+	}
+}
+
+func populateAllowedActionsNetworkPolicies(items []domainresource.NetworkPolicyView, decision domainaccess.Decision) {
 	for i := range items {
 		if len(items[i].AllowedActions) == 0 {
 			items[i].AllowedActions = stringifyActions(decision.AllowedActions)

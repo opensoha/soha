@@ -6,9 +6,11 @@ import { ConfigProvider } from '@douyinfe/semi-ui'
 import zhCN from '@douyinfe/semi-ui/lib/es/locale/source/zh_CN'
 import enUS from '@douyinfe/semi-ui/lib/es/locale/source/en_US'
 import App from './App'
+import { useBrandingSettings } from './features/settings/use-branding-settings'
 import { I18nProvider } from './i18n'
 import { usePreferencesStore } from './stores/preferences-store'
-import { applySemiTheme, readStoredThemePreference } from './theme/semi-theme'
+import { applySemiTheme, DEFAULT_SEMI_THEME_ID, readStoredThemePreference } from './theme/semi-theme'
+import { applyBrandingSettings, persistBrandingSettings, readStoredBrandingSettings } from './utils/branding'
 import './styles/globals.css'
 
 const queryClient = new QueryClient({
@@ -21,11 +23,20 @@ const queryClient = new QueryClient({
   },
 })
 
-const initialThemePreference = readStoredThemePreference()
-applySemiTheme(initialThemePreference.themeId, initialThemePreference.themeMode)
+const storedThemePreference = readStoredThemePreference()
+
+applySemiTheme(DEFAULT_SEMI_THEME_ID, storedThemePreference.themeMode)
+applyBrandingSettings(readStoredBrandingSettings())
 
 function AppProviders() {
   const localeCode = usePreferencesStore((state) => state.localeCode)
+  const brandingQuery = useBrandingSettings()
+  React.useEffect(() => {
+    if (!brandingQuery.isSuccess || !brandingQuery.data?.data) return
+    const branding = brandingQuery.data.data
+    applyBrandingSettings(branding)
+    persistBrandingSettings(branding)
+  }, [brandingQuery.data, brandingQuery.isSuccess])
   return (
     <ConfigProvider locale={localeCode === 'en_US' ? enUS : zhCN}>
       <I18nProvider>

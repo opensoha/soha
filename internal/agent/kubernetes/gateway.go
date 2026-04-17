@@ -3,7 +3,6 @@ package kubernetes
 import (
 	"context"
 	"fmt"
-	"sort"
 	"strings"
 	"time"
 
@@ -24,18 +23,6 @@ func (c *Client) ListGateways(ctx context.Context, namespace string) ([]domainre
 	views := make([]domainresource.GatewayView, 0, len(items))
 	for _, item := range items {
 		views = append(views, mapGatewayResource(item))
-	}
-	return views, nil
-}
-
-func (c *Client) ListHTTPRoutes(ctx context.Context, namespace string) ([]domainresource.HTTPRouteView, error) {
-	items, err := c.listNamespacedDynamicResources(ctx, namespace, "gateway.networking.k8s.io", gatewayVersions, "httproutes")
-	if err != nil {
-		return nil, err
-	}
-	views := make([]domainresource.HTTPRouteView, 0, len(items))
-	for _, item := range items {
-		views = append(views, mapHTTPRouteResource(item))
 	}
 	return views, nil
 }
@@ -81,63 +68,5 @@ func mapGatewayResource(item unstructured.Unstructured) domainresource.GatewayVi
 		Addresses:     addresses,
 		ListenerCount: int32(len(listeners)),
 		AgeSeconds:    secondsSince(item.GetCreationTimestamp().Time),
-	}
-}
-
-func mapHTTPRouteResource(item unstructured.Unstructured) domainresource.HTTPRouteView {
-	hostItems, _, _ := unstructured.NestedStringSlice(item.Object, "spec", "hostnames")
-	parentItems, _, _ := unstructured.NestedSlice(item.Object, "spec", "parentRefs")
-	parentRefs := make([]string, 0, len(parentItems))
-	for _, raw := range parentItems {
-		value, ok := raw.(map[string]any)
-		if !ok {
-			continue
-		}
-		name, _ := value["name"].(string)
-		namespace, _ := value["namespace"].(string)
-		if strings.TrimSpace(name) == "" {
-			continue
-		}
-		if strings.TrimSpace(namespace) != "" {
-			parentRefs = append(parentRefs, fmt.Sprintf("%s/%s", namespace, name))
-		} else {
-			parentRefs = append(parentRefs, name)
-		}
-	}
-	ruleItems, _, _ := unstructured.NestedSlice(item.Object, "spec", "rules")
-	backendServices := make([]string, 0)
-	seen := map[string]struct{}{}
-	for _, raw := range ruleItems {
-		rule, ok := raw.(map[string]any)
-		if !ok {
-			continue
-		}
-		backendRefs, _ := rule["backendRefs"].([]any)
-		for _, backendRaw := range backendRefs {
-			backendRef, ok := backendRaw.(map[string]any)
-			if !ok {
-				continue
-			}
-			name, _ := backendRef["name"].(string)
-			name = strings.TrimSpace(name)
-			if name == "" {
-				continue
-			}
-			if _, exists := seen[name]; exists {
-				continue
-			}
-			seen[name] = struct{}{}
-			backendServices = append(backendServices, name)
-		}
-	}
-	sort.Strings(backendServices)
-	return domainresource.HTTPRouteView{
-		Name:            item.GetName(),
-		Namespace:       item.GetNamespace(),
-		Hostnames:       hostItems,
-		ParentRefs:      parentRefs,
-		BackendServices: backendServices,
-		RuleCount:       int32(len(ruleItems)),
-		AgeSeconds:      secondsSince(item.GetCreationTimestamp().Time),
 	}
 }

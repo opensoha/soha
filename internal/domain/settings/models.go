@@ -3,9 +3,10 @@ package settings
 import "context"
 
 const (
-	IdentityOIDCSettingKey = "identity.oidc"
+	IdentityOIDCSettingKey         = "identity.oidc"
 	MonitoringPrometheusSettingKey = "monitoring.prometheus"
-	AIProviderSettingKey = "ai.provider"
+	AIProviderSettingKey           = "ai.provider"
+	BrandingSettingKey             = "branding.console"
 )
 
 type OIDCSettings struct {
@@ -47,6 +48,15 @@ type AIProviderSettings struct {
 
 type AISettings struct {
 	Provider AIProviderSettings `json:"provider"`
+}
+
+type BrandingSettings struct {
+	AppTitle         string `json:"appTitle"`
+	SidebarTitle     string `json:"sidebarTitle"`
+	LoginLogoURL     string `json:"loginLogoUrl"`
+	ExpandedLogoURL  string `json:"expandedLogoUrl"`
+	CollapsedLogoURL string `json:"collapsedLogoUrl"`
+	FaviconURL       string `json:"faviconUrl"`
 }
 
 type Store interface {

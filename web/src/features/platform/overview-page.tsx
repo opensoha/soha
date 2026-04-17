@@ -58,8 +58,8 @@ interface WorkloadOverview {
   unknownPods: number
   restartingPods: number
   atRiskPods: number
-  namespaceBreakdown: WorkloadOverviewNamespace[]
-  problematicPods: WorkloadOverviewPod[]
+  namespaceBreakdown?: WorkloadOverviewNamespace[]
+  problematicPods?: WorkloadOverviewPod[]
 }
 
 function buildPodDetailPath(name: string, namespace: string) {
@@ -132,6 +132,8 @@ export function OverviewPage() {
   ]
 
   const workloadOverview = workloadOverviewQuery.data?.data
+  const namespaceBreakdown = workloadOverview?.namespaceBreakdown ?? []
+  const problematicPods = workloadOverview?.problematicPods ?? []
   const scopeLabel = effectiveCluster
     ? `${effectiveCluster.name} / ${namespace && namespace !== '' ? namespace : t('platformScope.allNamespaces', 'All namespaces')}`
     : '-'
@@ -235,11 +237,11 @@ export function OverviewPage() {
                   ) : null
                 }
               >
-                {workloadOverview.namespaceBreakdown.length === 0 ? (
+                {namespaceBreakdown.length === 0 ? (
                   <Empty description={localeCode === 'zh_CN' ? '当前范围暂无 Pod 分布数据' : 'No namespace distribution in the current scope'} />
                 ) : (
                   <div className="kc-list-panel">
-                    {workloadOverview.namespaceBreakdown.map((item) => (
+                    {namespaceBreakdown.map((item) => (
                       <div key={item.namespace} className="kc-list-row">
                         <div className="kc-list-row-meta">
                           <Text strong>{item.namespace}</Text>
@@ -277,11 +279,11 @@ export function OverviewPage() {
                   </Text>
                 }
               >
-                {workloadOverview.problematicPods.length === 0 ? (
+                {problematicPods.length === 0 ? (
                   <Empty description={localeCode === 'zh_CN' ? '当前范围内没有需要关注的 Pod' : 'No pods require attention in the current scope'} />
                 ) : (
                   <div className="kc-list-panel">
-                    {workloadOverview.problematicPods.map((item) => (
+                    {problematicPods.map((item) => (
                       <div key={`${item.namespace}/${item.name}`} className="kc-list-row">
                         <div className="kc-list-row-meta">
                           <Button

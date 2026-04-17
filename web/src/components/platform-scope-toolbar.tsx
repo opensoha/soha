@@ -8,7 +8,21 @@ import type { ApiResponse, Cluster, Namespace } from '@/types'
 
 const { Text } = Typography
 
-export function PlatformScopeToolbar() {
+interface PlatformScopeToolbarProps {
+  className?: string
+  clusterWidth?: number
+  embedded?: boolean
+  namespaceWidth?: number
+  showLabel?: boolean
+}
+
+export function PlatformScopeToolbar({
+  className,
+  clusterWidth = 220,
+  embedded = false,
+  namespaceWidth = 220,
+  showLabel = true,
+}: PlatformScopeToolbarProps = {}) {
   const { t } = useI18n()
   const { clusterId, namespace, setClusterId, setNamespace } = usePlatformScopeStore()
 
@@ -47,15 +61,19 @@ export function PlatformScopeToolbar() {
   }, [clusterId, namespace, namespacesData, setNamespace])
 
   return (
-    <div className="kc-scopebar">
-      <Text strong size="small">
-        {t('platformScope.scope', 'Resource Scope')}
-      </Text>
+    <div className={['kc-scopebar', embedded ? 'is-embedded' : '', className].filter(Boolean).join(' ')}>
+      {showLabel ? (
+        <Text strong size="small">
+          {t('platformScope.scope', 'Resource Scope')}
+        </Text>
+      ) : null}
       <Select
+        className="kc-platform-compact-field"
+        size="small"
         placeholder={t('platformScope.clusterPlaceholder', 'Select cluster')}
         value={clusterId ?? undefined}
         onChange={(value) => setClusterId(value as string)}
-        style={{ width: 220 }}
+        style={{ width: clusterWidth }}
         optionList={(clustersData?.data ?? []).map((cluster) => ({
           value: cluster.id,
           label: cluster.name,
@@ -63,10 +81,12 @@ export function PlatformScopeToolbar() {
         showClear
       />
       <Select
+        className="kc-platform-compact-field"
+        size="small"
         placeholder={t('platformScope.namespacePlaceholder', 'Select namespace')}
         value={namespace ?? undefined}
         onChange={(value) => setNamespace(value as string)}
-        style={{ width: 220 }}
+        style={{ width: namespaceWidth }}
         optionList={[
           { value: '', label: t('platformScope.allNamespaces', 'All namespaces') },
           ...(namespacesData?.data ?? []).map((item) => ({

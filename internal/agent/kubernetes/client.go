@@ -9,9 +9,13 @@ import (
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
+	autoscalingv2 "k8s.io/api/autoscaling/v2"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	discoveryv1 "k8s.io/api/discovery/v1"
 	networkingv1 "k8s.io/api/networking/v1"
+	policyv1 "k8s.io/api/policy/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -538,6 +542,118 @@ func (c *Client) ListCronJobs(ctx context.Context, namespace string) ([]domainre
 	return views, nil
 }
 
+func (c *Client) ListReplicaSets(ctx context.Context, namespace string) ([]domainresource.ReplicaSetView, error) {
+	queryCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	items, err := c.typed.AppsV1().ReplicaSets(namespace).List(queryCtx, metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	views := make([]domainresource.ReplicaSetView, 0, len(items.Items))
+	for _, item := range items.Items {
+		views = append(views, mapReplicaSet(item))
+	}
+	return views, nil
+}
+
+func (c *Client) ListConfigMaps(ctx context.Context, namespace string) ([]domainresource.ConfigMapView, error) {
+	queryCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	items, err := c.typed.CoreV1().ConfigMaps(namespace).List(queryCtx, metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	views := make([]domainresource.ConfigMapView, 0, len(items.Items))
+	for _, item := range items.Items {
+		views = append(views, mapConfigMap(item))
+	}
+	return views, nil
+}
+
+func (c *Client) ListSecrets(ctx context.Context, namespace string) ([]domainresource.SecretView, error) {
+	queryCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	items, err := c.typed.CoreV1().Secrets(namespace).List(queryCtx, metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	views := make([]domainresource.SecretView, 0, len(items.Items))
+	for _, item := range items.Items {
+		views = append(views, mapSecret(item))
+	}
+	return views, nil
+}
+
+func (c *Client) ListServiceAccounts(ctx context.Context, namespace string) ([]domainresource.ServiceAccountView, error) {
+	queryCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	items, err := c.typed.CoreV1().ServiceAccounts(namespace).List(queryCtx, metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	views := make([]domainresource.ServiceAccountView, 0, len(items.Items))
+	for _, item := range items.Items {
+		views = append(views, mapServiceAccount(item))
+	}
+	return views, nil
+}
+
+func (c *Client) ListRoles(ctx context.Context, namespace string) ([]domainresource.RoleView, error) {
+	queryCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	items, err := c.typed.RbacV1().Roles(namespace).List(queryCtx, metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	views := make([]domainresource.RoleView, 0, len(items.Items))
+	for _, item := range items.Items {
+		views = append(views, mapRole(item))
+	}
+	return views, nil
+}
+
+func (c *Client) ListRoleBindings(ctx context.Context, namespace string) ([]domainresource.RoleBindingView, error) {
+	queryCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	items, err := c.typed.RbacV1().RoleBindings(namespace).List(queryCtx, metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	views := make([]domainresource.RoleBindingView, 0, len(items.Items))
+	for _, item := range items.Items {
+		views = append(views, mapRoleBinding(item))
+	}
+	return views, nil
+}
+
+func (c *Client) ListHorizontalPodAutoscalers(ctx context.Context, namespace string) ([]domainresource.HorizontalPodAutoscalerView, error) {
+	queryCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	items, err := c.typed.AutoscalingV2().HorizontalPodAutoscalers(namespace).List(queryCtx, metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	views := make([]domainresource.HorizontalPodAutoscalerView, 0, len(items.Items))
+	for _, item := range items.Items {
+		views = append(views, mapHorizontalPodAutoscaler(item))
+	}
+	return views, nil
+}
+
+func (c *Client) ListPodDisruptionBudgets(ctx context.Context, namespace string) ([]domainresource.PodDisruptionBudgetView, error) {
+	queryCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	items, err := c.typed.PolicyV1().PodDisruptionBudgets(namespace).List(queryCtx, metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	views := make([]domainresource.PodDisruptionBudgetView, 0, len(items.Items))
+	for _, item := range items.Items {
+		views = append(views, mapPodDisruptionBudget(item))
+	}
+	return views, nil
+}
+
 func (c *Client) GetCronJobDetail(ctx context.Context, namespace, name string) (domainresource.CronJobDetailView, error) {
 	queryCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
@@ -626,6 +742,34 @@ func (c *Client) ListIngresses(ctx context.Context, namespace string) ([]domainr
 	views := make([]domainresource.IngressView, 0, len(items.Items))
 	for _, item := range items.Items {
 		views = append(views, mapIngress(item))
+	}
+	return views, nil
+}
+
+func (c *Client) ListEndpointSlices(ctx context.Context, namespace string) ([]domainresource.EndpointSliceView, error) {
+	queryCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	items, err := c.typed.DiscoveryV1().EndpointSlices(namespace).List(queryCtx, metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	views := make([]domainresource.EndpointSliceView, 0, len(items.Items))
+	for _, item := range items.Items {
+		views = append(views, mapEndpointSlice(item))
+	}
+	return views, nil
+}
+
+func (c *Client) ListNetworkPolicies(ctx context.Context, namespace string) ([]domainresource.NetworkPolicyView, error) {
+	queryCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	items, err := c.typed.NetworkingV1().NetworkPolicies(namespace).List(queryCtx, metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	views := make([]domainresource.NetworkPolicyView, 0, len(items.Items))
+	for _, item := range items.Items {
+		views = append(views, mapNetworkPolicy(item))
 	}
 	return views, nil
 }
@@ -782,6 +926,7 @@ func mapPod(item corev1.Pod) domainresource.PodView {
 	ready := 0
 	restarts := int32(0)
 	claims := make([]string, 0)
+	requests, limits := podResourceTotals(item)
 	for _, status := range item.Status.ContainerStatuses {
 		if status.Ready {
 			ready++
@@ -800,6 +945,8 @@ func mapPod(item corev1.Pod) domainresource.PodView {
 		NodeName:               item.Spec.NodeName,
 		PodIP:                  item.Status.PodIP,
 		CreatedAt:              item.CreationTimestamp.Time.Format(time.RFC3339),
+		Requests:               formatNodeResourceTotals(requests),
+		Limits:                 formatNodeResourceTotals(limits),
 		Labels:                 item.Labels,
 		PersistentVolumeClaims: claims,
 		ReadyContainers:        fmt.Sprintf("%d/%d", ready, len(item.Status.ContainerStatuses)),
@@ -1118,6 +1265,119 @@ func mapCronJobDetail(item batchv1.CronJob) domainresource.CronJobDetailView {
 	}
 }
 
+func mapReplicaSet(item appsv1.ReplicaSet) domainresource.ReplicaSetView {
+	desired := int32(0)
+	if item.Spec.Replicas != nil {
+		desired = *item.Spec.Replicas
+	}
+	return domainresource.ReplicaSetView{
+		Name:              item.Name,
+		Namespace:         item.Namespace,
+		DesiredReplicas:   desired,
+		ReadyReplicas:     item.Status.ReadyReplicas,
+		AvailableReplicas: item.Status.AvailableReplicas,
+		AgeSeconds:        secondsSince(item.CreationTimestamp.Time),
+	}
+}
+
+func mapConfigMap(item corev1.ConfigMap) domainresource.ConfigMapView {
+	return domainresource.ConfigMapView{
+		Name:          item.Name,
+		Namespace:     item.Namespace,
+		DataEntries:   len(item.Data),
+		BinaryEntries: len(item.BinaryData),
+		Immutable:     item.Immutable != nil && *item.Immutable,
+		AgeSeconds:    secondsSince(item.CreationTimestamp.Time),
+	}
+}
+
+func mapSecret(item corev1.Secret) domainresource.SecretView {
+	return domainresource.SecretView{
+		Name:        item.Name,
+		Namespace:   item.Namespace,
+		Type:        string(item.Type),
+		DataEntries: len(item.Data),
+		Immutable:   item.Immutable != nil && *item.Immutable,
+		AgeSeconds:  secondsSince(item.CreationTimestamp.Time),
+	}
+}
+
+func mapServiceAccount(item corev1.ServiceAccount) domainresource.ServiceAccountView {
+	return domainresource.ServiceAccountView{
+		Name:             item.Name,
+		Namespace:        item.Namespace,
+		Secrets:          len(item.Secrets),
+		ImagePullSecrets: len(item.ImagePullSecrets),
+		AutomountSAToken: item.AutomountServiceAccountToken != nil && *item.AutomountServiceAccountToken,
+		AgeSeconds:       secondsSince(item.CreationTimestamp.Time),
+	}
+}
+
+func mapRole(item rbacv1.Role) domainresource.RoleView {
+	return domainresource.RoleView{
+		Name:       item.Name,
+		Namespace:  item.Namespace,
+		Rules:      len(item.Rules),
+		AgeSeconds: secondsSince(item.CreationTimestamp.Time),
+	}
+}
+
+func mapRoleBinding(item rbacv1.RoleBinding) domainresource.RoleBindingView {
+	subjects := make([]string, 0, len(item.Subjects))
+	for _, subject := range item.Subjects {
+		if strings.TrimSpace(subject.Namespace) != "" {
+			subjects = append(subjects, fmt.Sprintf("%s:%s/%s", subject.Kind, subject.Namespace, subject.Name))
+			continue
+		}
+		subjects = append(subjects, fmt.Sprintf("%s:%s", subject.Kind, subject.Name))
+	}
+	return domainresource.RoleBindingView{
+		Name:       item.Name,
+		Namespace:  item.Namespace,
+		RoleRef:    fmt.Sprintf("%s/%s", item.RoleRef.Kind, item.RoleRef.Name),
+		Subjects:   subjects,
+		AgeSeconds: secondsSince(item.CreationTimestamp.Time),
+	}
+}
+
+func mapHorizontalPodAutoscaler(item autoscalingv2.HorizontalPodAutoscaler) domainresource.HorizontalPodAutoscalerView {
+	minReplicas := int32(1)
+	if item.Spec.MinReplicas != nil {
+		minReplicas = *item.Spec.MinReplicas
+	}
+	return domainresource.HorizontalPodAutoscalerView{
+		Name:            item.Name,
+		Namespace:       item.Namespace,
+		TargetRef:       fmt.Sprintf("%s/%s", item.Spec.ScaleTargetRef.Kind, item.Spec.ScaleTargetRef.Name),
+		MinReplicas:     minReplicas,
+		MaxReplicas:     item.Spec.MaxReplicas,
+		CurrentReplicas: item.Status.CurrentReplicas,
+		DesiredReplicas: item.Status.DesiredReplicas,
+		AgeSeconds:      secondsSince(item.CreationTimestamp.Time),
+	}
+}
+
+func mapPodDisruptionBudget(item policyv1.PodDisruptionBudget) domainresource.PodDisruptionBudgetView {
+	minAvailable := ""
+	if item.Spec.MinAvailable != nil {
+		minAvailable = item.Spec.MinAvailable.String()
+	}
+	maxUnavailable := ""
+	if item.Spec.MaxUnavailable != nil {
+		maxUnavailable = item.Spec.MaxUnavailable.String()
+	}
+	return domainresource.PodDisruptionBudgetView{
+		Name:               item.Name,
+		Namespace:          item.Namespace,
+		MinAvailable:       minAvailable,
+		MaxUnavailable:     maxUnavailable,
+		CurrentHealthy:     item.Status.CurrentHealthy,
+		DesiredHealthy:     item.Status.DesiredHealthy,
+		DisruptionsAllowed: item.Status.DisruptionsAllowed,
+		AgeSeconds:         secondsSince(item.CreationTimestamp.Time),
+	}
+}
+
 func mapCRD(item unstructured.Unstructured) domainresource.CRDView {
 	group, _, _ := unstructured.NestedString(item.Object, "spec", "group")
 	scope, _, _ := unstructured.NestedString(item.Object, "spec", "scope")
@@ -1227,6 +1487,32 @@ func mapService(item corev1.Service) domainresource.ServiceView {
 	}
 }
 
+func mapEndpointSlice(item discoveryv1.EndpointSlice) domainresource.EndpointSliceView {
+	ports := make([]string, 0, len(item.Ports))
+	for _, port := range item.Ports {
+		if port.Port == nil {
+			continue
+		}
+		name := ""
+		if port.Name != nil && strings.TrimSpace(*port.Name) != "" {
+			name = *port.Name + ":"
+		}
+		protocol := ""
+		if port.Protocol != nil {
+			protocol = strings.ToLower(string(*port.Protocol))
+		}
+		ports = append(ports, fmt.Sprintf("%s%d/%s", name, *port.Port, protocol))
+	}
+	return domainresource.EndpointSliceView{
+		Name:        item.Name,
+		Namespace:   item.Namespace,
+		AddressType: string(item.AddressType),
+		Endpoints:   len(item.Endpoints),
+		Ports:       ports,
+		AgeSeconds:  secondsSince(item.CreationTimestamp.Time),
+	}
+}
+
 func mapIngress(item networkingv1.Ingress) domainresource.IngressView {
 	hosts := make([]string, 0, len(item.Spec.Rules))
 	for _, rule := range item.Spec.Rules {
@@ -1256,6 +1542,21 @@ func mapIngress(item networkingv1.Ingress) domainresource.IngressView {
 		Address:         strings.Join(addresses, ", "),
 		BackendServices: extractIngressBackendServices(item),
 		AgeSeconds:      secondsSince(item.CreationTimestamp.Time),
+	}
+}
+
+func mapNetworkPolicy(item networkingv1.NetworkPolicy) domainresource.NetworkPolicyView {
+	policyTypes := make([]string, 0, len(item.Spec.PolicyTypes))
+	for _, policyType := range item.Spec.PolicyTypes {
+		policyTypes = append(policyTypes, string(policyType))
+	}
+	return domainresource.NetworkPolicyView{
+		Name:         item.Name,
+		Namespace:    item.Namespace,
+		PolicyTypes:  policyTypes,
+		IngressRules: len(item.Spec.Ingress),
+		EgressRules:  len(item.Spec.Egress),
+		AgeSeconds:   secondsSince(item.CreationTimestamp.Time),
 	}
 }
 

@@ -108,24 +108,21 @@ func (s *Service) GetPodMetrics(ctx context.Context, principal domainidentity.Pr
 	view.Configured = true
 	queryRange := time.Duration(rangeMinutes) * time.Minute
 	definitions := buildPodMetricDefinitions(namespace, podName, clusterID, settings.ClusterLabel)
-	series := make([]domainresource.MetricSeriesView, 0, len(definitions))
-	var firstError string
-	for _, definition := range definitions {
-		points, latest, queryErr := s.queryPrometheusRange(ctx, settings.BaseURL, settings.BearerToken, definition.Query, queryRange, time.Duration(stepSeconds)*time.Second)
-		if queryErr != nil {
-			if firstError == "" {
-				firstError = queryErr.Error()
-			}
-			continue
-		}
-		series = append(series, domainresource.MetricSeriesView{
-			Key:    definition.Key,
-			Label:  definition.Label,
-			Unit:   definition.Unit,
-			Latest: latest,
-			Points: points,
-		})
+	fallbackDefinitions := []metricDefinition(nil)
+	if hasPrometheusClusterMatcher(clusterID, settings.ClusterLabel) {
+		fallbackDefinitions = buildPodMetricDefinitions(namespace, podName, "", "")
 	}
+	series, firstError := s.queryMetricSeriesWithFallback(
+		ctx,
+		settings.BaseURL,
+		settings.BearerToken,
+		definitions,
+		fallbackDefinitions,
+		namespace,
+		[]string{podName},
+		queryRange,
+		time.Duration(stepSeconds)*time.Second,
+	)
 	view.Series = series
 	if firstError != "" && len(series) == 0 {
 		view.Message = firstError
@@ -240,24 +237,21 @@ func (s *Service) queryResourceMetrics(ctx context.Context, principal domainiden
 	view.Configured = true
 	queryRange := time.Duration(rangeMinutes) * time.Minute
 	definitions := buildPodSetMetricDefinitions(namespace, podNames, clusterID, settings.ClusterLabel)
-	series := make([]domainresource.MetricSeriesView, 0, len(definitions))
-	var firstError string
-	for _, definition := range definitions {
-		points, latest, queryErr := s.queryPrometheusRange(ctx, settings.BaseURL, settings.BearerToken, definition.Query, queryRange, time.Duration(stepSeconds)*time.Second)
-		if queryErr != nil {
-			if firstError == "" {
-				firstError = queryErr.Error()
-			}
-			continue
-		}
-		series = append(series, domainresource.MetricSeriesView{
-			Key:    definition.Key,
-			Label:  definition.Label,
-			Unit:   definition.Unit,
-			Latest: latest,
-			Points: points,
-		})
+	fallbackDefinitions := []metricDefinition(nil)
+	if hasPrometheusClusterMatcher(clusterID, settings.ClusterLabel) {
+		fallbackDefinitions = buildPodSetMetricDefinitions(namespace, podNames, "", "")
 	}
+	series, firstError := s.queryMetricSeriesWithFallback(
+		ctx,
+		settings.BaseURL,
+		settings.BearerToken,
+		definitions,
+		fallbackDefinitions,
+		namespace,
+		podNames,
+		queryRange,
+		time.Duration(stepSeconds)*time.Second,
+	)
 	view.Series = series
 	if firstError != "" && len(series) == 0 {
 		view.Message = firstError
@@ -520,12 +514,23 @@ func (s *Service) listPodUsageValues(ctx context.Context, settings domainsetting
 
 		cpuByPod, cpuErr := s.queryPrometheusInstantByPod(ctx, settings.BaseURL, settings.BearerToken, fmt.Sprintf(`sum by (pod) (rate(container_cpu_usage_seconds_total{%s}[5m]))`, filter))
 		memoryByPod, memoryErr := s.queryPrometheusInstantByPod(ctx, settings.BaseURL, settings.BearerToken, fmt.Sprintf(`sum by (pod) (container_memory_working_set_bytes{%s})`, filter))
+		if hasPrometheusClusterMatcher(clusterID, settings.ClusterLabel) && len(cpuByPod) == 0 && len(memoryByPod) == 0 {
+			fallbackFilter := buildPodSetMetricMatcher(namespace, names, "", "")
+			fallbackCPUByPod, fallbackCPUErr := s.queryPrometheusInstantByPod(ctx, settings.BaseURL, settings.BearerToken, fmt.Sprintf(`sum by (pod) (rate(container_cpu_usage_seconds_total{%s}[5m]))`, fallbackFilter))
+			fallbackMemoryByPod, fallbackMemoryErr := s.queryPrometheusInstantByPod(ctx, settings.BaseURL, settings.BearerToken, fmt.Sprintf(`sum by (pod) (container_memory_working_set_bytes{%s})`, fallbackFilter))
+			if len(fallbackCPUByPod) > 0 || len(fallbackMemoryByPod) > 0 {
+				cpuByPod = fallbackCPUByPod
+				memoryByPod = fallbackMemoryByPod
+				cpuErr = fallbackCPUErr
+				memoryErr = fallbackMemoryErr
+			} else {
+				cpuErr = firstNonNilError(cpuErr, fallbackCPUErr)
+				memoryErr = firstNonNilError(memoryErr, fallbackMemoryErr)
+			}
+		}
 		if cpuErr != nil && memoryErr != nil {
 			if firstErr == nil {
-				firstErr = cpuErr
-				if firstErr == nil {
-					firstErr = memoryErr
-				}
+				firstErr = firstNonNilError(cpuErr, memoryErr)
 			}
 			continue
 		}
@@ -548,6 +553,91 @@ func (s *Service) listPodUsageValues(ctx context.Context, settings domainsetting
 		return nil, firstErr
 	}
 	return out, nil
+}
+
+func hasPrometheusClusterMatcher(clusterID, clusterLabel string) bool {
+	return strings.TrimSpace(clusterID) != "" && strings.TrimSpace(clusterLabel) != ""
+}
+
+func (s *Service) canUseUnscopedPodMetricsFallback(ctx context.Context, baseURL, bearerToken, namespace string, podNames []string) (bool, error) {
+	filter := buildPodSetMetricMatcher(namespace, podNames, "", "")
+	if filter == "" {
+		return false, nil
+	}
+	counts, err := s.queryPrometheusInstantByPod(
+		ctx,
+		baseURL,
+		bearerToken,
+		fmt.Sprintf(`count by (pod) (count by (pod, job, instance) (container_memory_working_set_bytes{%s}))`, filter),
+	)
+	if err != nil || len(counts) == 0 {
+		return false, nil
+	}
+	for _, count := range counts {
+		if count > 1.001 {
+			return false, fmt.Errorf("prometheus fallback was skipped because matching pod metrics were ambiguous without the configured cluster label")
+		}
+	}
+	return true, nil
+}
+
+func firstNonNilError(errors ...error) error {
+	for _, err := range errors {
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *Service) queryMetricSeries(ctx context.Context, baseURL, bearerToken string, definitions []metricDefinition, queryRange, step time.Duration) ([]domainresource.MetricSeriesView, string) {
+	series := make([]domainresource.MetricSeriesView, 0, len(definitions))
+	var firstError string
+	for _, definition := range definitions {
+		points, latest, queryErr := s.queryPrometheusRange(ctx, baseURL, bearerToken, definition.Query, queryRange, step)
+		if queryErr != nil {
+			if firstError == "" {
+				firstError = queryErr.Error()
+			}
+			continue
+		}
+		if len(points) == 0 {
+			continue
+		}
+		series = append(series, domainresource.MetricSeriesView{
+			Key:    definition.Key,
+			Label:  definition.Label,
+			Unit:   definition.Unit,
+			Latest: latest,
+			Points: points,
+		})
+	}
+	return series, firstError
+}
+
+func (s *Service) queryMetricSeriesWithFallback(ctx context.Context, baseURL, bearerToken string, definitions, fallbackDefinitions []metricDefinition, namespace string, podNames []string, queryRange, step time.Duration) ([]domainresource.MetricSeriesView, string) {
+	series, firstError := s.queryMetricSeries(ctx, baseURL, bearerToken, definitions, queryRange, step)
+	if len(series) > 0 || len(fallbackDefinitions) == 0 {
+		return series, firstError
+	}
+	canFallback, fallbackCheckErr := s.canUseUnscopedPodMetricsFallback(ctx, baseURL, bearerToken, namespace, podNames)
+	if fallbackCheckErr != nil {
+		if firstError == "" {
+			firstError = fallbackCheckErr.Error()
+		}
+		return series, firstError
+	}
+	if !canFallback {
+		return series, firstError
+	}
+	fallbackSeries, fallbackError := s.queryMetricSeries(ctx, baseURL, bearerToken, fallbackDefinitions, queryRange, step)
+	if len(fallbackSeries) > 0 {
+		return fallbackSeries, ""
+	}
+	if firstError == "" {
+		firstError = fallbackError
+	}
+	return series, firstError
 }
 
 func selectPodsBySelector(pods []domainresource.PodView, selector map[string]string) []string {

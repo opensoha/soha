@@ -4,6 +4,7 @@ import { Form, Button, Toast, Divider, Typography } from '@douyinfe/semi-ui'
 import { IconLock, IconUser } from '@douyinfe/semi-icons'
 import { api } from '@/services/api-client'
 import { useAuthStore } from '@/stores/auth-store'
+import { readStoredBrandingSettings } from '@/utils/branding'
 import type { ApiResponse, AuthResult } from '@/types'
 
 const { Title, Text } = Typography
@@ -16,6 +17,8 @@ export function LoginPage() {
   const { setTokens, setUser } = useAuthStore()
   const [loading, setLoading] = useState(false)
   const [oidcLoading, setOidcLoading] = useState(false)
+
+  const branding = readStoredBrandingSettings()
 
   const from = (location.state as { from?: { pathname: string } })?.from?.pathname ?? '/'
 
@@ -47,11 +50,16 @@ export function LoginPage() {
     <div className="kc-auth-shell">
       <div className="kc-auth-layout">
         <section className="kc-auth-hero">
+          {branding.loginLogoUrl ? (
+            <div className="kc-auth-hero-logo">
+              <img src={branding.loginLogoUrl} alt={branding.appTitle || 'Logo'} className="kc-auth-hero-logo-img" />
+            </div>
+          ) : null}
           <span className="kc-auth-pill">Semi Official Themes</span>
           <Title heading={1} style={{ marginTop: 18, marginBottom: 12 }}>
             多套官方主题可切换的
             <br />
-            KubeCrux 控制台
+            {branding.sidebarTitle || 'KubeCrux'} 控制台
           </Title>
           <Text style={{ fontSize: 16, lineHeight: 1.8 }}>
             把多集群、交付、观测、权限与 AI 助手收在一个更统一的创作服务式界面里。
@@ -81,9 +89,13 @@ export function LoginPage() {
         <section className="kc-auth-panel">
           <div className="kc-auth-panel-inner">
             <div className="kc-auth-brand">
-              <div className="kc-auth-mark">KC</div>
+              {branding.expandedLogoUrl ? (
+                <img src={branding.expandedLogoUrl} alt={branding.sidebarTitle || 'Logo'} className="kc-auth-brand-logo-img" />
+              ) : (
+                <div className="kc-auth-mark">KC</div>
+              )}
               <div className="kc-auth-brand-copy">
-                <Title heading={3} style={{ margin: 0 }}>KubeCrux</Title>
+                <Title heading={3} style={{ margin: 0 }}>{branding.sidebarTitle || 'KubeCrux'}</Title>
                 <Text type="tertiary">Kubernetes 多集群管理平台</Text>
               </div>
             </div>

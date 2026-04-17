@@ -89,6 +89,37 @@ func (s *Service) GetAISettings(ctx context.Context, principal domainidentity.Pr
 	return s.aiSettings(ctx)
 }
 
+func (s *Service) GetBrandingSettings(ctx context.Context, principal domainidentity.Principal) (domainsettings.BrandingSettings, error) {
+	if err := authorizePrincipal(principal, appaccess.PermSettingsBrandingView); err != nil {
+		return domainsettings.BrandingSettings{}, err
+	}
+	return s.brandingSettings(ctx)
+}
+
+func (s *Service) UpdateBrandingSettings(ctx context.Context, principal domainidentity.Principal, input domainsettings.BrandingSettings) (domainsettings.BrandingSettings, error) {
+	if err := authorizePrincipal(principal, appaccess.PermSettingsBrandingManage); err != nil {
+		return domainsettings.BrandingSettings{}, err
+	}
+	input.AppTitle = strings.TrimSpace(input.AppTitle)
+	input.SidebarTitle = strings.TrimSpace(input.SidebarTitle)
+	input.LoginLogoURL = strings.TrimSpace(input.LoginLogoURL)
+	input.ExpandedLogoURL = strings.TrimSpace(input.ExpandedLogoURL)
+	input.CollapsedLogoURL = strings.TrimSpace(input.CollapsedLogoURL)
+	input.FaviconURL = strings.TrimSpace(input.FaviconURL)
+	value := map[string]any{
+		"appTitle":         input.AppTitle,
+		"sidebarTitle":     input.SidebarTitle,
+		"loginLogoUrl":     input.LoginLogoURL,
+		"expandedLogoUrl":  input.ExpandedLogoURL,
+		"collapsedLogoUrl": input.CollapsedLogoURL,
+		"faviconUrl":       input.FaviconURL,
+	}
+	if err := s.store.Upsert(ctx, domainsettings.BrandingSettingKey, "branding", value, principal.UserID); err != nil {
+		return domainsettings.BrandingSettings{}, err
+	}
+	return s.brandingSettings(ctx)
+}
+
 func (s *Service) UpdateAISettings(ctx context.Context, principal domainidentity.Principal, input domainsettings.AIProviderSettings) (domainsettings.AISettings, error) {
 	if err := authorizePrincipal(principal, appaccess.PermSettingsAIManage); err != nil {
 		return domainsettings.AISettings{}, err
@@ -175,6 +206,10 @@ func (s *Service) ResolveMonitoringSettings(ctx context.Context) (domainsettings
 
 func (s *Service) ResolveAISettings(ctx context.Context) (domainsettings.AISettings, error) {
 	return s.aiSettings(ctx)
+}
+
+func (s *Service) ResolveBrandingSettings(ctx context.Context) (domainsettings.BrandingSettings, error) {
+	return s.brandingSettings(ctx)
 }
 
 func (s *Service) identitySettings(ctx context.Context) (domainsettings.IdentitySettings, error) {
@@ -302,6 +337,39 @@ func (s *Service) aiSettings(ctx context.Context) (domainsettings.AISettings, er
 	}
 	if value, ok := raw["model"].(string); ok && strings.TrimSpace(value) != "" {
 		item.Provider.Model = strings.TrimSpace(value)
+	}
+	return item, nil
+}
+
+func (s *Service) brandingSettings(ctx context.Context) (domainsettings.BrandingSettings, error) {
+	item := domainsettings.BrandingSettings{
+		AppTitle:     "KubeCrux",
+		SidebarTitle: "KubeCrux",
+	}
+	if s.store == nil {
+		return item, nil
+	}
+	raw, ok, err := s.store.Get(ctx, domainsettings.BrandingSettingKey)
+	if err != nil || !ok {
+		return item, err
+	}
+	if value, ok := raw["appTitle"].(string); ok && strings.TrimSpace(value) != "" {
+		item.AppTitle = strings.TrimSpace(value)
+	}
+	if value, ok := raw["sidebarTitle"].(string); ok && strings.TrimSpace(value) != "" {
+		item.SidebarTitle = strings.TrimSpace(value)
+	}
+	if value, ok := raw["loginLogoUrl"].(string); ok {
+		item.LoginLogoURL = strings.TrimSpace(value)
+	}
+	if value, ok := raw["expandedLogoUrl"].(string); ok {
+		item.ExpandedLogoURL = strings.TrimSpace(value)
+	}
+	if value, ok := raw["collapsedLogoUrl"].(string); ok {
+		item.CollapsedLogoURL = strings.TrimSpace(value)
+	}
+	if value, ok := raw["faviconUrl"].(string); ok {
+		item.FaviconURL = strings.TrimSpace(value)
 	}
 	return item, nil
 }

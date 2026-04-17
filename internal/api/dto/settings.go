@@ -28,3 +28,12 @@ type UpdateAISettingsRequest struct {
 	APIKey  string `json:"apiKey"`
 	Model   string `json:"model"`
 }
+
+type UpdateBrandingSettingsRequest struct {
+	AppTitle         string `json:"appTitle"`
+	SidebarTitle     string `json:"sidebarTitle"`
+	LoginLogoURL     string `json:"loginLogoUrl"`
+	ExpandedLogoURL  string `json:"expandedLogoUrl"`
+	CollapsedLogoURL string `json:"collapsedLogoUrl"`
+	FaviconURL       string `json:"faviconUrl"`
+}

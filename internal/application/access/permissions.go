@@ -11,6 +11,7 @@ const (
 	PermPlatformNodesView               = "platform.nodes.view"
 	PermPlatformNamespacesView          = "platform.namespaces.view"
 	PermPlatformWorkloadsView           = "platform.workloads.view"
+	PermPlatformConfigurationView       = "platform.configuration.view"
 	PermPlatformNetworkView             = "platform.network.view"
 	PermPlatformStorageView             = "platform.storage.view"
 	PermPlatformExtensionsView          = "platform.extensions.view"
@@ -69,6 +70,8 @@ const (
 	PermSettingsMonitoringManage        = "settings.monitoring.manage"
 	PermSettingsAIView                  = "settings.ai.view"
 	PermSettingsAIManage                = "settings.ai.manage"
+	PermSettingsBrandingView            = "settings.branding.view"
+	PermSettingsBrandingManage          = "settings.branding.manage"
 )
 
 func allPermissionKeys() []string {
@@ -77,6 +80,7 @@ func allPermissionKeys() []string {
 		PermPlatformNodesView,
 		PermPlatformNamespacesView,
 		PermPlatformWorkloadsView,
+		PermPlatformConfigurationView,
 		PermPlatformNetworkView,
 		PermPlatformStorageView,
 		PermPlatformExtensionsView,
@@ -135,6 +139,8 @@ func allPermissionKeys() []string {
 		PermSettingsMonitoringManage,
 		PermSettingsAIView,
 		PermSettingsAIManage,
+		PermSettingsBrandingView,
+		PermSettingsBrandingManage,
 	}
 }
 
@@ -145,6 +151,7 @@ func defaultRolePermissions() map[string][]string {
 		PermPlatformNodesView,
 		PermPlatformNamespacesView,
 		PermPlatformWorkloadsView,
+		PermPlatformConfigurationView,
 		PermPlatformNetworkView,
 		PermPlatformStorageView,
 		PermPlatformExtensionsView,
@@ -188,12 +195,15 @@ func defaultRolePermissions() map[string][]string {
 		PermSystemOperationsView,
 		PermSettingsAIView,
 		PermSettingsAIManage,
+		PermSettingsBrandingView,
+		PermSettingsBrandingManage,
 	}
 	developer := []string{
 		PermOverviewView,
 		PermPlatformNodesView,
 		PermPlatformNamespacesView,
 		PermPlatformWorkloadsView,
+		PermPlatformConfigurationView,
 		PermPlatformNetworkView,
 		PermPlatformStorageView,
 		PermPlatformExtensionsView,
@@ -220,6 +230,7 @@ func defaultRolePermissions() map[string][]string {
 		PermPlatformNodesView,
 		PermPlatformNamespacesView,
 		PermPlatformWorkloadsView,
+		PermPlatformConfigurationView,
 		PermPlatformNetworkView,
 		PermPlatformStorageView,
 		PermPlatformExtensionsView,

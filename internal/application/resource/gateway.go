@@ -3,7 +3,6 @@ package resource
 import (
 	"context"
 	"fmt"
-	"sort"
 	"strings"
 	"time"
 
@@ -53,39 +52,6 @@ func (s *Service) ListGateways(ctx context.Context, principal domainidentity.Pri
 	return items, nil
 }
 
-func (s *Service) ListHTTPRoutes(ctx context.Context, principal domainidentity.Principal, clusterID, namespace string) ([]domainresource.HTTPRouteView, error) {
-	connection, decision, err := s.authorize(ctx, principal, clusterID, namespace, "HTTPRoute", domainaccess.ActionList)
-	if err != nil {
-		return nil, err
-	}
-	var (
-		items  []domainresource.HTTPRouteView
-		source string
-	)
-	switch connection.Summary.ConnectionMode {
-	case domaincluster.ConnectionModeAgent:
-		client, err := s.agentClient(connection)
-		if err != nil {
-			return nil, err
-		}
-		items, err = client.ListHTTPRoutes(ctx, namespace)
-		if err != nil {
-			return nil, fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
-		}
-		source = "agent"
-	default:
-		items, err = s.listDirectHTTPRoutes(ctx, clusterID, namespace)
-		if err != nil {
-			return nil, err
-		}
-		source = "live"
-	}
-	items = filterScopedNamespaceItems(items, decision, func(item domainresource.HTTPRouteView) string { return item.Namespace })
-	populateAllowedActionsHTTPRoutes(items, decision)
-	_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, "HTTPRoute", "", string(domainaccess.ActionList), "success", fmt.Sprintf("listed httproutes via %s in namespace %s", source, displayNamespace(namespace)))
-	return items, nil
-}
-
 func (s *Service) listDirectGateways(ctx context.Context, clusterID, namespace string) ([]domainresource.GatewayView, error) {
 	items, err := s.listDynamicNamespacedResources(ctx, clusterID, namespace, "gateway.networking.k8s.io", gatewayAPIVersions, "gateways")
 	if err != nil {
@@ -94,18 +60,6 @@ func (s *Service) listDirectGateways(ctx context.Context, clusterID, namespace s
 	views := make([]domainresource.GatewayView, 0, len(items))
 	for _, item := range items {
 		views = append(views, mapGateway(item))
-	}
-	return views, nil
-}
-
-func (s *Service) listDirectHTTPRoutes(ctx context.Context, clusterID, namespace string) ([]domainresource.HTTPRouteView, error) {
-	items, err := s.listDynamicNamespacedResources(ctx, clusterID, namespace, "gateway.networking.k8s.io", gatewayAPIVersions, "httproutes")
-	if err != nil {
-		return nil, err
-	}
-	views := make([]domainresource.HTTPRouteView, 0, len(items))
-	for _, item := range items {
-		views = append(views, mapHTTPRoute(item))
 	}
 	return views, nil
 }
@@ -158,73 +112,7 @@ func mapGateway(item unstructured.Unstructured) domainresource.GatewayView {
 	}
 }
 
-func mapHTTPRoute(item unstructured.Unstructured) domainresource.HTTPRouteView {
-	hostItems, _, _ := unstructured.NestedStringSlice(item.Object, "spec", "hostnames")
-	parentItems, _, _ := unstructured.NestedSlice(item.Object, "spec", "parentRefs")
-	parentRefs := make([]string, 0, len(parentItems))
-	for _, raw := range parentItems {
-		value, ok := raw.(map[string]any)
-		if !ok {
-			continue
-		}
-		name, _ := value["name"].(string)
-		namespace, _ := value["namespace"].(string)
-		if strings.TrimSpace(name) == "" {
-			continue
-		}
-		if strings.TrimSpace(namespace) != "" {
-			parentRefs = append(parentRefs, fmt.Sprintf("%s/%s", namespace, name))
-		} else {
-			parentRefs = append(parentRefs, name)
-		}
-	}
-	ruleItems, _, _ := unstructured.NestedSlice(item.Object, "spec", "rules")
-	backendServices := make([]string, 0)
-	seen := map[string]struct{}{}
-	for _, raw := range ruleItems {
-		rule, ok := raw.(map[string]any)
-		if !ok {
-			continue
-		}
-		backendRefs, _ := rule["backendRefs"].([]any)
-		for _, backendRaw := range backendRefs {
-			backendRef, ok := backendRaw.(map[string]any)
-			if !ok {
-				continue
-			}
-			name, _ := backendRef["name"].(string)
-			name = strings.TrimSpace(name)
-			if name == "" {
-				continue
-			}
-			if _, exists := seen[name]; exists {
-				continue
-			}
-			seen[name] = struct{}{}
-			backendServices = append(backendServices, name)
-		}
-	}
-	sort.Strings(backendServices)
-	return domainresource.HTTPRouteView{
-		Name:            item.GetName(),
-		Namespace:       item.GetNamespace(),
-		Hostnames:       hostItems,
-		ParentRefs:      parentRefs,
-		BackendServices: backendServices,
-		RuleCount:       int32(len(ruleItems)),
-		AgeSeconds:      secondsSince(item.GetCreationTimestamp().Time),
-	}
-}
-
 func populateAllowedActionsGateways(items []domainresource.GatewayView, decision domainaccess.Decision) {
-	for i := range items {
-		if len(items[i].AllowedActions) == 0 {
-			items[i].AllowedActions = stringifyActions(decision.AllowedActions)
-		}
-	}
-}
-
-func populateAllowedActionsHTTPRoutes(items []domainresource.HTTPRouteView, decision domainaccess.Decision) {
 	for i := range items {
 		if len(items[i].AllowedActions) == 0 {
 			items[i].AllowedActions = stringifyActions(decision.AllowedActions)

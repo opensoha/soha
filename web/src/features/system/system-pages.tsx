@@ -120,9 +120,14 @@ export function OnlineUsersPage() {
       render: (_: string, record: OnlineUser) => (
         canManageOnlineUsers ? (
           <Popconfirm title="确认下线该用户会话？" onConfirm={() => revokeMutation.mutate(record.id)}>
-            <Button size="small" theme="borderless" type="danger" loading={revokeMutation.isPending}>
-              下线用户
-            </Button>
+            <Button
+              size="small"
+              theme="borderless"
+              type="danger"
+              icon={<IconDelete />}
+              aria-label="下线用户"
+              loading={revokeMutation.isPending}
+            />
           </Popconfirm>
         ) : '-'
       ),
@@ -295,6 +300,7 @@ export function AnnouncementsPage() {
 
 interface MenuItem {
   id: string
+  parentId?: string
   labelZh: string
   labelEn: string
   path: string
@@ -302,6 +308,46 @@ interface MenuItem {
   section: string
   sortOrder: number
   enabled: boolean
+  children?: MenuItem[]
+  depth?: number
+  parentLabelZh?: string
+}
+
+function flattenMenuItems(items: MenuItem[], depth = 0, parent?: MenuItem): MenuItem[] {
+  return items.flatMap((item) => {
+    const { children, ...rest } = item
+    const nextItem: MenuItem = {
+      ...rest,
+      depth,
+      parentLabelZh: parent?.labelZh,
+    }
+    return [nextItem, ...flattenMenuItems(children ?? [], depth + 1, item)]
+  })
+}
+
+function collectMenuDescendantIds(item: MenuItem): string[] {
+  return (item.children ?? []).flatMap((child) => [child.id, ...collectMenuDescendantIds(child)])
+}
+
+function findMenuItemByID(items: MenuItem[], id: string): MenuItem | null {
+  for (const item of items) {
+    if (item.id === id) {
+      return item
+    }
+    const child = findMenuItemByID(item.children ?? [], id)
+    if (child) {
+      return child
+    }
+  }
+  return null
+}
+
+function normalizeMenuSubmitValues(values: Record<string, unknown>) {
+  const normalizedParentId = typeof values.parentId === 'string' ? values.parentId.trim() : values.parentId
+  return {
+    ...values,
+    parentId: normalizedParentId ? normalizedParentId : null,
+  }
 }
 
 export function MenusPage() {
@@ -348,16 +394,43 @@ export function MenusPage() {
   })
 
   const handleSubmit = (values: Record<string, unknown>) => {
+    const normalizedValues = normalizeMenuSubmitValues(values)
     if (editing) {
-      updateMutation.mutate({ id: editing.id, values })
+      updateMutation.mutate({ id: editing.id, values: normalizedValues })
     } else {
-      createMutation.mutate(values)
+      createMutation.mutate(normalizedValues)
     }
   }
 
+  const menuTree = data?.data ?? []
+  const menuItems = flattenMenuItems(menuTree)
+  const menuPageSize = Math.max(menuItems.length, 1)
+  const blockedParentIds = new Set(editing ? [editing.id, ...collectMenuDescendantIds(editing)] : [])
+  const parentOptions = [
+    { label: '顶级菜单', value: '' },
+    ...menuItems
+      .filter((item) => !blockedParentIds.has(item.id))
+      .map((item) => ({
+        value: item.id,
+        label: `${'— '.repeat(item.depth ?? 0)}${item.labelZh}`,
+      })),
+  ]
+
   const columns: ColumnProps<MenuItem>[] = [
-    { title: '中文名称', dataIndex: 'labelZh' },
+    {
+      title: '中文名称',
+      dataIndex: 'labelZh',
+      render: (value: string, record: MenuItem) => (
+        <div style={{ paddingLeft: `${(record.depth ?? 0) * 16}px` }}>
+          <Space>
+            <span>{value}</span>
+            <Tag size="small">{record.parentId ? '子菜单' : '顶级'}</Tag>
+          </Space>
+        </div>
+      ),
+    },
     { title: '英文名称', dataIndex: 'labelEn' },
+    { title: '父级菜单', dataIndex: 'parentLabelZh', render: (value: string, record: MenuItem) => value || (record.parentId || '-') },
     { title: '路径', dataIndex: 'path' },
     { title: '图标', dataIndex: 'iconKey' },
     { title: '分组', dataIndex: 'section' },
@@ -373,7 +446,7 @@ export function MenusPage() {
       dataIndex: 'id',
       render: (_: unknown, record: MenuItem) => (
         <Space>
-          {canManageMenus ? <Button icon={<IconEdit />} theme="borderless" size="small" onClick={() => { setEditing(record); setModalVisible(true) }} /> : null}
+          {canManageMenus ? <Button icon={<IconEdit />} theme="borderless" size="small" onClick={() => { setEditing(findMenuItemByID(menuTree, record.id) ?? record); setModalVisible(true) }} /> : null}
           {canManageMenus ? (
             <Popconfirm title="确认删除？" onConfirm={() => deleteMutation.mutate(record.id)}>
               <Button icon={<IconDelete />} theme="borderless" type="danger" size="small" />
@@ -389,14 +462,15 @@ export function MenusPage() {
     <div className="kc-page">
       <PageHeader
         title="菜单管理"
-        description="维护菜单路径、可见性、排序和图标信息。"
+        description="维护菜单层级、路径、可见性、排序和图标信息。"
         actions={canManageMenus ? <Button icon={<IconPlus />} theme="solid" onClick={() => { setEditing(null); setModalVisible(true) }}>新建菜单</Button> : null}
       />
-      <AdminTable columns={columns} dataSource={data?.data ?? []} rowKey="id" loading={isLoading} pageSize={20} />
+      <AdminTable columns={columns} dataSource={menuItems} rowKey="id" loading={isLoading} pageSize={menuPageSize} />
       <Modal title={editing ? '编辑菜单' : '新建菜单'} visible={modalVisible} onCancel={() => { setModalVisible(false); setEditing(null) }} footer={null}>
-        <Form onSubmit={(values) => { if (!canManageMenus) return; handleSubmit(values) }} initValues={editing ? { labelZh: editing.labelZh, labelEn: editing.labelEn, path: editing.path, iconKey: editing.iconKey, section: editing.section, sortOrder: editing.sortOrder, enabled: editing.enabled } : { enabled: true, sortOrder: 0, section: 'system' }}>
+        <Form onSubmit={(values) => { if (!canManageMenus) return; handleSubmit(values) }} initValues={editing ? { labelZh: editing.labelZh, labelEn: editing.labelEn, parentId: editing.parentId || '', path: editing.path, iconKey: editing.iconKey, section: editing.section, sortOrder: editing.sortOrder, enabled: editing.enabled } : { enabled: true, sortOrder: 0, section: 'system', parentId: '' }}>
           <Form.Input field="labelZh" label="中文名称" rules={[{ required: true, message: '请输入中文名称' }]} />
           <Form.Input field="labelEn" label="英文名称" />
+          <Form.Select field="parentId" label="父级菜单" optionList={parentOptions} />
           <Form.Input field="path" label="路径" rules={[{ required: true, message: '请输入路径' }]} />
           <Form.Input field="iconKey" label="图标" />
           <Form.Input field="section" label="分组" />

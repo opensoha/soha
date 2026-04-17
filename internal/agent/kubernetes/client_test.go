@@ -1,36 +1,11 @@
-package resource
+package kubernetes
 
 import (
 	"testing"
 
-	domainaccess "github.com/kubecrux/kubecrux/internal/domain/access"
 	corev1 "k8s.io/api/core/v1"
 	apiresource "k8s.io/apimachinery/pkg/api/resource"
 )
-
-func TestShouldUseInformerCache(t *testing.T) {
-	if shouldUseInformerCache("") {
-		t.Fatalf("shouldUseInformerCache(\"\") = true, want false")
-	}
-	if shouldUseInformerCache("   ") {
-		t.Fatalf("shouldUseInformerCache(blank) = true, want false")
-	}
-	if !shouldUseInformerCache("erp-front") {
-		t.Fatalf("shouldUseInformerCache(namespace) = false, want true")
-	}
-}
-
-func TestShouldPopulatePodUsageSummaries(t *testing.T) {
-	if shouldPopulatePodUsageSummaries("") {
-		t.Fatalf("shouldPopulatePodUsageSummaries(\"\") = true, want false")
-	}
-	if shouldPopulatePodUsageSummaries("   ") {
-		t.Fatalf("shouldPopulatePodUsageSummaries(blank) = true, want false")
-	}
-	if !shouldPopulatePodUsageSummaries("erp-front") {
-		t.Fatalf("shouldPopulatePodUsageSummaries(namespace) = false, want true")
-	}
-}
 
 func TestMapPodIncludesRequestsAndLimits(t *testing.T) {
 	t.Parallel()
@@ -52,7 +27,7 @@ func TestMapPodIncludesRequestsAndLimits(t *testing.T) {
 				},
 			},
 		},
-	}, domainaccess.Decision{})
+	})
 
 	if view.Requests.CPU != "250m" || view.Requests.Memory != "128Mi" {
 		t.Fatalf("Requests = %+v, want cpu=250m memory=128Mi", view.Requests)

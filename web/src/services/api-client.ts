@@ -108,4 +108,24 @@ export const api = {
   put: <T>(path: string, body?: unknown) =>
     request<T>(path, { method: 'PUT', body: body ? JSON.stringify(body) : undefined }),
   delete: <T>(path: string) => request<T>(path, { method: 'DELETE' }),
+  upload: <T>(path: string, formData: FormData) => {
+    const { accessToken } = useAuthStore.getState()
+    const headers: Record<string, string> = {}
+    if (accessToken) {
+      headers['Authorization'] = `Bearer ${accessToken}`
+    }
+    return fetch(`${BASE_URL}${path}`, {
+      method: 'POST',
+      headers,
+      body: formData,
+    }).then(async (res) => {
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({ message: res.statusText })) as { message?: string; error?: string | { message?: string } }
+        const message = typeof body.message === 'string' ? body.message : typeof body.error === 'string' ? body.error : (body.error as { message?: string })?.message || res.statusText
+        throw new ApiError(res.status, message)
+      }
+      const body = await res.json()
+      return normalizeResponseBody<T>(body)
+    })
+  },
 }

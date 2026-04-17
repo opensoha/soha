@@ -283,6 +283,15 @@ func New(cfg cfgpkg.Config, logger *zap.Logger, client *k8sagent.Client) *Server
 			}
 			apiresponse.Items(c, http.StatusOK, items)
 		})
+		platform.GET("/workloads/replicasets", func(c *gin.Context) {
+			namespace := c.Query("namespace")
+			items, err := client.ListReplicaSets(c.Request.Context(), namespace)
+			if err != nil {
+				writeError(c, err)
+				return
+			}
+			apiresponse.Items(c, http.StatusOK, items)
+		})
 		platform.GET("/workloads/cronjobs/:name/detail", func(c *gin.Context) {
 			namespace := c.Query("namespace")
 			item, err := client.GetCronJobDetail(c.Request.Context(), namespace, c.Param("name"))
@@ -300,6 +309,69 @@ func New(cfg cfgpkg.Config, logger *zap.Logger, client *k8sagent.Client) *Server
 				return
 			}
 			apiresponse.Item(c, http.StatusOK, item)
+		})
+		platform.GET("/configuration/configmaps", func(c *gin.Context) {
+			namespace := c.Query("namespace")
+			items, err := client.ListConfigMaps(c.Request.Context(), namespace)
+			if err != nil {
+				writeError(c, err)
+				return
+			}
+			apiresponse.Items(c, http.StatusOK, items)
+		})
+		platform.GET("/configuration/secrets", func(c *gin.Context) {
+			namespace := c.Query("namespace")
+			items, err := client.ListSecrets(c.Request.Context(), namespace)
+			if err != nil {
+				writeError(c, err)
+				return
+			}
+			apiresponse.Items(c, http.StatusOK, items)
+		})
+		platform.GET("/configuration/hpas", func(c *gin.Context) {
+			namespace := c.Query("namespace")
+			items, err := client.ListHorizontalPodAutoscalers(c.Request.Context(), namespace)
+			if err != nil {
+				writeError(c, err)
+				return
+			}
+			apiresponse.Items(c, http.StatusOK, items)
+		})
+		platform.GET("/configuration/poddisruptionbudgets", func(c *gin.Context) {
+			namespace := c.Query("namespace")
+			items, err := client.ListPodDisruptionBudgets(c.Request.Context(), namespace)
+			if err != nil {
+				writeError(c, err)
+				return
+			}
+			apiresponse.Items(c, http.StatusOK, items)
+		})
+		platform.GET("/access-control/serviceaccounts", func(c *gin.Context) {
+			namespace := c.Query("namespace")
+			items, err := client.ListServiceAccounts(c.Request.Context(), namespace)
+			if err != nil {
+				writeError(c, err)
+				return
+			}
+			apiresponse.Items(c, http.StatusOK, items)
+		})
+		platform.GET("/access-control/roles", func(c *gin.Context) {
+			namespace := c.Query("namespace")
+			items, err := client.ListRoles(c.Request.Context(), namespace)
+			if err != nil {
+				writeError(c, err)
+				return
+			}
+			apiresponse.Items(c, http.StatusOK, items)
+		})
+		platform.GET("/access-control/rolebindings", func(c *gin.Context) {
+			namespace := c.Query("namespace")
+			items, err := client.ListRoleBindings(c.Request.Context(), namespace)
+			if err != nil {
+				writeError(c, err)
+				return
+			}
+			apiresponse.Items(c, http.StatusOK, items)
 		})
 		platform.GET("/network/services", func(c *gin.Context) {
 			namespace := c.Query("namespace")
@@ -319,18 +391,27 @@ func New(cfg cfgpkg.Config, logger *zap.Logger, client *k8sagent.Client) *Server
 			}
 			apiresponse.Items(c, http.StatusOK, items)
 		})
-		platform.GET("/network/gateways", func(c *gin.Context) {
+		platform.GET("/network/endpointslices", func(c *gin.Context) {
 			namespace := c.Query("namespace")
-			items, err := client.ListGateways(c.Request.Context(), namespace)
+			items, err := client.ListEndpointSlices(c.Request.Context(), namespace)
 			if err != nil {
 				writeError(c, err)
 				return
 			}
 			apiresponse.Items(c, http.StatusOK, items)
 		})
-		platform.GET("/network/http-routes", func(c *gin.Context) {
+		platform.GET("/network/networkpolicies", func(c *gin.Context) {
 			namespace := c.Query("namespace")
-			items, err := client.ListHTTPRoutes(c.Request.Context(), namespace)
+			items, err := client.ListNetworkPolicies(c.Request.Context(), namespace)
+			if err != nil {
+				writeError(c, err)
+				return
+			}
+			apiresponse.Items(c, http.StatusOK, items)
+		})
+		platform.GET("/network/gateways", func(c *gin.Context) {
+			namespace := c.Query("namespace")
+			items, err := client.ListGateways(c.Request.Context(), namespace)
 			if err != nil {
 				writeError(c, err)
 				return

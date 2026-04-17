@@ -7,7 +7,6 @@ import {
   Dropdown,
   Breadcrumb,
   Button,
-  Select,
 } from '@douyinfe/semi-ui'
 import {
   IconDesktop,
@@ -32,16 +31,22 @@ import {
   IconList,
   IconLock,
   IconHelpCircle,
+  IconLanguage,
+  IconMoon,
+  IconSun,
 } from '@douyinfe/semi-icons'
 import type { ReactNode } from 'react'
 import { Spin } from '@douyinfe/semi-ui'
+import { HeaderPreferenceButton } from '@/components/header-preference-button'
 import { useI18n } from '@/i18n'
+import { useBrandingSettings } from '@/features/settings/use-branding-settings'
 import { getAccessibleSidebarNav, getRouteMeta, getParentRouteMeta } from '@/routes/meta'
 import { usePermissionSnapshot } from '@/features/auth/permission-snapshot'
 import { useAuthStore } from '@/stores/auth-store'
 import { usePreferencesStore } from '@/stores/preferences-store'
-import { getSemiThemeLabel, semiThemeOptions, themeModeOptions } from '@/theme/semi-theme'
+import { resolveThemeMode } from '@/theme/semi-theme'
 import type { SidebarNavItem } from '@/types'
+import { getNormalizedBranding } from '@/features/settings/use-branding-settings'
 
 const { Sider, Header, Content } = Layout
 
@@ -135,15 +140,15 @@ export function AppLayout() {
   const location = useLocation()
   const { user, clearAuth } = useAuthStore()
   const permissionSnapshotQuery = usePermissionSnapshot()
-  const themeId = usePreferencesStore((state) => state.themeId)
-  const themeMode = usePreferencesStore((state) => state.themeMode)
-  const setThemeId = usePreferencesStore((state) => state.setThemeId)
-  const setThemeMode = usePreferencesStore((state) => state.setThemeMode)
+  const brandingQuery = useBrandingSettings()
   const localeCode = usePreferencesStore((state) => state.localeCode)
   const setLocaleCode = usePreferencesStore((state) => state.setLocaleCode)
+  const themeMode = usePreferencesStore((state) => state.themeMode)
+  const setThemeMode = usePreferencesStore((state) => state.setThemeMode)
   const { t } = useI18n()
   const [isNavCollapsed, setIsNavCollapsed] = useState(false)
   const [navOpenKeys, setNavOpenKeys] = useState<string[]>([])
+  const [resolvedThemeMode, setResolvedThemeMode] = useState<'light' | 'dark'>(() => resolveThemeMode(themeMode))
 
   const sidebarNav = useMemo(
     () => getAccessibleSidebarNav(permissionSnapshotQuery.data?.data),
@@ -151,6 +156,10 @@ export function AppLayout() {
   )
   const navItems = useMemo(() => isNavCollapsed ? buildNavItems(sidebarNav, t).filter((item) => !String(item.itemKey).startsWith('section-')) : buildNavItems(sidebarNav, t), [isNavCollapsed, sidebarNav, t])
   const itemKeyToPath = useMemo(() => buildItemKeyToPath(sidebarNav), [sidebarNav])
+  const parentItemKeys = useMemo(
+    () => new Set(sidebarNav.filter((item) => item.children?.length).map((item) => item.route.id)),
+    [sidebarNav],
+  )
 
   const currentMeta = getRouteMeta(location.pathname)
   const parentMeta = getParentRouteMeta(currentMeta)
@@ -180,16 +189,26 @@ export function AppLayout() {
       setNavOpenKeys([])
       return
     }
-    if (routeOpenKeys.length === 0) {
-      return
+    setNavOpenKeys(routeOpenKeys)
+  }, [isNavCollapsed, location.pathname, routeOpenKeys])
+
+  useEffect(() => {
+    const updateResolvedThemeMode = () => setResolvedThemeMode(resolveThemeMode(themeMode))
+    updateResolvedThemeMode()
+
+    if (themeMode !== 'system' || typeof window === 'undefined') {
+      return undefined
     }
-    setNavOpenKeys((current) => {
-      const next = [...new Set([...current, ...routeOpenKeys])]
-      return next
-    })
-  }, [isNavCollapsed, routeOpenKeys])
+
+    const media = window.matchMedia('(prefers-color-scheme: dark)')
+    media.addEventListener('change', updateResolvedThemeMode)
+    return () => media.removeEventListener('change', updateResolvedThemeMode)
+  }, [themeMode])
 
   const handleNavClick = (data: { itemKey: string }) => {
+    if (parentItemKeys.has(data.itemKey)) {
+      return
+    }
     const path = itemKeyToPath[data.itemKey]
     if (path) {
       navigate(path)
@@ -211,7 +230,17 @@ export function AppLayout() {
   }, [currentMeta, parentMeta, t])
 
   const userDisplayName = user?.userName ?? user?.email ?? 'User'
-  const currentThemeLabel = getSemiThemeLabel(themeId)
+  const branding = getNormalizedBranding(brandingQuery.data?.data)
+  const expandedLogo = branding.expandedLogoUrl
+  const collapsedLogo = branding.collapsedLogoUrl || branding.expandedLogoUrl
+  const activeLogo = isNavCollapsed ? (collapsedLogo || expandedLogo) : (expandedLogo || collapsedLogo)
+  const languageSwitchLabel = localeCode === 'zh_CN' ? 'EN' : '中文'
+  const languageSwitchTitle = localeCode === 'zh_CN'
+    ? t('layout.switchLanguageToEnglish', 'Switch to English')
+    : t('layout.switchLanguageToChinese', '切换到中文')
+  const themeSwitchTitle = resolvedThemeMode === 'dark'
+    ? t('layout.switchThemeToLight', 'Switch to light mode')
+    : t('layout.switchThemeToDark', '切换到深色模式')
 
   if (permissionSnapshotQuery.isLoading) {
     return (
@@ -231,15 +260,22 @@ export function AppLayout() {
           selectedKeys={selectedKeys}
           openKeys={navOpenKeys}
           onClick={handleNavClick as any}
-          onOpenChange={(data) => setNavOpenKeys((data.openKeys ?? []) as string[])}
+          onOpenChange={(data) => {
+            const nextOpenKeys = Array.isArray(data)
+              ? data
+              : ((data?.openKeys ?? []) as string[])
+            setNavOpenKeys(nextOpenKeys)
+          }}
           onCollapseChange={(collapsed) => setIsNavCollapsed(Boolean(collapsed))}
           header={{
-            logo: (
+            logo: activeLogo ? (
+              <img className="kc-brand-logo" src={activeLogo} alt={branding.sidebarTitle} />
+            ) : (
               <div className="kc-brand-mark">
-                  KC
+                KC
               </div>
             ),
-            text: 'KubeCrux',
+            text: branding.sidebarTitle,
           }}
           footer={{
             collapseButton: true,
@@ -270,46 +306,31 @@ export function AppLayout() {
 
           <div className="kc-header-right">
             <Button
-              theme="light"
+              className="kc-header-action"
+              size="small"
+              theme="borderless"
               icon={<IconHelpCircle />}
               onClick={() => window.open('/docs/', '_blank', 'noopener,noreferrer')}
             >
               {t('layout.docs', 'Docs')}
             </Button>
-            <span className="kc-header-pill">{currentThemeLabel}</span>
-            <Select
-              className="kc-theme-select"
-              size="small"
-              insetLabel={t('layout.language', 'Language')}
-              value={localeCode}
-              optionList={[
-                { value: 'zh_CN', label: '简体中文' },
-                { value: 'en_US', label: 'English' },
-              ]}
-              onChange={(value) => setLocaleCode(value as 'zh_CN' | 'en_US')}
-            />
-            <Select
-              className="kc-theme-select"
-              size="small"
-              insetLabel={t('layout.theme', 'Theme')}
-              value={themeId}
-              optionList={semiThemeOptions.map((option) => ({
-                value: option.id,
-                label: option.label,
-              }))}
-              onChange={(value) => setThemeId(value as any)}
-            />
-            <Select
-              className="kc-mode-select"
-              size="small"
-              insetLabel={t('layout.mode', 'Mode')}
-              value={themeMode}
-              optionList={themeModeOptions.map((option) => ({
-                value: option.value,
-                label: option.label,
-              }))}
-              onChange={(value) => setThemeMode(value as any)}
-            />
+            <div className="kc-header-preferences">
+              <HeaderPreferenceButton
+                ariaLabel={languageSwitchTitle}
+                title={languageSwitchTitle}
+                inset
+                icon={<IconLanguage />}
+                label={languageSwitchLabel}
+                onClick={() => setLocaleCode(localeCode === 'zh_CN' ? 'en_US' : 'zh_CN')}
+              />
+              <HeaderPreferenceButton
+                ariaLabel={themeSwitchTitle}
+                title={themeSwitchTitle}
+                icon={resolvedThemeMode === 'dark' ? <IconSun /> : <IconMoon />}
+                onClick={() => setThemeMode(resolvedThemeMode === 'dark' ? 'light' : 'dark')}
+                pressed={resolvedThemeMode === 'dark'}
+              />
+            </div>
             <Dropdown
               position="bottomRight"
               render={
@@ -325,7 +346,8 @@ export function AppLayout() {
               }
             >
               <Button
-                className="kc-user-trigger"
+                className="kc-header-action kc-user-trigger"
+                size="small"
                 theme="borderless"
                 icon={
                   <Avatar className="kc-user-avatar" size="small">

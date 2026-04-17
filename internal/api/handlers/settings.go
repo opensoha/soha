@@ -19,6 +19,8 @@ type SettingsService interface {
 	UpdatePrometheusSettings(context.Context, domainidentity.Principal, domainsettings.PrometheusSettings) (domainsettings.MonitoringSettings, error)
 	GetAISettings(context.Context, domainidentity.Principal) (domainsettings.AISettings, error)
 	UpdateAISettings(context.Context, domainidentity.Principal, domainsettings.AIProviderSettings) (domainsettings.AISettings, error)
+	GetBrandingSettings(context.Context, domainidentity.Principal) (domainsettings.BrandingSettings, error)
+	UpdateBrandingSettings(context.Context, domainidentity.Principal, domainsettings.BrandingSettings) (domainsettings.BrandingSettings, error)
 }
 
 type SettingsHandler struct {
@@ -119,6 +121,38 @@ func (h *SettingsHandler) UpdateAISettings(c *gin.Context) {
 		BaseURL: req.BaseURL,
 		APIKey:  req.APIKey,
 		Model:   req.Model,
+	})
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
+}
+
+func (h *SettingsHandler) GetBrandingSettings(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	item, err := h.service.GetBrandingSettings(c.Request.Context(), principal)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
+}
+
+func (h *SettingsHandler) UpdateBrandingSettings(c *gin.Context) {
+	var req dto.UpdateBrandingSettingsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid branding settings payload")
+		return
+	}
+	principal := apiMiddleware.PrincipalFromContext(c)
+	item, err := h.service.UpdateBrandingSettings(c.Request.Context(), principal, domainsettings.BrandingSettings{
+		AppTitle:         req.AppTitle,
+		SidebarTitle:     req.SidebarTitle,
+		LoginLogoURL:     req.LoginLogoURL,
+		ExpandedLogoURL:  req.ExpandedLogoURL,
+		CollapsedLogoURL: req.CollapsedLogoURL,
+		FaviconURL:       req.FaviconURL,
 	})
 	if err != nil {
 		writeError(c, err)

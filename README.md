@@ -35,6 +35,9 @@ kubecrux is a multi-cluster Kubernetes platform console. The frontend is a Vite 
 - platform:
   - `/clusters`
   - `/clusters/:clusterId`
+  - `/cluster-resources/nodes`
+  - `/cluster-resources/nodes/:nodeName`
+  - `/cluster-resources/namespaces`
   - `/workloads/deployments`
   - `/workloads/pods`
   - `/workloads/statefulsets`
@@ -44,7 +47,6 @@ kubecrux is a multi-cluster Kubernetes platform console. The frontend is a Vite 
   - `/network/services`
   - `/network/ingresses`
   - `/network/gateways`
-  - `/network/http-routes`
   - `/storage/persistentvolumeclaims`
   - `/storage/persistentvolumes`
   - `/storage/storageclasses`

@@ -93,9 +93,13 @@ func New(ctx context.Context) (*App, error) {
 		}
 	}
 	if cfg.Bootstrap.SeedDefaults {
-		if err := seedDefaults(ctx, databaseStore, cfg); err != nil {
+		if err := seedDefaults(ctx, databaseStore); err != nil {
 			cancel()
 			return nil, fmt.Errorf("seed bootstrap data: %w", err)
+		}
+		if err := syncBootstrapRuntime(ctx, databaseStore, cfg); err != nil {
+			cancel()
+			return nil, fmt.Errorf("sync bootstrap runtime data: %w", err)
 		}
 	}
 	if err := databaseStore.Ping(ctx); err != nil {

@@ -23,6 +23,10 @@ interface AdminTableProps {
   enableColumnSelection?: boolean
   expandedRowRender?: (record: any, index?: number) => ReactNode
   hideExpandedColumn?: boolean
+  title?: ReactNode
+  headerExtra?: ReactNode
+  toolbar?: ReactNode
+  toolbarExtra?: ReactNode
 }
 
 function getColumnId(column: any, index: number) {
@@ -48,6 +52,10 @@ export function AdminTable({
   className,
   scroll,
   enableColumnSelection = true,
+  title,
+  headerExtra,
+  toolbar,
+  toolbarExtra,
   ...rest
 }: AdminTableProps) {
   const columnOptions = columns.map((column, index) => ({
@@ -117,9 +125,31 @@ export function AdminTable({
     )
     : null
 
+  const resolvedToolbarExtra = toolbarExtra || columnSetting
+    ? (
+      <>
+        {toolbarExtra}
+        {columnSetting}
+      </>
+    )
+    : null
+  const hasHeader = Boolean(title || headerExtra)
+  const hasToolbar = Boolean(toolbar || resolvedToolbarExtra)
+
   return (
-    <div className={['kc-admin-table-shell', className].filter(Boolean).join(' ')}>
-      {columnSetting ? <div className="kc-admin-table-toolbar">{columnSetting}</div> : null}
+    <div className={['kc-admin-table-shell', className, hasHeader || hasToolbar ? 'is-panel' : ''].filter(Boolean).join(' ')}>
+      {hasHeader ? (
+        <div className="kc-admin-table-header">
+          <div className="kc-admin-table-header-main">{title}</div>
+          {headerExtra ? <div className="kc-admin-table-header-extra">{headerExtra}</div> : null}
+        </div>
+      ) : null}
+      {hasToolbar ? (
+        <div className="kc-admin-table-toolbar">
+          {toolbar ? <div className="kc-admin-table-toolbar-main">{toolbar}</div> : null}
+          {resolvedToolbarExtra ? <div className="kc-admin-table-toolbar-extra">{resolvedToolbarExtra}</div> : null}
+        </div>
+      ) : null}
       <Table
         {...rest}
         columns={activeColumns}
