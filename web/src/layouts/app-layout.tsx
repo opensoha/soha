@@ -207,6 +207,11 @@ export function AppLayout() {
 
   const handleNavClick = (data: { itemKey: string }) => {
     if (parentItemKeys.has(data.itemKey)) {
+      setNavOpenKeys((current) => (
+        current.includes(data.itemKey)
+          ? current.filter((key) => key !== data.itemKey)
+          : [...current, data.itemKey]
+      ))
       return
     }
     const path = itemKeyToPath[data.itemKey]
