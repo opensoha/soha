@@ -31,6 +31,19 @@ import type { ApiResponse } from '@/types'
 const { Text } = Typography
 
 type SemiTagColor = 'grey' | 'blue' | 'cyan' | 'green' | 'yellow' | 'red' | 'orange'
+type TopologyDataState = 'live' | 'pending' | 'demo'
+type LocaleCode = 'zh_CN' | 'en_US'
+type TopologySourceType = 'ingress' | 'httproute' | 'gateway' | 'demo'
+type TopologyNodeKind =
+  | 'entry'
+  | 'ingress-route'
+  | 'http-route'
+  | 'pending-route'
+  | 'service'
+  | 'missing-service'
+  | 'backend-group'
+  | 'empty-backend'
+  | 'pod'
 
 interface ServiceView {
   name: string
@@ -41,7 +54,17 @@ interface ServiceView {
 interface IngressView {
   name: string
   namespace: string
+  className?: string
   hosts?: string[]
+  address?: string
+  backendServices?: string[]
+}
+
+interface HTTPRouteView {
+  name: string
+  namespace: string
+  hostnames?: string[]
+  parentRefs?: string[]
   backendServices?: string[]
 }
 
@@ -59,31 +82,7 @@ interface PodView {
   labels?: Record<string, string>
 }
 
-type TopologyNodeKind = 'entry' | 'gateway' | 'pending-route' | 'service' | 'missing-service' | 'pod'
-type TopologyGraphNodeKind = TopologyNodeKind | 'backend-group' | 'empty-backend'
-type TopologyDataState = 'live' | 'pending' | 'demo'
-type LocaleCode = 'zh_CN' | 'en_US'
-
-interface TopologyNode {
-  id: string
-  name: string
-  kind: TopologyNodeKind
-  state: TopologyDataState
-  namespace?: string
-  resourceName?: string
-}
-
-interface TopologyTrace {
-  id: string
-  entry: TopologyNode
-  service?: TopologyNode
-  terminals: TopologyNode[]
-  sourceType: 'ingress' | 'gateway' | 'demo'
-  state: TopologyDataState
-  notes: string
-}
-
-interface GatewayCoverageItem {
+interface GatewayIndexItem {
   id: string
   name: string
   namespace: string
@@ -93,19 +92,51 @@ interface GatewayCoverageItem {
   source: 'live' | 'demo'
 }
 
-interface TableRow {
+interface TopologyNode {
+  id: string
+  name: string
+  kind: TopologyNodeKind
+  state: TopologyDataState
+  namespace?: string
+  resourceName?: string
+  subtitle?: string
+  badge?: string
+}
+
+interface TopologyTrace {
   id: string
   entry: TopologyNode
+  route: TopologyNode
   service?: TopologyNode
   terminals: TopologyNode[]
-  sourceType: 'ingress' | 'gateway' | 'demo'
+  sourceType: TopologySourceType
   state: TopologyDataState
   notes: string
 }
 
+interface TableRow {
+  id: string
+  entry: TopologyNode
+  route: TopologyNode
+  service?: TopologyNode
+  terminals: TopologyNode[]
+  sourceType: TopologySourceType
+  state: TopologyDataState
+  notes: string
+}
+
+interface TopologySelectionDetail {
+  notes: string[]
+  relatedEntries: TopologyNode[]
+  relatedRoutes: TopologyNode[]
+  relatedServices: TopologyNode[]
+  summary: string
+  terminalNodes: TopologyNode[]
+}
+
 interface TopologyGraphNodeData extends Record<string, unknown> {
   name: string
-  kind: TopologyGraphNodeKind
+  kind: TopologyNodeKind
   state: TopologyDataState
   subtitle?: string
   badge?: string
@@ -116,17 +147,8 @@ interface TopologyGraphNodeData extends Record<string, unknown> {
 }
 
 interface TopologyGraphEdgeData extends Record<string, unknown> {
-  sourceKind: TopologyGraphNodeKind
+  sourceKind: TopologyNodeKind
   state: TopologyDataState
-}
-
-interface TopologySelectionDetail {
-  notes: string[]
-  relatedEntries: TopologyNode[]
-  relatedServices: TopologyNode[]
-  serviceNode?: TopologyNode
-  summary: string
-  terminalNodes: TopologyNode[]
 }
 
 interface TopologyGraphData {
@@ -136,31 +158,34 @@ interface TopologyGraphData {
   nodeMap: Map<string, TopologyGraphNodeData>
   nodes: TopologyFlowNode[]
   podCount: number
+  routeCount: number
   serviceCount: number
 }
 
 type TopologyFlowNode = Node<TopologyGraphNodeData, 'topologyNode'>
 type TopologyFlowEdge = Edge<TopologyGraphEdgeData>
 
-const NODE_WIDTH = 252
+const NODE_WIDTH = 256
 const NODE_HEIGHT = 118
 
-const NODE_COLORS: Record<TopologyGraphNodeKind, string> = {
+const NODE_COLORS: Record<TopologyNodeKind, string> = {
   entry: '#3f67f6',
-  gateway: '#f38a1d',
-  'pending-route': '#d4a72c',
+  'ingress-route': '#0f766e',
+  'http-route': '#d97706',
+  'pending-route': '#b08900',
   service: '#1d92c5',
   'missing-service': '#d84c45',
-  pod: '#22a36a',
   'backend-group': '#22a36a',
   'empty-backend': '#94a3b8',
+  pod: '#22a36a',
 }
 
-const LEGEND_TAG_COLORS: Partial<Record<TopologyGraphNodeKind, SemiTagColor>> = {
+const LEGEND_TAG_COLORS: Record<Exclude<TopologyNodeKind, 'pod'>, SemiTagColor> = {
   entry: 'blue',
-  gateway: 'orange',
+  'ingress-route': 'cyan',
+  'http-route': 'orange',
   'pending-route': 'yellow',
-  service: 'cyan',
+  service: 'blue',
   'missing-service': 'red',
   'backend-group': 'green',
   'empty-backend': 'grey',
@@ -200,17 +225,33 @@ function mergeTopologyState(current: TopologyDataState, next: TopologyDataState)
   return 'demo'
 }
 
-function resolveNodeColor(kind: TopologyGraphNodeKind) {
+function uniqueTopologyNodes(items: Array<TopologyNode | undefined>) {
+  const map = new Map<string, TopologyNode>()
+  items.forEach((item) => {
+    if (item) {
+      map.set(item.id, item)
+    }
+  })
+  return Array.from(map.values())
+}
+
+function uniqueStrings(items: string[]) {
+  return Array.from(new Set(items.filter(Boolean)))
+}
+
+function resolveNodeColor(kind: TopologyNodeKind) {
   return NODE_COLORS[kind] ?? NODE_COLORS.entry
 }
 
-function getTopologyKindLabel(kind: TopologyGraphNodeKind, localeCode: LocaleCode) {
+function getTopologyKindLabel(kind: TopologyNodeKind, localeCode: LocaleCode) {
   if (localeCode === 'en_US') {
     switch (kind) {
       case 'entry':
         return 'Entry'
-      case 'gateway':
-        return 'Gateway'
+      case 'ingress-route':
+        return 'Ingress Route'
+      case 'http-route':
+        return 'HTTPRoute'
       case 'pending-route':
         return 'Pending Route'
       case 'service':
@@ -229,8 +270,10 @@ function getTopologyKindLabel(kind: TopologyGraphNodeKind, localeCode: LocaleCod
   switch (kind) {
     case 'entry':
       return '入口'
-    case 'gateway':
-      return '网关'
+    case 'ingress-route':
+      return 'Ingress 路由'
+    case 'http-route':
+      return 'HTTPRoute'
     case 'pending-route':
       return '待接路由'
     case 'service':
@@ -282,23 +325,11 @@ function selectorMatchesLabels(selector?: Record<string, string>, labels?: Recor
   return entries.every(([key, value]) => (labels ?? {})[key] === value)
 }
 
-function uniqueTopologyNodes(items: Array<TopologyNode | undefined>) {
-  const map = new Map<string, TopologyNode>()
-  items.forEach((item) => {
-    if (item) {
-      map.set(item.id, item)
-    }
-  })
-  return Array.from(map.values())
-}
-
-function uniqueStrings(items: string[]) {
-  return Array.from(new Set(items.filter(Boolean)))
-}
-
 function formatBackendSubtitle(pods: TopologyNode[], localeCode: LocaleCode) {
   if (pods.length === 0) {
-    return localeCode === 'zh_CN' ? 'Service 已解析，但 selector 暂未命中 Pod。' : 'Service resolved, but the selector does not match any pods yet.'
+    return localeCode === 'zh_CN'
+      ? 'Service 已解析，但 selector 暂未命中 Pod。'
+      : 'Service resolved, but the selector does not match any pods yet.'
   }
 
   const previewNames = pods.slice(0, 2).map((pod) => pod.name)
@@ -313,6 +344,57 @@ function formatBackendSubtitle(pods: TopologyNode[], localeCode: LocaleCode) {
   return previewNames.join(' · ')
 }
 
+function inferControllerFamily(value?: string) {
+  const normalized = value?.trim().toLowerCase() ?? ''
+  if (!normalized) {
+    return 'generic'
+  }
+  if (normalized.includes('kong')) {
+    return 'kong'
+  }
+  if (normalized.includes('apisix')) {
+    return 'apisix'
+  }
+  if (normalized.includes('traefik')) {
+    return 'traefik'
+  }
+  return 'generic'
+}
+
+function formatIngressControllerLabel(className: string | undefined, localeCode: LocaleCode) {
+  const family = inferControllerFamily(className)
+  switch (family) {
+    case 'kong':
+      return 'Kong Ingress'
+    case 'apisix':
+      return 'APISIX Ingress'
+    case 'traefik':
+      return 'Traefik Ingress'
+    default:
+      if (className && className.trim() !== '') {
+        return localeCode === 'zh_CN' ? `IngressClass: ${className}` : `IngressClass: ${className}`
+      }
+      return 'Ingress'
+  }
+}
+
+function formatGatewayClassLabel(gatewayClass: string | undefined, localeCode: LocaleCode) {
+  const family = inferControllerFamily(gatewayClass)
+  switch (family) {
+    case 'kong':
+      return 'Kong Gateway'
+    case 'apisix':
+      return 'APISIX Gateway'
+    case 'traefik':
+      return 'Traefik Gateway'
+    default:
+      if (gatewayClass && gatewayClass.trim() !== '') {
+        return localeCode === 'zh_CN' ? `GatewayClass: ${gatewayClass}` : `GatewayClass: ${gatewayClass}`
+      }
+      return localeCode === 'zh_CN' ? 'Gateway API' : 'Gateway API'
+  }
+}
+
 function makeNode(
   id: string,
   name: string,
@@ -320,6 +402,8 @@ function makeNode(
   state: TopologyDataState,
   namespace?: string,
   resourceName?: string,
+  subtitle?: string,
+  badge?: string,
 ): TopologyNode {
   return {
     id,
@@ -328,96 +412,12 @@ function makeNode(
     state,
     namespace,
     resourceName,
+    subtitle,
+    badge,
   }
 }
 
-function buildIngressTraces(
-  ingresses: IngressView[],
-  services: ServiceView[],
-  pods: PodView[],
-  localeCode: LocaleCode,
-) {
-  const serviceMap = new Map(services.map((service) => [`${service.namespace}/${service.name}`, service]))
-  const podsByNamespace = new Map<string, PodView[]>()
-
-  pods.forEach((pod) => {
-    const items = podsByNamespace.get(pod.namespace) ?? []
-    items.push(pod)
-    podsByNamespace.set(pod.namespace, items)
-  })
-
-  return ingresses.flatMap((ingress) => {
-    const hosts = ingress.hosts && ingress.hosts.length > 0 ? ingress.hosts : [ingress.name]
-    const backendServices = Array.from(new Set(ingress.backendServices?.filter(Boolean) ?? []))
-
-    return hosts.flatMap((host) => {
-      const entryNode = makeNode(
-        `entry:${ingress.namespace}/${ingress.name}/${host}`,
-        host,
-        'entry',
-        'live',
-        ingress.namespace,
-        ingress.name,
-      )
-
-      if (backendServices.length === 0) {
-        return [{
-          id: `${entryNode.id}:no-backend`,
-          entry: entryNode,
-          service: makeNode(
-            `pending-service:${ingress.namespace}/${ingress.name}`,
-            localeCode === 'zh_CN' ? '未声明后端 Service' : 'No backend service',
-            'missing-service',
-            'pending',
-            ingress.namespace,
-          ),
-          terminals: [],
-          sourceType: 'ingress' as const,
-          state: 'pending' as const,
-          notes: localeCode === 'zh_CN'
-            ? 'Ingress 当前没有可解析的 backendServices 字段。'
-            : 'The ingress does not expose a resolved backendServices list yet.',
-        }]
-      }
-
-      return backendServices.map((serviceName) => {
-        const serviceKey = `${ingress.namespace}/${serviceName}`
-        const service = serviceMap.get(serviceKey)
-        const serviceNode = service
-          ? makeNode(`service:${serviceKey}`, service.name, 'service', 'live', service.namespace, service.name)
-          : makeNode(`missing-service:${serviceKey}`, serviceName, 'missing-service', 'pending', ingress.namespace, serviceName)
-        const matchedPods = service
-          ? (podsByNamespace.get(service.namespace) ?? []).filter((pod) => selectorMatchesLabels(service.selector, pod.labels))
-          : []
-        const terminalPods = matchedPods.map((pod) =>
-          makeNode(`pod:${pod.namespace}/${pod.name}`, pod.name, 'pod', 'live', pod.namespace, pod.name),
-        )
-
-        return {
-          id: `${entryNode.id}:${serviceName}`,
-          entry: entryNode,
-          service: serviceNode,
-          terminals: terminalPods,
-          sourceType: 'ingress' as const,
-          state: service ? 'live' as const : 'pending' as const,
-          notes: service
-            ? terminalPods.length > 0
-              ? localeCode === 'zh_CN'
-                ? `已解析 ${terminalPods.length} 个 Pod 后端。`
-                : `${terminalPods.length} backend pods resolved.`
-              : localeCode === 'zh_CN'
-                ? 'Service 已解析，但当前没有匹配到 Pod。'
-                : 'Service resolved, but no matching pods were found.'
-            : localeCode === 'zh_CN'
-              ? 'Ingress 指向的 Service 当前在 scope 内不可见。'
-              : 'The service referenced by this ingress is not visible in the current scope.',
-        }
-      })
-    })
-  })
-}
-
-function buildGatewayCoverageItems(gateways: GatewayView[]): GatewayCoverageItem[] {
+function buildGatewayIndexItems(gateways: GatewayView[]): GatewayIndexItem[] {
   return gateways.map((gateway) => ({
     id: `${gateway.namespace}/${gateway.name}`,
     name: gateway.name,
@@ -429,87 +429,362 @@ function buildGatewayCoverageItems(gateways: GatewayView[]): GatewayCoverageItem
   }))
 }
 
-function buildDemoGatewayCoverageItems(): GatewayCoverageItem[] {
-  return [{
-    id: 'demo-gateway',
-    name: 'edge-gateway',
-    namespace: 'infra-system',
-    addressSummary: 'gw.kubecrux.local',
-    gatewayClass: 'kong',
-    listenerCount: 3,
-    source: 'demo',
-  }]
+function buildServiceLookup(services: ServiceView[]) {
+  return new Map(services.map((service) => [`${service.namespace}/${service.name}`, service]))
 }
 
-function buildGatewayTraces(gateways: GatewayCoverageItem[], localeCode: LocaleCode): TopologyTrace[] {
-  return gateways.map((gateway) => ({
-    id: `gateway:${gateway.id}`,
-    entry: makeNode(
-      `gateway:${gateway.id}`,
-      gateway.addressSummary !== '-' ? gateway.addressSummary : gateway.name,
-      'gateway',
-      gateway.source === 'live' ? 'pending' : 'demo',
-      gateway.namespace,
-      gateway.name,
-    ),
-    service: makeNode(
-      `httproute:${gateway.id}`,
-      localeCode === 'zh_CN' ? 'HTTPRoute 待接入' : 'HTTPRoute pending',
-      'pending-route',
-      'pending',
-      gateway.namespace,
-    ),
-    terminals: [],
-    sourceType: 'gateway',
-    state: 'pending',
-    notes: localeCode === 'zh_CN'
-      ? '当前后端还没有 Gateway -> HTTPRoute -> Service 的聚合关系。'
-      : 'Gateway -> HTTPRoute -> Service aggregation is not available in the backend yet.',
-  }))
+function buildPodsByNamespace(pods: PodView[]) {
+  const podsByNamespace = new Map<string, PodView[]>()
+  pods.forEach((pod) => {
+    const items = podsByNamespace.get(pod.namespace) ?? []
+    items.push(pod)
+    podsByNamespace.set(pod.namespace, items)
+  })
+  return podsByNamespace
 }
 
-function buildDemoTraces(localeCode: LocaleCode): TopologyTrace[] {
-  const frontendService = makeNode('demo-service:web', 'web-frontend', 'service', 'demo', 'demo-app', 'web-frontend')
-  const apiService = makeNode('demo-service:api', 'billing-api', 'service', 'demo', 'demo-app', 'billing-api')
+function resolveServiceNode(
+  routeNamespace: string,
+  serviceName: string,
+  services: Map<string, ServiceView>,
+  podsByNamespace: Map<string, PodView[]>,
+  localeCode: LocaleCode,
+  missingNote: string,
+  noPodNote: string,
+) {
+  const serviceKey = `${routeNamespace}/${serviceName}`
+  const service = services.get(serviceKey)
+  const serviceNode = service
+    ? makeNode(`service:${serviceKey}`, service.name, 'service', 'live', service.namespace, service.name, service.namespace, 'Service')
+    : makeNode(`missing-service:${serviceKey}`, serviceName, 'missing-service', 'pending', routeNamespace, serviceName, routeNamespace, localeCode === 'zh_CN' ? '当前 scope 不可见' : 'Out of current scope')
+
+  const matchedPods = service
+    ? (podsByNamespace.get(service.namespace) ?? []).filter((pod) => selectorMatchesLabels(service.selector, pod.labels))
+    : []
+  const terminalPods = matchedPods.map((pod) =>
+    makeNode(`pod:${pod.namespace}/${pod.name}`, pod.name, 'pod', 'live', pod.namespace, pod.name),
+  )
+
+  const note = service
+    ? terminalPods.length > 0
+      ? localeCode === 'zh_CN'
+        ? `已解析 ${terminalPods.length} 个 Pod 后端。`
+        : `${terminalPods.length} backend pods resolved.`
+      : noPodNote
+    : missingNote
+
+  return {
+    note,
+    serviceNode,
+    state: service ? 'live' as const : 'pending' as const,
+    terminals: terminalPods,
+  }
+}
+
+function buildIngressTraces(
+  ingresses: IngressView[],
+  services: Map<string, ServiceView>,
+  podsByNamespace: Map<string, PodView[]>,
+  localeCode: LocaleCode,
+) {
+  return ingresses.flatMap((ingress) => {
+    const routeNode = makeNode(
+      `ingress-route:${ingress.namespace}/${ingress.name}`,
+      ingress.name,
+      'ingress-route',
+      'live',
+      ingress.namespace,
+      ingress.name,
+      ingress.namespace,
+      formatIngressControllerLabel(ingress.className, localeCode),
+    )
+    const entries = ingress.hosts && ingress.hosts.length > 0
+      ? ingress.hosts
+      : ingress.address && ingress.address.trim() !== ''
+        ? ingress.address.split(',').map((item) => item.trim()).filter(Boolean)
+        : [ingress.name]
+    const backendServices = Array.from(new Set(ingress.backendServices?.filter(Boolean) ?? []))
+
+    return entries.flatMap((entryLabel) => {
+      const entryNode = makeNode(
+        `entry:ingress:${ingress.namespace}/${ingress.name}/${entryLabel}`,
+        entryLabel,
+        'entry',
+        'live',
+        ingress.namespace,
+        ingress.name,
+        ingress.namespace,
+        formatIngressControllerLabel(ingress.className, localeCode),
+      )
+
+      if (backendServices.length === 0) {
+        return [{
+          id: `${entryNode.id}:no-backend`,
+          entry: entryNode,
+          route: routeNode,
+          service: makeNode(
+            `missing-service:${ingress.namespace}/${ingress.name}:no-backend`,
+            localeCode === 'zh_CN' ? '未声明后端 Service' : 'No backend service',
+            'missing-service',
+            'pending',
+            ingress.namespace,
+            undefined,
+            ingress.namespace,
+            localeCode === 'zh_CN' ? '后端待补齐' : 'Backend pending',
+          ),
+          terminals: [],
+          sourceType: 'ingress' as const,
+          state: 'pending' as const,
+          notes: localeCode === 'zh_CN'
+            ? 'Ingress 当前没有可解析的 backendServices 字段。'
+            : 'The ingress does not expose a resolved backendServices list yet.',
+        }]
+      }
+
+      return backendServices.map((serviceName) => {
+        const resolved = resolveServiceNode(
+          ingress.namespace,
+          serviceName,
+          services,
+          podsByNamespace,
+          localeCode,
+          localeCode === 'zh_CN'
+            ? 'Ingress 指向的 Service 当前在 scope 内不可见。'
+            : 'The service referenced by this ingress is not visible in the current scope.',
+          localeCode === 'zh_CN'
+            ? 'Service 已解析，但当前没有匹配到 Pod。'
+            : 'Service resolved, but no matching pods were found.',
+        )
+
+        return {
+          id: `${entryNode.id}:${routeNode.id}:${serviceName}`,
+          entry: entryNode,
+          route: routeNode,
+          service: resolved.serviceNode,
+          terminals: resolved.terminals,
+          sourceType: 'ingress' as const,
+          state: resolved.state,
+          notes: resolved.note,
+        }
+      })
+    })
+  })
+}
+
+function buildHTTPRouteTraces(
+  httpRoutes: HTTPRouteView[],
+  gateways: Map<string, GatewayIndexItem>,
+  services: Map<string, ServiceView>,
+  podsByNamespace: Map<string, PodView[]>,
+  localeCode: LocaleCode,
+) {
+  return httpRoutes.flatMap((route) => {
+    const parentRefs = route.parentRefs?.filter(Boolean) ?? []
+    const resolvedParents = parentRefs.length > 0
+      ? parentRefs.map((ref) => gateways.get(ref) ?? {
+        id: ref,
+        name: ref.split('/').pop() || ref,
+        namespace: ref.split('/')[0] || route.namespace,
+        addressSummary: '-',
+        gatewayClass: '-',
+        listenerCount: 0,
+        source: 'live' as const,
+      })
+      : [{
+        id: `unbound:${route.namespace}/${route.name}`,
+        name: localeCode === 'zh_CN' ? '未绑定 Gateway' : 'Unbound gateway',
+        namespace: route.namespace,
+        addressSummary: '-',
+        gatewayClass: '-',
+        listenerCount: 0,
+        source: 'live' as const,
+      }]
+
+    const gatewayLabels = uniqueStrings(resolvedParents.map((item) => item.name))
+    const routeBadge = uniqueStrings(resolvedParents.map((item) => formatGatewayClassLabel(item.gatewayClass, localeCode))).join(' · ') || 'HTTPRoute'
+    const routeSubtitle = route.hostnames && route.hostnames.length > 0
+      ? route.hostnames.join(' · ')
+      : gatewayLabels.join(' · ') || route.namespace
+    const routeNode = makeNode(
+      `http-route:${route.namespace}/${route.name}`,
+      route.name,
+      'http-route',
+      'live',
+      route.namespace,
+      route.name,
+      routeSubtitle || route.namespace,
+      `HTTPRoute · ${routeBadge}`,
+    )
+    const backendServices = Array.from(new Set(route.backendServices?.filter(Boolean) ?? []))
+
+    return resolvedParents.flatMap((parent) => {
+      const entries = route.hostnames && route.hostnames.length > 0
+        ? route.hostnames
+        : parent.addressSummary !== '-' && parent.addressSummary.trim() !== ''
+          ? parent.addressSummary.split(',').map((item) => item.trim()).filter(Boolean)
+          : [parent.name]
+
+      return entries.flatMap((entryLabel) => {
+        const entryNode = makeNode(
+          `entry:gateway:${parent.id}:${entryLabel}`,
+          entryLabel,
+          'entry',
+          parent.name.startsWith('未绑定') || parent.name.startsWith('Unbound') ? 'pending' : 'live',
+          parent.namespace,
+          parent.name,
+          parent.namespace,
+          formatGatewayClassLabel(parent.gatewayClass, localeCode),
+        )
+
+        if (backendServices.length === 0) {
+          return [{
+            id: `${entryNode.id}:${routeNode.id}:no-backend`,
+            entry: entryNode,
+            route: routeNode,
+            service: makeNode(
+              `missing-service:${route.namespace}/${route.name}:no-backend`,
+              localeCode === 'zh_CN' ? '未声明后端 Service' : 'No backend service',
+              'missing-service',
+              'pending',
+              route.namespace,
+              undefined,
+              route.namespace,
+              localeCode === 'zh_CN' ? '后端待补齐' : 'Backend pending',
+            ),
+            terminals: [],
+            sourceType: 'httproute' as const,
+            state: 'pending' as const,
+            notes: localeCode === 'zh_CN'
+              ? 'HTTPRoute 当前没有可解析的 backendRefs。'
+              : 'The HTTPRoute does not expose resolved backendRefs yet.',
+          }]
+        }
+
+        return backendServices.map((serviceName) => {
+          const resolved = resolveServiceNode(
+            route.namespace,
+            serviceName,
+            services,
+            podsByNamespace,
+            localeCode,
+            localeCode === 'zh_CN'
+              ? 'HTTPRoute 指向的 Service 当前在 scope 内不可见。'
+              : 'The service referenced by this HTTPRoute is not visible in the current scope.',
+            localeCode === 'zh_CN'
+              ? 'Service 已解析，但当前没有匹配到 Pod。'
+              : 'Service resolved, but no matching pods were found.',
+          )
+
+          return {
+            id: `${entryNode.id}:${routeNode.id}:${serviceName}`,
+            entry: entryNode,
+            route: routeNode,
+            service: resolved.serviceNode,
+            terminals: resolved.terminals,
+            sourceType: 'httproute' as const,
+            state: resolved.state,
+            notes: parent.name.startsWith('未绑定') || parent.name.startsWith('Unbound')
+              ? localeCode === 'zh_CN'
+                ? `${resolved.note} 当前 HTTPRoute 没有关联到可见的 Gateway。`
+                : `${resolved.note} The HTTPRoute is not bound to a visible gateway yet.`
+              : resolved.note,
+          }
+        })
+      })
+    })
+  })
+}
+
+function buildPendingGatewayTraces(
+  gateways: GatewayIndexItem[],
+  referencedParents: Set<string>,
+  localeCode: LocaleCode,
+) {
+  return gateways
+    .filter((gateway) => !referencedParents.has(gateway.id))
+    .map((gateway) => {
+      const entryName = gateway.addressSummary !== '-' ? gateway.addressSummary : gateway.name
+      return {
+        id: `pending-gateway:${gateway.id}`,
+        entry: makeNode(
+          `entry:pending-gateway:${gateway.id}`,
+          entryName,
+          'entry',
+          gateway.source === 'demo' ? 'demo' : 'pending',
+          gateway.namespace,
+          gateway.name,
+          gateway.namespace,
+          formatGatewayClassLabel(gateway.gatewayClass, localeCode),
+        ),
+        route: makeNode(
+          `pending-route:${gateway.id}`,
+          localeCode === 'zh_CN' ? 'HTTPRoute 待接入' : 'HTTPRoute pending',
+          'pending-route',
+          'pending',
+          gateway.namespace,
+          gateway.name,
+          gateway.name,
+          formatGatewayClassLabel(gateway.gatewayClass, localeCode),
+        ),
+        service: undefined,
+        terminals: [],
+        sourceType: 'gateway' as const,
+        state: 'pending' as const,
+        notes: localeCode === 'zh_CN'
+          ? '当前 Gateway 还没有关联到可见的 HTTPRoute。'
+          : 'This gateway is not associated with any visible HTTPRoute yet.',
+      }
+    })
+}
+
+function buildDemoTraces(localeCode: LocaleCode) {
+  const webService = makeNode('service:demo-app/web-frontend', 'web-frontend', 'service', 'demo', 'demo-app', 'web-frontend', 'demo-app', 'Service')
+  const apiService = makeNode('service:demo-app/billing-api', 'billing-api', 'service', 'demo', 'demo-app', 'billing-api', 'demo-app', 'Service')
 
   return [
     {
-      id: 'demo-ingress-web',
-      entry: makeNode('demo-entry:web', 'app.kubecrux.local', 'entry', 'demo', 'demo-app', 'edge-web'),
-      service: frontendService,
+      id: 'demo-kong-ingress-web',
+      entry: makeNode('entry:demo-kong:web', 'app.kubecrux.local', 'entry', 'demo', 'demo-app', 'kong-public', 'demo-app', 'Kong Ingress'),
+      route: makeNode('route:demo-kong:web', 'kong-public', 'ingress-route', 'demo', 'demo-app', 'kong-public', 'demo-app', 'Kong Ingress'),
+      service: webService,
       terminals: [
-        makeNode('demo-pod:web-0', 'web-frontend-85d7c7d7c6-v91k2', 'pod', 'demo', 'demo-app', 'web-frontend-85d7c7d7c6-v91k2'),
-        makeNode('demo-pod:web-1', 'web-frontend-85d7c7d7c6-j8t6w', 'pod', 'demo', 'demo-app', 'web-frontend-85d7c7d7c6-j8t6w'),
+        makeNode('pod:demo-app/web-0', 'web-frontend-85d7c7d7c6-v91k2', 'pod', 'demo', 'demo-app', 'web-frontend-85d7c7d7c6-v91k2'),
+        makeNode('pod:demo-app/web-1', 'web-frontend-85d7c7d7c6-j8t6w', 'pod', 'demo', 'demo-app', 'web-frontend-85d7c7d7c6-j8t6w'),
       ],
-      sourceType: 'demo',
-      state: 'demo',
-      notes: localeCode === 'zh_CN' ? '演示链路，用于预览入口到 Pod 的拓扑形态。' : 'Preview flow used when no live topology is available.',
+      sourceType: 'demo' as const,
+      state: 'demo' as const,
+      notes: localeCode === 'zh_CN'
+        ? '演示一条基于 IngressClass 的控制器入口链路。'
+        : 'Preview flow for an ingress-controller-based entry path.',
     },
     {
-      id: 'demo-ingress-api',
-      entry: makeNode('demo-entry:api', 'api.kubecrux.local', 'entry', 'demo', 'demo-app', 'edge-api'),
+      id: 'demo-traefik-httproute-api',
+      entry: makeNode('entry:demo-http:api', 'api.kubecrux.local', 'entry', 'demo', 'infra-system', 'edge-gateway', 'infra-system', 'Traefik Gateway'),
+      route: makeNode('route:demo-http:api', 'payments-route', 'http-route', 'demo', 'demo-app', 'payments-route', 'api.kubecrux.local', 'HTTPRoute · Traefik Gateway'),
       service: apiService,
       terminals: [
-        makeNode('demo-pod:api-0', 'billing-api-6cb687f57d-k9nj2', 'pod', 'demo', 'demo-app', 'billing-api-6cb687f57d-k9nj2'),
-        makeNode('demo-pod:api-1', 'billing-api-6cb687f57d-mr4qb', 'pod', 'demo', 'demo-app', 'billing-api-6cb687f57d-mr4qb'),
-        makeNode('demo-pod:api-2', 'billing-api-6cb687f57d-x7lph', 'pod', 'demo', 'demo-app', 'billing-api-6cb687f57d-x7lph'),
+        makeNode('pod:demo-app/api-0', 'billing-api-6cb687f57d-k9nj2', 'pod', 'demo', 'demo-app', 'billing-api-6cb687f57d-k9nj2'),
+        makeNode('pod:demo-app/api-1', 'billing-api-6cb687f57d-mr4qb', 'pod', 'demo', 'demo-app', 'billing-api-6cb687f57d-mr4qb'),
+        makeNode('pod:demo-app/api-2', 'billing-api-6cb687f57d-x7lph', 'pod', 'demo', 'demo-app', 'billing-api-6cb687f57d-x7lph'),
       ],
-      sourceType: 'demo',
-      state: 'demo',
-      notes: localeCode === 'zh_CN' ? '演示链路，用于展示一对多后端 Pod 扇出。' : 'Preview flow that shows fan-out from one service to multiple pods.',
+      sourceType: 'demo' as const,
+      state: 'demo' as const,
+      notes: localeCode === 'zh_CN'
+        ? '演示一条 Gateway / HTTPRoute 到 Service 的链路。'
+        : 'Preview flow for a Gateway / HTTPRoute route to a service.',
     },
     {
-      id: 'demo-gateway',
-      entry: makeNode('demo-gateway:edge', 'gw.kubecrux.local', 'gateway', 'demo', 'infra-system', 'edge-gateway'),
-      service: makeNode('demo-httproute:edge', localeCode === 'zh_CN' ? 'HTTPRoute 待接入' : 'HTTPRoute pending', 'pending-route', 'pending', 'infra-system'),
+      id: 'demo-pending-gateway',
+      entry: makeNode('entry:demo-pending:gw', 'gw.kubecrux.local', 'entry', 'demo', 'infra-system', 'edge-gateway', 'infra-system', 'APISIX Gateway'),
+      route: makeNode('route:demo-pending:gw', localeCode === 'zh_CN' ? 'HTTPRoute 待接入' : 'HTTPRoute pending', 'pending-route', 'pending', 'infra-system', 'edge-gateway', 'edge-gateway', 'APISIX Gateway'),
       terminals: [],
-      sourceType: 'gateway',
-      state: 'pending',
+      sourceType: 'demo' as const,
+      state: 'pending' as const,
       notes: localeCode === 'zh_CN'
-        ? '演示 Gateway 通道，真实 HTTPRoute 聚合待后端补齐。'
-        : 'Preview gateway lane. Real HTTPRoute aggregation is pending in the backend.',
+        ? '演示一个已经暴露入口、但还没有路由绑定的 Gateway。'
+        : 'Preview a gateway entry that is exposed but not bound to any route yet.',
     },
-  ]
+  ] satisfies TopologyTrace[]
 }
 
 function filterTraces(traces: TopologyTrace[], keyword: string) {
@@ -520,6 +795,8 @@ function filterTraces(traces: TopologyTrace[], keyword: string) {
   return traces.filter((trace) => {
     const fields = [
       trace.entry.name,
+      trace.route.name,
+      trace.route.badge ?? '',
       trace.service?.name ?? '',
       trace.notes,
       ...trace.terminals.map((item) => item.name),
@@ -557,12 +834,11 @@ function layoutTopologyGraph(nodes: TopologyFlowNode[], edges: TopologyFlowEdge[
   })
 }
 
-function buildTopologyGraph(traces: TopologyTrace[], localeCode: LocaleCode): TopologyGraphData {
+function buildTopologyGraph(traces: TopologyTrace[]): TopologyGraphData {
   const nodeMap = new Map<string, TopologyGraphNodeData>()
   const edgeMap = new Map<string, TopologyFlowEdge>()
   const serviceMap = new Map<string, TopologyNode>()
   const backendPodsByService = new Map<string, Map<string, TopologyNode>>()
-  const emptyBackendNotes = new Map<string, string[]>()
 
   const addNode = (id: string, data: TopologyGraphNodeData) => {
     const current = nodeMap.get(id)
@@ -581,7 +857,7 @@ function buildTopologyGraph(traces: TopologyTrace[], localeCode: LocaleCode): To
     })
   }
 
-  const addEdge = (source: string, target: string, sourceKind: TopologyGraphNodeKind, state: TopologyDataState) => {
+  const addEdge = (source: string, target: string, sourceKind: TopologyNodeKind, state: TopologyDataState) => {
     const key = `${source}->${target}`
     const color = resolveNodeColor(sourceKind)
     const current = edgeMap.get(key)
@@ -614,15 +890,23 @@ function buildTopologyGraph(traces: TopologyTrace[], localeCode: LocaleCode): To
       name: trace.entry.name,
       kind: trace.entry.kind,
       state: trace.entry.state,
-      subtitle: trace.entry.namespace || '-',
-      badge: trace.sourceType === 'gateway'
-        ? (localeCode === 'zh_CN' ? 'Gateway 入口' : 'Gateway entry')
-        : trace.sourceType === 'demo'
-          ? (localeCode === 'zh_CN' ? '演示入口' : 'Preview entry')
-          : 'Ingress',
+      subtitle: trace.entry.subtitle || trace.entry.namespace || '-',
+      badge: trace.entry.badge,
       namespace: trace.entry.namespace,
       resourceName: trace.entry.resourceName,
     })
+
+    addNode(trace.route.id, {
+      name: trace.route.name,
+      kind: trace.route.kind,
+      state: trace.route.state,
+      subtitle: trace.route.subtitle || trace.route.namespace || '-',
+      badge: trace.route.badge,
+      namespace: trace.route.namespace,
+      resourceName: trace.route.resourceName,
+    })
+
+    addEdge(trace.entry.id, trace.route.id, trace.entry.kind, trace.state)
 
     if (!trace.service) {
       return
@@ -632,73 +916,61 @@ function buildTopologyGraph(traces: TopologyTrace[], localeCode: LocaleCode): To
       name: trace.service.name,
       kind: trace.service.kind,
       state: trace.service.state,
-      subtitle: trace.service.namespace || '-',
-      badge: trace.service.kind === 'pending-route'
-        ? (localeCode === 'zh_CN' ? '路由占位' : 'Route placeholder')
-        : trace.service.kind === 'missing-service'
-          ? (localeCode === 'zh_CN' ? '当前 scope 不可见' : 'Out of current scope')
-          : 'Service',
+      subtitle: trace.service.subtitle || trace.service.namespace || '-',
+      badge: trace.service.badge,
       namespace: trace.service.namespace,
       resourceName: trace.service.resourceName,
     })
-
-    addEdge(trace.entry.id, trace.service.id, trace.entry.kind, trace.state)
+    addEdge(trace.route.id, trace.service.id, trace.route.kind, trace.state)
 
     if (trace.service.kind !== 'service') {
       return
     }
 
     serviceMap.set(trace.service.id, trace.service)
-
-    if (trace.terminals.length > 0) {
-      const pods = backendPodsByService.get(trace.service.id) ?? new Map<string, TopologyNode>()
-      trace.terminals.forEach((terminal) => {
-        pods.set(terminal.id, terminal)
-      })
-      backendPodsByService.set(trace.service.id, pods)
+    if (trace.terminals.length === 0) {
       return
     }
 
-    const notes = emptyBackendNotes.get(trace.service.id) ?? []
-    notes.push(trace.notes)
-    emptyBackendNotes.set(trace.service.id, notes)
+    const pods = backendPodsByService.get(trace.service.id) ?? new Map<string, TopologyNode>()
+    trace.terminals.forEach((terminal) => {
+      pods.set(terminal.id, terminal)
+    })
+    backendPodsByService.set(trace.service.id, pods)
   })
 
-  serviceMap.forEach((serviceNode, serviceId) => {
-    const pods = Array.from(backendPodsByService.get(serviceId)?.values() ?? [])
-
+  serviceMap.forEach((serviceNode, serviceID) => {
+    const pods = Array.from(backendPodsByService.get(serviceID)?.values() ?? [])
     if (pods.length > 0) {
-      const backendId = `backend:${serviceId}`
-      addNode(backendId, {
-        name: localeCode === 'zh_CN' ? `${pods.length} 个 Backend Pods` : `${pods.length} backend pods`,
+      const backendID = `backend:${serviceID}`
+      addNode(backendID, {
+        name: `${pods.length} backend pods`,
         kind: 'backend-group',
         state: 'live',
-        subtitle: formatBackendSubtitle(pods, localeCode),
-        badge: localeCode === 'zh_CN' ? '后端集合' : 'Backend set',
+        subtitle: formatBackendSubtitle(pods, 'en_US'),
+        badge: 'Backend group',
         namespace: serviceNode.namespace,
         resourceName: serviceNode.resourceName,
-        serviceId,
+        serviceId: serviceID,
         terminalNodes: pods,
       })
-      addEdge(serviceId, backendId, 'service', 'live')
+      addEdge(serviceID, backendID, serviceNode.kind, 'live')
       return
     }
 
-    const backendId = `backend-empty:${serviceId}`
-    addNode(backendId, {
-      name: localeCode === 'zh_CN' ? '未匹配到后端 Pod' : 'No matching backend pods',
+    const backendID = `backend-empty:${serviceID}`
+    addNode(backendID, {
+      name: 'No matching backend pods',
       kind: 'empty-backend',
       state: 'pending',
-      subtitle: localeCode === 'zh_CN'
-        ? 'Service 已解析，但 selector 暂未命中 Pod。'
-        : 'Service resolved, but the selector does not match any pods yet.',
-      badge: localeCode === 'zh_CN' ? '选择器未命中' : 'Selector not matched',
+      subtitle: 'Service resolved, but selector has not matched any pod yet.',
+      badge: 'Selector not matched',
       namespace: serviceNode.namespace,
       resourceName: serviceNode.resourceName,
-      serviceId,
+      serviceId: serviceID,
       terminalNodes: [],
     })
-    addEdge(serviceId, backendId, 'service', 'pending')
+    addEdge(serviceID, backendID, serviceNode.kind, 'pending')
   })
 
   const flowNodes = Array.from(nodeMap.entries()).map(([id, data]) => ({
@@ -707,15 +979,11 @@ function buildTopologyGraph(traces: TopologyTrace[], localeCode: LocaleCode): To
     position: { x: 0, y: 0 },
     data,
   }))
-
   const flowEdges = Array.from(edgeMap.values())
   const nodes = layoutTopologyGraph(flowNodes, flowEdges)
-  const podIds = new Set<string>()
-
+  const podIDs = new Set<string>()
   backendPodsByService.forEach((pods) => {
-    pods.forEach((pod) => {
-      podIds.add(pod.id)
-    })
+    pods.forEach((pod) => podIDs.add(pod.id))
   })
 
   return {
@@ -723,9 +991,10 @@ function buildTopologyGraph(traces: TopologyTrace[], localeCode: LocaleCode): To
     edges: flowEdges,
     nodeMap,
     fitKey: `${nodes.map((node) => node.id).join(',')}::${flowEdges.map((edge) => edge.id).join(',')}`,
-    entryCount: Array.from(nodeMap.values()).filter((node) => node.kind === 'entry' || node.kind === 'gateway').length,
-    serviceCount: Array.from(nodeMap.values()).filter((node) => ['service', 'missing-service', 'pending-route'].includes(node.kind)).length,
-    podCount: podIds.size,
+    entryCount: Array.from(nodeMap.values()).filter((node) => node.kind === 'entry').length,
+    routeCount: Array.from(nodeMap.values()).filter((node) => ['ingress-route', 'http-route', 'pending-route'].includes(node.kind)).length,
+    serviceCount: Array.from(nodeMap.values()).filter((node) => ['service', 'missing-service'].includes(node.kind)).length,
+    podCount: podIDs.size,
   }
 }
 
@@ -743,87 +1012,96 @@ function renderTraceState(state: TopologyDataState, localeCode: LocaleCode) {
   return <Tag color="blue">{localeCode === 'zh_CN' ? '演示' : 'Preview'}</Tag>
 }
 
-function renderSourceType(sourceType: TopologyTrace['sourceType'], localeCode: LocaleCode) {
-  if (sourceType === 'gateway') {
-    return <Tag color="orange">Gateway</Tag>
-  }
-  if (sourceType === 'ingress') {
-    return <Tag color="blue">Ingress</Tag>
-  }
-  return <Tag color="blue">{localeCode === 'zh_CN' ? '演示' : 'Demo'}</Tag>
-}
-
 function buildSelectionDetail(
-  nodeId: string | null,
+  nodeID: string | null,
   nodeData: TopologyGraphNodeData | null,
   traces: TopologyTrace[],
   localeCode: LocaleCode,
 ): TopologySelectionDetail | null {
-  if (!nodeId || !nodeData) {
+  if (!nodeID || !nodeData) {
     return null
   }
 
   switch (nodeData.kind) {
-    case 'entry':
-    case 'gateway': {
-      const relatedTraces = traces.filter((trace) => trace.entry.id === nodeId)
+    case 'entry': {
+      const relatedTraces = traces.filter((trace) => trace.entry.id === nodeID)
+      const relatedRoutes = uniqueTopologyNodes(relatedTraces.map((trace) => trace.route))
       const relatedServices = uniqueTopologyNodes(relatedTraces.map((trace) => trace.service))
       const terminalNodes = uniqueTopologyNodes(relatedTraces.flatMap((trace) => trace.terminals))
       return {
         relatedEntries: [],
+        relatedRoutes,
         relatedServices,
-        serviceNode: undefined,
         terminalNodes,
         notes: uniqueStrings(relatedTraces.map((trace) => trace.notes)),
         summary: localeCode === 'zh_CN'
-          ? `当前节点向下游连接 ${relatedServices.length} 个 Service / Route，并覆盖 ${terminalNodes.length} 个后端 Pod。`
-          : `This node connects to ${relatedServices.length} downstream services or routes and covers ${terminalNodes.length} backend pods.`,
+          ? `该入口当前连接 ${relatedRoutes.length} 条路由、${relatedServices.length} 个 Service，并覆盖 ${terminalNodes.length} 个后端 Pod。`
+          : `This entry currently connects to ${relatedRoutes.length} routes, ${relatedServices.length} services, and ${terminalNodes.length} backend pods.`,
       }
     }
-    case 'service':
-    case 'missing-service':
+    case 'ingress-route':
+    case 'http-route':
     case 'pending-route': {
-      const relatedTraces = traces.filter((trace) => trace.service?.id === nodeId)
+      const relatedTraces = traces.filter((trace) => trace.route.id === nodeID)
       const relatedEntries = uniqueTopologyNodes(relatedTraces.map((trace) => trace.entry))
+      const relatedServices = uniqueTopologyNodes(relatedTraces.map((trace) => trace.service))
       const terminalNodes = uniqueTopologyNodes(relatedTraces.flatMap((trace) => trace.terminals))
       return {
         relatedEntries,
+        relatedRoutes: [],
+        relatedServices,
+        terminalNodes,
+        notes: uniqueStrings(relatedTraces.map((trace) => trace.notes)),
+        summary: nodeData.kind === 'pending-route'
+          ? localeCode === 'zh_CN'
+            ? `当前待接路由节点关联 ${relatedEntries.length} 个入口，但还没有接到可见的 Service。`
+            : `This pending-route node is attached to ${relatedEntries.length} entries but is not connected to any visible service yet.`
+          : localeCode === 'zh_CN'
+            ? `该路由节点当前承接 ${relatedEntries.length} 个入口，并连接 ${relatedServices.length} 个 Service。`
+            : `This route node currently receives ${relatedEntries.length} entries and connects to ${relatedServices.length} services.`,
+      }
+    }
+    case 'service':
+    case 'missing-service': {
+      const relatedTraces = traces.filter((trace) => trace.service?.id === nodeID)
+      const relatedEntries = uniqueTopologyNodes(relatedTraces.map((trace) => trace.entry))
+      const relatedRoutes = uniqueTopologyNodes(relatedTraces.map((trace) => trace.route))
+      const terminalNodes = uniqueTopologyNodes(relatedTraces.flatMap((trace) => trace.terminals))
+      return {
+        relatedEntries,
+        relatedRoutes,
         relatedServices: [],
-        serviceNode: relatedTraces[0]?.service,
         terminalNodes,
         notes: uniqueStrings(relatedTraces.map((trace) => trace.notes)),
         summary: nodeData.kind === 'service'
           ? localeCode === 'zh_CN'
-            ? `该 Service 当前承接 ${relatedEntries.length} 个上游入口，并汇总 ${terminalNodes.length} 个后端 Pod。`
-            : `This service receives ${relatedEntries.length} upstream entries and aggregates ${terminalNodes.length} backend pods.`
-          : nodeData.kind === 'missing-service'
-            ? localeCode === 'zh_CN'
-              ? `有 ${relatedEntries.length} 个入口指向当前缺失的 Service，用于提示 scope 内不可见或配置缺失。`
-              : `${relatedEntries.length} entries currently point to this missing service, which highlights an out-of-scope or missing backend.`
-            : localeCode === 'zh_CN'
-              ? '当前只展示 Gateway 到 HTTPRoute 的占位关系，等待后端聚合继续拉通到 Service。'
-              : 'The graph currently stops at the pending HTTPRoute placeholder until backend aggregation reaches Service.',
+            ? `该 Service 当前被 ${relatedRoutes.length} 条路由引用，并汇总 ${terminalNodes.length} 个后端 Pod。`
+            : `This service is referenced by ${relatedRoutes.length} routes and aggregates ${terminalNodes.length} backend pods.`
+          : localeCode === 'zh_CN'
+            ? `当前有 ${relatedRoutes.length} 条路由指向一个在 scope 内不可见的 Service。`
+            : `${relatedRoutes.length} routes currently point to a service that is not visible in the current scope.`,
       }
     }
     case 'backend-group':
     case 'empty-backend': {
-      const serviceId = nodeData.serviceId
-      const relatedTraces = traces.filter((trace) => trace.service?.id === serviceId)
+      const serviceID = String(nodeData.serviceId ?? '')
+      const relatedTraces = traces.filter((trace) => trace.service?.id === serviceID)
       const relatedEntries = uniqueTopologyNodes(relatedTraces.map((trace) => trace.entry))
+      const relatedRoutes = uniqueTopologyNodes(relatedTraces.map((trace) => trace.route))
       const terminalNodes = uniqueTopologyNodes(nodeData.terminalNodes ?? [])
       return {
         relatedEntries,
-        relatedServices: [],
-        serviceNode: relatedTraces[0]?.service,
+        relatedRoutes,
+        relatedServices: uniqueTopologyNodes(relatedTraces.map((trace) => trace.service)),
         terminalNodes,
         notes: uniqueStrings(relatedTraces.map((trace) => trace.notes)),
         summary: nodeData.kind === 'backend-group'
           ? localeCode === 'zh_CN'
-            ? `这是聚合后的后端集合节点，归属于一个 Service，并默认收起为 ${terminalNodes.length} 个 Pod。`
-            : `This aggregated backend node belongs to one service and is collapsed into ${terminalNodes.length} pods by default.`
+            ? `总览图把后端收敛成一个集合节点，当前包含 ${terminalNodes.length} 个 Pod。`
+            : `The overview graph collapses the backend into one aggregate node that currently contains ${terminalNodes.length} pods.`
           : localeCode === 'zh_CN'
-            ? 'Service 已解析，但 selector 还没有匹配到后端 Pod，因此总览图先停在这里。'
-            : 'The service is resolved, but the selector does not match backend pods yet, so the topology stops here.',
+            ? 'Service 已解析，但 selector 还没有命中任何后端 Pod。'
+            : 'The service is resolved, but its selector has not matched any backend pod yet.',
       }
     }
     case 'pod':
@@ -886,7 +1164,7 @@ function TopologyCanvasInner({
   edges: TopologyFlowEdge[]
   fitKey: string
   nodes: TopologyFlowNode[]
-  onSelectNode: (nodeId: string | null) => void
+  onSelectNode: (nodeID: string | null) => void
 }) {
   const { fitView } = useReactFlow()
 
@@ -933,7 +1211,7 @@ function TopologyCanvas({
   edges: TopologyFlowEdge[]
   fitKey: string
   nodes: TopologyFlowNode[]
-  onSelectNode: (nodeId: string | null) => void
+  onSelectNode: (nodeID: string | null) => void
 }) {
   return (
     <ReactFlowProvider>
@@ -947,7 +1225,7 @@ export function NetworkTopologyPage() {
   const navigate = useNavigate()
   const { clusterId, namespace } = usePlatformScopeStore()
   const [searchKeyword, setSearchKeyword] = useState('')
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
+  const [selectedNodeID, setSelectedNodeID] = useState<string | null>(null)
   const deferredSearchKeyword = useDeferredValue(searchKeyword.trim().toLowerCase())
 
   const servicesQuery = useQuery({
@@ -959,6 +1237,12 @@ export function NetworkTopologyPage() {
   const ingressesQuery = useQuery({
     queryKey: ['network-topology-ingresses', clusterId, namespace],
     queryFn: () => api.get<ApiResponse<IngressView[]>>(buildClusterScopedPath(clusterId!, 'network/ingresses', namespace)),
+    enabled: !!clusterId,
+  })
+
+  const httpRoutesQuery = useQuery({
+    queryKey: ['network-topology-httproutes', clusterId, namespace],
+    queryFn: () => api.get<ApiResponse<HTTPRouteView[]>>(buildClusterScopedPath(clusterId!, 'network/httproutes', namespace)),
     enabled: !!clusterId,
   })
 
@@ -974,37 +1258,63 @@ export function NetworkTopologyPage() {
     enabled: !!clusterId,
   })
 
-  const liveTraces = useMemo(
-    () => buildIngressTraces(
-      ingressesQuery.data?.data ?? [],
-      servicesQuery.data?.data ?? [],
-      podsQuery.data?.data ?? [],
-      localeCode,
-    ),
-    [ingressesQuery.data, localeCode, podsQuery.data, servicesQuery.data],
+  const serviceLookup = useMemo(
+    () => buildServiceLookup(servicesQuery.data?.data ?? []),
+    [servicesQuery.data],
   )
-
-  const liveGatewayCoverageItems = useMemo(
-    () => buildGatewayCoverageItems(gatewaysQuery.data?.data ?? []),
+  const podsByNamespace = useMemo(
+    () => buildPodsByNamespace(podsQuery.data?.data ?? []),
+    [podsQuery.data],
+  )
+  const gatewayItems = useMemo(
+    () => buildGatewayIndexItems(gatewaysQuery.data?.data ?? []),
     [gatewaysQuery.data],
   )
-
-  const hasLiveTopology = liveTraces.length > 0
-  const hasLiveGatewayCoverage = liveGatewayCoverageItems.length > 0
-  const chartMode = hasLiveTopology || hasLiveGatewayCoverage ? 'live' : 'demo'
-  const gatewayCoverageItems = useMemo(
-    () => liveGatewayCoverageItems.length > 0
-      ? liveGatewayCoverageItems
-      : chartMode === 'live'
-        ? []
-        : buildDemoGatewayCoverageItems(),
-    [chartMode, liveGatewayCoverageItems],
+  const gatewayMap = useMemo(
+    () => new Map(gatewayItems.map((gateway) => [gateway.id, gateway])),
+    [gatewayItems],
   )
+
+  const ingressTraces = useMemo(
+    () => buildIngressTraces(
+      ingressesQuery.data?.data ?? [],
+      serviceLookup,
+      podsByNamespace,
+      localeCode,
+    ),
+    [ingressesQuery.data, localeCode, podsByNamespace, serviceLookup],
+  )
+
+  const httpRouteTraces = useMemo(
+    () => buildHTTPRouteTraces(
+      httpRoutesQuery.data?.data ?? [],
+      gatewayMap,
+      serviceLookup,
+      podsByNamespace,
+      localeCode,
+    ),
+    [gatewayMap, httpRoutesQuery.data, localeCode, podsByNamespace, serviceLookup],
+  )
+
+  const referencedGatewayParents = useMemo(
+    () => new Set((httpRoutesQuery.data?.data ?? []).flatMap((route) => route.parentRefs?.filter(Boolean) ?? [])),
+    [httpRoutesQuery.data],
+  )
+
+  const pendingGatewayTraces = useMemo(
+    () => buildPendingGatewayTraces(gatewayItems, referencedGatewayParents, localeCode),
+    [gatewayItems, localeCode, referencedGatewayParents],
+  )
+
+  const liveTraces = useMemo(
+    () => [...ingressTraces, ...httpRouteTraces, ...pendingGatewayTraces],
+    [httpRouteTraces, ingressTraces, pendingGatewayTraces],
+  )
+
+  const chartMode = liveTraces.length > 0 ? 'live' : 'demo'
   const chartTraces = useMemo(
-    () => chartMode === 'live'
-      ? [...liveTraces, ...buildGatewayTraces(liveGatewayCoverageItems, localeCode)]
-      : buildDemoTraces(localeCode),
-    [chartMode, liveGatewayCoverageItems, liveTraces, localeCode],
+    () => liveTraces.length > 0 ? liveTraces : buildDemoTraces(localeCode),
+    [liveTraces, localeCode],
   )
 
   const filteredTraces = useMemo(
@@ -1013,22 +1323,43 @@ export function NetworkTopologyPage() {
   )
 
   const topologyGraph = useMemo(
-    () => buildTopologyGraph(filteredTraces, localeCode),
-    [filteredTraces, localeCode],
+    () => buildTopologyGraph(filteredTraces),
+    [filteredTraces],
   )
 
   const flowNodes = useMemo(
     () => topologyGraph.nodes.map((node) => ({
       ...node,
-      selected: node.id === selectedNodeId,
+      selected: node.id === selectedNodeID,
+      data: {
+        ...node.data,
+        subtitle: node.data.kind === 'backend-group'
+          ? formatBackendSubtitle(node.data.terminalNodes as TopologyNode[] ?? [], localeCode)
+          : node.data.kind === 'empty-backend'
+            ? (localeCode === 'zh_CN' ? 'Service 已解析，但 selector 暂未命中 Pod。' : 'Service resolved, but selector has not matched any pod yet.')
+            : node.data.subtitle,
+        badge: node.data.kind === 'backend-group'
+          ? (localeCode === 'zh_CN' ? '后端集合' : 'Backend group')
+          : node.data.kind === 'empty-backend'
+            ? (localeCode === 'zh_CN' ? '选择器未命中' : 'Selector not matched')
+            : node.data.badge,
+        name: node.data.kind === 'backend-group'
+          ? (localeCode === 'zh_CN'
+            ? `${(node.data.terminalNodes as TopologyNode[] ?? []).length} 个 Backend Pods`
+            : `${(node.data.terminalNodes as TopologyNode[] ?? []).length} backend pods`)
+          : node.data.kind === 'empty-backend'
+            ? (localeCode === 'zh_CN' ? '未匹配到后端 Pod' : 'No matching backend pods')
+            : node.data.name,
+      },
     })),
-    [selectedNodeId, topologyGraph.nodes],
+    [localeCode, selectedNodeID, topologyGraph.nodes],
   )
 
   const tableRows = useMemo<TableRow[]>(
     () => filteredTraces.map((trace) => ({
       id: trace.id,
       entry: trace.entry,
+      route: trace.route,
       service: trace.service,
       terminals: trace.terminals,
       sourceType: trace.sourceType,
@@ -1038,58 +1369,50 @@ export function NetworkTopologyPage() {
     [filteredTraces],
   )
 
-  const hasLivePendingGateway = liveGatewayCoverageItems.length > 0
+  useEffect(() => {
+    if (selectedNodeID && !topologyGraph.nodeMap.has(selectedNodeID)) {
+      setSelectedNodeID(null)
+    }
+  }, [selectedNodeID, topologyGraph.nodeMap])
+
   const liveErrors = [
     getErrorMessage(servicesQuery.error),
     getErrorMessage(ingressesQuery.error),
-    getErrorMessage(podsQuery.error),
+    getErrorMessage(httpRoutesQuery.error),
     getErrorMessage(gatewaysQuery.error),
+    getErrorMessage(podsQuery.error),
   ].filter(Boolean)
-  const liveLoading = clusterId && (servicesQuery.isLoading || ingressesQuery.isLoading || podsQuery.isLoading || gatewaysQuery.isLoading)
-
+  const liveLoading = clusterId && (servicesQuery.isLoading || ingressesQuery.isLoading || httpRoutesQuery.isLoading || gatewaysQuery.isLoading || podsQuery.isLoading)
   const viewTag = chartMode === 'live'
-    ? hasLiveTopology
-      ? hasLivePendingGateway
-        ? (localeCode === 'zh_CN' ? '混合视图' : 'Hybrid view')
-        : (localeCode === 'zh_CN' ? '实时链路' : 'Live flow')
-      : (localeCode === 'zh_CN' ? 'Gateway 视图' : 'Gateway view')
-    : (localeCode === 'zh_CN' ? '演示视图' : 'Preview flow')
+    ? (localeCode === 'zh_CN' ? '实时拓扑' : 'Live topology')
+    : (localeCode === 'zh_CN' ? '演示视图' : 'Preview topology')
 
   const viewDescription = chartMode === 'live'
-    ? hasLiveTopology
-      ? hasLivePendingGateway
-        ? (localeCode === 'zh_CN'
-          ? '主图改为分层拓扑：Ingress -> Service -> Backend Pods 使用实时聚合，Gateway / HTTPRoute 继续以待接占位展示。'
-          : 'The main graph now uses a layered topology: Ingress -> Service -> Backend Pods is live, while Gateway / HTTPRoute stays as a pending placeholder.')
-        : (localeCode === 'zh_CN'
-          ? '当前 scope 内已经解析出实时入口链路，并按分层拓扑收敛后端节点。'
-          : 'Live entry paths are available in the current scope and rendered as a layered topology with collapsed backends.')
-      : (localeCode === 'zh_CN'
-        ? '当前 scope 先只发现 Gateway 覆盖信息，HTTPRoute -> Service 聚合仍待后端补齐。'
-        : 'The current scope only exposes Gateway coverage for now, while HTTPRoute -> Service aggregation is still pending in the backend.')
+    ? (localeCode === 'zh_CN'
+      ? 'Ingress(controller)、Gateway / HTTPRoute 和 Service 后端已经统一进入同一张入口网络拓扑；未挂接 HTTPRoute 的 Gateway 会以待接路由节点保留在图里。'
+      : 'Ingress controllers, Gateway / HTTPRoute, and service backends now share one topology; gateways without HTTPRoute bindings remain visible as pending-route nodes.')
     : clusterId
       ? liveLoading
         ? (localeCode === 'zh_CN'
-          ? '正在加载实时链路，当前先展示演示拓扑。'
+          ? '正在加载实时拓扑，当前先展示演示视图。'
           : 'Live topology is still loading, so the preview graph is shown first.')
         : (localeCode === 'zh_CN'
-          ? '当前 scope 下没有可展示的实时入口链路，先切换到演示拓扑看布局和交互。'
-          : 'No live entry path is available in the current scope, so the preview graph is shown.')
+          ? '当前 scope 下没有可展示的实时入口拓扑，先切换到演示视图看布局。'
+          : 'No live entry topology is available in the current scope, so the preview graph is shown.')
       : (localeCode === 'zh_CN'
         ? '还没有选定集群，先展示一版演示拓扑。'
         : 'No cluster is selected yet, so the preview graph is shown.')
 
-  useEffect(() => {
-    if (selectedNodeId && !topologyGraph.nodeMap.has(selectedNodeId)) {
-      setSelectedNodeId(null)
-    }
-  }, [selectedNodeId, topologyGraph.nodeMap])
-
-  const selectedTopologyNode = selectedNodeId ? topologyGraph.nodeMap.get(selectedNodeId) ?? null : null
+  const selectedTopologyNode = selectedNodeID ? topologyGraph.nodeMap.get(selectedNodeID) ?? null : null
   const selectionDetail = useMemo(
-    () => buildSelectionDetail(selectedNodeId, selectedTopologyNode, filteredTraces, localeCode),
-    [filteredTraces, localeCode, selectedNodeId, selectedTopologyNode],
+    () => buildSelectionDetail(selectedNodeID, selectedTopologyNode, filteredTraces, localeCode),
+    [filteredTraces, localeCode, selectedNodeID, selectedTopologyNode],
   )
+
+  const selectedServicePath = selectedTopologyNode?.resourceName && selectedTopologyNode.namespace
+    && ['service', 'backend-group', 'empty-backend'].includes(selectedTopologyNode.kind)
+    ? buildServiceDetailPath(selectedTopologyNode.resourceName, namespace, selectedTopologyNode.namespace)
+    : null
 
   const columns: ColumnProps<TableRow>[] = [
     {
@@ -1098,29 +1421,39 @@ export function NetworkTopologyPage() {
       render: (_: TopologyNode, record: TableRow) => (
         <div className="flex flex-col gap-1">
           <Text strong>{record.entry.name}</Text>
-          <Text type="tertiary" size="small">{record.entry.namespace || '-'}</Text>
+          <Text type="tertiary" size="small">{record.entry.badge || record.entry.namespace || '-'}</Text>
         </div>
       ),
     },
     {
-      title: localeCode === 'zh_CN' ? '类型' : 'Type',
-      dataIndex: 'sourceType',
-      width: 110,
-      render: (_: TableRow['sourceType'], record: TableRow) => renderSourceType(record.sourceType, localeCode),
+      title: localeCode === 'zh_CN' ? '路由' : 'Route',
+      dataIndex: 'route',
+      render: (_: TopologyNode, record: TableRow) => (
+        <div className="flex flex-col gap-1">
+          <Text strong>{record.route.name}</Text>
+          <Space wrap>
+            {record.route.badge ? <Tag color={LEGEND_TAG_COLORS[record.route.kind as Exclude<TopologyNodeKind, 'pod'>]}>{record.route.badge}</Tag> : null}
+            {record.route.subtitle ? <Text type="tertiary" size="small">{record.route.subtitle}</Text> : null}
+          </Space>
+        </div>
+      ),
     },
     {
-      title: 'Service / Route',
+      title: 'Service',
       dataIndex: 'service',
       render: (_: TopologyNode | undefined, record: TableRow) => {
         if (!record.service) {
-          return '-'
+          return <Text type="tertiary">-</Text>
         }
-
         const canNavigate = record.service.kind === 'service' && record.service.resourceName && record.service.namespace
         if (!canNavigate) {
-          return <Text>{record.service.name}</Text>
+          return (
+            <div className="flex flex-col gap-1">
+              <Text>{record.service.name}</Text>
+              {record.service.badge ? <Text type="tertiary" size="small">{record.service.badge}</Text> : null}
+            </div>
+          )
         }
-
         return (
           <Button
             theme="borderless"
@@ -1133,7 +1466,7 @@ export function NetworkTopologyPage() {
       },
     },
     {
-      title: localeCode === 'zh_CN' ? 'Pods / 后续节点' : 'Pods / Next hops',
+      title: localeCode === 'zh_CN' ? 'Backend' : 'Backend',
       dataIndex: 'terminals',
       render: (_: TopologyNode[], record: TableRow) => {
         if (record.terminals.length === 0) {
@@ -1145,7 +1478,7 @@ export function NetworkTopologyPage() {
 
         return (
           <Space wrap>
-            {visibleItems.map((item) => item.kind === 'pod' && item.resourceName && item.namespace ? (
+            {visibleItems.map((item) => item.resourceName && item.namespace ? (
               <Button
                 key={item.id}
                 theme="light"
@@ -1176,18 +1509,13 @@ export function NetworkTopologyPage() {
     },
   ]
 
-  const selectedNodeServicePath = selectedTopologyNode?.resourceName && selectedTopologyNode.namespace
-    && ['service', 'backend-group', 'empty-backend'].includes(selectedTopologyNode.kind)
-    ? buildServiceDetailPath(selectedTopologyNode.resourceName, namespace, selectedTopologyNode.namespace)
-    : null
-
   return (
     <div className="kc-page">
       <PageHeader
-        title={localeCode === 'zh_CN' ? '网络链路' : 'Network Topology'}
+        title={localeCode === 'zh_CN' ? '网络拓扑' : 'Network Topology'}
         description={localeCode === 'zh_CN'
-          ? '把入口、路由、Service 与后端聚合进一张分层拓扑图里，总览保持清晰，Pod 明细留给下方表格和节点详情继续钻取。'
-          : 'Aggregate entries, routes, services, and backends into one layered topology so the overview stays readable while pod-level detail remains available below.'}
+          ? '把 Ingress、Gateway / HTTPRoute、Service 与后端汇总进一张入口网络拓扑里，先看路径，再继续向 Service 和 Pod 钻取。'
+          : 'Aggregate ingress, Gateway / HTTPRoute, services, and backends into one network topology so operators can read the path first and drill into services and pods next.'}
         actions={(
           <Space wrap>
             <Tag color={chartMode === 'live' ? 'green' : 'blue'}>{viewTag}</Tag>
@@ -1203,8 +1531,8 @@ export function NetworkTopologyPage() {
             <Input
               value={searchKeyword}
               onChange={setSearchKeyword}
-              placeholder={localeCode === 'zh_CN' ? '搜索域名 / Service / Pod / 说明' : 'Search host / service / pod / note'}
-              style={{ width: 320 }}
+              placeholder={localeCode === 'zh_CN' ? '搜索入口 / 路由 / Service / Pod / 说明' : 'Search entry / route / service / pod / note'}
+              style={{ width: 340 }}
               className="kc-platform-compact-field"
             />
             <Text type="tertiary" size="small">
@@ -1212,12 +1540,13 @@ export function NetworkTopologyPage() {
             </Text>
           </div>
           <Space wrap>
-            <Tag color={LEGEND_TAG_COLORS.entry}>Ingress</Tag>
-            <Tag color={LEGEND_TAG_COLORS.gateway}>Gateway</Tag>
-            <Tag color={LEGEND_TAG_COLORS['pending-route']}>{localeCode === 'zh_CN' ? '待接 HTTPRoute' : 'HTTPRoute pending'}</Tag>
+            <Tag color={LEGEND_TAG_COLORS.entry}>{localeCode === 'zh_CN' ? '入口' : 'Entry'}</Tag>
+            <Tag color={LEGEND_TAG_COLORS['ingress-route']}>Ingress</Tag>
+            <Tag color={LEGEND_TAG_COLORS['http-route']}>HTTPRoute</Tag>
+            <Tag color={LEGEND_TAG_COLORS['pending-route']}>{localeCode === 'zh_CN' ? '待接路由' : 'Pending route'}</Tag>
             <Tag color={LEGEND_TAG_COLORS.service}>Service</Tag>
-            <Tag color={LEGEND_TAG_COLORS['backend-group']}>{localeCode === 'zh_CN' ? 'Backend Pods' : 'Backend Pods'}</Tag>
-            <Tag color={LEGEND_TAG_COLORS['empty-backend']}>{localeCode === 'zh_CN' ? '无匹配 Pod' : 'No matching pods'}</Tag>
+            <Tag color={LEGEND_TAG_COLORS['backend-group']}>{localeCode === 'zh_CN' ? '后端集合' : 'Backend group'}</Tag>
+            <Tag color={LEGEND_TAG_COLORS['empty-backend']}>{localeCode === 'zh_CN' ? '无匹配 Pod' : 'No matching pod'}</Tag>
             <Tag color={LEGEND_TAG_COLORS['missing-service']}>{localeCode === 'zh_CN' ? '缺失 Service' : 'Missing service'}</Tag>
           </Space>
         </div>
@@ -1234,198 +1563,166 @@ export function NetworkTopologyPage() {
       <StatGrid
         items={[
           { label: localeCode === 'zh_CN' ? '入口节点' : 'Entry nodes', value: topologyGraph.entryCount },
-          { label: localeCode === 'zh_CN' ? 'Service / Route' : 'Service / Route', value: topologyGraph.serviceCount },
+          { label: localeCode === 'zh_CN' ? '路由节点' : 'Route nodes', value: topologyGraph.routeCount },
+          { label: localeCode === 'zh_CN' ? 'Service 节点' : 'Service nodes', value: topologyGraph.serviceCount },
           { label: localeCode === 'zh_CN' ? '后端 Pods' : 'Backend pods', value: topologyGraph.podCount },
-          { label: localeCode === 'zh_CN' ? '待接入 Gateway' : 'Pending gateways', value: gatewayCoverageItems.length },
         ]}
       />
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.65fr)_minmax(280px,360px)]">
-        <Card
-          className="kc-detail-card"
-          title={localeCode === 'zh_CN' ? '入口 -> 路由 -> Service -> Backend 拓扑' : 'Entry -> Route -> Service -> Backend topology'}
-          headerExtraContent={(
-            <Space wrap>
-              <Text type="tertiary" size="small">
-                {localeCode === 'zh_CN'
-                  ? `${filteredTraces.length} 条链路`
-                  : `${filteredTraces.length} traces`}
-              </Text>
-              {selectedTopologyNode ? (
-                <Tag color={LEGEND_TAG_COLORS[selectedTopologyNode.kind] ?? 'blue'}>
-                  {selectedTopologyNode.name}
-                </Tag>
-              ) : null}
-            </Space>
-          )}
-          bodyStyle={{ padding: 12 }}
-        >
-          {flowNodes.length > 0 ? (
-            <>
-              <TopologyCanvas
-                nodes={flowNodes}
-                edges={topologyGraph.edges}
-                fitKey={topologyGraph.fitKey}
-                onSelectNode={setSelectedNodeId}
-              />
-              <div className="kc-topology-selection">
-                {selectedTopologyNode && selectionDetail ? (
-                  <>
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div className="flex min-w-[240px] flex-1 flex-col gap-1">
-                        <Text strong>{selectedTopologyNode.name}</Text>
-                        <Text type="tertiary" size="small">{selectedTopologyNode.subtitle || '-'}</Text>
-                      </div>
+      <Card
+        className="kc-detail-card"
+        title={localeCode === 'zh_CN' ? '入口 -> 路由 -> Service -> Backend 拓扑' : 'Entry -> Route -> Service -> Backend topology'}
+        headerExtraContent={(
+          <Space wrap>
+            <Text type="tertiary" size="small">
+              {localeCode === 'zh_CN'
+                ? `${filteredTraces.length} 条链路`
+                : `${filteredTraces.length} traces`}
+            </Text>
+            {selectedTopologyNode ? (
+              <Tag color={LEGEND_TAG_COLORS[selectedTopologyNode.kind as Exclude<TopologyNodeKind, 'pod'>] ?? 'blue'}>
+                {selectedTopologyNode.name}
+              </Tag>
+            ) : null}
+          </Space>
+        )}
+        bodyStyle={{ padding: 12 }}
+      >
+        {flowNodes.length > 0 ? (
+          <>
+            <TopologyCanvas
+              nodes={flowNodes}
+              edges={topologyGraph.edges}
+              fitKey={topologyGraph.fitKey}
+              onSelectNode={setSelectedNodeID}
+            />
+            <div className="kc-topology-selection">
+              {selectedTopologyNode && selectionDetail ? (
+                <>
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="flex min-w-[240px] flex-1 flex-col gap-1">
+                      <Text strong>{selectedTopologyNode.name}</Text>
+                      <Text type="tertiary" size="small">{selectedTopologyNode.subtitle || '-'}</Text>
+                    </div>
+                    <Space wrap>
+                      <Tag color={LEGEND_TAG_COLORS[selectedTopologyNode.kind as Exclude<TopologyNodeKind, 'pod'>] ?? 'blue'}>
+                        {getTopologyKindLabel(selectedTopologyNode.kind, localeCode)}
+                      </Tag>
+                      {renderTraceState(selectedTopologyNode.state, localeCode)}
+                    </Space>
+                  </div>
+
+                  <Text type="tertiary">{selectionDetail.summary}</Text>
+
+                  {selectedServicePath ? (
+                    <Space wrap>
+                      <Button
+                        theme="light"
+                        type="primary"
+                        size="small"
+                        onClick={() => navigate(selectedServicePath)}
+                      >
+                        {localeCode === 'zh_CN' ? '查看 Service 详情' : 'Open Service detail'}
+                      </Button>
+                    </Space>
+                  ) : null}
+
+                  {selectionDetail.relatedEntries.length > 0 ? (
+                    <div className="flex flex-col gap-2">
+                      <Text strong size="small">{localeCode === 'zh_CN' ? '相关入口' : 'Related entries'}</Text>
                       <Space wrap>
-                        <Tag color={LEGEND_TAG_COLORS[selectedTopologyNode.kind] ?? 'blue'}>
-                          {getTopologyKindLabel(selectedTopologyNode.kind, localeCode)}
-                        </Tag>
-                        {renderTraceState(selectedTopologyNode.state, localeCode)}
+                        {selectionDetail.relatedEntries.map((item) => (
+                          <Tag key={item.id}>{item.name}</Tag>
+                        ))}
                       </Space>
                     </div>
+                  ) : null}
 
-                    <Text type="tertiary">{selectionDetail.summary}</Text>
-
-                    {selectedNodeServicePath ? (
+                  {selectionDetail.relatedRoutes.length > 0 ? (
+                    <div className="flex flex-col gap-2">
+                      <Text strong size="small">{localeCode === 'zh_CN' ? '相关路由' : 'Related routes'}</Text>
                       <Space wrap>
-                        <Button
-                          theme="light"
-                          type="primary"
-                          size="small"
-                          onClick={() => navigate(selectedNodeServicePath)}
-                        >
-                          {localeCode === 'zh_CN' ? '查看 Service 详情' : 'Open Service detail'}
-                        </Button>
-                      </Space>
-                    ) : null}
-
-                    {selectionDetail.relatedEntries.length > 0 ? (
-                      <div className="flex flex-col gap-2">
-                        <Text strong size="small">{localeCode === 'zh_CN' ? '上游入口' : 'Upstream entries'}</Text>
-                        <Space wrap>
-                          {selectionDetail.relatedEntries.map((item) => (
-                            <Tag key={item.id}>{item.name}</Tag>
-                          ))}
-                        </Space>
-                      </div>
-                    ) : null}
-
-                    {selectionDetail.relatedServices.length > 0 ? (
-                      <div className="flex flex-col gap-2">
-                        <Text strong size="small">{localeCode === 'zh_CN' ? '下游 Service / Route' : 'Downstream services / routes'}</Text>
-                        <Space wrap>
-                          {selectionDetail.relatedServices.map((item) => item.kind === 'service' && item.resourceName && item.namespace ? (
-                            <Button
-                              key={item.id}
-                              theme="light"
-                              type="tertiary"
-                              size="small"
-                              onClick={() => navigate(buildServiceDetailPath(item.resourceName!, namespace, item.namespace!))}
-                            >
-                              {item.name}
-                            </Button>
-                          ) : (
-                            <Tag key={item.id}>{item.name}</Tag>
-                          ))}
-                        </Space>
-                      </div>
-                    ) : null}
-
-                    {selectionDetail.terminalNodes.length > 0 ? (
-                      <div className="flex flex-col gap-2">
-                        <Text strong size="small">{localeCode === 'zh_CN' ? '后端 Pods' : 'Backend pods'}</Text>
-                        <Space wrap>
-                          {selectionDetail.terminalNodes.slice(0, 6).map((item) => item.resourceName && item.namespace ? (
-                            <Button
-                              key={item.id}
-                              theme="light"
-                              type="tertiary"
-                              size="small"
-                              onClick={() => navigate(buildPodDetailPath(item.resourceName!, namespace, item.namespace!))}
-                            >
-                              {item.name}
-                            </Button>
-                          ) : (
-                            <Tag key={item.id}>{item.name}</Tag>
-                          ))}
-                          {selectionDetail.terminalNodes.length > 6 ? (
-                            <Tag color="grey">{`+${selectionDetail.terminalNodes.length - 6}`}</Tag>
-                          ) : null}
-                        </Space>
-                      </div>
-                    ) : null}
-
-                    {selectionDetail.notes.length > 0 ? (
-                      <div className="kc-topology-note-list">
-                        {selectionDetail.notes.slice(0, 3).map((item) => (
-                          <Text key={item} type="tertiary" size="small">{item}</Text>
+                        {selectionDetail.relatedRoutes.map((item) => (
+                          <Tag key={item.id} color={LEGEND_TAG_COLORS[item.kind as Exclude<TopologyNodeKind, 'pod'>] ?? 'blue'}>
+                            {item.name}
+                          </Tag>
                         ))}
-                      </div>
-                    ) : null}
-                  </>
-                ) : (
-                  <Empty description={localeCode === 'zh_CN' ? '点击上方拓扑节点，查看它的上下游关系和跳转动作' : 'Click a topology node above to inspect its upstream and downstream relations'} />
-                )}
-              </div>
-            </>
-          ) : (
-            <div className="flex min-h-[320px] items-center justify-center">
-              <Empty description={localeCode === 'zh_CN' ? '当前筛选条件下没有可展示的链路' : 'No visible trace matches the current filter'} />
-            </div>
-          )}
-        </Card>
+                      </Space>
+                    </div>
+                  ) : null}
 
-        <Card
-          className="kc-detail-card"
-          title={localeCode === 'zh_CN' ? 'Gateway / HTTPRoute 覆盖状态' : 'Gateway / HTTPRoute coverage'}
-          headerExtraContent={hasLivePendingGateway ? <Tag color="orange">{localeCode === 'zh_CN' ? '待接真实路由' : 'Pending live routing'}</Tag> : null}
-        >
-          <div className="flex flex-col gap-3">
-            <Text type="tertiary">
-              {localeCode === 'zh_CN'
-                ? 'Gateway 独立保留在侧栏里，避免主拓扑被未完成的 HTTPRoute 聚合关系干扰。等后端补齐后，这些节点会直接进入主图。'
-                : 'Gateway stays in a separate card so unfinished HTTPRoute aggregation does not clutter the main topology. These nodes will move into the main graph once backend aggregation is ready.'}
-            </Text>
-            {gatewayCoverageItems.length === 0 ? (
-              <Empty description={localeCode === 'zh_CN' ? '当前 scope 下未发现 Gateway' : 'No gateways found in the current scope'} />
-            ) : gatewayCoverageItems.map((item) => (
-              <div
-                key={item.id}
-                style={{
-                  padding: 12,
-                  borderRadius: 10,
-                  border: '1px solid var(--semi-color-border)',
-                  background: item.source === 'live' ? 'var(--semi-color-bg-1)' : 'rgba(248, 250, 252, 0.92)',
-                }}
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex flex-col gap-1">
-                    <Text strong>{item.addressSummary !== '-' ? item.addressSummary : item.name}</Text>
-                    <Text type="tertiary" size="small">{item.namespace}</Text>
-                  </div>
-                  <Tag color={item.source === 'live' ? 'orange' : 'blue'}>
-                    {item.source === 'live'
-                      ? (localeCode === 'zh_CN' ? '待接 HTTPRoute' : 'HTTPRoute pending')
-                      : (localeCode === 'zh_CN' ? '演示' : 'Demo')}
-                  </Tag>
-                </div>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <Tag>{`Class: ${item.gatewayClass}`}</Tag>
-                  <Tag>{localeCode === 'zh_CN' ? `${item.listenerCount} 个监听器` : `${item.listenerCount} listeners`}</Tag>
-                </div>
-              </div>
-            ))}
+                  {selectionDetail.relatedServices.length > 0 ? (
+                    <div className="flex flex-col gap-2">
+                      <Text strong size="small">{localeCode === 'zh_CN' ? '相关 Service' : 'Related services'}</Text>
+                      <Space wrap>
+                        {selectionDetail.relatedServices.map((item) => item.kind === 'service' && item.resourceName && item.namespace ? (
+                          <Button
+                            key={item.id}
+                            theme="light"
+                            type="tertiary"
+                            size="small"
+                            onClick={() => navigate(buildServiceDetailPath(item.resourceName!, namespace, item.namespace!))}
+                          >
+                            {item.name}
+                          </Button>
+                        ) : (
+                          <Tag key={item.id}>{item.name}</Tag>
+                        ))}
+                      </Space>
+                    </div>
+                  ) : null}
+
+                  {selectionDetail.terminalNodes.length > 0 ? (
+                    <div className="flex flex-col gap-2">
+                      <Text strong size="small">{localeCode === 'zh_CN' ? '后端 Pods' : 'Backend pods'}</Text>
+                      <Space wrap>
+                        {selectionDetail.terminalNodes.slice(0, 6).map((item) => item.resourceName && item.namespace ? (
+                          <Button
+                            key={item.id}
+                            theme="light"
+                            type="tertiary"
+                            size="small"
+                            onClick={() => navigate(buildPodDetailPath(item.resourceName!, namespace, item.namespace!))}
+                          >
+                            {item.name}
+                          </Button>
+                        ) : (
+                          <Tag key={item.id}>{item.name}</Tag>
+                        ))}
+                        {selectionDetail.terminalNodes.length > 6 ? (
+                          <Tag color="grey">{`+${selectionDetail.terminalNodes.length - 6}`}</Tag>
+                        ) : null}
+                      </Space>
+                    </div>
+                  ) : null}
+
+                  {selectionDetail.notes.length > 0 ? (
+                    <div className="kc-topology-note-list">
+                      {selectionDetail.notes.slice(0, 3).map((item) => (
+                        <Text key={item} type="tertiary" size="small">{item}</Text>
+                      ))}
+                    </div>
+                  ) : null}
+                </>
+              ) : (
+                <Empty description={localeCode === 'zh_CN' ? '点击上方拓扑节点，查看它的上下游关系和跳转动作' : 'Click a topology node above to inspect its upstream and downstream relations'} />
+              )}
+            </div>
+          </>
+        ) : (
+          <div className="flex min-h-[320px] items-center justify-center">
+            <Empty description={localeCode === 'zh_CN' ? '当前筛选条件下没有可展示的链路' : 'No visible trace matches the current filter'} />
           </div>
-        </Card>
-      </div>
+        )}
+      </Card>
 
       <Card
         className="kc-detail-card"
-        title={localeCode === 'zh_CN' ? '入口链路明细' : 'Trace detail'}
+        title={localeCode === 'zh_CN' ? '网络拓扑明细' : 'Network topology detail'}
         headerExtraContent={(
           <Text type="tertiary" size="small">
             {chartMode === 'live'
-              ? (localeCode === 'zh_CN' ? '图上做总览收敛，Service / Pod 明细继续在这里展开' : 'The graph stays collapsed for overview, while detailed services and pods remain here')
+              ? (localeCode === 'zh_CN' ? '图上做总览收敛，路由和 Pod 明细继续在这里展开' : 'The graph stays collapsed for overview, while route and pod details remain here')
               : (localeCode === 'zh_CN' ? '演示数据用于确认页面布局和交互' : 'Preview data is used to validate layout and interaction')}
           </Text>
         )}

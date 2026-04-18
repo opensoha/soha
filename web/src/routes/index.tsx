@@ -61,6 +61,7 @@ const NetworkServicesPage = lazyNamed(() => import('@/features/platform/network-
 const ServiceDetailPage = lazyNamed(() => import('@/features/platform/network-storage-pages'), 'ServiceDetailPage')
 const NetworkIngressesPage = lazyNamed(() => import('@/features/platform/network-storage-pages'), 'NetworkIngressesPage')
 const NetworkGatewaysPage = lazyNamed(() => import('@/features/platform/network-storage-pages'), 'NetworkGatewaysPage')
+const NetworkTopologyPage = lazyNamed(() => import('@/features/platform/network-topology-page'), 'NetworkTopologyPage')
 const NetworkEndpointSlicesPage = lazyNamed(() => import('@/features/platform/platform-management-pages'), 'NetworkEndpointSlicesPage')
 const NetworkIngressClassesPage = lazyNamed(() => import('@/features/platform/platform-management-pages'), 'NetworkIngressClassesPage')
 const NetworkPoliciesPage = lazyNamed(() => import('@/features/platform/platform-management-pages'), 'NetworkPoliciesPage')
@@ -167,7 +168,8 @@ export function AppRouter() {
           <Route path="/platform-access-control/clusterrolebindings" element={<LazyPage><PlatformAccessControlClusterRoleBindingsPage /></LazyPage>} />
           <Route path="/platform-access-control/rolebindings" element={<LazyPage><PlatformAccessControlRoleBindingsPage /></LazyPage>} />
 
-          <Route path="/network" element={<Navigate to="/network/services" replace />} />
+          <Route path="/network" element={<Navigate to="/network/topology" replace />} />
+          <Route path="/network/topology" element={<LazyPage><NetworkTopologyPage /></LazyPage>} />
           <Route path="/network/services" element={<LazyPage><NetworkServicesPage /></LazyPage>} />
           <Route path="/network/services/:serviceName" element={<LazyPage><ServiceDetailPage /></LazyPage>} />
           <Route path="/network/ingresses" element={<LazyPage><NetworkIngressesPage /></LazyPage>} />

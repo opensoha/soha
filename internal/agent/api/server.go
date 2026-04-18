@@ -418,6 +418,15 @@ func New(cfg cfgpkg.Config, logger *zap.Logger, client *k8sagent.Client) *Server
 			}
 			apiresponse.Items(c, http.StatusOK, items)
 		})
+		platform.GET("/network/httproutes", func(c *gin.Context) {
+			namespace := c.Query("namespace")
+			items, err := client.ListHTTPRoutes(c.Request.Context(), namespace)
+			if err != nil {
+				writeError(c, err)
+				return
+			}
+			apiresponse.Items(c, http.StatusOK, items)
+		})
 		platform.GET("/storage/persistentvolumeclaims", func(c *gin.Context) {
 			namespace := c.Query("namespace")
 			items, err := client.ListPersistentVolumeClaims(c.Request.Context(), namespace)

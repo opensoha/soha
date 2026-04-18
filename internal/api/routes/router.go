@@ -145,6 +145,7 @@ func New(cfg cfgpkg.Config, logger *zap.Logger, deps Dependencies) *http.Server 
 		protected.GET("/clusters/:clusterID/network/endpointslices", deps.Platform.ListEndpointSlices)
 		protected.GET("/clusters/:clusterID/network/networkpolicies", deps.Platform.ListNetworkPolicies)
 		protected.GET("/clusters/:clusterID/network/gateways", deps.Platform.ListGateways)
+		protected.GET("/clusters/:clusterID/network/httproutes", deps.Platform.ListHTTPRoutes)
 		protected.GET("/clusters/:clusterID/storage/persistentvolumeclaims", deps.Platform.ListPersistentVolumeClaims)
 		protected.GET("/clusters/:clusterID/storage/persistentvolumes", deps.Platform.ListPersistentVolumes)
 		protected.GET("/clusters/:clusterID/storage/storageclasses", deps.Platform.ListStorageClasses)

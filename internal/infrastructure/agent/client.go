@@ -550,6 +550,17 @@ func (c *Client) ListGateways(ctx context.Context, namespace string) ([]domainre
 	return payload.Items, nil
 }
 
+func (c *Client) ListHTTPRoutes(ctx context.Context, namespace string) ([]domainresource.HTTPRouteView, error) {
+	var payload struct {
+		Items []domainresource.HTTPRouteView `json:"items"`
+	}
+	path := withNamespace("/api/v1/platform/network/httproutes", namespace)
+	if err := c.request(ctx, http.MethodGet, path, nil, &payload); err != nil {
+		return nil, err
+	}
+	return payload.Items, nil
+}
+
 func (c *Client) ListPersistentVolumeClaims(ctx context.Context, namespace string) ([]domainresource.PersistentVolumeClaimView, error) {
 	var payload struct {
 		Items []domainresource.PersistentVolumeClaimView `json:"items"`

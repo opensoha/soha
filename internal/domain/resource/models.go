@@ -411,6 +411,16 @@ type GatewayView struct {
 	AllowedActions []string `json:"allowedActions,omitempty"`
 }
 
+type HTTPRouteView struct {
+	Name            string   `json:"name"`
+	Namespace       string   `json:"namespace"`
+	Hostnames       []string `json:"hostnames,omitempty"`
+	ParentRefs      []string `json:"parentRefs,omitempty"`
+	BackendServices []string `json:"backendServices,omitempty"`
+	AgeSeconds      int64    `json:"ageSeconds"`
+	AllowedActions  []string `json:"allowedActions,omitempty"`
+}
+
 type NodeView struct {
 	Name           string                  `json:"name"`
 	Status         string                  `json:"status"`
