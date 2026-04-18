@@ -221,6 +221,10 @@ It includes:
   - jobs
   - cronjobs
 - network dashboard
+  - network topology
+    - ingress host or entry domain to service to pod flow
+    - gateway and HTTPRoute coverage must stay explicit even when service backend aggregation is still pending
+    - demo fallback is allowed for visual review, but it must be clearly labeled as preview data
   - services
     - backend pod linkage
     - events
@@ -318,6 +322,9 @@ The repository has already converged on these rules:
 - namespace-scoped platform capability expansion may ship as complete navigation plus placeholder pages before backend aggregation APIs are ready, but those placeholders must say that the backend platform API is still pending
 - Helm in platform management now focuses on releases and charts only; Kubernetes RBAC resources live under the standalone RBAC workspace
 - network platform navigation no longer exposes HTTP Routes; unsupported resource families should be removed end-to-end from routes, menu seeds, and API handlers instead of staying as dead entries
+- network now lands on a `网络链路` topology workspace before the raw resource lists; the topology view may combine live ingress-to-service-to-pod paths with explicitly pending gateway/HTTPRoute coverage, but it must not present missing backend aggregation as if it were verified
+- topology preview pages may fall back to clearly labeled demo traces when the current scope has no live entry path, so interaction and layout review do not depend on a pre-populated cluster
+- network topology overview should use a layered left-to-right graph for entry, route, service, and backend relationships; the overview may collapse backend pods into summary nodes, while pod-level drill-down stays in supporting detail panels and tables
 - platform overview should expose cluster-aware pod runtime cards instead of only fleet and alert counters
 - platform overview runtime cards must consume a backend workload overview aggregation endpoint and keep the active cluster/namespace scope visible; frontend should not fetch all Pod rows just to render dashboard summaries
 - service pages should evolve from plain tables to operational workspaces when selector, metrics, and event context already exist
