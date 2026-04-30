@@ -1,0 +1,25 @@
+{
+  "id": "operations/agent-runtime",
+  "title": "Agent Runtime",
+  "description": "Overview",
+  "source": "@site/operations/agent-runtime.md",
+  "sourceDirName": "operations",
+  "slug": "/operations/agent-runtime",
+  "permalink": "/docs/operations/agent-runtime",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/kubecrux/kubecrux/tree/main/docs/operations/agent-runtime.md",
+  "tags": [],
+  "version": "current",
+  "lastUpdatedAt": 1539502055000,
+  "frontMatter": {},
+  "sidebar": "mainSidebar",
+  "previous": {
+    "title": "角色授权分配运行手册",
+    "permalink": "/docs/operations/role-authorization-assignment"
+  },
+  "next": {
+    "title": "Deployment",
+    "permalink": "/docs/operations/deployment"
+  }
+}

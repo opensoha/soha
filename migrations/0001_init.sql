@@ -41,6 +41,7 @@ CREATE TABLE IF NOT EXISTS roles (
     name TEXT NOT NULL UNIQUE,
     scope TEXT NOT NULL DEFAULT 'system',
     capabilities JSONB NOT NULL DEFAULT '[]'::jsonb,
+    permission_keys JSONB NOT NULL DEFAULT '[]'::jsonb,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

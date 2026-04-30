@@ -60,10 +60,11 @@ type SettingsReader interface {
 }
 
 type Service struct {
-	cfg      cfgpkg.AuthConfig
-	users    UserRepository
-	audit    AuditRecorder
-	settings SettingsReader
+	cfg         cfgpkg.AuthConfig
+	users       UserRepository
+	audit       AuditRecorder
+	settings    SettingsReader
+	permissions *appaccess.PermissionResolver
 }
 
 type tokenClaims struct {
@@ -94,8 +95,8 @@ type oidcProfile struct {
 	Nonce             string `json:"nonce"`
 }
 
-func New(_ context.Context, cfg cfgpkg.AuthConfig, users UserRepository, audit AuditRecorder, settings SettingsReader) (*Service, error) {
-	return &Service{cfg: cfg, users: users, audit: audit, settings: settings}, nil
+func New(_ context.Context, cfg cfgpkg.AuthConfig, users UserRepository, audit AuditRecorder, settings SettingsReader, permissions *appaccess.PermissionResolver) (*Service, error) {
+	return &Service{cfg: cfg, users: users, audit: audit, settings: settings, permissions: permissions}, nil
 }
 
 func (s *Service) ListProviders(ctx context.Context) []domainidentity.Provider {
@@ -237,8 +238,8 @@ func (s *Service) ParseAccessToken(ctx context.Context, accessToken string) (dom
 }
 
 func (s *Service) ListActiveSessions(ctx context.Context, principal domainidentity.Principal, limit int) ([]domainidentity.SessionRecord, error) {
-	if !appaccess.HasPermission(principal.Roles, appaccess.PermSystemOnlineUsersView) {
-		return nil, fmt.Errorf("%w: missing permission %s", apperrors.ErrAccessDenied, appaccess.PermSystemOnlineUsersView)
+	if err := s.authorize(ctx, principal, appaccess.PermSystemOnlineUsersView); err != nil {
+		return nil, err
 	}
 	if limit <= 0 {
 		limit = 100
@@ -258,8 +259,8 @@ func (s *Service) ListActiveSessions(ctx context.Context, principal domainidenti
 }
 
 func (s *Service) RevokeSessionByID(ctx context.Context, principal domainidentity.Principal, sessionID string) error {
-	if !appaccess.HasPermission(principal.Roles, appaccess.PermSystemOnlineUsersManage) {
-		return fmt.Errorf("%w: missing permission %s", apperrors.ErrAccessDenied, appaccess.PermSystemOnlineUsersManage)
+	if err := s.authorize(ctx, principal, appaccess.PermSystemOnlineUsersManage); err != nil {
+		return err
 	}
 	session, err := s.users.GetSessionByID(ctx, strings.TrimSpace(sessionID))
 	if err != nil {
@@ -277,6 +278,10 @@ func (s *Service) RevokeSessionByID(ctx context.Context, principal domainidentit
 
 func (s *Service) CurrentPrincipal(ctx context.Context, userID string) (domainidentity.Principal, error) {
 	return s.loadPrincipal(ctx, userID)
+}
+
+func (s *Service) authorize(ctx context.Context, principal domainidentity.Principal, permissionKey string) error {
+	return appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, permissionKey)
 }
 
 func (s *Service) BeginOIDCLogin(ctx context.Context) (string, error) {

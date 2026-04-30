@@ -10,15 +10,18 @@ import (
 type Action string
 
 const (
-	ActionView    Action = "view"
-	ActionList    Action = "list"
-	ActionWatch   Action = "watch"
-	ActionUpdate  Action = "update"
-	ActionDelete  Action = "delete"
-	ActionRestart Action = "restart"
-	ActionScale   Action = "scale"
-	ActionLogs    Action = "logs"
-	ActionExec    Action = "exec"
+	ActionView     Action = "view"
+	ActionList     Action = "list"
+	ActionWatch    Action = "watch"
+	ActionCreate   Action = "create"
+	ActionUpdate   Action = "update"
+	ActionDelete   Action = "delete"
+	ActionRestart  Action = "restart"
+	ActionRollback Action = "rollback"
+	ActionScale    Action = "scale"
+	ActionTrigger  Action = "trigger"
+	ActionLogs     Action = "logs"
+	ActionExec     Action = "exec"
 )
 
 type PolicyEffect string
@@ -167,11 +170,12 @@ type UserInput struct {
 }
 
 type RoleRecord struct {
-	ID           string   `json:"id"`
-	Name         string   `json:"name"`
-	Scope        string   `json:"scope"`
-	Capabilities []Action `json:"capabilities"`
-	UserCount    int      `json:"userCount"`
+	ID             string   `json:"id"`
+	Name           string   `json:"name"`
+	Scope          string   `json:"scope"`
+	Capabilities   []Action `json:"capabilities"`
+	PermissionKeys []string `json:"permissionKeys"`
+	UserCount      int      `json:"userCount"`
 }
 
 type TeamRecord struct {
@@ -183,10 +187,11 @@ type TeamRecord struct {
 }
 
 type RoleInput struct {
-	ID           string   `json:"id"`
-	Name         string   `json:"name"`
-	Scope        string   `json:"scope"`
-	Capabilities []Action `json:"capabilities"`
+	ID             string   `json:"id"`
+	Name           string   `json:"name"`
+	Scope          string   `json:"scope"`
+	Capabilities   []Action `json:"capabilities"`
+	PermissionKeys []string `json:"permissionKeys"`
 }
 
 type TeamInput struct {

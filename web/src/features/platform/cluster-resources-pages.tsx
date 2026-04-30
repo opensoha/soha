@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
-import { Button, Card, Empty, Form, Modal, Space, Spin, Tag, Toast, Typography } from '@douyinfe/semi-ui'
-import { IconDelete, IconEdit, IconPlus, IconSend } from '@douyinfe/semi-icons'
+import { App, Button, Card, Empty, Form, Input, Modal, Space, Spin, Tag, Typography } from 'antd'
+import { DeleteOutlined, EditOutlined, PlusOutlined, SendOutlined } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { AdminTable } from '@/components/admin-table'
@@ -21,12 +21,13 @@ import {
   stringifyTaints,
 } from '@/features/platform/node-resource-utils'
 import type { ApiResponse, Namespace, Node, NodeDetail } from '@/types'
-import type { ColumnProps } from '@douyinfe/semi-ui/lib/es/table'
+import type { TableColumnsType } from 'antd'
 
 const { Text } = Typography
 
 export function ClusterNodesPage() {
   const { t } = useI18n()
+  const { message } = App.useApp()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const { clusterId } = usePlatformScopeStore()
@@ -53,12 +54,12 @@ export function ClusterNodesPage() {
       })
     },
     onSuccess: () => {
-      Toast.success('节点配置已更新')
+      void message.success('节点配置已更新')
       queryClient.invalidateQueries({ queryKey: ['cluster-nodes', clusterId] })
       queryClient.invalidateQueries({ queryKey: ['cluster-node-detail', clusterId, editingNodeName] })
       setEditingNodeName(null)
     },
-    onError: (err: Error) => Toast.error(err.message),
+    onError: (err: Error) => void message.error(err.message),
   })
 
   const deleteNodeMutation = useMutation({
@@ -67,10 +68,10 @@ export function ClusterNodesPage() {
       return api.delete(`/clusters/${clusterId}/infrastructure/nodes/${nodeName}`)
     },
     onSuccess: () => {
-      Toast.success('节点对象已删除')
+      void message.success('节点对象已删除')
       queryClient.invalidateQueries({ queryKey: ['cluster-nodes', clusterId] })
     },
-    onError: (err: Error) => Toast.error(err.message),
+    onError: (err: Error) => void message.error(err.message),
   })
 
   const nodeDetail = nodeDetailQuery.data?.data
@@ -82,12 +83,12 @@ export function ClusterNodesPage() {
     }
   }, [nodeDetail])
 
-  const nodeColumns: ColumnProps<Node>[] = [
+  const nodeColumns: TableColumnsType<Node> = [
     {
       title: '名称',
       dataIndex: 'name',
       render: (name: string) => (
-        <Button theme="borderless" type="primary" onClick={() => navigate(`/cluster-resources/nodes/${encodeURIComponent(name)}?clusterId=${encodeURIComponent(clusterId || '')}`)}>
+        <Button type="text" onClick={() => navigate(`/cluster-resources/nodes/${encodeURIComponent(name)}?clusterId=${encodeURIComponent(clusterId || '')}`)}>
           {name}
         </Button>
       ),
@@ -101,7 +102,7 @@ export function ClusterNodesPage() {
     {
       title: '角色',
       dataIndex: 'roles',
-      render: (roles: string[]) => roles?.map((r) => <Tag key={r} size="small" className="mr-1">{r}</Tag>) ?? '-',
+      render: (roles: string[]) => roles?.map((r) => <Tag key={r} className="mr-1">{r}</Tag>) ?? '-',
     },
     { title: 'IP', dataIndex: 'internalIp', render: (value: string) => value || '-' },
     { title: 'Version', dataIndex: 'version', render: (value: string) => value || '-' },
@@ -115,20 +116,19 @@ export function ClusterNodesPage() {
         <Space>
           <Button
             size="small"
-            theme="borderless"
-            type="primary"
+            type="text"
             onClick={() => navigate(`/cluster-resources/nodes/${encodeURIComponent(name)}?clusterId=${encodeURIComponent(clusterId || '')}`)}
           >
             详情
           </Button>
-          <Button size="small" theme="borderless" icon={<IconEdit />} onClick={() => setEditingNodeName(name)}>
+          <Button size="small" type="text" icon={<EditOutlined />} onClick={() => setEditingNodeName(name)}>
             编辑
           </Button>
           <Button
             size="small"
-            theme="borderless"
-            type="danger"
-            icon={<IconDelete />}
+            type="text"
+            danger
+            icon={<DeleteOutlined />}
             onClick={() => {
               Modal.confirm({
                 title: `确认删除节点 ${name}？`,
@@ -154,7 +154,7 @@ export function ClusterNodesPage() {
       ) : (
         <>
           <Card>
-            <Text type="tertiary" size="small">
+            <Text type="secondary" className="text-xs">
               新增节点需要通过云平台、虚拟机编排或集群扩容工具完成；这里支持编辑 labels/taints 和删除 Node 对象。
             </Text>
           </Card>
@@ -163,7 +163,7 @@ export function ClusterNodesPage() {
             dataSource={nodesQuery.data?.data ?? []}
             rowKey="name"
             loading={nodesQuery.isLoading}
-            pageSize={20}
+            pageSize={10}
             expandedRowRender={(record: Node) => <NodeResourcePanel node={record} />}
             hideExpandedColumn={false}
           />
@@ -172,7 +172,7 @@ export function ClusterNodesPage() {
 
       <Modal
         title={editingNodeName ? `编辑节点 ${editingNodeName}` : '编辑节点'}
-        visible={!!editingNodeName}
+        open={!!editingNodeName}
         footer={null}
         width={720}
         onCancel={() => setEditingNodeName(null)}
@@ -182,12 +182,16 @@ export function ClusterNodesPage() {
             <Spin size="large" />
           </div>
         ) : (
-          <Form key={editingNodeName ?? 'node'} initValues={nodeModalInitValues} onSubmit={(values) => updateNodeMutation.mutate(values)}>
-            <Form.TextArea field="labels" label="Labels(JSON)" rows={8} />
-            <Form.TextArea field="taints" label="Taints(JSON Array)" rows={8} />
+          <Form key={editingNodeName ?? 'node'} layout="vertical" initialValues={nodeModalInitValues} onFinish={(values) => updateNodeMutation.mutate(values)}>
+            <Form.Item name="labels" label="Labels(JSON)">
+              <Input.TextArea rows={8} />
+            </Form.Item>
+            <Form.Item name="taints" label="Taints(JSON Array)">
+              <Input.TextArea rows={8} />
+            </Form.Item>
             <div className="kc-form-actions">
               <Button onClick={() => setEditingNodeName(null)}>取消</Button>
-              <Button htmlType="submit" theme="solid" loading={updateNodeMutation.isPending}>
+              <Button htmlType="submit" type="primary" loading={updateNodeMutation.isPending}>
                 保存
               </Button>
             </div>
@@ -200,6 +204,7 @@ export function ClusterNodesPage() {
 
 export function ClusterNamespacesPage() {
   const { t } = useI18n()
+  const { message } = App.useApp()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const { clusterId, setNamespace } = usePlatformScopeStore()
@@ -222,12 +227,12 @@ export function ClusterNamespacesPage() {
       })
     },
     onSuccess: () => {
-      Toast.success('命名空间已创建')
+      void message.success('命名空间已创建')
       queryClient.invalidateQueries({ queryKey: ['cluster-namespaces', clusterId] })
       setNamespaceModalVisible(false)
       setEditingNamespace(null)
     },
-    onError: (err: Error) => Toast.error(err.message),
+    onError: (err: Error) => void message.error(err.message),
   })
 
   const updateNamespaceMutation = useMutation({
@@ -240,12 +245,12 @@ export function ClusterNamespacesPage() {
       })
     },
     onSuccess: () => {
-      Toast.success('命名空间已更新')
+      void message.success('命名空间已更新')
       queryClient.invalidateQueries({ queryKey: ['cluster-namespaces', clusterId] })
       setNamespaceModalVisible(false)
       setEditingNamespace(null)
     },
-    onError: (err: Error) => Toast.error(err.message),
+    onError: (err: Error) => void message.error(err.message),
   })
 
   const deleteNamespaceMutation = useMutation({
@@ -254,10 +259,10 @@ export function ClusterNamespacesPage() {
       return api.delete(`/clusters/${clusterId}/namespaces/${namespaceName}`)
     },
     onSuccess: () => {
-      Toast.success('命名空间已删除')
+      void message.success('命名空间已删除')
       queryClient.invalidateQueries({ queryKey: ['cluster-namespaces', clusterId] })
     },
-    onError: (err: Error) => Toast.error(err.message),
+    onError: (err: Error) => void message.error(err.message),
   })
 
   const namespaceModalInitValues = useMemo(() => {
@@ -271,7 +276,7 @@ export function ClusterNamespacesPage() {
     }
   }, [editingNamespace])
 
-  const nsColumns: ColumnProps<Namespace>[] = [
+  const nsColumns: TableColumnsType<Namespace> = [
     { title: '名称', dataIndex: 'name' },
     {
       ...tableColumnPresets.status,
@@ -285,7 +290,7 @@ export function ClusterNamespacesPage() {
       render: (labels: Record<string, string>) =>
         labels
           ? Object.entries(labels).slice(0, 3).map(([k, v]) => (
-              <Tag key={k} size="small" className="mr-1">{`${k}=${v}`}</Tag>
+              <Tag key={k} className="mr-1">{`${k}=${v}`}</Tag>
             ))
           : '-',
     },
@@ -297,8 +302,8 @@ export function ClusterNamespacesPage() {
         <Space>
           <Button
             size="small"
-            theme="borderless"
-            icon={<IconSend />}
+            type="text"
+            icon={<SendOutlined />}
             onClick={() => {
               setNamespace(name)
               navigate('/workloads/overview')
@@ -308,7 +313,7 @@ export function ClusterNamespacesPage() {
           </Button>
           <Button
             size="small"
-            theme="borderless"
+            type="text"
             onClick={() => {
               setNamespace(name)
               navigate('/helm/releases')
@@ -318,8 +323,8 @@ export function ClusterNamespacesPage() {
           </Button>
           <Button
             size="small"
-            theme="borderless"
-            icon={<IconEdit />}
+            type="text"
+            icon={<EditOutlined />}
             onClick={() => {
               setEditingNamespace(record)
               setNamespaceModalVisible(true)
@@ -329,9 +334,9 @@ export function ClusterNamespacesPage() {
           </Button>
           <Button
             size="small"
-            theme="borderless"
-            type="danger"
-            icon={<IconDelete />}
+            type="text"
+            danger
+            icon={<DeleteOutlined />}
             onClick={() => {
               Modal.confirm({
                 title: `确认删除命名空间 ${name}？`,
@@ -354,8 +359,8 @@ export function ClusterNamespacesPage() {
         description={t('page.namespaces.desc', 'Manage namespaces in the current cluster scope and jump into related workload views.')}
         actions={
           <Button
-            icon={<IconPlus />}
-            theme="solid"
+            icon={<PlusOutlined />}
+            type="primary"
             onClick={() => {
               setEditingNamespace(null)
               setNamespaceModalVisible(true)
@@ -374,13 +379,13 @@ export function ClusterNamespacesPage() {
           dataSource={namespacesQuery.data?.data ?? []}
           rowKey="name"
           loading={namespacesQuery.isLoading}
-          pageSize={20}
+          pageSize={10}
         />
       )}
 
       <Modal
         title={editingNamespace ? `编辑命名空间 ${editingNamespace.name}` : '新建命名空间'}
-        visible={namespaceModalVisible}
+        open={namespaceModalVisible}
         footer={null}
         width={720}
         onCancel={() => {
@@ -390,8 +395,9 @@ export function ClusterNamespacesPage() {
       >
         <Form
           key={editingNamespace?.name ?? 'namespace-new'}
-          initValues={namespaceModalInitValues}
-          onSubmit={(values) => {
+          layout="vertical"
+          initialValues={namespaceModalInitValues}
+          onFinish={(values) => {
             if (editingNamespace) {
               updateNamespaceMutation.mutate(values)
             } else {
@@ -399,9 +405,17 @@ export function ClusterNamespacesPage() {
             }
           }}
         >
-          {!editingNamespace ? <Form.Input field="name" label="命名空间名称" rules={[{ required: true, message: '请输入命名空间名称' }]} /> : null}
-          <Form.TextArea field="labels" label="Labels(JSON)" rows={8} />
-          <Form.TextArea field="annotations" label="Annotations(JSON)" rows={8} />
+          {!editingNamespace ? (
+            <Form.Item name="name" label="命名空间名称" rules={[{ required: true, message: '请输入命名空间名称' }]}>
+              <Input />
+            </Form.Item>
+          ) : null}
+          <Form.Item name="labels" label="Labels(JSON)">
+            <Input.TextArea rows={8} />
+          </Form.Item>
+          <Form.Item name="annotations" label="Annotations(JSON)">
+            <Input.TextArea rows={8} />
+          </Form.Item>
           <div className="kc-form-actions">
             <Button
               onClick={() => {
@@ -411,7 +425,7 @@ export function ClusterNamespacesPage() {
             >
               取消
             </Button>
-            <Button htmlType="submit" theme="solid" loading={createNamespaceMutation.isPending || updateNamespaceMutation.isPending}>
+            <Button htmlType="submit" type="primary" loading={createNamespaceMutation.isPending || updateNamespaceMutation.isPending}>
               {editingNamespace ? '保存' : '创建'}
             </Button>
           </div>

@@ -83,7 +83,10 @@ type ResourceService interface {
 	ListCronJobs(context.Context, domainidentity.Principal, string, string) ([]domainresource.CronJobView, error)
 	ListReplicaSets(context.Context, domainidentity.Principal, string, string) ([]domainresource.ReplicaSetView, error)
 	ListConfigMaps(context.Context, domainidentity.Principal, string, string) ([]domainresource.ConfigMapView, error)
+	GetConfigMapDetail(context.Context, domainidentity.Principal, string, string, string) (domainresource.ConfigMapDetailView, error)
 	ListSecrets(context.Context, domainidentity.Principal, string, string) ([]domainresource.SecretView, error)
+	GetSecretDetail(context.Context, domainidentity.Principal, string, string, string) (domainresource.SecretDetailView, error)
+	CreateResourceFromYAML(context.Context, domainidentity.Principal, string, string, string, string) (domainresource.ResourceYAMLView, error)
 	ListServiceAccounts(context.Context, domainidentity.Principal, string, string) ([]domainresource.ServiceAccountView, error)
 	ListRoles(context.Context, domainidentity.Principal, string, string) ([]domainresource.RoleView, error)
 	ListRoleBindings(context.Context, domainidentity.Principal, string, string) ([]domainresource.RoleBindingView, error)
@@ -102,6 +105,23 @@ type ResourceService interface {
 	ListPersistentVolumeClaims(context.Context, domainidentity.Principal, string, string) ([]domainresource.PersistentVolumeClaimView, error)
 	ListPersistentVolumes(context.Context, domainidentity.Principal, string) ([]domainresource.PersistentVolumeView, error)
 	ListStorageClasses(context.Context, domainidentity.Principal, string) ([]domainresource.StorageClassView, error)
+	ListIngressClasses(context.Context, domainidentity.Principal, string) ([]domainresource.IngressClassView, error)
+	ListPriorityClasses(context.Context, domainidentity.Principal, string) ([]domainresource.PriorityClassView, error)
+	ListRuntimeClasses(context.Context, domainidentity.Principal, string) ([]domainresource.RuntimeClassView, error)
+	ListClusterRoles(context.Context, domainidentity.Principal, string) ([]domainresource.ClusterRoleView, error)
+	ListClusterRoleBindings(context.Context, domainidentity.Principal, string) ([]domainresource.ClusterRoleBindingView, error)
+	ListMutatingWebhookConfigurations(context.Context, domainidentity.Principal, string) ([]domainresource.MutatingWebhookConfigurationView, error)
+	ListValidatingWebhookConfigurations(context.Context, domainidentity.Principal, string) ([]domainresource.ValidatingWebhookConfigurationView, error)
+	ListResourceQuotas(context.Context, domainidentity.Principal, string, string) ([]domainresource.ResourceQuotaView, error)
+	ListLimitRanges(context.Context, domainidentity.Principal, string, string) ([]domainresource.LimitRangeView, error)
+	ListLeases(context.Context, domainidentity.Principal, string, string) ([]domainresource.LeaseView, error)
+	ListReplicationControllers(context.Context, domainidentity.Principal, string, string) ([]domainresource.ReplicationControllerView, error)
+	GetResourceYAML(context.Context, domainidentity.Principal, string, string, string, string) (domainresource.ResourceYAMLView, error)
+	ApplyResourceYAMLByKind(context.Context, domainidentity.Principal, string, string, string, string, string) (domainresource.ResourceYAMLView, error)
+	DeleteResourceByKind(context.Context, domainidentity.Principal, string, string, string, string) error
+	ListPortForwards(context.Context, domainidentity.Principal, string) ([]domainresource.PortForwardSessionView, error)
+	RegisterPortForward(context.Context, domainidentity.Principal, string, domainresource.PortForwardRegisterInput) (domainresource.PortForwardSessionView, error)
+	StopPortForward(context.Context, domainidentity.Principal, string, string) error
 	ListCRDs(context.Context, domainidentity.Principal, string) ([]domainresource.CRDView, error)
 	ListHelmReleases(context.Context, domainidentity.Principal, string, string) ([]domainresource.HelmReleaseView, error)
 	ListClusterEvents(context.Context, domainidentity.Principal, string, string, int) ([]domainresource.ClusterEventView, error)
@@ -945,6 +965,58 @@ func (h *PlatformHandler) ListConfigMaps(c *gin.Context) {
 	apiresponse.Items(c, http.StatusOK, items)
 }
 
+func (h *PlatformHandler) GetConfigMapDetail(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	namespace := c.Query("namespace")
+	item, err := h.resources.GetConfigMapDetail(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("name"))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
+}
+
+func (h *PlatformHandler) GetSecretDetail(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	namespace := c.Query("namespace")
+	item, err := h.resources.GetSecretDetail(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("name"))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
+}
+
+func (h *PlatformHandler) CreateConfigMap(c *gin.Context) {
+	h.createResourceFromYAML(c, "ConfigMap")
+}
+
+func (h *PlatformHandler) CreateSecret(c *gin.Context) {
+	h.createResourceFromYAML(c, "Secret")
+}
+
+func (h *PlatformHandler) createResourceFromYAML(c *gin.Context, kind string) {
+	var payload struct {
+		Content   string `json:"content"`
+		Namespace string `json:"namespace"`
+	}
+	if err := c.ShouldBindJSON(&payload); err != nil {
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid create resource payload")
+		return
+	}
+	principal := apiMiddleware.PrincipalFromContext(c)
+	namespace := payload.Namespace
+	if namespace == "" {
+		namespace = c.Query("namespace")
+	}
+	item, err := h.resources.CreateResourceFromYAML(c.Request.Context(), principal, c.Param("clusterID"), namespace, kind, payload.Content)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusCreated, item)
+}
+
 func (h *PlatformHandler) ListSecrets(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.Query("namespace")
@@ -1119,6 +1191,257 @@ func (h *PlatformHandler) ListStorageClasses(c *gin.Context) {
 		return
 	}
 	apiresponse.Items(c, http.StatusOK, items)
+}
+
+func (h *PlatformHandler) ListIngressClasses(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	items, err := h.resources.ListIngressClasses(c.Request.Context(), principal, c.Param("clusterID"))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Items(c, http.StatusOK, items)
+}
+
+func (h *PlatformHandler) ListPriorityClasses(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	items, err := h.resources.ListPriorityClasses(c.Request.Context(), principal, c.Param("clusterID"))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Items(c, http.StatusOK, items)
+}
+
+func (h *PlatformHandler) ListRuntimeClasses(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	items, err := h.resources.ListRuntimeClasses(c.Request.Context(), principal, c.Param("clusterID"))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Items(c, http.StatusOK, items)
+}
+
+func (h *PlatformHandler) ListClusterRoles(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	items, err := h.resources.ListClusterRoles(c.Request.Context(), principal, c.Param("clusterID"))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Items(c, http.StatusOK, items)
+}
+
+func (h *PlatformHandler) ListClusterRoleBindings(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	items, err := h.resources.ListClusterRoleBindings(c.Request.Context(), principal, c.Param("clusterID"))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Items(c, http.StatusOK, items)
+}
+
+func (h *PlatformHandler) ListMutatingWebhookConfigurations(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	items, err := h.resources.ListMutatingWebhookConfigurations(c.Request.Context(), principal, c.Param("clusterID"))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Items(c, http.StatusOK, items)
+}
+
+func (h *PlatformHandler) ListValidatingWebhookConfigurations(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	items, err := h.resources.ListValidatingWebhookConfigurations(c.Request.Context(), principal, c.Param("clusterID"))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Items(c, http.StatusOK, items)
+}
+
+func (h *PlatformHandler) ListResourceQuotas(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	namespace := c.Query("namespace")
+	items, err := h.resources.ListResourceQuotas(c.Request.Context(), principal, c.Param("clusterID"), namespace)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Items(c, http.StatusOK, items)
+}
+
+func (h *PlatformHandler) ListLimitRanges(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	namespace := c.Query("namespace")
+	items, err := h.resources.ListLimitRanges(c.Request.Context(), principal, c.Param("clusterID"), namespace)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Items(c, http.StatusOK, items)
+}
+
+func (h *PlatformHandler) ListLeases(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	namespace := c.Query("namespace")
+	items, err := h.resources.ListLeases(c.Request.Context(), principal, c.Param("clusterID"), namespace)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Items(c, http.StatusOK, items)
+}
+
+func (h *PlatformHandler) ListReplicationControllers(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	namespace := c.Query("namespace")
+	items, err := h.resources.ListReplicationControllers(c.Request.Context(), principal, c.Param("clusterID"), namespace)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Items(c, http.StatusOK, items)
+}
+
+func (h *PlatformHandler) ListPortForwards(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	items, err := h.resources.ListPortForwards(c.Request.Context(), principal, c.Param("clusterID"))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Items(c, http.StatusOK, items)
+}
+
+func (h *PlatformHandler) RegisterPortForward(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	var payload domainresource.PortForwardRegisterInput
+	if err := c.ShouldBindJSON(&payload); err != nil {
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid port forward payload")
+		return
+	}
+	session, err := h.resources.RegisterPortForward(c.Request.Context(), principal, c.Param("clusterID"), payload)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusCreated, session)
+}
+
+func (h *PlatformHandler) StopPortForward(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	if err := h.resources.StopPortForward(c.Request.Context(), principal, c.Param("clusterID"), c.Param("sessionID")); err != nil {
+		writeError(c, err)
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
+func (h *PlatformHandler) genericResourceYAMLGet(kind string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		principal := apiMiddleware.PrincipalFromContext(c)
+		namespace := c.Query("namespace")
+		item, err := h.resources.GetResourceYAML(c.Request.Context(), principal, c.Param("clusterID"), namespace, kind, c.Param("name"))
+		if err != nil {
+			writeError(c, err)
+			return
+		}
+		apiresponse.Item(c, http.StatusOK, item)
+	}
+}
+
+func (h *PlatformHandler) genericResourceYAMLApply(kind string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		principal := apiMiddleware.PrincipalFromContext(c)
+		namespace := c.Query("namespace")
+		var payload struct {
+			Content string `json:"content"`
+		}
+		if err := c.ShouldBindJSON(&payload); err != nil {
+			apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid yaml payload")
+			return
+		}
+		item, err := h.resources.ApplyResourceYAMLByKind(c.Request.Context(), principal, c.Param("clusterID"), namespace, kind, c.Param("name"), payload.Content)
+		if err != nil {
+			writeError(c, err)
+			return
+		}
+		apiresponse.Item(c, http.StatusOK, item)
+	}
+}
+
+func (h *PlatformHandler) genericResourceDelete(kind string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		principal := apiMiddleware.PrincipalFromContext(c)
+		namespace := c.Query("namespace")
+		if err := h.resources.DeleteResourceByKind(c.Request.Context(), principal, c.Param("clusterID"), namespace, kind, c.Param("name")); err != nil {
+			writeError(c, err)
+			return
+		}
+		c.Status(http.StatusNoContent)
+	}
+}
+
+// RegisterGenericResourceRoutes wires delete + yaml view/apply endpoints for all
+// kinds covered by the 11-resource batch. Called from the router.
+func (h *PlatformHandler) RegisterGenericResourceRoutes(group gin.IRoutes) {
+	kinds := []struct {
+		path string
+		kind string
+	}{
+		{"/clusters/:clusterID/network/ingressclasses/:name", "IngressClass"},
+		{"/clusters/:clusterID/configuration/priorityclasses/:name", "PriorityClass"},
+		{"/clusters/:clusterID/configuration/runtimeclasses/:name", "RuntimeClass"},
+		{"/clusters/:clusterID/access-control/clusterroles/:name", "ClusterRole"},
+		{"/clusters/:clusterID/access-control/clusterrolebindings/:name", "ClusterRoleBinding"},
+		{"/clusters/:clusterID/configuration/mutatingwebhookconfigurations/:name", "MutatingWebhookConfiguration"},
+		{"/clusters/:clusterID/configuration/validatingwebhookconfigurations/:name", "ValidatingWebhookConfiguration"},
+		{"/clusters/:clusterID/configuration/resourcequotas/:name", "ResourceQuota"},
+		{"/clusters/:clusterID/configuration/limitranges/:name", "LimitRange"},
+		{"/clusters/:clusterID/configuration/leases/:name", "Lease"},
+		{"/clusters/:clusterID/workloads/replicationcontrollers/:name", "ReplicationController"},
+		{"/clusters/:clusterID/configuration/configmaps/:name", "ConfigMap"},
+		{"/clusters/:clusterID/configuration/secrets/:name", "Secret"},
+	}
+	for _, entry := range kinds {
+		group.GET(entry.path+"/yaml", h.genericResourceYAMLGet(entry.kind))
+		group.PUT(entry.path+"/yaml", h.genericResourceYAMLApply(entry.kind))
+		group.DELETE(entry.path, h.genericResourceDelete(entry.kind))
+	}
+}
+
+// RegisterWorkloadDeleteRoutes wires DELETE endpoints for built-in workloads using
+// the existing route param names (`:deploymentName`, etc.) to avoid route conflicts
+// with other GET/PUT entries already registered in router.go.
+func (h *PlatformHandler) RegisterWorkloadDeleteRoutes(group gin.IRoutes) {
+	entries := []struct {
+		path  string
+		param string
+		kind  string
+	}{
+		{"/clusters/:clusterID/workloads/deployments/:deploymentName", "deploymentName", "Deployment"},
+		{"/clusters/:clusterID/workloads/statefulsets/:statefulSetName", "statefulSetName", "StatefulSet"},
+		{"/clusters/:clusterID/workloads/daemonsets/:daemonSetName", "daemonSetName", "DaemonSet"},
+		{"/clusters/:clusterID/workloads/jobs/:jobName", "jobName", "Job"},
+		{"/clusters/:clusterID/workloads/cronjobs/:cronJobName", "cronJobName", "CronJob"},
+	}
+	for _, entry := range entries {
+		kind := entry.kind
+		paramName := entry.param
+		group.DELETE(entry.path, func(c *gin.Context) {
+			principal := apiMiddleware.PrincipalFromContext(c)
+			namespace := c.Query("namespace")
+			if err := h.resources.DeleteResourceByKind(c.Request.Context(), principal, c.Param("clusterID"), namespace, kind, c.Param(paramName)); err != nil {
+				writeError(c, err)
+				return
+			}
+			c.Status(http.StatusNoContent)
+		})
+	}
 }
 
 func (h *PlatformHandler) ListCRDs(c *gin.Context) {

@@ -2,15 +2,11 @@ package access
 
 import (
 	"context"
-	"fmt"
 	"slices"
-	"time"
 
 	domainaccess "github.com/kubecrux/kubecrux/internal/domain/access"
 	domainidentity "github.com/kubecrux/kubecrux/internal/domain/identity"
 	domainmenu "github.com/kubecrux/kubecrux/internal/domain/menu"
-	"github.com/kubecrux/kubecrux/internal/platform/apperrors"
-	"github.com/kubecrux/kubecrux/internal/platform/requestctx"
 )
 
 type UserReader interface {
@@ -28,39 +24,40 @@ type VisibleMenuReader interface {
 }
 
 type CatalogService struct {
-	users      UserReader
-	policies   PolicyReader
-	authorizer domainaccess.Authorizer
-	menus      VisibleMenuReader
+	users       UserReader
+	policies    PolicyReader
+	authorizer  domainaccess.Authorizer
+	menus       VisibleMenuReader
+	permissions *PermissionResolver
 }
 
-func NewCatalog(users UserReader, policies PolicyReader, authorizer domainaccess.Authorizer, menus VisibleMenuReader) *CatalogService {
-	return &CatalogService{users: users, policies: policies, authorizer: authorizer, menus: menus}
+func NewCatalog(users UserReader, policies PolicyReader, authorizer domainaccess.Authorizer, menus VisibleMenuReader, permissions *PermissionResolver) *CatalogService {
+	return &CatalogService{users: users, policies: policies, authorizer: authorizer, menus: menus, permissions: permissions}
 }
 
 func (s *CatalogService) ListUsers(ctx context.Context, principal domainidentity.Principal) ([]domainaccess.UserRecord, error) {
-	if err := s.authorize(ctx, principal, "users"); err != nil {
+	if err := s.authorizePermission(ctx, principal, PermAccessUsersView); err != nil {
 		return nil, err
 	}
 	return s.users.ListUsers(ctx)
 }
 
 func (s *CatalogService) ListRoles(ctx context.Context, principal domainidentity.Principal) ([]domainaccess.RoleRecord, error) {
-	if err := s.authorize(ctx, principal, "roles"); err != nil {
+	if err := s.authorizePermission(ctx, principal, PermAccessRolesView); err != nil {
 		return nil, err
 	}
 	return s.policies.ListRoles(ctx)
 }
 
 func (s *CatalogService) ListTeams(ctx context.Context, principal domainidentity.Principal) ([]domainaccess.TeamRecord, error) {
-	if err := s.authorize(ctx, principal, "teams"); err != nil {
+	if err := s.authorizePermission(ctx, principal, PermAccessGroupsView); err != nil {
 		return nil, err
 	}
 	return s.users.ListTeamsDetailed(ctx)
 }
 
 func (s *CatalogService) ListPolicies(ctx context.Context, principal domainidentity.Principal) ([]domainaccess.Policy, error) {
-	if err := s.authorize(ctx, principal, "policies"); err != nil {
+	if err := s.authorizePermission(ctx, principal, PermAccessPoliciesView); err != nil {
 		return nil, err
 	}
 	return s.policies.ListPolicies(ctx)
@@ -68,10 +65,15 @@ func (s *CatalogService) ListPolicies(ctx context.Context, principal domainident
 
 func (s *CatalogService) PermissionSnapshot(ctx context.Context, principal domainidentity.Principal) (domainaccess.PermissionSnapshot, error) {
 	snapshot := domainaccess.PermissionSnapshot{
-		PermissionKeys: PermissionKeysForRoles(principal.Roles),
+		PermissionKeys: []string{},
 		VisibleMenuIDs: []string{},
 		VisibleMenus:   []domainaccess.VisibleMenu{},
 	}
+	keys, err := s.permissionKeys(ctx, principal)
+	if err != nil {
+		return domainaccess.PermissionSnapshot{}, err
+	}
+	snapshot.PermissionKeys = keys
 	if s.menus == nil {
 		return snapshot, nil
 	}
@@ -83,36 +85,12 @@ func (s *CatalogService) PermissionSnapshot(ctx context.Context, principal domai
 	return snapshot, nil
 }
 
-func (s *CatalogService) authorize(ctx context.Context, principal domainidentity.Principal, resourceName string) error {
-	if s.authorizer == nil {
-		return nil
-	}
-	decision, err := s.authorizer.Authorize(ctx, domainaccess.Request{
-		Principal: principal,
-		Action:    domainaccess.ActionList,
-		Subject: domainaccess.SubjectAttributes{
-			UserID:   principal.UserID,
-			Roles:    principal.Roles,
-			Teams:    principal.Teams,
-			Projects: principal.Projects,
-			Tags:     principal.Tags,
-		},
-		Resource: domainaccess.ResourceAttributes{
-			Kind: "Access",
-			Name: resourceName,
-		},
-		Context: domainaccess.ContextAttributes{
-			Source:     requestctx.FromContext(ctx).Source,
-			OccurredAt: time.Now().UTC(),
-		},
-	})
-	if err != nil {
-		return err
-	}
-	if !decision.Allowed {
-		return fmt.Errorf("%w: %s", apperrors.ErrAccessDenied, decision.Reason)
-	}
-	return nil
+func (s *CatalogService) authorizePermission(ctx context.Context, principal domainidentity.Principal, permissionKey string) error {
+	return AuthorizeRuntimePermission(ctx, s.permissions, principal, permissionKey)
+}
+
+func (s *CatalogService) permissionKeys(ctx context.Context, principal domainidentity.Principal) ([]string, error) {
+	return RuntimePermissionKeys(ctx, s.permissions, principal)
 }
 
 func flattenVisibleMenus(items []domainmenu.Record, snapshot *domainaccess.PermissionSnapshot) {

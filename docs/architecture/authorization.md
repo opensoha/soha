@@ -40,15 +40,56 @@ RBAC answers one question first: does the principal's role set ever permit this 
 - the console exposes `users`, `roles`, `user groups`, `policies`, and `scope grants` as the access management surface
 - user-facing `user groups` map to the persisted `teams` relation so existing policy matchers and scope grants remain stable
 - user create and update operations persist base profile fields together with role bindings and user-group bindings in the same request, so permission changes become effective on the next principal load or token refresh
+- roles persist two distinct authorization payloads:
+  - `capabilities`: RBAC resource actions such as `view`, `list`, `update`, `trigger`
+  - `permissionKeys`: console menu and backend API permissions such as `access.users.manage` or `settings.ai.view`
+- built-in role permission maps remain bootstrap defaults for seed replay, but runtime backend authorization and permission snapshots must resolve effective `permissionKeys` from persisted role assignments so custom roles can formally delegate console/API access
 
 ## Frontend Permission Projection
 
 - the frontend now consumes a permission snapshot for authenticated sessions
-- the snapshot contains role-derived `permissionKeys` and backend-filtered `visibleMenuIds`
-- route visibility must not rely on static route metadata alone; route access is determined by both required permission keys and visible menu bindings when a route is bound to a managed menu
+- the snapshot contains persisted role-derived `permissionKeys` and backend-filtered `visibleMenuIds`
+- route visibility must not rely on static route metadata alone; route access is determined by both required permission keys and backend-filtered visible menus
 - page-level destructive or mutable buttons should progressively switch from unconditional rendering to either:
   - role-derived permission keys for delivery/management surfaces
   - backend-returned `allowedActions` for scoped platform resource rows
+
+## Menu Visibility Derivation
+
+- the common path now derives visible menus from runtime `permissionKeys` instead of requiring a second manual menu-role binding step
+- backend menu visibility evaluation follows this order:
+  - disabled menus are always hidden
+  - menus with a known backend derivation rule become visible when any mapped `*.view` permission key is present
+  - explicit `menu_role_bindings` remain as a fallback path for menus that still need operator-curated visibility
+  - unmapped menus without explicit bindings remain visible for compatibility until they are either mapped or explicitly bound
+- visible child menus automatically pull their enabled ancestors into the returned tree so sidebar structure stays navigable
+- the permission snapshot's `visibleMenuIds` is produced from this backend-filtered tree, so sidebar ordering and visibility stay aligned with backend menu state
+- frontend menu management now exposes three operator-facing states:
+  - `自动派生`: visibility comes from the mapped permission keys
+  - `显式覆盖`: menu role IDs are stored and used as the explicit path
+  - `未映射`: no known permission mapping exists yet, so operators must either keep explicit role IDs or accept the current compatibility fallback
+
+## Known Exception Paths
+
+- explicit menu role IDs are additive fallback in the current backend implementation; they do not narrow visibility for a principal that already satisfies the derived permission rule
+- the backend derivation table is intentionally bounded to the current menu contract, so newly added or custom menus do not auto-derive until their menu ID is mapped in the backend
+- the frontend can infer derived permission keys from route metadata for the menu-management UI, but the persisted menu payload still stores only `roleIds`; `visibilityMode` and `derivedPermissionKeys` are currently UI-level interpretation fields rather than durable backend columns
+
+## Access Surface Permissions
+
+- access-management read/list surfaces use:
+  - `access.users.view`
+  - `access.roles.view`
+  - `access.groups.view`
+  - `access.policies.view`
+  - `access.scope-grants.view`
+- mutable access-management operations use:
+  - `access.users.manage`
+  - `access.roles.manage`
+  - `access.groups.manage`
+  - `access.policies.manage`
+  - `access.scope-grants.manage`
+- these permission keys are separate from RBAC resource `capabilities`; they gate console menus, permission snapshots, and backend API writes rather than Kubernetes or delivery runtime actions directly
 
 ## Observability And AI
 
@@ -79,6 +120,10 @@ RBAC answers one question first: does the principal's role set ever permit this 
 - access control remains a first-level console entry so administrators can discover permission configuration directly from the sidebar
 - settings center is presented as a single first-level entry with tabbed identity, branding, and AI sections inside the page
 - cluster monitoring connection details are expected to be managed with cluster configuration, not as a separate global settings-center submenu
+
+## Operator Runbook
+
+- formal role assignment and validation steps now live in the operations runbook: [角色授权分配运行手册](../operations/role-authorization-assignment.md)
 
 ## Result Structure
 

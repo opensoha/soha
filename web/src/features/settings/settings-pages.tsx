@@ -1,6 +1,22 @@
-import { Card, Form, Button, Toast, Spin, Modal, Tag, Space, Tabs, TabPane, useFormApi, useFormState } from '@douyinfe/semi-ui'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
+import type { MouseEvent, ReactNode } from 'react'
+import {
+  Button,
+  Card,
+  Form,
+  Input,
+  InputNumber,
+  Modal,
+  Select,
+  Space,
+  Spin,
+  Switch,
+  Tabs,
+  Tag,
+  message,
+} from 'antd'
+import type { TableColumnsType } from 'antd'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { AdminTable } from '@/components/admin-table'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth/permission-snapshot'
@@ -10,7 +26,41 @@ import { StatusTag } from '@/components/status-tag'
 import { formatDateTime } from '@/utils/time'
 import { tableColumnPresets } from '@/utils/table-columns'
 import type { ApiResponse, BrandingSettings } from '@/types'
-import type { ColumnProps } from '@douyinfe/semi-ui/lib/es/table'
+
+const WIDE_FORM_LAYOUT = {
+  labelAlign: 'left' as const,
+  labelCol: { flex: '160px' },
+  wrapperCol: { flex: 'auto' },
+}
+
+const DEFAULT_FORM_LAYOUT = {
+  labelAlign: 'left' as const,
+  labelCol: { flex: '140px' },
+  wrapperCol: { flex: 'auto' },
+}
+
+const fullWidthStyle = { width: '100%' }
+
+function SectionCallout({ title, description }: { title: string; description: string }) {
+  return (
+    <div className="mb-4 rounded border border-[var(--semi-color-border)] bg-[var(--semi-color-fill-0)] p-3 text-sm">
+      <div className="font-medium">{title}</div>
+      <div className="mt-1 text-[var(--ant-colorTextSecondary)]">{description}</div>
+    </div>
+  )
+}
+
+function SettingsCard({ title, extra, children }: { title?: ReactNode; extra?: ReactNode; children: ReactNode }) {
+  return (
+    <Card title={title} extra={extra}>
+      {children}
+    </Card>
+  )
+}
+
+function TagSelect(props: { placeholder?: string; mode?: 'multiple' | 'tags'; options?: Array<{ value: string; label: string }> }) {
+  return <Select {...props} style={fullWidthStyle} />
+}
 
 /* ─── Identity Settings (OIDC) ─── */
 
@@ -44,10 +94,10 @@ export function BrandingSettingsPage({ embedded = false }: SettingsPageProps = {
   const saveMutation = useMutation({
     mutationFn: (values: Record<string, unknown>) => api.put('/settings/branding', values),
     onSuccess: () => {
-      Toast.success('品牌设置已保存')
-      queryClient.invalidateQueries({ queryKey: ['settings-branding'] })
+      void message.success('品牌设置已保存')
+      void queryClient.invalidateQueries({ queryKey: ['settings-branding'] })
     },
-    onError: (err: Error) => Toast.error(err.message),
+    onError: (err: Error) => void message.error(err.message),
   })
 
   if (isLoading) {
@@ -57,25 +107,28 @@ export function BrandingSettingsPage({ embedded = false }: SettingsPageProps = {
   if (!canViewBrandingSettings) {
     return (
       <div className="kc-page">
-        <Card>当前账号没有查看品牌设置的权限。</Card>
+        <SettingsCard>当前账号没有查看品牌设置的权限。</SettingsCard>
       </div>
     )
   }
 
   const settings = data?.data
   const content = (
-    <Card>
+    <SettingsCard>
       <Form
-        onSubmit={(values) => {
+        {...WIDE_FORM_LAYOUT}
+        onFinish={(values) => {
           if (!canManageBrandingSettings) return
           saveMutation.mutate(values as Record<string, unknown>)
         }}
-        initValues={settings ?? { appTitle: 'KubeCrux', sidebarTitle: 'KubeCrux' }}
-        labelPosition="left"
-        labelWidth={160}
+        initialValues={settings ?? { appTitle: 'KubeCrux', sidebarTitle: 'KubeCrux' }}
       >
-        <Form.Input field="appTitle" label="网页标题" placeholder="浏览器标签页标题" />
-        <Form.Input field="sidebarTitle" label="侧边栏标题" placeholder="左侧品牌栏文字" />
+        <Form.Item name="appTitle" label="网页标题">
+          <Input placeholder="浏览器标签页标题" />
+        </Form.Item>
+        <Form.Item name="sidebarTitle" label="侧边栏标题">
+          <Input placeholder="左侧品牌栏文字" />
+        </Form.Item>
 
         <div className="kc-branding-section-title">企业 Logo</div>
         <div className="kc-branding-upload-grid">
@@ -114,10 +167,10 @@ export function BrandingSettingsPage({ embedded = false }: SettingsPageProps = {
         </div>
 
         <div className="kc-form-actions">
-          {canManageBrandingSettings ? <Button htmlType="submit" theme="solid" loading={saveMutation.isPending}>保存设置</Button> : null}
+          {canManageBrandingSettings ? <Button htmlType="submit" type="primary" loading={saveMutation.isPending}>保存设置</Button> : null}
         </div>
       </Form>
-    </Card>
+    </SettingsCard>
   )
 
   if (embedded) {
@@ -132,8 +185,6 @@ export function BrandingSettingsPage({ embedded = false }: SettingsPageProps = {
   )
 }
 
-/* ─── Branding Upload Field Component ─── */
-
 interface BrandingUploadFieldProps {
   field: string
   label: string
@@ -145,7 +196,8 @@ interface BrandingUploadFieldProps {
 
 function BrandingUploadField({ field, label, hint, previewWidth, previewHeight, disabled }: BrandingUploadFieldProps) {
   const [uploading, setUploading] = useState(false)
-  const formApi = useFormApi()
+  const form = Form.useFormInstance()
+  const currentValue = Form.useWatch(field, form) as string | undefined
 
   const handleUploadClick = () => {
     if (disabled || uploading) return
@@ -156,7 +208,7 @@ function BrandingUploadField({ field, label, hint, previewWidth, previewHeight, 
       const file = input.files?.[0]
       if (!file) return
       if (file.size > 2 * 1024 * 1024) {
-        Toast.error('文件大小不能超过 2MB')
+        void message.error('文件大小不能超过 2MB')
         return
       }
       setUploading(true)
@@ -164,10 +216,10 @@ function BrandingUploadField({ field, label, hint, previewWidth, previewHeight, 
         const formData = new FormData()
         formData.append('file', file)
         const res = await api.upload<ApiResponse<{ url: string }>>('/settings/branding/upload', formData)
-        formApi.setValue(field, res.data.url)
-        Toast.success('图片上传成功')
+        form.setFieldValue(field, res.data.url)
+        void message.success('图片上传成功')
       } catch (err: any) {
-        Toast.error(err?.message ?? '上传失败')
+        void message.error(err?.message ?? '上传失败')
       } finally {
         setUploading(false)
       }
@@ -175,76 +227,49 @@ function BrandingUploadField({ field, label, hint, previewWidth, previewHeight, 
     input.click()
   }
 
-  const handleRemove = (e: React.MouseEvent) => {
+  const handleRemove = (e: MouseEvent<HTMLButtonElement>) => {
     e.stopPropagation()
-    formApi.setValue(field, '')
+    form.setFieldValue(field, '')
   }
 
   return (
     <div className="kc-branding-upload-zone">
       <div className="kc-branding-upload-label">{label}</div>
-      {/* Hidden input to keep value in form state */}
-      <Form.Input field={field} noLabel style={{ display: 'none' }} />
-      <BrandingUploadArea
-        field={field}
-        label={label}
-        previewWidth={previewWidth}
-        previewHeight={previewHeight}
-        disabled={!!disabled}
-        uploading={uploading}
-        onUploadClick={handleUploadClick}
-        onRemove={handleRemove}
-      />
-      <div className="kc-branding-upload-hint">{hint}</div>
-    </div>
-  )
-}
-
-function BrandingUploadArea({
-  field, label, previewWidth, previewHeight, disabled, uploading, onUploadClick, onRemove,
-}: {
-  field: string
-  label: string
-  previewWidth: number
-  previewHeight: number
-  disabled: boolean
-  uploading: boolean
-  onUploadClick: () => void
-  onRemove: (e: React.MouseEvent) => void
-}) {
-  const formState = useFormState()
-  const currentValue = (formState?.values as Record<string, string> | undefined)?.[field] || ''
-  return (
-    <div className="kc-branding-upload-area-wrap">
-      <div
-        className={`kc-branding-upload-area ${disabled ? 'is-disabled' : ''}`}
-        style={{ width: Math.max(previewWidth + 40, 160), height: Math.max(previewHeight + 40, 100) }}
-        onClick={onUploadClick}
-      >
-        {currentValue ? (
-          <img
-            src={currentValue}
-            alt={label}
-            className="kc-branding-upload-preview"
-            style={{ maxWidth: previewWidth, maxHeight: previewHeight }}
-          />
-        ) : (
-          <div className="kc-branding-upload-placeholder">
-            {uploading ? <Spin size="middle" /> : <span className="kc-branding-upload-plus">+</span>}
-          </div>
-        )}
-      </div>
-      {currentValue && !disabled ? (
-        <Button
-          size="small"
-          type="danger"
-          theme="light"
-          className="kc-branding-upload-remove"
-          onClick={onRemove}
+      <Form.Item name={field} hidden>
+        <Input />
+      </Form.Item>
+      <div className="kc-branding-upload-area-wrap">
+        <div
+          className={`kc-branding-upload-area ${disabled ? 'is-disabled' : ''}`}
+          style={{ width: Math.max(previewWidth + 40, 160), height: Math.max(previewHeight + 40, 100) }}
+          onClick={handleUploadClick}
         >
-          移除
-        </Button>
-      ) : null}
+          {currentValue ? (
+            <img
+              src={currentValue}
+              alt={label}
+              className="kc-branding-upload-preview"
+              style={{ maxWidth: previewWidth, maxHeight: previewHeight }}
+            />
+          ) : (
+            <div className="kc-branding-upload-placeholder">
+              {uploading ? <Spin size="small" /> : <span className="kc-branding-upload-plus">+</span>}
+            </div>
+          )}
+        </div>
+        {currentValue && !disabled ? (
+          <Button
+            size="small"
+            danger
+            variant="outlined"
+            className="kc-branding-upload-remove"
+            onClick={handleRemove}
+          >
+            移除
+          </Button>
+        ) : null}
+      </div>
+      <div className="kc-branding-upload-hint">{hint}</div>
     </div>
   )
 }
@@ -264,10 +289,10 @@ export function IdentitySettingsPage({ embedded = false }: SettingsPageProps = {
   const saveMutation = useMutation({
     mutationFn: (values: Record<string, unknown>) => api.put('/settings/identity/oidc', values),
     onSuccess: () => {
-      Toast.success('身份设置已保存')
-      queryClient.invalidateQueries({ queryKey: ['settings-identity'] })
+      void message.success('身份设置已保存')
+      void queryClient.invalidateQueries({ queryKey: ['settings-identity'] })
     },
-    onError: (err: Error) => Toast.error(err.message),
+    onError: (err: Error) => void message.error(err.message),
   })
 
   if (isLoading) {
@@ -277,37 +302,54 @@ export function IdentitySettingsPage({ embedded = false }: SettingsPageProps = {
   if (!canViewIdentitySettings) {
     return (
       <div className="kc-page">
-        <Card>当前账号没有查看身份设置的权限。</Card>
+        <SettingsCard>当前账号没有查看身份设置的权限。</SettingsCard>
       </div>
     )
   }
 
   const settings = data?.data
   const content = (
-    <Card>
+    <SettingsCard>
       <Form
-        onSubmit={(values) => {
+        {...DEFAULT_FORM_LAYOUT}
+        onFinish={(values) => {
           if (!canManageIdentitySettings) return
           saveMutation.mutate(values as Record<string, unknown>)
         }}
-        initValues={settings ?? {}}
-        labelPosition="left"
-        labelWidth={140}
+        initialValues={settings ?? {}}
       >
-        <Form.Switch field="enabled" label="启用 OIDC" />
-        <Form.Input field="providerName" label="Provider Name" />
-        <Form.Input field="issuer" label="Issuer URL" placeholder="https://accounts.example.com" rules={[{ required: true, message: '请输入 Issuer URL' }]} />
-        <Form.Input field="clientId" label="Client ID" rules={[{ required: true, message: '请输入 Client ID' }]} />
-        <Form.Input field="clientSecret" label="Client Secret" mode="password" rules={[{ required: true, message: '请输入 Client Secret' }]} />
-        <Form.Input field="redirectUrl" label="Redirect URL" placeholder="https://your-app.com/auth/oidc/callback" />
-        <Form.Input field="frontendRedirectUrl" label="Frontend Redirect URL" />
-        <Form.TagInput field="scopes" label="Scopes" placeholder="openid / profile / email" />
-        <Form.TagInput field="defaultRoles" label="Default Roles" placeholder="readonly / admin" />
+        <Form.Item name="enabled" label="启用 OIDC" valuePropName="checked">
+          <Switch />
+        </Form.Item>
+        <Form.Item name="providerName" label="Provider Name">
+          <Input />
+        </Form.Item>
+        <Form.Item name="issuer" label="Issuer URL" rules={[{ required: true, message: '请输入 Issuer URL' }]}>
+          <Input placeholder="https://accounts.example.com" />
+        </Form.Item>
+        <Form.Item name="clientId" label="Client ID" rules={[{ required: true, message: '请输入 Client ID' }]}>
+          <Input />
+        </Form.Item>
+        <Form.Item name="clientSecret" label="Client Secret" rules={[{ required: true, message: '请输入 Client Secret' }]}>
+          <Input.Password />
+        </Form.Item>
+        <Form.Item name="redirectUrl" label="Redirect URL">
+          <Input placeholder="https://your-app.com/auth/oidc/callback" />
+        </Form.Item>
+        <Form.Item name="frontendRedirectUrl" label="Frontend Redirect URL">
+          <Input />
+        </Form.Item>
+        <Form.Item name="scopes" label="Scopes">
+          <TagSelect mode="tags" placeholder="openid / profile / email" />
+        </Form.Item>
+        <Form.Item name="defaultRoles" label="Default Roles">
+          <TagSelect mode="tags" placeholder="readonly / admin" />
+        </Form.Item>
         <div className="kc-form-actions">
-          {canManageIdentitySettings ? <Button htmlType="submit" theme="solid" loading={saveMutation.isPending}>保存设置</Button> : null}
+          {canManageIdentitySettings ? <Button htmlType="submit" type="primary" loading={saveMutation.isPending}>保存设置</Button> : null}
         </div>
       </Form>
-    </Card>
+    </SettingsCard>
   )
 
   if (embedded) {
@@ -349,10 +391,10 @@ export function MonitoringSettingsPage() {
   const saveMutation = useMutation({
     mutationFn: (values: Record<string, unknown>) => api.put('/settings/monitoring/prometheus', values),
     onSuccess: () => {
-      Toast.success('监控设置已保存')
-      queryClient.invalidateQueries({ queryKey: ['settings-monitoring'] })
+      void message.success('监控设置已保存')
+      void queryClient.invalidateQueries({ queryKey: ['settings-monitoring'] })
     },
-    onError: (err: Error) => Toast.error(err.message),
+    onError: (err: Error) => void message.error(err.message),
   })
 
   if (isLoading) {
@@ -362,7 +404,7 @@ export function MonitoringSettingsPage() {
   if (!canViewMonitoringSettings) {
     return (
       <div className="kc-page">
-        <Card>当前账号没有查看监控设置的权限。</Card>
+        <SettingsCard>当前账号没有查看监控设置的权限。</SettingsCard>
       </div>
     )
   }
@@ -372,28 +414,41 @@ export function MonitoringSettingsPage() {
   return (
     <div className="kc-page">
       <PageHeader title="监控设置" description="配置 Prometheus 地址、默认查询范围和访问凭证。" />
-      <Card>
+      <SettingsCard>
         <Form
-          onSubmit={(values) => {
+          {...DEFAULT_FORM_LAYOUT}
+          onFinish={(values) => {
             if (!canManageMonitoringSettings) return
             saveMutation.mutate(values as Record<string, string>)
           }}
-          initValues={settings ?? {}}
-          labelPosition="left"
-          labelWidth={140}
+          initialValues={settings ?? {}}
         >
-          <Form.Switch field="enabled" label="启用监控" />
-          <Form.Input field="baseUrl" label="Prometheus URL" placeholder="http://prometheus:9090" rules={[{ required: true, message: '请输入 Prometheus URL' }]} />
-          <Form.Input field="bearerToken" label="Bearer Token" mode="password" />
-          <Form.InputNumber field="defaultRangeMinutes" label="默认范围(分钟)" />
-          <Form.InputNumber field="stepSeconds" label="默认步长(秒)" />
-          <Form.Input field="clusterLabel" label="Cluster Label" />
-          <Form.Input field="grafanaBaseUrl" label="Grafana URL" />
+          <Form.Item name="enabled" label="启用监控" valuePropName="checked">
+            <Switch />
+          </Form.Item>
+          <Form.Item name="baseUrl" label="Prometheus URL" rules={[{ required: true, message: '请输入 Prometheus URL' }]}>
+            <Input placeholder="http://prometheus:9090" />
+          </Form.Item>
+          <Form.Item name="bearerToken" label="Bearer Token">
+            <Input.Password />
+          </Form.Item>
+          <Form.Item name="defaultRangeMinutes" label="默认范围(分钟)">
+            <InputNumber style={fullWidthStyle} />
+          </Form.Item>
+          <Form.Item name="stepSeconds" label="默认步长(秒)">
+            <InputNumber style={fullWidthStyle} />
+          </Form.Item>
+          <Form.Item name="clusterLabel" label="Cluster Label">
+            <Input />
+          </Form.Item>
+          <Form.Item name="grafanaBaseUrl" label="Grafana URL">
+            <Input />
+          </Form.Item>
           <div className="kc-form-actions">
-            {canManageMonitoringSettings ? <Button htmlType="submit" theme="solid" loading={saveMutation.isPending}>保存设置</Button> : null}
+            {canManageMonitoringSettings ? <Button htmlType="submit" type="primary" loading={saveMutation.isPending}>保存设置</Button> : null}
           </div>
         </Form>
-      </Card>
+      </SettingsCard>
     </div>
   )
 }
@@ -714,56 +769,56 @@ export function AISettingsPage({ embedded = false }: SettingsPageProps = {}) {
   const saveMutation = useMutation({
     mutationFn: (values: Record<string, unknown>) => api.put('/settings/ai/provider', values),
     onSuccess: () => {
-      Toast.success('AI 设置已保存')
-      queryClient.invalidateQueries({ queryKey: ['settings-ai'] })
+      void message.success('AI 设置已保存')
+      void queryClient.invalidateQueries({ queryKey: ['settings-ai'] })
     },
-    onError: (err: Error) => Toast.error(err.message),
+    onError: (err: Error) => void message.error(err.message),
   })
   const dataSourceMutation = useMutation({
     mutationFn: ({ id, values }: { id?: string; values: Record<string, unknown> }) =>
       id ? api.put(`/copilot/data-sources/${id}`, buildDataSourcePayload(values)) : api.post('/copilot/data-sources', buildDataSourcePayload(values)),
     onSuccess: () => {
-      Toast.success('数据源已保存')
-      queryClient.invalidateQueries({ queryKey: ['copilot-data-sources'] })
+      void message.success('数据源已保存')
+      void queryClient.invalidateQueries({ queryKey: ['copilot-data-sources'] })
       setDataSourceModalVisible(false)
       setEditingDataSource(null)
       setDataSourceBackendType('es')
     },
-    onError: (err: Error) => Toast.error(err.message),
+    onError: (err: Error) => void message.error(err.message),
   })
   const validateDataSourceMutation = useMutation({
     mutationFn: (dataSourceID: string) => api.post<ApiResponse<DataSource>>(`/copilot/data-sources/${dataSourceID}/validate`),
     onSuccess: () => {
-      Toast.success('数据源校验通过')
+      void message.success('数据源校验通过')
     },
     onError: (err: Error) => {
-      Toast.error(err.message)
+      void message.error(err.message)
     },
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ['copilot-data-sources'] })
+      void queryClient.invalidateQueries({ queryKey: ['copilot-data-sources'] })
     },
   })
   const profileMutation = useMutation({
     mutationFn: ({ id, values }: { id?: string; values: Record<string, unknown> }) =>
       id ? api.put(`/copilot/analysis-profiles/${id}`, buildProfilePayload(values)) : api.post('/copilot/analysis-profiles', buildProfilePayload(values)),
     onSuccess: () => {
-      Toast.success('分析模板已保存')
-      queryClient.invalidateQueries({ queryKey: ['copilot-analysis-profiles'] })
+      void message.success('分析模板已保存')
+      void queryClient.invalidateQueries({ queryKey: ['copilot-analysis-profiles'] })
       setProfileModalVisible(false)
       setEditingProfile(null)
     },
-    onError: (err: Error) => Toast.error(err.message),
+    onError: (err: Error) => void message.error(err.message),
   })
   const policyMutation = useMutation({
     mutationFn: ({ id, values }: { id?: string; values: Record<string, unknown> }) =>
       id ? api.put(`/copilot/automation-policies/${id}`, buildPolicyPayload(values)) : api.post('/copilot/automation-policies', buildPolicyPayload(values)),
     onSuccess: () => {
-      Toast.success('自动化策略已保存')
-      queryClient.invalidateQueries({ queryKey: ['copilot-automation-policies'] })
+      void message.success('自动化策略已保存')
+      void queryClient.invalidateQueries({ queryKey: ['copilot-automation-policies'] })
       setPolicyModalVisible(false)
       setEditingPolicy(null)
     },
-    onError: (err: Error) => Toast.error(err.message),
+    onError: (err: Error) => void message.error(err.message),
   })
 
   if (isLoading) {
@@ -773,7 +828,7 @@ export function AISettingsPage({ embedded = false }: SettingsPageProps = {}) {
   if (!canViewAISettings) {
     return (
       <div className="kc-page">
-        <Card>当前账号没有查看 AI 设置的权限。</Card>
+        <SettingsCard>当前账号没有查看 AI 设置的权限。</SettingsCard>
       </div>
     )
   }
@@ -792,7 +847,7 @@ export function AISettingsPage({ embedded = false }: SettingsPageProps = {}) {
         ? [{ value: 'jaeger', label: 'jaeger' }]
         : [{ value: 'platform', label: 'platform' }]
 
-  const dataSourceColumns: ColumnProps<DataSource>[] = [
+  const dataSourceColumns: TableColumnsType<DataSource> = [
     { title: '名称', dataIndex: 'name' },
     { title: '能力层', dataIndex: 'mcpAdapter' },
     { title: '源类型', dataIndex: 'sourceKind', render: (value: string, record: DataSource) => `${value} / ${record.backendType}` },
@@ -802,15 +857,15 @@ export function AISettingsPage({ embedded = false }: SettingsPageProps = {}) {
       render: (value: string | undefined, record: DataSource) => {
         const isPending = validateDataSourceMutation.isPending && validateDataSourceMutation.variables === record.id
         if (isPending) return <Tag color="orange">校验中</Tag>
-        if (!value) return <Tag color="grey">未校验</Tag>
+        if (!value) return <Tag color="default">未校验</Tag>
         const normalized = value.toLowerCase()
-        const color = normalized === 'success' ? 'green' : normalized === 'error' ? 'red' : 'grey'
+        const color = normalized === 'success' ? 'green' : normalized === 'error' ? 'red' : 'default'
         const label = normalized === 'success' ? '已通过' : normalized === 'error' ? '失败' : value
         return (
           <div className="flex max-w-[240px] flex-col gap-1">
             <Tag color={color}>{label}</Tag>
             {record.validationMessage && normalized === 'error' ? (
-              <div className="text-xs text-[var(--semi-color-text-2)]">{record.validationMessage}</div>
+              <div className="text-xs text-[var(--ant-colorTextSecondary)]">{record.validationMessage}</div>
             ) : null}
           </div>
         )
@@ -831,206 +886,383 @@ export function AISettingsPage({ embedded = false }: SettingsPageProps = {}) {
           {canManageAISettings ? (
             <Button
               size="small"
-              theme="light"
+              variant="outlined"
               loading={validateDataSourceMutation.isPending && validateDataSourceMutation.variables === record.id}
               onClick={() => validateDataSourceMutation.mutate(record.id)}
             >
               校验连接
             </Button>
           ) : null}
-          {canManageAISettings ? <Button size="small" theme="borderless" onClick={() => { setEditingDataSource(record); setDataSourceSourceKind(record.sourceKind); setDataSourceBackendType(record.backendType); setDataSourceModalVisible(true) }}>编辑</Button> : null}
+          {canManageAISettings ? <Button size="small" type="text" onClick={() => { setEditingDataSource(record); setDataSourceSourceKind(record.sourceKind); setDataSourceBackendType(record.backendType); setDataSourceModalVisible(true) }}>编辑</Button> : null}
           {!canManageAISettings ? '-' : null}
         </Space>
       ),
     },
   ]
 
-  const profileColumns: ColumnProps<AnalysisProfile>[] = [
+  const profileColumns: TableColumnsType<AnalysisProfile> = [
     { title: '名称', dataIndex: 'name' },
     { title: '模式', dataIndex: 'mode' },
     { title: '数据源', dataIndex: 'enabledSources', render: (value: string[]) => <div className="flex flex-wrap gap-1">{(value ?? []).map((item) => <Tag key={item}>{item}</Tag>)}</div> },
     { title: 'Playbooks', dataIndex: 'enabledPlaybooks', render: (value: string[]) => <div className="flex flex-wrap gap-1">{(value ?? []).map((item) => <Tag key={item}>{item}</Tag>)}</div> },
     { title: '策略', dataIndex: 'remediationPolicy' },
-    { ...tableColumnPresets.action, title: '操作', dataIndex: 'id', render: (_: unknown, record: AnalysisProfile) => canManageAISettings ? <Button size="small" theme="borderless" onClick={() => { setEditingProfile(record); setProfileModalVisible(true) }}>编辑</Button> : '-' },
+    { ...tableColumnPresets.action, title: '操作', dataIndex: 'id', render: (_: unknown, record: AnalysisProfile) => canManageAISettings ? <Button size="small" type="text" onClick={() => { setEditingProfile(record); setProfileModalVisible(true) }}>编辑</Button> : '-' },
   ]
 
-  const policyColumns: ColumnProps<AutomationPolicy>[] = [
+  const policyColumns: TableColumnsType<AutomationPolicy> = [
     { title: '名称', dataIndex: 'name' },
     { title: '触发类型', dataIndex: 'triggerType' },
     { title: '分析模板', dataIndex: 'analysisProfileId' },
     { title: 'Dedup(s)', dataIndex: 'dedupWindowSeconds' },
     { title: '策略', dataIndex: 'remediationPolicy' },
     { title: '启用', dataIndex: 'enabled', render: (value: boolean) => <StatusTag value={value ? 'success' : 'default'} /> },
-    { ...tableColumnPresets.action, title: '操作', dataIndex: 'id', render: (_: unknown, record: AutomationPolicy) => canManageAISettings ? <Button size="small" theme="borderless" onClick={() => { setEditingPolicy(record); setPolicyModalVisible(true) }}>编辑</Button> : '-' },
+    { ...tableColumnPresets.action, title: '操作', dataIndex: 'id', render: (_: unknown, record: AutomationPolicy) => canManageAISettings ? <Button size="small" type="text" onClick={() => { setEditingPolicy(record); setPolicyModalVisible(true) }}>编辑</Button> : '-' },
   ]
 
   const content = (
     <>
-      <Card>
+      <SettingsCard>
         <Form
-          onSubmit={(values) => {
+          {...DEFAULT_FORM_LAYOUT}
+          onFinish={(values) => {
             if (!canManageAISettings) return
             saveMutation.mutate(values as Record<string, unknown>)
           }}
-          initValues={settings ?? {}}
-          labelPosition="left"
-          labelWidth={140}
+          initialValues={settings ?? {}}
         >
-          <Form.Switch field="enabled" label="启用 AI" />
-          <Form.Input field="apiKey" label="API Key" mode="password" rules={[{ required: true, message: '请输入 API Key' }]} />
-          <Form.Input field="model" label="模型" placeholder="gpt-4o / claude-sonnet-4-20250514" />
-          <Form.Input field="baseUrl" label="Base URL" placeholder="https://api.openai.com/v1 (可选)" />
+          <Form.Item name="enabled" label="启用 AI" valuePropName="checked">
+            <Switch />
+          </Form.Item>
+          <Form.Item name="apiKey" label="API Key" rules={[{ required: true, message: '请输入 API Key' }]}>
+            <Input.Password />
+          </Form.Item>
+          <Form.Item name="model" label="模型">
+            <Input placeholder="gpt-4o / claude-sonnet-4-20250514" />
+          </Form.Item>
+          <Form.Item name="baseUrl" label="Base URL">
+            <Input placeholder="https://api.openai.com/v1 (可选)" />
+          </Form.Item>
           <div className="kc-form-actions">
-            {canManageAISettings ? <Button htmlType="submit" theme="solid" loading={saveMutation.isPending}>保存设置</Button> : null}
+            {canManageAISettings ? <Button htmlType="submit" type="primary" loading={saveMutation.isPending}>保存设置</Button> : null}
           </div>
         </Form>
-      </Card>
-      <Card title="Data Sources" headerExtraContent={canManageAISettings ? <Button theme="solid" onClick={() => { setEditingDataSource(null); setDataSourceSourceKind('logs'); setDataSourceBackendType('es'); setDataSourceModalVisible(true) }}>新增</Button> : null}>
+      </SettingsCard>
+      <SettingsCard title="Data Sources" extra={canManageAISettings ? <Button type="primary" onClick={() => { setEditingDataSource(null); setDataSourceSourceKind('logs'); setDataSourceBackendType('es'); setDataSourceModalVisible(true) }}>新增</Button> : null}>
         <AdminTable columns={dataSourceColumns} dataSource={dataSources} rowKey="id" loading={dataSourcesQuery.isLoading} />
-      </Card>
-      <Card title="Analysis Profiles" headerExtraContent={canManageAISettings ? <Button theme="solid" onClick={() => { setEditingProfile(null); setProfileModalVisible(true) }}>新增</Button> : null}>
+      </SettingsCard>
+      <SettingsCard title="Analysis Profiles" extra={canManageAISettings ? <Button type="primary" onClick={() => { setEditingProfile(null); setProfileModalVisible(true) }}>新增</Button> : null}>
         <AdminTable columns={profileColumns} dataSource={profiles} rowKey="id" loading={profilesQuery.isLoading} />
-      </Card>
-      <Card title="Automation Policies" headerExtraContent={canManageAISettings ? <Button theme="solid" onClick={() => { setEditingPolicy(null); setPolicyModalVisible(true) }}>新增</Button> : null}>
+      </SettingsCard>
+      <SettingsCard title="Automation Policies" extra={canManageAISettings ? <Button type="primary" onClick={() => { setEditingPolicy(null); setPolicyModalVisible(true) }}>新增</Button> : null}>
         <AdminTable columns={policyColumns} dataSource={policies} rowKey="id" loading={policiesQuery.isLoading} />
-      </Card>
+      </SettingsCard>
 
-      <Modal title={editingDataSource ? '编辑数据源' : '新增数据源'} visible={dataSourceModalVisible} footer={null} onCancel={() => { setDataSourceModalVisible(false); setEditingDataSource(null); setDataSourceSourceKind('logs'); setDataSourceBackendType('es') }}>
+      <Modal
+        title={editingDataSource ? '编辑数据源' : '新增数据源'}
+        open={dataSourceModalVisible}
+        footer={null}
+        onCancel={() => { setDataSourceModalVisible(false); setEditingDataSource(null); setDataSourceSourceKind('logs'); setDataSourceBackendType('es') }}
+        destroyOnClose
+      >
         <Form
-          initValues={buildDataSourceFormValues(editingDataSource)}
-          onSubmit={(values) => {
+          {...DEFAULT_FORM_LAYOUT}
+          initialValues={buildDataSourceFormValues(editingDataSource)}
+          onFinish={(values) => {
             if (!canManageAISettings) return
-            dataSourceMutation.mutate({ id: editingDataSource?.id, values })
+            dataSourceMutation.mutate({ id: editingDataSource?.id, values: values as Record<string, unknown> })
           }}
-          labelPosition="left"
-          labelWidth={140}
         >
-          <div className="mb-4 rounded border border-[var(--semi-color-border)] bg-[var(--semi-color-fill-0)] p-3 text-sm">
-            <div className="font-medium">1. 基础信息</div>
-            <div className="mt-1 text-[var(--semi-color-text-2)]">先选择数据源的能力类别和后端类型，再填写连接与查询约束。</div>
-          </div>
-          <Form.Input field="name" label="名称" rules={[{ required: true, message: '请输入名称' }]} />
-          <Form.Select
-            field="sourceKind"
-            label="源类型"
-            optionList={[{ value: 'logs', label: 'logs' }, { value: 'metrics', label: 'metrics' }, { value: 'traces', label: 'traces' }, { value: 'platform-native', label: 'platform-native' }]}
-            onChange={(value) => {
-              const next = String(value)
-              setDataSourceSourceKind(next)
-              setDataSourceBackendType(next === 'logs' ? 'es' : next === 'metrics' ? 'prometheus' : next === 'traces' ? 'jaeger' : 'platform')
-            }}
-          />
-          <Form.Select
-            field="backendType"
-            label="后端类型"
-            optionList={backendOptions}
-            onChange={(value) => setDataSourceBackendType(String(value))}
-          />
-          <Form.Select field="mcpAdapter" label="能力层" optionList={filteredCapabilityOptions.map((item) => ({ value: item.id, label: item.name }))} />
-          <Form.Input field="credentialRef" label="凭据引用" />
-          <div className="mb-4 mt-6 rounded border border-[var(--semi-color-border)] bg-[var(--semi-color-fill-0)] p-3 text-sm">
-            <div className="font-medium">2. 作用范围与预算</div>
-            <div className="mt-1 text-[var(--semi-color-text-2)]">限制这个数据源在 AI 分析中的默认作用范围、查询次数和输出规模。</div>
-          </div>
-          <Form.Input field="scopeClusterId" label="Scope Cluster" />
-          <Form.Input field="scopeNamespace" label="Scope Namespace" />
-          <Form.Input field="scopeService" label="Scope Service" />
-          <Form.Input field="scopeWorkload" label="Scope Workload" />
-          <Form.InputNumber field="budgetMaxQueries" label="Max Queries" min={1} />
-          <Form.InputNumber field="budgetMaxLogBytes" label="Max Log Bytes" min={1024} />
-          <Form.InputNumber field="budgetTimeoutSeconds" label="Timeout(s)" min={1} />
-          <Form.TagInput field="redactionMaskFields" label="Mask Fields" />
-          <Form.TagInput field="redactionMaskPatterns" label="Mask Patterns" />
-          <Form.Switch field="redactionTruncateLongLines" label="Truncate Long Lines" />
-          <div className="mb-4 mt-6 rounded border border-[var(--semi-color-border)] bg-[var(--semi-color-fill-0)] p-3 text-sm">
-            <div className="font-medium">3. 后端连接</div>
-            <div className="mt-1 text-[var(--semi-color-text-2)]">这里只展示当前后端类型需要的关键字段，避免无关配置干扰。</div>
-          </div>
-          <Form.Input field="configEndpoint" label="Endpoint" rules={[{ required: true, message: '请输入 Endpoint' }]} />
-          {dataSourceBackendType === 'es' ? <Form.Input field="configIndex" label="ES Index" rules={[{ required: true, message: '请输入 ES Index' }]} /> : null}
-          {dataSourceBackendType === 'clickhouse' ? <Form.Input field="configTable" label="CK Table" rules={[{ required: true, message: '请输入 CK Table' }]} /> : null}
-          {dataSourceBackendType === 'clickhouse' ? <Form.Input field="configUsername" label="Username" /> : null}
-          {dataSourceBackendType === 'clickhouse' ? <Form.Input field="configPassword" label="Password" mode="password" /> : null}
-          {dataSourceBackendType !== 'clickhouse' && dataSourceBackendType !== 'platform' ? <Form.Input field="configBearerToken" label="Bearer Token" mode="password" /> : null}
-          {dataSourceSourceKind === 'logs' ? <Form.Input field="configTimestampField" label="Timestamp Field" /> : null}
-          {dataSourceSourceKind === 'logs' ? <Form.Input field="configMessageField" label="Message Field" /> : null}
-          {dataSourceSourceKind === 'logs' ? <Form.Input field="configSeverityField" label="Severity Field" /> : null}
-          {dataSourceSourceKind === 'logs' ? <Form.Input field="configServiceField" label="Service Field" /> : null}
-          {dataSourceSourceKind === 'logs' ? <Form.Input field="configWorkloadField" label="Workload Field" /> : null}
-          {dataSourceSourceKind === 'logs' ? <Form.Input field="configNamespaceField" label="Namespace Field" /> : null}
-          {dataSourceSourceKind === 'logs' ? <Form.Input field="configClusterField" label="Cluster Field" /> : null}
-          {dataSourceBackendType === 'loki' ? <Form.Input field="lokiLabelCluster" label="Loki Cluster Label" rules={[{ required: true, message: '请输入 Loki Cluster Label' }]} /> : null}
-          {dataSourceBackendType === 'loki' ? <Form.Input field="lokiLabelNamespace" label="Loki Namespace Label" rules={[{ required: true, message: '请输入 Loki Namespace Label' }]} /> : null}
-          {dataSourceBackendType === 'loki' ? <Form.Input field="lokiLabelService" label="Loki Service Label" rules={[{ required: true, message: '请输入 Loki Service Label' }]} /> : null}
-          {dataSourceBackendType === 'loki' ? <Form.Input field="lokiLabelWorkload" label="Loki Workload Label" rules={[{ required: true, message: '请输入 Loki Workload Label' }]} /> : null}
-          {dataSourceBackendType === 'loki' ? <Form.Input field="lokiLabelSeverity" label="Loki Severity Label" rules={[{ required: true, message: '请输入 Loki Severity Label' }]} /> : null}
-          <Form.Switch field="enabled" label="启用" />
+          <Form.Item name="id" hidden>
+            <Input />
+          </Form.Item>
+          <SectionCallout title="1. 基础信息" description="先选择数据源的能力类别和后端类型，再填写连接与查询约束。" />
+          <Form.Item name="name" label="名称" rules={[{ required: true, message: '请输入名称' }]}>
+            <Input />
+          </Form.Item>
+          <Form.Item name="sourceKind" label="源类型">
+            <Select
+              options={[{ value: 'logs', label: 'logs' }, { value: 'metrics', label: 'metrics' }, { value: 'traces', label: 'traces' }, { value: 'platform-native', label: 'platform-native' }]}
+              onChange={(value) => {
+                const next = String(value)
+                setDataSourceSourceKind(next)
+                setDataSourceBackendType(next === 'logs' ? 'es' : next === 'metrics' ? 'prometheus' : next === 'traces' ? 'jaeger' : 'platform')
+              }}
+            />
+          </Form.Item>
+          <Form.Item name="backendType" label="后端类型">
+            <Select options={backendOptions} onChange={(value) => setDataSourceBackendType(String(value))} />
+          </Form.Item>
+          <Form.Item name="mcpAdapter" label="能力层">
+            <Select options={filteredCapabilityOptions.map((item) => ({ value: item.id, label: item.name }))} />
+          </Form.Item>
+          <Form.Item name="credentialRef" label="凭据引用">
+            <Input />
+          </Form.Item>
+          <SectionCallout title="2. 作用范围与预算" description="限制这个数据源在 AI 分析中的默认作用范围、查询次数和输出规模。" />
+          <Form.Item name="scopeClusterId" label="Scope Cluster">
+            <Input />
+          </Form.Item>
+          <Form.Item name="scopeNamespace" label="Scope Namespace">
+            <Input />
+          </Form.Item>
+          <Form.Item name="scopeService" label="Scope Service">
+            <Input />
+          </Form.Item>
+          <Form.Item name="scopeWorkload" label="Scope Workload">
+            <Input />
+          </Form.Item>
+          <Form.Item name="budgetMaxQueries" label="Max Queries">
+            <InputNumber min={1} style={fullWidthStyle} />
+          </Form.Item>
+          <Form.Item name="budgetMaxLogBytes" label="Max Log Bytes">
+            <InputNumber min={1024} style={fullWidthStyle} />
+          </Form.Item>
+          <Form.Item name="budgetTimeoutSeconds" label="Timeout(s)">
+            <InputNumber min={1} style={fullWidthStyle} />
+          </Form.Item>
+          <Form.Item name="redactionMaskFields" label="Mask Fields">
+            <TagSelect mode="tags" />
+          </Form.Item>
+          <Form.Item name="redactionMaskPatterns" label="Mask Patterns">
+            <TagSelect mode="tags" />
+          </Form.Item>
+          <Form.Item name="redactionTruncateLongLines" label="Truncate Long Lines" valuePropName="checked">
+            <Switch />
+          </Form.Item>
+          <SectionCallout title="3. 后端连接" description="这里只展示当前后端类型需要的关键字段，避免无关配置干扰。" />
+          <Form.Item name="configEndpoint" label="Endpoint" rules={[{ required: true, message: '请输入 Endpoint' }]}>
+            <Input />
+          </Form.Item>
+          {dataSourceBackendType === 'es' ? (
+            <Form.Item name="configIndex" label="ES Index" rules={[{ required: true, message: '请输入 ES Index' }]}>
+              <Input />
+            </Form.Item>
+          ) : null}
+          {dataSourceBackendType === 'clickhouse' ? (
+            <Form.Item name="configTable" label="CK Table" rules={[{ required: true, message: '请输入 CK Table' }]}>
+              <Input />
+            </Form.Item>
+          ) : null}
+          {dataSourceBackendType === 'clickhouse' ? (
+            <Form.Item name="configUsername" label="Username">
+              <Input />
+            </Form.Item>
+          ) : null}
+          {dataSourceBackendType === 'clickhouse' ? (
+            <Form.Item name="configPassword" label="Password">
+              <Input.Password />
+            </Form.Item>
+          ) : null}
+          {dataSourceBackendType !== 'clickhouse' && dataSourceBackendType !== 'platform' ? (
+            <Form.Item name="configBearerToken" label="Bearer Token">
+              <Input.Password />
+            </Form.Item>
+          ) : null}
+          {dataSourceSourceKind === 'logs' ? (
+            <Form.Item name="configTimestampField" label="Timestamp Field">
+              <Input />
+            </Form.Item>
+          ) : null}
+          {dataSourceSourceKind === 'logs' ? (
+            <Form.Item name="configMessageField" label="Message Field">
+              <Input />
+            </Form.Item>
+          ) : null}
+          {dataSourceSourceKind === 'logs' ? (
+            <Form.Item name="configSeverityField" label="Severity Field">
+              <Input />
+            </Form.Item>
+          ) : null}
+          {dataSourceSourceKind === 'logs' ? (
+            <Form.Item name="configServiceField" label="Service Field">
+              <Input />
+            </Form.Item>
+          ) : null}
+          {dataSourceSourceKind === 'logs' ? (
+            <Form.Item name="configWorkloadField" label="Workload Field">
+              <Input />
+            </Form.Item>
+          ) : null}
+          {dataSourceSourceKind === 'logs' ? (
+            <Form.Item name="configNamespaceField" label="Namespace Field">
+              <Input />
+            </Form.Item>
+          ) : null}
+          {dataSourceSourceKind === 'logs' ? (
+            <Form.Item name="configClusterField" label="Cluster Field">
+              <Input />
+            </Form.Item>
+          ) : null}
+          {dataSourceBackendType === 'loki' ? (
+            <Form.Item name="lokiLabelCluster" label="Loki Cluster Label" rules={[{ required: true, message: '请输入 Loki Cluster Label' }]}>
+              <Input />
+            </Form.Item>
+          ) : null}
+          {dataSourceBackendType === 'loki' ? (
+            <Form.Item name="lokiLabelNamespace" label="Loki Namespace Label" rules={[{ required: true, message: '请输入 Loki Namespace Label' }]}>
+              <Input />
+            </Form.Item>
+          ) : null}
+          {dataSourceBackendType === 'loki' ? (
+            <Form.Item name="lokiLabelService" label="Loki Service Label" rules={[{ required: true, message: '请输入 Loki Service Label' }]}>
+              <Input />
+            </Form.Item>
+          ) : null}
+          {dataSourceBackendType === 'loki' ? (
+            <Form.Item name="lokiLabelWorkload" label="Loki Workload Label" rules={[{ required: true, message: '请输入 Loki Workload Label' }]}>
+              <Input />
+            </Form.Item>
+          ) : null}
+          {dataSourceBackendType === 'loki' ? (
+            <Form.Item name="lokiLabelSeverity" label="Loki Severity Label" rules={[{ required: true, message: '请输入 Loki Severity Label' }]}>
+              <Input />
+            </Form.Item>
+          ) : null}
+          <Form.Item name="enabled" label="启用" valuePropName="checked">
+            <Switch />
+          </Form.Item>
           <div className="kc-form-actions">
             <Button onClick={() => { setDataSourceModalVisible(false); setEditingDataSource(null); setDataSourceSourceKind('logs'); setDataSourceBackendType('es') }}>取消</Button>
-            {canManageAISettings ? <Button htmlType="submit" theme="solid" loading={dataSourceMutation.isPending}>保存</Button> : null}
+            {canManageAISettings ? <Button htmlType="submit" type="primary" loading={dataSourceMutation.isPending}>保存</Button> : null}
           </div>
         </Form>
       </Modal>
 
-      <Modal title={editingProfile ? '编辑分析模板' : '新增分析模板'} visible={profileModalVisible} footer={null} onCancel={() => { setProfileModalVisible(false); setEditingProfile(null) }}>
+      <Modal
+        title={editingProfile ? '编辑分析模板' : '新增分析模板'}
+        open={profileModalVisible}
+        footer={null}
+        onCancel={() => { setProfileModalVisible(false); setEditingProfile(null) }}
+        destroyOnClose
+      >
         <Form
-          initValues={buildProfileFormValues(editingProfile)}
-          onSubmit={(values) => {
+          {...DEFAULT_FORM_LAYOUT}
+          initialValues={buildProfileFormValues(editingProfile)}
+          onFinish={(values) => {
             if (!canManageAISettings) return
-            profileMutation.mutate({ id: editingProfile?.id, values })
+            profileMutation.mutate({ id: editingProfile?.id, values: values as Record<string, unknown> })
           }}
-          labelPosition="left"
-          labelWidth={140}
         >
-          <Form.Input field="name" label="名称" rules={[{ required: true, message: '请输入名称' }]} />
-          <Form.Select field="mode" label="模式" optionList={[{ value: 'root_cause', label: 'root_cause' }, { value: 'inspection', label: 'inspection' }]} />
-          <Form.Select field="enabledSources" label="数据源" multiple optionList={dataSources.map((item) => ({ value: item.id, label: `${item.name} (${item.sourceKind}/${item.backendType})` }))} />
-          <Form.Select field="enabledPlaybooks" label="Playbooks" multiple optionList={PLAYBOOK_OPTIONS} />
-          <Form.Input field="remediationPolicy" label="修复策略" />
-          <Form.InputNumber field="defaultTimeRangeMinutes" label="默认时间范围(分钟)" min={5} />
-          <Form.InputNumber field="timeoutSeconds" label="超时(秒)" min={10} />
-          <Form.InputNumber field="budgetMaxQueries" label="Max Queries" min={1} />
-          <Form.InputNumber field="budgetMaxLogBytes" label="Max Log Bytes" min={1024} />
-          <Form.InputNumber field="budgetMaxEvidenceItems" label="Max Evidence Items" min={1} />
-          <Form.Select field="outputSummaryLevel" label="Summary Level" optionList={[{ value: 'compact', label: 'compact' }, { value: 'standard', label: 'standard' }, { value: 'detailed', label: 'detailed' }]} />
-          <Form.Switch field="outputIncludeEvidenceDetail" label="Include Evidence Detail" />
-          <Form.Switch field="outputIncludeRecommendations" label="Include Recommendations" />
-          <Form.Switch field="outputIncludeTimeline" label="Include Timeline" />
-          <Form.Switch field="enabled" label="启用" />
+          <Form.Item name="id" hidden>
+            <Input />
+          </Form.Item>
+          <Form.Item name="name" label="名称" rules={[{ required: true, message: '请输入名称' }]}>
+            <Input />
+          </Form.Item>
+          <Form.Item name="mode" label="模式">
+            <Select options={[{ value: 'root_cause', label: 'root_cause' }, { value: 'inspection', label: 'inspection' }]} />
+          </Form.Item>
+          <Form.Item name="enabledSources" label="数据源">
+            <Select mode="multiple" options={dataSources.map((item) => ({ value: item.id, label: `${item.name} (${item.sourceKind}/${item.backendType})` }))} />
+          </Form.Item>
+          <Form.Item name="enabledPlaybooks" label="Playbooks">
+            <Select mode="multiple" options={PLAYBOOK_OPTIONS} />
+          </Form.Item>
+          <Form.Item name="remediationPolicy" label="修复策略">
+            <Input />
+          </Form.Item>
+          <Form.Item name="defaultTimeRangeMinutes" label="默认时间范围(分钟)">
+            <InputNumber min={5} style={fullWidthStyle} />
+          </Form.Item>
+          <Form.Item name="timeoutSeconds" label="超时(秒)">
+            <InputNumber min={10} style={fullWidthStyle} />
+          </Form.Item>
+          <Form.Item name="budgetMaxQueries" label="Max Queries">
+            <InputNumber min={1} style={fullWidthStyle} />
+          </Form.Item>
+          <Form.Item name="budgetMaxLogBytes" label="Max Log Bytes">
+            <InputNumber min={1024} style={fullWidthStyle} />
+          </Form.Item>
+          <Form.Item name="budgetMaxEvidenceItems" label="Max Evidence Items">
+            <InputNumber min={1} style={fullWidthStyle} />
+          </Form.Item>
+          <Form.Item name="outputSummaryLevel" label="Summary Level">
+            <Select options={[{ value: 'compact', label: 'compact' }, { value: 'standard', label: 'standard' }, { value: 'detailed', label: 'detailed' }]} />
+          </Form.Item>
+          <Form.Item name="outputIncludeEvidenceDetail" label="Include Evidence Detail" valuePropName="checked">
+            <Switch />
+          </Form.Item>
+          <Form.Item name="outputIncludeRecommendations" label="Include Recommendations" valuePropName="checked">
+            <Switch />
+          </Form.Item>
+          <Form.Item name="outputIncludeTimeline" label="Include Timeline" valuePropName="checked">
+            <Switch />
+          </Form.Item>
+          <Form.Item name="enabled" label="启用" valuePropName="checked">
+            <Switch />
+          </Form.Item>
           <div className="kc-form-actions">
             <Button onClick={() => { setProfileModalVisible(false); setEditingProfile(null) }}>取消</Button>
-            {canManageAISettings ? <Button htmlType="submit" theme="solid" loading={profileMutation.isPending}>保存</Button> : null}
+            {canManageAISettings ? <Button htmlType="submit" type="primary" loading={profileMutation.isPending}>保存</Button> : null}
           </div>
         </Form>
       </Modal>
-      <Modal title={editingPolicy ? '编辑自动化策略' : '新增自动化策略'} visible={policyModalVisible} footer={null} onCancel={() => { setPolicyModalVisible(false); setEditingPolicy(null) }}>
+      <Modal
+        title={editingPolicy ? '编辑自动化策略' : '新增自动化策略'}
+        open={policyModalVisible}
+        footer={null}
+        onCancel={() => { setPolicyModalVisible(false); setEditingPolicy(null) }}
+        destroyOnClose
+      >
         <Form
-          initValues={buildPolicyFormValues(editingPolicy)}
-          onSubmit={(values) => {
+          {...DEFAULT_FORM_LAYOUT}
+          initialValues={buildPolicyFormValues(editingPolicy)}
+          onFinish={(values) => {
             if (!canManageAISettings) return
-            policyMutation.mutate({ id: editingPolicy?.id, values })
+            policyMutation.mutate({ id: editingPolicy?.id, values: values as Record<string, unknown> })
           }}
-          labelPosition="left"
-          labelWidth={140}
         >
-          <Form.Input field="name" label="名称" rules={[{ required: true, message: '请输入名称' }]} />
-          <Form.Select field="triggerType" label="触发类型" optionList={[{ value: 'alert_webhook', label: 'alert_webhook' }]} />
-          <Form.Select field="analysisProfileId" label="分析模板" optionList={profiles.map((item) => ({ value: item.id, label: item.name }))} />
-          <Form.Input field="remediationPolicy" label="修复策略" />
-          <Form.InputNumber field="dedupWindowSeconds" label="Dedup 窗口(s)" min={0} />
-          <Form.InputNumber field="cooldownSeconds" label="Cooldown(s)" min={0} />
-          <Form.Select field="triggerSeverity" label="告警级别" multiple optionList={SEVERITY_OPTIONS} />
-          <Form.Select field="triggerStatus" label="告警状态" multiple optionList={STATUS_OPTIONS} />
-          <Form.InputNumber field="triggerMinDurationSeconds" label="最小持续(s)" min={0} />
-          <Form.Input field="triggerLabelKey" label="标签 Key" />
-          <Form.Input field="triggerLabelValue" label="标签 Value" />
-          <Form.InputNumber field="triggerTimeRangeMinutes" label="分析时间范围(分钟)" min={5} />
-          <Form.Switch field="approvalRequired" label="需要审批" />
-          <Form.TagInput field="approvalRoles" label="审批角色" />
-          <Form.Switch field="enabled" label="启用" />
+          <Form.Item name="id" hidden>
+            <Input />
+          </Form.Item>
+          <Form.Item name="name" label="名称" rules={[{ required: true, message: '请输入名称' }]}>
+            <Input />
+          </Form.Item>
+          <Form.Item name="triggerType" label="触发类型">
+            <Select options={[{ value: 'alert_webhook', label: 'alert_webhook' }]} />
+          </Form.Item>
+          <Form.Item name="analysisProfileId" label="分析模板">
+            <Select options={profiles.map((item) => ({ value: item.id, label: item.name }))} />
+          </Form.Item>
+          <Form.Item name="remediationPolicy" label="修复策略">
+            <Input />
+          </Form.Item>
+          <Form.Item name="dedupWindowSeconds" label="Dedup 窗口(s)">
+            <InputNumber min={0} style={fullWidthStyle} />
+          </Form.Item>
+          <Form.Item name="cooldownSeconds" label="Cooldown(s)">
+            <InputNumber min={0} style={fullWidthStyle} />
+          </Form.Item>
+          <Form.Item name="triggerSeverity" label="告警级别">
+            <Select mode="multiple" options={SEVERITY_OPTIONS} />
+          </Form.Item>
+          <Form.Item name="triggerStatus" label="告警状态">
+            <Select mode="multiple" options={STATUS_OPTIONS} />
+          </Form.Item>
+          <Form.Item name="triggerMinDurationSeconds" label="最小持续(s)">
+            <InputNumber min={0} style={fullWidthStyle} />
+          </Form.Item>
+          <Form.Item name="triggerLabelKey" label="标签 Key">
+            <Input />
+          </Form.Item>
+          <Form.Item name="triggerLabelValue" label="标签 Value">
+            <Input />
+          </Form.Item>
+          <Form.Item name="triggerTimeRangeMinutes" label="分析时间范围(分钟)">
+            <InputNumber min={5} style={fullWidthStyle} />
+          </Form.Item>
+          <Form.Item name="approvalRequired" label="需要审批" valuePropName="checked">
+            <Switch />
+          </Form.Item>
+          <Form.Item name="approvalRoles" label="审批角色">
+            <TagSelect mode="tags" />
+          </Form.Item>
+          <Form.Item name="enabled" label="启用" valuePropName="checked">
+            <Switch />
+          </Form.Item>
           <div className="kc-form-actions">
             <Button onClick={() => { setPolicyModalVisible(false); setEditingPolicy(null) }}>取消</Button>
-            {canManageAISettings ? <Button htmlType="submit" theme="solid" loading={policyMutation.isPending}>保存</Button> : null}
+            {canManageAISettings ? <Button htmlType="submit" type="primary" loading={policyMutation.isPending}>保存</Button> : null}
           </div>
         </Form>
       </Modal>
@@ -1052,30 +1284,51 @@ export function AISettingsPage({ embedded = false }: SettingsPageProps = {}) {
 export function SettingsCenterPage() {
   const location = useLocation()
   const navigate = useNavigate()
-  const activeKey = location.pathname.endsWith('/ai')
+  const permissionSnapshotQuery = usePermissionSnapshot()
+  const snapshot = permissionSnapshotQuery.data?.data
+  const tabs = [
+    { key: 'identity', path: '/settings', label: '身份设置', visible: hasPermission(snapshot, 'settings.identity.view'), children: <IdentitySettingsPage embedded /> },
+    { key: 'branding', path: '/settings/branding', label: '品牌设置', visible: hasPermission(snapshot, 'settings.branding.view'), children: <BrandingSettingsPage embedded /> },
+    { key: 'ai', path: '/settings/ai', label: 'AI 设置', visible: hasPermission(snapshot, 'settings.ai.view'), children: <AISettingsPage embedded /> },
+  ].filter((item) => item.visible)
+  const requestedKey = location.pathname.endsWith('/ai')
     ? 'ai'
     : location.pathname.endsWith('/branding')
       ? 'branding'
       : 'identity'
+  const activeKey = tabs.some((tab) => tab.key === requestedKey) ? requestedKey : tabs[0]?.key
+
+  if (permissionSnapshotQuery.isLoading) {
+    return (
+      <div className="kc-page">
+        <PageHeader title="设置中心" description="集中配置身份与 AI 能力。" />
+        <Card><Spin size="large" /></Card>
+      </div>
+    )
+  }
+
+  if (tabs.length === 0) {
+    return (
+      <div className="kc-page">
+        <PageHeader title="设置中心" description="集中配置身份与 AI 能力。" />
+        <SettingsCard>当前账号没有可访问的设置页权限。</SettingsCard>
+      </div>
+    )
+  }
 
   return (
     <div className="kc-page">
       <PageHeader title="设置中心" description="集中配置身份与 AI 能力。" />
       <Tabs
-        type="line"
         activeKey={activeKey}
-        onChange={(key) => navigate(key === 'ai' ? '/settings/ai' : key === 'branding' ? '/settings/branding' : '/settings')}
-      >
-        <TabPane tab="身份设置" itemKey="identity">
-          <IdentitySettingsPage embedded />
-        </TabPane>
-        <TabPane tab="品牌设置" itemKey="branding">
-          <BrandingSettingsPage embedded />
-        </TabPane>
-        <TabPane tab="AI 设置" itemKey="ai">
-          <AISettingsPage embedded />
-        </TabPane>
-      </Tabs>
+        onChange={(key) => {
+          const next = tabs.find((tab) => tab.key === key)
+          if (next) {
+            navigate(next.path)
+          }
+        }}
+        items={tabs}
+      />
     </div>
   )
 }

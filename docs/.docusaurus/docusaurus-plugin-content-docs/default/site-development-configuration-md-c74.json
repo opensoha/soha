@@ -1,0 +1,25 @@
+{
+  "id": "development/configuration",
+  "title": "Configuration",
+  "description": "All runtime config is environment-variable based in phase 1.",
+  "source": "@site/development/configuration.md",
+  "sourceDirName": "development",
+  "slug": "/development/configuration",
+  "permalink": "/docs/development/configuration",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/kubecrux/kubecrux/tree/main/docs/development/configuration.md",
+  "tags": [],
+  "version": "current",
+  "lastUpdatedAt": 1539502055000,
+  "frontMatter": {},
+  "sidebar": "mainSidebar",
+  "previous": {
+    "title": "Backend Structure",
+    "permalink": "/docs/development/backend-structure"
+  },
+  "next": {
+    "title": "Database Migrations",
+    "permalink": "/docs/development/database-migrations"
+  }
+}

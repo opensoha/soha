@@ -1,0 +1,25 @@
+{
+  "id": "architecture/event-model",
+  "title": "Event Model",
+  "description": "Event Sources",
+  "source": "@site/architecture/event-model.md",
+  "sourceDirName": "architecture",
+  "slug": "/architecture/event-model",
+  "permalink": "/docs/architecture/event-model",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/kubecrux/kubecrux/tree/main/docs/architecture/event-model.md",
+  "tags": [],
+  "version": "current",
+  "lastUpdatedAt": 1539502055000,
+  "frontMatter": {},
+  "sidebar": "mainSidebar",
+  "previous": {
+    "title": "Multi-Cluster Model",
+    "permalink": "/docs/architecture/multi-cluster-model"
+  },
+  "next": {
+    "title": "Audit Model",
+    "permalink": "/docs/architecture/audit-model"
+  }
+}

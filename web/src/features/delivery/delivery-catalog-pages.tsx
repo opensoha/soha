@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
-import { Button, Modal, Form, Tag, Toast, Popconfirm, Space, Card, Typography, Descriptions, Empty, Input, Select } from '@douyinfe/semi-ui'
-import { IconPlus, IconEdit, IconDelete, IconArrowRight, IconPlay, IconRefresh, IconSend } from '@douyinfe/semi-icons'
+import { App, Button, Card, Descriptions, Empty, Form, Input, InputNumber, Modal, Popconfirm, Select, Space, Switch, Tag, Typography } from 'antd'
+import { ArrowRightOutlined, DeleteOutlined, EditOutlined, PlayCircleOutlined, PlusOutlined, ReloadOutlined, SendOutlined } from '@ant-design/icons'
+import type { TableColumnsType } from 'antd'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams } from 'react-router-dom'
 import { AdminTable } from '@/components/admin-table'
@@ -18,7 +19,6 @@ import { api } from '@/services/api-client'
 import { formatDateTime } from '@/utils/time'
 import { tableColumnPresets } from '@/utils/table-columns'
 import type { ApiResponse, ApplicationEnvironment, BusinessLine, DeliveryEnvironment, WorkflowTemplate } from '@/types'
-import type { ColumnProps } from '@douyinfe/semi-ui/lib/es/table'
 
 function stringifyJSON(value: unknown, fallback: string) {
   return JSON.stringify(value ?? JSON.parse(fallback), null, 2)
@@ -109,6 +109,7 @@ const RELEASE_TEMPLATE_CATEGORY_OPTIONS = [
 ]
 
 const { Text } = Typography
+type ColumnProps<T> = TableColumnsType<T>[number]
 
 const ReleaseFlowDagEditor = lazy(async () => {
   const mod = await import('@/components/release-flow-dag-editor')
@@ -184,8 +185,10 @@ function summarizeLatestActivity(localeCode: 'zh_CN' | 'en_US', build?: BuildRec
 
 export function BusinessLinesPage() {
   const { t } = useI18n()
+  const { message } = App.useApp()
   const queryClient = useQueryClient()
   const permissionSnapshotQuery = usePermissionSnapshot()
+  const [form] = Form.useForm<Record<string, unknown>>()
   const [modalVisible, setModalVisible] = useState(false)
   const [editing, setEditing] = useState<BusinessLine | null>(null)
   const canManageBusinessLines = hasPermission(permissionSnapshotQuery.data?.data, 'delivery.business-lines.manage')
@@ -198,31 +201,31 @@ export function BusinessLinesPage() {
   const createMutation = useMutation({
     mutationFn: (values: Record<string, unknown>) => api.post('/business-lines', values),
     onSuccess: () => {
-      Toast.success('业务线创建成功')
+      message.success('业务线创建成功')
       queryClient.invalidateQueries({ queryKey: ['business-lines'] })
       setModalVisible(false)
     },
-    onError: (err: Error) => Toast.error(err.message),
+    onError: (err: Error) => message.error(err.message),
   })
 
   const updateMutation = useMutation({
     mutationFn: ({ id, values }: { id: string; values: Record<string, unknown> }) => api.put(`/business-lines/${id}`, values),
     onSuccess: () => {
-      Toast.success('业务线更新成功')
+      message.success('业务线更新成功')
       queryClient.invalidateQueries({ queryKey: ['business-lines'] })
       setModalVisible(false)
       setEditing(null)
     },
-    onError: (err: Error) => Toast.error(err.message),
+    onError: (err: Error) => message.error(err.message),
   })
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => api.delete(`/business-lines/${id}`),
     onSuccess: () => {
-      Toast.success('业务线已删除')
+      message.success('业务线已删除')
       queryClient.invalidateQueries({ queryKey: ['business-lines'] })
     },
-    onError: (err: Error) => Toast.error(err.message),
+    onError: (err: Error) => message.error(err.message),
   })
 
   const columns: ColumnProps<BusinessLine>[] = [
@@ -243,10 +246,10 @@ export function BusinessLinesPage() {
       dataIndex: 'id',
       render: (_: unknown, record: BusinessLine) => (
         <Space>
-          {canManageBusinessLines ? <Button icon={<IconEdit />} theme="borderless" size="small" onClick={() => { setEditing(record); setModalVisible(true) }} /> : null}
+          {canManageBusinessLines ? <Button icon={<EditOutlined />} type="text" size="small" onClick={() => { setEditing(record); setModalVisible(true) }} /> : null}
           {canManageBusinessLines ? (
             <Popconfirm title="确认删除？" onConfirm={() => deleteMutation.mutate(record.id)}>
-              <Button icon={<IconDelete />} theme="borderless" type="danger" size="small" />
+              <Button icon={<DeleteOutlined />} type="text" danger size="small" />
             </Popconfirm>
           ) : null}
           {!canManageBusinessLines ? '-' : null}
@@ -257,15 +260,20 @@ export function BusinessLinesPage() {
 
   return (
     <div className="kc-page">
-      <PageHeader
+      <AdminTable
         title={t('page.delivery.businessLines.title', 'Business Lines')}
-        description={t('page.delivery.businessLines.desc', 'Maintain business-line master data used by applications, environment bindings, and scope grants.')}
-        actions={canManageBusinessLines ? <Button icon={<IconPlus />} theme="solid" onClick={() => { setEditing(null); setModalVisible(true) }}>新建业务线</Button> : null}
+        headerExtra={canManageBusinessLines ? <Button icon={<PlusOutlined />} type="primary" onClick={() => { setEditing(null); setModalVisible(true) }}>新建业务线</Button> : null}
+        columns={columns}
+        dataSource={data?.data ?? []}
+        rowKey="id"
+        loading={isLoading}
       />
-      <AdminTable columns={columns} dataSource={data?.data ?? []} rowKey="id" loading={isLoading} />
-      <Modal title={editing ? '编辑业务线' : '新建业务线'} visible={modalVisible} onCancel={() => { setModalVisible(false); setEditing(null) }} footer={null}>
+      <Modal title={editing ? '编辑业务线' : '新建业务线'} open={modalVisible} onCancel={() => { setModalVisible(false); setEditing(null) }} footer={null} destroyOnClose>
         <Form
-          onSubmit={(values) => {
+          form={form}
+          key={editing?.id ?? 'create-business-line'}
+          layout="vertical"
+          onFinish={(values) => {
             const payload = {
               ...values,
               owners: String(values.owners ?? '').split(',').map((item) => item.trim()).filter(Boolean),
@@ -276,17 +284,29 @@ export function BusinessLinesPage() {
               createMutation.mutate(payload)
             }
           }}
-          initValues={editing ? { ...editing, owners: editing.owners?.join(', ') } : { enabled: true, sortOrder: 0 }}
+          initialValues={editing ? { ...editing, owners: editing.owners?.join(', ') } : { enabled: true, sortOrder: 0 }}
         >
-          <Form.Input field="key" label="业务线 Key" rules={[{ required: true, message: '请输入业务线 Key' }]} />
-          <Form.Input field="name" label="业务线名称" rules={[{ required: true, message: '请输入业务线名称' }]} />
-          <Form.Input field="description" label="描述" />
-          <Form.Input field="owners" label="Owners" placeholder="alice,bob" />
-          <Form.InputNumber field="sortOrder" label="排序" />
-          <Form.Switch field="enabled" label="启用" />
+          <Form.Item name="key" label="业务线 Key" rules={[{ required: true, message: '请输入业务线 Key' }]}>
+            <Input />
+          </Form.Item>
+          <Form.Item name="name" label="业务线名称" rules={[{ required: true, message: '请输入业务线名称' }]}>
+            <Input />
+          </Form.Item>
+          <Form.Item name="description" label="描述">
+            <Input />
+          </Form.Item>
+          <Form.Item name="owners" label="Owners">
+            <Input placeholder="alice,bob" />
+          </Form.Item>
+          <Form.Item name="sortOrder" label="排序">
+            <InputNumber style={{ width: '100%' }} />
+          </Form.Item>
+          <Form.Item name="enabled" label="启用" valuePropName="checked">
+            <Switch />
+          </Form.Item>
           <div className="kc-form-actions">
             <Button onClick={() => setModalVisible(false)}>取消</Button>
-            <Button htmlType="submit" theme="solid" loading={createMutation.isPending || updateMutation.isPending}>
+            <Button htmlType="submit" type="primary" loading={createMutation.isPending || updateMutation.isPending}>
               {editing ? '更新' : '创建'}
             </Button>
           </div>
@@ -298,8 +318,10 @@ export function BusinessLinesPage() {
 
 export function DeliveryEnvironmentsPage() {
   const { t } = useI18n()
+  const { message } = App.useApp()
   const queryClient = useQueryClient()
   const permissionSnapshotQuery = usePermissionSnapshot()
+  const [form] = Form.useForm<Record<string, unknown>>()
   const [modalVisible, setModalVisible] = useState(false)
   const [editing, setEditing] = useState<DeliveryEnvironment | null>(null)
   const canManageEnvironments = hasPermission(permissionSnapshotQuery.data?.data, 'delivery.environments.manage')
@@ -312,31 +334,31 @@ export function DeliveryEnvironmentsPage() {
   const createMutation = useMutation({
     mutationFn: (values: Record<string, unknown>) => api.post('/delivery-environments', values),
     onSuccess: () => {
-      Toast.success('环境创建成功')
+      message.success('环境创建成功')
       queryClient.invalidateQueries({ queryKey: ['delivery-environments'] })
       setModalVisible(false)
     },
-    onError: (err: Error) => Toast.error(err.message),
+    onError: (err: Error) => message.error(err.message),
   })
 
   const updateMutation = useMutation({
     mutationFn: ({ id, values }: { id: string; values: Record<string, unknown> }) => api.put(`/delivery-environments/${id}`, values),
     onSuccess: () => {
-      Toast.success('环境更新成功')
+      message.success('环境更新成功')
       queryClient.invalidateQueries({ queryKey: ['delivery-environments'] })
       setModalVisible(false)
       setEditing(null)
     },
-    onError: (err: Error) => Toast.error(err.message),
+    onError: (err: Error) => message.error(err.message),
   })
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => api.delete(`/delivery-environments/${id}`),
     onSuccess: () => {
-      Toast.success('环境已删除')
+      message.success('环境已删除')
       queryClient.invalidateQueries({ queryKey: ['delivery-environments'] })
     },
-    onError: (err: Error) => Toast.error(err.message),
+    onError: (err: Error) => message.error(err.message),
   })
 
   const columns: ColumnProps<DeliveryEnvironment>[] = [
@@ -354,10 +376,10 @@ export function DeliveryEnvironmentsPage() {
       dataIndex: 'id',
       render: (_: unknown, record: DeliveryEnvironment) => (
         <Space>
-          {canManageEnvironments ? <Button icon={<IconEdit />} theme="borderless" size="small" onClick={() => { setEditing(record); setModalVisible(true) }} /> : null}
+          {canManageEnvironments ? <Button icon={<EditOutlined />} type="text" size="small" onClick={() => { setEditing(record); setModalVisible(true) }} /> : null}
           {canManageEnvironments ? (
             <Popconfirm title="确认删除？" onConfirm={() => deleteMutation.mutate(record.id)}>
-              <Button icon={<IconDelete />} theme="borderless" type="danger" size="small" />
+              <Button icon={<DeleteOutlined />} type="text" danger size="small" />
             </Popconfirm>
           ) : null}
           {!canManageEnvironments ? '-' : null}
@@ -368,31 +390,49 @@ export function DeliveryEnvironmentsPage() {
 
   return (
     <div className="kc-page">
-      <PageHeader
+      <AdminTable
         title={t('page.delivery.environments.title', 'Environments')}
-        description={t('page.delivery.environments.desc', 'Maintain delivery environment master data, including ordering, production flags, and approval requirements.')}
-        actions={canManageEnvironments ? <Button icon={<IconPlus />} theme="solid" onClick={() => { setEditing(null); setModalVisible(true) }}>新建环境</Button> : null}
+        headerExtra={canManageEnvironments ? <Button icon={<PlusOutlined />} type="primary" onClick={() => { setEditing(null); setModalVisible(true) }}>新建环境</Button> : null}
+        columns={columns}
+        dataSource={data?.data ?? []}
+        rowKey="id"
+        loading={isLoading}
       />
-      <AdminTable columns={columns} dataSource={data?.data ?? []} rowKey="id" loading={isLoading} />
-      <Modal title={editing ? '编辑环境' : '新建环境'} visible={modalVisible} onCancel={() => { setModalVisible(false); setEditing(null) }} footer={null}>
-        <Form onSubmit={(values) => {
+      <Modal title={editing ? '编辑环境' : '新建环境'} open={modalVisible} onCancel={() => { setModalVisible(false); setEditing(null) }} footer={null} destroyOnClose>
+        <Form form={form} key={editing?.id ?? 'create-environment'} layout="vertical" onFinish={(values) => {
           if (editing) {
             updateMutation.mutate({ id: editing.id, values })
           } else {
             createMutation.mutate(values)
           }
-        }} initValues={editing ?? { enabled: true, sortOrder: 0, stageLevel: 0, isProduction: false, requiresApproval: false }}>
-          <Form.Input field="key" label="环境 Key" rules={[{ required: true, message: '请输入环境 Key' }]} />
-          <Form.Input field="name" label="环境名称" rules={[{ required: true, message: '请输入环境名称' }]} />
-          <Form.Input field="tier" label="Tier" />
-          <Form.InputNumber field="stageLevel" label="Stage Level" />
-          <Form.InputNumber field="sortOrder" label="排序" />
-          <Form.Switch field="isProduction" label="生产环境" />
-          <Form.Switch field="requiresApproval" label="发布需审批" />
-          <Form.Switch field="enabled" label="启用" />
+        }} initialValues={editing ?? { enabled: true, sortOrder: 0, stageLevel: 0, isProduction: false, requiresApproval: false }}>
+          <Form.Item name="key" label="环境 Key" rules={[{ required: true, message: '请输入环境 Key' }]}>
+            <Input />
+          </Form.Item>
+          <Form.Item name="name" label="环境名称" rules={[{ required: true, message: '请输入环境名称' }]}>
+            <Input />
+          </Form.Item>
+          <Form.Item name="tier" label="Tier">
+            <Input />
+          </Form.Item>
+          <Form.Item name="stageLevel" label="Stage Level">
+            <InputNumber style={{ width: '100%' }} />
+          </Form.Item>
+          <Form.Item name="sortOrder" label="排序">
+            <InputNumber style={{ width: '100%' }} />
+          </Form.Item>
+          <Form.Item name="isProduction" label="生产环境" valuePropName="checked">
+            <Switch />
+          </Form.Item>
+          <Form.Item name="requiresApproval" label="发布需审批" valuePropName="checked">
+            <Switch />
+          </Form.Item>
+          <Form.Item name="enabled" label="启用" valuePropName="checked">
+            <Switch />
+          </Form.Item>
           <div className="kc-form-actions">
             <Button onClick={() => setModalVisible(false)}>取消</Button>
-            <Button htmlType="submit" theme="solid" loading={createMutation.isPending || updateMutation.isPending}>
+            <Button htmlType="submit" type="primary" loading={createMutation.isPending || updateMutation.isPending}>
               {editing ? '更新' : '创建'}
             </Button>
           </div>
@@ -404,8 +444,10 @@ export function DeliveryEnvironmentsPage() {
 
 export function ApplicationEnvironmentsPage() {
   const { t } = useI18n()
+  const { message } = App.useApp()
   const queryClient = useQueryClient()
   const permissionSnapshotQuery = usePermissionSnapshot()
+  const [form] = Form.useForm<Record<string, unknown>>()
   const [modalVisible, setModalVisible] = useState(false)
   const [editing, setEditing] = useState<ApplicationEnvironment | null>(null)
   const canManageBindings = hasPermission(permissionSnapshotQuery.data?.data, 'delivery.application-environments.manage')
@@ -439,31 +481,31 @@ export function ApplicationEnvironmentsPage() {
   const createMutation = useMutation({
     mutationFn: (values: Record<string, unknown>) => api.post('/application-environments', values),
     onSuccess: () => {
-      Toast.success('应用环境绑定创建成功')
+      message.success('应用环境绑定创建成功')
       queryClient.invalidateQueries({ queryKey: ['application-environments'] })
       setModalVisible(false)
     },
-    onError: (err: Error) => Toast.error(err.message),
+    onError: (err: Error) => message.error(err.message),
   })
 
   const updateMutation = useMutation({
     mutationFn: ({ id, values }: { id: string; values: Record<string, unknown> }) => api.put(`/application-environments/${id}`, values),
     onSuccess: () => {
-      Toast.success('应用环境绑定更新成功')
+      message.success('应用环境绑定更新成功')
       queryClient.invalidateQueries({ queryKey: ['application-environments'] })
       setModalVisible(false)
       setEditing(null)
     },
-    onError: (err: Error) => Toast.error(err.message),
+    onError: (err: Error) => message.error(err.message),
   })
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => api.delete(`/application-environments/${id}`),
     onSuccess: () => {
-      Toast.success('应用环境绑定已删除')
+      message.success('应用环境绑定已删除')
       queryClient.invalidateQueries({ queryKey: ['application-environments'] })
     },
-    onError: (err: Error) => Toast.error(err.message),
+    onError: (err: Error) => message.error(err.message),
   })
 
   const columns: ColumnProps<ApplicationEnvironment>[] = [
@@ -478,10 +520,10 @@ export function ApplicationEnvironmentsPage() {
       dataIndex: 'id',
       render: (_: unknown, record: ApplicationEnvironment) => (
         <Space>
-          {canManageBindings ? <Button icon={<IconEdit />} theme="borderless" size="small" onClick={() => { setEditing(record); setModalVisible(true) }} /> : null}
+          {canManageBindings ? <Button icon={<EditOutlined />} type="text" size="small" onClick={() => { setEditing(record); setModalVisible(true) }} /> : null}
           {canManageBindings ? (
             <Popconfirm title="确认删除？" onConfirm={() => deleteMutation.mutate(record.id)}>
-              <Button icon={<IconDelete />} theme="borderless" type="danger" size="small" />
+              <Button icon={<DeleteOutlined />} type="text" danger size="small" />
             </Popconfirm>
           ) : null}
           {!canManageBindings ? '-' : null}
@@ -492,15 +534,20 @@ export function ApplicationEnvironmentsPage() {
 
   return (
     <div className="kc-page">
-      <PageHeader
+      <AdminTable
         title={t('page.delivery.bindings.title', 'Application Environment Bindings')}
-        description={t('page.delivery.bindings.desc', 'Bind applications, environments, and release targets so workflows and deployments can be linked.')}
-        actions={canManageBindings ? <Button icon={<IconPlus />} theme="solid" onClick={() => { setEditing(null); setModalVisible(true) }}>新建绑定</Button> : null}
+        headerExtra={canManageBindings ? <Button icon={<PlusOutlined />} type="primary" onClick={() => { setEditing(null); setModalVisible(true) }}>新建绑定</Button> : null}
+        columns={columns}
+        dataSource={bindingsQuery.data?.data ?? []}
+        rowKey="id"
+        loading={bindingsQuery.isLoading}
       />
-      <AdminTable columns={columns} dataSource={bindingsQuery.data?.data ?? []} rowKey="id" loading={bindingsQuery.isLoading} />
-      <Modal title={editing ? '编辑应用环境绑定' : '新建应用环境绑定'} visible={modalVisible} onCancel={() => { setModalVisible(false); setEditing(null) }} footer={null} width={760}>
+      <Modal title={editing ? '编辑应用环境绑定' : '新建应用环境绑定'} open={modalVisible} onCancel={() => { setModalVisible(false); setEditing(null) }} footer={null} width={760} destroyOnClose>
         <Form
-          onSubmit={(values) => {
+          form={form}
+          key={editing?.id ?? 'create-application-environment'}
+          layout="vertical"
+          onFinish={(values) => {
             let payload: Record<string, unknown>
             try {
               payload = {
@@ -510,7 +557,7 @@ export function ApplicationEnvironmentsPage() {
                 targets: parseJSONArray(values.targets, 'Release Targets'),
               }
             } catch (err) {
-              Toast.error((err as Error).message)
+              message.error((err as Error).message)
               return
             }
             if (editing) {
@@ -519,7 +566,7 @@ export function ApplicationEnvironmentsPage() {
               createMutation.mutate(payload)
             }
           }}
-          initValues={editing ? {
+          initialValues={editing ? {
             applicationId: editing.applicationId,
             environmentId: editing.environmentId,
             workflowTemplateId: editing.workflowTemplateId,
@@ -528,29 +575,27 @@ export function ApplicationEnvironmentsPage() {
             targets: stringifyJSON(editing.targets, '[]'),
           } : { buildPolicy: '{}', releasePolicy: '{}', targets: '[]' }}
         >
-          <Form.Select
-            field="applicationId"
-            label="应用"
-            optionList={(appsQuery.data?.data ?? []).map((item) => ({ value: item.id, label: item.name }))}
-            rules={[{ required: true, message: '请选择应用' }]}
-          />
-          <Form.Select
-            field="environmentId"
-            label="环境"
-            optionList={(environmentsQuery.data?.data ?? []).map((item) => ({ value: item.id, label: item.name }))}
-            rules={[{ required: true, message: '请选择环境' }]}
-          />
-          <Form.Select
-            field="workflowTemplateId"
-            label="发布流程模板"
-            optionList={(workflowTemplatesQuery.data?.data ?? []).map((item) => ({ value: item.id, label: item.name }))}
-          />
-          <Form.TextArea field="buildPolicy" label="Build Policy(JSON)" rows={4} />
-          <Form.TextArea field="releasePolicy" label="Release Policy(JSON)" rows={4} />
-          <Form.TextArea field="targets" label="Release Targets(JSON Array)" rows={8} />
+          <Form.Item name="applicationId" label="应用" rules={[{ required: true, message: '请选择应用' }]}>
+            <Select options={(appsQuery.data?.data ?? []).map((item) => ({ value: item.id, label: item.name }))} />
+          </Form.Item>
+          <Form.Item name="environmentId" label="环境" rules={[{ required: true, message: '请选择环境' }]}>
+            <Select options={(environmentsQuery.data?.data ?? []).map((item) => ({ value: item.id, label: item.name }))} />
+          </Form.Item>
+          <Form.Item name="workflowTemplateId" label="发布流程模板">
+            <Select options={(workflowTemplatesQuery.data?.data ?? []).map((item) => ({ value: item.id, label: item.name }))} />
+          </Form.Item>
+          <Form.Item name="buildPolicy" label="Build Policy(JSON)">
+            <Input.TextArea rows={4} />
+          </Form.Item>
+          <Form.Item name="releasePolicy" label="Release Policy(JSON)">
+            <Input.TextArea rows={4} />
+          </Form.Item>
+          <Form.Item name="targets" label="Release Targets(JSON Array)">
+            <Input.TextArea rows={8} />
+          </Form.Item>
           <div className="kc-form-actions">
             <Button onClick={() => setModalVisible(false)}>取消</Button>
-            <Button htmlType="submit" theme="solid" loading={createMutation.isPending || updateMutation.isPending}>
+            <Button htmlType="submit" type="primary" loading={createMutation.isPending || updateMutation.isPending}>
               {editing ? '更新' : '创建'}
             </Button>
           </div>
@@ -563,6 +608,8 @@ export function ApplicationEnvironmentsPage() {
 export function ReleaseBoardPage() {
   const { t, localeCode } = useI18n()
   const navigate = useNavigate()
+  const permissionSnapshotQuery = usePermissionSnapshot()
+  const canViewApplicationEnvironments = hasPermission(permissionSnapshotQuery.data?.data, 'delivery.application-environments.view')
   const businessLinesQuery = useQuery({
     queryKey: ['business-lines'],
     queryFn: () => api.get<ApiResponse<BusinessLine[]>>('/business-lines'),
@@ -627,7 +674,7 @@ export function ReleaseBoardPage() {
       dataIndex: environment.id,
       render: (_: unknown, record: any) => {
         const binding = record.__bindings?.[environment.id] as ApplicationEnvironment | undefined
-        if (!binding) return <Text type="tertiary">{localeCode === 'zh_CN' ? '未绑定' : 'Unbound'}</Text>
+        if (!binding) return <Text type="secondary">{localeCode === 'zh_CN' ? '未绑定' : 'Unbound'}</Text>
         if (!binding.targets?.length) return <Tag color="orange">{localeCode === 'zh_CN' ? '无目标' : 'No Targets'}</Tag>
         const latestBuild = findLatestBuild(binding.applicationId, builds)
         const latestWorkflow = findLatestWorkflow(binding, workflows)
@@ -637,23 +684,24 @@ export function ReleaseBoardPage() {
             {binding.targets.slice(0, 2).map((target) => (
               <Tag key={target.id} color="blue">{`${target.clusterId} / ${target.namespace} / ${target.workloadName}`}</Tag>
             ))}
-            {binding.targets.length > 2 ? <Text type="tertiary" size="small">{`+${binding.targets.length - 2} ${localeCode === 'zh_CN' ? '更多' : 'more'}`}</Text> : null}
-            <Text type="tertiary" size="small">{`${localeCode === 'zh_CN' ? '模板' : 'Template'}: ${binding.workflowTemplate?.name || '-'}`}</Text>
+            {binding.targets.length > 2 ? <Text type="secondary" style={{ fontSize: 12 }}>{`+${binding.targets.length - 2} ${localeCode === 'zh_CN' ? '更多' : 'more'}`}</Text> : null}
+            <Text type="secondary" style={{ fontSize: 12 }}>{`${localeCode === 'zh_CN' ? '模板' : 'Template'}: ${binding.workflowTemplate?.name || '-'}`}</Text>
             <div className="flex flex-wrap gap-1">
               {latestBuild ? <Tag color="cyan">{`Build: ${latestBuild.status}`}</Tag> : <Tag color="grey">Build: -</Tag>}
               {latestWorkflow ? <Tag color="purple">{`Workflow: ${latestWorkflow.status}`}</Tag> : <Tag color="grey">Workflow: -</Tag>}
               {latestRelease ? <Tag color="green">{`Release: ${latestRelease.status}`}</Tag> : <Tag color="grey">Release: -</Tag>}
             </div>
-            <Text type="tertiary" size="small">{summarizeLatestActivity(localeCode, latestBuild, latestWorkflow, latestRelease)}</Text>
-            <Button
-              icon={<IconArrowRight />}
-              theme="borderless"
-              type="primary"
-              size="small"
-              onClick={() => navigate(`/application-environments/${binding.id}`)}
-            >
-              {localeCode === 'zh_CN' ? '环境详情' : 'Environment Detail'}
-            </Button>
+            <Text type="secondary" style={{ fontSize: 12 }}>{summarizeLatestActivity(localeCode, latestBuild, latestWorkflow, latestRelease)}</Text>
+            {canViewApplicationEnvironments ? (
+              <Button
+                icon={<ArrowRightOutlined />}
+                type="text"
+                size="small"
+                onClick={() => navigate(`/application-environments/${binding.id}`)}
+              >
+                {localeCode === 'zh_CN' ? '环境详情' : 'Environment Detail'}
+              </Button>
+            ) : null}
           </div>
         )
       },
@@ -672,6 +720,7 @@ export function ReleaseBoardPage() {
 
 export function ApplicationEnvironmentDetailPage() {
   const { t, localeCode } = useI18n()
+  const { message } = App.useApp()
   const { applicationEnvironmentId } = useParams()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
@@ -681,9 +730,14 @@ export function ApplicationEnvironmentDetailPage() {
   const [releaseName, setReleaseName] = useState('')
   const [containerName, setContainerName] = useState('')
   const [rollbackRevision, setRollbackRevision] = useState('')
+  const canViewReleaseBoard = hasPermission(permissionSnapshotQuery.data?.data, 'delivery.release-board.view')
   const canTriggerWorkflow = hasPermission(permissionSnapshotQuery.data?.data, 'delivery.workflows.trigger')
   const canTriggerRelease = hasPermission(permissionSnapshotQuery.data?.data, 'delivery.releases.trigger')
   const canRollbackDeployment = hasPermission(permissionSnapshotQuery.data?.data, 'platform.deployment.rollback')
+  const backPath = canViewReleaseBoard ? '/release-board' : '/application-environments'
+  const backLabel = canViewReleaseBoard
+    ? (localeCode === 'zh_CN' ? '返回发布看板' : 'Back to Release Board')
+    : (localeCode === 'zh_CN' ? '返回应用环境绑定' : 'Back to App Environment Bindings')
 
   const bindingQuery = useQuery({
     queryKey: ['application-environment', applicationEnvironmentId],
@@ -818,12 +872,12 @@ export function ApplicationEnvironmentDetailPage() {
       })
     },
     onSuccess: () => {
-      Toast.success(localeCode === 'zh_CN' ? '工作流已触发' : 'Workflow triggered')
+      message.success(localeCode === 'zh_CN' ? '工作流已触发' : 'Workflow triggered')
       queryClient.invalidateQueries({ queryKey: ['workflows'] })
       queryClient.invalidateQueries({ queryKey: ['application-environment', applicationEnvironmentId] })
       queryClient.invalidateQueries({ queryKey: ['release-board'] })
     },
-    onError: (err: Error) => Toast.error(err.message),
+    onError: (err: Error) => message.error(err.message),
   })
 
   const releaseMutation = useMutation({
@@ -844,12 +898,12 @@ export function ApplicationEnvironmentDetailPage() {
       })
     },
     onSuccess: () => {
-      Toast.success(localeCode === 'zh_CN' ? '发布已触发' : 'Release triggered')
+      message.success(localeCode === 'zh_CN' ? '发布已触发' : 'Release triggered')
       queryClient.invalidateQueries({ queryKey: ['releases'] })
       queryClient.invalidateQueries({ queryKey: ['application-environment', applicationEnvironmentId] })
       queryClient.invalidateQueries({ queryKey: ['release-board'] })
     },
-    onError: (err: Error) => Toast.error(err.message),
+    onError: (err: Error) => message.error(err.message),
   })
 
   const rollbackMutation = useMutation({
@@ -866,18 +920,18 @@ export function ApplicationEnvironmentDetailPage() {
       )
     },
     onSuccess: () => {
-      Toast.success(localeCode === 'zh_CN' ? '回滚已触发' : 'Rollback triggered')
+      message.success(localeCode === 'zh_CN' ? '回滚已触发' : 'Rollback triggered')
       queryClient.invalidateQueries({ queryKey: ['deployment-rollouts', selectedTarget?.clusterId, selectedTarget?.namespace, selectedTarget?.workloadName] })
       queryClient.invalidateQueries({ queryKey: ['application-environment', applicationEnvironmentId] })
     },
-    onError: (err: Error) => Toast.error(err.message),
+    onError: (err: Error) => message.error(err.message),
   })
 
   if (bindingQuery.isLoading) {
     return (
       <div className="kc-page">
         <PageHeader title={localeCode === 'zh_CN' ? '环境详情' : 'Environment Detail'} description={localeCode === 'zh_CN' ? '加载应用环境绑定详情。' : 'Loading application-environment binding details.'} />
-        <Card><Text type="tertiary">{t('common.loading', 'Loading...')}</Text></Card>
+        <Card><Text type="secondary">{t('common.loading', 'Loading...')}</Text></Card>
       </div>
     )
   }
@@ -888,7 +942,7 @@ export function ApplicationEnvironmentDetailPage() {
         <PageHeader
           title={localeCode === 'zh_CN' ? '环境详情' : 'Environment Detail'}
           description={localeCode === 'zh_CN' ? '当前绑定不存在或已被删除。' : 'The current binding does not exist or has been removed.'}
-          actions={<Button onClick={() => navigate('/release-board')}>{localeCode === 'zh_CN' ? '返回发布看板' : 'Back to Release Board'}</Button>}
+          actions={<Button onClick={() => navigate(backPath)}>{backLabel}</Button>}
         />
         <Card><Empty description={localeCode === 'zh_CN' ? '未找到应用环境绑定' : 'Application-environment binding not found'} /></Card>
       </div>
@@ -917,19 +971,21 @@ export function ApplicationEnvironmentDetailPage() {
       <PageHeader
         title={`${application?.name || binding.applicationId} / ${environment?.name || binding.environmentKey || binding.environmentId}`}
         description={localeCode === 'zh_CN' ? '查看单个应用环境绑定的工作流模板、发布目标和最新执行状态。' : 'Inspect the workflow template, release targets, and latest execution state for a single application-environment binding.'}
-        actions={<Button onClick={() => navigate('/release-board')}>{localeCode === 'zh_CN' ? '返回发布看板' : 'Back to Release Board'}</Button>}
+        actions={<Button onClick={() => navigate(backPath)}>{backLabel}</Button>}
       />
       <Card>
-        <Descriptions data={[
-          { key: localeCode === 'zh_CN' ? '业务线' : 'Business Line', value: businessLineMap[binding.businessLineId || ''] || binding.businessLineId || '-' },
-          { key: localeCode === 'zh_CN' ? '环境 Key' : 'Environment Key', value: binding.environmentKey || environment?.key || '-' },
-          { key: localeCode === 'zh_CN' ? '发布流程模板' : 'Workflow Template', value: binding.workflowTemplate?.name || '-' },
-          { key: localeCode === 'zh_CN' ? '模板分类' : 'Template Category', value: binding.workflowTemplate?.category || '-' },
-          { key: localeCode === 'zh_CN' ? '最新 Build' : 'Latest Build', value: <StatusTag value={latestBuild?.status || 'unknown'} /> },
-          { key: localeCode === 'zh_CN' ? '最新 Workflow' : 'Latest Workflow', value: <StatusTag value={latestWorkflow?.status || 'unknown'} /> },
-          { key: localeCode === 'zh_CN' ? '最新 Release' : 'Latest Release', value: <StatusTag value={latestRelease?.status || 'unknown'} /> },
-          { key: localeCode === 'zh_CN' ? '最近活动' : 'Latest Activity', value: summarizeLatestActivity(localeCode, latestBuild, latestWorkflow, latestRelease) },
-        ]} />
+        <Descriptions
+          items={[
+            { key: 'businessLine', label: localeCode === 'zh_CN' ? '业务线' : 'Business Line', children: businessLineMap[binding.businessLineId || ''] || binding.businessLineId || '-' },
+            { key: 'environmentKey', label: localeCode === 'zh_CN' ? '环境 Key' : 'Environment Key', children: binding.environmentKey || environment?.key || '-' },
+            { key: 'workflowTemplate', label: localeCode === 'zh_CN' ? '发布流程模板' : 'Workflow Template', children: binding.workflowTemplate?.name || '-' },
+            { key: 'templateCategory', label: localeCode === 'zh_CN' ? '模板分类' : 'Template Category', children: binding.workflowTemplate?.category || '-' },
+            { key: 'latestBuild', label: localeCode === 'zh_CN' ? '最新 Build' : 'Latest Build', children: <StatusTag value={latestBuild?.status || 'unknown'} /> },
+            { key: 'latestWorkflow', label: localeCode === 'zh_CN' ? '最新 Workflow' : 'Latest Workflow', children: <StatusTag value={latestWorkflow?.status || 'unknown'} /> },
+            { key: 'latestRelease', label: localeCode === 'zh_CN' ? '最新 Release' : 'Latest Release', children: <StatusTag value={latestRelease?.status || 'unknown'} /> },
+            { key: 'latestActivity', label: localeCode === 'zh_CN' ? '最近活动' : 'Latest Activity', children: summarizeLatestActivity(localeCode, latestBuild, latestWorkflow, latestRelease) },
+          ]}
+        />
       </Card>
       <Card title={localeCode === 'zh_CN' ? '交付动作' : 'Delivery Actions'}>
         <div className="kc-delivery-action-grid">
@@ -937,11 +993,11 @@ export function ApplicationEnvironmentDetailPage() {
             <Text strong>{localeCode === 'zh_CN' ? '发布目标' : 'Release Target'}</Text>
             <Select
               value={selectedTarget?.id}
-              optionList={targetOptions}
+              options={targetOptions}
               onChange={(value) => setSelectedTargetId(String(value))}
               placeholder={localeCode === 'zh_CN' ? '选择目标 deployment' : 'Select target deployment'}
             />
-            <Text type="tertiary" size="small">
+            <Text type="secondary" style={{ fontSize: 12 }}>
               {binding.workflowTemplate?.name
                 ? `${localeCode === 'zh_CN' ? '工作流模板' : 'Workflow Template'}: ${binding.workflowTemplate.name}${binding.workflowTemplate.category ? ` / ${binding.workflowTemplate.category}` : ''}`
                 : localeCode === 'zh_CN' ? '当前未绑定工作流模板，将使用默认流程名' : 'No workflow template is bound. The default workflow name will be used.'}
@@ -949,10 +1005,10 @@ export function ApplicationEnvironmentDetailPage() {
           </div>
           <div className="kc-delivery-action-block">
             <Text strong>{localeCode === 'zh_CN' ? '触发工作流' : 'Trigger Workflow'}</Text>
-            <Text type="tertiary" size="small">{localeCode === 'zh_CN' ? '生成一条 workflow run，只做流程编排，不直接改 deployment 镜像。' : 'Create a workflow run for orchestration only without directly changing the deployment image.'}</Text>
+            <Text type="secondary" style={{ fontSize: 12 }}>{localeCode === 'zh_CN' ? '生成一条 workflow run，只做流程编排，不直接改 deployment 镜像。' : 'Create a workflow run for orchestration only without directly changing the deployment image.'}</Text>
             <Button
-              icon={<IconPlay />}
-              theme="solid"
+              icon={<PlayCircleOutlined />}
+              type="primary"
               onClick={() => workflowMutation.mutate()}
               loading={workflowMutation.isPending}
               disabled={!canTriggerWorkflow || !selectedTarget}
@@ -962,14 +1018,13 @@ export function ApplicationEnvironmentDetailPage() {
           </div>
           <div className="kc-delivery-action-block">
             <Text strong>{localeCode === 'zh_CN' ? '触发发布' : 'Trigger Release'}</Text>
-            <Input value={imageTag} onChange={setImageTag} placeholder={localeCode === 'zh_CN' ? 'Image Tag，默认取应用默认 Tag' : 'Image tag, defaulting to the application default tag'} />
-            <Input value={releaseName} onChange={setReleaseName} placeholder={localeCode === 'zh_CN' ? 'Release Name，可留空自动生成' : 'Release name, leave empty to auto-generate'} />
-            <Input value={containerName} onChange={setContainerName} placeholder={localeCode === 'zh_CN' ? 'Container Name，可留空使用绑定值' : 'Container name, leave empty to use the binding value'} />
-            {releaseImagePreview ? <Text type="tertiary" size="small">{`${localeCode === 'zh_CN' ? '目标镜像' : 'Target Image'}: ${releaseImagePreview}`}</Text> : null}
+            <Input value={imageTag} onChange={(event) => setImageTag(event.target.value)} placeholder={localeCode === 'zh_CN' ? 'Image Tag，默认取应用默认 Tag' : 'Image tag, defaulting to the application default tag'} />
+            <Input value={releaseName} onChange={(event) => setReleaseName(event.target.value)} placeholder={localeCode === 'zh_CN' ? 'Release Name，可留空自动生成' : 'Release name, leave empty to auto-generate'} />
+            <Input value={containerName} onChange={(event) => setContainerName(event.target.value)} placeholder={localeCode === 'zh_CN' ? 'Container Name，可留空使用绑定值' : 'Container name, leave empty to use the binding value'} />
+            {releaseImagePreview ? <Text type="secondary" style={{ fontSize: 12 }}>{`${localeCode === 'zh_CN' ? '目标镜像' : 'Target Image'}: ${releaseImagePreview}`}</Text> : null}
             {!selectedTargetIsDeployment ? <Text type="warning">{localeCode === 'zh_CN' ? '当前目标不是 Deployment，暂不支持直接触发发布。' : 'The current target is not a Deployment, so direct release triggering is not supported yet.'}</Text> : null}
             <Button
-              icon={<IconSend />}
-              theme="solid"
+              icon={<SendOutlined />}
               type="primary"
               onClick={() => releaseMutation.mutate()}
               loading={releaseMutation.isPending}
@@ -982,13 +1037,13 @@ export function ApplicationEnvironmentDetailPage() {
             <Text strong>{localeCode === 'zh_CN' ? '回滚' : 'Rollback'}</Text>
             <Select
               value={rollbackRevision || undefined}
-              optionList={rolloutOptions}
+              options={rolloutOptions}
               onChange={(value) => setRollbackRevision(String(value))}
               placeholder={t('common.selectRevision', 'Select a revision to roll back to')}
               loading={rolloutHistoryQuery.isLoading}
               disabled={!selectedTarget || rolloutOptions.length === 0}
             />
-            <Text type="tertiary" size="small">
+            <Text type="secondary" style={{ fontSize: 12 }}>
               {!selectedTargetIsDeployment
                 ? (localeCode === 'zh_CN' ? '当前目标不是 Deployment，暂不支持回滚。' : 'The current target is not a Deployment, so rollback is not supported yet.')
                 : rolloutOptions.length > 0
@@ -996,9 +1051,8 @@ export function ApplicationEnvironmentDetailPage() {
                   : (localeCode === 'zh_CN' ? '当前没有可用的 rollout history。' : 'No rollout history is currently available.')}
             </Text>
             <Button
-              icon={<IconRefresh />}
-              theme="outline"
-              type="danger"
+              icon={<ReloadOutlined />}
+              danger
               onClick={() => rollbackMutation.mutate()}
               loading={rollbackMutation.isPending}
               disabled={!canRollbackDeployment || !selectedTarget || !selectedTargetIsDeployment || !rollbackRevision}
@@ -1019,10 +1073,12 @@ export function ApplicationEnvironmentDetailPage() {
         )}
       </Card>
       <Card title={localeCode === 'zh_CN' ? '构建与发布策略' : 'Build and Release Policy'}>
-        <Descriptions data={[
-          { key: 'Build Policy', value: <pre className="kc-json-block">{JSON.stringify(binding.buildPolicy ?? {}, null, 2)}</pre> },
-          { key: 'Release Policy', value: <pre className="kc-json-block">{JSON.stringify(binding.releasePolicy ?? {}, null, 2)}</pre> },
-        ]} />
+        <Descriptions
+          items={[
+            { key: 'buildPolicy', label: 'Build Policy', children: <pre className="kc-json-block">{JSON.stringify(binding.buildPolicy ?? {}, null, 2)}</pre> },
+            { key: 'releasePolicy', label: 'Release Policy', children: <pre className="kc-json-block">{JSON.stringify(binding.releasePolicy ?? {}, null, 2)}</pre> },
+          ]}
+        />
       </Card>
     </div>
   )
@@ -1030,8 +1086,10 @@ export function ApplicationEnvironmentDetailPage() {
 
 export function WorkflowTemplatesPage() {
   const { t, localeCode } = useI18n()
+  const { message } = App.useApp()
   const queryClient = useQueryClient()
   const permissionSnapshotQuery = usePermissionSnapshot()
+  const [form] = Form.useForm<Record<string, unknown>>()
   const [modalVisible, setModalVisible] = useState(false)
   const [editing, setEditing] = useState<WorkflowTemplate | null>(null)
   const [editorDefinition, setEditorDefinition] = useState<ReleaseDagDefinition>(createDefaultReleaseDagDefinition())
@@ -1050,29 +1108,29 @@ export function WorkflowTemplatesPage() {
   const createMutation = useMutation({
     mutationFn: (values: Record<string, unknown>) => api.post('/workflow-templates', values),
     onSuccess: () => {
-      Toast.success(localeCode === 'zh_CN' ? 'DAG 发布流程模板创建成功' : 'DAG release flow template created')
+      message.success(localeCode === 'zh_CN' ? 'DAG 发布流程模板创建成功' : 'DAG release flow template created')
       queryClient.invalidateQueries({ queryKey: ['workflow-templates'] })
       setModalVisible(false)
     },
-    onError: (err: Error) => Toast.error(err.message),
+    onError: (err: Error) => message.error(err.message),
   })
   const updateMutation = useMutation({
     mutationFn: ({ id, values }: { id: string; values: Record<string, unknown> }) => api.put(`/workflow-templates/${id}`, values),
     onSuccess: () => {
-      Toast.success(localeCode === 'zh_CN' ? 'DAG 发布流程模板更新成功' : 'DAG release flow template updated')
+      message.success(localeCode === 'zh_CN' ? 'DAG 发布流程模板更新成功' : 'DAG release flow template updated')
       queryClient.invalidateQueries({ queryKey: ['workflow-templates'] })
       setModalVisible(false)
       setEditing(null)
     },
-    onError: (err: Error) => Toast.error(err.message),
+    onError: (err: Error) => message.error(err.message),
   })
   const deleteMutation = useMutation({
     mutationFn: (id: string) => api.delete(`/workflow-templates/${id}`),
     onSuccess: () => {
-      Toast.success(localeCode === 'zh_CN' ? 'DAG 发布流程模板已删除' : 'DAG release flow template deleted')
+      message.success(localeCode === 'zh_CN' ? 'DAG 发布流程模板已删除' : 'DAG release flow template deleted')
       queryClient.invalidateQueries({ queryKey: ['workflow-templates'] })
     },
-    onError: (err: Error) => Toast.error(err.message),
+    onError: (err: Error) => message.error(err.message),
   })
 
   const previewDefinition = useMemo(() => JSON.stringify(editorDefinition, null, 2), [editorDefinition])
@@ -1099,10 +1157,10 @@ export function WorkflowTemplatesPage() {
       dataIndex: 'id',
       render: (_: unknown, record: WorkflowTemplate) => (
         <Space>
-          {canManageWorkflowTemplates ? <Button icon={<IconEdit />} theme="borderless" size="small" onClick={() => { setEditing(record); setModalVisible(true) }} /> : null}
+          {canManageWorkflowTemplates ? <Button icon={<EditOutlined />} type="text" size="small" onClick={() => { setEditing(record); setModalVisible(true) }} /> : null}
           {canManageWorkflowTemplates ? (
             <Popconfirm title="确认删除？" onConfirm={() => deleteMutation.mutate(record.id)}>
-              <Button icon={<IconDelete />} theme="borderless" type="danger" size="small" />
+              <Button icon={<DeleteOutlined />} type="text" danger size="small" />
             </Popconfirm>
           ) : null}
           {!canManageWorkflowTemplates ? '-' : null}
@@ -1116,23 +1174,27 @@ export function WorkflowTemplatesPage() {
       <PageHeader
         title={t('page.workflowTemplates.title', 'Release Flow Templates')}
         description={t('page.workflowTemplates.desc', 'Maintain reusable DAG-based release flow templates with the React Flow canvas, including serial, parallel, and auto-layout patterns.')}
-        actions={canManageWorkflowTemplates ? <Button icon={<IconPlus />} theme="solid" onClick={() => { setEditing(null); setModalVisible(true) }}>{localeCode === 'zh_CN' ? '新建模板' : 'New Template'}</Button> : null}
+        actions={canManageWorkflowTemplates ? <Button icon={<PlusOutlined />} type="primary" onClick={() => { setEditing(null); setModalVisible(true) }}>{localeCode === 'zh_CN' ? '新建模板' : 'New Template'}</Button> : null}
       />
       <Card className="kc-scope-hint-card">
-        <Text type="tertiary">
+        <Text type="secondary">
           {t('page.workflowTemplates.hint', 'The canvas uses React Flow and dagre for auto-layout. Only fixed node types are allowed so backend execution and audit remain controllable.')}
         </Text>
       </Card>
       <AdminTable columns={columns} dataSource={data?.data ?? []} rowKey="id" loading={isLoading} />
       <Modal
         title={editing ? (localeCode === 'zh_CN' ? '编辑 DAG 发布流程模板' : 'Edit DAG Release Flow Template') : (localeCode === 'zh_CN' ? '新建 DAG 发布流程模板' : 'New DAG Release Flow Template')}
-        visible={modalVisible}
+        open={modalVisible}
         onCancel={() => { setModalVisible(false); setEditing(null) }}
         footer={null}
         width={1440}
+        destroyOnClose
       >
         <Form
-          onSubmit={(values) => {
+          form={form}
+          key={editing?.id ?? 'new-workflow-template'}
+          layout="vertical"
+          onFinish={(values) => {
             const payload = {
               ...values,
               category: values.category || 'release',
@@ -1144,26 +1206,36 @@ export function WorkflowTemplatesPage() {
               createMutation.mutate(payload)
             }
           }}
-          initValues={editing ? { ...editing, category: editing.category || 'release' } : { enabled: true, category: 'release' }}
+          initialValues={editing ? { ...editing, category: editing.category || 'release' } : { enabled: true, category: 'release' }}
         >
           <div className="kc-delivery-action-grid">
             <div className="kc-delivery-action-block">
-              <Form.Input field="key" label={localeCode === 'zh_CN' ? '模板 Key' : 'Template Key'} rules={[{ required: true, message: localeCode === 'zh_CN' ? '请输入模板 Key' : 'Enter the template key' }]} />
+              <Form.Item name="key" label={localeCode === 'zh_CN' ? '模板 Key' : 'Template Key'} rules={[{ required: true, message: localeCode === 'zh_CN' ? '请输入模板 Key' : 'Enter the template key' }]}>
+                <Input />
+              </Form.Item>
             </div>
             <div className="kc-delivery-action-block">
-              <Form.Input field="name" label={localeCode === 'zh_CN' ? '模板名称' : 'Template Name'} rules={[{ required: true, message: localeCode === 'zh_CN' ? '请输入模板名称' : 'Enter the template name' }]} />
+              <Form.Item name="name" label={localeCode === 'zh_CN' ? '模板名称' : 'Template Name'} rules={[{ required: true, message: localeCode === 'zh_CN' ? '请输入模板名称' : 'Enter the template name' }]}>
+                <Input />
+              </Form.Item>
             </div>
             <div className="kc-delivery-action-block">
-              <Form.Input field="description" label={localeCode === 'zh_CN' ? '描述' : 'Description'} />
+              <Form.Item name="description" label={localeCode === 'zh_CN' ? '描述' : 'Description'}>
+                <Input />
+              </Form.Item>
             </div>
             <div className="kc-delivery-action-block">
-              <Form.Select field="category" label={localeCode === 'zh_CN' ? '分类' : 'Category'} optionList={RELEASE_TEMPLATE_CATEGORY_OPTIONS} />
-              <Form.Switch field="enabled" label={localeCode === 'zh_CN' ? '启用' : 'Enabled'} />
+              <Form.Item name="category" label={localeCode === 'zh_CN' ? '分类' : 'Category'}>
+                <Select options={RELEASE_TEMPLATE_CATEGORY_OPTIONS} />
+              </Form.Item>
+              <Form.Item name="enabled" label={localeCode === 'zh_CN' ? '启用' : 'Enabled'} valuePropName="checked">
+                <Switch />
+              </Form.Item>
             </div>
           </div>
 
           <Card className="kc-template-editor-card" title={localeCode === 'zh_CN' ? 'DAG 编排画布' : 'DAG Composer'}>
-            <Suspense fallback={<Card><Text type="tertiary">{t('common.loading', 'Loading...')}</Text></Card>}>
+            <Suspense fallback={<Card><Text type="secondary">{t('common.loading', 'Loading...')}</Text></Card>}>
               <ReleaseFlowDagEditor
                 key={editing?.id ?? 'new-release-dag'}
                 initialDefinition={modalVisible ? normalizeReleaseDagDefinition(editing?.definition) : createDefaultReleaseDagDefinition()}
@@ -1178,7 +1250,7 @@ export function WorkflowTemplatesPage() {
 
           <div className="kc-form-actions">
             <Button onClick={() => setModalVisible(false)}>{t('common.cancel', 'Cancel')}</Button>
-            <Button htmlType="submit" theme="solid" loading={createMutation.isPending || updateMutation.isPending}>
+            <Button htmlType="submit" type="primary" loading={createMutation.isPending || updateMutation.isPending}>
               {editing ? t('common.update', 'Update') : t('common.create', 'Create')}
             </Button>
           </div>

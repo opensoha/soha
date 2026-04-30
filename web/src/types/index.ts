@@ -12,6 +12,7 @@ export interface RouteMeta {
   redirectTo?: string
   menuId?: string
   permissionKey?: string
+  permissionStrategy?: 'self' | 'any-child'
 }
 
 export interface SidebarNavItem {

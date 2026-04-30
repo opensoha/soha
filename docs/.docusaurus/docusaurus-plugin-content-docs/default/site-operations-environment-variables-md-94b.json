@@ -1,0 +1,25 @@
+{
+  "id": "operations/environment-variables",
+  "title": "Environment Overrides",
+  "description": "Backend",
+  "source": "@site/operations/environment-variables.md",
+  "sourceDirName": "operations",
+  "slug": "/operations/environment-variables",
+  "permalink": "/docs/operations/environment-variables",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/kubecrux/kubecrux/tree/main/docs/operations/environment-variables.md",
+  "tags": [],
+  "version": "current",
+  "lastUpdatedAt": 1539502055000,
+  "frontMatter": {},
+  "sidebar": "mainSidebar",
+  "previous": {
+    "title": "Deployment",
+    "permalink": "/docs/operations/deployment"
+  },
+  "next": {
+    "title": "Dependencies",
+    "permalink": "/docs/operations/dependencies"
+  }
+}

@@ -1,10 +1,11 @@
 package dto
 
 type UpsertRoleRequest struct {
-	ID           string   `json:"id"`
-	Name         string   `json:"name"`
-	Scope        string   `json:"scope"`
-	Capabilities []string `json:"capabilities"`
+	ID             string   `json:"id"`
+	Name           string   `json:"name"`
+	Scope          string   `json:"scope"`
+	Capabilities   []string `json:"capabilities"`
+	PermissionKeys []string `json:"permissionKeys"`
 }
 
 type UpsertTeamRequest struct {

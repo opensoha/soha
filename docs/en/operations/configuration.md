@@ -85,7 +85,7 @@ When `auth.enable_dev_auth` is `false`, this account is still seeded into Postgr
 - swagger route reservation: `/swagger/*any`
 - config override file: `KC_CONFIG_FILE=/abs/path/to/config.yaml`
 - frontend local dev port: `5173`
-- docs local dev port: `5174`
+- docs local dev port: `3000`
 
 ## Database Bootstrap
 

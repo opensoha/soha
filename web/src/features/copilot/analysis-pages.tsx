@@ -1,16 +1,21 @@
 import { useEffect, useMemo, useState } from 'react'
+import { PlayCircleOutlined, PlusOutlined, SearchOutlined, ThunderboltFilled } from '@ant-design/icons'
 import {
   Button,
   Card,
   Empty,
   Form,
+  Input,
+  InputNumber,
+  message,
   Modal,
+  Select,
   Space,
+  Switch,
   Tag,
-  Toast,
   Typography,
-} from '@douyinfe/semi-ui'
-import { IconPlay, IconPulse, IconSearch, IconPlus } from '@douyinfe/semi-icons'
+} from 'antd'
+import type { ColumnsType } from 'antd/es/table'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AdminTable } from '@/components/admin-table'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth/permission-snapshot'
@@ -22,7 +27,6 @@ import { api } from '@/services/api-client'
 import { formatDateTime, formatRelativeTime } from '@/utils/time'
 import { tableColumnPresets } from '@/utils/table-columns'
 import type { ApiResponse, Cluster } from '@/types'
-import type { ColumnProps } from '@douyinfe/semi-ui/lib/es/table'
 
 const { Text, Paragraph } = Typography
 
@@ -233,6 +237,7 @@ export function RootCauseAnalysisPage() {
   const { localeCode } = useI18n()
   const queryClient = useQueryClient()
   const permissionSnapshotQuery = usePermissionSnapshot()
+  const [form] = Form.useForm()
   const [selectedRunID, setSelectedRunID] = useState<string>()
   const [evidenceKindFilter, setEvidenceKindFilter] = useState<string>('all')
   const [logsOnly, setLogsOnly] = useState(false)
@@ -261,11 +266,12 @@ export function RootCauseAnalysisPage() {
   const createRunMutation = useMutation({
     mutationFn: (values: Record<string, unknown>) => api.post<ApiResponse<RootCauseRun>>('/copilot/root-cause/runs', values),
     onSuccess: (response) => {
-      Toast.success(localeCode === 'zh_CN' ? '根因分析已创建' : 'Root cause analysis started')
+      message.success(localeCode === 'zh_CN' ? '根因分析已创建' : 'Root cause analysis started')
       queryClient.invalidateQueries({ queryKey: ['copilot-root-cause-runs'] })
       setSelectedRunID(response.data.id)
+      form.resetFields()
     },
-    onError: (err: Error) => Toast.error(err.message),
+    onError: (err: Error) => message.error(err.message),
   })
 
   const insights = insightsQuery.data?.data ?? []
@@ -302,31 +308,46 @@ export function RootCauseAnalysisPage() {
       />
       <StatGrid
         items={[
-          { label: localeCode === 'zh_CN' ? 'AI洞察数' : 'AI Insights', value: insights.length, icon: <IconSearch size="extra-large" /> },
-          { label: localeCode === 'zh_CN' ? '活跃告警' : 'Active Alerts', value: activeAlerts.length, icon: <IconPulse size="extra-large" /> },
-          { label: localeCode === 'zh_CN' ? '分析运行' : 'Analysis Runs', value: runs.length, icon: <IconSearch size="extra-large" /> },
+          { label: localeCode === 'zh_CN' ? 'AI洞察数' : 'AI Insights', value: insights.length, icon: <SearchOutlined style={{ fontSize: 28 }} /> },
+          { label: localeCode === 'zh_CN' ? '活跃告警' : 'Active Alerts', value: activeAlerts.length, icon: <ThunderboltFilled style={{ fontSize: 28 }} /> },
+          { label: localeCode === 'zh_CN' ? '分析运行' : 'Analysis Runs', value: runs.length, icon: <SearchOutlined style={{ fontSize: 28 }} /> },
         ]}
       />
       <Card title={localeCode === 'zh_CN' ? '发起根因分析' : 'Start Root Cause Analysis'}>
         <Form
-          initValues={{ timeRangeMinutes: 60, workloadKind: 'Deployment' }}
-          onSubmit={(values) => {
+          form={form}
+          initialValues={{ timeRangeMinutes: 60, workloadKind: 'Deployment' }}
+          layout="horizontal"
+          labelCol={{ flex: '140px' }}
+          onFinish={(values) => {
             if (!canRunRootCause) return
             createRunMutation.mutate(values as Record<string, unknown>)
           }}
-          labelPosition="left"
-          labelWidth={140}
         >
-          <Form.Select field="analysisProfileId" label={localeCode === 'zh_CN' ? '分析模板' : 'Analysis Profile'} optionList={profiles.map((item) => ({ value: item.id, label: item.name }))} />
-          <Form.Select field="clusterId" label={localeCode === 'zh_CN' ? '集群' : 'Cluster'} optionList={clusters.map((item) => ({ value: item.id, label: item.name }))} />
-          <Form.Input field="namespace" label={localeCode === 'zh_CN' ? '命名空间' : 'Namespace'} />
-          <Form.Input field="workloadName" label={localeCode === 'zh_CN' ? '工作负载' : 'Workload'} />
-          <Form.Select field="alertId" label={localeCode === 'zh_CN' ? '关联告警' : 'Alert'} optionList={activeAlerts.map((item) => ({ value: item.id, label: item.title || item.name || item.id }))} />
-          <Form.InputNumber field="timeRangeMinutes" label={localeCode === 'zh_CN' ? '时间范围(分钟)' : 'Time Range (min)'} min={5} />
-          <Form.Input field="question" label={localeCode === 'zh_CN' ? '补充问题' : 'Question'} />
+          <Form.Item name="analysisProfileId" label={localeCode === 'zh_CN' ? '分析模板' : 'Analysis Profile'}>
+            <Select allowClear options={profiles.map((item) => ({ value: item.id, label: item.name }))} />
+          </Form.Item>
+          <Form.Item name="clusterId" label={localeCode === 'zh_CN' ? '集群' : 'Cluster'}>
+            <Select allowClear options={clusters.map((item) => ({ value: item.id, label: item.name }))} />
+          </Form.Item>
+          <Form.Item name="namespace" label={localeCode === 'zh_CN' ? '命名空间' : 'Namespace'}>
+            <Input />
+          </Form.Item>
+          <Form.Item name="workloadName" label={localeCode === 'zh_CN' ? '工作负载' : 'Workload'}>
+            <Input />
+          </Form.Item>
+          <Form.Item name="alertId" label={localeCode === 'zh_CN' ? '关联告警' : 'Alert'}>
+            <Select allowClear options={activeAlerts.map((item) => ({ value: item.id, label: item.title || item.name || item.id }))} />
+          </Form.Item>
+          <Form.Item name="timeRangeMinutes" label={localeCode === 'zh_CN' ? '时间范围(分钟)' : 'Time Range (min)'}>
+            <InputNumber min={5} style={{ width: '100%' }} />
+          </Form.Item>
+          <Form.Item name="question" label={localeCode === 'zh_CN' ? '补充问题' : 'Question'}>
+            <Input />
+          </Form.Item>
           {canRunRootCause ? (
             <div className="kc-form-actions">
-              <Button htmlType="submit" theme="solid" loading={createRunMutation.isPending}>
+              <Button htmlType="submit" type="primary" loading={createRunMutation.isPending}>
                 {localeCode === 'zh_CN' ? '开始分析' : 'Run Analysis'}
               </Button>
             </div>
@@ -377,7 +398,7 @@ export function RootCauseAnalysisPage() {
             { ...tableColumnPresets.status, title: localeCode === 'zh_CN' ? '严重度' : 'Severity', dataIndex: 'severity', render: (value: string) => <StatusTag value={value} /> },
             { title: localeCode === 'zh_CN' ? '范围' : 'Scope', dataIndex: 'clusterId', render: (_: string, record: RootCauseRun) => [record.clusterId, record.namespace, record.workloadName].filter(Boolean).join(' / ') || '-' },
             { ...tableColumnPresets.datetime, title: localeCode === 'zh_CN' ? '创建时间' : 'Created At', dataIndex: 'createdAt', render: (value: string) => formatDateTime(value) },
-            { ...tableColumnPresets.action, title: localeCode === 'zh_CN' ? '操作' : 'Actions', dataIndex: 'id', render: (value: string) => <Button size="small" theme="borderless" onClick={() => setSelectedRunID(value)}>{localeCode === 'zh_CN' ? '查看' : 'View'}</Button> },
+            { ...tableColumnPresets.action, title: localeCode === 'zh_CN' ? '操作' : 'Actions', dataIndex: 'id', render: (value: string) => <Button size="small" type="link" onClick={() => setSelectedRunID(value)}>{localeCode === 'zh_CN' ? '查看' : 'View'}</Button> },
           ]}
           dataSource={runs}
           rowKey="id"
@@ -399,18 +420,18 @@ export function RootCauseAnalysisPage() {
                 </Space>
               </div>
               <Paragraph style={{ marginBottom: 8 }}>{selectedRun.summary}</Paragraph>
-              <Text type="tertiary">{localeCode === 'zh_CN' ? '分析模板' : 'Profile'}: {selectedRun.analysisProfileId || '-'}</Text>
+              <Text type="secondary">{localeCode === 'zh_CN' ? '分析模板' : 'Profile'}: {selectedRun.analysisProfileId || '-'}</Text>
             </div>
             <div className="kc-list-row">
               <Text strong>{localeCode === 'zh_CN' ? '假设' : 'Hypotheses'}</Text>
               {(selectedRun.hypotheses ?? []).length === 0 ? (
-                <Text type="tertiary">-</Text>
+                <Text type="secondary">-</Text>
               ) : (
                 <div className="flex flex-col gap-2">
                   {(selectedRun.hypotheses ?? []).map((item) => (
                     <div key={item.id}>
                       <Text strong>{item.title}</Text>
-                      <Text type="tertiary"> ({item.confidence}%)</Text>
+                      <Text type="secondary"> ({item.confidence}%)</Text>
                       <Paragraph style={{ marginBottom: 4 }}>{item.summary}</Paragraph>
                     </div>
                   ))}
@@ -420,24 +441,24 @@ export function RootCauseAnalysisPage() {
             <div className="kc-list-row">
               <Text strong>{localeCode === 'zh_CN' ? '证据' : 'Evidence'}</Text>
               {(selectedRun.evidence ?? []).length === 0 ? (
-                <Text type="tertiary">-</Text>
+                <Text type="secondary">-</Text>
               ) : (
                 <div className="flex flex-col gap-3">
                   <div className="flex flex-wrap items-center gap-2">
-                    <Text type="tertiary">
+                    <Text type="secondary">
                       {localeCode === 'zh_CN'
                         ? `当前显示 ${filteredEvidence.length} / ${(selectedRun.evidence ?? []).length} 条证据`
                         : `Showing ${filteredEvidence.length} / ${(selectedRun.evidence ?? []).length} evidence items`}
                     </Text>
-                    <Button size="small" theme={evidenceKindFilter === 'all' ? 'solid' : 'light'} onClick={() => setEvidenceKindFilter('all')}>
+                    <Button size="small" type={evidenceKindFilter === 'all' ? 'primary' : 'default'} onClick={() => setEvidenceKindFilter('all')}>
                       {localeCode === 'zh_CN' ? '全部' : 'All'}
                     </Button>
                     {availableEvidenceKinds.map((item) => (
-                      <Button key={item} size="small" theme={evidenceKindFilter === item ? 'solid' : 'light'} onClick={() => setEvidenceKindFilter(item)}>
+                      <Button key={item} size="small" type={evidenceKindFilter === item ? 'primary' : 'default'} onClick={() => setEvidenceKindFilter(item)}>
                         {item}
                       </Button>
                     ))}
-                    <Button size="small" theme={logsOnly ? 'solid' : 'light'} onClick={() => setLogsOnly((current) => !current)}>
+                    <Button size="small" type={logsOnly ? 'primary' : 'default'} onClick={() => setLogsOnly((current) => !current)}>
                       {localeCode === 'zh_CN' ? '只看 logs evidence' : 'Logs Only'}
                     </Button>
                   </div>
@@ -457,16 +478,16 @@ export function RootCauseAnalysisPage() {
                     pagination={false}
                     expandedRowRender={(record: RootCauseEvidence) => (
                       <div className="flex flex-col gap-2 py-2">
-                        <Text type="tertiary">{localeCode === 'zh_CN' ? '源 ID' : 'Source ID'}: {String(evidenceAttribute(record, 'sourceId') || '-')}</Text>
-                        <Text type="tertiary">{localeCode === 'zh_CN' ? '后端类型' : 'Backend Type'}: {String(evidenceAttribute(record, 'backendType') || '-')}</Text>
-                        <Text type="tertiary">{localeCode === 'zh_CN' ? '截断' : 'Truncated'}: {String(Boolean(evidenceAttribute(record, 'truncated')))}</Text>
+                        <Text type="secondary">{localeCode === 'zh_CN' ? '源 ID' : 'Source ID'}: {String(evidenceAttribute(record, 'sourceId') || '-')}</Text>
+                        <Text type="secondary">{localeCode === 'zh_CN' ? '后端类型' : 'Backend Type'}: {String(evidenceAttribute(record, 'backendType') || '-')}</Text>
+                        <Text type="secondary">{localeCode === 'zh_CN' ? '截断' : 'Truncated'}: {String(Boolean(evidenceAttribute(record, 'truncated')))}</Text>
                         <div>
                           <Text strong>{localeCode === 'zh_CN' ? 'Query Cost' : 'Query Cost'}</Text>
-                          <pre className="mt-2 whitespace-pre-wrap rounded bg-[var(--semi-color-fill-0)] p-3 text-xs">{formatMapPreview(evidenceAttribute(record, 'queryCost'))}</pre>
+                          <pre className="mt-2 whitespace-pre-wrap rounded bg-[#f5f5f5] p-3 text-xs">{formatMapPreview(evidenceAttribute(record, 'queryCost'))}</pre>
                         </div>
                         <div>
                           <Text strong>{localeCode === 'zh_CN' ? 'Sample Window' : 'Sample Window'}</Text>
-                          <pre className="mt-2 whitespace-pre-wrap rounded bg-[var(--semi-color-fill-0)] p-3 text-xs">{formatMapPreview(evidenceAttribute(record, 'sampleWindow'))}</pre>
+                          <pre className="mt-2 whitespace-pre-wrap rounded bg-[#f5f5f5] p-3 text-xs">{formatMapPreview(evidenceAttribute(record, 'sampleWindow'))}</pre>
                         </div>
                         {sampleRecords(record).length > 0 ? (
                           <div>
@@ -498,11 +519,11 @@ export function RootCauseAnalysisPage() {
             </div>
             <div className="kc-list-row">
               <Text strong>{localeCode === 'zh_CN' ? '数据源快照' : 'Data Source Snapshot'}</Text>
-              <pre className="mt-2 whitespace-pre-wrap rounded bg-[var(--semi-color-fill-0)] p-3 text-xs">{formatMapPreview(selectedRun.dataSourceSnapshot)}</pre>
+              <pre className="mt-2 whitespace-pre-wrap rounded bg-[#f5f5f5] p-3 text-xs">{formatMapPreview(selectedRun.dataSourceSnapshot)}</pre>
             </div>
             <div className="kc-list-row">
               <Text strong>{localeCode === 'zh_CN' ? 'Playbook 结果' : 'Playbook Results'}</Text>
-              <pre className="mt-2 whitespace-pre-wrap rounded bg-[var(--semi-color-fill-0)] p-3 text-xs">{formatMapPreview(selectedRun.playbookResults)}</pre>
+              <pre className="mt-2 whitespace-pre-wrap rounded bg-[#f5f5f5] p-3 text-xs">{formatMapPreview(selectedRun.playbookResults)}</pre>
             </div>
             <div className="kc-list-row">
               <Text strong>{localeCode === 'zh_CN' ? '建议动作' : 'Recommendations'}</Text>
@@ -543,10 +564,10 @@ export function PerformanceAnalysisPage() {
       />
       <StatGrid
         items={[
-          { label: localeCode === 'zh_CN' ? '健康集群' : 'Healthy Clusters', value: clusters.length - degradedClusters.length, icon: <IconPulse size="extra-large" /> },
-          { label: localeCode === 'zh_CN' ? '异常集群' : 'Degraded Clusters', value: degradedClusters.length, icon: <IconPulse size="extra-large" /> },
-          { label: localeCode === 'zh_CN' ? '活跃告警' : 'Firing Alerts', value: summary?.firingCount ?? 0, icon: <IconPulse size="extra-large" /> },
-          { label: localeCode === 'zh_CN' ? '通知渠道' : 'Channels', value: summary?.channelCount ?? 0, icon: <IconPulse size="extra-large" /> },
+          { label: localeCode === 'zh_CN' ? '健康集群' : 'Healthy Clusters', value: clusters.length - degradedClusters.length, icon: <ThunderboltFilled style={{ fontSize: 28 }} /> },
+          { label: localeCode === 'zh_CN' ? '异常集群' : 'Degraded Clusters', value: degradedClusters.length, icon: <ThunderboltFilled style={{ fontSize: 28 }} /> },
+          { label: localeCode === 'zh_CN' ? '活跃告警' : 'Firing Alerts', value: summary?.firingCount ?? 0, icon: <ThunderboltFilled style={{ fontSize: 28 }} /> },
+          { label: localeCode === 'zh_CN' ? '通知渠道' : 'Channels', value: summary?.channelCount ?? 0, icon: <ThunderboltFilled style={{ fontSize: 28 }} /> },
         ]}
       />
       <Card title={localeCode === 'zh_CN' ? 'AI 性能结论' : 'AI Performance Signals'}>
@@ -558,7 +579,7 @@ export function PerformanceAnalysisPage() {
                 <StatusTag value={item.severity} />
               </div>
               <Paragraph style={{ marginBottom: 8 }}>{item.description}</Paragraph>
-              <Text type="tertiary">{item.recommendation}</Text>
+              <Text type="secondary">{item.recommendation}</Text>
             </div>
           ))}
         </div>
@@ -585,6 +606,7 @@ export function InspectionCenterPage() {
   const { localeCode } = useI18n()
   const queryClient = useQueryClient()
   const permissionSnapshotQuery = usePermissionSnapshot()
+  const [form] = Form.useForm()
   const [modalVisible, setModalVisible] = useState(false)
   const [editing, setEditing] = useState<InspectionTask | null>(null)
   const canManageInspection = hasPermission(permissionSnapshotQuery.data?.data, 'observe.ai.inspection.manage')
@@ -606,30 +628,32 @@ export function InspectionCenterPage() {
   const createMutation = useMutation({
     mutationFn: (values: Record<string, unknown>) => api.post('/copilot/inspection-tasks', values),
     onSuccess: () => {
-      Toast.success(localeCode === 'zh_CN' ? '巡检任务已创建' : 'Inspection task created')
+      message.success(localeCode === 'zh_CN' ? '巡检任务已创建' : 'Inspection task created')
       queryClient.invalidateQueries({ queryKey: ['copilot-inspection-tasks'] })
       setModalVisible(false)
+      form.resetFields()
     },
-    onError: (err: Error) => Toast.error(err.message),
+    onError: (err: Error) => message.error(err.message),
   })
   const updateMutation = useMutation({
     mutationFn: ({ id, values }: { id: string; values: Record<string, unknown> }) => api.put(`/copilot/inspection-tasks/${id}`, values),
     onSuccess: () => {
-      Toast.success(localeCode === 'zh_CN' ? '巡检任务已更新' : 'Inspection task updated')
+      message.success(localeCode === 'zh_CN' ? '巡检任务已更新' : 'Inspection task updated')
       queryClient.invalidateQueries({ queryKey: ['copilot-inspection-tasks'] })
       setModalVisible(false)
       setEditing(null)
+      form.resetFields()
     },
-    onError: (err: Error) => Toast.error(err.message),
+    onError: (err: Error) => message.error(err.message),
   })
   const executeMutation = useMutation({
     mutationFn: (taskId: string) => api.post(`/copilot/inspection-tasks/${taskId}/execute`),
     onSuccess: () => {
-      Toast.success(localeCode === 'zh_CN' ? '巡检已触发' : 'Inspection triggered')
+      message.success(localeCode === 'zh_CN' ? '巡检已触发' : 'Inspection triggered')
       queryClient.invalidateQueries({ queryKey: ['copilot-inspection-runs'] })
       queryClient.invalidateQueries({ queryKey: ['copilot-inspection-tasks'] })
     },
-    onError: (err: Error) => Toast.error(err.message),
+    onError: (err: Error) => message.error(err.message),
   })
 
   const taskNameMap = useMemo(
@@ -637,7 +661,17 @@ export function InspectionCenterPage() {
     [tasksQuery.data],
   )
 
-  const taskColumns: ColumnProps<InspectionTask>[] = [
+  useEffect(() => {
+    if (!modalVisible) return
+    form.setFieldsValue(editing ?? {
+      enabled: true,
+      scopeType: 'platform',
+      intervalMinutes: 30,
+      checks: INSPECTION_CHECK_OPTIONS.map((item) => item.value),
+    })
+  }, [editing, form, modalVisible])
+
+  const taskColumns: ColumnsType<InspectionTask> = [
     { title: localeCode === 'zh_CN' ? '任务名称' : 'Task', dataIndex: 'title' },
     {
       title: localeCode === 'zh_CN' ? '范围' : 'Scope',
@@ -671,15 +705,15 @@ export function InspectionCenterPage() {
       render: (_: unknown, record: InspectionTask) => (
         <Space>
           {canManageInspection ? (
-            <Button size="small" theme="borderless" onClick={() => { setEditing(record); setModalVisible(true) }}>
+            <Button size="small" type="link" onClick={() => { setEditing(record); setModalVisible(true) }}>
               {localeCode === 'zh_CN' ? '编辑' : 'Edit'}
             </Button>
           ) : null}
           {canRunInspection ? (
             <Button
               size="small"
-              theme="borderless"
-              icon={<IconPlay />}
+              type="link"
+              icon={<PlayCircleOutlined />}
               loading={executeMutation.isPending}
               onClick={() => executeMutation.mutate(record.id)}
             >
@@ -692,7 +726,7 @@ export function InspectionCenterPage() {
     },
   ]
 
-  const runColumns: ColumnProps<InspectionRun>[] = [
+  const runColumns: ColumnsType<InspectionRun> = [
     { title: localeCode === 'zh_CN' ? '任务' : 'Task', dataIndex: 'taskId', render: (value: string) => taskNameMap[value] || value },
     { ...tableColumnPresets.status, title: localeCode === 'zh_CN' ? '状态' : 'Status', dataIndex: 'status', render: (value: string) => <StatusTag value={value} /> },
     { ...tableColumnPresets.status, title: localeCode === 'zh_CN' ? '严重度' : 'Severity', dataIndex: 'severity', render: (value: string) => <StatusTag value={value} /> },
@@ -709,7 +743,7 @@ export function InspectionCenterPage() {
         description={localeCode === 'zh_CN' ? '维护巡检任务，按平台 / 集群 / 命名空间范围定时执行 AI 巡检。' : 'Manage inspection tasks and run AI inspections on platform, cluster, or namespace scopes.'}
         actions={
           canManageInspection ? (
-            <Button icon={<IconPlus />} theme="solid" onClick={() => { setEditing(null); setModalVisible(true) }}>
+            <Button icon={<PlusOutlined />} type="primary" onClick={() => { setEditing(null); setModalVisible(true) }}>
               {localeCode === 'zh_CN' ? '新建任务' : 'New Task'}
             </Button>
           ) : null
@@ -723,13 +757,14 @@ export function InspectionCenterPage() {
       </Card>
       <Modal
         title={editing ? (localeCode === 'zh_CN' ? '编辑巡检任务' : 'Edit Inspection Task') : (localeCode === 'zh_CN' ? '新建巡检任务' : 'New Inspection Task')}
-        visible={modalVisible}
+        open={modalVisible}
         onCancel={() => { setModalVisible(false); setEditing(null) }}
         footer={null}
       >
         <Form
-          initValues={editing ?? { enabled: true, scopeType: 'platform', intervalMinutes: 30, checks: INSPECTION_CHECK_OPTIONS.map((item) => item.value) }}
-          onSubmit={(values) => {
+          form={form}
+          layout="vertical"
+          onFinish={(values) => {
             const payload = {
               ...values,
               checks: Array.isArray(values.checks) ? values.checks : [],
@@ -741,36 +776,43 @@ export function InspectionCenterPage() {
             }
           }}
         >
-          <Form.Input field="title" label={localeCode === 'zh_CN' ? '任务名称' : 'Title'} rules={[{ required: true, message: localeCode === 'zh_CN' ? '请输入任务名称' : 'Enter task title' }]} />
-          <Form.Select
-            field="scopeType"
-            label={localeCode === 'zh_CN' ? '巡检范围' : 'Scope'}
-            optionList={[
-              { value: 'platform', label: localeCode === 'zh_CN' ? '平台级' : 'Platform' },
-              { value: 'cluster', label: localeCode === 'zh_CN' ? '集群级' : 'Cluster' },
-              { value: 'namespace', label: localeCode === 'zh_CN' ? '命名空间级' : 'Namespace' },
-            ]}
-          />
-          <Form.Select
-            field="clusterId"
-            label={localeCode === 'zh_CN' ? '集群' : 'Cluster'}
-            optionList={(clustersQuery.data?.data ?? []).map((item) => ({ value: item.id, label: item.name }))}
-          />
-          <Form.Input field="namespace" label={localeCode === 'zh_CN' ? '命名空间' : 'Namespace'} />
-          <Form.Select
-            field="checks"
-            label={localeCode === 'zh_CN' ? '检查项' : 'Checks'}
-            multiple
-            optionList={INSPECTION_CHECK_OPTIONS}
-          />
-          <Form.InputNumber field="intervalMinutes" label={localeCode === 'zh_CN' ? '执行间隔(分钟)' : 'Interval (min)'} min={5} />
-          <Form.Switch field="enabled" label={localeCode === 'zh_CN' ? '启用' : 'Enabled'} />
+          <Form.Item
+            name="title"
+            label={localeCode === 'zh_CN' ? '任务名称' : 'Title'}
+            rules={[{ required: true, message: localeCode === 'zh_CN' ? '请输入任务名称' : 'Enter task title' }]}
+          >
+            <Input />
+          </Form.Item>
+          <Form.Item name="scopeType" label={localeCode === 'zh_CN' ? '巡检范围' : 'Scope'}>
+            <Select
+              options={[
+                { value: 'platform', label: localeCode === 'zh_CN' ? '平台级' : 'Platform' },
+                { value: 'cluster', label: localeCode === 'zh_CN' ? '集群级' : 'Cluster' },
+                { value: 'namespace', label: localeCode === 'zh_CN' ? '命名空间级' : 'Namespace' },
+              ]}
+            />
+          </Form.Item>
+          <Form.Item name="clusterId" label={localeCode === 'zh_CN' ? '集群' : 'Cluster'}>
+            <Select allowClear options={(clustersQuery.data?.data ?? []).map((item) => ({ value: item.id, label: item.name }))} />
+          </Form.Item>
+          <Form.Item name="namespace" label={localeCode === 'zh_CN' ? '命名空间' : 'Namespace'}>
+            <Input />
+          </Form.Item>
+          <Form.Item name="checks" label={localeCode === 'zh_CN' ? '检查项' : 'Checks'}>
+            <Select mode="multiple" options={INSPECTION_CHECK_OPTIONS} />
+          </Form.Item>
+          <Form.Item name="intervalMinutes" label={localeCode === 'zh_CN' ? '执行间隔(分钟)' : 'Interval (min)'}>
+            <InputNumber min={5} style={{ width: '100%' }} />
+          </Form.Item>
+          <Form.Item name="enabled" label={localeCode === 'zh_CN' ? '启用' : 'Enabled'} valuePropName="checked">
+            <Switch />
+          </Form.Item>
           {canManageInspection ? (
             <div className="kc-form-actions">
               <Button onClick={() => { setModalVisible(false); setEditing(null) }}>
                 {localeCode === 'zh_CN' ? '取消' : 'Cancel'}
               </Button>
-              <Button htmlType="submit" theme="solid" loading={createMutation.isPending || updateMutation.isPending}>
+              <Button htmlType="submit" type="primary" loading={createMutation.isPending || updateMutation.isPending}>
                 {editing ? (localeCode === 'zh_CN' ? '更新' : 'Update') : (localeCode === 'zh_CN' ? '创建' : 'Create')}
               </Button>
             </div>

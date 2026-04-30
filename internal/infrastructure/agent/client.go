@@ -592,6 +592,148 @@ func (c *Client) ListStorageClasses(ctx context.Context) ([]domainresource.Stora
 	return payload.Items, nil
 }
 
+func (c *Client) ListIngressClasses(ctx context.Context) ([]domainresource.IngressClassView, error) {
+	var payload struct {
+		Items []domainresource.IngressClassView `json:"items"`
+	}
+	if err := c.request(ctx, http.MethodGet, "/api/v1/platform/network/ingressclasses", nil, &payload); err != nil {
+		return nil, err
+	}
+	return payload.Items, nil
+}
+
+func (c *Client) ListPriorityClasses(ctx context.Context) ([]domainresource.PriorityClassView, error) {
+	var payload struct {
+		Items []domainresource.PriorityClassView `json:"items"`
+	}
+	if err := c.request(ctx, http.MethodGet, "/api/v1/platform/configuration/priorityclasses", nil, &payload); err != nil {
+		return nil, err
+	}
+	return payload.Items, nil
+}
+
+func (c *Client) ListRuntimeClasses(ctx context.Context) ([]domainresource.RuntimeClassView, error) {
+	var payload struct {
+		Items []domainresource.RuntimeClassView `json:"items"`
+	}
+	if err := c.request(ctx, http.MethodGet, "/api/v1/platform/configuration/runtimeclasses", nil, &payload); err != nil {
+		return nil, err
+	}
+	return payload.Items, nil
+}
+
+func (c *Client) ListClusterRoles(ctx context.Context) ([]domainresource.ClusterRoleView, error) {
+	var payload struct {
+		Items []domainresource.ClusterRoleView `json:"items"`
+	}
+	if err := c.request(ctx, http.MethodGet, "/api/v1/platform/access-control/clusterroles", nil, &payload); err != nil {
+		return nil, err
+	}
+	return payload.Items, nil
+}
+
+func (c *Client) ListClusterRoleBindings(ctx context.Context) ([]domainresource.ClusterRoleBindingView, error) {
+	var payload struct {
+		Items []domainresource.ClusterRoleBindingView `json:"items"`
+	}
+	if err := c.request(ctx, http.MethodGet, "/api/v1/platform/access-control/clusterrolebindings", nil, &payload); err != nil {
+		return nil, err
+	}
+	return payload.Items, nil
+}
+
+func (c *Client) ListMutatingWebhookConfigurations(ctx context.Context) ([]domainresource.MutatingWebhookConfigurationView, error) {
+	var payload struct {
+		Items []domainresource.MutatingWebhookConfigurationView `json:"items"`
+	}
+	if err := c.request(ctx, http.MethodGet, "/api/v1/platform/configuration/mutatingwebhookconfigurations", nil, &payload); err != nil {
+		return nil, err
+	}
+	return payload.Items, nil
+}
+
+func (c *Client) ListValidatingWebhookConfigurations(ctx context.Context) ([]domainresource.ValidatingWebhookConfigurationView, error) {
+	var payload struct {
+		Items []domainresource.ValidatingWebhookConfigurationView `json:"items"`
+	}
+	if err := c.request(ctx, http.MethodGet, "/api/v1/platform/configuration/validatingwebhookconfigurations", nil, &payload); err != nil {
+		return nil, err
+	}
+	return payload.Items, nil
+}
+
+func (c *Client) ListResourceQuotas(ctx context.Context, namespace string) ([]domainresource.ResourceQuotaView, error) {
+	var payload struct {
+		Items []domainresource.ResourceQuotaView `json:"items"`
+	}
+	values := url.Values{}
+	if strings.TrimSpace(namespace) != "" {
+		values.Set("namespace", namespace)
+	}
+	path := "/api/v1/platform/configuration/resourcequotas"
+	if encoded := values.Encode(); encoded != "" {
+		path = path + "?" + encoded
+	}
+	if err := c.request(ctx, http.MethodGet, path, nil, &payload); err != nil {
+		return nil, err
+	}
+	return payload.Items, nil
+}
+
+func (c *Client) ListLimitRanges(ctx context.Context, namespace string) ([]domainresource.LimitRangeView, error) {
+	var payload struct {
+		Items []domainresource.LimitRangeView `json:"items"`
+	}
+	values := url.Values{}
+	if strings.TrimSpace(namespace) != "" {
+		values.Set("namespace", namespace)
+	}
+	path := "/api/v1/platform/configuration/limitranges"
+	if encoded := values.Encode(); encoded != "" {
+		path = path + "?" + encoded
+	}
+	if err := c.request(ctx, http.MethodGet, path, nil, &payload); err != nil {
+		return nil, err
+	}
+	return payload.Items, nil
+}
+
+func (c *Client) ListLeases(ctx context.Context, namespace string) ([]domainresource.LeaseView, error) {
+	var payload struct {
+		Items []domainresource.LeaseView `json:"items"`
+	}
+	values := url.Values{}
+	if strings.TrimSpace(namespace) != "" {
+		values.Set("namespace", namespace)
+	}
+	path := "/api/v1/platform/configuration/leases"
+	if encoded := values.Encode(); encoded != "" {
+		path = path + "?" + encoded
+	}
+	if err := c.request(ctx, http.MethodGet, path, nil, &payload); err != nil {
+		return nil, err
+	}
+	return payload.Items, nil
+}
+
+func (c *Client) ListReplicationControllers(ctx context.Context, namespace string) ([]domainresource.ReplicationControllerView, error) {
+	var payload struct {
+		Items []domainresource.ReplicationControllerView `json:"items"`
+	}
+	values := url.Values{}
+	if strings.TrimSpace(namespace) != "" {
+		values.Set("namespace", namespace)
+	}
+	path := "/api/v1/platform/workloads/replicationcontrollers"
+	if encoded := values.Encode(); encoded != "" {
+		path = path + "?" + encoded
+	}
+	if err := c.request(ctx, http.MethodGet, path, nil, &payload); err != nil {
+		return nil, err
+	}
+	return payload.Items, nil
+}
+
 func (c *Client) ListClusterEvents(ctx context.Context, namespace string, limit int) ([]domainresource.ClusterEventView, error) {
 	var payload struct {
 		Items []domainresource.ClusterEventView `json:"items"`

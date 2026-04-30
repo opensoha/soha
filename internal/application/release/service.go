@@ -11,6 +11,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
+	appaccess "github.com/kubecrux/kubecrux/internal/application/access"
 	domainaccess "github.com/kubecrux/kubecrux/internal/domain/access"
 	domainapp "github.com/kubecrux/kubecrux/internal/domain/application"
 	domainaudit "github.com/kubecrux/kubecrux/internal/domain/audit"
@@ -48,25 +49,29 @@ type AuditRecorder interface {
 }
 
 type Service struct {
-	repo       ReleaseRepository
-	apps       ApplicationReader
-	resolver   ConnectionResolver
-	authorizer domainaccess.Authorizer
-	events     EventWriter
-	audit      AuditRecorder
-	clusters   *k8sinfra.Manager
-	agents     *agentinfra.Registry
+	repo        ReleaseRepository
+	apps        ApplicationReader
+	resolver    ConnectionResolver
+	authorizer  domainaccess.Authorizer
+	permissions *appaccess.PermissionResolver
+	events      EventWriter
+	audit       AuditRecorder
+	clusters    *k8sinfra.Manager
+	agents      *agentinfra.Registry
 }
 
 type releasePruner interface {
 	DeleteByIDs(context.Context, []string) error
 }
 
-func New(repo ReleaseRepository, apps ApplicationReader, resolver ConnectionResolver, authorizer domainaccess.Authorizer, events EventWriter, audit AuditRecorder, clusters *k8sinfra.Manager, agents *agentinfra.Registry) *Service {
-	return &Service{repo: repo, apps: apps, resolver: resolver, authorizer: authorizer, events: events, audit: audit, clusters: clusters, agents: agents}
+func New(repo ReleaseRepository, apps ApplicationReader, resolver ConnectionResolver, authorizer domainaccess.Authorizer, permissions *appaccess.PermissionResolver, events EventWriter, audit AuditRecorder, clusters *k8sinfra.Manager, agents *agentinfra.Registry) *Service {
+	return &Service{repo: repo, apps: apps, resolver: resolver, authorizer: authorizer, permissions: permissions, events: events, audit: audit, clusters: clusters, agents: agents}
 }
 
 func (s *Service) List(ctx context.Context, principal domainidentity.Principal, filter domainrelease.Filter) ([]domainrelease.Record, error) {
+	if err := s.authorizePermission(ctx, principal, appaccess.PermDeliveryReleasesView); err != nil {
+		return nil, err
+	}
 	if strings.TrimSpace(filter.ClusterID) != "" {
 		if err := s.authorize(ctx, principal, filter.ClusterID, "", "Release", filter.ApplicationID, "", filter.ApplicationID, domainaccess.ActionList); err != nil {
 			return nil, err
@@ -113,6 +118,9 @@ func (s *Service) List(ctx context.Context, principal domainidentity.Principal, 
 }
 
 func (s *Service) Trigger(ctx context.Context, principal domainidentity.Principal, input domainrelease.TriggerInput) (domainrelease.Record, error) {
+	if err := s.authorizePermission(ctx, principal, appaccess.PermDeliveryReleasesTrigger); err != nil {
+		return domainrelease.Record{}, err
+	}
 	if strings.TrimSpace(input.ApplicationID) == "" {
 		return domainrelease.Record{}, fmt.Errorf("%w: applicationId is required", apperrors.ErrInvalidArgument)
 	}
@@ -134,7 +142,7 @@ func (s *Service) Trigger(ctx context.Context, principal domainidentity.Principa
 	if err != nil {
 		return domainrelease.Record{}, err
 	}
-	if err := s.authorize(ctx, principal, connection.Summary.ID, input.Namespace, "Deployment", input.DeploymentName, app.BusinessLineID, input.ApplicationID, domainaccess.ActionUpdate); err != nil {
+	if err := s.authorize(ctx, principal, connection.Summary.ID, input.Namespace, "Deployment", input.DeploymentName, app.BusinessLineID, input.ApplicationID, domainaccess.ActionTrigger); err != nil {
 		return domainrelease.Record{}, err
 	}
 
@@ -176,7 +184,7 @@ func (s *Service) Trigger(ctx context.Context, principal domainidentity.Principa
 	}
 
 	if err != nil {
-		_ = s.recordAudit(ctx, principal, connection.Summary.ID, input.Namespace, input.DeploymentName, string(domainaccess.ActionUpdate), "failure", err.Error(), map[string]any{"image": resolvedImage})
+		_ = s.recordAudit(ctx, principal, connection.Summary.ID, input.Namespace, input.DeploymentName, string(domainaccess.ActionTrigger), "failure", err.Error(), map[string]any{"image": resolvedImage})
 		return domainrelease.Record{}, fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
 	}
 
@@ -197,7 +205,7 @@ func (s *Service) Trigger(ctx context.Context, principal domainidentity.Principa
 			},
 		})
 	}
-	_ = s.recordAudit(ctx, principal, connection.Summary.ID, input.Namespace, input.DeploymentName, string(domainaccess.ActionUpdate), "success", "triggered deployment release", map[string]any{"image": resolvedImage})
+	_ = s.recordAudit(ctx, principal, connection.Summary.ID, input.Namespace, input.DeploymentName, string(domainaccess.ActionTrigger), "success", "triggered deployment release", map[string]any{"image": resolvedImage})
 	return record, nil
 }
 
@@ -411,6 +419,10 @@ func (s *Service) authorize(ctx context.Context, principal domainidentity.Princi
 		return fmt.Errorf("%w: %s", apperrors.ErrAccessDenied, decision.Reason)
 	}
 	return nil
+}
+
+func (s *Service) authorizePermission(ctx context.Context, principal domainidentity.Principal, permissionKey string) error {
+	return appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, permissionKey)
 }
 
 func (s *Service) recordAudit(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, deploymentName, action, result, summary string, metadata map[string]any) error {

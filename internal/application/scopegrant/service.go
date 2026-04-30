@@ -6,31 +6,43 @@ import (
 	"fmt"
 	"strings"
 
+	appaccess "github.com/kubecrux/kubecrux/internal/application/access"
+	domainidentity "github.com/kubecrux/kubecrux/internal/domain/identity"
 	domainscopegrant "github.com/kubecrux/kubecrux/internal/domain/scopegrant"
 	"github.com/kubecrux/kubecrux/internal/platform/apperrors"
 	scopegrantrepo "github.com/kubecrux/kubecrux/internal/repository/scopegrant"
 )
 
 type Service struct {
-	repo domainscopegrant.Repository
+	repo        domainscopegrant.Repository
+	permissions *appaccess.PermissionResolver
 }
 
-func New(repo domainscopegrant.Repository) *Service {
-	return &Service{repo: repo}
+func New(repo domainscopegrant.Repository, permissions *appaccess.PermissionResolver) *Service {
+	return &Service{repo: repo, permissions: permissions}
 }
 
-func (s *Service) List(ctx context.Context) ([]domainscopegrant.Record, error) {
+func (s *Service) List(ctx context.Context, principal domainidentity.Principal) ([]domainscopegrant.Record, error) {
+	if err := s.authorize(ctx, principal, appaccess.PermAccessScopeGrantsView); err != nil {
+		return nil, err
+	}
 	return s.repo.List(ctx)
 }
 
-func (s *Service) Create(ctx context.Context, input domainscopegrant.Input) (domainscopegrant.Record, error) {
+func (s *Service) Create(ctx context.Context, principal domainidentity.Principal, input domainscopegrant.Input) (domainscopegrant.Record, error) {
+	if err := s.authorize(ctx, principal, appaccess.PermAccessScopeGrantsManage); err != nil {
+		return domainscopegrant.Record{}, err
+	}
 	if err := validateInput(input); err != nil {
 		return domainscopegrant.Record{}, err
 	}
 	return s.repo.Create(ctx, input)
 }
 
-func (s *Service) Update(ctx context.Context, id string, input domainscopegrant.Input) (domainscopegrant.Record, error) {
+func (s *Service) Update(ctx context.Context, principal domainidentity.Principal, id string, input domainscopegrant.Input) (domainscopegrant.Record, error) {
+	if err := s.authorize(ctx, principal, appaccess.PermAccessScopeGrantsManage); err != nil {
+		return domainscopegrant.Record{}, err
+	}
 	if err := validateInput(input); err != nil {
 		return domainscopegrant.Record{}, err
 	}
@@ -38,7 +50,10 @@ func (s *Service) Update(ctx context.Context, id string, input domainscopegrant.
 	return item, normalizeRepoError(err)
 }
 
-func (s *Service) Delete(ctx context.Context, id string) error {
+func (s *Service) Delete(ctx context.Context, principal domainidentity.Principal, id string) error {
+	if err := s.authorize(ctx, principal, appaccess.PermAccessScopeGrantsManage); err != nil {
+		return err
+	}
 	return normalizeRepoError(s.repo.Delete(ctx, id))
 }
 
@@ -63,4 +78,8 @@ func normalizeRepoError(err error) error {
 		return fmt.Errorf("%w: %v", apperrors.ErrNotFound, err)
 	}
 	return err
+}
+
+func (s *Service) authorize(ctx context.Context, principal domainidentity.Principal, permissionKey string) error {
+	return appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, permissionKey)
 }

@@ -37,16 +37,17 @@ type PolicyManager interface {
 }
 
 type ManagementService struct {
-	users    UserManager
-	policies PolicyManager
+	users       UserManager
+	policies    PolicyManager
+	permissions *PermissionResolver
 }
 
-func NewManagement(users UserManager, policies PolicyManager) *ManagementService {
-	return &ManagementService{users: users, policies: policies}
+func NewManagement(users UserManager, policies PolicyManager, permissions *PermissionResolver) *ManagementService {
+	return &ManagementService{users: users, policies: policies, permissions: permissions}
 }
 
 func (s *ManagementService) CreateRole(ctx context.Context, principal domainidentity.Principal, input domainaccess.RoleInput) (domainaccess.RoleRecord, error) {
-	if err := ensureAdmin(principal); err != nil {
+	if err := s.ensurePermission(ctx, principal, PermAccessRolesManage); err != nil {
 		return domainaccess.RoleRecord{}, err
 	}
 	input.ID = normalizeID(input.ID, input.Name)
@@ -57,11 +58,16 @@ func (s *ManagementService) CreateRole(ctx context.Context, principal domainiden
 	if strings.TrimSpace(input.Scope) == "" {
 		input.Scope = "custom"
 	}
-	return s.policies.CreateRole(ctx, input)
+	input.PermissionKeys = normalizePermissionKeys(input.PermissionKeys)
+	item, err := s.policies.CreateRole(ctx, input)
+	if err == nil {
+		SetRolePermissionKeys(item.ID, item.PermissionKeys)
+	}
+	return item, err
 }
 
 func (s *ManagementService) UpdateRole(ctx context.Context, principal domainidentity.Principal, roleID string, input domainaccess.RoleInput) (domainaccess.RoleRecord, error) {
-	if err := ensureAdmin(principal); err != nil {
+	if err := s.ensurePermission(ctx, principal, PermAccessRolesManage); err != nil {
 		return domainaccess.RoleRecord{}, err
 	}
 	if strings.TrimSpace(roleID) == "" {
@@ -74,22 +80,30 @@ func (s *ManagementService) UpdateRole(ctx context.Context, principal domainiden
 	if strings.TrimSpace(input.Scope) == "" {
 		input.Scope = "custom"
 	}
+	input.PermissionKeys = normalizePermissionKeys(input.PermissionKeys)
 	item, err := s.policies.UpdateRole(ctx, roleID, input)
+	if err == nil {
+		SetRolePermissionKeys(item.ID, item.PermissionKeys)
+	}
 	return item, normalizeWriteError(err)
 }
 
 func (s *ManagementService) DeleteRole(ctx context.Context, principal domainidentity.Principal, roleID string) error {
-	if err := ensureAdmin(principal); err != nil {
+	if err := s.ensurePermission(ctx, principal, PermAccessRolesManage); err != nil {
 		return err
 	}
 	if strings.TrimSpace(roleID) == "" {
 		return fmt.Errorf("%w: role id is required", apperrors.ErrInvalidArgument)
 	}
-	return normalizeWriteError(s.policies.DeleteRole(ctx, roleID))
+	if err := normalizeWriteError(s.policies.DeleteRole(ctx, roleID)); err != nil {
+		return err
+	}
+	DeleteRolePermissionKeys(roleID)
+	return nil
 }
 
 func (s *ManagementService) CreateTeam(ctx context.Context, principal domainidentity.Principal, input domainaccess.TeamInput) (domainaccess.TeamRecord, error) {
-	if err := ensureAdmin(principal); err != nil {
+	if err := s.ensurePermission(ctx, principal, PermAccessGroupsManage); err != nil {
 		return domainaccess.TeamRecord{}, err
 	}
 	input.Name = strings.TrimSpace(input.Name)
@@ -105,7 +119,7 @@ func (s *ManagementService) CreateTeam(ctx context.Context, principal domainiden
 }
 
 func (s *ManagementService) UpdateTeam(ctx context.Context, principal domainidentity.Principal, teamID string, input domainaccess.TeamInput) (domainaccess.TeamRecord, error) {
-	if err := ensureAdmin(principal); err != nil {
+	if err := s.ensurePermission(ctx, principal, PermAccessGroupsManage); err != nil {
 		return domainaccess.TeamRecord{}, err
 	}
 	if strings.TrimSpace(teamID) == "" {
@@ -124,7 +138,7 @@ func (s *ManagementService) UpdateTeam(ctx context.Context, principal domainiden
 }
 
 func (s *ManagementService) DeleteTeam(ctx context.Context, principal domainidentity.Principal, teamID string) error {
-	if err := ensureAdmin(principal); err != nil {
+	if err := s.ensurePermission(ctx, principal, PermAccessGroupsManage); err != nil {
 		return err
 	}
 	if strings.TrimSpace(teamID) == "" {
@@ -134,7 +148,7 @@ func (s *ManagementService) DeleteTeam(ctx context.Context, principal domainiden
 }
 
 func (s *ManagementService) CreatePolicy(ctx context.Context, principal domainidentity.Principal, input domainaccess.PolicyInput) (domainaccess.Policy, error) {
-	if err := ensureAdmin(principal); err != nil {
+	if err := s.ensurePermission(ctx, principal, PermAccessPoliciesManage); err != nil {
 		return domainaccess.Policy{}, err
 	}
 	input.ID = normalizeID(input.ID, input.Name)
@@ -149,7 +163,7 @@ func (s *ManagementService) CreatePolicy(ctx context.Context, principal domainid
 }
 
 func (s *ManagementService) UpdatePolicy(ctx context.Context, principal domainidentity.Principal, policyID string, input domainaccess.PolicyInput) (domainaccess.Policy, error) {
-	if err := ensureAdmin(principal); err != nil {
+	if err := s.ensurePermission(ctx, principal, PermAccessPoliciesManage); err != nil {
 		return domainaccess.Policy{}, err
 	}
 	if strings.TrimSpace(policyID) == "" {
@@ -167,7 +181,7 @@ func (s *ManagementService) UpdatePolicy(ctx context.Context, principal domainid
 }
 
 func (s *ManagementService) DeletePolicy(ctx context.Context, principal domainidentity.Principal, policyID string) error {
-	if err := ensureAdmin(principal); err != nil {
+	if err := s.ensurePermission(ctx, principal, PermAccessPoliciesManage); err != nil {
 		return err
 	}
 	if strings.TrimSpace(policyID) == "" {
@@ -177,7 +191,7 @@ func (s *ManagementService) DeletePolicy(ctx context.Context, principal domainid
 }
 
 func (s *ManagementService) ReplaceUserRoles(ctx context.Context, principal domainidentity.Principal, userID string, roleIDs []string) error {
-	if err := ensureAdmin(principal); err != nil {
+	if err := s.ensurePermission(ctx, principal, PermAccessUsersManage); err != nil {
 		return err
 	}
 	if strings.TrimSpace(userID) == "" {
@@ -190,7 +204,7 @@ func (s *ManagementService) ReplaceUserRoles(ctx context.Context, principal doma
 }
 
 func (s *ManagementService) ReplaceUserTeams(ctx context.Context, principal domainidentity.Principal, userID string, teamIDs []string) error {
-	if err := ensureAdmin(principal); err != nil {
+	if err := s.ensurePermission(ctx, principal, PermAccessUsersManage); err != nil {
 		return err
 	}
 	if strings.TrimSpace(userID) == "" {
@@ -203,7 +217,7 @@ func (s *ManagementService) ReplaceUserTeams(ctx context.Context, principal doma
 }
 
 func (s *ManagementService) CreateUser(ctx context.Context, principal domainidentity.Principal, input domainaccess.UserInput) (domainaccess.UserRecord, error) {
-	if err := ensureAdmin(principal); err != nil {
+	if err := s.ensurePermission(ctx, principal, PermAccessUsersManage); err != nil {
 		return domainaccess.UserRecord{}, err
 	}
 	input.ID = normalizeID(input.ID, input.Username)
@@ -228,7 +242,7 @@ func (s *ManagementService) CreateUser(ctx context.Context, principal domainiden
 }
 
 func (s *ManagementService) UpdateUser(ctx context.Context, principal domainidentity.Principal, userID string, input domainaccess.UserInput) (domainaccess.UserRecord, error) {
-	if err := ensureAdmin(principal); err != nil {
+	if err := s.ensurePermission(ctx, principal, PermAccessUsersManage); err != nil {
 		return domainaccess.UserRecord{}, err
 	}
 	if strings.TrimSpace(userID) == "" {
@@ -256,7 +270,7 @@ func (s *ManagementService) UpdateUser(ctx context.Context, principal domainiden
 }
 
 func (s *ManagementService) DeleteUser(ctx context.Context, principal domainidentity.Principal, userID string) error {
-	if err := ensureAdmin(principal); err != nil {
+	if err := s.ensurePermission(ctx, principal, PermAccessUsersManage); err != nil {
 		return err
 	}
 	if strings.TrimSpace(userID) == "" {
@@ -266,7 +280,7 @@ func (s *ManagementService) DeleteUser(ctx context.Context, principal domainiden
 }
 
 func (s *ManagementService) RevokeUserSessions(ctx context.Context, principal domainidentity.Principal, userID string) error {
-	if err := ensureAdmin(principal); err != nil {
+	if err := s.ensurePermission(ctx, principal, PermAccessUsersManage); err != nil {
 		return err
 	}
 	if strings.TrimSpace(userID) == "" {
@@ -278,13 +292,8 @@ func (s *ManagementService) RevokeUserSessions(ctx context.Context, principal do
 	return normalizeWriteError(s.users.RevokeSessionsByUserID(ctx, userID))
 }
 
-func ensureAdmin(principal domainidentity.Principal) error {
-	for _, role := range principal.Roles {
-		if role == "admin" {
-			return nil
-		}
-	}
-	return fmt.Errorf("%w: access management write operations require admin role", apperrors.ErrAccessDenied)
+func (s *ManagementService) ensurePermission(ctx context.Context, principal domainidentity.Principal, permissionKey string) error {
+	return AuthorizeRuntimePermission(ctx, s.permissions, principal, permissionKey)
 }
 
 func normalizeID(value string, fallback string) string {

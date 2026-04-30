@@ -452,6 +452,98 @@ func New(cfg cfgpkg.Config, logger *zap.Logger, client *k8sagent.Client) *Server
 			}
 			apiresponse.Items(c, http.StatusOK, items)
 		})
+		platform.GET("/network/ingressclasses", func(c *gin.Context) {
+			items, err := client.ListIngressClasses(c.Request.Context())
+			if err != nil {
+				writeError(c, err)
+				return
+			}
+			apiresponse.Items(c, http.StatusOK, items)
+		})
+		platform.GET("/configuration/priorityclasses", func(c *gin.Context) {
+			items, err := client.ListPriorityClasses(c.Request.Context())
+			if err != nil {
+				writeError(c, err)
+				return
+			}
+			apiresponse.Items(c, http.StatusOK, items)
+		})
+		platform.GET("/configuration/runtimeclasses", func(c *gin.Context) {
+			items, err := client.ListRuntimeClasses(c.Request.Context())
+			if err != nil {
+				writeError(c, err)
+				return
+			}
+			apiresponse.Items(c, http.StatusOK, items)
+		})
+		platform.GET("/access-control/clusterroles", func(c *gin.Context) {
+			items, err := client.ListClusterRoles(c.Request.Context())
+			if err != nil {
+				writeError(c, err)
+				return
+			}
+			apiresponse.Items(c, http.StatusOK, items)
+		})
+		platform.GET("/access-control/clusterrolebindings", func(c *gin.Context) {
+			items, err := client.ListClusterRoleBindings(c.Request.Context())
+			if err != nil {
+				writeError(c, err)
+				return
+			}
+			apiresponse.Items(c, http.StatusOK, items)
+		})
+		platform.GET("/configuration/mutatingwebhookconfigurations", func(c *gin.Context) {
+			items, err := client.ListMutatingWebhookConfigurations(c.Request.Context())
+			if err != nil {
+				writeError(c, err)
+				return
+			}
+			apiresponse.Items(c, http.StatusOK, items)
+		})
+		platform.GET("/configuration/validatingwebhookconfigurations", func(c *gin.Context) {
+			items, err := client.ListValidatingWebhookConfigurations(c.Request.Context())
+			if err != nil {
+				writeError(c, err)
+				return
+			}
+			apiresponse.Items(c, http.StatusOK, items)
+		})
+		platform.GET("/configuration/resourcequotas", func(c *gin.Context) {
+			namespace := c.Query("namespace")
+			items, err := client.ListResourceQuotas(c.Request.Context(), namespace)
+			if err != nil {
+				writeError(c, err)
+				return
+			}
+			apiresponse.Items(c, http.StatusOK, items)
+		})
+		platform.GET("/configuration/limitranges", func(c *gin.Context) {
+			namespace := c.Query("namespace")
+			items, err := client.ListLimitRanges(c.Request.Context(), namespace)
+			if err != nil {
+				writeError(c, err)
+				return
+			}
+			apiresponse.Items(c, http.StatusOK, items)
+		})
+		platform.GET("/configuration/leases", func(c *gin.Context) {
+			namespace := c.Query("namespace")
+			items, err := client.ListLeases(c.Request.Context(), namespace)
+			if err != nil {
+				writeError(c, err)
+				return
+			}
+			apiresponse.Items(c, http.StatusOK, items)
+		})
+		platform.GET("/workloads/replicationcontrollers", func(c *gin.Context) {
+			namespace := c.Query("namespace")
+			items, err := client.ListReplicationControllers(c.Request.Context(), namespace)
+			if err != nil {
+				writeError(c, err)
+				return
+			}
+			apiresponse.Items(c, http.StatusOK, items)
+		})
 		platform.GET("/extensions/crds", func(c *gin.Context) {
 			items, err := client.ListCRDs(c.Request.Context())
 			if err != nil {

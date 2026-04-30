@@ -106,7 +106,7 @@ func TestListPrunesStaleApplications(t *testing.T) {
 		apps: &stubWorkflowApps{missing: map[string]bool{"app-missing": true}},
 	}
 
-	items, err := service.List(context.Background(), domainidentity.Principal{}, "", 50)
+	items, err := service.List(context.Background(), domainidentity.Principal{Roles: []string{"developer"}}, "", 50)
 	if err != nil {
 		t.Fatalf("List() error = %v", err)
 	}
@@ -134,7 +134,7 @@ func TestTriggerReturnsNotFoundWhenApplicationMissing(t *testing.T) {
 		apps: &stubWorkflowApps{missing: map[string]bool{"missing-app": true}},
 	}
 
-	_, err := service.Trigger(context.Background(), domainidentity.Principal{}, domainworkflow.Input{
+	_, err := service.Trigger(context.Background(), domainidentity.Principal{Roles: []string{"developer"}}, domainworkflow.Input{
 		ApplicationID: "missing-app",
 		WorkflowName:  "build-release-verify",
 		ClusterID:     "cluster-ok",
@@ -142,6 +142,27 @@ func TestTriggerReturnsNotFoundWhenApplicationMissing(t *testing.T) {
 	})
 	if !errors.Is(err, apperrors.ErrNotFound) {
 		t.Fatalf("Trigger() error = %v, want ErrNotFound", err)
+	}
+	if repo.createCalls != 0 {
+		t.Fatalf("Create() called %d times, want 0", repo.createCalls)
+	}
+}
+
+func TestTriggerRequiresWorkflowTriggerPermission(t *testing.T) {
+	repo := &stubWorkflowRepository{}
+	service := &Service{
+		repo: repo,
+		apps: &stubWorkflowApps{},
+	}
+
+	_, err := service.Trigger(context.Background(), domainidentity.Principal{Roles: []string{"readonly"}}, domainworkflow.Input{
+		ApplicationID: "app-1",
+		WorkflowName:  "build-release-verify",
+		ClusterID:     "cluster-ok",
+		Namespace:     "default",
+	})
+	if !errors.Is(err, apperrors.ErrAccessDenied) {
+		t.Fatalf("Trigger() error = %v, want ErrAccessDenied", err)
 	}
 	if repo.createCalls != 0 {
 		t.Fatalf("Create() called %d times, want 0", repo.createCalls)
@@ -191,7 +212,7 @@ func TestTriggerExecutesDAGWorkflowTemplate(t *testing.T) {
 		_ = service.Shutdown(context.Background())
 	}()
 
-	run, err := service.Trigger(context.Background(), domainidentity.Principal{UserName: "tester"}, domainworkflow.Input{
+	run, err := service.Trigger(context.Background(), domainidentity.Principal{UserName: "tester", Roles: []string{"developer"}}, domainworkflow.Input{
 		ApplicationID:  "app-1",
 		WorkflowName:   "release-dag",
 		ClusterID:      "cluster-1",

@@ -1,0 +1,301 @@
+<!doctype html><html lang=zh-Hans dir=ltr class="docs-wrapper plugin-docs plugin-id-default docs-version-current docs-doc-page docs-doc-id-operations/role-authorization-assignment" data-has-hydrated=false><head><meta charset=UTF-8><meta name=generator content="Docusaurus v3.10.0"><title data-rh=true>角色授权分配运行手册 | kubecrux Docs</title><meta data-rh=true name=viewport content="width=device-width, initial-scale=1.0"/><meta data-rh=true name=twitter:card content=summary_large_image /><meta data-rh=true property=og:image content=http://localhost/docs/logo.svg /><meta data-rh=true name=twitter:image content=http://localhost/docs/logo.svg /><meta data-rh=true property=og:url content=http://localhost/docs/operations/role-authorization-assignment/ /><meta data-rh=true property=og:locale content=zh_Hans /><meta data-rh=true name=docusaurus_locale content=zh-Hans /><meta data-rh=true name=docsearch:language content=zh-Hans /><meta data-rh=true name=docusaurus_version content=current /><meta data-rh=true name=docusaurus_tag content=docs-default-current /><meta data-rh=true name=docsearch:version content=current /><meta data-rh=true name=docsearch:docusaurus_tag content=docs-default-current /><meta data-rh=true property=og:title content="角色授权分配运行手册 | kubecrux Docs"/><meta data-rh=true name=description content=目的 /><meta data-rh=true property=og:description content=目的 /><link data-rh=true rel=icon href=/docs/logo.svg /><link data-rh=true rel=canonical href=http://localhost/docs/operations/role-authorization-assignment/ /><link data-rh=true rel=alternate href=http://localhost/docs/operations/role-authorization-assignment/ hreflang=zh-Hans /><link data-rh=true rel=alternate href=http://localhost/docs/operations/role-authorization-assignment/ hreflang=x-default /><script data-rh=true type=application/ld+json>{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","item":"http://localhost/docs/operations/role-authorization-assignment","name":"角色授权分配运行手册","position":1}]}</script><link rel=stylesheet href=/docs/assets/css/styles.0d687a83.css /><script src=/docs/assets/js/runtime~main.a95940df.js defer></script><script src=/docs/assets/js/main.542bafea.js defer></script></head><body><svg style="display: none;"><defs>
+<symbol id=theme-svg-external-link viewBox="0 0 24 24"><path fill=currentColor d="M21 13v10h-21v-19h12v2h-10v15h17v-8h2zm3-12h-10.988l4.035 4-6.977 7.07 2.828 2.828 6.977-7.07 4.125 4.172v-11z"/></symbol>
+</defs></svg>
+<script>!function(){var t=function(){try{return new URLSearchParams(window.location.search).get("docusaurus-theme")}catch(t){}}()||function(){try{return window.localStorage.getItem("theme-db3")}catch(t){}}();document.documentElement.setAttribute("data-theme",t||(window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light")),document.documentElement.setAttribute("data-theme-choice",t||"system")}(),function(){try{for(var[t,e]of new URLSearchParams(window.location.search).entries())if(t.startsWith("docusaurus-data-")){var a=t.replace("docusaurus-data-","data-");document.documentElement.setAttribute(a,e)}}catch(t){}}()</script><div id=__docusaurus><link rel=preload as=image href=/docs/logo.svg /><div role=region aria-label=跳到主要内容><a class=skipToContent_fXgn href=#__docusaurus_skipToContent_fallback>跳到主要内容</a></div><nav aria-label=主导航 class="theme-layout-navbar navbar navbar--fixed-top navbarHideable_m1mJ"><div class=navbar__inner><div class="theme-layout-navbar-left navbar__items"><button aria-label=切换导航栏 aria-expanded=false class="navbar__toggle clean-btn" type=button><svg width=30 height=30 viewBox="0 0 30 30" aria-hidden=true><path stroke=currentColor stroke-linecap=round stroke-miterlimit=10 stroke-width=2 d="M4 7h22M4 15h22M4 23h22"/></svg></button><a class=navbar__brand href=/docs/><div class=navbar__logo><img src=/docs/logo.svg alt="kubecrux logo" class="themedComponent_mlkZ themedComponent--light_NVdE"/><img src=/docs/logo.svg alt="kubecrux logo" class="themedComponent_mlkZ themedComponent--dark_xIcU"/></div><b class="navbar__title text--truncate">kubecrux Docs</b></a><a aria-current=page class="navbar__item navbar__link navbar__link--active" href=/docs/>首页</a><a aria-current=page class="navbar__item navbar__link navbar__link--active" href=/docs/architecture/>架构</a><a aria-current=page class="navbar__item navbar__link navbar__link--active" href=/docs/development/local-development/>开发</a><a aria-current=page class="navbar__item navbar__link navbar__link--active" href=/docs/api/overview/>API</a><a aria-current=page class="navbar__item navbar__link navbar__link--active" href=/docs/operations/configuration/>运维</a></div><div class="theme-layout-navbar-right navbar__items navbar__items--right"><div class="toggle_vylO colorModeToggle_DEke"><button class="clean-btn toggleButton_gllP toggleButtonDisabled_aARS" type=button disabled title="system mode" aria-label="切换浅色/暗黑模式（当前为system mode）"><svg viewBox="0 0 24 24" width=24 height=24 aria-hidden=true class="toggleIcon_g3eP lightToggleIcon_pyhR"><path fill=currentColor d="M12,9c1.65,0,3,1.35,3,3s-1.35,3-3,3s-3-1.35-3-3S10.35,9,12,9 M12,7c-2.76,0-5,2.24-5,5s2.24,5,5,5s5-2.24,5-5 S14.76,7,12,7L12,7z M2,13l2,0c0.55,0,1-0.45,1-1s-0.45-1-1-1l-2,0c-0.55,0-1,0.45-1,1S1.45,13,2,13z M20,13l2,0c0.55,0,1-0.45,1-1 s-0.45-1-1-1l-2,0c-0.55,0-1,0.45-1,1S19.45,13,20,13z M11,2v2c0,0.55,0.45,1,1,1s1-0.45,1-1V2c0-0.55-0.45-1-1-1S11,1.45,11,2z M11,20v2c0,0.55,0.45,1,1,1s1-0.45,1-1v-2c0-0.55-0.45-1-1-1C11.45,19,11,19.45,11,20z M5.99,4.58c-0.39-0.39-1.03-0.39-1.41,0 c-0.39,0.39-0.39,1.03,0,1.41l1.06,1.06c0.39,0.39,1.03,0.39,1.41,0s0.39-1.03,0-1.41L5.99,4.58z M18.36,16.95 c-0.39-0.39-1.03-0.39-1.41,0c-0.39,0.39-0.39,1.03,0,1.41l1.06,1.06c0.39,0.39,1.03,0.39,1.41,0c0.39-0.39,0.39-1.03,0-1.41 L18.36,16.95z M19.42,5.99c0.39-0.39,0.39-1.03,0-1.41c-0.39-0.39-1.03-0.39-1.41,0l-1.06,1.06c-0.39,0.39-0.39,1.03,0,1.41 s1.03,0.39,1.41,0L19.42,5.99z M7.05,18.36c0.39-0.39,0.39-1.03,0-1.41c-0.39-0.39-1.03-0.39-1.41,0l-1.06,1.06 c-0.39,0.39-0.39,1.03,0,1.41s1.03,0.39,1.41,0L7.05,18.36z"/></svg><svg viewBox="0 0 24 24" width=24 height=24 aria-hidden=true class="toggleIcon_g3eP darkToggleIcon_wfgR"><path fill=currentColor d="M9.37,5.51C9.19,6.15,9.1,6.82,9.1,7.5c0,4.08,3.32,7.4,7.4,7.4c0.68,0,1.35-0.09,1.99-0.27C17.45,17.19,14.93,19,12,19 c-3.86,0-7-3.14-7-7C5,9.07,6.81,6.55,9.37,5.51z M12,3c-4.97,0-9,4.03-9,9s4.03,9,9,9s9-4.03,9-9c0-0.46-0.04-0.92-0.1-1.36 c-0.98,1.37-2.58,2.26-4.4,2.26c-2.98,0-5.4-2.42-5.4-5.4c0-1.81,0.89-3.42,2.26-4.4C12.92,3.04,12.46,3,12,3L12,3z"/></svg><svg viewBox="0 0 24 24" width=24 height=24 aria-hidden=true class="toggleIcon_g3eP systemToggleIcon_QzmC"><path fill=currentColor d="m12 21c4.971 0 9-4.029 9-9s-4.029-9-9-9-9 4.029-9 9 4.029 9 9 9zm4.95-13.95c1.313 1.313 2.05 3.093 2.05 4.95s-0.738 3.637-2.05 4.95c-1.313 1.313-3.093 2.05-4.95 2.05v-14c1.857 0 3.637 0.737 4.95 2.05z"/></svg></button></div><div class=navbarSearchContainer_Bca1></div></div></div><div role=presentation class=navbar-sidebar__backdrop></div></nav><div id=__docusaurus_skipToContent_fallback class="theme-layout-main main-wrapper mainWrapper_z2l0"><div class=docsWrapper_hBAB><button aria-label=回到顶部 class="clean-btn theme-back-to-top-button backToTopButton_sjWU" type=button></button><div class=docRoot_UBD9><aside class="theme-doc-sidebar-container docSidebarContainer_YfHR"><div class=sidebarViewport_aRkj><div class="sidebar_njMd sidebarWithHideableNavbar_wUlq"><a tabindex=-1 class=sidebarLogo_isFc href=/docs/><img src=/docs/logo.svg alt="kubecrux logo" class="themedComponent_mlkZ themedComponent--light_NVdE"/><img src=/docs/logo.svg alt="kubecrux logo" class="themedComponent_mlkZ themedComponent--dark_xIcU"/><b>kubecrux Docs</b></a><nav aria-label=文档侧边栏 class="menu thin-scrollbar menu_SIkG"><ul class="theme-doc-sidebar-menu menu__list"><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/docs/><span title="kubecrux 文档" class=linkLabel_WmDU>kubecrux 文档</span></a><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class=menu__list-item-collapsible><a class="categoryLink_byQd menu__link menu__link--sublist" href=/docs/architecture/><span title=架构 class=categoryLinkLabel_W154>架构</span></a><button aria-label="展开侧边栏分类 '架构'" aria-expanded=false type=button class="clean-btn menu__caret"></button></div><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class=menu__list-item-collapsible><a class="categoryLink_byQd menu__link menu__link--sublist menu__link--sublist-caret" role=button aria-expanded=false href=/docs/development/local-development/><span title=开发 class=categoryLinkLabel_W154>开发</span></a></div><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class=menu__list-item-collapsible><a class="categoryLink_byQd menu__link menu__link--sublist menu__link--sublist-caret" role=button aria-expanded=false href=/docs/api/overview/><span title=API class=categoryLinkLabel_W154>API</span></a></div><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item"><div class=menu__list-item-collapsible><a class="categoryLink_byQd menu__link menu__link--sublist menu__link--sublist-caret menu__link--active" role=button aria-expanded=true href=/docs/operations/configuration/><span title=运维 class=categoryLinkLabel_W154>运维</span></a></div><ul class=menu__list><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class=menu__link tabindex=0 href=/docs/operations/configuration/><span title=Configuration class=linkLabel_WmDU>Configuration</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class="menu__link menu__link--active" aria-current=page tabindex=0 href=/docs/operations/role-authorization-assignment/><span title=角色授权分配运行手册 class=linkLabel_WmDU>角色授权分配运行手册</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class=menu__link tabindex=0 href=/docs/operations/agent-runtime/><span title="Agent Runtime" class=linkLabel_WmDU>Agent Runtime</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class=menu__link tabindex=0 href=/docs/operations/deployment/><span title=Deployment class=linkLabel_WmDU>Deployment</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class=menu__link tabindex=0 href=/docs/operations/environment-variables/><span title="Environment Overrides" class=linkLabel_WmDU>Environment Overrides</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class=menu__link tabindex=0 href=/docs/operations/dependencies/><span title=Dependencies class=linkLabel_WmDU>Dependencies</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class=menu__link tabindex=0 href=/docs/operations/docs-publishing/><span title="Docs Publishing" class=linkLabel_WmDU>Docs Publishing</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class=menu__link tabindex=0 href=/docs/operations/mcp/><span title=MCP class=linkLabel_WmDU>MCP</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class=menu__link tabindex=0 href=/docs/operations/mcp-configuration/><span title="MCP Configuration" class=linkLabel_WmDU>MCP Configuration</span></a></ul><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class=menu__list-item-collapsible><a class="categoryLink_byQd menu__link menu__link--sublist menu__link--sublist-caret" role=button aria-expanded=false href=/docs/roadmap/><span title=路线图 class=categoryLinkLabel_W154>路线图</span></a></div><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class=menu__list-item-collapsible><a class="categoryLink_byQd menu__link menu__link--sublist menu__link--sublist-caret" role=button aria-expanded=false href=/docs/reference/product-information-architecture/><span title=参考 class=categoryLinkLabel_W154>参考</span></a></div></ul></nav></div></div></aside><main class=docMainContainer_TBSr><div class="container padding-top--md padding-bottom--lg"><div class=row><div class="col docItemCol_VOVn"><div class=docItemContainer_Djhp><article><nav class="theme-doc-breadcrumbs breadcrumbsContainer_Z_bl" aria-label=页面路径><ul class=breadcrumbs><li class=breadcrumbs__item><a aria-label=主页面 class=breadcrumbs__link href=/docs/><svg viewBox="0 0 24 24" class=breadcrumbHomeIcon_YNFT><path d="M10 19v-5h4v5c0 .55.45 1 1 1h3c.55 0 1-.45 1-1v-7h1.7c.46 0 .68-.57.33-.87L12.67 3.6c-.38-.34-.96-.34-1.34 0l-8.36 7.53c-.34.3-.13.87.33.87H5v7c0 .55.45 1 1 1h3c.55 0 1-.45 1-1z" fill=currentColor /></svg></a><li class=breadcrumbs__item><span class=breadcrumbs__link>运维</span><li class="breadcrumbs__item breadcrumbs__item--active"><span class=breadcrumbs__link>角色授权分配运行手册</span></ul></nav><div class="tocCollapsible_ETCw theme-doc-toc-mobile tocMobile_ITEo"><button type=button class="clean-btn tocCollapsibleButton_TO0P">本页总览</button></div><div class="theme-doc-markdown markdown"><header><h1>角色授权分配运行手册</h1></header>
+<h2 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id=目的>目的<a href=#目的 class=hash-link aria-label=目的的直接链接 title=目的的直接链接 translate=no>​</a></h2>
+<p>本手册用于标准化 kubecrux 中的角色授权分配流程，避免“角色已经分配，但页面仍不可见”或“页面可见，但接口仍然 403”这类常见偏差。</p>
+<p>当前控制台权限已经收敛到“<code>permissionKeys</code> 派生菜单可见性”为默认路径：</p>
+<ul>
+<li class="">角色上的 <code>permissionKeys</code> 决定页面访问、后端控制面 API 权限，以及大多数菜单可见性</li>
+<li class="">菜单与角色的显式绑定只保留给少数例外或未映射菜单</li>
+</ul>
+<p>对平台类资源页面，还可能叠加第三层约束：</p>
+<ul>
+<li class="">ABAC 策略或 <code>scope grants</code> 决定的集群、命名空间与资源范围</li>
+</ul>
+<p>这意味着“给用户分配一个角色”本身仍不等于“用户已经拥有完整可用的页面与 API 访问能力”，但常规页面已不再需要额外手工维护一份菜单角色绑定。</p>
+<h2 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id=适用范围>适用范围<a href=#适用范围 class=hash-link aria-label=适用范围的直接链接 title=适用范围的直接链接 translate=no>​</a></h2>
+<p>本手册适用于以下运维或管理员场景：</p>
+<ul>
+<li class="">新增角色并授予控制台页面访问权限</li>
+<li class="">给现有角色增加读写能力</li>
+<li class="">排查某个用户为什么看不到菜单、打不开页面、不能保存配置、或看得到页面但拿不到平台资源数据</li>
+</ul>
+<h2 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id=生效模型>生效模型<a href=#生效模型 class=hash-link aria-label=生效模型的直接链接 title=生效模型的直接链接 translate=no>​</a></h2>
+<p>角色授权是否完整生效，按下面顺序判断：</p>
+<ol>
+<li class="">用户是否绑定了目标角色</li>
+<li class="">目标角色是否包含所需 <code>permissionKeys</code></li>
+<li class="">对应菜单是否属于默认派生路径，还是仍需显式绑定的例外路径</li>
+<li class="">如果是平台资源或范围化数据，用户或其角色/用户组是否还有对应的策略与 <code>scope grants</code></li>
+<li class="">用户当前会话是否已经刷新到最新的权限快照</li>
+</ol>
+<p>只要其中任何一层缺失，最终体验都可能是部分可用或完全不可用。</p>
+<h2 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id=前置准备>前置准备<a href=#前置准备 class=hash-link aria-label=前置准备的直接链接 title=前置准备的直接链接 translate=no>​</a></h2>
+<p>执行授权前，先确认以下信息：</p>
+<ul>
+<li class="">目标用户是谁</li>
+<li class="">目标用户属于哪些 <code>用户组</code></li>
+<li class="">目标角色是新建角色还是已有角色</li>
+<li class="">要开放的是页面可见、只读、还是可写/可操作能力</li>
+<li class="">涉及哪些菜单</li>
+<li class="">涉及哪些 <code>permissionKeys</code></li>
+<li class="">目标菜单当前在菜单管理里显示为 <code>自动派生</code>、<code>显式覆盖</code> 还是 <code>未映射</code></li>
+<li class="">是否还需要平台资源范围授权，例如集群、命名空间、标签选择器</li>
+</ul>
+<p>建议在变更单或操作记录中提前写清下面三类映射：</p>
+<ul>
+<li class="">页面或功能 -> 对应菜单</li>
+<li class="">页面或功能 -> 对应 <code>permissionKeys</code></li>
+<li class="">页面或功能 -> 是否需要 <code>scope grants</code> 或 ABAC 策略</li>
+<li class="">页面或功能 -> 是否走默认派生，或需要显式菜单例外</li>
+</ul>
+<h2 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id=正式分配检查清单>正式分配检查清单<a href=#正式分配检查清单 class=hash-link aria-label=正式分配检查清单的直接链接 title=正式分配检查清单的直接链接 translate=no>​</a></h2>
+<h3 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id=1-明确目标能力>1. 明确目标能力<a href=#1-明确目标能力 class=hash-link aria-label="1. 明确目标能力的直接链接" title="1. 明确目标能力的直接链接" translate=no>​</a></h3>
+<p>先把需求翻译成系统内可执行的授权对象，而不是只写“给某某开放权限”。</p>
+<p>至少要明确：</p>
+<ul>
+<li class="">目标页面或模块，例如 <code>访问控制 > 用户</code>、<code>设置中心 > AI</code></li>
+<li class="">是只读还是可管理</li>
+<li class="">是否需要后端写接口</li>
+<li class="">是否需要平台资源范围</li>
+</ul>
+<p>推荐使用下面的拆分方式：</p>
+<ul>
+<li class="">页面访问：<code>*.view</code></li>
+<li class="">变更或保存：<code>*.manage</code></li>
+<li class="">平台运行时操作：由资源 <code>capabilities</code>、<code>allowedActions</code>、策略与范围控制</li>
+</ul>
+<h3 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id=2-校验或更新角色的-permissionkeys>2. 校验或更新角色的 <code>permissionKeys</code><a href=#2-校验或更新角色的-permissionkeys class=hash-link aria-label=2-校验或更新角色的-permissionkeys的直接链接 title=2-校验或更新角色的-permissionkeys的直接链接 translate=no>​</a></h3>
+<p>在角色定义中确认目标角色已经具备所需 <code>permissionKeys</code>。</p>
+<p>典型示例：</p>
+<ul>
+<li class="">访问用户列表：<code>access.users.view</code></li>
+<li class="">创建或更新用户：<code>access.users.manage</code></li>
+<li class="">查看 AI 设置页：<code>settings.ai.view</code></li>
+<li class="">修改 AI 设置：<code>settings.ai.manage</code></li>
+</ul>
+<p>检查点：</p>
+<ul>
+<li class="">只读场景不要误配成仅有 <code>*.manage</code> 而缺少 <code>*.view</code></li>
+<li class="">可写场景通常需要同时具备 <code>*.view</code> 和 <code>*.manage</code></li>
+<li class="">不要把平台资源动作能力误写进 <code>permissionKeys</code></li>
+<li class="">不要假设内置角色默认值一定等于当前数据库中的持久化角色</li>
+</ul>
+<h3 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id=3-校验菜单可见性模式>3. 校验菜单可见性模式<a href=#3-校验菜单可见性模式 class=hash-link aria-label="3. 校验菜单可见性模式的直接链接" title="3. 校验菜单可见性模式的直接链接" translate=no>​</a></h3>
+<p>大多数已接入的控制台菜单不再要求手工做菜单角色绑定。先在 <code>系统管理 > 菜单管理</code> 确认当前菜单属于哪一类：</p>
+<ul>
+<li class=""><code>自动派生</code>
+<ul>
+<li class="">这是默认路径</li>
+<li class="">角色具备对应 <code>permissionKeys</code> 后，菜单会自动进入 <code>visibleMenuIds</code></li>
+<li class="">不需要再手工维护 <code>roleIds</code></li>
+</ul>
+</li>
+<li class=""><code>显式覆盖</code>
+<ul>
+<li class="">只用于少数例外场景，或运维明确希望保留单独菜单绑定时</li>
+<li class="">当前实现里，<code>roleIds</code> 是补充可见性的回退路径，不是“比权限键更强的隐藏规则”</li>
+</ul>
+</li>
+<li class=""><code>未映射</code>
+<ul>
+<li class="">说明前端路由和当前后端派生表还没有形成稳定映射</li>
+<li class="">这类菜单如果仍要控制可见性，应填写显式 <code>roleIds</code></li>
+</ul>
+</li>
+</ul>
+<p>判断原则：</p>
+<ul>
+<li class=""><code>permissionKeys</code> 解决“是否允许访问页面/API”</li>
+<li class="">菜单派生或显式绑定解决“该入口是否进入可见菜单集合”</li>
+</ul>
+<p>对已映射菜单，常规流程只维护 <code>permissionKeys</code>；只有例外路径才维护 <code>roleIds</code>。</p>
+<h3 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id=4-校验平台范围授权>4. 校验平台范围授权<a href=#4-校验平台范围授权 class=hash-link aria-label="4. 校验平台范围授权的直接链接" title="4. 校验平台范围授权的直接链接" translate=no>​</a></h3>
+<p>如果页面属于平台资源或受范围控制的数据面，菜单可见和页面可打开仍然不代表用户一定能看到资源数据。</p>
+<p>需要继续确认：</p>
+<ul>
+<li class="">用户角色或用户组是否命中了正确策略</li>
+<li class="">是否存在对应 <code>scope grants</code></li>
+<li class="">集群、命名空间、标签条件是否覆盖目标资源</li>
+</ul>
+<p>典型症状：</p>
+<ul>
+<li class="">页面能打开，但列表为空</li>
+<li class="">详情页能进入，但操作按钮消失</li>
+<li class="">后端返回允许登录，却对具体资源请求返回 403 或空结果</li>
+</ul>
+<h3 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id=5-把角色分配给用户>5. 把角色分配给用户<a href=#5-把角色分配给用户 class=hash-link aria-label="5. 把角色分配给用户的直接链接" title="5. 把角色分配给用户的直接链接" translate=no>​</a></h3>
+<p>完成角色定义后，再确认用户本身已经绑定目标角色，并且用户组关系正确。</p>
+<p>检查点：</p>
+<ul>
+<li class="">用户角色绑定是否保存成功</li>
+<li class="">用户组绑定是否同步保存成功</li>
+<li class="">如果策略依赖 <code>用户组</code>，不要只绑角色不绑组</li>
+</ul>
+<h3 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id=6-刷新权限快照>6. 刷新权限快照<a href=#6-刷新权限快照 class=hash-link aria-label="6. 刷新权限快照的直接链接" title="6. 刷新权限快照的直接链接" translate=no>​</a></h3>
+<p>角色、菜单、策略、范围变更后，当前登录态未必立即拿到最新权限快照。</p>
+<p>操作后应执行至少一种刷新动作：</p>
+<ul>
+<li class="">重新登录</li>
+<li class="">刷新当前会话对应的认证上下文</li>
+<li class="">在浏览器里确认最新会话请求已经返回更新后的 <code>permissionKeys</code> 与 <code>visibleMenuIds</code></li>
+</ul>
+<p>如果这一步跳过，最常见结果是后台数据已经改对，但前端仍表现为旧权限。</p>
+<h2 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id=验证步骤>验证步骤<a href=#验证步骤 class=hash-link aria-label=验证步骤的直接链接 title=验证步骤的直接链接 translate=no>​</a></h2>
+<h3 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id=基础验证>基础验证<a href=#基础验证 class=hash-link aria-label=基础验证的直接链接 title=基础验证的直接链接 translate=no>​</a></h3>
+<ol>
+<li class="">使用目标用户重新登录控制台</li>
+<li class="">检查目标菜单是否出现在侧边栏</li>
+<li class="">打开目标页面，确认没有被路由拦截或跳转</li>
+<li class="">对只读页面，确认列表或详情可正常加载</li>
+<li class="">对可写页面，确认保存、创建、删除或其他管理按钮按预期显示</li>
+</ol>
+<h3 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id=权限快照验证>权限快照验证<a href=#权限快照验证 class=hash-link aria-label=权限快照验证的直接链接 title=权限快照验证的直接链接 translate=no>​</a></h3>
+<p>在浏览器开发者工具的网络请求中，检查登录后会话初始化或权限快照返回的数据，确认：</p>
+<ul>
+<li class=""><code>permissionKeys</code> 包含目标键</li>
+<li class=""><code>visibleMenuIds</code> 包含目标菜单</li>
+</ul>
+<p>如果目标菜单属于 <code>自动派生</code>，通常应同时命中这两项；如果属于 <code>显式覆盖</code> 或 <code>未映射</code>，则还要继续核对菜单配置本身。</p>
+<h3 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id=api-验证>API 验证<a href=#api-验证 class=hash-link aria-label="API 验证的直接链接" title="API 验证的直接链接" translate=no>​</a></h3>
+<p>对目标功能实际发起一次读请求和一次写请求。</p>
+<p>验证目标：</p>
+<ul>
+<li class="">只读角色：读请求成功，写请求被拒绝</li>
+<li class="">管理角色：读写请求都成功</li>
+<li class="">平台范围角色：请求只返回被允许的集群、命名空间或资源</li>
+</ul>
+<h3 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id=范围验证>范围验证<a href=#范围验证 class=hash-link aria-label=范围验证的直接链接 title=范围验证的直接链接 translate=no>​</a></h3>
+<p>如果涉及平台资源，再额外验证：</p>
+<ul>
+<li class="">切换到允许的集群/命名空间时可见数据</li>
+<li class="">切换到未授权范围时为空或被拒绝</li>
+<li class="">行级操作只在允许范围内出现</li>
+</ul>
+<h2 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id=常见失败模式>常见失败模式<a href=#常见失败模式 class=hash-link aria-label=常见失败模式的直接链接 title=常见失败模式的直接链接 translate=no>​</a></h2>
+<h3 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id=角色已有-permissionkeys但菜单仍不可见>角色已有 <code>permissionKeys</code>，但菜单仍不可见<a href=#角色已有-permissionkeys但菜单仍不可见 class=hash-link aria-label=角色已有-permissionkeys但菜单仍不可见的直接链接 title=角色已有-permissionkeys但菜单仍不可见的直接链接 translate=no>​</a></h3>
+<p>现象：</p>
+<ul>
+<li class="">侧边栏看不到页面</li>
+<li class="">页面可能被路由拦截，或入口不可发现</li>
+</ul>
+<p>处理：</p>
+<ul>
+<li class="">先确认该菜单是否是 <code>自动派生</code></li>
+<li class="">如果是 <code>自动派生</code>，检查菜单是否 <code>enabled</code>、菜单 ID 是否已接入后端派生表、以及会话是否已刷新</li>
+<li class="">如果是 <code>未映射</code>，改用显式 <code>roleIds</code> 或补齐前后端映射后再验证</li>
+</ul>
+<h3 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id=菜单已显式绑定但-permissionkeys-缺失>菜单已显式绑定，但 <code>permissionKeys</code> 缺失<a href=#菜单已显式绑定但-permissionkeys-缺失 class=hash-link aria-label=菜单已显式绑定但-permissionkeys-缺失的直接链接 title=菜单已显式绑定但-permissionkeys-缺失的直接链接 translate=no>​</a></h3>
+<p>现象：</p>
+<ul>
+<li class="">菜单可能可见，但页面打开后被权限校验拦截</li>
+<li class="">页面能进，但保存操作返回 403</li>
+</ul>
+<p>处理：</p>
+<ul>
+<li class="">给角色补齐对应 <code>*.view</code> 或 <code>*.manage</code></li>
+</ul>
+<h3 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id=已配置显式-roleids但有权限的用户仍然能看到菜单>已配置显式 <code>roleIds</code>，但有权限的用户仍然能看到菜单<a href=#已配置显式-roleids但有权限的用户仍然能看到菜单 class=hash-link aria-label=已配置显式-roleids但有权限的用户仍然能看到菜单的直接链接 title=已配置显式-roleids但有权限的用户仍然能看到菜单的直接链接 translate=no>​</a></h3>
+<p>现象：</p>
+<ul>
+<li class="">菜单处于 <code>显式覆盖</code></li>
+<li class="">某用户不在显式 <code>roleIds</code> 里，但只要具备对应派生权限键，菜单仍可见</li>
+</ul>
+<p>处理：</p>
+<ul>
+<li class="">这是当前实现行为，不是单独故障</li>
+<li class="">当前后端将显式 <code>roleIds</code> 作为补充可见性的回退路径，而不是收窄派生权限结果的强制覆盖</li>
+<li class="">如果需要真正的“有权限但仍隐藏”语义，需要后续产品与后端模型专门收敛</li>
+</ul>
+<h3 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id=未映射菜单未配-roleids结果默认可见>未映射菜单未配 <code>roleIds</code>，结果默认可见<a href=#未映射菜单未配-roleids结果默认可见 class=hash-link aria-label=未映射菜单未配-roleids结果默认可见的直接链接 title=未映射菜单未配-roleids结果默认可见的直接链接 translate=no>​</a></h3>
+<p>现象：</p>
+<ul>
+<li class="">菜单管理里显示 <code>未映射</code></li>
+<li class="">菜单启用且没有显式 <code>roleIds</code></li>
+<li class="">用户即使没有特定页面权限，也能在侧边栏看到该入口</li>
+</ul>
+<p>处理：</p>
+<ul>
+<li class="">这是当前兼容路径，用于避免旧菜单因尚未接入映射而突然消失</li>
+<li class="">若该入口需要权限控制，补齐显式 <code>roleIds</code></li>
+<li class="">若该入口应收敛为默认派生路径，则安排补齐后端菜单 ID 到权限键映射</li>
+</ul>
+<h3 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id=view-和-manage-只配了一半><code>view</code> 和 <code>manage</code> 只配了一半<a href=#view-和-manage-只配了一半 class=hash-link aria-label=view-和-manage-只配了一半的直接链接 title=view-和-manage-只配了一半的直接链接 translate=no>​</a></h3>
+<p>现象：</p>
+<ul>
+<li class="">页面可见，但保存按钮缺失</li>
+<li class="">页面按钮可见，但提交时被后端拒绝</li>
+</ul>
+<p>处理：</p>
+<ul>
+<li class="">对照页面语义分别补齐 <code>*.view</code> 与 <code>*.manage</code></li>
+</ul>
+<h3 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id=角色已更新但用户会话还是旧快照>角色已更新，但用户会话还是旧快照<a href=#角色已更新但用户会话还是旧快照 class=hash-link aria-label=角色已更新，但用户会话还是旧快照的直接链接 title=角色已更新，但用户会话还是旧快照的直接链接 translate=no>​</a></h3>
+<p>现象：</p>
+<ul>
+<li class="">数据库或后台配置已经正确</li>
+<li class="">前端仍按旧权限显示</li>
+</ul>
+<p>处理：</p>
+<ul>
+<li class="">重新登录或刷新权限快照</li>
+</ul>
+<h3 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id=页面可见但平台数据为空>页面可见，但平台数据为空<a href=#页面可见但平台数据为空 class=hash-link aria-label=页面可见，但平台数据为空的直接链接 title=页面可见，但平台数据为空的直接链接 translate=no>​</a></h3>
+<p>现象：</p>
+<ul>
+<li class="">菜单和路由都正常</li>
+<li class="">资源列表为空，或资源操作被拒绝</li>
+</ul>
+<p>处理：</p>
+<ul>
+<li class="">检查 ABAC 策略与 <code>scope grants</code></li>
+<li class="">检查用户组、角色、命名空间和集群范围是否真正命中</li>
+</ul>
+<h3 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id=误把运行时资源动作当成控制台页面权限>误把运行时资源动作当成控制台页面权限<a href=#误把运行时资源动作当成控制台页面权限 class=hash-link aria-label=误把运行时资源动作当成控制台页面权限的直接链接 title=误把运行时资源动作当成控制台页面权限的直接链接 translate=no>​</a></h3>
+<p>现象：</p>
+<ul>
+<li class="">给了 <code>permissionKeys</code>，但重启、扩缩容、日志、终端等动作仍不可执行</li>
+</ul>
+<p>处理：</p>
+<ul>
+<li class="">检查资源 <code>capabilities</code></li>
+<li class="">检查后端返回的 <code>allowedActions</code></li>
+<li class="">检查对应范围策略</li>
+</ul>
+<h2 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id=变更后最小验收标准>变更后最小验收标准<a href=#变更后最小验收标准 class=hash-link aria-label=变更后最小验收标准的直接链接 title=变更后最小验收标准的直接链接 translate=no>​</a></h2>
+<p>一次正式授权变更至少应满足以下结果：</p>
+<ul>
+<li class="">目标用户能看到正确的菜单入口</li>
+<li class="">目标页面可打开</li>
+<li class="">只读与可写能力符合预期</li>
+<li class="">平台数据范围符合预期</li>
+<li class="">未授权页面、按钮和范围仍保持拒绝</li>
+</ul>
+<p>如果上述任一项未通过，不应把本次授权变更视为完成。</p>
+<h2 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id=操作建议>操作建议<a href=#操作建议 class=hash-link aria-label=操作建议的直接链接 title=操作建议的直接链接 translate=no>​</a></h2>
+<ul>
+<li class="">默认先维护 <code>permissionKeys</code>，不要把显式菜单绑定当成常规步骤</li>
+<li class="">在菜单管理里优先让路由型菜单保持 <code>自动派生</code></li>
+<li class="">新增页面或新权限时，同步维护“权限键 + 菜单映射/例外模式 + 范围要求”</li>
+<li class="">新增自定义菜单时，明确它是：<!-- -->
+<ul>
+<li class="">走后端派生表的正式菜单</li>
+<li class="">暂时通过显式 <code>roleIds</code> 控制的例外菜单</li>
+<li class="">尚未收敛、因此保留兼容可见性的未映射菜单</li>
+</ul>
+</li>
+<li class="">不要只验证页面可见，还要验证真实 API 与真实范围</li>
+<li class="">自定义角色上线前，先用一个测试用户完整走一遍登录、菜单、页面、写操作、范围过滤验收</li>
+</ul>
+<h2 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id=未决例外路径>未决例外路径<a href=#未决例外路径 class=hash-link aria-label=未决例外路径的直接链接 title=未决例外路径的直接链接 translate=no>​</a></h2>
+<ul>
+<li class="">已映射菜单上的显式 <code>roleIds</code> 当前只提供补充可见性，不会压过派生权限结果</li>
+<li class="">未映射且未配置 <code>roleIds</code> 的启用菜单，当前仍保持默认可见以兼容历史菜单</li>
+<li class="">前端菜单管理的 <code>自动派生/显式覆盖/未映射</code> 标签，当前部分依赖路由元数据推断；后端持久层仍只保存 <code>roleIds</code></li>
+</ul>
+<h2 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id=相关文档>相关文档<a href=#相关文档 class=hash-link aria-label=相关文档的直接链接 title=相关文档的直接链接 translate=no>​</a></h2>
+<ul>
+<li class=""><a class="" href=/docs/architecture/authorization/>权限模型</a></li>
+<li class=""><a class="" href=/docs/operations/configuration/>配置说明</a></li>
+</ul></div><footer class="theme-doc-footer docusaurus-mt-lg"><div class="row margin-top--sm theme-doc-footer-edit-meta-row"><div class="col noPrint_WFHX"><a href=https://github.com/kubecrux/kubecrux/tree/main/docs/operations/role-authorization-assignment.md target=_blank rel="noopener noreferrer" class=theme-edit-this-page><svg fill=currentColor height=20 width=20 viewBox="0 0 40 40" class=iconEdit_Z9Sw aria-hidden=true><g><path d="m34.5 11.7l-3 3.1-6.3-6.3 3.1-3q0.5-0.5 1.2-0.5t1.1 0.5l3.9 3.9q0.5 0.4 0.5 1.1t-0.5 1.2z m-29.5 17.1l18.4-18.5 6.3 6.3-18.4 18.4h-6.3v-6.2z"/></g></svg>编辑此页</a></div><div class="col lastUpdated_JAkA"></div></div></footer></article><nav class="docusaurus-mt-lg pagination-nav" aria-label=文件选项卡><a class="pagination-nav__link pagination-nav__link--prev" href=/docs/operations/configuration/><div class=pagination-nav__sublabel>上一页</div><div class=pagination-nav__label>Configuration</div></a><a class="pagination-nav__link pagination-nav__link--next" href=/docs/operations/agent-runtime/><div class=pagination-nav__sublabel>下一页</div><div class=pagination-nav__label>Agent Runtime</div></a></nav></div></div><div class="col col--3"><div class="tableOfContents_bqdL thin-scrollbar theme-doc-toc-desktop"><ul class="table-of-contents table-of-contents__left-border"><li><a href=#目的 class="table-of-contents__link toc-highlight">目的</a><li><a href=#适用范围 class="table-of-contents__link toc-highlight">适用范围</a><li><a href=#生效模型 class="table-of-contents__link toc-highlight">生效模型</a><li><a href=#前置准备 class="table-of-contents__link toc-highlight">前置准备</a><li><a href=#正式分配检查清单 class="table-of-contents__link toc-highlight">正式分配检查清单</a><ul><li><a href=#1-明确目标能力 class="table-of-contents__link toc-highlight">1. 明确目标能力</a><li><a href=#2-校验或更新角色的-permissionkeys class="table-of-contents__link toc-highlight">2. 校验或更新角色的 <code>permissionKeys</code></a><li><a href=#3-校验菜单可见性模式 class="table-of-contents__link toc-highlight">3. 校验菜单可见性模式</a><li><a href=#4-校验平台范围授权 class="table-of-contents__link toc-highlight">4. 校验平台范围授权</a><li><a href=#5-把角色分配给用户 class="table-of-contents__link toc-highlight">5. 把角色分配给用户</a><li><a href=#6-刷新权限快照 class="table-of-contents__link toc-highlight">6. 刷新权限快照</a></ul><li><a href=#验证步骤 class="table-of-contents__link toc-highlight">验证步骤</a><ul><li><a href=#基础验证 class="table-of-contents__link toc-highlight">基础验证</a><li><a href=#权限快照验证 class="table-of-contents__link toc-highlight">权限快照验证</a><li><a href=#api-验证 class="table-of-contents__link toc-highlight">API 验证</a><li><a href=#范围验证 class="table-of-contents__link toc-highlight">范围验证</a></ul><li><a href=#常见失败模式 class="table-of-contents__link toc-highlight">常见失败模式</a><ul><li><a href=#角色已有-permissionkeys但菜单仍不可见 class="table-of-contents__link toc-highlight">角色已有 <code>permissionKeys</code>，但菜单仍不可见</a><li><a href=#菜单已显式绑定但-permissionkeys-缺失 class="table-of-contents__link toc-highlight">菜单已显式绑定，但 <code>permissionKeys</code> 缺失</a><li><a href=#已配置显式-roleids但有权限的用户仍然能看到菜单 class="table-of-contents__link toc-highlight">已配置显式 <code>roleIds</code>，但有权限的用户仍然能看到菜单</a><li><a href=#未映射菜单未配-roleids结果默认可见 class="table-of-contents__link toc-highlight">未映射菜单未配 <code>roleIds</code>，结果默认可见</a><li><a href=#view-和-manage-只配了一半 class="table-of-contents__link toc-highlight"><code>view</code> 和 <code>manage</code> 只配了一半</a><li><a href=#角色已更新但用户会话还是旧快照 class="table-of-contents__link toc-highlight">角色已更新，但用户会话还是旧快照</a><li><a href=#页面可见但平台数据为空 class="table-of-contents__link toc-highlight">页面可见，但平台数据为空</a><li><a href=#误把运行时资源动作当成控制台页面权限 class="table-of-contents__link toc-highlight">误把运行时资源动作当成控制台页面权限</a></ul><li><a href=#变更后最小验收标准 class="table-of-contents__link toc-highlight">变更后最小验收标准</a><li><a href=#操作建议 class="table-of-contents__link toc-highlight">操作建议</a><li><a href=#未决例外路径 class="table-of-contents__link toc-highlight">未决例外路径</a><li><a href=#相关文档 class="table-of-contents__link toc-highlight">相关文档</a></ul></div></div></div></div></main></div></div></div><footer class="theme-layout-footer footer footer--dark"><div class="container container-fluid"><div class="row footer__links"><div class="theme-layout-footer-column col footer__col"><div class=footer__title>文档</div><ul class="footer__items clean-list"><li class=footer__item><a class=footer__link-item href=/docs/architecture/>架构</a><li class=footer__item><a class=footer__link-item href=/docs/development/local-development/>开发</a><li class=footer__item><a class=footer__link-item href=/docs/api/overview/>API</a><li class=footer__item><a class=footer__link-item href=/docs/operations/configuration/>运维</a></ul></div></div><div class="footer__bottom text--center"><div class=footer__copyright>Copyright © 2026 kubecrux contributors.</div></div></div></footer></div></body>

@@ -8,14 +8,22 @@ dev-web:
 	cd web && npm run dev
 
 dev-docs:
-	cd docs && npm run docs:dev
+	cd docs && npm run dev
+
+dev-all:
+	@echo "Starting api, web and docs..."
+	@trap 'kill 0' INT TERM EXIT; \
+	$(MAKE) dev-api & \
+	$(MAKE) dev-web & \
+	$(MAKE) dev-docs & \
+	wait
 
 # Build
 build-web:
 	cd web && npm run build
 
 build-docs:
-	cd docs && npm run docs:build
+	cd docs && npm run build
 
 build: build-web build-docs
 	CGO_ENABLED=0 go build -o bin/kubecrux ./cmd/server
@@ -29,4 +37,4 @@ test-web:
 
 # Clean
 clean:
-	rm -rf bin/ web/dist/ docs/.vitepress/dist/
+	rm -rf bin/ web/dist/ docs/build/ docs/.docusaurus/

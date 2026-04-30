@@ -560,6 +560,18 @@ type ConfigMapView struct {
 	AllowedActions []string `json:"allowedActions,omitempty"`
 }
 
+type ConfigMapDetailView struct {
+	Name        string            `json:"name"`
+	Namespace   string            `json:"namespace"`
+	Labels      map[string]string `json:"labels,omitempty"`
+	Annotations map[string]string `json:"annotations,omitempty"`
+	Data        map[string]string `json:"data,omitempty"`
+	BinaryData  map[string]string `json:"binaryData,omitempty"`
+	Immutable   bool              `json:"immutable"`
+	CreatedAt   string            `json:"createdAt,omitempty"`
+	AgeSeconds  int64             `json:"ageSeconds"`
+}
+
 type SecretView struct {
 	Name           string   `json:"name"`
 	Namespace      string   `json:"namespace"`
@@ -568,6 +580,18 @@ type SecretView struct {
 	Immutable      bool     `json:"immutable"`
 	AgeSeconds     int64    `json:"ageSeconds"`
 	AllowedActions []string `json:"allowedActions,omitempty"`
+}
+
+type SecretDetailView struct {
+	Name        string            `json:"name"`
+	Namespace   string            `json:"namespace"`
+	Type        string            `json:"type"`
+	Labels      map[string]string `json:"labels,omitempty"`
+	Annotations map[string]string `json:"annotations,omitempty"`
+	Data        map[string]string `json:"data,omitempty"`
+	Immutable   bool              `json:"immutable"`
+	CreatedAt   string            `json:"createdAt,omitempty"`
+	AgeSeconds  int64             `json:"ageSeconds"`
 }
 
 type ServiceAccountView struct {
@@ -649,4 +673,121 @@ type PodDisruptionBudgetView struct {
 	DisruptionsAllowed int32    `json:"disruptionsAllowed"`
 	AgeSeconds         int64    `json:"ageSeconds"`
 	AllowedActions     []string `json:"allowedActions,omitempty"`
+}
+
+type IngressClassView struct {
+	Name           string   `json:"name"`
+	Controller     string   `json:"controller"`
+	IsDefault      bool     `json:"isDefault"`
+	Parameters     string   `json:"parameters,omitempty"`
+	AgeSeconds     int64    `json:"ageSeconds"`
+	AllowedActions []string `json:"allowedActions,omitempty"`
+}
+
+type PriorityClassView struct {
+	Name             string   `json:"name"`
+	Value            int32    `json:"value"`
+	GlobalDefault    bool     `json:"globalDefault"`
+	PreemptionPolicy string   `json:"preemptionPolicy,omitempty"`
+	Description      string   `json:"description,omitempty"`
+	AgeSeconds       int64    `json:"ageSeconds"`
+	AllowedActions   []string `json:"allowedActions,omitempty"`
+}
+
+type RuntimeClassView struct {
+	Name           string   `json:"name"`
+	Handler        string   `json:"handler"`
+	AgeSeconds     int64    `json:"ageSeconds"`
+	AllowedActions []string `json:"allowedActions,omitempty"`
+}
+
+type ClusterRoleView struct {
+	Name             string   `json:"name"`
+	Rules            int      `json:"rules"`
+	AggregationRules int      `json:"aggregationRules"`
+	AgeSeconds       int64    `json:"ageSeconds"`
+	AllowedActions   []string `json:"allowedActions,omitempty"`
+}
+
+type ClusterRoleBindingView struct {
+	Name           string   `json:"name"`
+	RoleRef        string   `json:"roleRef"`
+	Subjects       []string `json:"subjects,omitempty"`
+	AgeSeconds     int64    `json:"ageSeconds"`
+	AllowedActions []string `json:"allowedActions,omitempty"`
+}
+
+type MutatingWebhookConfigurationView struct {
+	Name           string   `json:"name"`
+	Webhooks       int      `json:"webhooks"`
+	AgeSeconds     int64    `json:"ageSeconds"`
+	AllowedActions []string `json:"allowedActions,omitempty"`
+}
+
+type ValidatingWebhookConfigurationView struct {
+	Name           string   `json:"name"`
+	Webhooks       int      `json:"webhooks"`
+	AgeSeconds     int64    `json:"ageSeconds"`
+	AllowedActions []string `json:"allowedActions,omitempty"`
+}
+
+type ResourceQuotaView struct {
+	Name           string            `json:"name"`
+	Namespace      string            `json:"namespace"`
+	Scopes         []string          `json:"scopes,omitempty"`
+	Hard           map[string]string `json:"hard,omitempty"`
+	Used           map[string]string `json:"used,omitempty"`
+	AgeSeconds     int64             `json:"ageSeconds"`
+	AllowedActions []string          `json:"allowedActions,omitempty"`
+}
+
+type LimitRangeView struct {
+	Name           string   `json:"name"`
+	Namespace      string   `json:"namespace"`
+	Limits         int      `json:"limits"`
+	AgeSeconds     int64    `json:"ageSeconds"`
+	AllowedActions []string `json:"allowedActions,omitempty"`
+}
+
+type LeaseView struct {
+	Name                 string   `json:"name"`
+	Namespace            string   `json:"namespace"`
+	HolderIdentity       string   `json:"holderIdentity,omitempty"`
+	LeaseDurationSeconds int32    `json:"leaseDurationSeconds,omitempty"`
+	AcquireTime          string   `json:"acquireTime,omitempty"`
+	RenewTime            string   `json:"renewTime,omitempty"`
+	AgeSeconds           int64    `json:"ageSeconds"`
+	AllowedActions       []string `json:"allowedActions,omitempty"`
+}
+
+type ReplicationControllerView struct {
+	Name              string   `json:"name"`
+	Namespace         string   `json:"namespace"`
+	DesiredReplicas   int32    `json:"desiredReplicas"`
+	CurrentReplicas   int32    `json:"currentReplicas"`
+	ReadyReplicas     int32    `json:"readyReplicas"`
+	AvailableReplicas int32    `json:"availableReplicas"`
+	AgeSeconds        int64    `json:"ageSeconds"`
+	AllowedActions    []string `json:"allowedActions,omitempty"`
+}
+
+type PortForwardSessionView struct {
+	SessionID  string `json:"sessionId"`
+	ClusterID  string `json:"clusterId"`
+	Namespace  string `json:"namespace"`
+	TargetKind string `json:"targetKind"`
+	TargetName string `json:"targetName"`
+	LocalPort  int    `json:"localPort"`
+	RemotePort int    `json:"remotePort"`
+	Status     string `json:"status"`
+	CreatedBy  string `json:"createdBy,omitempty"`
+	CreatedAt  string `json:"createdAt"`
+}
+
+type PortForwardRegisterInput struct {
+	Namespace  string `json:"namespace"`
+	TargetKind string `json:"targetKind"`
+	TargetName string `json:"targetName"`
+	LocalPort  int    `json:"localPort"`
+	RemotePort int    `json:"remotePort"`
 }

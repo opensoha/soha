@@ -1,0 +1,25 @@
+{
+  "id": "architecture/application-delivery",
+  "title": "Application Delivery",
+  "description": "Goal",
+  "source": "@site/architecture/application-delivery.md",
+  "sourceDirName": "architecture",
+  "slug": "/architecture/application-delivery",
+  "permalink": "/docs/architecture/application-delivery",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/kubecrux/kubecrux/tree/main/docs/architecture/application-delivery.md",
+  "tags": [],
+  "version": "current",
+  "lastUpdatedAt": 1539502055000,
+  "frontMatter": {},
+  "sidebar": "mainSidebar",
+  "previous": {
+    "title": "架构入口",
+    "permalink": "/docs/architecture/"
+  },
+  "next": {
+    "title": "Monitoring And Alerting",
+    "permalink": "/docs/architecture/monitoring-and-alerting"
+  }
+}

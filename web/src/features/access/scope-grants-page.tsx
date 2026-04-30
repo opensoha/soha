@@ -1,18 +1,27 @@
-import { useMemo, useRef, useState } from 'react'
-import { Button, Modal, Form, Tag, Toast, Popconfirm, Space } from '@douyinfe/semi-ui'
-import { IconPlus, IconEdit, IconDelete } from '@douyinfe/semi-icons'
+import { useMemo, useState } from 'react'
+import { App, Button, Form, Input, Modal, Popconfirm, Select, Space, Switch, Tag } from 'antd'
+import { DeleteOutlined, EditOutlined, PlusOutlined } from '@ant-design/icons'
+import type { TableColumnsType } from 'antd'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AdminTable } from '@/components/admin-table'
+import { hasPermission, usePermissionSnapshot } from '@/features/auth/permission-snapshot'
 import { PageHeader } from '@/components/page-header'
 import { BooleanTag } from '@/components/status-tag'
 import { api } from '@/services/api-client'
 import { formatDateTime } from '@/utils/time'
 import { tableColumnPresets } from '@/utils/table-columns'
 import type { ApiResponse, BusinessLine, DeliveryEnvironment, ScopeGrant } from '@/types'
-import type { ColumnProps } from '@douyinfe/semi-ui/lib/es/table'
 
-type ModalFormApi = {
-  validate: () => Promise<Record<string, unknown>>
+type ColumnProps<T> = TableColumnsType<T>[number]
+type ScopeGrantFormValues = {
+  applicationIds?: string
+  businessLineId: string
+  effect: string
+  enabled: boolean
+  environmentIds?: string
+  role: string
+  subjectId: string
+  subjectType: 'team' | 'user'
 }
 
 function parseCSV(value: unknown) {
@@ -23,8 +32,13 @@ function parseCSV(value: unknown) {
 }
 
 export function AccessScopeGrantsPage() {
+  const { message } = App.useApp()
+  const permissionSnapshotQuery = usePermissionSnapshot()
+  const snapshot = permissionSnapshotQuery.data?.data
+  const canViewScopeGrants = hasPermission(snapshot, 'access.scope-grants.view')
+  const canManageScopeGrants = hasPermission(snapshot, 'access.scope-grants.manage')
   const queryClient = useQueryClient()
-  const formApiRef = useRef<ModalFormApi | null>(null)
+  const [form] = Form.useForm<ScopeGrantFormValues>()
   const [modalVisible, setModalVisible] = useState(false)
   const [editing, setEditing] = useState<ScopeGrant | null>(null)
 
@@ -61,29 +75,29 @@ export function AccessScopeGrantsPage() {
   const createMutation = useMutation({
     mutationFn: (values: Record<string, unknown>) => api.post('/access/scope-grants', values),
     onSuccess: () => {
-      Toast.success('授权项创建成功')
+      message.success('授权项创建成功')
       queryClient.invalidateQueries({ queryKey: ['scope-grants'] })
       setModalVisible(false)
     },
-    onError: (err: Error) => Toast.error(err.message),
+    onError: (err: Error) => message.error(err.message),
   })
   const updateMutation = useMutation({
     mutationFn: ({ id, values }: { id: string; values: Record<string, unknown> }) => api.put(`/access/scope-grants/${id}`, values),
     onSuccess: () => {
-      Toast.success('授权项更新成功')
+      message.success('授权项更新成功')
       queryClient.invalidateQueries({ queryKey: ['scope-grants'] })
       setModalVisible(false)
       setEditing(null)
     },
-    onError: (err: Error) => Toast.error(err.message),
+    onError: (err: Error) => message.error(err.message),
   })
   const deleteMutation = useMutation({
     mutationFn: (id: string) => api.delete(`/access/scope-grants/${id}`),
     onSuccess: () => {
-      Toast.success('授权项已删除')
+      message.success('授权项已删除')
       queryClient.invalidateQueries({ queryKey: ['scope-grants'] })
     },
-    onError: (err: Error) => Toast.error(err.message),
+    onError: (err: Error) => message.error(err.message),
   })
 
   const columns: ColumnProps<ScopeGrant>[] = [
@@ -110,29 +124,38 @@ export function AccessScopeGrantsPage() {
       dataIndex: 'id',
       render: (_: unknown, record: ScopeGrant) => (
         <Space>
-          <Button icon={<IconEdit />} theme="borderless" size="small" onClick={() => { setEditing(record); setModalVisible(true) }} />
-          <Popconfirm title="确认删除？" onConfirm={() => deleteMutation.mutate(record.id)}>
-            <Button icon={<IconDelete />} theme="borderless" type="danger" size="small" />
-          </Popconfirm>
+          {canManageScopeGrants ? (
+            <>
+              <Button icon={<EditOutlined />} type="text" size="small" onClick={() => { setEditing(record); setModalVisible(true) }} />
+              <Popconfirm title="确认删除？" onConfirm={() => deleteMutation.mutate(record.id)}>
+                <Button icon={<DeleteOutlined />} type="text" danger size="small" />
+              </Popconfirm>
+            </>
+          ) : '-'}
         </Space>
       ),
     },
   ]
+
+  if (!canViewScopeGrants) {
+    return <div className="kc-page">当前账号没有授权范围页面权限。</div>
+  }
 
   return (
     <div className="kc-page">
       <PageHeader
         title="授权范围"
         description="按用户或用户组维护业务线、环境、应用级别的可管理范围。"
-        actions={<Button icon={<IconPlus />} theme="solid" onClick={() => { setEditing(null); setModalVisible(true) }}>新建授权项</Button>}
+        actions={canManageScopeGrants ? <Button icon={<PlusOutlined />} type="primary" onClick={() => { setEditing(null); setModalVisible(true) }}>新建授权项</Button> : null}
       />
       <AdminTable columns={columns} dataSource={grantsQuery.data?.data ?? []} rowKey="id" loading={grantsQuery.isLoading} />
       <Modal
         title={editing ? '编辑授权项' : '新建授权项'}
-        visible={modalVisible}
+        open={modalVisible}
         onCancel={() => { setModalVisible(false); setEditing(null) }}
-        onOk={() => {
-          formApiRef.current?.validate().then((values) => {
+        onOk={async () => {
+          try {
+            const values = await form.validateFields()
             const payload = {
               ...values,
               environmentIds: parseCSV(values.environmentIds),
@@ -143,37 +166,52 @@ export function AccessScopeGrantsPage() {
               return
             }
             createMutation.mutate(payload)
-          }).catch(() => undefined)
+          } catch {
+            return
+          }
         }}
         okText={editing ? '更新' : '创建'}
         cancelText="取消"
         confirmLoading={createMutation.isPending || updateMutation.isPending}
         width={760}
         maskClosable={false}
-        bodyStyle={{ maxHeight: '65vh', overflow: 'auto' }}
+        destroyOnClose
+        styles={{ body: { maxHeight: '65vh', overflow: 'auto' } }}
       >
         <Form
+          form={form}
           key={editing?.id ?? 'create-scope-grant'}
-          getFormApi={(formApi) => { formApiRef.current = formApi as ModalFormApi }}
-          initValues={editing ? {
+          layout="vertical"
+          initialValues={editing ? {
             ...editing,
             environmentIds: editing.environmentIds.join(', '),
             applicationIds: editing.applicationIds.join(', '),
           } : { enabled: true, effect: 'allow', subjectType: 'team' }}
         >
-          <Form.Select field="subjectType" label="主体类型" optionList={[{ value: 'team', label: '用户组' }, { value: 'user', label: '用户' }]} />
-          <Form.Input field="subjectId" label="主体 ID" rules={[{ required: true, message: '请输入主体 ID' }]} />
-          <Form.Select
-            field="businessLineId"
-            label="业务线"
-            optionList={(businessLinesQuery.data?.data ?? []).map((item) => ({ value: item.id, label: item.name }))}
-            rules={[{ required: true, message: '请选择业务线' }]}
-          />
-          <Form.Input field="environmentIds" label="环境 IDs" placeholder="留空表示全部环境，多个以逗号分隔" />
-          <Form.Input field="applicationIds" label="应用 IDs" placeholder="留空表示全部应用，多个以逗号分隔" />
-          <Form.Input field="role" label="角色" rules={[{ required: true, message: '请输入角色' }]} />
-          <Form.Select field="effect" label="效果" optionList={[{ value: 'allow', label: '允许' }]} />
-          <Form.Switch field="enabled" label="启用" />
+          <Form.Item name="subjectType" label="主体类型">
+            <Select options={[{ value: 'team', label: '用户组' }, { value: 'user', label: '用户' }]} />
+          </Form.Item>
+          <Form.Item name="subjectId" label="主体 ID" rules={[{ required: true, message: '请输入主体 ID' }]}>
+            <Input />
+          </Form.Item>
+          <Form.Item name="businessLineId" label="业务线" rules={[{ required: true, message: '请选择业务线' }]}>
+            <Select options={(businessLinesQuery.data?.data ?? []).map((item) => ({ value: item.id, label: item.name }))} />
+          </Form.Item>
+          <Form.Item name="environmentIds" label="环境 IDs">
+            <Input placeholder="留空表示全部环境，多个以逗号分隔" />
+          </Form.Item>
+          <Form.Item name="applicationIds" label="应用 IDs">
+            <Input placeholder="留空表示全部应用，多个以逗号分隔" />
+          </Form.Item>
+          <Form.Item name="role" label="角色" rules={[{ required: true, message: '请输入角色' }]}>
+            <Input />
+          </Form.Item>
+          <Form.Item name="effect" label="效果">
+            <Select options={[{ value: 'allow', label: '允许' }]} />
+          </Form.Item>
+          <Form.Item name="enabled" label="启用" valuePropName="checked">
+            <Switch />
+          </Form.Item>
         </Form>
       </Modal>
     </div>

@@ -6,15 +6,17 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/kubecrux/kubecrux/internal/api/dto"
+	apiMiddleware "github.com/kubecrux/kubecrux/internal/api/middleware"
 	apiresponse "github.com/kubecrux/kubecrux/internal/api/response"
+	domainidentity "github.com/kubecrux/kubecrux/internal/domain/identity"
 	domainscopegrant "github.com/kubecrux/kubecrux/internal/domain/scopegrant"
 )
 
 type ScopeGrantService interface {
-	List(context.Context) ([]domainscopegrant.Record, error)
-	Create(context.Context, domainscopegrant.Input) (domainscopegrant.Record, error)
-	Update(context.Context, string, domainscopegrant.Input) (domainscopegrant.Record, error)
-	Delete(context.Context, string) error
+	List(context.Context, domainidentity.Principal) ([]domainscopegrant.Record, error)
+	Create(context.Context, domainidentity.Principal, domainscopegrant.Input) (domainscopegrant.Record, error)
+	Update(context.Context, domainidentity.Principal, string, domainscopegrant.Input) (domainscopegrant.Record, error)
+	Delete(context.Context, domainidentity.Principal, string) error
 }
 
 type ScopeGrantHandler struct {
@@ -26,7 +28,8 @@ func NewScopeGrantHandler(service ScopeGrantService) *ScopeGrantHandler {
 }
 
 func (h *ScopeGrantHandler) List(c *gin.Context) {
-	items, err := h.service.List(c.Request.Context())
+	principal := apiMiddleware.PrincipalFromContext(c)
+	items, err := h.service.List(c.Request.Context(), principal)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -40,7 +43,8 @@ func (h *ScopeGrantHandler) Create(c *gin.Context) {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid scope grant payload")
 		return
 	}
-	item, err := h.service.Create(c.Request.Context(), mapScopeGrantInput(req))
+	principal := apiMiddleware.PrincipalFromContext(c)
+	item, err := h.service.Create(c.Request.Context(), principal, mapScopeGrantInput(req))
 	if err != nil {
 		writeError(c, err)
 		return
@@ -54,7 +58,8 @@ func (h *ScopeGrantHandler) Update(c *gin.Context) {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid scope grant payload")
 		return
 	}
-	item, err := h.service.Update(c.Request.Context(), c.Param("scopeGrantID"), mapScopeGrantInput(req))
+	principal := apiMiddleware.PrincipalFromContext(c)
+	item, err := h.service.Update(c.Request.Context(), principal, c.Param("scopeGrantID"), mapScopeGrantInput(req))
 	if err != nil {
 		writeError(c, err)
 		return
@@ -63,7 +68,8 @@ func (h *ScopeGrantHandler) Update(c *gin.Context) {
 }
 
 func (h *ScopeGrantHandler) Delete(c *gin.Context) {
-	if err := h.service.Delete(c.Request.Context(), c.Param("scopeGrantID")); err != nil {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	if err := h.service.Delete(c.Request.Context(), principal, c.Param("scopeGrantID")); err != nil {
 		writeError(c, err)
 		return
 	}

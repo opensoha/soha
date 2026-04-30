@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	appaccess "github.com/kubecrux/kubecrux/internal/application/access"
 	domainaccess "github.com/kubecrux/kubecrux/internal/domain/access"
 	domainapp "github.com/kubecrux/kubecrux/internal/domain/application"
 	domainbuild "github.com/kubecrux/kubecrux/internal/domain/build"
@@ -61,16 +62,17 @@ type ResourceExecutor interface {
 }
 
 type Service struct {
-	repo       Repository
-	apps       ApplicationReader
-	authorizer domainaccess.Authorizer
-	catalog    CatalogReader
-	builds     BuildExecutor
-	releases   ReleaseExecutor
-	resources  ResourceExecutor
-	httpClient *http.Client
-	logger     *zap.Logger
-	metrics    *runtimeobs.Registry
+	repo        Repository
+	apps        ApplicationReader
+	authorizer  domainaccess.Authorizer
+	permissions *appaccess.PermissionResolver
+	catalog     CatalogReader
+	builds      BuildExecutor
+	releases    ReleaseExecutor
+	resources   ResourceExecutor
+	httpClient  *http.Client
+	logger      *zap.Logger
+	metrics     *runtimeobs.Registry
 
 	runnerMu          sync.Mutex
 	runnerCtx         context.Context
@@ -98,11 +100,12 @@ type dagRunTask struct {
 	requestMeta requestctx.Metadata
 }
 
-func New(repo Repository, apps ApplicationReader, authorizer domainaccess.Authorizer, catalog CatalogReader, builds BuildExecutor, releases ReleaseExecutor, resources ResourceExecutor) *Service {
+func New(repo Repository, apps ApplicationReader, authorizer domainaccess.Authorizer, permissions *appaccess.PermissionResolver, catalog CatalogReader, builds BuildExecutor, releases ReleaseExecutor, resources ResourceExecutor) *Service {
 	return &Service{
 		repo:              repo,
 		apps:              apps,
 		authorizer:        authorizer,
+		permissions:       permissions,
 		catalog:           catalog,
 		builds:            builds,
 		releases:          releases,
@@ -254,6 +257,9 @@ func (s *Service) enqueueDAGRun(ctx context.Context, task dagRunTask) error {
 }
 
 func (s *Service) List(ctx context.Context, principal domainidentity.Principal, applicationID string, limit int) ([]domainworkflow.Run, error) {
+	if err := s.authorizePermission(ctx, principal, appaccess.PermDeliveryWorkflowsView); err != nil {
+		return nil, err
+	}
 	items, err := s.repo.List(ctx, strings.TrimSpace(applicationID), limit)
 	if err != nil {
 		return nil, err
@@ -288,6 +294,9 @@ func (s *Service) List(ctx context.Context, principal domainidentity.Principal, 
 }
 
 func (s *Service) Trigger(ctx context.Context, principal domainidentity.Principal, input domainworkflow.Input) (domainworkflow.Run, error) {
+	if err := s.authorizePermission(ctx, principal, appaccess.PermDeliveryWorkflowsTrigger); err != nil {
+		return domainworkflow.Run{}, err
+	}
 	if strings.TrimSpace(input.ApplicationID) == "" {
 		return domainworkflow.Run{}, fmt.Errorf("%w: applicationId is required", apperrors.ErrInvalidArgument)
 	}
@@ -298,7 +307,7 @@ func (s *Service) Trigger(ctx context.Context, principal domainidentity.Principa
 		}
 		return domainworkflow.Run{}, err
 	}
-	if err := s.authorize(ctx, principal, domainaccess.ActionUpdate, app, input.ApplicationID); err != nil {
+	if err := s.authorize(ctx, principal, domainaccess.ActionTrigger, app, input.ApplicationID); err != nil {
 		return domainworkflow.Run{}, err
 	}
 	if run, binding, definition, ok, err := s.prepareBoundDAGRun(ctx, app, input); err != nil {
@@ -1339,6 +1348,10 @@ func (s *Service) authorize(ctx context.Context, principal domainidentity.Princi
 		return fmt.Errorf("%w: %s", apperrors.ErrAccessDenied, decision.Reason)
 	}
 	return nil
+}
+
+func (s *Service) authorizePermission(ctx context.Context, principal domainidentity.Principal, permissionKey string) error {
+	return appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, permissionKey)
 }
 
 func uniqueIDs(values []string) []string {

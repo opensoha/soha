@@ -334,10 +334,11 @@ func mapRoleInput(req dto.UpsertRoleRequest) domainaccess.RoleInput {
 		actions = append(actions, domainaccess.Action(item))
 	}
 	return domainaccess.RoleInput{
-		ID:           req.ID,
-		Name:         req.Name,
-		Scope:        req.Scope,
-		Capabilities: actions,
+		ID:             req.ID,
+		Name:           req.Name,
+		Scope:          req.Scope,
+		Capabilities:   actions,
+		PermissionKeys: req.PermissionKeys,
 	}
 }
 

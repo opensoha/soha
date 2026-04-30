@@ -38,6 +38,7 @@ CREATE TABLE IF NOT EXISTS roles (
     name TEXT NOT NULL UNIQUE,
     scope TEXT NOT NULL DEFAULT 'system',
     capabilities JSON NOT NULL DEFAULT '[]',
+    permission_keys JSON NOT NULL DEFAULT '[]',
     created_at TIMESTAMP NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMP NOT NULL DEFAULT NOW()
 );

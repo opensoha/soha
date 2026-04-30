@@ -4,7 +4,7 @@
 
 - `web` builds the Vite SPA console
 - `cmd/server` serves the HTTP API
-- `docs` builds the VitePress site
+- `docs` builds the Docusaurus site
 - PostgreSQL is the durable system of record
 - Redis backs cache, session state, locks, and transient coordination
 - cluster credentials are provided by environment configuration or future secret providers
@@ -15,4 +15,4 @@
 - Redis at `localhost:6379`
 - kubeconfig available at `$HOME/.kube/config` unless overridden
 - frontend dev server at `http://localhost:5173`
-- docs dev server at `http://localhost:5174`
+- docs dev server at `http://localhost:3000/docs/`

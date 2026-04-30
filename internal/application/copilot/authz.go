@@ -1,18 +1,14 @@
 package copilot
 
 import (
-	"fmt"
+	"context"
 
 	appaccess "github.com/kubecrux/kubecrux/internal/application/access"
 	domainidentity "github.com/kubecrux/kubecrux/internal/domain/identity"
-	aperrors "github.com/kubecrux/kubecrux/internal/platform/apperrors"
 )
 
-func authorizePrincipal(principal domainidentity.Principal, permissionKey string) error {
-	if appaccess.HasPermission(principal.Roles, permissionKey) {
-		return nil
-	}
-	return fmt.Errorf("%w: missing permission %s", aperrors.ErrAccessDenied, permissionKey)
+func (s *Service) authorizePrincipal(ctx context.Context, principal domainidentity.Principal, permissionKey string) error {
+	return appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, permissionKey)
 }
 
 func systemPrincipal() domainidentity.Principal {

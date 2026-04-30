@@ -4,6 +4,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"sync"
 )
 
 const (
@@ -53,9 +54,15 @@ const (
 	PermObserveAIInspectionManage       = "observe.ai.inspection.manage"
 	PermObserveAIInspectionRun          = "observe.ai.inspection.run"
 	PermAccessUsersView                 = "access.users.view"
+	PermAccessUsersManage               = "access.users.manage"
 	PermAccessRolesView                 = "access.roles.view"
+	PermAccessRolesManage               = "access.roles.manage"
 	PermAccessGroupsView                = "access.groups.view"
+	PermAccessGroupsManage              = "access.groups.manage"
 	PermAccessPoliciesView              = "access.policies.view"
+	PermAccessPoliciesManage            = "access.policies.manage"
+	PermAccessScopeGrantsView           = "access.scope-grants.view"
+	PermAccessScopeGrantsManage         = "access.scope-grants.manage"
 	PermSystemOnlineUsersView           = "system.online-users.view"
 	PermSystemOnlineUsersManage         = "system.online-users.manage"
 	PermSystemAnnouncementsView         = "system.announcements.view"
@@ -72,6 +79,11 @@ const (
 	PermSettingsAIManage                = "settings.ai.manage"
 	PermSettingsBrandingView            = "settings.branding.view"
 	PermSettingsBrandingManage          = "settings.branding.manage"
+)
+
+var (
+	rolePermissionMatrixMu sync.RWMutex
+	rolePermissionMatrix   map[string][]string
 )
 
 func allPermissionKeys() []string {
@@ -122,9 +134,15 @@ func allPermissionKeys() []string {
 		PermObserveAIInspectionManage,
 		PermObserveAIInspectionRun,
 		PermAccessUsersView,
+		PermAccessUsersManage,
 		PermAccessRolesView,
+		PermAccessRolesManage,
 		PermAccessGroupsView,
+		PermAccessGroupsManage,
 		PermAccessPoliciesView,
+		PermAccessPoliciesManage,
+		PermAccessScopeGrantsView,
+		PermAccessScopeGrantsManage,
 		PermSystemOnlineUsersView,
 		PermSystemOnlineUsersManage,
 		PermSystemAnnouncementsView,
@@ -193,6 +211,16 @@ func defaultRolePermissions() map[string][]string {
 		PermObserveAIInspectionRun,
 		PermSystemAuditView,
 		PermSystemOperationsView,
+		PermAccessUsersView,
+		PermAccessUsersManage,
+		PermAccessRolesView,
+		PermAccessRolesManage,
+		PermAccessGroupsView,
+		PermAccessGroupsManage,
+		PermAccessPoliciesView,
+		PermAccessPoliciesManage,
+		PermAccessScopeGrantsView,
+		PermAccessScopeGrantsManage,
 		PermSettingsAIView,
 		PermSettingsAIManage,
 		PermSettingsBrandingView,
@@ -263,8 +291,62 @@ func defaultRolePermissions() map[string][]string {
 	}
 }
 
-func PermissionKeysForRoles(roles []string) []string {
+func normalizePermissionKeys(permissionKeys []string) []string {
+	keys := make([]string, 0, len(permissionKeys))
+	for _, permissionKey := range permissionKeys {
+		value := strings.TrimSpace(permissionKey)
+		if value == "" || slices.Contains(keys, value) {
+			continue
+		}
+		keys = append(keys, value)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func SetRolePermissionMatrix(matrix map[string][]string) {
+	rolePermissionMatrixMu.Lock()
+	defer rolePermissionMatrixMu.Unlock()
+	if len(matrix) == 0 {
+		rolePermissionMatrix = nil
+		return
+	}
+	rolePermissionMatrix = make(map[string][]string, len(matrix))
+	for roleID, keys := range matrix {
+		rolePermissionMatrix[strings.TrimSpace(roleID)] = normalizePermissionKeys(keys)
+	}
+}
+
+func SetRolePermissionKeys(roleID string, permissionKeys []string) {
+	rolePermissionMatrixMu.Lock()
+	defer rolePermissionMatrixMu.Unlock()
+	if rolePermissionMatrix == nil {
+		rolePermissionMatrix = map[string][]string{}
+	}
+	rolePermissionMatrix[strings.TrimSpace(roleID)] = normalizePermissionKeys(permissionKeys)
+}
+
+func DeleteRolePermissionKeys(roleID string) {
+	rolePermissionMatrixMu.Lock()
+	defer rolePermissionMatrixMu.Unlock()
+	delete(rolePermissionMatrix, strings.TrimSpace(roleID))
+	if len(rolePermissionMatrix) == 0 {
+		rolePermissionMatrix = nil
+	}
+}
+
+func effectiveRolePermissionMatrix() map[string][]string {
 	matrix := defaultRolePermissions()
+	rolePermissionMatrixMu.RLock()
+	defer rolePermissionMatrixMu.RUnlock()
+	for roleID, keys := range rolePermissionMatrix {
+		matrix[roleID] = append([]string(nil), keys...)
+	}
+	return matrix
+}
+
+func PermissionKeysForRoles(roles []string) []string {
+	matrix := effectiveRolePermissionMatrix()
 	keys := make([]string, 0)
 	for _, role := range roles {
 		for _, permission := range matrix[strings.TrimSpace(role)] {
@@ -273,8 +355,7 @@ func PermissionKeysForRoles(roles []string) []string {
 			}
 		}
 	}
-	sort.Strings(keys)
-	return keys
+	return normalizePermissionKeys(keys)
 }
 
 func HasPermission(roles []string, permissionKey string) bool {

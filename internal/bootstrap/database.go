@@ -40,9 +40,10 @@ type policySeed struct {
 }
 
 type roleSeed struct {
-	ID           string
-	Name         string
-	Capabilities string
+	ID             string
+	Name           string
+	Capabilities   string
+	PermissionKeys string
 }
 
 type environmentSeed struct {
@@ -81,7 +82,7 @@ type clusterCredentialSeed struct {
 // While the stored version matches this constant, the static seed block is
 // skipped entirely. Config-driven sync (admin user, clusters) runs separately
 // during startup so runtime config updates do not depend on replaying defaults.
-const bootstrapSeedVersion = "2026-04-18-2"
+const bootstrapSeedVersion = "2026-04-30-2"
 
 const bootstrapSeedVersionKey = "bootstrap.seed_version"
 
@@ -243,6 +244,9 @@ func seedMenus(ctx context.Context, db *gorm.DB) error {
 		{ID: "assistant-chat", ParentID: "assistant", Path: "/ai-observe/chat", LabelZH: "AI Chat", LabelEN: "AI Chat", IconKey: "bot", Section: "observe", SortOrder: 18, Enabled: true},
 		{ID: "assistant-inspection", ParentID: "assistant", Path: "/ai-observe/inspection", LabelZH: "智能巡检", LabelEN: "Inspection Center", IconKey: "bot", Section: "observe", SortOrder: 19, Enabled: true},
 		{ID: "builds", Path: "/applications", LabelZH: "应用中心", LabelEN: "Application Center", IconKey: "blocks", Section: "deliver", SortOrder: 110, Enabled: true, Roles: []string{"admin", "ops", "developer"}},
+		{ID: "business-lines", Path: "/business-lines", LabelZH: "业务线管理", LabelEN: "Business Lines", IconKey: "blocks", Section: "catalog", SortOrder: 210, Enabled: true, Roles: []string{"admin", "ops"}},
+		{ID: "delivery-environments", Path: "/delivery-environments", LabelZH: "环境管理", LabelEN: "Environments", IconKey: "blocks", Section: "catalog", SortOrder: 220, Enabled: true, Roles: []string{"admin", "ops"}},
+		{ID: "application-environments", Path: "/application-environments", LabelZH: "应用环境绑定", LabelEN: "Application Environment Bindings", IconKey: "blocks", Section: "catalog", SortOrder: 230, Enabled: true, Roles: []string{"admin", "ops"}},
 		{ID: "workflows", Path: "/workflows", LabelZH: "工作流", LabelEN: "Workflows", IconKey: "activity", Section: "deliver", SortOrder: 115, Enabled: true, Roles: []string{"admin", "ops", "developer"}},
 		{ID: "releases", Path: "/releases", LabelZH: "发布", LabelEN: "Releases", IconKey: "activity", Section: "deliver", SortOrder: 120, Enabled: true, Roles: []string{"admin", "ops", "developer"}},
 		{ID: "events", ParentID: "observability", Path: "/observability/events", LabelZH: "事件", LabelEN: "Events", IconKey: "bell", Section: "observe", SortOrder: 65, Enabled: true},
@@ -392,22 +396,23 @@ func upsertRoles(ctx context.Context, db *gorm.DB, items []roleSeed, now time.Ti
 		return nil
 	}
 	var builder strings.Builder
-	args := make([]any, 0, len(items)*5)
+	args := make([]any, 0, len(items)*6)
 	builder.WriteString(`
-		INSERT INTO roles (id, name, scope, capabilities, created_at, updated_at)
+		INSERT INTO roles (id, name, scope, capabilities, permission_keys, created_at, updated_at)
 		VALUES
 	`)
 	for index, item := range items {
 		if index > 0 {
 			builder.WriteString(",")
 		}
-		builder.WriteString(" (?, ?, 'system', ?, ?, ?)")
-		args = append(args, item.ID, item.Name, item.Capabilities, now, now)
+		builder.WriteString(" (?, ?, 'system', ?, ?, ?, ?)")
+		args = append(args, item.ID, item.Name, item.Capabilities, item.PermissionKeys, now, now)
 	}
 	builder.WriteString(`
 		ON CONFLICT (id) DO UPDATE SET
 			name = EXCLUDED.name,
 			capabilities = EXCLUDED.capabilities,
+			permission_keys = EXCLUDED.permission_keys,
 			updated_at = EXCLUDED.updated_at
 	`)
 	return db.WithContext(ctx).Exec(builder.String(), args...).Error
@@ -569,7 +574,11 @@ func seedRoles(ctx context.Context, db *gorm.DB) error {
 		if err != nil {
 			return fmt.Errorf("marshal capabilities for role %s: %w", name, err)
 		}
-		items = append(items, roleSeed{ID: name, Name: name, Capabilities: string(capabilities)})
+		permissionKeys, err := json.Marshal(accessapp.PermissionKeysForRoles([]string{name}))
+		if err != nil {
+			return fmt.Errorf("marshal permission keys for role %s: %w", name, err)
+		}
+		items = append(items, roleSeed{ID: name, Name: name, Capabilities: string(capabilities), PermissionKeys: string(permissionKeys)})
 	}
 	return upsertRoles(ctx, db, items, now)
 }

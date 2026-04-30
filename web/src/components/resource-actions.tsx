@@ -1,0 +1,88 @@
+import { useState } from 'react'
+import { DeleteOutlined } from '@ant-design/icons'
+import { Button, message, Modal, Tooltip } from 'antd'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useI18n } from '@/i18n'
+import { api } from '@/services/api-client'
+import { usePlatformScopeStore } from '@/stores/platform-scope-store'
+import { buildClusterScopedPath } from '@/features/platform/platform-scope-query'
+import type { TableColumnsType } from 'antd'
+
+type ColumnProps<T> = TableColumnsType<T>[number]
+export const TABLE_ACTIONS_COLUMN_CLASS_NAME = 'kc-table-actions-column'
+
+export function useResourceActions<T extends Record<string, any>>(options: {
+  resourcePath: string
+  resourceKind: string
+  resourceLabel?: string
+  getName: (record: T) => string
+  getNamespace?: (record: T) => string | undefined
+  width?: number
+  listInvalidationKey?: unknown[]
+}): { column: ColumnProps<T>; modalNode: React.ReactNode } {
+  const { localeCode } = useI18n()
+  const { clusterId } = usePlatformScopeStore()
+  const queryClient = useQueryClient()
+  const [deleting, setDeleting] = useState<string | null>(null)
+
+  const invalidate = () => {
+    if (options.listInvalidationKey) {
+      queryClient.invalidateQueries({ queryKey: options.listInvalidationKey })
+    } else {
+      queryClient.invalidateQueries({ queryKey: ['platform-resource', options.resourcePath] })
+    }
+  }
+
+  const deleteMutation = useMutation({
+    mutationFn: async ({ name, namespace }: { name: string; namespace?: string }) => {
+      const encoded = encodeURIComponent(name)
+      const base = buildClusterScopedPath(clusterId!, `${options.resourcePath}/${encoded}`)
+      const path = namespace ? `${base}${base.includes('?') ? '&' : '?'}namespace=${encodeURIComponent(namespace)}` : base
+      return api.delete(path)
+    },
+    onMutate: ({ name, namespace }) => setDeleting(`${namespace || ''}/${name}`),
+    onSettled: () => setDeleting(null),
+    onSuccess: () => {
+      void message.success(localeCode === 'zh_CN' ? '已删除' : 'Deleted')
+      invalidate()
+    },
+    onError: (err: Error) => void message.error(err.message),
+  })
+
+  const column: ColumnProps<T> = {
+    title: '',
+    dataIndex: '__actions',
+    fixed: 'right',
+    align: 'center',
+    width: options.width ?? 52,
+    onHeaderCell: () => ({ className: TABLE_ACTIONS_COLUMN_CLASS_NAME }),
+    onCell: () => ({ className: TABLE_ACTIONS_COLUMN_CLASS_NAME }),
+    render: (_: unknown, record: T) => {
+      const name = options.getName(record)
+      const namespace = options.getNamespace?.(record)
+      const key = `${namespace || ''}/${name}`
+      return (
+        <Tooltip title={localeCode === 'zh_CN' ? '删除' : 'Delete'}>
+          <Button
+            size="small"
+            type="text"
+            danger
+            icon={<DeleteOutlined />}
+            aria-label={localeCode === 'zh_CN' ? '删除' : 'Delete'}
+            loading={deleting === key}
+            onClick={() => {
+              Modal.confirm({
+                title: localeCode === 'zh_CN' ? `确认删除 ${name}？` : `Delete ${name}?`,
+                content: localeCode === 'zh_CN' ? '此操作不可恢复，删除后集群资源立即消失。' : 'This deletes the resource immediately and cannot be undone.',
+                okButtonProps: { danger: true },
+                onOk: () => deleteMutation.mutate({ name, namespace }),
+              })
+            }}
+          />
+        </Tooltip>
+      )
+    },
+  }
+
+  return { column, modalNode: null }
+}

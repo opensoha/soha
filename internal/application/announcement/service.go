@@ -15,22 +15,23 @@ import (
 )
 
 type Service struct {
-	repo domainannouncement.Repository
+	repo        domainannouncement.Repository
+	permissions *appaccess.PermissionResolver
 }
 
-func New(repo domainannouncement.Repository) *Service {
-	return &Service{repo: repo}
+func New(repo domainannouncement.Repository, permissions *appaccess.PermissionResolver) *Service {
+	return &Service{repo: repo, permissions: permissions}
 }
 
 func (s *Service) List(ctx context.Context, principal domainidentity.Principal, limit int) ([]domainannouncement.Record, error) {
-	if err := authorizePrincipal(principal, appaccess.PermSystemAnnouncementsView); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.PermSystemAnnouncementsView); err != nil {
 		return nil, err
 	}
 	return s.repo.List(ctx, limit)
 }
 
 func (s *Service) Get(ctx context.Context, principal domainidentity.Principal, announcementID string) (domainannouncement.Record, error) {
-	if err := authorizePrincipal(principal, appaccess.PermSystemAnnouncementsView); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.PermSystemAnnouncementsView); err != nil {
 		return domainannouncement.Record{}, err
 	}
 	item, err := s.repo.Get(ctx, strings.TrimSpace(announcementID))
@@ -44,7 +45,7 @@ func (s *Service) Get(ctx context.Context, principal domainidentity.Principal, a
 }
 
 func (s *Service) Create(ctx context.Context, principal domainidentity.Principal, input domainannouncement.Input) (domainannouncement.Record, error) {
-	if err := authorizePrincipal(principal, appaccess.PermSystemAnnouncementsManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.PermSystemAnnouncementsManage); err != nil {
 		return domainannouncement.Record{}, err
 	}
 	item, err := normalizeInput(input)
@@ -64,7 +65,7 @@ func (s *Service) Create(ctx context.Context, principal domainidentity.Principal
 }
 
 func (s *Service) Update(ctx context.Context, principal domainidentity.Principal, announcementID string, input domainannouncement.Input) (domainannouncement.Record, error) {
-	if err := authorizePrincipal(principal, appaccess.PermSystemAnnouncementsManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.PermSystemAnnouncementsManage); err != nil {
 		return domainannouncement.Record{}, err
 	}
 	item, err := normalizeInput(input)
@@ -89,7 +90,7 @@ func (s *Service) Update(ctx context.Context, principal domainidentity.Principal
 }
 
 func (s *Service) Delete(ctx context.Context, principal domainidentity.Principal, announcementID string) error {
-	if err := authorizePrincipal(principal, appaccess.PermSystemAnnouncementsManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.PermSystemAnnouncementsManage); err != nil {
 		return err
 	}
 	if strings.TrimSpace(announcementID) == "" {
@@ -151,9 +152,6 @@ func normalizeID(value, fallback string) string {
 	return strings.ToLower(strings.ReplaceAll(strings.ReplaceAll(fallback, " ", "-"), "_", "-"))
 }
 
-func authorizePrincipal(principal domainidentity.Principal, permissionKey string) error {
-	if appaccess.HasPermission(principal.Roles, permissionKey) {
-		return nil
-	}
-	return fmt.Errorf("%w: missing permission %s", apperrors.ErrAccessDenied, permissionKey)
+func (s *Service) authorize(ctx context.Context, principal domainidentity.Principal, permissionKey string) error {
+	return appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, permissionKey)
 }

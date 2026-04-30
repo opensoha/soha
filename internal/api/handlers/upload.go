@@ -15,9 +15,9 @@ import (
 )
 
 const (
-	brandingUploadDir    = "data/branding"
-	brandingMaxFileSize  = 2 << 20 // 2MB
-	brandingURLPathBase  = "/branding-assets/"
+	brandingUploadDir   = "data/branding"
+	brandingMaxFileSize = 2 << 20 // 2MB
+	brandingURLPathBase = "/branding-assets/"
 )
 
 var allowedExtensions = map[string]bool{
@@ -32,7 +32,7 @@ var allowedExtensions = map[string]bool{
 // UploadBrandingAsset handles branding image upload, saves to disk and returns the served URL.
 func (h *SettingsHandler) UploadBrandingAsset(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	if !appaccess.HasPermission(principal.Roles, appaccess.PermSettingsBrandingManage) {
+	if err := appaccess.AuthorizeRuntimePermission(c.Request.Context(), h.permissions, principal, appaccess.PermSettingsBrandingManage); err != nil {
 		apiresponse.Error(c, http.StatusForbidden, "access_denied", "missing branding manage permission")
 		return
 	}

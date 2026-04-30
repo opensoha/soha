@@ -1,5 +1,6 @@
-import { Card, Tag, Tabs, TabPane, Button, Toast, Typography } from '@douyinfe/semi-ui'
-import { IconPulse, IconAlertTriangle } from '@douyinfe/semi-icons'
+import { AlertOutlined, HeartFilled } from '@ant-design/icons'
+import { Button, Card, message, Tabs, Tag, Typography } from 'antd'
+import type { ColumnsType } from 'antd/es/table'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { AdminTable } from '@/components/admin-table'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth/permission-snapshot'
@@ -10,7 +11,6 @@ import { api } from '@/services/api-client'
 import { formatDateTime } from '@/utils/time'
 import { tableColumnPresets } from '@/utils/table-columns'
 import type { ApiResponse } from '@/types'
-import type { ColumnProps } from '@douyinfe/semi-ui/lib/es/table'
 
 const { Title, Text, Paragraph } = Typography
 
@@ -37,11 +37,11 @@ export function MonitoringPage() {
 
   const stats = summary
     ? [
-        { label: '总告警数', value: summary.totalCount, icon: <IconPulse size="extra-large" /> },
-        { label: '活跃告警', value: summary.firingCount, icon: <IconAlertTriangle size="extra-large" /> },
-        { label: '已恢复', value: summary.resolvedCount, icon: <IconPulse size="extra-large" /> },
-        { label: '严重告警', value: summary.criticalCount, icon: <IconAlertTriangle size="extra-large" /> },
-        { label: '通知渠道', value: summary.channelCount, icon: <IconPulse size="extra-large" /> },
+        { label: '总告警数', value: summary.totalCount, icon: <HeartFilled style={{ fontSize: 28 }} /> },
+        { label: '活跃告警', value: summary.firingCount, icon: <AlertOutlined style={{ fontSize: 28 }} /> },
+        { label: '已恢复', value: summary.resolvedCount, icon: <HeartFilled style={{ fontSize: 28 }} /> },
+        { label: '严重告警', value: summary.criticalCount, icon: <AlertOutlined style={{ fontSize: 28 }} /> },
+        { label: '通知渠道', value: summary.channelCount, icon: <HeartFilled style={{ fontSize: 28 }} /> },
       ]
     : []
 
@@ -62,11 +62,11 @@ export function MonitoringPage() {
       <Card title="告警分布">
         <div className="flex items-center justify-center h-64 text-gray-400">
           <div className="text-center">
-            <IconPulse size="extra-large" />
-            <Paragraph type="tertiary" className="mt-2">
+            <HeartFilled style={{ fontSize: 28 }} />
+            <Paragraph type="secondary" className="mt-2">
               Critical {summary?.criticalCount ?? 0} / Warning {summary?.warningCount ?? 0} / Info {summary?.infoCount ?? 0}
             </Paragraph>
-            <Paragraph type="tertiary">
+            <Paragraph type="secondary">
               最近接收时间: {formatDateTime(summary?.lastReceivedAt)}
             </Paragraph>
           </div>
@@ -102,13 +102,13 @@ export function AlertsPage() {
   const ackMutation = useMutation({
     mutationFn: (id: string) => api.post(`/alerts/${id}/acknowledge`),
     onSuccess: () => {
-      Toast.success('告警已确认')
+      message.success('告警已确认')
       queryClient.invalidateQueries({ queryKey: ['alerts'] })
     },
-    onError: (err: Error) => Toast.error(err.message),
+    onError: (err: Error) => message.error(err.message),
   })
 
-  const columns: ColumnProps<Alert>[] = [
+  const columns: ColumnsType<Alert> = [
     { title: '名称', dataIndex: 'name' },
     {
       ...tableColumnPresets.status,
@@ -132,13 +132,13 @@ export function AlertsPage() {
       dataIndex: 'id',
       render: (_: unknown, record: Alert) =>
         canAcknowledge && record.status !== 'acknowledged' ? (
-          <Button size="small" theme="borderless" onClick={() => ackMutation.mutate(record.id)}>
+          <Button size="small" type="link" onClick={() => ackMutation.mutate(record.id)}>
             确认
           </Button>
         ) : record.status !== 'acknowledged' ? (
-          <Text type="tertiary" size="small">-</Text>
+          <Text type="secondary" style={{ fontSize: 12 }}>-</Text>
         ) : (
-          <Text type="tertiary" size="small">已确认</Text>
+          <Text type="secondary" style={{ fontSize: 12 }}>已确认</Text>
         ),
     },
   ]
@@ -192,7 +192,7 @@ export function NotificationsPage() {
     queryFn: () => api.get<ApiResponse<Silence[]>>('/alert-silences'),
   })
 
-  const channelColumns: ColumnProps<NotificationChannel>[] = [
+  const channelColumns: ColumnsType<NotificationChannel> = [
     { title: '名称', dataIndex: 'name' },
     { title: '类型', dataIndex: 'type', render: (t: string) => <Tag>{t}</Tag> },
     { title: 'Endpoint', dataIndex: 'endpoint', ellipsis: true },
@@ -204,7 +204,7 @@ export function NotificationsPage() {
     },
   ]
 
-  const routeColumns: ColumnProps<NotificationRoute>[] = [
+  const routeColumns: ColumnsType<NotificationRoute> = [
     { title: '名称', dataIndex: 'name' },
     { title: '匹配规则', dataIndex: 'matcher' },
     { title: '接收器', dataIndex: 'receiver' },
@@ -216,7 +216,7 @@ export function NotificationsPage() {
     },
   ]
 
-  const silenceColumns: ColumnProps<Silence>[] = [
+  const silenceColumns: ColumnsType<Silence> = [
     { title: '匹配器', dataIndex: 'matchers' },
     { title: '创建者', dataIndex: 'creator' },
     { ...tableColumnPresets.datetime, title: '开始时间', dataIndex: 'startsAt', render: (value: string) => formatDateTime(value) },
@@ -232,17 +232,25 @@ export function NotificationsPage() {
   return (
     <div className="kc-page">
       <PageHeader title="通知策略" description="维护通知渠道、路由规则与静默策略。" />
-      <Tabs type="line">
-        <TabPane tab="通知渠道" itemKey="channels">
-          <AdminTable columns={channelColumns} dataSource={channelsQuery.data?.data ?? []} rowKey="id" loading={channelsQuery.isLoading} />
-        </TabPane>
-        <TabPane tab="路由规则" itemKey="routes">
-          <AdminTable columns={routeColumns} dataSource={routesQuery.data?.data ?? []} rowKey="id" loading={routesQuery.isLoading} />
-        </TabPane>
-        <TabPane tab="静默规则" itemKey="silences">
-          <AdminTable columns={silenceColumns} dataSource={silencesQuery.data?.data ?? []} rowKey="id" loading={silencesQuery.isLoading} />
-        </TabPane>
-      </Tabs>
+      <Tabs
+        items={[
+          {
+            key: 'channels',
+            label: '通知渠道',
+            children: <AdminTable columns={channelColumns} dataSource={channelsQuery.data?.data ?? []} rowKey="id" loading={channelsQuery.isLoading} />,
+          },
+          {
+            key: 'routes',
+            label: '路由规则',
+            children: <AdminTable columns={routeColumns} dataSource={routesQuery.data?.data ?? []} rowKey="id" loading={routesQuery.isLoading} />,
+          },
+          {
+            key: 'silences',
+            label: '静默规则',
+            children: <AdminTable columns={silenceColumns} dataSource={silencesQuery.data?.data ?? []} rowKey="id" loading={silencesQuery.isLoading} />,
+          },
+        ]}
+      />
     </div>
   )
 }
@@ -265,7 +273,7 @@ export function EventsPage() {
     queryFn: () => api.get<ApiResponse<K8sEvent[]>>('/events'),
   })
 
-  const columns: ColumnProps<K8sEvent>[] = [
+  const columns: ColumnsType<K8sEvent> = [
     { ...tableColumnPresets.datetime, title: '时间', dataIndex: 'timestamp', render: (value: string) => formatDateTime(value) },
     { ...tableColumnPresets.status, title: '类型', dataIndex: 'type', render: (t: string) => <StatusTag value={t} /> },
     { title: 'Reason', dataIndex: 'reason', width: 140 },
@@ -290,9 +298,9 @@ export function OnCallPage() {
       <PageHeader title="值班协同" description="值班排班、升级策略与通知联动能力的预留入口。" />
       <Card>
         <div className="flex flex-col items-center justify-center h-64 text-gray-400">
-          <IconAlertTriangle size="extra-large" />
-          <Title heading={5} type="tertiary" style={{ marginTop: 16 }}>值班协同</Title>
-          <Paragraph type="tertiary">
+          <AlertOutlined style={{ fontSize: 28 }} />
+          <Title level={5} style={{ marginTop: 16 }}>值班协同</Title>
+          <Paragraph type="secondary">
             配置值班轮换计划、升级策略和通知规则。该功能即将上线。
           </Paragraph>
         </div>

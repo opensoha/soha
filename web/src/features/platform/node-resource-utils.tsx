@@ -1,4 +1,4 @@
-import { Progress, Typography } from '@douyinfe/semi-ui'
+import { Progress, Typography } from 'antd'
 import type { Node, NodeTaint } from '@/types'
 
 const { Text } = Typography
@@ -104,9 +104,9 @@ export function formatBytesAsG(value?: string) {
 }
 
 function resolveProgressStroke(percent: number) {
-  if (percent >= 85) return 'var(--semi-color-danger)'
-  if (percent >= 60) return 'var(--semi-color-warning)'
-  return 'var(--semi-color-success)'
+  if (percent >= 85) return '#d84c45'
+  if (percent >= 60) return '#d97706'
+  return '#22a36a'
 }
 
 export function ResourceProgressCell({
@@ -129,13 +129,13 @@ export function ResourceProgressCell({
     <div className={['kc-resource-cell', compact ? 'is-compact' : '', className].filter(Boolean).join(' ')}>
       <div className="kc-resource-cell-copy">
         <Text strong>{primary}</Text>
-        <Text type="tertiary" size="small">{secondary}</Text>
+        <Text type="secondary" className="text-xs">{secondary}</Text>
       </div>
       <Progress
         percent={value}
         showInfo
-        size={compact ? 'default' : 'large'}
-        stroke={resolveProgressStroke(value)}
+        size={compact ? 'small' : 'default'}
+        strokeColor={resolveProgressStroke(value)}
         format={(current) => `${current}%`}
         aria-label={ariaLabel}
       />

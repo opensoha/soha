@@ -1,0 +1,25 @@
+{
+  "id": "api/core-endpoints",
+  "title": "Core Endpoints",
+  "description": "Cluster APIs",
+  "source": "@site/api/core-endpoints.md",
+  "sourceDirName": "api",
+  "slug": "/api/core-endpoints",
+  "permalink": "/docs/api/core-endpoints",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/kubecrux/kubecrux/tree/main/docs/api/core-endpoints.md",
+  "tags": [],
+  "version": "current",
+  "lastUpdatedAt": 1539502055000,
+  "frontMatter": {},
+  "sidebar": "mainSidebar",
+  "previous": {
+    "title": "API Overview",
+    "permalink": "/docs/api/overview"
+  },
+  "next": {
+    "title": "Auth And Errors",
+    "permalink": "/docs/api/auth-and-errors"
+  }
+}

@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { Select, Typography } from '@douyinfe/semi-ui'
+import { Select, Typography } from 'antd'
 import { useQuery } from '@tanstack/react-query'
 import { useI18n } from '@/i18n'
 import { api } from '@/services/api-client'
@@ -63,7 +63,7 @@ export function PlatformScopeToolbar({
   return (
     <div className={['kc-scopebar', embedded ? 'is-embedded' : '', className].filter(Boolean).join(' ')}>
       {showLabel ? (
-        <Text strong size="small">
+        <Text strong style={{ fontSize: 12 }}>
           {t('platformScope.scope', 'Resource Scope')}
         </Text>
       ) : null}
@@ -72,22 +72,22 @@ export function PlatformScopeToolbar({
         size="small"
         placeholder={t('platformScope.clusterPlaceholder', 'Select cluster')}
         value={clusterId ?? undefined}
-        onChange={(value) => setClusterId(value as string)}
+        onChange={(value) => setClusterId(typeof value === 'string' ? value : null)}
         style={{ width: clusterWidth }}
-        optionList={(clustersData?.data ?? []).map((cluster) => ({
+        options={(clustersData?.data ?? []).map((cluster) => ({
           value: cluster.id,
           label: cluster.name,
         }))}
-        showClear
+        allowClear
       />
       <Select
         className="kc-platform-compact-field"
         size="small"
         placeholder={t('platformScope.namespacePlaceholder', 'Select namespace')}
         value={namespace ?? undefined}
-        onChange={(value) => setNamespace(value as string)}
+        onChange={(value) => setNamespace(typeof value === 'string' ? value : null)}
         style={{ width: namespaceWidth }}
-        optionList={[
+        options={[
           { value: '', label: t('platformScope.allNamespaces', 'All namespaces') },
           ...(namespacesData?.data ?? []).map((item) => ({
             value: item.name,
@@ -95,7 +95,7 @@ export function PlatformScopeToolbar({
           })),
         ]}
         disabled={!clusterId}
-        showClear
+        allowClear
       />
     </div>
   )

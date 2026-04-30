@@ -1,0 +1,25 @@
+{
+  "id": "architecture/monitoring-and-alerting",
+  "title": "Monitoring And Alerting",
+  "description": "Goal",
+  "source": "@site/architecture/monitoring-and-alerting.md",
+  "sourceDirName": "architecture",
+  "slug": "/architecture/monitoring-and-alerting",
+  "permalink": "/docs/architecture/monitoring-and-alerting",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/kubecrux/kubecrux/tree/main/docs/architecture/monitoring-and-alerting.md",
+  "tags": [],
+  "version": "current",
+  "lastUpdatedAt": 1539502055000,
+  "frontMatter": {},
+  "sidebar": "mainSidebar",
+  "previous": {
+    "title": "Application Delivery",
+    "permalink": "/docs/architecture/application-delivery"
+  },
+  "next": {
+    "title": "Authorization",
+    "permalink": "/docs/architecture/authorization"
+  }
+}

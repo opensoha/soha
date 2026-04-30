@@ -2,6 +2,7 @@ package resource
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
@@ -10,14 +11,18 @@ import (
 	"strings"
 	"time"
 
+	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	autoscalingv2 "k8s.io/api/autoscaling/v2"
 	batchv1 "k8s.io/api/batch/v1"
+	coordinationv1 "k8s.io/api/coordination/v1"
 	corev1 "k8s.io/api/core/v1"
 	discoveryv1 "k8s.io/api/discovery/v1"
 	networkingv1 "k8s.io/api/networking/v1"
+	nodev1 "k8s.io/api/node/v1"
 	policyv1 "k8s.io/api/policy/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	schedulingv1 "k8s.io/api/scheduling/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -28,6 +33,7 @@ import (
 	"k8s.io/client-go/tools/remotecommand"
 	"sigs.k8s.io/yaml"
 
+	appaccess "github.com/kubecrux/kubecrux/internal/application/access"
 	domainaccess "github.com/kubecrux/kubecrux/internal/domain/access"
 	domainaudit "github.com/kubecrux/kubecrux/internal/domain/audit"
 	domaincluster "github.com/kubecrux/kubecrux/internal/domain/cluster"
@@ -40,6 +46,7 @@ import (
 	"github.com/kubecrux/kubecrux/internal/platform/apperrors"
 	"github.com/kubecrux/kubecrux/internal/platform/requestctx"
 	"github.com/kubecrux/kubecrux/internal/platform/streamlimit"
+	portforwardrepo "github.com/kubecrux/kubecrux/internal/repository/portforward"
 )
 
 type AuditRecorder interface {
@@ -55,27 +62,41 @@ type MonitoringSettingsResolver interface {
 }
 
 type Service struct {
-	clusters   *k8sinfra.Manager
-	cache      *informerinfra.Service
-	agents     *agentinfra.Registry
-	resolver   ConnectionResolver
-	authorizer domainaccess.Authorizer
-	audit      AuditRecorder
-	settings   MonitoringSettingsResolver
-	httpClient *http.Client
+	clusters     *k8sinfra.Manager
+	cache        *informerinfra.Service
+	agents       *agentinfra.Registry
+	resolver     ConnectionResolver
+	authorizer   domainaccess.Authorizer
+	permissions  *appaccess.PermissionResolver
+	audit        AuditRecorder
+	settings     MonitoringSettingsResolver
+	httpClient   *http.Client
+	portForwards PortForwardRepository
 }
 
-func New(clusters *k8sinfra.Manager, cache *informerinfra.Service, agents *agentinfra.Registry, resolver ConnectionResolver, authorizer domainaccess.Authorizer, audit AuditRecorder, settings MonitoringSettingsResolver) *Service {
+type PortForwardRepository interface {
+	List(ctx context.Context) ([]portforwardrepo.Record, error)
+	Upsert(ctx context.Context, rec portforwardrepo.Record) error
+	Delete(ctx context.Context, sessionID string) error
+	MarkStatus(ctx context.Context, sessionID, status, lastErr string) error
+}
+
+func New(clusters *k8sinfra.Manager, cache *informerinfra.Service, agents *agentinfra.Registry, resolver ConnectionResolver, authorizer domainaccess.Authorizer, permissions *appaccess.PermissionResolver, audit AuditRecorder, settings MonitoringSettingsResolver) *Service {
 	return &Service{
-		clusters:   clusters,
-		cache:      cache,
-		agents:     agents,
-		resolver:   resolver,
-		authorizer: authorizer,
-		audit:      audit,
-		settings:   settings,
-		httpClient: &http.Client{Timeout: 10 * time.Second},
+		clusters:    clusters,
+		cache:       cache,
+		agents:      agents,
+		resolver:    resolver,
+		authorizer:  authorizer,
+		permissions: permissions,
+		audit:       audit,
+		settings:    settings,
+		httpClient:  &http.Client{Timeout: 10 * time.Second},
 	}
+}
+
+func (s *Service) SetPortForwardRepository(repo PortForwardRepository) {
+	s.portForwards = repo
 }
 
 func (s *Service) ListNamespaces(ctx context.Context, principal domainidentity.Principal, clusterID string) ([]domainresource.NamespaceView, error) {
@@ -956,7 +977,10 @@ func (s *Service) ListDeploymentRolloutHistory(ctx context.Context, principal do
 }
 
 func (s *Service) RollbackDeployment(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, name, revision string) (domainresource.DeploymentRollbackView, error) {
-	connection, _, err := s.authorize(ctx, principal, clusterID, namespace, "Deployment", domainaccess.ActionUpdate)
+	if err := s.authorizeDeploymentPermission(ctx, principal, appaccess.PermPlatformDeploymentRollback); err != nil {
+		return domainresource.DeploymentRollbackView{}, err
+	}
+	connection, _, err := s.authorize(ctx, principal, clusterID, namespace, "Deployment", domainaccess.ActionRollback)
 	if err != nil {
 		return domainresource.DeploymentRollbackView{}, err
 	}
@@ -973,20 +997,20 @@ func (s *Service) RollbackDeployment(ctx context.Context, principal domainidenti
 			return domainresource.DeploymentRollbackView{}, err
 		}
 		if err := client.RollbackDeployment(ctx, namespace, name, revision); err != nil {
-			_ = s.recordAudit(ctx, principal, clusterID, namespace, "Deployment", name, string(domainaccess.ActionUpdate), "failure", err.Error())
+			_ = s.recordAudit(ctx, principal, clusterID, namespace, "Deployment", name, string(domainaccess.ActionRollback), "failure", err.Error())
 			return domainresource.DeploymentRollbackView{}, fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
 		}
 		source = "agent"
 	default:
 		if err := s.rollbackDirectDeployment(ctx, clusterID, namespace, name, revision); err != nil {
-			_ = s.recordAudit(ctx, principal, clusterID, namespace, "Deployment", name, string(domainaccess.ActionUpdate), "failure", err.Error())
+			_ = s.recordAudit(ctx, principal, clusterID, namespace, "Deployment", name, string(domainaccess.ActionRollback), "failure", err.Error())
 			return domainresource.DeploymentRollbackView{}, err
 		}
 		source = "live"
 	}
 
 	now := time.Now().UTC().Format(time.RFC3339)
-	_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, "Deployment", name, string(domainaccess.ActionUpdate), "success", fmt.Sprintf("rolled back deployment to revision %s via %s", revision, source))
+	_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, "Deployment", name, string(domainaccess.ActionRollback), "success", fmt.Sprintf("rolled back deployment to revision %s via %s", revision, source))
 	return domainresource.DeploymentRollbackView{
 		Name:           name,
 		Namespace:      namespace,
@@ -1253,6 +1277,156 @@ func (s *Service) ListSecrets(ctx context.Context, principal domainidentity.Prin
 	populateAllowedActionsSecrets(items, decision)
 	_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, "Secret", "", string(domainaccess.ActionList), "success", fmt.Sprintf("listed secrets via %s in namespace %s", source, displayNamespace(namespace)))
 	return items, nil
+}
+
+func (s *Service) GetConfigMapDetail(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, name string) (domainresource.ConfigMapDetailView, error) {
+	connection, _, err := s.authorize(ctx, principal, clusterID, namespace, "ConfigMap", domainaccess.ActionView)
+	if err != nil {
+		return domainresource.ConfigMapDetailView{}, err
+	}
+	if connection.Summary.ConnectionMode == domaincluster.ConnectionModeAgent {
+		return domainresource.ConfigMapDetailView{}, fmt.Errorf("%w: configmap detail is not supported for agent-connected clusters yet", apperrors.ErrInvalidArgument)
+	}
+	bundle, err := s.clusters.Bundle(ctx, clusterID)
+	if err != nil {
+		return domainresource.ConfigMapDetailView{}, fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
+	}
+	queryCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	item, err := bundle.Typed.CoreV1().ConfigMaps(namespace).Get(queryCtx, name, metav1.GetOptions{})
+	if err != nil {
+		return domainresource.ConfigMapDetailView{}, err
+	}
+	binaryData := make(map[string]string, len(item.BinaryData))
+	for k, v := range item.BinaryData {
+		binaryData[k] = base64.StdEncoding.EncodeToString(v)
+	}
+	immutable := item.Immutable != nil && *item.Immutable
+	_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, "ConfigMap", name, string(domainaccess.ActionView), "success", "viewed configmap detail")
+	return domainresource.ConfigMapDetailView{
+		Name:        item.Name,
+		Namespace:   item.Namespace,
+		Labels:      item.Labels,
+		Annotations: item.Annotations,
+		Data:        item.Data,
+		BinaryData:  binaryData,
+		Immutable:   immutable,
+		CreatedAt:   item.CreationTimestamp.Time.Format(time.RFC3339),
+		AgeSeconds:  secondsSince(item.CreationTimestamp.Time),
+	}, nil
+}
+
+func (s *Service) GetSecretDetail(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, name string) (domainresource.SecretDetailView, error) {
+	connection, _, err := s.authorize(ctx, principal, clusterID, namespace, "Secret", domainaccess.ActionView)
+	if err != nil {
+		return domainresource.SecretDetailView{}, err
+	}
+	if connection.Summary.ConnectionMode == domaincluster.ConnectionModeAgent {
+		return domainresource.SecretDetailView{}, fmt.Errorf("%w: secret detail is not supported for agent-connected clusters yet", apperrors.ErrInvalidArgument)
+	}
+	bundle, err := s.clusters.Bundle(ctx, clusterID)
+	if err != nil {
+		return domainresource.SecretDetailView{}, fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
+	}
+	queryCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	item, err := bundle.Typed.CoreV1().Secrets(namespace).Get(queryCtx, name, metav1.GetOptions{})
+	if err != nil {
+		return domainresource.SecretDetailView{}, err
+	}
+	data := make(map[string]string, len(item.Data))
+	for k, v := range item.Data {
+		data[k] = base64.StdEncoding.EncodeToString(v)
+	}
+	immutable := item.Immutable != nil && *item.Immutable
+	_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, "Secret", name, string(domainaccess.ActionView), "success", "viewed secret detail")
+	return domainresource.SecretDetailView{
+		Name:        item.Name,
+		Namespace:   item.Namespace,
+		Type:        string(item.Type),
+		Labels:      item.Labels,
+		Annotations: item.Annotations,
+		Data:        data,
+		Immutable:   immutable,
+		CreatedAt:   item.CreationTimestamp.Time.Format(time.RFC3339),
+		AgeSeconds:  secondsSince(item.CreationTimestamp.Time),
+	}, nil
+}
+
+// CreateResourceFromYAML creates a new resource in the cluster from YAML content
+// for any kind registered in resourceGVRForKind. For namespace-scoped resources,
+// the namespace argument is used when metadata.namespace is empty in the YAML.
+func (s *Service) CreateResourceFromYAML(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, kind, content string) (domainresource.ResourceYAMLView, error) {
+	connection, _, err := s.authorize(ctx, principal, clusterID, namespace, kind, domainaccess.ActionCreate)
+	if err != nil {
+		return domainresource.ResourceYAMLView{}, err
+	}
+	if strings.TrimSpace(content) == "" {
+		return domainresource.ResourceYAMLView{}, fmt.Errorf("%w: yaml content is required", apperrors.ErrInvalidArgument)
+	}
+	if connection.Summary.ConnectionMode == domaincluster.ConnectionModeAgent {
+		return domainresource.ResourceYAMLView{}, fmt.Errorf("%w: yaml create is not supported for agent-connected clusters yet", apperrors.ErrInvalidArgument)
+	}
+	bundle, err := s.clusters.Bundle(ctx, clusterID)
+	if err != nil {
+		return domainresource.ResourceYAMLView{}, fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
+	}
+	var object map[string]any
+	if err := yaml.Unmarshal([]byte(content), &object); err != nil {
+		return domainresource.ResourceYAMLView{}, fmt.Errorf("%w: invalid yaml: %v", apperrors.ErrInvalidArgument, err)
+	}
+	item := &unstructured.Unstructured{Object: object}
+	if item.GetKind() == "" {
+		item.SetKind(kind)
+	}
+	if !strings.EqualFold(item.GetKind(), kind) {
+		return domainresource.ResourceYAMLView{}, fmt.Errorf("%w: yaml kind %s does not match target %s", apperrors.ErrInvalidArgument, item.GetKind(), kind)
+	}
+	if strings.TrimSpace(item.GetName()) == "" {
+		return domainresource.ResourceYAMLView{}, fmt.Errorf("%w: yaml metadata.name is required", apperrors.ErrInvalidArgument)
+	}
+	gvr, namespaceScoped, err := resourceGVRForKind(kind)
+	if err != nil {
+		return domainresource.ResourceYAMLView{}, err
+	}
+	queryCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	var resource dynamic.ResourceInterface
+	if namespaceScoped {
+		ns := item.GetNamespace()
+		if ns == "" {
+			ns = namespace
+			item.SetNamespace(ns)
+		}
+		if strings.TrimSpace(ns) == "" {
+			return domainresource.ResourceYAMLView{}, fmt.Errorf("%w: namespace is required for namespace-scoped resource", apperrors.ErrInvalidArgument)
+		}
+		resource = bundle.Dynamic.Resource(gvr).Namespace(ns)
+	} else {
+		if strings.TrimSpace(item.GetNamespace()) != "" {
+			return domainresource.ResourceYAMLView{}, fmt.Errorf("%w: yaml metadata.namespace must be empty for cluster-scoped resource", apperrors.ErrInvalidArgument)
+		}
+		item.SetNamespace("")
+		resource = bundle.Dynamic.Resource(gvr)
+	}
+	item.SetResourceVersion("")
+	created, err := resource.Create(queryCtx, item, metav1.CreateOptions{})
+	if err != nil {
+		_ = s.recordAudit(ctx, principal, clusterID, item.GetNamespace(), kind, item.GetName(), string(domainaccess.ActionCreate), "failure", err.Error())
+		return domainresource.ResourceYAMLView{}, err
+	}
+	unstructured.RemoveNestedField(created.Object, "metadata", "managedFields")
+	rendered, err := yaml.Marshal(created.Object)
+	if err != nil {
+		return domainresource.ResourceYAMLView{}, err
+	}
+	_ = s.recordAudit(ctx, principal, connection.Summary.ID, created.GetNamespace(), kind, created.GetName(), string(domainaccess.ActionCreate), "success", "created resource from yaml")
+	return domainresource.ResourceYAMLView{
+		Kind:      kind,
+		Name:      created.GetName(),
+		Namespace: created.GetNamespace(),
+		Content:   string(rendered),
+	}, nil
 }
 
 func (s *Service) ListServiceAccounts(ctx context.Context, principal domainidentity.Principal, clusterID, namespace string) ([]domainresource.ServiceAccountView, error) {
@@ -1697,6 +1871,406 @@ func (s *Service) ListStorageClasses(ctx context.Context, principal domainidenti
 	return items, nil
 }
 
+func (s *Service) ListIngressClasses(ctx context.Context, principal domainidentity.Principal, clusterID string) ([]domainresource.IngressClassView, error) {
+	connection, decision, err := s.authorize(ctx, principal, clusterID, "", "IngressClass", domainaccess.ActionList)
+	if err != nil {
+		return nil, err
+	}
+	var (
+		items  []domainresource.IngressClassView
+		source string
+	)
+	switch connection.Summary.ConnectionMode {
+	case domaincluster.ConnectionModeAgent:
+		client, err := s.agentClient(connection)
+		if err != nil {
+			return nil, err
+		}
+		items, err = client.ListIngressClasses(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
+		}
+		source = "agent"
+	default:
+		rawItems, err := s.listDirectIngressClasses(ctx, clusterID)
+		if err != nil {
+			return nil, err
+		}
+		items = make([]domainresource.IngressClassView, 0, len(rawItems))
+		for _, item := range rawItems {
+			items = append(items, mapIngressClass(item, decision))
+		}
+		source = "live"
+	}
+	populateAllowedActionsIngressClasses(items, decision)
+	_ = s.recordAudit(ctx, principal, connection.Summary.ID, "", "IngressClass", "", string(domainaccess.ActionList), "success", fmt.Sprintf("listed ingressclasses via %s", source))
+	return items, nil
+}
+
+func (s *Service) ListPriorityClasses(ctx context.Context, principal domainidentity.Principal, clusterID string) ([]domainresource.PriorityClassView, error) {
+	connection, decision, err := s.authorize(ctx, principal, clusterID, "", "PriorityClass", domainaccess.ActionList)
+	if err != nil {
+		return nil, err
+	}
+	var (
+		items  []domainresource.PriorityClassView
+		source string
+	)
+	switch connection.Summary.ConnectionMode {
+	case domaincluster.ConnectionModeAgent:
+		client, err := s.agentClient(connection)
+		if err != nil {
+			return nil, err
+		}
+		items, err = client.ListPriorityClasses(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
+		}
+		source = "agent"
+	default:
+		rawItems, err := s.listDirectPriorityClasses(ctx, clusterID)
+		if err != nil {
+			return nil, err
+		}
+		items = make([]domainresource.PriorityClassView, 0, len(rawItems))
+		for _, item := range rawItems {
+			items = append(items, mapPriorityClass(item, decision))
+		}
+		source = "live"
+	}
+	populateAllowedActionsPriorityClasses(items, decision)
+	_ = s.recordAudit(ctx, principal, connection.Summary.ID, "", "PriorityClass", "", string(domainaccess.ActionList), "success", fmt.Sprintf("listed priorityclasses via %s", source))
+	return items, nil
+}
+
+func (s *Service) ListRuntimeClasses(ctx context.Context, principal domainidentity.Principal, clusterID string) ([]domainresource.RuntimeClassView, error) {
+	connection, decision, err := s.authorize(ctx, principal, clusterID, "", "RuntimeClass", domainaccess.ActionList)
+	if err != nil {
+		return nil, err
+	}
+	var (
+		items  []domainresource.RuntimeClassView
+		source string
+	)
+	switch connection.Summary.ConnectionMode {
+	case domaincluster.ConnectionModeAgent:
+		client, err := s.agentClient(connection)
+		if err != nil {
+			return nil, err
+		}
+		items, err = client.ListRuntimeClasses(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
+		}
+		source = "agent"
+	default:
+		rawItems, err := s.listDirectRuntimeClasses(ctx, clusterID)
+		if err != nil {
+			return nil, err
+		}
+		items = make([]domainresource.RuntimeClassView, 0, len(rawItems))
+		for _, item := range rawItems {
+			items = append(items, mapRuntimeClass(item, decision))
+		}
+		source = "live"
+	}
+	populateAllowedActionsRuntimeClasses(items, decision)
+	_ = s.recordAudit(ctx, principal, connection.Summary.ID, "", "RuntimeClass", "", string(domainaccess.ActionList), "success", fmt.Sprintf("listed runtimeclasses via %s", source))
+	return items, nil
+}
+
+func (s *Service) ListClusterRoles(ctx context.Context, principal domainidentity.Principal, clusterID string) ([]domainresource.ClusterRoleView, error) {
+	connection, decision, err := s.authorize(ctx, principal, clusterID, "", "ClusterRole", domainaccess.ActionList)
+	if err != nil {
+		return nil, err
+	}
+	var (
+		items  []domainresource.ClusterRoleView
+		source string
+	)
+	switch connection.Summary.ConnectionMode {
+	case domaincluster.ConnectionModeAgent:
+		client, err := s.agentClient(connection)
+		if err != nil {
+			return nil, err
+		}
+		items, err = client.ListClusterRoles(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
+		}
+		source = "agent"
+	default:
+		rawItems, err := s.listDirectClusterRoles(ctx, clusterID)
+		if err != nil {
+			return nil, err
+		}
+		items = make([]domainresource.ClusterRoleView, 0, len(rawItems))
+		for _, item := range rawItems {
+			items = append(items, mapClusterRole(item, decision))
+		}
+		source = "live"
+	}
+	populateAllowedActionsClusterRoles(items, decision)
+	_ = s.recordAudit(ctx, principal, connection.Summary.ID, "", "ClusterRole", "", string(domainaccess.ActionList), "success", fmt.Sprintf("listed clusterroles via %s", source))
+	return items, nil
+}
+
+func (s *Service) ListClusterRoleBindings(ctx context.Context, principal domainidentity.Principal, clusterID string) ([]domainresource.ClusterRoleBindingView, error) {
+	connection, decision, err := s.authorize(ctx, principal, clusterID, "", "ClusterRoleBinding", domainaccess.ActionList)
+	if err != nil {
+		return nil, err
+	}
+	var (
+		items  []domainresource.ClusterRoleBindingView
+		source string
+	)
+	switch connection.Summary.ConnectionMode {
+	case domaincluster.ConnectionModeAgent:
+		client, err := s.agentClient(connection)
+		if err != nil {
+			return nil, err
+		}
+		items, err = client.ListClusterRoleBindings(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
+		}
+		source = "agent"
+	default:
+		rawItems, err := s.listDirectClusterRoleBindings(ctx, clusterID)
+		if err != nil {
+			return nil, err
+		}
+		items = make([]domainresource.ClusterRoleBindingView, 0, len(rawItems))
+		for _, item := range rawItems {
+			items = append(items, mapClusterRoleBinding(item, decision))
+		}
+		source = "live"
+	}
+	populateAllowedActionsClusterRoleBindings(items, decision)
+	_ = s.recordAudit(ctx, principal, connection.Summary.ID, "", "ClusterRoleBinding", "", string(domainaccess.ActionList), "success", fmt.Sprintf("listed clusterrolebindings via %s", source))
+	return items, nil
+}
+
+func (s *Service) ListMutatingWebhookConfigurations(ctx context.Context, principal domainidentity.Principal, clusterID string) ([]domainresource.MutatingWebhookConfigurationView, error) {
+	connection, decision, err := s.authorize(ctx, principal, clusterID, "", "MutatingWebhookConfiguration", domainaccess.ActionList)
+	if err != nil {
+		return nil, err
+	}
+	var (
+		items  []domainresource.MutatingWebhookConfigurationView
+		source string
+	)
+	switch connection.Summary.ConnectionMode {
+	case domaincluster.ConnectionModeAgent:
+		client, err := s.agentClient(connection)
+		if err != nil {
+			return nil, err
+		}
+		items, err = client.ListMutatingWebhookConfigurations(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
+		}
+		source = "agent"
+	default:
+		rawItems, err := s.listDirectMutatingWebhookConfigurations(ctx, clusterID)
+		if err != nil {
+			return nil, err
+		}
+		items = make([]domainresource.MutatingWebhookConfigurationView, 0, len(rawItems))
+		for _, item := range rawItems {
+			items = append(items, mapMutatingWebhookConfiguration(item, decision))
+		}
+		source = "live"
+	}
+	populateAllowedActionsMutatingWebhookConfigurations(items, decision)
+	_ = s.recordAudit(ctx, principal, connection.Summary.ID, "", "MutatingWebhookConfiguration", "", string(domainaccess.ActionList), "success", fmt.Sprintf("listed mutatingwebhookconfigurations via %s", source))
+	return items, nil
+}
+
+func (s *Service) ListValidatingWebhookConfigurations(ctx context.Context, principal domainidentity.Principal, clusterID string) ([]domainresource.ValidatingWebhookConfigurationView, error) {
+	connection, decision, err := s.authorize(ctx, principal, clusterID, "", "ValidatingWebhookConfiguration", domainaccess.ActionList)
+	if err != nil {
+		return nil, err
+	}
+	var (
+		items  []domainresource.ValidatingWebhookConfigurationView
+		source string
+	)
+	switch connection.Summary.ConnectionMode {
+	case domaincluster.ConnectionModeAgent:
+		client, err := s.agentClient(connection)
+		if err != nil {
+			return nil, err
+		}
+		items, err = client.ListValidatingWebhookConfigurations(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
+		}
+		source = "agent"
+	default:
+		rawItems, err := s.listDirectValidatingWebhookConfigurations(ctx, clusterID)
+		if err != nil {
+			return nil, err
+		}
+		items = make([]domainresource.ValidatingWebhookConfigurationView, 0, len(rawItems))
+		for _, item := range rawItems {
+			items = append(items, mapValidatingWebhookConfiguration(item, decision))
+		}
+		source = "live"
+	}
+	populateAllowedActionsValidatingWebhookConfigurations(items, decision)
+	_ = s.recordAudit(ctx, principal, connection.Summary.ID, "", "ValidatingWebhookConfiguration", "", string(domainaccess.ActionList), "success", fmt.Sprintf("listed validatingwebhookconfigurations via %s", source))
+	return items, nil
+}
+
+func (s *Service) ListResourceQuotas(ctx context.Context, principal domainidentity.Principal, clusterID, namespace string) ([]domainresource.ResourceQuotaView, error) {
+	connection, decision, err := s.authorize(ctx, principal, clusterID, namespace, "ResourceQuota", domainaccess.ActionList)
+	if err != nil {
+		return nil, err
+	}
+	var (
+		items  []domainresource.ResourceQuotaView
+		source string
+	)
+	switch connection.Summary.ConnectionMode {
+	case domaincluster.ConnectionModeAgent:
+		client, err := s.agentClient(connection)
+		if err != nil {
+			return nil, err
+		}
+		items, err = client.ListResourceQuotas(ctx, namespace)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
+		}
+		source = "agent"
+	default:
+		rawItems, err := s.listDirectResourceQuotas(ctx, clusterID, namespace)
+		if err != nil {
+			return nil, err
+		}
+		items = make([]domainresource.ResourceQuotaView, 0, len(rawItems))
+		for _, item := range rawItems {
+			items = append(items, mapResourceQuota(item, decision))
+		}
+		source = "live"
+	}
+	items = filterScopedNamespaceItems(items, decision, func(item domainresource.ResourceQuotaView) string { return item.Namespace })
+	populateAllowedActionsResourceQuotas(items, decision)
+	_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, "ResourceQuota", "", string(domainaccess.ActionList), "success", fmt.Sprintf("listed resourcequotas via %s in namespace %s", source, displayNamespace(namespace)))
+	return items, nil
+}
+
+func (s *Service) ListLimitRanges(ctx context.Context, principal domainidentity.Principal, clusterID, namespace string) ([]domainresource.LimitRangeView, error) {
+	connection, decision, err := s.authorize(ctx, principal, clusterID, namespace, "LimitRange", domainaccess.ActionList)
+	if err != nil {
+		return nil, err
+	}
+	var (
+		items  []domainresource.LimitRangeView
+		source string
+	)
+	switch connection.Summary.ConnectionMode {
+	case domaincluster.ConnectionModeAgent:
+		client, err := s.agentClient(connection)
+		if err != nil {
+			return nil, err
+		}
+		items, err = client.ListLimitRanges(ctx, namespace)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
+		}
+		source = "agent"
+	default:
+		rawItems, err := s.listDirectLimitRanges(ctx, clusterID, namespace)
+		if err != nil {
+			return nil, err
+		}
+		items = make([]domainresource.LimitRangeView, 0, len(rawItems))
+		for _, item := range rawItems {
+			items = append(items, mapLimitRange(item, decision))
+		}
+		source = "live"
+	}
+	items = filterScopedNamespaceItems(items, decision, func(item domainresource.LimitRangeView) string { return item.Namespace })
+	populateAllowedActionsLimitRanges(items, decision)
+	_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, "LimitRange", "", string(domainaccess.ActionList), "success", fmt.Sprintf("listed limitranges via %s in namespace %s", source, displayNamespace(namespace)))
+	return items, nil
+}
+
+func (s *Service) ListLeases(ctx context.Context, principal domainidentity.Principal, clusterID, namespace string) ([]domainresource.LeaseView, error) {
+	connection, decision, err := s.authorize(ctx, principal, clusterID, namespace, "Lease", domainaccess.ActionList)
+	if err != nil {
+		return nil, err
+	}
+	var (
+		items  []domainresource.LeaseView
+		source string
+	)
+	switch connection.Summary.ConnectionMode {
+	case domaincluster.ConnectionModeAgent:
+		client, err := s.agentClient(connection)
+		if err != nil {
+			return nil, err
+		}
+		items, err = client.ListLeases(ctx, namespace)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
+		}
+		source = "agent"
+	default:
+		rawItems, err := s.listDirectLeases(ctx, clusterID, namespace)
+		if err != nil {
+			return nil, err
+		}
+		items = make([]domainresource.LeaseView, 0, len(rawItems))
+		for _, item := range rawItems {
+			items = append(items, mapLease(item, decision))
+		}
+		source = "live"
+	}
+	items = filterScopedNamespaceItems(items, decision, func(item domainresource.LeaseView) string { return item.Namespace })
+	populateAllowedActionsLeases(items, decision)
+	_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, "Lease", "", string(domainaccess.ActionList), "success", fmt.Sprintf("listed leases via %s in namespace %s", source, displayNamespace(namespace)))
+	return items, nil
+}
+
+func (s *Service) ListReplicationControllers(ctx context.Context, principal domainidentity.Principal, clusterID, namespace string) ([]domainresource.ReplicationControllerView, error) {
+	connection, decision, err := s.authorize(ctx, principal, clusterID, namespace, "ReplicationController", domainaccess.ActionList)
+	if err != nil {
+		return nil, err
+	}
+	var (
+		items  []domainresource.ReplicationControllerView
+		source string
+	)
+	switch connection.Summary.ConnectionMode {
+	case domaincluster.ConnectionModeAgent:
+		client, err := s.agentClient(connection)
+		if err != nil {
+			return nil, err
+		}
+		items, err = client.ListReplicationControllers(ctx, namespace)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
+		}
+		source = "agent"
+	default:
+		rawItems, err := s.listDirectReplicationControllers(ctx, clusterID, namespace)
+		if err != nil {
+			return nil, err
+		}
+		items = make([]domainresource.ReplicationControllerView, 0, len(rawItems))
+		for _, item := range rawItems {
+			items = append(items, mapReplicationController(item, decision))
+		}
+		source = "live"
+	}
+	items = filterScopedNamespaceItems(items, decision, func(item domainresource.ReplicationControllerView) string { return item.Namespace })
+	populateAllowedActionsReplicationControllers(items, decision)
+	_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, "ReplicationController", "", string(domainaccess.ActionList), "success", fmt.Sprintf("listed replicationcontrollers via %s in namespace %s", source, displayNamespace(namespace)))
+	return items, nil
+}
+
 func (s *Service) ListCRDs(ctx context.Context, principal domainidentity.Principal, clusterID string) ([]domainresource.CRDView, error) {
 	connection, decision, err := s.authorize(ctx, principal, clusterID, "", "CRD", domainaccess.ActionList)
 	if err != nil {
@@ -1796,6 +2370,9 @@ func (s *Service) ListClusterEvents(ctx context.Context, principal domainidentit
 }
 
 func (s *Service) RestartDeployment(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, name string) error {
+	if err := s.authorizeDeploymentPermission(ctx, principal, appaccess.PermPlatformDeploymentRestart); err != nil {
+		return err
+	}
 	connection, _, err := s.authorize(ctx, principal, clusterID, namespace, "Deployment", domainaccess.ActionRestart)
 	if err != nil {
 		return err
@@ -1826,6 +2403,9 @@ func (s *Service) RestartDeployment(ctx context.Context, principal domainidentit
 }
 
 func (s *Service) ScaleDeployment(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, name string, replicas int32) error {
+	if err := s.authorizeDeploymentPermission(ctx, principal, appaccess.PermPlatformDeploymentScale); err != nil {
+		return err
+	}
 	connection, _, err := s.authorize(ctx, principal, clusterID, namespace, "Deployment", domainaccess.ActionScale)
 	if err != nil {
 		return err
@@ -2333,6 +2913,12 @@ func (s *Service) getDirectCronJobYAML(ctx context.Context, clusterID, namespace
 	return domainresource.ResourceYAMLView{Kind: "CronJob", Name: name, Namespace: namespace, Content: string(content)}, nil
 }
 
+// ApplyResourceYAMLByKind applies updated YAML for any kind registered in
+// resourceGVRForKind via the dynamic client.
+func (s *Service) ApplyResourceYAMLByKind(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, kind, name, content string) (domainresource.ResourceYAMLView, error) {
+	return s.applyResourceYAML(ctx, principal, clusterID, namespace, kind, name, content)
+}
+
 func (s *Service) applyResourceYAML(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, kind, name, content string) (domainresource.ResourceYAMLView, error) {
 	connection, _, err := s.authorize(ctx, principal, clusterID, namespace, kind, domainaccess.ActionUpdate)
 	if err != nil {
@@ -2353,6 +2939,100 @@ func (s *Service) applyResourceYAML(ctx context.Context, principal domainidentit
 		_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, kind, name, string(domainaccess.ActionUpdate), "success", "applied resource yaml")
 		return item, nil
 	}
+}
+
+// GetResourceYAML fetches the YAML representation of any kind registered in
+// resourceGVRForKind via the dynamic client. Namespace may be empty for
+// cluster-scoped kinds.
+func (s *Service) GetResourceYAML(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, kind, name string) (domainresource.ResourceYAMLView, error) {
+	connection, _, err := s.authorize(ctx, principal, clusterID, namespace, kind, domainaccess.ActionView)
+	if err != nil {
+		return domainresource.ResourceYAMLView{}, err
+	}
+	switch connection.Summary.ConnectionMode {
+	case domaincluster.ConnectionModeAgent:
+		return domainresource.ResourceYAMLView{}, fmt.Errorf("%w: yaml view is not supported for agent-connected clusters yet", apperrors.ErrInvalidArgument)
+	default:
+		item, err := s.getDirectResourceYAMLByKind(ctx, clusterID, namespace, kind, name)
+		if err != nil {
+			return domainresource.ResourceYAMLView{}, err
+		}
+		_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, kind, name, string(domainaccess.ActionView), "success", "viewed resource yaml")
+		return item, nil
+	}
+}
+
+// DeleteResourceByKind deletes any kind registered in resourceGVRForKind.
+func (s *Service) DeleteResourceByKind(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, kind, name string) error {
+	connection, _, err := s.authorize(ctx, principal, clusterID, namespace, kind, domainaccess.ActionDelete)
+	if err != nil {
+		return err
+	}
+	switch connection.Summary.ConnectionMode {
+	case domaincluster.ConnectionModeAgent:
+		return fmt.Errorf("%w: delete is not supported for agent-connected clusters yet", apperrors.ErrInvalidArgument)
+	default:
+		if err := s.deleteDirectResourceByKind(ctx, clusterID, namespace, kind, name); err != nil {
+			_ = s.recordAudit(ctx, principal, clusterID, namespace, kind, name, string(domainaccess.ActionDelete), "failure", err.Error())
+			return err
+		}
+		_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, kind, name, string(domainaccess.ActionDelete), "success", "deleted resource")
+		return nil
+	}
+}
+
+func (s *Service) getDirectResourceYAMLByKind(ctx context.Context, clusterID, namespace, kind, name string) (domainresource.ResourceYAMLView, error) {
+	bundle, err := s.clusters.Bundle(ctx, clusterID)
+	if err != nil {
+		return domainresource.ResourceYAMLView{}, fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
+	}
+	gvr, namespaceScoped, err := resourceGVRForKind(kind)
+	if err != nil {
+		return domainresource.ResourceYAMLView{}, err
+	}
+	queryCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	var resource dynamic.ResourceInterface
+	if namespaceScoped {
+		resource = bundle.Dynamic.Resource(gvr).Namespace(namespace)
+	} else {
+		resource = bundle.Dynamic.Resource(gvr)
+	}
+	item, err := resource.Get(queryCtx, name, metav1.GetOptions{})
+	if err != nil {
+		return domainresource.ResourceYAMLView{}, err
+	}
+	unstructured.RemoveNestedField(item.Object, "metadata", "managedFields")
+	content, err := yaml.Marshal(item.Object)
+	if err != nil {
+		return domainresource.ResourceYAMLView{}, err
+	}
+	return domainresource.ResourceYAMLView{
+		Kind:      kind,
+		Name:      name,
+		Namespace: item.GetNamespace(),
+		Content:   string(content),
+	}, nil
+}
+
+func (s *Service) deleteDirectResourceByKind(ctx context.Context, clusterID, namespace, kind, name string) error {
+	bundle, err := s.clusters.Bundle(ctx, clusterID)
+	if err != nil {
+		return fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
+	}
+	gvr, namespaceScoped, err := resourceGVRForKind(kind)
+	if err != nil {
+		return err
+	}
+	queryCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	var resource dynamic.ResourceInterface
+	if namespaceScoped {
+		resource = bundle.Dynamic.Resource(gvr).Namespace(namespace)
+	} else {
+		resource = bundle.Dynamic.Resource(gvr)
+	}
+	return resource.Delete(queryCtx, name, metav1.DeleteOptions{})
 }
 
 func (s *Service) applyDirectResourceYAML(ctx context.Context, clusterID, namespace, kind, name, content string) (domainresource.ResourceYAMLView, error) {
@@ -2436,6 +3116,32 @@ func resourceGVRForKind(kind string) (schema.GroupVersionResource, bool, error) 
 		return schema.GroupVersionResource{Group: "batch", Version: "v1", Resource: "jobs"}, true, nil
 	case "cronjob":
 		return schema.GroupVersionResource{Group: "batch", Version: "v1", Resource: "cronjobs"}, true, nil
+	case "configmap":
+		return schema.GroupVersionResource{Group: "", Version: "v1", Resource: "configmaps"}, true, nil
+	case "secret":
+		return schema.GroupVersionResource{Group: "", Version: "v1", Resource: "secrets"}, true, nil
+	case "replicationcontroller":
+		return schema.GroupVersionResource{Group: "", Version: "v1", Resource: "replicationcontrollers"}, true, nil
+	case "resourcequota":
+		return schema.GroupVersionResource{Group: "", Version: "v1", Resource: "resourcequotas"}, true, nil
+	case "limitrange":
+		return schema.GroupVersionResource{Group: "", Version: "v1", Resource: "limitranges"}, true, nil
+	case "lease":
+		return schema.GroupVersionResource{Group: "coordination.k8s.io", Version: "v1", Resource: "leases"}, true, nil
+	case "ingressclass":
+		return schema.GroupVersionResource{Group: "networking.k8s.io", Version: "v1", Resource: "ingressclasses"}, false, nil
+	case "priorityclass":
+		return schema.GroupVersionResource{Group: "scheduling.k8s.io", Version: "v1", Resource: "priorityclasses"}, false, nil
+	case "runtimeclass":
+		return schema.GroupVersionResource{Group: "node.k8s.io", Version: "v1", Resource: "runtimeclasses"}, false, nil
+	case "clusterrole":
+		return schema.GroupVersionResource{Group: "rbac.authorization.k8s.io", Version: "v1", Resource: "clusterroles"}, false, nil
+	case "clusterrolebinding":
+		return schema.GroupVersionResource{Group: "rbac.authorization.k8s.io", Version: "v1", Resource: "clusterrolebindings"}, false, nil
+	case "mutatingwebhookconfiguration":
+		return schema.GroupVersionResource{Group: "admissionregistration.k8s.io", Version: "v1", Resource: "mutatingwebhookconfigurations"}, false, nil
+	case "validatingwebhookconfiguration":
+		return schema.GroupVersionResource{Group: "admissionregistration.k8s.io", Version: "v1", Resource: "validatingwebhookconfigurations"}, false, nil
 	default:
 		return schema.GroupVersionResource{}, false, fmt.Errorf("%w: yaml apply does not support kind %s", apperrors.ErrInvalidArgument, kind)
 	}
@@ -3166,6 +3872,196 @@ func (s *Service) listDirectStorageClasses(ctx context.Context, clusterID string
 	return items.Items, nil
 }
 
+func (s *Service) listDirectIngressClasses(ctx context.Context, clusterID string) ([]networkingv1.IngressClass, error) {
+	bundle, err := s.clusters.Bundle(ctx, clusterID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
+	}
+	queryCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
+	defer cancel()
+	items, err := bundle.Typed.NetworkingV1().IngressClasses().List(queryCtx, metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	return items.Items, nil
+}
+
+func (s *Service) listDirectPriorityClasses(ctx context.Context, clusterID string) ([]schedulingv1.PriorityClass, error) {
+	bundle, err := s.clusters.Bundle(ctx, clusterID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
+	}
+	queryCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
+	defer cancel()
+	items, err := bundle.Typed.SchedulingV1().PriorityClasses().List(queryCtx, metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	return items.Items, nil
+}
+
+func (s *Service) listDirectRuntimeClasses(ctx context.Context, clusterID string) ([]nodev1.RuntimeClass, error) {
+	bundle, err := s.clusters.Bundle(ctx, clusterID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
+	}
+	queryCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
+	defer cancel()
+	items, err := bundle.Typed.NodeV1().RuntimeClasses().List(queryCtx, metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	return items.Items, nil
+}
+
+func (s *Service) listDirectClusterRoles(ctx context.Context, clusterID string) ([]rbacv1.ClusterRole, error) {
+	bundle, err := s.clusters.Bundle(ctx, clusterID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
+	}
+	queryCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
+	defer cancel()
+	items, err := bundle.Typed.RbacV1().ClusterRoles().List(queryCtx, metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	return items.Items, nil
+}
+
+func (s *Service) listDirectClusterRoleBindings(ctx context.Context, clusterID string) ([]rbacv1.ClusterRoleBinding, error) {
+	bundle, err := s.clusters.Bundle(ctx, clusterID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
+	}
+	queryCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
+	defer cancel()
+	items, err := bundle.Typed.RbacV1().ClusterRoleBindings().List(queryCtx, metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	return items.Items, nil
+}
+
+func (s *Service) listDirectMutatingWebhookConfigurations(ctx context.Context, clusterID string) ([]admissionregistrationv1.MutatingWebhookConfiguration, error) {
+	bundle, err := s.clusters.Bundle(ctx, clusterID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
+	}
+	queryCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
+	defer cancel()
+	items, err := bundle.Typed.AdmissionregistrationV1().MutatingWebhookConfigurations().List(queryCtx, metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	return items.Items, nil
+}
+
+func (s *Service) listDirectValidatingWebhookConfigurations(ctx context.Context, clusterID string) ([]admissionregistrationv1.ValidatingWebhookConfiguration, error) {
+	bundle, err := s.clusters.Bundle(ctx, clusterID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
+	}
+	queryCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
+	defer cancel()
+	items, err := bundle.Typed.AdmissionregistrationV1().ValidatingWebhookConfigurations().List(queryCtx, metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	return items.Items, nil
+}
+
+func (s *Service) listDirectResourceQuotas(ctx context.Context, clusterID, namespace string) ([]corev1.ResourceQuota, error) {
+	if strings.TrimSpace(namespace) == "" {
+		return listAcrossNamespaces(ctx, s, clusterID, func(queryCtx context.Context, bundle *k8sinfra.Bundle, namespace string) ([]corev1.ResourceQuota, error) {
+			items, err := bundle.Typed.CoreV1().ResourceQuotas(namespace).List(queryCtx, metav1.ListOptions{})
+			if err != nil {
+				return nil, err
+			}
+			return items.Items, nil
+		})
+	}
+	bundle, err := s.clusters.Bundle(ctx, clusterID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
+	}
+	queryCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
+	defer cancel()
+	items, err := bundle.Typed.CoreV1().ResourceQuotas(namespace).List(queryCtx, metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	return items.Items, nil
+}
+
+func (s *Service) listDirectLimitRanges(ctx context.Context, clusterID, namespace string) ([]corev1.LimitRange, error) {
+	if strings.TrimSpace(namespace) == "" {
+		return listAcrossNamespaces(ctx, s, clusterID, func(queryCtx context.Context, bundle *k8sinfra.Bundle, namespace string) ([]corev1.LimitRange, error) {
+			items, err := bundle.Typed.CoreV1().LimitRanges(namespace).List(queryCtx, metav1.ListOptions{})
+			if err != nil {
+				return nil, err
+			}
+			return items.Items, nil
+		})
+	}
+	bundle, err := s.clusters.Bundle(ctx, clusterID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
+	}
+	queryCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
+	defer cancel()
+	items, err := bundle.Typed.CoreV1().LimitRanges(namespace).List(queryCtx, metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	return items.Items, nil
+}
+
+func (s *Service) listDirectLeases(ctx context.Context, clusterID, namespace string) ([]coordinationv1.Lease, error) {
+	if strings.TrimSpace(namespace) == "" {
+		return listAcrossNamespaces(ctx, s, clusterID, func(queryCtx context.Context, bundle *k8sinfra.Bundle, namespace string) ([]coordinationv1.Lease, error) {
+			items, err := bundle.Typed.CoordinationV1().Leases(namespace).List(queryCtx, metav1.ListOptions{})
+			if err != nil {
+				return nil, err
+			}
+			return items.Items, nil
+		})
+	}
+	bundle, err := s.clusters.Bundle(ctx, clusterID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
+	}
+	queryCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
+	defer cancel()
+	items, err := bundle.Typed.CoordinationV1().Leases(namespace).List(queryCtx, metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	return items.Items, nil
+}
+
+func (s *Service) listDirectReplicationControllers(ctx context.Context, clusterID, namespace string) ([]corev1.ReplicationController, error) {
+	if strings.TrimSpace(namespace) == "" {
+		return listAcrossNamespaces(ctx, s, clusterID, func(queryCtx context.Context, bundle *k8sinfra.Bundle, namespace string) ([]corev1.ReplicationController, error) {
+			items, err := bundle.Typed.CoreV1().ReplicationControllers(namespace).List(queryCtx, metav1.ListOptions{})
+			if err != nil {
+				return nil, err
+			}
+			return items.Items, nil
+		})
+	}
+	bundle, err := s.clusters.Bundle(ctx, clusterID)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
+	}
+	queryCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
+	defer cancel()
+	items, err := bundle.Typed.CoreV1().ReplicationControllers(namespace).List(queryCtx, metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	return items.Items, nil
+}
+
 func (s *Service) restartDirectDeployment(ctx context.Context, clusterID, namespace, name string) error {
 	bundle, err := s.clusters.Bundle(ctx, clusterID)
 	if err != nil {
@@ -3390,6 +4286,10 @@ func (s *Service) recordAudit(ctx context.Context, principal domainidentity.Prin
 			"source": meta.Source,
 		},
 	})
+}
+
+func (s *Service) authorizeDeploymentPermission(ctx context.Context, principal domainidentity.Principal, permissionKey string) error {
+	return appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, permissionKey)
 }
 
 func filterScopedNamespaceItems[T any](items []T, decision domainaccess.Decision, namespaceOf func(T) string) []T {
@@ -4172,6 +5072,180 @@ func mapStorageClass(item storagev1.StorageClass, decision domainaccess.Decision
 	}
 }
 
+func mapIngressClass(item networkingv1.IngressClass, decision domainaccess.Decision) domainresource.IngressClassView {
+	isDefault := false
+	if v, ok := item.Annotations["ingressclass.kubernetes.io/is-default-class"]; ok && strings.EqualFold(strings.TrimSpace(v), "true") {
+		isDefault = true
+	}
+	parameters := ""
+	if item.Spec.Parameters != nil {
+		parameters = fmt.Sprintf("%s/%s", item.Spec.Parameters.Kind, item.Spec.Parameters.Name)
+	}
+	return domainresource.IngressClassView{
+		Name:           item.Name,
+		Controller:     item.Spec.Controller,
+		IsDefault:      isDefault,
+		Parameters:     parameters,
+		AgeSeconds:     secondsSince(item.CreationTimestamp.Time),
+		AllowedActions: stringifyActions(decision.AllowedActions),
+	}
+}
+
+func mapPriorityClass(item schedulingv1.PriorityClass, decision domainaccess.Decision) domainresource.PriorityClassView {
+	preemptionPolicy := ""
+	if item.PreemptionPolicy != nil {
+		preemptionPolicy = string(*item.PreemptionPolicy)
+	}
+	return domainresource.PriorityClassView{
+		Name:             item.Name,
+		Value:            item.Value,
+		GlobalDefault:    item.GlobalDefault,
+		PreemptionPolicy: preemptionPolicy,
+		Description:      item.Description,
+		AgeSeconds:       secondsSince(item.CreationTimestamp.Time),
+		AllowedActions:   stringifyActions(decision.AllowedActions),
+	}
+}
+
+func mapRuntimeClass(item nodev1.RuntimeClass, decision domainaccess.Decision) domainresource.RuntimeClassView {
+	return domainresource.RuntimeClassView{
+		Name:           item.Name,
+		Handler:        item.Handler,
+		AgeSeconds:     secondsSince(item.CreationTimestamp.Time),
+		AllowedActions: stringifyActions(decision.AllowedActions),
+	}
+}
+
+func mapClusterRole(item rbacv1.ClusterRole, decision domainaccess.Decision) domainresource.ClusterRoleView {
+	aggregation := 0
+	if item.AggregationRule != nil {
+		aggregation = len(item.AggregationRule.ClusterRoleSelectors)
+	}
+	return domainresource.ClusterRoleView{
+		Name:             item.Name,
+		Rules:            len(item.Rules),
+		AggregationRules: aggregation,
+		AgeSeconds:       secondsSince(item.CreationTimestamp.Time),
+		AllowedActions:   stringifyActions(decision.AllowedActions),
+	}
+}
+
+func mapClusterRoleBinding(item rbacv1.ClusterRoleBinding, decision domainaccess.Decision) domainresource.ClusterRoleBindingView {
+	subjects := make([]string, 0, len(item.Subjects))
+	for _, subject := range item.Subjects {
+		if strings.TrimSpace(subject.Namespace) != "" {
+			subjects = append(subjects, fmt.Sprintf("%s:%s/%s", subject.Kind, subject.Namespace, subject.Name))
+			continue
+		}
+		subjects = append(subjects, fmt.Sprintf("%s:%s", subject.Kind, subject.Name))
+	}
+	return domainresource.ClusterRoleBindingView{
+		Name:           item.Name,
+		RoleRef:        fmt.Sprintf("%s/%s", item.RoleRef.Kind, item.RoleRef.Name),
+		Subjects:       subjects,
+		AgeSeconds:     secondsSince(item.CreationTimestamp.Time),
+		AllowedActions: stringifyActions(decision.AllowedActions),
+	}
+}
+
+func mapMutatingWebhookConfiguration(item admissionregistrationv1.MutatingWebhookConfiguration, decision domainaccess.Decision) domainresource.MutatingWebhookConfigurationView {
+	return domainresource.MutatingWebhookConfigurationView{
+		Name:           item.Name,
+		Webhooks:       len(item.Webhooks),
+		AgeSeconds:     secondsSince(item.CreationTimestamp.Time),
+		AllowedActions: stringifyActions(decision.AllowedActions),
+	}
+}
+
+func mapValidatingWebhookConfiguration(item admissionregistrationv1.ValidatingWebhookConfiguration, decision domainaccess.Decision) domainresource.ValidatingWebhookConfigurationView {
+	return domainresource.ValidatingWebhookConfigurationView{
+		Name:           item.Name,
+		Webhooks:       len(item.Webhooks),
+		AgeSeconds:     secondsSince(item.CreationTimestamp.Time),
+		AllowedActions: stringifyActions(decision.AllowedActions),
+	}
+}
+
+func mapResourceQuota(item corev1.ResourceQuota, decision domainaccess.Decision) domainresource.ResourceQuotaView {
+	scopes := make([]string, 0, len(item.Spec.Scopes))
+	for _, scope := range item.Spec.Scopes {
+		scopes = append(scopes, string(scope))
+	}
+	hard := make(map[string]string, len(item.Status.Hard))
+	for k, v := range item.Status.Hard {
+		hard[string(k)] = v.String()
+	}
+	used := make(map[string]string, len(item.Status.Used))
+	for k, v := range item.Status.Used {
+		used[string(k)] = v.String()
+	}
+	return domainresource.ResourceQuotaView{
+		Name:           item.Name,
+		Namespace:      item.Namespace,
+		Scopes:         scopes,
+		Hard:           hard,
+		Used:           used,
+		AgeSeconds:     secondsSince(item.CreationTimestamp.Time),
+		AllowedActions: stringifyActions(decision.AllowedActions),
+	}
+}
+
+func mapLimitRange(item corev1.LimitRange, decision domainaccess.Decision) domainresource.LimitRangeView {
+	return domainresource.LimitRangeView{
+		Name:           item.Name,
+		Namespace:      item.Namespace,
+		Limits:         len(item.Spec.Limits),
+		AgeSeconds:     secondsSince(item.CreationTimestamp.Time),
+		AllowedActions: stringifyActions(decision.AllowedActions),
+	}
+}
+
+func mapLease(item coordinationv1.Lease, decision domainaccess.Decision) domainresource.LeaseView {
+	holder := ""
+	if item.Spec.HolderIdentity != nil {
+		holder = *item.Spec.HolderIdentity
+	}
+	duration := int32(0)
+	if item.Spec.LeaseDurationSeconds != nil {
+		duration = *item.Spec.LeaseDurationSeconds
+	}
+	acquire := ""
+	if item.Spec.AcquireTime != nil {
+		acquire = item.Spec.AcquireTime.UTC().Format(time.RFC3339)
+	}
+	renew := ""
+	if item.Spec.RenewTime != nil {
+		renew = item.Spec.RenewTime.UTC().Format(time.RFC3339)
+	}
+	return domainresource.LeaseView{
+		Name:                 item.Name,
+		Namespace:            item.Namespace,
+		HolderIdentity:       holder,
+		LeaseDurationSeconds: duration,
+		AcquireTime:          acquire,
+		RenewTime:            renew,
+		AgeSeconds:           secondsSince(item.CreationTimestamp.Time),
+		AllowedActions:       stringifyActions(decision.AllowedActions),
+	}
+}
+
+func mapReplicationController(item corev1.ReplicationController, decision domainaccess.Decision) domainresource.ReplicationControllerView {
+	desired := int32(0)
+	if item.Spec.Replicas != nil {
+		desired = *item.Spec.Replicas
+	}
+	return domainresource.ReplicationControllerView{
+		Name:              item.Name,
+		Namespace:         item.Namespace,
+		DesiredReplicas:   desired,
+		CurrentReplicas:   item.Status.Replicas,
+		ReadyReplicas:     item.Status.ReadyReplicas,
+		AvailableReplicas: item.Status.AvailableReplicas,
+		AgeSeconds:        secondsSince(item.CreationTimestamp.Time),
+		AllowedActions:    stringifyActions(decision.AllowedActions),
+	}
+}
+
 func mapNetworkPolicy(item networkingv1.NetworkPolicy, decision domainaccess.Decision) domainresource.NetworkPolicyView {
 	policyTypes := make([]string, 0, len(item.Spec.PolicyTypes))
 	for _, policyType := range item.Spec.PolicyTypes {
@@ -4587,6 +5661,94 @@ func populateAllowedActionsPersistentVolumes(items []domainresource.PersistentVo
 }
 
 func populateAllowedActionsStorageClasses(items []domainresource.StorageClassView, decision domainaccess.Decision) {
+	for i := range items {
+		if len(items[i].AllowedActions) == 0 {
+			items[i].AllowedActions = stringifyActions(decision.AllowedActions)
+		}
+	}
+}
+
+func populateAllowedActionsIngressClasses(items []domainresource.IngressClassView, decision domainaccess.Decision) {
+	for i := range items {
+		if len(items[i].AllowedActions) == 0 {
+			items[i].AllowedActions = stringifyActions(decision.AllowedActions)
+		}
+	}
+}
+
+func populateAllowedActionsPriorityClasses(items []domainresource.PriorityClassView, decision domainaccess.Decision) {
+	for i := range items {
+		if len(items[i].AllowedActions) == 0 {
+			items[i].AllowedActions = stringifyActions(decision.AllowedActions)
+		}
+	}
+}
+
+func populateAllowedActionsRuntimeClasses(items []domainresource.RuntimeClassView, decision domainaccess.Decision) {
+	for i := range items {
+		if len(items[i].AllowedActions) == 0 {
+			items[i].AllowedActions = stringifyActions(decision.AllowedActions)
+		}
+	}
+}
+
+func populateAllowedActionsClusterRoles(items []domainresource.ClusterRoleView, decision domainaccess.Decision) {
+	for i := range items {
+		if len(items[i].AllowedActions) == 0 {
+			items[i].AllowedActions = stringifyActions(decision.AllowedActions)
+		}
+	}
+}
+
+func populateAllowedActionsClusterRoleBindings(items []domainresource.ClusterRoleBindingView, decision domainaccess.Decision) {
+	for i := range items {
+		if len(items[i].AllowedActions) == 0 {
+			items[i].AllowedActions = stringifyActions(decision.AllowedActions)
+		}
+	}
+}
+
+func populateAllowedActionsMutatingWebhookConfigurations(items []domainresource.MutatingWebhookConfigurationView, decision domainaccess.Decision) {
+	for i := range items {
+		if len(items[i].AllowedActions) == 0 {
+			items[i].AllowedActions = stringifyActions(decision.AllowedActions)
+		}
+	}
+}
+
+func populateAllowedActionsValidatingWebhookConfigurations(items []domainresource.ValidatingWebhookConfigurationView, decision domainaccess.Decision) {
+	for i := range items {
+		if len(items[i].AllowedActions) == 0 {
+			items[i].AllowedActions = stringifyActions(decision.AllowedActions)
+		}
+	}
+}
+
+func populateAllowedActionsResourceQuotas(items []domainresource.ResourceQuotaView, decision domainaccess.Decision) {
+	for i := range items {
+		if len(items[i].AllowedActions) == 0 {
+			items[i].AllowedActions = stringifyActions(decision.AllowedActions)
+		}
+	}
+}
+
+func populateAllowedActionsLimitRanges(items []domainresource.LimitRangeView, decision domainaccess.Decision) {
+	for i := range items {
+		if len(items[i].AllowedActions) == 0 {
+			items[i].AllowedActions = stringifyActions(decision.AllowedActions)
+		}
+	}
+}
+
+func populateAllowedActionsLeases(items []domainresource.LeaseView, decision domainaccess.Decision) {
+	for i := range items {
+		if len(items[i].AllowedActions) == 0 {
+			items[i].AllowedActions = stringifyActions(decision.AllowedActions)
+		}
+	}
+}
+
+func populateAllowedActionsReplicationControllers(items []domainresource.ReplicationControllerView, decision domainaccess.Decision) {
 	for i := range items {
 		if len(items[i].AllowedActions) == 0 {
 			items[i].AllowedActions = stringifyActions(decision.AllowedActions)

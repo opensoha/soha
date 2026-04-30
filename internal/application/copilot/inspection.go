@@ -54,14 +54,14 @@ func (s *Service) Start(ctx context.Context) {
 }
 
 func (s *Service) ListInspectionTasks(ctx context.Context, principal domainidentity.Principal) ([]domaincopilot.InspectionTask, error) {
-	if err := authorizePrincipal(principal, appaccess.PermObserveAIView); err != nil {
+	if err := s.authorizePrincipal(ctx, principal, appaccess.PermObserveAIView); err != nil {
 		return nil, err
 	}
 	return s.repo.ListInspectionTasks(ctx, principal.UserID, 50)
 }
 
 func (s *Service) CreateInspectionTask(ctx context.Context, principal domainidentity.Principal, input domaincopilot.InspectionTaskInput, locale string) (domaincopilot.InspectionTask, error) {
-	if err := authorizePrincipal(principal, appaccess.PermObserveAIInspectionManage); err != nil {
+	if err := s.authorizePrincipal(ctx, principal, appaccess.PermObserveAIInspectionManage); err != nil {
 		return domaincopilot.InspectionTask{}, err
 	}
 	title := strings.TrimSpace(input.Title)
@@ -90,7 +90,7 @@ func (s *Service) CreateInspectionTask(ctx context.Context, principal domainiden
 }
 
 func (s *Service) UpdateInspectionTask(ctx context.Context, principal domainidentity.Principal, taskID string, input domaincopilot.InspectionTaskInput, locale string) (domaincopilot.InspectionTask, error) {
-	if err := authorizePrincipal(principal, appaccess.PermObserveAIInspectionManage); err != nil {
+	if err := s.authorizePrincipal(ctx, principal, appaccess.PermObserveAIInspectionManage); err != nil {
 		return domaincopilot.InspectionTask{}, err
 	}
 	task, err := s.repo.GetInspectionTask(ctx, principal.UserID, strings.TrimSpace(taskID))
@@ -119,7 +119,7 @@ func (s *Service) UpdateInspectionTask(ctx context.Context, principal domainiden
 }
 
 func (s *Service) ListInspectionRuns(ctx context.Context, principal domainidentity.Principal, filter domaincopilot.InspectionRunFilter) ([]domaincopilot.InspectionRun, error) {
-	if err := authorizePrincipal(principal, appaccess.PermObserveAIView); err != nil {
+	if err := s.authorizePrincipal(ctx, principal, appaccess.PermObserveAIView); err != nil {
 		return nil, err
 	}
 	filter.TaskID = strings.TrimSpace(filter.TaskID)
@@ -133,7 +133,7 @@ func (s *Service) ListInspectionRuns(ctx context.Context, principal domainidenti
 }
 
 func (s *Service) ExecuteInspectionTask(ctx context.Context, principal domainidentity.Principal, taskID, locale string) (domaincopilot.InspectionRun, error) {
-	if err := authorizePrincipal(principal, appaccess.PermObserveAIInspectionRun); err != nil {
+	if err := s.authorizePrincipal(ctx, principal, appaccess.PermObserveAIInspectionRun); err != nil {
 		return domaincopilot.InspectionRun{}, err
 	}
 	task, err := s.repo.GetInspectionTask(ctx, principal.UserID, strings.TrimSpace(taskID))

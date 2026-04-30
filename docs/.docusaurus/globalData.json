@@ -1,0 +1,203 @@
+{
+  "docusaurus-plugin-content-docs": {
+    "default": {
+      "path": "/docs/",
+      "versions": [
+        {
+          "name": "current",
+          "label": "Next",
+          "isLast": true,
+          "path": "/docs/",
+          "mainDocId": "index",
+          "docs": [
+            {
+              "id": "api/auth-and-errors",
+              "path": "/docs/api/auth-and-errors",
+              "sidebar": "mainSidebar"
+            },
+            {
+              "id": "api/core-endpoints",
+              "path": "/docs/api/core-endpoints",
+              "sidebar": "mainSidebar"
+            },
+            {
+              "id": "api/overview",
+              "path": "/docs/api/overview",
+              "sidebar": "mainSidebar"
+            },
+            {
+              "id": "architecture/access-model",
+              "path": "/docs/architecture/access-model",
+              "sidebar": "mainSidebar"
+            },
+            {
+              "id": "architecture/agent-protocol",
+              "path": "/docs/architecture/agent-protocol",
+              "sidebar": "mainSidebar"
+            },
+            {
+              "id": "architecture/ai-copilot",
+              "path": "/docs/architecture/ai-copilot",
+              "sidebar": "mainSidebar"
+            },
+            {
+              "id": "architecture/application-delivery",
+              "path": "/docs/architecture/application-delivery",
+              "sidebar": "mainSidebar"
+            },
+            {
+              "id": "architecture/audit-model",
+              "path": "/docs/architecture/audit-model",
+              "sidebar": "mainSidebar"
+            },
+            {
+              "id": "architecture/authorization",
+              "path": "/docs/architecture/authorization",
+              "sidebar": "mainSidebar"
+            },
+            {
+              "id": "architecture/event-model",
+              "path": "/docs/architecture/event-model",
+              "sidebar": "mainSidebar"
+            },
+            {
+              "id": "architecture/index",
+              "path": "/docs/architecture/",
+              "sidebar": "mainSidebar"
+            },
+            {
+              "id": "architecture/mcp-integration",
+              "path": "/docs/architecture/mcp-integration",
+              "sidebar": "mainSidebar"
+            },
+            {
+              "id": "architecture/monitoring-and-alerting",
+              "path": "/docs/architecture/monitoring-and-alerting",
+              "sidebar": "mainSidebar"
+            },
+            {
+              "id": "architecture/multi-cluster-model",
+              "path": "/docs/architecture/multi-cluster-model",
+              "sidebar": "mainSidebar"
+            },
+            {
+              "id": "development/add-mcp-integration",
+              "path": "/docs/development/add-mcp-integration",
+              "sidebar": "mainSidebar"
+            },
+            {
+              "id": "development/add-page",
+              "path": "/docs/development/add-page",
+              "sidebar": "mainSidebar"
+            },
+            {
+              "id": "development/add-resource-module",
+              "path": "/docs/development/add-resource-module",
+              "sidebar": "mainSidebar"
+            },
+            {
+              "id": "development/backend-structure",
+              "path": "/docs/development/backend-structure",
+              "sidebar": "mainSidebar"
+            },
+            {
+              "id": "development/configuration",
+              "path": "/docs/development/configuration",
+              "sidebar": "mainSidebar"
+            },
+            {
+              "id": "development/database-migrations",
+              "path": "/docs/development/database-migrations",
+              "sidebar": "mainSidebar"
+            },
+            {
+              "id": "development/frontend-structure",
+              "path": "/docs/development/frontend-structure",
+              "sidebar": "mainSidebar"
+            },
+            {
+              "id": "development/local-development",
+              "path": "/docs/development/local-development",
+              "sidebar": "mainSidebar"
+            },
+            {
+              "id": "index",
+              "path": "/docs/",
+              "sidebar": "mainSidebar"
+            },
+            {
+              "id": "operations/agent-runtime",
+              "path": "/docs/operations/agent-runtime",
+              "sidebar": "mainSidebar"
+            },
+            {
+              "id": "operations/configuration",
+              "path": "/docs/operations/configuration",
+              "sidebar": "mainSidebar"
+            },
+            {
+              "id": "operations/dependencies",
+              "path": "/docs/operations/dependencies",
+              "sidebar": "mainSidebar"
+            },
+            {
+              "id": "operations/deployment",
+              "path": "/docs/operations/deployment",
+              "sidebar": "mainSidebar"
+            },
+            {
+              "id": "operations/docs-publishing",
+              "path": "/docs/operations/docs-publishing",
+              "sidebar": "mainSidebar"
+            },
+            {
+              "id": "operations/environment-variables",
+              "path": "/docs/operations/environment-variables",
+              "sidebar": "mainSidebar"
+            },
+            {
+              "id": "operations/mcp",
+              "path": "/docs/operations/mcp",
+              "sidebar": "mainSidebar"
+            },
+            {
+              "id": "operations/mcp-configuration",
+              "path": "/docs/operations/mcp-configuration",
+              "sidebar": "mainSidebar"
+            },
+            {
+              "id": "operations/role-authorization-assignment",
+              "path": "/docs/operations/role-authorization-assignment",
+              "sidebar": "mainSidebar"
+            },
+            {
+              "id": "reference/database-schema",
+              "path": "/docs/reference/database-schema",
+              "sidebar": "mainSidebar"
+            },
+            {
+              "id": "reference/product-information-architecture",
+              "path": "/docs/reference/product-information-architecture",
+              "sidebar": "mainSidebar"
+            },
+            {
+              "id": "roadmap/index",
+              "path": "/docs/roadmap/",
+              "sidebar": "mainSidebar"
+            }
+          ],
+          "draftIds": [],
+          "sidebars": {
+            "mainSidebar": {
+              "link": {
+                "path": "/docs/",
+                "label": "index"
+              }
+            }
+          }
+        }
+      ],
+      "breadcrumbs": true
+    }
+  }
+}

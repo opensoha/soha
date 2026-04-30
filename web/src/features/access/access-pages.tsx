@@ -1,12 +1,12 @@
-import { useMemo, useRef, useState } from 'react'
-import { Avatar, Button, Col, Form, Modal, Popconfirm, Row, Space, TabPane, Tabs, Tag, Toast, Typography } from '@douyinfe/semi-ui'
-import { IconDelete, IconEdit, IconPlus } from '@douyinfe/semi-icons'
+import { useMemo, useState } from 'react'
+import { Alert, App, Avatar, Button, Col, Form, Input, InputNumber, Modal, Popconfirm, Row, Select, Space, Switch, Tag, Typography } from 'antd'
+import { DeleteOutlined, EditOutlined, PlusOutlined } from '@ant-design/icons'
+import type { TableColumnsType } from 'antd'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useLocation, useNavigate } from 'react-router-dom'
-import type { ColumnProps } from '@douyinfe/semi-ui/lib/es/table'
+import { Navigate } from 'react-router-dom'
 import { AdminTable } from '@/components/admin-table'
+import { consolePermissionGroups, consolePermissionLabelMap } from '@/features/auth/permission-catalog'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth/permission-snapshot'
-import { PageHeader } from '@/components/page-header'
 import { StatusTag } from '@/components/status-tag'
 import { api } from '@/services/api-client'
 import type { ApiResponse, BusinessLine, DeliveryEnvironment, ScopeGrant } from '@/types'
@@ -42,9 +42,7 @@ const POLICY_EFFECT_OPTIONS = [
   { value: 'deny', label: '拒绝' },
 ]
 
-type ModalFormApi = {
-  validate: () => Promise<Record<string, unknown>>
-}
+type ColumnProps<T> = TableColumnsType<T>[number]
 
 interface AccessUser {
   id: string
@@ -64,6 +62,7 @@ interface AccessRole {
   name: string
   scope: string
   capabilities: string[]
+  permissionKeys?: string[]
   userCount: number
 }
 
@@ -153,14 +152,28 @@ function renderMappedTags(values: string[], labelMap: Record<string, string>, em
     return emptyText
   }
   return (
-    <Space wrap spacing={4}>
+    <Space wrap size={4}>
       {values.map((value) => (
-        <Tag key={value} size="small">
+        <Tag key={value}>
           {labelMap[value] || value}
         </Tag>
       ))}
     </Space>
   )
+}
+
+function getRolePermissionSelectOptions() {
+  return consolePermissionGroups.map((group) => ({
+    label: group.label,
+    options: group.options.map((option) => ({
+      value: option.value,
+      label: `${option.label} (${option.value})`,
+    })),
+  }))
+}
+
+function normalizePermissionKeys(value: unknown) {
+  return toStringArray(value).sort((left, right) => left.localeCompare(right))
 }
 
 function buildPolicySubjectsSummary(policy: AccessPolicy, roleMap: Record<string, string>, teamMap: Record<string, string>) {
@@ -212,6 +225,7 @@ function useCRUD<T extends { id: string }>(
     invalidateKeys?: string[][]
   },
 ) {
+  const { message } = App.useApp()
   const queryClient = useQueryClient()
   const [modalVisible, setModalVisible] = useState(false)
   const [editing, setEditing] = useState<T | null>(null)
@@ -229,32 +243,32 @@ function useCRUD<T extends { id: string }>(
   const createMutation = useMutation({
     mutationFn: (values: Record<string, unknown>) => api.post(`/${resource}`, values),
     onSuccess: () => {
-      Toast.success('创建成功')
+      message.success('创建成功')
       invalidateAll()
       setModalVisible(false)
     },
-    onError: (err: Error) => Toast.error(err.message),
+    onError: (err: Error) => message.error(err.message),
   })
 
   const updateMutation = useMutation({
     mutationFn: ({ id, values }: { id: string; values: Record<string, unknown> }) =>
       api.put(`/${resource}/${id}`, values),
     onSuccess: () => {
-      Toast.success('更新成功')
+      message.success('更新成功')
       invalidateAll()
       setModalVisible(false)
       setEditing(null)
     },
-    onError: (err: Error) => Toast.error(err.message),
+    onError: (err: Error) => message.error(err.message),
   })
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => api.delete(`/${resource}/${id}`),
     onSuccess: () => {
-      Toast.success('删除成功')
+      message.success('删除成功')
       invalidateAll()
     },
-    onError: (err: Error) => Toast.error(err.message),
+    onError: (err: Error) => message.error(err.message),
   })
 
   const handleSubmit = (values: Record<string, unknown>) => {
@@ -307,8 +321,11 @@ function ScopeGrantManager({
   title: string
   onClose: () => void
 }) {
+  const { message } = App.useApp()
+  const permissionSnapshotQuery = usePermissionSnapshot()
+  const canManageScopeGrants = hasPermission(permissionSnapshotQuery.data?.data, 'access.scope-grants.manage')
   const queryClient = useQueryClient()
-  const grantFormApiRef = useRef<ModalFormApi | null>(null)
+  const [form] = Form.useForm<Record<string, unknown>>()
   const [editing, setEditing] = useState<ScopeGrant | null>(null)
   const [grantModalVisible, setGrantModalVisible] = useState(false)
 
@@ -354,29 +371,29 @@ function ScopeGrantManager({
   const createMutation = useMutation({
     mutationFn: (values: Record<string, unknown>) => api.post('/access/scope-grants', values),
     onSuccess: () => {
-      Toast.success('授权项创建成功')
+      message.success('授权项创建成功')
       queryClient.invalidateQueries({ queryKey: ['scope-grants'] })
       setGrantModalVisible(false)
     },
-    onError: (err: Error) => Toast.error(err.message),
+    onError: (err: Error) => message.error(err.message),
   })
   const updateMutation = useMutation({
     mutationFn: ({ id, values }: { id: string; values: Record<string, unknown> }) => api.put(`/access/scope-grants/${id}`, values),
     onSuccess: () => {
-      Toast.success('授权项更新成功')
+      message.success('授权项更新成功')
       queryClient.invalidateQueries({ queryKey: ['scope-grants'] })
       setEditing(null)
       setGrantModalVisible(false)
     },
-    onError: (err: Error) => Toast.error(err.message),
+    onError: (err: Error) => message.error(err.message),
   })
   const deleteMutation = useMutation({
     mutationFn: (id: string) => api.delete(`/access/scope-grants/${id}`),
     onSuccess: () => {
-      Toast.success('授权项已删除')
+      message.success('授权项已删除')
       queryClient.invalidateQueries({ queryKey: ['scope-grants'] })
     },
-    onError: (err: Error) => Toast.error(err.message),
+    onError: (err: Error) => message.error(err.message),
   })
 
   const submitGrant = (values: Record<string, unknown>) => {
@@ -415,10 +432,14 @@ function ScopeGrantManager({
       dataIndex: 'id',
       render: (_: unknown, record: ScopeGrant) => (
         <Space>
-          <Button icon={<IconEdit />} theme="borderless" size="small" onClick={() => { setEditing(record); setGrantModalVisible(true) }} />
-          <Popconfirm title="确认删除？" onConfirm={() => deleteMutation.mutate(record.id)}>
-            <Button icon={<IconDelete />} theme="borderless" type="danger" size="small" />
-          </Popconfirm>
+          {canManageScopeGrants ? (
+            <>
+              <Button icon={<EditOutlined />} type="text" size="small" onClick={() => { setEditing(record); setGrantModalVisible(true) }} />
+              <Popconfirm title="确认删除？" onConfirm={() => deleteMutation.mutate(record.id)}>
+                <Button icon={<DeleteOutlined />} type="text" danger size="small" />
+              </Popconfirm>
+            </>
+          ) : '-'}
         </Space>
       ),
     },
@@ -426,50 +447,66 @@ function ScopeGrantManager({
 
   return (
     <>
-      <Modal title={title} visible={visible} onCancel={onClose} footer={null} width={880}>
+      <Modal title={title} open={visible} onCancel={onClose} footer={null} width={880}>
         <div className="kc-page">
           <div className="flex justify-end">
-            <Button icon={<IconPlus />} theme="solid" onClick={() => { setEditing(null); setGrantModalVisible(true) }}>
-              新建授权项
-            </Button>
+            {canManageScopeGrants ? (
+              <Button icon={<PlusOutlined />} type="primary" onClick={() => { setEditing(null); setGrantModalVisible(true) }}>
+                新建授权项
+              </Button>
+            ) : null}
           </div>
           <AdminTable columns={columns} dataSource={grants} rowKey="id" loading={grantsQuery.isLoading} />
         </div>
       </Modal>
       <Modal
         title={editing ? '编辑授权项' : '新建授权项'}
-        visible={grantModalVisible}
+        open={grantModalVisible}
         onCancel={() => { setGrantModalVisible(false); setEditing(null) }}
-        onOk={() => {
-          grantFormApiRef.current?.validate().then(submitGrant).catch(() => undefined)
+        onOk={async () => {
+          try {
+            const values = await form.validateFields()
+            submitGrant(values)
+          } catch {
+            return
+          }
         }}
         okText={editing ? '更新' : '创建'}
         cancelText="取消"
         confirmLoading={createMutation.isPending || updateMutation.isPending}
         width={760}
         maskClosable={false}
-        bodyStyle={{ maxHeight: '65vh', overflow: 'auto' }}
+        destroyOnClose
+        styles={{ body: { maxHeight: '65vh', overflow: 'auto' } }}
       >
         <Form
+          form={form}
           key={editing?.id ?? 'create-scope-grant'}
-          getFormApi={(formApi) => { grantFormApiRef.current = formApi as ModalFormApi }}
-          initValues={editing ? {
+          layout="vertical"
+          initialValues={editing ? {
             ...editing,
             environmentIds: joinCSV(editing.environmentIds),
             applicationIds: joinCSV(editing.applicationIds),
           } : { enabled: true, effect: 'allow', role: 'developer' }}
         >
-          <Form.Select
-            field="businessLineId"
-            label="业务线"
-            optionList={(businessLinesQuery.data?.data ?? []).map((item) => ({ value: item.id, label: item.name }))}
-            rules={[{ required: true, message: '请选择业务线' }]}
-          />
-          <Form.Input field="environmentIds" label="环境 IDs" placeholder="留空表示全部环境，多个以逗号分隔" />
-          <Form.Input field="applicationIds" label="应用 IDs" placeholder="留空表示全部应用，多个以逗号分隔" />
-          <Form.Input field="role" label="角色" rules={[{ required: true, message: '请输入角色' }]} />
-          <Form.Input field="effect" label="效果" disabled initValue="allow" />
-          <Form.Switch field="enabled" label="启用" />
+          <Form.Item name="businessLineId" label="业务线" rules={[{ required: true, message: '请选择业务线' }]}>
+            <Select options={(businessLinesQuery.data?.data ?? []).map((item) => ({ value: item.id, label: item.name }))} />
+          </Form.Item>
+          <Form.Item name="environmentIds" label="环境 IDs">
+            <Input placeholder="留空表示全部环境，多个以逗号分隔" />
+          </Form.Item>
+          <Form.Item name="applicationIds" label="应用 IDs">
+            <Input placeholder="留空表示全部应用，多个以逗号分隔" />
+          </Form.Item>
+          <Form.Item name="role" label="角色" rules={[{ required: true, message: '请输入角色' }]}>
+            <Input />
+          </Form.Item>
+          <Form.Item name="effect" label="效果">
+            <Input disabled />
+          </Form.Item>
+          <Form.Item name="enabled" label="启用" valuePropName="checked">
+            <Switch />
+          </Form.Item>
         </Form>
       </Modal>
     </>
@@ -477,8 +514,14 @@ function ScopeGrantManager({
 }
 
 export function AccessUsersPage() {
+  const { message } = App.useApp()
   const queryClient = useQueryClient()
-  const userFormApiRef = useRef<ModalFormApi | null>(null)
+  const permissionSnapshotQuery = usePermissionSnapshot()
+  const snapshot = permissionSnapshotQuery.data?.data
+  const canViewUsers = hasPermission(snapshot, 'access.users.view')
+  const canManageUsers = hasPermission(snapshot, 'access.users.manage')
+  const canManageScopeGrants = hasPermission(snapshot, 'access.scope-grants.manage')
+  const [form] = Form.useForm<Record<string, unknown>>()
   const [modalVisible, setModalVisible] = useState(false)
   const [editing, setEditing] = useState<AccessUser | null>(null)
   const [grantUser, setGrantUser] = useState<AccessUser | null>(null)
@@ -516,31 +559,31 @@ export function AccessUsersPage() {
   const createMutation = useMutation({
     mutationFn: (values: Record<string, unknown>) => api.post('/access/users', values),
     onSuccess: () => {
-      Toast.success('用户创建成功')
+      message.success('用户创建成功')
       queryClient.invalidateQueries({ queryKey: ['access/users'] })
       setModalVisible(false)
     },
-    onError: (err: Error) => Toast.error(err.message),
+    onError: (err: Error) => message.error(err.message),
   })
 
   const updateMutation = useMutation({
     mutationFn: ({ id, values }: { id: string; values: Record<string, unknown> }) => api.put(`/access/users/${id}`, values),
     onSuccess: () => {
-      Toast.success('用户更新成功')
+      message.success('用户更新成功')
       queryClient.invalidateQueries({ queryKey: ['access/users'] })
       setModalVisible(false)
       setEditing(null)
     },
-    onError: (err: Error) => Toast.error(err.message),
+    onError: (err: Error) => message.error(err.message),
   })
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => api.delete(`/access/users/${id}`),
     onSuccess: () => {
-      Toast.success('用户删除成功')
+      message.success('用户删除成功')
       queryClient.invalidateQueries({ queryKey: ['access/users'] })
     },
-    onError: (err: Error) => Toast.error(err.message),
+    onError: (err: Error) => message.error(err.message),
   })
 
   const closeModal = () => {
@@ -577,7 +620,7 @@ export function AccessUsersPage() {
           </Avatar>
           <div className="min-w-0 flex-1">
             <div className="truncate font-medium" style={{ color: 'var(--semi-color-text-0)' }}>{record.username}</div>
-            <Text type="tertiary" size="small">
+            <Text type="secondary" style={{ fontSize: 12 }}>
               {record.displayName || record.email || '-'}
             </Text>
           </div>
@@ -613,42 +656,62 @@ export function AccessUsersPage() {
       dataIndex: 'id',
       render: (_: unknown, record: AccessUser) => (
         <Space>
-          <Button theme="borderless" size="small" onClick={() => setGrantUser(record)}>授权范围</Button>
-          <Button icon={<IconEdit />} theme="borderless" size="small" onClick={() => { setEditing(record); setModalVisible(true) }} />
-          <Popconfirm title="确认删除？" onConfirm={() => deleteMutation.mutate(record.id)}>
-            <Button icon={<IconDelete />} theme="borderless" type="danger" size="small" />
-          </Popconfirm>
+          {canManageUsers || canManageScopeGrants ? (
+            <>
+              {canManageScopeGrants ? <Button type="text" size="small" onClick={() => setGrantUser(record)}>授权范围</Button> : null}
+              {canManageUsers ? <Button icon={<EditOutlined />} type="text" size="small" onClick={() => { setEditing(record); setModalVisible(true) }} /> : null}
+              {canManageUsers ? (
+                <Popconfirm title="确认删除？" onConfirm={() => deleteMutation.mutate(record.id)}>
+                  <Button icon={<DeleteOutlined />} type="text" danger size="small" />
+                </Popconfirm>
+              ) : null}
+            </>
+          ) : '-'}
         </Space>
       ),
     },
   ]
 
+  if (!canViewUsers) {
+    return <div className="kc-page">当前账号没有用户管理权限。</div>
+  }
+
   return (
     <div className="kc-page">
-      <PageHeader
+      <AdminTable
         title="用户管理"
-        description="维护用户账号、角色绑定、用户组归属与启用状态。"
-        actions={<Button icon={<IconPlus />} theme="solid" onClick={() => { setEditing(null); setModalVisible(true) }}>添加用户</Button>}
+        className="kc-access-table"
+        toolbarExtra={canManageUsers ? <Button icon={<PlusOutlined />} type="primary" onClick={() => { setEditing(null); setModalVisible(true) }}>添加用户</Button> : null}
+        columns={columns}
+        dataSource={usersQuery.data?.data ?? []}
+        rowKey="id"
+        loading={usersQuery.isLoading}
       />
-      <AdminTable columns={columns} dataSource={usersQuery.data?.data ?? []} rowKey="id" loading={usersQuery.isLoading} />
       <Modal
         title={editing ? `编辑用户: ${getUserLabel(editing)}` : '添加用户'}
-        visible={modalVisible}
+        open={modalVisible}
         onCancel={closeModal}
-        onOk={() => {
-          userFormApiRef.current?.validate().then(submitUser).catch(() => undefined)
+        onOk={async () => {
+          try {
+            const values = await form.validateFields()
+            submitUser(values)
+          } catch {
+            return
+          }
         }}
         okText={editing ? '更新' : '创建'}
         cancelText="取消"
         confirmLoading={createMutation.isPending || updateMutation.isPending}
         width={860}
         maskClosable={false}
-        bodyStyle={{ maxHeight: '70vh', overflow: 'auto' }}
+        destroyOnClose
+        styles={{ body: { maxHeight: '70vh', overflow: 'auto' } }}
       >
         <Form
+          form={form}
           key={editing?.id ?? 'create-user'}
-          getFormApi={(formApi) => { userFormApiRef.current = formApi as ModalFormApi }}
-          initValues={editing ? {
+          layout="vertical"
+          initialValues={editing ? {
             username: editing.username,
             displayName: editing.displayName,
             email: editing.email,
@@ -665,36 +728,50 @@ export function AccessUsersPage() {
         >
           <Row gutter={16}>
             <Col span={12}>
-              <Form.Input field="username" label="用户名" rules={[{ required: true, message: '请输入用户名' }]} />
+              <Form.Item name="username" label="用户名" rules={[{ required: true, message: '请输入用户名' }]}>
+                <Input />
+              </Form.Item>
             </Col>
             <Col span={12}>
-              <Form.Input field="displayName" label="显示名" placeholder="留空时顶部默认展示用户名" />
+              <Form.Item name="displayName" label="显示名">
+                <Input placeholder="留空时顶部默认展示用户名" />
+              </Form.Item>
             </Col>
           </Row>
           <Row gutter={16}>
             <Col span={12}>
-              <Form.Input field="email" label="邮箱" rules={[{ required: true, message: '请输入邮箱' }]} />
+              <Form.Item name="email" label="邮箱" rules={[{ required: true, message: '请输入邮箱' }]}>
+                <Input />
+              </Form.Item>
             </Col>
             <Col span={12}>
-              <Form.Select field="status" label="状态" optionList={USER_STATUS_OPTIONS} rules={[{ required: true, message: '请选择状态' }]} />
+              <Form.Item name="status" label="状态" rules={[{ required: true, message: '请选择状态' }]}>
+                <Select options={USER_STATUS_OPTIONS} />
+              </Form.Item>
             </Col>
           </Row>
           <Row gutter={16}>
             <Col span={12}>
-              <Form.Select field="roleIds" label="角色" multiple optionList={roleOptions} placeholder="选择用户角色" />
+              <Form.Item name="roleIds" label="角色">
+                <Select mode="multiple" options={roleOptions} placeholder="选择用户角色" />
+              </Form.Item>
             </Col>
             <Col span={12}>
-              <Form.Select field="teamIds" label="用户组" multiple optionList={teamOptions} placeholder="选择所属用户组" />
+              <Form.Item name="teamIds" label="用户组">
+                <Select mode="multiple" options={teamOptions} placeholder="选择所属用户组" />
+              </Form.Item>
             </Col>
           </Row>
-          <Form.TagInput field="tags" label="标签" placeholder="输入标签后按回车确认" />
-          <Form.Input
-            field="password"
+          <Form.Item name="tags" label="标签">
+            <Select mode="tags" tokenSeparators={[',']} placeholder="输入标签后按回车确认" />
+          </Form.Item>
+          <Form.Item
+            name="password"
             label={editing ? '重置密码' : '登录密码'}
-            mode="password"
-            placeholder={editing ? '留空表示不修改密码' : '请输入初始密码'}
             rules={editing ? undefined : [{ required: true, message: '请输入密码' }]}
-          />
+          >
+            <Input.Password placeholder={editing ? '留空表示不修改密码' : '请输入初始密码'} />
+          </Form.Item>
         </Form>
       </Modal>
       <ScopeGrantManager
@@ -709,8 +786,13 @@ export function AccessUsersPage() {
 }
 
 export function AccessRolesPage() {
-  const roleFormApiRef = useRef<ModalFormApi | null>(null)
+  const permissionSnapshotQuery = usePermissionSnapshot()
+  const snapshot = permissionSnapshotQuery.data?.data
+  const canViewRoles = hasPermission(snapshot, 'access.roles.view')
+  const canManageRoles = hasPermission(snapshot, 'access.roles.manage')
+  const [form] = Form.useForm<Record<string, unknown>>()
   const crud = useCRUD<AccessRole>('access/roles', { invalidateKeys: [['access/users']] })
+  const permissionSelectOptions = useMemo(() => getRolePermissionSelectOptions(), [])
 
   const columns: ColumnProps<AccessRole>[] = [
     { title: '角色名称', dataIndex: 'name' },
@@ -720,6 +802,11 @@ export function AccessRolesPage() {
       dataIndex: 'capabilities',
       render: (values: string[]) => renderMappedTags(values, {}, '未配置'),
     },
+    {
+      title: '控制台权限',
+      dataIndex: 'permissionKeys',
+      render: (values: string[] | undefined) => renderMappedTags(normalizePermissionKeys(values), consolePermissionLabelMap, '未配置'),
+    },
     { title: '绑定用户', dataIndex: 'userCount' },
     {
       ...tableColumnPresets.action,
@@ -727,10 +814,14 @@ export function AccessRolesPage() {
       dataIndex: 'id',
       render: (_: unknown, record: AccessRole) => (
         <Space>
-          <Button icon={<IconEdit />} theme="borderless" size="small" onClick={() => crud.openEdit(record)} />
-          <Popconfirm title="确认删除？" onConfirm={() => crud.deleteMutation.mutate(record.id)}>
-            <Button icon={<IconDelete />} theme="borderless" type="danger" size="small" />
-          </Popconfirm>
+          {canManageRoles ? (
+            <>
+              <Button icon={<EditOutlined />} type="text" size="small" onClick={() => crud.openEdit(record)} />
+              <Popconfirm title="确认删除？" onConfirm={() => crud.deleteMutation.mutate(record.id)}>
+                <Button icon={<DeleteOutlined />} type="text" danger size="small" />
+              </Popconfirm>
+            </>
+          ) : '-'}
         </Space>
       ),
     },
@@ -741,51 +832,92 @@ export function AccessRolesPage() {
       name: String(values.name ?? '').trim(),
       scope: String(values.scope ?? 'custom'),
       capabilities: toStringArray(values.capabilities),
+      permissionKeys: normalizePermissionKeys(values.permissionKeys),
     })
+  }
+
+  if (!canViewRoles) {
+    return <div className="kc-page">当前账号没有角色管理权限。</div>
   }
 
   return (
     <div className="kc-page">
-      <PageHeader
-        title="角色管理"
-        description="维护 RBAC 角色的能力集合，角色能力会直接进入平台权限基线。"
-        actions={<Button icon={<IconPlus />} theme="solid" onClick={crud.openCreate}>添加角色</Button>}
+      <Alert
+        className="mb-4"
+        type="info"
+        showIcon
+        message="角色控制台权限通过 permissionKeys 提交。当前环境若尚未部署后端映射与持久化，保存后可能不会立即回显该字段。"
       />
-      <AdminTable columns={columns} dataSource={crud.data} rowKey="id" loading={crud.isLoading} />
+      <AdminTable
+        title="角色管理"
+        className="kc-access-table"
+        toolbarExtra={canManageRoles ? <Button icon={<PlusOutlined />} type="primary" onClick={crud.openCreate}>添加角色</Button> : null}
+        columns={columns}
+        dataSource={crud.data}
+        rowKey="id"
+        loading={crud.isLoading}
+      />
       <Modal
         title={crud.editing ? `编辑角色: ${crud.editing.name}` : '添加角色'}
-        visible={crud.modalVisible}
+        open={crud.modalVisible}
         onCancel={crud.closeModal}
-        onOk={() => {
-          roleFormApiRef.current?.validate().then(submitRole).catch(() => undefined)
+        onOk={async () => {
+          try {
+            const values = await form.validateFields()
+            submitRole(values)
+          } catch {
+            return
+          }
         }}
         okText={crud.editing ? '更新' : '创建'}
         cancelText="取消"
         confirmLoading={crud.isSaving}
         width={720}
         maskClosable={false}
+        destroyOnClose
       >
         <Form
+          form={form}
           key={crud.editing?.id ?? 'create-role'}
-          getFormApi={(formApi) => { roleFormApiRef.current = formApi as ModalFormApi }}
-          initValues={crud.editing ? {
+          layout="vertical"
+          initialValues={crud.editing ? {
             name: crud.editing.name,
             scope: crud.editing.scope || 'custom',
             capabilities: crud.editing.capabilities ?? [],
+            permissionKeys: normalizePermissionKeys(crud.editing.permissionKeys),
           } : {
             scope: 'custom',
             capabilities: [],
+            permissionKeys: [],
           }}
         >
-          <Form.Input field="name" label="角色名称" rules={[{ required: true, message: '请输入角色名称' }]} />
-          <Form.Select field="scope" label="角色范围" optionList={ROLE_SCOPE_OPTIONS} />
-          <Form.Select
-            field="capabilities"
+          <Form.Item name="name" label="角色名称" rules={[{ required: true, message: '请输入角色名称' }]}>
+            <Input />
+          </Form.Item>
+          <Form.Item name="scope" label="角色范围">
+            <Select options={ROLE_SCOPE_OPTIONS} />
+          </Form.Item>
+          <Form.Item
+            name="capabilities"
             label="权限动作"
-            multiple
-            optionList={ACCESS_ACTION_OPTIONS}
-            validate={(value) => toStringArray(value).length > 0 ? '' : '请选择至少一个权限动作'}
-          />
+            rules={[{
+              validator: (_, value) => toStringArray(value).length > 0
+                ? Promise.resolve()
+                : Promise.reject(new Error('请选择至少一个权限动作')),
+            }]}
+          >
+            <Select mode="multiple" options={ACCESS_ACTION_OPTIONS} />
+          </Form.Item>
+          <Form.Item name="permissionKeys" label="控制台权限键">
+            <Select
+              mode="multiple"
+              allowClear
+              showSearch
+              optionFilterProp="label"
+              options={permissionSelectOptions}
+              placeholder="选择该角色可见菜单与可调用 API 对应的权限键"
+            />
+          </Form.Item>
         </Form>
       </Modal>
     </div>
@@ -793,7 +925,12 @@ export function AccessRolesPage() {
 }
 
 export function AccessTeamsPage() {
-  const groupFormApiRef = useRef<ModalFormApi | null>(null)
+  const permissionSnapshotQuery = usePermissionSnapshot()
+  const snapshot = permissionSnapshotQuery.data?.data
+  const canViewGroups = hasPermission(snapshot, 'access.groups.view')
+  const canManageGroups = hasPermission(snapshot, 'access.groups.manage')
+  const canManageScopeGrants = hasPermission(snapshot, 'access.scope-grants.manage')
+  const [form] = Form.useForm<Record<string, unknown>>()
   const crud = useCRUD<AccessTeam>('access/teams', { invalidateKeys: [['access/users'], ['scope-grants']] })
   const [grantTeam, setGrantTeam] = useState<AccessTeam | null>(null)
 
@@ -808,11 +945,17 @@ export function AccessTeamsPage() {
       dataIndex: 'id',
       render: (_: unknown, record: AccessTeam) => (
         <Space>
-          <Button theme="borderless" size="small" onClick={() => setGrantTeam(record)}>授权范围</Button>
-          <Button icon={<IconEdit />} theme="borderless" size="small" onClick={() => crud.openEdit(record)} />
-          <Popconfirm title="确认删除？" onConfirm={() => crud.deleteMutation.mutate(record.id)}>
-            <Button icon={<IconDelete />} theme="borderless" type="danger" size="small" />
-          </Popconfirm>
+          {canManageGroups || canManageScopeGrants ? (
+            <>
+              {canManageScopeGrants ? <Button type="text" size="small" onClick={() => setGrantTeam(record)}>授权范围</Button> : null}
+              {canManageGroups ? <Button icon={<EditOutlined />} type="text" size="small" onClick={() => crud.openEdit(record)} /> : null}
+              {canManageGroups ? (
+                <Popconfirm title="确认删除？" onConfirm={() => crud.deleteMutation.mutate(record.id)}>
+                  <Button icon={<DeleteOutlined />} type="text" danger size="small" />
+                </Popconfirm>
+              ) : null}
+            </>
+          ) : '-'}
         </Space>
       ),
     },
@@ -829,39 +972,59 @@ export function AccessTeamsPage() {
     })
   }
 
+  if (!canViewGroups) {
+    return <div className="kc-page">当前账号没有用户组管理权限。</div>
+  }
+
   return (
     <div className="kc-page">
-      <PageHeader
+      <AdminTable
         title="用户组管理"
-        description="把用户归拢到用户组，用于批量授权、范围控制与访问策略匹配。"
-        actions={<Button icon={<IconPlus />} theme="solid" onClick={crud.openCreate}>添加用户组</Button>}
+        className="kc-access-table"
+        toolbarExtra={canManageGroups ? <Button icon={<PlusOutlined />} type="primary" onClick={crud.openCreate}>添加用户组</Button> : null}
+        columns={columns}
+        dataSource={crud.data}
+        rowKey="id"
+        loading={crud.isLoading}
       />
-      <AdminTable columns={columns} dataSource={crud.data} rowKey="id" loading={crud.isLoading} />
       <Modal
         title={crud.editing ? `编辑用户组: ${crud.editing.name}` : '添加用户组'}
-        visible={crud.modalVisible}
+        open={crud.modalVisible}
         onCancel={crud.closeModal}
-        onOk={() => {
-          groupFormApiRef.current?.validate().then(submitGroup).catch(() => undefined)
+        onOk={async () => {
+          try {
+            const values = await form.validateFields()
+            submitGroup(values)
+          } catch {
+            return
+          }
         }}
         okText={crud.editing ? '更新' : '创建'}
         cancelText="取消"
         confirmLoading={crud.isSaving}
         width={720}
         maskClosable={false}
+        destroyOnClose
       >
         <Form
+          form={form}
           key={crud.editing?.id ?? 'create-group'}
-          getFormApi={(formApi) => { groupFormApiRef.current = formApi as ModalFormApi }}
-          initValues={crud.editing ? {
+          layout="vertical"
+          initialValues={crud.editing ? {
             name: crud.editing.name,
             slug: crud.editing.slug,
             description: getGroupDescription(crud.editing.metadata),
           } : {}}
         >
-          <Form.Input field="name" label="用户组名称" rules={[{ required: true, message: '请输入用户组名称' }]} />
-          <Form.Input field="slug" label="标识" placeholder="留空时按名称自动生成" />
-          <Form.TextArea field="description" label="说明" rows={4} placeholder="说明该用户组的职责边界和适用成员" />
+          <Form.Item name="name" label="用户组名称" rules={[{ required: true, message: '请输入用户组名称' }]}>
+            <Input />
+          </Form.Item>
+          <Form.Item name="slug" label="标识">
+            <Input placeholder="留空时按名称自动生成" />
+          </Form.Item>
+          <Form.Item name="description" label="说明">
+            <Input.TextArea rows={4} placeholder="说明该用户组的职责边界和适用成员" />
+          </Form.Item>
         </Form>
       </Modal>
       <ScopeGrantManager
@@ -876,7 +1039,11 @@ export function AccessTeamsPage() {
 }
 
 export function AccessPoliciesPage() {
-  const policyFormApiRef = useRef<ModalFormApi | null>(null)
+  const permissionSnapshotQuery = usePermissionSnapshot()
+  const snapshot = permissionSnapshotQuery.data?.data
+  const canViewPolicies = hasPermission(snapshot, 'access.policies.view')
+  const canManagePolicies = hasPermission(snapshot, 'access.policies.manage')
+  const [form] = Form.useForm<Record<string, unknown>>()
   const crud = useCRUD<AccessPolicy>('access/policies')
 
   const rolesQuery = useQuery({
@@ -937,10 +1104,14 @@ export function AccessPoliciesPage() {
       dataIndex: 'id',
       render: (_: unknown, record: AccessPolicy) => (
         <Space>
-          <Button icon={<IconEdit />} theme="borderless" size="small" onClick={() => crud.openEdit(record)} />
-          <Popconfirm title="确认删除？" onConfirm={() => crud.deleteMutation.mutate(record.id)}>
-            <Button icon={<IconDelete />} theme="borderless" type="danger" size="small" />
-          </Popconfirm>
+          {canManagePolicies ? (
+            <>
+              <Button icon={<EditOutlined />} type="text" size="small" onClick={() => crud.openEdit(record)} />
+              <Popconfirm title="确认删除？" onConfirm={() => crud.deleteMutation.mutate(record.id)}>
+                <Button icon={<DeleteOutlined />} type="text" danger size="small" />
+              </Popconfirm>
+            </>
+          ) : '-'}
         </Space>
       ),
     },
@@ -991,32 +1162,46 @@ export function AccessPoliciesPage() {
     })
   }
 
+  if (!canViewPolicies) {
+    return <div className="kc-page">当前账号没有策略管理权限。</div>
+  }
+
   return (
     <div className="kc-page">
-      <PageHeader
+      <AdminTable
         title="策略管理"
-        description="在角色能力之上继续用主体、环境、命名空间和资源维度约束最终可执行权限。"
-        actions={<Button icon={<IconPlus />} theme="solid" onClick={crud.openCreate}>添加策略</Button>}
+        className="kc-access-table"
+        toolbarExtra={canManagePolicies ? <Button icon={<PlusOutlined />} type="primary" onClick={crud.openCreate}>添加策略</Button> : null}
+        columns={columns}
+        dataSource={crud.data}
+        rowKey="id"
+        loading={crud.isLoading}
       />
-      <AdminTable columns={columns} dataSource={crud.data} rowKey="id" loading={crud.isLoading} />
       <Modal
         title={crud.editing ? `编辑策略: ${crud.editing.name}` : '添加策略'}
-        visible={crud.modalVisible}
+        open={crud.modalVisible}
         onCancel={crud.closeModal}
-        onOk={() => {
-          policyFormApiRef.current?.validate().then(submitPolicy).catch(() => undefined)
+        onOk={async () => {
+          try {
+            const values = await form.validateFields()
+            submitPolicy(values)
+          } catch {
+            return
+          }
         }}
         okText={crud.editing ? '更新' : '创建'}
         cancelText="取消"
         confirmLoading={crud.isSaving}
         width={920}
         maskClosable={false}
-        bodyStyle={{ maxHeight: '72vh', overflow: 'auto' }}
+        destroyOnClose
+        styles={{ body: { maxHeight: '72vh', overflow: 'auto' } }}
       >
         <Form
+          form={form}
           key={crud.editing?.id ?? 'create-policy'}
-          getFormApi={(formApi) => { policyFormApiRef.current = formApi as ModalFormApi }}
-          initValues={crud.editing ? {
+          layout="vertical"
+          initialValues={crud.editing ? {
             name: crud.editing.name,
             effect: crud.editing.effect,
             priority: crud.editing.priority,
@@ -1046,74 +1231,112 @@ export function AccessPoliciesPage() {
         >
           <Row gutter={16}>
             <Col span={12}>
-              <Form.Input field="name" label="策略名称" rules={[{ required: true, message: '请输入策略名称' }]} />
+              <Form.Item name="name" label="策略名称" rules={[{ required: true, message: '请输入策略名称' }]}>
+                <Input />
+              </Form.Item>
             </Col>
             <Col span={6}>
-              <Form.Select field="effect" label="效果" optionList={POLICY_EFFECT_OPTIONS} rules={[{ required: true, message: '请选择效果' }]} />
+              <Form.Item name="effect" label="效果" rules={[{ required: true, message: '请选择效果' }]}>
+                <Select options={POLICY_EFFECT_OPTIONS} />
+              </Form.Item>
             </Col>
             <Col span={6}>
-              <Form.InputNumber field="priority" label="优先级" />
+              <Form.Item name="priority" label="优先级">
+                <InputNumber style={{ width: '100%' }} />
+              </Form.Item>
             </Col>
           </Row>
-          <Form.Select
-            field="actions"
+          <Form.Item
+            name="actions"
             label="动作"
-            multiple
-            optionList={ACCESS_ACTION_OPTIONS}
-            validate={(value) => toStringArray(value).length > 0 ? '' : '请选择至少一个动作'}
-          />
+            rules={[{
+              validator: (_, value) => toStringArray(value).length > 0
+                ? Promise.resolve()
+                : Promise.reject(new Error('请选择至少一个动作')),
+            }]}
+          >
+            <Select mode="multiple" options={ACCESS_ACTION_OPTIONS} />
+          </Form.Item>
           <Row gutter={16}>
             <Col span={12}>
-              <Form.Select field="subjectRoleIds" label="主体角色" multiple optionList={roleOptions} />
+              <Form.Item name="subjectRoleIds" label="主体角色">
+                <Select mode="multiple" options={roleOptions} />
+              </Form.Item>
             </Col>
             <Col span={12}>
-              <Form.Select field="subjectTeamIds" label="主体用户组" multiple optionList={teamOptions} />
+              <Form.Item name="subjectTeamIds" label="主体用户组">
+                <Select mode="multiple" options={teamOptions} />
+              </Form.Item>
             </Col>
           </Row>
           <Row gutter={16}>
             <Col span={12}>
-              <Form.Input field="subjectUsers" label="主体用户" placeholder="多个用户名以逗号分隔" />
+              <Form.Item name="subjectUsers" label="主体用户">
+                <Input placeholder="多个用户名以逗号分隔" />
+              </Form.Item>
             </Col>
             <Col span={12}>
-              <Form.Input field="subjectTags" label="主体标签" placeholder="多个标签以逗号分隔" />
+              <Form.Item name="subjectTags" label="主体标签">
+                <Input placeholder="多个标签以逗号分隔" />
+              </Form.Item>
             </Col>
           </Row>
           <Row gutter={16}>
             <Col span={8}>
-              <Form.Input field="clusterEnvironments" label="集群环境" placeholder="development, staging" />
+              <Form.Item name="clusterEnvironments" label="集群环境">
+                <Input placeholder="development, staging" />
+              </Form.Item>
             </Col>
             <Col span={8}>
-              <Form.Input field="clusterRegions" label="集群地域" placeholder="cn-beijing, us-west" />
+              <Form.Item name="clusterRegions" label="集群地域">
+                <Input placeholder="cn-beijing, us-west" />
+              </Form.Item>
             </Col>
             <Col span={8}>
-              <Form.Input field="clusterIds" label="集群 IDs" placeholder="多个集群 ID 以逗号分隔" />
+              <Form.Item name="clusterIds" label="集群 IDs">
+                <Input placeholder="多个集群 ID 以逗号分隔" />
+              </Form.Item>
             </Col>
           </Row>
           <Row gutter={16}>
             <Col span={12}>
-              <Form.Input field="namespaceNames" label="命名空间" placeholder="多个命名空间以逗号分隔" />
+              <Form.Item name="namespaceNames" label="命名空间">
+                <Input placeholder="多个命名空间以逗号分隔" />
+              </Form.Item>
             </Col>
             <Col span={12}>
-              <Form.Select field="ownerTeamIds" label="归属用户组" multiple optionList={teamOptions} />
+              <Form.Item name="ownerTeamIds" label="归属用户组">
+                <Select mode="multiple" options={teamOptions} />
+              </Form.Item>
             </Col>
           </Row>
           <Row gutter={16}>
             <Col span={12}>
-              <Form.Input field="resourceKinds" label="资源类型" placeholder="Pod, Deployment, Namespace" />
+              <Form.Item name="resourceKinds" label="资源类型">
+                <Input placeholder="Pod, Deployment, Namespace" />
+              </Form.Item>
             </Col>
             <Col span={12}>
-              <Form.Input field="resourceNames" label="资源名称" placeholder="多个资源名称以逗号分隔" />
+              <Form.Item name="resourceNames" label="资源名称">
+                <Input placeholder="多个资源名称以逗号分隔" />
+              </Form.Item>
             </Col>
           </Row>
           <Row gutter={16}>
             <Col span={12}>
-              <Form.Input field="sources" label="请求来源" placeholder="console, api, oidc" />
+              <Form.Item name="sources" label="请求来源">
+                <Input placeholder="console, api, oidc" />
+              </Form.Item>
             </Col>
             <Col span={12}>
-              <Form.Input field="approvalStates" label="审批状态" placeholder="approved, pending" />
+              <Form.Item name="approvalStates" label="审批状态">
+                <Input placeholder="approved, pending" />
+              </Form.Item>
             </Col>
           </Row>
-          <Form.TextArea field="reason" label="原因说明" rows={3} placeholder="说明该策略的意图和生效边界" />
+          <Form.Item name="reason" label="原因说明">
+            <Input.TextArea rows={3} placeholder="说明该策略的意图和生效边界" />
+          </Form.Item>
         </Form>
       </Modal>
     </div>
@@ -1121,54 +1344,25 @@ export function AccessPoliciesPage() {
 }
 
 export function AccessCenterPage() {
-  const location = useLocation()
-  const navigate = useNavigate()
   const permissionSnapshotQuery = usePermissionSnapshot()
   const snapshot = permissionSnapshotQuery.data?.data
-  const tabs = [
-    { key: 'users', path: '/access/users', label: '用户', visible: hasPermission(snapshot, 'access.users.view') },
-    { key: 'roles', path: '/access/roles', label: '角色', visible: hasPermission(snapshot, 'access.roles.view') },
-    { key: 'groups', path: '/access/teams', label: '用户组', visible: hasPermission(snapshot, 'access.groups.view') },
-    { key: 'policies', path: '/access/policies', label: '策略', visible: hasPermission(snapshot, 'access.policies.view') },
-  ].filter((item) => item.visible)
-
-  const activeKey = location.pathname.startsWith('/access/roles')
-    ? 'roles'
-    : location.pathname.startsWith('/access/teams')
-      ? 'groups'
-      : location.pathname.startsWith('/access/policies')
-        ? 'policies'
-        : 'users'
+  const firstAccessiblePath = hasPermission(snapshot, 'access.users.view')
+    ? '/access/users'
+    : hasPermission(snapshot, 'access.roles.view')
+      ? '/access/roles'
+      : hasPermission(snapshot, 'access.groups.view')
+        ? '/access/teams'
+        : hasPermission(snapshot, 'access.policies.view')
+          ? '/access/policies'
+          : null
 
   if (permissionSnapshotQuery.isLoading) {
     return <div className="kc-page"><div className="flex items-center justify-center h-32">加载中...</div></div>
   }
 
-  if (tabs.length === 0) {
+  if (!firstAccessiblePath) {
     return <div className="kc-page"><div className="text-[var(--semi-color-text-2)]">当前账号没有访问控制页面权限。</div></div>
   }
 
-  return (
-    <div className="kc-page">
-      <Tabs
-        type="line"
-        activeKey={activeKey}
-        onChange={(key) => {
-          const next = tabs.find((item) => item.key === key)
-          if (next) {
-            navigate(next.path)
-          }
-        }}
-      >
-        {tabs.map((tab) => (
-          <TabPane tab={tab.label} itemKey={tab.key} key={tab.key}>
-            {tab.key === 'users' ? <AccessUsersPage /> : null}
-            {tab.key === 'roles' ? <AccessRolesPage /> : null}
-            {tab.key === 'groups' ? <AccessTeamsPage /> : null}
-            {tab.key === 'policies' ? <AccessPoliciesPage /> : null}
-          </TabPane>
-        ))}
-      </Tabs>
-    </div>
-  )
+  return <Navigate to={firstAccessiblePath} replace />
 }

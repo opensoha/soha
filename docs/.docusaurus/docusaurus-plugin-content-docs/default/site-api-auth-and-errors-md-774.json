@@ -1,0 +1,25 @@
+{
+  "id": "api/auth-and-errors",
+  "title": "Auth And Errors",
+  "description": "Auth Entry",
+  "source": "@site/api/auth-and-errors.md",
+  "sourceDirName": "api",
+  "slug": "/api/auth-and-errors",
+  "permalink": "/docs/api/auth-and-errors",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/kubecrux/kubecrux/tree/main/docs/api/auth-and-errors.md",
+  "tags": [],
+  "version": "current",
+  "lastUpdatedAt": 1539502055000,
+  "frontMatter": {},
+  "sidebar": "mainSidebar",
+  "previous": {
+    "title": "Core Endpoints",
+    "permalink": "/docs/api/core-endpoints"
+  },
+  "next": {
+    "title": "Configuration",
+    "permalink": "/docs/operations/configuration"
+  }
+}

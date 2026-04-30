@@ -1,4 +1,4 @@
-import { Card, Empty, Tag } from '@douyinfe/semi-ui'
+import { Card, Empty, Tag } from 'antd'
 import { useQuery } from '@tanstack/react-query'
 import { AdminTable } from '@/components/admin-table'
 import { useI18n } from '@/i18n'
@@ -12,7 +12,7 @@ import { usePlatformScopeStore } from '@/stores/platform-scope-store'
 import { formatRelativeTime } from '@/utils/time'
 import { tableColumnPresets } from '@/utils/table-columns'
 import type { ApiResponse } from '@/types'
-import type { ColumnProps } from '@douyinfe/semi-ui/lib/es/table'
+import type { TableColumnsType } from 'antd'
 
 /* ─── CRDs ─── */
 
@@ -34,7 +34,7 @@ export function CRDPage() {
     enabled: !!clusterId,
   })
 
-  const columns: ColumnProps<CRD>[] = [
+  const columns: TableColumnsType<CRD> = [
     { title: '名称', dataIndex: 'name' },
     { title: 'Group', dataIndex: 'group' },
     { title: 'Version', dataIndex: 'version' },
@@ -51,7 +51,7 @@ export function CRDPage() {
       <PageHeader title={t('page.extensions.crd.title', 'CustomResourceDefinitions')} description={t('page.extensions.crd.desc', 'Inspect cluster CRDs, groups, versions, and scope.')} />
       <PlatformScopeToolbar />
       <PlatformClusterScopeHint resourceLabel="CRD" />
-      <AdminTable columns={columns} dataSource={data?.data ?? []} rowKey="name" loading={isLoading} pageSize={20} />
+      <AdminTable columns={columns} dataSource={data?.data ?? []} rowKey="name" loading={isLoading} pageSize={10} />
     </div>
   )
 }
@@ -78,7 +78,7 @@ export function HelmReleasesPage() {
     enabled: !!clusterId,
   })
 
-  const columns: ColumnProps<HelmRelease>[] = [
+  const columns: TableColumnsType<HelmRelease> = [
     { title: '名称', dataIndex: 'name' },
     { title: '命名空间', dataIndex: 'namespace' },
     { title: 'Chart', dataIndex: 'chart' },
@@ -110,8 +110,12 @@ export function HelmChartsPage() {
       <PageHeader title={t('page.extensions.helmCharts.title', 'Helm Charts')} description={t('page.extensions.helmCharts.desc', 'The backend does not provide a Helm Charts API yet, so this page remains a standard empty placeholder.')} />
       <Card>
         <Empty
-          title={t('page.extensions.helmCharts.emptyTitle', 'Helm Charts not available')}
-          description={t('page.extensions.helmCharts.emptyDesc', 'The backend currently has no /helm/charts endpoint. Restore the list view after the backend capability is added.')}
+          description={(
+            <div>
+              <div>{t('page.extensions.helmCharts.emptyTitle', 'Helm Charts not available')}</div>
+              <div>{t('page.extensions.helmCharts.emptyDesc', 'The backend currently has no /helm/charts endpoint. Restore the list view after the backend capability is added.')}</div>
+            </div>
+          )}
         />
       </Card>
     </div>

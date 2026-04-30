@@ -35,7 +35,7 @@ npm run dev
 
 - `web/src/services/api-client.ts` 使用同源 `/api/v1`
 - `web/vite.config.ts` 把 `/api` 代理到 `http://localhost:8080`
-- 文档页通过 `/docs/` 内嵌 VitePress 站点
+- 文档页通过同源 `/docs/` 访问 Docusaurus 站点，Vite 本地开发会把它代理到 `http://localhost:3000/docs/`
 
 可选快捷命令：
 
@@ -50,7 +50,7 @@ make dev-docs
 ```bash
 cd docs
 npm install
-npm run docs:dev
+npm run dev
 ```
 
 ## MVP Runtime Notes

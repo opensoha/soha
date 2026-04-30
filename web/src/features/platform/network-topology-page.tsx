@@ -13,10 +13,10 @@ import {
   type NodeProps,
 } from '@xyflow/react'
 import dagre from 'dagre'
-import { Button, Card, Empty, Input, Space, Tag, Typography } from '@douyinfe/semi-ui'
+import { Button, Card, Empty, Input, Space, Tag, Typography } from 'antd'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import type { ColumnProps } from '@douyinfe/semi-ui/lib/es/table'
+import type { TableColumnsType } from 'antd'
 import '@xyflow/react/dist/style.css'
 import { AdminTable } from '@/components/admin-table'
 import { PageHeader } from '@/components/page-header'
@@ -30,7 +30,6 @@ import type { ApiResponse } from '@/types'
 
 const { Text } = Typography
 
-type SemiTagColor = 'grey' | 'blue' | 'cyan' | 'green' | 'yellow' | 'red' | 'orange'
 type TopologyDataState = 'live' | 'pending' | 'demo'
 type LocaleCode = 'zh_CN' | 'en_US'
 type TopologySourceType = 'ingress' | 'httproute' | 'gateway' | 'demo'
@@ -89,7 +88,6 @@ interface GatewayIndexItem {
   addressSummary: string
   gatewayClass: string
   listenerCount: number
-  source: 'live' | 'demo'
 }
 
 interface TopologyNode {
@@ -180,15 +178,15 @@ const NODE_COLORS: Record<TopologyNodeKind, string> = {
   pod: '#22a36a',
 }
 
-const LEGEND_TAG_COLORS: Record<Exclude<TopologyNodeKind, 'pod'>, SemiTagColor> = {
+const LEGEND_TAG_COLORS: Record<Exclude<TopologyNodeKind, 'pod'>, string> = {
   entry: 'blue',
   'ingress-route': 'cyan',
   'http-route': 'orange',
-  'pending-route': 'yellow',
+  'pending-route': 'gold',
   service: 'blue',
   'missing-service': 'red',
   'backend-group': 'green',
-  'empty-backend': 'grey',
+  'empty-backend': 'default',
 }
 
 function hexToRgba(hex: string, alpha: number) {
@@ -425,7 +423,6 @@ function buildGatewayIndexItems(gateways: GatewayView[]): GatewayIndexItem[] {
     addressSummary: gateway.addresses?.join(', ') || '-',
     gatewayClass: gateway.gatewayClass || '-',
     listenerCount: gateway.listenerCount ?? 0,
-    source: 'live',
   }))
 }
 
@@ -710,7 +707,7 @@ function buildPendingGatewayTraces(
           `entry:pending-gateway:${gateway.id}`,
           entryName,
           'entry',
-          gateway.source === 'demo' ? 'demo' : 'pending',
+          'pending',
           gateway.namespace,
           gateway.name,
           gateway.namespace,
@@ -735,56 +732,6 @@ function buildPendingGatewayTraces(
           : 'This gateway is not associated with any visible HTTPRoute yet.',
       }
     })
-}
-
-function buildDemoTraces(localeCode: LocaleCode) {
-  const webService = makeNode('service:demo-app/web-frontend', 'web-frontend', 'service', 'demo', 'demo-app', 'web-frontend', 'demo-app', 'Service')
-  const apiService = makeNode('service:demo-app/billing-api', 'billing-api', 'service', 'demo', 'demo-app', 'billing-api', 'demo-app', 'Service')
-
-  return [
-    {
-      id: 'demo-kong-ingress-web',
-      entry: makeNode('entry:demo-kong:web', 'app.kubecrux.local', 'entry', 'demo', 'demo-app', 'kong-public', 'demo-app', 'Kong Ingress'),
-      route: makeNode('route:demo-kong:web', 'kong-public', 'ingress-route', 'demo', 'demo-app', 'kong-public', 'demo-app', 'Kong Ingress'),
-      service: webService,
-      terminals: [
-        makeNode('pod:demo-app/web-0', 'web-frontend-85d7c7d7c6-v91k2', 'pod', 'demo', 'demo-app', 'web-frontend-85d7c7d7c6-v91k2'),
-        makeNode('pod:demo-app/web-1', 'web-frontend-85d7c7d7c6-j8t6w', 'pod', 'demo', 'demo-app', 'web-frontend-85d7c7d7c6-j8t6w'),
-      ],
-      sourceType: 'demo' as const,
-      state: 'demo' as const,
-      notes: localeCode === 'zh_CN'
-        ? '演示一条基于 IngressClass 的控制器入口链路。'
-        : 'Preview flow for an ingress-controller-based entry path.',
-    },
-    {
-      id: 'demo-traefik-httproute-api',
-      entry: makeNode('entry:demo-http:api', 'api.kubecrux.local', 'entry', 'demo', 'infra-system', 'edge-gateway', 'infra-system', 'Traefik Gateway'),
-      route: makeNode('route:demo-http:api', 'payments-route', 'http-route', 'demo', 'demo-app', 'payments-route', 'api.kubecrux.local', 'HTTPRoute · Traefik Gateway'),
-      service: apiService,
-      terminals: [
-        makeNode('pod:demo-app/api-0', 'billing-api-6cb687f57d-k9nj2', 'pod', 'demo', 'demo-app', 'billing-api-6cb687f57d-k9nj2'),
-        makeNode('pod:demo-app/api-1', 'billing-api-6cb687f57d-mr4qb', 'pod', 'demo', 'demo-app', 'billing-api-6cb687f57d-mr4qb'),
-        makeNode('pod:demo-app/api-2', 'billing-api-6cb687f57d-x7lph', 'pod', 'demo', 'demo-app', 'billing-api-6cb687f57d-x7lph'),
-      ],
-      sourceType: 'demo' as const,
-      state: 'demo' as const,
-      notes: localeCode === 'zh_CN'
-        ? '演示一条 Gateway / HTTPRoute 到 Service 的链路。'
-        : 'Preview flow for a Gateway / HTTPRoute route to a service.',
-    },
-    {
-      id: 'demo-pending-gateway',
-      entry: makeNode('entry:demo-pending:gw', 'gw.kubecrux.local', 'entry', 'demo', 'infra-system', 'edge-gateway', 'infra-system', 'APISIX Gateway'),
-      route: makeNode('route:demo-pending:gw', localeCode === 'zh_CN' ? 'HTTPRoute 待接入' : 'HTTPRoute pending', 'pending-route', 'pending', 'infra-system', 'edge-gateway', 'edge-gateway', 'APISIX Gateway'),
-      terminals: [],
-      sourceType: 'demo' as const,
-      state: 'pending' as const,
-      notes: localeCode === 'zh_CN'
-        ? '演示一个已经暴露入口、但还没有路由绑定的 Gateway。'
-        : 'Preview a gateway entry that is exposed but not bound to any route yet.',
-    },
-  ] satisfies TopologyTrace[]
 }
 
 function filterTraces(traces: TopologyTrace[], keyword: string) {
@@ -1311,15 +1258,11 @@ export function NetworkTopologyPage() {
     [httpRouteTraces, ingressTraces, pendingGatewayTraces],
   )
 
-  const chartMode = liveTraces.length > 0 ? 'live' : 'demo'
-  const chartTraces = useMemo(
-    () => liveTraces.length > 0 ? liveTraces : buildDemoTraces(localeCode),
-    [liveTraces, localeCode],
-  )
+  const hasLiveTopology = liveTraces.length > 0
 
   const filteredTraces = useMemo(
-    () => filterTraces(chartTraces, deferredSearchKeyword),
-    [chartTraces, deferredSearchKeyword],
+    () => filterTraces(liveTraces, deferredSearchKeyword),
+    [deferredSearchKeyword, liveTraces],
   )
 
   const topologyGraph = useMemo(
@@ -1383,25 +1326,66 @@ export function NetworkTopologyPage() {
     getErrorMessage(podsQuery.error),
   ].filter(Boolean)
   const liveLoading = clusterId && (servicesQuery.isLoading || ingressesQuery.isLoading || httpRoutesQuery.isLoading || gatewaysQuery.isLoading || podsQuery.isLoading)
-  const viewTag = chartMode === 'live'
+  const topologyViewState = !clusterId
+    ? 'cluster-required'
+    : liveLoading
+      ? 'loading'
+      : hasLiveTopology
+        ? 'live'
+        : 'unavailable'
+  const viewTag = topologyViewState === 'live'
     ? (localeCode === 'zh_CN' ? '实时拓扑' : 'Live topology')
-    : (localeCode === 'zh_CN' ? '演示视图' : 'Preview topology')
+    : topologyViewState === 'loading'
+      ? (localeCode === 'zh_CN' ? '加载中' : 'Loading')
+      : topologyViewState === 'cluster-required'
+        ? (localeCode === 'zh_CN' ? '待选集群' : 'Select cluster')
+        : (localeCode === 'zh_CN' ? '实时不可用' : 'Live unavailable')
+  const viewTagColor = topologyViewState === 'live'
+    ? 'green'
+    : topologyViewState === 'loading'
+      ? 'blue'
+      : topologyViewState === 'cluster-required'
+        ? 'default'
+        : 'orange'
 
-  const viewDescription = chartMode === 'live'
+  const viewDescription = topologyViewState === 'live'
     ? (localeCode === 'zh_CN'
       ? 'Ingress(controller)、Gateway / HTTPRoute 和 Service 后端已经统一进入同一张入口网络拓扑；未挂接 HTTPRoute 的 Gateway 会以待接路由节点保留在图里。'
       : 'Ingress controllers, Gateway / HTTPRoute, and service backends now share one topology; gateways without HTTPRoute bindings remain visible as pending-route nodes.')
-    : clusterId
-      ? liveLoading
+    : topologyViewState === 'loading'
+      ? (localeCode === 'zh_CN'
+        ? '正在从 Ingress、Gateway、HTTPRoute、Service 和 Pod 资源装载实时入口拓扑。'
+        : 'Loading the live entry topology from ingress, gateway, HTTPRoute, service, and pod resources.')
+      : topologyViewState === 'cluster-required'
         ? (localeCode === 'zh_CN'
-          ? '正在加载实时拓扑，当前先展示演示视图。'
-          : 'Live topology is still loading, so the preview graph is shown first.')
+          ? '先选择一个集群，再加载当前 scope 下的实时入口拓扑。'
+          : 'Select a cluster first to load the live entry topology for the current scope.')
         : (localeCode === 'zh_CN'
-          ? '当前 scope 下没有可展示的实时入口拓扑，先切换到演示视图看布局。'
-          : 'No live entry topology is available in the current scope, so the preview graph is shown.')
-      : (localeCode === 'zh_CN'
-        ? '还没有选定集群，先展示一版演示拓扑。'
-        : 'No cluster is selected yet, so the preview graph is shown.')
+          ? '当前 scope 下没有检测到实时入口拓扑，因此页面不会回退到演示或预览链路。请检查 Ingress、Gateway、HTTPRoute 和 Service 关系是否在当前集群或命名空间可见。'
+          : 'No live entry topology was detected in the current scope, so the page does not fall back to demo or preview traces. Verify that ingress, gateway, HTTPRoute, and service relations are visible in the selected cluster or namespace.')
+
+  const emptyStateTitle = topologyViewState === 'loading'
+    ? (localeCode === 'zh_CN' ? '实时拓扑加载中' : 'Loading live topology')
+    : topologyViewState === 'cluster-required'
+      ? (localeCode === 'zh_CN' ? '选择集群后查看拓扑' : 'Select a cluster to view topology')
+      : hasLiveTopology
+        ? (localeCode === 'zh_CN' ? '当前筛选条件下没有可展示的链路' : 'No visible trace matches the current filter')
+        : (localeCode === 'zh_CN' ? '当前 scope 下没有实时入口拓扑' : 'No live entry topology in the current scope')
+  const emptyStateDescription = topologyViewState === 'loading'
+    ? (localeCode === 'zh_CN'
+      ? '页面只展示实时链路，正在等待网络资源返回。'
+      : 'The page renders live traces only and is waiting for network resources to return.')
+    : topologyViewState === 'cluster-required'
+      ? (localeCode === 'zh_CN'
+        ? '选择集群后，这里会展示 Kong、APISIX、Traefik、原生 Ingress 和 Gateway 入口路径。'
+        : 'After a cluster is selected, this view will render Kong, APISIX, Traefik, native Ingress, and Gateway entry paths.')
+      : hasLiveTopology
+        ? (localeCode === 'zh_CN'
+          ? '调整搜索关键词，或清空筛选后重试。'
+          : 'Adjust the search keyword or clear the filter and try again.')
+        : (localeCode === 'zh_CN'
+          ? '当前没有检测到任何可见的 Ingress 或 Gateway 入口链路，页面不会再渲染演示数据。'
+          : 'No visible ingress or gateway entry path was detected, and the page no longer renders demo data in this state.')
 
   const selectedTopologyNode = selectedNodeID ? topologyGraph.nodeMap.get(selectedNodeID) ?? null : null
   const selectionDetail = useMemo(
@@ -1414,14 +1398,14 @@ export function NetworkTopologyPage() {
     ? buildServiceDetailPath(selectedTopologyNode.resourceName, namespace, selectedTopologyNode.namespace)
     : null
 
-  const columns: ColumnProps<TableRow>[] = [
+  const columns: TableColumnsType<TableRow> = [
     {
       title: localeCode === 'zh_CN' ? '入口' : 'Entry',
       dataIndex: 'entry',
       render: (_: TopologyNode, record: TableRow) => (
         <div className="flex flex-col gap-1">
           <Text strong>{record.entry.name}</Text>
-          <Text type="tertiary" size="small">{record.entry.badge || record.entry.namespace || '-'}</Text>
+          <Text type="secondary" className="text-xs">{record.entry.badge || record.entry.namespace || '-'}</Text>
         </div>
       ),
     },
@@ -1433,7 +1417,7 @@ export function NetworkTopologyPage() {
           <Text strong>{record.route.name}</Text>
           <Space wrap>
             {record.route.badge ? <Tag color={LEGEND_TAG_COLORS[record.route.kind as Exclude<TopologyNodeKind, 'pod'>]}>{record.route.badge}</Tag> : null}
-            {record.route.subtitle ? <Text type="tertiary" size="small">{record.route.subtitle}</Text> : null}
+            {record.route.subtitle ? <Text type="secondary" className="text-xs">{record.route.subtitle}</Text> : null}
           </Space>
         </div>
       ),
@@ -1443,21 +1427,20 @@ export function NetworkTopologyPage() {
       dataIndex: 'service',
       render: (_: TopologyNode | undefined, record: TableRow) => {
         if (!record.service) {
-          return <Text type="tertiary">-</Text>
+          return <Text type="secondary">-</Text>
         }
         const canNavigate = record.service.kind === 'service' && record.service.resourceName && record.service.namespace
         if (!canNavigate) {
           return (
             <div className="flex flex-col gap-1">
               <Text>{record.service.name}</Text>
-              {record.service.badge ? <Text type="tertiary" size="small">{record.service.badge}</Text> : null}
+              {record.service.badge ? <Text type="secondary" className="text-xs">{record.service.badge}</Text> : null}
             </div>
           )
         }
         return (
           <Button
-            theme="borderless"
-            type="primary"
+            type="text"
             onClick={() => navigate(buildServiceDetailPath(record.service!.resourceName!, namespace, record.service!.namespace!))}
           >
             {record.service.name}
@@ -1470,7 +1453,7 @@ export function NetworkTopologyPage() {
       dataIndex: 'terminals',
       render: (_: TopologyNode[], record: TableRow) => {
         if (record.terminals.length === 0) {
-          return <Text type="tertiary">-</Text>
+          return <Text type="secondary">-</Text>
         }
 
         const visibleItems = record.terminals.slice(0, 3)
@@ -1481,8 +1464,7 @@ export function NetworkTopologyPage() {
             {visibleItems.map((item) => item.resourceName && item.namespace ? (
               <Button
                 key={item.id}
-                theme="light"
-                type="tertiary"
+                variant="outlined"
                 size="small"
                 onClick={() => navigate(buildPodDetailPath(item.resourceName!, namespace, item.namespace!))}
               >
@@ -1491,7 +1473,7 @@ export function NetworkTopologyPage() {
             ) : (
               <Tag key={item.id}>{item.name}</Tag>
             ))}
-            {remainCount > 0 ? <Tag color="grey">+{remainCount}</Tag> : null}
+            {remainCount > 0 ? <Tag color="default">+{remainCount}</Tag> : null}
           </Space>
         )
       },
@@ -1505,7 +1487,7 @@ export function NetworkTopologyPage() {
     {
       title: localeCode === 'zh_CN' ? '说明' : 'Notes',
       dataIndex: 'notes',
-      render: (value: string) => <Text type="tertiary">{value}</Text>,
+      render: (value: string) => <Text type="secondary">{value}</Text>,
     },
   ]
 
@@ -1518,7 +1500,7 @@ export function NetworkTopologyPage() {
           : 'Aggregate ingress, Gateway / HTTPRoute, services, and backends into one network topology so operators can read the path first and drill into services and pods next.'}
         actions={(
           <Space wrap>
-            <Tag color={chartMode === 'live' ? 'green' : 'blue'}>{viewTag}</Tag>
+            <Tag color={viewTagColor}>{viewTag}</Tag>
             {liveErrors.length > 0 ? <Tag color="red">{localeCode === 'zh_CN' ? '实时数据部分失败' : 'Partial live data failure'}</Tag> : null}
           </Space>
         )}
@@ -1530,12 +1512,12 @@ export function NetworkTopologyPage() {
           <div className="flex min-w-[280px] flex-1 flex-wrap items-center gap-3">
             <Input
               value={searchKeyword}
-              onChange={setSearchKeyword}
+              onChange={(event) => setSearchKeyword(event.target.value)}
               placeholder={localeCode === 'zh_CN' ? '搜索入口 / 路由 / Service / Pod / 说明' : 'Search entry / route / service / pod / note'}
               style={{ width: 340 }}
               className="kc-platform-compact-field"
             />
-            <Text type="tertiary" size="small">
+            <Text type="secondary" className="text-xs">
               {viewDescription}
             </Text>
           </div>
@@ -1572,9 +1554,9 @@ export function NetworkTopologyPage() {
       <Card
         className="kc-detail-card"
         title={localeCode === 'zh_CN' ? '入口 -> 路由 -> Service -> Backend 拓扑' : 'Entry -> Route -> Service -> Backend topology'}
-        headerExtraContent={(
+        extra={(
           <Space wrap>
-            <Text type="tertiary" size="small">
+            <Text type="secondary" className="text-xs">
               {localeCode === 'zh_CN'
                 ? `${filteredTraces.length} 条链路`
                 : `${filteredTraces.length} traces`}
@@ -1602,7 +1584,7 @@ export function NetworkTopologyPage() {
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="flex min-w-[240px] flex-1 flex-col gap-1">
                       <Text strong>{selectedTopologyNode.name}</Text>
-                      <Text type="tertiary" size="small">{selectedTopologyNode.subtitle || '-'}</Text>
+                      <Text type="secondary" className="text-xs">{selectedTopologyNode.subtitle || '-'}</Text>
                     </div>
                     <Space wrap>
                       <Tag color={LEGEND_TAG_COLORS[selectedTopologyNode.kind as Exclude<TopologyNodeKind, 'pod'>] ?? 'blue'}>
@@ -1612,13 +1594,13 @@ export function NetworkTopologyPage() {
                     </Space>
                   </div>
 
-                  <Text type="tertiary">{selectionDetail.summary}</Text>
+                  <Text type="secondary">{selectionDetail.summary}</Text>
 
                   {selectedServicePath ? (
                     <Space wrap>
                       <Button
-                        theme="light"
                         type="primary"
+                        variant="outlined"
                         size="small"
                         onClick={() => navigate(selectedServicePath)}
                       >
@@ -1629,7 +1611,7 @@ export function NetworkTopologyPage() {
 
                   {selectionDetail.relatedEntries.length > 0 ? (
                     <div className="flex flex-col gap-2">
-                      <Text strong size="small">{localeCode === 'zh_CN' ? '相关入口' : 'Related entries'}</Text>
+                      <Text strong className="text-xs">{localeCode === 'zh_CN' ? '相关入口' : 'Related entries'}</Text>
                       <Space wrap>
                         {selectionDetail.relatedEntries.map((item) => (
                           <Tag key={item.id}>{item.name}</Tag>
@@ -1640,7 +1622,7 @@ export function NetworkTopologyPage() {
 
                   {selectionDetail.relatedRoutes.length > 0 ? (
                     <div className="flex flex-col gap-2">
-                      <Text strong size="small">{localeCode === 'zh_CN' ? '相关路由' : 'Related routes'}</Text>
+                      <Text strong className="text-xs">{localeCode === 'zh_CN' ? '相关路由' : 'Related routes'}</Text>
                       <Space wrap>
                         {selectionDetail.relatedRoutes.map((item) => (
                           <Tag key={item.id} color={LEGEND_TAG_COLORS[item.kind as Exclude<TopologyNodeKind, 'pod'>] ?? 'blue'}>
@@ -1653,13 +1635,12 @@ export function NetworkTopologyPage() {
 
                   {selectionDetail.relatedServices.length > 0 ? (
                     <div className="flex flex-col gap-2">
-                      <Text strong size="small">{localeCode === 'zh_CN' ? '相关 Service' : 'Related services'}</Text>
+                      <Text strong className="text-xs">{localeCode === 'zh_CN' ? '相关 Service' : 'Related services'}</Text>
                       <Space wrap>
                         {selectionDetail.relatedServices.map((item) => item.kind === 'service' && item.resourceName && item.namespace ? (
                           <Button
                             key={item.id}
-                            theme="light"
-                            type="tertiary"
+                            variant="outlined"
                             size="small"
                             onClick={() => navigate(buildServiceDetailPath(item.resourceName!, namespace, item.namespace!))}
                           >
@@ -1674,13 +1655,12 @@ export function NetworkTopologyPage() {
 
                   {selectionDetail.terminalNodes.length > 0 ? (
                     <div className="flex flex-col gap-2">
-                      <Text strong size="small">{localeCode === 'zh_CN' ? '后端 Pods' : 'Backend pods'}</Text>
+                      <Text strong className="text-xs">{localeCode === 'zh_CN' ? '后端 Pods' : 'Backend pods'}</Text>
                       <Space wrap>
                         {selectionDetail.terminalNodes.slice(0, 6).map((item) => item.resourceName && item.namespace ? (
                           <Button
                             key={item.id}
-                            theme="light"
-                            type="tertiary"
+                            variant="outlined"
                             size="small"
                             onClick={() => navigate(buildPodDetailPath(item.resourceName!, namespace, item.namespace!))}
                           >
@@ -1690,7 +1670,7 @@ export function NetworkTopologyPage() {
                           <Tag key={item.id}>{item.name}</Tag>
                         ))}
                         {selectionDetail.terminalNodes.length > 6 ? (
-                          <Tag color="grey">{`+${selectionDetail.terminalNodes.length - 6}`}</Tag>
+                          <Tag color="default">{`+${selectionDetail.terminalNodes.length - 6}`}</Tag>
                         ) : null}
                       </Space>
                     </div>
@@ -1699,7 +1679,7 @@ export function NetworkTopologyPage() {
                   {selectionDetail.notes.length > 0 ? (
                     <div className="kc-topology-note-list">
                       {selectionDetail.notes.slice(0, 3).map((item) => (
-                        <Text key={item} type="tertiary" size="small">{item}</Text>
+                        <Text key={item} type="secondary" className="text-xs">{item}</Text>
                       ))}
                     </div>
                   ) : null}
@@ -1711,7 +1691,14 @@ export function NetworkTopologyPage() {
           </>
         ) : (
           <div className="flex min-h-[320px] items-center justify-center">
-            <Empty description={localeCode === 'zh_CN' ? '当前筛选条件下没有可展示的链路' : 'No visible trace matches the current filter'} />
+            <Empty
+              description={(
+                <div className="flex flex-col items-center gap-1">
+                  <Text strong>{emptyStateTitle}</Text>
+                  <Text type="secondary" className="text-xs">{emptyStateDescription}</Text>
+                </div>
+              )}
+            />
           </div>
         )}
       </Card>
@@ -1719,11 +1706,15 @@ export function NetworkTopologyPage() {
       <Card
         className="kc-detail-card"
         title={localeCode === 'zh_CN' ? '网络拓扑明细' : 'Network topology detail'}
-        headerExtraContent={(
-          <Text type="tertiary" size="small">
-            {chartMode === 'live'
+        extra={(
+          <Text type="secondary" className="text-xs">
+            {hasLiveTopology
               ? (localeCode === 'zh_CN' ? '图上做总览收敛，路由和 Pod 明细继续在这里展开' : 'The graph stays collapsed for overview, while route and pod details remain here')
-              : (localeCode === 'zh_CN' ? '演示数据用于确认页面布局和交互' : 'Preview data is used to validate layout and interaction')}
+              : topologyViewState === 'loading'
+                ? (localeCode === 'zh_CN' ? '等待实时资源返回后再展示明细' : 'Details appear after the live resources finish loading')
+                : topologyViewState === 'cluster-required'
+                  ? (localeCode === 'zh_CN' ? '选择集群后再查看实时入口链路明细' : 'Select a cluster to inspect live entry-path details')
+                  : (localeCode === 'zh_CN' ? '当前没有可展示的实时入口链路明细' : 'There are no live entry-path details to show in the current scope')}
           </Text>
         )}
       >

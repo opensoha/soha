@@ -2,11 +2,10 @@
 
 ## Current Stack
 
-- UI shell and page primitives use Semi Design through `@douyinfe/semi-ui` and `@douyinfe/semi-icons`
-- official Semi theme packages are applied at runtime, and the active theme is persisted in client preferences
-- Tailwind is kept for layout, spacing, and a small set of utility colors aligned with Semi tokens
-- `web/tailwind.config.ts` maps common utilities to `--semi-*` CSS variables and disables `preflight`
-- `web/src/styles/globals.css` defines the shared Semi-admin shell and page skeleton
+- UI shell and shared page primitives use native `antd` and `@ant-design/icons`
+- Tailwind CSS 4 remains a utility layer for layout and spacing
+- `web/src/styles/globals.css` defines the shared console shell and page skeleton
+- route-driven pages consume TanStack Query server state and Zustand preference or scope state
 
 ```text
 web/src/
@@ -51,8 +50,6 @@ web/src/
     preferences-store.ts
   styles/
     globals.css
-  theme/
-    semi-theme.ts
   components/
     admin-table.tsx
     page-header.tsx
@@ -72,12 +69,11 @@ web/src/
 - `web/src/App.tsx` only mounts `AppRouter`; runtime composition starts in `web/src/main.tsx`
 - route registration and lazy loading live in `web/src/routes/index.tsx`
 - sidebar groups, titles, redirects, and breadcrumb metadata live in `web/src/routes/meta.ts`
-- `web/src/layouts/app-layout.tsx` owns the Semi-based shell: `Layout`, `Nav`, `Breadcrumb`, theme switchers, the user dropdown, and logout action
+- `web/src/layouts/app-layout.tsx` owns the Ant Design shell: `Layout`, `Menu`, `Breadcrumb`, theme controls, the user dropdown, and logout action
 - page implementations are grouped by business domain under `web/src/features`
 - platform pages intentionally remain bundled by capability today: `workloads-pages.tsx`, `network-storage-pages.tsx`, and `extensions-pages.tsx` each export multiple route-level pages
 - HTTP access goes through `web/src/services/api-client.ts`, which targets same-origin `/api/v1` and retries once after token refresh
 - persisted client state lives under `web/src/stores`; `preferences-store.ts` persists theme and sidebar preferences, while server state stays in TanStack Query
-- `web/src/theme/semi-theme.ts` is the runtime theme bridge for official Semi theme packages and light/dark/system mode
 - `components/` is now used for shared page skeleton parts such as `page-header.tsx` and `platform-scope-toolbar.tsx`
 - `components/` also contains shared admin primitives such as `admin-table.tsx`, `stat-grid.tsx`, and `status-tag.tsx`
 - `utils/time.ts` centralizes table-friendly datetime and relative-time formatting

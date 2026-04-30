@@ -13,24 +13,25 @@ import (
 )
 
 type Service struct {
-	store      domainsettings.Store
-	auth       cfgpkg.AuthConfig
-	monitoring cfgpkg.MonitoringConfig
+	store       domainsettings.Store
+	auth        cfgpkg.AuthConfig
+	monitoring  cfgpkg.MonitoringConfig
+	permissions *appaccess.PermissionResolver
 }
 
-func New(store domainsettings.Store, auth cfgpkg.AuthConfig, monitoring cfgpkg.MonitoringConfig) *Service {
-	return &Service{store: store, auth: auth, monitoring: monitoring}
+func New(store domainsettings.Store, auth cfgpkg.AuthConfig, monitoring cfgpkg.MonitoringConfig, permissions *appaccess.PermissionResolver) *Service {
+	return &Service{store: store, auth: auth, monitoring: monitoring, permissions: permissions}
 }
 
 func (s *Service) GetIdentitySettings(ctx context.Context, principal domainidentity.Principal) (domainsettings.IdentitySettings, error) {
-	if err := authorizePrincipal(principal, appaccess.PermSettingsIdentityView); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.PermSettingsIdentityView); err != nil {
 		return domainsettings.IdentitySettings{}, err
 	}
 	return s.identitySettings(ctx)
 }
 
 func (s *Service) UpdateOIDCSettings(ctx context.Context, principal domainidentity.Principal, input domainsettings.OIDCSettings) (domainsettings.IdentitySettings, error) {
-	if err := authorizePrincipal(principal, appaccess.PermSettingsIdentityManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.PermSettingsIdentityManage); err != nil {
 		return domainsettings.IdentitySettings{}, err
 	}
 	input.ProviderName = strings.TrimSpace(input.ProviderName)
@@ -76,28 +77,28 @@ func (s *Service) UpdateOIDCSettings(ctx context.Context, principal domainidenti
 }
 
 func (s *Service) GetMonitoringSettings(ctx context.Context, principal domainidentity.Principal) (domainsettings.MonitoringSettings, error) {
-	if err := authorizePrincipal(principal, appaccess.PermSettingsMonitoringView); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.PermSettingsMonitoringView); err != nil {
 		return domainsettings.MonitoringSettings{}, err
 	}
 	return s.monitoringSettings(ctx)
 }
 
 func (s *Service) GetAISettings(ctx context.Context, principal domainidentity.Principal) (domainsettings.AISettings, error) {
-	if err := authorizePrincipal(principal, appaccess.PermSettingsAIView); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.PermSettingsAIView); err != nil {
 		return domainsettings.AISettings{}, err
 	}
 	return s.aiSettings(ctx)
 }
 
 func (s *Service) GetBrandingSettings(ctx context.Context, principal domainidentity.Principal) (domainsettings.BrandingSettings, error) {
-	if err := authorizePrincipal(principal, appaccess.PermSettingsBrandingView); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.PermSettingsBrandingView); err != nil {
 		return domainsettings.BrandingSettings{}, err
 	}
 	return s.brandingSettings(ctx)
 }
 
 func (s *Service) UpdateBrandingSettings(ctx context.Context, principal domainidentity.Principal, input domainsettings.BrandingSettings) (domainsettings.BrandingSettings, error) {
-	if err := authorizePrincipal(principal, appaccess.PermSettingsBrandingManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.PermSettingsBrandingManage); err != nil {
 		return domainsettings.BrandingSettings{}, err
 	}
 	input.AppTitle = strings.TrimSpace(input.AppTitle)
@@ -121,7 +122,7 @@ func (s *Service) UpdateBrandingSettings(ctx context.Context, principal domainid
 }
 
 func (s *Service) UpdateAISettings(ctx context.Context, principal domainidentity.Principal, input domainsettings.AIProviderSettings) (domainsettings.AISettings, error) {
-	if err := authorizePrincipal(principal, appaccess.PermSettingsAIManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.PermSettingsAIManage); err != nil {
 		return domainsettings.AISettings{}, err
 	}
 	input.BaseURL = strings.TrimSpace(input.BaseURL)
@@ -151,7 +152,7 @@ func (s *Service) UpdateAISettings(ctx context.Context, principal domainidentity
 }
 
 func (s *Service) UpdatePrometheusSettings(ctx context.Context, principal domainidentity.Principal, input domainsettings.PrometheusSettings) (domainsettings.MonitoringSettings, error) {
-	if err := authorizePrincipal(principal, appaccess.PermSettingsMonitoringManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.PermSettingsMonitoringManage); err != nil {
 		return domainsettings.MonitoringSettings{}, err
 	}
 	input.BaseURL = strings.TrimSpace(input.BaseURL)
@@ -408,9 +409,6 @@ func ensureAdmin(principal domainidentity.Principal) error {
 	return fmt.Errorf("%w: admin role required", apperrors.ErrAccessDenied)
 }
 
-func authorizePrincipal(principal domainidentity.Principal, permissionKey string) error {
-	if appaccess.HasPermission(principal.Roles, permissionKey) {
-		return nil
-	}
-	return fmt.Errorf("%w: missing permission %s", apperrors.ErrAccessDenied, permissionKey)
+func (s *Service) authorize(ctx context.Context, principal domainidentity.Principal, permissionKey string) error {
+	return appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, permissionKey)
 }

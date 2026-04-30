@@ -3,10 +3,12 @@ package routes
 import (
 	"io/fs"
 	"net/http"
+	"path"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	docsembed "github.com/kubecrux/kubecrux/docs"
 	apiHandlers "github.com/kubecrux/kubecrux/internal/api/handlers"
 	apiMiddleware "github.com/kubecrux/kubecrux/internal/api/middleware"
 	cfgpkg "github.com/kubecrux/kubecrux/internal/infrastructure/config"
@@ -133,7 +135,11 @@ func New(cfg cfgpkg.Config, logger *zap.Logger, deps Dependencies) *http.Server 
 		protected.GET("/clusters/:clusterID/workloads/cronjobs/:cronJobName/yaml", deps.Platform.GetCronJobYAML)
 		protected.PUT("/clusters/:clusterID/workloads/cronjobs/:cronJobName/yaml", deps.Platform.ApplyCronJobYAML)
 		protected.GET("/clusters/:clusterID/configuration/configmaps", deps.Platform.ListConfigMaps)
+		protected.POST("/clusters/:clusterID/configuration/configmaps", deps.Platform.CreateConfigMap)
+		protected.GET("/clusters/:clusterID/configuration/configmaps/:name/detail", deps.Platform.GetConfigMapDetail)
 		protected.GET("/clusters/:clusterID/configuration/secrets", deps.Platform.ListSecrets)
+		protected.POST("/clusters/:clusterID/configuration/secrets", deps.Platform.CreateSecret)
+		protected.GET("/clusters/:clusterID/configuration/secrets/:name/detail", deps.Platform.GetSecretDetail)
 		protected.GET("/clusters/:clusterID/configuration/hpas", deps.Platform.ListHorizontalPodAutoscalers)
 		protected.GET("/clusters/:clusterID/configuration/poddisruptionbudgets", deps.Platform.ListPodDisruptionBudgets)
 		protected.GET("/clusters/:clusterID/access-control/serviceaccounts", deps.Platform.ListServiceAccounts)
@@ -149,6 +155,22 @@ func New(cfg cfgpkg.Config, logger *zap.Logger, deps Dependencies) *http.Server 
 		protected.GET("/clusters/:clusterID/storage/persistentvolumeclaims", deps.Platform.ListPersistentVolumeClaims)
 		protected.GET("/clusters/:clusterID/storage/persistentvolumes", deps.Platform.ListPersistentVolumes)
 		protected.GET("/clusters/:clusterID/storage/storageclasses", deps.Platform.ListStorageClasses)
+		protected.GET("/clusters/:clusterID/network/ingressclasses", deps.Platform.ListIngressClasses)
+		protected.GET("/clusters/:clusterID/configuration/priorityclasses", deps.Platform.ListPriorityClasses)
+		protected.GET("/clusters/:clusterID/configuration/runtimeclasses", deps.Platform.ListRuntimeClasses)
+		protected.GET("/clusters/:clusterID/access-control/clusterroles", deps.Platform.ListClusterRoles)
+		protected.GET("/clusters/:clusterID/access-control/clusterrolebindings", deps.Platform.ListClusterRoleBindings)
+		protected.GET("/clusters/:clusterID/configuration/mutatingwebhookconfigurations", deps.Platform.ListMutatingWebhookConfigurations)
+		protected.GET("/clusters/:clusterID/configuration/validatingwebhookconfigurations", deps.Platform.ListValidatingWebhookConfigurations)
+		protected.GET("/clusters/:clusterID/configuration/resourcequotas", deps.Platform.ListResourceQuotas)
+		protected.GET("/clusters/:clusterID/configuration/limitranges", deps.Platform.ListLimitRanges)
+		protected.GET("/clusters/:clusterID/configuration/leases", deps.Platform.ListLeases)
+		protected.GET("/clusters/:clusterID/workloads/replicationcontrollers", deps.Platform.ListReplicationControllers)
+		protected.GET("/clusters/:clusterID/network/port-forwards", deps.Platform.ListPortForwards)
+		protected.POST("/clusters/:clusterID/network/port-forwards", deps.Platform.RegisterPortForward)
+		protected.DELETE("/clusters/:clusterID/network/port-forwards/:sessionID", deps.Platform.StopPortForward)
+		deps.Platform.RegisterGenericResourceRoutes(protected)
+		deps.Platform.RegisterWorkloadDeleteRoutes(protected)
 		protected.GET("/clusters/:clusterID/extensions/crds", deps.Platform.ListCRDs)
 		protected.GET("/clusters/:clusterID/helm/releases", deps.Platform.ListHelmReleases)
 		protected.GET("/clusters/:clusterID/events", deps.Platform.ListClusterEvents)
@@ -272,6 +294,9 @@ func New(cfg cfgpkg.Config, logger *zap.Logger, deps Dependencies) *http.Server 
 	// Serve uploaded branding assets
 	router.Static("/branding-assets", "data/branding")
 
+	// Serve embedded documentation site
+	registerDocs(router, logger)
+
 	// Serve embedded frontend SPA assets
 	registerSPA(router, logger)
 
@@ -289,6 +314,43 @@ func New(cfg cfgpkg.Config, logger *zap.Logger, deps Dependencies) *http.Server 
 	}
 }
 
+func registerDocs(router *gin.Engine, logger *zap.Logger) {
+	buildFS, err := fs.Sub(docsembed.Assets, "build")
+	if err != nil {
+		logger.Warn("docs assets not available, docs serving disabled", zap.Error(err))
+		return
+	}
+
+	docsServer := http.FileServer(http.FS(buildFS))
+
+	router.GET("/docs", func(c *gin.Context) {
+		c.Redirect(http.StatusPermanentRedirect, "/docs/")
+	})
+
+	router.GET("/docs/*filepath", func(c *gin.Context) {
+		requestPath := strings.TrimPrefix(c.Param("filepath"), "/")
+		if requestPath == "" {
+			requestPath = "index.html"
+		}
+
+		candidates := []string{requestPath}
+		if !strings.Contains(path.Base(requestPath), ".") {
+			candidates = append(candidates, path.Join(requestPath, "index.html"))
+		}
+
+		for _, candidate := range candidates {
+			if info, err := fs.Stat(buildFS, candidate); err == nil && !info.IsDir() {
+				c.Request.URL.Path = "/" + candidate
+				docsServer.ServeHTTP(c.Writer, c.Request)
+				return
+			}
+		}
+
+		c.Request.URL.Path = "/404.html"
+		docsServer.ServeHTTP(c.Writer, c.Request)
+	})
+}
+
 func registerSPA(router *gin.Engine, logger *zap.Logger) {
 	distFS, err := fs.Sub(webembed.Assets, "dist")
 	if err != nil {
@@ -302,7 +364,7 @@ func registerSPA(router *gin.Engine, logger *zap.Logger) {
 		path := c.Request.URL.Path
 
 		// Let API and health routes fall through to 404
-		if strings.HasPrefix(path, "/api/") || path == "/healthz" || path == "/readyz" {
+		if strings.HasPrefix(path, "/api/") || strings.HasPrefix(path, "/docs/") || path == "/docs" || path == "/healthz" || path == "/readyz" {
 			c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
 			return
 		}

@@ -1,0 +1,198 @@
+{
+  "/docs/__docusaurus/debug/-472": {
+    "__comp": "__comp---theme-debug-config-23-a-2ff",
+    "__context": {
+      "plugin": "plugin---docs-docusaurus-debug-b-38-c4c"
+    }
+  },
+  "/docs/__docusaurus/debug/config/-62e": {
+    "__comp": "__comp---theme-debug-config-23-a-2ff",
+    "__context": {
+      "plugin": "plugin---docs-docusaurus-debug-b-38-c4c"
+    }
+  },
+  "/docs/__docusaurus/debug/content/-149": {
+    "__comp": "__comp---theme-debug-contentba-8-ce7",
+    "__context": {
+      "plugin": "plugin---docs-docusaurus-debug-b-38-c4c"
+    },
+    "__props": "__props---docs-docusaurus-debug-content-93-c-97f"
+  },
+  "/docs/__docusaurus/debug/globalData/-59b": {
+    "__comp": "__comp---theme-debug-global-dataede-0fa",
+    "__context": {
+      "plugin": "plugin---docs-docusaurus-debug-b-38-c4c"
+    }
+  },
+  "/docs/__docusaurus/debug/metadata/-943": {
+    "__comp": "__comp---theme-debug-site-metadata-68-e-3d4",
+    "__context": {
+      "plugin": "plugin---docs-docusaurus-debug-b-38-c4c"
+    }
+  },
+  "/docs/__docusaurus/debug/registry/-ab0": {
+    "__comp": "__comp---theme-debug-registry-679-501",
+    "__context": {
+      "plugin": "plugin---docs-docusaurus-debug-b-38-c4c"
+    }
+  },
+  "/docs/__docusaurus/debug/routes/-cd1": {
+    "__comp": "__comp---theme-debug-routes-946-699",
+    "__context": {
+      "plugin": "plugin---docs-docusaurus-debug-b-38-c4c"
+    }
+  },
+  "/docs/-eb8": {
+    "__comp": "__comp---theme-docs-root-5-e-9-0b6",
+    "__context": {
+      "plugin": "plugin---docs-aba-4f5"
+    }
+  },
+  "/docs/-80e": {
+    "__comp": "__comp---theme-doc-version-roota-7-b-5de",
+    "__props": "__props---docs-11-b-f70"
+  },
+  "/docs/-4f2": {
+    "__comp": "__comp---theme-doc-roota-94-67a"
+  },
+  "/docs/api/auth-and-errors/-b21": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---docs-api-auth-and-errors-774-6ba"
+  },
+  "/docs/api/core-endpoints/-8a1": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---docs-api-core-endpoints-e-00-0f0"
+  },
+  "/docs/api/overview/-663": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---docs-api-overview-e-7-c-01f"
+  },
+  "/docs/architecture/-840": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---docs-architecture-abf-858"
+  },
+  "/docs/architecture/access-model/-3b5": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---docs-architecture-access-model-539-d6f"
+  },
+  "/docs/architecture/agent-protocol/-a26": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---docs-architecture-agent-protocol-205-462"
+  },
+  "/docs/architecture/ai-copilot/-f6e": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---docs-architecture-ai-copilot-d-0-d-5e6"
+  },
+  "/docs/architecture/application-delivery/-9d4": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---docs-architecture-application-delivery-b-1-f-98b"
+  },
+  "/docs/architecture/audit-model/-563": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---docs-architecture-audit-model-734-865"
+  },
+  "/docs/architecture/authorization/-aa7": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---docs-architecture-authorization-fae-755"
+  },
+  "/docs/architecture/event-model/-be4": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---docs-architecture-event-model-26-d-64c"
+  },
+  "/docs/architecture/mcp-integration/-d5f": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---docs-architecture-mcp-integration-aff-0d4"
+  },
+  "/docs/architecture/monitoring-and-alerting/-eb0": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---docs-architecture-monitoring-and-alerting-0-fa-500"
+  },
+  "/docs/architecture/multi-cluster-model/-3b5": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---docs-architecture-multi-cluster-model-fb-0-81a"
+  },
+  "/docs/development/add-mcp-integration/-1ab": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---docs-development-add-mcp-integration-a-27-125"
+  },
+  "/docs/development/add-page/-ca4": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---docs-development-add-page-1-f-5-be9"
+  },
+  "/docs/development/add-resource-module/-712": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---docs-development-add-resource-module-a-13-51b"
+  },
+  "/docs/development/backend-structure/-2bc": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---docs-development-backend-structure-bad-b3a"
+  },
+  "/docs/development/configuration/-3f8": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---docs-development-configuration-c-74-680"
+  },
+  "/docs/development/database-migrations/-149": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---docs-development-database-migrations-e-8-b-570"
+  },
+  "/docs/development/frontend-structure/-381": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---docs-development-frontend-structure-0-bd-2a4"
+  },
+  "/docs/development/local-development/-4f4": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---docs-development-local-development-fdf-a8c"
+  },
+  "/docs/operations/agent-runtime/-3e2": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---docs-operations-agent-runtime-366-120"
+  },
+  "/docs/operations/configuration/-42b": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---docs-operations-configuration-738-133"
+  },
+  "/docs/operations/dependencies/-e49": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---docs-operations-dependencies-caf-379"
+  },
+  "/docs/operations/deployment/-1aa": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---docs-operations-deployment-fbd-64c"
+  },
+  "/docs/operations/docs-publishing/-447": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---docs-operations-docs-publishing-786-8d8"
+  },
+  "/docs/operations/environment-variables/-c20": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---docs-operations-environment-variables-94-b-5aa"
+  },
+  "/docs/operations/mcp-configuration/-2c3": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---docs-operations-mcp-configuration-bac-d09"
+  },
+  "/docs/operations/mcp/-9f4": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---docs-operations-mcp-dd-6-43d"
+  },
+  "/docs/operations/role-authorization-assignment/-bec": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---docs-operations-role-authorization-assignment-f-7-a-ee1"
+  },
+  "/docs/reference/database-schema/-fe8": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---docs-reference-database-schema-9-a-4-eae"
+  },
+  "/docs/reference/product-information-architecture/-59e": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---docs-reference-product-information-architecture-2-c-4-b5a"
+  },
+  "/docs/roadmap/-696": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---docs-roadmap-76-d-1f2"
+  },
+  "/docs/-2f8": {
+    "__comp": "__comp---theme-doc-item-178-a40",
+    "content": "content---docs-082-794"
+  }
+}

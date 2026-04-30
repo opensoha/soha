@@ -58,6 +58,13 @@ func (s *Service) Authorize(ctx context.Context, request domainaccess.Request) (
 	if !decision.Allowed && decision.Reason != "" {
 		return decision, nil
 	}
+	if decision.Reason == "" && isClusterlessDeliveryRequest(request) {
+		decision = domainaccess.Decision{
+			Allowed:        true,
+			Reason:         "delivery RBAC baseline matched without cluster-scoped ABAC policy",
+			AllowedActions: append([]domainaccess.Action(nil), baseline...),
+		}
+	}
 	if decision.Reason == "" {
 		return domainaccess.Decision{Allowed: false, Reason: "no ABAC policy matched request scope"}, nil
 	}
@@ -410,11 +417,20 @@ func sortedKeys(items map[string]struct{}) []string {
 	return keys
 }
 
+func isClusterlessDeliveryRequest(request domainaccess.Request) bool {
+	if strings.TrimSpace(request.Cluster.ClusterID) != "" {
+		return false
+	}
+	return strings.TrimSpace(request.Delivery.BusinessLineID) != "" ||
+		strings.TrimSpace(request.Delivery.EnvironmentKey) != "" ||
+		strings.TrimSpace(request.Delivery.ApplicationID) != ""
+}
+
 func RoleMatrix() map[string][]domainaccess.Action {
 	return map[string][]domainaccess.Action{
 		"admin":     allActions(),
-		"ops":       {domainaccess.ActionView, domainaccess.ActionList, domainaccess.ActionWatch, domainaccess.ActionLogs, domainaccess.ActionRestart, domainaccess.ActionScale, domainaccess.ActionUpdate},
-		"developer": {domainaccess.ActionView, domainaccess.ActionList, domainaccess.ActionWatch, domainaccess.ActionLogs, domainaccess.ActionRestart, domainaccess.ActionScale},
+		"ops":       {domainaccess.ActionView, domainaccess.ActionList, domainaccess.ActionWatch, domainaccess.ActionLogs, domainaccess.ActionRestart, domainaccess.ActionRollback, domainaccess.ActionScale, domainaccess.ActionTrigger, domainaccess.ActionCreate, domainaccess.ActionUpdate},
+		"developer": {domainaccess.ActionView, domainaccess.ActionList, domainaccess.ActionWatch, domainaccess.ActionLogs, domainaccess.ActionRestart, domainaccess.ActionRollback, domainaccess.ActionScale, domainaccess.ActionTrigger},
 		"readonly":  {domainaccess.ActionView, domainaccess.ActionList, domainaccess.ActionWatch, domainaccess.ActionLogs},
 		"auditor":   {domainaccess.ActionView, domainaccess.ActionList, domainaccess.ActionWatch},
 	}
@@ -446,7 +462,7 @@ func DefaultPolicies() []domainaccess.Policy {
 			Effect:   domainaccess.EffectAllow,
 			Priority: 80,
 			Subjects: domainaccess.Matcher{Roles: []string{"ops"}},
-			Actions:  []domainaccess.Action{domainaccess.ActionView, domainaccess.ActionList, domainaccess.ActionWatch, domainaccess.ActionLogs, domainaccess.ActionRestart, domainaccess.ActionScale, domainaccess.ActionUpdate},
+			Actions:  []domainaccess.Action{domainaccess.ActionView, domainaccess.ActionList, domainaccess.ActionWatch, domainaccess.ActionLogs, domainaccess.ActionRestart, domainaccess.ActionRollback, domainaccess.ActionScale, domainaccess.ActionTrigger, domainaccess.ActionCreate, domainaccess.ActionUpdate},
 			Reason:   "role ops matched",
 		},
 		{
@@ -456,7 +472,7 @@ func DefaultPolicies() []domainaccess.Policy {
 			Priority: 60,
 			Subjects: domainaccess.Matcher{Roles: []string{"developer"}},
 			Clusters: domainaccess.ClusterMatcher{Environments: []string{"development", "staging"}},
-			Actions:  []domainaccess.Action{domainaccess.ActionView, domainaccess.ActionList, domainaccess.ActionWatch, domainaccess.ActionLogs, domainaccess.ActionRestart, domainaccess.ActionScale},
+			Actions:  []domainaccess.Action{domainaccess.ActionView, domainaccess.ActionList, domainaccess.ActionWatch, domainaccess.ActionLogs, domainaccess.ActionRestart, domainaccess.ActionRollback, domainaccess.ActionScale, domainaccess.ActionTrigger},
 			Reason:   "role developer matched non-production scope",
 		},
 		{
@@ -519,10 +535,13 @@ func allActions() []domainaccess.Action {
 		domainaccess.ActionView,
 		domainaccess.ActionList,
 		domainaccess.ActionWatch,
+		domainaccess.ActionCreate,
 		domainaccess.ActionUpdate,
 		domainaccess.ActionDelete,
 		domainaccess.ActionRestart,
+		domainaccess.ActionRollback,
 		domainaccess.ActionScale,
+		domainaccess.ActionTrigger,
 		domainaccess.ActionLogs,
 		domainaccess.ActionExec,
 	}

@@ -1,51 +1,44 @@
 ---
-layout: home
-
-hero:
-  name: kubecrux
-  text: Multi-cluster Kubernetes platform console
-  tagline: Built for platform teams that need converged identity, authorization, cluster access, release workflows, alert routing, and AI inspection capabilities.
-  actions:
-    - theme: brand
-      text: Architecture
-      link: /en/architecture/
-    - theme: alt
-      text: Local Development
-      link: /en/development/local-development
-    - theme: alt
-      text: API Overview
-      link: /en/api/overview
-
-features:
-  - title: Platform Views Instead of Raw Kubernetes
-    details: kubecrux exposes aggregated workload, infrastructure, audit, and event views so the frontend is not forced to absorb raw Kubernetes object complexity.
-  - title: Converged Backend Architecture
-    details: The Go backend is organized as a modular monolith with API, application, policy, infrastructure, repository, and bootstrap layers.
-  - title: Real Product Loops Are In Place
-    details: The repository now includes access management groundwork, release center MVP, alert routes, storage views, and platform-native AI inspection flows.
-  - title: Docs Live With the Code
-    details: The docs site is built with VitePress from the repository docs directory and evolves in lockstep with implementation.
+id: index
+slug: /
+title: kubecrux Docs
+description: Architecture, development, API, and operations documentation for the kubecrux platform console.
 ---
 
-## Why kubecrux
+# kubecrux Docs
 
-kubecrux is not a thin Kubernetes Dashboard wrapper. It is a platform control surface that sits above cluster APIs and provides:
+kubecrux is a multi-cluster Kubernetes platform console. It is not a thin wrapper around the upstream Kubernetes Dashboard. The product is meant to act as a unified control surface for platform teams across cluster access, workload operations, delivery workflows, authorization, alert collaboration, and AI-assisted analysis.
 
-- Multi-cluster access and health awareness
-- Aggregated workload and infrastructure views
-- Unified audit and event center
-- RBAC + ABAC based access control
-- Application build and release center
-- Alert routes and notification channels
-- Platform-native AI inspection tasks and inspection runs
-- Stable extension points for agent mode and MCP adapters
+## Site Baseline
 
-## Repository Shape
+- The docs site is built with Docusaurus and evolves with the repository
+- Chinese is the default docs set and English is exposed under `/docs/en/`
+- Local docs development runs at `http://localhost:3000/docs/`
+- Production serving is expected at same-origin `/docs/`
 
-- `web`: Vite + React + TypeScript frontend console
-- `cmd` + `internal`: Go modular monolith backend and agent runtime
-- `configs`: backend and agent configuration files
-- `docs`: VitePress documentation site maintained with the codebase
+## Start Here
+
+- [Architecture Entry](./architecture/index.md)
+- [Local Development](./development/local-development.md)
+- [API Overview](./api/overview.md)
+- [Operations Configuration](./operations/configuration.md)
+- [Roadmap](./roadmap/index.md)
+
+## Current Product Surface
+
+- Platform management: clusters, nodes, namespaces, workloads, network, storage, extensions, and Helm
+- Delivery: applications, environments, workflows, releases, and registries
+- Observability: monitoring, alerts, notifications, events, and AI observation workflows
+- Access and system management: users, roles, groups, policies, menus, audit, and settings
+
+## Repository Layout
+
+- `cmd`: server and agent entrypoints
+- `internal`: backend API, application, policy, infrastructure, and repository layers
+- `web`: React 18 + Vite 6 + TypeScript 5 console
+- `docs`: Docusaurus documentation site
+- `configs`: server and agent configuration
+- `migrations`: schema bootstrap and migration SQL
 
 ## Quick Start
 
@@ -64,54 +57,22 @@ npm install
 npm run dev
 ```
 
-The active frontend has converged to a single Vite SPA under `web/`. The current shape is:
-
-- `src/main.tsx`: Query Client and `BrowserRouter` bootstrap
-- `src/routes/index.tsx`: lazy route registry
-- `src/routes/meta.ts`: sidebar and breadcrumb metadata
-- `src/layouts/app-layout.tsx`: Semi Design console shell
-- `src/features/*`: page modules grouped by platform, delivery, observability, access, system, and settings
-- `src/services/api-client.ts`: `/api/v1` client with refresh retry logic
-- `src/stores/*`: persisted auth, platform scope, and preference state
-
 ### Docs
 
 ```bash
 cd docs
 npm install
-npm run docs:dev
+npm run dev
 ```
 
-## Local Dependencies
+When `web` is running at the same time, Vite proxies same-origin `/docs/` traffic to `http://localhost:3000/docs/`.
 
-### PostgreSQL
+## Recommended Reading
 
-- host: `localhost`
-- port: `5432`
-- database: `kubecrux`
-- username: `pgsql`
-- password: `pgsql`
-
-### Redis
-
-- host: `localhost`
-- port: `6379`
-- password: none
-
-## Current Frontend Surface
-
-- platform: overview, clusters, workloads, network, storage, extensions, helm
-- delivery: applications, workflows, releases, registries
-- observability: monitoring, alerts, notifications, on-call, events, AI chat
-- control plane: access management, system utilities, settings, embedded docs
-
-## Recommended Entry Points
-
-- Repository engineering memory source: repository-root `agents.md`
-- [Architecture Entry](/en/architecture/)
-- [AI Copilot](/en/architecture/ai-copilot)
-- [Application Delivery](/en/architecture/application-delivery)
-- [Monitoring And Alerting](/en/architecture/monitoring-and-alerting)
-- [Authorization](/en/architecture/authorization)
-- [Configuration](/en/operations/configuration)
-- [MCP](/en/operations/mcp)
+- Repository engineering spec: root `AGENTS.md`
+- [Architecture Entry](./architecture/index.md)
+- [Application Delivery](./architecture/application-delivery.md)
+- [Monitoring And Alerting](./architecture/monitoring-and-alerting.md)
+- [Authorization](./architecture/authorization.md)
+- [AI Copilot](./architecture/ai-copilot.md)
+- [MCP Integration](./architecture/mcp-integration.md)

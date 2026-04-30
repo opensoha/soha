@@ -99,6 +99,10 @@ const PerformanceAnalysisPage = lazyNamed(() => import('@/features/copilot/analy
 const InspectionCenterPage = lazyNamed(() => import('@/features/copilot/analysis-pages'), 'InspectionCenterPage')
 
 const AccessCenterPage = lazyNamed(() => import('@/features/access/access-pages'), 'AccessCenterPage')
+const AccessUsersPage = lazyNamed(() => import('@/features/access/access-pages'), 'AccessUsersPage')
+const AccessRolesPage = lazyNamed(() => import('@/features/access/access-pages'), 'AccessRolesPage')
+const AccessTeamsPage = lazyNamed(() => import('@/features/access/access-pages'), 'AccessTeamsPage')
+const AccessPoliciesPage = lazyNamed(() => import('@/features/access/access-pages'), 'AccessPoliciesPage')
 const AccessScopeGrantsPage = lazyNamed(() => import('@/features/access/scope-grants-page'), 'AccessScopeGrantsPage')
 
 const OnlineUsersPage = lazyNamed(() => import('@/features/system/system-pages'), 'OnlineUsersPage')
@@ -218,11 +222,11 @@ export function AppRouter() {
           <Route path="/ai-observe/inspection" element={<LazyPage><InspectionCenterPage /></LazyPage>} />
           <Route path="/chat" element={<Navigate to="/ai-observe/chat" replace />} />
 
-          <Route path="/access" element={<Navigate to="/access/users" replace />} />
-          <Route path="/access/users" element={<LazyPage><AccessCenterPage /></LazyPage>} />
-          <Route path="/access/roles" element={<LazyPage><AccessCenterPage /></LazyPage>} />
-          <Route path="/access/teams" element={<LazyPage><AccessCenterPage /></LazyPage>} />
-          <Route path="/access/policies" element={<LazyPage><AccessCenterPage /></LazyPage>} />
+          <Route path="/access" element={<LazyPage><AccessCenterPage /></LazyPage>} />
+          <Route path="/access/users" element={<LazyPage><AccessUsersPage /></LazyPage>} />
+          <Route path="/access/roles" element={<LazyPage><AccessRolesPage /></LazyPage>} />
+          <Route path="/access/teams" element={<LazyPage><AccessTeamsPage /></LazyPage>} />
+          <Route path="/access/policies" element={<LazyPage><AccessPoliciesPage /></LazyPage>} />
           <Route path="/access/scope-grants" element={<LazyPage><AccessScopeGrantsPage /></LazyPage>} />
 
           <Route path="/system" element={<Navigate to="/system/online-users" replace />} />

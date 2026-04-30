@@ -15,22 +15,23 @@ import (
 )
 
 type Service struct {
-	repo domainregistry.Repository
+	repo        domainregistry.Repository
+	permissions *appaccess.PermissionResolver
 }
 
-func New(repo domainregistry.Repository) *Service {
-	return &Service{repo: repo}
+func New(repo domainregistry.Repository, permissions *appaccess.PermissionResolver) *Service {
+	return &Service{repo: repo, permissions: permissions}
 }
 
 func (s *Service) List(ctx context.Context, principal domainidentity.Principal, limit int) ([]domainregistry.Connection, error) {
-	if err := authorizePrincipal(principal, appaccess.PermDeliveryRegistriesView); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.PermDeliveryRegistriesView); err != nil {
 		return nil, err
 	}
 	return s.repo.List(ctx, limit)
 }
 
 func (s *Service) Create(ctx context.Context, principal domainidentity.Principal, input domainregistry.Input) (domainregistry.Connection, error) {
-	if err := authorizePrincipal(principal, appaccess.PermDeliveryRegistriesManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.PermDeliveryRegistriesManage); err != nil {
 		return domainregistry.Connection{}, err
 	}
 	item, err := normalizeInput(input)
@@ -45,7 +46,7 @@ func (s *Service) Create(ctx context.Context, principal domainidentity.Principal
 }
 
 func (s *Service) Update(ctx context.Context, principal domainidentity.Principal, id string, input domainregistry.Input) (domainregistry.Connection, error) {
-	if err := authorizePrincipal(principal, appaccess.PermDeliveryRegistriesManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.PermDeliveryRegistriesManage); err != nil {
 		return domainregistry.Connection{}, err
 	}
 	item, err := normalizeInput(input)
@@ -64,7 +65,7 @@ func (s *Service) Update(ctx context.Context, principal domainidentity.Principal
 }
 
 func (s *Service) Delete(ctx context.Context, principal domainidentity.Principal, id string) error {
-	if err := authorizePrincipal(principal, appaccess.PermDeliveryRegistriesManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.PermDeliveryRegistriesManage); err != nil {
 		return err
 	}
 	if strings.TrimSpace(id) == "" {
@@ -121,9 +122,6 @@ func normalizeID(value, fallback string) string {
 	return strings.ToLower(strings.ReplaceAll(strings.ReplaceAll(fallback, " ", "-"), "_", "-"))
 }
 
-func authorizePrincipal(principal domainidentity.Principal, permissionKey string) error {
-	if appaccess.HasPermission(principal.Roles, permissionKey) {
-		return nil
-	}
-	return fmt.Errorf("%w: missing permission %s", apperrors.ErrAccessDenied, permissionKey)
+func (s *Service) authorize(ctx context.Context, principal domainidentity.Principal, permissionKey string) error {
+	return appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, permissionKey)
 }

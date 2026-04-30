@@ -1,0 +1,25 @@
+{
+  "id": "operations/docs-publishing",
+  "title": "Docs Publishing",
+  "description": "The documentation site lives at docs/ and uses Docusaurus.",
+  "source": "@site/operations/docs-publishing.md",
+  "sourceDirName": "operations",
+  "slug": "/operations/docs-publishing",
+  "permalink": "/docs/operations/docs-publishing",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/kubecrux/kubecrux/tree/main/docs/operations/docs-publishing.md",
+  "tags": [],
+  "version": "current",
+  "lastUpdatedAt": 1539502055000,
+  "frontMatter": {},
+  "sidebar": "mainSidebar",
+  "previous": {
+    "title": "Dependencies",
+    "permalink": "/docs/operations/dependencies"
+  },
+  "next": {
+    "title": "MCP",
+    "permalink": "/docs/operations/mcp"
+  }
+}

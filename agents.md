@@ -32,6 +32,13 @@ It is not only a resource viewer. It is intended to become a unified control pla
 - system management
 - AI-assisted analysis
 
+Project summary:
+
+- `kubecrux` is a multi-cluster Kubernetes platform console
+- backend baseline: Go + Gin + PostgreSQL + Redis + `client-go`
+- frontend baseline: React 18 + Vite 6 + TypeScript 5 + TanStack Query 5 + Zustand 5 + Ant Design 6
+- docs baseline: Docusaurus
+
 ## 3. Engineering Baseline
 
 ### Backend
@@ -50,14 +57,14 @@ It is not only a resource viewer. It is intended to become a unified control pla
 - routing: React Router 6
 - server state: TanStack Query 5
 - client state: Zustand 5
-- UI system: Semi Design
-- utility styling: Tailwind CSS 3
-- charts/visualization: ECharts
+- UI system: Ant Design 6
+- utility styling: Tailwind CSS 4
+- charts/visualization: Ant Design Charts, ECharts legacy transition allowed during migration
 - test baseline: Vitest
 
 ### Docs
 
-- in-repo docs site: VitePress
+- in-repo docs site: Docusaurus
 - architecture documents under `docs/architecture`
 - this file is the top-level execution memory
 
@@ -170,9 +177,18 @@ The frontend is route-driven and domain-oriented.
 - `web/src/utils`
   - cross-page table/time helpers
 
+Current structure summary:
+
+- `web/src/routes` owns route registration and navigation metadata
+- `web/src/features` owns domain-oriented route pages
+- `web/src/components` owns real shared primitives only
+- `internal/api`, `internal/application`, `internal/policy`, `internal/infrastructure`, and `internal/repository` keep strict backend layer responsibilities
+- `docs/architecture` is the public architecture document set
+
 ### 6.2 UI and State Rules
 
-- Semi Design is the primary component system
+- Ant Design is the primary component system
+- `@/compat/semi-*` is a temporary migration aid only; new code must not depend on it
 - Zustand stores lightweight local UI/runtime preferences
 - TanStack Query owns server data lifecycle
 - route metadata is the navigation source of truth
@@ -185,6 +201,7 @@ The frontend is route-driven and domain-oriented.
 - prefer shared scoped query helpers for platform pages
 - do not issue one request per namespace from the browser when backend aggregation exists
 - keep detail pages focused; expensive editors/log/terminal modules should remain lazy
+- migration work must replace Semi semantics with native antd semantics rather than widening compatibility wrappers indefinitely
 
 ## 7. Functional Design
 
@@ -266,6 +283,7 @@ Design expectations:
 Design expectation:
 
 - delivery remains platform-native
+- business lines, delivery environments, and application-environment bindings are now treated as a standalone master-data domain in frontend navigation; they still serve delivery and access-control scope flows, but their ownership is no longer represented as delivery-only in the console IA
 - environment binding and release orchestration must map to platform runtime context
 
 ### 7.3 Observability
@@ -313,6 +331,7 @@ The repository has already converged on these rules:
 - pod detail is now expected to be an operational workspace, not only a static detail page
 - workload list pages should support search/filter first, then batch action surfaces where backend capability already exists
 - pod list pages should stay flat and list-first; inline row preview expansion, health summary columns, and multi-select batch actions should not compete with the dedicated pod detail workspace
+- deployment list pages should stay flat and route related-pod inspection into the deployment detail workspace; multi-select header actions should operate on the current visible page and keep the right-side action icon rail fixed during horizontal scrolling
 - pod list pages should avoid dashboard-style summary cards above the table when the same page already centers on scoped filtering and tabular operations
 - pod list tables should keep the primary name column visually left-anchored and keep mutation actions fixed on the right when horizontal scrolling is enabled
 - workload list pages should fold scope filters, search, refresh, and batch actions into the table panel toolbar instead of stacking a separate page header and external scope bar above the table
@@ -336,7 +355,9 @@ The repository has already converged on these rules:
 - user create/update must persist role bindings and user-group bindings in the same submission so RBAC/scope decisions take effect immediately
 - user-facing terminology under access control is `用户组` while persistence and policy matcher internals may continue using `team/teams`
 - authenticated frontend navigation must consume a backend permission snapshot instead of relying on static route visibility alone
+- backend permission snapshots and console/API permission checks now resolve from persisted role `permissionKeys`; static built-in role maps remain bootstrap defaults only and custom roles must be able to drive backend authorization without `admin` special-casing
 - menu visibility is now a conjunction of backend visible menu bindings and frontend route permission keys, while page buttons should progressively consume either permission keys or backend `allowedActions`
+- access management and scope-grant CRUD must use explicit `access.*.(view|manage)` permission keys; scope-grant list/create/update/delete are principal-aware backend operations and are no longer safe to leave authenticated-only
 - sidebar sibling ordering should honor backend visible-menu sort within each frontend group so menu-management sort changes affect the console without duplicating section headers
 - monitoring and copilot APIs are no longer implicitly open to any authenticated user; user-facing reads and writes must check permission keys before hitting repository operations
 - observability and AI pages should treat route visibility, button visibility, and backend API authorization as three separate gates that must stay aligned
@@ -348,7 +369,18 @@ The repository has already converged on these rules:
 - settings center is a single top-level menu with in-page tabs for identity and AI; cluster-level monitoring configuration should not remain as a separate settings-center submenu
 - settings center now includes a branding tab for console-level brand assets and title metadata; branding settings are distinct from cluster-level monitoring settings and should be applied globally in the web shell
 - the console shell theme keeps a fixed Semi theme variant with brand overrides, while the header may expose a light/dark mode toggle as a user preference; theme-brand switching should still stay disabled unless it is intentionally restored end-to-end
+- frontend theme customization now uses `web/src/theme/semi-theme.ts` as the single source for both antd `ThemeConfig` and shared `--kc-*` CSS variables; avoid duplicating theme tokens in `main.tsx` or standalone style files
+- the console visual baseline has shifted from the older purple brand palette to a neutral shadcn-like grayscale palette, while still preserving light/dark mode support and shared CSS variable contracts for non-antd surfaces
 - shared platform filters such as resource scope and workload search bars should use compact, square-edged controls rather than pill-shaped fields
+- frontend migration baseline is now antd-first: new or migrated pages must import directly from `antd` and `@ant-design/icons`
+- native antd migration should normalize shared foundation modules first: `resource-metrics-panel`, `resource-actions`, `page-header`, `status-tag`, and `platform-scope-toolbar` own the primary replacement of compat button/modal/tabs/descriptions/select/tag semantics for downstream pages
+- remaining compat-removal execution order is fixed: shared foundation first, then domain feature waves (`platform`, `access`, `delivery`, `observability`, `copilot` plus remaining auth/system/settings/docs web modules), then compatibility-layer deletion, and only then docs-site Docusaurus cleanup
+- compat-removal work must rewrite form/button/modal/tab/description/toast usage to native antd APIs in place; do not preserve Semi prop names behind new wrappers
+- remaining `@/compat/semi-*` imports are migration debt; they should be removed module-by-module until the compatibility layer can be deleted
+- antd-first is the stable frontend baseline; `platform`, `access`, `delivery`, `observability`, `copilot`, `system`, `settings`, docs-facing web modules, plus the remaining shared/auth/routes tail files have all converged on native `antd` and `@ant-design/icons`
+- `rg -n "@/compat/semi-" web/src` and `rg -n "@/compat/semi-icons" web/src` are now expected to stay at zero; `web/src/compat/**` has been deleted after web-side compat usage fully cleared
+- docs-side Docusaurus cleanup continues only after the web compat layer is fully cleared, and web cleanup is now complete
+- docs migration baseline is Docusaurus-first; new docs-site work must target Docusaurus config, sidebars, and MDX component conventions instead of VitePress
 
 ## 9. Change Rules
 
@@ -373,6 +405,7 @@ For this repository, that means:
 - update `docs/architecture/*` when the public architecture description changes materially
 - update route metadata when navigation or page ownership changes
 - update tests when semantics or contracts change
+- when frontend migration tasks land, record whether a module still depends on `@/compat/semi-*` or has been fully moved to native antd imports
 
 ### For Platform Dashboard Changes
 
@@ -445,6 +478,7 @@ This repository may use repo-local collaboration files under `.codex/` for isola
 - `.codex/state/results/` stores concise role outputs instead of full transcripts or raw long logs
 - `.codex/handoffs/` stores explicit handoff notes between `main`, `coder`, `tester`, and `reviewer`
 - `.codex/prompts/` stores reusable role prompt templates for child threads
+- multi-track migrations should assign disjoint write ownership by directory or module family in `queue.md`; shared foundation ownership must be resolved before compat-file deletion or docs migration begins
 - child threads must not assume access to the full parent-thread conversation; they should rely on `current_task`, relevant handoff files, result files, and the referenced code files
 - handoffs should pass only the minimum necessary context: current task summary, exact files to read, verification status, open risks, and one recommended next step
 - when command output is long, keep only a concise summary plus the minimal failing or trailing excerpt needed for the next role

@@ -2,5 +2,5 @@ package docs
 
 import "embed"
 
-//go:embed all:.vitepress/dist
+//go:embed all:build
 var Assets embed.FS

@@ -21,21 +21,21 @@ import (
 )
 
 func (s *Service) ListRootCauseRuns(ctx context.Context, principal domainidentity.Principal, filter domaincopilot.RootCauseRunFilter) ([]domaincopilot.RootCauseRun, error) {
-	if err := authorizePrincipal(principal, appaccess.PermObserveAIView); err != nil {
+	if err := s.authorizePrincipal(ctx, principal, appaccess.PermObserveAIView); err != nil {
 		return nil, err
 	}
 	return s.repo.ListRootCauseRuns(ctx, principal.UserID, filter)
 }
 
 func (s *Service) GetRootCauseRun(ctx context.Context, principal domainidentity.Principal, runID string) (domaincopilot.RootCauseRun, error) {
-	if err := authorizePrincipal(principal, appaccess.PermObserveAIView); err != nil {
+	if err := s.authorizePrincipal(ctx, principal, appaccess.PermObserveAIView); err != nil {
 		return domaincopilot.RootCauseRun{}, err
 	}
 	return s.repo.GetRootCauseRun(ctx, principal.UserID, strings.TrimSpace(runID))
 }
 
 func (s *Service) RunRootCauseAnalysis(ctx context.Context, principal domainidentity.Principal, input domaincopilot.RootCauseRunInput, locale string) (domaincopilot.RootCauseRun, error) {
-	if err := authorizePrincipal(principal, appaccess.PermObserveAIRootCauseRun); err != nil {
+	if err := s.authorizePrincipal(ctx, principal, appaccess.PermObserveAIRootCauseRun); err != nil {
 		return domaincopilot.RootCauseRun{}, err
 	}
 	return s.executeRootCauseRun(ctx, principal, principal.UserID, input, "", locale)

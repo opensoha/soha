@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
-import { Input, Button, Empty, Spin, Typography, Avatar } from '@douyinfe/semi-ui'
-import { IconSend, IconPlus, IconComment } from '@douyinfe/semi-icons'
+import { CommentOutlined, PlusOutlined, SendOutlined } from '@ant-design/icons'
+import { Avatar, Button, Empty, Input, Spin, Typography } from 'antd'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth/permission-snapshot'
 import { PageHeader } from '@/components/page-header'
@@ -88,8 +88,8 @@ export function ChatPage() {
         actions={
           canUseChat ? (
             <Button
-              icon={<IconPlus />}
-              theme="solid"
+              icon={<PlusOutlined />}
+              type="primary"
               onClick={() => createSessionMutation.mutate()}
               loading={createSessionMutation.isPending}
             >
@@ -106,33 +106,33 @@ export function ChatPage() {
           gap: 0,
           flex: 1,
           minHeight: 'calc(100vh - 230px)',
-          border: '1px solid var(--semi-color-border)',
+          border: '1px solid #f0f0f0',
           borderRadius: 12,
           overflow: 'hidden',
-          background: 'var(--semi-color-bg-1)',
+          background: '#ffffff',
         }}
       >
-        <div style={{ borderRight: '1px solid var(--semi-color-border)', minWidth: 0 }}>
-          <div className="p-3" style={{ borderBottom: '1px solid var(--semi-color-border)' }}>
-            <Text type="tertiary" size="small">{localeCode === 'zh_CN' ? '会话列表' : 'Sessions'}</Text>
+        <div style={{ borderRight: '1px solid #f0f0f0', minWidth: 0 }}>
+          <div className="p-3" style={{ borderBottom: '1px solid #f0f0f0' }}>
+            <Text type="secondary" style={{ fontSize: 12 }}>{localeCode === 'zh_CN' ? '会话列表' : 'Sessions'}</Text>
           </div>
           <div className="flex-1 overflow-auto">
             {sessionsQuery.isLoading ? (
               <div className="flex justify-center py-8"><Spin /></div>
             ) : sessions.length === 0 ? (
               <div className="p-4 text-center">
-                <Text type="tertiary" size="small">{localeCode === 'zh_CN' ? '暂无对话' : 'No sessions'}</Text>
+                <Text type="secondary" style={{ fontSize: 12 }}>{localeCode === 'zh_CN' ? '暂无对话' : 'No sessions'}</Text>
               </div>
             ) : (
               sessions.map((s) => (
                 <div
                   key={s.id}
                   className={`px-3 py-3 cursor-pointer border-b hover:bg-gray-100 ${activeSession === s.id ? 'bg-blue-50' : ''}`}
-                  style={{ borderColor: 'var(--semi-color-border)' }}
+                  style={{ borderColor: '#f0f0f0' }}
                   onClick={() => setActiveSession(s.id)}
                 >
-                  <Text ellipsis={{ showTooltip: true }} style={{ width: '100%' }}>{s.title}</Text>
-                  <Text type="tertiary" size="small">{s.updatedAt}</Text>
+                  <Text ellipsis style={{ width: '100%' }} title={s.title}>{s.title}</Text>
+                  <Text type="secondary" style={{ fontSize: 12 }}>{s.updatedAt}</Text>
                 </div>
               ))
             )}
@@ -143,9 +143,9 @@ export function ChatPage() {
           {!activeSession ? (
             <div className="flex-1 flex items-center justify-center">
               <div className="text-center">
-                <IconComment size="extra-large" style={{ fontSize: 48, color: 'var(--semi-color-text-2)' }} />
-                <Title heading={5} type="tertiary" style={{ marginTop: 16 }}>{t('page.ai.chat.title', 'AI Chat')}</Title>
-                <Paragraph type="tertiary">{localeCode === 'zh_CN' ? '选择一个对话或创建新对话开始聊天' : 'Select a session or create a new one to start chatting'}</Paragraph>
+                <CommentOutlined style={{ fontSize: 48, color: '#8c8c8c' }} />
+                <Title level={5} style={{ marginTop: 16 }}>{t('page.ai.chat.title', 'AI Chat')}</Title>
+                <Paragraph type="secondary">{localeCode === 'zh_CN' ? '选择一个对话或创建新对话开始聊天' : 'Select a session or create a new one to start chatting'}</Paragraph>
               </div>
             </div>
           ) : (
@@ -159,7 +159,7 @@ export function ChatPage() {
                   messages.map((msg) => (
                     <div key={msg.id} className={`flex gap-3 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                       {msg.role === 'assistant' && (
-                        <Avatar size="small" style={{ backgroundColor: 'var(--semi-color-primary)' }}>AI</Avatar>
+                        <Avatar size="small" style={{ backgroundColor: '#1677ff' }}>AI</Avatar>
                       )}
                       <div
                         className={`max-w-[70%] rounded-lg px-4 py-2 ${
@@ -173,7 +173,7 @@ export function ChatPage() {
                         </Paragraph>
                       </div>
                       {msg.role === 'user' && (
-                        <Avatar size="small" style={{ backgroundColor: 'var(--semi-color-success)' }}>U</Avatar>
+                        <Avatar size="small" style={{ backgroundColor: '#52c41a' }}>U</Avatar>
                       )}
                     </div>
                   ))
@@ -181,19 +181,19 @@ export function ChatPage() {
                 <div ref={messagesEndRef} />
               </div>
 
-              <div className="border-t p-4" style={{ borderColor: 'var(--semi-color-border)' }}>
+              <div className="border-t p-4" style={{ borderColor: '#f0f0f0' }}>
                 <div className="flex gap-2">
                   <Input
                     placeholder={localeCode === 'zh_CN' ? '输入消息... (Enter 发送)' : 'Type a message... (Enter to send)'}
                     value={inputValue}
-                    onChange={setInputValue}
+                    onChange={(event) => setInputValue(event.target.value)}
                     onKeyDown={handleKeyDown}
                     disabled={!canUseChat || sendMessageMutation.isPending}
                     size="large"
                   />
                   <Button
-                    icon={<IconSend />}
-                    theme="solid"
+                    icon={<SendOutlined />}
+                    type="primary"
                     size="large"
                     onClick={handleSend}
                     loading={sendMessageMutation.isPending}

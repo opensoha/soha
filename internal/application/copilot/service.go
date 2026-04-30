@@ -100,6 +100,7 @@ type Service struct {
 	builds                BuildReader
 	releases              ReleaseReader
 	settings              AISettingsResolver
+	permissions           *appaccess.PermissionResolver
 	http                  *http.Client
 	logger                *zap.Logger
 	metrics               *runtimeobs.Registry
@@ -112,7 +113,7 @@ type MCPRegistry interface {
 	Get(string) (domainmcp.Adapter, bool)
 }
 
-func New(repo Repository, clusters ClusterReader, alerts AlertReader, events EventReader, audits AuditReader, apps ApplicationReader, builds BuildReader, releases ReleaseReader, settings AISettingsResolver) *Service {
+func New(repo Repository, clusters ClusterReader, alerts AlertReader, events EventReader, audits AuditReader, apps ApplicationReader, builds BuildReader, releases ReleaseReader, settings AISettingsResolver, permissions *appaccess.PermissionResolver) *Service {
 	return &Service{
 		repo:                  repo,
 		clusters:              clusters,
@@ -123,6 +124,7 @@ func New(repo Repository, clusters ClusterReader, alerts AlertReader, events Eve
 		builds:                builds,
 		releases:              releases,
 		settings:              settings,
+		permissions:           permissions,
 		http:                  &http.Client{Timeout: 30 * time.Second},
 		inspectionParallelism: 2,
 	}
@@ -156,14 +158,14 @@ func (s *Service) logDebug(message string, fields ...zap.Field) {
 }
 
 func (s *Service) ListSessions(ctx context.Context, principal domainidentity.Principal) ([]domaincopilot.Session, error) {
-	if err := authorizePrincipal(principal, appaccess.PermObserveAIChatUse); err != nil {
+	if err := s.authorizePrincipal(ctx, principal, appaccess.PermObserveAIChatUse); err != nil {
 		return nil, err
 	}
 	return s.repo.ListSessions(ctx, principal.UserID, 20)
 }
 
 func (s *Service) CreateSession(ctx context.Context, principal domainidentity.Principal, title, locale string) (domaincopilot.Session, error) {
-	if err := authorizePrincipal(principal, appaccess.PermObserveAIChatUse); err != nil {
+	if err := s.authorizePrincipal(ctx, principal, appaccess.PermObserveAIChatUse); err != nil {
 		return domaincopilot.Session{}, err
 	}
 	if strings.TrimSpace(title) == "" {
@@ -180,14 +182,14 @@ func (s *Service) CreateSession(ctx context.Context, principal domainidentity.Pr
 }
 
 func (s *Service) ListMessages(ctx context.Context, principal domainidentity.Principal, sessionID string) ([]domaincopilot.Message, error) {
-	if err := authorizePrincipal(principal, appaccess.PermObserveAIChatUse); err != nil {
+	if err := s.authorizePrincipal(ctx, principal, appaccess.PermObserveAIChatUse); err != nil {
 		return nil, err
 	}
 	return s.repo.ListMessages(ctx, sessionID, 100)
 }
 
 func (s *Service) SendMessage(ctx context.Context, principal domainidentity.Principal, sessionID, content, locale string) ([]domaincopilot.Message, error) {
-	if err := authorizePrincipal(principal, appaccess.PermObserveAIChatUse); err != nil {
+	if err := s.authorizePrincipal(ctx, principal, appaccess.PermObserveAIChatUse); err != nil {
 		return nil, err
 	}
 	locale = detectMessageLocale(content, locale)
@@ -218,7 +220,7 @@ func (s *Service) SendMessage(ctx context.Context, principal domainidentity.Prin
 }
 
 func (s *Service) Insights(ctx context.Context, principal domainidentity.Principal, locale string) ([]domaincopilot.Insight, error) {
-	if err := authorizePrincipal(principal, appaccess.PermObserveAIView); err != nil {
+	if err := s.authorizePrincipal(ctx, principal, appaccess.PermObserveAIView); err != nil {
 		return nil, err
 	}
 	clusters, _ := s.clusters.List(ctx)

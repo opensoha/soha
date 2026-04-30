@@ -1,6 +1,7 @@
 import { useState } from 'react'
-import { Button, Modal, Form, Tag, Toast, Popconfirm, Space, Card, Typography } from '@douyinfe/semi-ui'
-import { IconPlus, IconEdit, IconDelete, IconPlay } from '@douyinfe/semi-icons'
+import { App, Button, Card, Form, Input, Modal, Popconfirm, Select, Space, Switch, Tag, Typography } from 'antd'
+import { DeleteOutlined, EditOutlined, PlayCircleOutlined, PlusOutlined } from '@ant-design/icons'
+import type { TableColumnsType } from 'antd'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { AdminTable } from '@/components/admin-table'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth/permission-snapshot'
@@ -11,9 +12,9 @@ import { api } from '@/services/api-client'
 import { formatDateTime } from '@/utils/time'
 import { tableColumnPresets } from '@/utils/table-columns'
 import type { ApiResponse, BusinessLine, WorkflowNodeRun } from '@/types'
-import type { ColumnProps } from '@douyinfe/semi-ui/lib/es/table'
 
 const { Text } = Typography
+type ColumnProps<T> = TableColumnsType<T>[number]
 
 /* ─── Applications ─── */
 
@@ -37,8 +38,10 @@ interface Application {
 
 export function ApplicationsPage() {
   const { t } = useI18n()
+  const { message } = App.useApp()
   const queryClient = useQueryClient()
   const permissionSnapshotQuery = usePermissionSnapshot()
+  const [form] = Form.useForm<Record<string, unknown>>()
   const [modalVisible, setModalVisible] = useState(false)
   const [editing, setEditing] = useState<Application | null>(null)
 
@@ -61,32 +64,32 @@ export function ApplicationsPage() {
   const createMutation = useMutation({
     mutationFn: (values: Record<string, unknown>) => api.post('/applications', values),
     onSuccess: () => {
-      Toast.success('应用创建成功')
+      message.success('应用创建成功')
       queryClient.invalidateQueries({ queryKey: ['applications'] })
       setModalVisible(false)
     },
-    onError: (err: Error) => Toast.error(err.message),
+    onError: (err: Error) => message.error(err.message),
   })
 
   const updateMutation = useMutation({
     mutationFn: ({ id, values }: { id: string; values: Record<string, unknown> }) =>
       api.put(`/applications/${id}`, values),
     onSuccess: () => {
-      Toast.success('应用更新成功')
+      message.success('应用更新成功')
       queryClient.invalidateQueries({ queryKey: ['applications'] })
       setModalVisible(false)
       setEditing(null)
     },
-    onError: (err: Error) => Toast.error(err.message),
+    onError: (err: Error) => message.error(err.message),
   })
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => api.delete(`/applications/${id}`),
     onSuccess: () => {
-      Toast.success('应用已删除')
+      message.success('应用已删除')
       queryClient.invalidateQueries({ queryKey: ['applications'] })
     },
-    onError: (err: Error) => Toast.error(err.message),
+    onError: (err: Error) => message.error(err.message),
   })
 
   const handleSubmit = (values: Record<string, unknown>) => {
@@ -118,10 +121,10 @@ export function ApplicationsPage() {
       dataIndex: 'id',
       render: (_: unknown, record: Application) => (
         <Space>
-          {canUpdateApplication ? <Button icon={<IconEdit />} theme="borderless" size="small" onClick={() => { setEditing(record); setModalVisible(true) }} /> : null}
+          {canUpdateApplication ? <Button icon={<EditOutlined />} type="text" size="small" onClick={() => { setEditing(record); setModalVisible(true) }} /> : null}
           {canDeleteApplication ? (
             <Popconfirm title="确认删除？" onConfirm={() => deleteMutation.mutate(record.id)}>
-              <Button icon={<IconDelete />} theme="borderless" type="danger" size="small" />
+              <Button icon={<DeleteOutlined />} type="text" danger size="small" />
             </Popconfirm>
           ) : null}
           {!canUpdateApplication && !canDeleteApplication ? '-' : null}
@@ -135,23 +138,27 @@ export function ApplicationsPage() {
       <PageHeader
         title={t('page.delivery.applications.title', 'Applications')}
         description={t('page.delivery.applications.desc', 'Manage application repositories, Dockerfile build parameters, and recent deployment state.')}
-        actions={canCreateApplication ? <Button icon={<IconPlus />} theme="solid" onClick={() => { setEditing(null); setModalVisible(true) }}>新建应用</Button> : null}
+        actions={canCreateApplication ? <Button icon={<PlusOutlined />} type="primary" onClick={() => { setEditing(null); setModalVisible(true) }}>新建应用</Button> : null}
       />
       <Card className="kc-scope-hint-card">
-        <Text type="tertiary">
+        <Text type="secondary">
           当前构建链路先只支持 `Dockerfile`。这里配置的是镜像仓库、默认 Tag、构建上下文目录和 Dockerfile 路径，后续发布流程会直接复用这些参数。
         </Text>
       </Card>
       <AdminTable columns={columns} dataSource={data?.data ?? []} rowKey="id" loading={isLoading} />
       <Modal
         title={editing ? '编辑应用' : '新建应用'}
-        visible={modalVisible}
+        open={modalVisible}
         onCancel={() => { setModalVisible(false); setEditing(null) }}
         footer={null}
+        destroyOnClose
       >
         <Form
-          onSubmit={handleSubmit}
-          initValues={
+          form={form}
+          key={editing?.id ?? 'create-application'}
+          layout="vertical"
+          onFinish={handleSubmit}
+          initialValues={
             editing
               ? {
                   name: editing.name,
@@ -170,35 +177,52 @@ export function ApplicationsPage() {
               : { enabled: true, language: 'node', defaultBranch: 'main' }
           }
         >
-          <Form.Input field="name" label="应用名称" rules={[{ required: true, message: '请输入应用名称' }]} />
-          <Form.Input field="key" label="应用 Key" rules={[{ required: true, message: '请输入应用 Key' }]} />
-          <Form.Input field="group" label="应用分组" rules={[{ required: true, message: '请输入应用分组' }]} />
-          <Form.Select
-            field="businessLineId"
-            label="业务线"
-            optionList={(businessLinesQuery.data?.data ?? []).map((item) => ({ value: item.id, label: item.name }))}
-            rules={[{ required: true, message: '请选择业务线' }]}
-          />
-          <Form.Select
-            field="language"
-            label="语言"
-            optionList={[
-              { value: 'node', label: 'Node.js' },
-              { value: 'java', label: 'Java' },
-              { value: 'go', label: 'Go' },
-              { value: 'python', label: 'Python' },
-            ]}
-          />
-          <Form.Input field="repositoryPath" label="代码仓库路径" />
-          <Form.Input field="defaultBranch" label="默认分支" />
-          <Form.Input field="defaultTag" label="默认镜像 Tag" />
-          <Form.Input field="buildImage" label="镜像仓库地址" />
-          <Form.Input field="buildContextDir" label="构建上下文目录" placeholder="." />
-          <Form.Input field="dockerfilePath" label="Dockerfile 路径" placeholder="./Dockerfile" />
-          <Form.Switch field="enabled" label="启用" />
+          <Form.Item name="name" label="应用名称" rules={[{ required: true, message: '请输入应用名称' }]}>
+            <Input />
+          </Form.Item>
+          <Form.Item name="key" label="应用 Key" rules={[{ required: true, message: '请输入应用 Key' }]}>
+            <Input />
+          </Form.Item>
+          <Form.Item name="group" label="应用分组" rules={[{ required: true, message: '请输入应用分组' }]}>
+            <Input />
+          </Form.Item>
+          <Form.Item name="businessLineId" label="业务线" rules={[{ required: true, message: '请选择业务线' }]}>
+            <Select options={(businessLinesQuery.data?.data ?? []).map((item) => ({ value: item.id, label: item.name }))} />
+          </Form.Item>
+          <Form.Item name="language" label="语言">
+            <Select
+              options={[
+                { value: 'node', label: 'Node.js' },
+                { value: 'java', label: 'Java' },
+                { value: 'go', label: 'Go' },
+                { value: 'python', label: 'Python' },
+              ]}
+            />
+          </Form.Item>
+          <Form.Item name="repositoryPath" label="代码仓库路径">
+            <Input />
+          </Form.Item>
+          <Form.Item name="defaultBranch" label="默认分支">
+            <Input />
+          </Form.Item>
+          <Form.Item name="defaultTag" label="默认镜像 Tag">
+            <Input />
+          </Form.Item>
+          <Form.Item name="buildImage" label="镜像仓库地址">
+            <Input />
+          </Form.Item>
+          <Form.Item name="buildContextDir" label="构建上下文目录">
+            <Input placeholder="." />
+          </Form.Item>
+          <Form.Item name="dockerfilePath" label="Dockerfile 路径">
+            <Input placeholder="./Dockerfile" />
+          </Form.Item>
+          <Form.Item name="enabled" label="启用" valuePropName="checked">
+            <Switch />
+          </Form.Item>
           <div className="kc-form-actions">
             <Button onClick={() => setModalVisible(false)}>取消</Button>
-            <Button htmlType="submit" theme="solid" loading={createMutation.isPending || updateMutation.isPending}>
+            <Button htmlType="submit" type="primary" loading={createMutation.isPending || updateMutation.isPending}>
               {editing ? '更新' : '创建'}
             </Button>
           </div>
@@ -230,6 +254,7 @@ interface Workflow {
 
 export function WorkflowsPage() {
   const { t, localeCode } = useI18n()
+  const { message } = App.useApp()
   const queryClient = useQueryClient()
   const permissionSnapshotQuery = usePermissionSnapshot()
   const canTriggerWorkflow = hasPermission(permissionSnapshotQuery.data?.data, 'delivery.workflows.trigger')
@@ -249,12 +274,12 @@ export function WorkflowsPage() {
         deploymentName: record.deploymentName,
         triggerBuild: record.metadata?.triggerBuild ?? true,
         triggerRelease: record.metadata?.triggerRelease ?? true,
-      }),
+    }),
     onSuccess: () => {
-      Toast.success(localeCode === 'zh_CN' ? '工作流已触发' : 'Workflow triggered')
+      message.success(localeCode === 'zh_CN' ? '工作流已触发' : 'Workflow triggered')
       queryClient.invalidateQueries({ queryKey: ['workflows'] })
     },
-    onError: (err: Error) => Toast.error(err.message),
+    onError: (err: Error) => message.error(err.message),
   })
 
   const columns: ColumnProps<Workflow>[] = [
@@ -290,7 +315,7 @@ export function WorkflowsPage() {
       dataIndex: 'id',
       render: (_: unknown, record: Workflow) => (
         canTriggerWorkflow ? (
-          <Button icon={<IconPlay />} size="small" theme="borderless" onClick={() => triggerMutation.mutate(record)}>
+          <Button icon={<PlayCircleOutlined />} size="small" type="text" onClick={() => triggerMutation.mutate(record)}>
             {localeCode === 'zh_CN' ? '触发' : 'Trigger'}
           </Button>
         ) : '-'
@@ -322,6 +347,7 @@ interface Release {
 
 export function ReleasesPage() {
   const { t } = useI18n()
+  const { message } = App.useApp()
   const queryClient = useQueryClient()
   const permissionSnapshotQuery = usePermissionSnapshot()
   const canTriggerRelease = hasPermission(permissionSnapshotQuery.data?.data, 'delivery.releases.trigger')
@@ -342,12 +368,12 @@ export function ReleasesPage() {
         image: record.metadata?.image,
         imageTag: record.metadata?.imageTag,
         releaseName: record.metadata?.releaseName,
-      }),
+    }),
     onSuccess: () => {
-      Toast.success('发布已触发')
+      message.success('发布已触发')
       queryClient.invalidateQueries({ queryKey: ['releases'] })
     },
-    onError: (err: Error) => Toast.error(err.message),
+    onError: (err: Error) => message.error(err.message),
   })
 
   const columns: ColumnProps<Release>[] = [
@@ -368,7 +394,7 @@ export function ReleasesPage() {
       dataIndex: 'id',
       render: (_: unknown, record: Release) => (
         canTriggerRelease ? (
-          <Button icon={<IconPlay />} size="small" theme="borderless" onClick={() => triggerMutation.mutate(record)}>
+          <Button icon={<PlayCircleOutlined />} size="small" type="text" onClick={() => triggerMutation.mutate(record)}>
             部署
           </Button>
         ) : '-'
@@ -397,8 +423,10 @@ interface Registry {
 
 export function RegistriesPage() {
   const { t } = useI18n()
+  const { message } = App.useApp()
   const queryClient = useQueryClient()
   const permissionSnapshotQuery = usePermissionSnapshot()
+  const [form] = Form.useForm<Record<string, string>>()
   const [modalVisible, setModalVisible] = useState(false)
   const [editing, setEditing] = useState<Registry | null>(null)
   const canManageRegistry = hasPermission(permissionSnapshotQuery.data?.data, 'delivery.registries.manage')
@@ -411,32 +439,32 @@ export function RegistriesPage() {
   const createMutation = useMutation({
     mutationFn: (values: Record<string, string>) => api.post('/registries', values),
     onSuccess: () => {
-      Toast.success('仓库创建成功')
+      message.success('仓库创建成功')
       queryClient.invalidateQueries({ queryKey: ['registries'] })
       setModalVisible(false)
     },
-    onError: (err: Error) => Toast.error(err.message),
+    onError: (err: Error) => message.error(err.message),
   })
 
   const updateMutation = useMutation({
     mutationFn: ({ id, values }: { id: string; values: Record<string, string> }) =>
       api.put(`/registries/${id}`, values),
     onSuccess: () => {
-      Toast.success('仓库更新成功')
+      message.success('仓库更新成功')
       queryClient.invalidateQueries({ queryKey: ['registries'] })
       setModalVisible(false)
       setEditing(null)
     },
-    onError: (err: Error) => Toast.error(err.message),
+    onError: (err: Error) => message.error(err.message),
   })
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => api.delete(`/registries/${id}`),
     onSuccess: () => {
-      Toast.success('仓库已删除')
+      message.success('仓库已删除')
       queryClient.invalidateQueries({ queryKey: ['registries'] })
     },
-    onError: (err: Error) => Toast.error(err.message),
+    onError: (err: Error) => message.error(err.message),
   })
 
   const handleSubmit = (values: Record<string, string>) => {
@@ -464,10 +492,10 @@ export function RegistriesPage() {
       dataIndex: 'id',
       render: (_: unknown, record: Registry) => (
         <Space>
-          {canManageRegistry ? <Button icon={<IconEdit />} theme="borderless" size="small" onClick={() => { setEditing(record); setModalVisible(true) }} /> : null}
+          {canManageRegistry ? <Button icon={<EditOutlined />} type="text" size="small" onClick={() => { setEditing(record); setModalVisible(true) }} /> : null}
           {canManageRegistry ? (
             <Popconfirm title="确认删除？" onConfirm={() => deleteMutation.mutate(record.id)}>
-              <Button icon={<IconDelete />} theme="borderless" type="danger" size="small" />
+              <Button icon={<DeleteOutlined />} type="text" danger size="small" />
             </Popconfirm>
           ) : null}
           {!canManageRegistry ? '-' : null}
@@ -481,30 +509,47 @@ export function RegistriesPage() {
       <PageHeader
         title={t('page.delivery.registries.title', 'Registries')}
         description={t('page.delivery.registries.desc', 'Manage registry connections, credentials, and connectivity status.')}
-        actions={canManageRegistry ? <Button icon={<IconPlus />} theme="solid" onClick={() => { setEditing(null); setModalVisible(true) }}>添加仓库</Button> : null}
+        actions={canManageRegistry ? <Button icon={<PlusOutlined />} type="primary" onClick={() => { setEditing(null); setModalVisible(true) }}>添加仓库</Button> : null}
       />
       <AdminTable columns={columns} dataSource={data?.data ?? []} rowKey="id" loading={isLoading} />
       <Modal
         title={editing ? '编辑仓库' : '添加仓库'}
-        visible={modalVisible}
+        open={modalVisible}
         onCancel={() => { setModalVisible(false); setEditing(null) }}
         footer={null}
+        destroyOnClose
       >
-        <Form onSubmit={handleSubmit} initValues={editing ? { name: editing.name, type: editing.type, endpoint: editing.endpoint, username: editing.username } : {}}>
-          <Form.Input field="name" label="名称" rules={[{ required: true, message: '请输入名称' }]} />
-          <Form.Select field="type" label="类型" optionList={[
-            { value: 'docker', label: 'Docker Hub' },
-            { value: 'harbor', label: 'Harbor' },
-            { value: 'acr', label: 'ACR' },
-            { value: 'ecr', label: 'ECR' },
-            { value: 'gcr', label: 'GCR' },
-          ]} rules={[{ required: true, message: '请选择类型' }]} />
-          <Form.Input field="endpoint" label="Endpoint" rules={[{ required: true, message: '请输入地址' }]} />
-          <Form.Input field="username" label="用户名" />
-          <Form.Input field="password" label="密码" mode="password" />
+        <Form
+          form={form}
+          key={editing?.id ?? 'create-registry'}
+          layout="vertical"
+          onFinish={handleSubmit}
+          initialValues={editing ? { name: editing.name, type: editing.type, endpoint: editing.endpoint, username: editing.username } : {}}
+        >
+          <Form.Item name="name" label="名称" rules={[{ required: true, message: '请输入名称' }]}>
+            <Input />
+          </Form.Item>
+          <Form.Item name="type" label="类型" rules={[{ required: true, message: '请选择类型' }]}>
+            <Select options={[
+              { value: 'docker', label: 'Docker Hub' },
+              { value: 'harbor', label: 'Harbor' },
+              { value: 'acr', label: 'ACR' },
+              { value: 'ecr', label: 'ECR' },
+              { value: 'gcr', label: 'GCR' },
+            ]} />
+          </Form.Item>
+          <Form.Item name="endpoint" label="Endpoint" rules={[{ required: true, message: '请输入地址' }]}>
+            <Input />
+          </Form.Item>
+          <Form.Item name="username" label="用户名">
+            <Input />
+          </Form.Item>
+          <Form.Item name="password" label="密码">
+            <Input.Password />
+          </Form.Item>
           <div className="kc-form-actions">
             <Button onClick={() => setModalVisible(false)}>取消</Button>
-            <Button htmlType="submit" theme="solid" loading={createMutation.isPending || updateMutation.isPending}>
+            <Button htmlType="submit" type="primary" loading={createMutation.isPending || updateMutation.isPending}>
               {editing ? '更新' : '创建'}
             </Button>
           </div>

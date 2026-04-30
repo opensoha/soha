@@ -1,0 +1,25 @@
+{
+  "id": "development/add-resource-module",
+  "title": "Add Resource Module",
+  "description": "1. Add or extend platform DTOs under internal/domain/resource.",
+  "source": "@site/development/add-resource-module.md",
+  "sourceDirName": "development",
+  "slug": "/development/add-resource-module",
+  "permalink": "/docs/development/add-resource-module",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/kubecrux/kubecrux/tree/main/docs/development/add-resource-module.md",
+  "tags": [],
+  "version": "current",
+  "lastUpdatedAt": 1539502055000,
+  "frontMatter": {},
+  "sidebar": "mainSidebar",
+  "previous": {
+    "title": "Database Migrations",
+    "permalink": "/docs/development/database-migrations"
+  },
+  "next": {
+    "title": "Add Page",
+    "permalink": "/docs/development/add-page"
+  }
+}

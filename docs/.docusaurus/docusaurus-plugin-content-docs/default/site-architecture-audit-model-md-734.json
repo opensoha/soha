@@ -1,0 +1,25 @@
+{
+  "id": "architecture/audit-model",
+  "title": "Audit Model",
+  "description": "Audit Categories",
+  "source": "@site/architecture/audit-model.md",
+  "sourceDirName": "architecture",
+  "slug": "/architecture/audit-model",
+  "permalink": "/docs/architecture/audit-model",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/kubecrux/kubecrux/tree/main/docs/architecture/audit-model.md",
+  "tags": [],
+  "version": "current",
+  "lastUpdatedAt": 1539502055000,
+  "frontMatter": {},
+  "sidebar": "mainSidebar",
+  "previous": {
+    "title": "Event Model",
+    "permalink": "/docs/architecture/event-model"
+  },
+  "next": {
+    "title": "MCP Integration",
+    "permalink": "/docs/architecture/mcp-integration"
+  }
+}

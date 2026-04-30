@@ -1,42 +1,38 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Outlet, useNavigate, useLocation } from 'react-router-dom'
+import { Outlet, useLocation, useNavigate } from 'react-router-dom'
+import { Avatar, Breadcrumb, Button, Dropdown, Layout, Menu, Spin } from 'antd'
+import type { MenuProps } from 'antd'
 import {
-  Layout,
-  Nav,
-  Avatar,
-  Dropdown,
-  Breadcrumb,
-  Button,
-} from '@douyinfe/semi-ui'
-import {
-  IconDesktop,
-  IconGlobe,
-  IconGridView,
-  IconServer,
-  IconPuzzle,
-  IconAppCenter,
-  IconSend,
-  IconInbox,
-  IconPulse,
-  IconAlertTriangle,
-  IconBell,
-  IconUserCircle,
-  IconComment,
-  IconShield,
-  IconUser,
-  IconUserGroup,
-  IconSetting,
-  IconMenu,
-  IconFile,
-  IconList,
-  IconLock,
-  IconHelpCircle,
-  IconLanguage,
-  IconMoon,
-  IconSun,
-} from '@douyinfe/semi-icons'
+  AlertOutlined,
+  AppstoreOutlined,
+  BellOutlined,
+  BookOutlined,
+  CommentOutlined,
+  DashboardOutlined,
+  DesktopOutlined,
+  DeploymentUnitOutlined,
+  FileOutlined,
+  GlobalOutlined,
+  HddOutlined,
+  InboxOutlined,
+  LinkOutlined,
+  LockOutlined,
+  MenuOutlined,
+  MenuFoldOutlined,
+  MenuUnfoldOutlined,
+  MoonOutlined,
+  OrderedListOutlined,
+  QuestionCircleOutlined,
+  SafetyOutlined,
+  SendOutlined,
+  SettingOutlined,
+  SunOutlined,
+  TeamOutlined,
+  TranslationOutlined,
+  UserOutlined,
+  UserSwitchOutlined,
+} from '@ant-design/icons'
 import type { ReactNode } from 'react'
-import { Spin } from '@douyinfe/semi-ui'
 import { HeaderPreferenceButton } from '@/components/header-preference-button'
 import { useI18n } from '@/i18n'
 import { useBrandingSettings } from '@/features/settings/use-branding-settings'
@@ -44,43 +40,44 @@ import { getAccessibleSidebarNav, getRouteMeta, getParentRouteMeta } from '@/rou
 import { usePermissionSnapshot } from '@/features/auth/permission-snapshot'
 import { useAuthStore } from '@/stores/auth-store'
 import { usePreferencesStore } from '@/stores/preferences-store'
-import { resolveThemeMode } from '@/theme/semi-theme'
+import { resolveThemeMode, watchSystemThemeMode } from '@/theme/semi-theme'
 import type { SidebarNavItem } from '@/types'
 import { getNormalizedBranding } from '@/features/settings/use-branding-settings'
 
 const { Sider, Header, Content } = Layout
 
 const iconMap: Record<string, ReactNode> = {
-  IconDesktop: <IconDesktop />,
-  IconGlobe: <IconGlobe />,
-  IconGridView: <IconGridView />,
-  IconConnection: <IconServer />,
-  IconServer: <IconServer />,
-  IconPuzzle: <IconPuzzle />,
-  IconAppCenter: <IconAppCenter />,
-  IconFlow: <IconSend />,
-  IconSend: <IconSend />,
-  IconInbox: <IconInbox />,
-  IconPulse: <IconPulse />,
-  IconAlertTriangle: <IconAlertTriangle />,
-  IconBell: <IconBell />,
-  IconUserCircle: <IconUserCircle />,
-  IconComment: <IconComment />,
-  IconShield: <IconShield />,
-  IconUser: <IconUser />,
-  IconUserGroup: <IconUserGroup />,
-  IconSetting: <IconSetting />,
-  IconMenu: <IconMenu />,
-  IconFile: <IconFile />,
-  IconList: <IconList />,
-  IconBookOpen: <IconFile />,
-  IconLock: <IconLock />,
+  IconDesktop: <DesktopOutlined />,
+  IconGlobe: <GlobalOutlined />,
+  IconGridView: <AppstoreOutlined />,
+  IconConnection: <LinkOutlined />,
+  IconServer: <HddOutlined />,
+  IconPuzzle: <DeploymentUnitOutlined />,
+  IconAppCenter: <AppstoreOutlined />,
+  IconFlow: <SendOutlined />,
+  IconSend: <SendOutlined />,
+  IconInbox: <InboxOutlined />,
+  IconPulse: <DashboardOutlined />,
+  IconAlertTriangle: <AlertOutlined />,
+  IconBell: <BellOutlined />,
+  IconUserCircle: <UserSwitchOutlined />,
+  IconComment: <CommentOutlined />,
+  IconShield: <SafetyOutlined />,
+  IconUser: <UserOutlined />,
+  IconUserGroup: <TeamOutlined />,
+  IconSetting: <SettingOutlined />,
+  IconMenu: <MenuOutlined />,
+  IconFile: <FileOutlined />,
+  IconList: <OrderedListOutlined />,
+  IconBookOpen: <BookOutlined />,
+  IconLock: <LockOutlined />,
 }
 
-function buildNavItems(sidebarNav: SidebarNavItem[], t: (key: string, fallback?: string) => string) {
+function buildMenuItems(sidebarNav: SidebarNavItem[], t: (key: string, fallback?: string) => string): MenuProps['items'] {
   const groupLabels: Record<string, string> = {
     overview: '概览',
     platform: '平台管理',
+    catalog: '基础目录',
     delivery: '应用交付',
     observe: '运维智能',
     access: '访问控制',
@@ -88,38 +85,37 @@ function buildNavItems(sidebarNav: SidebarNavItem[], t: (key: string, fallback?:
     settings: '设置中心',
   }
 
-  const items: any[] = []
-  let previousGroup = ''
+  const groups = new Map<string, NonNullable<MenuProps['items']>[number][]>()
 
   for (const item of sidebarNav) {
-    if (item.route.group !== previousGroup) {
-      previousGroup = item.route.group
-      items.push({
-        itemKey: `section-${item.route.group}`,
-        text: <span className="kc-nav-section-title">{groupLabels[item.route.group] || t(`layout.group.${item.route.group}`, item.route.group)}</span>,
-        disabled: true,
-      })
-    }
-    if (item.children && item.children.length > 0) {
-      items.push({
-        itemKey: item.route.id,
-        text: t(`route.${item.route.id}.title`, item.route.title),
-        icon: iconMap[item.route.icon],
-        items: item.children.map((child) => ({
-          itemKey: child.id,
-          text: t(`route.${child.id}.title`, child.title),
-        })),
-      })
-      continue
-    }
-    items.push({
-      itemKey: item.route.id,
-      text: t(`route.${item.route.id}.title`, item.route.title),
-      icon: iconMap[item.route.icon],
-    })
+    const groupKey = item.route.group
+    const menuItem: NonNullable<MenuProps['items']>[number] = item.children?.length
+      ? {
+          key: item.route.id,
+          icon: iconMap[item.route.icon],
+          label: t(`route.${item.route.id}.title`, item.route.title),
+          children: item.children.map((child) => ({
+            key: child.id,
+            label: t(`route.${child.id}.title`, child.title),
+          })),
+        }
+      : {
+          key: item.route.id,
+          icon: iconMap[item.route.icon],
+          label: t(`route.${item.route.id}.title`, item.route.title),
+        }
+
+    const current = groups.get(groupKey) ?? []
+    current.push(menuItem)
+    groups.set(groupKey, current)
   }
 
-  return items
+  return Array.from(groups.entries()).map(([groupKey, items]) => ({
+    key: `group-${groupKey}`,
+    type: 'group' as const,
+    label: <span className="kc-nav-section-title">{groupLabels[groupKey] || t(`layout.group.${groupKey}`, groupKey)}</span>,
+    children: items,
+  }))
 }
 
 function buildItemKeyToPath(sidebarNav: SidebarNavItem[]): Record<string, string> {
@@ -145,21 +141,19 @@ export function AppLayout() {
   const setLocaleCode = usePreferencesStore((state) => state.setLocaleCode)
   const themeMode = usePreferencesStore((state) => state.themeMode)
   const setThemeMode = usePreferencesStore((state) => state.setThemeMode)
+  const sidebarCollapsed = usePreferencesStore((state) => state.sidebarCollapsed)
+  const setSidebarCollapsed = usePreferencesStore((state) => state.setSidebarCollapsed)
   const { t } = useI18n()
-  const [isNavCollapsed, setIsNavCollapsed] = useState(false)
   const [navOpenKeys, setNavOpenKeys] = useState<string[]>([])
-  const [resolvedThemeMode, setResolvedThemeMode] = useState<'light' | 'dark'>(() => resolveThemeMode(themeMode))
+  const [systemThemeVersion, setSystemThemeVersion] = useState(0)
 
   const sidebarNav = useMemo(
     () => getAccessibleSidebarNav(permissionSnapshotQuery.data?.data),
     [permissionSnapshotQuery.data?.data],
   )
-  const navItems = useMemo(() => isNavCollapsed ? buildNavItems(sidebarNav, t).filter((item) => !String(item.itemKey).startsWith('section-')) : buildNavItems(sidebarNav, t), [isNavCollapsed, sidebarNav, t])
+  const menuItems = useMemo(() => buildMenuItems(sidebarNav, t), [sidebarNav, t])
   const itemKeyToPath = useMemo(() => buildItemKeyToPath(sidebarNav), [sidebarNav])
-  const parentItemKeys = useMemo(
-    () => new Set(sidebarNav.filter((item) => item.children?.length).map((item) => item.route.id)),
-    [sidebarNav],
-  )
+  const resolvedThemeMode = useMemo(() => resolveThemeMode(themeMode), [themeMode, systemThemeVersion])
 
   const currentMeta = getRouteMeta(location.pathname)
   const parentMeta = getParentRouteMeta(currentMeta)
@@ -178,55 +172,29 @@ export function AppLayout() {
     if (currentMeta.parentId && itemKeyToPath[currentMeta.parentId]) {
       return [currentMeta.parentId]
     }
-    if (currentMeta.navVisible && sidebarNav.some((item) => item.route.id === currentMeta.id && item.children?.length)) {
-      return [currentMeta.id]
-    }
     return []
-  }, [currentMeta, itemKeyToPath, sidebarNav])
+  }, [currentMeta, itemKeyToPath])
 
   useEffect(() => {
-    if (isNavCollapsed) {
+    if (sidebarCollapsed) {
       setNavOpenKeys([])
       return
     }
-    setNavOpenKeys(routeOpenKeys)
-  }, [isNavCollapsed, location.pathname, routeOpenKeys])
+    setNavOpenKeys((current) => {
+      const desired = routeOpenKeys
+      if (desired.length === 0) return current
+      const merged = Array.from(new Set([...current, ...desired]))
+      return merged.length === current.length && merged.every((key, index) => key === current[index]) ? current : merged
+    })
+  }, [routeOpenKeys, sidebarCollapsed])
 
   useEffect(() => {
-    const updateResolvedThemeMode = () => setResolvedThemeMode(resolveThemeMode(themeMode))
-    updateResolvedThemeMode()
-
-    if (themeMode !== 'system' || typeof window === 'undefined') {
-      return undefined
-    }
-
-    const media = window.matchMedia('(prefers-color-scheme: dark)')
-    media.addEventListener('change', updateResolvedThemeMode)
-    return () => media.removeEventListener('change', updateResolvedThemeMode)
+    if (themeMode !== 'system') return undefined
+    return watchSystemThemeMode(() => setSystemThemeVersion((current) => current + 1))
   }, [themeMode])
 
-  const handleNavClick = (data: { itemKey: string }) => {
-    if (parentItemKeys.has(data.itemKey)) {
-      setNavOpenKeys((current) => (
-        current.includes(data.itemKey)
-          ? current.filter((key) => key !== data.itemKey)
-          : [...current, data.itemKey]
-      ))
-      return
-    }
-    const path = itemKeyToPath[data.itemKey]
-    if (path) {
-      navigate(path)
-    }
-  }
-
-  const handleLogout = () => {
-    clearAuth()
-    navigate('/login')
-  }
-
   const breadcrumbRoutes = useMemo(() => {
-    const routes: { name: string; path?: string }[] = []
+    const routes: Array<{ name: string; path?: string }> = []
     if (parentMeta) {
       routes.push({ name: t(`route.${parentMeta.id}.title`, parentMeta.title), path: parentMeta.redirectTo ?? parentMeta.path })
     }
@@ -238,7 +206,7 @@ export function AppLayout() {
   const branding = getNormalizedBranding(brandingQuery.data?.data)
   const expandedLogo = branding.expandedLogoUrl
   const collapsedLogo = branding.collapsedLogoUrl || branding.expandedLogoUrl
-  const activeLogo = isNavCollapsed ? (collapsedLogo || expandedLogo) : (expandedLogo || collapsedLogo)
+  const activeLogo = sidebarCollapsed ? (collapsedLogo || expandedLogo) : (expandedLogo || collapsedLogo)
   const languageSwitchLabel = localeCode === 'zh_CN' ? 'EN' : '中文'
   const languageSwitchTitle = localeCode === 'zh_CN'
     ? t('layout.switchLanguageToEnglish', 'Switch to English')
@@ -257,64 +225,76 @@ export function AppLayout() {
 
   return (
     <Layout className="kc-shell">
-      <Sider className="kc-sider" style={{ backgroundColor: 'transparent' }}>
-        <Nav
-          className="kc-nav"
-          style={{ height: '100%' }}
-          items={navItems}
-          selectedKeys={selectedKeys}
-          openKeys={navOpenKeys}
-          onClick={handleNavClick as any}
-          onOpenChange={(data) => {
-            const nextOpenKeys = Array.isArray(data)
-              ? data
-              : ((data?.openKeys ?? []) as string[])
-            setNavOpenKeys(nextOpenKeys)
-          }}
-          onCollapseChange={(collapsed) => setIsNavCollapsed(Boolean(collapsed))}
-          header={{
-            logo: activeLogo ? (
+      <Sider
+        className="kc-sider"
+        collapsible
+        collapsed={sidebarCollapsed}
+        onCollapse={(collapsed) => setSidebarCollapsed(collapsed)}
+        style={{ backgroundColor: 'transparent' }}
+        trigger={null}
+        width={248}
+      >
+        <div className="kc-nav" style={{ height: '100%' }}>
+          <div className="kc-sider-brand">
+            {activeLogo ? (
               <img className="kc-brand-logo" src={activeLogo} alt={branding.sidebarTitle} />
             ) : (
-              <div className="kc-brand-mark">
-                KC
-              </div>
-            ),
-            text: branding.sidebarTitle,
-          }}
-          footer={{
-            collapseButton: true,
-          }}
-        />
+              <div className="kc-brand-mark">KC</div>
+            )}
+            {!sidebarCollapsed ? <span className="kc-sider-brand-text">{branding.sidebarTitle}</span> : null}
+          </div>
+          <Menu
+            className="kc-nav-menu"
+            mode="inline"
+            items={menuItems}
+            selectedKeys={selectedKeys}
+            openKeys={sidebarCollapsed ? [] : navOpenKeys}
+            onOpenChange={(keys) => setNavOpenKeys(keys as string[])}
+            onClick={({ key }) => {
+              const path = itemKeyToPath[String(key)]
+              if (path) navigate(path)
+            }}
+            inlineCollapsed={sidebarCollapsed}
+            theme={resolvedThemeMode}
+          />
+        </div>
       </Sider>
 
       <Layout className="kc-main">
         <Header className="kc-header">
           <div className="kc-header-main">
-            <Breadcrumb>
-              {breadcrumbRoutes.map((route, index) => (
-                <Breadcrumb.Item
-                  key={index}
-                  href={route.path}
-                  onClick={(e) => {
-                    if (route.path) {
-                      e?.preventDefault()
-                      navigate(route.path)
-                    }
-                  }}
-                >
-                  {route.name}
-                </Breadcrumb.Item>
-              ))}
-            </Breadcrumb>
+            <div className="kc-header-breadcrumb-row">
+              <Button
+                aria-label={sidebarCollapsed ? t('layout.expand', 'Expand sidebar') : t('layout.collapse', 'Collapse sidebar')}
+                className="kc-header-action kc-header-sider-toggle"
+                type="text"
+                icon={sidebarCollapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+                onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+              />
+              <Breadcrumb
+                items={breadcrumbRoutes.map((route) => ({
+                  title: route.path ? (
+                    <a
+                      href={route.path}
+                      onClick={(event) => {
+                        event.preventDefault()
+                        navigate(route.path!)
+                      }}
+                    >
+                      {route.name}
+                    </a>
+                  ) : route.name,
+                }))}
+              />
+            </div>
           </div>
 
           <div className="kc-header-right">
             <Button
               className="kc-header-action"
               size="small"
-              theme="borderless"
-              icon={<IconHelpCircle />}
+              type="text"
+              icon={<QuestionCircleOutlined />}
               onClick={() => window.open('/docs/', '_blank', 'noopener,noreferrer')}
             >
               {t('layout.docs', 'Docs')}
@@ -324,36 +304,38 @@ export function AppLayout() {
                 ariaLabel={languageSwitchTitle}
                 title={languageSwitchTitle}
                 inset
-                icon={<IconLanguage />}
+                icon={<TranslationOutlined />}
                 label={languageSwitchLabel}
                 onClick={() => setLocaleCode(localeCode === 'zh_CN' ? 'en_US' : 'zh_CN')}
               />
               <HeaderPreferenceButton
                 ariaLabel={themeSwitchTitle}
                 title={themeSwitchTitle}
-                icon={resolvedThemeMode === 'dark' ? <IconSun /> : <IconMoon />}
+                icon={resolvedThemeMode === 'dark' ? <SunOutlined /> : <MoonOutlined />}
                 onClick={() => setThemeMode(resolvedThemeMode === 'dark' ? 'light' : 'dark')}
                 pressed={resolvedThemeMode === 'dark'}
               />
             </div>
             <Dropdown
-              position="bottomRight"
-              render={
-                <Dropdown.Menu>
-                  <Dropdown.Item disabled>
-                    {userDisplayName}
-                  </Dropdown.Item>
-                  <Dropdown.Divider />
-                  <Dropdown.Item onClick={handleLogout}>
-                    {t('layout.logout', 'Sign out')}
-                  </Dropdown.Item>
-                </Dropdown.Menu>
-              }
+              menu={{
+                items: [
+                  { key: 'user', label: userDisplayName, disabled: true },
+                  { type: 'divider' },
+                  { key: 'logout', label: t('layout.logout', 'Sign out') },
+                ],
+                onClick: ({ key }) => {
+                  if (key === 'logout') {
+                    clearAuth()
+                    navigate('/login')
+                  }
+                },
+              }}
+              placement="bottomRight"
             >
               <Button
                 className="kc-header-action kc-user-trigger"
                 size="small"
-                theme="borderless"
+                type="text"
                 icon={
                   <Avatar className="kc-user-avatar" size="small">
                     {userDisplayName.charAt(0).toUpperCase()}

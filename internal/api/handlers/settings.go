@@ -10,6 +10,7 @@ import (
 	apiresponse "github.com/kubecrux/kubecrux/internal/api/response"
 	domainidentity "github.com/kubecrux/kubecrux/internal/domain/identity"
 	domainsettings "github.com/kubecrux/kubecrux/internal/domain/settings"
+	appaccess "github.com/kubecrux/kubecrux/internal/application/access"
 )
 
 type SettingsService interface {
@@ -24,11 +25,12 @@ type SettingsService interface {
 }
 
 type SettingsHandler struct {
-	service SettingsService
+	service     SettingsService
+	permissions *appaccess.PermissionResolver
 }
 
-func NewSettingsHandler(service SettingsService) *SettingsHandler {
-	return &SettingsHandler{service: service}
+func NewSettingsHandler(service SettingsService, permissions *appaccess.PermissionResolver) *SettingsHandler {
+	return &SettingsHandler{service: service, permissions: permissions}
 }
 
 func (h *SettingsHandler) GetIdentitySettings(c *gin.Context) {

@@ -35,7 +35,7 @@ The current frontend local workflow does not depend on a checked-in frontend env
 
 - `web/src/services/api-client.ts` uses same-origin `/api/v1`
 - `web/vite.config.ts` proxies `/api` to `http://localhost:8080`
-- the docs page embeds the VitePress site at `/docs/`
+- the docs page is exposed at same-origin `/docs/`, and local Vite development proxies it to `http://localhost:3000/docs/`
 
 Optional shortcuts:
 
@@ -50,7 +50,7 @@ make dev-docs
 ```bash
 cd docs
 npm install
-npm run docs:dev
+npm run dev
 ```
 
 ## MVP Runtime Notes

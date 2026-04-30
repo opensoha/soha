@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Button, Card, Empty, Spin, Typography } from '@douyinfe/semi-ui'
-import { IconAlertTriangle, IconGridView, IconServer, IconTick } from '@douyinfe/semi-icons'
+import { Button, Card, Empty, Spin, Typography } from 'antd'
+import { AppstoreOutlined, CheckCircleOutlined, ClusterOutlined, WarningOutlined } from '@ant-design/icons'
 import { useQuery } from '@tanstack/react-query'
 import { PageHeader } from '@/components/page-header'
 import { PlatformScopeToolbar } from '@/components/platform-scope-toolbar'
@@ -125,10 +125,10 @@ export function OverviewPage() {
   }
 
   const stats = [
-    { label: '集群总数', value: clusters.length, icon: <IconServer size="extra-large" /> },
-    { label: '健康集群', value: healthyClusters, icon: <IconTick size="extra-large" /> },
-    { label: '活跃告警', value: summary?.firingCount ?? 0, icon: <IconAlertTriangle size="extra-large" /> },
-    { label: '通知渠道', value: summary?.channelCount ?? 0, icon: <IconGridView size="extra-large" /> },
+    { label: '集群总数', value: clusters.length, icon: <ClusterOutlined style={{ fontSize: 28 }} /> },
+    { label: '健康集群', value: healthyClusters, icon: <CheckCircleOutlined style={{ fontSize: 28 }} /> },
+    { label: '活跃告警', value: summary?.firingCount ?? 0, icon: <WarningOutlined style={{ fontSize: 28 }} /> },
+    { label: '通知渠道', value: summary?.channelCount ?? 0, icon: <AppstoreOutlined style={{ fontSize: 28 }} /> },
   ]
 
   const workloadOverview = workloadOverviewQuery.data?.data
@@ -138,12 +138,12 @@ export function OverviewPage() {
     ? `${effectiveCluster.name} / ${namespace && namespace !== '' ? namespace : t('platformScope.allNamespaces', 'All namespaces')}`
     : '-'
   const podStats = [
-    { label: localeCode === 'zh_CN' ? 'Pod 总数' : 'Pods', value: workloadOverview?.totalPods ?? 0, icon: <IconGridView size="extra-large" /> },
-    { label: 'Running', value: workloadOverview?.runningPods ?? 0, icon: <IconTick size="extra-large" /> },
-    { label: 'Pending', value: workloadOverview?.pendingPods ?? 0, icon: <IconAlertTriangle size="extra-large" /> },
-    { label: localeCode === 'zh_CN' ? '已完成' : 'Completed', value: workloadOverview?.succeededPods ?? 0, icon: <IconTick size="extra-large" /> },
-    { label: localeCode === 'zh_CN' ? '需关注 Pod' : 'At-risk Pods', value: workloadOverview?.atRiskPods ?? 0, icon: <IconAlertTriangle size="extra-large" /> },
-    { label: localeCode === 'zh_CN' ? '发生重启' : 'Restarting', value: workloadOverview?.restartingPods ?? 0, icon: <IconAlertTriangle size="extra-large" /> },
+    { label: localeCode === 'zh_CN' ? 'Pod 总数' : 'Pods', value: workloadOverview?.totalPods ?? 0, icon: <AppstoreOutlined style={{ fontSize: 28 }} /> },
+    { label: 'Running', value: workloadOverview?.runningPods ?? 0, icon: <CheckCircleOutlined style={{ fontSize: 28 }} /> },
+    { label: 'Pending', value: workloadOverview?.pendingPods ?? 0, icon: <WarningOutlined style={{ fontSize: 28 }} /> },
+    { label: localeCode === 'zh_CN' ? '已完成' : 'Completed', value: workloadOverview?.succeededPods ?? 0, icon: <CheckCircleOutlined style={{ fontSize: 28 }} /> },
+    { label: localeCode === 'zh_CN' ? '需关注 Pod' : 'At-risk Pods', value: workloadOverview?.atRiskPods ?? 0, icon: <WarningOutlined style={{ fontSize: 28 }} /> },
+    { label: localeCode === 'zh_CN' ? '发生重启' : 'Restarting', value: workloadOverview?.restartingPods ?? 0, icon: <WarningOutlined style={{ fontSize: 28 }} /> },
   ]
 
   return (
@@ -161,12 +161,12 @@ export function OverviewPage() {
                 <Text strong>{t('page.overview.alertDist', 'Alert Distribution')}</Text>
               </div>
               <div className="kc-list-row-extra">
-                <Text type="tertiary" size="small">总数: {summary.totalCount}</Text>
-                <Text type="tertiary" size="small">活跃: {summary.firingCount}</Text>
-                <Text type="tertiary" size="small">已恢复: {summary.resolvedCount}</Text>
-                <Text type="tertiary" size="small">Critical: {summary.criticalCount}</Text>
-                <Text type="tertiary" size="small">Warning: {summary.warningCount}</Text>
-                <Text type="tertiary" size="small">最近接收: {formatDateTime(summary.lastReceivedAt)}</Text>
+                <Text type="secondary" className="text-xs">总数: {summary.totalCount}</Text>
+                <Text type="secondary" className="text-xs">活跃: {summary.firingCount}</Text>
+                <Text type="secondary" className="text-xs">已恢复: {summary.resolvedCount}</Text>
+                <Text type="secondary" className="text-xs">Critical: {summary.criticalCount}</Text>
+                <Text type="secondary" className="text-xs">Warning: {summary.warningCount}</Text>
+                <Text type="secondary" className="text-xs">最近接收: {formatDateTime(summary.lastReceivedAt)}</Text>
               </div>
             </div>
           </div>
@@ -187,10 +187,10 @@ export function OverviewPage() {
                   <StatusTag value={cluster.health?.status ?? 'unknown'} />
                 </div>
                 <div className="kc-list-row-extra">
-                  <Text type="tertiary" size="small">Region: {cluster.region || '-'}</Text>
-                  <Text type="tertiary" size="small">Env: {cluster.environment || '-'}</Text>
-                  <Text type="tertiary" size="small">Mode: {cluster.connectionMode || '-'}</Text>
-                  <Text type="tertiary" size="small">Version: {cluster.version || '-'}</Text>
+                  <Text type="secondary" className="text-xs">Region: {cluster.region || '-'}</Text>
+                  <Text type="secondary" className="text-xs">Env: {cluster.environment || '-'}</Text>
+                  <Text type="secondary" className="text-xs">Mode: {cluster.connectionMode || '-'}</Text>
+                  <Text type="secondary" className="text-xs">Version: {cluster.version || '-'}</Text>
                 </div>
               </div>
             ))}
@@ -200,12 +200,12 @@ export function OverviewPage() {
 
       <Card
         title={localeCode === 'zh_CN' ? 'Pod 运行态势' : 'Pod Runtime'}
-        headerExtraContent={effectiveCluster ? (
+        extra={effectiveCluster ? (
           <div className="flex items-center gap-3">
-            <Text type="tertiary" size="small">
+            <Text type="secondary" className="text-xs">
               {localeCode === 'zh_CN' ? '当前范围' : 'Scope'}: {scopeLabel}
             </Text>
-            <Button theme="borderless" type="primary" onClick={() => navigate('/workloads/pods')}>
+            <Button type="text" onClick={() => navigate('/workloads/pods')}>
               {localeCode === 'zh_CN' ? '查看 Pod 列表' : 'Open Pods'}
             </Button>
           </div>
@@ -229,9 +229,9 @@ export function OverviewPage() {
                     ? (localeCode === 'zh_CN' ? '当前命名空间摘要' : 'Namespace Snapshot')
                     : (localeCode === 'zh_CN' ? '命名空间热点' : 'Namespace Hotspots')
                 }
-                headerExtraContent={
+                extra={
                   namespace && namespace !== '' ? (
-                    <Button theme="borderless" type="primary" onClick={() => setNamespace(null)}>
+                    <Button type="text" onClick={() => setNamespace(null)}>
                       {localeCode === 'zh_CN' ? '查看全部命名空间' : 'All Namespaces'}
                     </Button>
                   ) : null
@@ -247,14 +247,13 @@ export function OverviewPage() {
                           <Text strong>{item.namespace}</Text>
                         </div>
                         <div className="kc-list-row-extra">
-                          <Text type="tertiary" size="small">Pods: {item.totalPods}</Text>
-                          <Text type="tertiary" size="small">Running: {item.runningPods}</Text>
-                          <Text type="tertiary" size="small">{localeCode === 'zh_CN' ? '需关注' : 'At-risk'}: {item.atRiskPods}</Text>
-                          <Text type="tertiary" size="small">{localeCode === 'zh_CN' ? '重启' : 'Restarts'}: {item.restartingPods}</Text>
+                          <Text type="secondary" className="text-xs">Pods: {item.totalPods}</Text>
+                          <Text type="secondary" className="text-xs">Running: {item.runningPods}</Text>
+                          <Text type="secondary" className="text-xs">{localeCode === 'zh_CN' ? '需关注' : 'At-risk'}: {item.atRiskPods}</Text>
+                          <Text type="secondary" className="text-xs">{localeCode === 'zh_CN' ? '重启' : 'Restarts'}: {item.restartingPods}</Text>
                           {namespace && namespace !== '' ? null : (
                             <Button
-                              theme="borderless"
-                              type="primary"
+                              type="text"
                               onClick={() => {
                                 setNamespace(item.namespace)
                                 navigate('/workloads/pods')
@@ -273,8 +272,8 @@ export function OverviewPage() {
               <Card
                 className="kc-detail-card"
                 title={localeCode === 'zh_CN' ? '需关注的 Pod' : 'Pods Requiring Attention'}
-                headerExtraContent={
-                  <Text type="tertiary" size="small">
+                extra={
+                  <Text type="secondary" className="text-xs">
                     {localeCode === 'zh_CN' ? '更新时间' : 'Updated'}: {formatDateTime(workloadOverview.generatedAt)}
                   </Text>
                 }
@@ -287,8 +286,7 @@ export function OverviewPage() {
                       <div key={`${item.namespace}/${item.name}`} className="kc-list-row">
                         <div className="kc-list-row-meta">
                           <Button
-                            theme="borderless"
-                            type="primary"
+                            type="text"
                             onClick={() => navigate(buildPodDetailPath(item.name, item.namespace))}
                           >
                             {item.name}
@@ -296,11 +294,11 @@ export function OverviewPage() {
                           <StatusTag value={item.phase} />
                         </div>
                         <div className="kc-list-row-extra">
-                          <Text type="tertiary" size="small">NS: {item.namespace}</Text>
-                          <Text type="tertiary" size="small">Node: {item.nodeName || '-'}</Text>
-                          <Text type="tertiary" size="small">Ready: {item.readyContainers}</Text>
-                          <Text type="tertiary" size="small">Restarts: {item.restarts}</Text>
-                          <Text type="tertiary" size="small">Age: {formatAgeSeconds(item.ageSeconds)}</Text>
+                          <Text type="secondary" className="text-xs">NS: {item.namespace}</Text>
+                          <Text type="secondary" className="text-xs">Node: {item.nodeName || '-'}</Text>
+                          <Text type="secondary" className="text-xs">Ready: {item.readyContainers}</Text>
+                          <Text type="secondary" className="text-xs">Restarts: {item.restarts}</Text>
+                          <Text type="secondary" className="text-xs">Age: {formatAgeSeconds(item.ageSeconds)}</Text>
                         </div>
                       </div>
                     ))}

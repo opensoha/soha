@@ -5,7 +5,19 @@
       "Bash(npm install:*)",
       "mcp__semi-mcp__get_semi_document",
       "Bash(npx tsc:*)",
-      "Bash(npx vite:*)"
+      "Bash(npx vite:*)",
+      "mcp__semi-mcp__get_function_code",
+      "Bash(./node_modules/.bin/tsc --noEmit)",
+      "Bash(echo \"exit=$?\")",
+      "mcp__semi-mcp__get_semi_code_block",
+      "Bash(node *)",
+      "Bash(npm uninstall *)",
+      "Bash(echo \"go=$?\")",
+      "Bash(echo \"tsc=$?\")",
+      "Bash(go vet *)",
+      "Bash(echo \"vet=$?\")",
+      "Bash(npx eslint *)",
+      "mcp__semi-mcp__get_file_code"
     ]
   }
 }

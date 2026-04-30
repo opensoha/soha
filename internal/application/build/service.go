@@ -70,7 +70,7 @@ func (s *Service) Trigger(ctx context.Context, principal domainidentity.Principa
 	if err != nil {
 		return domainbuild.Record{}, err
 	}
-	if err := s.authorize(ctx, principal, domainaccess.ActionUpdate, app.ID); err != nil {
+	if err := s.authorize(ctx, principal, domainaccess.ActionTrigger, app.ID); err != nil {
 		return domainbuild.Record{}, err
 	}
 	metadata := map[string]any{
@@ -111,7 +111,7 @@ func (s *Service) Trigger(ctx context.Context, principal domainidentity.Principa
 			},
 		})
 	}
-	_ = s.recordAudit(ctx, principal, app.Name, string(domainaccess.ActionUpdate), "success", "triggered manual build")
+	_ = s.recordAudit(ctx, principal, app.Name, string(domainaccess.ActionTrigger), "success", "triggered manual build")
 	return record, nil
 }
 

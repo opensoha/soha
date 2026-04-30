@@ -1,6 +1,6 @@
 # kubecrux
 
-kubecrux is a multi-cluster Kubernetes platform console. The frontend is a Vite + React single-page application, the backend is a Go modular monolith, and the documentation site is maintained in-repo with VitePress.
+kubecrux is a multi-cluster Kubernetes platform console. The frontend is a Vite + React single-page application, the backend is a Go modular monolith, and the documentation site is maintained in-repo with Docusaurus.
 
 ## Repository Layout
 
@@ -9,16 +9,16 @@ kubecrux is a multi-cluster Kubernetes platform console. The frontend is a Vite 
 - `configs`: backend and agent configuration files
 - `internal`: API, application, policy, infrastructure, and repository layers
 - `migrations`: SQL bootstrap and schema migrations
-- `docs`: VitePress documentation site
+- `docs`: Docusaurus documentation site
 
 ## Frontend Summary
 
 - runtime: React 18, Vite 6, TypeScript 5, React Router 6
 - data and local state: TanStack Query 5, Zustand 5
-- UI stack: Semi Design, Tailwind CSS, ECharts
-- shell model: Semi `Layout` + `Nav` + `Breadcrumb` with route metadata driven navigation
-- theme model: official Semi theme packages are switchable at runtime and persisted in client preferences
-- styling model: Tailwind utilities are aligned to Semi CSS variables in `web/tailwind.config.ts`, and `preflight` is disabled to reduce conflicts
+- UI stack: Ant Design 6, Tailwind CSS 4, Ant Design Charts, ECharts legacy transition
+- shell model: Ant Design `Layout` + `Menu` + `Breadcrumb` with route metadata driven navigation
+- theme model: fixed console theme baseline with persisted user light/dark preference
+- styling model: Tailwind utilities complement shared global shell and page styles
 - bootstrap: `web/src/main.tsx` creates the Query client and `BrowserRouter`
 - route registry: `web/src/routes/index.tsx` lazy-loads page modules by named export
 - navigation metadata: `web/src/routes/meta.ts` drives sidebar groups and breadcrumbs
@@ -111,7 +111,7 @@ The current frontend is same-origin by default.
 
 - API base path is fixed to `/api/v1` in [web/src/services/api-client.ts](web/src/services/api-client.ts)
 - local development proxies `/api` to `http://localhost:8080` through [web/vite.config.ts](web/vite.config.ts)
-- the in-app docs page embeds `/docs/` in an iframe
+- the in-app docs page opens the Docusaurus site at `/docs/`
 
 If you deploy the SPA and API on separate origins, add a reverse proxy or adjust the frontend client implementation.
 
@@ -153,8 +153,10 @@ npm run dev
 ```bash
 cd docs
 npm install
-npm run docs:dev
+npm run dev
 ```
+
+The Docusaurus dev server is served at `http://localhost:3000/docs/`.
 
 Optional shortcuts:
 

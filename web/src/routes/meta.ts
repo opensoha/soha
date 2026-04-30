@@ -63,9 +63,9 @@ export const routeMeta: RouteMeta[] = [
   { id: 'cluster-detail', path: '/clusters/:clusterId', title: '集群详情', description: '集群详情', icon: 'IconGlobe', group: 'platform', requiresAuth: true, tabbar: false, navVisible: false, parentId: 'clusters' },
 
   { id: 'applications', path: '/applications', title: '应用管理', description: '应用交付', icon: 'IconAppCenter', group: 'delivery', requiresAuth: true, tabbar: true, navVisible: true, menuId: 'builds', permissionKey: 'delivery.applications.view' },
-  { id: 'business-lines', path: '/business-lines', title: '业务线管理', description: '业务线主数据', icon: 'IconAppCenter', group: 'delivery', requiresAuth: true, tabbar: true, navVisible: true, permissionKey: 'delivery.business-lines.view' },
-  { id: 'delivery-environments', path: '/delivery-environments', title: '环境管理', description: '交付环境主数据', icon: 'IconAppCenter', group: 'delivery', requiresAuth: true, tabbar: true, navVisible: true, permissionKey: 'delivery.environments.view' },
-  { id: 'application-environments', path: '/application-environments', title: '应用环境绑定', description: '应用与环境绑定', icon: 'IconAppCenter', group: 'delivery', requiresAuth: true, tabbar: true, navVisible: true, permissionKey: 'delivery.application-environments.view' },
+  { id: 'business-lines', path: '/business-lines', title: '业务线管理', description: '业务线主数据', icon: 'IconAppCenter', group: 'catalog', requiresAuth: true, tabbar: true, navVisible: true, permissionKey: 'delivery.business-lines.view' },
+  { id: 'delivery-environments', path: '/delivery-environments', title: '环境管理', description: '交付环境主数据', icon: 'IconAppCenter', group: 'catalog', requiresAuth: true, tabbar: true, navVisible: true, permissionKey: 'delivery.environments.view' },
+  { id: 'application-environments', path: '/application-environments', title: '应用环境绑定', description: '应用与环境绑定', icon: 'IconAppCenter', group: 'catalog', requiresAuth: true, tabbar: true, navVisible: true, permissionKey: 'delivery.application-environments.view' },
   { id: 'application-environment-detail', path: '/application-environments/:applicationEnvironmentId', title: '环境详情', description: '应用环境详情', icon: 'IconAppCenter', group: 'delivery', requiresAuth: true, tabbar: false, navVisible: false, parentId: 'application-environments' },
   { id: 'workflow-templates', path: '/workflow-templates', title: '发布流程模板', description: '交付发布流程模板', icon: 'IconFlow', group: 'delivery', requiresAuth: true, tabbar: true, navVisible: true, permissionKey: 'delivery.workflow-templates.view' },
   { id: 'release-board', path: '/release-board', title: '发布看板', description: '应用环境发布矩阵', icon: 'IconSend', group: 'delivery', requiresAuth: true, tabbar: true, navVisible: true, permissionKey: 'delivery.release-board.view' },
@@ -87,12 +87,12 @@ export const routeMeta: RouteMeta[] = [
   { id: 'ai-inspection', path: '/ai-observe/inspection', title: '智能巡检', description: 'AI 巡检任务与执行记录', icon: 'IconComment', group: 'observe', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'ai-observe', permissionKey: 'observe.ai.view' },
   { id: 'chat', path: '/chat', title: 'AI Chat', description: '兼容旧入口', icon: 'IconComment', group: 'observe', requiresAuth: true, tabbar: false, navVisible: false, parentId: 'ai-observe', permissionKey: 'observe.ai.chat' },
 
-  { id: 'access', path: '/access', title: '访问控制', description: '身份、角色、用户组与策略', icon: 'IconShield', group: 'access', requiresAuth: true, tabbar: false, navVisible: true, redirectTo: '/access/users', menuId: 'access' },
-  { id: 'access-users', path: '/access/users', title: '用户', description: '用户管理', icon: 'IconUser', group: 'access', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'access', menuId: 'access-users', permissionKey: 'access.users.view' },
-  { id: 'access-roles', path: '/access/roles', title: '角色', description: '角色管理', icon: 'IconUserCircle', group: 'access', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'access', menuId: 'access-roles', permissionKey: 'access.roles.view' },
-  { id: 'access-teams', path: '/access/teams', title: '用户组', description: '用户组管理', icon: 'IconUserGroup', group: 'access', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'access', menuId: 'access-teams', permissionKey: 'access.groups.view' },
-  { id: 'access-policies', path: '/access/policies', title: '策略', description: '策略管理', icon: 'IconShield', group: 'access', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'access', menuId: 'access-policies', permissionKey: 'access.policies.view' },
-  { id: 'access-scope-grants', path: '/access/scope-grants', title: '授权范围', description: '业务线环境应用授权', icon: 'IconShield', group: 'access', requiresAuth: true, tabbar: false, navVisible: false, permissionKey: 'access.users.view' },
+  { id: 'access', path: '/access', title: '访问控制', description: '身份、角色、用户组与策略', icon: 'IconShield', group: 'access', requiresAuth: true, tabbar: false, navVisible: false, menuId: 'access', permissionKey: 'access.users.view', permissionStrategy: 'any-child' },
+  { id: 'access-users', path: '/access/users', title: '用户', description: '用户管理', icon: 'IconUser', group: 'access', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'access', menuId: 'access', permissionKey: 'access.users.view' },
+  { id: 'access-roles', path: '/access/roles', title: '角色', description: '角色管理', icon: 'IconUserCircle', group: 'access', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'access', menuId: 'access', permissionKey: 'access.roles.view' },
+  { id: 'access-teams', path: '/access/teams', title: '用户组', description: '用户组管理', icon: 'IconUserGroup', group: 'access', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'access', menuId: 'access', permissionKey: 'access.groups.view' },
+  { id: 'access-policies', path: '/access/policies', title: '策略', description: '策略管理', icon: 'IconShield', group: 'access', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'access', menuId: 'access', permissionKey: 'access.policies.view' },
+  { id: 'access-scope-grants', path: '/access/scope-grants', title: '授权范围', description: '业务线环境应用授权', icon: 'IconShield', group: 'access', requiresAuth: true, tabbar: false, navVisible: false, permissionKey: 'access.scope-grants.view' },
 
   { id: 'system', path: '/system', title: '系统管理', description: '公告、菜单、审计与操作记录', icon: 'IconSetting', group: 'system', requiresAuth: true, tabbar: false, navVisible: false, redirectTo: '/system/online-users' },
   { id: 'system-online-users', path: '/system/online-users', title: '在线用户', description: '在线用户监控', icon: 'IconUser', group: 'system', requiresAuth: true, tabbar: true, navVisible: true, menuId: 'system-online-users', permissionKey: 'system.online-users.view' },
@@ -101,7 +101,7 @@ export const routeMeta: RouteMeta[] = [
   { id: 'audit', path: '/system/audit', title: '审计日志', description: '审计记录', icon: 'IconFile', group: 'system', requiresAuth: true, tabbar: true, navVisible: true, menuId: 'audit', permissionKey: 'system.audit.view' },
   { id: 'operations', path: '/system/operations', title: '操作日志', description: '操作记录', icon: 'IconList', group: 'system', requiresAuth: true, tabbar: true, navVisible: true, menuId: 'operations', permissionKey: 'system.operations.view' },
 
-  { id: 'settings', path: '/settings', title: '设置中心', description: '身份与 AI 配置', icon: 'IconSetting', group: 'settings', requiresAuth: true, tabbar: false, navVisible: true, menuId: 'settings' },
+  { id: 'settings', path: '/settings', title: '设置中心', description: '身份与 AI 配置', icon: 'IconSetting', group: 'settings', requiresAuth: true, tabbar: false, navVisible: true, menuId: 'settings', permissionStrategy: 'any-child' },
   { id: 'settings-identity', path: '/settings/identity', title: '身份设置', description: 'OIDC 配置', icon: 'IconSetting', group: 'settings', requiresAuth: true, tabbar: false, navVisible: false, parentId: 'settings', menuId: 'settings', permissionKey: 'settings.identity.view' },
   { id: 'settings-branding', path: '/settings/branding', title: '品牌设置', description: '品牌 Logo 与标题配置', icon: 'IconSetting', group: 'settings', requiresAuth: true, tabbar: false, navVisible: false, parentId: 'settings', menuId: 'settings', permissionKey: 'settings.branding.view' },
   { id: 'settings-monitoring', path: '/settings/monitoring', title: '监控设置', description: 'Prometheus 配置', icon: 'IconSetting', group: 'settings', requiresAuth: true, tabbar: false, navVisible: false, menuId: 'settings', permissionKey: 'settings.monitoring.view' },
@@ -113,15 +113,24 @@ export const routeMeta: RouteMeta[] = [
 ]
 
 export function getSidebarNav(): SidebarNavItem[] {
+  const sidebarVisible = routeMeta.filter((route) => route.navVisible)
+  const visibleParentIDs = new Set(sidebarVisible.map((route) => route.id))
   return routeMeta
-    .filter((r) => r.navVisible && !r.parentId)
+    .filter((route) => route.navVisible && (!route.parentId || !visibleParentIDs.has(route.parentId)))
     .map((route) => ({
       route,
       children: routeMeta.filter((child) => child.parentId === route.id && child.navVisible),
     }))
     .map((item) => ({
       ...item,
-      children: item.children.length > 0 ? item.children : undefined,
+      children: item.children.length > 0
+        ? item.route.id === 'access'
+          ? [...item.children].sort((left, right) => {
+              const accessOrder = ['access-users', 'access-roles', 'access-teams', 'access-policies']
+              return accessOrder.indexOf(left.id) - accessOrder.indexOf(right.id)
+            })
+          : item.children
+        : undefined,
     }))
 }
 
@@ -189,12 +198,17 @@ export function resolveRouteMenuId(route: RouteMeta): string | undefined {
   return parent ? resolveRouteMenuId(parent) : undefined
 }
 
-export function canAccessRoute(route: RouteMeta, snapshot?: PermissionSnapshot | null) {
+export function canAccessRoute(route: RouteMeta, snapshot?: PermissionSnapshot | null): boolean {
   if (!route.requiresAuth) {
     return true
   }
   if (!snapshot) {
     return false
+  }
+  if (route.permissionStrategy === 'any-child') {
+    return routeMeta
+      .filter((child) => child.parentId === route.id)
+      .some((child) => canAccessRoute(child, snapshot))
   }
   const permissionKey = resolveRoutePermission(route)
   const menuId = resolveRouteMenuId(route)

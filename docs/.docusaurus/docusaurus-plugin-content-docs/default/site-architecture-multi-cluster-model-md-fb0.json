@@ -1,0 +1,25 @@
+{
+  "id": "architecture/multi-cluster-model",
+  "title": "Multi-Cluster Model",
+  "description": "Cluster Registry Model",
+  "source": "@site/architecture/multi-cluster-model.md",
+  "sourceDirName": "architecture",
+  "slug": "/architecture/multi-cluster-model",
+  "permalink": "/docs/architecture/multi-cluster-model",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/kubecrux/kubecrux/tree/main/docs/architecture/multi-cluster-model.md",
+  "tags": [],
+  "version": "current",
+  "lastUpdatedAt": 1539502055000,
+  "frontMatter": {},
+  "sidebar": "mainSidebar",
+  "previous": {
+    "title": "Agent Protocol",
+    "permalink": "/docs/architecture/agent-protocol"
+  },
+  "next": {
+    "title": "Event Model",
+    "permalink": "/docs/architecture/event-model"
+  }
+}

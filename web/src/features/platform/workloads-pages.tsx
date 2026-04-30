@@ -1,12 +1,14 @@
 import { lazy, Suspense, useState, useEffect, useMemo } from 'react'
 import {
-  Tag, Button, Select, Tabs, TabPane, Card, Spin, Empty, Input,
-  Descriptions, Typography, Space, Toast, Modal, InputNumber, Tooltip,
-} from '@douyinfe/semi-ui'
-import { IconDelete, IconEdit, IconRefresh, IconUndo } from '@douyinfe/semi-icons'
+  App, Tag, Button, Select, Tabs, Card, Spin, Empty, Input,
+  Descriptions, Typography, Space, Modal, InputNumber, Tooltip, message,
+} from 'antd'
+import { DeleteOutlined, EditOutlined, ReloadOutlined, UndoOutlined } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { AdminTable } from '@/components/admin-table'
+import { useResourceActions } from '@/components/resource-actions'
+import { TABLE_ACTIONS_COLUMN_CLASS_NAME } from '@/components/resource-actions'
 import { hasAllowedAction } from '@/features/auth/permission-snapshot'
 import { useI18n } from '@/i18n'
 import { PageHeader } from '@/components/page-header'
@@ -22,10 +24,11 @@ import { downloadJSON } from '@/utils/download'
 import { formatAgeSeconds, formatDateTime, formatRelativeTime } from '@/utils/time'
 import { tableColumnPresets } from '@/utils/table-columns'
 import type { ApiResponse, DeploymentRolloutStatus, PodDetail, PodMetrics, ResourceMetrics, ResourceQuantity, ResourceYAMLView, RolloutHistory, WorkloadCondition, WorkloadContainer } from '@/types'
-import type { ColumnProps } from '@douyinfe/semi-ui/lib/es/table'
+import type { TableColumnsType, TabsProps } from 'antd'
 import { StatGrid } from '@/components/stat-grid'
 
-const { Text } = Typography
+const { Link, Text } = Typography
+const DEPLOYMENT_ACTIONS_COLUMN_CLASS_NAME = `${TABLE_ACTIONS_COLUMN_CLASS_NAME} kc-deployment-actions-column`
 
 const K8sYamlEditor = lazy(async () => {
   const mod = await import('@/components/k8s-yaml-editor')
@@ -230,7 +233,7 @@ export function WorkloadsOverviewPage() {
     { label: 'CronJobs', value: cronJobsQuery.data?.data?.length ?? 0 },
   ]
 
-  const eventColumns: ColumnProps<WorkloadOverviewEvent>[] = [
+  const eventColumns: TableColumnsType<WorkloadOverviewEvent> = [
     { title: t('common.namespace', 'Namespace'), dataIndex: 'namespace', render: (value: string) => value || '-' },
     { title: localeCode === 'zh_CN' ? '类型' : 'Type', dataIndex: 'type', render: (value: string) => <StatusTag value={value} /> },
     { title: localeCode === 'zh_CN' ? '原因' : 'Reason', dataIndex: 'reason' },
@@ -251,7 +254,7 @@ export function WorkloadsOverviewPage() {
           dataSource={eventsQuery.data?.data ?? []}
           rowKey={(record) => `${record.namespace || ''}/${record.name}`}
           loading={eventsQuery.isLoading}
-          pageSize={20}
+          pageSize={10}
         />
       </Card>
     </div>
@@ -285,7 +288,7 @@ function WorkloadDetailShell({
   title: string
   resource: string
   paramKey: string
-  extraTabPanes?: React.ReactElement[]
+  extraTabPanes?: NonNullable<TabsProps['items']>
   extraOverview?: React.ReactNode
   actions?: React.ReactNode
   activeTabKey?: string
@@ -294,6 +297,7 @@ function WorkloadDetailShell({
   yamlLast?: boolean
 }) {
   const { t, localeCode } = useI18n()
+  const { message } = App.useApp()
   const params = useParams()
   const [searchParams] = useSearchParams()
   const name = params[paramKey] as string
@@ -333,11 +337,11 @@ function WorkloadDetailShell({
         window.localStorage.removeItem(yamlDraftStorageKey)
       }
       setYamlDraft(response.data?.content ?? yamlDraft)
-      Toast.success(t('yamlEditor.applySuccess', 'YAML applied'))
+      void message.success(t('yamlEditor.applySuccess', 'YAML applied'))
       yamlQuery.refetch()
       detailQuery.refetch()
     },
-    onError: (err: Error) => Toast.error(err.message),
+    onError: (err: Error) => void message.error(err.message),
   })
 
   const detail = detailQuery.data?.data
@@ -360,65 +364,75 @@ function WorkloadDetailShell({
       />
       {showScopeToolbar ? <PlatformScopeToolbar /> : null}
       <Tabs
-        type="line"
         {...(activeTabKey != null ? { activeKey: activeTabKey } : { defaultActiveKey: 'overview' })}
         onChange={onTabChange}
-      >
-        <TabPane tab={t('common.overview', 'Overview')} itemKey="overview">
-          <Card className="kc-detail-card">
-            <Descriptions
-              data={[
-                { key: t('common.name', 'Name'), value: detail.name },
-                { key: t('common.namespace', 'Namespace'), value: detail.namespace },
-                { key: t('common.createdAt', 'Created At'), value: detail.createdAt ? formatRelativeTime(detail.createdAt) : '-' },
-              ]}
-            />
-            {detail.labels && Object.keys(detail.labels).length > 0 && (
-              <div className="kc-detail-meta">
-                <Text strong>{`${t('common.labels', 'Labels')}:`}</Text>
-                <div className="kc-tag-list">
-                  {Object.entries(detail.labels).map(([k, v]) => (
-                    <Tag key={k} size="small">{k}={v}</Tag>
-                  ))}
-                </div>
-              </div>
-            )}
-            {detail.annotations && Object.keys(detail.annotations).length > 0 && (
-              <div className="kc-detail-meta">
-                <Text strong>{`${localeCode === 'zh_CN' ? '注解' : 'Annotations'}:`}</Text>
-                <pre className="kc-json-block">{JSON.stringify(detail.annotations, null, 2)}</pre>
-              </div>
-            )}
-          </Card>
-          {extraOverview}
-        </TabPane>
-        {yamlLast ? extraTabPanes?.map((tabPane) => tabPane) : null}
-        <TabPane tab={t('common.yaml', 'YAML')} itemKey="yaml">
-          <Suspense fallback={<Card className="kc-detail-card"><Spin size="large" /></Card>}>
-            <K8sYamlEditor
-              value={yamlDraft}
-              onChange={setYamlDraft}
-              onReset={() => {
-                if (yamlDraftStorageKey) {
-                  window.localStorage.removeItem(yamlDraftStorageKey)
-                }
-                setYamlDraft(yamlServerValue)
-                Toast.success(t('yamlEditor.resetSuccess', 'YAML draft reset'))
-              }}
-              onSave={() => {
-                if (!yamlDraftStorageKey) return
-                window.localStorage.setItem(yamlDraftStorageKey, yamlDraft)
-                Toast.success(t('yamlEditor.saveSuccess', 'YAML draft saved locally'))
-              }}
-              onApply={() => applyYamlMutation.mutate()}
-              saveDisabled={!yamlDraftStorageKey}
-              applyDisabled={!yamlPath || !yamlDraft.trim()}
-              applying={applyYamlMutation.isPending}
-            />
-          </Suspense>
-        </TabPane>
-        {yamlLast ? null : extraTabPanes?.map((tabPane) => tabPane)}
-      </Tabs>
+        items={[
+          {
+            key: 'overview',
+            label: t('common.overview', 'Overview'),
+            children: (
+              <>
+                <Card className="kc-detail-card">
+                  <Descriptions
+                    items={[
+                      { key: t('common.name', 'Name'), label: t('common.name', 'Name'), children: detail.name },
+                      { key: t('common.namespace', 'Namespace'), label: t('common.namespace', 'Namespace'), children: detail.namespace },
+                      { key: t('common.createdAt', 'Created At'), label: t('common.createdAt', 'Created At'), children: detail.createdAt ? formatRelativeTime(detail.createdAt) : '-' },
+                    ]}
+                  />
+                  {detail.labels && Object.keys(detail.labels).length > 0 && (
+                    <div className="kc-detail-meta">
+                      <Text strong>{`${t('common.labels', 'Labels')}:`}</Text>
+                      <div className="kc-tag-list">
+                        {Object.entries(detail.labels).map(([k, v]) => (
+                          <Tag key={k}>{k}={v}</Tag>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {detail.annotations && Object.keys(detail.annotations).length > 0 && (
+                    <div className="kc-detail-meta">
+                      <Text strong>{`${localeCode === 'zh_CN' ? '注解' : 'Annotations'}:`}</Text>
+                      <pre className="kc-json-block">{JSON.stringify(detail.annotations, null, 2)}</pre>
+                    </div>
+                  )}
+                </Card>
+                {extraOverview}
+              </>
+            ),
+          },
+          ...(yamlLast ? extraTabPanes ?? [] : []),
+          {
+            key: 'yaml',
+            label: t('common.yaml', 'YAML'),
+            children: (
+              <Suspense fallback={<Card className="kc-detail-card"><Spin size="large" /></Card>}>
+                <K8sYamlEditor
+                  value={yamlDraft}
+                  onChange={setYamlDraft}
+                  onReset={() => {
+                    if (yamlDraftStorageKey) {
+                      window.localStorage.removeItem(yamlDraftStorageKey)
+                    }
+                    setYamlDraft(yamlServerValue)
+                    void message.success(t('yamlEditor.resetSuccess', 'YAML draft reset'))
+                  }}
+                  onSave={() => {
+                    if (!yamlDraftStorageKey) return
+                    window.localStorage.setItem(yamlDraftStorageKey, yamlDraft)
+                    void message.success(t('yamlEditor.saveSuccess', 'YAML draft saved locally'))
+                  }}
+                  onApply={() => applyYamlMutation.mutate()}
+                  saveDisabled={!yamlDraftStorageKey}
+                  applyDisabled={!yamlPath || !yamlDraft.trim()}
+                  applying={applyYamlMutation.isPending}
+                />
+              </Suspense>
+            ),
+          },
+          ...(yamlLast ? [] : extraTabPanes ?? []),
+        ]}
+      />
     </div>
   )
 }
@@ -465,75 +479,6 @@ function getDeploymentHealth(deployment: Deployment) {
   return 'progressing'
 }
 
-function DeploymentPodsPanel({
-  clusterId,
-  deploymentName,
-  namespace,
-}: {
-  clusterId?: string | null
-  deploymentName: string
-  namespace: string
-}) {
-  const { localeCode } = useI18n()
-  const navigate = useNavigate()
-
-  const deploymentDetailQuery = useQuery({
-    queryKey: ['deployment-inline-detail', clusterId, namespace, deploymentName],
-    queryFn: () => api.get<ApiResponse<DeploymentDetailMeta>>(
-      `/clusters/${clusterId}/workloads/deployments/${deploymentName}/detail?namespace=${encodeURIComponent(namespace)}`,
-    ),
-    enabled: !!clusterId && !!namespace,
-  })
-
-  const podsQuery = useQuery({
-    queryKey: ['deployment-inline-pods', clusterId, namespace, deploymentName],
-    queryFn: async () => {
-      const response = await api.get<ApiResponse<Pod[]>>(
-        `/clusters/${clusterId}/workloads/pods?namespace=${encodeURIComponent(namespace)}`,
-      )
-      const selector = deploymentDetailQuery.data?.data?.selector
-      return {
-        data: (response.data ?? []).filter((item) => selectorMatchesLabels(selector, item.labels)),
-      } as ApiResponse<Pod[]>
-    },
-    enabled: !!clusterId && !!namespace && !!deploymentDetailQuery.data?.data,
-  })
-
-  const columns: ColumnProps<Pod>[] = [
-    {
-      title: localeCode === 'zh_CN' ? 'Pod' : 'Pod',
-      dataIndex: 'name',
-      render: (value: string, record: Pod) => (
-        <Button
-          theme="borderless"
-          type="primary"
-          onClick={() => navigate(buildWorkloadDetailPath('pods', value, namespace, record.namespace))}
-        >
-          {value}
-        </Button>
-      ),
-    },
-    { title: localeCode === 'zh_CN' ? '状态' : 'Status', dataIndex: 'phase', render: (value: string) => <StatusTag value={value} /> },
-    { title: 'Ready', dataIndex: 'readyContainers' },
-    { title: localeCode === 'zh_CN' ? '重启次数' : 'Restarts', dataIndex: 'restarts' },
-    { title: localeCode === 'zh_CN' ? '节点' : 'Node', dataIndex: 'nodeName', render: (value: string) => value || '-' },
-  ]
-
-  return (
-    <div className="kc-page-section">
-      <Text strong>{localeCode === 'zh_CN' ? '关联 Pods' : 'Related Pods'}</Text>
-      <AdminTable
-        columns={columns}
-        dataSource={podsQuery.data?.data ?? []}
-        rowKey={(record) => `${record.namespace}/${record.name}`}
-        loading={deploymentDetailQuery.isLoading || podsQuery.isLoading}
-        pageSize={10}
-        enableColumnSelection={false}
-      />
-    </div>
-  )
-}
-
 export function WorkloadsDeploymentsPage() {
   const { t, localeCode } = useI18n()
   const navigate = useNavigate()
@@ -557,31 +502,41 @@ export function WorkloadsDeploymentsPage() {
     mutationFn: ({ name, namespace: targetNamespace }: { name: string; namespace: string }) =>
       api.post(`/clusters/${clusterId}/workloads/deployments/restart`, { namespace: targetNamespace, name }),
     onSuccess: () => {
-      Toast.success('已触发重启')
+      void message.success('已触发重启')
       queryClient.invalidateQueries({ queryKey: ['deployments'] })
     },
-    onError: (err: Error) => Toast.error(err.message),
+    onError: (err: Error) => void message.error(err.message),
   })
 
   const scaleMutation = useMutation({
     mutationFn: ({ name, namespace: targetNamespace, replicas }: { name: string; namespace: string; replicas: number }) =>
       api.post(`/clusters/${clusterId}/workloads/deployments/scale`, { namespace: targetNamespace, name, replicas }),
     onSuccess: () => {
-      Toast.success('已触发扩缩容')
+      void message.success('已触发扩缩容')
       setScaleTarget(null)
       queryClient.invalidateQueries({ queryKey: ['deployments'] })
     },
-    onError: (err: Error) => Toast.error(err.message),
+    onError: (err: Error) => void message.error(err.message),
   })
 
   const rollbackMutation = useMutation({
     mutationFn: ({ name, namespace: targetNamespace }: { name: string; namespace: string }) =>
       api.post(`/clusters/${clusterId}/workloads/deployments/rollback`, { namespace: targetNamespace, name }),
     onSuccess: () => {
-      Toast.success('已触发回滚')
+      void message.success('已触发回滚')
       queryClient.invalidateQueries({ queryKey: ['deployments'] })
     },
-    onError: (err: Error) => Toast.error(err.message),
+    onError: (err: Error) => void message.error(err.message),
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: ({ name, namespace: targetNamespace }: { name: string; namespace: string }) =>
+      api.delete(`/clusters/${clusterId}/workloads/deployments/${encodeURIComponent(name)}?namespace=${encodeURIComponent(targetNamespace)}`),
+    onSuccess: () => {
+      void message.success(localeCode === 'zh_CN' ? '已删除' : 'Deleted')
+      queryClient.invalidateQueries({ queryKey: ['deployments'] })
+    },
+    onError: (err: Error) => void message.error(err.message),
   })
 
   const batchRestartMutation = useMutation({
@@ -594,11 +549,11 @@ export function WorkloadsDeploymentsPage() {
     onSuccess: (results) => {
       const successCount = results.filter((item) => item.status === 'fulfilled').length
       const failureCount = results.length - successCount
-      Toast.success(failureCount > 0 ? `批量重启完成，成功 ${successCount}，失败 ${failureCount}` : `已批量重启 ${successCount} 个 Deployment`)
+      void message.success(failureCount > 0 ? `批量重启完成，成功 ${successCount}，失败 ${failureCount}` : `已批量重启 ${successCount} 个 Deployment`)
       setSelectedDeploymentKeys([])
       queryClient.invalidateQueries({ queryKey: ['deployments'] })
     },
-    onError: (err: Error) => Toast.error(err.message),
+    onError: (err: Error) => void message.error(err.message),
   })
 
   const batchScaleMutation = useMutation({
@@ -611,12 +566,12 @@ export function WorkloadsDeploymentsPage() {
     onSuccess: (results) => {
       const successCount = results.filter((item) => item.status === 'fulfilled').length
       const failureCount = results.length - successCount
-      Toast.success(failureCount > 0 ? `批量扩缩完成，成功 ${successCount}，失败 ${failureCount}` : `已批量扩缩 ${successCount} 个 Deployment`)
+      void message.success(failureCount > 0 ? `批量扩缩完成，成功 ${successCount}，失败 ${failureCount}` : `已批量扩缩 ${successCount} 个 Deployment`)
       setBatchScaleVisible(false)
       setSelectedDeploymentKeys([])
       queryClient.invalidateQueries({ queryKey: ['deployments'] })
     },
-    onError: (err: Error) => Toast.error(err.message),
+    onError: (err: Error) => void message.error(err.message),
   })
 
   const batchRollbackMutation = useMutation({
@@ -638,12 +593,12 @@ export function WorkloadsDeploymentsPage() {
     onSuccess: (results) => {
       const successCount = results.filter((item) => item.status === 'fulfilled').length
       const failureCount = results.length - successCount
-      Toast.success(failureCount > 0 ? `批量回滚完成，成功 ${successCount}，失败 ${failureCount}` : `已批量回滚 ${successCount} 个 Deployment`)
+      void message.success(failureCount > 0 ? `批量回滚完成，成功 ${successCount}，失败 ${failureCount}` : `已批量回滚 ${successCount} 个 Deployment`)
       setBatchRollbackVisible(false)
       setSelectedDeploymentKeys([])
       queryClient.invalidateQueries({ queryKey: ['deployments'] })
     },
-    onError: (err: Error) => Toast.error(err.message),
+    onError: (err: Error) => void message.error(err.message),
   })
 
   const filteredDeployments = useMemo(() => (
@@ -689,76 +644,112 @@ export function WorkloadsDeploymentsPage() {
       )
       setBatchRollbackDrafts(drafts)
     } catch (err) {
-      Toast.error(err instanceof Error ? err.message : String(err))
+      void message.error(err instanceof Error ? err.message : String(err))
       setBatchRollbackVisible(false)
     } finally {
       setBatchRollbackLoading(false)
     }
   }
 
-  const columns: ColumnProps<Deployment>[] = [
+  const columns: TableColumnsType<Deployment> = [
     {
-      title: '名称',
+      title: localeCode === 'zh_CN' ? '名称' : 'Name',
       dataIndex: 'name',
       render: (name: string, record: Deployment) => (
-        <Button theme="borderless" type="primary" onClick={() => navigate(buildWorkloadDetailPath('deployments', name, namespace, record.namespace))}>
-          {name}
-        </Button>
+        <Tooltip title={name} placement="topLeft">
+          <Link
+            onClick={() => navigate(buildWorkloadDetailPath('deployments', name, namespace, record.namespace))}
+            style={{ display: 'inline-flex', whiteSpace: 'nowrap' }}
+          >
+            {name}
+          </Link>
+        </Tooltip>
       ),
     },
-    { title: '命名空间', dataIndex: 'namespace' },
+    { title: t('common.namespace', 'Namespace'), dataIndex: 'namespace' },
     {
-      ...tableColumnPresets.status,
-      title: localeCode === 'zh_CN' ? '健康度' : 'Health',
-      dataIndex: 'name',
-      render: (_: string, record: Deployment) => <StatusTag value={getDeploymentHealth(record)} />,
+      title: localeCode === 'zh_CN' ? '状态' : 'Status',
+      dataIndex: 'health',
+      key: 'health',
+      width: 120,
+      render: (_: unknown, record: Deployment) => <StatusTag value={getDeploymentHealth(record)} />,
     },
-    { title: 'Ready', dataIndex: 'readyReplicas', render: (_: number, record: Deployment) => `${record.readyReplicas}/${record.desiredReplicas}` },
-    { title: 'Up-to-date', dataIndex: 'updatedReplicas' },
-    { title: 'Available', dataIndex: 'available' },
-    { ...tableColumnPresets.datetime, title: 'Age', dataIndex: 'ageSeconds', render: (value: number) => formatAgeSeconds(value) },
+    { title: 'Ready', dataIndex: 'readyReplicas', width: 88, render: (_: number, record: Deployment) => `${record.readyReplicas}/${record.desiredReplicas}` },
+    { title: localeCode === 'zh_CN' ? '已更新' : 'Up-to-date', dataIndex: 'updatedReplicas', width: 96 },
+    { title: localeCode === 'zh_CN' ? '可用' : 'Available', dataIndex: 'available', width: 88 },
+    { title: 'Age', dataIndex: 'ageSeconds', width: 104, render: (value: number) => formatAgeSeconds(value) },
     {
-      ...tableColumnPresets.action,
-      title: t('common.actions', 'Actions'),
+      fixed: 'right',
+      title: '',
       dataIndex: 'name',
-      render: (name: string, record: Deployment) => (
-        <Space>
-          {hasAllowedAction(record.allowedActions, 'restart') ? (
-            <Tooltip content={localeCode === 'zh_CN' ? '重启' : 'Restart'}>
-              <Button
-                size="small"
-                theme="borderless"
-                icon={<IconRefresh />}
-                aria-label={localeCode === 'zh_CN' ? '重启' : 'Restart'}
-                onClick={() => restartMutation.mutate({ name, namespace: record.namespace })}
-              />
-            </Tooltip>
-          ) : null}
-          {hasAllowedAction(record.allowedActions, 'scale') ? (
-            <Tooltip content={localeCode === 'zh_CN' ? '扩缩' : 'Scale'}>
-              <Button
-                size="small"
-                theme="borderless"
-                icon={<IconEdit />}
-                aria-label={localeCode === 'zh_CN' ? '扩缩' : 'Scale'}
-                onClick={() => setScaleTarget({ name, namespace: record.namespace, replicas: record.desiredReplicas })}
-              />
-            </Tooltip>
-          ) : null}
-          {hasAllowedAction(record.allowedActions, 'update') ? (
-            <Tooltip content={localeCode === 'zh_CN' ? '回滚' : 'Rollback'}>
-              <Button
-                size="small"
-                theme="borderless"
-                icon={<IconUndo />}
-                aria-label={localeCode === 'zh_CN' ? '回滚' : 'Rollback'}
-                onClick={() => rollbackMutation.mutate({ name, namespace: record.namespace })}
-              />
-            </Tooltip>
-          ) : null}
-          {!hasAllowedAction(record.allowedActions, 'restart') && !hasAllowedAction(record.allowedActions, 'scale') && !hasAllowedAction(record.allowedActions, 'update') ? '-' : null}
-        </Space>
-      ),
+      key: 'actions',
+      width: 148,
+      align: 'center',
+      onHeaderCell: () => ({ className: DEPLOYMENT_ACTIONS_COLUMN_CLASS_NAME }),
+      onCell: () => ({ className: DEPLOYMENT_ACTIONS_COLUMN_CLASS_NAME }),
+      render: (name: string, record: Deployment) => {
+        const canRestart = hasAllowedAction(record.allowedActions, 'restart')
+        const canScale = hasAllowedAction(record.allowedActions, 'scale')
+        const canRollback = hasAllowedAction(record.allowedActions, 'update')
+        const canDelete = hasAllowedAction(record.allowedActions, 'delete')
+        if (!canRestart && !canScale && !canRollback && !canDelete) return '-'
+        return (
+          <Space size={4} className="kc-deployment-action-cell">
+            {canRestart ? (
+              <Tooltip title={localeCode === 'zh_CN' ? '重启' : 'Restart'}>
+                <Button
+                  size="small"
+                  type="text"
+                  icon={<ReloadOutlined />}
+                  aria-label={localeCode === 'zh_CN' ? '重启' : 'Restart'}
+                  onClick={() => restartMutation.mutate({ name, namespace: record.namespace })}
+                />
+              </Tooltip>
+            ) : null}
+            {canScale ? (
+              <Tooltip title={localeCode === 'zh_CN' ? '扩缩' : 'Scale'}>
+                <Button
+                  size="small"
+                  type="text"
+                  icon={<EditOutlined />}
+                  aria-label={localeCode === 'zh_CN' ? '扩缩' : 'Scale'}
+                  onClick={() => setScaleTarget({ name, namespace: record.namespace, replicas: record.desiredReplicas })}
+                />
+              </Tooltip>
+            ) : null}
+            {canRollback ? (
+              <Tooltip title={localeCode === 'zh_CN' ? '回滚' : 'Rollback'}>
+                <Button
+                  size="small"
+                  type="text"
+                  icon={<UndoOutlined />}
+                  aria-label={localeCode === 'zh_CN' ? '回滚' : 'Rollback'}
+                  onClick={() => rollbackMutation.mutate({ name, namespace: record.namespace })}
+                />
+              </Tooltip>
+            ) : null}
+            {canDelete ? (
+              <Tooltip title={localeCode === 'zh_CN' ? '删除' : 'Delete'}>
+                <Button
+                  size="small"
+                  type="text"
+                  danger
+                  icon={<DeleteOutlined />}
+                  aria-label={localeCode === 'zh_CN' ? '删除' : 'Delete'}
+                  loading={deleteMutation.isPending && deleteMutation.variables?.name === name && deleteMutation.variables?.namespace === record.namespace}
+                  onClick={() => {
+                    Modal.confirm({
+                      title: localeCode === 'zh_CN' ? `确认删除 ${name}？` : `Delete ${name}?`,
+                      content: localeCode === 'zh_CN' ? '此操作不可恢复，删除后集群资源立即消失。' : 'This deletes the resource immediately and cannot be undone.',
+                      onOk: () => deleteMutation.mutate({ name, namespace: record.namespace }),
+                    })
+                  }}
+                />
+              </Tooltip>
+            ) : null}
+          </Space>
+        )
+      },
     },
   ]
 
@@ -769,17 +760,17 @@ export function WorkloadsDeploymentsPage() {
         className="kc-platform-compact-field"
         size="small"
         value={searchKeyword}
-        onChange={setSearchKeyword}
-        placeholder={localeCode === 'zh_CN' ? '搜索 Deployment / Namespace' : 'Search deployment or namespace'}
-        style={{ width: 260 }}
+        onChange={(event) => setSearchKeyword(event.target.value)}
+        placeholder={localeCode === 'zh_CN' ? '搜索 Deployment 名称' : 'Search deployment name'}
+        style={{ width: 220 }}
       />
       <Select
         className="kc-platform-compact-field"
         size="small"
         value={healthFilter}
         onChange={(value) => setHealthFilter(String(value))}
-        style={{ width: 190 }}
-        optionList={[
+        style={{ width: 180 }}
+        options={[
           { value: 'all', label: localeCode === 'zh_CN' ? '全部健康状态' : 'All health states' },
           { value: 'healthy', label: localeCode === 'zh_CN' ? '健康' : 'Healthy' },
           { value: 'progressing', label: localeCode === 'zh_CN' ? '进行中' : 'Progressing' },
@@ -787,16 +778,14 @@ export function WorkloadsDeploymentsPage() {
           { value: 'scaled-down', label: localeCode === 'zh_CN' ? '已缩容为 0' : 'Scaled down' },
         ]}
       />
-      <Text className="kc-workload-table-summary" type="tertiary" size="small">
-        {localeCode === 'zh_CN' ? `当前 ${filteredDeployments.length} / ${deployments.length} 条` : `${filteredDeployments.length} / ${deployments.length} items`}
-      </Text>
     </div>
   )
 
   const deploymentToolbarExtra = (
     <div className="kc-page-toolbar">
       <Button
-        theme="light"
+        size="small"
+        variant="outlined"
         disabled={!canBatchRestart}
         loading={batchRestartMutation.isPending}
         onClick={() => batchRestartMutation.mutate(selectedDeployments)}
@@ -804,7 +793,8 @@ export function WorkloadsDeploymentsPage() {
         {localeCode === 'zh_CN' ? `批量重启 (${selectedDeployments.length})` : `Batch Restart (${selectedDeployments.length})`}
       </Button>
       <Button
-        theme="light"
+        size="small"
+        variant="outlined"
         disabled={!canBatchRollback}
         loading={batchRollbackLoading}
         onClick={openBatchRollbackModal}
@@ -812,7 +802,8 @@ export function WorkloadsDeploymentsPage() {
         {localeCode === 'zh_CN' ? `批量回滚 (${selectedDeployments.length})` : `Batch Rollback (${selectedDeployments.length})`}
       </Button>
       <Button
-        theme="light"
+        size="small"
+        variant="outlined"
         disabled={!canBatchScale}
         onClick={() => {
           setBatchScaleReplicas(selectedDeployments[0]?.desiredReplicas ?? 1)
@@ -821,7 +812,7 @@ export function WorkloadsDeploymentsPage() {
       >
         {localeCode === 'zh_CN' ? `批量扩缩 (${selectedDeployments.length})` : `Batch Scale (${selectedDeployments.length})`}
       </Button>
-      <Button icon={<IconRefresh />} theme="light" onClick={() => queryClient.invalidateQueries({ queryKey: ['deployments', clusterId, namespace] })}>
+      <Button size="small" icon={<ReloadOutlined />} variant="outlined" onClick={() => queryClient.invalidateQueries({ queryKey: ['deployments', clusterId, namespace] })}>
         {t('common.refresh', 'Refresh')}
       </Button>
     </div>
@@ -831,19 +822,16 @@ export function WorkloadsDeploymentsPage() {
     <div className="kc-page">
       <AdminTable
         title={t('page.workloads.deployments.title', 'Deployments')}
+        className="kc-deployments-table kc-platform-table"
         toolbar={deploymentToolbar}
         toolbarExtra={deploymentToolbarExtra}
         columns={columns}
         dataSource={filteredDeployments}
         rowKey={(record) => `${record.namespace}/${record.name}`}
         loading={isLoading}
-        expandedRowRender={(record: Deployment) => (
-          <DeploymentPodsPanel
-            clusterId={clusterId}
-            deploymentName={record.name}
-            namespace={record.namespace}
-          />
-        )}
+        pageSize={10}
+        scroll={{ x: 'max-content' }}
+        selectCurrentPageOnly
         rowSelection={{
           selectedRowKeys: selectedDeploymentKeys,
           onChange: (selectedRowKeys: string[]) => setSelectedDeploymentKeys(selectedRowKeys),
@@ -851,7 +839,7 @@ export function WorkloadsDeploymentsPage() {
       />
       <Modal
         title={localeCode === 'zh_CN' ? '扩缩容' : 'Scale deployment'}
-        visible={!!scaleTarget}
+        open={!!scaleTarget}
         onOk={() => {
           if (scaleTarget) {
             scaleMutation.mutate(scaleTarget)
@@ -871,7 +859,7 @@ export function WorkloadsDeploymentsPage() {
       </Modal>
       <Modal
         title={localeCode === 'zh_CN' ? '批量回滚' : 'Batch rollback deployments'}
-        visible={batchRollbackVisible}
+        open={batchRollbackVisible}
         onOk={() => batchRollbackMutation.mutate(batchRollbackDrafts)}
         onCancel={() => setBatchRollbackVisible(false)}
         confirmLoading={batchRollbackMutation.isPending}
@@ -890,7 +878,7 @@ export function WorkloadsDeploymentsPage() {
                 render: (_: string, record: BatchRollbackDraft) => (
                   <Select
                     value={record.revision || undefined}
-                    optionList={record.options}
+                    options={record.options}
                     style={{ width: 260 }}
                     placeholder={localeCode === 'zh_CN' ? '选择回滚版本' : 'Select revision'}
                     onChange={(value) =>
@@ -911,13 +899,13 @@ export function WorkloadsDeploymentsPage() {
       </Modal>
       <Modal
         title={localeCode === 'zh_CN' ? '批量扩缩容' : 'Batch scale deployments'}
-        visible={batchScaleVisible}
+        open={batchScaleVisible}
         onOk={() => batchScaleMutation.mutate({ items: selectedDeployments, replicas: batchScaleReplicas })}
         onCancel={() => setBatchScaleVisible(false)}
         confirmLoading={batchScaleMutation.isPending}
       >
         <div className="flex flex-col gap-3">
-          <Text type="tertiary">
+          <Text type="secondary">
             {localeCode === 'zh_CN'
               ? `将对 ${selectedDeployments.length} 个 Deployment 应用相同副本数`
               : `Apply the same replica count to ${selectedDeployments.length} deployments`}
@@ -1094,12 +1082,12 @@ export function DeploymentDetailPage() {
         name: deploymentName,
       }),
     onSuccess: () => {
-      Toast.success(localeCode === 'zh_CN' ? '已触发 Restart Deployment' : 'Restart Deployment triggered')
+      void message.success(localeCode === 'zh_CN' ? '已触发 Restart Deployment' : 'Restart Deployment triggered')
       queryClient.invalidateQueries({ queryKey: ['deployment-rollout-status', clusterId, detailNamespace, deploymentName] })
       queryClient.invalidateQueries({ queryKey: ['deployment-rollouts', clusterId, detailNamespace, deploymentName] })
       queryClient.invalidateQueries({ queryKey: ['deployments', clusterId, namespace] })
     },
-    onError: (err: Error) => Toast.error(err.message),
+    onError: (err: Error) => void message.error(err.message),
   })
 
   const scaleDeploymentMutation = useMutation({
@@ -1110,16 +1098,16 @@ export function DeploymentDetailPage() {
         replicas: scaleReplicas,
       }),
     onSuccess: () => {
-      Toast.success(localeCode === 'zh_CN' ? '已触发扩缩容' : 'Scale triggered')
+      void message.success(localeCode === 'zh_CN' ? '已触发扩缩容' : 'Scale triggered')
       setScaleVisible(false)
       queryClient.invalidateQueries({ queryKey: ['deployment-rollout-status', clusterId, detailNamespace, deploymentName] })
       queryClient.invalidateQueries({ queryKey: ['deployment-rollouts', clusterId, detailNamespace, deploymentName] })
       queryClient.invalidateQueries({ queryKey: ['deployments', clusterId, namespace] })
     },
-    onError: (err: Error) => Toast.error(err.message),
+    onError: (err: Error) => void message.error(err.message),
   })
 
-  const rolloutColumns: ColumnProps<RolloutHistory>[] = [
+  const rolloutColumns: TableColumnsType<RolloutHistory> = [
     { title: localeCode === 'zh_CN' ? 'Revision' : 'Revision', dataIndex: 'revision' },
     { title: localeCode === 'zh_CN' ? '镜像' : 'Images', dataIndex: 'images', render: (value: string[]) => value?.join(', ') || '-' },
     { title: localeCode === 'zh_CN' ? '副本' : 'Replicas', dataIndex: 'replicas' },
@@ -1127,14 +1115,13 @@ export function DeploymentDetailPage() {
     { ...tableColumnPresets.datetime, title: localeCode === 'zh_CN' ? '创建时间' : 'Created', dataIndex: 'createdAt', render: (value: string) => value ? formatDateTime(value) : '-' },
   ]
 
-  const deploymentPodColumns: ColumnProps<Pod>[] = [
+  const deploymentPodColumns: TableColumnsType<Pod> = [
     {
       title: localeCode === 'zh_CN' ? 'Pod' : 'Pod',
       dataIndex: 'name',
       render: (value: string, record: Pod) => (
         <Button
-          theme="borderless"
-          type="primary"
+          type="text"
           onClick={() => navigate(buildWorkloadDetailPath('pods', value, detailNamespace, record.namespace))}
         >
           {value}
@@ -1153,14 +1140,14 @@ export function DeploymentDetailPage() {
       <Card className="kc-detail-card" title={localeCode === 'zh_CN' ? '滚动发布状态' : 'Rollout Status'}>
         {rolloutStatus ? (
           <Descriptions
-            data={[
-              { key: localeCode === 'zh_CN' ? 'Revision' : 'Revision', value: rolloutStatus.revision || '-' },
-              { key: localeCode === 'zh_CN' ? '状态' : 'Status', value: <StatusTag value={rolloutStatus.status} /> },
-              { key: localeCode === 'zh_CN' ? '消息' : 'Message', value: rolloutStatus.message || '-' },
-              { key: localeCode === 'zh_CN' ? '副本' : 'Desired', value: rolloutStatus.desiredReplicas },
-              { key: localeCode === 'zh_CN' ? '更新副本' : 'Updated', value: rolloutStatus.updatedReplicas },
-              { key: localeCode === 'zh_CN' ? '就绪副本' : 'Ready', value: rolloutStatus.readyReplicas },
-              { key: localeCode === 'zh_CN' ? '可用副本' : 'Available', value: rolloutStatus.availableReplicas },
+            items={[
+              { key: localeCode === 'zh_CN' ? 'Revision' : 'Revision', label: localeCode === 'zh_CN' ? 'Revision' : 'Revision', children: rolloutStatus.revision || '-' },
+              { key: localeCode === 'zh_CN' ? '状态' : 'Status', label: localeCode === 'zh_CN' ? '状态' : 'Status', children: <StatusTag value={rolloutStatus.status} /> },
+              { key: localeCode === 'zh_CN' ? '消息' : 'Message', label: localeCode === 'zh_CN' ? '消息' : 'Message', children: rolloutStatus.message || '-' },
+              { key: localeCode === 'zh_CN' ? '副本' : 'Desired', label: localeCode === 'zh_CN' ? '副本' : 'Desired', children: rolloutStatus.desiredReplicas },
+              { key: localeCode === 'zh_CN' ? '更新副本' : 'Updated', label: localeCode === 'zh_CN' ? '更新副本' : 'Updated', children: rolloutStatus.updatedReplicas },
+              { key: localeCode === 'zh_CN' ? '就绪副本' : 'Ready', label: localeCode === 'zh_CN' ? '就绪副本' : 'Ready', children: rolloutStatus.readyReplicas },
+              { key: localeCode === 'zh_CN' ? '可用副本' : 'Available', label: localeCode === 'zh_CN' ? '可用副本' : 'Available', children: rolloutStatus.availableReplicas },
             ]}
           />
         ) : (
@@ -1219,7 +1206,7 @@ export function DeploymentDetailPage() {
                     <StatusTag value={latestBuild?.status || 'unknown'} />
                     <StatusTag value={latestWorkflow?.status || 'unknown'} />
                     <StatusTag value={latestRelease?.status || 'unknown'} />
-                    <Text type="tertiary" size="small">
+                    <Text type="secondary" className="text-xs">
                       {latestRelease?.createdAt
                         ? `最近发布: ${formatDateTime(latestRelease.createdAt)}`
                         : latestWorkflow?.updatedAt
@@ -1238,26 +1225,30 @@ export function DeploymentDetailPage() {
     </div>
   )
 
-  const metricsTab = (
-    <TabPane tab={localeCode === 'zh_CN' ? '指标' : 'Metrics'} itemKey="metrics" key="metrics">
+  const metricsTab: NonNullable<TabsProps['items']>[number] = {
+    key: 'metrics',
+    label: localeCode === 'zh_CN' ? '指标' : 'Metrics',
+    children: (
       <ResourceMetricsPanel
         title={localeCode === 'zh_CN' ? 'Deployment 指标' : 'Deployment Metrics'}
         data={metricsQuery.data?.data}
         loading={metricsQuery.isLoading}
       />
-    </TabPane>
-  )
+    ),
+  }
 
-  const eventsTab = (
-    <TabPane tab={localeCode === 'zh_CN' ? '事件' : 'Events'} itemKey="events" key="events">
+  const eventsTab: NonNullable<TabsProps['items']>[number] = {
+    key: 'events',
+    label: localeCode === 'zh_CN' ? '事件' : 'Events',
+    children: (
       <ResourceEventsTimeline
         title={localeCode === 'zh_CN' ? 'Deployment 事件时间线' : 'Deployment Event Timeline'}
         events={deploymentTimelineEvents}
         loading={deploymentEventsQuery.isLoading}
         emptyDescription={localeCode === 'zh_CN' ? '当前 Deployment 暂无事件和状态变化' : 'No deployment events or rollout condition transitions'}
       />
-    </TabPane>
-  )
+    ),
+  }
 
   return (
     <>
@@ -1270,14 +1261,14 @@ export function DeploymentDetailPage() {
         yamlLast
         actions={(
           <Space>
-            <Button theme="light" loading={restartDeploymentMutation.isPending} onClick={() => restartDeploymentMutation.mutate()}>
+            <Button variant="outlined" loading={restartDeploymentMutation.isPending} onClick={() => restartDeploymentMutation.mutate()}>
               Restart Deployment
             </Button>
-            <Button theme="light" onClick={() => setScaleVisible(true)}>
+            <Button variant="outlined" onClick={() => setScaleVisible(true)}>
               {localeCode === 'zh_CN' ? '扩缩容' : 'Scale'}
             </Button>
             <Button
-              theme="light"
+              variant="outlined"
               onClick={() => downloadJSON(`deployment-diagnostics-${deploymentName}.json`, deploymentExportPayload)}
             >
               {localeCode === 'zh_CN' ? '导出诊断' : 'Export Diagnostics'}
@@ -1287,7 +1278,7 @@ export function DeploymentDetailPage() {
       />
       <Modal
         title={localeCode === 'zh_CN' ? 'Deployment 扩缩容' : 'Scale deployment'}
-        visible={scaleVisible}
+        open={scaleVisible}
         onOk={() => scaleDeploymentMutation.mutate()}
         onCancel={() => setScaleVisible(false)}
         confirmLoading={scaleDeploymentMutation.isPending}
@@ -1416,7 +1407,7 @@ function renderPodResourceCell(record: Pod, resource: 'cpu' | 'memory', localeCo
     <div className="kc-resource-cell is-compact">
       <div className="kc-resource-cell-copy">
         <Text strong>{usageDisplay}</Text>
-        <Text type="tertiary" size="small">{secondary}</Text>
+        <Text type="secondary" className="text-xs">{secondary}</Text>
       </div>
     </div>
   )
@@ -1477,17 +1468,17 @@ export function WorkloadsPodsPage() {
     mutationFn: async ({ name, namespace: targetNamespace }: { name: string; namespace: string }) =>
       api.delete(`/clusters/${clusterId}/workloads/pods/${encodeURIComponent(name)}?namespace=${encodeURIComponent(targetNamespace)}`),
     onSuccess: () => {
-      Toast.success(localeCode === 'zh_CN' ? 'Pod 已删除，控制器将自动重建' : 'Pod deleted. The controller should recreate it automatically')
+      void message.success(localeCode === 'zh_CN' ? 'Pod 已删除，控制器将自动重建' : 'Pod deleted. The controller should recreate it automatically')
       queryClient.invalidateQueries({ queryKey: ['pods', clusterId, namespace] })
     },
-    onError: (err: Error) => Toast.error(err.message),
+    onError: (err: Error) => void message.error(err.message),
   })
 
-  const columns: ColumnProps<Pod>[] = [
+  const columns: TableColumnsType<Pod> = [
     {
       title: localeCode === 'zh_CN' ? '名称' : 'Name',
       dataIndex: 'name',
-      width: 220,
+      width: 280,
       ellipsis: { showTitle: false },
       sorter: podSorter((left, right) => {
         const nameCompare = compareStrings(left.name, right.name)
@@ -1496,23 +1487,27 @@ export function WorkloadsPodsPage() {
       }),
       defaultSortOrder: 'ascend',
       render: (name: string, record: Pod) => (
-        <Tooltip content={name} position="topLeft">
-          <Text
-            link={{ onClick: () => navigate(buildWorkloadDetailPath('pods', name, namespace, record.namespace)) }}
-            ellipsis={{ showTooltip: false }}
-            style={{ maxWidth: '100%', display: 'block' }}
+        <Tooltip title={name} placement="topLeft">
+          <Link
+            onClick={() => navigate(buildWorkloadDetailPath('pods', name, namespace, record.namespace))}
+            style={{
+              display: 'block',
+              maxWidth: '100%',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
           >
             {name}
-          </Text>
+          </Link>
         </Tooltip>
       ),
     },
-    { title: t('common.namespace', 'Namespace'), dataIndex: 'namespace', width: 136, ellipsis: { showTitle: true }, sorter: podSorter((left, right) => compareStrings(left.namespace, right.namespace)) },
+    { title: t('common.namespace', 'Namespace'), dataIndex: 'namespace', sorter: podSorter((left, right) => compareStrings(left.namespace, right.namespace)) },
     {
-      ...tableColumnPresets.status,
       title: t('common.status', 'Status'),
       dataIndex: 'phase',
-      width: 112,
+      width: 120,
       sorter: podSorter((left, right) => compareStrings(left.phase, right.phase)),
       render: (s: string) => <StatusTag value={s} />,
     },
@@ -1533,42 +1528,47 @@ export function WorkloadsPodsPage() {
     {
       title: 'CPU',
       dataIndex: 'cpu',
-      width: 176,
+      width: 172,
       sorter: podSorter((left, right) => parseCpuValue(left.cpu) - parseCpuValue(right.cpu)),
       render: (_: string, record: Pod) => renderPodResourceCell(record, 'cpu', localeCode),
     },
     {
       title: localeCode === 'zh_CN' ? '内存' : 'Memory',
       dataIndex: 'memory',
-      width: 176,
+      width: 172,
       sorter: podSorter((left, right) => parseMemoryValue(left.memory) - parseMemoryValue(right.memory)),
       render: (_: string, record: Pod) => renderPodResourceCell(record, 'memory', localeCode),
     },
-    { ...tableColumnPresets.datetime, width: 84, title: 'Age', dataIndex: 'ageSeconds', sorter: podSorter((left, right) => left.ageSeconds - right.ageSeconds), render: (value: number) => formatAgeSeconds(value) },
+    { title: 'Age', dataIndex: 'ageSeconds', width: 96, sorter: podSorter((left, right) => left.ageSeconds - right.ageSeconds), render: (value: number) => formatAgeSeconds(value) },
     {
-      width: 64,
-      align: 'center' as const,
       fixed: 'right',
       title: '',
       dataIndex: 'name',
+      key: 'actions',
+      width: 52,
+      align: 'center',
+      onHeaderCell: () => ({ className: TABLE_ACTIONS_COLUMN_CLASS_NAME }),
+      onCell: () => ({ className: TABLE_ACTIONS_COLUMN_CLASS_NAME }),
       render: (value: string, record: Pod) => (
-        <Tooltip content={localeCode === 'zh_CN' ? '重建 Pod' : 'Rebuild Pod'}>
-          <Button
-            size="small"
-            theme="borderless"
-            type="danger"
-            icon={<IconDelete />}
-            aria-label={localeCode === 'zh_CN' ? '重建 Pod' : 'Rebuild Pod'}
-            loading={rebuildPodMutation.isPending}
-            onClick={() => {
-              Modal.confirm({
-                title: localeCode === 'zh_CN' ? `确认重建 Pod ${value}？` : `Rebuild pod ${value}?`,
-                content: localeCode === 'zh_CN' ? '这会删除当前 Pod，由控制器自动重建。' : 'This deletes the current pod and lets the controller recreate it.',
-                onOk: () => rebuildPodMutation.mutate({ name: value, namespace: record.namespace }),
-              })
-            }}
-          />
-        </Tooltip>
+        <Space size={4} className="kc-deployment-action-cell">
+          <Tooltip title={localeCode === 'zh_CN' ? '重建 Pod' : 'Rebuild Pod'}>
+            <Button
+              size="small"
+              type="text"
+              danger
+              icon={<DeleteOutlined />}
+              aria-label={localeCode === 'zh_CN' ? '重建 Pod' : 'Rebuild Pod'}
+              loading={rebuildPodMutation.isPending}
+              onClick={() => {
+                Modal.confirm({
+                  title: localeCode === 'zh_CN' ? `确认重建 Pod ${value}？` : `Rebuild pod ${value}?`,
+                  content: localeCode === 'zh_CN' ? '这会删除当前 Pod，由控制器自动重建。' : 'This deletes the current pod and lets the controller recreate it.',
+                  onOk: () => rebuildPodMutation.mutate({ name: value, namespace: record.namespace }),
+                })
+              }}
+            />
+          </Tooltip>
+        </Space>
       ),
     },
   ]
@@ -1580,17 +1580,17 @@ export function WorkloadsPodsPage() {
         className="kc-platform-compact-field"
         size="small"
         value={searchKeyword}
-        onChange={setSearchKeyword}
-        placeholder={localeCode === 'zh_CN' ? '搜索 Pod / Namespace / Node / IP' : 'Search pod / namespace / node / IP'}
-        style={{ width: 260 }}
+        onChange={(event) => setSearchKeyword(event.target.value)}
+        placeholder={localeCode === 'zh_CN' ? '搜索 Pod / Node / IP' : 'Search pod / node / IP'}
+        style={{ width: 220 }}
       />
       <Select
         className="kc-platform-compact-field"
         size="small"
         value={phaseFilter}
         onChange={(value) => setPhaseFilter(String(value))}
-        style={{ width: 180 }}
-        optionList={[
+        style={{ width: 160 }}
+        options={[
           { value: 'all', label: localeCode === 'zh_CN' ? '全部状态' : 'All phases' },
           { value: 'Running', label: 'Running' },
           { value: 'Pending', label: 'Pending' },
@@ -1604,8 +1604,8 @@ export function WorkloadsPodsPage() {
         size="small"
         value={restartFilter}
         onChange={(value) => setRestartFilter(String(value))}
-        style={{ width: 160 }}
-        optionList={[
+        style={{ width: 150 }}
+        options={[
           { value: 'all', label: localeCode === 'zh_CN' ? '全部重启状态' : 'All restart states' },
           { value: 'restarting', label: localeCode === 'zh_CN' ? '仅有重启' : 'Restarted only' },
           { value: 'clean', label: localeCode === 'zh_CN' ? '仅无重启' : 'No restarts' },
@@ -1616,8 +1616,8 @@ export function WorkloadsPodsPage() {
         size="small"
         value={pvcFilter}
         onChange={(value) => setPvcFilter(String(value))}
-        style={{ width: 160 }}
-        optionList={[
+        style={{ width: 150 }}
+        options={[
           { value: 'all', label: localeCode === 'zh_CN' ? '全部存储状态' : 'All storage states' },
           { value: 'with-pvc', label: localeCode === 'zh_CN' ? '仅挂载 PVC' : 'With PVC only' },
           { value: 'without-pvc', label: localeCode === 'zh_CN' ? '仅无 PVC' : 'Without PVC' },
@@ -1629,20 +1629,17 @@ export function WorkloadsPodsPage() {
         value={nodeFilter}
         onChange={(value) => setNodeFilter(String(value))}
         style={{ width: 180 }}
-        optionList={[
+        options={[
           { value: 'all', label: localeCode === 'zh_CN' ? '全部节点' : 'All nodes' },
           ...nodeOptions.map((item) => ({ value: item, label: item })),
         ]}
       />
-      <Text className="kc-workload-table-summary" type="tertiary" size="small">
-        {localeCode === 'zh_CN' ? `当前 ${filteredPods.length} / ${pods.length} 条` : `${filteredPods.length} / ${pods.length} items`}
-      </Text>
     </div>
   )
 
   const podToolbarExtra = (
     <div className="kc-page-toolbar">
-      <Button icon={<IconRefresh />} theme="light" onClick={() => queryClient.invalidateQueries({ queryKey: ['pods', clusterId, namespace] })}>
+      <Button size="small" icon={<ReloadOutlined />} variant="outlined" onClick={() => queryClient.invalidateQueries({ queryKey: ['pods', clusterId, namespace] })}>
         {t('common.refresh', 'Refresh')}
       </Button>
     </div>
@@ -1651,7 +1648,7 @@ export function WorkloadsPodsPage() {
   return (
     <div className="kc-page">
       <AdminTable
-        className="kc-pods-table"
+        className="kc-pods-table kc-platform-table"
         title={t('page.workloads.pods.title', 'Pods')}
         toolbar={podToolbar}
         toolbarExtra={podToolbarExtra}
@@ -1659,8 +1656,8 @@ export function WorkloadsPodsPage() {
         dataSource={orderedPods}
         rowKey={(record) => `${record.namespace}/${record.name}`}
         loading={isLoading}
-        pageSize={20}
-        scroll={{ x: 1480 }}
+        pageSize={10}
+        scroll={{ x: 'max-content' }}
       />
     </div>
   )
@@ -1744,7 +1741,7 @@ export function PodDetailPage() {
     events: podEventsQuery.data?.data ?? [],
   }), [clusterId, container, detailNamespace, podDetail, podEventsQuery.data, podMetricsQuery.data, podName])
 
-  const containerColumns: ColumnProps<WorkloadContainer>[] = [
+  const containerColumns: TableColumnsType<WorkloadContainer> = [
     { title: localeCode === 'zh_CN' ? '容器' : 'Container', dataIndex: 'name' },
     { title: localeCode === 'zh_CN' ? '镜像' : 'Image', dataIndex: 'image', ellipsis: true },
     { title: localeCode === 'zh_CN' ? '就绪' : 'Ready', dataIndex: 'ready', render: (value: boolean) => <BooleanTag value={value} trueLabel="Yes" falseLabel="No" /> },
@@ -1753,7 +1750,7 @@ export function PodDetailPage() {
     { title: localeCode === 'zh_CN' ? '重启次数' : 'Restarts', dataIndex: 'restartCount' },
   ]
 
-  const conditionColumns: ColumnProps<WorkloadCondition>[] = [
+  const conditionColumns: TableColumnsType<WorkloadCondition> = [
     { title: localeCode === 'zh_CN' ? '条件' : 'Condition', dataIndex: 'type' },
     { title: localeCode === 'zh_CN' ? '状态' : 'Status', dataIndex: 'status', render: (value: string) => <StatusTag value={value} /> },
     { title: localeCode === 'zh_CN' ? '原因' : 'Reason', dataIndex: 'reason', render: (value: string) => value || '-' },
@@ -1765,14 +1762,14 @@ export function PodDetailPage() {
     <>
       <Card className="kc-detail-card" title={localeCode === 'zh_CN' ? '运行时概览' : 'Runtime Overview'}>
         <Descriptions
-          data={[
-            { key: localeCode === 'zh_CN' ? '阶段' : 'Phase', value: <StatusTag value={podDetail.phase} /> },
-            { key: 'Pod IP', value: podDetail.podIp || '-' },
-            { key: 'Host IP', value: podDetail.hostIp || '-' },
-            { key: localeCode === 'zh_CN' ? '节点' : 'Node', value: podDetail.nodeName || '-' },
-            { key: localeCode === 'zh_CN' ? '服务账号' : 'ServiceAccount', value: podDetail.serviceAccountName || '-' },
-            { key: 'QoS', value: podDetail.qosClass || '-' },
-            { key: localeCode === 'zh_CN' ? '启动时间' : 'Started At', value: podDetail.startTime ? formatDateTime(podDetail.startTime) : '-' },
+          items={[
+            { key: localeCode === 'zh_CN' ? '阶段' : 'Phase', label: localeCode === 'zh_CN' ? '阶段' : 'Phase', children: <StatusTag value={podDetail.phase} /> },
+            { key: 'Pod IP', label: 'Pod IP', children: podDetail.podIp || '-' },
+            { key: 'Host IP', label: 'Host IP', children: podDetail.hostIp || '-' },
+            { key: localeCode === 'zh_CN' ? '节点' : 'Node', label: localeCode === 'zh_CN' ? '节点' : 'Node', children: podDetail.nodeName || '-' },
+            { key: localeCode === 'zh_CN' ? '服务账号' : 'ServiceAccount', label: localeCode === 'zh_CN' ? '服务账号' : 'ServiceAccount', children: podDetail.serviceAccountName || '-' },
+            { key: 'QoS', label: 'QoS', children: podDetail.qosClass || '-' },
+            { key: localeCode === 'zh_CN' ? '启动时间' : 'Started At', label: localeCode === 'zh_CN' ? '启动时间' : 'Started At', children: podDetail.startTime ? formatDateTime(podDetail.startTime) : '-' },
           ]}
         />
       </Card>
@@ -1797,8 +1794,10 @@ export function PodDetailPage() {
     </>
   ) : null
 
-  const metricsTab = (
-    <TabPane tab={localeCode === 'zh_CN' ? '指标' : 'Metrics'} itemKey="metrics" key="metrics">
+  const metricsTab: NonNullable<TabsProps['items']>[number] = {
+    key: 'metrics',
+    label: localeCode === 'zh_CN' ? '指标' : 'Metrics',
+    children: (
       <ResourceMetricsPanel
         title={localeCode === 'zh_CN' ? 'Pod 指标' : 'Pod Metrics'}
         data={podMetricsQuery.data?.data}
@@ -1810,22 +1809,26 @@ export function PodDetailPage() {
         resourceLimits={podDetail?.limits}
         compact
       />
-    </TabPane>
-  )
+    ),
+  }
 
-  const eventsTab = (
-    <TabPane tab={localeCode === 'zh_CN' ? '事件' : 'Events'} itemKey="events" key="events">
+  const eventsTab: NonNullable<TabsProps['items']>[number] = {
+    key: 'events',
+    label: localeCode === 'zh_CN' ? '事件' : 'Events',
+    children: (
       <ResourceEventsTimeline
         title={localeCode === 'zh_CN' ? 'Pod 事件时间线' : 'Pod Event Timeline'}
         events={podTimelineEvents}
         loading={podEventsQuery.isLoading}
         emptyDescription={localeCode === 'zh_CN' ? '当前 Pod 暂无事件和条件变化' : 'No pod events or condition transitions'}
       />
-    </TabPane>
-  )
+    ),
+  }
 
-  const logsTab = (
-    <TabPane tab={localeCode === 'zh_CN' ? '日志' : 'Logs'} itemKey="logs" key="logs">
+  const logsTab: NonNullable<TabsProps['items']>[number] = {
+    key: 'logs',
+    label: localeCode === 'zh_CN' ? '日志' : 'Logs',
+    children: (
       <Suspense fallback={<Spin size="large" />}>
         <PodLogViewer
           clusterId={clusterId}
@@ -1837,8 +1840,8 @@ export function PodDetailPage() {
           onContainerChange={setContainer}
         />
       </Suspense>
-    </TabPane>
-  )
+    ),
+  }
 
   return (
     <>
@@ -1854,11 +1857,11 @@ export function PodDetailPage() {
         yamlLast
         actions={(
           <Space>
-            <Button theme="light" onClick={() => setTerminalVisible(true)}>
+            <Button variant="outlined" onClick={() => setTerminalVisible(true)}>
               {localeCode === 'zh_CN' ? '打开终端' : 'Open Terminal'}
             </Button>
             <Button
-              theme="light"
+              variant="outlined"
               onClick={() => downloadJSON(`pod-diagnostics-${podName}.json`, podExportPayload)}
             >
               {localeCode === 'zh_CN' ? '导出诊断' : 'Export Diagnostics'}
@@ -1868,27 +1871,27 @@ export function PodDetailPage() {
       />
       <Modal
         title={`Terminal: ${podName}`}
-        visible={terminalVisible}
+        open={terminalVisible}
         onCancel={() => setTerminalVisible(false)}
         footer={null}
         width={1080}
       >
         <div className="flex items-center gap-2 mb-2">
-          <Text strong size="small">{localeCode === 'zh_CN' ? '容器:' : 'Container:'}</Text>
+          <Text strong className="text-xs">{localeCode === 'zh_CN' ? '容器:' : 'Container:'}</Text>
           <Select
             placeholder={localeCode === 'zh_CN' ? '选择容器' : 'Select container'}
             value={container}
             onChange={(value) => setContainer(String(value || ''))}
             style={{ width: 220 }}
-            optionList={containerOptions}
-            showClear
+            options={containerOptions}
+            allowClear
           />
-          <Text strong size="small">{localeCode === 'zh_CN' ? 'Shell:' : 'Shell:'}</Text>
+          <Text strong className="text-xs">{localeCode === 'zh_CN' ? 'Shell:' : 'Shell:'}</Text>
           <Select
             value={terminalShell}
             onChange={(value) => setTerminalShell(String(value))}
             style={{ width: 180 }}
-            optionList={[
+            options={[
               { value: '/bin/sh', label: '/bin/sh' },
               { value: '/bin/bash', label: '/bin/bash' },
               { value: '/bin/ash', label: '/bin/ash' },
@@ -1936,12 +1939,12 @@ export function WorkloadsStatefulSetsPage() {
     statefulSets.filter((item) => includesSearch([item.name, item.namespace, item.serviceName], normalizeSearchKeyword(searchKeyword)))
   ), [searchKeyword, statefulSets])
 
-  const columns: ColumnProps<StatefulSet>[] = [
+  const columns: TableColumnsType<StatefulSet> = [
     {
       title: '名称',
       dataIndex: 'name',
       render: (name: string, record: StatefulSet) => (
-        <Button theme="borderless" type="primary" onClick={() => navigate(buildWorkloadDetailPath('statefulsets', name, namespace, record.namespace))}>{name}</Button>
+        <Button type="text" onClick={() => navigate(buildWorkloadDetailPath('statefulsets', name, namespace, record.namespace))}>{name}</Button>
       ),
     },
     { title: '命名空间', dataIndex: 'namespace' },
@@ -1951,9 +1954,20 @@ export function WorkloadsStatefulSetsPage() {
     { ...tableColumnPresets.datetime, title: 'Age', dataIndex: 'ageSeconds', render: (value: number) => formatAgeSeconds(value) },
   ]
 
+  const { column: statefulSetActions, modalNode: statefulSetYamlModal } = useResourceActions<StatefulSet>({
+    resourcePath: 'workloads/statefulsets',
+    resourceKind: 'StatefulSet',
+    getName: (record) => record.name,
+    getNamespace: (record) => record.namespace,
+    listInvalidationKey: ['statefulsets'],
+  })
+  columns.push(statefulSetActions)
+
   return (
     <div className="kc-page">
+      {statefulSetYamlModal}
       <AdminTable
+        className="kc-statefulsets-table kc-platform-table"
         title={t('page.workloads.statefulsets.title', 'StatefulSets')}
         toolbar={(
           <div className="kc-workload-table-filters">
@@ -1962,18 +1976,18 @@ export function WorkloadsStatefulSetsPage() {
               className="kc-platform-compact-field"
               size="small"
               value={searchKeyword}
-              onChange={setSearchKeyword}
+              onChange={(event) => setSearchKeyword(event.target.value)}
               placeholder={localeCode === 'zh_CN' ? '搜索 StatefulSet / Namespace / Service' : 'Search stateful set / namespace / service'}
               style={{ width: 280 }}
             />
-            <Text className="kc-workload-table-summary" type="tertiary" size="small">
+            <Text className="kc-workload-table-summary" type="secondary">
               {localeCode === 'zh_CN' ? `当前 ${filteredStatefulSets.length} / ${statefulSets.length} 条` : `${filteredStatefulSets.length} / ${statefulSets.length} items`}
             </Text>
           </div>
         )}
         toolbarExtra={(
           <div className="kc-page-toolbar">
-            <Button icon={<IconRefresh />} theme="light" onClick={() => queryClient.invalidateQueries({ queryKey: ['statefulsets', clusterId, namespace] })}>
+            <Button icon={<ReloadOutlined />} variant="outlined" onClick={() => queryClient.invalidateQueries({ queryKey: ['statefulsets', clusterId, namespace] })}>
               {t('common.refresh', 'Refresh')}
             </Button>
           </div>
@@ -1982,6 +1996,7 @@ export function WorkloadsStatefulSetsPage() {
         dataSource={filteredStatefulSets}
         rowKey={(record) => `${record.namespace}/${record.name}`}
         loading={isLoading}
+        scroll={{ x: 'max-content' }}
       />
     </div>
   )
@@ -2017,12 +2032,12 @@ export function WorkloadsDaemonSetsPage() {
     daemonSets.filter((item) => includesSearch([item.name, item.namespace], normalizeSearchKeyword(searchKeyword)))
   ), [daemonSets, searchKeyword])
 
-  const columns: ColumnProps<DaemonSet>[] = [
+  const columns: TableColumnsType<DaemonSet> = [
     {
       title: '名称',
       dataIndex: 'name',
       render: (name: string, record: DaemonSet) => (
-        <Button theme="borderless" type="primary" onClick={() => navigate(buildWorkloadDetailPath('daemonsets', name, namespace, record.namespace))}>{name}</Button>
+        <Button type="text" onClick={() => navigate(buildWorkloadDetailPath('daemonsets', name, namespace, record.namespace))}>{name}</Button>
       ),
     },
     { title: '命名空间', dataIndex: 'namespace' },
@@ -2034,9 +2049,21 @@ export function WorkloadsDaemonSetsPage() {
     { ...tableColumnPresets.datetime, title: 'Age', dataIndex: 'ageSeconds', render: (value: number) => formatAgeSeconds(value) },
   ]
 
+  const { column: daemonSetActions, modalNode: daemonSetYamlModal } = useResourceActions<DaemonSet>({
+    resourcePath: 'workloads/daemonsets',
+    resourceKind: 'DaemonSet',
+    getName: (record) => record.name,
+    getNamespace: (record) => record.namespace,
+    listInvalidationKey: ['daemonsets'],
+  })
+  columns.push(daemonSetActions)
+
   return (
+    <>
+      {daemonSetYamlModal}
     <div className="kc-page">
       <AdminTable
+        className="kc-daemonsets-table kc-platform-table"
         title="DaemonSets"
         toolbar={(
           <div className="kc-workload-table-filters">
@@ -2045,18 +2072,18 @@ export function WorkloadsDaemonSetsPage() {
               className="kc-platform-compact-field"
               size="small"
               value={searchKeyword}
-              onChange={setSearchKeyword}
+              onChange={(event) => setSearchKeyword(event.target.value)}
               placeholder={localeCode === 'zh_CN' ? '搜索 DaemonSet / Namespace' : 'Search daemon set / namespace'}
               style={{ width: 260 }}
             />
-            <Text className="kc-workload-table-summary" type="tertiary" size="small">
+            <Text className="kc-workload-table-summary" type="secondary">
               {localeCode === 'zh_CN' ? `当前 ${filteredDaemonSets.length} / ${daemonSets.length} 条` : `${filteredDaemonSets.length} / ${daemonSets.length} items`}
             </Text>
           </div>
         )}
         toolbarExtra={(
           <div className="kc-page-toolbar">
-            <Button icon={<IconRefresh />} theme="light" onClick={() => queryClient.invalidateQueries({ queryKey: ['daemonsets', clusterId, namespace] })}>
+            <Button icon={<ReloadOutlined />} variant="outlined" onClick={() => queryClient.invalidateQueries({ queryKey: ['daemonsets', clusterId, namespace] })}>
               {localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
             </Button>
           </div>
@@ -2065,8 +2092,10 @@ export function WorkloadsDaemonSetsPage() {
         dataSource={filteredDaemonSets}
         rowKey={(record) => `${record.namespace}/${record.name}`}
         loading={isLoading}
+        scroll={{ x: 'max-content' }}
       />
     </div>
+    </>
   )
 }
 
@@ -2100,12 +2129,12 @@ export function WorkloadsJobsPage() {
     jobs.filter((item) => includesSearch([item.name, item.namespace, item.completionMode], normalizeSearchKeyword(searchKeyword)))
   ), [jobs, searchKeyword])
 
-  const columns: ColumnProps<Job>[] = [
+  const columns: TableColumnsType<Job> = [
     {
       title: '名称',
       dataIndex: 'name',
       render: (name: string, record: Job) => (
-        <Button theme="borderless" type="primary" onClick={() => navigate(buildWorkloadDetailPath('jobs', name, namespace, record.namespace))}>{name}</Button>
+        <Button type="text" onClick={() => navigate(buildWorkloadDetailPath('jobs', name, namespace, record.namespace))}>{name}</Button>
       ),
     },
     { title: '命名空间', dataIndex: 'namespace' },
@@ -2117,9 +2146,21 @@ export function WorkloadsJobsPage() {
     { ...tableColumnPresets.datetime, title: 'Age', dataIndex: 'ageSeconds', render: (value: number) => formatAgeSeconds(value) },
   ]
 
+  const { column: jobActions, modalNode: jobYamlModal } = useResourceActions<Job>({
+    resourcePath: 'workloads/jobs',
+    resourceKind: 'Job',
+    getName: (record) => record.name,
+    getNamespace: (record) => record.namespace,
+    listInvalidationKey: ['jobs'],
+  })
+  columns.push(jobActions)
+
   return (
+    <>
+    {jobYamlModal}
     <div className="kc-page">
       <AdminTable
+        className="kc-jobs-table kc-platform-table"
         title={t('page.workloads.jobs.title', 'Jobs')}
         toolbar={(
           <div className="kc-workload-table-filters">
@@ -2128,18 +2169,18 @@ export function WorkloadsJobsPage() {
               className="kc-platform-compact-field"
               size="small"
               value={searchKeyword}
-              onChange={setSearchKeyword}
+              onChange={(event) => setSearchKeyword(event.target.value)}
               placeholder={localeCode === 'zh_CN' ? '搜索 Job / Namespace / Mode' : 'Search job / namespace / mode'}
               style={{ width: 260 }}
             />
-            <Text className="kc-workload-table-summary" type="tertiary" size="small">
+            <Text className="kc-workload-table-summary" type="secondary">
               {localeCode === 'zh_CN' ? `当前 ${filteredJobs.length} / ${jobs.length} 条` : `${filteredJobs.length} / ${jobs.length} items`}
             </Text>
           </div>
         )}
         toolbarExtra={(
           <div className="kc-page-toolbar">
-            <Button icon={<IconRefresh />} theme="light" onClick={() => queryClient.invalidateQueries({ queryKey: ['jobs', clusterId, namespace] })}>
+            <Button icon={<ReloadOutlined />} variant="outlined" onClick={() => queryClient.invalidateQueries({ queryKey: ['jobs', clusterId, namespace] })}>
               {t('common.refresh', 'Refresh')}
             </Button>
           </div>
@@ -2148,8 +2189,10 @@ export function WorkloadsJobsPage() {
         dataSource={filteredJobs}
         rowKey={(record) => `${record.namespace}/${record.name}`}
         loading={isLoading}
+        scroll={{ x: 'max-content' }}
       />
     </div>
+    </>
   )
 }
 
@@ -2182,12 +2225,12 @@ export function WorkloadsCronJobsPage() {
     cronJobs.filter((item) => includesSearch([item.name, item.namespace, item.schedule], normalizeSearchKeyword(searchKeyword)))
   ), [cronJobs, searchKeyword])
 
-  const columns: ColumnProps<CronJob>[] = [
+  const columns: TableColumnsType<CronJob> = [
     {
       title: '名称',
       dataIndex: 'name',
       render: (name: string, record: CronJob) => (
-        <Button theme="borderless" type="primary" onClick={() => navigate(buildWorkloadDetailPath('cronjobs', name, namespace, record.namespace))}>{name}</Button>
+        <Button type="text" onClick={() => navigate(buildWorkloadDetailPath('cronjobs', name, namespace, record.namespace))}>{name}</Button>
       ),
     },
     { title: '命名空间', dataIndex: 'namespace' },
@@ -2203,9 +2246,21 @@ export function WorkloadsCronJobsPage() {
     { ...tableColumnPresets.datetime, title: 'Age', dataIndex: 'ageSeconds', render: (value: number) => formatAgeSeconds(value) },
   ]
 
+  const { column: cronJobActions, modalNode: cronJobYamlModal } = useResourceActions<CronJob>({
+    resourcePath: 'workloads/cronjobs',
+    resourceKind: 'CronJob',
+    getName: (record) => record.name,
+    getNamespace: (record) => record.namespace,
+    listInvalidationKey: ['cronjobs'],
+  })
+  columns.push(cronJobActions)
+
   return (
+    <>
+    {cronJobYamlModal}
     <div className="kc-page">
       <AdminTable
+        className="kc-cronjobs-table kc-platform-table"
         title={t('page.workloads.cronjobs.title', 'CronJobs')}
         toolbar={(
           <div className="kc-workload-table-filters">
@@ -2214,18 +2269,18 @@ export function WorkloadsCronJobsPage() {
               className="kc-platform-compact-field"
               size="small"
               value={searchKeyword}
-              onChange={setSearchKeyword}
+              onChange={(event) => setSearchKeyword(event.target.value)}
               placeholder={localeCode === 'zh_CN' ? '搜索 CronJob / Namespace / Schedule' : 'Search cron job / namespace / schedule'}
               style={{ width: 280 }}
             />
-            <Text className="kc-workload-table-summary" type="tertiary" size="small">
+            <Text className="kc-workload-table-summary" type="secondary">
               {localeCode === 'zh_CN' ? `当前 ${filteredCronJobs.length} / ${cronJobs.length} 条` : `${filteredCronJobs.length} / ${cronJobs.length} items`}
             </Text>
           </div>
         )}
         toolbarExtra={(
           <div className="kc-page-toolbar">
-            <Button icon={<IconRefresh />} theme="light" onClick={() => queryClient.invalidateQueries({ queryKey: ['cronjobs', clusterId, namespace] })}>
+            <Button icon={<ReloadOutlined />} variant="outlined" onClick={() => queryClient.invalidateQueries({ queryKey: ['cronjobs', clusterId, namespace] })}>
               {t('common.refresh', 'Refresh')}
             </Button>
           </div>
@@ -2234,8 +2289,10 @@ export function WorkloadsCronJobsPage() {
         dataSource={filteredCronJobs}
         rowKey={(record) => `${record.namespace}/${record.name}`}
         loading={isLoading}
+        scroll={{ x: 'max-content' }}
       />
     </div>
+    </>
   )
 }
 

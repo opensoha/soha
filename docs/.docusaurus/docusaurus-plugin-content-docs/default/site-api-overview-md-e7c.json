@@ -1,0 +1,25 @@
+{
+  "id": "api/overview",
+  "title": "API Overview",
+  "description": "Versioning",
+  "source": "@site/api/overview.md",
+  "sourceDirName": "api",
+  "slug": "/api/overview",
+  "permalink": "/docs/api/overview",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/kubecrux/kubecrux/tree/main/docs/api/overview.md",
+  "tags": [],
+  "version": "current",
+  "lastUpdatedAt": 1539502055000,
+  "frontMatter": {},
+  "sidebar": "mainSidebar",
+  "previous": {
+    "title": "Add MCP Integration",
+    "permalink": "/docs/development/add-mcp-integration"
+  },
+  "next": {
+    "title": "Core Endpoints",
+    "permalink": "/docs/api/core-endpoints"
+  }
+}

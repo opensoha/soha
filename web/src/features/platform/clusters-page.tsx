@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { Button, Modal, Form, Toast, Space, Card, Spin, Typography, Tag, Descriptions } from '@douyinfe/semi-ui'
-import { IconPlus, IconEdit, IconDelete } from '@douyinfe/semi-icons'
+import { App, Button, Card, Descriptions, Form, Input, Modal, Select, Space, Spin, Tag, Typography } from 'antd'
+import { DeleteOutlined, EditOutlined, PlusOutlined } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { AdminTable } from '@/components/admin-table'
 import { useI18n } from '@/i18n'
@@ -11,7 +11,7 @@ import { usePlatformScopeStore } from '@/stores/platform-scope-store'
 import { StatusTag } from '@/components/status-tag'
 import { tableColumnPresets } from '@/utils/table-columns'
 import type { Cluster, ClusterDetail, ApiResponse, Node } from '@/types'
-import type { ColumnProps } from '@douyinfe/semi-ui/lib/es/table'
+import type { TableColumnsType } from 'antd'
 
 const { Text } = Typography
 
@@ -34,6 +34,7 @@ interface ClusterFormValues {
 
 export function ClustersPage() {
   const { t } = useI18n()
+  const { message } = App.useApp()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [modalVisible, setModalVisible] = useState(false)
@@ -54,42 +55,42 @@ export function ClustersPage() {
   const createMutation = useMutation({
     mutationFn: (values: Record<string, unknown>) => api.post<ApiResponse<Cluster>>('/clusters', values),
     onSuccess: () => {
-      Toast.success('集群创建成功')
+      void message.success('集群创建成功')
       queryClient.invalidateQueries({ queryKey: ['clusters'] })
       setModalVisible(false)
     },
-    onError: (err: Error) => Toast.error(err.message),
+    onError: (err: Error) => void message.error(err.message),
   })
 
   const updateMutation = useMutation({
     mutationFn: ({ id, values }: { id: string; values: Record<string, unknown> }) =>
       api.put<ApiResponse<Cluster>>(`/clusters/${id}`, values),
     onSuccess: () => {
-      Toast.success('集群更新成功')
+      void message.success('集群更新成功')
       queryClient.invalidateQueries({ queryKey: ['clusters'] })
       setModalVisible(false)
       setEditingCluster(null)
     },
-    onError: (err: Error) => Toast.error(err.message),
+    onError: (err: Error) => void message.error(err.message),
   })
 
   const deleteMutation = useMutation({
     mutationFn: (id: string) => api.delete(`/clusters/${id}`),
     onSuccess: () => {
-      Toast.success('集群已删除')
+      void message.success('集群已删除')
       queryClient.invalidateQueries({ queryKey: ['clusters'] })
     },
-    onError: (err: Error) => Toast.error(err.message),
+    onError: (err: Error) => void message.error(err.message),
   })
 
   const clusters = data?.data ?? []
 
-  const columns: ColumnProps<Cluster>[] = [
+  const columns: TableColumnsType<Cluster> = [
     {
       title: '名称',
       dataIndex: 'name',
       render: (_: unknown, record: Cluster) => (
-        <Button theme="borderless" type="primary" onClick={() => navigate(`/clusters/${record.id}`)}>
+        <Button type="text" onClick={() => navigate(`/clusters/${record.id}`)}>
           {record.name}
         </Button>
       ),
@@ -111,8 +112,8 @@ export function ClustersPage() {
       render: (_: unknown, record: Cluster) => (
         <Space>
           <Button
-            icon={<IconEdit />}
-            theme="borderless"
+            icon={<EditOutlined />}
+            type="text"
             size="small"
             onClick={() => {
               setEditingCluster(record)
@@ -120,9 +121,9 @@ export function ClustersPage() {
             }}
           />
           <Button
-            icon={<IconDelete />}
-            theme="borderless"
-            type="danger"
+            icon={<DeleteOutlined />}
+            type="text"
+            danger
             size="small"
             onClick={() => {
               Modal.confirm({
@@ -200,8 +201,8 @@ kubernetes:
         description={t('page.clusters.desc', 'Manage cluster onboarding, health state, and connection settings in one place.')}
         actions={
           <Button
-            icon={<IconPlus />}
-            theme="solid"
+            icon={<PlusOutlined />}
+            type="primary"
             onClick={() => {
               setEditingCluster(null)
               setModalVisible(true)
@@ -221,7 +222,7 @@ kubernetes:
 
       <Modal
         title={editingCluster ? '编辑集群' : '添加集群'}
-        visible={modalVisible}
+        open={modalVisible}
         width={760}
         onCancel={() => {
           setModalVisible(false)
@@ -234,37 +235,55 @@ kubernetes:
             <Spin size="large" />
           </div>
         ) : (
-          <Form key={formKey} onSubmit={handleSubmit} initValues={initialValues}>
-            {!editingCluster && <Form.Input field="id" label="集群 ID" rules={[{ required: true, message: '请输入集群 ID' }]} />}
-            <Form.Input field="name" label="集群名称" rules={[{ required: true, message: '请输入集群名称' }]} />
-            <Form.Input field="region" label="Region" />
-            <Form.Input field="environment" label="Environment" />
-            <Form.Select
-              field="connectionMode"
-              label="连接方式"
-              initValue={connectionMode}
-              optionList={[
-                { value: 'direct_kubeconfig', label: '直接 Kubeconfig' },
-                { value: 'agent', label: 'Agent' },
-              ]}
-              onChange={(value) => setConnectionMode(value as ConnectionMode)}
-            />
+          <Form key={formKey} layout="vertical" onFinish={handleSubmit} initialValues={initialValues}>
+            {!editingCluster ? (
+              <Form.Item name="id" label="集群 ID" rules={[{ required: true, message: '请输入集群 ID' }]}>
+                <Input />
+              </Form.Item>
+            ) : null}
+            <Form.Item name="name" label="集群名称" rules={[{ required: true, message: '请输入集群名称' }]}>
+              <Input />
+            </Form.Item>
+            <Form.Item name="region" label="Region">
+              <Input />
+            </Form.Item>
+            <Form.Item name="environment" label="Environment">
+              <Input />
+            </Form.Item>
+            <Form.Item name="connectionMode" label="连接方式">
+              <Select
+                options={[
+                  { value: 'direct_kubeconfig', label: '直接 Kubeconfig' },
+                  { value: 'agent', label: 'Agent' },
+                ]}
+                onChange={(value) => setConnectionMode(value as ConnectionMode)}
+              />
+            </Form.Item>
 
             {connectionMode === 'direct_kubeconfig' ? (
               <>
-                <Form.Input field="context" label="Kube Context" placeholder="可选，留空使用 kubeconfig 默认 context" />
-                <Form.TextArea
-                  field="kubeconfig"
+                <Form.Item name="context" label="Kube Context">
+                  <Input placeholder="可选，留空使用 kubeconfig 默认 context" />
+                </Form.Item>
+                <Form.Item
+                  name="kubeconfig"
                   label="Kubeconfig"
-                  placeholder={editingCluster ? '留空则沿用现有 kubeconfig；切换到直连模式时请填写新的 kubeconfig' : '请输入 kubeconfig 内容'}
                   rules={editingCluster ? undefined : [{ required: true, message: '请输入 Kubeconfig' }]}
-                  rows={8}
-                />
+                >
+                  <Input.TextArea
+                    placeholder={editingCluster ? '留空则沿用现有 kubeconfig；切换到直连模式时请填写新的 kubeconfig' : '请输入 kubeconfig 内容'}
+                    rows={8}
+                  />
+                </Form.Item>
               </>
             ) : (
               <>
-                <Form.Input field="agentEndpoint" label="Agent Endpoint" placeholder="http://127.0.0.1:18080" rules={[{ required: true, message: '请输入 Agent Endpoint' }]} />
-                <Form.Input field="agentToken" label="Agent Token" mode="password" placeholder={editingCluster ? '留空则沿用现有 token' : '与 agent 配置中的 auth.bearer_token 一致'} />
+                <Form.Item name="agentEndpoint" label="Agent Endpoint" rules={[{ required: true, message: '请输入 Agent Endpoint' }]}>
+                  <Input placeholder="http://127.0.0.1:18080" />
+                </Form.Item>
+                <Form.Item name="agentToken" label="Agent Token">
+                  <Input.Password placeholder={editingCluster ? '留空则沿用现有 token' : '与 agent 配置中的 auth.bearer_token 一致'} />
+                </Form.Item>
                 <Card className="kc-detail-card">
                   <div className="kc-detail-meta">
                     <Text strong>Agent 部署方式</Text>
@@ -278,16 +297,22 @@ kubernetes:
             <Card className="kc-detail-card">
               <div className="kc-detail-meta">
                 <Text strong>Prometheus</Text>
-                <Text type="tertiary" size="small">节点 CPU、内存指标依赖这里的集群级 Prometheus 地址。</Text>
+                <Text type="secondary" className="text-xs">节点 CPU、内存指标依赖这里的集群级 Prometheus 地址。</Text>
               </div>
-              <Form.Input field="prometheusBaseUrl" label="Prometheus URL" placeholder="http://prometheus:9090" />
-              <Form.Input field="prometheusBearerToken" label="Prometheus Token" mode="password" placeholder={editingCluster ? '留空则沿用现有 token' : ''} />
-              <Form.Input field="prometheusClusterLabel" label="Prometheus Cluster Label" placeholder="cluster" />
+              <Form.Item name="prometheusBaseUrl" label="Prometheus URL">
+                <Input placeholder="http://prometheus:9090" />
+              </Form.Item>
+              <Form.Item name="prometheusBearerToken" label="Prometheus Token">
+                <Input.Password placeholder={editingCluster ? '留空则沿用现有 token' : ''} />
+              </Form.Item>
+              <Form.Item name="prometheusClusterLabel" label="Prometheus Cluster Label">
+                <Input placeholder="cluster" />
+              </Form.Item>
             </Card>
 
             <div className="kc-form-actions">
               <Button onClick={() => setModalVisible(false)}>取消</Button>
-              <Button htmlType="submit" theme="solid" loading={createMutation.isPending || updateMutation.isPending}>
+              <Button htmlType="submit" type="primary" loading={createMutation.isPending || updateMutation.isPending}>
                 {editingCluster ? '更新' : '创建'}
               </Button>
             </div>
@@ -317,14 +342,13 @@ export function ClusterDetailPage() {
 
   const detail = clusterDetailQuery.data?.data
   const summary = detail?.summary
-  const nodeColumns: ColumnProps<Node>[] = [
+  const nodeColumns: TableColumnsType<Node> = [
     {
       title: localeCode === 'zh_CN' ? '节点' : 'Node',
       dataIndex: 'name',
       render: (value: string) => (
         <Button
-          theme="borderless"
-          type="primary"
+          type="text"
           onClick={() => {
             setClusterId(summary?.id ?? null)
             navigate(`/cluster-resources/nodes/${encodeURIComponent(value)}?clusterId=${encodeURIComponent(summary?.id ?? '')}`)
@@ -373,7 +397,7 @@ export function ClusterDetailPage() {
       <div className="kc-page">
         <PageHeader title={localeCode === 'zh_CN' ? '集群详情' : 'Cluster Detail'} description={localeCode === 'zh_CN' ? '当前集群不存在或详情不可用。' : 'The cluster was not found or its detail is unavailable.'} />
         <Card>
-          <Text type="tertiary">{t('common.notFound', 'Not found')}</Text>
+          <Text type="secondary">{t('common.notFound', 'Not found')}</Text>
         </Card>
       </div>
     )
@@ -388,7 +412,7 @@ export function ClusterDetailPage() {
           <Space>
             <Button onClick={() => navigate('/clusters')}>{localeCode === 'zh_CN' ? '返回列表' : 'Back'}</Button>
             <Button
-              theme="light"
+              variant="outlined"
               onClick={() => {
                 setClusterId(summary.id)
                 navigate('/cluster-resources/nodes')
@@ -397,7 +421,7 @@ export function ClusterDetailPage() {
               {localeCode === 'zh_CN' ? '查看节点' : 'Open Nodes'}
             </Button>
             <Button
-              theme="solid"
+              type="primary"
               onClick={() => {
                 setClusterId(summary.id)
                 navigate('/workloads/overview')
@@ -412,25 +436,25 @@ export function ClusterDetailPage() {
       <div className="grid gap-4 xl:grid-cols-2">
         <Card className="kc-detail-card" title={localeCode === 'zh_CN' ? '基础信息' : 'Summary'}>
           <Descriptions
-            data={[
-              { key: localeCode === 'zh_CN' ? '名称' : 'Name', value: summary.name },
-              { key: localeCode === 'zh_CN' ? '状态' : 'Status', value: <StatusTag value={summary.health?.status ?? 'unknown'} /> },
-              { key: localeCode === 'zh_CN' ? '版本' : 'Version', value: summary.version || '-' },
-              { key: 'Region', value: summary.region || '-' },
-              { key: 'Environment', value: summary.environment || '-' },
-              { key: localeCode === 'zh_CN' ? '连接方式' : 'Mode', value: summary.connectionMode || '-' },
-              { key: localeCode === 'zh_CN' ? '最近检查' : 'Last Checked', value: summary.health?.lastChecked || '-' },
-              { key: localeCode === 'zh_CN' ? '状态信息' : 'Message', value: summary.health?.message || '-' },
+            items={[
+              { key: localeCode === 'zh_CN' ? '名称' : 'Name', label: localeCode === 'zh_CN' ? '名称' : 'Name', children: summary.name },
+              { key: localeCode === 'zh_CN' ? '状态' : 'Status', label: localeCode === 'zh_CN' ? '状态' : 'Status', children: <StatusTag value={summary.health?.status ?? 'unknown'} /> },
+              { key: localeCode === 'zh_CN' ? '版本' : 'Version', label: localeCode === 'zh_CN' ? '版本' : 'Version', children: summary.version || '-' },
+              { key: 'Region', label: 'Region', children: summary.region || '-' },
+              { key: 'Environment', label: 'Environment', children: summary.environment || '-' },
+              { key: localeCode === 'zh_CN' ? '连接方式' : 'Mode', label: localeCode === 'zh_CN' ? '连接方式' : 'Mode', children: summary.connectionMode || '-' },
+              { key: localeCode === 'zh_CN' ? '最近检查' : 'Last Checked', label: localeCode === 'zh_CN' ? '最近检查' : 'Last Checked', children: summary.health?.lastChecked || '-' },
+              { key: localeCode === 'zh_CN' ? '状态信息' : 'Message', label: localeCode === 'zh_CN' ? '状态信息' : 'Message', children: summary.health?.message || '-' },
             ]}
           />
           <div className="kc-detail-meta">
             <Text strong>{localeCode === 'zh_CN' ? '集群 Labels:' : 'Cluster Labels:'}</Text>
             {Object.keys(summary.labels || {}).length === 0 ? (
-              <Text type="tertiary" size="small">{localeCode === 'zh_CN' ? '未配置标签' : 'No labels configured'}</Text>
+              <Text type="secondary" className="text-xs">{localeCode === 'zh_CN' ? '未配置标签' : 'No labels configured'}</Text>
             ) : (
               <div className="kc-tag-list">
                 {Object.entries(summary.labels || {}).map(([key, value]) => (
-                  <Tag key={key} size="small">{key}={value}</Tag>
+                  <Tag key={key}>{key}={value}</Tag>
                 ))}
               </div>
             )}
@@ -440,28 +464,28 @@ export function ClusterDetailPage() {
             {summary.capabilities?.length ? (
               <div className="kc-tag-list">
                 {summary.capabilities.map((item) => (
-                  <Tag key={item} size="small">{item}</Tag>
+                  <Tag key={item}>{item}</Tag>
                 ))}
               </div>
             ) : (
-              <Text type="tertiary" size="small">{localeCode === 'zh_CN' ? '无额外能力声明' : 'No explicit capabilities reported'}</Text>
+              <Text type="secondary" className="text-xs">{localeCode === 'zh_CN' ? '无额外能力声明' : 'No explicit capabilities reported'}</Text>
             )}
           </div>
         </Card>
 
         <Card className="kc-detail-card" title={localeCode === 'zh_CN' ? '连接与诊断' : 'Connection & Diagnostics'}>
           <Descriptions
-            data={[
-              { key: localeCode === 'zh_CN' ? '连接模式' : 'Connection Mode', value: detail.connection.mode || '-' },
-              { key: localeCode === 'zh_CN' ? '凭据类型' : 'Credential Type', value: detail.connection.credentialType || '-' },
-              { key: localeCode === 'zh_CN' ? '来源类型' : 'Source Type', value: detail.connection.sourceType || '-' },
-              { key: localeCode === 'zh_CN' ? 'Context' : 'Context', value: detail.connection.context || '-' },
-              { key: localeCode === 'zh_CN' ? 'Endpoint' : 'Endpoint', value: detail.connection.endpoint || '-' },
-              { key: localeCode === 'zh_CN' ? 'Informer Cache' : 'Informer Cache', value: detail.connection.usesInformerCache ? 'Yes' : 'No' },
-              { key: localeCode === 'zh_CN' ? '同步策略' : 'Sync Strategy', value: detail.diagnostics.syncStrategy || '-' },
-              { key: localeCode === 'zh_CN' ? '缓存状态' : 'Cache Status', value: detail.diagnostics.cacheStatus || '-' },
-              { key: localeCode === 'zh_CN' ? '连接状态' : 'Connection State', value: detail.diagnostics.connectionState || '-' },
-              { key: localeCode === 'zh_CN' ? '诊断信息' : 'Diagnostic Message', value: detail.diagnostics.message || '-' },
+            items={[
+              { key: localeCode === 'zh_CN' ? '连接模式' : 'Connection Mode', label: localeCode === 'zh_CN' ? '连接模式' : 'Connection Mode', children: detail.connection.mode || '-' },
+              { key: localeCode === 'zh_CN' ? '凭据类型' : 'Credential Type', label: localeCode === 'zh_CN' ? '凭据类型' : 'Credential Type', children: detail.connection.credentialType || '-' },
+              { key: localeCode === 'zh_CN' ? '来源类型' : 'Source Type', label: localeCode === 'zh_CN' ? '来源类型' : 'Source Type', children: detail.connection.sourceType || '-' },
+              { key: localeCode === 'zh_CN' ? 'Context' : 'Context', label: localeCode === 'zh_CN' ? 'Context' : 'Context', children: detail.connection.context || '-' },
+              { key: localeCode === 'zh_CN' ? 'Endpoint' : 'Endpoint', label: localeCode === 'zh_CN' ? 'Endpoint' : 'Endpoint', children: detail.connection.endpoint || '-' },
+              { key: localeCode === 'zh_CN' ? 'Informer Cache' : 'Informer Cache', label: localeCode === 'zh_CN' ? 'Informer Cache' : 'Informer Cache', children: detail.connection.usesInformerCache ? 'Yes' : 'No' },
+              { key: localeCode === 'zh_CN' ? '同步策略' : 'Sync Strategy', label: localeCode === 'zh_CN' ? '同步策略' : 'Sync Strategy', children: detail.diagnostics.syncStrategy || '-' },
+              { key: localeCode === 'zh_CN' ? '缓存状态' : 'Cache Status', label: localeCode === 'zh_CN' ? '缓存状态' : 'Cache Status', children: detail.diagnostics.cacheStatus || '-' },
+              { key: localeCode === 'zh_CN' ? '连接状态' : 'Connection State', label: localeCode === 'zh_CN' ? '连接状态' : 'Connection State', children: detail.diagnostics.connectionState || '-' },
+              { key: localeCode === 'zh_CN' ? '诊断信息' : 'Diagnostic Message', label: localeCode === 'zh_CN' ? '诊断信息' : 'Diagnostic Message', children: detail.diagnostics.message || '-' },
             ]}
           />
         </Card>
@@ -469,17 +493,17 @@ export function ClusterDetailPage() {
 
       <Card className="kc-detail-card" title={localeCode === 'zh_CN' ? '监控配置' : 'Monitoring'}>
         <Descriptions
-          data={[
-            { key: localeCode === 'zh_CN' ? 'Prometheus URL' : 'Prometheus URL', value: detail.monitoring.prometheus.baseUrl || '-' },
-            { key: localeCode === 'zh_CN' ? 'Prometheus Cluster Label' : 'Prometheus Cluster Label', value: detail.monitoring.prometheus.clusterLabel || '-' },
-            { key: localeCode === 'zh_CN' ? 'Bearer Token' : 'Bearer Token', value: detail.monitoring.prometheus.hasBearerToken ? (localeCode === 'zh_CN' ? '已配置' : 'Configured') : (localeCode === 'zh_CN' ? '未配置' : 'Not configured') },
+          items={[
+            { key: localeCode === 'zh_CN' ? 'Prometheus URL' : 'Prometheus URL', label: localeCode === 'zh_CN' ? 'Prometheus URL' : 'Prometheus URL', children: detail.monitoring.prometheus.baseUrl || '-' },
+            { key: localeCode === 'zh_CN' ? 'Prometheus Cluster Label' : 'Prometheus Cluster Label', label: localeCode === 'zh_CN' ? 'Prometheus Cluster Label' : 'Prometheus Cluster Label', children: detail.monitoring.prometheus.clusterLabel || '-' },
+            { key: localeCode === 'zh_CN' ? 'Bearer Token' : 'Bearer Token', label: localeCode === 'zh_CN' ? 'Bearer Token' : 'Bearer Token', children: detail.monitoring.prometheus.hasBearerToken ? (localeCode === 'zh_CN' ? '已配置' : 'Configured') : (localeCode === 'zh_CN' ? '未配置' : 'Not configured') },
           ]}
         />
       </Card>
 
       <Card className="kc-detail-card" title={localeCode === 'zh_CN' ? '节点快照' : 'Node Snapshot'}>
         <div className="kc-detail-meta">
-          <Text type="tertiary">
+          <Text type="secondary">
             {localeCode === 'zh_CN'
               ? '点击节点可进入独立详情页，继续查看污点、YAML、Labels 和承载 Pod。'
               : 'Open a node to inspect taints, YAML, labels, and scheduled pods in a dedicated workspace.'}

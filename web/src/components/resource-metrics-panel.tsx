@@ -1,4 +1,4 @@
-import { Button, Card, Descriptions, Empty, Select, Space, Tabs, TabPane, Typography } from '@douyinfe/semi-ui'
+import { Button, Card, Descriptions, Empty, Select, Space, Tabs, Typography } from 'antd'
 import { LineChart } from '@visactor/react-vchart'
 import { AdminTable } from '@/components/admin-table'
 import { StatGrid } from '@/components/stat-grid'
@@ -6,9 +6,11 @@ import { useI18n } from '@/i18n'
 import { formatDateTime } from '@/utils/time'
 import { tableColumnPresets } from '@/utils/table-columns'
 import type { MetricSeries, MetricsSnapshot, ResourceQuantity } from '@/types'
-import type { ColumnProps } from '@douyinfe/semi-ui/lib/es/table'
+import type { DescriptionsProps, TableColumnsType, TabsProps } from 'antd'
 
 const { Text } = Typography
+type ColumnProps<T> = TableColumnsType<T>[number]
+type TabItem = NonNullable<TabsProps['items']>[number]
 
 const COMPACT_METRIC_CARD_HEIGHT = 300
 const COMPACT_METRIC_CHART_HEIGHT = 236
@@ -287,7 +289,7 @@ function buildCompactChartSpec(lines: CompactChartLine[], unit: string, _localeC
           fillOpacity: 1,
           lineWidth: 2,
           size: 68,
-          stroke: 'var(--semi-color-bg-1)',
+          stroke: 'var(--ant-color-bg-container)',
           visible: true,
         },
         blur: {
@@ -297,7 +299,7 @@ function buildCompactChartSpec(lines: CompactChartLine[], unit: string, _localeC
           fillOpacity: 1,
           lineWidth: 2,
           size: 64,
-          stroke: 'var(--semi-color-bg-1)',
+          stroke: 'var(--ant-color-bg-container)',
           visible: true,
         },
       },
@@ -334,7 +336,7 @@ function buildCompactChartSpec(lines: CompactChartLine[], unit: string, _localeC
           autoLimit: true,
           autoHide: true,
         },
-        domainLine: { style: { stroke: 'var(--semi-color-border)' } },
+        domainLine: { style: { stroke: 'var(--ant-color-border-secondary)' } },
         tick: { visible: false },
       },
       {
@@ -352,7 +354,7 @@ function buildCompactChartSpec(lines: CompactChartLine[], unit: string, _localeC
         grid: {
           visible: true,
           style: {
-            stroke: 'var(--semi-color-border)',
+            stroke: 'var(--ant-color-border-secondary)',
             lineDash: [3, 3],
             strokeOpacity: 0.6,
           },
@@ -380,7 +382,7 @@ function buildCompactChartSpec(lines: CompactChartLine[], unit: string, _localeC
           position: 'start' as const,
           padding: { bottom: 4 },
           item: {
-            label: { style: { fontSize: 11, fill: 'var(--semi-color-text-1)' } },
+            label: { style: { fontSize: 11, fill: 'var(--ant-color-text)' } },
           },
         }
       : { visible: false },
@@ -540,7 +542,7 @@ function CompactMetricCard({ card, localeCode }: { card: CompactChartCard; local
   const hasData = card.lines.length > 0
   return (
     <div
-      className="rounded-lg border border-[var(--semi-color-border)] bg-[var(--semi-color-bg-1)] p-4"
+      className="rounded-lg border border-[var(--ant-color-border-secondary)] bg-[var(--ant-color-bg-container)] p-4"
       style={{ display: 'flex', flexDirection: 'column', height: COMPACT_METRIC_CARD_HEIGHT }}
     >
       <div style={{ marginBottom: 8 }}>
@@ -614,7 +616,7 @@ export function ResourceMetricsPanel({
       value={String(rangeMinutes ?? data.rangeMinutes)}
       onChange={(value) => onRangeChange(Number(value))}
       style={{ width: 180 }}
-      optionList={[
+      options={[
         { value: '15', label: localeCode === 'zh_CN' ? '最近 15 分钟' : 'Last 15 min' },
         { value: '60', label: localeCode === 'zh_CN' ? '最近 1 小时' : 'Last 1 hour' },
         { value: '360', label: localeCode === 'zh_CN' ? '最近 6 小时' : 'Last 6 hours' },
@@ -623,7 +625,7 @@ export function ResourceMetricsPanel({
     />
   ) : null
   const grafanaButton = data.grafanaBaseUrl ? (
-    <Button theme="light" type="primary" onClick={() => window.open(data.grafanaBaseUrl, '_blank', 'noopener,noreferrer')}>
+    <Button type="primary" onClick={() => window.open(data.grafanaBaseUrl, '_blank', 'noopener,noreferrer')}>
       {localeCode === 'zh_CN' ? '打开 Grafana' : 'Open Grafana'}
     </Button>
   ) : null
@@ -638,7 +640,7 @@ export function ResourceMetricsPanel({
     const compactCards = buildCompactChartCards(series, localeCode, resourceRequests, resourceLimits)
     return (
       <div className="kc-page-section">
-        <Card className="kc-detail-card" title={title} headerExtraContent={headerExtraContent}>
+        <Card className="kc-detail-card" title={title} extra={headerExtraContent}>
           <div
             className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3"
             style={{ gridAutoRows: `${COMPACT_METRIC_CARD_HEIGHT}px` }}
@@ -671,23 +673,23 @@ export function ResourceMetricsPanel({
 
   return (
     <div className="kc-page-section">
-      <Card className="kc-detail-card" title={title} headerExtraContent={headerExtraContent}>
+      <Card className="kc-detail-card" title={title} extra={headerExtraContent}>
         <Descriptions
-          data={[
-            { key: localeCode === 'zh_CN' ? '状态' : 'Status', value: data.configured ? (localeCode === 'zh_CN' ? '已配置' : 'Configured') : (localeCode === 'zh_CN' ? '未配置' : 'Not configured') },
-            { key: localeCode === 'zh_CN' ? '来源' : 'Source', value: data.source || '-' },
-            { key: localeCode === 'zh_CN' ? '生成时间' : 'Generated At', value: formatDateTime(data.generatedAt) },
-            { key: localeCode === 'zh_CN' ? '查询范围' : 'Range', value: `${data.rangeMinutes} min` },
-            { key: localeCode === 'zh_CN' ? '采样步长' : 'Step', value: `${data.stepSeconds}s` },
-          ]}
+          items={[
+            { key: 'status', label: localeCode === 'zh_CN' ? '状态' : 'Status', children: data.configured ? (localeCode === 'zh_CN' ? '已配置' : 'Configured') : (localeCode === 'zh_CN' ? '未配置' : 'Not configured') },
+            { key: 'source', label: localeCode === 'zh_CN' ? '来源' : 'Source', children: data.source || '-' },
+            { key: 'generated-at', label: localeCode === 'zh_CN' ? '生成时间' : 'Generated At', children: formatDateTime(data.generatedAt) },
+            { key: 'range', label: localeCode === 'zh_CN' ? '查询范围' : 'Range', children: `${data.rangeMinutes} min` },
+            { key: 'step', label: localeCode === 'zh_CN' ? '采样步长' : 'Step', children: `${data.stepSeconds}s` },
+          ] satisfies DescriptionsProps['items']}
         />
         {data.message ? (
           <div style={{ marginTop: 12 }}>
-            <Text type="tertiary" size="small" style={{ display: 'block' }}>
+            <Text type="secondary" style={{ display: 'block', fontSize: 12 }}>
               {data.message}
             </Text>
             {metricsHint ? (
-              <Text size="small" style={{ display: 'block', marginTop: 6, color: 'var(--semi-color-warning)' }}>
+              <Text style={{ display: 'block', marginTop: 6, fontSize: 12, color: 'var(--ant-color-warning)' }}>
                 {metricsHint}
               </Text>
             ) : null}
@@ -699,8 +701,9 @@ export function ResourceMetricsPanel({
         <>
           <StatGrid items={stats} />
           <Card className="kc-detail-card" title={localeCode === 'zh_CN' ? '时序明细' : 'Series Detail'}>
-            <Tabs type="card">
-              {series.map((item) => {
+            <Tabs
+              type="card"
+              items={series.map((item): TabItem => {
                 const summary = summarizeSeries(item)
                 const rows = [...(item.points ?? [])]
                   .slice(-20)
@@ -727,33 +730,37 @@ export function ResourceMetricsPanel({
                   },
                 ]
 
-                return (
-                  <TabPane tab={item.label} itemKey={item.key} key={item.key}>
-                    <Descriptions
-                      data={[
-                        { key: localeCode === 'zh_CN' ? '最新值' : 'Latest', value: formatMetricValue(item.latest, item.unit) },
-                        { key: localeCode === 'zh_CN' ? '最小值' : 'Min', value: summary.min },
-                        { key: localeCode === 'zh_CN' ? '最大值' : 'Max', value: summary.max },
-                        { key: localeCode === 'zh_CN' ? '平均值' : 'Average', value: summary.avg },
-                        { key: localeCode === 'zh_CN' ? '样本数' : 'Samples', value: summary.samples },
-                      ]}
-                    />
-                    <div style={{ marginTop: 16, height: 280 }}>
-                      <LineChart spec={buildCompactChartSpec(cardLines, item.unit, localeCode)} />
-                    </div>
-                    <div style={{ marginTop: 16 }}>
-                      <AdminTable
-                        columns={columns}
-                        dataSource={rows}
-                        rowKey={(record) => record.timestamp}
-                        pageSize={10}
-                        enableColumnSelection={false}
+                return {
+                  label: item.label,
+                  key: item.key,
+                  children: (
+                    <>
+                      <Descriptions
+                        items={[
+                          { key: 'latest', label: localeCode === 'zh_CN' ? '最新值' : 'Latest', children: formatMetricValue(item.latest, item.unit) },
+                          { key: 'min', label: localeCode === 'zh_CN' ? '最小值' : 'Min', children: summary.min },
+                          { key: 'max', label: localeCode === 'zh_CN' ? '最大值' : 'Max', children: summary.max },
+                          { key: 'avg', label: localeCode === 'zh_CN' ? '平均值' : 'Average', children: summary.avg },
+                          { key: 'samples', label: localeCode === 'zh_CN' ? '样本数' : 'Samples', children: summary.samples },
+                        ] satisfies DescriptionsProps['items']}
                       />
-                    </div>
-                  </TabPane>
-                )
+                      <div style={{ marginTop: 16, height: 280 }}>
+                        <LineChart spec={buildCompactChartSpec(cardLines, item.unit, localeCode)} />
+                      </div>
+                      <div style={{ marginTop: 16 }}>
+                        <AdminTable
+                          columns={columns}
+                          dataSource={rows}
+                          rowKey={(record) => record.timestamp}
+                          pageSize={10}
+                          enableColumnSelection={false}
+                        />
+                      </div>
+                    </>
+                  ),
+                }
               })}
-            </Tabs>
+            />
           </Card>
         </>
       ) : (

@@ -15,15 +15,16 @@ import (
 )
 
 type Service struct {
-	repo domainmenu.Repository
+	repo        domainmenu.Repository
+	permissions *appaccess.PermissionResolver
 }
 
-func New(repo domainmenu.Repository) *Service {
-	return &Service{repo: repo}
+func New(repo domainmenu.Repository, permissions *appaccess.PermissionResolver) *Service {
+	return &Service{repo: repo, permissions: permissions}
 }
 
 func (s *Service) ListAll(ctx context.Context, principal domainidentity.Principal) ([]domainmenu.Record, error) {
-	if err := authorizePrincipal(principal, appaccess.PermSystemMenusView); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.PermSystemMenusView); err != nil {
 		return nil, err
 	}
 	items, err := s.repo.List(ctx)
@@ -34,7 +35,7 @@ func (s *Service) ListAll(ctx context.Context, principal domainidentity.Principa
 }
 
 func (s *Service) Get(ctx context.Context, principal domainidentity.Principal, menuID string) (domainmenu.Record, error) {
-	if err := authorizePrincipal(principal, appaccess.PermSystemMenusView); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.PermSystemMenusView); err != nil {
 		return domainmenu.Record{}, err
 	}
 	item, err := s.repo.Get(ctx, strings.TrimSpace(menuID))
@@ -52,33 +53,60 @@ func (s *Service) ListVisible(ctx context.Context, principal domainidentity.Prin
 	if err != nil {
 		return nil, err
 	}
-	visible := make([]domainmenu.Record, 0)
+	permissionKeys, err := appaccess.RuntimePermissionKeys(ctx, s.permissions, principal)
+	if err != nil {
+		return nil, err
+	}
+	itemsByID := make(map[string]domainmenu.Record, len(items))
+	visibleIDs := make(map[string]struct{}, len(items))
 	for _, item := range items {
-		if !item.Enabled {
+		itemsByID[item.ID] = item
+		if shouldShowMenu(item, principal.Roles, permissionKeys) {
+			visibleIDs[item.ID] = struct{}{}
+		}
+	}
+	for _, item := range items {
+		if _, ok := visibleIDs[item.ID]; !ok {
 			continue
 		}
-		if len(item.RoleIDs) == 0 || overlaps(item.RoleIDs, principal.Roles) {
-			visible = append(visible, item)
+		for parentID := strings.TrimSpace(item.ParentID); parentID != ""; {
+			parent, ok := itemsByID[parentID]
+			if !ok || !parent.Enabled {
+				break
+			}
+			if _, seen := visibleIDs[parentID]; seen {
+				break
+			}
+			visibleIDs[parentID] = struct{}{}
+			parentID = strings.TrimSpace(parent.ParentID)
 		}
 	}
-	visibleIDs := make(map[string]struct{}, len(visible))
-	for _, item := range visible {
-		visibleIDs[item.ID] = struct{}{}
-	}
-	filtered := make([]domainmenu.Record, 0, len(visible))
-	for _, item := range visible {
-		if item.ParentID != "" {
-			if _, ok := visibleIDs[item.ParentID]; !ok {
-				continue
-			}
+	filtered := make([]domainmenu.Record, 0, len(visibleIDs))
+	for _, item := range items {
+		if _, ok := visibleIDs[item.ID]; !ok {
+			continue
 		}
 		filtered = append(filtered, item)
 	}
 	return buildTree(filtered), nil
 }
 
+func shouldShowMenu(item domainmenu.Record, roleIDs []string, permissionKeys []string) bool {
+	if !item.Enabled {
+		return false
+	}
+	if isVisibleByPermissions(item, permissionKeys) {
+		return true
+	}
+	if len(item.RoleIDs) > 0 {
+		return overlaps(item.RoleIDs, roleIDs)
+	}
+	_, derived := permissionRuleForMenu(item)
+	return !derived
+}
+
 func (s *Service) Create(ctx context.Context, principal domainidentity.Principal, input domainmenu.Input) (domainmenu.Record, error) {
-	if err := authorizePrincipal(principal, appaccess.PermSystemMenusManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.PermSystemMenusManage); err != nil {
 		return domainmenu.Record{}, err
 	}
 	item, err := normalizeInput(input)
@@ -89,7 +117,7 @@ func (s *Service) Create(ctx context.Context, principal domainidentity.Principal
 }
 
 func (s *Service) Update(ctx context.Context, principal domainidentity.Principal, menuID string, input domainmenu.Input) (domainmenu.Record, error) {
-	if err := authorizePrincipal(principal, appaccess.PermSystemMenusManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.PermSystemMenusManage); err != nil {
 		return domainmenu.Record{}, err
 	}
 	item, err := normalizeInput(input)
@@ -108,7 +136,7 @@ func (s *Service) Update(ctx context.Context, principal domainidentity.Principal
 }
 
 func (s *Service) Delete(ctx context.Context, principal domainidentity.Principal, menuID string) error {
-	if err := authorizePrincipal(principal, appaccess.PermSystemMenusManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.PermSystemMenusManage); err != nil {
 		return err
 	}
 	if strings.TrimSpace(menuID) == "" {
@@ -233,9 +261,6 @@ func uniqueStrings(items []string) []string {
 	return unique
 }
 
-func authorizePrincipal(principal domainidentity.Principal, permissionKey string) error {
-	if appaccess.HasPermission(principal.Roles, permissionKey) {
-		return nil
-	}
-	return fmt.Errorf("%w: missing permission %s", apperrors.ErrAccessDenied, permissionKey)
+func (s *Service) authorize(ctx context.Context, principal domainidentity.Principal, permissionKey string) error {
+	return appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, permissionKey)
 }

@@ -1,0 +1,25 @@
+{
+  "id": "operations/mcp",
+  "title": "MCP",
+  "description": "Positioning",
+  "source": "@site/operations/mcp.md",
+  "sourceDirName": "operations",
+  "slug": "/operations/mcp",
+  "permalink": "/docs/operations/mcp",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/kubecrux/kubecrux/tree/main/docs/operations/mcp.md",
+  "tags": [],
+  "version": "current",
+  "lastUpdatedAt": 1539502055000,
+  "frontMatter": {},
+  "sidebar": "mainSidebar",
+  "previous": {
+    "title": "Docs Publishing",
+    "permalink": "/docs/operations/docs-publishing"
+  },
+  "next": {
+    "title": "MCP Configuration",
+    "permalink": "/docs/operations/mcp-configuration"
+  }
+}

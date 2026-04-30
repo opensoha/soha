@@ -48,14 +48,15 @@ type AlertAutomationHandler interface {
 type Service struct {
 	repo         Repository
 	events       EventWriter
+	permissions  *appaccess.PermissionResolver
 	webhookToken string
 	enabled      bool
 	httpClient   *http.Client
 	automation   AlertAutomationHandler
 }
 
-func New(repo Repository, events EventWriter, enabled bool, webhookToken string) *Service {
-	return &Service{repo: repo, events: events, enabled: enabled, webhookToken: webhookToken, httpClient: &http.Client{Timeout: 8 * time.Second}}
+func New(repo Repository, events EventWriter, permissions *appaccess.PermissionResolver, enabled bool, webhookToken string) *Service {
+	return &Service{repo: repo, events: events, permissions: permissions, enabled: enabled, webhookToken: webhookToken, httpClient: &http.Client{Timeout: 8 * time.Second}}
 }
 
 func (s *Service) SetAutomation(handler AlertAutomationHandler) {
@@ -63,7 +64,7 @@ func (s *Service) SetAutomation(handler AlertAutomationHandler) {
 }
 
 func (s *Service) Summary(ctx context.Context, principal domainidentity.Principal) (domainalert.Summary, error) {
-	if err := authorize(principal, appaccess.PermObserveMonitoringView); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.PermObserveMonitoringView); err != nil {
 		return domainalert.Summary{}, err
 	}
 	if s.repo == nil {
@@ -73,7 +74,7 @@ func (s *Service) Summary(ctx context.Context, principal domainidentity.Principa
 }
 
 func (s *Service) ListAlerts(ctx context.Context, principal domainidentity.Principal, filter domainalert.Filter) ([]domainalert.Instance, error) {
-	if err := authorize(principal, appaccess.PermObserveAlertsView); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.PermObserveAlertsView); err != nil {
 		return nil, err
 	}
 	if s.repo == nil {
@@ -83,7 +84,7 @@ func (s *Service) ListAlerts(ctx context.Context, principal domainidentity.Princ
 }
 
 func (s *Service) GetAlert(ctx context.Context, principal domainidentity.Principal, alertID string) (domainalert.Instance, error) {
-	if err := authorize(principal, appaccess.PermObserveAlertsView); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.PermObserveAlertsView); err != nil {
 		return domainalert.Instance{}, err
 	}
 	if s.repo == nil {
@@ -100,7 +101,7 @@ func (s *Service) GetAlert(ctx context.Context, principal domainidentity.Princip
 }
 
 func (s *Service) UpdateOwnership(ctx context.Context, principal domainidentity.Principal, alertID string, input domainalert.OwnershipInput) (domainalert.Instance, error) {
-	if err := authorize(principal, appaccess.PermObserveAlertsAssign); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.PermObserveAlertsAssign); err != nil {
 		return domainalert.Instance{}, err
 	}
 	if s.repo == nil {
@@ -120,7 +121,7 @@ func (s *Service) UpdateOwnership(ctx context.Context, principal domainidentity.
 }
 
 func (s *Service) Acknowledge(ctx context.Context, principal domainidentity.Principal, alertID, userID, userName string) (domainalert.Instance, error) {
-	if err := authorize(principal, appaccess.PermObserveAlertsAcknowledge); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.PermObserveAlertsAcknowledge); err != nil {
 		return domainalert.Instance{}, err
 	}
 	if s.repo == nil {
@@ -140,7 +141,7 @@ func (s *Service) Acknowledge(ctx context.Context, principal domainidentity.Prin
 }
 
 func (s *Service) ListChannels(ctx context.Context, principal domainidentity.Principal) ([]domainalert.NotificationChannel, error) {
-	if err := authorize(principal, appaccess.PermObserveNotificationsView); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.PermObserveNotificationsView); err != nil {
 		return nil, err
 	}
 	if s.repo == nil {
@@ -150,7 +151,7 @@ func (s *Service) ListChannels(ctx context.Context, principal domainidentity.Pri
 }
 
 func (s *Service) CreateChannel(ctx context.Context, principal domainidentity.Principal, input domainalert.ChannelInput) (domainalert.NotificationChannel, error) {
-	if err := authorize(principal, appaccess.PermObserveNotificationsManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.PermObserveNotificationsManage); err != nil {
 		return domainalert.NotificationChannel{}, err
 	}
 	if s.repo == nil {
@@ -163,7 +164,7 @@ func (s *Service) CreateChannel(ctx context.Context, principal domainidentity.Pr
 }
 
 func (s *Service) UpdateChannel(ctx context.Context, principal domainidentity.Principal, channelID string, input domainalert.ChannelInput) (domainalert.NotificationChannel, error) {
-	if err := authorize(principal, appaccess.PermObserveNotificationsManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.PermObserveNotificationsManage); err != nil {
 		return domainalert.NotificationChannel{}, err
 	}
 	if s.repo == nil {
@@ -186,7 +187,7 @@ func (s *Service) UpdateChannel(ctx context.Context, principal domainidentity.Pr
 }
 
 func (s *Service) ListRoutes(ctx context.Context, principal domainidentity.Principal) ([]domainalert.AlertRoute, error) {
-	if err := authorize(principal, appaccess.PermObserveNotificationsView); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.PermObserveNotificationsView); err != nil {
 		return nil, err
 	}
 	if s.repo == nil {
@@ -196,7 +197,7 @@ func (s *Service) ListRoutes(ctx context.Context, principal domainidentity.Princ
 }
 
 func (s *Service) ListSilences(ctx context.Context, principal domainidentity.Principal) ([]domainalert.AlertSilence, error) {
-	if err := authorize(principal, appaccess.PermObserveNotificationsView); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.PermObserveNotificationsView); err != nil {
 		return nil, err
 	}
 	if s.repo == nil {
@@ -206,7 +207,7 @@ func (s *Service) ListSilences(ctx context.Context, principal domainidentity.Pri
 }
 
 func (s *Service) CreateSilence(ctx context.Context, principal domainidentity.Principal, input domainalert.SilenceInput) (domainalert.AlertSilence, error) {
-	if err := authorize(principal, appaccess.PermObserveNotificationsManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.PermObserveNotificationsManage); err != nil {
 		return domainalert.AlertSilence{}, err
 	}
 	if s.repo == nil {
@@ -219,7 +220,7 @@ func (s *Service) CreateSilence(ctx context.Context, principal domainidentity.Pr
 }
 
 func (s *Service) UpdateSilence(ctx context.Context, principal domainidentity.Principal, silenceID string, input domainalert.SilenceInput) (domainalert.AlertSilence, error) {
-	if err := authorize(principal, appaccess.PermObserveNotificationsManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.PermObserveNotificationsManage); err != nil {
 		return domainalert.AlertSilence{}, err
 	}
 	if s.repo == nil {
@@ -242,7 +243,7 @@ func (s *Service) UpdateSilence(ctx context.Context, principal domainidentity.Pr
 }
 
 func (s *Service) ListDeliveryLogs(ctx context.Context, principal domainidentity.Principal, filter domainalert.DeliveryFilter) ([]domainalert.DeliveryLog, error) {
-	if err := authorize(principal, appaccess.PermObserveAlertsView); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.PermObserveAlertsView); err != nil {
 		return nil, err
 	}
 	if s.repo == nil {
@@ -252,7 +253,7 @@ func (s *Service) ListDeliveryLogs(ctx context.Context, principal domainidentity
 }
 
 func (s *Service) CreateRoute(ctx context.Context, principal domainidentity.Principal, input domainalert.RouteInput) (domainalert.AlertRoute, error) {
-	if err := authorize(principal, appaccess.PermObserveNotificationsManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.PermObserveNotificationsManage); err != nil {
 		return domainalert.AlertRoute{}, err
 	}
 	if s.repo == nil {
@@ -265,7 +266,7 @@ func (s *Service) CreateRoute(ctx context.Context, principal domainidentity.Prin
 }
 
 func (s *Service) UpdateRoute(ctx context.Context, principal domainidentity.Principal, routeID string, input domainalert.RouteInput) (domainalert.AlertRoute, error) {
-	if err := authorize(principal, appaccess.PermObserveNotificationsManage); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.PermObserveNotificationsManage); err != nil {
 		return domainalert.AlertRoute{}, err
 	}
 	if s.repo == nil {
@@ -348,11 +349,8 @@ func (s *Service) Ingest(ctx context.Context, req domainalert.IngestRequest) (in
 	return len(instances), nil
 }
 
-func authorize(principal domainidentity.Principal, permissionKey string) error {
-	if appaccess.HasPermission(principal.Roles, permissionKey) {
-		return nil
-	}
-	return fmt.Errorf("%w: missing permission %s", apperrors.ErrAccessDenied, permissionKey)
+func (s *Service) authorize(ctx context.Context, principal domainidentity.Principal, permissionKey string) error {
+	return appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, permissionKey)
 }
 
 func validateChannelInput(input domainalert.ChannelInput) error {

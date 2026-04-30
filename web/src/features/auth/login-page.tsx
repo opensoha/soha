@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
 import { Alert, App, Button, Divider, Form, Input, Typography } from 'antd'
 import { LockOutlined, UserOutlined } from '@ant-design/icons'
 import { api } from '@/services/api-client'
@@ -16,6 +17,13 @@ interface LoginFormValues {
   username: string
 }
 
+interface AuthProvider {
+  enabled: boolean
+  loginURL?: string
+  name: string
+  type: string
+}
+
 export function LoginPage() {
   const navigate = useNavigate()
   const location = useLocation()
@@ -26,6 +34,13 @@ export function LoginPage() {
 
   const branding = readStoredBrandingSettings()
   const from = (location.state as { from?: { pathname: string } })?.from?.pathname ?? '/'
+  const providersQuery = useQuery({
+    queryKey: ['auth-providers'],
+    queryFn: () => api.get<ApiResponse<AuthProvider[]>>('/auth/providers'),
+    select: (response) => response.data,
+    staleTime: 60_000,
+  })
+  const hasOIDCProvider = (providersQuery.data ?? []).some((item) => item.type === 'oidc' && item.enabled !== false)
 
   const handleLogin = async (values: LoginFormValues) => {
     setLoading(true)
@@ -125,20 +140,24 @@ export function LoginPage() {
               </Button>
             </Form>
 
-            <Divider style={{ marginBlock: 24 }}>
-              <Text type="secondary">或</Text>
-            </Divider>
+            {hasOIDCProvider ? (
+              <>
+                <Divider style={{ marginBlock: 24 }}>
+                  <Text type="secondary">或</Text>
+                </Divider>
 
-            <Button block loading={oidcLoading} onClick={handleOIDCLogin}>
-              OIDC 单点登录
-            </Button>
+                <Button block loading={oidcLoading} onClick={handleOIDCLogin}>
+                  OIDC 单点登录
+                </Button>
 
-            <Alert
-              className="mt-4"
-              title="建议使用管理员账号进入后，继续调整平台菜单、品牌配置与接入信息。"
-              type="info"
-              showIcon
-            />
+                <Alert
+                  className="mt-4"
+                  title="建议使用管理员账号进入后，继续调整平台菜单、品牌配置与接入信息。"
+                  type="info"
+                  showIcon
+                />
+              </>
+            ) : null}
           </div>
         </section>
       </div>

@@ -71,6 +71,35 @@ func (r *Repository) ListRoleCapabilities(ctx context.Context) (map[string][]dom
 	return matrix, rows.Err()
 }
 
+func (r *Repository) ListRolePermissions(ctx context.Context) (map[string][]string, error) {
+	rows, err := r.db.WithContext(ctx).Raw(`
+		SELECT id, permission_keys
+		FROM roles
+		ORDER BY id ASC
+	`).Rows()
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	matrix := map[string][]string{}
+	for rows.Next() {
+		var roleID string
+		var permissionKeys []byte
+		if err := rows.Scan(&roleID, &permissionKeys); err != nil {
+			return nil, err
+		}
+		var keys []string
+		if len(permissionKeys) > 0 {
+			if err := json.Unmarshal(permissionKeys, &keys); err != nil {
+				return nil, fmt.Errorf("unmarshal role permission keys for %s: %w", roleID, err)
+			}
+		}
+		matrix[roleID] = keys
+	}
+	return matrix, rows.Err()
+}
+
 func (r *Repository) ListRoles(ctx context.Context) ([]domainaccess.RoleRecord, error) {
 	rows, err := r.db.WithContext(ctx).Raw(`
 		SELECT
@@ -78,10 +107,11 @@ func (r *Repository) ListRoles(ctx context.Context) ([]domainaccess.RoleRecord, 
 			r.name,
 			r.scope,
 			r.capabilities,
+			r.permission_keys,
 			COUNT(DISTINCT urb.user_id) AS user_count
 		FROM roles r
 		LEFT JOIN user_role_bindings urb ON urb.role_id = r.id
-		GROUP BY r.id, r.name, r.scope, r.capabilities
+		GROUP BY r.id, r.name, r.scope, r.capabilities, r.permission_keys
 		ORDER BY r.name ASC, r.id ASC
 	`).Rows()
 	if err != nil {
@@ -93,12 +123,18 @@ func (r *Repository) ListRoles(ctx context.Context) ([]domainaccess.RoleRecord, 
 	for rows.Next() {
 		var item domainaccess.RoleRecord
 		var capabilities []byte
-		if err := rows.Scan(&item.ID, &item.Name, &item.Scope, &capabilities, &item.UserCount); err != nil {
+		var permissionKeys []byte
+		if err := rows.Scan(&item.ID, &item.Name, &item.Scope, &capabilities, &permissionKeys, &item.UserCount); err != nil {
 			return nil, err
 		}
 		if len(capabilities) > 0 {
 			if err := json.Unmarshal(capabilities, &item.Capabilities); err != nil {
 				return nil, fmt.Errorf("unmarshal role capabilities for %s: %w", item.ID, err)
+			}
+		}
+		if len(permissionKeys) > 0 {
+			if err := json.Unmarshal(permissionKeys, &item.PermissionKeys); err != nil {
+				return nil, fmt.Errorf("unmarshal role permission keys for %s: %w", item.ID, err)
 			}
 		}
 		items = append(items, item)
@@ -112,18 +148,23 @@ func (r *Repository) CreateRole(ctx context.Context, input domainaccess.RoleInpu
 	if err != nil {
 		return domainaccess.RoleRecord{}, fmt.Errorf("marshal role capabilities: %w", err)
 	}
+	permissionKeys, err := json.Marshal(input.PermissionKeys)
+	if err != nil {
+		return domainaccess.RoleRecord{}, fmt.Errorf("marshal role permission keys: %w", err)
+	}
 	if err := r.db.WithContext(ctx).Exec(`
-		INSERT INTO roles (id, name, scope, capabilities, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?)
-	`, strings.TrimSpace(input.ID), strings.TrimSpace(input.Name), strings.TrimSpace(input.Scope), string(capabilities), now, now).Error; err != nil {
+		INSERT INTO roles (id, name, scope, capabilities, permission_keys, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+	`, strings.TrimSpace(input.ID), strings.TrimSpace(input.Name), strings.TrimSpace(input.Scope), string(capabilities), string(permissionKeys), now, now).Error; err != nil {
 		return domainaccess.RoleRecord{}, err
 	}
 	return domainaccess.RoleRecord{
-		ID:           strings.TrimSpace(input.ID),
-		Name:         strings.TrimSpace(input.Name),
-		Scope:        strings.TrimSpace(input.Scope),
-		Capabilities: input.Capabilities,
-		UserCount:    0,
+		ID:             strings.TrimSpace(input.ID),
+		Name:           strings.TrimSpace(input.Name),
+		Scope:          strings.TrimSpace(input.Scope),
+		Capabilities:   input.Capabilities,
+		PermissionKeys: input.PermissionKeys,
+		UserCount:      0,
 	}, nil
 }
 
@@ -132,11 +173,15 @@ func (r *Repository) UpdateRole(ctx context.Context, roleID string, input domain
 	if err != nil {
 		return domainaccess.RoleRecord{}, fmt.Errorf("marshal role capabilities: %w", err)
 	}
+	permissionKeys, err := json.Marshal(input.PermissionKeys)
+	if err != nil {
+		return domainaccess.RoleRecord{}, fmt.Errorf("marshal role permission keys: %w", err)
+	}
 	result := r.db.WithContext(ctx).Exec(`
 		UPDATE roles
-		SET name = ?, scope = ?, capabilities = ?, updated_at = ?
+		SET name = ?, scope = ?, capabilities = ?, permission_keys = ?, updated_at = ?
 		WHERE id = ?
-	`, strings.TrimSpace(input.Name), strings.TrimSpace(input.Scope), string(capabilities), time.Now().UTC(), strings.TrimSpace(roleID))
+	`, strings.TrimSpace(input.Name), strings.TrimSpace(input.Scope), string(capabilities), string(permissionKeys), time.Now().UTC(), strings.TrimSpace(roleID))
 	if result.Error != nil {
 		return domainaccess.RoleRecord{}, result.Error
 	}

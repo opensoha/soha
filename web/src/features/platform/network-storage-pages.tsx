@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { Button, Card, Descriptions, Empty, Tabs, TabPane, Tag, Typography } from '@douyinfe/semi-ui'
+import { Button, Card, Descriptions, Empty, Tabs, Tag, Typography } from 'antd'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { AdminTable } from '@/components/admin-table'
@@ -17,7 +17,7 @@ import { downloadJSON } from '@/utils/download'
 import { formatAgeSeconds, formatRelativeTime } from '@/utils/time'
 import { tableColumnPresets } from '@/utils/table-columns'
 import type { ApiResponse, ResourceMetrics } from '@/types'
-import type { ColumnProps } from '@douyinfe/semi-ui/lib/es/table'
+import type { TableColumnsType } from 'antd'
 
 const { Text } = Typography
 
@@ -115,12 +115,12 @@ export function NetworkServicesPage() {
   const { namespace } = usePlatformScopeStore()
   const { data, isLoading } = useScopedQuery<Service>('services')
 
-  const columns: ColumnProps<Service>[] = [
+  const columns: TableColumnsType<Service> = [
     {
       title: '名称',
       dataIndex: 'name',
       render: (value: string, record: Service) => (
-        <Button theme="borderless" type="primary" onClick={() => navigate(buildServiceDetailPath(value, namespace, record.namespace))}>
+        <Button type="text" onClick={() => navigate(buildServiceDetailPath(value, namespace, record.namespace))}>
           {value}
         </Button>
       ),
@@ -197,12 +197,12 @@ export function ServiceDetailPage() {
     enabled: !!clusterId && !!detailNamespace,
   })
 
-  const backendPodColumns: ColumnProps<ServiceBackendPod>[] = [
+  const backendPodColumns: TableColumnsType<ServiceBackendPod> = [
     {
       title: localeCode === 'zh_CN' ? 'Pod' : 'Pod',
       dataIndex: 'name',
       render: (value: string, record: ServiceBackendPod) => (
-        <Button theme="borderless" type="primary" onClick={() => navigate(buildPodDetailPath(value, detailNamespace, record.namespace))}>
+        <Button type="text" onClick={() => navigate(buildPodDetailPath(value, detailNamespace, record.namespace))}>
           {value}
         </Button>
       ),
@@ -254,63 +254,79 @@ export function ServiceDetailPage() {
         title={`Service: ${service.name}`}
         description={localeCode === 'zh_CN' ? '查看服务暴露信息、后端 Pod、事件与指标。' : 'Inspect service exposure, backend pods, events, and metrics.'}
         actions={(
-          <Button theme="light" onClick={() => downloadJSON(`service-diagnostics-${service.name}.json`, exportPayload)}>
+          <Button variant="outlined" onClick={() => downloadJSON(`service-diagnostics-${service.name}.json`, exportPayload)}>
             {localeCode === 'zh_CN' ? '导出诊断' : 'Export Diagnostics'}
           </Button>
         )}
       />
       <PlatformScopeToolbar />
-      <Tabs type="line">
-        <TabPane tab={localeCode === 'zh_CN' ? '概览' : 'Overview'} itemKey="overview">
-          <Card className="kc-detail-card">
-            <Descriptions
-              data={[
-                { key: localeCode === 'zh_CN' ? '名称' : 'Name', value: service.name },
-                { key: localeCode === 'zh_CN' ? '命名空间' : 'Namespace', value: service.namespace },
-                { key: localeCode === 'zh_CN' ? '类型' : 'Type', value: service.type },
-                { key: 'Cluster IP', value: service.clusterIp || '-' },
-                { key: 'Ports', value: service.ports?.join(', ') || '-' },
-                { key: 'Age', value: formatAgeSeconds(service.ageSeconds) },
-              ]}
-            />
-            {service.selector && Object.keys(service.selector).length > 0 ? (
-              <div className="kc-detail-meta">
-                <Text strong>{localeCode === 'zh_CN' ? 'Selector' : 'Selector'}</Text>
-                <div className="kc-tag-list">
-                  {Object.entries(service.selector).map(([key, value]) => (
-                    <Tag key={key} size="small">{key}={String(value)}</Tag>
-                  ))}
-                </div>
-              </div>
-            ) : null}
-          </Card>
-          <Card className="kc-detail-card" title={localeCode === 'zh_CN' ? '后端 Pods' : 'Backend Pods'}>
-            <AdminTable
-              columns={backendPodColumns}
-              dataSource={backendPodsQuery.data?.data ?? []}
-              rowKey={(record) => `${record.namespace}/${record.name}`}
-              loading={backendPodsQuery.isLoading}
-              pageSize={10}
-              enableColumnSelection={false}
-            />
-          </Card>
-        </TabPane>
-        <TabPane tab={localeCode === 'zh_CN' ? '指标' : 'Metrics'} itemKey="metrics">
-          <ResourceMetricsPanel
-            title={localeCode === 'zh_CN' ? 'Service 指标' : 'Service Metrics'}
-            data={metricsQuery.data?.data}
-            loading={metricsQuery.isLoading}
-          />
-        </TabPane>
-        <TabPane tab={localeCode === 'zh_CN' ? '事件' : 'Events'} itemKey="events">
-          <ResourceEventsTimeline
-            title={localeCode === 'zh_CN' ? 'Service 事件时间线' : 'Service Event Timeline'}
-            events={eventsQuery.data?.data ?? []}
-            loading={eventsQuery.isLoading}
-            emptyDescription={localeCode === 'zh_CN' ? '当前 Service 暂无事件' : 'No service events'}
-          />
-        </TabPane>
-      </Tabs>
+      <Tabs
+        items={[
+          {
+            key: 'overview',
+            label: localeCode === 'zh_CN' ? '概览' : 'Overview',
+            children: (
+              <>
+                <Card className="kc-detail-card">
+                  <Descriptions
+                    items={[
+                      { key: localeCode === 'zh_CN' ? '名称' : 'Name', label: localeCode === 'zh_CN' ? '名称' : 'Name', children: service.name },
+                      { key: localeCode === 'zh_CN' ? '命名空间' : 'Namespace', label: localeCode === 'zh_CN' ? '命名空间' : 'Namespace', children: service.namespace },
+                      { key: localeCode === 'zh_CN' ? '类型' : 'Type', label: localeCode === 'zh_CN' ? '类型' : 'Type', children: service.type },
+                      { key: 'Cluster IP', label: 'Cluster IP', children: service.clusterIp || '-' },
+                      { key: 'Ports', label: 'Ports', children: service.ports?.join(', ') || '-' },
+                      { key: 'Age', label: 'Age', children: formatAgeSeconds(service.ageSeconds) },
+                    ]}
+                  />
+                  {service.selector && Object.keys(service.selector).length > 0 ? (
+                    <div className="kc-detail-meta">
+                      <Text strong>{localeCode === 'zh_CN' ? 'Selector' : 'Selector'}</Text>
+                      <div className="kc-tag-list">
+                        {Object.entries(service.selector).map(([key, value]) => (
+                          <Tag key={key}>{key}={String(value)}</Tag>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                </Card>
+                <Card className="kc-detail-card" title={localeCode === 'zh_CN' ? '后端 Pods' : 'Backend Pods'}>
+                  <AdminTable
+                    columns={backendPodColumns}
+                    dataSource={backendPodsQuery.data?.data ?? []}
+                    rowKey={(record) => `${record.namespace}/${record.name}`}
+                    loading={backendPodsQuery.isLoading}
+                    pageSize={10}
+                    enableColumnSelection={false}
+                  />
+                </Card>
+              </>
+            ),
+          },
+          {
+            key: 'metrics',
+            label: localeCode === 'zh_CN' ? '指标' : 'Metrics',
+            children: (
+              <ResourceMetricsPanel
+                title={localeCode === 'zh_CN' ? 'Service 指标' : 'Service Metrics'}
+                data={metricsQuery.data?.data}
+                loading={metricsQuery.isLoading}
+              />
+            ),
+          },
+          {
+            key: 'events',
+            label: localeCode === 'zh_CN' ? '事件' : 'Events',
+            children: (
+              <ResourceEventsTimeline
+                title={localeCode === 'zh_CN' ? 'Service 事件时间线' : 'Service Event Timeline'}
+                events={eventsQuery.data?.data ?? []}
+                loading={eventsQuery.isLoading}
+                emptyDescription={localeCode === 'zh_CN' ? '当前 Service 暂无事件' : 'No service events'}
+              />
+            ),
+          },
+        ]}
+      />
     </div>
   )
 }
@@ -330,7 +346,7 @@ export function NetworkIngressesPage() {
   const { t } = useI18n()
   const { data, isLoading } = useScopedQuery<Ingress>('ingresses')
 
-  const columns: ColumnProps<Ingress>[] = [
+  const columns: TableColumnsType<Ingress> = [
     { title: '名称', dataIndex: 'name' },
     { title: '命名空间', dataIndex: 'namespace' },
     {
@@ -367,7 +383,7 @@ export function NetworkGatewaysPage() {
   const { t } = useI18n()
   const { data, isLoading } = useScopedQuery<Gateway>('gateways')
 
-  const columns: ColumnProps<Gateway>[] = [
+  const columns: TableColumnsType<Gateway> = [
     { title: '名称', dataIndex: 'name' },
     { title: '命名空间', dataIndex: 'namespace' },
     { title: 'Gateway Class', dataIndex: 'gatewayClassName' },
@@ -406,7 +422,7 @@ export function StoragePvcPage() {
   const { t } = useI18n()
   const { data, isLoading } = useScopedQuery<PVC>('persistentvolumeclaims')
 
-  const columns: ColumnProps<PVC>[] = [
+  const columns: TableColumnsType<PVC> = [
     { title: '名称', dataIndex: 'name' },
     { title: '命名空间', dataIndex: 'namespace' },
     {
@@ -452,7 +468,7 @@ export function StoragePvPage() {
     enabled: !!clusterId,
   })
 
-  const columns: ColumnProps<PV>[] = [
+  const columns: TableColumnsType<PV> = [
     { title: '名称', dataIndex: 'name' },
     { title: '容量', dataIndex: 'capacity' },
     {
@@ -502,7 +518,7 @@ export function StorageClassesPage() {
     enabled: !!clusterId,
   })
 
-  const columns: ColumnProps<StorageClass>[] = [
+  const columns: TableColumnsType<StorageClass> = [
     { title: '名称', dataIndex: 'name' },
     { title: 'Provisioner', dataIndex: 'provisioner' },
     { title: 'Reclaim Policy', dataIndex: 'reclaimPolicy' },

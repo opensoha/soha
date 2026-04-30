@@ -1,0 +1,25 @@
+{
+  "id": "operations/deployment",
+  "title": "Deployment",
+  "description": "Runtime Shape",
+  "source": "@site/operations/deployment.md",
+  "sourceDirName": "operations",
+  "slug": "/operations/deployment",
+  "permalink": "/docs/operations/deployment",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/kubecrux/kubecrux/tree/main/docs/operations/deployment.md",
+  "tags": [],
+  "version": "current",
+  "lastUpdatedAt": 1539502055000,
+  "frontMatter": {},
+  "sidebar": "mainSidebar",
+  "previous": {
+    "title": "Agent Runtime",
+    "permalink": "/docs/operations/agent-runtime"
+  },
+  "next": {
+    "title": "Environment Overrides",
+    "permalink": "/docs/operations/environment-variables"
+  }
+}

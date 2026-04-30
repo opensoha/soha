@@ -1,0 +1,141 @@
+export interface PermissionCatalogOption {
+  value: string
+  label: string
+  description?: string
+}
+
+export interface PermissionCatalogGroup {
+  key: string
+  label: string
+  description: string
+  options: PermissionCatalogOption[]
+}
+
+export const consolePermissionGroups: PermissionCatalogGroup[] = [
+  {
+    key: 'overview',
+    label: '概览',
+    description: '控制平台首页与总览入口。',
+    options: [
+      { value: 'overview.view', label: '查看概览' },
+    ],
+  },
+  {
+    key: 'platform',
+    label: '平台管理',
+    description: '控制 Kubernetes 平台管理、工作负载与运维动作。',
+    options: [
+      { value: 'platform.nodes.view', label: '查看节点' },
+      { value: 'platform.namespaces.view', label: '查看命名空间' },
+      { value: 'platform.workloads.view', label: '查看工作负载' },
+      { value: 'platform.configuration.view', label: '查看配置资源' },
+      { value: 'platform.network.view', label: '查看网络资源' },
+      { value: 'platform.storage.view', label: '查看存储资源' },
+      { value: 'platform.extensions.view', label: '查看 CRD' },
+      { value: 'platform.helm.view', label: '查看 Helm' },
+      { value: 'platform.clusters.view', label: '查看集群管理' },
+      { value: 'platform.deployment.restart', label: '重启 Deployment' },
+      { value: 'platform.deployment.scale', label: '伸缩 Deployment' },
+      { value: 'platform.deployment.rollback', label: '回滚 Deployment' },
+    ],
+  },
+  {
+    key: 'delivery',
+    label: '应用交付',
+    description: '控制应用、环境、流程模板、发布与仓库能力。',
+    options: [
+      { value: 'delivery.applications.view', label: '查看应用' },
+      { value: 'delivery.application.create', label: '创建应用' },
+      { value: 'delivery.application.update', label: '更新应用' },
+      { value: 'delivery.application.delete', label: '删除应用' },
+      { value: 'delivery.business-lines.view', label: '查看业务线' },
+      { value: 'delivery.business-lines.manage', label: '管理业务线' },
+      { value: 'delivery.environments.view', label: '查看交付环境' },
+      { value: 'delivery.environments.manage', label: '管理交付环境' },
+      { value: 'delivery.application-environments.view', label: '查看应用环境绑定' },
+      { value: 'delivery.application-environments.manage', label: '管理应用环境绑定' },
+      { value: 'delivery.workflow-templates.view', label: '查看流程模板' },
+      { value: 'delivery.workflow-templates.manage', label: '管理流程模板' },
+      { value: 'delivery.release-board.view', label: '查看发布看板' },
+      { value: 'delivery.workflows.view', label: '查看工作流' },
+      { value: 'delivery.workflows.trigger', label: '触发工作流' },
+      { value: 'delivery.releases.view', label: '查看发布' },
+      { value: 'delivery.releases.trigger', label: '触发发布' },
+      { value: 'delivery.registries.view', label: '查看镜像仓库' },
+      { value: 'delivery.registries.manage', label: '管理镜像仓库' },
+    ],
+  },
+  {
+    key: 'observe',
+    label: '运维智能',
+    description: '控制监控、告警、通知、值班与 AI 能力。',
+    options: [
+      { value: 'observe.monitoring.view', label: '查看监控概览' },
+      { value: 'observe.alerts.view', label: '查看告警' },
+      { value: 'observe.alerts.ack', label: '确认告警' },
+      { value: 'observe.alerts.assign', label: '分派告警' },
+      { value: 'observe.notifications.view', label: '查看通知策略' },
+      { value: 'observe.notifications.manage', label: '管理通知策略' },
+      { value: 'observe.oncall.view', label: '查看值班协同' },
+      { value: 'observe.events.view', label: '查看事件流' },
+      { value: 'observe.ai.view', label: '查看 AI 观测分析' },
+      { value: 'observe.ai.chat', label: '使用 AI Chat' },
+      { value: 'observe.ai.root-cause.run', label: '运行根因分析' },
+      { value: 'observe.ai.inspection.manage', label: '管理巡检任务' },
+      { value: 'observe.ai.inspection.run', label: '运行巡检任务' },
+    ],
+  },
+  {
+    key: 'access',
+    label: '访问控制',
+    description: '控制访问中心各模块的查看、变更与授权范围维护能力。',
+    options: [
+      { value: 'access.users.view', label: '查看用户' },
+      { value: 'access.users.manage', label: '管理用户' },
+      { value: 'access.roles.view', label: '查看角色' },
+      { value: 'access.roles.manage', label: '管理角色' },
+      { value: 'access.groups.view', label: '查看用户组' },
+      { value: 'access.groups.manage', label: '管理用户组' },
+      { value: 'access.policies.view', label: '查看策略' },
+      { value: 'access.policies.manage', label: '管理策略' },
+      { value: 'access.scope-grants.view', label: '查看授权范围' },
+      { value: 'access.scope-grants.manage', label: '管理授权范围' },
+    ],
+  },
+  {
+    key: 'system',
+    label: '系统管理',
+    description: '控制在线会话、公告、菜单与审计类页面。',
+    options: [
+      { value: 'system.online-users.view', label: '查看在线用户' },
+      { value: 'system.online-users.manage', label: '管理在线用户' },
+      { value: 'system.announcements.view', label: '查看公告' },
+      { value: 'system.announcements.manage', label: '管理公告' },
+      { value: 'system.menus.view', label: '查看菜单' },
+      { value: 'system.menus.manage', label: '管理菜单' },
+      { value: 'system.audit.view', label: '查看审计日志' },
+      { value: 'system.operations.view', label: '查看操作日志' },
+    ],
+  },
+  {
+    key: 'settings',
+    label: '设置中心',
+    description: '控制身份、监控、AI 和品牌设置。',
+    options: [
+      { value: 'settings.identity.view', label: '查看身份设置' },
+      { value: 'settings.identity.manage', label: '管理身份设置' },
+      { value: 'settings.monitoring.view', label: '查看监控设置' },
+      { value: 'settings.monitoring.manage', label: '管理监控设置' },
+      { value: 'settings.ai.view', label: '查看 AI 设置' },
+      { value: 'settings.ai.manage', label: '管理 AI 设置' },
+      { value: 'settings.branding.view', label: '查看品牌设置' },
+      { value: 'settings.branding.manage', label: '管理品牌设置' },
+    ],
+  },
+]
+
+export const consolePermissionOptions = consolePermissionGroups.flatMap((group) => group.options)
+
+export const consolePermissionLabelMap = Object.fromEntries(
+  consolePermissionOptions.map((option) => [option.value, option.label]),
+) as Record<string, string>

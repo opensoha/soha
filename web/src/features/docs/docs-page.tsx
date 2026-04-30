@@ -1,4 +1,4 @@
-import { Button } from '@douyinfe/semi-ui'
+import { Button } from 'antd'
 import { PageHeader } from '@/components/page-header'
 
 export function DocsPage() {
@@ -8,7 +8,7 @@ export function DocsPage() {
         title="项目文档"
         description="在控制台内嵌浏览项目文档，也可以在独立窗口中直接打开文档站。"
         actions={
-          <Button theme="light" type="primary" onClick={() => window.open('/docs/', '_blank', 'noopener,noreferrer')}>
+          <Button type="primary" variant="outlined" onClick={() => window.open('/docs/', '_blank', 'noopener,noreferrer')}>
             在新窗口打开
           </Button>
         }

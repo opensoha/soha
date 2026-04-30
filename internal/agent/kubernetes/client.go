@@ -10,12 +10,16 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	autoscalingv2 "k8s.io/api/autoscaling/v2"
+	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
 	batchv1 "k8s.io/api/batch/v1"
+	coordinationv1 "k8s.io/api/coordination/v1"
 	corev1 "k8s.io/api/core/v1"
 	discoveryv1 "k8s.io/api/discovery/v1"
 	networkingv1 "k8s.io/api/networking/v1"
+	nodev1 "k8s.io/api/node/v1"
 	policyv1 "k8s.io/api/policy/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	schedulingv1 "k8s.io/api/scheduling/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -812,6 +816,160 @@ func (c *Client) ListStorageClasses(ctx context.Context) ([]domainresource.Stora
 	views := make([]domainresource.StorageClassView, 0, len(items.Items))
 	for _, item := range items.Items {
 		views = append(views, mapStorageClass(item))
+	}
+	return views, nil
+}
+
+func (c *Client) ListIngressClasses(ctx context.Context) ([]domainresource.IngressClassView, error) {
+	queryCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	items, err := c.typed.NetworkingV1().IngressClasses().List(queryCtx, metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	views := make([]domainresource.IngressClassView, 0, len(items.Items))
+	for _, item := range items.Items {
+		views = append(views, mapIngressClass(item))
+	}
+	return views, nil
+}
+
+func (c *Client) ListPriorityClasses(ctx context.Context) ([]domainresource.PriorityClassView, error) {
+	queryCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	items, err := c.typed.SchedulingV1().PriorityClasses().List(queryCtx, metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	views := make([]domainresource.PriorityClassView, 0, len(items.Items))
+	for _, item := range items.Items {
+		views = append(views, mapPriorityClass(item))
+	}
+	return views, nil
+}
+
+func (c *Client) ListRuntimeClasses(ctx context.Context) ([]domainresource.RuntimeClassView, error) {
+	queryCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	items, err := c.typed.NodeV1().RuntimeClasses().List(queryCtx, metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	views := make([]domainresource.RuntimeClassView, 0, len(items.Items))
+	for _, item := range items.Items {
+		views = append(views, mapRuntimeClass(item))
+	}
+	return views, nil
+}
+
+func (c *Client) ListClusterRoles(ctx context.Context) ([]domainresource.ClusterRoleView, error) {
+	queryCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	items, err := c.typed.RbacV1().ClusterRoles().List(queryCtx, metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	views := make([]domainresource.ClusterRoleView, 0, len(items.Items))
+	for _, item := range items.Items {
+		views = append(views, mapClusterRole(item))
+	}
+	return views, nil
+}
+
+func (c *Client) ListClusterRoleBindings(ctx context.Context) ([]domainresource.ClusterRoleBindingView, error) {
+	queryCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	items, err := c.typed.RbacV1().ClusterRoleBindings().List(queryCtx, metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	views := make([]domainresource.ClusterRoleBindingView, 0, len(items.Items))
+	for _, item := range items.Items {
+		views = append(views, mapClusterRoleBinding(item))
+	}
+	return views, nil
+}
+
+func (c *Client) ListMutatingWebhookConfigurations(ctx context.Context) ([]domainresource.MutatingWebhookConfigurationView, error) {
+	queryCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	items, err := c.typed.AdmissionregistrationV1().MutatingWebhookConfigurations().List(queryCtx, metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	views := make([]domainresource.MutatingWebhookConfigurationView, 0, len(items.Items))
+	for _, item := range items.Items {
+		views = append(views, mapMutatingWebhookConfiguration(item))
+	}
+	return views, nil
+}
+
+func (c *Client) ListValidatingWebhookConfigurations(ctx context.Context) ([]domainresource.ValidatingWebhookConfigurationView, error) {
+	queryCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	items, err := c.typed.AdmissionregistrationV1().ValidatingWebhookConfigurations().List(queryCtx, metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	views := make([]domainresource.ValidatingWebhookConfigurationView, 0, len(items.Items))
+	for _, item := range items.Items {
+		views = append(views, mapValidatingWebhookConfiguration(item))
+	}
+	return views, nil
+}
+
+func (c *Client) ListResourceQuotas(ctx context.Context, namespace string) ([]domainresource.ResourceQuotaView, error) {
+	queryCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	items, err := c.typed.CoreV1().ResourceQuotas(namespace).List(queryCtx, metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	views := make([]domainresource.ResourceQuotaView, 0, len(items.Items))
+	for _, item := range items.Items {
+		views = append(views, mapResourceQuota(item))
+	}
+	return views, nil
+}
+
+func (c *Client) ListLimitRanges(ctx context.Context, namespace string) ([]domainresource.LimitRangeView, error) {
+	queryCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	items, err := c.typed.CoreV1().LimitRanges(namespace).List(queryCtx, metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	views := make([]domainresource.LimitRangeView, 0, len(items.Items))
+	for _, item := range items.Items {
+		views = append(views, mapLimitRange(item))
+	}
+	return views, nil
+}
+
+func (c *Client) ListLeases(ctx context.Context, namespace string) ([]domainresource.LeaseView, error) {
+	queryCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	items, err := c.typed.CoordinationV1().Leases(namespace).List(queryCtx, metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	views := make([]domainresource.LeaseView, 0, len(items.Items))
+	for _, item := range items.Items {
+		views = append(views, mapLease(item))
+	}
+	return views, nil
+}
+
+func (c *Client) ListReplicationControllers(ctx context.Context, namespace string) ([]domainresource.ReplicationControllerView, error) {
+	queryCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	items, err := c.typed.CoreV1().ReplicationControllers(namespace).List(queryCtx, metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	views := make([]domainresource.ReplicationControllerView, 0, len(items.Items))
+	for _, item := range items.Items {
+		views = append(views, mapReplicationController(item))
 	}
 	return views, nil
 }
@@ -1667,6 +1825,169 @@ func mapStorageClass(item storagev1.StorageClass) domainresource.StorageClassVie
 		AllowVolumeExpansion: allowVolumeExpansion,
 		Parameters:           item.Parameters,
 		AgeSeconds:           secondsSince(item.CreationTimestamp.Time),
+	}
+}
+
+func mapIngressClass(item networkingv1.IngressClass) domainresource.IngressClassView {
+	isDefault := false
+	if v, ok := item.Annotations["ingressclass.kubernetes.io/is-default-class"]; ok && strings.EqualFold(strings.TrimSpace(v), "true") {
+		isDefault = true
+	}
+	parameters := ""
+	if item.Spec.Parameters != nil {
+		parameters = fmt.Sprintf("%s/%s", item.Spec.Parameters.Kind, item.Spec.Parameters.Name)
+	}
+	return domainresource.IngressClassView{
+		Name:       item.Name,
+		Controller: item.Spec.Controller,
+		IsDefault:  isDefault,
+		Parameters: parameters,
+		AgeSeconds: secondsSince(item.CreationTimestamp.Time),
+	}
+}
+
+func mapPriorityClass(item schedulingv1.PriorityClass) domainresource.PriorityClassView {
+	preemptionPolicy := ""
+	if item.PreemptionPolicy != nil {
+		preemptionPolicy = string(*item.PreemptionPolicy)
+	}
+	return domainresource.PriorityClassView{
+		Name:             item.Name,
+		Value:            item.Value,
+		GlobalDefault:    item.GlobalDefault,
+		PreemptionPolicy: preemptionPolicy,
+		Description:      item.Description,
+		AgeSeconds:       secondsSince(item.CreationTimestamp.Time),
+	}
+}
+
+func mapRuntimeClass(item nodev1.RuntimeClass) domainresource.RuntimeClassView {
+	return domainresource.RuntimeClassView{
+		Name:       item.Name,
+		Handler:    item.Handler,
+		AgeSeconds: secondsSince(item.CreationTimestamp.Time),
+	}
+}
+
+func mapClusterRole(item rbacv1.ClusterRole) domainresource.ClusterRoleView {
+	aggregation := 0
+	if item.AggregationRule != nil {
+		aggregation = len(item.AggregationRule.ClusterRoleSelectors)
+	}
+	return domainresource.ClusterRoleView{
+		Name:             item.Name,
+		Rules:            len(item.Rules),
+		AggregationRules: aggregation,
+		AgeSeconds:       secondsSince(item.CreationTimestamp.Time),
+	}
+}
+
+func mapClusterRoleBinding(item rbacv1.ClusterRoleBinding) domainresource.ClusterRoleBindingView {
+	subjects := make([]string, 0, len(item.Subjects))
+	for _, subject := range item.Subjects {
+		if strings.TrimSpace(subject.Namespace) != "" {
+			subjects = append(subjects, fmt.Sprintf("%s:%s/%s", subject.Kind, subject.Namespace, subject.Name))
+			continue
+		}
+		subjects = append(subjects, fmt.Sprintf("%s:%s", subject.Kind, subject.Name))
+	}
+	return domainresource.ClusterRoleBindingView{
+		Name:       item.Name,
+		RoleRef:    fmt.Sprintf("%s/%s", item.RoleRef.Kind, item.RoleRef.Name),
+		Subjects:   subjects,
+		AgeSeconds: secondsSince(item.CreationTimestamp.Time),
+	}
+}
+
+func mapMutatingWebhookConfiguration(item admissionregistrationv1.MutatingWebhookConfiguration) domainresource.MutatingWebhookConfigurationView {
+	return domainresource.MutatingWebhookConfigurationView{
+		Name:       item.Name,
+		Webhooks:   len(item.Webhooks),
+		AgeSeconds: secondsSince(item.CreationTimestamp.Time),
+	}
+}
+
+func mapValidatingWebhookConfiguration(item admissionregistrationv1.ValidatingWebhookConfiguration) domainresource.ValidatingWebhookConfigurationView {
+	return domainresource.ValidatingWebhookConfigurationView{
+		Name:       item.Name,
+		Webhooks:   len(item.Webhooks),
+		AgeSeconds: secondsSince(item.CreationTimestamp.Time),
+	}
+}
+
+func mapResourceQuota(item corev1.ResourceQuota) domainresource.ResourceQuotaView {
+	scopes := make([]string, 0, len(item.Spec.Scopes))
+	for _, scope := range item.Spec.Scopes {
+		scopes = append(scopes, string(scope))
+	}
+	hard := make(map[string]string, len(item.Status.Hard))
+	for k, v := range item.Status.Hard {
+		hard[string(k)] = v.String()
+	}
+	used := make(map[string]string, len(item.Status.Used))
+	for k, v := range item.Status.Used {
+		used[string(k)] = v.String()
+	}
+	return domainresource.ResourceQuotaView{
+		Name:       item.Name,
+		Namespace:  item.Namespace,
+		Scopes:     scopes,
+		Hard:       hard,
+		Used:       used,
+		AgeSeconds: secondsSince(item.CreationTimestamp.Time),
+	}
+}
+
+func mapLimitRange(item corev1.LimitRange) domainresource.LimitRangeView {
+	return domainresource.LimitRangeView{
+		Name:       item.Name,
+		Namespace:  item.Namespace,
+		Limits:     len(item.Spec.Limits),
+		AgeSeconds: secondsSince(item.CreationTimestamp.Time),
+	}
+}
+
+func mapLease(item coordinationv1.Lease) domainresource.LeaseView {
+	holder := ""
+	if item.Spec.HolderIdentity != nil {
+		holder = *item.Spec.HolderIdentity
+	}
+	duration := int32(0)
+	if item.Spec.LeaseDurationSeconds != nil {
+		duration = *item.Spec.LeaseDurationSeconds
+	}
+	acquire := ""
+	if item.Spec.AcquireTime != nil {
+		acquire = item.Spec.AcquireTime.UTC().Format(time.RFC3339)
+	}
+	renew := ""
+	if item.Spec.RenewTime != nil {
+		renew = item.Spec.RenewTime.UTC().Format(time.RFC3339)
+	}
+	return domainresource.LeaseView{
+		Name:                 item.Name,
+		Namespace:            item.Namespace,
+		HolderIdentity:       holder,
+		LeaseDurationSeconds: duration,
+		AcquireTime:          acquire,
+		RenewTime:            renew,
+		AgeSeconds:           secondsSince(item.CreationTimestamp.Time),
+	}
+}
+
+func mapReplicationController(item corev1.ReplicationController) domainresource.ReplicationControllerView {
+	desired := int32(0)
+	if item.Spec.Replicas != nil {
+		desired = *item.Spec.Replicas
+	}
+	return domainresource.ReplicationControllerView{
+		Name:              item.Name,
+		Namespace:         item.Namespace,
+		DesiredReplicas:   desired,
+		CurrentReplicas:   item.Status.Replicas,
+		ReadyReplicas:     item.Status.ReadyReplicas,
+		AvailableReplicas: item.Status.AvailableReplicas,
+		AgeSeconds:        secondsSince(item.CreationTimestamp.Time),
 	}
 }
 

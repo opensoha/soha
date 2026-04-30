@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
-import { Button, Card, Descriptions, Empty, Form, Space, Spin, Tabs, Tag, Toast, Typography } from '@douyinfe/semi-ui'
+import { App, Button, Card, Descriptions, Empty, Form, Input, Space, Spin, Tabs, Tag, Typography } from 'antd'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { AdminTable } from '@/components/admin-table'
@@ -19,9 +19,8 @@ import { api } from '@/services/api-client'
 import { usePlatformScopeStore } from '@/stores/platform-scope-store'
 import { formatAgeSeconds, formatDateTime } from '@/utils/time'
 import type { ApiResponse, NodeDetail, NodePod, ResourceYAMLView, WorkloadCondition } from '@/types'
-import type { ColumnProps } from '@douyinfe/semi-ui/lib/es/table'
+import type { TableColumnsType } from 'antd'
 
-const { TabPane } = Tabs
 const { Text } = Typography
 
 const K8sYamlEditor = lazy(async () => {
@@ -40,6 +39,7 @@ function buildPodDetailPath(name: string, namespace: string) {
 
 export function NodeDetailPage() {
   const { localeCode, t } = useI18n()
+  const { message } = App.useApp()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const { nodeName } = useParams()
@@ -95,13 +95,13 @@ export function NodeDetailPage() {
       })
     },
     onSuccess: () => {
-      Toast.success(localeCode === 'zh_CN' ? '节点配置已更新' : 'Node configuration updated')
+      void message.success(localeCode === 'zh_CN' ? '节点配置已更新' : 'Node configuration updated')
       queryClient.invalidateQueries({ queryKey: ['cluster-nodes', clusterId] })
       queryClient.invalidateQueries({ queryKey: ['cluster-node-detail', clusterId, nodeName] })
       queryClient.invalidateQueries({ queryKey: ['cluster-node-detail-page', clusterId, nodeName] })
       queryClient.invalidateQueries({ queryKey: ['cluster-node-yaml', clusterId, nodeName] })
     },
-    onError: (err: Error) => Toast.error(err.message),
+    onError: (err: Error) => void message.error(err.message),
   })
 
   const applyYAMLMutation = useMutation({
@@ -111,13 +111,13 @@ export function NodeDetailPage() {
         window.localStorage.removeItem(yamlDraftStorageKey)
       }
       setYamlDraft(response.data?.content ?? yamlDraft)
-      Toast.success(t('yamlEditor.applySuccess', 'YAML applied'))
+      void message.success(t('yamlEditor.applySuccess', 'YAML applied'))
       queryClient.invalidateQueries({ queryKey: ['cluster-nodes', clusterId] })
       queryClient.invalidateQueries({ queryKey: ['cluster-node-detail', clusterId, nodeName] })
       queryClient.invalidateQueries({ queryKey: ['cluster-node-detail-page', clusterId, nodeName] })
       queryClient.invalidateQueries({ queryKey: ['cluster-node-yaml', clusterId, nodeName] })
     },
-    onError: (err: Error) => Toast.error(err.message),
+    onError: (err: Error) => void message.error(err.message),
   })
 
   const nodeDetail = nodeDetailQuery.data?.data
@@ -131,12 +131,12 @@ export function NodeDetailPage() {
     }
   }, [nodeDetail])
 
-  const podColumns: ColumnProps<NodePod>[] = [
+  const podColumns: TableColumnsType<NodePod> = [
     {
       title: 'Pod',
       dataIndex: 'name',
       render: (value: string, record: NodePod) => (
-        <Button theme="borderless" type="primary" onClick={() => navigate(buildPodDetailPath(value, record.namespace))}>
+        <Button type="text" onClick={() => navigate(buildPodDetailPath(value, record.namespace))}>
           {value}
         </Button>
       ),
@@ -151,7 +151,7 @@ export function NodeDetailPage() {
     { title: localeCode === 'zh_CN' ? '存活时长' : 'Age', dataIndex: 'ageSeconds', render: (value: number) => formatAgeSeconds(value) },
   ]
 
-  const conditionColumns: ColumnProps<WorkloadCondition>[] = [
+  const conditionColumns: TableColumnsType<WorkloadCondition> = [
     { title: localeCode === 'zh_CN' ? '类型' : 'Type', dataIndex: 'type' },
     { title: localeCode === 'zh_CN' ? '状态' : 'Status', dataIndex: 'status', render: (value: string) => <StatusTag value={value} /> },
     { title: localeCode === 'zh_CN' ? '原因' : 'Reason', dataIndex: 'reason', render: (value: string) => value || '-' },
@@ -188,7 +188,7 @@ export function NodeDetailPage() {
           actions={<Button onClick={() => navigate('/cluster-resources/nodes')}>{t('common.back', 'Back')}</Button>}
         />
         <Card>
-          <Text type="tertiary">{t('common.notFound', 'Not found')}</Text>
+          <Text type="secondary">{t('common.notFound', 'Not found')}</Text>
         </Card>
       </div>
     )
@@ -202,162 +202,176 @@ export function NodeDetailPage() {
         actions={(
           <Space>
             <Button onClick={() => navigate(`/clusters/${clusterId}`)}>{localeCode === 'zh_CN' ? '集群详情' : 'Cluster Detail'}</Button>
-            <Button theme="solid" onClick={() => navigate('/cluster-resources/nodes')}>{t('common.back', 'Back')}</Button>
+            <Button type="primary" onClick={() => navigate('/cluster-resources/nodes')}>{t('common.back', 'Back')}</Button>
           </Space>
         )}
       />
       <PlatformScopeToolbar />
       <PlatformClusterScopeHint resourceLabel={localeCode === 'zh_CN' ? '节点详情' : 'Node'} />
-      <Tabs type="line">
-        <TabPane tab={t('common.overview', 'Overview')} itemKey="overview">
-          <div className="grid gap-4 xl:grid-cols-2">
-            <Card className="kc-detail-card" title={localeCode === 'zh_CN' ? '基础信息' : 'Summary'}>
-              <Descriptions
-                data={[
-                  { key: t('common.name', 'Name'), value: nodeDetail.name },
-                  { key: t('common.cluster', 'Cluster'), value: clusterId },
-                  { key: t('common.status', 'Status'), value: <StatusTag value={nodeDetail.status || 'unknown'} /> },
-                  { key: localeCode === 'zh_CN' ? '版本' : 'Version', value: nodeDetail.version || '-' },
-                  { key: 'IP', value: nodeDetail.internalIp || '-' },
-                  { key: localeCode === 'zh_CN' ? 'Pod 数量' : 'Pods', value: nodeDetail.podCount },
-                  { key: localeCode === 'zh_CN' ? '存活时长' : 'Age', value: formatAgeSeconds(nodeDetail.ageSeconds) },
-                ]}
-              />
-              <div className="kc-detail-meta">
-                <Text strong>{localeCode === 'zh_CN' ? '节点角色:' : 'Roles:'}</Text>
-                {nodeDetail.roles?.length ? (
-                  <div className="kc-tag-list">
-                    {nodeDetail.roles.map((role) => <Tag key={role} size="small">{role}</Tag>)}
-                  </div>
-                ) : (
-                  <Text type="tertiary" size="small">{localeCode === 'zh_CN' ? '未声明角色标签' : 'No explicit node role labels'}</Text>
-                )}
-              </div>
-              <div className="kc-detail-meta">
-                <Text strong>{t('common.labels', 'Labels')}:</Text>
-                {Object.keys(nodeDetail.labels || {}).length ? (
-                  <div className="kc-tag-list">
-                    {Object.entries(nodeDetail.labels || {}).map(([key, value]) => (
-                      <Tag key={key} size="small">{key}={value}</Tag>
-                    ))}
-                  </div>
-                ) : (
-                  <Text type="tertiary" size="small">{localeCode === 'zh_CN' ? '未配置标签' : 'No labels configured'}</Text>
-                )}
-              </div>
-              <div className="kc-detail-meta">
-                <Text strong>{localeCode === 'zh_CN' ? '污点:' : 'Taints:'}</Text>
-                {nodeDetail.taints?.length ? (
-                  <div className="kc-tag-list">
-                    {nodeDetail.taints.map((item) => (
-                      <Tag key={`${item.key}:${item.effect}:${item.value || ''}`} size="small">
-                        {item.key}{item.value ? `=${item.value}` : ''}:{item.effect}
-                      </Tag>
-                    ))}
-                  </div>
-                ) : (
-                  <Text type="tertiary" size="small">{localeCode === 'zh_CN' ? '当前节点没有污点' : 'No taints configured on this node'}</Text>
-                )}
-              </div>
-              {nodeDetail.annotations && Object.keys(nodeDetail.annotations).length > 0 ? (
-                <div className="kc-detail-meta">
-                  <Text strong>{localeCode === 'zh_CN' ? '注解:' : 'Annotations:'}</Text>
-                  <pre className="kc-json-block">{JSON.stringify(nodeDetail.annotations, null, 2)}</pre>
-                </div>
-              ) : null}
-            </Card>
+      <Tabs
+        items={[
+          {
+            key: 'overview',
+            label: t('common.overview', 'Overview'),
+            children: (
+              <>
+                <div className="grid gap-4 xl:grid-cols-2">
+                  <Card className="kc-detail-card" title={localeCode === 'zh_CN' ? '基础信息' : 'Summary'}>
+                    <Descriptions
+                      items={[
+                        { key: t('common.name', 'Name'), label: t('common.name', 'Name'), children: nodeDetail.name },
+                        { key: t('common.cluster', 'Cluster'), label: t('common.cluster', 'Cluster'), children: clusterId },
+                        { key: t('common.status', 'Status'), label: t('common.status', 'Status'), children: <StatusTag value={nodeDetail.status || 'unknown'} /> },
+                        { key: localeCode === 'zh_CN' ? '版本' : 'Version', label: localeCode === 'zh_CN' ? '版本' : 'Version', children: nodeDetail.version || '-' },
+                        { key: 'IP', label: 'IP', children: nodeDetail.internalIp || '-' },
+                        { key: localeCode === 'zh_CN' ? 'Pod 数量' : 'Pods', label: localeCode === 'zh_CN' ? 'Pod 数量' : 'Pods', children: nodeDetail.podCount },
+                        { key: localeCode === 'zh_CN' ? '存活时长' : 'Age', label: localeCode === 'zh_CN' ? '存活时长' : 'Age', children: formatAgeSeconds(nodeDetail.ageSeconds) },
+                      ]}
+                    />
+                    <div className="kc-detail-meta">
+                      <Text strong>{localeCode === 'zh_CN' ? '节点角色:' : 'Roles:'}</Text>
+                      {nodeDetail.roles?.length ? (
+                        <div className="kc-tag-list">
+                          {nodeDetail.roles.map((role) => <Tag key={role}>{role}</Tag>)}
+                        </div>
+                      ) : (
+                        <Text type="secondary" className="text-xs">{localeCode === 'zh_CN' ? '未声明角色标签' : 'No explicit node role labels'}</Text>
+                      )}
+                    </div>
+                    <div className="kc-detail-meta">
+                      <Text strong>{t('common.labels', 'Labels')}:</Text>
+                      {Object.keys(nodeDetail.labels || {}).length ? (
+                        <div className="kc-tag-list">
+                          {Object.entries(nodeDetail.labels || {}).map(([key, value]) => (
+                            <Tag key={key}>{key}={value}</Tag>
+                          ))}
+                        </div>
+                      ) : (
+                        <Text type="secondary" className="text-xs">{localeCode === 'zh_CN' ? '未配置标签' : 'No labels configured'}</Text>
+                      )}
+                    </div>
+                    <div className="kc-detail-meta">
+                      <Text strong>{localeCode === 'zh_CN' ? '污点:' : 'Taints:'}</Text>
+                      {nodeDetail.taints?.length ? (
+                        <div className="kc-tag-list">
+                          {nodeDetail.taints.map((item) => (
+                            <Tag key={`${item.key}:${item.effect}:${item.value || ''}`}>
+                              {item.key}{item.value ? `=${item.value}` : ''}:{item.effect}
+                            </Tag>
+                          ))}
+                        </div>
+                      ) : (
+                        <Text type="secondary" className="text-xs">{localeCode === 'zh_CN' ? '当前节点没有污点' : 'No taints configured on this node'}</Text>
+                      )}
+                    </div>
+                    {nodeDetail.annotations && Object.keys(nodeDetail.annotations).length > 0 ? (
+                      <div className="kc-detail-meta">
+                        <Text strong>{localeCode === 'zh_CN' ? '注解:' : 'Annotations:'}</Text>
+                        <pre className="kc-json-block">{JSON.stringify(nodeDetail.annotations, null, 2)}</pre>
+                      </div>
+                    ) : null}
+                  </Card>
 
-            <Card className="kc-detail-card" title={localeCode === 'zh_CN' ? '资源分配' : 'Resource Allocation'}>
-              <NodeResourcePanel node={nodeDetail} />
-              {nodeDetail.metricsMessage ? (
-                <div className="kc-detail-meta">
-                  <Text type="tertiary">{nodeDetail.metricsMessage}</Text>
+                  <Card className="kc-detail-card" title={localeCode === 'zh_CN' ? '资源分配' : 'Resource Allocation'}>
+                    <NodeResourcePanel node={nodeDetail} />
+                    {nodeDetail.metricsMessage ? (
+                      <div className="kc-detail-meta">
+                        <Text type="secondary">{nodeDetail.metricsMessage}</Text>
+                      </div>
+                    ) : null}
+                  </Card>
                 </div>
-              ) : null}
-            </Card>
-          </div>
 
-          <Card className="kc-detail-card" title={localeCode === 'zh_CN' ? '快速编辑 Labels / 污点' : 'Quick Edit Labels / Taints'}>
-            <Form
-              key={`node-edit:${clusterId}:${nodeName}:${nodeDetailQuery.dataUpdatedAt}`}
-              initValues={nodeFormInitValues}
-              onSubmit={(values) => updateNodeMutation.mutate(values)}
-            >
-              <Form.TextArea field="labels" label="Labels(JSON)" rows={8} />
-              <Form.TextArea field="taints" label="Taints(JSON Array)" rows={8} />
-              <div className="kc-form-actions">
-                <Button
-                  onClick={() => {
-                    queryClient.invalidateQueries({ queryKey: ['cluster-node-detail-page', clusterId, nodeName] })
+                <Card className="kc-detail-card" title={localeCode === 'zh_CN' ? '快速编辑 Labels / 污点' : 'Quick Edit Labels / Taints'}>
+                  <Form
+                    key={`node-edit:${clusterId}:${nodeName}:${nodeDetailQuery.dataUpdatedAt}`}
+                    layout="vertical"
+                    initialValues={nodeFormInitValues}
+                    onFinish={(values) => updateNodeMutation.mutate(values)}
+                  >
+                    <Form.Item name="labels" label="Labels(JSON)">
+                      <Input.TextArea rows={8} />
+                    </Form.Item>
+                    <Form.Item name="taints" label="Taints(JSON Array)">
+                      <Input.TextArea rows={8} />
+                    </Form.Item>
+                    <div className="kc-form-actions">
+                      <Button
+                        onClick={() => {
+                          queryClient.invalidateQueries({ queryKey: ['cluster-node-detail-page', clusterId, nodeName] })
+                        }}
+                      >
+                        {t('common.refresh', 'Refresh')}
+                      </Button>
+                      <Button htmlType="submit" type="primary" loading={updateNodeMutation.isPending}>
+                        {t('common.save', 'Save')}
+                      </Button>
+                    </div>
+                  </Form>
+                </Card>
+
+                <Card className="kc-detail-card" title={localeCode === 'zh_CN' ? `承载 Pods (${nodeDetail.pods?.length ?? 0})` : `Scheduled Pods (${nodeDetail.pods?.length ?? 0})`}>
+                  <AdminTable
+                    columns={podColumns}
+                    dataSource={nodeDetail.pods ?? []}
+                    rowKey={(record) => `${record.namespace}/${record.name}`}
+                    pageSize={10}
+                    enableColumnSelection={false}
+                  />
+                </Card>
+
+                <Card className="kc-detail-card" title={localeCode === 'zh_CN' ? '节点 Conditions' : 'Node Conditions'}>
+                  <AdminTable
+                    columns={conditionColumns}
+                    dataSource={nodeDetail.conditions ?? []}
+                    rowKey={(record) => `${record.type}:${record.lastTransitionTime || ''}`}
+                    pageSize={10}
+                    enableColumnSelection={false}
+                  />
+                </Card>
+              </>
+            ),
+          },
+          {
+            key: 'yaml',
+            label: t('common.yaml', 'YAML'),
+            children: nodeYAMLQuery.isLoading ? (
+              <Card className="kc-detail-card">
+                <div className="flex items-center justify-center h-64">
+                  <Spin size="large" />
+                </div>
+              </Card>
+            ) : nodeYAMLQuery.isError ? (
+              <Card className="kc-detail-card">
+                <Text type="warning">{(nodeYAMLQuery.error as Error)?.message || (localeCode === 'zh_CN' ? '节点 YAML 暂不可用' : 'Node YAML is unavailable')}</Text>
+              </Card>
+            ) : (
+              <Suspense fallback={<Card className="kc-detail-card"><Spin size="large" /></Card>}>
+                <K8sYamlEditor
+                  value={yamlDraft}
+                  onChange={setYamlDraft}
+                  onReset={() => {
+                    if (yamlDraftStorageKey) {
+                      window.localStorage.removeItem(yamlDraftStorageKey)
+                    }
+                    setYamlDraft(yamlServerValue)
+                    void message.success(t('yamlEditor.resetSuccess', 'YAML draft reset'))
                   }}
-                >
-                  {t('common.refresh', 'Refresh')}
-                </Button>
-                <Button htmlType="submit" theme="solid" loading={updateNodeMutation.isPending}>
-                  {t('common.save', 'Save')}
-                </Button>
-              </div>
-            </Form>
-          </Card>
-
-          <Card className="kc-detail-card" title={localeCode === 'zh_CN' ? `承载 Pods (${nodeDetail.pods?.length ?? 0})` : `Scheduled Pods (${nodeDetail.pods?.length ?? 0})`}>
-            <AdminTable
-              columns={podColumns}
-              dataSource={nodeDetail.pods ?? []}
-              rowKey={(record) => `${record.namespace}/${record.name}`}
-              pageSize={10}
-              enableColumnSelection={false}
-            />
-          </Card>
-
-          <Card className="kc-detail-card" title={localeCode === 'zh_CN' ? '节点 Conditions' : 'Node Conditions'}>
-            <AdminTable
-              columns={conditionColumns}
-              dataSource={nodeDetail.conditions ?? []}
-              rowKey={(record) => `${record.type}:${record.lastTransitionTime || ''}`}
-              pageSize={10}
-              enableColumnSelection={false}
-            />
-          </Card>
-        </TabPane>
-
-        <TabPane tab={t('common.yaml', 'YAML')} itemKey="yaml">
-          {nodeYAMLQuery.isLoading ? (
-            <Card className="kc-detail-card">
-              <div className="flex items-center justify-center h-64">
-                <Spin size="large" />
-              </div>
-            </Card>
-          ) : nodeYAMLQuery.isError ? (
-            <Card className="kc-detail-card">
-              <Text type="warning">{(nodeYAMLQuery.error as Error)?.message || (localeCode === 'zh_CN' ? '节点 YAML 暂不可用' : 'Node YAML is unavailable')}</Text>
-            </Card>
-          ) : (
-            <Suspense fallback={<Card className="kc-detail-card"><Spin size="large" /></Card>}>
-              <K8sYamlEditor
-                value={yamlDraft}
-                onChange={setYamlDraft}
-                onReset={() => {
-                  if (yamlDraftStorageKey) {
-                    window.localStorage.removeItem(yamlDraftStorageKey)
-                  }
-                  setYamlDraft(yamlServerValue)
-                  Toast.success(t('yamlEditor.resetSuccess', 'YAML draft reset'))
-                }}
-                onSave={() => {
-                  if (!yamlDraftStorageKey) return
-                  window.localStorage.setItem(yamlDraftStorageKey, yamlDraft)
-                  Toast.success(t('yamlEditor.saveSuccess', 'YAML draft saved locally'))
-                }}
-                onApply={() => applyYAMLMutation.mutate()}
-                saveDisabled={!yamlDraftStorageKey}
-                applyDisabled={!nodeYAMLPath || !yamlDraft.trim()}
-                applying={applyYAMLMutation.isPending}
-              />
-            </Suspense>
-          )}
-        </TabPane>
-      </Tabs>
+                  onSave={() => {
+                    if (!yamlDraftStorageKey) return
+                    window.localStorage.setItem(yamlDraftStorageKey, yamlDraft)
+                    void message.success(t('yamlEditor.saveSuccess', 'YAML draft saved locally'))
+                  }}
+                  onApply={() => applyYAMLMutation.mutate()}
+                  saveDisabled={!yamlDraftStorageKey}
+                  applyDisabled={!nodeYAMLPath || !yamlDraft.trim()}
+                  applying={applyYAMLMutation.isPending}
+                />
+              </Suspense>
+            ),
+          },
+        ]}
+      />
     </div>
   )
 }

@@ -1,0 +1,21 @@
+{
+  "id": "reference/database-schema",
+  "title": "Database Schema",
+  "description": "PostgreSQL Tables",
+  "source": "@site/reference/database-schema.md",
+  "sourceDirName": "reference",
+  "slug": "/reference/database-schema",
+  "permalink": "/docs/reference/database-schema",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/kubecrux/kubecrux/tree/main/docs/reference/database-schema.md",
+  "tags": [],
+  "version": "current",
+  "lastUpdatedAt": 1539502055000,
+  "frontMatter": {},
+  "sidebar": "mainSidebar",
+  "previous": {
+    "title": "Product Information Architecture",
+    "permalink": "/docs/reference/product-information-architecture"
+  }
+}

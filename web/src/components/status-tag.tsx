@@ -1,6 +1,23 @@
-import { Tag } from '@douyinfe/semi-ui'
+import { Tag } from 'antd'
 
-type TagColor = 'grey' | 'green' | 'red' | 'orange' | 'blue'
+type TagColor = 'default' | 'success' | 'error' | 'warning' | 'processing' | 'grey' | 'green' | 'red' | 'orange' | 'blue'
+
+function resolveAntdTagColor(color: TagColor): Exclude<TagColor, 'grey' | 'green' | 'red' | 'orange' | 'blue'> {
+  switch (color) {
+    case 'green':
+      return 'success'
+    case 'red':
+      return 'error'
+    case 'orange':
+      return 'warning'
+    case 'blue':
+      return 'processing'
+    case 'grey':
+      return 'default'
+    default:
+      return color
+  }
+}
 
 function pickStatusColor(value: string): TagColor {
   const normalized = value.trim().toLowerCase()
@@ -10,40 +27,40 @@ function pickStatusColor(value: string): TagColor {
     'connected', 'published', 'visible', 'resolved', 'deployed', 'available',
     'bound', 'normal', 'true', 'allow',
   ].includes(normalized)) {
-    return 'green'
+    return 'success'
   }
 
   if ([
     'warning', 'pending', 'queued', 'building', 'waiting', 'released',
     'pending-install', 'pending-upgrade', 'draft',
   ].includes(normalized)) {
-    return 'orange'
+    return 'warning'
   }
 
   if ([
     'error', 'failed', 'disconnected', 'critical', 'crashloopbackoff',
     'terminating', 'notready', 'lost', 'deny',
   ].includes(normalized)) {
-    return 'red'
+    return 'error'
   }
 
   if (['acknowledged', 'info'].includes(normalized)) {
-    return 'blue'
+    return 'processing'
   }
 
-  return 'grey'
+  return 'default'
 }
 
 export function StatusTag({ value }: { value: string }) {
-  return <Tag color={pickStatusColor(value)}>{value}</Tag>
+  return <Tag color={resolveAntdTagColor(pickStatusColor(value))}>{value}</Tag>
 }
 
 export function BooleanTag({
   value,
   trueLabel = '是',
   falseLabel = '否',
-  trueColor = 'green',
-  falseColor = 'grey',
+  trueColor = 'success',
+  falseColor = 'default',
 }: {
   value: boolean
   trueLabel?: string
@@ -51,5 +68,5 @@ export function BooleanTag({
   trueColor?: TagColor
   falseColor?: TagColor
 }) {
-  return <Tag color={value ? trueColor : falseColor}>{value ? trueLabel : falseLabel}</Tag>
+  return <Tag color={resolveAntdTagColor(value ? trueColor : falseColor)}>{value ? trueLabel : falseLabel}</Tag>
 }

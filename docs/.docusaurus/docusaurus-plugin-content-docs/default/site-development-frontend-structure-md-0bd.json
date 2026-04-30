@@ -1,0 +1,25 @@
+{
+  "id": "development/frontend-structure",
+  "title": "Frontend Structure",
+  "description": "Current Stack",
+  "source": "@site/development/frontend-structure.md",
+  "sourceDirName": "development",
+  "slug": "/development/frontend-structure",
+  "permalink": "/docs/development/frontend-structure",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/kubecrux/kubecrux/tree/main/docs/development/frontend-structure.md",
+  "tags": [],
+  "version": "current",
+  "lastUpdatedAt": 1539502055000,
+  "frontMatter": {},
+  "sidebar": "mainSidebar",
+  "previous": {
+    "title": "Local Development",
+    "permalink": "/docs/development/local-development"
+  },
+  "next": {
+    "title": "Backend Structure",
+    "permalink": "/docs/development/backend-structure"
+  }
+}

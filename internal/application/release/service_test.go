@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	appaccess "github.com/kubecrux/kubecrux/internal/application/access"
 	domainapp "github.com/kubecrux/kubecrux/internal/domain/application"
 	domaincluster "github.com/kubecrux/kubecrux/internal/domain/cluster"
 	domainidentity "github.com/kubecrux/kubecrux/internal/domain/identity"
@@ -51,6 +52,22 @@ type stubReleaseResolver struct {
 	missing map[string]bool
 }
 
+type stubReleaseRolePermissionReader struct {
+	matrix map[string][]string
+}
+
+func (s stubReleaseRolePermissionReader) ListRolePermissions(context.Context) (map[string][]string, error) {
+	return s.matrix, nil
+}
+
+func releasePermissions(role string, keys ...string) *appaccess.PermissionResolver {
+	return appaccess.NewPermissionResolver(stubReleaseRolePermissionReader{
+		matrix: map[string][]string{
+			role: keys,
+		},
+	})
+}
+
 func (r *stubReleaseResolver) GetConnection(_ context.Context, clusterID string) (domaincluster.Connection, error) {
 	if r.missing[clusterID] {
 		return domaincluster.Connection{}, clusterrepo.ErrNotFound
@@ -80,9 +97,10 @@ func TestListPrunesStaleDependencies(t *testing.T) {
 		resolver: &stubReleaseResolver{
 			missing: map[string]bool{"cluster-missing": true},
 		},
+		permissions: releasePermissions("developer", appaccess.PermDeliveryReleasesView),
 	}
 
-	items, err := service.List(context.Background(), domainidentity.Principal{}, domainrelease.Filter{})
+	items, err := service.List(context.Background(), domainidentity.Principal{Roles: []string{"developer"}}, domainrelease.Filter{})
 	if err != nil {
 		t.Fatalf("List() error = %v", err)
 	}
@@ -106,11 +124,12 @@ func TestListPrunesStaleDependencies(t *testing.T) {
 func TestTriggerReturnsNotFoundWhenApplicationMissing(t *testing.T) {
 	repo := &stubReleaseRepository{}
 	service := &Service{
-		repo: repo,
-		apps: &stubReleaseApps{missing: map[string]bool{"missing-app": true}},
+		repo:        repo,
+		apps:        &stubReleaseApps{missing: map[string]bool{"missing-app": true}},
+		permissions: releasePermissions("developer", appaccess.PermDeliveryReleasesTrigger),
 	}
 
-	_, err := service.Trigger(context.Background(), domainidentity.Principal{}, domainrelease.TriggerInput{
+	_, err := service.Trigger(context.Background(), domainidentity.Principal{Roles: []string{"developer"}}, domainrelease.TriggerInput{
 		ApplicationID:  "missing-app",
 		ClusterID:      "cluster-ok",
 		Namespace:      "default",
@@ -119,6 +138,74 @@ func TestTriggerReturnsNotFoundWhenApplicationMissing(t *testing.T) {
 	})
 	if !errors.Is(err, apperrors.ErrNotFound) {
 		t.Fatalf("Trigger() error = %v, want ErrNotFound", err)
+	}
+	if repo.createCalls != 0 {
+		t.Fatalf("Create() called %d times, want 0", repo.createCalls)
+	}
+}
+
+func TestTriggerRequiresReleaseTriggerPermission(t *testing.T) {
+	repo := &stubReleaseRepository{}
+	service := &Service{
+		repo: repo,
+		apps: &stubReleaseApps{},
+	}
+
+	_, err := service.Trigger(context.Background(), domainidentity.Principal{Roles: []string{"readonly"}}, domainrelease.TriggerInput{
+		ApplicationID:  "app-ok",
+		ClusterID:      "cluster-ok",
+		Namespace:      "default",
+		DeploymentName: "dep",
+		Image:          "repo/image:tag",
+	})
+	if !errors.Is(err, apperrors.ErrAccessDenied) {
+		t.Fatalf("Trigger() error = %v, want ErrAccessDenied", err)
+	}
+	if repo.createCalls != 0 {
+		t.Fatalf("Create() called %d times, want 0", repo.createCalls)
+	}
+}
+
+func TestTriggerAllowsDelegatedReleasePermission(t *testing.T) {
+	repo := &stubReleaseRepository{}
+	service := &Service{
+		repo: repo,
+		apps: &stubReleaseApps{missing: map[string]bool{"app-ok": true}},
+		permissions: appaccess.NewPermissionResolver(stubReleaseRolePermissionReader{
+			matrix: map[string][]string{
+				"delegated": {appaccess.PermDeliveryReleasesTrigger},
+			},
+		}),
+	}
+
+	_, err := service.Trigger(context.Background(), domainidentity.Principal{Roles: []string{"delegated"}}, domainrelease.TriggerInput{
+		ApplicationID:  "app-ok",
+		ClusterID:      "cluster-ok",
+		Namespace:      "default",
+		DeploymentName: "dep",
+		Image:          "repo/image:tag",
+	})
+	if !errors.Is(err, apperrors.ErrNotFound) {
+		t.Fatalf("Trigger() error = %v, want ErrNotFound after passing permission gate", err)
+	}
+}
+
+func TestTriggerFailsClosedWithoutRuntimeResolver(t *testing.T) {
+	repo := &stubReleaseRepository{}
+	service := &Service{
+		repo: repo,
+		apps: &stubReleaseApps{},
+	}
+
+	_, err := service.Trigger(context.Background(), domainidentity.Principal{Roles: []string{"developer"}}, domainrelease.TriggerInput{
+		ApplicationID:  "app-ok",
+		ClusterID:      "cluster-ok",
+		Namespace:      "default",
+		DeploymentName: "dep",
+		Image:          "repo/image:tag",
+	})
+	if !errors.Is(err, apperrors.ErrAccessDenied) {
+		t.Fatalf("Trigger() error = %v, want ErrAccessDenied when runtime resolver is missing", err)
 	}
 	if repo.createCalls != 0 {
 		t.Fatalf("Create() called %d times, want 0", repo.createCalls)
