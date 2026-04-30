@@ -804,12 +804,19 @@ a {
   flex-wrap: wrap;
 }
 
-.kc-page-header {
+.kc-page-container-header {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
   flex-wrap: wrap;
+  padding: 4px 0 20px;
+  border-bottom: 1px solid var(--kc-border-color);
+}
+
+.kc-page-container-header-main {
+  min-width: 0;
+  flex: 1 1 auto;
 }
 
 .kc-page-title-wrap {
@@ -832,6 +839,12 @@ a {
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+.kc-pro-content-host {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
 }
 
 .kc-page-section {
@@ -1029,24 +1042,42 @@ a {
 .kc-auth-shell {
   display: flex;
   align-items: center;
-  justify-content: center;
   min-height: 100vh;
   padding: 24px;
-  background: var(--semi-color-bg-0);
+  background:
+    radial-gradient(circle at top left, rgba(22, 119, 255, 0.18), transparent 32%),
+    radial-gradient(circle at right 18%, rgba(19, 194, 194, 0.14), transparent 28%),
+    linear-gradient(180deg, var(--kc-bg-canvas), var(--kc-bg-surface-muted));
 }
 
 .kc-auth-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(360px, 420px);
+  align-items: stretch;
+  grid-template-columns: minmax(0, 1.1fr) minmax(360px, 440px);
   gap: 24px;
-  width: min(980px, 100%);
+  width: min(1120px, 100%);
+  margin: 0 auto;
+}
+
+.kc-auth-layout--pro {
+  position: relative;
 }
 
 .kc-auth-hero {
-  padding: 32px;
-  border: 1px solid var(--semi-color-border);
-  border-radius: var(--kc-radius);
-  background: var(--semi-color-bg-1);
+  display: flex;
+  flex-direction: column;
+  height: 646px;
+  padding: 40px;
+  border: 1px solid var(--kc-border-color);
+  border-radius: 28px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.88), rgba(255, 255, 255, 0.72));
+  box-shadow: 0 24px 80px rgba(15, 23, 42, 0.08);
+  backdrop-filter: blur(14px);
+}
+
+:root[data-theme-mode='dark'] .kc-auth-hero {
+  background: linear-gradient(180deg, rgba(17, 24, 39, 0.9), rgba(17, 24, 39, 0.76));
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.3);
 }
 
 .kc-auth-pill {
@@ -1055,8 +1086,9 @@ a {
   height: 30px;
   padding: 0 10px;
   border-radius: 999px;
-  background: var(--semi-color-fill-0);
-  color: var(--semi-color-primary);
+  border: 1px solid rgba(22, 119, 255, 0.16);
+  background: rgba(22, 119, 255, 0.08);
+  color: var(--kc-color-primary);
   font-size: 12px;
   font-weight: 600;
 }
@@ -1070,23 +1102,44 @@ a {
 
 .kc-auth-feature {
   padding: 16px;
-  border: 1px solid var(--semi-color-border);
-  border-radius: var(--kc-radius);
-  background: var(--semi-color-bg-2);
+  border: 1px solid var(--kc-border-color);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.62);
 }
 
 .kc-auth-feature-title {
   display: block;
   margin-bottom: 6px;
   font-weight: 600;
-  color: var(--semi-color-text-0);
+  color: var(--kc-text-primary);
 }
 
 .kc-auth-panel {
+  height: 646px;
+  padding: 0;
+  border: 1px solid var(--kc-border-color);
+  border-radius: 28px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 24px 80px rgba(15, 23, 42, 0.12);
+  overflow: hidden;
+}
+
+:root[data-theme-mode='dark'] .kc-auth-panel {
+  background: rgba(17, 24, 39, 0.92);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.34);
+}
+
+.kc-auth-panel.ant-card .ant-card-body {
+  height: 100%;
+  padding: 0;
+}
+
+.kc-auth-panel-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  height: 100%;
   padding: 32px;
-  border: 1px solid var(--semi-color-border);
-  border-radius: var(--kc-radius);
-  background: var(--semi-color-bg-1);
 }
 
 .kc-auth-brand {
@@ -1102,8 +1155,8 @@ a {
   justify-content: center;
   width: 42px;
   height: 42px;
-  border-radius: var(--kc-radius);
-  background: var(--semi-color-primary);
+  border-radius: 14px;
+  background: linear-gradient(135deg, var(--kc-color-primary), #13c2c2);
   color: #fff;
   font-size: 16px;
   font-weight: 700;
@@ -1113,10 +1166,55 @@ a {
   display: block;
 }
 
+.kc-auth-provider-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.kc-auth-provider-slot {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  min-height: 124px;
+  margin-top: auto;
+}
+
+.kc-auth-provider-button {
+  height: 52px;
+}
+
+.kc-auth-provider-button__content {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  width: 100%;
+}
+
+.kc-auth-provider-button__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  background: var(--kc-color-primary-light-default, rgba(22, 119, 255, 0.08));
+  color: var(--kc-color-primary);
+  font-size: 15px;
+  flex: 0 0 auto;
+}
+
+.kc-auth-provider-button__label {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+}
+
 .kc-auth-hint {
   margin-top: 18px;
   font-size: 12px;
-  color: var(--semi-color-text-2);
+  color: var(--kc-text-tertiary);
 }
 
 /* ─── Login Page Hero Logo ─── */
@@ -1561,6 +1659,11 @@ a {
 @media (max-width: 960px) {
   .kc-auth-layout {
     grid-template-columns: 1fr;
+  }
+
+  .kc-auth-hero,
+  .kc-auth-panel {
+    height: auto;
   }
 }
 

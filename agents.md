@@ -36,7 +36,7 @@ Project summary:
 
 - `kubecrux` is a multi-cluster Kubernetes platform console
 - backend baseline: Go + Gin + PostgreSQL + Redis + `client-go`
-- frontend baseline: React 18 + Vite 6 + TypeScript 5 + TanStack Query 5 + Zustand 5 + Ant Design 6
+- frontend baseline: React 18 + TypeScript 5 + Ant Design 6 + Vite + React Router + TanStack Query 5 + Zustand 5
 - docs baseline: Docusaurus
 
 ## 3. Engineering Baseline
@@ -53,8 +53,9 @@ Project summary:
 
 ### Frontend
 
-- runtime: React 18 + Vite 6 + TypeScript 5
-- routing: React Router 6
+- runtime: React 18 + TypeScript 5 + Vite
+- layout and scaffold: custom antd shell with shared theme tokens
+- routing: React Router
 - server state: TanStack Query 5
 - client state: Zustand 5
 - UI system: Ant Design 6
@@ -160,48 +161,55 @@ Two runtime modes are supported:
 
 ### 6.1 Frontend Structure
 
-The frontend is route-driven and domain-oriented.
+The frontend active baseline has been reset to the Vite application.
 
-- `web/src/routes`
-  - route registry and navigation metadata
+- active target: `web`
+- backup directory: `web_pro_backup`
+- migration reference: `old_web`
+- `web/src/App.tsx`
+  - app bootstrap and theme application
 - `web/src/layouts`
-  - shell layout
+  - shared shell layout and navigation chrome
+- `web/src/routes`
+  - React Router route registration and route metadata
 - `web/src/features`
-  - route-level business pages
+  - kubecrux business logic and route-level feature implementations
 - `web/src/components`
-  - real shared primitives only
+  - shared antd primitives and complex reusable widgets
 - `web/src/services`
-  - API client
+  - API clients and auth/runtime helpers
 - `web/src/stores`
-  - auth, preference, platform scope
+  - auth, preference, platform scope state
 - `web/src/utils`
-  - cross-page table/time helpers
+  - cross-page helpers and theme/branding helpers
 
 Current structure summary:
 
-- `web/src/routes` owns route registration and navigation metadata
-- `web/src/features` owns domain-oriented route pages
-- `web/src/components` owns real shared primitives only
+- `web` is the only active frontend target
+- `web_pro_backup` preserves the previous frontend backup and must not be treated as the active shell
+- `old_web` remains as migration/reference material only after the reset
+- `web/src/routes/**` defines the active route surface for the Vite app
+- `web/src/features/**` provides kubecrux business logic behind that route surface
 - `internal/api`, `internal/application`, `internal/policy`, `internal/infrastructure`, and `internal/repository` keep strict backend layer responsibilities
 - `docs/architecture` is the public architecture document set
 
 ### 6.2 UI and State Rules
 
 - Ant Design is the primary component system
-- `@/compat/semi-*` is a temporary migration aid only; new code must not depend on it
+- custom theme tokens under `web/src/theme/semi-theme.ts` remain the single source for light/dark/system mode and shared CSS variables
 - Zustand stores lightweight local UI/runtime preferences
 - TanStack Query owns server data lifecycle
-- route metadata is the navigation source of truth
+- route metadata in `web/src/routes/meta.ts` drives navigation, breadcrumb, and permission-aware route behavior
 - platform pages must share persisted cluster/namespace scope
 
 ### 6.3 Frontend Performance Rules
 
-- lazy-load route modules
+- lazy-load route modules where practical inside the Vite shell
 - avoid page-level repeated query construction
 - prefer shared scoped query helpers for platform pages
 - do not issue one request per namespace from the browser when backend aggregation exists
 - keep detail pages focused; expensive editors/log/terminal modules should remain lazy
-- migration work must replace Semi semantics with native antd semantics rather than widening compatibility wrappers indefinitely
+- frontend rebuild work must preserve the custom theme system and shared antd shell instead of reintroducing Umi-only shell assumptions
 
 ## 7. Functional Design
 

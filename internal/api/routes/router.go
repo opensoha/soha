@@ -51,6 +51,15 @@ func New(cfg cfgpkg.Config, logger *zap.Logger, deps Dependencies) *http.Server 
 	router.GET("/healthz", deps.System.Healthz)
 	router.GET("/readyz", deps.System.Readyz)
 	swaggerinfra.Register(router, cfg.Swagger.Enabled, cfg.Swagger.Path)
+	apiCompat := router.Group("/api")
+	apiCompat.Use(apiMiddleware.RequireAuth())
+	{
+		apiCompat.GET("/currentUser", deps.Auth.ProCurrentUser)
+		apiCompat.GET("/currentUserDetail", deps.Auth.ProCurrentUser)
+		apiCompat.GET("/accountSettingCurrentUser", deps.Auth.ProCurrentUser)
+		apiCompat.POST("/login/outLogin", deps.Auth.ProLogout)
+	}
+	router.POST("/api/login/account", deps.Auth.ProLogin)
 
 	v1 := router.Group(cfg.HTTP.BasePath)
 	{
@@ -69,6 +78,7 @@ func New(cfg cfgpkg.Config, logger *zap.Logger, deps Dependencies) *http.Server 
 	protected.Use(apiMiddleware.RequireAuth())
 	{
 		protected.GET("/auth/me", deps.Auth.Me)
+		protected.GET("/auth/bootstrap", deps.Auth.Bootstrap)
 		protected.POST("/auth/logout", deps.Auth.Logout)
 		protected.GET("/auth/sessions", deps.Auth.ListSessions)
 		protected.POST("/auth/sessions/:sessionID/revoke", deps.Auth.RevokeSession)

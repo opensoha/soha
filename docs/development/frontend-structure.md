@@ -2,20 +2,28 @@
 
 ## Current Stack
 
-- UI shell and page primitives use native `antd` and `@ant-design/icons`
+- the active frontend target is `web`, running on `vite` + `react-router-dom`
+- `web_pro_backup` preserves the previous frontend backup
+- `old_web` remains in-repo as a feature-behavior reference after the reset
+- UI shell and page primitives use native `antd`, `@ant-design/icons`, and the custom kubecrux layout/theme system
 - Tailwind CSS 4 is kept as a utility layer for layout and spacing
-- `web/src/styles/globals.css` defines the shared console shell and page skeleton
+- `web/src/styles/globals.css` defines shared kubecrux shell/page styling under the Vite app shell
 - route-driven pages consume TanStack Query server state and Zustand preference or scope state
 
 ```text
 web/src/
-  main.tsx
   App.tsx
+  main.tsx
+  layouts/
+    app-layout.tsx
+  routes/
+    index.tsx
+    meta.ts
   features/
     access/
       access-pages.tsx
     auth/
-      auth-guard.tsx
+      auth-api.ts
       login-page.tsx
       oidc-callback-page.tsx
     copilot/
@@ -37,11 +45,6 @@ web/src/
       settings-pages.tsx
     system/
       system-pages.tsx
-  layouts/
-    app-layout.tsx
-  routes/
-    index.tsx
-    meta.ts
   services/
     api-client.ts
   stores/
@@ -61,23 +64,22 @@ web/src/
   utils/
     table-columns.ts
     time.ts
+  theme/
+    semi-theme.ts
   vite-env.d.ts
 ```
 
 ## Frontend Rules
 
-- `web/src/App.tsx` only mounts `AppRouter`; runtime composition starts in `web/src/main.tsx`
-- route registration and lazy loading live in `web/src/routes/index.tsx`
-- sidebar grouping, titles, redirects, and breadcrumb metadata live in `web/src/routes/meta.ts`
-- `web/src/layouts/app-layout.tsx` owns the Ant Design shell: `Layout`, `Menu`, `Breadcrumb`, theme controls, user dropdown, and logout action
-- page implementations are grouped by business domain under `web/src/features`
-- platform pages intentionally stay bundled by capability today: `workloads-pages.tsx`, `network-storage-pages.tsx`, and `extensions-pages.tsx` each export multiple route-level pages
-- HTTP access goes through `web/src/services/api-client.ts`, which targets same-origin `/api/v1` and retries once after token refresh
+- `web/src/routes/index.tsx` is the active route surface for the Vite shell
+- `web/src/layouts/app-layout.tsx` owns the shared console shell, sidebar, header, breadcrumb, and theme-aware chrome
+- page entry modules should stay thin and delegate business logic to `web/src/features/**`
+- `web_pro_backup` and `old_web` are both reference-only and must not be treated as active shell structure
+- HTTP access goes through kubecrux auth helpers and same-origin `/api/v1`
 - persisted client state lives under `web/src/stores`; `preferences-store.ts` persists theme and sidebar preferences, while server state stays in TanStack Query
-- `components/` is now used for shared page skeleton parts such as `page-header.tsx` and `platform-scope-toolbar.tsx`
-- `components/` also contains shared admin primitives such as `admin-table.tsx`, `stat-grid.tsx`, and `status-tag.tsx`
+- `components/` contains shared antd primitives and heavier reusable widgets
 - `utils/time.ts` centralizes table-friendly date and relative-time formatting
 - `utils/table-columns.ts` centralizes common table-column width and alignment presets
 - `hooks/` is still intentionally absent today; only add it when reuse is concrete
-- when adding a new page, update both `web/src/routes/index.tsx` and `web/src/routes/meta.ts`
+- when adding a new active page, update `web/src/routes/index.tsx` and `web/src/routes/meta.ts` together
 - page code consumes aggregated DTOs only

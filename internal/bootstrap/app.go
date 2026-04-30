@@ -185,7 +185,7 @@ func New(ctx context.Context) (*App, error) {
 	integrationService := appintegration.New(mcpRegistry)
 
 	systemHandler := apiHandlers.NewSystemHandler(databaseStore, runtimeMetrics)
-	authHandler := apiHandlers.NewAuthHandler(identityService)
+	authHandler := apiHandlers.NewAuthHandler(identityService, accessConsoleService, settingsService)
 	announcementHandler := apiHandlers.NewAnnouncementHandler(announcementService)
 	menuHandler := apiHandlers.NewMenuHandler(menuService)
 	monitoringHandler := apiHandlers.NewMonitoringHandler(monitoringService)

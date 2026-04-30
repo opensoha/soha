@@ -22,19 +22,19 @@ type AccessTokenParser interface {
 
 func BuildPrincipalMiddleware(cfg cfgpkg.AuthConfig, parser AccessTokenParser) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		bearer := strings.TrimSpace(c.GetHeader("Authorization"))
-		if bearer == "" {
-			bearer = strings.TrimSpace(c.Query("access_token"))
+		token := normalizeBearerToken(c.GetHeader("Authorization"))
+		if token == "" {
+			token = strings.TrimSpace(c.Query("access_token"))
 		}
-		if bearer != "" {
-			principal, _, err := parser.ParseAccessToken(c.Request.Context(), bearer)
+		if token != "" {
+			principal, _, err := parser.ParseAccessToken(c.Request.Context(), token)
 			if err != nil {
 				apiresponse.Error(c, http.StatusUnauthorized, "unauthorized", err.Error())
 				c.Abort()
 				return
 			}
 			c.Set(principalKey, principal)
-			c.Set(accessTokenKey, bearer)
+			c.Set(accessTokenKey, token)
 			c.Next()
 			return
 		}
@@ -73,5 +73,16 @@ func PrincipalFromContext(c *gin.Context) domainidentity.Principal {
 func BearerTokenFromContext(c *gin.Context) string {
 	token, _ := c.Get(accessTokenKey)
 	value, _ := token.(string)
+	return value
+}
+
+func normalizeBearerToken(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	if len(value) >= 7 && strings.EqualFold(value[:7], "Bearer ") {
+		return strings.TrimSpace(value[7:])
+	}
 	return value
 }
