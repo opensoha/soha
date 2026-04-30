@@ -1,5 +1,5 @@
 import { Navigate, Outlet, useLocation } from 'react-router-dom'
-import { Empty, Spin } from '@douyinfe/semi-ui'
+import { Empty, Spin } from 'antd'
 import { usePermissionSnapshot } from '@/features/auth/permission-snapshot'
 import { canAccessRoute, findFirstAccessiblePath, getRouteMeta } from '@/routes/meta'
 import { useAuthStore } from '@/stores/auth-store'

@@ -1,6 +1,6 @@
 import { lazy, Suspense } from 'react'
 import { Navigate, Route, Routes } from 'react-router-dom'
-import { Spin } from '@douyinfe/semi-ui'
+import { Spin } from 'antd'
 import { AuthGuard } from '@/features/auth/auth-guard'
 import { AppLayout } from '@/layouts/app-layout'
 
@@ -42,6 +42,8 @@ const CronJobDetailPage = lazyNamed(() => import('@/features/platform/workloads-
 
 const ConfigurationConfigMapsPage = lazyNamed(() => import('@/features/platform/platform-management-pages'), 'ConfigurationConfigMapsPage')
 const ConfigurationSecretsPage = lazyNamed(() => import('@/features/platform/platform-management-pages'), 'ConfigurationSecretsPage')
+const ConfigMapDetailPage = lazyNamed(() => import('@/features/platform/configuration-detail-pages'), 'ConfigMapDetailPage')
+const SecretDetailPage = lazyNamed(() => import('@/features/platform/configuration-detail-pages'), 'SecretDetailPage')
 const ConfigurationResourceQuotasPage = lazyNamed(() => import('@/features/platform/platform-management-pages'), 'ConfigurationResourceQuotasPage')
 const ConfigurationLimitRangesPage = lazyNamed(() => import('@/features/platform/platform-management-pages'), 'ConfigurationLimitRangesPage')
 const ConfigurationHPAPage = lazyNamed(() => import('@/features/platform/platform-management-pages'), 'ConfigurationHPAPage')
@@ -150,7 +152,9 @@ export function AppRouter() {
 
           <Route path="/configuration" element={<Navigate to="/configuration/configmaps" replace />} />
           <Route path="/configuration/configmaps" element={<LazyPage><ConfigurationConfigMapsPage /></LazyPage>} />
+          <Route path="/configuration/configmaps/:configMapName" element={<LazyPage><ConfigMapDetailPage /></LazyPage>} />
           <Route path="/configuration/secrets" element={<LazyPage><ConfigurationSecretsPage /></LazyPage>} />
+          <Route path="/configuration/secrets/:secretName" element={<LazyPage><SecretDetailPage /></LazyPage>} />
           <Route path="/configuration/resourcequotas" element={<LazyPage><ConfigurationResourceQuotasPage /></LazyPage>} />
           <Route path="/configuration/limitranges" element={<LazyPage><ConfigurationLimitRangesPage /></LazyPage>} />
           <Route path="/configuration/hpas" element={<LazyPage><ConfigurationHPAPage /></LazyPage>} />

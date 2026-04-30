@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { Spin, Toast, Typography } from '@douyinfe/semi-ui'
+import { App, Spin, theme, Typography } from 'antd'
 import { api } from '@/services/api-client'
 import { useAuthStore } from '@/stores/auth-store'
 import type { ApiResponse, AuthResult } from '@/types'
@@ -10,6 +10,8 @@ const { Title, Text } = Typography
 export function OIDCCallbackPage() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
+  const { message } = App.useApp()
+  const { token } = theme.useToken()
   const { setTokens, setUser } = useAuthStore()
   const [error, setError] = useState<string | null>(null)
   const handledRef = useRef(false)
@@ -33,28 +35,28 @@ export function OIDCCallbackPage() {
         setTokens(authRes.data.tokens.accessToken, authRes.data.tokens.refreshToken)
         setUser(authRes.data.user)
 
-        Toast.success('登录成功')
+        message.success('登录成功')
         navigate('/', { replace: true })
       } catch (err: any) {
         setError(err?.message ?? 'OIDC 登录失败')
-        Toast.error(err?.message ?? 'OIDC 登录失败')
+        message.error(err?.message ?? 'OIDC 登录失败')
       }
     }
 
     exchangeCode(code)
-  }, [searchParams, navigate, setTokens, setUser])
+  }, [message, navigate, searchParams, setTokens, setUser])
 
   return (
-    <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: 'var(--semi-color-bg-0)' }}>
+    <div className="min-h-screen flex items-center justify-center" style={{ backgroundColor: token.colorBgLayout }}>
       <div className="flex flex-col items-center gap-4">
         {error ? (
           <>
-            <Title heading={4}>登录失败</Title>
+            <Title level={4}>登录失败</Title>
             <Text type="danger">{error}</Text>
             <a
               href="/login"
               className="mt-4"
-              style={{ color: 'var(--semi-color-primary)' }}
+              style={{ color: token.colorPrimary }}
             >
               返回登录
             </a>
@@ -62,7 +64,7 @@ export function OIDCCallbackPage() {
         ) : (
           <>
             <Spin size="large" />
-            <Text type="tertiary">正在完成登录...</Text>
+            <Text type="secondary">正在完成登录...</Text>
           </>
         )}
       </div>

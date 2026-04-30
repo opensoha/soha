@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef } from 'react'
 import Editor, { useMonaco } from '@monaco-editor/react'
-import { Button, Card, Space, Typography } from '@douyinfe/semi-ui'
-import { IconRefresh } from '@douyinfe/semi-icons'
+import { ReloadOutlined } from '@ant-design/icons'
+import { Button, Card, Space, Typography } from 'antd'
 import { configureMonacoYaml, type MonacoYaml } from 'monaco-yaml'
 import EditorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker'
 import YamlWorker from 'monaco-yaml/yaml.worker?worker'
@@ -104,12 +104,12 @@ export function K8sYamlEditor({
       <div className="kc-terminal-toolbar">
         <Space>
           <Text strong>{t('yamlEditor.title', 'Kubernetes YAML Editor')}</Text>
-          <Text type="tertiary" size="small">{t('yamlEditor.hint', 'Monaco + monaco-yaml with local schema assistance enabled')}</Text>
+          <Text type="secondary" style={{ fontSize: 12 }}>{t('yamlEditor.hint', 'Monaco + monaco-yaml with local schema assistance enabled')}</Text>
         </Space>
         <Space>
-          <Button theme="light" icon={<IconRefresh />} onClick={onReset}>{t('common.reset', 'Reset')}</Button>
-          <Button theme="light" onClick={onSave} disabled={saveDisabled}>{t('yamlEditor.saveDraft', 'Save Draft')}</Button>
-          <Button theme="solid" type="primary" onClick={onApply} loading={applying} disabled={applyDisabled}>{t('common.apply', 'Apply')}</Button>
+          <Button variant="outlined" icon={<ReloadOutlined />} onClick={onReset}>{t('common.reset', 'Reset')}</Button>
+          <Button variant="outlined" onClick={onSave} disabled={saveDisabled}>{t('yamlEditor.saveDraft', 'Save Draft')}</Button>
+          <Button type="primary" onClick={onApply} loading={applying} disabled={applyDisabled}>{t('common.apply', 'Apply')}</Button>
         </Space>
       </div>
       <div className="kc-yaml-editor-shell">

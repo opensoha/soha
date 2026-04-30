@@ -17,7 +17,7 @@ import {
   type NodeProps,
 } from '@xyflow/react'
 import dagre from 'dagre'
-import { Button, Card, Empty, Input, InputNumber, Select, Space, Switch, Tag, Typography } from '@douyinfe/semi-ui'
+import { Button, Card, Empty, Input, InputNumber, Select, Space, Switch, Tag, Typography } from 'antd'
 import '@xyflow/react/dist/style.css'
 import { useI18n } from '@/i18n'
 import {
@@ -36,6 +36,18 @@ const { Text } = Typography
 type SemiTagColor = 'grey' | 'blue' | 'cyan' | 'green' | 'yellow' | 'purple' | 'pink' | 'red' | 'orange'
 type FlowNode = Node<ReleaseDagNodeData, 'releaseStep'>
 type FlowEdge = Edge<{ condition: ReleaseDagEdgeCondition }>
+
+const DAG_NODE_TAG_COLORS: Record<SemiTagColor, string> = {
+  grey: 'default',
+  blue: 'blue',
+  cyan: 'cyan',
+  green: 'green',
+  yellow: 'gold',
+  purple: 'purple',
+  pink: 'magenta',
+  red: 'red',
+  orange: 'orange',
+}
 
 const DAG_NODE_OPTIONS: Array<{ value: ReleaseDagNodeType; label: string; color: SemiTagColor }> = [
   { value: 'manual_approval', label: '审批', color: 'orange' },
@@ -56,6 +68,7 @@ const EDGE_CONDITION_OPTIONS = [
 
 const NODE_WIDTH = 260
 const NODE_HEIGHT = 116
+const FULL_WIDTH_STYLE = { width: '100%' } as const
 
 interface ReleaseDagNodeData extends ReleaseDagNodeDefinition, Record<string, unknown> {}
 
@@ -180,10 +193,10 @@ function ReleaseStepNode({ data, selected }: NodeProps<FlowNode>) {
       <div className="kc-dag-node-card">
         <div className="kc-dag-node-head">
           <Text strong>{data.name}</Text>
-          <Tag color={option?.color || 'blue'}>{getDagNodeLabel(data.type, localeCode)}</Tag>
+          <Tag color={option ? DAG_NODE_TAG_COLORS[option.color] : 'blue'}>{getDagNodeLabel(data.type, localeCode)}</Tag>
         </div>
-        <Text type="tertiary" size="small">{localeCode === 'zh_CN' ? `超时 ${data.timeoutSeconds ?? 300}s` : `timeout ${data.timeoutSeconds ?? 300}s`}</Text>
-        {data.continueOnFailure ? <Text type="warning" size="small">{localeCode === 'zh_CN' ? '失败继续' : 'Continue on failure'}</Text> : null}
+        <Text type="secondary" className="text-xs">{localeCode === 'zh_CN' ? `超时 ${data.timeoutSeconds ?? 300}s` : `timeout ${data.timeoutSeconds ?? 300}s`}</Text>
+        {data.continueOnFailure ? <Text type="warning" className="text-xs">{localeCode === 'zh_CN' ? '失败继续' : 'Continue on failure'}</Text> : null}
       </div>
       <Handle type="source" position={Position.Bottom} />
     </div>
@@ -208,10 +221,10 @@ function StepConfigInspector({
           <Input
             value={Array.isArray(config.approverRoles) ? config.approverRoles.join(', ') : ''}
             placeholder="release-manager, ops-lead"
-            onChange={(value) => patch('approverRoles', value.split(',').map((item) => item.trim()).filter(Boolean))}
+            onChange={(event) => patch('approverRoles', event.target.value.split(',').map((item) => item.trim()).filter(Boolean))}
           />
           <div className="kc-step-inline">
-            <Text type="tertiary" size="small">{localeCode === 'zh_CN' ? '必须审批' : 'Required approval'}</Text>
+            <Text type="secondary" className="text-xs">{localeCode === 'zh_CN' ? '必须审批' : 'Required approval'}</Text>
             <Switch checked={config.required !== false} onChange={(checked) => patch('required', checked)} />
           </div>
         </>
@@ -219,10 +232,11 @@ function StepConfigInspector({
     case 'deploy_update_image':
       return (
         <>
-          <Input value={String(config.targetRef ?? 'primary')} placeholder="target ref" onChange={(value) => patch('targetRef', value)} />
+          <Input value={String(config.targetRef ?? 'primary')} placeholder="target ref" onChange={(event) => patch('targetRef', event.target.value)} />
           <Select
+            style={FULL_WIDTH_STYLE}
             value={String(config.imageTagSource ?? 'workflow_input')}
-            optionList={[
+            options={[
               { value: 'workflow_input', label: localeCode === 'zh_CN' ? '执行时输入' : 'Runtime input' },
               { value: 'application_default', label: localeCode === 'zh_CN' ? '应用默认 Tag' : 'Application default tag' },
               { value: 'build_artifact', label: localeCode === 'zh_CN' ? '构建产物' : 'Build artifact' },
@@ -233,45 +247,46 @@ function StepConfigInspector({
       )
     case 'wait_rollout':
       return (
-        <InputNumber value={Number(config.timeoutSeconds ?? 300)} min={30} step={30} onChange={(value) => patch('timeoutSeconds', Number(value || 300))} />
+        <InputNumber style={FULL_WIDTH_STYLE} value={Number(config.timeoutSeconds ?? 300)} min={30} step={30} onChange={(value) => patch('timeoutSeconds', Number(value || 300))} />
       )
     case 'check_http':
       return (
         <>
-          <Input value={String(config.url ?? '')} placeholder="https://service/healthz" onChange={(value) => patch('url', value)} />
-          <InputNumber value={Number(config.expectedStatus ?? 200)} min={100} max={599} onChange={(value) => patch('expectedStatus', Number(value || 200))} />
+          <Input value={String(config.url ?? '')} placeholder="https://service/healthz" onChange={(event) => patch('url', event.target.value)} />
+          <InputNumber style={FULL_WIDTH_STYLE} value={Number(config.expectedStatus ?? 200)} min={100} max={599} onChange={(value) => patch('expectedStatus', Number(value || 200))} />
         </>
       )
     case 'check_k8s_event':
       return (
         <>
           <Select
+            style={FULL_WIDTH_STYLE}
             value={String(config.eventType ?? 'Warning')}
-            optionList={[
+            options={[
               { value: 'Warning', label: 'Warning' },
               { value: 'Normal', label: 'Normal' },
             ]}
             onChange={(value) => patch('eventType', String(value))}
           />
-          <Input value={String(config.reasonContains ?? '')} placeholder="BackOff / Failed / Unhealthy" onChange={(value) => patch('reasonContains', value)} />
+          <Input value={String(config.reasonContains ?? '')} placeholder="BackOff / Failed / Unhealthy" onChange={(event) => patch('reasonContains', event.target.value)} />
         </>
       )
     case 'smoke_test':
       return (
         <>
-          <Input value={String(config.endpoint ?? '')} placeholder="https://service/smoke" onChange={(value) => patch('endpoint', value)} />
-          <InputNumber value={Number(config.expectedStatus ?? 200)} min={100} max={599} onChange={(value) => patch('expectedStatus', Number(value || 200))} />
+          <Input value={String(config.endpoint ?? '')} placeholder="https://service/smoke" onChange={(event) => patch('endpoint', event.target.value)} />
+          <InputNumber style={FULL_WIDTH_STYLE} value={Number(config.expectedStatus ?? 200)} min={100} max={599} onChange={(value) => patch('expectedStatus', Number(value || 200))} />
         </>
       )
     case 'notify':
       return (
         <>
-          <Input value={String(config.channel ?? '')} placeholder="wecom-release / ding-group" onChange={(value) => patch('channel', value)} />
-          <Input value={String(config.template ?? 'release-result')} placeholder="template" onChange={(value) => patch('template', value)} />
+          <Input value={String(config.channel ?? '')} placeholder="wecom-release / ding-group" onChange={(event) => patch('channel', event.target.value)} />
+          <Input value={String(config.template ?? 'release-result')} placeholder="template" onChange={(event) => patch('template', event.target.value)} />
         </>
       )
     case 'rollback_to_previous':
-      return <Text type="tertiary" size="small">{localeCode === 'zh_CN' ? '回滚到最近成功的上一版 revision。' : 'Roll back to the previous successful revision.'}</Text>
+      return <Text type="secondary" className="text-xs">{localeCode === 'zh_CN' ? '回滚到最近成功的上一版 revision。' : 'Roll back to the previous successful revision.'}</Text>
     default:
       return null
   }
@@ -352,19 +367,19 @@ function ReleaseFlowDagEditorInner({
       <Card className="kc-dag-panel" title={localeCode === 'zh_CN' ? '节点面板' : 'Node Palette'}>
         <div className="kc-dag-palette">
           {DAG_NODE_OPTIONS.map((item) => (
-            <Button key={item.value} theme="light" onClick={() => addNode(item.value)}>
+            <Button key={item.value} onClick={() => addNode(item.value)}>
               {getDagNodeLabel(item.value, localeCode)}
             </Button>
           ))}
         </div>
         <Space>
-          <Button theme="solid" onClick={applyAutoLayout}>{localeCode === 'zh_CN' ? '自动布局' : 'Auto Layout'}</Button>
-          <Button theme="light" onClick={() => fitView({ padding: 0.2 })}>{localeCode === 'zh_CN' ? '适配视图' : 'Fit View'}</Button>
-          <Button theme="borderless" type="danger" disabled={!selectedNodeId && !selectedEdgeId} onClick={removeSelected}>
+          <Button type="primary" onClick={applyAutoLayout}>{localeCode === 'zh_CN' ? '自动布局' : 'Auto Layout'}</Button>
+          <Button onClick={() => fitView({ padding: 0.2 })}>{localeCode === 'zh_CN' ? '适配视图' : 'Fit View'}</Button>
+          <Button type="text" danger disabled={!selectedNodeId && !selectedEdgeId} onClick={removeSelected}>
             {localeCode === 'zh_CN' ? '删除选中' : 'Delete Selected'}
           </Button>
         </Space>
-        <Text type="tertiary" size="small">
+        <Text type="secondary" className="text-xs">
           {localeCode === 'zh_CN'
             ? '节点可直接在画布中拖动。连线默认表示 `success`，右侧属性面板可以改成 `failure` 或 `always`。'
             : 'Drag nodes directly on the canvas. Edges default to `success`, and the inspector can switch them to `failure` or `always`.'}
@@ -399,11 +414,12 @@ function ReleaseFlowDagEditorInner({
             <Text strong>{localeCode === 'zh_CN' ? '节点属性' : 'Node Properties'}</Text>
             <Input
               value={selectedNode.data.name}
-              onChange={(value) => setNodes((current) => current.map((node) => node.id === selectedNode.id ? { ...node, data: { ...node.data, name: value } } : node))}
+              onChange={(event) => setNodes((current) => current.map((node) => node.id === selectedNode.id ? { ...node, data: { ...node.data, name: event.target.value } } : node))}
             />
             <Select
+              style={FULL_WIDTH_STYLE}
               value={selectedNode.data.type}
-              optionList={DAG_NODE_OPTIONS.map((item) => ({ value: item.value, label: getDagNodeLabel(item.value, localeCode) }))}
+              options={DAG_NODE_OPTIONS.map((item) => ({ value: item.value, label: getDagNodeLabel(item.value, localeCode) }))}
               onChange={(value) => {
                 const nextType = String(value) as ReleaseDagNodeType
                 setNodes((current) => current.map((node) => node.id === selectedNode.id ? {
@@ -417,13 +433,14 @@ function ReleaseFlowDagEditorInner({
               }}
             />
             <InputNumber
+              style={FULL_WIDTH_STYLE}
               value={selectedNode.data.timeoutSeconds ?? 300}
               min={30}
               step={30}
               onChange={(value) => setNodes((current) => current.map((node) => node.id === selectedNode.id ? { ...node, data: { ...node.data, timeoutSeconds: Number(value || 300) } } : node))}
             />
             <div className="kc-step-inline">
-              <Text type="tertiary" size="small">{localeCode === 'zh_CN' ? '失败继续' : 'Continue on Failure'}</Text>
+              <Text type="secondary" className="text-xs">{localeCode === 'zh_CN' ? '失败继续' : 'Continue on Failure'}</Text>
               <Switch
                 checked={Boolean(selectedNode.data.continueOnFailure)}
                 onChange={(checked) => setNodes((current) => current.map((node) => node.id === selectedNode.id ? { ...node, data: { ...node.data, continueOnFailure: checked } } : node))}
@@ -438,14 +455,15 @@ function ReleaseFlowDagEditorInner({
           <div className="kc-dag-inspector">
             <Text strong>{localeCode === 'zh_CN' ? '连线属性' : 'Edge Properties'}</Text>
             <Select
+              style={FULL_WIDTH_STYLE}
               value={selectedEdge.data?.condition || 'success'}
-              optionList={edgeConditionOptions}
+              options={edgeConditionOptions}
               onChange={(value) => {
                 const condition = String(value) as ReleaseDagEdgeCondition
                 setEdges((current) => current.map((edge) => edge.id === selectedEdge.id ? { ...edge, label: condition, data: { condition } } : edge))
               }}
             />
-            <Text type="tertiary" size="small">{`${selectedEdge.source} -> ${selectedEdge.target}`}</Text>
+            <Text type="secondary" className="text-xs">{`${selectedEdge.source} -> ${selectedEdge.target}`}</Text>
           </div>
         ) : (
           <Empty description={localeCode === 'zh_CN' ? '选择节点或连线后，可在这里编辑属性' : 'Select a node or edge to edit its properties here'} />

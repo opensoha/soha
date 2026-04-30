@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Button, Card, Descriptions, Empty, InputNumber, Select, Tag, TextArea, Toast, Typography } from '@douyinfe/semi-ui'
+import { App, Button, Card, Descriptions, Empty, Input, InputNumber, Select, Tag, Typography } from 'antd'
 import { useMutation } from '@tanstack/react-query'
 import { useI18n } from '@/i18n'
 import { api } from '@/services/api-client'
@@ -26,6 +26,7 @@ export function PodExecPanel({
   containerOptions: Array<{ value: string; label: string }>
 }) {
   const { localeCode } = useI18n()
+  const { message } = App.useApp()
   const [command, setCommand] = useState(COMMAND_PRESETS[0])
   const [timeoutSeconds, setTimeoutSeconds] = useState(10)
   const [container, setContainer] = useState('')
@@ -54,9 +55,9 @@ export function PodExecPanel({
     },
     onSuccess: (response) => {
       setResult(response.data)
-      Toast.success(localeCode === 'zh_CN' ? '命令执行完成' : 'Command executed')
+      message.success(localeCode === 'zh_CN' ? '命令执行完成' : 'Command executed')
     },
-    onError: (err: Error) => Toast.error(err.message),
+    onError: (err: Error) => message.error(err.message),
   })
 
   if (!clusterId || !namespace) {
@@ -70,7 +71,7 @@ export function PodExecPanel({
           <div className="flex flex-wrap items-center gap-2">
             <Text strong>{localeCode === 'zh_CN' ? '快捷命令' : 'Presets'}</Text>
             {COMMAND_PRESETS.map((item) => (
-              <Button key={item} size="small" theme="light" onClick={() => setCommand(item)}>
+              <Button key={item} size="small" variant="outlined" onClick={() => setCommand(item)}>
                 {item}
               </Button>
             ))}
@@ -81,18 +82,18 @@ export function PodExecPanel({
               <Text strong>{localeCode === 'zh_CN' ? '容器' : 'Container'}</Text>
               <Select
                 value={container || undefined}
-                onChange={(value) => setContainer(String(value || ''))}
-                optionList={containerOptions}
+                onChange={(value) => setContainer(String(value ?? ''))}
+                options={containerOptions}
                 placeholder={localeCode === 'zh_CN' ? '选择容器' : 'Select container'}
-                showClear
+                allowClear
               />
             </div>
             <div className="flex flex-col gap-2">
               <Text strong>{localeCode === 'zh_CN' ? '命令' : 'Command'}</Text>
-              <TextArea
+              <Input.TextArea
                 value={command}
-                onChange={setCommand}
-                autosize={{ minRows: 3, maxRows: 6 }}
+                onChange={(event) => setCommand(event.target.value)}
+                autoSize={{ minRows: 3, maxRows: 6 }}
                 placeholder={localeCode === 'zh_CN' ? '请输入要在容器中执行的命令' : 'Enter the command to run inside the container'}
               />
             </div>
@@ -104,7 +105,6 @@ export function PodExecPanel({
 
           <div className="flex justify-end">
             <Button
-              theme="solid"
               type="primary"
               loading={execMutation.isPending}
               disabled={!command.trim()}
@@ -121,16 +121,16 @@ export function PodExecPanel({
           <Card
             className="kc-detail-card"
             title={localeCode === 'zh_CN' ? '执行结果' : 'Execution Result'}
-            headerExtraContent={<Tag color={result.success ? 'green' : 'red'}>{result.success ? (localeCode === 'zh_CN' ? '成功' : 'Success') : (localeCode === 'zh_CN' ? '失败' : 'Failed')}</Tag>}
+            extra={<Tag color={result.success ? 'green' : 'red'}>{result.success ? (localeCode === 'zh_CN' ? '成功' : 'Success') : (localeCode === 'zh_CN' ? '失败' : 'Failed')}</Tag>}
           >
             <Descriptions
-              data={[
-                { key: localeCode === 'zh_CN' ? '命令' : 'Command', value: result.command },
-                { key: localeCode === 'zh_CN' ? '容器' : 'Container', value: result.container || '-' },
-                { key: localeCode === 'zh_CN' ? '执行时间' : 'Executed At', value: formatDateTime(result.executedAt) },
-                { key: 'Stdout', value: `${result.stdoutBytes} B${result.stdoutTruncated ? ` (${localeCode === 'zh_CN' ? '已截断' : 'truncated'})` : ''}` },
-                { key: 'Stderr', value: `${result.stderrBytes} B${result.stderrTruncated ? ` (${localeCode === 'zh_CN' ? '已截断' : 'truncated'})` : ''}` },
-                { key: localeCode === 'zh_CN' ? '退出信息' : 'Exit Message', value: result.exitMessage || '-' },
+              items={[
+                { key: 'command', label: localeCode === 'zh_CN' ? '命令' : 'Command', children: result.command },
+                { key: 'container', label: localeCode === 'zh_CN' ? '容器' : 'Container', children: result.container || '-' },
+                { key: 'executedAt', label: localeCode === 'zh_CN' ? '执行时间' : 'Executed At', children: formatDateTime(result.executedAt) },
+                { key: 'stdout', label: 'Stdout', children: `${result.stdoutBytes} B${result.stdoutTruncated ? ` (${localeCode === 'zh_CN' ? '已截断' : 'truncated'})` : ''}` },
+                { key: 'stderr', label: 'Stderr', children: `${result.stderrBytes} B${result.stderrTruncated ? ` (${localeCode === 'zh_CN' ? '已截断' : 'truncated'})` : ''}` },
+                { key: 'exitMessage', label: localeCode === 'zh_CN' ? '退出信息' : 'Exit Message', children: result.exitMessage || '-' },
               ]}
             />
           </Card>

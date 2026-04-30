@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Button, Card, Empty, Input, Select, Space, Switch, Tag, Typography } from '@douyinfe/semi-ui'
-import { IconDelete, IconRefresh } from '@douyinfe/semi-icons'
+import { DeleteOutlined, ReloadOutlined } from '@ant-design/icons'
+import { Button, Card, Empty, Input, Select, Space, Switch, Tag, Typography } from 'antd'
 import { useI18n } from '@/i18n'
 import { api } from '@/services/api-client'
 import { useAuthStore } from '@/stores/auth-store'
@@ -388,7 +388,7 @@ export function PodLogViewer({
     <Card className="kc-detail-card">
       <div className="kc-terminal-toolbar">
         <Space>
-          <Tag color={connectionState === 'connected' ? 'green' : connectionState === 'connecting' ? 'blue' : connectionState === 'error' ? 'red' : 'grey'}>
+          <Tag color={connectionState === 'connected' ? 'green' : connectionState === 'connecting' ? 'blue' : connectionState === 'error' ? 'red' : connectionState === 'closed' ? 'orange' : undefined}>
             {connectionState}
           </Tag>
           <Tag color={previous ? 'orange' : 'blue'}>
@@ -396,25 +396,30 @@ export function PodLogViewer({
               ? (localeCode === 'zh_CN' ? '历史日志' : 'Historical logs')
               : (localeCode === 'zh_CN' ? '当前日志' : 'Current logs')}
           </Tag>
-          <Text type="tertiary" size="small">{statusMessage}</Text>
+          <Text type="secondary" style={{ fontSize: 12 }}>{statusMessage}</Text>
         </Space>
         <Space>
           {containerOptions && containerOptions.length > 0 ? (
             <Select
               value={container || undefined}
-              onChange={(value) => onContainerChange?.(String(value || ''))}
-              optionList={containerOptions}
+              onChange={(value) => onContainerChange?.(String(value ?? ''))}
+              options={containerOptions}
               placeholder={t('common.container', 'Container')}
               style={{ width: 220 }}
-              showClear
+              allowClear
             />
           ) : null}
-          <Input value={keyword} onChange={setKeyword} placeholder={t('podLogViewer.searchPlaceholder', 'Search log keyword')} style={{ width: 220 }} />
+          <Input
+            value={keyword}
+            onChange={(event) => setKeyword(event.target.value)}
+            placeholder={t('podLogViewer.searchPlaceholder', 'Search log keyword')}
+            style={{ width: 220 }}
+          />
           <Select
             value={String(sinceSeconds)}
             onChange={(value) => setSinceSeconds(Number(value) || 0)}
             style={{ width: 180 }}
-            optionList={[
+            options={[
               { value: '0', label: t('podLogViewer.timeAll', 'All available') },
               { value: '300', label: t('podLogViewer.time5m', 'Last 5 min') },
               { value: '900', label: t('podLogViewer.time15m', 'Last 15 min') },
@@ -423,16 +428,16 @@ export function PodLogViewer({
             ]}
           />
           <div className="kc-step-inline">
-            <Text type="tertiary" size="small">{t('podLogViewer.autoScroll', 'Auto scroll')}</Text>
-            <Switch checked={autoScroll} onChange={setAutoScroll} />
+            <Text type="secondary" style={{ fontSize: 12 }}>{t('podLogViewer.autoScroll', 'Auto scroll')}</Text>
+            <Switch checked={autoScroll} onChange={(checked) => setAutoScroll(checked)} />
           </div>
           <div className="kc-step-inline">
-            <Text type="tertiary" size="small">{localeCode === 'zh_CN' ? '历史日志' : 'Historical logs'}</Text>
-            <Switch checked={previous} onChange={(value) => setPrevious(Boolean(value))} />
+            <Text type="secondary" style={{ fontSize: 12 }}>{localeCode === 'zh_CN' ? '历史日志' : 'Historical logs'}</Text>
+            <Switch checked={previous} onChange={(checked) => setPrevious(checked)} />
           </div>
-          <Button icon={<IconDelete />} theme="borderless" onClick={() => setLines([])}>{t('podLogViewer.clear', 'Clear')}</Button>
+          <Button icon={<DeleteOutlined />} type="text" onClick={() => setLines([])}>{t('podLogViewer.clear', 'Clear')}</Button>
           <Button
-            theme="borderless"
+            type="text"
             onClick={() => downloadText(
               `${podName}-${previous ? 'historical' : 'current'}-logs.txt`,
               exportLogContent,
@@ -441,7 +446,7 @@ export function PodLogViewer({
           >
             {localeCode === 'zh_CN' ? '导出日志' : 'Export Logs'}
           </Button>
-          <Button icon={<IconRefresh />} size="small" theme="borderless" onClick={() => fetchSnapshot(historyLines)}>{t('podLogViewer.reconnect', 'Reconnect')}</Button>
+          <Button icon={<ReloadOutlined />} size="small" type="text" onClick={() => fetchSnapshot(historyLines)}>{t('podLogViewer.reconnect', 'Reconnect')}</Button>
         </Space>
       </div>
       <div ref={scrollerRef} className="kc-log-shell" onScroll={() => { void handleScroll() }}>

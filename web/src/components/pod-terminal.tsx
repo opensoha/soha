@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Button, Card, Empty, Space, Tag, Typography } from '@douyinfe/semi-ui'
-import { IconRefresh } from '@douyinfe/semi-icons'
+import { ReloadOutlined } from '@ant-design/icons'
+import { Button, Card, Empty, Space, Tag, Typography } from 'antd'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
@@ -225,9 +225,9 @@ export function PodTerminal({
         <Space>
           <Text strong>{container ? `${t('common.container', 'Container')}: ${container}` : t('podTerminal.defaultContainer', 'Container: default')}</Text>
           <TagByState state={connectionState} />
-          <Text type="tertiary" size="small">{lastMessage}</Text>
+          <Text type="secondary" style={{ fontSize: 12 }}>{lastMessage}</Text>
         </Space>
-        <Button icon={<IconRefresh />} size="small" theme="borderless" onClick={connect}>
+        <Button icon={<ReloadOutlined />} size="small" type="text" onClick={connect}>
           {t('podTerminal.reconnect', 'Reconnect')}
         </Button>
       </div>
@@ -241,7 +241,7 @@ export function PodTerminal({
 function TagByState({ state }: { state: 'idle' | 'connecting' | 'connected' | 'closed' | 'error' }) {
   const { localeCode } = useI18n()
   const mapping = {
-    idle: { color: 'grey', label: localeCode === 'zh_CN' ? '空闲' : 'Idle' },
+    idle: { color: undefined, label: localeCode === 'zh_CN' ? '空闲' : 'Idle' },
     connecting: { color: 'blue', label: localeCode === 'zh_CN' ? '连接中' : 'Connecting' },
     connected: { color: 'green', label: localeCode === 'zh_CN' ? '已连接' : 'Connected' },
     closed: { color: 'orange', label: localeCode === 'zh_CN' ? '已关闭' : 'Closed' },

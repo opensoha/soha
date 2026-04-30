@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { Card, Space, Tag, Typography } from '@douyinfe/semi-ui'
+import { Card, Space, Tag, Typography } from 'antd'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '@/services/api-client'
 import { usePlatformScopeStore } from '@/stores/platform-scope-store'
@@ -71,17 +71,17 @@ export function PlatformClusterScopeHint({ resourceLabel }: { resourceLabel: str
 
   return (
     <Card className="kc-scope-hint-card">
-      <Space vertical align="start" spacing="tight">
+      <Space direction="vertical" align="start" size={4}>
         <Text strong>{`${resourceLabel} 业务线范围说明`}</Text>
-        <Text type="tertiary">
+        <Text type="secondary">
           {`${resourceLabel} 属于集群级共享资源，不会按单个 workload 再拆分。页面可见性由你在当前集群已绑定的发布目标范围决定。`}
         </Text>
         {namespace ? (
-          <Text type="tertiary">当前页是集群级视图，已选择的命名空间筛选不会影响这类资源结果。</Text>
+          <Text type="secondary">当前页是集群级视图，已选择的命名空间筛选不会影响这类资源结果。</Text>
         ) : null}
         {scopeSummary && scopeSummary.bindingsCount > 0 ? (
           <>
-            <Text type="tertiary">
+            <Text type="secondary">
               {`当前集群命中了 ${scopeSummary.bindingsCount} 条应用环境绑定，覆盖 ${scopeSummary.businessLines.length} 条业务线、${scopeSummary.environments.length} 个环境、${scopeSummary.applications.length} 个应用。`}
             </Text>
             <div className="kc-scope-hint-tags">
