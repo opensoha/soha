@@ -267,6 +267,9 @@ Design expectations:
 - workload/network/storage views should prefer aggregated APIs
 - frontend behavior must match backend scope semantics
 - cluster management should remain a registration and connection-management surface, not a separate cluster overview workspace
+- the CRD workspace is now an operational surface: the catalog must expose each CRD's kind, plural, served versions, and scope, and the same workspace should list real CRD-backed resources plus YAML-based create/edit/delete actions for the selected kind
+- CRD-backed resource listing follows CRD scope semantics: cluster-scoped CRDs ignore namespace selection, while namespaced CRDs must support both single-namespace views and all-namespaces aggregation when no namespace filter is active
+- CRD-backed resource CRUD and YAML flows are currently direct-cluster capabilities only; agent-connected clusters must surface those paths as unsupported instead of implying parity
 
 ### 7.2 Delivery
 

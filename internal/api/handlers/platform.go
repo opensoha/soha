@@ -123,6 +123,11 @@ type ResourceService interface {
 	RegisterPortForward(context.Context, domainidentity.Principal, string, domainresource.PortForwardRegisterInput) (domainresource.PortForwardSessionView, error)
 	StopPortForward(context.Context, domainidentity.Principal, string, string) error
 	ListCRDs(context.Context, domainidentity.Principal, string) ([]domainresource.CRDView, error)
+	ListCRDResources(context.Context, domainidentity.Principal, string, string, string) ([]domainresource.CustomResourceView, error)
+	CreateCRDResourceFromYAML(context.Context, domainidentity.Principal, string, string, string, string) (domainresource.ResourceYAMLView, error)
+	GetCRDResourceYAML(context.Context, domainidentity.Principal, string, string, string, string) (domainresource.ResourceYAMLView, error)
+	ApplyCRDResourceYAML(context.Context, domainidentity.Principal, string, string, string, string, string) (domainresource.ResourceYAMLView, error)
+	DeleteCRDResource(context.Context, domainidentity.Principal, string, string, string, string) error
 	ListHelmReleases(context.Context, domainidentity.Principal, string, string) ([]domainresource.HelmReleaseView, error)
 	ListClusterEvents(context.Context, domainidentity.Principal, string, string, int) ([]domainresource.ClusterEventView, error)
 	RestartDeployment(context.Context, domainidentity.Principal, string, string, string) error
@@ -1452,6 +1457,78 @@ func (h *PlatformHandler) ListCRDs(c *gin.Context) {
 		return
 	}
 	apiresponse.Items(c, http.StatusOK, items)
+}
+
+func (h *PlatformHandler) ListCRDResources(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	namespace := c.Query("namespace")
+	items, err := h.resources.ListCRDResources(c.Request.Context(), principal, c.Param("clusterID"), c.Param("crdName"), namespace)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Items(c, http.StatusOK, items)
+}
+
+func (h *PlatformHandler) CreateCRDResource(c *gin.Context) {
+	var payload struct {
+		Content   string `json:"content"`
+		Namespace string `json:"namespace"`
+	}
+	if err := c.ShouldBindJSON(&payload); err != nil {
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid create resource payload")
+		return
+	}
+	principal := apiMiddleware.PrincipalFromContext(c)
+	namespace := payload.Namespace
+	if namespace == "" {
+		namespace = c.Query("namespace")
+	}
+	item, err := h.resources.CreateCRDResourceFromYAML(c.Request.Context(), principal, c.Param("clusterID"), c.Param("crdName"), namespace, payload.Content)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusCreated, item)
+}
+
+func (h *PlatformHandler) GetCRDResourceYAML(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	namespace := c.Query("namespace")
+	item, err := h.resources.GetCRDResourceYAML(c.Request.Context(), principal, c.Param("clusterID"), c.Param("crdName"), namespace, c.Param("name"))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
+}
+
+func (h *PlatformHandler) ApplyCRDResourceYAML(c *gin.Context) {
+	var payload struct {
+		Content string `json:"content"`
+	}
+	if err := c.ShouldBindJSON(&payload); err != nil {
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid yaml payload")
+		return
+	}
+	principal := apiMiddleware.PrincipalFromContext(c)
+	namespace := c.Query("namespace")
+	item, err := h.resources.ApplyCRDResourceYAML(c.Request.Context(), principal, c.Param("clusterID"), c.Param("crdName"), namespace, c.Param("name"), payload.Content)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
+}
+
+func (h *PlatformHandler) DeleteCRDResource(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	namespace := c.Query("namespace")
+	if err := h.resources.DeleteCRDResource(c.Request.Context(), principal, c.Param("clusterID"), c.Param("crdName"), namespace, c.Param("name")); err != nil {
+		writeError(c, err)
+		return
+	}
+	c.Status(http.StatusNoContent)
 }
 
 func (h *PlatformHandler) ListHelmReleases(c *gin.Context) {

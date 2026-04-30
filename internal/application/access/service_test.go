@@ -308,3 +308,34 @@ func TestAuthorizeAllowsDeveloperRollbackWithinPlatformScopeGrant(t *testing.T) 
 		t.Fatalf("decision.Allowed = false, reason=%q", decision.Reason)
 	}
 }
+
+func TestAuthorizeAllowsUnknownPlatformKindWhenRBACAndABACMatch(t *testing.T) {
+	service := New(policy.NewEngine(), nil, nil, nil)
+
+	decision, err := service.Authorize(context.Background(), domainaccess.Request{
+		Principal: domainidentity.Principal{
+			UserID: "user-1",
+			Roles:  []string{"ops"},
+		},
+		Action: domainaccess.ActionCreate,
+		Subject: domainaccess.SubjectAttributes{
+			UserID: "user-1",
+			Roles:  []string{"ops"},
+		},
+		Cluster: domainaccess.ClusterAttributes{
+			ClusterID:   "cluster-a",
+			Environment: "development",
+		},
+		Namespace: domainaccess.NamespaceAttributes{Namespace: "team-a"},
+		Resource:  domainaccess.ResourceAttributes{Kind: "Widget"},
+	})
+	if err != nil {
+		t.Fatalf("Authorize returned error: %v", err)
+	}
+	if !decision.Allowed {
+		t.Fatalf("decision.Allowed = false, reason=%q", decision.Reason)
+	}
+	if len(decision.AllowedActions) == 0 {
+		t.Fatal("decision.AllowedActions is empty, want effective actions for custom resource kind")
+	}
+}

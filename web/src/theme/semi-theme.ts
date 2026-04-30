@@ -77,7 +77,7 @@ const THEME_PALETTES: Record<ResolvedThemeMode, ThemePalette> = {
     colorInfo: '#111827',
     controlOutline: 'rgba(17, 24, 39, 0.12)',
     colorBgBase: '#ffffff',
-    colorBgLayout: '#f6f8fb',
+    colorBgLayout: '#ffffff',
     colorBgContainer: '#ffffff',
     colorBgElevated: '#ffffff',
     colorBgMuted: '#eef3f8',

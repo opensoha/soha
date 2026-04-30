@@ -533,9 +533,22 @@ type CRDView struct {
 	Scope          string   `json:"scope"`
 	Kind           string   `json:"kind"`
 	Plural         string   `json:"plural"`
+	Version        string   `json:"version,omitempty"`
 	Versions       []string `json:"versions,omitempty"`
+	CreatedAt      string   `json:"createdAt,omitempty"`
 	AgeSeconds     int64    `json:"ageSeconds"`
 	AllowedActions []string `json:"allowedActions,omitempty"`
+}
+
+type CustomResourceView struct {
+	APIVersion     string            `json:"apiVersion,omitempty"`
+	Kind           string            `json:"kind"`
+	Name           string            `json:"name"`
+	Namespace      string            `json:"namespace,omitempty"`
+	Labels         map[string]string `json:"labels,omitempty"`
+	CreatedAt      string            `json:"createdAt,omitempty"`
+	AgeSeconds     int64             `json:"ageSeconds"`
+	AllowedActions []string          `json:"allowedActions,omitempty"`
 }
 
 type HelmReleaseView struct {
