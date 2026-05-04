@@ -1,0 +1,4 @@
+interface:
+  display_name: "Kubecrux Backend"
+  short_description: "Go API and platform aggregation changes for kubecrux"
+  default_prompt: "Use $kubecrux-backend to implement or refactor a kubecrux backend capability."

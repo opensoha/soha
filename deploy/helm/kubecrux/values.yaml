@@ -1,0 +1,78 @@
+image:
+  repository: ghcr.io/example/kubecrux
+  tag: latest
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  port: 8080
+
+ingress:
+  enabled: true
+  className: nginx
+  annotations: {}
+  host: kubecrux.example.com
+  tls: false
+  tlsSecretName: ""
+
+postgres:
+  image: postgres:16
+  database: kubecrux
+  username: pgsql
+  password: change-me
+  storageSize: 10Gi
+
+config:
+  appEnv: production
+  loggerLevel: info
+  loggerFormat: json
+  basePath: /api/v1
+  corsAllowedOrigins:
+    - https://kubecrux.example.com
+  runtime:
+    workflowWorkers: 4
+    workflowQueueSize: 64
+    workflowNodeParallelism: 4
+    clusterSyncParallelism: 4
+    copilotInspectionParallelism: 2
+    alertUpsertBatchSize: 100
+  auth:
+    enableDevAuth: false
+    adminUserId: admin
+    adminName: Admin
+    adminEmail: admin@kubecrux.local
+    adminPassword: change-me
+    adminRoles:
+      - admin
+      - ops
+      - auditor
+    jwtIssuer: kubecrux
+    jwtSecret: change-me
+    accessTTL: 15m
+    refreshTTL: 168h
+    oidc:
+      enabled: false
+      providerName: default
+      issuer: ""
+      clientId: ""
+      clientSecret: ""
+      redirectUrl: https://kubecrux.example.com/api/v1/auth/oidc/callback
+      frontendRedirectUrl: https://kubecrux.example.com/login/callback
+      scopes:
+        - openid
+        - profile
+        - email
+      defaultRoles:
+        - readonly
+  monitoring:
+    enabled: true
+    webhookToken: change-me
+    prometheusUrl: ""
+    prometheusBearerToken: ""
+    prometheusDefaultRangeMinutes: 60
+    prometheusStepSeconds: 60
+    prometheusClusterLabel: cluster
+    grafanaBaseUrl: ""
+  swaggerEnabled: false
+  mcpEnabled: true
+  seedDefaults: true

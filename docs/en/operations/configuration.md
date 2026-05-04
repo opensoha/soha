@@ -43,7 +43,7 @@ Key backend fields now used by the runtime:
 - `runtime.workflow_workers`, `runtime.workflow_queue_size`, `runtime.workflow_node_parallelism`
 - `runtime.cluster_sync_parallelism`, `runtime.copilot_inspection_parallelism`, `runtime.alert_upsert_batch_size`
 - `database.migration_path`: migration root directory (runtime resolves `migrations/<driver>/0001_init.sql`)
-- `database.migration_file`: explicit SQL bootstrap file override
+- `database.migration_file`: explicit SQL bootstrap file override; the current repo baseline points at the consolidated PostgreSQL bootstrap file
 - `kubernetes.clusters[*].kubeconfig`: direct cluster file path for bootstrapped clusters
 - `kubernetes.clusters[*].kubeconfig_data`: inline kubeconfig support when file paths are not used
 - `mcp.default_timeout`: default timeout reused by MCP and agent HTTP integrations

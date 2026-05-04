@@ -1,0 +1,29 @@
+# Runtime Checklist
+
+## Before Build
+
+- Confirm `web/package-lock.json` and `docs/package-lock.json` are present so the image build can use deterministic installs.
+- Confirm the repo has a valid backend config file for the target environment.
+- Decide whether OIDC stays disabled or needs production callback URLs.
+
+## Before Rollout
+
+- Replace placeholder passwords, JWT secrets, and webhook tokens.
+- Confirm PostgreSQL persistence size and storage class expectations.
+- Confirm the ingress host or external URL that the SPA will use.
+- Confirm `KC_CONFIG_FILE` points at the mounted config file.
+
+## Smoke Tests
+
+- `GET /healthz`
+- `GET /readyz`
+- load `/` and confirm the SPA shell renders
+- load `/docs/` and confirm the docs site is reachable
+- log in with the intended auth mode
+- confirm the app can talk to PostgreSQL and bootstrap menus, roles, and default data
+
+## Common Adjustments
+
+- For external PostgreSQL, edit the config Secret or values before rollout.
+- For stricter security, move example Secret material into your platform's secret manager.
+- For cluster access, mount kubeconfig or seed cluster connection metadata after startup.

@@ -1,198 +1,155 @@
 {
-  "/docs/__docusaurus/debug/-472": {
-    "__comp": "__comp---theme-debug-config-23-a-2ff",
+  "/docs/-953": {
+    "__comp": "5e95c892",
     "__context": {
-      "plugin": "plugin---docs-docusaurus-debug-b-38-c4c"
+      "plugin": "aba21aa0"
     }
   },
-  "/docs/__docusaurus/debug/config/-62e": {
-    "__comp": "__comp---theme-debug-config-23-a-2ff",
-    "__context": {
-      "plugin": "plugin---docs-docusaurus-debug-b-38-c4c"
-    }
+  "/docs/-b4d": {
+    "__comp": "a7bd4aaa",
+    "__props": "11b43341"
   },
-  "/docs/__docusaurus/debug/content/-149": {
-    "__comp": "__comp---theme-debug-contentba-8-ce7",
-    "__context": {
-      "plugin": "plugin---docs-docusaurus-debug-b-38-c4c"
-    },
-    "__props": "__props---docs-docusaurus-debug-content-93-c-97f"
+  "/docs/-4ec": {
+    "__comp": "a94703ab"
   },
-  "/docs/__docusaurus/debug/globalData/-59b": {
-    "__comp": "__comp---theme-debug-global-dataede-0fa",
-    "__context": {
-      "plugin": "plugin---docs-docusaurus-debug-b-38-c4c"
-    }
+  "/docs/api/auth-and-errors/-83d": {
+    "__comp": "17896441",
+    "content": "77412ce5"
   },
-  "/docs/__docusaurus/debug/metadata/-943": {
-    "__comp": "__comp---theme-debug-site-metadata-68-e-3d4",
-    "__context": {
-      "plugin": "plugin---docs-docusaurus-debug-b-38-c4c"
-    }
+  "/docs/api/core-endpoints/-6be": {
+    "__comp": "17896441",
+    "content": "e00ba162"
   },
-  "/docs/__docusaurus/debug/registry/-ab0": {
-    "__comp": "__comp---theme-debug-registry-679-501",
-    "__context": {
-      "plugin": "plugin---docs-docusaurus-debug-b-38-c4c"
-    }
+  "/docs/api/overview/-0ad": {
+    "__comp": "17896441",
+    "content": "e7c8172f"
   },
-  "/docs/__docusaurus/debug/routes/-cd1": {
-    "__comp": "__comp---theme-debug-routes-946-699",
-    "__context": {
-      "plugin": "plugin---docs-docusaurus-debug-b-38-c4c"
-    }
+  "/docs/architecture/-c21": {
+    "__comp": "17896441",
+    "content": "abf8ab6a"
   },
-  "/docs/-eb8": {
-    "__comp": "__comp---theme-docs-root-5-e-9-0b6",
-    "__context": {
-      "plugin": "plugin---docs-aba-4f5"
-    }
+  "/docs/architecture/access-model/-346": {
+    "__comp": "17896441",
+    "content": "53909347"
   },
-  "/docs/-80e": {
-    "__comp": "__comp---theme-doc-version-roota-7-b-5de",
-    "__props": "__props---docs-11-b-f70"
+  "/docs/architecture/agent-protocol/-bb9": {
+    "__comp": "17896441",
+    "content": "205c9963"
   },
-  "/docs/-4f2": {
-    "__comp": "__comp---theme-doc-roota-94-67a"
+  "/docs/architecture/ai-copilot/-756": {
+    "__comp": "17896441",
+    "content": "d0d78531"
   },
-  "/docs/api/auth-and-errors/-b21": {
-    "__comp": "__comp---theme-doc-item-178-a40",
-    "content": "content---docs-api-auth-and-errors-774-6ba"
+  "/docs/architecture/application-delivery/-182": {
+    "__comp": "17896441",
+    "content": "b1fc9f5f"
   },
-  "/docs/api/core-endpoints/-8a1": {
-    "__comp": "__comp---theme-doc-item-178-a40",
-    "content": "content---docs-api-core-endpoints-e-00-0f0"
+  "/docs/architecture/audit-model/-83c": {
+    "__comp": "17896441",
+    "content": "734e9963"
   },
-  "/docs/api/overview/-663": {
-    "__comp": "__comp---theme-doc-item-178-a40",
-    "content": "content---docs-api-overview-e-7-c-01f"
+  "/docs/architecture/authorization/-0f5": {
+    "__comp": "17896441",
+    "content": "fae30f0d"
   },
-  "/docs/architecture/-840": {
-    "__comp": "__comp---theme-doc-item-178-a40",
-    "content": "content---docs-architecture-abf-858"
+  "/docs/architecture/event-model/-f42": {
+    "__comp": "17896441",
+    "content": "26d1d4d8"
   },
-  "/docs/architecture/access-model/-3b5": {
-    "__comp": "__comp---theme-doc-item-178-a40",
-    "content": "content---docs-architecture-access-model-539-d6f"
+  "/docs/architecture/mcp-integration/-c23": {
+    "__comp": "17896441",
+    "content": "aff97073"
   },
-  "/docs/architecture/agent-protocol/-a26": {
-    "__comp": "__comp---theme-doc-item-178-a40",
-    "content": "content---docs-architecture-agent-protocol-205-462"
+  "/docs/architecture/monitoring-and-alerting/-984": {
+    "__comp": "17896441",
+    "content": "0fa7de35"
   },
-  "/docs/architecture/ai-copilot/-f6e": {
-    "__comp": "__comp---theme-doc-item-178-a40",
-    "content": "content---docs-architecture-ai-copilot-d-0-d-5e6"
+  "/docs/architecture/multi-cluster-model/-78f": {
+    "__comp": "17896441",
+    "content": "fb08fd46"
   },
-  "/docs/architecture/application-delivery/-9d4": {
-    "__comp": "__comp---theme-doc-item-178-a40",
-    "content": "content---docs-architecture-application-delivery-b-1-f-98b"
+  "/docs/development/add-mcp-integration/-239": {
+    "__comp": "17896441",
+    "content": "a27a8eff"
   },
-  "/docs/architecture/audit-model/-563": {
-    "__comp": "__comp---theme-doc-item-178-a40",
-    "content": "content---docs-architecture-audit-model-734-865"
+  "/docs/development/add-page/-3fa": {
+    "__comp": "17896441",
+    "content": "1f51cae4"
   },
-  "/docs/architecture/authorization/-aa7": {
-    "__comp": "__comp---theme-doc-item-178-a40",
-    "content": "content---docs-architecture-authorization-fae-755"
+  "/docs/development/add-resource-module/-a73": {
+    "__comp": "17896441",
+    "content": "a13d753d"
   },
-  "/docs/architecture/event-model/-be4": {
-    "__comp": "__comp---theme-doc-item-178-a40",
-    "content": "content---docs-architecture-event-model-26-d-64c"
+  "/docs/development/backend-structure/-3fc": {
+    "__comp": "17896441",
+    "content": "badf2422"
   },
-  "/docs/architecture/mcp-integration/-d5f": {
-    "__comp": "__comp---theme-doc-item-178-a40",
-    "content": "content---docs-architecture-mcp-integration-aff-0d4"
+  "/docs/development/configuration/-74f": {
+    "__comp": "17896441",
+    "content": "c74b1be9"
   },
-  "/docs/architecture/monitoring-and-alerting/-eb0": {
-    "__comp": "__comp---theme-doc-item-178-a40",
-    "content": "content---docs-architecture-monitoring-and-alerting-0-fa-500"
+  "/docs/development/database-migrations/-a92": {
+    "__comp": "17896441",
+    "content": "e8bc8711"
   },
-  "/docs/architecture/multi-cluster-model/-3b5": {
-    "__comp": "__comp---theme-doc-item-178-a40",
-    "content": "content---docs-architecture-multi-cluster-model-fb-0-81a"
+  "/docs/development/frontend-structure/-274": {
+    "__comp": "17896441",
+    "content": "0bdf1156"
   },
-  "/docs/development/add-mcp-integration/-1ab": {
-    "__comp": "__comp---theme-doc-item-178-a40",
-    "content": "content---docs-development-add-mcp-integration-a-27-125"
+  "/docs/development/local-development/-c1b": {
+    "__comp": "17896441",
+    "content": "fdf81dc1"
   },
-  "/docs/development/add-page/-ca4": {
-    "__comp": "__comp---theme-doc-item-178-a40",
-    "content": "content---docs-development-add-page-1-f-5-be9"
+  "/docs/operations/agent-runtime/-41f": {
+    "__comp": "17896441",
+    "content": "36682ff3"
   },
-  "/docs/development/add-resource-module/-712": {
-    "__comp": "__comp---theme-doc-item-178-a40",
-    "content": "content---docs-development-add-resource-module-a-13-51b"
+  "/docs/operations/configuration/-dba": {
+    "__comp": "17896441",
+    "content": "7385f29e"
   },
-  "/docs/development/backend-structure/-2bc": {
-    "__comp": "__comp---theme-doc-item-178-a40",
-    "content": "content---docs-development-backend-structure-bad-b3a"
+  "/docs/operations/dependencies/-52f": {
+    "__comp": "17896441",
+    "content": "caf93bf4"
   },
-  "/docs/development/configuration/-3f8": {
-    "__comp": "__comp---theme-doc-item-178-a40",
-    "content": "content---docs-development-configuration-c-74-680"
+  "/docs/operations/deployment/-777": {
+    "__comp": "17896441",
+    "content": "fbd4efcc"
   },
-  "/docs/development/database-migrations/-149": {
-    "__comp": "__comp---theme-doc-item-178-a40",
-    "content": "content---docs-development-database-migrations-e-8-b-570"
+  "/docs/operations/docs-publishing/-ffe": {
+    "__comp": "17896441",
+    "content": "7861d971"
   },
-  "/docs/development/frontend-structure/-381": {
-    "__comp": "__comp---theme-doc-item-178-a40",
-    "content": "content---docs-development-frontend-structure-0-bd-2a4"
+  "/docs/operations/environment-variables/-a09": {
+    "__comp": "17896441",
+    "content": "94b5d8e0"
   },
-  "/docs/development/local-development/-4f4": {
-    "__comp": "__comp---theme-doc-item-178-a40",
-    "content": "content---docs-development-local-development-fdf-a8c"
+  "/docs/operations/mcp-configuration/-3cc": {
+    "__comp": "17896441",
+    "content": "bacfdb68"
   },
-  "/docs/operations/agent-runtime/-3e2": {
-    "__comp": "__comp---theme-doc-item-178-a40",
-    "content": "content---docs-operations-agent-runtime-366-120"
+  "/docs/operations/mcp/-63c": {
+    "__comp": "17896441",
+    "content": "dd639a17"
   },
-  "/docs/operations/configuration/-42b": {
-    "__comp": "__comp---theme-doc-item-178-a40",
-    "content": "content---docs-operations-configuration-738-133"
+  "/docs/operations/role-authorization-assignment/-63a": {
+    "__comp": "17896441",
+    "content": "f7a31dc9"
   },
-  "/docs/operations/dependencies/-e49": {
-    "__comp": "__comp---theme-doc-item-178-a40",
-    "content": "content---docs-operations-dependencies-caf-379"
+  "/docs/reference/database-schema/-17a": {
+    "__comp": "17896441",
+    "content": "9a4044ca"
   },
-  "/docs/operations/deployment/-1aa": {
-    "__comp": "__comp---theme-doc-item-178-a40",
-    "content": "content---docs-operations-deployment-fbd-64c"
+  "/docs/reference/product-information-architecture/-e11": {
+    "__comp": "17896441",
+    "content": "2c450f4a"
   },
-  "/docs/operations/docs-publishing/-447": {
-    "__comp": "__comp---theme-doc-item-178-a40",
-    "content": "content---docs-operations-docs-publishing-786-8d8"
+  "/docs/roadmap/-fa1": {
+    "__comp": "17896441",
+    "content": "76de80cd"
   },
-  "/docs/operations/environment-variables/-c20": {
-    "__comp": "__comp---theme-doc-item-178-a40",
-    "content": "content---docs-operations-environment-variables-94-b-5aa"
-  },
-  "/docs/operations/mcp-configuration/-2c3": {
-    "__comp": "__comp---theme-doc-item-178-a40",
-    "content": "content---docs-operations-mcp-configuration-bac-d09"
-  },
-  "/docs/operations/mcp/-9f4": {
-    "__comp": "__comp---theme-doc-item-178-a40",
-    "content": "content---docs-operations-mcp-dd-6-43d"
-  },
-  "/docs/operations/role-authorization-assignment/-bec": {
-    "__comp": "__comp---theme-doc-item-178-a40",
-    "content": "content---docs-operations-role-authorization-assignment-f-7-a-ee1"
-  },
-  "/docs/reference/database-schema/-fe8": {
-    "__comp": "__comp---theme-doc-item-178-a40",
-    "content": "content---docs-reference-database-schema-9-a-4-eae"
-  },
-  "/docs/reference/product-information-architecture/-59e": {
-    "__comp": "__comp---theme-doc-item-178-a40",
-    "content": "content---docs-reference-product-information-architecture-2-c-4-b5a"
-  },
-  "/docs/roadmap/-696": {
-    "__comp": "__comp---theme-doc-item-178-a40",
-    "content": "content---docs-roadmap-76-d-1f2"
-  },
-  "/docs/-2f8": {
-    "__comp": "__comp---theme-doc-item-178-a40",
-    "content": "content---docs-082-794"
+  "/docs/-fc1": {
+    "__comp": "17896441",
+    "content": "08238c6d"
   }
 }

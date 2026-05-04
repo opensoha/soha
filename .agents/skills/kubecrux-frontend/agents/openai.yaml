@@ -1,0 +1,4 @@
+interface:
+  display_name: "Kubecrux Frontend"
+  short_description: "Ant Design 6 console work with shadcn-style tokens"
+  default_prompt: "Use $kubecrux-frontend to implement or refactor a kubecrux web console feature."

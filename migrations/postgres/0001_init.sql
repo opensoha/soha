@@ -1,3 +1,7 @@
+-- Consolidated PostgreSQL bootstrap migration.
+-- This file contains the full current schema baseline for fresh kubecrux databases.
+-- It supersedes the previously split 0002-0007 postgres migration files.
+
 -- Schema only. The bootstrap account is seeded by backend startup from auth.dev_principal
 -- and the repository baseline is admin / kubecrux with no legacy migration path.
 
@@ -211,7 +215,6 @@ CREATE TABLE IF NOT EXISTS clusters (
 );
 
 ALTER TABLE clusters ADD COLUMN IF NOT EXISTS version TEXT;
-ALTER TABLE clusters ADD COLUMN IF NOT EXISTS connection_mode TEXT NOT NULL DEFAULT 'direct_kubeconfig';
 
 CREATE TABLE IF NOT EXISTS cluster_credentials_meta (
     id TEXT PRIMARY KEY,
@@ -579,12 +582,6 @@ CREATE TABLE IF NOT EXISTS scope_grants (
     updated_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
-ALTER TABLE alert_instances ADD COLUMN IF NOT EXISTS owner_team TEXT;
-ALTER TABLE alert_instances ADD COLUMN IF NOT EXISTS assignee TEXT;
-ALTER TABLE alert_instances ADD COLUMN IF NOT EXISTS acknowledged_at TIMESTAMP;
-ALTER TABLE alert_instances ADD COLUMN IF NOT EXISTS acknowledged_by TEXT;
-ALTER TABLE alert_instances ADD COLUMN IF NOT EXISTS acknowledged_by_name TEXT;
-
 CREATE TABLE IF NOT EXISTS user_preferences (
     id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL REFERENCES users(id),
@@ -594,12 +591,6 @@ CREATE TABLE IF NOT EXISTS user_preferences (
     updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
     UNIQUE (user_id, category)
 );
-
-ALTER TABLE operation_logs ADD COLUMN IF NOT EXISTS actor_name TEXT;
-ALTER TABLE operation_logs ADD COLUMN IF NOT EXISTS request_path TEXT;
-ALTER TABLE operation_logs ADD COLUMN IF NOT EXISTS request_method TEXT;
-ALTER TABLE operation_logs ADD COLUMN IF NOT EXISTS request_id TEXT;
-ALTER TABLE operation_logs ADD COLUMN IF NOT EXISTS source_ip TEXT;
 
 CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs (created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_actor_id ON audit_logs (actor_id);
@@ -660,3 +651,232 @@ CREATE TABLE IF NOT EXISTS ai_root_cause_runs (
 CREATE INDEX IF NOT EXISTS idx_ai_root_cause_runs_created_by_updated_at ON ai_root_cause_runs (created_by, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_ai_root_cause_runs_cluster_namespace ON ai_root_cause_runs (cluster_id, namespace);
 CREATE INDEX IF NOT EXISTS idx_ai_root_cause_runs_alert_id ON ai_root_cause_runs (alert_id);
+
+
+-- Consolidated from migrations/postgres/0002_ai_control_plane.sql
+
+CREATE TABLE IF NOT EXISTS ai_data_sources (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    source_type TEXT NOT NULL,
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    credential_ref TEXT,
+    scope JSON NOT NULL DEFAULT '{}',
+    query_budget JSON NOT NULL DEFAULT '{}',
+    redaction_policy JSON NOT NULL DEFAULT '{}',
+    mcp_adapter TEXT NOT NULL,
+    config JSON NOT NULL DEFAULT '{}',
+    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS ai_analysis_profiles (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    mode TEXT NOT NULL,
+    enabled_sources JSON NOT NULL DEFAULT '[]',
+    enabled_playbooks JSON NOT NULL DEFAULT '[]',
+    query_budgets JSON NOT NULL DEFAULT '{}',
+    output_style JSON NOT NULL DEFAULT '{}',
+    remediation_policy TEXT NOT NULL DEFAULT 'suggest_only',
+    default_time_range_minutes INT NOT NULL DEFAULT 60,
+    timeout_seconds INT NOT NULL DEFAULT 90,
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS ai_automation_policies (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    trigger_type TEXT NOT NULL,
+    trigger_conditions JSON NOT NULL DEFAULT '{}',
+    dedup_window_seconds INT NOT NULL DEFAULT 900,
+    analysis_profile_id TEXT NOT NULL REFERENCES ai_analysis_profiles(id),
+    remediation_policy TEXT NOT NULL DEFAULT 'suggest_only',
+    approval_policy JSON NOT NULL DEFAULT '{}',
+    cooldown_seconds INT NOT NULL DEFAULT 0,
+    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE ai_root_cause_runs ADD COLUMN IF NOT EXISTS analysis_profile_id TEXT;
+ALTER TABLE ai_root_cause_runs ADD COLUMN IF NOT EXISTS trigger_type TEXT NOT NULL DEFAULT 'manual';
+ALTER TABLE ai_root_cause_runs ADD COLUMN IF NOT EXISTS data_source_snapshot JSON NOT NULL DEFAULT '{}';
+ALTER TABLE ai_root_cause_runs ADD COLUMN IF NOT EXISTS playbook_results JSON NOT NULL DEFAULT '{}';
+ALTER TABLE ai_root_cause_runs ADD COLUMN IF NOT EXISTS remediation_plan JSON NOT NULL DEFAULT '{}';
+ALTER TABLE ai_root_cause_runs ADD COLUMN IF NOT EXISTS dedup_key TEXT;
+
+CREATE INDEX IF NOT EXISTS idx_ai_data_sources_type_enabled ON ai_data_sources (source_type, enabled);
+CREATE INDEX IF NOT EXISTS idx_ai_analysis_profiles_mode_enabled ON ai_analysis_profiles (mode, enabled);
+CREATE INDEX IF NOT EXISTS idx_ai_automation_policies_trigger_enabled ON ai_automation_policies (trigger_type, enabled);
+CREATE INDEX IF NOT EXISTS idx_ai_root_cause_runs_trigger_type_created_at ON ai_root_cause_runs (trigger_type, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_ai_root_cause_runs_dedup_key ON ai_root_cause_runs (dedup_key);
+
+-- Consolidated from migrations/postgres/0003_ai_datasource_abstraction.sql
+
+ALTER TABLE ai_data_sources ADD COLUMN IF NOT EXISTS source_kind TEXT;
+ALTER TABLE ai_data_sources ADD COLUMN IF NOT EXISTS backend_type TEXT;
+
+UPDATE ai_data_sources
+SET source_kind = CASE
+    WHEN source_kind IS NOT NULL AND source_kind <> '' THEN source_kind
+    WHEN mcp_adapter = 'logs.v1' THEN 'logs'
+    WHEN mcp_adapter = 'metrics.v1' THEN 'metrics'
+    WHEN mcp_adapter = 'traces.v1' THEN 'traces'
+    ELSE source_type
+END
+WHERE source_kind IS NULL OR source_kind = '';
+
+UPDATE ai_data_sources
+SET backend_type = CASE
+    WHEN backend_type IS NOT NULL AND backend_type <> '' THEN backend_type
+    WHEN source_type = 'es-logs' THEN 'es'
+    WHEN source_type = 'loki-logs' THEN 'loki'
+    WHEN source_type = 'clickhouse-logs' THEN 'clickhouse'
+    WHEN source_type = 'prometheus' THEN 'prometheus'
+    WHEN source_type = 'jaeger-traces' THEN 'jaeger'
+    WHEN source_type = 'platform-native' THEN 'platform'
+    WHEN source_type = 'alert-center' THEN 'platform'
+    WHEN source_type = 'release-records' THEN 'platform'
+    ELSE source_type
+END
+WHERE backend_type IS NULL OR backend_type = '';
+
+UPDATE ai_data_sources
+SET mcp_adapter = CASE
+    WHEN source_kind = 'logs' THEN 'logs.v1'
+    WHEN source_kind = 'metrics' THEN 'metrics.v1'
+    WHEN source_kind = 'traces' THEN 'traces.v1'
+    ELSE 'platform-native.v1'
+END
+WHERE mcp_adapter NOT IN ('logs.v1', 'metrics.v1', 'traces.v1', 'platform-native.v1');
+
+CREATE INDEX IF NOT EXISTS idx_ai_data_sources_kind_backend_enabled ON ai_data_sources (source_kind, backend_type, enabled);
+
+
+-- Consolidated from migrations/postgres/0004_ai_datasource_validation.sql
+
+ALTER TABLE ai_data_sources ADD COLUMN IF NOT EXISTS validation_status TEXT;
+ALTER TABLE ai_data_sources ADD COLUMN IF NOT EXISTS validation_message TEXT;
+ALTER TABLE ai_data_sources ADD COLUMN IF NOT EXISTS last_validated_at TIMESTAMP;
+
+CREATE INDEX IF NOT EXISTS idx_ai_data_sources_validation_status ON ai_data_sources (validation_status, last_validated_at DESC);
+
+
+-- Consolidated from migrations/postgres/0005_ai_workbench.sql
+
+ALTER TABLE ai_sessions ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP;
+
+ALTER TABLE ai_root_cause_runs ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'root_cause';
+ALTER TABLE ai_root_cause_runs ADD COLUMN IF NOT EXISTS session_id TEXT;
+ALTER TABLE ai_root_cause_runs ADD COLUMN IF NOT EXISTS tool_executions JSON NOT NULL DEFAULT '[]';
+
+ALTER TABLE ai_automation_policies ADD COLUMN IF NOT EXISTS analysis_kinds JSON NOT NULL DEFAULT '["root_cause"]';
+
+CREATE INDEX IF NOT EXISTS idx_ai_sessions_created_by_deleted_updated_at ON ai_sessions (created_by, deleted_at, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_ai_root_cause_runs_session_id_created_at ON ai_root_cause_runs (session_id, created_at DESC);
+
+
+-- Consolidated from migrations/postgres/0005_port_forward_sessions.sql
+
+CREATE TABLE IF NOT EXISTS port_forward_sessions (
+    session_id TEXT PRIMARY KEY,
+    cluster_id TEXT NOT NULL,
+    namespace TEXT NOT NULL,
+    target_kind TEXT NOT NULL,
+    target_name TEXT NOT NULL,
+    local_port INTEGER NOT NULL,
+    remote_port INTEGER NOT NULL,
+    status TEXT NOT NULL,
+    connection_mode TEXT NOT NULL DEFAULT 'direct',
+    last_error TEXT,
+    created_by TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_port_forward_sessions_cluster ON port_forward_sessions(cluster_id);
+
+-- Consolidated from migrations/postgres/0007_delivery_orchestration.sql
+
+ALTER TABLE build_records ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+
+CREATE TABLE IF NOT EXISTS application_build_sources (
+    id TEXT PRIMARY KEY,
+    application_id TEXT NOT NULL REFERENCES applications(id) ON DELETE CASCADE,
+    source_name TEXT NOT NULL,
+    source_type TEXT NOT NULL,
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    is_default BOOLEAN NOT NULL DEFAULT FALSE,
+    build_image TEXT,
+    default_tag TEXT,
+    config JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_application_build_sources_application_id ON application_build_sources(application_id);
+
+INSERT INTO application_build_sources (
+    id,
+    application_id,
+    source_name,
+    source_type,
+    enabled,
+    is_default,
+    build_image,
+    default_tag,
+    config,
+    created_at,
+    updated_at
+)
+SELECT
+    'default:' || a.id,
+    a.id,
+    'Repository Dockerfile',
+    'repo_dockerfile',
+    a.enabled,
+    TRUE,
+    a.build_image,
+    a.default_tag,
+    jsonb_build_object(
+        'contextDir', COALESCE(NULLIF(a.build_context_dir, ''), '.'),
+        'dockerfilePath', COALESCE(NULLIF(a.dockerfile_path, ''), 'Dockerfile'),
+        'builderKind', 'docker'
+    ),
+    a.created_at,
+    a.updated_at
+FROM applications a
+WHERE NOT EXISTS (
+    SELECT 1 FROM application_build_sources s WHERE s.application_id = a.id
+);
+
+CREATE TABLE IF NOT EXISTS build_templates (
+    id TEXT PRIMARY KEY,
+    template_key TEXT NOT NULL UNIQUE,
+    name TEXT NOT NULL,
+    description TEXT,
+    builder_kind TEXT NOT NULL DEFAULT 'custom',
+    dockerfile_template TEXT,
+    build_commands JSONB NOT NULL DEFAULT '[]'::jsonb,
+    variable_schema JSONB NOT NULL DEFAULT '{}'::jsonb,
+    default_variables JSONB NOT NULL DEFAULT '{}'::jsonb,
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS workflow_approvals (
+    id TEXT PRIMARY KEY,
+    workflow_run_id TEXT NOT NULL REFERENCES workflow_runs(id) ON DELETE CASCADE,
+    node_id TEXT NOT NULL,
+    action TEXT NOT NULL,
+    comment TEXT,
+    actor_id TEXT NOT NULL,
+    actor_name TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_workflow_approvals_workflow_run_id ON workflow_approvals(workflow_run_id);

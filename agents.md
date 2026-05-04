@@ -69,6 +69,14 @@ Project summary:
 - architecture documents under `docs/architecture`
 - this file is the top-level execution memory
 
+### Deployment
+
+- canonical deployment assets live under repo-root `deploy`
+- `deploy/docker` owns the single-project image build path
+- `deploy/compose` owns local app-plus-PostgreSQL startup
+- `deploy/k8s` owns raw Kubernetes manifests
+- `deploy/helm` owns repeatable Helm installation assets
+
 ## 4. System Architecture
 
 The system is organized as a modular monolith with clear layers.
@@ -185,6 +193,7 @@ The frontend active baseline has been reset to the Vite application.
 
 Current structure summary:
 
+- `deploy` is the canonical repo-local deployment directory for container build, compose, Kubernetes YAML, and Helm assets
 - `web` is the only active frontend target
 - `web_pro_backup` preserves the previous frontend backup and must not be treated as the active shell
 - `old_web` remains as migration/reference material only after the reset
@@ -346,6 +355,7 @@ The repository has already converged on these rules:
 - platform collection pages should use shared scoped path construction
 - backend all-namespaces aggregation is preferred over frontend namespace fan-out
 - identity bootstrap baseline is a single `admin / kubecrux` seed from `auth.dev_principal`; legacy bootstrap migration and login fallback are removed
+- PostgreSQL bootstrap schema is now consolidated into `migrations/postgres/0001_init.sql`; duplicate legacy root migration mirrors are migration debt and should stay removed
 - built-in bootstrap defaults should be version-gated: first-time initialization and seed-version upgrades replay static roles/menus/policies/templates, while config-driven admin user and cluster sync stay as separate startup work
 - pod detail is now expected to be an operational workspace, not only a static detail page
 - workload list pages should support search/filter first, then batch action surfaces where backend capability already exists
@@ -506,12 +516,15 @@ Primary supporting documents:
 
 This repository may use repo-local collaboration files under `.codex/` for isolated Codex threads or agents.
 `AGENTS.md` remains the engineering baseline; `.codex/` carries task execution context.
+Reusable repo-specific Codex skills may also live under `.agents/skills/` when the repository wants frontend, backend, or deployment guidance versioned alongside the codebase.
 
 - `.codex/state/current_task.md` is the canonical task snapshot for any spawned thread
 - `.codex/state/queue.md` tracks subtask ownership, priority, status, and dependencies
 - `.codex/state/results/` stores concise role outputs instead of full transcripts or raw long logs
 - `.codex/handoffs/` stores explicit handoff notes between `main`, `coder`, `tester`, and `reviewer`
 - `.codex/prompts/` stores reusable role prompt templates for child threads
+- `.agents/skills/` stores repo-local skill definitions and bundled references or assets for kubecrux-specific workflows such as frontend, backend, and deployment work
+- `.agents/` should not duplicate `.codex/` task snapshots, handoffs, queues, or prompt templates; subagent execution state belongs under `.codex/` only
 - multi-track migrations should assign disjoint write ownership by directory or module family in `queue.md`; shared foundation ownership must be resolved before compat-file deletion or docs migration begins
 - child threads must not assume access to the full parent-thread conversation; they should rely on `current_task`, relevant handoff files, result files, and the referenced code files
 - handoffs should pass only the minimum necessary context: current task summary, exact files to read, verification status, open risks, and one recommended next step
