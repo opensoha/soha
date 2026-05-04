@@ -34,20 +34,46 @@ func (s *Service) HandleAlertAutomation(ctx context.Context, instance domainaler
 		if err == nil && withinDedupWindow(existing, policy.DedupWindowSeconds) {
 			continue
 		}
-		_, err = s.executeRootCauseRun(ctx, systemPrincipal(), automationRootCauseCreatedBy, domaincopilot.RootCauseRunInput{
-			Title:             instance.Title,
-			AnalysisProfileID: policy.AnalysisProfileID,
-			TriggerType:       "alert_webhook",
-			ClusterID:         instance.ClusterID,
-			Namespace:         instance.Namespace,
-			WorkloadKind:      "Deployment",
-			WorkloadName:      resolveAlertWorkload(instance),
-			AlertID:           instance.ID,
-			TimeRangeMinutes:  policyTimeRangeMinutes(policy),
-			Question:          fmt.Sprintf("Investigate alert %s", instance.ID),
-		}, dedupKey, "en-US")
-		if err != nil {
-			return err
+		kinds := policy.AnalysisKinds
+		if len(kinds) == 0 {
+			kinds = []string{"root_cause"}
+		}
+		for _, kind := range kinds {
+			switch strings.TrimSpace(kind) {
+			case "performance", "trace":
+				_, _, _ = s.analyzeConversation(ctx, systemPrincipal(), domaincopilot.Session{
+					ID:        "automation:" + policy.ID,
+					Title:     instance.Title,
+					CreatedBy: automationRootCauseCreatedBy,
+					Metadata: map[string]any{
+						"mode": kind,
+						"scope": map[string]any{
+							"clusterId":        instance.ClusterID,
+							"namespace":        instance.Namespace,
+							"workload":         resolveAlertWorkload(instance),
+							"alertId":          instance.ID,
+							"timeRangeMinutes": policyTimeRangeMinutes(policy),
+						},
+					},
+				}, fmt.Sprintf("Investigate alert %s", instance.ID), "en-US")
+			default:
+				_, err = s.executeRootCauseRun(ctx, systemPrincipal(), automationRootCauseCreatedBy, domaincopilot.RootCauseRunInput{
+					Kind:              "root_cause",
+					Title:             instance.Title,
+					AnalysisProfileID: policy.AnalysisProfileID,
+					TriggerType:       "alert_webhook",
+					ClusterID:         instance.ClusterID,
+					Namespace:         instance.Namespace,
+					WorkloadKind:      "Deployment",
+					WorkloadName:      resolveAlertWorkload(instance),
+					AlertID:           instance.ID,
+					TimeRangeMinutes:  policyTimeRangeMinutes(policy),
+					Question:          fmt.Sprintf("Investigate alert %s", instance.ID),
+				}, dedupKey, "en-US")
+			}
+			if err != nil {
+				return err
+			}
 		}
 	}
 	return nil

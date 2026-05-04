@@ -5,6 +5,43 @@ import (
 	"time"
 )
 
+type SessionScope struct {
+	ClusterID  string `json:"clusterId,omitempty"`
+	Namespace  string `json:"namespace,omitempty"`
+	Workload   string `json:"workload,omitempty"`
+	Service    string `json:"service,omitempty"`
+	AlertID    string `json:"alertId,omitempty"`
+	TimeRangeMinutes int `json:"timeRangeMinutes,omitempty"`
+}
+
+type SessionToolset struct {
+	EnabledAdapterIDs    []string       `json:"enabledAdapterIds,omitempty"`
+	EnabledSkillIDs      []string       `json:"enabledSkillIds,omitempty"`
+	DisabledToolNames    []string       `json:"disabledToolNames,omitempty"`
+	BudgetOverrides      map[string]any `json:"budgetOverrides,omitempty"`
+	ScopeOverrides       map[string]any `json:"scopeOverrides,omitempty"`
+}
+
+type AnalysisRunRef struct {
+	ID        string `json:"id"`
+	Kind      string `json:"kind"`
+	Status    string `json:"status,omitempty"`
+	CreatedAt string `json:"createdAt,omitempty"`
+}
+
+type SessionMetadata struct {
+	Mode            string         `json:"mode,omitempty"`
+	Status          string         `json:"status,omitempty"`
+	Scope           SessionScope   `json:"scope,omitempty"`
+	PinnedContext   map[string]any `json:"pinnedContext,omitempty"`
+	Toolset         SessionToolset `json:"toolset,omitempty"`
+	AnalysisRunRefs []AnalysisRunRef `json:"analysisRunRefs,omitempty"`
+	Summary         string         `json:"summary,omitempty"`
+	Tags            []string       `json:"tags,omitempty"`
+	ArchivedAt      string         `json:"archivedAt,omitempty"`
+	Source          string         `json:"source,omitempty"`
+}
+
 type Session struct {
 	ID        string         `json:"id"`
 	Title     string         `json:"title"`
@@ -23,6 +60,38 @@ type Message struct {
 	CreatedAt time.Time      `json:"createdAt"`
 }
 
+type ToolExecution struct {
+	ID          string         `json:"id"`
+	AdapterID   string         `json:"adapterId"`
+	ToolName    string         `json:"toolName"`
+	Status      string         `json:"status"`
+	Summary     string         `json:"summary,omitempty"`
+	Input       map[string]any `json:"input,omitempty"`
+	Output      map[string]any `json:"output,omitempty"`
+	StartedAt   time.Time      `json:"startedAt"`
+	CompletedAt *time.Time     `json:"completedAt,omitempty"`
+}
+
+type AnalysisArtifact struct {
+	Kind             string                `json:"kind"`
+	RunID            string                `json:"runId"`
+	Title            string                `json:"title,omitempty"`
+	Summary          string                `json:"summary"`
+	Scope            SessionScope          `json:"scope,omitempty"`
+	Evidence         []RootCauseEvidence   `json:"evidence,omitempty"`
+	Hypotheses       []RootCauseHypothesis `json:"hypotheses,omitempty"`
+	Recommendations  []string              `json:"recommendations,omitempty"`
+	ToolExecutions   []ToolExecution       `json:"toolExecutions,omitempty"`
+	DataSourceSnapshot map[string]any      `json:"dataSourceSnapshot,omitempty"`
+}
+
+type SessionMessageEnvelope struct {
+	Messages          []Message           `json:"messages"`
+	ToolCalls         []ToolExecution     `json:"toolCalls,omitempty"`
+	AnalysisArtifacts []AnalysisArtifact  `json:"analysisArtifacts,omitempty"`
+	SessionPatch      map[string]any      `json:"sessionPatch,omitempty"`
+}
+
 type Insight struct {
 	Title       string   `json:"title"`
 	Description string   `json:"description"`
@@ -32,6 +101,8 @@ type Insight struct {
 
 type RootCauseRun struct {
 	ID                 string                `json:"id"`
+	Kind               string                `json:"kind,omitempty"`
+	SessionID          string                `json:"sessionId,omitempty"`
 	Title              string                `json:"title"`
 	CreatedBy          string                `json:"createdBy"`
 	AnalysisProfileID  string                `json:"analysisProfileId,omitempty"`
@@ -49,6 +120,7 @@ type RootCauseRun struct {
 	Evidence           []RootCauseEvidence   `json:"evidence,omitempty"`
 	Hypotheses         []RootCauseHypothesis `json:"hypotheses,omitempty"`
 	Recommendations    []string              `json:"recommendations,omitempty"`
+	ToolExecutions     []ToolExecution       `json:"toolExecutions,omitempty"`
 	DataSourceSnapshot map[string]any        `json:"dataSourceSnapshot,omitempty"`
 	PlaybookResults    map[string]any        `json:"playbookResults,omitempty"`
 	RemediationPlan    map[string]any        `json:"remediationPlan,omitempty"`
@@ -59,6 +131,8 @@ type RootCauseRun struct {
 
 type RootCauseRunInput struct {
 	Title             string `json:"title"`
+	Kind              string `json:"kind,omitempty"`
+	SessionID         string `json:"sessionId,omitempty"`
 	AnalysisProfileID string `json:"analysisProfileId,omitempty"`
 	TriggerType       string `json:"triggerType,omitempty"`
 	ClusterID         string `json:"clusterId,omitempty"`
@@ -161,7 +235,10 @@ type InspectionRunFilter struct {
 
 type Repository interface {
 	ListSessions(context.Context, string, int) ([]Session, error)
+	GetSession(context.Context, string, string) (Session, error)
 	CreateSession(context.Context, Session) (Session, error)
+	UpdateSession(context.Context, string, string, Session) (Session, error)
+	DeleteSession(context.Context, string, string) error
 	ListMessages(context.Context, string, int) ([]Message, error)
 	CreateMessage(context.Context, Message) (Message, error)
 	ListRootCauseRuns(context.Context, string, RootCauseRunFilter) ([]RootCauseRun, error)

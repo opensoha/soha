@@ -55,6 +55,14 @@ JSONB fits:
 - provider metadata
 - auth plugin settings
 
+### announcements
+
+Announcement catalog with publish lifecycle, audience metadata, and active-window fields.
+
+### announcement_receipts
+
+Per-user read receipts for published announcements.
+
 ### audit_logs
 
 Append-only durable audit store.
@@ -69,6 +77,8 @@ JSONB fits:
 
 Operational task records for mutating workflows.
 
+Expected fields now include actor context, request context, and backend-owned `target_scope` JSON for UI formatting.
+
 ### event_stream
 
 Unified event envelope persistence.
@@ -81,11 +91,40 @@ JSONB fits:
 
 ### build_records
 
-Reserved for CI build history.
+Build history plus worker-emitted artifact metadata.
+
+Expected metadata now includes:
+
+- `applicationEnvironmentId`
+- `buildSourceId`
+- `artifact`
+- `image`
+- `variables`
+- `triggeredByWorkflowRunId`
 
 ### deploy_records
 
-Reserved for release and deploy history.
+Deploy and release history.
+
+Expected metadata now includes:
+
+- `applicationEnvironmentId`
+- `actionKind`
+- `previousImage`
+- `image`
+- `imageTag`
+
+### application_build_sources
+
+Per-application build-source registry.
+
+### build_templates
+
+Platform-managed Dockerfile and build-command templates.
+
+### workflow_approvals
+
+Approval decisions for suspended workflow runs.
 
 ### notification_channels
 

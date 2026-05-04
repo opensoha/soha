@@ -12,6 +12,7 @@ type Capability struct {
 type Tool struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
+	SchemaHint  string `json:"schemaHint,omitempty"`
 }
 
 type Adapter struct {
@@ -20,8 +21,13 @@ type Adapter struct {
 	SupportedBackends []string `json:"supportedBackends,omitempty"`
 	Name              string   `json:"name"`
 	Description       string   `json:"description"`
+	Category          string   `json:"category,omitempty"`
+	RequiresConfig    bool     `json:"requiresConfig"`
+	SupportsSessionOverride bool `json:"supportsSessionOverride"`
 	Scopes            []string `json:"scopes"`
 	Tools             []Tool   `json:"tools,omitempty"`
+	DefaultBudget     map[string]any `json:"defaultBudget,omitempty"`
+	ToolSchemaSummary map[string]string `json:"toolSchemaSummary,omitempty"`
 }
 
 type Service interface {

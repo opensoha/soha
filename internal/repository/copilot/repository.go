@@ -27,7 +27,7 @@ func (r *Repository) ListSessions(ctx context.Context, createdBy string, limit i
 	rows, err := r.db.WithContext(ctx).Raw(`
 		SELECT id, title, created_by, metadata, created_at, updated_at
 		FROM ai_sessions
-		WHERE created_by = ?
+		WHERE created_by = ? AND deleted_at IS NULL
 		ORDER BY updated_at DESC, created_at DESC
 		LIMIT ?
 	`, createdBy, limit).Rows()
@@ -46,6 +46,16 @@ func (r *Repository) ListSessions(ctx context.Context, createdBy string, limit i
 	return items, rows.Err()
 }
 
+func (r *Repository) GetSession(ctx context.Context, createdBy, sessionID string) (domaincopilot.Session, error) {
+	row := r.db.WithContext(ctx).Raw(`
+		SELECT id, title, created_by, metadata, created_at, updated_at
+		FROM ai_sessions
+		WHERE created_by = ? AND id = ? AND deleted_at IS NULL
+		LIMIT 1
+	`, createdBy, sessionID).Row()
+	return scanSessionRow(row)
+}
+
 func (r *Repository) CreateSession(ctx context.Context, session domaincopilot.Session) (domaincopilot.Session, error) {
 	metadata, err := json.Marshal(session.Metadata)
 	if err != nil {
@@ -58,6 +68,40 @@ func (r *Repository) CreateSession(ctx context.Context, session domaincopilot.Se
 		return domaincopilot.Session{}, fmt.Errorf("create ai session: %w", err)
 	}
 	return session, nil
+}
+
+func (r *Repository) UpdateSession(ctx context.Context, createdBy, sessionID string, session domaincopilot.Session) (domaincopilot.Session, error) {
+	metadata, err := json.Marshal(session.Metadata)
+	if err != nil {
+		return domaincopilot.Session{}, fmt.Errorf("marshal ai session metadata: %w", err)
+	}
+	result := r.db.WithContext(ctx).Exec(`
+		UPDATE ai_sessions
+		SET title = ?, metadata = ?, updated_at = ?
+		WHERE created_by = ? AND id = ? AND deleted_at IS NULL
+	`, session.Title, string(metadata), session.UpdatedAt, createdBy, sessionID)
+	if result.Error != nil {
+		return domaincopilot.Session{}, fmt.Errorf("update ai session: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return domaincopilot.Session{}, fmt.Errorf("ai session not found: %s", sessionID)
+	}
+	return r.GetSession(ctx, createdBy, sessionID)
+}
+
+func (r *Repository) DeleteSession(ctx context.Context, createdBy, sessionID string) error {
+	result := r.db.WithContext(ctx).Exec(`
+		UPDATE ai_sessions
+		SET deleted_at = ?, updated_at = ?
+		WHERE created_by = ? AND id = ? AND deleted_at IS NULL
+	`, time.Now().UTC(), time.Now().UTC(), createdBy, sessionID)
+	if result.Error != nil {
+		return fmt.Errorf("delete ai session: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return fmt.Errorf("ai session not found: %s", sessionID)
+	}
+	return nil
 }
 
 func (r *Repository) ListMessages(ctx context.Context, sessionID string, limit int) ([]domaincopilot.Message, error) {
@@ -292,7 +336,7 @@ func (r *Repository) UpdateAnalysisProfile(ctx context.Context, profileID string
 
 func (r *Repository) ListAutomationPolicies(ctx context.Context) ([]domaincopilot.AutomationPolicy, error) {
 	rows, err := r.db.WithContext(ctx).Raw(`
-		SELECT id, name, enabled, trigger_type, trigger_conditions, dedup_window_seconds, analysis_profile_id, remediation_policy, approval_policy, cooldown_seconds, created_at, updated_at
+		SELECT id, name, enabled, trigger_type, analysis_kinds, trigger_conditions, dedup_window_seconds, analysis_profile_id, remediation_policy, approval_policy, cooldown_seconds, created_at, updated_at
 		FROM ai_automation_policies
 		ORDER BY updated_at DESC, created_at DESC
 	`).Rows()
@@ -312,6 +356,10 @@ func (r *Repository) ListAutomationPolicies(ctx context.Context) ([]domaincopilo
 }
 
 func (r *Repository) CreateAutomationPolicy(ctx context.Context, item domaincopilot.AutomationPolicy) (domaincopilot.AutomationPolicy, error) {
+	analysisKinds, err := json.Marshal(item.AnalysisKinds)
+	if err != nil {
+		return domaincopilot.AutomationPolicy{}, fmt.Errorf("marshal analysis kinds: %w", err)
+	}
 	triggerConditions, err := json.Marshal(item.TriggerConditions)
 	if err != nil {
 		return domaincopilot.AutomationPolicy{}, fmt.Errorf("marshal trigger conditions: %w", err)
@@ -321,15 +369,19 @@ func (r *Repository) CreateAutomationPolicy(ctx context.Context, item domaincopi
 		return domaincopilot.AutomationPolicy{}, fmt.Errorf("marshal approval policy: %w", err)
 	}
 	if err := r.db.WithContext(ctx).Exec(`
-		INSERT INTO ai_automation_policies (id, name, enabled, trigger_type, trigger_conditions, dedup_window_seconds, analysis_profile_id, remediation_policy, approval_policy, cooldown_seconds, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, item.ID, item.Name, item.Enabled, item.TriggerType, string(triggerConditions), item.DedupWindowSeconds, item.AnalysisProfileID, item.RemediationPolicy, string(approvalPolicy), item.CooldownSeconds, item.CreatedAt, item.UpdatedAt).Error; err != nil {
+		INSERT INTO ai_automation_policies (id, name, enabled, trigger_type, analysis_kinds, trigger_conditions, dedup_window_seconds, analysis_profile_id, remediation_policy, approval_policy, cooldown_seconds, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, item.ID, item.Name, item.Enabled, item.TriggerType, string(analysisKinds), string(triggerConditions), item.DedupWindowSeconds, item.AnalysisProfileID, item.RemediationPolicy, string(approvalPolicy), item.CooldownSeconds, item.CreatedAt, item.UpdatedAt).Error; err != nil {
 		return domaincopilot.AutomationPolicy{}, fmt.Errorf("create automation policy: %w", err)
 	}
 	return item, nil
 }
 
 func (r *Repository) UpdateAutomationPolicy(ctx context.Context, policyID string, input domaincopilot.AutomationPolicyInput) (domaincopilot.AutomationPolicy, error) {
+	analysisKinds, err := json.Marshal(input.AnalysisKinds)
+	if err != nil {
+		return domaincopilot.AutomationPolicy{}, fmt.Errorf("marshal analysis kinds: %w", err)
+	}
 	triggerConditions, err := json.Marshal(input.TriggerConditions)
 	if err != nil {
 		return domaincopilot.AutomationPolicy{}, fmt.Errorf("marshal trigger conditions: %w", err)
@@ -340,9 +392,9 @@ func (r *Repository) UpdateAutomationPolicy(ctx context.Context, policyID string
 	}
 	result := r.db.WithContext(ctx).Exec(`
 		UPDATE ai_automation_policies
-		SET name = ?, enabled = ?, trigger_type = ?, trigger_conditions = ?, dedup_window_seconds = ?, analysis_profile_id = ?, remediation_policy = ?, approval_policy = ?, cooldown_seconds = ?, updated_at = ?
+		SET name = ?, enabled = ?, trigger_type = ?, analysis_kinds = ?, trigger_conditions = ?, dedup_window_seconds = ?, analysis_profile_id = ?, remediation_policy = ?, approval_policy = ?, cooldown_seconds = ?, updated_at = ?
 		WHERE id = ?
-	`, input.Name, input.Enabled, input.TriggerType, string(triggerConditions), input.DedupWindowSeconds, input.AnalysisProfileID, input.RemediationPolicy, string(approvalPolicy), input.CooldownSeconds, time.Now().UTC(), policyID)
+	`, input.Name, input.Enabled, input.TriggerType, string(analysisKinds), string(triggerConditions), input.DedupWindowSeconds, input.AnalysisProfileID, input.RemediationPolicy, string(approvalPolicy), input.CooldownSeconds, time.Now().UTC(), policyID)
 	if result.Error != nil {
 		return domaincopilot.AutomationPolicy{}, fmt.Errorf("update automation policy: %w", result.Error)
 	}
@@ -358,8 +410,8 @@ func (r *Repository) ListRootCauseRuns(ctx context.Context, createdBy string, fi
 		limit = 20
 	}
 	query := `
-		SELECT id, title, created_by, analysis_profile_id, trigger_type, status, severity, summary, cluster_id, namespace, workload_kind, workload_name, alert_id,
-			time_range_minutes, question, evidence, hypotheses, recommendations, data_source_snapshot, playbook_results, remediation_plan, dedup_key, created_at, updated_at
+		SELECT id, kind, session_id, title, created_by, analysis_profile_id, trigger_type, status, severity, summary, cluster_id, namespace, workload_kind, workload_name, alert_id,
+			time_range_minutes, question, evidence, hypotheses, recommendations, tool_executions, data_source_snapshot, playbook_results, remediation_plan, dedup_key, created_at, updated_at
 		FROM ai_root_cause_runs
 		WHERE created_by = ?
 	`
@@ -396,8 +448,8 @@ func (r *Repository) ListRootCauseRuns(ctx context.Context, createdBy string, fi
 
 func (r *Repository) GetRootCauseRun(ctx context.Context, createdBy, runID string) (domaincopilot.RootCauseRun, error) {
 	row := r.db.WithContext(ctx).Raw(`
-		SELECT id, title, created_by, analysis_profile_id, trigger_type, status, severity, summary, cluster_id, namespace, workload_kind, workload_name, alert_id,
-			time_range_minutes, question, evidence, hypotheses, recommendations, data_source_snapshot, playbook_results, remediation_plan, dedup_key, created_at, updated_at
+		SELECT id, kind, session_id, title, created_by, analysis_profile_id, trigger_type, status, severity, summary, cluster_id, namespace, workload_kind, workload_name, alert_id,
+			time_range_minutes, question, evidence, hypotheses, recommendations, tool_executions, data_source_snapshot, playbook_results, remediation_plan, dedup_key, created_at, updated_at
 		FROM ai_root_cause_runs
 		WHERE created_by = ? AND id = ?
 		LIMIT 1
@@ -418,6 +470,10 @@ func (r *Repository) CreateRootCauseRun(ctx context.Context, run domaincopilot.R
 	if err != nil {
 		return domaincopilot.RootCauseRun{}, fmt.Errorf("marshal root cause recommendations: %w", err)
 	}
+	toolExecutions, err := json.Marshal(run.ToolExecutions)
+	if err != nil {
+		return domaincopilot.RootCauseRun{}, fmt.Errorf("marshal root cause tool executions: %w", err)
+	}
 	dataSourceSnapshot, err := json.Marshal(run.DataSourceSnapshot)
 	if err != nil {
 		return domaincopilot.RootCauseRun{}, fmt.Errorf("marshal root cause data source snapshot: %w", err)
@@ -432,11 +488,13 @@ func (r *Repository) CreateRootCauseRun(ctx context.Context, run domaincopilot.R
 	}
 	if err := r.db.WithContext(ctx).Exec(`
 		INSERT INTO ai_root_cause_runs (
-			id, title, created_by, analysis_profile_id, trigger_type, status, severity, summary, cluster_id, namespace, workload_kind, workload_name, alert_id,
-			time_range_minutes, question, evidence, hypotheses, recommendations, data_source_snapshot, playbook_results, remediation_plan, dedup_key, created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			id, kind, session_id, title, created_by, analysis_profile_id, trigger_type, status, severity, summary, cluster_id, namespace, workload_kind, workload_name, alert_id,
+			time_range_minutes, question, evidence, hypotheses, recommendations, tool_executions, data_source_snapshot, playbook_results, remediation_plan, dedup_key, created_at, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`,
 		run.ID,
+		run.Kind,
+		nullableString(run.SessionID),
 		run.Title,
 		run.CreatedBy,
 		nullableString(run.AnalysisProfileID),
@@ -454,6 +512,7 @@ func (r *Repository) CreateRootCauseRun(ctx context.Context, run domaincopilot.R
 		string(evidence),
 		string(hypotheses),
 		string(recommendations),
+		string(toolExecutions),
 		string(dataSourceSnapshot),
 		string(playbookResults),
 		string(remediationPlan),
@@ -684,6 +743,18 @@ func scanSession(rows *sql.Rows) (domaincopilot.Session, error) {
 	return item, nil
 }
 
+func scanSessionRow(row *sql.Row) (domaincopilot.Session, error) {
+	var item domaincopilot.Session
+	var metadata []byte
+	if err := row.Scan(&item.ID, &item.Title, &item.CreatedBy, &metadata, &item.CreatedAt, &item.UpdatedAt); err != nil {
+		return domaincopilot.Session{}, fmt.Errorf("scan ai session row: %w", err)
+	}
+	if len(metadata) > 0 {
+		_ = json.Unmarshal(metadata, &item.Metadata)
+	}
+	return item, nil
+}
+
 func scanMessage(rows *sql.Rows) (domaincopilot.Message, error) {
 	var item domaincopilot.Message
 	var metadata []byte
@@ -834,8 +905,12 @@ func scanAutomationPolicy(rows *sql.Rows) (domaincopilot.AutomationPolicy, error
 	var item domaincopilot.AutomationPolicy
 	var triggerConditions []byte
 	var approvalPolicy []byte
-	if err := rows.Scan(&item.ID, &item.Name, &item.Enabled, &item.TriggerType, &triggerConditions, &item.DedupWindowSeconds, &item.AnalysisProfileID, &item.RemediationPolicy, &approvalPolicy, &item.CooldownSeconds, &item.CreatedAt, &item.UpdatedAt); err != nil {
+	var analysisKinds []byte
+	if err := rows.Scan(&item.ID, &item.Name, &item.Enabled, &item.TriggerType, &analysisKinds, &triggerConditions, &item.DedupWindowSeconds, &item.AnalysisProfileID, &item.RemediationPolicy, &approvalPolicy, &item.CooldownSeconds, &item.CreatedAt, &item.UpdatedAt); err != nil {
 		return domaincopilot.AutomationPolicy{}, fmt.Errorf("scan automation policy: %w", err)
+	}
+	if len(analysisKinds) > 0 {
+		_ = json.Unmarshal(analysisKinds, &item.AnalysisKinds)
 	}
 	if len(triggerConditions) > 0 {
 		_ = json.Unmarshal(triggerConditions, &item.TriggerConditions)
@@ -850,8 +925,12 @@ func scanAutomationPolicyRow(row *sql.Row) (domaincopilot.AutomationPolicy, erro
 	var item domaincopilot.AutomationPolicy
 	var triggerConditions []byte
 	var approvalPolicy []byte
-	if err := row.Scan(&item.ID, &item.Name, &item.Enabled, &item.TriggerType, &triggerConditions, &item.DedupWindowSeconds, &item.AnalysisProfileID, &item.RemediationPolicy, &approvalPolicy, &item.CooldownSeconds, &item.CreatedAt, &item.UpdatedAt); err != nil {
+	var analysisKinds []byte
+	if err := row.Scan(&item.ID, &item.Name, &item.Enabled, &item.TriggerType, &analysisKinds, &triggerConditions, &item.DedupWindowSeconds, &item.AnalysisProfileID, &item.RemediationPolicy, &approvalPolicy, &item.CooldownSeconds, &item.CreatedAt, &item.UpdatedAt); err != nil {
 		return domaincopilot.AutomationPolicy{}, fmt.Errorf("scan automation policy: %w", err)
+	}
+	if len(analysisKinds) > 0 {
+		_ = json.Unmarshal(analysisKinds, &item.AnalysisKinds)
 	}
 	if len(triggerConditions) > 0 {
 		_ = json.Unmarshal(triggerConditions, &item.TriggerConditions)
@@ -884,6 +963,8 @@ func (r *Repository) getAutomationPolicy(ctx context.Context, policyID string) (
 
 func scanRootCauseRun(rows *sql.Rows) (domaincopilot.RootCauseRun, error) {
 	var item domaincopilot.RootCauseRun
+	var kind string
+	var sessionID sql.NullString
 	var analysisProfileID sql.NullString
 	var triggerType sql.NullString
 	var clusterID sql.NullString
@@ -895,12 +976,15 @@ func scanRootCauseRun(rows *sql.Rows) (domaincopilot.RootCauseRun, error) {
 	var evidence []byte
 	var hypotheses []byte
 	var recommendations []byte
+	var toolExecutions []byte
 	var dataSourceSnapshot []byte
 	var playbookResults []byte
 	var remediationPlan []byte
 	var dedupKey sql.NullString
 	if err := rows.Scan(
 		&item.ID,
+		&kind,
+		&sessionID,
 		&item.Title,
 		&item.CreatedBy,
 		&analysisProfileID,
@@ -918,6 +1002,7 @@ func scanRootCauseRun(rows *sql.Rows) (domaincopilot.RootCauseRun, error) {
 		&evidence,
 		&hypotheses,
 		&recommendations,
+		&toolExecutions,
 		&dataSourceSnapshot,
 		&playbookResults,
 		&remediationPlan,
@@ -926,6 +1011,10 @@ func scanRootCauseRun(rows *sql.Rows) (domaincopilot.RootCauseRun, error) {
 		&item.UpdatedAt,
 	); err != nil {
 		return domaincopilot.RootCauseRun{}, fmt.Errorf("scan root cause run: %w", err)
+	}
+	item.Kind = kind
+	if sessionID.Valid {
+		item.SessionID = sessionID.String
 	}
 	if analysisProfileID.Valid {
 		item.AnalysisProfileID = analysisProfileID.String
@@ -962,6 +1051,9 @@ func scanRootCauseRun(rows *sql.Rows) (domaincopilot.RootCauseRun, error) {
 	}
 	if len(recommendations) > 0 {
 		_ = json.Unmarshal(recommendations, &item.Recommendations)
+	}
+	if len(toolExecutions) > 0 {
+		_ = json.Unmarshal(toolExecutions, &item.ToolExecutions)
 	}
 	if len(dataSourceSnapshot) > 0 {
 		_ = json.Unmarshal(dataSourceSnapshot, &item.DataSourceSnapshot)
@@ -977,6 +1069,8 @@ func scanRootCauseRun(rows *sql.Rows) (domaincopilot.RootCauseRun, error) {
 
 func scanRootCauseRunRow(row *sql.Row) (domaincopilot.RootCauseRun, error) {
 	var item domaincopilot.RootCauseRun
+	var kind string
+	var sessionID sql.NullString
 	var analysisProfileID sql.NullString
 	var triggerType sql.NullString
 	var clusterID sql.NullString
@@ -988,12 +1082,15 @@ func scanRootCauseRunRow(row *sql.Row) (domaincopilot.RootCauseRun, error) {
 	var evidence []byte
 	var hypotheses []byte
 	var recommendations []byte
+	var toolExecutions []byte
 	var dataSourceSnapshot []byte
 	var playbookResults []byte
 	var remediationPlan []byte
 	var dedupKey sql.NullString
 	if err := row.Scan(
 		&item.ID,
+		&kind,
+		&sessionID,
 		&item.Title,
 		&item.CreatedBy,
 		&analysisProfileID,
@@ -1011,6 +1108,7 @@ func scanRootCauseRunRow(row *sql.Row) (domaincopilot.RootCauseRun, error) {
 		&evidence,
 		&hypotheses,
 		&recommendations,
+		&toolExecutions,
 		&dataSourceSnapshot,
 		&playbookResults,
 		&remediationPlan,
@@ -1019,6 +1117,10 @@ func scanRootCauseRunRow(row *sql.Row) (domaincopilot.RootCauseRun, error) {
 		&item.UpdatedAt,
 	); err != nil {
 		return domaincopilot.RootCauseRun{}, fmt.Errorf("scan root cause run: %w", err)
+	}
+	item.Kind = kind
+	if sessionID.Valid {
+		item.SessionID = sessionID.String
 	}
 	if analysisProfileID.Valid {
 		item.AnalysisProfileID = analysisProfileID.String
@@ -1055,6 +1157,9 @@ func scanRootCauseRunRow(row *sql.Row) (domaincopilot.RootCauseRun, error) {
 	}
 	if len(recommendations) > 0 {
 		_ = json.Unmarshal(recommendations, &item.Recommendations)
+	}
+	if len(toolExecutions) > 0 {
+		_ = json.Unmarshal(toolExecutions, &item.ToolExecutions)
 	}
 	if len(dataSourceSnapshot) > 0 {
 		_ = json.Unmarshal(dataSourceSnapshot, &item.DataSourceSnapshot)

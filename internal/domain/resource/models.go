@@ -563,6 +563,57 @@ type HelmReleaseView struct {
 	AllowedActions []string `json:"allowedActions,omitempty"`
 }
 
+type HelmReleaseDetailView struct {
+	Name              string            `json:"name"`
+	Namespace         string            `json:"namespace"`
+	Revision          string            `json:"revision,omitempty"`
+	Status            string            `json:"status,omitempty"`
+	Chart             string            `json:"chart,omitempty"`
+	ChartName         string            `json:"chartName,omitempty"`
+	ChartVersion      string            `json:"chartVersion,omitempty"`
+	AppVersion        string            `json:"appVersion,omitempty"`
+	StorageDriver     string            `json:"storageDriver,omitempty"`
+	Description       string            `json:"description,omitempty"`
+	CreatedAt         string            `json:"createdAt,omitempty"`
+	UpdatedAt         string            `json:"updatedAt,omitempty"`
+	FirstDeployedAt   string            `json:"firstDeployedAt,omitempty"`
+	LastDeployedAt    string            `json:"lastDeployedAt,omitempty"`
+	Notes             string            `json:"notes,omitempty"`
+	Labels            map[string]string `json:"labels,omitempty"`
+	Annotations       map[string]string `json:"annotations,omitempty"`
+	AgeSeconds        int64             `json:"ageSeconds"`
+	AllowedActions    []string          `json:"allowedActions,omitempty"`
+	ValuesEditable    bool              `json:"valuesEditable"`
+	ValuesDiffEnabled bool              `json:"valuesDiffEnabled"`
+}
+
+type HelmReleaseHistoryView struct {
+	Name           string   `json:"name"`
+	Namespace      string   `json:"namespace"`
+	Revision       string   `json:"revision"`
+	Status         string   `json:"status,omitempty"`
+	Chart          string   `json:"chart,omitempty"`
+	ChartVersion   string   `json:"chartVersion,omitempty"`
+	AppVersion     string   `json:"appVersion,omitempty"`
+	Description    string   `json:"description,omitempty"`
+	UpdatedAt      string   `json:"updatedAt,omitempty"`
+	CreatedAt      string   `json:"createdAt,omitempty"`
+	ManifestDigest string   `json:"manifestDigest,omitempty"`
+	ValuesDigest   string   `json:"valuesDigest,omitempty"`
+	AllowedActions []string `json:"allowedActions,omitempty"`
+}
+
+type HelmValuesView struct {
+	Name           string   `json:"name"`
+	Namespace      string   `json:"namespace"`
+	Revision       string   `json:"revision,omitempty"`
+	Content        string   `json:"content"`
+	Original       string   `json:"original,omitempty"`
+	Editable       bool     `json:"editable"`
+	DiffEnabled    bool     `json:"diffEnabled"`
+	AllowedActions []string `json:"allowedActions,omitempty"`
+}
+
 type ConfigMapView struct {
 	Name           string   `json:"name"`
 	Namespace      string   `json:"namespace"`

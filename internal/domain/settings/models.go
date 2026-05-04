@@ -46,8 +46,17 @@ type AIProviderSettings struct {
 	Model   string `json:"model"`
 }
 
+type AISkillSettings struct {
+	ID          string   `json:"id"`
+	Name        string   `json:"name"`
+	Description string   `json:"description,omitempty"`
+	Enabled     bool     `json:"enabled"`
+	Scopes      []string `json:"scopes,omitempty"`
+}
+
 type AISettings struct {
-	Provider AIProviderSettings `json:"provider"`
+	Provider       AIProviderSettings `json:"provider"`
+	SkillsRegistry []AISkillSettings  `json:"skillsRegistry,omitempty"`
 }
 
 type BrandingSettings struct {

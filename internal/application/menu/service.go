@@ -8,19 +8,33 @@ import (
 
 	"github.com/google/uuid"
 	appaccess "github.com/kubecrux/kubecrux/internal/application/access"
+	domainaudit "github.com/kubecrux/kubecrux/internal/domain/audit"
 	domainidentity "github.com/kubecrux/kubecrux/internal/domain/identity"
 	domainmenu "github.com/kubecrux/kubecrux/internal/domain/menu"
+	domainoperation "github.com/kubecrux/kubecrux/internal/domain/operation"
+	"github.com/kubecrux/kubecrux/internal/platform/operationentry"
+	"github.com/kubecrux/kubecrux/internal/platform/requestctx"
 	"github.com/kubecrux/kubecrux/internal/platform/apperrors"
 	"gorm.io/gorm"
 )
 
+type AuditRecorder interface {
+	Record(context.Context, domainaudit.Entry) error
+}
+
+type OperationRecorder interface {
+	Record(context.Context, domainoperation.Entry) error
+}
+
 type Service struct {
 	repo        domainmenu.Repository
 	permissions *appaccess.PermissionResolver
+	audit       AuditRecorder
+	operations  OperationRecorder
 }
 
-func New(repo domainmenu.Repository, permissions *appaccess.PermissionResolver) *Service {
-	return &Service{repo: repo, permissions: permissions}
+func New(repo domainmenu.Repository, permissions *appaccess.PermissionResolver, audit AuditRecorder, operations OperationRecorder) *Service {
+	return &Service{repo: repo, permissions: permissions, audit: audit, operations: operations}
 }
 
 func (s *Service) ListAll(ctx context.Context, principal domainidentity.Principal) ([]domainmenu.Record, error) {
@@ -113,7 +127,11 @@ func (s *Service) Create(ctx context.Context, principal domainidentity.Principal
 	if err != nil {
 		return domainmenu.Record{}, err
 	}
-	return s.repo.Create(ctx, item)
+	created, err := s.repo.Create(ctx, item)
+	if err == nil {
+		s.recordWriteLogs(ctx, principal, "system.menu.create", created, "success", "created menu")
+	}
+	return created, err
 }
 
 func (s *Service) Update(ctx context.Context, principal domainidentity.Principal, menuID string, input domainmenu.Input) (domainmenu.Record, error) {
@@ -132,6 +150,7 @@ func (s *Service) Update(ctx context.Context, principal domainidentity.Principal
 		}
 		return domainmenu.Record{}, err
 	}
+	s.recordWriteLogs(ctx, principal, "system.menu.update", updated, "success", "updated menu")
 	return updated, nil
 }
 
@@ -148,6 +167,7 @@ func (s *Service) Delete(ctx context.Context, principal domainidentity.Principal
 		}
 		return err
 	}
+	s.recordDeleteLogs(ctx, principal, strings.TrimSpace(menuID))
 	return nil
 }
 
@@ -263,4 +283,96 @@ func uniqueStrings(items []string) []string {
 
 func (s *Service) authorize(ctx context.Context, principal domainidentity.Principal, permissionKey string) error {
 	return appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, permissionKey)
+}
+
+func (s *Service) recordWriteLogs(ctx context.Context, principal domainidentity.Principal, operationType string, item domainmenu.Record, result string, summary string) {
+	meta := requestctx.FromContext(ctx)
+	if s.audit != nil {
+		_ = s.audit.Record(ctx, domainaudit.Entry{
+			ActorID:       principal.UserID,
+			ActorName:     principal.UserName,
+			Roles:         principal.Roles,
+			Teams:         principal.Teams,
+			ResourceKind:  "Menu",
+			ResourceName:  item.Path,
+			Action:        strings.TrimPrefix(operationType, "system.menu."),
+			Result:        result,
+			Summary:       summary,
+			RequestPath:   meta.Path,
+			RequestMethod: meta.Method,
+			RequestID:     meta.RequestID,
+			SourceIP:      meta.SourceIP,
+			Metadata: map[string]any{
+				"menuId":    item.ID,
+				"labelZh":   item.LabelZH,
+				"labelEn":   item.LabelEN,
+				"parentId":  item.ParentID,
+				"iconKey":   item.IconKey,
+				"menuPath":  item.Path,
+				"menuGroup": item.Section,
+				"source":    meta.Source,
+			},
+		})
+	}
+	if s.operations != nil {
+		_ = s.operations.Record(ctx, operationentry.New(
+			ctx,
+			principal,
+			operationType,
+			map[string]any{
+				"module":       "system",
+				"resourceKind": "Menu",
+				"targetId":     item.ID,
+				"targetLabel":  item.LabelZH,
+				"targetPath":   item.Path,
+			},
+			result,
+			summary,
+			map[string]any{
+				"menuId": item.ID,
+				"path":   item.Path,
+			},
+		))
+	}
+}
+
+func (s *Service) recordDeleteLogs(ctx context.Context, principal domainidentity.Principal, menuID string) {
+	meta := requestctx.FromContext(ctx)
+	if s.audit != nil {
+		_ = s.audit.Record(ctx, domainaudit.Entry{
+			ActorID:       principal.UserID,
+			ActorName:     principal.UserName,
+			Roles:         principal.Roles,
+			Teams:         principal.Teams,
+			ResourceKind:  "Menu",
+			ResourceName:  menuID,
+			Action:        "delete",
+			Result:        "success",
+			Summary:       "deleted menu",
+			RequestPath:   meta.Path,
+			RequestMethod: meta.Method,
+			RequestID:     meta.RequestID,
+			SourceIP:      meta.SourceIP,
+			Metadata: map[string]any{
+				"menuId": menuID,
+				"source": meta.Source,
+			},
+		})
+	}
+	if s.operations != nil {
+		_ = s.operations.Record(ctx, operationentry.New(
+			ctx,
+			principal,
+			"system.menu.delete",
+			map[string]any{
+				"module":       "system",
+				"resourceKind": "Menu",
+				"targetId":     menuID,
+				"targetLabel":  menuID,
+			},
+			"success",
+			"deleted menu",
+			map[string]any{"menuId": menuID},
+		))
+	}
 }

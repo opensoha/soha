@@ -73,17 +73,21 @@ const StoragePvPage = lazyNamed(() => import('@/features/platform/network-storag
 const StorageClassesPage = lazyNamed(() => import('@/features/platform/network-storage-pages'), 'StorageClassesPage')
 
 const CRDPage = lazyNamed(() => import('@/features/platform/extensions-pages'), 'CRDPage')
+const CRDApiGroupDetailPage = lazyNamed(() => import('@/features/platform/extensions-pages'), 'CRDApiGroupDetailPage')
 const HelmReleasesPage = lazyNamed(() => import('@/features/platform/extensions-pages'), 'HelmReleasesPage')
+const HelmReleaseDetailPage = lazyNamed(() => import('@/features/platform/extensions-pages'), 'HelmReleaseDetailPage')
 const HelmChartsPage = lazyNamed(() => import('@/features/platform/extensions-pages'), 'HelmChartsPage')
 
-const ApplicationsPage = lazyNamed(() => import('@/features/delivery/delivery-pages'), 'ApplicationsPage')
+const ApplicationsPage = lazyNamed(() => import('@/features/delivery/delivery-app-pages'), 'ApplicationsPage')
+const ApplicationDetailPage = lazyNamed(() => import('@/features/delivery/delivery-app-pages'), 'ApplicationDetailPage')
+const BuildTemplatesPage = lazyNamed(() => import('@/features/delivery/delivery-app-pages'), 'BuildTemplatesPage')
 const BusinessLinesPage = lazyNamed(() => import('@/features/delivery/delivery-catalog-pages'), 'BusinessLinesPage')
 const DeliveryEnvironmentsPage = lazyNamed(() => import('@/features/delivery/delivery-catalog-pages'), 'DeliveryEnvironmentsPage')
 const ApplicationEnvironmentsPage = lazyNamed(() => import('@/features/delivery/delivery-catalog-pages'), 'ApplicationEnvironmentsPage')
 const ApplicationEnvironmentDetailPage = lazyNamed(() => import('@/features/delivery/delivery-catalog-pages'), 'ApplicationEnvironmentDetailPage')
 const WorkflowTemplatesPage = lazyNamed(() => import('@/features/delivery/delivery-catalog-pages'), 'WorkflowTemplatesPage')
 const ReleaseBoardPage = lazyNamed(() => import('@/features/delivery/delivery-catalog-pages'), 'ReleaseBoardPage')
-const WorkflowsPage = lazyNamed(() => import('@/features/delivery/delivery-pages'), 'WorkflowsPage')
+const WorkflowsPage = lazyNamed(() => import('@/features/delivery/delivery-app-pages'), 'WorkflowsPage')
 const ReleasesPage = lazyNamed(() => import('@/features/delivery/delivery-pages'), 'ReleasesPage')
 const RegistriesPage = lazyNamed(() => import('@/features/delivery/delivery-pages'), 'RegistriesPage')
 
@@ -93,10 +97,10 @@ const NotificationsPage = lazyNamed(() => import('@/features/observability/monit
 const EventsPage = lazyNamed(() => import('@/features/observability/monitoring-pages'), 'EventsPage')
 const OnCallPage = lazyNamed(() => import('@/features/observability/monitoring-pages'), 'OnCallPage')
 
-const ChatPage = lazyNamed(() => import('@/features/copilot/chat-page'), 'ChatPage')
-const RootCauseAnalysisPage = lazyNamed(() => import('@/features/copilot/analysis-pages'), 'RootCauseAnalysisPage')
-const PerformanceAnalysisPage = lazyNamed(() => import('@/features/copilot/analysis-pages'), 'PerformanceAnalysisPage')
-const InspectionCenterPage = lazyNamed(() => import('@/features/copilot/analysis-pages'), 'InspectionCenterPage')
+const AIObserveOverviewPage = lazyNamed(() => import('@/features/copilot/ai-observe-pages'), 'AIObserveOverviewPage')
+const AIWorkbenchPage = lazyNamed(() => import('@/features/copilot/ai-observe-pages'), 'AIWorkbenchPage')
+const AIOperationsPage = lazyNamed(() => import('@/features/copilot/ai-observe-pages'), 'AIOperationsPage')
+const AIToolsPage = lazyNamed(() => import('@/features/copilot/ai-observe-pages'), 'AIToolsPage')
 
 const AccessCenterPage = lazyNamed(() => import('@/features/access/access-pages'), 'AccessCenterPage')
 const AccessUsersPage = lazyNamed(() => import('@/features/access/access-pages'), 'AccessUsersPage')
@@ -193,15 +197,19 @@ export function AppRouter() {
           <Route path="/storage/storageclasses" element={<LazyPage><StorageClassesPage /></LazyPage>} />
 
           <Route path="/extensions" element={<LazyPage><CRDPage /></LazyPage>} />
+          <Route path="/extensions/apis/:groupName" element={<LazyPage><CRDApiGroupDetailPage /></LazyPage>} />
           <Route path="/helm" element={<Navigate to="/helm/releases" replace />} />
           <Route path="/helm/releases" element={<LazyPage><HelmReleasesPage /></LazyPage>} />
+          <Route path="/helm/releases/:releaseName" element={<LazyPage><HelmReleaseDetailPage /></LazyPage>} />
           <Route path="/helm/charts" element={<LazyPage><HelmChartsPage /></LazyPage>} />
 
           <Route path="/applications" element={<LazyPage><ApplicationsPage /></LazyPage>} />
+          <Route path="/applications/:applicationId" element={<LazyPage><ApplicationDetailPage /></LazyPage>} />
           <Route path="/business-lines" element={<LazyPage><BusinessLinesPage /></LazyPage>} />
           <Route path="/delivery-environments" element={<LazyPage><DeliveryEnvironmentsPage /></LazyPage>} />
           <Route path="/application-environments" element={<LazyPage><ApplicationEnvironmentsPage /></LazyPage>} />
           <Route path="/application-environments/:applicationEnvironmentId" element={<LazyPage><ApplicationEnvironmentDetailPage /></LazyPage>} />
+          <Route path="/build-templates" element={<LazyPage><BuildTemplatesPage /></LazyPage>} />
           <Route path="/workflow-templates" element={<LazyPage><WorkflowTemplatesPage /></LazyPage>} />
           <Route path="/release-board" element={<LazyPage><ReleaseBoardPage /></LazyPage>} />
           <Route path="/workflows" element={<LazyPage><WorkflowsPage /></LazyPage>} />
@@ -215,12 +223,15 @@ export function AppRouter() {
           <Route path="/observability/oncall" element={<LazyPage><OnCallPage /></LazyPage>} />
           <Route path="/observability/events" element={<LazyPage><EventsPage /></LazyPage>} />
 
-          <Route path="/ai-observe" element={<Navigate to="/ai-observe/root-cause" replace />} />
-          <Route path="/ai-observe/root-cause" element={<LazyPage><RootCauseAnalysisPage /></LazyPage>} />
-          <Route path="/ai-observe/performance" element={<LazyPage><PerformanceAnalysisPage /></LazyPage>} />
-          <Route path="/ai-observe/chat" element={<LazyPage><ChatPage /></LazyPage>} />
-          <Route path="/ai-observe/inspection" element={<LazyPage><InspectionCenterPage /></LazyPage>} />
-          <Route path="/chat" element={<Navigate to="/ai-observe/chat" replace />} />
+          <Route path="/ai-observe" element={<LazyPage><AIObserveOverviewPage /></LazyPage>} />
+          <Route path="/ai-observe/workbench" element={<LazyPage><AIWorkbenchPage /></LazyPage>} />
+          <Route path="/ai-observe/operations" element={<LazyPage><AIOperationsPage /></LazyPage>} />
+          <Route path="/ai-observe/tools" element={<LazyPage><AIToolsPage /></LazyPage>} />
+          <Route path="/ai-observe/root-cause" element={<Navigate to="/ai-observe/workbench?mode=root_cause" replace />} />
+          <Route path="/ai-observe/performance" element={<Navigate to="/ai-observe/workbench?mode=performance" replace />} />
+          <Route path="/ai-observe/chat" element={<Navigate to="/ai-observe/workbench" replace />} />
+          <Route path="/ai-observe/inspection" element={<Navigate to="/ai-observe/operations" replace />} />
+          <Route path="/chat" element={<Navigate to="/ai-observe/workbench" replace />} />
 
           <Route path="/access" element={<LazyPage><AccessCenterPage /></LazyPage>} />
           <Route path="/access/users" element={<LazyPage><AccessUsersPage /></LazyPage>} />

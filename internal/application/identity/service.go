@@ -16,8 +16,10 @@ import (
 	appaccess "github.com/kubecrux/kubecrux/internal/application/access"
 	domainaudit "github.com/kubecrux/kubecrux/internal/domain/audit"
 	domainidentity "github.com/kubecrux/kubecrux/internal/domain/identity"
+	domainoperation "github.com/kubecrux/kubecrux/internal/domain/operation"
 	cfgpkg "github.com/kubecrux/kubecrux/internal/infrastructure/config"
 	"github.com/kubecrux/kubecrux/internal/platform/apperrors"
+	"github.com/kubecrux/kubecrux/internal/platform/operationentry"
 	"github.com/kubecrux/kubecrux/internal/platform/requestctx"
 	userrepo "github.com/kubecrux/kubecrux/internal/repository/user"
 	"golang.org/x/crypto/bcrypt"
@@ -55,6 +57,10 @@ type AuditRecorder interface {
 	Record(context.Context, domainaudit.Entry) error
 }
 
+type OperationRecorder interface {
+	Record(context.Context, domainoperation.Entry) error
+}
+
 type SettingsReader interface {
 	ResolveOIDCSettings(context.Context) (cfgpkg.OIDCConfig, error)
 }
@@ -63,6 +69,7 @@ type Service struct {
 	cfg         cfgpkg.AuthConfig
 	users       UserRepository
 	audit       AuditRecorder
+	operations  OperationRecorder
 	settings    SettingsReader
 	permissions *appaccess.PermissionResolver
 }
@@ -95,8 +102,8 @@ type oidcProfile struct {
 	Nonce             string `json:"nonce"`
 }
 
-func New(_ context.Context, cfg cfgpkg.AuthConfig, users UserRepository, audit AuditRecorder, settings SettingsReader, permissions *appaccess.PermissionResolver) (*Service, error) {
-	return &Service{cfg: cfg, users: users, audit: audit, settings: settings, permissions: permissions}, nil
+func New(_ context.Context, cfg cfgpkg.AuthConfig, users UserRepository, audit AuditRecorder, operations OperationRecorder, settings SettingsReader, permissions *appaccess.PermissionResolver) (*Service, error) {
+	return &Service{cfg: cfg, users: users, audit: audit, operations: operations, settings: settings, permissions: permissions}, nil
 }
 
 func (s *Service) ListProviders(ctx context.Context) []domainidentity.Provider {
@@ -273,6 +280,26 @@ func (s *Service) RevokeSessionByID(ctx context.Context, principal domainidentit
 		"targetUserId": session.UserID,
 		"sessionId":    session.ID,
 	})
+	if s.operations != nil {
+		_ = s.operations.Record(ctx, operationentry.New(
+			ctx,
+			principal,
+			"system.session.revoke",
+			map[string]any{
+				"module":       "system",
+				"resourceKind": "Session",
+				"targetId":     session.ID,
+				"targetLabel":  session.UserName,
+				"userId":       session.UserID,
+			},
+			"success",
+			"admin revoked user session",
+			map[string]any{
+				"targetUserId": session.UserID,
+				"sessionId":    session.ID,
+			},
+		))
+	}
 	return nil
 }
 

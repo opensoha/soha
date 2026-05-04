@@ -3,108 +3,52 @@ import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { Avatar, Breadcrumb, Button, Dropdown, Layout, Menu, Spin } from 'antd'
 import type { MenuProps } from 'antd'
 import {
-  AlertOutlined,
-  AppstoreOutlined,
-  BellOutlined,
-  BookOutlined,
-  CommentOutlined,
-  DashboardOutlined,
-  DesktopOutlined,
-  DeploymentUnitOutlined,
-  FileOutlined,
-  GlobalOutlined,
-  HddOutlined,
-  InboxOutlined,
-  LinkOutlined,
-  LockOutlined,
-  MenuOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
   MoonOutlined,
-  OrderedListOutlined,
   QuestionCircleOutlined,
-  SafetyOutlined,
-  SendOutlined,
-  SettingOutlined,
   SunOutlined,
-  TeamOutlined,
   TranslationOutlined,
-  UserOutlined,
-  UserSwitchOutlined,
 } from '@ant-design/icons'
-import type { ReactNode } from 'react'
 import { HeaderPreferenceButton } from '@/components/header-preference-button'
+import { AnnouncementBell } from '@/features/announcements/announcement-center'
+import { resolveMenuIcon } from '@/features/system/menu-icons'
+import { resolveMenuSectionLabel } from '@/features/system/menu-schema'
 import { useI18n } from '@/i18n'
 import { useBrandingSettings } from '@/features/settings/use-branding-settings'
-import { getAccessibleSidebarNav, getRouteMeta, getParentRouteMeta } from '@/routes/meta'
+import { getAccessibleSidebarNav, getRouteMeta, getParentRouteMeta, resolveRouteMenuId } from '@/routes/meta'
 import { usePermissionSnapshot } from '@/features/auth/permission-snapshot'
 import { useAuthStore } from '@/stores/auth-store'
 import { usePreferencesStore } from '@/stores/preferences-store'
 import { resolveThemeMode, watchSystemThemeMode } from '@/theme/semi-theme'
-import type { SidebarNavItem } from '@/types'
+import type { RuntimeMenuNode } from '@/types'
 import { getNormalizedBranding } from '@/features/settings/use-branding-settings'
 
 const { Sider, Header, Content } = Layout
 
-const iconMap: Record<string, ReactNode> = {
-  IconDesktop: <DesktopOutlined />,
-  IconGlobe: <GlobalOutlined />,
-  IconGridView: <AppstoreOutlined />,
-  IconConnection: <LinkOutlined />,
-  IconServer: <HddOutlined />,
-  IconPuzzle: <DeploymentUnitOutlined />,
-  IconAppCenter: <AppstoreOutlined />,
-  IconFlow: <SendOutlined />,
-  IconSend: <SendOutlined />,
-  IconInbox: <InboxOutlined />,
-  IconPulse: <DashboardOutlined />,
-  IconAlertTriangle: <AlertOutlined />,
-  IconBell: <BellOutlined />,
-  IconUserCircle: <UserSwitchOutlined />,
-  IconComment: <CommentOutlined />,
-  IconShield: <SafetyOutlined />,
-  IconUser: <UserOutlined />,
-  IconUserGroup: <TeamOutlined />,
-  IconSetting: <SettingOutlined />,
-  IconMenu: <MenuOutlined />,
-  IconFile: <FileOutlined />,
-  IconList: <OrderedListOutlined />,
-  IconBookOpen: <BookOutlined />,
-  IconLock: <LockOutlined />,
+function buildMenuNodeItem(node: RuntimeMenuNode, localeCode: 'zh_CN' | 'en_US'): NonNullable<MenuProps['items']>[number] {
+  const label = localeCode === 'en_US' && node.labelEn ? node.labelEn : node.labelZh
+  if (node.children?.length) {
+    return {
+      key: node.id,
+      icon: resolveMenuIcon(node.iconKey),
+      label,
+      children: node.children.map((child) => buildMenuNodeItem(child, localeCode)),
+    }
+  }
+  return {
+    key: node.id,
+    icon: resolveMenuIcon(node.iconKey),
+    label,
+  }
 }
 
-function buildMenuItems(sidebarNav: SidebarNavItem[], t: (key: string, fallback?: string) => string): MenuProps['items'] {
-  const groupLabels: Record<string, string> = {
-    overview: '概览',
-    platform: '平台管理',
-    catalog: '基础目录',
-    delivery: '应用交付',
-    observe: '运维智能',
-    access: '访问控制',
-    system: '系统管理',
-    settings: '设置中心',
-  }
-
+function buildMenuItems(sidebarNav: RuntimeMenuNode[], localeCode: 'zh_CN' | 'en_US'): MenuProps['items'] {
   const groups = new Map<string, NonNullable<MenuProps['items']>[number][]>()
 
   for (const item of sidebarNav) {
-    const groupKey = item.route.group
-    const menuItem: NonNullable<MenuProps['items']>[number] = item.children?.length
-      ? {
-          key: item.route.id,
-          icon: iconMap[item.route.icon],
-          label: t(`route.${item.route.id}.title`, item.route.title),
-          children: item.children.map((child) => ({
-            key: child.id,
-            label: t(`route.${child.id}.title`, child.title),
-          })),
-        }
-      : {
-          key: item.route.id,
-          icon: iconMap[item.route.icon],
-          label: t(`route.${item.route.id}.title`, item.route.title),
-        }
-
+    const groupKey = item.section || 'control'
+    const menuItem = buildMenuNodeItem(item, localeCode)
     const current = groups.get(groupKey) ?? []
     current.push(menuItem)
     groups.set(groupKey, current)
@@ -113,22 +57,47 @@ function buildMenuItems(sidebarNav: SidebarNavItem[], t: (key: string, fallback?
   return Array.from(groups.entries()).map(([groupKey, items]) => ({
     key: `group-${groupKey}`,
     type: 'group' as const,
-    label: <span className="kc-nav-section-title">{groupLabels[groupKey] || t(`layout.group.${groupKey}`, groupKey)}</span>,
+    label: <span className="kc-nav-section-title">{resolveMenuSectionLabel(groupKey, localeCode)}</span>,
     children: items,
   }))
 }
 
-function buildItemKeyToPath(sidebarNav: SidebarNavItem[]): Record<string, string> {
+function buildItemKeyToPath(sidebarNav: RuntimeMenuNode[]): Record<string, string> {
   const map: Record<string, string> = {}
-  for (const item of sidebarNav) {
-    map[item.route.id] = item.route.redirectTo ?? item.route.path
-    if (item.children) {
-      for (const child of item.children) {
-        map[child.id] = child.path
-      }
+  const visit = (node: RuntimeMenuNode) => {
+    if (!node.children?.length && node.route) {
+      map[node.id] = node.route.redirectTo ?? node.route.path
     }
+    node.children?.forEach(visit)
   }
+  sidebarNav.forEach(visit)
   return map
+}
+
+function buildParentMap(sidebarNav: RuntimeMenuNode[]) {
+  const parentByID = new Map<string, string>()
+  const visit = (node: RuntimeMenuNode, parentID?: string) => {
+    if (parentID) {
+      parentByID.set(node.id, parentID)
+    }
+    node.children?.forEach((child) => visit(child, node.id))
+  }
+  sidebarNav.forEach((node) => visit(node))
+  return parentByID
+}
+
+function findMenuIDByRoutePath(sidebarNav: RuntimeMenuNode[], routePath: string) {
+  let matched: string | null = null
+  const visit = (node: RuntimeMenuNode) => {
+    if (matched) return
+    if (node.route?.path === routePath || node.path === routePath) {
+      matched = node.id
+      return
+    }
+    node.children?.forEach(visit)
+  }
+  sidebarNav.forEach(visit)
+  return matched
 }
 
 export function AppLayout() {
@@ -151,29 +120,39 @@ export function AppLayout() {
     () => getAccessibleSidebarNav(permissionSnapshotQuery.data?.data),
     [permissionSnapshotQuery.data?.data],
   )
-  const menuItems = useMemo(() => buildMenuItems(sidebarNav, t), [sidebarNav, t])
+  const menuItems = useMemo(() => buildMenuItems(sidebarNav, localeCode), [sidebarNav, localeCode])
   const itemKeyToPath = useMemo(() => buildItemKeyToPath(sidebarNav), [sidebarNav])
+  const parentByID = useMemo(() => buildParentMap(sidebarNav), [sidebarNav])
   const resolvedThemeMode = useMemo(() => resolveThemeMode(themeMode), [themeMode, systemThemeVersion])
 
   const currentMeta = getRouteMeta(location.pathname)
   const parentMeta = getParentRouteMeta(currentMeta)
+  const currentMenuID = useMemo(
+    () => findMenuIDByRoutePath(sidebarNav, currentMeta.path) ?? resolveRouteMenuId(currentMeta) ?? currentMeta.menuId ?? currentMeta.id,
+    [currentMeta, sidebarNav],
+  )
 
   const selectedKeys = useMemo(() => {
-    let primaryKey = currentMeta.id
-    if (!currentMeta.navVisible && parentMeta?.navVisible && itemKeyToPath[parentMeta.id]) {
-      primaryKey = parentMeta.id
-    } else if (!currentMeta.navVisible && currentMeta.menuId && itemKeyToPath[currentMeta.menuId]) {
-      primaryKey = currentMeta.menuId
+    if (currentMenuID && itemKeyToPath[currentMenuID]) {
+      return [currentMenuID]
     }
-    return [primaryKey]
-  }, [currentMeta, itemKeyToPath, parentMeta])
+    if (!currentMeta.navVisible && parentMeta?.navVisible && itemKeyToPath[parentMeta.id]) {
+      return [parentMeta.id]
+    }
+    return [currentMeta.id]
+  }, [currentMenuID, currentMeta, itemKeyToPath, parentMeta])
 
   const routeOpenKeys = useMemo(() => {
-    if (currentMeta.parentId && itemKeyToPath[currentMeta.parentId]) {
-      return [currentMeta.parentId]
+    const keys: string[] = []
+    let pointer = currentMenuID
+    while (pointer && parentByID.has(pointer)) {
+      const parentID = parentByID.get(pointer)
+      if (!parentID) break
+      keys.unshift(parentID)
+      pointer = parentID
     }
-    return []
-  }, [currentMeta, itemKeyToPath])
+    return keys
+  }, [currentMenuID, parentByID])
 
   useEffect(() => {
     if (sidebarCollapsed) {
@@ -316,6 +295,7 @@ export function AppLayout() {
                 pressed={resolvedThemeMode === 'dark'}
               />
             </div>
+            <AnnouncementBell />
             <Dropdown
               menu={{
                 items: [

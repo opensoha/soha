@@ -18,14 +18,17 @@ type Record struct {
 }
 
 type TriggerInput struct {
-	ApplicationID  string `json:"applicationId"`
-	ClusterID      string `json:"clusterId"`
-	Namespace      string `json:"namespace"`
-	DeploymentName string `json:"deploymentName"`
-	ContainerName  string `json:"containerName,omitempty"`
-	Image          string `json:"image,omitempty"`
-	ImageTag       string `json:"imageTag,omitempty"`
-	ReleaseName    string `json:"releaseName,omitempty"`
+	ApplicationID            string `json:"applicationId"`
+	ApplicationEnvironmentID string `json:"applicationEnvironmentId,omitempty"`
+	ClusterID                string `json:"clusterId"`
+	Namespace                string `json:"namespace"`
+	DeploymentName           string `json:"deploymentName"`
+	ContainerName            string `json:"containerName,omitempty"`
+	Image                    string `json:"image,omitempty"`
+	ImageTag                 string `json:"imageTag,omitempty"`
+	ReleaseName              string `json:"releaseName,omitempty"`
+	ActionKind               string `json:"actionKind,omitempty"`
+	WorkflowRunID            string `json:"workflowRunId,omitempty"`
 }
 
 type Filter struct {

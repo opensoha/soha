@@ -121,29 +121,40 @@ func (s *Service) UpdateBrandingSettings(ctx context.Context, principal domainid
 	return s.brandingSettings(ctx)
 }
 
-func (s *Service) UpdateAISettings(ctx context.Context, principal domainidentity.Principal, input domainsettings.AIProviderSettings) (domainsettings.AISettings, error) {
+func (s *Service) UpdateAISettings(ctx context.Context, principal domainidentity.Principal, input domainsettings.AISettings) (domainsettings.AISettings, error) {
 	if err := s.authorize(ctx, principal, appaccess.PermSettingsAIManage); err != nil {
 		return domainsettings.AISettings{}, err
 	}
-	input.BaseURL = strings.TrimSpace(input.BaseURL)
-	input.APIKey = strings.TrimSpace(input.APIKey)
-	input.Model = strings.TrimSpace(input.Model)
-	if input.Enabled {
-		if input.BaseURL == "" {
+	input.Provider.BaseURL = strings.TrimSpace(input.Provider.BaseURL)
+	input.Provider.APIKey = strings.TrimSpace(input.Provider.APIKey)
+	input.Provider.Model = strings.TrimSpace(input.Provider.Model)
+	if input.Provider.Enabled {
+		if input.Provider.BaseURL == "" {
 			return domainsettings.AISettings{}, fmt.Errorf("%w: ai base url is required", apperrors.ErrInvalidArgument)
 		}
-		if input.APIKey == "" {
+		if input.Provider.APIKey == "" {
 			return domainsettings.AISettings{}, fmt.Errorf("%w: ai api key is required", apperrors.ErrInvalidArgument)
 		}
-		if input.Model == "" {
-			input.Model = "gpt-4.1-mini"
+		if input.Provider.Model == "" {
+			input.Provider.Model = "gpt-4.1-mini"
 		}
 	}
+	skills := make([]map[string]any, 0, len(input.SkillsRegistry))
+	for _, item := range input.SkillsRegistry {
+		skills = append(skills, map[string]any{
+			"id":          strings.TrimSpace(item.ID),
+			"name":        strings.TrimSpace(item.Name),
+			"description": strings.TrimSpace(item.Description),
+			"enabled":     item.Enabled,
+			"scopes":      item.Scopes,
+		})
+	}
 	value := map[string]any{
-		"enabled": input.Enabled,
-		"baseUrl": input.BaseURL,
-		"apiKey":  input.APIKey,
-		"model":   input.Model,
+		"enabled":        input.Provider.Enabled,
+		"baseUrl":        input.Provider.BaseURL,
+		"apiKey":         input.Provider.APIKey,
+		"model":          input.Provider.Model,
+		"skillsRegistry": skills,
 	}
 	if err := s.store.Upsert(ctx, domainsettings.AIProviderSettingKey, "ai", value, principal.UserID); err != nil {
 		return domainsettings.AISettings{}, err
@@ -339,6 +350,28 @@ func (s *Service) aiSettings(ctx context.Context) (domainsettings.AISettings, er
 	if value, ok := raw["model"].(string); ok && strings.TrimSpace(value) != "" {
 		item.Provider.Model = strings.TrimSpace(value)
 	}
+	if values, ok := raw["skillsRegistry"].([]any); ok {
+		item.SkillsRegistry = make([]domainsettings.AISkillSettings, 0, len(values))
+		for _, current := range values {
+			record, ok := current.(map[string]any)
+			if !ok {
+				continue
+			}
+			scopes := []string{}
+			if rawScopes, ok := record["scopes"].([]any); ok {
+				for _, scope := range rawScopes {
+					scopes = append(scopes, fmt.Sprint(scope))
+				}
+			}
+			item.SkillsRegistry = append(item.SkillsRegistry, domainsettings.AISkillSettings{
+				ID:          strings.TrimSpace(fmt.Sprint(record["id"])),
+				Name:        strings.TrimSpace(fmt.Sprint(record["name"])),
+				Description: strings.TrimSpace(fmt.Sprint(record["description"])),
+				Enabled:     boolValue(record["enabled"]),
+				Scopes:      scopes,
+			})
+		}
+	}
 	return item, nil
 }
 
@@ -373,6 +406,11 @@ func (s *Service) brandingSettings(ctx context.Context) (domainsettings.Branding
 		item.FaviconURL = strings.TrimSpace(value)
 	}
 	return item, nil
+}
+
+func boolValue(value any) bool {
+	current, ok := value.(bool)
+	return ok && current
 }
 
 func sliceOfStrings(items []any) []string {

@@ -1,4 +1,5 @@
-import type { PermissionSnapshot, RouteMeta, SidebarNavItem } from '@/types'
+import { MENU_SECTION_ORDER } from '@/features/system/menu-schema'
+import type { PermissionSnapshot, RouteMeta, RuntimeMenuNode, VisibleMenu } from '@/types'
 
 export const routeMeta: RouteMeta[] = [
   { id: 'overview', path: '/', title: '概览', description: '平台总览', icon: 'IconDesktop', group: 'overview', requiresAuth: true, tabbar: true, navVisible: true, menuId: 'dashboard', permissionKey: 'overview.view' },
@@ -55,18 +56,22 @@ export const routeMeta: RouteMeta[] = [
 
   { id: 'helm', path: '/helm', title: 'Helm', description: 'Helm 管理', icon: 'IconPuzzle', group: 'platform', requiresAuth: true, tabbar: false, navVisible: true, redirectTo: '/helm/releases', menuId: 'helm', permissionKey: 'platform.helm.view' },
   { id: 'helm-releases', path: '/helm/releases', title: 'Helm Releases', description: 'Helm 发布', icon: 'IconPuzzle', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'helm' },
+  { id: 'helm-release-detail', path: '/helm/releases/:releaseName', title: 'Helm Release Detail', description: 'Helm 发布详情', icon: 'IconPuzzle', group: 'platform', requiresAuth: true, tabbar: false, navVisible: false, parentId: 'helm-releases' },
   { id: 'helm-charts', path: '/helm/charts', title: 'Helm Charts', description: 'Helm 图表', icon: 'IconPuzzle', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'helm' },
 
   { id: 'extensions', path: '/extensions', title: 'CRD', description: 'CRD 管理', icon: 'IconPuzzle', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, menuId: 'extensions', permissionKey: 'platform.extensions.view' },
+  { id: 'extensions-group-detail', path: '/extensions/apis/:groupName', title: 'CRD API Detail', description: 'CRD API 详情', icon: 'IconPuzzle', group: 'platform', requiresAuth: true, tabbar: false, navVisible: false, parentId: 'extensions' },
   { id: 'cluster-resources-namespaces', path: '/cluster-resources/namespaces', title: '命名空间', description: '命名空间管理', icon: 'IconServer', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, menuId: 'cluster-resources-namespaces', permissionKey: 'platform.namespaces.view' },
   { id: 'clusters', path: '/clusters', title: '集群管理', description: '集群生命周期管理', icon: 'IconGlobe', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, menuId: 'clusters', permissionKey: 'platform.clusters.view' },
   { id: 'cluster-detail', path: '/clusters/:clusterId', title: '集群详情', description: '集群详情', icon: 'IconGlobe', group: 'platform', requiresAuth: true, tabbar: false, navVisible: false, parentId: 'clusters' },
 
   { id: 'applications', path: '/applications', title: '应用管理', description: '应用交付', icon: 'IconAppCenter', group: 'delivery', requiresAuth: true, tabbar: true, navVisible: true, menuId: 'builds', permissionKey: 'delivery.applications.view' },
+  { id: 'application-detail', path: '/applications/:applicationId', title: '应用详情', description: '应用交付详情', icon: 'IconAppCenter', group: 'delivery', requiresAuth: true, tabbar: false, navVisible: false, parentId: 'applications' },
   { id: 'business-lines', path: '/business-lines', title: '业务线管理', description: '业务线主数据', icon: 'IconAppCenter', group: 'catalog', requiresAuth: true, tabbar: true, navVisible: true, permissionKey: 'delivery.business-lines.view' },
   { id: 'delivery-environments', path: '/delivery-environments', title: '环境管理', description: '交付环境主数据', icon: 'IconAppCenter', group: 'catalog', requiresAuth: true, tabbar: true, navVisible: true, permissionKey: 'delivery.environments.view' },
   { id: 'application-environments', path: '/application-environments', title: '应用环境绑定', description: '应用与环境绑定', icon: 'IconAppCenter', group: 'catalog', requiresAuth: true, tabbar: true, navVisible: true, permissionKey: 'delivery.application-environments.view' },
   { id: 'application-environment-detail', path: '/application-environments/:applicationEnvironmentId', title: '环境详情', description: '应用环境详情', icon: 'IconAppCenter', group: 'delivery', requiresAuth: true, tabbar: false, navVisible: false, parentId: 'application-environments' },
+  { id: 'build-templates', path: '/build-templates', title: '构建模板', description: '平台构建模板', icon: 'IconCode', group: 'delivery', requiresAuth: true, tabbar: true, navVisible: true, permissionKey: 'delivery.build-templates.view' },
   { id: 'workflow-templates', path: '/workflow-templates', title: '发布流程模板', description: '交付发布流程模板', icon: 'IconFlow', group: 'delivery', requiresAuth: true, tabbar: true, navVisible: true, permissionKey: 'delivery.workflow-templates.view' },
   { id: 'release-board', path: '/release-board', title: '发布看板', description: '应用环境发布矩阵', icon: 'IconSend', group: 'delivery', requiresAuth: true, tabbar: true, navVisible: true, permissionKey: 'delivery.release-board.view' },
   { id: 'workflows', path: '/workflows', title: '工作流', description: '工作流管理', icon: 'IconFlow', group: 'delivery', requiresAuth: true, tabbar: true, navVisible: true, menuId: 'workflows', permissionKey: 'delivery.workflows.view' },
@@ -80,12 +85,15 @@ export const routeMeta: RouteMeta[] = [
   { id: 'oncall', path: '/observability/oncall', title: '值班协同', description: '值班轮换与升级联动', icon: 'IconUserCircle', group: 'observe', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'observability', permissionKey: 'observe.oncall.view' },
   { id: 'events', path: '/observability/events', title: '事件流', description: '事件时间线与上下文', icon: 'IconBell', group: 'observe', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'observability', permissionKey: 'observe.events.view' },
 
-  { id: 'ai-observe', path: '/ai-observe', title: 'AI观测分析中心', description: '根因分析、性能分析、AI Chat 与智能巡检', icon: 'IconComment', group: 'observe', requiresAuth: true, tabbar: false, navVisible: true, redirectTo: '/ai-observe/root-cause', menuId: 'assistant', permissionKey: 'observe.ai.view' },
-  { id: 'ai-root-cause', path: '/ai-observe/root-cause', title: '链路根因分析', description: 'AI 根因洞察与排查建议', icon: 'IconComment', group: 'observe', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'ai-observe', permissionKey: 'observe.ai.view' },
-  { id: 'ai-performance', path: '/ai-observe/performance', title: '性能分析', description: 'AI 性能信号与运行建议', icon: 'IconComment', group: 'observe', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'ai-observe', permissionKey: 'observe.ai.view' },
-  { id: 'ai-chat', path: '/ai-observe/chat', title: 'AI Chat', description: '基于平台上下文的分析会话', icon: 'IconComment', group: 'observe', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'ai-observe', permissionKey: 'observe.ai.chat' },
-  { id: 'ai-inspection', path: '/ai-observe/inspection', title: '智能巡检', description: 'AI 巡检任务与执行记录', icon: 'IconComment', group: 'observe', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'ai-observe', permissionKey: 'observe.ai.view' },
-  { id: 'chat', path: '/chat', title: 'AI Chat', description: '兼容旧入口', icon: 'IconComment', group: 'observe', requiresAuth: true, tabbar: false, navVisible: false, parentId: 'ai-observe', permissionKey: 'observe.ai.chat' },
+  { id: 'ai-observe', path: '/ai-observe', title: 'AI观测分析中心', description: 'AIOps 总览与调查入口', icon: 'IconComment', group: 'observe', requiresAuth: true, tabbar: true, navVisible: true, menuId: 'assistant', permissionKey: 'observe.ai.view' },
+  { id: 'ai-workbench', path: '/ai-observe/workbench', title: '调查工作台', description: '统一承载 AI Chat、根因、性能与链路分析', icon: 'IconComment', group: 'observe', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'ai-observe', permissionKey: 'observe.ai.chat' },
+  { id: 'ai-operations', path: '/ai-observe/operations', title: '巡检与自动化', description: '巡检任务、运行记录与自动化策略', icon: 'IconComment', group: 'observe', requiresAuth: true, tabbar: true, navVisible: false, parentId: 'ai-observe', permissionKey: 'observe.ai.view' },
+  { id: 'ai-tools', path: '/ai-observe/tools', title: '工具与技能', description: 'MCP adapters、数据源与技能装配', icon: 'IconComment', group: 'observe', requiresAuth: true, tabbar: true, navVisible: false, parentId: 'ai-observe', permissionKey: 'observe.ai.view' },
+  { id: 'ai-root-cause', path: '/ai-observe/root-cause', title: '链路根因分析', description: '兼容旧入口，跳转到工作台根因模式', icon: 'IconComment', group: 'observe', requiresAuth: true, tabbar: false, navVisible: false, parentId: 'ai-observe', permissionKey: 'observe.ai.view' },
+  { id: 'ai-performance', path: '/ai-observe/performance', title: '性能分析', description: '兼容旧入口，跳转到工作台性能模式', icon: 'IconComment', group: 'observe', requiresAuth: true, tabbar: false, navVisible: false, parentId: 'ai-observe', permissionKey: 'observe.ai.view' },
+  { id: 'ai-chat', path: '/ai-observe/chat', title: 'AI Chat', description: '兼容旧入口，跳转到调查工作台', icon: 'IconComment', group: 'observe', requiresAuth: true, tabbar: false, navVisible: false, parentId: 'ai-observe', permissionKey: 'observe.ai.chat' },
+  { id: 'ai-inspection', path: '/ai-observe/inspection', title: '智能巡检', description: '兼容旧入口，跳转到巡检与自动化', icon: 'IconComment', group: 'observe', requiresAuth: true, tabbar: false, navVisible: false, parentId: 'ai-observe', permissionKey: 'observe.ai.view' },
+  { id: 'chat', path: '/chat', title: 'AI Chat', description: '兼容旧入口', icon: 'IconComment', group: 'observe', requiresAuth: true, tabbar: false, navVisible: false, parentId: 'ai-workbench', permissionKey: 'observe.ai.chat' },
 
   { id: 'access', path: '/access', title: '访问控制', description: '身份、角色、用户组与策略', icon: 'IconShield', group: 'access', requiresAuth: true, tabbar: false, navVisible: false, menuId: 'access', permissionKey: 'access.users.view', permissionStrategy: 'any-child' },
   { id: 'access-users', path: '/access/users', title: '用户', description: '用户管理', icon: 'IconUser', group: 'access', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'access', menuId: 'access', permissionKey: 'access.users.view' },
@@ -111,59 +119,6 @@ export const routeMeta: RouteMeta[] = [
   { id: 'oidc-callback', path: '/auth/oidc/callback', title: 'OIDC Callback', description: 'OIDC 回调', icon: 'IconLock', group: 'auth', requiresAuth: false, tabbar: false, navVisible: false },
   { id: 'login-callback', path: '/login/callback', title: 'Login Callback', description: '登录回调', icon: 'IconLock', group: 'auth', requiresAuth: false, tabbar: false, navVisible: false },
 ]
-
-export function getSidebarNav(): SidebarNavItem[] {
-  const sidebarVisible = routeMeta.filter((route) => route.navVisible)
-  const visibleParentIDs = new Set(sidebarVisible.map((route) => route.id))
-  return routeMeta
-    .filter((route) => route.navVisible && (!route.parentId || !visibleParentIDs.has(route.parentId)))
-    .map((route) => ({
-      route,
-      children: routeMeta.filter((child) => child.parentId === route.id && child.navVisible),
-    }))
-    .map((item) => ({
-      ...item,
-      children: item.children.length > 0
-        ? item.route.id === 'access'
-          ? [...item.children].sort((left, right) => {
-              const accessOrder = ['access-users', 'access-roles', 'access-teams', 'access-policies']
-              return accessOrder.indexOf(left.id) - accessOrder.indexOf(right.id)
-            })
-          : item.children
-        : undefined,
-    }))
-}
-
-function getGroupOrder(items: SidebarNavItem[]) {
-  const order = new Map<string, number>()
-  items.forEach((item) => {
-    if (!order.has(item.route.group)) {
-      order.set(item.route.group, order.size)
-    }
-  })
-  return order
-}
-
-function getVisibleMenuOrder(snapshot?: PermissionSnapshot | null) {
-  const order = new Map<string, number>()
-  snapshot?.visibleMenus.forEach((item, index) => {
-    order.set(`id:${item.id}`, index)
-    order.set(`path:${item.path}`, index)
-  })
-  return order
-}
-
-function getExplicitRouteOrder() {
-  const order = new Map<string, number>()
-  routeMeta.forEach((route, index) => {
-    order.set(route.id, index)
-  })
-  return order
-}
-
-function getRouteMenuOrder(route: RouteMeta, order: Map<string, number>) {
-  return order.get(`id:${route.menuId ?? route.id}`) ?? order.get(`path:${route.path}`) ?? Number.MAX_SAFE_INTEGER
-}
 
 export function getRouteMeta(pathname: string): RouteMeta {
   const candidates = [...routeMeta].sort((a, b) => b.path.length - a.path.length)
@@ -217,45 +172,101 @@ export function canAccessRoute(route: RouteMeta, snapshot?: PermissionSnapshot |
   return hasPermission && hasMenu
 }
 
-export function getAccessibleSidebarNav(snapshot?: PermissionSnapshot | null): SidebarNavItem[] {
-  const sidebarNav = getSidebarNav()
-  const groupOrder = getGroupOrder(sidebarNav)
-  const visibleMenuOrder = getVisibleMenuOrder(snapshot)
-  const explicitRouteOrder = getExplicitRouteOrder()
+function getSectionOrder(section?: string) {
+  const index = MENU_SECTION_ORDER.indexOf(String(section || '').trim() as (typeof MENU_SECTION_ORDER)[number])
+  return index >= 0 ? index : Number.MAX_SAFE_INTEGER
+}
 
-  return sidebarNav
-    .filter((item) => canAccessRoute(item.route, snapshot))
-    .map((item) => ({
-      ...item,
-      children: item.children
-        ?.filter((child) => canAccessRoute(child, snapshot))
-        .sort((left, right) => {
-          const explicitCompare = (explicitRouteOrder.get(left.id) ?? Number.MAX_SAFE_INTEGER) - (explicitRouteOrder.get(right.id) ?? Number.MAX_SAFE_INTEGER)
-          if (explicitCompare !== 0) {
-            return explicitCompare
-          }
-          const orderCompare = getRouteMenuOrder(left, visibleMenuOrder) - getRouteMenuOrder(right, visibleMenuOrder)
-          if (orderCompare !== 0) {
-            return orderCompare
-          }
-          return left.path.localeCompare(right.path)
-        }),
-    }))
+function sortRuntimeMenuTree(items: RuntimeMenuNode[]): RuntimeMenuNode[] {
+  return [...items]
     .sort((left, right) => {
-      const groupCompare = (groupOrder.get(left.route.group) ?? Number.MAX_SAFE_INTEGER) - (groupOrder.get(right.route.group) ?? Number.MAX_SAFE_INTEGER)
-      if (groupCompare !== 0) {
-        return groupCompare
-      }
-      const explicitCompare = (explicitRouteOrder.get(left.route.id) ?? Number.MAX_SAFE_INTEGER) - (explicitRouteOrder.get(right.route.id) ?? Number.MAX_SAFE_INTEGER)
-      if (explicitCompare !== 0) {
-        return explicitCompare
-      }
-      const orderCompare = getRouteMenuOrder(left.route, visibleMenuOrder) - getRouteMenuOrder(right.route, visibleMenuOrder)
-      if (orderCompare !== 0) {
-        return orderCompare
-      }
-      return left.route.path.localeCompare(right.route.path)
+      const sectionCompare = getSectionOrder(left.section) - getSectionOrder(right.section)
+      if (sectionCompare !== 0) return sectionCompare
+      if (left.sortOrder !== right.sortOrder) return left.sortOrder - right.sortOrder
+      return left.path.localeCompare(right.path)
     })
+    .map((item): RuntimeMenuNode => ({
+      ...item,
+      children: item.children && item.children.length > 0 ? sortRuntimeMenuTree(item.children) : undefined,
+    }))
+}
+
+function findBestRouteForMenu(menu: VisibleMenu, snapshot?: PermissionSnapshot | null): RouteMeta | undefined {
+  const candidates = routeMeta.filter((route) => {
+    const routeMenuId = resolveRouteMenuId(route)
+    return routeMenuId === menu.id || route.path === menu.path
+  }).filter((route) => canAccessRoute(route, snapshot))
+
+  if (candidates.length === 0) return undefined
+
+  return candidates.sort((left, right) => {
+    const leftExactPath = left.path === menu.path ? 0 : 1
+    const rightExactPath = right.path === menu.path ? 0 : 1
+    if (leftExactPath !== rightExactPath) return leftExactPath - rightExactPath
+
+    const leftNavVisible = left.navVisible ? 0 : 1
+    const rightNavVisible = right.navVisible ? 0 : 1
+    if (leftNavVisible !== rightNavVisible) return leftNavVisible - rightNavVisible
+
+    const leftRedirect = left.redirectTo ? 1 : 0
+    const rightRedirect = right.redirectTo ? 1 : 0
+    if (leftRedirect !== rightRedirect) return leftRedirect - rightRedirect
+
+    return left.path.localeCompare(right.path)
+  })[0]
+}
+
+function buildRuntimeMenuTree(snapshot?: PermissionSnapshot | null): RuntimeMenuNode[] {
+  const visibleMenus = snapshot?.visibleMenus ?? []
+  const nodes = new Map<string, RuntimeMenuNode>()
+
+  visibleMenus.forEach((menu) => {
+    nodes.set(menu.id, {
+      id: menu.id,
+      parentId: menu.parentId,
+      path: menu.path,
+      labelZh: menu.labelZh || menu.id,
+      labelEn: menu.labelEn || menu.labelZh || menu.id,
+      iconKey: menu.iconKey || '',
+      section: menu.section || 'control',
+      sortOrder: typeof menu.sortOrder === 'number' ? menu.sortOrder : 0,
+      enabled: menu.enabled ?? true,
+      route: findBestRouteForMenu(menu, snapshot),
+      children: [],
+    })
+  })
+
+  const roots: RuntimeMenuNode[] = []
+  nodes.forEach((node) => {
+    if (node.parentId && nodes.has(node.parentId)) {
+      nodes.get(node.parentId)?.children?.push(node)
+      return
+    }
+    roots.push(node)
+  })
+
+  const prune = (node: RuntimeMenuNode): RuntimeMenuNode | null => {
+    const nextChildren = (node.children ?? []).map(prune).filter((item): item is RuntimeMenuNode => Boolean(item))
+    const keepAsContainer = nextChildren.length > 0
+    const keepAsLeaf = Boolean(node.route)
+    if (!keepAsContainer && !keepAsLeaf) {
+      return null
+    }
+    return {
+      ...node,
+      children: nextChildren.length > 0 ? nextChildren : undefined,
+    }
+  }
+
+  return sortRuntimeMenuTree(
+    roots
+      .map(prune)
+      .filter((item): item is RuntimeMenuNode => Boolean(item)),
+  )
+}
+
+export function getAccessibleSidebarNav(snapshot?: PermissionSnapshot | null): RuntimeMenuNode[] {
+  return buildRuntimeMenuTree(snapshot)
 }
 
 export function findFirstAccessiblePath(snapshot?: PermissionSnapshot | null): string | null {

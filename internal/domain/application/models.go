@@ -5,6 +5,38 @@ import (
 	"time"
 )
 
+type BuildSourceType string
+
+const (
+	BuildSourceTypeRepoDockerfile   BuildSourceType = "repo_dockerfile"
+	BuildSourceTypePlatformTemplate BuildSourceType = "platform_build_template"
+	BuildSourceTypeExternalPipeline BuildSourceType = "external_pipeline"
+)
+
+type BuildSource struct {
+	ID         string          `json:"id"`
+	Name       string          `json:"name"`
+	Type       BuildSourceType `json:"type"`
+	Enabled    bool            `json:"enabled"`
+	IsDefault  bool            `json:"isDefault"`
+	BuildImage string          `json:"buildImage,omitempty"`
+	DefaultTag string          `json:"defaultTag,omitempty"`
+	Config     map[string]any  `json:"config,omitempty"`
+	CreatedAt  time.Time       `json:"createdAt"`
+	UpdatedAt  time.Time       `json:"updatedAt"`
+}
+
+type BuildSourceInput struct {
+	ID         string          `json:"id"`
+	Name       string          `json:"name"`
+	Type       BuildSourceType `json:"type"`
+	Enabled    bool            `json:"enabled"`
+	IsDefault  bool            `json:"isDefault"`
+	BuildImage string          `json:"buildImage,omitempty"`
+	DefaultTag string          `json:"defaultTag,omitempty"`
+	Config     map[string]any  `json:"config,omitempty"`
+}
+
 type App struct {
 	ID                  string         `json:"id"`
 	Name                string         `json:"name"`
@@ -24,29 +56,32 @@ type App struct {
 	DockerfilePath      string         `json:"dockerfilePath,omitempty"`
 	Enabled             bool           `json:"enabled"`
 	Metadata            map[string]any `json:"metadata,omitempty"`
+	BuildSources        []BuildSource  `json:"buildSources,omitempty"`
+	EnvironmentCount    int            `json:"environmentCount,omitempty"`
 	CreatedAt           time.Time      `json:"createdAt"`
 	UpdatedAt           time.Time      `json:"updatedAt"`
 }
 
 type UpsertInput struct {
-	ID                  string         `json:"id"`
-	Name                string         `json:"name"`
-	Key                 string         `json:"key"`
-	Group               string         `json:"group"`
-	BusinessLineID      string         `json:"businessLineId,omitempty"`
-	Language            string         `json:"language"`
-	Description         string         `json:"description,omitempty"`
-	OwnerTeam           string         `json:"ownerTeam,omitempty"`
-	RepositoryProvider  string         `json:"repositoryProvider,omitempty"`
-	RepositoryProjectID string         `json:"repositoryProjectId,omitempty"`
-	RepositoryPath      string         `json:"repositoryPath,omitempty"`
-	DefaultBranch       string         `json:"defaultBranch,omitempty"`
-	DefaultTag          string         `json:"defaultTag,omitempty"`
-	BuildImage          string         `json:"buildImage,omitempty"`
-	BuildContextDir     string         `json:"buildContextDir,omitempty"`
-	DockerfilePath      string         `json:"dockerfilePath,omitempty"`
-	Enabled             bool           `json:"enabled"`
-	Metadata            map[string]any `json:"metadata,omitempty"`
+	ID                  string             `json:"id"`
+	Name                string             `json:"name"`
+	Key                 string             `json:"key"`
+	Group               string             `json:"group"`
+	BusinessLineID      string             `json:"businessLineId,omitempty"`
+	Language            string             `json:"language"`
+	Description         string             `json:"description,omitempty"`
+	OwnerTeam           string             `json:"ownerTeam,omitempty"`
+	RepositoryProvider  string             `json:"repositoryProvider,omitempty"`
+	RepositoryProjectID string             `json:"repositoryProjectId,omitempty"`
+	RepositoryPath      string             `json:"repositoryPath,omitempty"`
+	DefaultBranch       string             `json:"defaultBranch,omitempty"`
+	DefaultTag          string             `json:"defaultTag,omitempty"`
+	BuildImage          string             `json:"buildImage,omitempty"`
+	BuildContextDir     string             `json:"buildContextDir,omitempty"`
+	DockerfilePath      string             `json:"dockerfilePath,omitempty"`
+	Enabled             bool               `json:"enabled"`
+	Metadata            map[string]any     `json:"metadata,omitempty"`
+	BuildSources        []BuildSourceInput `json:"buildSources,omitempty"`
 }
 
 type Filter struct {

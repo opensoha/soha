@@ -257,8 +257,8 @@ func normalizeAnalysisProfileInput(input domaincopilot.AnalysisProfileInput) (do
 	if input.Name == "" {
 		return domaincopilot.AnalysisProfileInput{}, fmt.Errorf("%w: profile name is required", aperrors.ErrInvalidArgument)
 	}
-	if input.Mode != "root_cause" && input.Mode != "inspection" {
-		return domaincopilot.AnalysisProfileInput{}, fmt.Errorf("%w: mode must be root_cause or inspection", aperrors.ErrInvalidArgument)
+	if input.Mode != "root_cause" && input.Mode != "inspection" && input.Mode != "performance" && input.Mode != "trace" {
+		return domaincopilot.AnalysisProfileInput{}, fmt.Errorf("%w: mode must be root_cause, inspection, performance, or trace", aperrors.ErrInvalidArgument)
 	}
 	if input.RemediationPolicy == "" {
 		input.RemediationPolicy = "suggest_only"
@@ -304,6 +304,9 @@ func normalizeAutomationPolicyInput(input domaincopilot.AutomationPolicyInput) (
 	}
 	if input.TriggerConditions == nil {
 		input.TriggerConditions = map[string]any{}
+	}
+	if len(input.AnalysisKinds) == 0 {
+		input.AnalysisKinds = []string{"root_cause"}
 	}
 	if input.ApprovalPolicy == nil {
 		input.ApprovalPolicy = map[string]any{}

@@ -15,8 +15,12 @@ import (
 type AnnouncementService interface {
 	List(context.Context, domainidentity.Principal, int) ([]domainannouncement.Record, error)
 	Get(context.Context, domainidentity.Principal, string) (domainannouncement.Record, error)
+	Inbox(context.Context, domainidentity.Principal, int) (domainannouncement.Inbox, error)
+	MarkRead(context.Context, domainidentity.Principal, string) error
 	Create(context.Context, domainidentity.Principal, domainannouncement.Input) (domainannouncement.Record, error)
 	Update(context.Context, domainidentity.Principal, string, domainannouncement.Input) (domainannouncement.Record, error)
+	Publish(context.Context, domainidentity.Principal, string) (domainannouncement.Record, error)
+	Withdraw(context.Context, domainidentity.Principal, string) (domainannouncement.Record, error)
 	Delete(context.Context, domainidentity.Principal, string) error
 }
 
@@ -46,6 +50,25 @@ func (h *AnnouncementHandler) Get(c *gin.Context) {
 		return
 	}
 	apiresponse.Item(c, http.StatusOK, item)
+}
+
+func (h *AnnouncementHandler) Inbox(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	item, err := h.service.Inbox(c.Request.Context(), principal, parseLimit(c.Query("limit"), 10))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
+}
+
+func (h *AnnouncementHandler) MarkRead(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	if err := h.service.MarkRead(c.Request.Context(), principal, c.Param("announcementID")); err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.JSON(c, http.StatusOK, gin.H{"status": "ok"})
 }
 
 func (h *AnnouncementHandler) Create(c *gin.Context) {
@@ -93,6 +116,26 @@ func (h *AnnouncementHandler) Update(c *gin.Context) {
 		StartsAt: req.StartsAt,
 		EndsAt:   req.EndsAt,
 	})
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
+}
+
+func (h *AnnouncementHandler) Publish(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	item, err := h.service.Publish(c.Request.Context(), principal, c.Param("announcementID"))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
+}
+
+func (h *AnnouncementHandler) Withdraw(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	item, err := h.service.Withdraw(c.Request.Context(), principal, c.Param("announcementID"))
 	if err != nil {
 		writeError(c, err)
 		return

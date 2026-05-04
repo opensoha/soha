@@ -275,13 +275,14 @@ Design expectations:
 - workload/network/storage views should prefer aggregated APIs
 - frontend behavior must match backend scope semantics
 - cluster management should remain a registration and connection-management surface, not a separate cluster overview workspace
-- the CRD workspace is now an operational surface: the catalog must expose each CRD's kind, plural, served versions, and scope, and the same workspace should list real CRD-backed resources plus YAML-based create/edit/delete actions for the selected kind
+- the CRD workspace is now a two-level operational surface: the outer catalog should expose available CRD API groups first, and each API-group detail workspace should expose its served kinds as left-side tags/cards plus the real CRD-backed resources and YAML-based create/edit/delete actions for the selected kind
 - CRD-backed resource listing follows CRD scope semantics: cluster-scoped CRDs ignore namespace selection, while namespaced CRDs must support both single-namespace views and all-namespaces aggregation when no namespace filter is active
 - CRD-backed resource CRUD and YAML flows are currently direct-cluster capabilities only; agent-connected clusters must surface those paths as unsupported instead of implying parity
 
 ### 7.2 Delivery
 
 - applications
+- build templates
 - business lines
 - delivery environments
 - application environments
@@ -294,6 +295,13 @@ Design expectations:
 Design expectation:
 
 - delivery remains platform-native
+- application delivery now centers on four stable objects: applications, build templates, application-environment bindings, and execution records
+- applications may own multiple build sources (`repo_dockerfile`, `platform_build_template`, `external_pipeline`), while each application-environment binding selects one concrete build source plus one workflow template and one or more explicit release targets
+- legacy top-level application build fields may remain as backend compatibility/migration inputs, but the active application-center UI should no longer expose them as the primary editing surface once `buildSources` is available
+- application-environment binding `buildPolicy` and `releasePolicy` are now structured contracts rather than free-form JSON blobs; the frontend should edit them with typed controls instead of raw JSON textareas wherever possible
+- platform-managed build templates are now a first-class delivery object with arbitrary build-command payloads, but those commands are only allowed inside the dedicated build worker path and must never execute inline in API handlers
+- release-board and application/application-environment detail pages now prefer backend aggregate endpoints instead of frontend fan-out joins across builds, workflows, and releases
+- workflow `manual_approval` now pauses runs with status `waiting_approval`, and approve/reject decisions persist to `workflow_approvals`
 - business lines, delivery environments, and application-environment bindings are now treated as a standalone master-data domain in frontend navigation; they still serve delivery and access-control scope flows, but their ownership is no longer represented as delivery-only in the console IA
 - environment binding and release orchestration must map to platform runtime context
 
@@ -348,6 +356,7 @@ The repository has already converged on these rules:
 - workload list pages should fold scope filters, search, refresh, and batch actions into the table panel toolbar instead of stacking a separate page header and external scope bar above the table
 - pod metrics panels should present five equal-footprint charts; CPU and memory baselines stay inside the chart, while disk and network throughput use mirrored up/down axes to contrast read-or-in against write-or-out
 - platform navigation should expose CRD as its own top-level entry, keep Helm adjacent to namespace-scoped operations, and place configuration resources between workloads and network
+- the CRD top-level route now lands on an API-group catalog instead of a same-page CRD/resource split view; resource tables belong to the API-group detail page after selecting a kind
 - platform navigation now treats Kubernetes RBAC as a standalone top-level workspace with child pages for service accounts and RBAC bindings, instead of nesting it under Helm
 - namespace-scoped platform capability expansion may ship as complete navigation plus placeholder pages before backend aggregation APIs are ready, but those placeholders must say that the backend platform API is still pending
 - Helm in platform management now focuses on releases and charts only; Kubernetes RBAC resources live under the standalone RBAC workspace
@@ -368,14 +377,28 @@ The repository has already converged on these rules:
 - authenticated frontend navigation must consume a backend permission snapshot instead of relying on static route visibility alone
 - backend permission snapshots and console/API permission checks now resolve from persisted role `permissionKeys`; static built-in role maps remain bootstrap defaults only and custom roles must be able to drive backend authorization without `admin` special-casing
 - menu visibility is now a conjunction of backend visible menu bindings and frontend route permission keys, while page buttons should progressively consume either permission keys or backend `allowedActions`
+- authenticated sidebar navigation is now backend-menu-driven instead of route-group-driven: `PermissionSnapshot.visibleMenus` must carry menu labels, `iconKey`, `section`, `sortOrder`, and `enabled`, and the web shell must build foldable parent/child navigation from that tree instead of flattening `system` / `access` / `settings` children into static route groups
+- menu sections are now user-extensible from menu management itself: the section field may reuse known defaults or accept a new raw section key, and unknown section keys must still remain valid runtime group buckets with raw-label fallback in both the sidebar and menu-management filters
+- menu-management changes to parent-child structure, icon key, section, sort order, enabled state, or explicit visibility overrides must invalidate the current permission snapshot so the active shell reflects the new navigation tree immediately; parent menus act as expand/collapse containers and leaf menus own navigation clicks
 - access management and scope-grant CRUD must use explicit `access.*.(view|manage)` permission keys; scope-grant list/create/update/delete are principal-aware backend operations and are no longer safe to leave authenticated-only
 - sidebar sibling ordering should honor backend visible-menu sort within each frontend group so menu-management sort changes affect the console without duplicating section headers
 - monitoring and copilot APIs are no longer implicitly open to any authenticated user; user-facing reads and writes must check permission keys before hitting repository operations
 - observability and AI pages should treat route visibility, button visibility, and backend API authorization as three separate gates that must stay aligned
 - delivery catalog writes such as business lines, environments, application-environment bindings, workflow templates, and registry connections must enforce backend permission keys, not just frontend button hiding
+- build-template reads/writes must enforce explicit `delivery.build-templates.(view|manage)` permission keys, and delivery navigation visibility should include build templates, workflow templates, release board, business lines, environments, and application-environment bindings through backend menu/permission resolution rather than relying on “unmapped menu” fallback
 - AI settings now split into `settings.ai.view` and `settings.ai.manage`; the provider form and copilot control-plane sections must stay consistent with those keys
+- AI observability center now uses a two-layer IA: `/ai-observe` is the AIOps overview entry, while `/ai-observe/workbench`, `/ai-observe/operations`, and `/ai-observe/tools` own investigation, inspection/automation, and tool/skill workflows
+- Root cause analysis, performance analysis, and AI chat are now mode switches inside the single `/ai-observe/workbench` investigation workspace; they must not be reintroduced as separate first-class sibling menus in navigation
+- AI investigation is now session-first: `ai_sessions.metadata` carries mode, scope, toolset, tags, summary, archive status, and analysis run references, and the workbench must treat a session as the primary investigation object
+- AI workbench message flows now return structured envelopes with messages, tool calls, analysis artifacts, and session patch hints instead of plain assistant text only
+- MCP capability control is now dual-entry: Settings > AI remains the global control plane for provider, adapters, data sources, profiles, and policies, while the AIOps workbench exposes session-level temporary toolset assembly
+- `metrics.v1` and `traces.v1` have moved from registry-only placeholders to real execution backends, with Prometheus-backed metric analysis and Jaeger-backed trace hotspot analysis expected to remain available to the workbench
+- AI automation policies can now declare supported analysis kinds (`root_cause`, `performance`, `trace`) instead of implying root-cause-only orchestration
 - settings center should consistently use `settings.<domain>.view` for route visibility and `settings.<domain>.manage` for save/update actions instead of mixing permission keys with legacy admin-only checks
 - system management should follow the same split: `system.<module>.view` for page access and `system.<module>.manage` for destructive or mutable actions such as session revocation, announcements, and menus
+- audit logs now remain the durable broad-scope read/write/deny trail, while operation logs are a separate durable stream for authorized mutable actions only; `/api/v1/audit/logs` and `/api/v1/operations/logs` are principal-aware backend-authorized reads, and operation-log rows now persist actor/request context plus backend-owned `target_scope` payloads instead of frontend-only placeholders
+- announcement management is now a real publish workflow instead of a draft-only CRUD surface: managers can create, edit, publish, withdraw, and delete announcements; publish resets per-user read receipts, and withdraw removes the announcement from the user inbox without deleting the historical publish timestamp
+- the console shell header now exposes a bell-driven announcement center for users with `system.announcements.view`; the inbox is backed by persisted `announcement_receipts`, auto-opens the highest-priority unread published announcement once per shell load, and an announcement marked read must stop auto-popup behavior across refresh and re-login until it is explicitly re-published
 - access control should remain visible as a top-level console menu entry for admins, while its child pages can stay as nested routes beneath that entry
 - settings center is a single top-level menu with in-page tabs for identity and AI; cluster-level monitoring configuration should not remain as a separate settings-center submenu
 - settings center now includes a branding tab for console-level brand assets and title metadata; branding settings are distinct from cluster-level monitoring settings and should be applied globally in the web shell

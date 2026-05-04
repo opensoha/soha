@@ -43,7 +43,7 @@ export function PlatformScopeToolbar({
     if (clusterId && clusters.some((cluster) => cluster.id === clusterId)) {
       return
     }
-    if (clusters.length === 1) {
+    if (clusters.length >= 1) {
       setClusterId(clusters[0].id)
       return
     }

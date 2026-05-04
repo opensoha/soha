@@ -2,116 +2,188 @@
 
 ## Goal
 
-kubecrux should support two AI interaction surfaces:
+kubecrux 的 AI 层已经从单一聊天页升级为面向运维中后台的 AIOps assistant workbench。
 
-1. an inline AI assistant inside the platform console
-2. a standalone chat workspace for deeper cluster and business link analysis
+当前目标分成两个层面：
 
-The AI layer should help with:
+1. 一个总入口 `/ai-observe`
+2. 一组工作台型子页面，承载调查、巡检自动化、工具装配
 
-- cluster diagnostics
-- workload anomaly explanation
-- event and audit correlation
-- release risk review
-- business link analysis across platform signals
+AI 层需要帮助完成：
+
+- 告警驱动的根因分析
+- 性能抖动与容量异常分析
+- 链路慢点和错误热点分析
+- 日志、事件、审计、发布、构建的多源证据归并
+- 巡检结果到调查会话的闭环
+- 工具、skills、数据源的会话级装配
 
 ## Current Implemented Surface
 
-The repository now includes a read-only standalone chat workspace baseline.
+当前前后端已经实现以下能力：
 
-- frontend route:
-  - `/chat`
-- backend APIs:
-  - `GET /api/v1/copilot/sessions`
-  - `POST /api/v1/copilot/sessions`
-  - `GET /api/v1/copilot/sessions/:sessionID/messages`
-  - `POST /api/v1/copilot/sessions/:sessionID/messages`
-- persistence:
-  - `ai_sessions`
-  - `ai_messages`
+- 总入口:
+  - `/ai-observe`
+- 调查工作台:
+  - `/ai-observe/workbench`
+- 巡检与自动化:
+  - `/ai-observe/operations`
+- 工具与技能:
+  - `/ai-observe/tools`
 
-Current reply generation is platform-native and read-only. It uses live data already persisted in kubecrux rather than calling an external model provider directly from the browser.
+兼容旧入口仍保留跳转：
 
-Current context sources:
+- `/ai-observe/root-cause`
+- `/ai-observe/performance`
+- `/ai-observe/chat`
+- `/ai-observe/inspection`
+- `/chat`
 
-- cluster summaries
-- alert summary
-- events
-- audit logs
-- applications
-- build records
+## Session Model
 
-## Product Surfaces
+AI 调查以会话为一等对象，而不是临时聊天记录。
 
-### Inline Assistant
+持久化基础表仍然是：
 
-- not implemented in the current refactored frontend
-- reserved for future page-scoped assistance
+- `ai_sessions`
+- `ai_messages`
 
-### Standalone Chat
+但 `ai_sessions.metadata` 现在承载工作台元数据：
 
-- full-height page with session history on the left and chat area on the right
-- supports saved conversations through `ai_sessions` and `ai_messages`
-- can stitch together cluster, audit, event, alert, application, and build context
+- `mode`
+- `status`
+- `scope`
+- `pinnedContext`
+- `toolset`
+- `analysisRunRefs`
+- `summary`
+- `tags`
+- `archivedAt`
 
-## Recommended Modules
+当前会话模式：
 
-### Backend
+- `general`
+- `root_cause`
+- `performance`
+- `trace`
+- `inspection_review`
 
-- `internal/application/copilot`
-  - prompt assembly
-  - context collection
-  - tool calling policy
-- `internal/infrastructure/ai`
-  - model gateway
-  - token and provider config
-- `internal/infrastructure/mcp`
-  - MCP adapters for tool context
-- `internal/repository/copilot`
-  - saved chats, prompt presets, feedback
+## API Surface
 
-### Frontend
+当前已实现或扩展的会话接口：
 
-- `web/src/features/copilot/chat-page.tsx`
-  - standalone chat workspace
-- future:
-  - inline assistant surfaces
-  - visible context panel
-  - guarded action proposal UI
+- `GET /api/v1/copilot/sessions`
+- `GET /api/v1/copilot/sessions/:sessionID`
+- `POST /api/v1/copilot/sessions`
+- `PATCH /api/v1/copilot/sessions/:sessionID`
+- `DELETE /api/v1/copilot/sessions/:sessionID`
+- `GET /api/v1/copilot/sessions/:sessionID/messages`
+- `POST /api/v1/copilot/sessions/:sessionID/messages`
 
-## Safety Model
+消息发送不再只返回纯消息列表，当前返回 envelope：
 
-The AI layer should start read-only.
+- `messages`
+- `toolCalls`
+- `analysisArtifacts`
+- `sessionPatch`
 
-Read context may include:
+分析运行接口当前基于统一工件方向扩展：
 
-- cluster summaries
-- workload views
-- events
-- audit logs
-- alerts
-- build and release records
+- `GET /api/v1/copilot/root-cause/runs`
+- `POST /api/v1/copilot/root-cause/runs`
+- `GET /api/v1/copilot/root-cause/runs/:runID`
 
-Write or execution capabilities should require:
+当前 `ai_root_cause_runs` 已承载：
 
-- explicit action intent
-- RBAC + ABAC pass
-- audit record
-- optional approval gate for risky operations
+- `kind`
+- `session_id`
+- `tool_executions`
+- 原有 root-cause 证据、假设、建议和数据源快照字段
 
-## Data Flow Direction
+## Data Sources And MCP
 
-1. frontend sends user message plus visible platform context
-2. copilot service expands context from platform APIs and repositories
-3. MCP adapters provide external tools when needed
-4. model response returns explanation, recommended actions, or tool invocation proposals
-5. platform records the conversation and any executed actions
+当前 AIOps 工具能力继续通过 MCP adapter 抽象暴露。
 
-## Next Step Reserve
+已注册 adapter：
 
-The next increment should add:
+- `platform-native.v1`
+- `logs.v1`
+- `metrics.v1`
+- `traces.v1`
 
-- external model gateway configuration
-- MCP-backed tool expansion
-- inline assistant in cluster and workload pages
-- guarded action proposals with approval checks
+当前状态：
+
+- `platform-native.v1`
+  - 已可读平台聚合证据
+- `logs.v1`
+  - 已有真实后端执行层
+  - 支持 `es` / `loki` / `clickhouse`
+- `metrics.v1`
+  - 已补齐 Prometheus-backed 执行层
+- `traces.v1`
+  - 已补齐 Jaeger-backed 执行层
+
+控制平面采用双入口：
+
+1. Settings > AI
+   - 全局 provider、data source、analysis profile、automation policy 配置
+2. `/ai-observe/tools`
+   - 会话级临时 toolset 和 skill 装配入口
+
+## Frontend Shape
+
+### `/ai-observe`
+
+总入口负责：
+
+- 助手欢迎
+- 最近调查
+- 最近分析
+- 风险雷达
+- 快捷跳转到工作台、巡检自动化、工具技能
+
+### `/ai-observe/workbench`
+
+调查工作台使用 Ant Design X + antd 组合：
+
+- 左侧 `Conversations`
+- 中间 `Bubble.List` + `Sender` + `Prompts`
+- 右侧上下文 / 证据 / 假设 / 建议面板
+- `ThoughtChain` 抽屉显示工具链与分析步骤
+
+### `/ai-observe/operations`
+
+当前基于原 `InspectionCenterPage` 扩展，为后续整合自动化策略预留统一入口。
+
+### `/ai-observe/tools`
+
+当前展示：
+
+- MCP adapters
+- 全局数据源镜像
+- 会话级 toolset 装配入口
+
+## Safety And Execution Model
+
+AI 层仍保持“分析与建议优先”的安全方向。
+
+当前重点是：
+
+- 聚合上下文
+- 调用读型工具
+- 生成证据、假设、建议
+- 把工具调用和分析工件沉淀进会话
+
+当前没有把高风险执行动作直接挂入聊天自动执行链。
+
+## Near-Term Expectations
+
+本阶段之后，AI 相关功能应默认遵守以下规则：
+
+- 新的 AI 观测页面优先接入工作台，而不是继续新增独立传统表格页
+- 会话相关增强优先扩 `metadata`，避免过早拆分调查实体模型
+- 新的数据源或工具能力需要同时考虑：
+  - 全局配置
+  - 会话级装配
+  - 分析工件落盘
+- root cause / performance / trace 三类分析应尽量共用统一 artifact 模型，而不是重复造页面协议

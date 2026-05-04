@@ -129,6 +129,9 @@ type ResourceService interface {
 	ApplyCRDResourceYAML(context.Context, domainidentity.Principal, string, string, string, string, string) (domainresource.ResourceYAMLView, error)
 	DeleteCRDResource(context.Context, domainidentity.Principal, string, string, string, string) error
 	ListHelmReleases(context.Context, domainidentity.Principal, string, string) ([]domainresource.HelmReleaseView, error)
+	GetHelmReleaseDetail(context.Context, domainidentity.Principal, string, string, string) (domainresource.HelmReleaseDetailView, error)
+	ListHelmReleaseHistory(context.Context, domainidentity.Principal, string, string, string) ([]domainresource.HelmReleaseHistoryView, error)
+	GetHelmReleaseValues(context.Context, domainidentity.Principal, string, string, string, string) (domainresource.HelmValuesView, error)
 	ListClusterEvents(context.Context, domainidentity.Principal, string, string, int) ([]domainresource.ClusterEventView, error)
 	RestartDeployment(context.Context, domainidentity.Principal, string, string, string) error
 	RollbackDeployment(context.Context, domainidentity.Principal, string, string, string, string) (domainresource.DeploymentRollbackView, error)
@@ -136,7 +139,7 @@ type ResourceService interface {
 }
 
 type AuditService interface {
-	List(context.Context, domainaudit.Filter) ([]domainaudit.Entry, error)
+	ListAuthorized(context.Context, domainidentity.Principal, domainaudit.Filter) ([]domainaudit.Entry, error)
 }
 
 type EventService interface {
@@ -145,7 +148,7 @@ type EventService interface {
 }
 
 type OperationService interface {
-	List(context.Context, int) ([]domainoperation.Entry, error)
+	ListAuthorized(context.Context, domainidentity.Principal, domainoperation.Filter) ([]domainoperation.Entry, error)
 }
 
 type IntegrationService interface {
@@ -1542,6 +1545,40 @@ func (h *PlatformHandler) ListHelmReleases(c *gin.Context) {
 	apiresponse.Items(c, http.StatusOK, items)
 }
 
+func (h *PlatformHandler) GetHelmReleaseDetail(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	namespace := c.Query("namespace")
+	item, err := h.resources.GetHelmReleaseDetail(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("releaseName"))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
+}
+
+func (h *PlatformHandler) ListHelmReleaseHistory(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	namespace := c.Query("namespace")
+	items, err := h.resources.ListHelmReleaseHistory(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("releaseName"))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Items(c, http.StatusOK, items)
+}
+
+func (h *PlatformHandler) GetHelmReleaseValues(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	namespace := c.Query("namespace")
+	revision := c.Query("revision")
+	item, err := h.resources.GetHelmReleaseValues(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("releaseName"), revision)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
+}
+
 func (h *PlatformHandler) ListClusterEvents(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.Query("namespace")
@@ -1614,8 +1651,9 @@ func (h *PlatformHandler) RollbackDeployment(c *gin.Context) {
 }
 
 func (h *PlatformHandler) ListAuditLogs(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
 	limit := parseLimit(c.Query("limit"), 50)
-	items, err := h.audit.List(c.Request.Context(), domainaudit.Filter{
+	items, err := h.audit.ListAuthorized(c.Request.Context(), principal, domainaudit.Filter{
 		Action: c.Query("action"),
 		Result: c.Query("result"),
 		Limit:  limit,
@@ -1746,8 +1784,13 @@ func (h *PlatformHandler) GetEvent(c *gin.Context) {
 }
 
 func (h *PlatformHandler) ListOperationLogs(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
 	limit := parseLimit(c.Query("limit"), 50)
-	items, err := h.operations.List(c.Request.Context(), limit)
+	items, err := h.operations.ListAuthorized(c.Request.Context(), principal, domainoperation.Filter{
+		OperationType: c.Query("operationType"),
+		Result:        c.Query("result"),
+		Limit:         limit,
+	})
 	if err != nil {
 		writeError(c, err)
 		return

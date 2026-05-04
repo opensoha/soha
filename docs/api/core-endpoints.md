@@ -34,10 +34,27 @@
 - `GET /api/v1/applications?search=<optional>&limit=100`
 - `POST /api/v1/applications`
 - `GET /api/v1/applications/:applicationID`
+- `GET /api/v1/applications/:applicationID/detail`
 - `PUT /api/v1/applications/:applicationID`
 - `DELETE /api/v1/applications/:applicationID`
+- `GET /api/v1/build-templates`
+- `POST /api/v1/build-templates`
+- `PUT /api/v1/build-templates/:buildTemplateID`
+- `DELETE /api/v1/build-templates/:buildTemplateID`
+- `GET /api/v1/application-environments`
+- `GET /api/v1/application-environments/:applicationEnvironmentID`
+- `GET /api/v1/application-environments/:applicationEnvironmentID/detail`
+- `GET /api/v1/application-environments/target-candidates?clusterId=<required>&namespace=<required>&search=<optional>`
+- `GET /api/v1/workflow-templates`
+- `GET /api/v1/delivery/release-board`
 - `GET /api/v1/builds?applicationId=<optional>&limit=50`
 - `POST /api/v1/builds/trigger`
+- `GET /api/v1/workflows?applicationId=<optional>&limit=50`
+- `POST /api/v1/workflows/trigger`
+- `POST /api/v1/workflows/:workflowRunID/approve`
+- `POST /api/v1/workflows/:workflowRunID/reject`
+- `GET /api/v1/releases?applicationId=<optional>&clusterId=<optional>&limit=50`
+- `POST /api/v1/releases/trigger`
 - `GET /api/v1/integrations/gitlab/projects?search=<optional>&limit=50`
 - `GET /api/v1/integrations/gitlab/branches?projectId=<required>&search=<optional>&limit=50`
 - `GET /api/v1/integrations/gitlab/tags?projectId=<required>&search=<optional>&limit=50`
@@ -46,9 +63,31 @@
 
 - `GET /api/v1/copilot/insights`
 - `GET /api/v1/copilot/sessions`
+- `GET /api/v1/copilot/sessions/:sessionID`
 - `POST /api/v1/copilot/sessions`
+- `PATCH /api/v1/copilot/sessions/:sessionID`
+- `DELETE /api/v1/copilot/sessions/:sessionID`
 - `GET /api/v1/copilot/sessions/:sessionID/messages`
 - `POST /api/v1/copilot/sessions/:sessionID/messages`
+- `GET /api/v1/copilot/root-cause/runs`
+- `POST /api/v1/copilot/root-cause/runs`
+- `GET /api/v1/copilot/root-cause/runs/:runID`
+- `GET /api/v1/copilot/data-source-capabilities`
+- `GET /api/v1/copilot/data-sources`
+- `POST /api/v1/copilot/data-sources`
+- `PUT /api/v1/copilot/data-sources/:dataSourceID`
+- `POST /api/v1/copilot/data-sources/:dataSourceID/validate`
+- `GET /api/v1/copilot/analysis-profiles`
+- `POST /api/v1/copilot/analysis-profiles`
+- `PUT /api/v1/copilot/analysis-profiles/:profileID`
+- `GET /api/v1/copilot/automation-policies`
+- `POST /api/v1/copilot/automation-policies`
+- `PUT /api/v1/copilot/automation-policies/:policyID`
+- `GET /api/v1/copilot/inspection-tasks`
+- `POST /api/v1/copilot/inspection-tasks`
+- `PUT /api/v1/copilot/inspection-tasks/:taskID`
+- `GET /api/v1/copilot/inspection-runs`
+- `POST /api/v1/copilot/inspection-tasks/:taskID/execute`
 
 ## Application Payload
 
@@ -69,6 +108,22 @@
   "buildImage": "registry.example.com/platform/billing-api",
   "buildContextDir": ".",
   "dockerfilePath": "Dockerfile",
+  "buildSources": [
+    {
+      "id": "default:billing-api",
+      "name": "Repository Dockerfile",
+      "type": "repo_dockerfile",
+      "enabled": true,
+      "isDefault": true,
+      "buildImage": "registry.example.com/platform/billing-api",
+      "defaultTag": "v1.0.0",
+      "config": {
+        "contextDir": ".",
+        "dockerfilePath": "Dockerfile",
+        "builderKind": "docker"
+      }
+    }
+  ],
   "enabled": true,
   "metadata": {
     "tier": "core"
@@ -81,11 +136,16 @@
 ```json
 {
   "applicationId": "billing-api",
+  "applicationEnvironmentId": "binding-prod",
+  "buildSourceId": "default:billing-api",
   "refType": "branch",
   "refName": "main",
   "imageTag": "billing-api:manual-20260322",
   "buildArgs": {
     "profile": "default"
+  },
+  "variables": {
+    "GO_VERSION": "1.24"
   }
 }
 ```

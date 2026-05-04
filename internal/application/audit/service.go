@@ -5,15 +5,18 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	appaccess "github.com/kubecrux/kubecrux/internal/application/access"
 	domainaudit "github.com/kubecrux/kubecrux/internal/domain/audit"
+	domainidentity "github.com/kubecrux/kubecrux/internal/domain/identity"
 )
 
 type Service struct {
-	repo domainaudit.Repository
+	repo        domainaudit.Repository
+	permissions *appaccess.PermissionResolver
 }
 
-func New(repo domainaudit.Repository) *Service {
-	return &Service{repo: repo}
+func New(repo domainaudit.Repository, permissions *appaccess.PermissionResolver) *Service {
+	return &Service{repo: repo, permissions: permissions}
 }
 
 func (s *Service) Record(ctx context.Context, entry domainaudit.Entry) error {
@@ -40,4 +43,11 @@ func (s *Service) List(ctx context.Context, filter domainaudit.Filter) ([]domain
 		filter.Limit = 50
 	}
 	return s.repo.List(ctx, filter)
+}
+
+func (s *Service) ListAuthorized(ctx context.Context, principal domainidentity.Principal, filter domainaudit.Filter) ([]domainaudit.Entry, error) {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermSystemAuditView); err != nil {
+		return nil, err
+	}
+	return s.List(ctx, filter)
 }

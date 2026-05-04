@@ -18,6 +18,7 @@ import (
 
 type stubCatalogRepository struct {
 	lastWorkflowTemplate    domaincatalog.WorkflowTemplateInput
+	lastBuildTemplate       domaincatalog.BuildTemplateInput
 	applicationEnvironments map[string]domaincatalog.ApplicationEnvironment
 	environments            map[string]domaincatalog.Environment
 }
@@ -94,6 +95,28 @@ func (s *stubCatalogRepository) UpdateApplicationEnvironment(context.Context, st
 func (s *stubCatalogRepository) DeleteApplicationEnvironment(context.Context, string) error {
 	return nil
 }
+
+func (s *stubCatalogRepository) ListBuildTemplates(context.Context) ([]domaincatalog.BuildTemplate, error) {
+	return nil, nil
+}
+
+func (s *stubCatalogRepository) GetBuildTemplate(context.Context, string) (domaincatalog.BuildTemplate, error) {
+	return domaincatalog.BuildTemplate{}, nil
+}
+
+func (s *stubCatalogRepository) CreateBuildTemplate(_ context.Context, input domaincatalog.BuildTemplateInput) (domaincatalog.BuildTemplate, error) {
+	s.lastBuildTemplate = input
+	return domaincatalog.BuildTemplate{Key: input.Key, Name: input.Name, BuilderKind: input.BuilderKind, BuildCommands: input.BuildCommands}, nil
+}
+
+func (s *stubCatalogRepository) UpdateBuildTemplate(_ context.Context, _ string, input domaincatalog.BuildTemplateInput) (domaincatalog.BuildTemplate, error) {
+	s.lastBuildTemplate = input
+	return domaincatalog.BuildTemplate{Key: input.Key, Name: input.Name, BuilderKind: input.BuilderKind, BuildCommands: input.BuildCommands}, nil
+}
+
+func (s *stubCatalogRepository) DeleteBuildTemplate(context.Context, string) error {
+	return nil
+}
 func (s *stubCatalogRepository) ListWorkflowTemplates(context.Context) ([]domaincatalog.WorkflowTemplate, error) {
 	return nil, nil
 }
@@ -164,7 +187,7 @@ func catalogPermissions(keys ...string) *appaccess.PermissionResolver {
 
 func TestCreateWorkflowTemplateRejectsUnsupportedStepType(t *testing.T) {
 	repo := &stubCatalogRepository{}
-	service := New(repo, nil, nil, catalogPermissions(appaccess.PermDeliveryWorkflowTemplatesManage))
+	service := New(repo, nil, nil, catalogPermissions(appaccess.PermDeliveryWorkflowTemplatesManage), nil, nil)
 	principal := domainidentity.Principal{Roles: []string{"admin"}}
 
 	_, err := service.CreateWorkflowTemplate(context.Background(), principal, domaincatalog.WorkflowTemplateInput{
@@ -188,7 +211,7 @@ func TestCreateWorkflowTemplateRejectsUnsupportedStepType(t *testing.T) {
 
 func TestCreateWorkflowTemplateDefaultsReleaseDefinition(t *testing.T) {
 	repo := &stubCatalogRepository{}
-	service := New(repo, nil, nil, catalogPermissions(appaccess.PermDeliveryWorkflowTemplatesManage))
+	service := New(repo, nil, nil, catalogPermissions(appaccess.PermDeliveryWorkflowTemplatesManage), nil, nil)
 	principal := domainidentity.Principal{Roles: []string{"admin"}}
 
 	_, err := service.CreateWorkflowTemplate(context.Background(), principal, domaincatalog.WorkflowTemplateInput{
@@ -208,7 +231,7 @@ func TestCreateWorkflowTemplateDefaultsReleaseDefinition(t *testing.T) {
 
 func TestCreateWorkflowTemplateRejectsGraphCycle(t *testing.T) {
 	repo := &stubCatalogRepository{}
-	service := New(repo, nil, nil, catalogPermissions(appaccess.PermDeliveryWorkflowTemplatesManage))
+	service := New(repo, nil, nil, catalogPermissions(appaccess.PermDeliveryWorkflowTemplatesManage), nil, nil)
 	principal := domainidentity.Principal{Roles: []string{"admin"}}
 
 	_, err := service.CreateWorkflowTemplate(context.Background(), principal, domaincatalog.WorkflowTemplateInput{
@@ -261,7 +284,7 @@ func TestUpdateApplicationEnvironmentDeniesOutsideScopeGrant(t *testing.T) {
 	}, []domaincatalog.Environment{{ID: "env-dev", Key: "dev"}}, []domaincatalog.ApplicationEnvironment{repo.applicationEnvironments["binding-1"]})
 	service := New(repo, authorizer, stubCatalogApps{items: map[string]domainapp.App{
 		"app-1": {ID: "app-1", BusinessLineID: "bl-retail"},
-	}}, nil)
+	}}, nil, nil, nil)
 
 	_, err := service.UpdateApplicationEnvironment(context.Background(), domainidentity.Principal{
 		UserID: "user-1",
@@ -281,7 +304,7 @@ func TestCreateWorkflowTemplateAllowsDelegatedManagePermission(t *testing.T) {
 		matrix: map[string][]string{
 			"delegated": {appaccess.PermDeliveryWorkflowTemplatesManage},
 		},
-	}))
+	}), nil, nil)
 
 	_, err := service.CreateWorkflowTemplate(context.Background(), domainidentity.Principal{Roles: []string{"delegated"}}, domaincatalog.WorkflowTemplateInput{
 		Key:  "release-flow",

@@ -12,7 +12,9 @@ import (
 	domainapp "github.com/kubecrux/kubecrux/internal/domain/application"
 	domainaudit "github.com/kubecrux/kubecrux/internal/domain/audit"
 	domainidentity "github.com/kubecrux/kubecrux/internal/domain/identity"
+	domainoperation "github.com/kubecrux/kubecrux/internal/domain/operation"
 	"github.com/kubecrux/kubecrux/internal/platform/apperrors"
+	"github.com/kubecrux/kubecrux/internal/platform/operationentry"
 	"github.com/kubecrux/kubecrux/internal/platform/requestctx"
 	applicationrepo "github.com/kubecrux/kubecrux/internal/repository/application"
 )
@@ -35,15 +37,20 @@ type AuditRecorder interface {
 	Record(context.Context, domainaudit.Entry) error
 }
 
+type OperationRecorder interface {
+	Record(context.Context, domainoperation.Entry) error
+}
+
 type Service struct {
 	repo       Repository
 	gitlab     GitLabClient
 	authorizer domainaccess.Authorizer
 	audit      AuditRecorder
+	operations OperationRecorder
 }
 
-func New(repo Repository, gitlab GitLabClient, authorizer domainaccess.Authorizer, audit AuditRecorder) *Service {
-	return &Service{repo: repo, gitlab: gitlab, authorizer: authorizer, audit: audit}
+func New(repo Repository, gitlab GitLabClient, authorizer domainaccess.Authorizer, audit AuditRecorder, operations OperationRecorder) *Service {
+	return &Service{repo: repo, gitlab: gitlab, authorizer: authorizer, audit: audit, operations: operations}
 }
 
 func (s *Service) List(ctx context.Context, principal domainidentity.Principal, filter domainapp.Filter) ([]domainapp.App, error) {
@@ -89,6 +96,7 @@ func (s *Service) Create(ctx context.Context, principal domainidentity.Principal
 		return domainapp.App{}, normalizeRepoError(err)
 	}
 	_ = s.recordAudit(ctx, principal, "", "Application", item.Name, string(domainaccess.ActionUpdate), "success", "created application")
+	s.recordOperation(ctx, principal, "delivery.application.create", item.ID, item.Name, "created application")
 	return item, nil
 }
 
@@ -104,6 +112,7 @@ func (s *Service) Update(ctx context.Context, principal domainidentity.Principal
 		return domainapp.App{}, normalizeRepoError(err)
 	}
 	_ = s.recordAudit(ctx, principal, "", "Application", item.Name, string(domainaccess.ActionUpdate), "success", "updated application")
+	s.recordOperation(ctx, principal, "delivery.application.update", item.ID, item.Name, "updated application")
 	return item, nil
 }
 
@@ -119,6 +128,7 @@ func (s *Service) Delete(ctx context.Context, principal domainidentity.Principal
 		return normalizeRepoError(err)
 	}
 	_ = s.recordAudit(ctx, principal, "", "Application", item.Name, string(domainaccess.ActionDelete), "success", "deleted application")
+	s.recordOperation(ctx, principal, "delivery.application.delete", item.ID, item.Name, "deleted application")
 	return nil
 }
 
@@ -255,4 +265,26 @@ func (s *Service) recordAudit(ctx context.Context, principal domainidentity.Prin
 			"source": meta.Source,
 		},
 	})
+}
+
+func (s *Service) recordOperation(ctx context.Context, principal domainidentity.Principal, operationType, targetID, targetLabel, summary string) {
+	if s.operations == nil {
+		return
+	}
+	_ = s.operations.Record(ctx, operationentry.New(
+		ctx,
+		principal,
+		operationType,
+		map[string]any{
+			"module":       "delivery",
+			"resourceKind": "Application",
+			"targetId":     targetID,
+			"targetLabel":  targetLabel,
+		},
+		"success",
+		summary,
+		map[string]any{
+			"targetId": targetID,
+		},
+	))
 }

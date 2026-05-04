@@ -47,14 +47,17 @@ func (h *ReleaseHandler) TriggerRelease(c *gin.Context) {
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
 	item, err := h.service.Trigger(c.Request.Context(), principal, domainrelease.TriggerInput{
-		ApplicationID:  req.ApplicationID,
-		ClusterID:      req.ClusterID,
-		Namespace:      req.Namespace,
-		DeploymentName: req.DeploymentName,
-		ContainerName:  req.ContainerName,
-		Image:          req.Image,
-		ImageTag:       req.ImageTag,
-		ReleaseName:    req.ReleaseName,
+		ApplicationID:            req.ApplicationID,
+		ApplicationEnvironmentID: req.ApplicationEnvironmentID,
+		ClusterID:                req.ClusterID,
+		Namespace:                req.Namespace,
+		DeploymentName:           req.DeploymentName,
+		ContainerName:            req.ContainerName,
+		Image:                    req.Image,
+		ImageTag:                 req.ImageTag,
+		ReleaseName:              req.ReleaseName,
+		ActionKind:               req.ActionKind,
+		WorkflowRunID:            req.WorkflowRunID,
 	})
 	if err != nil {
 		writeError(c, err)

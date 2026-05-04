@@ -37,9 +37,41 @@ type ApplicationEnvironmentRequest struct {
 	ApplicationID      string                 `json:"applicationId"`
 	EnvironmentID      string                 `json:"environmentId"`
 	WorkflowTemplateID string                 `json:"workflowTemplateId"`
-	BuildPolicy        map[string]any         `json:"buildPolicy"`
-	ReleasePolicy      map[string]any         `json:"releasePolicy"`
+	BuildPolicy        BuildPolicyRequest     `json:"buildPolicy"`
+	ReleasePolicy      ReleasePolicyRequest   `json:"releasePolicy"`
 	Targets            []ReleaseTargetRequest `json:"targets"`
+}
+
+type BuildPolicyRequest struct {
+	SourceID         string         `json:"sourceId"`
+	RefType          string         `json:"refType"`
+	RefValue         string         `json:"refValue"`
+	ImageTagMode     string         `json:"imageTagMode"`
+	ImageTagTemplate string         `json:"imageTagTemplate"`
+	Variables        map[string]any `json:"variables"`
+	BuildArgs        map[string]any `json:"buildArgs"`
+}
+
+type ReleasePolicyRequest struct {
+	ActionKind            string   `json:"actionKind"`
+	RequiresApproval      bool     `json:"requiresApproval"`
+	ApproverRoles         []string `json:"approverRoles"`
+	AutoRollback          bool     `json:"autoRollback"`
+	RolloutTimeoutSeconds int      `json:"rolloutTimeoutSeconds"`
+	VerificationMode      string   `json:"verificationMode"`
+}
+
+type BuildTemplateRequest struct {
+	ID                 string         `json:"id"`
+	Key                string         `json:"key"`
+	Name               string         `json:"name"`
+	Description        string         `json:"description"`
+	BuilderKind        string         `json:"builderKind"`
+	DockerfileTemplate string         `json:"dockerfileTemplate"`
+	BuildCommands      []string       `json:"buildCommands"`
+	VariableSchema     map[string]any `json:"variableSchema"`
+	DefaultVariables   map[string]any `json:"defaultVariables"`
+	Enabled            bool           `json:"enabled"`
 }
 
 type WorkflowTemplateRequest struct {

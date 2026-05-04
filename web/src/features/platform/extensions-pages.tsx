@@ -1,4 +1,5 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
   Alert,
   Button,
@@ -8,11 +9,19 @@ import {
   Modal,
   Space,
   Spin,
+  Tabs,
   Tag,
   Typography,
   message,
 } from 'antd'
-import { DeleteOutlined, EditOutlined, PlusOutlined } from '@ant-design/icons'
+import {
+  ArrowLeftOutlined,
+  DeleteOutlined,
+  EditOutlined,
+  HistoryOutlined,
+  PlusOutlined,
+  RightOutlined,
+} from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AdminTable } from '@/components/admin-table'
 import { useI18n } from '@/i18n'
@@ -20,20 +29,20 @@ import { PageHeader } from '@/components/page-header'
 import { PlatformClusterScopeHint } from '@/components/platform-cluster-scope-hint'
 import { PlatformScopeToolbar } from '@/components/platform-scope-toolbar'
 import { StatusTag } from '@/components/status-tag'
+import { YamlDraftDiffEditor } from '@/components/yaml-draft-diff-editor'
 import { buildClusterScopedPath } from '@/features/platform/platform-scope-query'
 import { api } from '@/services/api-client'
 import { usePlatformScopeStore } from '@/stores/platform-scope-store'
-import { formatAgeSeconds, formatRelativeTime } from '@/utils/time'
+import { formatAgeSeconds, formatDateTime, formatRelativeTime } from '@/utils/time'
 import { tableColumnPresets } from '@/utils/table-columns'
-import type { ApiResponse } from '@/types'
-import type { TableColumnsType } from 'antd'
+import type { ApiResponse, HelmRelease, HelmReleaseDetail, HelmReleaseHistory, HelmValues } from '@/types'
+import type { TableColumnsType, TabsProps } from 'antd'
 
 const { Text } = Typography
 const K8sYamlEditor = lazy(async () => {
   const mod = await import('@/components/k8s-yaml-editor')
   return { default: mod.K8sYamlEditor }
 })
-
 /* ─── CRDs ─── */
 
 interface CRD {
@@ -58,6 +67,16 @@ interface CRDResourceInstance {
   namespace?: string
   status?: string
   summary?: Record<string, string | number | boolean | null>
+}
+
+interface CRDApiGroupSummary {
+  clusterCount: number
+  crdCount: number
+  crds: CRD[]
+  group: string
+  kindNames: string[]
+  namespacedCount: number
+  versions: string[]
 }
 
 interface CRDResourceEditorModalProps {
@@ -98,6 +117,62 @@ function buildCustomResourceItemPath(
     isNamespacedCRD(crd) ? namespace : null,
     { version: crd.version },
   )
+}
+
+function buildCRDApiGroupDetailPath(group: string) {
+  return `/extensions/apis/${encodeURIComponent(group)}`
+}
+
+function buildHelmReleaseDetailPath(name: string, namespace?: string | null) {
+  const encodedName = encodeURIComponent(name)
+  if (!namespace) {
+    return `/helm/releases/${encodedName}`
+  }
+  const params = new URLSearchParams()
+  params.set('namespace', namespace)
+  return `/helm/releases/${encodedName}?${params.toString()}`
+}
+
+function getPrimaryCRDName(group: CRDApiGroupSummary) {
+  return group.group
+}
+
+function getServedVersions(crd: CRD) {
+  return Array.from(new Set((crd.versions?.length ? crd.versions : [crd.version]).filter(Boolean)))
+}
+
+function groupCRDsByApi(crds: CRD[]) {
+  const grouped = new Map<string, CRD[]>()
+  for (const crd of crds) {
+    const current = grouped.get(crd.group) ?? []
+    current.push(crd)
+    grouped.set(crd.group, current)
+  }
+
+  return Array.from(grouped.entries())
+    .map(([group, items]) => {
+      const sortedCRDs = [...items].sort((left, right) => left.kind.localeCompare(right.kind))
+      const versions = Array.from(new Set(sortedCRDs.flatMap((item) => getServedVersions(item)))).sort((left, right) => left.localeCompare(right))
+      return {
+        clusterCount: sortedCRDs.filter((item) => !isNamespacedCRD(item)).length,
+        crdCount: sortedCRDs.length,
+        crds: sortedCRDs,
+        group,
+        kindNames: sortedCRDs.map((item) => item.kind),
+        namespacedCount: sortedCRDs.filter((item) => isNamespacedCRD(item)).length,
+        versions,
+      } satisfies CRDApiGroupSummary
+    })
+    .sort((left, right) => left.group.localeCompare(right.group))
+}
+
+function safeDecodeURIComponent(value?: string) {
+  if (!value) return ''
+  try {
+    return decodeURIComponent(value)
+  } catch {
+    return value
+  }
 }
 
 function toKebabCase(value: string) {
@@ -289,55 +364,32 @@ function CRDResourceEditorModal({
   )
 }
 
-export function CRDPage() {
+function CRDKindWorkspace({ crd }: { crd: CRD }) {
   const { t } = useI18n()
   const { clusterId, namespace } = usePlatformScopeStore()
   const queryClient = useQueryClient()
-  const [selectedCRDName, setSelectedCRDName] = useState<string | null>(null)
   const [createOpen, setCreateOpen] = useState(false)
   const [editingResource, setEditingResource] = useState<CRDResourceInstance | null>(null)
   const [deletingKey, setDeletingKey] = useState<string | null>(null)
 
-  const { data, isLoading } = useQuery({
-    queryKey: ['crds', clusterId],
-    queryFn: () => api.get<ApiResponse<CRD[]>>(buildClusterScopedPath(clusterId!, 'extensions/crds')),
-    enabled: !!clusterId,
-  })
-
-  const crds = data?.data ?? []
-  const selectedCRD = useMemo(
-    () => crds.find((item) => item.name === selectedCRDName) ?? crds[0] ?? null,
-    [crds, selectedCRDName],
-  )
-  const selectedScopeNamespace = selectedCRD && isNamespacedCRD(selectedCRD) ? (namespace ?? '') : null
-  const selectedListQueryKey = ['crd-resources', clusterId, selectedCRD?.name ?? null, selectedScopeNamespace ?? '__cluster__']
-
-  useEffect(() => {
-    if (!crds.length) {
-      setSelectedCRDName(null)
-      return
-    }
-    if (selectedCRDName && crds.some((item) => item.name === selectedCRDName)) {
-      return
-    }
-    setSelectedCRDName(crds[0].name)
-  }, [crds, selectedCRDName])
+  const selectedScopeNamespace = isNamespacedCRD(crd) ? (namespace ?? '') : null
+  const selectedListQueryKey = ['crd-resources', clusterId, crd.name, selectedScopeNamespace ?? '__cluster__']
 
   const resourcesQuery = useQuery({
     queryKey: selectedListQueryKey,
     queryFn: () => api.get<ApiResponse<CRDResourceInstance[]>>(
-      buildCustomResourceCollectionPath(clusterId!, selectedCRD!, namespace),
+      buildCustomResourceCollectionPath(clusterId!, crd, namespace),
     ),
-    enabled: !!clusterId && !!selectedCRD,
+    enabled: !!clusterId,
   })
 
   const deleteMutation = useMutation({
     mutationFn: ({ resourceName, resourceNamespace }: { resourceName: string; resourceNamespace?: string }) => {
-      if (!clusterId || !selectedCRD) {
+      if (!clusterId) {
         throw new Error(t('platformScope.clusterPlaceholder', 'Select cluster'))
       }
       return api.delete(
-        buildCustomResourceItemPath(clusterId, selectedCRD, resourceName, resourceNamespace ?? namespace ?? ''),
+        buildCustomResourceItemPath(clusterId, crd, resourceName, resourceNamespace ?? namespace ?? ''),
       )
     },
     onMutate: ({ resourceName, resourceNamespace }) => setDeletingKey(`${resourceNamespace || ''}/${resourceName}`),
@@ -349,36 +401,6 @@ export function CRDPage() {
     onError: (err: Error) => void message.error(err.message),
   })
 
-  const columns: TableColumnsType<CRD> = [
-    { title: '名称', dataIndex: 'name' },
-    { title: 'Kind', dataIndex: 'kind', width: 180 },
-    { title: 'Group', dataIndex: 'group' },
-    { title: 'Plural', dataIndex: 'plural', width: 180 },
-    {
-      title: 'Version',
-      dataIndex: 'version',
-      render: (_: string, record: CRD) => (
-        <Space size={[4, 4]} wrap>
-          {(record.versions?.length ? record.versions : [record.version]).map((value) => (
-            <Tag key={value} color={value === record.version ? 'blue' : 'default'}>
-              {value}
-            </Tag>
-          ))}
-        </Space>
-      ),
-    },
-    {
-      title: 'Scope',
-      dataIndex: 'scope',
-      render: (s: string) => <Tag>{s}</Tag>,
-    },
-    {
-      title: 'Age',
-      key: 'age',
-      render: (_: unknown, record: CRD) => formatResourceAge(record.createdAt, record.ageSeconds),
-    },
-  ]
-
   const resourceColumns: TableColumnsType<CRDResourceInstance> = [
     {
       title: '名称',
@@ -389,20 +411,20 @@ export function CRDPage() {
         </Button>
       ),
     },
-    ...(selectedCRD && isNamespacedCRD(selectedCRD)
+    ...(isNamespacedCRD(crd)
       ? [{ title: '命名空间', dataIndex: 'namespace', width: 180 } satisfies TableColumnsType<CRDResourceInstance>[number]]
       : []),
     {
       title: 'Kind',
       dataIndex: 'kind',
       width: 180,
-      render: (value?: string) => value || selectedCRD?.kind || '-',
+      render: (value?: string) => value || crd.kind || '-',
     },
     {
       title: 'API Version',
       dataIndex: 'apiVersion',
       width: 220,
-      render: (value?: string) => value || (selectedCRD ? `${selectedCRD.group}/${selectedCRD.version}` : '-'),
+      render: (value?: string) => value || `${crd.group}/${crd.version}`,
     },
     {
       title: '状态',
@@ -449,7 +471,7 @@ export function CRDPage() {
               onClick={() => {
                 Modal.confirm({
                   title: t('common.deleteConfirm', `Delete ${record.name}?`),
-                  content: isNamespacedCRD(selectedCRD)
+                  content: isNamespacedCRD(crd)
                     ? (record.namespace
                         ? `${record.name} (${record.namespace})`
                         : record.name)
@@ -468,161 +490,400 @@ export function CRDPage() {
     },
   ]
 
-  const instanceToolbar = selectedCRD ? (
+  const instanceToolbar = (
     <Space wrap>
       <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>
         {t('common.create', 'Create')}
       </Button>
-      <Tag color={isNamespacedCRD(selectedCRD) ? 'gold' : 'blue'}>
-        {isNamespacedCRD(selectedCRD)
+      <Tag color={isNamespacedCRD(crd) ? 'gold' : 'blue'}>
+        {isNamespacedCRD(crd)
           ? (namespace
               ? `${t('common.namespace', 'Namespace')}: ${namespace}`
               : t('platformScope.allNamespaces', 'All namespaces'))
           : t('page.extensions.crd.clusterScoped', 'Cluster scoped')}
       </Tag>
     </Space>
-  ) : null
+  )
 
   return (
-    <div className="kc-page">
-      <PageHeader
-        title={t('page.extensions.crd.title', 'CustomResourceDefinitions')}
-        description={t('page.extensions.crd.desc', 'Inspect CRDs, pick a kind, and operate on the custom resources backed by that definition.')}
-      />
-      <PlatformScopeToolbar />
-      <PlatformClusterScopeHint resourceLabel="CRD" />
-      <AdminTable
-        columns={columns}
-        dataSource={crds}
-        rowKey="name"
-        loading={isLoading}
-        pageSize={10}
-        enableColumnSelection={false}
-        rowSelection={{
-          type: 'radio',
-          selectedRowKeys: selectedCRD ? [selectedCRD.name] : [],
-          onChange: (selectedRowKeys: React.Key[]) => {
-            const next = typeof selectedRowKeys[0] === 'string' ? selectedRowKeys[0] : null
-            setSelectedCRDName(next)
-          },
-        }}
-        title={(
-          <Space direction="vertical" size={0}>
-            <Text strong>{t('page.extensions.crd.catalogTitle', 'CRD Catalog')}</Text>
-            <Text type="secondary">{t('page.extensions.crd.catalogDesc', 'Select a CRD to inspect the custom resources it serves.')}</Text>
-          </Space>
-        )}
-      />
-
-      <Card className="kc-detail-card" style={{ marginTop: 16 }}>
-        {!selectedCRD ? (
-          <Empty description={clusterId ? t('page.extensions.crd.emptySelection', 'Select a CRD from the catalog to inspect its resources.') : t('platformScope.clusterPlaceholder', 'Select cluster')} />
-        ) : (
-          <Space direction="vertical" size={16} style={{ width: '100%' }}>
-            <Descriptions
-              column={{ xs: 1, sm: 2, lg: 4 }}
-              items={[
-                { key: 'name', label: 'CRD', children: selectedCRD.name },
-                { key: 'kind', label: 'Kind', children: selectedCRD.kind },
-                { key: 'group', label: 'Group', children: selectedCRD.group },
-                { key: 'plural', label: 'Plural', children: selectedCRD.plural },
-                {
-                  key: 'versions',
-                  label: 'Versions',
-                  span: 2,
-                  children: (
-                    <Space size={[4, 4]} wrap>
-                      {(selectedCRD.versions?.length ? selectedCRD.versions : [selectedCRD.version]).map((value) => (
-                        <Tag key={value} color={value === selectedCRD.version ? 'blue' : 'default'}>
-                          {value}
-                        </Tag>
-                      ))}
-                    </Space>
-                  ),
-                },
-                { key: 'scope', label: 'Scope', children: <Tag>{selectedCRD.scope}</Tag> },
-                { key: 'age', label: 'Age', children: formatResourceAge(selectedCRD.createdAt, selectedCRD.ageSeconds) },
-              ]}
-            />
-            <Alert
-              type="info"
-              showIcon
-              message={isNamespacedCRD(selectedCRD)
-                ? t('page.extensions.crd.namespacedTitle', 'Namespaced custom resources')
-                : t('page.extensions.crd.clusterTitle', 'Cluster-scoped custom resources')}
-              description={isNamespacedCRD(selectedCRD)
-                ? (namespace
-                    ? t('page.extensions.crd.namespacedDesc', `The lower table is filtered by namespace ${namespace}. Clear the namespace selector to inspect all namespaces for this CRD.`)
-                    : t('page.extensions.crd.namespacedAllDesc', 'The lower table spans all namespaces for this CRD because no namespace filter is active.'))
-                : t('page.extensions.crd.clusterDesc', 'The lower table ignores the namespace selector because the selected CRD is cluster-scoped.')}
-            />
-            <AdminTable
-              columns={resourceColumns}
-              dataSource={resourcesQuery.data?.data ?? []}
-              rowKey={(record) => `${record.namespace || '__cluster__'}:${record.name}`}
-              loading={resourcesQuery.isLoading}
-              empty={resourcesQuery.isError
-                ? (
-                  <Alert
-                    type="warning"
-                    showIcon
-                    message={t('page.extensions.crd.resourcesUnavailable', 'Custom resource list unavailable')}
-                    description={(resourcesQuery.error as Error)?.message}
-                  />
-                )
-                : <Empty description={t('page.extensions.crd.resourcesEmpty', 'No custom resources found for the selected CRD in the current scope.')} />}
-              enableColumnSelection={false}
-              scroll={{ x: 'max-content' }}
-              title={(
-                <Space direction="vertical" size={0}>
-                  <Text strong>{`${selectedCRD.kind} ${t('page.extensions.crd.resourcesTitle', 'Resources')}`}</Text>
-                  <Text type="secondary">
-                    {t('page.extensions.crd.resourcesDesc', 'Create, edit, or delete resources through generic YAML flows driven by the selected CRD metadata.')}
-                  </Text>
-                </Space>
-              )}
-              toolbar={instanceToolbar}
-            />
-          </Space>
-        )}
+    <>
+      <Card className="kc-detail-card" style={{ marginTop: 0 }}>
+        <Space direction="vertical" size={16} style={{ width: '100%' }}>
+          <Descriptions
+            column={{ xs: 1, sm: 2, lg: 4 }}
+            items={[
+              { key: 'name', label: 'CRD', children: crd.name },
+              { key: 'kind', label: 'Kind', children: crd.kind },
+              { key: 'group', label: 'Group', children: crd.group },
+              { key: 'plural', label: 'Plural', children: crd.plural },
+              {
+                key: 'versions',
+                label: 'Versions',
+                span: 2,
+                children: (
+                  <Space size={[4, 4]} wrap>
+                    {getServedVersions(crd).map((value) => (
+                      <Tag key={value} color={value === crd.version ? 'blue' : 'default'}>
+                        {value}
+                      </Tag>
+                    ))}
+                  </Space>
+                ),
+              },
+              { key: 'scope', label: 'Scope', children: <Tag>{crd.scope}</Tag> },
+              { key: 'age', label: 'Age', children: formatResourceAge(crd.createdAt, crd.ageSeconds) },
+            ]}
+          />
+          <Alert
+            type="info"
+            showIcon
+            message={isNamespacedCRD(crd)
+              ? t('page.extensions.crd.namespacedTitle', 'Namespaced custom resources')
+              : t('page.extensions.crd.clusterTitle', 'Cluster-scoped custom resources')}
+            description={isNamespacedCRD(crd)
+              ? (namespace
+                  ? t('page.extensions.crd.namespacedDesc', `The lower table is filtered by namespace ${namespace}. Clear the namespace selector to inspect all namespaces for this CRD.`)
+                  : t('page.extensions.crd.namespacedAllDesc', 'The lower table spans all namespaces for this CRD because no namespace filter is active.'))
+              : t('page.extensions.crd.clusterDesc', 'The lower table ignores the namespace selector because the selected CRD is cluster-scoped.')}
+          />
+        </Space>
       </Card>
 
-      {selectedCRD ? (
+      <AdminTable
+        columns={resourceColumns}
+        dataSource={resourcesQuery.data?.data ?? []}
+        rowKey={(record) => `${record.namespace || '__cluster__'}:${record.name}`}
+        loading={resourcesQuery.isLoading}
+        empty={resourcesQuery.isError
+          ? (
+            <Alert
+              type="warning"
+              showIcon
+              message={t('page.extensions.crd.resourcesUnavailable', 'Custom resource list unavailable')}
+              description={(resourcesQuery.error as Error)?.message}
+            />
+          )
+          : <Empty description={t('page.extensions.crd.resourcesEmpty', 'No custom resources found for the selected CRD in the current scope.')} />}
+        enableColumnSelection={false}
+        scroll={{ x: 'max-content' }}
+        title={(
+          <Space direction="vertical" size={0}>
+            <Text strong>{`${crd.kind} ${t('page.extensions.crd.resourcesTitle', 'Resources')}`}</Text>
+            <Text type="secondary">
+              {t('page.extensions.crd.resourcesDesc', 'Create, edit, or delete resources through generic YAML flows driven by the selected CRD metadata.')}
+            </Text>
+          </Space>
+        )}
+        toolbar={instanceToolbar}
+      />
+
+      <CRDResourceEditorModal
+        crd={crd}
+        mode="create"
+        open={createOpen}
+        onClose={() => setCreateOpen(false)}
+      />
+
+      {editingResource ? (
         <CRDResourceEditorModal
-          crd={selectedCRD}
-          mode="create"
-          open={createOpen}
-          onClose={() => setCreateOpen(false)}
-        />
-      ) : null}
-      {selectedCRD && editingResource ? (
-        <CRDResourceEditorModal
-          crd={selectedCRD}
+          crd={crd}
           mode="edit"
           open={!!editingResource}
           resource={editingResource}
           onClose={() => setEditingResource(null)}
         />
       ) : null}
+    </>
+  )
+}
+
+export function CRDPage() {
+  const { t, localeCode } = useI18n()
+  const { clusterId } = usePlatformScopeStore()
+  const navigate = useNavigate()
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['crds', clusterId],
+    queryFn: () => api.get<ApiResponse<CRD[]>>(buildClusterScopedPath(clusterId!, 'extensions/crds')),
+    enabled: !!clusterId,
+  })
+
+  const apiGroups = useMemo(() => groupCRDsByApi(data?.data ?? []), [data?.data])
+
+  const columns: TableColumnsType<CRDApiGroupSummary> = [
+    {
+      title: t('page.extensions.crd.crdNameColumn', 'CRD Name'),
+      dataIndex: 'group',
+      render: (_: string, record: CRDApiGroupSummary) => (
+        <div className="kc-crd-catalog-name">
+          <Button
+            type="link"
+            style={{ paddingInline: 0 }}
+            onClick={(event) => {
+              event.stopPropagation()
+              navigate(buildCRDApiGroupDetailPath(record.group))
+            }}
+          >
+            {getPrimaryCRDName(record)}
+          </Button>
+          <Text type="secondary">
+            {localeCode === 'zh_CN'
+              ? `${record.crdCount} 个 kinds`
+              : `${record.crdCount} kinds`}
+          </Text>
+        </div>
+      ),
+    },
+    {
+      title: t('page.extensions.crd.kindPreviewColumn', 'Served kinds'),
+      key: 'kinds',
+      width: 420,
+      render: (_: unknown, record: CRDApiGroupSummary) => (
+        <Space size={[4, 4]} wrap>
+          {record.kindNames.slice(0, 6).map((value) => (
+            <Tag key={value}>{value}</Tag>
+          ))}
+          {record.kindNames.length > 6 ? <Tag>{`+${record.kindNames.length - 6}`}</Tag> : null}
+        </Space>
+      ),
+    },
+    {
+      title: t('page.extensions.crd.versionsColumn', 'Versions'),
+      key: 'versions',
+      width: 240,
+      render: (_: unknown, record: CRDApiGroupSummary) => (
+        <Space size={[4, 4]} wrap>
+          {record.versions.map((value) => (
+            <Tag key={value} color="blue">
+              {value}
+            </Tag>
+          ))}
+        </Space>
+      ),
+    },
+    {
+      title: t('page.extensions.crd.scopeColumn', 'Scope mix'),
+      key: 'scope',
+      width: 220,
+      render: (_: unknown, record: CRDApiGroupSummary) => (
+        <Space size={[4, 4]} wrap>
+          {record.namespacedCount > 0 ? (
+            <Tag color="gold">
+              {localeCode === 'zh_CN' ? `Namespaced ${record.namespacedCount}` : `Namespaced ${record.namespacedCount}`}
+            </Tag>
+          ) : null}
+          {record.clusterCount > 0 ? (
+            <Tag color="blue">
+              {localeCode === 'zh_CN' ? `Cluster ${record.clusterCount}` : `Cluster ${record.clusterCount}`}
+            </Tag>
+          ) : null}
+        </Space>
+      ),
+    },
+    {
+      title: '',
+      key: 'action',
+      width: 132,
+      align: 'right',
+      render: (_: unknown, record: CRDApiGroupSummary) => (
+        <Button
+          type="link"
+          icon={<RightOutlined />}
+          iconPosition="end"
+          onClick={(event) => {
+            event.stopPropagation()
+            navigate(buildCRDApiGroupDetailPath(record.group))
+          }}
+        >
+          {t('page.extensions.crd.openDetail', localeCode === 'zh_CN' ? '查看详情' : 'Open')}
+        </Button>
+      ),
+    },
+  ]
+
+  return (
+    <div className="kc-page">
+      <PageHeader
+        title={t('page.extensions.crd.title', 'CustomResourceDefinitions')}
+        description={t('page.extensions.crd.desc', 'Browse existing CRD names first, then open one to inspect its served kinds and resources.')}
+      />
+      <PlatformScopeToolbar />
+      <PlatformClusterScopeHint resourceLabel="CRD" />
+      <AdminTable
+        columns={columns}
+        dataSource={apiGroups}
+        rowKey="group"
+        loading={isLoading}
+        pageSize={10}
+        enableColumnSelection={false}
+        onRow={(record: CRDApiGroupSummary) => ({
+          onClick: () => navigate(buildCRDApiGroupDetailPath(record.group)),
+          style: { cursor: 'pointer' },
+        })}
+        title={(
+          <Space direction="vertical" size={0}>
+            <Text strong>{t('page.extensions.crd.catalogTitle', 'CRD Catalog')}</Text>
+            <Text type="secondary">{t('page.extensions.crd.catalogDesc', 'See which CRD names are available in the current cluster, then open one to inspect its kinds.')}</Text>
+          </Space>
+        )}
+      />
+    </div>
+  )
+}
+
+export function CRDApiGroupDetailPage() {
+  const { t, localeCode } = useI18n()
+  const { groupName } = useParams()
+  const { clusterId } = usePlatformScopeStore()
+  const navigate = useNavigate()
+  const [selectedCRDName, setSelectedCRDName] = useState<string | null>(null)
+
+  const decodedGroupName = safeDecodeURIComponent(groupName)
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['crds', clusterId],
+    queryFn: () => api.get<ApiResponse<CRD[]>>(buildClusterScopedPath(clusterId!, 'extensions/crds')),
+    enabled: !!clusterId,
+  })
+
+  const apiGroups = useMemo(() => groupCRDsByApi(data?.data ?? []), [data?.data])
+  const groupSummary = useMemo(
+    () => apiGroups.find((item) => item.group === decodedGroupName) ?? null,
+    [apiGroups, decodedGroupName],
+  )
+  const groupCRDs = groupSummary?.crds ?? []
+  const selectedCRD = useMemo(
+    () => groupCRDs.find((item) => item.name === selectedCRDName) ?? groupCRDs[0] ?? null,
+    [groupCRDs, selectedCRDName],
+  )
+
+  useEffect(() => {
+    if (!groupCRDs.length) {
+      setSelectedCRDName(null)
+      return
+    }
+    if (selectedCRDName && groupCRDs.some((item) => item.name === selectedCRDName)) {
+      return
+    }
+    setSelectedCRDName(groupCRDs[0].name)
+  }, [groupCRDs, selectedCRDName])
+
+  return (
+    <div className="kc-page">
+      <PageHeader
+        title={decodedGroupName || t('route.extensions-group-detail.title', 'API Detail')}
+        description={t('page.extensions.crd.groupDesc', 'Inspect the kinds served by this CRD entry and switch resources from the left-side CRD cards.')}
+        actions={(
+          <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/extensions')}>
+            {t('page.extensions.crd.backToApis', localeCode === 'zh_CN' ? '返回 API 列表' : 'Back to API catalog')}
+          </Button>
+        )}
+      />
+      <PlatformScopeToolbar />
+      <PlatformClusterScopeHint resourceLabel="CRD" />
+
+      {!clusterId ? (
+        <Card className="kc-detail-card" style={{ marginTop: 0 }}>
+          <Empty description={t('platformScope.clusterPlaceholder', 'Select cluster')} />
+        </Card>
+      ) : isLoading ? (
+        <Card className="kc-detail-card" style={{ marginTop: 0 }} loading />
+      ) : !groupSummary ? (
+        <Card className="kc-detail-card" style={{ marginTop: 0 }}>
+          <Empty description={t('page.extensions.crd.groupEmpty', 'The selected API group is not available in the current cluster.')}>
+            <Button onClick={() => navigate('/extensions')}>
+              {t('page.extensions.crd.backToApis', localeCode === 'zh_CN' ? '返回 API 列表' : 'Back to API catalog')}
+            </Button>
+          </Empty>
+        </Card>
+      ) : (
+        <div className="kc-crd-workspace">
+          <Card className="kc-crd-sidebar-card" style={{ marginTop: 0 }}>
+            <Space direction="vertical" size={16} style={{ width: '100%' }}>
+              <div>
+                <Text strong>{t('page.extensions.crd.kindCatalogTitle', 'CRD Resources')}</Text>
+                <div>
+                  <Text type="secondary">
+                    {t('page.extensions.crd.kindCatalogDesc', 'Select a CRD resource card to inspect its kind and resource instances.')}
+                  </Text>
+                </div>
+              </div>
+
+              <div className="kc-tag-list">
+                <Tag color="geekblue">{`${groupSummary.crdCount} ${localeCode === 'zh_CN' ? 'Kinds' : 'Kinds'}`}</Tag>
+                {groupSummary.namespacedCount > 0 ? (
+                  <Tag color="gold">
+                    {localeCode === 'zh_CN' ? `Namespaced ${groupSummary.namespacedCount}` : `Namespaced ${groupSummary.namespacedCount}`}
+                  </Tag>
+                ) : null}
+                {groupSummary.clusterCount > 0 ? (
+                  <Tag color="blue">
+                    {localeCode === 'zh_CN' ? `Cluster ${groupSummary.clusterCount}` : `Cluster ${groupSummary.clusterCount}`}
+                  </Tag>
+                ) : null}
+              </div>
+
+              <div className="kc-tag-list">
+                {groupSummary.versions.map((value) => (
+                  <Tag key={value} color="blue">
+                    {value}
+                  </Tag>
+                ))}
+              </div>
+
+              <div className="kc-crd-kind-list">
+                {groupCRDs.map((crd) => {
+                  const isActive = selectedCRD?.name === crd.name
+                  return (
+                    <button
+                      key={crd.name}
+                      type="button"
+                      className={`kc-crd-kind-item ${isActive ? 'is-active' : ''}`}
+                      onClick={() => setSelectedCRDName(crd.name)}
+                    >
+                      <span className="kc-crd-kind-item__header">
+                        <span className="kc-crd-kind-item__name">{crd.name}</span>
+                        <Tag color={isNamespacedCRD(crd) ? 'gold' : 'blue'} bordered={false}>
+                          {isNamespacedCRD(crd)
+                            ? t('page.extensions.crd.namespacedScoped', 'Namespaced')
+                            : t('page.extensions.crd.clusterScoped', 'Cluster scoped')}
+                        </Tag>
+                      </span>
+                      <span className="kc-crd-kind-item__meta">
+                        {`${t('page.extensions.crd.kindLabel', 'Kind')}: ${crd.kind}`}
+                      </span>
+                      <span className="kc-crd-kind-item__meta">
+                        {`${t('page.extensions.crd.pluralLabel', 'Plural')}: ${crd.plural}`}
+                      </span>
+                      <span className="kc-crd-kind-item__meta">{getServedVersions(crd).join(' · ')}</span>
+                    </button>
+                  )
+                })}
+              </div>
+            </Space>
+          </Card>
+
+          <div className="kc-crd-detail-column">
+            {selectedCRD ? (
+              <CRDKindWorkspace crd={selectedCRD} />
+            ) : (
+              <Card className="kc-detail-card" style={{ marginTop: 0 }}>
+                <Empty description={t('page.extensions.crd.emptySelection', 'Select a kind to inspect its resources.')} />
+              </Card>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
 
 /* ─── Helm Releases ─── */
 
-interface HelmRelease {
-  name: string
-  namespace: string
-  chart: string
-  version: string
-  appVersion: string
-  status: string
-  updatedAt: string
-}
-
 export function HelmReleasesPage() {
   const { t } = useI18n()
   const { clusterId, namespace } = usePlatformScopeStore()
+  const navigate = useNavigate()
 
   const { data, isLoading } = useQuery({
     queryKey: ['helm-releases', clusterId, namespace],
@@ -631,24 +892,190 @@ export function HelmReleasesPage() {
   })
 
   const columns: TableColumnsType<HelmRelease> = [
-    { title: '名称', dataIndex: 'name' },
+    {
+      title: '名称',
+      dataIndex: 'name',
+      render: (value: string, record: HelmRelease) => (
+        <Button type="link" style={{ paddingInline: 0 }} onClick={() => navigate(buildHelmReleaseDetailPath(value, record.namespace))}>
+          {value}
+        </Button>
+      ),
+    },
     { title: '命名空间', dataIndex: 'namespace' },
     { title: 'Chart', dataIndex: 'chart' },
-    { title: 'Version', dataIndex: 'version' },
+    { title: 'Revision', dataIndex: 'revision' },
     {
       ...tableColumnPresets.status,
       title: '状态',
       dataIndex: 'status',
       render: (s: string) => <StatusTag value={s} />,
     },
-    { ...tableColumnPresets.datetime, title: '更新时间', dataIndex: 'updatedAt', render: (t: string) => formatRelativeTime(t) },
+    { title: 'App Version', dataIndex: 'appVersion' },
+    { ...tableColumnPresets.datetime, title: 'Age', dataIndex: 'ageSeconds', render: (value: number) => formatAgeSeconds(value) },
   ]
 
   return (
     <div className="kc-page">
       <PageHeader title={t('page.extensions.helm.title', 'Helm Releases')} description={t('page.extensions.helm.desc', 'Inspect Helm release status, charts, and versions by cluster and namespace.')} />
       <PlatformScopeToolbar />
-      <AdminTable columns={columns} dataSource={data?.data ?? []} rowKey="name" loading={isLoading} />
+      <AdminTable
+        columns={columns}
+        dataSource={data?.data ?? []}
+        rowKey={(record) => `${record.namespace}:${record.name}`}
+        loading={isLoading}
+        onRow={(record: HelmRelease) => ({
+          onClick: () => navigate(buildHelmReleaseDetailPath(record.name, record.namespace)),
+          style: { cursor: 'pointer' },
+        })}
+      />
+    </div>
+  )
+}
+
+export function HelmReleaseDetailPage() {
+  const { t, localeCode } = useI18n()
+  const { clusterId, namespace } = usePlatformScopeStore()
+  const params = useParams()
+  const [searchParams] = useSearchParams()
+  const navigate = useNavigate()
+  const releaseName = params.releaseName as string
+  const detailNamespace = searchParams.get('namespace') || namespace || ''
+  const [valuesDraft, setValuesDraft] = useState('')
+
+  const detailQuery = useQuery({
+    queryKey: ['helm-release-detail', clusterId, detailNamespace, releaseName],
+    queryFn: () => api.get<ApiResponse<HelmReleaseDetail>>(
+      `/clusters/${clusterId}/helm/releases/${encodeURIComponent(releaseName)}/detail?namespace=${encodeURIComponent(detailNamespace)}`,
+    ),
+    enabled: !!clusterId && !!detailNamespace,
+  })
+
+  const valuesQuery = useQuery({
+    queryKey: ['helm-release-values', clusterId, detailNamespace, releaseName],
+    queryFn: () => api.get<ApiResponse<HelmValues>>(
+      `/clusters/${clusterId}/helm/releases/${encodeURIComponent(releaseName)}/values?namespace=${encodeURIComponent(detailNamespace)}`,
+    ),
+    enabled: !!clusterId && !!detailNamespace,
+  })
+
+  const historyQuery = useQuery({
+    queryKey: ['helm-release-history', clusterId, detailNamespace, releaseName],
+    queryFn: () => api.get<ApiResponse<HelmReleaseHistory[]>>(
+      `/clusters/${clusterId}/helm/releases/${encodeURIComponent(releaseName)}/history?namespace=${encodeURIComponent(detailNamespace)}`,
+    ),
+    enabled: !!clusterId && !!detailNamespace,
+  })
+
+  useEffect(() => {
+    setValuesDraft(valuesQuery.data?.data?.content ?? '')
+  }, [valuesQuery.data?.data?.content])
+
+  const historyColumns: TableColumnsType<HelmReleaseHistory> = [
+    { title: 'Revision', dataIndex: 'revision', width: 96 },
+    { title: 'Status', dataIndex: 'status', width: 140, render: (value?: string) => value ? <StatusTag value={value} /> : '-' },
+    { title: 'Chart', dataIndex: 'chart' },
+    { title: 'App Version', dataIndex: 'appVersion', width: 160 },
+    { title: 'Values Digest', dataIndex: 'valuesDigest', width: 220, render: (value?: string) => value ? value.slice(0, 12) : '-' },
+    { title: 'Manifest Digest', dataIndex: 'manifestDigest', width: 220, render: (value?: string) => value ? value.slice(0, 12) : '-' },
+    { ...tableColumnPresets.datetime, title: localeCode === 'zh_CN' ? '更新时间' : 'Updated', dataIndex: 'updatedAt', render: (value?: string) => value ? formatDateTime(value) : '-' },
+  ]
+
+  const detail = detailQuery.data?.data
+  const values = valuesQuery.data?.data
+  const history = historyQuery.data?.data ?? []
+
+  const tabs: TabsProps['items'] = [
+    {
+      key: 'values',
+      label: 'values.yaml',
+      children: (
+        <YamlDraftDiffEditor
+          title="values.yaml"
+          description={t('page.extensions.helm.valuesDesc', 'Review the current values.yaml, edit a local draft, and inspect a side-by-side diff before applying changes.')}
+          original={values?.original || values?.content || ''}
+          modified={valuesDraft}
+          onChange={setValuesDraft}
+          onReset={() => setValuesDraft(values?.original || values?.content || '')}
+          leftLabel={t('yamlDiffEditor.originalLabel', 'Original')}
+          rightLabel={t('yamlDiffEditor.modifiedLabel', 'Modified')}
+          editable={true}
+          saveDisabled
+        />
+      ),
+    },
+    {
+      key: 'history',
+      label: (
+        <Space size={6}>
+          <HistoryOutlined />
+          <span>{t('page.extensions.helm.historyTitle', 'Revision History')}</span>
+        </Space>
+      ),
+      children: (
+        <AdminTable
+          columns={historyColumns}
+          dataSource={history}
+          rowKey={(record) => record.revision}
+          enableColumnSelection={false}
+          pageSize={10}
+        />
+      ),
+    },
+  ]
+
+  return (
+    <div className="kc-page">
+      <PageHeader
+        title={detail?.name || releaseName}
+        description={t('page.extensions.helm.detailDesc', 'Inspect Helm release summary, values.yaml, and revision history in one workspace.')}
+        actions={(
+          <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/helm/releases')}>
+            {t('common.back', 'Back')}
+          </Button>
+        )}
+      />
+      <PlatformScopeToolbar />
+
+      {!clusterId || !detailNamespace ? (
+        <Card className="kc-detail-card" style={{ marginTop: 0 }}>
+          <Empty description={t('platformScope.clusterPlaceholder', 'Select cluster')} />
+        </Card>
+      ) : detailQuery.isLoading ? (
+        <Card className="kc-detail-card" style={{ marginTop: 0 }} loading />
+      ) : !detail ? (
+        <Card className="kc-detail-card" style={{ marginTop: 0 }}>
+          <Empty description={t('common.notFound', 'Not found')} />
+        </Card>
+      ) : (
+        <>
+          <Card className="kc-detail-card" style={{ marginTop: 0 }}>
+            <Descriptions
+              column={{ xs: 1, sm: 2, lg: 4 }}
+              items={[
+                { key: 'name', label: 'Release', children: detail.name },
+                { key: 'namespace', label: 'Namespace', children: detail.namespace },
+                { key: 'revision', label: 'Revision', children: detail.revision || '-' },
+                { key: 'status', label: 'Status', children: detail.status ? <StatusTag value={detail.status} /> : '-' },
+                { key: 'chart', label: 'Chart', children: detail.chart || '-' },
+                { key: 'appVersion', label: 'App Version', children: detail.appVersion || '-' },
+                { key: 'storageDriver', label: 'Storage', children: detail.storageDriver || '-' },
+                { key: 'updatedAt', label: localeCode === 'zh_CN' ? '更新时间' : 'Updated', children: detail.updatedAt ? formatDateTime(detail.updatedAt) : '-' },
+              ]}
+            />
+            {detail.description ? (
+              <Alert
+                style={{ marginTop: 16 }}
+                type="info"
+                showIcon
+                message={localeCode === 'zh_CN' ? 'Release 描述' : 'Release Description'}
+                description={detail.description}
+              />
+            ) : null}
+          </Card>
+
+          <Tabs items={tabs} />
+        </>
+      )}
     </div>
   )
 }

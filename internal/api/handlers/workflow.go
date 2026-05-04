@@ -15,6 +15,8 @@ import (
 type WorkflowService interface {
 	List(context.Context, domainidentity.Principal, string, int) ([]domainworkflow.Run, error)
 	Trigger(context.Context, domainidentity.Principal, domainworkflow.Input) (domainworkflow.Run, error)
+	Approve(context.Context, domainidentity.Principal, string, string) (domainworkflow.Run, error)
+	Reject(context.Context, domainidentity.Principal, string, string) (domainworkflow.Run, error)
 }
 
 type WorkflowHandler struct {
@@ -51,6 +53,36 @@ func (h *WorkflowHandler) Trigger(c *gin.Context) {
 		TriggerBuild:   req.TriggerBuild,
 		TriggerRelease: req.TriggerRelease,
 	})
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusAccepted, item)
+}
+
+func (h *WorkflowHandler) Approve(c *gin.Context) {
+	var req dto.WorkflowApprovalRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid workflow approval payload")
+		return
+	}
+	principal := apiMiddleware.PrincipalFromContext(c)
+	item, err := h.service.Approve(c.Request.Context(), principal, c.Param("workflowRunID"), req.Comment)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusAccepted, item)
+}
+
+func (h *WorkflowHandler) Reject(c *gin.Context) {
+	var req dto.WorkflowApprovalRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid workflow approval payload")
+		return
+	}
+	principal := apiMiddleware.PrincipalFromContext(c)
+	item, err := h.service.Reject(c.Request.Context(), principal, c.Param("workflowRunID"), req.Comment)
 	if err != nil {
 		writeError(c, err)
 		return

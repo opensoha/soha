@@ -40,7 +40,7 @@ func TestListRequiresScopeGrantViewPermission(t *testing.T) {
 		matrix: map[string][]string{
 			"delegated": {appaccess.PermAccessUsersView},
 		},
-	}))
+	}), nil, nil)
 
 	_, err := service.List(context.Background(), domainidentity.Principal{Roles: []string{"delegated"}})
 	if err == nil {
@@ -53,7 +53,7 @@ func TestCreateRequiresScopeGrantManagePermission(t *testing.T) {
 		matrix: map[string][]string{
 			"delegated": {appaccess.PermAccessScopeGrantsView},
 		},
-	}))
+	}), nil, nil)
 
 	_, err := service.Create(context.Background(), domainidentity.Principal{Roles: []string{"delegated"}}, domainscopegrant.Input{
 		SubjectType:    "user",

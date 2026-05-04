@@ -1,6 +1,9 @@
 package announcement
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 type Record struct {
 	ID          string  `json:"id"`
@@ -33,10 +36,25 @@ type Input struct {
 	EndsAt   *string `json:"endsAt,omitempty"`
 }
 
+type InboxItem struct {
+	Record
+	IsRead bool    `json:"isRead"`
+	ReadAt *string `json:"readAt,omitempty"`
+}
+
+type Inbox struct {
+	Items       []InboxItem `json:"items"`
+	UnreadCount int         `json:"unreadCount"`
+}
+
 type Repository interface {
 	List(context.Context, int) ([]Record, error)
 	Get(context.Context, string) (Record, error)
 	Create(context.Context, Record) (Record, error)
 	Update(context.Context, string, Record) (Record, error)
 	Delete(context.Context, string) error
+	Publish(context.Context, string, time.Time, string) (Record, error)
+	Withdraw(context.Context, string, time.Time, string) (Record, error)
+	ListInbox(context.Context, string, int, time.Time) (Inbox, error)
+	MarkRead(context.Context, string, string, time.Time) error
 }

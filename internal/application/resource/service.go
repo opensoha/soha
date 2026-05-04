@@ -38,12 +38,14 @@ import (
 	domainaudit "github.com/kubecrux/kubecrux/internal/domain/audit"
 	domaincluster "github.com/kubecrux/kubecrux/internal/domain/cluster"
 	domainidentity "github.com/kubecrux/kubecrux/internal/domain/identity"
+	domainoperation "github.com/kubecrux/kubecrux/internal/domain/operation"
 	domainresource "github.com/kubecrux/kubecrux/internal/domain/resource"
 	domainsettings "github.com/kubecrux/kubecrux/internal/domain/settings"
 	agentinfra "github.com/kubecrux/kubecrux/internal/infrastructure/agent"
 	informerinfra "github.com/kubecrux/kubecrux/internal/infrastructure/informer"
 	k8sinfra "github.com/kubecrux/kubecrux/internal/infrastructure/kubernetes"
 	"github.com/kubecrux/kubecrux/internal/platform/apperrors"
+	"github.com/kubecrux/kubecrux/internal/platform/operationentry"
 	"github.com/kubecrux/kubecrux/internal/platform/requestctx"
 	"github.com/kubecrux/kubecrux/internal/platform/streamlimit"
 	portforwardrepo "github.com/kubecrux/kubecrux/internal/repository/portforward"
@@ -51,6 +53,10 @@ import (
 
 type AuditRecorder interface {
 	Record(context.Context, domainaudit.Entry) error
+}
+
+type OperationRecorder interface {
+	Record(context.Context, domainoperation.Entry) error
 }
 
 type ConnectionResolver interface {
@@ -69,6 +75,7 @@ type Service struct {
 	authorizer   domainaccess.Authorizer
 	permissions  *appaccess.PermissionResolver
 	audit        AuditRecorder
+	operations   OperationRecorder
 	settings     MonitoringSettingsResolver
 	httpClient   *http.Client
 	portForwards PortForwardRepository
@@ -90,7 +97,7 @@ type crdResourceDefinition struct {
 	Namespaced bool
 }
 
-func New(clusters *k8sinfra.Manager, cache *informerinfra.Service, agents *agentinfra.Registry, resolver ConnectionResolver, authorizer domainaccess.Authorizer, permissions *appaccess.PermissionResolver, audit AuditRecorder, settings MonitoringSettingsResolver) *Service {
+func New(clusters *k8sinfra.Manager, cache *informerinfra.Service, agents *agentinfra.Registry, resolver ConnectionResolver, authorizer domainaccess.Authorizer, permissions *appaccess.PermissionResolver, audit AuditRecorder, operations OperationRecorder, settings MonitoringSettingsResolver) *Service {
 	return &Service{
 		clusters:    clusters,
 		cache:       cache,
@@ -99,6 +106,7 @@ func New(clusters *k8sinfra.Manager, cache *informerinfra.Service, agents *agent
 		authorizer:  authorizer,
 		permissions: permissions,
 		audit:       audit,
+		operations:  operations,
 		settings:    settings,
 		httpClient:  &http.Client{Timeout: 10 * time.Second},
 	}
@@ -163,6 +171,7 @@ func (s *Service) CreateNamespace(ctx context.Context, principal domainidentity.
 		}
 		view := mapNamespace(*item, decision)
 		_ = s.recordAudit(ctx, principal, clusterID, input.Name, "Namespace", input.Name, string(domainaccess.ActionUpdate), "success", "created namespace")
+		s.recordOperation(ctx, principal, "platform.namespace.create", clusterID, input.Name, "Namespace", input.Name, "created namespace", nil)
 		return view, nil
 	}
 }
@@ -184,6 +193,7 @@ func (s *Service) UpdateNamespace(ctx context.Context, principal domainidentity.
 		}
 		view := mapNamespace(*item, decision)
 		_ = s.recordAudit(ctx, principal, clusterID, namespace, "Namespace", namespace, string(domainaccess.ActionUpdate), "success", "updated namespace")
+		s.recordOperation(ctx, principal, "platform.namespace.update", clusterID, namespace, "Namespace", namespace, "updated namespace", nil)
 		return view, nil
 	}
 }
@@ -203,6 +213,7 @@ func (s *Service) DeleteNamespace(ctx context.Context, principal domainidentity.
 			return err
 		}
 		_ = s.recordAudit(ctx, principal, clusterID, namespace, "Namespace", namespace, string(domainaccess.ActionDelete), "success", "deleted namespace")
+		s.recordOperation(ctx, principal, "platform.namespace.delete", clusterID, namespace, "Namespace", namespace, "deleted namespace", nil)
 		return nil
 	}
 }
@@ -261,6 +272,7 @@ func (s *Service) UpdateNode(ctx context.Context, principal domainidentity.Princ
 		}
 		view := s.buildNodeDetail(ctx, clusterID, *item, nil, domainaccess.Decision{AllowedActions: []domainaccess.Action{domainaccess.ActionView, domainaccess.ActionList, domainaccess.ActionUpdate, domainaccess.ActionDelete}})
 		_ = s.recordAudit(ctx, principal, clusterID, "", "Node", nodeName, string(domainaccess.ActionUpdate), "success", "updated node labels and taints")
+		s.recordOperation(ctx, principal, "platform.node.update", clusterID, "", "Node", nodeName, "updated node labels and taints", nil)
 		return view, nil
 	}
 }
@@ -307,6 +319,7 @@ func (s *Service) DeleteNode(ctx context.Context, principal domainidentity.Princ
 			return err
 		}
 		_ = s.recordAudit(ctx, principal, clusterID, "", "Node", nodeName, string(domainaccess.ActionDelete), "success", "deleted node object")
+		s.recordOperation(ctx, principal, "platform.node.delete", clusterID, "", "Node", nodeName, "deleted node object", nil)
 		return nil
 	}
 }
@@ -1020,6 +1033,7 @@ func (s *Service) RollbackDeployment(ctx context.Context, principal domainidenti
 
 	now := time.Now().UTC().Format(time.RFC3339)
 	_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, "Deployment", name, string(domainaccess.ActionRollback), "success", fmt.Sprintf("rolled back deployment to revision %s via %s", revision, source))
+	s.recordOperation(ctx, principal, "platform.deployment.rollback", connection.Summary.ID, namespace, "Deployment", name, fmt.Sprintf("rolled back deployment to revision %s via %s", revision, source), map[string]any{"revision": revision})
 	return domainresource.DeploymentRollbackView{
 		Name:           name,
 		Namespace:      namespace,
@@ -1430,6 +1444,7 @@ func (s *Service) CreateResourceFromYAML(ctx context.Context, principal domainid
 		return domainresource.ResourceYAMLView{}, err
 	}
 	_ = s.recordAudit(ctx, principal, connection.Summary.ID, created.GetNamespace(), kind, created.GetName(), string(domainaccess.ActionCreate), "success", "created resource from yaml")
+	s.recordOperation(ctx, principal, "platform.resource.create", connection.Summary.ID, created.GetNamespace(), kind, created.GetName(), "created resource from yaml", nil)
 	return domainresource.ResourceYAMLView{
 		Kind:      kind,
 		Name:      created.GetName(),
@@ -2370,6 +2385,7 @@ func (s *Service) CreateCRDResourceFromYAML(ctx context.Context, principal domai
 			return domainresource.ResourceYAMLView{}, err
 		}
 		_ = s.recordAudit(ctx, principal, connection.Summary.ID, effectiveNamespace, definition.Kind, created.Name, string(domainaccess.ActionCreate), "success", "created custom resource from yaml")
+		s.recordOperation(ctx, principal, "platform.custom_resource.create", connection.Summary.ID, effectiveNamespace, definition.Kind, created.Name, "created custom resource from yaml", map[string]any{"crdName": crdName})
 		return created, nil
 	}
 }
@@ -2429,6 +2445,7 @@ func (s *Service) ApplyCRDResourceYAML(ctx context.Context, principal domainiden
 			return domainresource.ResourceYAMLView{}, err
 		}
 		_ = s.recordAudit(ctx, principal, connection.Summary.ID, effectiveNamespace, definition.Kind, name, string(domainaccess.ActionUpdate), "success", "applied custom resource yaml")
+		s.recordOperation(ctx, principal, "platform.custom_resource.apply", connection.Summary.ID, effectiveNamespace, definition.Kind, name, "applied custom resource yaml", map[string]any{"crdName": crdName})
 		return updated, nil
 	}
 }
@@ -2458,6 +2475,7 @@ func (s *Service) DeleteCRDResource(ctx context.Context, principal domainidentit
 			return err
 		}
 		_ = s.recordAudit(ctx, principal, connection.Summary.ID, effectiveNamespace, definition.Kind, name, string(domainaccess.ActionDelete), "success", "deleted custom resource")
+		s.recordOperation(ctx, principal, "platform.custom_resource.delete", connection.Summary.ID, effectiveNamespace, definition.Kind, name, "deleted custom resource", map[string]any{"crdName": crdName})
 		return nil
 	}
 }
@@ -2558,6 +2576,7 @@ func (s *Service) RestartDeployment(ctx context.Context, principal domainidentit
 	if err := s.recordAudit(ctx, principal, clusterID, namespace, "Deployment", name, string(domainaccess.ActionRestart), "success", fmt.Sprintf("restarted deployment via %s", source)); err != nil {
 		return fmt.Errorf("record restart deployment audit: %w", err)
 	}
+	s.recordOperation(ctx, principal, "platform.deployment.restart", clusterID, namespace, "Deployment", name, fmt.Sprintf("restarted deployment via %s", source), nil)
 	return nil
 }
 
@@ -2591,6 +2610,7 @@ func (s *Service) ScaleDeployment(ctx context.Context, principal domainidentity.
 	if err := s.recordAudit(ctx, principal, clusterID, namespace, "Deployment", name, string(domainaccess.ActionScale), "success", fmt.Sprintf("scaled deployment to %d via %s", replicas, source)); err != nil {
 		return fmt.Errorf("record scale deployment audit: %w", err)
 	}
+	s.recordOperation(ctx, principal, "platform.deployment.scale", clusterID, namespace, "Deployment", name, fmt.Sprintf("scaled deployment to %d via %s", replicas, source), map[string]any{"replicas": replicas})
 	return nil
 }
 
@@ -3096,6 +3116,7 @@ func (s *Service) applyResourceYAML(ctx context.Context, principal domainidentit
 			return domainresource.ResourceYAMLView{}, err
 		}
 		_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, kind, name, string(domainaccess.ActionUpdate), "success", "applied resource yaml")
+		s.recordOperation(ctx, principal, "platform.resource.apply", connection.Summary.ID, namespace, kind, name, "applied resource yaml", nil)
 		return item, nil
 	}
 }
@@ -3136,6 +3157,7 @@ func (s *Service) DeleteResourceByKind(ctx context.Context, principal domainiden
 			return err
 		}
 		_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, kind, name, string(domainaccess.ActionDelete), "success", "deleted resource")
+		s.recordOperation(ctx, principal, "platform.resource.delete", connection.Summary.ID, namespace, kind, name, "deleted resource", nil)
 		return nil
 	}
 }
@@ -4620,6 +4642,32 @@ func (s *Service) recordAudit(ctx context.Context, principal domainidentity.Prin
 			"source": meta.Source,
 		},
 	})
+}
+
+func (s *Service) recordOperation(ctx context.Context, principal domainidentity.Principal, operationType, clusterID, namespace, kind, name, summary string, metadata map[string]any) {
+	if s.operations == nil {
+		return
+	}
+	if metadata == nil {
+		metadata = map[string]any{}
+	}
+	_ = s.operations.Record(ctx, operationentry.New(
+		ctx,
+		principal,
+		operationType,
+		map[string]any{
+			"module":       "platform",
+			"clusterId":    clusterID,
+			"namespace":    namespace,
+			"resourceKind": kind,
+			"resourceName": name,
+			"targetId":     name,
+			"targetLabel":  name,
+		},
+		"success",
+		summary,
+		metadata,
+	))
 }
 
 func (s *Service) authorizeDeploymentPermission(ctx context.Context, principal domainidentity.Principal, permissionKey string) error {
@@ -6321,7 +6369,7 @@ func dedupeHelmReleases(items []domainresource.HelmReleaseView) []domainresource
 	seen := make(map[string]struct{}, len(items))
 	result := make([]domainresource.HelmReleaseView, 0, len(items))
 	for _, item := range items {
-		key := item.Namespace + "/" + item.Name + "/" + item.Revision
+		key := item.Namespace + "/" + item.Name
 		if _, ok := seen[key]; ok {
 			continue
 		}

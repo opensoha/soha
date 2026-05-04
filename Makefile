@@ -15,7 +15,6 @@ dev-all:
 	@trap 'kill 0' INT TERM EXIT; \
 	$(MAKE) dev-api & \
 	$(MAKE) dev-web & \
-	$(MAKE) dev-docs & \
 	wait
 
 # Build

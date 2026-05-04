@@ -23,10 +23,19 @@ type UpdatePrometheusSettingsRequest struct {
 }
 
 type UpdateAISettingsRequest struct {
-	Enabled bool   `json:"enabled"`
-	BaseURL string `json:"baseUrl"`
-	APIKey  string `json:"apiKey"`
-	Model   string `json:"model"`
+	Enabled        bool              `json:"enabled"`
+	BaseURL        string            `json:"baseUrl"`
+	APIKey         string            `json:"apiKey"`
+	Model          string            `json:"model"`
+	SkillsRegistry []AISkillSettings `json:"skillsRegistry"`
+}
+
+type AISkillSettings struct {
+	ID          string   `json:"id"`
+	Name        string   `json:"name"`
+	Description string   `json:"description"`
+	Enabled     bool     `json:"enabled"`
+	Scopes      []string `json:"scopes"`
 }
 
 type UpdateBrandingSettingsRequest struct {

@@ -18,11 +18,7 @@ import { BooleanTag, StatusTag } from '@/components/status-tag'
 import { api } from '@/services/api-client'
 import { formatDateTime } from '@/utils/time'
 import { tableColumnPresets } from '@/utils/table-columns'
-import type { ApiResponse, ApplicationEnvironment, BusinessLine, DeliveryEnvironment, WorkflowTemplate } from '@/types'
-
-function stringifyJSON(value: unknown, fallback: string) {
-  return JSON.stringify(value ?? JSON.parse(fallback), null, 2)
-}
+import type { ApiResponse, ApplicationEnvironment, BusinessLine, BuildSource, DeliveryApplication, DeliveryApplicationEnvironmentDetail, DeliveryEnvironment, DeliveryTargetCandidate, ReleaseBoardEntry, WorkflowRun, WorkflowTemplate } from '@/types'
 
 function parseJSONObject(raw: unknown, field: string) {
   const value = typeof raw === 'string' ? raw.trim() : ''
@@ -36,33 +32,6 @@ function parseJSONObject(raw: unknown, field: string) {
   } catch {
     throw new Error(`${field} 需要是合法 JSON 对象`)
   }
-}
-
-function parseJSONArray(raw: unknown, field: string) {
-  const value = typeof raw === 'string' ? raw.trim() : ''
-  if (!value) return []
-  try {
-    const parsed = JSON.parse(value)
-    if (!Array.isArray(parsed)) {
-      throw new Error('invalid')
-    }
-    return parsed
-  } catch {
-    throw new Error(`${field} 需要是合法 JSON 数组`)
-  }
-}
-
-interface ApplicationOption {
-  id: string
-  name: string
-  businessLineId?: string
-}
-
-interface ApplicationDetail extends ApplicationOption {
-  key: string
-  group: string
-  buildImage?: string
-  defaultTag?: string
 }
 
 interface BuildRecord {
@@ -136,30 +105,6 @@ function pickLatest<T>(items: T[], matcher: (item: T) => boolean, timeSelector: 
     .sort((left, right) => new Date(timeSelector(right)).getTime() - new Date(timeSelector(left)).getTime())[0]
 }
 
-function findLatestBuild(applicationId: string, builds: BuildRecord[]) {
-  return pickLatest(builds, (item) => item.applicationId === applicationId, (item) => item.createdAt)
-}
-
-function findLatestWorkflow(binding: ApplicationEnvironment, workflows: WorkflowRecord[]) {
-  return pickLatest(
-    workflows,
-    (item) =>
-      item.applicationId === binding.applicationId
-        && (binding.targets ?? []).some((target) => matchesBindingTarget(target, item.clusterId, item.namespace, item.deploymentName)),
-    (item) => item.updatedAt,
-  )
-}
-
-function findLatestRelease(binding: ApplicationEnvironment, releases: ReleaseRecord[]) {
-  return pickLatest(
-    releases,
-    (item) =>
-      item.applicationId === binding.applicationId
-        && (binding.targets ?? []).some((target) => matchesBindingTarget(target, item.clusterId, item.namespace, item.deploymentName)),
-    (item) => item.createdAt,
-  )
-}
-
 function findLatestWorkflowForTarget(target: NonNullable<ApplicationEnvironment['targets']>[number], binding: ApplicationEnvironment, workflows: WorkflowRecord[]) {
   return pickLatest(
     workflows,
@@ -176,7 +121,7 @@ function findLatestReleaseForTarget(target: NonNullable<ApplicationEnvironment['
   )
 }
 
-function summarizeLatestActivity(localeCode: 'zh_CN' | 'en_US', build?: BuildRecord, workflow?: WorkflowRecord, release?: ReleaseRecord) {
+function summarizeLatestActivity(localeCode: 'zh_CN' | 'en_US', build?: BuildRecord, workflow?: WorkflowRecord | WorkflowRun, release?: ReleaseRecord) {
   if (release?.createdAt) return localeCode === 'zh_CN' ? `最近发布 ${formatDateTime(release.createdAt)}` : `Latest release ${formatDateTime(release.createdAt)}`
   if (workflow?.updatedAt) return localeCode === 'zh_CN' ? `最近工作流 ${formatDateTime(workflow.updatedAt)}` : `Latest workflow ${formatDateTime(workflow.updatedAt)}`
   if (build?.createdAt) return localeCode === 'zh_CN' ? `最近构建 ${formatDateTime(build.createdAt)}` : `Latest build ${formatDateTime(build.createdAt)}`
@@ -450,6 +395,9 @@ export function ApplicationEnvironmentsPage() {
   const [form] = Form.useForm<Record<string, unknown>>()
   const [modalVisible, setModalVisible] = useState(false)
   const [editing, setEditing] = useState<ApplicationEnvironment | null>(null)
+  const selectedApplicationId = Form.useWatch('applicationId', form) as string | undefined
+  const selectedClusterId = Form.useWatch('targetClusterId', form) as string | undefined
+  const selectedNamespace = Form.useWatch('targetNamespace', form) as string | undefined
   const canManageBindings = hasPermission(permissionSnapshotQuery.data?.data, 'delivery.application-environments.manage')
 
   const bindingsQuery = useQuery({
@@ -458,7 +406,7 @@ export function ApplicationEnvironmentsPage() {
   })
   const appsQuery = useQuery({
     queryKey: ['applications'],
-    queryFn: () => api.get<ApiResponse<ApplicationOption[]>>('/applications'),
+    queryFn: () => api.get<ApiResponse<DeliveryApplication[]>>('/applications'),
   })
   const environmentsQuery = useQuery({
     queryKey: ['delivery-environments'],
@@ -467,6 +415,11 @@ export function ApplicationEnvironmentsPage() {
   const workflowTemplatesQuery = useQuery({
     queryKey: ['workflow-templates'],
     queryFn: () => api.get<ApiResponse<WorkflowTemplate[]>>('/workflow-templates'),
+  })
+  const targetCandidatesQuery = useQuery({
+    queryKey: ['target-candidates', selectedClusterId, selectedNamespace],
+    queryFn: () => api.get<ApiResponse<DeliveryTargetCandidate[]>>(`/application-environments/target-candidates?clusterId=${encodeURIComponent(selectedClusterId || '')}&namespace=${encodeURIComponent(selectedNamespace || '')}`),
+    enabled: !!selectedClusterId && !!selectedNamespace && modalVisible,
   })
 
   const appNameMap = useMemo(
@@ -483,6 +436,7 @@ export function ApplicationEnvironmentsPage() {
     onSuccess: () => {
       message.success('应用环境绑定创建成功')
       queryClient.invalidateQueries({ queryKey: ['application-environments'] })
+      queryClient.invalidateQueries({ queryKey: ['delivery-release-board'] })
       setModalVisible(false)
     },
     onError: (err: Error) => message.error(err.message),
@@ -493,6 +447,7 @@ export function ApplicationEnvironmentsPage() {
     onSuccess: () => {
       message.success('应用环境绑定更新成功')
       queryClient.invalidateQueries({ queryKey: ['application-environments'] })
+      queryClient.invalidateQueries({ queryKey: ['delivery-release-board'] })
       setModalVisible(false)
       setEditing(null)
     },
@@ -504,6 +459,7 @@ export function ApplicationEnvironmentsPage() {
     onSuccess: () => {
       message.success('应用环境绑定已删除')
       queryClient.invalidateQueries({ queryKey: ['application-environments'] })
+      queryClient.invalidateQueries({ queryKey: ['delivery-release-board'] })
     },
     onError: (err: Error) => message.error(err.message),
   })
@@ -511,6 +467,8 @@ export function ApplicationEnvironmentsPage() {
   const columns: ColumnProps<ApplicationEnvironment>[] = [
     { title: '应用', dataIndex: 'applicationId', render: (value: string) => appNameMap[value] || value },
     { title: '环境', dataIndex: 'environmentId', render: (value: string) => environmentNameMap[value] || value },
+    { title: '构建来源', dataIndex: 'buildPolicy', render: (value: ApplicationEnvironment['buildPolicy']) => value?.sourceId || '-' },
+    { title: '动作', dataIndex: 'releasePolicy', render: (value: ApplicationEnvironment['releasePolicy']) => value?.actionKind || 'deploy' },
     { title: '发布流程模板', dataIndex: 'workflowTemplate', render: (_: WorkflowTemplate, record: ApplicationEnvironment) => record.workflowTemplate?.name || record.workflowTemplateId || '-' },
     { title: '目标数', dataIndex: 'targets', render: (targets: ApplicationEnvironment['targets']) => targets?.length ?? 0 },
     { ...tableColumnPresets.datetime, title: '更新时间', dataIndex: 'updatedAt', render: (value: string) => formatDateTime(value) },
@@ -548,17 +506,45 @@ export function ApplicationEnvironmentsPage() {
           key={editing?.id ?? 'create-application-environment'}
           layout="vertical"
           onFinish={(values) => {
-            let payload: Record<string, unknown>
+            const selectedTarget = (targetCandidatesQuery.data?.data ?? []).find((item) => `${item.clusterId}/${item.namespace}/${item.workloadName}` === values.targetWorkload)
+            let variables: Record<string, unknown>
+            let buildArgs: Record<string, unknown>
             try {
-              payload = {
-                ...values,
-                buildPolicy: parseJSONObject(values.buildPolicy, 'Build Policy'),
-                releasePolicy: parseJSONObject(values.releasePolicy, 'Release Policy'),
-                targets: parseJSONArray(values.targets, 'Release Targets'),
-              }
+              variables = parseJSONObject(values.buildVariablesText, '构建变量')
+              buildArgs = parseJSONObject(values.buildArgsText, '构建参数')
             } catch (err) {
               message.error((err as Error).message)
               return
+            }
+            const payload: Record<string, unknown> = {
+              applicationId: values.applicationId,
+              environmentId: values.environmentId,
+              workflowTemplateId: values.workflowTemplateId,
+              buildPolicy: {
+                sourceId: values.buildSourceId,
+                refType: values.refType || 'branch',
+                refValue: values.refValue || '',
+                imageTagMode: values.imageTagMode || 'input',
+                imageTagTemplate: values.imageTagTemplate || '',
+                variables,
+                buildArgs,
+              },
+              releasePolicy: {
+                actionKind: values.actionKind || 'deploy',
+                requiresApproval: Boolean(values.requiresApproval),
+                approverRoles: String(values.approverRoles || '').split(',').map((item) => item.trim()).filter(Boolean),
+                autoRollback: Boolean(values.autoRollback),
+                rolloutTimeoutSeconds: Number(values.rolloutTimeoutSeconds || 300),
+                verificationMode: values.verificationMode || 'workflow',
+              },
+              targets: selectedTarget ? [{
+                clusterId: selectedTarget.clusterId,
+                namespace: selectedTarget.namespace,
+                workloadKind: selectedTarget.workloadKind,
+                workloadName: selectedTarget.workloadName,
+                containerName: values.targetContainer || '',
+                enabled: true,
+              }] : [],
             }
             if (editing) {
               updateMutation.mutate({ id: editing.id, values: payload })
@@ -570,10 +556,24 @@ export function ApplicationEnvironmentsPage() {
             applicationId: editing.applicationId,
             environmentId: editing.environmentId,
             workflowTemplateId: editing.workflowTemplateId,
-            buildPolicy: stringifyJSON(editing.buildPolicy, '{}'),
-            releasePolicy: stringifyJSON(editing.releasePolicy, '{}'),
-            targets: stringifyJSON(editing.targets, '[]'),
-          } : { buildPolicy: '{}', releasePolicy: '{}', targets: '[]' }}
+            buildSourceId: editing.buildPolicy?.sourceId,
+            refType: editing.buildPolicy?.refType || 'branch',
+            refValue: editing.buildPolicy?.refValue || '',
+            imageTagMode: editing.buildPolicy?.imageTagMode || 'input',
+            imageTagTemplate: editing.buildPolicy?.imageTagTemplate || '',
+            buildVariablesText: JSON.stringify(editing.buildPolicy?.variables ?? {}, null, 2),
+            buildArgsText: JSON.stringify(editing.buildPolicy?.buildArgs ?? {}, null, 2),
+            actionKind: editing.releasePolicy?.actionKind || 'deploy',
+            requiresApproval: editing.releasePolicy?.requiresApproval,
+            approverRoles: (editing.releasePolicy?.approverRoles ?? []).join(', '),
+            autoRollback: editing.releasePolicy?.autoRollback,
+            rolloutTimeoutSeconds: editing.releasePolicy?.rolloutTimeoutSeconds || 300,
+            verificationMode: editing.releasePolicy?.verificationMode || 'workflow',
+            targetClusterId: editing.targets?.[0]?.clusterId,
+            targetNamespace: editing.targets?.[0]?.namespace,
+            targetWorkload: editing.targets?.[0] ? `${editing.targets[0].clusterId}/${editing.targets[0].namespace}/${editing.targets[0].workloadName}` : undefined,
+            targetContainer: editing.targets?.[0]?.containerName,
+          } : { refType: 'branch', imageTagMode: 'input', buildVariablesText: '{}', buildArgsText: '{}', actionKind: 'deploy', rolloutTimeoutSeconds: 300, verificationMode: 'workflow' }}
         >
           <Form.Item name="applicationId" label="应用" rules={[{ required: true, message: '请选择应用' }]}>
             <Select options={(appsQuery.data?.data ?? []).map((item) => ({ value: item.id, label: item.name }))} />
@@ -581,17 +581,51 @@ export function ApplicationEnvironmentsPage() {
           <Form.Item name="environmentId" label="环境" rules={[{ required: true, message: '请选择环境' }]}>
             <Select options={(environmentsQuery.data?.data ?? []).map((item) => ({ value: item.id, label: item.name }))} />
           </Form.Item>
+          <Form.Item name="buildSourceId" label="构建来源" rules={[{ required: true, message: '请选择构建来源' }]}>
+            <Select options={((appsQuery.data?.data ?? []).find((item) => item.id === selectedApplicationId)?.buildSources ?? []).map((item: BuildSource) => ({ value: item.id, label: `${item.name} / ${item.type}` }))} />
+          </Form.Item>
+          <Form.Item name="refType" label="构建引用类型">
+            <Select options={[{ value: 'branch', label: 'branch' }, { value: 'tag', label: 'tag' }]} />
+          </Form.Item>
+          <Form.Item name="refValue" label="构建引用值"><Input placeholder="main / v1.0.0" /></Form.Item>
+          <Form.Item name="imageTagMode" label="镜像 Tag 模式">
+            <Select options={[{ value: 'input', label: 'input' }, { value: 'template', label: 'template' }, { value: 'build_output', label: 'build_output' }]} />
+          </Form.Item>
+          <Form.Item name="imageTagTemplate" label="镜像 Tag 模板"><Input placeholder="{{branch}}-{{timestamp}}" /></Form.Item>
+          <Form.Item name="buildVariablesText" label="构建变量(JSON)"><Input.TextArea rows={4} /></Form.Item>
+          <Form.Item name="buildArgsText" label="构建参数(JSON)"><Input.TextArea rows={4} /></Form.Item>
+          <Form.Item name="actionKind" label="交付动作">
+            <Select options={[{ value: 'deploy', label: 'deploy' }, { value: 'release', label: 'release' }]} />
+          </Form.Item>
+          <Form.Item name="requiresApproval" label="需要审批" valuePropName="checked"><Switch /></Form.Item>
+          <Form.Item name="approverRoles" label="审批角色"><Input placeholder="release-manager, ops-lead" /></Form.Item>
+          <Form.Item name="autoRollback" label="失败自动回滚" valuePropName="checked"><Switch /></Form.Item>
+          <Form.Item name="rolloutTimeoutSeconds" label="Rollout 超时秒数"><InputNumber min={30} step={30} style={{ width: '100%' }} /></Form.Item>
+          <Form.Item name="verificationMode" label="校验模式">
+            <Select options={[{ value: 'workflow', label: 'workflow' }, { value: 'none', label: 'none' }]} />
+          </Form.Item>
           <Form.Item name="workflowTemplateId" label="发布流程模板">
             <Select options={(workflowTemplatesQuery.data?.data ?? []).map((item) => ({ value: item.id, label: item.name }))} />
           </Form.Item>
-          <Form.Item name="buildPolicy" label="Build Policy(JSON)">
-            <Input.TextArea rows={4} />
+          <Form.Item name="targetClusterId" label="目标集群" rules={[{ required: true, message: '请输入目标集群 ID' }]}><Input /></Form.Item>
+          <Form.Item name="targetNamespace" label="目标命名空间" rules={[{ required: true, message: '请输入目标命名空间' }]}><Input /></Form.Item>
+          <Form.Item name="targetWorkload" label="目标 Deployment" rules={[{ required: true, message: '请选择目标 Deployment' }]}>
+            <Select
+              showSearch
+              options={(targetCandidatesQuery.data?.data ?? []).map((item) => ({
+                value: `${item.clusterId}/${item.namespace}/${item.workloadName}`,
+                label: `${item.clusterId} / ${item.namespace} / ${item.workloadName}`,
+              }))}
+            />
           </Form.Item>
-          <Form.Item name="releasePolicy" label="Release Policy(JSON)">
-            <Input.TextArea rows={4} />
-          </Form.Item>
-          <Form.Item name="targets" label="Release Targets(JSON Array)">
-            <Input.TextArea rows={8} />
+          <Form.Item name="targetContainer" label="目标容器">
+            <Select
+              allowClear
+              options={(() => {
+                const selectedTarget = (targetCandidatesQuery.data?.data ?? []).find((item) => `${item.clusterId}/${item.namespace}/${item.workloadName}` === form.getFieldValue('targetWorkload'))
+                return (selectedTarget?.containers ?? []).map((item) => ({ value: item, label: item }))
+              })()}
+            />
           </Form.Item>
           <div className="kc-form-actions">
             <Button onClick={() => setModalVisible(false)}>取消</Button>
@@ -610,109 +644,39 @@ export function ReleaseBoardPage() {
   const navigate = useNavigate()
   const permissionSnapshotQuery = usePermissionSnapshot()
   const canViewApplicationEnvironments = hasPermission(permissionSnapshotQuery.data?.data, 'delivery.application-environments.view')
-  const businessLinesQuery = useQuery({
-    queryKey: ['business-lines'],
-    queryFn: () => api.get<ApiResponse<BusinessLine[]>>('/business-lines'),
-  })
-  const applicationsQuery = useQuery({
-    queryKey: ['applications'],
-    queryFn: () => api.get<ApiResponse<ApplicationOption[]>>('/applications'),
-  })
-  const environmentsQuery = useQuery({
-    queryKey: ['delivery-environments'],
-    queryFn: () => api.get<ApiResponse<DeliveryEnvironment[]>>('/delivery-environments'),
-  })
-  const bindingsQuery = useQuery({
-    queryKey: ['application-environments'],
-    queryFn: () => api.get<ApiResponse<ApplicationEnvironment[]>>('/application-environments'),
-  })
-  const buildsQuery = useQuery({
-    queryKey: ['builds'],
-    queryFn: () => api.get<ApiResponse<BuildRecord[]>>('/builds'),
-  })
-  const workflowsQuery = useQuery({
-    queryKey: ['workflows'],
-    queryFn: () => api.get<ApiResponse<WorkflowRecord[]>>('/workflows'),
-  })
-  const releasesQuery = useQuery({
-    queryKey: ['releases'],
-    queryFn: () => api.get<ApiResponse<ReleaseRecord[]>>('/releases'),
+  const releaseBoardQuery = useQuery({
+    queryKey: ['delivery-release-board'],
+    queryFn: () => api.get<ApiResponse<ReleaseBoardEntry[]>>('/delivery/release-board'),
   })
 
-  const businessLineMap = useMemo(
-    () => Object.fromEntries((businessLinesQuery.data?.data ?? []).map((item) => [item.id, item.name])),
-    [businessLinesQuery.data],
-  )
-  const environments = useMemo(
-    () => [...(environmentsQuery.data?.data ?? [])].sort((left, right) => left.sortOrder - right.sortOrder),
-    [environmentsQuery.data],
-  )
-  const rows = useMemo(() => {
-    const bindings = bindingsQuery.data?.data ?? []
-    return (applicationsQuery.data?.data ?? []).map((application) => {
-      const bindingMap = Object.fromEntries(
-        bindings
-          .filter((item) => item.applicationId === application.id)
-          .map((item) => [item.environmentId, item]),
-      )
-      return {
-        ...application,
-        __bindings: bindingMap,
-      }
-    })
-  }, [applicationsQuery.data, bindingsQuery.data])
-
-  const builds = buildsQuery.data?.data ?? []
-  const workflows = workflowsQuery.data?.data ?? []
-  const releases = releasesQuery.data?.data ?? []
-
-  const columns: ColumnProps<any>[] = [
-    { title: t('common.application', 'Application'), dataIndex: 'name' },
-    { title: localeCode === 'zh_CN' ? '业务线' : 'Business Line', dataIndex: 'businessLineId', render: (value: string) => businessLineMap[value] || value || '-' },
-    ...environments.map((environment) => ({
-      title: environment.name,
-      dataIndex: environment.id,
-      render: (_: unknown, record: any) => {
-        const binding = record.__bindings?.[environment.id] as ApplicationEnvironment | undefined
-        if (!binding) return <Text type="secondary">{localeCode === 'zh_CN' ? '未绑定' : 'Unbound'}</Text>
-        if (!binding.targets?.length) return <Tag color="orange">{localeCode === 'zh_CN' ? '无目标' : 'No Targets'}</Tag>
-        const latestBuild = findLatestBuild(binding.applicationId, builds)
-        const latestWorkflow = findLatestWorkflow(binding, workflows)
-        const latestRelease = findLatestRelease(binding, releases)
-        return (
-          <div className="flex flex-col gap-1">
-            {binding.targets.slice(0, 2).map((target) => (
-              <Tag key={target.id} color="blue">{`${target.clusterId} / ${target.namespace} / ${target.workloadName}`}</Tag>
-            ))}
-            {binding.targets.length > 2 ? <Text type="secondary" style={{ fontSize: 12 }}>{`+${binding.targets.length - 2} ${localeCode === 'zh_CN' ? '更多' : 'more'}`}</Text> : null}
-            <Text type="secondary" style={{ fontSize: 12 }}>{`${localeCode === 'zh_CN' ? '模板' : 'Template'}: ${binding.workflowTemplate?.name || '-'}`}</Text>
-            <div className="flex flex-wrap gap-1">
-              {latestBuild ? <Tag color="cyan">{`Build: ${latestBuild.status}`}</Tag> : <Tag color="grey">Build: -</Tag>}
-              {latestWorkflow ? <Tag color="purple">{`Workflow: ${latestWorkflow.status}`}</Tag> : <Tag color="grey">Workflow: -</Tag>}
-              {latestRelease ? <Tag color="green">{`Release: ${latestRelease.status}`}</Tag> : <Tag color="grey">Release: -</Tag>}
-            </div>
-            <Text type="secondary" style={{ fontSize: 12 }}>{summarizeLatestActivity(localeCode, latestBuild, latestWorkflow, latestRelease)}</Text>
-            {canViewApplicationEnvironments ? (
-              <Button
-                icon={<ArrowRightOutlined />}
-                type="text"
-                size="small"
-                onClick={() => navigate(`/application-environments/${binding.id}`)}
-              >
-                {localeCode === 'zh_CN' ? '环境详情' : 'Environment Detail'}
-              </Button>
-            ) : null}
-          </div>
-        )
-      },
-    })),
+  const columns: ColumnProps<ReleaseBoardEntry>[] = [
+    { title: t('common.application', 'Application'), dataIndex: 'applicationName' },
+    { title: localeCode === 'zh_CN' ? '环境' : 'Environment', dataIndex: 'environmentName', render: (value: string, record) => value || record.environmentKey || record.environmentId },
+    { title: localeCode === 'zh_CN' ? '动作' : 'Action', dataIndex: 'actionKind', render: (value: string) => value || 'deploy' },
+    { title: localeCode === 'zh_CN' ? '审批' : 'Approval', dataIndex: 'requiresApproval', render: (value: boolean) => <BooleanTag value={value} /> },
+    { title: localeCode === 'zh_CN' ? '构建来源' : 'Build Source', dataIndex: 'buildSource', render: (_: unknown, record) => record.buildSource?.name || record.buildSourceId || '-' },
+    { title: localeCode === 'zh_CN' ? '目标' : 'Targets', dataIndex: 'targets', render: (targets: ReleaseBoardEntry['targets']) => targets?.length ?? 0 },
+    { title: 'Build', dataIndex: 'latestBuild', render: (value: ReleaseBoardEntry['latestBuild']) => <StatusTag value={value?.status || 'unknown'} /> },
+    { title: 'Workflow', dataIndex: 'latestWorkflow', render: (value: ReleaseBoardEntry['latestWorkflow']) => <StatusTag value={value?.status || 'unknown'} /> },
+    { title: 'Release', dataIndex: 'latestRelease', render: (value: ReleaseBoardEntry['latestRelease']) => <StatusTag value={value?.status || 'unknown'} /> },
+    {
+      ...tableColumnPresets.action,
+      title: t('common.actions', 'Actions'),
+      dataIndex: 'applicationEnvironmentId',
+      render: (_: unknown, record: ReleaseBoardEntry) =>
+        canViewApplicationEnvironments ? (
+          <Button icon={<ArrowRightOutlined />} type="text" size="small" onClick={() => navigate(`/application-environments/${record.applicationEnvironmentId}`)}>
+            {localeCode === 'zh_CN' ? '环境详情' : 'Environment Detail'}
+          </Button>
+        ) : '-',
+    },
   ]
 
   return (
     <div className="kc-page">
       <PageHeader title={t('page.releaseBoard.title', 'Release Board')} description={t('page.releaseBoard.desc', 'Inspect target bindings by application and environment as the entry point for workflow and deployment linkage.')} />
       <Card>
-        <AdminTable columns={columns} dataSource={rows} rowKey="id" loading={applicationsQuery.isLoading || environmentsQuery.isLoading || bindingsQuery.isLoading || businessLinesQuery.isLoading || buildsQuery.isLoading || workflowsQuery.isLoading || releasesQuery.isLoading} />
+        <AdminTable columns={columns} dataSource={releaseBoardQuery.data?.data ?? []} rowKey="applicationEnvironmentId" loading={releaseBoardQuery.isLoading} />
       </Card>
     </div>
   )
@@ -741,25 +705,12 @@ export function ApplicationEnvironmentDetailPage() {
 
   const bindingQuery = useQuery({
     queryKey: ['application-environment', applicationEnvironmentId],
-    queryFn: () => api.get<ApiResponse<ApplicationEnvironment>>(`/application-environments/${applicationEnvironmentId}`),
+    queryFn: () => api.get<ApiResponse<DeliveryApplicationEnvironmentDetail>>(`/application-environments/${applicationEnvironmentId}/detail`),
     enabled: !!applicationEnvironmentId,
   })
   const businessLinesQuery = useQuery({
     queryKey: ['business-lines'],
     queryFn: () => api.get<ApiResponse<BusinessLine[]>>('/business-lines'),
-  })
-  const applicationQuery = useQuery({
-    queryKey: ['application', bindingQuery.data?.data?.applicationId],
-    queryFn: () => api.get<ApiResponse<ApplicationDetail>>(`/applications/${bindingQuery.data!.data.applicationId}`),
-    enabled: !!bindingQuery.data?.data?.applicationId,
-  })
-  const environmentsQuery = useQuery({
-    queryKey: ['delivery-environments'],
-    queryFn: () => api.get<ApiResponse<DeliveryEnvironment[]>>('/delivery-environments'),
-  })
-  const buildsQuery = useQuery({
-    queryKey: ['builds'],
-    queryFn: () => api.get<ApiResponse<BuildRecord[]>>('/builds'),
   })
   const workflowsQuery = useQuery({
     queryKey: ['workflows'],
@@ -770,18 +721,15 @@ export function ApplicationEnvironmentDetailPage() {
     queryFn: () => api.get<ApiResponse<ReleaseRecord[]>>('/releases'),
   })
 
-  const binding = bindingQuery.data?.data
+  const detail = bindingQuery.data?.data
+  const binding = detail?.binding
   const businessLineMap = useMemo(
     () => Object.fromEntries((businessLinesQuery.data?.data ?? []).map((item) => [item.id, item.name])),
     [businessLinesQuery.data],
   )
-  const environmentMap = useMemo(
-    () => Object.fromEntries((environmentsQuery.data?.data ?? []).map((item) => [item.id, item])),
-    [environmentsQuery.data],
-  )
-  const latestBuild = binding ? findLatestBuild(binding.applicationId, buildsQuery.data?.data ?? []) : undefined
-  const latestWorkflow = binding ? findLatestWorkflow(binding, workflowsQuery.data?.data ?? []) : undefined
-  const latestRelease = binding ? findLatestRelease(binding, releasesQuery.data?.data ?? []) : undefined
+  const latestBuild = detail?.latestBuild
+  const latestWorkflow = detail?.latestWorkflow
+  const latestRelease = detail?.latestRelease
 
   useEffect(() => {
     if (!binding?.targets?.length) {
@@ -808,9 +756,9 @@ export function ApplicationEnvironmentDetailPage() {
   }, [selectedTarget])
 
   useEffect(() => {
-    if (!applicationQuery.data?.data?.defaultTag || imageTag) return
-    setImageTag(applicationQuery.data.data.defaultTag)
-  }, [applicationQuery.data, imageTag])
+    if (!detail?.buildSource?.defaultTag || imageTag) return
+    setImageTag(detail.buildSource.defaultTag)
+  }, [detail, imageTag])
 
   const rolloutHistoryQuery = useQuery({
     queryKey: ['deployment-rollouts', selectedTarget?.clusterId, selectedTarget?.namespace, selectedTarget?.workloadName],
@@ -875,7 +823,7 @@ export function ApplicationEnvironmentDetailPage() {
       message.success(localeCode === 'zh_CN' ? '工作流已触发' : 'Workflow triggered')
       queryClient.invalidateQueries({ queryKey: ['workflows'] })
       queryClient.invalidateQueries({ queryKey: ['application-environment', applicationEnvironmentId] })
-      queryClient.invalidateQueries({ queryKey: ['release-board'] })
+      queryClient.invalidateQueries({ queryKey: ['delivery-release-board'] })
     },
     onError: (err: Error) => message.error(err.message),
   })
@@ -883,25 +831,27 @@ export function ApplicationEnvironmentDetailPage() {
   const releaseMutation = useMutation({
     mutationFn: async () => {
       if (!binding || !selectedTarget) throw new Error(t('common.selectTarget', 'Select a release target'))
-      const effectiveImageTag = imageTag.trim() || applicationQuery.data?.data?.defaultTag || ''
+      const effectiveImageTag = imageTag.trim() || detail?.buildSource?.defaultTag || ''
       if (!effectiveImageTag) {
         throw new Error(localeCode === 'zh_CN' ? '请提供 Image Tag，或先在应用中配置默认 Tag' : 'Provide an image tag, or configure a default tag on the application first')
       }
       return api.post('/releases/trigger', {
         applicationId: binding.applicationId,
+        applicationEnvironmentId: binding.id,
         clusterId: selectedTarget.clusterId,
         namespace: selectedTarget.namespace,
         deploymentName: selectedTarget.workloadName,
         containerName: containerName.trim() || selectedTarget.containerName || '',
         imageTag: effectiveImageTag,
         releaseName: releaseName.trim(),
+        actionKind: detail?.actionKind || 'deploy',
       })
     },
     onSuccess: () => {
       message.success(localeCode === 'zh_CN' ? '发布已触发' : 'Release triggered')
       queryClient.invalidateQueries({ queryKey: ['releases'] })
       queryClient.invalidateQueries({ queryKey: ['application-environment', applicationEnvironmentId] })
-      queryClient.invalidateQueries({ queryKey: ['release-board'] })
+      queryClient.invalidateQueries({ queryKey: ['delivery-release-board'] })
     },
     onError: (err: Error) => message.error(err.message),
   })
@@ -949,8 +899,8 @@ export function ApplicationEnvironmentDetailPage() {
     )
   }
 
-  const application = applicationQuery.data?.data
-  const environment = environmentMap[binding.environmentId]
+  const application = detail?.application
+  const environment = detail?.environment
   const selectedTargetIsDeployment = selectedTarget?.workloadKind.toLowerCase() === 'deployment'
   const targetOptions = (binding.targets ?? []).map((target) => ({
     value: target.id,
@@ -962,9 +912,12 @@ export function ApplicationEnvironmentDetailPage() {
       value: item.revision,
       label: `${item.revision}${item.createdAt ? ` · ${formatDateTime(item.createdAt)}` : ''}`,
     }))
-  const releaseImagePreview = application?.buildImage && (imageTag.trim() || application.defaultTag)
-    ? `${application.buildImage}:${imageTag.trim() || application.defaultTag}`
+  const releaseImagePreview = detail?.buildSource?.buildImage && (imageTag.trim() || detail.buildSource.defaultTag)
+    ? `${detail.buildSource.buildImage}:${imageTag.trim() || detail.buildSource.defaultTag}`
     : ''
+  const releaseActionLabel = detail?.actionKind === 'release'
+    ? (localeCode === 'zh_CN' ? '触发发布' : 'Trigger Release')
+    : (localeCode === 'zh_CN' ? '触发部署' : 'Trigger Deploy')
 
   return (
     <div className="kc-page">
@@ -980,6 +933,7 @@ export function ApplicationEnvironmentDetailPage() {
             { key: 'environmentKey', label: localeCode === 'zh_CN' ? '环境 Key' : 'Environment Key', children: binding.environmentKey || environment?.key || '-' },
             { key: 'workflowTemplate', label: localeCode === 'zh_CN' ? '发布流程模板' : 'Workflow Template', children: binding.workflowTemplate?.name || '-' },
             { key: 'templateCategory', label: localeCode === 'zh_CN' ? '模板分类' : 'Template Category', children: binding.workflowTemplate?.category || '-' },
+            { key: 'buildSource', label: localeCode === 'zh_CN' ? '构建来源' : 'Build Source', children: detail?.buildSource?.name || binding.buildPolicy?.sourceId || '-' },
             { key: 'latestBuild', label: localeCode === 'zh_CN' ? '最新 Build' : 'Latest Build', children: <StatusTag value={latestBuild?.status || 'unknown'} /> },
             { key: 'latestWorkflow', label: localeCode === 'zh_CN' ? '最新 Workflow' : 'Latest Workflow', children: <StatusTag value={latestWorkflow?.status || 'unknown'} /> },
             { key: 'latestRelease', label: localeCode === 'zh_CN' ? '最新 Release' : 'Latest Release', children: <StatusTag value={latestRelease?.status || 'unknown'} /> },
@@ -1030,7 +984,7 @@ export function ApplicationEnvironmentDetailPage() {
               loading={releaseMutation.isPending}
               disabled={!canTriggerRelease || !selectedTarget || !selectedTargetIsDeployment}
             >
-              {localeCode === 'zh_CN' ? '触发发布' : 'Trigger Release'}
+              {releaseActionLabel}
             </Button>
           </div>
           <div className="kc-delivery-action-block">

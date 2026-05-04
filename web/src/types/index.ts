@@ -15,11 +15,6 @@ export interface RouteMeta {
   permissionStrategy?: 'self' | 'any-child'
 }
 
-export interface SidebarNavItem {
-  route: RouteMeta
-  children?: RouteMeta[]
-}
-
 export interface User {
   userId: string
   userName: string
@@ -59,6 +54,26 @@ export interface VisibleMenu {
   id: string
   parentId?: string
   path: string
+  labelZh?: string
+  labelEn?: string
+  iconKey?: string
+  section?: string
+  sortOrder?: number
+  enabled?: boolean
+}
+
+export interface RuntimeMenuNode {
+  id: string
+  parentId?: string
+  path: string
+  labelZh: string
+  labelEn: string
+  iconKey: string
+  section: string
+  sortOrder: number
+  enabled: boolean
+  route?: RouteMeta
+  children?: RuntimeMenuNode[]
 }
 
 export interface PermissionSnapshot {
@@ -361,6 +376,69 @@ export interface DeploymentRolloutStatus {
   conditions?: WorkloadCondition[]
 }
 
+export interface HelmRelease {
+  name: string
+  namespace: string
+  revision?: string
+  status?: string
+  chart?: string
+  appVersion?: string
+  storageDriver?: string
+  ageSeconds: number
+  allowedActions?: string[]
+}
+
+export interface HelmReleaseDetail {
+  name: string
+  namespace: string
+  revision?: string
+  status?: string
+  chart?: string
+  chartName?: string
+  chartVersion?: string
+  appVersion?: string
+  storageDriver?: string
+  description?: string
+  createdAt?: string
+  updatedAt?: string
+  firstDeployedAt?: string
+  lastDeployedAt?: string
+  notes?: string
+  labels?: Record<string, string>
+  annotations?: Record<string, string>
+  ageSeconds: number
+  allowedActions?: string[]
+  valuesEditable: boolean
+  valuesDiffEnabled: boolean
+}
+
+export interface HelmReleaseHistory {
+  name: string
+  namespace: string
+  revision: string
+  status?: string
+  chart?: string
+  chartVersion?: string
+  appVersion?: string
+  description?: string
+  updatedAt?: string
+  createdAt?: string
+  manifestDigest?: string
+  valuesDigest?: string
+  allowedActions?: string[]
+}
+
+export interface HelmValues {
+  name: string
+  namespace: string
+  revision?: string
+  content: string
+  original?: string
+  editable: boolean
+  diffEnabled: boolean
+  allowedActions?: string[]
+}
+
 export interface WorkflowNodeRun {
   nodeId: string
   name: string
@@ -407,6 +485,36 @@ export interface ReleaseTarget {
   enabled: boolean
 }
 
+export interface BuildSource {
+  id: string
+  name: string
+  type: 'repo_dockerfile' | 'platform_build_template' | 'external_pipeline'
+  enabled: boolean
+  isDefault: boolean
+  buildImage?: string
+  defaultTag?: string
+  config?: Record<string, unknown>
+}
+
+export interface BuildPolicy {
+  sourceId?: string
+  refType?: string
+  refValue?: string
+  imageTagMode?: string
+  imageTagTemplate?: string
+  variables?: Record<string, unknown>
+  buildArgs?: Record<string, unknown>
+}
+
+export interface ReleasePolicy {
+  actionKind?: 'deploy' | 'release'
+  requiresApproval?: boolean
+  approverRoles?: string[]
+  autoRollback?: boolean
+  rolloutTimeoutSeconds?: number
+  verificationMode?: 'none' | 'workflow'
+}
+
 export interface ApplicationEnvironment {
   id: string
   applicationId: string
@@ -415,9 +523,24 @@ export interface ApplicationEnvironment {
   environmentKey?: string
   workflowTemplateId?: string
   workflowTemplate?: WorkflowTemplate
-  buildPolicy?: Record<string, unknown>
-  releasePolicy?: Record<string, unknown>
+  buildPolicy?: BuildPolicy
+  releasePolicy?: ReleasePolicy
   targets?: ReleaseTarget[]
+  createdAt: string
+  updatedAt: string
+}
+
+export interface BuildTemplate {
+  id: string
+  key: string
+  name: string
+  description?: string
+  builderKind?: string
+  dockerfileTemplate?: string
+  buildCommands?: string[]
+  variableSchema?: Record<string, unknown>
+  defaultVariables?: Record<string, unknown>
+  enabled: boolean
   createdAt: string
   updatedAt: string
 }
@@ -432,6 +555,133 @@ export interface WorkflowTemplate {
   enabled: boolean
   createdAt: string
   updatedAt: string
+}
+
+export interface DeliveryApplication {
+  id: string
+  name: string
+  key: string
+  group: string
+  businessLineId?: string
+  language: string
+  repositoryProvider?: string
+  repositoryProjectId?: string
+  repositoryPath?: string
+  defaultBranch?: string
+  defaultTag?: string
+  buildImage?: string
+  buildContextDir?: string
+  dockerfilePath?: string
+  enabled: boolean
+  metadata?: Record<string, unknown>
+  buildSources?: BuildSource[]
+  environmentCount?: number
+  createdAt: string
+  updatedAt: string
+}
+
+export interface BuildRecord {
+  id: string
+  applicationId: string
+  sourceSystem: string
+  status: string
+  metadata?: Record<string, unknown>
+  startedAt?: string
+  finishedAt?: string
+  createdAt: string
+}
+
+export interface ReleaseRecord {
+  id: string
+  applicationId: string
+  clusterId: string
+  namespace: string
+  deploymentName: string
+  status: string
+  metadata?: Record<string, unknown>
+  deployedAt?: string
+  createdAt: string
+}
+
+export interface WorkflowRun {
+  id: string
+  applicationId: string
+  workflowName: string
+  clusterId?: string
+  namespace?: string
+  deploymentName?: string
+  status: string
+  steps: Array<{ name: string; status: string; summary?: string }>
+  nodeRuns?: WorkflowNodeRun[]
+  metadata?: Record<string, unknown>
+  createdAt: string
+  updatedAt: string
+}
+
+export interface DeliveryApplicationBindingSummary {
+  applicationEnvironmentId: string
+  environmentId: string
+  environmentName?: string
+  environmentKey?: string
+  actionKind?: string
+  requiresApproval: boolean
+  workflowTemplateId?: string
+  workflowTemplateName?: string
+  targetCount: number
+  buildSourceId?: string
+  buildSource?: BuildSource
+  latestBuild?: BuildRecord
+  latestWorkflow?: WorkflowRun
+  latestRelease?: ReleaseRecord
+}
+
+export interface DeliveryApplicationDetail {
+  application: DeliveryApplication
+  bindings?: DeliveryApplicationBindingSummary[]
+  latestBuild?: BuildRecord
+  latestWorkflow?: WorkflowRun
+  latestRelease?: ReleaseRecord
+}
+
+export interface DeliveryApplicationEnvironmentDetail {
+  binding: ApplicationEnvironment
+  application: DeliveryApplication
+  environment?: DeliveryEnvironment
+  actionKind?: string
+  requiresApproval: boolean
+  buildSource?: BuildSource
+  latestBuild?: BuildRecord
+  latestWorkflow?: WorkflowRun
+  latestRelease?: ReleaseRecord
+}
+
+export interface ReleaseBoardEntry {
+  applicationEnvironmentId: string
+  applicationId: string
+  applicationName: string
+  businessLineId?: string
+  environmentId: string
+  environmentName?: string
+  environmentKey?: string
+  actionKind?: string
+  requiresApproval: boolean
+  workflowTemplateId?: string
+  workflowTemplateName?: string
+  buildSourceId?: string
+  buildSource?: BuildSource
+  targets?: ReleaseTarget[]
+  latestBuild?: BuildRecord
+  latestWorkflow?: WorkflowRun
+  latestRelease?: ReleaseRecord
+}
+
+export interface DeliveryTargetCandidate {
+  clusterId: string
+  namespace: string
+  workloadKind: string
+  workloadName: string
+  containers?: string[]
+  labels?: Record<string, string>
 }
 
 export interface ScopeGrant {

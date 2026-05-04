@@ -19,22 +19,58 @@ func New(db *gorm.DB) *Repository {
 	return &Repository{db: db}
 }
 
-func (r *Repository) List(ctx context.Context, limit int) ([]domainoperation.Entry, error) {
-	if limit <= 0 {
-		limit = 50
+func (r *Repository) Create(ctx context.Context, entry domainoperation.Entry) error {
+	targetScope, err := json.Marshal(entry.TargetScope)
+	if err != nil {
+		return fmt.Errorf("marshal operation target scope: %w", err)
+	}
+	metadata, err := json.Marshal(entry.Metadata)
+	if err != nil {
+		return fmt.Errorf("marshal operation metadata: %w", err)
+	}
+	return r.db.WithContext(ctx).Exec(`
+		INSERT INTO operation_logs (
+			id, actor_id, actor_name, operation_type, target_scope, result, summary, request_path,
+			request_method, request_id, source_ip, metadata, created_at
+		) VALUES (
+			?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+		)
+	`,
+		entry.ID,
+		entry.ActorID,
+		entry.ActorName,
+		entry.OperationType,
+		string(targetScope),
+		entry.Result,
+		entry.Summary,
+		entry.RequestPath,
+		entry.RequestMethod,
+		entry.RequestID,
+		entry.SourceIP,
+		string(metadata),
+		entry.CreatedAt,
+	).Error
+}
+
+func (r *Repository) List(ctx context.Context, filter domainoperation.Filter) ([]domainoperation.Entry, error) {
+	if filter.Limit <= 0 {
+		filter.Limit = 50
 	}
 	rows, err := r.db.WithContext(ctx).Raw(`
-		SELECT id, actor_id, operation_type, target_scope, result, summary, metadata, created_at
+		SELECT id, actor_id, actor_name, operation_type, target_scope, result, summary, request_path,
+		       request_method, request_id, source_ip, metadata, created_at
 		FROM operation_logs
+		WHERE (? = '' OR operation_type = ?)
+		  AND (? = '' OR result = ?)
 		ORDER BY created_at DESC
 		LIMIT ?
-	`, limit).Rows()
+	`, filter.OperationType, filter.OperationType, filter.Result, filter.Result, filter.Limit).Rows()
 	if err != nil {
 		return nil, fmt.Errorf("query operation logs: %w", err)
 	}
 	defer rows.Close()
 
-	items := make([]domainoperation.Entry, 0, limit)
+	items := make([]domainoperation.Entry, 0, filter.Limit)
 	for rows.Next() {
 		item, err := scanEntry(rows)
 		if err != nil {
@@ -50,10 +86,24 @@ func scanEntry(rows *sql.Rows) (domainoperation.Entry, error) {
 	var targetScope []byte
 	var metadata []byte
 	var createdAt time.Time
-	if err := rows.Scan(&item.ID, &item.ActorID, &item.OperationType, &targetScope, &item.Result, &item.Summary, &metadata, &createdAt); err != nil {
+	if err := rows.Scan(
+		&item.ID,
+		&item.ActorID,
+		&item.ActorName,
+		&item.OperationType,
+		&targetScope,
+		&item.Result,
+		&item.Summary,
+		&item.RequestPath,
+		&item.RequestMethod,
+		&item.RequestID,
+		&item.SourceIP,
+		&metadata,
+		&createdAt,
+	); err != nil {
 		return domainoperation.Entry{}, err
 	}
-	item.CreatedAt = createdAt.Format(time.RFC3339)
+	item.CreatedAt = createdAt
 	if len(targetScope) > 0 {
 		_ = json.Unmarshal(targetScope, &item.TargetScope)
 	}

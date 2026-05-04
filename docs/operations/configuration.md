@@ -151,6 +151,10 @@ Application management now uses one PostgreSQL-backed registry table:
 - `build_records`
 - `ai_sessions`
 - `ai_messages`
+- `ai_root_cause_runs`
+- `ai_data_sources`
+- `ai_analysis_profiles`
+- `ai_automation_policies`
 
 GitLab integration is configured in `config.yaml`:
 
@@ -181,7 +185,10 @@ Build and AI routes now also exist:
 - `POST /api/v1/builds/trigger`
 - `GET /api/v1/copilot/insights`
 - `GET /api/v1/copilot/sessions`
+- `GET /api/v1/copilot/sessions/:sessionID`
 - `POST /api/v1/copilot/sessions`
+- `PATCH /api/v1/copilot/sessions/:sessionID`
+- `DELETE /api/v1/copilot/sessions/:sessionID`
 - `GET /api/v1/copilot/sessions/:sessionID/messages`
 - `POST /api/v1/copilot/sessions/:sessionID/messages`
 

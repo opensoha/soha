@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { PermissionSnapshot, RouteMeta } from '@/types'
-import { canAccessRoute, routeMeta } from './meta'
+import { canAccessRoute, getAccessibleSidebarNav, routeMeta } from './meta'
 
 function buildSnapshot(overrides?: Partial<PermissionSnapshot>): PermissionSnapshot {
   return {
@@ -50,5 +50,39 @@ describe('access route authorization', () => {
 
     expect(canAccessRoute(getRoute('access-scope-grants'), snapshot)).toBe(true)
     expect(canAccessRoute(getRoute('access'), snapshot)).toBe(false)
+  })
+
+  it('builds sidebar nav from visible menu tree instead of flattening children', () => {
+    const snapshot = buildSnapshot({
+      permissionKeys: ['system.menus.view', 'system.audit.view'],
+      visibleMenuIds: ['system', 'menus', 'audit'],
+      visibleMenus: [
+        { id: 'system', path: '/system', labelZh: '系统管理', labelEn: 'System', iconKey: 'panels-top-left', section: 'control', sortOrder: 10, enabled: true },
+        { id: 'audit', parentId: 'system', path: '/system/audit', labelZh: '审计日志', labelEn: 'Audit', iconKey: 'file-clock', section: 'control', sortOrder: 2, enabled: true },
+        { id: 'menus', parentId: 'system', path: '/system/menus', labelZh: '菜单管理', labelEn: 'Menus', iconKey: 'menu-square', section: 'control', sortOrder: 1, enabled: true },
+      ],
+    })
+
+    const nav = getAccessibleSidebarNav(snapshot)
+    expect(nav).toHaveLength(1)
+    expect(nav[0].id).toBe('system')
+    expect(nav[0].children?.map((item) => item.id)).toEqual(['menus', 'audit'])
+  })
+
+  it('orders runtime roots by backend section and preserves backend icon keys', () => {
+    const snapshot = buildSnapshot({
+      permissionKeys: ['delivery.applications.view', 'system.menus.view'],
+      visibleMenuIds: ['builds', 'system', 'menus'],
+      visibleMenus: [
+        { id: 'system', path: '/system', labelZh: '系统管理', labelEn: 'System', iconKey: 'panels-top-left', section: 'control', sortOrder: 50, enabled: true },
+        { id: 'menus', parentId: 'system', path: '/system/menus', labelZh: '菜单管理', labelEn: 'Menus', iconKey: 'menu-square', section: 'control', sortOrder: 10, enabled: true },
+        { id: 'builds', path: '/applications', labelZh: '应用中心', labelEn: 'Applications', iconKey: 'blocks', section: 'deliver', sortOrder: 5, enabled: true },
+      ],
+    })
+
+    const nav = getAccessibleSidebarNav(snapshot)
+    expect(nav.map((item) => item.id)).toEqual(['builds', 'system'])
+    expect(nav[0].iconKey).toBe('blocks')
+    expect(nav[1].iconKey).toBe('panels-top-left')
   })
 })

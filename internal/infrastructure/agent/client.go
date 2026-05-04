@@ -495,6 +495,44 @@ func (c *Client) ListHelmReleases(ctx context.Context, namespace string) ([]doma
 	return payload.Items, nil
 }
 
+func (c *Client) GetHelmReleaseDetail(ctx context.Context, namespace, name string) (domainresource.HelmReleaseDetailView, error) {
+	var payload struct {
+		Data domainresource.HelmReleaseDetailView `json:"data"`
+	}
+	path := fmt.Sprintf("/api/v1/platform/helm/releases/%s/detail?namespace=%s", url.PathEscape(name), url.QueryEscape(namespace))
+	if err := c.request(ctx, http.MethodGet, path, nil, &payload); err != nil {
+		return domainresource.HelmReleaseDetailView{}, err
+	}
+	return payload.Data, nil
+}
+
+func (c *Client) ListHelmReleaseHistory(ctx context.Context, namespace, name string) ([]domainresource.HelmReleaseHistoryView, error) {
+	var payload struct {
+		Items []domainresource.HelmReleaseHistoryView `json:"items"`
+	}
+	path := fmt.Sprintf("/api/v1/platform/helm/releases/%s/history?namespace=%s", url.PathEscape(name), url.QueryEscape(namespace))
+	if err := c.request(ctx, http.MethodGet, path, nil, &payload); err != nil {
+		return nil, err
+	}
+	return payload.Items, nil
+}
+
+func (c *Client) GetHelmReleaseValues(ctx context.Context, namespace, name, revision string) (domainresource.HelmValuesView, error) {
+	var payload struct {
+		Data domainresource.HelmValuesView `json:"data"`
+	}
+	values := url.Values{}
+	values.Set("namespace", namespace)
+	if strings.TrimSpace(revision) != "" {
+		values.Set("revision", revision)
+	}
+	path := fmt.Sprintf("/api/v1/platform/helm/releases/%s/values?%s", url.PathEscape(name), values.Encode())
+	if err := c.request(ctx, http.MethodGet, path, nil, &payload); err != nil {
+		return domainresource.HelmValuesView{}, err
+	}
+	return payload.Data, nil
+}
+
 func (c *Client) ListServices(ctx context.Context, namespace string) ([]domainresource.ServiceView, error) {
 	var payload struct {
 		Items []domainresource.ServiceView `json:"items"`

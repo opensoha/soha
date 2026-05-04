@@ -54,7 +54,7 @@ func TestListVisibleDerivesMenusFromPermissionKeys(t *testing.T) {
 		matrix: map[string][]string{
 			"custom": {appaccess.PermPlatformWorkloadsView, appaccess.PermSettingsAIView},
 		},
-	}))
+	}), nil, nil)
 
 	items, err := service.ListVisible(context.Background(), domainidentity.Principal{Roles: []string{"custom"}})
 	if err != nil {
@@ -90,7 +90,7 @@ func TestListVisibleFallsBackToExplicitBindingsForMappedMenus(t *testing.T) {
 		matrix: map[string][]string{
 			"ops": {},
 		},
-	}))
+	}), nil, nil)
 
 	items, err := service.ListVisible(context.Background(), domainidentity.Principal{Roles: []string{"ops"}})
 	if err != nil {
@@ -119,14 +119,14 @@ func findMenu(items []domainmenu.Record, menuID string) *domainmenu.Record {
 func TestListVisiblePreservesUnmappedMenusWithoutBindings(t *testing.T) {
 	service := New(stubRepository{
 		items: []domainmenu.Record{
-			{ID: "business-lines", Path: "/business-lines", Enabled: true},
-			{ID: "release-board", Path: "/release-board", Enabled: true},
+			{ID: "custom-catalog", Path: "/custom-catalog", Enabled: true},
+			{ID: "custom-delivery", Path: "/custom-delivery", Enabled: true},
 		},
 	}, appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"readonly": {},
 		},
-	}))
+	}), nil, nil)
 
 	items, err := service.ListVisible(context.Background(), domainidentity.Principal{Roles: []string{"readonly"}})
 	if err != nil {
@@ -135,7 +135,7 @@ func TestListVisiblePreservesUnmappedMenusWithoutBindings(t *testing.T) {
 	if len(items) != 2 {
 		t.Fatalf("visible menus = %d, want 2", len(items))
 	}
-	if items[0].ID != "business-lines" || items[1].ID != "release-board" {
+	if items[0].ID != "custom-catalog" || items[1].ID != "custom-delivery" {
 		t.Fatalf("visible menus = %#v, want unmapped menus preserved", items)
 	}
 }

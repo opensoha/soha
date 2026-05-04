@@ -124,6 +124,19 @@ func (h *ApplicationHandler) ListGitTags(c *gin.Context) {
 }
 
 func mapApplicationInput(req dto.UpsertApplicationRequest) domainapp.UpsertInput {
+	buildSources := make([]domainapp.BuildSourceInput, 0, len(req.BuildSources))
+	for _, item := range req.BuildSources {
+		buildSources = append(buildSources, domainapp.BuildSourceInput{
+			ID:         item.ID,
+			Name:       item.Name,
+			Type:       domainapp.BuildSourceType(item.Type),
+			Enabled:    item.Enabled,
+			IsDefault:  item.IsDefault,
+			BuildImage: item.BuildImage,
+			DefaultTag: item.DefaultTag,
+			Config:     item.Config,
+		})
+	}
 	return domainapp.UpsertInput{
 		ID:                  req.ID,
 		Name:                req.Name,
@@ -143,5 +156,6 @@ func mapApplicationInput(req dto.UpsertApplicationRequest) domainapp.UpsertInput
 		DockerfilePath:      req.DockerfilePath,
 		Enabled:             req.Enabled,
 		Metadata:            req.Metadata,
+		BuildSources:        buildSources,
 	}
 }

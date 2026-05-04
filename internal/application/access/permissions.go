@@ -33,6 +33,8 @@ const (
 	PermDeliveryApplicationEnvManage    = "delivery.application-environments.manage"
 	PermDeliveryWorkflowTemplatesView   = "delivery.workflow-templates.view"
 	PermDeliveryWorkflowTemplatesManage = "delivery.workflow-templates.manage"
+	PermDeliveryBuildTemplatesView      = "delivery.build-templates.view"
+	PermDeliveryBuildTemplatesManage    = "delivery.build-templates.manage"
 	PermDeliveryReleaseBoardView        = "delivery.release-board.view"
 	PermDeliveryWorkflowsView           = "delivery.workflows.view"
 	PermDeliveryWorkflowsTrigger        = "delivery.workflows.trigger"
@@ -113,6 +115,8 @@ func allPermissionKeys() []string {
 		PermDeliveryApplicationEnvManage,
 		PermDeliveryWorkflowTemplatesView,
 		PermDeliveryWorkflowTemplatesManage,
+		PermDeliveryBuildTemplatesView,
+		PermDeliveryBuildTemplatesManage,
 		PermDeliveryReleaseBoardView,
 		PermDeliveryWorkflowsView,
 		PermDeliveryWorkflowsTrigger,
@@ -189,6 +193,8 @@ func defaultRolePermissions() map[string][]string {
 		PermDeliveryApplicationEnvManage,
 		PermDeliveryWorkflowTemplatesView,
 		PermDeliveryWorkflowTemplatesManage,
+		PermDeliveryBuildTemplatesView,
+		PermDeliveryBuildTemplatesManage,
 		PermDeliveryReleaseBoardView,
 		PermDeliveryWorkflowsView,
 		PermDeliveryWorkflowsTrigger,
@@ -247,6 +253,9 @@ func defaultRolePermissions() map[string][]string {
 		PermObserveAIRootCauseRun,
 		PermObserveAIInspectionRun,
 		PermDeliveryApplicationsView,
+		PermDeliveryApplicationEnvView,
+		PermDeliveryWorkflowTemplatesView,
+		PermDeliveryBuildTemplatesView,
 		PermDeliveryReleaseBoardView,
 		PermDeliveryWorkflowsView,
 		PermDeliveryWorkflowsTrigger,

@@ -17,11 +17,15 @@ type Record struct {
 }
 
 type TriggerInput struct {
-	ApplicationID string         `json:"applicationId"`
-	RefType       string         `json:"refType"`
-	RefName       string         `json:"refName"`
-	ImageTag      string         `json:"imageTag"`
-	BuildArgs     map[string]any `json:"buildArgs,omitempty"`
+	ApplicationID            string         `json:"applicationId"`
+	ApplicationEnvironmentID string         `json:"applicationEnvironmentId,omitempty"`
+	BuildSourceID            string         `json:"buildSourceId,omitempty"`
+	RefType                  string         `json:"refType"`
+	RefName                  string         `json:"refName"`
+	ImageTag                 string         `json:"imageTag"`
+	BuildArgs                map[string]any `json:"buildArgs,omitempty"`
+	Variables                map[string]any `json:"variables,omitempty"`
+	TriggeredByWorkflowRunID string         `json:"triggeredByWorkflowRunId,omitempty"`
 }
 
 type Filter struct {

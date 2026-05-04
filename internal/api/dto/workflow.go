@@ -9,3 +9,7 @@ type TriggerWorkflowRequest struct {
 	TriggerBuild   bool   `json:"triggerBuild"`
 	TriggerRelease bool   `json:"triggerRelease"`
 }
+
+type WorkflowApprovalRequest struct {
+	Comment string `json:"comment"`
+}

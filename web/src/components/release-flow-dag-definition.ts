@@ -1,4 +1,5 @@
 export type ReleaseDagNodeType =
+  | 'build'
   | 'manual_approval'
   | 'deploy_update_image'
   | 'wait_rollout'
@@ -42,6 +43,8 @@ export function getDefaultReleaseDagNodeLabel(type: ReleaseDagNodeType) {
   switch (type) {
     case 'manual_approval':
       return '审批'
+    case 'build':
+      return '构建'
     case 'deploy_update_image':
       return '更新镜像'
     case 'wait_rollout':
@@ -61,6 +64,8 @@ export function getDefaultReleaseDagNodeLabel(type: ReleaseDagNodeType) {
 
 export function createNodeConfig(type: ReleaseDagNodeType): Record<string, unknown> {
   switch (type) {
+    case 'build':
+      return { sourceRef: 'binding', refType: 'branch', refValue: '' }
     case 'manual_approval':
       return { approverRoles: ['release-manager'], required: true }
     case 'deploy_update_image':

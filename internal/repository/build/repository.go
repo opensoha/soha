@@ -69,10 +69,25 @@ func (r *Repository) Create(ctx context.Context, input domainbuild.TriggerInput,
 		return domainbuild.Record{}, fmt.Errorf("marshal build metadata: %w", err)
 	}
 	if err := r.db.WithContext(ctx).Exec(`
-		INSERT INTO build_records (id, project_id, source_system, status, metadata, started_at, finished_at, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-	`, record.ID, record.ApplicationID, record.SourceSystem, record.Status, string(payload), nil, nil, record.CreatedAt).Error; err != nil {
+		INSERT INTO build_records (id, project_id, source_system, status, metadata, started_at, finished_at, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, record.ID, record.ApplicationID, record.SourceSystem, record.Status, string(payload), nil, nil, record.CreatedAt, record.CreatedAt).Error; err != nil {
 		return domainbuild.Record{}, fmt.Errorf("create build record: %w", err)
+	}
+	return record, nil
+}
+
+func (r *Repository) Update(ctx context.Context, record domainbuild.Record) (domainbuild.Record, error) {
+	payload, err := json.Marshal(record.Metadata)
+	if err != nil {
+		return domainbuild.Record{}, fmt.Errorf("marshal build metadata: %w", err)
+	}
+	if err := r.db.WithContext(ctx).Exec(`
+		UPDATE build_records
+		SET status = ?, metadata = ?, started_at = ?, finished_at = ?, updated_at = ?
+		WHERE id = ?
+	`, record.Status, string(payload), record.StartedAt, record.FinishedAt, time.Now().UTC(), record.ID).Error; err != nil {
+		return domainbuild.Record{}, fmt.Errorf("update build record: %w", err)
 	}
 	return record, nil
 }

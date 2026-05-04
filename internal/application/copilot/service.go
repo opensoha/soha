@@ -28,7 +28,10 @@ import (
 
 type Repository interface {
 	ListSessions(context.Context, string, int) ([]domaincopilot.Session, error)
+	GetSession(context.Context, string, string) (domaincopilot.Session, error)
 	CreateSession(context.Context, domaincopilot.Session) (domaincopilot.Session, error)
+	UpdateSession(context.Context, string, string, domaincopilot.Session) (domaincopilot.Session, error)
+	DeleteSession(context.Context, string, string) error
 	ListMessages(context.Context, string, int) ([]domaincopilot.Message, error)
 	CreateMessage(context.Context, domaincopilot.Message) (domaincopilot.Message, error)
 	ListDataSources(context.Context) ([]domaincopilot.DataSource, error)
@@ -164,21 +167,86 @@ func (s *Service) ListSessions(ctx context.Context, principal domainidentity.Pri
 	return s.repo.ListSessions(ctx, principal.UserID, 20)
 }
 
-func (s *Service) CreateSession(ctx context.Context, principal domainidentity.Principal, title, locale string) (domaincopilot.Session, error) {
+func (s *Service) ListAnalysisRuns(ctx context.Context, principal domainidentity.Principal, filter domaincopilot.RootCauseRunFilter) ([]domaincopilot.RootCauseRun, error) {
+	return s.ListRootCauseRuns(ctx, principal, filter)
+}
+
+func (s *Service) GetSession(ctx context.Context, principal domainidentity.Principal, sessionID string) (domaincopilot.Session, error) {
+	if err := s.authorizePrincipal(ctx, principal, appaccess.PermObserveAIChatUse); err != nil {
+		return domaincopilot.Session{}, err
+	}
+	return s.repo.GetSession(ctx, principal.UserID, strings.TrimSpace(sessionID))
+}
+
+func (s *Service) CreateSession(ctx context.Context, principal domainidentity.Principal, title, mode string, scope map[string]any, tags []string, locale string) (domaincopilot.Session, error) {
 	if err := s.authorizePrincipal(ctx, principal, appaccess.PermObserveAIChatUse); err != nil {
 		return domaincopilot.Session{}, err
 	}
 	if strings.TrimSpace(title) == "" {
 		title = localize(locale, "新的调查会话", "New Investigation")
 	}
+	metadata := sessionMetadataMap(domaincopilot.SessionMetadata{
+		Mode:   normalizeSessionMode(mode),
+		Status: "active",
+		Scope:  scopeFromMap(scope),
+		Tags:   normalizeStringList(tags),
+		Source: "manual",
+	})
+	metadata["locale"] = normalizeLocale(locale)
 	return s.repo.CreateSession(ctx, domaincopilot.Session{
 		ID:        uuid.NewString(),
 		Title:     strings.TrimSpace(title),
 		CreatedBy: principal.UserID,
-		Metadata:  map[string]any{"mode": "read-only", "locale": normalizeLocale(locale)},
+		Metadata:  metadata,
 		CreatedAt: time.Now().UTC(),
 		UpdatedAt: time.Now().UTC(),
 	})
+}
+
+func (s *Service) UpdateSession(ctx context.Context, principal domainidentity.Principal, sessionID string, title, mode, status, summary string, scope, toolset map[string]any, tags []string, archived bool) (domaincopilot.Session, error) {
+	if err := s.authorizePrincipal(ctx, principal, appaccess.PermObserveAIChatUse); err != nil {
+		return domaincopilot.Session{}, err
+	}
+	current, err := s.repo.GetSession(ctx, principal.UserID, strings.TrimSpace(sessionID))
+	if err != nil {
+		return domaincopilot.Session{}, err
+	}
+	metadata := parseSessionMetadata(current.Metadata)
+	if strings.TrimSpace(mode) != "" {
+		metadata.Mode = normalizeSessionMode(mode)
+	}
+	if strings.TrimSpace(status) != "" {
+		metadata.Status = strings.TrimSpace(status)
+	}
+	if strings.TrimSpace(summary) != "" {
+		metadata.Summary = strings.TrimSpace(summary)
+	}
+	if len(tags) > 0 {
+		metadata.Tags = normalizeStringList(tags)
+	}
+	if scope != nil {
+		metadata.Scope = scopeFromMap(scope)
+	}
+	if toolset != nil {
+		metadata.Toolset = toolsetFromMap(toolset)
+	}
+	if archived {
+		metadata.ArchivedAt = time.Now().UTC().Format(time.RFC3339)
+		metadata.Status = "archived"
+	}
+	if strings.TrimSpace(title) != "" {
+		current.Title = strings.TrimSpace(title)
+	}
+	current.Metadata = sessionMetadataMap(metadata)
+	current.UpdatedAt = time.Now().UTC()
+	return s.repo.UpdateSession(ctx, principal.UserID, current.ID, current)
+}
+
+func (s *Service) DeleteSession(ctx context.Context, principal domainidentity.Principal, sessionID string) error {
+	if err := s.authorizePrincipal(ctx, principal, appaccess.PermObserveAIChatUse); err != nil {
+		return err
+	}
+	return s.repo.DeleteSession(ctx, principal.UserID, strings.TrimSpace(sessionID))
 }
 
 func (s *Service) ListMessages(ctx context.Context, principal domainidentity.Principal, sessionID string) ([]domaincopilot.Message, error) {
@@ -188,35 +256,100 @@ func (s *Service) ListMessages(ctx context.Context, principal domainidentity.Pri
 	return s.repo.ListMessages(ctx, sessionID, 100)
 }
 
-func (s *Service) SendMessage(ctx context.Context, principal domainidentity.Principal, sessionID, content, locale string) ([]domaincopilot.Message, error) {
+func (s *Service) SendMessage(ctx context.Context, principal domainidentity.Principal, sessionID, content, locale string) (domaincopilot.SessionMessageEnvelope, error) {
 	if err := s.authorizePrincipal(ctx, principal, appaccess.PermObserveAIChatUse); err != nil {
-		return nil, err
+		return domaincopilot.SessionMessageEnvelope{}, err
 	}
+	session, err := s.repo.GetSession(ctx, principal.UserID, strings.TrimSpace(sessionID))
+	if err != nil {
+		return domaincopilot.SessionMessageEnvelope{}, err
+	}
+	sessionMeta := parseSessionMetadata(session.Metadata)
 	locale = detectMessageLocale(content, locale)
 	userMessage, err := s.repo.CreateMessage(ctx, domaincopilot.Message{
 		ID:        uuid.NewString(),
 		SessionID: sessionID,
 		Role:      "user",
 		Content:   strings.TrimSpace(content),
-		Metadata:  map[string]any{"userId": principal.UserID, "locale": locale},
+		Metadata:  map[string]any{"userId": principal.UserID, "locale": locale, "mode": sessionMeta.Mode},
 		CreatedAt: time.Now().UTC(),
 	})
 	if err != nil {
-		return nil, err
+		return domaincopilot.SessionMessageEnvelope{}, err
 	}
+	toolCalls, artifacts, sessionPatch := s.analyzeConversation(ctx, principal, session, content, locale)
 	reply := s.generateReply(ctx, principal, content, locale)
+	if len(artifacts) > 0 {
+		reply = artifacts[0].Summary
+	}
 	assistantMessage, err := s.repo.CreateMessage(ctx, domaincopilot.Message{
 		ID:        uuid.NewString(),
 		SessionID: sessionID,
 		Role:      "assistant",
 		Content:   reply,
-		Metadata:  map[string]any{"mode": "read-only", "source": "platform-context", "locale": locale},
+		Metadata:  map[string]any{"mode": sessionMeta.Mode, "source": "platform-context", "locale": locale, "analysisArtifacts": artifacts},
 		CreatedAt: time.Now().UTC(),
 	})
 	if err != nil {
-		return nil, err
+		return domaincopilot.SessionMessageEnvelope{}, err
 	}
-	return []domaincopilot.Message{userMessage, assistantMessage}, nil
+	if len(sessionPatch) > 0 {
+		merged := parseSessionMetadata(session.Metadata)
+		if summary, ok := sessionPatch["summary"].(string); ok && strings.TrimSpace(summary) != "" {
+			merged.Summary = strings.TrimSpace(summary)
+		}
+		if refs, ok := sessionPatch["analysisRunRefs"].([]domaincopilot.AnalysisRunRef); ok && len(refs) > 0 {
+			merged.AnalysisRunRefs = refs
+		}
+		session.Metadata = sessionMetadataMap(merged)
+		session.UpdatedAt = time.Now().UTC()
+		_, _ = s.repo.UpdateSession(ctx, principal.UserID, session.ID, session)
+	}
+	return domaincopilot.SessionMessageEnvelope{
+		Messages:          []domaincopilot.Message{userMessage, assistantMessage},
+		ToolCalls:         toolCalls,
+		AnalysisArtifacts: artifacts,
+		SessionPatch:      sessionPatch,
+	}, nil
+}
+
+func (s *Service) RunSessionAnalysis(ctx context.Context, principal domainidentity.Principal, sessionID string, input domaincopilot.RootCauseRunInput, locale string) (domaincopilot.SessionMessageEnvelope, error) {
+	if err := s.authorizePrincipal(ctx, principal, appaccess.PermObserveAIChatUse); err != nil {
+		return domaincopilot.SessionMessageEnvelope{}, err
+	}
+	session, err := s.repo.GetSession(ctx, principal.UserID, strings.TrimSpace(sessionID))
+	if err != nil {
+		return domaincopilot.SessionMessageEnvelope{}, err
+	}
+	scope := scopeFromMap(inputScopeMap(input))
+	toolCalls, artifacts, sessionPatch := s.analyzeConversation(ctx, principal, domaincopilot.Session{
+		ID:        session.ID,
+		Title:     session.Title,
+		CreatedBy: session.CreatedBy,
+		Metadata:  sessionMetadataMap(domaincopilot.SessionMetadata{
+			Mode:   normalizeSessionMode(input.Kind),
+			Status: "active",
+			Scope:  scope,
+		}),
+		CreatedAt: session.CreatedAt,
+		UpdatedAt: session.UpdatedAt,
+	}, input.Question, locale)
+	return domaincopilot.SessionMessageEnvelope{
+		Messages:          nil,
+		ToolCalls:         toolCalls,
+		AnalysisArtifacts: artifacts,
+		SessionPatch:      sessionPatch,
+	}, nil
+}
+
+func inputScopeMap(input domaincopilot.RootCauseRunInput) map[string]any {
+	return map[string]any{
+		"clusterId":        input.ClusterID,
+		"namespace":        input.Namespace,
+		"workload":         input.WorkloadName,
+		"alertId":          input.AlertID,
+		"timeRangeMinutes": input.TimeRangeMinutes,
+	}
 }
 
 func (s *Service) Insights(ctx context.Context, principal domainidentity.Principal, locale string) ([]domaincopilot.Insight, error) {

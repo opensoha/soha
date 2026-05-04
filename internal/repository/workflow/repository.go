@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -50,6 +51,16 @@ func (r *Repository) List(ctx context.Context, applicationID string, limit int) 
 	return items, rows.Err()
 }
 
+func (r *Repository) Get(ctx context.Context, runID string) (domainworkflow.Run, error) {
+	row := r.db.WithContext(ctx).Raw(`
+		SELECT id, application_id, workflow_name, cluster_id, namespace, deployment_name, status, steps, metadata, created_at, updated_at
+		FROM workflow_runs
+		WHERE id = ?
+		LIMIT 1
+	`, runID).Row()
+	return scanWorkflowRow(row)
+}
+
 func (r *Repository) Create(ctx context.Context, item domainworkflow.Run) (domainworkflow.Run, error) {
 	item.Metadata = persistWorkflowMetadata(item.Metadata, item.NodeRuns)
 	steps, err := json.Marshal(item.Steps)
@@ -89,6 +100,16 @@ func (r *Repository) Update(ctx context.Context, item domainworkflow.Run) (domai
 	return item, nil
 }
 
+func (r *Repository) CreateApproval(ctx context.Context, item domainworkflow.Approval) error {
+	if err := r.db.WithContext(ctx).Exec(`
+		INSERT INTO workflow_approvals (id, workflow_run_id, node_id, action, comment, actor_id, actor_name, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+	`, item.ID, item.WorkflowRunID, item.NodeID, item.Action, nullable(item.Comment), item.ActorID, nullable(item.ActorName), item.CreatedAt).Error; err != nil {
+		return fmt.Errorf("create workflow approval: %w", err)
+	}
+	return nil
+}
+
 func (r *Repository) DeleteByIDs(ctx context.Context, ids []string) error {
 	if len(ids) == 0 {
 		return nil
@@ -110,6 +131,42 @@ func scanWorkflow(rows *sql.Rows) (domainworkflow.Run, error) {
 	var updatedAt time.Time
 	if err := rows.Scan(&item.ID, &item.ApplicationID, &item.WorkflowName, &clusterID, &namespace, &deploymentName, &item.Status, &steps, &metadata, &createdAt, &updatedAt); err != nil {
 		return domainworkflow.Run{}, fmt.Errorf("scan workflow run: %w", err)
+	}
+	if clusterID.Valid {
+		item.ClusterID = clusterID.String
+	}
+	if namespace.Valid {
+		item.Namespace = namespace.String
+	}
+	if deploymentName.Valid {
+		item.DeploymentName = deploymentName.String
+	}
+	if len(steps) > 0 {
+		_ = json.Unmarshal(steps, &item.Steps)
+	}
+	if len(metadata) > 0 {
+		_ = json.Unmarshal(metadata, &item.Metadata)
+	}
+	item.NodeRuns = extractWorkflowNodeRuns(item.Metadata)
+	item.CreatedAt = createdAt.Format(time.RFC3339)
+	item.UpdatedAt = updatedAt.Format(time.RFC3339)
+	return item, nil
+}
+
+func scanWorkflowRow(row *sql.Row) (domainworkflow.Run, error) {
+	var item domainworkflow.Run
+	var clusterID sql.NullString
+	var namespace sql.NullString
+	var deploymentName sql.NullString
+	var steps []byte
+	var metadata []byte
+	var createdAt time.Time
+	var updatedAt time.Time
+	if err := row.Scan(&item.ID, &item.ApplicationID, &item.WorkflowName, &clusterID, &namespace, &deploymentName, &item.Status, &steps, &metadata, &createdAt, &updatedAt); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return domainworkflow.Run{}, fmt.Errorf("workflow run not found")
+		}
+		return domainworkflow.Run{}, fmt.Errorf("scan workflow run row: %w", err)
 	}
 	if clusterID.Valid {
 		item.ClusterID = clusterID.String

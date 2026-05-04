@@ -303,6 +303,102 @@ func (r *Repository) DeleteApplicationEnvironment(ctx context.Context, id string
 	return nil
 }
 
+func (r *Repository) ListBuildTemplates(ctx context.Context) ([]domaincatalog.BuildTemplate, error) {
+	rows, err := r.db.WithContext(ctx).Raw(`
+		SELECT id, template_key, name, description, builder_kind, dockerfile_template, build_commands, variable_schema, default_variables, enabled, created_at, updated_at
+		FROM build_templates
+		ORDER BY name ASC
+	`).Rows()
+	if err != nil {
+		return nil, fmt.Errorf("query build templates: %w", err)
+	}
+	defer rows.Close()
+
+	items := make([]domaincatalog.BuildTemplate, 0)
+	for rows.Next() {
+		item, scanErr := scanBuildTemplate(rows)
+		if scanErr != nil {
+			return nil, scanErr
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func (r *Repository) GetBuildTemplate(ctx context.Context, id string) (domaincatalog.BuildTemplate, error) {
+	row := r.db.WithContext(ctx).Raw(`
+		SELECT id, template_key, name, description, builder_kind, dockerfile_template, build_commands, variable_schema, default_variables, enabled, created_at, updated_at
+		FROM build_templates
+		WHERE id = ?
+		LIMIT 1
+	`, strings.TrimSpace(id)).Row()
+	return scanBuildTemplateRow(row)
+}
+
+func (r *Repository) CreateBuildTemplate(ctx context.Context, input domaincatalog.BuildTemplateInput) (domaincatalog.BuildTemplate, error) {
+	item := normalizeBuildTemplateInput(input)
+	buildCommands, err := json.Marshal(item.BuildCommands)
+	if err != nil {
+		return domaincatalog.BuildTemplate{}, fmt.Errorf("marshal build template commands: %w", err)
+	}
+	variableSchema, err := json.Marshal(item.VariableSchema)
+	if err != nil {
+		return domaincatalog.BuildTemplate{}, fmt.Errorf("marshal build template variable schema: %w", err)
+	}
+	defaultVariables, err := json.Marshal(item.DefaultVariables)
+	if err != nil {
+		return domaincatalog.BuildTemplate{}, fmt.Errorf("marshal build template default variables: %w", err)
+	}
+	if err := r.db.WithContext(ctx).Exec(`
+		INSERT INTO build_templates (id, template_key, name, description, builder_kind, dockerfile_template, build_commands, variable_schema, default_variables, enabled, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, item.ID, item.Key, item.Name, nullableString(item.Description), item.BuilderKind, nullableString(item.DockerfileTemplate), string(buildCommands), string(variableSchema), string(defaultVariables), item.Enabled, item.CreatedAt, item.UpdatedAt).Error; err != nil {
+		return domaincatalog.BuildTemplate{}, fmt.Errorf("create build template: %w", err)
+	}
+	return item, nil
+}
+
+func (r *Repository) UpdateBuildTemplate(ctx context.Context, id string, input domaincatalog.BuildTemplateInput) (domaincatalog.BuildTemplate, error) {
+	item := normalizeBuildTemplateInput(input)
+	item.ID = strings.TrimSpace(id)
+	buildCommands, err := json.Marshal(item.BuildCommands)
+	if err != nil {
+		return domaincatalog.BuildTemplate{}, fmt.Errorf("marshal build template commands: %w", err)
+	}
+	variableSchema, err := json.Marshal(item.VariableSchema)
+	if err != nil {
+		return domaincatalog.BuildTemplate{}, fmt.Errorf("marshal build template variable schema: %w", err)
+	}
+	defaultVariables, err := json.Marshal(item.DefaultVariables)
+	if err != nil {
+		return domaincatalog.BuildTemplate{}, fmt.Errorf("marshal build template default variables: %w", err)
+	}
+	result := r.db.WithContext(ctx).Exec(`
+		UPDATE build_templates
+		SET template_key = ?, name = ?, description = ?, builder_kind = ?, dockerfile_template = ?, build_commands = ?, variable_schema = ?, default_variables = ?, enabled = ?, updated_at = ?
+		WHERE id = ?
+	`, item.Key, item.Name, nullableString(item.Description), item.BuilderKind, nullableString(item.DockerfileTemplate), string(buildCommands), string(variableSchema), string(defaultVariables), item.Enabled, item.UpdatedAt, item.ID)
+	if result.Error != nil {
+		return domaincatalog.BuildTemplate{}, fmt.Errorf("update build template: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return domaincatalog.BuildTemplate{}, ErrNotFound
+	}
+	item.CreatedAt = fetchCreatedAt(ctx, r.db, "build_templates", item.ID)
+	return item, nil
+}
+
+func (r *Repository) DeleteBuildTemplate(ctx context.Context, id string) error {
+	result := r.db.WithContext(ctx).Exec(`DELETE FROM build_templates WHERE id = ?`, strings.TrimSpace(id))
+	if result.Error != nil {
+		return fmt.Errorf("delete build template: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 func (r *Repository) ListWorkflowTemplates(ctx context.Context) ([]domaincatalog.WorkflowTemplate, error) {
 	rows, err := r.db.WithContext(ctx).Raw(`
 		SELECT id, template_key, name, description, category, definition, enabled, created_at, updated_at
@@ -487,12 +583,6 @@ func scanApplicationEnvironment(rows *sql.Rows) (domaincatalog.ApplicationEnviro
 	item.WorkflowTemplateID = workflowTemplateID.String
 	_ = json.Unmarshal(buildPolicy, &item.BuildPolicy)
 	_ = json.Unmarshal(releasePolicy, &item.ReleasePolicy)
-	if item.BuildPolicy == nil {
-		item.BuildPolicy = map[string]any{}
-	}
-	if item.ReleasePolicy == nil {
-		item.ReleasePolicy = map[string]any{}
-	}
 	return item, nil
 }
 
@@ -514,12 +604,6 @@ func scanApplicationEnvironmentRow(row *sql.Row) (domaincatalog.ApplicationEnvir
 	item.WorkflowTemplateID = workflowTemplateID.String
 	_ = json.Unmarshal(buildPolicy, &item.BuildPolicy)
 	_ = json.Unmarshal(releasePolicy, &item.ReleasePolicy)
-	if item.BuildPolicy == nil {
-		item.BuildPolicy = map[string]any{}
-	}
-	if item.ReleasePolicy == nil {
-		item.ReleasePolicy = map[string]any{}
-	}
 	return item, nil
 }
 
@@ -530,6 +614,57 @@ func scanReleaseTarget(rows *sql.Rows) (domaincatalog.ReleaseTarget, error) {
 		return domaincatalog.ReleaseTarget{}, fmt.Errorf("scan release target: %w", err)
 	}
 	item.ContainerName = containerName.String
+	return item, nil
+}
+
+func scanBuildTemplate(rows *sql.Rows) (domaincatalog.BuildTemplate, error) {
+	var item domaincatalog.BuildTemplate
+	var description sql.NullString
+	var dockerfileTemplate sql.NullString
+	var buildCommands []byte
+	var variableSchema []byte
+	var defaultVariables []byte
+	if err := rows.Scan(&item.ID, &item.Key, &item.Name, &description, &item.BuilderKind, &dockerfileTemplate, &buildCommands, &variableSchema, &defaultVariables, &item.Enabled, &item.CreatedAt, &item.UpdatedAt); err != nil {
+		return domaincatalog.BuildTemplate{}, fmt.Errorf("scan build template: %w", err)
+	}
+	item.Description = description.String
+	item.DockerfileTemplate = dockerfileTemplate.String
+	_ = json.Unmarshal(buildCommands, &item.BuildCommands)
+	_ = json.Unmarshal(variableSchema, &item.VariableSchema)
+	_ = json.Unmarshal(defaultVariables, &item.DefaultVariables)
+	if item.VariableSchema == nil {
+		item.VariableSchema = map[string]any{}
+	}
+	if item.DefaultVariables == nil {
+		item.DefaultVariables = map[string]any{}
+	}
+	return item, nil
+}
+
+func scanBuildTemplateRow(row *sql.Row) (domaincatalog.BuildTemplate, error) {
+	var item domaincatalog.BuildTemplate
+	var description sql.NullString
+	var dockerfileTemplate sql.NullString
+	var buildCommands []byte
+	var variableSchema []byte
+	var defaultVariables []byte
+	if err := row.Scan(&item.ID, &item.Key, &item.Name, &description, &item.BuilderKind, &dockerfileTemplate, &buildCommands, &variableSchema, &defaultVariables, &item.Enabled, &item.CreatedAt, &item.UpdatedAt); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return domaincatalog.BuildTemplate{}, ErrNotFound
+		}
+		return domaincatalog.BuildTemplate{}, fmt.Errorf("scan build template row: %w", err)
+	}
+	item.Description = description.String
+	item.DockerfileTemplate = dockerfileTemplate.String
+	_ = json.Unmarshal(buildCommands, &item.BuildCommands)
+	_ = json.Unmarshal(variableSchema, &item.VariableSchema)
+	_ = json.Unmarshal(defaultVariables, &item.DefaultVariables)
+	if item.VariableSchema == nil {
+		item.VariableSchema = map[string]any{}
+	}
+	if item.DefaultVariables == nil {
+		item.DefaultVariables = map[string]any{}
+	}
 	return item, nil
 }
 
@@ -616,12 +751,6 @@ func normalizeApplicationEnvironmentInput(input domaincatalog.ApplicationEnviron
 	if id == "" {
 		id = uuid.NewString()
 	}
-	if input.BuildPolicy == nil {
-		input.BuildPolicy = map[string]any{}
-	}
-	if input.ReleasePolicy == nil {
-		input.ReleasePolicy = map[string]any{}
-	}
 	return domaincatalog.ApplicationEnvironment{
 		ID:                 id,
 		ApplicationID:      strings.TrimSpace(input.ApplicationID),
@@ -629,6 +758,34 @@ func normalizeApplicationEnvironmentInput(input domaincatalog.ApplicationEnviron
 		WorkflowTemplateID: strings.TrimSpace(input.WorkflowTemplateID),
 		BuildPolicy:        input.BuildPolicy,
 		ReleasePolicy:      input.ReleasePolicy,
+		CreatedAt:          now,
+		UpdatedAt:          now,
+	}
+}
+
+func normalizeBuildTemplateInput(input domaincatalog.BuildTemplateInput) domaincatalog.BuildTemplate {
+	now := time.Now().UTC()
+	id := strings.TrimSpace(input.ID)
+	if id == "" {
+		id = uuid.NewString()
+	}
+	if input.VariableSchema == nil {
+		input.VariableSchema = map[string]any{}
+	}
+	if input.DefaultVariables == nil {
+		input.DefaultVariables = map[string]any{}
+	}
+	return domaincatalog.BuildTemplate{
+		ID:                 id,
+		Key:                strings.TrimSpace(input.Key),
+		Name:               strings.TrimSpace(input.Name),
+		Description:        strings.TrimSpace(input.Description),
+		BuilderKind:        firstNonEmpty(strings.TrimSpace(input.BuilderKind), "custom"),
+		DockerfileTemplate: input.DockerfileTemplate,
+		BuildCommands:      input.BuildCommands,
+		VariableSchema:     input.VariableSchema,
+		DefaultVariables:   input.DefaultVariables,
+		Enabled:            input.Enabled,
 		CreatedAt:          now,
 		UpdatedAt:          now,
 	}
@@ -654,6 +811,15 @@ func normalizeWorkflowTemplateInput(input domaincatalog.WorkflowTemplateInput) d
 		CreatedAt:   now,
 		UpdatedAt:   now,
 	}
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
 }
 
 func normalizeReleaseTargetInput(applicationEnvironmentID string, input domaincatalog.ReleaseTargetInput, now time.Time) domaincatalog.ReleaseTarget {

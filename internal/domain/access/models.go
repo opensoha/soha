@@ -216,9 +216,15 @@ type PolicyInput struct {
 }
 
 type VisibleMenu struct {
-	ID       string `json:"id"`
-	ParentID string `json:"parentId,omitempty"`
-	Path     string `json:"path"`
+	ID        string `json:"id"`
+	ParentID  string `json:"parentId,omitempty"`
+	Path      string `json:"path"`
+	LabelZH   string `json:"labelZh"`
+	LabelEN   string `json:"labelEn"`
+	IconKey   string `json:"iconKey"`
+	Section   string `json:"section"`
+	SortOrder int    `json:"sortOrder"`
+	Enabled   bool   `json:"enabled"`
 }
 
 type PermissionSnapshot struct {

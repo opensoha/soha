@@ -48,6 +48,7 @@ type rootCauseAnalysis struct {
 	summary         string
 	severity        string
 	playbookResults map[string]any
+	toolExecutions  []domaincopilot.ToolExecution
 }
 
 func (s *Service) executeRootCauseRun(ctx context.Context, principal domainidentity.Principal, createdBy string, input domaincopilot.RootCauseRunInput, dedupKey, locale string) (domaincopilot.RootCauseRun, error) {
@@ -71,6 +72,8 @@ func (s *Service) executeRootCauseRun(ctx context.Context, principal domainident
 	dataSourceSnapshot, remediationPlan := s.buildRootCauseExecutionMetadata(ctx, profile, analysis)
 	run := domaincopilot.RootCauseRun{
 		ID:                 "rca:" + uuid.NewString(),
+		Kind:               normalizeAnalysisKind(input.Kind),
+		SessionID:          strings.TrimSpace(input.SessionID),
 		Title:              analysisTitle(input, locale),
 		CreatedBy:          createdBy,
 		AnalysisProfileID:  profile.ID,
@@ -88,6 +91,7 @@ func (s *Service) executeRootCauseRun(ctx context.Context, principal domainident
 		Evidence:           analysis.evidence,
 		Hypotheses:         analysis.hypotheses,
 		Recommendations:    analysis.recommendations,
+		ToolExecutions:     analysis.toolExecutions,
 		DataSourceSnapshot: dataSourceSnapshot,
 		PlaybookResults:    analysis.playbookResults,
 		RemediationPlan:    remediationPlan,
@@ -363,6 +367,8 @@ func (s *Service) collectRootCauseAnalysis(ctx context.Context, principal domain
 
 func normalizeRootCauseInput(input domaincopilot.RootCauseRunInput) domaincopilot.RootCauseRunInput {
 	input.Title = strings.TrimSpace(input.Title)
+	input.Kind = normalizeAnalysisKind(input.Kind)
+	input.SessionID = strings.TrimSpace(input.SessionID)
 	input.ClusterID = strings.TrimSpace(input.ClusterID)
 	input.Namespace = strings.TrimSpace(input.Namespace)
 	input.WorkloadKind = strings.TrimSpace(input.WorkloadKind)
@@ -373,6 +379,15 @@ func normalizeRootCauseInput(input domaincopilot.RootCauseRunInput) domaincopilo
 		input.WorkloadKind = "Deployment"
 	}
 	return input
+}
+
+func normalizeAnalysisKind(kind string) string {
+	switch strings.TrimSpace(kind) {
+	case "performance", "trace":
+		return strings.TrimSpace(kind)
+	default:
+		return "root_cause"
+	}
 }
 
 func analysisTitle(input domaincopilot.RootCauseRunInput, locale string) string {

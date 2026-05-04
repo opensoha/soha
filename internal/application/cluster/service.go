@@ -12,11 +12,13 @@ import (
 	domainaudit "github.com/kubecrux/kubecrux/internal/domain/audit"
 	domaincluster "github.com/kubecrux/kubecrux/internal/domain/cluster"
 	domainidentity "github.com/kubecrux/kubecrux/internal/domain/identity"
+	domainoperation "github.com/kubecrux/kubecrux/internal/domain/operation"
 	agentinfra "github.com/kubecrux/kubecrux/internal/infrastructure/agent"
 	cfgpkg "github.com/kubecrux/kubecrux/internal/infrastructure/config"
 	informerinfra "github.com/kubecrux/kubecrux/internal/infrastructure/informer"
 	k8sinfra "github.com/kubecrux/kubecrux/internal/infrastructure/kubernetes"
 	"github.com/kubecrux/kubecrux/internal/platform/apperrors"
+	"github.com/kubecrux/kubecrux/internal/platform/operationentry"
 	"github.com/kubecrux/kubecrux/internal/platform/requestctx"
 	"github.com/kubecrux/kubecrux/internal/platform/runtimeobs"
 	"go.uber.org/zap"
@@ -39,6 +41,10 @@ type AuditRecorder interface {
 	Record(context.Context, domainaudit.Entry) error
 }
 
+type OperationRecorder interface {
+	Record(context.Context, domainoperation.Entry) error
+}
+
 type Service struct {
 	manager    *k8sinfra.Manager
 	cache      *informerinfra.Service
@@ -46,12 +52,13 @@ type Service struct {
 	repo       Repository
 	authorizer domainaccess.Authorizer
 	audit      AuditRecorder
+	operations OperationRecorder
 	syncLimit  int
 	logger     *zap.Logger
 	metrics    *runtimeobs.Registry
 }
 
-func New(manager *k8sinfra.Manager, cache *informerinfra.Service, agents *agentinfra.Registry, repo Repository, authorizer domainaccess.Authorizer, audit AuditRecorder) *Service {
+func New(manager *k8sinfra.Manager, cache *informerinfra.Service, agents *agentinfra.Registry, repo Repository, authorizer domainaccess.Authorizer, audit AuditRecorder, operations OperationRecorder) *Service {
 	return &Service{
 		manager:    manager,
 		cache:      cache,
@@ -59,6 +66,7 @@ func New(manager *k8sinfra.Manager, cache *informerinfra.Service, agents *agenti
 		repo:       repo,
 		authorizer: authorizer,
 		audit:      audit,
+		operations: operations,
 		syncLimit:  defaultSyncConcurrency,
 	}
 }
@@ -301,6 +309,7 @@ func (s *Service) Register(ctx context.Context, principal domainidentity.Princip
 	if err := s.recordAudit(ctx, principal, connection.Summary.ID, "Cluster", connection.Summary.Name, string(domainaccess.ActionUpdate), "success", "registered cluster connection"); err != nil {
 		return domaincluster.Summary{}, fmt.Errorf("record cluster registration audit: %w", err)
 	}
+	s.recordOperation(ctx, principal, "platform.cluster.register", connection.Summary.ID, connection.Summary.Name, "registered cluster connection")
 	return item, nil
 }
 
@@ -364,6 +373,7 @@ func (s *Service) Update(ctx context.Context, principal domainidentity.Principal
 	if err := s.recordAudit(ctx, principal, connection.Summary.ID, "Cluster", connection.Summary.Name, string(domainaccess.ActionUpdate), "success", "updated cluster connection"); err != nil {
 		return domaincluster.Summary{}, fmt.Errorf("record cluster update audit: %w", err)
 	}
+	s.recordOperation(ctx, principal, "platform.cluster.update", connection.Summary.ID, connection.Summary.Name, "updated cluster connection")
 	return item, nil
 }
 
@@ -388,6 +398,7 @@ func (s *Service) Delete(ctx context.Context, principal domainidentity.Principal
 	if err := s.recordAudit(ctx, principal, clusterID, "Cluster", summary.Name, string(domainaccess.ActionDelete), "success", "deleted cluster connection"); err != nil {
 		return fmt.Errorf("record cluster delete audit: %w", err)
 	}
+	s.recordOperation(ctx, principal, "platform.cluster.delete", clusterID, summary.Name, "deleted cluster connection")
 	return nil
 }
 
@@ -790,4 +801,27 @@ func (s *Service) recordAudit(ctx context.Context, principal domainidentity.Prin
 			"source": meta.Source,
 		},
 	})
+}
+
+func (s *Service) recordOperation(ctx context.Context, principal domainidentity.Principal, operationType, targetID, targetLabel, summary string) {
+	if s.operations == nil {
+		return
+	}
+	_ = s.operations.Record(ctx, operationentry.New(
+		ctx,
+		principal,
+		operationType,
+		map[string]any{
+			"module":       "platform",
+			"resourceKind": "Cluster",
+			"targetId":     targetID,
+			"targetLabel":  targetLabel,
+			"clusterId":    targetID,
+		},
+		"success",
+		summary,
+		map[string]any{
+			"clusterId": targetID,
+		},
+	))
 }

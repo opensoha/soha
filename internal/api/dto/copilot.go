@@ -1,7 +1,23 @@
 package dto
 
 type CreateCopilotSessionRequest struct {
-	Title string `json:"title"`
+	Title    string         `json:"title"`
+	Mode     string         `json:"mode"`
+	Scope    map[string]any `json:"scope"`
+	Tags     []string       `json:"tags"`
+	AlertID  string         `json:"alertId"`
+	Workload string         `json:"workload"`
+}
+
+type UpdateCopilotSessionRequest struct {
+	Title    string         `json:"title"`
+	Mode     string         `json:"mode"`
+	Status   string         `json:"status"`
+	Scope    map[string]any `json:"scope"`
+	Toolset  map[string]any `json:"toolset"`
+	Tags     []string       `json:"tags"`
+	Summary  string         `json:"summary"`
+	Archived bool           `json:"archived"`
 }
 
 type SendCopilotMessageRequest struct {
@@ -10,6 +26,8 @@ type SendCopilotMessageRequest struct {
 
 type CreateRootCauseRunRequest struct {
 	Title            string `json:"title"`
+	Kind             string `json:"kind"`
+	SessionID        string `json:"sessionId"`
 	ClusterID        string `json:"clusterId"`
 	Namespace        string `json:"namespace"`
 	WorkloadKind     string `json:"workloadKind"`
@@ -17,6 +35,14 @@ type CreateRootCauseRunRequest struct {
 	AlertID          string `json:"alertId"`
 	TimeRangeMinutes int    `json:"timeRangeMinutes"`
 	Question         string `json:"question"`
+}
+
+type AnalyzeSessionRequest struct {
+	Mode             string         `json:"mode"`
+	AnalysisProfileID string        `json:"analysisProfileId"`
+	TriggerType      string         `json:"triggerType"`
+	Question         string         `json:"question"`
+	Scope            map[string]any `json:"scope"`
 }
 
 type DataSourceRequest struct {
@@ -52,6 +78,7 @@ type AutomationPolicyRequest struct {
 	Name               string         `json:"name"`
 	Enabled            bool           `json:"enabled"`
 	TriggerType        string         `json:"triggerType"`
+	AnalysisKinds      []string       `json:"analysisKinds"`
 	TriggerConditions  map[string]any `json:"triggerConditions"`
 	DedupWindowSeconds int            `json:"dedupWindowSeconds"`
 	AnalysisProfileID  string         `json:"analysisProfileId"`

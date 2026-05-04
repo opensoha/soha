@@ -50,6 +50,7 @@ const DAG_NODE_TAG_COLORS: Record<SemiTagColor, string> = {
 }
 
 const DAG_NODE_OPTIONS: Array<{ value: ReleaseDagNodeType; label: string; color: SemiTagColor }> = [
+  { value: 'build', label: '构建', color: 'green' },
   { value: 'manual_approval', label: '审批', color: 'orange' },
   { value: 'deploy_update_image', label: '更新镜像', color: 'blue' },
   { value: 'wait_rollout', label: '等待 Rollout', color: 'cyan' },
@@ -79,6 +80,8 @@ function createGraphId(prefix: string) {
 function getDagNodeLabel(type: ReleaseDagNodeType, localeCode: 'zh_CN' | 'en_US') {
   if (localeCode === 'en_US') {
     switch (type) {
+      case 'build':
+        return 'Build'
       case 'manual_approval':
         return 'Approval'
       case 'deploy_update_image':
@@ -215,6 +218,22 @@ function StepConfigInspector({
   const patch = (key: string, value: unknown) => onChange({ ...config, [key]: value })
 
   switch (node.type) {
+    case 'build':
+      return (
+        <>
+          <Input value={String(config.sourceRef ?? 'binding')} placeholder="binding source" onChange={(event) => patch('sourceRef', event.target.value)} />
+          <Select
+            style={FULL_WIDTH_STYLE}
+            value={String(config.refType ?? 'branch')}
+            options={[
+              { value: 'branch', label: localeCode === 'zh_CN' ? '分支' : 'Branch' },
+              { value: 'tag', label: localeCode === 'zh_CN' ? '标签' : 'Tag' },
+            ]}
+            onChange={(value) => patch('refType', String(value))}
+          />
+          <Input value={String(config.refValue ?? '')} placeholder="main / v1.0.0" onChange={(event) => patch('refValue', event.target.value)} />
+        </>
+      )
     case 'manual_approval':
       return (
         <>

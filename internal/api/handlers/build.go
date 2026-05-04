@@ -46,11 +46,14 @@ func (h *BuildHandler) TriggerBuild(c *gin.Context) {
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
 	item, err := h.service.Trigger(c.Request.Context(), principal, domainbuild.TriggerInput{
-		ApplicationID: req.ApplicationID,
-		RefType:       req.RefType,
-		RefName:       req.RefName,
-		ImageTag:      req.ImageTag,
-		BuildArgs:     req.BuildArgs,
+		ApplicationID:            req.ApplicationID,
+		ApplicationEnvironmentID: req.ApplicationEnvironmentID,
+		BuildSourceID:            req.BuildSourceID,
+		RefType:                  req.RefType,
+		RefName:                  req.RefName,
+		ImageTag:                 req.ImageTag,
+		BuildArgs:                req.BuildArgs,
+		Variables:                req.Variables,
 	})
 	if err != nil {
 		writeError(c, err)

@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	appaccess "github.com/kubecrux/kubecrux/internal/application/access"
 	domainapp "github.com/kubecrux/kubecrux/internal/domain/application"
 	domainbuild "github.com/kubecrux/kubecrux/internal/domain/build"
 	domaincatalog "github.com/kubecrux/kubecrux/internal/domain/catalog"
@@ -23,6 +24,7 @@ type stubWorkflowRepository struct {
 	deletedIDs  []string
 	createCalls int
 	updated     []domainworkflow.Run
+	approvals   []domainworkflow.Approval
 }
 
 func (r *stubWorkflowRepository) List(context.Context, string, int) ([]domainworkflow.Run, error) {
@@ -34,9 +36,23 @@ func (r *stubWorkflowRepository) Create(_ context.Context, item domainworkflow.R
 	return item, nil
 }
 
+func (r *stubWorkflowRepository) Get(_ context.Context, runID string) (domainworkflow.Run, error) {
+	for _, item := range r.items {
+		if item.ID == runID {
+			return item, nil
+		}
+	}
+	return domainworkflow.Run{}, errors.New("workflow run not found")
+}
+
 func (r *stubWorkflowRepository) Update(_ context.Context, item domainworkflow.Run) (domainworkflow.Run, error) {
 	r.updated = append(r.updated, item)
 	return item, nil
+}
+
+func (r *stubWorkflowRepository) CreateApproval(_ context.Context, item domainworkflow.Approval) error {
+	r.approvals = append(r.approvals, item)
+	return nil
 }
 
 func (r *stubWorkflowRepository) DeleteByIDs(_ context.Context, ids []string) error {
@@ -93,6 +109,18 @@ func (stubWorkflowBuildExecutor) Trigger(context.Context, domainidentity.Princip
 	return domainbuild.Record{ID: "build-1", Status: "queued"}, nil
 }
 
+func (stubWorkflowBuildExecutor) Execute(context.Context, domainidentity.Principal, domainbuild.TriggerInput) (domainbuild.Record, error) {
+	return domainbuild.Record{ID: "build-1", Status: "completed", Metadata: map[string]any{"image": "repo/demo:latest", "artifact": map[string]any{"ref": "repo/demo:latest"}}}, nil
+}
+
+type stubWorkflowRolePermissionReader struct {
+	matrix map[string][]string
+}
+
+func (s stubWorkflowRolePermissionReader) ListRolePermissions(context.Context) (map[string][]string, error) {
+	return s.matrix, nil
+}
+
 func TestListPrunesStaleApplications(t *testing.T) {
 	repo := &stubWorkflowRepository{
 		items: []domainworkflow.Run{
@@ -102,8 +130,9 @@ func TestListPrunesStaleApplications(t *testing.T) {
 		},
 	}
 	service := &Service{
-		repo: repo,
-		apps: &stubWorkflowApps{missing: map[string]bool{"app-missing": true}},
+		repo:        repo,
+		apps:        &stubWorkflowApps{missing: map[string]bool{"app-missing": true}},
+		permissions: appaccess.NewPermissionResolver(stubWorkflowRolePermissionReader{matrix: map[string][]string{"developer": {appaccess.PermDeliveryWorkflowsView}}}),
 	}
 
 	items, err := service.List(context.Background(), domainidentity.Principal{Roles: []string{"developer"}}, "", 50)
@@ -130,8 +159,9 @@ func TestListPrunesStaleApplications(t *testing.T) {
 func TestTriggerReturnsNotFoundWhenApplicationMissing(t *testing.T) {
 	repo := &stubWorkflowRepository{}
 	service := &Service{
-		repo: repo,
-		apps: &stubWorkflowApps{missing: map[string]bool{"missing-app": true}},
+		repo:        repo,
+		apps:        &stubWorkflowApps{missing: map[string]bool{"missing-app": true}},
+		permissions: appaccess.NewPermissionResolver(stubWorkflowRolePermissionReader{matrix: map[string][]string{"developer": {appaccess.PermDeliveryWorkflowsTrigger}}}),
 	}
 
 	_, err := service.Trigger(context.Background(), domainidentity.Principal{Roles: []string{"developer"}}, domainworkflow.Input{
@@ -151,8 +181,9 @@ func TestTriggerReturnsNotFoundWhenApplicationMissing(t *testing.T) {
 func TestTriggerRequiresWorkflowTriggerPermission(t *testing.T) {
 	repo := &stubWorkflowRepository{}
 	service := &Service{
-		repo: repo,
-		apps: &stubWorkflowApps{},
+		repo:        repo,
+		apps:        &stubWorkflowApps{},
+		permissions: appaccess.NewPermissionResolver(stubWorkflowRolePermissionReader{matrix: map[string][]string{"readonly": {}}}),
 	}
 
 	_, err := service.Trigger(context.Background(), domainidentity.Principal{Roles: []string{"readonly"}}, domainworkflow.Input{
@@ -198,12 +229,13 @@ func TestTriggerExecutesDAGWorkflowTemplate(t *testing.T) {
 		},
 	}
 	service := &Service{
-		repo:      repo,
-		apps:      &stubWorkflowApps{},
-		catalog:   &stubWorkflowCatalog{items: []domaincatalog.ApplicationEnvironment{binding}},
-		releases:  stubWorkflowReleaseExecutor{},
-		resources: stubWorkflowResourceExecutor{},
-		builds:    stubWorkflowBuildExecutor{},
+		repo:        repo,
+		apps:        &stubWorkflowApps{},
+		catalog:     &stubWorkflowCatalog{items: []domaincatalog.ApplicationEnvironment{binding}},
+		releases:    stubWorkflowReleaseExecutor{},
+		resources:   stubWorkflowResourceExecutor{},
+		builds:      stubWorkflowBuildExecutor{},
+		permissions: appaccess.NewPermissionResolver(stubWorkflowRolePermissionReader{matrix: map[string][]string{"developer": {appaccess.PermDeliveryWorkflowsTrigger}}}),
 	}
 	runnerCtx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -235,7 +267,18 @@ func TestTriggerExecutesDAGWorkflowTemplate(t *testing.T) {
 	if len(repo.updated) == 0 {
 		t.Fatalf("expected async workflow runner to persist updates")
 	}
+	if repo.updated[len(repo.updated)-1].Status != workflowStatusWaitingApproval {
+		t.Fatalf("final updated status = %q, want waiting_approval", repo.updated[len(repo.updated)-1].Status)
+	}
+	repo.items = []domainworkflow.Run{repo.updated[len(repo.updated)-1]}
+	if _, err := service.Approve(context.Background(), domainidentity.Principal{UserID: "u-1", UserName: "approver", Roles: []string{"developer"}}, run.ID, "approved"); err != nil {
+		t.Fatalf("Approve() error = %v", err)
+	}
+	deadline = time.Now().Add(300 * time.Millisecond)
+	for repo.updated[len(repo.updated)-1].Status != "completed" && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
 	if repo.updated[len(repo.updated)-1].Status != "completed" {
-		t.Fatalf("final updated status = %q, want completed", repo.updated[len(repo.updated)-1].Status)
+		t.Fatalf("approved workflow final status = %q, want completed", repo.updated[len(repo.updated)-1].Status)
 	}
 }

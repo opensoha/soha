@@ -3,6 +3,7 @@ import type { MouseEvent, ReactNode } from 'react'
 import {
   Button,
   Card,
+  Empty,
   Form,
   Input,
   InputNumber,
@@ -456,10 +457,25 @@ export function MonitoringSettingsPage() {
 /* ─── AI Settings ─── */
 
 interface AISettings {
+  provider?: {
+    enabled: boolean
+    baseUrl: string
+    apiKey: string
+    model: string
+  }
   enabled: boolean
   baseUrl: string
   apiKey: string
   model: string
+  skillsRegistry?: Array<{ id: string; name: string; description?: string; enabled: boolean; scopes?: string[] }>
+}
+
+interface AISkillSetting {
+  id: string
+  name: string
+  description?: string
+  enabled: boolean
+  scopes?: string[]
 }
 
 interface DataSource {
@@ -495,6 +511,7 @@ interface AutomationPolicy {
   id: string
   name: string
   triggerType: string
+  analysisKinds?: string[]
   analysisProfileId: string
   remediationPolicy: string
   enabled: boolean
@@ -674,6 +691,7 @@ function buildPolicyFormValues(item?: AutomationPolicy | null) {
     id: item?.id,
     name: item?.name ?? '',
     triggerType: item?.triggerType ?? 'alert_webhook',
+    analysisKinds: item?.analysisKinds ?? ['root_cause'],
     analysisProfileId: item?.analysisProfileId ?? '',
     remediationPolicy: item?.remediationPolicy ?? 'suggest_only',
     enabled: item?.enabled ?? true,
@@ -700,6 +718,7 @@ function buildPolicyPayload(values: Record<string, unknown>) {
     name: values.name,
     enabled: values.enabled,
     triggerType: values.triggerType,
+    analysisKinds: values.analysisKinds || ['root_cause'],
     analysisProfileId: values.analysisProfileId,
     remediationPolicy: values.remediationPolicy,
     dedupWindowSeconds: Number(values.dedupWindowSeconds || 0),
@@ -727,6 +746,9 @@ export function AISettingsPage({ embedded = false }: SettingsPageProps = {}) {
   const [editingDataSource, setEditingDataSource] = useState<DataSource | null>(null)
   const [editingProfile, setEditingProfile] = useState<AnalysisProfile | null>(null)
   const [editingPolicy, setEditingPolicy] = useState<AutomationPolicy | null>(null)
+  const [skillsModalVisible, setSkillsModalVisible] = useState(false)
+  const [editingSkill, setEditingSkill] = useState<AISkillSetting | null>(null)
+  const [skillsRegistryDraft, setSkillsRegistryDraft] = useState<AISkillSetting[]>([])
   const [dataSourceSourceKind, setDataSourceSourceKind] = useState('logs')
   const [dataSourceBackendType, setDataSourceBackendType] = useState('es')
   const canViewAISettings = hasPermission(permissionSnapshotQuery.data?.data, 'settings.ai.view')
@@ -747,7 +769,19 @@ export function AISettingsPage({ embedded = false }: SettingsPageProps = {}) {
   const { data, isLoading } = useQuery({
     queryKey: ['settings-ai'],
     queryFn: () => api.get<ApiResponse<AISettings>>('/settings/ai'),
-    select: (response: any) => ({ data: response.data.provider as AISettings }),
+    select: (response: any) => {
+      const current = response.data as AISettings
+      const provider = current.provider ?? current
+      return {
+        data: {
+          enabled: Boolean(provider.enabled),
+          baseUrl: String(provider.baseUrl ?? ''),
+          apiKey: String(provider.apiKey ?? ''),
+          model: String(provider.model ?? ''),
+          skillsRegistry: current.skillsRegistry ?? [],
+        } satisfies AISettings,
+      }
+    },
   })
   const dataSourcesQuery = useQuery({
     queryKey: ['copilot-data-sources'],
@@ -767,7 +801,10 @@ export function AISettingsPage({ embedded = false }: SettingsPageProps = {}) {
   })
 
   const saveMutation = useMutation({
-    mutationFn: (values: Record<string, unknown>) => api.put('/settings/ai/provider', values),
+    mutationFn: (values: Record<string, unknown>) => api.put('/settings/ai/provider', {
+      ...values,
+      skillsRegistry: skillsRegistryDraft,
+    }),
     onSuccess: () => {
       void message.success('AI 设置已保存')
       void queryClient.invalidateQueries({ queryKey: ['settings-ai'] })
@@ -834,6 +871,15 @@ export function AISettingsPage({ embedded = false }: SettingsPageProps = {}) {
   }
 
   const settings = data?.data
+  useEffect(() => {
+    setSkillsRegistryDraft((settings?.skillsRegistry ?? []).map((item) => ({
+      id: item.id,
+      name: item.name,
+      description: item.description,
+      enabled: item.enabled,
+      scopes: item.scopes ?? [],
+    })))
+  }, [settings?.skillsRegistry])
   const dataSources = dataSourcesQuery.data?.data ?? []
   const profiles = profilesQuery.data?.data ?? []
   const policies = policiesQuery.data?.data ?? []
@@ -928,7 +974,9 @@ export function AISettingsPage({ embedded = false }: SettingsPageProps = {}) {
             if (!canManageAISettings) return
             saveMutation.mutate(values as Record<string, unknown>)
           }}
-          initialValues={settings ?? {}}
+          initialValues={{
+            ...(settings ?? {}),
+          }}
         >
           <Form.Item name="enabled" label="启用 AI" valuePropName="checked">
             <Switch />
@@ -947,6 +995,81 @@ export function AISettingsPage({ embedded = false }: SettingsPageProps = {}) {
           </div>
         </Form>
       </SettingsCard>
+      <SettingsCard title="Skills Registry" extra={canManageAISettings ? <Button type="primary" onClick={() => { setEditingSkill(null); setSkillsModalVisible(true) }}>新增</Button> : null}>
+        <div className="mb-3 text-sm text-[var(--ant-colorTextSecondary)]">
+          全局 skills 由 `settings.ai.manage` 控制；它们决定工作台可装配的默认能力集合，但不会自动绕过会话级选择与预算限制。
+        </div>
+        <AdminTable
+          rowKey="id"
+          dataSource={skillsRegistryDraft}
+          empty={<Empty description="还没有全局 skills，可先新增 MCP、logs、metrics、traces 这类技能条目。" />}
+          columns={[
+            { title: 'ID', dataIndex: 'id' },
+            { title: '名称', dataIndex: 'name' },
+            { title: '说明', dataIndex: 'description', render: (value?: string) => value || '-' },
+            { title: '作用域', dataIndex: 'scopes', render: (value?: string[]) => <div className="flex flex-wrap gap-1">{(value ?? []).map((item) => <Tag key={item}>{item}</Tag>)}</div> },
+            { title: '启用', dataIndex: 'enabled', render: (value: boolean) => <StatusTag value={value ? 'enabled' : 'disabled'} /> },
+            {
+              title: '排序',
+              dataIndex: 'id',
+              render: (_: unknown, record: AISkillSetting) => canManageAISettings ? (
+                <Space>
+                  <Button
+                    size="small"
+                    type="text"
+                    disabled={skillsRegistryDraft[0]?.id === record.id}
+                    onClick={() => {
+                      setSkillsRegistryDraft((current) => {
+                        const index = current.findIndex((item) => item.id === record.id)
+                        if (index <= 0) return current
+                        const next = [...current]
+                        ;[next[index - 1], next[index]] = [next[index], next[index - 1]]
+                        return next
+                      })
+                    }}
+                  >
+                    上移
+                  </Button>
+                  <Button
+                    size="small"
+                    type="text"
+                    disabled={skillsRegistryDraft[skillsRegistryDraft.length - 1]?.id === record.id}
+                    onClick={() => {
+                      setSkillsRegistryDraft((current) => {
+                        const index = current.findIndex((item) => item.id === record.id)
+                        if (index < 0 || index >= current.length - 1) return current
+                        const next = [...current]
+                        ;[next[index], next[index + 1]] = [next[index + 1], next[index]]
+                        return next
+                      })
+                    }}
+                  >
+                    下移
+                  </Button>
+                </Space>
+              ) : '-',
+            },
+            {
+              ...tableColumnPresets.action,
+              title: '操作',
+              dataIndex: 'id',
+              render: (_: unknown, record: AISkillSetting) => canManageAISettings ? (
+                <Space>
+                  <Button size="small" type="text" onClick={() => { setEditingSkill(record); setSkillsModalVisible(true) }}>编辑</Button>
+                  <Button
+                    size="small"
+                    type="text"
+                    danger
+                    onClick={() => setSkillsRegistryDraft((current) => current.filter((item) => item.id !== record.id))}
+                  >
+                    删除
+                  </Button>
+                </Space>
+              ) : '-',
+            },
+          ]}
+        />
+      </SettingsCard>
       <SettingsCard title="Data Sources" extra={canManageAISettings ? <Button type="primary" onClick={() => { setEditingDataSource(null); setDataSourceSourceKind('logs'); setDataSourceBackendType('es'); setDataSourceModalVisible(true) }}>新增</Button> : null}>
         <AdminTable columns={dataSourceColumns} dataSource={dataSources} rowKey="id" loading={dataSourcesQuery.isLoading} />
       </SettingsCard>
@@ -956,6 +1079,72 @@ export function AISettingsPage({ embedded = false }: SettingsPageProps = {}) {
       <SettingsCard title="Automation Policies" extra={canManageAISettings ? <Button type="primary" onClick={() => { setEditingPolicy(null); setPolicyModalVisible(true) }}>新增</Button> : null}>
         <AdminTable columns={policyColumns} dataSource={policies} rowKey="id" loading={policiesQuery.isLoading} />
       </SettingsCard>
+
+      <Modal
+        title={editingSkill ? '编辑 Skill' : '新增 Skill'}
+        open={skillsModalVisible}
+        footer={null}
+        onCancel={() => { setSkillsModalVisible(false); setEditingSkill(null) }}
+        destroyOnClose
+      >
+        <Form
+          {...DEFAULT_FORM_LAYOUT}
+          initialValues={{
+            id: editingSkill?.id ?? '',
+            name: editingSkill?.name ?? '',
+            description: editingSkill?.description ?? '',
+            enabled: editingSkill?.enabled ?? true,
+            scopes: editingSkill?.scopes ?? [],
+          }}
+          onFinish={(values) => {
+            const next: AISkillSetting = {
+              id: String(values.id ?? '').trim(),
+              name: String(values.name ?? '').trim(),
+              description: String(values.description ?? '').trim(),
+              enabled: Boolean(values.enabled),
+              scopes: Array.isArray(values.scopes) ? values.scopes as string[] : [],
+            }
+            if (!next.id || !next.name) {
+              void message.error('Skill ID 和名称不能为空')
+              return
+            }
+            const duplicate = skillsRegistryDraft.find((item) => item.id === next.id && item.id !== editingSkill?.id)
+            if (duplicate) {
+              void message.error(`Skill ID 已存在: ${next.id}`)
+              return
+            }
+            setSkillsRegistryDraft((current) => {
+              const rest = current.filter((item) => item.id !== next.id)
+              return [...rest, next]
+            })
+            setSkillsModalVisible(false)
+            setEditingSkill(null)
+          }}
+        >
+          <Form.Item name="id" label="ID" rules={[{ required: true, message: '请输入 ID' }]}>
+            <Input />
+          </Form.Item>
+          <Form.Item name="name" label="名称" rules={[{ required: true, message: '请输入名称' }]}>
+            <Input />
+          </Form.Item>
+          <Form.Item name="description" label="说明">
+            <Input.TextArea rows={3} />
+          </Form.Item>
+          <Form.Item name="scopes" label="作用域">
+            <TagSelect mode="tags" />
+          </Form.Item>
+          <Form.Item name="enabled" label="启用" valuePropName="checked">
+            <Switch />
+          </Form.Item>
+          <div className="text-sm text-[var(--ant-colorTextSecondary)]">
+            ID 需要在全局 registry 中唯一；作用域用于提示这个 skill 主要服务于哪些工作区或资源，不直接替代权限判断。
+          </div>
+          <div className="kc-form-actions">
+            <Button onClick={() => { setSkillsModalVisible(false); setEditingSkill(null) }}>取消</Button>
+            <Button htmlType="submit" type="primary">保存</Button>
+          </div>
+        </Form>
+      </Modal>
 
       <Modal
         title={editingDataSource ? '编辑数据源' : '新增数据源'}
@@ -1150,7 +1339,7 @@ export function AISettingsPage({ embedded = false }: SettingsPageProps = {}) {
             <Input />
           </Form.Item>
           <Form.Item name="mode" label="模式">
-            <Select options={[{ value: 'root_cause', label: 'root_cause' }, { value: 'inspection', label: 'inspection' }]} />
+            <Select options={[{ value: 'root_cause', label: 'root_cause' }, { value: 'inspection', label: 'inspection' }, { value: 'performance', label: 'performance' }, { value: 'trace', label: 'trace' }]} />
           </Form.Item>
           <Form.Item name="enabledSources" label="数据源">
             <Select mode="multiple" options={dataSources.map((item) => ({ value: item.id, label: `${item.name} (${item.sourceKind}/${item.backendType})` }))} />
@@ -1220,6 +1409,9 @@ export function AISettingsPage({ embedded = false }: SettingsPageProps = {}) {
           </Form.Item>
           <Form.Item name="triggerType" label="触发类型">
             <Select options={[{ value: 'alert_webhook', label: 'alert_webhook' }]} />
+          </Form.Item>
+          <Form.Item name="analysisKinds" label="分析类型">
+            <Select mode="multiple" options={[{ value: 'root_cause', label: 'root_cause' }, { value: 'performance', label: 'performance' }, { value: 'trace', label: 'trace' }]} />
           </Form.Item>
           <Form.Item name="analysisProfileId" label="分析模板">
             <Select options={profiles.map((item) => ({ value: item.id, label: item.name }))} />

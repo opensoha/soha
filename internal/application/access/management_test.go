@@ -91,7 +91,7 @@ func TestManagementCreateRoleRequiresExplicitManagePermission(t *testing.T) {
 		matrix: map[string][]string{
 			"delegated": {PermAccessRolesView},
 		},
-	}))
+	}), nil, nil)
 
 	_, err := service.CreateRole(context.Background(), domainidentity.Principal{Roles: []string{"delegated"}}, domainaccess.RoleInput{
 		Name: "Custom Role",
@@ -108,7 +108,7 @@ func TestManagementCreateRolePersistsNormalizedPermissionKeys(t *testing.T) {
 		matrix: map[string][]string{
 			"delegated": {PermAccessRolesManage},
 		},
-	}))
+	}), nil, nil)
 
 	item, err := service.CreateRole(context.Background(), domainidentity.Principal{Roles: []string{"delegated"}}, domainaccess.RoleInput{
 		Name:           "Custom Role",
@@ -126,7 +126,7 @@ func TestManagementCreateRolePersistsNormalizedPermissionKeys(t *testing.T) {
 }
 
 func TestManagementCreateRoleFailsClosedWithoutRuntimeResolver(t *testing.T) {
-	service := NewManagement(stubUserManager{}, &capturePolicyManager{}, nil)
+	service := NewManagement(stubUserManager{}, &capturePolicyManager{}, nil, nil, nil)
 
 	_, err := service.CreateRole(context.Background(), domainidentity.Principal{Roles: []string{"admin"}}, domainaccess.RoleInput{
 		Name: "Custom Role",

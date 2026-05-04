@@ -70,6 +70,7 @@ type AutomationPolicy struct {
 	Name               string         `json:"name"`
 	Enabled            bool           `json:"enabled"`
 	TriggerType        string         `json:"triggerType"`
+	AnalysisKinds      []string       `json:"analysisKinds,omitempty"`
 	TriggerConditions  map[string]any `json:"triggerConditions,omitempty"`
 	DedupWindowSeconds int            `json:"dedupWindowSeconds"`
 	AnalysisProfileID  string         `json:"analysisProfileId"`
@@ -85,6 +86,7 @@ type AutomationPolicyInput struct {
 	Name               string         `json:"name"`
 	Enabled            bool           `json:"enabled"`
 	TriggerType        string         `json:"triggerType"`
+	AnalysisKinds      []string       `json:"analysisKinds,omitempty"`
 	TriggerConditions  map[string]any `json:"triggerConditions,omitempty"`
 	DedupWindowSeconds int            `json:"dedupWindowSeconds"`
 	AnalysisProfileID  string         `json:"analysisProfileId"`

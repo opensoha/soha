@@ -82,7 +82,7 @@ type clusterCredentialSeed struct {
 // While the stored version matches this constant, the static seed block is
 // skipped entirely. Config-driven sync (admin user, clusters) runs separately
 // during startup so runtime config updates do not depend on replaying defaults.
-const bootstrapSeedVersion = "2026-04-30-2"
+const bootstrapSeedVersion = "2026-05-02-1"
 
 const bootstrapSeedVersionKey = "bootstrap.seed_version"
 
@@ -239,11 +239,13 @@ func seedMenus(ctx context.Context, db *gorm.DB) error {
 		{ID: "notifications", ParentID: "observability", Path: "/observability/notifications", LabelZH: "通知策略", LabelEN: "Notification Policies", IconKey: "bell", Section: "observe", SortOrder: 63, Enabled: true},
 		{ID: "oncall", ParentID: "observability", Path: "/observability/oncall", LabelZH: "值班协同", LabelEN: "On-Call Coordination", IconKey: "users", Section: "observe", SortOrder: 64, Enabled: true},
 		{ID: "assistant", Path: "/ai-observe", LabelZH: "AI观测分析中心", LabelEN: "AI Observability Analysis Center", IconKey: "bot", Section: "observe", SortOrder: 15, Enabled: true},
-		{ID: "assistant-root-cause", ParentID: "assistant", Path: "/ai-observe/root-cause", LabelZH: "链路根因分析", LabelEN: "Root Cause Analysis", IconKey: "bot", Section: "observe", SortOrder: 16, Enabled: true},
-		{ID: "assistant-performance", ParentID: "assistant", Path: "/ai-observe/performance", LabelZH: "性能分析", LabelEN: "Performance Analysis", IconKey: "bot", Section: "observe", SortOrder: 17, Enabled: true},
-		{ID: "assistant-chat", ParentID: "assistant", Path: "/ai-observe/chat", LabelZH: "AI Chat", LabelEN: "AI Chat", IconKey: "bot", Section: "observe", SortOrder: 18, Enabled: true},
-		{ID: "assistant-inspection", ParentID: "assistant", Path: "/ai-observe/inspection", LabelZH: "智能巡检", LabelEN: "Inspection Center", IconKey: "bot", Section: "observe", SortOrder: 19, Enabled: true},
+		{ID: "assistant-workbench", ParentID: "assistant", Path: "/ai-observe/workbench", LabelZH: "调查工作台", LabelEN: "Investigation Workbench", IconKey: "bot", Section: "observe", SortOrder: 16, Enabled: true},
+		{ID: "assistant-operations", ParentID: "assistant", Path: "/ai-observe/operations", LabelZH: "巡检与自动化", LabelEN: "Inspection & Automation", IconKey: "bot", Section: "observe", SortOrder: 17, Enabled: true},
+		{ID: "assistant-tools", ParentID: "assistant", Path: "/ai-observe/tools", LabelZH: "工具与技能", LabelEN: "Tools & Skills", IconKey: "bot", Section: "observe", SortOrder: 18, Enabled: true},
 		{ID: "builds", Path: "/applications", LabelZH: "应用中心", LabelEN: "Application Center", IconKey: "blocks", Section: "deliver", SortOrder: 110, Enabled: true, Roles: []string{"admin", "ops", "developer"}},
+		{ID: "build-templates", Path: "/build-templates", LabelZH: "构建模板", LabelEN: "Build Templates", IconKey: "code", Section: "deliver", SortOrder: 112, Enabled: true, Roles: []string{"admin", "ops"}},
+		{ID: "workflow-templates", Path: "/workflow-templates", LabelZH: "发布流程模板", LabelEN: "Workflow Templates", IconKey: "activity", Section: "deliver", SortOrder: 113, Enabled: true, Roles: []string{"admin", "ops"}},
+		{ID: "release-board", Path: "/release-board", LabelZH: "发布看板", LabelEN: "Release Board", IconKey: "activity", Section: "deliver", SortOrder: 114, Enabled: true, Roles: []string{"admin", "ops", "developer"}},
 		{ID: "business-lines", Path: "/business-lines", LabelZH: "业务线管理", LabelEN: "Business Lines", IconKey: "blocks", Section: "catalog", SortOrder: 210, Enabled: true, Roles: []string{"admin", "ops"}},
 		{ID: "delivery-environments", Path: "/delivery-environments", LabelZH: "环境管理", LabelEN: "Environments", IconKey: "blocks", Section: "catalog", SortOrder: 220, Enabled: true, Roles: []string{"admin", "ops"}},
 		{ID: "application-environments", Path: "/application-environments", LabelZH: "应用环境绑定", LabelEN: "Application Environment Bindings", IconKey: "blocks", Section: "catalog", SortOrder: 230, Enabled: true, Roles: []string{"admin", "ops"}},
@@ -276,6 +278,13 @@ func seedMenus(ctx context.Context, db *gorm.DB) error {
 		}
 	}
 	if err := db.WithContext(ctx).Exec(`DELETE FROM menu_role_bindings WHERE menu_id IN ?`, menuIDs).Error; err != nil {
+		return err
+	}
+	deprecatedMenuIDs := []string{"assistant-root-cause", "assistant-performance", "assistant-chat", "assistant-inspection"}
+	if err := db.WithContext(ctx).Exec(`DELETE FROM menu_role_bindings WHERE menu_id IN ?`, deprecatedMenuIDs).Error; err != nil {
+		return err
+	}
+	if err := db.WithContext(ctx).Exec(`DELETE FROM menus WHERE id IN ?`, deprecatedMenuIDs).Error; err != nil {
 		return err
 	}
 	if len(roleBindingValues) > 0 {

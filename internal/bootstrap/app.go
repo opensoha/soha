@@ -15,6 +15,7 @@ import (
 	appcatalog "github.com/kubecrux/kubecrux/internal/application/catalog"
 	appcluster "github.com/kubecrux/kubecrux/internal/application/cluster"
 	appcopilot "github.com/kubecrux/kubecrux/internal/application/copilot"
+	appdelivery "github.com/kubecrux/kubecrux/internal/application/delivery"
 	appevent "github.com/kubecrux/kubecrux/internal/application/event"
 	appidentity "github.com/kubecrux/kubecrux/internal/application/identity"
 	appintegration "github.com/kubecrux/kubecrux/internal/application/integration"
@@ -132,33 +133,33 @@ func New(ctx context.Context) (*App, error) {
 	registryRepository := registryrepo.New(databaseStore.DB())
 	releaseRepository := releaserepo.New(databaseStore.DB())
 	copilotRepository := copilotrepo.New(databaseStore.DB())
-	auditService := appaudit.New(auditRepository)
-	operationService := appoperation.New(operationRepository)
 	identityRepository := userrepo.New(databaseStore.DB())
 	settingsRepository := settingsrepo.New(databaseStore.DB())
 	scopeGrantRepository := scopegrantrepo.New(databaseStore.DB())
 	policyRepository := policyrepo.New(databaseStore.DB())
 	clusterRepository := clusterrepo.New(databaseStore.DB())
 	permissionResolver := appaccess.NewPermissionResolver(policyRepository)
-	announcementService := appannouncement.New(announcementRepository, permissionResolver)
-	menuService := appmenu.New(menuRepository, permissionResolver)
+	auditService := appaudit.New(auditRepository, permissionResolver)
+	operationService := appoperation.New(operationRepository, permissionResolver)
+	announcementService := appannouncement.New(announcementRepository, permissionResolver, auditService, operationService)
+	menuService := appmenu.New(menuRepository, permissionResolver, auditService, operationService)
 	settingsService := appsettings.New(settingsRepository, cfg.Auth, cfg.Monitoring, permissionResolver)
 
-	identityService, err := appidentity.New(ctx, cfg.Auth, identityRepository, auditService, settingsService, permissionResolver)
+	identityService, err := appidentity.New(ctx, cfg.Auth, identityRepository, auditService, operationService, settingsService, permissionResolver)
 	if err != nil {
 		return nil, fmt.Errorf("build identity service: %w", err)
 	}
 	policyEngine := policy.NewEngine()
 	accessService := appaccess.New(policyEngine, policyRepository, scopeGrantRepository, catalogRepository)
 	accessCatalogService := appaccess.NewCatalog(identityRepository, policyRepository, accessService, menuService, permissionResolver)
-	accessManagementService := appaccess.NewManagement(identityRepository, policyRepository, permissionResolver)
+	accessManagementService := appaccess.NewManagement(identityRepository, policyRepository, permissionResolver, auditService, operationService)
 	accessConsoleService := appaccess.NewConsole(accessCatalogService, accessManagementService)
 	gitlabClient := gitlabinfra.New(cfg.GitLab)
-	clusterService := appcluster.New(clusterManager, informers, agentRegistry, clusterRepository, accessService, auditService)
+	clusterService := appcluster.New(clusterManager, informers, agentRegistry, clusterRepository, accessService, auditService, operationService)
 	clusterService.SetSyncLimit(cfg.Runtime.ClusterSyncParallelism)
 	clusterService.SetInstrumentation(logger, runtimeMetrics)
 	clusterService.Start(lifecycleCtx)
-	resourceService := appresource.New(clusterManager, informers, agentRegistry, clusterRepository, accessService, permissionResolver, auditService, settingsService)
+	resourceService := appresource.New(clusterManager, informers, agentRegistry, clusterRepository, accessService, permissionResolver, auditService, operationService, settingsService)
 	portForwardRepository := portforwardrepo.New(databaseStore.DB())
 	resourceService.SetPortForwardRepository(portForwardRepository)
 	if err := resourceService.RestorePortForwards(ctx); err != nil {
@@ -166,16 +167,17 @@ func New(ctx context.Context) (*App, error) {
 	}
 	eventService := appevent.New(eventRepository)
 	monitoringService := appmonitoring.New(alertRepository, eventRepository, permissionResolver, cfg.Monitoring.Enabled, cfg.Monitoring.WebhookToken)
-	applicationService := appregistry.New(applicationRepository, gitlabClient, accessService, auditService)
-	buildService := appbuild.New(buildRepository, applicationRepository, accessService, eventRepository, auditService)
-	catalogService := appcatalog.New(catalogRepository, accessService, applicationRepository, permissionResolver)
-	scopeGrantService := appscopegrant.New(scopeGrantRepository, permissionResolver)
+	applicationService := appregistry.New(applicationRepository, gitlabClient, accessService, auditService, operationService)
+	buildService := appbuild.New(buildRepository, applicationRepository, accessService, eventRepository, auditService, operationService)
+	catalogService := appcatalog.New(catalogRepository, accessService, applicationRepository, permissionResolver, auditService, operationService)
+	scopeGrantService := appscopegrant.New(scopeGrantRepository, permissionResolver, auditService, operationService)
 	registryService := appregistryconn.New(registryRepository, permissionResolver)
-	releaseService := apprelease.New(releaseRepository, applicationRepository, clusterRepository, accessService, permissionResolver, eventRepository, auditService, clusterManager, agentRegistry)
+	releaseService := apprelease.New(releaseRepository, applicationRepository, clusterRepository, accessService, permissionResolver, eventRepository, auditService, operationService, clusterManager, agentRegistry)
 	workflowService := appworkflow.New(workflowRepository, applicationRepository, accessService, permissionResolver, catalogRepository, buildService, releaseService, resourceService)
 	workflowService.SetRuntimeOptions(cfg.Runtime.WorkflowWorkers, cfg.Runtime.WorkflowQueueSize, cfg.Runtime.WorkflowNodeParallelism)
 	workflowService.SetInstrumentation(logger, runtimeMetrics)
 	workflowService.Start(lifecycleCtx)
+	deliveryService := appdelivery.New(applicationService, catalogService, buildService, workflowService, releaseService, resourceService, permissionResolver)
 	copilotService := appcopilot.New(copilotRepository, clusterService, monitoringService, eventService, auditService, applicationRepository, buildRepository, releaseRepository, settingsService, permissionResolver)
 	copilotService.SetMCPRegistry(mcpRegistry)
 	copilotService.SetInspectionParallelism(cfg.Runtime.CopilotInspectionParallelism)
@@ -190,6 +192,7 @@ func New(ctx context.Context) (*App, error) {
 	menuHandler := apiHandlers.NewMenuHandler(menuService)
 	monitoringHandler := apiHandlers.NewMonitoringHandler(monitoringService)
 	catalogHandler := apiHandlers.NewCatalogHandler(catalogService)
+	deliveryHandler := apiHandlers.NewDeliveryHandler(deliveryService)
 	applicationHandler := apiHandlers.NewApplicationHandler(applicationService)
 	buildHandler := apiHandlers.NewBuildHandler(buildService)
 	workflowHandler := apiHandlers.NewWorkflowHandler(workflowService)
@@ -207,6 +210,7 @@ func New(ctx context.Context) (*App, error) {
 		Menu:          menuHandler,
 		Monitoring:    monitoringHandler,
 		Catalog:       catalogHandler,
+		Delivery:      deliveryHandler,
 		Applications:  applicationHandler,
 		Builds:        buildHandler,
 		Workflows:     workflowHandler,

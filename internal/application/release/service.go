@@ -18,10 +18,12 @@ import (
 	domaincluster "github.com/kubecrux/kubecrux/internal/domain/cluster"
 	domainevent "github.com/kubecrux/kubecrux/internal/domain/event"
 	domainidentity "github.com/kubecrux/kubecrux/internal/domain/identity"
+	domainoperation "github.com/kubecrux/kubecrux/internal/domain/operation"
 	domainrelease "github.com/kubecrux/kubecrux/internal/domain/release"
 	agentinfra "github.com/kubecrux/kubecrux/internal/infrastructure/agent"
 	k8sinfra "github.com/kubecrux/kubecrux/internal/infrastructure/kubernetes"
 	"github.com/kubecrux/kubecrux/internal/platform/apperrors"
+	"github.com/kubecrux/kubecrux/internal/platform/operationentry"
 	"github.com/kubecrux/kubecrux/internal/platform/requestctx"
 	apprepo "github.com/kubecrux/kubecrux/internal/repository/application"
 	clusterrepo "github.com/kubecrux/kubecrux/internal/repository/cluster"
@@ -48,6 +50,10 @@ type AuditRecorder interface {
 	Record(context.Context, domainaudit.Entry) error
 }
 
+type OperationRecorder interface {
+	Record(context.Context, domainoperation.Entry) error
+}
+
 type Service struct {
 	repo        ReleaseRepository
 	apps        ApplicationReader
@@ -56,6 +62,7 @@ type Service struct {
 	permissions *appaccess.PermissionResolver
 	events      EventWriter
 	audit       AuditRecorder
+	operations  OperationRecorder
 	clusters    *k8sinfra.Manager
 	agents      *agentinfra.Registry
 }
@@ -64,8 +71,8 @@ type releasePruner interface {
 	DeleteByIDs(context.Context, []string) error
 }
 
-func New(repo ReleaseRepository, apps ApplicationReader, resolver ConnectionResolver, authorizer domainaccess.Authorizer, permissions *appaccess.PermissionResolver, events EventWriter, audit AuditRecorder, clusters *k8sinfra.Manager, agents *agentinfra.Registry) *Service {
-	return &Service{repo: repo, apps: apps, resolver: resolver, authorizer: authorizer, permissions: permissions, events: events, audit: audit, clusters: clusters, agents: agents}
+func New(repo ReleaseRepository, apps ApplicationReader, resolver ConnectionResolver, authorizer domainaccess.Authorizer, permissions *appaccess.PermissionResolver, events EventWriter, audit AuditRecorder, operations OperationRecorder, clusters *k8sinfra.Manager, agents *agentinfra.Registry) *Service {
+	return &Service{repo: repo, apps: apps, resolver: resolver, authorizer: authorizer, permissions: permissions, events: events, audit: audit, operations: operations, clusters: clusters, agents: agents}
 }
 
 func (s *Service) List(ctx context.Context, principal domainidentity.Principal, filter domainrelease.Filter) ([]domainrelease.Record, error) {
@@ -206,6 +213,30 @@ func (s *Service) Trigger(ctx context.Context, principal domainidentity.Principa
 		})
 	}
 	_ = s.recordAudit(ctx, principal, connection.Summary.ID, input.Namespace, input.DeploymentName, string(domainaccess.ActionTrigger), "success", "triggered deployment release", map[string]any{"image": resolvedImage})
+	if s.operations != nil {
+		_ = s.operations.Record(ctx, operationentry.New(
+			ctx,
+			principal,
+			"delivery.release.trigger",
+			map[string]any{
+				"module":       "delivery",
+				"clusterId":    record.ClusterID,
+				"namespace":    record.Namespace,
+				"resourceKind": "Release",
+				"resourceName": record.DeploymentName,
+				"targetId":     record.ID,
+				"targetLabel":  app.Name,
+			},
+			"success",
+			"triggered deployment release",
+			map[string]any{
+				"releaseId":      record.ID,
+				"applicationId":  record.ApplicationID,
+				"deploymentName": record.DeploymentName,
+				"image":          resolvedImage,
+			},
+		))
+	}
 	return record, nil
 }
 

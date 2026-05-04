@@ -30,12 +30,15 @@ const (
 	defaultAsyncWorkflowWorkers   = 4
 	defaultAsyncWorkflowQueueSize = 64
 	defaultDAGNodeConcurrency     = 4
+	workflowStatusWaitingApproval = "waiting_approval"
 )
 
 type Repository interface {
 	List(context.Context, string, int) ([]domainworkflow.Run, error)
+	Get(context.Context, string) (domainworkflow.Run, error)
 	Create(context.Context, domainworkflow.Run) (domainworkflow.Run, error)
 	Update(context.Context, domainworkflow.Run) (domainworkflow.Run, error)
+	CreateApproval(context.Context, domainworkflow.Approval) error
 }
 
 type ApplicationReader interface {
@@ -48,6 +51,7 @@ type CatalogReader interface {
 
 type BuildExecutor interface {
 	Trigger(context.Context, domainidentity.Principal, domainbuild.TriggerInput) (domainbuild.Record, error)
+	Execute(context.Context, domainidentity.Principal, domainbuild.TriggerInput) (domainbuild.Record, error)
 }
 
 type ReleaseExecutor interface {
@@ -362,6 +366,123 @@ func (s *Service) Trigger(ctx context.Context, principal domainidentity.Principa
 	return s.repo.Create(ctx, item)
 }
 
+func (s *Service) Approve(ctx context.Context, principal domainidentity.Principal, workflowRunID, comment string) (domainworkflow.Run, error) {
+	return s.resolveApproval(ctx, principal, workflowRunID, "approved", comment)
+}
+
+func (s *Service) Reject(ctx context.Context, principal domainidentity.Principal, workflowRunID, comment string) (domainworkflow.Run, error) {
+	return s.resolveApproval(ctx, principal, workflowRunID, "rejected", comment)
+}
+
+func (s *Service) resolveApproval(ctx context.Context, principal domainidentity.Principal, workflowRunID, action, comment string) (domainworkflow.Run, error) {
+	if err := s.authorizePermission(ctx, principal, appaccess.PermDeliveryWorkflowsTrigger); err != nil {
+		return domainworkflow.Run{}, err
+	}
+	run, err := s.repo.Get(ctx, strings.TrimSpace(workflowRunID))
+	if err != nil {
+		return domainworkflow.Run{}, err
+	}
+	app, err := s.apps.Get(ctx, run.ApplicationID)
+	if err != nil {
+		return domainworkflow.Run{}, err
+	}
+	if err := s.authorize(ctx, principal, domainaccess.ActionTrigger, app, run.ApplicationID); err != nil {
+		return domainworkflow.Run{}, err
+	}
+	if run.Status != workflowStatusWaitingApproval {
+		return domainworkflow.Run{}, fmt.Errorf("%w: workflow is not waiting for approval", apperrors.ErrInvalidArgument)
+	}
+	definition, ok := definitionFromRunMetadata(run)
+	if !ok {
+		return domainworkflow.Run{}, fmt.Errorf("%w: workflow definition is missing", apperrors.ErrInvalidArgument)
+	}
+	nodeRuns := run.NodeRuns
+	if len(nodeRuns) == 0 {
+		return domainworkflow.Run{}, fmt.Errorf("%w: workflow has no node runs", apperrors.ErrInvalidArgument)
+	}
+	pendingNodeID := ""
+	for _, item := range nodeRuns {
+		if item.Type == "manual_approval" && item.Status == workflowStatusWaitingApproval {
+			pendingNodeID = item.NodeID
+			break
+		}
+	}
+	if pendingNodeID == "" {
+		return domainworkflow.Run{}, fmt.Errorf("%w: approval node not found", apperrors.ErrInvalidArgument)
+	}
+	approval := domainworkflow.Approval{
+		ID:            uuid.NewString(),
+		WorkflowRunID: run.ID,
+		NodeID:        pendingNodeID,
+		Action:        action,
+		Comment:       strings.TrimSpace(comment),
+		ActorID:       principal.UserID,
+		ActorName:     principal.UserName,
+		CreatedAt:     time.Now().UTC(),
+	}
+	if err := s.repo.CreateApproval(ctx, approval); err != nil {
+		return domainworkflow.Run{}, err
+	}
+	nextStatus := "completed"
+	nextSummary := fmt.Sprintf("approved by %s", principal.UserName)
+	runStatus := "running"
+	if action == "rejected" {
+		nextStatus = "failed"
+		nextSummary = fmt.Sprintf("rejected by %s", principal.UserName)
+		runStatus = "failed"
+	}
+	for index := range nodeRuns {
+		if nodeRuns[index].NodeID == pendingNodeID {
+			nodeRuns[index].Status = nextStatus
+			nodeRuns[index].Summary = nextSummary
+			nodeRuns[index].FinishedAt = time.Now().UTC().Format(time.RFC3339)
+		}
+	}
+	run.NodeRuns = nodeRuns
+	run.Status = runStatus
+	run.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+	if run.Metadata == nil {
+		run.Metadata = map[string]any{}
+	}
+	run.Metadata["approvalDecision"] = action
+	run.Metadata["approvalComment"] = strings.TrimSpace(comment)
+	run = syncRunNodeState(run, definition, restoreNodeRuns(definition, run.NodeRuns))
+	updated := s.updateRun(ctx, run)
+	if action == "rejected" {
+		return updated, nil
+	}
+
+	appInput := domainworkflow.Input{
+		ApplicationID:  run.ApplicationID,
+		WorkflowName:   run.WorkflowName,
+		ClusterID:      run.ClusterID,
+		Namespace:      run.Namespace,
+		DeploymentName: run.DeploymentName,
+	}
+	appBinding, err := s.findApplicationEnvironmentBinding(ctx, appInput)
+	if err != nil {
+		return domainworkflow.Run{}, err
+	}
+	if appBinding == nil {
+		return domainworkflow.Run{}, fmt.Errorf("%w: application environment binding is missing", apperrors.ErrInvalidArgument)
+	}
+	updated.Status = "queued"
+	updated.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+	updated = s.updateRun(ctx, updated)
+	if err := s.enqueueDAGRun(ctx, dagRunTask{
+		principal:   principal,
+		app:         app,
+		input:       appInput,
+		binding:     *appBinding,
+		definition:  definition,
+		run:         updated,
+		requestMeta: requestctx.FromContext(ctx),
+	}); err != nil {
+		return s.failRun(context.Background(), updated, definition, fmt.Sprintf("workflow runner enqueue failed after approval: %v", err)), nil
+	}
+	return updated, nil
+}
+
 type dagWorkflowNode struct {
 	ID                string
 	Name              string
@@ -390,6 +511,7 @@ type dagExecutionResult struct {
 	step    domainworkflow.Step
 	status  string
 	summary string
+	outputs map[string]any
 }
 
 type dagNodeRun = domainworkflow.NodeRun
@@ -455,8 +577,9 @@ func (s *Service) runDAGAsync(ctx context.Context, principal domainidentity.Prin
 		s.metrics.RecordStart(runtimeobs.ComponentWorkflowRunner, run.ID, s.queueDepth(), len(definition.Nodes))
 	}
 	s.logDebug("workflow execution started", zap.String("runID", run.ID), zap.String("applicationID", run.ApplicationID))
-	nodeRuns := initializeNodeRuns(definition)
-	statuses := make(map[string]string, len(definition.Nodes))
+	nodeRuns := restoreNodeRuns(definition, run.NodeRuns)
+	statuses := collectNodeStatuses(nodeRuns)
+	artifactState := make(map[string]any)
 
 	run.Status = "running"
 	run.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
@@ -499,6 +622,13 @@ func (s *Service) runDAGAsync(ctx context.Context, principal domainidentity.Prin
 			run = s.updateRun(ctx, run)
 		}
 		if len(ready) == 0 {
+			if hasWaitingApproval(nodeRuns) {
+				run.Status = workflowStatusWaitingApproval
+				run.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+				run = syncRunNodeState(run, definition, nodeRuns)
+				s.updateRun(ctx, run)
+				return
+			}
 			if !progressed {
 				break
 			}
@@ -515,13 +645,22 @@ func (s *Service) runDAGAsync(ctx context.Context, principal domainidentity.Prin
 		run = syncRunNodeState(run, definition, nodeRuns)
 		run = s.updateRun(ctx, run)
 
-		for _, result := range s.executeReadyDAGNodes(ctx, principal, app, input, binding, ready) {
+		for _, result := range s.executeReadyDAGNodes(ctx, principal, app, input, binding, ready, run, artifactState) {
 			entry := nodeRuns[result.nodeID]
 			entry.Status = result.status
 			entry.Summary = result.summary
 			entry.FinishedAt = time.Now().UTC().Format(time.RFC3339)
 			nodeRuns[result.nodeID] = entry
 			statuses[result.nodeID] = result.status
+			for key, value := range result.outputs {
+				artifactState[key] = value
+			}
+			if len(result.outputs) > 0 {
+				if run.Metadata == nil {
+					run.Metadata = map[string]any{}
+				}
+				run.Metadata["artifacts"] = artifactState
+			}
 		}
 		run.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
 		run = syncRunNodeState(run, definition, nodeRuns)
@@ -688,6 +827,7 @@ func (s *Service) executeDAGWorkflow(
 
 	statuses := make(map[string]string, len(definition.Nodes))
 	steps := make([]domainworkflow.Step, 0, len(definition.Nodes))
+	artifactState := make(map[string]any)
 	metadata := map[string]any{
 		"mode":                 "release_dag",
 		"schemaVersion":        definition.SchemaVersion,
@@ -723,9 +863,20 @@ func (s *Service) executeDAGWorkflow(
 			continue
 		}
 
-		for _, result := range s.executeReadyDAGNodes(ctx, principal, app, input, binding, ready) {
+		run := domainworkflow.Run{
+			ID:             "workflow:" + uuid.NewString(),
+			ApplicationID:  input.ApplicationID,
+			WorkflowName:   strings.TrimSpace(input.WorkflowName),
+			ClusterID:      strings.TrimSpace(input.ClusterID),
+			Namespace:      strings.TrimSpace(input.Namespace),
+			DeploymentName: strings.TrimSpace(input.DeploymentName),
+		}
+		for _, result := range s.executeReadyDAGNodes(ctx, principal, app, input, binding, ready, run, artifactState) {
 			statuses[result.nodeID] = result.status
 			steps = append(steps, result.step)
+			for key, value := range result.outputs {
+				artifactState[key] = value
+			}
 		}
 	}
 
@@ -741,6 +892,9 @@ func (s *Service) executeDAGWorkflow(
 		}
 	}
 	metadata["nodeStatus"] = statuses
+	if len(artifactState) > 0 {
+		metadata["artifacts"] = artifactState
+	}
 	return steps, metadata, finalStatus, nil
 }
 
@@ -751,6 +905,8 @@ func (s *Service) executeReadyDAGNodes(
 	input domainworkflow.Input,
 	binding domaincatalog.ApplicationEnvironment,
 	ready []dagWorkflowNode,
+	run domainworkflow.Run,
+	artifactState map[string]any,
 ) []dagExecutionResult {
 	if len(ready) == 0 {
 		return nil
@@ -773,7 +929,7 @@ func (s *Service) executeReadyDAGNodes(
 		go func() {
 			defer wait.Done()
 			for node := range jobs {
-				results <- s.executeDAGNode(ctx, principal, app, input, binding, node)
+				results <- s.executeDAGNode(ctx, principal, app, input, binding, node, run, artifactState)
 			}
 		}()
 	}
@@ -814,7 +970,7 @@ func resolveDAGNodeReadiness(node dagWorkflowNode, incoming []dagWorkflowEdge, s
 	anySatisfied := false
 	for _, edge := range incoming {
 		predStatus := statuses[edge.Source]
-		if predStatus == "" {
+		if predStatus == "" || predStatus == "pending" || predStatus == "running" || predStatus == workflowStatusWaitingApproval {
 			allPredicatesResolved = false
 			continue
 		}
@@ -850,6 +1006,37 @@ func initializeNodeRuns(definition dagWorkflowDefinition) map[string]dagNodeRun 
 		}
 	}
 	return items
+}
+
+func restoreNodeRuns(definition dagWorkflowDefinition, existing []domainworkflow.NodeRun) map[string]dagNodeRun {
+	items := initializeNodeRuns(definition)
+	for _, item := range existing {
+		if _, ok := items[item.NodeID]; !ok {
+			continue
+		}
+		items[item.NodeID] = item
+	}
+	return items
+}
+
+func collectNodeStatuses(items map[string]dagNodeRun) map[string]string {
+	statuses := make(map[string]string, len(items))
+	for nodeID, item := range items {
+		if item.Status == "" || item.Status == "pending" {
+			continue
+		}
+		statuses[nodeID] = item.Status
+	}
+	return statuses
+}
+
+func hasWaitingApproval(items map[string]dagNodeRun) bool {
+	for _, item := range items {
+		if item.Status == workflowStatusWaitingApproval {
+			return true
+		}
+	}
+	return false
 }
 
 func buildStepsFromNodeRuns(definition dagWorkflowDefinition, nodeRuns map[string]dagNodeRun) []domainworkflow.Step {
@@ -1000,12 +1187,16 @@ func (s *Service) executeDAGNode(
 	input domainworkflow.Input,
 	binding domaincatalog.ApplicationEnvironment,
 	node dagWorkflowNode,
+	run domainworkflow.Run,
+	artifactState map[string]any,
 ) dagExecutionResult {
 	status := "completed"
 	summary := ""
+	outputs := map[string]any{}
 	switch node.Type {
 	case "manual_approval":
-		summary = fmt.Sprintf("approved by trigger user %s", principal.UserName)
+		status = workflowStatusWaitingApproval
+		summary = "waiting for approval"
 	case "deploy_update_image", "release":
 		if s.releases == nil {
 			status = "failed"
@@ -1017,12 +1208,32 @@ func (s *Service) executeDAGNode(
 		if containerName == "" && target != nil {
 			containerName = target.ContainerName
 		}
+		actionKind := strings.TrimSpace(binding.ReleasePolicy.ActionKind)
+		if actionKind == "" {
+			actionKind = strings.TrimSpace(fmt.Sprint(node.Config["actionKind"]))
+		}
+		if actionKind == "" {
+			actionKind = "deploy"
+		}
+		resolvedImage := strings.TrimSpace(fmt.Sprint(artifactState["image"]))
+		imageTag := strings.TrimSpace(fmt.Sprint(node.Config["imageTag"]))
+		imageTagSource := strings.TrimSpace(fmt.Sprint(node.Config["imageTagSource"]))
+		if imageTagSource == "build_artifact" && resolvedImage == "" {
+			status = "failed"
+			summary = "build artifact image is not available"
+			break
+		}
 		record, err := s.releases.Trigger(ctx, principal, domainrelease.TriggerInput{
-			ApplicationID:  app.ID,
-			ClusterID:      input.ClusterID,
-			Namespace:      input.Namespace,
-			DeploymentName: input.DeploymentName,
-			ContainerName:  containerName,
+			ApplicationID:            app.ID,
+			ApplicationEnvironmentID: binding.ID,
+			ClusterID:                input.ClusterID,
+			Namespace:                input.Namespace,
+			DeploymentName:           input.DeploymentName,
+			ContainerName:            containerName,
+			Image:                    resolvedImage,
+			ImageTag:                 imageTag,
+			ActionKind:               actionKind,
+			WorkflowRunID:            run.ID,
 		})
 		if err != nil {
 			status = "failed"
@@ -1036,15 +1247,27 @@ func (s *Service) executeDAGNode(
 			summary = "build executor is not configured"
 			break
 		}
-		refName := app.DefaultBranch
+		refType := strings.TrimSpace(binding.BuildPolicy.RefType)
+		if refType == "" {
+			refType = "branch"
+		}
+		refName := strings.TrimSpace(binding.BuildPolicy.RefValue)
+		if refName == "" {
+			refName = app.DefaultBranch
+		}
 		if refName == "" {
 			refName = "main"
 		}
-		record, err := s.builds.Trigger(ctx, principal, domainbuild.TriggerInput{
-			ApplicationID: app.ID,
-			RefType:       "branch",
-			RefName:       refName,
-			ImageTag:      app.DefaultTag,
+		record, err := s.builds.Execute(ctx, principal, domainbuild.TriggerInput{
+			ApplicationID:            app.ID,
+			ApplicationEnvironmentID: binding.ID,
+			BuildSourceID:            binding.BuildPolicy.SourceID,
+			RefType:                  refType,
+			RefName:                  refName,
+			ImageTag:                 app.DefaultTag,
+			BuildArgs:                binding.BuildPolicy.BuildArgs,
+			Variables:                binding.BuildPolicy.Variables,
+			TriggeredByWorkflowRunID: run.ID,
 		})
 		if err != nil {
 			status = "failed"
@@ -1052,6 +1275,14 @@ func (s *Service) executeDAGNode(
 			break
 		}
 		summary = fmt.Sprintf("build %s queued", record.ID)
+		if record.Metadata != nil {
+			if artifact, ok := record.Metadata["artifact"]; ok {
+				outputs["artifact"] = artifact
+			}
+			if image, ok := record.Metadata["image"]; ok {
+				outputs["image"] = image
+			}
+		}
 	case "wait_rollout":
 		if s.resources == nil {
 			status = "failed"
@@ -1132,6 +1363,7 @@ func (s *Service) executeDAGNode(
 		nodeID:  node.ID,
 		status:  status,
 		summary: summary,
+		outputs: outputs,
 		step: domainworkflow.Step{
 			Name:    node.Name,
 			Status:  status,
@@ -1254,6 +1486,29 @@ func matchBindingTarget(binding domaincatalog.ApplicationEnvironment, input doma
 		}
 	}
 	return nil
+}
+
+func definitionFromRunMetadata(run domainworkflow.Run) (dagWorkflowDefinition, bool) {
+	if len(run.Metadata) == 0 {
+		return dagWorkflowDefinition{}, false
+	}
+	if nodes, ok := run.Metadata["nodes"].([]dagWorkflowNode); ok && len(nodes) > 0 {
+		definition := dagWorkflowDefinition{
+			SchemaVersion: toInt(run.Metadata["schemaVersion"], 2),
+			Mode:          "release_dag",
+			Nodes:         nodes,
+		}
+		if edges, edgeOK := run.Metadata["edges"].([]dagWorkflowEdge); edgeOK {
+			definition.Edges = edges
+		}
+		return definition, true
+	}
+	return parseDAGWorkflowDefinition(map[string]any{
+		"mode":          "release_dag",
+		"schemaVersion": run.Metadata["schemaVersion"],
+		"nodes":         run.Metadata["nodes"],
+		"edges":         run.Metadata["edges"],
+	})
 }
 
 func toMapSlice(value any) ([]map[string]any, bool) {

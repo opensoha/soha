@@ -98,9 +98,15 @@ func flattenVisibleMenus(items []domainmenu.Record, snapshot *domainaccess.Permi
 		if item.ID != "" && !slices.Contains(snapshot.VisibleMenuIDs, item.ID) {
 			snapshot.VisibleMenuIDs = append(snapshot.VisibleMenuIDs, item.ID)
 			snapshot.VisibleMenus = append(snapshot.VisibleMenus, domainaccess.VisibleMenu{
-				ID:       item.ID,
-				ParentID: item.ParentID,
-				Path:     item.Path,
+				ID:        item.ID,
+				ParentID:  item.ParentID,
+				Path:      item.Path,
+				LabelZH:   item.LabelZH,
+				LabelEN:   item.LabelEN,
+				IconKey:   item.IconKey,
+				Section:   item.Section,
+				SortOrder: item.SortOrder,
+				Enabled:   item.Enabled,
 			})
 		}
 		if len(item.Children) > 0 {

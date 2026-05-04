@@ -1,6 +1,9 @@
 package workflow
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 type Step struct {
 	Name    string `json:"name"`
@@ -43,7 +46,21 @@ type Input struct {
 	TriggerRelease bool   `json:"triggerRelease"`
 }
 
+type Approval struct {
+	ID            string    `json:"id"`
+	WorkflowRunID string    `json:"workflowRunId"`
+	NodeID        string    `json:"nodeId"`
+	Action        string    `json:"action"`
+	Comment       string    `json:"comment,omitempty"`
+	ActorID       string    `json:"actorId"`
+	ActorName     string    `json:"actorName,omitempty"`
+	CreatedAt     time.Time `json:"createdAt"`
+}
+
 type Repository interface {
 	List(context.Context, string, int) ([]Run, error)
+	Get(context.Context, string) (Run, error)
 	Create(context.Context, Run) (Run, error)
+	Update(context.Context, Run) (Run, error)
+	CreateApproval(context.Context, Approval) error
 }

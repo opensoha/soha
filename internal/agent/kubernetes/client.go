@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -37,6 +38,7 @@ import (
 	cfgpkg "github.com/kubecrux/kubecrux/internal/agent/config"
 	domaincluster "github.com/kubecrux/kubecrux/internal/domain/cluster"
 	domainresource "github.com/kubecrux/kubecrux/internal/domain/resource"
+	helmrelease "github.com/kubecrux/kubecrux/internal/platform/helmrelease"
 	"github.com/kubecrux/kubecrux/internal/platform/streamlimit"
 )
 
@@ -720,6 +722,57 @@ func (c *Client) ListHelmReleases(ctx context.Context, namespace string) ([]doma
 		return views[i].Revision > views[j].Revision
 	})
 	return dedupeHelmReleases(views), nil
+}
+
+func (c *Client) GetHelmReleaseDetail(ctx context.Context, namespace, name string) (domainresource.HelmReleaseDetailView, error) {
+	record, err := c.getHelmReleaseRecord(ctx, namespace, name, "")
+	if err != nil {
+		return domainresource.HelmReleaseDetailView{}, err
+	}
+	return mapHelmReleaseDetailRecord(record), nil
+}
+
+func (c *Client) ListHelmReleaseHistory(ctx context.Context, namespace, name string) ([]domainresource.HelmReleaseHistoryView, error) {
+	records, err := c.listHelmReleaseRecords(ctx, namespace)
+	if err != nil {
+		return nil, err
+	}
+	items := make([]domainresource.HelmReleaseHistoryView, 0)
+	for _, record := range records {
+		if record.release == nil || record.release.Name != name {
+			continue
+		}
+		items = append(items, mapHelmReleaseHistoryRecord(record))
+	}
+	sort.SliceStable(items, func(i, j int) bool {
+		leftRevision, _ := strconv.Atoi(items[i].Revision)
+		rightRevision, _ := strconv.Atoi(items[j].Revision)
+		return leftRevision > rightRevision
+	})
+	if len(items) == 0 {
+		return nil, fmt.Errorf("helm release %s not found", name)
+	}
+	return items, nil
+}
+
+func (c *Client) GetHelmReleaseValues(ctx context.Context, namespace, name, revision string) (domainresource.HelmValuesView, error) {
+	record, err := c.getHelmReleaseRecord(ctx, namespace, name, revision)
+	if err != nil {
+		return domainresource.HelmValuesView{}, err
+	}
+	content, err := helmrelease.ValuesYAML(record.release)
+	if err != nil {
+		return domainresource.HelmValuesView{}, err
+	}
+	return domainresource.HelmValuesView{
+		Name:        record.release.Name,
+		Namespace:   record.release.Namespace,
+		Revision:    strconv.Itoa(record.release.Version),
+		Content:     content,
+		Original:    content,
+		Editable:    false,
+		DiffEnabled: true,
+	}, nil
 }
 
 func (c *Client) ListServices(ctx context.Context, namespace string) ([]domainresource.ServiceView, error) {
@@ -1591,6 +1644,176 @@ func mapHelmRelease(name, namespace string, labels map[string]string, createdAt 
 	}
 }
 
+type helmReleaseRecord struct {
+	createdAt time.Time
+	labels    map[string]string
+	release   *helmrelease.Release
+	secret    string
+}
+
+func (c *Client) listHelmReleaseRecords(ctx context.Context, namespace string) ([]helmReleaseRecord, error) {
+	queryCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	items, err := c.typed.CoreV1().Secrets(namespace).List(queryCtx, metav1.ListOptions{LabelSelector: "owner=helm"})
+	if err != nil {
+		return nil, err
+	}
+	records := make([]helmReleaseRecord, 0, len(items.Items))
+	for _, item := range items.Items {
+		releaseData := strings.TrimSpace(string(item.Data["release"]))
+		if releaseData == "" {
+			continue
+		}
+		release, err := helmrelease.Decode(releaseData, item.Labels)
+		if err != nil {
+			continue
+		}
+		if strings.TrimSpace(release.Namespace) == "" {
+			release.Namespace = item.Namespace
+		}
+		records = append(records, helmReleaseRecord{
+			createdAt: item.CreationTimestamp.Time,
+			labels:    cloneStringMap(item.Labels),
+			release:   release,
+			secret:    item.Name,
+		})
+	}
+	sort.SliceStable(records, func(i, j int) bool {
+		if records[i].release.Namespace != records[j].release.Namespace {
+			return records[i].release.Namespace < records[j].release.Namespace
+		}
+		if records[i].release.Name != records[j].release.Name {
+			return records[i].release.Name < records[j].release.Name
+		}
+		return records[i].release.Version > records[j].release.Version
+	})
+	return records, nil
+}
+
+func (c *Client) getHelmReleaseRecord(ctx context.Context, namespace, name, revision string) (helmReleaseRecord, error) {
+	records, err := c.listHelmReleaseRecords(ctx, namespace)
+	if err != nil {
+		return helmReleaseRecord{}, err
+	}
+	for _, record := range records {
+		if record.release == nil || record.release.Name != name {
+			continue
+		}
+		if revision != "" && strconv.Itoa(record.release.Version) != revision {
+			continue
+		}
+		return record, nil
+	}
+	return helmReleaseRecord{}, fmt.Errorf("helm release %s not found", name)
+}
+
+func mapHelmReleaseDetailRecord(record helmReleaseRecord) domainresource.HelmReleaseDetailView {
+	release := record.release
+	chartName := ""
+	chartVersion := ""
+	appVersion := ""
+	description := ""
+	annotations := map[string]string(nil)
+	if release.Chart != nil && release.Chart.Metadata != nil {
+		chartName = strings.TrimSpace(release.Chart.Metadata.Name)
+		chartVersion = strings.TrimSpace(release.Chart.Metadata.Version)
+		appVersion = strings.TrimSpace(release.Chart.Metadata.AppVersion)
+		description = strings.TrimSpace(release.Chart.Metadata.Description)
+		annotations = cloneStringMap(release.Chart.Metadata.Annotations)
+	}
+	status := strings.TrimSpace(record.labels["status"])
+	if status == "" && release.Info != nil {
+		status = strings.TrimSpace(release.Info.Status)
+	}
+	if status == "" {
+		status = "unknown"
+	}
+	item := domainresource.HelmReleaseDetailView{
+		Name:              release.Name,
+		Namespace:         release.Namespace,
+		Revision:          strconv.Itoa(release.Version),
+		Status:            status,
+		Chart:             strings.TrimSpace(record.labels["helm.sh/chart"]),
+		ChartName:         chartName,
+		ChartVersion:      chartVersion,
+		AppVersion:        appVersion,
+		StorageDriver:     "secret",
+		Description:       description,
+		Labels:            cloneStringMap(record.labels),
+		Annotations:       annotations,
+		AgeSeconds:        secondsSince(record.createdAt),
+		ValuesEditable:    false,
+		ValuesDiffEnabled: true,
+		CreatedAt:         formatHelmTime(record.createdAt),
+	}
+	if item.Chart == "" && chartName != "" {
+		if chartVersion != "" {
+			item.Chart = fmt.Sprintf("%s-%s", chartName, chartVersion)
+		} else {
+			item.Chart = chartName
+		}
+	}
+	if release.Info != nil {
+		item.Status = firstNonEmpty(item.Status, strings.TrimSpace(release.Info.Status))
+		item.UpdatedAt = formatHelmTime(release.Info.LastDeployed)
+		item.FirstDeployedAt = formatHelmTime(release.Info.FirstDeployed)
+		item.LastDeployedAt = formatHelmTime(release.Info.LastDeployed)
+		item.Description = firstNonEmpty(strings.TrimSpace(release.Info.Description), item.Description)
+		item.Notes = release.Info.Notes
+	}
+	return item
+}
+
+func mapHelmReleaseHistoryRecord(record helmReleaseRecord) domainresource.HelmReleaseHistoryView {
+	release := record.release
+	item := domainresource.HelmReleaseHistoryView{
+		Name:      release.Name,
+		Namespace: release.Namespace,
+		Revision:  strconv.Itoa(release.Version),
+		Status:    strings.TrimSpace(record.labels["status"]),
+		Chart:     strings.TrimSpace(record.labels["helm.sh/chart"]),
+		CreatedAt: formatHelmTime(record.createdAt),
+	}
+	if release.Chart != nil && release.Chart.Metadata != nil {
+		item.ChartVersion = strings.TrimSpace(release.Chart.Metadata.Version)
+		item.AppVersion = strings.TrimSpace(release.Chart.Metadata.AppVersion)
+		if item.Chart == "" && release.Chart.Metadata.Name != "" {
+			if item.ChartVersion != "" {
+				item.Chart = fmt.Sprintf("%s-%s", release.Chart.Metadata.Name, item.ChartVersion)
+			} else {
+				item.Chart = release.Chart.Metadata.Name
+			}
+		}
+	}
+	if release.Info != nil {
+		item.Status = firstNonEmpty(item.Status, strings.TrimSpace(release.Info.Status))
+		item.Description = strings.TrimSpace(release.Info.Description)
+		item.UpdatedAt = formatHelmTime(release.Info.LastDeployed)
+	}
+	valuesContent, err := helmrelease.ValuesYAML(release)
+	if err == nil {
+		item.ValuesDigest = helmrelease.Digest(valuesContent)
+	}
+	item.ManifestDigest = helmrelease.Digest(release.Manifest)
+	return item
+}
+
+func formatHelmTime(value time.Time) string {
+	if value.IsZero() {
+		return ""
+	}
+	return value.UTC().Format(time.RFC3339)
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
+}
+
 func parseHelmReleaseName(name string) string {
 	trimmed := strings.TrimPrefix(name, "sh.helm.release.v1.")
 	if trimmed == name {
@@ -1615,7 +1838,7 @@ func dedupeHelmReleases(items []domainresource.HelmReleaseView) []domainresource
 	seen := make(map[string]struct{}, len(items))
 	result := make([]domainresource.HelmReleaseView, 0, len(items))
 	for _, item := range items {
-		key := item.Namespace + "/" + item.Name + "/" + item.Revision
+		key := item.Namespace + "/" + item.Name
 		if _, ok := seen[key]; ok {
 			continue
 		}

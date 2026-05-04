@@ -26,6 +26,18 @@ func permissionRuleForMenu(item domainmenu.Record) (visibilityRule, bool) {
 		return visibilityRule{permissions: []string{appaccess.PermPlatformClustersView}}, true
 	case item.ID == "builds":
 		return visibilityRule{permissions: []string{appaccess.PermDeliveryApplicationsView}}, true
+	case item.ID == "build-templates":
+		return visibilityRule{permissions: []string{appaccess.PermDeliveryBuildTemplatesView}}, true
+	case item.ID == "workflow-templates":
+		return visibilityRule{permissions: []string{appaccess.PermDeliveryWorkflowTemplatesView}}, true
+	case item.ID == "release-board":
+		return visibilityRule{permissions: []string{appaccess.PermDeliveryReleaseBoardView}}, true
+	case item.ID == "application-environments":
+		return visibilityRule{permissions: []string{appaccess.PermDeliveryApplicationEnvView}}, true
+	case item.ID == "delivery-environments":
+		return visibilityRule{permissions: []string{appaccess.PermDeliveryEnvironmentsView}}, true
+	case item.ID == "business-lines":
+		return visibilityRule{permissions: []string{appaccess.PermDeliveryBusinessLinesView}}, true
 	case item.ID == "workflows":
 		return visibilityRule{permissions: []string{appaccess.PermDeliveryWorkflowsView}}, true
 	case item.ID == "releases":
@@ -52,10 +64,10 @@ func permissionRuleForMenu(item domainmenu.Record) (visibilityRule, bool) {
 		return visibilityRule{permissions: []string{appaccess.PermObserveEventsView}}, true
 	case item.ID == "assistant":
 		return visibilityRule{permissions: []string{appaccess.PermObserveAIView, appaccess.PermObserveAIChatUse}}, true
-	case item.ID == "assistant-root-cause", item.ID == "assistant-performance", item.ID == "assistant-inspection":
-		return visibilityRule{permissions: []string{appaccess.PermObserveAIView}}, true
-	case item.ID == "assistant-chat":
+	case item.ID == "assistant-workbench":
 		return visibilityRule{permissions: []string{appaccess.PermObserveAIChatUse}}, true
+	case item.ID == "assistant-operations", item.ID == "assistant-tools":
+		return visibilityRule{permissions: []string{appaccess.PermObserveAIView}}, true
 	case item.ID == "access":
 		return visibilityRule{permissions: []string{
 			appaccess.PermAccessUsersView,

@@ -54,6 +54,8 @@ export const consolePermissionGroups: PermissionCatalogGroup[] = [
       { value: 'delivery.environments.manage', label: '管理交付环境' },
       { value: 'delivery.application-environments.view', label: '查看应用环境绑定' },
       { value: 'delivery.application-environments.manage', label: '管理应用环境绑定' },
+      { value: 'delivery.build-templates.view', label: '查看构建模板' },
+      { value: 'delivery.build-templates.manage', label: '管理构建模板' },
       { value: 'delivery.workflow-templates.view', label: '查看流程模板' },
       { value: 'delivery.workflow-templates.manage', label: '管理流程模板' },
       { value: 'delivery.release-board.view', label: '查看发布看板' },

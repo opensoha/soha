@@ -147,6 +147,63 @@ func (s *Service) ExecuteInspectionTask(ctx context.Context, principal domainide
 	return run, err
 }
 
+func (s *Service) CreateSessionFromInspectionRun(ctx context.Context, principal domainidentity.Principal, runID, locale string) (domaincopilot.Session, error) {
+	if err := s.authorizePrincipal(ctx, principal, appaccess.PermObserveAIChatUse); err != nil {
+		return domaincopilot.Session{}, err
+	}
+	runs, err := s.repo.ListInspectionRuns(ctx, principal.UserID, domaincopilot.InspectionRunFilter{Limit: 200})
+	if err != nil {
+		return domaincopilot.Session{}, err
+	}
+	var target *domaincopilot.InspectionRun
+	for index := range runs {
+		if runs[index].ID == strings.TrimSpace(runID) {
+			target = &runs[index]
+			break
+		}
+	}
+	if target == nil {
+		return domaincopilot.Session{}, fmt.Errorf("inspection run not found: %s", runID)
+	}
+	title := localize(locale, "巡检结果调查", "Inspection Investigation")
+	return s.CreateSession(ctx, principal, title, "inspection_review", map[string]any{}, []string{"inspection", "generated"}, locale)
+}
+
+func (s *Service) CreateInspectionTaskFromSession(ctx context.Context, principal domainidentity.Principal, sessionID string, input domaincopilot.InspectionTaskInput, locale string) (domaincopilot.InspectionTask, error) {
+	if err := s.authorizePrincipal(ctx, principal, appaccess.PermObserveAIInspectionManage); err != nil {
+		return domaincopilot.InspectionTask{}, err
+	}
+	session, err := s.repo.GetSession(ctx, principal.UserID, strings.TrimSpace(sessionID))
+	if err != nil {
+		return domaincopilot.InspectionTask{}, err
+	}
+	metadata := parseSessionMetadata(session.Metadata)
+	if strings.TrimSpace(input.Title) == "" {
+		input.Title = localize(locale, "从调查生成的巡检任务", "Inspection task from investigation")
+	}
+	if input.ScopeType == "" {
+		if metadata.Scope.Namespace != "" {
+			input.ScopeType = "namespace"
+		} else if metadata.Scope.ClusterID != "" {
+			input.ScopeType = "cluster"
+		} else {
+			input.ScopeType = "platform"
+		}
+	}
+	if input.ClusterID == "" {
+		input.ClusterID = metadata.Scope.ClusterID
+	}
+	if input.Namespace == "" {
+		input.Namespace = metadata.Scope.Namespace
+	}
+	if input.Metadata == nil {
+		input.Metadata = map[string]any{}
+	}
+	input.Metadata["sourceSessionId"] = session.ID
+	input.Metadata["sourceSessionMode"] = metadata.Mode
+	return s.CreateInspectionTask(ctx, principal, input, locale)
+}
+
 func (s *Service) runDueInspectionTasks(ctx context.Context) (int, error) {
 	tasks, err := s.repo.ListDueInspectionTasks(ctx, time.Now().UTC(), 20)
 	if err != nil {

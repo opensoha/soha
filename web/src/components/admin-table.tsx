@@ -13,10 +13,12 @@ interface AdminTableProps {
   dataSource: any[]
   empty?: ReactNode
   enableColumnSelection?: boolean
+  expandable?: any
   expandedRowRender?: (record: any, index?: number) => ReactNode
   headerExtra?: ReactNode
   hideExpandedColumn?: boolean
   loading?: boolean
+  onRow?: any
   pageSize?: number
   pagination?: any
   rowKey: string | ((record: any) => string)

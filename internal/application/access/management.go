@@ -8,7 +8,11 @@ import (
 
 	"github.com/google/uuid"
 	domainaccess "github.com/kubecrux/kubecrux/internal/domain/access"
+	domainaudit "github.com/kubecrux/kubecrux/internal/domain/audit"
 	domainidentity "github.com/kubecrux/kubecrux/internal/domain/identity"
+	domainoperation "github.com/kubecrux/kubecrux/internal/domain/operation"
+	"github.com/kubecrux/kubecrux/internal/platform/operationentry"
+	"github.com/kubecrux/kubecrux/internal/platform/requestctx"
 	"github.com/kubecrux/kubecrux/internal/platform/apperrors"
 	userrepo "github.com/kubecrux/kubecrux/internal/repository/user"
 	"gorm.io/gorm"
@@ -36,14 +40,30 @@ type PolicyManager interface {
 	DeletePolicy(context.Context, string) error
 }
 
+type AuditRecorder interface {
+	Record(context.Context, domainaudit.Entry) error
+}
+
+type OperationRecorder interface {
+	Record(context.Context, domainoperation.Entry) error
+}
+
 type ManagementService struct {
 	users       UserManager
 	policies    PolicyManager
 	permissions *PermissionResolver
+	audit       AuditRecorder
+	operations  OperationRecorder
 }
 
-func NewManagement(users UserManager, policies PolicyManager, permissions *PermissionResolver) *ManagementService {
-	return &ManagementService{users: users, policies: policies, permissions: permissions}
+func NewManagement(users UserManager, policies PolicyManager, permissions *PermissionResolver, audit AuditRecorder, operations OperationRecorder) *ManagementService {
+	return &ManagementService{
+		users:       users,
+		policies:    policies,
+		permissions: permissions,
+		audit:       audit,
+		operations:  operations,
+	}
 }
 
 func (s *ManagementService) CreateRole(ctx context.Context, principal domainidentity.Principal, input domainaccess.RoleInput) (domainaccess.RoleRecord, error) {
@@ -62,6 +82,7 @@ func (s *ManagementService) CreateRole(ctx context.Context, principal domainiden
 	item, err := s.policies.CreateRole(ctx, input)
 	if err == nil {
 		SetRolePermissionKeys(item.ID, item.PermissionKeys)
+		s.recordWriteLogs(ctx, principal, "access.role.create", "Role", item.ID, item.Name, "created role")
 	}
 	return item, err
 }
@@ -84,6 +105,7 @@ func (s *ManagementService) UpdateRole(ctx context.Context, principal domainiden
 	item, err := s.policies.UpdateRole(ctx, roleID, input)
 	if err == nil {
 		SetRolePermissionKeys(item.ID, item.PermissionKeys)
+		s.recordWriteLogs(ctx, principal, "access.role.update", "Role", item.ID, item.Name, "updated role")
 	}
 	return item, normalizeWriteError(err)
 }
@@ -99,6 +121,7 @@ func (s *ManagementService) DeleteRole(ctx context.Context, principal domainiden
 		return err
 	}
 	DeleteRolePermissionKeys(roleID)
+	s.recordWriteLogs(ctx, principal, "access.role.delete", "Role", roleID, roleID, "deleted role")
 	return nil
 }
 
@@ -115,7 +138,11 @@ func (s *ManagementService) CreateTeam(ctx context.Context, principal domainiden
 	if input.Metadata == nil {
 		input.Metadata = map[string]any{}
 	}
-	return s.users.CreateTeam(ctx, input)
+	item, err := s.users.CreateTeam(ctx, input)
+	if err == nil {
+		s.recordWriteLogs(ctx, principal, "access.team.create", "Team", item.ID, item.Name, "created team")
+	}
+	return item, err
 }
 
 func (s *ManagementService) UpdateTeam(ctx context.Context, principal domainidentity.Principal, teamID string, input domainaccess.TeamInput) (domainaccess.TeamRecord, error) {
@@ -134,6 +161,9 @@ func (s *ManagementService) UpdateTeam(ctx context.Context, principal domainiden
 		input.Metadata = map[string]any{}
 	}
 	item, err := s.users.UpdateTeam(ctx, teamID, input)
+	if err == nil {
+		s.recordWriteLogs(ctx, principal, "access.team.update", "Team", item.ID, item.Name, "updated team")
+	}
 	return item, normalizeWriteError(err)
 }
 
@@ -144,7 +174,11 @@ func (s *ManagementService) DeleteTeam(ctx context.Context, principal domainiden
 	if strings.TrimSpace(teamID) == "" {
 		return fmt.Errorf("%w: team id is required", apperrors.ErrInvalidArgument)
 	}
-	return normalizeWriteError(s.users.DeleteTeam(ctx, teamID))
+	if err := normalizeWriteError(s.users.DeleteTeam(ctx, teamID)); err != nil {
+		return err
+	}
+	s.recordWriteLogs(ctx, principal, "access.team.delete", "Team", teamID, teamID, "deleted team")
+	return nil
 }
 
 func (s *ManagementService) CreatePolicy(ctx context.Context, principal domainidentity.Principal, input domainaccess.PolicyInput) (domainaccess.Policy, error) {
@@ -159,7 +193,11 @@ func (s *ManagementService) CreatePolicy(ctx context.Context, principal domainid
 	if input.Effect == "" {
 		input.Effect = domainaccess.EffectAllow
 	}
-	return s.policies.CreatePolicy(ctx, input)
+	item, err := s.policies.CreatePolicy(ctx, input)
+	if err == nil {
+		s.recordWriteLogs(ctx, principal, "access.policy.create", "Policy", item.ID, item.Name, "created policy")
+	}
+	return item, err
 }
 
 func (s *ManagementService) UpdatePolicy(ctx context.Context, principal domainidentity.Principal, policyID string, input domainaccess.PolicyInput) (domainaccess.Policy, error) {
@@ -177,6 +215,9 @@ func (s *ManagementService) UpdatePolicy(ctx context.Context, principal domainid
 		input.Effect = domainaccess.EffectAllow
 	}
 	item, err := s.policies.UpdatePolicy(ctx, policyID, input)
+	if err == nil {
+		s.recordWriteLogs(ctx, principal, "access.policy.update", "Policy", item.ID, item.Name, "updated policy")
+	}
 	return item, normalizeWriteError(err)
 }
 
@@ -187,7 +228,11 @@ func (s *ManagementService) DeletePolicy(ctx context.Context, principal domainid
 	if strings.TrimSpace(policyID) == "" {
 		return fmt.Errorf("%w: policy id is required", apperrors.ErrInvalidArgument)
 	}
-	return normalizeWriteError(s.policies.DeletePolicy(ctx, policyID))
+	if err := normalizeWriteError(s.policies.DeletePolicy(ctx, policyID)); err != nil {
+		return err
+	}
+	s.recordWriteLogs(ctx, principal, "access.policy.delete", "Policy", policyID, policyID, "deleted policy")
+	return nil
 }
 
 func (s *ManagementService) ReplaceUserRoles(ctx context.Context, principal domainidentity.Principal, userID string, roleIDs []string) error {
@@ -200,7 +245,11 @@ func (s *ManagementService) ReplaceUserRoles(ctx context.Context, principal doma
 	if _, err := s.users.GetByID(ctx, userID); err != nil {
 		return normalizeWriteError(err)
 	}
-	return normalizeWriteError(s.users.ReplaceRoleBindings(ctx, userID, roleIDs))
+	if err := normalizeWriteError(s.users.ReplaceRoleBindings(ctx, userID, roleIDs)); err != nil {
+		return err
+	}
+	s.recordWriteLogs(ctx, principal, "access.user.replace_roles", "User", userID, userID, "replaced user role bindings")
+	return nil
 }
 
 func (s *ManagementService) ReplaceUserTeams(ctx context.Context, principal domainidentity.Principal, userID string, teamIDs []string) error {
@@ -213,7 +262,11 @@ func (s *ManagementService) ReplaceUserTeams(ctx context.Context, principal doma
 	if _, err := s.users.GetByID(ctx, userID); err != nil {
 		return normalizeWriteError(err)
 	}
-	return normalizeWriteError(s.users.ReplaceTeamBindings(ctx, userID, teamIDs))
+	if err := normalizeWriteError(s.users.ReplaceTeamBindings(ctx, userID, teamIDs)); err != nil {
+		return err
+	}
+	s.recordWriteLogs(ctx, principal, "access.user.replace_teams", "User", userID, userID, "replaced user team bindings")
+	return nil
 }
 
 func (s *ManagementService) CreateUser(ctx context.Context, principal domainidentity.Principal, input domainaccess.UserInput) (domainaccess.UserRecord, error) {
@@ -238,7 +291,11 @@ func (s *ManagementService) CreateUser(ctx context.Context, principal domainiden
 	if input.Preferences == nil {
 		input.Preferences = map[string]any{}
 	}
-	return s.users.CreateUser(ctx, input)
+	item, err := s.users.CreateUser(ctx, input)
+	if err == nil {
+		s.recordWriteLogs(ctx, principal, "access.user.create", "User", item.ID, item.Username, "created user")
+	}
+	return item, err
 }
 
 func (s *ManagementService) UpdateUser(ctx context.Context, principal domainidentity.Principal, userID string, input domainaccess.UserInput) (domainaccess.UserRecord, error) {
@@ -266,6 +323,9 @@ func (s *ManagementService) UpdateUser(ctx context.Context, principal domainiden
 		input.Preferences = map[string]any{}
 	}
 	item, err := s.users.UpdateUser(ctx, userID, input)
+	if err == nil {
+		s.recordWriteLogs(ctx, principal, "access.user.update", "User", item.ID, item.Username, "updated user")
+	}
 	return item, normalizeWriteError(err)
 }
 
@@ -276,7 +336,11 @@ func (s *ManagementService) DeleteUser(ctx context.Context, principal domainiden
 	if strings.TrimSpace(userID) == "" {
 		return fmt.Errorf("%w: user id is required", apperrors.ErrInvalidArgument)
 	}
-	return normalizeWriteError(s.users.DeleteUser(ctx, userID))
+	if err := normalizeWriteError(s.users.DeleteUser(ctx, userID)); err != nil {
+		return err
+	}
+	s.recordWriteLogs(ctx, principal, "access.user.delete", "User", userID, userID, "deleted user")
+	return nil
 }
 
 func (s *ManagementService) RevokeUserSessions(ctx context.Context, principal domainidentity.Principal, userID string) error {
@@ -289,7 +353,11 @@ func (s *ManagementService) RevokeUserSessions(ctx context.Context, principal do
 	if _, err := s.users.GetByID(ctx, userID); err != nil {
 		return normalizeWriteError(err)
 	}
-	return normalizeWriteError(s.users.RevokeSessionsByUserID(ctx, userID))
+	if err := normalizeWriteError(s.users.RevokeSessionsByUserID(ctx, userID)); err != nil {
+		return err
+	}
+	s.recordWriteLogs(ctx, principal, "access.user.revoke_sessions", "User", userID, userID, "revoked user sessions")
+	return nil
 }
 
 func (s *ManagementService) ensurePermission(ctx context.Context, principal domainidentity.Principal, permissionKey string) error {
@@ -331,4 +399,47 @@ func normalizeWriteError(err error) error {
 		return fmt.Errorf("%w: %v", apperrors.ErrNotFound, err)
 	}
 	return err
+}
+
+func (s *ManagementService) recordWriteLogs(ctx context.Context, principal domainidentity.Principal, operationType, resourceKind, targetID, targetLabel, summary string) {
+	meta := requestctx.FromContext(ctx)
+	if s.audit != nil {
+		_ = s.audit.Record(ctx, domainaudit.Entry{
+			ActorID:       principal.UserID,
+			ActorName:     principal.UserName,
+			Roles:         principal.Roles,
+			Teams:         principal.Teams,
+			ResourceKind:  resourceKind,
+			ResourceName:  targetLabel,
+			Action:        strings.TrimPrefix(operationType, "access."),
+			Result:        "success",
+			Summary:       summary,
+			RequestPath:   meta.Path,
+			RequestMethod: meta.Method,
+			RequestID:     meta.RequestID,
+			SourceIP:      meta.SourceIP,
+			Metadata: map[string]any{
+				"targetId": targetID,
+				"source":   meta.Source,
+			},
+		})
+	}
+	if s.operations != nil {
+		_ = s.operations.Record(ctx, operationentry.New(
+			ctx,
+			principal,
+			operationType,
+			map[string]any{
+				"module":       "access",
+				"resourceKind": resourceKind,
+				"targetId":     targetID,
+				"targetLabel":  targetLabel,
+			},
+			"success",
+			summary,
+			map[string]any{
+				"targetId": targetID,
+			},
+		))
+	}
 }

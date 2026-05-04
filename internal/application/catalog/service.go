@@ -10,18 +10,31 @@ import (
 	appaccess "github.com/kubecrux/kubecrux/internal/application/access"
 	domainaccess "github.com/kubecrux/kubecrux/internal/domain/access"
 	domainapp "github.com/kubecrux/kubecrux/internal/domain/application"
+	domainaudit "github.com/kubecrux/kubecrux/internal/domain/audit"
 	domaincatalog "github.com/kubecrux/kubecrux/internal/domain/catalog"
 	domainidentity "github.com/kubecrux/kubecrux/internal/domain/identity"
+	domainoperation "github.com/kubecrux/kubecrux/internal/domain/operation"
 	"github.com/kubecrux/kubecrux/internal/platform/apperrors"
+	"github.com/kubecrux/kubecrux/internal/platform/operationentry"
 	"github.com/kubecrux/kubecrux/internal/platform/requestctx"
 	catalogrepo "github.com/kubecrux/kubecrux/internal/repository/catalog"
 )
+
+type AuditRecorder interface {
+	Record(context.Context, domainaudit.Entry) error
+}
+
+type OperationRecorder interface {
+	Record(context.Context, domainoperation.Entry) error
+}
 
 type Service struct {
 	repo        domaincatalog.Repository
 	authorizer  domainaccess.Authorizer
 	apps        ApplicationReader
 	permissions *appaccess.PermissionResolver
+	audit       AuditRecorder
+	operations  OperationRecorder
 }
 
 type catalogLookupRepository interface {
@@ -34,8 +47,8 @@ type ApplicationReader interface {
 	Get(context.Context, string) (domainapp.App, error)
 }
 
-func New(repo domaincatalog.Repository, authorizer domainaccess.Authorizer, apps ApplicationReader, permissions *appaccess.PermissionResolver) *Service {
-	return &Service{repo: repo, authorizer: authorizer, apps: apps, permissions: permissions}
+func New(repo domaincatalog.Repository, authorizer domainaccess.Authorizer, apps ApplicationReader, permissions *appaccess.PermissionResolver, audit AuditRecorder, operations OperationRecorder) *Service {
+	return &Service{repo: repo, authorizer: authorizer, apps: apps, permissions: permissions, audit: audit, operations: operations}
 }
 
 func (s *Service) ListBusinessLines(ctx context.Context, principal domainidentity.Principal) ([]domaincatalog.BusinessLine, error) {
@@ -52,7 +65,11 @@ func (s *Service) CreateBusinessLine(ctx context.Context, principal domainidenti
 	if strings.TrimSpace(input.Key) == "" || strings.TrimSpace(input.Name) == "" {
 		return domaincatalog.BusinessLine{}, fmt.Errorf("%w: key and name are required", apperrors.ErrInvalidArgument)
 	}
-	return s.repo.CreateBusinessLine(ctx, input)
+	item, err := s.repo.CreateBusinessLine(ctx, input)
+	if err == nil {
+		s.recordWriteLogs(ctx, principal, "delivery.business_line.create", "BusinessLine", item.ID, item.Name, "created business line")
+	}
+	return item, err
 }
 
 func (s *Service) UpdateBusinessLine(ctx context.Context, principal domainidentity.Principal, id string, input domaincatalog.BusinessLineInput) (domaincatalog.BusinessLine, error) {
@@ -63,6 +80,9 @@ func (s *Service) UpdateBusinessLine(ctx context.Context, principal domainidenti
 		return domaincatalog.BusinessLine{}, fmt.Errorf("%w: key and name are required", apperrors.ErrInvalidArgument)
 	}
 	item, err := s.repo.UpdateBusinessLine(ctx, id, input)
+	if err == nil {
+		s.recordWriteLogs(ctx, principal, "delivery.business_line.update", "BusinessLine", item.ID, item.Name, "updated business line")
+	}
 	return item, normalizeRepoError(err)
 }
 
@@ -70,7 +90,11 @@ func (s *Service) DeleteBusinessLine(ctx context.Context, principal domainidenti
 	if err := s.authorize(ctx, principal, appaccess.PermDeliveryBusinessLinesManage); err != nil {
 		return err
 	}
-	return normalizeRepoError(s.repo.DeleteBusinessLine(ctx, id))
+	if err := normalizeRepoError(s.repo.DeleteBusinessLine(ctx, id)); err != nil {
+		return err
+	}
+	s.recordWriteLogs(ctx, principal, "delivery.business_line.delete", "BusinessLine", id, id, "deleted business line")
+	return nil
 }
 
 func (s *Service) ListEnvironments(ctx context.Context, principal domainidentity.Principal) ([]domaincatalog.Environment, error) {
@@ -87,7 +111,11 @@ func (s *Service) CreateEnvironment(ctx context.Context, principal domainidentit
 	if strings.TrimSpace(input.Key) == "" || strings.TrimSpace(input.Name) == "" {
 		return domaincatalog.Environment{}, fmt.Errorf("%w: key and name are required", apperrors.ErrInvalidArgument)
 	}
-	return s.repo.CreateEnvironment(ctx, input)
+	item, err := s.repo.CreateEnvironment(ctx, input)
+	if err == nil {
+		s.recordWriteLogs(ctx, principal, "delivery.environment.create", "Environment", item.ID, item.Name, "created environment")
+	}
+	return item, err
 }
 
 func (s *Service) UpdateEnvironment(ctx context.Context, principal domainidentity.Principal, id string, input domaincatalog.EnvironmentInput) (domaincatalog.Environment, error) {
@@ -98,6 +126,9 @@ func (s *Service) UpdateEnvironment(ctx context.Context, principal domainidentit
 		return domaincatalog.Environment{}, fmt.Errorf("%w: key and name are required", apperrors.ErrInvalidArgument)
 	}
 	item, err := s.repo.UpdateEnvironment(ctx, id, input)
+	if err == nil {
+		s.recordWriteLogs(ctx, principal, "delivery.environment.update", "Environment", item.ID, item.Name, "updated environment")
+	}
 	return item, normalizeRepoError(err)
 }
 
@@ -105,7 +136,11 @@ func (s *Service) DeleteEnvironment(ctx context.Context, principal domainidentit
 	if err := s.authorize(ctx, principal, appaccess.PermDeliveryEnvironmentsManage); err != nil {
 		return err
 	}
-	return normalizeRepoError(s.repo.DeleteEnvironment(ctx, id))
+	if err := normalizeRepoError(s.repo.DeleteEnvironment(ctx, id)); err != nil {
+		return err
+	}
+	s.recordWriteLogs(ctx, principal, "delivery.environment.delete", "Environment", id, id, "deleted environment")
+	return nil
 }
 
 func (s *Service) ListApplicationEnvironments(ctx context.Context, principal domainidentity.Principal) ([]domaincatalog.ApplicationEnvironment, error) {
@@ -139,7 +174,11 @@ func (s *Service) CreateApplicationEnvironment(ctx context.Context, principal do
 	if err := s.authorizeApplicationEnvironmentInput(ctx, principal, domainaccess.ActionCreate, input); err != nil {
 		return domaincatalog.ApplicationEnvironment{}, err
 	}
-	return s.repo.CreateApplicationEnvironment(ctx, input)
+	item, err := s.repo.CreateApplicationEnvironment(ctx, input)
+	if err == nil {
+		s.recordWriteLogs(ctx, principal, "delivery.application_environment.create", "ApplicationEnvironment", item.ID, item.ID, "created application environment binding")
+	}
+	return item, err
 }
 
 func (s *Service) UpdateApplicationEnvironment(ctx context.Context, principal domainidentity.Principal, id string, input domaincatalog.ApplicationEnvironmentInput) (domaincatalog.ApplicationEnvironment, error) {
@@ -160,6 +199,9 @@ func (s *Service) UpdateApplicationEnvironment(ctx context.Context, principal do
 		return domaincatalog.ApplicationEnvironment{}, err
 	}
 	item, err := s.repo.UpdateApplicationEnvironment(ctx, id, input)
+	if err == nil {
+		s.recordWriteLogs(ctx, principal, "delivery.application_environment.update", "ApplicationEnvironment", item.ID, item.ID, "updated application environment binding")
+	}
 	return item, normalizeRepoError(err)
 }
 
@@ -174,7 +216,65 @@ func (s *Service) DeleteApplicationEnvironment(ctx context.Context, principal do
 	if err := s.authorizeApplicationEnvironment(ctx, principal, domainaccess.ActionDelete, item); err != nil {
 		return err
 	}
-	return normalizeRepoError(s.repo.DeleteApplicationEnvironment(ctx, id))
+	if err := normalizeRepoError(s.repo.DeleteApplicationEnvironment(ctx, id)); err != nil {
+		return err
+	}
+	s.recordWriteLogs(ctx, principal, "delivery.application_environment.delete", "ApplicationEnvironment", id, id, "deleted application environment binding")
+	return nil
+}
+
+func (s *Service) ListBuildTemplates(ctx context.Context, principal domainidentity.Principal) ([]domaincatalog.BuildTemplate, error) {
+	if err := s.authorize(ctx, principal, appaccess.PermDeliveryBuildTemplatesView); err != nil {
+		return nil, err
+	}
+	return s.repo.ListBuildTemplates(ctx)
+}
+
+func (s *Service) CreateBuildTemplate(ctx context.Context, principal domainidentity.Principal, input domaincatalog.BuildTemplateInput) (domaincatalog.BuildTemplate, error) {
+	if err := s.authorize(ctx, principal, appaccess.PermDeliveryBuildTemplatesManage); err != nil {
+		return domaincatalog.BuildTemplate{}, err
+	}
+	input = normalizeBuildTemplateInput(input)
+	if strings.TrimSpace(input.Key) == "" || strings.TrimSpace(input.Name) == "" {
+		return domaincatalog.BuildTemplate{}, fmt.Errorf("%w: key and name are required", apperrors.ErrInvalidArgument)
+	}
+	if len(input.BuildCommands) == 0 {
+		return domaincatalog.BuildTemplate{}, fmt.Errorf("%w: buildCommands are required", apperrors.ErrInvalidArgument)
+	}
+	item, err := s.repo.CreateBuildTemplate(ctx, input)
+	if err == nil {
+		s.recordWriteLogs(ctx, principal, "delivery.build_template.create", "BuildTemplate", item.ID, item.Name, "created build template")
+	}
+	return item, err
+}
+
+func (s *Service) UpdateBuildTemplate(ctx context.Context, principal domainidentity.Principal, id string, input domaincatalog.BuildTemplateInput) (domaincatalog.BuildTemplate, error) {
+	if err := s.authorize(ctx, principal, appaccess.PermDeliveryBuildTemplatesManage); err != nil {
+		return domaincatalog.BuildTemplate{}, err
+	}
+	input = normalizeBuildTemplateInput(input)
+	if strings.TrimSpace(input.Key) == "" || strings.TrimSpace(input.Name) == "" {
+		return domaincatalog.BuildTemplate{}, fmt.Errorf("%w: key and name are required", apperrors.ErrInvalidArgument)
+	}
+	if len(input.BuildCommands) == 0 {
+		return domaincatalog.BuildTemplate{}, fmt.Errorf("%w: buildCommands are required", apperrors.ErrInvalidArgument)
+	}
+	item, err := s.repo.UpdateBuildTemplate(ctx, id, input)
+	if err == nil {
+		s.recordWriteLogs(ctx, principal, "delivery.build_template.update", "BuildTemplate", item.ID, item.Name, "updated build template")
+	}
+	return item, normalizeRepoError(err)
+}
+
+func (s *Service) DeleteBuildTemplate(ctx context.Context, principal domainidentity.Principal, id string) error {
+	if err := s.authorize(ctx, principal, appaccess.PermDeliveryBuildTemplatesManage); err != nil {
+		return err
+	}
+	if err := normalizeRepoError(s.repo.DeleteBuildTemplate(ctx, id)); err != nil {
+		return err
+	}
+	s.recordWriteLogs(ctx, principal, "delivery.build_template.delete", "BuildTemplate", id, id, "deleted build template")
+	return nil
 }
 
 func (s *Service) ListWorkflowTemplates(ctx context.Context, principal domainidentity.Principal) ([]domaincatalog.WorkflowTemplate, error) {
@@ -195,7 +295,11 @@ func (s *Service) CreateWorkflowTemplate(ctx context.Context, principal domainid
 	if err := validateWorkflowTemplateDefinition(input.Definition); err != nil {
 		return domaincatalog.WorkflowTemplate{}, err
 	}
-	return s.repo.CreateWorkflowTemplate(ctx, input)
+	item, err := s.repo.CreateWorkflowTemplate(ctx, input)
+	if err == nil {
+		s.recordWriteLogs(ctx, principal, "delivery.workflow_template.create", "WorkflowTemplate", item.ID, item.Name, "created workflow template")
+	}
+	return item, err
 }
 
 func (s *Service) UpdateWorkflowTemplate(ctx context.Context, principal domainidentity.Principal, id string, input domaincatalog.WorkflowTemplateInput) (domaincatalog.WorkflowTemplate, error) {
@@ -210,6 +314,9 @@ func (s *Service) UpdateWorkflowTemplate(ctx context.Context, principal domainid
 		return domaincatalog.WorkflowTemplate{}, err
 	}
 	item, err := s.repo.UpdateWorkflowTemplate(ctx, id, input)
+	if err == nil {
+		s.recordWriteLogs(ctx, principal, "delivery.workflow_template.update", "WorkflowTemplate", item.ID, item.Name, "updated workflow template")
+	}
 	return item, normalizeRepoError(err)
 }
 
@@ -217,7 +324,11 @@ func (s *Service) DeleteWorkflowTemplate(ctx context.Context, principal domainid
 	if err := s.authorize(ctx, principal, appaccess.PermDeliveryWorkflowTemplatesManage); err != nil {
 		return err
 	}
-	return normalizeRepoError(s.repo.DeleteWorkflowTemplate(ctx, id))
+	if err := normalizeRepoError(s.repo.DeleteWorkflowTemplate(ctx, id)); err != nil {
+		return err
+	}
+	s.recordWriteLogs(ctx, principal, "delivery.workflow_template.delete", "WorkflowTemplate", id, id, "deleted workflow template")
+	return nil
 }
 
 func normalizeRepoError(err error) error {
@@ -236,6 +347,19 @@ func normalizeWorkflowTemplateInput(input domaincatalog.WorkflowTemplateInput) d
 	}
 	if len(input.Definition) == 0 {
 		input.Definition = defaultReleaseFlowDefinition()
+	}
+	return input
+}
+
+func normalizeBuildTemplateInput(input domaincatalog.BuildTemplateInput) domaincatalog.BuildTemplateInput {
+	if strings.TrimSpace(input.BuilderKind) == "" {
+		input.BuilderKind = "custom"
+	}
+	if input.VariableSchema == nil {
+		input.VariableSchema = map[string]any{}
+	}
+	if input.DefaultVariables == nil {
+		input.DefaultVariables = map[string]any{}
 	}
 	return input
 }
@@ -353,6 +477,49 @@ func validateWorkflowTemplateDefinition(definition map[string]any) error {
 
 func (s *Service) authorize(ctx context.Context, principal domainidentity.Principal, permissionKey string) error {
 	return appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, permissionKey)
+}
+
+func (s *Service) recordWriteLogs(ctx context.Context, principal domainidentity.Principal, operationType, resourceKind, targetID, targetLabel, summary string) {
+	meta := requestctx.FromContext(ctx)
+	if s.audit != nil {
+		_ = s.audit.Record(ctx, domainaudit.Entry{
+			ActorID:       principal.UserID,
+			ActorName:     principal.UserName,
+			Roles:         principal.Roles,
+			Teams:         principal.Teams,
+			ResourceKind:  resourceKind,
+			ResourceName:  targetLabel,
+			Action:        strings.TrimPrefix(operationType, "delivery."),
+			Result:        "success",
+			Summary:       summary,
+			RequestPath:   meta.Path,
+			RequestMethod: meta.Method,
+			RequestID:     meta.RequestID,
+			SourceIP:      meta.SourceIP,
+			Metadata: map[string]any{
+				"targetId": targetID,
+				"source":   meta.Source,
+			},
+		})
+	}
+	if s.operations != nil {
+		_ = s.operations.Record(ctx, operationentry.New(
+			ctx,
+			principal,
+			operationType,
+			map[string]any{
+				"module":       "delivery",
+				"resourceKind": resourceKind,
+				"targetId":     targetID,
+				"targetLabel":  targetLabel,
+			},
+			"success",
+			summary,
+			map[string]any{
+				"targetId": targetID,
+			},
+		))
+	}
 }
 
 func (s *Service) authorizeApplicationEnvironment(ctx context.Context, principal domainidentity.Principal, action domainaccess.Action, item domaincatalog.ApplicationEnvironment) error {

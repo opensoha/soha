@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 
 import { describe, expect, it } from 'vitest'
-import { getMenuDerivedPermissionKeys, summarizeMenuVisibility } from './system-pages'
+import { filterMenuTree, getMenuDerivedPermissionKeys, summarizeMenuVisibility } from './system-pages'
 
 describe('menu visibility helpers', () => {
   it('derives permission-based visibility for route-backed menus', () => {
@@ -46,5 +46,51 @@ describe('menu visibility helpers', () => {
         derivedPermissionKeys: ['custom.view', ' custom.view ', 'custom.manage'],
       }),
     ).toEqual(['custom.manage', 'custom.view'])
+  })
+
+  it('removes empty children arrays from leaf nodes used by the tree table', () => {
+    const filtered = filterMenuTree([
+      {
+        id: 'parent',
+        labelZh: 'Parent',
+        labelEn: 'Parent',
+        path: '/parent',
+        iconKey: 'menu-square',
+        section: 'control',
+        sortOrder: 1,
+        enabled: true,
+        children: [
+          {
+            id: 'child-leaf',
+            parentId: 'parent',
+            labelZh: 'Child',
+            labelEn: 'Child',
+            path: '/parent/child',
+            iconKey: 'menu-square',
+            section: 'control',
+            sortOrder: 1,
+            enabled: true,
+          },
+        ],
+      },
+      {
+        id: 'standalone-leaf',
+        labelZh: 'Leaf',
+        labelEn: 'Leaf',
+        path: '/leaf',
+        iconKey: 'menu-square',
+        section: 'control',
+        sortOrder: 2,
+        enabled: true,
+      },
+    ], {
+      topLevelOnly: true,
+      section: '',
+      enabled: 'all',
+      visibility: 'all',
+    })
+
+    expect(filtered[0].children?.[0].children).toBeUndefined()
+    expect(filtered[1].children).toBeUndefined()
   })
 })

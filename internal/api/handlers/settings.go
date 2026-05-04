@@ -19,7 +19,7 @@ type SettingsService interface {
 	GetMonitoringSettings(context.Context, domainidentity.Principal) (domainsettings.MonitoringSettings, error)
 	UpdatePrometheusSettings(context.Context, domainidentity.Principal, domainsettings.PrometheusSettings) (domainsettings.MonitoringSettings, error)
 	GetAISettings(context.Context, domainidentity.Principal) (domainsettings.AISettings, error)
-	UpdateAISettings(context.Context, domainidentity.Principal, domainsettings.AIProviderSettings) (domainsettings.AISettings, error)
+	UpdateAISettings(context.Context, domainidentity.Principal, domainsettings.AISettings) (domainsettings.AISettings, error)
 	GetBrandingSettings(context.Context, domainidentity.Principal) (domainsettings.BrandingSettings, error)
 	UpdateBrandingSettings(context.Context, domainidentity.Principal, domainsettings.BrandingSettings) (domainsettings.BrandingSettings, error)
 }
@@ -118,11 +118,14 @@ func (h *SettingsHandler) UpdateAISettings(c *gin.Context) {
 		return
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.service.UpdateAISettings(c.Request.Context(), principal, domainsettings.AIProviderSettings{
-		Enabled: req.Enabled,
-		BaseURL: req.BaseURL,
-		APIKey:  req.APIKey,
-		Model:   req.Model,
+	item, err := h.service.UpdateAISettings(c.Request.Context(), principal, domainsettings.AISettings{
+		Provider: domainsettings.AIProviderSettings{
+			Enabled: req.Enabled,
+			BaseURL: req.BaseURL,
+			APIKey:  req.APIKey,
+			Model:   req.Model,
+		},
+		SkillsRegistry: mapAISkills(req.SkillsRegistry),
 	})
 	if err != nil {
 		writeError(c, err)
@@ -139,6 +142,20 @@ func (h *SettingsHandler) GetBrandingSettings(c *gin.Context) {
 		return
 	}
 	apiresponse.Item(c, http.StatusOK, item)
+}
+
+func mapAISkills(items []dto.AISkillSettings) []domainsettings.AISkillSettings {
+	out := make([]domainsettings.AISkillSettings, 0, len(items))
+	for _, item := range items {
+		out = append(out, domainsettings.AISkillSettings{
+			ID:          item.ID,
+			Name:        item.Name,
+			Description: item.Description,
+			Enabled:     item.Enabled,
+			Scopes:      item.Scopes,
+		})
+	}
+	return out
 }
 
 func (h *SettingsHandler) UpdateBrandingSettings(c *gin.Context) {

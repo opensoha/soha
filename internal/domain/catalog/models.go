@@ -5,6 +5,25 @@ import (
 	"time"
 )
 
+type BuildPolicy struct {
+	SourceID         string         `json:"sourceId,omitempty"`
+	RefType          string         `json:"refType,omitempty"`
+	RefValue         string         `json:"refValue,omitempty"`
+	ImageTagMode     string         `json:"imageTagMode,omitempty"`
+	ImageTagTemplate string         `json:"imageTagTemplate,omitempty"`
+	Variables        map[string]any `json:"variables,omitempty"`
+	BuildArgs        map[string]any `json:"buildArgs,omitempty"`
+}
+
+type ReleasePolicy struct {
+	ActionKind            string   `json:"actionKind,omitempty"`
+	RequiresApproval      bool     `json:"requiresApproval"`
+	ApproverRoles         []string `json:"approverRoles,omitempty"`
+	AutoRollback          bool     `json:"autoRollback"`
+	RolloutTimeoutSeconds int      `json:"rolloutTimeoutSeconds,omitempty"`
+	VerificationMode      string   `json:"verificationMode,omitempty"`
+}
+
 type BusinessLine struct {
 	ID          string    `json:"id"`
 	Key         string    `json:"key"`
@@ -77,18 +96,18 @@ type ReleaseTargetInput struct {
 }
 
 type ApplicationEnvironment struct {
-	ID                 string          `json:"id"`
-	ApplicationID      string          `json:"applicationId"`
-	BusinessLineID     string          `json:"businessLineId,omitempty"`
-	EnvironmentID      string          `json:"environmentId"`
-	EnvironmentKey     string          `json:"environmentKey,omitempty"`
-	WorkflowTemplateID string          `json:"workflowTemplateId,omitempty"`
+	ID                 string            `json:"id"`
+	ApplicationID      string            `json:"applicationId"`
+	BusinessLineID     string            `json:"businessLineId,omitempty"`
+	EnvironmentID      string            `json:"environmentId"`
+	EnvironmentKey     string            `json:"environmentKey,omitempty"`
+	WorkflowTemplateID string            `json:"workflowTemplateId,omitempty"`
 	WorkflowTemplate   *WorkflowTemplate `json:"workflowTemplate,omitempty"`
-	BuildPolicy        map[string]any  `json:"buildPolicy,omitempty"`
-	ReleasePolicy      map[string]any  `json:"releasePolicy,omitempty"`
-	Targets            []ReleaseTarget `json:"targets,omitempty"`
-	CreatedAt          time.Time       `json:"createdAt"`
-	UpdatedAt          time.Time       `json:"updatedAt"`
+	BuildPolicy        BuildPolicy       `json:"buildPolicy,omitempty"`
+	ReleasePolicy      ReleasePolicy     `json:"releasePolicy,omitempty"`
+	Targets            []ReleaseTarget   `json:"targets,omitempty"`
+	CreatedAt          time.Time         `json:"createdAt"`
+	UpdatedAt          time.Time         `json:"updatedAt"`
 }
 
 type ApplicationEnvironmentInput struct {
@@ -96,9 +115,37 @@ type ApplicationEnvironmentInput struct {
 	ApplicationID      string               `json:"applicationId"`
 	EnvironmentID      string               `json:"environmentId"`
 	WorkflowTemplateID string               `json:"workflowTemplateId,omitempty"`
-	BuildPolicy        map[string]any       `json:"buildPolicy,omitempty"`
-	ReleasePolicy      map[string]any       `json:"releasePolicy,omitempty"`
+	BuildPolicy        BuildPolicy          `json:"buildPolicy,omitempty"`
+	ReleasePolicy      ReleasePolicy        `json:"releasePolicy,omitempty"`
 	Targets            []ReleaseTargetInput `json:"targets,omitempty"`
+}
+
+type BuildTemplate struct {
+	ID                 string         `json:"id"`
+	Key                string         `json:"key"`
+	Name               string         `json:"name"`
+	Description        string         `json:"description,omitempty"`
+	BuilderKind        string         `json:"builderKind,omitempty"`
+	DockerfileTemplate string         `json:"dockerfileTemplate,omitempty"`
+	BuildCommands      []string       `json:"buildCommands,omitempty"`
+	VariableSchema     map[string]any `json:"variableSchema,omitempty"`
+	DefaultVariables   map[string]any `json:"defaultVariables,omitempty"`
+	Enabled            bool           `json:"enabled"`
+	CreatedAt          time.Time      `json:"createdAt"`
+	UpdatedAt          time.Time      `json:"updatedAt"`
+}
+
+type BuildTemplateInput struct {
+	ID                 string         `json:"id"`
+	Key                string         `json:"key"`
+	Name               string         `json:"name"`
+	Description        string         `json:"description,omitempty"`
+	BuilderKind        string         `json:"builderKind,omitempty"`
+	DockerfileTemplate string         `json:"dockerfileTemplate,omitempty"`
+	BuildCommands      []string       `json:"buildCommands,omitempty"`
+	VariableSchema     map[string]any `json:"variableSchema,omitempty"`
+	DefaultVariables   map[string]any `json:"defaultVariables,omitempty"`
+	Enabled            bool           `json:"enabled"`
 }
 
 type WorkflowTemplate struct {
@@ -141,6 +188,12 @@ type Repository interface {
 	CreateApplicationEnvironment(context.Context, ApplicationEnvironmentInput) (ApplicationEnvironment, error)
 	UpdateApplicationEnvironment(context.Context, string, ApplicationEnvironmentInput) (ApplicationEnvironment, error)
 	DeleteApplicationEnvironment(context.Context, string) error
+
+	ListBuildTemplates(context.Context) ([]BuildTemplate, error)
+	GetBuildTemplate(context.Context, string) (BuildTemplate, error)
+	CreateBuildTemplate(context.Context, BuildTemplateInput) (BuildTemplate, error)
+	UpdateBuildTemplate(context.Context, string, BuildTemplateInput) (BuildTemplate, error)
+	DeleteBuildTemplate(context.Context, string) error
 
 	ListWorkflowTemplates(context.Context) ([]WorkflowTemplate, error)
 	GetWorkflowTemplate(context.Context, string) (WorkflowTemplate, error)
