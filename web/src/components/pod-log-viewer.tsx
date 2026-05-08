@@ -13,6 +13,7 @@ const DEFAULT_HISTORY_LINES = 100
 const HISTORY_INCREMENT = 100
 const POLLING_INTERVAL_MS = 3000
 const RECONNECT_DELAYS_MS = [1000, 2000, 5000, 10000, 15000]
+const CLEAR_BOUNDARY_LINES = 5
 
 interface LogMessage {
   type: string
@@ -60,6 +61,17 @@ function appendLineWithDedupe(current: string[], nextLine: string) {
   return [...current, nextLine].slice(-10000)
 }
 
+function sameLines(left: string[], right: string[]) {
+  if (left === right) return true
+  if (left.length !== right.length) return false
+  for (let index = 0; index < left.length; index += 1) {
+    if (left[index] !== right[index]) {
+      return false
+    }
+  }
+  return true
+}
+
 function mergeLogLines(current: string[], incoming: string[]) {
   if (current.length === 0) return incoming
   if (incoming.length === 0) return current
@@ -67,7 +79,7 @@ function mergeLogLines(current: string[], incoming: string[]) {
   if (incoming.length >= current.length) {
     const incomingTail = incoming.slice(-current.length)
     if (JSON.stringify(incomingTail) === JSON.stringify(current)) {
-      return incoming
+      return incoming.length === current.length ? current : incoming
     }
   }
 
@@ -80,9 +92,29 @@ function mergeLogLines(current: string[], incoming: string[]) {
     }
   }
 
-  return incoming.length > current.length
+  const merged = incoming.length > current.length
     ? incoming
     : [...current, ...incoming].slice(-10000)
+  return sameLines(merged, current) ? current : merged
+}
+
+function trimLinesAfterBoundary(incoming: string[], boundary: string[]) {
+  if (boundary.length === 0 || incoming.length < boundary.length) {
+    return incoming
+  }
+  for (let start = incoming.length - boundary.length; start >= 0; start -= 1) {
+    let matched = true
+    for (let index = 0; index < boundary.length; index += 1) {
+      if (incoming[start + index] !== boundary[index]) {
+        matched = false
+        break
+      }
+    }
+    if (matched) {
+      return incoming.slice(start + boundary.length)
+    }
+  }
+  return incoming
 }
 
 function getEmptyLogMessage({
@@ -130,7 +162,6 @@ export function PodLogViewer({
   const accessToken = useAuthStore((state) => state.accessToken)
   const [lines, setLines] = useState<string[]>([])
   const [connectionState, setConnectionState] = useState<'idle' | 'connecting' | 'connected' | 'closed' | 'error'>('idle')
-  const [statusMessage, setStatusMessage] = useState(t('podLogViewer.idle', 'Log stream has not been connected yet'))
   const [keyword, setKeyword] = useState('')
   const [autoScroll, setAutoScroll] = useState(true)
   const [sinceSeconds, setSinceSeconds] = useState(0)
@@ -143,6 +174,8 @@ export function PodLogViewer({
   const reconnectAttemptRef = useRef(0)
   const scrollerRef = useRef<HTMLDivElement | null>(null)
   const restoreScrollRef = useRef<{ previousHeight: number; previousTop: number } | null>(null)
+  const clearBoundaryRef = useRef<string[]>([])
+  const suppressClearedReplayRef = useRef(false)
 
   const logsPath = useMemo(() => {
     if (!clusterId || !namespace) return ''
@@ -199,7 +232,10 @@ export function PodLogViewer({
     const response = await api.get<ApiResponse<PodLogs>>(
       `/clusters/${clusterId}/workloads/pods/${encodeURIComponent(podName)}/logs?${params.toString()}`,
     )
-    const nextLines = splitLogContent(response.data?.content ?? '')
+    const nextLines = trimLinesAfterBoundary(
+      splitLogContent(response.data?.content ?? ''),
+      previous ? [] : clearBoundaryRef.current,
+    )
     setLines((current) => mergeLogLines(current, nextLines))
   }, [clusterId, container, namespace, podName, previous, sinceSeconds])
 
@@ -211,58 +247,48 @@ export function PodLogViewer({
         const nextLines = splitLogContent(response.data?.content ?? '')
         setLines((current) => mergeLogLines(current, nextLines))
         setConnectionState('connected')
-        setStatusMessage(previous
-          ? (localeCode === 'zh_CN' ? '当前查看历史日志' : 'Viewing historical logs')
-          : (localeCode === 'zh_CN' ? '当前跟随实时日志' : 'Following live logs'))
-      } catch (err) {
+      } catch {
         setConnectionState('error')
-        setStatusMessage(err instanceof Error ? err.message : t('podLogViewer.failed', 'Log stream connection failed'))
       }
     }, POLLING_INTERVAL_MS)
-  }, [localeCode, logsPath, previous, t])
+  }, [logsPath])
 
   const scheduleReconnect = useCallback(() => {
     if (previous || !active || reconnectTimerRef.current != null) return
     const attempt = reconnectAttemptRef.current
     const delay = RECONNECT_DELAYS_MS[Math.min(attempt, RECONNECT_DELAYS_MS.length - 1)]
     reconnectAttemptRef.current += 1
-    setStatusMessage(
-      localeCode === 'zh_CN'
-        ? `日志流已断开，${Math.round(delay / 1000)} 秒后自动重连（第 ${reconnectAttemptRef.current} 次）`
-        : `Log stream disconnected. Reconnecting in ${Math.round(delay / 1000)}s (attempt ${reconnectAttemptRef.current})`,
-    )
     reconnectTimerRef.current = window.setTimeout(() => {
       reconnectTimerRef.current = null
       connect()
     }, delay)
-  }, [active, localeCode, previous])
+  }, [active, previous])
 
   const connect = useCallback(() => {
     if (!streamURL) return
     disconnect()
     setConnectionState('connecting')
-    setStatusMessage(t('podLogViewer.connecting', 'Connecting log stream...'))
     const socket = new WebSocket(streamURL)
     socketRef.current = socket
 
     socket.onopen = () => {
+      if (socketRef.current !== socket) return
       reconnectAttemptRef.current = 0
       setConnectionState('connected')
-      setStatusMessage(previous
-        ? (localeCode === 'zh_CN' ? '当前查看历史日志' : 'Viewing historical logs')
-        : (localeCode === 'zh_CN' ? '当前跟随实时日志' : 'Following live logs'))
     }
 
     socket.onmessage = (event) => {
+      if (socketRef.current !== socket) return
       const payload = JSON.parse(String(event.data)) as LogMessage
       if (payload.type === 'log') {
+        if (suppressClearedReplayRef.current && clearBoundaryRef.current.includes(payload.data || '')) {
+          return
+        }
+        suppressClearedReplayRef.current = false
         setLines((current) => appendLineWithDedupe(current, payload.data || ''))
         return
       }
       if (payload.type === 'status' || payload.type === 'exit') {
-        if (payload.message) {
-          setStatusMessage(payload.message)
-        }
         if (payload.type === 'exit') {
           setConnectionState('closed')
         }
@@ -270,13 +296,14 @@ export function PodLogViewer({
     }
 
     socket.onerror = () => {
+      if (socketRef.current !== socket) return
       setConnectionState('error')
-      setStatusMessage(t('podLogViewer.failed', 'Log stream connection failed'))
       startPollingSync()
       scheduleReconnect()
     }
 
     socket.onclose = () => {
+      if (socketRef.current !== socket) return
       setConnectionState((current) => current === 'error' ? 'error' : 'closed')
       startPollingSync()
       scheduleReconnect()
@@ -287,6 +314,8 @@ export function PodLogViewer({
     if (!clusterId || !namespace || !active) return
     setHistoryLines(DEFAULT_HISTORY_LINES)
     setLines([])
+    clearBoundaryRef.current = []
+    suppressClearedReplayRef.current = false
   }, [active, clusterId, container, namespace, podName, previous, sinceSeconds])
 
   useEffect(() => {
@@ -294,22 +323,19 @@ export function PodLogViewer({
     fetchSnapshot(historyLines)
       .then(() => {
         if (!previous) {
-          startPollingSync()
           connect()
         } else {
           disconnect()
           reconnectAttemptRef.current = 0
           setConnectionState('closed')
-          setStatusMessage(localeCode === 'zh_CN' ? '当前查看历史日志' : 'Viewing historical logs')
         }
       })
-      .catch((err) => {
+      .catch(() => {
         setConnectionState('error')
-        setStatusMessage(err instanceof Error ? err.message : t('podLogViewer.failed', 'Log stream connection failed'))
       })
 
     return () => disconnect()
-  }, [active, clusterId, connect, disconnect, fetchSnapshot, historyLines, localeCode, namespace, previous, startPollingSync, t])
+  }, [active, clusterId, connect, disconnect, fetchSnapshot, historyLines, namespace, previous])
 
   useEffect(() => {
     if (!restoreScrollRef.current || !scrollerRef.current) return
@@ -376,6 +402,20 @@ export function PodLogViewer({
     }
   }, [fetchSnapshot, historyLines, loadingOlder])
 
+  const handleClear = useCallback(() => {
+    clearBoundaryRef.current = previous ? [] : lines.slice(-CLEAR_BOUNDARY_LINES)
+    suppressClearedReplayRef.current = !previous && clearBoundaryRef.current.length > 0
+    setLines([])
+    restoreScrollRef.current = null
+    if (previous) {
+      return
+    }
+    reconnectAttemptRef.current = 0
+    disconnect()
+    setConnectionState('connecting')
+    connect()
+  }, [connect, disconnect, lines, previous])
+
   if (!clusterId || !namespace) {
     return <Empty description={t('podLogViewer.notReady', 'Select a valid cluster and namespace before opening live logs')} />
   }
@@ -385,9 +425,9 @@ export function PodLogViewer({
   }
 
   return (
-    <Card className="kc-detail-card">
-      <div className="kc-terminal-toolbar">
-        <Space>
+    <Card className="kc-detail-card kc-log-card">
+      <div className="kc-terminal-toolbar kc-log-toolbar">
+        <Space className="kc-log-toolbar-group kc-log-toolbar-meta">
           <Tag color={connectionState === 'connected' ? 'green' : connectionState === 'connecting' ? 'blue' : connectionState === 'error' ? 'red' : connectionState === 'closed' ? 'orange' : undefined}>
             {connectionState}
           </Tag>
@@ -396,9 +436,8 @@ export function PodLogViewer({
               ? (localeCode === 'zh_CN' ? '历史日志' : 'Historical logs')
               : (localeCode === 'zh_CN' ? '当前日志' : 'Current logs')}
           </Tag>
-          <Text type="secondary" style={{ fontSize: 12 }}>{statusMessage}</Text>
         </Space>
-        <Space>
+        <Space className="kc-log-toolbar-group kc-log-toolbar-actions">
           {containerOptions && containerOptions.length > 0 ? (
             <Select
               value={container || undefined}
@@ -435,7 +474,7 @@ export function PodLogViewer({
             <Text type="secondary" style={{ fontSize: 12 }}>{localeCode === 'zh_CN' ? '历史日志' : 'Historical logs'}</Text>
             <Switch checked={previous} onChange={(checked) => setPrevious(checked)} />
           </div>
-          <Button icon={<DeleteOutlined />} type="text" onClick={() => setLines([])}>{t('podLogViewer.clear', 'Clear')}</Button>
+          <Button icon={<DeleteOutlined />} type="text" onClick={handleClear}>{t('podLogViewer.clear', 'Clear')}</Button>
           <Button
             type="text"
             onClick={() => downloadText(

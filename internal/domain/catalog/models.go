@@ -73,26 +73,40 @@ type EnvironmentInput struct {
 }
 
 type ReleaseTarget struct {
-	ID                       string    `json:"id"`
-	ApplicationEnvironmentID string    `json:"applicationEnvironmentId"`
-	ClusterID                string    `json:"clusterId"`
-	Namespace                string    `json:"namespace"`
-	WorkloadKind             string    `json:"workloadKind"`
-	WorkloadName             string    `json:"workloadName"`
-	ContainerName            string    `json:"containerName,omitempty"`
-	Enabled                  bool      `json:"enabled"`
-	CreatedAt                time.Time `json:"createdAt"`
-	UpdatedAt                time.Time `json:"updatedAt"`
+	ID                       string         `json:"id"`
+	ApplicationEnvironmentID string         `json:"applicationEnvironmentId"`
+	ClusterID                string         `json:"clusterId"`
+	Namespace                string         `json:"namespace"`
+	TargetKind               string         `json:"targetKind,omitempty"`
+	ExecutorKind             string         `json:"executorKind,omitempty"`
+	GroupKey                 string         `json:"groupKey,omitempty"`
+	WaveKey                  string         `json:"waveKey,omitempty"`
+	RegionKey                string         `json:"regionKey,omitempty"`
+	ConfigRef                string         `json:"configRef,omitempty"`
+	WorkloadKind             string         `json:"workloadKind"`
+	WorkloadName             string         `json:"workloadName"`
+	ContainerName            string         `json:"containerName,omitempty"`
+	Metadata                 map[string]any `json:"metadata,omitempty"`
+	Enabled                  bool           `json:"enabled"`
+	CreatedAt                time.Time      `json:"createdAt"`
+	UpdatedAt                time.Time      `json:"updatedAt"`
 }
 
 type ReleaseTargetInput struct {
-	ID            string `json:"id"`
-	ClusterID     string `json:"clusterId"`
-	Namespace     string `json:"namespace"`
-	WorkloadKind  string `json:"workloadKind"`
-	WorkloadName  string `json:"workloadName"`
-	ContainerName string `json:"containerName,omitempty"`
-	Enabled       bool   `json:"enabled"`
+	ID            string         `json:"id"`
+	ClusterID     string         `json:"clusterId"`
+	Namespace     string         `json:"namespace"`
+	TargetKind    string         `json:"targetKind,omitempty"`
+	ExecutorKind  string         `json:"executorKind,omitempty"`
+	GroupKey      string         `json:"groupKey,omitempty"`
+	WaveKey       string         `json:"waveKey,omitempty"`
+	RegionKey     string         `json:"regionKey,omitempty"`
+	ConfigRef     string         `json:"configRef,omitempty"`
+	WorkloadKind  string         `json:"workloadKind"`
+	WorkloadName  string         `json:"workloadName"`
+	ContainerName string         `json:"containerName,omitempty"`
+	Metadata      map[string]any `json:"metadata,omitempty"`
+	Enabled       bool           `json:"enabled"`
 }
 
 type ApplicationEnvironment struct {
@@ -101,6 +115,10 @@ type ApplicationEnvironment struct {
 	BusinessLineID     string            `json:"businessLineId,omitempty"`
 	EnvironmentID      string            `json:"environmentId"`
 	EnvironmentKey     string            `json:"environmentKey,omitempty"`
+	StrategyProfileID  string            `json:"strategyProfileId,omitempty"`
+	PromotionPolicyID  string            `json:"promotionPolicyId,omitempty"`
+	ApprovalPolicyID   string            `json:"approvalPolicyId,omitempty"`
+	ArtifactPolicyID   string            `json:"artifactPolicyId,omitempty"`
 	WorkflowTemplateID string            `json:"workflowTemplateId,omitempty"`
 	WorkflowTemplate   *WorkflowTemplate `json:"workflowTemplate,omitempty"`
 	BuildPolicy        BuildPolicy       `json:"buildPolicy,omitempty"`
@@ -114,6 +132,10 @@ type ApplicationEnvironmentInput struct {
 	ID                 string               `json:"id"`
 	ApplicationID      string               `json:"applicationId"`
 	EnvironmentID      string               `json:"environmentId"`
+	StrategyProfileID  string               `json:"strategyProfileId,omitempty"`
+	PromotionPolicyID  string               `json:"promotionPolicyId,omitempty"`
+	ApprovalPolicyID   string               `json:"approvalPolicyId,omitempty"`
+	ArtifactPolicyID   string               `json:"artifactPolicyId,omitempty"`
 	WorkflowTemplateID string               `json:"workflowTemplateId,omitempty"`
 	BuildPolicy        BuildPolicy          `json:"buildPolicy,omitempty"`
 	ReleasePolicy      ReleasePolicy        `json:"releasePolicy,omitempty"`

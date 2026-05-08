@@ -12,10 +12,13 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	appaccess "github.com/kubecrux/kubecrux/internal/application/access"
+	execution "github.com/kubecrux/kubecrux/internal/application/execution"
 	domainaccess "github.com/kubecrux/kubecrux/internal/domain/access"
 	domainapp "github.com/kubecrux/kubecrux/internal/domain/application"
 	domainaudit "github.com/kubecrux/kubecrux/internal/domain/audit"
+	domaincatalog "github.com/kubecrux/kubecrux/internal/domain/catalog"
 	domaincluster "github.com/kubecrux/kubecrux/internal/domain/cluster"
+	domaindelivery "github.com/kubecrux/kubecrux/internal/domain/delivery"
 	domainevent "github.com/kubecrux/kubecrux/internal/domain/event"
 	domainidentity "github.com/kubecrux/kubecrux/internal/domain/identity"
 	domainoperation "github.com/kubecrux/kubecrux/internal/domain/operation"
@@ -38,12 +41,21 @@ type ApplicationReader interface {
 	Get(context.Context, string) (domainapp.App, error)
 }
 
+type BindingReader interface {
+	GetApplicationEnvironment(context.Context, string) (domaincatalog.ApplicationEnvironment, error)
+}
+
 type ConnectionResolver interface {
 	GetConnection(context.Context, string) (domaincluster.Connection, error)
 }
 
 type EventWriter interface {
 	Create(context.Context, domainevent.Envelope) error
+}
+
+type ExecutionPlane interface {
+	StartReleaseExecution(context.Context, execution.ReleasePlan) (domaindelivery.ReleaseBundle, domaindelivery.ExecutionTask, error)
+	CompleteReleaseExecution(context.Context, string, string, string, map[string]any) error
 }
 
 type AuditRecorder interface {
@@ -57,7 +69,9 @@ type OperationRecorder interface {
 type Service struct {
 	repo        ReleaseRepository
 	apps        ApplicationReader
+	bindings    BindingReader
 	resolver    ConnectionResolver
+	execution   ExecutionPlane
 	authorizer  domainaccess.Authorizer
 	permissions *appaccess.PermissionResolver
 	events      EventWriter
@@ -71,8 +85,8 @@ type releasePruner interface {
 	DeleteByIDs(context.Context, []string) error
 }
 
-func New(repo ReleaseRepository, apps ApplicationReader, resolver ConnectionResolver, authorizer domainaccess.Authorizer, permissions *appaccess.PermissionResolver, events EventWriter, audit AuditRecorder, operations OperationRecorder, clusters *k8sinfra.Manager, agents *agentinfra.Registry) *Service {
-	return &Service{repo: repo, apps: apps, resolver: resolver, authorizer: authorizer, permissions: permissions, events: events, audit: audit, operations: operations, clusters: clusters, agents: agents}
+func New(repo ReleaseRepository, apps ApplicationReader, bindings BindingReader, resolver ConnectionResolver, execution ExecutionPlane, authorizer domainaccess.Authorizer, permissions *appaccess.PermissionResolver, events EventWriter, audit AuditRecorder, operations OperationRecorder, clusters *k8sinfra.Manager, agents *agentinfra.Registry) *Service {
+	return &Service{repo: repo, apps: apps, bindings: bindings, resolver: resolver, execution: execution, authorizer: authorizer, permissions: permissions, events: events, audit: audit, operations: operations, clusters: clusters, agents: agents}
 }
 
 func (s *Service) List(ctx context.Context, principal domainidentity.Principal, filter domainrelease.Filter) ([]domainrelease.Record, error) {
@@ -145,17 +159,98 @@ func (s *Service) Trigger(ctx context.Context, principal domainidentity.Principa
 	if err != nil {
 		return domainrelease.Record{}, normalizeApplicationError(err)
 	}
+	target, targetErr := s.resolveTarget(ctx, input)
+	if targetErr != nil {
+		return domainrelease.Record{}, targetErr
+	}
 	connection, err := s.loadConnection(ctx, input.ClusterID)
 	if err != nil {
 		return domainrelease.Record{}, err
 	}
-	if err := s.authorize(ctx, principal, connection.Summary.ID, input.Namespace, "Deployment", input.DeploymentName, app.BusinessLineID, input.ApplicationID, domainaccess.ActionTrigger); err != nil {
+	resourceKind := "Deployment"
+	if strings.TrimSpace(target.WorkloadKind) != "" {
+		resourceKind = strings.TrimSpace(target.WorkloadKind)
+	}
+	if err := s.authorize(ctx, principal, connection.Summary.ID, input.Namespace, resourceKind, input.DeploymentName, app.BusinessLineID, input.ApplicationID, domainaccess.ActionTrigger); err != nil {
 		return domainrelease.Record{}, err
 	}
 
 	resolvedImage, err := resolveImage(app, input)
 	if err != nil {
 		return domainrelease.Record{}, err
+	}
+	bundleID := strings.TrimSpace(input.ReleaseBundleID)
+	taskID := ""
+	providerKind := resolveReleaseProviderKind(target)
+	targetKind := resolveReleaseTargetKind(target)
+	if s.execution != nil {
+		bundle, task, execErr := s.execution.StartReleaseExecution(ctx, execution.ReleasePlan{
+			ApplicationID:            app.ID,
+			ApplicationEnvironmentID: strings.TrimSpace(input.ApplicationEnvironmentID),
+			ReleaseBundleID:          bundleID,
+			Version:                  firstNonEmpty(strings.TrimSpace(input.ReleaseName), strings.TrimSpace(input.ImageTag)),
+			SourceType:               firstNonEmpty(strings.TrimSpace(input.ActionKind), "release"),
+			ProviderKind:             providerKind,
+			TargetKind:               targetKind,
+			ArtifactRef:              resolvedImage,
+			Metadata:                 buildReleaseExecutionMetadata(app, input, target, resolvedImage),
+		})
+		if execErr == nil {
+			bundleID = bundle.ID
+			taskID = task.ID
+		}
+	}
+	if !shouldApplyReleaseDirectly(target) {
+		now := time.Now().UTC()
+		record := domainrelease.Record{
+			ID:             fmt.Sprintf("release:%s:%d", input.ApplicationID, now.UnixNano()),
+			ApplicationID:  input.ApplicationID,
+			ClusterID:      connection.Summary.ID,
+			Namespace:      input.Namespace,
+			DeploymentName: strings.TrimSpace(input.DeploymentName),
+			Status:         "queued",
+			Metadata: map[string]any{
+				"applicationName":          app.Name,
+				"applicationEnvironmentId": strings.TrimSpace(input.ApplicationEnvironmentID),
+				"releaseBundleId":          bundleID,
+				"executionTaskId":          taskID,
+				"clusterId":                input.ClusterID,
+				"namespace":                input.Namespace,
+				"targetKind":               targetKind,
+				"executorKind":             providerKind,
+				"deploymentName":           input.DeploymentName,
+				"workloadKind":             target.WorkloadKind,
+				"workloadName":             target.WorkloadName,
+				"containerName":            input.ContainerName,
+				"releaseName":              input.ReleaseName,
+				"imageTag":                 strings.TrimSpace(input.ImageTag),
+				"image":                    resolvedImage,
+			},
+			CreatedAt: now,
+		}
+		record, err = s.repo.Create(ctx, record)
+		if err != nil {
+			return domainrelease.Record{}, err
+		}
+		if s.events != nil {
+			_ = s.events.Create(ctx, domainevent.Envelope{
+				ID:        "event:" + record.ID,
+				Source:    "release",
+				Category:  "release",
+				Severity:  "info",
+				ClusterID: record.ClusterID,
+				Namespace: record.Namespace,
+				Summary:   fmt.Sprintf("Queued %s release task for %s/%s", app.Name, record.ClusterID, record.Namespace),
+				Payload: map[string]any{
+					"releaseId":       record.ID,
+					"applicationId":   record.ApplicationID,
+					"executionTaskId": taskID,
+					"releaseBundleId": bundleID,
+				},
+			})
+		}
+		_ = s.recordAudit(ctx, principal, connection.Summary.ID, input.Namespace, input.DeploymentName, string(domainaccess.ActionTrigger), "success", "queued async release task", map[string]any{"image": resolvedImage})
+		return record, nil
 	}
 	containerName, previousImage, err := s.applyDeploymentImage(ctx, connection, input.Namespace, input.DeploymentName, input.ContainerName, resolvedImage)
 	status := "deployed"
@@ -172,13 +267,16 @@ func (s *Service) Trigger(ctx context.Context, principal domainidentity.Principa
 		DeploymentName: strings.TrimSpace(input.DeploymentName),
 		Status:         status,
 		Metadata: map[string]any{
-			"applicationName": app.Name,
-			"deploymentName":  input.DeploymentName,
-			"releaseName":     fallbackReleaseName(input.ReleaseName, input.DeploymentName),
-			"containerName":   containerName,
-			"previousImage":   previousImage,
-			"image":           resolvedImage,
-			"imageTag":        strings.TrimSpace(input.ImageTag),
+			"applicationName":          app.Name,
+			"applicationEnvironmentId": strings.TrimSpace(input.ApplicationEnvironmentID),
+			"releaseBundleId":          bundleID,
+			"executionTaskId":          taskID,
+			"deploymentName":           input.DeploymentName,
+			"releaseName":              fallbackReleaseName(input.ReleaseName, input.DeploymentName),
+			"containerName":            containerName,
+			"previousImage":            previousImage,
+			"image":                    resolvedImage,
+			"imageTag":                 strings.TrimSpace(input.ImageTag),
 		},
 		CreatedAt: now,
 	}
@@ -191,8 +289,22 @@ func (s *Service) Trigger(ctx context.Context, principal domainidentity.Principa
 	}
 
 	if err != nil {
+		if s.execution != nil && bundleID != "" && taskID != "" {
+			_ = s.execution.CompleteReleaseExecution(ctx, bundleID, taskID, "failed", map[string]any{"error": err.Error(), "image": resolvedImage})
+		}
 		_ = s.recordAudit(ctx, principal, connection.Summary.ID, input.Namespace, input.DeploymentName, string(domainaccess.ActionTrigger), "failure", err.Error(), map[string]any{"image": resolvedImage})
 		return domainrelease.Record{}, fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
+	}
+	if s.execution != nil && bundleID != "" && taskID != "" {
+		_ = s.execution.CompleteReleaseExecution(ctx, bundleID, taskID, "completed", map[string]any{
+			"image":          resolvedImage,
+			"previousImage":  previousImage,
+			"containerName":  containerName,
+			"clusterId":      connection.Summary.ID,
+			"namespace":      input.Namespace,
+			"deploymentName": input.DeploymentName,
+			"recordId":       record.ID,
+		})
 	}
 
 	if s.events != nil {
@@ -316,6 +428,262 @@ func fallbackReleaseName(value, deploymentName string) string {
 		return strings.TrimSpace(value)
 	}
 	return fmt.Sprintf("%s-%d", strings.TrimSpace(deploymentName), time.Now().UTC().Unix())
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
+}
+
+func resolveReleaseTargetKind(target domaincatalog.ReleaseTarget) string {
+	if strings.TrimSpace(target.TargetKind) == "" {
+		return "k8s_workload"
+	}
+	return strings.TrimSpace(target.TargetKind)
+}
+
+func resolveReleaseProviderKind(target domaincatalog.ReleaseTarget) string {
+	if strings.TrimSpace(target.ExecutorKind) == "" {
+		return "k8s_job_runner"
+	}
+	return strings.TrimSpace(target.ExecutorKind)
+}
+
+func shouldApplyReleaseDirectly(target domaincatalog.ReleaseTarget) bool {
+	return resolveReleaseTargetKind(target) == "k8s_workload" && resolveReleaseProviderKind(target) == "k8s_job_runner"
+}
+
+func buildReleaseExecutionMetadata(app domainapp.App, input domainrelease.TriggerInput, target domaincatalog.ReleaseTarget, image string) map[string]any {
+	metadata := map[string]any{
+		"clusterId":      input.ClusterID,
+		"namespace":      input.Namespace,
+		"targetKind":     resolveReleaseTargetKind(target),
+		"executorKind":   resolveReleaseProviderKind(target),
+		"deploymentName": input.DeploymentName,
+		"workloadKind":   target.WorkloadKind,
+		"workloadName":   target.WorkloadName,
+		"containerName":  input.ContainerName,
+		"releaseName":    input.ReleaseName,
+		"imageTag":       input.ImageTag,
+		"image":          image,
+	}
+	if len(target.Metadata) > 0 {
+		metadata["targetMetadata"] = target.Metadata
+	}
+	if workspace := buildReleaseExecutionWorkspace(app, input, target); len(workspace) > 0 {
+		metadata["workspace"] = workspace
+	}
+	metadata["runtime"] = buildReleaseExecutionRuntime(target)
+	commands := buildReleaseExecutionCommands(target, image)
+	if len(commands) > 0 {
+		metadata["commands"] = commands
+	}
+	return metadata
+}
+
+func buildReleaseExecutionRuntime(target domaincatalog.ReleaseTarget) map[string]any {
+	runtime := map[string]any{}
+	if value := strings.TrimSpace(fmt.Sprint(target.Metadata["runtimeImage"])); value != "" {
+		runtime["image"] = value
+	}
+	switch resolveReleaseTargetKind(target) {
+	case "helm_release":
+		if strings.TrimSpace(fmt.Sprint(runtime["image"])) == "" {
+			runtime["image"] = "alpine/helm:3.16.1"
+		}
+	case "kustomize_overlay", "k8s_workload":
+		if strings.TrimSpace(fmt.Sprint(runtime["image"])) == "" {
+			runtime["image"] = "bitnami/kubectl:1.31"
+		}
+	default:
+		if strings.TrimSpace(fmt.Sprint(runtime["image"])) == "" {
+			runtime["image"] = "alpine:3.20"
+		}
+	}
+	return runtime
+}
+
+func buildReleaseExecutionWorkspace(app domainapp.App, input domainrelease.TriggerInput, target domaincatalog.ReleaseTarget) map[string]any {
+	workspace := map[string]any{}
+	workspacePath := firstNonEmpty(
+		strings.TrimSpace(fmt.Sprint(target.Metadata["workspacePath"])),
+		strings.TrimSpace(fmt.Sprint(target.Metadata["workspace"])),
+		strings.TrimSpace(app.RepositoryPath),
+		strings.TrimSpace(app.Key),
+		strings.TrimSpace(app.ID),
+	)
+	if workspacePath != "" {
+		workspace["path"] = workspacePath
+	}
+	if commandDir := firstNonEmpty(
+		strings.TrimSpace(fmt.Sprint(target.Metadata["workingDir"])),
+		strings.TrimSpace(fmt.Sprint(target.Metadata["commandDir"])),
+	); commandDir != "" {
+		workspace["commandDir"] = commandDir
+	}
+	if artifactFiles := valueAsStringSlice(target.Metadata["artifactFiles"]); len(artifactFiles) > 0 {
+		workspace["artifactFiles"] = artifactFiles
+	}
+	checkoutEnabled := boolValue(target.Metadata["checkoutEnabled"], false)
+	checkout := map[string]any{
+		"enabled":        checkoutEnabled,
+		"repositoryPath": strings.TrimSpace(app.RepositoryPath),
+		"repositoryURL": firstNonEmpty(
+			strings.TrimSpace(fmt.Sprint(target.Metadata["repositoryURL"])),
+			strings.TrimSpace(fmt.Sprint(target.Metadata["repositoryUrl"])),
+			strings.TrimSpace(fmt.Sprint(app.Metadata["repositoryURL"])),
+			strings.TrimSpace(fmt.Sprint(app.Metadata["repositoryUrl"])),
+		),
+		"refType":       "branch",
+		"refName":       firstNonEmpty(strings.TrimSpace(app.DefaultBranch), "main"),
+		"defaultBranch": strings.TrimSpace(app.DefaultBranch),
+	}
+	if checkoutRaw, ok := target.Metadata["checkout"].(map[string]any); ok {
+		checkout["enabled"] = boolValue(checkoutRaw["enabled"], checkoutEnabled)
+		if value := strings.TrimSpace(fmt.Sprint(checkoutRaw["repositoryPath"])); value != "" {
+			checkout["repositoryPath"] = value
+		}
+		if value := firstNonEmpty(strings.TrimSpace(fmt.Sprint(checkoutRaw["repositoryURL"])), strings.TrimSpace(fmt.Sprint(checkoutRaw["repositoryUrl"]))); value != "" {
+			checkout["repositoryURL"] = value
+		}
+		if value := strings.TrimSpace(fmt.Sprint(checkoutRaw["refType"])); value != "" {
+			checkout["refType"] = value
+		}
+		if value := strings.TrimSpace(fmt.Sprint(checkoutRaw["refName"])); value != "" {
+			checkout["refName"] = value
+		}
+	}
+	if boolValue(checkout["enabled"], false) || strings.TrimSpace(fmt.Sprint(checkout["repositoryURL"])) != "" || strings.TrimSpace(fmt.Sprint(checkout["repositoryPath"])) != "" {
+		workspace["checkout"] = checkout
+	}
+	_ = input
+	return workspace
+}
+
+func buildReleaseExecutionCommands(target domaincatalog.ReleaseTarget, image string) []string {
+	if raw, ok := target.Metadata["commands"].([]any); ok && len(raw) > 0 {
+		items := make([]string, 0, len(raw))
+		for _, item := range raw {
+			value := strings.TrimSpace(fmt.Sprint(item))
+			if value != "" {
+				value = strings.ReplaceAll(value, "{{IMAGE_REF}}", image)
+				value = strings.ReplaceAll(value, "{{TARGET_NAME}}", target.WorkloadName)
+				value = strings.ReplaceAll(value, "{{CONFIG_REF}}", target.ConfigRef)
+				items = append(items, value)
+			}
+		}
+		return items
+	}
+	switch resolveReleaseTargetKind(target) {
+	case "host_service":
+		serviceName := strings.TrimSpace(target.WorkloadName)
+		if serviceName == "" {
+			serviceName = "service"
+		}
+		unit := strings.TrimSpace(fmt.Sprint(target.Metadata["serviceUnit"]))
+		if unit == "" {
+			unit = serviceName
+		}
+		return []string{
+			fmt.Sprintf("echo deploying %s with image %s", serviceName, image),
+			fmt.Sprintf("systemctl restart %s", unit),
+		}
+	case "helm_release":
+		releaseName := strings.TrimSpace(target.WorkloadName)
+		if releaseName == "" {
+			releaseName = "release"
+		}
+		chartRef := strings.TrimSpace(target.ConfigRef)
+		if chartRef == "" {
+			chartRef = "chart"
+		}
+		return []string{
+			fmt.Sprintf("helm upgrade --install %s %s --set image.repository=%s", releaseName, chartRef, image),
+		}
+	case "kustomize_overlay":
+		overlay := strings.TrimSpace(target.ConfigRef)
+		if overlay == "" {
+			overlay = "."
+		}
+		return []string{
+			fmt.Sprintf("kustomize build %s > /tmp/%s.yaml", overlay, strings.ReplaceAll(target.WorkloadName, "/", "-")),
+			fmt.Sprintf("kubectl apply -f /tmp/%s.yaml", strings.ReplaceAll(target.WorkloadName, "/", "-")),
+		}
+	default:
+		return nil
+	}
+}
+
+func valueAsStringSlice(raw any) []string {
+	switch value := raw.(type) {
+	case []string:
+		items := make([]string, 0, len(value))
+		for _, item := range value {
+			if trimmed := strings.TrimSpace(item); trimmed != "" {
+				items = append(items, trimmed)
+			}
+		}
+		return items
+	case []any:
+		items := make([]string, 0, len(value))
+		for _, item := range value {
+			if trimmed := strings.TrimSpace(fmt.Sprint(item)); trimmed != "" {
+				items = append(items, trimmed)
+			}
+		}
+		return items
+	default:
+		return nil
+	}
+}
+
+func boolValue(raw any, fallback bool) bool {
+	switch value := raw.(type) {
+	case bool:
+		return value
+	case string:
+		switch strings.TrimSpace(strings.ToLower(value)) {
+		case "true", "1", "yes", "y", "on":
+			return true
+		case "false", "0", "no", "n", "off":
+			return false
+		default:
+			return fallback
+		}
+	default:
+		return fallback
+	}
+}
+
+func (s *Service) resolveTarget(ctx context.Context, input domainrelease.TriggerInput) (domaincatalog.ReleaseTarget, error) {
+	if strings.TrimSpace(input.ApplicationEnvironmentID) == "" {
+		return domaincatalog.ReleaseTarget{TargetKind: "k8s_workload", ExecutorKind: "k8s_job_runner", WorkloadKind: "Deployment", WorkloadName: input.DeploymentName}, nil
+	}
+	if s.bindings == nil {
+		return domaincatalog.ReleaseTarget{}, fmt.Errorf("%w: application environment binding reader is not configured", apperrors.ErrInvalidArgument)
+	}
+	binding, err := s.bindings.GetApplicationEnvironment(ctx, strings.TrimSpace(input.ApplicationEnvironmentID))
+	if err != nil {
+		return domaincatalog.ReleaseTarget{}, fmt.Errorf("%w: application environment binding not found", apperrors.ErrInvalidArgument)
+	}
+	for _, target := range binding.Targets {
+		if !target.Enabled {
+			continue
+		}
+		if target.ClusterID == strings.TrimSpace(input.ClusterID) &&
+			target.Namespace == strings.TrimSpace(input.Namespace) &&
+			target.WorkloadName == strings.TrimSpace(input.DeploymentName) {
+			return target, nil
+		}
+	}
+	if len(binding.Targets) > 0 {
+		return binding.Targets[0], nil
+	}
+	return domaincatalog.ReleaseTarget{}, fmt.Errorf("%w: no enabled target is configured for application environment", apperrors.ErrInvalidArgument)
 }
 
 func (s *Service) agentClient(connection domaincluster.Connection) (*agentinfra.Client, error) {

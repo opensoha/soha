@@ -28,6 +28,12 @@ func permissionRuleForMenu(item domainmenu.Record) (visibilityRule, bool) {
 		return visibilityRule{permissions: []string{appaccess.PermDeliveryApplicationsView}}, true
 	case item.ID == "build-templates":
 		return visibilityRule{permissions: []string{appaccess.PermDeliveryBuildTemplatesView}}, true
+	case item.ID == "release-bundles":
+		return visibilityRule{permissions: []string{appaccess.PermDeliveryReleaseBundlesView}}, true
+	case item.ID == "execution-tasks":
+		return visibilityRule{permissions: []string{appaccess.PermDeliveryExecutionTasksView}}, true
+	case item.ID == "approval-policies":
+		return visibilityRule{permissions: []string{appaccess.PermDeliveryApprovalPoliciesView}}, true
 	case item.ID == "workflow-templates":
 		return visibilityRule{permissions: []string{appaccess.PermDeliveryWorkflowTemplatesView}}, true
 	case item.ID == "release-board":
@@ -47,19 +53,25 @@ func permissionRuleForMenu(item domainmenu.Record) (visibilityRule, bool) {
 	case item.ID == "observability":
 		return visibilityRule{permissions: []string{
 			appaccess.PermObserveMonitoringView,
+			appaccess.PermObserveAlertRulesView,
 			appaccess.PermObserveAlertsView,
 			appaccess.PermObserveNotificationsView,
 			appaccess.PermObserveOncallView,
+			appaccess.PermObserveHealingView,
 			appaccess.PermObserveEventsView,
 		}}, true
 	case item.ID == "monitoring":
 		return visibilityRule{permissions: []string{appaccess.PermObserveMonitoringView}}, true
 	case item.ID == "alerts":
 		return visibilityRule{permissions: []string{appaccess.PermObserveAlertsView}}, true
+	case item.ID == "rules":
+		return visibilityRule{permissions: []string{appaccess.PermObserveAlertRulesView}}, true
 	case item.ID == "notifications":
 		return visibilityRule{permissions: []string{appaccess.PermObserveNotificationsView}}, true
 	case item.ID == "oncall":
 		return visibilityRule{permissions: []string{appaccess.PermObserveOncallView}}, true
+	case item.ID == "healing":
+		return visibilityRule{permissions: []string{appaccess.PermObserveHealingView}}, true
 	case item.ID == "events":
 		return visibilityRule{permissions: []string{appaccess.PermObserveEventsView}}, true
 	case item.ID == "assistant":

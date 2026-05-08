@@ -13,13 +13,17 @@ import { api } from '@/services/api-client'
 import { formatDateTime } from '@/utils/time'
 import { tableColumnPresets } from '@/utils/table-columns'
 import type {
+  ApprovalPolicy,
   ApiResponse,
   BuildSource,
   BuildTemplate,
   BusinessLine,
   DeliveryApplication,
   DeliveryApplicationDetail,
+  ExecutionArtifact,
+  ExecutionTask,
   ReleaseBoardEntry,
+  ReleaseBundle,
   WorkflowRun,
 } from '@/types'
 
@@ -98,6 +102,14 @@ function buildStatus(entry?: ReleaseBoardEntry) {
   if (entry?.latestWorkflow?.status) return entry.latestWorkflow.status
   if (entry?.latestBuild?.status) return entry.latestBuild.status
   return 'unknown'
+}
+
+function canCancelExecutionTask(task?: ExecutionTask | null) {
+  return task ? ['queued', 'dispatching', 'running'].includes(task.status) : false
+}
+
+function canRetryExecutionTask(task?: ExecutionTask | null) {
+  return task ? ['failed', 'callback_timeout', 'canceled'].includes(task.status) : false
 }
 
 export function ApplicationsPage() {
@@ -252,6 +264,8 @@ export function ApplicationsPage() {
                     />
                     <Input value={item.buildImage} placeholder="镜像地址" onChange={(event) => setBuildSources((current) => current.map((source, currentIndex) => currentIndex === index ? { ...source, buildImage: event.target.value } : source))} />
                     <Input value={item.defaultTag} placeholder="默认 Tag" onChange={(event) => setBuildSources((current) => current.map((source, currentIndex) => currentIndex === index ? { ...source, defaultTag: event.target.value } : source))} />
+                    <Input value={String(item.config?.workspacePath ?? '')} placeholder="Agent Workspace Path (可选)" onChange={(event) => setBuildSources((current) => current.map((source, currentIndex) => currentIndex === index ? { ...source, config: { ...source.config, workspacePath: event.target.value } } : source))} />
+                    <Input value={String(item.config?.repositoryURL ?? item.config?.repositoryUrl ?? '')} placeholder="Repository URL (可选)" onChange={(event) => setBuildSources((current) => current.map((source, currentIndex) => currentIndex === index ? { ...source, config: { ...source.config, repositoryURL: event.target.value } } : source))} />
                     {item.type === 'repo_dockerfile' ? (
                       <>
                         <Input value={String(item.config?.contextDir ?? '.')} placeholder="构建上下文目录" onChange={(event) => setBuildSources((current) => current.map((source, currentIndex) => currentIndex === index ? { ...source, config: { ...source.config, contextDir: event.target.value } } : source))} />
@@ -367,6 +381,8 @@ export function ApplicationDetailPage() {
             { title: '构建来源', dataIndex: 'buildSource', render: (value: BuildSource | undefined) => summarizeBuildSource(value) },
             { title: '目标数', dataIndex: 'targetCount' },
             { title: '审批', dataIndex: 'requiresApproval', render: (value: boolean) => <BooleanTag value={value} /> },
+            { title: 'Bundle', dataIndex: 'latestBundle', render: (value: ApplicationBindingRow['latestBundle']) => <StatusTag value={value?.status || 'unknown'} /> },
+            { title: 'Task', dataIndex: 'latestExecutionTask', render: (value: ApplicationBindingRow['latestExecutionTask']) => <StatusTag value={value?.status || 'unknown'} /> },
             { title: 'Workflow', dataIndex: 'latestWorkflow', render: (value: WorkflowRun | undefined) => <StatusTag value={value?.status || 'unknown'} /> },
             { title: 'Release', dataIndex: 'latestRelease', render: (value: ApplicationBindingRow['latestRelease']) => <StatusTag value={value?.status || 'unknown'} /> },
             { ...tableColumnPresets.action, title: '操作', dataIndex: 'applicationEnvironmentId', render: (_: unknown, record: ApplicationBindingRow) => <Button type="link" onClick={() => navigate(`/application-environments/${record.applicationEnvironmentId}`)}>查看绑定</Button> },
@@ -546,6 +562,279 @@ export function WorkflowsPage() {
     <div className="kc-page">
       <PageHeader title={t('page.delivery.workflows.title', 'Workflows')} description={t('page.delivery.workflows.desc', 'Inspect automation flow records, trigger methods, and recent execution state.')} />
       <AdminTable columns={columns} dataSource={workflowsQuery.data?.data ?? []} rowKey="id" loading={workflowsQuery.isLoading} />
+    </div>
+  )
+}
+
+export function ReleaseBundlesPage() {
+  const bundlesQuery = useQuery({
+    queryKey: ['release-bundles'],
+    queryFn: () => api.get<ApiResponse<ReleaseBundle[]>>('/delivery/release-bundles'),
+  })
+
+  return (
+    <div className="kc-page">
+      <PageHeader title="版本包" description="查看不可变交付版本包、制品引用和当前状态。" />
+      <AdminTable
+        rowKey="id"
+        loading={bundlesQuery.isLoading}
+        dataSource={bundlesQuery.data?.data ?? []}
+        columns={[
+          { title: 'Version', dataIndex: 'version' },
+          { title: 'Application', dataIndex: 'applicationId' },
+          { title: 'Environment Binding', dataIndex: 'applicationEnvironmentId', render: (value: string) => value || '-' },
+          { title: 'Source', dataIndex: 'sourceType' },
+          { title: 'Artifact', dataIndex: 'artifactRef', render: (value: string) => value || '-' },
+          { title: 'Digest', dataIndex: 'artifactDigest', render: (value: string) => value || '-' },
+          { title: 'Status', dataIndex: 'status', render: (value: string) => <StatusTag value={value} /> },
+          { ...tableColumnPresets.datetime, title: 'Updated', dataIndex: 'updatedAt', render: (value: string) => formatDateTime(value) },
+        ]}
+      />
+    </div>
+  )
+}
+
+export function ExecutionTasksPage() {
+  const { message } = App.useApp()
+  const permissionSnapshotQuery = usePermissionSnapshot()
+  const canManage = hasPermission(permissionSnapshotQuery.data?.data, 'delivery.execution-tasks.manage')
+  const [selectedTask, setSelectedTask] = useState<ExecutionTask | null>(null)
+  const tasksQuery = useQuery({
+    queryKey: ['execution-tasks'],
+    queryFn: () => api.get<ApiResponse<ExecutionTask[]>>('/delivery/execution-tasks'),
+    refetchInterval: 5000,
+  })
+  const logsQuery = useQuery({
+    queryKey: ['execution-task-logs', selectedTask?.id],
+    queryFn: () => api.get<ApiResponse<Array<{ id: string; logLevel: string; message: string; createdAt: string }>>>(`/delivery/execution-tasks/${selectedTask!.id}/logs`),
+    enabled: !!selectedTask?.id,
+    refetchInterval: selectedTask?.id ? 5000 : false,
+  })
+  const callbackMutation = useMutation({
+    mutationFn: (task: ExecutionTask) => api.post('/delivery/execution-callbacks', {
+      callbackToken: task.callbackToken,
+      status: 'completed',
+      payload: {
+        logs: [`manual callback for ${task.id}`],
+      },
+    }),
+    onSuccess: () => {
+      message.success('回调已记录')
+      tasksQuery.refetch()
+      if (selectedTask?.id) {
+        logsQuery.refetch()
+      }
+    },
+    onError: (err: Error) => message.error(err.message),
+  })
+  const cancelMutation = useMutation({
+    mutationFn: (task: ExecutionTask) => api.post(`/delivery/execution-tasks/${task.id}/cancel`, {
+      reason: 'Canceled from execution tasks console',
+    }),
+    onSuccess: () => {
+      message.success('任务已取消')
+      tasksQuery.refetch()
+      if (selectedTask?.id) {
+        logsQuery.refetch()
+      }
+    },
+    onError: (err: Error) => message.error(err.message),
+  })
+  const retryMutation = useMutation({
+    mutationFn: (task: ExecutionTask) => api.post(`/delivery/execution-tasks/${task.id}/retry`, {
+      reason: 'Retried from execution tasks console',
+    }),
+    onSuccess: () => {
+      message.success('任务已重新入队')
+      tasksQuery.refetch()
+      if (selectedTask?.id) {
+        logsQuery.refetch()
+      }
+    },
+    onError: (err: Error) => message.error(err.message),
+  })
+
+  return (
+    <div className="kc-page">
+      <PageHeader title="执行任务" description="查看执行平面任务、provider 状态和任务日志。" />
+      <AdminTable
+        rowKey="id"
+        loading={tasksQuery.isLoading}
+        dataSource={tasksQuery.data?.data ?? []}
+        columns={[
+          { title: 'Task', dataIndex: 'taskKind' },
+          { title: 'Provider', dataIndex: 'providerKind' },
+          { title: 'Target', dataIndex: 'targetKind' },
+          { title: 'Application', dataIndex: 'applicationId' },
+          { title: 'Bundle', dataIndex: 'releaseBundleId', render: (value: string) => value || '-' },
+          { title: 'Artifacts', dataIndex: 'artifacts', render: (value?: ExecutionArtifact[]) => value?.length ?? 0 },
+          { title: 'Status', dataIndex: 'status', render: (value: string) => <StatusTag value={value} /> },
+          { title: 'Retries', dataIndex: 'attemptCount', render: (value: number, record: ExecutionTask) => `${value}/${record.maxRetries}` },
+          { title: 'Timeout(s)', dataIndex: 'timeoutSeconds' },
+          { ...tableColumnPresets.datetime, title: 'Heartbeat', dataIndex: 'lastHeartbeatAt', render: (value?: string) => value ? formatDateTime(value) : '-' },
+          { ...tableColumnPresets.datetime, title: 'Updated', dataIndex: 'updatedAt', render: (value: string) => formatDateTime(value) },
+          {
+            ...tableColumnPresets.action,
+            title: '操作',
+            dataIndex: 'id',
+            render: (_: unknown, record: ExecutionTask) => (
+              <Space>
+                <Button type="link" size="small" onClick={() => setSelectedTask(record)}>日志</Button>
+                {canManage && canCancelExecutionTask(record) ? (
+                  <Popconfirm title="确认取消该任务？" onConfirm={() => cancelMutation.mutate(record)}>
+                    <Button type="link" size="small" danger>取消</Button>
+                  </Popconfirm>
+                ) : null}
+                {canManage && canRetryExecutionTask(record) ? (
+                  <Button type="link" size="small" onClick={() => retryMutation.mutate(record)}>重试</Button>
+                ) : null}
+                {canManage && record.providerKind !== 'k8s_job_runner' && record.callbackToken ? <Button type="link" size="small" onClick={() => callbackMutation.mutate(record)}>模拟回调</Button> : null}
+              </Space>
+            ),
+          },
+        ]}
+      />
+      <Modal
+        title={selectedTask ? `任务日志 · ${selectedTask.id}` : '任务日志'}
+        open={!!selectedTask}
+        onCancel={() => setSelectedTask(null)}
+        footer={null}
+        width={920}
+        destroyOnClose
+      >
+        <Descriptions
+          items={selectedTask ? [
+            { key: 'provider', label: 'Provider', children: selectedTask.providerKind },
+            { key: 'status', label: 'Status', children: <StatusTag value={selectedTask.status} /> },
+            { key: 'bundle', label: 'Bundle', children: selectedTask.releaseBundleId || '-' },
+            { key: 'heartbeat', label: 'Last Heartbeat', children: selectedTask.lastHeartbeatAt ? formatDateTime(selectedTask.lastHeartbeatAt) : '-' },
+            { key: 'callback', label: 'Callback Token', children: selectedTask.callbackToken || '-' },
+          ] : []}
+        />
+        {canManage && selectedTask ? (
+          <Space style={{ marginBottom: 12 }}>
+            {canCancelExecutionTask(selectedTask) ? <Button danger onClick={() => cancelMutation.mutate(selectedTask)} loading={cancelMutation.isPending}>取消任务</Button> : null}
+            {canRetryExecutionTask(selectedTask) ? <Button onClick={() => retryMutation.mutate(selectedTask)} loading={retryMutation.isPending}>重新入队</Button> : null}
+          </Space>
+        ) : null}
+        <Card size="small" title="Execution Logs">
+          <pre className="kc-json-block">
+            {logsQuery.data?.data?.map((item) => `[${item.createdAt}] ${item.logLevel.toUpperCase()} ${item.message}`).join('\n') || 'No logs'}
+          </pre>
+        </Card>
+        <Card size="small" title="Artifacts">
+          <pre className="kc-json-block">{JSON.stringify(selectedTask?.artifacts ?? [], null, 2)}</pre>
+        </Card>
+        <Card size="small" title="Result">
+          <pre className="kc-json-block">{JSON.stringify(selectedTask?.result ?? {}, null, 2)}</pre>
+        </Card>
+      </Modal>
+    </div>
+  )
+}
+
+export function ApprovalPoliciesPage() {
+  const { message } = App.useApp()
+  const queryClient = useQueryClient()
+  const permissionSnapshotQuery = usePermissionSnapshot()
+  const canManage = hasPermission(permissionSnapshotQuery.data?.data, 'delivery.approval-policies.manage')
+  const [form] = Form.useForm<Record<string, unknown>>()
+  const [modalVisible, setModalVisible] = useState(false)
+  const [editing, setEditing] = useState<ApprovalPolicy | null>(null)
+
+  const policiesQuery = useQuery({
+    queryKey: ['approval-policies'],
+    queryFn: () => api.get<ApiResponse<ApprovalPolicy[]>>('/delivery/approval-policies'),
+  })
+
+  const createMutation = useMutation({
+    mutationFn: (values: Record<string, unknown>) => api.post('/delivery/approval-policies', values),
+    onSuccess: () => {
+      message.success('审批策略创建成功')
+      queryClient.invalidateQueries({ queryKey: ['approval-policies'] })
+      setModalVisible(false)
+    },
+    onError: (err: Error) => message.error(err.message),
+  })
+  const updateMutation = useMutation({
+    mutationFn: ({ id, values }: { id: string; values: Record<string, unknown> }) => api.put(`/delivery/approval-policies/${id}`, values),
+    onSuccess: () => {
+      message.success('审批策略更新成功')
+      queryClient.invalidateQueries({ queryKey: ['approval-policies'] })
+      setModalVisible(false)
+      setEditing(null)
+    },
+    onError: (err: Error) => message.error(err.message),
+  })
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => api.delete(`/delivery/approval-policies/${id}`),
+    onSuccess: () => {
+      message.success('审批策略已删除')
+      queryClient.invalidateQueries({ queryKey: ['approval-policies'] })
+    },
+    onError: (err: Error) => message.error(err.message),
+  })
+
+  return (
+    <div className="kc-page">
+      <PageHeader title="审批策略" description="维护 delivery 审批策略、会签模式和 SLA。" actions={canManage ? <Button icon={<PlusOutlined />} type="primary" onClick={() => { setEditing(null); setModalVisible(true) }}>新建策略</Button> : null} />
+      <AdminTable
+        rowKey="id"
+        loading={policiesQuery.isLoading}
+        dataSource={policiesQuery.data?.data ?? []}
+        columns={[
+          { title: '名称', dataIndex: 'name' },
+          { title: 'Key', dataIndex: 'key' },
+          { title: '模式', dataIndex: 'mode', render: (value: string) => value || 'single' },
+          { title: '审批数', dataIndex: 'requiredApprovals' },
+          { title: 'SLA(min)', dataIndex: 'slaMinutes' },
+          { title: '角色', dataIndex: 'approverRoles', render: (value: string[]) => value?.join(', ') || '-' },
+          { title: '启用', dataIndex: 'enabled', render: (value: boolean) => <BooleanTag value={value} /> },
+          { ...tableColumnPresets.action, title: '操作', dataIndex: 'id', render: (_: unknown, record: ApprovalPolicy) => <Space>{canManage ? <Button icon={<EditOutlined />} size="small" type="text" onClick={() => { setEditing(record); setModalVisible(true) }} /> : null}{canManage ? <Popconfirm title="确认删除？" onConfirm={() => deleteMutation.mutate(record.id)}><Button icon={<DeleteOutlined />} size="small" type="text" danger /></Popconfirm> : null}</Space> },
+        ]}
+      />
+      <Modal title={editing ? '编辑审批策略' : '新建审批策略'} open={modalVisible} onCancel={() => { setModalVisible(false); setEditing(null) }} footer={null} destroyOnClose width={860}>
+        <Form
+          form={form}
+          key={editing?.id ?? 'approval-policy'}
+          layout="vertical"
+          initialValues={editing ? { ...editing, approverRolesText: (editing.approverRoles ?? []).join(', '), changeWindowText: JSON.stringify(editing.changeWindow ?? {}, null, 2), metadataText: JSON.stringify(editing.metadata ?? {}, null, 2) } : { enabled: true, mode: 'single', requiredApprovals: 1, slaMinutes: 60, changeWindowText: '{}', metadataText: '{}' }}
+          onFinish={(values) => {
+            let payload: Record<string, unknown>
+            try {
+              payload = {
+                ...values,
+                approverRoles: String(values.approverRolesText || '').split(',').map((item) => item.trim()).filter(Boolean),
+                changeWindow: parseJSONObject(values.changeWindowText, 'Change Window'),
+                metadata: parseJSONObject(values.metadataText, 'Metadata'),
+              }
+            } catch (err) {
+              message.error((err as Error).message)
+              return
+            }
+            if (editing) {
+              updateMutation.mutate({ id: editing.id, values: payload })
+            } else {
+              createMutation.mutate(payload)
+            }
+          }}
+        >
+          <Form.Item name="key" label="策略 Key" rules={[{ required: true, message: '请输入策略 Key' }]}><Input /></Form.Item>
+          <Form.Item name="name" label="策略名称" rules={[{ required: true, message: '请输入策略名称' }]}><Input /></Form.Item>
+          <Form.Item name="description" label="描述"><Input /></Form.Item>
+          <Form.Item name="mode" label="模式"><Select options={[{ value: 'single', label: 'single' }, { value: 'multi', label: 'multi' }, { value: 'all', label: 'all' }]} /></Form.Item>
+          <Form.Item name="requiredApprovals" label="需要审批数"><Input type="number" /></Form.Item>
+          <Form.Item name="slaMinutes" label="SLA(分钟)"><Input type="number" /></Form.Item>
+          <Form.Item name="approverRolesText" label="审批角色"><Input placeholder="release-manager, ops-lead" /></Form.Item>
+          <Form.Item name="changeWindowText" label="变更窗口(JSON)"><Input.TextArea rows={5} /></Form.Item>
+          <Form.Item name="metadataText" label="Metadata(JSON)"><Input.TextArea rows={5} /></Form.Item>
+          <Form.Item name="enabled" label="启用" valuePropName="checked"><Switch /></Form.Item>
+          <div className="kc-form-actions">
+            <Button onClick={() => setModalVisible(false)}>取消</Button>
+            <Button htmlType="submit" type="primary" loading={createMutation.isPending || updateMutation.isPending}>保存</Button>
+          </div>
+        </Form>
+      </Modal>
     </div>
   )
 }

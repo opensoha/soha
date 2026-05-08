@@ -1,12 +1,13 @@
-import { useState } from 'react'
-import { App, Button, Empty, Input, InputNumber, Modal, Progress, Select, Space, Tag, Tooltip, Typography } from 'antd'
-import { DeleteOutlined, PlusOutlined } from '@ant-design/icons'
+import { useDeferredValue, useMemo, useState } from 'react'
+import { Alert, App, Button, Empty, Input, InputNumber, Modal, Popover, Progress, Select, Space, Tag, Tooltip, Typography } from 'antd'
+import { DeleteOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { AdminTable } from '@/components/admin-table'
 import { useResourceActions } from '@/components/resource-actions'
 import { BooleanTag } from '@/components/status-tag'
 import { PageHeader } from '@/components/page-header'
+import { hasAllowedAction } from '@/features/auth/permission-snapshot'
 import { PlatformScopeToolbar } from '@/components/platform-scope-toolbar'
 import { buildClusterScopedPath } from '@/features/platform/platform-scope-query'
 import {
@@ -19,7 +20,7 @@ import { api } from '@/services/api-client'
 import { usePlatformScopeStore } from '@/stores/platform-scope-store'
 import { formatAgeSeconds, formatDateTime } from '@/utils/time'
 import { tableColumnPresets } from '@/utils/table-columns'
-import type { ApiResponse } from '@/types'
+import type { ApiResponse, Cluster } from '@/types'
 import type { TableColumnsType } from 'antd'
 
 const { Text } = Typography
@@ -31,6 +32,59 @@ interface LocalizedCopy {
   en_US: string
   zh_CN: string
 }
+
+const SERVICE_ACCOUNT_DEFAULT_TEMPLATE = `apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: example-service-account
+`
+
+const ROLE_DEFAULT_TEMPLATE = `apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: example-role
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+`
+
+const ROLE_BINDING_DEFAULT_TEMPLATE = `apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: example-rolebinding
+subjects:
+  - kind: ServiceAccount
+    name: example-service-account
+    namespace: default
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: example-role
+`
+
+const CLUSTER_ROLE_DEFAULT_TEMPLATE = `apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: example-cluster-role
+rules:
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["get", "list"]
+`
+
+const CLUSTER_ROLE_BINDING_DEFAULT_TEMPLATE = `apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: example-cluster-rolebinding
+subjects:
+  - kind: User
+    name: example-user
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: example-cluster-role
+`
 
 interface ConfigMapResource {
   ageSeconds: number
@@ -57,6 +111,7 @@ interface ServiceAccountResource {
   name: string
   namespace: string
   secrets: number
+  allowedActions?: string[]
 }
 
 interface RoleResource {
@@ -64,6 +119,7 @@ interface RoleResource {
   name: string
   namespace: string
   rules: number
+  allowedActions?: string[]
 }
 
 interface RoleBindingResource {
@@ -72,6 +128,7 @@ interface RoleBindingResource {
   namespace: string
   roleRef: string
   subjects?: string[]
+  allowedActions?: string[]
 }
 
 interface ReplicaSetResource {
@@ -151,6 +208,7 @@ interface ClusterRoleResource {
   aggregationRules: number
   name: string
   rules: number
+  allowedActions?: string[]
 }
 
 interface ClusterRoleBindingResource {
@@ -158,6 +216,7 @@ interface ClusterRoleBindingResource {
   name: string
   roleRef: string
   subjects?: string[]
+  allowedActions?: string[]
 }
 
 interface MutatingWebhookConfigurationResource {
@@ -230,6 +289,110 @@ function buildInspectDescription(resourceZh: string, resourceEn: string): Locali
     zh_CN: `查看当前 cluster / namespace scope 下的 ${resourceZh} 资源和后续操作入口。`,
     en_US: `Inspect ${resourceEn} resources and follow-up operations in the current cluster and namespace scope.`,
   }
+}
+
+function normalizeSearchKeyword(value: string) {
+  return value.trim().toLowerCase()
+}
+
+function includesSearch(values: Array<string | undefined | null>, keyword: string) {
+  if (!keyword) return true
+  return values.some((value) => (value ?? '').toLowerCase().includes(keyword))
+}
+
+function roleRefTag(value?: string) {
+  if (!value) {
+    return <Text type="secondary">-</Text>
+  }
+  return <Text code className="kc-rbac-role-ref">{value}</Text>
+}
+
+interface RBACSubjectSummary {
+  kind: string
+  label: string
+  namespace?: string
+  name: string
+}
+
+function parseRBACSubject(value: string): RBACSubjectSummary {
+  const normalized = value.trim()
+  const [kindPart, remainder = ''] = normalized.split(':', 2)
+  const kind = kindPart || 'Subject'
+  const parts = remainder.split('/').filter(Boolean)
+  if (parts.length >= 2) {
+    const namespace = parts[0]
+    const name = parts.slice(1).join('/')
+    return {
+      kind,
+      namespace,
+      name,
+      label: `${kind} ${namespace}/${name}`,
+    }
+  }
+  const name = remainder || normalized
+  return {
+    kind,
+    name,
+    label: `${kind} ${name}`.trim(),
+  }
+}
+
+function renderRBACSubjectChips(subjects: string[] | undefined, emptyLabel: string) {
+  if (!subjects || subjects.length === 0) {
+    return <Text type="secondary">{emptyLabel}</Text>
+  }
+
+  const preview = subjects.slice(0, 2).map(parseRBACSubject)
+  const overflow = subjects.slice(2).map(parseRBACSubject)
+
+  return (
+    <div className="kc-rbac-subject-list">
+      {preview.map((subject) => (
+        <Tag key={subject.label} className="kc-rbac-subject-chip">
+          {subject.label}
+        </Tag>
+      ))}
+      {overflow.length > 0 ? (
+        <Popover
+          placement="topLeft"
+          content={(
+            <div className="kc-rbac-subject-popover">
+              {overflow.map((subject) => (
+                <Tag key={subject.label} className="kc-rbac-subject-chip">
+                  {subject.label}
+                </Tag>
+              ))}
+            </div>
+          )}
+        >
+          <Tag className="kc-rbac-subject-chip">{`+${overflow.length}`}</Tag>
+        </Popover>
+      ) : null}
+    </div>
+  )
+}
+
+interface RBACActionConfig<T extends Record<string, any>> {
+  resourceKind: string
+  getName: (record: T) => string
+  getNamespace?: (record: T) => string | undefined
+  canDelete?: (record: T) => boolean
+}
+
+interface RBACCreateConfig {
+  defaultTemplate: string
+  kind: string
+  namespaceScope?: 'cluster' | 'required'
+}
+
+function useRBACActionColumn<T extends Record<string, any>>(resourcePath: string, actionConfig?: RBACActionConfig<T>) {
+  return useResourceActions<T>({
+    resourcePath,
+    resourceKind: actionConfig?.resourceKind ?? 'Resource',
+    getName: actionConfig?.getName ?? (() => ''),
+    getNamespace: actionConfig?.getNamespace,
+    canDelete: actionConfig?.canDelete,
+  })
 }
 
 function useScopedResourceQuery<T>(resourcePath: string) {
@@ -339,10 +502,199 @@ function buildNamespaceQuery(namespace: string | undefined | null) {
   return `?namespace=${encodeURIComponent(namespace)}`
 }
 
+function buildRBACDetailPath(resourcePath: string, name: string, namespace?: string | null) {
+  const base = `/platform-access-control/${resourcePath}/${encodeURIComponent(name)}`
+  const query = buildNamespaceQuery(namespace)
+  return query ? `${base}${query}` : base
+}
+
 function ResourceNameLink({ to, name }: { to: string; name: string }) {
   const navigate = useNavigate()
   return (
     <Button type="text" onClick={() => navigate(to)}>{name}</Button>
+  )
+}
+
+function buildRBACInspectDescription(title: LocalizedCopy): LocalizedCopy {
+  return {
+    zh_CN: `按当前集群与命名空间范围审查 ${title.zh_CN} 资源关系。`,
+    en_US: `Review ${title.en_US} relationships in the current cluster and namespace scope.`,
+  }
+}
+
+function buildRBACSearchPlaceholder(title: LocalizedCopy): LocalizedCopy {
+  return {
+    zh_CN: `搜索 ${title.zh_CN}`,
+    en_US: `Search ${title.en_US}`,
+  }
+}
+
+function buildRBACSearchEmptyDescription(title: LocalizedCopy): LocalizedCopy {
+  return {
+    zh_CN: `没有匹配的 ${title.zh_CN}`,
+    en_US: `No matching ${title.en_US}`,
+  }
+}
+
+function buildRequestErrorDescription(localeCode: 'zh_CN' | 'en_US', error: unknown) {
+  if (error instanceof Error && error.message.trim()) {
+    return localeCode === 'zh_CN'
+      ? `RBAC 资源请求失败：${error.message}`
+      : `Failed to load RBAC resources: ${error.message}`
+  }
+  return localeCode === 'zh_CN' ? 'RBAC 资源请求失败。' : 'Failed to load RBAC resources.'
+}
+
+function buildClusterSelectionDescription(localeCode: 'zh_CN' | 'en_US') {
+  return localeCode === 'zh_CN' ? '请选择集群查看 RBAC 资源。' : 'Select a cluster to inspect RBAC resources.'
+}
+
+function buildRBACErrorMessage(localeCode: 'zh_CN' | 'en_US') {
+  return localeCode === 'zh_CN' ? 'RBAC 资源暂时不可用' : 'RBAC resources unavailable'
+}
+
+function buildRBACRefreshLabel(localeCode: 'zh_CN' | 'en_US') {
+  return localeCode === 'zh_CN' ? '刷新' : 'Refresh'
+}
+
+function RBACListPage<T extends { allowedActions?: string[] }>({
+  actionConfig,
+  createConfig,
+  columns,
+  emptyDescription,
+  resourcePath,
+  rowKey,
+  searchPlaceholder,
+  searchValues,
+  title,
+}: {
+  actionConfig?: RBACActionConfig<T>
+  createConfig?: RBACCreateConfig
+  columns: TableColumnsType<T>
+  emptyDescription: LocalizedCopy
+  resourcePath: string
+  rowKey: string | ((record: T) => string)
+  searchPlaceholder?: LocalizedCopy
+  searchValues: (record: T) => Array<string | undefined | null>
+  title: LocalizedCopy
+}) {
+  const { localeCode } = useI18n()
+  const { clusterId } = usePlatformScopeStore()
+  const query = useScopedResourceQuery<T>(resourcePath)
+  const clustersQuery = useQuery({
+    queryKey: ['clusters'],
+    queryFn: () => api.get<ApiResponse<Cluster[]>>('/clusters'),
+    enabled: !!clusterId,
+  })
+  const [searchKeyword, setSearchKeyword] = useState('')
+  const [createVisible, setCreateVisible] = useState(false)
+  const deferredSearchKeyword = useDeferredValue(searchKeyword)
+  const normalizedKeyword = normalizeSearchKeyword(deferredSearchKeyword)
+  const rawItems = query.data?.data ?? []
+  const currentCluster = (clustersQuery.data?.data ?? []).find((item) => item.id === clusterId)
+  const isAgentCluster = currentCluster?.connectionMode === 'agent'
+  const filteredItems = useMemo(
+    () => rawItems.filter((item) => includesSearch(searchValues(item), normalizedKeyword)),
+    [normalizedKeyword, rawItems, searchValues],
+  )
+  const effectiveActionConfig = actionConfig
+    ? {
+        ...actionConfig,
+        canDelete: (record: T) => {
+          if (isAgentCluster) return false
+          return actionConfig.canDelete ? actionConfig.canDelete(record) : true
+        },
+      }
+    : undefined
+  const shouldShowActions = effectiveActionConfig
+    ? rawItems.some((item) => effectiveActionConfig.canDelete ? effectiveActionConfig.canDelete(item) : true)
+    : false
+  const { column: actionColumn, modalNode } = useRBACActionColumn<T>(resourcePath, shouldShowActions ? effectiveActionConfig : undefined)
+
+  const effectiveColumns = shouldShowActions ? [...columns, actionColumn] : columns
+  const effectiveEmptyDescription = !clusterId
+    ? buildClusterSelectionDescription(localeCode)
+    : normalizedKeyword && rawItems.length > 0
+      ? localize(localeCode, buildRBACSearchEmptyDescription(title))
+      : localize(localeCode, emptyDescription)
+  const titleZh = localize('zh_CN', title)
+  const titleEn = localize('en_US', title)
+  const createDisabled = !clusterId || isAgentCluster
+  const createDisabledReason = !clusterId
+    ? (localeCode === 'zh_CN' ? '请先选择集群。' : 'Select a cluster first.')
+    : isAgentCluster
+      ? (localeCode === 'zh_CN' ? 'agent 集群暂不支持 YAML 新增。' : 'YAML create is not supported for agent-connected clusters yet.')
+      : ''
+
+  return (
+    <div className="kc-page">
+      {query.isError ? (
+        <Alert
+          showIcon
+          type="error"
+          message={buildRBACErrorMessage(localeCode)}
+          description={buildRequestErrorDescription(localeCode, query.error)}
+        />
+      ) : null}
+      {modalNode}
+      {createConfig ? (
+        <CreateResourceModal
+          visible={createVisible}
+          onClose={() => setCreateVisible(false)}
+          kind={createConfig.kind}
+          resourcePath={resourcePath}
+          defaultTemplate={createConfig.defaultTemplate}
+          invalidationKeys={[['platform-resource', resourcePath]]}
+          namespaceScope={createConfig.namespaceScope}
+        />
+      ) : null}
+      <AdminTable
+        className="kc-rbac-table kc-platform-table"
+        title={(
+          <div className="kc-admin-table-title-block">
+            <Text strong>{localize(localeCode, title)}</Text>
+            <Text type="secondary">{localize(localeCode, buildRBACInspectDescription({ zh_CN: titleZh, en_US: titleEn }))}</Text>
+          </div>
+        )}
+        columns={effectiveColumns}
+        dataSource={clusterId ? filteredItems : []}
+        rowKey={rowKey}
+        loading={query.isLoading}
+        pageSize={10}
+        enableColumnSelection={false}
+        scroll={{ x: 'max-content' }}
+        toolbar={(
+          <div className="kc-workload-table-filters">
+            <PlatformScopeToolbar embedded showLabel={false} clusterWidth={180} namespaceWidth={180} />
+            <Input
+              className="kc-platform-compact-field"
+              size="small"
+              value={searchKeyword}
+              onChange={(event) => setSearchKeyword(event.target.value)}
+              placeholder={localize(localeCode, searchPlaceholder ?? buildRBACSearchPlaceholder(title))}
+              style={{ width: 240 }}
+            />
+          </div>
+        )}
+        toolbarExtra={(
+          <div className="kc-page-toolbar">
+            {createConfig ? (
+              <Tooltip title={createDisabled ? createDisabledReason : ''}>
+                <span>
+                  <Button size="small" type="primary" disabled={createDisabled} onClick={() => setCreateVisible(true)}>
+                    {localeCode === 'zh_CN' ? '新增' : 'Create'}
+                  </Button>
+                </span>
+              </Tooltip>
+            ) : null}
+            <Button size="small" icon={<ReloadOutlined />} variant="outlined" onClick={() => void query.refetch()}>
+              {buildRBACRefreshLabel(localeCode)}
+            </Button>
+          </div>
+        )}
+        empty={<Empty description={effectiveEmptyDescription} />}
+      />
+    </div>
   )
 }
 
@@ -425,29 +777,79 @@ const networkPolicyColumns: TableColumnsType<NetworkPolicyResource> = [
   { ...tableColumnPresets.datetime, title: 'Age', dataIndex: 'ageSeconds', render: (value: number) => formatAgeSeconds(value) },
 ]
 
-const serviceAccountColumns: TableColumnsType<ServiceAccountResource> = [
-  { title: 'Name', dataIndex: 'name' },
-  { title: 'Namespace', dataIndex: 'namespace' },
-  { title: 'Secrets', dataIndex: 'secrets' },
-  { title: 'Image Pull Secrets', dataIndex: 'imagePullSecrets' },
-  { title: 'Automount SA Token', dataIndex: 'automountServiceAccountToken', render: (value: boolean) => <BooleanTag value={value} /> },
-  { ...tableColumnPresets.datetime, title: 'Age', dataIndex: 'ageSeconds', render: (value: number) => formatAgeSeconds(value) },
-]
+function buildServiceAccountColumns(localeCode: 'zh_CN' | 'en_US'): TableColumnsType<ServiceAccountResource> {
+  return [
+    {
+      title: localeCode === 'zh_CN' ? '名称' : 'Name',
+      dataIndex: 'name',
+      render: (value: string, record: ServiceAccountResource) => (
+        <ResourceNameLink name={value} to={buildRBACDetailPath('serviceaccounts', value, record.namespace)} />
+      ),
+    },
+    { title: localeCode === 'zh_CN' ? '命名空间' : 'Namespace', dataIndex: 'namespace' },
+    { title: localeCode === 'zh_CN' ? 'Secrets' : 'Secrets', dataIndex: 'secrets', width: 88 },
+    { title: localeCode === 'zh_CN' ? '镜像拉取密钥' : 'Image Pull Secrets', dataIndex: 'imagePullSecrets', width: 138 },
+    {
+      title: localeCode === 'zh_CN' ? '自动挂载 Token' : 'Automount Token',
+      dataIndex: 'automountServiceAccountToken',
+      width: 132,
+      render: (value: boolean) => (
+        <BooleanTag
+          value={value}
+          trueLabel={localeCode === 'zh_CN' ? '是' : 'Yes'}
+          falseLabel={localeCode === 'zh_CN' ? '否' : 'No'}
+        />
+      ),
+    },
+    { ...tableColumnPresets.datetime, title: 'Age', dataIndex: 'ageSeconds', width: 104, render: (value: number) => formatAgeSeconds(value) },
+  ]
+}
 
-const roleColumns: TableColumnsType<RoleResource> = [
-  { title: 'Name', dataIndex: 'name' },
-  { title: 'Namespace', dataIndex: 'namespace' },
-  { title: 'Rules', dataIndex: 'rules' },
-  { ...tableColumnPresets.datetime, title: 'Age', dataIndex: 'ageSeconds', render: (value: number) => formatAgeSeconds(value) },
-]
+function buildRoleColumns(localeCode: 'zh_CN' | 'en_US'): TableColumnsType<RoleResource> {
+  return [
+    {
+      title: localeCode === 'zh_CN' ? '名称' : 'Name',
+      dataIndex: 'name',
+      render: (value: string, record: RoleResource) => (
+        <ResourceNameLink name={value} to={buildRBACDetailPath('roles', value, record.namespace)} />
+      ),
+    },
+    { title: localeCode === 'zh_CN' ? '命名空间' : 'Namespace', dataIndex: 'namespace' },
+    { title: localeCode === 'zh_CN' ? '规则数' : 'Rules', dataIndex: 'rules', width: 88 },
+    { ...tableColumnPresets.datetime, title: 'Age', dataIndex: 'ageSeconds', width: 104, render: (value: number) => formatAgeSeconds(value) },
+  ]
+}
 
-const roleBindingColumns: TableColumnsType<RoleBindingResource> = [
-  { title: 'Name', dataIndex: 'name' },
-  { title: 'Namespace', dataIndex: 'namespace' },
-  { title: 'RoleRef', dataIndex: 'roleRef' },
-  { title: 'Subjects', dataIndex: 'subjects', render: (value: string[] | undefined) => value?.join(', ') || '-' },
-  { ...tableColumnPresets.datetime, title: 'Age', dataIndex: 'ageSeconds', render: (value: number) => formatAgeSeconds(value) },
-]
+function buildRoleBindingColumns(localeCode: 'zh_CN' | 'en_US'): TableColumnsType<RoleBindingResource> {
+  return [
+    {
+      title: localeCode === 'zh_CN' ? '名称' : 'Name',
+      dataIndex: 'name',
+      render: (value: string, record: RoleBindingResource) => (
+        <ResourceNameLink name={value} to={buildRBACDetailPath('rolebindings', value, record.namespace)} />
+      ),
+    },
+    { title: localeCode === 'zh_CN' ? '命名空间' : 'Namespace', dataIndex: 'namespace' },
+    {
+      title: 'RoleRef',
+      dataIndex: 'roleRef',
+      width: 170,
+      render: (value: string | undefined) => roleRefTag(value),
+    },
+    {
+      title: localeCode === 'zh_CN' ? '主体预览' : 'Subjects',
+      dataIndex: 'subjects',
+      render: (value: string[] | undefined) => renderRBACSubjectChips(value, localeCode === 'zh_CN' ? '无主体' : 'No subjects'),
+    },
+    {
+      title: localeCode === 'zh_CN' ? '主体数' : 'Subject Count',
+      dataIndex: 'subjects',
+      width: 108,
+      render: (value: string[] | undefined) => value?.length ?? 0,
+    },
+    { ...tableColumnPresets.datetime, title: 'Age', dataIndex: 'ageSeconds', width: 104, render: (value: number) => formatAgeSeconds(value) },
+  ]
+}
 
 const ingressClassColumns: TableColumnsType<IngressClassResource> = [
   { title: 'Name', dataIndex: 'name' },
@@ -472,19 +874,50 @@ const runtimeClassColumns: TableColumnsType<RuntimeClassResource> = [
   { ...tableColumnPresets.datetime, title: 'Age', dataIndex: 'ageSeconds', render: (value: number) => formatAgeSeconds(value) },
 ]
 
-const clusterRoleColumns: TableColumnsType<ClusterRoleResource> = [
-  { title: 'Name', dataIndex: 'name' },
-  { title: 'Rules', dataIndex: 'rules' },
-  { title: 'Aggregation', dataIndex: 'aggregationRules' },
-  { ...tableColumnPresets.datetime, title: 'Age', dataIndex: 'ageSeconds', render: (value: number) => formatAgeSeconds(value) },
-]
+function buildClusterRoleColumns(localeCode: 'zh_CN' | 'en_US'): TableColumnsType<ClusterRoleResource> {
+  return [
+    {
+      title: localeCode === 'zh_CN' ? '名称' : 'Name',
+      dataIndex: 'name',
+      render: (value: string) => (
+        <ResourceNameLink name={value} to={buildRBACDetailPath('clusterroles', value)} />
+      ),
+    },
+    { title: localeCode === 'zh_CN' ? '规则数' : 'Rules', dataIndex: 'rules', width: 88 },
+    { title: localeCode === 'zh_CN' ? '聚合规则' : 'Aggregation', dataIndex: 'aggregationRules', width: 108 },
+    { ...tableColumnPresets.datetime, title: 'Age', dataIndex: 'ageSeconds', width: 104, render: (value: number) => formatAgeSeconds(value) },
+  ]
+}
 
-const clusterRoleBindingColumns: TableColumnsType<ClusterRoleBindingResource> = [
-  { title: 'Name', dataIndex: 'name' },
-  { title: 'RoleRef', dataIndex: 'roleRef' },
-  { title: 'Subjects', dataIndex: 'subjects', render: (value: string[] | undefined) => value?.join(', ') || '-' },
-  { ...tableColumnPresets.datetime, title: 'Age', dataIndex: 'ageSeconds', render: (value: number) => formatAgeSeconds(value) },
-]
+function buildClusterRoleBindingColumns(localeCode: 'zh_CN' | 'en_US'): TableColumnsType<ClusterRoleBindingResource> {
+  return [
+    {
+      title: localeCode === 'zh_CN' ? '名称' : 'Name',
+      dataIndex: 'name',
+      render: (value: string) => (
+        <ResourceNameLink name={value} to={buildRBACDetailPath('clusterrolebindings', value)} />
+      ),
+    },
+    {
+      title: 'RoleRef',
+      dataIndex: 'roleRef',
+      width: 170,
+      render: (value: string | undefined) => roleRefTag(value),
+    },
+    {
+      title: localeCode === 'zh_CN' ? '主体预览' : 'Subjects',
+      dataIndex: 'subjects',
+      render: (value: string[] | undefined) => renderRBACSubjectChips(value, localeCode === 'zh_CN' ? '无主体' : 'No subjects'),
+    },
+    {
+      title: localeCode === 'zh_CN' ? '主体数' : 'Subject Count',
+      dataIndex: 'subjects',
+      width: 108,
+      render: (value: string[] | undefined) => value?.length ?? 0,
+    },
+    { ...tableColumnPresets.datetime, title: 'Age', dataIndex: 'ageSeconds', width: 104, render: (value: number) => formatAgeSeconds(value) },
+  ]
+}
 
 const mutatingWebhookColumns: TableColumnsType<MutatingWebhookConfigurationResource> = [
   { title: 'Name', dataIndex: 'name' },
@@ -993,63 +1426,121 @@ export function NetworkPortForwardPage() {
 }
 
 export function PlatformAccessControlServiceAccountsPage() {
+  const { localeCode } = useI18n()
   return (
-    <ResourceListPage<ServiceAccountResource>
+    <RBACListPage<ServiceAccountResource>
       title={{ zh_CN: 'ServiceAccounts', en_US: 'ServiceAccounts' }}
       resourcePath="access-control/serviceaccounts"
-      columns={serviceAccountColumns}
+      columns={buildServiceAccountColumns(localeCode)}
       rowKey={(record) => `${record.namespace}/${record.name}`}
       emptyDescription={{ zh_CN: '当前范围没有 ServiceAccounts', en_US: 'No service accounts in the current scope' }}
+      searchValues={(record) => [record.name, record.namespace]}
+      createConfig={{
+        kind: 'ServiceAccount',
+        defaultTemplate: SERVICE_ACCOUNT_DEFAULT_TEMPLATE,
+      }}
+      actionConfig={{
+        resourceKind: 'ServiceAccount',
+        getName: (record) => record.name,
+        getNamespace: (record) => record.namespace,
+        canDelete: (record) => hasAllowedAction(record.allowedActions, 'delete'),
+      }}
     />
   )
 }
 
 export function PlatformAccessControlClusterRolesPage() {
+  const { localeCode } = useI18n()
   return (
-    <ResourceListPage<ClusterRoleResource>
+    <RBACListPage<ClusterRoleResource>
       title={{ zh_CN: 'ClusterRoles', en_US: 'ClusterRoles' }}
       resourcePath="access-control/clusterroles"
-      columns={clusterRoleColumns}
+      columns={buildClusterRoleColumns(localeCode)}
       rowKey="name"
       emptyDescription={{ zh_CN: '当前集群没有 ClusterRole', en_US: 'No cluster roles in this cluster' }}
-      actionConfig={{ resourceKind: 'ClusterRole', getName: (record) => record.name }}
+      searchValues={(record) => [record.name]}
+      createConfig={{
+        kind: 'ClusterRole',
+        defaultTemplate: CLUSTER_ROLE_DEFAULT_TEMPLATE,
+        namespaceScope: 'cluster',
+      }}
+      actionConfig={{
+        resourceKind: 'ClusterRole',
+        getName: (record) => record.name,
+        canDelete: (record) => hasAllowedAction(record.allowedActions, 'delete'),
+      }}
     />
   )
 }
 
 export function PlatformAccessControlRolesPage() {
+  const { localeCode } = useI18n()
   return (
-    <ResourceListPage<RoleResource>
+    <RBACListPage<RoleResource>
       title={{ zh_CN: 'Roles', en_US: 'Roles' }}
       resourcePath="access-control/roles"
-      columns={roleColumns}
+      columns={buildRoleColumns(localeCode)}
       rowKey={(record) => `${record.namespace}/${record.name}`}
       emptyDescription={{ zh_CN: '当前范围没有 Roles', en_US: 'No roles in the current scope' }}
+      searchValues={(record) => [record.name, record.namespace]}
+      createConfig={{
+        kind: 'Role',
+        defaultTemplate: ROLE_DEFAULT_TEMPLATE,
+      }}
+      actionConfig={{
+        resourceKind: 'Role',
+        getName: (record) => record.name,
+        getNamespace: (record) => record.namespace,
+        canDelete: (record) => hasAllowedAction(record.allowedActions, 'delete'),
+      }}
     />
   )
 }
 
 export function PlatformAccessControlClusterRoleBindingsPage() {
+  const { localeCode } = useI18n()
   return (
-    <ResourceListPage<ClusterRoleBindingResource>
+    <RBACListPage<ClusterRoleBindingResource>
       title={{ zh_CN: 'ClusterRoleBindings', en_US: 'ClusterRoleBindings' }}
       resourcePath="access-control/clusterrolebindings"
-      columns={clusterRoleBindingColumns}
+      columns={buildClusterRoleBindingColumns(localeCode)}
       rowKey="name"
       emptyDescription={{ zh_CN: '当前集群没有 ClusterRoleBinding', en_US: 'No cluster role bindings in this cluster' }}
-      actionConfig={{ resourceKind: 'ClusterRoleBinding', getName: (record) => record.name }}
+      searchValues={(record) => [record.name, record.roleRef, ...(record.subjects ?? [])]}
+      createConfig={{
+        kind: 'ClusterRoleBinding',
+        defaultTemplate: CLUSTER_ROLE_BINDING_DEFAULT_TEMPLATE,
+        namespaceScope: 'cluster',
+      }}
+      actionConfig={{
+        resourceKind: 'ClusterRoleBinding',
+        getName: (record) => record.name,
+        canDelete: (record) => hasAllowedAction(record.allowedActions, 'delete'),
+      }}
     />
   )
 }
 
 export function PlatformAccessControlRoleBindingsPage() {
+  const { localeCode } = useI18n()
   return (
-    <ResourceListPage<RoleBindingResource>
+    <RBACListPage<RoleBindingResource>
       title={{ zh_CN: 'RoleBindings', en_US: 'RoleBindings' }}
       resourcePath="access-control/rolebindings"
-      columns={roleBindingColumns}
+      columns={buildRoleBindingColumns(localeCode)}
       rowKey={(record) => `${record.namespace}/${record.name}`}
       emptyDescription={{ zh_CN: '当前范围没有 RoleBindings', en_US: 'No role bindings in the current scope' }}
+      searchValues={(record) => [record.name, record.namespace, record.roleRef, ...(record.subjects ?? [])]}
+      createConfig={{
+        kind: 'RoleBinding',
+        defaultTemplate: ROLE_BINDING_DEFAULT_TEMPLATE,
+      }}
+      actionConfig={{
+        resourceKind: 'RoleBinding',
+        getName: (record) => record.name,
+        getNamespace: (record) => record.namespace,
+        canDelete: (record) => hasAllowedAction(record.allowedActions, 'delete'),
+      }}
     />
   )
 }

@@ -94,13 +94,13 @@ export function YamlDraftDiffEditor({
       ]
 
   return (
-    <Card className="kc-detail-card" style={{ marginTop: 0 }}>
-      <div className="kc-terminal-toolbar">
-        <Space direction="vertical" size={2}>
+    <Card className="kc-detail-card kc-yaml-card" style={{ marginTop: 0 }}>
+      <div className="kc-terminal-toolbar kc-yaml-toolbar">
+        <Space className="kc-yaml-toolbar-meta" direction="vertical" size={2}>
           <Text strong>{title}</Text>
           {description ? <Text type="secondary" style={{ fontSize: 12 }}>{description}</Text> : null}
         </Space>
-        <Space wrap>
+        <Space className="kc-yaml-toolbar-actions" wrap>
           <Segmented<ViewMode>
             options={availableModes}
             value={viewMode}
@@ -111,51 +111,53 @@ export function YamlDraftDiffEditor({
         </Space>
       </div>
 
-      {viewMode === 'diff' ? (
-        <>
-          <div className="kc-tag-list" style={{ marginBottom: 12, marginTop: 0 }}>
-            <Tag color="default">{leftLabel || t('yamlDiffEditor.originalLabel', 'Original')}</Tag>
-            <Tag color="blue">{rightLabel || t('yamlDiffEditor.modifiedLabel', 'Modified')}</Tag>
-          </div>
-          <DiffEditor
-            height="620px"
-            language="yaml"
-            original={original}
-            modified={modified}
-            originalModelPath={diffPaths.original}
-            modifiedModelPath={diffPaths.modified}
+      <div className="kc-yaml-editor-shell">
+        {viewMode === 'diff' ? (
+          <>
+            <div className="kc-tag-list" style={{ marginBottom: 12, marginTop: 0 }}>
+              <Tag color="default">{leftLabel || t('yamlDiffEditor.originalLabel', 'Original')}</Tag>
+              <Tag color="blue">{rightLabel || t('yamlDiffEditor.modifiedLabel', 'Modified')}</Tag>
+            </div>
+            <DiffEditor
+              height="100%"
+              language="yaml"
+              original={original}
+              modified={modified}
+              originalModelPath={diffPaths.original}
+              modifiedModelPath={diffPaths.modified}
+              options={{
+                automaticLayout: true,
+                readOnly: true,
+                originalEditable: false,
+                renderSideBySide: true,
+                minimap: { enabled: false },
+                wordWrap: 'on',
+                scrollBeyondLastLine: false,
+              }}
+            />
+          </>
+        ) : (
+          <Editor
+            height="100%"
+            defaultLanguage="yaml"
+            path={editorPath}
+            value={modified}
+            onChange={(nextValue) => {
+              if (!editable || !onChange) return
+              onChange(nextValue ?? '')
+            }}
             options={{
               automaticLayout: true,
-              readOnly: true,
-              originalEditable: false,
-              renderSideBySide: true,
               minimap: { enabled: false },
               wordWrap: 'on',
               scrollBeyondLastLine: false,
+              tabSize: 2,
+              insertSpaces: true,
+              readOnly: !editable || viewMode === 'preview',
             }}
           />
-        </>
-      ) : (
-        <Editor
-          height="620px"
-          defaultLanguage="yaml"
-          path={editorPath}
-          value={modified}
-          onChange={(nextValue) => {
-            if (!editable || !onChange) return
-            onChange(nextValue ?? '')
-          }}
-          options={{
-            automaticLayout: true,
-            minimap: { enabled: false },
-            wordWrap: 'on',
-            scrollBeyondLastLine: false,
-            tabSize: 2,
-            insertSpaces: true,
-            readOnly: !editable || viewMode === 'preview',
-          }}
-        />
-      )}
+        )}
+      </div>
     </Card>
   )
 }

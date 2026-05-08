@@ -52,14 +52,44 @@ describe('access route authorization', () => {
     expect(canAccessRoute(getRoute('access'), snapshot)).toBe(false)
   })
 
+  it('allows RBAC platform child routes from visible menu bindings without a dedicated permission key', () => {
+    const snapshot = buildSnapshot({
+      visibleMenuIds: ['platform-access-control'],
+      visibleMenus: [{ id: 'platform-access-control', path: '/platform-access-control' }],
+    })
+
+    expect(canAccessRoute(getRoute('platform-access-control'), snapshot)).toBe(true)
+    expect(canAccessRoute(getRoute('platform-access-control-clusterroles'), snapshot)).toBe(true)
+  })
+
+  it('inherits RBAC list access for hidden detail routes', () => {
+    const snapshot = buildSnapshot({
+      visibleMenuIds: ['platform-access-control'],
+      visibleMenus: [{ id: 'platform-access-control', path: '/platform-access-control' }],
+    })
+
+    expect(canAccessRoute(getRoute('platform-access-control-serviceaccount-detail'), snapshot)).toBe(true)
+    expect(canAccessRoute(getRoute('platform-access-control-rolebinding-detail'), snapshot)).toBe(true)
+  })
+
+  it('blocks RBAC platform child routes when the RBAC menu binding is missing', () => {
+    const snapshot = buildSnapshot({
+      visibleMenuIds: [],
+      visibleMenus: [],
+    })
+
+    expect(canAccessRoute(getRoute('platform-access-control'), snapshot)).toBe(false)
+    expect(canAccessRoute(getRoute('platform-access-control-rolebindings'), snapshot)).toBe(false)
+  })
+
   it('builds sidebar nav from visible menu tree instead of flattening children', () => {
     const snapshot = buildSnapshot({
       permissionKeys: ['system.menus.view', 'system.audit.view'],
       visibleMenuIds: ['system', 'menus', 'audit'],
       visibleMenus: [
-        { id: 'system', path: '/system', labelZh: '系统管理', labelEn: 'System', iconKey: 'panels-top-left', section: 'control', sortOrder: 10, enabled: true },
-        { id: 'audit', parentId: 'system', path: '/system/audit', labelZh: '审计日志', labelEn: 'Audit', iconKey: 'file-clock', section: 'control', sortOrder: 2, enabled: true },
-        { id: 'menus', parentId: 'system', path: '/system/menus', labelZh: '菜单管理', labelEn: 'Menus', iconKey: 'menu-square', section: 'control', sortOrder: 1, enabled: true },
+        { id: 'system', path: '/system', labelZh: '系统管理', labelEn: 'System', iconKey: 'panels-top-left', section: 'admin', sortOrder: 10, enabled: true },
+        { id: 'audit', parentId: 'system', path: '/system/audit', labelZh: '审计日志', labelEn: 'Audit', iconKey: 'file-clock', section: 'admin', sortOrder: 2, enabled: true },
+        { id: 'menus', parentId: 'system', path: '/system/menus', labelZh: '菜单管理', labelEn: 'Menus', iconKey: 'menu-square', section: 'admin', sortOrder: 1, enabled: true },
       ],
     })
 
@@ -74,8 +104,8 @@ describe('access route authorization', () => {
       permissionKeys: ['delivery.applications.view', 'system.menus.view'],
       visibleMenuIds: ['builds', 'system', 'menus'],
       visibleMenus: [
-        { id: 'system', path: '/system', labelZh: '系统管理', labelEn: 'System', iconKey: 'panels-top-left', section: 'control', sortOrder: 50, enabled: true },
-        { id: 'menus', parentId: 'system', path: '/system/menus', labelZh: '菜单管理', labelEn: 'Menus', iconKey: 'menu-square', section: 'control', sortOrder: 10, enabled: true },
+        { id: 'system', path: '/system', labelZh: '系统管理', labelEn: 'System', iconKey: 'panels-top-left', section: 'admin', sortOrder: 50, enabled: true },
+        { id: 'menus', parentId: 'system', path: '/system/menus', labelZh: '菜单管理', labelEn: 'Menus', iconKey: 'menu-square', section: 'admin', sortOrder: 10, enabled: true },
         { id: 'builds', path: '/applications', labelZh: '应用中心', labelEn: 'Applications', iconKey: 'blocks', section: 'deliver', sortOrder: 5, enabled: true },
       ],
     })

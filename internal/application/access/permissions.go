@@ -35,6 +35,11 @@ const (
 	PermDeliveryWorkflowTemplatesManage = "delivery.workflow-templates.manage"
 	PermDeliveryBuildTemplatesView      = "delivery.build-templates.view"
 	PermDeliveryBuildTemplatesManage    = "delivery.build-templates.manage"
+	PermDeliveryReleaseBundlesView      = "delivery.release-bundles.view"
+	PermDeliveryExecutionTasksView      = "delivery.execution-tasks.view"
+	PermDeliveryExecutionTasksManage    = "delivery.execution-tasks.manage"
+	PermDeliveryApprovalPoliciesView    = "delivery.approval-policies.view"
+	PermDeliveryApprovalPoliciesManage  = "delivery.approval-policies.manage"
 	PermDeliveryReleaseBoardView        = "delivery.release-board.view"
 	PermDeliveryWorkflowsView           = "delivery.workflows.view"
 	PermDeliveryWorkflowsTrigger        = "delivery.workflows.trigger"
@@ -46,9 +51,15 @@ const (
 	PermObserveAlertsView               = "observe.alerts.view"
 	PermObserveAlertsAcknowledge        = "observe.alerts.ack"
 	PermObserveAlertsAssign             = "observe.alerts.assign"
+	PermObserveAlertsManage             = "observe.alerts.manage"
+	PermObserveAlertRulesView           = "observe.alert-rules.view"
+	PermObserveAlertRulesManage         = "observe.alert-rules.manage"
 	PermObserveNotificationsView        = "observe.notifications.view"
 	PermObserveNotificationsManage      = "observe.notifications.manage"
 	PermObserveOncallView               = "observe.oncall.view"
+	PermObserveOncallManage             = "observe.oncall.manage"
+	PermObserveHealingView              = "observe.healing.view"
+	PermObserveHealingManage            = "observe.healing.manage"
 	PermObserveEventsView               = "observe.events.view"
 	PermObserveAIView                   = "observe.ai.view"
 	PermObserveAIChatUse                = "observe.ai.chat"
@@ -117,6 +128,11 @@ func allPermissionKeys() []string {
 		PermDeliveryWorkflowTemplatesManage,
 		PermDeliveryBuildTemplatesView,
 		PermDeliveryBuildTemplatesManage,
+		PermDeliveryReleaseBundlesView,
+		PermDeliveryExecutionTasksView,
+		PermDeliveryExecutionTasksManage,
+		PermDeliveryApprovalPoliciesView,
+		PermDeliveryApprovalPoliciesManage,
 		PermDeliveryReleaseBoardView,
 		PermDeliveryWorkflowsView,
 		PermDeliveryWorkflowsTrigger,
@@ -128,9 +144,15 @@ func allPermissionKeys() []string {
 		PermObserveAlertsView,
 		PermObserveAlertsAcknowledge,
 		PermObserveAlertsAssign,
+		PermObserveAlertsManage,
+		PermObserveAlertRulesView,
+		PermObserveAlertRulesManage,
 		PermObserveNotificationsView,
 		PermObserveNotificationsManage,
 		PermObserveOncallView,
+		PermObserveOncallManage,
+		PermObserveHealingView,
+		PermObserveHealingManage,
 		PermObserveEventsView,
 		PermObserveAIView,
 		PermObserveAIChatUse,
@@ -195,6 +217,11 @@ func defaultRolePermissions() map[string][]string {
 		PermDeliveryWorkflowTemplatesManage,
 		PermDeliveryBuildTemplatesView,
 		PermDeliveryBuildTemplatesManage,
+		PermDeliveryReleaseBundlesView,
+		PermDeliveryExecutionTasksView,
+		PermDeliveryExecutionTasksManage,
+		PermDeliveryApprovalPoliciesView,
+		PermDeliveryApprovalPoliciesManage,
 		PermDeliveryReleaseBoardView,
 		PermDeliveryWorkflowsView,
 		PermDeliveryWorkflowsTrigger,
@@ -206,9 +233,15 @@ func defaultRolePermissions() map[string][]string {
 		PermObserveAlertsView,
 		PermObserveAlertsAcknowledge,
 		PermObserveAlertsAssign,
+		PermObserveAlertsManage,
+		PermObserveAlertRulesView,
+		PermObserveAlertRulesManage,
 		PermObserveNotificationsView,
 		PermObserveNotificationsManage,
 		PermObserveOncallView,
+		PermObserveOncallManage,
+		PermObserveHealingView,
+		PermObserveHealingManage,
 		PermObserveEventsView,
 		PermObserveAIView,
 		PermObserveAIChatUse,
@@ -256,6 +289,9 @@ func defaultRolePermissions() map[string][]string {
 		PermDeliveryApplicationEnvView,
 		PermDeliveryWorkflowTemplatesView,
 		PermDeliveryBuildTemplatesView,
+		PermDeliveryReleaseBundlesView,
+		PermDeliveryExecutionTasksView,
+		PermDeliveryApprovalPoliciesView,
 		PermDeliveryReleaseBoardView,
 		PermDeliveryWorkflowsView,
 		PermDeliveryWorkflowsTrigger,

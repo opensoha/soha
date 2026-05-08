@@ -49,6 +49,7 @@ func (h *ReleaseHandler) TriggerRelease(c *gin.Context) {
 	item, err := h.service.Trigger(c.Request.Context(), principal, domainrelease.TriggerInput{
 		ApplicationID:            req.ApplicationID,
 		ApplicationEnvironmentID: req.ApplicationEnvironmentID,
+		ReleaseBundleID:          req.ReleaseBundleID,
 		ClusterID:                req.ClusterID,
 		Namespace:                req.Namespace,
 		DeploymentName:           req.DeploymentName,

@@ -236,6 +236,149 @@ export interface ResourceYAMLView {
   content: string
 }
 
+export interface ServiceAccountDetail {
+  name: string
+  namespace: string
+  labels?: Record<string, string>
+  annotations?: Record<string, string>
+  secrets?: string[]
+  imagePullSecrets?: string[]
+  automountServiceAccountToken: boolean
+  createdAt?: string
+  ageSeconds: number
+  allowedActions?: string[]
+}
+
+export interface RoleDetail {
+  name: string
+  namespace: string
+  labels?: Record<string, string>
+  annotations?: Record<string, string>
+  rules: number
+  ruleSummaries?: string[]
+  createdAt?: string
+  ageSeconds: number
+  allowedActions?: string[]
+}
+
+export interface RoleBindingDetail {
+  name: string
+  namespace: string
+  labels?: Record<string, string>
+  annotations?: Record<string, string>
+  roleRef: string
+  subjects?: string[]
+  createdAt?: string
+  ageSeconds: number
+  allowedActions?: string[]
+}
+
+export interface ClusterRoleDetail {
+  name: string
+  labels?: Record<string, string>
+  annotations?: Record<string, string>
+  rules: number
+  aggregationRules: number
+  ruleSummaries?: string[]
+  createdAt?: string
+  ageSeconds: number
+  allowedActions?: string[]
+}
+
+export interface ClusterRoleBindingDetail {
+  name: string
+  labels?: Record<string, string>
+  annotations?: Record<string, string>
+  roleRef: string
+  subjects?: string[]
+  createdAt?: string
+  ageSeconds: number
+  allowedActions?: string[]
+}
+
+export interface PersistentVolumeClaim {
+  name: string
+  namespace: string
+  status: string
+  volumeName?: string
+  storageClass?: string
+  accessModes?: string[]
+  requested?: string
+  ageSeconds: number
+  allowedActions?: string[]
+}
+
+export interface PersistentVolumeClaimDetail {
+  name: string
+  namespace: string
+  status: string
+  volumeName?: string
+  storageClass?: string
+  accessModes?: string[]
+  requested?: string
+  volumeMode?: string
+  capacity?: string
+  labels?: Record<string, string>
+  annotations?: Record<string, string>
+  createdAt?: string
+  ageSeconds: number
+  allowedActions?: string[]
+}
+
+export interface PersistentVolume {
+  name: string
+  status: string
+  storageClass?: string
+  claimRef?: string
+  accessModes?: string[]
+  capacity?: string
+  reclaimPolicy?: string
+  volumeMode?: string
+  ageSeconds: number
+  allowedActions?: string[]
+}
+
+export interface PersistentVolumeDetail {
+  name: string
+  status: string
+  storageClass?: string
+  claimRef?: string
+  accessModes?: string[]
+  capacity?: string
+  reclaimPolicy?: string
+  volumeMode?: string
+  labels?: Record<string, string>
+  annotations?: Record<string, string>
+  createdAt?: string
+  ageSeconds: number
+  allowedActions?: string[]
+}
+
+export interface StorageClass {
+  name: string
+  provisioner: string
+  reclaimPolicy?: string
+  volumeBindingMode?: string
+  allowVolumeExpansion: boolean
+  parameters?: Record<string, string>
+  ageSeconds: number
+  allowedActions?: string[]
+}
+
+export interface StorageClassDetail {
+  name: string
+  provisioner: string
+  reclaimPolicy?: string
+  volumeBindingMode?: string
+  allowVolumeExpansion: boolean
+  parameters?: Record<string, string>
+  labels?: Record<string, string>
+  annotations?: Record<string, string>
+  createdAt?: string
+  ageSeconds: number
+  allowedActions?: string[]
+}
+
 export interface PodLogs {
   podName: string
   namespace: string
@@ -263,6 +406,38 @@ export interface WorkloadContainer {
   restartCount: number
   state?: string
   lastState?: string
+  containerId?: string
+  startedAt?: string
+  reason?: string
+  message?: string
+}
+
+export interface PodVolumeMount {
+  name: string
+  mountPath: string
+  subPath?: string
+  readOnly: boolean
+  volumeType?: string
+  sourceName?: string
+  description?: string
+}
+
+export interface PodVolume {
+  name: string
+  type: string
+  sourceName?: string
+  readOnly: boolean
+  details?: string[]
+  volumeMounts?: PodVolumeMount[]
+  referencedConfigMaps?: string[]
+}
+
+export interface PodRelatedResource {
+  kind: string
+  name: string
+  namespace?: string
+  relations?: string[]
+  details?: string[]
 }
 
 export interface MetricPoint {
@@ -349,6 +524,8 @@ export interface PodDetail {
   annotations?: Record<string, string>
   containers?: WorkloadContainer[]
   conditions?: WorkloadCondition[]
+  volumes?: PodVolume[]
+  relatedResources?: PodRelatedResource[]
   allowedActions?: string[]
 }
 
@@ -479,9 +656,16 @@ export interface ReleaseTarget {
   id: string
   clusterId: string
   namespace: string
+  targetKind?: string
+  executorKind?: string
+  groupKey?: string
+  waveKey?: string
+  regionKey?: string
+  configRef?: string
   workloadKind: string
   workloadName: string
   containerName?: string
+  metadata?: Record<string, unknown>
   enabled: boolean
 }
 
@@ -521,6 +705,10 @@ export interface ApplicationEnvironment {
   businessLineId?: string
   environmentId: string
   environmentKey?: string
+  strategyProfileId?: string
+  promotionPolicyId?: string
+  approvalPolicyId?: string
+  artifactPolicyId?: string
   workflowTemplateId?: string
   workflowTemplate?: WorkflowTemplate
   buildPolicy?: BuildPolicy
@@ -618,6 +806,73 @@ export interface WorkflowRun {
   updatedAt: string
 }
 
+export interface ReleaseBundle {
+  id: string
+  applicationId: string
+  applicationEnvironmentId?: string
+  version: string
+  sourceType: string
+  status: string
+  artifactRef?: string
+  artifactDigest?: string
+  metadata?: Record<string, unknown>
+  createdAt: string
+  updatedAt: string
+}
+
+export interface ExecutionArtifact {
+  kind: string
+  name?: string
+  ref?: string
+  digest?: string
+  path?: string
+  status?: string
+  sizeBytes?: number
+  metadata?: Record<string, unknown>
+  modifiedAt?: string
+}
+
+export interface ExecutionTask {
+  id: string
+  releaseBundleId?: string
+  applicationId: string
+  applicationEnvironmentId?: string
+  taskKind: string
+  providerKind: string
+  targetKind: string
+  status: string
+  queueKey?: string
+  lockKey?: string
+  maxRetries: number
+  attemptCount: number
+  timeoutSeconds: number
+  callbackToken?: string
+  payload?: Record<string, unknown>
+  result?: Record<string, unknown>
+  artifacts?: ExecutionArtifact[]
+  startedAt?: string
+  lastHeartbeatAt?: string
+  finishedAt?: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface ApprovalPolicy {
+  id: string
+  key: string
+  name: string
+  description?: string
+  mode?: string
+  requiredApprovals: number
+  slaMinutes: number
+  approverRoles?: string[]
+  changeWindow?: Record<string, unknown>
+  enabled: boolean
+  metadata?: Record<string, unknown>
+  createdAt: string
+  updatedAt: string
+}
+
 export interface DeliveryApplicationBindingSummary {
   applicationEnvironmentId: string
   environmentId: string
@@ -630,6 +885,8 @@ export interface DeliveryApplicationBindingSummary {
   targetCount: number
   buildSourceId?: string
   buildSource?: BuildSource
+  latestBundle?: ReleaseBundle
+  latestExecutionTask?: ExecutionTask
   latestBuild?: BuildRecord
   latestWorkflow?: WorkflowRun
   latestRelease?: ReleaseRecord
@@ -638,6 +895,8 @@ export interface DeliveryApplicationBindingSummary {
 export interface DeliveryApplicationDetail {
   application: DeliveryApplication
   bindings?: DeliveryApplicationBindingSummary[]
+  latestBundle?: ReleaseBundle
+  latestExecutionTask?: ExecutionTask
   latestBuild?: BuildRecord
   latestWorkflow?: WorkflowRun
   latestRelease?: ReleaseRecord
@@ -650,6 +909,8 @@ export interface DeliveryApplicationEnvironmentDetail {
   actionKind?: string
   requiresApproval: boolean
   buildSource?: BuildSource
+  latestBundle?: ReleaseBundle
+  latestExecutionTask?: ExecutionTask
   latestBuild?: BuildRecord
   latestWorkflow?: WorkflowRun
   latestRelease?: ReleaseRecord
@@ -669,6 +930,8 @@ export interface ReleaseBoardEntry {
   workflowTemplateName?: string
   buildSourceId?: string
   buildSource?: BuildSource
+  latestBundle?: ReleaseBundle
+  latestExecutionTask?: ExecutionTask
   targets?: ReleaseTarget[]
   latestBuild?: BuildRecord
   latestWorkflow?: WorkflowRun

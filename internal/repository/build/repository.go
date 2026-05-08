@@ -77,6 +77,17 @@ func (r *Repository) Create(ctx context.Context, input domainbuild.TriggerInput,
 	return record, nil
 }
 
+func (r *Repository) GetByExecutionTaskID(ctx context.Context, executionTaskID string) (domainbuild.Record, error) {
+	row := r.db.WithContext(ctx).Raw(`
+		SELECT id, project_id, source_system, status, metadata, started_at, finished_at, created_at
+		FROM build_records
+		WHERE metadata ->> 'executionTaskId' = ?
+		ORDER BY created_at DESC
+		LIMIT 1
+	`, executionTaskID).Row()
+	return scanRecordRow(row)
+}
+
 func (r *Repository) Update(ctx context.Context, record domainbuild.Record) (domainbuild.Record, error) {
 	payload, err := json.Marshal(record.Metadata)
 	if err != nil {
@@ -99,6 +110,31 @@ func scanRecord(rows *sql.Rows) (domainbuild.Record, error) {
 	var finishedAt sql.NullTime
 	if err := rows.Scan(&item.ID, &item.ApplicationID, &item.SourceSystem, &item.Status, &payload, &startedAt, &finishedAt, &item.CreatedAt); err != nil {
 		return domainbuild.Record{}, fmt.Errorf("scan build record: %w", err)
+	}
+	if len(payload) > 0 {
+		_ = json.Unmarshal(payload, &item.Metadata)
+	}
+	if startedAt.Valid {
+		value := startedAt.Time
+		item.StartedAt = &value
+	}
+	if finishedAt.Valid {
+		value := finishedAt.Time
+		item.FinishedAt = &value
+	}
+	return item, nil
+}
+
+func scanRecordRow(row *sql.Row) (domainbuild.Record, error) {
+	var item domainbuild.Record
+	var payload []byte
+	var startedAt sql.NullTime
+	var finishedAt sql.NullTime
+	if err := row.Scan(&item.ID, &item.ApplicationID, &item.SourceSystem, &item.Status, &payload, &startedAt, &finishedAt, &item.CreatedAt); err != nil {
+		if err == sql.ErrNoRows {
+			return domainbuild.Record{}, fmt.Errorf("build record not found")
+		}
+		return domainbuild.Record{}, fmt.Errorf("scan build record row: %w", err)
 	}
 	if len(payload) > 0 {
 		_ = json.Unmarshal(payload, &item.Metadata)

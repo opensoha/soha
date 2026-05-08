@@ -3,6 +3,7 @@ package cluster
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	domainaccess "github.com/kubecrux/kubecrux/internal/domain/access"
@@ -117,6 +118,90 @@ func TestUpdatePersistsClusterMonitoringMetadata(t *testing.T) {
 	}
 	if got := repo.connection.Metadata["grafana_base_url"]; got != "http://grafana.internal:3000" {
 		t.Fatalf("grafana_base_url = %v, want %q", got, "http://grafana.internal:3000")
+	}
+}
+
+func TestRegisterGeneratesClusterID(t *testing.T) {
+	repo := &stubRepository{}
+	service := &Service{manager: k8sinfra.NewManager(nil), repo: repo}
+
+	item, err := service.Register(context.Background(), domainidentity.Principal{}, domaincluster.RegisterInput{
+		Name:           "demo-cluster",
+		ConnectionMode: domaincluster.ConnectionModeAgent,
+		AgentEndpoint:  "http://agent.internal",
+	})
+	if err != nil {
+		t.Fatalf("Register returned error: %v", err)
+	}
+	if strings.TrimSpace(item.ID) == "" {
+		t.Fatalf("Register returned empty cluster ID")
+	}
+	if strings.TrimSpace(repo.connection.Summary.ID) == "" {
+		t.Fatalf("registration persisted empty cluster ID")
+	}
+}
+
+func TestUpdateRetainsExistingAgentEndpointWhenOmitted(t *testing.T) {
+	repo := &stubRepository{
+		connection: domaincluster.Connection{
+			Summary: domaincluster.Summary{
+				ID:             "cluster-1",
+				Name:           "cluster-1",
+				ConnectionMode: domaincluster.ConnectionModeAgent,
+			},
+			CredentialType: "bearer",
+			SourceType:     "agent",
+			SourceRef:      "http://agent.internal",
+			Metadata: map[string]any{
+				"endpoint": "http://agent.internal",
+				"token":    "agent-token",
+			},
+		},
+	}
+
+	service := &Service{manager: k8sinfra.NewManager(nil), repo: repo}
+
+	_, err := service.Update(context.Background(), domainidentity.Principal{}, "cluster-1", domaincluster.UpdateInput{
+		Name:           "cluster-1",
+		ConnectionMode: domaincluster.ConnectionModeAgent,
+	})
+	if err != nil {
+		t.Fatalf("Update returned error: %v", err)
+	}
+	if got := repo.connection.Metadata["endpoint"]; got != "http://agent.internal" {
+		t.Fatalf("endpoint = %v, want %q", got, "http://agent.internal")
+	}
+}
+
+func TestUpdateRetainsExistingKubeContextWhenOmitted(t *testing.T) {
+	repo := &stubRepository{
+		connection: domaincluster.Connection{
+			Summary: domaincluster.Summary{
+				ID:             "cluster-1",
+				Name:           "cluster-1",
+				ConnectionMode: domaincluster.ConnectionModeDirectKubeconfig,
+			},
+			CredentialType: "kubeconfig",
+			SourceType:     "api",
+			SourceRef:      "cluster.register",
+			Metadata: map[string]any{
+				"kubeconfig": "apiVersion: v1\nkind: Config\nclusters:\n- name: prod\n  cluster:\n    server: https://127.0.0.1:6443\ncontexts:\n- name: prod\n  context:\n    cluster: prod\n    user: prod\ncurrent-context: prod\nusers:\n- name: prod\n  user:\n    token: demo\n",
+				"context":    "prod",
+			},
+		},
+	}
+
+	service := &Service{manager: k8sinfra.NewManager(nil), repo: repo}
+
+	_, err := service.Update(context.Background(), domainidentity.Principal{}, "cluster-1", domaincluster.UpdateInput{
+		Name:           "cluster-1",
+		ConnectionMode: domaincluster.ConnectionModeDirectKubeconfig,
+	})
+	if err != nil {
+		t.Fatalf("Update returned error: %v", err)
+	}
+	if got := repo.connection.Metadata["context"]; got != "prod" {
+		t.Fatalf("context = %v, want %q", got, "prod")
 	}
 }
 

@@ -17,6 +17,7 @@ import (
 	appcopilot "github.com/kubecrux/kubecrux/internal/application/copilot"
 	appdelivery "github.com/kubecrux/kubecrux/internal/application/delivery"
 	appevent "github.com/kubecrux/kubecrux/internal/application/event"
+	appexecution "github.com/kubecrux/kubecrux/internal/application/execution"
 	appidentity "github.com/kubecrux/kubecrux/internal/application/identity"
 	appintegration "github.com/kubecrux/kubecrux/internal/application/integration"
 	appmenu "github.com/kubecrux/kubecrux/internal/application/menu"
@@ -46,6 +47,7 @@ import (
 	catalogrepo "github.com/kubecrux/kubecrux/internal/repository/catalog"
 	clusterrepo "github.com/kubecrux/kubecrux/internal/repository/cluster"
 	copilotrepo "github.com/kubecrux/kubecrux/internal/repository/copilot"
+	deliveryrepo "github.com/kubecrux/kubecrux/internal/repository/delivery"
 	eventrepo "github.com/kubecrux/kubecrux/internal/repository/eventstream"
 	menurepo "github.com/kubecrux/kubecrux/internal/repository/menu"
 	operationrepo "github.com/kubecrux/kubecrux/internal/repository/operationlog"
@@ -130,6 +132,7 @@ func New(ctx context.Context) (*App, error) {
 	buildRepository := buildrepo.New(databaseStore.DB())
 	catalogRepository := catalogrepo.New(databaseStore.DB())
 	workflowRepository := workflowrepo.New(databaseStore.DB())
+	deliveryRepository := deliveryrepo.New(databaseStore.DB())
 	registryRepository := registryrepo.New(databaseStore.DB())
 	releaseRepository := releaserepo.New(databaseStore.DB())
 	copilotRepository := copilotrepo.New(databaseStore.DB())
@@ -166,18 +169,35 @@ func New(ctx context.Context) (*App, error) {
 		logger.Warn("restore port forwards failed", zap.Error(err))
 	}
 	eventService := appevent.New(eventRepository)
-	monitoringService := appmonitoring.New(alertRepository, eventRepository, permissionResolver, cfg.Monitoring.Enabled, cfg.Monitoring.WebhookToken)
+	monitoringService := appmonitoring.New(alertRepository, eventRepository, copilotRepository, permissionResolver, cfg.Monitoring.Enabled, cfg.Monitoring.WebhookToken)
 	applicationService := appregistry.New(applicationRepository, gitlabClient, accessService, auditService, operationService)
-	buildService := appbuild.New(buildRepository, applicationRepository, accessService, eventRepository, auditService, operationService)
+	executionService := appexecution.New(
+		deliveryRepository,
+		buildRepository,
+		releaseRepository,
+		clusterManager,
+		cfg.Runtime.ExecutionJobClusterID,
+		cfg.Runtime.ExecutionJobNamespace,
+		cfg.Runtime.ExecutionJobImage,
+		cfg.Runtime.ExecutionJobGitImage,
+		cfg.Runtime.ExecutionJobTTLSeconds,
+		cfg.Runtime.ExecutionRunnerToken,
+		permissionResolver,
+	)
+	executionService.Start(lifecycleCtx)
+	buildService := appbuild.New(buildRepository, applicationRepository, catalogRepository, executionService, accessService, eventRepository, auditService, operationService)
 	catalogService := appcatalog.New(catalogRepository, accessService, applicationRepository, permissionResolver, auditService, operationService)
 	scopeGrantService := appscopegrant.New(scopeGrantRepository, permissionResolver, auditService, operationService)
 	registryService := appregistryconn.New(registryRepository, permissionResolver)
-	releaseService := apprelease.New(releaseRepository, applicationRepository, clusterRepository, accessService, permissionResolver, eventRepository, auditService, operationService, clusterManager, agentRegistry)
+	releaseService := apprelease.New(releaseRepository, applicationRepository, catalogRepository, clusterRepository, executionService, accessService, permissionResolver, eventRepository, auditService, operationService, clusterManager, agentRegistry)
 	workflowService := appworkflow.New(workflowRepository, applicationRepository, accessService, permissionResolver, catalogRepository, buildService, releaseService, resourceService)
 	workflowService.SetRuntimeOptions(cfg.Runtime.WorkflowWorkers, cfg.Runtime.WorkflowQueueSize, cfg.Runtime.WorkflowNodeParallelism)
 	workflowService.SetInstrumentation(logger, runtimeMetrics)
+	workflowService.SetAlertMutator(monitoringService)
 	workflowService.Start(lifecycleCtx)
-	deliveryService := appdelivery.New(applicationService, catalogService, buildService, workflowService, releaseService, resourceService, permissionResolver)
+	monitoringService.SetWorkflowExecutor(workflowService)
+	monitoringService.Start(lifecycleCtx)
+	deliveryService := appdelivery.New(applicationService, catalogService, buildService, workflowService, releaseService, deliveryRepository, executionService, resourceService, permissionResolver)
 	copilotService := appcopilot.New(copilotRepository, clusterService, monitoringService, eventService, auditService, applicationRepository, buildRepository, releaseRepository, settingsService, permissionResolver)
 	copilotService.SetMCPRegistry(mcpRegistry)
 	copilotService.SetInspectionParallelism(cfg.Runtime.CopilotInspectionParallelism)
@@ -192,7 +212,7 @@ func New(ctx context.Context) (*App, error) {
 	menuHandler := apiHandlers.NewMenuHandler(menuService)
 	monitoringHandler := apiHandlers.NewMonitoringHandler(monitoringService)
 	catalogHandler := apiHandlers.NewCatalogHandler(catalogService)
-	deliveryHandler := apiHandlers.NewDeliveryHandler(deliveryService)
+	deliveryHandler := apiHandlers.NewDeliveryHandler(deliveryService, cfg.Runtime.ExecutionRunnerToken)
 	applicationHandler := apiHandlers.NewApplicationHandler(applicationService)
 	buildHandler := apiHandlers.NewBuildHandler(buildService)
 	workflowHandler := apiHandlers.NewWorkflowHandler(workflowService)

@@ -45,12 +45,18 @@ type LoggerConfig struct {
 }
 
 type RuntimeConfig struct {
-	WorkflowWorkers              int `mapstructure:"workflow_workers"`
-	WorkflowQueueSize            int `mapstructure:"workflow_queue_size"`
-	WorkflowNodeParallelism      int `mapstructure:"workflow_node_parallelism"`
-	ClusterSyncParallelism       int `mapstructure:"cluster_sync_parallelism"`
-	CopilotInspectionParallelism int `mapstructure:"copilot_inspection_parallelism"`
-	AlertUpsertBatchSize         int `mapstructure:"alert_upsert_batch_size"`
+	WorkflowWorkers              int    `mapstructure:"workflow_workers"`
+	WorkflowQueueSize            int    `mapstructure:"workflow_queue_size"`
+	WorkflowNodeParallelism      int    `mapstructure:"workflow_node_parallelism"`
+	ClusterSyncParallelism       int    `mapstructure:"cluster_sync_parallelism"`
+	CopilotInspectionParallelism int    `mapstructure:"copilot_inspection_parallelism"`
+	AlertUpsertBatchSize         int    `mapstructure:"alert_upsert_batch_size"`
+	ExecutionRunnerToken         string `mapstructure:"execution_runner_token"`
+	ExecutionJobClusterID        string `mapstructure:"execution_job_cluster_id"`
+	ExecutionJobNamespace        string `mapstructure:"execution_job_namespace"`
+	ExecutionJobImage            string `mapstructure:"execution_job_image"`
+	ExecutionJobGitImage         string `mapstructure:"execution_job_git_image"`
+	ExecutionJobTTLSeconds       int    `mapstructure:"execution_job_ttl_seconds"`
 }
 
 type DatabaseConfig struct {
@@ -243,6 +249,12 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("runtime.cluster_sync_parallelism", 4)
 	v.SetDefault("runtime.copilot_inspection_parallelism", 2)
 	v.SetDefault("runtime.alert_upsert_batch_size", 100)
+	v.SetDefault("runtime.execution_runner_token", "")
+	v.SetDefault("runtime.execution_job_cluster_id", "")
+	v.SetDefault("runtime.execution_job_namespace", "kubecrux-system")
+	v.SetDefault("runtime.execution_job_image", "alpine:3.20")
+	v.SetDefault("runtime.execution_job_git_image", "alpine/git:2.47.0")
+	v.SetDefault("runtime.execution_job_ttl_seconds", 3600)
 	v.SetDefault("database.driver", "postgres")
 	v.SetDefault("database.host", "localhost")
 	v.SetDefault("database.port", 5432)

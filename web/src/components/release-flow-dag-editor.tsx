@@ -53,10 +53,16 @@ const DAG_NODE_OPTIONS: Array<{ value: ReleaseDagNodeType; label: string; color:
   { value: 'build', label: '构建', color: 'green' },
   { value: 'manual_approval', label: '审批', color: 'orange' },
   { value: 'deploy_update_image', label: '更新镜像', color: 'blue' },
+  { value: 'restart_workload', label: '重启工作负载', color: 'red' },
+  { value: 'scale_workload', label: '扩缩容', color: 'cyan' },
+  { value: 'delete_pod', label: '删除 Pod', color: 'orange' },
+  { value: 'evict_pod', label: '驱逐 Pod', color: 'orange' },
   { value: 'wait_rollout', label: '等待 Rollout', color: 'cyan' },
   { value: 'check_http', label: 'HTTP 检查', color: 'green' },
   { value: 'check_k8s_event', label: 'K8s 事件检查', color: 'yellow' },
   { value: 'smoke_test', label: 'Smoke Test', color: 'purple' },
+  { value: 'http_callback', label: 'HTTP 回调', color: 'pink' },
+  { value: 'create_silence', label: '创建静默', color: 'grey' },
   { value: 'notify', label: '通知', color: 'pink' },
   { value: 'rollback_to_previous', label: '失败回滚', color: 'red' },
 ]
@@ -86,6 +92,14 @@ function getDagNodeLabel(type: ReleaseDagNodeType, localeCode: 'zh_CN' | 'en_US'
         return 'Approval'
       case 'deploy_update_image':
         return 'Update Image'
+      case 'restart_workload':
+        return 'Restart Workload'
+      case 'scale_workload':
+        return 'Scale Workload'
+      case 'delete_pod':
+        return 'Delete Pod'
+      case 'evict_pod':
+        return 'Evict Pod'
       case 'wait_rollout':
         return 'Wait Rollout'
       case 'check_http':
@@ -94,6 +108,10 @@ function getDagNodeLabel(type: ReleaseDagNodeType, localeCode: 'zh_CN' | 'en_US'
         return 'K8s Event'
       case 'smoke_test':
         return 'Smoke Test'
+      case 'http_callback':
+        return 'HTTP Callback'
+      case 'create_silence':
+        return 'Create Silence'
       case 'notify':
         return 'Notify'
       case 'rollback_to_previous':
@@ -264,6 +282,18 @@ function StepConfigInspector({
           />
         </>
       )
+    case 'restart_workload':
+      return <Input value={String(config.deploymentName ?? '')} placeholder="deployment name" onChange={(event) => patch('deploymentName', event.target.value)} />
+    case 'scale_workload':
+      return (
+        <>
+          <Input value={String(config.deploymentName ?? '')} placeholder="deployment name" onChange={(event) => patch('deploymentName', event.target.value)} />
+          <InputNumber style={FULL_WIDTH_STYLE} value={Number(config.replicas ?? 1)} min={0} step={1} onChange={(value) => patch('replicas', Number(value || 1))} />
+        </>
+      )
+    case 'delete_pod':
+    case 'evict_pod':
+      return <Input value={String(config.podName ?? '')} placeholder="pod name" onChange={(event) => patch('podName', event.target.value)} />
     case 'wait_rollout':
       return (
         <InputNumber style={FULL_WIDTH_STYLE} value={Number(config.timeoutSeconds ?? 300)} min={30} step={30} onChange={(value) => patch('timeoutSeconds', Number(value || 300))} />
@@ -295,6 +325,30 @@ function StepConfigInspector({
         <>
           <Input value={String(config.endpoint ?? '')} placeholder="https://service/smoke" onChange={(event) => patch('endpoint', event.target.value)} />
           <InputNumber style={FULL_WIDTH_STYLE} value={Number(config.expectedStatus ?? 200)} min={100} max={599} onChange={(value) => patch('expectedStatus', Number(value || 200))} />
+        </>
+      )
+    case 'http_callback':
+      return (
+        <>
+          <Input value={String(config.url ?? '')} placeholder="https://hooks/service" onChange={(event) => patch('url', event.target.value)} />
+          <Input value={String(config.method ?? 'POST')} placeholder="POST" onChange={(event) => patch('method', event.target.value)} />
+          <InputNumber style={FULL_WIDTH_STYLE} value={Number(config.expectedStatus ?? 200)} min={100} max={599} onChange={(value) => patch('expectedStatus', Number(value || 200))} />
+          <Input.TextArea value={String(config.body ?? '{}')} rows={4} onChange={(event) => patch('body', event.target.value)} />
+        </>
+      )
+    case 'create_silence':
+      return (
+        <>
+          <Input value={String(config.name ?? '')} placeholder="silence name" onChange={(event) => patch('name', event.target.value)} />
+          <Input value={String(config.reason ?? '')} placeholder="reason" onChange={(event) => patch('reason', event.target.value)} />
+          <InputNumber style={FULL_WIDTH_STYLE} value={Number(config.durationMinutes ?? 60)} min={1} step={5} onChange={(value) => patch('durationMinutes', Number(value || 60))} />
+          <Input.TextArea value={JSON.stringify(config.matchers ?? {}, null, 2)} rows={4} onChange={(event) => {
+            try {
+              patch('matchers', JSON.parse(event.target.value))
+            } catch {
+              patch('matchers', config.matchers ?? {})
+            }
+          }} />
         </>
       )
     case 'notify':

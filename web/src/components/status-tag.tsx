@@ -19,8 +19,11 @@ function resolveAntdTagColor(color: TagColor): Exclude<TagColor, 'grey' | 'green
   }
 }
 
-function pickStatusColor(value: string): TagColor {
-  const normalized = value.trim().toLowerCase()
+function pickStatusColor(value?: null | string): TagColor {
+  const normalized = (value || '').trim().toLowerCase()
+  if (!normalized) {
+    return 'default'
+  }
 
   if ([
     'active', 'healthy', 'ready', 'running', 'succeeded', 'complete', 'success',
@@ -51,8 +54,9 @@ function pickStatusColor(value: string): TagColor {
   return 'default'
 }
 
-export function StatusTag({ value }: { value: string }) {
-  return <Tag color={resolveAntdTagColor(pickStatusColor(value))}>{value}</Tag>
+export function StatusTag({ value }: { value?: null | string }) {
+  const label = (value || '').trim() || '-'
+  return <Tag color={resolveAntdTagColor(pickStatusColor(value))}>{label}</Tag>
 }
 
 export function BooleanTag({

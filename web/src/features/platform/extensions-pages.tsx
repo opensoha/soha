@@ -72,6 +72,7 @@ interface CRDResourceInstance {
 interface CRDApiGroupSummary {
   clusterCount: number
   crdCount: number
+  crdNames: string[]
   crds: CRD[]
   group: string
   kindNames: string[]
@@ -133,10 +134,6 @@ function buildHelmReleaseDetailPath(name: string, namespace?: string | null) {
   return `/helm/releases/${encodedName}?${params.toString()}`
 }
 
-function getPrimaryCRDName(group: CRDApiGroupSummary) {
-  return group.group
-}
-
 function getServedVersions(crd: CRD) {
   return Array.from(new Set((crd.versions?.length ? crd.versions : [crd.version]).filter(Boolean)))
 }
@@ -156,6 +153,7 @@ function groupCRDsByApi(crds: CRD[]) {
       return {
         clusterCount: sortedCRDs.filter((item) => !isNamespacedCRD(item)).length,
         crdCount: sortedCRDs.length,
+        crdNames: sortedCRDs.map((item) => item.name),
         crds: sortedCRDs,
         group,
         kindNames: sortedCRDs.map((item) => item.kind),
@@ -612,32 +610,55 @@ export function CRDPage() {
 
   const columns: TableColumnsType<CRDApiGroupSummary> = [
     {
-      title: t('page.extensions.crd.crdNameColumn', 'CRD Name'),
+      title: t('page.extensions.crd.apiGroupColumn', 'API Group'),
       dataIndex: 'group',
+      width: 220,
       render: (_: string, record: CRDApiGroupSummary) => (
-        <div className="kc-crd-catalog-name">
-          <Button
-            type="link"
-            style={{ paddingInline: 0 }}
-            onClick={(event) => {
-              event.stopPropagation()
-              navigate(buildCRDApiGroupDetailPath(record.group))
-            }}
-          >
-            {getPrimaryCRDName(record)}
-          </Button>
-          <Text type="secondary">
-            {localeCode === 'zh_CN'
-              ? `${record.crdCount} 个 kinds`
-              : `${record.crdCount} kinds`}
-          </Text>
+        <Button
+          type="link"
+          className="kc-crd-group-link"
+          onClick={(event) => {
+            event.stopPropagation()
+            navigate(buildCRDApiGroupDetailPath(record.group))
+          }}
+        >
+          <span className="kc-crd-group-card">
+            <code className="kc-crd-group-card__value">{record.group}</code>
+          </span>
+        </Button>
+      ),
+    },
+    {
+      title: t('page.extensions.crd.crdNameColumn', 'CRD Names'),
+      key: 'crdNames',
+      width: 360,
+      render: (_: unknown, record: CRDApiGroupSummary) => (
+        <div className="kc-crd-name-chip-list">
+          {record.crdNames.slice(0, 2).map((value) => (
+            <code key={value} className="kc-crd-name-chip">{value}</code>
+          ))}
+          {record.crdNames.length > 2 ? (
+            <code className="kc-crd-name-chip is-summary">
+              {localeCode === 'zh_CN'
+                ? `+${record.crdNames.length - 2} 个 CRD`
+                : `+${record.crdNames.length - 2} more CRDs`}
+            </code>
+          ) : null}
         </div>
+      ),
+    },
+    {
+      title: t('page.extensions.crd.kindCountColumn', 'Kind Count'),
+      key: 'kindCount',
+      width: 120,
+      render: (_: unknown, record: CRDApiGroupSummary) => (
+        <Text>{localeCode === 'zh_CN' ? `${record.crdCount} 个` : String(record.crdCount)}</Text>
       ),
     },
     {
       title: t('page.extensions.crd.kindPreviewColumn', 'Served kinds'),
       key: 'kinds',
-      width: 420,
+      width: 360,
       render: (_: unknown, record: CRDApiGroupSummary) => (
         <Space size={[4, 4]} wrap>
           {record.kindNames.slice(0, 6).map((value) => (
@@ -703,11 +724,6 @@ export function CRDPage() {
 
   return (
     <div className="kc-page">
-      <PageHeader
-        title={t('page.extensions.crd.title', 'CustomResourceDefinitions')}
-        description={t('page.extensions.crd.desc', 'Browse existing CRD names first, then open one to inspect its served kinds and resources.')}
-      />
-      <PlatformScopeToolbar />
       <PlatformClusterScopeHint resourceLabel="CRD" />
       <AdminTable
         columns={columns}
@@ -716,15 +732,21 @@ export function CRDPage() {
         loading={isLoading}
         pageSize={10}
         enableColumnSelection={false}
+        scroll={{ x: 'max-content' }}
         onRow={(record: CRDApiGroupSummary) => ({
           onClick: () => navigate(buildCRDApiGroupDetailPath(record.group)),
           style: { cursor: 'pointer' },
         })}
         title={(
-          <Space direction="vertical" size={0}>
-            <Text strong>{t('page.extensions.crd.catalogTitle', 'CRD Catalog')}</Text>
-            <Text type="secondary">{t('page.extensions.crd.catalogDesc', 'See which CRD names are available in the current cluster, then open one to inspect its kinds.')}</Text>
-          </Space>
+          <div className="kc-admin-table-title-block">
+            <Text strong>{t('page.extensions.crd.title', 'CustomResourceDefinitions')}</Text>
+            <Text type="secondary">{t('page.extensions.crd.desc', 'Review CRD API groups and definition names in the current cluster, then open one group to inspect its served kinds and resources.')}</Text>
+          </div>
+        )}
+        toolbar={(
+          <div className="kc-workload-table-filters">
+            <PlatformScopeToolbar embedded showLabel={false} clusterWidth={180} namespaceWidth={180} />
+          </div>
         )}
       />
     </div>
@@ -799,7 +821,7 @@ export function CRDApiGroupDetailPage() {
       ) : (
         <div className="kc-crd-workspace">
           <Card className="kc-crd-sidebar-card" style={{ marginTop: 0 }}>
-            <Space direction="vertical" size={16} style={{ width: '100%' }}>
+            <div className="kc-crd-sidebar-body">
               <div>
                 <Text strong>{t('page.extensions.crd.kindCatalogTitle', 'CRD Resources')}</Text>
                 <div>
@@ -860,7 +882,7 @@ export function CRDApiGroupDetailPage() {
                   )
                 })}
               </div>
-            </Space>
+            </div>
           </Card>
 
           <div className="kc-crd-detail-column">

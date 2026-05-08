@@ -178,7 +178,7 @@ func (r *Repository) DeleteEnvironment(ctx context.Context, id string) error {
 
 func (r *Repository) ListApplicationEnvironments(ctx context.Context) ([]domaincatalog.ApplicationEnvironment, error) {
 	rows, err := r.db.WithContext(ctx).Raw(`
-		SELECT ae.id, ae.application_id, a.business_line_id, ae.environment_id, e.environment_key, ae.workflow_template_id, ae.build_policy, ae.release_policy, ae.created_at, ae.updated_at
+		SELECT ae.id, ae.application_id, a.business_line_id, ae.environment_id, e.environment_key, ae.strategy_profile_id, ae.promotion_policy_id, ae.approval_policy_id, ae.artifact_policy_id, ae.workflow_template_id, ae.build_policy, ae.release_policy, ae.created_at, ae.updated_at
 		FROM application_environments ae
 		JOIN applications a ON a.id = ae.application_id
 		JOIN delivery_environments e ON e.id = ae.environment_id
@@ -213,7 +213,7 @@ func (r *Repository) ListApplicationEnvironments(ctx context.Context) ([]domainc
 
 func (r *Repository) GetApplicationEnvironment(ctx context.Context, id string) (domaincatalog.ApplicationEnvironment, error) {
 	row := r.db.WithContext(ctx).Raw(`
-		SELECT ae.id, ae.application_id, a.business_line_id, ae.environment_id, e.environment_key, ae.workflow_template_id, ae.build_policy, ae.release_policy, ae.created_at, ae.updated_at
+		SELECT ae.id, ae.application_id, a.business_line_id, ae.environment_id, e.environment_key, ae.strategy_profile_id, ae.promotion_policy_id, ae.approval_policy_id, ae.artifact_policy_id, ae.workflow_template_id, ae.build_policy, ae.release_policy, ae.created_at, ae.updated_at
 		FROM application_environments ae
 		JOIN applications a ON a.id = ae.application_id
 		JOIN delivery_environments e ON e.id = ae.environment_id
@@ -249,9 +249,9 @@ func (r *Repository) CreateApplicationEnvironment(ctx context.Context, input dom
 			return fmt.Errorf("marshal release policy: %w", err)
 		}
 		if err := tx.Exec(`
-			INSERT INTO application_environments (id, application_id, environment_id, workflow_template_id, build_policy, release_policy, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-		`, item.ID, item.ApplicationID, item.EnvironmentID, nullableString(item.WorkflowTemplateID), string(buildPolicy), string(releasePolicy), item.CreatedAt, item.UpdatedAt).Error; err != nil {
+			INSERT INTO application_environments (id, application_id, environment_id, strategy_profile_id, promotion_policy_id, approval_policy_id, artifact_policy_id, workflow_template_id, build_policy, release_policy, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`, item.ID, item.ApplicationID, item.EnvironmentID, nullableString(item.StrategyProfileID), nullableString(item.PromotionPolicyID), nullableString(item.ApprovalPolicyID), nullableString(item.ArtifactPolicyID), nullableString(item.WorkflowTemplateID), string(buildPolicy), string(releasePolicy), item.CreatedAt, item.UpdatedAt).Error; err != nil {
 			return fmt.Errorf("create application environment: %w", err)
 		}
 		return replaceReleaseTargetsTx(tx, item.ID, input.Targets, item.CreatedAt)
@@ -275,9 +275,9 @@ func (r *Repository) UpdateApplicationEnvironment(ctx context.Context, id string
 		}
 		result := tx.Exec(`
 			UPDATE application_environments
-			SET application_id = ?, environment_id = ?, workflow_template_id = ?, build_policy = ?, release_policy = ?, updated_at = ?
+			SET application_id = ?, environment_id = ?, strategy_profile_id = ?, promotion_policy_id = ?, approval_policy_id = ?, artifact_policy_id = ?, workflow_template_id = ?, build_policy = ?, release_policy = ?, updated_at = ?
 			WHERE id = ?
-		`, item.ApplicationID, item.EnvironmentID, nullableString(item.WorkflowTemplateID), string(buildPolicy), string(releasePolicy), item.UpdatedAt, item.ID)
+		`, item.ApplicationID, item.EnvironmentID, nullableString(item.StrategyProfileID), nullableString(item.PromotionPolicyID), nullableString(item.ApprovalPolicyID), nullableString(item.ArtifactPolicyID), nullableString(item.WorkflowTemplateID), string(buildPolicy), string(releasePolicy), item.UpdatedAt, item.ID)
 		if result.Error != nil {
 			return fmt.Errorf("update application environment: %w", result.Error)
 		}
@@ -481,7 +481,7 @@ func (r *Repository) DeleteWorkflowTemplate(ctx context.Context, id string) erro
 
 func (r *Repository) listReleaseTargets(ctx context.Context, applicationEnvironmentID string) ([]domaincatalog.ReleaseTarget, error) {
 	rows, err := r.db.WithContext(ctx).Raw(`
-		SELECT id, application_environment_id, cluster_id, namespace, workload_kind, workload_name, container_name, enabled, created_at, updated_at
+		SELECT id, application_environment_id, cluster_id, namespace, target_kind, executor_kind, group_key, wave_key, region_key, config_ref, workload_kind, workload_name, container_name, metadata, enabled, created_at, updated_at
 		FROM release_targets
 		WHERE application_environment_id = ?
 		ORDER BY created_at ASC
@@ -508,10 +508,14 @@ func replaceReleaseTargetsTx(tx *gorm.DB, applicationEnvironmentID string, input
 	}
 	for _, input := range inputs {
 		item := normalizeReleaseTargetInput(applicationEnvironmentID, input, now)
+		metadata, err := json.Marshal(item.Metadata)
+		if err != nil {
+			return fmt.Errorf("marshal release target metadata: %w", err)
+		}
 		if err := tx.Exec(`
-			INSERT INTO release_targets (id, application_environment_id, cluster_id, namespace, workload_kind, workload_name, container_name, enabled, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-		`, item.ID, item.ApplicationEnvironmentID, item.ClusterID, item.Namespace, item.WorkloadKind, item.WorkloadName, nullableString(item.ContainerName), item.Enabled, item.CreatedAt, item.UpdatedAt).Error; err != nil {
+			INSERT INTO release_targets (id, application_environment_id, cluster_id, namespace, target_kind, executor_kind, group_key, wave_key, region_key, config_ref, workload_kind, workload_name, container_name, metadata, enabled, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`, item.ID, item.ApplicationEnvironmentID, item.ClusterID, item.Namespace, item.TargetKind, item.ExecutorKind, nullableString(item.GroupKey), nullableString(item.WaveKey), nullableString(item.RegionKey), nullableString(item.ConfigRef), item.WorkloadKind, item.WorkloadName, nullableString(item.ContainerName), string(metadata), item.Enabled, item.CreatedAt, item.UpdatedAt).Error; err != nil {
 			return fmt.Errorf("create release target: %w", err)
 		}
 	}
@@ -572,14 +576,22 @@ func scanApplicationEnvironment(rows *sql.Rows) (domaincatalog.ApplicationEnviro
 	var item domaincatalog.ApplicationEnvironment
 	var businessLineID sql.NullString
 	var environmentKey sql.NullString
+	var strategyProfileID sql.NullString
+	var promotionPolicyID sql.NullString
+	var approvalPolicyID sql.NullString
+	var artifactPolicyID sql.NullString
 	var workflowTemplateID sql.NullString
 	var buildPolicy []byte
 	var releasePolicy []byte
-	if err := rows.Scan(&item.ID, &item.ApplicationID, &businessLineID, &item.EnvironmentID, &environmentKey, &workflowTemplateID, &buildPolicy, &releasePolicy, &item.CreatedAt, &item.UpdatedAt); err != nil {
+	if err := rows.Scan(&item.ID, &item.ApplicationID, &businessLineID, &item.EnvironmentID, &environmentKey, &strategyProfileID, &promotionPolicyID, &approvalPolicyID, &artifactPolicyID, &workflowTemplateID, &buildPolicy, &releasePolicy, &item.CreatedAt, &item.UpdatedAt); err != nil {
 		return domaincatalog.ApplicationEnvironment{}, fmt.Errorf("scan application environment: %w", err)
 	}
 	item.BusinessLineID = businessLineID.String
 	item.EnvironmentKey = environmentKey.String
+	item.StrategyProfileID = strategyProfileID.String
+	item.PromotionPolicyID = promotionPolicyID.String
+	item.ApprovalPolicyID = approvalPolicyID.String
+	item.ArtifactPolicyID = artifactPolicyID.String
 	item.WorkflowTemplateID = workflowTemplateID.String
 	_ = json.Unmarshal(buildPolicy, &item.BuildPolicy)
 	_ = json.Unmarshal(releasePolicy, &item.ReleasePolicy)
@@ -590,10 +602,14 @@ func scanApplicationEnvironmentRow(row *sql.Row) (domaincatalog.ApplicationEnvir
 	var item domaincatalog.ApplicationEnvironment
 	var businessLineID sql.NullString
 	var environmentKey sql.NullString
+	var strategyProfileID sql.NullString
+	var promotionPolicyID sql.NullString
+	var approvalPolicyID sql.NullString
+	var artifactPolicyID sql.NullString
 	var workflowTemplateID sql.NullString
 	var buildPolicy []byte
 	var releasePolicy []byte
-	if err := row.Scan(&item.ID, &item.ApplicationID, &businessLineID, &item.EnvironmentID, &environmentKey, &workflowTemplateID, &buildPolicy, &releasePolicy, &item.CreatedAt, &item.UpdatedAt); err != nil {
+	if err := row.Scan(&item.ID, &item.ApplicationID, &businessLineID, &item.EnvironmentID, &environmentKey, &strategyProfileID, &promotionPolicyID, &approvalPolicyID, &artifactPolicyID, &workflowTemplateID, &buildPolicy, &releasePolicy, &item.CreatedAt, &item.UpdatedAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return domaincatalog.ApplicationEnvironment{}, ErrNotFound
 		}
@@ -601,6 +617,10 @@ func scanApplicationEnvironmentRow(row *sql.Row) (domaincatalog.ApplicationEnvir
 	}
 	item.BusinessLineID = businessLineID.String
 	item.EnvironmentKey = environmentKey.String
+	item.StrategyProfileID = strategyProfileID.String
+	item.PromotionPolicyID = promotionPolicyID.String
+	item.ApprovalPolicyID = approvalPolicyID.String
+	item.ArtifactPolicyID = artifactPolicyID.String
 	item.WorkflowTemplateID = workflowTemplateID.String
 	_ = json.Unmarshal(buildPolicy, &item.BuildPolicy)
 	_ = json.Unmarshal(releasePolicy, &item.ReleasePolicy)
@@ -609,11 +629,28 @@ func scanApplicationEnvironmentRow(row *sql.Row) (domaincatalog.ApplicationEnvir
 
 func scanReleaseTarget(rows *sql.Rows) (domaincatalog.ReleaseTarget, error) {
 	var item domaincatalog.ReleaseTarget
+	var targetKind sql.NullString
+	var executorKind sql.NullString
+	var groupKey sql.NullString
+	var waveKey sql.NullString
+	var regionKey sql.NullString
+	var configRef sql.NullString
 	var containerName sql.NullString
-	if err := rows.Scan(&item.ID, &item.ApplicationEnvironmentID, &item.ClusterID, &item.Namespace, &item.WorkloadKind, &item.WorkloadName, &containerName, &item.Enabled, &item.CreatedAt, &item.UpdatedAt); err != nil {
+	var metadata []byte
+	if err := rows.Scan(&item.ID, &item.ApplicationEnvironmentID, &item.ClusterID, &item.Namespace, &targetKind, &executorKind, &groupKey, &waveKey, &regionKey, &configRef, &item.WorkloadKind, &item.WorkloadName, &containerName, &metadata, &item.Enabled, &item.CreatedAt, &item.UpdatedAt); err != nil {
 		return domaincatalog.ReleaseTarget{}, fmt.Errorf("scan release target: %w", err)
 	}
+	item.TargetKind = targetKind.String
+	item.ExecutorKind = executorKind.String
+	item.GroupKey = groupKey.String
+	item.WaveKey = waveKey.String
+	item.RegionKey = regionKey.String
+	item.ConfigRef = configRef.String
 	item.ContainerName = containerName.String
+	_ = json.Unmarshal(metadata, &item.Metadata)
+	if item.Metadata == nil {
+		item.Metadata = map[string]any{}
+	}
 	return item, nil
 }
 
@@ -755,6 +792,10 @@ func normalizeApplicationEnvironmentInput(input domaincatalog.ApplicationEnviron
 		ID:                 id,
 		ApplicationID:      strings.TrimSpace(input.ApplicationID),
 		EnvironmentID:      strings.TrimSpace(input.EnvironmentID),
+		StrategyProfileID:  strings.TrimSpace(input.StrategyProfileID),
+		PromotionPolicyID:  strings.TrimSpace(input.PromotionPolicyID),
+		ApprovalPolicyID:   strings.TrimSpace(input.ApprovalPolicyID),
+		ArtifactPolicyID:   strings.TrimSpace(input.ArtifactPolicyID),
 		WorkflowTemplateID: strings.TrimSpace(input.WorkflowTemplateID),
 		BuildPolicy:        input.BuildPolicy,
 		ReleasePolicy:      input.ReleasePolicy,
@@ -832,9 +873,16 @@ func normalizeReleaseTargetInput(applicationEnvironmentID string, input domainca
 		ApplicationEnvironmentID: applicationEnvironmentID,
 		ClusterID:                strings.TrimSpace(input.ClusterID),
 		Namespace:                strings.TrimSpace(input.Namespace),
+		TargetKind:               firstNonEmpty(strings.TrimSpace(input.TargetKind), "k8s_workload"),
+		ExecutorKind:             firstNonEmpty(strings.TrimSpace(input.ExecutorKind), "k8s_job_runner"),
+		GroupKey:                 strings.TrimSpace(input.GroupKey),
+		WaveKey:                  strings.TrimSpace(input.WaveKey),
+		RegionKey:                strings.TrimSpace(input.RegionKey),
+		ConfigRef:                strings.TrimSpace(input.ConfigRef),
 		WorkloadKind:             strings.TrimSpace(input.WorkloadKind),
 		WorkloadName:             strings.TrimSpace(input.WorkloadName),
 		ContainerName:            strings.TrimSpace(input.ContainerName),
+		Metadata:                 input.Metadata,
 		Enabled:                  input.Enabled,
 		CreatedAt:                now,
 		UpdatedAt:                now,

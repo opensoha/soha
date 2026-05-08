@@ -11,11 +11,12 @@ import (
 )
 
 type Config struct {
-	App        AppConfig        `mapstructure:"app"`
-	HTTP       HTTPConfig       `mapstructure:"http"`
-	Logger     LoggerConfig     `mapstructure:"logger"`
-	Auth       AuthConfig       `mapstructure:"auth"`
-	Kubernetes KubernetesConfig `mapstructure:"kubernetes"`
+	App          AppConfig          `mapstructure:"app"`
+	HTTP         HTTPConfig         `mapstructure:"http"`
+	Logger       LoggerConfig       `mapstructure:"logger"`
+	Auth         AuthConfig         `mapstructure:"auth"`
+	ControlPlane ControlPlaneConfig `mapstructure:"control_plane"`
+	Kubernetes   KubernetesConfig   `mapstructure:"kubernetes"`
 }
 
 type AppConfig struct {
@@ -37,6 +38,17 @@ type LoggerConfig struct {
 
 type AuthConfig struct {
 	BearerToken string `mapstructure:"bearer_token"`
+}
+
+type ControlPlaneConfig struct {
+	Enabled         bool          `mapstructure:"enabled"`
+	BaseURL         string        `mapstructure:"base_url"`
+	BearerToken     string        `mapstructure:"bearer_token"`
+	AgentID         string        `mapstructure:"agent_id"`
+	RuntimeEndpoint string        `mapstructure:"runtime_endpoint"`
+	PollInterval    time.Duration `mapstructure:"poll_interval"`
+	ProviderKinds   []string      `mapstructure:"provider_kinds"`
+	WorkspaceRoot   string        `mapstructure:"workspace_root"`
 }
 
 type KubernetesConfig struct {
@@ -94,6 +106,14 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("logger.level", "debug")
 	v.SetDefault("logger.format", "console")
 	v.SetDefault("auth.bearer_token", "")
+	v.SetDefault("control_plane.enabled", false)
+	v.SetDefault("control_plane.base_url", "http://127.0.0.1:8080")
+	v.SetDefault("control_plane.bearer_token", "")
+	v.SetDefault("control_plane.agent_id", "local-agent")
+	v.SetDefault("control_plane.runtime_endpoint", "http://127.0.0.1:18080")
+	v.SetDefault("control_plane.poll_interval", "5s")
+	v.SetDefault("control_plane.provider_kinds", []string{"ci_agent_runner"})
+	v.SetDefault("control_plane.workspace_root", ".")
 	v.SetDefault("kubernetes.id", "local-agent")
 	v.SetDefault("kubernetes.name", "Local Agent")
 	v.SetDefault("kubernetes.kubeconfig", "$HOME/.kube/config")

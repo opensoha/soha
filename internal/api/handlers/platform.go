@@ -88,8 +88,11 @@ type ResourceService interface {
 	GetSecretDetail(context.Context, domainidentity.Principal, string, string, string) (domainresource.SecretDetailView, error)
 	CreateResourceFromYAML(context.Context, domainidentity.Principal, string, string, string, string) (domainresource.ResourceYAMLView, error)
 	ListServiceAccounts(context.Context, domainidentity.Principal, string, string) ([]domainresource.ServiceAccountView, error)
+	GetServiceAccountDetail(context.Context, domainidentity.Principal, string, string, string) (domainresource.ServiceAccountDetailView, error)
 	ListRoles(context.Context, domainidentity.Principal, string, string) ([]domainresource.RoleView, error)
+	GetRoleDetail(context.Context, domainidentity.Principal, string, string, string) (domainresource.RoleDetailView, error)
 	ListRoleBindings(context.Context, domainidentity.Principal, string, string) ([]domainresource.RoleBindingView, error)
+	GetRoleBindingDetail(context.Context, domainidentity.Principal, string, string, string) (domainresource.RoleBindingDetailView, error)
 	ListHorizontalPodAutoscalers(context.Context, domainidentity.Principal, string, string) ([]domainresource.HorizontalPodAutoscalerView, error)
 	ListPodDisruptionBudgets(context.Context, domainidentity.Principal, string, string) ([]domainresource.PodDisruptionBudgetView, error)
 	GetCronJobDetail(context.Context, domainidentity.Principal, string, string, string) (domainresource.CronJobDetailView, error)
@@ -103,13 +106,18 @@ type ResourceService interface {
 	ListGateways(context.Context, domainidentity.Principal, string, string) ([]domainresource.GatewayView, error)
 	ListHTTPRoutes(context.Context, domainidentity.Principal, string, string) ([]domainresource.HTTPRouteView, error)
 	ListPersistentVolumeClaims(context.Context, domainidentity.Principal, string, string) ([]domainresource.PersistentVolumeClaimView, error)
+	GetPersistentVolumeClaimDetail(context.Context, domainidentity.Principal, string, string, string) (domainresource.PersistentVolumeClaimDetailView, error)
 	ListPersistentVolumes(context.Context, domainidentity.Principal, string) ([]domainresource.PersistentVolumeView, error)
+	GetPersistentVolumeDetail(context.Context, domainidentity.Principal, string, string) (domainresource.PersistentVolumeDetailView, error)
 	ListStorageClasses(context.Context, domainidentity.Principal, string) ([]domainresource.StorageClassView, error)
+	GetStorageClassDetail(context.Context, domainidentity.Principal, string, string) (domainresource.StorageClassDetailView, error)
 	ListIngressClasses(context.Context, domainidentity.Principal, string) ([]domainresource.IngressClassView, error)
 	ListPriorityClasses(context.Context, domainidentity.Principal, string) ([]domainresource.PriorityClassView, error)
 	ListRuntimeClasses(context.Context, domainidentity.Principal, string) ([]domainresource.RuntimeClassView, error)
 	ListClusterRoles(context.Context, domainidentity.Principal, string) ([]domainresource.ClusterRoleView, error)
+	GetClusterRoleDetail(context.Context, domainidentity.Principal, string, string) (domainresource.ClusterRoleDetailView, error)
 	ListClusterRoleBindings(context.Context, domainidentity.Principal, string) ([]domainresource.ClusterRoleBindingView, error)
+	GetClusterRoleBindingDetail(context.Context, domainidentity.Principal, string, string) (domainresource.ClusterRoleBindingDetailView, error)
 	ListMutatingWebhookConfigurations(context.Context, domainidentity.Principal, string) ([]domainresource.MutatingWebhookConfigurationView, error)
 	ListValidatingWebhookConfigurations(context.Context, domainidentity.Principal, string) ([]domainresource.ValidatingWebhookConfigurationView, error)
 	ListResourceQuotas(context.Context, domainidentity.Principal, string, string) ([]domainresource.ResourceQuotaView, error)
@@ -169,6 +177,12 @@ var podTerminalUpgrader = websocket.Upgrader{
 		return true
 	},
 }
+
+const (
+	podLogPingInterval   = 20 * time.Second
+	podLogPongWait       = 45 * time.Second
+	podLogReconnectDelay = 1200 * time.Millisecond
+)
 
 func NewPlatformHandler(clusters ClusterService, resources ResourceService, audit AuditService, events EventService, operations OperationService, integration IntegrationService) *PlatformHandler {
 	return &PlatformHandler{
@@ -475,19 +489,34 @@ func (h *PlatformHandler) StreamPodLogs(c *gin.Context) {
 		return
 	}
 	defer conn.Close()
+	_ = conn.SetReadDeadline(time.Now().Add(podLogPongWait))
+	conn.SetPongHandler(func(string) error {
+		return conn.SetReadDeadline(time.Now().Add(podLogPongWait))
+	})
 
 	ctx, cancel := context.WithCancel(c.Request.Context())
 	defer cancel()
 
 	var writeMu sync.Mutex
-	_ = writeTerminalMessage(conn, &writeMu, terminalMessage{
-		Type:    "status",
-		Message: "log stream connected",
-	})
+	go func() {
+		ticker := time.NewTicker(podLogPingInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if err := writeControlMessage(conn, &writeMu, websocket.PingMessage, nil); err != nil {
+					cancel()
+					return
+				}
+			}
+		}
+	}()
 
 	streamErrCh := make(chan error, 1)
 	go func() {
-		streamErrCh <- h.resources.StreamPodLogs(
+		streamErrCh <- h.streamPodLogsWithReconnect(
 			ctx,
 			principal,
 			c.Param("clusterID"),
@@ -496,7 +525,7 @@ func (h *PlatformHandler) StreamPodLogs(c *gin.Context) {
 			container,
 			tailLines,
 			sinceSeconds,
-			logStreamWriter{conn: conn, writeMu: &writeMu},
+			&logStreamWriter{conn: conn, writeMu: &writeMu},
 		)
 	}()
 
@@ -529,6 +558,46 @@ func (h *PlatformHandler) StreamPodLogs(c *gin.Context) {
 		_ = writeTerminalMessage(conn, &writeMu, exitMessage)
 	case <-readDone:
 		_ = writeTerminalMessage(conn, &writeMu, terminalMessage{Type: "exit", Message: "log stream closed"})
+	}
+}
+
+func (h *PlatformHandler) streamPodLogsWithReconnect(
+	ctx context.Context,
+	principal domainidentity.Principal,
+	clusterID, namespace, podName, container string,
+	tailLines, sinceSeconds int64,
+	writer *logStreamWriter,
+) error {
+	currentTailLines := tailLines
+	connectedOnce := false
+	for {
+		err := h.resources.StreamPodLogs(
+			ctx,
+			principal,
+			clusterID,
+			namespace,
+			podName,
+			container,
+			currentTailLines,
+			sinceSeconds,
+			writer,
+		)
+		if errors.Is(err, context.Canceled) || ctx.Err() != nil {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			return err
+		}
+		if !connectedOnce && err != nil {
+			return err
+		}
+		connectedOnce = true
+		currentTailLines = 0
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(podLogReconnectDelay):
+		}
 	}
 }
 
@@ -1047,6 +1116,21 @@ func (h *PlatformHandler) ListServiceAccounts(c *gin.Context) {
 	apiresponse.Items(c, http.StatusOK, items)
 }
 
+func (h *PlatformHandler) GetServiceAccountDetail(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	namespace := c.Query("namespace")
+	item, err := h.resources.GetServiceAccountDetail(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("name"))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
+}
+
+func (h *PlatformHandler) CreateServiceAccount(c *gin.Context) {
+	h.createResourceFromYAML(c, "ServiceAccount")
+}
+
 func (h *PlatformHandler) ListRoles(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.Query("namespace")
@@ -1058,6 +1142,21 @@ func (h *PlatformHandler) ListRoles(c *gin.Context) {
 	apiresponse.Items(c, http.StatusOK, items)
 }
 
+func (h *PlatformHandler) GetRoleDetail(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	namespace := c.Query("namespace")
+	item, err := h.resources.GetRoleDetail(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("name"))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
+}
+
+func (h *PlatformHandler) CreateRole(c *gin.Context) {
+	h.createResourceFromYAML(c, "Role")
+}
+
 func (h *PlatformHandler) ListRoleBindings(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.Query("namespace")
@@ -1067,6 +1166,21 @@ func (h *PlatformHandler) ListRoleBindings(c *gin.Context) {
 		return
 	}
 	apiresponse.Items(c, http.StatusOK, items)
+}
+
+func (h *PlatformHandler) GetRoleBindingDetail(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	namespace := c.Query("namespace")
+	item, err := h.resources.GetRoleBindingDetail(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("name"))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
+}
+
+func (h *PlatformHandler) CreateRoleBinding(c *gin.Context) {
+	h.createResourceFromYAML(c, "RoleBinding")
 }
 
 func (h *PlatformHandler) ListHorizontalPodAutoscalers(c *gin.Context) {
@@ -1181,6 +1295,21 @@ func (h *PlatformHandler) ListPersistentVolumeClaims(c *gin.Context) {
 	apiresponse.Items(c, http.StatusOK, items)
 }
 
+func (h *PlatformHandler) GetPersistentVolumeClaimDetail(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	namespace := c.Query("namespace")
+	item, err := h.resources.GetPersistentVolumeClaimDetail(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("name"))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
+}
+
+func (h *PlatformHandler) CreatePersistentVolumeClaim(c *gin.Context) {
+	h.createResourceFromYAML(c, "PersistentVolumeClaim")
+}
+
 func (h *PlatformHandler) ListPersistentVolumes(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	items, err := h.resources.ListPersistentVolumes(c.Request.Context(), principal, c.Param("clusterID"))
@@ -1191,6 +1320,20 @@ func (h *PlatformHandler) ListPersistentVolumes(c *gin.Context) {
 	apiresponse.Items(c, http.StatusOK, items)
 }
 
+func (h *PlatformHandler) GetPersistentVolumeDetail(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	item, err := h.resources.GetPersistentVolumeDetail(c.Request.Context(), principal, c.Param("clusterID"), c.Param("name"))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
+}
+
+func (h *PlatformHandler) CreatePersistentVolume(c *gin.Context) {
+	h.createResourceFromYAML(c, "PersistentVolume")
+}
+
 func (h *PlatformHandler) ListStorageClasses(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	items, err := h.resources.ListStorageClasses(c.Request.Context(), principal, c.Param("clusterID"))
@@ -1199,6 +1342,20 @@ func (h *PlatformHandler) ListStorageClasses(c *gin.Context) {
 		return
 	}
 	apiresponse.Items(c, http.StatusOK, items)
+}
+
+func (h *PlatformHandler) GetStorageClassDetail(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	item, err := h.resources.GetStorageClassDetail(c.Request.Context(), principal, c.Param("clusterID"), c.Param("name"))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
+}
+
+func (h *PlatformHandler) CreateStorageClass(c *gin.Context) {
+	h.createResourceFromYAML(c, "StorageClass")
 }
 
 func (h *PlatformHandler) ListIngressClasses(c *gin.Context) {
@@ -1241,6 +1398,20 @@ func (h *PlatformHandler) ListClusterRoles(c *gin.Context) {
 	apiresponse.Items(c, http.StatusOK, items)
 }
 
+func (h *PlatformHandler) GetClusterRoleDetail(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	item, err := h.resources.GetClusterRoleDetail(c.Request.Context(), principal, c.Param("clusterID"), c.Param("name"))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
+}
+
+func (h *PlatformHandler) CreateClusterRole(c *gin.Context) {
+	h.createResourceFromYAML(c, "ClusterRole")
+}
+
 func (h *PlatformHandler) ListClusterRoleBindings(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	items, err := h.resources.ListClusterRoleBindings(c.Request.Context(), principal, c.Param("clusterID"))
@@ -1249,6 +1420,20 @@ func (h *PlatformHandler) ListClusterRoleBindings(c *gin.Context) {
 		return
 	}
 	apiresponse.Items(c, http.StatusOK, items)
+}
+
+func (h *PlatformHandler) GetClusterRoleBindingDetail(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	item, err := h.resources.GetClusterRoleBindingDetail(c.Request.Context(), principal, c.Param("clusterID"), c.Param("name"))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
+}
+
+func (h *PlatformHandler) CreateClusterRoleBinding(c *gin.Context) {
+	h.createResourceFromYAML(c, "ClusterRoleBinding")
 }
 
 func (h *PlatformHandler) ListMutatingWebhookConfigurations(c *gin.Context) {
@@ -1401,6 +1586,9 @@ func (h *PlatformHandler) RegisterGenericResourceRoutes(group gin.IRoutes) {
 		path string
 		kind string
 	}{
+		{"/clusters/:clusterID/access-control/serviceaccounts/:name", "ServiceAccount"},
+		{"/clusters/:clusterID/access-control/roles/:name", "Role"},
+		{"/clusters/:clusterID/access-control/rolebindings/:name", "RoleBinding"},
 		{"/clusters/:clusterID/network/ingressclasses/:name", "IngressClass"},
 		{"/clusters/:clusterID/configuration/priorityclasses/:name", "PriorityClass"},
 		{"/clusters/:clusterID/configuration/runtimeclasses/:name", "RuntimeClass"},
@@ -1414,6 +1602,9 @@ func (h *PlatformHandler) RegisterGenericResourceRoutes(group gin.IRoutes) {
 		{"/clusters/:clusterID/workloads/replicationcontrollers/:name", "ReplicationController"},
 		{"/clusters/:clusterID/configuration/configmaps/:name", "ConfigMap"},
 		{"/clusters/:clusterID/configuration/secrets/:name", "Secret"},
+		{"/clusters/:clusterID/storage/persistentvolumeclaims/:name", "PersistentVolumeClaim"},
+		{"/clusters/:clusterID/storage/persistentvolumes/:name", "PersistentVolume"},
+		{"/clusters/:clusterID/storage/storageclasses/:name", "StorageClass"},
 	}
 	for _, entry := range kinds {
 		group.GET(entry.path+"/yaml", h.genericResourceYAMLGet(entry.kind))
@@ -1698,7 +1889,7 @@ func (w terminalStreamWriter) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-func (w logStreamWriter) Write(p []byte) (int, error) {
+func (w *logStreamWriter) Write(p []byte) (int, error) {
 	if len(p) == 0 {
 		return 0, nil
 	}
@@ -1762,6 +1953,12 @@ func writeTerminalMessage(conn *websocket.Conn, writeMu *sync.Mutex, message ter
 	writeMu.Lock()
 	defer writeMu.Unlock()
 	return conn.WriteJSON(message)
+}
+
+func writeControlMessage(conn *websocket.Conn, writeMu *sync.Mutex, messageType int, data []byte) error {
+	writeMu.Lock()
+	defer writeMu.Unlock()
+	return conn.WriteControl(messageType, data, time.Now().Add(5*time.Second))
 }
 
 func (h *PlatformHandler) ListEvents(c *gin.Context) {

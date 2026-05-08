@@ -35,5 +35,7 @@ type Filter struct {
 
 type Repository interface {
 	List(context.Context, Filter) ([]Record, error)
+	GetByExecutionTaskID(context.Context, string) (Record, error)
 	Create(context.Context, TriggerInput, map[string]any) (Record, error)
+	Update(context.Context, Record) (Record, error)
 }

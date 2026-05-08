@@ -69,18 +69,21 @@ export function CreateResourceModal({
   resourcePath,
   defaultTemplate,
   invalidationKeys,
+  namespaceScope = 'required',
 }: {
   visible: boolean
   onClose: () => void
-  kind: 'ConfigMap' | 'Secret'
+  kind: string
   resourcePath: string
   defaultTemplate: string
   invalidationKeys: unknown[][]
+  namespaceScope?: 'cluster' | 'required'
 }) {
   const { t, localeCode } = useI18n()
   const { clusterId, namespace } = usePlatformScopeStore()
   const queryClient = useQueryClient()
   const [draft, setDraft] = useState(defaultTemplate)
+  const effectiveNamespace = namespaceScope === 'cluster' ? null : (namespace || 'default')
 
   useEffect(() => {
     if (visible) setDraft(defaultTemplate)
@@ -89,8 +92,8 @@ export function CreateResourceModal({
   const createMutation = useMutation({
     mutationFn: () =>
       api.post<ApiResponse<ResourceYAMLView>>(
-        buildClusterScopedPath(clusterId!, resourcePath, namespace || 'default'),
-        { content: draft, namespace: namespace || 'default' },
+        buildClusterScopedPath(clusterId!, resourcePath, effectiveNamespace),
+        { content: draft, ...(effectiveNamespace ? { namespace: effectiveNamespace } : {}) },
       ),
     onSuccess: () => {
       void message.success(localeCode === 'zh_CN' ? `${kind} 已创建` : `${kind} created`)
@@ -118,10 +121,14 @@ export function CreateResourceModal({
             showIcon
             type="info"
             description={localeCode === 'zh_CN'
-              ? `命名空间：${namespace || 'default'}。可在 YAML 内指定 metadata.namespace 覆盖。`
-              : `Namespace: ${namespace || 'default'}. You can override via metadata.namespace in YAML.`}
+              ? (namespaceScope === 'cluster'
+                ? '当前资源为 cluster scope，metadata.namespace 必须留空。'
+                : `命名空间：${effectiveNamespace || 'default'}。可在 YAML 内指定 metadata.namespace 覆盖。`)
+              : (namespaceScope === 'cluster'
+                ? 'This resource is cluster-scoped. Keep metadata.namespace empty.'
+                : `Namespace: ${effectiveNamespace || 'default'}. You can override via metadata.namespace in YAML.`)}
           />
-          <div style={{ height: 520, marginTop: 12 }}>
+          <div style={{ marginTop: 12 }}>
             <K8sYamlEditor
               value={draft}
               onChange={setDraft}
@@ -131,6 +138,7 @@ export function CreateResourceModal({
               saveDisabled
               applyDisabled={!draft.trim() || createMutation.isPending}
               applying={createMutation.isPending}
+              editorHeight="min(46vh, 440px)"
             />
           </div>
           <div style={{ marginTop: 12, textAlign: 'right' }}>
@@ -202,7 +210,7 @@ function decodeBase64Safe(value: string) {
   }
 }
 
-function ResourceMetaOverview({
+export function ResourceMetaOverview({
   name, namespace, createdAt, labels, annotations, extra,
 }: {
   name: string
@@ -243,7 +251,7 @@ function ResourceMetaOverview({
   )
 }
 
-function useResourceYAMLState(yamlPath: string | null, resource: string, name: string, namespace: string) {
+export function useResourceYAMLState(yamlPath: string | null, resource: string, name: string, namespace: string) {
   const { t } = useI18n()
   const queryClient = useQueryClient()
   const yamlQuery = useQuery({

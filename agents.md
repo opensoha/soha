@@ -305,12 +305,29 @@ Design expectation:
 
 - delivery remains platform-native
 - application delivery now centers on four stable objects: applications, build templates, application-environment bindings, and execution records
+- the next enterprise execution-plane baseline is now started in code: `release_bundles`, `execution_tasks`, `execution_logs`, `execution_callbacks`, and `approval_policies` exist as first-class delivery control-plane objects
 - applications may own multiple build sources (`repo_dockerfile`, `platform_build_template`, `external_pipeline`), while each application-environment binding selects one concrete build source plus one workflow template and one or more explicit release targets
+- application-environment bindings now also carry strategy/promotion/approval/artifact policy references, and release targets now carry `targetKind`, `executorKind`, `groupKey`, `waveKey`, `regionKey`, and `configRef` as the stable enterprise target contract
 - legacy top-level application build fields may remain as backend compatibility/migration inputs, but the active application-center UI should no longer expose them as the primary editing surface once `buildSources` is available
 - application-environment binding `buildPolicy` and `releasePolicy` are now structured contracts rather than free-form JSON blobs; the frontend should edit them with typed controls instead of raw JSON textareas wherever possible
 - platform-managed build templates are now a first-class delivery object with arbitrary build-command payloads, but those commands are only allowed inside the dedicated build worker path and must never execute inline in API handlers
 - release-board and application/application-environment detail pages now prefer backend aggregate endpoints instead of frontend fan-out joins across builds, workflows, and releases
 - workflow `manual_approval` now pauses runs with status `waiting_approval`, and approve/reject decisions persist to `workflow_approvals`
+- build and release entrypoints now begin dual-writing `releaseBundleId` and `executionTaskId`, so the execution plane can evolve independently from the current synchronous delivery path
+- the active delivery web surface now exposes minimal enterprise control-plane pages for release bundles, execution tasks, execution logs, and approval policies so the new execution-plane objects are inspectable from the console instead of remaining backend-only
+- the first runnable `ci_agent_runner` chain now exists: control plane task claim + callback APIs, agent-side polling, local shell execution, and callback-driven task/bundle state advancement are all in place for command-driven build/release tasks
+- execution-task claim and callback handling must stay routed through `internal/application/execution`; delivery HTTP handlers must not bypass that orchestration path because heartbeat persistence, release-bundle updates, and build/deploy record backfill now depend on it
+- execution tasks now persist `last_heartbeat_at`, and callback-driven task updates must keep `build_records` and `deploy_records` synchronized with execution-plane status instead of leaving business records stranded at `queued`
+- `ci_agent_runner` tasks are now workspace-aware: build and release payloads may carry `workspace.path`, `workspace.commandDir`, `workspace.checkout`, and `workspace.artifactFiles`, and the agent runner is responsible for preparing that workspace before executing shell commands
+- asynchronous build callbacks must normalize release-bundle state back to `ready` and update `artifact_ref` or `artifact_digest` from callback payloads; they must not leave build bundles stuck at raw task states like `completed`
+- the execution plane now owns a server-side timeout sweep: `dispatching` and `running` tasks that exceed `timeout_seconds` without heartbeat must transition to `callback_timeout`, emit an execution log entry, and backfill bundle, build-record, and deploy-record failure state from the execution service
+- execution tasks now expose explicit control-plane operations for `cancel` and `retry`; retry must rotate the callback token before re-queueing so stale agent callbacks cannot overwrite the new attempt
+- `ci_agent_runner` must inspect execution-callback responses during heartbeat and stop its local process when the control plane has already transitioned the task to a terminal state such as `canceled` or `callback_timeout`; cancel is no longer allowed to be database-only
+- the runner-facing delivery surface now also exposes a token-protected task-status read path so `ci_agent_runner` can poll current task state during long commands instead of waiting for the next heartbeat callback to discover cancellation
+- the agent process now owns an in-memory active-task registry plus agent-local runtime APIs for active-task list/get/cancel; these APIs are the stable local control surface for future control-plane initiated stop flows and manual runner diagnostics
+- execution-task claims now include an agent runtime endpoint, and the control plane will attempt runtime cancellation directly before relying on subsequent heartbeats or status polling
+- `k8s_job_runner` now consumes execution-job settings from server runtime config and can dispatch a real Kubernetes Job for build execution when an execution cluster is configured; if no execution cluster exists, the service must fall back instead of pretending parity
+- execution-task rows now expose a first-class `artifacts[]` view built from task result payloads, so logs, image refs, and workspace evidence can be inspected from the console without parsing raw JSON
 - business lines, delivery environments, and application-environment bindings are now treated as a standalone master-data domain in frontend navigation; they still serve delivery and access-control scope flows, but their ownership is no longer represented as delivery-only in the console IA
 - environment binding and release orchestration must map to platform runtime context
 
@@ -378,6 +395,9 @@ The repository has already converged on these rules:
 - platform overview runtime cards must consume a backend workload overview aggregation endpoint and keep the active cluster/namespace scope visible; frontend should not fetch all Pod rows just to render dashboard summaries
 - service pages should evolve from plain tables to operational workspaces when selector, metrics, and event context already exist
 - cluster management remains the registration surface, but each cluster row should drill into a lightweight detail page for labels, version, health, and handoff into node operations
+- cluster registration forms should not ask operators to hand-enter cluster IDs; backend registration generates the stable ID automatically, and the direct-kubeconfig form should avoid exposing kube context unless an explicit context-selection workflow is restored end-to-end
+- cluster onboarding should present cloud or distribution choices such as `standard_kubernetes`, `gke`, `ack`, `tke`, and `aks` as provider-style metadata for UI display and filtering, while backend `region` semantics remain reserved for policy/runtime data
+- platform resource metrics should default to global monitoring settings, may accept cluster-level Prometheus/Grafana overrides from cluster registration data when present, and should not imply automatic in-cluster Prometheus discovery when operators have not configured either path
 - node resources should expose a standalone node detail workspace with YAML, labels/taints editing, and scheduled pod context instead of limiting all actions to list-row modals
 - page bundles may export multiple route-level pages until reuse pressure justifies further splitting
 - frontend consumes aggregated platform views only

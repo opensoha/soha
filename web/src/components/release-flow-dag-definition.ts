@@ -7,6 +7,12 @@ export type ReleaseDagNodeType =
   | 'check_k8s_event'
   | 'smoke_test'
   | 'notify'
+  | 'restart_workload'
+  | 'scale_workload'
+  | 'delete_pod'
+  | 'evict_pod'
+  | 'http_callback'
+  | 'create_silence'
   | 'rollback_to_previous'
 
 export type ReleaseDagEdgeCondition = 'success' | 'failure' | 'always'
@@ -57,6 +63,18 @@ export function getDefaultReleaseDagNodeLabel(type: ReleaseDagNodeType) {
       return 'Smoke Test'
     case 'notify':
       return '通知'
+    case 'restart_workload':
+      return '重启工作负载'
+    case 'scale_workload':
+      return '扩缩容'
+    case 'delete_pod':
+      return '删除 Pod'
+    case 'evict_pod':
+      return '驱逐 Pod'
+    case 'http_callback':
+      return 'HTTP 回调'
+    case 'create_silence':
+      return '创建静默'
     case 'rollback_to_previous':
       return '失败回滚'
   }
@@ -80,6 +98,18 @@ export function createNodeConfig(type: ReleaseDagNodeType): Record<string, unkno
       return { endpoint: '', expectedStatus: 200 }
     case 'notify':
       return { channel: '', template: 'release-result' }
+    case 'restart_workload':
+      return { deploymentName: '' }
+    case 'scale_workload':
+      return { deploymentName: '', replicas: 1 }
+    case 'delete_pod':
+      return { podName: '' }
+    case 'evict_pod':
+      return { podName: '' }
+    case 'http_callback':
+      return { url: '', method: 'POST', expectedStatus: 200, body: '{}' }
+    case 'create_silence':
+      return { name: '', reason: '', durationMinutes: 60, matchers: { severity: ['critical'] } }
     case 'rollback_to_previous':
       return {}
     default:

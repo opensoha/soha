@@ -77,6 +77,32 @@ func (r *Repository) Create(ctx context.Context, record domainrelease.Record) (d
 	return record, nil
 }
 
+func (r *Repository) GetByExecutionTaskID(ctx context.Context, executionTaskID string) (domainrelease.Record, error) {
+	row := r.db.WithContext(ctx).Raw(`
+		SELECT id, project_id, cluster_id, namespace, release_name, status, metadata, deployed_at, created_at
+		FROM deploy_records
+		WHERE metadata ->> 'executionTaskId' = ?
+		ORDER BY created_at DESC
+		LIMIT 1
+	`, executionTaskID).Row()
+	return scanRecordRow(row)
+}
+
+func (r *Repository) Update(ctx context.Context, record domainrelease.Record) (domainrelease.Record, error) {
+	payload, err := json.Marshal(record.Metadata)
+	if err != nil {
+		return domainrelease.Record{}, fmt.Errorf("marshal release metadata: %w", err)
+	}
+	if err := r.db.WithContext(ctx).Exec(`
+		UPDATE deploy_records
+		SET status = ?, metadata = ?, deployed_at = ?
+		WHERE id = ?
+	`, record.Status, string(payload), record.DeployedAt, record.ID).Error; err != nil {
+		return domainrelease.Record{}, fmt.Errorf("update release record: %w", err)
+	}
+	return record, nil
+}
+
 func (r *Repository) DeleteByIDs(ctx context.Context, ids []string) error {
 	if len(ids) == 0 {
 		return nil
@@ -93,6 +119,26 @@ func scanRecord(rows *sql.Rows) (domainrelease.Record, error) {
 	var deployedAt sql.NullTime
 	if err := rows.Scan(&item.ID, &item.ApplicationID, &item.ClusterID, &item.Namespace, &item.DeploymentName, &item.Status, &payload, &deployedAt, &item.CreatedAt); err != nil {
 		return domainrelease.Record{}, fmt.Errorf("scan release record: %w", err)
+	}
+	if len(payload) > 0 {
+		_ = json.Unmarshal(payload, &item.Metadata)
+	}
+	if deployedAt.Valid {
+		value := deployedAt.Time
+		item.DeployedAt = &value
+	}
+	return item, nil
+}
+
+func scanRecordRow(row *sql.Row) (domainrelease.Record, error) {
+	var item domainrelease.Record
+	var payload []byte
+	var deployedAt sql.NullTime
+	if err := row.Scan(&item.ID, &item.ApplicationID, &item.ClusterID, &item.Namespace, &item.DeploymentName, &item.Status, &payload, &deployedAt, &item.CreatedAt); err != nil {
+		if err == sql.ErrNoRows {
+			return domainrelease.Record{}, fmt.Errorf("release record not found")
+		}
+		return domainrelease.Record{}, fmt.Errorf("scan release record row: %w", err)
 	}
 	if len(payload) > 0 {
 		_ = json.Unmarshal(payload, &item.Metadata)

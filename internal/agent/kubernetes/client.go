@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
+	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
 	appsv1 "k8s.io/api/apps/v1"
 	autoscalingv2 "k8s.io/api/autoscaling/v2"
-	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
 	batchv1 "k8s.io/api/batch/v1"
 	coordinationv1 "k8s.io/api/coordination/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -178,7 +178,7 @@ func (c *Client) GetPodDetail(ctx context.Context, namespace, name string) (doma
 	if err != nil {
 		return domainresource.PodDetailView{}, err
 	}
-	return mapPodDetail(*item), nil
+	return c.buildPodDetail(queryCtx, *item), nil
 }
 
 func (c *Client) GetPodLogs(ctx context.Context, namespace, name, container string, tailLines, sinceSeconds int64, previous bool) (domainresource.PodLogsView, error) {
@@ -604,6 +604,16 @@ func (c *Client) ListServiceAccounts(ctx context.Context, namespace string) ([]d
 	return views, nil
 }
 
+func (c *Client) GetServiceAccountDetail(ctx context.Context, namespace, name string) (domainresource.ServiceAccountDetailView, error) {
+	queryCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	item, err := c.typed.CoreV1().ServiceAccounts(namespace).Get(queryCtx, name, metav1.GetOptions{})
+	if err != nil {
+		return domainresource.ServiceAccountDetailView{}, err
+	}
+	return mapServiceAccountDetail(*item), nil
+}
+
 func (c *Client) ListRoles(ctx context.Context, namespace string) ([]domainresource.RoleView, error) {
 	queryCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
@@ -618,6 +628,16 @@ func (c *Client) ListRoles(ctx context.Context, namespace string) ([]domainresou
 	return views, nil
 }
 
+func (c *Client) GetRoleDetail(ctx context.Context, namespace, name string) (domainresource.RoleDetailView, error) {
+	queryCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	item, err := c.typed.RbacV1().Roles(namespace).Get(queryCtx, name, metav1.GetOptions{})
+	if err != nil {
+		return domainresource.RoleDetailView{}, err
+	}
+	return mapRoleDetail(*item), nil
+}
+
 func (c *Client) ListRoleBindings(ctx context.Context, namespace string) ([]domainresource.RoleBindingView, error) {
 	queryCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
@@ -630,6 +650,16 @@ func (c *Client) ListRoleBindings(ctx context.Context, namespace string) ([]doma
 		views = append(views, mapRoleBinding(item))
 	}
 	return views, nil
+}
+
+func (c *Client) GetRoleBindingDetail(ctx context.Context, namespace, name string) (domainresource.RoleBindingDetailView, error) {
+	queryCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	item, err := c.typed.RbacV1().RoleBindings(namespace).Get(queryCtx, name, metav1.GetOptions{})
+	if err != nil {
+		return domainresource.RoleBindingDetailView{}, err
+	}
+	return mapRoleBindingDetail(*item), nil
 }
 
 func (c *Client) ListHorizontalPodAutoscalers(ctx context.Context, namespace string) ([]domainresource.HorizontalPodAutoscalerView, error) {
@@ -929,6 +959,16 @@ func (c *Client) ListClusterRoles(ctx context.Context) ([]domainresource.Cluster
 	return views, nil
 }
 
+func (c *Client) GetClusterRoleDetail(ctx context.Context, name string) (domainresource.ClusterRoleDetailView, error) {
+	queryCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	item, err := c.typed.RbacV1().ClusterRoles().Get(queryCtx, name, metav1.GetOptions{})
+	if err != nil {
+		return domainresource.ClusterRoleDetailView{}, err
+	}
+	return mapClusterRoleDetail(*item), nil
+}
+
 func (c *Client) ListClusterRoleBindings(ctx context.Context) ([]domainresource.ClusterRoleBindingView, error) {
 	queryCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
@@ -941,6 +981,16 @@ func (c *Client) ListClusterRoleBindings(ctx context.Context) ([]domainresource.
 		views = append(views, mapClusterRoleBinding(item))
 	}
 	return views, nil
+}
+
+func (c *Client) GetClusterRoleBindingDetail(ctx context.Context, name string) (domainresource.ClusterRoleBindingDetailView, error) {
+	queryCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	item, err := c.typed.RbacV1().ClusterRoleBindings().Get(queryCtx, name, metav1.GetOptions{})
+	if err != nil {
+		return domainresource.ClusterRoleBindingDetailView{}, err
+	}
+	return mapClusterRoleBindingDetail(*item), nil
 }
 
 func (c *Client) ListMutatingWebhookConfigurations(ctx context.Context) ([]domainresource.MutatingWebhookConfigurationView, error) {
@@ -1212,6 +1262,452 @@ func mapPodDetail(item corev1.Pod) domainresource.PodDetailView {
 		Containers:         containers,
 		Conditions:         conditions,
 	}
+}
+
+func (c *Client) buildPodDetail(ctx context.Context, item corev1.Pod) domainresource.PodDetailView {
+	view := mapPodDetail(item)
+	refs := buildPodVolumeSourceRefs(item)
+	view.Containers = buildDetailedPodContainers(item)
+	view.Volumes = buildPodVolumes(item, refs)
+	view.RelatedResources = c.buildPodRelatedResources(ctx, item, refs)
+	return view
+}
+
+type podVolumeSourceRefSet struct {
+	configMaps      map[string]struct{}
+	secrets         map[string]struct{}
+	serviceAccounts map[string]struct{}
+	pvcs            map[string]struct{}
+}
+
+type podRelatedResourceAccumulator struct {
+	kind      string
+	name      string
+	namespace string
+	relations map[string]struct{}
+	details   map[string]struct{}
+}
+
+func buildDetailedPodContainers(item corev1.Pod) []domainresource.WorkloadContainerView {
+	containers := make([]domainresource.WorkloadContainerView, 0, len(item.Spec.Containers))
+	statusMap := make(map[string]corev1.ContainerStatus, len(item.Status.ContainerStatuses))
+	for _, status := range item.Status.ContainerStatuses {
+		statusMap[status.Name] = status
+	}
+	for _, container := range item.Spec.Containers {
+		containerStatus := statusMap[container.Name]
+		state := containerState(containerStatus.State)
+		lastState := containerState(containerStatus.LastTerminationState)
+		startedAt := ""
+		reason := ""
+		message := ""
+		if containerStatus.State.Running != nil && !containerStatus.State.Running.StartedAt.IsZero() {
+			startedAt = containerStatus.State.Running.StartedAt.Time.UTC().Format(time.RFC3339)
+		}
+		if containerStatus.State.Waiting != nil {
+			reason = containerStatus.State.Waiting.Reason
+			message = containerStatus.State.Waiting.Message
+		}
+		if containerStatus.State.Terminated != nil {
+			if reason == "" {
+				reason = containerStatus.State.Terminated.Reason
+			}
+			if message == "" {
+				message = containerStatus.State.Terminated.Message
+			}
+			if startedAt == "" && !containerStatus.State.Terminated.StartedAt.IsZero() {
+				startedAt = containerStatus.State.Terminated.StartedAt.Time.UTC().Format(time.RFC3339)
+			}
+		}
+		containers = append(containers, domainresource.WorkloadContainerView{
+			Name:         container.Name,
+			Image:        container.Image,
+			Ready:        containerStatus.Ready,
+			RestartCount: containerStatus.RestartCount,
+			State:        state,
+			LastState:    lastState,
+			ContainerID:  strings.TrimSpace(containerStatus.ContainerID),
+			StartedAt:    startedAt,
+			Reason:       strings.TrimSpace(reason),
+			Message:      strings.TrimSpace(message),
+		})
+	}
+	return containers
+}
+
+func buildPodVolumeSourceRefs(item corev1.Pod) podVolumeSourceRefSet {
+	refs := podVolumeSourceRefSet{
+		configMaps:      map[string]struct{}{},
+		secrets:         map[string]struct{}{},
+		serviceAccounts: map[string]struct{}{},
+		pvcs:            map[string]struct{}{},
+	}
+	if sa := strings.TrimSpace(item.Spec.ServiceAccountName); sa != "" {
+		refs.serviceAccounts[sa] = struct{}{}
+	}
+	for _, volume := range item.Spec.Volumes {
+		if volume.ConfigMap != nil && strings.TrimSpace(volume.ConfigMap.Name) != "" {
+			refs.configMaps[volume.ConfigMap.Name] = struct{}{}
+		}
+		if volume.Secret != nil && strings.TrimSpace(volume.Secret.SecretName) != "" {
+			refs.secrets[volume.Secret.SecretName] = struct{}{}
+		}
+		if volume.PersistentVolumeClaim != nil && strings.TrimSpace(volume.PersistentVolumeClaim.ClaimName) != "" {
+			refs.pvcs[volume.PersistentVolumeClaim.ClaimName] = struct{}{}
+		}
+		if volume.Projected != nil {
+			for _, source := range volume.Projected.Sources {
+				if source.ConfigMap != nil && strings.TrimSpace(source.ConfigMap.Name) != "" {
+					refs.configMaps[source.ConfigMap.Name] = struct{}{}
+				}
+				if source.Secret != nil && strings.TrimSpace(source.Secret.Name) != "" {
+					refs.secrets[source.Secret.Name] = struct{}{}
+				}
+				if source.ServiceAccountToken != nil && strings.TrimSpace(item.Spec.ServiceAccountName) != "" {
+					refs.serviceAccounts[item.Spec.ServiceAccountName] = struct{}{}
+				}
+			}
+		}
+	}
+	for _, container := range item.Spec.Containers {
+		collectContainerEnvRefs(container, &refs)
+	}
+	for _, container := range item.Spec.InitContainers {
+		collectContainerEnvRefs(container, &refs)
+	}
+	return refs
+}
+
+func collectContainerEnvRefs(container corev1.Container, refs *podVolumeSourceRefSet) {
+	for _, env := range container.Env {
+		if env.ValueFrom == nil {
+			continue
+		}
+		if env.ValueFrom.ConfigMapKeyRef != nil && strings.TrimSpace(env.ValueFrom.ConfigMapKeyRef.Name) != "" {
+			refs.configMaps[env.ValueFrom.ConfigMapKeyRef.Name] = struct{}{}
+		}
+		if env.ValueFrom.SecretKeyRef != nil && strings.TrimSpace(env.ValueFrom.SecretKeyRef.Name) != "" {
+			refs.secrets[env.ValueFrom.SecretKeyRef.Name] = struct{}{}
+		}
+	}
+	for _, envFrom := range container.EnvFrom {
+		if envFrom.ConfigMapRef != nil && strings.TrimSpace(envFrom.ConfigMapRef.Name) != "" {
+			refs.configMaps[envFrom.ConfigMapRef.Name] = struct{}{}
+		}
+		if envFrom.SecretRef != nil && strings.TrimSpace(envFrom.SecretRef.Name) != "" {
+			refs.secrets[envFrom.SecretRef.Name] = struct{}{}
+		}
+	}
+}
+
+func buildPodVolumes(item corev1.Pod, refs podVolumeSourceRefSet) []domainresource.PodVolumeView {
+	mountsByVolume := map[string][]domainresource.PodVolumeMountView{}
+	appendMounts := func(containerName string, mounts []corev1.VolumeMount) {
+		for _, mount := range mounts {
+			if strings.TrimSpace(mount.Name) == "" {
+				continue
+			}
+			mountsByVolume[mount.Name] = append(mountsByVolume[mount.Name], domainresource.PodVolumeMountView{
+				Name:        containerName,
+				MountPath:   mount.MountPath,
+				SubPath:     mount.SubPath,
+				ReadOnly:    mount.ReadOnly,
+				Description: containerName,
+			})
+		}
+	}
+	for _, container := range item.Spec.InitContainers {
+		appendMounts(container.Name, container.VolumeMounts)
+	}
+	for _, container := range item.Spec.Containers {
+		appendMounts(container.Name, container.VolumeMounts)
+	}
+
+	volumes := make([]domainresource.PodVolumeView, 0, len(item.Spec.Volumes))
+	for _, volume := range item.Spec.Volumes {
+		volumeType, sourceName, readOnly, details := describePodVolume(volume)
+		referencedConfigMaps := referencedConfigMapsForVolume(volume)
+		volumeMounts := append([]domainresource.PodVolumeMountView(nil), mountsByVolume[volume.Name]...)
+		for index := range volumeMounts {
+			volumeMounts[index].VolumeType = volumeType
+			volumeMounts[index].SourceName = sourceName
+		}
+		sort.SliceStable(volumeMounts, func(i, j int) bool {
+			if volumeMounts[i].Name != volumeMounts[j].Name {
+				return volumeMounts[i].Name < volumeMounts[j].Name
+			}
+			return volumeMounts[i].MountPath < volumeMounts[j].MountPath
+		})
+		sort.Strings(referencedConfigMaps)
+		volumes = append(volumes, domainresource.PodVolumeView{
+			Name:                 volume.Name,
+			Type:                 volumeType,
+			SourceName:           sourceName,
+			ReadOnly:             readOnly,
+			Details:              details,
+			VolumeMounts:         volumeMounts,
+			ReferencedConfigMaps: referencedConfigMaps,
+		})
+	}
+	sort.SliceStable(volumes, func(i, j int) bool { return volumes[i].Name < volumes[j].Name })
+	return volumes
+}
+
+func describePodVolume(volume corev1.Volume) (string, string, bool, []string) {
+	switch {
+	case volume.ConfigMap != nil:
+		details := []string{fmt.Sprintf("ConfigMap: %s", volume.ConfigMap.Name)}
+		if volume.ConfigMap.Optional != nil {
+			details = append(details, fmt.Sprintf("Optional: %t", *volume.ConfigMap.Optional))
+		}
+		if len(volume.ConfigMap.Items) > 0 {
+			details = append(details, fmt.Sprintf("Items: %d", len(volume.ConfigMap.Items)))
+		}
+		return "ConfigMap", volume.ConfigMap.Name, false, details
+	case volume.Secret != nil:
+		details := []string{fmt.Sprintf("Secret: %s", volume.Secret.SecretName)}
+		if volume.Secret.Optional != nil {
+			details = append(details, fmt.Sprintf("Optional: %t", *volume.Secret.Optional))
+		}
+		if volume.Secret.DefaultMode != nil {
+			details = append(details, fmt.Sprintf("DefaultMode: %04o", *volume.Secret.DefaultMode))
+		}
+		return "Secret", volume.Secret.SecretName, false, details
+	case volume.PersistentVolumeClaim != nil:
+		details := []string{fmt.Sprintf("PVC: %s", volume.PersistentVolumeClaim.ClaimName)}
+		if volume.PersistentVolumeClaim.ReadOnly {
+			details = append(details, "ReadOnly: true")
+		}
+		return "PersistentVolumeClaim", volume.PersistentVolumeClaim.ClaimName, volume.PersistentVolumeClaim.ReadOnly, details
+	case volume.Projected != nil:
+		details := []string{fmt.Sprintf("Sources: %d", len(volume.Projected.Sources))}
+		if volume.Projected.DefaultMode != nil {
+			details = append(details, fmt.Sprintf("DefaultMode: %04o", *volume.Projected.DefaultMode))
+		}
+		return "Projected", summarizeProjectedSourceNames(volume.Projected.Sources), false, details
+	case volume.EmptyDir != nil:
+		details := []string{}
+		if volume.EmptyDir.Medium != "" {
+			details = append(details, fmt.Sprintf("Medium: %s", volume.EmptyDir.Medium))
+		}
+		if volume.EmptyDir.SizeLimit != nil {
+			details = append(details, fmt.Sprintf("SizeLimit: %s", volume.EmptyDir.SizeLimit.String()))
+		}
+		return "EmptyDir", "", false, details
+	case volume.HostPath != nil:
+		details := []string{fmt.Sprintf("Path: %s", volume.HostPath.Path)}
+		if volume.HostPath.Type != nil {
+			details = append(details, fmt.Sprintf("HostPathType: %s", string(*volume.HostPath.Type)))
+		}
+		return "HostPath", volume.HostPath.Path, false, details
+	case volume.DownwardAPI != nil:
+		details := []string{fmt.Sprintf("Items: %d", len(volume.DownwardAPI.Items))}
+		if volume.DownwardAPI.DefaultMode != nil {
+			details = append(details, fmt.Sprintf("DefaultMode: %04o", *volume.DownwardAPI.DefaultMode))
+		}
+		return "DownwardAPI", "", false, details
+	default:
+		return detectGenericPodVolumeType(volume), "", false, nil
+	}
+}
+
+func detectGenericPodVolumeType(volume corev1.Volume) string {
+	switch {
+	case volume.CSI != nil:
+		return "CSI"
+	case volume.NFS != nil:
+		return "NFS"
+	case volume.AzureDisk != nil:
+		return "AzureDisk"
+	case volume.AzureFile != nil:
+		return "AzureFile"
+	case volume.CephFS != nil:
+		return "CephFS"
+	case volume.GCEPersistentDisk != nil:
+		return "GCEPersistentDisk"
+	case volume.ISCSI != nil:
+		return "ISCSI"
+	case volume.Ephemeral != nil:
+		return "Ephemeral"
+	default:
+		return "Other"
+	}
+}
+
+func summarizeProjectedSourceNames(sources []corev1.VolumeProjection) string {
+	names := make([]string, 0, len(sources))
+	for _, source := range sources {
+		switch {
+		case source.ConfigMap != nil && strings.TrimSpace(source.ConfigMap.Name) != "":
+			names = append(names, source.ConfigMap.Name)
+		case source.Secret != nil && strings.TrimSpace(source.Secret.Name) != "":
+			names = append(names, source.Secret.Name)
+		case source.ServiceAccountToken != nil:
+			names = append(names, "serviceAccountToken")
+		case source.DownwardAPI != nil:
+			names = append(names, "downwardAPI")
+		case source.ClusterTrustBundle != nil && source.ClusterTrustBundle.Name != nil && strings.TrimSpace(*source.ClusterTrustBundle.Name) != "":
+			names = append(names, *source.ClusterTrustBundle.Name)
+		}
+	}
+	sort.Strings(names)
+	return strings.Join(names, ", ")
+}
+
+func referencedConfigMapsForVolume(volume corev1.Volume) []string {
+	names := make([]string, 0, 2)
+	if volume.ConfigMap != nil && strings.TrimSpace(volume.ConfigMap.Name) != "" {
+		names = append(names, volume.ConfigMap.Name)
+	}
+	if volume.Projected != nil {
+		for _, source := range volume.Projected.Sources {
+			if source.ConfigMap != nil && strings.TrimSpace(source.ConfigMap.Name) != "" {
+				names = append(names, source.ConfigMap.Name)
+			}
+		}
+	}
+	return uniqueSortedStrings(names)
+}
+
+func (c *Client) buildPodRelatedResources(ctx context.Context, item corev1.Pod, refs podVolumeSourceRefSet) []domainresource.PodRelatedResourceView {
+	resources := map[string]*podRelatedResourceAccumulator{}
+	add := func(kind, namespace, name, relation string, details ...string) {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			return
+		}
+		key := fmt.Sprintf("%s/%s/%s", kind, namespace, name)
+		entry, ok := resources[key]
+		if !ok {
+			entry = &podRelatedResourceAccumulator{
+				kind:      kind,
+				name:      name,
+				namespace: namespace,
+				relations: map[string]struct{}{},
+				details:   map[string]struct{}{},
+			}
+			resources[key] = entry
+		}
+		if strings.TrimSpace(relation) != "" {
+			entry.relations[relation] = struct{}{}
+		}
+		for _, detail := range details {
+			if strings.TrimSpace(detail) != "" {
+				entry.details[detail] = struct{}{}
+			}
+		}
+	}
+
+	if sa := strings.TrimSpace(item.Spec.ServiceAccountName); sa != "" {
+		add("ServiceAccount", item.Namespace, sa, "service-account")
+	}
+	for name := range refs.configMaps {
+		add("ConfigMap", item.Namespace, name, "config")
+	}
+	for name := range refs.secrets {
+		add("Secret", item.Namespace, name, "secret")
+	}
+	for name := range refs.pvcs {
+		add("PersistentVolumeClaim", item.Namespace, name, "volume")
+	}
+	for _, owner := range item.OwnerReferences {
+		switch owner.Kind {
+		case "ReplicaSet":
+			add("ReplicaSet", item.Namespace, owner.Name, "owner")
+		case "StatefulSet", "DaemonSet", "Job", "CronJob":
+			add(owner.Kind, item.Namespace, owner.Name, "owner")
+		}
+	}
+
+	if services, err := c.ListServices(ctx, item.Namespace); err == nil {
+		serviceNames := map[string]struct{}{}
+		for _, svc := range services {
+			if selectorMatchesPodLabels(svc.Selector, item.Labels) {
+				add("Service", svc.Namespace, svc.Name, "selected-by-service", fmt.Sprintf("Type: %s", svc.Type))
+				serviceNames[svc.Name] = struct{}{}
+			}
+		}
+		if ingresses, err := c.ListIngresses(ctx, item.Namespace); err == nil {
+			for _, ingress := range ingresses {
+				for _, serviceName := range ingress.BackendServices {
+					if _, ok := serviceNames[serviceName]; ok {
+						add("Ingress", ingress.Namespace, ingress.Name, "routes-service", fmt.Sprintf("Service: %s", serviceName))
+					}
+				}
+			}
+		}
+	}
+	if replicaSets, err := c.typed.AppsV1().ReplicaSets(item.Namespace).List(ctx, metav1.ListOptions{}); err == nil {
+		for _, rs := range replicaSets.Items {
+			if selectorMatchesPodLabels(rs.Spec.Selector.MatchLabels, item.Labels) {
+				add("ReplicaSet", rs.Namespace, rs.Name, "selector-match")
+				for _, owner := range rs.OwnerReferences {
+					if owner.Kind == "Deployment" {
+						add("Deployment", rs.Namespace, owner.Name, "managed-by-replicaset", fmt.Sprintf("ReplicaSet: %s", rs.Name))
+					}
+				}
+			}
+		}
+	}
+	if deployments, err := c.typed.AppsV1().Deployments(item.Namespace).List(ctx, metav1.ListOptions{}); err == nil {
+		for _, deployment := range deployments.Items {
+			if selectorMatchesPodLabels(deployment.Spec.Selector.MatchLabels, item.Labels) {
+				add("Deployment", deployment.Namespace, deployment.Name, "selector-match")
+			}
+		}
+	}
+
+	result := make([]domainresource.PodRelatedResourceView, 0, len(resources))
+	for _, entry := range resources {
+		result = append(result, domainresource.PodRelatedResourceView{
+			Kind:      entry.kind,
+			Name:      entry.name,
+			Namespace: entry.namespace,
+			Relations: mapKeysSorted(entry.relations),
+			Details:   mapKeysSorted(entry.details),
+		})
+	}
+	sort.SliceStable(result, func(i, j int) bool {
+		if result[i].Kind != result[j].Kind {
+			return result[i].Kind < result[j].Kind
+		}
+		if result[i].Namespace != result[j].Namespace {
+			return result[i].Namespace < result[j].Namespace
+		}
+		return result[i].Name < result[j].Name
+	})
+	return result
+}
+
+func selectorMatchesPodLabels(selector, labels map[string]string) bool {
+	if len(selector) == 0 {
+		return false
+	}
+	for key, value := range selector {
+		if labels[key] != value {
+			return false
+		}
+	}
+	return true
+}
+
+func uniqueSortedStrings(items []string) []string {
+	set := make(map[string]struct{}, len(items))
+	for _, item := range items {
+		if strings.TrimSpace(item) != "" {
+			set[item] = struct{}{}
+		}
+	}
+	return mapKeysSorted(set)
+}
+
+func mapKeysSorted(items map[string]struct{}) []string {
+	values := make([]string, 0, len(items))
+	for item := range items {
+		values = append(values, item)
+	}
+	sort.Strings(values)
+	return values
 }
 
 func mapDeployment(item appsv1.Deployment) domainresource.DeploymentView {
@@ -1524,12 +2020,87 @@ func mapServiceAccount(item corev1.ServiceAccount) domainresource.ServiceAccount
 	}
 }
 
+func mapServiceAccountDetail(item corev1.ServiceAccount) domainresource.ServiceAccountDetailView {
+	secrets := make([]string, 0, len(item.Secrets))
+	for _, secret := range item.Secrets {
+		if strings.TrimSpace(secret.Name) != "" {
+			secrets = append(secrets, secret.Name)
+		}
+	}
+	imagePullSecrets := make([]string, 0, len(item.ImagePullSecrets))
+	for _, secret := range item.ImagePullSecrets {
+		if strings.TrimSpace(secret.Name) != "" {
+			imagePullSecrets = append(imagePullSecrets, secret.Name)
+		}
+	}
+	sort.Strings(secrets)
+	sort.Strings(imagePullSecrets)
+	return domainresource.ServiceAccountDetailView{
+		Name:             item.Name,
+		Namespace:        item.Namespace,
+		Labels:           item.Labels,
+		Annotations:      item.Annotations,
+		Secrets:          secrets,
+		ImagePullSecrets: imagePullSecrets,
+		AutomountSAToken: item.AutomountServiceAccountToken != nil && *item.AutomountServiceAccountToken,
+		CreatedAt:        item.CreationTimestamp.Time.Format(time.RFC3339),
+		AgeSeconds:       secondsSince(item.CreationTimestamp.Time),
+	}
+}
+
+func summarizeRBACPolicyRules(rules []rbacv1.PolicyRule) []string {
+	summaries := make([]string, 0, len(rules))
+	for _, rule := range rules {
+		verbs := append([]string(nil), rule.Verbs...)
+		sort.Strings(verbs)
+		left := strings.Join(verbs, ", ")
+		switch {
+		case len(rule.NonResourceURLs) > 0:
+			urls := append([]string(nil), rule.NonResourceURLs...)
+			sort.Strings(urls)
+			summaries = append(summaries, fmt.Sprintf("%s -> %s", left, strings.Join(urls, ", ")))
+		default:
+			resources := append([]string(nil), rule.Resources...)
+			sort.Strings(resources)
+			right := strings.Join(resources, ", ")
+			if len(rule.APIGroups) > 0 {
+				groups := append([]string(nil), rule.APIGroups...)
+				sort.Strings(groups)
+				groupSummary := strings.Join(groups, ", ")
+				if strings.TrimSpace(groupSummary) != "" {
+					right = fmt.Sprintf("%s (%s)", right, groupSummary)
+				}
+			}
+			if len(rule.ResourceNames) > 0 {
+				names := append([]string(nil), rule.ResourceNames...)
+				sort.Strings(names)
+				right = fmt.Sprintf("%s [%s]", right, strings.Join(names, ", "))
+			}
+			summaries = append(summaries, fmt.Sprintf("%s -> %s", left, right))
+		}
+	}
+	return summaries
+}
+
 func mapRole(item rbacv1.Role) domainresource.RoleView {
 	return domainresource.RoleView{
 		Name:       item.Name,
 		Namespace:  item.Namespace,
 		Rules:      len(item.Rules),
 		AgeSeconds: secondsSince(item.CreationTimestamp.Time),
+	}
+}
+
+func mapRoleDetail(item rbacv1.Role) domainresource.RoleDetailView {
+	return domainresource.RoleDetailView{
+		Name:          item.Name,
+		Namespace:     item.Namespace,
+		Labels:        item.Labels,
+		Annotations:   item.Annotations,
+		Rules:         len(item.Rules),
+		RuleSummaries: summarizeRBACPolicyRules(item.Rules),
+		CreatedAt:     item.CreationTimestamp.Time.Format(time.RFC3339),
+		AgeSeconds:    secondsSince(item.CreationTimestamp.Time),
 	}
 }
 
@@ -1548,6 +2119,28 @@ func mapRoleBinding(item rbacv1.RoleBinding) domainresource.RoleBindingView {
 		RoleRef:    fmt.Sprintf("%s/%s", item.RoleRef.Kind, item.RoleRef.Name),
 		Subjects:   subjects,
 		AgeSeconds: secondsSince(item.CreationTimestamp.Time),
+	}
+}
+
+func mapRoleBindingDetail(item rbacv1.RoleBinding) domainresource.RoleBindingDetailView {
+	subjects := make([]string, 0, len(item.Subjects))
+	for _, subject := range item.Subjects {
+		if strings.TrimSpace(subject.Namespace) != "" {
+			subjects = append(subjects, fmt.Sprintf("%s:%s/%s", subject.Kind, subject.Namespace, subject.Name))
+			continue
+		}
+		subjects = append(subjects, fmt.Sprintf("%s:%s", subject.Kind, subject.Name))
+	}
+	sort.Strings(subjects)
+	return domainresource.RoleBindingDetailView{
+		Name:        item.Name,
+		Namespace:   item.Namespace,
+		Labels:      item.Labels,
+		Annotations: item.Annotations,
+		RoleRef:     fmt.Sprintf("%s/%s", item.RoleRef.Kind, item.RoleRef.Name),
+		Subjects:    subjects,
+		CreatedAt:   item.CreationTimestamp.Time.Format(time.RFC3339),
+		AgeSeconds:  secondsSince(item.CreationTimestamp.Time),
 	}
 }
 
@@ -2105,6 +2698,23 @@ func mapClusterRole(item rbacv1.ClusterRole) domainresource.ClusterRoleView {
 	}
 }
 
+func mapClusterRoleDetail(item rbacv1.ClusterRole) domainresource.ClusterRoleDetailView {
+	aggregation := 0
+	if item.AggregationRule != nil {
+		aggregation = len(item.AggregationRule.ClusterRoleSelectors)
+	}
+	return domainresource.ClusterRoleDetailView{
+		Name:             item.Name,
+		Labels:           item.Labels,
+		Annotations:      item.Annotations,
+		Rules:            len(item.Rules),
+		AggregationRules: aggregation,
+		RuleSummaries:    summarizeRBACPolicyRules(item.Rules),
+		CreatedAt:        item.CreationTimestamp.Time.Format(time.RFC3339),
+		AgeSeconds:       secondsSince(item.CreationTimestamp.Time),
+	}
+}
+
 func mapClusterRoleBinding(item rbacv1.ClusterRoleBinding) domainresource.ClusterRoleBindingView {
 	subjects := make([]string, 0, len(item.Subjects))
 	for _, subject := range item.Subjects {
@@ -2119,6 +2729,27 @@ func mapClusterRoleBinding(item rbacv1.ClusterRoleBinding) domainresource.Cluste
 		RoleRef:    fmt.Sprintf("%s/%s", item.RoleRef.Kind, item.RoleRef.Name),
 		Subjects:   subjects,
 		AgeSeconds: secondsSince(item.CreationTimestamp.Time),
+	}
+}
+
+func mapClusterRoleBindingDetail(item rbacv1.ClusterRoleBinding) domainresource.ClusterRoleBindingDetailView {
+	subjects := make([]string, 0, len(item.Subjects))
+	for _, subject := range item.Subjects {
+		if strings.TrimSpace(subject.Namespace) != "" {
+			subjects = append(subjects, fmt.Sprintf("%s:%s/%s", subject.Kind, subject.Namespace, subject.Name))
+			continue
+		}
+		subjects = append(subjects, fmt.Sprintf("%s:%s", subject.Kind, subject.Name))
+	}
+	sort.Strings(subjects)
+	return domainresource.ClusterRoleBindingDetailView{
+		Name:        item.Name,
+		Labels:      item.Labels,
+		Annotations: item.Annotations,
+		RoleRef:     fmt.Sprintf("%s/%s", item.RoleRef.Kind, item.RoleRef.Name),
+		Subjects:    subjects,
+		CreatedAt:   item.CreationTimestamp.Time.Format(time.RFC3339),
+		AgeSeconds:  secondsSince(item.CreationTimestamp.Time),
 	}
 }
 

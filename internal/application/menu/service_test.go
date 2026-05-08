@@ -107,6 +107,74 @@ func TestListVisibleFallsBackToExplicitBindingsForMappedMenus(t *testing.T) {
 	}
 }
 
+func TestListVisibleIncludesNetworkTopologyUnderNetwork(t *testing.T) {
+	service := New(stubRepository{
+		items: []domainmenu.Record{
+			{ID: "network", Path: "/network", SortOrder: 50, Enabled: true},
+			{ID: "network-topology", ParentID: "network", Path: "/network/topology", SortOrder: 40, Enabled: true},
+			{ID: "network-services", ParentID: "network", Path: "/network/services", SortOrder: 41, Enabled: true},
+		},
+	}, appaccess.NewPermissionResolver(stubRolePermissionReader{
+		matrix: map[string][]string{
+			"custom": {appaccess.PermPlatformNetworkView},
+		},
+	}), nil, nil)
+
+	items, err := service.ListVisible(context.Background(), domainidentity.Principal{Roles: []string{"custom"}})
+	if err != nil {
+		t.Fatalf("ListVisible returned error: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("root menus = %d, want 1", len(items))
+	}
+	network := findMenu(items, "network")
+	if network == nil {
+		t.Fatalf("network menu not found: %#v", items)
+	}
+	if len(network.Children) != 2 {
+		t.Fatalf("network children = %#v, want topology and services", network.Children)
+	}
+	if network.Children[0].ID != "network-topology" || network.Children[1].ID != "network-services" {
+		t.Fatalf("network children order = %#v, want network-topology then network-services", network.Children)
+	}
+}
+
+func TestListVisibleRestrictsRBACMenusToExplicitPlatformBindings(t *testing.T) {
+	service := New(stubRepository{
+		items: []domainmenu.Record{
+			{ID: "platform-access-control", Path: "/platform-access-control", Enabled: true, RoleIDs: []string{"admin", "ops", "developer", "readonly"}},
+			{ID: "platform-access-control-clusterroles", ParentID: "platform-access-control", Path: "/platform-access-control/clusterroles", Enabled: true, RoleIDs: []string{"admin", "ops", "developer", "readonly"}},
+		},
+	}, appaccess.NewPermissionResolver(stubRolePermissionReader{
+		matrix: map[string][]string{
+			"readonly": {},
+			"auditor":  {},
+		},
+	}), nil, nil)
+
+	readonlyItems, err := service.ListVisible(context.Background(), domainidentity.Principal{Roles: []string{"readonly"}})
+	if err != nil {
+		t.Fatalf("ListVisible returned error for readonly: %v", err)
+	}
+	if len(readonlyItems) != 1 {
+		t.Fatalf("readonly visible roots = %d, want 1", len(readonlyItems))
+	}
+	if readonlyItems[0].ID != "platform-access-control" {
+		t.Fatalf("readonly root = %s, want platform-access-control", readonlyItems[0].ID)
+	}
+	if len(readonlyItems[0].Children) != 1 || readonlyItems[0].Children[0].ID != "platform-access-control-clusterroles" {
+		t.Fatalf("readonly children = %#v, want clusterroles child", readonlyItems[0].Children)
+	}
+
+	auditorItems, err := service.ListVisible(context.Background(), domainidentity.Principal{Roles: []string{"auditor"}})
+	if err != nil {
+		t.Fatalf("ListVisible returned error for auditor: %v", err)
+	}
+	if len(auditorItems) != 0 {
+		t.Fatalf("auditor visible menus = %#v, want none", auditorItems)
+	}
+}
+
 func findMenu(items []domainmenu.Record, menuID string) *domainmenu.Record {
 	for index := range items {
 		if items[index].ID == menuID {

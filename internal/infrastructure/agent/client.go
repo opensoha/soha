@@ -31,6 +31,23 @@ type Client struct {
 	httpClient *http.Client
 }
 
+type RuntimeExecutionTask struct {
+	TaskID                   string    `json:"taskId"`
+	ApplicationID            string    `json:"applicationId"`
+	ApplicationEnvironmentID string    `json:"applicationEnvironmentId,omitempty"`
+	TaskKind                 string    `json:"taskKind"`
+	ProviderKind             string    `json:"providerKind"`
+	Status                   string    `json:"status"`
+	CurrentCommand           string    `json:"currentCommand,omitempty"`
+	CommandIndex             int       `json:"commandIndex,omitempty"`
+	CommandCount             int       `json:"commandCount,omitempty"`
+	WorkspacePath            string    `json:"workspacePath,omitempty"`
+	StartedAt                time.Time `json:"startedAt"`
+	UpdatedAt                time.Time `json:"updatedAt"`
+	StopSource               string    `json:"stopSource,omitempty"`
+	StopReason               string    `json:"stopReason,omitempty"`
+}
+
 type scaleDeploymentRequest struct {
 	Namespace string `json:"namespace"`
 	Name      string `json:"name"`
@@ -59,6 +76,10 @@ type rollbackDeploymentRequest struct {
 	Namespace string `json:"namespace"`
 	Name      string `json:"name"`
 	Revision  string `json:"revision"`
+}
+
+type cancelRuntimeTaskRequest struct {
+	Reason string `json:"reason"`
 }
 
 func (r *Registry) ClientFor(connection domaincluster.Connection) (*Client, error) {
@@ -408,6 +429,17 @@ func (c *Client) ListServiceAccounts(ctx context.Context, namespace string) ([]d
 	return payload.Items, nil
 }
 
+func (c *Client) GetServiceAccountDetail(ctx context.Context, namespace, name string) (domainresource.ServiceAccountDetailView, error) {
+	var payload struct {
+		Data domainresource.ServiceAccountDetailView `json:"data"`
+	}
+	path := fmt.Sprintf("/api/v1/platform/access-control/serviceaccounts/%s/detail?namespace=%s", url.PathEscape(name), url.QueryEscape(namespace))
+	if err := c.request(ctx, http.MethodGet, path, nil, &payload); err != nil {
+		return domainresource.ServiceAccountDetailView{}, err
+	}
+	return payload.Data, nil
+}
+
 func (c *Client) ListRoles(ctx context.Context, namespace string) ([]domainresource.RoleView, error) {
 	var payload struct {
 		Items []domainresource.RoleView `json:"items"`
@@ -419,6 +451,17 @@ func (c *Client) ListRoles(ctx context.Context, namespace string) ([]domainresou
 	return payload.Items, nil
 }
 
+func (c *Client) GetRoleDetail(ctx context.Context, namespace, name string) (domainresource.RoleDetailView, error) {
+	var payload struct {
+		Data domainresource.RoleDetailView `json:"data"`
+	}
+	path := fmt.Sprintf("/api/v1/platform/access-control/roles/%s/detail?namespace=%s", url.PathEscape(name), url.QueryEscape(namespace))
+	if err := c.request(ctx, http.MethodGet, path, nil, &payload); err != nil {
+		return domainresource.RoleDetailView{}, err
+	}
+	return payload.Data, nil
+}
+
 func (c *Client) ListRoleBindings(ctx context.Context, namespace string) ([]domainresource.RoleBindingView, error) {
 	var payload struct {
 		Items []domainresource.RoleBindingView `json:"items"`
@@ -428,6 +471,17 @@ func (c *Client) ListRoleBindings(ctx context.Context, namespace string) ([]doma
 		return nil, err
 	}
 	return payload.Items, nil
+}
+
+func (c *Client) GetRoleBindingDetail(ctx context.Context, namespace, name string) (domainresource.RoleBindingDetailView, error) {
+	var payload struct {
+		Data domainresource.RoleBindingDetailView `json:"data"`
+	}
+	path := fmt.Sprintf("/api/v1/platform/access-control/rolebindings/%s/detail?namespace=%s", url.PathEscape(name), url.QueryEscape(namespace))
+	if err := c.request(ctx, http.MethodGet, path, nil, &payload); err != nil {
+		return domainresource.RoleBindingDetailView{}, err
+	}
+	return payload.Data, nil
 }
 
 func (c *Client) ListHorizontalPodAutoscalers(ctx context.Context, namespace string) ([]domainresource.HorizontalPodAutoscalerView, error) {
@@ -670,6 +724,17 @@ func (c *Client) ListClusterRoles(ctx context.Context) ([]domainresource.Cluster
 	return payload.Items, nil
 }
 
+func (c *Client) GetClusterRoleDetail(ctx context.Context, name string) (domainresource.ClusterRoleDetailView, error) {
+	var payload struct {
+		Data domainresource.ClusterRoleDetailView `json:"data"`
+	}
+	path := fmt.Sprintf("/api/v1/platform/access-control/clusterroles/%s/detail", url.PathEscape(name))
+	if err := c.request(ctx, http.MethodGet, path, nil, &payload); err != nil {
+		return domainresource.ClusterRoleDetailView{}, err
+	}
+	return payload.Data, nil
+}
+
 func (c *Client) ListClusterRoleBindings(ctx context.Context) ([]domainresource.ClusterRoleBindingView, error) {
 	var payload struct {
 		Items []domainresource.ClusterRoleBindingView `json:"items"`
@@ -678,6 +743,17 @@ func (c *Client) ListClusterRoleBindings(ctx context.Context) ([]domainresource.
 		return nil, err
 	}
 	return payload.Items, nil
+}
+
+func (c *Client) GetClusterRoleBindingDetail(ctx context.Context, name string) (domainresource.ClusterRoleBindingDetailView, error) {
+	var payload struct {
+		Data domainresource.ClusterRoleBindingDetailView `json:"data"`
+	}
+	path := fmt.Sprintf("/api/v1/platform/access-control/clusterrolebindings/%s/detail", url.PathEscape(name))
+	if err := c.request(ctx, http.MethodGet, path, nil, &payload); err != nil {
+		return domainresource.ClusterRoleBindingDetailView{}, err
+	}
+	return payload.Data, nil
 }
 
 func (c *Client) ListMutatingWebhookConfigurations(ctx context.Context) ([]domainresource.MutatingWebhookConfigurationView, error) {
@@ -818,6 +894,12 @@ func (c *Client) UpdateDeploymentImage(ctx context.Context, namespace, name, con
 		return "", "", err
 	}
 	return payload.Data.ContainerName, payload.Data.PreviousImage, nil
+}
+
+func (c *Client) CancelRuntimeExecutionTask(ctx context.Context, taskID, reason string) error {
+	return c.request(ctx, http.MethodPost, fmt.Sprintf("/api/v1/runtime/execution-tasks/%s/cancel", url.PathEscape(strings.TrimSpace(taskID))), cancelRuntimeTaskRequest{
+		Reason: strings.TrimSpace(reason),
+	}, nil)
 }
 
 func (c *Client) request(ctx context.Context, method, path string, body any, out any) error {

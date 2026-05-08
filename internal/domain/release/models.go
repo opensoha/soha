@@ -20,6 +20,7 @@ type Record struct {
 type TriggerInput struct {
 	ApplicationID            string `json:"applicationId"`
 	ApplicationEnvironmentID string `json:"applicationEnvironmentId,omitempty"`
+	ReleaseBundleID          string `json:"releaseBundleId,omitempty"`
 	ClusterID                string `json:"clusterId"`
 	Namespace                string `json:"namespace"`
 	DeploymentName           string `json:"deploymentName"`
@@ -39,5 +40,7 @@ type Filter struct {
 
 type Repository interface {
 	List(context.Context, Filter) ([]Record, error)
+	GetByExecutionTaskID(context.Context, string) (Record, error)
 	Create(context.Context, Record) (Record, error)
+	Update(context.Context, Record) (Record, error)
 }

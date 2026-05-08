@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 	appaccess "github.com/kubecrux/kubecrux/internal/application/access"
 	domainaccess "github.com/kubecrux/kubecrux/internal/domain/access"
+	domainalert "github.com/kubecrux/kubecrux/internal/domain/alert"
 	domainapp "github.com/kubecrux/kubecrux/internal/domain/application"
 	domainbuild "github.com/kubecrux/kubecrux/internal/domain/build"
 	domaincatalog "github.com/kubecrux/kubecrux/internal/domain/catalog"
@@ -63,6 +64,13 @@ type ResourceExecutor interface {
 	ListDeploymentRolloutHistory(context.Context, domainidentity.Principal, string, string, string) ([]domainresource.RolloutHistoryView, error)
 	RollbackDeployment(context.Context, domainidentity.Principal, string, string, string, string) (domainresource.DeploymentRollbackView, error)
 	ListClusterEvents(context.Context, domainidentity.Principal, string, string, int) ([]domainresource.ClusterEventView, error)
+	RestartDeployment(context.Context, domainidentity.Principal, string, string, string) error
+	ScaleDeployment(context.Context, domainidentity.Principal, string, string, string, int32) error
+	DeletePod(context.Context, domainidentity.Principal, string, string, string) error
+}
+
+type AlertMutator interface {
+	CreateWorkflowSilence(context.Context, domainidentity.Principal, domainalert.SilenceInput) (domainalert.AlertSilence, error)
 }
 
 type Service struct {
@@ -74,6 +82,7 @@ type Service struct {
 	builds      BuildExecutor
 	releases    ReleaseExecutor
 	resources   ResourceExecutor
+	alerts      AlertMutator
 	httpClient  *http.Client
 	logger      *zap.Logger
 	metrics     *runtimeobs.Registry
@@ -124,6 +133,10 @@ func New(repo Repository, apps ApplicationReader, authorizer domainaccess.Author
 func (s *Service) SetInstrumentation(logger *zap.Logger, metrics *runtimeobs.Registry) {
 	s.logger = logger
 	s.metrics = metrics
+}
+
+func (s *Service) SetAlertMutator(alerts AlertMutator) {
+	s.alerts = alerts
 }
 
 func (s *Service) SetRuntimeOptions(workerCount, queueSize, nodeParallelism int) {
@@ -364,6 +377,83 @@ func (s *Service) Trigger(ctx context.Context, principal domainidentity.Principa
 		item.WorkflowName = "build-release-verify"
 	}
 	return s.repo.Create(ctx, item)
+}
+
+func (s *Service) ExecuteSystemDAG(ctx context.Context, principal domainidentity.Principal, applicationID, workflowName, workflowTemplateID string, definition map[string]any, input domainworkflow.Input, extraMetadata map[string]any) (domainworkflow.Run, error) {
+	parsed, ok := parseDAGWorkflowDefinition(definition)
+	if !ok {
+		return domainworkflow.Run{}, fmt.Errorf("%w: workflow definition is not a supported DAG", apperrors.ErrInvalidArgument)
+	}
+	nodeRuns := initializeNodeRuns(parsed)
+	now := time.Now().UTC().Format(time.RFC3339)
+	if strings.TrimSpace(applicationID) == "" {
+		applicationID = "healing:" + firstNonEmpty(strings.TrimSpace(workflowTemplateID), "adhoc")
+	}
+	if strings.TrimSpace(workflowName) == "" {
+		workflowName = firstNonEmpty(strings.TrimSpace(workflowTemplateID), "healing-dag")
+	}
+	syntheticBinding := domaincatalog.ApplicationEnvironment{
+		ID:                 firstNonEmpty(strings.TrimSpace(workflowTemplateID), "healing-binding"),
+		ApplicationID:      applicationID,
+		WorkflowTemplateID: strings.TrimSpace(workflowTemplateID),
+		WorkflowTemplate: &domaincatalog.WorkflowTemplate{
+			ID:         strings.TrimSpace(workflowTemplateID),
+			Key:        strings.TrimSpace(workflowTemplateID),
+			Name:       workflowName,
+			Definition: definition,
+		},
+	}
+	runMetadata := map[string]any{
+		"applicationName":      workflowName,
+		"mode":                 "release_dag",
+		"schemaVersion":        parsed.SchemaVersion,
+		"workflowTemplateId":   syntheticBinding.WorkflowTemplateID,
+		"workflowTemplateKey":  syntheticBinding.WorkflowTemplate.Key,
+		"workflowTemplateName": syntheticBinding.WorkflowTemplate.Name,
+		"bindingId":            syntheticBinding.ID,
+		"nodes":                parsed.Nodes,
+		"edges":                parsed.Edges,
+	}
+	for key, value := range extraMetadata {
+		runMetadata[key] = value
+	}
+	run := domainworkflow.Run{
+		ID:             "workflow:" + uuid.NewString(),
+		ApplicationID:  applicationID,
+		WorkflowName:   workflowName,
+		ClusterID:      strings.TrimSpace(input.ClusterID),
+		Namespace:      strings.TrimSpace(input.Namespace),
+		DeploymentName: strings.TrimSpace(input.DeploymentName),
+		Status:         "queued",
+		Steps:          buildStepsFromNodeRuns(parsed, nodeRuns),
+		NodeRuns:       mapNodeRunsToSlice(parsed, nodeRuns),
+		Metadata:       withNodeRunsMetadata(runMetadata, parsed, nodeRuns),
+		CreatedAt:      now,
+		UpdatedAt:      now,
+	}
+	created, err := s.repo.Create(ctx, run)
+	if err != nil {
+		return domainworkflow.Run{}, err
+	}
+	if err := s.enqueueDAGRun(ctx, dagRunTask{
+		principal: principal,
+		app: domainapp.App{
+			ID:   applicationID,
+			Name: workflowName,
+		},
+		input:       input,
+		binding:     syntheticBinding,
+		definition:  parsed,
+		run:         created,
+		requestMeta: requestctx.FromContext(ctx),
+	}); err != nil {
+		return s.failRun(context.Background(), created, parsed, fmt.Sprintf("workflow runner enqueue failed: %v", err)), nil
+	}
+	return created, nil
+}
+
+func (s *Service) GetSystemRun(ctx context.Context, runID string) (domainworkflow.Run, error) {
+	return s.repo.Get(ctx, strings.TrimSpace(runID))
 }
 
 func (s *Service) Approve(ctx context.Context, principal domainidentity.Principal, workflowRunID, comment string) (domainworkflow.Run, error) {
@@ -754,8 +844,7 @@ func (s *Service) findApplicationEnvironmentBinding(ctx context.Context, input d
 			}
 			if target.ClusterID == strings.TrimSpace(input.ClusterID) &&
 				target.Namespace == strings.TrimSpace(input.Namespace) &&
-				target.WorkloadName == strings.TrimSpace(input.DeploymentName) &&
-				strings.EqualFold(target.WorkloadKind, "deployment") {
+				target.WorkloadName == strings.TrimSpace(input.DeploymentName) {
 				copyItem := item
 				return &copyItem, nil
 			}
@@ -1342,6 +1431,113 @@ func (s *Service) executeDAGNode(
 			break
 		}
 		summary = result.Message
+	case "restart_workload":
+		if s.resources == nil {
+			status = "failed"
+			summary = "resource executor is not configured"
+			break
+		}
+		deploymentName := firstNonEmpty(strings.TrimSpace(fmt.Sprint(node.Config["deploymentName"])), strings.TrimSpace(input.DeploymentName))
+		if deploymentName == "" {
+			status = "failed"
+			summary = "restart workload requires deploymentName"
+			break
+		}
+		if err := s.resources.RestartDeployment(ctx, principal, input.ClusterID, input.Namespace, deploymentName); err != nil {
+			status = "failed"
+			summary = err.Error()
+			break
+		}
+		summary = fmt.Sprintf("restarted deployment %s", deploymentName)
+	case "scale_workload":
+		if s.resources == nil {
+			status = "failed"
+			summary = "resource executor is not configured"
+			break
+		}
+		deploymentName := firstNonEmpty(strings.TrimSpace(fmt.Sprint(node.Config["deploymentName"])), strings.TrimSpace(input.DeploymentName))
+		if deploymentName == "" {
+			status = "failed"
+			summary = "scale workload requires deploymentName"
+			break
+		}
+		replicas := int32(toInt(node.Config["replicas"], 1))
+		if err := s.resources.ScaleDeployment(ctx, principal, input.ClusterID, input.Namespace, deploymentName, replicas); err != nil {
+			status = "failed"
+			summary = err.Error()
+			break
+		}
+		summary = fmt.Sprintf("scaled deployment %s to %d", deploymentName, replicas)
+	case "delete_pod", "evict_pod":
+		if s.resources == nil {
+			status = "failed"
+			summary = "resource executor is not configured"
+			break
+		}
+		podName := firstNonEmpty(strings.TrimSpace(fmt.Sprint(node.Config["podName"])), strings.TrimSpace(fmt.Sprint(node.Config["name"])))
+		if podName == "" {
+			status = "failed"
+			summary = "delete pod requires podName"
+			break
+		}
+		if err := s.resources.DeletePod(ctx, principal, input.ClusterID, input.Namespace, podName); err != nil {
+			status = "failed"
+			summary = err.Error()
+			break
+		}
+		summary = fmt.Sprintf("%s executed for pod %s", node.Type, podName)
+	case "http_callback":
+		callbackURL := strings.TrimSpace(fmt.Sprint(node.Config["url"]))
+		if callbackURL == "" {
+			status = "failed"
+			summary = "http callback requires url"
+			break
+		}
+		method := firstNonEmpty(strings.TrimSpace(fmt.Sprint(node.Config["method"])), http.MethodPost)
+		body := strings.TrimSpace(fmt.Sprint(node.Config["body"]))
+		expectedStatus := toInt(node.Config["expectedStatus"], 200)
+		if err := s.callHTTPCallback(ctx, callbackURL, method, body, expectedStatus, toConfigMap(node.Config["headers"])); err != nil {
+			status = "failed"
+			summary = err.Error()
+			break
+		}
+		summary = fmt.Sprintf("HTTP callback %s %s completed", method, callbackURL)
+	case "create_silence":
+		if s.alerts == nil {
+			status = "failed"
+			summary = "alert mutator is not configured"
+			break
+		}
+		name := firstNonEmpty(strings.TrimSpace(fmt.Sprint(node.Config["name"])), "workflow-generated-silence")
+		reason := strings.TrimSpace(fmt.Sprint(node.Config["reason"]))
+		durationMinutes := toInt(node.Config["durationMinutes"], 60)
+		if durationMinutes <= 0 {
+			durationMinutes = 60
+		}
+		startsAt := time.Now().UTC()
+		endsAt := startsAt.Add(time.Duration(durationMinutes) * time.Minute)
+		matchers := toConfigMap(node.Config["matchers"])
+		if len(matchers) == 0 {
+			matchers = map[string]any{
+				"clusterId": input.ClusterID,
+				"namespace": input.Namespace,
+			}
+		}
+		silence, err := s.alerts.CreateWorkflowSilence(ctx, principal, domainalert.SilenceInput{
+			Name:     name,
+			Matchers: matchers,
+			Reason:   reason,
+			StartsAt: startsAt,
+			EndsAt:   endsAt,
+			Enabled:  true,
+		})
+		if err != nil {
+			status = "failed"
+			summary = err.Error()
+			break
+		}
+		outputs["silenceId"] = silence.ID
+		summary = fmt.Sprintf("created silence %s", silence.ID)
 	case "notify":
 		channel := strings.TrimSpace(fmt.Sprint(node.Config["channel"]))
 		if channel == "" {
@@ -1423,6 +1619,34 @@ func (s *Service) checkHTTP(ctx context.Context, targetURL string, expectedStatu
 	return nil
 }
 
+func (s *Service) callHTTPCallback(ctx context.Context, targetURL, method, body string, expectedStatus int, headers map[string]any) error {
+	if s.httpClient == nil {
+		s.httpClient = &http.Client{Timeout: 10 * time.Second}
+	}
+	req, err := http.NewRequestWithContext(ctx, method, targetURL, strings.NewReader(body))
+	if err != nil {
+		return err
+	}
+	for key, value := range headers {
+		req.Header.Set(key, fmt.Sprint(value))
+	}
+	if req.Header.Get("Content-Type") == "" {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if expectedStatus > 0 && resp.StatusCode != expectedStatus {
+		return fmt.Errorf("HTTP callback got status %d, want %d", resp.StatusCode, expectedStatus)
+	}
+	if resp.StatusCode >= http.StatusBadRequest {
+		return fmt.Errorf("HTTP callback got status %d", resp.StatusCode)
+	}
+	return nil
+}
+
 func (s *Service) checkK8sEvents(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, deploymentName string, config map[string]any) error {
 	events, err := s.resources.ListClusterEvents(ctx, principal, clusterID, namespace, 50)
 	if err != nil {
@@ -1479,8 +1703,7 @@ func matchBindingTarget(binding domaincatalog.ApplicationEnvironment, input doma
 		}
 		if target.ClusterID == strings.TrimSpace(input.ClusterID) &&
 			target.Namespace == strings.TrimSpace(input.Namespace) &&
-			target.WorkloadName == strings.TrimSpace(input.DeploymentName) &&
-			strings.EqualFold(target.WorkloadKind, "deployment") {
+			target.WorkloadName == strings.TrimSpace(input.DeploymentName) {
 			copyTarget := target
 			return &copyTarget
 		}
@@ -1540,6 +1763,15 @@ func toConfigMap(value any) map[string]any {
 		return valueMap
 	}
 	return map[string]any{}
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
 }
 
 func toInt(value any, fallback int) int {

@@ -2,14 +2,13 @@ package monitoring
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
-	"github.com/google/uuid"
 	appaccess "github.com/kubecrux/kubecrux/internal/application/access"
 	domainalert "github.com/kubecrux/kubecrux/internal/domain/alert"
 	domainevent "github.com/kubecrux/kubecrux/internal/domain/event"
@@ -35,6 +34,39 @@ type Repository interface {
 	UpdateSilence(context.Context, string, domainalert.SilenceInput) (domainalert.AlertSilence, error)
 	ListDeliveryLogs(context.Context, domainalert.DeliveryFilter) ([]domainalert.DeliveryLog, error)
 	CreateDeliveryLog(context.Context, domainalert.DeliveryLog) error
+	ListRules(context.Context) ([]domainalert.AlertRule, error)
+	GetRule(context.Context, string) (domainalert.AlertRule, error)
+	CreateRule(context.Context, domainalert.AlertRuleInput) (domainalert.AlertRule, error)
+	UpdateRule(context.Context, string, domainalert.AlertRuleInput) (domainalert.AlertRule, error)
+	ListRuleRuns(context.Context, domainalert.AlertRuleRunFilter) ([]domainalert.AlertRuleRun, error)
+	CreateRuleRun(context.Context, domainalert.AlertRuleRunInput) (domainalert.AlertRuleRun, error)
+	ListEvents(context.Context, domainalert.AlertEventFilter) ([]domainalert.AlertEvent, error)
+	GetEvent(context.Context, string) (domainalert.AlertEvent, error)
+	CreateEvent(context.Context, domainalert.AlertEventInput) (domainalert.AlertEvent, error)
+	UpdateEvent(context.Context, string, domainalert.AlertEventInput) (domainalert.AlertEvent, error)
+	ListNotificationPolicies(context.Context) ([]domainalert.NotificationPolicy, error)
+	CreateNotificationPolicy(context.Context, domainalert.NotificationPolicyInput) (domainalert.NotificationPolicy, error)
+	UpdateNotificationPolicy(context.Context, string, domainalert.NotificationPolicyInput) (domainalert.NotificationPolicy, error)
+	ListNotificationTemplates(context.Context) ([]domainalert.NotificationTemplate, error)
+	CreateNotificationTemplate(context.Context, domainalert.NotificationTemplateInput) (domainalert.NotificationTemplate, error)
+	UpdateNotificationTemplate(context.Context, string, domainalert.NotificationTemplateInput) (domainalert.NotificationTemplate, error)
+	ListHealingPolicies(context.Context) ([]domainalert.HealingPolicy, error)
+	GetHealingPolicy(context.Context, string) (domainalert.HealingPolicy, error)
+	CreateHealingPolicy(context.Context, domainalert.HealingPolicyInput) (domainalert.HealingPolicy, error)
+	UpdateHealingPolicy(context.Context, string, domainalert.HealingPolicyInput) (domainalert.HealingPolicy, error)
+	ListHealingRuns(context.Context, domainalert.HealingRunFilter) ([]domainalert.HealingRun, error)
+	GetHealingRun(context.Context, string) (domainalert.HealingRun, error)
+	CreateHealingRun(context.Context, domainalert.HealingRunInput) (domainalert.HealingRun, error)
+	UpdateHealingRun(context.Context, string, domainalert.HealingRunInput) (domainalert.HealingRun, error)
+	ListOnCallSchedules(context.Context) ([]domainalert.OnCallSchedule, error)
+	CreateOnCallSchedule(context.Context, domainalert.OnCallScheduleInput) (domainalert.OnCallSchedule, error)
+	UpdateOnCallSchedule(context.Context, string, domainalert.OnCallScheduleInput) (domainalert.OnCallSchedule, error)
+	ListOnCallRotations(context.Context) ([]domainalert.OnCallRotation, error)
+	CreateOnCallRotation(context.Context, domainalert.OnCallRotationInput) (domainalert.OnCallRotation, error)
+	UpdateOnCallRotation(context.Context, string, domainalert.OnCallRotationInput) (domainalert.OnCallRotation, error)
+	ListOnCallEscalationPolicies(context.Context) ([]domainalert.OnCallEscalationPolicy, error)
+	CreateOnCallEscalationPolicy(context.Context, domainalert.OnCallEscalationPolicyInput) (domainalert.OnCallEscalationPolicy, error)
+	UpdateOnCallEscalationPolicy(context.Context, string, domainalert.OnCallEscalationPolicyInput) (domainalert.OnCallEscalationPolicy, error)
 }
 
 type EventWriter interface {
@@ -53,14 +85,36 @@ type Service struct {
 	enabled      bool
 	httpClient   *http.Client
 	automation   AlertAutomationHandler
+	dataSources  DataSourceRepository
+	workflow     WorkflowExecutor
+	ruleInterval time.Duration
+	startMu      sync.Mutex
+	started      bool
 }
 
-func New(repo Repository, events EventWriter, permissions *appaccess.PermissionResolver, enabled bool, webhookToken string) *Service {
-	return &Service{repo: repo, events: events, permissions: permissions, enabled: enabled, webhookToken: webhookToken, httpClient: &http.Client{Timeout: 8 * time.Second}}
+func New(repo Repository, events EventWriter, dataSources DataSourceRepository, permissions *appaccess.PermissionResolver, enabled bool, webhookToken string) *Service {
+	return &Service{
+		repo:         repo,
+		events:       events,
+		dataSources:  dataSources,
+		permissions:  permissions,
+		enabled:      enabled,
+		webhookToken: webhookToken,
+		httpClient:   &http.Client{Timeout: 8 * time.Second},
+		ruleInterval: 1 * time.Minute,
+	}
 }
 
 func (s *Service) SetAutomation(handler AlertAutomationHandler) {
 	s.automation = handler
+}
+
+func (s *Service) SetDataSourceRepository(dataSources DataSourceRepository) {
+	s.dataSources = dataSources
+}
+
+func (s *Service) SetWorkflowExecutor(workflow WorkflowExecutor) {
+	s.workflow = workflow
 }
 
 func (s *Service) Summary(ctx context.Context, principal domainidentity.Principal) (domainalert.Summary, error) {
@@ -193,7 +247,11 @@ func (s *Service) ListRoutes(ctx context.Context, principal domainidentity.Princ
 	if s.repo == nil {
 		return []domainalert.AlertRoute{}, nil
 	}
-	return s.repo.ListRoutes(ctx)
+	items, err := s.repo.ListNotificationPolicies(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return compatAlertRoutes(items), nil
 }
 
 func (s *Service) ListSilences(ctx context.Context, principal domainidentity.Principal) ([]domainalert.AlertSilence, error) {
@@ -262,7 +320,11 @@ func (s *Service) CreateRoute(ctx context.Context, principal domainidentity.Prin
 	if err := validateRouteInput(input); err != nil {
 		return domainalert.AlertRoute{}, err
 	}
-	return s.repo.CreateRoute(ctx, input)
+	item, err := s.repo.CreateNotificationPolicy(ctx, compatNotificationPolicyInput(input))
+	if err != nil {
+		return domainalert.AlertRoute{}, err
+	}
+	return compatAlertRoute(item), nil
 }
 
 func (s *Service) UpdateRoute(ctx context.Context, principal domainidentity.Principal, routeID string, input domainalert.RouteInput) (domainalert.AlertRoute, error) {
@@ -278,14 +340,14 @@ func (s *Service) UpdateRoute(ctx context.Context, principal domainidentity.Prin
 	if err := validateRouteInput(input); err != nil {
 		return domainalert.AlertRoute{}, err
 	}
-	item, err := s.repo.UpdateRoute(ctx, routeID, input)
+	item, err := s.repo.UpdateNotificationPolicy(ctx, routeID, compatNotificationPolicyInput(input))
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
 			return domainalert.AlertRoute{}, fmt.Errorf("%w: %s", apperrors.ErrNotFound, strings.TrimSpace(routeID))
 		}
 		return domainalert.AlertRoute{}, err
 	}
-	return item, nil
+	return compatAlertRoute(item), nil
 }
 
 func (s *Service) ValidateWebhookToken(token string) error {
@@ -341,7 +403,28 @@ func (s *Service) Ingest(ctx context.Context, req domainalert.IngestRequest) (in
 				},
 			})
 		}
-		s.fanOutAlert(ctx, instance)
+		event, _ := s.repo.CreateEvent(ctx, domainalert.AlertEventInput{
+			ID:           instance.ID,
+			RuleID:       "",
+			SourceType:   "external_webhook",
+			SourceSystem: instance.Source,
+			Fingerprint:  instance.Fingerprint,
+			Title:        instance.Title,
+			Summary:      instance.Summary,
+			Severity:     instance.Severity,
+			Status:       instance.Status,
+			ClusterID:    instance.ClusterID,
+			Namespace:    instance.Namespace,
+			Labels:       instance.Labels,
+			Annotations:  instance.Annotations,
+			Receiver:     instance.Receiver,
+			GeneratorURL: instance.GeneratorURL,
+			StartsAt:     instance.StartsAt,
+			EndsAt:       instance.EndsAt,
+			LastSeenAt:   instance.LastSeenAt,
+			CurrentState: instance.Status,
+		})
+		_, _ = s.fanOutEvent(ctx, event)
 		if s.automation != nil {
 			_ = s.automation.HandleAlertAutomation(ctx, instance)
 		}
@@ -379,6 +462,40 @@ func validateRouteInput(input domainalert.RouteInput) error {
 	return nil
 }
 
+func compatAlertRoutes(items []domainalert.NotificationPolicy) []domainalert.AlertRoute {
+	routes := make([]domainalert.AlertRoute, 0, len(items))
+	for _, item := range items {
+		routes = append(routes, compatAlertRoute(item))
+	}
+	return routes
+}
+
+func compatAlertRoute(item domainalert.NotificationPolicy) domainalert.AlertRoute {
+	return domainalert.AlertRoute{
+		ID:         item.ID,
+		Name:       item.Name,
+		Matchers:   item.Matchers,
+		ChannelIDs: append([]string{}, item.ChannelRefs...),
+		Enabled:    item.Enabled,
+		CreatedAt:  item.CreatedAt,
+		UpdatedAt:  item.UpdatedAt,
+	}
+}
+
+func compatNotificationPolicyInput(input domainalert.RouteInput) domainalert.NotificationPolicyInput {
+	return domainalert.NotificationPolicyInput{
+		ID:              input.ID,
+		Name:            input.Name,
+		Matchers:        input.Matchers,
+		ProcessorChain:  []string{"webhook_update"},
+		ChannelRefs:     append([]string{}, input.ChannelIDs...),
+		OnCallRef:       "",
+		SendResolved:    false,
+		CooldownSeconds: 0,
+		Enabled:         input.Enabled,
+	}
+}
+
 func validateSilenceInput(input domainalert.SilenceInput) error {
 	if strings.TrimSpace(input.Name) == "" {
 		return fmt.Errorf("%w: alert silence name is required", apperrors.ErrInvalidArgument)
@@ -392,68 +509,6 @@ func validateSilenceInput(input domainalert.SilenceInput) error {
 	return nil
 }
 
-func (s *Service) fanOutAlert(ctx context.Context, instance domainalert.Instance) {
-	if s.repo == nil {
-		return
-	}
-	silences, err := s.repo.ListSilences(ctx)
-	if err == nil {
-		if silence, ok := firstMatchingSilence(silences, instance, time.Now().UTC()); ok {
-			_ = s.repo.CreateDeliveryLog(ctx, domainalert.DeliveryLog{
-				ID:        uuid.NewString(),
-				AlertID:   instance.ID,
-				Status:    "silenced",
-				Summary:   silence.Reason,
-				Metadata:  map[string]any{"silenceId": silence.ID, "silenceName": silence.Name},
-				CreatedAt: time.Now().UTC(),
-			})
-			return
-		}
-	}
-	routes, err := s.repo.ListRoutes(ctx)
-	if err != nil || len(routes) == 0 {
-		return
-	}
-	channels, err := s.repo.ListChannels(ctx)
-	if err != nil || len(channels) == 0 {
-		return
-	}
-	channelMap := make(map[string]domainalert.NotificationChannel, len(channels))
-	for _, channel := range channels {
-		channelMap[channel.ID] = channel
-	}
-	for _, route := range routes {
-		if !route.Enabled || !matchesRoute(route, instance) {
-			continue
-		}
-		for _, channelID := range route.ChannelIDs {
-			channel, ok := channelMap[channelID]
-			if !ok || !channel.Enabled {
-				_ = s.repo.CreateDeliveryLog(ctx, domainalert.DeliveryLog{
-					ID:        uuid.NewString(),
-					AlertID:   instance.ID,
-					ChannelID: channelID,
-					Status:    "skipped",
-					Summary:   "channel is missing or disabled",
-					Metadata:  map[string]any{"routeId": route.ID},
-					CreatedAt: time.Now().UTC(),
-				})
-				continue
-			}
-			status, summary, metadata := s.deliverToChannel(ctx, channel, instance, route)
-			_ = s.repo.CreateDeliveryLog(ctx, domainalert.DeliveryLog{
-				ID:        uuid.NewString(),
-				AlertID:   instance.ID,
-				ChannelID: channelID,
-				Status:    status,
-				Summary:   summary,
-				Metadata:  metadata,
-				CreatedAt: time.Now().UTC(),
-			})
-		}
-	}
-}
-
 func firstMatchingSilence(silences []domainalert.AlertSilence, instance domainalert.Instance, now time.Time) (domainalert.AlertSilence, bool) {
 	for _, silence := range silences {
 		if !silence.Enabled {
@@ -462,117 +517,11 @@ func firstMatchingSilence(silences []domainalert.AlertSilence, instance domainal
 		if now.Before(silence.StartsAt) || now.After(silence.EndsAt) {
 			continue
 		}
-		routeLike := domainalert.AlertRoute{Matchers: silence.Matchers, Enabled: silence.Enabled}
-		if matchesRoute(routeLike, instance) {
+		if silenceMatches(silence.Matchers, instance) {
 			return silence, true
 		}
 	}
 	return domainalert.AlertSilence{}, false
-}
-
-func matchesRoute(route domainalert.AlertRoute, instance domainalert.Instance) bool {
-	if len(route.Matchers) == 0 {
-		return true
-	}
-	for key, rawValue := range route.Matchers {
-		values := matcherValues(rawValue)
-		switch {
-		case key == "severity":
-			if !containsMatcher(values, instance.Severity) {
-				return false
-			}
-		case key == "status":
-			if !containsMatcher(values, instance.Status) {
-				return false
-			}
-		case key == "clusterId":
-			if !containsMatcher(values, instance.ClusterID) {
-				return false
-			}
-		case key == "namespace":
-			if !containsMatcher(values, instance.Namespace) {
-				return false
-			}
-		case strings.HasPrefix(key, "label:"):
-			labelKey := strings.TrimPrefix(key, "label:")
-			if !containsMatcher(values, instance.Labels[labelKey]) {
-				return false
-			}
-		}
-	}
-	return true
-}
-
-func matcherValues(value any) []string {
-	switch typed := value.(type) {
-	case string:
-		return []string{typed}
-	case []string:
-		return typed
-	case []any:
-		items := make([]string, 0, len(typed))
-		for _, item := range typed {
-			if text, ok := item.(string); ok {
-				items = append(items, text)
-			}
-		}
-		return items
-	default:
-		return []string{}
-	}
-}
-
-func containsMatcher(values []string, actual string) bool {
-	if len(values) == 0 {
-		return true
-	}
-	for _, value := range values {
-		if strings.EqualFold(strings.TrimSpace(value), strings.TrimSpace(actual)) {
-			return true
-		}
-	}
-	return false
-}
-
-func (s *Service) deliverToChannel(ctx context.Context, channel domainalert.NotificationChannel, instance domainalert.Instance, route domainalert.AlertRoute) (string, string, map[string]any) {
-	targetURL := resolveChannelURL(channel)
-	if targetURL == "" {
-		return "skipped", "channel does not expose a supported webhook url", map[string]any{"routeId": route.ID, "channelType": channel.ChannelType}
-	}
-	payload := map[string]any{
-		"route":   route.Name,
-		"routeId": route.ID,
-		"alert": map[string]any{
-			"id":          instance.ID,
-			"title":       instance.Title,
-			"summary":     instance.Summary,
-			"severity":    instance.Severity,
-			"status":      instance.Status,
-			"clusterId":   instance.ClusterID,
-			"namespace":   instance.Namespace,
-			"fingerprint": instance.Fingerprint,
-			"labels":      instance.Labels,
-			"annotations": instance.Annotations,
-		},
-	}
-	encoded, err := json.Marshal(payload)
-	if err != nil {
-		return "failed", err.Error(), map[string]any{"routeId": route.ID}
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, targetURL, strings.NewReader(string(encoded)))
-	if err != nil {
-		return "failed", err.Error(), map[string]any{"routeId": route.ID, "url": targetURL}
-	}
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := s.httpClient.Do(req)
-	if err != nil {
-		return "failed", err.Error(), map[string]any{"routeId": route.ID, "url": targetURL}
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= http.StatusBadRequest {
-		return "failed", fmt.Sprintf("delivery failed with status %d", resp.StatusCode), map[string]any{"routeId": route.ID, "url": targetURL}
-	}
-	return "delivered", "alert delivered to channel", map[string]any{"routeId": route.ID, "url": targetURL}
 }
 
 func resolveChannelURL(channel domainalert.NotificationChannel) string {

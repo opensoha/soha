@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   Alert,
   Button,
@@ -30,7 +30,7 @@ import dayjs from 'dayjs'
 import { AdminTable } from '@/components/admin-table'
 import { hasPermission, permissionSnapshotQueryKey, usePermissionSnapshot } from '@/features/auth/permission-snapshot'
 import { MENU_ICON_OPTIONS, isKnownMenuIcon, resolveMenuIcon } from '@/features/system/menu-icons'
-import { buildMenuSectionOptions, resolveMenuSectionLabel } from '@/features/system/menu-schema'
+import { buildMenuSectionOptions, normalizeMenuSection, resolveMenuSectionLabel } from '@/features/system/menu-schema'
 import { PageHeader } from '@/components/page-header'
 import { BooleanTag, StatusTag } from '@/components/status-tag'
 import { resolveRouteMenuId, resolveRoutePermission, routeMeta } from '@/routes/meta'
@@ -750,7 +750,7 @@ export function filterMenuTree(
 ) {
   const matches = (item: MenuItem) => {
     const summary = summarizeMenuVisibility(item)
-    const matchesSection = !options.section || item.section === options.section
+    const matchesSection = !options.section || normalizeMenuSection(item.section) === options.section
     const matchesEnabled = options.enabled === 'all'
       ? true
       : options.enabled === 'enabled'
@@ -814,11 +814,38 @@ function normalizeMenuSubmitValues(values: Record<string, unknown>) {
     labelEn: typeof values.labelEn === 'string' ? values.labelEn.trim() : values.labelEn,
     path: typeof values.path === 'string' ? values.path.trim() : values.path,
     iconKey: typeof values.iconKey === 'string' ? values.iconKey.trim() : values.iconKey,
-    section: normalizedSection,
+    section: normalizeMenuSection(normalizedSection),
     sortOrder: values.sortOrder,
     enabled: values.enabled,
     parentId: normalizedParentId ? normalizedParentId : null,
     roleIds: visibilityMode === 'explicit' ? roleIds : [],
+  }
+}
+
+function buildMenuFormValues(editing: MenuItem | null) {
+  if (editing) {
+    return {
+      id: editing.id,
+      labelZh: editing.labelZh,
+      labelEn: editing.labelEn,
+      parentId: editing.parentId || '',
+      path: editing.path,
+      iconKey: editing.iconKey,
+      section: editing.section ? [normalizeMenuSection(editing.section)] : [],
+      sortOrder: editing.sortOrder,
+      enabled: editing.enabled,
+      roleIds: editing.roleIds ?? [],
+      visibilityMode: summarizeMenuVisibility(editing).mode === 'explicit' ? 'explicit' : 'derived',
+    }
+  }
+
+  return {
+    enabled: true,
+    sortOrder: 0,
+    section: [],
+    parentId: '',
+    roleIds: [],
+    visibilityMode: 'derived',
   }
 }
 
@@ -941,6 +968,7 @@ export function MenusPage() {
       void message.success('菜单创建成功')
       void queryClient.invalidateQueries({ queryKey: ['menus'] })
       void queryClient.invalidateQueries({ queryKey: permissionSnapshotQueryKey })
+      form.resetFields()
       setModalVisible(false)
     },
     onError: (err: Error) => void message.error(err.message),
@@ -953,6 +981,7 @@ export function MenusPage() {
       void message.success('菜单更新成功')
       void queryClient.invalidateQueries({ queryKey: ['menus'] })
       void queryClient.invalidateQueries({ queryKey: permissionSnapshotQueryKey })
+      form.resetFields()
       setModalVisible(false)
       setEditing(null)
     },
@@ -1008,6 +1037,13 @@ export function MenusPage() {
         label: `${'— '.repeat(item.depth ?? 0)}${item.labelZh}`,
       })),
   ]
+
+  useEffect(() => {
+    if (!modalVisible) return
+
+    form.resetFields()
+    form.setFieldsValue(buildMenuFormValues(editing))
+  }, [editing, form, modalVisible])
 
   const columns: TableColumnsType<MenuItem> = [
     {
@@ -1149,28 +1185,6 @@ export function MenusPage() {
           form={form}
           {...MODAL_FORM_LAYOUT}
           onFinish={(values) => { if (!canManageMenus) return; handleSubmit(values as Record<string, unknown>) }}
-          initialValues={editing
-            ? {
-                id: editing.id,
-                labelZh: editing.labelZh,
-                labelEn: editing.labelEn,
-                parentId: editing.parentId || '',
-                path: editing.path,
-                iconKey: editing.iconKey,
-                section: editing.section ? [editing.section] : [],
-                sortOrder: editing.sortOrder,
-                enabled: editing.enabled,
-                roleIds: editing.roleIds ?? [],
-                visibilityMode: summarizeMenuVisibility(editing).mode === 'explicit' ? 'explicit' : 'derived',
-              }
-            : {
-                enabled: true,
-                sortOrder: 0,
-                section: ['control'],
-                parentId: '',
-                roleIds: [],
-                visibilityMode: 'derived',
-              }}
         >
           <Form.Item noStyle shouldUpdate={(prev, next) => prev.path !== next.path || prev.roleIds !== next.roleIds || prev.visibilityMode !== next.visibilityMode || prev.id !== next.id}>
             {({ getFieldValue }) => {

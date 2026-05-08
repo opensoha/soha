@@ -3,6 +3,7 @@ package dto
 type TriggerReleaseRequest struct {
 	ApplicationID            string `json:"applicationId"`
 	ApplicationEnvironmentID string `json:"applicationEnvironmentId"`
+	ReleaseBundleID          string `json:"releaseBundleId"`
 	ClusterID                string `json:"clusterId"`
 	Namespace                string `json:"namespace"`
 	DeploymentName           string `json:"deploymentName"`

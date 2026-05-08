@@ -17,6 +17,7 @@ export function useResourceActions<T extends Record<string, any>>(options: {
   resourceLabel?: string
   getName: (record: T) => string
   getNamespace?: (record: T) => string | undefined
+  canDelete?: (record: T) => boolean
   width?: number
   listInvalidationKey?: unknown[]
 }): { column: ColumnProps<T>; modalNode: React.ReactNode } {
@@ -58,6 +59,9 @@ export function useResourceActions<T extends Record<string, any>>(options: {
     onHeaderCell: () => ({ className: TABLE_ACTIONS_COLUMN_CLASS_NAME }),
     onCell: () => ({ className: TABLE_ACTIONS_COLUMN_CLASS_NAME }),
     render: (_: unknown, record: T) => {
+      if (options.canDelete && !options.canDelete(record)) {
+        return null
+      }
       const name = options.getName(record)
       const namespace = options.getNamespace?.(record)
       const key = `${namespace || ''}/${name}`

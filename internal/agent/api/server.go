@@ -5,11 +5,13 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	cfgpkg "github.com/kubecrux/kubecrux/internal/agent/config"
 	k8sagent "github.com/kubecrux/kubecrux/internal/agent/kubernetes"
+	runnerpkg "github.com/kubecrux/kubecrux/internal/agent/runner"
 	apiMiddleware "github.com/kubecrux/kubecrux/internal/api/middleware"
 	apiresponse "github.com/kubecrux/kubecrux/internal/api/response"
 	"go.uber.org/zap"
@@ -17,6 +19,12 @@ import (
 
 type Server struct {
 	httpServer *http.Server
+}
+
+type RuntimeTaskController interface {
+	ListActiveTasks() []runnerpkg.ActiveTask
+	GetActiveTask(string) (runnerpkg.ActiveTask, bool)
+	CancelActiveTask(string, string) bool
 }
 
 type restartDeploymentRequest struct {
@@ -49,7 +57,11 @@ type rollbackDeploymentRequest struct {
 	Revision  string `json:"revision"`
 }
 
-func New(cfg cfgpkg.Config, logger *zap.Logger, client *k8sagent.Client) *Server {
+type cancelRuntimeTaskRequest struct {
+	Reason string `json:"reason"`
+}
+
+func New(cfg cfgpkg.Config, logger *zap.Logger, client *k8sagent.Client, runtime RuntimeTaskController) *Server {
 	if cfg.App.Env == "production" {
 		gin.SetMode(gin.ReleaseMode)
 	}
@@ -355,6 +367,15 @@ func New(cfg cfgpkg.Config, logger *zap.Logger, client *k8sagent.Client) *Server
 			}
 			apiresponse.Items(c, http.StatusOK, items)
 		})
+		platform.GET("/access-control/serviceaccounts/:name/detail", func(c *gin.Context) {
+			namespace := c.Query("namespace")
+			item, err := client.GetServiceAccountDetail(c.Request.Context(), namespace, c.Param("name"))
+			if err != nil {
+				writeError(c, err)
+				return
+			}
+			apiresponse.Item(c, http.StatusOK, item)
+		})
 		platform.GET("/access-control/roles", func(c *gin.Context) {
 			namespace := c.Query("namespace")
 			items, err := client.ListRoles(c.Request.Context(), namespace)
@@ -364,6 +385,15 @@ func New(cfg cfgpkg.Config, logger *zap.Logger, client *k8sagent.Client) *Server
 			}
 			apiresponse.Items(c, http.StatusOK, items)
 		})
+		platform.GET("/access-control/roles/:name/detail", func(c *gin.Context) {
+			namespace := c.Query("namespace")
+			item, err := client.GetRoleDetail(c.Request.Context(), namespace, c.Param("name"))
+			if err != nil {
+				writeError(c, err)
+				return
+			}
+			apiresponse.Item(c, http.StatusOK, item)
+		})
 		platform.GET("/access-control/rolebindings", func(c *gin.Context) {
 			namespace := c.Query("namespace")
 			items, err := client.ListRoleBindings(c.Request.Context(), namespace)
@@ -372,6 +402,15 @@ func New(cfg cfgpkg.Config, logger *zap.Logger, client *k8sagent.Client) *Server
 				return
 			}
 			apiresponse.Items(c, http.StatusOK, items)
+		})
+		platform.GET("/access-control/rolebindings/:name/detail", func(c *gin.Context) {
+			namespace := c.Query("namespace")
+			item, err := client.GetRoleBindingDetail(c.Request.Context(), namespace, c.Param("name"))
+			if err != nil {
+				writeError(c, err)
+				return
+			}
+			apiresponse.Item(c, http.StatusOK, item)
 		})
 		platform.GET("/network/services", func(c *gin.Context) {
 			namespace := c.Query("namespace")
@@ -484,6 +523,14 @@ func New(cfg cfgpkg.Config, logger *zap.Logger, client *k8sagent.Client) *Server
 			}
 			apiresponse.Items(c, http.StatusOK, items)
 		})
+		platform.GET("/access-control/clusterroles/:name/detail", func(c *gin.Context) {
+			item, err := client.GetClusterRoleDetail(c.Request.Context(), c.Param("name"))
+			if err != nil {
+				writeError(c, err)
+				return
+			}
+			apiresponse.Item(c, http.StatusOK, item)
+		})
 		platform.GET("/access-control/clusterrolebindings", func(c *gin.Context) {
 			items, err := client.ListClusterRoleBindings(c.Request.Context())
 			if err != nil {
@@ -491,6 +538,14 @@ func New(cfg cfgpkg.Config, logger *zap.Logger, client *k8sagent.Client) *Server
 				return
 			}
 			apiresponse.Items(c, http.StatusOK, items)
+		})
+		platform.GET("/access-control/clusterrolebindings/:name/detail", func(c *gin.Context) {
+			item, err := client.GetClusterRoleBindingDetail(c.Request.Context(), c.Param("name"))
+			if err != nil {
+				writeError(c, err)
+				return
+			}
+			apiresponse.Item(c, http.StatusOK, item)
 		})
 		platform.GET("/configuration/mutatingwebhookconfigurations", func(c *gin.Context) {
 			items, err := client.ListMutatingWebhookConfigurations(c.Request.Context())
@@ -657,6 +712,33 @@ func New(cfg cfgpkg.Config, logger *zap.Logger, client *k8sagent.Client) *Server
 		})
 	}
 
+	if runtime != nil {
+		runtimeGroup := router.Group(fmt.Sprintf("%s/runtime", cfg.HTTP.BasePath))
+		runtimeGroup.Use(authAnyMiddleware(cfg.Auth.BearerToken, cfg.ControlPlane.BearerToken))
+		{
+			runtimeGroup.GET("/execution-tasks", func(c *gin.Context) {
+				apiresponse.Items(c, http.StatusOK, runtime.ListActiveTasks())
+			})
+			runtimeGroup.GET("/execution-tasks/:taskID", func(c *gin.Context) {
+				item, ok := runtime.GetActiveTask(c.Param("taskID"))
+				if !ok {
+					apiresponse.Error(c, http.StatusNotFound, "not_found", "runtime execution task not found")
+					return
+				}
+				apiresponse.Item(c, http.StatusOK, item)
+			})
+			runtimeGroup.POST("/execution-tasks/:taskID/cancel", func(c *gin.Context) {
+				var req cancelRuntimeTaskRequest
+				_ = c.ShouldBindJSON(&req)
+				if !runtime.CancelActiveTask(c.Param("taskID"), req.Reason) {
+					apiresponse.Error(c, http.StatusNotFound, "not_found", "runtime execution task not found")
+					return
+				}
+				apiresponse.JSON(c, http.StatusAccepted, gin.H{"status": "canceling"})
+			})
+		}
+	}
+
 	logger.Info("agent server configured",
 		zap.String("addr", cfg.HTTP.Addr),
 		zap.String("base_path", cfg.HTTP.BasePath),
@@ -696,6 +778,30 @@ func authMiddleware(token string) gin.HandlerFunc {
 			return
 		}
 		c.Next()
+	}
+}
+
+func authAnyMiddleware(tokens ...string) gin.HandlerFunc {
+	allowed := make([]string, 0, len(tokens))
+	for _, token := range tokens {
+		if trimmed := strings.TrimSpace(token); trimmed != "" {
+			allowed = append(allowed, trimmed)
+		}
+	}
+	return func(c *gin.Context) {
+		if len(allowed) == 0 {
+			c.Next()
+			return
+		}
+		header := strings.TrimSpace(c.GetHeader("Authorization"))
+		for _, token := range allowed {
+			if header == fmt.Sprintf("Bearer %s", token) {
+				c.Next()
+				return
+			}
+		}
+		apiresponse.Error(c, http.StatusUnauthorized, "unauthorized", "invalid agent token")
+		c.Abort()
 	}
 }
 

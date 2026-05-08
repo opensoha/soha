@@ -58,6 +58,11 @@ const PlatformAccessControlClusterRolesPage = lazyNamed(() => import('@/features
 const PlatformAccessControlRolesPage = lazyNamed(() => import('@/features/platform/platform-management-pages'), 'PlatformAccessControlRolesPage')
 const PlatformAccessControlClusterRoleBindingsPage = lazyNamed(() => import('@/features/platform/platform-management-pages'), 'PlatformAccessControlClusterRoleBindingsPage')
 const PlatformAccessControlRoleBindingsPage = lazyNamed(() => import('@/features/platform/platform-management-pages'), 'PlatformAccessControlRoleBindingsPage')
+const PlatformAccessControlServiceAccountDetailPage = lazyNamed(() => import('@/features/platform/rbac-detail-pages'), 'PlatformAccessControlServiceAccountDetailPage')
+const PlatformAccessControlRoleDetailPage = lazyNamed(() => import('@/features/platform/rbac-detail-pages'), 'PlatformAccessControlRoleDetailPage')
+const PlatformAccessControlRoleBindingDetailPage = lazyNamed(() => import('@/features/platform/rbac-detail-pages'), 'PlatformAccessControlRoleBindingDetailPage')
+const PlatformAccessControlClusterRoleDetailPage = lazyNamed(() => import('@/features/platform/rbac-detail-pages'), 'PlatformAccessControlClusterRoleDetailPage')
+const PlatformAccessControlClusterRoleBindingDetailPage = lazyNamed(() => import('@/features/platform/rbac-detail-pages'), 'PlatformAccessControlClusterRoleBindingDetailPage')
 
 const NetworkServicesPage = lazyNamed(() => import('@/features/platform/network-storage-pages'), 'NetworkServicesPage')
 const ServiceDetailPage = lazyNamed(() => import('@/features/platform/network-storage-pages'), 'ServiceDetailPage')
@@ -71,6 +76,9 @@ const NetworkPortForwardPage = lazyNamed(() => import('@/features/platform/platf
 const StoragePvcPage = lazyNamed(() => import('@/features/platform/network-storage-pages'), 'StoragePvcPage')
 const StoragePvPage = lazyNamed(() => import('@/features/platform/network-storage-pages'), 'StoragePvPage')
 const StorageClassesPage = lazyNamed(() => import('@/features/platform/network-storage-pages'), 'StorageClassesPage')
+const StoragePvcDetailPage = lazyNamed(() => import('@/features/platform/network-storage-pages'), 'StoragePvcDetailPage')
+const StoragePvDetailPage = lazyNamed(() => import('@/features/platform/network-storage-pages'), 'StoragePvDetailPage')
+const StorageClassDetailPage = lazyNamed(() => import('@/features/platform/network-storage-pages'), 'StorageClassDetailPage')
 
 const CRDPage = lazyNamed(() => import('@/features/platform/extensions-pages'), 'CRDPage')
 const CRDApiGroupDetailPage = lazyNamed(() => import('@/features/platform/extensions-pages'), 'CRDApiGroupDetailPage')
@@ -81,6 +89,9 @@ const HelmChartsPage = lazyNamed(() => import('@/features/platform/extensions-pa
 const ApplicationsPage = lazyNamed(() => import('@/features/delivery/delivery-app-pages'), 'ApplicationsPage')
 const ApplicationDetailPage = lazyNamed(() => import('@/features/delivery/delivery-app-pages'), 'ApplicationDetailPage')
 const BuildTemplatesPage = lazyNamed(() => import('@/features/delivery/delivery-app-pages'), 'BuildTemplatesPage')
+const ReleaseBundlesPage = lazyNamed(() => import('@/features/delivery/delivery-app-pages'), 'ReleaseBundlesPage')
+const ExecutionTasksPage = lazyNamed(() => import('@/features/delivery/delivery-app-pages'), 'ExecutionTasksPage')
+const ApprovalPoliciesPage = lazyNamed(() => import('@/features/delivery/delivery-app-pages'), 'ApprovalPoliciesPage')
 const BusinessLinesPage = lazyNamed(() => import('@/features/delivery/delivery-catalog-pages'), 'BusinessLinesPage')
 const DeliveryEnvironmentsPage = lazyNamed(() => import('@/features/delivery/delivery-catalog-pages'), 'DeliveryEnvironmentsPage')
 const ApplicationEnvironmentsPage = lazyNamed(() => import('@/features/delivery/delivery-catalog-pages'), 'ApplicationEnvironmentsPage')
@@ -95,7 +106,10 @@ const MonitoringPage = lazyNamed(() => import('@/features/observability/monitori
 const AlertsPage = lazyNamed(() => import('@/features/observability/monitoring-pages'), 'AlertsPage')
 const NotificationsPage = lazyNamed(() => import('@/features/observability/monitoring-pages'), 'NotificationsPage')
 const EventsPage = lazyNamed(() => import('@/features/observability/monitoring-pages'), 'EventsPage')
-const OnCallPage = lazyNamed(() => import('@/features/observability/monitoring-pages'), 'OnCallPage')
+const AlertRulesPage = lazyNamed(() => import('@/features/observability/alerting-pages'), 'AlertRulesPage')
+const HealingPage = lazyNamed(() => import('@/features/observability/alerting-pages'), 'HealingPage')
+const OnCallPage = lazyNamed(() => import('@/features/observability/alerting-pages'), 'OnCallPage')
+const AlertEventDetailPage = lazyNamed(() => import('@/features/observability/alerting-pages'), 'AlertEventDetailPage')
 
 const AIObserveOverviewPage = lazyNamed(() => import('@/features/copilot/ai-observe-pages'), 'AIObserveOverviewPage')
 const AIWorkbenchPage = lazyNamed(() => import('@/features/copilot/ai-observe-pages'), 'AIWorkbenchPage')
@@ -175,10 +189,15 @@ export function AppRouter() {
 
           <Route path="/platform-access-control" element={<Navigate to="/platform-access-control/serviceaccounts" replace />} />
           <Route path="/platform-access-control/serviceaccounts" element={<LazyPage><PlatformAccessControlServiceAccountsPage /></LazyPage>} />
+          <Route path="/platform-access-control/serviceaccounts/:name" element={<LazyPage><PlatformAccessControlServiceAccountDetailPage /></LazyPage>} />
           <Route path="/platform-access-control/clusterroles" element={<LazyPage><PlatformAccessControlClusterRolesPage /></LazyPage>} />
+          <Route path="/platform-access-control/clusterroles/:name" element={<LazyPage><PlatformAccessControlClusterRoleDetailPage /></LazyPage>} />
           <Route path="/platform-access-control/roles" element={<LazyPage><PlatformAccessControlRolesPage /></LazyPage>} />
+          <Route path="/platform-access-control/roles/:name" element={<LazyPage><PlatformAccessControlRoleDetailPage /></LazyPage>} />
           <Route path="/platform-access-control/clusterrolebindings" element={<LazyPage><PlatformAccessControlClusterRoleBindingsPage /></LazyPage>} />
+          <Route path="/platform-access-control/clusterrolebindings/:name" element={<LazyPage><PlatformAccessControlClusterRoleBindingDetailPage /></LazyPage>} />
           <Route path="/platform-access-control/rolebindings" element={<LazyPage><PlatformAccessControlRoleBindingsPage /></LazyPage>} />
+          <Route path="/platform-access-control/rolebindings/:name" element={<LazyPage><PlatformAccessControlRoleBindingDetailPage /></LazyPage>} />
 
           <Route path="/network" element={<Navigate to="/network/topology" replace />} />
           <Route path="/network/topology" element={<LazyPage><NetworkTopologyPage /></LazyPage>} />
@@ -193,8 +212,11 @@ export function AppRouter() {
 
           <Route path="/storage" element={<Navigate to="/storage/persistentvolumeclaims" replace />} />
           <Route path="/storage/persistentvolumeclaims" element={<LazyPage><StoragePvcPage /></LazyPage>} />
+          <Route path="/storage/persistentvolumeclaims/:name" element={<LazyPage><StoragePvcDetailPage /></LazyPage>} />
           <Route path="/storage/persistentvolumes" element={<LazyPage><StoragePvPage /></LazyPage>} />
+          <Route path="/storage/persistentvolumes/:name" element={<LazyPage><StoragePvDetailPage /></LazyPage>} />
           <Route path="/storage/storageclasses" element={<LazyPage><StorageClassesPage /></LazyPage>} />
+          <Route path="/storage/storageclasses/:name" element={<LazyPage><StorageClassDetailPage /></LazyPage>} />
 
           <Route path="/extensions" element={<LazyPage><CRDPage /></LazyPage>} />
           <Route path="/extensions/apis/:groupName" element={<LazyPage><CRDApiGroupDetailPage /></LazyPage>} />
@@ -210,6 +232,9 @@ export function AppRouter() {
           <Route path="/application-environments" element={<LazyPage><ApplicationEnvironmentsPage /></LazyPage>} />
           <Route path="/application-environments/:applicationEnvironmentId" element={<LazyPage><ApplicationEnvironmentDetailPage /></LazyPage>} />
           <Route path="/build-templates" element={<LazyPage><BuildTemplatesPage /></LazyPage>} />
+          <Route path="/delivery/release-bundles" element={<LazyPage><ReleaseBundlesPage /></LazyPage>} />
+          <Route path="/delivery/execution-tasks" element={<LazyPage><ExecutionTasksPage /></LazyPage>} />
+          <Route path="/delivery/approval-policies" element={<LazyPage><ApprovalPoliciesPage /></LazyPage>} />
           <Route path="/workflow-templates" element={<LazyPage><WorkflowTemplatesPage /></LazyPage>} />
           <Route path="/release-board" element={<LazyPage><ReleaseBoardPage /></LazyPage>} />
           <Route path="/workflows" element={<LazyPage><WorkflowsPage /></LazyPage>} />
@@ -218,8 +243,11 @@ export function AppRouter() {
 
           <Route path="/observability" element={<Navigate to="/observability/monitoring" replace />} />
           <Route path="/observability/monitoring" element={<LazyPage><MonitoringPage /></LazyPage>} />
+          <Route path="/observability/rules" element={<LazyPage><AlertRulesPage /></LazyPage>} />
           <Route path="/observability/alerts" element={<LazyPage><AlertsPage /></LazyPage>} />
+          <Route path="/observability/alerts/:eventId" element={<LazyPage><AlertEventDetailPage /></LazyPage>} />
           <Route path="/observability/notifications" element={<LazyPage><NotificationsPage /></LazyPage>} />
+          <Route path="/observability/healing" element={<LazyPage><HealingPage /></LazyPage>} />
           <Route path="/observability/oncall" element={<LazyPage><OnCallPage /></LazyPage>} />
           <Route path="/observability/events" element={<LazyPage><EventsPage /></LazyPage>} />
 

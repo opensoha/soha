@@ -47,6 +47,18 @@
 - `GET /api/v1/application-environments/target-candidates?clusterId=<required>&namespace=<required>&search=<optional>`
 - `GET /api/v1/workflow-templates`
 - `GET /api/v1/delivery/release-board`
+- `GET /api/v1/delivery/release-bundles?applicationId=<optional>&applicationEnvironmentId=<optional>&limit=50`
+- `GET /api/v1/delivery/release-bundles/:bundleID`
+- `GET /api/v1/delivery/execution-tasks?applicationId=<optional>&applicationEnvironmentId=<optional>&releaseBundleId=<optional>&status=<optional>&providerKind=<optional>&limit=50`
+- `GET /api/v1/delivery/execution-tasks/:taskID`
+- `POST /api/v1/delivery/execution-tasks/:taskID/cancel`
+- `POST /api/v1/delivery/execution-tasks/:taskID/retry`
+- `GET /api/v1/delivery/approval-policies`
+- `POST /api/v1/delivery/approval-policies`
+- `PUT /api/v1/delivery/approval-policies/:approvalPolicyID`
+- `DELETE /api/v1/delivery/approval-policies/:approvalPolicyID`
+- `POST /api/v1/delivery/execution-callbacks`
+- `GET /api/v1/delivery/execution-tasks/:taskID/runner-status`
 - `GET /api/v1/builds?applicationId=<optional>&limit=50`
 - `POST /api/v1/builds/trigger`
 - `GET /api/v1/workflows?applicationId=<optional>&limit=50`
@@ -146,6 +158,23 @@
   },
   "variables": {
     "GO_VERSION": "1.24"
+  }
+}
+```
+
+## Execution Callback Payload
+
+```json
+{
+  "callbackToken": "task-callback-token",
+  "status": "completed",
+  "payload": {
+    "logs": [
+      "checkout source",
+      "build image completed"
+    ],
+    "image": "registry.example.com/platform/billing-api:20260505",
+    "imageDigest": "sha256:..."
   }
 }
 ```

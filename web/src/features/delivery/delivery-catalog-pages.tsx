@@ -398,6 +398,8 @@ export function ApplicationEnvironmentsPage() {
   const selectedApplicationId = Form.useWatch('applicationId', form) as string | undefined
   const selectedClusterId = Form.useWatch('targetClusterId', form) as string | undefined
   const selectedNamespace = Form.useWatch('targetNamespace', form) as string | undefined
+  const selectedTargetKind = Form.useWatch('targetKind', form) as string | undefined
+  const selectedExecutorKind = Form.useWatch('executorKind', form) as string | undefined
   const canManageBindings = hasPermission(permissionSnapshotQuery.data?.data, 'delivery.application-environments.manage')
 
   const bindingsQuery = useQuery({
@@ -419,7 +421,7 @@ export function ApplicationEnvironmentsPage() {
   const targetCandidatesQuery = useQuery({
     queryKey: ['target-candidates', selectedClusterId, selectedNamespace],
     queryFn: () => api.get<ApiResponse<DeliveryTargetCandidate[]>>(`/application-environments/target-candidates?clusterId=${encodeURIComponent(selectedClusterId || '')}&namespace=${encodeURIComponent(selectedNamespace || '')}`),
-    enabled: !!selectedClusterId && !!selectedNamespace && modalVisible,
+    enabled: !!selectedClusterId && !!selectedNamespace && modalVisible && (selectedTargetKind || 'k8s_workload') === 'k8s_workload' && (selectedExecutorKind || 'k8s_job_runner') === 'k8s_job_runner',
   })
 
   const appNameMap = useMemo(
@@ -467,6 +469,8 @@ export function ApplicationEnvironmentsPage() {
   const columns: ColumnProps<ApplicationEnvironment>[] = [
     { title: '应用', dataIndex: 'applicationId', render: (value: string) => appNameMap[value] || value },
     { title: '环境', dataIndex: 'environmentId', render: (value: string) => environmentNameMap[value] || value },
+    { title: '策略', dataIndex: 'strategyProfileId', render: (value: string) => value || '-' },
+    { title: '审批策略', dataIndex: 'approvalPolicyId', render: (value: string) => value || '-' },
     { title: '构建来源', dataIndex: 'buildPolicy', render: (value: ApplicationEnvironment['buildPolicy']) => value?.sourceId || '-' },
     { title: '动作', dataIndex: 'releasePolicy', render: (value: ApplicationEnvironment['releasePolicy']) => value?.actionKind || 'deploy' },
     { title: '发布流程模板', dataIndex: 'workflowTemplate', render: (_: WorkflowTemplate, record: ApplicationEnvironment) => record.workflowTemplate?.name || record.workflowTemplateId || '-' },
@@ -509,16 +513,37 @@ export function ApplicationEnvironmentsPage() {
             const selectedTarget = (targetCandidatesQuery.data?.data ?? []).find((item) => `${item.clusterId}/${item.namespace}/${item.workloadName}` === values.targetWorkload)
             let variables: Record<string, unknown>
             let buildArgs: Record<string, unknown>
+            let targetMetadata: Record<string, unknown>
             try {
               variables = parseJSONObject(values.buildVariablesText, '构建变量')
               buildArgs = parseJSONObject(values.buildArgsText, '构建参数')
+              targetMetadata = parseJSONObject(values.targetMetadataText, '目标元数据')
             } catch (err) {
               message.error((err as Error).message)
               return
             }
+            const resolvedTargetKind = String(values.targetKind || 'k8s_workload')
+            const resolvedExecutorKind = String(values.executorKind || 'k8s_job_runner')
+            const targetRecord = selectedTarget
+              ? {
+                  clusterId: selectedTarget.clusterId,
+                  namespace: selectedTarget.namespace,
+                  workloadKind: selectedTarget.workloadKind,
+                  workloadName: selectedTarget.workloadName,
+                }
+              : {
+                  clusterId: String(values.targetClusterId || ''),
+                  namespace: String(values.targetNamespace || ''),
+                  workloadKind: String(values.targetWorkloadKind || (resolvedTargetKind === 'host_service' ? 'Service' : 'Deployment')),
+                  workloadName: String(values.targetWorkload || ''),
+                }
             const payload: Record<string, unknown> = {
               applicationId: values.applicationId,
               environmentId: values.environmentId,
+              strategyProfileId: values.strategyProfileId || '',
+              promotionPolicyId: values.promotionPolicyId || '',
+              approvalPolicyId: values.approvalPolicyId || '',
+              artifactPolicyId: values.artifactPolicyId || '',
               workflowTemplateId: values.workflowTemplateId,
               buildPolicy: {
                 sourceId: values.buildSourceId,
@@ -537,12 +562,19 @@ export function ApplicationEnvironmentsPage() {
                 rolloutTimeoutSeconds: Number(values.rolloutTimeoutSeconds || 300),
                 verificationMode: values.verificationMode || 'workflow',
               },
-              targets: selectedTarget ? [{
-                clusterId: selectedTarget.clusterId,
-                namespace: selectedTarget.namespace,
-                workloadKind: selectedTarget.workloadKind,
-                workloadName: selectedTarget.workloadName,
+              targets: targetRecord.workloadName ? [{
+                clusterId: targetRecord.clusterId,
+                namespace: targetRecord.namespace,
+                targetKind: resolvedTargetKind,
+                executorKind: resolvedExecutorKind,
+                groupKey: values.groupKey || '',
+                waveKey: values.waveKey || '',
+                regionKey: values.regionKey || '',
+                configRef: values.configRef || '',
+                workloadKind: targetRecord.workloadKind,
+                workloadName: targetRecord.workloadName,
                 containerName: values.targetContainer || '',
+                metadata: targetMetadata,
                 enabled: true,
               }] : [],
             }
@@ -555,6 +587,10 @@ export function ApplicationEnvironmentsPage() {
           initialValues={editing ? {
             applicationId: editing.applicationId,
             environmentId: editing.environmentId,
+            strategyProfileId: editing.strategyProfileId || '',
+            promotionPolicyId: editing.promotionPolicyId || '',
+            approvalPolicyId: editing.approvalPolicyId || '',
+            artifactPolicyId: editing.artifactPolicyId || '',
             workflowTemplateId: editing.workflowTemplateId,
             buildSourceId: editing.buildPolicy?.sourceId,
             refType: editing.buildPolicy?.refType || 'branch',
@@ -571,9 +607,19 @@ export function ApplicationEnvironmentsPage() {
             verificationMode: editing.releasePolicy?.verificationMode || 'workflow',
             targetClusterId: editing.targets?.[0]?.clusterId,
             targetNamespace: editing.targets?.[0]?.namespace,
-            targetWorkload: editing.targets?.[0] ? `${editing.targets[0].clusterId}/${editing.targets[0].namespace}/${editing.targets[0].workloadName}` : undefined,
+            targetKind: editing.targets?.[0]?.targetKind || 'k8s_workload',
+            executorKind: editing.targets?.[0]?.executorKind || 'k8s_job_runner',
+            groupKey: editing.targets?.[0]?.groupKey || '',
+            waveKey: editing.targets?.[0]?.waveKey || '',
+            regionKey: editing.targets?.[0]?.regionKey || '',
+            configRef: editing.targets?.[0]?.configRef || '',
+            targetWorkload: editing.targets?.[0]?.targetKind === 'k8s_workload' && editing.targets?.[0]?.executorKind === 'k8s_job_runner'
+              ? `${editing.targets[0].clusterId}/${editing.targets[0].namespace}/${editing.targets[0].workloadName}`
+              : editing.targets?.[0]?.workloadName,
+            targetWorkloadKind: editing.targets?.[0]?.workloadKind || 'Deployment',
             targetContainer: editing.targets?.[0]?.containerName,
-          } : { refType: 'branch', imageTagMode: 'input', buildVariablesText: '{}', buildArgsText: '{}', actionKind: 'deploy', rolloutTimeoutSeconds: 300, verificationMode: 'workflow' }}
+            targetMetadataText: JSON.stringify(editing.targets?.[0]?.metadata ?? {}, null, 2),
+          } : { refType: 'branch', imageTagMode: 'input', buildVariablesText: '{}', buildArgsText: '{}', actionKind: 'deploy', rolloutTimeoutSeconds: 300, verificationMode: 'workflow', targetKind: 'k8s_workload', executorKind: 'k8s_job_runner', targetWorkloadKind: 'Deployment', targetMetadataText: '{}' }}
         >
           <Form.Item name="applicationId" label="应用" rules={[{ required: true, message: '请选择应用' }]}>
             <Select options={(appsQuery.data?.data ?? []).map((item) => ({ value: item.id, label: item.name }))} />
@@ -584,6 +630,10 @@ export function ApplicationEnvironmentsPage() {
           <Form.Item name="buildSourceId" label="构建来源" rules={[{ required: true, message: '请选择构建来源' }]}>
             <Select options={((appsQuery.data?.data ?? []).find((item) => item.id === selectedApplicationId)?.buildSources ?? []).map((item: BuildSource) => ({ value: item.id, label: `${item.name} / ${item.type}` }))} />
           </Form.Item>
+          <Form.Item name="strategyProfileId" label="发布策略 Profile"><Input placeholder="rolling-default / canary-prod" /></Form.Item>
+          <Form.Item name="promotionPolicyId" label="晋级策略 Policy"><Input placeholder="promote-prod-only" /></Form.Item>
+          <Form.Item name="approvalPolicyId" label="审批策略 Policy"><Input placeholder="double-sign-prod" /></Form.Item>
+          <Form.Item name="artifactPolicyId" label="制品策略 Policy"><Input placeholder="signed-sbom-required" /></Form.Item>
           <Form.Item name="refType" label="构建引用类型">
             <Select options={[{ value: 'branch', label: 'branch' }, { value: 'tag', label: 'tag' }]} />
           </Form.Item>
@@ -609,15 +659,32 @@ export function ApplicationEnvironmentsPage() {
           </Form.Item>
           <Form.Item name="targetClusterId" label="目标集群" rules={[{ required: true, message: '请输入目标集群 ID' }]}><Input /></Form.Item>
           <Form.Item name="targetNamespace" label="目标命名空间" rules={[{ required: true, message: '请输入目标命名空间' }]}><Input /></Form.Item>
-          <Form.Item name="targetWorkload" label="目标 Deployment" rules={[{ required: true, message: '请选择目标 Deployment' }]}>
-            <Select
-              showSearch
-              options={(targetCandidatesQuery.data?.data ?? []).map((item) => ({
-                value: `${item.clusterId}/${item.namespace}/${item.workloadName}`,
-                label: `${item.clusterId} / ${item.namespace} / ${item.workloadName}`,
-              }))}
-            />
+          <Form.Item name="targetKind" label="目标类型">
+            <Select options={[{ value: 'k8s_workload', label: 'k8s_workload' }, { value: 'host_service', label: 'host_service' }, { value: 'helm_release', label: 'helm_release' }, { value: 'kustomize_overlay', label: 'kustomize_overlay' }]} />
           </Form.Item>
+          <Form.Item name="executorKind" label="执行器">
+            <Select options={[{ value: 'k8s_job_runner', label: 'k8s_job_runner' }, { value: 'ci_agent_runner', label: 'ci_agent_runner' }, { value: 'external_pipeline_adapter', label: 'external_pipeline_adapter' }]} />
+          </Form.Item>
+          <Form.Item name="groupKey" label="Target Group"><Input placeholder="core-services / edge-cn" /></Form.Item>
+          <Form.Item name="waveKey" label="Wave"><Input placeholder="wave-1 / wave-2" /></Form.Item>
+          <Form.Item name="regionKey" label="Region"><Input placeholder="cn-shanghai / ap-southeast" /></Form.Item>
+          <Form.Item name="configRef" label="配置引用"><Input placeholder="helm-values-prod / kustomize/prod" /></Form.Item>
+          <Form.Item name="targetWorkloadKind" label="资源 Kind"><Input placeholder="Deployment / Service / Release" /></Form.Item>
+          {(selectedTargetKind || 'k8s_workload') === 'k8s_workload' && (selectedExecutorKind || 'k8s_job_runner') === 'k8s_job_runner' ? (
+            <Form.Item name="targetWorkload" label="目标 Deployment" rules={[{ required: true, message: '请选择目标 Deployment' }]}>
+              <Select
+                showSearch
+                options={(targetCandidatesQuery.data?.data ?? []).map((item) => ({
+                  value: `${item.clusterId}/${item.namespace}/${item.workloadName}`,
+                  label: `${item.clusterId} / ${item.namespace} / ${item.workloadName}`,
+                }))}
+              />
+            </Form.Item>
+          ) : (
+            <Form.Item name="targetWorkload" label="目标名称" rules={[{ required: true, message: '请输入目标名称' }]}>
+              <Input placeholder="billing.service / helm-release / overlay-prod" />
+            </Form.Item>
+          )}
           <Form.Item name="targetContainer" label="目标容器">
             <Select
               allowClear
@@ -626,6 +693,9 @@ export function ApplicationEnvironmentsPage() {
                 return (selectedTarget?.containers ?? []).map((item) => ({ value: item, label: item }))
               })()}
             />
+          </Form.Item>
+          <Form.Item name="targetMetadataText" label="目标元数据(JSON)">
+            <Input.TextArea rows={5} placeholder='{"commands":["systemctl restart billing"],"serviceUnit":"billing.service"}' />
           </Form.Item>
           <div className="kc-form-actions">
             <Button onClick={() => setModalVisible(false)}>取消</Button>
@@ -842,6 +912,7 @@ export function ApplicationEnvironmentDetailPage() {
         namespace: selectedTarget.namespace,
         deploymentName: selectedTarget.workloadName,
         containerName: containerName.trim() || selectedTarget.containerName || '',
+        image: releaseImagePreview || undefined,
         imageTag: effectiveImageTag,
         releaseName: releaseName.trim(),
         actionKind: detail?.actionKind || 'deploy',
@@ -902,6 +973,11 @@ export function ApplicationEnvironmentDetailPage() {
   const application = detail?.application
   const environment = detail?.environment
   const selectedTargetIsDeployment = selectedTarget?.workloadKind.toLowerCase() === 'deployment'
+  const selectedTargetSupportsDirectRelease = !!selectedTarget && (
+    selectedTarget.executorKind !== 'k8s_job_runner'
+      || selectedTarget.targetKind !== 'k8s_workload'
+      || selectedTargetIsDeployment
+  )
   const targetOptions = (binding.targets ?? []).map((target) => ({
     value: target.id,
     label: `${target.clusterId} / ${target.namespace} / ${target.workloadName}`,
@@ -934,6 +1010,10 @@ export function ApplicationEnvironmentDetailPage() {
             { key: 'workflowTemplate', label: localeCode === 'zh_CN' ? '发布流程模板' : 'Workflow Template', children: binding.workflowTemplate?.name || '-' },
             { key: 'templateCategory', label: localeCode === 'zh_CN' ? '模板分类' : 'Template Category', children: binding.workflowTemplate?.category || '-' },
             { key: 'buildSource', label: localeCode === 'zh_CN' ? '构建来源' : 'Build Source', children: detail?.buildSource?.name || binding.buildPolicy?.sourceId || '-' },
+            { key: 'strategyProfile', label: localeCode === 'zh_CN' ? '策略 Profile' : 'Strategy Profile', children: binding.strategyProfileId || '-' },
+            { key: 'approvalPolicy', label: localeCode === 'zh_CN' ? '审批策略' : 'Approval Policy', children: binding.approvalPolicyId || '-' },
+            { key: 'latestBundle', label: localeCode === 'zh_CN' ? '最新 Bundle' : 'Latest Bundle', children: <StatusTag value={detail?.latestBundle?.status || 'unknown'} /> },
+            { key: 'latestTask', label: localeCode === 'zh_CN' ? '最新任务' : 'Latest Task', children: <StatusTag value={detail?.latestExecutionTask?.status || 'unknown'} /> },
             { key: 'latestBuild', label: localeCode === 'zh_CN' ? '最新 Build' : 'Latest Build', children: <StatusTag value={latestBuild?.status || 'unknown'} /> },
             { key: 'latestWorkflow', label: localeCode === 'zh_CN' ? '最新 Workflow' : 'Latest Workflow', children: <StatusTag value={latestWorkflow?.status || 'unknown'} /> },
             { key: 'latestRelease', label: localeCode === 'zh_CN' ? '最新 Release' : 'Latest Release', children: <StatusTag value={latestRelease?.status || 'unknown'} /> },
@@ -976,13 +1056,13 @@ export function ApplicationEnvironmentDetailPage() {
             <Input value={releaseName} onChange={(event) => setReleaseName(event.target.value)} placeholder={localeCode === 'zh_CN' ? 'Release Name，可留空自动生成' : 'Release name, leave empty to auto-generate'} />
             <Input value={containerName} onChange={(event) => setContainerName(event.target.value)} placeholder={localeCode === 'zh_CN' ? 'Container Name，可留空使用绑定值' : 'Container name, leave empty to use the binding value'} />
             {releaseImagePreview ? <Text type="secondary" style={{ fontSize: 12 }}>{`${localeCode === 'zh_CN' ? '目标镜像' : 'Target Image'}: ${releaseImagePreview}`}</Text> : null}
-            {!selectedTargetIsDeployment ? <Text type="warning">{localeCode === 'zh_CN' ? '当前目标不是 Deployment，暂不支持直接触发发布。' : 'The current target is not a Deployment, so direct release triggering is not supported yet.'}</Text> : null}
+            {!selectedTargetSupportsDirectRelease ? <Text type="warning">{localeCode === 'zh_CN' ? '当前目标暂不支持直接发布。' : 'The current target does not support direct release yet.'}</Text> : null}
             <Button
               icon={<SendOutlined />}
               type="primary"
               onClick={() => releaseMutation.mutate()}
               loading={releaseMutation.isPending}
-              disabled={!canTriggerRelease || !selectedTarget || !selectedTargetIsDeployment}
+              disabled={!canTriggerRelease || !selectedTarget || !selectedTargetSupportsDirectRelease}
             >
               {releaseActionLabel}
             </Button>

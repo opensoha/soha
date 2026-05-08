@@ -89,6 +89,38 @@ type WorkloadContainerView struct {
 	RestartCount int32  `json:"restartCount"`
 	State        string `json:"state,omitempty"`
 	LastState    string `json:"lastState,omitempty"`
+	ContainerID  string `json:"containerId,omitempty"`
+	StartedAt    string `json:"startedAt,omitempty"`
+	Reason       string `json:"reason,omitempty"`
+	Message      string `json:"message,omitempty"`
+}
+
+type PodVolumeMountView struct {
+	Name        string `json:"name"`
+	MountPath   string `json:"mountPath"`
+	SubPath     string `json:"subPath,omitempty"`
+	ReadOnly    bool   `json:"readOnly"`
+	VolumeType  string `json:"volumeType,omitempty"`
+	SourceName  string `json:"sourceName,omitempty"`
+	Description string `json:"description,omitempty"`
+}
+
+type PodVolumeView struct {
+	Name                 string               `json:"name"`
+	Type                 string               `json:"type"`
+	SourceName           string               `json:"sourceName,omitempty"`
+	ReadOnly             bool                 `json:"readOnly"`
+	Details              []string             `json:"details,omitempty"`
+	VolumeMounts         []PodVolumeMountView `json:"volumeMounts,omitempty"`
+	ReferencedConfigMaps []string             `json:"referencedConfigMaps,omitempty"`
+}
+
+type PodRelatedResourceView struct {
+	Kind      string   `json:"kind"`
+	Name      string   `json:"name"`
+	Namespace string   `json:"namespace,omitempty"`
+	Relations []string `json:"relations,omitempty"`
+	Details   []string `json:"details,omitempty"`
 }
 
 type ResourceQuantityView struct {
@@ -132,6 +164,8 @@ type PodDetailView struct {
 	Annotations        map[string]string       `json:"annotations,omitempty"`
 	Containers         []WorkloadContainerView `json:"containers,omitempty"`
 	Conditions         []WorkloadConditionView `json:"conditions,omitempty"`
+	Volumes            []PodVolumeView         `json:"volumes,omitempty"`
+	RelatedResources   []PodRelatedResourceView `json:"relatedResources,omitempty"`
 	AllowedActions     []string                `json:"allowedActions,omitempty"`
 }
 
@@ -527,6 +561,53 @@ type StorageClassView struct {
 	AllowedActions       []string          `json:"allowedActions,omitempty"`
 }
 
+type PersistentVolumeClaimDetailView struct {
+	Name           string            `json:"name"`
+	Namespace      string            `json:"namespace"`
+	Status         string            `json:"status"`
+	VolumeName     string            `json:"volumeName,omitempty"`
+	StorageClass   string            `json:"storageClass,omitempty"`
+	AccessModes    []string          `json:"accessModes,omitempty"`
+	Requested      string            `json:"requested,omitempty"`
+	VolumeMode     string            `json:"volumeMode,omitempty"`
+	Capacity       string            `json:"capacity,omitempty"`
+	Labels         map[string]string `json:"labels,omitempty"`
+	Annotations    map[string]string `json:"annotations,omitempty"`
+	CreatedAt      string            `json:"createdAt,omitempty"`
+	AgeSeconds     int64             `json:"ageSeconds"`
+	AllowedActions []string          `json:"allowedActions,omitempty"`
+}
+
+type PersistentVolumeDetailView struct {
+	Name           string            `json:"name"`
+	Status         string            `json:"status"`
+	StorageClass   string            `json:"storageClass,omitempty"`
+	ClaimRef       string            `json:"claimRef,omitempty"`
+	AccessModes    []string          `json:"accessModes,omitempty"`
+	Capacity       string            `json:"capacity,omitempty"`
+	ReclaimPolicy  string            `json:"reclaimPolicy,omitempty"`
+	VolumeMode     string            `json:"volumeMode,omitempty"`
+	Labels         map[string]string `json:"labels,omitempty"`
+	Annotations    map[string]string `json:"annotations,omitempty"`
+	CreatedAt      string            `json:"createdAt,omitempty"`
+	AgeSeconds     int64             `json:"ageSeconds"`
+	AllowedActions []string          `json:"allowedActions,omitempty"`
+}
+
+type StorageClassDetailView struct {
+	Name                 string            `json:"name"`
+	Provisioner          string            `json:"provisioner"`
+	ReclaimPolicy        string            `json:"reclaimPolicy,omitempty"`
+	VolumeBindingMode    string            `json:"volumeBindingMode,omitempty"`
+	AllowVolumeExpansion bool              `json:"allowVolumeExpansion"`
+	Parameters           map[string]string `json:"parameters,omitempty"`
+	Labels               map[string]string `json:"labels,omitempty"`
+	Annotations          map[string]string `json:"annotations,omitempty"`
+	CreatedAt            string            `json:"createdAt,omitempty"`
+	AgeSeconds           int64             `json:"ageSeconds"`
+	AllowedActions       []string          `json:"allowedActions,omitempty"`
+}
+
 type CRDView struct {
 	Name           string   `json:"name"`
 	Group          string   `json:"group"`
@@ -668,12 +749,37 @@ type ServiceAccountView struct {
 	AllowedActions   []string `json:"allowedActions,omitempty"`
 }
 
+type ServiceAccountDetailView struct {
+	Name             string            `json:"name"`
+	Namespace        string            `json:"namespace"`
+	Labels           map[string]string `json:"labels,omitempty"`
+	Annotations      map[string]string `json:"annotations,omitempty"`
+	Secrets          []string          `json:"secrets,omitempty"`
+	ImagePullSecrets []string          `json:"imagePullSecrets,omitempty"`
+	AutomountSAToken bool              `json:"automountServiceAccountToken"`
+	CreatedAt        string            `json:"createdAt,omitempty"`
+	AgeSeconds       int64             `json:"ageSeconds"`
+	AllowedActions   []string          `json:"allowedActions,omitempty"`
+}
+
 type RoleView struct {
 	Name           string   `json:"name"`
 	Namespace      string   `json:"namespace"`
 	Rules          int      `json:"rules"`
 	AgeSeconds     int64    `json:"ageSeconds"`
 	AllowedActions []string `json:"allowedActions,omitempty"`
+}
+
+type RoleDetailView struct {
+	Name           string            `json:"name"`
+	Namespace      string            `json:"namespace"`
+	Labels         map[string]string `json:"labels,omitempty"`
+	Annotations    map[string]string `json:"annotations,omitempty"`
+	Rules          int               `json:"rules"`
+	RuleSummaries  []string          `json:"ruleSummaries,omitempty"`
+	CreatedAt      string            `json:"createdAt,omitempty"`
+	AgeSeconds     int64             `json:"ageSeconds"`
+	AllowedActions []string          `json:"allowedActions,omitempty"`
 }
 
 type RoleBindingView struct {
@@ -683,6 +789,18 @@ type RoleBindingView struct {
 	Subjects       []string `json:"subjects,omitempty"`
 	AgeSeconds     int64    `json:"ageSeconds"`
 	AllowedActions []string `json:"allowedActions,omitempty"`
+}
+
+type RoleBindingDetailView struct {
+	Name           string            `json:"name"`
+	Namespace      string            `json:"namespace"`
+	Labels         map[string]string `json:"labels,omitempty"`
+	Annotations    map[string]string `json:"annotations,omitempty"`
+	RoleRef        string            `json:"roleRef"`
+	Subjects       []string          `json:"subjects,omitempty"`
+	CreatedAt      string            `json:"createdAt,omitempty"`
+	AgeSeconds     int64             `json:"ageSeconds"`
+	AllowedActions []string          `json:"allowedActions,omitempty"`
 }
 
 type ReplicaSetView struct {
@@ -773,12 +891,35 @@ type ClusterRoleView struct {
 	AllowedActions   []string `json:"allowedActions,omitempty"`
 }
 
+type ClusterRoleDetailView struct {
+	Name             string            `json:"name"`
+	Labels           map[string]string `json:"labels,omitempty"`
+	Annotations      map[string]string `json:"annotations,omitempty"`
+	Rules            int               `json:"rules"`
+	AggregationRules int               `json:"aggregationRules"`
+	RuleSummaries    []string          `json:"ruleSummaries,omitempty"`
+	CreatedAt        string            `json:"createdAt,omitempty"`
+	AgeSeconds       int64             `json:"ageSeconds"`
+	AllowedActions   []string          `json:"allowedActions,omitempty"`
+}
+
 type ClusterRoleBindingView struct {
 	Name           string   `json:"name"`
 	RoleRef        string   `json:"roleRef"`
 	Subjects       []string `json:"subjects,omitempty"`
 	AgeSeconds     int64    `json:"ageSeconds"`
 	AllowedActions []string `json:"allowedActions,omitempty"`
+}
+
+type ClusterRoleBindingDetailView struct {
+	Name           string            `json:"name"`
+	Labels         map[string]string `json:"labels,omitempty"`
+	Annotations    map[string]string `json:"annotations,omitempty"`
+	RoleRef        string            `json:"roleRef"`
+	Subjects       []string          `json:"subjects,omitempty"`
+	CreatedAt      string            `json:"createdAt,omitempty"`
+	AgeSeconds     int64             `json:"ageSeconds"`
+	AllowedActions []string          `json:"allowedActions,omitempty"`
 }
 
 type MutatingWebhookConfigurationView struct {

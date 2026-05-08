@@ -18,22 +18,39 @@ const { Text } = Typography
 type ConnectionMode = 'direct_kubeconfig' | 'agent'
 
 interface ClusterFormValues {
-  id?: string
   name?: string
-  region?: string
+  provider?: string
   environment?: string
   connectionMode: ConnectionMode
   kubeconfig?: string
-  context?: string
   agentEndpoint?: string
   agentToken?: string
   prometheusBaseUrl?: string
   prometheusBearerToken?: string
-  prometheusClusterLabel?: string
+}
+
+const clusterTypeOptions = [
+  { value: 'standard_kubernetes', labelZh: '标准 Kubernetes', labelEn: 'Standard Kubernetes' },
+  { value: 'gke', labelZh: 'GKE', labelEn: 'GKE' },
+  { value: 'ack', labelZh: 'ACK', labelEn: 'ACK' },
+  { value: 'tke', labelZh: 'TKE', labelEn: 'TKE' },
+  { value: 'aks', labelZh: 'AKS', labelEn: 'AKS' },
+]
+
+function formatClusterType(value: string | undefined, localeCode: string) {
+  const item = clusterTypeOptions.find((option) => option.value === value)
+  if (!item) return value || '-'
+  return localeCode === 'zh_CN' ? item.labelZh : item.labelEn
+}
+
+function clusterTypeOf(cluster: Pick<Cluster, 'region' | 'labels'>) {
+  const provider = cluster.labels?.provider
+  return typeof provider === 'string' && provider.trim() !== '' ? provider.trim() : cluster.region
 }
 
 export function ClustersPage() {
   const { t } = useI18n()
+  const { localeCode } = useI18n()
   const { message } = App.useApp()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
@@ -101,7 +118,7 @@ export function ClustersPage() {
       dataIndex: 'health',
       render: (health: Cluster['health']) => <StatusTag value={health?.status ?? 'unknown'} />,
     },
-    { title: 'Region', dataIndex: 'region' },
+    { title: localeCode === 'zh_CN' ? '类型' : 'Type', dataIndex: 'region', render: (_: string, record: Cluster) => formatClusterType(clusterTypeOf(record), localeCode) },
     { title: 'Env', dataIndex: 'environment' },
     { title: 'Mode', dataIndex: 'connectionMode' },
     { title: '版本', dataIndex: 'version', render: (value: string) => value || '-' },
@@ -151,20 +168,17 @@ export function ClustersPage() {
     if (!editingCluster) {
       return {
         connectionMode: 'direct_kubeconfig',
-        prometheusClusterLabel: 'cluster',
+        provider: 'standard_kubernetes',
       }
     }
-
     const detail = clusterDetailQuery.data?.data
     return {
       name: editingCluster.name,
-      region: editingCluster.region,
+      provider: clusterTypeOf(editingCluster) || undefined,
       environment: editingCluster.environment,
       connectionMode: ((detail?.connection.mode || editingCluster.connectionMode) as ConnectionMode) || 'direct_kubeconfig',
-      context: detail?.connection.context || '',
       agentEndpoint: detail?.connection.endpoint || '',
       prometheusBaseUrl: detail?.monitoring.prometheus.baseUrl || '',
-      prometheusClusterLabel: detail?.monitoring.prometheus.clusterLabel || 'cluster',
     }
   }, [editingCluster, clusterDetailQuery.data])
 
@@ -187,10 +201,22 @@ kubernetes:
 `
 
   const handleSubmit = (values: Record<string, unknown>) => {
-    if (editingCluster) {
-      updateMutation.mutate({ id: editingCluster.id, values })
+    const provider = typeof values.provider === 'string' ? values.provider.trim() : ''
+    const labels = { ...(editingCluster?.labels ?? {}) }
+    if (provider) {
+      labels.provider = provider
     } else {
-      createMutation.mutate(values)
+      delete labels.provider
+    }
+    const payload = {
+      ...values,
+      labels,
+    }
+    delete (payload as Record<string, unknown>).provider
+    if (editingCluster) {
+      updateMutation.mutate({ id: editingCluster.id, values: payload })
+    } else {
+      createMutation.mutate(payload)
     }
   }
 
@@ -236,16 +262,16 @@ kubernetes:
           </div>
         ) : (
           <Form key={formKey} layout="vertical" onFinish={handleSubmit} initialValues={initialValues}>
-            {!editingCluster ? (
-              <Form.Item name="id" label="集群 ID" rules={[{ required: true, message: '请输入集群 ID' }]}>
-                <Input />
-              </Form.Item>
-            ) : null}
             <Form.Item name="name" label="集群名称" rules={[{ required: true, message: '请输入集群名称' }]}>
               <Input />
             </Form.Item>
-            <Form.Item name="region" label="Region">
-              <Input />
+            <Form.Item name="provider" label={localeCode === 'zh_CN' ? '集群类型' : 'Cluster Type'} rules={[{ required: true, message: localeCode === 'zh_CN' ? '请选择集群类型' : 'Select a cluster type' }]}>
+              <Select
+                options={clusterTypeOptions.map((item) => ({
+                  value: item.value,
+                  label: localeCode === 'zh_CN' ? item.labelZh : item.labelEn,
+                }))}
+              />
             </Form.Item>
             <Form.Item name="environment" label="Environment">
               <Input />
@@ -261,25 +287,20 @@ kubernetes:
             </Form.Item>
 
             {connectionMode === 'direct_kubeconfig' ? (
-              <>
-                <Form.Item name="context" label="Kube Context">
-                  <Input placeholder="可选，留空使用 kubeconfig 默认 context" />
-                </Form.Item>
-                <Form.Item
-                  name="kubeconfig"
-                  label="Kubeconfig"
-                  rules={editingCluster ? undefined : [{ required: true, message: '请输入 Kubeconfig' }]}
-                >
-                  <Input.TextArea
-                    placeholder={editingCluster ? '留空则沿用现有 kubeconfig；切换到直连模式时请填写新的 kubeconfig' : '请输入 kubeconfig 内容'}
-                    rows={8}
-                  />
-                </Form.Item>
-              </>
+              <Form.Item
+                name="kubeconfig"
+                label="Kubeconfig"
+                rules={editingCluster ? undefined : [{ required: true, message: '请输入 Kubeconfig' }]}
+              >
+                <Input.TextArea
+                  placeholder={editingCluster ? '留空则沿用现有 kubeconfig' : '请输入 kubeconfig 内容'}
+                  rows={8}
+                />
+              </Form.Item>
             ) : (
               <>
-                <Form.Item name="agentEndpoint" label="Agent Endpoint" rules={[{ required: true, message: '请输入 Agent Endpoint' }]}>
-                  <Input placeholder="http://127.0.0.1:18080" />
+                <Form.Item name="agentEndpoint" label="Agent Endpoint" rules={editingCluster ? undefined : [{ required: true, message: '请输入 Agent Endpoint' }]}>
+                  <Input placeholder={editingCluster ? '留空则沿用现有 endpoint' : 'http://127.0.0.1:18080'} />
                 </Form.Item>
                 <Form.Item name="agentToken" label="Agent Token">
                   <Input.Password placeholder={editingCluster ? '留空则沿用现有 token' : '与 agent 配置中的 auth.bearer_token 一致'} />
@@ -297,16 +318,12 @@ kubernetes:
             <Card className="kc-detail-card">
               <div className="kc-detail-meta">
                 <Text strong>Prometheus</Text>
-                <Text type="secondary" className="text-xs">节点 CPU、内存指标依赖这里的集群级 Prometheus 地址。</Text>
               </div>
               <Form.Item name="prometheusBaseUrl" label="Prometheus URL">
                 <Input placeholder="http://prometheus:9090" />
               </Form.Item>
               <Form.Item name="prometheusBearerToken" label="Prometheus Token">
                 <Input.Password placeholder={editingCluster ? '留空则沿用现有 token' : ''} />
-              </Form.Item>
-              <Form.Item name="prometheusClusterLabel" label="Prometheus Cluster Label">
-                <Input placeholder="cluster" />
               </Form.Item>
             </Card>
 
@@ -440,7 +457,7 @@ export function ClusterDetailPage() {
               { key: localeCode === 'zh_CN' ? '名称' : 'Name', label: localeCode === 'zh_CN' ? '名称' : 'Name', children: summary.name },
               { key: localeCode === 'zh_CN' ? '状态' : 'Status', label: localeCode === 'zh_CN' ? '状态' : 'Status', children: <StatusTag value={summary.health?.status ?? 'unknown'} /> },
               { key: localeCode === 'zh_CN' ? '版本' : 'Version', label: localeCode === 'zh_CN' ? '版本' : 'Version', children: summary.version || '-' },
-              { key: 'Region', label: 'Region', children: summary.region || '-' },
+              { key: localeCode === 'zh_CN' ? '类型' : 'Type', label: localeCode === 'zh_CN' ? '类型' : 'Type', children: formatClusterType(clusterTypeOf(summary), localeCode) },
               { key: 'Environment', label: 'Environment', children: summary.environment || '-' },
               { key: localeCode === 'zh_CN' ? '连接方式' : 'Mode', label: localeCode === 'zh_CN' ? '连接方式' : 'Mode', children: summary.connectionMode || '-' },
               { key: localeCode === 'zh_CN' ? '最近检查' : 'Last Checked', label: localeCode === 'zh_CN' ? '最近检查' : 'Last Checked', children: summary.health?.lastChecked || '-' },
@@ -497,6 +514,7 @@ export function ClusterDetailPage() {
             { key: localeCode === 'zh_CN' ? 'Prometheus URL' : 'Prometheus URL', label: localeCode === 'zh_CN' ? 'Prometheus URL' : 'Prometheus URL', children: detail.monitoring.prometheus.baseUrl || '-' },
             { key: localeCode === 'zh_CN' ? 'Prometheus Cluster Label' : 'Prometheus Cluster Label', label: localeCode === 'zh_CN' ? 'Prometheus Cluster Label' : 'Prometheus Cluster Label', children: detail.monitoring.prometheus.clusterLabel || '-' },
             { key: localeCode === 'zh_CN' ? 'Bearer Token' : 'Bearer Token', label: localeCode === 'zh_CN' ? 'Bearer Token' : 'Bearer Token', children: detail.monitoring.prometheus.hasBearerToken ? (localeCode === 'zh_CN' ? '已配置' : 'Configured') : (localeCode === 'zh_CN' ? '未配置' : 'Not configured') },
+            { key: localeCode === 'zh_CN' ? 'Grafana URL' : 'Grafana URL', label: localeCode === 'zh_CN' ? 'Grafana URL' : 'Grafana URL', children: detail.monitoring.prometheus.grafanaBaseUrl || '-' },
           ]}
         />
       </Card>

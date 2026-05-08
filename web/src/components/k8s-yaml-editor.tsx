@@ -43,6 +43,7 @@ export function K8sYamlEditor({
   saveDisabled,
   applyDisabled,
   applying,
+  editorHeight = 620,
 }: {
   value: string
   onChange: (value: string) => void
@@ -52,6 +53,7 @@ export function K8sYamlEditor({
   saveDisabled?: boolean
   applyDisabled?: boolean
   applying?: boolean
+  editorHeight?: number | string
 }) {
   const { t } = useI18n()
   const monaco = useMonaco()
@@ -100,21 +102,21 @@ export function K8sYamlEditor({
   const editorPath = useMemo(() => 'file:///k8s-resource.yaml', [])
 
   return (
-    <Card className="kc-detail-card">
-      <div className="kc-terminal-toolbar">
-        <Space>
+    <Card className="kc-detail-card kc-yaml-card">
+      <div className="kc-terminal-toolbar kc-yaml-toolbar">
+        <Space className="kc-yaml-toolbar-meta" direction="vertical" size={2}>
           <Text strong>{t('yamlEditor.title', 'Kubernetes YAML Editor')}</Text>
           <Text type="secondary" style={{ fontSize: 12 }}>{t('yamlEditor.hint', 'Monaco + monaco-yaml with local schema assistance enabled')}</Text>
         </Space>
-        <Space>
+        <Space className="kc-yaml-toolbar-actions" wrap>
           <Button variant="outlined" icon={<ReloadOutlined />} onClick={onReset}>{t('common.reset', 'Reset')}</Button>
           <Button variant="outlined" onClick={onSave} disabled={saveDisabled}>{t('yamlEditor.saveDraft', 'Save Draft')}</Button>
           <Button type="primary" onClick={onApply} loading={applying} disabled={applyDisabled}>{t('common.apply', 'Apply')}</Button>
         </Space>
       </div>
-      <div className="kc-yaml-editor-shell">
+      <div className="kc-yaml-editor-shell" style={{ height: editorHeight }}>
         <Editor
-          height="620px"
+          height="100%"
           defaultLanguage="yaml"
           path={editorPath}
           value={value}

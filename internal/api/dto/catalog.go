@@ -23,19 +23,30 @@ type DeliveryEnvironmentRequest struct {
 }
 
 type ReleaseTargetRequest struct {
-	ID            string `json:"id"`
-	ClusterID     string `json:"clusterId"`
-	Namespace     string `json:"namespace"`
-	WorkloadKind  string `json:"workloadKind"`
-	WorkloadName  string `json:"workloadName"`
-	ContainerName string `json:"containerName"`
-	Enabled       bool   `json:"enabled"`
+	ID            string         `json:"id"`
+	ClusterID     string         `json:"clusterId"`
+	Namespace     string         `json:"namespace"`
+	TargetKind    string         `json:"targetKind"`
+	ExecutorKind  string         `json:"executorKind"`
+	GroupKey      string         `json:"groupKey"`
+	WaveKey       string         `json:"waveKey"`
+	RegionKey     string         `json:"regionKey"`
+	ConfigRef     string         `json:"configRef"`
+	WorkloadKind  string         `json:"workloadKind"`
+	WorkloadName  string         `json:"workloadName"`
+	ContainerName string         `json:"containerName"`
+	Metadata      map[string]any `json:"metadata"`
+	Enabled       bool           `json:"enabled"`
 }
 
 type ApplicationEnvironmentRequest struct {
 	ID                 string                 `json:"id"`
 	ApplicationID      string                 `json:"applicationId"`
 	EnvironmentID      string                 `json:"environmentId"`
+	StrategyProfileID  string                 `json:"strategyProfileId"`
+	PromotionPolicyID  string                 `json:"promotionPolicyId"`
+	ApprovalPolicyID   string                 `json:"approvalPolicyId"`
+	ArtifactPolicyID   string                 `json:"artifactPolicyId"`
 	WorkflowTemplateID string                 `json:"workflowTemplateId"`
 	BuildPolicy        BuildPolicyRequest     `json:"buildPolicy"`
 	ReleasePolicy      ReleasePolicyRequest   `json:"releasePolicy"`

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ReloadOutlined } from '@ant-design/icons'
-import { Button, Card, Empty, Space, Tag, Typography } from 'antd'
+import { Button, Card, Empty, Tag, Typography } from 'antd'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
@@ -68,8 +68,9 @@ export function PodTerminal({
   const resizeObserverRef = useRef<ResizeObserver | null>(null)
   const previousContainerRef = useRef<string | undefined>(container)
   const previousShellRef = useRef<string>(shell)
+  const sessionRef = useRef(0)
   const [connectionState, setConnectionState] = useState<'idle' | 'connecting' | 'connected' | 'closed' | 'error'>('idle')
-  const [lastMessage, setLastMessage] = useState(t('podTerminal.idle', 'Terminal has not been connected yet'))
+  const [, setLastMessage] = useState(t('podTerminal.idle', 'Terminal has not been connected yet'))
   const [reconnectNotice, setReconnectNotice] = useState('')
 
   const canConnect = Boolean(clusterId && namespace)
@@ -99,6 +100,7 @@ export function PodTerminal({
     resizeObserverRef.current?.disconnect()
     resizeObserverRef.current = null
     if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+      socketRef.current.send(JSON.stringify({ type: 'input', data: 'exit\n' }))
       socketRef.current.send(JSON.stringify({ type: 'close' }))
     }
     socketRef.current?.close()
@@ -106,13 +108,20 @@ export function PodTerminal({
     terminalRef.current?.dispose()
     terminalRef.current = null
     fitAddonRef.current = null
+    if (containerRef.current) {
+      containerRef.current.innerHTML = ''
+    }
   }, [])
 
   const connect = useCallback(() => {
     if (!containerRef.current || !terminalURL) {
       return
     }
+    const sessionId = ++sessionRef.current
     disposeTerminal()
+    if (containerRef.current) {
+      containerRef.current.innerHTML = ''
+    }
     setConnectionState('connecting')
     setLastMessage(t('podTerminal.connecting', 'Connecting terminal...'))
 
@@ -139,6 +148,7 @@ export function PodTerminal({
     socketRef.current = socket
 
     socket.onopen = () => {
+      if (sessionRef.current !== sessionId) return
       setConnectionState('connected')
       if (reconnectNotice) {
         setLastMessage(reconnectNotice)
@@ -151,6 +161,7 @@ export function PodTerminal({
       sendResize()
     }
     socket.onmessage = (event) => {
+      if (sessionRef.current !== sessionId) return
       const payload = JSON.parse(String(event.data)) as TerminalMessage
       switch (payload.type) {
         case 'stdout':
@@ -170,21 +181,25 @@ export function PodTerminal({
       }
     }
     socket.onerror = () => {
+      if (sessionRef.current !== sessionId) return
       setConnectionState('error')
       setLastMessage(t('podTerminal.failed', 'Terminal connection failed'))
       terminal.writeln('\r\n[error] terminal connection failed')
     }
     socket.onclose = () => {
+      if (sessionRef.current !== sessionId) return
       setConnectionState((current) => current === 'error' ? 'error' : 'closed')
     }
 
     terminal.onData((data) => {
+      if (sessionRef.current !== sessionId) return
       if (socket.readyState === WebSocket.OPEN) {
         socket.send(JSON.stringify({ type: 'input', data }))
       }
     })
 
     resizeObserverRef.current = new ResizeObserver(() => {
+      if (sessionRef.current !== sessionId) return
       fitAddon.fit()
       sendResize()
     })
@@ -193,8 +208,14 @@ export function PodTerminal({
 
   useEffect(() => {
     if (!canConnect) return
-    connect()
-    return () => disposeTerminal()
+    const frame = window.requestAnimationFrame(() => {
+      connect()
+    })
+    return () => {
+      window.cancelAnimationFrame(frame)
+      sessionRef.current += 1
+      disposeTerminal()
+    }
   }, [canConnect, connect, disposeTerminal])
 
   useEffect(() => {
@@ -222,11 +243,10 @@ export function PodTerminal({
   return (
     <Card className="kc-detail-card">
       <div className="kc-terminal-toolbar">
-        <Space>
+        <div className="kc-terminal-toolbar-group">
           <Text strong>{container ? `${t('common.container', 'Container')}: ${container}` : t('podTerminal.defaultContainer', 'Container: default')}</Text>
           <TagByState state={connectionState} />
-          <Text type="secondary" style={{ fontSize: 12 }}>{lastMessage}</Text>
-        </Space>
+        </div>
         <Button icon={<ReloadOutlined />} size="small" type="text" onClick={connect}>
           {t('podTerminal.reconnect', 'Reconnect')}
         </Button>

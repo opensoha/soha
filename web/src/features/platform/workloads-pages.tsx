@@ -1,7 +1,7 @@
 import { lazy, Suspense, useState, useEffect, useMemo } from 'react'
 import {
   App, Tag, Button, Select, Tabs, Card, Spin, Empty, Input,
-  Descriptions, Typography, Space, Modal, InputNumber, Tooltip, message,
+  Descriptions, Typography, Space, Modal, InputNumber, Switch, Tooltip, message,
 } from 'antd'
 import { DeleteOutlined, EditOutlined, ReloadOutlined, UndoOutlined } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
@@ -23,7 +23,7 @@ import { usePlatformScopeStore } from '@/stores/platform-scope-store'
 import { downloadJSON } from '@/utils/download'
 import { formatAgeSeconds, formatDateTime, formatRelativeTime } from '@/utils/time'
 import { tableColumnPresets } from '@/utils/table-columns'
-import type { ApiResponse, DeploymentRolloutStatus, PodDetail, PodMetrics, ResourceMetrics, ResourceQuantity, ResourceYAMLView, RolloutHistory, WorkloadCondition, WorkloadContainer } from '@/types'
+import type { ApiResponse, DeploymentRolloutStatus, PodDetail, PodMetrics, PodRelatedResource, PodVolume, PodVolumeMount, ResourceMetrics, ResourceQuantity, ResourceYAMLView, RolloutHistory, WorkloadCondition, WorkloadContainer } from '@/types'
 import type { TableColumnsType, TabsProps } from 'antd'
 import { StatGrid } from '@/components/stat-grid'
 
@@ -63,6 +63,178 @@ function buildWorkloadDetailPath(resource: string, name: string, selectedNamespa
   return query ? `/workloads/${resource}/${name}?${query}` : `/workloads/${resource}/${name}`
 }
 
+function buildNamespacedDetailQuery(namespace?: string | null) {
+  if (!namespace) return ''
+  return `?namespace=${encodeURIComponent(namespace)}`
+}
+
+function formatContainerStateLabel(value?: string) {
+  if (!value) return '-'
+  const [phase, reason] = value.split(':', 2)
+  if (!reason) return phase
+  return `${phase} · ${reason}`
+}
+
+function renderDetailTagList(values: string[] | undefined, emptyLabel = '-') {
+  if (!values || values.length === 0) {
+    return <Text type="secondary">{emptyLabel}</Text>
+  }
+  return (
+    <Space size={[6, 6]} wrap>
+      {values.map((item) => (
+        <Tag key={item}>{item}</Tag>
+      ))}
+    </Space>
+  )
+}
+
+function renderVolumeMounts(mounts: PodVolumeMount[] | undefined) {
+  if (!mounts || mounts.length === 0) {
+    return <Text type="secondary">N/A</Text>
+  }
+  return (
+    <div className="kc-volume-mount-list">
+      {mounts.map((mount) => (
+        <div key={`${mount.name}:${mount.mountPath}:${mount.subPath || '-'}`} className="kc-volume-mount-item">
+          <Text className="kc-volume-mount-name">{mount.name}</Text>
+          <Text type="secondary" className="kc-volume-mount-path">
+            {mount.subPath ? `${mount.mountPath} (${mount.subPath})` : mount.mountPath}
+          </Text>
+          {mount.readOnly ? <Tag className="kc-volume-mount-badge">RO</Tag> : null}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function formatVolumeTypeLabel(type: string) {
+  const labelMap: Record<string, string> = {
+    ConfigMap: 'configMap',
+    Secret: 'secret',
+    PersistentVolumeClaim: 'pvc',
+    Projected: 'projected',
+    EmptyDir: 'emptyDir',
+    HostPath: 'hostPath',
+    DownwardAPI: 'downwardAPI',
+    ServiceAccountToken: 'serviceAccountToken',
+    CSI: 'csi',
+    NFS: 'nfs',
+    Other: 'other',
+  }
+  return labelMap[type] ?? type
+}
+
+function summarizeVolumeDetail(volume: PodVolume, localeCode: 'zh_CN' | 'en_US') {
+  if (volume.sourceName && ['ConfigMap', 'Secret', 'PersistentVolumeClaim'].includes(volume.type)) {
+    return volume.sourceName
+  }
+  const preferredDetail = (volume.details ?? []).find((item) =>
+    item.startsWith('Sources:') || item.startsWith('Medium:') || item.startsWith('SizeLimit:'),
+  ) ?? volume.details?.[0]
+  return preferredDetail || (localeCode === 'zh_CN' ? '无' : 'N/A')
+}
+
+function renderVolumeDetail(
+  volume: PodVolume,
+  localeCode: 'zh_CN' | 'en_US',
+  detailNamespace: string | null,
+  navigate: ReturnType<typeof useNavigate>,
+) {
+  const targetPath = buildVolumeDetailPath(volume, detailNamespace)
+  const summary = summarizeVolumeDetail(volume, localeCode)
+  if (!targetPath) {
+    return <Text type="secondary" className="kc-volume-detail-value">{summary}</Text>
+  }
+  return (
+    <Link className="kc-volume-detail-link" onClick={() => navigate(targetPath)}>
+      {summary}
+    </Link>
+  )
+}
+
+function localizeRelatedResourceKind(kind: string, localeCode: 'zh_CN' | 'en_US') {
+  const labelMap: Record<string, { zh_CN: string; en_US: string }> = {
+    ConfigMap: { zh_CN: 'ConfigMap', en_US: 'ConfigMap' },
+    Secret: { zh_CN: 'Secret', en_US: 'Secret' },
+    Service: { zh_CN: 'Service', en_US: 'Service' },
+    Ingress: { zh_CN: 'Ingress', en_US: 'Ingress' },
+    Deployment: { zh_CN: 'Deployment', en_US: 'Deployment' },
+    ReplicaSet: { zh_CN: 'ReplicaSet', en_US: 'ReplicaSet' },
+    ServiceAccount: { zh_CN: 'ServiceAccount', en_US: 'ServiceAccount' },
+    PersistentVolumeClaim: { zh_CN: 'PVC', en_US: 'PVC' },
+    StatefulSet: { zh_CN: 'StatefulSet', en_US: 'StatefulSet' },
+    DaemonSet: { zh_CN: 'DaemonSet', en_US: 'DaemonSet' },
+    Job: { zh_CN: 'Job', en_US: 'Job' },
+    CronJob: { zh_CN: 'CronJob', en_US: 'CronJob' },
+  }
+  return labelMap[kind]?.[localeCode] ?? kind
+}
+
+function localizeRelatedRelation(relation: string, localeCode: 'zh_CN' | 'en_US') {
+  const labelMap: Record<string, { zh_CN: string; en_US: string }> = {
+    owner: { zh_CN: '所有者', en_US: 'Owner' },
+    'service-account': { zh_CN: '服务账号', en_US: 'Service account' },
+    config: { zh_CN: '配置引用', en_US: 'Config reference' },
+    secret: { zh_CN: '密钥引用', en_US: 'Secret reference' },
+    volume: { zh_CN: '卷引用', en_US: 'Volume reference' },
+    'selected-by-service': { zh_CN: 'Service 选择器命中', en_US: 'Selected by service' },
+    'routes-service': { zh_CN: 'Ingress 后端指向', en_US: 'Ingress backend' },
+    'selector-match': { zh_CN: 'Selector 命中', en_US: 'Selector match' },
+    'managed-by-replicaset': { zh_CN: 'ReplicaSet 所属', en_US: 'Managed by ReplicaSet' },
+    'name-prefix': { zh_CN: '名称前缀匹配', en_US: 'Name prefix match' },
+    'generated-name': { zh_CN: '生成名匹配', en_US: 'Generated name match' },
+  }
+  return labelMap[relation]?.[localeCode] ?? relation
+}
+
+function buildRelatedResourcePath(resource: PodRelatedResource, selectedNamespace: string | null) {
+  const effectiveNamespace = resource.namespace || selectedNamespace || ''
+  switch (resource.kind) {
+    case 'Service':
+      return `/network/services/${encodeURIComponent(resource.name)}${buildNamespacedDetailQuery(effectiveNamespace)}`
+    case 'ConfigMap':
+      return `/configuration/configmaps/${encodeURIComponent(resource.name)}${buildNamespacedDetailQuery(effectiveNamespace)}`
+    case 'Secret':
+      return `/configuration/secrets/${encodeURIComponent(resource.name)}${buildNamespacedDetailQuery(effectiveNamespace)}`
+    case 'Deployment':
+      return buildWorkloadDetailPath('deployments', resource.name, selectedNamespace, effectiveNamespace)
+    case 'StatefulSet':
+      return buildWorkloadDetailPath('statefulsets', resource.name, selectedNamespace, effectiveNamespace)
+    case 'DaemonSet':
+      return buildWorkloadDetailPath('daemonsets', resource.name, selectedNamespace, effectiveNamespace)
+    case 'Job':
+      return buildWorkloadDetailPath('jobs', resource.name, selectedNamespace, effectiveNamespace)
+    case 'CronJob':
+      return buildWorkloadDetailPath('cronjobs', resource.name, selectedNamespace, effectiveNamespace)
+    case 'PersistentVolumeClaim':
+      return `/storage/persistentvolumeclaims/${encodeURIComponent(resource.name)}${buildNamespacedDetailQuery(effectiveNamespace)}`
+    case 'ServiceAccount':
+      return `/platform-access-control/serviceaccounts/${encodeURIComponent(resource.name)}${buildNamespacedDetailQuery(effectiveNamespace)}`
+    default:
+      return null
+  }
+}
+
+function buildVolumeDetailPath(volume: PodVolume, selectedNamespace: string | null) {
+  const effectiveNamespace = selectedNamespace || ''
+  switch (volume.type) {
+    case 'ConfigMap':
+      return volume.sourceName
+        ? `/configuration/configmaps/${encodeURIComponent(volume.sourceName)}${buildNamespacedDetailQuery(effectiveNamespace)}`
+        : null
+    case 'Secret':
+      return volume.sourceName
+        ? `/configuration/secrets/${encodeURIComponent(volume.sourceName)}${buildNamespacedDetailQuery(effectiveNamespace)}`
+        : null
+    case 'PersistentVolumeClaim':
+      return volume.sourceName
+        ? `/storage/persistentvolumeclaims/${encodeURIComponent(volume.sourceName)}${buildNamespacedDetailQuery(effectiveNamespace)}`
+        : null
+    default:
+      return null
+  }
+}
+
 function useScopedQuery<T>(resource: string, extra?: string) {
   const { clusterId, namespace } = usePlatformScopeStore()
   if (!clusterId) {
@@ -87,6 +259,18 @@ function normalizeSearchKeyword(value: string) {
 function includesSearch(values: Array<string | undefined | null>, keyword: string) {
   if (!keyword) return true
   return values.some((value) => (value ?? '').toLowerCase().includes(keyword))
+}
+
+function formatRefreshTimestamp(value: number, localeCode: 'zh_CN' | 'en_US') {
+  if (!value) {
+    return localeCode === 'zh_CN' ? '尚未刷新' : 'Not refreshed yet'
+  }
+  return new Intl.DateTimeFormat(localeCode === 'zh_CN' ? 'zh-CN' : 'en-US', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).format(value)
 }
 
 interface WorkloadOverviewEvent {
@@ -217,8 +401,18 @@ export function WorkloadsOverviewPage() {
   if (!clusterId) {
     return (
       <div className="kc-page">
-        <PageHeader title={t('page.workloads.overview.title', 'Workload Overview')} description={t('page.workloads.overview.desc', 'Inspect workload counts and recent events under the current cluster and namespace scope.')} />
-        <PlatformScopeToolbar />
+        <Card className="kc-workload-overview-hero" variant="borderless">
+          <div className="kc-workload-overview-hero-copy">
+            <Text className="kc-workload-overview-eyebrow">{localeCode === 'zh_CN' ? '工作负载' : 'Workloads'}</Text>
+            <div className="kc-admin-table-title-block">
+              <Text strong>{t('page.workloads.overview.title', 'Workload Overview')}</Text>
+              <Text type="secondary">{t('page.workloads.overview.desc', 'Inspect workload counts and recent events under the current cluster and namespace scope.')}</Text>
+            </div>
+          </div>
+          <div className="kc-workload-overview-toolbar">
+            <PlatformScopeToolbar embedded showLabel={false} clusterWidth={190} namespaceWidth={190} />
+          </div>
+        </Card>
         <Empty description={t('common.pleaseSelectClusterShort', 'Select a cluster')} />
       </div>
     )
@@ -245,10 +439,22 @@ export function WorkloadsOverviewPage() {
 
   return (
     <div className="kc-page">
-      <PageHeader title={t('page.workloads.overview.title', 'Workload Overview')} description={t('page.workloads.overview.desc', 'Inspect workload counts and recent events under the current cluster and namespace scope.')} />
-      <PlatformScopeToolbar />
-      <StatGrid items={stats} />
-      <Card title={localeCode === 'zh_CN' ? '最近事件' : 'Recent Events'}>
+      <Card className="kc-workload-overview-hero" variant="borderless">
+        <div className="kc-workload-overview-hero-copy">
+          <Text className="kc-workload-overview-eyebrow">{localeCode === 'zh_CN' ? '工作负载' : 'Workloads'}</Text>
+          <div className="kc-admin-table-title-block">
+            <Text strong>{t('page.workloads.overview.title', 'Workload Overview')}</Text>
+            <Text type="secondary">{t('page.workloads.overview.desc', 'Inspect workload counts and recent events under the current cluster and namespace scope.')}</Text>
+          </div>
+        </div>
+        <div className="kc-workload-overview-toolbar">
+          <PlatformScopeToolbar embedded showLabel={false} clusterWidth={190} namespaceWidth={190} />
+        </div>
+      </Card>
+      <div className="kc-workload-overview-stats-shell">
+        <StatGrid items={stats} />
+      </div>
+      <Card className="kc-workload-overview-events" title={localeCode === 'zh_CN' ? '最近事件' : 'Recent Events'} variant="borderless">
         <AdminTable
           columns={eventColumns}
           dataSource={eventsQuery.data?.data ?? []}
@@ -1429,14 +1635,26 @@ function podSorter(compareFn: (left: Pod, right: Pod) => number) {
 export function WorkloadsPodsPage() {
   const { t, localeCode } = useI18n()
   const navigate = useNavigate()
-  const queryClient = useQueryClient()
   const { clusterId, namespace } = usePlatformScopeStore()
-  const { data, isLoading } = useScopedQuery<Pod>('pods')
+  const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(true)
+  const [autoRefreshIntervalSeconds, setAutoRefreshIntervalSeconds] = useState(15)
+  const [manualRefreshPending, setManualRefreshPending] = useState(false)
   const [searchKeyword, setSearchKeyword] = useState('')
   const [phaseFilter, setPhaseFilter] = useState('all')
   const [restartFilter, setRestartFilter] = useState('all')
   const [pvcFilter, setPvcFilter] = useState('all')
   const [nodeFilter, setNodeFilter] = useState('all')
+
+  const podsQuery = useQuery({
+    queryKey: ['pods', clusterId, namespace, undefined],
+    queryFn: () => api.get<ApiResponse<Pod[]>>(buildClusterScopedPath(clusterId!, 'workloads/pods', namespace)),
+    enabled: !!clusterId,
+    refetchInterval: autoRefreshEnabled && clusterId ? autoRefreshIntervalSeconds * 1000 : false,
+  })
+
+  const data = podsQuery.data
+  const isLoading = podsQuery.isLoading
+  const isBackgroundRefreshing = podsQuery.isFetching && !podsQuery.isLoading && !manualRefreshPending
 
   const pods = data?.data ?? []
   const normalizedKeyword = normalizeSearchKeyword(searchKeyword)
@@ -1464,15 +1682,37 @@ export function WorkloadsPodsPage() {
     })
   ), [filteredPods])
 
+  const refreshStatusLabel = manualRefreshPending
+    ? (localeCode === 'zh_CN' ? '手动刷新中…' : 'Manual refresh in progress…')
+    : isBackgroundRefreshing
+      ? (localeCode === 'zh_CN' ? '自动刷新中…' : 'Auto refresh in progress…')
+      : clusterId
+        ? (localeCode === 'zh_CN'
+          ? `更新于 ${formatRefreshTimestamp(podsQuery.dataUpdatedAt, localeCode)}`
+          : `Updated at ${formatRefreshTimestamp(podsQuery.dataUpdatedAt, localeCode)}`)
+        : (localeCode === 'zh_CN' ? '选择集群后开始刷新' : 'Select a cluster to start refreshing')
+
   const rebuildPodMutation = useMutation({
     mutationFn: async ({ name, namespace: targetNamespace }: { name: string; namespace: string }) =>
       api.delete(`/clusters/${clusterId}/workloads/pods/${encodeURIComponent(name)}?namespace=${encodeURIComponent(targetNamespace)}`),
     onSuccess: () => {
       void message.success(localeCode === 'zh_CN' ? 'Pod 已删除，控制器将自动重建' : 'Pod deleted. The controller should recreate it automatically')
-      queryClient.invalidateQueries({ queryKey: ['pods', clusterId, namespace] })
+      void podsQuery.refetch()
     },
     onError: (err: Error) => void message.error(err.message),
   })
+
+  const handleRefresh = async () => {
+    if (!clusterId || manualRefreshPending) {
+      return
+    }
+    setManualRefreshPending(true)
+    try {
+      await podsQuery.refetch()
+    } finally {
+      setManualRefreshPending(false)
+    }
+  }
 
   const columns: TableColumnsType<Pod> = [
     {
@@ -1639,7 +1879,41 @@ export function WorkloadsPodsPage() {
 
   const podToolbarExtra = (
     <div className="kc-page-toolbar">
-      <Button size="small" icon={<ReloadOutlined />} variant="outlined" onClick={() => queryClient.invalidateQueries({ queryKey: ['pods', clusterId, namespace] })}>
+      <Text className="kc-refresh-meta" type="secondary">
+        {refreshStatusLabel}
+      </Text>
+      <div className="kc-refresh-controls">
+        <Text className="kc-refresh-meta" type="secondary">
+          {localeCode === 'zh_CN' ? '自动刷新' : 'Auto refresh'}
+        </Text>
+        <Switch
+          size="small"
+          checked={autoRefreshEnabled}
+          onChange={setAutoRefreshEnabled}
+          disabled={!clusterId}
+        />
+        <Select
+          className="kc-platform-compact-field"
+          size="small"
+          value={autoRefreshIntervalSeconds}
+          onChange={(value) => setAutoRefreshIntervalSeconds(Number(value))}
+          disabled={!clusterId || !autoRefreshEnabled}
+          style={{ width: 96 }}
+          options={[
+            { value: 5, label: localeCode === 'zh_CN' ? '5 秒' : '5s' },
+            { value: 15, label: localeCode === 'zh_CN' ? '15 秒' : '15s' },
+            { value: 30, label: localeCode === 'zh_CN' ? '30 秒' : '30s' },
+          ]}
+        />
+      </div>
+      <Button
+        size="small"
+        icon={<ReloadOutlined />}
+        variant="outlined"
+        loading={manualRefreshPending}
+        disabled={!clusterId || manualRefreshPending}
+        onClick={() => void handleRefresh()}
+      >
         {t('common.refresh', 'Refresh')}
       </Button>
     </div>
@@ -1665,6 +1939,7 @@ export function WorkloadsPodsPage() {
 
 export function PodDetailPage() {
   const { localeCode } = useI18n()
+  const navigate = useNavigate()
   const params = useParams()
   const [searchParams] = useSearchParams()
   const podName = params.podName as string
@@ -1674,6 +1949,7 @@ export function PodDetailPage() {
   const [terminalShell, setTerminalShell] = useState('/bin/sh')
   const [activeTabKey, setActiveTabKey] = useState('overview')
   const [terminalVisible, setTerminalVisible] = useState(false)
+  const [terminalMounted, setTerminalMounted] = useState(false)
   const [metricsRangeMinutes, setMetricsRangeMinutes] = useState(60)
 
   const podDetailPath = clusterId && detailNamespace
@@ -1730,24 +2006,108 @@ export function PodDetailPage() {
       : (podDetail?.conditions ?? []).map(conditionToTimelineEvent)),
     [podDetail, podEventsQuery.data],
   )
-  const podExportPayload = useMemo(() => ({
-    exportedAt: new Date().toISOString(),
-    clusterId,
-    namespace: detailNamespace,
-    podName,
-    container: container || null,
-    detail: podDetail ?? null,
-    metrics: podMetricsQuery.data?.data ?? null,
-    events: podEventsQuery.data?.data ?? [],
-  }), [clusterId, container, detailNamespace, podDetail, podEventsQuery.data, podMetricsQuery.data, podName])
+  const podVolumes = podDetail?.volumes ?? []
+  const podRelatedResources = podDetail?.relatedResources ?? []
+  const containerSummary = useMemo(() => {
+    const containers = podDetail?.containers ?? []
+    return {
+      total: containers.length,
+      ready: containers.filter((item) => item.ready).length,
+      restarts: containers.reduce((sum, item) => sum + (item.restartCount || 0), 0),
+    }
+  }, [podDetail])
 
   const containerColumns: TableColumnsType<WorkloadContainer> = [
     { title: localeCode === 'zh_CN' ? '容器' : 'Container', dataIndex: 'name' },
     { title: localeCode === 'zh_CN' ? '镜像' : 'Image', dataIndex: 'image', ellipsis: true },
     { title: localeCode === 'zh_CN' ? '就绪' : 'Ready', dataIndex: 'ready', render: (value: boolean) => <BooleanTag value={value} trueLabel="Yes" falseLabel="No" /> },
-    { title: localeCode === 'zh_CN' ? '状态' : 'State', dataIndex: 'state', render: (value: string) => value || '-' },
-    { title: localeCode === 'zh_CN' ? '上次状态' : 'Last State', dataIndex: 'lastState', render: (value: string) => value || '-' },
+    { title: localeCode === 'zh_CN' ? '状态' : 'State', dataIndex: 'state', render: (value: string) => formatContainerStateLabel(value) },
+    { title: localeCode === 'zh_CN' ? '原因' : 'Reason', dataIndex: 'reason', render: (value: string) => value || '-' },
+    { title: localeCode === 'zh_CN' ? '上次状态' : 'Last State', dataIndex: 'lastState', render: (value: string) => formatContainerStateLabel(value) },
     { title: localeCode === 'zh_CN' ? '重启次数' : 'Restarts', dataIndex: 'restartCount' },
+    { title: localeCode === 'zh_CN' ? '启动时间' : 'Started At', dataIndex: 'startedAt', render: (value?: string) => value ? formatDateTime(value) : '-' },
+    { title: 'Container ID', dataIndex: 'containerId', ellipsis: true, render: (value?: string) => value || '-' },
+  ]
+
+  const volumeColumns: TableColumnsType<PodVolume> = [
+    {
+      title: localeCode === 'zh_CN' ? '卷名' : 'Volume',
+      dataIndex: 'name',
+      width: 220,
+      render: (value: string, record: PodVolume) => {
+        const targetPath = buildVolumeDetailPath(record, detailNamespace)
+        if (!targetPath) {
+          return <Text className="kc-volume-name-text">{value}</Text>
+        }
+        return (
+          <Link className="kc-volume-name-link" onClick={() => navigate(targetPath)}>
+            {value}
+          </Link>
+        )
+      },
+    },
+    {
+      title: 'Type',
+      dataIndex: 'type',
+      width: 130,
+      render: (value: string) => <Tag className="kc-volume-type-tag">{formatVolumeTypeLabel(value)}</Tag>,
+    },
+    {
+      title: localeCode === 'zh_CN' ? '详情' : 'Details',
+      width: 300,
+      render: (_: unknown, record: PodVolume) => renderVolumeDetail(record, localeCode, detailNamespace, navigate),
+    },
+    {
+      title: localeCode === 'zh_CN' ? 'Volume Mounts' : 'Volume Mounts',
+      dataIndex: 'volumeMounts',
+      render: (value?: PodVolumeMount[]) => renderVolumeMounts(value),
+    },
+  ]
+
+  const relatedResourceColumns: TableColumnsType<PodRelatedResource> = [
+    {
+      title: localeCode === 'zh_CN' ? '资源类型' : 'Kind',
+      dataIndex: 'kind',
+      width: 150,
+      render: (value: string) => <Tag>{localizeRelatedResourceKind(value, localeCode)}</Tag>,
+    },
+    {
+      title: localeCode === 'zh_CN' ? '名称' : 'Name',
+      dataIndex: 'name',
+      render: (value: string, record: PodRelatedResource) => {
+        const targetPath = buildRelatedResourcePath(record, detailNamespace)
+        if (!targetPath) {
+          return value
+        }
+        return (
+          <Link onClick={() => navigate(targetPath)}>
+            {value}
+          </Link>
+        )
+      },
+    },
+    {
+      title: localeCode === 'zh_CN' ? '命名空间' : 'Namespace',
+      dataIndex: 'namespace',
+      width: 160,
+      render: (value?: string) => value || '-',
+    },
+    {
+      title: localeCode === 'zh_CN' ? '关联关系' : 'Relations',
+      dataIndex: 'relations',
+      render: (value?: string[]) => (
+        <Space size={[6, 6]} wrap>
+          {(value ?? []).map((item) => (
+            <Tag key={item}>{localizeRelatedRelation(item, localeCode)}</Tag>
+          ))}
+        </Space>
+      ),
+    },
+    {
+      title: localeCode === 'zh_CN' ? '详情' : 'Details',
+      dataIndex: 'details',
+      render: (value?: string[]) => renderDetailTagList(value, localeCode === 'zh_CN' ? '无' : 'None'),
+    },
   ]
 
   const conditionColumns: TableColumnsType<WorkloadCondition> = [
@@ -1759,8 +2119,27 @@ export function PodDetailPage() {
   ]
 
   const runtimeOverview = podDetail ? (
-    <>
-      <Card className="kc-detail-card" title={localeCode === 'zh_CN' ? '运行时概览' : 'Runtime Overview'}>
+    <div className="kc-pod-overview-stack">
+      <Card
+        className="kc-detail-card kc-pod-overview-card kc-pod-overview-status"
+        title={localeCode === 'zh_CN' ? '容器状态' : 'Containers'}
+        extra={(
+          <Space size={6}>
+            <Tag color="blue">{localeCode === 'zh_CN' ? '容器' : 'Containers'} {containerSummary.total}</Tag>
+            <Tag color="green">{localeCode === 'zh_CN' ? '就绪' : 'Ready'} {containerSummary.ready}</Tag>
+            <Tag color="orange">{localeCode === 'zh_CN' ? '重启' : 'Restarts'} {containerSummary.restarts}</Tag>
+          </Space>
+        )}
+      >
+        <AdminTable
+          columns={containerColumns}
+          dataSource={podDetail.containers ?? []}
+          rowKey="name"
+          pageSize={10}
+          enableColumnSelection={false}
+        />
+      </Card>
+      <Card className="kc-detail-card kc-pod-overview-card kc-pod-overview-summary" title={localeCode === 'zh_CN' ? '运行时概览' : 'Runtime Overview'}>
         <Descriptions
           items={[
             { key: localeCode === 'zh_CN' ? '阶段' : 'Phase', label: localeCode === 'zh_CN' ? '阶段' : 'Phase', children: <StatusTag value={podDetail.phase} /> },
@@ -1773,16 +2152,7 @@ export function PodDetailPage() {
           ]}
         />
       </Card>
-      <Card className="kc-detail-card" title={localeCode === 'zh_CN' ? '容器状态' : 'Containers'}>
-        <AdminTable
-          columns={containerColumns}
-          dataSource={podDetail.containers ?? []}
-          rowKey="name"
-          pageSize={10}
-          enableColumnSelection={false}
-        />
-      </Card>
-      <Card className="kc-detail-card" title={localeCode === 'zh_CN' ? '条件' : 'Conditions'}>
+      <Card className="kc-detail-card kc-pod-overview-card kc-pod-overview-conditions" title={localeCode === 'zh_CN' ? '条件' : 'Conditions'}>
         <AdminTable
           columns={conditionColumns}
           dataSource={podDetail.conditions ?? []}
@@ -1791,7 +2161,7 @@ export function PodDetailPage() {
           enableColumnSelection={false}
         />
       </Card>
-    </>
+    </div>
   ) : null
 
   const metricsTab: NonNullable<TabsProps['items']>[number] = {
@@ -1825,6 +2195,57 @@ export function PodDetailPage() {
     ),
   }
 
+  const containersTab: NonNullable<TabsProps['items']>[number] = {
+    key: 'containers',
+    label: localeCode === 'zh_CN' ? '容器' : 'Containers',
+    children: (
+      <Card className="kc-detail-card" title={localeCode === 'zh_CN' ? '容器状态' : 'Container Status'}>
+        <AdminTable
+          columns={containerColumns}
+          dataSource={podDetail?.containers ?? []}
+          rowKey={(record) => record.name}
+          pageSize={10}
+          enableColumnSelection={false}
+        />
+      </Card>
+    ),
+  }
+
+  const volumesTab: NonNullable<TabsProps['items']>[number] = {
+    key: 'volumes',
+    label: localeCode === 'zh_CN' ? '卷' : 'Volumes',
+    children: (
+      <Card className="kc-detail-card" title={localeCode === 'zh_CN' ? 'Pod 卷与挂载' : 'Pod Volumes & Mounts'}>
+        <AdminTable
+          className="kc-pod-volumes-table"
+          columns={volumeColumns}
+          dataSource={podVolumes}
+          rowKey={(record) => record.name}
+          pageSize={10}
+          enableColumnSelection={false}
+          empty={<Empty description={localeCode === 'zh_CN' ? '当前 Pod 没有关联卷' : 'No pod volumes found'} />}
+        />
+      </Card>
+    ),
+  }
+
+  const relatedResourcesTab: NonNullable<TabsProps['items']>[number] = {
+    key: 'related-resources',
+    label: localeCode === 'zh_CN' ? '相关资源' : 'Related Resources',
+    children: (
+      <Card className="kc-detail-card" title={localeCode === 'zh_CN' ? 'Pod 关联资源' : 'Pod Related Resources'}>
+        <AdminTable
+          columns={relatedResourceColumns}
+          dataSource={podRelatedResources}
+          rowKey={(record) => `${record.kind}:${record.namespace || 'cluster'}:${record.name}`}
+          pageSize={10}
+          enableColumnSelection={false}
+          empty={<Empty description={localeCode === 'zh_CN' ? '当前 Pod 暂无可识别的关联资源' : 'No related resources detected for this pod'} />}
+        />
+      </Card>
+    ),
+  }
+
   const logsTab: NonNullable<TabsProps['items']>[number] = {
     key: 'logs',
     label: localeCode === 'zh_CN' ? '日志' : 'Logs',
@@ -1850,7 +2271,7 @@ export function PodDetailPage() {
         resource="pods"
         paramKey="podName"
         extraOverview={runtimeOverview}
-        extraTabPanes={[logsTab, eventsTab, metricsTab]}
+        extraTabPanes={[containersTab, logsTab, eventsTab, volumesTab, relatedResourcesTab, metricsTab]}
         activeTabKey={activeTabKey}
         onTabChange={setActiveTabKey}
         showScopeToolbar={false}
@@ -1860,12 +2281,6 @@ export function PodDetailPage() {
             <Button variant="outlined" onClick={() => setTerminalVisible(true)}>
               {localeCode === 'zh_CN' ? '打开终端' : 'Open Terminal'}
             </Button>
-            <Button
-              variant="outlined"
-              onClick={() => downloadJSON(`pod-diagnostics-${podName}.json`, podExportPayload)}
-            >
-              {localeCode === 'zh_CN' ? '导出诊断' : 'Export Diagnostics'}
-            </Button>
           </Space>
         )}
       />
@@ -1873,32 +2288,37 @@ export function PodDetailPage() {
         title={`Terminal: ${podName}`}
         open={terminalVisible}
         onCancel={() => setTerminalVisible(false)}
+        afterOpenChange={setTerminalMounted}
         footer={null}
         width={1080}
       >
-        <div className="flex items-center gap-2 mb-2">
-          <Text strong className="text-xs">{localeCode === 'zh_CN' ? '容器:' : 'Container:'}</Text>
-          <Select
-            placeholder={localeCode === 'zh_CN' ? '选择容器' : 'Select container'}
-            value={container}
-            onChange={(value) => setContainer(String(value || ''))}
-            style={{ width: 220 }}
-            options={containerOptions}
-            allowClear
-          />
-          <Text strong className="text-xs">{localeCode === 'zh_CN' ? 'Shell:' : 'Shell:'}</Text>
-          <Select
-            value={terminalShell}
-            onChange={(value) => setTerminalShell(String(value))}
-            style={{ width: 180 }}
-            options={[
-              { value: '/bin/sh', label: '/bin/sh' },
-              { value: '/bin/bash', label: '/bin/bash' },
-              { value: '/bin/ash', label: '/bin/ash' },
-            ]}
-          />
+        <div className="kc-terminal-controls">
+          <div className="kc-terminal-control-group">
+            <Text strong className="text-xs">{localeCode === 'zh_CN' ? '容器:' : 'Container:'}</Text>
+            <Select
+              placeholder={localeCode === 'zh_CN' ? '选择容器' : 'Select container'}
+              value={container}
+              onChange={(value) => setContainer(String(value || ''))}
+              style={{ width: 220 }}
+              options={containerOptions}
+              allowClear
+            />
+          </div>
+          <div className="kc-terminal-control-group">
+            <Text strong className="text-xs">{localeCode === 'zh_CN' ? 'Shell:' : 'Shell:'}</Text>
+            <Select
+              value={terminalShell}
+              onChange={(value) => setTerminalShell(String(value))}
+              style={{ width: 180 }}
+              options={[
+                { value: '/bin/sh', label: '/bin/sh' },
+                { value: '/bin/bash', label: '/bin/bash' },
+                { value: '/bin/ash', label: '/bin/ash' },
+              ]}
+            />
+          </div>
         </div>
-        {terminalVisible ? (
+        {terminalMounted ? (
           <Suspense fallback={<Card className="kc-detail-card"><Spin size="large" /></Card>}>
             <PodTerminal
               clusterId={clusterId}

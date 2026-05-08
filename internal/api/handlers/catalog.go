@@ -384,9 +384,16 @@ func mapApplicationEnvironmentInput(req dto.ApplicationEnvironmentRequest) domai
 			ID:            item.ID,
 			ClusterID:     item.ClusterID,
 			Namespace:     item.Namespace,
+			TargetKind:    item.TargetKind,
+			ExecutorKind:  item.ExecutorKind,
+			GroupKey:      item.GroupKey,
+			WaveKey:       item.WaveKey,
+			RegionKey:     item.RegionKey,
+			ConfigRef:     item.ConfigRef,
 			WorkloadKind:  item.WorkloadKind,
 			WorkloadName:  item.WorkloadName,
 			ContainerName: item.ContainerName,
+			Metadata:      item.Metadata,
 			Enabled:       item.Enabled,
 		})
 	}
@@ -394,6 +401,10 @@ func mapApplicationEnvironmentInput(req dto.ApplicationEnvironmentRequest) domai
 		ID:                 req.ID,
 		ApplicationID:      req.ApplicationID,
 		EnvironmentID:      req.EnvironmentID,
+		StrategyProfileID:  req.StrategyProfileID,
+		PromotionPolicyID:  req.PromotionPolicyID,
+		ApprovalPolicyID:   req.ApprovalPolicyID,
+		ArtifactPolicyID:   req.ArtifactPolicyID,
 		WorkflowTemplateID: req.WorkflowTemplateID,
 		BuildPolicy: domaincatalog.BuildPolicy{
 			SourceID:         req.BuildPolicy.SourceID,

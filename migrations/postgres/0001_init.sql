@@ -464,6 +464,160 @@ CREATE TABLE IF NOT EXISTS alert_silences (
     updated_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS alert_rules (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    rule_type TEXT NOT NULL,
+    datasource_selector JSON NOT NULL DEFAULT '{}',
+    query_spec JSON NOT NULL DEFAULT '{}',
+    threshold_spec JSON NOT NULL DEFAULT '{}',
+    for_seconds INT NOT NULL DEFAULT 0,
+    group_by JSON NOT NULL DEFAULT '[]',
+    labels JSON NOT NULL DEFAULT '{}',
+    annotations JSON NOT NULL DEFAULT '{}',
+    notification_policy_id TEXT,
+    healing_policy_ids JSON NOT NULL DEFAULT '[]',
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS alert_rule_targets (
+    id TEXT PRIMARY KEY,
+    rule_id TEXT NOT NULL REFERENCES alert_rules(id) ON DELETE CASCADE,
+    datasource_id TEXT NOT NULL,
+    target_kind TEXT NOT NULL,
+    target_config JSON NOT NULL DEFAULT '{}',
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS alert_rule_runs (
+    id TEXT PRIMARY KEY,
+    rule_id TEXT NOT NULL REFERENCES alert_rules(id) ON DELETE CASCADE,
+    status TEXT NOT NULL,
+    summary TEXT,
+    result JSON NOT NULL DEFAULT '{}',
+    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS alert_events (
+    id TEXT PRIMARY KEY,
+    rule_id TEXT,
+    source_type TEXT NOT NULL,
+    source_system TEXT,
+    fingerprint TEXT NOT NULL,
+    title TEXT NOT NULL,
+    summary TEXT NOT NULL,
+    severity TEXT NOT NULL,
+    status TEXT NOT NULL,
+    cluster_id TEXT,
+    namespace TEXT,
+    labels JSON NOT NULL DEFAULT '{}',
+    annotations JSON NOT NULL DEFAULT '{}',
+    receiver TEXT,
+    generator_url TEXT,
+    current_state TEXT,
+    last_notification_at TIMESTAMP,
+    starts_at TIMESTAMP,
+    ends_at TIMESTAMP,
+    last_seen_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS notification_policies (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    matchers JSON NOT NULL DEFAULT '{}',
+    processor_chain JSON NOT NULL DEFAULT '[]',
+    channel_refs JSON NOT NULL DEFAULT '[]',
+    oncall_ref TEXT,
+    send_resolved BOOLEAN NOT NULL DEFAULT FALSE,
+    cooldown_seconds INT NOT NULL DEFAULT 0,
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS notification_templates (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    template_type TEXT NOT NULL,
+    content_type TEXT NOT NULL,
+    body_template TEXT,
+    headers JSON NOT NULL DEFAULT '{}',
+    query_params JSON NOT NULL DEFAULT '{}',
+    sample_payload JSON NOT NULL DEFAULT '{}',
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS healing_policies (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    trigger_mode TEXT NOT NULL,
+    workflow_template_id TEXT NOT NULL,
+    approval_policy_ref TEXT,
+    cooldown_seconds INT NOT NULL DEFAULT 0,
+    concurrency_key TEXT,
+    safety_window_seconds INT NOT NULL DEFAULT 0,
+    definition JSON NOT NULL DEFAULT '{}',
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS healing_runs (
+    id TEXT PRIMARY KEY,
+    policy_id TEXT NOT NULL REFERENCES healing_policies(id) ON DELETE CASCADE,
+    event_id TEXT,
+    status TEXT NOT NULL,
+    approval_status TEXT,
+    approval_comment TEXT,
+    requested_by TEXT,
+    approved_by TEXT,
+    workflow_run_id TEXT,
+    result JSON NOT NULL DEFAULT '{}',
+    started_at TIMESTAMP,
+    completed_at TIMESTAMP,
+    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS oncall_schedules (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    time_zone TEXT,
+    description TEXT,
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS oncall_rotations (
+    id TEXT PRIMARY KEY,
+    schedule_id TEXT NOT NULL REFERENCES oncall_schedules(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    participants JSON NOT NULL DEFAULT '[]',
+    rotation_config JSON NOT NULL DEFAULT '{}',
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS oncall_escalation_policies (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    steps JSON NOT NULL DEFAULT '[]',
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS saved_views (
     id TEXT PRIMARY KEY,
     owner_type TEXT NOT NULL,
@@ -604,6 +758,15 @@ CREATE INDEX IF NOT EXISTS idx_alert_instances_status ON alert_instances (status
 CREATE INDEX IF NOT EXISTS idx_alert_instances_last_seen_at ON alert_instances (last_seen_at DESC);
 CREATE INDEX IF NOT EXISTS idx_alert_instances_cluster_namespace ON alert_instances (cluster_id, namespace);
 CREATE INDEX IF NOT EXISTS idx_alert_instances_acknowledged_at ON alert_instances (acknowledged_at DESC);
+CREATE INDEX IF NOT EXISTS idx_alert_rules_enabled_updated_at ON alert_rules (enabled, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_alert_events_status_last_seen_at ON alert_events (status, last_seen_at DESC);
+CREATE INDEX IF NOT EXISTS idx_notification_policies_enabled_updated_at ON notification_policies (enabled, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_notification_templates_enabled_updated_at ON notification_templates (enabled, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_healing_policies_enabled_updated_at ON healing_policies (enabled, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_healing_runs_status_updated_at ON healing_runs (status, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_oncall_schedules_enabled_updated_at ON oncall_schedules (enabled, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_oncall_rotations_schedule_id_updated_at ON oncall_rotations (schedule_id, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_oncall_escalation_policies_enabled_updated_at ON oncall_escalation_policies (enabled, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_alert_delivery_logs_alert_id_created_at ON alert_delivery_logs (alert_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_alert_delivery_logs_status_created_at ON alert_delivery_logs (status, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_alert_silences_enabled_time ON alert_silences (enabled, starts_at, ends_at);

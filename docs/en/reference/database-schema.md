@@ -122,9 +122,29 @@ Per-application build-source registry.
 
 Platform-managed Dockerfile and build-command templates.
 
+### release_bundles
+
+Immutable delivery version unit for promotion and audit.
+
+### execution_tasks
+
+Execution-plane task records for build, deploy, verification, and callback-driven provider work.
+
+### execution_logs
+
+Task-scoped execution logs persisted independently from build/release summary rows.
+
+### execution_callbacks
+
+Provider callback history used to advance execution-task state.
+
 ### workflow_approvals
 
 Approval decisions for suspended workflow runs.
+
+### approval_policies
+
+Reusable approval configuration for multi-step delivery governance.
 
 ### notification_channels
 

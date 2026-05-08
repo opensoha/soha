@@ -721,7 +721,17 @@ func mergeClusterUpdateInput(existing domaincluster.Connection, next domainclust
 				next.Kubeconfig = kubeconfig
 			}
 		}
+		if strings.TrimSpace(next.Context) == "" && existing.Summary.ConnectionMode == domaincluster.ConnectionModeDirectKubeconfig {
+			if contextName, _ := existing.Metadata["context"].(string); strings.TrimSpace(contextName) != "" {
+				next.Context = contextName
+			}
+		}
 	case domaincluster.ConnectionModeAgent:
+		if strings.TrimSpace(next.AgentEndpoint) == "" && existing.Summary.ConnectionMode == domaincluster.ConnectionModeAgent {
+			if endpoint, _ := existing.Metadata["endpoint"].(string); strings.TrimSpace(endpoint) != "" {
+				next.AgentEndpoint = endpoint
+			}
+		}
 		if strings.TrimSpace(next.AgentToken) == "" && existing.Summary.ConnectionMode == domaincluster.ConnectionModeAgent {
 			if token, _ := existing.Metadata["token"].(string); strings.TrimSpace(token) != "" {
 				next.AgentToken = token
@@ -731,6 +741,16 @@ func mergeClusterUpdateInput(existing domaincluster.Connection, next domainclust
 	if strings.TrimSpace(next.PrometheusBearerToken) == "" {
 		if token, _ := existing.Metadata["prometheus_bearer_token"].(string); strings.TrimSpace(token) != "" {
 			next.PrometheusBearerToken = token
+		}
+	}
+	if strings.TrimSpace(next.PrometheusClusterLabel) == "" {
+		if label, _ := existing.Metadata["prometheus_cluster_label"].(string); strings.TrimSpace(label) != "" {
+			next.PrometheusClusterLabel = label
+		}
+	}
+	if strings.TrimSpace(next.GrafanaBaseURL) == "" {
+		if baseURL, _ := existing.Metadata["grafana_base_url"].(string); strings.TrimSpace(baseURL) != "" {
+			next.GrafanaBaseURL = baseURL
 		}
 	}
 

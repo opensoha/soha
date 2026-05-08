@@ -103,6 +103,18 @@ func (stubWorkflowResourceExecutor) ListClusterEvents(context.Context, domainide
 	return nil, nil
 }
 
+func (stubWorkflowResourceExecutor) RestartDeployment(context.Context, domainidentity.Principal, string, string, string) error {
+	return nil
+}
+
+func (stubWorkflowResourceExecutor) ScaleDeployment(context.Context, domainidentity.Principal, string, string, string, int32) error {
+	return nil
+}
+
+func (stubWorkflowResourceExecutor) DeletePod(context.Context, domainidentity.Principal, string, string, string) error {
+	return nil
+}
+
 type stubWorkflowBuildExecutor struct{}
 
 func (stubWorkflowBuildExecutor) Trigger(context.Context, domainidentity.Principal, domainbuild.TriggerInput) (domainbuild.Record, error) {
