@@ -10,25 +10,16 @@
 - username: `pgsql`
 - password: `pgsql`
 
-### Redis
-
-- host: `localhost`
-- port: `6379`
-- password: none
-
-## Start Backend
+## Initialize PostgreSQL
 
 ```bash
-docker compose up -d postgres redis
-go run ./cmd/server
+make init
 ```
 
-## Start Frontend
+## Start Backend and Frontend
 
 ```bash
-cd web
-npm install
-npm run dev
+make
 ```
 
 The current frontend local workflow does not depend on a checked-in frontend env template. The default behavior is:
@@ -40,6 +31,7 @@ The current frontend local workflow does not depend on a checked-in frontend env
 Optional shortcuts:
 
 ```bash
+make init
 make dev-api
 make dev-web
 make dev-docs

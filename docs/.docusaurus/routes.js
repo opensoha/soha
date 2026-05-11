@@ -4,15 +4,15 @@ import ComponentCreator from '@docusaurus/ComponentCreator';
 export default [
   {
     path: '/docs/',
-    component: ComponentCreator('/docs/', '953'),
+    component: ComponentCreator('/docs/', 'e03'),
     routes: [
       {
         path: '/docs/',
-        component: ComponentCreator('/docs/', 'b4d'),
+        component: ComponentCreator('/docs/', '4d1'),
         routes: [
           {
             path: '/docs/',
-            component: ComponentCreator('/docs/', '4ec'),
+            component: ComponentCreator('/docs/', '3a6'),
             routes: [
               {
                 path: '/docs/api/auth-and-errors/',
@@ -22,7 +22,7 @@ export default [
               },
               {
                 path: '/docs/api/core-endpoints/',
-                component: ComponentCreator('/docs/api/core-endpoints/', '6be'),
+                component: ComponentCreator('/docs/api/core-endpoints/', 'dee'),
                 exact: true,
                 sidebar: "mainSidebar"
               },
@@ -58,7 +58,7 @@ export default [
               },
               {
                 path: '/docs/architecture/application-delivery/',
-                component: ComponentCreator('/docs/architecture/application-delivery/', '182'),
+                component: ComponentCreator('/docs/architecture/application-delivery/', '5d8'),
                 exact: true,
                 sidebar: "mainSidebar"
               },
@@ -130,7 +130,7 @@ export default [
               },
               {
                 path: '/docs/development/database-migrations/',
-                component: ComponentCreator('/docs/development/database-migrations/', 'a92'),
+                component: ComponentCreator('/docs/development/database-migrations/', 'c88'),
                 exact: true,
                 sidebar: "mainSidebar"
               },
@@ -154,7 +154,7 @@ export default [
               },
               {
                 path: '/docs/operations/configuration/',
-                component: ComponentCreator('/docs/operations/configuration/', 'dba'),
+                component: ComponentCreator('/docs/operations/configuration/', '86c'),
                 exact: true,
                 sidebar: "mainSidebar"
               },
@@ -166,7 +166,7 @@ export default [
               },
               {
                 path: '/docs/operations/deployment/',
-                component: ComponentCreator('/docs/operations/deployment/', '777'),
+                component: ComponentCreator('/docs/operations/deployment/', '24c'),
                 exact: true,
                 sidebar: "mainSidebar"
               },
@@ -202,7 +202,7 @@ export default [
               },
               {
                 path: '/docs/reference/database-schema/',
-                component: ComponentCreator('/docs/reference/database-schema/', '17a'),
+                component: ComponentCreator('/docs/reference/database-schema/', '6ef'),
                 exact: true,
                 sidebar: "mainSidebar"
               },

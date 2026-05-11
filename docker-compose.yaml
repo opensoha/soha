@@ -1,0 +1,47 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: pgsql
+    environment:
+      POSTGRES_DB: kubecrux
+      POSTGRES_USER: pgsql
+      POSTGRES_PASSWORD: pgsql
+    ports:
+      - "5432:5432"
+    volumes:
+      - kubecrux-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pgsql -d kubecrux"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  kubecrux:
+    container_name: kubecrux
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: kubecrux:local
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      KC_CONFIG_FILE: /app/configs/config.yaml
+      KC_DATABASE_HOST: postgres
+      KC_DATABASE_PORT: "5432"
+      KC_DATABASE_NAME: kubecrux
+      KC_DATABASE_USER: pgsql
+      KC_DATABASE_PASSWORD: pgsql
+      KC_DATABASE_SSLMODE: disable
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./configs/config.yaml:/app/configs/config.yaml:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8080/readyz >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+volumes:
+  kubecrux-postgres-data:

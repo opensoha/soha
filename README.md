@@ -76,14 +76,15 @@ The repository follows a modular-monolith backend and a route-driven frontend sh
 .
 ├── cmd/                 # server and agent entrypoints
 ├── configs/             # backend and agent config files
-├── deploy/              # image build, compose, k8s, and Helm deployment assets
+├── deploy/              # k8s manifests and Helm deployment assets
 ├── docs/                # Docusaurus docs site
 ├── internal/            # backend layers
 ├── migrations/          # SQL bootstrap and schema migrations
 ├── web/                 # active frontend app
 ├── AGENTS.md            # engineering spec and repo memory
+├── Dockerfile           # single-project image build entry
 ├── Makefile             # common dev/build/deploy commands
-└── docker-compose.yml   # lightweight local PostgreSQL bootstrap
+└── docker-compose.yaml  # local compose stack for kubecrux and PostgreSQL
 ```
 
 ## Features In Scope
@@ -104,28 +105,27 @@ Current product scope centers on:
 - Docker and Docker Compose for local infrastructure or deployment tests
 - PostgreSQL 16 for local backend development
 
-### 1. Start local PostgreSQL
+### 1. Initialize local PostgreSQL
 
 ```bash
-docker compose up -d postgres
+make init
 ```
 
-The root `docker-compose.yml` is intentionally minimal and only boots the local development database.
+This boots the `pgsql` container from the root `docker-compose.yaml` and waits until PostgreSQL is ready.
 
-### 2. Start the backend
+### 2. Start the backend and frontend
 
 ```bash
-go run ./cmd/server
+make
 ```
 
-The default backend config is [configs/config.yaml](./configs/config.yaml). Override with `KC_CONFIG_FILE=/abs/path/to/config.yaml` when needed.
+The default `make` target starts the Go API and the Vite frontend together. The backend still reads [configs/config.yaml](./configs/config.yaml), and you can override it with `KC_CONFIG_FILE=/abs/path/to/config.yaml` when needed.
 
-### 3. Start the frontend
+### 3. Run backend or frontend separately when needed
 
 ```bash
-cd web
-npm install
-npm run dev
+make dev-api
+make dev-web
 ```
 
 The frontend runs on `http://localhost:5173` and proxies `/api` to `http://localhost:8080`.
@@ -151,6 +151,8 @@ The default agent config is [configs/agent.config.yaml](./configs/agent.config.y
 ## Common Commands
 
 ```bash
+make
+make init
 make dev-api
 make dev-web
 make dev-docs
@@ -161,13 +163,13 @@ make test-web
 
 ## Deployment
 
-The canonical deployment assets live under [deploy](./deploy/).
+The main image and local compose assets now live at the repo root.
 
-- [deploy/docker/Dockerfile.single-project](./deploy/docker/Dockerfile.single-project): multi-stage image build for the API server with embedded SPA and docs
-- [deploy/compose/docker-compose.single-project.yml](./deploy/compose/docker-compose.single-project.yml): local full-stack startup with kubecrux plus PostgreSQL
+- [Dockerfile](./Dockerfile): multi-stage image build for the API server with embedded SPA and docs
+- [docker-compose.yaml](./docker-compose.yaml): local full-stack startup with kubecrux plus PostgreSQL
+- [configs/config.yaml](./configs/config.yaml): default application config used by local development and the container image
 - [deploy/k8s/kubecrux-single-project.yaml](./deploy/k8s/kubecrux-single-project.yaml): raw Kubernetes manifest set
 - [deploy/helm/kubecrux](./deploy/helm/kubecrux): Helm chart for repeatable installs
-- [deploy/config/config.api.single-project.yaml](./deploy/config/config.api.single-project.yaml): starter application config for single-project deployment
 
 Example commands:
 
@@ -181,8 +183,8 @@ make deploy-helm-lint
 Or directly:
 
 ```bash
-docker build -f deploy/docker/Dockerfile.single-project -t kubecrux:single-project .
-docker compose -f deploy/compose/docker-compose.single-project.yml up -d --build
+docker build -t kubecrux:single-project .
+docker compose -f docker-compose.yaml up -d --build
 helm lint deploy/helm/kubecrux
 ```
 

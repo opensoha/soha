@@ -10,25 +10,16 @@
 - username: `pgsql`
 - password: `pgsql`
 
-### Redis
-
-- host: `localhost`
-- port: `6379`
-- password: none
-
-## Start Backend
+## Initialize PostgreSQL
 
 ```bash
-docker compose up -d postgres redis
-go run ./cmd/server
+make init
 ```
 
-## Start Frontend
+## Start Backend and Frontend
 
 ```bash
-cd web
-npm install
-npm run dev
+make
 ```
 
 当前前端本地开发不依赖仓库内的前端 env 模板文件。默认行为是：
@@ -40,6 +31,7 @@ npm run dev
 可选快捷命令：
 
 ```bash
+make init
 make dev-api
 make dev-web
 make dev-docs

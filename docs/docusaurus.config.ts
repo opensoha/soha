@@ -2,6 +2,10 @@ import {themes as prismThemes} from 'prism-react-renderer';
 import type {Config} from '@docusaurus/types';
 import type * as Preset from '@docusaurus/preset-classic';
 
+const docsSiteUrl = process.env.DOCS_SITE_URL ?? 'http://localhost';
+const docsBaseUrl = process.env.DOCS_BASE_URL ?? '/docs/';
+const showDocsLastUpdateTime = process.env.DOCS_SHOW_LAST_UPDATE_TIME !== 'false';
+
 const config: Config = {
   title: 'kubecrux Docs',
   tagline: 'Multi-cluster Kubernetes platform console documentation',
@@ -9,8 +13,8 @@ const config: Config = {
   future: {
     v4: true,
   },
-  url: 'http://localhost',
-  baseUrl: '/docs/',
+  url: docsSiteUrl,
+  baseUrl: docsBaseUrl,
   trailingSlash: true,
   onBrokenLinks: 'throw',
   markdown: {
@@ -40,7 +44,7 @@ const config: Config = {
             'src/**',
             'static/**',
           ],
-          showLastUpdateTime: true,
+          showLastUpdateTime: showDocsLastUpdateTime,
           editUrl: 'https://github.com/kubecrux/kubecrux/tree/main/docs/',
         },
         blog: false,
