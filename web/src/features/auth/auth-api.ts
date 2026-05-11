@@ -1,5 +1,5 @@
 import { useAuthStore } from '@/stores/auth-store'
-import type { ApiResponse, AuthResult } from '@/types'
+import type { ApiResponse, AuthResult, PermissionSnapshot } from '@/types'
 
 export const API_BASE_URL = import.meta.env.DEV ? 'http://127.0.0.1:8080/api/v1' : '/api/v1'
 
@@ -113,6 +113,13 @@ export async function exchangeOIDCCode(code: string) {
   const response = await fetchAuthJSON<ApiResponse<AuthResult>>('/auth/oidc/exchange', {
     method: 'POST',
     body: JSON.stringify({ code }),
+  })
+  return response.data
+}
+
+export async function fetchPermissionSnapshot() {
+  const response = await fetchAuthJSON<ApiResponse<PermissionSnapshot>>('/access/permission-snapshot', {
+    accessToken: getStoredAccessToken(),
   })
   return response.data
 }

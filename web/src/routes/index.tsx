@@ -87,7 +87,10 @@ const HelmReleaseDetailPage = lazyNamed(() => import('@/features/platform/extens
 const HelmChartsPage = lazyNamed(() => import('@/features/platform/extensions-pages'), 'HelmChartsPage')
 
 const ApplicationsPage = lazyNamed(() => import('@/features/delivery/delivery-app-pages'), 'ApplicationsPage')
-const ApplicationDetailPage = lazyNamed(() => import('@/features/delivery/delivery-app-pages'), 'ApplicationDetailPage')
+const ApplicationManagementPage = lazyNamed(() => import('@/features/delivery/application-management-pages'), 'ApplicationManagementPage')
+const ApplicationManagementDetailPage = lazyNamed(() => import('@/features/delivery/application-management-pages'), 'ApplicationManagementDetailPage')
+const ApplicationDetailPage = lazyNamed(() => import('@/features/delivery/application-runtime-pages'), 'ApplicationDetailPage')
+const ApplicationWorkloadDetailPage = lazyNamed(() => import('@/features/delivery/application-runtime-pages'), 'ApplicationWorkloadDetailPage')
 const BuildTemplatesPage = lazyNamed(() => import('@/features/delivery/delivery-app-pages'), 'BuildTemplatesPage')
 const ReleaseBundlesPage = lazyNamed(() => import('@/features/delivery/delivery-app-pages'), 'ReleaseBundlesPage')
 const ExecutionTasksPage = lazyNamed(() => import('@/features/delivery/delivery-app-pages'), 'ExecutionTasksPage')
@@ -226,7 +229,10 @@ export function AppRouter() {
           <Route path="/helm/charts" element={<LazyPage><HelmChartsPage /></LazyPage>} />
 
           <Route path="/applications" element={<LazyPage><ApplicationsPage /></LazyPage>} />
+          <Route path="/application-management" element={<LazyPage><ApplicationManagementPage /></LazyPage>} />
+          <Route path="/application-management/:applicationId" element={<LazyPage><ApplicationManagementDetailPage /></LazyPage>} />
           <Route path="/applications/:applicationId" element={<LazyPage><ApplicationDetailPage /></LazyPage>} />
+          <Route path="/applications/:applicationId/application-environments/:applicationEnvironmentId/workloads/:workloadName" element={<LazyPage><ApplicationWorkloadDetailPage /></LazyPage>} />
           <Route path="/business-lines" element={<LazyPage><BusinessLinesPage /></LazyPage>} />
           <Route path="/delivery-environments" element={<LazyPage><DeliveryEnvironmentsPage /></LazyPage>} />
           <Route path="/application-environments" element={<LazyPage><ApplicationEnvironmentsPage /></LazyPage>} />

@@ -98,3 +98,20 @@ func TestCatalogListUsersFailsClosedWithoutRuntimeResolver(t *testing.T) {
 		t.Fatalf("ListUsers error = nil, want runtime resolver failure")
 	}
 }
+
+func TestDefaultRolePermissionsIncludeWorkspaceEntryPermissions(t *testing.T) {
+	SetRolePermissionMatrix(nil)
+
+	if !HasPermission([]string{"developer"}, PermWorkspaceApplicationView) {
+		t.Fatalf("developer role should include %s", PermWorkspaceApplicationView)
+	}
+	if !HasPermission([]string{"developer"}, PermWorkspaceResourceView) {
+		t.Fatalf("developer role should include %s", PermWorkspaceResourceView)
+	}
+	if !HasPermission([]string{"auditor"}, PermWorkspaceResourceView) {
+		t.Fatalf("auditor role should include %s", PermWorkspaceResourceView)
+	}
+	if HasPermission([]string{"auditor"}, PermWorkspaceApplicationView) {
+		t.Fatalf("auditor role should not include %s", PermWorkspaceApplicationView)
+	}
+}

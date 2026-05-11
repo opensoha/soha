@@ -52,7 +52,7 @@ func TestListVisibleDerivesMenusFromPermissionKeys(t *testing.T) {
 		},
 	}, appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
-			"custom": {appaccess.PermPlatformWorkloadsView, appaccess.PermSettingsAIView},
+			"custom": {appaccess.PermWorkspaceResourceView, appaccess.PermPlatformWorkloadsView, appaccess.PermSettingsAIView},
 		},
 	}), nil, nil)
 
@@ -116,7 +116,7 @@ func TestListVisibleIncludesNetworkTopologyUnderNetwork(t *testing.T) {
 		},
 	}, appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
-			"custom": {appaccess.PermPlatformNetworkView},
+			"custom": {appaccess.PermWorkspaceResourceView, appaccess.PermPlatformNetworkView},
 		},
 	}), nil, nil)
 

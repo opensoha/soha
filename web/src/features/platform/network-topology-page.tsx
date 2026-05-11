@@ -20,7 +20,6 @@ import type { TableColumnsType } from 'antd'
 import '@xyflow/react/dist/style.css'
 import { AdminTable } from '@/components/admin-table'
 import { PageHeader } from '@/components/page-header'
-import { PlatformScopeToolbar } from '@/components/platform-scope-toolbar'
 import { StatGrid } from '@/components/stat-grid'
 import { useI18n } from '@/i18n'
 import { buildClusterScopedPath } from '@/features/platform/platform-scope-query'
@@ -1505,8 +1504,6 @@ export function NetworkTopologyPage() {
           </Space>
         )}
       />
-      <PlatformScopeToolbar />
-
       <Card className="kc-detail-card">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex min-w-[280px] flex-1 flex-wrap items-center gap-3">

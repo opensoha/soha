@@ -1,3 +1,6 @@
+export type WorkspaceType = 'application' | 'resource' | 'system'
+export type BusinessWorkspaceType = Exclude<WorkspaceType, 'system'>
+
 export interface RouteMeta {
   id: string
   path: string
@@ -13,6 +16,8 @@ export interface RouteMeta {
   menuId?: string
   permissionKey?: string
   permissionStrategy?: 'self' | 'any-child'
+  scopeMode?: 'hidden' | 'passive' | 'cluster' | 'namespace'
+  workspace?: WorkspaceType
 }
 
 export interface User {
@@ -72,6 +77,7 @@ export interface RuntimeMenuNode {
   section: string
   sortOrder: number
   enabled: boolean
+  workspace?: WorkspaceType
   route?: RouteMeta
   children?: RuntimeMenuNode[]
 }
@@ -529,6 +535,64 @@ export interface PodDetail {
   allowedActions?: string[]
 }
 
+export interface Pod {
+  name: string
+  namespace: string
+  phase: string
+  nodeName?: string
+  podIp?: string
+  createdAt?: string
+  cpu?: string
+  memory?: string
+  requests?: ResourceQuantity
+  limits?: ResourceQuantity
+  labels?: Record<string, string>
+  persistentVolumeClaims?: string[]
+  readyContainers: string
+  restarts: number
+  ageSeconds: number
+  allowedActions?: string[]
+}
+
+export interface Service {
+  name: string
+  namespace: string
+  type: string
+  clusterIp?: string
+  ports?: string[]
+  selector?: Record<string, string>
+  ageSeconds: number
+  allowedActions?: string[]
+}
+
+export interface Ingress {
+  name: string
+  namespace: string
+  className?: string
+  hosts?: string[]
+  address?: string
+  backendServices?: string[]
+  ageSeconds: number
+  allowedActions?: string[]
+}
+
+export interface DeploymentDetail {
+  name: string
+  namespace: string
+  desiredReplicas: number
+  readyReplicas: number
+  updatedReplicas: number
+  availableReplicas: number
+  observedGeneration: number
+  strategy: string
+  labels?: Record<string, string>
+  annotations?: Record<string, string>
+  selector?: Record<string, string>
+  containers?: WorkloadContainer[]
+  conditions?: WorkloadCondition[]
+  allowedActions?: string[]
+}
+
 export interface RolloutHistory {
   name: string
   namespace: string
@@ -713,6 +777,9 @@ export interface ApplicationEnvironment {
   workflowTemplate?: WorkflowTemplate
   buildPolicy?: BuildPolicy
   releasePolicy?: ReleasePolicy
+  resourceSelector?: {
+    matchLabels?: Record<string, string>
+  }
   targets?: ReleaseTarget[]
   createdAt: string
   updatedAt: string
@@ -883,6 +950,7 @@ export interface DeliveryApplicationBindingSummary {
   workflowTemplateId?: string
   workflowTemplateName?: string
   targetCount: number
+  targets?: ReleaseTarget[]
   buildSourceId?: string
   buildSource?: BuildSource
   latestBundle?: ReleaseBundle
@@ -900,6 +968,71 @@ export interface DeliveryApplicationDetail {
   latestBuild?: BuildRecord
   latestWorkflow?: WorkflowRun
   latestRelease?: ReleaseRecord
+}
+
+export interface ApplicationRuntimeWorkload {
+  applicationEnvironmentId: string
+  clusterId: string
+  namespace: string
+  workloadKind: string
+  workloadName: string
+  labels?: Record<string, string>
+  selector?: Record<string, string>
+  desiredReplicas: number
+  readyReplicas: number
+  updatedReplicas: number
+  availableReplicas: number
+  buildSource?: BuildSource
+  latestBundle?: ReleaseBundle
+  latestExecutionTask?: ExecutionTask
+  latestBuild?: BuildRecord
+  latestWorkflow?: WorkflowRun
+  latestRelease?: ReleaseRecord
+}
+
+export interface ApplicationRuntimeEnvironment {
+  applicationEnvironmentId: string
+  environmentId: string
+  environmentName?: string
+  environmentKey?: string
+  actionKind?: string
+  requiresApproval: boolean
+  resourceSelector?: {
+    matchLabels?: Record<string, string>
+  }
+  targets?: ReleaseTarget[]
+  workloads?: ApplicationRuntimeWorkload[]
+}
+
+export interface ApplicationRuntimeDetail {
+  application: DeliveryApplication
+  environments?: ApplicationRuntimeEnvironment[]
+}
+
+export interface ApplicationWorkloadRuntimeDetail {
+  application: DeliveryApplication
+  binding: ApplicationEnvironment
+  environment?: DeliveryEnvironment
+  workload: ApplicationRuntimeWorkload
+  deployment: {
+    name: string
+    namespace: string
+    desiredReplicas: number
+    readyReplicas: number
+    updatedReplicas: number
+    availableReplicas: number
+    observedGeneration: number
+    strategy: string
+    labels?: Record<string, string>
+    annotations?: Record<string, string>
+    selector?: Record<string, string>
+    containers?: WorkloadContainer[]
+    conditions?: WorkloadCondition[]
+    allowedActions?: string[]
+  }
+  pods?: Pod[]
+  services?: Service[]
+  ingresses?: Ingress[]
 }
 
 export interface DeliveryApplicationEnvironmentDetail {

@@ -310,6 +310,8 @@ func New(cfg cfgpkg.Config, logger *zap.Logger, deps Dependencies) *http.Server 
 		protected.POST("/applications", deps.Applications.CreateApplication)
 		protected.GET("/applications/:applicationID", deps.Applications.GetApplication)
 		protected.GET("/applications/:applicationID/detail", deps.Delivery.GetApplicationDetail)
+		protected.GET("/applications/:applicationID/runtime", deps.Delivery.GetApplicationRuntimeDetail)
+		protected.GET("/applications/:applicationID/application-environments/:applicationEnvironmentID/workloads/:workloadName/runtime", deps.Delivery.GetApplicationWorkloadRuntimeDetail)
 		protected.PUT("/applications/:applicationID", deps.Applications.UpdateApplication)
 		protected.DELETE("/applications/:applicationID", deps.Applications.DeleteApplication)
 		protected.GET("/builds", deps.Builds.ListBuilds)

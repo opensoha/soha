@@ -10,11 +10,12 @@ import {
   ReloadOutlined,
   WarningOutlined,
 } from '@ant-design/icons'
-import { useQueries, useQuery } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { StatusTag } from '@/components/status-tag'
 import { buildClusterScopedPath } from '@/features/platform/platform-scope-query'
 import { useI18n } from '@/i18n'
 import { api } from '@/services/api-client'
+import { usePlatformScopeStore } from '@/stores/platform-scope-store'
 import { formatAgeSeconds, formatDateTime } from '@/utils/time'
 import type { ApiResponse, Cluster } from '@/types'
 
@@ -119,6 +120,7 @@ interface AggregatedWorkloadOverview extends Omit<WorkloadOverview, 'clusterId' 
 export function OverviewPage() {
   const { t, localeCode } = useI18n()
   const navigate = useNavigate()
+  const { clusterId } = usePlatformScopeStore()
 
   const clustersQuery = useQuery({
     queryKey: ['clusters'],
@@ -133,95 +135,61 @@ export function OverviewPage() {
   const clusters = clustersQuery.data?.data ?? []
   const summary = summaryQuery.data?.data
   const healthyClusters = clusters.filter((cluster) => cluster.health?.status === 'healthy').length
+  const currentCluster = clusters.find((cluster) => cluster.id === clusterId) ?? null
 
-  const workloadOverviewQueries = useQueries({
-    queries: clusters.map((cluster) => ({
-      queryKey: ['overview-workload', cluster.id, '__all__'],
-      queryFn: () =>
-        api.get<ApiResponse<WorkloadOverview>>(
-          buildClusterScopedPath(cluster.id, 'workloads/overview', null),
-        ),
-      enabled: clusters.length > 0,
-    })),
+  const workloadOverviewQuery = useQuery({
+    queryKey: ['overview-workload', clusterId, '__all__'],
+    queryFn: () =>
+      api.get<ApiResponse<WorkloadOverview>>(
+        buildClusterScopedPath(clusterId!, 'workloads/overview', null),
+      ),
+    enabled: !!clusterId,
   })
 
-  const workloadOverviewLoading = workloadOverviewQueries.some((query) => query.isLoading)
-  const workloadOverviewData = workloadOverviewQueries
-    .map((query) => query.data?.data)
-    .filter((item): item is WorkloadOverview => Boolean(item))
+  const workloadOverviewLoading = workloadOverviewQuery.isLoading
+  const workloadOverviewData = workloadOverviewQuery.data?.data ?? null
 
   const workloadOverview = useMemo<AggregatedWorkloadOverview | null>(() => {
-    if (workloadOverviewData.length === 0) return null
-
-    const clusterNameById = new Map(clusters.map((cluster) => [cluster.id, cluster.name]))
-    const namespaceSummary = new Map<string, AggregatedNamespaceBreakdown>()
-    const problematicPods = workloadOverviewData.flatMap((item) =>
-      (item.problematicPods ?? []).map((pod) => ({
-        ...pod,
-        clusterId: item.clusterId,
-        clusterName: clusterNameById.get(item.clusterId) ?? item.clusterId,
-      })),
-    )
-    const latestGeneratedAt = workloadOverviewData
-      .map((item) => item.generatedAt)
-      .filter(Boolean)
-      .sort((left, right) => right.localeCompare(left))[0] ?? ''
-    const source = workloadOverviewData.some((item) => item.source === 'live')
-      ? 'live'
-      : workloadOverviewData.some((item) => item.source === 'agent')
-        ? 'agent'
-        : workloadOverviewData[0]?.source ?? '-'
-
-    for (const item of workloadOverviewData) {
-      for (const ns of item.namespaceBreakdown ?? []) {
-        const clusterName = clusterNameById.get(item.clusterId) ?? item.clusterId
-        const summaryKey = `${item.clusterId}::${ns.namespace}`
-        const current = namespaceSummary.get(summaryKey) ?? {
-          clusterId: item.clusterId,
-          clusterName,
-          namespace: ns.namespace,
-          totalPods: 0,
-          runningPods: 0,
-          atRiskPods: 0,
-          restartingPods: 0,
-        }
-        current.totalPods += ns.totalPods
-        current.runningPods += ns.runningPods
-        current.atRiskPods += ns.atRiskPods
-        current.restartingPods += ns.restartingPods
-        namespaceSummary.set(summaryKey, current)
-      }
-    }
+    if (!workloadOverviewData) return null
+    const clusterName = currentCluster?.name ?? clusterId ?? '-'
 
     return {
-      totalPods: workloadOverviewData.reduce((sum, item) => sum + item.totalPods, 0),
-      runningPods: workloadOverviewData.reduce((sum, item) => sum + item.runningPods, 0),
-      pendingPods: workloadOverviewData.reduce((sum, item) => sum + item.pendingPods, 0),
-      succeededPods: workloadOverviewData.reduce((sum, item) => sum + item.succeededPods, 0),
-      failedPods: workloadOverviewData.reduce((sum, item) => sum + item.failedPods, 0),
-      unknownPods: workloadOverviewData.reduce((sum, item) => sum + item.unknownPods, 0),
-      restartingPods: workloadOverviewData.reduce((sum, item) => sum + item.restartingPods, 0),
-      atRiskPods: workloadOverviewData.reduce((sum, item) => sum + item.atRiskPods, 0),
-      generatedAt: latestGeneratedAt,
-      source,
-      namespaceBreakdown: Array.from(namespaceSummary.values())
+      totalPods: workloadOverviewData.totalPods,
+      runningPods: workloadOverviewData.runningPods,
+      pendingPods: workloadOverviewData.pendingPods,
+      succeededPods: workloadOverviewData.succeededPods,
+      failedPods: workloadOverviewData.failedPods,
+      unknownPods: workloadOverviewData.unknownPods,
+      restartingPods: workloadOverviewData.restartingPods,
+      atRiskPods: workloadOverviewData.atRiskPods,
+      generatedAt: workloadOverviewData.generatedAt,
+      source: workloadOverviewData.source,
+      namespaceBreakdown: (workloadOverviewData.namespaceBreakdown ?? [])
+        .map((item) => ({
+          ...item,
+          clusterId: workloadOverviewData.clusterId,
+          clusterName,
+        }))
         .sort((left, right) => {
           if (left.atRiskPods !== right.atRiskPods) return right.atRiskPods - left.atRiskPods
           if (left.restartingPods !== right.restartingPods) return right.restartingPods - left.restartingPods
           if (left.totalPods !== right.totalPods) return right.totalPods - left.totalPods
-          return left.clusterName.localeCompare(right.clusterName) || left.namespace.localeCompare(right.namespace)
+          return left.namespace.localeCompare(right.namespace)
         })
         .slice(0, 6),
-      problematicPods: problematicPods
+      problematicPods: (workloadOverviewData.problematicPods ?? [])
+        .map((item) => ({
+          ...item,
+          clusterId: workloadOverviewData.clusterId,
+          clusterName,
+        }))
         .sort((left, right) => {
           if (left.restarts !== right.restarts) return right.restarts - left.restarts
-          return left.clusterName.localeCompare(right.clusterName)
-            || left.namespace.localeCompare(right.namespace)
-            || left.name.localeCompare(right.name)
+          return left.namespace.localeCompare(right.namespace) || left.name.localeCompare(right.name)
         })
         .slice(0, 8),
     }
-  }, [clusters, workloadOverviewData])
+  }, [clusterId, currentCluster?.name, workloadOverviewData])
 
   const namespaceBreakdown = workloadOverview?.namespaceBreakdown ?? []
   const problematicPods = workloadOverview?.problematicPods ?? []
@@ -456,7 +424,7 @@ export function OverviewPage() {
                     {localeCode === 'zh_CN' ? '运行面信号' : 'Runtime Signal'}
                   </div>
                   <Text strong className="kc-overview-runtime-scope">
-                    {localeCode === 'zh_CN' ? '全部集群聚合' : 'All Clusters Aggregated'}
+                    {currentCluster?.name || (localeCode === 'zh_CN' ? '当前集群' : 'Current Cluster')}
                   </Text>
                 </div>
                 <div className="kc-overview-hero-pills">

@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { App, Spin, theme, Typography } from 'antd'
-import { commitAuthResult, exchangeOIDCCode } from '@/features/auth/auth-api'
+import { commitAuthResult, exchangeOIDCCode, fetchPermissionSnapshot } from '@/features/auth/auth-api'
+import { findLandingPath } from '@/routes/meta'
+import { usePreferencesStore } from '@/stores/preferences-store'
 
 const { Title, Text } = Typography
 
@@ -27,8 +29,10 @@ export function OIDCCallbackPage() {
       try {
         const authResult = await exchangeOIDCCode(authCode)
         commitAuthResult(authResult)
+        const snapshot = await fetchPermissionSnapshot().catch(() => null)
+        const nextPath = findLandingPath(snapshot, usePreferencesStore.getState().currentWorkspace, authResult.user.roles) ?? '/'
         message.success('登录成功')
-        navigate('/', { replace: true })
+        navigate(nextPath, { replace: true })
       } catch (err: any) {
         setError(err?.message ?? 'OIDC 登录失败')
         message.error(err?.message ?? 'OIDC 登录失败')

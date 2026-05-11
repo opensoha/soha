@@ -82,7 +82,7 @@ type clusterCredentialSeed struct {
 // While the stored version matches this constant, the static seed block is
 // skipped entirely. Config-driven sync (admin user, clusters) runs separately
 // during startup so runtime config updates do not depend on replaying defaults.
-const bootstrapSeedVersion = "2026-05-07-1"
+const bootstrapSeedVersion = "2026-05-09-1"
 
 const bootstrapSeedVersionKey = "bootstrap.seed_version"
 
@@ -246,6 +246,7 @@ func seedMenus(ctx context.Context, db *gorm.DB) error {
 		{ID: "assistant-operations", ParentID: "assistant", Path: "/ai-observe/operations", LabelZH: "巡检与自动化", LabelEN: "Inspection & Automation", IconKey: "bot", Section: "ops", SortOrder: 17, Enabled: true},
 		{ID: "assistant-tools", ParentID: "assistant", Path: "/ai-observe/tools", LabelZH: "工具与技能", LabelEN: "Tools & Skills", IconKey: "bot", Section: "ops", SortOrder: 18, Enabled: true},
 		{ID: "builds", Path: "/applications", LabelZH: "应用中心", LabelEN: "Application Center", IconKey: "blocks", Section: "deliver", SortOrder: 110, Enabled: true, Roles: []string{"admin", "ops", "developer"}},
+		{ID: "application-management", Path: "/application-management", LabelZH: "应用管理", LabelEN: "Application Management", IconKey: "blocks", Section: "deliver", SortOrder: 111, Enabled: true, Roles: []string{"admin", "ops", "developer"}},
 		{ID: "build-templates", Path: "/build-templates", LabelZH: "构建模板", LabelEN: "Build Templates", IconKey: "code", Section: "deliver", SortOrder: 112, Enabled: true, Roles: []string{"admin", "ops"}},
 		{ID: "release-bundles", Path: "/delivery/release-bundles", LabelZH: "版本包", LabelEN: "Release Bundles", IconKey: "blocks", Section: "deliver", SortOrder: 113, Enabled: true, Roles: []string{"admin", "ops", "developer"}},
 		{ID: "execution-tasks", Path: "/delivery/execution-tasks", LabelZH: "执行任务", LabelEN: "Execution Tasks", IconKey: "activity", Section: "deliver", SortOrder: 114, Enabled: true, Roles: []string{"admin", "ops", "developer"}},
@@ -254,7 +255,7 @@ func seedMenus(ctx context.Context, db *gorm.DB) error {
 		{ID: "release-board", Path: "/release-board", LabelZH: "发布看板", LabelEN: "Release Board", IconKey: "activity", Section: "deliver", SortOrder: 117, Enabled: true, Roles: []string{"admin", "ops", "developer"}},
 		{ID: "business-lines", Path: "/business-lines", LabelZH: "业务线管理", LabelEN: "Business Lines", IconKey: "blocks", Section: "catalog", SortOrder: 210, Enabled: true, Roles: []string{"admin", "ops"}},
 		{ID: "delivery-environments", Path: "/delivery-environments", LabelZH: "环境管理", LabelEN: "Environments", IconKey: "blocks", Section: "catalog", SortOrder: 220, Enabled: true, Roles: []string{"admin", "ops"}},
-		{ID: "application-environments", Path: "/application-environments", LabelZH: "应用环境绑定", LabelEN: "Application Environment Bindings", IconKey: "blocks", Section: "catalog", SortOrder: 230, Enabled: true, Roles: []string{"admin", "ops"}},
+		{ID: "application-environments", Path: "/application-environments", LabelZH: "应用环境绑定", LabelEN: "Application Environment Bindings", IconKey: "blocks", Section: "deliver", SortOrder: 111, Enabled: true, Roles: []string{"admin", "ops", "developer"}},
 		{ID: "workflows", Path: "/workflows", LabelZH: "工作流", LabelEN: "Workflows", IconKey: "activity", Section: "deliver", SortOrder: 118, Enabled: true, Roles: []string{"admin", "ops", "developer"}},
 		{ID: "releases", Path: "/releases", LabelZH: "发布", LabelEN: "Releases", IconKey: "activity", Section: "deliver", SortOrder: 120, Enabled: true, Roles: []string{"admin", "ops", "developer"}},
 		{ID: "events", ParentID: "observability", Path: "/observability/events", LabelZH: "事件", LabelEN: "Events", IconKey: "bell", Section: "ops", SortOrder: 65, Enabled: true},
@@ -269,7 +270,7 @@ func seedMenus(ctx context.Context, db *gorm.DB) error {
 		{ID: "system-online-users", ParentID: "system", Path: "/system/online-users", LabelZH: "在线用户", LabelEN: "Online Users", IconKey: "users", Section: "admin", SortOrder: 256, Enabled: true, Roles: []string{"admin"}},
 		{ID: "operations", ParentID: "system", Path: "/system/operations", LabelZH: "操作", LabelEN: "Operations", IconKey: "clipboard-list", Section: "admin", SortOrder: 257, Enabled: true},
 		{ID: "audit", ParentID: "system", Path: "/system/audit", LabelZH: "审计", LabelEN: "Audit", IconKey: "file-clock", Section: "admin", SortOrder: 258, Enabled: true},
-		{ID: "registries", Path: "/registries", LabelZH: "资源管理", LabelEN: "Registry Connections", IconKey: "menu-square", Section: "admin", SortOrder: 259, Enabled: true, Roles: []string{"admin"}},
+		{ID: "registries", Path: "/registries", LabelZH: "镜像仓库", LabelEN: "Registry Connections", IconKey: "menu-square", Section: "deliver", SortOrder: 121, Enabled: true, Roles: []string{"admin", "ops"}},
 		{ID: "settings", Path: "/settings", LabelZH: "设置", LabelEN: "Settings", IconKey: "cog", Section: "admin", SortOrder: 260, Enabled: true, Roles: []string{"admin"}},
 	}
 	if err := upsertMenus(ctx, db, items, now); err != nil {

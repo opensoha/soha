@@ -17,6 +17,8 @@ import (
 
 type DeliveryService interface {
 	GetApplicationDetail(context.Context, domainidentity.Principal, string) (domaindelivery.ApplicationDetail, error)
+	GetApplicationRuntimeDetail(context.Context, domainidentity.Principal, string) (domaindelivery.ApplicationRuntimeDetail, error)
+	GetApplicationWorkloadRuntimeDetail(context.Context, domainidentity.Principal, string, string, string) (domaindelivery.ApplicationWorkloadRuntimeDetail, error)
 	GetApplicationEnvironmentDetail(context.Context, domainidentity.Principal, string) (domaindelivery.ApplicationEnvironmentDetail, error)
 	ListReleaseBoard(context.Context, domainidentity.Principal) ([]domaindelivery.ReleaseBoardEntry, error)
 	ListTargetCandidates(context.Context, domainidentity.Principal, string, string, string) ([]domaindelivery.TargetCandidate, error)
@@ -50,6 +52,32 @@ func NewDeliveryHandler(service DeliveryService, runnerToken string) *DeliveryHa
 func (h *DeliveryHandler) GetApplicationDetail(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	item, err := h.service.GetApplicationDetail(c.Request.Context(), principal, c.Param("applicationID"))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
+}
+
+func (h *DeliveryHandler) GetApplicationRuntimeDetail(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	item, err := h.service.GetApplicationRuntimeDetail(c.Request.Context(), principal, c.Param("applicationID"))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
+}
+
+func (h *DeliveryHandler) GetApplicationWorkloadRuntimeDetail(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	item, err := h.service.GetApplicationWorkloadRuntimeDetail(
+		c.Request.Context(),
+		principal,
+		c.Param("applicationID"),
+		c.Param("applicationEnvironmentID"),
+		c.Param("workloadName"),
+	)
 	if err != nil {
 		writeError(c, err)
 		return

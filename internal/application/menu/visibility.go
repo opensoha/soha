@@ -12,6 +12,42 @@ type visibilityRule struct {
 	permissions []string
 }
 
+func workspacePermissionForMenu(item domainmenu.Record) string {
+	path := strings.TrimSpace(item.Path)
+	switch {
+	case path == "/" ||
+		strings.HasPrefix(path, "/cluster-resources") ||
+		strings.HasPrefix(path, "/workloads") ||
+		strings.HasPrefix(path, "/configuration") ||
+		strings.HasPrefix(path, "/network") ||
+		strings.HasPrefix(path, "/storage") ||
+		strings.HasPrefix(path, "/platform-access-control") ||
+		strings.HasPrefix(path, "/helm") ||
+		strings.HasPrefix(path, "/extensions") ||
+		strings.HasPrefix(path, "/clusters") ||
+		strings.HasPrefix(path, "/observability") ||
+		strings.HasPrefix(path, "/ai-observe") ||
+		strings.HasPrefix(path, "/chat"):
+		return appaccess.PermWorkspaceResourceView
+	case strings.HasPrefix(path, "/applications") ||
+		strings.HasPrefix(path, "/business-lines") ||
+		strings.HasPrefix(path, "/delivery-environments") ||
+		strings.HasPrefix(path, "/application-environments") ||
+		strings.HasPrefix(path, "/build-templates") ||
+		strings.HasPrefix(path, "/delivery/release-bundles") ||
+		strings.HasPrefix(path, "/delivery/execution-tasks") ||
+		strings.HasPrefix(path, "/delivery/approval-policies") ||
+		strings.HasPrefix(path, "/workflow-templates") ||
+		strings.HasPrefix(path, "/release-board") ||
+		strings.HasPrefix(path, "/workflows") ||
+		strings.HasPrefix(path, "/releases") ||
+		strings.HasPrefix(path, "/registries"):
+		return appaccess.PermWorkspaceApplicationView
+	default:
+		return ""
+	}
+}
+
 func permissionRuleForMenu(item domainmenu.Record) (visibilityRule, bool) {
 	switch {
 	case item.ID == "dashboard":
@@ -137,6 +173,9 @@ func permissionRuleForMenu(item domainmenu.Record) (visibilityRule, bool) {
 }
 
 func isVisibleByPermissions(item domainmenu.Record, permissionKeys []string) bool {
+	if workspacePermission := workspacePermissionForMenu(item); workspacePermission != "" && !slices.Contains(permissionKeys, workspacePermission) {
+		return false
+	}
 	rule, ok := permissionRuleForMenu(item)
 	if !ok {
 		return false

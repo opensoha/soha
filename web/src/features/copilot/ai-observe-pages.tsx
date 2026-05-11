@@ -28,6 +28,60 @@ interface RootCauseRun {
   summary: string
 }
 
+const AI_HUB_MODES = [
+  { key: 'root_cause', label: '根因', detail: '面向告警、事件、异常波动', href: '/ai-observe/workbench?mode=root-cause', icon: <RobotOutlined /> },
+  { key: 'performance', label: '性能', detail: '面向容量、时延、吞吐分析', href: '/ai-observe/workbench?mode=performance', icon: <RadarChartOutlined /> },
+  { key: 'trace', label: '链路', detail: '面向跨服务路径与热点定位', href: '/ai-observe/workbench?mode=trace', icon: <AppstoreOutlined /> },
+] as const
+
+const AI_HUB_LANES = [
+  {
+    key: 'workbench',
+    title: '调查工作台',
+    description: '把 AI Chat、根因、性能、链路和巡检复盘都收进一个主调查面板。',
+    cta: '进入调查',
+    href: '/ai-observe/workbench',
+    icon: <RobotOutlined />,
+  },
+  {
+    key: 'operations',
+    title: '巡检与自动化',
+    description: '管理巡检任务、运行结果和自动化策略，并把结论送回调查会话。',
+    cta: '进入巡检',
+    href: '/ai-observe/operations',
+    icon: <PlayCircleOutlined />,
+  },
+  {
+    key: 'tools',
+    title: '工具与技能',
+    description: '查看 MCP adapters、数据源和技能装配，把工具层能力变成调查输入。',
+    cta: '进入工具',
+    href: '/ai-observe/tools',
+    icon: <ToolOutlined />,
+  },
+] as const
+
+const AI_SIGNAL_STRIPS = [
+  {
+    title: '告警起因',
+    detail: '先从告警、事件、最近异常切入，决定是直接开调查还是先做巡检复盘。',
+    action: '查看告警中心',
+    href: '/observability/alerts',
+  },
+  {
+    title: '运行画像',
+    detail: '从性能、链路和服务热点快速确定本轮观察范围，再进入调查工作台。',
+    action: '按性能模式进入',
+    href: '/ai-observe/workbench?mode=performance',
+  },
+  {
+    title: '工具装配',
+    detail: '确认当前数据源、技能和 MCP adapter 可用性，避免调查入口进来后再补工具。',
+    action: '查看工具与技能',
+    href: '/ai-observe/tools',
+  },
+] as const
+
 export function AIObserveOverviewPage() {
   const navigate = useNavigate()
   const sessionsQuery = useQuery({
@@ -56,7 +110,7 @@ export function AIObserveOverviewPage() {
     <div className="kc-page">
       <PageHeader
         title="AI观测分析中心"
-        description="面向运维中后台的 AIOps 助手入口，统一调查、巡检、性能和工具能力。"
+        description="面向资源工作台的 AIOps 入口，统一承接调查、巡检、性能与工具链能力。"
         actions={
           <Space>
             <Button icon={<ToolOutlined />} onClick={() => navigate('/ai-observe/tools')}>工具与技能</Button>
@@ -65,6 +119,67 @@ export function AIObserveOverviewPage() {
         }
       />
 
+      <section className="kc-ai-hub-hero">
+        <div className="kc-ai-hub-hero__copy">
+          <div className="kc-ai-hub-hero__eyebrow">AIOps Hub</div>
+          <h2 className="kc-ai-hub-hero__title">让 AI 观测成为资源工作台里的第一层排障入口</h2>
+          <Paragraph className="kc-ai-hub-hero__description">
+            先判断是告警、性能、链路还是巡检复盘，再进入对应操作面。资源工作台里只保留一个 AI 主入口，避免左侧导航继续裂成第二套树。
+          </Paragraph>
+          <Space wrap>
+            <Tag color="blue">会话优先</Tag>
+            <Tag>调查中心化</Tag>
+            <Tag>巡检复盘回流</Tag>
+            <Tag>工具装配可见</Tag>
+          </Space>
+        </div>
+        <div className="kc-ai-hub-hero__rail">
+          {AI_HUB_MODES.map((item) => (
+            <button
+              key={item.key}
+              className="kc-ai-hub-mode"
+              onClick={() => navigate(item.href)}
+              type="button"
+            >
+              <span className="kc-ai-hub-mode__icon">{item.icon}</span>
+              <span className="kc-ai-hub-mode__copy">
+                <span className="kc-ai-hub-mode__label">{item.label}</span>
+                <span className="kc-ai-hub-mode__detail">{item.detail}</span>
+              </span>
+            </button>
+          ))}
+        </div>
+      </section>
+
+      <section className="kc-ai-hub-lanes">
+        {AI_HUB_LANES.map((lane) => (
+          <Card
+            key={lane.key}
+            className="kc-ai-hub-lane"
+            extra={<Button type={lane.key === 'workbench' ? 'primary' : 'default'} onClick={() => navigate(lane.href)}>{lane.cta}</Button>}
+          >
+            <div className="kc-ai-hub-lane__icon">{lane.icon}</div>
+            <div className="kc-ai-hub-lane__title">{lane.title}</div>
+            <Paragraph className="kc-ai-hub-lane__description">{lane.description}</Paragraph>
+          </Card>
+        ))}
+      </section>
+
+      <section className="kc-ai-signal-strip-grid">
+        {AI_SIGNAL_STRIPS.map((item) => (
+          <button
+            key={item.title}
+            className="kc-ai-signal-strip"
+            onClick={() => navigate(item.href)}
+            type="button"
+          >
+            <span className="kc-ai-signal-strip__title">{item.title}</span>
+            <span className="kc-ai-signal-strip__detail">{item.detail}</span>
+            <span className="kc-ai-signal-strip__action">{item.action}</span>
+          </button>
+        ))}
+      </section>
+
       <Row gutter={[16, 16]}>
         <Col xs={24} xl={12}>
           <Card>
@@ -72,17 +187,15 @@ export function AIObserveOverviewPage() {
               <Space align="start">
                 <RobotOutlined style={{ fontSize: 24 }} />
                 <div>
-                  <Text strong>助手欢迎区</Text>
+                  <Text strong>调查入口</Text>
                   <Paragraph type="secondary" style={{ marginBottom: 0 }}>
                     当前 AI 能力已覆盖会话调查、根因分析、性能分析、链路分析与巡检复盘。
                   </Paragraph>
                 </div>
               </Space>
-              <Space wrap>
-                <Tag color="blue">双层 AIOps 控制面</Tag>
-                <Tag>Ant Design X 工作台</Tag>
-                <Tag>会话级工具集装配</Tag>
-              </Space>
+              <Paragraph type="secondary" style={{ marginBottom: 0 }}>
+                不再把 AI 入口拆成左侧第二层功能树，而是先通过这个总入口判断该走调查、巡检还是工具装配。
+              </Paragraph>
               <Space>
                 <Button onClick={() => navigate('/ai-observe/workbench?mode=root-cause')}>按根因模式开始</Button>
                 <Button onClick={() => navigate('/ai-observe/workbench?mode=performance')}>按性能模式开始</Button>

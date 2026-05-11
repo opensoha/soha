@@ -8,6 +8,7 @@ import (
 	domainbuild "github.com/kubecrux/kubecrux/internal/domain/build"
 	domaincatalog "github.com/kubecrux/kubecrux/internal/domain/catalog"
 	domainrelease "github.com/kubecrux/kubecrux/internal/domain/release"
+	domainresource "github.com/kubecrux/kubecrux/internal/domain/resource"
 	domainworkflow "github.com/kubecrux/kubecrux/internal/domain/workflow"
 )
 
@@ -147,22 +148,23 @@ type ApprovalPolicyInput struct {
 }
 
 type ApplicationBindingSummary struct {
-	ApplicationEnvironmentID string                 `json:"applicationEnvironmentId"`
-	EnvironmentID            string                 `json:"environmentId"`
-	EnvironmentName          string                 `json:"environmentName,omitempty"`
-	EnvironmentKey           string                 `json:"environmentKey,omitempty"`
-	ActionKind               string                 `json:"actionKind,omitempty"`
-	RequiresApproval         bool                   `json:"requiresApproval"`
-	WorkflowTemplateID       string                 `json:"workflowTemplateId,omitempty"`
-	WorkflowTemplateName     string                 `json:"workflowTemplateName,omitempty"`
-	TargetCount              int                    `json:"targetCount"`
-	BuildSourceID            string                 `json:"buildSourceId,omitempty"`
-	BuildSource              *domainapp.BuildSource `json:"buildSource,omitempty"`
-	LatestBundle             *ReleaseBundle         `json:"latestBundle,omitempty"`
-	LatestExecutionTask      *ExecutionTask         `json:"latestExecutionTask,omitempty"`
-	LatestBuild              *domainbuild.Record    `json:"latestBuild,omitempty"`
-	LatestWorkflow           *domainworkflow.Run    `json:"latestWorkflow,omitempty"`
-	LatestRelease            *domainrelease.Record  `json:"latestRelease,omitempty"`
+	ApplicationEnvironmentID string                        `json:"applicationEnvironmentId"`
+	EnvironmentID            string                        `json:"environmentId"`
+	EnvironmentName          string                        `json:"environmentName,omitempty"`
+	EnvironmentKey           string                        `json:"environmentKey,omitempty"`
+	ActionKind               string                        `json:"actionKind,omitempty"`
+	RequiresApproval         bool                          `json:"requiresApproval"`
+	WorkflowTemplateID       string                        `json:"workflowTemplateId,omitempty"`
+	WorkflowTemplateName     string                        `json:"workflowTemplateName,omitempty"`
+	TargetCount              int                           `json:"targetCount"`
+	Targets                  []domaincatalog.ReleaseTarget `json:"targets,omitempty"`
+	BuildSourceID            string                        `json:"buildSourceId,omitempty"`
+	BuildSource              *domainapp.BuildSource        `json:"buildSource,omitempty"`
+	LatestBundle             *ReleaseBundle                `json:"latestBundle,omitempty"`
+	LatestExecutionTask      *ExecutionTask                `json:"latestExecutionTask,omitempty"`
+	LatestBuild              *domainbuild.Record           `json:"latestBuild,omitempty"`
+	LatestWorkflow           *domainworkflow.Run           `json:"latestWorkflow,omitempty"`
+	LatestRelease            *domainrelease.Record         `json:"latestRelease,omitempty"`
 }
 
 type ApplicationDetail struct {
@@ -173,6 +175,54 @@ type ApplicationDetail struct {
 	LatestBuild         *domainbuild.Record         `json:"latestBuild,omitempty"`
 	LatestWorkflow      *domainworkflow.Run         `json:"latestWorkflow,omitempty"`
 	LatestRelease       *domainrelease.Record       `json:"latestRelease,omitempty"`
+}
+
+type ApplicationRuntimeWorkload struct {
+	ApplicationEnvironmentID string                  `json:"applicationEnvironmentId"`
+	ClusterID                string                  `json:"clusterId"`
+	Namespace                string                  `json:"namespace"`
+	WorkloadKind             string                  `json:"workloadKind"`
+	WorkloadName             string                  `json:"workloadName"`
+	Labels                   map[string]string       `json:"labels,omitempty"`
+	Selector                 map[string]string       `json:"selector,omitempty"`
+	DesiredReplicas          int32                   `json:"desiredReplicas"`
+	ReadyReplicas            int32                   `json:"readyReplicas"`
+	UpdatedReplicas          int32                   `json:"updatedReplicas"`
+	AvailableReplicas        int32                   `json:"availableReplicas"`
+	BuildSource              *domainapp.BuildSource  `json:"buildSource,omitempty"`
+	LatestBundle             *ReleaseBundle          `json:"latestBundle,omitempty"`
+	LatestExecutionTask      *ExecutionTask          `json:"latestExecutionTask,omitempty"`
+	LatestBuild              *domainbuild.Record     `json:"latestBuild,omitempty"`
+	LatestWorkflow           *domainworkflow.Run     `json:"latestWorkflow,omitempty"`
+	LatestRelease            *domainrelease.Record   `json:"latestRelease,omitempty"`
+}
+
+type ApplicationRuntimeEnvironment struct {
+	ApplicationEnvironmentID string                        `json:"applicationEnvironmentId"`
+	EnvironmentID            string                        `json:"environmentId"`
+	EnvironmentName          string                        `json:"environmentName,omitempty"`
+	EnvironmentKey           string                        `json:"environmentKey,omitempty"`
+	ActionKind               string                        `json:"actionKind,omitempty"`
+	RequiresApproval         bool                          `json:"requiresApproval"`
+	ResourceSelector         domaincatalog.ResourceSelector `json:"resourceSelector,omitempty"`
+	Targets                  []domaincatalog.ReleaseTarget `json:"targets,omitempty"`
+	Workloads                []ApplicationRuntimeWorkload  `json:"workloads,omitempty"`
+}
+
+type ApplicationRuntimeDetail struct {
+	Application  domainapp.App                 `json:"application"`
+	Environments []ApplicationRuntimeEnvironment `json:"environments,omitempty"`
+}
+
+type ApplicationWorkloadRuntimeDetail struct {
+	Application         domainapp.App                  `json:"application"`
+	Binding             domaincatalog.ApplicationEnvironment `json:"binding"`
+	Environment         *domaincatalog.Environment     `json:"environment,omitempty"`
+	Workload            ApplicationRuntimeWorkload     `json:"workload"`
+	Deployment          domainresource.DeploymentDetailView `json:"deployment"`
+	Pods                []domainresource.PodView       `json:"pods,omitempty"`
+	Services            []domainresource.ServiceView   `json:"services,omitempty"`
+	Ingresses           []domainresource.IngressView   `json:"ingresses,omitempty"`
 }
 
 type ApplicationEnvironmentDetail struct {

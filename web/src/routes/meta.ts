@@ -1,134 +1,169 @@
 import { getMenuSectionOrder, normalizeMenuSection } from '@/features/system/menu-schema'
-import type { PermissionSnapshot, RouteMeta, RuntimeMenuNode, VisibleMenu } from '@/types'
+import type { BusinessWorkspaceType, PermissionSnapshot, RouteMeta, RuntimeMenuNode, VisibleMenu, WorkspaceType } from '@/types'
+
+const WORKSPACE_PERMISSION_KEYS: Record<BusinessWorkspaceType, string> = {
+  application: 'workspace.application.view',
+  resource: 'workspace.resource.view',
+}
+
+const DEFAULT_WORKSPACE_PATHS: Record<BusinessWorkspaceType, string> = {
+  application: '/applications',
+  resource: '/',
+}
+
+const RESOURCE_DEFAULT_ROLES = new Set(['admin', 'ops', 'readonly', 'auditor'])
+const APPLICATION_PATH_PREFIXES = [
+  '/applications',
+  '/application-management',
+  '/business-lines',
+  '/delivery-environments',
+  '/application-environments',
+  '/build-templates',
+  '/delivery/release-bundles',
+  '/delivery/execution-tasks',
+  '/delivery/approval-policies',
+  '/workflow-templates',
+  '/release-board',
+  '/workflows',
+  '/releases',
+  '/registries',
+]
+
+function matchesRoutePrefix(pathname: string, prefixes: string[]) {
+  return prefixes.some((prefix) => pathname.startsWith(prefix))
+}
 
 export const routeMeta: RouteMeta[] = [
-  { id: 'overview', path: '/', title: '概览', description: '平台总览', icon: 'IconDesktop', group: 'overview', requiresAuth: true, tabbar: true, navVisible: true, menuId: 'dashboard', permissionKey: 'overview.view' },
+  { id: 'overview', path: '/', title: '概览', description: '平台总览', icon: 'IconDesktop', group: 'overview', requiresAuth: true, tabbar: true, navVisible: true, menuId: 'dashboard', permissionKey: 'overview.view', scopeMode: 'cluster', workspace: 'resource' },
 
-  { id: 'cluster-resources-nodes', path: '/cluster-resources/nodes', title: '节点', description: '节点管理', icon: 'IconServer', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, menuId: 'cluster-resources-nodes', permissionKey: 'platform.nodes.view' },
-  { id: 'cluster-resources-node-detail', path: '/cluster-resources/nodes/:nodeName', title: '节点详情', description: '节点详情', icon: 'IconServer', group: 'platform', requiresAuth: true, tabbar: false, navVisible: false, parentId: 'cluster-resources-nodes' },
+  { id: 'cluster-resources-nodes', path: '/cluster-resources/nodes', title: '节点', description: '节点管理', icon: 'IconServer', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, menuId: 'cluster-resources-nodes', permissionKey: 'platform.nodes.view', scopeMode: 'cluster', workspace: 'resource' },
+  { id: 'cluster-resources-node-detail', path: '/cluster-resources/nodes/:nodeName', title: '节点详情', description: '节点详情', icon: 'IconServer', group: 'platform', requiresAuth: true, tabbar: false, navVisible: false, parentId: 'cluster-resources-nodes', scopeMode: 'cluster' },
 
-  { id: 'workloads', path: '/workloads', title: '工作负载', description: '工作负载管理', icon: 'IconGridView', group: 'platform', requiresAuth: true, tabbar: false, navVisible: true, redirectTo: '/workloads/overview', menuId: 'workloads', permissionKey: 'platform.workloads.view' },
-  { id: 'workloads-overview', path: '/workloads/overview', title: 'Overview', description: '资源概览与事件', icon: 'IconGridView', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'workloads' },
-  { id: 'workloads-deployments', path: '/workloads/deployments', title: 'Deployments', description: '部署管理', icon: 'IconGridView', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'workloads' },
-  { id: 'workloads-pods', path: '/workloads/pods', title: 'Pods', description: 'Pod 管理', icon: 'IconGridView', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'workloads' },
-  { id: 'workloads-statefulsets', path: '/workloads/statefulsets', title: 'StatefulSets', description: '有状态副本集', icon: 'IconGridView', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'workloads' },
-  { id: 'workloads-daemonsets', path: '/workloads/daemonsets', title: 'DaemonSets', description: '守护进程集', icon: 'IconGridView', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'workloads' },
-  { id: 'workloads-jobs', path: '/workloads/jobs', title: 'Jobs', description: '批量作业', icon: 'IconGridView', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'workloads' },
-  { id: 'workloads-cronjobs', path: '/workloads/cronjobs', title: 'CronJobs', description: '定时任务', icon: 'IconGridView', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'workloads' },
-  { id: 'workloads-replicasets', path: '/workloads/replicasets', title: 'ReplicaSets', description: '副本集', icon: 'IconGridView', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'workloads' },
-  { id: 'workloads-replicationcontrollers', path: '/workloads/replicationcontrollers', title: 'ReplicationControllers', description: '复制控制器', icon: 'IconGridView', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'workloads' },
+  { id: 'workloads', path: '/workloads', title: '工作负载', description: '工作负载管理', icon: 'IconGridView', group: 'platform', requiresAuth: true, tabbar: false, navVisible: true, redirectTo: '/workloads/overview', menuId: 'workloads', permissionKey: 'platform.workloads.view', scopeMode: 'namespace', workspace: 'resource' },
+  { id: 'workloads-overview', path: '/workloads/overview', title: 'Overview', description: '资源概览与事件', icon: 'IconGridView', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'workloads', scopeMode: 'namespace' },
+  { id: 'workloads-deployments', path: '/workloads/deployments', title: 'Deployments', description: '部署管理', icon: 'IconGridView', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'workloads', scopeMode: 'namespace' },
+  { id: 'workloads-pods', path: '/workloads/pods', title: 'Pods', description: 'Pod 管理', icon: 'IconGridView', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'workloads', scopeMode: 'namespace' },
+  { id: 'workloads-statefulsets', path: '/workloads/statefulsets', title: 'StatefulSets', description: '有状态副本集', icon: 'IconGridView', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'workloads', scopeMode: 'namespace' },
+  { id: 'workloads-daemonsets', path: '/workloads/daemonsets', title: 'DaemonSets', description: '守护进程集', icon: 'IconGridView', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'workloads', scopeMode: 'namespace' },
+  { id: 'workloads-jobs', path: '/workloads/jobs', title: 'Jobs', description: '批量作业', icon: 'IconGridView', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'workloads', scopeMode: 'namespace' },
+  { id: 'workloads-cronjobs', path: '/workloads/cronjobs', title: 'CronJobs', description: '定时任务', icon: 'IconGridView', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'workloads', scopeMode: 'namespace' },
+  { id: 'workloads-replicasets', path: '/workloads/replicasets', title: 'ReplicaSets', description: '副本集', icon: 'IconGridView', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'workloads', scopeMode: 'namespace' },
+  { id: 'workloads-replicationcontrollers', path: '/workloads/replicationcontrollers', title: 'ReplicationControllers', description: '复制控制器', icon: 'IconGridView', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'workloads', scopeMode: 'namespace' },
 
-  { id: 'configuration', path: '/configuration', title: 'Configuration', description: '平台配置资源', icon: 'IconSetting', group: 'platform', requiresAuth: true, tabbar: false, navVisible: true, redirectTo: '/configuration/configmaps', menuId: 'configuration', permissionKey: 'platform.configuration.view' },
-  { id: 'configuration-configmaps', path: '/configuration/configmaps', title: 'ConfigMaps', description: '配置映射', icon: 'IconSetting', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'configuration' },
-  { id: 'configuration-secrets', path: '/configuration/secrets', title: 'Secrets', description: '密钥对象', icon: 'IconSetting', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'configuration' },
-  { id: 'configuration-resourcequotas', path: '/configuration/resourcequotas', title: 'ResourceQuotas', description: '资源配额', icon: 'IconSetting', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'configuration' },
-  { id: 'configuration-limitranges', path: '/configuration/limitranges', title: 'LimitRanges', description: '资源限制范围', icon: 'IconSetting', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'configuration' },
-  { id: 'configuration-hpas', path: '/configuration/hpas', title: 'HorizontalPodAutoscalers', description: '自动扩缩容', icon: 'IconSetting', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'configuration' },
-  { id: 'configuration-poddisruptionbudgets', path: '/configuration/poddisruptionbudgets', title: 'PodDisruptionBudgets', description: '驱逐预算', icon: 'IconSetting', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'configuration' },
-  { id: 'configuration-priorityclasses', path: '/configuration/priorityclasses', title: 'PriorityClasses', description: '优先级类', icon: 'IconSetting', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'configuration' },
-  { id: 'configuration-runtimeclasses', path: '/configuration/runtimeclasses', title: 'RuntimeClasses', description: '运行时类', icon: 'IconSetting', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'configuration' },
-  { id: 'configuration-leases', path: '/configuration/leases', title: 'Leases', description: '租约', icon: 'IconSetting', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'configuration' },
-  { id: 'configuration-mutatingwebhookconfigurations', path: '/configuration/mutatingwebhookconfigurations', title: 'MutatingWebhookConfigurations', description: '变更 Webhook', icon: 'IconSetting', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'configuration' },
-  { id: 'configuration-validatingwebhookconfigurations', path: '/configuration/validatingwebhookconfigurations', title: 'ValidatingWebhookConfigurations', description: '校验 Webhook', icon: 'IconSetting', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'configuration' },
+  { id: 'configuration', path: '/configuration', title: 'Configuration', description: '平台配置资源', icon: 'IconSetting', group: 'platform', requiresAuth: true, tabbar: false, navVisible: true, redirectTo: '/configuration/configmaps', menuId: 'configuration', permissionKey: 'platform.configuration.view', scopeMode: 'namespace', workspace: 'resource' },
+  { id: 'configuration-configmaps', path: '/configuration/configmaps', title: 'ConfigMaps', description: '配置映射', icon: 'IconSetting', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'configuration', scopeMode: 'namespace' },
+  { id: 'configuration-secrets', path: '/configuration/secrets', title: 'Secrets', description: '密钥对象', icon: 'IconSetting', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'configuration', scopeMode: 'namespace' },
+  { id: 'configuration-resourcequotas', path: '/configuration/resourcequotas', title: 'ResourceQuotas', description: '资源配额', icon: 'IconSetting', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'configuration', scopeMode: 'namespace' },
+  { id: 'configuration-limitranges', path: '/configuration/limitranges', title: 'LimitRanges', description: '资源限制范围', icon: 'IconSetting', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'configuration', scopeMode: 'namespace' },
+  { id: 'configuration-hpas', path: '/configuration/hpas', title: 'HorizontalPodAutoscalers', description: '自动扩缩容', icon: 'IconSetting', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'configuration', scopeMode: 'namespace' },
+  { id: 'configuration-poddisruptionbudgets', path: '/configuration/poddisruptionbudgets', title: 'PodDisruptionBudgets', description: '驱逐预算', icon: 'IconSetting', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'configuration', scopeMode: 'namespace' },
+  { id: 'configuration-priorityclasses', path: '/configuration/priorityclasses', title: 'PriorityClasses', description: '优先级类', icon: 'IconSetting', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'configuration', scopeMode: 'cluster' },
+  { id: 'configuration-runtimeclasses', path: '/configuration/runtimeclasses', title: 'RuntimeClasses', description: '运行时类', icon: 'IconSetting', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'configuration', scopeMode: 'cluster' },
+  { id: 'configuration-leases', path: '/configuration/leases', title: 'Leases', description: '租约', icon: 'IconSetting', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'configuration', scopeMode: 'namespace' },
+  { id: 'configuration-mutatingwebhookconfigurations', path: '/configuration/mutatingwebhookconfigurations', title: 'MutatingWebhookConfigurations', description: '变更 Webhook', icon: 'IconSetting', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'configuration', scopeMode: 'cluster' },
+  { id: 'configuration-validatingwebhookconfigurations', path: '/configuration/validatingwebhookconfigurations', title: 'ValidatingWebhookConfigurations', description: '校验 Webhook', icon: 'IconSetting', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'configuration', scopeMode: 'cluster' },
 
-  { id: 'network', path: '/network', title: '网络', description: '网络资源', icon: 'IconConnection', group: 'platform', requiresAuth: true, tabbar: false, navVisible: true, redirectTo: '/network/topology', menuId: 'network', permissionKey: 'platform.network.view' },
-  { id: 'network-topology', path: '/network/topology', title: '网络拓扑', description: '入口、路由、Service 与后端的网络拓扑', icon: 'IconConnection', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'network' },
-  { id: 'network-services', path: '/network/services', title: 'Services', description: '服务管理', icon: 'IconConnection', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'network' },
-  { id: 'network-service-detail', path: '/network/services/:serviceName', title: 'Service Detail', description: '服务详情', icon: 'IconConnection', group: 'platform', requiresAuth: true, tabbar: false, navVisible: false, parentId: 'network-services' },
-  { id: 'network-ingresses', path: '/network/ingresses', title: 'Ingresses', description: '入口管理', icon: 'IconConnection', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'network' },
-  { id: 'network-gateways', path: '/network/gateways', title: 'Gateways', description: '网关管理', icon: 'IconConnection', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'network' },
-  { id: 'network-endpointslices', path: '/network/endpointslices', title: 'EndpointSlices', description: '服务后端切片', icon: 'IconConnection', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'network' },
-  { id: 'network-ingressclasses', path: '/network/ingressclasses', title: 'IngressClasses', description: 'Ingress 类', icon: 'IconConnection', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'network' },
-  { id: 'network-networkpolicies', path: '/network/networkpolicies', title: 'NetworkPolicies', description: '网络策略', icon: 'IconConnection', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'network' },
-  { id: 'network-port-forward', path: '/network/port-forward', title: 'Port Forward', description: '端口转发', icon: 'IconConnection', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'network' },
+  { id: 'network', path: '/network', title: '网络', description: '网络资源', icon: 'IconConnection', group: 'platform', requiresAuth: true, tabbar: false, navVisible: true, redirectTo: '/network/topology', menuId: 'network', permissionKey: 'platform.network.view', scopeMode: 'namespace', workspace: 'resource' },
+  { id: 'network-topology', path: '/network/topology', title: '网络拓扑', description: '入口、路由、Service 与后端的网络拓扑', icon: 'IconConnection', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'network', scopeMode: 'namespace' },
+  { id: 'network-services', path: '/network/services', title: 'Services', description: '服务管理', icon: 'IconConnection', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'network', scopeMode: 'namespace' },
+  { id: 'network-service-detail', path: '/network/services/:serviceName', title: 'Service Detail', description: '服务详情', icon: 'IconConnection', group: 'platform', requiresAuth: true, tabbar: false, navVisible: false, parentId: 'network-services', scopeMode: 'namespace' },
+  { id: 'network-ingresses', path: '/network/ingresses', title: 'Ingresses', description: '入口管理', icon: 'IconConnection', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'network', scopeMode: 'namespace' },
+  { id: 'network-gateways', path: '/network/gateways', title: 'Gateways', description: '网关管理', icon: 'IconConnection', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'network', scopeMode: 'namespace' },
+  { id: 'network-endpointslices', path: '/network/endpointslices', title: 'EndpointSlices', description: '服务后端切片', icon: 'IconConnection', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'network', scopeMode: 'namespace' },
+  { id: 'network-ingressclasses', path: '/network/ingressclasses', title: 'IngressClasses', description: 'Ingress 类', icon: 'IconConnection', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'network', scopeMode: 'cluster' },
+  { id: 'network-networkpolicies', path: '/network/networkpolicies', title: 'NetworkPolicies', description: '网络策略', icon: 'IconConnection', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'network', scopeMode: 'namespace' },
+  { id: 'network-port-forward', path: '/network/port-forward', title: 'Port Forward', description: '端口转发', icon: 'IconConnection', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'network', scopeMode: 'namespace' },
 
-  { id: 'storage', path: '/storage', title: '存储', description: '存储资源', icon: 'IconServer', group: 'platform', requiresAuth: true, tabbar: false, navVisible: true, redirectTo: '/storage/persistentvolumeclaims', menuId: 'storage', permissionKey: 'platform.storage.view' },
-  { id: 'storage-pvc', path: '/storage/persistentvolumeclaims', title: 'PVC', description: '持久卷声明', icon: 'IconServer', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'storage' },
-  { id: 'storage-pv', path: '/storage/persistentvolumes', title: 'PV', description: '持久卷', icon: 'IconServer', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'storage' },
-  { id: 'storage-classes', path: '/storage/storageclasses', title: 'StorageClasses', description: '存储类', icon: 'IconServer', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'storage' },
+  { id: 'storage', path: '/storage', title: '存储', description: '存储资源', icon: 'IconServer', group: 'platform', requiresAuth: true, tabbar: false, navVisible: true, redirectTo: '/storage/persistentvolumeclaims', menuId: 'storage', permissionKey: 'platform.storage.view', scopeMode: 'namespace', workspace: 'resource' },
+  { id: 'storage-pvc', path: '/storage/persistentvolumeclaims', title: 'PVC', description: '持久卷声明', icon: 'IconServer', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'storage', scopeMode: 'namespace' },
+  { id: 'storage-pv', path: '/storage/persistentvolumes', title: 'PV', description: '持久卷', icon: 'IconServer', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'storage', scopeMode: 'cluster' },
+  { id: 'storage-classes', path: '/storage/storageclasses', title: 'StorageClasses', description: '存储类', icon: 'IconServer', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'storage', scopeMode: 'cluster' },
 
-  { id: 'platform-access-control', path: '/platform-access-control', title: 'RBAC', description: 'Kubernetes RBAC 资源', icon: 'IconShield', group: 'platform', requiresAuth: true, tabbar: false, navVisible: true, redirectTo: '/platform-access-control/serviceaccounts', menuId: 'platform-access-control' },
-  { id: 'platform-access-control-serviceaccounts', path: '/platform-access-control/serviceaccounts', title: 'ServiceAccounts', description: '服务账户', icon: 'IconShield', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'platform-access-control' },
-  { id: 'platform-access-control-serviceaccount-detail', path: '/platform-access-control/serviceaccounts/:name', title: 'ServiceAccount Detail', description: '服务账户详情', icon: 'IconShield', group: 'platform', requiresAuth: true, tabbar: false, navVisible: false, parentId: 'platform-access-control-serviceaccounts', menuId: 'platform-access-control' },
-  { id: 'platform-access-control-clusterroles', path: '/platform-access-control/clusterroles', title: 'ClusterRoles', description: '集群角色', icon: 'IconShield', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'platform-access-control' },
-  { id: 'platform-access-control-clusterrole-detail', path: '/platform-access-control/clusterroles/:name', title: 'ClusterRole Detail', description: '集群角色详情', icon: 'IconShield', group: 'platform', requiresAuth: true, tabbar: false, navVisible: false, parentId: 'platform-access-control-clusterroles', menuId: 'platform-access-control' },
-  { id: 'platform-access-control-roles', path: '/platform-access-control/roles', title: 'Roles', description: '命名空间角色', icon: 'IconShield', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'platform-access-control' },
-  { id: 'platform-access-control-role-detail', path: '/platform-access-control/roles/:name', title: 'Role Detail', description: '命名空间角色详情', icon: 'IconShield', group: 'platform', requiresAuth: true, tabbar: false, navVisible: false, parentId: 'platform-access-control-roles', menuId: 'platform-access-control' },
-  { id: 'platform-access-control-clusterrolebindings', path: '/platform-access-control/clusterrolebindings', title: 'ClusterRoleBindings', description: '集群角色绑定', icon: 'IconShield', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'platform-access-control' },
-  { id: 'platform-access-control-clusterrolebinding-detail', path: '/platform-access-control/clusterrolebindings/:name', title: 'ClusterRoleBinding Detail', description: '集群角色绑定详情', icon: 'IconShield', group: 'platform', requiresAuth: true, tabbar: false, navVisible: false, parentId: 'platform-access-control-clusterrolebindings', menuId: 'platform-access-control' },
-  { id: 'platform-access-control-rolebindings', path: '/platform-access-control/rolebindings', title: 'RoleBindings', description: '命名空间角色绑定', icon: 'IconShield', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'platform-access-control' },
-  { id: 'platform-access-control-rolebinding-detail', path: '/platform-access-control/rolebindings/:name', title: 'RoleBinding Detail', description: '命名空间角色绑定详情', icon: 'IconShield', group: 'platform', requiresAuth: true, tabbar: false, navVisible: false, parentId: 'platform-access-control-rolebindings', menuId: 'platform-access-control' },
+  { id: 'platform-access-control', path: '/platform-access-control', title: 'RBAC', description: 'Kubernetes RBAC 资源', icon: 'IconShield', group: 'platform', requiresAuth: true, tabbar: false, navVisible: true, redirectTo: '/platform-access-control/serviceaccounts', menuId: 'platform-access-control', scopeMode: 'namespace', workspace: 'resource' },
+  { id: 'platform-access-control-serviceaccounts', path: '/platform-access-control/serviceaccounts', title: 'ServiceAccounts', description: '服务账户', icon: 'IconShield', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'platform-access-control', scopeMode: 'namespace' },
+  { id: 'platform-access-control-serviceaccount-detail', path: '/platform-access-control/serviceaccounts/:name', title: 'ServiceAccount Detail', description: '服务账户详情', icon: 'IconShield', group: 'platform', requiresAuth: true, tabbar: false, navVisible: false, parentId: 'platform-access-control-serviceaccounts', menuId: 'platform-access-control', scopeMode: 'namespace' },
+  { id: 'platform-access-control-clusterroles', path: '/platform-access-control/clusterroles', title: 'ClusterRoles', description: '集群角色', icon: 'IconShield', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'platform-access-control', scopeMode: 'cluster' },
+  { id: 'platform-access-control-clusterrole-detail', path: '/platform-access-control/clusterroles/:name', title: 'ClusterRole Detail', description: '集群角色详情', icon: 'IconShield', group: 'platform', requiresAuth: true, tabbar: false, navVisible: false, parentId: 'platform-access-control-clusterroles', menuId: 'platform-access-control', scopeMode: 'cluster' },
+  { id: 'platform-access-control-roles', path: '/platform-access-control/roles', title: 'Roles', description: '命名空间角色', icon: 'IconShield', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'platform-access-control', scopeMode: 'namespace' },
+  { id: 'platform-access-control-role-detail', path: '/platform-access-control/roles/:name', title: 'Role Detail', description: '命名空间角色详情', icon: 'IconShield', group: 'platform', requiresAuth: true, tabbar: false, navVisible: false, parentId: 'platform-access-control-roles', menuId: 'platform-access-control', scopeMode: 'namespace' },
+  { id: 'platform-access-control-clusterrolebindings', path: '/platform-access-control/clusterrolebindings', title: 'ClusterRoleBindings', description: '集群角色绑定', icon: 'IconShield', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'platform-access-control', scopeMode: 'cluster' },
+  { id: 'platform-access-control-clusterrolebinding-detail', path: '/platform-access-control/clusterrolebindings/:name', title: 'ClusterRoleBinding Detail', description: '集群角色绑定详情', icon: 'IconShield', group: 'platform', requiresAuth: true, tabbar: false, navVisible: false, parentId: 'platform-access-control-clusterrolebindings', menuId: 'platform-access-control', scopeMode: 'cluster' },
+  { id: 'platform-access-control-rolebindings', path: '/platform-access-control/rolebindings', title: 'RoleBindings', description: '命名空间角色绑定', icon: 'IconShield', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'platform-access-control', scopeMode: 'namespace' },
+  { id: 'platform-access-control-rolebinding-detail', path: '/platform-access-control/rolebindings/:name', title: 'RoleBinding Detail', description: '命名空间角色绑定详情', icon: 'IconShield', group: 'platform', requiresAuth: true, tabbar: false, navVisible: false, parentId: 'platform-access-control-rolebindings', menuId: 'platform-access-control', scopeMode: 'namespace' },
 
-  { id: 'helm', path: '/helm', title: 'Helm', description: 'Helm 管理', icon: 'IconPuzzle', group: 'platform', requiresAuth: true, tabbar: false, navVisible: true, redirectTo: '/helm/releases', menuId: 'helm', permissionKey: 'platform.helm.view' },
-  { id: 'helm-releases', path: '/helm/releases', title: 'Helm Releases', description: 'Helm 发布', icon: 'IconPuzzle', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'helm' },
-  { id: 'helm-release-detail', path: '/helm/releases/:releaseName', title: 'Helm Release Detail', description: 'Helm 发布详情', icon: 'IconPuzzle', group: 'platform', requiresAuth: true, tabbar: false, navVisible: false, parentId: 'helm-releases' },
-  { id: 'helm-charts', path: '/helm/charts', title: 'Helm Charts', description: 'Helm 图表', icon: 'IconPuzzle', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'helm' },
+  { id: 'helm', path: '/helm', title: 'Helm', description: 'Helm 管理', icon: 'IconPuzzle', group: 'platform', requiresAuth: true, tabbar: false, navVisible: true, redirectTo: '/helm/releases', menuId: 'helm', permissionKey: 'platform.helm.view', scopeMode: 'namespace', workspace: 'resource' },
+  { id: 'helm-releases', path: '/helm/releases', title: 'Helm Releases', description: 'Helm 发布', icon: 'IconPuzzle', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'helm', scopeMode: 'namespace' },
+  { id: 'helm-release-detail', path: '/helm/releases/:releaseName', title: 'Helm Release Detail', description: 'Helm 发布详情', icon: 'IconPuzzle', group: 'platform', requiresAuth: true, tabbar: false, navVisible: false, parentId: 'helm-releases', scopeMode: 'namespace' },
+  { id: 'helm-charts', path: '/helm/charts', title: 'Helm Charts', description: 'Helm 图表', icon: 'IconPuzzle', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'helm', scopeMode: 'cluster' },
 
-  { id: 'extensions', path: '/extensions', title: 'CRD', description: 'CRD 管理', icon: 'IconPuzzle', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, menuId: 'extensions', permissionKey: 'platform.extensions.view' },
-  { id: 'extensions-group-detail', path: '/extensions/apis/:groupName', title: 'CRD API Detail', description: 'CRD API 详情', icon: 'IconPuzzle', group: 'platform', requiresAuth: true, tabbar: false, navVisible: false, parentId: 'extensions' },
-  { id: 'cluster-resources-namespaces', path: '/cluster-resources/namespaces', title: '命名空间', description: '命名空间管理', icon: 'IconServer', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, menuId: 'cluster-resources-namespaces', permissionKey: 'platform.namespaces.view' },
-  { id: 'clusters', path: '/clusters', title: '集群管理', description: '集群生命周期管理', icon: 'IconGlobe', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, menuId: 'clusters', permissionKey: 'platform.clusters.view' },
-  { id: 'cluster-detail', path: '/clusters/:clusterId', title: '集群详情', description: '集群详情', icon: 'IconGlobe', group: 'platform', requiresAuth: true, tabbar: false, navVisible: false, parentId: 'clusters' },
+  { id: 'extensions', path: '/extensions', title: 'CRD', description: 'CRD 管理', icon: 'IconPuzzle', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, menuId: 'extensions', permissionKey: 'platform.extensions.view', scopeMode: 'cluster', workspace: 'resource' },
+  { id: 'extensions-group-detail', path: '/extensions/apis/:groupName', title: 'CRD API Detail', description: 'CRD API 详情', icon: 'IconPuzzle', group: 'platform', requiresAuth: true, tabbar: false, navVisible: false, parentId: 'extensions', scopeMode: 'cluster' },
+  { id: 'cluster-resources-namespaces', path: '/cluster-resources/namespaces', title: '命名空间', description: '命名空间管理', icon: 'IconServer', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, menuId: 'cluster-resources-namespaces', permissionKey: 'platform.namespaces.view', scopeMode: 'cluster', workspace: 'resource' },
+  { id: 'clusters', path: '/clusters', title: '集群管理', description: '集群生命周期管理', icon: 'IconGlobe', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, menuId: 'clusters', permissionKey: 'platform.clusters.view', scopeMode: 'passive', workspace: 'resource' },
+  { id: 'cluster-detail', path: '/clusters/:clusterId', title: '集群详情', description: '集群详情', icon: 'IconGlobe', group: 'platform', requiresAuth: true, tabbar: false, navVisible: false, parentId: 'clusters', scopeMode: 'passive' },
 
-  { id: 'applications', path: '/applications', title: '应用管理', description: '应用交付', icon: 'IconAppCenter', group: 'delivery', requiresAuth: true, tabbar: true, navVisible: true, menuId: 'builds', permissionKey: 'delivery.applications.view' },
-  { id: 'application-detail', path: '/applications/:applicationId', title: '应用详情', description: '应用交付详情', icon: 'IconAppCenter', group: 'delivery', requiresAuth: true, tabbar: false, navVisible: false, parentId: 'applications' },
-  { id: 'business-lines', path: '/business-lines', title: '业务线管理', description: '业务线主数据', icon: 'IconAppCenter', group: 'catalog', requiresAuth: true, tabbar: true, navVisible: true, permissionKey: 'delivery.business-lines.view' },
-  { id: 'delivery-environments', path: '/delivery-environments', title: '环境管理', description: '交付环境主数据', icon: 'IconAppCenter', group: 'catalog', requiresAuth: true, tabbar: true, navVisible: true, permissionKey: 'delivery.environments.view' },
-  { id: 'application-environments', path: '/application-environments', title: '应用环境绑定', description: '应用与环境绑定', icon: 'IconAppCenter', group: 'catalog', requiresAuth: true, tabbar: true, navVisible: true, permissionKey: 'delivery.application-environments.view' },
-  { id: 'application-environment-detail', path: '/application-environments/:applicationEnvironmentId', title: '环境详情', description: '应用环境详情', icon: 'IconAppCenter', group: 'delivery', requiresAuth: true, tabbar: false, navVisible: false, parentId: 'application-environments' },
-  { id: 'build-templates', path: '/build-templates', title: '构建模板', description: '平台构建模板', icon: 'IconCode', group: 'delivery', requiresAuth: true, tabbar: true, navVisible: true, permissionKey: 'delivery.build-templates.view' },
-  { id: 'release-bundles', path: '/delivery/release-bundles', title: '版本包', description: '不可变交付版本包', icon: 'IconInbox', group: 'delivery', requiresAuth: true, tabbar: true, navVisible: true, permissionKey: 'delivery.release-bundles.view' },
-  { id: 'execution-tasks', path: '/delivery/execution-tasks', title: '执行任务', description: '执行平面任务与日志', icon: 'IconFlow', group: 'delivery', requiresAuth: true, tabbar: true, navVisible: true, permissionKey: 'delivery.execution-tasks.view' },
-  { id: 'approval-policies', path: '/delivery/approval-policies', title: '审批策略', description: '交付审批策略中心', icon: 'IconShield', group: 'delivery', requiresAuth: true, tabbar: true, navVisible: true, permissionKey: 'delivery.approval-policies.view' },
-  { id: 'workflow-templates', path: '/workflow-templates', title: '发布流程模板', description: '交付发布流程模板', icon: 'IconFlow', group: 'delivery', requiresAuth: true, tabbar: true, navVisible: true, permissionKey: 'delivery.workflow-templates.view' },
-  { id: 'release-board', path: '/release-board', title: '发布看板', description: '应用环境发布矩阵', icon: 'IconSend', group: 'delivery', requiresAuth: true, tabbar: true, navVisible: true, permissionKey: 'delivery.release-board.view' },
-  { id: 'workflows', path: '/workflows', title: '工作流', description: '工作流管理', icon: 'IconFlow', group: 'delivery', requiresAuth: true, tabbar: true, navVisible: true, menuId: 'workflows', permissionKey: 'delivery.workflows.view' },
-  { id: 'releases', path: '/releases', title: '发布管理', description: '发布编排', icon: 'IconSend', group: 'delivery', requiresAuth: true, tabbar: true, navVisible: true, menuId: 'releases', permissionKey: 'delivery.releases.view' },
-  { id: 'registries', path: '/registries', title: '镜像仓库', description: '镜像仓库连接', icon: 'IconInbox', group: 'delivery', requiresAuth: true, tabbar: true, navVisible: true, menuId: 'registries', permissionKey: 'delivery.registries.view' },
+  { id: 'applications', path: '/applications', title: '应用中心', description: '应用入口视角', icon: 'IconAppCenter', group: 'delivery', requiresAuth: true, tabbar: true, navVisible: true, menuId: 'builds', permissionKey: 'delivery.applications.view', scopeMode: 'passive', workspace: 'application' },
+  { id: 'application-management', path: '/application-management', title: '应用管理', description: '应用配置与发布管理', icon: 'IconAppCenter', group: 'delivery', requiresAuth: true, tabbar: true, navVisible: true, menuId: 'application-management', permissionKey: 'delivery.applications.view', scopeMode: 'passive', workspace: 'application' },
+  { id: 'application-management-detail', path: '/application-management/:applicationId', title: '应用管理详情', description: '应用配置详情', icon: 'IconAppCenter', group: 'delivery', requiresAuth: true, tabbar: false, navVisible: false, parentId: 'application-management', scopeMode: 'passive' },
+  { id: 'application-detail', path: '/applications/:applicationId', title: '应用详情', description: '应用运行详情', icon: 'IconAppCenter', group: 'delivery', requiresAuth: true, tabbar: false, navVisible: false, parentId: 'applications', scopeMode: 'passive' },
+  { id: 'application-workload-detail', path: '/applications/:applicationId/application-environments/:applicationEnvironmentId/workloads/:workloadName', title: '服务详情', description: '应用服务运行详情', icon: 'IconAppCenter', group: 'delivery', requiresAuth: true, tabbar: false, navVisible: false, parentId: 'application-detail', scopeMode: 'passive' },
+  { id: 'business-lines', path: '/business-lines', title: '业务线管理', description: '业务线主数据', icon: 'IconAppCenter', group: 'catalog', requiresAuth: true, tabbar: true, navVisible: true, permissionKey: 'delivery.business-lines.view', scopeMode: 'passive', workspace: 'application' },
+  { id: 'delivery-environments', path: '/delivery-environments', title: '环境管理', description: '交付环境主数据', icon: 'IconAppCenter', group: 'catalog', requiresAuth: true, tabbar: true, navVisible: true, permissionKey: 'delivery.environments.view', scopeMode: 'passive', workspace: 'application' },
+  { id: 'application-environments', path: '/application-environments', title: '应用环境绑定', description: '应用与环境绑定', icon: 'IconAppCenter', group: 'delivery', requiresAuth: true, tabbar: true, navVisible: true, permissionKey: 'delivery.application-environments.view', scopeMode: 'passive', workspace: 'application' },
+  { id: 'application-environment-detail', path: '/application-environments/:applicationEnvironmentId', title: '环境详情', description: '应用环境详情', icon: 'IconAppCenter', group: 'delivery', requiresAuth: true, tabbar: false, navVisible: false, parentId: 'application-environments', scopeMode: 'passive' },
+  { id: 'build-templates', path: '/build-templates', title: '构建模板', description: '平台构建模板', icon: 'IconCode', group: 'delivery', requiresAuth: true, tabbar: true, navVisible: true, permissionKey: 'delivery.build-templates.view', scopeMode: 'passive', workspace: 'application' },
+  { id: 'release-bundles', path: '/delivery/release-bundles', title: '版本包', description: '不可变交付版本包', icon: 'IconInbox', group: 'delivery', requiresAuth: true, tabbar: true, navVisible: true, permissionKey: 'delivery.release-bundles.view', scopeMode: 'passive', workspace: 'application' },
+  { id: 'execution-tasks', path: '/delivery/execution-tasks', title: '执行任务', description: '执行平面任务与日志', icon: 'IconFlow', group: 'delivery', requiresAuth: true, tabbar: true, navVisible: true, permissionKey: 'delivery.execution-tasks.view', scopeMode: 'passive', workspace: 'application' },
+  { id: 'approval-policies', path: '/delivery/approval-policies', title: '审批策略', description: '交付审批策略中心', icon: 'IconShield', group: 'delivery', requiresAuth: true, tabbar: true, navVisible: true, permissionKey: 'delivery.approval-policies.view', scopeMode: 'passive', workspace: 'application' },
+  { id: 'workflow-templates', path: '/workflow-templates', title: '发布流程模板', description: '交付发布流程模板', icon: 'IconFlow', group: 'delivery', requiresAuth: true, tabbar: true, navVisible: true, permissionKey: 'delivery.workflow-templates.view', scopeMode: 'passive', workspace: 'application' },
+  { id: 'release-board', path: '/release-board', title: '发布看板', description: '应用环境发布矩阵', icon: 'IconSend', group: 'delivery', requiresAuth: true, tabbar: true, navVisible: true, permissionKey: 'delivery.release-board.view', scopeMode: 'passive', workspace: 'application' },
+  { id: 'workflows', path: '/workflows', title: '工作流', description: '工作流管理', icon: 'IconFlow', group: 'delivery', requiresAuth: true, tabbar: true, navVisible: true, menuId: 'workflows', permissionKey: 'delivery.workflows.view', scopeMode: 'passive', workspace: 'application' },
+  { id: 'releases', path: '/releases', title: '发布管理', description: '发布编排', icon: 'IconSend', group: 'delivery', requiresAuth: true, tabbar: true, navVisible: true, menuId: 'releases', permissionKey: 'delivery.releases.view', scopeMode: 'passive', workspace: 'application' },
+  { id: 'registries', path: '/registries', title: '镜像仓库', description: '镜像仓库连接', icon: 'IconInbox', group: 'delivery', requiresAuth: true, tabbar: true, navVisible: true, menuId: 'registries', permissionKey: 'delivery.registries.view', scopeMode: 'passive', workspace: 'application' },
 
-  { id: 'observability', path: '/observability', title: '告警中心', description: '监控、告警、通知和值班协同', icon: 'IconAlertTriangle', group: 'observe', requiresAuth: true, tabbar: false, navVisible: true, redirectTo: '/observability/monitoring', menuId: 'observability', permissionKey: 'observe.monitoring.view' },
-  { id: 'monitoring', path: '/observability/monitoring', title: '中心概览', description: '告警与监控概览', icon: 'IconPulse', group: 'observe', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'observability', permissionKey: 'observe.monitoring.view' },
-  { id: 'alert-rules', path: '/observability/rules', title: '告警规则', description: '告警规则与数据源选择', icon: 'IconFileSearch', group: 'observe', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'observability', menuId: 'rules', permissionKey: 'observe.alert-rules.view' },
-  { id: 'alerts', path: '/observability/alerts', title: '活跃告警', description: '当前告警处理面板', icon: 'IconAlertTriangle', group: 'observe', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'observability', permissionKey: 'observe.alerts.view' },
-  { id: 'alert-event-detail', path: '/observability/alerts/:eventId', title: '告警事件详情', description: '单条告警事件详情', icon: 'IconAlertTriangle', group: 'observe', requiresAuth: true, tabbar: false, navVisible: false, parentId: 'alerts', permissionKey: 'observe.alerts.view' },
-  { id: 'notifications', path: '/observability/notifications', title: '通知策略', description: '通知渠道与路由策略', icon: 'IconBell', group: 'observe', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'observability', permissionKey: 'observe.notifications.view' },
-  { id: 'healing', path: '/observability/healing', title: '自愈中心', description: '告警自愈策略与执行审批', icon: 'IconTool', group: 'observe', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'observability', menuId: 'healing', permissionKey: 'observe.healing.view' },
-  { id: 'oncall', path: '/observability/oncall', title: '值班协同', description: '值班轮换与升级联动', icon: 'IconUserCircle', group: 'observe', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'observability', permissionKey: 'observe.oncall.view' },
-  { id: 'events', path: '/observability/events', title: '事件流', description: '事件时间线与上下文', icon: 'IconBell', group: 'observe', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'observability', permissionKey: 'observe.events.view' },
+  { id: 'observability', path: '/observability', title: '告警中心', description: '监控、告警、通知和值班协同', icon: 'IconAlertTriangle', group: 'observe', requiresAuth: true, tabbar: false, navVisible: true, redirectTo: '/observability/monitoring', menuId: 'observability', permissionKey: 'observe.monitoring.view', scopeMode: 'passive', workspace: 'resource' },
+  { id: 'monitoring', path: '/observability/monitoring', title: '中心概览', description: '告警与监控概览', icon: 'IconPulse', group: 'observe', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'observability', permissionKey: 'observe.monitoring.view', scopeMode: 'passive' },
+  { id: 'alert-rules', path: '/observability/rules', title: '告警规则', description: '告警规则与数据源选择', icon: 'IconFileSearch', group: 'observe', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'observability', menuId: 'rules', permissionKey: 'observe.alert-rules.view', scopeMode: 'passive' },
+  { id: 'alerts', path: '/observability/alerts', title: '活跃告警', description: '当前告警处理面板', icon: 'IconAlertTriangle', group: 'observe', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'observability', permissionKey: 'observe.alerts.view', scopeMode: 'passive' },
+  { id: 'alert-event-detail', path: '/observability/alerts/:eventId', title: '告警事件详情', description: '单条告警事件详情', icon: 'IconAlertTriangle', group: 'observe', requiresAuth: true, tabbar: false, navVisible: false, parentId: 'alerts', permissionKey: 'observe.alerts.view', scopeMode: 'passive' },
+  { id: 'notifications', path: '/observability/notifications', title: '通知策略', description: '通知渠道与路由策略', icon: 'IconBell', group: 'observe', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'observability', permissionKey: 'observe.notifications.view', scopeMode: 'passive' },
+  { id: 'healing', path: '/observability/healing', title: '自愈中心', description: '告警自愈策略与执行审批', icon: 'IconTool', group: 'observe', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'observability', menuId: 'healing', permissionKey: 'observe.healing.view', scopeMode: 'passive' },
+  { id: 'oncall', path: '/observability/oncall', title: '值班协同', description: '值班轮换与升级联动', icon: 'IconUserCircle', group: 'observe', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'observability', permissionKey: 'observe.oncall.view', scopeMode: 'passive' },
+  { id: 'events', path: '/observability/events', title: '事件流', description: '事件时间线与上下文', icon: 'IconBell', group: 'observe', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'observability', permissionKey: 'observe.events.view', scopeMode: 'passive' },
 
-  { id: 'ai-observe', path: '/ai-observe', title: 'Ai可观测性', description: 'AIOps 总览与调查入口', icon: 'IconComment', group: 'observe', requiresAuth: true, tabbar: true, navVisible: true, menuId: 'assistant', permissionKey: 'observe.ai.view' },
-  { id: 'ai-workbench', path: '/ai-observe/workbench', title: '调查工作台', description: '统一承载 AI Chat、根因、性能与链路分析', icon: 'IconComment', group: 'observe', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'ai-observe', permissionKey: 'observe.ai.chat' },
-  { id: 'ai-operations', path: '/ai-observe/operations', title: '巡检与自动化', description: '巡检任务、运行记录与自动化策略', icon: 'IconComment', group: 'observe', requiresAuth: true, tabbar: true, navVisible: false, parentId: 'ai-observe', permissionKey: 'observe.ai.view' },
-  { id: 'ai-tools', path: '/ai-observe/tools', title: '工具与技能', description: 'MCP adapters、数据源与技能装配', icon: 'IconComment', group: 'observe', requiresAuth: true, tabbar: true, navVisible: false, parentId: 'ai-observe', permissionKey: 'observe.ai.view' },
-  { id: 'ai-root-cause', path: '/ai-observe/root-cause', title: '链路根因分析', description: '兼容旧入口，跳转到工作台根因模式', icon: 'IconComment', group: 'observe', requiresAuth: true, tabbar: false, navVisible: false, parentId: 'ai-observe', permissionKey: 'observe.ai.view' },
-  { id: 'ai-performance', path: '/ai-observe/performance', title: '性能分析', description: '兼容旧入口，跳转到工作台性能模式', icon: 'IconComment', group: 'observe', requiresAuth: true, tabbar: false, navVisible: false, parentId: 'ai-observe', permissionKey: 'observe.ai.view' },
-  { id: 'ai-chat', path: '/ai-observe/chat', title: 'AI Chat', description: '兼容旧入口，跳转到调查工作台', icon: 'IconComment', group: 'observe', requiresAuth: true, tabbar: false, navVisible: false, parentId: 'ai-observe', permissionKey: 'observe.ai.chat' },
-  { id: 'ai-inspection', path: '/ai-observe/inspection', title: '智能巡检', description: '兼容旧入口，跳转到巡检与自动化', icon: 'IconComment', group: 'observe', requiresAuth: true, tabbar: false, navVisible: false, parentId: 'ai-observe', permissionKey: 'observe.ai.view' },
-  { id: 'chat', path: '/chat', title: 'AI Chat', description: '兼容旧入口', icon: 'IconComment', group: 'observe', requiresAuth: true, tabbar: false, navVisible: false, parentId: 'ai-workbench', permissionKey: 'observe.ai.chat' },
+  { id: 'ai-observe', path: '/ai-observe', title: 'Ai可观测性', description: 'AIOps 总览与调查入口', icon: 'IconComment', group: 'observe', requiresAuth: true, tabbar: true, navVisible: true, menuId: 'assistant', permissionKey: 'observe.ai.view', scopeMode: 'passive', workspace: 'resource' },
+  { id: 'ai-workbench', path: '/ai-observe/workbench', title: '调查工作台', description: '统一承载 AI Chat、根因、性能与链路分析', icon: 'IconComment', group: 'observe', requiresAuth: true, tabbar: true, navVisible: false, parentId: 'ai-observe', permissionKey: 'observe.ai.chat', scopeMode: 'passive' },
+  { id: 'ai-operations', path: '/ai-observe/operations', title: '巡检与自动化', description: '巡检任务、运行记录与自动化策略', icon: 'IconComment', group: 'observe', requiresAuth: true, tabbar: true, navVisible: false, parentId: 'ai-observe', permissionKey: 'observe.ai.view', scopeMode: 'passive' },
+  { id: 'ai-tools', path: '/ai-observe/tools', title: '工具与技能', description: 'MCP adapters、数据源与技能装配', icon: 'IconComment', group: 'observe', requiresAuth: true, tabbar: true, navVisible: false, parentId: 'ai-observe', permissionKey: 'observe.ai.view', scopeMode: 'passive' },
+  { id: 'ai-root-cause', path: '/ai-observe/root-cause', title: '链路根因分析', description: '兼容旧入口，跳转到工作台根因模式', icon: 'IconComment', group: 'observe', requiresAuth: true, tabbar: false, navVisible: false, parentId: 'ai-observe', permissionKey: 'observe.ai.view', scopeMode: 'passive' },
+  { id: 'ai-performance', path: '/ai-observe/performance', title: '性能分析', description: '兼容旧入口，跳转到工作台性能模式', icon: 'IconComment', group: 'observe', requiresAuth: true, tabbar: false, navVisible: false, parentId: 'ai-observe', permissionKey: 'observe.ai.view', scopeMode: 'passive' },
+  { id: 'ai-chat', path: '/ai-observe/chat', title: 'AI Chat', description: '兼容旧入口，跳转到调查工作台', icon: 'IconComment', group: 'observe', requiresAuth: true, tabbar: false, navVisible: false, parentId: 'ai-observe', permissionKey: 'observe.ai.chat', scopeMode: 'passive' },
+  { id: 'ai-inspection', path: '/ai-observe/inspection', title: '智能巡检', description: '兼容旧入口，跳转到巡检与自动化', icon: 'IconComment', group: 'observe', requiresAuth: true, tabbar: false, navVisible: false, parentId: 'ai-observe', permissionKey: 'observe.ai.view', scopeMode: 'passive' },
+  { id: 'chat', path: '/chat', title: 'AI Chat', description: '兼容旧入口', icon: 'IconComment', group: 'observe', requiresAuth: true, tabbar: false, navVisible: false, parentId: 'ai-workbench', permissionKey: 'observe.ai.chat', scopeMode: 'passive' },
 
-  { id: 'access', path: '/access', title: '访问控制', description: '身份、角色、用户组与策略', icon: 'IconShield', group: 'access', requiresAuth: true, tabbar: false, navVisible: false, menuId: 'access', permissionKey: 'access.users.view', permissionStrategy: 'any-child' },
-  { id: 'access-users', path: '/access/users', title: '用户', description: '用户管理', icon: 'IconUser', group: 'access', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'access', menuId: 'access', permissionKey: 'access.users.view' },
-  { id: 'access-roles', path: '/access/roles', title: '角色', description: '角色管理', icon: 'IconUserCircle', group: 'access', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'access', menuId: 'access', permissionKey: 'access.roles.view' },
-  { id: 'access-teams', path: '/access/teams', title: '用户组', description: '用户组管理', icon: 'IconUserGroup', group: 'access', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'access', menuId: 'access', permissionKey: 'access.groups.view' },
-  { id: 'access-policies', path: '/access/policies', title: '策略', description: '策略管理', icon: 'IconShield', group: 'access', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'access', menuId: 'access', permissionKey: 'access.policies.view' },
-  { id: 'access-scope-grants', path: '/access/scope-grants', title: '授权范围', description: '业务线环境应用授权', icon: 'IconShield', group: 'access', requiresAuth: true, tabbar: false, navVisible: false, permissionKey: 'access.scope-grants.view' },
+  { id: 'access', path: '/access', title: '访问控制', description: '身份、角色、用户组与策略', icon: 'IconShield', group: 'access', requiresAuth: true, tabbar: false, navVisible: false, menuId: 'access', permissionKey: 'access.users.view', permissionStrategy: 'any-child', scopeMode: 'passive', workspace: 'system' },
+  { id: 'access-users', path: '/access/users', title: '用户', description: '用户管理', icon: 'IconUser', group: 'access', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'access', menuId: 'access', permissionKey: 'access.users.view', scopeMode: 'passive' },
+  { id: 'access-roles', path: '/access/roles', title: '角色', description: '角色管理', icon: 'IconUserCircle', group: 'access', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'access', menuId: 'access', permissionKey: 'access.roles.view', scopeMode: 'passive' },
+  { id: 'access-teams', path: '/access/teams', title: '用户组', description: '用户组管理', icon: 'IconUserGroup', group: 'access', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'access', menuId: 'access', permissionKey: 'access.groups.view', scopeMode: 'passive' },
+  { id: 'access-policies', path: '/access/policies', title: '策略', description: '策略管理', icon: 'IconShield', group: 'access', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'access', menuId: 'access', permissionKey: 'access.policies.view', scopeMode: 'passive' },
+  { id: 'access-scope-grants', path: '/access/scope-grants', title: '授权范围', description: '业务线环境应用授权', icon: 'IconShield', group: 'access', requiresAuth: true, tabbar: false, navVisible: false, permissionKey: 'access.scope-grants.view', scopeMode: 'passive' },
 
-  { id: 'system', path: '/system', title: '系统管理', description: '公告、菜单、审计与操作记录', icon: 'IconSetting', group: 'system', requiresAuth: true, tabbar: false, navVisible: false, redirectTo: '/system/online-users' },
-  { id: 'system-online-users', path: '/system/online-users', title: '在线用户', description: '在线用户监控', icon: 'IconUser', group: 'system', requiresAuth: true, tabbar: true, navVisible: true, menuId: 'system-online-users', permissionKey: 'system.online-users.view' },
-  { id: 'system-announcements', path: '/system/announcements', title: '公告', description: '公告管理', icon: 'IconBell', group: 'system', requiresAuth: true, tabbar: true, navVisible: true, menuId: 'announcements', permissionKey: 'system.announcements.view' },
-  { id: 'system-menus', path: '/system/menus', title: '菜单', description: '菜单管理', icon: 'IconMenu', group: 'system', requiresAuth: true, tabbar: true, navVisible: true, menuId: 'menus', permissionKey: 'system.menus.view' },
-  { id: 'audit', path: '/system/audit', title: '审计日志', description: '审计记录', icon: 'IconFile', group: 'system', requiresAuth: true, tabbar: true, navVisible: true, menuId: 'audit', permissionKey: 'system.audit.view' },
-  { id: 'operations', path: '/system/operations', title: '操作日志', description: '操作记录', icon: 'IconList', group: 'system', requiresAuth: true, tabbar: true, navVisible: true, menuId: 'operations', permissionKey: 'system.operations.view' },
+  { id: 'system', path: '/system', title: '系统管理', description: '公告、菜单、审计与操作记录', icon: 'IconSetting', group: 'system', requiresAuth: true, tabbar: false, navVisible: false, redirectTo: '/system/online-users', scopeMode: 'passive', workspace: 'system' },
+  { id: 'system-online-users', path: '/system/online-users', title: '在线用户', description: '在线用户监控', icon: 'IconUser', group: 'system', requiresAuth: true, tabbar: true, navVisible: true, menuId: 'system-online-users', permissionKey: 'system.online-users.view', scopeMode: 'passive' },
+  { id: 'system-announcements', path: '/system/announcements', title: '公告', description: '公告管理', icon: 'IconBell', group: 'system', requiresAuth: true, tabbar: true, navVisible: true, menuId: 'announcements', permissionKey: 'system.announcements.view', scopeMode: 'passive' },
+  { id: 'system-menus', path: '/system/menus', title: '菜单', description: '菜单管理', icon: 'IconMenu', group: 'system', requiresAuth: true, tabbar: true, navVisible: true, menuId: 'menus', permissionKey: 'system.menus.view', scopeMode: 'passive' },
+  { id: 'audit', path: '/system/audit', title: '审计日志', description: '审计记录', icon: 'IconFile', group: 'system', requiresAuth: true, tabbar: true, navVisible: true, menuId: 'audit', permissionKey: 'system.audit.view', scopeMode: 'passive' },
+  { id: 'operations', path: '/system/operations', title: '操作日志', description: '操作记录', icon: 'IconList', group: 'system', requiresAuth: true, tabbar: true, navVisible: true, menuId: 'operations', permissionKey: 'system.operations.view', scopeMode: 'passive' },
 
-  { id: 'settings', path: '/settings', title: '设置中心', description: '身份与 AI 配置', icon: 'IconSetting', group: 'settings', requiresAuth: true, tabbar: false, navVisible: true, menuId: 'settings', permissionStrategy: 'any-child' },
-  { id: 'settings-identity', path: '/settings/identity', title: '身份设置', description: 'OIDC 配置', icon: 'IconSetting', group: 'settings', requiresAuth: true, tabbar: false, navVisible: false, parentId: 'settings', menuId: 'settings', permissionKey: 'settings.identity.view' },
-  { id: 'settings-branding', path: '/settings/branding', title: '品牌设置', description: '品牌 Logo 与标题配置', icon: 'IconSetting', group: 'settings', requiresAuth: true, tabbar: false, navVisible: false, parentId: 'settings', menuId: 'settings', permissionKey: 'settings.branding.view' },
-  { id: 'settings-monitoring', path: '/settings/monitoring', title: '监控设置', description: 'Prometheus 配置', icon: 'IconSetting', group: 'settings', requiresAuth: true, tabbar: false, navVisible: false, menuId: 'settings', permissionKey: 'settings.monitoring.view' },
-  { id: 'settings-ai', path: '/settings/ai', title: 'AI 设置', description: 'AI 提供商配置', icon: 'IconSetting', group: 'settings', requiresAuth: true, tabbar: false, navVisible: false, parentId: 'settings', menuId: 'settings', permissionKey: 'settings.ai.view' },
+  { id: 'settings', path: '/settings', title: '设置中心', description: '身份与 AI 配置', icon: 'IconSetting', group: 'settings', requiresAuth: true, tabbar: false, navVisible: true, menuId: 'settings', permissionStrategy: 'any-child', scopeMode: 'passive', workspace: 'system' },
+  { id: 'settings-identity', path: '/settings/identity', title: '身份设置', description: 'OIDC 配置', icon: 'IconSetting', group: 'settings', requiresAuth: true, tabbar: false, navVisible: false, parentId: 'settings', menuId: 'settings', permissionKey: 'settings.identity.view', scopeMode: 'passive' },
+  { id: 'settings-branding', path: '/settings/branding', title: '品牌设置', description: '品牌 Logo 与标题配置', icon: 'IconSetting', group: 'settings', requiresAuth: true, tabbar: false, navVisible: false, parentId: 'settings', menuId: 'settings', permissionKey: 'settings.branding.view', scopeMode: 'passive' },
+  { id: 'settings-monitoring', path: '/settings/monitoring', title: '监控设置', description: 'Prometheus 配置', icon: 'IconSetting', group: 'settings', requiresAuth: true, tabbar: false, navVisible: false, menuId: 'settings', permissionKey: 'settings.monitoring.view', scopeMode: 'passive' },
+  { id: 'settings-ai', path: '/settings/ai', title: 'AI 设置', description: 'AI 提供商配置', icon: 'IconSetting', group: 'settings', requiresAuth: true, tabbar: false, navVisible: false, parentId: 'settings', menuId: 'settings', permissionKey: 'settings.ai.view', scopeMode: 'passive' },
 
-  { id: 'login', path: '/login', title: '登录', description: '用户登录', icon: 'IconLock', group: 'auth', requiresAuth: false, tabbar: false, navVisible: false },
-  { id: 'oidc-callback', path: '/auth/oidc/callback', title: 'OIDC Callback', description: 'OIDC 回调', icon: 'IconLock', group: 'auth', requiresAuth: false, tabbar: false, navVisible: false },
-  { id: 'login-callback', path: '/login/callback', title: 'Login Callback', description: '登录回调', icon: 'IconLock', group: 'auth', requiresAuth: false, tabbar: false, navVisible: false },
+  { id: 'login', path: '/login', title: '登录', description: '用户登录', icon: 'IconLock', group: 'auth', requiresAuth: false, tabbar: false, navVisible: false, scopeMode: 'hidden' },
+  { id: 'oidc-callback', path: '/auth/oidc/callback', title: 'OIDC Callback', description: 'OIDC 回调', icon: 'IconLock', group: 'auth', requiresAuth: false, tabbar: false, navVisible: false, scopeMode: 'hidden' },
+  { id: 'login-callback', path: '/login/callback', title: 'Login Callback', description: '登录回调', icon: 'IconLock', group: 'auth', requiresAuth: false, tabbar: false, navVisible: false, scopeMode: 'hidden' },
 ]
 
 export function getRouteMeta(pathname: string): RouteMeta {
@@ -164,6 +199,92 @@ export function resolveRouteMenuId(route: RouteMeta): string | undefined {
   return parent ? resolveRouteMenuId(parent) : undefined
 }
 
+export function getRouteWorkspace(route: RouteMeta): WorkspaceType | null {
+  if (route.workspace) {
+    return route.workspace
+  }
+  const parent = getParentRouteMeta(route)
+  if (parent) {
+    return getRouteWorkspace(parent)
+  }
+  const pathname = route.path
+  if (pathname === '/login' || pathname.startsWith('/auth/') || pathname.startsWith('/login/')) {
+    return null
+  }
+  if (pathname.startsWith('/access') || pathname.startsWith('/system') || pathname.startsWith('/settings')) {
+    return 'system'
+  }
+  if (matchesRoutePrefix(pathname, APPLICATION_PATH_PREFIXES)) {
+    return 'application'
+  }
+  return route.requiresAuth ? 'resource' : null
+}
+
+export function getRouteScopeMode(route: RouteMeta): NonNullable<RouteMeta['scopeMode']> {
+  if (route.scopeMode) {
+    return route.scopeMode
+  }
+  const parent = getParentRouteMeta(route)
+  if (parent) {
+    return getRouteScopeMode(parent)
+  }
+  const pathname = route.path
+  if (pathname === '/login' || pathname.startsWith('/auth/') || pathname.startsWith('/login/')) {
+    return 'hidden'
+  }
+  if (pathname === '/' || pathname === '/clusters' || pathname.startsWith('/cluster-resources/nodes') || pathname.startsWith('/cluster-resources/namespaces') || pathname.startsWith('/extensions') || pathname.startsWith('/platform-access-control/clusterroles') || pathname.startsWith('/platform-access-control/clusterrolebindings') || pathname.startsWith('/storage/persistentvolumes') || pathname.startsWith('/storage/storageclasses')) {
+    return 'cluster'
+  }
+  if (pathname.startsWith('/access') || pathname.startsWith('/system') || pathname.startsWith('/settings') || pathname.startsWith('/applications') || pathname.startsWith('/business-lines') || pathname.startsWith('/delivery-environments') || pathname.startsWith('/application-environments') || pathname.startsWith('/build-templates') || pathname.startsWith('/delivery/release-bundles') || pathname.startsWith('/delivery/execution-tasks') || pathname.startsWith('/delivery/approval-policies') || pathname.startsWith('/workflow-templates') || pathname.startsWith('/release-board') || pathname.startsWith('/releases') || pathname.startsWith('/registries') || pathname.startsWith('/observability') || pathname.startsWith('/ai-observe')) {
+    return 'passive'
+  }
+  return 'namespace'
+}
+
+export function getWorkspacePermissionKey(workspace: BusinessWorkspaceType) {
+  return WORKSPACE_PERMISSION_KEYS[workspace]
+}
+
+export function hasWorkspaceAccess(workspace: BusinessWorkspaceType, snapshot?: PermissionSnapshot | null) {
+  return snapshot?.permissionKeys.includes(WORKSPACE_PERMISSION_KEYS[workspace]) ?? false
+}
+
+export function getAccessibleWorkspaces(snapshot?: PermissionSnapshot | null): BusinessWorkspaceType[] {
+  const workspaces: BusinessWorkspaceType[] = []
+  ;(['application', 'resource'] as const).forEach((workspace) => {
+    if (!hasWorkspaceAccess(workspace, snapshot)) {
+      return
+    }
+    if (findFirstAccessiblePathForWorkspace(workspace, snapshot)) {
+      workspaces.push(workspace)
+    }
+  })
+  return workspaces
+}
+
+export function getDefaultWorkspaceForRoles(roles: string[] = []): BusinessWorkspaceType {
+  return roles.some((role) => RESOURCE_DEFAULT_ROLES.has(String(role || '').trim())) ? 'resource' : 'application'
+}
+
+export function findPreferredWorkspace(
+  snapshot?: PermissionSnapshot | null,
+  persistedWorkspace?: BusinessWorkspaceType | null,
+  roles: string[] = [],
+): BusinessWorkspaceType | null {
+  const accessibleWorkspaces = getAccessibleWorkspaces(snapshot)
+  if (accessibleWorkspaces.length === 0) {
+    return null
+  }
+  if (persistedWorkspace && accessibleWorkspaces.includes(persistedWorkspace)) {
+    return persistedWorkspace
+  }
+  const roleDefault = getDefaultWorkspaceForRoles(roles)
+  if (accessibleWorkspaces.includes(roleDefault)) {
+    return roleDefault
+  }
+  return accessibleWorkspaces[0]
+}
+
 export function canAccessRoute(route: RouteMeta, snapshot?: PermissionSnapshot | null): boolean {
   if (!route.requiresAuth) {
     return true
@@ -178,9 +299,13 @@ export function canAccessRoute(route: RouteMeta, snapshot?: PermissionSnapshot |
   }
   const permissionKey = resolveRoutePermission(route)
   const menuId = resolveRouteMenuId(route)
+  const workspace = getRouteWorkspace(route)
+  const hasWorkspacePermission = workspace === 'application' || workspace === 'resource'
+    ? hasWorkspaceAccess(workspace, snapshot)
+    : true
   const hasPermission = !permissionKey || snapshot.permissionKeys.includes(permissionKey)
   const hasMenu = !menuId || snapshot.visibleMenuIds.includes(menuId)
-  return hasPermission && hasMenu
+  return hasWorkspacePermission && hasPermission && hasMenu
 }
 
 function getSectionOrder(section?: string) {
@@ -199,6 +324,55 @@ function sortRuntimeMenuTree(items: RuntimeMenuNode[]): RuntimeMenuNode[] {
       ...item,
       children: item.children && item.children.length > 0 ? sortRuntimeMenuTree(item.children) : undefined,
     }))
+}
+
+const APPLICATION_SECTION_ORDER: Record<string, number> = {
+  applications: 10,
+  'application-management': 15,
+  'application-environments': 20,
+  'release-board': 30,
+  workflows: 40,
+  releases: 50,
+  'build-templates': 60,
+  'approval-policies': 70,
+  'release-bundles': 80,
+  'execution-tasks': 90,
+  registries: 100,
+  'business-lines': 110,
+  'delivery-environments': 120,
+}
+
+const SYSTEM_ROOT_ORDER: Record<string, number> = {
+  access: 10,
+  system: 20,
+  settings: 30,
+}
+
+function deriveRuntimeMenuSection(node: RuntimeMenuNode): string {
+  const workspace = node.route ? getRouteWorkspace(node.route) : node.workspace
+  if (workspace === 'system') {
+    return 'admin'
+  }
+  if (workspace === 'application') {
+    if (node.id === 'application-environments') {
+      return 'deliver'
+    }
+    return node.route?.group === 'catalog' ? 'catalog' : 'deliver'
+  }
+  if (workspace === 'resource') {
+    return node.route?.group === 'observe' ? 'ops' : 'platform'
+  }
+  return normalizeMenuSection(node.section || 'control') || 'control'
+}
+
+function deriveRuntimeMenuSortOrder(node: RuntimeMenuNode, workspace: WorkspaceType | null): number {
+  if (workspace === 'application' && node.id in APPLICATION_SECTION_ORDER) {
+    return APPLICATION_SECTION_ORDER[node.id]
+  }
+  if (workspace === 'system' && !node.parentId && node.id in SYSTEM_ROOT_ORDER) {
+    return SYSTEM_ROOT_ORDER[node.id]
+  }
+  return node.sortOrder
 }
 
 function findBestRouteForMenu(menu: VisibleMenu, snapshot?: PermissionSnapshot | null): RouteMeta | undefined {
@@ -231,6 +405,7 @@ function buildRuntimeMenuTree(snapshot?: PermissionSnapshot | null): RuntimeMenu
   const nodes = new Map<string, RuntimeMenuNode>()
 
   visibleMenus.forEach((menu) => {
+    const route = findBestRouteForMenu(menu, snapshot)
     nodes.set(menu.id, {
       id: menu.id,
       parentId: menu.parentId,
@@ -241,7 +416,8 @@ function buildRuntimeMenuTree(snapshot?: PermissionSnapshot | null): RuntimeMenu
       section: normalizeMenuSection(menu.section || 'control') || 'control',
       sortOrder: typeof menu.sortOrder === 'number' ? menu.sortOrder : 0,
       enabled: menu.enabled ?? true,
-      route: findBestRouteForMenu(menu, snapshot),
+      workspace: route ? getRouteWorkspace(route) ?? undefined : undefined,
+      route,
       children: [],
     })
   })
@@ -279,10 +455,74 @@ export function getAccessibleSidebarNav(snapshot?: PermissionSnapshot | null): R
   return buildRuntimeMenuTree(snapshot)
 }
 
-export function findFirstAccessiblePath(snapshot?: PermissionSnapshot | null): string | null {
+export function filterSidebarNavByWorkspace(sidebarNav: RuntimeMenuNode[], workspace: WorkspaceType): RuntimeMenuNode[] {
+  const filterNode = (node: RuntimeMenuNode): RuntimeMenuNode | null => {
+    const nextChildren = (node.children ?? [])
+      .map(filterNode)
+      .filter((item): item is RuntimeMenuNode => Boolean(item))
+    const routeWorkspace = node.route ? getRouteWorkspace(node.route) : node.workspace ?? null
+    const keepLeaf = Boolean(node.route && node.route.navVisible !== false) && routeWorkspace === workspace
+    if (!keepLeaf && nextChildren.length === 0) {
+      return null
+    }
+    return {
+      ...node,
+      section: deriveRuntimeMenuSection(node),
+      sortOrder: deriveRuntimeMenuSortOrder(node, workspace),
+      workspace: workspace,
+      children: nextChildren.length > 0 ? sortRuntimeMenuTree(nextChildren) : undefined,
+    }
+  }
+
+  return sortRuntimeMenuTree(
+    sidebarNav
+      .map(filterNode)
+      .filter((item): item is RuntimeMenuNode => Boolean(item)),
+  )
+}
+
+export function findFirstAccessiblePathForWorkspace(
+  workspace: BusinessWorkspaceType,
+  snapshot?: PermissionSnapshot | null,
+): string | null {
+  const defaultRoute = routeMeta.find((route) => route.path === DEFAULT_WORKSPACE_PATHS[workspace])
+  if (defaultRoute && canAccessRoute(defaultRoute, snapshot)) {
+    return defaultRoute.redirectTo ?? defaultRoute.path
+  }
+  const firstRoute = routeMeta.find((route) => {
+    if (!route.requiresAuth || !route.navVisible) {
+      return false
+    }
+    return getRouteWorkspace(route) === workspace && canAccessRoute(route, snapshot)
+  })
+  if (!firstRoute) {
+    return null
+  }
+  return firstRoute.redirectTo ?? firstRoute.path
+}
+
+export function findFirstAccessiblePath(
+  snapshot?: PermissionSnapshot | null,
+  preferredWorkspace?: BusinessWorkspaceType | null,
+): string | null {
+  if (preferredWorkspace) {
+    const preferredPath = findFirstAccessiblePathForWorkspace(preferredWorkspace, snapshot)
+    if (preferredPath) {
+      return preferredPath
+    }
+  }
   const firstRoute = routeMeta.find((route) => route.requiresAuth && route.navVisible && canAccessRoute(route, snapshot))
   if (!firstRoute) {
     return null
   }
   return firstRoute.redirectTo ?? firstRoute.path
+}
+
+export function findLandingPath(
+  snapshot?: PermissionSnapshot | null,
+  persistedWorkspace?: BusinessWorkspaceType | null,
+  roles: string[] = [],
+): string | null {
+  const workspace = findPreferredWorkspace(snapshot, persistedWorkspace, roles)
+  return findFirstAccessiblePath(snapshot, workspace)
 }

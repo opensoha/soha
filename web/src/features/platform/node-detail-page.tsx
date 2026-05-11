@@ -5,7 +5,6 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { AdminTable } from '@/components/admin-table'
 import { PageHeader } from '@/components/page-header'
 import { PlatformClusterScopeHint } from '@/components/platform-cluster-scope-hint'
-import { PlatformScopeToolbar } from '@/components/platform-scope-toolbar'
 import { StatusTag } from '@/components/status-tag'
 import { useI18n } from '@/i18n'
 import {
@@ -206,7 +205,6 @@ export function NodeDetailPage() {
           </Space>
         )}
       />
-      <PlatformScopeToolbar />
       <PlatformClusterScopeHint resourceLabel={localeCode === 'zh_CN' ? '节点详情' : 'Node'} />
       <Tabs
         items={[

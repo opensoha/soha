@@ -2,7 +2,8 @@ ALTER TABLE application_environments
     ADD COLUMN IF NOT EXISTS strategy_profile_id TEXT,
     ADD COLUMN IF NOT EXISTS promotion_policy_id TEXT,
     ADD COLUMN IF NOT EXISTS approval_policy_id TEXT,
-    ADD COLUMN IF NOT EXISTS artifact_policy_id TEXT;
+    ADD COLUMN IF NOT EXISTS artifact_policy_id TEXT,
+    ADD COLUMN IF NOT EXISTS resource_selector JSONB NOT NULL DEFAULT '{}'::jsonb;
 
 ALTER TABLE release_targets
     ADD COLUMN IF NOT EXISTS target_kind TEXT NOT NULL DEFAULT 'k8s_workload',

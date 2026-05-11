@@ -1,14 +1,17 @@
 import { Navigate, Outlet, useLocation } from 'react-router-dom'
 import { Empty, Spin } from 'antd'
 import { permissionSnapshotQueryKey, usePermissionSnapshot } from '@/features/auth/permission-snapshot'
-import { canAccessRoute, findFirstAccessiblePath, getRouteMeta } from '@/routes/meta'
+import { canAccessRoute, findFirstAccessiblePath, findPreferredWorkspace, getRouteMeta } from '@/routes/meta'
 import { useAuthStore } from '@/stores/auth-store'
+import { usePreferencesStore } from '@/stores/preferences-store'
 import { useQueryClient } from '@tanstack/react-query'
 
 export function AuthGuard() {
   const location = useLocation()
   const queryClient = useQueryClient()
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated())
+  const roles = useAuthStore((s) => s.user?.roles ?? [])
+  const currentWorkspace = usePreferencesStore((state) => state.currentWorkspace)
   const permissionSnapshotQuery = usePermissionSnapshot()
 
   if (!isAuthenticated) {
@@ -24,7 +27,8 @@ export function AuthGuard() {
     ?? queryClient.getQueryData<{ data?: import('@/types').PermissionSnapshot }>(permissionSnapshotQueryKey)?.data
   const currentRoute = getRouteMeta(location.pathname)
   if (!canAccessRoute(currentRoute, snapshot)) {
-    const fallbackPath = findFirstAccessiblePath(snapshot)
+    const preferredWorkspace = findPreferredWorkspace(snapshot, currentWorkspace, roles)
+    const fallbackPath = findFirstAccessiblePath(snapshot, preferredWorkspace)
     if (fallbackPath && fallbackPath !== location.pathname) {
       return <Navigate to={fallbackPath} replace />
     }

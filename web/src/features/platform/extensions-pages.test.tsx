@@ -216,7 +216,6 @@ describe('CRD catalog page', () => {
 
     expect(container.querySelector('[data-testid="page-header"]')).toBeNull()
     expect(container.textContent).toContain('CustomResourceDefinitions')
-    expect(container.textContent).toContain('scope-toolbar')
     expect(container.textContent).toContain('scope-hint')
 
     expect(container.textContent).toContain('API Group')

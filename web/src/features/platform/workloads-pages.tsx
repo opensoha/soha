@@ -12,7 +12,6 @@ import { TABLE_ACTIONS_COLUMN_CLASS_NAME } from '@/components/resource-actions'
 import { hasAllowedAction } from '@/features/auth/permission-snapshot'
 import { useI18n } from '@/i18n'
 import { PageHeader } from '@/components/page-header'
-import { PlatformScopeToolbar } from '@/components/platform-scope-toolbar'
 import { ResourceEventsTimeline } from '@/components/resource-events-timeline'
 import { BooleanTag, StatusTag } from '@/components/status-tag'
 import { ResourceMetricsPanel } from '@/components/resource-metrics-panel'
@@ -409,9 +408,7 @@ export function WorkloadsOverviewPage() {
               <Text type="secondary">{t('page.workloads.overview.desc', 'Inspect workload counts and recent events under the current cluster and namespace scope.')}</Text>
             </div>
           </div>
-          <div className="kc-workload-overview-toolbar">
-            <PlatformScopeToolbar embedded showLabel={false} clusterWidth={190} namespaceWidth={190} />
-          </div>
+          <div className="kc-workload-overview-toolbar" />
         </Card>
         <Empty description={t('common.pleaseSelectClusterShort', 'Select a cluster')} />
       </div>
@@ -447,9 +444,7 @@ export function WorkloadsOverviewPage() {
             <Text type="secondary">{t('page.workloads.overview.desc', 'Inspect workload counts and recent events under the current cluster and namespace scope.')}</Text>
           </div>
         </div>
-        <div className="kc-workload-overview-toolbar">
-          <PlatformScopeToolbar embedded showLabel={false} clusterWidth={190} namespaceWidth={190} />
-        </div>
+        <div className="kc-workload-overview-toolbar" />
       </Card>
       <div className="kc-workload-overview-stats-shell">
         <StatGrid items={stats} />
@@ -488,7 +483,6 @@ function WorkloadDetailShell({
   actions,
   activeTabKey,
   onTabChange,
-  showScopeToolbar = true,
   yamlLast = false,
 }: {
   title: string
@@ -499,7 +493,6 @@ function WorkloadDetailShell({
   actions?: React.ReactNode
   activeTabKey?: string
   onTabChange?: (activeKey: string) => void
-  showScopeToolbar?: boolean
   yamlLast?: boolean
 }) {
   const { t, localeCode } = useI18n()
@@ -568,7 +561,6 @@ function WorkloadDetailShell({
         description={localeCode === 'zh_CN' ? `查看 ${title} 的资源概览、标签、注解与 YAML 等详情信息。` : `Inspect ${title} overview, labels, annotations, and YAML details.`}
         actions={actions}
       />
-      {showScopeToolbar ? <PlatformScopeToolbar /> : null}
       <Tabs
         {...(activeTabKey != null ? { activeKey: activeTabKey } : { defaultActiveKey: 'overview' })}
         onChange={onTabChange}
@@ -961,7 +953,6 @@ export function WorkloadsDeploymentsPage() {
 
   const deploymentToolbar = (
     <div className="kc-workload-table-filters">
-      <PlatformScopeToolbar embedded showLabel={false} clusterWidth={180} namespaceWidth={180} />
       <Input
         className="kc-platform-compact-field"
         size="small"
@@ -1815,7 +1806,6 @@ export function WorkloadsPodsPage() {
 
   const podToolbar = (
     <div className="kc-workload-table-filters">
-      <PlatformScopeToolbar embedded showLabel={false} clusterWidth={180} namespaceWidth={180} />
       <Input
         className="kc-platform-compact-field"
         size="small"
@@ -2274,7 +2264,6 @@ export function PodDetailPage() {
         extraTabPanes={[containersTab, logsTab, eventsTab, volumesTab, relatedResourcesTab, metricsTab]}
         activeTabKey={activeTabKey}
         onTabChange={setActiveTabKey}
-        showScopeToolbar={false}
         yamlLast
         actions={(
           <Space>
@@ -2391,7 +2380,6 @@ export function WorkloadsStatefulSetsPage() {
         title={t('page.workloads.statefulsets.title', 'StatefulSets')}
         toolbar={(
           <div className="kc-workload-table-filters">
-            <PlatformScopeToolbar embedded showLabel={false} clusterWidth={180} namespaceWidth={180} />
             <Input
               className="kc-platform-compact-field"
               size="small"
@@ -2487,7 +2475,6 @@ export function WorkloadsDaemonSetsPage() {
         title="DaemonSets"
         toolbar={(
           <div className="kc-workload-table-filters">
-            <PlatformScopeToolbar embedded showLabel={false} clusterWidth={180} namespaceWidth={180} />
             <Input
               className="kc-platform-compact-field"
               size="small"
@@ -2584,7 +2571,6 @@ export function WorkloadsJobsPage() {
         title={t('page.workloads.jobs.title', 'Jobs')}
         toolbar={(
           <div className="kc-workload-table-filters">
-            <PlatformScopeToolbar embedded showLabel={false} clusterWidth={180} namespaceWidth={180} />
             <Input
               className="kc-platform-compact-field"
               size="small"
@@ -2684,7 +2670,6 @@ export function WorkloadsCronJobsPage() {
         title={t('page.workloads.cronjobs.title', 'CronJobs')}
         toolbar={(
           <div className="kc-workload-table-filters">
-            <PlatformScopeToolbar embedded showLabel={false} clusterWidth={180} namespaceWidth={180} />
             <Input
               className="kc-platform-compact-field"
               size="small"

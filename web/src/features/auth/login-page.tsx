@@ -3,7 +3,9 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { App, Button, Card, Divider, Form, Input, Space, Typography } from 'antd'
 import { LockOutlined, SafetyCertificateOutlined, UserOutlined } from '@ant-design/icons'
-import { commitAuthResult, fetchAuthProviders, loginWithPassword } from '@/features/auth/auth-api'
+import { commitAuthResult, fetchAuthProviders, fetchPermissionSnapshot, loginWithPassword } from '@/features/auth/auth-api'
+import { findLandingPath } from '@/routes/meta'
+import { usePreferencesStore } from '@/stores/preferences-store'
 import { readStoredBrandingSettings } from '@/utils/branding'
 
 const { Title, Text } = Typography
@@ -35,7 +37,7 @@ export function LoginPage() {
   const [oidcLoading, setOidcLoading] = useState(false)
 
   const branding = readStoredBrandingSettings()
-  const from = (location.state as { from?: { pathname: string } })?.from?.pathname ?? '/'
+  const from = (location.state as { from?: { pathname: string } } | undefined)?.from?.pathname
   const providersQuery = useQuery({
     queryKey: ['auth-providers'],
     queryFn: fetchAuthProviders,
@@ -43,14 +45,26 @@ export function LoginPage() {
   })
   const thirdPartyProviders = (providersQuery.data ?? []).filter((item) => item.enabled !== false && item.type === 'oidc')
   const appTitle = branding.sidebarTitle || branding.appTitle || 'KubeCrux'
+  const resolvePostLoginPath = async (roles: string[], explicitPath?: string) => {
+    if (explicitPath && explicitPath !== '/login') {
+      return explicitPath
+    }
+    try {
+      const snapshot = await fetchPermissionSnapshot()
+      return findLandingPath(snapshot, usePreferencesStore.getState().currentWorkspace, roles) ?? '/'
+    } catch {
+      return '/'
+    }
+  }
 
   const handleLogin = async (values: LoginFormValues) => {
     setLoading(true)
     try {
       const authResult = await loginWithPassword(values.username, values.password)
       commitAuthResult(authResult)
+      const nextPath = await resolvePostLoginPath(authResult.user.roles, from)
       message.success('登录成功')
-      navigate(from, { replace: true })
+      navigate(nextPath, { replace: true })
     } catch (err: any) {
       message.error(err?.message ?? '登录失败')
     } finally {

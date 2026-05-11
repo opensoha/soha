@@ -15,6 +15,10 @@ type BuildPolicy struct {
 	BuildArgs        map[string]any `json:"buildArgs,omitempty"`
 }
 
+type ResourceSelector struct {
+	MatchLabels map[string]string `json:"matchLabels,omitempty"`
+}
+
 type ReleasePolicy struct {
 	ActionKind            string   `json:"actionKind,omitempty"`
 	RequiresApproval      bool     `json:"requiresApproval"`
@@ -123,6 +127,7 @@ type ApplicationEnvironment struct {
 	WorkflowTemplate   *WorkflowTemplate `json:"workflowTemplate,omitempty"`
 	BuildPolicy        BuildPolicy       `json:"buildPolicy,omitempty"`
 	ReleasePolicy      ReleasePolicy     `json:"releasePolicy,omitempty"`
+	ResourceSelector   ResourceSelector  `json:"resourceSelector,omitempty"`
 	Targets            []ReleaseTarget   `json:"targets,omitempty"`
 	CreatedAt          time.Time         `json:"createdAt"`
 	UpdatedAt          time.Time         `json:"updatedAt"`
@@ -139,6 +144,7 @@ type ApplicationEnvironmentInput struct {
 	WorkflowTemplateID string               `json:"workflowTemplateId,omitempty"`
 	BuildPolicy        BuildPolicy          `json:"buildPolicy,omitempty"`
 	ReleasePolicy      ReleasePolicy        `json:"releasePolicy,omitempty"`
+	ResourceSelector   ResourceSelector     `json:"resourceSelector,omitempty"`
 	Targets            []ReleaseTargetInput `json:"targets,omitempty"`
 }
 

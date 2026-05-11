@@ -50,7 +50,12 @@ type ApplicationEnvironmentRequest struct {
 	WorkflowTemplateID string                 `json:"workflowTemplateId"`
 	BuildPolicy        BuildPolicyRequest     `json:"buildPolicy"`
 	ReleasePolicy      ReleasePolicyRequest   `json:"releasePolicy"`
+	ResourceSelector   ResourceSelectorRequest `json:"resourceSelector"`
 	Targets            []ReleaseTargetRequest `json:"targets"`
+}
+
+type ResourceSelectorRequest struct {
+	MatchLabels map[string]string `json:"matchLabels"`
 }
 
 type BuildPolicyRequest struct {

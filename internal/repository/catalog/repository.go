@@ -178,7 +178,7 @@ func (r *Repository) DeleteEnvironment(ctx context.Context, id string) error {
 
 func (r *Repository) ListApplicationEnvironments(ctx context.Context) ([]domaincatalog.ApplicationEnvironment, error) {
 	rows, err := r.db.WithContext(ctx).Raw(`
-		SELECT ae.id, ae.application_id, a.business_line_id, ae.environment_id, e.environment_key, ae.strategy_profile_id, ae.promotion_policy_id, ae.approval_policy_id, ae.artifact_policy_id, ae.workflow_template_id, ae.build_policy, ae.release_policy, ae.created_at, ae.updated_at
+		SELECT ae.id, ae.application_id, a.business_line_id, ae.environment_id, e.environment_key, ae.strategy_profile_id, ae.promotion_policy_id, ae.approval_policy_id, ae.artifact_policy_id, ae.workflow_template_id, ae.build_policy, ae.release_policy, ae.resource_selector, ae.created_at, ae.updated_at
 		FROM application_environments ae
 		JOIN applications a ON a.id = ae.application_id
 		JOIN delivery_environments e ON e.id = ae.environment_id
@@ -213,7 +213,7 @@ func (r *Repository) ListApplicationEnvironments(ctx context.Context) ([]domainc
 
 func (r *Repository) GetApplicationEnvironment(ctx context.Context, id string) (domaincatalog.ApplicationEnvironment, error) {
 	row := r.db.WithContext(ctx).Raw(`
-		SELECT ae.id, ae.application_id, a.business_line_id, ae.environment_id, e.environment_key, ae.strategy_profile_id, ae.promotion_policy_id, ae.approval_policy_id, ae.artifact_policy_id, ae.workflow_template_id, ae.build_policy, ae.release_policy, ae.created_at, ae.updated_at
+		SELECT ae.id, ae.application_id, a.business_line_id, ae.environment_id, e.environment_key, ae.strategy_profile_id, ae.promotion_policy_id, ae.approval_policy_id, ae.artifact_policy_id, ae.workflow_template_id, ae.build_policy, ae.release_policy, ae.resource_selector, ae.created_at, ae.updated_at
 		FROM application_environments ae
 		JOIN applications a ON a.id = ae.application_id
 		JOIN delivery_environments e ON e.id = ae.environment_id
@@ -248,10 +248,14 @@ func (r *Repository) CreateApplicationEnvironment(ctx context.Context, input dom
 		if err != nil {
 			return fmt.Errorf("marshal release policy: %w", err)
 		}
+		resourceSelector, err := json.Marshal(item.ResourceSelector)
+		if err != nil {
+			return fmt.Errorf("marshal resource selector: %w", err)
+		}
 		if err := tx.Exec(`
-			INSERT INTO application_environments (id, application_id, environment_id, strategy_profile_id, promotion_policy_id, approval_policy_id, artifact_policy_id, workflow_template_id, build_policy, release_policy, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-		`, item.ID, item.ApplicationID, item.EnvironmentID, nullableString(item.StrategyProfileID), nullableString(item.PromotionPolicyID), nullableString(item.ApprovalPolicyID), nullableString(item.ArtifactPolicyID), nullableString(item.WorkflowTemplateID), string(buildPolicy), string(releasePolicy), item.CreatedAt, item.UpdatedAt).Error; err != nil {
+			INSERT INTO application_environments (id, application_id, environment_id, strategy_profile_id, promotion_policy_id, approval_policy_id, artifact_policy_id, workflow_template_id, build_policy, release_policy, resource_selector, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`, item.ID, item.ApplicationID, item.EnvironmentID, nullableString(item.StrategyProfileID), nullableString(item.PromotionPolicyID), nullableString(item.ApprovalPolicyID), nullableString(item.ArtifactPolicyID), nullableString(item.WorkflowTemplateID), string(buildPolicy), string(releasePolicy), string(resourceSelector), item.CreatedAt, item.UpdatedAt).Error; err != nil {
 			return fmt.Errorf("create application environment: %w", err)
 		}
 		return replaceReleaseTargetsTx(tx, item.ID, input.Targets, item.CreatedAt)
@@ -273,11 +277,15 @@ func (r *Repository) UpdateApplicationEnvironment(ctx context.Context, id string
 		if err != nil {
 			return fmt.Errorf("marshal release policy: %w", err)
 		}
+		resourceSelector, err := json.Marshal(item.ResourceSelector)
+		if err != nil {
+			return fmt.Errorf("marshal resource selector: %w", err)
+		}
 		result := tx.Exec(`
 			UPDATE application_environments
-			SET application_id = ?, environment_id = ?, strategy_profile_id = ?, promotion_policy_id = ?, approval_policy_id = ?, artifact_policy_id = ?, workflow_template_id = ?, build_policy = ?, release_policy = ?, updated_at = ?
+			SET application_id = ?, environment_id = ?, strategy_profile_id = ?, promotion_policy_id = ?, approval_policy_id = ?, artifact_policy_id = ?, workflow_template_id = ?, build_policy = ?, release_policy = ?, resource_selector = ?, updated_at = ?
 			WHERE id = ?
-		`, item.ApplicationID, item.EnvironmentID, nullableString(item.StrategyProfileID), nullableString(item.PromotionPolicyID), nullableString(item.ApprovalPolicyID), nullableString(item.ArtifactPolicyID), nullableString(item.WorkflowTemplateID), string(buildPolicy), string(releasePolicy), item.UpdatedAt, item.ID)
+		`, item.ApplicationID, item.EnvironmentID, nullableString(item.StrategyProfileID), nullableString(item.PromotionPolicyID), nullableString(item.ApprovalPolicyID), nullableString(item.ArtifactPolicyID), nullableString(item.WorkflowTemplateID), string(buildPolicy), string(releasePolicy), string(resourceSelector), item.UpdatedAt, item.ID)
 		if result.Error != nil {
 			return fmt.Errorf("update application environment: %w", result.Error)
 		}
@@ -583,7 +591,8 @@ func scanApplicationEnvironment(rows *sql.Rows) (domaincatalog.ApplicationEnviro
 	var workflowTemplateID sql.NullString
 	var buildPolicy []byte
 	var releasePolicy []byte
-	if err := rows.Scan(&item.ID, &item.ApplicationID, &businessLineID, &item.EnvironmentID, &environmentKey, &strategyProfileID, &promotionPolicyID, &approvalPolicyID, &artifactPolicyID, &workflowTemplateID, &buildPolicy, &releasePolicy, &item.CreatedAt, &item.UpdatedAt); err != nil {
+	var resourceSelector []byte
+	if err := rows.Scan(&item.ID, &item.ApplicationID, &businessLineID, &item.EnvironmentID, &environmentKey, &strategyProfileID, &promotionPolicyID, &approvalPolicyID, &artifactPolicyID, &workflowTemplateID, &buildPolicy, &releasePolicy, &resourceSelector, &item.CreatedAt, &item.UpdatedAt); err != nil {
 		return domaincatalog.ApplicationEnvironment{}, fmt.Errorf("scan application environment: %w", err)
 	}
 	item.BusinessLineID = businessLineID.String
@@ -595,6 +604,7 @@ func scanApplicationEnvironment(rows *sql.Rows) (domaincatalog.ApplicationEnviro
 	item.WorkflowTemplateID = workflowTemplateID.String
 	_ = json.Unmarshal(buildPolicy, &item.BuildPolicy)
 	_ = json.Unmarshal(releasePolicy, &item.ReleasePolicy)
+	_ = json.Unmarshal(resourceSelector, &item.ResourceSelector)
 	return item, nil
 }
 
@@ -609,7 +619,8 @@ func scanApplicationEnvironmentRow(row *sql.Row) (domaincatalog.ApplicationEnvir
 	var workflowTemplateID sql.NullString
 	var buildPolicy []byte
 	var releasePolicy []byte
-	if err := row.Scan(&item.ID, &item.ApplicationID, &businessLineID, &item.EnvironmentID, &environmentKey, &strategyProfileID, &promotionPolicyID, &approvalPolicyID, &artifactPolicyID, &workflowTemplateID, &buildPolicy, &releasePolicy, &item.CreatedAt, &item.UpdatedAt); err != nil {
+	var resourceSelector []byte
+	if err := row.Scan(&item.ID, &item.ApplicationID, &businessLineID, &item.EnvironmentID, &environmentKey, &strategyProfileID, &promotionPolicyID, &approvalPolicyID, &artifactPolicyID, &workflowTemplateID, &buildPolicy, &releasePolicy, &resourceSelector, &item.CreatedAt, &item.UpdatedAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return domaincatalog.ApplicationEnvironment{}, ErrNotFound
 		}
@@ -624,6 +635,7 @@ func scanApplicationEnvironmentRow(row *sql.Row) (domaincatalog.ApplicationEnvir
 	item.WorkflowTemplateID = workflowTemplateID.String
 	_ = json.Unmarshal(buildPolicy, &item.BuildPolicy)
 	_ = json.Unmarshal(releasePolicy, &item.ReleasePolicy)
+	_ = json.Unmarshal(resourceSelector, &item.ResourceSelector)
 	return item, nil
 }
 

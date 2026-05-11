@@ -52,8 +52,11 @@ type ExecutionController interface {
 }
 
 type TargetReader interface {
+	ListPods(context.Context, domainidentity.Principal, string, string) ([]domainresource.PodView, error)
 	ListDeployments(context.Context, domainidentity.Principal, string, string) ([]domainresource.DeploymentView, error)
 	GetDeploymentDetail(context.Context, domainidentity.Principal, string, string, string) (domainresource.DeploymentDetailView, error)
+	ListServices(context.Context, domainidentity.Principal, string, string) ([]domainresource.ServiceView, error)
+	ListIngresses(context.Context, domainidentity.Principal, string, string) ([]domainresource.IngressView, error)
 }
 
 type Service struct {
@@ -111,6 +114,7 @@ func (s *Service) GetApplicationDetail(ctx context.Context, principal domainiden
 			WorkflowTemplateID:       binding.WorkflowTemplateID,
 			WorkflowTemplateName:     workflowTemplateName(binding),
 			TargetCount:              len(binding.Targets),
+			Targets:                  binding.Targets,
 			BuildSourceID:            binding.BuildPolicy.SourceID,
 			BuildSource:              resolveBuildSource(app, binding.BuildPolicy.SourceID),
 			LatestBundle:             latestBundleForBinding(binding, bundles),
@@ -128,6 +132,114 @@ func (s *Service) GetApplicationDetail(ctx context.Context, principal domainiden
 		LatestBuild:         latestBuildForApplication(app.ID, builds),
 		LatestWorkflow:      latestWorkflowForApplication(app.ID, workflows),
 		LatestRelease:       latestReleaseForApplication(app.ID, releases),
+	}, nil
+}
+
+func (s *Service) GetApplicationRuntimeDetail(ctx context.Context, principal domainidentity.Principal, applicationID string) (domaindelivery.ApplicationRuntimeDetail, error) {
+	app, err := s.applications.Get(ctx, principal, strings.TrimSpace(applicationID))
+	if err != nil {
+		return domaindelivery.ApplicationRuntimeDetail{}, err
+	}
+	bindings, environments, bundles, tasks, builds, workflows, releases, err := s.loadDeliveryContext(ctx, principal, app.ID)
+	if err != nil {
+		return domaindelivery.ApplicationRuntimeDetail{}, err
+	}
+	envByID := make(map[string]domaincatalog.Environment, len(environments))
+	for _, item := range environments {
+		envByID[item.ID] = item
+	}
+	items := make([]domaindelivery.ApplicationRuntimeEnvironment, 0)
+	for _, binding := range bindings {
+		if binding.ApplicationID != app.ID {
+			continue
+		}
+		environment := envByID[binding.EnvironmentID]
+		workloads, workloadsErr := s.listRuntimeWorkloadsForBinding(ctx, principal, app, binding, bundles, tasks, builds, workflows, releases)
+		if workloadsErr != nil {
+			return domaindelivery.ApplicationRuntimeDetail{}, workloadsErr
+		}
+		items = append(items, domaindelivery.ApplicationRuntimeEnvironment{
+			ApplicationEnvironmentID: binding.ID,
+			EnvironmentID:            binding.EnvironmentID,
+			EnvironmentName:          environment.Name,
+			EnvironmentKey:           binding.EnvironmentKey,
+			ActionKind:               actionKindForBinding(binding, environment),
+			RequiresApproval:         requiresApproval(binding, environment),
+			ResourceSelector:         binding.ResourceSelector,
+			Targets:                  binding.Targets,
+			Workloads:                workloads,
+		})
+	}
+	return domaindelivery.ApplicationRuntimeDetail{
+		Application:  app,
+		Environments: items,
+	}, nil
+}
+
+func (s *Service) GetApplicationWorkloadRuntimeDetail(ctx context.Context, principal domainidentity.Principal, applicationID, bindingID, workloadName string) (domaindelivery.ApplicationWorkloadRuntimeDetail, error) {
+	app, err := s.applications.Get(ctx, principal, strings.TrimSpace(applicationID))
+	if err != nil {
+		return domaindelivery.ApplicationWorkloadRuntimeDetail{}, err
+	}
+	binding, err := s.catalog.GetApplicationEnvironment(ctx, principal, strings.TrimSpace(bindingID))
+	if err != nil {
+		return domaindelivery.ApplicationWorkloadRuntimeDetail{}, err
+	}
+	if binding.ApplicationID != app.ID {
+		return domaindelivery.ApplicationWorkloadRuntimeDetail{}, fmt.Errorf("application environment does not belong to application")
+	}
+	_, environments, bundles, tasks, builds, workflows, releases, err := s.loadDeliveryContext(ctx, principal, app.ID)
+	if err != nil {
+		return domaindelivery.ApplicationWorkloadRuntimeDetail{}, err
+	}
+	var environment *domaincatalog.Environment
+	for _, item := range environments {
+		if item.ID == binding.EnvironmentID {
+			copyItem := item
+			environment = &copyItem
+			break
+		}
+	}
+	workloads, err := s.listRuntimeWorkloadsForBinding(ctx, principal, app, binding, bundles, tasks, builds, workflows, releases)
+	if err != nil {
+		return domaindelivery.ApplicationWorkloadRuntimeDetail{}, err
+	}
+	var selected *domaindelivery.ApplicationRuntimeWorkload
+	for _, item := range workloads {
+		if item.WorkloadName == strings.TrimSpace(workloadName) {
+			copyItem := item
+			selected = &copyItem
+			break
+		}
+	}
+	if selected == nil {
+		return domaindelivery.ApplicationWorkloadRuntimeDetail{}, fmt.Errorf("workload not found")
+	}
+	deployment, err := s.targets.GetDeploymentDetail(ctx, principal, selected.ClusterID, selected.Namespace, selected.WorkloadName)
+	if err != nil {
+		return domaindelivery.ApplicationWorkloadRuntimeDetail{}, err
+	}
+	pods, err := s.targets.ListPods(ctx, principal, selected.ClusterID, selected.Namespace)
+	if err != nil {
+		return domaindelivery.ApplicationWorkloadRuntimeDetail{}, err
+	}
+	services, err := s.targets.ListServices(ctx, principal, selected.ClusterID, selected.Namespace)
+	if err != nil {
+		return domaindelivery.ApplicationWorkloadRuntimeDetail{}, err
+	}
+	ingresses, err := s.targets.ListIngresses(ctx, principal, selected.ClusterID, selected.Namespace)
+	if err != nil {
+		return domaindelivery.ApplicationWorkloadRuntimeDetail{}, err
+	}
+	return domaindelivery.ApplicationWorkloadRuntimeDetail{
+		Application: app,
+		Binding:     binding,
+		Environment: environment,
+		Workload:    *selected,
+		Deployment:  deployment,
+		Pods:        filterPodsBySelector(pods, deployment.Selector),
+		Services:    filterServicesBySelector(services, deployment.Selector),
+		Ingresses:   filterIngressesByServices(ingresses, filterServicesBySelector(services, deployment.Selector)),
 	}, nil
 }
 
@@ -647,6 +759,126 @@ func latestExecutionTaskForBinding(binding domaincatalog.ApplicationEnvironment,
 		}
 	}
 	return latestExecutionTaskForApplication(binding.ApplicationID, items)
+}
+
+func selectorMatchesLabels(selector map[string]string, labels map[string]string) bool {
+	if len(selector) == 0 {
+		return false
+	}
+	for key, value := range selector {
+		if strings.TrimSpace(key) == "" {
+			continue
+		}
+		if labels[key] != value {
+			return false
+		}
+	}
+	return true
+}
+
+func filterPodsBySelector(items []domainresource.PodView, selector map[string]string) []domainresource.PodView {
+	if len(selector) == 0 {
+		return nil
+	}
+	filtered := make([]domainresource.PodView, 0)
+	for _, item := range items {
+		if selectorMatchesLabels(selector, item.Labels) {
+			filtered = append(filtered, item)
+		}
+	}
+	return filtered
+}
+
+func filterServicesBySelector(items []domainresource.ServiceView, selector map[string]string) []domainresource.ServiceView {
+	if len(selector) == 0 {
+		return nil
+	}
+	filtered := make([]domainresource.ServiceView, 0)
+	for _, item := range items {
+		if selectorMatchesLabels(item.Selector, selector) || selectorMatchesLabels(selector, item.Selector) {
+			filtered = append(filtered, item)
+		}
+	}
+	return filtered
+}
+
+func filterIngressesByServices(items []domainresource.IngressView, services []domainresource.ServiceView) []domainresource.IngressView {
+	if len(services) == 0 {
+		return nil
+	}
+	serviceNames := make(map[string]struct{}, len(services))
+	for _, item := range services {
+		serviceNames[item.Name] = struct{}{}
+	}
+	filtered := make([]domainresource.IngressView, 0)
+	for _, item := range items {
+		for _, backend := range item.BackendServices {
+			if _, ok := serviceNames[backend]; ok {
+				filtered = append(filtered, item)
+				break
+			}
+		}
+	}
+	return filtered
+}
+
+func (s *Service) listRuntimeWorkloadsForBinding(
+	ctx context.Context,
+	principal domainidentity.Principal,
+	app domainapp.App,
+	binding domaincatalog.ApplicationEnvironment,
+	bundles []domaindelivery.ReleaseBundle,
+	tasks []domaindelivery.ExecutionTask,
+	builds []domainbuild.Record,
+	workflows []domainworkflow.Run,
+	releases []domainrelease.Record,
+) ([]domaindelivery.ApplicationRuntimeWorkload, error) {
+	workloads := make([]domaindelivery.ApplicationRuntimeWorkload, 0)
+	seen := make(map[string]struct{})
+	for _, target := range binding.Targets {
+		clusterID := strings.TrimSpace(target.ClusterID)
+		namespace := strings.TrimSpace(target.Namespace)
+		if clusterID == "" || namespace == "" {
+			continue
+		}
+		items, err := s.targets.ListDeployments(ctx, principal, clusterID, namespace)
+		if err != nil {
+			return nil, err
+		}
+		for _, item := range items {
+			if len(binding.ResourceSelector.MatchLabels) > 0 {
+				if !selectorMatchesLabels(binding.ResourceSelector.MatchLabels, item.Labels) {
+					continue
+				}
+			} else if strings.TrimSpace(item.Name) != strings.TrimSpace(target.WorkloadName) {
+				continue
+			}
+			key := fmt.Sprintf("%s/%s/%s", clusterID, namespace, item.Name)
+			if _, ok := seen[key]; ok {
+				continue
+			}
+			seen[key] = struct{}{}
+			workloads = append(workloads, domaindelivery.ApplicationRuntimeWorkload{
+				ApplicationEnvironmentID: binding.ID,
+				ClusterID:                clusterID,
+				Namespace:                namespace,
+				WorkloadKind:             "Deployment",
+				WorkloadName:             item.Name,
+				Labels:                   item.Labels,
+				DesiredReplicas:          item.DesiredReplicas,
+				ReadyReplicas:            item.ReadyReplicas,
+				UpdatedReplicas:          item.UpdatedReplicas,
+				AvailableReplicas:        item.Available,
+				BuildSource:              resolveBuildSource(app, binding.BuildPolicy.SourceID),
+				LatestBundle:             latestBundleForBinding(binding, bundles),
+				LatestExecutionTask:      latestExecutionTaskForBinding(binding, tasks),
+				LatestBuild:              latestBuildForBinding(binding, builds),
+				LatestWorkflow:           latestWorkflowForBinding(binding, workflows),
+				LatestRelease:            latestReleaseForBinding(binding, releases),
+			})
+		}
+	}
+	return workloads, nil
 }
 
 func matchesBindingTarget(binding domaincatalog.ApplicationEnvironment, clusterID, namespace, workloadName string) bool {

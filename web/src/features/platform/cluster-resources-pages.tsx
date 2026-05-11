@@ -5,8 +5,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { AdminTable } from '@/components/admin-table'
 import { useI18n } from '@/i18n'
+import { PageHeader } from '@/components/page-header'
 import { PlatformClusterScopeHint } from '@/components/platform-cluster-scope-hint'
-import { PlatformScopeToolbar } from '@/components/platform-scope-toolbar'
 import { StatusTag } from '@/components/status-tag'
 import { api } from '@/services/api-client'
 import { usePlatformScopeStore } from '@/stores/platform-scope-store'
@@ -145,6 +145,10 @@ export function ClusterNodesPage() {
 
   return (
     <div className="kc-page">
+      <PageHeader
+        title={t('page.nodes.title', 'Node Resources')}
+        description={t('page.nodes.desc', 'Inspect node resources in the current cluster scope and edit labels / taints.')}
+      />
       <PlatformClusterScopeHint resourceLabel="节点" />
       {!clusterId ? (
         <Empty description={t('common.pleaseSelectCluster', 'Please select a cluster')} />
@@ -169,12 +173,7 @@ export function ClusterNodesPage() {
             pageSize={10}
             expandedRowRender={(record: Node) => <NodeResourcePanel node={record} />}
             hideExpandedColumn={false}
-            toolbar={(
-              <div className="kc-workload-table-filters">
-                <PlatformScopeToolbar embedded showLabel={false} clusterWidth={180} namespaceWidth={180} />
-              </div>
-            )}
-          />
+        />
         </>
       )}
 
@@ -362,6 +361,10 @@ export function ClusterNamespacesPage() {
 
   return (
     <div className="kc-page">
+      <PageHeader
+        title={t('page.namespaces.title', 'Namespaces')}
+        description={t('page.namespaces.desc', 'Manage namespaces in the current cluster scope and jump into related workload views.')}
+      />
       {!clusterId ? (
         <Empty description={t('common.pleaseSelectClusterShort', 'Select a cluster')} />
       ) : (
@@ -377,11 +380,6 @@ export function ClusterNamespacesPage() {
           rowKey="name"
           loading={namespacesQuery.isLoading}
           pageSize={10}
-          toolbar={(
-            <div className="kc-workload-table-filters">
-              <PlatformScopeToolbar embedded showLabel={false} clusterWidth={180} namespaceWidth={180} />
-            </div>
-          )}
           toolbarExtra={(
             <div className="kc-page-toolbar">
               <Button

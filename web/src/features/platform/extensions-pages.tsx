@@ -27,7 +27,6 @@ import { AdminTable } from '@/components/admin-table'
 import { useI18n } from '@/i18n'
 import { PageHeader } from '@/components/page-header'
 import { PlatformClusterScopeHint } from '@/components/platform-cluster-scope-hint'
-import { PlatformScopeToolbar } from '@/components/platform-scope-toolbar'
 import { StatusTag } from '@/components/status-tag'
 import { YamlDraftDiffEditor } from '@/components/yaml-draft-diff-editor'
 import { buildClusterScopedPath } from '@/features/platform/platform-scope-query'
@@ -743,11 +742,6 @@ export function CRDPage() {
             <Text type="secondary">{t('page.extensions.crd.desc', 'Review CRD API groups and definition names in the current cluster, then open one group to inspect its served kinds and resources.')}</Text>
           </div>
         )}
-        toolbar={(
-          <div className="kc-workload-table-filters">
-            <PlatformScopeToolbar embedded showLabel={false} clusterWidth={180} namespaceWidth={180} />
-          </div>
-        )}
       />
     </div>
   )
@@ -801,7 +795,6 @@ export function CRDApiGroupDetailPage() {
           </Button>
         )}
       />
-      <PlatformScopeToolbar />
       <PlatformClusterScopeHint resourceLabel="CRD" />
 
       {!clusterId ? (
@@ -939,7 +932,6 @@ export function HelmReleasesPage() {
   return (
     <div className="kc-page">
       <PageHeader title={t('page.extensions.helm.title', 'Helm Releases')} description={t('page.extensions.helm.desc', 'Inspect Helm release status, charts, and versions by cluster and namespace.')} />
-      <PlatformScopeToolbar />
       <AdminTable
         columns={columns}
         dataSource={data?.data ?? []}
@@ -1056,8 +1048,6 @@ export function HelmReleaseDetailPage() {
           </Button>
         )}
       />
-      <PlatformScopeToolbar />
-
       {!clusterId || !detailNamespace ? (
         <Card className="kc-detail-card" style={{ marginTop: 0 }}>
           <Empty description={t('platformScope.clusterPlaceholder', 'Select cluster')} />

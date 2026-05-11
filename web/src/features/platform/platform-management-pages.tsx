@@ -8,7 +8,6 @@ import { useResourceActions } from '@/components/resource-actions'
 import { BooleanTag } from '@/components/status-tag'
 import { PageHeader } from '@/components/page-header'
 import { hasAllowedAction } from '@/features/auth/permission-snapshot'
-import { PlatformScopeToolbar } from '@/components/platform-scope-toolbar'
 import { buildClusterScopedPath } from '@/features/platform/platform-scope-query'
 import {
   CONFIGMAP_DEFAULT_TEMPLATE,
@@ -485,7 +484,6 @@ function ResourceListPage<T extends Record<string, any>>({
   return (
     <div className="kc-page">
       <PageHeader title={localize(localeCode, title)} description={localize(localeCode, buildInspectDescription(titleZh, titleEn))} />
-      <PlatformScopeToolbar />
       <ResourceTableCard<T>
         columns={columns}
         resourcePath={resourcePath}
@@ -665,7 +663,6 @@ function RBACListPage<T extends { allowedActions?: string[] }>({
         scroll={{ x: 'max-content' }}
         toolbar={(
           <div className="kc-workload-table-filters">
-            <PlatformScopeToolbar embedded showLabel={false} clusterWidth={180} namespaceWidth={180} />
             <Input
               className="kc-platform-compact-field"
               size="small"
@@ -1054,7 +1051,6 @@ export function ConfigurationConfigMapsPage() {
           </Button>
         )}
       />
-      <PlatformScopeToolbar />
       <ResourceTableCard<ConfigMapResource>
         columns={configMapColumns}
         resourcePath="configuration/configmaps"
@@ -1092,7 +1088,6 @@ export function ConfigurationSecretsPage() {
           </Button>
         )}
       />
-      <PlatformScopeToolbar />
       <ResourceTableCard<SecretResource>
         columns={secretColumns}
         resourcePath="configuration/secrets"
@@ -1356,7 +1351,6 @@ export function NetworkPortForwardPage() {
           title={localeCode === 'zh_CN' ? 'Port Forward' : 'Port Forward'}
           description={localeCode === 'zh_CN' ? '查看当前已登记的 Port Forward 会话。' : 'Inspect registered port forward sessions.'}
         />
-        <PlatformScopeToolbar />
         <Empty description={localeCode === 'zh_CN' ? '请选择集群' : 'Select a cluster'} />
       </div>
     )
@@ -1373,7 +1367,6 @@ export function NetworkPortForwardPage() {
           </Button>
         )}
       />
-      <PlatformScopeToolbar />
       <AdminTable
         columns={columns}
         dataSource={query.data?.data ?? []}

@@ -5,7 +5,6 @@ import { useQuery } from '@tanstack/react-query'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { AdminTable } from '@/components/admin-table'
 import { PlatformClusterScopeHint } from '@/components/platform-cluster-scope-hint'
-import { PlatformScopeToolbar } from '@/components/platform-scope-toolbar'
 import { ResourceEventsTimeline } from '@/components/resource-events-timeline'
 import { ResourceMetricsPanel } from '@/components/resource-metrics-panel'
 import { useResourceActions } from '@/components/resource-actions'
@@ -192,7 +191,8 @@ function StorageListTitle({ title, description, clusterScopedHint }: { title: st
 }
 
 function StorageListToolbar({ clusterScoped = false }: { clusterScoped?: boolean }) {
-  return <PlatformScopeToolbar embedded showLabel={false} clusterWidth={180} namespaceWidth={clusterScoped ? 180 : 220} />
+  void clusterScoped
+  return null
 }
 
 function StorageDetailHeader({ title, description, actions }: { title: string; description: string; actions?: React.ReactNode }) {
@@ -254,7 +254,6 @@ export function NetworkServicesPage() {
   return (
     <div className="kc-page">
       <StorageDetailHeader title={t('page.network.services.title', 'Services')} description={t('page.network.services.desc', 'Inspect service exposure, access addresses, and ports by cluster and namespace.')} />
-      <PlatformScopeToolbar />
       <AdminTable columns={columns} dataSource={data?.data ?? []} rowKey="name" loading={isLoading} />
     </div>
   )
@@ -344,7 +343,6 @@ export function ServiceDetailPage() {
         description={localeCode === 'zh_CN' ? '查看服务暴露信息、后端 Pod、事件与指标。' : 'Inspect service exposure, backend pods, events, and metrics.'}
         actions={<Button variant="outlined" onClick={() => downloadJSON(`service-diagnostics-${service.name}.json`, exportPayload)}>{localeCode === 'zh_CN' ? '导出诊断' : 'Export Diagnostics'}</Button>}
       />
-      <PlatformScopeToolbar />
       <Tabs items={[
         {
           key: 'overview',

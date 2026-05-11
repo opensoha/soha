@@ -8,6 +8,8 @@ import (
 )
 
 const (
+	PermWorkspaceApplicationView        = "workspace.application.view"
+	PermWorkspaceResourceView           = "workspace.resource.view"
 	PermOverviewView                    = "overview.view"
 	PermPlatformNodesView               = "platform.nodes.view"
 	PermPlatformNamespacesView          = "platform.namespaces.view"
@@ -101,6 +103,8 @@ var (
 
 func allPermissionKeys() []string {
 	return []string{
+		PermWorkspaceApplicationView,
+		PermWorkspaceResourceView,
 		PermOverviewView,
 		PermPlatformNodesView,
 		PermPlatformNamespacesView,
@@ -191,6 +195,8 @@ func allPermissionKeys() []string {
 func defaultRolePermissions() map[string][]string {
 	admin := allPermissionKeys()
 	ops := []string{
+		PermWorkspaceApplicationView,
+		PermWorkspaceResourceView,
 		PermOverviewView,
 		PermPlatformNodesView,
 		PermPlatformNamespacesView,
@@ -266,6 +272,8 @@ func defaultRolePermissions() map[string][]string {
 		PermSettingsBrandingManage,
 	}
 	developer := []string{
+		PermWorkspaceApplicationView,
+		PermWorkspaceResourceView,
 		PermOverviewView,
 		PermPlatformNodesView,
 		PermPlatformNamespacesView,
@@ -299,6 +307,8 @@ func defaultRolePermissions() map[string][]string {
 		PermDeliveryReleasesTrigger,
 	}
 	readonly := []string{
+		PermWorkspaceApplicationView,
+		PermWorkspaceResourceView,
 		PermOverviewView,
 		PermPlatformNodesView,
 		PermPlatformNamespacesView,
@@ -319,6 +329,7 @@ func defaultRolePermissions() map[string][]string {
 		PermObserveAIView,
 	}
 	auditor := []string{
+		PermWorkspaceResourceView,
 		PermOverviewView,
 		PermObserveMonitoringView,
 		PermObserveAlertsView,

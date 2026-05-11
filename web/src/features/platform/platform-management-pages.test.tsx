@@ -48,6 +48,7 @@ vi.mock('@/services/api-client', () => ({
 
 vi.mock('@/components/platform-scope-toolbar', () => ({
   PlatformScopeToolbar: () => <div data-testid="scope-toolbar">scope-toolbar</div>,
+  ResourceWorkspaceScopeBar: () => <div data-testid="resource-workspace-scopebar">resource-workspace-scopebar</div>,
 }))
 
 vi.mock('@/components/admin-table', () => ({

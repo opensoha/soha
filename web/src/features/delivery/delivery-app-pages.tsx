@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
-import { App, Button, Card, Descriptions, Form, Input, Modal, Popconfirm, Select, Space, Switch, Tag, Typography } from 'antd'
-import { DeleteOutlined, EditOutlined, EyeOutlined, PlayCircleOutlined, PlusOutlined } from '@ant-design/icons'
+import { App, Button, Card, Descriptions, Empty, Form, Input, Modal, Popconfirm, Select, Space, Switch, Tag, Typography } from 'antd'
+import { CodeOutlined, DeleteOutlined, EditOutlined, EyeOutlined, PlayCircleOutlined, PlusOutlined } from '@ant-design/icons'
 import type { TableColumnsType } from 'antd'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams } from 'react-router-dom'
@@ -17,7 +17,6 @@ import type {
   ApiResponse,
   BuildSource,
   BuildTemplate,
-  BusinessLine,
   DeliveryApplication,
   DeliveryApplicationDetail,
   ExecutionArtifact,
@@ -30,6 +29,13 @@ import type {
 const { Text } = Typography
 type ColumnProps<T> = TableColumnsType<T>[number]
 type ApplicationBindingRow = NonNullable<DeliveryApplicationDetail['bindings']>[number]
+type ApplicationWorkspaceCard = {
+  app: DeliveryApplication
+  bindings: ReleaseBoardEntry[]
+  lastStatus: string
+  activeTargets: number
+  latestEnvironmentName: string
+}
 
 function parseJSONObject(raw: unknown, field: string) {
   const value = typeof raw === 'string' ? raw.trim() : ''
@@ -42,44 +48,6 @@ function parseJSONObject(raw: unknown, field: string) {
     return parsed
   } catch {
     throw new Error(`${field} 需要是合法 JSON 对象`)
-  }
-}
-
-function createBuildSource(type: BuildSource['type'], isDefault = false): BuildSource {
-  switch (type) {
-    case 'platform_build_template':
-      return {
-        id: '',
-        name: 'Platform Template',
-        type,
-        enabled: true,
-        isDefault,
-        buildImage: '',
-        defaultTag: '',
-        config: { buildTemplateId: '', contextDir: '.' },
-      }
-    case 'external_pipeline':
-      return {
-        id: '',
-        name: 'External Pipeline',
-        type,
-        enabled: true,
-        isDefault,
-        buildImage: '',
-        defaultTag: '',
-        config: { provider: '', pipelineKey: '' },
-      }
-    default:
-      return {
-        id: '',
-        name: 'Repository Dockerfile',
-        type: 'repo_dockerfile',
-        enabled: true,
-        isDefault,
-        buildImage: '',
-        defaultTag: '',
-        config: { contextDir: '.', dockerfilePath: 'Dockerfile', builderKind: 'docker' },
-      }
   }
 }
 
@@ -97,11 +65,45 @@ function summarizeBuildSource(source?: BuildSource) {
   }
 }
 
+function renderTargetSummary(targets?: ApplicationBindingRow['targets']) {
+  if (!targets?.length) {
+    return '-'
+  }
+  const visibleTargets = targets.slice(0, 2)
+  return (
+    <Space direction="vertical" size={2}>
+      {visibleTargets.map((target, index) => (
+        <Text key={`${target.clusterId}-${target.namespace}-${target.workloadName}-${index}`}>
+          {`${target.clusterId} / ${target.namespace} / ${target.workloadName}`}
+        </Text>
+      ))}
+      {targets.length > visibleTargets.length ? (
+        <Text type="secondary">{`+${targets.length - visibleTargets.length}`}</Text>
+      ) : null}
+    </Space>
+  )
+}
+
 function buildStatus(entry?: ReleaseBoardEntry) {
   if (entry?.latestRelease?.status) return entry.latestRelease.status
   if (entry?.latestWorkflow?.status) return entry.latestWorkflow.status
   if (entry?.latestBuild?.status) return entry.latestBuild.status
   return 'unknown'
+}
+
+function summarizeApplicationRole(app: DeliveryApplication) {
+  const language = app.language ? app.language.toUpperCase() : 'APP'
+  const group = app.group || '业务应用'
+  return `${language} · ${group}`
+}
+
+function summarizeEnvironmentCoverage(bindings: ReleaseBoardEntry[]) {
+  const names = Array.from(
+    new Set(bindings.map((item) => item.environmentName || item.environmentKey || item.environmentId).filter(Boolean)),
+  )
+  if (names.length === 0) return '尚未绑定环境'
+  if (names.length === 1) return names[0]
+  return `${names.slice(0, 2).join(' / ')}${names.length > 2 ? ` +${names.length - 2}` : ''}`
 }
 
 function canCancelExecutionTask(task?: ExecutionTask | null) {
@@ -113,35 +115,18 @@ function canRetryExecutionTask(task?: ExecutionTask | null) {
 }
 
 export function ApplicationsPage() {
-  const { t } = useI18n()
-  const { message } = App.useApp()
   const navigate = useNavigate()
-  const queryClient = useQueryClient()
-  const permissionSnapshotQuery = usePermissionSnapshot()
-  const permissionSnapshot = permissionSnapshotQuery.data?.data
-  const [form] = Form.useForm<Record<string, unknown>>()
-  const [modalVisible, setModalVisible] = useState(false)
-  const [editing, setEditing] = useState<DeliveryApplication | null>(null)
-  const [buildSources, setBuildSources] = useState<BuildSource[]>([])
+  const [activeGroup, setActiveGroup] = useState<string>('all')
 
   const applicationsQuery = useQuery({
     queryKey: ['applications'],
     queryFn: () => api.get<ApiResponse<DeliveryApplication[]>>('/applications'),
   })
-  const businessLinesQuery = useQuery({
-    queryKey: ['business-lines'],
-    queryFn: () => api.get<ApiResponse<BusinessLine[]>>('/business-lines'),
-  })
   const releaseBoardQuery = useQuery({
     queryKey: ['delivery-release-board'],
     queryFn: () => api.get<ApiResponse<ReleaseBoardEntry[]>>('/delivery/release-board'),
   })
-  const buildTemplatesQuery = useQuery({
-    queryKey: ['build-templates'],
-    queryFn: () => api.get<ApiResponse<BuildTemplate[]>>('/build-templates'),
-  })
 
-  const businessLineMap = Object.fromEntries((businessLinesQuery.data?.data ?? []).map((item) => [item.id, item.name]))
   const boardByApp = useMemo(() => {
     const items = releaseBoardQuery.data?.data ?? []
     return items.reduce<Record<string, ReleaseBoardEntry[]>>((acc, item) => {
@@ -149,184 +134,106 @@ export function ApplicationsPage() {
       return acc
     }, {})
   }, [releaseBoardQuery.data])
-
-  const canCreateApplication = hasPermission(permissionSnapshot, 'delivery.application.create')
-  const canUpdateApplication = hasPermission(permissionSnapshot, 'delivery.application.update')
-  const canDeleteApplication = hasPermission(permissionSnapshot, 'delivery.application.delete')
-
-  const createMutation = useMutation({
-    mutationFn: (values: Record<string, unknown>) => api.post('/applications', values),
-    onSuccess: () => {
-      message.success('应用创建成功')
-      queryClient.invalidateQueries({ queryKey: ['applications'] })
-      queryClient.invalidateQueries({ queryKey: ['delivery-release-board'] })
-      setModalVisible(false)
-    },
-    onError: (err: Error) => message.error(err.message),
-  })
-  const updateMutation = useMutation({
-    mutationFn: ({ id, values }: { id: string; values: Record<string, unknown> }) => api.put(`/applications/${id}`, values),
-    onSuccess: () => {
-      message.success('应用更新成功')
-      queryClient.invalidateQueries({ queryKey: ['applications'] })
-      queryClient.invalidateQueries({ queryKey: ['delivery-release-board'] })
-      setModalVisible(false)
-      setEditing(null)
-    },
-    onError: (err: Error) => message.error(err.message),
-  })
-  const deleteMutation = useMutation({
-    mutationFn: (id: string) => api.delete(`/applications/${id}`),
-    onSuccess: () => {
-      message.success('应用已删除')
-      queryClient.invalidateQueries({ queryKey: ['applications'] })
-      queryClient.invalidateQueries({ queryKey: ['delivery-release-board'] })
-    },
-    onError: (err: Error) => message.error(err.message),
-  })
-
-  const columns: ColumnProps<DeliveryApplication>[] = [
-    { title: '名称', dataIndex: 'name' },
-    { title: 'Key', dataIndex: 'key' },
-    { title: '分组', dataIndex: 'group' },
-    { title: '业务线', dataIndex: 'businessLineId', render: (value: string) => businessLineMap[value] || value || '-' },
-    { title: '默认构建来源', dataIndex: 'buildSources', render: (value: BuildSource[]) => summarizeBuildSource((value ?? []).find((item) => item.isDefault)) },
-    { title: '环境覆盖', dataIndex: 'id', render: (value: string) => boardByApp[value]?.length ?? 0 },
-    { title: '最近状态', dataIndex: 'id', render: (value: string) => <StatusTag value={buildStatus(boardByApp[value]?.[0])} /> },
-    { title: '仓库路径', dataIndex: 'repositoryPath', ellipsis: true },
-    { ...tableColumnPresets.datetime, title: '更新时间', dataIndex: 'updatedAt', render: (value: string) => formatDateTime(value) },
-    {
-      ...tableColumnPresets.action,
-      title: '操作',
-      dataIndex: 'id',
-      render: (_: unknown, record: DeliveryApplication) => (
-        <Space>
-          <Button icon={<EyeOutlined />} size="small" type="text" onClick={() => navigate(`/applications/${record.id}`)} />
-          {canUpdateApplication ? <Button icon={<EditOutlined />} size="small" type="text" onClick={() => { setEditing(record); setBuildSources(record.buildSources ?? []); setModalVisible(true) }} /> : null}
-          {canDeleteApplication ? <Popconfirm title="确认删除？" onConfirm={() => deleteMutation.mutate(record.id)}><Button icon={<DeleteOutlined />} size="small" type="text" danger /></Popconfirm> : null}
-        </Space>
-      ),
-    },
-  ]
+  const applicationCards = useMemo<ApplicationWorkspaceCard[]>(() => {
+    return (applicationsQuery.data?.data ?? []).map((app) => {
+      const bindings = boardByApp[app.id] ?? []
+      return {
+        app,
+        bindings,
+        lastStatus: buildStatus(bindings[0]),
+        activeTargets: bindings.reduce((sum, item) => sum + (item.targets?.length ?? 0), 0),
+        latestEnvironmentName: summarizeEnvironmentCoverage(bindings),
+      }
+    })
+  }, [applicationsQuery.data, boardByApp])
+  const groupOptions = useMemo(() => {
+    const groups = Array.from(new Set(applicationCards.map(({ app }) => app.group).filter(Boolean)))
+    return ['all', ...groups]
+  }, [applicationCards])
+  const visibleApplicationCards = useMemo(
+    () => applicationCards.filter(({ app }) => activeGroup === 'all' || app.group === activeGroup),
+    [activeGroup, applicationCards],
+  )
 
   return (
     <div className="kc-page">
-      <PageHeader
-        title={t('page.delivery.applications.title', 'Applications')}
-        description="管理应用仓库、多构建来源与最近交付状态。"
-        actions={canCreateApplication ? <Button icon={<PlusOutlined />} type="primary" onClick={() => { setEditing(null); setBuildSources([createBuildSource('repo_dockerfile', true)]); setModalVisible(true) }}>新建应用</Button> : null}
-      />
-      <Card className="kc-scope-hint-card">
-        <Text type="secondary">应用中心现在显示默认构建来源、环境覆盖矩阵和最近执行状态；环境级工作流与发布动作通过应用环境绑定接入。</Text>
-      </Card>
-      <AdminTable columns={columns} dataSource={applicationsQuery.data?.data ?? []} rowKey="id" loading={applicationsQuery.isLoading || releaseBoardQuery.isLoading} />
-      <Modal title={editing ? '编辑应用' : '新建应用'} open={modalVisible} onCancel={() => { setModalVisible(false); setEditing(null) }} footer={null} destroyOnClose width={860}>
-        <Form
-          form={form}
-          key={editing?.id ?? 'create-application'}
-          layout="vertical"
-          initialValues={editing ? { ...editing, enabled: editing.enabled } : { enabled: true, language: 'go', defaultBranch: 'main' }}
-          onFinish={(values) => {
-            const payload = { ...values, buildSources }
-            if (editing) {
-              updateMutation.mutate({ id: editing.id, values: payload })
-            } else {
-              createMutation.mutate(payload)
-            }
-          }}
-        >
-          <Form.Item name="name" label="应用名称" rules={[{ required: true, message: '请输入应用名称' }]}><Input /></Form.Item>
-          <Form.Item name="key" label="应用 Key" rules={[{ required: true, message: '请输入应用 Key' }]}><Input /></Form.Item>
-          <Form.Item name="group" label="应用分组" rules={[{ required: true, message: '请输入应用分组' }]}><Input /></Form.Item>
-          <Form.Item name="businessLineId" label="业务线" rules={[{ required: true, message: '请选择业务线' }]}><Select options={(businessLinesQuery.data?.data ?? []).map((item) => ({ value: item.id, label: item.name }))} /></Form.Item>
-          <Form.Item name="language" label="语言"><Select options={[{ value: 'go', label: 'Go' }, { value: 'java', label: 'Java' }, { value: 'node', label: 'Node.js' }, { value: 'python', label: 'Python' }]} /></Form.Item>
-          <Form.Item name="repositoryPath" label="代码仓库路径"><Input /></Form.Item>
-          <Form.Item name="defaultBranch" label="默认分支"><Input /></Form.Item>
-          <Form.Item name="enabled" label="启用" valuePropName="checked"><Switch /></Form.Item>
-          <Card title="构建来源" size="small">
-            <Space direction="vertical" style={{ width: '100%' }}>
-              {buildSources.map((item, index) => (
-                <Card
-                  key={`${item.id || 'new'}-${index}`}
-                  size="small"
-                  extra={<Button type="text" danger size="small" onClick={() => setBuildSources((current) => current.filter((_, currentIndex) => currentIndex !== index))}>删除</Button>}
-                >
-                  <Space direction="vertical" style={{ width: '100%' }}>
-                    <Input value={item.name} placeholder="来源名称" onChange={(event) => setBuildSources((current) => current.map((source, currentIndex) => currentIndex === index ? { ...source, name: event.target.value } : source))} />
-                    <Select
-                      value={item.type}
-                      options={[
-                        { value: 'repo_dockerfile', label: 'Repo Dockerfile' },
-                        { value: 'platform_build_template', label: 'Platform Template' },
-                        { value: 'external_pipeline', label: 'External Pipeline' },
-                      ]}
-                      onChange={(value) => setBuildSources((current) => current.map((source, currentIndex) => currentIndex === index ? { ...createBuildSource(value as BuildSource['type'], source.isDefault), id: source.id, enabled: source.enabled } : source))}
-                    />
-                    <Input value={item.buildImage} placeholder="镜像地址" onChange={(event) => setBuildSources((current) => current.map((source, currentIndex) => currentIndex === index ? { ...source, buildImage: event.target.value } : source))} />
-                    <Input value={item.defaultTag} placeholder="默认 Tag" onChange={(event) => setBuildSources((current) => current.map((source, currentIndex) => currentIndex === index ? { ...source, defaultTag: event.target.value } : source))} />
-                    <Input value={String(item.config?.workspacePath ?? '')} placeholder="Agent Workspace Path (可选)" onChange={(event) => setBuildSources((current) => current.map((source, currentIndex) => currentIndex === index ? { ...source, config: { ...source.config, workspacePath: event.target.value } } : source))} />
-                    <Input value={String(item.config?.repositoryURL ?? item.config?.repositoryUrl ?? '')} placeholder="Repository URL (可选)" onChange={(event) => setBuildSources((current) => current.map((source, currentIndex) => currentIndex === index ? { ...source, config: { ...source.config, repositoryURL: event.target.value } } : source))} />
-                    {item.type === 'repo_dockerfile' ? (
-                      <>
-                        <Input value={String(item.config?.contextDir ?? '.')} placeholder="构建上下文目录" onChange={(event) => setBuildSources((current) => current.map((source, currentIndex) => currentIndex === index ? { ...source, config: { ...source.config, contextDir: event.target.value } } : source))} />
-                        <Input value={String(item.config?.dockerfilePath ?? 'Dockerfile')} placeholder="Dockerfile 路径" onChange={(event) => setBuildSources((current) => current.map((source, currentIndex) => currentIndex === index ? { ...source, config: { ...source.config, dockerfilePath: event.target.value } } : source))} />
-                        <Select
-                          value={String(item.config?.builderKind ?? 'docker')}
-                          options={[{ value: 'docker', label: 'docker' }, { value: 'buildx', label: 'buildx' }, { value: 'kaniko', label: 'kaniko' }]}
-                          onChange={(value) => setBuildSources((current) => current.map((source, currentIndex) => currentIndex === index ? { ...source, config: { ...source.config, builderKind: value } } : source))}
-                        />
-                      </>
-                    ) : null}
-                    {item.type === 'platform_build_template' ? (
-                      <>
-                        <Select
-                          value={String(item.config?.buildTemplateId ?? '') || undefined}
-                          placeholder="选择构建模板"
-                          options={(buildTemplatesQuery.data?.data ?? []).map((template) => ({ value: template.id, label: template.name }))}
-                          onChange={(value) => setBuildSources((current) => current.map((source, currentIndex) => currentIndex === index ? { ...source, config: { ...source.config, buildTemplateId: value } } : source))}
-                        />
-                        <Input value={String(item.config?.contextDir ?? '.')} placeholder="构建上下文目录" onChange={(event) => setBuildSources((current) => current.map((source, currentIndex) => currentIndex === index ? { ...source, config: { ...source.config, contextDir: event.target.value } } : source))} />
-                        <Input.TextArea rows={4} value={JSON.stringify(item.config?.variables ?? {}, null, 2)} placeholder="模板变量(JSON)" onChange={(event) => {
-                          try {
-                            const next = parseJSONObject(event.target.value, '模板变量')
-                            setBuildSources((current) => current.map((source, currentIndex) => currentIndex === index ? { ...source, config: { ...source.config, variables: next } } : source))
-                          } catch {
-                            return
-                          }
-                        }} />
-                      </>
-                    ) : null}
-                    {item.type === 'external_pipeline' ? (
-                      <>
-                        <Input value={String(item.config?.provider ?? '')} placeholder="Pipeline Provider" onChange={(event) => setBuildSources((current) => current.map((source, currentIndex) => currentIndex === index ? { ...source, config: { ...source.config, provider: event.target.value } } : source))} />
-                        <Input value={String(item.config?.pipelineKey ?? '')} placeholder="Pipeline Key" onChange={(event) => setBuildSources((current) => current.map((source, currentIndex) => currentIndex === index ? { ...source, config: { ...source.config, pipelineKey: event.target.value } } : source))} />
-                        <Input.TextArea rows={4} value={JSON.stringify(item.config?.triggerConfig ?? {}, null, 2)} placeholder="触发参数(JSON)" onChange={(event) => {
-                          try {
-                            const next = parseJSONObject(event.target.value, '触发参数')
-                            setBuildSources((current) => current.map((source, currentIndex) => currentIndex === index ? { ...source, config: { ...source.config, triggerConfig: next } } : source))
-                          } catch {
-                            return
-                          }
-                        }} />
-                      </>
-                    ) : null}
-                    <Space>
-                      <Button size="small" type={item.isDefault ? 'primary' : 'default'} onClick={() => setBuildSources((current) => current.map((source, currentIndex) => ({ ...source, isDefault: currentIndex === index })))}>设为默认</Button>
-                      <Button size="small" onClick={() => setBuildSources((current) => current.map((source, currentIndex) => currentIndex === index ? { ...source, enabled: !source.enabled } : source))}>{item.enabled ? '停用' : '启用'}</Button>
-                      <Tag>{summarizeBuildSource(item)}</Tag>
-                    </Space>
-                  </Space>
-                </Card>
-              ))}
-              <Button onClick={() => setBuildSources((current) => [...current, createBuildSource('repo_dockerfile', current.length === 0)])}>新增构建来源</Button>
-            </Space>
-          </Card>
-          <div className="kc-form-actions">
-            <Button onClick={() => setModalVisible(false)}>取消</Button>
-            <Button htmlType="submit" type="primary" loading={createMutation.isPending || updateMutation.isPending}>保存</Button>
+      <section className="kc-page-section">
+        <div className="kc-application-center-shell">
+          <div className="kc-application-center-header">
+            <div className="kc-application-center-header__main">
+              <h2 className="kc-application-center-header__title">应用中心</h2>
+              <Text type="secondary">按应用查看构建来源、环境覆盖，并进入对应应用页。</Text>
+              <div className="kc-application-group-tags">
+                {groupOptions.map((group) => (
+                  <Tag
+                    key={group}
+                    className={`kc-application-group-tag ${activeGroup === group ? 'is-active' : ''}`}
+                    variant="filled"
+                    onClick={() => setActiveGroup(group)}
+                  >
+                    {group === 'all' ? '全部' : group}
+                  </Tag>
+                ))}
+              </div>
+            </div>
+            <Button type="primary" icon={<PlusOutlined />} onClick={() => navigate('/application-management')}>
+              新建应用
+            </Button>
           </div>
-        </Form>
-      </Modal>
+        </div>
+      </section>
+
+      <section className="kc-page-section">
+        <div className="kc-application-card-grid">
+          {visibleApplicationCards.length > 0 ? visibleApplicationCards.map(({ app, bindings, lastStatus, activeTargets, latestEnvironmentName }) => {
+            const defaultBuildSource = (app.buildSources ?? []).find((item) => item.isDefault)
+            return (
+              <Card
+                key={app.id}
+                className="kc-application-card"
+                hoverable
+                onClick={() => navigate(`/applications/${app.id}`)}
+                actions={[
+                  <Button key="detail" type="link" icon={<EyeOutlined />} onClick={(event) => { event.stopPropagation(); navigate(`/applications/${app.id}`) }}>进入应用</Button>,
+                ]}
+              >
+                <div className="kc-application-card__header">
+                  <div className="kc-application-card__title-wrap">
+                    <div className="kc-application-card__title-row">
+                      <h3 className="kc-application-card__title">{app.name}</h3>
+                      <StatusTag value={lastStatus} />
+                    </div>
+                    <Text type="secondary">{summarizeApplicationRole(app)}</Text>
+                  </div>
+                  <div className="kc-application-card__meta-chip">
+                    <CodeOutlined />
+                    <span>{summarizeBuildSource(defaultBuildSource)}</span>
+                  </div>
+                </div>
+
+                <div className="kc-application-card__stats">
+                  <div className="kc-application-card__stat">
+                    <span className="kc-application-card__stat-label">环境覆盖</span>
+                    <span className="kc-application-card__stat-value">{bindings.length || app.environmentCount || 0}</span>
+                  </div>
+                  <div className="kc-application-card__stat">
+                    <span className="kc-application-card__stat-label">部署目标</span>
+                    <span className="kc-application-card__stat-value">{activeTargets}</span>
+                  </div>
+                  <div className="kc-application-card__stat is-wide">
+                    <span className="kc-application-card__stat-label">环境描述</span>
+                    <span className="kc-application-card__stat-value">{latestEnvironmentName}</span>
+                  </div>
+                </div>
+              </Card>
+            )
+          }) : (
+            <Card className="kc-application-empty-card">
+              <Empty description={activeGroup === 'all' ? '当前还没有应用，先创建第一个应用并接入仓库、构建来源和环境。' : '当前分组下还没有应用。'} />
+            </Card>
+          )}
+        </div>
+      </section>
     </div>
   )
 }
@@ -377,6 +284,7 @@ export function ApplicationDetailPage() {
           loading={detailQuery.isLoading}
           columns={[
             { title: '环境', dataIndex: 'environmentName', render: (value: string, record: ApplicationBindingRow) => value || record.environmentKey || record.environmentId },
+            { title: '部署目标', dataIndex: 'targets', render: (value: ApplicationBindingRow['targets']) => renderTargetSummary(value) },
             { title: '动作', dataIndex: 'actionKind', render: (value: string) => value || 'deploy' },
             { title: '构建来源', dataIndex: 'buildSource', render: (value: BuildSource | undefined) => summarizeBuildSource(value) },
             { title: '目标数', dataIndex: 'targetCount' },

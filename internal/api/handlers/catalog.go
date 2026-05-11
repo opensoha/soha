@@ -423,6 +423,9 @@ func mapApplicationEnvironmentInput(req dto.ApplicationEnvironmentRequest) domai
 			RolloutTimeoutSeconds: req.ReleasePolicy.RolloutTimeoutSeconds,
 			VerificationMode:      req.ReleasePolicy.VerificationMode,
 		},
+		ResourceSelector: domaincatalog.ResourceSelector{
+			MatchLabels: req.ResourceSelector.MatchLabels,
+		},
 		Targets: targets,
 	}
 }
