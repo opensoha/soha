@@ -10,6 +10,7 @@ docs/.vitepress/dist/
 docs/.vitepress/cache/
 bin/
 tmp/
+.dev/
 
 # IDE / OS
 .DS_Store

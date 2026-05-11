@@ -425,7 +425,7 @@ func New(cfg cfgpkg.Config, logger *zap.Logger, deps Dependencies) *http.Server 
 }
 
 func registerDocs(router *gin.Engine, logger *zap.Logger) {
-	buildFS, err := fs.Sub(docsembed.Assets, "build")
+	buildFS, err := docsembed.StaticFS()
 	if err != nil {
 		logger.Warn("docs assets not available, docs serving disabled", zap.Error(err))
 		return
@@ -462,7 +462,7 @@ func registerDocs(router *gin.Engine, logger *zap.Logger) {
 }
 
 func registerSPA(router *gin.Engine, logger *zap.Logger) {
-	distFS, err := fs.Sub(webembed.Assets, "dist")
+	distFS, err := webembed.StaticFS()
 	if err != nil {
 		logger.Warn("web assets not available, SPA serving disabled", zap.Error(err))
 		return

@@ -16,6 +16,26 @@ services:
       timeout: 5s
       retries: 20
 
+  k3s:
+    image: rancher/k3s:v1.36.0-k3s1
+    container_name: kubecrux-k3s
+    privileged: true
+    command:
+      - server
+      - --node-name=local-k3s
+      - --disable=traefik
+      - --disable=servicelb
+      - --tls-san=127.0.0.1
+    ports:
+      - "6443:6443"
+    volumes:
+      - kubecrux-k3s-data:/var/lib/rancher/k3s
+    healthcheck:
+      test: ["CMD-SHELL", "kubectl get nodes >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 30
+
   kubecrux:
     container_name: kubecrux
     build:
@@ -45,3 +65,4 @@ services:
 
 volumes:
   kubecrux-postgres-data:
+  kubecrux-k3s-data:

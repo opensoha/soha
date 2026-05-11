@@ -104,4 +104,12 @@ bootstrap:
   seed_defaults: true
 
 kubernetes:
-  clusters: []
+  clusters:
+    - id: local-k3s
+      name: Local K3s
+      kubeconfig: ./.dev/k3s/kubeconfig.yaml
+      region: local
+      environment: development
+      labels:
+        provider: k3s
+        purpose: debug

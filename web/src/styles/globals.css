@@ -39,6 +39,7 @@ body,
   --kc-code-fg: #fafafa;
   --kc-shadow-soft: 0 10px 24px rgba(15, 23, 42, 0.06);
   --kc-shadow-strong: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px -1px rgba(0, 0, 0, 0.1);
+  --kc-app-chrome-height: 56px;
   --kc-surface: var(--kc-bg-surface);
   --semi-color-link: var(--kc-primary);
   --semi-color-link-hover: var(--kc-primary-hover);
@@ -120,11 +121,13 @@ a {
 }
 
 .kc-sider-topbar {
+  box-sizing: border-box;
   display: flex;
   align-items: center;
   justify-content: flex-start;
-  min-height: 52px;
-  padding: 10px 14px 8px;
+  height: var(--kc-app-chrome-height);
+  min-height: var(--kc-app-chrome-height);
+  padding: 10px 14px;
   border-bottom: 1px solid var(--kc-border-color);
   background: var(--kc-bg-surface);
 }
@@ -390,9 +393,13 @@ a {
 
 .kc-header {
   flex: 0 0 auto;
-  display: block;
-  min-height: 40px;
-  padding: 4px 14px;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  height: var(--kc-app-chrome-height);
+  min-height: var(--kc-app-chrome-height);
+  line-height: normal;
+  padding: 0 14px;
   border-bottom: 1px solid var(--kc-border-color);
   background: var(--kc-bg-surface) !important;
 }
@@ -403,6 +410,7 @@ a {
   justify-content: space-between;
   gap: 8px;
   min-width: 0;
+  width: 100%;
 }
 
 .kc-header-main,
@@ -3573,6 +3581,8 @@ a {
   }
 
   .kc-header {
+    display: block;
+    height: auto;
     min-height: 52px;
     padding: 10px 16px;
   }

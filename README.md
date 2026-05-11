@@ -105,13 +105,14 @@ Current product scope centers on:
 - Docker and Docker Compose for local infrastructure or deployment tests
 - PostgreSQL 16 for local backend development
 
-### 1. Initialize local PostgreSQL
+### 1. Initialize local development dependencies
 
 ```bash
 make init
 ```
 
-This boots the `pgsql` container from the root `docker-compose.yaml` and waits until PostgreSQL is ready.
+This runs `go mod tidy`, installs the `web` and `docs` npm dependencies, then boots the `pgsql` container from the root `docker-compose.yaml` and waits until PostgreSQL is ready.
+It also starts a local `k3s server` debug cluster, writes its kubeconfig to `./.dev/k3s/kubeconfig.yaml`, and the default development config registers it as `local-k3s`.
 
 ### 2. Start the backend and frontend
 

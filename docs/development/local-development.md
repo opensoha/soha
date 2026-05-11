@@ -10,11 +10,14 @@
 - username: `pgsql`
 - password: `pgsql`
 
-## Initialize PostgreSQL
+## Initialize Local Development Dependencies
 
 ```bash
 make init
 ```
+
+这会执行 `go mod tidy`、安装 `web` 和 `docs` 的 npm 依赖，然后启动 PostgreSQL 和本地 `k3s server` 调试集群，并等待它们就绪。
+`k3s` kubeconfig 会写到 `./.dev/k3s/kubeconfig.yaml`，默认开发配置会把它注册为 `local-k3s`。
 
 ## Start Backend and Frontend
 
@@ -47,7 +50,7 @@ npm run dev
 
 ## MVP Runtime Notes
 
-The backend bootstraps a local cluster entry from `KC_CLUSTER_LOCAL_*` environment variables. By default it reads `~/.kube/config`.
+The backend bootstraps a local development cluster from `configs/config.yaml` and reads the generated kubeconfig from `./.dev/k3s/kubeconfig.yaml`.
 
 The minimal MVP exposes:
 

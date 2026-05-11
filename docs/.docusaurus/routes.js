@@ -4,15 +4,15 @@ import ComponentCreator from '@docusaurus/ComponentCreator';
 export default [
   {
     path: '/docs/',
-    component: ComponentCreator('/docs/', 'e03'),
+    component: ComponentCreator('/docs/', '9b2'),
     routes: [
       {
         path: '/docs/',
-        component: ComponentCreator('/docs/', '4d1'),
+        component: ComponentCreator('/docs/', 'd16'),
         routes: [
           {
             path: '/docs/',
-            component: ComponentCreator('/docs/', '3a6'),
+            component: ComponentCreator('/docs/', '260'),
             routes: [
               {
                 path: '/docs/api/auth-and-errors/',
@@ -142,7 +142,7 @@ export default [
               },
               {
                 path: '/docs/development/local-development/',
-                component: ComponentCreator('/docs/development/local-development/', 'c1b'),
+                component: ComponentCreator('/docs/development/local-development/', '40a'),
                 exact: true,
                 sidebar: "mainSidebar"
               },
@@ -166,7 +166,7 @@ export default [
               },
               {
                 path: '/docs/operations/deployment/',
-                component: ComponentCreator('/docs/operations/deployment/', '24c'),
+                component: ComponentCreator('/docs/operations/deployment/', '1b0'),
                 exact: true,
                 sidebar: "mainSidebar"
               },

@@ -36,7 +36,7 @@ RUN for attempt in 1 2 3; do \
 COPY . .
 COPY --from=web-build /src/web/dist ./web/dist
 COPY --from=docs-build /src/docs/build ./docs/build
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o /out/kubecrux ./cmd/server
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -tags embedassets -trimpath -ldflags="-s -w" -o /out/kubecrux ./cmd/server
 
 FROM alpine:3.20
 RUN addgroup -S kubecrux && adduser -S -G kubecrux kubecrux && apk add --no-cache ca-certificates tzdata
