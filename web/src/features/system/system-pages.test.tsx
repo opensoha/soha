@@ -86,6 +86,7 @@ describe('menu visibility helpers', () => {
     ], {
       topLevelOnly: true,
       section: '',
+      workbench: '',
       enabled: 'all',
       visibility: 'all',
     })

@@ -23,8 +23,8 @@ import { resolveMenuIcon } from '@/features/system/menu-icons'
 import { resolveMenuSectionLabel } from '@/features/system/menu-schema'
 import { useI18n } from '@/i18n'
 import {
+  filterSidebarNavByWorkbench,
   filterSidebarNavByWorkspace,
-  findFirstAccessiblePathForWorkspace,
   findFirstAccessiblePathForWorkbench,
   findPreferredWorkspace,
   getAccessibleSidebarNav,
@@ -35,6 +35,7 @@ import {
   getRouteWorkbenchId,
   getRouteWorkspace,
   resolveRouteMenuId,
+  type WorkbenchId,
 } from '@/routes/meta'
 import { useBrandingSettings } from '@/features/settings/use-branding-settings'
 import { useAuthStore } from '@/stores/auth-store'
@@ -45,17 +46,10 @@ import { getNormalizedBranding } from '@/features/settings/use-branding-settings
 
 const { Sider, Header, Content } = Layout
 
-interface WorkspaceOption {
-  description: string
-  icon: ReactNode
-  key: BusinessWorkspaceType
-  label: string
-}
-
 interface WorkbenchOption {
   description: string
   icon: ReactNode
-  key: 'platform' | 'delivery' | 'ai' | 'monitoring'
+  key: WorkbenchId
   label: string
 }
 
@@ -150,6 +144,18 @@ function collectNodeIDs(sidebarNav: RuntimeMenuNode[]) {
   return ids
 }
 
+function collectExpandableNodeIDs(sidebarNav: RuntimeMenuNode[]) {
+  const ids = new Set<string>()
+  const visit = (node: RuntimeMenuNode) => {
+    if (node.children?.length) {
+      ids.add(node.id)
+      node.children.forEach(visit)
+    }
+  }
+  sidebarNav.forEach(visit)
+  return ids
+}
+
 function wrapSystemNav(sidebarNav: RuntimeMenuNode[]): RuntimeMenuNode[] {
   if (sidebarNav.length === 0) {
     return []
@@ -178,39 +184,6 @@ function mergeOpenKeys(current: string[], desired: string[]) {
   return merged.length === current.length && merged.every((key, index) => key === current[index]) ? current : merged
 }
 
-function buildWorkspaceOptions(localeCode: 'zh_CN' | 'en_US'): WorkspaceOption[] {
-  if (localeCode === 'en_US') {
-    return [
-      {
-        key: 'application',
-        label: 'Application Workspace',
-        description: 'Delivery, status, and releases across applications and environments',
-        icon: <AppstoreOutlined />,
-      },
-      {
-        key: 'resource',
-        label: 'Resource Workspace',
-        description: 'Clusters, namespaces, Kubernetes resources, and troubleshooting',
-        icon: <CloudServerOutlined />,
-      },
-    ]
-  }
-  return [
-    {
-      key: 'application',
-      label: '应用工作台',
-      description: '面向应用与环境的交付、状态与发布',
-      icon: <AppstoreOutlined />,
-    },
-    {
-      key: 'resource',
-      label: '资源工作台',
-      description: '面向集群、命名空间与 Kubernetes 资源排障',
-      icon: <CloudServerOutlined />,
-    },
-  ]
-}
-
 function buildWorkbenchOptions(localeCode: 'zh_CN' | 'en_US'): WorkbenchOption[] {
   if (localeCode === 'en_US') {
     return [
@@ -226,63 +199,6 @@ function buildWorkbenchOptions(localeCode: 'zh_CN' | 'en_US'): WorkbenchOption[]
     { key: 'ai', label: 'AI工作台', description: '调查、自动化、工具与技能', icon: <RobotOutlined /> },
     { key: 'monitoring', label: '监控工作台', description: '告警、路由、通知和值班协同', icon: <AlertOutlined /> },
   ]
-}
-
-function WorkspaceSwitcher({
-  collapsed,
-  current,
-  onSelect,
-  options,
-}: {
-  collapsed: boolean
-  current: WorkspaceOption
-  onSelect: (workspace: BusinessWorkspaceType) => void
-  options: WorkspaceOption[]
-}) {
-  const dropdownItems: MenuProps['items'] = options.map((option) => ({
-    key: option.key,
-    label: (
-      <div className="kc-workspace-option">
-        <span className="kc-workspace-option__icon">{option.icon}</span>
-        <span className="kc-workspace-option__copy">
-          <span className="kc-workspace-option__label">{option.label}</span>
-          <span className="kc-workspace-option__desc">{option.description}</span>
-        </span>
-      </div>
-    ),
-  }))
-
-  const trigger = (
-    <Button className="kc-workspace-switcher" type="text">
-      <span className="kc-workspace-switcher__icon">{current.icon}</span>
-      {!collapsed ? (
-        <span className="kc-workspace-switcher__copy">
-          <span className="kc-workspace-switcher__label">{current.label}</span>
-          <span className="kc-workspace-switcher__desc">{current.description}</span>
-        </span>
-      ) : null}
-      {options.length > 1 ? <DownOutlined className="kc-workspace-switcher__arrow" /> : null}
-    </Button>
-  )
-
-  if (options.length <= 1) {
-    return trigger
-  }
-
-  return (
-    <Dropdown
-      menu={{
-        items: dropdownItems,
-        selectable: true,
-        selectedKeys: [current.key],
-        onClick: ({ key }) => onSelect(String(key) as BusinessWorkspaceType),
-      }}
-      placement="bottomLeft"
-      trigger={['click']}
-    >
-      {trigger}
-    </Dropdown>
-  )
 }
 
 function WorkbenchSwitcher({
@@ -365,7 +281,6 @@ export function AppLayout() {
   const fullSidebarNav = useMemo(() => getAccessibleSidebarNav(snapshot), [snapshot])
   const accessibleWorkspaces = useMemo(() => getAccessibleWorkspaces(snapshot), [snapshot])
   const accessibleWorkbenchIds = useMemo(() => getAccessibleWorkbenchIds(snapshot), [snapshot])
-  const workspaceOptions = useMemo(() => buildWorkspaceOptions(localeCode), [localeCode])
   const workbenchOptions = useMemo(() => buildWorkbenchOptions(localeCode).filter((item) => accessibleWorkbenchIds.includes(item.key)), [accessibleWorkbenchIds, localeCode])
   const preferredWorkspace = useMemo(
     () => findPreferredWorkspace(snapshot, currentWorkspace, user?.roles ?? []),
@@ -380,11 +295,29 @@ export function AppLayout() {
     }
     return preferredWorkspace
   }, [accessibleWorkspaces, currentRouteWorkspace, preferredWorkspace])
+  const activeWorkbenchId = useMemo<WorkbenchId | null>(() => {
+    if (currentWorkbenchId && accessibleWorkbenchIds.includes(currentWorkbenchId)) {
+      return currentWorkbenchId
+    }
+    if (activeWorkspace === 'application' && accessibleWorkbenchIds.includes('delivery')) {
+      return 'delivery'
+    }
+    if (activeWorkspace === 'resource') {
+      return (['platform', 'ai', 'monitoring'] as const).find((item) => accessibleWorkbenchIds.includes(item)) ?? null
+    }
+    return accessibleWorkbenchIds[0] ?? null
+  }, [accessibleWorkbenchIds, activeWorkspace, currentWorkbenchId])
 
-  const businessNav = useMemo(
+  const businessWorkspaceNav = useMemo(
     () => (activeWorkspace ? filterSidebarNavByWorkspace(fullSidebarNav, activeWorkspace) : []),
     [activeWorkspace, fullSidebarNav],
   )
+  const businessNav = useMemo(() => {
+    if (!activeWorkbenchId) {
+      return businessWorkspaceNav
+    }
+    return filterSidebarNavByWorkbench(businessWorkspaceNav, activeWorkbenchId)
+  }, [activeWorkbenchId, businessWorkspaceNav])
   const systemNav = useMemo(
     () => filterSidebarNavByWorkspace(fullSidebarNav, 'system'),
     [fullSidebarNav],
@@ -401,7 +334,9 @@ export function AppLayout() {
   )
   const parentByID = useMemo(() => buildParentMap(combinedNav), [combinedNav])
   const businessNodeIDs = useMemo(() => collectNodeIDs(businessNav), [businessNav])
+  const businessExpandableNodeIDs = useMemo(() => collectExpandableNodeIDs(businessNav), [businessNav])
   const systemNodeIDs = useMemo(() => collectNodeIDs(systemMenuTree), [systemMenuTree])
+  const systemExpandableNodeIDs = useMemo(() => collectExpandableNodeIDs(systemMenuTree), [systemMenuTree])
   const resolvedThemeMode = useMemo(() => resolveThemeMode(themeMode), [themeMode, systemThemeVersion])
 
   const parentMeta = getParentRouteMeta(currentMeta)
@@ -429,8 +364,11 @@ export function AppLayout() {
       keys.unshift(parentID)
       pointer = parentID
     }
+    if (currentMenuID && (businessExpandableNodeIDs.has(currentMenuID) || systemExpandableNodeIDs.has(currentMenuID))) {
+      keys.push(currentMenuID)
+    }
     return keys
-  }, [currentMenuID, parentByID])
+  }, [businessExpandableNodeIDs, currentMenuID, parentByID, systemExpandableNodeIDs])
 
   useEffect(() => {
     if (sidebarCollapsed) {
@@ -485,9 +423,7 @@ export function AppLayout() {
   const themeSwitchTitle = resolvedThemeMode === 'dark'
     ? t('layout.switchThemeToLight', 'Switch to light mode')
     : t('layout.switchThemeToDark', '切换到深色模式')
-  const visibleWorkspaceOptions = workspaceOptions.filter((option) => accessibleWorkspaces.includes(option.key))
-  const currentWorkspaceOption = visibleWorkspaceOptions.find((option) => option.key === activeWorkspace) ?? visibleWorkspaceOptions[0] ?? null
-  const currentWorkbenchOption = workbenchOptions.find((option) => option.key === currentWorkbenchId) ?? workbenchOptions[0] ?? null
+  const currentWorkbenchOption = workbenchOptions.find((option) => option.key === activeWorkbenchId) ?? workbenchOptions[0] ?? null
   const businessSelectedKeys = selectedKeys.filter((key) => businessNodeIDs.has(key))
   const systemSelectedKeys = selectedKeys.filter((key) => systemNodeIDs.has(key))
 
@@ -532,24 +468,6 @@ export function AppLayout() {
                   if (!targetPath) {
                     return
                   }
-                  navigate(targetPath)
-                }}
-              />
-            </div>
-          ) : null}
-
-          {visibleWorkspaceOptions.length > 0 && currentWorkspaceOption ? (
-            <div className="kc-workspace-switcher-shell">
-              <WorkspaceSwitcher
-                collapsed={sidebarCollapsed}
-                current={currentWorkspaceOption}
-                options={visibleWorkspaceOptions}
-                onSelect={(workspace) => {
-                  const targetPath = findFirstAccessiblePathForWorkspace(workspace, snapshot)
-                  if (!targetPath) {
-                    return
-                  }
-                  setCurrentWorkspace(workspace)
                   navigate(targetPath)
                 }}
               />

@@ -250,4 +250,15 @@ describe('menus page modal state', () => {
     expect(inputValues).not.toContain('系统')
     expect(inputValues).not.toContain('/system')
   })
+
+  it('shows derived workbench ownership for menu rows and edit state', async () => {
+    await renderWithProviders(<MenusPage />, '/system/menus')
+
+    expect(document.body.textContent).toContain('平台工作台')
+    expect(document.body.textContent).toContain('系统管理')
+
+    await clickButton(getRowEditButton('configuration'))
+
+    expect(document.body.textContent).toContain('当前菜单会在 平台工作台 的导航树内展示。')
+  })
 })

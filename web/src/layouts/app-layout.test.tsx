@@ -215,7 +215,7 @@ describe('app layout workspace navigation', () => {
     vi.clearAllMocks()
   })
 
-  it('shows a static workspace badge when only one workspace is available', async () => {
+  it('shows only the workbench switcher when only one business workspace is available', async () => {
     const container = await renderWithProviders('/', {
       permissionKeys: ['workspace.resource.view', 'overview.view', 'system.menus.view'],
       visibleMenuIds: ['dashboard', 'system', 'menus'],
@@ -226,14 +226,14 @@ describe('app layout workspace navigation', () => {
       ],
     })
 
-    expect(container.querySelector('.kc-workspace-switcher__label')?.textContent).toBe('资源工作台')
-    expect(container.querySelector('.kc-workspace-switcher__arrow')).toBeNull()
+    expect(container.querySelector('.kc-workbench-switcher__label')?.textContent).toBe('平台工作台')
+    expect(container.querySelector('.kc-workspace-switcher-shell')).toBeNull()
   })
 
   it('filters the business menu by the current application workspace', async () => {
     const container = await renderWithProviders('/applications')
 
-    expect(container.querySelector('.kc-workspace-switcher__label')?.textContent).toBe('应用工作台')
+    expect(container.querySelector('.kc-workbench-switcher__label')?.textContent).toBe('应用交付工作台')
     expect(container.textContent).toContain('应用中心')
     expect(container.textContent).not.toContain('概览')
     expect(container.textContent).toContain('系统管理')
@@ -243,27 +243,24 @@ describe('app layout workspace navigation', () => {
   it('keeps the last business workspace active while visiting system pages', async () => {
     const container = await renderWithProviders('/system/menus')
 
-    expect(container.querySelector('.kc-workspace-switcher__label')?.textContent).toBe('资源工作台')
+    expect(container.querySelector('.kc-workbench-switcher__label')?.textContent).toBe('平台工作台')
     expect(container.textContent).toContain('概览')
     expect(container.textContent).toContain('菜单管理')
     expect(testState.prefs.setCurrentWorkspace).not.toHaveBeenCalled()
   })
 
-  it('renders the workspace switcher below the brand bar and above the business menu', async () => {
+  it('renders the workbench switcher below the brand bar and above the business menu', async () => {
     const container = await renderWithProviders('/')
     const brandBar = container.querySelector('.kc-sider-topbar')
     const workbenchShell = container.querySelector('.kc-workbench-switcher-shell')
-    const switcherShell = container.querySelector('.kc-workspace-switcher-shell')
     const businessNav = container.querySelector('.kc-nav-business')
 
     expect(brandBar).not.toBeNull()
     expect(workbenchShell).not.toBeNull()
-    expect(switcherShell).not.toBeNull()
     expect(businessNav).not.toBeNull()
-    expect(brandBar?.querySelector('.kc-workspace-switcher')).toBeNull()
+    expect(container.querySelector('.kc-workspace-switcher-shell')).toBeNull()
     expect(brandBar?.nextElementSibling).toBe(workbenchShell)
-    expect(workbenchShell?.nextElementSibling).toBe(switcherShell)
-    expect(switcherShell?.nextElementSibling).toBe(businessNav)
+    expect(workbenchShell?.nextElementSibling).toBe(businessNav)
   })
 
   it('syncs the persisted workspace when navigating directly to resource pages', async () => {
@@ -280,5 +277,44 @@ describe('app layout workspace navigation', () => {
     })
 
     expect(testState.prefs.setCurrentWorkspace).toHaveBeenCalledWith('resource')
+  })
+
+  it('shows only AI workbench menus when the AI workbench is active', async () => {
+    const container = await renderWithProviders('/ai-workbench', {
+      permissionKeys: [
+        'workspace.resource.view',
+        'observe.ai.view',
+        'observe.ai.chat',
+        'observe.monitoring.view',
+        'overview.view',
+        'system.menus.view',
+      ],
+      visibleMenuIds: [
+        'dashboard',
+        'ai-workbench',
+        'ai-workbench-investigation',
+        'ai-workbench-operations',
+        'monitoring-workbench',
+        'monitoring-workbench-overview',
+        'system',
+        'menus',
+      ],
+      visibleMenus: [
+        { id: 'dashboard', path: '/', labelZh: '概览', labelEn: 'Overview', iconKey: 'gauge', section: 'platform', sortOrder: 1, enabled: true },
+        { id: 'ai-workbench', path: '/ai-workbench', labelZh: 'AI工作台', labelEn: 'AI Workbench', iconKey: 'bot', section: 'ops', sortOrder: 15, enabled: true },
+        { id: 'ai-workbench-investigation', parentId: 'ai-workbench', path: '/ai-workbench/investigation', labelZh: '调查工作台', labelEn: 'Investigation Workbench', iconKey: 'bot', section: 'ops', sortOrder: 16, enabled: true },
+        { id: 'ai-workbench-operations', parentId: 'ai-workbench', path: '/ai-workbench/automation', labelZh: '巡检与自动化', labelEn: 'Automation', iconKey: 'bot', section: 'ops', sortOrder: 17, enabled: true },
+        { id: 'monitoring-workbench', path: '/monitoring-workbench', labelZh: '监控工作台', labelEn: 'Monitoring Workbench', iconKey: 'gauge', section: 'ops', sortOrder: 60, enabled: true },
+        { id: 'monitoring-workbench-overview', parentId: 'monitoring-workbench', path: '/monitoring-workbench/overview', labelZh: '工作台概览', labelEn: 'Overview', iconKey: 'gauge', section: 'ops', sortOrder: 61, enabled: true },
+        { id: 'system', path: '/system', labelZh: '系统管理', labelEn: 'System', iconKey: 'panels-top-left', section: 'admin', sortOrder: 99, enabled: true },
+        { id: 'menus', parentId: 'system', path: '/system/menus', labelZh: '菜单管理', labelEn: 'Menus', iconKey: 'menu-square', section: 'admin', sortOrder: 100, enabled: true },
+      ],
+    })
+
+    expect(container.querySelector('.kc-workbench-switcher__label')?.textContent).toBe('AI工作台')
+    expect(container.textContent).toContain('调查工作台')
+    expect(container.textContent).toContain('巡检与自动化')
+    expect(container.textContent).not.toContain('监控工作台')
+    expect(container.textContent).not.toContain('概览')
   })
 })

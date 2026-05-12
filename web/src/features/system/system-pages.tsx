@@ -33,11 +33,11 @@ import { MENU_ICON_OPTIONS, isKnownMenuIcon, resolveMenuIcon } from '@/features/
 import { buildMenuSectionOptions, normalizeMenuSection, resolveMenuSectionLabel } from '@/features/system/menu-schema'
 import { PageHeader } from '@/components/page-header'
 import { BooleanTag, StatusTag } from '@/components/status-tag'
-import { resolveRouteMenuId, resolveRoutePermission, routeMeta } from '@/routes/meta'
+import { getMenuWorkbenchId, getMenuWorkspace, resolveRouteMenuId, resolveRoutePermission, routeMeta, type WorkbenchId } from '@/routes/meta'
 import { api } from '@/services/api-client'
 import { formatDateTime, formatRelativeTime } from '@/utils/time'
 import { tableColumnPresets } from '@/utils/table-columns'
-import type { ApiResponse } from '@/types'
+import type { ApiResponse, WorkspaceType } from '@/types'
 
 const { Paragraph, Text, Title } = Typography
 
@@ -719,6 +719,58 @@ interface MenuVisibilitySummary {
   mode: MenuVisibilityMode
 }
 
+type MenuWorkbenchSurface = WorkbenchId | 'system' | 'unmapped'
+
+interface MenuWorkbenchSummary {
+  key: MenuWorkbenchSurface
+  label: string
+  pathPlacement: MenuWorkbenchSurface
+  pathPlacementLabel: string
+  parentPlacement: MenuWorkbenchSurface | null
+  parentPlacementLabel: string | null
+  workspace: WorkspaceType | null
+}
+
+const MENU_WORKBENCH_ORDER: MenuWorkbenchSurface[] = ['platform', 'ai', 'monitoring', 'delivery', 'system', 'unmapped']
+
+const MENU_WORKBENCH_LABELS: Record<MenuWorkbenchSurface, string> = {
+  platform: '平台工作台',
+  ai: 'AI工作台',
+  monitoring: '监控工作台',
+  delivery: '应用交付工作台',
+  system: '系统管理',
+  unmapped: '未映射',
+}
+
+function resolveMenuWorkbenchKey(item: Pick<MenuItem, 'id' | 'path'>): MenuWorkbenchSurface {
+  const workspace = getMenuWorkspace(item)
+  if (workspace === 'system') {
+    return 'system'
+  }
+  return getMenuWorkbenchId(item) ?? 'unmapped'
+}
+
+function summarizeMenuWorkbench(
+  item: Pick<MenuItem, 'id' | 'path' | 'parentId'>,
+  menuLookup: Map<string, MenuItem>,
+): MenuWorkbenchSummary {
+  const workspace = getMenuWorkspace(item)
+  const pathPlacement = resolveMenuWorkbenchKey(item)
+  const parentItem = item.parentId ? menuLookup.get(item.parentId) : undefined
+  const parentPlacement = parentItem ? resolveMenuWorkbenchKey(parentItem) : null
+  const key = parentPlacement ?? pathPlacement
+
+  return {
+    key,
+    label: MENU_WORKBENCH_LABELS[key],
+    pathPlacement,
+    pathPlacementLabel: MENU_WORKBENCH_LABELS[pathPlacement],
+    parentPlacement,
+    parentPlacementLabel: parentPlacement ? MENU_WORKBENCH_LABELS[parentPlacement] : null,
+    workspace,
+  }
+}
+
 function flattenMenuItems(items: MenuItem[], depth = 0, parent?: MenuItem): MenuItem[] {
   return items.flatMap((item) => {
     const { children, ...rest } = item
@@ -744,20 +796,23 @@ export function filterMenuTree(
   options: {
     topLevelOnly: boolean
     section: string
+    workbench: string
     enabled: 'all' | 'enabled' | 'disabled'
     visibility: 'all' | 'derived' | 'explicit' | 'unmapped'
   },
 ) {
+  const menuLookup = new Map(flattenMenuItems(items).map((item) => [item.id, item]))
   const matches = (item: MenuItem) => {
     const summary = summarizeMenuVisibility(item)
     const matchesSection = !options.section || normalizeMenuSection(item.section) === options.section
+    const matchesWorkbench = !options.workbench || summarizeMenuWorkbench(item, menuLookup).key === options.workbench
     const matchesEnabled = options.enabled === 'all'
       ? true
       : options.enabled === 'enabled'
         ? item.enabled
         : !item.enabled
     const matchesVisibility = options.visibility === 'all' ? true : summary.mode === options.visibility
-    return matchesSection && matchesEnabled && matchesVisibility
+    return matchesSection && matchesWorkbench && matchesEnabled && matchesVisibility
   }
 
   const visit = (item: MenuItem, depth = 0): MenuItem | null => {
@@ -938,6 +993,21 @@ function MenuVisibilityTags({ item }: { item: Pick<MenuItem, 'id' | 'path' | 'ro
   )
 }
 
+function MenuWorkbenchTag({ item, menuLookup }: { item: Pick<MenuItem, 'id' | 'path' | 'parentId'>; menuLookup: Map<string, MenuItem> }) {
+  const summary = summarizeMenuWorkbench(item, menuLookup)
+  const color = summary.key === 'unmapped'
+    ? 'default'
+    : summary.key === 'system'
+      ? 'purple'
+      : summary.key === 'delivery'
+        ? 'blue'
+        : summary.key === 'platform'
+          ? 'cyan'
+          : 'geekblue'
+
+  return <Tag color={color}>{summary.label}</Tag>
+}
+
 export function MenusPage() {
   const queryClient = useQueryClient()
   const permissionSnapshotQuery = usePermissionSnapshot()
@@ -945,6 +1015,7 @@ export function MenusPage() {
   const [modalVisible, setModalVisible] = useState(false)
   const [editing, setEditing] = useState<MenuItem | null>(null)
   const [sectionFilter, setSectionFilter] = useState<string>('')
+  const [workbenchFilter, setWorkbenchFilter] = useState<string>('')
   const [enabledFilter, setEnabledFilter] = useState<'all' | 'enabled' | 'disabled'>('all')
   const [visibilityFilter, setVisibilityFilter] = useState<'all' | 'derived' | 'explicit' | 'unmapped'>('all')
   const [treeView, setTreeView] = useState<'top' | 'all'>('top')
@@ -1009,18 +1080,29 @@ export function MenusPage() {
 
   const menuTree = data?.data ?? []
   const menuItems = flattenMenuItems(menuTree)
+  const menuLookup = useMemo(() => new Map(menuItems.map((item) => [item.id, item])), [menuItems])
   const filteredMenuTree = useMemo(
     () => filterMenuTree(menuTree, {
       topLevelOnly: treeView === 'top',
       section: sectionFilter,
+      workbench: workbenchFilter,
       enabled: enabledFilter,
       visibility: visibilityFilter,
     }),
-    [enabledFilter, menuTree, sectionFilter, treeView, visibilityFilter],
+    [enabledFilter, menuTree, sectionFilter, treeView, visibilityFilter, workbenchFilter],
   )
   const sectionOptions = useMemo(
     () => buildMenuSectionOptions(menuItems.map((item) => item.section)),
     [menuItems],
+  )
+  const workbenchOptions = useMemo(
+    () => Array.from(new Set(menuItems.map((item) => summarizeMenuWorkbench(item, menuLookup).key)))
+      .sort((left, right) => MENU_WORKBENCH_ORDER.indexOf(left) - MENU_WORKBENCH_ORDER.indexOf(right))
+      .map((value) => ({
+        value,
+        label: MENU_WORKBENCH_LABELS[value],
+      })),
+    [menuItems, menuLookup],
   )
   const menuPageSize = Math.max(menuItems.length, 1)
   const roleOptions = (rolesResponse?.data ?? []).map((role) => ({
@@ -1030,11 +1112,24 @@ export function MenusPage() {
   const blockedParentIds = new Set(editing ? [editing.id, ...collectMenuDescendantIds(editing)] : [])
   const parentOptions = [
     { label: '顶级菜单', value: '' },
-    ...menuItems
-      .filter((item) => !blockedParentIds.has(item.id))
-      .map((item) => ({
-        value: item.id,
-        label: `${'— '.repeat(item.depth ?? 0)}${item.labelZh}`,
+    ...Array.from(
+      menuItems
+        .filter((item) => !blockedParentIds.has(item.id))
+        .reduce((acc, item) => {
+          const workbench = summarizeMenuWorkbench(item, menuLookup)
+          const current = acc.get(workbench.key) ?? []
+          current.push({
+            value: item.id,
+            label: `${'— '.repeat(item.depth ?? 0)}${item.labelZh}`,
+          })
+          acc.set(workbench.key, current)
+          return acc
+        }, new Map<MenuWorkbenchSurface, Array<{ value: string; label: string }>>()),
+    )
+      .sort(([left], [right]) => MENU_WORKBENCH_ORDER.indexOf(left) - MENU_WORKBENCH_ORDER.indexOf(right))
+      .map(([key, options]) => ({
+        label: MENU_WORKBENCH_LABELS[key],
+        options,
       })),
   ]
 
@@ -1061,6 +1156,11 @@ export function MenusPage() {
       ),
     },
     { title: '路径', dataIndex: 'path' },
+    {
+      title: '工作台',
+      key: 'workbench',
+      render: (_: unknown, record: MenuItem) => <MenuWorkbenchTag item={record} menuLookup={menuLookup} />,
+    },
     {
       title: '图标',
       dataIndex: 'iconKey',
@@ -1116,11 +1216,11 @@ export function MenusPage() {
         loading={isLoading}
         pageSize={menuPageSize}
         pagination={false}
-        scroll={{ x: 1180 }}
+        scroll={{ x: 1320 }}
         title={(
           <div className="kc-admin-table-title-block">
             <Text strong>菜单管理</Text>
-            <Text type="secondary">维护菜单层级、路径、启用状态、排序，以及菜单可见性的派生或覆盖规则。</Text>
+            <Text type="secondary">维护菜单层级、工作台归属、路径、启用状态、排序，以及菜单可见性的派生或覆盖规则。</Text>
           </div>
         )}
         headerExtra={canManageMenus ? (
@@ -1149,6 +1249,14 @@ export function MenusPage() {
               value={sectionFilter || undefined}
               onChange={(value) => setSectionFilter(value || '')}
               options={sectionOptions}
+            />
+            <Select
+              allowClear
+              placeholder="按工作台筛选"
+              style={{ width: 220 }}
+              value={workbenchFilter || undefined}
+              onChange={(value) => setWorkbenchFilter(value || '')}
+              options={workbenchOptions}
             />
             <Select
               value={enabledFilter}
@@ -1255,6 +1363,39 @@ export function MenusPage() {
           </Form.Item>
           <Form.Item name="path" label="路径" rules={[{ required: true, message: '请输入路径' }]}>
             <Input />
+          </Form.Item>
+          <Form.Item noStyle shouldUpdate={(prev, next) => prev.id !== next.id || prev.path !== next.path || prev.parentId !== next.parentId}>
+            {({ getFieldValue }) => {
+              const draftPlacement = summarizeMenuWorkbench({
+                id: String(getFieldValue('id') || ''),
+                path: String(getFieldValue('path') || ''),
+                parentId: String(getFieldValue('parentId') || ''),
+              }, menuLookup)
+              const hasPlacementConflict = Boolean(
+                draftPlacement.parentPlacement &&
+                draftPlacement.pathPlacement !== 'unmapped' &&
+                draftPlacement.parentPlacement !== draftPlacement.pathPlacement,
+              )
+
+              return (
+                <Form.Item label="工作台归属">
+                  <Space direction="vertical" size={4} style={{ width: '100%' }}>
+                    <Space wrap>
+                      <Tag color={draftPlacement.key === 'unmapped' ? 'default' : 'blue'}>{draftPlacement.label}</Tag>
+                      {draftPlacement.parentPlacement ? <Text type="secondary">跟随父级菜单</Text> : <Text type="secondary">按路径自动派生</Text>}
+                      {hasPlacementConflict ? <Tag color="gold">父级与路径不一致</Tag> : null}
+                    </Space>
+                    <Text type={hasPlacementConflict ? 'danger' : 'secondary'}>
+                      {hasPlacementConflict
+                        ? `当前路径命中 ${draftPlacement.pathPlacementLabel}，但父级菜单属于 ${draftPlacement.parentPlacementLabel}。保存后侧栏将按父级工作台收纳。`
+                        : draftPlacement.key === 'unmapped'
+                          ? '当前菜单尚未映射到已知工作台；若需要进入侧栏，请确认路径或父级菜单归属。'
+                          : `当前菜单会在 ${draftPlacement.label} 的导航树内展示。`}
+                    </Text>
+                  </Space>
+                </Form.Item>
+              )
+            }}
           </Form.Item>
           <Form.Item name="iconKey" label="图标" rules={[{ required: true, message: '请选择图标' }]}>
             <Select

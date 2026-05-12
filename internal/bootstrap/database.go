@@ -82,7 +82,7 @@ type clusterCredentialSeed struct {
 // While the stored version matches this constant, the static seed block is
 // skipped entirely. Config-driven sync (admin user, clusters) runs separately
 // during startup so runtime config updates do not depend on replaying defaults.
-const bootstrapSeedVersion = "2026-05-12-1"
+const bootstrapSeedVersion = "2026-05-12-2"
 
 const bootstrapSeedVersionKey = "bootstrap.seed_version"
 
@@ -183,9 +183,8 @@ func pruneDemoClusters(ctx context.Context, db *gorm.DB, clusters []cfgpkg.Clust
 	return nil
 }
 
-func seedMenus(ctx context.Context, db *gorm.DB, modules cfgpkg.ModulesConfig) error {
-	now := time.Now().UTC()
-	items := []menuSeed{
+func defaultMenuSeeds() []menuSeed {
+	return []menuSeed{
 		{ID: "dashboard", Path: "/", LabelZH: "总览", LabelEN: "Dashboard", IconKey: "gauge", Section: "platform", SortOrder: 10, Enabled: true},
 		{ID: "cluster-resources-nodes", Path: "/cluster-resources/nodes", LabelZH: "节点", LabelEN: "Nodes", IconKey: "server", Section: "platform", SortOrder: 20, Enabled: true},
 		{ID: "extensions", Path: "/extensions", LabelZH: "CRD", LabelEN: "CRD", IconKey: "puzzle", Section: "platform", SortOrder: 90, Enabled: true},
@@ -260,7 +259,6 @@ func seedMenus(ctx context.Context, db *gorm.DB, modules cfgpkg.ModulesConfig) e
 		{ID: "application-environments", Path: "/application-environments", LabelZH: "应用环境绑定", LabelEN: "Application Environment Bindings", IconKey: "blocks", Section: "deliver", SortOrder: 111, Enabled: true, Roles: []string{"admin", "ops", "developer"}},
 		{ID: "workflows", Path: "/workflows", LabelZH: "工作流", LabelEN: "Workflows", IconKey: "activity", Section: "deliver", SortOrder: 118, Enabled: true, Roles: []string{"admin", "ops", "developer"}},
 		{ID: "releases", Path: "/releases", LabelZH: "发布", LabelEN: "Releases", IconKey: "activity", Section: "deliver", SortOrder: 120, Enabled: true, Roles: []string{"admin", "ops", "developer"}},
-		{ID: "events", ParentID: "observability", Path: "/observability/events", LabelZH: "事件", LabelEN: "Events", IconKey: "bell", Section: "ops", SortOrder: 65, Enabled: true},
 		{ID: "system", Path: "/system", LabelZH: "系统", LabelEN: "System", IconKey: "panels-top-left", Section: "admin", SortOrder: 225, Enabled: true},
 		{ID: "announcements", ParentID: "system", Path: "/system/announcements", LabelZH: "通知公告", LabelEN: "Announcements", IconKey: "megaphone", Section: "admin", SortOrder: 230, Enabled: true, Roles: []string{"admin"}},
 		{ID: "access", Path: "/access", LabelZH: "访问控制", LabelEN: "Access Control", IconKey: "shield", Section: "admin", SortOrder: 240, Enabled: true, Roles: []string{"admin"}},
@@ -274,6 +272,55 @@ func seedMenus(ctx context.Context, db *gorm.DB, modules cfgpkg.ModulesConfig) e
 		{ID: "audit", ParentID: "system", Path: "/system/audit", LabelZH: "审计", LabelEN: "Audit", IconKey: "file-clock", Section: "admin", SortOrder: 258, Enabled: true},
 		{ID: "registries", Path: "/registries", LabelZH: "镜像仓库", LabelEN: "Registry Connections", IconKey: "menu-square", Section: "deliver", SortOrder: 121, Enabled: true, Roles: []string{"admin", "ops"}},
 		{ID: "settings", Path: "/settings", LabelZH: "设置", LabelEN: "Settings", IconKey: "cog", Section: "admin", SortOrder: 260, Enabled: true, Roles: []string{"admin"}},
+	}
+}
+
+func deprecatedMenuIDs() []string {
+	return []string{
+		"assistant-root-cause",
+		"assistant-performance",
+		"assistant-chat",
+		"assistant-inspection",
+		"network-http-routes",
+		"observability",
+		"monitoring",
+		"rules",
+		"alerts",
+		"notifications",
+		"healing",
+		"oncall",
+		"assistant",
+		"assistant-workbench",
+		"assistant-operations",
+		"assistant-tools",
+		"events",
+	}
+}
+
+func validateMenuSeeds(items []menuSeed) error {
+	ids := make(map[string]struct{}, len(items))
+	for _, item := range items {
+		if _, exists := ids[item.ID]; exists {
+			return fmt.Errorf("duplicate menu seed id %q", item.ID)
+		}
+		ids[item.ID] = struct{}{}
+	}
+	for _, item := range items {
+		if item.ParentID == "" {
+			continue
+		}
+		if _, exists := ids[item.ParentID]; !exists {
+			return fmt.Errorf("menu seed %q references missing parent %q", item.ID, item.ParentID)
+		}
+	}
+	return nil
+}
+
+func seedMenus(ctx context.Context, db *gorm.DB, modules cfgpkg.ModulesConfig) error {
+	now := time.Now().UTC()
+	items := defaultMenuSeeds()
+	if err := validateMenuSeeds(items); err != nil {
+		return err
 	}
 	allItems := append([]menuSeed(nil), items...)
 	items = filterSeedMenusByModules(items, modules)
@@ -294,11 +341,11 @@ func seedMenus(ctx context.Context, db *gorm.DB, modules cfgpkg.ModulesConfig) e
 	if err := db.WithContext(ctx).Exec(`DELETE FROM menu_role_bindings WHERE menu_id IN ?`, menuIDs).Error; err != nil {
 		return err
 	}
-	deprecatedMenuIDs := []string{"assistant-root-cause", "assistant-performance", "assistant-chat", "assistant-inspection", "network-http-routes", "observability", "monitoring", "rules", "alerts", "notifications", "healing", "oncall", "assistant", "assistant-workbench", "assistant-operations", "assistant-tools", "events"}
-	if err := db.WithContext(ctx).Exec(`DELETE FROM menu_role_bindings WHERE menu_id IN ?`, deprecatedMenuIDs).Error; err != nil {
+	deprecatedIDs := deprecatedMenuIDs()
+	if err := db.WithContext(ctx).Exec(`DELETE FROM menu_role_bindings WHERE menu_id IN ?`, deprecatedIDs).Error; err != nil {
 		return err
 	}
-	if err := db.WithContext(ctx).Exec(`DELETE FROM menus WHERE id IN ?`, deprecatedMenuIDs).Error; err != nil {
+	if err := db.WithContext(ctx).Exec(`DELETE FROM menus WHERE id IN ?`, deprecatedIDs).Error; err != nil {
 		return err
 	}
 	if len(roleBindingValues) > 0 {

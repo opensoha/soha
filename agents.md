@@ -413,6 +413,7 @@ The repository has already converged on these rules:
 - sidebar sibling ordering should honor backend visible-menu sort within each frontend group so menu-management sort changes affect the console without duplicating section headers
 - monitoring and copilot APIs are no longer implicitly open to any authenticated user; user-facing reads and writes must check permission keys before hitting repository operations
 - observability and AI pages should treat route visibility, button visibility, and backend API authorization as three separate gates that must stay aligned
+- AI工作台 and 监控工作台 are first-class workbench switcher entries; their child menus belong inside their own workbench trees and must not remain duplicated under 平台工作台 / resource navigation
 - delivery catalog writes such as business lines, environments, application-environment bindings, workflow templates, and registry connections must enforce backend permission keys, not just frontend button hiding
 - build-template reads/writes must enforce explicit `delivery.build-templates.(view|manage)` permission keys, and delivery navigation visibility should include build templates, workflow templates, release board, business lines, environments, and application-environment bindings through backend menu/permission resolution rather than relying on “unmapped menu” fallback
 - AI settings now split into `settings.ai.view` and `settings.ai.manage`; the provider form and copilot control-plane sections must stay consistent with those keys

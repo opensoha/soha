@@ -2,11 +2,13 @@ import { describe, expect, it } from 'vitest'
 import type { PermissionSnapshot, RouteMeta } from '@/types'
 import {
   canAccessRoute,
+  filterSidebarNavByWorkbench,
   filterSidebarNavByWorkspace,
   findFirstAccessiblePathForWorkspace,
   findLandingPath,
   findPreferredWorkspace,
   getAccessibleSidebarNav,
+  getMenuWorkbenchId,
   getAccessibleWorkspaces,
   getRouteScopeMode,
   getRouteWorkspace,
@@ -177,6 +179,56 @@ describe('access route authorization', () => {
     expect(applicationNav[0].section).toBe('deliver')
     expect(applicationNav[1].section).toBe('deliver')
     expect(systemNav.map((item) => item.id)).toEqual(['system'])
+  })
+
+  it('filters resource sidebar trees by workbench so AI and monitoring menus do not remain under platform', () => {
+    const snapshot = buildSnapshot({
+      permissionKeys: [
+        'workspace.resource.view',
+        'overview.view',
+        'observe.ai.view',
+        'observe.ai.chat',
+        'observe.monitoring.view',
+        'observe.alert-rules.view',
+      ],
+      visibleMenuIds: [
+        'dashboard',
+        'ai-workbench',
+        'ai-workbench-investigation',
+        'ai-workbench-operations',
+        'monitoring-workbench',
+        'monitoring-workbench-overview',
+        'monitoring-workbench-rules',
+      ],
+      visibleMenus: [
+        { id: 'dashboard', path: '/', labelZh: '概览', labelEn: 'Overview', iconKey: 'gauge', section: 'platform', sortOrder: 1, enabled: true },
+        { id: 'ai-workbench', path: '/ai-workbench', labelZh: 'AI工作台', labelEn: 'AI Workbench', iconKey: 'bot', section: 'ops', sortOrder: 15, enabled: true },
+        { id: 'ai-workbench-investigation', parentId: 'ai-workbench', path: '/ai-workbench/investigation', labelZh: '调查工作台', labelEn: 'Investigation Workbench', iconKey: 'bot', section: 'ops', sortOrder: 16, enabled: true },
+        { id: 'ai-workbench-operations', parentId: 'ai-workbench', path: '/ai-workbench/automation', labelZh: '巡检与自动化', labelEn: 'Automation', iconKey: 'bot', section: 'ops', sortOrder: 17, enabled: true },
+        { id: 'monitoring-workbench', path: '/monitoring-workbench', labelZh: '监控工作台', labelEn: 'Monitoring Workbench', iconKey: 'gauge', section: 'ops', sortOrder: 60, enabled: true },
+        { id: 'monitoring-workbench-overview', parentId: 'monitoring-workbench', path: '/monitoring-workbench/overview', labelZh: '工作台概览', labelEn: 'Overview', iconKey: 'gauge', section: 'ops', sortOrder: 61, enabled: true },
+        { id: 'monitoring-workbench-rules', parentId: 'monitoring-workbench', path: '/monitoring-workbench/rules', labelZh: '告警规则', labelEn: 'Alert Rules', iconKey: 'siren', section: 'ops', sortOrder: 62, enabled: true },
+      ],
+    })
+
+    const nav = getAccessibleSidebarNav(snapshot)
+    const resourceNav = filterSidebarNavByWorkspace(nav, 'resource')
+    const platformNav = filterSidebarNavByWorkbench(resourceNav, 'platform')
+    const aiNav = filterSidebarNavByWorkbench(resourceNav, 'ai')
+    const monitoringNav = filterSidebarNavByWorkbench(resourceNav, 'monitoring')
+
+    expect(platformNav.map((item) => item.id)).toEqual(['dashboard'])
+    expect(aiNav.map((item) => item.id)).toEqual(['ai-workbench'])
+    expect(aiNav[0].children?.map((item) => item.id)).toEqual(['ai-workbench-investigation', 'ai-workbench-operations'])
+    expect(monitoringNav.map((item) => item.id)).toEqual(['monitoring-workbench'])
+    expect(monitoringNav[0].children?.map((item) => item.id)).toEqual(['monitoring-workbench-overview', 'monitoring-workbench-rules'])
+  })
+
+  it('derives menu workbench ownership from route mappings', () => {
+    expect(getMenuWorkbenchId({ id: 'dashboard', path: '/' })).toBe('platform')
+    expect(getMenuWorkbenchId({ id: 'ai-workbench-operations', path: '/ai-workbench/automation' })).toBe('ai')
+    expect(getMenuWorkbenchId({ id: 'monitoring-workbench-rules', path: '/monitoring-workbench/rules' })).toBe('monitoring')
+    expect(getMenuWorkbenchId({ id: 'menus', path: '/system/menus' })).toBe(null)
   })
 
   it('resolves accessible workspaces and preferred landing path', () => {

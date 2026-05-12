@@ -37,6 +37,8 @@ const WORKBENCH_DEFAULT_PATHS = {
   monitoring: '/monitoring-workbench',
 } as const
 
+export type WorkbenchId = keyof typeof WORKBENCH_DEFAULT_PATHS
+
 function matchesRoutePrefix(pathname: string, prefixes: string[]) {
   return prefixes.some((prefix) => pathname.startsWith(prefix))
 }
@@ -149,9 +151,9 @@ export const routeMeta: RouteMeta[] = [
   { id: 'observability-events-compat', path: '/observability/events', title: '旧事件入口', description: '兼容旧入口', icon: 'IconBell', group: 'observe', requiresAuth: true, tabbar: false, navVisible: false, parentId: 'monitoring-workbench', permissionKey: 'observe.events.view', scopeMode: 'passive' },
 
   { id: 'ai-workbench', path: '/ai-workbench', title: 'AI工作台', description: 'AIOps 总览与调查入口', icon: 'IconComment', group: 'observe', workbenchId: 'ai', requiresAuth: true, tabbar: true, navVisible: true, menuId: 'ai-workbench', permissionKey: 'observe.ai.view', scopeMode: 'passive', workspace: 'resource' },
-  { id: 'ai-workbench-investigation', path: '/ai-workbench/investigation', title: '调查工作台', description: '统一承载 AI Chat、根因、性能与链路分析', icon: 'IconComment', group: 'observe', workbenchId: 'ai', requiresAuth: true, tabbar: true, navVisible: false, parentId: 'ai-workbench', menuId: 'ai-workbench-investigation', permissionKey: 'observe.ai.chat', scopeMode: 'passive' },
-  { id: 'ai-workbench-automation', path: '/ai-workbench/automation', title: '巡检与自动化', description: '巡检任务、运行记录与自动化策略', icon: 'IconComment', group: 'observe', workbenchId: 'ai', requiresAuth: true, tabbar: true, navVisible: false, parentId: 'ai-workbench', menuId: 'ai-workbench-operations', permissionKey: 'observe.ai.view', scopeMode: 'passive' },
-  { id: 'ai-workbench-tools', path: '/ai-workbench/tools', title: '工具与技能', description: 'MCP adapters、数据源与技能装配', icon: 'IconComment', group: 'observe', workbenchId: 'ai', requiresAuth: true, tabbar: true, navVisible: false, parentId: 'ai-workbench', menuId: 'ai-workbench-tools', permissionKey: 'observe.ai.view', scopeMode: 'passive' },
+  { id: 'ai-workbench-investigation', path: '/ai-workbench/investigation', title: '调查工作台', description: '统一承载 AI Chat、根因、性能与链路分析', icon: 'IconComment', group: 'observe', workbenchId: 'ai', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'ai-workbench', menuId: 'ai-workbench-investigation', permissionKey: 'observe.ai.chat', scopeMode: 'passive' },
+  { id: 'ai-workbench-automation', path: '/ai-workbench/automation', title: '巡检与自动化', description: '巡检任务、运行记录与自动化策略', icon: 'IconComment', group: 'observe', workbenchId: 'ai', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'ai-workbench', menuId: 'ai-workbench-operations', permissionKey: 'observe.ai.view', scopeMode: 'passive' },
+  { id: 'ai-workbench-tools', path: '/ai-workbench/tools', title: '工具与技能', description: 'MCP adapters、数据源与技能装配', icon: 'IconComment', group: 'observe', workbenchId: 'ai', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'ai-workbench', menuId: 'ai-workbench-tools', permissionKey: 'observe.ai.view', scopeMode: 'passive' },
   { id: 'ai-observe-compat', path: '/ai-observe', title: 'Ai可观测性', description: '兼容旧入口', icon: 'IconComment', group: 'observe', requiresAuth: true, tabbar: false, navVisible: false, redirectTo: '/ai-workbench', permissionKey: 'observe.ai.view', scopeMode: 'passive', workspace: 'resource' },
   { id: 'ai-observe-workbench-compat', path: '/ai-observe/workbench', title: '旧调查入口', description: '兼容旧入口', icon: 'IconComment', group: 'observe', requiresAuth: true, tabbar: false, navVisible: false, parentId: 'ai-workbench', permissionKey: 'observe.ai.chat', scopeMode: 'passive' },
   { id: 'ai-observe-operations-compat', path: '/ai-observe/operations', title: '旧巡检入口', description: '兼容旧入口', icon: 'IconComment', group: 'observe', requiresAuth: true, tabbar: false, navVisible: false, parentId: 'ai-workbench', permissionKey: 'observe.ai.view', scopeMode: 'passive' },
@@ -220,15 +222,7 @@ export function resolveRouteMenuId(route: RouteMeta): string | undefined {
   return parent ? resolveRouteMenuId(parent) : undefined
 }
 
-export function getRouteWorkspace(route: RouteMeta): WorkspaceType | null {
-  if (route.workspace) {
-    return route.workspace
-  }
-  const parent = getParentRouteMeta(route)
-  if (parent) {
-    return getRouteWorkspace(parent)
-  }
-  const pathname = route.path
+function deriveWorkspaceFromPath(pathname: string, requiresAuth: boolean): WorkspaceType | null {
   if (pathname === '/login' || pathname.startsWith('/auth/') || pathname.startsWith('/login/')) {
     return null
   }
@@ -238,18 +232,21 @@ export function getRouteWorkspace(route: RouteMeta): WorkspaceType | null {
   if (matchesRoutePrefix(pathname, APPLICATION_PATH_PREFIXES)) {
     return 'application'
   }
-  return route.requiresAuth ? 'resource' : null
+  return requiresAuth ? 'resource' : null
 }
 
-export function getRouteWorkbenchId(route: RouteMeta): keyof typeof WORKBENCH_DEFAULT_PATHS | null {
-  if (route.workbenchId && route.workbenchId in WORKBENCH_DEFAULT_PATHS) {
-    return route.workbenchId as keyof typeof WORKBENCH_DEFAULT_PATHS
+export function getRouteWorkspace(route: RouteMeta): WorkspaceType | null {
+  if (route.workspace) {
+    return route.workspace
   }
   const parent = getParentRouteMeta(route)
   if (parent) {
-    return getRouteWorkbenchId(parent)
+    return getRouteWorkspace(parent)
   }
-  const pathname = route.path
+  return deriveWorkspaceFromPath(route.path, route.requiresAuth)
+}
+
+function deriveWorkbenchIdFromPath(pathname: string): WorkbenchId | null {
   if (
     pathname === '/' ||
     pathname.startsWith('/cluster-resources') ||
@@ -274,6 +271,62 @@ export function getRouteWorkbenchId(route: RouteMeta): keyof typeof WORKBENCH_DE
     return 'monitoring'
   }
   return null
+}
+
+function rankMenuRouteCandidates(candidates: RouteMeta[], menuPath: string) {
+  return [...candidates].sort((left, right) => {
+    const leftExactPath = left.path === menuPath ? 0 : 1
+    const rightExactPath = right.path === menuPath ? 0 : 1
+    if (leftExactPath !== rightExactPath) return leftExactPath - rightExactPath
+
+    const leftNavVisible = left.navVisible ? 0 : 1
+    const rightNavVisible = right.navVisible ? 0 : 1
+    if (leftNavVisible !== rightNavVisible) return leftNavVisible - rightNavVisible
+
+    const leftRedirect = left.redirectTo ? 1 : 0
+    const rightRedirect = right.redirectTo ? 1 : 0
+    if (leftRedirect !== rightRedirect) return leftRedirect - rightRedirect
+
+    return left.path.localeCompare(right.path)
+  })
+}
+
+function findBestRouteForMenuMeta(menu: Pick<VisibleMenu, 'id' | 'path'>) {
+  const candidates = routeMeta.filter((route) => {
+    const routeMenuId = resolveRouteMenuId(route)
+    return routeMenuId === menu.id || route.path === menu.path
+  })
+  if (candidates.length === 0) {
+    return undefined
+  }
+  return rankMenuRouteCandidates(candidates, menu.path)[0]
+}
+
+export function getMenuWorkspace(menu: Pick<VisibleMenu, 'id' | 'path'>): WorkspaceType | null {
+  const route = findBestRouteForMenuMeta(menu)
+  if (route) {
+    return getRouteWorkspace(route)
+  }
+  return deriveWorkspaceFromPath(menu.path, true)
+}
+
+export function getMenuWorkbenchId(menu: Pick<VisibleMenu, 'id' | 'path'>): WorkbenchId | null {
+  const route = findBestRouteForMenuMeta(menu)
+  if (route) {
+    return getRouteWorkbenchId(route)
+  }
+  return deriveWorkbenchIdFromPath(menu.path)
+}
+
+export function getRouteWorkbenchId(route: RouteMeta): WorkbenchId | null {
+  if (route.workbenchId && route.workbenchId in WORKBENCH_DEFAULT_PATHS) {
+    return route.workbenchId as WorkbenchId
+  }
+  const parent = getParentRouteMeta(route)
+  if (parent) {
+    return getRouteWorkbenchId(parent)
+  }
+  return deriveWorkbenchIdFromPath(route.path)
 }
 
 export function getRouteScopeMode(route: RouteMeta): NonNullable<RouteMeta['scopeMode']> {
@@ -470,21 +523,7 @@ function findBestRouteForMenu(menu: VisibleMenu, snapshot?: PermissionSnapshot |
 
   if (candidates.length === 0) return undefined
 
-  return candidates.sort((left, right) => {
-    const leftExactPath = left.path === menu.path ? 0 : 1
-    const rightExactPath = right.path === menu.path ? 0 : 1
-    if (leftExactPath !== rightExactPath) return leftExactPath - rightExactPath
-
-    const leftNavVisible = left.navVisible ? 0 : 1
-    const rightNavVisible = right.navVisible ? 0 : 1
-    if (leftNavVisible !== rightNavVisible) return leftNavVisible - rightNavVisible
-
-    const leftRedirect = left.redirectTo ? 1 : 0
-    const rightRedirect = right.redirectTo ? 1 : 0
-    if (leftRedirect !== rightRedirect) return leftRedirect - rightRedirect
-
-    return left.path.localeCompare(right.path)
-  })[0]
+  return rankMenuRouteCandidates(candidates, menu.path)[0]
 }
 
 function buildRuntimeMenuTree(snapshot?: PermissionSnapshot | null): RuntimeMenuNode[] {
@@ -559,6 +598,30 @@ export function filterSidebarNavByWorkspace(sidebarNav: RuntimeMenuNode[], works
       sortOrder: deriveRuntimeMenuSortOrder(node, workspace),
       workspace: workspace,
       workbenchId: node.route ? getRouteWorkbenchId(node.route) ?? undefined : node.workbenchId,
+      children: nextChildren.length > 0 ? sortRuntimeMenuTree(nextChildren) : undefined,
+    }
+  }
+
+  return sortRuntimeMenuTree(
+    sidebarNav
+      .map(filterNode)
+      .filter((item): item is RuntimeMenuNode => Boolean(item)),
+  )
+}
+
+export function filterSidebarNavByWorkbench(sidebarNav: RuntimeMenuNode[], workbenchId: WorkbenchId): RuntimeMenuNode[] {
+  const filterNode = (node: RuntimeMenuNode): RuntimeMenuNode | null => {
+    const nextChildren = (node.children ?? [])
+      .map(filterNode)
+      .filter((item): item is RuntimeMenuNode => Boolean(item))
+    const nodeWorkbenchId = node.route ? getRouteWorkbenchId(node.route) : node.workbenchId ?? getMenuWorkbenchId(node)
+    const keepLeaf = Boolean(node.route && node.route.navVisible !== false) && nodeWorkbenchId === workbenchId
+    if (!keepLeaf && nextChildren.length === 0) {
+      return null
+    }
+    return {
+      ...node,
+      workbenchId: nodeWorkbenchId ?? undefined,
       children: nextChildren.length > 0 ? sortRuntimeMenuTree(nextChildren) : undefined,
     }
   }
