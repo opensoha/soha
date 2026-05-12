@@ -467,15 +467,35 @@ interface AISettings {
   baseUrl: string
   apiKey: string
   model: string
-  skillsRegistry?: Array<{ id: string; name: string; description?: string; enabled: boolean; scopes?: string[] }>
+  skillsRegistry?: Array<{
+    id: string
+    name: string
+    category?: string
+    ownerModule?: string
+    description?: string
+    enabled: boolean
+    scopes?: string[]
+    capabilityRefs?: string[]
+    blueprintRefs?: string[]
+    scopeRules?: string[]
+    inputSchema?: Record<string, unknown>
+    outputSchema?: Record<string, unknown>
+  }>
 }
 
 interface AISkillSetting {
   id: string
   name: string
+  category?: string
+  ownerModule?: string
   description?: string
   enabled: boolean
   scopes?: string[]
+  capabilityRefs?: string[]
+  blueprintRefs?: string[]
+  scopeRules?: string[]
+  inputSchema?: Record<string, unknown>
+  outputSchema?: Record<string, unknown>
 }
 
 interface DataSource {
@@ -875,9 +895,16 @@ export function AISettingsPage({ embedded = false }: SettingsPageProps = {}) {
     setSkillsRegistryDraft((settings?.skillsRegistry ?? []).map((item) => ({
       id: item.id,
       name: item.name,
+      category: item.category,
+      ownerModule: item.ownerModule,
       description: item.description,
       enabled: item.enabled,
       scopes: item.scopes ?? [],
+      capabilityRefs: item.capabilityRefs ?? [],
+      blueprintRefs: item.blueprintRefs ?? [],
+      scopeRules: item.scopeRules ?? [],
+      inputSchema: item.inputSchema ?? {},
+      outputSchema: item.outputSchema ?? {},
     })))
   }, [settings?.skillsRegistry])
   const dataSources = dataSourcesQuery.data?.data ?? []
@@ -1006,8 +1033,11 @@ export function AISettingsPage({ embedded = false }: SettingsPageProps = {}) {
           columns={[
             { title: 'ID', dataIndex: 'id' },
             { title: '名称', dataIndex: 'name' },
+            { title: '分类', dataIndex: 'category', render: (value?: string) => value || '-' },
+            { title: '归属模块', dataIndex: 'ownerModule', render: (value?: string) => value || '-' },
             { title: '说明', dataIndex: 'description', render: (value?: string) => value || '-' },
             { title: '作用域', dataIndex: 'scopes', render: (value?: string[]) => <div className="flex flex-wrap gap-1">{(value ?? []).map((item) => <Tag key={item}>{item}</Tag>)}</div> },
+            { title: '能力引用', dataIndex: 'capabilityRefs', render: (value?: string[]) => <div className="flex flex-wrap gap-1">{(value ?? []).slice(0, 3).map((item) => <Tag key={item}>{item}</Tag>)}</div> },
             { title: '启用', dataIndex: 'enabled', render: (value: boolean) => <StatusTag value={value ? 'enabled' : 'disabled'} /> },
             {
               title: '排序',
@@ -1092,17 +1122,40 @@ export function AISettingsPage({ embedded = false }: SettingsPageProps = {}) {
           initialValues={{
             id: editingSkill?.id ?? '',
             name: editingSkill?.name ?? '',
+            category: editingSkill?.category ?? '',
+            ownerModule: editingSkill?.ownerModule ?? '',
             description: editingSkill?.description ?? '',
             enabled: editingSkill?.enabled ?? true,
             scopes: editingSkill?.scopes ?? [],
+            capabilityRefs: editingSkill?.capabilityRefs ?? [],
+            blueprintRefs: editingSkill?.blueprintRefs ?? [],
+            scopeRules: editingSkill?.scopeRules ?? [],
+            inputSchemaText: JSON.stringify(editingSkill?.inputSchema ?? {}, null, 2),
+            outputSchemaText: JSON.stringify(editingSkill?.outputSchema ?? {}, null, 2),
           }}
           onFinish={(values) => {
+            let inputSchema: Record<string, unknown> = {}
+            let outputSchema: Record<string, unknown> = {}
+            try {
+              inputSchema = values.inputSchemaText ? JSON.parse(String(values.inputSchemaText)) : {}
+              outputSchema = values.outputSchemaText ? JSON.parse(String(values.outputSchemaText)) : {}
+            } catch {
+              void message.error('Input/Output Schema 需要是合法 JSON')
+              return
+            }
             const next: AISkillSetting = {
               id: String(values.id ?? '').trim(),
               name: String(values.name ?? '').trim(),
+              category: String(values.category ?? '').trim(),
+              ownerModule: String(values.ownerModule ?? '').trim(),
               description: String(values.description ?? '').trim(),
               enabled: Boolean(values.enabled),
               scopes: Array.isArray(values.scopes) ? values.scopes as string[] : [],
+              capabilityRefs: Array.isArray(values.capabilityRefs) ? values.capabilityRefs as string[] : [],
+              blueprintRefs: Array.isArray(values.blueprintRefs) ? values.blueprintRefs as string[] : [],
+              scopeRules: Array.isArray(values.scopeRules) ? values.scopeRules as string[] : [],
+              inputSchema,
+              outputSchema,
             }
             if (!next.id || !next.name) {
               void message.error('Skill ID 和名称不能为空')
@@ -1127,11 +1180,32 @@ export function AISettingsPage({ embedded = false }: SettingsPageProps = {}) {
           <Form.Item name="name" label="名称" rules={[{ required: true, message: '请输入名称' }]}>
             <Input />
           </Form.Item>
+          <Form.Item name="category" label="分类">
+            <Input placeholder="delivery / observability / platform" />
+          </Form.Item>
+          <Form.Item name="ownerModule" label="归属模块">
+            <Input placeholder="delivery / ai / monitoring" />
+          </Form.Item>
           <Form.Item name="description" label="说明">
             <Input.TextArea rows={3} />
           </Form.Item>
           <Form.Item name="scopes" label="作用域">
             <TagSelect mode="tags" />
+          </Form.Item>
+          <Form.Item name="capabilityRefs" label="能力引用">
+            <TagSelect mode="tags" />
+          </Form.Item>
+          <Form.Item name="blueprintRefs" label="蓝图引用">
+            <TagSelect mode="tags" />
+          </Form.Item>
+          <Form.Item name="scopeRules" label="范围规则">
+            <TagSelect mode="tags" />
+          </Form.Item>
+          <Form.Item name="inputSchemaText" label="Input Schema(JSON)">
+            <Input.TextArea rows={4} spellCheck={false} />
+          </Form.Item>
+          <Form.Item name="outputSchemaText" label="Output Schema(JSON)">
+            <Input.TextArea rows={4} spellCheck={false} />
           </Form.Item>
           <Form.Item name="enabled" label="启用" valuePropName="checked">
             <Switch />

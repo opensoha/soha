@@ -13,6 +13,19 @@ The target model is:
 
 This keeps alert governance inside the platform instead of scattering logic across multiple tools.
 
+The active information architecture now treats this area as the Monitoring Workbench:
+
+- `/monitoring-workbench`
+- `/monitoring-workbench/overview`
+- `/monitoring-workbench/alerts`
+- `/monitoring-workbench/rules`
+- `/monitoring-workbench/notifications`
+- `/monitoring-workbench/healing`
+- `/monitoring-workbench/oncall`
+- `/monitoring-workbench/events`
+
+Legacy `/observability/*` paths remain as compatibility redirects.
+
 ## Current Implemented Surface
 
 The repository now has a real monitoring ingress baseline, not just placeholders.
@@ -20,25 +33,51 @@ The repository now has a real monitoring ingress baseline, not just placeholders
 - inbound webhook: `POST /api/v1/integrations/alerts/webhook`
 - summary API: `GET /api/v1/monitoring/summary`
 - alert inventory API: `GET /api/v1/alerts`
+- alert governance APIs:
+  - `POST /api/v1/alerts/:alertID/acknowledge`
+  - `PUT /api/v1/alerts/:alertID/ownership`
 - notification channel APIs:
   - `GET /api/v1/notification-channels`
   - `POST /api/v1/notification-channels`
   - `PUT /api/v1/notification-channels/:channelID`
+- alert silence APIs:
+  - `GET /api/v1/alert-silences`
+  - `POST /api/v1/alert-silences`
+  - `PUT /api/v1/alert-silences/:silenceID`
+- alert delivery history API:
+  - `GET /api/v1/alert-delivery-logs`
 - frontend pages:
-  - `/observability/monitoring`
-  - `/observability/alerts`
-  - `/observability/notifications`
-  - `/observability/oncall`
-  - `/observability/events`
-  - notification channels, routes, and silences are grouped under `/observability/notifications`
+  - `/monitoring-workbench/overview`
+  - `/monitoring-workbench/alerts`
+  - `/monitoring-workbench/notifications`
+  - `/monitoring-workbench/oncall`
+  - `/monitoring-workbench/events`
+  - notification channels, routes, and silences are grouped under `/monitoring-workbench/notifications`
 
 Current persistence behavior:
 
 - normalized alerts are written to `alert_instances`
 - notification channel definitions are written to `notification_channels`
+- silence windows are written to `alert_silences`
+- downstream delivery attempts are written to `alert_delivery_logs`
 - every accepted alert ingest also emits a normalized record into `event_stream`
 
-This means the platform already owns alert ingestion and downstream channel registration, even though richer routing and fan-out work is still reserved for the next step.
+This means the platform now owns:
+
+- alert ingestion
+- route matching
+- downstream fan-out logging
+- silence-based suppression
+- acknowledgement
+- owner and assignee state
+- notification channel registration
+
+The Monitoring Workbench now has a defined boundary with the AI Workbench:
+
+- monitoring owns alert governance, notification, healing, on-call, and event flow
+- AI owns investigation, evidence aggregation, and analysis sessions
+- monitoring can hand off a live alert context to AI through standard scope fields
+- AI should only link back to the original alert or event instead of mutating alert governance inline
 
 ## Recommended Modules
 
@@ -124,8 +163,8 @@ Authorization should reuse existing RBAC + ABAC.
 
 The next increment should add:
 
-- route matching from `alert_routes`
+- richer route matching from `alert_routes`
 - deeper silence and acknowledgement workflow
-- delivery worker and retry state
-- downstream fan-out logs in `alert_delivery_logs`
-- ownership, assignment, and escalation views in the frontend
+- delivery retry state
+- escalation policies
+- incident grouping and owner views above single alerts

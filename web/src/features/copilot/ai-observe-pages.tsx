@@ -29,9 +29,9 @@ interface RootCauseRun {
 }
 
 const AI_HUB_MODES = [
-  { key: 'root_cause', label: '根因', detail: '面向告警、事件、异常波动', href: '/ai-observe/workbench?mode=root-cause', icon: <RobotOutlined /> },
-  { key: 'performance', label: '性能', detail: '面向容量、时延、吞吐分析', href: '/ai-observe/workbench?mode=performance', icon: <RadarChartOutlined /> },
-  { key: 'trace', label: '链路', detail: '面向跨服务路径与热点定位', href: '/ai-observe/workbench?mode=trace', icon: <AppstoreOutlined /> },
+  { key: 'root_cause', label: '根因', detail: '面向告警、事件、异常波动', href: '/ai-workbench/investigation?mode=root_cause', icon: <RobotOutlined /> },
+  { key: 'performance', label: '性能', detail: '面向容量、时延、吞吐分析', href: '/ai-workbench/investigation?mode=performance', icon: <RadarChartOutlined /> },
+  { key: 'trace', label: '链路', detail: '面向跨服务路径与热点定位', href: '/ai-workbench/investigation?mode=trace', icon: <AppstoreOutlined /> },
 ] as const
 
 const AI_HUB_LANES = [
@@ -40,7 +40,7 @@ const AI_HUB_LANES = [
     title: '调查工作台',
     description: '把 AI Chat、根因、性能、链路和巡检复盘都收进一个主调查面板。',
     cta: '进入调查',
-    href: '/ai-observe/workbench',
+    href: '/ai-workbench/investigation',
     icon: <RobotOutlined />,
   },
   {
@@ -48,7 +48,7 @@ const AI_HUB_LANES = [
     title: '巡检与自动化',
     description: '管理巡检任务、运行结果和自动化策略，并把结论送回调查会话。',
     cta: '进入巡检',
-    href: '/ai-observe/operations',
+    href: '/ai-workbench/automation',
     icon: <PlayCircleOutlined />,
   },
   {
@@ -56,7 +56,7 @@ const AI_HUB_LANES = [
     title: '工具与技能',
     description: '查看 MCP adapters、数据源和技能装配，把工具层能力变成调查输入。',
     cta: '进入工具',
-    href: '/ai-observe/tools',
+    href: '/ai-workbench/tools',
     icon: <ToolOutlined />,
   },
 ] as const
@@ -65,20 +65,20 @@ const AI_SIGNAL_STRIPS = [
   {
     title: '告警起因',
     detail: '先从告警、事件、最近异常切入，决定是直接开调查还是先做巡检复盘。',
-    action: '查看告警中心',
-    href: '/observability/alerts',
+    action: '查看监控工作台',
+    href: '/monitoring-workbench/alerts',
   },
   {
     title: '运行画像',
     detail: '从性能、链路和服务热点快速确定本轮观察范围，再进入调查工作台。',
     action: '按性能模式进入',
-    href: '/ai-observe/workbench?mode=performance',
+    href: '/ai-workbench/investigation?mode=performance',
   },
   {
     title: '工具装配',
     detail: '确认当前数据源、技能和 MCP adapter 可用性，避免调查入口进来后再补工具。',
     action: '查看工具与技能',
-    href: '/ai-observe/tools',
+    href: '/ai-workbench/tools',
   },
 ] as const
 
@@ -109,12 +109,12 @@ export function AIObserveOverviewPage() {
   return (
     <div className="kc-page">
       <PageHeader
-        title="AI观测分析中心"
-        description="面向资源工作台的 AIOps 入口，统一承接调查、巡检、性能与工具链能力。"
+        title="AI工作台"
+        description="面向平台工作台的 AIOps 入口，统一承接调查、巡检、性能与工具链能力。"
         actions={
           <Space>
-            <Button icon={<ToolOutlined />} onClick={() => navigate('/ai-observe/tools')}>工具与技能</Button>
-            <Button type="primary" icon={<RobotOutlined />} onClick={() => navigate('/ai-observe/workbench')}>进入调查工作台</Button>
+            <Button icon={<ToolOutlined />} onClick={() => navigate('/ai-workbench/tools')}>工具与技能</Button>
+            <Button type="primary" icon={<RobotOutlined />} onClick={() => navigate('/ai-workbench/investigation')}>进入调查工作台</Button>
           </Space>
         }
       />
@@ -197,9 +197,9 @@ export function AIObserveOverviewPage() {
                 不再把 AI 入口拆成左侧第二层功能树，而是先通过这个总入口判断该走调查、巡检还是工具装配。
               </Paragraph>
               <Space>
-                <Button onClick={() => navigate('/ai-observe/workbench?mode=root-cause')}>按根因模式开始</Button>
-                <Button onClick={() => navigate('/ai-observe/workbench?mode=performance')}>按性能模式开始</Button>
-                <Button onClick={() => navigate('/ai-observe/workbench?mode=trace')}>按链路模式开始</Button>
+                <Button onClick={() => navigate('/ai-workbench/investigation?mode=root_cause')}>按根因模式开始</Button>
+                <Button onClick={() => navigate('/ai-workbench/investigation?mode=performance')}>按性能模式开始</Button>
+                <Button onClick={() => navigate('/ai-workbench/investigation?mode=trace')}>按链路模式开始</Button>
               </Space>
             </Space>
           </Card>
@@ -224,7 +224,7 @@ export function AIObserveOverviewPage() {
               <List
                 dataSource={sessions.slice(0, 5)}
                 renderItem={(item) => (
-                  <List.Item actions={[<Link key="open" to="/ai-observe/workbench">打开</Link>]}>
+                  <List.Item actions={[<Link key="open" to="/ai-workbench/investigation">打开</Link>]}>
                     <List.Item.Meta title={item.title} description={item.metadata?.summary || item.updatedAt} />
                     {item.metadata?.mode ? <Tag>{item.metadata.mode}</Tag> : null}
                   </List.Item>
@@ -293,7 +293,7 @@ export function AIOperationsPage() {
     onSuccess: () => {
       void message.success('已从巡检运行创建调查会话')
       void queryClient.invalidateQueries({ queryKey: ['ai-observe-overview-sessions'] })
-      navigate('/ai-observe/workbench?mode=inspection_review')
+      navigate('/ai-workbench/investigation?mode=inspection_review')
     },
     onError: (err: Error) => void message.error(err.message),
   })
@@ -318,8 +318,8 @@ export function AIOperationsPage() {
         description="统一查看巡检任务、巡检运行、自动化策略，并把发现结果送入调查工作台。"
         actions={
           <Space>
-            <Button onClick={() => navigate('/ai-observe/workbench?mode=inspection_review')}>进入巡检复盘工作台</Button>
-            <Button type="primary" onClick={() => navigate('/ai-observe/workbench')}>新建调查</Button>
+            <Button onClick={() => navigate('/ai-workbench/investigation?mode=inspection_review')}>进入巡检复盘工作台</Button>
+            <Button type="primary" onClick={() => navigate('/ai-workbench/investigation')}>新建调查</Button>
           </Space>
         }
       />
@@ -489,7 +489,7 @@ export function AIToolsPage() {
             />
             <Space style={{ marginTop: 16 }}>
               <Button onClick={() => navigate('/settings/ai')}>前往 AI 设置</Button>
-              <Button type="primary" onClick={() => navigate('/ai-observe/workbench')}>回到调查工作台</Button>
+              <Button type="primary" onClick={() => navigate('/ai-workbench/investigation')}>回到调查工作台</Button>
             </Space>
           </Card>
         </Col>

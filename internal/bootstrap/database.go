@@ -82,11 +82,11 @@ type clusterCredentialSeed struct {
 // While the stored version matches this constant, the static seed block is
 // skipped entirely. Config-driven sync (admin user, clusters) runs separately
 // during startup so runtime config updates do not depend on replaying defaults.
-const bootstrapSeedVersion = "2026-05-09-1"
+const bootstrapSeedVersion = "2026-05-12-1"
 
 const bootstrapSeedVersionKey = "bootstrap.seed_version"
 
-func seedDefaults(ctx context.Context, store *dbinfra.Store) error {
+func seedDefaults(ctx context.Context, store *dbinfra.Store, cfg cfgpkg.Config) error {
 	storedVersion, err := readBootstrapSeedVersion(ctx, store.DB())
 	if err != nil {
 		return err
@@ -106,7 +106,7 @@ func seedDefaults(ctx context.Context, store *dbinfra.Store) error {
 		if err := seedRoles(ctx, tx); err != nil {
 			return err
 		}
-		if err := seedMenus(ctx, tx); err != nil {
+		if err := seedMenus(ctx, tx, cfg.Modules); err != nil {
 			return err
 		}
 		if err := seedPolicies(ctx, tx); err != nil {
@@ -183,7 +183,7 @@ func pruneDemoClusters(ctx context.Context, db *gorm.DB, clusters []cfgpkg.Clust
 	return nil
 }
 
-func seedMenus(ctx context.Context, db *gorm.DB) error {
+func seedMenus(ctx context.Context, db *gorm.DB, modules cfgpkg.ModulesConfig) error {
 	now := time.Now().UTC()
 	items := []menuSeed{
 		{ID: "dashboard", Path: "/", LabelZH: "总览", LabelEN: "Dashboard", IconKey: "gauge", Section: "platform", SortOrder: 10, Enabled: true},
@@ -234,20 +234,22 @@ func seedMenus(ctx context.Context, db *gorm.DB) error {
 		{ID: "storage-pv", ParentID: "storage", Path: "/storage/persistentvolumes", LabelZH: "PV", LabelEN: "PV", IconKey: "waves", Section: "platform", SortOrder: 52, Enabled: true},
 		{ID: "storage-classes", ParentID: "storage", Path: "/storage/storageclasses", LabelZH: "StorageClasses", LabelEN: "StorageClasses", IconKey: "waves", Section: "platform", SortOrder: 53, Enabled: true},
 		{ID: "clusters", Path: "/clusters", LabelZH: "集群", LabelEN: "Clusters", IconKey: "globe", Section: "platform", SortOrder: 99, Enabled: true},
-		{ID: "observability", Path: "/observability", LabelZH: "告警中心", LabelEN: "Alert Center", IconKey: "gauge", Section: "ops", SortOrder: 60, Enabled: true},
-		{ID: "monitoring", ParentID: "observability", Path: "/observability/monitoring", LabelZH: "中心概览", LabelEN: "Overview", IconKey: "gauge", Section: "ops", SortOrder: 61, Enabled: true},
-		{ID: "rules", ParentID: "observability", Path: "/observability/rules", LabelZH: "告警规则", LabelEN: "Alert Rules", IconKey: "siren", Section: "ops", SortOrder: 62, Enabled: true},
-		{ID: "alerts", ParentID: "observability", Path: "/observability/alerts", LabelZH: "活跃告警", LabelEN: "Active Alerts", IconKey: "siren", Section: "ops", SortOrder: 63, Enabled: true},
-		{ID: "notifications", ParentID: "observability", Path: "/observability/notifications", LabelZH: "通知策略", LabelEN: "Notification Policies", IconKey: "bell", Section: "ops", SortOrder: 64, Enabled: true},
-		{ID: "healing", ParentID: "observability", Path: "/observability/healing", LabelZH: "自愈中心", LabelEN: "Healing Center", IconKey: "activity", Section: "ops", SortOrder: 65, Enabled: true},
-		{ID: "oncall", ParentID: "observability", Path: "/observability/oncall", LabelZH: "值班协同", LabelEN: "On-Call Coordination", IconKey: "users", Section: "ops", SortOrder: 66, Enabled: true},
-		{ID: "assistant", Path: "/ai-observe", LabelZH: "AI观测分析中心", LabelEN: "AI Observability Analysis Center", IconKey: "bot", Section: "ops", SortOrder: 15, Enabled: true},
-		{ID: "assistant-workbench", ParentID: "assistant", Path: "/ai-observe/workbench", LabelZH: "调查工作台", LabelEN: "Investigation Workbench", IconKey: "bot", Section: "ops", SortOrder: 16, Enabled: true},
-		{ID: "assistant-operations", ParentID: "assistant", Path: "/ai-observe/operations", LabelZH: "巡检与自动化", LabelEN: "Inspection & Automation", IconKey: "bot", Section: "ops", SortOrder: 17, Enabled: true},
-		{ID: "assistant-tools", ParentID: "assistant", Path: "/ai-observe/tools", LabelZH: "工具与技能", LabelEN: "Tools & Skills", IconKey: "bot", Section: "ops", SortOrder: 18, Enabled: true},
+		{ID: "monitoring-workbench", Path: "/monitoring-workbench", LabelZH: "监控工作台", LabelEN: "Monitoring Workbench", IconKey: "gauge", Section: "ops", SortOrder: 60, Enabled: true},
+		{ID: "monitoring-workbench-overview", ParentID: "monitoring-workbench", Path: "/monitoring-workbench/overview", LabelZH: "工作台概览", LabelEN: "Overview", IconKey: "gauge", Section: "ops", SortOrder: 61, Enabled: true},
+		{ID: "monitoring-workbench-rules", ParentID: "monitoring-workbench", Path: "/monitoring-workbench/rules", LabelZH: "告警规则", LabelEN: "Alert Rules", IconKey: "siren", Section: "ops", SortOrder: 62, Enabled: true},
+		{ID: "monitoring-workbench-alerts", ParentID: "monitoring-workbench", Path: "/monitoring-workbench/alerts", LabelZH: "活跃告警", LabelEN: "Active Alerts", IconKey: "siren", Section: "ops", SortOrder: 63, Enabled: true},
+		{ID: "monitoring-workbench-notifications", ParentID: "monitoring-workbench", Path: "/monitoring-workbench/notifications", LabelZH: "通知策略", LabelEN: "Notification Policies", IconKey: "bell", Section: "ops", SortOrder: 64, Enabled: true},
+		{ID: "monitoring-workbench-healing", ParentID: "monitoring-workbench", Path: "/monitoring-workbench/healing", LabelZH: "自愈中心", LabelEN: "Healing Center", IconKey: "activity", Section: "ops", SortOrder: 65, Enabled: true},
+		{ID: "monitoring-workbench-oncall", ParentID: "monitoring-workbench", Path: "/monitoring-workbench/oncall", LabelZH: "值班协同", LabelEN: "On-Call Coordination", IconKey: "users", Section: "ops", SortOrder: 66, Enabled: true},
+		{ID: "monitoring-workbench-events", ParentID: "monitoring-workbench", Path: "/monitoring-workbench/events", LabelZH: "事件流", LabelEN: "Events", IconKey: "bell", Section: "ops", SortOrder: 67, Enabled: true},
+		{ID: "ai-workbench", Path: "/ai-workbench", LabelZH: "AI工作台", LabelEN: "AI Workbench", IconKey: "bot", Section: "ops", SortOrder: 15, Enabled: true},
+		{ID: "ai-workbench-investigation", ParentID: "ai-workbench", Path: "/ai-workbench/investigation", LabelZH: "调查工作台", LabelEN: "Investigation Workbench", IconKey: "bot", Section: "ops", SortOrder: 16, Enabled: true},
+		{ID: "ai-workbench-operations", ParentID: "ai-workbench", Path: "/ai-workbench/automation", LabelZH: "巡检与自动化", LabelEN: "Automation", IconKey: "bot", Section: "ops", SortOrder: 17, Enabled: true},
+		{ID: "ai-workbench-tools", ParentID: "ai-workbench", Path: "/ai-workbench/tools", LabelZH: "工具与技能", LabelEN: "Tools & Skills", IconKey: "bot", Section: "ops", SortOrder: 18, Enabled: true},
 		{ID: "builds", Path: "/applications", LabelZH: "应用中心", LabelEN: "Application Center", IconKey: "blocks", Section: "deliver", SortOrder: 110, Enabled: true, Roles: []string{"admin", "ops", "developer"}},
 		{ID: "application-management", Path: "/application-management", LabelZH: "应用管理", LabelEN: "Application Management", IconKey: "blocks", Section: "deliver", SortOrder: 111, Enabled: true, Roles: []string{"admin", "ops", "developer"}},
 		{ID: "build-templates", Path: "/build-templates", LabelZH: "构建模板", LabelEN: "Build Templates", IconKey: "code", Section: "deliver", SortOrder: 112, Enabled: true, Roles: []string{"admin", "ops"}},
+		{ID: "delivery-blueprints", Path: "/delivery/blueprints", LabelZH: "交付蓝图", LabelEN: "Delivery Blueprints", IconKey: "code", Section: "deliver", SortOrder: 112, Enabled: true, Roles: []string{"admin", "ops", "developer"}},
 		{ID: "release-bundles", Path: "/delivery/release-bundles", LabelZH: "版本包", LabelEN: "Release Bundles", IconKey: "blocks", Section: "deliver", SortOrder: 113, Enabled: true, Roles: []string{"admin", "ops", "developer"}},
 		{ID: "execution-tasks", Path: "/delivery/execution-tasks", LabelZH: "执行任务", LabelEN: "Execution Tasks", IconKey: "activity", Section: "deliver", SortOrder: 114, Enabled: true, Roles: []string{"admin", "ops", "developer"}},
 		{ID: "approval-policies", Path: "/delivery/approval-policies", LabelZH: "审批策略", LabelEN: "Approval Policies", IconKey: "shield", Section: "deliver", SortOrder: 115, Enabled: true, Roles: []string{"admin", "ops"}},
@@ -273,7 +275,12 @@ func seedMenus(ctx context.Context, db *gorm.DB) error {
 		{ID: "registries", Path: "/registries", LabelZH: "镜像仓库", LabelEN: "Registry Connections", IconKey: "menu-square", Section: "deliver", SortOrder: 121, Enabled: true, Roles: []string{"admin", "ops"}},
 		{ID: "settings", Path: "/settings", LabelZH: "设置", LabelEN: "Settings", IconKey: "cog", Section: "admin", SortOrder: 260, Enabled: true, Roles: []string{"admin"}},
 	}
+	allItems := append([]menuSeed(nil), items...)
+	items = filterSeedMenusByModules(items, modules)
 	if err := upsertMenus(ctx, db, items, now); err != nil {
+		return err
+	}
+	if err := deleteDisabledModuleMenus(ctx, db, allItems, modules); err != nil {
 		return err
 	}
 	menuIDs := make([]string, 0, len(items))
@@ -287,7 +294,7 @@ func seedMenus(ctx context.Context, db *gorm.DB) error {
 	if err := db.WithContext(ctx).Exec(`DELETE FROM menu_role_bindings WHERE menu_id IN ?`, menuIDs).Error; err != nil {
 		return err
 	}
-	deprecatedMenuIDs := []string{"assistant-root-cause", "assistant-performance", "assistant-chat", "assistant-inspection", "network-http-routes"}
+	deprecatedMenuIDs := []string{"assistant-root-cause", "assistant-performance", "assistant-chat", "assistant-inspection", "network-http-routes", "observability", "monitoring", "rules", "alerts", "notifications", "healing", "oncall", "assistant", "assistant-workbench", "assistant-operations", "assistant-tools", "events"}
 	if err := db.WithContext(ctx).Exec(`DELETE FROM menu_role_bindings WHERE menu_id IN ?`, deprecatedMenuIDs).Error; err != nil {
 		return err
 	}
@@ -307,6 +314,72 @@ func nullableMenu(value string) any {
 		return nil
 	}
 	return value
+}
+
+func filterSeedMenusByModules(items []menuSeed, modules cfgpkg.ModulesConfig) []menuSeed {
+	filtered := make([]menuSeed, 0, len(items))
+	for _, item := range items {
+		switch {
+		case !modules.Delivery.Enabled && isDeliveryMenuSeed(item):
+			continue
+		case !modules.Monitoring.Enabled && isMonitoringMenuSeed(item):
+			continue
+		case !modules.AI.Enabled && isAIMenuSeed(item):
+			continue
+		default:
+			filtered = append(filtered, item)
+		}
+	}
+	return filtered
+}
+
+func deleteDisabledModuleMenus(ctx context.Context, db *gorm.DB, items []menuSeed, modules cfgpkg.ModulesConfig) error {
+	menuIDs := make([]string, 0)
+	for _, item := range items {
+		switch {
+		case !modules.Delivery.Enabled && isDeliveryMenuSeed(item):
+			menuIDs = append(menuIDs, item.ID)
+		case !modules.Monitoring.Enabled && isMonitoringMenuSeed(item):
+			menuIDs = append(menuIDs, item.ID)
+		case !modules.AI.Enabled && isAIMenuSeed(item):
+			menuIDs = append(menuIDs, item.ID)
+		}
+	}
+	if len(menuIDs) == 0 {
+		return nil
+	}
+	if err := db.WithContext(ctx).Exec(`DELETE FROM menu_role_bindings WHERE menu_id IN ?`, menuIDs).Error; err != nil {
+		return err
+	}
+	return db.WithContext(ctx).Exec(`DELETE FROM menus WHERE id IN ?`, menuIDs).Error
+}
+
+func isDeliveryMenuSeed(item menuSeed) bool {
+	return strings.HasPrefix(item.Path, "/applications") ||
+		strings.HasPrefix(item.Path, "/application-management") ||
+		strings.HasPrefix(item.Path, "/business-lines") ||
+		strings.HasPrefix(item.Path, "/delivery-environments") ||
+		strings.HasPrefix(item.Path, "/application-environments") ||
+		strings.HasPrefix(item.Path, "/build-templates") ||
+		strings.HasPrefix(item.Path, "/delivery/blueprints") ||
+		strings.HasPrefix(item.Path, "/delivery/release-bundles") ||
+		strings.HasPrefix(item.Path, "/delivery/execution-tasks") ||
+		strings.HasPrefix(item.Path, "/delivery/approval-policies") ||
+		strings.HasPrefix(item.Path, "/workflow-templates") ||
+		strings.HasPrefix(item.Path, "/release-board") ||
+		strings.HasPrefix(item.Path, "/workflows") ||
+		strings.HasPrefix(item.Path, "/releases") ||
+		strings.HasPrefix(item.Path, "/registries")
+}
+
+func isMonitoringMenuSeed(item menuSeed) bool {
+	return item.ID == "monitoring-workbench" ||
+		strings.HasPrefix(item.Path, "/monitoring-workbench")
+}
+
+func isAIMenuSeed(item menuSeed) bool {
+	return item.ID == "ai-workbench" ||
+		strings.HasPrefix(item.Path, "/ai-workbench")
 }
 
 func upsertMenus(ctx context.Context, db *gorm.DB, items []menuSeed, now time.Time) error {

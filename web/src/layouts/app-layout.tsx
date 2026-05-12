@@ -4,6 +4,7 @@ import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { Avatar, Breadcrumb, Button, Dropdown, Layout, Menu, Spin } from 'antd'
 import type { MenuProps } from 'antd'
 import {
+  AlertOutlined,
   AppstoreOutlined,
   CloudServerOutlined,
   DownOutlined,
@@ -11,6 +12,7 @@ import {
   MenuUnfoldOutlined,
   MoonOutlined,
   QuestionCircleOutlined,
+  RobotOutlined,
   SunOutlined,
   TranslationOutlined,
 } from '@ant-design/icons'
@@ -23,11 +25,14 @@ import { useI18n } from '@/i18n'
 import {
   filterSidebarNavByWorkspace,
   findFirstAccessiblePathForWorkspace,
+  findFirstAccessiblePathForWorkbench,
   findPreferredWorkspace,
   getAccessibleSidebarNav,
   getAccessibleWorkspaces,
+  getAccessibleWorkbenchIds,
   getParentRouteMeta,
   getRouteMeta,
+  getRouteWorkbenchId,
   getRouteWorkspace,
   resolveRouteMenuId,
 } from '@/routes/meta'
@@ -44,6 +49,13 @@ interface WorkspaceOption {
   description: string
   icon: ReactNode
   key: BusinessWorkspaceType
+  label: string
+}
+
+interface WorkbenchOption {
+  description: string
+  icon: ReactNode
+  key: 'platform' | 'delivery' | 'ai' | 'monitoring'
   label: string
 }
 
@@ -199,6 +211,23 @@ function buildWorkspaceOptions(localeCode: 'zh_CN' | 'en_US'): WorkspaceOption[]
   ]
 }
 
+function buildWorkbenchOptions(localeCode: 'zh_CN' | 'en_US'): WorkbenchOption[] {
+  if (localeCode === 'en_US') {
+    return [
+      { key: 'platform', label: 'Platform Workbench', description: 'Clusters, workloads, network, storage, and runtime resources', icon: <AppstoreOutlined /> },
+      { key: 'delivery', label: 'Delivery Workbench', description: 'Applications, build sources, bindings, and release orchestration', icon: <CloudServerOutlined /> },
+      { key: 'ai', label: 'AI Workbench', description: 'Investigation, automation, tools, and skills', icon: <RobotOutlined /> },
+      { key: 'monitoring', label: 'Monitoring Workbench', description: 'Alerts, routes, notifications, and on-call flows', icon: <AlertOutlined /> },
+    ]
+  }
+  return [
+    { key: 'platform', label: '平台工作台', description: '集群、工作负载、网络、存储与运行资源', icon: <AppstoreOutlined /> },
+    { key: 'delivery', label: '应用交付工作台', description: '应用、构建来源、环境绑定与发布编排', icon: <CloudServerOutlined /> },
+    { key: 'ai', label: 'AI工作台', description: '调查、自动化、工具与技能', icon: <RobotOutlined /> },
+    { key: 'monitoring', label: '监控工作台', description: '告警、路由、通知和值班协同', icon: <AlertOutlined /> },
+  ]
+}
+
 function WorkspaceSwitcher({
   collapsed,
   current,
@@ -256,6 +285,63 @@ function WorkspaceSwitcher({
   )
 }
 
+function WorkbenchSwitcher({
+  collapsed,
+  current,
+  onSelect,
+  options,
+}: {
+  collapsed: boolean
+  current: WorkbenchOption
+  onSelect: (workbench: WorkbenchOption['key']) => void
+  options: WorkbenchOption[]
+}) {
+  const dropdownItems: MenuProps['items'] = options.map((option) => ({
+    key: option.key,
+    label: (
+      <div className="kc-workspace-option">
+        <span className="kc-workspace-option__icon">{option.icon}</span>
+        <span className="kc-workspace-option__copy">
+          <span className="kc-workspace-option__label">{option.label}</span>
+          <span className="kc-workspace-option__desc">{option.description}</span>
+        </span>
+      </div>
+    ),
+  }))
+
+  const trigger = (
+    <Button className="kc-workbench-switcher" type="text">
+      <span className="kc-workbench-switcher__icon">{current.icon}</span>
+      {!collapsed ? (
+        <span className="kc-workbench-switcher__copy">
+          <span className="kc-workbench-switcher__label">{current.label}</span>
+          <span className="kc-workbench-switcher__desc">{current.description}</span>
+        </span>
+      ) : null}
+      {options.length > 1 ? <DownOutlined className="kc-workbench-switcher__arrow" /> : null}
+    </Button>
+  )
+
+  if (options.length <= 1) {
+    return trigger
+  }
+
+  return (
+    <Dropdown
+      menu={{
+        items: dropdownItems,
+        selectable: true,
+        selectedKeys: [current.key],
+        onClick: ({ key }) => onSelect(String(key) as WorkbenchOption['key']),
+      }}
+      placement="bottomLeft"
+      trigger={['click']}
+    >
+      {trigger}
+    </Dropdown>
+  )
+}
+
 export function AppLayout() {
   const navigate = useNavigate()
   const location = useLocation()
@@ -278,12 +364,15 @@ export function AppLayout() {
   const snapshot = permissionSnapshotQuery.data?.data
   const fullSidebarNav = useMemo(() => getAccessibleSidebarNav(snapshot), [snapshot])
   const accessibleWorkspaces = useMemo(() => getAccessibleWorkspaces(snapshot), [snapshot])
+  const accessibleWorkbenchIds = useMemo(() => getAccessibleWorkbenchIds(snapshot), [snapshot])
   const workspaceOptions = useMemo(() => buildWorkspaceOptions(localeCode), [localeCode])
+  const workbenchOptions = useMemo(() => buildWorkbenchOptions(localeCode).filter((item) => accessibleWorkbenchIds.includes(item.key)), [accessibleWorkbenchIds, localeCode])
   const preferredWorkspace = useMemo(
     () => findPreferredWorkspace(snapshot, currentWorkspace, user?.roles ?? []),
     [snapshot, currentWorkspace, user?.roles],
   )
   const currentMeta = getRouteMeta(location.pathname)
+  const currentWorkbenchId = getRouteWorkbenchId(currentMeta)
   const currentRouteWorkspace = getRouteWorkspace(currentMeta)
   const activeWorkspace = useMemo<BusinessWorkspaceType | null>(() => {
     if ((currentRouteWorkspace === 'application' || currentRouteWorkspace === 'resource') && accessibleWorkspaces.includes(currentRouteWorkspace)) {
@@ -398,6 +487,7 @@ export function AppLayout() {
     : t('layout.switchThemeToDark', '切换到深色模式')
   const visibleWorkspaceOptions = workspaceOptions.filter((option) => accessibleWorkspaces.includes(option.key))
   const currentWorkspaceOption = visibleWorkspaceOptions.find((option) => option.key === activeWorkspace) ?? visibleWorkspaceOptions[0] ?? null
+  const currentWorkbenchOption = workbenchOptions.find((option) => option.key === currentWorkbenchId) ?? workbenchOptions[0] ?? null
   const businessSelectedKeys = selectedKeys.filter((key) => businessNodeIDs.has(key))
   const systemSelectedKeys = selectedKeys.filter((key) => systemNodeIDs.has(key))
 
@@ -430,6 +520,23 @@ export function AppLayout() {
               )}
             </div>
           </div>
+
+          {workbenchOptions.length > 0 && currentWorkbenchOption ? (
+            <div className="kc-workbench-switcher-shell">
+              <WorkbenchSwitcher
+                collapsed={sidebarCollapsed}
+                current={currentWorkbenchOption}
+                options={workbenchOptions}
+                onSelect={(workbench) => {
+                  const targetPath = findFirstAccessiblePathForWorkbench(workbench, snapshot)
+                  if (!targetPath) {
+                    return
+                  }
+                  navigate(targetPath)
+                }}
+              />
+            </div>
+          ) : null}
 
           {visibleWorkspaceOptions.length > 0 && currentWorkspaceOption ? (
             <div className="kc-workspace-switcher-shell">

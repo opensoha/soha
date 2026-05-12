@@ -252,14 +252,17 @@ describe('app layout workspace navigation', () => {
   it('renders the workspace switcher below the brand bar and above the business menu', async () => {
     const container = await renderWithProviders('/')
     const brandBar = container.querySelector('.kc-sider-topbar')
+    const workbenchShell = container.querySelector('.kc-workbench-switcher-shell')
     const switcherShell = container.querySelector('.kc-workspace-switcher-shell')
     const businessNav = container.querySelector('.kc-nav-business')
 
     expect(brandBar).not.toBeNull()
+    expect(workbenchShell).not.toBeNull()
     expect(switcherShell).not.toBeNull()
     expect(businessNav).not.toBeNull()
     expect(brandBar?.querySelector('.kc-workspace-switcher')).toBeNull()
-    expect(brandBar?.nextElementSibling).toBe(switcherShell)
+    expect(brandBar?.nextElementSibling).toBe(workbenchShell)
+    expect(workbenchShell?.nextElementSibling).toBe(switcherShell)
     expect(switcherShell?.nextElementSibling).toBe(businessNav)
   })
 

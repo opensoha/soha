@@ -8,6 +8,7 @@ export interface RouteMeta {
   description: string
   icon: string
   group: string
+  workbenchId?: string
   requiresAuth: boolean
   tabbar: boolean
   navVisible: boolean
@@ -67,6 +68,21 @@ export interface VisibleMenu {
   enabled?: boolean
 }
 
+export interface WorkbenchModuleDescriptor {
+  id: string
+  name: string
+  defaultPath: string
+  enabledConfigKey?: string
+  dependencies?: string[]
+  visiblePermissions?: string[]
+  seedMenus?: string[]
+}
+
+export interface WorkbenchModuleStatus {
+  descriptor: WorkbenchModuleDescriptor
+  enabled: boolean
+}
+
 export interface RuntimeMenuNode {
   id: string
   parentId?: string
@@ -78,6 +94,7 @@ export interface RuntimeMenuNode {
   sortOrder: number
   enabled: boolean
   workspace?: WorkspaceType
+  workbenchId?: string
   route?: RouteMeta
   children?: RuntimeMenuNode[]
 }
@@ -731,6 +748,83 @@ export interface ReleaseTarget {
   containerName?: string
   metadata?: Record<string, unknown>
   enabled: boolean
+}
+
+export interface BlueprintFileTemplate {
+  path: string
+  kind: string
+  content: string
+  required: boolean
+  purpose?: string
+}
+
+export interface BlueprintApplicationDraft {
+  id?: string
+  name: string
+  key: string
+  group: string
+  businessLineId?: string
+  language: string
+  description?: string
+  ownerTeam?: string
+  repositoryProvider?: string
+  repositoryProjectId?: string
+  repositoryPath?: string
+  defaultBranch?: string
+  defaultTag?: string
+  buildImage?: string
+  buildContextDir?: string
+  dockerfilePath?: string
+  enabled: boolean
+  metadata?: Record<string, unknown>
+}
+
+export interface BlueprintEnvironmentBindingTemplate {
+  environmentId?: string
+  environmentKey?: string
+  businessLineId?: string
+  strategyProfileId?: string
+  promotionPolicyId?: string
+  approvalPolicyId?: string
+  artifactPolicyId?: string
+  workflowTemplateId?: string
+  buildPolicy?: BuildPolicy
+  releasePolicy?: ReleasePolicy
+  resourceSelector?: {
+    matchLabels?: Record<string, string>
+  }
+  targets?: ReleaseTarget[]
+}
+
+export interface DeliveryBlueprint {
+  id: string
+  key: string
+  name: string
+  description?: string
+  applicationDraft: BlueprintApplicationDraft
+  buildSources?: BuildSource[]
+  environmentBindings?: BlueprintEnvironmentBindingTemplate[]
+  files?: BlueprintFileTemplate[]
+  executionHints?: Record<string, unknown>
+  postCreateActions?: string[]
+  enabled: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+export interface RenderedDeliverySpec {
+  applicationDraft: BlueprintApplicationDraft
+  buildSources?: BuildSource[]
+  environmentBindings?: BlueprintEnvironmentBindingTemplate[]
+  files?: BlueprintFileTemplate[]
+  executionHints?: Record<string, unknown>
+  postCreateActions?: string[]
+}
+
+export interface BlueprintBootstrapResult {
+  application: DeliveryApplication
+  environmentBindings?: ApplicationEnvironment[]
+  spec: RenderedDeliverySpec
 }
 
 export interface BuildSource {

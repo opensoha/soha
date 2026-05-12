@@ -25,6 +25,14 @@ func (s stubApplicationReader) Get(context.Context, domainidentity.Principal, st
 	return s.app, nil
 }
 
+func (s stubApplicationReader) Create(context.Context, domainidentity.Principal, domainapp.UpsertInput) (domainapp.App, error) {
+	return s.app, nil
+}
+
+func (s stubApplicationReader) Update(context.Context, domainidentity.Principal, string, domainapp.UpsertInput) (domainapp.App, error) {
+	return s.app, nil
+}
+
 type stubCatalogReader struct {
 	bindings []domaincatalog.ApplicationEnvironment
 	envs     []domaincatalog.Environment
@@ -39,6 +47,20 @@ func (s stubCatalogReader) ListApplicationEnvironments(context.Context, domainid
 }
 
 func (s stubCatalogReader) GetApplicationEnvironment(context.Context, domainidentity.Principal, string) (domaincatalog.ApplicationEnvironment, error) {
+	if len(s.bindings) == 0 {
+		return domaincatalog.ApplicationEnvironment{}, nil
+	}
+	return s.bindings[0], nil
+}
+
+func (s stubCatalogReader) CreateApplicationEnvironment(context.Context, domainidentity.Principal, domaincatalog.ApplicationEnvironmentInput) (domaincatalog.ApplicationEnvironment, error) {
+	if len(s.bindings) == 0 {
+		return domaincatalog.ApplicationEnvironment{}, nil
+	}
+	return s.bindings[0], nil
+}
+
+func (s stubCatalogReader) UpdateApplicationEnvironment(context.Context, domainidentity.Principal, string, domaincatalog.ApplicationEnvironmentInput) (domaincatalog.ApplicationEnvironment, error) {
 	if len(s.bindings) == 0 {
 		return domaincatalog.ApplicationEnvironment{}, nil
 	}
@@ -147,6 +169,22 @@ func (stubRepository) UpdateApprovalPolicy(context.Context, string, domaindelive
 
 func (stubRepository) DeleteApprovalPolicy(context.Context, string) error {
 	return nil
+}
+
+func (stubRepository) ListDeliveryBlueprints(context.Context) ([]domaindelivery.DeliveryBlueprint, error) {
+	return nil, nil
+}
+
+func (stubRepository) GetDeliveryBlueprint(context.Context, string) (domaindelivery.DeliveryBlueprint, error) {
+	return domaindelivery.DeliveryBlueprint{}, nil
+}
+
+func (stubRepository) CreateDeliveryBlueprint(context.Context, domaindelivery.DeliveryBlueprintInput) (domaindelivery.DeliveryBlueprint, error) {
+	return domaindelivery.DeliveryBlueprint{}, nil
+}
+
+func (stubRepository) UpdateDeliveryBlueprint(context.Context, string, domaindelivery.DeliveryBlueprintInput) (domaindelivery.DeliveryBlueprint, error) {
+	return domaindelivery.DeliveryBlueprint{}, nil
 }
 
 func TestGetApplicationDetailIncludesBindingTargets(t *testing.T) {

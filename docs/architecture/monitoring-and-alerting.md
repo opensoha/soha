@@ -13,6 +13,19 @@ The target model is:
 
 This keeps alert governance inside the platform instead of scattering logic across multiple tools.
 
+当前信息架构已经从旧的“告警中心”收敛成“监控工作台”：
+
+- `/monitoring-workbench`
+- `/monitoring-workbench/overview`
+- `/monitoring-workbench/alerts`
+- `/monitoring-workbench/rules`
+- `/monitoring-workbench/notifications`
+- `/monitoring-workbench/healing`
+- `/monitoring-workbench/oncall`
+- `/monitoring-workbench/events`
+
+旧的 `/observability/*` 路径仍保留兼容跳转。
+
 ## Current Implemented Surface
 
 The repository now has a real monitoring ingress baseline, not just placeholders.
@@ -34,12 +47,12 @@ The repository now has a real monitoring ingress baseline, not just placeholders
 - alert delivery history API:
   - `GET /api/v1/alert-delivery-logs`
 - frontend pages:
-  - `/observability/monitoring`
-  - `/observability/alerts`
-  - `/observability/notifications`
-  - `/observability/oncall`
-  - `/observability/events`
-  - notification channels, routes, and silences are grouped under `/observability/notifications`
+  - `/monitoring-workbench/overview`
+  - `/monitoring-workbench/alerts`
+  - `/monitoring-workbench/notifications`
+  - `/monitoring-workbench/oncall`
+  - `/monitoring-workbench/events`
+  - notification channels, routes, and silences are grouped under `/monitoring-workbench/notifications`
 
 Current persistence behavior:
 
@@ -58,6 +71,13 @@ This means the platform now owns:
 - acknowledgement
 - owner and assignee state
 - notification channel registration
+
+监控工作台与 AI 工作台当前边界：
+
+- 监控工作台负责告警治理、通知、自愈、值班与事件流
+- AI 工作台负责调查、分析与证据归并
+- 监控工作台可以把 `alertId`、cluster、namespace、workload、timeRange 通过标准 handoff scope 传给 AI 工作台
+- AI 工作台只回链原始告警或事件，不在聊天面板里直接承接治理动作
 
 ## Recommended Modules
 

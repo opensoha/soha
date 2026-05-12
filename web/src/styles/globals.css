@@ -147,14 +147,16 @@ a {
   width: 36px;
 }
 
-.kc-workspace-switcher-shell {
+.kc-workspace-switcher-shell,
+.kc-workbench-switcher-shell {
   flex: 0 0 auto;
   padding: 8px 12px 10px;
   border-bottom: 1px solid var(--kc-border-color);
   background: var(--kc-bg-surface);
 }
 
-.kc-workspace-switcher.ant-btn {
+.kc-workspace-switcher.ant-btn,
+.kc-workbench-switcher.ant-btn {
   display: flex;
   width: 100%;
   min-height: 32px;
@@ -167,11 +169,14 @@ a {
 }
 
 .kc-workspace-switcher.ant-btn:hover,
-.kc-workspace-switcher.ant-btn:focus {
+.kc-workspace-switcher.ant-btn:focus,
+.kc-workbench-switcher.ant-btn:hover,
+.kc-workbench-switcher.ant-btn:focus {
   background: var(--kc-fill-weak) !important;
 }
 
-.kc-workspace-switcher__icon {
+.kc-workspace-switcher__icon,
+.kc-workbench-switcher__icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -183,7 +188,8 @@ a {
   flex: 0 0 auto;
 }
 
-.kc-workspace-switcher__copy {
+.kc-workspace-switcher__copy,
+.kc-workbench-switcher__copy {
   display: inline-flex;
   min-width: 0;
   flex: 1 1 auto;
@@ -191,18 +197,21 @@ a {
   text-align: left;
 }
 
-.kc-workspace-switcher__label {
+.kc-workspace-switcher__label,
+.kc-workbench-switcher__label {
   color: var(--kc-text-primary);
   font-size: 11px;
   font-weight: 700;
   line-height: 1.1;
 }
 
-.kc-workspace-switcher__desc {
+.kc-workspace-switcher__desc,
+.kc-workbench-switcher__desc {
   display: none;
 }
 
-.kc-workspace-switcher__arrow {
+.kc-workspace-switcher__arrow,
+.kc-workbench-switcher__arrow {
   color: var(--kc-text-tertiary);
   flex: 0 0 auto;
 }
@@ -245,11 +254,13 @@ a {
   white-space: normal;
 }
 
-.ant-layout-sider-collapsed .kc-workspace-switcher-shell {
+.ant-layout-sider-collapsed .kc-workspace-switcher-shell,
+.ant-layout-sider-collapsed .kc-workbench-switcher-shell {
   padding-inline: 12px;
 }
 
-.ant-layout-sider-collapsed .kc-workspace-switcher.ant-btn {
+.ant-layout-sider-collapsed .kc-workspace-switcher.ant-btn,
+.ant-layout-sider-collapsed .kc-workbench-switcher.ant-btn {
   justify-content: center;
   padding-inline: 0 !important;
 }
@@ -3634,6 +3645,7 @@ a {
   }
 
   .kc-workspace-switcher__desc,
+  .kc-workbench-switcher__desc,
   .kc-nav-system__subtitle {
     display: none;
   }

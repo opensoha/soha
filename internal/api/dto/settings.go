@@ -31,11 +31,18 @@ type UpdateAISettingsRequest struct {
 }
 
 type AISkillSettings struct {
-	ID          string   `json:"id"`
-	Name        string   `json:"name"`
-	Description string   `json:"description"`
-	Enabled     bool     `json:"enabled"`
-	Scopes      []string `json:"scopes"`
+	ID             string         `json:"id"`
+	Name           string         `json:"name"`
+	Category       string         `json:"category"`
+	OwnerModule    string         `json:"ownerModule"`
+	Description    string         `json:"description"`
+	CapabilityRefs []string       `json:"capabilityRefs"`
+	BlueprintRefs  []string       `json:"blueprintRefs"`
+	InputSchema    map[string]any `json:"inputSchema"`
+	OutputSchema   map[string]any `json:"outputSchema"`
+	ScopeRules     []string       `json:"scopeRules"`
+	Enabled        bool           `json:"enabled"`
+	Scopes         []string       `json:"scopes"`
 }
 
 type UpdateBrandingSettingsRequest struct {

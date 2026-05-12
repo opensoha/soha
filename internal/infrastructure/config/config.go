@@ -22,6 +22,7 @@ type Config struct {
 	Monitoring MonitoringConfig `mapstructure:"monitoring"`
 	Swagger    SwaggerConfig    `mapstructure:"swagger"`
 	MCP        MCPConfig        `mapstructure:"mcp"`
+	Modules    ModulesConfig    `mapstructure:"modules"`
 	Bootstrap  BootstrapConfig  `mapstructure:"bootstrap"`
 	Kubernetes KubernetesConfig `mapstructure:"kubernetes"`
 }
@@ -137,6 +138,18 @@ type SwaggerConfig struct {
 type MCPConfig struct {
 	Enabled        bool          `mapstructure:"enabled"`
 	DefaultTimeout time.Duration `mapstructure:"default_timeout"`
+}
+
+type ModuleToggleConfig struct {
+	Enabled bool `mapstructure:"enabled"`
+}
+
+type ModulesConfig struct {
+	Delivery   ModuleToggleConfig `mapstructure:"delivery"`
+	Monitoring ModuleToggleConfig `mapstructure:"monitoring"`
+	AI         ModuleToggleConfig `mapstructure:"ai"`
+	Security   ModuleToggleConfig `mapstructure:"security"`
+	CMDB       ModuleToggleConfig `mapstructure:"cmdb"`
 }
 
 type BootstrapConfig struct {
@@ -298,6 +311,11 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("swagger.path", "/swagger/*any")
 	v.SetDefault("mcp.enabled", true)
 	v.SetDefault("mcp.default_timeout", "10s")
+	v.SetDefault("modules.delivery.enabled", true)
+	v.SetDefault("modules.monitoring.enabled", true)
+	v.SetDefault("modules.ai.enabled", true)
+	v.SetDefault("modules.security.enabled", false)
+	v.SetDefault("modules.cmdb.enabled", false)
 	v.SetDefault("bootstrap.seed_defaults", true)
 	v.SetDefault("kubernetes.clusters", []map[string]any{})
 }

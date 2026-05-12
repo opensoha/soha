@@ -25,6 +25,8 @@ func workspacePermissionForMenu(item domainmenu.Record) string {
 		strings.HasPrefix(path, "/helm") ||
 		strings.HasPrefix(path, "/extensions") ||
 		strings.HasPrefix(path, "/clusters") ||
+		strings.HasPrefix(path, "/monitoring-workbench") ||
+		strings.HasPrefix(path, "/ai-workbench") ||
 		strings.HasPrefix(path, "/observability") ||
 		strings.HasPrefix(path, "/ai-observe") ||
 		strings.HasPrefix(path, "/chat"):
@@ -34,6 +36,7 @@ func workspacePermissionForMenu(item domainmenu.Record) string {
 		strings.HasPrefix(path, "/delivery-environments") ||
 		strings.HasPrefix(path, "/application-environments") ||
 		strings.HasPrefix(path, "/build-templates") ||
+		strings.HasPrefix(path, "/delivery/blueprints") ||
 		strings.HasPrefix(path, "/delivery/release-bundles") ||
 		strings.HasPrefix(path, "/delivery/execution-tasks") ||
 		strings.HasPrefix(path, "/delivery/approval-policies") ||
@@ -62,6 +65,8 @@ func permissionRuleForMenu(item domainmenu.Record) (visibilityRule, bool) {
 		return visibilityRule{permissions: []string{appaccess.PermPlatformClustersView}}, true
 	case item.ID == "builds":
 		return visibilityRule{permissions: []string{appaccess.PermDeliveryApplicationsView}}, true
+	case item.ID == "delivery-blueprints":
+		return visibilityRule{permissions: []string{appaccess.PermDeliveryApplicationsView}}, true
 	case item.ID == "build-templates":
 		return visibilityRule{permissions: []string{appaccess.PermDeliveryBuildTemplatesView}}, true
 	case item.ID == "release-bundles":
@@ -86,7 +91,7 @@ func permissionRuleForMenu(item domainmenu.Record) (visibilityRule, bool) {
 		return visibilityRule{permissions: []string{appaccess.PermDeliveryReleasesView}}, true
 	case item.ID == "registries":
 		return visibilityRule{permissions: []string{appaccess.PermDeliveryRegistriesView}}, true
-	case item.ID == "observability":
+	case item.ID == "monitoring-workbench":
 		return visibilityRule{permissions: []string{
 			appaccess.PermObserveMonitoringView,
 			appaccess.PermObserveAlertRulesView,
@@ -96,25 +101,25 @@ func permissionRuleForMenu(item domainmenu.Record) (visibilityRule, bool) {
 			appaccess.PermObserveHealingView,
 			appaccess.PermObserveEventsView,
 		}}, true
-	case item.ID == "monitoring":
+	case item.ID == "monitoring-workbench-overview", item.ID == "monitoring":
 		return visibilityRule{permissions: []string{appaccess.PermObserveMonitoringView}}, true
-	case item.ID == "alerts":
+	case item.ID == "monitoring-workbench-alerts", item.ID == "alerts":
 		return visibilityRule{permissions: []string{appaccess.PermObserveAlertsView}}, true
-	case item.ID == "rules":
+	case item.ID == "monitoring-workbench-rules", item.ID == "rules":
 		return visibilityRule{permissions: []string{appaccess.PermObserveAlertRulesView}}, true
-	case item.ID == "notifications":
+	case item.ID == "monitoring-workbench-notifications", item.ID == "notifications":
 		return visibilityRule{permissions: []string{appaccess.PermObserveNotificationsView}}, true
-	case item.ID == "oncall":
+	case item.ID == "monitoring-workbench-oncall", item.ID == "oncall":
 		return visibilityRule{permissions: []string{appaccess.PermObserveOncallView}}, true
-	case item.ID == "healing":
+	case item.ID == "monitoring-workbench-healing", item.ID == "healing":
 		return visibilityRule{permissions: []string{appaccess.PermObserveHealingView}}, true
-	case item.ID == "events":
+	case item.ID == "monitoring-workbench-events", item.ID == "events":
 		return visibilityRule{permissions: []string{appaccess.PermObserveEventsView}}, true
-	case item.ID == "assistant":
+	case item.ID == "ai-workbench":
 		return visibilityRule{permissions: []string{appaccess.PermObserveAIView, appaccess.PermObserveAIChatUse}}, true
-	case item.ID == "assistant-workbench":
+	case item.ID == "ai-workbench-investigation", item.ID == "assistant-workbench":
 		return visibilityRule{permissions: []string{appaccess.PermObserveAIChatUse}}, true
-	case item.ID == "assistant-operations", item.ID == "assistant-tools":
+	case item.ID == "ai-workbench-operations", item.ID == "ai-workbench-tools", item.ID == "assistant-operations", item.ID == "assistant-tools":
 		return visibilityRule{permissions: []string{appaccess.PermObserveAIView}}, true
 	case item.ID == "access":
 		return visibilityRule{permissions: []string{

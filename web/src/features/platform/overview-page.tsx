@@ -342,8 +342,8 @@ export function OverviewPage() {
                       : (localeCode === 'zh_CN' ? '当前没有活跃告警，保持通道与规则可用。' : 'No active alerts right now. Keep rules and channels healthy.')}
                   </div>
                 </div>
-                <Button type="text" icon={<ArrowRightOutlined />} onClick={() => navigate('/observability/alerts')}>
-                  {localeCode === 'zh_CN' ? '查看告警中心' : 'Open Alerts'}
+                <Button type="text" icon={<ArrowRightOutlined />} onClick={() => navigate('/monitoring-workbench/alerts')}>
+                  {localeCode === 'zh_CN' ? '查看监控工作台' : 'Open Monitoring Workbench'}
                 </Button>
               </div>
               <div className="kc-overview-chip-grid">

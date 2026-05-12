@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { App, Button, Card, Descriptions, Drawer, Modal, Select, Space, Tabs, Typography } from 'antd'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useNavigate } from 'react-router-dom'
 import { AdminTable } from '@/components/admin-table'
 import { PageHeader } from '@/components/page-header'
 import { BooleanTag, StatusTag } from '@/components/status-tag'
@@ -404,10 +405,15 @@ function AlertEventDetailActions({
   extra?: React.ReactNode
 }) {
   const { acknowledgeMutation, canAcknowledge, canHeal, canManageAlerts, event, openHealModal, resolveMutation, rule } = detail
+  const navigate = useNavigate()
+  const aiWorkbenchPath = event
+    ? `/ai-workbench/investigation?mode=root_cause&alertId=${encodeURIComponent(event.id)}&clusterId=${encodeURIComponent(event.clusterId || '')}&namespace=${encodeURIComponent(event.namespace || '')}&workload=${encodeURIComponent(event.labels?.workload || event.labels?.deployment || event.labels?.app || event.labels?.service || '')}&timeRangeMinutes=60`
+    : '/ai-workbench/investigation?mode=root_cause'
 
   return (
     <Space wrap>
       {extra}
+      <Button onClick={() => navigate(aiWorkbenchPath)}>AI 调查</Button>
       {canAcknowledge && event?.status !== 'acknowledged' ? <Button loading={acknowledgeMutation.isPending} onClick={() => acknowledgeMutation.mutate()}>确认</Button> : null}
       {canManageAlerts && event?.status !== 'resolved' ? <Button loading={resolveMutation.isPending} onClick={() => resolveMutation.mutate()}>恢复</Button> : null}
       {canHeal && (rule?.healingPolicyIds?.length ?? 0) > 0 ? <Button type="primary" onClick={openHealModal}>发起自愈</Button> : null}

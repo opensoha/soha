@@ -50,7 +50,7 @@ export function MonitoringPage() {
 
   return (
     <div className="kc-page">
-      <PageHeader title="告警中心概览" description="查看告警压力、通知覆盖度与整体运行态势。" />
+      <PageHeader title="监控工作台概览" description="查看告警压力、通知覆盖度与整体运行态势。" />
 
       {isLoading ? (
         <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-5 gap-4">
@@ -170,6 +170,7 @@ export function AlertsPage() {
       dataIndex: 'id',
       render: (_: unknown, record: Alert) =>
         <Space>
+          <Button size="small" type="primary" onClick={() => navigate(`/ai-workbench/investigation?mode=root_cause&alertId=${encodeURIComponent(record.id)}&clusterId=${encodeURIComponent(record.clusterId || '')}&namespace=${encodeURIComponent(record.namespace || '')}&timeRangeMinutes=60`)}>AI调查</Button>
           <Button size="small" icon={<EyeOutlined />} onClick={() => { setDetailEventId(record.id); setDetailOpen(true) }}>详情</Button>
           {canHeal ? <Button size="small" onClick={() => { setSelectedAlertId(record.id); setHealingPolicyId(''); setHealOpen(true) }}>自愈</Button> : null}
           {canAcknowledge && record.status !== 'acknowledged' ? <Button size="small" type="link" onClick={() => ackMutation.mutate(record.id)}>确认</Button> : null}
@@ -197,7 +198,7 @@ export function AlertsPage() {
         onClose={() => setDetailOpen(false)}
         onOpenStandalone={(eventId) => {
           setDetailOpen(false)
-          navigate(`/observability/alerts/${eventId}`)
+          navigate(`/monitoring-workbench/alerts/${eventId}`)
         }}
       />
     </div>

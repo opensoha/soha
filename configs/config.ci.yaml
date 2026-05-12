@@ -100,6 +100,18 @@ mcp:
   enabled: true
   default_timeout: 10s
 
+modules:
+  delivery:
+    enabled: true
+  monitoring:
+    enabled: true
+  ai:
+    enabled: true
+  security:
+    enabled: false
+  cmdb:
+    enabled: false
+
 bootstrap:
   seed_defaults: true
 

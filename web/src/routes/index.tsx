@@ -92,6 +92,7 @@ const ApplicationManagementDetailPage = lazyNamed(() => import('@/features/deliv
 const ApplicationDetailPage = lazyNamed(() => import('@/features/delivery/application-runtime-pages'), 'ApplicationDetailPage')
 const ApplicationWorkloadDetailPage = lazyNamed(() => import('@/features/delivery/application-runtime-pages'), 'ApplicationWorkloadDetailPage')
 const BuildTemplatesPage = lazyNamed(() => import('@/features/delivery/delivery-app-pages'), 'BuildTemplatesPage')
+const DeliveryBlueprintsPage = lazyNamed(() => import('@/features/delivery/delivery-blueprint-pages'), 'DeliveryBlueprintsPage')
 const ReleaseBundlesPage = lazyNamed(() => import('@/features/delivery/delivery-app-pages'), 'ReleaseBundlesPage')
 const ExecutionTasksPage = lazyNamed(() => import('@/features/delivery/delivery-app-pages'), 'ExecutionTasksPage')
 const ApprovalPoliciesPage = lazyNamed(() => import('@/features/delivery/delivery-app-pages'), 'ApprovalPoliciesPage')
@@ -238,6 +239,7 @@ export function AppRouter() {
           <Route path="/application-environments" element={<LazyPage><ApplicationEnvironmentsPage /></LazyPage>} />
           <Route path="/application-environments/:applicationEnvironmentId" element={<LazyPage><ApplicationEnvironmentDetailPage /></LazyPage>} />
           <Route path="/build-templates" element={<LazyPage><BuildTemplatesPage /></LazyPage>} />
+          <Route path="/delivery/blueprints" element={<LazyPage><DeliveryBlueprintsPage /></LazyPage>} />
           <Route path="/delivery/release-bundles" element={<LazyPage><ReleaseBundlesPage /></LazyPage>} />
           <Route path="/delivery/execution-tasks" element={<LazyPage><ExecutionTasksPage /></LazyPage>} />
           <Route path="/delivery/approval-policies" element={<LazyPage><ApprovalPoliciesPage /></LazyPage>} />
@@ -247,25 +249,42 @@ export function AppRouter() {
           <Route path="/releases" element={<LazyPage><ReleasesPage /></LazyPage>} />
           <Route path="/registries" element={<LazyPage><RegistriesPage /></LazyPage>} />
 
-          <Route path="/observability" element={<Navigate to="/observability/monitoring" replace />} />
-          <Route path="/observability/monitoring" element={<LazyPage><MonitoringPage /></LazyPage>} />
-          <Route path="/observability/rules" element={<LazyPage><AlertRulesPage /></LazyPage>} />
-          <Route path="/observability/alerts" element={<LazyPage><AlertsPage /></LazyPage>} />
+          <Route path="/monitoring-workbench" element={<Navigate to="/monitoring-workbench/overview" replace />} />
+          <Route path="/monitoring-workbench/overview" element={<LazyPage><MonitoringPage /></LazyPage>} />
+          <Route path="/monitoring-workbench/rules" element={<LazyPage><AlertRulesPage /></LazyPage>} />
+          <Route path="/monitoring-workbench/alerts" element={<LazyPage><AlertsPage /></LazyPage>} />
+          <Route path="/monitoring-workbench/alerts/:eventId" element={<LazyPage><AlertEventDetailPage /></LazyPage>} />
+          <Route path="/monitoring-workbench/notifications" element={<LazyPage><NotificationsPage /></LazyPage>} />
+          <Route path="/monitoring-workbench/healing" element={<LazyPage><HealingPage /></LazyPage>} />
+          <Route path="/monitoring-workbench/oncall" element={<LazyPage><OnCallPage /></LazyPage>} />
+          <Route path="/monitoring-workbench/events" element={<LazyPage><EventsPage /></LazyPage>} />
+          <Route path="/observability" element={<Navigate to="/monitoring-workbench" replace />} />
+          <Route path="/observability/monitoring" element={<Navigate to="/monitoring-workbench/overview" replace />} />
+          <Route path="/observability/rules" element={<Navigate to="/monitoring-workbench/rules" replace />} />
+          <Route path="/observability/alerts" element={<Navigate to="/monitoring-workbench/alerts" replace />} />
           <Route path="/observability/alerts/:eventId" element={<LazyPage><AlertEventDetailPage /></LazyPage>} />
-          <Route path="/observability/notifications" element={<LazyPage><NotificationsPage /></LazyPage>} />
-          <Route path="/observability/healing" element={<LazyPage><HealingPage /></LazyPage>} />
-          <Route path="/observability/oncall" element={<LazyPage><OnCallPage /></LazyPage>} />
-          <Route path="/observability/events" element={<LazyPage><EventsPage /></LazyPage>} />
+          <Route path="/observability/notifications" element={<Navigate to="/monitoring-workbench/notifications" replace />} />
+          <Route path="/observability/healing" element={<Navigate to="/monitoring-workbench/healing" replace />} />
+          <Route path="/observability/oncall" element={<Navigate to="/monitoring-workbench/oncall" replace />} />
+          <Route path="/observability/events" element={<Navigate to="/monitoring-workbench/events" replace />} />
 
-          <Route path="/ai-observe" element={<LazyPage><AIObserveOverviewPage /></LazyPage>} />
-          <Route path="/ai-observe/workbench" element={<LazyPage><AIWorkbenchPage /></LazyPage>} />
-          <Route path="/ai-observe/operations" element={<LazyPage><AIOperationsPage /></LazyPage>} />
-          <Route path="/ai-observe/tools" element={<LazyPage><AIToolsPage /></LazyPage>} />
-          <Route path="/ai-observe/root-cause" element={<Navigate to="/ai-observe/workbench?mode=root_cause" replace />} />
-          <Route path="/ai-observe/performance" element={<Navigate to="/ai-observe/workbench?mode=performance" replace />} />
-          <Route path="/ai-observe/chat" element={<Navigate to="/ai-observe/workbench" replace />} />
-          <Route path="/ai-observe/inspection" element={<Navigate to="/ai-observe/operations" replace />} />
-          <Route path="/chat" element={<Navigate to="/ai-observe/workbench" replace />} />
+          <Route path="/ai-workbench" element={<LazyPage><AIObserveOverviewPage /></LazyPage>} />
+          <Route path="/ai-workbench/investigation" element={<LazyPage><AIWorkbenchPage /></LazyPage>} />
+          <Route path="/ai-workbench/automation" element={<LazyPage><AIOperationsPage /></LazyPage>} />
+          <Route path="/ai-workbench/tools" element={<LazyPage><AIToolsPage /></LazyPage>} />
+          <Route path="/ai-workbench/root-cause" element={<Navigate to="/ai-workbench/investigation?mode=root_cause" replace />} />
+          <Route path="/ai-workbench/performance" element={<Navigate to="/ai-workbench/investigation?mode=performance" replace />} />
+          <Route path="/ai-workbench/chat" element={<Navigate to="/ai-workbench/investigation" replace />} />
+          <Route path="/ai-workbench/inspection" element={<Navigate to="/ai-workbench/automation" replace />} />
+          <Route path="/ai-observe" element={<Navigate to="/ai-workbench" replace />} />
+          <Route path="/ai-observe/workbench" element={<Navigate to="/ai-workbench/investigation" replace />} />
+          <Route path="/ai-observe/operations" element={<Navigate to="/ai-workbench/automation" replace />} />
+          <Route path="/ai-observe/tools" element={<Navigate to="/ai-workbench/tools" replace />} />
+          <Route path="/ai-observe/root-cause" element={<Navigate to="/ai-workbench/investigation?mode=root_cause" replace />} />
+          <Route path="/ai-observe/performance" element={<Navigate to="/ai-workbench/investigation?mode=performance" replace />} />
+          <Route path="/ai-observe/chat" element={<Navigate to="/ai-workbench/investigation" replace />} />
+          <Route path="/ai-observe/inspection" element={<Navigate to="/ai-workbench/automation" replace />} />
+          <Route path="/chat" element={<Navigate to="/ai-workbench/investigation" replace />} />
 
           <Route path="/access" element={<LazyPage><AccessCenterPage /></LazyPage>} />
           <Route path="/access/users" element={<LazyPage><AccessUsersPage /></LazyPage>} />

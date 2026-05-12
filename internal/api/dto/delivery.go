@@ -29,3 +29,25 @@ type ClaimExecutionTaskRequest struct {
 type ExecutionTaskActionRequest struct {
 	Reason string `json:"reason"`
 }
+
+type DeliveryBlueprintFileRequest struct {
+	Path     string `json:"path"`
+	Kind     string `json:"kind"`
+	Content  string `json:"content"`
+	Required bool   `json:"required"`
+	Purpose  string `json:"purpose"`
+}
+
+type DeliveryBlueprintRequest struct {
+	ID                  string                         `json:"id"`
+	Key                 string                         `json:"key"`
+	Name                string                         `json:"name"`
+	Description         string                         `json:"description"`
+	ApplicationDraft    map[string]any                 `json:"applicationDraft"`
+	BuildSources        []map[string]any               `json:"buildSources"`
+	EnvironmentBindings []map[string]any               `json:"environmentBindings"`
+	Files               []DeliveryBlueprintFileRequest `json:"files"`
+	ExecutionHints      map[string]any                 `json:"executionHints"`
+	PostCreateActions   []string                       `json:"postCreateActions"`
+	Enabled             bool                           `json:"enabled"`
+}

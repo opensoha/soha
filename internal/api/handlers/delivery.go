@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 	"github.com/kubecrux/kubecrux/internal/api/dto"
 	apiMiddleware "github.com/kubecrux/kubecrux/internal/api/middleware"
 	apiresponse "github.com/kubecrux/kubecrux/internal/api/response"
+	domainapp "github.com/kubecrux/kubecrux/internal/domain/application"
 	domaindelivery "github.com/kubecrux/kubecrux/internal/domain/delivery"
 	domainidentity "github.com/kubecrux/kubecrux/internal/domain/identity"
 )
@@ -33,6 +35,11 @@ type DeliveryService interface {
 	CreateApprovalPolicy(context.Context, domainidentity.Principal, domaindelivery.ApprovalPolicyInput) (domaindelivery.ApprovalPolicy, error)
 	UpdateApprovalPolicy(context.Context, domainidentity.Principal, string, domaindelivery.ApprovalPolicyInput) (domaindelivery.ApprovalPolicy, error)
 	DeleteApprovalPolicy(context.Context, domainidentity.Principal, string) error
+	ListDeliveryBlueprints(context.Context, domainidentity.Principal) ([]domaindelivery.DeliveryBlueprint, error)
+	CreateDeliveryBlueprint(context.Context, domainidentity.Principal, domaindelivery.DeliveryBlueprintInput) (domaindelivery.DeliveryBlueprint, error)
+	UpdateDeliveryBlueprint(context.Context, domainidentity.Principal, string, domaindelivery.DeliveryBlueprintInput) (domaindelivery.DeliveryBlueprint, error)
+	RenderDeliveryBlueprintSpec(context.Context, domainidentity.Principal, string) (domaindelivery.RenderedDeliverySpec, error)
+	BootstrapApplicationFromBlueprint(context.Context, domainidentity.Principal, string) (domaindelivery.BlueprintBootstrapResult, error)
 	CancelExecutionTask(context.Context, domainidentity.Principal, string, domaindelivery.ExecutionTaskActionInput) (domaindelivery.ExecutionTask, error)
 	RetryExecutionTask(context.Context, domainidentity.Principal, string, domaindelivery.ExecutionTaskActionInput) (domaindelivery.ExecutionTask, error)
 	GetExecutionTaskForRunner(context.Context, string) (domaindelivery.ExecutionTask, error)
@@ -269,6 +276,66 @@ func (h *DeliveryHandler) DeleteApprovalPolicy(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
+func (h *DeliveryHandler) ListDeliveryBlueprints(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	items, err := h.service.ListDeliveryBlueprints(c.Request.Context(), principal)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Items(c, http.StatusOK, items)
+}
+
+func (h *DeliveryHandler) CreateDeliveryBlueprint(c *gin.Context) {
+	input, err := decodeDeliveryBlueprintRequest(c)
+	if err != nil {
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", err.Error())
+		return
+	}
+	principal := apiMiddleware.PrincipalFromContext(c)
+	item, err := h.service.CreateDeliveryBlueprint(c.Request.Context(), principal, input)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusCreated, item)
+}
+
+func (h *DeliveryHandler) UpdateDeliveryBlueprint(c *gin.Context) {
+	input, err := decodeDeliveryBlueprintRequest(c)
+	if err != nil {
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", err.Error())
+		return
+	}
+	principal := apiMiddleware.PrincipalFromContext(c)
+	item, err := h.service.UpdateDeliveryBlueprint(c.Request.Context(), principal, c.Param("blueprintID"), input)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
+}
+
+func (h *DeliveryHandler) RenderDeliveryBlueprintSpec(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	item, err := h.service.RenderDeliveryBlueprintSpec(c.Request.Context(), principal, c.Param("blueprintID"))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
+}
+
+func (h *DeliveryHandler) BootstrapApplicationFromBlueprint(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	item, err := h.service.BootstrapApplicationFromBlueprint(c.Request.Context(), principal, c.Param("blueprintID"))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
+}
+
 func (h *DeliveryHandler) CancelExecutionTask(c *gin.Context) {
 	var req dto.ExecutionTaskActionRequest
 	if err := c.ShouldBindJSON(&req); err != nil && !errors.Is(err, io.EOF) {
@@ -360,4 +427,54 @@ func (h *DeliveryHandler) authorizeRunner(header string) bool {
 	token = strings.TrimPrefix(token, "Bearer ")
 	token = strings.TrimPrefix(token, "bearer ")
 	return strings.TrimSpace(token) == strings.TrimSpace(h.runnerToken)
+}
+
+func decodeDeliveryBlueprintRequest(c *gin.Context) (domaindelivery.DeliveryBlueprintInput, error) {
+	var req dto.DeliveryBlueprintRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		return domaindelivery.DeliveryBlueprintInput{}, errors.New("invalid delivery blueprint payload")
+	}
+	draft := domaindelivery.BlueprintApplicationDraft{}
+	if err := remarshal(req.ApplicationDraft, &draft); err != nil {
+		return domaindelivery.DeliveryBlueprintInput{}, errors.New("invalid applicationDraft payload")
+	}
+	buildSources := []domainapp.BuildSourceInput{}
+	if err := remarshal(req.BuildSources, &buildSources); err != nil {
+		return domaindelivery.DeliveryBlueprintInput{}, errors.New("invalid buildSources payload")
+	}
+	environmentBindings := []domaindelivery.BlueprintEnvironmentBindingTemplate{}
+	if err := remarshal(req.EnvironmentBindings, &environmentBindings); err != nil {
+		return domaindelivery.DeliveryBlueprintInput{}, errors.New("invalid environmentBindings payload")
+	}
+	files := make([]domaindelivery.BlueprintFileTemplate, 0, len(req.Files))
+	for _, item := range req.Files {
+		files = append(files, domaindelivery.BlueprintFileTemplate{
+			Path:     item.Path,
+			Kind:     item.Kind,
+			Content:  item.Content,
+			Required: item.Required,
+			Purpose:  item.Purpose,
+		})
+	}
+	return domaindelivery.DeliveryBlueprintInput{
+		ID:                  req.ID,
+		Key:                 req.Key,
+		Name:                req.Name,
+		Description:         req.Description,
+		ApplicationDraft:    draft,
+		BuildSources:        buildSources,
+		EnvironmentBindings: environmentBindings,
+		Files:               files,
+		ExecutionHints:      req.ExecutionHints,
+		PostCreateActions:   req.PostCreateActions,
+		Enabled:             req.Enabled,
+	}, nil
+}
+
+func remarshal(source any, target any) error {
+	payload, err := json.Marshal(source)
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(payload, target)
 }

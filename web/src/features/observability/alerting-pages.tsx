@@ -439,7 +439,7 @@ export function AlertRulesPage() {
 export function AlertEventDetailPage() {
   const { eventId = '' } = useParams()
   const navigate = useNavigate()
-  return <AlertEventDetailPageContent eventId={eventId} onBack={() => navigate('/observability/alerts')} />
+  return <AlertEventDetailPageContent eventId={eventId} onBack={() => navigate('/monitoring-workbench/alerts')} />
 }
 
 export function HealingPage() {

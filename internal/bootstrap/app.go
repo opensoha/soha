@@ -21,6 +21,7 @@ import (
 	appidentity "github.com/kubecrux/kubecrux/internal/application/identity"
 	appintegration "github.com/kubecrux/kubecrux/internal/application/integration"
 	appmenu "github.com/kubecrux/kubecrux/internal/application/menu"
+	appmodule "github.com/kubecrux/kubecrux/internal/application/module"
 	appmonitoring "github.com/kubecrux/kubecrux/internal/application/monitoring"
 	appoperation "github.com/kubecrux/kubecrux/internal/application/operation"
 	appregistryconn "github.com/kubecrux/kubecrux/internal/application/registry"
@@ -97,7 +98,7 @@ func New(ctx context.Context) (*App, error) {
 		}
 	}
 	if cfg.Bootstrap.SeedDefaults {
-		if err := seedDefaults(ctx, databaseStore); err != nil {
+		if err := seedDefaults(ctx, databaseStore, cfg); err != nil {
 			cancel()
 			return nil, fmt.Errorf("seed bootstrap data: %w", err)
 		}
@@ -146,6 +147,7 @@ func New(ctx context.Context) (*App, error) {
 	operationService := appoperation.New(operationRepository, permissionResolver)
 	announcementService := appannouncement.New(announcementRepository, permissionResolver, auditService, operationService)
 	menuService := appmenu.New(menuRepository, permissionResolver, auditService, operationService)
+	moduleService := appmodule.New(cfg.Modules)
 	settingsService := appsettings.New(settingsRepository, cfg.Auth, cfg.Monitoring, permissionResolver)
 
 	identityService, err := appidentity.New(ctx, cfg.Auth, identityRepository, auditService, operationService, settingsService, permissionResolver)
@@ -184,7 +186,9 @@ func New(ctx context.Context) (*App, error) {
 		cfg.Runtime.ExecutionRunnerToken,
 		permissionResolver,
 	)
-	executionService.Start(lifecycleCtx)
+	if cfg.Modules.Delivery.Enabled {
+		executionService.Start(lifecycleCtx)
+	}
 	buildService := appbuild.New(buildRepository, applicationRepository, catalogRepository, executionService, accessService, eventRepository, auditService, operationService)
 	catalogService := appcatalog.New(catalogRepository, accessService, applicationRepository, permissionResolver, auditService, operationService)
 	scopeGrantService := appscopegrant.New(scopeGrantRepository, permissionResolver, auditService, operationService)
@@ -194,22 +198,29 @@ func New(ctx context.Context) (*App, error) {
 	workflowService.SetRuntimeOptions(cfg.Runtime.WorkflowWorkers, cfg.Runtime.WorkflowQueueSize, cfg.Runtime.WorkflowNodeParallelism)
 	workflowService.SetInstrumentation(logger, runtimeMetrics)
 	workflowService.SetAlertMutator(monitoringService)
-	workflowService.Start(lifecycleCtx)
+	if cfg.Modules.Delivery.Enabled {
+		workflowService.Start(lifecycleCtx)
+	}
 	monitoringService.SetWorkflowExecutor(workflowService)
-	monitoringService.Start(lifecycleCtx)
+	if cfg.Modules.Monitoring.Enabled {
+		monitoringService.Start(lifecycleCtx)
+	}
 	deliveryService := appdelivery.New(applicationService, catalogService, buildService, workflowService, releaseService, deliveryRepository, executionService, resourceService, permissionResolver)
 	copilotService := appcopilot.New(copilotRepository, clusterService, monitoringService, eventService, auditService, applicationRepository, buildRepository, releaseRepository, settingsService, permissionResolver)
 	copilotService.SetMCPRegistry(mcpRegistry)
 	copilotService.SetInspectionParallelism(cfg.Runtime.CopilotInspectionParallelism)
 	copilotService.SetInstrumentation(logger, runtimeMetrics)
 	monitoringService.SetAutomation(copilotService)
-	copilotService.Start(lifecycleCtx)
+	if cfg.Modules.AI.Enabled {
+		copilotService.Start(lifecycleCtx)
+	}
 	integrationService := appintegration.New(mcpRegistry)
 
 	systemHandler := apiHandlers.NewSystemHandler(databaseStore, runtimeMetrics)
 	authHandler := apiHandlers.NewAuthHandler(identityService, accessConsoleService, settingsService)
 	announcementHandler := apiHandlers.NewAnnouncementHandler(announcementService)
 	menuHandler := apiHandlers.NewMenuHandler(menuService)
+	moduleHandler := apiHandlers.NewModuleHandler(moduleService)
 	monitoringHandler := apiHandlers.NewMonitoringHandler(monitoringService)
 	catalogHandler := apiHandlers.NewCatalogHandler(catalogService)
 	deliveryHandler := apiHandlers.NewDeliveryHandler(deliveryService, cfg.Runtime.ExecutionRunnerToken)
@@ -228,6 +239,7 @@ func New(ctx context.Context) (*App, error) {
 		Platform:      platformHandler,
 		Announcements: announcementHandler,
 		Menu:          menuHandler,
+		Module:        moduleHandler,
 		Monitoring:    monitoringHandler,
 		Catalog:       catalogHandler,
 		Delivery:      deliveryHandler,

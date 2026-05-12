@@ -1043,3 +1043,23 @@ CREATE TABLE IF NOT EXISTS workflow_approvals (
 );
 
 CREATE INDEX IF NOT EXISTS idx_workflow_approvals_workflow_run_id ON workflow_approvals(workflow_run_id);
+
+-- Consolidated from migrations/postgres/0008_delivery_blueprints.sql
+
+CREATE TABLE IF NOT EXISTS delivery_blueprints (
+    id TEXT PRIMARY KEY,
+    blueprint_key TEXT NOT NULL UNIQUE,
+    name TEXT NOT NULL,
+    description TEXT,
+    application_draft JSONB NOT NULL DEFAULT '{}'::jsonb,
+    build_sources JSONB NOT NULL DEFAULT '[]'::jsonb,
+    environment_bindings JSONB NOT NULL DEFAULT '[]'::jsonb,
+    file_templates JSONB NOT NULL DEFAULT '[]'::jsonb,
+    execution_hints JSONB NOT NULL DEFAULT '{}'::jsonb,
+    post_create_actions JSONB NOT NULL DEFAULT '[]'::jsonb,
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_delivery_blueprints_enabled_updated_at ON delivery_blueprints(enabled, updated_at DESC);

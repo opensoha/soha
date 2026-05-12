@@ -142,11 +142,18 @@ func (s *Service) UpdateAISettings(ctx context.Context, principal domainidentity
 	skills := make([]map[string]any, 0, len(input.SkillsRegistry))
 	for _, item := range input.SkillsRegistry {
 		skills = append(skills, map[string]any{
-			"id":          strings.TrimSpace(item.ID),
-			"name":        strings.TrimSpace(item.Name),
-			"description": strings.TrimSpace(item.Description),
-			"enabled":     item.Enabled,
-			"scopes":      item.Scopes,
+			"id":             strings.TrimSpace(item.ID),
+			"name":           strings.TrimSpace(item.Name),
+			"category":       strings.TrimSpace(item.Category),
+			"ownerModule":    strings.TrimSpace(item.OwnerModule),
+			"description":    strings.TrimSpace(item.Description),
+			"capabilityRefs": item.CapabilityRefs,
+			"blueprintRefs":  item.BlueprintRefs,
+			"inputSchema":    item.InputSchema,
+			"outputSchema":   item.OutputSchema,
+			"scopeRules":     item.ScopeRules,
+			"enabled":        item.Enabled,
+			"scopes":         item.Scopes,
 		})
 	}
 	value := map[string]any{
@@ -358,17 +365,42 @@ func (s *Service) aiSettings(ctx context.Context) (domainsettings.AISettings, er
 				continue
 			}
 			scopes := []string{}
+			scopeRules := []string{}
+			capabilityRefs := []string{}
+			blueprintRefs := []string{}
 			if rawScopes, ok := record["scopes"].([]any); ok {
 				for _, scope := range rawScopes {
 					scopes = append(scopes, fmt.Sprint(scope))
 				}
 			}
+			if rawScopeRules, ok := record["scopeRules"].([]any); ok {
+				for _, value := range rawScopeRules {
+					scopeRules = append(scopeRules, fmt.Sprint(value))
+				}
+			}
+			if rawCapabilityRefs, ok := record["capabilityRefs"].([]any); ok {
+				for _, value := range rawCapabilityRefs {
+					capabilityRefs = append(capabilityRefs, fmt.Sprint(value))
+				}
+			}
+			if rawBlueprintRefs, ok := record["blueprintRefs"].([]any); ok {
+				for _, value := range rawBlueprintRefs {
+					blueprintRefs = append(blueprintRefs, fmt.Sprint(value))
+				}
+			}
 			item.SkillsRegistry = append(item.SkillsRegistry, domainsettings.AISkillSettings{
-				ID:          strings.TrimSpace(fmt.Sprint(record["id"])),
-				Name:        strings.TrimSpace(fmt.Sprint(record["name"])),
-				Description: strings.TrimSpace(fmt.Sprint(record["description"])),
-				Enabled:     boolValue(record["enabled"]),
-				Scopes:      scopes,
+				ID:             strings.TrimSpace(fmt.Sprint(record["id"])),
+				Name:           strings.TrimSpace(fmt.Sprint(record["name"])),
+				Category:       strings.TrimSpace(fmt.Sprint(record["category"])),
+				OwnerModule:    strings.TrimSpace(fmt.Sprint(record["ownerModule"])),
+				Description:    strings.TrimSpace(fmt.Sprint(record["description"])),
+				CapabilityRefs: capabilityRefs,
+				BlueprintRefs:  blueprintRefs,
+				InputSchema:    mapValue(record["inputSchema"]),
+				OutputSchema:   mapValue(record["outputSchema"]),
+				ScopeRules:     scopeRules,
+				Enabled:        boolValue(record["enabled"]),
+				Scopes:         scopes,
 			})
 		}
 	}
@@ -411,6 +443,14 @@ func (s *Service) brandingSettings(ctx context.Context) (domainsettings.Branding
 func boolValue(value any) bool {
 	current, ok := value.(bool)
 	return ok && current
+}
+
+func mapValue(value any) map[string]any {
+	current, ok := value.(map[string]any)
+	if !ok {
+		return map[string]any{}
+	}
+	return current
 }
 
 func sliceOfStrings(items []any) []string {

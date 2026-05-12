@@ -19,6 +19,7 @@ const APPLICATION_PATH_PREFIXES = [
   '/delivery-environments',
   '/application-environments',
   '/build-templates',
+  '/delivery/blueprints',
   '/delivery/release-bundles',
   '/delivery/execution-tasks',
   '/delivery/approval-policies',
@@ -29,12 +30,19 @@ const APPLICATION_PATH_PREFIXES = [
   '/registries',
 ]
 
+const WORKBENCH_DEFAULT_PATHS = {
+  platform: '/',
+  delivery: '/applications',
+  ai: '/ai-workbench',
+  monitoring: '/monitoring-workbench',
+} as const
+
 function matchesRoutePrefix(pathname: string, prefixes: string[]) {
   return prefixes.some((prefix) => pathname.startsWith(prefix))
 }
 
 export const routeMeta: RouteMeta[] = [
-  { id: 'overview', path: '/', title: '概览', description: '平台总览', icon: 'IconDesktop', group: 'overview', requiresAuth: true, tabbar: true, navVisible: true, menuId: 'dashboard', permissionKey: 'overview.view', scopeMode: 'cluster', workspace: 'resource' },
+  { id: 'overview', path: '/', title: '平台工作台', description: '平台总览', icon: 'IconDesktop', group: 'overview', workbenchId: 'platform', requiresAuth: true, tabbar: true, navVisible: true, menuId: 'dashboard', permissionKey: 'overview.view', scopeMode: 'cluster', workspace: 'resource' },
 
   { id: 'cluster-resources-nodes', path: '/cluster-resources/nodes', title: '节点', description: '节点管理', icon: 'IconServer', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, menuId: 'cluster-resources-nodes', permissionKey: 'platform.nodes.view', scopeMode: 'cluster', workspace: 'resource' },
   { id: 'cluster-resources-node-detail', path: '/cluster-resources/nodes/:nodeName', title: '节点详情', description: '节点详情', icon: 'IconServer', group: 'platform', requiresAuth: true, tabbar: false, navVisible: false, parentId: 'cluster-resources-nodes', scopeMode: 'cluster' },
@@ -102,7 +110,7 @@ export const routeMeta: RouteMeta[] = [
   { id: 'clusters', path: '/clusters', title: '集群管理', description: '集群生命周期管理', icon: 'IconGlobe', group: 'platform', requiresAuth: true, tabbar: true, navVisible: true, menuId: 'clusters', permissionKey: 'platform.clusters.view', scopeMode: 'passive', workspace: 'resource' },
   { id: 'cluster-detail', path: '/clusters/:clusterId', title: '集群详情', description: '集群详情', icon: 'IconGlobe', group: 'platform', requiresAuth: true, tabbar: false, navVisible: false, parentId: 'clusters', scopeMode: 'passive' },
 
-  { id: 'applications', path: '/applications', title: '应用中心', description: '应用入口视角', icon: 'IconAppCenter', group: 'delivery', requiresAuth: true, tabbar: true, navVisible: true, menuId: 'builds', permissionKey: 'delivery.applications.view', scopeMode: 'passive', workspace: 'application' },
+  { id: 'applications', path: '/applications', title: '应用交付工作台', description: '应用入口视角', icon: 'IconAppCenter', group: 'delivery', workbenchId: 'delivery', requiresAuth: true, tabbar: true, navVisible: true, menuId: 'builds', permissionKey: 'delivery.applications.view', scopeMode: 'passive', workspace: 'application' },
   { id: 'application-management', path: '/application-management', title: '应用管理', description: '应用配置与发布管理', icon: 'IconAppCenter', group: 'delivery', requiresAuth: true, tabbar: true, navVisible: true, menuId: 'application-management', permissionKey: 'delivery.applications.view', scopeMode: 'passive', workspace: 'application' },
   { id: 'application-management-detail', path: '/application-management/:applicationId', title: '应用管理详情', description: '应用配置详情', icon: 'IconAppCenter', group: 'delivery', requiresAuth: true, tabbar: false, navVisible: false, parentId: 'application-management', scopeMode: 'passive' },
   { id: 'application-detail', path: '/applications/:applicationId', title: '应用详情', description: '应用运行详情', icon: 'IconAppCenter', group: 'delivery', requiresAuth: true, tabbar: false, navVisible: false, parentId: 'applications', scopeMode: 'passive' },
@@ -112,6 +120,7 @@ export const routeMeta: RouteMeta[] = [
   { id: 'application-environments', path: '/application-environments', title: '应用环境绑定', description: '应用与环境绑定', icon: 'IconAppCenter', group: 'delivery', requiresAuth: true, tabbar: true, navVisible: true, permissionKey: 'delivery.application-environments.view', scopeMode: 'passive', workspace: 'application' },
   { id: 'application-environment-detail', path: '/application-environments/:applicationEnvironmentId', title: '环境详情', description: '应用环境详情', icon: 'IconAppCenter', group: 'delivery', requiresAuth: true, tabbar: false, navVisible: false, parentId: 'application-environments', scopeMode: 'passive' },
   { id: 'build-templates', path: '/build-templates', title: '构建模板', description: '平台构建模板', icon: 'IconCode', group: 'delivery', requiresAuth: true, tabbar: true, navVisible: true, permissionKey: 'delivery.build-templates.view', scopeMode: 'passive', workspace: 'application' },
+  { id: 'delivery-blueprints', path: '/delivery/blueprints', title: '交付蓝图', description: '应用接入模板、规范渲染与平台编排入口', icon: 'IconCode', group: 'delivery', workbenchId: 'delivery', requiresAuth: true, tabbar: true, navVisible: true, menuId: 'delivery-blueprints', permissionKey: 'delivery.applications.view', scopeMode: 'passive', workspace: 'application' },
   { id: 'release-bundles', path: '/delivery/release-bundles', title: '版本包', description: '不可变交付版本包', icon: 'IconInbox', group: 'delivery', requiresAuth: true, tabbar: true, navVisible: true, permissionKey: 'delivery.release-bundles.view', scopeMode: 'passive', workspace: 'application' },
   { id: 'execution-tasks', path: '/delivery/execution-tasks', title: '执行任务', description: '执行平面任务与日志', icon: 'IconFlow', group: 'delivery', requiresAuth: true, tabbar: true, navVisible: true, permissionKey: 'delivery.execution-tasks.view', scopeMode: 'passive', workspace: 'application' },
   { id: 'approval-policies', path: '/delivery/approval-policies', title: '审批策略', description: '交付审批策略中心', icon: 'IconShield', group: 'delivery', requiresAuth: true, tabbar: true, navVisible: true, permissionKey: 'delivery.approval-policies.view', scopeMode: 'passive', workspace: 'application' },
@@ -121,24 +130,36 @@ export const routeMeta: RouteMeta[] = [
   { id: 'releases', path: '/releases', title: '发布管理', description: '发布编排', icon: 'IconSend', group: 'delivery', requiresAuth: true, tabbar: true, navVisible: true, menuId: 'releases', permissionKey: 'delivery.releases.view', scopeMode: 'passive', workspace: 'application' },
   { id: 'registries', path: '/registries', title: '镜像仓库', description: '镜像仓库连接', icon: 'IconInbox', group: 'delivery', requiresAuth: true, tabbar: true, navVisible: true, menuId: 'registries', permissionKey: 'delivery.registries.view', scopeMode: 'passive', workspace: 'application' },
 
-  { id: 'observability', path: '/observability', title: '告警中心', description: '监控、告警、通知和值班协同', icon: 'IconAlertTriangle', group: 'observe', requiresAuth: true, tabbar: false, navVisible: true, redirectTo: '/observability/monitoring', menuId: 'observability', permissionKey: 'observe.monitoring.view', scopeMode: 'passive', workspace: 'resource' },
-  { id: 'monitoring', path: '/observability/monitoring', title: '中心概览', description: '告警与监控概览', icon: 'IconPulse', group: 'observe', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'observability', permissionKey: 'observe.monitoring.view', scopeMode: 'passive' },
-  { id: 'alert-rules', path: '/observability/rules', title: '告警规则', description: '告警规则与数据源选择', icon: 'IconFileSearch', group: 'observe', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'observability', menuId: 'rules', permissionKey: 'observe.alert-rules.view', scopeMode: 'passive' },
-  { id: 'alerts', path: '/observability/alerts', title: '活跃告警', description: '当前告警处理面板', icon: 'IconAlertTriangle', group: 'observe', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'observability', permissionKey: 'observe.alerts.view', scopeMode: 'passive' },
-  { id: 'alert-event-detail', path: '/observability/alerts/:eventId', title: '告警事件详情', description: '单条告警事件详情', icon: 'IconAlertTriangle', group: 'observe', requiresAuth: true, tabbar: false, navVisible: false, parentId: 'alerts', permissionKey: 'observe.alerts.view', scopeMode: 'passive' },
-  { id: 'notifications', path: '/observability/notifications', title: '通知策略', description: '通知渠道与路由策略', icon: 'IconBell', group: 'observe', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'observability', permissionKey: 'observe.notifications.view', scopeMode: 'passive' },
-  { id: 'healing', path: '/observability/healing', title: '自愈中心', description: '告警自愈策略与执行审批', icon: 'IconTool', group: 'observe', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'observability', menuId: 'healing', permissionKey: 'observe.healing.view', scopeMode: 'passive' },
-  { id: 'oncall', path: '/observability/oncall', title: '值班协同', description: '值班轮换与升级联动', icon: 'IconUserCircle', group: 'observe', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'observability', permissionKey: 'observe.oncall.view', scopeMode: 'passive' },
-  { id: 'events', path: '/observability/events', title: '事件流', description: '事件时间线与上下文', icon: 'IconBell', group: 'observe', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'observability', permissionKey: 'observe.events.view', scopeMode: 'passive' },
+  { id: 'monitoring-workbench', path: '/monitoring-workbench', title: '监控工作台', description: '监控、告警、通知和值班协同', icon: 'IconAlertTriangle', group: 'observe', workbenchId: 'monitoring', requiresAuth: true, tabbar: false, navVisible: true, redirectTo: '/monitoring-workbench/overview', menuId: 'monitoring-workbench', permissionKey: 'observe.monitoring.view', scopeMode: 'passive', workspace: 'resource' },
+  { id: 'monitoring-workbench-overview', path: '/monitoring-workbench/overview', title: '工作台概览', description: '告警与监控概览', icon: 'IconPulse', group: 'observe', workbenchId: 'monitoring', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'monitoring-workbench', menuId: 'monitoring-workbench-overview', permissionKey: 'observe.monitoring.view', scopeMode: 'passive' },
+  { id: 'monitoring-workbench-rules', path: '/monitoring-workbench/rules', title: '告警规则', description: '告警规则与数据源选择', icon: 'IconFileSearch', group: 'observe', workbenchId: 'monitoring', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'monitoring-workbench', menuId: 'monitoring-workbench-rules', permissionKey: 'observe.alert-rules.view', scopeMode: 'passive' },
+  { id: 'monitoring-workbench-alerts', path: '/monitoring-workbench/alerts', title: '活跃告警', description: '当前告警处理面板', icon: 'IconAlertTriangle', group: 'observe', workbenchId: 'monitoring', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'monitoring-workbench', menuId: 'monitoring-workbench-alerts', permissionKey: 'observe.alerts.view', scopeMode: 'passive' },
+  { id: 'alert-event-detail', path: '/monitoring-workbench/alerts/:eventId', title: '告警事件详情', description: '单条告警事件详情', icon: 'IconAlertTriangle', group: 'observe', workbenchId: 'monitoring', requiresAuth: true, tabbar: false, navVisible: false, parentId: 'monitoring-workbench-alerts', permissionKey: 'observe.alerts.view', scopeMode: 'passive' },
+  { id: 'monitoring-workbench-notifications', path: '/monitoring-workbench/notifications', title: '通知策略', description: '通知渠道与路由策略', icon: 'IconBell', group: 'observe', workbenchId: 'monitoring', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'monitoring-workbench', menuId: 'monitoring-workbench-notifications', permissionKey: 'observe.notifications.view', scopeMode: 'passive' },
+  { id: 'monitoring-workbench-healing', path: '/monitoring-workbench/healing', title: '自愈中心', description: '告警自愈策略与执行审批', icon: 'IconTool', group: 'observe', workbenchId: 'monitoring', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'monitoring-workbench', menuId: 'monitoring-workbench-healing', permissionKey: 'observe.healing.view', scopeMode: 'passive' },
+  { id: 'monitoring-workbench-oncall', path: '/monitoring-workbench/oncall', title: '值班协同', description: '值班轮换与升级联动', icon: 'IconUserCircle', group: 'observe', workbenchId: 'monitoring', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'monitoring-workbench', menuId: 'monitoring-workbench-oncall', permissionKey: 'observe.oncall.view', scopeMode: 'passive' },
+  { id: 'monitoring-workbench-events', path: '/monitoring-workbench/events', title: '事件流', description: '事件时间线与上下文', icon: 'IconBell', group: 'observe', workbenchId: 'monitoring', requiresAuth: true, tabbar: true, navVisible: true, parentId: 'monitoring-workbench', menuId: 'monitoring-workbench-events', permissionKey: 'observe.events.view', scopeMode: 'passive' },
+  { id: 'observability-compat', path: '/observability', title: '告警中心', description: '兼容旧入口', icon: 'IconAlertTriangle', group: 'observe', requiresAuth: true, tabbar: false, navVisible: false, redirectTo: '/monitoring-workbench', permissionKey: 'observe.monitoring.view', scopeMode: 'passive', workspace: 'resource' },
+  { id: 'observability-monitoring-compat', path: '/observability/monitoring', title: '旧概览入口', description: '兼容旧入口', icon: 'IconPulse', group: 'observe', requiresAuth: true, tabbar: false, navVisible: false, parentId: 'monitoring-workbench', permissionKey: 'observe.monitoring.view', scopeMode: 'passive' },
+  { id: 'observability-rules-compat', path: '/observability/rules', title: '旧规则入口', description: '兼容旧入口', icon: 'IconFileSearch', group: 'observe', requiresAuth: true, tabbar: false, navVisible: false, parentId: 'monitoring-workbench', permissionKey: 'observe.alert-rules.view', scopeMode: 'passive' },
+  { id: 'observability-alerts-compat', path: '/observability/alerts', title: '旧告警入口', description: '兼容旧入口', icon: 'IconAlertTriangle', group: 'observe', requiresAuth: true, tabbar: false, navVisible: false, parentId: 'monitoring-workbench', permissionKey: 'observe.alerts.view', scopeMode: 'passive' },
+  { id: 'observability-notifications-compat', path: '/observability/notifications', title: '旧通知入口', description: '兼容旧入口', icon: 'IconBell', group: 'observe', requiresAuth: true, tabbar: false, navVisible: false, parentId: 'monitoring-workbench', permissionKey: 'observe.notifications.view', scopeMode: 'passive' },
+  { id: 'observability-healing-compat', path: '/observability/healing', title: '旧自愈入口', description: '兼容旧入口', icon: 'IconTool', group: 'observe', requiresAuth: true, tabbar: false, navVisible: false, parentId: 'monitoring-workbench', permissionKey: 'observe.healing.view', scopeMode: 'passive' },
+  { id: 'observability-oncall-compat', path: '/observability/oncall', title: '旧值班入口', description: '兼容旧入口', icon: 'IconUserCircle', group: 'observe', requiresAuth: true, tabbar: false, navVisible: false, parentId: 'monitoring-workbench', permissionKey: 'observe.oncall.view', scopeMode: 'passive' },
+  { id: 'observability-events-compat', path: '/observability/events', title: '旧事件入口', description: '兼容旧入口', icon: 'IconBell', group: 'observe', requiresAuth: true, tabbar: false, navVisible: false, parentId: 'monitoring-workbench', permissionKey: 'observe.events.view', scopeMode: 'passive' },
 
-  { id: 'ai-observe', path: '/ai-observe', title: 'Ai可观测性', description: 'AIOps 总览与调查入口', icon: 'IconComment', group: 'observe', requiresAuth: true, tabbar: true, navVisible: true, menuId: 'assistant', permissionKey: 'observe.ai.view', scopeMode: 'passive', workspace: 'resource' },
-  { id: 'ai-workbench', path: '/ai-observe/workbench', title: '调查工作台', description: '统一承载 AI Chat、根因、性能与链路分析', icon: 'IconComment', group: 'observe', requiresAuth: true, tabbar: true, navVisible: false, parentId: 'ai-observe', permissionKey: 'observe.ai.chat', scopeMode: 'passive' },
-  { id: 'ai-operations', path: '/ai-observe/operations', title: '巡检与自动化', description: '巡检任务、运行记录与自动化策略', icon: 'IconComment', group: 'observe', requiresAuth: true, tabbar: true, navVisible: false, parentId: 'ai-observe', permissionKey: 'observe.ai.view', scopeMode: 'passive' },
-  { id: 'ai-tools', path: '/ai-observe/tools', title: '工具与技能', description: 'MCP adapters、数据源与技能装配', icon: 'IconComment', group: 'observe', requiresAuth: true, tabbar: true, navVisible: false, parentId: 'ai-observe', permissionKey: 'observe.ai.view', scopeMode: 'passive' },
-  { id: 'ai-root-cause', path: '/ai-observe/root-cause', title: '链路根因分析', description: '兼容旧入口，跳转到工作台根因模式', icon: 'IconComment', group: 'observe', requiresAuth: true, tabbar: false, navVisible: false, parentId: 'ai-observe', permissionKey: 'observe.ai.view', scopeMode: 'passive' },
-  { id: 'ai-performance', path: '/ai-observe/performance', title: '性能分析', description: '兼容旧入口，跳转到工作台性能模式', icon: 'IconComment', group: 'observe', requiresAuth: true, tabbar: false, navVisible: false, parentId: 'ai-observe', permissionKey: 'observe.ai.view', scopeMode: 'passive' },
-  { id: 'ai-chat', path: '/ai-observe/chat', title: 'AI Chat', description: '兼容旧入口，跳转到调查工作台', icon: 'IconComment', group: 'observe', requiresAuth: true, tabbar: false, navVisible: false, parentId: 'ai-observe', permissionKey: 'observe.ai.chat', scopeMode: 'passive' },
-  { id: 'ai-inspection', path: '/ai-observe/inspection', title: '智能巡检', description: '兼容旧入口，跳转到巡检与自动化', icon: 'IconComment', group: 'observe', requiresAuth: true, tabbar: false, navVisible: false, parentId: 'ai-observe', permissionKey: 'observe.ai.view', scopeMode: 'passive' },
+  { id: 'ai-workbench', path: '/ai-workbench', title: 'AI工作台', description: 'AIOps 总览与调查入口', icon: 'IconComment', group: 'observe', workbenchId: 'ai', requiresAuth: true, tabbar: true, navVisible: true, menuId: 'ai-workbench', permissionKey: 'observe.ai.view', scopeMode: 'passive', workspace: 'resource' },
+  { id: 'ai-workbench-investigation', path: '/ai-workbench/investigation', title: '调查工作台', description: '统一承载 AI Chat、根因、性能与链路分析', icon: 'IconComment', group: 'observe', workbenchId: 'ai', requiresAuth: true, tabbar: true, navVisible: false, parentId: 'ai-workbench', menuId: 'ai-workbench-investigation', permissionKey: 'observe.ai.chat', scopeMode: 'passive' },
+  { id: 'ai-workbench-automation', path: '/ai-workbench/automation', title: '巡检与自动化', description: '巡检任务、运行记录与自动化策略', icon: 'IconComment', group: 'observe', workbenchId: 'ai', requiresAuth: true, tabbar: true, navVisible: false, parentId: 'ai-workbench', menuId: 'ai-workbench-operations', permissionKey: 'observe.ai.view', scopeMode: 'passive' },
+  { id: 'ai-workbench-tools', path: '/ai-workbench/tools', title: '工具与技能', description: 'MCP adapters、数据源与技能装配', icon: 'IconComment', group: 'observe', workbenchId: 'ai', requiresAuth: true, tabbar: true, navVisible: false, parentId: 'ai-workbench', menuId: 'ai-workbench-tools', permissionKey: 'observe.ai.view', scopeMode: 'passive' },
+  { id: 'ai-observe-compat', path: '/ai-observe', title: 'Ai可观测性', description: '兼容旧入口', icon: 'IconComment', group: 'observe', requiresAuth: true, tabbar: false, navVisible: false, redirectTo: '/ai-workbench', permissionKey: 'observe.ai.view', scopeMode: 'passive', workspace: 'resource' },
+  { id: 'ai-observe-workbench-compat', path: '/ai-observe/workbench', title: '旧调查入口', description: '兼容旧入口', icon: 'IconComment', group: 'observe', requiresAuth: true, tabbar: false, navVisible: false, parentId: 'ai-workbench', permissionKey: 'observe.ai.chat', scopeMode: 'passive' },
+  { id: 'ai-observe-operations-compat', path: '/ai-observe/operations', title: '旧巡检入口', description: '兼容旧入口', icon: 'IconComment', group: 'observe', requiresAuth: true, tabbar: false, navVisible: false, parentId: 'ai-workbench', permissionKey: 'observe.ai.view', scopeMode: 'passive' },
+  { id: 'ai-observe-tools-compat', path: '/ai-observe/tools', title: '旧工具入口', description: '兼容旧入口', icon: 'IconComment', group: 'observe', requiresAuth: true, tabbar: false, navVisible: false, parentId: 'ai-workbench', permissionKey: 'observe.ai.view', scopeMode: 'passive' },
+  { id: 'ai-root-cause', path: '/ai-observe/root-cause', title: '链路根因分析', description: '兼容旧入口，跳转到工作台根因模式', icon: 'IconComment', group: 'observe', requiresAuth: true, tabbar: false, navVisible: false, parentId: 'ai-workbench', permissionKey: 'observe.ai.view', scopeMode: 'passive' },
+  { id: 'ai-performance', path: '/ai-observe/performance', title: '性能分析', description: '兼容旧入口，跳转到工作台性能模式', icon: 'IconComment', group: 'observe', requiresAuth: true, tabbar: false, navVisible: false, parentId: 'ai-workbench', permissionKey: 'observe.ai.view', scopeMode: 'passive' },
+  { id: 'ai-chat', path: '/ai-observe/chat', title: 'AI Chat', description: '兼容旧入口，跳转到调查工作台', icon: 'IconComment', group: 'observe', requiresAuth: true, tabbar: false, navVisible: false, parentId: 'ai-workbench', permissionKey: 'observe.ai.chat', scopeMode: 'passive' },
+  { id: 'ai-inspection', path: '/ai-observe/inspection', title: '智能巡检', description: '兼容旧入口，跳转到巡检与自动化', icon: 'IconComment', group: 'observe', requiresAuth: true, tabbar: false, navVisible: false, parentId: 'ai-workbench', permissionKey: 'observe.ai.view', scopeMode: 'passive' },
   { id: 'chat', path: '/chat', title: 'AI Chat', description: '兼容旧入口', icon: 'IconComment', group: 'observe', requiresAuth: true, tabbar: false, navVisible: false, parentId: 'ai-workbench', permissionKey: 'observe.ai.chat', scopeMode: 'passive' },
 
   { id: 'access', path: '/access', title: '访问控制', description: '身份、角色、用户组与策略', icon: 'IconShield', group: 'access', requiresAuth: true, tabbar: false, navVisible: false, menuId: 'access', permissionKey: 'access.users.view', permissionStrategy: 'any-child', scopeMode: 'passive', workspace: 'system' },
@@ -220,6 +241,41 @@ export function getRouteWorkspace(route: RouteMeta): WorkspaceType | null {
   return route.requiresAuth ? 'resource' : null
 }
 
+export function getRouteWorkbenchId(route: RouteMeta): keyof typeof WORKBENCH_DEFAULT_PATHS | null {
+  if (route.workbenchId && route.workbenchId in WORKBENCH_DEFAULT_PATHS) {
+    return route.workbenchId as keyof typeof WORKBENCH_DEFAULT_PATHS
+  }
+  const parent = getParentRouteMeta(route)
+  if (parent) {
+    return getRouteWorkbenchId(parent)
+  }
+  const pathname = route.path
+  if (
+    pathname === '/' ||
+    pathname.startsWith('/cluster-resources') ||
+    pathname.startsWith('/workloads') ||
+    pathname.startsWith('/configuration') ||
+    pathname.startsWith('/network') ||
+    pathname.startsWith('/storage') ||
+    pathname.startsWith('/platform-access-control') ||
+    pathname.startsWith('/helm') ||
+    pathname.startsWith('/extensions') ||
+    pathname.startsWith('/clusters')
+  ) {
+    return 'platform'
+  }
+  if (matchesRoutePrefix(pathname, APPLICATION_PATH_PREFIXES)) {
+    return 'delivery'
+  }
+  if (pathname.startsWith('/ai-workbench') || pathname.startsWith('/ai-observe') || pathname.startsWith('/chat')) {
+    return 'ai'
+  }
+  if (pathname.startsWith('/monitoring-workbench') || pathname.startsWith('/observability')) {
+    return 'monitoring'
+  }
+  return null
+}
+
 export function getRouteScopeMode(route: RouteMeta): NonNullable<RouteMeta['scopeMode']> {
   if (route.scopeMode) {
     return route.scopeMode
@@ -235,10 +291,41 @@ export function getRouteScopeMode(route: RouteMeta): NonNullable<RouteMeta['scop
   if (pathname === '/' || pathname === '/clusters' || pathname.startsWith('/cluster-resources/nodes') || pathname.startsWith('/cluster-resources/namespaces') || pathname.startsWith('/extensions') || pathname.startsWith('/platform-access-control/clusterroles') || pathname.startsWith('/platform-access-control/clusterrolebindings') || pathname.startsWith('/storage/persistentvolumes') || pathname.startsWith('/storage/storageclasses')) {
     return 'cluster'
   }
-  if (pathname.startsWith('/access') || pathname.startsWith('/system') || pathname.startsWith('/settings') || pathname.startsWith('/applications') || pathname.startsWith('/business-lines') || pathname.startsWith('/delivery-environments') || pathname.startsWith('/application-environments') || pathname.startsWith('/build-templates') || pathname.startsWith('/delivery/release-bundles') || pathname.startsWith('/delivery/execution-tasks') || pathname.startsWith('/delivery/approval-policies') || pathname.startsWith('/workflow-templates') || pathname.startsWith('/release-board') || pathname.startsWith('/releases') || pathname.startsWith('/registries') || pathname.startsWith('/observability') || pathname.startsWith('/ai-observe')) {
+  if (pathname.startsWith('/access') || pathname.startsWith('/system') || pathname.startsWith('/settings') || pathname.startsWith('/applications') || pathname.startsWith('/business-lines') || pathname.startsWith('/delivery-environments') || pathname.startsWith('/application-environments') || pathname.startsWith('/build-templates') || pathname.startsWith('/delivery/blueprints') || pathname.startsWith('/delivery/release-bundles') || pathname.startsWith('/delivery/execution-tasks') || pathname.startsWith('/delivery/approval-policies') || pathname.startsWith('/workflow-templates') || pathname.startsWith('/release-board') || pathname.startsWith('/releases') || pathname.startsWith('/registries') || pathname.startsWith('/monitoring-workbench') || pathname.startsWith('/observability') || pathname.startsWith('/ai-workbench') || pathname.startsWith('/ai-observe')) {
     return 'passive'
   }
   return 'namespace'
+}
+
+export function getAccessibleWorkbenchIds(snapshot?: PermissionSnapshot | null): Array<keyof typeof WORKBENCH_DEFAULT_PATHS> {
+  const seen = new Set<keyof typeof WORKBENCH_DEFAULT_PATHS>()
+  for (const route of routeMeta) {
+    const workbenchId = getRouteWorkbenchId(route)
+    if (!workbenchId || seen.has(workbenchId)) {
+      continue
+    }
+    if (!route.requiresAuth || !canAccessRoute(route, snapshot)) {
+      continue
+    }
+    seen.add(workbenchId)
+  }
+  return Array.from(seen)
+}
+
+export function findFirstAccessiblePathForWorkbench(
+  workbenchId: keyof typeof WORKBENCH_DEFAULT_PATHS,
+  snapshot?: PermissionSnapshot | null,
+): string | null {
+  const defaultPath = WORKBENCH_DEFAULT_PATHS[workbenchId]
+  const defaultRoute = routeMeta.find((route) => route.path === defaultPath)
+  if (defaultRoute && canAccessRoute(defaultRoute, snapshot)) {
+    return defaultRoute.redirectTo ?? defaultRoute.path
+  }
+  const firstRoute = routeMeta.find((route) => route.requiresAuth && route.navVisible && getRouteWorkbenchId(route) === workbenchId && canAccessRoute(route, snapshot))
+  if (!firstRoute) {
+    return null
+  }
+  return firstRoute.redirectTo ?? firstRoute.path
 }
 
 export function getWorkspacePermissionKey(workspace: BusinessWorkspaceType) {
@@ -417,6 +504,7 @@ function buildRuntimeMenuTree(snapshot?: PermissionSnapshot | null): RuntimeMenu
       sortOrder: typeof menu.sortOrder === 'number' ? menu.sortOrder : 0,
       enabled: menu.enabled ?? true,
       workspace: route ? getRouteWorkspace(route) ?? undefined : undefined,
+      workbenchId: route ? getRouteWorkbenchId(route) ?? undefined : undefined,
       route,
       children: [],
     })
@@ -470,6 +558,7 @@ export function filterSidebarNavByWorkspace(sidebarNav: RuntimeMenuNode[], works
       section: deriveRuntimeMenuSection(node),
       sortOrder: deriveRuntimeMenuSortOrder(node, workspace),
       workspace: workspace,
+      workbenchId: node.route ? getRouteWorkbenchId(node.route) ?? undefined : node.workbenchId,
       children: nextChildren.length > 0 ? sortRuntimeMenuTree(nextChildren) : undefined,
     }
   }

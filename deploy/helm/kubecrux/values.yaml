@@ -73,6 +73,17 @@ config:
     prometheusStepSeconds: 60
     prometheusClusterLabel: cluster
     grafanaBaseUrl: ""
+  modules:
+    delivery:
+      enabled: true
+    monitoring:
+      enabled: true
+    ai:
+      enabled: true
+    security:
+      enabled: false
+    cmdb:
+      enabled: false
   swaggerEnabled: false
   mcpEnabled: true
   seedDefaults: true

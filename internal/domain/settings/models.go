@@ -46,17 +46,26 @@ type AIProviderSettings struct {
 	Model   string `json:"model"`
 }
 
-type AISkillSettings struct {
-	ID          string   `json:"id"`
-	Name        string   `json:"name"`
-	Description string   `json:"description,omitempty"`
-	Enabled     bool     `json:"enabled"`
-	Scopes      []string `json:"scopes,omitempty"`
+type SkillDefinition struct {
+	ID             string         `json:"id"`
+	Name           string         `json:"name"`
+	Category       string         `json:"category,omitempty"`
+	OwnerModule    string         `json:"ownerModule,omitempty"`
+	Description    string         `json:"description,omitempty"`
+	CapabilityRefs []string       `json:"capabilityRefs,omitempty"`
+	BlueprintRefs  []string       `json:"blueprintRefs,omitempty"`
+	InputSchema    map[string]any `json:"inputSchema,omitempty"`
+	OutputSchema   map[string]any `json:"outputSchema,omitempty"`
+	ScopeRules     []string       `json:"scopeRules,omitempty"`
+	Enabled        bool           `json:"enabled"`
+	Scopes         []string       `json:"scopes,omitempty"`
 }
+
+type AISkillSettings = SkillDefinition
 
 type AISettings struct {
 	Provider       AIProviderSettings `json:"provider"`
-	SkillsRegistry []AISkillSettings  `json:"skillsRegistry,omitempty"`
+	SkillsRegistry []SkillDefinition  `json:"skillsRegistry,omitempty"`
 }
 
 type BrandingSettings struct {

@@ -8,9 +8,9 @@ import (
 	"github.com/kubecrux/kubecrux/internal/api/dto"
 	apiMiddleware "github.com/kubecrux/kubecrux/internal/api/middleware"
 	apiresponse "github.com/kubecrux/kubecrux/internal/api/response"
+	appaccess "github.com/kubecrux/kubecrux/internal/application/access"
 	domainidentity "github.com/kubecrux/kubecrux/internal/domain/identity"
 	domainsettings "github.com/kubecrux/kubecrux/internal/domain/settings"
-	appaccess "github.com/kubecrux/kubecrux/internal/application/access"
 )
 
 type SettingsService interface {
@@ -148,11 +148,18 @@ func mapAISkills(items []dto.AISkillSettings) []domainsettings.AISkillSettings {
 	out := make([]domainsettings.AISkillSettings, 0, len(items))
 	for _, item := range items {
 		out = append(out, domainsettings.AISkillSettings{
-			ID:          item.ID,
-			Name:        item.Name,
-			Description: item.Description,
-			Enabled:     item.Enabled,
-			Scopes:      item.Scopes,
+			ID:             item.ID,
+			Name:           item.Name,
+			Category:       item.Category,
+			OwnerModule:    item.OwnerModule,
+			Description:    item.Description,
+			CapabilityRefs: item.CapabilityRefs,
+			BlueprintRefs:  item.BlueprintRefs,
+			InputSchema:    item.InputSchema,
+			OutputSchema:   item.OutputSchema,
+			ScopeRules:     item.ScopeRules,
+			Enabled:        item.Enabled,
+			Scopes:         item.Scopes,
 		})
 	}
 	return out

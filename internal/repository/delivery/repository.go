@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	domainapp "github.com/kubecrux/kubecrux/internal/domain/application"
 	domaindelivery "github.com/kubecrux/kubecrux/internal/domain/delivery"
 	"gorm.io/gorm"
 )
@@ -522,6 +523,107 @@ func (r *Repository) DeleteApprovalPolicy(ctx context.Context, id string) error 
 	return nil
 }
 
+func (r *Repository) ListDeliveryBlueprints(ctx context.Context) ([]domaindelivery.DeliveryBlueprint, error) {
+	rows, err := r.db.WithContext(ctx).Raw(`
+		SELECT id, blueprint_key, name, description, application_draft, build_sources, environment_bindings, file_templates, execution_hints, post_create_actions, enabled, created_at, updated_at
+		FROM delivery_blueprints
+		ORDER BY created_at DESC
+	`).Rows()
+	if err != nil {
+		return nil, fmt.Errorf("query delivery blueprints: %w", err)
+	}
+	defer rows.Close()
+
+	items := make([]domaindelivery.DeliveryBlueprint, 0)
+	for rows.Next() {
+		item, scanErr := scanDeliveryBlueprint(rows)
+		if scanErr != nil {
+			return nil, scanErr
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func (r *Repository) GetDeliveryBlueprint(ctx context.Context, id string) (domaindelivery.DeliveryBlueprint, error) {
+	row := r.db.WithContext(ctx).Raw(`
+		SELECT id, blueprint_key, name, description, application_draft, build_sources, environment_bindings, file_templates, execution_hints, post_create_actions, enabled, created_at, updated_at
+		FROM delivery_blueprints
+		WHERE id = ?
+		LIMIT 1
+	`, strings.TrimSpace(id)).Row()
+	return scanDeliveryBlueprintRow(row)
+}
+
+func (r *Repository) CreateDeliveryBlueprint(ctx context.Context, input domaindelivery.DeliveryBlueprintInput) (domaindelivery.DeliveryBlueprint, error) {
+	item := normalizeDeliveryBlueprintInput(input)
+	if err := r.saveDeliveryBlueprint(ctx, item, true); err != nil {
+		return domaindelivery.DeliveryBlueprint{}, err
+	}
+	return item, nil
+}
+
+func (r *Repository) UpdateDeliveryBlueprint(ctx context.Context, id string, input domaindelivery.DeliveryBlueprintInput) (domaindelivery.DeliveryBlueprint, error) {
+	item := normalizeDeliveryBlueprintInput(input)
+	item.ID = strings.TrimSpace(id)
+	item.CreatedAt = fetchCreatedAt(ctx, r.db, "delivery_blueprints", item.ID)
+	if item.CreatedAt.IsZero() {
+		return domaindelivery.DeliveryBlueprint{}, ErrNotFound
+	}
+	if err := r.saveDeliveryBlueprint(ctx, item, false); err != nil {
+		return domaindelivery.DeliveryBlueprint{}, err
+	}
+	return item, nil
+}
+
+func (r *Repository) saveDeliveryBlueprint(ctx context.Context, item domaindelivery.DeliveryBlueprint, create bool) error {
+	applicationDraft, err := json.Marshal(item.ApplicationDraft)
+	if err != nil {
+		return fmt.Errorf("marshal delivery blueprint application draft: %w", err)
+	}
+	buildSources, err := json.Marshal(item.BuildSources)
+	if err != nil {
+		return fmt.Errorf("marshal delivery blueprint build sources: %w", err)
+	}
+	environmentBindings, err := json.Marshal(item.EnvironmentBindings)
+	if err != nil {
+		return fmt.Errorf("marshal delivery blueprint environment bindings: %w", err)
+	}
+	fileTemplates, err := json.Marshal(item.Files)
+	if err != nil {
+		return fmt.Errorf("marshal delivery blueprint file templates: %w", err)
+	}
+	executionHints, err := json.Marshal(item.ExecutionHints)
+	if err != nil {
+		return fmt.Errorf("marshal delivery blueprint execution hints: %w", err)
+	}
+	postCreateActions, err := json.Marshal(item.PostCreateActions)
+	if err != nil {
+		return fmt.Errorf("marshal delivery blueprint post-create actions: %w", err)
+	}
+	if create {
+		if err := r.db.WithContext(ctx).Exec(`
+			INSERT INTO delivery_blueprints (id, blueprint_key, name, description, application_draft, build_sources, environment_bindings, file_templates, execution_hints, post_create_actions, enabled, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`, item.ID, item.Key, item.Name, nullableString(item.Description), string(applicationDraft), string(buildSources), string(environmentBindings), string(fileTemplates), string(executionHints), string(postCreateActions), item.Enabled, item.CreatedAt, item.UpdatedAt).Error; err != nil {
+			return fmt.Errorf("create delivery blueprint: %w", err)
+		}
+		return nil
+	}
+	result := r.db.WithContext(ctx).Exec(`
+		UPDATE delivery_blueprints
+		SET blueprint_key = ?, name = ?, description = ?, application_draft = ?, build_sources = ?, environment_bindings = ?, file_templates = ?, execution_hints = ?, post_create_actions = ?, enabled = ?, updated_at = ?
+		WHERE id = ?
+	`, item.Key, item.Name, nullableString(item.Description), string(applicationDraft), string(buildSources), string(environmentBindings), string(fileTemplates), string(executionHints), string(postCreateActions), item.Enabled, item.UpdatedAt, item.ID)
+	if result.Error != nil {
+		return fmt.Errorf("update delivery blueprint: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 func scanReleaseBundle(rows *sql.Rows) (domaindelivery.ReleaseBundle, error) {
 	var item domaindelivery.ReleaseBundle
 	var applicationEnvironmentID sql.NullString
@@ -810,6 +912,164 @@ func normalizeApprovalPolicyInput(input domaindelivery.ApprovalPolicyInput) doma
 		Metadata:          input.Metadata,
 		CreatedAt:         now,
 		UpdatedAt:         now,
+	}
+}
+
+func scanDeliveryBlueprint(rows *sql.Rows) (domaindelivery.DeliveryBlueprint, error) {
+	var item domaindelivery.DeliveryBlueprint
+	var description sql.NullString
+	var applicationDraft []byte
+	var buildSources []byte
+	var environmentBindings []byte
+	var fileTemplates []byte
+	var executionHints []byte
+	var postCreateActions []byte
+	if err := rows.Scan(&item.ID, &item.Key, &item.Name, &description, &applicationDraft, &buildSources, &environmentBindings, &fileTemplates, &executionHints, &postCreateActions, &item.Enabled, &item.CreatedAt, &item.UpdatedAt); err != nil {
+		return domaindelivery.DeliveryBlueprint{}, fmt.Errorf("scan delivery blueprint: %w", err)
+	}
+	item.Description = description.String
+	_ = json.Unmarshal(applicationDraft, &item.ApplicationDraft)
+	_ = json.Unmarshal(buildSources, &item.BuildSources)
+	_ = json.Unmarshal(environmentBindings, &item.EnvironmentBindings)
+	_ = json.Unmarshal(fileTemplates, &item.Files)
+	_ = json.Unmarshal(executionHints, &item.ExecutionHints)
+	_ = json.Unmarshal(postCreateActions, &item.PostCreateActions)
+	if item.ApplicationDraft.Metadata == nil {
+		item.ApplicationDraft.Metadata = map[string]any{}
+	}
+	if item.ExecutionHints == nil {
+		item.ExecutionHints = map[string]any{}
+	}
+	return item, nil
+}
+
+func scanDeliveryBlueprintRow(row *sql.Row) (domaindelivery.DeliveryBlueprint, error) {
+	var item domaindelivery.DeliveryBlueprint
+	var description sql.NullString
+	var applicationDraft []byte
+	var buildSources []byte
+	var environmentBindings []byte
+	var fileTemplates []byte
+	var executionHints []byte
+	var postCreateActions []byte
+	if err := row.Scan(&item.ID, &item.Key, &item.Name, &description, &applicationDraft, &buildSources, &environmentBindings, &fileTemplates, &executionHints, &postCreateActions, &item.Enabled, &item.CreatedAt, &item.UpdatedAt); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return domaindelivery.DeliveryBlueprint{}, ErrNotFound
+		}
+		return domaindelivery.DeliveryBlueprint{}, fmt.Errorf("scan delivery blueprint row: %w", err)
+	}
+	item.Description = description.String
+	_ = json.Unmarshal(applicationDraft, &item.ApplicationDraft)
+	_ = json.Unmarshal(buildSources, &item.BuildSources)
+	_ = json.Unmarshal(environmentBindings, &item.EnvironmentBindings)
+	_ = json.Unmarshal(fileTemplates, &item.Files)
+	_ = json.Unmarshal(executionHints, &item.ExecutionHints)
+	_ = json.Unmarshal(postCreateActions, &item.PostCreateActions)
+	if item.ApplicationDraft.Metadata == nil {
+		item.ApplicationDraft.Metadata = map[string]any{}
+	}
+	if item.ExecutionHints == nil {
+		item.ExecutionHints = map[string]any{}
+	}
+	return item, nil
+}
+
+func normalizeDeliveryBlueprintInput(input domaindelivery.DeliveryBlueprintInput) domaindelivery.DeliveryBlueprint {
+	now := time.Now().UTC()
+	id := strings.TrimSpace(input.ID)
+	if id == "" {
+		id = uuid.NewString()
+	}
+	draft := input.ApplicationDraft
+	draft.Name = strings.TrimSpace(draft.Name)
+	draft.Key = strings.TrimSpace(draft.Key)
+	draft.Group = strings.TrimSpace(draft.Group)
+	draft.BusinessLineID = strings.TrimSpace(draft.BusinessLineID)
+	draft.Language = strings.TrimSpace(draft.Language)
+	if draft.Language == "" {
+		draft.Language = "node"
+	}
+	draft.Description = strings.TrimSpace(draft.Description)
+	draft.OwnerTeam = strings.TrimSpace(draft.OwnerTeam)
+	draft.RepositoryProvider = strings.TrimSpace(draft.RepositoryProvider)
+	draft.RepositoryProjectID = strings.TrimSpace(draft.RepositoryProjectID)
+	draft.RepositoryPath = strings.TrimSpace(draft.RepositoryPath)
+	draft.DefaultBranch = strings.TrimSpace(draft.DefaultBranch)
+	if draft.DefaultBranch == "" {
+		draft.DefaultBranch = "main"
+	}
+	draft.DefaultTag = strings.TrimSpace(draft.DefaultTag)
+	draft.BuildImage = strings.TrimSpace(draft.BuildImage)
+	draft.BuildContextDir = strings.TrimSpace(draft.BuildContextDir)
+	draft.DockerfilePath = strings.TrimSpace(draft.DockerfilePath)
+	if draft.Metadata == nil {
+		draft.Metadata = map[string]any{}
+	}
+	buildSources := make([]domainapp.BuildSourceInput, 0, len(input.BuildSources))
+	for _, source := range input.BuildSources {
+		buildSources = append(buildSources, domainapp.BuildSourceInput{
+			ID:         strings.TrimSpace(source.ID),
+			Name:       strings.TrimSpace(source.Name),
+			Type:       source.Type,
+			Enabled:    source.Enabled,
+			IsDefault:  source.IsDefault,
+			BuildImage: strings.TrimSpace(source.BuildImage),
+			DefaultTag: strings.TrimSpace(source.DefaultTag),
+			Config:     source.Config,
+		})
+	}
+	environmentBindings := make([]domaindelivery.BlueprintEnvironmentBindingTemplate, 0, len(input.EnvironmentBindings))
+	for _, binding := range input.EnvironmentBindings {
+		environmentBindings = append(environmentBindings, domaindelivery.BlueprintEnvironmentBindingTemplate{
+			EnvironmentID:      strings.TrimSpace(binding.EnvironmentID),
+			EnvironmentKey:     strings.TrimSpace(binding.EnvironmentKey),
+			BusinessLineID:     strings.TrimSpace(binding.BusinessLineID),
+			StrategyProfileID:  strings.TrimSpace(binding.StrategyProfileID),
+			PromotionPolicyID:  strings.TrimSpace(binding.PromotionPolicyID),
+			ApprovalPolicyID:   strings.TrimSpace(binding.ApprovalPolicyID),
+			ArtifactPolicyID:   strings.TrimSpace(binding.ArtifactPolicyID),
+			WorkflowTemplateID: strings.TrimSpace(binding.WorkflowTemplateID),
+			BuildPolicy:        binding.BuildPolicy,
+			ReleasePolicy:      binding.ReleasePolicy,
+			ResourceSelector:   binding.ResourceSelector,
+			Targets:            binding.Targets,
+		})
+	}
+	files := make([]domaindelivery.BlueprintFileTemplate, 0, len(input.Files))
+	for _, file := range input.Files {
+		files = append(files, domaindelivery.BlueprintFileTemplate{
+			Path:     strings.TrimSpace(file.Path),
+			Kind:     strings.TrimSpace(file.Kind),
+			Content:  file.Content,
+			Required: file.Required,
+			Purpose:  strings.TrimSpace(file.Purpose),
+		})
+	}
+	executionHints := input.ExecutionHints
+	if executionHints == nil {
+		executionHints = map[string]any{}
+	}
+	postCreateActions := make([]string, 0, len(input.PostCreateActions))
+	for _, action := range input.PostCreateActions {
+		trimmed := strings.TrimSpace(action)
+		if trimmed != "" {
+			postCreateActions = append(postCreateActions, trimmed)
+		}
+	}
+	return domaindelivery.DeliveryBlueprint{
+		ID:                  id,
+		Key:                 strings.TrimSpace(input.Key),
+		Name:                strings.TrimSpace(input.Name),
+		Description:         strings.TrimSpace(input.Description),
+		ApplicationDraft:    draft,
+		BuildSources:        buildSources,
+		EnvironmentBindings: environmentBindings,
+		Files:               files,
+		ExecutionHints:      executionHints,
+		PostCreateActions:   postCreateActions,
+		Enabled:             input.Enabled,
+		CreatedAt:           now,
+		UpdatedAt:           now,
 	}
 }
 

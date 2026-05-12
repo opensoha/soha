@@ -32,6 +32,14 @@ Each MCP adapter should register:
 - transport configuration
 - timeout and isolation policy
 
+The built-in registry now includes at least:
+
+- `platform-native.v1`
+- `logs.v1`
+- `metrics.v1`
+- `traces.v1`
+- `delivery.v1`
+
 ## Permission Boundary
 
 MCP must not bypass platform authorization. Every MCP capability maps to a platform action and target scope. The platform owns:
@@ -40,3 +48,29 @@ MCP must not bypass platform authorization. Every MCP capability maps to a platf
 - authorization decision
 - invocation audit
 - response filtering
+
+The first delivery-facing MCP tools are:
+
+- `delivery.blueprints.list`
+- `delivery.spec.render`
+- `delivery.targets.list`
+- `delivery.application.bootstrap`
+- `delivery.execution.start`
+
+These tools still must flow through platform permission, scope, audit, and response filtering. Gin handlers must not turn MCP invocations into direct repo writes or long-running shell execution.
+
+## Module Contract
+
+To support single-binary modular startup with a future external-module protocol, the platform now exposes a module contract.
+
+The backend module descriptor currently includes:
+
+- `id`
+- `name`
+- `defaultPath`
+- `enabledConfigKey`
+- `dependencies`
+- `visiblePermissions`
+- `seedMenus`
+
+Current module state is exposed through `GET /api/v1/modules`.

@@ -6,7 +6,7 @@ kubecrux 的 AI 层已经从单一聊天页升级为面向运维中后台的 AIO
 
 当前目标分成两个层面：
 
-1. 一个总入口 `/ai-observe`
+1. 一个总入口 `/ai-workbench`
 2. 一组工作台型子页面，承载调查、巡检自动化、工具装配
 
 AI 层需要帮助完成：
@@ -23,16 +23,20 @@ AI 层需要帮助完成：
 当前前后端已经实现以下能力：
 
 - 总入口:
-  - `/ai-observe`
+  - `/ai-workbench`
 - 调查工作台:
-  - `/ai-observe/workbench`
+  - `/ai-workbench/investigation`
 - 巡检与自动化:
-  - `/ai-observe/operations`
+  - `/ai-workbench/automation`
 - 工具与技能:
-  - `/ai-observe/tools`
+  - `/ai-workbench/tools`
 
 兼容旧入口仍保留跳转：
 
+- `/ai-observe`
+- `/ai-observe/workbench`
+- `/ai-observe/operations`
+- `/ai-observe/tools`
 - `/ai-observe/root-cause`
 - `/ai-observe/performance`
 - `/ai-observe/chat`
@@ -59,6 +63,14 @@ AI 调查以会话为一等对象，而不是临时聊天记录。
 - `summary`
 - `tags`
 - `archivedAt`
+
+其中 `scope` 现在也是监控工作台向 AI 工作台 handoff 的标准载体，统一承接：
+
+- `alertId`
+- `clusterId`
+- `namespace`
+- `workload`
+- `timeRangeMinutes`
 
 当前会话模式：
 
@@ -110,6 +122,7 @@ AI 调查以会话为一等对象，而不是临时聊天记录。
 - `logs.v1`
 - `metrics.v1`
 - `traces.v1`
+- `delivery.v1`
 
 当前状态：
 
@@ -127,12 +140,25 @@ AI 调查以会话为一等对象，而不是临时聊天记录。
 
 1. Settings > AI
    - 全局 provider、data source、analysis profile、automation policy 配置
-2. `/ai-observe/tools`
+2. `/ai-workbench/tools`
    - 会话级临时 toolset 和 skill 装配入口
+
+全局 skill registry 现在采用企业 skill definition，而不是仅保留简单展示项：
+
+- `id`
+- `name`
+- `category`
+- `ownerModule`
+- `capabilityRefs`
+- `blueprintRefs`
+- `inputSchema`
+- `outputSchema`
+- `scopeRules`
+- `enabled`
 
 ## Frontend Shape
 
-### `/ai-observe`
+### `/ai-workbench`
 
 总入口负责：
 
@@ -142,7 +168,7 @@ AI 调查以会话为一等对象，而不是临时聊天记录。
 - 风险雷达
 - 快捷跳转到工作台、巡检自动化、工具技能
 
-### `/ai-observe/workbench`
+### `/ai-workbench/investigation`
 
 调查工作台使用 Ant Design X + antd 组合：
 
@@ -150,18 +176,20 @@ AI 调查以会话为一等对象，而不是临时聊天记录。
 - 中间 `Bubble.List` + `Sender` + `Prompts`
 - 右侧上下文 / 证据 / 假设 / 建议面板
 - `ThoughtChain` 抽屉显示工具链与分析步骤
+- 当当前会话 scope 携带 `alertId` 时，工作台支持回跳原始监控告警详情
 
-### `/ai-observe/operations`
+### `/ai-workbench/automation`
 
 当前基于原 `InspectionCenterPage` 扩展，为后续整合自动化策略预留统一入口。
 
-### `/ai-observe/tools`
+### `/ai-workbench/tools`
 
 当前展示：
 
 - MCP adapters
 - 全局数据源镜像
 - 会话级 toolset 装配入口
+- 企业 skill registry
 
 ## Safety And Execution Model
 
@@ -176,14 +204,17 @@ AI 层仍保持“分析与建议优先”的安全方向。
 
 当前没有把高风险执行动作直接挂入聊天自动执行链。
 
+应用接入规范生成与平台交付编排不归 AI 工作台，而归应用交付工作台；AI 工作台只负责暴露能被企业 AI coding 客户端发现和调用的 MCP/skills 能力。
+
 ## Near-Term Expectations
 
 本阶段之后，AI 相关功能应默认遵守以下规则：
 
-- 新的 AI 观测页面优先接入工作台，而不是继续新增独立传统表格页
+- 新的 AI 页面优先接入 AI 工作台，而不是继续新增独立传统表格页
 - 会话相关增强优先扩 `metadata`，避免过早拆分调查实体模型
 - 新的数据源或工具能力需要同时考虑：
   - 全局配置
   - 会话级装配
   - 分析工件落盘
 - root cause / performance / trace 三类分析应尽量共用统一 artifact 模型，而不是重复造页面协议
+- 监控工作台到 AI 工作台的 handoff 应保持标准 scope 契约，不再由页面各自定义私有跳转协议

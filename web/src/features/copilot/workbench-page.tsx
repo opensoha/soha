@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   ApiOutlined,
   BranchesOutlined,
@@ -37,7 +37,7 @@ import {
   Typography,
 } from 'antd'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useSearchParams } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { StatusTag } from '@/components/status-tag'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth/permission-snapshot'
 import { api } from '@/services/api-client'
@@ -91,11 +91,20 @@ function isSyntheticSession(item: WorkbenchSession) {
 export function AIWorkbenchPage() {
   const { message } = App.useApp()
   const queryClient = useQueryClient()
+  const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const permissionSnapshotQuery = usePermissionSnapshot()
   const canUseChat = hasPermission(permissionSnapshotQuery.data?.data, 'observe.ai.chat')
+  const autoSessionScopeKeyRef = useRef<string>('')
 
   const initialMode = (searchParams.get('mode') as NonNullable<WorkbenchSession['metadata']>['mode']) || 'general'
+  const draftScope = useMemo<WorkbenchSessionScope>(() => ({
+    clusterId: searchParams.get('clusterId') || undefined,
+    namespace: searchParams.get('namespace') || undefined,
+    workload: searchParams.get('workload') || undefined,
+    alertId: searchParams.get('alertId') || undefined,
+    timeRangeMinutes: Number(searchParams.get('timeRangeMinutes') || 60) || 60,
+  }), [searchParams])
   const [activeSessionId, setActiveSessionId] = useState<string>()
   const [renameOpen, setRenameOpen] = useState(false)
   const [renameValue, setRenameValue] = useState('')
@@ -143,7 +152,12 @@ export function AIWorkbenchPage() {
   }, [sessionsQuery.data, activeSessionId])
 
   const createSessionMutation = useMutation({
-    mutationFn: () => api.post<ApiResponse<WorkbenchSession>>('/copilot/sessions', { title: '', mode: draftMode, scope: {}, tags: [] }),
+    mutationFn: (payload?: { title?: string; scope?: WorkbenchSessionScope }) => api.post<ApiResponse<WorkbenchSession>>('/copilot/sessions', {
+      title: payload?.title || '',
+      mode: draftMode,
+      scope: payload?.scope || draftScope,
+      tags: [],
+    }),
     onSuccess: (response) => {
       void queryClient.invalidateQueries({ queryKey: ['copilot-workbench-sessions'] })
       setActiveSessionId(response.data.id)
@@ -151,6 +165,20 @@ export function AIWorkbenchPage() {
     },
     onError: (err: Error) => void message.error(err.message),
   })
+
+  useEffect(() => {
+    const scopeKey = JSON.stringify(draftScope)
+    const hasScopedEntry = Boolean(draftScope.alertId || draftScope.clusterId || draftScope.namespace || draftScope.workload)
+    if (!hasScopedEntry || !canUseChat || createSessionMutation.isPending || autoSessionScopeKeyRef.current === scopeKey) {
+      return
+    }
+    autoSessionScopeKeyRef.current = scopeKey
+    setActiveSessionId(undefined)
+    createSessionMutation.mutate({
+      title: draftScope.alertId ? `Alert ${draftScope.alertId}` : draftScope.workload ? `${draftScope.workload} 调查` : '新的调查会话',
+      scope: draftScope,
+    })
+  }, [canUseChat, createSessionMutation, draftScope])
 
   const patchSessionMutation = useMutation({
     mutationFn: (payload: { sessionId: string; body: Record<string, unknown> }) =>
@@ -312,7 +340,7 @@ export function AIWorkbenchPage() {
                   <Button icon={<ToolOutlined />} onClick={() => setToolsetOpen(true)}>
                     工具集
                   </Button>
-                  <Button type="primary" icon={<PlusOutlined />} loading={createSessionMutation.isPending} onClick={() => createSessionMutation.mutate()} disabled={!canUseChat}>
+                  <Button type="primary" icon={<PlusOutlined />} loading={createSessionMutation.isPending} onClick={() => createSessionMutation.mutate({ scope: draftScope })} disabled={!canUseChat}>
                     新建调查
                   </Button>
                 </Space>
@@ -359,13 +387,18 @@ export function AIWorkbenchPage() {
                       <Paragraph type="secondary" style={{ margin: '8px 0 0' }}>
                         {currentSession.metadata?.summary || '围绕当前范围继续追问、分析和沉淀调查结论。'}
                       </Paragraph>
-                      <Space size={[8, 8]} wrap style={{ marginTop: 12 }}>
-                        <Tag color="blue">{modeLabel(currentSession.metadata?.mode)}</Tag>
-                        <Tag>{buildScopeSummary(currentSession.metadata?.scope)}</Tag>
-                        {(currentSession.metadata?.tags ?? []).map((item) => <Tag key={item}>{item}</Tag>)}
-                      </Space>
+                    <Space size={[8, 8]} wrap style={{ marginTop: 12 }}>
+                      <Tag color="blue">{modeLabel(currentSession.metadata?.mode)}</Tag>
+                      <Tag>{buildScopeSummary(currentSession.metadata?.scope)}</Tag>
+                      {(currentSession.metadata?.tags ?? []).map((item) => <Tag key={item}>{item}</Tag>)}
+                    </Space>
                     </div>
                     <Space>
+                      {currentSession.metadata?.scope?.alertId ? (
+                        <Button onClick={() => navigate(`/monitoring-workbench/alerts/${currentSession.metadata?.scope?.alertId}`)}>
+                          回到原告警
+                        </Button>
+                      ) : null}
                       <Button loading={analyzeSessionMutation.isPending} onClick={() => analyzeSessionMutation.mutate()}>
                         显式分析
                       </Button>
@@ -448,6 +481,11 @@ export function AIWorkbenchPage() {
                     <Space direction="vertical" size={12} style={{ width: '100%' }}>
                       <Card size="small" title="调查范围">
                         <Paragraph style={{ marginBottom: 0 }}>{buildScopeSummary(currentSession.metadata?.scope)}</Paragraph>
+                        {currentSession.metadata?.scope?.alertId ? (
+                          <Button style={{ marginTop: 12 }} size="small" onClick={() => navigate(`/monitoring-workbench/alerts/${currentSession.metadata?.scope?.alertId}`)}>
+                            查看原始告警详情
+                          </Button>
+                        ) : null}
                       </Card>
                       <Card size="small" title="分析运行">
                         {(currentSession.metadata?.analysisRunRefs ?? []).length === 0 ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="还没有运行记录" /> : (

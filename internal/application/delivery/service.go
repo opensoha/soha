@@ -21,12 +21,16 @@ import (
 type ApplicationReader interface {
 	List(context.Context, domainidentity.Principal, domainapp.Filter) ([]domainapp.App, error)
 	Get(context.Context, domainidentity.Principal, string) (domainapp.App, error)
+	Create(context.Context, domainidentity.Principal, domainapp.UpsertInput) (domainapp.App, error)
+	Update(context.Context, domainidentity.Principal, string, domainapp.UpsertInput) (domainapp.App, error)
 }
 
 type CatalogReader interface {
 	ListEnvironments(context.Context, domainidentity.Principal) ([]domaincatalog.Environment, error)
 	ListApplicationEnvironments(context.Context, domainidentity.Principal) ([]domaincatalog.ApplicationEnvironment, error)
 	GetApplicationEnvironment(context.Context, domainidentity.Principal, string) (domaincatalog.ApplicationEnvironment, error)
+	CreateApplicationEnvironment(context.Context, domainidentity.Principal, domaincatalog.ApplicationEnvironmentInput) (domaincatalog.ApplicationEnvironment, error)
+	UpdateApplicationEnvironment(context.Context, domainidentity.Principal, string, domaincatalog.ApplicationEnvironmentInput) (domaincatalog.ApplicationEnvironment, error)
 }
 
 type BuildReader interface {
@@ -460,6 +464,122 @@ func (s *Service) DeleteApprovalPolicy(ctx context.Context, principal domainiden
 		return err
 	}
 	return s.repository.DeleteApprovalPolicy(ctx, strings.TrimSpace(policyID))
+}
+
+func (s *Service) ListDeliveryBlueprints(ctx context.Context, principal domainidentity.Principal) ([]domaindelivery.DeliveryBlueprint, error) {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermDeliveryApplicationsView); err != nil {
+		return nil, err
+	}
+	return s.repository.ListDeliveryBlueprints(ctx)
+}
+
+func (s *Service) CreateDeliveryBlueprint(ctx context.Context, principal domainidentity.Principal, input domaindelivery.DeliveryBlueprintInput) (domaindelivery.DeliveryBlueprint, error) {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermDeliveryApplicationsUpdate); err != nil {
+		return domaindelivery.DeliveryBlueprint{}, err
+	}
+	if strings.TrimSpace(input.Key) == "" || strings.TrimSpace(input.Name) == "" {
+		return domaindelivery.DeliveryBlueprint{}, fmt.Errorf("delivery blueprint key and name are required")
+	}
+	return s.repository.CreateDeliveryBlueprint(ctx, input)
+}
+
+func (s *Service) UpdateDeliveryBlueprint(ctx context.Context, principal domainidentity.Principal, blueprintID string, input domaindelivery.DeliveryBlueprintInput) (domaindelivery.DeliveryBlueprint, error) {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermDeliveryApplicationsUpdate); err != nil {
+		return domaindelivery.DeliveryBlueprint{}, err
+	}
+	if strings.TrimSpace(input.Key) == "" || strings.TrimSpace(input.Name) == "" {
+		return domaindelivery.DeliveryBlueprint{}, fmt.Errorf("delivery blueprint key and name are required")
+	}
+	return s.repository.UpdateDeliveryBlueprint(ctx, strings.TrimSpace(blueprintID), input)
+}
+
+func (s *Service) RenderDeliveryBlueprintSpec(ctx context.Context, principal domainidentity.Principal, blueprintID string) (domaindelivery.RenderedDeliverySpec, error) {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermDeliveryApplicationsView); err != nil {
+		return domaindelivery.RenderedDeliverySpec{}, err
+	}
+	blueprint, err := s.repository.GetDeliveryBlueprint(ctx, strings.TrimSpace(blueprintID))
+	if err != nil {
+		return domaindelivery.RenderedDeliverySpec{}, err
+	}
+	return renderedSpecFromBlueprint(blueprint), nil
+}
+
+func (s *Service) BootstrapApplicationFromBlueprint(ctx context.Context, principal domainidentity.Principal, blueprintID string) (domaindelivery.BlueprintBootstrapResult, error) {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermDeliveryApplicationsUpdate); err != nil {
+		return domaindelivery.BlueprintBootstrapResult{}, err
+	}
+	blueprint, err := s.repository.GetDeliveryBlueprint(ctx, strings.TrimSpace(blueprintID))
+	if err != nil {
+		return domaindelivery.BlueprintBootstrapResult{}, err
+	}
+	spec := renderedSpecFromBlueprint(blueprint)
+	appInput := applicationInputFromDraft(spec.ApplicationDraft, spec.BuildSources)
+	app, err := s.upsertApplication(ctx, principal, appInput)
+	if err != nil {
+		return domaindelivery.BlueprintBootstrapResult{}, err
+	}
+	environments, err := s.catalog.ListEnvironments(ctx, principal)
+	if err != nil {
+		return domaindelivery.BlueprintBootstrapResult{}, err
+	}
+	envByKey := make(map[string]domaincatalog.Environment, len(environments))
+	for _, item := range environments {
+		envByKey[item.Key] = item
+	}
+	existingBindings, err := s.catalog.ListApplicationEnvironments(ctx, principal)
+	if err != nil {
+		return domaindelivery.BlueprintBootstrapResult{}, err
+	}
+	resultBindings := make([]domaincatalog.ApplicationEnvironment, 0, len(spec.EnvironmentBindings))
+	for _, binding := range spec.EnvironmentBindings {
+		environmentID := strings.TrimSpace(binding.EnvironmentID)
+		if environmentID == "" {
+			if item, ok := envByKey[strings.TrimSpace(binding.EnvironmentKey)]; ok {
+				environmentID = item.ID
+			}
+		}
+		if environmentID == "" {
+			return domaindelivery.BlueprintBootstrapResult{}, fmt.Errorf("delivery blueprint binding is missing environment mapping")
+		}
+		if binding.BuildPolicy.SourceID == "" && len(spec.BuildSources) > 0 {
+			binding.BuildPolicy.SourceID = spec.BuildSources[0].ID
+		}
+		input := domaincatalog.ApplicationEnvironmentInput{
+			ApplicationID:      app.ID,
+			EnvironmentID:      environmentID,
+			StrategyProfileID:  binding.StrategyProfileID,
+			PromotionPolicyID:  binding.PromotionPolicyID,
+			ApprovalPolicyID:   binding.ApprovalPolicyID,
+			ArtifactPolicyID:   binding.ArtifactPolicyID,
+			WorkflowTemplateID: binding.WorkflowTemplateID,
+			BuildPolicy:        binding.BuildPolicy,
+			ReleasePolicy:      binding.ReleasePolicy,
+			ResourceSelector:   binding.ResourceSelector,
+			Targets:            binding.Targets,
+		}
+		existingID := ""
+		for _, item := range existingBindings {
+			if item.ApplicationID == app.ID && item.EnvironmentID == environmentID {
+				existingID = item.ID
+				break
+			}
+		}
+		var saved domaincatalog.ApplicationEnvironment
+		if existingID != "" {
+			saved, err = s.catalog.UpdateApplicationEnvironment(ctx, principal, existingID, input)
+		} else {
+			saved, err = s.catalog.CreateApplicationEnvironment(ctx, principal, input)
+		}
+		if err != nil {
+			return domaindelivery.BlueprintBootstrapResult{}, err
+		}
+		resultBindings = append(resultBindings, saved)
+	}
+	return domaindelivery.BlueprintBootstrapResult{
+		Application:         app,
+		EnvironmentBindings: resultBindings,
+		Spec:                spec,
+	}, nil
 }
 
 func (s *Service) ClaimExecutionTask(ctx context.Context, providerKinds []string, agentID, runtimeEndpoint string) (domaindelivery.ExecutionTask, error) {
@@ -914,4 +1034,55 @@ func derefEnvironment(item *domaincatalog.Environment) domaincatalog.Environment
 		return domaincatalog.Environment{}
 	}
 	return *item
+}
+
+func renderedSpecFromBlueprint(blueprint domaindelivery.DeliveryBlueprint) domaindelivery.RenderedDeliverySpec {
+	return domaindelivery.RenderedDeliverySpec{
+		ApplicationDraft:    blueprint.ApplicationDraft,
+		BuildSources:        append([]domainapp.BuildSourceInput(nil), blueprint.BuildSources...),
+		EnvironmentBindings: append([]domaindelivery.BlueprintEnvironmentBindingTemplate(nil), blueprint.EnvironmentBindings...),
+		Files:               append([]domaindelivery.BlueprintFileTemplate(nil), blueprint.Files...),
+		ExecutionHints:      ensureMap(blueprint.ExecutionHints),
+		PostCreateActions:   append([]string(nil), blueprint.PostCreateActions...),
+	}
+}
+
+func applicationInputFromDraft(draft domaindelivery.BlueprintApplicationDraft, buildSources []domainapp.BuildSourceInput) domainapp.UpsertInput {
+	return domainapp.UpsertInput{
+		ID:                  strings.TrimSpace(draft.ID),
+		Name:                strings.TrimSpace(draft.Name),
+		Key:                 strings.TrimSpace(draft.Key),
+		Group:               strings.TrimSpace(draft.Group),
+		BusinessLineID:      strings.TrimSpace(draft.BusinessLineID),
+		Language:            strings.TrimSpace(draft.Language),
+		Description:         strings.TrimSpace(draft.Description),
+		OwnerTeam:           strings.TrimSpace(draft.OwnerTeam),
+		RepositoryProvider:  strings.TrimSpace(draft.RepositoryProvider),
+		RepositoryProjectID: strings.TrimSpace(draft.RepositoryProjectID),
+		RepositoryPath:      strings.TrimSpace(draft.RepositoryPath),
+		DefaultBranch:       strings.TrimSpace(draft.DefaultBranch),
+		DefaultTag:          strings.TrimSpace(draft.DefaultTag),
+		BuildImage:          strings.TrimSpace(draft.BuildImage),
+		BuildContextDir:     strings.TrimSpace(draft.BuildContextDir),
+		DockerfilePath:      strings.TrimSpace(draft.DockerfilePath),
+		Enabled:             draft.Enabled,
+		Metadata:            ensureMap(draft.Metadata),
+		BuildSources:        buildSources,
+	}
+}
+
+func (s *Service) upsertApplication(ctx context.Context, principal domainidentity.Principal, input domainapp.UpsertInput) (domainapp.App, error) {
+	if strings.TrimSpace(input.ID) != "" {
+		return s.applications.Update(ctx, principal, input.ID, input)
+	}
+	items, err := s.applications.List(ctx, principal, domainapp.Filter{Limit: 200})
+	if err != nil {
+		return domainapp.App{}, err
+	}
+	for _, item := range items {
+		if strings.TrimSpace(item.Key) == strings.TrimSpace(input.Key) {
+			return s.applications.Update(ctx, principal, item.ID, input)
+		}
+	}
+	return s.applications.Create(ctx, principal, input)
 }

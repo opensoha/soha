@@ -12,6 +12,7 @@ The repository now has a delivery control-plane baseline centered on four stable
 - build templates
 - application-environment bindings
 - execution records
+- delivery blueprints
 
 - application CRUD and detail APIs:
   - `GET /api/v1/applications`
@@ -25,6 +26,12 @@ The repository now has a delivery control-plane baseline centered on four stable
   - `POST /api/v1/build-templates`
   - `PUT /api/v1/build-templates/:buildTemplateID`
   - `DELETE /api/v1/build-templates/:buildTemplateID`
+- delivery blueprint APIs:
+  - `GET /api/v1/delivery/blueprints`
+  - `POST /api/v1/delivery/blueprints`
+  - `PUT /api/v1/delivery/blueprints/:blueprintID`
+  - `POST /api/v1/delivery/blueprints/:blueprintID/render-spec`
+  - `POST /api/v1/delivery/blueprints/:blueprintID/bootstrap-application`
 - execution-plane APIs:
   - `GET /api/v1/delivery/release-bundles`
   - `GET /api/v1/delivery/release-bundles/:bundleID`
@@ -52,6 +59,7 @@ The repository now has a delivery control-plane baseline centered on four stable
   - `GET /api/v1/integrations/gitlab/tags`
 - current frontend routes:
   - `/applications`
+  - `/delivery/blueprints`
   - `/applications/:applicationId`
   - `/build-templates`
   - `/delivery/release-bundles`
@@ -65,9 +73,10 @@ The repository now has a delivery control-plane baseline centered on four stable
   - `/releases`
   - `/registries`
 - PostgreSQL tables:
-  - `applications`
+- `applications`
 - `application_build_sources`
 - `build_templates`
+- `delivery_blueprints`
 - `release_bundles`
 - `execution_tasks`
 - `execution_logs`
@@ -117,6 +126,13 @@ The current model is not GitOps-only and not a fake mock pipeline. It is a real 
 6. deployment replaces the target Deployment image in Kubernetes while execution task state is advanced in parallel
 7. kubecrux records workflow, execution-task, deploy, and release outcomes
 
+企业 AI coding 场景下，`delivery_blueprints` 作为控制平面模板对象存在，而不是仓库文件本身：
+
+- 蓝图组合应用草稿、build sources、环境绑定模板、目标模板与文件模板
+- `render-spec` 返回 `RenderedDeliverySpec`
+- `bootstrap-application` 只负责创建或更新平台控制面对象
+- v1 不在 API 服务端直接改 Git 仓库文件
+
 ## Recommended Modules
 
 ### Backend
@@ -160,6 +176,10 @@ The current model is not GitOps-only and not a fake mock pipeline. It is a real 
   - structured application-environment binding form
   - aggregated release board
   - application-environment delivery workspace
+- `web/src/features/delivery/delivery-blueprint-pages.tsx`
+  - blueprint CRUD
+  - rendered spec preview
+  - platform bootstrap result inspection
 
 ## Data Model Direction
 
