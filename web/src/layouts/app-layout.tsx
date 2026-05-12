@@ -307,6 +307,7 @@ export function AppLayout() {
     }
     return accessibleWorkbenchIds[0] ?? null
   }, [accessibleWorkbenchIds, activeWorkspace, currentWorkbenchId])
+  const isAIWorkbenchRoute = activeWorkbenchId === 'ai'
 
   const businessWorkspaceNav = useMemo(
     () => (activeWorkspace ? filterSidebarNavByWorkspace(fullSidebarNav, activeWorkspace) : []),
@@ -322,7 +323,7 @@ export function AppLayout() {
     () => filterSidebarNavByWorkspace(fullSidebarNav, 'system'),
     [fullSidebarNav],
   )
-  const systemMenuTree = useMemo(() => wrapSystemNav(systemNav), [systemNav])
+  const systemMenuTree = useMemo(() => (isAIWorkbenchRoute ? [] : wrapSystemNav(systemNav)), [isAIWorkbenchRoute, systemNav])
   const businessMenuItems = useMemo(() => buildMenuItems(businessNav, localeCode), [businessNav, localeCode])
   const systemMenuItems = useMemo(() => buildMenuItems(systemMenuTree, localeCode, { grouped: false }), [systemMenuTree, localeCode])
   const businessItemKeyToPath = useMemo(() => buildItemKeyToPath(businessNav), [businessNav])
@@ -474,39 +475,43 @@ export function AppLayout() {
             </div>
           ) : null}
 
-          <div className="kc-nav-business">
-            <Menu
-              className="kc-nav-menu kc-nav-menu--business"
-              mode="inline"
-              items={businessMenuItems}
-              selectedKeys={businessSelectedKeys}
-              openKeys={sidebarCollapsed ? [] : businessOpenKeys}
-              onOpenChange={(keys) => setBusinessOpenKeys(keys as string[])}
-              onClick={({ key }) => {
-                const path = businessItemKeyToPath[String(key)]
-                if (path) navigate(path)
-              }}
-              inlineCollapsed={sidebarCollapsed}
-              theme={resolvedThemeMode}
-            />
-          </div>
+          {!isAIWorkbenchRoute ? (
+            <div className="kc-nav-business">
+              <Menu
+                className="kc-nav-menu kc-nav-menu--business"
+                mode="inline"
+                items={businessMenuItems}
+                selectedKeys={businessSelectedKeys}
+                openKeys={sidebarCollapsed ? [] : businessOpenKeys}
+                onOpenChange={(keys) => setBusinessOpenKeys(keys as string[])}
+                onClick={({ key }) => {
+                  const path = businessItemKeyToPath[String(key)]
+                  if (path) navigate(path)
+                }}
+                inlineCollapsed={sidebarCollapsed}
+                theme={resolvedThemeMode}
+              />
+            </div>
+          ) : null}
 
-          <div className="kc-nav-system">
-            <Menu
-              className="kc-nav-menu kc-nav-menu--system"
-              mode="inline"
-              items={systemMenuItems}
-              selectedKeys={systemSelectedKeys}
-              openKeys={sidebarCollapsed ? [] : systemOpenKeys}
-              onOpenChange={(keys) => setSystemOpenKeys(keys as string[])}
-              onClick={({ key }) => {
-                const path = systemItemKeyToPath[String(key)]
-                if (path) navigate(path)
-              }}
-              inlineCollapsed={sidebarCollapsed}
-              theme={resolvedThemeMode}
-            />
-          </div>
+          {!isAIWorkbenchRoute && (systemMenuItems?.length ?? 0) > 0 ? (
+            <div className="kc-nav-system">
+              <Menu
+                className="kc-nav-menu kc-nav-menu--system"
+                mode="inline"
+                items={systemMenuItems}
+                selectedKeys={systemSelectedKeys}
+                openKeys={sidebarCollapsed ? [] : systemOpenKeys}
+                onOpenChange={(keys) => setSystemOpenKeys(keys as string[])}
+                onClick={({ key }) => {
+                  const path = systemItemKeyToPath[String(key)]
+                  if (path) navigate(path)
+                }}
+                inlineCollapsed={sidebarCollapsed}
+                theme={resolvedThemeMode}
+              />
+            </div>
+          ) : null}
         </div>
       </Sider>
 

@@ -115,7 +115,6 @@ const HealingPage = lazyNamed(() => import('@/features/observability/alerting-pa
 const OnCallPage = lazyNamed(() => import('@/features/observability/alerting-pages'), 'OnCallPage')
 const AlertEventDetailPage = lazyNamed(() => import('@/features/observability/alerting-pages'), 'AlertEventDetailPage')
 
-const AIObserveOverviewPage = lazyNamed(() => import('@/features/copilot/ai-observe-pages'), 'AIObserveOverviewPage')
 const AIWorkbenchPage = lazyNamed(() => import('@/features/copilot/ai-observe-pages'), 'AIWorkbenchPage')
 const AIOperationsPage = lazyNamed(() => import('@/features/copilot/ai-observe-pages'), 'AIOperationsPage')
 const AIToolsPage = lazyNamed(() => import('@/features/copilot/ai-observe-pages'), 'AIToolsPage')
@@ -268,7 +267,7 @@ export function AppRouter() {
           <Route path="/observability/oncall" element={<Navigate to="/monitoring-workbench/oncall" replace />} />
           <Route path="/observability/events" element={<Navigate to="/monitoring-workbench/events" replace />} />
 
-          <Route path="/ai-workbench" element={<LazyPage><AIObserveOverviewPage /></LazyPage>} />
+          <Route path="/ai-workbench" element={<LazyPage><AIWorkbenchPage /></LazyPage>} />
           <Route path="/ai-workbench/investigation" element={<LazyPage><AIWorkbenchPage /></LazyPage>} />
           <Route path="/ai-workbench/automation" element={<LazyPage><AIOperationsPage /></LazyPage>} />
           <Route path="/ai-workbench/tools" element={<LazyPage><AIToolsPage /></LazyPage>} />

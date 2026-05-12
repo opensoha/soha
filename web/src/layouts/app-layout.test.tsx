@@ -312,9 +312,9 @@ describe('app layout workspace navigation', () => {
     })
 
     expect(container.querySelector('.kc-workbench-switcher__label')?.textContent).toBe('AI工作台')
-    expect(container.textContent).toContain('调查工作台')
-    expect(container.textContent).toContain('巡检与自动化')
+    expect(container.querySelector('.kc-nav-business')).toBeNull()
+    expect(container.querySelector('.kc-nav-system')).toBeNull()
     expect(container.textContent).not.toContain('监控工作台')
-    expect(container.textContent).not.toContain('概览')
+    expect(container.textContent).not.toContain('系统管理')
   })
 })
