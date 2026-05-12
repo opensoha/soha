@@ -65,7 +65,7 @@ web/src/
     table-columns.ts
     time.ts
   theme/
-    semi-theme.ts
+    app-theme.ts
   vite-env.d.ts
 ```
 

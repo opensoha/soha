@@ -8,9 +8,9 @@ description: >-
   page-level UX. This skill enforces the active repo baseline: work only in
   `web`, keep `web_pro_backup` and `old_web` reference-only, use native `antd`
   and `@ant-design/icons`, preserve the existing shadcn-like grayscale visual
-  language from `web/src/theme/semi-theme.ts`, reuse persisted cluster and
+  language from `web/src/theme/app-theme.ts`, reuse persisted cluster and
   namespace scope, consume backend-aggregated DTOs, and avoid reintroducing
-  `@/compat/semi-*`.
+  any Semi Design residue.
 ---
 
 # Kubecrux Frontend
@@ -26,13 +26,15 @@ Implement console work inside the active Vite app under `web`. Keep the UI antd-
 3. Fetch server data through TanStack Query and same-origin `/api/v1` helpers. Reuse persisted cluster and namespace scope from Zustand instead of creating page-local duplicates.
 4. Build UI with native `antd` components plus the existing theme and CSS-variable system. Treat "shadcn style" as a visual direction, not as `shadcn/ui`.
 5. Update route metadata, i18n strings, permission wiring, and tests together when navigation or behavior changes.
-6. Validate with `npm run typecheck` in `web`, plus focused `npm run test` when semantics change.
+6. Clean up stale assets or scripts when they no longer match the active UI baseline; do not leave dead Semi-era static files around once usage is gone.
+7. Validate with `npm run typecheck` in `web`, plus focused `npm run test` when semantics change.
 
 ## Non-Negotiables
 
 - Work in `web`. Do not treat `old_web` or `web_pro_backup` as active implementation targets.
-- Import directly from `antd` and `@ant-design/icons`. Keep `rg -n "@/compat/semi-" web/src` at zero.
-- Keep `web/src/theme/semi-theme.ts` as the single source for antd theme tokens and shared `--kc-*` CSS variables.
+- Import directly from `antd` and `@ant-design/icons`. Do not introduce Semi Design packages, compat layers, variables, or naming back into `web`.
+- Keep `web/src/theme/app-theme.ts` as the single source for antd theme tokens and shared `--kc-*` CSS variables.
+- Do not reintroduce removed legacy theme assets, old static sync scripts, historical token aliases, or outdated file naming unless the user explicitly asks for legacy compatibility.
 - Route registration lives in `web/src/routes/index.tsx`. Navigation ownership, breadcrumbs, and permission-aware metadata live in `web/src/routes/meta.ts`.
 - Server state belongs to TanStack Query. Persisted UI and runtime preferences belong to Zustand. Avoid storing fetched API payloads in local stores.
 - Prefer backend aggregation over browser fan-out. Do not issue one request per namespace when a platform aggregate endpoint exists or should exist.

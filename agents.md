@@ -71,11 +71,10 @@ Project summary:
 
 ### Deployment
 
-- canonical deployment assets live under repo-root `deploy`
-- `deploy/docker` owns the single-project image build path
-- `deploy/compose` owns local app-plus-PostgreSQL startup
-- `deploy/k8s` owns raw Kubernetes manifests
-- `deploy/helm` owns repeatable Helm installation assets
+- root `Dockerfile` owns the single-project image build path
+- root `docker-compose.yaml` owns local app-plus-PostgreSQL startup
+- root `deployment.yaml` owns the raw Kubernetes manifest baseline
+- root `chart/` owns repeatable Helm installation assets
 
 ## 4. System Architecture
 
@@ -193,7 +192,7 @@ The frontend active baseline has been reset to the Vite application.
 
 Current structure summary:
 
-- `deploy` is the canonical repo-local deployment directory for container build, compose, Kubernetes YAML, and Helm assets
+- root-level `Dockerfile`, `docker-compose.yaml`, `deployment.yaml`, and `chart/` are the canonical repo-local deployment assets
 - `web` is the only active frontend target
 - `web_pro_backup` preserves the previous frontend backup and must not be treated as the active shell
 - `old_web` remains as migration/reference material only after the reset
@@ -205,7 +204,7 @@ Current structure summary:
 ### 6.2 UI and State Rules
 
 - Ant Design is the primary component system
-- custom theme tokens under `web/src/theme/semi-theme.ts` remain the single source for light/dark/system mode and shared CSS variables
+- custom theme tokens under `web/src/theme/app-theme.ts` remain the single source for light/dark/system mode and shared CSS variables
 - Zustand stores lightweight local UI/runtime preferences
 - TanStack Query owns server data lifecycle
 - route metadata in `web/src/routes/meta.ts` drives navigation, breadcrumb, and permission-aware route behavior
@@ -432,18 +431,14 @@ The repository has already converged on these rules:
 - access control should remain visible as a top-level console menu entry for admins, while its child pages can stay as nested routes beneath that entry
 - settings center is a single top-level menu with in-page tabs for identity and AI; cluster-level monitoring configuration should not remain as a separate settings-center submenu
 - settings center now includes a branding tab for console-level brand assets and title metadata; branding settings are distinct from cluster-level monitoring settings and should be applied globally in the web shell
-- the console shell theme keeps a fixed Semi theme variant with brand overrides, while the header may expose a light/dark mode toggle as a user preference; theme-brand switching should still stay disabled unless it is intentionally restored end-to-end
-- frontend theme customization now uses `web/src/theme/semi-theme.ts` as the single source for both antd `ThemeConfig` and shared `--kc-*` CSS variables; avoid duplicating theme tokens in `main.tsx` or standalone style files
+- the console shell theme keeps a fixed kubecrux theme variant with brand overrides, while the header may expose a light/dark mode toggle as a user preference; theme-brand switching should still stay disabled unless it is intentionally restored end-to-end
+- frontend theme customization now uses `web/src/theme/app-theme.ts` as the single source for both antd `ThemeConfig` and shared `--kc-*` CSS variables; avoid duplicating theme tokens in `main.tsx` or standalone style files
 - the console visual baseline has shifted from the older purple brand palette to a neutral shadcn-like grayscale palette, while still preserving light/dark mode support and shared CSS variable contracts for non-antd surfaces
 - shared platform filters such as resource scope and workload search bars should use compact, square-edged controls rather than pill-shaped fields
 - frontend migration baseline is now antd-first: new or migrated pages must import directly from `antd` and `@ant-design/icons`
-- native antd migration should normalize shared foundation modules first: `resource-metrics-panel`, `resource-actions`, `page-header`, `status-tag`, and `platform-scope-toolbar` own the primary replacement of compat button/modal/tabs/descriptions/select/tag semantics for downstream pages
-- remaining compat-removal execution order is fixed: shared foundation first, then domain feature waves (`platform`, `access`, `delivery`, `observability`, `copilot` plus remaining auth/system/settings/docs web modules), then compatibility-layer deletion, and only then docs-site Docusaurus cleanup
-- compat-removal work must rewrite form/button/modal/tab/description/toast usage to native antd APIs in place; do not preserve Semi prop names behind new wrappers
-- remaining `@/compat/semi-*` imports are migration debt; they should be removed module-by-module until the compatibility layer can be deleted
+- native antd migration is complete. Do not reintroduce the retired UI system's packages, compat layers, legacy token names, or wrapper APIs into the active `web` application.
 - antd-first is the stable frontend baseline; `platform`, `access`, `delivery`, `observability`, `copilot`, `system`, `settings`, docs-facing web modules, plus the remaining shared/auth/routes tail files have all converged on native `antd` and `@ant-design/icons`
-- `rg -n "@/compat/semi-" web/src` and `rg -n "@/compat/semi-icons" web/src` are now expected to stay at zero; `web/src/compat/**` has been deleted after web-side compat usage fully cleared
-- docs-side Docusaurus cleanup continues only after the web compat layer is fully cleared, and web cleanup is now complete
+- active `web/src` code should stay free of retired design-system naming and semantics; keep any remaining history confined to cleanup work only
 - docs migration baseline is Docusaurus-first; new docs-site work must target Docusaurus config, sidebars, and MDX component conventions instead of VitePress
 
 ## 9. Change Rules
@@ -469,7 +464,7 @@ For this repository, that means:
 - update `docs/architecture/*` when the public architecture description changes materially
 - update route metadata when navigation or page ownership changes
 - update tests when semantics or contracts change
-- when frontend migration tasks land, record whether a module still depends on `@/compat/semi-*` or has been fully moved to native antd imports
+- when frontend theme or design-system tasks land, record whether any legacy naming or compatibility residue was removed and keep active code free of Semi Design references
 
 ### For Platform Dashboard Changes
 

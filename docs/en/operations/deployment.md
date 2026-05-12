@@ -13,8 +13,8 @@
 - `Dockerfile`
 - `docker-compose.yaml`
 - `configs/config.yaml`
-- `deploy/k8s/kubecrux-single-project.yaml`
-- `deploy/helm/kubecrux/`
+- `deployment.yaml`
+- `chart/`
 
 ## Quick Commands
 
@@ -33,7 +33,7 @@ docker compose -f docker-compose.yaml up -d --build
 Lint the Helm chart:
 
 ```bash
-helm lint deploy/helm/kubecrux
+helm lint chart
 ```
 
 ## Local Run Assumptions

@@ -16,7 +16,7 @@
 - `web/src/components/**`: shared reusable UI primitives and heavier widgets.
 - `web/src/services/**`: API client and request helpers.
 - `web/src/stores/**`: persisted auth, preference, and platform scope state.
-- `web/src/theme/semi-theme.ts`: antd `ThemeConfig` plus shared CSS-variable baseline.
+- `web/src/theme/app-theme.ts`: antd `ThemeConfig` plus shared CSS-variable baseline.
 
 ## Data and State Rules
 

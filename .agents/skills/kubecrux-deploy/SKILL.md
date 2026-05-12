@@ -9,24 +9,24 @@ description: >-
   skill assumes the current repo can ship as one application container because
   `cmd/server` serves embedded SPA and docs assets when `web/dist` and
   `docs/build` are present at build time, and the canonical deployment assets
-  live under the repo-root `deploy/` directory.
+  now live at the repo root plus `chart/`.
 ---
 
 # Kubecrux Deploy
 
 ## Overview
 
-Use the repo deployment assets under `deploy/` to run kubecrux as a single-project runtime: one application container serving API, SPA, and docs, plus PostgreSQL as the required durable dependency. This matches the current codebase better than deploying the Vite dev server separately.
+Use the root deployment assets to run kubecrux as a single-project runtime: one application container serving API, SPA, and docs, plus PostgreSQL as the required durable dependency. This matches the current codebase better than deploying the Vite dev server separately.
 
 ## Workflow
 
 1. Confirm the target is a single-project deployment, not a multi-service platform split.
-2. Start from `deploy/docker/Dockerfile.single-project` so `web/dist` and `docs/build` are baked into the server binary during image build.
-3. Copy and adapt `deploy/config/config.api.single-project.yaml` for the target environment.
+2. Start from the repo-root `Dockerfile` so `web/dist` and `docs/build` are baked into the server binary during image build.
+3. Reuse `configs/config.yaml` for local and container defaults, or provide overrides through environment variables or mounted config files when deployment needs differ.
 4. Choose one delivery form:
-   - `deploy/compose/docker-compose.single-project.yml` for local or VM-style runs
-   - `deploy/k8s/kubecrux-single-project.yaml` for raw-cluster delivery
-   - `deploy/helm/kubecrux/` for repeatable cluster installs
+   - `docker-compose.yaml` for local or VM-style runs
+   - `deployment.yaml` for raw-cluster delivery
+   - `chart/` for repeatable cluster installs
 5. Verify `KC_CONFIG_FILE`, database settings, OIDC redirect URLs, and ingress hostnames before rollout.
 6. Smoke test `/healthz`, `/readyz`, `/`, and `/docs/` after deployment.
 
@@ -41,11 +41,18 @@ Use the repo deployment assets under `deploy/` to run kubecrux as a single-proje
 
 ## Deployment Map
 
-- `deploy/docker/Dockerfile.single-project`: multi-stage image build for embedded SPA and docs.
-- `deploy/config/config.api.single-project.yaml`: starter backend config for same-origin single-project installs.
-- `deploy/compose/docker-compose.single-project.yml`: local stack with app plus PostgreSQL.
-- `deploy/k8s/kubecrux-single-project.yaml`: raw Kubernetes manifest for namespace, Secret, app, PostgreSQL, Service, and Ingress.
-- `deploy/helm/kubecrux/`: Helm chart for the same topology.
+- `Dockerfile`: multi-stage image build for embedded SPA and docs.
+- `docker-compose.yaml`: local stack with app plus PostgreSQL, plus the current optional local `k3s` runtime if present in the file.
+- `configs/config.yaml`: default backend config for local and container startup.
+- `deployment.yaml`: raw Kubernetes manifest for namespace, Secret, app, PostgreSQL, Service, and Ingress.
+- `chart/`: Helm chart for the same topology.
+
+## Repo Reality Checks
+
+- Do not reintroduce a `deploy/` directory for container build, compose, raw YAML, or Helm unless the user explicitly asks for that structure back.
+- Keep the single-project deployment story coherent across `Dockerfile`, `docker-compose.yaml`, `deployment.yaml`, and `chart/`.
+- If `docker-compose.yaml` also carries local cluster helpers such as `k3s`, preserve them unless the user explicitly wants a simpler compose file.
+- When changing deployment docs or examples, update `README.md`, `README-cn.md`, `docs/operations/deployment.md`, and `docs/en/operations/deployment.md` together.
 
 ## Read These References When Needed
 

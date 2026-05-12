@@ -22,7 +22,7 @@ Use for:
 - one-host testing
 - quick stakeholder preview
 
-Start from `deploy/compose/docker-compose.single-project.yml`.
+Start from `docker-compose.yaml`.
 
 ### Raw Kubernetes YAML
 
@@ -32,7 +32,7 @@ Use for:
 - environments where Helm is not wanted
 - fast manifest review in GitOps bootstrap work
 
-Start from `deploy/k8s/kubecrux-single-project.yaml`.
+Start from `deployment.yaml`.
 
 ### Helm
 
@@ -42,7 +42,7 @@ Use for:
 - multiple clusters or environments
 - overrides through values files
 
-Start from `deploy/helm/kubecrux/`.
+Start from `chart/`.
 
 ## Scope of the Starter Assets
 

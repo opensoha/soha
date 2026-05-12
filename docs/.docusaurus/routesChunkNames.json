@@ -1,15 +1,15 @@
 {
-  "/docs/-9b2": {
+  "/docs/-abe": {
     "__comp": "5e95c892",
     "__context": {
       "plugin": "aba21aa0"
     }
   },
-  "/docs/-d16": {
+  "/docs/-e84": {
     "__comp": "a7bd4aaa",
     "__props": "11b43341"
   },
-  "/docs/-260": {
+  "/docs/-51b": {
     "__comp": "a94703ab"
   },
   "/docs/api/auth-and-errors/-83d": {
@@ -36,11 +36,11 @@
     "__comp": "17896441",
     "content": "205c9963"
   },
-  "/docs/architecture/ai-copilot/-756": {
+  "/docs/architecture/ai-copilot/-b58": {
     "__comp": "17896441",
     "content": "d0d78531"
   },
-  "/docs/architecture/application-delivery/-5d8": {
+  "/docs/architecture/application-delivery/-116": {
     "__comp": "17896441",
     "content": "b1fc9f5f"
   },
@@ -56,11 +56,11 @@
     "__comp": "17896441",
     "content": "26d1d4d8"
   },
-  "/docs/architecture/mcp-integration/-c23": {
+  "/docs/architecture/mcp-integration/-b5f": {
     "__comp": "17896441",
     "content": "aff97073"
   },
-  "/docs/architecture/monitoring-and-alerting/-984": {
+  "/docs/architecture/monitoring-and-alerting/-28d": {
     "__comp": "17896441",
     "content": "0fa7de35"
   },
@@ -96,7 +96,7 @@
     "__comp": "17896441",
     "content": "0bdf1156"
   },
-  "/docs/development/local-development/-40a": {
+  "/docs/development/local-development/-01b": {
     "__comp": "17896441",
     "content": "fdf81dc1"
   },
@@ -140,7 +140,7 @@
     "__comp": "17896441",
     "content": "9a4044ca"
   },
-  "/docs/reference/product-information-architecture/-e11": {
+  "/docs/reference/product-information-architecture/-ead": {
     "__comp": "17896441",
     "content": "2c450f4a"
   },

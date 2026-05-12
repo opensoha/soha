@@ -14,7 +14,7 @@ Do not add a second design system or copy shadcn component APIs.
 
 ## Visual Rules
 
-- Reuse tokens from `web/src/theme/semi-theme.ts`.
+- Reuse tokens from `web/src/theme/app-theme.ts`.
 - Prefer neutral backgrounds, dark text, and restrained emphasis colors.
 - Keep control shapes mostly square-edged instead of pill-shaped.
 - Use shadow sparingly. Border and spacing should do most of the separation work.

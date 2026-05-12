@@ -25,7 +25,7 @@ Implement backend changes through the repository's layered Go architecture. Keep
 2. Read the existing handler, service, repository, and route wiring before editing. Follow the current module rather than creating a parallel path.
 3. Keep authorization, scope semantics, audit, and operation logging aligned with the behavior change.
 4. For Kubernetes-facing work, decide whether the capability should use informer/cache, live query fallback, or agent mode, and make unsupported agent paths explicit.
-5. Update tests, config defaults, and memory or docs in the same task when contracts or semantics change.
+5. Update tests, config defaults, deployment-facing manifests, and memory or docs in the same task when contracts or semantics change.
 6. Validate with focused `go test` runs, or at minimum with the affected package tests and a repo build path.
 
 ## Non-Negotiables

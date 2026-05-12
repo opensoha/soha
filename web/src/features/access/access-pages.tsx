@@ -619,7 +619,7 @@ export function AccessUsersPage() {
             {getUserInitial(record)}
           </Avatar>
           <div className="min-w-0 flex-1">
-            <div className="truncate font-medium" style={{ color: 'var(--semi-color-text-0)' }}>{record.username}</div>
+            <div className="truncate font-medium" style={{ color: 'var(--kc-text-primary)' }}>{record.username}</div>
             <Text type="secondary" style={{ fontSize: 12 }}>
               {record.displayName || record.email || '-'}
             </Text>
@@ -1361,7 +1361,7 @@ export function AccessCenterPage() {
   }
 
   if (!firstAccessiblePath) {
-    return <div className="kc-page"><div className="text-[var(--semi-color-text-2)]">当前账号没有访问控制页面权限。</div></div>
+    return <div className="kc-page"><div className="text-[var(--kc-text-tertiary)]">当前账号没有访问控制页面权限。</div></div>
   }
 
   return <Navigate to={firstAccessiblePath} replace />

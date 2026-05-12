@@ -44,7 +44,7 @@ const fullWidthStyle = { width: '100%' }
 
 function SectionCallout({ title, description }: { title: string; description: string }) {
   return (
-    <div className="mb-4 rounded border border-[var(--semi-color-border)] bg-[var(--semi-color-fill-0)] p-3 text-sm">
+    <div className="mb-4 rounded border border-[var(--kc-border-color)] bg-[var(--kc-fill-weak)] p-3 text-sm">
       <div className="font-medium">{title}</div>
       <div className="mt-1 text-[var(--ant-colorTextSecondary)]">{description}</div>
     </div>

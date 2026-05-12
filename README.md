@@ -39,7 +39,7 @@ The repository follows a modular-monolith backend and a route-driven frontend sh
 - `web/src/components`: shared reusable UI primitives and widgets
 - `web/src/services`: API access helpers
 - `web/src/stores`: auth, preferences, and platform scope state
-- `web/src/theme/semi-theme.ts`: shared theme tokens and CSS-variable baseline
+- `web/src/theme/app-theme.ts`: shared theme tokens and CSS-variable baseline
 
 ### Docs
 
@@ -76,14 +76,15 @@ The repository follows a modular-monolith backend and a route-driven frontend sh
 .
 ├── cmd/                 # server and agent entrypoints
 ├── configs/             # backend and agent config files
-├── deploy/              # k8s manifests and Helm deployment assets
 ├── docs/                # Docusaurus docs site
 ├── internal/            # backend layers
 ├── migrations/          # SQL bootstrap and schema migrations
 ├── web/                 # active frontend app
 ├── AGENTS.md            # engineering spec and repo memory
+├── chart/               # Helm chart
 ├── Dockerfile           # single-project image build entry
 ├── Makefile             # common dev/build/deploy commands
+├── deployment.yaml      # raw Kubernetes manifest
 └── docker-compose.yaml  # local compose stack for kubecrux and PostgreSQL
 ```
 
@@ -169,8 +170,8 @@ The main image and local compose assets now live at the repo root.
 - [Dockerfile](./Dockerfile): multi-stage image build for the API server with embedded SPA and docs
 - [docker-compose.yaml](./docker-compose.yaml): local full-stack startup with kubecrux plus PostgreSQL
 - [configs/config.yaml](./configs/config.yaml): default application config used by local development and the container image
-- [deploy/k8s/kubecrux-single-project.yaml](./deploy/k8s/kubecrux-single-project.yaml): raw Kubernetes manifest set
-- [deploy/helm/kubecrux](./deploy/helm/kubecrux): Helm chart for repeatable installs
+- [deployment.yaml](./deployment.yaml): raw Kubernetes manifest set
+- [chart](./chart): Helm chart for repeatable installs
 
 Example commands:
 
@@ -186,7 +187,7 @@ Or directly:
 ```bash
 docker build -t kubecrux:single-project .
 docker compose -f docker-compose.yaml up -d --build
-helm lint deploy/helm/kubecrux
+helm lint chart
 ```
 
 ## Documentation

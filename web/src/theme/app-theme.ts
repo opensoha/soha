@@ -2,7 +2,6 @@ import { theme as antdTheme } from 'antd'
 import type { ThemeConfig } from 'antd'
 
 export type AppThemeId = 'kubecrux'
-export type SemiThemeId = AppThemeId
 
 export type ThemeMode = 'light' | 'dark' | 'system'
 export type ResolvedThemeMode = 'light' | 'dark'
@@ -48,10 +47,10 @@ export interface ThemePalette {
 
 const PREFERENCES_STORAGE_KEY = 'kubecrux-prefs'
 
-export const DEFAULT_SEMI_THEME_ID: AppThemeId = 'kubecrux'
+export const DEFAULT_APP_THEME_ID: AppThemeId = 'kubecrux'
 export const DEFAULT_THEME_MODE: ThemeMode = 'light'
 
-export const semiThemeOptions: Array<{ id: AppThemeId; label: string }> = [
+export const appThemeOptions: Array<{ id: AppThemeId; label: string }> = [
   { id: 'kubecrux', label: 'KubeCrux' },
 ]
 
@@ -397,11 +396,11 @@ export function getAntdTheme(themeMode: ThemeMode | ResolvedThemeMode): ThemeCon
   }
 }
 
-export function getSemiThemeLabel(): string {
+export function getAppThemeLabel(): string {
   return 'KubeCrux'
 }
 
-export function applySemiTheme(_themeId: AppThemeId, themeMode: ThemeMode) {
+export function applyAppTheme(_themeId: AppThemeId, themeMode: ThemeMode) {
   if (typeof document === 'undefined') return
   const resolvedMode = resolveThemeMode(themeMode)
   const palette = getThemePalette(resolvedMode)
@@ -474,7 +473,7 @@ export function readStoredThemePreference(): {
 } {
   if (typeof window === 'undefined') {
     return {
-      themeId: DEFAULT_SEMI_THEME_ID,
+      themeId: DEFAULT_APP_THEME_ID,
       themeMode: DEFAULT_THEME_MODE,
     }
   }
@@ -483,7 +482,7 @@ export function readStoredThemePreference(): {
     const raw = window.localStorage.getItem(PREFERENCES_STORAGE_KEY)
     if (!raw) {
       return {
-        themeId: DEFAULT_SEMI_THEME_ID,
+        themeId: DEFAULT_APP_THEME_ID,
         themeMode: DEFAULT_THEME_MODE,
       }
     }
@@ -495,12 +494,12 @@ export function readStoredThemePreference(): {
       : DEFAULT_THEME_MODE
 
     return {
-      themeId: DEFAULT_SEMI_THEME_ID,
+      themeId: DEFAULT_APP_THEME_ID,
       themeMode,
     }
   } catch {
     return {
-      themeId: DEFAULT_SEMI_THEME_ID,
+      themeId: DEFAULT_APP_THEME_ID,
       themeMode: DEFAULT_THEME_MODE,
     }
   }

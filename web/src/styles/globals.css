@@ -41,33 +41,6 @@ body,
   --kc-shadow-strong: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px -1px rgba(0, 0, 0, 0.1);
   --kc-app-chrome-height: 56px;
   --kc-surface: var(--kc-bg-surface);
-  --semi-color-link: var(--kc-primary);
-  --semi-color-link-hover: var(--kc-primary-hover);
-  --semi-color-link-active: var(--kc-primary-active);
-  --semi-color-link-visited: var(--kc-primary);
-  --semi-color-primary: var(--kc-primary);
-  --semi-color-primary-hover: var(--kc-primary-hover);
-  --semi-color-primary-active: var(--kc-primary-active);
-  --semi-color-primary-light-default: var(--kc-primary-light-default);
-  --semi-color-primary-light-hover: var(--kc-primary-light-hover);
-  --semi-color-primary-light-active: var(--kc-primary-light-active);
-  --semi-color-primary-disabled: var(--kc-primary-disabled);
-  --semi-color-focus-border: var(--kc-primary);
-  --semi-color-bg-0: var(--kc-bg-layout);
-  --semi-color-bg-1: var(--kc-bg-surface);
-  --semi-color-bg-2: var(--kc-bg-surface-muted);
-  --semi-color-fill-0: var(--kc-fill-weak);
-  --semi-color-fill-1: var(--kc-fill-medium);
-  --semi-color-fill-2: var(--kc-fill-strong);
-  --semi-color-border: var(--kc-border-color);
-  --semi-color-text-0: var(--kc-text-primary);
-  --semi-color-text-1: var(--kc-text-secondary);
-  --semi-color-text-2: var(--kc-text-tertiary);
-  --semi-color-white: var(--kc-white);
-  --semi-color-danger: var(--kc-danger);
-  --semi-border-radius-large: var(--kc-radius);
-  --semi-border-radius-medium: var(--kc-radius);
-  --semi-border-radius-small: var(--kc-radius);
 }
 
 :root[data-theme-mode='dark'] {
@@ -1911,7 +1884,7 @@ a {
 }
 
 .kc-stat-icon {
-  color: var(--semi-color-primary);
+  color: var(--kc-primary);
 }
 
 .kc-workload-overview-hero.ant-card,
@@ -1981,9 +1954,9 @@ a {
   justify-content: space-between;
   gap: 12px;
   padding: 14px 16px;
-  border: 1px solid var(--semi-color-border);
+  border: 1px solid var(--kc-border-color);
   border-radius: var(--kc-radius);
-  background: var(--semi-color-bg-1);
+  background: var(--kc-bg-surface);
 }
 
 .kc-list-row-meta {
@@ -2648,7 +2621,7 @@ a {
   margin: 24px 0 12px;
   font-size: 14px;
   font-weight: 600;
-  color: var(--semi-color-text-0);
+  color: var(--kc-text-primary);
 }
 
 .kc-branding-upload-grid {
@@ -2662,15 +2635,15 @@ a {
   flex-direction: column;
   gap: 8px;
   padding: 16px;
-  border: 1px solid var(--semi-color-border);
+  border: 1px solid var(--kc-border-color);
   border-radius: var(--kc-radius);
-  background: var(--semi-color-bg-2);
+  background: var(--kc-bg-surface-muted);
 }
 
 .kc-branding-upload-label {
   font-size: 13px;
   font-weight: 500;
-  color: var(--semi-color-text-1);
+  color: var(--kc-text-secondary);
   line-height: 1.5;
 }
 
@@ -2685,17 +2658,17 @@ a {
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 1.5px dashed var(--semi-color-border);
+  border: 1.5px dashed var(--kc-border-color);
   border-radius: var(--kc-radius);
-  background: var(--semi-color-bg-1);
+  background: var(--kc-bg-surface);
   cursor: pointer;
   transition: border-color 0.2s, background 0.2s;
   overflow: hidden;
 }
 
 .kc-branding-upload-area:hover:not(.is-disabled) {
-  border-color: var(--semi-color-primary);
-  background: var(--semi-color-primary-light-default);
+  border-color: var(--kc-primary);
+  background: var(--kc-primary-light-default);
 }
 
 .kc-branding-upload-area.is-disabled {
@@ -2713,7 +2686,7 @@ a {
 
 .kc-branding-upload-plus {
   font-size: 28px;
-  color: var(--semi-color-text-2);
+  color: var(--kc-text-tertiary);
   line-height: 1;
   font-weight: 300;
   user-select: none;
@@ -2731,7 +2704,7 @@ a {
 
 .kc-branding-upload-hint {
   font-size: 12px;
-  color: var(--semi-color-text-2);
+  color: var(--kc-text-tertiary);
   line-height: 1.5;
 }
 
@@ -2739,8 +2712,8 @@ a {
   margin: 0;
   padding: 12px;
   border-radius: var(--kc-radius);
-  background: var(--semi-color-fill-0);
-  border: 1px solid var(--semi-color-border);
+  background: var(--kc-fill-weak);
+  border: 1px solid var(--kc-border-color);
   overflow: auto;
   white-space: pre-wrap;
   word-break: break-word;
@@ -2769,9 +2742,9 @@ a {
   flex-direction: column;
   gap: 10px;
   padding: 16px;
-  border: 1px solid var(--semi-color-border);
+  border: 1px solid var(--kc-border-color);
   border-radius: var(--kc-radius);
-  background: var(--semi-color-fill-0);
+  background: var(--kc-fill-weak);
 }
 
 .kc-application-workspace-hero {
@@ -3147,7 +3120,7 @@ a {
 
 .kc-dag-canvas {
   height: 640px;
-  border: 1px solid var(--semi-color-border);
+  border: 1px solid var(--kc-border-color);
   border-radius: var(--kc-radius);
   overflow: hidden;
   background:
@@ -3161,14 +3134,14 @@ a {
 
 .kc-dag-node-card {
   padding: 14px 16px;
-  border: 1px solid var(--semi-color-border);
+  border: 1px solid var(--kc-border-color);
   border-radius: var(--kc-radius);
-  background: var(--semi-color-bg-2);
+  background: var(--kc-bg-surface-muted);
   box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
 }
 
 .kc-dag-node.is-selected .kc-dag-node-card {
-  border-color: var(--semi-color-primary);
+  border-color: var(--kc-primary);
   box-shadow: 0 0 0 2px rgba(var(--kc-primary-rgb), 0.16);
 }
 
@@ -3188,7 +3161,7 @@ a {
 
 .kc-topology-canvas {
   height: 600px;
-  border: 1px solid var(--semi-color-border);
+  border: 1px solid var(--kc-border-color);
   border-radius: 14px;
   overflow: hidden;
   background:
@@ -3215,9 +3188,9 @@ a {
 
 .kc-topology-node-card {
   padding: 14px 16px;
-  border: 1px solid var(--semi-color-border);
+  border: 1px solid var(--kc-border-color);
   border-radius: 14px;
-  background: var(--semi-color-bg-1);
+  background: var(--kc-bg-surface);
   box-shadow: 0 10px 28px rgba(15, 23, 42, 0.1);
   transition:
     box-shadow 0.18s ease,
@@ -3256,12 +3229,12 @@ a {
 .kc-topology-node-state {
   font-size: 11px;
   font-weight: 600;
-  color: var(--semi-color-text-2);
+  color: var(--kc-text-tertiary);
   white-space: nowrap;
 }
 
 .kc-topology-node-title {
-  color: var(--semi-color-text-0);
+  color: var(--kc-text-primary);
   font-size: 15px;
   line-height: 1.35;
   font-weight: 700;
@@ -3270,7 +3243,7 @@ a {
 
 .kc-topology-node-subtitle {
   margin-top: 6px;
-  color: var(--semi-color-text-2);
+  color: var(--kc-text-tertiary);
   font-size: 12px;
   line-height: 1.45;
   word-break: break-word;
@@ -3278,7 +3251,7 @@ a {
 
 .kc-topology-node-badge {
   margin-top: 10px;
-  color: var(--semi-color-text-1);
+  color: var(--kc-text-secondary);
   font-size: 12px;
   font-weight: 500;
   line-height: 1.4;
@@ -3290,9 +3263,9 @@ a {
   gap: 12px;
   margin-top: 14px;
   padding: 14px 16px;
-  border: 1px solid var(--semi-color-border);
+  border: 1px solid var(--kc-border-color);
   border-radius: 14px;
-  background: var(--semi-color-bg-2);
+  background: var(--kc-bg-surface-muted);
 }
 
 .kc-topology-note-list {
@@ -3499,7 +3472,7 @@ a {
   height: clamp(540px, 64vh, 840px);
   border-radius: var(--kc-radius);
   overflow: hidden;
-  border: 1px solid var(--semi-color-border);
+  border: 1px solid var(--kc-border-color);
 }
 
 @media (max-width: 1200px) {

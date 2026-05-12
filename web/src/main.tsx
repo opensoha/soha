@@ -10,13 +10,13 @@ import { useBrandingSettings } from './features/settings/use-branding-settings'
 import { I18nProvider } from './i18n'
 import { usePreferencesStore } from './stores/preferences-store'
 import {
-  applySemiTheme,
-  DEFAULT_SEMI_THEME_ID,
+  applyAppTheme,
+  DEFAULT_APP_THEME_ID,
   getAntdTheme,
   readStoredThemePreference,
   resolveThemeMode,
   watchSystemThemeMode,
-} from './theme/semi-theme'
+} from './theme/app-theme'
 import { applyBrandingSettings, persistBrandingSettings, readStoredBrandingSettings } from './utils/branding'
 import './styles/globals.css'
 
@@ -32,7 +32,7 @@ const queryClient = new QueryClient({
 
 const storedThemePreference = readStoredThemePreference()
 
-applySemiTheme(DEFAULT_SEMI_THEME_ID, storedThemePreference.themeMode)
+applyAppTheme(DEFAULT_APP_THEME_ID, storedThemePreference.themeMode)
 applyBrandingSettings(readStoredBrandingSettings())
 
 function AppProviders() {

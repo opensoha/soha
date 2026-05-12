@@ -1,4 +1,4 @@
-<!doctype html><html lang=zh-Hans dir=ltr class="docs-wrapper plugin-docs plugin-id-default docs-version-current docs-doc-page docs-doc-id-architecture/ai-copilot" data-has-hydrated=false><head><meta charset=UTF-8><meta name=generator content="Docusaurus v3.10.0"><title data-rh=true>AI Copilot | kubecrux Docs</title><meta data-rh=true name=viewport content="width=device-width, initial-scale=1.0"/><meta data-rh=true name=twitter:card content=summary_large_image /><meta data-rh=true property=og:image content=http://localhost/docs/logo.svg /><meta data-rh=true name=twitter:image content=http://localhost/docs/logo.svg /><meta data-rh=true property=og:url content=http://localhost/docs/architecture/ai-copilot/ /><meta data-rh=true property=og:locale content=zh_Hans /><meta data-rh=true name=docusaurus_locale content=zh-Hans /><meta data-rh=true name=docsearch:language content=zh-Hans /><meta data-rh=true name=docusaurus_version content=current /><meta data-rh=true name=docusaurus_tag content=docs-default-current /><meta data-rh=true name=docsearch:version content=current /><meta data-rh=true name=docsearch:docusaurus_tag content=docs-default-current /><meta data-rh=true property=og:title content="AI Copilot | kubecrux Docs"/><meta data-rh=true name=description content=Goal /><meta data-rh=true property=og:description content=Goal /><link data-rh=true rel=icon href=/docs/logo.svg /><link data-rh=true rel=canonical href=http://localhost/docs/architecture/ai-copilot/ /><link data-rh=true rel=alternate href=http://localhost/docs/architecture/ai-copilot/ hreflang=zh-Hans /><link data-rh=true rel=alternate href=http://localhost/docs/architecture/ai-copilot/ hreflang=x-default /><script data-rh=true type=application/ld+json>{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","item":"http://localhost/docs/architecture/","name":"架构","position":1},{"@type":"ListItem","item":"http://localhost/docs/architecture/ai-copilot","name":"AI Copilot","position":2}]}</script><link rel=stylesheet href=/docs/assets/css/styles.0d687a83.css /><script src=/docs/assets/js/runtime~main.f19d70fd.js defer></script><script src=/docs/assets/js/main.c498f6c7.js defer></script></head><body><svg style="display: none;"><defs>
+<!doctype html><html lang=zh-Hans dir=ltr class="docs-wrapper plugin-docs plugin-id-default docs-version-current docs-doc-page docs-doc-id-architecture/ai-copilot" data-has-hydrated=false><head><meta charset=UTF-8><meta name=generator content="Docusaurus v3.10.0"><title data-rh=true>AI Copilot | kubecrux Docs</title><meta data-rh=true name=viewport content="width=device-width, initial-scale=1.0"/><meta data-rh=true name=twitter:card content=summary_large_image /><meta data-rh=true property=og:image content=http://localhost/docs/logo.svg /><meta data-rh=true name=twitter:image content=http://localhost/docs/logo.svg /><meta data-rh=true property=og:url content=http://localhost/docs/architecture/ai-copilot/ /><meta data-rh=true property=og:locale content=zh_Hans /><meta data-rh=true name=docusaurus_locale content=zh-Hans /><meta data-rh=true name=docsearch:language content=zh-Hans /><meta data-rh=true name=docusaurus_version content=current /><meta data-rh=true name=docusaurus_tag content=docs-default-current /><meta data-rh=true name=docsearch:version content=current /><meta data-rh=true name=docsearch:docusaurus_tag content=docs-default-current /><meta data-rh=true property=og:title content="AI Copilot | kubecrux Docs"/><meta data-rh=true name=description content=Goal /><meta data-rh=true property=og:description content=Goal /><link data-rh=true rel=icon href=/docs/logo.svg /><link data-rh=true rel=canonical href=http://localhost/docs/architecture/ai-copilot/ /><link data-rh=true rel=alternate href=http://localhost/docs/architecture/ai-copilot/ hreflang=zh-Hans /><link data-rh=true rel=alternate href=http://localhost/docs/architecture/ai-copilot/ hreflang=x-default /><script data-rh=true type=application/ld+json>{"@context":"https://schema.org","@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","item":"http://localhost/docs/architecture/","name":"架构","position":1},{"@type":"ListItem","item":"http://localhost/docs/architecture/ai-copilot","name":"AI Copilot","position":2}]}</script><link rel=stylesheet href=/docs/assets/css/styles.0d687a83.css /><script src=/docs/assets/js/runtime~main.46f5abd6.js defer></script><script src=/docs/assets/js/main.02a4f7dd.js defer></script></head><body><svg style="display: none;"><defs>
 <symbol id=theme-svg-external-link viewBox="0 0 24 24"><path fill=currentColor d="M21 13v10h-21v-19h12v2h-10v15h17v-8h2zm3-12h-10.988l4.035 4-6.977 7.07 2.828 2.828 6.977-7.07 4.125 4.172v-11z"/></symbol>
 </defs></svg>
 <script>!function(){var t=function(){try{return new URLSearchParams(window.location.search).get("docusaurus-theme")}catch(t){}}()||function(){try{return window.localStorage.getItem("theme-db3")}catch(t){}}();document.documentElement.setAttribute("data-theme",t||(window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light")),document.documentElement.setAttribute("data-theme-choice",t||"system")}(),function(){try{for(var[t,e]of new URLSearchParams(window.location.search).entries())if(t.startsWith("docusaurus-data-")){var a=t.replace("docusaurus-data-","data-");document.documentElement.setAttribute(a,e)}}catch(t){}}()</script><div id=__docusaurus><link rel=preload as=image href=/docs/logo.svg /><div role=region aria-label=跳到主要内容><a class=skipToContent_fXgn href=#__docusaurus_skipToContent_fallback>跳到主要内容</a></div><nav aria-label=主导航 class="theme-layout-navbar navbar navbar--fixed-top navbarHideable_m1mJ"><div class=navbar__inner><div class="theme-layout-navbar-left navbar__items"><button aria-label=切换导航栏 aria-expanded=false class="navbar__toggle clean-btn" type=button><svg width=30 height=30 viewBox="0 0 30 30" aria-hidden=true><path stroke=currentColor stroke-linecap=round stroke-miterlimit=10 stroke-width=2 d="M4 7h22M4 15h22M4 23h22"/></svg></button><a class=navbar__brand href=/docs/><div class=navbar__logo><img src=/docs/logo.svg alt="kubecrux logo" class="themedComponent_mlkZ themedComponent--light_NVdE"/><img src=/docs/logo.svg alt="kubecrux logo" class="themedComponent_mlkZ themedComponent--dark_xIcU"/></div><b class="navbar__title text--truncate">kubecrux Docs</b></a><a aria-current=page class="navbar__item navbar__link navbar__link--active" href=/docs/>首页</a><a aria-current=page class="navbar__item navbar__link navbar__link--active" href=/docs/architecture/>架构</a><a aria-current=page class="navbar__item navbar__link navbar__link--active" href=/docs/development/local-development/>开发</a><a aria-current=page class="navbar__item navbar__link navbar__link--active" href=/docs/api/overview/>API</a><a aria-current=page class="navbar__item navbar__link navbar__link--active" href=/docs/operations/configuration/>运维</a></div><div class="theme-layout-navbar-right navbar__items navbar__items--right"><div class="toggle_vylO colorModeToggle_DEke"><button class="clean-btn toggleButton_gllP toggleButtonDisabled_aARS" type=button disabled title="system mode" aria-label="切换浅色/暗黑模式（当前为system mode）"><svg viewBox="0 0 24 24" width=24 height=24 aria-hidden=true class="toggleIcon_g3eP lightToggleIcon_pyhR"><path fill=currentColor d="M12,9c1.65,0,3,1.35,3,3s-1.35,3-3,3s-3-1.35-3-3S10.35,9,12,9 M12,7c-2.76,0-5,2.24-5,5s2.24,5,5,5s5-2.24,5-5 S14.76,7,12,7L12,7z M2,13l2,0c0.55,0,1-0.45,1-1s-0.45-1-1-1l-2,0c-0.55,0-1,0.45-1,1S1.45,13,2,13z M20,13l2,0c0.55,0,1-0.45,1-1 s-0.45-1-1-1l-2,0c-0.55,0-1,0.45-1,1S19.45,13,20,13z M11,2v2c0,0.55,0.45,1,1,1s1-0.45,1-1V2c0-0.55-0.45-1-1-1S11,1.45,11,2z M11,20v2c0,0.55,0.45,1,1,1s1-0.45,1-1v-2c0-0.55-0.45-1-1-1C11.45,19,11,19.45,11,20z M5.99,4.58c-0.39-0.39-1.03-0.39-1.41,0 c-0.39,0.39-0.39,1.03,0,1.41l1.06,1.06c0.39,0.39,1.03,0.39,1.41,0s0.39-1.03,0-1.41L5.99,4.58z M18.36,16.95 c-0.39-0.39-1.03-0.39-1.41,0c-0.39,0.39-0.39,1.03,0,1.41l1.06,1.06c0.39,0.39,1.03,0.39,1.41,0c0.39-0.39,0.39-1.03,0-1.41 L18.36,16.95z M19.42,5.99c0.39-0.39,0.39-1.03,0-1.41c-0.39-0.39-1.03-0.39-1.41,0l-1.06,1.06c-0.39,0.39-0.39,1.03,0,1.41 s1.03,0.39,1.41,0L19.42,5.99z M7.05,18.36c0.39-0.39,0.39-1.03,0-1.41c-0.39-0.39-1.03-0.39-1.41,0l-1.06,1.06 c-0.39,0.39-0.39,1.03,0,1.41s1.03,0.39,1.41,0L7.05,18.36z"/></svg><svg viewBox="0 0 24 24" width=24 height=24 aria-hidden=true class="toggleIcon_g3eP darkToggleIcon_wfgR"><path fill=currentColor d="M9.37,5.51C9.19,6.15,9.1,6.82,9.1,7.5c0,4.08,3.32,7.4,7.4,7.4c0.68,0,1.35-0.09,1.99-0.27C17.45,17.19,14.93,19,12,19 c-3.86,0-7-3.14-7-7C5,9.07,6.81,6.55,9.37,5.51z M12,3c-4.97,0-9,4.03-9,9s4.03,9,9,9s9-4.03,9-9c0-0.46-0.04-0.92-0.1-1.36 c-0.98,1.37-2.58,2.26-4.4,2.26c-2.98,0-5.4-2.42-5.4-5.4c0-1.81,0.89-3.42,2.26-4.4C12.92,3.04,12.46,3,12,3L12,3z"/></svg><svg viewBox="0 0 24 24" width=24 height=24 aria-hidden=true class="toggleIcon_g3eP systemToggleIcon_QzmC"><path fill=currentColor d="m12 21c4.971 0 9-4.029 9-9s-4.029-9-9-9-9 4.029-9 9 4.029 9 9 9zm4.95-13.95c1.313 1.313 2.05 3.093 2.05 4.95s-0.738 3.637-2.05 4.95c-1.313 1.313-3.093 2.05-4.95 2.05v-14c1.857 0 3.637 0.737 4.95 2.05z"/></svg></button></div><div class=navbarSearchContainer_Bca1></div></div></div><div role=presentation class=navbar-sidebar__backdrop></div></nav><div id=__docusaurus_skipToContent_fallback class="theme-layout-main main-wrapper mainWrapper_z2l0"><div class=docsWrapper_hBAB><button aria-label=回到顶部 class="clean-btn theme-back-to-top-button backToTopButton_sjWU" type=button></button><div class=docRoot_UBD9><aside class="theme-doc-sidebar-container docSidebarContainer_YfHR"><div class=sidebarViewport_aRkj><div class="sidebar_njMd sidebarWithHideableNavbar_wUlq"><a tabindex=-1 class=sidebarLogo_isFc href=/docs/><img src=/docs/logo.svg alt="kubecrux logo" class="themedComponent_mlkZ themedComponent--light_NVdE"/><img src=/docs/logo.svg alt="kubecrux logo" class="themedComponent_mlkZ themedComponent--dark_xIcU"/><b>kubecrux Docs</b></a><nav aria-label=文档侧边栏 class="menu thin-scrollbar menu_SIkG"><ul class="theme-doc-sidebar-menu menu__list"><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class=menu__link href=/docs/><span title="kubecrux 文档" class=linkLabel_WmDU>kubecrux 文档</span></a><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item"><div class=menu__list-item-collapsible><a class="categoryLink_byQd menu__link menu__link--sublist menu__link--active" href=/docs/architecture/><span title=架构 class=categoryLinkLabel_W154>架构</span></a><button aria-label="折叠侧边栏分类 '架构'" aria-expanded=true type=button class="clean-btn menu__caret"></button></div><ul class=menu__list><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class=menu__link tabindex=0 href=/docs/architecture/application-delivery/><span title="Application Delivery" class=linkLabel_WmDU>Application Delivery</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class=menu__link tabindex=0 href=/docs/architecture/monitoring-and-alerting/><span title="Monitoring And Alerting" class=linkLabel_WmDU>Monitoring And Alerting</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class=menu__link tabindex=0 href=/docs/architecture/authorization/><span title=Authorization class=linkLabel_WmDU>Authorization</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class="menu__link menu__link--active" aria-current=page tabindex=0 href=/docs/architecture/ai-copilot/><span title="AI Copilot" class=linkLabel_WmDU>AI Copilot</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class=menu__link tabindex=0 href=/docs/architecture/agent-protocol/><span title="Agent Protocol" class=linkLabel_WmDU>Agent Protocol</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class=menu__link tabindex=0 href=/docs/architecture/multi-cluster-model/><span title="Multi-Cluster Model" class=linkLabel_WmDU>Multi-Cluster Model</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class=menu__link tabindex=0 href=/docs/architecture/event-model/><span title="Event Model" class=linkLabel_WmDU>Event Model</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class=menu__link tabindex=0 href=/docs/architecture/audit-model/><span title="Audit Model" class=linkLabel_WmDU>Audit Model</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class=menu__link tabindex=0 href=/docs/architecture/mcp-integration/><span title="MCP Integration" class=linkLabel_WmDU>MCP Integration</span></a><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class=menu__link tabindex=0 href=/docs/architecture/access-model/><span title="Access Model" class=linkLabel_WmDU>Access Model</span></a></ul><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class=menu__list-item-collapsible><a class="categoryLink_byQd menu__link menu__link--sublist menu__link--sublist-caret" role=button aria-expanded=false href=/docs/development/local-development/><span title=开发 class=categoryLinkLabel_W154>开发</span></a></div><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class=menu__list-item-collapsible><a class="categoryLink_byQd menu__link menu__link--sublist menu__link--sublist-caret" role=button aria-expanded=false href=/docs/api/overview/><span title=API class=categoryLinkLabel_W154>API</span></a></div><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class=menu__list-item-collapsible><a class="categoryLink_byQd menu__link menu__link--sublist menu__link--sublist-caret" role=button aria-expanded=false href=/docs/operations/configuration/><span title=运维 class=categoryLinkLabel_W154>运维</span></a></div><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class=menu__list-item-collapsible><a class="categoryLink_byQd menu__link menu__link--sublist menu__link--sublist-caret" role=button aria-expanded=false href=/docs/roadmap/><span title=路线图 class=categoryLinkLabel_W154>路线图</span></a></div><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class=menu__list-item-collapsible><a class="categoryLink_byQd menu__link menu__link--sublist menu__link--sublist-caret" role=button aria-expanded=false href=/docs/reference/product-information-architecture/><span title=参考 class=categoryLinkLabel_W154>参考</span></a></div></ul></nav></div></div></aside><main class=docMainContainer_TBSr><div class="container padding-top--md padding-bottom--lg"><div class=row><div class="col docItemCol_VOVn"><div class=docItemContainer_Djhp><article><nav class="theme-doc-breadcrumbs breadcrumbsContainer_Z_bl" aria-label=页面路径><ul class=breadcrumbs><li class=breadcrumbs__item><a aria-label=主页面 class=breadcrumbs__link href=/docs/><svg viewBox="0 0 24 24" class=breadcrumbHomeIcon_YNFT><path d="M10 19v-5h4v5c0 .55.45 1 1 1h3c.55 0 1-.45 1-1v-7h1.7c.46 0 .68-.57.33-.87L12.67 3.6c-.38-.34-.96-.34-1.34 0l-8.36 7.53c-.34.3-.13.87.33.87H5v7c0 .55.45 1 1 1h3c.55 0 1-.45 1-1z" fill=currentColor /></svg></a><li class=breadcrumbs__item><a class=breadcrumbs__link href=/docs/architecture/><span>架构</span></a><li class="breadcrumbs__item breadcrumbs__item--active"><span class=breadcrumbs__link>AI Copilot</span></ul></nav><div class="tocCollapsible_ETCw theme-doc-toc-mobile tocMobile_ITEo"><button type=button class="clean-btn tocCollapsibleButton_TO0P">本页总览</button></div><div class="theme-doc-markdown markdown"><header><h1>AI Copilot</h1></header>
@@ -6,7 +6,7 @@
 <p>kubecrux 的 AI 层已经从单一聊天页升级为面向运维中后台的 AIOps assistant workbench。</p>
 <p>当前目标分成两个层面：</p>
 <ol>
-<li class="">一个总入口 <code>/ai-observe</code></li>
+<li class="">一个总入口 <code>/ai-workbench</code></li>
 <li class="">一组工作台型子页面，承载调查、巡检自动化、工具装配</li>
 </ol>
 <p>AI 层需要帮助完成：</p>
@@ -23,27 +23,31 @@
 <ul>
 <li class="">总入口:<!-- -->
 <ul>
-<li class=""><code>/ai-observe</code></li>
+<li class=""><code>/ai-workbench</code></li>
 </ul>
 </li>
 <li class="">调查工作台:<!-- -->
 <ul>
-<li class=""><code>/ai-observe/workbench</code></li>
+<li class=""><code>/ai-workbench/investigation</code></li>
 </ul>
 </li>
 <li class="">巡检与自动化:<!-- -->
 <ul>
-<li class=""><code>/ai-observe/operations</code></li>
+<li class=""><code>/ai-workbench/automation</code></li>
 </ul>
 </li>
 <li class="">工具与技能:<!-- -->
 <ul>
-<li class=""><code>/ai-observe/tools</code></li>
+<li class=""><code>/ai-workbench/tools</code></li>
 </ul>
 </li>
 </ul>
 <p>兼容旧入口仍保留跳转：</p>
 <ul>
+<li class=""><code>/ai-observe</code></li>
+<li class=""><code>/ai-observe/workbench</code></li>
+<li class=""><code>/ai-observe/operations</code></li>
+<li class=""><code>/ai-observe/tools</code></li>
 <li class=""><code>/ai-observe/root-cause</code></li>
 <li class=""><code>/ai-observe/performance</code></li>
 <li class=""><code>/ai-observe/chat</code></li>
@@ -68,6 +72,14 @@
 <li class=""><code>summary</code></li>
 <li class=""><code>tags</code></li>
 <li class=""><code>archivedAt</code></li>
+</ul>
+<p>其中 <code>scope</code> 现在也是监控工作台向 AI 工作台 handoff 的标准载体，统一承接：</p>
+<ul>
+<li class=""><code>alertId</code></li>
+<li class=""><code>clusterId</code></li>
+<li class=""><code>namespace</code></li>
+<li class=""><code>workload</code></li>
+<li class=""><code>timeRangeMinutes</code></li>
 </ul>
 <p>当前会话模式：</p>
 <ul>
@@ -116,6 +128,7 @@
 <li class=""><code>logs.v1</code></li>
 <li class=""><code>metrics.v1</code></li>
 <li class=""><code>traces.v1</code></li>
+<li class=""><code>delivery.v1</code></li>
 </ul>
 <p>当前状态：</p>
 <ul>
@@ -148,14 +161,27 @@
 <li class="">全局 provider、data source、analysis profile、automation policy 配置</li>
 </ul>
 </li>
-<li class=""><code>/ai-observe/tools</code>
+<li class=""><code>/ai-workbench/tools</code>
 <ul>
 <li class="">会话级临时 toolset 和 skill 装配入口</li>
 </ul>
 </li>
 </ol>
+<p>全局 skill registry 现在采用企业 skill definition，而不是仅保留简单展示项：</p>
+<ul>
+<li class=""><code>id</code></li>
+<li class=""><code>name</code></li>
+<li class=""><code>category</code></li>
+<li class=""><code>ownerModule</code></li>
+<li class=""><code>capabilityRefs</code></li>
+<li class=""><code>blueprintRefs</code></li>
+<li class=""><code>inputSchema</code></li>
+<li class=""><code>outputSchema</code></li>
+<li class=""><code>scopeRules</code></li>
+<li class=""><code>enabled</code></li>
+</ul>
 <h2 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id=frontend-shape>Frontend Shape<a href=#frontend-shape class=hash-link aria-label="Frontend Shape的直接链接" title="Frontend Shape的直接链接" translate=no>​</a></h2>
-<h3 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id=ai-observe><code>/ai-observe</code><a href=#ai-observe class=hash-link aria-label=ai-observe的直接链接 title=ai-observe的直接链接 translate=no>​</a></h3>
+<h3 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id=ai-workbench><code>/ai-workbench</code><a href=#ai-workbench class=hash-link aria-label=ai-workbench的直接链接 title=ai-workbench的直接链接 translate=no>​</a></h3>
 <p>总入口负责：</p>
 <ul>
 <li class="">助手欢迎</li>
@@ -164,22 +190,24 @@
 <li class="">风险雷达</li>
 <li class="">快捷跳转到工作台、巡检自动化、工具技能</li>
 </ul>
-<h3 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id=ai-observeworkbench><code>/ai-observe/workbench</code><a href=#ai-observeworkbench class=hash-link aria-label=ai-observeworkbench的直接链接 title=ai-observeworkbench的直接链接 translate=no>​</a></h3>
+<h3 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id=ai-workbenchinvestigation><code>/ai-workbench/investigation</code><a href=#ai-workbenchinvestigation class=hash-link aria-label=ai-workbenchinvestigation的直接链接 title=ai-workbenchinvestigation的直接链接 translate=no>​</a></h3>
 <p>调查工作台使用 Ant Design X + antd 组合：</p>
 <ul>
 <li class="">左侧 <code>Conversations</code></li>
 <li class="">中间 <code>Bubble.List</code> + <code>Sender</code> + <code>Prompts</code></li>
 <li class="">右侧上下文 / 证据 / 假设 / 建议面板</li>
 <li class=""><code>ThoughtChain</code> 抽屉显示工具链与分析步骤</li>
+<li class="">当当前会话 scope 携带 <code>alertId</code> 时，工作台支持回跳原始监控告警详情</li>
 </ul>
-<h3 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id=ai-observeoperations><code>/ai-observe/operations</code><a href=#ai-observeoperations class=hash-link aria-label=ai-observeoperations的直接链接 title=ai-observeoperations的直接链接 translate=no>​</a></h3>
+<h3 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id=ai-workbenchautomation><code>/ai-workbench/automation</code><a href=#ai-workbenchautomation class=hash-link aria-label=ai-workbenchautomation的直接链接 title=ai-workbenchautomation的直接链接 translate=no>​</a></h3>
 <p>当前基于原 <code>InspectionCenterPage</code> 扩展，为后续整合自动化策略预留统一入口。</p>
-<h3 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id=ai-observetools><code>/ai-observe/tools</code><a href=#ai-observetools class=hash-link aria-label=ai-observetools的直接链接 title=ai-observetools的直接链接 translate=no>​</a></h3>
+<h3 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id=ai-workbenchtools><code>/ai-workbench/tools</code><a href=#ai-workbenchtools class=hash-link aria-label=ai-workbenchtools的直接链接 title=ai-workbenchtools的直接链接 translate=no>​</a></h3>
 <p>当前展示：</p>
 <ul>
 <li class="">MCP adapters</li>
 <li class="">全局数据源镜像</li>
 <li class="">会话级 toolset 装配入口</li>
+<li class="">企业 skill registry</li>
 </ul>
 <h2 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id=safety-and-execution-model>Safety And Execution Model<a href=#safety-and-execution-model class=hash-link aria-label="Safety And Execution Model的直接链接" title="Safety And Execution Model的直接链接" translate=no>​</a></h2>
 <p>AI 层仍保持“分析与建议优先”的安全方向。</p>
@@ -191,10 +219,11 @@
 <li class="">把工具调用和分析工件沉淀进会话</li>
 </ul>
 <p>当前没有把高风险执行动作直接挂入聊天自动执行链。</p>
+<p>应用接入规范生成与平台交付编排不归 AI 工作台，而归应用交付工作台；AI 工作台只负责暴露能被企业 AI coding 客户端发现和调用的 MCP/skills 能力。</p>
 <h2 class="anchor anchorTargetHideOnScrollNavbar_vjPI" id=near-term-expectations>Near-Term Expectations<a href=#near-term-expectations class=hash-link aria-label="Near-Term Expectations的直接链接" title="Near-Term Expectations的直接链接" translate=no>​</a></h2>
 <p>本阶段之后，AI 相关功能应默认遵守以下规则：</p>
 <ul>
-<li class="">新的 AI 观测页面优先接入工作台，而不是继续新增独立传统表格页</li>
+<li class="">新的 AI 页面优先接入 AI 工作台，而不是继续新增独立传统表格页</li>
 <li class="">会话相关增强优先扩 <code>metadata</code>，避免过早拆分调查实体模型</li>
 <li class="">新的数据源或工具能力需要同时考虑：<!-- -->
 <ul>
@@ -204,4 +233,5 @@
 </ul>
 </li>
 <li class="">root cause / performance / trace 三类分析应尽量共用统一 artifact 模型，而不是重复造页面协议</li>
-</ul></div><footer class="theme-doc-footer docusaurus-mt-lg"><div class="row margin-top--sm theme-doc-footer-edit-meta-row"><div class="col noPrint_WFHX"><a href=https://github.com/kubecrux/kubecrux/tree/main/docs/architecture/ai-copilot.md target=_blank rel="noopener noreferrer" class=theme-edit-this-page><svg fill=currentColor height=20 width=20 viewBox="0 0 40 40" class=iconEdit_Z9Sw aria-hidden=true><g><path d="m34.5 11.7l-3 3.1-6.3-6.3 3.1-3q0.5-0.5 1.2-0.5t1.1 0.5l3.9 3.9q0.5 0.4 0.5 1.1t-0.5 1.2z m-29.5 17.1l18.4-18.5 6.3 6.3-18.4 18.4h-6.3v-6.2z"/></g></svg>编辑此页</a></div><div class="col lastUpdated_JAkA"><span class=theme-last-updated>最后<!-- -->于 <b><time datetime=2026-05-04T15:06:04.000Z itemprop=dateModified>2026年5月4日</time></b> <!-- -->更新</span></div></div></footer></article><nav class="docusaurus-mt-lg pagination-nav" aria-label=文件选项卡><a class="pagination-nav__link pagination-nav__link--prev" href=/docs/architecture/authorization/><div class=pagination-nav__sublabel>上一页</div><div class=pagination-nav__label>Authorization</div></a><a class="pagination-nav__link pagination-nav__link--next" href=/docs/architecture/agent-protocol/><div class=pagination-nav__sublabel>下一页</div><div class=pagination-nav__label>Agent Protocol</div></a></nav></div></div><div class="col col--3"><div class="tableOfContents_bqdL thin-scrollbar theme-doc-toc-desktop"><ul class="table-of-contents table-of-contents__left-border"><li><a href=#goal class="table-of-contents__link toc-highlight">Goal</a><li><a href=#current-implemented-surface class="table-of-contents__link toc-highlight">Current Implemented Surface</a><li><a href=#session-model class="table-of-contents__link toc-highlight">Session Model</a><li><a href=#api-surface class="table-of-contents__link toc-highlight">API Surface</a><li><a href=#data-sources-and-mcp class="table-of-contents__link toc-highlight">Data Sources And MCP</a><li><a href=#frontend-shape class="table-of-contents__link toc-highlight">Frontend Shape</a><ul><li><a href=#ai-observe class="table-of-contents__link toc-highlight"><code>/ai-observe</code></a><li><a href=#ai-observeworkbench class="table-of-contents__link toc-highlight"><code>/ai-observe/workbench</code></a><li><a href=#ai-observeoperations class="table-of-contents__link toc-highlight"><code>/ai-observe/operations</code></a><li><a href=#ai-observetools class="table-of-contents__link toc-highlight"><code>/ai-observe/tools</code></a></ul><li><a href=#safety-and-execution-model class="table-of-contents__link toc-highlight">Safety And Execution Model</a><li><a href=#near-term-expectations class="table-of-contents__link toc-highlight">Near-Term Expectations</a></ul></div></div></div></div></main></div></div></div><footer class="theme-layout-footer footer footer--dark"><div class="container container-fluid"><div class="row footer__links"><div class="theme-layout-footer-column col footer__col"><div class=footer__title>文档</div><ul class="footer__items clean-list"><li class=footer__item><a class=footer__link-item href=/docs/architecture/>架构</a><li class=footer__item><a class=footer__link-item href=/docs/development/local-development/>开发</a><li class=footer__item><a class=footer__link-item href=/docs/api/overview/>API</a><li class=footer__item><a class=footer__link-item href=/docs/operations/configuration/>运维</a></ul></div></div><div class="footer__bottom text--center"><div class=footer__copyright>Copyright © 2026 kubecrux contributors.</div></div></div></footer></div></body>
+<li class="">监控工作台到 AI 工作台的 handoff 应保持标准 scope 契约，不再由页面各自定义私有跳转协议</li>
+</ul></div><footer class="theme-doc-footer docusaurus-mt-lg"><div class="row margin-top--sm theme-doc-footer-edit-meta-row"><div class="col noPrint_WFHX"><a href=https://github.com/kubecrux/kubecrux/tree/main/docs/architecture/ai-copilot.md target=_blank rel="noopener noreferrer" class=theme-edit-this-page><svg fill=currentColor height=20 width=20 viewBox="0 0 40 40" class=iconEdit_Z9Sw aria-hidden=true><g><path d="m34.5 11.7l-3 3.1-6.3-6.3 3.1-3q0.5-0.5 1.2-0.5t1.1 0.5l3.9 3.9q0.5 0.4 0.5 1.1t-0.5 1.2z m-29.5 17.1l18.4-18.5 6.3 6.3-18.4 18.4h-6.3v-6.2z"/></g></svg>编辑此页</a></div><div class="col lastUpdated_JAkA"><span class=theme-last-updated>最后<!-- -->于 <b><time datetime=2026-05-12T00:02:01.000Z itemprop=dateModified>2026年5月12日</time></b> <!-- -->更新</span></div></div></footer></article><nav class="docusaurus-mt-lg pagination-nav" aria-label=文件选项卡><a class="pagination-nav__link pagination-nav__link--prev" href=/docs/architecture/authorization/><div class=pagination-nav__sublabel>上一页</div><div class=pagination-nav__label>Authorization</div></a><a class="pagination-nav__link pagination-nav__link--next" href=/docs/architecture/agent-protocol/><div class=pagination-nav__sublabel>下一页</div><div class=pagination-nav__label>Agent Protocol</div></a></nav></div></div><div class="col col--3"><div class="tableOfContents_bqdL thin-scrollbar theme-doc-toc-desktop"><ul class="table-of-contents table-of-contents__left-border"><li><a href=#goal class="table-of-contents__link toc-highlight">Goal</a><li><a href=#current-implemented-surface class="table-of-contents__link toc-highlight">Current Implemented Surface</a><li><a href=#session-model class="table-of-contents__link toc-highlight">Session Model</a><li><a href=#api-surface class="table-of-contents__link toc-highlight">API Surface</a><li><a href=#data-sources-and-mcp class="table-of-contents__link toc-highlight">Data Sources And MCP</a><li><a href=#frontend-shape class="table-of-contents__link toc-highlight">Frontend Shape</a><ul><li><a href=#ai-workbench class="table-of-contents__link toc-highlight"><code>/ai-workbench</code></a><li><a href=#ai-workbenchinvestigation class="table-of-contents__link toc-highlight"><code>/ai-workbench/investigation</code></a><li><a href=#ai-workbenchautomation class="table-of-contents__link toc-highlight"><code>/ai-workbench/automation</code></a><li><a href=#ai-workbenchtools class="table-of-contents__link toc-highlight"><code>/ai-workbench/tools</code></a></ul><li><a href=#safety-and-execution-model class="table-of-contents__link toc-highlight">Safety And Execution Model</a><li><a href=#near-term-expectations class="table-of-contents__link toc-highlight">Near-Term Expectations</a></ul></div></div></div></div></main></div></div></div><footer class="theme-layout-footer footer footer--dark"><div class="container container-fluid"><div class="row footer__links"><div class="theme-layout-footer-column col footer__col"><div class=footer__title>文档</div><ul class="footer__items clean-list"><li class=footer__item><a class=footer__link-item href=/docs/architecture/>架构</a><li class=footer__item><a class=footer__link-item href=/docs/development/local-development/>开发</a><li class=footer__item><a class=footer__link-item href=/docs/api/overview/>API</a><li class=footer__item><a class=footer__link-item href=/docs/operations/configuration/>运维</a></ul></div></div><div class="footer__bottom text--center"><div class=footer__copyright>Copyright © 2026 kubecrux contributors.</div></div></div></footer></div></body>

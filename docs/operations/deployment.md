@@ -16,8 +16,8 @@ The main image and compose assets now live at the repo root.
 - `Dockerfile`
 - `docker-compose.yaml`
 - `configs/config.yaml`
-- `deploy/k8s/kubecrux-single-project.yaml`
-- `deploy/helm/kubecrux/`
+- `deployment.yaml`
+- `chart/`
 
 Use these paths as the default baseline for image build, local stack startup, raw Kubernetes rollout, and Helm packaging.
 
@@ -38,7 +38,7 @@ docker compose -f docker-compose.yaml up -d --build
 Lint the Helm chart:
 
 ```bash
-helm lint deploy/helm/kubecrux
+helm lint chart
 ```
 
 ## Local Run Assumptions

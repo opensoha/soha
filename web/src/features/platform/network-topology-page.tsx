@@ -1531,7 +1531,7 @@ export function NetworkTopologyPage() {
         </div>
         {liveErrors.length > 0 ? (
           <div style={{ marginTop: 12 }}>
-            <Text style={{ color: 'var(--semi-color-danger)' }}>
+            <Text style={{ color: 'var(--kc-danger)' }}>
               {localeCode === 'zh_CN' ? '实时数据错误：' : 'Live data error: '}
               {liveErrors.join(' / ')}
             </Text>

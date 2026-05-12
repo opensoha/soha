@@ -39,7 +39,7 @@ import {
 import { useBrandingSettings } from '@/features/settings/use-branding-settings'
 import { useAuthStore } from '@/stores/auth-store'
 import { usePreferencesStore } from '@/stores/preferences-store'
-import { resolveThemeMode, watchSystemThemeMode } from '@/theme/semi-theme'
+import { resolveThemeMode, watchSystemThemeMode } from '@/theme/app-theme'
 import type { BusinessWorkspaceType, RuntimeMenuNode } from '@/types'
 import { getNormalizedBranding } from '@/features/settings/use-branding-settings'
 

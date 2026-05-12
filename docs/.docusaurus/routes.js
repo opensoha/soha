@@ -4,15 +4,15 @@ import ComponentCreator from '@docusaurus/ComponentCreator';
 export default [
   {
     path: '/docs/',
-    component: ComponentCreator('/docs/', '9b2'),
+    component: ComponentCreator('/docs/', 'abe'),
     routes: [
       {
         path: '/docs/',
-        component: ComponentCreator('/docs/', 'd16'),
+        component: ComponentCreator('/docs/', 'e84'),
         routes: [
           {
             path: '/docs/',
-            component: ComponentCreator('/docs/', '260'),
+            component: ComponentCreator('/docs/', '51b'),
             routes: [
               {
                 path: '/docs/api/auth-and-errors/',
@@ -52,13 +52,13 @@ export default [
               },
               {
                 path: '/docs/architecture/ai-copilot/',
-                component: ComponentCreator('/docs/architecture/ai-copilot/', '756'),
+                component: ComponentCreator('/docs/architecture/ai-copilot/', 'b58'),
                 exact: true,
                 sidebar: "mainSidebar"
               },
               {
                 path: '/docs/architecture/application-delivery/',
-                component: ComponentCreator('/docs/architecture/application-delivery/', '5d8'),
+                component: ComponentCreator('/docs/architecture/application-delivery/', '116'),
                 exact: true,
                 sidebar: "mainSidebar"
               },
@@ -82,13 +82,13 @@ export default [
               },
               {
                 path: '/docs/architecture/mcp-integration/',
-                component: ComponentCreator('/docs/architecture/mcp-integration/', 'c23'),
+                component: ComponentCreator('/docs/architecture/mcp-integration/', 'b5f'),
                 exact: true,
                 sidebar: "mainSidebar"
               },
               {
                 path: '/docs/architecture/monitoring-and-alerting/',
-                component: ComponentCreator('/docs/architecture/monitoring-and-alerting/', '984'),
+                component: ComponentCreator('/docs/architecture/monitoring-and-alerting/', '28d'),
                 exact: true,
                 sidebar: "mainSidebar"
               },
@@ -142,7 +142,7 @@ export default [
               },
               {
                 path: '/docs/development/local-development/',
-                component: ComponentCreator('/docs/development/local-development/', '40a'),
+                component: ComponentCreator('/docs/development/local-development/', '01b'),
                 exact: true,
                 sidebar: "mainSidebar"
               },
@@ -208,7 +208,7 @@ export default [
               },
               {
                 path: '/docs/reference/product-information-architecture/',
-                component: ComponentCreator('/docs/reference/product-information-architecture/', 'e11'),
+                component: ComponentCreator('/docs/reference/product-information-architecture/', 'ead'),
                 exact: true,
                 sidebar: "mainSidebar"
               },

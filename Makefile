@@ -86,7 +86,7 @@ deploy-compose-config:
 	docker compose -f $(ROOT_COMPOSE_FILE) config
 
 deploy-helm-lint:
-	helm lint deploy/helm/kubecrux
+	helm lint chart
 
 # Test
 test-api:
