@@ -1,6 +1,0 @@
-apiVersion: v2
-name: kubecrux
-description: Single-project Helm chart for kubecrux with embedded SPA and docs plus PostgreSQL.
-type: application
-version: 0.1.0
-appVersion: "0.1.0"
