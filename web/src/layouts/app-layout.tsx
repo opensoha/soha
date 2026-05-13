@@ -13,6 +13,7 @@ import {
   MoonOutlined,
   QuestionCircleOutlined,
   RobotOutlined,
+  SettingOutlined,
   SunOutlined,
   TranslationOutlined,
 } from '@ant-design/icons'
@@ -156,32 +157,26 @@ function collectExpandableNodeIDs(sidebarNav: RuntimeMenuNode[]) {
   return ids
 }
 
-function wrapSystemNav(sidebarNav: RuntimeMenuNode[]): RuntimeMenuNode[] {
-  if (sidebarNav.length === 0) {
-    return []
-  }
-  return [
-    {
-      id: 'system-shell',
-      path: '/system',
-      labelZh: '系统管理',
-      labelEn: 'System',
-      iconKey: 'panels-top-left',
-      section: 'admin',
-      sortOrder: 0,
-      enabled: true,
-      workspace: 'system',
-      children: sidebarNav,
-    },
-  ]
-}
-
 function mergeOpenKeys(current: string[], desired: string[]) {
   if (desired.length === 0) {
     return current
   }
   const merged = Array.from(new Set([...current, ...desired]))
   return merged.length === current.length && merged.every((key, index) => key === current[index]) ? current : merged
+}
+
+function findFirstNavigablePath(sidebarNav: RuntimeMenuNode[]): string | null {
+  let matched: string | null = null
+  const visit = (node: RuntimeMenuNode) => {
+    if (matched) return
+    if (node.route && node.route.navVisible !== false) {
+      matched = node.route.redirectTo ?? node.route.path
+      return
+    }
+    node.children?.forEach(visit)
+  }
+  sidebarNav.forEach(visit)
+  return matched
 }
 
 function buildWorkbenchOptions(localeCode: 'zh_CN' | 'en_US'): WorkbenchOption[] {
@@ -289,6 +284,7 @@ export function AppLayout() {
   const currentMeta = getRouteMeta(location.pathname)
   const currentWorkbenchId = getRouteWorkbenchId(currentMeta)
   const currentRouteWorkspace = getRouteWorkspace(currentMeta)
+  const isSystemWorkspaceRoute = currentRouteWorkspace === 'system'
   const activeWorkspace = useMemo<BusinessWorkspaceType | null>(() => {
     if ((currentRouteWorkspace === 'application' || currentRouteWorkspace === 'resource') && accessibleWorkspaces.includes(currentRouteWorkspace)) {
       return currentRouteWorkspace
@@ -323,21 +319,27 @@ export function AppLayout() {
     () => filterSidebarNavByWorkspace(fullSidebarNav, 'system'),
     [fullSidebarNav],
   )
-  const systemMenuTree = useMemo(() => (isAIWorkbenchRoute ? [] : wrapSystemNav(systemNav)), [isAIWorkbenchRoute, systemNav])
-  const businessMenuItems = useMemo(() => buildMenuItems(businessNav, localeCode), [businessNav, localeCode])
-  const systemMenuItems = useMemo(() => buildMenuItems(systemMenuTree, localeCode, { grouped: false }), [systemMenuTree, localeCode])
-  const businessItemKeyToPath = useMemo(() => buildItemKeyToPath(businessNav), [businessNav])
-  const systemItemKeyToPath = useMemo(() => buildItemKeyToPath(systemMenuTree), [systemMenuTree])
-  const combinedNav = useMemo(() => [...businessNav, ...systemMenuTree], [businessNav, systemMenuTree])
+  const primaryNav = useMemo(() => {
+    if (isSystemWorkspaceRoute) {
+      return systemNav
+    }
+    return businessNav
+  }, [businessNav, isSystemWorkspaceRoute, systemNav])
+  const primaryMenuItems = useMemo(
+    () => buildMenuItems(primaryNav, localeCode, { grouped: !isSystemWorkspaceRoute }),
+    [isSystemWorkspaceRoute, localeCode, primaryNav],
+  )
+  const primaryItemKeyToPath = useMemo(() => buildItemKeyToPath(primaryNav), [primaryNav])
+  const combinedNav = useMemo(() => [...businessNav, ...systemNav], [businessNav, systemNav])
   const combinedItemKeyToPath = useMemo(
-    () => ({ ...businessItemKeyToPath, ...systemItemKeyToPath }),
-    [businessItemKeyToPath, systemItemKeyToPath],
+    () => ({ ...buildItemKeyToPath(businessNav), ...buildItemKeyToPath(systemNav) }),
+    [businessNav, systemNav],
   )
   const parentByID = useMemo(() => buildParentMap(combinedNav), [combinedNav])
   const businessNodeIDs = useMemo(() => collectNodeIDs(businessNav), [businessNav])
   const businessExpandableNodeIDs = useMemo(() => collectExpandableNodeIDs(businessNav), [businessNav])
-  const systemNodeIDs = useMemo(() => collectNodeIDs(systemMenuTree), [systemMenuTree])
-  const systemExpandableNodeIDs = useMemo(() => collectExpandableNodeIDs(systemMenuTree), [systemMenuTree])
+  const systemNodeIDs = useMemo(() => collectNodeIDs(systemNav), [systemNav])
+  const systemExpandableNodeIDs = useMemo(() => collectExpandableNodeIDs(systemNav), [systemNav])
   const resolvedThemeMode = useMemo(() => resolveThemeMode(themeMode), [themeMode, systemThemeVersion])
 
   const parentMeta = getParentRouteMeta(currentMeta)
@@ -424,9 +426,17 @@ export function AppLayout() {
   const themeSwitchTitle = resolvedThemeMode === 'dark'
     ? t('layout.switchThemeToLight', 'Switch to light mode')
     : t('layout.switchThemeToDark', '切换到深色模式')
+  const settingsTriggerTitle = localeCode === 'zh_CN' ? '系统设置' : 'System settings'
+  const settingsEntryPath = useMemo(() => {
+    const settingsNode = systemNav.find((item) => item.id === 'settings')
+    const preferredSettingsPath = settingsNode ? findFirstNavigablePath([settingsNode]) : null
+    return preferredSettingsPath ?? findFirstNavigablePath(systemNav)
+  }, [systemNav])
   const currentWorkbenchOption = workbenchOptions.find((option) => option.key === activeWorkbenchId) ?? workbenchOptions[0] ?? null
   const businessSelectedKeys = selectedKeys.filter((key) => businessNodeIDs.has(key))
   const systemSelectedKeys = selectedKeys.filter((key) => systemNodeIDs.has(key))
+  const primarySelectedKeys = isSystemWorkspaceRoute ? systemSelectedKeys : businessSelectedKeys
+  const primaryOpenKeys = isSystemWorkspaceRoute ? systemOpenKeys : businessOpenKeys
 
   if (permissionSnapshotQuery.isLoading) {
     return (
@@ -447,16 +457,21 @@ export function AppLayout() {
         trigger={null}
         width={248}
       >
-        <div className="kc-nav" style={{ height: '100%' }}>
-          <div className="kc-sider-topbar">
-            <div className="kc-sider-brand">
-              {activeLogo ? (
-                <img className="kc-brand-logo" src={activeLogo} alt={branding.sidebarTitle} />
-              ) : (
-                <div className="kc-brand-mark">KC</div>
-              )}
+          <div className="kc-nav" style={{ height: '100%' }}>
+            <div className="kc-sider-topbar">
+              <button
+                type="button"
+                className="kc-sider-brand"
+                aria-label={localeCode === 'zh_CN' ? '返回首页' : 'Go to overview'}
+                onClick={() => navigate('/')}
+              >
+                {activeLogo ? (
+                  <img className="kc-brand-logo" src={activeLogo} alt={branding.sidebarTitle} />
+                ) : (
+                  <div className="kc-brand-mark">KC</div>
+                )}
+              </button>
             </div>
-          </div>
 
           {workbenchOptions.length > 0 && currentWorkbenchOption ? (
             <div className="kc-workbench-switcher-shell">
@@ -476,37 +491,25 @@ export function AppLayout() {
           ) : null}
 
           {!isAIWorkbenchRoute ? (
-            <div className="kc-nav-business">
+            <div className={['kc-nav-business', isSystemWorkspaceRoute ? 'is-system' : ''].filter(Boolean).join(' ')}>
               <Menu
-                className="kc-nav-menu kc-nav-menu--business"
+                className={['kc-nav-menu', isSystemWorkspaceRoute ? 'kc-nav-menu--system-workspace' : 'kc-nav-menu--business'].join(' ')}
                 mode="inline"
-                items={businessMenuItems}
-                selectedKeys={businessSelectedKeys}
-                openKeys={sidebarCollapsed ? [] : businessOpenKeys}
-                onOpenChange={(keys) => setBusinessOpenKeys(keys as string[])}
+                items={primaryMenuItems}
+                selectedKeys={primarySelectedKeys}
+                openKeys={sidebarCollapsed ? [] : primaryOpenKeys}
+                onOpenChange={(keys) => {
+                  if (isSystemWorkspaceRoute) {
+                    setSystemOpenKeys(keys as string[])
+                    return
+                  }
+                  setBusinessOpenKeys(keys as string[])
+                }}
                 onClick={({ key }) => {
-                  const path = businessItemKeyToPath[String(key)]
+                  const path = primaryItemKeyToPath[String(key)]
                   if (path) navigate(path)
                 }}
-                inlineCollapsed={sidebarCollapsed}
-                theme={resolvedThemeMode}
-              />
-            </div>
-          ) : null}
-
-          {!isAIWorkbenchRoute && (systemMenuItems?.length ?? 0) > 0 ? (
-            <div className="kc-nav-system">
-              <Menu
-                className="kc-nav-menu kc-nav-menu--system"
-                mode="inline"
-                items={systemMenuItems}
-                selectedKeys={systemSelectedKeys}
-                openKeys={sidebarCollapsed ? [] : systemOpenKeys}
-                onOpenChange={(keys) => setSystemOpenKeys(keys as string[])}
-                onClick={({ key }) => {
-                  const path = systemItemKeyToPath[String(key)]
-                  if (path) navigate(path)
-                }}
+                inlineIndent={isSystemWorkspaceRoute ? 16 : 24}
                 inlineCollapsed={sidebarCollapsed}
                 theme={resolvedThemeMode}
               />
@@ -572,6 +575,20 @@ export function AppLayout() {
                 />
               </div>
               <AnnouncementBell />
+              {settingsEntryPath ? (
+                <Button
+                  aria-label={settingsTriggerTitle}
+                  className="kc-header-action"
+                  size="small"
+                  type="text"
+                  icon={<SettingOutlined />}
+                  title={settingsTriggerTitle}
+                  onClick={() => {
+                    setSidebarCollapsed(false)
+                    navigate(settingsEntryPath)
+                  }}
+                />
+              ) : null}
               <Dropdown
                 menu={{
                   items: [

@@ -49,6 +49,19 @@ function getColumnLabel(column: any, index: number) {
   return `列 ${index + 1}`
 }
 
+function getColumnWidth(column: any) {
+  if (typeof column?.width === 'number' && Number.isFinite(column.width)) {
+    return column.width
+  }
+  if (typeof column?.width === 'string') {
+    const parsed = Number.parseInt(column.width, 10)
+    if (Number.isFinite(parsed)) {
+      return parsed
+    }
+  }
+  return null
+}
+
 export function AdminTable({
   className,
   columns,
@@ -105,6 +118,11 @@ export function AdminTable({
   const activeColumns = columnOptions
     .filter((option) => activeColumnIds.includes(option.id))
     .map((option) => option.column)
+  const estimatedScrollWidth = useMemo(() => {
+    const columnWidth = activeColumns.reduce((total, column) => total + (getColumnWidth(column) ?? 168), 0)
+    const selectionWidth = rowSelection ? 56 : 0
+    return Math.max(960, columnWidth + selectionWidth)
+  }, [activeColumns, rowSelection])
 
   const getRowKeyValue = (record: any) => (typeof rowKey === 'function' ? rowKey(record) : record?.[rowKey])
   const activeRowSelection = rowSelection && typeof rowSelection === 'object' ? rowSelection : undefined
@@ -156,6 +174,11 @@ export function AdminTable({
           pagination?.onPageSizeChange?.(nextPageSize)
         },
       }
+
+  const resolvedScroll = useMemo(() => ({
+    x: scroll?.x ?? estimatedScrollWidth,
+    y: scroll?.y,
+  }), [estimatedScrollWidth, scroll?.x, scroll?.y])
 
   const columnSetting = enableColumnSelection && columnOptions.length > 1 ? (
     <Popover
@@ -221,7 +244,7 @@ export function AdminTable({
         pagination={resolvedPagination}
         rowKey={rowKey}
         rowSelection={resolvedRowSelection}
-        scroll={scroll}
+        scroll={resolvedScroll}
         size="middle"
       />
     </div>

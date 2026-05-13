@@ -270,13 +270,13 @@ export function OnlineUsersPage() {
   )
 
   const columns: TableColumnsType<OnlineUser> = [
-    { title: '用户 ID', dataIndex: 'userId' },
-    { title: '用户名', dataIndex: 'userName' },
-    { title: '邮箱', dataIndex: 'email' },
-    { title: '登录方式', dataIndex: 'providerType' },
-    { title: '来源', dataIndex: 'source', render: (value: string) => <SourceTag value={value} /> },
-    { title: 'IP', dataIndex: 'sourceIp', render: (value: string) => value || '-' },
-    { title: '设备', dataIndex: 'userAgent', ellipsis: true, render: (value: string) => value || '-' },
+    { title: '用户 ID', dataIndex: 'userId', width: 180, ellipsis: true },
+    { title: '用户名', dataIndex: 'userName', width: 140 },
+    { title: '邮箱', dataIndex: 'email', width: 240, ellipsis: true },
+    { title: '登录方式', dataIndex: 'providerType', width: 120 },
+    { title: '来源', dataIndex: 'source', width: 100, render: (value: string) => <SourceTag value={value} /> },
+    { title: 'IP', dataIndex: 'sourceIp', width: 140, ellipsis: true, render: (value: string) => value || '-' },
+    { title: '设备', dataIndex: 'userAgent', width: 280, ellipsis: true, render: (value: string) => value || '-' },
     {
       ...tableColumnPresets.status,
       title: '状态',
@@ -285,11 +285,12 @@ export function OnlineUsersPage() {
     },
     { ...tableColumnPresets.datetime, title: '登录时间', dataIndex: 'loginTime', render: (_: string, record: OnlineUser) => formatDateTime(record.loginTime) },
     { ...tableColumnPresets.datetime, title: '最近活跃', dataIndex: 'lastSeenAt', render: (_: string, record: OnlineUser) => formatDateTime(record.lastSeenAt) },
-    { title: '活跃时长', dataIndex: 'lastSeenAt', render: (_: string, record: OnlineUser) => formatRelativeTime(record.lastSeenAt) },
+    { title: '活跃时长', dataIndex: 'lastSeenAt', width: 120, render: (_: string, record: OnlineUser) => formatRelativeTime(record.lastSeenAt) },
     { ...tableColumnPresets.datetime, title: '过期时间', dataIndex: 'expiry', render: (_: string, record: OnlineUser) => formatDateTime(record.expiry) },
     {
       ...tableColumnPresets.action,
       title: '操作',
+      width: 88,
       dataIndex: 'id',
       render: (_: string, record: OnlineUser) => (
         canManageOnlineUsers ? (

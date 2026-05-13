@@ -6,7 +6,8 @@ export const tableColumnPresets = {
     width: 180,
   },
   action: {
-    width: 120,
+    width: 140,
     align: 'right' as const,
+    fixed: 'right' as const,
   },
 }

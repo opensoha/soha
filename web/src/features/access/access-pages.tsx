@@ -613,6 +613,7 @@ export function AccessUsersPage() {
     {
       title: '用户',
       dataIndex: 'username',
+      width: 220,
       render: (_: string, record: AccessUser) => (
         <div className="flex items-center gap-3">
           <Avatar className="kc-user-avatar" size="small">
@@ -627,15 +628,17 @@ export function AccessUsersPage() {
         </div>
       ),
     },
-    { title: '邮箱', dataIndex: 'email' },
+    { title: '邮箱', dataIndex: 'email', width: 240 },
     {
       title: '角色',
       dataIndex: 'roles',
+      width: 180,
       render: (roles: string[]) => renderMappedTags(roles, roleMap, '未绑定'),
     },
     {
       title: '用户组',
       dataIndex: 'teams',
+      width: 160,
       render: (teams: string[]) => renderMappedTags(teams, teamMap, '未绑定'),
     },
     {
@@ -653,6 +656,7 @@ export function AccessUsersPage() {
     {
       ...tableColumnPresets.action,
       title: '操作',
+      width: 164,
       dataIndex: 'id',
       render: (_: unknown, record: AccessUser) => (
         <Space>

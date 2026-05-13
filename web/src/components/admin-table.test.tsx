@@ -1,0 +1,99 @@
+/** @vitest-environment jsdom */
+
+import type { ReactNode } from 'react'
+import { createRoot } from 'react-dom/client'
+import { act } from 'react'
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
+import { AdminTable } from './admin-table'
+import { tableColumnPresets } from '@/utils/table-columns'
+
+const captured = vi.hoisted(() => ({
+  tableProps: null as any,
+}))
+
+vi.mock('antd', () => ({
+  Button: ({ children, ...props }: { children?: ReactNode }) => <button {...props}>{children}</button>,
+  Checkbox: {
+    Group: () => <div data-testid="checkbox-group" />,
+  },
+  Empty: ({ description }: { description?: ReactNode }) => <div>{description}</div>,
+  Popover: ({ children }: { children?: ReactNode }) => <>{children}</>,
+  Table: (props: any) => {
+    captured.tableProps = props
+    return <div data-testid="table-proxy" />
+  },
+  Typography: {
+    Text: ({ children }: { children?: ReactNode }) => <span>{children}</span>,
+  },
+}))
+
+let containers: HTMLDivElement[] = []
+let roots: Array<ReturnType<typeof createRoot>> = []
+
+async function renderNode(node: ReactNode) {
+  const container = document.createElement('div')
+  document.body.appendChild(container)
+  containers.push(container)
+
+  const root = createRoot(container)
+  roots.push(root)
+
+  await act(async () => {
+    root.render(<>{node}</>)
+  })
+
+  return container
+}
+
+describe('AdminTable', () => {
+  beforeAll(() => {
+    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
+  })
+
+  afterEach(async () => {
+    captured.tableProps = null
+    await act(async () => {
+      for (const root of roots) {
+        root.unmount()
+      }
+    })
+    roots = []
+    for (const container of containers) {
+      container.remove()
+    }
+    containers = []
+  })
+
+  it('derives a default horizontal scroll width from active columns', async () => {
+    await renderNode(
+      <AdminTable
+        columns={[
+          { title: 'A', dataIndex: 'a', width: 220 },
+          { title: 'B', dataIndex: 'b', width: 180 },
+          { title: 'C', dataIndex: 'c' },
+        ]}
+        dataSource={[{ id: '1', a: 'a', b: 'b', c: 'c' }]}
+        rowKey="id"
+      />,
+    )
+
+    expect(captured.tableProps?.scroll).toEqual({ x: 960, y: undefined })
+  })
+
+  it('keeps an explicit horizontal scroll width when provided', async () => {
+    await renderNode(
+      <AdminTable
+        columns={[{ title: 'A', dataIndex: 'a', width: 220 }]}
+        dataSource={[{ id: '1', a: 'a' }]}
+        rowKey="id"
+        scroll={{ x: 1440 }}
+      />,
+    )
+
+    expect(captured.tableProps?.scroll).toEqual({ x: 1440, y: undefined })
+  })
+
+  it('pins the shared action preset to the right side', () => {
+    expect(tableColumnPresets.action.fixed).toBe('right')
+  })
+})

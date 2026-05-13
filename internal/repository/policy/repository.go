@@ -108,10 +108,13 @@ func (r *Repository) ListRoles(ctx context.Context) ([]domainaccess.RoleRecord, 
 			r.scope,
 			r.capabilities,
 			r.permission_keys,
-			COUNT(DISTINCT urb.user_id) AS user_count
+			COALESCE(urb.user_count, 0) AS user_count
 		FROM roles r
-		LEFT JOIN user_role_bindings urb ON urb.role_id = r.id
-		GROUP BY r.id, r.name, r.scope, r.capabilities, r.permission_keys
+		LEFT JOIN (
+			SELECT role_id, COUNT(DISTINCT user_id) AS user_count
+			FROM user_role_bindings
+			GROUP BY role_id
+		) urb ON urb.role_id = r.id
 		ORDER BY r.name ASC, r.id ASC
 	`).Rows()
 	if err != nil {

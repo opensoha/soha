@@ -112,7 +112,10 @@ a {
   min-height: 36px;
   width: 100%;
   padding: 0;
+  border: none;
   background: transparent;
+  cursor: pointer;
+  text-align: left;
 }
 
 .ant-layout-sider-collapsed .kc-sider-brand {
@@ -252,6 +255,11 @@ a {
   overflow: hidden;
 }
 
+.kc-nav-business.is-system {
+  padding: 6px 0 0;
+  background: transparent;
+}
+
 .kc-nav-system {
   flex: 0 0 auto;
   padding: 14px 12px 18px;
@@ -284,6 +292,70 @@ a {
 .kc-nav-menu--business {
   height: 100%;
   overflow-y: auto;
+}
+
+.kc-nav-menu--system-workspace {
+  height: 100%;
+  overflow-y: auto;
+  padding: 6px 12px 14px !important;
+  border: none;
+  border-radius: 0;
+  background: transparent !important;
+}
+
+.kc-nav-menu--system-workspace .ant-menu-item,
+.kc-nav-menu--system-workspace .ant-menu-submenu-title {
+  min-height: 38px;
+  padding-block: 4px;
+  border-radius: 10px;
+}
+
+.kc-nav-menu--system-workspace .ant-menu-item,
+.kc-nav-menu--system-workspace .ant-menu-submenu-title,
+.kc-nav-menu--system-workspace .ant-menu-submenu .ant-menu-item {
+  display: flex;
+  align-items: center;
+}
+
+.kc-nav-menu--system-workspace .ant-menu-sub.ant-menu-inline {
+  margin-inline-start: 0 !important;
+  padding-inline-start: 8px !important;
+}
+
+.kc-nav-menu--system-workspace .ant-menu-item-icon,
+.kc-nav-menu--system-workspace .ant-menu-submenu-title .ant-menu-item-icon,
+.kc-nav-menu--system-workspace .ant-menu-submenu-title .anticon {
+  display: inline-flex;
+  width: 16px;
+  min-width: 16px;
+  align-items: center;
+  justify-content: center;
+  margin-inline-end: 10px;
+}
+
+.kc-nav-menu--system-workspace .ant-menu-title-content {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.kc-nav-menu--system-workspace .ant-menu-item-selected,
+.kc-nav-menu--system-workspace .ant-menu-submenu-selected > .ant-menu-submenu-title {
+  background: var(--kc-fill-medium) !important;
+  color: var(--kc-text-primary) !important;
+}
+
+.kc-nav-menu--system-workspace .ant-menu-item:hover,
+.kc-nav-menu--system-workspace .ant-menu-submenu-title:hover {
+  background: var(--kc-fill-weak) !important;
+}
+
+.kc-nav-menu--system-workspace .ant-menu-item-group {
+  margin-top: 0;
+}
+
+.kc-nav-menu--system-workspace .ant-menu-item-group-title {
+  display: none;
 }
 
 .kc-nav-menu--system {
@@ -521,6 +593,7 @@ a {
 }
 
 .kc-header-preference-button.is-active,
+.kc-header-action.ant-btn.is-active,
 .kc-header-preference-button[aria-pressed='true'] {
   background: var(--kc-primary-light-default);
   color: var(--kc-primary);
@@ -818,6 +891,10 @@ a {
   min-width: 100%;
 }
 
+.kc-admin-table .ant-table-content {
+  overflow-x: auto;
+}
+
 .kc-admin-table .ant-table-thead > tr > th {
   background: var(--kc-bg-surface-muted);
   color: var(--kc-text-secondary);
@@ -828,6 +905,8 @@ a {
 .kc-admin-table .ant-table-tbody > tr > td {
   padding-left: 12px;
   padding-right: 12px;
+  white-space: nowrap;
+  word-break: keep-all;
 }
 
 .kc-system-overview-grid {
@@ -1044,6 +1123,8 @@ a {
 /* Right-fixed column: solid left divider on header + body, replacing Semi's fade-only shadow */
 .kc-table-actions-column,
 .kc-deployment-actions-column,
+.kc-admin-table .ant-table-cell-fix-right-first,
+.kc-admin-table th.ant-table-cell-fix-right-first,
 .kc-pods-table .ant-table-cell-fix-right-first,
 .kc-platform-table .ant-table-cell-fix-right-first,
 .kc-pods-table th.ant-table-cell-fix-right-first,
@@ -1086,6 +1167,11 @@ a {
 .kc-admin-table-shell.is-panel .kc-admin-table .ant-table-container {
   border: none;
   border-radius: 0;
+}
+
+.kc-admin-table .ant-table-cell-fix-right-first .ant-space {
+  width: 100%;
+  justify-content: flex-end;
 }
 
 .kc-content-inner > .p-6.space-y-4,

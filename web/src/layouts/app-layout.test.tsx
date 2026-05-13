@@ -236,16 +236,21 @@ describe('app layout workspace navigation', () => {
     expect(container.querySelector('.kc-workbench-switcher__label')?.textContent).toBe('应用交付工作台')
     expect(container.textContent).toContain('应用中心')
     expect(container.textContent).not.toContain('概览')
-    expect(container.textContent).toContain('系统管理')
+    expect(container.querySelector('.kc-nav-system')).toBeNull()
     expect(testState.prefs.setCurrentWorkspace).toHaveBeenCalledWith('application')
   })
 
-  it('keeps the last business workspace active while visiting system pages', async () => {
+  it('switches the left nav into system workspace mode while visiting system pages', async () => {
     const container = await renderWithProviders('/system/menus')
 
+    expect(container.querySelector('.kc-workbench-switcher-shell')).not.toBeNull()
     expect(container.querySelector('.kc-workbench-switcher__label')?.textContent).toBe('平台工作台')
-    expect(container.textContent).toContain('概览')
     expect(container.textContent).toContain('菜单管理')
+    expect(container.textContent).not.toContain('概览')
+    expect(container.querySelector('.kc-nav-system')).toBeNull()
+    expect(container.querySelector('.kc-nav-business.is-system')).not.toBeNull()
+    expect(container.querySelector('.kc-sider-topbar > button.kc-sider-brand')).not.toBeNull()
+    expect(container.querySelector('button[aria-label="系统设置"]')?.className).not.toContain('is-active')
     expect(testState.prefs.setCurrentWorkspace).not.toHaveBeenCalled()
   })
 
@@ -316,5 +321,22 @@ describe('app layout workspace navigation', () => {
     expect(container.querySelector('.kc-nav-system')).toBeNull()
     expect(container.textContent).not.toContain('监控工作台')
     expect(container.textContent).not.toContain('系统管理')
+  })
+
+  it('shows a settings entry in the header and routes system navigation through the main sidebar', async () => {
+    const container = await renderWithProviders('/', {
+      permissionKeys: ['workspace.resource.view', 'overview.view', 'settings.identity.view', 'system.menus.view'],
+      visibleMenuIds: ['dashboard', 'settings', 'system', 'menus'],
+      visibleMenus: [
+        { id: 'dashboard', path: '/', labelZh: '概览', labelEn: 'Overview', iconKey: 'gauge', section: 'platform', sortOrder: 1, enabled: true },
+        { id: 'settings', path: '/settings', labelZh: '设置中心', labelEn: 'Settings', iconKey: 'settings', section: 'admin', sortOrder: 2, enabled: true },
+        { id: 'system', path: '/system', labelZh: '系统管理', labelEn: 'System', iconKey: 'panels-top-left', section: 'admin', sortOrder: 3, enabled: true },
+        { id: 'menus', parentId: 'system', path: '/system/menus', labelZh: '菜单管理', labelEn: 'Menus', iconKey: 'menu-square', section: 'admin', sortOrder: 4, enabled: true },
+      ],
+    })
+
+    const settingsButton = container.querySelector('button[aria-label="系统设置"]')
+    expect(settingsButton).not.toBeNull()
+    expect(container.querySelector('.kc-nav-system')).toBeNull()
   })
 })
