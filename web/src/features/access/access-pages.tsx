@@ -611,21 +611,27 @@ export function AccessUsersPage() {
 
   const columns: ColumnProps<AccessUser>[] = [
     {
-      title: '用户',
+      title: '头像',
+      key: 'avatar',
+      width: 76,
+      render: (_: unknown, record: AccessUser) => (
+        <Avatar className="kc-user-avatar" size="small">
+          {getUserInitial(record)}
+        </Avatar>
+      ),
+    },
+    {
+      title: '用户名',
       dataIndex: 'username',
-      width: 220,
-      render: (_: string, record: AccessUser) => (
-        <div className="flex items-center gap-3">
-          <Avatar className="kc-user-avatar" size="small">
-            {getUserInitial(record)}
-          </Avatar>
-          <div className="min-w-0 flex-1">
-            <div className="truncate font-medium" style={{ color: 'var(--kc-text-primary)' }}>{record.username}</div>
-            <Text type="secondary" style={{ fontSize: 12 }}>
-              {record.displayName || record.email || '-'}
-            </Text>
-          </div>
-        </div>
+      width: 180,
+      render: (value: string) => <Text strong>{value || '-'}</Text>,
+    },
+    {
+      title: '显示名',
+      dataIndex: 'displayName',
+      width: 180,
+      render: (value: string, record: AccessUser) => (
+        <Text type={value ? undefined : 'secondary'}>{value || record.email || '-'}</Text>
       ),
     },
     { title: '邮箱', dataIndex: 'email', width: 240 },

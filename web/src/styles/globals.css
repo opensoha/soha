@@ -1120,19 +1120,67 @@ a {
   justify-content: flex-end;
 }
 
-/* Right-fixed column: solid left divider on header + body, replacing Semi's fade-only shadow */
+/* Right-fixed column: force an opaque sticky surface so underlying cells never bleed through */
 .kc-table-actions-column,
 .kc-deployment-actions-column,
+.kc-admin-table .ant-table-cell-fix-right,
 .kc-admin-table .ant-table-cell-fix-right-first,
+.kc-admin-table .ant-table-cell-fix-right-last,
+.kc-admin-table th.ant-table-cell-fix-right,
 .kc-admin-table th.ant-table-cell-fix-right-first,
+.kc-admin-table th.ant-table-cell-fix-right-last,
+.kc-pods-table .ant-table-cell-fix-right,
 .kc-pods-table .ant-table-cell-fix-right-first,
+.kc-pods-table .ant-table-cell-fix-right-last,
+.kc-platform-table .ant-table-cell-fix-right,
 .kc-platform-table .ant-table-cell-fix-right-first,
+.kc-platform-table .ant-table-cell-fix-right-last,
+.kc-pods-table th.ant-table-cell-fix-right,
 .kc-pods-table th.ant-table-cell-fix-right-first,
-.kc-platform-table th.ant-table-cell-fix-right-first {
+.kc-pods-table th.ant-table-cell-fix-right-last,
+.kc-platform-table th.ant-table-cell-fix-right,
+.kc-platform-table th.ant-table-cell-fix-right-first,
+.kc-platform-table th.ant-table-cell-fix-right-last {
   border-left: 1px solid var(--kc-border-color) !important;
   box-shadow: none !important;
   background: var(--kc-bg-surface) !important;
   background-clip: padding-box;
+}
+
+.kc-admin-table .ant-table-thead > tr > th.ant-table-cell-fix-right,
+.kc-admin-table .ant-table-thead > tr > th.ant-table-cell-fix-right-first,
+.kc-admin-table .ant-table-thead > tr > th.ant-table-cell-fix-right-last,
+.kc-pods-table .ant-table-thead > tr > th.ant-table-cell-fix-right,
+.kc-pods-table .ant-table-thead > tr > th.ant-table-cell-fix-right-first,
+.kc-pods-table .ant-table-thead > tr > th.ant-table-cell-fix-right-last,
+.kc-platform-table .ant-table-thead > tr > th.ant-table-cell-fix-right,
+.kc-platform-table .ant-table-thead > tr > th.ant-table-cell-fix-right-first,
+.kc-platform-table .ant-table-thead > tr > th.ant-table-cell-fix-right-last {
+  background: var(--kc-bg-surface-muted) !important;
+}
+
+.kc-admin-table .ant-table-tbody > tr:hover > td.ant-table-cell-fix-right,
+.kc-admin-table .ant-table-tbody > tr:hover > td.ant-table-cell-fix-right-first,
+.kc-admin-table .ant-table-tbody > tr:hover > td.ant-table-cell-fix-right-last,
+.kc-pods-table .ant-table-tbody > tr:hover > td.ant-table-cell-fix-right,
+.kc-pods-table .ant-table-tbody > tr:hover > td.ant-table-cell-fix-right-first,
+.kc-pods-table .ant-table-tbody > tr:hover > td.ant-table-cell-fix-right-last,
+.kc-platform-table .ant-table-tbody > tr:hover > td.ant-table-cell-fix-right,
+.kc-platform-table .ant-table-tbody > tr:hover > td.ant-table-cell-fix-right-first,
+.kc-platform-table .ant-table-tbody > tr:hover > td.ant-table-cell-fix-right-last {
+  background: var(--kc-bg-surface) !important;
+}
+
+.kc-admin-table .ant-table-cell-fix-right::after,
+.kc-admin-table .ant-table-cell-fix-right-first::after,
+.kc-admin-table .ant-table-cell-fix-right-last::after,
+.kc-pods-table .ant-table-cell-fix-right::after,
+.kc-pods-table .ant-table-cell-fix-right-first::after,
+.kc-pods-table .ant-table-cell-fix-right-last::after,
+.kc-platform-table .ant-table-cell-fix-right::after,
+.kc-platform-table .ant-table-cell-fix-right-first::after,
+.kc-platform-table .ant-table-cell-fix-right-last::after {
+  box-shadow: none !important;
 }
 
 .kc-table-actions-column {

@@ -878,18 +878,6 @@ export function AISettingsPage({ embedded = false }: SettingsPageProps = {}) {
     onError: (err: Error) => void message.error(err.message),
   })
 
-  if (isLoading) {
-    return <div className="flex items-center justify-center h-64"><Spin size="large" /></div>
-  }
-
-  if (!canViewAISettings) {
-    return (
-      <div className="kc-page">
-        <SettingsCard>当前账号没有查看 AI 设置的权限。</SettingsCard>
-      </div>
-    )
-  }
-
   const settings = data?.data
   useEffect(() => {
     setSkillsRegistryDraft((settings?.skillsRegistry ?? []).map((item) => ({
@@ -907,6 +895,19 @@ export function AISettingsPage({ embedded = false }: SettingsPageProps = {}) {
       outputSchema: item.outputSchema ?? {},
     })))
   }, [settings?.skillsRegistry])
+
+  if (isLoading) {
+    return <div className="flex items-center justify-center h-64"><Spin size="large" /></div>
+  }
+
+  if (!canViewAISettings) {
+    return (
+      <div className="kc-page">
+        <SettingsCard>当前账号没有查看 AI 设置的权限。</SettingsCard>
+      </div>
+    )
+  }
+
   const dataSources = dataSourcesQuery.data?.data ?? []
   const profiles = profilesQuery.data?.data ?? []
   const policies = policiesQuery.data?.data ?? []
