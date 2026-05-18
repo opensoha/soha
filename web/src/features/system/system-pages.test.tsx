@@ -94,4 +94,37 @@ describe('menu visibility helpers', () => {
     expect(filtered[0].children?.[0].children).toBeUndefined()
     expect(filtered[1].children).toBeUndefined()
   })
+
+  it('can filter menus with no section as ungrouped', () => {
+    const filtered = filterMenuTree([
+      {
+        id: 'ungrouped',
+        labelZh: 'Ungrouped',
+        labelEn: 'Ungrouped',
+        path: '/',
+        iconKey: 'gauge',
+        section: '',
+        sortOrder: 1,
+        enabled: true,
+      },
+      {
+        id: 'grouped',
+        labelZh: 'Grouped',
+        labelEn: 'Grouped',
+        path: '/grouped',
+        iconKey: 'menu-square',
+        section: 'admin',
+        sortOrder: 2,
+        enabled: true,
+      },
+    ], {
+      topLevelOnly: true,
+      section: '__ungrouped__',
+      workbench: '',
+      enabled: 'all',
+      visibility: 'all',
+    })
+
+    expect(filtered.map((item) => item.id)).toEqual(['ungrouped'])
+  })
 })

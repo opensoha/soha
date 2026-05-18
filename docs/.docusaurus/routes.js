@@ -4,15 +4,15 @@ import ComponentCreator from '@docusaurus/ComponentCreator';
 export default [
   {
     path: '/docs/',
-    component: ComponentCreator('/docs/', 'abe'),
+    component: ComponentCreator('/docs/', '34f'),
     routes: [
       {
         path: '/docs/',
-        component: ComponentCreator('/docs/', 'e84'),
+        component: ComponentCreator('/docs/', '618'),
         routes: [
           {
             path: '/docs/',
-            component: ComponentCreator('/docs/', '51b'),
+            component: ComponentCreator('/docs/', '6fb'),
             routes: [
               {
                 path: '/docs/api/auth-and-errors/',
@@ -81,6 +81,12 @@ export default [
                 sidebar: "mainSidebar"
               },
               {
+                path: '/docs/architecture/login-and-identity/',
+                component: ComponentCreator('/docs/architecture/login-and-identity/', '466'),
+                exact: true,
+                sidebar: "mainSidebar"
+              },
+              {
                 path: '/docs/architecture/mcp-integration/',
                 component: ComponentCreator('/docs/architecture/mcp-integration/', 'b5f'),
                 exact: true,
@@ -136,7 +142,7 @@ export default [
               },
               {
                 path: '/docs/development/frontend-structure/',
-                component: ComponentCreator('/docs/development/frontend-structure/', '274'),
+                component: ComponentCreator('/docs/development/frontend-structure/', 'c05'),
                 exact: true,
                 sidebar: "mainSidebar"
               },
@@ -166,7 +172,7 @@ export default [
               },
               {
                 path: '/docs/operations/deployment/',
-                component: ComponentCreator('/docs/operations/deployment/', '1b0'),
+                component: ComponentCreator('/docs/operations/deployment/', 'cdc'),
                 exact: true,
                 sidebar: "mainSidebar"
               },

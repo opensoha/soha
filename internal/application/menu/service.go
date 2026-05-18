@@ -12,9 +12,9 @@ import (
 	domainidentity "github.com/kubecrux/kubecrux/internal/domain/identity"
 	domainmenu "github.com/kubecrux/kubecrux/internal/domain/menu"
 	domainoperation "github.com/kubecrux/kubecrux/internal/domain/operation"
+	"github.com/kubecrux/kubecrux/internal/platform/apperrors"
 	"github.com/kubecrux/kubecrux/internal/platform/operationentry"
 	"github.com/kubecrux/kubecrux/internal/platform/requestctx"
-	"github.com/kubecrux/kubecrux/internal/platform/apperrors"
 	"gorm.io/gorm"
 )
 
@@ -185,9 +185,6 @@ func normalizeInput(input domainmenu.Input) (domainmenu.Record, error) {
 	}
 	if iconKey == "" {
 		return domainmenu.Record{}, fmt.Errorf("%w: menu icon key is required", apperrors.ErrInvalidArgument)
-	}
-	if section == "" {
-		return domainmenu.Record{}, fmt.Errorf("%w: menu section is required", apperrors.ErrInvalidArgument)
 	}
 	id := strings.TrimSpace(input.ID)
 	if id == "" {

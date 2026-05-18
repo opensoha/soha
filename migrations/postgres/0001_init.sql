@@ -161,7 +161,7 @@ CREATE TABLE IF NOT EXISTS menus (
     label_zh TEXT NOT NULL,
     label_en TEXT NOT NULL,
     icon_key TEXT NOT NULL,
-    section TEXT NOT NULL,
+    section TEXT,
     sort_order INT NOT NULL DEFAULT 0,
     enabled BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TIMESTAMP NOT NULL DEFAULT NOW(),

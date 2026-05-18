@@ -37,6 +37,16 @@ type stubRolePermissionReader struct {
 	matrix map[string][]string
 }
 
+type captureRepository struct {
+	stubRepository
+	created domainmenu.Record
+}
+
+func (s *captureRepository) Create(_ context.Context, item domainmenu.Record) (domainmenu.Record, error) {
+	s.created = item
+	return item, nil
+}
+
 func (s stubRolePermissionReader) ListRolePermissions(context.Context) (map[string][]string, error) {
 	return s.matrix, nil
 }
@@ -48,11 +58,11 @@ func TestListVisibleDerivesMenusFromPermissionKeys(t *testing.T) {
 			{ID: "workloads", Path: "/workloads", SortOrder: 2, Enabled: true},
 			{ID: "workloads-pods", ParentID: "workloads", Path: "/workloads/pods", SortOrder: 1, Enabled: true},
 			{ID: "settings", Path: "/settings", SortOrder: 3, Enabled: true},
-			{ID: "settings-ai", ParentID: "settings", Path: "/settings/ai", SortOrder: 1, Enabled: true},
+			{ID: "settings-login", ParentID: "settings", Path: "/settings/login", SortOrder: 1, Enabled: true},
 		},
 	}, appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
-			"custom": {appaccess.PermWorkspaceResourceView, appaccess.PermPlatformWorkloadsView, appaccess.PermSettingsAIView},
+			"custom": {appaccess.PermWorkspaceResourceView, appaccess.PermPlatformWorkloadsView, appaccess.PermSettingsIdentityView},
 		},
 	}), nil, nil)
 
@@ -74,8 +84,8 @@ func TestListVisibleDerivesMenusFromPermissionKeys(t *testing.T) {
 	if settings == nil {
 		t.Fatalf("settings menu not found: %#v", items)
 	}
-	if len(settings.Children) != 1 || settings.Children[0].ID != "settings-ai" {
-		t.Fatalf("settings children = %#v, want settings-ai", settings.Children)
+	if len(settings.Children) != 1 || settings.Children[0].ID != "settings-login" {
+		t.Fatalf("settings children = %#v, want settings-login", settings.Children)
 	}
 }
 
@@ -205,5 +215,29 @@ func TestListVisiblePreservesUnmappedMenusWithoutBindings(t *testing.T) {
 	}
 	if items[0].ID != "custom-catalog" || items[1].ID != "custom-delivery" {
 		t.Fatalf("visible menus = %#v, want unmapped menus preserved", items)
+	}
+}
+
+func TestCreateAllowsEmptyMenuSection(t *testing.T) {
+	repo := &captureRepository{}
+	service := New(repo, appaccess.NewPermissionResolver(stubRolePermissionReader{
+		matrix: map[string][]string{
+			"admin": {appaccess.PermSystemMenusManage},
+		},
+	}), nil, nil)
+
+	created, err := service.Create(context.Background(), domainidentity.Principal{Roles: []string{"admin"}}, domainmenu.Input{
+		ID:      "plain-platform-entry",
+		Path:    "/plain-platform-entry",
+		LabelZH: "平台入口",
+		LabelEN: "Platform Entry",
+		IconKey: "gauge",
+		Enabled: true,
+	})
+	if err != nil {
+		t.Fatalf("Create returned error: %v", err)
+	}
+	if created.Section != "" || repo.created.Section != "" {
+		t.Fatalf("created section = %q, stored section = %q, want empty", created.Section, repo.created.Section)
 	}
 }

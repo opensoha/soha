@@ -30,7 +30,7 @@ import dayjs from 'dayjs'
 import { AdminTable } from '@/components/admin-table'
 import { hasPermission, permissionSnapshotQueryKey, usePermissionSnapshot } from '@/features/auth/permission-snapshot'
 import { MENU_ICON_OPTIONS, isKnownMenuIcon, resolveMenuIcon } from '@/features/system/menu-icons'
-import { buildMenuSectionOptions, normalizeMenuSection, resolveMenuSectionLabel } from '@/features/system/menu-schema'
+import { buildMenuSectionOptions, getMenuSectionOrder, normalizeMenuSection, resolveMenuSectionLabel } from '@/features/system/menu-schema'
 import { PageHeader } from '@/components/page-header'
 import { BooleanTag, StatusTag } from '@/components/status-tag'
 import { getMenuWorkbenchId, getMenuWorkspace, resolveRouteMenuId, resolveRoutePermission, routeMeta, type WorkbenchId } from '@/routes/meta'
@@ -705,6 +705,8 @@ interface MenuItem {
   children?: MenuItem[]
   depth?: number
   parentLabelZh?: string
+  syntheticKind?: 'workbench' | 'section'
+  syntheticWorkbenchKey?: MenuWorkbenchSurface
 }
 
 interface AccessRoleOption {
@@ -743,6 +745,8 @@ const MENU_WORKBENCH_LABELS: Record<MenuWorkbenchSurface, string> = {
   unmapped: '未映射',
 }
 
+const MENU_UNGROUPED_FILTER = '__ungrouped__'
+
 function resolveMenuWorkbenchKey(item: Pick<MenuItem, 'id' | 'path'>): MenuWorkbenchSurface {
   const workspace = getMenuWorkspace(item)
   if (workspace === 'system') {
@@ -775,6 +779,9 @@ function summarizeMenuWorkbench(
 function flattenMenuItems(items: MenuItem[], depth = 0, parent?: MenuItem): MenuItem[] {
   return items.flatMap((item) => {
     const { children, ...rest } = item
+    if (item.syntheticKind) {
+      return flattenMenuItems(children ?? [], depth, parent)
+    }
     const nextItem: MenuItem = {
       ...rest,
       depth,
@@ -792,6 +799,84 @@ function countDirectMenuChildren(item: Pick<MenuItem, 'children'>) {
   return item.children?.length ?? 0
 }
 
+function compareMenuItems(left: MenuItem, right: MenuItem) {
+  const leftSection = normalizeMenuSection(left.section)
+  const rightSection = normalizeMenuSection(right.section)
+  const sectionCompare = getMenuSectionOrder(leftSection) - getMenuSectionOrder(rightSection)
+  if (sectionCompare !== 0) return sectionCompare
+  if (left.sortOrder !== right.sortOrder) return left.sortOrder - right.sortOrder
+  return left.path.localeCompare(right.path)
+}
+
+function buildWorkbenchMenuTree(items: MenuItem[]) {
+  const menuLookup = new Map(flattenMenuItems(items).map((item) => [item.id, item]))
+  const groupedByWorkbench = new Map<MenuWorkbenchSurface, MenuItem[]>()
+
+  for (const item of items) {
+    const summary = summarizeMenuWorkbench(item, menuLookup)
+    const current = groupedByWorkbench.get(summary.key) ?? []
+    current.push(item)
+    groupedByWorkbench.set(summary.key, current)
+  }
+
+  return MENU_WORKBENCH_ORDER
+    .map((workbenchKey): MenuItem | null => {
+      const workbenchItems = groupedByWorkbench.get(workbenchKey)
+      if (!workbenchItems?.length) {
+        return null
+      }
+
+      const directItems: MenuItem[] = []
+      const sectionGroups = new Map<string, MenuItem[]>()
+
+      for (const item of workbenchItems) {
+        const section = normalizeMenuSection(item.section)
+        if (!section) {
+          directItems.push(item)
+          continue
+        }
+        const current = sectionGroups.get(section) ?? []
+        current.push(item)
+        sectionGroups.set(section, current)
+      }
+
+      const sectionNodes = Array.from(sectionGroups.entries())
+        .sort(([left], [right]) => {
+          const sectionCompare = getMenuSectionOrder(left) - getMenuSectionOrder(right)
+          if (sectionCompare !== 0) return sectionCompare
+          return resolveMenuSectionLabel(left).localeCompare(resolveMenuSectionLabel(right))
+        })
+        .map(([section, sectionItems]): MenuItem => ({
+          id: `__section__${workbenchKey}__${section}`,
+          labelZh: resolveMenuSectionLabel(section),
+          labelEn: resolveMenuSectionLabel(section, 'en_US'),
+          path: '',
+          iconKey: '',
+          section,
+          sortOrder: 0,
+          enabled: true,
+          syntheticKind: 'section',
+          syntheticWorkbenchKey: workbenchKey,
+          children: [...sectionItems].sort(compareMenuItems),
+        }))
+
+      return {
+        id: `__workbench__${workbenchKey}`,
+        labelZh: MENU_WORKBENCH_LABELS[workbenchKey],
+        labelEn: MENU_WORKBENCH_LABELS[workbenchKey],
+        path: '',
+        iconKey: '',
+        section: '',
+        sortOrder: MENU_WORKBENCH_ORDER.indexOf(workbenchKey),
+        enabled: true,
+        syntheticKind: 'workbench',
+        syntheticWorkbenchKey: workbenchKey,
+        children: [...directItems].sort(compareMenuItems).concat(sectionNodes),
+      } satisfies MenuItem
+    })
+    .filter((item): item is MenuItem => Boolean(item))
+}
+
 export function filterMenuTree(
   items: MenuItem[],
   options: {
@@ -805,7 +890,9 @@ export function filterMenuTree(
   const menuLookup = new Map(flattenMenuItems(items).map((item) => [item.id, item]))
   const matches = (item: MenuItem) => {
     const summary = summarizeMenuVisibility(item)
-    const matchesSection = !options.section || normalizeMenuSection(item.section) === options.section
+    const normalizedSection = normalizeMenuSection(item.section)
+    const matchesSection = !options.section ||
+      (options.section === MENU_UNGROUPED_FILTER ? normalizedSection === '' : normalizedSection === options.section)
     const matchesWorkbench = !options.workbench || summarizeMenuWorkbench(item, menuLookup).key === options.workbench
     const matchesEnabled = options.enabled === 'all'
       ? true
@@ -1019,7 +1106,7 @@ export function MenusPage() {
   const [workbenchFilter, setWorkbenchFilter] = useState<string>('')
   const [enabledFilter, setEnabledFilter] = useState<'all' | 'enabled' | 'disabled'>('all')
   const [visibilityFilter, setVisibilityFilter] = useState<'all' | 'derived' | 'explicit' | 'unmapped'>('all')
-  const [treeView, setTreeView] = useState<'top' | 'all'>('top')
+  const [treeView, setTreeView] = useState<'workbench' | 'top' | 'all'>('workbench')
   const canManageMenus = hasPermission(permissionSnapshotQuery.data?.data, 'system.menus.manage')
 
   const { data, isLoading } = useQuery({
@@ -1082,7 +1169,7 @@ export function MenusPage() {
   const menuTree = data?.data ?? []
   const menuItems = flattenMenuItems(menuTree)
   const menuLookup = useMemo(() => new Map(menuItems.map((item) => [item.id, item])), [menuItems])
-  const filteredMenuTree = useMemo(
+  const rawFilteredMenuTree = useMemo(
     () => filterMenuTree(menuTree, {
       topLevelOnly: treeView === 'top',
       section: sectionFilter,
@@ -1092,8 +1179,15 @@ export function MenusPage() {
     }),
     [enabledFilter, menuTree, sectionFilter, treeView, visibilityFilter, workbenchFilter],
   )
+  const filteredMenuTree = useMemo(
+    () => treeView === 'workbench' ? buildWorkbenchMenuTree(rawFilteredMenuTree) : rawFilteredMenuTree,
+    [rawFilteredMenuTree, treeView],
+  )
   const sectionOptions = useMemo(
-    () => buildMenuSectionOptions(menuItems.map((item) => item.section)),
+    () => [
+      { value: MENU_UNGROUPED_FILTER, label: '未分组' },
+      ...buildMenuSectionOptions(menuItems.map((item) => item.section)),
+    ],
     [menuItems],
   )
   const workbenchOptions = useMemo(
@@ -1146,26 +1240,42 @@ export function MenusPage() {
       title: '菜单名称',
       dataIndex: 'labelZh',
       render: (value: string, record: MenuItem) => (
-        <Space direction="vertical" size={2}>
+        record.syntheticKind ? (
           <Space size={8} wrap>
             <Text strong>{value}</Text>
-            <Tag>{record.parentId ? '子菜单' : '顶级'}</Tag>
-            {countDirectMenuChildren(record) > 0 ? <Tag color="blue">{`${countDirectMenuChildren(record)} 个子项`}</Tag> : null}
+            <Tag color={record.syntheticKind === 'workbench' ? 'blue' : 'default'}>{record.syntheticKind === 'workbench' ? '工作台' : '分组'}</Tag>
+            {countDirectMenuChildren(record) > 0 ? <Tag color="blue">{`${countDirectMenuChildren(record)} 个菜单`}</Tag> : null}
           </Space>
-          <Text type="secondary">{record.labelEn || '-'}</Text>
-        </Space>
+        ) : (
+          <Space direction="vertical" size={2}>
+            <Space size={8} wrap>
+              <Text strong>{value}</Text>
+              <Tag>{record.parentId ? '子菜单' : '顶级'}</Tag>
+              {countDirectMenuChildren(record) > 0 ? <Tag color="blue">{`${countDirectMenuChildren(record)} 个子项`}</Tag> : null}
+            </Space>
+            <Text type="secondary">{record.labelEn || '-'}</Text>
+          </Space>
+        )
       ),
     },
-    { title: '路径', dataIndex: 'path' },
+    { title: '路径', dataIndex: 'path', render: (value: string, record: MenuItem) => record.syntheticKind ? '-' : value },
     {
       title: '工作台',
       key: 'workbench',
-      render: (_: unknown, record: MenuItem) => <MenuWorkbenchTag item={record} menuLookup={menuLookup} />,
+      render: (_: unknown, record: MenuItem) => {
+        if (record.syntheticKind === 'workbench' && record.syntheticWorkbenchKey) {
+          return <Tag color="blue">{MENU_WORKBENCH_LABELS[record.syntheticWorkbenchKey]}</Tag>
+        }
+        if (record.syntheticKind === 'section' && record.syntheticWorkbenchKey) {
+          return <Tag>{MENU_WORKBENCH_LABELS[record.syntheticWorkbenchKey]}</Tag>
+        }
+        return <MenuWorkbenchTag item={record} menuLookup={menuLookup} />
+      },
     },
     {
       title: '图标',
       dataIndex: 'iconKey',
-      render: (value: string) => (
+      render: (value: string, record: MenuItem) => record.syntheticKind ? '-' : (
         <Space size={8} wrap>
           <span>{resolveMenuIcon(value)}</span>
           <Text code>{value || '-'}</Text>
@@ -1176,18 +1286,22 @@ export function MenusPage() {
     {
       title: '分组',
       dataIndex: 'section',
-      render: (value: string) => <Tag>{resolveMenuSectionLabel(value)}</Tag>,
+      render: (value: string, record: MenuItem) => {
+        if (record.syntheticKind === 'workbench') return '-'
+        const section = normalizeMenuSection(value)
+        return section ? <Tag>{resolveMenuSectionLabel(section)}</Tag> : <Tag>未分组</Tag>
+      },
     },
-    { title: '排序', dataIndex: 'sortOrder' },
+    { title: '排序', dataIndex: 'sortOrder', render: (value: number, record: MenuItem) => record.syntheticKind ? '-' : value },
     {
       title: '可见',
       dataIndex: 'enabled',
-      render: (v: boolean) => <BooleanTag value={v} />,
+      render: (v: boolean, record: MenuItem) => record.syntheticKind ? '-' : <BooleanTag value={v} />,
     },
     {
       title: '可见性策略',
       key: 'visibilityModel',
-      render: (_: unknown, record: MenuItem) => <MenuVisibilityTags item={record} />,
+      render: (_: unknown, record: MenuItem) => record.syntheticKind ? '-' : <MenuVisibilityTags item={record} />,
     },
     {
       ...tableColumnPresets.action,
@@ -1195,13 +1309,13 @@ export function MenusPage() {
       dataIndex: 'id',
       render: (_: unknown, record: MenuItem) => (
         <Space>
-          {canManageMenus ? <Button icon={<EditOutlined />} type="text" size="small" onClick={() => { setEditing(findMenuItemByID(menuTree, record.id) ?? record); setModalVisible(true) }} /> : null}
-          {canManageMenus ? (
+          {canManageMenus && !record.syntheticKind ? <Button icon={<EditOutlined />} type="text" size="small" onClick={() => { setEditing(findMenuItemByID(menuTree, record.id) ?? record); setModalVisible(true) }} /> : null}
+          {canManageMenus && !record.syntheticKind ? (
             <Popconfirm title="确认删除？" onConfirm={() => deleteMutation.mutate(record.id)}>
               <Button icon={<DeleteOutlined />} type="text" danger size="small" />
             </Popconfirm>
           ) : null}
-          {!canManageMenus ? '-' : null}
+          {!canManageMenus || record.syntheticKind ? '-' : null}
         </Space>
       ),
     },
@@ -1230,15 +1344,16 @@ export function MenusPage() {
           </Button>
         ) : null}
         expandable={{
-          defaultExpandAllRows: treeView === 'all',
+          defaultExpandAllRows: treeView !== 'top',
           rowExpandable: (record: MenuItem) => countDirectMenuChildren(record) > 0,
         }}
         toolbar={(
           <Space wrap>
             <Segmented
               value={treeView}
-              onChange={(value) => setTreeView(value as 'top' | 'all')}
+              onChange={(value) => setTreeView(value as 'workbench' | 'top' | 'all')}
               options={[
+                { value: 'workbench', label: '工作台视图' },
                 { value: 'top', label: '默认看顶级' },
                 { value: 'all', label: '看全部树' },
               ]}

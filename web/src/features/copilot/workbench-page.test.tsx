@@ -64,7 +64,36 @@ const apiGetMock = vi.hoisted(() => vi.fn(async (path: string) => {
     return {
       data: [
         { id: 'msg-1', sessionId: 'session-1', role: 'user', content: '最近告警为什么爆发？', createdAt: '2026-05-12T10:01:00Z' },
-        { id: 'msg-2', sessionId: 'session-1', role: 'assistant', content: '初步判断与数据库连接耗尽有关。', createdAt: '2026-05-12T10:02:00Z', metadata: { analysisArtifacts: [{ kind: 'root_cause', runId: 'run-1', summary: '发现数据库连接异常', evidence: [{ id: 'e1', kind: 'metric', title: '连接数升高', summary: '连接池在 5 分钟内升高到上限' }], hypotheses: [{ id: 'h1', title: '连接池泄漏', summary: '连接未及时释放', confidence: 81 }], recommendations: ['先限制新流量并检查连接归还链路'] }] } },
+        {
+          id: 'msg-2',
+          sessionId: 'session-1',
+          role: 'assistant',
+          content: '初步判断与数据库连接耗尽有关。',
+          createdAt: '2026-05-12T10:02:00Z',
+          metadata: {
+            analysisArtifacts: [{
+              kind: 'root_cause',
+              runId: 'run-1',
+              summary: '发现数据库连接异常',
+              evidence: [{ id: 'e1', kind: 'metric', title: '连接数升高', summary: '连接池在 5 分钟内升高到上限' }],
+              hypotheses: [{ id: 'h1', title: '连接池泄漏', summary: '连接未及时释放', confidence: 81, evidenceIds: ['e1'] }],
+              recommendations: ['先限制新流量并检查连接归还链路'],
+              graph: {
+                layout: 'LR',
+                focusNodeId: 'scope:workload:payment-api',
+                nodes: [
+                  { id: 'scope:workload:payment-api', kind: 'scope', title: 'payment-api', subtitle: 'local-k3s / payments' },
+                  { id: 'metric:db-connections', kind: 'metric_signal', title: '数据库连接数', subtitle: 'latest=92 avg=35 trend=spike', severity: 'warning', evidenceIds: ['e1'] },
+                  { id: 'hypothesis:h1', kind: 'hypothesis', title: '连接池泄漏', subtitle: '连接未及时释放', severity: 'critical', evidenceIds: ['e1'] },
+                ],
+                edges: [
+                  { id: 'scope:workload:payment-api->metric:db-connections', source: 'scope:workload:payment-api', target: 'metric:db-connections', relation: 'measures', severity: 'warning', evidenceIds: ['e1'] },
+                  { id: 'metric:db-connections->hypothesis:h1', source: 'metric:db-connections', target: 'hypothesis:h1', relation: 'supports', evidenceIds: ['e1'] },
+                ],
+              },
+            }],
+          },
+        },
       ],
     }
   }
@@ -199,13 +228,13 @@ describe('AIWorkbenchPage', () => {
     containers = []
   })
 
-  it('renders the AI rail and conversation canvas together', async () => {
+  it('renders the conversation canvas without duplicated mode navigation', async () => {
     const container = await renderPage()
 
-    expect(container.textContent).toContain('功能切换')
-    expect(container.textContent).toContain('会话记录')
     expect(container.textContent).toContain('对话流程')
     expect(container.textContent).toContain('支付告警调查')
-    expect(container.textContent).toContain('巡检与自动化')
+    expect(container.textContent).toContain('巡检')
+    expect(container.textContent).toContain('根因链路图')
+    expect(container.textContent).toContain('数据库连接数')
   })
 })

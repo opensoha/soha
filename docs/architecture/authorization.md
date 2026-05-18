@@ -107,7 +107,7 @@ RBAC answers one question first: does the principal's role set ever permit this 
 ## Settings Center
 
 - settings routes use `settings.<domain>.view` to control page access
-- mutable operations such as saving OIDC, Prometheus, or AI provider/control-plane settings use `settings.<domain>.manage`
+- mutable operations such as saving login-provider, Prometheus, or AI provider/control-plane settings use `settings.<domain>.manage`
 - frontend forms must hide submit actions and block submit handlers when the manage permission is absent, but backend services remain the final enforcement point
 
 ## System Management
@@ -118,7 +118,8 @@ RBAC answers one question first: does the principal's role set ever permit this 
 ## Console Navigation Notes
 
 - access control remains a first-level console entry so administrators can discover permission configuration directly from the sidebar
-- settings center is presented as a single first-level entry with tabbed identity, branding, and AI sections inside the page
+- settings center remains a first-level system-workspace entry, but login settings and branding settings now resolve as dedicated child routes under `/settings/login` and `/settings/branding`
+- AI settings no longer live inside the settings-center tab surface; they belong to the AI workbench settings routes
 - cluster monitoring connection details are expected to be managed with cluster configuration, not as a separate global settings-center submenu
 
 ## Operator Runbook
@@ -155,7 +156,7 @@ RBAC answers one question first: does the principal's role set ever permit this 
 ### Redis
 
 - session cache and token blacklist
-- OIDC state and one-time frontend exchange payloads
+- OIDC and OAuth provider state, plus one-time frontend exchange payloads
 - optional short-lived policy evaluation cache for repeated read operations
 - lock state for mutable operations and future approvals
 

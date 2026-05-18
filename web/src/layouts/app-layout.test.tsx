@@ -284,8 +284,24 @@ describe('app layout workspace navigation', () => {
     expect(testState.prefs.setCurrentWorkspace).toHaveBeenCalledWith('resource')
   })
 
-  it('shows only AI workbench menus when the AI workbench is active', async () => {
-    const container = await renderWithProviders('/ai-workbench', {
+  it('renders ungrouped workbench menus without a group heading', async () => {
+    const container = await renderWithProviders('/', {
+      permissionKeys: ['workspace.resource.view', 'overview.view', 'platform.workloads.view'],
+      visibleMenuIds: ['dashboard', 'workloads'],
+      visibleMenus: [
+        { id: 'dashboard', path: '/', labelZh: '概览', labelEn: 'Overview', iconKey: 'gauge', section: '', sortOrder: 1, enabled: true },
+        { id: 'workloads', path: '/workloads', labelZh: '工作负载', labelEn: 'Workloads', iconKey: 'boxes', section: '', sortOrder: 2, enabled: true },
+      ],
+    })
+
+    expect(container.textContent).toContain('概览')
+    expect(container.textContent).toContain('工作负载')
+    expect(container.textContent).not.toContain('platform')
+    expect(container.querySelector('.ant-menu-item-group-title')).toBeNull()
+  })
+
+  it('shows AI workbench menus in the standard business sidebar when the AI workbench is active', async () => {
+    const container = await renderWithProviders('/ai-workbench/chat', {
       permissionKeys: [
         'workspace.resource.view',
         'observe.ai.view',
@@ -297,8 +313,9 @@ describe('app layout workspace navigation', () => {
       visibleMenuIds: [
         'dashboard',
         'ai-workbench',
-        'ai-workbench-investigation',
-        'ai-workbench-operations',
+        'ai-workbench-chat',
+        'ai-workbench-inspection',
+        'ai-workbench-model-settings',
         'monitoring-workbench',
         'monitoring-workbench-overview',
         'system',
@@ -307,8 +324,9 @@ describe('app layout workspace navigation', () => {
       visibleMenus: [
         { id: 'dashboard', path: '/', labelZh: '概览', labelEn: 'Overview', iconKey: 'gauge', section: 'platform', sortOrder: 1, enabled: true },
         { id: 'ai-workbench', path: '/ai-workbench', labelZh: 'AI工作台', labelEn: 'AI Workbench', iconKey: 'bot', section: 'ops', sortOrder: 15, enabled: true },
-        { id: 'ai-workbench-investigation', parentId: 'ai-workbench', path: '/ai-workbench/investigation', labelZh: '调查工作台', labelEn: 'Investigation Workbench', iconKey: 'bot', section: 'ops', sortOrder: 16, enabled: true },
-        { id: 'ai-workbench-operations', parentId: 'ai-workbench', path: '/ai-workbench/automation', labelZh: '巡检与自动化', labelEn: 'Automation', iconKey: 'bot', section: 'ops', sortOrder: 17, enabled: true },
+        { id: 'ai-workbench-chat', parentId: 'ai-workbench', path: '/ai-workbench/chat', labelZh: '通用聊天', labelEn: 'Chat', iconKey: 'bot', section: 'ops', sortOrder: 16, enabled: true },
+        { id: 'ai-workbench-inspection', parentId: 'ai-workbench', path: '/ai-workbench/inspection', labelZh: '巡检', labelEn: 'Inspection', iconKey: 'bot', section: 'ops', sortOrder: 19, enabled: true },
+        { id: 'ai-workbench-model-settings', parentId: 'ai-workbench', path: '/ai-workbench/model-settings', labelZh: '模型设置', labelEn: 'Model Settings', iconKey: 'bot', section: 'ops', sortOrder: 20, enabled: true },
         { id: 'monitoring-workbench', path: '/monitoring-workbench', labelZh: '监控工作台', labelEn: 'Monitoring Workbench', iconKey: 'gauge', section: 'ops', sortOrder: 60, enabled: true },
         { id: 'monitoring-workbench-overview', parentId: 'monitoring-workbench', path: '/monitoring-workbench/overview', labelZh: '工作台概览', labelEn: 'Overview', iconKey: 'gauge', section: 'ops', sortOrder: 61, enabled: true },
         { id: 'system', path: '/system', labelZh: '系统管理', labelEn: 'System', iconKey: 'panels-top-left', section: 'admin', sortOrder: 99, enabled: true },
@@ -317,8 +335,10 @@ describe('app layout workspace navigation', () => {
     })
 
     expect(container.querySelector('.kc-workbench-switcher__label')?.textContent).toBe('AI工作台')
-    expect(container.querySelector('.kc-nav-business')).toBeNull()
+    expect(container.querySelector('.kc-nav-business')).not.toBeNull()
     expect(container.querySelector('.kc-nav-system')).toBeNull()
+    expect(container.textContent).toContain('通用聊天')
+    expect(container.textContent).toContain('巡检')
     expect(container.textContent).not.toContain('监控工作台')
     expect(container.textContent).not.toContain('系统管理')
   })

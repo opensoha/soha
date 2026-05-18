@@ -53,6 +53,12 @@ Implement console work inside the active Vite app under `web`. Keep the UI antd-
 - `references/architecture.md`: folder ownership, route/runtime rules, query/state boundaries, and permission wiring.
 - `references/ui-style.md`: antd plus shadcn-like UI rules, table/detail patterns, and visual do/don'ts.
 
+## Repo-specific reminders
+
+- Settings navigation changes must update route metadata, menu wiring, i18n, and tests together.
+- Login and callback pages must stay aligned with the backend auth-provider contract; do not hard-code a single OIDC-only assumption once `/auth/providers` exposes multiple enabled providers.
+- If a backend capability is configuration-visible but runtime-incomplete, show that boundary plainly in UI copy instead of pretending the flow is available.
+
 ## Done Criteria
 
 - Routes, permissions, and visible menu behavior still align.

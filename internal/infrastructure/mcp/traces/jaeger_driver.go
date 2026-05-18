@@ -93,6 +93,10 @@ func (d jaegerDriver) FindSlowSpans(ctx context.Context, sourceID string, config
 			} `json:"processes"`
 			Spans []struct {
 				SpanID       string            `json:"spanID"`
+				References   []struct {
+					RefType string `json:"refType"`
+					SpanID  string `json:"spanID"`
+				} `json:"references"`
 				OperationName string           `json:"operationName"`
 				ProcessID    string            `json:"processID"`
 				StartTime    int64             `json:"startTime"`
@@ -126,15 +130,23 @@ func (d jaegerDriver) FindSlowSpans(ctx context.Context, sourceID string, config
 					}
 				}
 			}
+			parentSpanID := ""
+			for _, reference := range span.References {
+				if strings.EqualFold(reference.RefType, "CHILD_OF") && strings.TrimSpace(reference.SpanID) != "" {
+					parentSpanID = strings.TrimSpace(reference.SpanID)
+					break
+				}
+			}
 			current := Span{
-				TraceID:    trace.TraceID,
-				SpanID:     span.SpanID,
-				Operation:  span.OperationName,
-				Service:    serviceName,
-				DurationMS: float64(span.Duration) / 1000.0,
-				StartTime:  time.UnixMicro(span.StartTime).UTC(),
-				Tags:       tagMap,
-				Error:      errorFlag,
+				TraceID:      trace.TraceID,
+				SpanID:       span.SpanID,
+				ParentSpanID: parentSpanID,
+				Operation:    span.OperationName,
+				Service:      serviceName,
+				DurationMS:   float64(span.Duration) / 1000.0,
+				StartTime:    time.UnixMicro(span.StartTime).UTC(),
+				Tags:         tagMap,
+				Error:        errorFlag,
 			}
 			spans = append(spans, current)
 			key := fmt.Sprintf("%s::%s", current.Service, current.Operation)

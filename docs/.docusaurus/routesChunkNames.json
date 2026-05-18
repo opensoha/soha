@@ -1,15 +1,15 @@
 {
-  "/docs/-abe": {
+  "/docs/-34f": {
     "__comp": "5e95c892",
     "__context": {
       "plugin": "aba21aa0"
     }
   },
-  "/docs/-e84": {
+  "/docs/-618": {
     "__comp": "a7bd4aaa",
     "__props": "11b43341"
   },
-  "/docs/-51b": {
+  "/docs/-6fb": {
     "__comp": "a94703ab"
   },
   "/docs/api/auth-and-errors/-83d": {
@@ -56,6 +56,10 @@
     "__comp": "17896441",
     "content": "26d1d4d8"
   },
+  "/docs/architecture/login-and-identity/-466": {
+    "__comp": "17896441",
+    "content": "0625878c"
+  },
   "/docs/architecture/mcp-integration/-b5f": {
     "__comp": "17896441",
     "content": "aff97073"
@@ -92,7 +96,7 @@
     "__comp": "17896441",
     "content": "e8bc8711"
   },
-  "/docs/development/frontend-structure/-274": {
+  "/docs/development/frontend-structure/-c05": {
     "__comp": "17896441",
     "content": "0bdf1156"
   },
@@ -112,7 +116,7 @@
     "__comp": "17896441",
     "content": "caf93bf4"
   },
-  "/docs/operations/deployment/-1b0": {
+  "/docs/operations/deployment/-cdc": {
     "__comp": "17896441",
     "content": "fbd4efcc"
   },

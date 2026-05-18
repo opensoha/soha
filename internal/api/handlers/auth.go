@@ -21,7 +21,9 @@ type IdentityService interface {
 	Logout(context.Context, string, string) error
 	CurrentPrincipal(context.Context, string) (domainidentity.Principal, error)
 	BeginOIDCLogin(context.Context) (string, error)
+	BeginProviderLogin(context.Context, string) (string, error)
 	HandleOIDCCallback(context.Context, string, string) (string, error)
+	HandleProviderCallback(context.Context, string, string, string) (string, error)
 	ConsumeOIDCExchange(context.Context, string) (domainidentity.AuthResult, error)
 	ListActiveSessions(context.Context, domainidentity.Principal, int) ([]domainidentity.SessionRecord, error)
 	RevokeSessionByID(context.Context, domainidentity.Principal, string) error
@@ -272,6 +274,24 @@ func (h *AuthHandler) OIDCExchange(c *gin.Context) {
 		return
 	}
 	apiresponse.Item(c, http.StatusOK, result)
+}
+
+func (h *AuthHandler) ProviderLogin(c *gin.Context) {
+	loginURL, err := h.identity.BeginProviderLogin(c.Request.Context(), c.Param("providerID"))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	c.Redirect(http.StatusTemporaryRedirect, loginURL)
+}
+
+func (h *AuthHandler) ProviderCallback(c *gin.Context) {
+	redirectURL, err := h.identity.HandleProviderCallback(c.Request.Context(), c.Param("providerID"), c.Query("state"), c.Query("code"))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	c.Redirect(http.StatusTemporaryRedirect, redirectURL)
 }
 
 func (h *AuthHandler) ListSessions(c *gin.Context) {

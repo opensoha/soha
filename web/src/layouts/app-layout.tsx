@@ -54,6 +54,50 @@ interface WorkbenchOption {
   label: string
 }
 
+const AI_WORKBENCH_MENU_ENTRIES = [
+  { key: 'ai-workbench-chat', iconKey: 'bot', label: '通用聊天', path: '/ai-workbench/chat' },
+  { key: 'ai-workbench-inspection', iconKey: 'inspect', label: '巡检', path: '/ai-workbench/inspection' },
+  { key: 'ai-workbench-tool-settings', iconKey: 'wrench', label: '工具与技能', path: '/ai-workbench/tool-settings' },
+  { key: 'ai-workbench-model-settings', iconKey: 'settings', label: 'AI 设置', path: '/ai-workbench/model-settings' },
+] as const
+
+function buildAIWorkbenchMenuItems(): MenuProps['items'] {
+  return AI_WORKBENCH_MENU_ENTRIES.map((item) => ({
+    key: item.key,
+    icon: resolveMenuIcon(item.iconKey),
+    label: item.label,
+  }))
+}
+
+function buildAIWorkbenchItemKeyToPath() {
+  return Object.fromEntries(AI_WORKBENCH_MENU_ENTRIES.map((item) => [item.key, item.path])) as Record<string, string>
+}
+
+function buildAIWorkbenchSearch(search: string) {
+  const source = new URLSearchParams(search)
+  const next = new URLSearchParams()
+  ;['session', 'clusterId', 'namespace', 'workload', 'alertId', 'timeRangeMinutes'].forEach((key) => {
+    const value = source.get(key)
+    if (value) {
+      next.set(key, value)
+    }
+  })
+  const suffix = next.toString()
+  return suffix ? `?${suffix}` : ''
+}
+
+function findAIWorkbenchMenuKey(pathname: string, search: string) {
+  if (pathname === '/ai-workbench/investigation') {
+    const mode = new URLSearchParams(search).get('mode')
+    if (mode === 'inspection_review') return 'ai-workbench-inspection'
+    return 'ai-workbench-chat'
+  }
+  if (pathname === '/ai-workbench/root-cause' || pathname === '/ai-workbench/performance') {
+    return 'ai-workbench-chat'
+  }
+  return AI_WORKBENCH_MENU_ENTRIES.find((item) => item.path === pathname)?.key ?? null
+}
+
 function buildMenuNodeItem(node: RuntimeMenuNode, localeCode: 'zh_CN' | 'en_US'): NonNullable<MenuProps['items']>[number] {
   const label = localeCode === 'en_US' && node.labelEn ? node.labelEn : node.labelZh
   if (node.children?.length) {
@@ -79,22 +123,29 @@ function buildMenuItems(
   if (options.grouped === false) {
     return sidebarNav.map((item) => buildMenuNodeItem(item, localeCode))
   }
+  const directItems: NonNullable<MenuProps['items']>[number][] = []
   const groups = new Map<string, NonNullable<MenuProps['items']>[number][]>()
 
   for (const item of sidebarNav) {
-    const groupKey = item.section || 'control'
     const menuItem = buildMenuNodeItem(item, localeCode)
+    const groupKey = String(item.section || '').trim()
+    if (!groupKey) {
+      directItems.push(menuItem)
+      continue
+    }
     const current = groups.get(groupKey) ?? []
     current.push(menuItem)
     groups.set(groupKey, current)
   }
 
-  return Array.from(groups.entries()).map(([groupKey, items]) => ({
+  const groupedItems = Array.from(groups.entries()).map(([groupKey, items]) => ({
     key: `group-${groupKey}`,
     type: 'group' as const,
     label: <span className="kc-nav-section-title">{resolveMenuSectionLabel(groupKey, localeCode)}</span>,
     children: items,
   }))
+
+  return [...directItems, ...groupedItems]
 }
 
 function buildItemKeyToPath(sidebarNav: RuntimeMenuNode[]): Record<string, string> {
@@ -303,8 +354,6 @@ export function AppLayout() {
     }
     return accessibleWorkbenchIds[0] ?? null
   }, [accessibleWorkbenchIds, activeWorkspace, currentWorkbenchId])
-  const isAIWorkbenchRoute = activeWorkbenchId === 'ai'
-
   const businessWorkspaceNav = useMemo(
     () => (activeWorkspace ? filterSidebarNavByWorkspace(fullSidebarNav, activeWorkspace) : []),
     [activeWorkspace, fullSidebarNav],
@@ -326,10 +375,21 @@ export function AppLayout() {
     return businessNav
   }, [businessNav, isSystemWorkspaceRoute, systemNav])
   const primaryMenuItems = useMemo(
-    () => buildMenuItems(primaryNav, localeCode, { grouped: !isSystemWorkspaceRoute }),
-    [isSystemWorkspaceRoute, localeCode, primaryNav],
+    () => activeWorkbenchId === 'ai'
+      ? buildAIWorkbenchMenuItems()
+      : buildMenuItems(primaryNav, localeCode, { grouped: !isSystemWorkspaceRoute }),
+    [activeWorkbenchId, isSystemWorkspaceRoute, localeCode, primaryNav],
   )
-  const primaryItemKeyToPath = useMemo(() => buildItemKeyToPath(primaryNav), [primaryNav])
+  const primaryItemKeyToPath = useMemo(
+    () => {
+      if (activeWorkbenchId === 'ai') {
+        const suffix = buildAIWorkbenchSearch(location.search)
+        return Object.fromEntries(Object.entries(buildAIWorkbenchItemKeyToPath()).map(([key, path]) => [key, `${path}${suffix}`]))
+      }
+      return buildItemKeyToPath(primaryNav)
+    },
+    [activeWorkbenchId, location.search, primaryNav],
+  )
   const combinedNav = useMemo(() => [...businessNav, ...systemNav], [businessNav, systemNav])
   const combinedItemKeyToPath = useMemo(
     () => ({ ...buildItemKeyToPath(businessNav), ...buildItemKeyToPath(systemNav) }),
@@ -343,10 +403,15 @@ export function AppLayout() {
   const resolvedThemeMode = useMemo(() => resolveThemeMode(themeMode), [themeMode, systemThemeVersion])
 
   const parentMeta = getParentRouteMeta(currentMeta)
-  const currentMenuID = useMemo(
-    () => findMenuIDByRoutePath(combinedNav, currentMeta.path) ?? resolveRouteMenuId(currentMeta) ?? currentMeta.menuId ?? currentMeta.id,
-    [combinedNav, currentMeta],
-  )
+  const currentMenuID = useMemo(() => {
+    if (activeWorkbenchId === 'ai') {
+      return findAIWorkbenchMenuKey(location.pathname, location.search)
+        ?? resolveRouteMenuId(currentMeta)
+        ?? currentMeta.menuId
+        ?? currentMeta.id
+    }
+    return findMenuIDByRoutePath(combinedNav, currentMeta.path) ?? resolveRouteMenuId(currentMeta) ?? currentMeta.menuId ?? currentMeta.id
+  }, [activeWorkbenchId, combinedNav, currentMeta, location.pathname, location.search])
 
   const selectedKeys = useMemo(() => {
     if (currentMenuID && combinedItemKeyToPath[currentMenuID]) {
@@ -359,6 +424,9 @@ export function AppLayout() {
   }, [combinedItemKeyToPath, currentMenuID, currentMeta, parentMeta])
 
   const routeOpenKeys = useMemo(() => {
+    if (activeWorkbenchId === 'ai') {
+      return []
+    }
     const keys: string[] = []
     let pointer = currentMenuID
     while (pointer && parentByID.has(pointer)) {
@@ -371,7 +439,7 @@ export function AppLayout() {
       keys.push(currentMenuID)
     }
     return keys
-  }, [businessExpandableNodeIDs, currentMenuID, parentByID, systemExpandableNodeIDs])
+  }, [activeWorkbenchId, businessExpandableNodeIDs, currentMenuID, parentByID, systemExpandableNodeIDs])
 
   useEffect(() => {
     if (sidebarCollapsed) {
@@ -490,7 +558,7 @@ export function AppLayout() {
             </div>
           ) : null}
 
-          {!isAIWorkbenchRoute ? (
+          {(
             <div className={['kc-nav-business', isSystemWorkspaceRoute ? 'is-system' : ''].filter(Boolean).join(' ')}>
               <Menu
                 className={['kc-nav-menu', isSystemWorkspaceRoute ? 'kc-nav-menu--system-workspace' : 'kc-nav-menu--business'].join(' ')}
@@ -514,7 +582,7 @@ export function AppLayout() {
                 theme={resolvedThemeMode}
               />
             </div>
-          ) : null}
+          )}
         </div>
       </Sider>
 

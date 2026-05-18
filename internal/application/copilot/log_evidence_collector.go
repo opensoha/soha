@@ -15,6 +15,7 @@ type logEvidenceAnalysis struct {
 	hypotheses      []domaincopilot.RootCauseHypothesis
 	recommendations []string
 	playbookResults map[string]any
+	toolExecutions  []domaincopilot.ToolExecution
 }
 
 func (s *Service) collectRootCauseLogEvidence(ctx context.Context, input domaincopilot.RootCauseRunInput, profile domaincopilot.AnalysisProfile, locale string) logEvidenceAnalysis {
@@ -60,6 +61,18 @@ func (s *Service) collectRootCauseLogEvidence(ctx context.Context, input domainc
 			continue
 		}
 		result.playbookResults["logs:"+source.ID] = "matched"
+		now := time.Now().UTC()
+		result.toolExecutions = append(result.toolExecutions, domaincopilot.ToolExecution{
+			ID:         "tool:logs:" + source.ID + ":" + now.Format("150405.000"),
+			AdapterID:  "logs.v1",
+			ToolName:   "logs.correlation",
+			Status:     "success",
+			Summary:    correlation.Summary,
+			Input:      map[string]any{"scope": input, "sourceId": source.ID},
+			Output:     map[string]any{"signatures": correlation.Signatures, "records": buildSampleRecordAttributes(correlation.Records, 5)},
+			StartedAt:  now,
+			CompletedAt: &now,
+		})
 		signatureEvidence := make([]domaincopilot.RootCauseEvidence, 0, len(correlation.Signatures))
 		for index, item := range correlation.Signatures {
 			attributes := map[string]any{
@@ -70,6 +83,10 @@ func (s *Service) collectRootCauseLogEvidence(ctx context.Context, input domainc
 				"sampleWindow":  correlation.SampleWindow,
 				"truncated":     correlation.Truncated,
 				"sampleRecords": buildSampleRecordAttributes(correlation.Records, 3),
+				"clusterId":     input.ClusterID,
+				"namespace":     input.Namespace,
+				"workload":      input.WorkloadName,
+				"service":       firstNonEmptyCorrelationService(correlation.Records, input.WorkloadName),
 			}
 			if strings.TrimSpace(correlation.ErrorKind) != "" {
 				attributes["errorKind"] = correlation.ErrorKind
@@ -173,4 +190,13 @@ func buildSampleRecordAttributes(records []mcplogs.Record, limit int) []map[stri
 		})
 	}
 	return items
+}
+
+func firstNonEmptyCorrelationService(records []mcplogs.Record, fallback string) string {
+	for _, item := range records {
+		if strings.TrimSpace(item.Service) != "" {
+			return strings.TrimSpace(item.Service)
+		}
+	}
+	return strings.TrimSpace(fallback)
 }

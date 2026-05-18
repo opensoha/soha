@@ -33,6 +33,7 @@ type AuthResult struct {
 
 type Provider struct {
 	Type     string `json:"type"`
+	ID       string `json:"id,omitempty"`
 	Name     string `json:"name"`
 	Enabled  bool   `json:"enabled"`
 	LoginURL string `json:"loginUrl,omitempty"`

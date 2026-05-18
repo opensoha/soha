@@ -12,6 +12,35 @@ type UpdateOIDCSettingsRequest struct {
 	DefaultRoles        []string `json:"defaultRoles"`
 }
 
+type UpdateLoginProvidersSettingsRequest struct {
+	DefaultProviderID string                  `json:"defaultProviderId"`
+	Providers         []LoginProviderSettings `json:"providers"`
+}
+
+type LoginProviderSettings struct {
+	ID                  string   `json:"id"`
+	Name                string   `json:"name"`
+	Type                string   `json:"type"`
+	Enabled             bool     `json:"enabled"`
+	ClientID            string   `json:"clientId"`
+	ClientSecret        string   `json:"clientSecret"`
+	Issuer              string   `json:"issuer"`
+	AuthorizeURL        string   `json:"authorizeUrl"`
+	TokenURL            string   `json:"tokenUrl"`
+	UserInfoURL         string   `json:"userInfoUrl"`
+	ProfileURL          string   `json:"profileUrl"`
+	RedirectURL         string   `json:"redirectUrl"`
+	FrontendRedirectURL string   `json:"frontendRedirectUrl"`
+	Scopes              []string `json:"scopes"`
+	DefaultRoles        []string `json:"defaultRoles"`
+	UserIDField         string   `json:"userIdField"`
+	UserNameField       string   `json:"userNameField"`
+	EmailField          string   `json:"emailField"`
+	MetadataURL         string   `json:"metadataUrl"`
+	EntityID            string   `json:"entityId"`
+	Certificate         string   `json:"certificate"`
+}
+
 type UpdatePrometheusSettingsRequest struct {
 	Enabled             bool   `json:"enabled"`
 	BaseURL             string `json:"baseUrl"`
@@ -23,11 +52,37 @@ type UpdatePrometheusSettingsRequest struct {
 }
 
 type UpdateAISettingsRequest struct {
-	Enabled        bool              `json:"enabled"`
-	BaseURL        string            `json:"baseUrl"`
-	APIKey         string            `json:"apiKey"`
-	Model          string            `json:"model"`
-	SkillsRegistry []AISkillSettings `json:"skillsRegistry"`
+	Enabled           bool                 `json:"enabled"`
+	BaseURL           string               `json:"baseUrl"`
+	APIKey            string               `json:"apiKey"`
+	Model             string               `json:"model"`
+	DefaultProviderID string               `json:"defaultProviderId"`
+	Providers         []AIProviderSettings `json:"providers"`
+	SkillsRegistry    []AISkillSettings    `json:"skillsRegistry"`
+}
+
+type UpdateAIProviderConnectionsRequest struct {
+	DefaultProviderID string               `json:"defaultProviderId"`
+	Providers         []AIProviderSettings `json:"providers"`
+}
+
+type AIProviderSettings struct {
+	ID           string `json:"id"`
+	Name         string `json:"name"`
+	ProviderKind string `json:"providerKind"`
+	Enabled      bool   `json:"enabled"`
+	BaseURL      string `json:"baseUrl"`
+	APIKey       string `json:"apiKey"`
+	Model        string `json:"model"`
+}
+
+type AIProviderModelsRequest struct {
+	Provider AIProviderSettings `json:"provider"`
+}
+
+type AIProviderTestRequest struct {
+	Provider AIProviderSettings `json:"provider"`
+	Prompt   string             `json:"prompt"`
 }
 
 type AISkillSettings struct {

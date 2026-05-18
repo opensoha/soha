@@ -1,0 +1,25 @@
+{
+  "id": "architecture/login-and-identity",
+  "title": "登录与身份链路",
+  "description": "目标",
+  "source": "@site/architecture/login-and-identity.md",
+  "sourceDirName": "architecture",
+  "slug": "/architecture/login-and-identity",
+  "permalink": "/docs/architecture/login-and-identity",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/kubecrux/kubecrux/tree/main/docs/architecture/login-and-identity.md",
+  "tags": [],
+  "version": "current",
+  "lastUpdatedAt": null,
+  "frontMatter": {},
+  "sidebar": "mainSidebar",
+  "previous": {
+    "title": "Authorization",
+    "permalink": "/docs/architecture/authorization"
+  },
+  "next": {
+    "title": "AI Copilot",
+    "permalink": "/docs/architecture/ai-copilot"
+  }
+}

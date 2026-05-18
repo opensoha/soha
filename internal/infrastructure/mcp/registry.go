@@ -87,7 +87,7 @@ func NewRegistry(defaultTimeout time.Duration) *Registry {
 			{
 				ID:                      "traces.v1",
 				SourceKind:              "traces",
-				SupportedBackends:       []string{"jaeger"},
+				SupportedBackends:       []string{"jaeger", "skywalking"},
 				Name:                    "traces.v1",
 				Description:             "Unified tracing analysis contract across trace backends",
 				Category:                "observability",

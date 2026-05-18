@@ -353,7 +353,7 @@ Design expectation:
 - menus
 - audit logs
 - operation logs
-- identity settings
+- login settings
 - monitoring settings
 - AI settings
 
@@ -433,8 +433,11 @@ The repository has already converged on these rules:
 - announcement management is now a real publish workflow instead of a draft-only CRUD surface: managers can create, edit, publish, withdraw, and delete announcements; publish resets per-user read receipts, and withdraw removes the announcement from the user inbox without deleting the historical publish timestamp
 - the console shell header now exposes a bell-driven announcement center for users with `system.announcements.view`; the inbox is backed by persisted `announcement_receipts`, auto-opens the highest-priority unread published announcement once per shell load, and an announcement marked read must stop auto-popup behavior across refresh and re-login until it is explicitly re-published
 - access control should remain visible as a top-level console menu entry for admins, while its child pages can stay as nested routes beneath that entry
-- settings center is a single top-level menu with in-page tabs for identity and AI; cluster-level monitoring configuration should not remain as a separate settings-center submenu
-- settings center now includes a branding tab for console-level brand assets and title metadata; branding settings are distinct from cluster-level monitoring settings and should be applied globally in the web shell
+- settings center remains the system-workspace container entry, but login settings and branding settings now resolve as independent child menu routes under `/settings/login` and `/settings/branding` instead of sharing one tab-only surface
+- login settings are now the active console identity-management surface: the route title is `登陆设置`, it supports concurrent provider configuration for OIDC, 飞书 OAuth2, 钉钉 OAuth2, 企业微信 OAuth2, generic OAuth2, and SAML metadata, and the login page should list every enabled third-party provider rather than assuming a single OIDC source
+- the backend login-provider contract must stay backward-compatible with the legacy single-OIDC setting key while multi-provider settings are taking over; runtime OIDC flows may still reuse the legacy config resolver, but the stored source of truth is the multi-provider login settings document
+- SAML is currently configuration-visible but runtime-incomplete: the settings model and menu/login entry may expose it, but the server must not imply that ACS/assertion handling is already implemented
+- branding settings remain a dedicated console-level child menu under settings; they are distinct from cluster-level monitoring settings and should be applied globally in the web shell
 - the console shell theme keeps a fixed kubecrux theme variant with brand overrides, while the header may expose a light/dark mode toggle as a user preference; theme-brand switching should still stay disabled unless it is intentionally restored end-to-end
 - frontend theme customization now uses `web/src/theme/app-theme.ts` as the single source for both antd `ThemeConfig` and shared `--kc-*` CSS variables; avoid duplicating theme tokens in `main.tsx` or standalone style files
 - the console visual baseline has shifted from the older purple brand palette to a neutral shadcn-like grayscale palette, while still preserving light/dark mode support and shared CSS variable contracts for non-antd surfaces

@@ -51,7 +51,15 @@ func (s stubIdentityService) BeginOIDCLogin(context.Context) (string, error) {
 	return "", nil
 }
 
+func (s stubIdentityService) BeginProviderLogin(context.Context, string) (string, error) {
+	return "", nil
+}
+
 func (s stubIdentityService) HandleOIDCCallback(context.Context, string, string) (string, error) {
+	return "", nil
+}
+
+func (s stubIdentityService) HandleProviderCallback(context.Context, string, string, string) (string, error) {
 	return "", nil
 }
 

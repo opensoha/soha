@@ -322,20 +322,79 @@ func (s *Service) RunSessionAnalysis(ctx context.Context, principal domainidenti
 		return domaincopilot.SessionMessageEnvelope{}, err
 	}
 	scope := scopeFromMap(inputScopeMap(input))
-	toolCalls, artifacts, sessionPatch := s.analyzeConversation(ctx, principal, domaincopilot.Session{
-		ID:        session.ID,
-		Title:     session.Title,
-		CreatedBy: session.CreatedBy,
-		Metadata:  sessionMetadataMap(domaincopilot.SessionMetadata{
-			Mode:   normalizeSessionMode(input.Kind),
-			Status: "active",
-			Scope:  scope,
-		}),
-		CreatedAt: session.CreatedAt,
-		UpdatedAt: session.UpdatedAt,
-	}, input.Question, locale)
+	mode := normalizeSessionMode(input.Kind)
+	toolCalls := make([]domaincopilot.ToolExecution, 0)
+	artifacts := make([]domaincopilot.AnalysisArtifact, 0)
+	refs := append([]domaincopilot.AnalysisRunRef{}, parseSessionMetadata(session.Metadata).AnalysisRunRefs...)
+	switch mode {
+	case "root_cause":
+		run, calls, artifact, runErr := s.runSessionRootCause(ctx, principal, session.ID, scope, input.Question, locale)
+		if runErr != nil {
+			return domaincopilot.SessionMessageEnvelope{}, runErr
+		}
+		toolCalls = append(toolCalls, calls...)
+		artifacts = append(artifacts, artifact)
+		refs = append(refs, domaincopilot.AnalysisRunRef{ID: run.ID, Kind: run.Kind, Status: run.Status, CreatedAt: run.CreatedAt.Format(time.RFC3339)})
+	case "performance":
+		calls, artifact, runErr := s.runSessionPerformance(ctx, session.ID, scope, input.Question)
+		if runErr != nil {
+			return domaincopilot.SessionMessageEnvelope{}, runErr
+		}
+		toolCalls = append(toolCalls, calls...)
+		artifacts = append(artifacts, artifact)
+		refs = append(refs, domaincopilot.AnalysisRunRef{ID: artifact.RunID, Kind: artifact.Kind, Status: "completed", CreatedAt: time.Now().UTC().Format(time.RFC3339)})
+	case "trace":
+		calls, artifact, runErr := s.runSessionTrace(ctx, session.ID, scope, input.Question)
+		if runErr != nil {
+			return domaincopilot.SessionMessageEnvelope{}, runErr
+		}
+		toolCalls = append(toolCalls, calls...)
+		artifacts = append(artifacts, artifact)
+		refs = append(refs, domaincopilot.AnalysisRunRef{ID: artifact.RunID, Kind: artifact.Kind, Status: "completed", CreatedAt: time.Now().UTC().Format(time.RFC3339)})
+	default:
+		toolCalls, artifacts, _ = s.analyzeConversation(ctx, principal, domaincopilot.Session{
+			ID:        session.ID,
+			Title:     session.Title,
+			CreatedBy: session.CreatedBy,
+			Metadata:  sessionMetadataMap(domaincopilot.SessionMetadata{Mode: mode, Status: "active", Scope: scope}),
+			CreatedAt: session.CreatedAt,
+			UpdatedAt: session.UpdatedAt,
+		}, input.Question, locale)
+	}
+	sessionPatch := map[string]any{}
+	if len(artifacts) > 0 {
+		sessionPatch["summary"] = artifacts[0].Summary
+		sessionPatch["analysisRunRefs"] = refs
+	}
+	reply := localize(locale, "已执行显式分析，但当前没有生成新的分析工件。", "Explicit analysis completed, but no new analysis artifact was produced.")
+	if len(artifacts) > 0 {
+		reply = artifacts[0].Summary
+	}
+	assistantMessage, err := s.repo.CreateMessage(ctx, domaincopilot.Message{
+		ID:        uuid.NewString(),
+		SessionID: sessionID,
+		Role:      "assistant",
+		Content:   reply,
+		Metadata:  map[string]any{"mode": normalizeSessionMode(input.Kind), "source": "explicit-analysis", "locale": locale, "analysisArtifacts": artifacts},
+		CreatedAt: time.Now().UTC(),
+	})
+	if err != nil {
+		return domaincopilot.SessionMessageEnvelope{}, err
+	}
+	if len(sessionPatch) > 0 {
+		merged := parseSessionMetadata(session.Metadata)
+		if summary, ok := sessionPatch["summary"].(string); ok && strings.TrimSpace(summary) != "" {
+			merged.Summary = strings.TrimSpace(summary)
+		}
+		if refs, ok := sessionPatch["analysisRunRefs"].([]domaincopilot.AnalysisRunRef); ok && len(refs) > 0 {
+			merged.AnalysisRunRefs = refs
+		}
+		session.Metadata = sessionMetadataMap(merged)
+		session.UpdatedAt = time.Now().UTC()
+		_, _ = s.repo.UpdateSession(ctx, principal.UserID, session.ID, session)
+	}
 	return domaincopilot.SessionMessageEnvelope{
-		Messages:          nil,
+		Messages:          []domaincopilot.Message{assistantMessage},
 		ToolCalls:         toolCalls,
 		AnalysisArtifacts: artifacts,
 		SessionPatch:      sessionPatch,

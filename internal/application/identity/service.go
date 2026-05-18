@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
 	"net/url"
 	"regexp"
 	"strings"
@@ -17,6 +19,7 @@ import (
 	domainaudit "github.com/kubecrux/kubecrux/internal/domain/audit"
 	domainidentity "github.com/kubecrux/kubecrux/internal/domain/identity"
 	domainoperation "github.com/kubecrux/kubecrux/internal/domain/operation"
+	domainsettings "github.com/kubecrux/kubecrux/internal/domain/settings"
 	cfgpkg "github.com/kubecrux/kubecrux/internal/infrastructure/config"
 	"github.com/kubecrux/kubecrux/internal/platform/apperrors"
 	"github.com/kubecrux/kubecrux/internal/platform/operationentry"
@@ -63,6 +66,8 @@ type OperationRecorder interface {
 
 type SettingsReader interface {
 	ResolveOIDCSettings(context.Context) (cfgpkg.OIDCConfig, error)
+	ResolveLoginProviders(context.Context) ([]domainsettings.LoginProviderSettings, string, error)
+	ResolveLoginProvider(context.Context, string) (domainsettings.LoginProviderSettings, error)
 }
 
 type Service struct {
@@ -94,6 +99,31 @@ type oidcExchangePayload struct {
 	Result domainidentity.AuthResult `json:"result"`
 }
 
+type genericProfile struct {
+	ID       string
+	Email    string
+	Name     string
+	Raw      map[string]any
+	Provider string
+}
+
+type accessTokenEnvelope struct {
+	AccessToken string `json:"access_token"`
+	TokenType   string `json:"token_type"`
+	ExpiresIn   int64  `json:"expires_in"`
+	OpenID      string `json:"open_id"`
+	UnionID     string `json:"union_id"`
+	ErrCode     int    `json:"errcode"`
+	ErrMsg      string `json:"errmsg"`
+	Code        int    `json:"code"`
+	Message     string `json:"message"`
+	Data        struct {
+		AccessToken string `json:"access_token"`
+		OpenID      string `json:"open_id"`
+		UnionID     string `json:"union_id"`
+	} `json:"data"`
+}
+
 type oidcProfile struct {
 	Sub               string `json:"sub"`
 	Email             string `json:"email"`
@@ -107,10 +137,33 @@ func New(_ context.Context, cfg cfgpkg.AuthConfig, users UserRepository, audit A
 }
 
 func (s *Service) ListProviders(ctx context.Context) []domainidentity.Provider {
-	providers := []domainidentity.Provider{{Type: "password", Name: "Password", Enabled: true}}
+	providers := []domainidentity.Provider{{ID: "password", Type: "password", Name: "Password", Enabled: true}}
+	loginProviders, _, err := s.loginProviders(ctx)
+	if err == nil {
+		for _, item := range loginProviders {
+			if !item.Enabled {
+				continue
+			}
+			loginURL := fmt.Sprintf("/auth/login/%s/start", url.PathEscape(item.ID))
+			if item.Type == "saml" {
+				loginURL = ""
+			}
+			providers = append(providers, domainidentity.Provider{
+				ID:       item.ID,
+				Type:     item.Type,
+				Name:     item.Name,
+				Enabled:  item.Enabled,
+				LoginURL: loginURL,
+			})
+		}
+		if len(loginProviders) > 0 {
+			return providers
+		}
+	}
 	oidcCfg, err := s.oidcConfig(ctx)
 	if err == nil && oidcCfg.Enabled {
 		providers = append(providers, domainidentity.Provider{
+			ID:       firstNonEmpty(strings.TrimSpace(oidcCfg.ProviderName), "oidc-default"),
 			Type:     "oidc",
 			Name:     oidcCfg.ProviderName,
 			Enabled:  true,
@@ -312,21 +365,61 @@ func (s *Service) authorize(ctx context.Context, principal domainidentity.Princi
 }
 
 func (s *Service) BeginOIDCLogin(ctx context.Context) (string, error) {
-	_, _, _, oauthConfig, err := s.oidcRuntime(ctx)
+	return s.BeginProviderLogin(ctx, "")
+}
+
+func (s *Service) BeginProviderLogin(ctx context.Context, providerID string) (string, error) {
+	provider, err := s.resolveLoginProvider(ctx, providerID)
 	if err != nil {
-		return "", fmt.Errorf("%w: oidc is disabled", apperrors.ErrNotFound)
+		return "", err
 	}
-	state := uuid.NewString()
-	nonce := uuid.NewString()
-	if err := s.users.CreateEphemeralToken(ctx, userrepo.EphemeralToken{
-		Token:     state,
-		Kind:      oidcStateKind,
-		Payload:   map[string]any{"nonce": nonce},
-		ExpiresAt: time.Now().UTC().Add(10 * time.Minute),
-	}); err != nil {
-		return "", fmt.Errorf("store oidc state: %w", err)
+	if !provider.Enabled {
+		return "", fmt.Errorf("%w: login provider is disabled", apperrors.ErrNotFound)
 	}
-	return oauthConfig.AuthCodeURL(state, oidc.Nonce(nonce)), nil
+	switch provider.Type {
+	case "oidc":
+		_, _, _, oauthConfig, err := s.oidcRuntimeWithProvider(ctx, provider)
+		if err != nil {
+			return "", fmt.Errorf("%w: oidc is disabled", apperrors.ErrNotFound)
+		}
+		state := uuid.NewString()
+		nonce := uuid.NewString()
+		if err := s.users.CreateEphemeralToken(ctx, userrepo.EphemeralToken{
+			Token: state,
+			Kind:  oidcStateKind,
+			Payload: map[string]any{
+				"nonce":      nonce,
+				"providerId": provider.ID,
+				"type":       provider.Type,
+			},
+			ExpiresAt: time.Now().UTC().Add(10 * time.Minute),
+		}); err != nil {
+			return "", fmt.Errorf("store oidc state: %w", err)
+		}
+		return oauthConfig.AuthCodeURL(state, oidc.Nonce(nonce)), nil
+	case "oauth2", "feishu", "dingtalk", "wecom":
+		state := uuid.NewString()
+		if err := s.users.CreateEphemeralToken(ctx, userrepo.EphemeralToken{
+			Token: state,
+			Kind:  oauthStateKind,
+			Payload: map[string]any{
+				"providerId": provider.ID,
+				"type":       provider.Type,
+			},
+			ExpiresAt: time.Now().UTC().Add(10 * time.Minute),
+		}); err != nil {
+			return "", fmt.Errorf("store oauth state: %w", err)
+		}
+		if provider.Type == "wecom" {
+			return buildWecomAuthorizeURL(provider, state), nil
+		}
+		oauthConfig := oauth2ConfigFromProvider(provider)
+		return oauthConfig.AuthCodeURL(state), nil
+	case "saml":
+		return "", fmt.Errorf("%w: saml login runtime is not enabled", apperrors.ErrInvalidArgument)
+	default:
+		return "", fmt.Errorf("%w: unsupported login provider type %s", apperrors.ErrInvalidArgument, provider.Type)
+	}
 }
 
 func (s *Service) HandleOIDCCallback(ctx context.Context, state, code string) (string, error) {
@@ -344,7 +437,12 @@ func (s *Service) HandleOIDCCallback(ctx context.Context, state, code string) (s
 		return "", fmt.Errorf("decode oidc state: %w", err)
 	}
 
-	oidcCfg, provider, verifier, oauthConfig, err := s.oidcRuntime(ctx)
+	providerID, _ := stateToken.Payload["providerId"].(string)
+	loginProvider, err := s.resolveLoginProvider(ctx, providerID)
+	if err != nil {
+		return "", err
+	}
+	oidcCfg, provider, verifier, oauthConfig, err := s.oidcRuntimeWithProvider(ctx, loginProvider)
 	if err != nil {
 		return "", fmt.Errorf("%w: oidc is disabled", apperrors.ErrNotFound)
 	}
@@ -432,6 +530,59 @@ func (s *Service) ConsumeOIDCExchange(ctx context.Context, code string) (domaini
 		return domainidentity.AuthResult{}, fmt.Errorf("decode oidc exchange payload: %w", err)
 	}
 	return payload.Result, nil
+}
+
+func (s *Service) loginProviders(ctx context.Context) ([]domainsettings.LoginProviderSettings, string, error) {
+	if s.settings != nil {
+		return s.settings.ResolveLoginProviders(ctx)
+	}
+	return nil, "", nil
+}
+
+func (s *Service) resolveLoginProvider(ctx context.Context, providerID string) (domainsettings.LoginProviderSettings, error) {
+	if s.settings != nil {
+		return s.settings.ResolveLoginProvider(ctx, providerID)
+	}
+	oidcCfg, err := s.oidcConfig(ctx)
+	if err != nil {
+		return domainsettings.LoginProviderSettings{}, err
+	}
+	if !oidcCfg.Enabled {
+		return domainsettings.LoginProviderSettings{}, fmt.Errorf("%w: login provider not found", apperrors.ErrNotFound)
+	}
+	return domainsettings.LoginProviderSettings{
+		ID:                  firstNonEmpty(strings.TrimSpace(providerID), strings.TrimSpace(oidcCfg.ProviderName), "oidc-default"),
+		Name:                firstNonEmpty(oidcCfg.ProviderName, "OIDC"),
+		Type:                "oidc",
+		Enabled:             oidcCfg.Enabled,
+		ClientID:            oidcCfg.ClientID,
+		ClientSecret:        oidcCfg.ClientSecret,
+		Issuer:              oidcCfg.Issuer,
+		RedirectURL:         oidcCfg.RedirectURL,
+		FrontendRedirectURL: oidcCfg.FrontendRedirectURL,
+		Scopes:              append([]string(nil), oidcCfg.Scopes...),
+		DefaultRoles:        append([]string(nil), oidcCfg.DefaultRoles...),
+		UserIDField:         "sub",
+		UserNameField:       "name",
+		EmailField:          "email",
+	}, nil
+}
+
+func (s *Service) HandleProviderCallback(ctx context.Context, providerID, state, code string) (string, error) {
+	provider, err := s.resolveLoginProvider(ctx, providerID)
+	if err != nil {
+		return "", err
+	}
+	switch provider.Type {
+	case "oidc":
+		return s.HandleOIDCCallback(ctx, state, code)
+	case "oauth2", "feishu", "dingtalk", "wecom":
+		return s.handleOAuth2Callback(ctx, provider, state, code)
+	case "saml":
+		return "", fmt.Errorf("%w: saml login runtime is not enabled", apperrors.ErrInvalidArgument)
+	default:
+		return "", fmt.Errorf("%w: unsupported login provider type %s", apperrors.ErrInvalidArgument, provider.Type)
+	}
 }
 
 func (s *Service) issueAuthResult(ctx context.Context, principal domainidentity.Principal, providerType string) (domainidentity.AuthResult, error) {
@@ -573,6 +724,68 @@ func (s *Service) reconcileOIDCUser(ctx context.Context, profile oidcProfile, oi
 	return s.loadPrincipal(ctx, user.ID)
 }
 
+func (s *Service) reconcileExternalUser(ctx context.Context, provider domainsettings.LoginProviderSettings, profile genericProfile) (domainidentity.Principal, error) {
+	if strings.TrimSpace(profile.ID) == "" {
+		return domainidentity.Principal{}, fmt.Errorf("%w: external subject is missing", apperrors.ErrUnauthorized)
+	}
+	if profile.Email == "" {
+		profile.Email = fmt.Sprintf("%s@%s.login.local", profile.ID, strings.ReplaceAll(provider.ID, " ", "-"))
+	}
+	if profile.Name == "" {
+		profile.Name = firstNonEmpty(profile.Email, profile.ID)
+	}
+	identity, err := s.users.FindIdentity(ctx, provider.Type, provider.ID, profile.ID)
+	var user userrepo.User
+	if err == nil {
+		user, err = s.users.GetByID(ctx, identity.UserID)
+		if err != nil {
+			return domainidentity.Principal{}, err
+		}
+	} else if errors.Is(err, userrepo.ErrNotFound) {
+		user, err = s.users.FindByEmail(ctx, profile.Email)
+		if errors.Is(err, userrepo.ErrNotFound) {
+			user = userrepo.User{
+				ID:          uuid.NewString(),
+				Username:    normalizeUsername(firstNonEmpty(profile.Name, profile.Email, profile.ID)),
+				Email:       strings.ToLower(profile.Email),
+				DisplayName: profile.Name,
+				Status:      "active",
+				Preferences: map[string]any{},
+			}
+			if err := s.users.UpsertUser(ctx, user); err != nil {
+				return domainidentity.Principal{}, fmt.Errorf("create external login user: %w", err)
+			}
+		} else if err != nil {
+			return domainidentity.Principal{}, fmt.Errorf("find external login user by email: %w", err)
+		}
+	} else if err != nil {
+		return domainidentity.Principal{}, fmt.Errorf("find external login identity: %w", err)
+	}
+
+	if err := s.users.UpsertOIDCIdentity(ctx, userrepo.OIDCIdentity{
+		ID:             uuid.NewString(),
+		UserID:         user.ID,
+		ProviderType:   provider.Type,
+		ProviderID:     provider.ID,
+		ProviderUserID: profile.ID,
+		Profile:        profile.Raw,
+		LastLoginAt:    time.Now().UTC(),
+	}); err != nil {
+		return domainidentity.Principal{}, fmt.Errorf("upsert external login identity: %w", err)
+	}
+
+	roles, err := s.users.ListRoles(ctx, user.ID)
+	if err != nil {
+		return domainidentity.Principal{}, fmt.Errorf("load external user roles: %w", err)
+	}
+	if len(roles) == 0 && len(provider.DefaultRoles) > 0 {
+		if err := s.users.ReplaceRoleBindings(ctx, user.ID, provider.DefaultRoles); err != nil {
+			return domainidentity.Principal{}, fmt.Errorf("assign default external login roles: %w", err)
+		}
+	}
+	return s.loadPrincipal(ctx, user.ID)
+}
+
 func (s *Service) oidcConfig(ctx context.Context) (cfgpkg.OIDCConfig, error) {
 	if s.settings != nil {
 		if item, err := s.settings.ResolveOIDCSettings(ctx); err == nil {
@@ -586,6 +799,36 @@ func (s *Service) oidcRuntime(ctx context.Context) (cfgpkg.OIDCConfig, *oidc.Pro
 	oidcCfg, err := s.oidcConfig(ctx)
 	if err != nil {
 		return cfgpkg.OIDCConfig{}, nil, nil, nil, err
+	}
+	if !oidcCfg.Enabled {
+		return cfgpkg.OIDCConfig{}, nil, nil, nil, fmt.Errorf("%w: oidc is disabled", apperrors.ErrNotFound)
+	}
+	provider, err := oidc.NewProvider(ctx, oidcCfg.Issuer)
+	if err != nil {
+		return cfgpkg.OIDCConfig{}, nil, nil, nil, fmt.Errorf("build oidc provider: %w", err)
+	}
+	verifier := provider.Verifier(&oidc.Config{ClientID: oidcCfg.ClientID})
+	oauthConfig := &oauth2.Config{
+		ClientID:     oidcCfg.ClientID,
+		ClientSecret: oidcCfg.ClientSecret,
+		Endpoint:     provider.Endpoint(),
+		RedirectURL:  oidcCfg.RedirectURL,
+		Scopes:       oidcCfg.Scopes,
+	}
+	return oidcCfg, provider, verifier, oauthConfig, nil
+}
+
+func (s *Service) oidcRuntimeWithProvider(ctx context.Context, item domainsettings.LoginProviderSettings) (cfgpkg.OIDCConfig, *oidc.Provider, *oidc.IDTokenVerifier, *oauth2.Config, error) {
+	oidcCfg := cfgpkg.OIDCConfig{
+		Enabled:             item.Enabled,
+		ProviderName:        item.Name,
+		Issuer:              item.Issuer,
+		ClientID:            item.ClientID,
+		ClientSecret:        item.ClientSecret,
+		RedirectURL:         item.RedirectURL,
+		FrontendRedirectURL: item.FrontendRedirectURL,
+		Scopes:              append([]string(nil), item.Scopes...),
+		DefaultRoles:        append([]string(nil), item.DefaultRoles...),
 	}
 	if !oidcCfg.Enabled {
 		return cfgpkg.OIDCConfig{}, nil, nil, nil, fmt.Errorf("%w: oidc is disabled", apperrors.ErrNotFound)
@@ -750,7 +993,331 @@ func addQueryValue(rawURL, key, value string) (string, error) {
 	return parsed.String(), nil
 }
 
+func oauth2ConfigFromProvider(provider domainsettings.LoginProviderSettings) *oauth2.Config {
+	return &oauth2.Config{
+		ClientID:     provider.ClientID,
+		ClientSecret: provider.ClientSecret,
+		RedirectURL:  provider.RedirectURL,
+		Scopes:       append([]string(nil), provider.Scopes...),
+		Endpoint: oauth2.Endpoint{
+			AuthURL:  provider.AuthorizeURL,
+			TokenURL: provider.TokenURL,
+		},
+	}
+}
+
+func buildWecomAuthorizeURL(provider domainsettings.LoginProviderSettings, state string) string {
+	authorizeURL := strings.TrimSpace(provider.AuthorizeURL)
+	if authorizeURL == "" {
+		authorizeURL = "https://open.weixin.qq.com/connect/oauth2/authorize"
+	}
+	parsed, err := url.Parse(authorizeURL)
+	if err != nil {
+		return authorizeURL
+	}
+	query := parsed.Query()
+	query.Set("appid", provider.ClientID)
+	query.Set("redirect_uri", provider.RedirectURL)
+	query.Set("response_type", "code")
+	query.Set("scope", firstNonEmpty(provider.Scopes...))
+	query.Set("state", state)
+	parsed.RawQuery = query.Encode()
+	value := parsed.String()
+	if !strings.Contains(value, "#wechat_redirect") {
+		value += "#wechat_redirect"
+	}
+	return value
+}
+
+func (s *Service) exchangeOAuth2Code(ctx context.Context, provider domainsettings.LoginProviderSettings, code string) (*oauth2.Token, error) {
+	switch provider.Type {
+	case "wecom":
+		corporateToken, err := s.fetchWecomAccessToken(ctx, provider)
+		if err != nil {
+			return nil, err
+		}
+		userID, err := s.fetchWecomUserID(ctx, provider, corporateToken, code)
+		if err != nil {
+			return nil, err
+		}
+		token := &oauth2.Token{
+			AccessToken: corporateToken,
+			TokenType:   "Bearer",
+			Expiry:      time.Now().UTC().Add(1 * time.Hour),
+		}
+		return token.WithExtra(map[string]any{
+			"user_id": userID,
+		}), nil
+	case "feishu":
+		token, err := s.exchangeFeishuCode(ctx, provider, code)
+		if err == nil {
+			return token, nil
+		}
+	}
+	oauthConfig := oauth2ConfigFromProvider(provider)
+	return oauthConfig.Exchange(ctx, code)
+}
+
+func (s *Service) exchangeFeishuCode(ctx context.Context, provider domainsettings.LoginProviderSettings, code string) (*oauth2.Token, error) {
+	payload := map[string]string{
+		"grant_type":    "authorization_code",
+		"code":          code,
+		"client_id":     provider.ClientID,
+		"client_secret": provider.ClientSecret,
+		"redirect_uri":  provider.RedirectURL,
+	}
+	encoded, err := json.Marshal(payload)
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, provider.TokenURL, strings.NewReader(string(encoded)))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json; charset=utf-8")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= http.StatusBadRequest {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return nil, fmt.Errorf("provider returned %s: %s", resp.Status, strings.TrimSpace(string(body)))
+	}
+	var token accessTokenEnvelope
+	if err := json.NewDecoder(resp.Body).Decode(&token); err != nil {
+		return nil, err
+	}
+	accessToken := firstNonEmpty(token.AccessToken, token.Data.AccessToken)
+	if accessToken == "" {
+		return nil, fmt.Errorf("provider response missing access_token")
+	}
+	tokenValue := &oauth2.Token{
+		AccessToken: accessToken,
+		TokenType:   firstNonEmpty(token.TokenType, "Bearer"),
+		Expiry:      time.Now().UTC().Add(time.Duration(token.ExpiresIn) * time.Second),
+	}
+	return tokenValue.WithExtra(map[string]any{
+		"open_id":  firstNonEmpty(token.OpenID, token.Data.OpenID),
+		"union_id": firstNonEmpty(token.UnionID, token.Data.UnionID),
+	}), nil
+}
+
+func (s *Service) fetchWecomAccessToken(ctx context.Context, provider domainsettings.LoginProviderSettings) (string, error) {
+	parsed, err := url.Parse(provider.TokenURL)
+	if err != nil {
+		return "", err
+	}
+	query := parsed.Query()
+	query.Set("corpid", provider.ClientID)
+	query.Set("corpsecret", provider.ClientSecret)
+	parsed.RawQuery = query.Encode()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, parsed.String(), nil)
+	if err != nil {
+		return "", err
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= http.StatusBadRequest {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return "", fmt.Errorf("provider returned %s: %s", resp.Status, strings.TrimSpace(string(body)))
+	}
+	var token accessTokenEnvelope
+	if err := json.NewDecoder(resp.Body).Decode(&token); err != nil {
+		return "", err
+	}
+	if token.ErrCode != 0 {
+		return "", fmt.Errorf("provider returned errcode=%d errmsg=%s", token.ErrCode, token.ErrMsg)
+	}
+	if strings.TrimSpace(token.AccessToken) == "" {
+		return "", fmt.Errorf("provider response missing access_token")
+	}
+	return strings.TrimSpace(token.AccessToken), nil
+}
+
+func (s *Service) fetchWecomUserID(ctx context.Context, provider domainsettings.LoginProviderSettings, accessToken, code string) (string, error) {
+	parsed, err := url.Parse(provider.UserInfoURL)
+	if err != nil {
+		return "", err
+	}
+	query := parsed.Query()
+	query.Set("access_token", accessToken)
+	query.Set("code", code)
+	parsed.RawQuery = query.Encode()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, parsed.String(), nil)
+	if err != nil {
+		return "", err
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= http.StatusBadRequest {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return "", fmt.Errorf("provider returned %s: %s", resp.Status, strings.TrimSpace(string(body)))
+	}
+	var payload map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return "", err
+	}
+	if errCode, ok := payload["errcode"].(float64); ok && int(errCode) != 0 {
+		return "", fmt.Errorf("provider returned errcode=%d errmsg=%s", int(errCode), strings.TrimSpace(fmt.Sprint(payload["errmsg"])))
+	}
+	userID := firstNonEmpty(nestedString(payload, "UserId"), nestedString(payload, "OpenId"))
+	if userID == "" {
+		return "", fmt.Errorf("provider response missing UserId")
+	}
+	return userID, nil
+}
+
+func (s *Service) handleOAuth2Callback(ctx context.Context, provider domainsettings.LoginProviderSettings, state, code string) (string, error) {
+	if strings.TrimSpace(state) == "" || strings.TrimSpace(code) == "" {
+		return "", fmt.Errorf("%w: missing oauth2 callback parameters", apperrors.ErrInvalidArgument)
+	}
+	stateToken, err := s.users.ConsumeEphemeralToken(ctx, state, oauthStateKind)
+	if err != nil {
+		return "", fmt.Errorf("%w: oauth state missing or expired", apperrors.ErrUnauthorized)
+	}
+	if payloadProviderID, _ := stateToken.Payload["providerId"].(string); payloadProviderID != "" && payloadProviderID != provider.ID {
+		return "", fmt.Errorf("%w: oauth provider mismatch", apperrors.ErrUnauthorized)
+	}
+	oauthToken, err := s.exchangeOAuth2Code(ctx, provider, code)
+	if err != nil {
+		return "", fmt.Errorf("exchange oauth2 code: %w", err)
+	}
+	profile, err := s.fetchOAuth2Profile(ctx, provider, oauthToken)
+	if err != nil {
+		return "", err
+	}
+	principal, err := s.reconcileExternalUser(ctx, provider, profile)
+	if err != nil {
+		return "", err
+	}
+	result, err := s.issueAuthResult(ctx, principal, provider.Type)
+	if err != nil {
+		return "", err
+	}
+	exchangeCode := uuid.NewString()
+	payload, err := json.Marshal(oidcExchangePayload{Result: result})
+	if err != nil {
+		return "", fmt.Errorf("marshal oauth exchange payload: %w", err)
+	}
+	var payloadMap map[string]any
+	if err := json.Unmarshal(payload, &payloadMap); err != nil {
+		return "", fmt.Errorf("decode oauth exchange payload: %w", err)
+	}
+	if err := s.users.CreateEphemeralToken(ctx, userrepo.EphemeralToken{
+		Token:     exchangeCode,
+		Kind:      oidcExchangeKind,
+		Payload:   payloadMap,
+		ExpiresAt: time.Now().UTC().Add(2 * time.Minute),
+	}); err != nil {
+		return "", fmt.Errorf("store oauth exchange payload: %w", err)
+	}
+	redirectURL, err := addQueryValue(provider.FrontendRedirectURL, "code", exchangeCode)
+	if err != nil {
+		return "", err
+	}
+	_ = s.recordAudit(ctx, principal, "login", "success", "oauth2 login succeeded", map[string]any{"provider": provider.ID, "providerType": provider.Type})
+	return redirectURL, nil
+}
+
+func (s *Service) fetchOAuth2Profile(ctx context.Context, provider domainsettings.LoginProviderSettings, oauthToken *oauth2.Token) (genericProfile, error) {
+	profileURL := firstNonEmpty(provider.UserInfoURL, provider.ProfileURL)
+	if strings.TrimSpace(profileURL) == "" {
+		return genericProfile{}, fmt.Errorf("%w: oauth2 user info url is required", apperrors.ErrInvalidArgument)
+	}
+	if provider.Type == "wecom" {
+		return genericProfile{
+			ID:       nestedString(map[string]any{"user_id": oauthToken.Extra("user_id")}, "user_id"),
+			Name:     nestedString(map[string]any{"user_id": oauthToken.Extra("user_id")}, "user_id"),
+			Email:    "",
+			Raw:      map[string]any{"user_id": oauthToken.Extra("user_id")},
+			Provider: provider.ID,
+		}, nil
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, profileURL, nil)
+	if err != nil {
+		return genericProfile{}, err
+	}
+	req.Header.Set("Authorization", "Bearer "+oauthToken.AccessToken)
+	if provider.Type == "feishu" {
+		req.Header.Set("Authorization", "Bearer "+oauthToken.AccessToken)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return genericProfile{}, fmt.Errorf("request oauth2 user info: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= http.StatusBadRequest {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return genericProfile{}, fmt.Errorf("oauth2 user info returned %s: %s", resp.Status, strings.TrimSpace(string(body)))
+	}
+	var raw map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
+		return genericProfile{}, fmt.Errorf("decode oauth2 user info: %w", err)
+	}
+	if data, ok := raw["data"].(map[string]any); ok && provider.Type == "feishu" {
+		raw = data
+	}
+	id := nestedString(raw, provider.UserIDField)
+	if id == "" {
+		if provider.Type == "feishu" {
+			id = firstNonEmpty(
+				nestedString(map[string]any{"open_id": oauthToken.Extra("open_id")}, "open_id"),
+				nestedString(map[string]any{"union_id": oauthToken.Extra("union_id")}, "union_id"),
+			)
+		}
+	}
+	if id == "" {
+		id = nestedString(raw, "sub")
+	}
+	name := nestedString(raw, provider.UserNameField)
+	if name == "" {
+		name = firstNonEmpty(nestedString(raw, "name"), nestedString(raw, "nick"), nestedString(raw, "preferred_username"))
+	}
+	email := nestedString(raw, provider.EmailField)
+	if email == "" {
+		email = firstNonEmpty(nestedString(raw, "email"), nestedString(raw, "enterprise_email"))
+	}
+	return genericProfile{
+		ID:       id,
+		Email:    email,
+		Name:     name,
+		Raw:      raw,
+		Provider: provider.ID,
+	}, nil
+}
+
+func nestedString(raw map[string]any, field string) string {
+	field = strings.TrimSpace(field)
+	if field == "" {
+		return ""
+	}
+	current := any(raw)
+	for _, part := range strings.Split(field, ".") {
+		record, ok := current.(map[string]any)
+		if !ok {
+			return ""
+		}
+		current, ok = record[part]
+		if !ok {
+			return ""
+		}
+	}
+	value := strings.TrimSpace(fmt.Sprint(current))
+	if value == "<nil>" {
+		return ""
+	}
+	return value
+}
+
 const (
 	oidcStateKind    = "oidc_state"
+	oauthStateKind   = "oauth_state"
 	oidcExchangeKind = "oidc_exchange"
 )

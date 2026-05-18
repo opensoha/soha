@@ -33,7 +33,7 @@ func (r *Repository) List(ctx context.Context) ([]domainmenu.Record, error) {
 			m.sort_order,
 			m.enabled
 		FROM menus m
-		ORDER BY m.section ASC, m.sort_order ASC, m.path ASC
+		ORDER BY COALESCE(m.section, '') ASC, m.sort_order ASC, m.path ASC
 	`).Rows()
 	if err != nil {
 		return nil, fmt.Errorf("query menus: %w", err)
@@ -82,11 +82,15 @@ func (r *Repository) Get(ctx context.Context, menuID string) (domainmenu.Record,
 
 	var item domainmenu.Record
 	var parentID sql.NullString
-	if err := row.Scan(&item.ID, &parentID, &item.Path, &item.LabelZH, &item.LabelEN, &item.IconKey, &item.Section, &item.SortOrder, &item.Enabled); err != nil {
+	var section sql.NullString
+	if err := row.Scan(&item.ID, &parentID, &item.Path, &item.LabelZH, &item.LabelEN, &item.IconKey, &section, &item.SortOrder, &item.Enabled); err != nil {
 		return domainmenu.Record{}, err
 	}
 	if parentID.Valid {
 		item.ParentID = parentID.String
+	}
+	if section.Valid {
+		item.Section = section.String
 	}
 	roleMap, err := r.loadRoleBindings(ctx, []string{item.ID})
 	if err != nil {
@@ -105,7 +109,7 @@ func (r *Repository) Create(ctx context.Context, item domainmenu.Record) (domain
 	if err := tx.Exec(`
 		INSERT INTO menus (id, parent_id, path, label_zh, label_en, icon_key, section, sort_order, enabled, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, item.ID, nullable(item.ParentID), item.Path, item.LabelZH, item.LabelEN, item.IconKey, item.Section, item.SortOrder, item.Enabled, now, now).Error; err != nil {
+	`, item.ID, nullable(item.ParentID), item.Path, item.LabelZH, item.LabelEN, item.IconKey, nullable(item.Section), item.SortOrder, item.Enabled, now, now).Error; err != nil {
 		tx.Rollback()
 		return domainmenu.Record{}, err
 	}
@@ -129,7 +133,7 @@ func (r *Repository) Update(ctx context.Context, menuID string, item domainmenu.
 		UPDATE menus
 		SET parent_id = ?, path = ?, label_zh = ?, label_en = ?, icon_key = ?, section = ?, sort_order = ?, enabled = ?, updated_at = ?
 		WHERE id = ?
-	`, nullable(item.ParentID), item.Path, item.LabelZH, item.LabelEN, item.IconKey, item.Section, item.SortOrder, item.Enabled, now, menuID)
+	`, nullable(item.ParentID), item.Path, item.LabelZH, item.LabelEN, item.IconKey, nullable(item.Section), item.SortOrder, item.Enabled, now, menuID)
 	if result.Error != nil {
 		tx.Rollback()
 		return domainmenu.Record{}, result.Error
@@ -177,11 +181,15 @@ func replaceBindings(tx *gorm.DB, menuID string, roleIDs []string, now time.Time
 func scanMenu(rows *sql.Rows) (domainmenu.Record, error) {
 	var item domainmenu.Record
 	var parentID sql.NullString
-	if err := rows.Scan(&item.ID, &parentID, &item.Path, &item.LabelZH, &item.LabelEN, &item.IconKey, &item.Section, &item.SortOrder, &item.Enabled); err != nil {
+	var section sql.NullString
+	if err := rows.Scan(&item.ID, &parentID, &item.Path, &item.LabelZH, &item.LabelEN, &item.IconKey, &section, &item.SortOrder, &item.Enabled); err != nil {
 		return domainmenu.Record{}, err
 	}
 	if parentID.Valid {
 		item.ParentID = parentID.String
+	}
+	if section.Valid {
+		item.Section = section.String
 	}
 	return item, nil
 }

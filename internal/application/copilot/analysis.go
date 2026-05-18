@@ -125,7 +125,7 @@ func (s *Service) resolveRootCauseProfile(ctx context.Context, input domaincopil
 		ID:                      "builtin:root-cause",
 		Name:                    "Built-in Root Cause",
 		Mode:                    "root_cause",
-		EnabledSources:          []string{"platform-native", "logs"},
+		EnabledSources:          []string{"platform-native", "logs", "metrics", "traces"},
 		EnabledPlaybooks:        []string{"release-correlation", "cluster-health", "access-drift", "runtime-instability", "alert-pressure", "build-queue", "error-burst", "dependency-timeout"},
 		RemediationPolicy:       "suggest_only",
 		DefaultTimeRangeMinutes: input.TimeRangeMinutes,
@@ -279,6 +279,19 @@ func (s *Service) collectRootCauseAnalysis(ctx context.Context, principal domain
 	evidence = append(evidence, logAnalysis.evidence...)
 	hypotheses = append(hypotheses, logAnalysis.hypotheses...)
 	playbookResults = mergePlaybookResults(playbookResults, logAnalysis.playbookResults)
+	toolExecutions := append([]domaincopilot.ToolExecution{}, logAnalysis.toolExecutions...)
+
+	metricAnalysis := s.collectRootCauseMetricEvidence(ctx, input, profile, locale)
+	evidence = append(evidence, metricAnalysis.evidence...)
+	hypotheses = append(hypotheses, metricAnalysis.hypotheses...)
+	playbookResults = mergePlaybookResults(playbookResults, metricAnalysis.playbookResults)
+	toolExecutions = append(toolExecutions, metricAnalysis.toolExecutions...)
+
+	traceAnalysis := s.collectRootCauseTraceEvidence(ctx, input, profile, locale)
+	evidence = append(evidence, traceAnalysis.evidence...)
+	hypotheses = append(hypotheses, traceAnalysis.hypotheses...)
+	playbookResults = mergePlaybookResults(playbookResults, traceAnalysis.playbookResults)
+	toolExecutions = append(toolExecutions, traceAnalysis.toolExecutions...)
 
 	if playbooks["release-correlation"] && len(releaseEvidence) > 0 && len(alertEvidence) > 0 {
 		hypotheses = append(hypotheses, domaincopilot.RootCauseHypothesis{
@@ -348,6 +361,8 @@ func (s *Service) collectRootCauseAnalysis(ctx context.Context, principal domain
 		recommendations = []string{localize(locale, "先缩小范围到单个集群/命名空间/工作负载，再重新运行根因分析。", "Narrow the scope to a single cluster, namespace, or workload and rerun the analysis.")}
 	}
 	recommendations = uniqueStrings(recommendations, logAnalysis.recommendations)
+	recommendations = uniqueStrings(recommendations, metricAnalysis.recommendations)
+	recommendations = uniqueStrings(recommendations, traceAnalysis.recommendations)
 
 	summary := localize(locale, "当前证据还不足以给出明确根因。", "Current evidence is not yet sufficient for a decisive root cause.")
 	severity := "info"
@@ -362,6 +377,7 @@ func (s *Service) collectRootCauseAnalysis(ctx context.Context, principal domain
 		summary:         summary,
 		severity:        severity,
 		playbookResults: playbookResults,
+		toolExecutions:  toolExecutions,
 	}
 }
 
@@ -506,6 +522,7 @@ func degradedClusterEvidence(clusters []domaincluster.Summary) []domaincopilot.R
 			Attributes: map[string]any{
 				"status":      item.Health.Status,
 				"environment": item.Environment,
+				"clusterId":   item.ID,
 			},
 		})
 	}
@@ -528,6 +545,8 @@ func alertRootCauseEvidence(alerts []domainalert.Instance) []domaincopilot.RootC
 			Attributes: map[string]any{
 				"status":      item.Status,
 				"fingerprint": item.Fingerprint,
+				"clusterId":   item.ClusterID,
+				"namespace":   item.Namespace,
 			},
 		})
 	}
@@ -575,6 +594,8 @@ func auditRootCauseEvidence(audits []domainaudit.Entry) []domaincopilot.RootCaus
 				"result":       item.Result,
 				"resourceKind": item.ResourceKind,
 				"resourceName": item.ResourceName,
+				"clusterId":    item.ClusterID,
+				"namespace":    item.Namespace,
 			},
 		})
 	}
@@ -600,6 +621,9 @@ func releaseRootCauseEvidence(releases []domainrelease.Record) []domaincopilot.R
 			Attributes: map[string]any{
 				"status":        item.Status,
 				"applicationId": item.ApplicationID,
+				"clusterId":     item.ClusterID,
+				"namespace":     item.Namespace,
+				"workload":      item.DeploymentName,
 			},
 		})
 	}

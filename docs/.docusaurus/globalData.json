@@ -66,6 +66,11 @@
               "sidebar": "mainSidebar"
             },
             {
+              "id": "architecture/login-and-identity",
+              "path": "/docs/architecture/login-and-identity",
+              "sidebar": "mainSidebar"
+            },
+            {
               "id": "architecture/mcp-integration",
               "path": "/docs/architecture/mcp-integration",
               "sidebar": "mainSidebar"

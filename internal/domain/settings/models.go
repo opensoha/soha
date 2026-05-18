@@ -3,10 +3,11 @@ package settings
 import "context"
 
 const (
-	IdentityOIDCSettingKey         = "identity.oidc"
-	MonitoringPrometheusSettingKey = "monitoring.prometheus"
-	AIProviderSettingKey           = "ai.provider"
-	BrandingSettingKey             = "branding.console"
+	IdentityOIDCSettingKey           = "identity.oidc"
+	IdentityLoginProvidersSettingKey = "identity.login_providers"
+	MonitoringPrometheusSettingKey   = "monitoring.prometheus"
+	AIProviderSettingKey             = "ai.provider"
+	BrandingSettingKey               = "branding.console"
 )
 
 type OIDCSettings struct {
@@ -21,8 +22,34 @@ type OIDCSettings struct {
 	DefaultRoles        []string `json:"defaultRoles"`
 }
 
+type LoginProviderSettings struct {
+	ID                  string   `json:"id"`
+	Name                string   `json:"name"`
+	Type                string   `json:"type"`
+	Enabled             bool     `json:"enabled"`
+	ClientID            string   `json:"clientId,omitempty"`
+	ClientSecret        string   `json:"clientSecret,omitempty"`
+	Issuer              string   `json:"issuer,omitempty"`
+	AuthorizeURL        string   `json:"authorizeUrl,omitempty"`
+	TokenURL            string   `json:"tokenUrl,omitempty"`
+	UserInfoURL         string   `json:"userInfoUrl,omitempty"`
+	ProfileURL          string   `json:"profileUrl,omitempty"`
+	RedirectURL         string   `json:"redirectUrl,omitempty"`
+	FrontendRedirectURL string   `json:"frontendRedirectUrl,omitempty"`
+	Scopes              []string `json:"scopes,omitempty"`
+	DefaultRoles        []string `json:"defaultRoles,omitempty"`
+	UserIDField         string   `json:"userIdField,omitempty"`
+	UserNameField       string   `json:"userNameField,omitempty"`
+	EmailField          string   `json:"emailField,omitempty"`
+	MetadataURL         string   `json:"metadataUrl,omitempty"`
+	EntityID            string   `json:"entityId,omitempty"`
+	Certificate         string   `json:"certificate,omitempty"`
+}
+
 type IdentitySettings struct {
-	OIDC OIDCSettings `json:"oidc"`
+	OIDC              OIDCSettings            `json:"oidc"`
+	Providers         []LoginProviderSettings `json:"providers,omitempty"`
+	DefaultProviderID string                  `json:"defaultProviderId,omitempty"`
 }
 
 type PrometheusSettings struct {
@@ -40,10 +67,20 @@ type MonitoringSettings struct {
 }
 
 type AIProviderSettings struct {
-	Enabled bool   `json:"enabled"`
-	BaseURL string `json:"baseUrl"`
-	APIKey  string `json:"apiKey"`
-	Model   string `json:"model"`
+	ID           string `json:"id,omitempty"`
+	Name         string `json:"name,omitempty"`
+	ProviderKind string `json:"providerKind,omitempty"`
+	Enabled      bool   `json:"enabled"`
+	BaseURL      string `json:"baseUrl"`
+	APIKey       string `json:"apiKey"`
+	Model        string `json:"model"`
+}
+
+type AIProviderTestResult struct {
+	OK      bool   `json:"ok"`
+	Model   string `json:"model,omitempty"`
+	Message string `json:"message,omitempty"`
+	Reply   string `json:"reply,omitempty"`
 }
 
 type SkillDefinition struct {
@@ -64,8 +101,10 @@ type SkillDefinition struct {
 type AISkillSettings = SkillDefinition
 
 type AISettings struct {
-	Provider       AIProviderSettings `json:"provider"`
-	SkillsRegistry []SkillDefinition  `json:"skillsRegistry,omitempty"`
+	Provider          AIProviderSettings   `json:"provider"`
+	Providers         []AIProviderSettings `json:"providers,omitempty"`
+	DefaultProviderID string               `json:"defaultProviderId,omitempty"`
+	SkillsRegistry    []SkillDefinition    `json:"skillsRegistry,omitempty"`
 }
 
 type BrandingSettings struct {

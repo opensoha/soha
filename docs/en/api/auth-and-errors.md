@@ -8,13 +8,22 @@ The current backend uses real identity and session handling.
 - Token refresh: `POST /api/v1/auth/refresh`
 - Current user: `GET /api/v1/auth/me`
 - Logout: `POST /api/v1/auth/logout`
+- Provider discovery: `GET /api/v1/auth/providers`
+- Provider browser entry: `GET /api/v1/auth/login/:providerID/start`
+- Provider callback: `GET /api/v1/auth/login/:providerID/callback`
 - OIDC browser entry: `GET /api/v1/auth/oidc/login`
 - OIDC callback: `GET /api/v1/auth/oidc/callback`
 - OIDC frontend exchange: `POST /api/v1/auth/oidc/exchange`
 
 Production-style requests use `Authorization: Bearer <access-token>`.
 
-When `auth.enable_dev_auth` is enabled in `config.yaml`, the backend can still attach the configured bootstrap principal to requests without a bearer token. That fallback is for local development only and does not replace the real password or OIDC paths.
+When `auth.enable_dev_auth` is enabled in `config.yaml`, the backend can still attach the configured bootstrap principal to requests without a bearer token. That fallback is for local development only and does not replace the real password or third-party login paths.
+
+## Provider Notes
+
+- `POST /api/v1/auth/oidc/exchange` is still the final frontend session exchange endpoint for OIDC and the newer OAuth2-style providers.
+- `GET /api/v1/auth/providers` now returns every enabled third-party provider instead of assuming a single OIDC entry.
+- SAML may appear in configuration and provider discovery, but the runtime ACS/assertion flow is not enabled yet. A provider without a `loginUrl` should be treated by the frontend as non-runnable.
 
 ## Error Envelope
 

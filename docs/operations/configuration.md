@@ -38,7 +38,7 @@ Key backend fields now used by the runtime:
 - `http.cors_allowed_origins`: allowed browser origins for the frontend console
 - `auth.jwt.secret`, `auth.jwt.access_ttl`, `auth.jwt.refresh_ttl`
 - `auth.dev_principal.*`: bootstrap local account seed and, when enabled, the no-token development principal
-- `auth.oidc.*`: issuer, client, callback, frontend redirect, and default role mapping
+- `auth.oidc.*`: legacy single-OIDC compatibility defaults; runtime OIDC may still read these when no multi-provider document has been saved yet
 - `gitlab.enabled`, `gitlab.base_url`, `gitlab.token`, `gitlab.group_id`, `gitlab.per_page`, `gitlab.timeout`
 - `runtime.workflow_workers`, `runtime.workflow_queue_size`, `runtime.workflow_node_parallelism`
 - `runtime.cluster_sync_parallelism`, `runtime.copilot_inspection_parallelism`, `runtime.alert_upsert_batch_size`
@@ -75,6 +75,34 @@ The default local bootstrap account comes from `auth.dev_principal` inside `conf
 - password: `kubecrux`
 
 When `auth.enable_dev_auth` is `false`, this account is still seeded into PostgreSQL for real password login. The flag only controls whether the backend accepts an automatic development principal when no bearer token is present. The runtime no longer keeps a legacy bootstrap migration or password-login fallback path.
+
+## Login Provider Runtime
+
+The active console login source is now settings-driven rather than file-only.
+
+Operationally:
+
+- `auth.oidc.*` remains the bootstrap-compatible fallback
+- the active multi-provider document is stored in application settings under `identity.login_providers`
+- operators can configure multiple concurrent providers from the console login-settings page
+
+Supported provider types in the current settings model:
+
+- `oidc`
+- `feishu`
+- `dingtalk`
+- `wecom`
+- `oauth2`
+- `saml`
+
+Current runtime expectations:
+
+- `oidc`: full runtime supported
+- `oauth2`: supported when authorize/token/userinfo URLs and field mappings are correct
+- `feishu`: supported through configured Feishu auth endpoints and field mappings
+- `dingtalk`: supported through configured DingTalk auth endpoints and field mappings
+- `wecom`: supported through webpage authorization plus enterprise access-token and `getuserinfo` APIs
+- `saml`: configuration-visible only; runtime assertion/ACS handling is not enabled yet
 
 ## Operational Conventions
 

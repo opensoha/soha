@@ -26,6 +26,7 @@ type Query struct {
 type Span struct {
 	TraceID      string         `json:"traceId"`
 	SpanID       string         `json:"spanId"`
+	ParentSpanID string         `json:"parentSpanId,omitempty"`
 	Operation    string         `json:"operation"`
 	Service      string         `json:"service"`
 	DurationMS   float64        `json:"durationMs"`
@@ -55,8 +56,9 @@ type Registry struct {
 
 func NewRegistry() *Registry {
 	registry := &Registry{drivers: map[string]Driver{}}
-	driver := newJaegerDriver()
-	registry.drivers[driver.BackendType()] = driver
+	for _, driver := range []Driver{newJaegerDriver(), newSkyWalkingDriver()} {
+		registry.drivers[driver.BackendType()] = driver
+	}
 	return registry
 }
 

@@ -19,7 +19,7 @@
     "permalink": "/docs/architecture/monitoring-and-alerting"
   },
   "next": {
-    "title": "AI Copilot",
-    "permalink": "/docs/architecture/ai-copilot"
+    "title": "登录与身份链路",
+    "permalink": "/docs/architecture/login-and-identity"
   }
 }

@@ -162,6 +162,10 @@ func permissionRuleForMenu(item domainmenu.Record) (visibilityRule, bool) {
 			appaccess.PermSettingsAIView,
 			appaccess.PermSettingsBrandingView,
 		}}, true
+	case item.ID == "settings-login":
+		return visibilityRule{permissions: []string{appaccess.PermSettingsIdentityView}}, true
+	case item.ID == "settings-branding":
+		return visibilityRule{permissions: []string{appaccess.PermSettingsBrandingView}}, true
 	case item.ID == "helm" || strings.HasPrefix(item.ID, "helm-"):
 		return visibilityRule{permissions: []string{appaccess.PermPlatformHelmView}}, true
 	case item.ID == "workloads" || strings.HasPrefix(item.ID, "workloads-"):

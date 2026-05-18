@@ -72,6 +72,34 @@ type ToolExecution struct {
 	CompletedAt *time.Time     `json:"completedAt,omitempty"`
 }
 
+type AnalysisGraphNode struct {
+	ID         string         `json:"id"`
+	Kind       string         `json:"kind"`
+	Title      string         `json:"title"`
+	Subtitle   string         `json:"subtitle,omitempty"`
+	Severity   string         `json:"severity,omitempty"`
+	EvidenceIDs []string      `json:"evidenceIds,omitempty"`
+	SourceRefs []string       `json:"sourceRefs,omitempty"`
+	Attributes map[string]any `json:"attributes,omitempty"`
+}
+
+type AnalysisGraphEdge struct {
+	ID         string         `json:"id"`
+	Source     string         `json:"source"`
+	Target     string         `json:"target"`
+	Relation   string         `json:"relation"`
+	Severity   string         `json:"severity,omitempty"`
+	EvidenceIDs []string      `json:"evidenceIds,omitempty"`
+	Attributes map[string]any `json:"attributes,omitempty"`
+}
+
+type AnalysisGraph struct {
+	Layout      string              `json:"layout,omitempty"`
+	FocusNodeID string              `json:"focusNodeId,omitempty"`
+	Nodes       []AnalysisGraphNode `json:"nodes,omitempty"`
+	Edges       []AnalysisGraphEdge `json:"edges,omitempty"`
+}
+
 type AnalysisArtifact struct {
 	Kind             string                `json:"kind"`
 	RunID            string                `json:"runId"`
@@ -82,6 +110,7 @@ type AnalysisArtifact struct {
 	Hypotheses       []RootCauseHypothesis `json:"hypotheses,omitempty"`
 	Recommendations  []string              `json:"recommendations,omitempty"`
 	ToolExecutions   []ToolExecution       `json:"toolExecutions,omitempty"`
+	Graph            *AnalysisGraph        `json:"graph,omitempty"`
 	DataSourceSnapshot map[string]any      `json:"dataSourceSnapshot,omitempty"`
 }
 

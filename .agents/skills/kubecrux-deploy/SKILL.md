@@ -53,6 +53,7 @@ Use the root deployment assets to run kubecrux as a single-project runtime: one 
 - Keep the single-project deployment story coherent across `Dockerfile`, `docker-compose.yaml`, `deployment.yaml`, and `chart/`.
 - If `docker-compose.yaml` also carries local cluster helpers such as `k3s`, preserve them unless the user explicitly wants a simpler compose file.
 - When changing deployment docs or examples, update `README.md`, `README-cn.md`, `docs/operations/deployment.md`, and `docs/en/operations/deployment.md` together.
+- When auth callback URLs or external login provider assumptions change, re-check deployment-facing hostname, ingress, and `KC_CONFIG_FILE` examples so redirect URLs stay coherent.
 
 ## Read These References When Needed
 

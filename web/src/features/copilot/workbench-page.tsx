@@ -6,7 +6,6 @@ import {
   EditOutlined,
   ExperimentOutlined,
   EyeOutlined,
-  PlusOutlined,
   PlayCircleOutlined,
   RadarChartOutlined,
   RobotOutlined,
@@ -15,11 +14,24 @@ import {
 } from '@ant-design/icons'
 import {
   Bubble,
+  Conversations,
   Prompts,
   Sender,
   ThoughtChain,
   Welcome,
 } from '@ant-design/x'
+import {
+  Background,
+  Controls,
+  MarkerType,
+  Position,
+  ReactFlow,
+  ReactFlowProvider,
+  type Edge,
+  type Node,
+  type NodeProps,
+} from '@xyflow/react'
+import dagre from 'dagre'
 import {
   Alert,
   App,
@@ -37,8 +49,9 @@ import {
   Tag,
   Typography,
 } from 'antd'
+import '@xyflow/react/dist/style.css'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { StatusTag } from '@/components/status-tag'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth/permission-snapshot'
 import { api } from '@/services/api-client'
@@ -46,6 +59,8 @@ import type { ApiResponse } from '@/types'
 import type {
   WorkbenchAdapter,
   WorkbenchArtifact,
+  WorkbenchGraph,
+  WorkbenchGraphNode,
   WorkbenchMessage,
   WorkbenchMessageEnvelope,
   WorkbenchSession,
@@ -54,15 +69,20 @@ import type {
 
 const { Paragraph, Text, Title } = Typography
 
+type InspectorView = 'context' | 'evidence' | 'hypotheses' | 'actions'
+type WorkbenchFlowNode = Node<WorkbenchGraphNode & Record<string, unknown>, 'workbenchGraphNode'>
+type WorkbenchFlowEdge = Edge<{ relation: string; severity?: string }, 'smoothstep'>
+
+const GRAPH_NODE_WIDTH = 248
+const GRAPH_NODE_HEIGHT = 104
+
 const WORKBENCH_MODE_OPTIONS = [
-  { value: 'general', label: '通用调查' },
+  { value: 'general', label: '通用聊天' },
   { value: 'root_cause', label: '根因分析' },
   { value: 'performance', label: '性能分析' },
   { value: 'trace', label: '链路分析' },
   { value: 'inspection_review', label: '巡检复盘' },
 ] as const
-
-type InspectorView = 'context' | 'evidence' | 'hypotheses' | 'actions'
 
 function modeLabel(mode?: string) {
   switch (mode) {
@@ -75,8 +95,50 @@ function modeLabel(mode?: string) {
     case 'inspection_review':
       return '巡检复盘'
     default:
-      return '通用调查'
+      return '通用聊天'
   }
+}
+
+function modeDescription(mode?: string) {
+  switch (mode) {
+    case 'root_cause':
+      return '围绕告警、变更和异常证据收敛根因。'
+    case 'performance':
+      return '聚焦延迟、容量和抖动问题，沉淀优化建议。'
+    case 'trace':
+      return '从入口请求向下游链路展开，定位热点 span。'
+    case 'inspection_review':
+      return '把巡检发现整理成后续动作和交接结论。'
+    default:
+      return '沉淀一轮完整问答、证据和下一步排障动作。'
+  }
+}
+
+function modeIcon(mode?: string) {
+  switch (mode) {
+    case 'root_cause':
+      return <ThunderboltOutlined />
+    case 'performance':
+      return <RadarChartOutlined />
+    case 'trace':
+      return <BranchesOutlined />
+    case 'inspection_review':
+      return <PlayCircleOutlined />
+    default:
+      return <RobotOutlined />
+  }
+}
+
+function formatSessionTimestamp(value?: string) {
+  if (!value) return '刚刚'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return new Intl.DateTimeFormat('zh-CN', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(date)
 }
 
 function bubbleItems(messages: WorkbenchMessage[]) {
@@ -87,6 +149,52 @@ function bubbleItems(messages: WorkbenchMessage[]) {
     status: 'success' as const,
     extraInfo: { createdAt: item.createdAt },
   }))
+}
+
+function graphAccent(kind: string) {
+  switch (kind) {
+    case 'scope':
+      return '#1d4ed8'
+    case 'service':
+      return '#0f766e'
+    case 'span':
+      return '#7c3aed'
+    case 'log_signature':
+      return '#b45309'
+    case 'metric_signal':
+      return '#2563eb'
+    case 'hypothesis':
+      return '#dc2626'
+    case 'missing_source':
+      return '#64748b'
+    case 'recommendation':
+      return '#0f766e'
+    default:
+      return '#475569'
+  }
+}
+
+function graphNodeLabel(kind: string) {
+  switch (kind) {
+    case 'scope':
+      return '范围'
+    case 'service':
+      return '服务'
+    case 'span':
+      return 'Span'
+    case 'log_signature':
+      return '日志'
+    case 'metric_signal':
+      return '指标'
+    case 'hypothesis':
+      return '假设'
+    case 'missing_source':
+      return '缺失源'
+    case 'recommendation':
+      return '建议'
+    default:
+      return kind
+  }
 }
 
 function buildScopeSummary(scope?: WorkbenchSessionScope) {
@@ -135,17 +243,178 @@ function buildPromptItems(mode: NonNullable<WorkbenchSession['metadata']>['mode'
   ]
 }
 
+function layoutWorkbenchGraph(nodes: WorkbenchFlowNode[], edges: WorkbenchFlowEdge[]) {
+  const graph = new dagre.graphlib.Graph()
+  graph.setDefaultEdgeLabel(() => ({}))
+  graph.setGraph({ rankdir: 'LR', ranksep: 88, nodesep: 28 })
+
+  nodes.forEach((node) => {
+    graph.setNode(node.id, { width: GRAPH_NODE_WIDTH, height: GRAPH_NODE_HEIGHT })
+  })
+
+  edges.forEach((edge) => {
+    graph.setEdge(edge.source, edge.target)
+  })
+
+  dagre.layout(graph)
+
+  return nodes.map((node) => {
+    const position = graph.node(node.id) ?? { x: GRAPH_NODE_WIDTH / 2, y: GRAPH_NODE_HEIGHT / 2 }
+    return {
+      ...node,
+      position: {
+        x: position.x - GRAPH_NODE_WIDTH / 2,
+        y: position.y - GRAPH_NODE_HEIGHT / 2,
+      },
+      sourcePosition: Position.Right,
+      targetPosition: Position.Left,
+    }
+  })
+}
+
+function WorkbenchGraphNodeCard({ data, selected }: NodeProps<WorkbenchFlowNode>) {
+  const accent = graphAccent(data.kind)
+  return (
+    <div className={`kc-workbench-graph-node ${selected ? 'is-selected' : ''}`}>
+      <div
+        className="kc-workbench-graph-node__card"
+        style={{
+          borderColor: selected ? accent : `${accent}44`,
+          boxShadow: selected ? `0 0 0 2px ${accent}22` : undefined,
+        }}
+      >
+        <div className="kc-workbench-graph-node__head">
+          <span className="kc-workbench-graph-node__kind" style={{ color: accent, background: `${accent}1a` }}>
+            {graphNodeLabel(data.kind)}
+          </span>
+          {data.severity ? <StatusTag value={data.severity} /> : null}
+        </div>
+        <div className="kc-workbench-graph-node__title">{data.title}</div>
+        {data.subtitle ? <div className="kc-workbench-graph-node__subtitle">{data.subtitle}</div> : null}
+        {data.sourceRefs?.length ? (
+          <div className="kc-workbench-graph-node__refs">
+            {data.sourceRefs.slice(0, 2).join(' · ')}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
+const WORKBENCH_GRAPH_NODE_TYPES = {
+  workbenchGraphNode: WorkbenchGraphNodeCard,
+} as const
+
+function WorkbenchGraphCanvasInner({
+  graph,
+  onSelectNode,
+}: {
+  graph: WorkbenchGraph
+  onSelectNode: (nodeId: string | null) => void
+}) {
+  const nodes = useMemo(() => {
+    const rawNodes = (graph.nodes ?? []).map((item) => ({
+      id: item.id,
+      type: 'workbenchGraphNode' as const,
+      position: { x: 0, y: 0 },
+      data: {
+        ...item,
+      } as WorkbenchGraphNode & Record<string, unknown>,
+    }))
+    const rawEdges = (graph.edges ?? []).map((item) => ({
+      id: item.id,
+      source: item.source,
+      target: item.target,
+      type: 'smoothstep' as const,
+      data: { relation: item.relation, severity: item.severity },
+      markerEnd: {
+        type: MarkerType.ArrowClosed,
+        color: graphAccent(item.target),
+      },
+      label: item.relation,
+      style: {
+        stroke: item.severity === 'critical' ? '#dc2626' : item.severity === 'warning' ? '#d97706' : '#94a3b8',
+        strokeWidth: item.relation === 'supports' ? 1.4 : 1.8,
+        strokeDasharray: item.relation === 'supports' ? '8 4' : undefined,
+      },
+      labelStyle: { fontSize: 11, fill: '#475569' },
+    }))
+    return layoutWorkbenchGraph(rawNodes, rawEdges)
+  }, [graph])
+  const edges = useMemo(() => (graph.edges ?? []).map((item) => ({
+    id: item.id,
+    source: item.source,
+    target: item.target,
+    type: 'smoothstep' as const,
+    data: { relation: item.relation, severity: item.severity },
+    markerEnd: {
+      type: MarkerType.ArrowClosed,
+      color: graphAccent(item.target),
+    },
+    label: item.relation,
+    style: {
+      stroke: item.severity === 'critical' ? '#dc2626' : item.severity === 'warning' ? '#d97706' : '#94a3b8',
+      strokeWidth: item.relation === 'supports' ? 1.4 : 1.8,
+      strokeDasharray: item.relation === 'supports' ? '8 4' : undefined,
+    },
+    labelStyle: { fontSize: 11, fill: '#475569' },
+  })), [graph.edges])
+
+  return (
+    <div className="kc-workbench-graph-canvas">
+      <ReactFlow<WorkbenchFlowNode, WorkbenchFlowEdge>
+        nodes={nodes}
+        edges={edges}
+        nodeTypes={WORKBENCH_GRAPH_NODE_TYPES}
+        fitView
+        nodesDraggable={false}
+        nodesConnectable={false}
+        elementsSelectable
+        edgesFocusable={false}
+        proOptions={{ hideAttribution: true }}
+        onPaneClick={() => onSelectNode(null)}
+        onNodeClick={(_, node) => onSelectNode(node.id)}
+      >
+        <Background gap={18} size={1} />
+        <Controls showInteractive={false} />
+      </ReactFlow>
+    </div>
+  )
+}
+
+function WorkbenchGraphCanvas({
+  fitKey,
+  graph,
+  onSelectNode,
+}: {
+  fitKey: string
+  graph: WorkbenchGraph
+  onSelectNode: (nodeId: string | null) => void
+}) {
+  return (
+    <ReactFlowProvider>
+      <WorkbenchGraphCanvasInner key={fitKey} graph={graph} onSelectNode={onSelectNode} />
+    </ReactFlowProvider>
+  )
+}
+
 export function AIWorkbenchPage() {
   const { message } = App.useApp()
   const queryClient = useQueryClient()
   const navigate = useNavigate()
+  const location = useLocation()
   const [searchParams, setSearchParams] = useSearchParams()
   const permissionSnapshotQuery = usePermissionSnapshot()
   const canUseChat = hasPermission(permissionSnapshotQuery.data?.data, 'observe.ai.chat')
   const autoSessionScopeKeyRef = useRef<string>('')
 
   const requestedSessionId = searchParams.get('session') || undefined
-  const initialMode = (searchParams.get('mode') as NonNullable<WorkbenchSession['metadata']>['mode']) || 'general'
+  const pathMode = useMemo<NonNullable<WorkbenchSession['metadata']>['mode']>(() => {
+    if (location.pathname === '/ai-workbench/root-cause') return 'root_cause'
+    if (location.pathname === '/ai-workbench/performance') return 'performance'
+    return 'general'
+  }, [location.pathname])
+  const initialMode = (searchParams.get('mode') as NonNullable<WorkbenchSession['metadata']>['mode']) || pathMode
   const draftScope = useMemo<WorkbenchSessionScope>(() => ({
     clusterId: searchParams.get('clusterId') || undefined,
     namespace: searchParams.get('namespace') || undefined,
@@ -167,6 +436,8 @@ export function AIWorkbenchPage() {
   const [disabledToolNames, setDisabledToolNames] = useState<string[]>([])
   const [budgetOverrides, setBudgetOverrides] = useState<Record<string, number>>({})
   const [scopeOverrides, setScopeOverrides] = useState<Record<string, string>>({})
+  const [skillsDisclosureExpanded, setSkillsDisclosureExpanded] = useState<Record<string, boolean>>({})
+  const [showAllSkills, setShowAllSkills] = useState(false)
 
   const updateSearchParams = (patch: Record<string, string | undefined>) => {
     const next = new URLSearchParams(searchParams)
@@ -190,7 +461,7 @@ export function AIWorkbenchPage() {
   })
   const settingsQuery = useQuery({
     queryKey: ['copilot-workbench-settings-ai'],
-    queryFn: () => api.get<ApiResponse<{ skillsRegistry?: Array<{ id: string; name: string; description?: string; enabled: boolean; scopes?: string[] }> }>>('/settings/ai'),
+    queryFn: () => api.get<ApiResponse<{ skillsRegistry?: Array<{ id: string; name: string; description?: string; enabled: boolean; scopes?: string[]; capabilityRefs?: string[]; scopeRules?: string[]; category?: string }> }>>('/settings/ai'),
   })
   const dataSourcesQuery = useQuery({
     queryKey: ['copilot-workbench-datasources'],
@@ -207,7 +478,7 @@ export function AIWorkbenchPage() {
     enabled: Boolean(requestedSessionId),
   })
 
-  const visibleSessions = (sessionsQuery.data?.data ?? []).filter((item) => !isSyntheticSession(item))
+  const visibleSessions = useMemo(() => (sessionsQuery.data?.data ?? []).filter((item) => !isSyntheticSession(item)), [sessionsQuery.data?.data])
   const currentSession = (sessionDetailQuery.data?.data && !isSyntheticSession(sessionDetailQuery.data.data) ? sessionDetailQuery.data.data : undefined)
     ?? visibleSessions.find((item) => item.id === requestedSessionId)
   const messages = messagesQuery.data?.data ?? []
@@ -294,6 +565,7 @@ export function AIWorkbenchPage() {
       scope: currentSession?.metadata?.scope || {},
     }),
     onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['copilot-workbench-messages', requestedSessionId] })
       await queryClient.invalidateQueries({ queryKey: ['copilot-workbench-session-detail', requestedSessionId] })
       await queryClient.invalidateQueries({ queryKey: ['copilot-workbench-sessions'] })
       setThinkingOpen(true)
@@ -346,50 +618,117 @@ export function AIWorkbenchPage() {
   }, [messages])
 
   const activeArtifact = artifacts[0]
+  const activeGraph = activeArtifact?.graph
+  const [selectedGraphNodeId, setSelectedGraphNodeId] = useState<string | null>(null)
   const queryError = sessionsQuery.error || sessionDetailQuery.error || messagesQuery.error || adaptersQuery.error || dataSourcesQuery.error || settingsQuery.error
   const promptItems = buildPromptItems(currentSession?.metadata?.mode || draftMode)
-  const functionSwitches = [
-    { key: 'chat', label: '会话调查', detail: '当前主工作区', active: true, action: () => undefined, icon: <RobotOutlined /> },
-    { key: 'automation', label: '巡检与自动化', detail: '任务、运行与策略', active: false, action: () => navigate('/ai-workbench/automation'), icon: <PlayCircleOutlined /> },
-    { key: 'tools', label: '工具与技能', detail: '数据源与技能装配', active: false, action: () => navigate('/ai-workbench/tools'), icon: <ToolOutlined /> },
-  ] as const
+  const conversationItems = useMemo(() => visibleSessions.map((item) => ({
+    key: item.id,
+    icon: modeIcon(item.metadata?.mode),
+    label: (
+      <div className="kc-ai-workbench__conversation-label">
+        <span className="kc-ai-workbench__conversation-label-title">{item.title}</span>
+        <span className="kc-ai-workbench__conversation-label-meta">
+          {modeLabel(item.metadata?.mode)} · {formatSessionTimestamp(item.updatedAt)}
+        </span>
+        <span className="kc-ai-workbench__conversation-label-scope">{buildScopeSummary(item.metadata?.scope)}</span>
+      </div>
+    ),
+  })), [visibleSessions])
   const artifactSummary = [
     {
-      key: 'context',
+      key: 'context' as const,
       label: '上下文',
       value: currentSession?.metadata?.analysisRunRefs?.length ?? 0,
       description: buildScopeSummary(currentSession?.metadata?.scope),
       icon: <EyeOutlined />,
     },
     {
-      key: 'evidence',
+      key: 'evidence' as const,
       label: '证据',
       value: activeArtifact?.evidence?.length ?? 0,
       description: activeArtifact?.summary || '还没有提取证据摘要',
       icon: <RadarChartOutlined />,
     },
     {
-      key: 'hypotheses',
+      key: 'hypotheses' as const,
       label: '假设',
       value: activeArtifact?.hypotheses?.length ?? 0,
       description: activeArtifact?.hypotheses?.[0]?.summary || '还没有形成假设',
       icon: <RobotOutlined />,
     },
     {
-      key: 'actions',
+      key: 'actions' as const,
       label: '建议',
       value: activeArtifact?.recommendations?.length ?? 0,
       description: activeArtifact?.recommendations?.[0] || '还没有建议动作',
       icon: <ToolOutlined />,
     },
-  ] as Array<{
-    key: InspectorView
-    label: string
-    value: number
-    description: string
-    icon: React.ReactNode
-  }>
+  ]
+  const enabledDataSources = (dataSourcesQuery.data?.data ?? []).filter((item) => item.enabled)
+  const selectedSkillNames = globalSkills.filter((item) => selectedSkillIds.includes(item.id)).map((item) => item.name)
+  const activeMode = currentSession?.metadata?.mode || draftMode
+  const enabledSkills = globalSkills.filter((item) => item.enabled)
+  const skillRelevanceTokens = useMemo(() => {
+    if (activeMode === 'root_cause') return ['logs', 'metrics', 'traces', 'events', 'alerts']
+    if (activeMode === 'performance') return ['metrics', 'traces', 'capacity', 'latency']
+    if (activeMode === 'trace') return ['traces', 'logs', 'spans', 'service']
+    if (activeMode === 'inspection_review') return ['inspection', 'automation', 'policy', 'events']
+    return ['logs', 'metrics', 'traces', 'events', 'platform']
+  }, [activeMode])
+  const rankedSkills = useMemo(() => {
+    const scoreSkill = (skill: typeof enabledSkills[number]) => {
+      const haystack = [
+        skill.name,
+        skill.description,
+        ...(skill.scopes ?? []),
+        ...(skill.capabilityRefs ?? []),
+        ...(skill.scopeRules ?? []),
+        skill.category,
+      ].join(' ').toLowerCase()
+      const relevance = skillRelevanceTokens.reduce((score, token) => score + (haystack.includes(token) ? 2 : 0), 0)
+      const selected = selectedSkillIds.includes(skill.id) ? 6 : 0
+      return relevance + selected
+    }
+    return [...enabledSkills].sort((left, right) => scoreSkill(right) - scoreSkill(left) || left.name.localeCompare(right.name))
+  }, [enabledSkills, selectedSkillIds, skillRelevanceTokens])
+  const primarySkills = rankedSkills.slice(0, showAllSkills ? rankedSkills.length : 3)
+  const hiddenSkillCount = Math.max(rankedSkills.length - 3, 0)
+  const selectedGraphNode = useMemo(
+    () => activeGraph?.nodes?.find((item) => item.id === selectedGraphNodeId) ?? null,
+    [activeGraph?.nodes, selectedGraphNodeId],
+  )
+  const graphFitKey = useMemo(
+    () => `${activeGraph?.nodes?.map((item) => item.id).join(',') || ''}::${activeGraph?.edges?.map((item) => item.id).join(',') || ''}`,
+    [activeGraph?.edges, activeGraph?.nodes],
+  )
 
+  useEffect(() => {
+    setSelectedGraphNodeId(activeGraph?.focusNodeId ?? activeGraph?.nodes?.[0]?.id ?? null)
+  }, [activeGraph?.focusNodeId, activeGraph?.nodes])
+
+  const handleModeChange = (value: string | number) => {
+    const next = value as NonNullable<WorkbenchSession['metadata']>['mode']
+    setDraftMode(next)
+    const nextSearch = new URLSearchParams(searchParams)
+    if (next === 'general') {
+      nextSearch.delete('mode')
+    } else {
+      nextSearch.set('mode', String(next))
+    }
+    const nextPath = next === 'root_cause'
+      ? '/ai-workbench/root-cause'
+      : next === 'performance'
+        ? '/ai-workbench/performance'
+        : '/ai-workbench/chat'
+    navigate({
+      pathname: nextPath,
+      search: nextSearch.toString() ? `?${nextSearch.toString()}` : '',
+    })
+    if (currentSession && currentSession.metadata?.mode !== next) {
+      patchSessionMutation.mutate({ sessionId: currentSession.id, body: { mode: next } })
+    }
+  }
   const openInspector = (view: InspectorView) => {
     setInspectorView(view)
     setInspectorOpen(true)
@@ -479,41 +818,6 @@ export function AIWorkbenchPage() {
   return (
     <div className="kc-page kc-ai-workbench-page">
       <div className="kc-ai-workbench">
-        <section className="kc-ai-workbench__hero">
-          <div className="kc-ai-workbench__hero-main">
-            <div className="kc-ai-workbench__eyebrow">AI Workbench</div>
-            <Title level={3} className="kc-ai-workbench__title">AI工作台</Title>
-            <Paragraph className="kc-ai-workbench__description">
-              顶栏与工作台切换保持不动，会话记录和功能切换收敛到 AI 左栏；当前主画布聚焦对话流程、分析步骤和调查沉淀。
-            </Paragraph>
-            <div className="kc-ai-workbench__mode-bar">
-              <Segmented
-                value={draftMode}
-                options={WORKBENCH_MODE_OPTIONS.map((item) => ({ value: item.value, label: item.label }))}
-                onChange={(value) => {
-                  const next = value as NonNullable<WorkbenchSession['metadata']>['mode']
-                  setDraftMode(next)
-                  updateSearchParams({ mode: next === 'general' ? undefined : next })
-                  if (currentSession && currentSession.metadata?.mode !== next) {
-                    patchSessionMutation.mutate({ sessionId: currentSession.id, body: { mode: next } })
-                  }
-                }}
-              />
-            </div>
-          </div>
-          <div className="kc-ai-workbench__hero-actions">
-            <Button icon={<ToolOutlined />} onClick={() => setToolsetOpen(true)}>
-              会话工具装配
-            </Button>
-            <Button icon={<PlayCircleOutlined />} onClick={() => navigate('/ai-workbench/automation')}>
-              巡检与自动化
-            </Button>
-            <Button type="primary" icon={<PlusOutlined />} loading={createSessionMutation.isPending} onClick={() => createSessionMutation.mutate({ scope: draftScope })} disabled={!canUseChat}>
-              新建会话
-            </Button>
-          </div>
-        </section>
-
         {!canUseChat ? (
           <Alert
             type="warning"
@@ -531,230 +835,439 @@ export function AIWorkbenchPage() {
           />
         ) : null}
 
-        <div className="kc-ai-workbench__summary-grid">
-          {artifactSummary.map((item) => (
-            <button
-              key={item.key}
-              className="kc-ai-workbench__summary-card"
-              type="button"
-              onClick={() => openInspector(item.key)}
-            >
-              <span className="kc-ai-workbench__summary-icon">{item.icon}</span>
-              <span className="kc-ai-workbench__summary-copy">
-                <span className="kc-ai-workbench__summary-label">{item.label}</span>
-                <span className="kc-ai-workbench__summary-value">{item.value}</span>
-                <span className="kc-ai-workbench__summary-detail">{item.description}</span>
-              </span>
-            </button>
-          ))}
-        </div>
+        <section className="kc-ai-workbench__workspace">
+          <aside className="kc-ai-workbench-sidebar">
+            <div className="kc-ai-workbench__tools-header">
+              <div className="kc-ai-workbench__tools-title">
+                <span className="kc-ai-workbench__tools-icon">{modeIcon(activeMode)}</span>
+                <span>
+                  <Text strong>会话记录</Text>
+                  <Text type="secondary">{visibleSessions.length > 0 ? `${visibleSessions.length} 个调查会话` : '从这里切换当前调查'}</Text>
+                </span>
+              </div>
+              <Button size="small" type="text" onClick={() => navigate('/ai-workbench/model-settings')}>
+                模型设置
+              </Button>
+            </div>
 
-        <section className="kc-ai-workbench__body">
-          <aside className="kc-ai-workbench__rail">
-            <Card className="kc-ai-workbench__rail-card" size="small">
-              <div className="kc-ai-workbench__rail-heading">
-                <Text strong>功能切换</Text>
-                <Text type="secondary">AI 内部导航</Text>
-              </div>
-              <div className="kc-ai-workbench__switch-list">
-                {functionSwitches.map((item) => (
-                  <button
-                    key={item.key}
-                    className={['kc-ai-workbench__switch-item', item.active ? 'is-active' : ''].filter(Boolean).join(' ')}
-                    type="button"
-                    onClick={item.action}
-                  >
-                    <span className="kc-ai-workbench__switch-icon">{item.icon}</span>
-                    <span className="kc-ai-workbench__switch-copy">
-                      <span className="kc-ai-workbench__switch-label">{item.label}</span>
-                      <span className="kc-ai-workbench__switch-detail">{item.detail}</span>
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </Card>
+            <Conversations
+              items={conversationItems}
+              activeKey={currentSession?.id}
+              onActiveChange={(value) => updateSearchParams({ session: String(value) })}
+              className="kc-ai-workbench__conversations"
+              creation={{
+                icon: <EditOutlined />,
+                label: '新建会话',
+                onClick: () => createSessionMutation.mutate({ scope: draftScope }),
+                disabled: !canUseChat || createSessionMutation.isPending,
+              }}
+            />
 
-            <Card className="kc-ai-workbench__rail-card kc-ai-workbench__session-list-card" size="small">
-              <div className="kc-ai-workbench__rail-heading">
-                <Text strong>会话记录</Text>
-                <Text type="secondary">{visibleSessions.length}</Text>
-              </div>
-              <div className="kc-ai-workbench__session-list">
-                {visibleSessions.length === 0 ? (
-                  <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无会话" />
-                ) : (
-                  visibleSessions.map((item) => {
-                    const active = item.id === currentSession?.id
-                    return (
-                      <button
-                        key={item.id}
-                        className={['kc-ai-workbench__session-item', active ? 'is-active' : ''].filter(Boolean).join(' ')}
-                        type="button"
-                        onClick={() => updateSearchParams({ session: item.id })}
-                      >
-                        <span className="kc-ai-workbench__session-item-main">
-                          <span className="kc-ai-workbench__session-item-title">{item.title}</span>
-                          <span className="kc-ai-workbench__session-item-meta">{modeLabel(item.metadata?.mode)} · {item.updatedAt}</span>
-                        </span>
-                        <span className="kc-ai-workbench__session-item-tags">
-                          {item.metadata?.scope?.clusterId ? <Tag>{item.metadata.scope.clusterId}</Tag> : null}
-                        </span>
-                      </button>
-                    )
-                  })
-                )}
-              </div>
-            </Card>
-
-            <Card className="kc-ai-workbench__rail-card" size="small">
-              <div className="kc-ai-workbench__rail-heading">
-                <Text strong>快捷入口</Text>
-                <Text type="secondary">工具与证据</Text>
-              </div>
-              <Space orientation="vertical" size={8} style={{ width: '100%' }}>
-                <Button block onClick={() => openInspector('context')}>查看上下文</Button>
-                <Button block onClick={() => openInspector('evidence')}>查看证据与结论</Button>
-                <Button block onClick={() => setToolsetOpen(true)}>会话工具装配</Button>
-              </Space>
-            </Card>
+            <div className="kc-ai-workbench-sidebar__footer">
+              <Button block onClick={() => navigate('/ai-workbench/automation')}>
+                巡检与自动化
+              </Button>
+              <Button block onClick={() => setToolsetOpen(true)}>
+                工具装配
+              </Button>
+            </div>
           </aside>
 
-          <div className="kc-ai-workbench__dialog-shell">
-            {!currentSession ? (
-              <Card className="kc-ai-workbench__empty-card">
-                <Welcome
-                  icon={<ExperimentOutlined />}
-                  title={visibleSessions.length > 0 ? '正在准备会话' : '开始一轮调查'}
-                  description={visibleSessions.length > 0 ? '正在同步当前会话，请稍候。' : '从左侧会话记录选择既有调查，或直接新建一个会话开始排障。'}
-                  extra={
-                    <Space wrap>
-                      <Button type="primary" icon={<PlusOutlined />} loading={createSessionMutation.isPending} onClick={() => createSessionMutation.mutate({ scope: draftScope })} disabled={!canUseChat}>
-                        新建会话
-                      </Button>
-                      <Button onClick={() => navigate('/ai-workbench/automation')}>查看巡检与自动化</Button>
-                      <Button onClick={() => navigate('/ai-workbench/tools')}>查看工具与技能</Button>
-                    </Space>
-                  }
+          <main className="kc-ai-workbench__canvas">
+            <div className="kc-ai-workbench__function-bar">
+              <div className="kc-ai-workbench__function-main">
+                <div className="kc-ai-workbench__function-copy">
+                  <Text type="secondary">调查模式</Text>
+                  <Title level={5} style={{ margin: 0 }}>{modeLabel(activeMode)}</Title>
+                  <Paragraph style={{ marginBottom: 0 }} type="secondary">
+                    {modeDescription(activeMode)}
+                  </Paragraph>
+                </div>
+                <Segmented
+                  value={activeMode}
+                  options={WORKBENCH_MODE_OPTIONS.map((item) => ({ value: item.value, label: item.label }))}
+                  onChange={handleModeChange}
                 />
-              </Card>
-            ) : (
-              <>
-                <Card className="kc-ai-workbench__session-card" size="small">
-                  <Flex justify="space-between" align="start" gap={16} wrap="wrap">
-                    <div className="kc-ai-workbench__session-copy">
-                      <div className="kc-ai-workbench__session-title-row">
-                        <Title level={4} style={{ margin: 0 }}>{currentSession.title}</Title>
-                        <Button
-                          type="text"
-                          size="small"
-                          icon={<EditOutlined />}
-                          onClick={() => {
-                            setRenameTargetId(currentSession.id)
-                            setRenameValue(currentSession.title)
-                            setRenameOpen(true)
-                          }}
-                        />
-                      </div>
-                      <Paragraph className="kc-ai-workbench__session-description">
-                        {currentSession.metadata?.summary || '围绕当前范围继续追问、分析和沉淀调查结论。'}
-                      </Paragraph>
-                      <Space size={[8, 8]} wrap>
-                        <Tag color="blue">{modeLabel(currentSession.metadata?.mode)}</Tag>
-                        <Tag>{buildScopeSummary(currentSession.metadata?.scope)}</Tag>
-                        {(currentSession.metadata?.tags ?? []).map((item) => <Tag key={item}>{item}</Tag>)}
-                      </Space>
-                    </div>
-                    <Space wrap>
-                      {currentSession.metadata?.scope?.alertId ? (
-                        <Button onClick={() => navigate(`/monitoring-workbench/alerts/${currentSession.metadata?.scope?.alertId}`)}>
-                          回到原告警
+              </div>
+              <Space wrap className="kc-ai-workbench__function-tabs">
+                <Button icon={<ToolOutlined />} onClick={() => setToolsetOpen(true)}>
+                  工具装配
+                </Button>
+                <Button icon={<PlayCircleOutlined />} onClick={() => navigate('/ai-workbench/model-settings')}>
+                  模型设置
+                </Button>
+                <Button type="primary" icon={<EditOutlined />} loading={createSessionMutation.isPending} onClick={() => createSessionMutation.mutate({ scope: draftScope })} disabled={!canUseChat}>
+                  新建会话
+                </Button>
+              </Space>
+            </div>
+
+            <div className="kc-ai-workbench__dialog-shell">
+              {!currentSession ? (
+                <div className="kc-ai-workbench__empty-state">
+                  <Welcome
+                    icon={<ExperimentOutlined />}
+                    title={visibleSessions.length > 0 ? '正在准备会话' : '开始一轮调查'}
+                    description={visibleSessions.length > 0 ? '正在同步当前会话，请稍候。' : '从左侧菜单的会话记录选择既有调查，或直接新建一个会话开始排障。'}
+                    extra={
+                      <Space wrap>
+                        <Button type="primary" loading={createSessionMutation.isPending} onClick={() => createSessionMutation.mutate({ scope: draftScope })} disabled={!canUseChat}>
+                          新建会话
                         </Button>
-                      ) : null}
-                      <Button onClick={() => openInspector('context')}>查看上下文</Button>
-                      <Button loading={analyzeSessionMutation.isPending} onClick={() => analyzeSessionMutation.mutate()}>
-                        显式分析
-                      </Button>
-                      <Button loading={createInspectionFromSessionMutation.isPending} onClick={() => createInspectionFromSessionMutation.mutate()}>
-                        生成巡检任务
-                      </Button>
-                      <Button icon={<BranchesOutlined />} onClick={() => setThinkingOpen(true)}>
-                        分析链路
-                      </Button>
-                      <Button danger icon={<DeleteOutlined />} onClick={() => deleteSessionMutation.mutate(currentSession.id)}>
-                        归档
-                      </Button>
-                    </Space>
-                  </Flex>
-                </Card>
-
-                <div className="kc-ai-workbench__conversation-card">
-                  <div className="kc-ai-workbench__conversation-topbar">
-                    <div>
-                      <Text strong>对话流程</Text>
-                      <Paragraph className="kc-ai-workbench__conversation-subtitle">
-                        右侧主区域以问答、工具调用和分析沉淀为主，证据与建议通过侧抽屉查看。
-                      </Paragraph>
-                    </div>
-                    <Space wrap>
-                      <Button size="small" onClick={() => openInspector('evidence')}>证据</Button>
-                      <Button size="small" onClick={() => openInspector('hypotheses')}>假设</Button>
-                      <Button size="small" onClick={() => openInspector('actions')}>建议</Button>
-                    </Space>
-                  </div>
-
-                  <div className="kc-ai-workbench__conversation-scroll">
-                    {messages.length === 0 ? (
-                      <Welcome
-                        icon={<ExperimentOutlined />}
-                        title="开始一轮调查"
-                        description="围绕当前模式发起提问，AI 会把工具调用、证据和建议回流到当前会话。"
-                        extra={
-                          <Prompts
-                            title="建议起手问题"
-                            wrap
-                            items={promptItems.map((item) => ({
-                              key: item.key,
-                              label: item.label,
-                              description: item.label,
-                            }))}
-                            onItemClick={({ data }) => sendMessageMutation.mutate(String(data.label))}
-                          />
-                        }
-                      />
-                    ) : (
-                      <Bubble.List
-                        autoScroll
-                        items={bubbleItems(messages)}
-                        role={{
-                          ai: { placement: 'start', avatar: <RobotOutlined />, variant: 'borderless' },
-                          user: { placement: 'end', variant: 'filled' },
-                          system: { placement: 'start', variant: 'outlined' },
-                        }}
-                        style={{ flex: 1, overflow: 'auto', paddingRight: 8 }}
-                      />
-                    )}
-                  </div>
-
-                  <Sender
-                    placeholder="输入排障问题、分析目标或进一步追问"
-                    loading={sendMessageMutation.isPending}
-                    disabled={!canUseChat || !currentSession}
-                    onSubmit={(value) => {
-                      if (!value?.trim()) return
-                      sendMessageMutation.mutate(value)
-                    }}
-                    header={
-                      <Prompts
-                        wrap
-                        items={promptItems}
-                        onItemClick={({ data }) => sendMessageMutation.mutate(String(data.label))}
-                      />
+                        <Button onClick={() => navigate('/ai-workbench/automation')}>查看巡检与自动化</Button>
+                        <Button onClick={() => navigate('/ai-workbench/tools')}>查看工具与技能</Button>
+                      </Space>
                     }
                   />
                 </div>
-              </>
-            )}
-          </div>
+              ) : (
+                <>
+                  <div className="kc-ai-workbench__session-card">
+                    <Flex justify="space-between" align="start" gap={16} wrap="wrap">
+                      <div className="kc-ai-workbench__session-copy">
+                        <div className="kc-ai-workbench__session-title-row">
+                          <Title level={4} style={{ margin: 0 }}>{currentSession.title}</Title>
+                          <Button
+                            type="text"
+                            size="small"
+                            icon={<EditOutlined />}
+                            onClick={() => {
+                              setRenameTargetId(currentSession.id)
+                              setRenameValue(currentSession.title)
+                              setRenameOpen(true)
+                            }}
+                          />
+                        </div>
+                        <Paragraph className="kc-ai-workbench__session-description">
+                          {currentSession.metadata?.summary || modeDescription(currentSession.metadata?.mode)}
+                        </Paragraph>
+                        <Space size={[8, 8]} wrap>
+                          <Tag color="blue">{modeLabel(currentSession.metadata?.mode)}</Tag>
+                          <Tag>{buildScopeSummary(currentSession.metadata?.scope)}</Tag>
+                          {currentSession.metadata?.analysisRunRefs?.[0]?.status ? <StatusTag value={currentSession.metadata.analysisRunRefs[0].status} /> : null}
+                          {(currentSession.metadata?.tags ?? []).map((item) => <Tag key={item}>{item}</Tag>)}
+                        </Space>
+                      </div>
+                      <Space wrap>
+                        {currentSession.metadata?.scope?.alertId ? (
+                          <Button onClick={() => navigate(`/monitoring-workbench/alerts/${currentSession.metadata?.scope?.alertId}`)}>
+                            回到原告警
+                          </Button>
+                        ) : null}
+                        <Button onClick={() => openInspector('context')}>查看上下文</Button>
+                        <Button loading={analyzeSessionMutation.isPending} onClick={() => analyzeSessionMutation.mutate()}>
+                          显式分析
+                        </Button>
+                        <Button loading={createInspectionFromSessionMutation.isPending} onClick={() => createInspectionFromSessionMutation.mutate()}>
+                          生成巡检任务
+                        </Button>
+                        <Button icon={<BranchesOutlined />} onClick={() => setThinkingOpen(true)}>
+                          分析链路
+                        </Button>
+                        <Button danger icon={<DeleteOutlined />} onClick={() => deleteSessionMutation.mutate(currentSession.id)}>
+                          归档
+                        </Button>
+                      </Space>
+                    </Flex>
+                  </div>
+
+                  <div className="kc-ai-workbench__conversation-card">
+                    <div className="kc-ai-workbench__conversation-topbar">
+                      <div>
+                        <Text strong>对话流程</Text>
+                        <Paragraph className="kc-ai-workbench__conversation-subtitle">
+                          {buildScopeSummary(currentSession.metadata?.scope)} · {messages.length} 条消息
+                        </Paragraph>
+                      </div>
+                      <Space wrap>
+                        <Button size="small" onClick={() => openInspector('evidence')}>证据</Button>
+                        <Button size="small" onClick={() => openInspector('hypotheses')}>假设</Button>
+                        <Button size="small" onClick={() => openInspector('actions')}>建议</Button>
+                      </Space>
+                    </div>
+
+                    {activeGraph?.nodes?.length ? (
+                      <div className="kc-ai-workbench__graph-panel">
+                        <div className="kc-ai-workbench__graph-head">
+                          <div>
+                            <Text strong>根因链路图</Text>
+                            <Paragraph className="kc-ai-workbench__conversation-subtitle">
+                              把 traces、logs、metrics 与假设收敛成一张会话内动态图。
+                            </Paragraph>
+                          </div>
+                          <Space size={8} wrap>
+                            <Tag color="blue">{activeArtifact?.kind || activeMode}</Tag>
+                            <Tag>{activeGraph.nodes?.length || 0} 节点</Tag>
+                            <Tag>{activeGraph.edges?.length || 0} 连线</Tag>
+                          </Space>
+                        </div>
+                        {!enabledDataSources.some((item) => ['logs', 'metrics', 'traces'].includes(item.sourceKind)) ? (
+                          <Alert
+                            type="info"
+                            showIcon
+                            message="当前还没有可用的 logs / metrics / traces 数据源"
+                            description="现在展示的是会话范围根节点。配置 Elasticsearch/Loki、Prometheus、Jaeger 之后，根因图会自动扩展成错误链路、日志签名和指标挂件。"
+                          />
+                        ) : null}
+                        <div className="kc-ai-workbench__graph-layout">
+                          <WorkbenchGraphCanvas
+                            fitKey={graphFitKey}
+                            graph={activeGraph}
+                            onSelectNode={setSelectedGraphNodeId}
+                          />
+                          <div className="kc-workbench-graph-selection">
+                            {selectedGraphNode ? (
+                              <Space orientation="vertical" size={10} style={{ width: '100%' }}>
+                                <div>
+                                  <Space size={[8, 8]} wrap>
+                                    <Text strong>{selectedGraphNode.title}</Text>
+                                    <Tag>{graphNodeLabel(selectedGraphNode.kind)}</Tag>
+                                    {selectedGraphNode.severity ? <StatusTag value={selectedGraphNode.severity} /> : null}
+                                  </Space>
+                                  {selectedGraphNode.subtitle ? (
+                                    <Paragraph type="secondary" style={{ margin: '8px 0 0' }}>
+                                      {selectedGraphNode.subtitle}
+                                    </Paragraph>
+                                  ) : null}
+                                </div>
+                                {selectedGraphNode.sourceRefs?.length ? (
+                                  <div className="kc-ai-workbench__tool-chip-list">
+                                    {selectedGraphNode.sourceRefs.map((item) => <Tag key={`${selectedGraphNode.id}-${item}`}>{item}</Tag>)}
+                                  </div>
+                                ) : null}
+                                {selectedGraphNode.kind === 'missing_source' ? (
+                                  <Alert
+                                    type="info"
+                                    showIcon
+                                    message="当前会话缺少这类观测源"
+                                    description="先到“工具与技能”或“模型设置 / 数据源配置”里补上对应连接，再重新执行显式分析。"
+                                  />
+                                ) : null}
+                                {selectedGraphNode.kind === 'recommendation' ? (
+                                  <Alert
+                                    type="success"
+                                    showIcon
+                                    message="建议的下一步动作"
+                                    description={selectedGraphNode.subtitle || '优先缩小 scope，再重新分析。'}
+                                  />
+                                ) : null}
+                                {selectedGraphNode.evidenceIds?.length ? (
+                                  <Card size="small" title="关联证据">
+                                    <Space orientation="vertical" size={8} style={{ width: '100%' }}>
+                                      {(activeArtifact?.evidence ?? []).filter((item) => selectedGraphNode.evidenceIds?.includes(item.id)).map((item) => (
+                                        <div key={item.id}>
+                                          <Text strong>{item.title}</Text>
+                                          <Paragraph type="secondary" style={{ margin: '4px 0 0' }}>{item.summary}</Paragraph>
+                                        </div>
+                                      ))}
+                                    </Space>
+                                  </Card>
+                                ) : null}
+                                {selectedGraphNode.attributes ? (
+                                  <Card size="small" title="节点属性">
+                                    <pre className="kc-workbench-graph-json">{JSON.stringify(selectedGraphNode.attributes, null, 2)}</pre>
+                                  </Card>
+                                ) : null}
+                              </Space>
+                            ) : (
+                              <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="点击图中的节点，查看链路明细" />
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ) : null}
+
+                    <div className="kc-ai-workbench__conversation-scroll">
+                      {messages.length === 0 ? (
+                        <Welcome
+                          icon={<ExperimentOutlined />}
+                          title="开始一轮调查"
+                          description="围绕当前模式发起提问，AI 会把工具调用、证据和建议回流到当前会话。"
+                          extra={
+                            <Prompts
+                              title="建议起手问题"
+                              wrap
+                              items={promptItems.map((item) => ({
+                                key: item.key,
+                                label: item.label,
+                                description: item.label,
+                              }))}
+                              onItemClick={({ data }) => sendMessageMutation.mutate(String(data.label))}
+                            />
+                          }
+                        />
+                      ) : (
+                        <Bubble.List
+                          autoScroll
+                          items={bubbleItems(messages)}
+                          role={{
+                            ai: { placement: 'start', avatar: <RobotOutlined />, variant: 'borderless' },
+                            user: { placement: 'end', variant: 'filled' },
+                            system: { placement: 'start', variant: 'outlined' },
+                          }}
+                          style={{ flex: 1, overflow: 'auto', paddingRight: 8 }}
+                        />
+                      )}
+                    </div>
+
+                    <Sender
+                      placeholder="输入排障问题、分析目标或进一步追问"
+                      loading={sendMessageMutation.isPending}
+                      disabled={!canUseChat || !currentSession}
+                      onSubmit={(value) => {
+                        if (!value?.trim()) return
+                        sendMessageMutation.mutate(value)
+                      }}
+                      header={
+                        <Prompts
+                          wrap
+                          items={promptItems}
+                          onItemClick={({ data }) => sendMessageMutation.mutate(String(data.label))}
+                        />
+                      }
+                    />
+                  </div>
+                </>
+              )}
+            </div>
+          </main>
+          <aside className="kc-ai-workbench__tools-pane">
+            <div className="kc-ai-workbench__tools-header">
+              <div className="kc-ai-workbench__tools-title">
+                <span className="kc-ai-workbench__tools-icon"><BranchesOutlined /></span>
+                <span>
+                  <Text strong>调查焦点</Text>
+                  <Text type="secondary">把上下文、证据和下一步动作收在右侧。</Text>
+                </span>
+              </div>
+              <Button size="small" type="text" onClick={() => setThinkingOpen(true)}>
+                分析链路
+              </Button>
+            </div>
+
+            <div className="kc-ai-workbench__insight-list">
+              {artifactSummary.map((item) => (
+                <button key={item.key} className="kc-ai-workbench__insight-item" type="button" onClick={() => openInspector(item.key)}>
+                  <span className="kc-ai-workbench__insight-icon">{item.icon}</span>
+                  <span className="kc-ai-workbench__insight-copy">
+                    <span className="kc-ai-workbench__insight-title">{item.label} · {item.value}</span>
+                    <span className="kc-ai-workbench__insight-detail">{item.description}</span>
+                  </span>
+                </button>
+              ))}
+            </div>
+
+                    <div className="kc-ai-workbench__tool-section">
+                      <div className="kc-ai-workbench__tool-section-title">
+                        <Text strong>会话装配</Text>
+                        <Button size="small" type="text" onClick={() => setToolsetOpen(true)}>
+                          调整
+                </Button>
+              </div>
+              <div className="kc-ai-workbench__tool-stack">
+                <div className="kc-ai-workbench__tool-row">
+                  <span>
+                    <Text strong>已选适配器</Text>
+                    <Text type="secondary">{selectedAdapterIds.length > 0 ? selectedAdapterIds.join(', ') : '默认自动选择'}</Text>
+                  </span>
+                  <Tag>{selectedAdapterIds.length || 'Auto'}</Tag>
+                </div>
+                <div className="kc-ai-workbench__tool-row">
+                  <span>
+                    <Text strong>会话技能</Text>
+                    <Text type="secondary">{selectedSkillNames.length > 0 ? selectedSkillNames.join(', ') : '沿用全局技能'}</Text>
+                  </span>
+                  <Tag>{selectedSkillNames.length || globalSkills.filter((item) => item.enabled).length}</Tag>
+                </div>
+                <div className="kc-ai-workbench__tool-row">
+                  <span>
+                    <Text strong>活跃数据源</Text>
+                    <Text type="secondary">{enabledDataSources.length > 0 ? enabledDataSources.map((item) => item.name).join(', ') : '暂无可用数据源'}</Text>
+                  </span>
+                  <Tag>{enabledDataSources.length}</Tag>
+                </div>
+                        </div>
+                      </div>
+
+                      <div className="kc-ai-workbench__tool-section">
+                        <div className="kc-ai-workbench__tool-section-title">
+                          <Text strong>Skills 渐进式披露</Text>
+                          {hiddenSkillCount > 0 ? (
+                            <Button size="small" type="text" onClick={() => setShowAllSkills((current) => !current)}>
+                              {showAllSkills ? '收起扩展' : `展开更多 (${hiddenSkillCount})`}
+                            </Button>
+                          ) : null}
+                        </div>
+                        <Paragraph type="secondary" style={{ marginBottom: 0 }}>
+                          先展示当前模式最相关、或本会话已经启用的 skills；只有继续展开时才披露能力引用、范围规则和附加技能。
+                        </Paragraph>
+                        <div className="kc-ai-workbench__tool-stack">
+                          {primarySkills.length === 0 ? (
+                            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="当前没有启用的 skills" />
+                          ) : primarySkills.map((skill) => {
+                            const expanded = Boolean(skillsDisclosureExpanded[skill.id])
+                            const selected = selectedSkillIds.includes(skill.id)
+                            return (
+                              <div key={skill.id} className="kc-ai-workbench__tool-row is-skill">
+                                <span>
+                                  <Space size={[6, 6]} wrap>
+                                    <Text strong>{skill.name}</Text>
+                                    {selected ? <StatusTag value="enabled" /> : null}
+                                    {skill.category ? <Tag>{skill.category}</Tag> : null}
+                                  </Space>
+                                  <Text type="secondary">{skill.description || (skill.scopes ?? []).join(', ') || '未填写说明'}</Text>
+                                  {expanded ? (
+                                    <div className="kc-ai-workbench__tool-chip-list" style={{ marginTop: 8 }}>
+                                      {(skill.capabilityRefs ?? []).map((item) => <Tag key={`${skill.id}-cap-${item}`}>{item}</Tag>)}
+                                      {(skill.scopeRules ?? []).map((item) => <Tag key={`${skill.id}-scope-${item}`}>{item}</Tag>)}
+                                      {(skill.scopes ?? []).map((item) => <Tag key={`${skill.id}-grant-${item}`}>{item}</Tag>)}
+                                    </div>
+                                  ) : null}
+                                </span>
+                                <Button
+                                  size="small"
+                                  onClick={() => setSkillsDisclosureExpanded((current) => ({ ...current, [skill.id]: !expanded }))}
+                                >
+                                  {expanded ? '收起能力' : '展开能力'}
+                                </Button>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </div>
+
+                      <div className="kc-ai-workbench__tool-section">
+                        <div className="kc-ai-workbench__tool-section-title">
+                          <Text strong>快捷动作</Text>
+                <Button size="small" type="text" onClick={() => navigate('/ai-workbench/tools')}>
+                  工具与技能
+                </Button>
+              </div>
+              <div className="kc-ai-workbench__tool-stack">
+                <div className="kc-ai-workbench__tool-row">
+                  <span>
+                    <Text strong>当前范围</Text>
+                    <Text type="secondary">{buildScopeSummary(currentSession?.metadata?.scope)}</Text>
+                  </span>
+                  <Button size="small" onClick={() => openInspector('context')}>查看</Button>
+                </div>
+                <div className="kc-ai-workbench__tool-row">
+                  <span>
+                    <Text strong>显式分析</Text>
+                    <Text type="secondary">把当前会话转成一轮结构化分析输出。</Text>
+                  </span>
+                  <Button size="small" loading={analyzeSessionMutation.isPending} onClick={() => analyzeSessionMutation.mutate()} disabled={!currentSession}>运行</Button>
+                </div>
+                <div className="kc-ai-workbench__tool-row">
+                  <span>
+                    <Text strong>生成巡检任务</Text>
+                    <Text type="secondary">把会话结论转成后续巡检与自动化入口。</Text>
+                  </span>
+                  <Button size="small" loading={createInspectionFromSessionMutation.isPending} onClick={() => createInspectionFromSessionMutation.mutate()} disabled={!currentSession}>生成</Button>
+                </div>
+              </div>
+            </div>
+          </aside>
         </section>
       </div>
 

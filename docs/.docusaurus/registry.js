@@ -1,4 +1,5 @@
 export default {
+  "0625878c": [() => import(/* webpackChunkName: "0625878c" */ "@site/architecture/login-and-identity.md"), "@site/architecture/login-and-identity.md", require.resolveWeak("@site/architecture/login-and-identity.md")],
   "08238c6d": [() => import(/* webpackChunkName: "08238c6d" */ "@site/index.md"), "@site/index.md", require.resolveWeak("@site/index.md")],
   "0bdf1156": [() => import(/* webpackChunkName: "0bdf1156" */ "@site/development/frontend-structure.md"), "@site/development/frontend-structure.md", require.resolveWeak("@site/development/frontend-structure.md")],
   "0fa7de35": [() => import(/* webpackChunkName: "0fa7de35" */ "@site/architecture/monitoring-and-alerting.md"), "@site/architecture/monitoring-and-alerting.md", require.resolveWeak("@site/architecture/monitoring-and-alerting.md")],

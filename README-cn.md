@@ -196,6 +196,7 @@ helm lint chart
 
 - [工程规范](./AGENTS.md)
 - [架构总览](./docs/architecture/index.md)
+- [登录与身份链路](./docs/architecture/login-and-identity.md)
 - [应用交付](./docs/architecture/application-delivery.md)
 - [权限体系](./docs/architecture/authorization.md)
 - [监控与告警](./docs/architecture/monitoring-and-alerting.md)

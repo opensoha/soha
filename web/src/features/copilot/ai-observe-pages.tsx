@@ -1,11 +1,12 @@
 import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { AppstoreOutlined, PlayCircleOutlined, RadarChartOutlined, RobotOutlined, ToolOutlined } from '@ant-design/icons'
-import { App, Button, Card, Col, Empty, List, Row, Segmented, Space, Statistic, Table, Tag, Typography } from 'antd'
+import { App, Button, Card, Col, Empty, List, Row, Segmented, Select, Space, Statistic, Table, Tag, Typography } from 'antd'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { PageHeader } from '@/components/page-header'
 import { StatusTag } from '@/components/status-tag'
 import { api } from '@/services/api-client'
+import { AISettingsPage } from '@/features/settings/settings-pages'
 import type { ApiResponse } from '@/types'
 import { AIWorkbenchPage } from './workbench-page'
 import type { WorkbenchSession } from './workbench-types'
@@ -417,6 +418,10 @@ export function AIOperationsPage() {
 
 export function AIToolsPage() {
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const requestedSessionId = searchParams.get('session') || undefined
+  const queryClient = useQueryClient()
+  const { message } = App.useApp()
   const settingsQuery = useQuery({
     queryKey: ['ai-tools-settings'],
     queryFn: () => api.get<ApiResponse<{ skillsRegistry?: Array<{ id: string; name: string; description?: string; enabled: boolean; scopes?: string[] }> }>>('/settings/ai'),
@@ -429,10 +434,27 @@ export function AIToolsPage() {
     queryKey: ['ai-tools-datasources'],
     queryFn: () => api.get<ApiResponse<Array<{ id: string; name: string; sourceKind: string; backendType: string; enabled: boolean; mcpAdapter: string; validationStatus?: string }>>>('/copilot/data-sources'),
   })
+  const sessionDetailQuery = useQuery({
+    queryKey: ['copilot-workbench-session-detail', requestedSessionId],
+    queryFn: () => api.get<ApiResponse<WorkbenchSession>>(`/copilot/sessions/${requestedSessionId}`),
+    enabled: Boolean(requestedSessionId),
+  })
 
   const adapters = adaptersQuery.data?.data ?? []
   const dataSources = dataSourcesQuery.data?.data ?? []
   const skills = settingsQuery.data?.data?.skillsRegistry ?? []
+  const currentSession = sessionDetailQuery.data?.data
+
+  const patchSessionMutation = useMutation({
+    mutationFn: (payload: { sessionId: string; body: Record<string, unknown> }) =>
+      api.patch<ApiResponse<WorkbenchSession>>(`/copilot/sessions/${payload.sessionId}`, payload.body),
+    onSuccess: async (_response, payload) => {
+      await queryClient.invalidateQueries({ queryKey: ['copilot-workbench-sessions'] })
+      await queryClient.invalidateQueries({ queryKey: ['copilot-workbench-session-detail', payload.sessionId] })
+      void message.success('会话级工具装配已更新')
+    },
+    onError: (err: Error) => void message.error(err.message),
+  })
 
   return (
     <div className="kc-page">
@@ -473,6 +495,54 @@ export function AIToolsPage() {
           </Card>
         </Col>
         <Col xs={24}>
+          <Card title="会话级装配">
+            {!requestedSessionId || !currentSession ? (
+              <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="先从左侧菜单进入一个会话，再配置工具装配。" />
+            ) : (
+              <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                <div className="flex flex-wrap gap-2">
+                  <Tag color="blue">{currentSession.title}</Tag>
+                  <Tag>{currentSession.metadata?.mode || 'general'}</Tag>
+                </div>
+                <Select
+                  mode="multiple"
+                  placeholder="选择会话级适配器"
+                  value={currentSession.metadata?.toolset?.enabledAdapterIds ?? []}
+                  onChange={(value: string[]) => {
+                    patchSessionMutation.mutate({
+                      sessionId: requestedSessionId,
+                      body: {
+                        toolset: {
+                          ...(currentSession.metadata?.toolset ?? {}),
+                          enabledAdapterIds: value,
+                        },
+                      },
+                    })
+                  }}
+                  options={adapters.map((item) => ({ value: item.id, label: `${item.name} (${item.sourceKind})` }))}
+                />
+                <Select
+                  mode="multiple"
+                  placeholder="选择会话级技能"
+                  value={currentSession.metadata?.toolset?.enabledSkillIds ?? []}
+                  onChange={(value: string[]) => {
+                    patchSessionMutation.mutate({
+                      sessionId: requestedSessionId,
+                      body: {
+                        toolset: {
+                          ...(currentSession.metadata?.toolset ?? {}),
+                          enabledSkillIds: value,
+                        },
+                      },
+                    })
+                  }}
+                  options={skills.filter((item) => item.enabled).map((item) => ({ value: item.id, label: item.name }))}
+                />
+              </Space>
+            )}
+          </Card>
+        </Col>
+        <Col xs={24}>
           <Card title="Skills Registry">
             <List
               dataSource={skills}
@@ -488,12 +558,24 @@ export function AIToolsPage() {
               )}
             />
             <Space style={{ marginTop: 16 }}>
-              <Button onClick={() => navigate('/settings/ai')}>前往 AI 设置</Button>
-              <Button type="primary" onClick={() => navigate('/ai-workbench/investigation')}>回到调查工作台</Button>
+              <Button onClick={() => navigate('/ai-workbench/model-settings')}>前往 AI 设置</Button>
+              <Button type="primary" onClick={() => navigate('/ai-workbench/chat')}>回到调查工作台</Button>
             </Space>
           </Card>
         </Col>
       </Row>
+    </div>
+  )
+}
+
+export function AIModelSettingsPage() {
+  return (
+    <div className="kc-page">
+      <PageHeader
+        title="AI 设置"
+        description="在 AI 工作台内查看和调整 Provider、数据源、技能与自动化策略。"
+      />
+      <AISettingsPage embedded />
     </div>
   )
 }

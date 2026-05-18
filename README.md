@@ -196,6 +196,7 @@ Primary project docs live in [docs](./docs/).
 
 - [Engineering Spec](./AGENTS.md)
 - [Architecture Overview](./docs/architecture/index.md)
+- [Login And Identity Flow](./docs/architecture/login-and-identity.md)
 - [Application Delivery](./docs/architecture/application-delivery.md)
 - [Authorization](./docs/architecture/authorization.md)
 - [Monitoring and Alerting](./docs/architecture/monitoring-and-alerting.md)

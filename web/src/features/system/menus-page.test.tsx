@@ -48,16 +48,19 @@ vi.mock('@/components/admin-table', () => ({
       {title ? <div>{title}</div> : null}
       {headerExtra ? <div>{headerExtra}</div> : null}
       {toolbar ? <div>{toolbar}</div> : null}
-      {(dataSource as Array<Record<string, unknown>>).map((record, rowIndex) => (
-        <div key={String(record.id ?? rowIndex)} data-testid={`row-${String(record.id ?? rowIndex)}`}>
-          {columns.map((column, columnIndex) => {
-            const dataIndex = column?.dataIndex
-            const value = typeof dataIndex === 'string' ? record[dataIndex] : undefined
-            const content = column?.render ? column.render(value, record, rowIndex) : String(value ?? '')
-            return <div key={`${String(dataIndex ?? columnIndex)}:${columnIndex}`}>{content}</div>
-          })}
-        </div>
-      ))}
+      {(function renderRows(items: Array<Record<string, unknown>>, prefix = ''): ReactNode {
+        return items.map((record, rowIndex) => (
+          <div key={`${prefix}${String(record.id ?? rowIndex)}`} data-testid={`row-${String(record.id ?? rowIndex)}`}>
+            {columns.map((column, columnIndex) => {
+              const dataIndex = column?.dataIndex
+              const value = typeof dataIndex === 'string' ? record[dataIndex] : undefined
+              const content = column?.render ? column.render(value, record, rowIndex) : String(value ?? '')
+              return <div key={`${String(dataIndex ?? columnIndex)}:${columnIndex}`}>{content}</div>
+            })}
+            {Array.isArray(record.children) ? renderRows(record.children as Array<Record<string, unknown>>, `${String(record.id ?? rowIndex)}:`) : null}
+          </div>
+        ))
+      })(dataSource as Array<Record<string, unknown>>)}
     </div>
   ),
 }))
@@ -260,5 +263,29 @@ describe('menus page modal state', () => {
     await clickButton(getRowEditButton('configuration'))
 
     expect(document.body.textContent).toContain('当前菜单会在 平台工作台 的导航树内展示。')
+  })
+
+  it('submits an empty section as an ungrouped menu', async () => {
+    testState.responses['/menus'] = [
+      {
+        id: 'configuration',
+        labelZh: '配置',
+        labelEn: 'Configuration',
+        path: '/configuration',
+        iconKey: 'cog',
+        section: '',
+        sortOrder: 40,
+        enabled: true,
+      },
+    ]
+    await renderWithProviders(<MenusPage />, '/system/menus')
+
+    expect(document.body.textContent).toContain('工作台视图')
+    expect(document.body.textContent).toContain('未分组')
+
+    await clickButton(getRowEditButton('configuration'))
+    await clickButtonByText('更新')
+
+    expect(apiPutMock).toHaveBeenCalledWith('/menus/configuration', expect.objectContaining({ section: '' }))
   })
 })

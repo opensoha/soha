@@ -15,8 +15,8 @@
   "frontMatter": {},
   "sidebar": "mainSidebar",
   "previous": {
-    "title": "Authorization",
-    "permalink": "/docs/architecture/authorization"
+    "title": "登录与身份链路",
+    "permalink": "/docs/architecture/login-and-identity"
   },
   "next": {
     "title": "Agent Protocol",

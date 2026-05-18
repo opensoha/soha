@@ -61,6 +61,34 @@ export interface WorkbenchToolCall {
   completedAt?: string
 }
 
+export interface WorkbenchGraphNode {
+  id: string
+  kind: string
+  title: string
+  subtitle?: string
+  severity?: string
+  evidenceIds?: string[]
+  sourceRefs?: string[]
+  attributes?: Record<string, unknown>
+}
+
+export interface WorkbenchGraphEdge {
+  id: string
+  source: string
+  target: string
+  relation: string
+  severity?: string
+  evidenceIds?: string[]
+  attributes?: Record<string, unknown>
+}
+
+export interface WorkbenchGraph {
+  layout?: string
+  focusNodeId?: string
+  nodes?: WorkbenchGraphNode[]
+  edges?: WorkbenchGraphEdge[]
+}
+
 export interface WorkbenchEvidence {
   id: string
   kind: string
@@ -89,6 +117,7 @@ export interface WorkbenchArtifact {
   hypotheses?: WorkbenchHypothesis[]
   recommendations?: string[]
   toolExecutions?: WorkbenchToolCall[]
+  graph?: WorkbenchGraph
   dataSourceSnapshot?: Record<string, unknown>
 }
 

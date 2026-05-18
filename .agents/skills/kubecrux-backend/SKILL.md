@@ -51,6 +51,12 @@ Implement backend changes through the repository's layered Go architecture. Keep
 - `references/architecture.md`: module responsibilities, bootstrap wiring, and where common backend changes should land.
 - `references/platform-rules.md`: cluster-access behavior, scope semantics, performance expectations, and backend verification prompts.
 
+## Repo-specific reminders
+
+- When changing identity or login flows, update the matching docs in `docs/architecture/**`, `docs/en/api/**`, and `docs/operations/**` in the same task.
+- Treat legacy `auth.oidc.*` config as a compatibility layer when multi-provider login settings exist; do not silently break old OIDC runtime paths.
+- If a provider type is only configuration-visible and not runtime-complete, make that explicit in API behavior and docs rather than implying parity.
+
 ## Done Criteria
 
 - Layer boundaries remain intact.
