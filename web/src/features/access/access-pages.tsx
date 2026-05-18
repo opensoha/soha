@@ -525,6 +525,7 @@ export function AccessUsersPage() {
   const [modalVisible, setModalVisible] = useState(false)
   const [editing, setEditing] = useState<AccessUser | null>(null)
   const [grantUser, setGrantUser] = useState<AccessUser | null>(null)
+  const [searchText, setSearchText] = useState('')
 
   const usersQuery = useQuery({
     queryKey: ['access/users'],
@@ -555,6 +556,18 @@ export function AccessUsersPage() {
     () => (teamsQuery.data?.data ?? []).map((item) => ({ value: item.id, label: item.name })),
     [teamsQuery.data],
   )
+  const filteredUsers = useMemo(() => {
+    const query = searchText.trim().toLowerCase()
+    const items = usersQuery.data?.data ?? []
+    if (!query) {
+      return items
+    }
+    return items.filter((item) => {
+      return [item.username, item.displayName, item.email, ...(item.roles ?? []), ...(item.teams ?? [])]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(query))
+    })
+  }, [searchText, usersQuery.data])
 
   const createMutation = useMutation({
     mutationFn: (values: Record<string, unknown>) => api.post('/access/users', values),
@@ -691,9 +704,36 @@ export function AccessUsersPage() {
       <AdminTable
         title="用户管理"
         className="kc-access-table"
-        toolbarExtra={canManageUsers ? <Button icon={<PlusOutlined />} type="primary" onClick={() => { setEditing(null); setModalVisible(true) }}>添加用户</Button> : null}
+        toolbar={(
+          <div className="kc-workload-table-filters">
+            <Input
+              allowClear
+              className="kc-platform-compact-field"
+              size="small"
+              placeholder="搜索用户名、显示名、邮箱、角色或用户组"
+              value={searchText}
+              onChange={(event) => setSearchText(event.target.value)}
+              style={{ width: 320 }}
+            />
+          </div>
+        )}
+        toolbarExtra={canManageUsers ? (
+          <div className="kc-page-toolbar">
+            <Button
+              size="small"
+              icon={<PlusOutlined />}
+              type="primary"
+              onClick={() => {
+                setEditing(null)
+                setModalVisible(true)
+              }}
+            >
+              添加用户
+            </Button>
+          </div>
+        ) : null}
         columns={columns}
-        dataSource={usersQuery.data?.data ?? []}
+        dataSource={filteredUsers}
         rowKey="id"
         loading={usersQuery.isLoading}
       />
@@ -861,7 +901,13 @@ export function AccessRolesPage() {
       <AdminTable
         title="角色管理"
         className="kc-access-table"
-        toolbarExtra={canManageRoles ? <Button icon={<PlusOutlined />} type="primary" onClick={crud.openCreate}>添加角色</Button> : null}
+        toolbarExtra={canManageRoles ? (
+          <div className="kc-page-toolbar">
+            <Button size="small" icon={<PlusOutlined />} type="primary" onClick={crud.openCreate}>
+              添加角色
+            </Button>
+          </div>
+        ) : null}
         columns={columns}
         dataSource={crud.data}
         rowKey="id"
@@ -991,7 +1037,13 @@ export function AccessTeamsPage() {
       <AdminTable
         title="用户组管理"
         className="kc-access-table"
-        toolbarExtra={canManageGroups ? <Button icon={<PlusOutlined />} type="primary" onClick={crud.openCreate}>添加用户组</Button> : null}
+        toolbarExtra={canManageGroups ? (
+          <div className="kc-page-toolbar">
+            <Button size="small" icon={<PlusOutlined />} type="primary" onClick={crud.openCreate}>
+              添加用户组
+            </Button>
+          </div>
+        ) : null}
         columns={columns}
         dataSource={crud.data}
         rowKey="id"
@@ -1181,7 +1233,13 @@ export function AccessPoliciesPage() {
       <AdminTable
         title="策略管理"
         className="kc-access-table"
-        toolbarExtra={canManagePolicies ? <Button icon={<PlusOutlined />} type="primary" onClick={crud.openCreate}>添加策略</Button> : null}
+        toolbarExtra={canManagePolicies ? (
+          <div className="kc-page-toolbar">
+            <Button size="small" icon={<PlusOutlined />} type="primary" onClick={crud.openCreate}>
+              添加策略
+            </Button>
+          </div>
+        ) : null}
         columns={columns}
         dataSource={crud.data}
         rowKey="id"

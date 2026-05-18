@@ -319,15 +319,18 @@ export function OnlineUsersPage() {
           </div>
         )}
         headerExtra={canManageOnlineUsers ? (
-          <Button
-            danger
-            variant="outlined"
-            disabled={selectedSessions.length === 0}
-            loading={batchRevokeMutation.isPending}
-            onClick={() => batchRevokeMutation.mutate(selectedSessions.map((item: OnlineUser) => item.id))}
-          >
-            {`批量下线 (${selectedSessions.length})`}
-          </Button>
+          <div className="kc-page-toolbar">
+            <Button
+              size="small"
+              danger
+              variant="outlined"
+              disabled={selectedSessions.length === 0}
+              loading={batchRevokeMutation.isPending}
+              onClick={() => batchRevokeMutation.mutate(selectedSessions.map((item: OnlineUser) => item.id))}
+            >
+              {`批量下线 (${selectedSessions.length})`}
+            </Button>
+          </div>
         ) : null}
         columns={columns}
         dataSource={filteredSessions}
@@ -335,9 +338,11 @@ export function OnlineUsersPage() {
         loading={isLoading}
         pageSize={20}
         toolbar={(
-          <Space wrap>
+          <div className="kc-workload-table-filters">
             <Select
+              className="kc-platform-compact-field"
               allowClear
+              size="small"
               placeholder="登录方式"
               style={{ width: 180 }}
               value={providerFilter || undefined}
@@ -345,14 +350,16 @@ export function OnlineUsersPage() {
               options={providerOptions}
             />
             <Input.Search
+              className="kc-platform-compact-field"
               allowClear
+              size="small"
               placeholder="搜索用户 / 邮箱 / IP / 设备"
               style={{ width: 280 }}
               value={searchKeyword}
               onChange={(event) => setSearchKeyword(event.target.value)}
               onSearch={(value) => setSearchKeyword(value)}
             />
-          </Space>
+          </div>
         )}
         rowSelection={canManageOnlineUsers ? {
           selectedRowKeys: selectedSessionIds,
@@ -521,7 +528,11 @@ export function AnnouncementsPage() {
       <PageHeader
         title="公告管理"
         description="按发布状态管理公告内容、发布时间窗与置顶优先级。"
-        actions={canManageAnnouncements ? <Button icon={<PlusOutlined />} type="primary" onClick={() => { setEditing(null); setModalVisible(true) }}>新建公告</Button> : null}
+        actions={canManageAnnouncements ? (
+          <Button size="small" icon={<PlusOutlined />} type="primary" onClick={() => { setEditing(null); setModalVisible(true) }}>
+            新建公告
+          </Button>
+        ) : null}
       />
       <div className="kc-system-overview-grid">
         <Card variant="outlined" className="kc-system-metric-card">
@@ -1335,67 +1346,79 @@ export function MenusPage() {
         title={(
           <div className="kc-admin-table-title-block">
             <Text strong>菜单管理</Text>
-            <Text type="secondary">维护菜单层级、工作台归属、路径、启用状态、排序，以及菜单可见性的派生或覆盖规则。</Text>
           </div>
         )}
-        headerExtra={canManageMenus ? (
-          <Button icon={<PlusOutlined />} type="primary" onClick={() => { setEditing(null); setModalVisible(true) }}>
-            新建菜单
-          </Button>
-        ) : null}
         expandable={{
           defaultExpandAllRows: treeView !== 'top',
           rowExpandable: (record: MenuItem) => countDirectMenuChildren(record) > 0,
         }}
         toolbar={(
-          <Space wrap>
-            <Segmented
-              value={treeView}
-              onChange={(value) => setTreeView(value as 'workbench' | 'top' | 'all')}
-              options={[
-                { value: 'workbench', label: '工作台视图' },
-                { value: 'top', label: '默认看顶级' },
-                { value: 'all', label: '看全部树' },
-              ]}
-            />
-            <Select
-              allowClear
-              placeholder="按分组筛选"
-              style={{ width: 220 }}
-              value={sectionFilter || undefined}
-              onChange={(value) => setSectionFilter(value || '')}
-              options={sectionOptions}
-            />
-            <Select
-              allowClear
-              placeholder="按工作台筛选"
-              style={{ width: 220 }}
-              value={workbenchFilter || undefined}
-              onChange={(value) => setWorkbenchFilter(value || '')}
-              options={workbenchOptions}
-            />
-            <Select
-              value={enabledFilter}
-              style={{ width: 160 }}
-              onChange={(value) => setEnabledFilter(value as 'all' | 'enabled' | 'disabled')}
-              options={[
-                { value: 'all', label: '全部状态' },
-                { value: 'enabled', label: '仅启用' },
-                { value: 'disabled', label: '仅禁用' },
-              ]}
-            />
-            <Select
-              value={visibilityFilter}
-              style={{ width: 180 }}
-              onChange={(value) => setVisibilityFilter(value as 'all' | 'derived' | 'explicit' | 'unmapped')}
-              options={[
-                { value: 'all', label: '全部策略' },
-                { value: 'derived', label: '自动派生' },
-                { value: 'explicit', label: '显式覆盖' },
-                { value: 'unmapped', label: '未映射' },
-              ]}
-            />
-          </Space>
+          <div className="kc-admin-table-toolbar-main">
+            <div className="kc-workload-table-filters">
+              <Segmented
+                size="small"
+                value={treeView}
+                onChange={(value) => setTreeView(value as 'workbench' | 'top' | 'all')}
+                options={[
+                  { value: 'workbench', label: '工作台视图' },
+                  { value: 'top', label: '默认看顶级' },
+                  { value: 'all', label: '看全部树' },
+                ]}
+              />
+              <Select
+                className="kc-platform-compact-field"
+                allowClear
+                size="small"
+                placeholder="按分组筛选"
+                style={{ width: 220 }}
+                value={sectionFilter || undefined}
+                onChange={(value) => setSectionFilter(value || '')}
+                options={sectionOptions}
+              />
+              <Select
+                className="kc-platform-compact-field"
+                allowClear
+                size="small"
+                placeholder="按工作台筛选"
+                style={{ width: 220 }}
+                value={workbenchFilter || undefined}
+                onChange={(value) => setWorkbenchFilter(value || '')}
+                options={workbenchOptions}
+              />
+              <Select
+                className="kc-platform-compact-field"
+                size="small"
+                value={enabledFilter}
+                style={{ width: 160 }}
+                onChange={(value) => setEnabledFilter(value as 'all' | 'enabled' | 'disabled')}
+                options={[
+                  { value: 'all', label: '全部状态' },
+                  { value: 'enabled', label: '仅启用' },
+                  { value: 'disabled', label: '仅禁用' },
+                ]}
+              />
+              <Select
+                className="kc-platform-compact-field"
+                size="small"
+                value={visibilityFilter}
+                style={{ width: 180 }}
+                onChange={(value) => setVisibilityFilter(value as 'all' | 'derived' | 'explicit' | 'unmapped')}
+                options={[
+                  { value: 'all', label: '全部策略' },
+                  { value: 'derived', label: '自动派生' },
+                  { value: 'explicit', label: '显式覆盖' },
+                  { value: 'unmapped', label: '未映射' },
+                ]}
+              />
+            </div>
+            {canManageMenus ? (
+              <div className="kc-page-toolbar">
+                <Button size="small" icon={<PlusOutlined />} type="primary" onClick={() => { setEditing(null); setModalVisible(true) }}>
+                  新建菜单
+                </Button>
+              </div>
+            ) : null}
+          </div>
         )}
       />
       <Modal
@@ -1754,8 +1777,9 @@ export function AuditLogsPage() {
           style: { cursor: 'pointer' },
         })}
         toolbar={(
-          <Space wrap>
+          <div className="kc-workload-table-filters">
             <Segmented
+              size="small"
               value={viewMode}
               onChange={(value) => setViewMode(value as 'all' | 'abnormal' | 'today')}
               options={[
@@ -1765,7 +1789,9 @@ export function AuditLogsPage() {
               ]}
             />
             <Select
+              className="kc-platform-compact-field"
               allowClear
+              size="small"
               placeholder="动作"
               style={{ width: 160 }}
               value={actionFilter || undefined}
@@ -1782,7 +1808,9 @@ export function AuditLogsPage() {
               ]}
             />
             <Select
+              className="kc-platform-compact-field"
               allowClear
+              size="small"
               placeholder="结果"
               style={{ width: 160 }}
               value={resultFilter || undefined}
@@ -1793,7 +1821,7 @@ export function AuditLogsPage() {
                 { value: 'deny', label: 'deny' },
               ]}
             />
-          </Space>
+          </div>
         )}
       />
       <AuditLogDrawer record={activeRecord} open={Boolean(activeRecord)} onClose={() => setActiveRecord(null)} />
@@ -2001,8 +2029,9 @@ export function OperationLogsPage() {
           style: { cursor: 'pointer' },
         })}
         toolbar={(
-          <Space wrap>
+          <div className="kc-workload-table-filters">
             <Segmented
+              size="small"
               value={moduleView}
               onChange={(value) => setModuleView(value as 'all' | 'system' | 'access' | 'platform' | 'delivery')}
               options={[
@@ -2014,13 +2043,17 @@ export function OperationLogsPage() {
               ]}
             />
             <Input
+              className="kc-platform-compact-field"
+              size="small"
               placeholder="按操作类型过滤"
               value={operationTypeFilter}
               onChange={(event) => setOperationTypeFilter(event.target.value)}
               style={{ width: 220 }}
             />
             <Select
+              className="kc-platform-compact-field"
               allowClear
+              size="small"
               placeholder="按结果过滤"
               style={{ width: 160 }}
               value={resultFilter || undefined}
@@ -2030,7 +2063,7 @@ export function OperationLogsPage() {
                 { value: 'failure', label: 'failure' },
               ]}
             />
-          </Space>
+          </div>
         )}
       />
       <OperationLogDrawer record={activeRecord} open={Boolean(activeRecord)} onClose={() => setActiveRecord(null)} />

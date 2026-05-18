@@ -687,24 +687,25 @@ export function LoginSettingsPage({
   ];
   const content = (
     <>
-      <SettingsCard title="登陆方式">
-        <SectionCallout
-          title="多登录源配置"
-          description="支持同时配置 OIDC、飞书、钉钉、企业微信、通用 OAuth2 和 SAML。登录页会展示所有启用的第三方登录源；其中 SAML 当前仅支持配置落库，服务端运行链路未启用。"
-        />
-        <div className="kc-form-actions" style={{ marginBottom: 12 }}>
-          {canManageLoginSettings ? (
-            <Button
-              type="primary"
-              onClick={() => {
-                setEditingProvider(null);
-                setProviderModalVisible(true);
-              }}
-            >
-              新增登录源
-            </Button>
-          ) : null}
-        </div>
+      <SettingsCard
+        title="登陆设置"
+        extra={
+          canManageLoginSettings ? (
+            <div className="kc-page-toolbar">
+              <Button
+                size="small"
+                type="primary"
+                onClick={() => {
+                  setEditingProvider(null);
+                  setProviderModalVisible(true);
+                }}
+              >
+                新增登录源
+              </Button>
+            </div>
+          ) : null
+        }
+      >
         <Table
           rowKey="id"
           pagination={false}
@@ -922,15 +923,7 @@ export function LoginSettingsPage({
     return content;
   }
 
-  return (
-    <div className="kc-page">
-      <PageHeader
-        title="登陆设置"
-        description="配置 OIDC、飞书、钉钉、企业微信、OAuth2 与 SAML 登录源。"
-      />
-      {content}
-    </div>
-  );
+  return <div className="kc-page">{content}</div>;
 }
 
 /* ─── Monitoring Settings (Prometheus) ─── */

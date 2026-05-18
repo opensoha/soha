@@ -235,8 +235,10 @@ describe("settings ai page rendering", () => {
     );
 
     expect(container.textContent).toContain("登陆设置");
-    expect(container.textContent).toContain("多登录源配置");
     expect(container.textContent).toContain("OIDC");
+    expect(container.textContent).not.toContain(
+      "配置 OIDC、飞书、钉钉、企业微信、OAuth2 与 SAML 登录源。",
+    );
   });
 
   it("renders full AI settings content under ai-workbench model settings", async () => {

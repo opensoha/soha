@@ -791,7 +791,7 @@ a {
   display: flex;
   align-items: center;
   gap: 12px;
-  flex: 1 1 720px;
+  flex: 1 1 360px;
   min-width: 0;
   flex-wrap: wrap;
 }

@@ -40,9 +40,10 @@ vi.mock('@/services/api-client', () => ({
 }))
 
 vi.mock('@/components/admin-table', () => ({
-  AdminTable: ({ columns, dataSource, title, toolbarExtra }: { columns: any[]; dataSource: Array<Record<string, unknown>>; title?: ReactNode; toolbarExtra?: ReactNode }) => (
+  AdminTable: ({ columns, dataSource, title, toolbar, toolbarExtra }: { columns: any[]; dataSource: Array<Record<string, unknown>>; title?: ReactNode; toolbar?: ReactNode; toolbarExtra?: ReactNode }) => (
     <div data-testid="admin-table">
       {title ? <div>{title}</div> : null}
+      {toolbar ? <div>{toolbar}</div> : null}
       {toolbarExtra ? <div>{toolbarExtra}</div> : null}
       <div data-testid="headers">
         {columns.map((column, index) => (
@@ -132,6 +133,18 @@ async function renderWithProviders(node: ReactNode, route: string) {
   return container
 }
 
+async function waitForRow(container: HTMLElement, testId: string) {
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    if (container.querySelector(`[data-testid="${testId}"]`)) {
+      return
+    }
+    await act(async () => {
+      await Promise.resolve()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+  }
+}
+
 describe('access users page columns', () => {
   beforeAll(() => {
     class ResizeObserverMock {
@@ -178,6 +191,7 @@ describe('access users page columns', () => {
 
   it('renders avatar ahead of a standalone username column', async () => {
     const container = await renderWithProviders(<AccessUsersPage />, '/access/users')
+    await waitForRow(container, 'row-u-admin')
 
     const headerText = container.querySelector('[data-testid="headers"]')?.textContent ?? ''
     expect(headerText).toContain('头像')
@@ -191,5 +205,46 @@ describe('access users page columns', () => {
     expect(avatarCell).not.toBeNull()
     expect(usernameCell?.textContent).toContain('admin')
     expect(displayNameCell?.textContent).toContain('Admin')
+  })
+
+  it('filters users from the toolbar search input', async () => {
+    testState.responses['/access/users'] = [
+      {
+        id: 'u-admin',
+        username: 'admin',
+        displayName: 'Admin',
+        email: 'admin@kubecrux.local',
+        status: 'active',
+        roles: ['admin'],
+        teams: [],
+        tags: [],
+        projects: [],
+      },
+      {
+        id: 'u-dev',
+        username: 'developer',
+        displayName: 'Dev User',
+        email: 'dev@kubecrux.local',
+        status: 'active',
+        roles: ['developer'],
+        teams: ['platform'],
+        tags: [],
+        projects: [],
+      },
+    ]
+
+    const container = await renderWithProviders(<AccessUsersPage />, '/access/users')
+    const searchInput = container.querySelector('input[placeholder="搜索用户名、显示名、邮箱、角色或用户组"]') as HTMLInputElement | null
+
+    expect(searchInput).not.toBeNull()
+
+    await act(async () => {
+      const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set
+      nativeInputValueSetter?.call(searchInput, 'developer')
+      searchInput!.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+
+    expect(container.querySelector('[data-testid="row-u-admin"]')).toBeNull()
+    expect(container.querySelector('[data-testid="row-u-dev"]')).not.toBeNull()
   })
 })
