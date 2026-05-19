@@ -618,6 +618,28 @@ CREATE TABLE IF NOT EXISTS oncall_escalation_policies (
     updated_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS oncall_assignment_rules (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    integration_id TEXT,
+    integration_type TEXT,
+    business_line_id TEXT,
+    alert_category TEXT,
+    alert_name TEXT,
+    severity TEXT,
+    service TEXT,
+    role TEXT,
+    matchers JSON NOT NULL DEFAULT '{}',
+    target_type TEXT NOT NULL,
+    target_ref TEXT NOT NULL,
+    route_order INT NOT NULL DEFAULT 100,
+    group_by JSON NOT NULL DEFAULT '[]',
+    priority INT NOT NULL DEFAULT 100,
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS saved_views (
     id TEXT PRIMARY KEY,
     owner_type TEXT NOT NULL,
@@ -767,6 +789,9 @@ CREATE INDEX IF NOT EXISTS idx_healing_runs_status_updated_at ON healing_runs (s
 CREATE INDEX IF NOT EXISTS idx_oncall_schedules_enabled_updated_at ON oncall_schedules (enabled, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_oncall_rotations_schedule_id_updated_at ON oncall_rotations (schedule_id, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_oncall_escalation_policies_enabled_updated_at ON oncall_escalation_policies (enabled, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_oncall_assignment_rules_business_role ON oncall_assignment_rules (business_line_id, role, enabled, priority DESC);
+CREATE INDEX IF NOT EXISTS idx_oncall_assignment_rules_alert_scope ON oncall_assignment_rules (alert_category, severity, service, enabled, priority DESC);
+CREATE INDEX IF NOT EXISTS idx_oncall_assignment_rules_integration_route ON oncall_assignment_rules (integration_type, integration_id, enabled, route_order ASC);
 CREATE INDEX IF NOT EXISTS idx_alert_delivery_logs_alert_id_created_at ON alert_delivery_logs (alert_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_alert_delivery_logs_status_created_at ON alert_delivery_logs (status, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_alert_silences_enabled_time ON alert_silences (enabled, starts_at, ends_at);

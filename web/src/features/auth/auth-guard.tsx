@@ -6,11 +6,13 @@ import { useAuthStore } from '@/stores/auth-store'
 import { usePreferencesStore } from '@/stores/preferences-store'
 import { useQueryClient } from '@tanstack/react-query'
 
+const EMPTY_ROLES: string[] = []
+
 export function AuthGuard() {
   const location = useLocation()
   const queryClient = useQueryClient()
-  const isAuthenticated = useAuthStore((s) => s.isAuthenticated())
-  const roles = useAuthStore((s) => s.user?.roles ?? [])
+  const isAuthenticated = useAuthStore((s) => Boolean(s.accessToken))
+  const roles = useAuthStore((s) => s.user?.roles ?? EMPTY_ROLES)
   const currentWorkspace = usePreferencesStore((state) => state.currentWorkspace)
   const permissionSnapshotQuery = usePermissionSnapshot()
 

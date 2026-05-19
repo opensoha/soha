@@ -157,12 +157,13 @@ func (s *Service) HealEvent(ctx context.Context, principal domainidentity.Princi
 	}
 	if strings.TrimSpace(event.RuleID) != "" {
 		if rule, ruleErr := s.repo.GetRule(ctx, event.RuleID); ruleErr == nil && strings.TrimSpace(rule.NotificationPolicyID) != "" {
-			if notificationPolicy, notifyErr := s.findNotificationPolicy(ctx, rule.NotificationPolicyID); notifyErr == nil && strings.TrimSpace(notificationPolicy.OnCallRef) != "" {
-				if currentOnCall, oncallErr := s.resolveCurrentOnCall(ctx, notificationPolicy.OnCallRef); oncallErr == nil {
+			if notificationPolicy, notifyErr := s.findNotificationPolicy(ctx, rule.NotificationPolicyID); notifyErr == nil {
+				currentOnCall := s.resolveEventOnCall(ctx, notificationPolicy, event)
+				if len(currentOnCall) > 0 {
 					result["currentOnCall"] = currentOnCall
-					if participant := stringValue(currentOnCall["currentParticipant"], ""); participant != "" {
-						result["approvalCandidates"] = []string{participant}
-					}
+				}
+				if participant := stringValue(currentOnCall["currentParticipant"], ""); participant != "" {
+					result["approvalCandidates"] = []string{participant}
 				}
 			}
 		}
@@ -477,6 +478,58 @@ func (s *Service) UpdateOnCallEscalationPolicy(ctx context.Context, principal do
 	return s.repo.UpdateOnCallEscalationPolicy(ctx, policyID, input)
 }
 
+func (s *Service) ListOnCallAssignmentRules(ctx context.Context, principal domainidentity.Principal) ([]domainalert.OnCallAssignmentRule, error) {
+	if err := s.authorize(ctx, principal, appaccess.PermObserveOncallView); err != nil {
+		return nil, err
+	}
+	return s.repo.ListOnCallAssignmentRules(ctx)
+}
+
+func (s *Service) CreateOnCallAssignmentRule(ctx context.Context, principal domainidentity.Principal, input domainalert.OnCallAssignmentRuleInput) (domainalert.OnCallAssignmentRule, error) {
+	if err := s.authorize(ctx, principal, appaccess.PermObserveOncallManage); err != nil {
+		return domainalert.OnCallAssignmentRule{}, err
+	}
+	if err := validateOnCallAssignmentRuleInput(input); err != nil {
+		return domainalert.OnCallAssignmentRule{}, err
+	}
+	return s.repo.CreateOnCallAssignmentRule(ctx, input)
+}
+
+func (s *Service) UpdateOnCallAssignmentRule(ctx context.Context, principal domainidentity.Principal, ruleID string, input domainalert.OnCallAssignmentRuleInput) (domainalert.OnCallAssignmentRule, error) {
+	if err := s.authorize(ctx, principal, appaccess.PermObserveOncallManage); err != nil {
+		return domainalert.OnCallAssignmentRule{}, err
+	}
+	if err := validateOnCallAssignmentRuleInput(input); err != nil {
+		return domainalert.OnCallAssignmentRule{}, err
+	}
+	return s.repo.UpdateOnCallAssignmentRule(ctx, ruleID, input)
+}
+
+func (s *Service) ResolveOnCall(ctx context.Context, principal domainidentity.Principal, input domainalert.OnCallResolveInput) (map[string]any, error) {
+	if err := s.authorize(ctx, principal, appaccess.PermObserveOncallView); err != nil {
+		return nil, err
+	}
+	return s.resolveOnCallAssignment(ctx, input)
+}
+
+func (s *Service) ListOnCallTasks(ctx context.Context, principal domainidentity.Principal, limit int) ([]domainalert.OnCallTask, error) {
+	if err := s.authorize(ctx, principal, appaccess.PermObserveOncallView); err != nil {
+		return nil, err
+	}
+	if s.repo == nil {
+		return []domainalert.OnCallTask{}, nil
+	}
+	events, err := s.repo.ListEvents(ctx, domainalert.AlertEventFilter{Status: "firing", Limit: limit})
+	if err != nil {
+		return nil, err
+	}
+	tasks := make([]domainalert.OnCallTask, 0, len(events))
+	for _, event := range events {
+		tasks = append(tasks, s.buildOnCallTask(ctx, event))
+	}
+	return tasks, nil
+}
+
 func (s *Service) CreateWorkflowSilence(ctx context.Context, principal domainidentity.Principal, input domainalert.SilenceInput) (domainalert.AlertSilence, error) {
 	if s.repo == nil {
 		return domainalert.AlertSilence{}, fmt.Errorf("%w: alert repository is not configured", apperrors.ErrInvalidArgument)
@@ -734,6 +787,25 @@ func validateHealingPolicyInput(input domainalert.HealingPolicyInput) error {
 	}
 	if len(input.Definition) == 0 {
 		return fmt.Errorf("%w: healing workflow definition is required", apperrors.ErrInvalidArgument)
+	}
+	return nil
+}
+
+func validateOnCallAssignmentRuleInput(input domainalert.OnCallAssignmentRuleInput) error {
+	if strings.TrimSpace(input.Name) == "" {
+		return fmt.Errorf("%w: oncall assignment rule name is required", apperrors.ErrInvalidArgument)
+	}
+	targetType := strings.ToLower(strings.TrimSpace(input.TargetType))
+	if targetType == "" {
+		targetType = "escalation"
+	}
+	switch targetType {
+	case "schedule", "escalation":
+	default:
+		return fmt.Errorf("%w: targetType must be schedule or escalation chain", apperrors.ErrInvalidArgument)
+	}
+	if strings.TrimSpace(input.TargetRef) == "" {
+		return fmt.Errorf("%w: targetRef is required", apperrors.ErrInvalidArgument)
 	}
 	return nil
 }

@@ -82,7 +82,7 @@ type clusterCredentialSeed struct {
 // While the stored version matches this constant, the static seed block is
 // skipped entirely. Config-driven sync (admin user, clusters) runs separately
 // during startup so runtime config updates do not depend on replaying defaults.
-const bootstrapSeedVersion = "2026-05-17-1"
+const bootstrapSeedVersion = "2026-05-19-1"
 
 const bootstrapSeedVersionKey = "bootstrap.seed_version"
 
@@ -234,7 +234,7 @@ func defaultMenuSeeds() []menuSeed {
 		{ID: "storage-classes", ParentID: "storage", Path: "/storage/storageclasses", LabelZH: "StorageClasses", LabelEN: "StorageClasses", IconKey: "waves", SortOrder: 53, Enabled: true},
 		{ID: "clusters", Path: "/clusters", LabelZH: "集群", LabelEN: "Clusters", IconKey: "globe", SortOrder: 99, Enabled: true},
 		{ID: "monitoring-workbench", Path: "/monitoring-workbench", LabelZH: "监控工作台", LabelEN: "Monitoring Workbench", IconKey: "gauge", Section: "ops", SortOrder: 60, Enabled: true},
-		{ID: "monitoring-workbench-overview", ParentID: "monitoring-workbench", Path: "/monitoring-workbench/overview", LabelZH: "工作台概览", LabelEN: "Overview", IconKey: "gauge", Section: "ops", SortOrder: 61, Enabled: true},
+		{ID: "monitoring-workbench-overview", ParentID: "monitoring-workbench", Path: "/monitoring-workbench/overview", LabelZH: "总览", LabelEN: "Overview", IconKey: "gauge", Section: "ops", SortOrder: 61, Enabled: true},
 		{ID: "monitoring-workbench-rules", ParentID: "monitoring-workbench", Path: "/monitoring-workbench/rules", LabelZH: "告警规则", LabelEN: "Alert Rules", IconKey: "siren", Section: "ops", SortOrder: 62, Enabled: true},
 		{ID: "monitoring-workbench-alerts", ParentID: "monitoring-workbench", Path: "/monitoring-workbench/alerts", LabelZH: "活跃告警", LabelEN: "Active Alerts", IconKey: "siren", Section: "ops", SortOrder: 63, Enabled: true},
 		{ID: "monitoring-workbench-notifications", ParentID: "monitoring-workbench", Path: "/monitoring-workbench/notifications", LabelZH: "通知策略", LabelEN: "Notification Policies", IconKey: "bell", Section: "ops", SortOrder: 64, Enabled: true},

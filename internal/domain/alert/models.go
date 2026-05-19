@@ -199,6 +199,9 @@ type Repository interface {
 	ListOnCallEscalationPolicies(context.Context) ([]OnCallEscalationPolicy, error)
 	CreateOnCallEscalationPolicy(context.Context, OnCallEscalationPolicyInput) (OnCallEscalationPolicy, error)
 	UpdateOnCallEscalationPolicy(context.Context, string, OnCallEscalationPolicyInput) (OnCallEscalationPolicy, error)
+	ListOnCallAssignmentRules(context.Context) ([]OnCallAssignmentRule, error)
+	CreateOnCallAssignmentRule(context.Context, OnCallAssignmentRuleInput) (OnCallAssignmentRule, error)
+	UpdateOnCallAssignmentRule(context.Context, string, OnCallAssignmentRuleInput) (OnCallAssignmentRule, error)
 }
 
 type AlertRule struct {
@@ -465,6 +468,91 @@ type OnCallEscalationPolicyInput struct {
 	Name    string           `json:"name"`
 	Steps   []map[string]any `json:"steps,omitempty"`
 	Enabled bool             `json:"enabled"`
+}
+
+type OnCallAssignmentRule struct {
+	ID              string         `json:"id"`
+	Name            string         `json:"name"`
+	IntegrationID   string         `json:"integrationId,omitempty"`
+	IntegrationType string         `json:"integrationType,omitempty"`
+	BusinessLineID  string         `json:"businessLineId,omitempty"`
+	AlertCategory   string         `json:"alertCategory,omitempty"`
+	AlertName       string         `json:"alertName,omitempty"`
+	Severity        string         `json:"severity,omitempty"`
+	Service         string         `json:"service,omitempty"`
+	Role            string         `json:"role,omitempty"`
+	Matchers        map[string]any `json:"matchers,omitempty"`
+	TargetType      string         `json:"targetType"`
+	TargetRef       string         `json:"targetRef"`
+	RouteOrder      int            `json:"routeOrder"`
+	GroupBy         []string       `json:"groupBy,omitempty"`
+	Priority        int            `json:"priority"`
+	Enabled         bool           `json:"enabled"`
+	CreatedAt       time.Time      `json:"createdAt"`
+	UpdatedAt       time.Time      `json:"updatedAt"`
+}
+
+type OnCallAssignmentRuleInput struct {
+	ID              string         `json:"id"`
+	Name            string         `json:"name"`
+	IntegrationID   string         `json:"integrationId,omitempty"`
+	IntegrationType string         `json:"integrationType,omitempty"`
+	BusinessLineID  string         `json:"businessLineId,omitempty"`
+	AlertCategory   string         `json:"alertCategory,omitempty"`
+	AlertName       string         `json:"alertName,omitempty"`
+	Severity        string         `json:"severity,omitempty"`
+	Service         string         `json:"service,omitempty"`
+	Role            string         `json:"role,omitempty"`
+	Matchers        map[string]any `json:"matchers,omitempty"`
+	TargetType      string         `json:"targetType"`
+	TargetRef       string         `json:"targetRef"`
+	RouteOrder      int            `json:"routeOrder"`
+	GroupBy         []string       `json:"groupBy,omitempty"`
+	Priority        int            `json:"priority"`
+	Enabled         bool           `json:"enabled"`
+}
+
+type OnCallResolveInput struct {
+	AlertID         string            `json:"alertId,omitempty"`
+	IntegrationID   string            `json:"integrationId,omitempty"`
+	IntegrationType string            `json:"integrationType,omitempty"`
+	BusinessLineID  string            `json:"businessLineId,omitempty"`
+	AlertCategory   string            `json:"alertCategory,omitempty"`
+	AlertName       string            `json:"alertName,omitempty"`
+	Severity        string            `json:"severity,omitempty"`
+	Service         string            `json:"service,omitempty"`
+	Role            string            `json:"role,omitempty"`
+	ClusterID       string            `json:"clusterId,omitempty"`
+	Namespace       string            `json:"namespace,omitempty"`
+	Labels          map[string]string `json:"labels,omitempty"`
+}
+
+type OnCallTask struct {
+	ID                 string            `json:"id"`
+	EventID            string            `json:"eventId"`
+	Title              string            `json:"title"`
+	Summary            string            `json:"summary,omitempty"`
+	Severity           string            `json:"severity"`
+	Status             string            `json:"status"`
+	IntegrationID      string            `json:"integrationId,omitempty"`
+	IntegrationType    string            `json:"integrationType,omitempty"`
+	ClusterID          string            `json:"clusterId,omitempty"`
+	Namespace          string            `json:"namespace,omitempty"`
+	Service            string            `json:"service,omitempty"`
+	BusinessLineID     string            `json:"businessLineId,omitempty"`
+	RouteID            string            `json:"routeId,omitempty"`
+	RouteName          string            `json:"routeName,omitempty"`
+	GroupKey           string            `json:"groupKey,omitempty"`
+	GroupBy            []string          `json:"groupBy,omitempty"`
+	TargetType         string            `json:"targetType,omitempty"`
+	TargetRef          string            `json:"targetRef,omitempty"`
+	CurrentParticipant string            `json:"currentParticipant,omitempty"`
+	Participants       []string          `json:"participants,omitempty"`
+	ResolutionStatus   string            `json:"resolutionStatus"`
+	Labels             map[string]string `json:"labels,omitempty"`
+	LastSeenAt         time.Time         `json:"lastSeenAt"`
+	CreatedAt          time.Time         `json:"createdAt"`
+	UpdatedAt          time.Time         `json:"updatedAt"`
 }
 
 type RuleTestResult struct {

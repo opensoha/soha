@@ -2849,6 +2849,64 @@ a {
   padding: 18px;
 }
 
+.kc-oncall-calendar-card.ant-card .ant-card-extra {
+  max-width: 100%;
+}
+
+.kc-oncall-calendar-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.kc-oncall-calendar-card .ant-picker-calendar {
+  background: transparent;
+}
+
+.kc-oncall-calendar-card .ant-picker-calendar-header {
+  padding-inline: 0;
+}
+
+.kc-oncall-calendar-card .ant-picker-panel {
+  background: transparent;
+}
+
+.kc-oncall-calendar-card .ant-picker-calendar-date-content {
+  min-height: 78px;
+}
+
+.kc-oncall-calendar-cell {
+  display: flex;
+  min-width: 0;
+  height: 100%;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 6px;
+  padding-top: 2px;
+}
+
+.kc-oncall-calendar-duty-list {
+  min-width: 0;
+}
+
+.kc-oncall-duty-tag.ant-tag {
+  max-width: 100%;
+  margin-inline-end: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.kc-oncall-override-tag.ant-tag {
+  margin-inline-end: 0;
+}
+
+.kc-oncall-calendar-empty {
+  font-size: 12px;
+}
+
 .kc-overview-alert-stack {
   display: flex;
   flex-direction: column;
@@ -2871,6 +2929,10 @@ a {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 12px;
+}
+
+.kc-monitoring-chip-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .kc-overview-chip {
@@ -3039,6 +3101,26 @@ a {
 
 .kc-overview-linklike.ant-btn > span {
   font-weight: 600;
+}
+
+.kc-monitoring-operation-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.kc-monitoring-alert-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.kc-monitoring-alert-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex-wrap: wrap;
 }
 
 .kc-auth-shell {
@@ -4134,7 +4216,8 @@ a {
   }
 
   .kc-overview-metric-grid,
-  .kc-overview-pod-grid {
+  .kc-overview-pod-grid,
+  .kc-monitoring-operation-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -4174,13 +4257,29 @@ a {
     padding: 14px;
   }
 
+  .kc-oncall-calendar-card.ant-card .ant-card-head-wrapper {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .kc-oncall-calendar-card.ant-card .ant-card-extra,
+  .kc-oncall-calendar-card.ant-card .ant-card-extra .ant-select {
+    width: 100% !important;
+  }
+
+  .kc-oncall-calendar-card .ant-picker-calendar-date-content {
+    min-height: 64px;
+  }
+
   .kc-overview-title {
     font-size: 18px;
   }
 
   .kc-overview-metric-grid,
   .kc-overview-pod-grid,
-  .kc-overview-chip-grid {
+  .kc-overview-chip-grid,
+  .kc-monitoring-operation-grid {
     grid-template-columns: 1fr;
   }
 

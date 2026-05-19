@@ -306,7 +306,7 @@ func (s *Service) enrichHealingRun(ctx context.Context, run domainalert.HealingR
 }
 
 func (s *Service) resolveCurrentOnCall(ctx context.Context, ref string) (map[string]any, error) {
-	ref = strings.TrimSpace(strings.TrimPrefix(ref, "schedule:"))
+	ref = strings.TrimSpace(ref)
 	if ref == "" {
 		return nil, fmt.Errorf("%w: ref is required", apperrors.ErrInvalidArgument)
 	}
@@ -340,7 +340,7 @@ func (s *Service) resolveCurrentOnCall(ctx context.Context, ref string) (map[str
 	var schedule domainalert.OnCallSchedule
 	found := false
 	for _, item := range schedules {
-		if item.ID == scheduleID {
+		if onCallRefMatches(item.ID, scheduleID) {
 			schedule = item
 			found = true
 			break
@@ -387,6 +387,26 @@ func (s *Service) resolveCurrentOnCall(ctx context.Context, ref string) (map[str
 	if startAt.IsZero() {
 		startAt = now
 	}
+	if overrideParticipants := onCallDateOverrideParticipants(rotation.RotationConfig, now); len(overrideParticipants) > 0 {
+		dayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+		dayEnd := dayStart.AddDate(0, 0, 1)
+		return map[string]any{
+			"ref":                ref,
+			"scheduleId":         schedule.ID,
+			"schedule":           schedule.Name,
+			"rotationId":         rotation.ID,
+			"rotation":           rotation.Name,
+			"currentParticipant": overrideParticipants[0],
+			"nextParticipant":    overrideParticipants[(1)%len(overrideParticipants)],
+			"participants":       overrideParticipants,
+			"overrideDate":       now.Format("2006-01-02"),
+			"override":           true,
+			"shiftMinutes":       shiftMinutes,
+			"windowStart":        dayStart.Format(time.RFC3339),
+			"windowEnd":          dayEnd.Format(time.RFC3339),
+			"escalationPolicyId": escalationRef,
+		}, nil
+	}
 	participants := normalizeStrings(rotation.Participants)
 	if len(participants) == 0 {
 		return map[string]any{
@@ -419,6 +439,425 @@ func (s *Service) resolveCurrentOnCall(ctx context.Context, ref string) (map[str
 		"windowEnd":          windowEnd.Format(time.RFC3339),
 		"escalationPolicyId": escalationRef,
 	}, nil
+}
+
+func onCallDateOverrideParticipants(rotationConfig map[string]any, now time.Time) []string {
+	if len(rotationConfig) == 0 {
+		return nil
+	}
+	rawOverrides, ok := rotationConfig["overrides"]
+	if !ok {
+		return nil
+	}
+	overrides, ok := rawOverrides.(map[string]any)
+	if !ok {
+		return nil
+	}
+	return onCallOverrideParticipantsValue(overrides[now.Format("2006-01-02")])
+}
+
+func onCallOverrideParticipantsValue(value any) []string {
+	if participants := stringSliceValue(value); len(participants) > 0 {
+		return participants
+	}
+	if text, ok := value.(string); ok {
+		return normalizeStrings(strings.Split(text, ","))
+	}
+	record, ok := value.(map[string]any)
+	if !ok {
+		return nil
+	}
+	for _, key := range []string{"participants", "currentParticipants", "currentParticipant"} {
+		if participants := onCallOverrideParticipantsValue(record[key]); len(participants) > 0 {
+			return participants
+		}
+	}
+	return nil
+}
+
+func onCallRefMatches(candidate string, wanted string) bool {
+	candidate = strings.TrimSpace(candidate)
+	wanted = strings.TrimSpace(wanted)
+	if candidate == wanted {
+		return true
+	}
+	return strings.TrimPrefix(candidate, "schedule:") == strings.TrimPrefix(wanted, "schedule:")
+}
+
+func (s *Service) resolveOnCallAssignment(ctx context.Context, input domainalert.OnCallResolveInput) (map[string]any, error) {
+	rawInput := input
+	context := normalizeOnCallResolveInput(input)
+	if strings.TrimSpace(context.AlertID) != "" {
+		event, err := s.repo.GetEvent(ctx, strings.TrimSpace(context.AlertID))
+		if err != nil {
+			return nil, err
+		}
+		context = mergeOnCallResolveInput(onCallResolveInputFromEvent(event), rawInput)
+	}
+	rules, err := s.repo.ListOnCallAssignmentRules(ctx)
+	if err != nil {
+		return nil, err
+	}
+	rule, found := selectOnCallAssignmentRule(rules, context)
+	if !found {
+		return map[string]any{
+			"resolutionStatus": "no_match",
+			"context":          onCallResolveContextPayload(context),
+		}, nil
+	}
+	current, err := s.resolveCurrentOnCall(ctx, rule.TargetRef)
+	if err != nil {
+		return map[string]any{
+			"resolutionStatus": "target_error",
+			"assignmentRuleId": rule.ID,
+			"assignmentRule":   rule.Name,
+			"routeId":          rule.ID,
+			"route":            rule.Name,
+			"targetType":       rule.TargetType,
+			"targetRef":        rule.TargetRef,
+			"groupBy":          rule.GroupBy,
+			"groupKey":         buildOnCallGroupKey(rule, context),
+			"context":          onCallResolveContextPayload(context),
+			"error":            err.Error(),
+		}, nil
+	}
+	current["resolutionStatus"] = "matched"
+	current["assignmentRuleId"] = rule.ID
+	current["assignmentRule"] = rule.Name
+	current["routeId"] = rule.ID
+	current["route"] = rule.Name
+	current["integrationId"] = context.IntegrationID
+	current["integrationType"] = context.IntegrationType
+	current["businessLineId"] = context.BusinessLineID
+	current["alertCategory"] = context.AlertCategory
+	current["alertName"] = context.AlertName
+	current["severity"] = context.Severity
+	current["service"] = context.Service
+	current["role"] = context.Role
+	current["targetType"] = rule.TargetType
+	current["targetRef"] = rule.TargetRef
+	current["routeOrder"] = rule.RouteOrder
+	current["groupBy"] = rule.GroupBy
+	current["groupKey"] = buildOnCallGroupKey(rule, context)
+	return current, nil
+}
+
+func (s *Service) resolveEventOnCall(ctx context.Context, policy domainalert.NotificationPolicy, event domainalert.AlertEvent) map[string]any {
+	if strings.TrimSpace(policy.OnCallRef) != "" {
+		if current, err := s.resolveCurrentOnCall(ctx, policy.OnCallRef); err == nil {
+			current["resolutionStatus"] = "matched"
+			current["resolutionSource"] = "notification_policy"
+			return current
+		}
+	}
+	current, err := s.resolveOnCallAssignment(ctx, onCallResolveInputFromEvent(event))
+	if err != nil {
+		return map[string]any{}
+	}
+	if stringValue(current["resolutionStatus"], "") != "matched" {
+		return map[string]any{}
+	}
+	current["resolutionSource"] = "assignment_rule"
+	return current
+}
+
+func (s *Service) buildOnCallTask(ctx context.Context, event domainalert.AlertEvent) domainalert.OnCallTask {
+	context := onCallResolveInputFromEvent(event)
+	resolution, err := s.resolveOnCallAssignment(ctx, context)
+	status := "unavailable"
+	if err == nil {
+		status = stringValue(resolution["resolutionStatus"], "no_match")
+	}
+	labels := make(map[string]string, len(event.Labels))
+	for key, value := range event.Labels {
+		labels[key] = value
+	}
+	participants := []string{}
+	if rawParticipants, ok := resolution["participants"].([]string); ok {
+		participants = append(participants, rawParticipants...)
+	} else if rawParticipants, ok := resolution["participants"].([]any); ok {
+		for _, item := range rawParticipants {
+			if value := strings.TrimSpace(fmt.Sprint(item)); value != "" {
+				participants = append(participants, value)
+			}
+		}
+	}
+	return domainalert.OnCallTask{
+		ID:                 "oncall-task:" + event.ID,
+		EventID:            event.ID,
+		Title:              event.Title,
+		Summary:            event.Summary,
+		Severity:           event.Severity,
+		Status:             event.Status,
+		IntegrationID:      context.IntegrationID,
+		IntegrationType:    context.IntegrationType,
+		ClusterID:          event.ClusterID,
+		Namespace:          event.Namespace,
+		Service:            context.Service,
+		BusinessLineID:     context.BusinessLineID,
+		RouteID:            stringValue(resolution["routeId"], ""),
+		RouteName:          stringValue(resolution["route"], ""),
+		GroupKey:           stringValue(resolution["groupKey"], ""),
+		GroupBy:            stringSliceFromAny(resolution["groupBy"]),
+		TargetType:         stringValue(resolution["targetType"], ""),
+		TargetRef:          stringValue(resolution["targetRef"], ""),
+		CurrentParticipant: stringValue(resolution["currentParticipant"], ""),
+		Participants:       participants,
+		ResolutionStatus:   status,
+		Labels:             labels,
+		LastSeenAt:         event.LastSeenAt,
+		CreatedAt:          event.CreatedAt,
+		UpdatedAt:          event.UpdatedAt,
+	}
+}
+
+func normalizeOnCallResolveInput(input domainalert.OnCallResolveInput) domainalert.OnCallResolveInput {
+	if input.Labels == nil {
+		input.Labels = map[string]string{}
+	}
+	input.AlertID = strings.TrimSpace(input.AlertID)
+	input.IntegrationID = strings.TrimSpace(input.IntegrationID)
+	input.IntegrationType = strings.ToLower(strings.TrimSpace(input.IntegrationType))
+	input.BusinessLineID = strings.TrimSpace(input.BusinessLineID)
+	input.AlertCategory = strings.TrimSpace(input.AlertCategory)
+	input.AlertName = strings.TrimSpace(input.AlertName)
+	input.Severity = strings.ToLower(strings.TrimSpace(input.Severity))
+	input.Service = strings.TrimSpace(input.Service)
+	input.Role = strings.ToLower(strings.TrimSpace(input.Role))
+	input.ClusterID = strings.TrimSpace(input.ClusterID)
+	input.Namespace = strings.TrimSpace(input.Namespace)
+	if input.Role == "" {
+		input.Role = "ops"
+	}
+	return input
+}
+
+func onCallResolveInputFromEvent(event domainalert.AlertEvent) domainalert.OnCallResolveInput {
+	labels := make(map[string]string, len(event.Labels))
+	for key, value := range event.Labels {
+		labels[key] = value
+	}
+	return normalizeOnCallResolveInput(domainalert.OnCallResolveInput{
+		AlertID:         event.ID,
+		IntegrationID:   firstNonEmpty(event.SourceSystem, labels["integrationId"], labels["integration"]),
+		IntegrationType: firstNonEmpty(event.SourceType, labels["integrationType"], labels["sourceType"]),
+		BusinessLineID:  firstNonEmpty(labels["businessLineId"], labels["business_line_id"], labels["businessLine"], labels["business"]),
+		AlertCategory:   firstNonEmpty(labels["alertCategory"], labels["category"], labels["alert_type"], labels["alertType"], event.SourceType),
+		AlertName:       firstNonEmpty(labels["alertName"], labels["alert"], event.Title),
+		Severity:        event.Severity,
+		Service:         firstNonEmpty(labels["service"], labels["app"], labels["workload"], labels["deployment"]),
+		Role:            firstNonEmpty(labels["oncallRole"], labels["ownerRole"], labels["role"], "ops"),
+		ClusterID:       event.ClusterID,
+		Namespace:       event.Namespace,
+		Labels:          labels,
+	})
+}
+
+func mergeOnCallResolveInput(base, override domainalert.OnCallResolveInput) domainalert.OnCallResolveInput {
+	rawOverride := override
+	base = normalizeOnCallResolveInput(base)
+	override = normalizeOnCallResolveInput(override)
+	if strings.TrimSpace(rawOverride.AlertID) != "" {
+		base.AlertID = override.AlertID
+	}
+	if strings.TrimSpace(rawOverride.IntegrationID) != "" {
+		base.IntegrationID = override.IntegrationID
+	}
+	if strings.TrimSpace(rawOverride.IntegrationType) != "" {
+		base.IntegrationType = override.IntegrationType
+	}
+	if strings.TrimSpace(rawOverride.BusinessLineID) != "" {
+		base.BusinessLineID = override.BusinessLineID
+	}
+	if strings.TrimSpace(rawOverride.AlertCategory) != "" {
+		base.AlertCategory = override.AlertCategory
+	}
+	if strings.TrimSpace(rawOverride.AlertName) != "" {
+		base.AlertName = override.AlertName
+	}
+	if strings.TrimSpace(rawOverride.Severity) != "" {
+		base.Severity = override.Severity
+	}
+	if strings.TrimSpace(rawOverride.Service) != "" {
+		base.Service = override.Service
+	}
+	if strings.TrimSpace(rawOverride.Role) != "" {
+		base.Role = override.Role
+	}
+	if strings.TrimSpace(rawOverride.ClusterID) != "" {
+		base.ClusterID = override.ClusterID
+	}
+	if strings.TrimSpace(rawOverride.Namespace) != "" {
+		base.Namespace = override.Namespace
+	}
+	for key, value := range override.Labels {
+		base.Labels[key] = value
+	}
+	return base
+}
+
+func selectOnCallAssignmentRule(rules []domainalert.OnCallAssignmentRule, input domainalert.OnCallResolveInput) (domainalert.OnCallAssignmentRule, bool) {
+	var selected domainalert.OnCallAssignmentRule
+	selectedRouteRank := 0
+	selectedScore := 0
+	found := false
+	for _, rule := range rules {
+		if !rule.Enabled || !onCallAssignmentRuleMatches(rule, input) {
+			continue
+		}
+		routeRank := onCallRouteRank(rule)
+		score := rule.Priority*100 + onCallAssignmentRuleSpecificity(rule)
+		if !found || routeRank < selectedRouteRank || (routeRank == selectedRouteRank && score > selectedScore) {
+			selected = rule
+			selectedRouteRank = routeRank
+			selectedScore = score
+			found = true
+		}
+	}
+	return selected, found
+}
+
+func onCallAssignmentRuleMatches(rule domainalert.OnCallAssignmentRule, input domainalert.OnCallResolveInput) bool {
+	if !matchesOnCallField(rule.IntegrationID, input.IntegrationID, false) {
+		return false
+	}
+	if !matchesOnCallField(rule.IntegrationType, input.IntegrationType, false) {
+		return false
+	}
+	if !matchesOnCallField(rule.BusinessLineID, input.BusinessLineID, false) {
+		return false
+	}
+	if !matchesOnCallField(rule.AlertCategory, input.AlertCategory, false) {
+		return false
+	}
+	if !matchesOnCallField(rule.AlertName, input.AlertName, true) {
+		return false
+	}
+	if !matchesOnCallField(rule.Severity, input.Severity, false) {
+		return false
+	}
+	if !matchesOnCallField(rule.Service, input.Service, false) {
+		return false
+	}
+	if !matchesOnCallField(rule.Role, input.Role, false) {
+		return false
+	}
+	return onCallMatchersMatch(rule.Matchers, input)
+}
+
+func matchesOnCallField(wanted, actual string, contains bool) bool {
+	wanted = strings.TrimSpace(wanted)
+	if wanted == "" {
+		return true
+	}
+	actual = strings.TrimSpace(actual)
+	if contains {
+		return strings.Contains(strings.ToLower(actual), strings.ToLower(wanted))
+	}
+	return strings.EqualFold(wanted, actual)
+}
+
+func onCallMatchersMatch(matchers map[string]any, input domainalert.OnCallResolveInput) bool {
+	if len(matchers) == 0 {
+		return true
+	}
+	values := onCallResolveContextValues(input)
+	for key, rawValue := range matchers {
+		wanted := matcherValues(rawValue)
+		switch {
+		case strings.HasPrefix(key, "label:"):
+			labelKey := strings.TrimPrefix(key, "label:")
+			if !containsMatcher(wanted, input.Labels[labelKey]) {
+				return false
+			}
+		case strings.HasPrefix(key, "label."):
+			labelKey := strings.TrimPrefix(key, "label.")
+			if !containsMatcher(wanted, input.Labels[labelKey]) {
+				return false
+			}
+		default:
+			if !containsMatcher(wanted, values[key]) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func onCallAssignmentRuleSpecificity(rule domainalert.OnCallAssignmentRule) int {
+	score := 0
+	for _, value := range []string{rule.IntegrationID, rule.IntegrationType, rule.BusinessLineID, rule.AlertCategory, rule.AlertName, rule.Severity, rule.Service, rule.Role} {
+		if strings.TrimSpace(value) != "" {
+			score += 10
+		}
+	}
+	score += len(rule.Matchers) * 5
+	return score
+}
+
+func onCallResolveContextValues(input domainalert.OnCallResolveInput) map[string]string {
+	values := map[string]string{
+		"alertId":         input.AlertID,
+		"integrationId":   input.IntegrationID,
+		"integrationType": input.IntegrationType,
+		"businessLineId":  input.BusinessLineID,
+		"alertCategory":   input.AlertCategory,
+		"alertName":       input.AlertName,
+		"severity":        input.Severity,
+		"service":         input.Service,
+		"role":            input.Role,
+		"clusterId":       input.ClusterID,
+		"namespace":       input.Namespace,
+	}
+	for key, value := range input.Labels {
+		values["label:"+key] = value
+		values["label."+key] = value
+	}
+	return values
+}
+
+func onCallResolveContextPayload(input domainalert.OnCallResolveInput) map[string]any {
+	return map[string]any{
+		"alertId":         input.AlertID,
+		"integrationId":   input.IntegrationID,
+		"integrationType": input.IntegrationType,
+		"businessLineId":  input.BusinessLineID,
+		"alertCategory":   input.AlertCategory,
+		"alertName":       input.AlertName,
+		"severity":        input.Severity,
+		"service":         input.Service,
+		"role":            input.Role,
+		"clusterId":       input.ClusterID,
+		"namespace":       input.Namespace,
+		"labels":          input.Labels,
+	}
+}
+
+func onCallRouteRank(rule domainalert.OnCallAssignmentRule) int {
+	if rule.RouteOrder > 0 {
+		return rule.RouteOrder
+	}
+	return 100000 - rule.Priority
+}
+
+func buildOnCallGroupKey(rule domainalert.OnCallAssignmentRule, input domainalert.OnCallResolveInput) string {
+	groupBy := normalizeStrings(rule.GroupBy)
+	if len(groupBy) == 0 {
+		groupBy = []string{"alertName", "clusterId", "namespace", "service"}
+	}
+	values := onCallResolveContextValues(input)
+	parts := make([]string, 0, len(groupBy))
+	for _, key := range groupBy {
+		value := strings.TrimSpace(values[key])
+		if value == "" {
+			value = strings.TrimSpace(input.Labels[key])
+		}
+		if value == "" {
+			value = "-"
+		}
+		parts = append(parts, key+"="+value)
+	}
+	return strings.Join(parts, "|")
 }
 
 func buildRuleMatches(rule domainalert.AlertRule, result domainalert.RuleTestResult) []ruleMatch {
@@ -679,12 +1118,7 @@ func (s *Service) buildNotificationOutputs(ctx context.Context, policy domainale
 	for _, item := range channels {
 		channelMap[item.ID] = item
 	}
-	oncall := map[string]any{}
-	if strings.TrimSpace(policy.OnCallRef) != "" {
-		if current, currentErr := s.resolveCurrentOnCall(ctx, policy.OnCallRef); currentErr == nil {
-			oncall = current
-		}
-	}
+	oncall := s.resolveEventOnCall(ctx, policy, event)
 	outputs := make([]map[string]any, 0, len(policy.ChannelRefs))
 	for _, channelID := range policy.ChannelRefs {
 		channel, ok := channelMap[channelID]

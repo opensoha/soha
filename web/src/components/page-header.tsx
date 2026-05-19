@@ -10,14 +10,15 @@ interface PageHeaderProps {
   title: string
   description?: string
   actions?: ReactNode
+  showResourceScope?: boolean
 }
 
-export function PageHeader({ title, description, actions }: PageHeaderProps) {
+export function PageHeader({ title, description, actions, showResourceScope = true }: PageHeaderProps) {
   const location = useLocation()
   const currentRoute = getRouteMeta(location.pathname)
   const workspace = getRouteWorkspace(currentRoute)
   const scopeMode = getRouteScopeMode(currentRoute)
-  const showResourceScope = workspace === 'resource' && scopeMode !== 'hidden'
+  const shouldShowResourceScope = showResourceScope && workspace === 'resource' && scopeMode !== 'hidden'
 
   return (
     <div className="kc-page-header-shell">
@@ -32,7 +33,7 @@ export function PageHeader({ title, description, actions }: PageHeaderProps) {
         </div>
         {actions ? <div className="kc-page-toolbar">{actions}</div> : null}
       </div>
-      {showResourceScope ? <ResourceWorkspaceScopeBar scopeMode={scopeMode} /> : null}
+      {shouldShowResourceScope ? <ResourceWorkspaceScopeBar scopeMode={scopeMode} /> : null}
     </div>
   )
 }

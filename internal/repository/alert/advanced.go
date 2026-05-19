@@ -837,6 +837,75 @@ func (r *Repository) UpdateOnCallEscalationPolicy(ctx context.Context, policyID 
 	return item, nil
 }
 
+func (r *Repository) ListOnCallAssignmentRules(ctx context.Context) ([]domainalert.OnCallAssignmentRule, error) {
+	rows, err := r.db.WithContext(ctx).Raw(`
+		SELECT id, name, integration_id, integration_type, business_line_id, alert_category, alert_name, severity, service, role, matchers, target_type, target_ref, route_order, group_by, priority, enabled, created_at, updated_at
+		FROM oncall_assignment_rules
+		ORDER BY CASE WHEN route_order > 0 THEN route_order ELSE 100000 - priority END ASC, priority DESC, updated_at DESC, created_at DESC
+	`).Rows()
+	if err != nil {
+		return nil, fmt.Errorf("query oncall assignment rules: %w", err)
+	}
+	defer rows.Close()
+
+	items := make([]domainalert.OnCallAssignmentRule, 0)
+	for rows.Next() {
+		item, err := scanOnCallAssignmentRule(rows)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func (r *Repository) CreateOnCallAssignmentRule(ctx context.Context, input domainalert.OnCallAssignmentRuleInput) (domainalert.OnCallAssignmentRule, error) {
+	item := normalizeOnCallAssignmentRuleInput(input, time.Now().UTC())
+	matchers, err := json.Marshal(item.Matchers)
+	if err != nil {
+		return domainalert.OnCallAssignmentRule{}, fmt.Errorf("marshal oncall assignment rule matchers: %w", err)
+	}
+	groupBy, err := json.Marshal(item.GroupBy)
+	if err != nil {
+		return domainalert.OnCallAssignmentRule{}, fmt.Errorf("marshal oncall assignment rule group by: %w", err)
+	}
+	if err := r.db.WithContext(ctx).Exec(`
+		INSERT INTO oncall_assignment_rules (
+			id, name, integration_id, integration_type, business_line_id, alert_category, alert_name, severity, service, role, matchers, target_type, target_ref, route_order, group_by, priority, enabled, created_at, updated_at
+		)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, item.ID, item.Name, nullableString(item.IntegrationID), nullableString(item.IntegrationType), nullableString(item.BusinessLineID), nullableString(item.AlertCategory), nullableString(item.AlertName), nullableString(item.Severity), nullableString(item.Service), nullableString(item.Role), string(matchers), item.TargetType, item.TargetRef, item.RouteOrder, string(groupBy), item.Priority, item.Enabled, item.CreatedAt, item.UpdatedAt).Error; err != nil {
+		return domainalert.OnCallAssignmentRule{}, fmt.Errorf("create oncall assignment rule: %w", err)
+	}
+	return item, nil
+}
+
+func (r *Repository) UpdateOnCallAssignmentRule(ctx context.Context, ruleID string, input domainalert.OnCallAssignmentRuleInput) (domainalert.OnCallAssignmentRule, error) {
+	item := normalizeOnCallAssignmentRuleInput(input, time.Now().UTC())
+	item.ID = strings.TrimSpace(ruleID)
+	matchers, err := json.Marshal(item.Matchers)
+	if err != nil {
+		return domainalert.OnCallAssignmentRule{}, fmt.Errorf("marshal oncall assignment rule matchers: %w", err)
+	}
+	groupBy, err := json.Marshal(item.GroupBy)
+	if err != nil {
+		return domainalert.OnCallAssignmentRule{}, fmt.Errorf("marshal oncall assignment rule group by: %w", err)
+	}
+	result := r.db.WithContext(ctx).Exec(`
+		UPDATE oncall_assignment_rules
+		SET name = ?, integration_id = ?, integration_type = ?, business_line_id = ?, alert_category = ?, alert_name = ?, severity = ?, service = ?, role = ?, matchers = ?, target_type = ?, target_ref = ?, route_order = ?, group_by = ?, priority = ?, enabled = ?, updated_at = ?
+		WHERE id = ?
+	`, item.Name, nullableString(item.IntegrationID), nullableString(item.IntegrationType), nullableString(item.BusinessLineID), nullableString(item.AlertCategory), nullableString(item.AlertName), nullableString(item.Severity), nullableString(item.Service), nullableString(item.Role), string(matchers), item.TargetType, item.TargetRef, item.RouteOrder, string(groupBy), item.Priority, item.Enabled, item.UpdatedAt, item.ID)
+	if result.Error != nil {
+		return domainalert.OnCallAssignmentRule{}, fmt.Errorf("update oncall assignment rule: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return domainalert.OnCallAssignmentRule{}, fmt.Errorf("oncall assignment rule not found: %s", item.ID)
+	}
+	item.CreatedAt = fetchTableCreatedAt(ctx, r.db, "oncall_assignment_rules", item.ID)
+	return item, nil
+}
+
 func fetchTableCreatedAt(ctx context.Context, db *gorm.DB, table string, id string) time.Time {
 	var createdAt time.Time
 	if err := db.WithContext(ctx).Raw(fmt.Sprintf(`SELECT created_at FROM %s WHERE id = ?`, table), id).Row().Scan(&createdAt); err != nil {
@@ -1072,6 +1141,67 @@ func scanNotificationPolicy(rows *sql.Rows) (domainalert.NotificationPolicy, err
 	if oncallRef.Valid {
 		item.OnCallRef = oncallRef.String
 	}
+	return item, nil
+}
+
+func scanOnCallAssignmentRule(rows *sql.Rows) (domainalert.OnCallAssignmentRule, error) {
+	var item domainalert.OnCallAssignmentRule
+	var integrationID, integrationType, businessLineID, alertCategory, alertName, severity, service, role sql.NullString
+	var matchers []byte
+	var groupBy []byte
+	if err := rows.Scan(
+		&item.ID,
+		&item.Name,
+		&integrationID,
+		&integrationType,
+		&businessLineID,
+		&alertCategory,
+		&alertName,
+		&severity,
+		&service,
+		&role,
+		&matchers,
+		&item.TargetType,
+		&item.TargetRef,
+		&item.RouteOrder,
+		&groupBy,
+		&item.Priority,
+		&item.Enabled,
+		&item.CreatedAt,
+		&item.UpdatedAt,
+	); err != nil {
+		return domainalert.OnCallAssignmentRule{}, fmt.Errorf("scan oncall assignment rule: %w", err)
+	}
+	if integrationID.Valid {
+		item.IntegrationID = integrationID.String
+	}
+	if integrationType.Valid {
+		item.IntegrationType = integrationType.String
+	}
+	if businessLineID.Valid {
+		item.BusinessLineID = businessLineID.String
+	}
+	if alertCategory.Valid {
+		item.AlertCategory = alertCategory.String
+	}
+	if alertName.Valid {
+		item.AlertName = alertName.String
+	}
+	if severity.Valid {
+		item.Severity = severity.String
+	}
+	if service.Valid {
+		item.Service = service.String
+	}
+	if role.Valid {
+		item.Role = role.String
+	}
+	_ = json.Unmarshal(matchers, &item.Matchers)
+	if item.Matchers == nil {
+		item.Matchers = map[string]any{}
+	}
+	_ = json.Unmarshal(groupBy, &item.GroupBy)
+	item.GroupBy = normalizeStrings(item.GroupBy)
 	return item, nil
 }
 
@@ -1478,6 +1608,45 @@ func normalizeOnCallEscalationPolicyInput(input domainalert.OnCallEscalationPoli
 		Enabled:   input.Enabled,
 		CreatedAt: now,
 		UpdatedAt: now,
+	}
+}
+
+func normalizeOnCallAssignmentRuleInput(input domainalert.OnCallAssignmentRuleInput, now time.Time) domainalert.OnCallAssignmentRule {
+	id := strings.TrimSpace(input.ID)
+	if id == "" {
+		id = "oncall-rule:" + uuid.NewString()
+	}
+	if input.Matchers == nil {
+		input.Matchers = map[string]any{}
+	}
+	targetType := strings.ToLower(strings.TrimSpace(input.TargetType))
+	if targetType == "" {
+		targetType = "escalation"
+	}
+	priority := input.Priority
+	if priority == 0 {
+		priority = 100
+	}
+	return domainalert.OnCallAssignmentRule{
+		ID:              id,
+		Name:            strings.TrimSpace(input.Name),
+		IntegrationID:   strings.TrimSpace(input.IntegrationID),
+		IntegrationType: strings.ToLower(strings.TrimSpace(input.IntegrationType)),
+		BusinessLineID:  strings.TrimSpace(input.BusinessLineID),
+		AlertCategory:   strings.TrimSpace(input.AlertCategory),
+		AlertName:       strings.TrimSpace(input.AlertName),
+		Severity:        strings.ToLower(strings.TrimSpace(input.Severity)),
+		Service:         strings.TrimSpace(input.Service),
+		Role:            strings.ToLower(strings.TrimSpace(input.Role)),
+		Matchers:        input.Matchers,
+		TargetType:      targetType,
+		TargetRef:       strings.TrimSpace(input.TargetRef),
+		RouteOrder:      input.RouteOrder,
+		GroupBy:         normalizeStrings(input.GroupBy),
+		Priority:        priority,
+		Enabled:         input.Enabled,
+		CreatedAt:       now,
+		UpdatedAt:       now,
 	}
 }
 

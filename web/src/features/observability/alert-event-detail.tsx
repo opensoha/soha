@@ -358,7 +358,7 @@ function AlertEventDetailBody({ detail, inDrawer = false }: { detail: AlertEvent
             key: 'raw',
             label: '原始载荷',
             children: (
-              <Space direction="vertical" size={16} style={{ width: '100%' }}>
+              <Space orientation="vertical" size={16} style={{ width: '100%' }}>
                 <Card size="small" title="Labels">
                   <pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{stringifyPayload(event?.labels)}</pre>
                 </Card>

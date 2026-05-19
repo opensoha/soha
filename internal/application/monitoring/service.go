@@ -67,6 +67,9 @@ type Repository interface {
 	ListOnCallEscalationPolicies(context.Context) ([]domainalert.OnCallEscalationPolicy, error)
 	CreateOnCallEscalationPolicy(context.Context, domainalert.OnCallEscalationPolicyInput) (domainalert.OnCallEscalationPolicy, error)
 	UpdateOnCallEscalationPolicy(context.Context, string, domainalert.OnCallEscalationPolicyInput) (domainalert.OnCallEscalationPolicy, error)
+	ListOnCallAssignmentRules(context.Context) ([]domainalert.OnCallAssignmentRule, error)
+	CreateOnCallAssignmentRule(context.Context, domainalert.OnCallAssignmentRuleInput) (domainalert.OnCallAssignmentRule, error)
+	UpdateOnCallAssignmentRule(context.Context, string, domainalert.OnCallAssignmentRuleInput) (domainalert.OnCallAssignmentRule, error)
 }
 
 type EventWriter interface {

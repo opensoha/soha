@@ -298,11 +298,11 @@ describe('observability monitoring pages', () => {
 
   it('renders the notification route compatibility view using matchers and channel ids', async () => {
     const container = await renderWithProviders(<NotificationsPage />, '/observability/notifications')
-    await clickElementByText('路由规则（兼容）')
+    await clickElementByText('路由规则')
 
     expect(container.textContent).toContain('通知策略')
-    expect(container.textContent).toContain('路由规则（兼容）')
-    expect(container.textContent).toContain('只读兼容视图')
+    expect(container.textContent).toContain('路由规则')
+    expect(container.textContent).toContain('兼容 `/alert-routes`')
     expect(container.textContent).toContain('Primary Slack')
     expect(container.textContent).toContain('{"severity":"critical"}')
     expect(apiGetMock).toHaveBeenCalledWith('/alert-routes')

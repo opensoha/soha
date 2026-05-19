@@ -343,6 +343,10 @@ Design expectation:
 
 - observability is not isolated from platform data
 - cluster/application/runtime context should be composable
+- on-call collaboration follows a Grafana IRM-style model: alert integrations enter ordered on-call routes, routes match alert labels/context, grouping keys produce alert groups, and matched routes target escalation chains or schedules
+- the on-call workspace is alert-task-first: the primary surface must be generated from active alert events and backend route resolution, while manual route parsing belongs to diagnostics or route editing rather than the first-screen workflow
+- on-call routes are backend-owned operational contracts exposed through `/api/v1/oncall/routes` with `/api/v1/oncall/assignment-rules` kept as a compatibility alias; business line, service, and duty role (`dev`, `qa`, `ops`, `sre`, `security`, `owner`) are optional route match labels rather than the primary IA
+- alert notification and self-healing approval flows may resolve current on-call from explicit notification policy `oncallRef` first, then fall back to matching IRM routes derived from alert event integration metadata and labels such as `businessLineId`, `alertCategory`, `service`, and `role`
 
 ### 7.4 Access / System / Settings
 
@@ -414,6 +418,7 @@ The repository has already converged on these rules:
 - sidebar sibling ordering should honor backend visible-menu sort within each frontend group so menu-management sort changes affect the console without duplicating section headers
 - monitoring and copilot APIs are no longer implicitly open to any authenticated user; user-facing reads and writes must check permission keys before hitting repository operations
 - observability and AI pages should treat route visibility, button visibility, and backend API authorization as three separate gates that must stay aligned
+- monitoring OnCall is production-usable as an IRM routing surface: the `值班协同` page must lead with active on-call tasks derived from alert events, then expose integration-aware routes, grouping keys, escalation chains, schedules, and rotations; route resolution must prefer backend matching over frontend-only filtering
 - AI工作台 and 监控工作台 are first-class workbench switcher entries; their child menus belong inside their own workbench trees and must not remain duplicated under 平台工作台 / resource navigation
 - AI工作台根入口 `/ai-workbench` is now the canonical session-first investigation surface; legacy `/ai-workbench/investigation` and `/ai-observe/workbench` paths should only remain as compatibility redirects instead of hosting a separate overview shell
 - when the active workbench is AI, the global sidebar should not keep rendering duplicated AI child trees or the bottom system-management block; AI-specific function switching, session history, and tool-entry affordances belong inside the AI workbench page chrome so the right-side canvas can stay focused on conversation flow

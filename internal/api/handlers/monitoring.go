@@ -66,7 +66,12 @@ type MonitoringService interface {
 	ListOnCallEscalationPolicies(context.Context, domainidentity.Principal) ([]domainalert.OnCallEscalationPolicy, error)
 	CreateOnCallEscalationPolicy(context.Context, domainidentity.Principal, domainalert.OnCallEscalationPolicyInput) (domainalert.OnCallEscalationPolicy, error)
 	UpdateOnCallEscalationPolicy(context.Context, domainidentity.Principal, string, domainalert.OnCallEscalationPolicyInput) (domainalert.OnCallEscalationPolicy, error)
+	ListOnCallAssignmentRules(context.Context, domainidentity.Principal) ([]domainalert.OnCallAssignmentRule, error)
+	CreateOnCallAssignmentRule(context.Context, domainidentity.Principal, domainalert.OnCallAssignmentRuleInput) (domainalert.OnCallAssignmentRule, error)
+	UpdateOnCallAssignmentRule(context.Context, domainidentity.Principal, string, domainalert.OnCallAssignmentRuleInput) (domainalert.OnCallAssignmentRule, error)
 	GetCurrentOnCall(context.Context, domainidentity.Principal, string) (map[string]any, error)
+	ResolveOnCall(context.Context, domainidentity.Principal, domainalert.OnCallResolveInput) (map[string]any, error)
+	ListOnCallTasks(context.Context, domainidentity.Principal, int) ([]domainalert.OnCallTask, error)
 }
 
 type MonitoringHandler struct {

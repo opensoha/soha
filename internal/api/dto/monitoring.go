@@ -168,3 +168,23 @@ type OnCallEscalationPolicyRequest struct {
 	Steps   []map[string]any `json:"steps"`
 	Enabled bool             `json:"enabled"`
 }
+
+type OnCallAssignmentRuleRequest struct {
+	ID              string         `json:"id"`
+	Name            string         `json:"name"`
+	IntegrationID   string         `json:"integrationId"`
+	IntegrationType string         `json:"integrationType"`
+	BusinessLineID  string         `json:"businessLineId"`
+	AlertCategory   string         `json:"alertCategory"`
+	AlertName       string         `json:"alertName"`
+	Severity        string         `json:"severity"`
+	Service         string         `json:"service"`
+	Role            string         `json:"role"`
+	Matchers        map[string]any `json:"matchers"`
+	TargetType      string         `json:"targetType"`
+	TargetRef       string         `json:"targetRef"`
+	RouteOrder      int            `json:"routeOrder"`
+	GroupBy         []string       `json:"groupBy"`
+	Priority        int            `json:"priority"`
+	Enabled         bool           `json:"enabled"`
+}

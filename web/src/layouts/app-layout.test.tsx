@@ -328,7 +328,7 @@ describe('app layout workspace navigation', () => {
         { id: 'ai-workbench-inspection', parentId: 'ai-workbench', path: '/ai-workbench/inspection', labelZh: '巡检', labelEn: 'Inspection', iconKey: 'bot', section: 'ops', sortOrder: 19, enabled: true },
         { id: 'ai-workbench-model-settings', parentId: 'ai-workbench', path: '/ai-workbench/model-settings', labelZh: '模型设置', labelEn: 'Model Settings', iconKey: 'bot', section: 'ops', sortOrder: 20, enabled: true },
         { id: 'monitoring-workbench', path: '/monitoring-workbench', labelZh: '监控工作台', labelEn: 'Monitoring Workbench', iconKey: 'gauge', section: 'ops', sortOrder: 60, enabled: true },
-        { id: 'monitoring-workbench-overview', parentId: 'monitoring-workbench', path: '/monitoring-workbench/overview', labelZh: '工作台概览', labelEn: 'Overview', iconKey: 'gauge', section: 'ops', sortOrder: 61, enabled: true },
+        { id: 'monitoring-workbench-overview', parentId: 'monitoring-workbench', path: '/monitoring-workbench/overview', labelZh: '总览', labelEn: 'Overview', iconKey: 'gauge', section: 'ops', sortOrder: 61, enabled: true },
         { id: 'system', path: '/system', labelZh: '系统管理', labelEn: 'System', iconKey: 'panels-top-left', section: 'admin', sortOrder: 99, enabled: true },
         { id: 'menus', parentId: 'system', path: '/system/menus', labelZh: '菜单管理', labelEn: 'Menus', iconKey: 'menu-square', section: 'admin', sortOrder: 100, enabled: true },
       ],

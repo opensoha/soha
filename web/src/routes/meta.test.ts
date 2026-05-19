@@ -491,7 +491,7 @@ describe("access route authorization", () => {
           id: "monitoring-workbench-overview",
           parentId: "monitoring-workbench",
           path: "/monitoring-workbench/overview",
-          labelZh: "工作台概览",
+          labelZh: "总览",
           labelEn: "Overview",
           iconKey: "gauge",
           section: "ops",

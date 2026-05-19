@@ -3,6 +3,7 @@ package monitoring
 import (
 	"context"
 	"testing"
+	"time"
 
 	appaccess "github.com/kubecrux/kubecrux/internal/application/access"
 	domainalert "github.com/kubecrux/kubecrux/internal/domain/alert"
@@ -22,6 +23,10 @@ type stubMonitoringCompatRepository struct {
 	listNotificationPoliciesFn func(context.Context) ([]domainalert.NotificationPolicy, error)
 	createNotificationPolicyFn func(context.Context, domainalert.NotificationPolicyInput) (domainalert.NotificationPolicy, error)
 	updateNotificationPolicyFn func(context.Context, string, domainalert.NotificationPolicyInput) (domainalert.NotificationPolicy, error)
+	onCallSchedules            []domainalert.OnCallSchedule
+	onCallRotations            []domainalert.OnCallRotation
+	onCallAssignmentRules      []domainalert.OnCallAssignmentRule
+	alertEvents                map[string]domainalert.AlertEvent
 }
 
 func (s *stubMonitoringCompatRepository) Upsert(context.Context, string, []domainalert.IngestAlert) ([]domainalert.Instance, error) {
@@ -117,10 +122,19 @@ func (s *stubMonitoringCompatRepository) CreateRuleRun(context.Context, domainal
 }
 
 func (s *stubMonitoringCompatRepository) ListEvents(context.Context, domainalert.AlertEventFilter) ([]domainalert.AlertEvent, error) {
-	return nil, nil
+	items := make([]domainalert.AlertEvent, 0, len(s.alertEvents))
+	for _, item := range s.alertEvents {
+		items = append(items, item)
+	}
+	return items, nil
 }
 
-func (s *stubMonitoringCompatRepository) GetEvent(context.Context, string) (domainalert.AlertEvent, error) {
+func (s *stubMonitoringCompatRepository) GetEvent(_ context.Context, eventID string) (domainalert.AlertEvent, error) {
+	if s.alertEvents != nil {
+		if item, ok := s.alertEvents[eventID]; ok {
+			return item, nil
+		}
+	}
 	return domainalert.AlertEvent{}, nil
 }
 
@@ -198,7 +212,7 @@ func (s *stubMonitoringCompatRepository) UpdateHealingRun(context.Context, strin
 }
 
 func (s *stubMonitoringCompatRepository) ListOnCallSchedules(context.Context) ([]domainalert.OnCallSchedule, error) {
-	return nil, nil
+	return s.onCallSchedules, nil
 }
 
 func (s *stubMonitoringCompatRepository) CreateOnCallSchedule(context.Context, domainalert.OnCallScheduleInput) (domainalert.OnCallSchedule, error) {
@@ -210,7 +224,7 @@ func (s *stubMonitoringCompatRepository) UpdateOnCallSchedule(context.Context, s
 }
 
 func (s *stubMonitoringCompatRepository) ListOnCallRotations(context.Context) ([]domainalert.OnCallRotation, error) {
-	return nil, nil
+	return s.onCallRotations, nil
 }
 
 func (s *stubMonitoringCompatRepository) CreateOnCallRotation(context.Context, domainalert.OnCallRotationInput) (domainalert.OnCallRotation, error) {
@@ -231,6 +245,18 @@ func (s *stubMonitoringCompatRepository) CreateOnCallEscalationPolicy(context.Co
 
 func (s *stubMonitoringCompatRepository) UpdateOnCallEscalationPolicy(context.Context, string, domainalert.OnCallEscalationPolicyInput) (domainalert.OnCallEscalationPolicy, error) {
 	return domainalert.OnCallEscalationPolicy{}, nil
+}
+
+func (s *stubMonitoringCompatRepository) ListOnCallAssignmentRules(context.Context) ([]domainalert.OnCallAssignmentRule, error) {
+	return s.onCallAssignmentRules, nil
+}
+
+func (s *stubMonitoringCompatRepository) CreateOnCallAssignmentRule(context.Context, domainalert.OnCallAssignmentRuleInput) (domainalert.OnCallAssignmentRule, error) {
+	return domainalert.OnCallAssignmentRule{}, nil
+}
+
+func (s *stubMonitoringCompatRepository) UpdateOnCallAssignmentRule(context.Context, string, domainalert.OnCallAssignmentRuleInput) (domainalert.OnCallAssignmentRule, error) {
+	return domainalert.OnCallAssignmentRule{}, nil
 }
 
 var _ Repository = (*stubMonitoringCompatRepository)(nil)
@@ -427,5 +453,245 @@ func TestServiceUpdateRouteMapsToCompatibilityNotificationPolicy(t *testing.T) {
 	}
 	if len(item.ChannelIDs) != 1 || item.ChannelIDs[0] != "channel-feishu" {
 		t.Fatalf("item.ChannelIDs = %#v, want [channel-feishu]", item.ChannelIDs)
+	}
+}
+
+func TestServiceResolveOnCallUsesBusinessLineAndRoleAssignment(t *testing.T) {
+	now := time.Now().UTC().Add(-1 * time.Hour)
+	repo := &stubMonitoringCompatRepository{
+		onCallSchedules: []domainalert.OnCallSchedule{
+			{ID: "schedule:dev-retail", Name: "Retail Dev", TimeZone: "UTC", Enabled: true, CreatedAt: now, UpdatedAt: now},
+		},
+		onCallRotations: []domainalert.OnCallRotation{
+			{ID: "rotation:dev-retail", ScheduleID: "schedule:dev-retail", Name: "Retail Dev Rotation", Participants: []string{"dev-a", "dev-b"}, RotationConfig: map[string]any{"shiftHours": 12}, Enabled: true},
+		},
+		onCallAssignmentRules: []domainalert.OnCallAssignmentRule{
+			{ID: "oncall-rule:retail-dev", Name: "Retail critical dev", BusinessLineID: "retail", Severity: "critical", Role: "dev", TargetType: "schedule", TargetRef: "schedule:dev-retail", Priority: 200, Enabled: true},
+		},
+	}
+	service := &Service{
+		repo:        repo,
+		events:      &stubMonitoringEventWriter{},
+		permissions: monitoringCompatPermissions(appaccess.PermObserveOncallView),
+	}
+
+	result, err := service.ResolveOnCall(context.Background(), monitoringCompatPrincipal(), domainalert.OnCallResolveInput{
+		BusinessLineID: "retail",
+		Severity:       "critical",
+		Role:           "dev",
+	})
+	if err != nil {
+		t.Fatalf("ResolveOnCall returned error: %v", err)
+	}
+	if got := result["resolutionStatus"]; got != "matched" {
+		t.Fatalf("resolutionStatus = %v, want matched", got)
+	}
+	if got := result["assignmentRuleId"]; got != "oncall-rule:retail-dev" {
+		t.Fatalf("assignmentRuleId = %v, want oncall-rule:retail-dev", got)
+	}
+	if got := result["currentParticipant"]; got != "dev-a" {
+		t.Fatalf("currentParticipant = %v, want dev-a", got)
+	}
+}
+
+func TestServiceResolveOnCallUsesRotationDateOverride(t *testing.T) {
+	now := time.Now().UTC()
+	dateKey := now.Format("2006-01-02")
+	repo := &stubMonitoringCompatRepository{
+		onCallSchedules: []domainalert.OnCallSchedule{
+			{ID: "schedule:dev-retail", Name: "Retail Dev", TimeZone: "UTC", Enabled: true, CreatedAt: now.Add(-24 * time.Hour), UpdatedAt: now},
+		},
+		onCallRotations: []domainalert.OnCallRotation{
+			{
+				ID:           "rotation:dev-retail",
+				ScheduleID:   "schedule:dev-retail",
+				Name:         "Retail Dev Rotation",
+				Participants: []string{"dev-a", "dev-b"},
+				RotationConfig: map[string]any{
+					"shiftHours": 24,
+					"overrides": map[string]any{
+						dateKey: []any{"override-a", "override-b"},
+					},
+				},
+				Enabled: true,
+			},
+		},
+		onCallAssignmentRules: []domainalert.OnCallAssignmentRule{
+			{ID: "oncall-rule:retail-dev", Name: "Retail critical dev", BusinessLineID: "retail", Severity: "critical", Role: "dev", TargetType: "schedule", TargetRef: "schedule:dev-retail", Priority: 200, Enabled: true},
+		},
+	}
+	service := &Service{
+		repo:        repo,
+		events:      &stubMonitoringEventWriter{},
+		permissions: monitoringCompatPermissions(appaccess.PermObserveOncallView),
+	}
+
+	result, err := service.ResolveOnCall(context.Background(), monitoringCompatPrincipal(), domainalert.OnCallResolveInput{
+		BusinessLineID: "retail",
+		Severity:       "critical",
+		Role:           "dev",
+	})
+	if err != nil {
+		t.Fatalf("ResolveOnCall returned error: %v", err)
+	}
+	if got := result["currentParticipant"]; got != "override-a" {
+		t.Fatalf("currentParticipant = %v, want override-a", got)
+	}
+	if got := result["override"]; got != true {
+		t.Fatalf("override = %v, want true", got)
+	}
+	if got := result["overrideDate"]; got != dateKey {
+		t.Fatalf("overrideDate = %v, want %s", got, dateKey)
+	}
+}
+
+func TestServiceResolveOnCallUsesIRMRoutingOrderAndGrouping(t *testing.T) {
+	now := time.Now().UTC().Add(-1 * time.Hour)
+	repo := &stubMonitoringCompatRepository{
+		onCallSchedules: []domainalert.OnCallSchedule{
+			{ID: "schedule:platform", Name: "Platform Primary", TimeZone: "UTC", Enabled: true, CreatedAt: now, UpdatedAt: now},
+			{ID: "schedule:payments", Name: "Payments Primary", TimeZone: "UTC", Enabled: true, CreatedAt: now, UpdatedAt: now},
+		},
+		onCallRotations: []domainalert.OnCallRotation{
+			{ID: "rotation:platform", ScheduleID: "schedule:platform", Name: "Platform Rotation", Participants: []string{"platform-a"}, Enabled: true},
+			{ID: "rotation:payments", ScheduleID: "schedule:payments", Name: "Payments Rotation", Participants: []string{"payments-a"}, Enabled: true},
+		},
+		onCallAssignmentRules: []domainalert.OnCallAssignmentRule{
+			{ID: "oncall-route:fallback", Name: "Prometheus fallback", IntegrationType: "prometheus", TargetType: "schedule", TargetRef: "schedule:platform", RouteOrder: 50, GroupBy: []string{"alertName"}, Priority: 300, Enabled: true},
+			{ID: "oncall-route:payments", Name: "Payments checkout", IntegrationType: "prometheus", Service: "checkout", Severity: "critical", TargetType: "schedule", TargetRef: "schedule:payments", RouteOrder: 10, GroupBy: []string{"alertName", "service", "clusterId"}, Priority: 100, Enabled: true},
+		},
+	}
+	service := &Service{
+		repo:        repo,
+		events:      &stubMonitoringEventWriter{},
+		permissions: monitoringCompatPermissions(appaccess.PermObserveOncallView),
+	}
+
+	result, err := service.ResolveOnCall(context.Background(), monitoringCompatPrincipal(), domainalert.OnCallResolveInput{
+		IntegrationType: "prometheus",
+		AlertName:       "HighLatency",
+		Severity:        "critical",
+		Service:         "checkout",
+		ClusterID:       "prod-a",
+	})
+	if err != nil {
+		t.Fatalf("ResolveOnCall returned error: %v", err)
+	}
+	if got := result["routeId"]; got != "oncall-route:payments" {
+		t.Fatalf("routeId = %v, want oncall-route:payments", got)
+	}
+	if got := result["groupKey"]; got != "alertName=HighLatency|service=checkout|clusterId=prod-a" {
+		t.Fatalf("groupKey = %v, want alertName=HighLatency|service=checkout|clusterId=prod-a", got)
+	}
+	if got := result["currentParticipant"]; got != "payments-a" {
+		t.Fatalf("currentParticipant = %v, want payments-a", got)
+	}
+}
+
+func TestServiceResolveOnCallCanDeriveContextFromAlertEvent(t *testing.T) {
+	now := time.Now().UTC().Add(-1 * time.Hour)
+	repo := &stubMonitoringCompatRepository{
+		alertEvents: map[string]domainalert.AlertEvent{
+			"evt-qa": {
+				ID:         "evt-qa",
+				Title:      "Checkout smoke test failed",
+				Severity:   "warning",
+				SourceType: "prometheus",
+				Labels: map[string]string{
+					"businessLineId": "retail",
+					"alertCategory":  "business",
+					"service":        "checkout",
+					"role":           "qa",
+				},
+			},
+		},
+		onCallSchedules: []domainalert.OnCallSchedule{
+			{ID: "schedule:qa-retail", Name: "Retail QA", TimeZone: "UTC", Enabled: true, CreatedAt: now, UpdatedAt: now},
+		},
+		onCallRotations: []domainalert.OnCallRotation{
+			{ID: "rotation:qa-retail", ScheduleID: "schedule:qa-retail", Name: "Retail QA Rotation", Participants: []string{"qa-a", "qa-b"}, RotationConfig: map[string]any{"shiftHours": 12}, Enabled: true},
+		},
+		onCallAssignmentRules: []domainalert.OnCallAssignmentRule{
+			{ID: "oncall-rule:retail-qa", Name: "Retail QA business alerts", BusinessLineID: "retail", AlertCategory: "business", Service: "checkout", Role: "qa", TargetType: "schedule", TargetRef: "schedule:qa-retail", Priority: 200, Enabled: true},
+		},
+	}
+	service := &Service{
+		repo:        repo,
+		events:      &stubMonitoringEventWriter{},
+		permissions: monitoringCompatPermissions(appaccess.PermObserveOncallView),
+	}
+
+	result, err := service.ResolveOnCall(context.Background(), monitoringCompatPrincipal(), domainalert.OnCallResolveInput{AlertID: "evt-qa"})
+	if err != nil {
+		t.Fatalf("ResolveOnCall returned error: %v", err)
+	}
+	if got := result["assignmentRuleId"]; got != "oncall-rule:retail-qa" {
+		t.Fatalf("assignmentRuleId = %v, want oncall-rule:retail-qa", got)
+	}
+	if got := result["currentParticipant"]; got != "qa-a" {
+		t.Fatalf("currentParticipant = %v, want qa-a", got)
+	}
+	if got := result["role"]; got != "qa" {
+		t.Fatalf("role = %v, want qa", got)
+	}
+}
+
+func TestServiceListOnCallTasksBuildsTasksFromFiringAlertEvents(t *testing.T) {
+	now := time.Now().UTC().Add(-1 * time.Hour)
+	repo := &stubMonitoringCompatRepository{
+		alertEvents: map[string]domainalert.AlertEvent{
+			"evt-payment": {
+				ID:           "evt-payment",
+				Title:        "Payment checkout latency",
+				Summary:      "p95 latency exceeded threshold",
+				Severity:     "critical",
+				Status:       "firing",
+				SourceType:   "prometheus",
+				SourceSystem: "prom-main",
+				ClusterID:    "prod-a",
+				Namespace:    "checkout",
+				Labels: map[string]string{
+					"service":        "checkout",
+					"businessLineId": "payment",
+				},
+				LastSeenAt: now,
+				CreatedAt:  now,
+				UpdatedAt:  now,
+			},
+		},
+		onCallSchedules: []domainalert.OnCallSchedule{
+			{ID: "schedule:payment-primary", Name: "Payment Primary", TimeZone: "UTC", Enabled: true, CreatedAt: now, UpdatedAt: now},
+		},
+		onCallRotations: []domainalert.OnCallRotation{
+			{ID: "rotation:payment-primary", ScheduleID: "schedule:payment-primary", Name: "Payment Rotation", Participants: []string{"pay-a", "pay-b"}, Enabled: true},
+		},
+		onCallAssignmentRules: []domainalert.OnCallAssignmentRule{
+			{ID: "oncall-route:payment", Name: "Payment route", IntegrationType: "prometheus", Service: "checkout", TargetType: "schedule", TargetRef: "schedule:payment-primary", RouteOrder: 10, GroupBy: []string{"alertName", "service"}, Enabled: true},
+		},
+	}
+	service := &Service{
+		repo:        repo,
+		events:      &stubMonitoringEventWriter{},
+		permissions: monitoringCompatPermissions(appaccess.PermObserveOncallView),
+	}
+
+	tasks, err := service.ListOnCallTasks(context.Background(), monitoringCompatPrincipal(), 20)
+	if err != nil {
+		t.Fatalf("ListOnCallTasks returned error: %v", err)
+	}
+	if len(tasks) != 1 {
+		t.Fatalf("len(tasks) = %d, want 1", len(tasks))
+	}
+	if got := tasks[0].EventID; got != "evt-payment" {
+		t.Fatalf("EventID = %v, want evt-payment", got)
+	}
+	if got := tasks[0].RouteID; got != "oncall-route:payment" {
+		t.Fatalf("RouteID = %v, want oncall-route:payment", got)
+	}
+	if got := tasks[0].CurrentParticipant; got != "pay-a" {
+		t.Fatalf("CurrentParticipant = %v, want pay-a", got)
+	}
+	if got := tasks[0].GroupKey; got != "alertName=Payment checkout latency|service=checkout" {
+		t.Fatalf("GroupKey = %v, want alertName=Payment checkout latency|service=checkout", got)
 	}
 }

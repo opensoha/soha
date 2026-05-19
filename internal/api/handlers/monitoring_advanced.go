@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/kubecrux/kubecrux/internal/api/dto"
@@ -598,6 +599,92 @@ func (h *MonitoringHandler) UpdateOnCallEscalationPolicy(c *gin.Context) {
 	apiresponse.Item(c, http.StatusOK, item)
 }
 
+func (h *MonitoringHandler) ListOnCallAssignmentRules(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	items, err := h.service.ListOnCallAssignmentRules(c.Request.Context(), principal)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Items(c, http.StatusOK, items)
+}
+
+func (h *MonitoringHandler) CreateOnCallAssignmentRule(c *gin.Context) {
+	var req dto.OnCallAssignmentRuleRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid oncall assignment rule payload")
+		return
+	}
+	principal := apiMiddleware.PrincipalFromContext(c)
+	item, err := h.service.CreateOnCallAssignmentRule(c.Request.Context(), principal, domainalert.OnCallAssignmentRuleInput{
+		ID:              req.ID,
+		Name:            req.Name,
+		IntegrationID:   req.IntegrationID,
+		IntegrationType: req.IntegrationType,
+		BusinessLineID:  req.BusinessLineID,
+		AlertCategory:   req.AlertCategory,
+		AlertName:       req.AlertName,
+		Severity:        req.Severity,
+		Service:         req.Service,
+		Role:            req.Role,
+		Matchers:        req.Matchers,
+		TargetType:      req.TargetType,
+		TargetRef:       req.TargetRef,
+		RouteOrder:      req.RouteOrder,
+		GroupBy:         req.GroupBy,
+		Priority:        req.Priority,
+		Enabled:         req.Enabled,
+	})
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusCreated, item)
+}
+
+func (h *MonitoringHandler) UpdateOnCallAssignmentRule(c *gin.Context) {
+	var req dto.OnCallAssignmentRuleRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid oncall assignment rule payload")
+		return
+	}
+	principal := apiMiddleware.PrincipalFromContext(c)
+	ruleID := firstNonEmptyParam(c.Param("ruleID"), c.Param("routeID"))
+	item, err := h.service.UpdateOnCallAssignmentRule(c.Request.Context(), principal, ruleID, domainalert.OnCallAssignmentRuleInput{
+		ID:              req.ID,
+		Name:            req.Name,
+		IntegrationID:   req.IntegrationID,
+		IntegrationType: req.IntegrationType,
+		BusinessLineID:  req.BusinessLineID,
+		AlertCategory:   req.AlertCategory,
+		AlertName:       req.AlertName,
+		Severity:        req.Severity,
+		Service:         req.Service,
+		Role:            req.Role,
+		Matchers:        req.Matchers,
+		TargetType:      req.TargetType,
+		TargetRef:       req.TargetRef,
+		RouteOrder:      req.RouteOrder,
+		GroupBy:         req.GroupBy,
+		Priority:        req.Priority,
+		Enabled:         req.Enabled,
+	})
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
+}
+
+func firstNonEmptyParam(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
+}
+
 func (h *MonitoringHandler) GetCurrentOnCall(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	item, err := h.service.GetCurrentOnCall(c.Request.Context(), principal, c.Query("ref"))
@@ -606,4 +693,36 @@ func (h *MonitoringHandler) GetCurrentOnCall(c *gin.Context) {
 		return
 	}
 	apiresponse.Item(c, http.StatusOK, item)
+}
+
+func (h *MonitoringHandler) ResolveOnCall(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	item, err := h.service.ResolveOnCall(c.Request.Context(), principal, domainalert.OnCallResolveInput{
+		AlertID:         c.Query("alertId"),
+		IntegrationID:   c.Query("integrationId"),
+		IntegrationType: c.Query("integrationType"),
+		BusinessLineID:  c.Query("businessLineId"),
+		AlertCategory:   c.Query("alertCategory"),
+		AlertName:       c.Query("alertName"),
+		Severity:        c.Query("severity"),
+		Service:         c.Query("service"),
+		Role:            c.Query("role"),
+		ClusterID:       c.Query("clusterId"),
+		Namespace:       c.Query("namespace"),
+	})
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
+}
+
+func (h *MonitoringHandler) ListOnCallTasks(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	items, err := h.service.ListOnCallTasks(c.Request.Context(), principal, parseLimit(c.Query("limit"), 50))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Items(c, http.StatusOK, items)
 }

@@ -1154,8 +1154,8 @@ export const routeMeta: RouteMeta[] = [
   {
     id: "monitoring-workbench-overview",
     path: "/monitoring-workbench/overview",
-    title: "工作台概览",
-    description: "告警与监控概览",
+    title: "总览",
+    description: "监控总览",
     icon: "IconPulse",
     group: "observe",
     workbenchId: "monitoring",
