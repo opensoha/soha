@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { App, Button, Calendar, Card, Empty, Form, Input, InputNumber, Modal, Select, Space, Switch, Tag, Tabs, Typography } from 'antd'
+import { App, Avatar, Badge, Button, Calendar, Card, Col, DatePicker, Descriptions, Drawer, Empty, Form, Input, InputNumber, Modal, Radio, Row, Segmented, Select, Space, Statistic, Switch, Tag, Tabs, Timeline, Tooltip, Typography } from 'antd'
 import type { CalendarProps } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { PlusOutlined, PlayCircleOutlined, EditOutlined, CheckOutlined, CloseOutlined, ReloadOutlined } from '@ant-design/icons'
@@ -318,6 +318,180 @@ function baseParticipantsForDate(rotation: OnCallRotation, date: Dayjs) {
   }
 
   return result.length > 0 ? result : [participants[0]]
+}
+
+type OnCallBoardView = 'calendar' | 'timeline' | 'list'
+type OnCallRotationMode = 'daily' | 'weekly' | 'custom'
+
+interface OnCallRotationFormValues {
+  name: string
+  scheduleId: string
+  participants: string[]
+  rotationMode: OnCallRotationMode
+  shiftHours?: number
+  startAt?: Dayjs | null
+  enabled: boolean
+}
+
+interface OnCallEscalationStepFormValues {
+  scheduleId?: string
+  delayMinutes?: number
+  role?: string
+  description?: string
+}
+
+interface OnCallEscalationPolicyFormValues {
+  name: string
+  steps: OnCallEscalationStepFormValues[]
+  enabled: boolean
+}
+
+interface OnCallUser {
+  id: string
+  username: string
+  displayName?: string
+  email?: string
+  status?: string
+}
+
+function onCallUserOptions(users: OnCallUser[]) {
+  return users.map((user) => {
+    const username = user.username || user.email || user.id
+    const display = user.displayName || username
+    const label = display && display !== username ? `${display} (${username})` : username
+    return { value: username, label }
+  })
+}
+
+const ONCALL_INTEGRATION_TYPE_OPTIONS = [
+  { value: 'prometheus', label: 'Prometheus' },
+  { value: 'grafana_alerting', label: 'Grafana Alerting' },
+  { value: 'alertmanager', label: 'Alertmanager' },
+  { value: 'webhook', label: 'Webhook' },
+  { value: 'logs', label: 'Logs' },
+  { value: 'traces', label: 'Traces' },
+]
+
+const ONCALL_GROUP_BY_OPTIONS = ['alertName', 'clusterId', 'namespace', 'service', 'severity', 'businessLineId', 'integrationId'].map((value) => ({ value, label: value }))
+
+const ONCALL_ROLE_OPTIONS = [
+  { value: 'dev', label: '开发 Dev' },
+  { value: 'qa', label: '测试 QA' },
+  { value: 'ops', label: '运维 Ops' },
+  { value: 'sre', label: 'SRE' },
+  { value: 'security', label: '安全 Security' },
+  { value: 'owner', label: '业务负责人 Owner' },
+]
+
+const ONCALL_SEVERITY_OPTIONS = [
+  { value: 'critical', label: 'Critical' },
+  { value: 'warning', label: 'Warning' },
+  { value: 'info', label: 'Info' },
+]
+
+function participantAvatarText(value: string) {
+  const parts = value.split(/[\s._-]+/).map((item) => item.trim()).filter(Boolean)
+  if (parts.length >= 2) return `${parts[0][0] || ''}${parts[1][0] || ''}`.toUpperCase()
+  return value.slice(0, 2).toUpperCase()
+}
+
+function formatParticipantSummary(participants: string[]) {
+  return participants.length > 0 ? participants.join('、') : '未排班'
+}
+
+function rotationConfigShiftHours(rotationConfig?: Record<string, unknown>) {
+  const rotationMinutes = readPositiveNumber(rotationConfig?.rotationMinutes, 0)
+  if (rotationMinutes > 0) return Number((rotationMinutes / 60).toFixed(2))
+  return readPositiveNumber(rotationConfig?.shiftHours, 24)
+}
+
+function rotationModeFromConfig(rotationConfig?: Record<string, unknown>): OnCallRotationMode {
+  const shiftHours = rotationConfigShiftHours(rotationConfig)
+  if (Math.abs(shiftHours - 24) < 0.001) return 'daily'
+  if (Math.abs(shiftHours - 168) < 0.001) return 'weekly'
+  return 'custom'
+}
+
+function rotationModeLabel(rotationConfig?: Record<string, unknown>) {
+  const mode = rotationModeFromConfig(rotationConfig)
+  if (mode === 'daily') return '每日轮换'
+  if (mode === 'weekly') return '每周轮换'
+  const shiftHours = rotationConfigShiftHours(rotationConfig)
+  return `自定义 · ${shiftHours} 小时`
+}
+
+function defaultOnCallRotationFormValues(): OnCallRotationFormValues {
+  return {
+    name: '',
+    scheduleId: '',
+    participants: [],
+    rotationMode: 'daily',
+    shiftHours: 24,
+    startAt: dayjs(),
+    enabled: true,
+  }
+}
+
+function toOnCallRotationFormValues(record: OnCallRotation | null): OnCallRotationFormValues {
+  if (!record) return defaultOnCallRotationFormValues()
+  return {
+    name: record.name,
+    scheduleId: record.scheduleId,
+    participants: normalizeParticipantList(record.participants),
+    rotationMode: rotationModeFromConfig(record.rotationConfig),
+    shiftHours: rotationConfigShiftHours(record.rotationConfig),
+    startAt: parseDayjs(record.rotationConfig?.startAt) ?? parseDayjs(record.createdAt),
+    enabled: record.enabled,
+  }
+}
+
+function buildRotationConfigFromForm(values: OnCallRotationFormValues, currentConfig?: Record<string, unknown>) {
+  const nextConfig = { ...(currentConfig ?? {}) }
+  delete nextConfig.shiftHours
+  delete nextConfig.rotationMinutes
+  delete nextConfig.startAt
+
+  const shiftHours = values.rotationMode === 'daily'
+    ? 24
+    : values.rotationMode === 'weekly'
+      ? 168
+      : readPositiveNumber(values.shiftHours, 24)
+
+  nextConfig.shiftHours = shiftHours
+  if (values.rotationMode === 'custom') {
+    nextConfig.rotationMinutes = Math.max(1, Math.round(shiftHours * 60))
+  }
+  if (values.startAt?.isValid()) {
+    nextConfig.startAt = values.startAt.toISOString()
+  }
+  return nextConfig
+}
+
+function defaultEscalationStep(): OnCallEscalationStepFormValues {
+  return { scheduleId: '', delayMinutes: 0, role: '', description: '' }
+}
+
+function toOnCallEscalationStepFormValues(steps?: Array<Record<string, unknown>>) {
+  if (!steps?.length) return [defaultEscalationStep()]
+  return steps.map((step) => ({
+    scheduleId: typeof step.scheduleId === 'string' ? step.scheduleId : '',
+    delayMinutes: Number(step.delayMinutes ?? 0),
+    role: typeof step.role === 'string' ? step.role : '',
+    description: typeof step.description === 'string' ? step.description : '',
+  }))
+}
+
+function buildEscalationStepsFromForm(values: OnCallEscalationStepFormValues[], currentSteps?: Array<Record<string, unknown>>) {
+  return values.map((step, index) => {
+    const current = isPlainRecord(currentSteps?.[index]) ? { ...currentSteps?.[index] } : {}
+    return {
+      ...current,
+      scheduleId: step.scheduleId || '',
+      delayMinutes: Number(step.delayMinutes ?? 0),
+      role: step.role || '',
+      description: step.description || '',
+    }
+  })
 }
 
 function serializeRulePayload(values: Record<string, unknown> | Partial<AlertRuleFormValues> | Partial<AlertRule>) {
@@ -820,32 +994,31 @@ export function HealingPage() {
   )
 }
 
-export function OnCallPage() {
+export function OnCallSettingsPage() {
   const { message } = App.useApp()
   const queryClient = useQueryClient()
   const permissionSnapshotQuery = usePermissionSnapshot()
   const canManageOnCall = hasPermission(permissionSnapshotQuery.data?.data, 'observe.oncall.manage')
   const [scheduleForm] = Form.useForm<Record<string, unknown>>()
-  const [rotationForm] = Form.useForm<Record<string, unknown>>()
-  const [policyForm] = Form.useForm<Record<string, unknown>>()
+  const [rotationForm] = Form.useForm<OnCallRotationFormValues>()
+  const [policyForm] = Form.useForm<OnCallEscalationPolicyFormValues>()
   const [assignmentForm] = Form.useForm<Record<string, unknown>>()
-  const [overrideForm] = Form.useForm<Record<string, unknown>>()
   const [scheduleOpen, setScheduleOpen] = useState(false)
   const [rotationOpen, setRotationOpen] = useState(false)
   const [policyOpen, setPolicyOpen] = useState(false)
   const [assignmentOpen, setAssignmentOpen] = useState(false)
-  const [overrideOpen, setOverrideOpen] = useState(false)
   const [editingSchedule, setEditingSchedule] = useState<OnCallSchedule | null>(null)
   const [editingRotation, setEditingRotation] = useState<OnCallRotation | null>(null)
   const [editingPolicy, setEditingPolicy] = useState<OnCallEscalationPolicy | null>(null)
   const [editingAssignment, setEditingAssignment] = useState<OnCallAssignmentRule | null>(null)
-  const [selectedScheduleId, setSelectedScheduleId] = useState('')
-  const [calendarValue, setCalendarValue] = useState<Dayjs>(() => dayjs())
-  const [overrideDate, setOverrideDate] = useState<Dayjs | null>(null)
 
   const businessLinesQuery = useQuery({
     queryKey: ['business-lines'],
     queryFn: () => api.get<ApiResponse<BusinessLine[]>>('/business-lines'),
+  })
+  const usersQuery = useQuery({
+    queryKey: ['access-users'],
+    queryFn: () => api.get<ApiResponse<OnCallUser[]>>('/access/users'),
   })
   const schedulesQuery = useQuery({
     queryKey: ['oncall-schedules'],
@@ -862,10 +1035,6 @@ export function OnCallPage() {
   const assignmentsQuery = useQuery({
     queryKey: ['oncall-routes'],
     queryFn: () => api.get<ApiResponse<OnCallAssignmentRule[]>>('/oncall/routes'),
-  })
-  const tasksQuery = useQuery({
-    queryKey: ['oncall-tasks'],
-    queryFn: () => api.get<ApiResponse<OnCallTask[]>>('/oncall/tasks?limit=50'),
   })
 
   const createSchedule = useMutation({
@@ -888,17 +1057,6 @@ export function OnCallPage() {
     onSuccess: () => { void message.success('轮值已更新'); void queryClient.invalidateQueries({ queryKey: ['oncall-rotations'] }); setRotationOpen(false); setEditingRotation(null) },
     onError: (err: Error) => void message.error(err.message),
   })
-  const updateRotationOverride = useMutation({
-    mutationFn: ({ id, payload }: { id: string; payload: Record<string, unknown> }) => api.put(`/oncall/rotations/${id}`, payload),
-    onSuccess: () => {
-      void message.success('值班覆盖已保存')
-      void queryClient.invalidateQueries({ queryKey: ['oncall-rotations'] })
-      void queryClient.invalidateQueries({ queryKey: ['oncall-tasks'] })
-      setOverrideOpen(false)
-      setOverrideDate(null)
-    },
-    onError: (err: Error) => void message.error(err.message),
-  })
   const createPolicy = useMutation({
     mutationFn: (payload: Record<string, unknown>) => api.post('/oncall/escalation-policies', payload),
     onSuccess: () => { void message.success('升级链已保存'); void queryClient.invalidateQueries({ queryKey: ['oncall-escalation-policies'] }); setPolicyOpen(false); setEditingPolicy(null) },
@@ -911,12 +1069,12 @@ export function OnCallPage() {
   })
   const createAssignment = useMutation({
     mutationFn: (payload: Record<string, unknown>) => api.post('/oncall/routes', payload),
-    onSuccess: () => { void message.success('路由规则已保存'); void queryClient.invalidateQueries({ queryKey: ['oncall-routes'] }); setAssignmentOpen(false); setEditingAssignment(null) },
+    onSuccess: () => { void message.success('分派规则已保存'); void queryClient.invalidateQueries({ queryKey: ['oncall-routes'] }); setAssignmentOpen(false); setEditingAssignment(null) },
     onError: (err: Error) => void message.error(err.message),
   })
   const updateAssignment = useMutation({
     mutationFn: ({ id, payload }: { id: string; payload: Record<string, unknown> }) => api.put(`/oncall/routes/${id}`, payload),
-    onSuccess: () => { void message.success('路由规则已更新'); void queryClient.invalidateQueries({ queryKey: ['oncall-routes'] }); setAssignmentOpen(false); setEditingAssignment(null) },
+    onSuccess: () => { void message.success('分派规则已更新'); void queryClient.invalidateQueries({ queryKey: ['oncall-routes'] }); setAssignmentOpen(false); setEditingAssignment(null) },
     onError: (err: Error) => void message.error(err.message),
   })
 
@@ -933,127 +1091,21 @@ export function OnCallPage() {
     [policiesQuery.data?.data],
   )
   const schedules = schedulesQuery.data?.data ?? []
-  const rotations = rotationsQuery.data?.data ?? []
-  const selectedSchedule = useMemo(() => {
-    const matchedSchedule = schedules.find((item) => item.id === selectedScheduleId)
-    if (matchedSchedule) return matchedSchedule
-    return schedules.find((item) => item.enabled) ?? schedules[0] ?? null
-  }, [schedules, selectedScheduleId])
-  const selectedRotation = useMemo(() => {
-    if (!selectedSchedule) return null
-    const scheduleRotations = rotations.filter((item) => item.scheduleId === selectedSchedule.id)
-    return scheduleRotations.find((item) => item.enabled) ?? scheduleRotations[0] ?? null
-  }, [rotations, selectedSchedule])
-  const selectedOverrides = useMemo(() => readRotationOverrides(selectedRotation?.rotationConfig), [selectedRotation?.rotationConfig])
-  const scheduleOptions = useMemo(
-    () => schedules.map((item) => ({ value: item.id, label: item.enabled ? item.name : `${item.name} (禁用)` })),
-    [schedules],
-  )
-  const participantOptions = useMemo(() => {
-    const names = new Set<string>()
-    normalizeParticipantList(selectedRotation?.participants).forEach((item) => names.add(item))
-    Object.values(selectedOverrides).flat().forEach((item) => names.add(item))
-    return Array.from(names).map((item) => ({ value: item, label: item }))
-  }, [selectedOverrides, selectedRotation?.participants])
   const targetOptions = useMemo(() => [
     ...(policiesQuery.data?.data ?? []).map((item) => ({ value: item.id, label: `升级链 · ${item.name}` })),
     ...(schedulesQuery.data?.data ?? []).map((item) => ({ value: item.id, label: `排班 · ${item.name}` })),
   ], [policiesQuery.data?.data, schedulesQuery.data?.data])
-  const integrationTypeOptions = [
-    { value: 'prometheus', label: 'Prometheus' },
-    { value: 'grafana_alerting', label: 'Grafana Alerting' },
-    { value: 'alertmanager', label: 'Alertmanager' },
-    { value: 'webhook', label: 'Webhook' },
-    { value: 'logs', label: 'Logs' },
-    { value: 'traces', label: 'Traces' },
-  ]
-  const groupByOptions = ['alertName', 'clusterId', 'namespace', 'service', 'severity', 'businessLineId', 'integrationId'].map((value) => ({ value, label: value }))
-  const roleOptions = [
-    { value: 'dev', label: '开发 Dev' },
-    { value: 'qa', label: '测试 QA' },
-    { value: 'ops', label: '运维 Ops' },
-    { value: 'sre', label: 'SRE' },
-    { value: 'security', label: '安全 Security' },
-    { value: 'owner', label: '业务负责人 Owner' },
-  ]
-  const severityOptions = [
-    { value: 'critical', label: 'Critical' },
-    { value: 'warning', label: 'Warning' },
-    { value: 'info', label: 'Info' },
-  ]
+  const integrationTypeOptions = ONCALL_INTEGRATION_TYPE_OPTIONS
+  const groupByOptions = ONCALL_GROUP_BY_OPTIONS
+  const roleOptions = ONCALL_ROLE_OPTIONS
+  const severityOptions = ONCALL_SEVERITY_OPTIONS
+  const userOptions = useMemo(() => onCallUserOptions(usersQuery.data?.data ?? []), [usersQuery.data?.data])
 
   function targetLabel(type?: string, ref?: string) {
     if (!ref) return '-'
     if (type === 'escalation') return escalationMap[ref] ? `升级链 · ${escalationMap[ref]}` : ref
     return scheduleMap[ref] ? `排班 · ${scheduleMap[ref]}` : ref
   }
-
-  function assignmentForDate(date: Dayjs) {
-    if (!selectedRotation) return { participants: [] as string[], override: false }
-    const dateKey = date.format(ONCALL_DATE_FORMAT)
-    const overrideParticipants = selectedOverrides[dateKey]
-    if (overrideParticipants?.length) {
-      return { participants: overrideParticipants, override: true }
-    }
-    return { participants: baseParticipantsForDate(selectedRotation, date), override: false }
-  }
-
-  const selectedDateAssignment = assignmentForDate(calendarValue)
-
-  const calendarCellRender: CalendarProps<Dayjs>['cellRender'] = (current, info) => {
-    if (info.type !== 'date') return info.originNode
-    if (!current.isSame(calendarValue, 'month')) return null
-    const assignment = assignmentForDate(current)
-    const visibleParticipants = assignment.participants.slice(0, 3)
-    return (
-      <div className="kc-oncall-calendar-cell">
-        {visibleParticipants.length > 0 ? (
-          <Space size={[4, 4]} wrap className="kc-oncall-calendar-duty-list">
-            {visibleParticipants.map((participant) => (
-              <Tag key={participant} color={assignment.override ? 'gold' : undefined} className="kc-oncall-duty-tag">
-                {participant}
-              </Tag>
-            ))}
-            {assignment.participants.length > visibleParticipants.length ? (
-              <Tag className="kc-oncall-duty-tag">+{assignment.participants.length - visibleParticipants.length}</Tag>
-            ) : null}
-          </Space>
-        ) : (
-          <Text type="secondary" className="kc-oncall-calendar-empty">未排班</Text>
-        )}
-        {assignment.override ? <Tag color="processing" className="kc-oncall-override-tag">覆盖</Tag> : null}
-      </div>
-    )
-  }
-
-  const taskColumns: ColumnsType<OnCallTask> = [
-    {
-      title: '告警任务',
-      dataIndex: 'title',
-      render: (value: string, record: OnCallTask) => (
-        <Space orientation="vertical" size={2}>
-          <Text strong>{value}</Text>
-          <Text type="secondary" className="text-xs">{record.eventId}</Text>
-        </Space>
-      ),
-    },
-    { title: '严重度', dataIndex: 'severity', width: 100, render: (value: string) => <StatusTag value={value} /> },
-    {
-      title: '集成源',
-      dataIndex: 'integrationType',
-      render: (value: string, record: OnCallTask) => (
-        <Space wrap>
-          {value ? <Tag>{integrationTypeOptions.find((item) => item.value === value)?.label || value}</Tag> : <Tag>unknown</Tag>}
-          {record.integrationId ? <Tag>{record.integrationId}</Tag> : null}
-        </Space>
-      ),
-    },
-    { title: '路由', dataIndex: 'routeName', render: (value: string, record: OnCallTask) => value || (record.resolutionStatus === 'matched' ? record.routeId : <StatusTag value="no_match" />) },
-    { title: '分组键', dataIndex: 'groupKey', render: (value: string) => value || '-' },
-    { title: '当前响应人', dataIndex: 'currentParticipant', render: (value: string, record: OnCallTask) => value || (record.participants?.length ? record.participants.join(', ') : '-') },
-    { title: '服务', dataIndex: 'service', render: (value: string, record: OnCallTask) => value || record.namespace || '-' },
-    { title: '最近出现', dataIndex: 'lastSeenAt', render: (value: string) => formatDateTime(value) },
-  ]
 
   const scheduleColumns: ColumnsType<OnCallSchedule> = [
     { title: '名称', dataIndex: 'name' },
@@ -1070,7 +1122,7 @@ export function OnCallPage() {
     { title: '参与人', dataIndex: 'participants', render: (value: string[]) => <Space wrap>{(value ?? []).map((item) => <Tag key={item}>{item}</Tag>)}</Space> },
     { title: '启用', dataIndex: 'enabled', render: (value: boolean) => <BooleanTag value={value} trueLabel="启用" falseLabel="禁用" /> },
     { title: '更新时间', dataIndex: 'updatedAt', render: (value: string) => formatDateTime(value) },
-    { title: '操作', dataIndex: 'id', render: (_: string, record: OnCallRotation) => canManageOnCall ? <Button size="small" icon={<EditOutlined />} onClick={() => { setEditingRotation(record); rotationForm.setFieldsValue({ ...record, participants: (record.participants ?? []).join(', '), rotationConfig: prettyJson(record.rotationConfig) }); setRotationOpen(true) }}>编辑</Button> : null },
+    { title: '操作', dataIndex: 'id', render: (_: string, record: OnCallRotation) => canManageOnCall ? <Button size="small" icon={<EditOutlined />} onClick={() => { setEditingRotation(record); rotationForm.setFieldsValue(toOnCallRotationFormValues(record)); setRotationOpen(true) }}>编辑</Button> : null },
   ]
 
   const escalationColumns: ColumnsType<OnCallEscalationPolicy> = [
@@ -1078,12 +1130,12 @@ export function OnCallPage() {
     { title: '步骤数', dataIndex: 'steps', render: (value: Array<Record<string, unknown>>) => value?.length ?? 0 },
     { title: '启用', dataIndex: 'enabled', render: (value: boolean) => <BooleanTag value={value} trueLabel="启用" falseLabel="禁用" /> },
     { title: '更新时间', dataIndex: 'updatedAt', render: (value: string) => formatDateTime(value) },
-    { title: '操作', dataIndex: 'id', render: (_: string, record: OnCallEscalationPolicy) => canManageOnCall ? <Button size="small" icon={<EditOutlined />} onClick={() => { setEditingPolicy(record); policyForm.setFieldsValue({ ...record, steps: prettyJson(record.steps) }); setPolicyOpen(true) }}>编辑</Button> : null },
+    { title: '操作', dataIndex: 'id', render: (_: string, record: OnCallEscalationPolicy) => canManageOnCall ? <Button size="small" icon={<EditOutlined />} onClick={() => { setEditingPolicy(record); policyForm.setFieldsValue({ name: record.name, steps: toOnCallEscalationStepFormValues(record.steps), enabled: record.enabled }); setPolicyOpen(true) }}>编辑</Button> : null },
   ]
 
   const assignmentColumns: ColumnsType<OnCallAssignmentRule> = [
     { title: '顺序', dataIndex: 'routeOrder', width: 78, render: (value: number, record: OnCallAssignmentRule) => value || record.priority || '-' },
-    { title: '路由', dataIndex: 'name', width: 220 },
+    { title: '规则名称', dataIndex: 'name', width: 220 },
     {
       title: '集成源',
       dataIndex: 'integrationType',
@@ -1131,82 +1183,32 @@ export function OnCallPage() {
     createSchedule.mutate(payload)
   }
 
-  function submitRotation(values: Record<string, unknown>) {
-    try {
-      const payload = {
-        ...values,
-        participants: String(values.participants || '').split(',').map((item) => item.trim()).filter(Boolean),
-        rotationConfig: safeParseJson(String(values.rotationConfig || '{}'), {}),
-        enabled: Boolean(values.enabled),
-      }
-      if (editingRotation?.id) {
-        updateRotation.mutate({ id: editingRotation.id, payload })
-        return
-      }
-      createRotation.mutate(payload)
-    } catch (error) {
-      message.error(error instanceof Error ? error.message : '保存失败')
+  function submitRotation(values: OnCallRotationFormValues) {
+    const payload = {
+      name: values.name,
+      scheduleId: values.scheduleId,
+      participants: values.participants ?? [],
+      rotationConfig: buildRotationConfigFromForm(values, editingRotation?.rotationConfig),
+      enabled: Boolean(values.enabled),
     }
-  }
-
-  function openOverrideEditor(date: Dayjs) {
-    setCalendarValue(date)
-    if (!canManageOnCall) return
-    if (!selectedSchedule) {
-      void message.warning('请先选择排班表')
+    if (editingRotation?.id) {
+      updateRotation.mutate({ id: editingRotation.id, payload })
       return
     }
-    if (!selectedRotation) {
-      void message.warning('请先为当前排班新增轮值')
+    createRotation.mutate(payload)
+  }
+
+  function submitPolicy(values: OnCallEscalationPolicyFormValues) {
+    const payload = {
+      name: values.name,
+      steps: buildEscalationStepsFromForm(values.steps ?? [], editingPolicy?.steps),
+      enabled: Boolean(values.enabled),
+    }
+    if (editingPolicy?.id) {
+      updatePolicy.mutate({ id: editingPolicy.id, payload })
       return
     }
-    setOverrideDate(date)
-    overrideForm.setFieldsValue({ participants: assignmentForDate(date).participants })
-    setOverrideOpen(true)
-  }
-
-  function submitOverride(values: Record<string, unknown>) {
-    if (!selectedRotation || !overrideDate) return
-    const participants = normalizeParticipantList(values.participants)
-    const dateKey = overrideDate.format(ONCALL_DATE_FORMAT)
-    const payload = {
-      scheduleId: selectedRotation.scheduleId,
-      name: selectedRotation.name,
-      participants: normalizeParticipantList(selectedRotation.participants),
-      rotationConfig: buildRotationConfigWithOverride(selectedRotation.rotationConfig, dateKey, participants),
-      enabled: selectedRotation.enabled,
-    }
-    updateRotationOverride.mutate({ id: selectedRotation.id, payload })
-  }
-
-  function clearOverride() {
-    if (!selectedRotation || !overrideDate) return
-    const dateKey = overrideDate.format(ONCALL_DATE_FORMAT)
-    const payload = {
-      scheduleId: selectedRotation.scheduleId,
-      name: selectedRotation.name,
-      participants: normalizeParticipantList(selectedRotation.participants),
-      rotationConfig: buildRotationConfigWithOverride(selectedRotation.rotationConfig, dateKey, []),
-      enabled: selectedRotation.enabled,
-    }
-    updateRotationOverride.mutate({ id: selectedRotation.id, payload })
-  }
-
-  function submitPolicy(values: Record<string, unknown>) {
-    try {
-      const payload = {
-        ...values,
-        steps: safeParseJson(String(values.steps || '[]'), []),
-        enabled: Boolean(values.enabled),
-      }
-      if (editingPolicy?.id) {
-        updatePolicy.mutate({ id: editingPolicy.id, payload })
-        return
-      }
-      createPolicy.mutate(payload)
-    } catch (error) {
-      message.error(error instanceof Error ? error.message : '保存失败')
-    }
+    createPolicy.mutate(payload)
   }
 
   function openAssignmentEditor(record: OnCallAssignmentRule | null) {
@@ -1269,76 +1271,23 @@ export function OnCallPage() {
   return (
     <div className="kc-page">
       <PageHeader
-        title="值班协同"
-        description="以排班日历承载每日值班安排，IRM 路由、告警任务和升级配置作为后续操作面。"
+        title="值班设置"
+        description="集中维护值班排班、轮值策略、升级链与告警分派规则。"
         showResourceScope={false}
         actions={(
           <Space>
-            {canManageOnCall ? <Button icon={<PlusOutlined />} onClick={() => { setEditingRotation(null); rotationForm.resetFields(); setRotationOpen(true) }}>新增轮值</Button> : null}
+            {canManageOnCall ? <Button icon={<PlusOutlined />} onClick={() => { setEditingAssignment(null); assignmentForm.resetFields(); setAssignmentOpen(true) }}>新增分派规则</Button> : null}
+            {canManageOnCall ? <Button icon={<PlusOutlined />} onClick={() => { setEditingPolicy(null); policyForm.setFieldsValue({ name: '', steps: [defaultEscalationStep()], enabled: true }); setPolicyOpen(true) }}>新增升级链</Button> : null}
+            {canManageOnCall ? <Button icon={<PlusOutlined />} onClick={() => { setEditingRotation(null); rotationForm.setFieldsValue(defaultOnCallRotationFormValues()); setRotationOpen(true) }}>新增轮值</Button> : null}
             {canManageOnCall ? <Button icon={<PlusOutlined />} onClick={() => { setEditingSchedule(null); scheduleForm.resetFields(); setScheduleOpen(true) }}>新增排班</Button> : null}
           </Space>
         )}
       />
-      <Card
-        className="kc-overview-panel-card kc-oncall-calendar-card"
-        title="排班日历"
-        extra={(
-          <Select
-            showSearch
-            value={selectedSchedule?.id}
-            placeholder="选择排班表"
-            options={scheduleOptions}
-            loading={schedulesQuery.isLoading}
-            style={{ width: 260 }}
-            onChange={(value) => setSelectedScheduleId(value)}
-          />
-        )}
-      >
-        {selectedSchedule ? (
-          <Space orientation="vertical" size={16} style={{ width: '100%' }}>
-            <div className="kc-oncall-calendar-toolbar">
-              <Space wrap>
-                <Text strong>{selectedSchedule.name}</Text>
-                <Tag>{selectedSchedule.timeZone || 'Local time'}</Tag>
-                {selectedRotation ? <Tag>{selectedRotation.name}</Tag> : <Tag color="orange">缺少轮值</Tag>}
-                <Tag>覆盖 {Object.keys(selectedOverrides).length}</Tag>
-              </Space>
-              <Space wrap>
-                <Text type="secondary">{calendarValue.format(ONCALL_DATE_FORMAT)}</Text>
-                {selectedDateAssignment.participants.length > 0 ? (
-                  selectedDateAssignment.participants.map((participant) => (
-                    <Tag key={participant} color={selectedDateAssignment.override ? 'gold' : undefined}>{participant}</Tag>
-                  ))
-                ) : (
-                  <Tag>未排班</Tag>
-                )}
-              </Space>
-            </div>
-            <Calendar
-              value={calendarValue}
-              cellRender={calendarCellRender}
-              onPanelChange={(value) => setCalendarValue(value)}
-              onSelect={(date, info) => {
-                if (info.source === 'date') {
-                  openOverrideEditor(date)
-                  return
-                }
-                setCalendarValue(date)
-              }}
-            />
-          </Space>
-        ) : (
-          <Empty description="暂无排班表" />
-        )}
-      </Card>
-      <Card className="kc-overview-panel-card" title="待响应任务">
-        <AdminTable shellClassName="is-panel" columns={taskColumns} dataSource={tasksQuery.data?.data ?? []} rowKey="id" loading={tasksQuery.isLoading} />
-      </Card>
       <Tabs
         items={[
           {
             key: 'assignments',
-            label: 'IRM 路由',
+            label: '告警分派',
             children: <AdminTable shellClassName="is-panel" columns={assignmentColumns} dataSource={assignmentsQuery.data?.data ?? []} rowKey="id" loading={assignmentsQuery.isLoading} />,
           },
           {
@@ -1359,31 +1308,6 @@ export function OnCallPage() {
         ]}
       />
 
-      <Modal
-        title={overrideDate ? `${overrideDate.format(ONCALL_DATE_FORMAT)} 值班覆盖` : '值班覆盖'}
-        open={overrideOpen}
-        onCancel={() => setOverrideOpen(false)}
-        footer={null}
-        destroyOnHidden
-      >
-        <Form layout="vertical" form={overrideForm} onFinish={submitOverride} clearOnDestroy>
-          <Form.Item name="participants" label="当日值班人员">
-            <Select
-              mode="tags"
-              allowClear
-              options={participantOptions}
-              tokenSeparators={[',']}
-              placeholder="输入人员名称后回车"
-            />
-          </Form.Item>
-          <Space>
-            <Button type="primary" htmlType="submit" loading={updateRotationOverride.isPending}>保存覆盖</Button>
-            <Button onClick={() => setOverrideOpen(false)}>取消</Button>
-            <Button danger disabled={!overrideDate || !selectedOverrides[overrideDate.format(ONCALL_DATE_FORMAT)]} loading={updateRotationOverride.isPending} onClick={clearOverride}>清除覆盖</Button>
-          </Space>
-        </Form>
-      </Modal>
-
       <Modal title={editingSchedule ? '编辑排班' : '新建排班'} open={scheduleOpen} onCancel={() => setScheduleOpen(false)} footer={null} destroyOnClose>
         <Form layout="vertical" form={scheduleForm} onFinish={submitSchedule} initialValues={{ enabled: true }}>
           <Form.Item name="name" label="名称" rules={[{ required: true }]}><Input /></Form.Item>
@@ -1397,10 +1321,10 @@ export function OnCallPage() {
         </Form>
       </Modal>
 
-      <Modal title={editingAssignment ? '编辑 IRM 路由' : '新建 IRM 路由'} open={assignmentOpen} onCancel={() => setAssignmentOpen(false)} footer={null} destroyOnClose width={960}>
+      <Modal title={editingAssignment ? '编辑告警分派规则' : '新建告警分派规则'} open={assignmentOpen} onCancel={() => setAssignmentOpen(false)} footer={null} destroyOnClose width={960}>
         <Form layout="vertical" form={assignmentForm} onFinish={submitAssignment} initialValues={{ targetType: 'escalation', integrationType: 'prometheus', routeOrder: 100, groupBy: ['alertName', 'clusterId', 'namespace', 'service'], enabled: true }}>
           <Space size={16} style={{ width: '100%' }}>
-            <Form.Item name="name" label="路由名称" rules={[{ required: true }]} style={{ flex: 1 }}><Input /></Form.Item>
+            <Form.Item name="name" label="规则名称" rules={[{ required: true }]} style={{ flex: 1 }}><Input /></Form.Item>
             <Form.Item name="routeOrder" label="匹配顺序" style={{ width: 160 }}><InputNumber min={1} style={{ width: '100%' }} /></Form.Item>
           </Space>
           <Space size={16} style={{ width: '100%' }}>
@@ -1443,29 +1367,481 @@ export function OnCallPage() {
       </Modal>
 
       <Modal title={editingRotation ? '编辑轮值' : '新建轮值'} open={rotationOpen} onCancel={() => setRotationOpen(false)} footer={null} destroyOnClose width={720}>
-        <Form layout="vertical" form={rotationForm} onFinish={submitRotation} initialValues={{ enabled: true }}>
+        <Form layout="vertical" form={rotationForm} onFinish={submitRotation} initialValues={defaultOnCallRotationFormValues()}>
           <Form.Item name="name" label="名称" rules={[{ required: true }]}><Input /></Form.Item>
           <Form.Item name="scheduleId" label="排班" rules={[{ required: true }]}>
             <Select showSearch options={(schedulesQuery.data?.data ?? []).map((item) => ({ value: item.id, label: item.name }))} />
           </Form.Item>
-          <Form.Item name="participants" label="参与人(逗号分隔)"><Input /></Form.Item>
-          <Form.Item name="rotationConfig" label="轮值配置(JSON)"><Input.TextArea rows={4} /></Form.Item>
+          <Form.Item name="participants" label="参与人" rules={[{ required: true, message: '至少选择一个参与人' }]}>
+            <Select mode="multiple" showSearch optionFilterProp="label" options={userOptions} placeholder="选择参与人" />
+          </Form.Item>
+          <Form.Item name="rotationMode" label="轮换节奏" rules={[{ required: true }]}>
+            <Radio.Group
+              options={[
+                { value: 'daily', label: '每日轮换' },
+                { value: 'weekly', label: '每周轮换' },
+                { value: 'custom', label: '自定义' },
+              ]}
+              optionType="button"
+              buttonStyle="solid"
+            />
+          </Form.Item>
+          <Form.Item noStyle shouldUpdate={(prev, next) => prev.rotationMode !== next.rotationMode}>
+            {({ getFieldValue }) => getFieldValue('rotationMode') === 'custom' ? (
+              <Form.Item name="shiftHours" label="单班时长(小时)" rules={[{ required: true, message: '请填写时长' }]}>
+                <InputNumber min={1} max={168 * 4} step={1} style={{ width: '100%' }} />
+              </Form.Item>
+            ) : null}
+          </Form.Item>
+          <Form.Item name="startAt" label="轮值起始时间">
+            <DatePicker showTime style={{ width: '100%' }} />
+          </Form.Item>
           <Form.Item name="enabled" label="启用" valuePropName="checked"><Switch /></Form.Item>
           <Space>
-            <Button type="primary" htmlType="submit">保存</Button>
+            <Button type="primary" htmlType="submit" loading={createRotation.isPending || updateRotation.isPending}>保存</Button>
             <Button onClick={() => setRotationOpen(false)}>取消</Button>
           </Space>
         </Form>
       </Modal>
 
-      <Modal title={editingPolicy ? '编辑升级链' : '新建升级链'} open={policyOpen} onCancel={() => setPolicyOpen(false)} footer={null} destroyOnClose width={720}>
-        <Form layout="vertical" form={policyForm} onFinish={submitPolicy} initialValues={{ enabled: true }}>
+      <Modal title={editingPolicy ? '编辑升级链' : '新建升级链'} open={policyOpen} onCancel={() => setPolicyOpen(false)} footer={null} destroyOnClose width={840}>
+        <Form layout="vertical" form={policyForm} onFinish={submitPolicy} initialValues={{ enabled: true, steps: [defaultEscalationStep()] }}>
           <Form.Item name="name" label="名称" rules={[{ required: true }]}><Input /></Form.Item>
-          <Form.Item name="steps" label="升级步骤(JSON数组)" rules={[{ required: true }]}><Input.TextArea rows={8} /></Form.Item>
-          <Form.Item name="enabled" label="启用" valuePropName="checked"><Switch /></Form.Item>
+          <Form.List name="steps">
+            {(fields, { add, remove }) => (
+              <>
+                {fields.map(({ key, name, ...rest }, index) => (
+                  <Card key={key} size="small" className="kc-oncall-step-card" title={`步骤 ${index + 1}`} extra={fields.length > 1 ? <Button size="small" danger onClick={() => remove(name)}>删除</Button> : null}>
+                    <Row gutter={12}>
+                      <Col span={12}>
+                        <Form.Item {...rest} name={[name, 'scheduleId']} label="排班对象" rules={[{ required: true, message: '请选择排班' }]}>
+                          <Select
+                            showSearch
+                            allowClear
+                            options={schedules.map((item) => ({ value: item.id, label: item.name }))}
+                            placeholder="选择排班"
+                          />
+                        </Form.Item>
+                      </Col>
+                      <Col span={6}>
+                        <Form.Item {...rest} name={[name, 'delayMinutes']} label="延迟(分钟)">
+                          <InputNumber min={0} style={{ width: '100%' }} />
+                        </Form.Item>
+                      </Col>
+                      <Col span={6}>
+                        <Form.Item {...rest} name={[name, 'role']} label="响应角色">
+                          <Select allowClear options={ONCALL_ROLE_OPTIONS} />
+                        </Form.Item>
+                      </Col>
+                      <Col span={24}>
+                        <Form.Item {...rest} name={[name, 'description']} label="说明">
+                          <Input placeholder="例如：5 分钟内未确认则升级" />
+                        </Form.Item>
+                      </Col>
+                    </Row>
+                  </Card>
+                ))}
+                <Button type="dashed" onClick={() => add(defaultEscalationStep())} icon={<PlusOutlined />} block>
+                  新增步骤
+                </Button>
+              </>
+            )}
+          </Form.List>
+          <Form.Item name="enabled" label="启用" valuePropName="checked" style={{ marginTop: 16 }}><Switch /></Form.Item>
           <Space>
-            <Button type="primary" htmlType="submit">保存</Button>
+            <Button type="primary" htmlType="submit" loading={createPolicy.isPending || updatePolicy.isPending}>保存</Button>
             <Button onClick={() => setPolicyOpen(false)}>取消</Button>
+          </Space>
+        </Form>
+      </Modal>
+    </div>
+  )
+}
+
+interface OnCallDayAssignment {
+  participants: string[]
+  override: boolean
+}
+
+function assignmentForDate(rotation: OnCallRotation | null, date: Dayjs): OnCallDayAssignment {
+  if (!rotation) return { participants: [], override: false }
+  const overrides = readRotationOverrides(rotation.rotationConfig)
+  const dateKey = date.format(ONCALL_DATE_FORMAT)
+  if (overrides[dateKey]) return { participants: overrides[dateKey], override: true }
+  return { participants: baseParticipantsForDate(rotation, date), override: false }
+}
+
+interface ShiftSlot {
+  participant: string
+  start: string
+  end: string
+}
+
+function shiftsForDate(rotation: OnCallRotation | null, date: Dayjs): ShiftSlot[] {
+  if (!rotation) return []
+  const participants = normalizeParticipantList(rotation.participants)
+  if (participants.length === 0) return []
+  const shiftMinutes = rotationShiftMinutes(rotation)
+  const startAt = rotationStartAt(rotation, date)
+  const dayStart = date.startOf('day')
+  const dayEnd = dayStart.add(1, 'day')
+  const elapsedAtDayStart = dayStart.diff(startAt, 'minute')
+  let slot = elapsedAtDayStart < 0 ? 0 : Math.floor(elapsedAtDayStart / shiftMinutes)
+  let slotStart = startAt.add(slot * shiftMinutes, 'minute')
+  while (slotStart.isAfter(dayStart) && slot > 0) {
+    slot -= 1
+    slotStart = startAt.add(slot * shiftMinutes, 'minute')
+  }
+  const result: ShiftSlot[] = []
+  let guard = 0
+  while (slotStart.isBefore(dayEnd) && guard < 200) {
+    const slotEnd = slotStart.add(shiftMinutes, 'minute')
+    if (slotEnd.isAfter(dayStart)) {
+      const participantIndex = slot < 0 ? 0 : slot % participants.length
+      const displayStart = slotStart.isBefore(dayStart) ? dayStart : slotStart
+      const displayEnd = slotEnd.isAfter(dayEnd) ? dayEnd : slotEnd
+      result.push({
+        participant: participants[participantIndex],
+        start: displayStart.format('HH:mm'),
+        end: displayEnd.format('HH:mm'),
+      })
+    }
+    slot += 1
+    slotStart = slotEnd
+    guard += 1
+  }
+  return result
+}
+
+export function OnCallBoardPage() {
+  const { message } = App.useApp()
+  const queryClient = useQueryClient()
+  const navigate = useNavigate()
+  const permissionSnapshotQuery = usePermissionSnapshot()
+  const canManageOnCall = hasPermission(permissionSnapshotQuery.data?.data, 'observe.oncall.manage')
+  const [overrideForm] = Form.useForm<{ participants: string[] }>()
+  const [view, setView] = useState<OnCallBoardView>('calendar')
+  const [calendarValue, setCalendarValue] = useState<Dayjs>(dayjs())
+  const [selectedScheduleId, setSelectedScheduleId] = useState<string>('')
+  const [drawerDate, setDrawerDate] = useState<Dayjs | null>(null)
+  const [overrideOpen, setOverrideOpen] = useState(false)
+  const [overrideDate, setOverrideDate] = useState<Dayjs | null>(null)
+
+  const schedulesQuery = useQuery({
+    queryKey: ['oncall-schedules'],
+    queryFn: () => api.get<ApiResponse<OnCallSchedule[]>>('/oncall/schedules'),
+  })
+  const rotationsQuery = useQuery({
+    queryKey: ['oncall-rotations'],
+    queryFn: () => api.get<ApiResponse<OnCallRotation[]>>('/oncall/rotations'),
+  })
+  const tasksQuery = useQuery({
+    queryKey: ['oncall-tasks'],
+    queryFn: () => api.get<ApiResponse<OnCallTask[]>>('/oncall/tasks?status=pending&status=acknowledged'),
+    refetchInterval: 30_000,
+  })
+  const usersQuery = useQuery({
+    queryKey: ['access-users'],
+    queryFn: () => api.get<ApiResponse<OnCallUser[]>>('/access/users'),
+    enabled: canManageOnCall,
+  })
+
+  const updateRotationOverride = useMutation({
+    mutationFn: ({ id, payload }: { id: string; payload: Record<string, unknown> }) => api.put(`/oncall/rotations/${id}`, payload),
+    onSuccess: () => {
+      void message.success('值班覆盖已保存')
+      void queryClient.invalidateQueries({ queryKey: ['oncall-rotations'] })
+      setOverrideOpen(false)
+    },
+    onError: (err: Error) => void message.error(err.message),
+  })
+
+  const schedules = schedulesQuery.data?.data ?? []
+  const rotations = rotationsQuery.data?.data ?? []
+  const tasks = tasksQuery.data?.data ?? []
+
+  const scheduleOptions = useMemo(() => schedules.map((item) => ({ value: item.id, label: item.name })), [schedules])
+
+  const effectiveScheduleId = selectedScheduleId || schedules[0]?.id || ''
+  const selectedSchedule = useMemo(
+    () => schedules.find((item) => item.id === effectiveScheduleId) ?? null,
+    [schedules, effectiveScheduleId],
+  )
+  const selectedRotation = useMemo(
+    () => rotations.find((item) => item.scheduleId === effectiveScheduleId && item.enabled) ?? rotations.find((item) => item.scheduleId === effectiveScheduleId) ?? null,
+    [rotations, effectiveScheduleId],
+  )
+  const overrides = useMemo(() => readRotationOverrides(selectedRotation?.rotationConfig), [selectedRotation])
+  const overrideCount = Object.keys(overrides).length
+
+  const today = dayjs()
+  const todayAssignment = assignmentForDate(selectedRotation, today)
+  const tomorrowAssignment = assignmentForDate(selectedRotation, today.add(1, 'day'))
+
+  const overrideEntries = useMemo(
+    () => Object.entries(overrides).sort(([a], [b]) => (a < b ? 1 : a > b ? -1 : 0)),
+    [overrides],
+  )
+
+  function openOverride(date: Dayjs) {
+    if (!canManageOnCall) return
+    if (!selectedRotation) {
+      void message.warning('当前排班尚未配置轮值，请先到值班设置中创建')
+      return
+    }
+    setOverrideDate(date)
+    overrideForm.setFieldsValue({ participants: assignmentForDate(selectedRotation, date).participants })
+    setOverrideOpen(true)
+  }
+
+  function submitOverride(values: { participants: string[] }) {
+    if (!selectedRotation || !overrideDate) return
+    const next = normalizeParticipantList(values.participants)
+    const dateKey = overrideDate.format(ONCALL_DATE_FORMAT)
+    updateRotationOverride.mutate({
+      id: selectedRotation.id,
+      payload: {
+        scheduleId: selectedRotation.scheduleId,
+        name: selectedRotation.name,
+        participants: normalizeParticipantList(selectedRotation.participants),
+        rotationConfig: buildRotationConfigWithOverride(selectedRotation.rotationConfig, dateKey, next),
+        enabled: selectedRotation.enabled,
+      },
+    })
+  }
+
+  function clearOverride() {
+    if (!selectedRotation || !overrideDate) return
+    const dateKey = overrideDate.format(ONCALL_DATE_FORMAT)
+    updateRotationOverride.mutate({
+      id: selectedRotation.id,
+      payload: {
+        scheduleId: selectedRotation.scheduleId,
+        name: selectedRotation.name,
+        participants: normalizeParticipantList(selectedRotation.participants),
+        rotationConfig: buildRotationConfigWithOverride(selectedRotation.rotationConfig, dateKey, []),
+        enabled: selectedRotation.enabled,
+      },
+    })
+  }
+
+  const cellRender: CalendarProps<Dayjs>['cellRender'] = (current, info) => {
+    if (info.type !== 'date') return info.originNode
+    const assignment = assignmentForDate(selectedRotation, current)
+    const list = assignment.participants
+    if (list.length === 0) {
+      return <div className="kc-oncall-cell kc-oncall-cell-empty"><Text type="secondary">未排班</Text></div>
+    }
+    const isToday = current.isSame(today, 'day')
+    return (
+      <Tooltip title={list.join('、')}>
+        <div className={`kc-oncall-cell${assignment.override ? ' kc-oncall-cell-override' : ''}${isToday ? ' kc-oncall-cell-today' : ''}`}>
+          <Avatar.Group size="small" max={{ count: 3 }}>
+            {list.map((name) => (
+              <Avatar key={name} style={{ backgroundColor: assignment.override ? '#fa8c16' : '#1677ff' }}>{participantAvatarText(name)}</Avatar>
+            ))}
+          </Avatar.Group>
+          {assignment.override ? <Badge status="warning" text="覆盖" /> : null}
+        </div>
+      </Tooltip>
+    )
+  }
+
+  const taskColumns: ColumnsType<OnCallTask> = [
+    { title: '标题', dataIndex: 'title' },
+    { title: '严重度', dataIndex: 'severity', render: (value: string) => <StatusTag value={value} /> },
+    { title: '状态', dataIndex: 'status', render: (value: string) => <StatusTag value={value} /> },
+    { title: '当前响应人', dataIndex: 'currentParticipant', render: (value: string) => value || '-' },
+    { title: '分派规则', dataIndex: 'routeName', render: (value: string) => value || '-' },
+    { title: '更新时间', dataIndex: 'updatedAt', render: (value: string) => formatDateTime(value) },
+  ]
+
+  const drawerAssignment = drawerDate ? assignmentForDate(selectedRotation, drawerDate) : null
+
+  return (
+    <div className="kc-page">
+      <PageHeader
+        title="值班协同"
+        description="跟踪当前排班、轮值与待响应任务，必要时可临时覆盖某天的值班人。"
+        showResourceScope={false}
+        actions={(
+          <Space>
+            <Select
+              style={{ minWidth: 220 }}
+              placeholder="选择排班"
+              value={effectiveScheduleId || undefined}
+              options={scheduleOptions}
+              onChange={(value) => setSelectedScheduleId(value)}
+            />
+            <Button onClick={() => navigate('/monitoring-workbench/oncall/settings')}>值班设置</Button>
+          </Space>
+        )}
+      />
+      {schedules.length === 0 ? (
+        <Card>
+          <Empty description="尚未创建排班，请前往值班设置新增。">
+            {canManageOnCall ? <Button type="primary" onClick={() => navigate('/monitoring-workbench/oncall/settings')}>前往设置</Button> : null}
+          </Empty>
+        </Card>
+      ) : (
+        <>
+          <Row gutter={16} className="kc-oncall-stats-row">
+            <Col xs={24} sm={12} md={6}>
+              <Card><Statistic title="今日值班" value={formatParticipantSummary(todayAssignment.participants)} valueStyle={{ fontSize: 18 }} /></Card>
+            </Col>
+            <Col xs={24} sm={12} md={6}>
+              <Card><Statistic title="明日值班" value={formatParticipantSummary(tomorrowAssignment.participants)} valueStyle={{ fontSize: 18 }} /></Card>
+            </Col>
+            <Col xs={24} sm={12} md={6}>
+              <Card><Statistic title="轮换节奏" value={selectedRotation ? rotationModeLabel(selectedRotation.rotationConfig) : '未配置'} valueStyle={{ fontSize: 18 }} /></Card>
+            </Col>
+            <Col xs={24} sm={12} md={6}>
+              <Card>
+                <Statistic title="待响应任务" value={tasks.length} suffix={overrideCount > 0 ? <Tag color="orange">覆盖 {overrideCount}</Tag> : null} />
+              </Card>
+            </Col>
+          </Row>
+          <Card
+            className="kc-oncall-board-card"
+            title={(
+              <Space>
+                <Text strong>{selectedSchedule?.name || '未选择排班'}</Text>
+                {selectedRotation ? <Tag color="blue">{selectedRotation.name}</Tag> : <Tag>暂无轮值</Tag>}
+                {todayAssignment.override ? <Tag color="orange">今日已覆盖</Tag> : null}
+              </Space>
+            )}
+            extra={(
+              <Segmented
+                value={view}
+                onChange={(value) => setView(value as OnCallBoardView)}
+                options={[
+                  { value: 'calendar', label: '月历' },
+                  { value: 'timeline', label: '时间轴' },
+                  { value: 'list', label: '覆盖列表' },
+                ]}
+              />
+            )}
+          >
+            {view === 'calendar' ? (
+              <Calendar
+                value={calendarValue}
+                onPanelChange={(value) => setCalendarValue(value)}
+                onSelect={(value, selectInfo) => {
+                  setCalendarValue(value)
+                  if (selectInfo?.source === 'date') setDrawerDate(value)
+                }}
+                cellRender={cellRender}
+              />
+            ) : null}
+            {view === 'timeline' ? (
+              <Timeline
+                className="kc-oncall-timeline"
+                items={Array.from({ length: 14 }).map((_, idx) => {
+                  const date = today.add(idx, 'day')
+                  const a = assignmentForDate(selectedRotation, date)
+                  return {
+                    color: a.override ? 'orange' : idx === 0 ? 'blue' : 'gray',
+                    children: (
+                      <Space direction="vertical" size={2}>
+                        <Text strong>{date.format('MM-DD ddd')}{idx === 0 ? ' · 今日' : ''}</Text>
+                        <Text>{formatParticipantSummary(a.participants)}</Text>
+                        {a.override ? <Tag color="orange">手动覆盖</Tag> : null}
+                      </Space>
+                    ),
+                  }
+                })}
+              />
+            ) : null}
+            {view === 'list' ? (
+              overrideEntries.length === 0 ? (
+                <Empty description="暂无覆盖记录" />
+              ) : (
+                <AdminTable
+                  shellClassName="is-panel"
+                  columns={[
+                    { title: '日期', dataIndex: 'date', render: (value: string) => value },
+                    { title: '值班人', dataIndex: 'participants', render: (value: string[]) => formatParticipantSummary(value) },
+                    {
+                      title: '操作',
+                      dataIndex: 'date',
+                      render: (value: string) => canManageOnCall ? (
+                        <Button size="small" icon={<EditOutlined />} onClick={() => openOverride(dayjs(value))}>编辑</Button>
+                      ) : null,
+                    },
+                  ]}
+                  dataSource={overrideEntries.map(([date, list]) => ({ date, participants: list }))}
+                  rowKey="date"
+                  pagination={false}
+                />
+              )
+            ) : null}
+          </Card>
+          <Card title="待响应任务" className="kc-oncall-tasks-card">
+            <AdminTable columns={taskColumns} dataSource={tasks} rowKey="id" loading={tasksQuery.isLoading} pagination={{ pageSize: 10 }} />
+          </Card>
+        </>
+      )}
+      <Drawer
+        title={drawerDate ? `${drawerDate.format('YYYY-MM-DD ddd')} 值班详情` : '值班详情'}
+        open={Boolean(drawerDate)}
+        onClose={() => setDrawerDate(null)}
+        width={420}
+      >
+        {drawerDate && drawerAssignment ? (
+          <Space direction="vertical" size={16} style={{ width: '100%' }}>
+            <Descriptions column={1} size="small" bordered>
+              <Descriptions.Item label="排班">{selectedSchedule?.name || '-'}</Descriptions.Item>
+              <Descriptions.Item label="轮值">{selectedRotation?.name || '未配置'}</Descriptions.Item>
+              <Descriptions.Item label="值班人">{formatParticipantSummary(drawerAssignment.participants)}</Descriptions.Item>
+              <Descriptions.Item label="是否覆盖">{drawerAssignment.override ? <Tag color="orange">手动覆盖</Tag> : <Tag>遵循轮换</Tag>}</Descriptions.Item>
+            </Descriptions>
+            {!drawerAssignment.override && selectedRotation ? (
+              <Card size="small" title="当日班次">
+                <Timeline
+                  items={shiftsForDate(selectedRotation, drawerDate).map((slot) => ({
+                    children: <Text>{slot.start} – {slot.end}　{slot.participant}</Text>,
+                  }))}
+                />
+              </Card>
+            ) : null}
+            {canManageOnCall ? (
+              <Space>
+                <Button type="primary" icon={<EditOutlined />} onClick={() => openOverride(drawerDate)}>覆盖当日</Button>
+                <Button onClick={() => navigate('/monitoring-workbench/oncall/settings')}>调整轮值</Button>
+              </Space>
+            ) : null}
+          </Space>
+        ) : null}
+      </Drawer>
+      <Modal
+        title={overrideDate ? `${overrideDate.format(ONCALL_DATE_FORMAT)} 值班覆盖` : '值班覆盖'}
+        open={overrideOpen}
+        onCancel={() => setOverrideOpen(false)}
+        footer={null}
+        destroyOnClose
+      >
+        <Form layout="vertical" form={overrideForm} onFinish={submitOverride}>
+          <Form.Item name="participants" label="当日值班人员">
+            <Select
+              mode="multiple"
+              allowClear
+              showSearch
+              optionFilterProp="label"
+              placeholder="选择当日值班人员"
+              options={onCallUserOptions(usersQuery.data?.data ?? [])}
+            />
+          </Form.Item>
+          <Space>
+            <Button type="primary" htmlType="submit" loading={updateRotationOverride.isPending}>保存覆盖</Button>
+            <Button onClick={() => setOverrideOpen(false)}>取消</Button>
+            <Button
+              danger
+              disabled={!overrideDate || !overrides[overrideDate.format(ONCALL_DATE_FORMAT)]}
+              loading={updateRotationOverride.isPending}
+              onClick={clearOverride}
+            >
+              清除覆盖
+            </Button>
           </Space>
         </Form>
       </Modal>

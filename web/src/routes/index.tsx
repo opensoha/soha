@@ -385,9 +385,13 @@ const HealingPage = lazyNamed(
   () => import("@/features/observability/alerting-pages"),
   "HealingPage",
 );
-const OnCallPage = lazyNamed(
+const OnCallBoardPage = lazyNamed(
   () => import("@/features/observability/alerting-pages"),
-  "OnCallPage",
+  "OnCallBoardPage",
+);
+const OnCallSettingsPage = lazyNamed(
+  () => import("@/features/observability/alerting-pages"),
+  "OnCallSettingsPage",
 );
 const AlertEventDetailPage = lazyNamed(
   () => import("@/features/observability/alerting-pages"),
@@ -1263,7 +1267,15 @@ export function AppRouter() {
             path="/monitoring-workbench/oncall"
             element={
               <LazyPage>
-                <OnCallPage />
+                <OnCallBoardPage />
+              </LazyPage>
+            }
+          />
+          <Route
+            path="/monitoring-workbench/oncall/settings"
+            element={
+              <LazyPage>
+                <OnCallSettingsPage />
               </LazyPage>
             }
           />
