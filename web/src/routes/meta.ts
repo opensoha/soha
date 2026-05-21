@@ -42,6 +42,7 @@ const APPLICATION_PATH_PREFIXES = [
 
 const WORKBENCH_DEFAULT_PATHS = {
   platform: "/",
+  virtualization: "/virtualization",
   delivery: "/applications",
   ai: "/ai-workbench",
   monitoring: "/monitoring-workbench",
@@ -1135,6 +1136,151 @@ export const routeMeta: RouteMeta[] = [
   },
 
   {
+    id: "virtualization-workbench",
+    path: "/virtualization",
+    title: "虚拟化管理工作台",
+    description: "虚拟化资源总览、虚拟机、集群、镜像、规格与操作记录",
+    icon: "IconServer",
+    group: "virtualization",
+    workbenchId: "virtualization",
+    requiresAuth: true,
+    tabbar: false,
+    navVisible: true,
+    redirectTo: "/virtualization/overview",
+    menuId: "virtualization-workbench",
+    permissionStrategy: "any-child",
+    scopeMode: "passive",
+    workspace: "resource",
+  },
+  {
+    id: "virtualization-workbench-overview",
+    path: "/virtualization/overview",
+    title: "总览",
+    description: "虚拟化资源接入状态与后续目标",
+    icon: "IconServer",
+    group: "virtualization",
+    workbenchId: "virtualization",
+    requiresAuth: true,
+    tabbar: true,
+    navVisible: true,
+    parentId: "virtualization-workbench",
+    menuId: "virtualization-workbench-overview",
+    permissionKey: "virtualization.overview.view",
+    scopeMode: "passive",
+  },
+  {
+    id: "virtualization-workbench-vms",
+    path: "/virtualization/vms",
+    title: "虚拟机",
+    description: "虚拟机实例入口",
+    icon: "IconServer",
+    group: "virtualization",
+    workbenchId: "virtualization",
+    requiresAuth: true,
+    tabbar: true,
+    navVisible: true,
+    parentId: "virtualization-workbench",
+    menuId: "virtualization-workbench-vms",
+    permissionKey: "virtualization.vms.view",
+    scopeMode: "passive",
+  },
+  {
+    id: "virtualization-workbench-vm-detail",
+    path: "/virtualization/vms/:id",
+    title: "虚拟机详情",
+    description: "虚拟机规格、镜像、网络和任务详情",
+    icon: "IconServer",
+    group: "virtualization",
+    workbenchId: "virtualization",
+    requiresAuth: true,
+    tabbar: false,
+    navVisible: false,
+    parentId: "virtualization-workbench-vms",
+    permissionKey: "virtualization.vms.view",
+    scopeMode: "passive",
+  },
+  {
+    id: "virtualization-workbench-clusters",
+    path: "/virtualization/clusters",
+    title: "虚拟化集群",
+    description: "虚拟化集群入口",
+    icon: "IconServer",
+    group: "virtualization",
+    workbenchId: "virtualization",
+    requiresAuth: true,
+    tabbar: true,
+    navVisible: true,
+    parentId: "virtualization-workbench",
+    menuId: "virtualization-workbench-clusters",
+    permissionKey: "virtualization.clusters.view",
+    scopeMode: "passive",
+  },
+  {
+    id: "virtualization-workbench-images",
+    path: "/virtualization/images",
+    title: "镜像",
+    description: "虚拟机镜像入口",
+    icon: "IconInbox",
+    group: "virtualization",
+    workbenchId: "virtualization",
+    requiresAuth: true,
+    tabbar: true,
+    navVisible: true,
+    parentId: "virtualization-workbench",
+    menuId: "virtualization-workbench-images",
+    permissionKey: "virtualization.images.view",
+    scopeMode: "passive",
+  },
+  {
+    id: "virtualization-workbench-flavors",
+    path: "/virtualization/flavors",
+    title: "规格",
+    description: "虚拟机规格入口",
+    icon: "IconGridView",
+    group: "virtualization",
+    workbenchId: "virtualization",
+    requiresAuth: true,
+    tabbar: true,
+    navVisible: true,
+    parentId: "virtualization-workbench",
+    menuId: "virtualization-workbench-flavors",
+    permissionKey: "virtualization.flavors.view",
+    scopeMode: "passive",
+  },
+  {
+    id: "virtualization-workbench-operations",
+    path: "/virtualization/operations",
+    title: "操作记录",
+    description: "虚拟化操作记录入口",
+    icon: "IconFileSearch",
+    group: "virtualization",
+    workbenchId: "virtualization",
+    requiresAuth: true,
+    tabbar: true,
+    navVisible: true,
+    parentId: "virtualization-workbench",
+    menuId: "virtualization-workbench-operations",
+    permissionKey: "virtualization.operations.view",
+    scopeMode: "passive",
+  },
+  {
+    id: "virtualization-workbench-sync",
+    path: "/virtualization/sync",
+    title: "同步任务",
+    description: "虚拟化资产同步任务",
+    icon: "IconFileSearch",
+    group: "virtualization",
+    workbenchId: "virtualization",
+    requiresAuth: true,
+    tabbar: true,
+    navVisible: true,
+    parentId: "virtualization-workbench",
+    menuId: "virtualization-workbench-sync",
+    permissionKey: "virtualization.sync.manage",
+    scopeMode: "passive",
+  },
+
+  {
     id: "monitoring-workbench",
     path: "/monitoring-workbench",
     title: "监控工作台",
@@ -2060,6 +2206,9 @@ function deriveWorkbenchIdFromPath(pathname: string): WorkbenchId | null {
   if (matchesRoutePrefix(pathname, APPLICATION_PATH_PREFIXES)) {
     return "delivery";
   }
+  if (pathname.startsWith("/virtualization")) {
+    return "virtualization";
+  }
   if (
     pathname.startsWith("/ai-workbench") ||
     pathname.startsWith("/ai-observe") ||
@@ -2187,6 +2336,7 @@ export function getRouteScopeMode(
     pathname.startsWith("/registries") ||
     pathname.startsWith("/monitoring-workbench") ||
     pathname.startsWith("/observability") ||
+    pathname.startsWith("/virtualization") ||
     pathname.startsWith("/ai-workbench") ||
     pathname.startsWith("/ai-observe")
   ) {
@@ -2219,19 +2369,42 @@ export function findFirstAccessiblePathForWorkbench(
   const defaultPath = WORKBENCH_DEFAULT_PATHS[workbenchId];
   const defaultRoute = routeMeta.find((route) => route.path === defaultPath);
   if (defaultRoute && canAccessRoute(defaultRoute, snapshot)) {
-    return defaultRoute.redirectTo ?? defaultRoute.path;
+    const defaultAccessiblePath = resolveAccessibleRoutePath(
+      defaultRoute,
+      snapshot,
+    );
+    if (defaultAccessiblePath) {
+      return defaultAccessiblePath;
+    }
   }
-  const firstRoute = routeMeta.find(
-    (route) =>
+  for (const route of routeMeta) {
+    if (
       route.requiresAuth &&
       route.navVisible &&
       getRouteWorkbenchId(route) === workbenchId &&
-      canAccessRoute(route, snapshot),
-  );
-  if (!firstRoute) {
-    return null;
+      canAccessRoute(route, snapshot)
+    ) {
+      const accessiblePath = resolveAccessibleRoutePath(route, snapshot);
+      if (accessiblePath) {
+        return accessiblePath;
+      }
+    }
   }
-  return firstRoute.redirectTo ?? firstRoute.path;
+  return null;
+}
+
+function resolveAccessibleRoutePath(
+  route: RouteMeta,
+  snapshot?: PermissionSnapshot | null,
+): string | null {
+  if (!route.redirectTo) {
+    return route.path;
+  }
+  const redirectRoute = routeMeta.find((item) => item.path === route.redirectTo);
+  if (!redirectRoute) {
+    return route.redirectTo;
+  }
+  return canAccessRoute(redirectRoute, snapshot) ? route.redirectTo : null;
 }
 
 export function getWorkspacePermissionKey(workspace: BusinessWorkspaceType) {
@@ -2535,13 +2708,19 @@ export function filterSidebarNavByWorkbench(
       .filter((item): item is RuntimeMenuNode => Boolean(item)),
   );
 
-  if (workbenchId !== "monitoring") {
+  const flattenedWorkbenchRootIds: Partial<Record<WorkbenchId, string>> = {
+    monitoring: "monitoring-workbench",
+    virtualization: "virtualization-workbench",
+  };
+  const flattenedRootId = flattenedWorkbenchRootIds[workbenchId];
+
+  if (!flattenedRootId) {
     return filteredTree;
   }
 
   return sortRuntimeMenuTree(
     filteredTree.flatMap((node) => {
-      if (node.id === "monitoring-workbench" && node.children?.length) {
+      if (node.id === flattenedRootId && node.children?.length) {
         return node.children;
       }
       return [node];
@@ -2557,20 +2736,29 @@ export function findFirstAccessiblePathForWorkspace(
     (route) => route.path === DEFAULT_WORKSPACE_PATHS[workspace],
   );
   if (defaultRoute && canAccessRoute(defaultRoute, snapshot)) {
-    return defaultRoute.redirectTo ?? defaultRoute.path;
-  }
-  const firstRoute = routeMeta.find((route) => {
-    if (!route.requiresAuth || !route.navVisible) {
-      return false;
-    }
-    return (
-      getRouteWorkspace(route) === workspace && canAccessRoute(route, snapshot)
+    const defaultAccessiblePath = resolveAccessibleRoutePath(
+      defaultRoute,
+      snapshot,
     );
-  });
-  if (!firstRoute) {
-    return null;
+    if (defaultAccessiblePath) {
+      return defaultAccessiblePath;
+    }
   }
-  return firstRoute.redirectTo ?? firstRoute.path;
+  for (const route of routeMeta) {
+    if (!route.requiresAuth || !route.navVisible) {
+      continue;
+    }
+    if (
+      getRouteWorkspace(route) === workspace &&
+      canAccessRoute(route, snapshot)
+    ) {
+      const accessiblePath = resolveAccessibleRoutePath(route, snapshot);
+      if (accessiblePath) {
+        return accessiblePath;
+      }
+    }
+  }
+  return null;
 }
 
 export function findFirstAccessiblePath(
@@ -2586,14 +2774,19 @@ export function findFirstAccessiblePath(
       return preferredPath;
     }
   }
-  const firstRoute = routeMeta.find(
-    (route) =>
-      route.requiresAuth && route.navVisible && canAccessRoute(route, snapshot),
-  );
-  if (!firstRoute) {
-    return null;
+  for (const route of routeMeta) {
+    if (
+      route.requiresAuth &&
+      route.navVisible &&
+      canAccessRoute(route, snapshot)
+    ) {
+      const accessiblePath = resolveAccessibleRoutePath(route, snapshot);
+      if (accessiblePath) {
+        return accessiblePath;
+      }
+    }
   }
-  return firstRoute.redirectTo ?? firstRoute.path;
+  return null;
 }
 
 export function findLandingPath(

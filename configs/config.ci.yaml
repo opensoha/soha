@@ -107,10 +107,16 @@ modules:
     enabled: true
   ai:
     enabled: true
+  virtualization:
+    enabled: true
   security:
     enabled: false
   cmdb:
     enabled: false
+
+security:
+  credential_encryption_key: ${KC_SECURITY_CREDENTIAL_ENCRYPTION_KEY}
+  secret_provider: ${KC_SECURITY_SECRET_PROVIDER}
 
 bootstrap:
   seed_defaults: true

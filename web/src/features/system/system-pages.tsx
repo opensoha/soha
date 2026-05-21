@@ -678,7 +678,7 @@ export function AnnouncementsPage() {
         destroyOnHidden
       >
         {previewing ? (
-          <Space direction="vertical" size={12} style={{ width: '100%' }}>
+          <Space orientation="vertical" size={12} style={{ width: '100%' }}>
             <Descriptions
               bordered
               size="small"
@@ -745,10 +745,11 @@ interface MenuWorkbenchSummary {
   workspace: WorkspaceType | null
 }
 
-const MENU_WORKBENCH_ORDER: MenuWorkbenchSurface[] = ['platform', 'ai', 'monitoring', 'delivery', 'system', 'unmapped']
+const MENU_WORKBENCH_ORDER: MenuWorkbenchSurface[] = ['platform', 'virtualization', 'delivery', 'ai', 'monitoring', 'system', 'unmapped']
 
 const MENU_WORKBENCH_LABELS: Record<MenuWorkbenchSurface, string> = {
   platform: '平台工作台',
+  virtualization: '虚拟化管理工作台',
   ai: 'AI工作台',
   monitoring: '监控工作台',
   delivery: '应用交付工作台',
@@ -1202,13 +1203,11 @@ export function MenusPage() {
     [menuItems],
   )
   const workbenchOptions = useMemo(
-    () => Array.from(new Set(menuItems.map((item) => summarizeMenuWorkbench(item, menuLookup).key)))
-      .sort((left, right) => MENU_WORKBENCH_ORDER.indexOf(left) - MENU_WORKBENCH_ORDER.indexOf(right))
-      .map((value) => ({
-        value,
-        label: MENU_WORKBENCH_LABELS[value],
-      })),
-    [menuItems, menuLookup],
+    () => MENU_WORKBENCH_ORDER.map((value) => ({
+      value,
+      label: MENU_WORKBENCH_LABELS[value],
+    })),
+    [],
   )
   const menuPageSize = Math.max(menuItems.length, 1)
   const roleOptions = (rolesResponse?.data ?? []).map((role) => ({
@@ -1258,7 +1257,7 @@ export function MenusPage() {
             {countDirectMenuChildren(record) > 0 ? <Tag color="blue">{`${countDirectMenuChildren(record)} 个菜单`}</Tag> : null}
           </Space>
         ) : (
-          <Space direction="vertical" size={2}>
+          <Space orientation="vertical" size={2}>
             <Space size={8} wrap>
               <Text strong>{value}</Text>
               <Tag>{record.parentId ? '子菜单' : '顶级'}</Tag>
@@ -1449,7 +1448,7 @@ export function MenusPage() {
                   <Alert
                     showIcon
                     type={visibilitySummary.mode === 'unmapped' ? 'warning' : 'info'}
-                    message={visibilitySummary.mode === 'explicit' ? '当前菜单使用显式角色覆盖' : visibilitySummary.mode === 'derived' ? '当前菜单将按权限键自动派生可见性' : '当前菜单尚未映射已知权限键'}
+                    title={visibilitySummary.mode === 'explicit' ? '当前菜单使用显式角色覆盖' : visibilitySummary.mode === 'derived' ? '当前菜单将按权限键自动派生可见性' : '当前菜单尚未映射已知权限键'}
                     description={visibilitySummary.mode === 'explicit'
                       ? '仅为少数例外场景保留显式角色覆盖。保存后会提交 roleIds，覆盖默认的 permissionKeys 派生行为。'
                       : visibilitySummary.mode === 'derived'
@@ -1518,7 +1517,7 @@ export function MenusPage() {
 
               return (
                 <Form.Item label="工作台归属">
-                  <Space direction="vertical" size={4} style={{ width: '100%' }}>
+                  <Space orientation="vertical" size={4} style={{ width: '100%' }}>
                     <Space wrap>
                       <Tag color={draftPlacement.key === 'unmapped' ? 'default' : 'blue'}>{draftPlacement.label}</Tag>
                       {draftPlacement.parentPlacement ? <Text type="secondary">跟随父级菜单</Text> : <Text type="secondary">按路径自动派生</Text>}
@@ -1616,7 +1615,7 @@ function AuditLogDrawer({ record, open, onClose }: { record: AuditLog | null; op
               key: 'overview',
               label: '概览',
               children: (
-                <Space direction="vertical" size={16} style={{ width: '100%' }}>
+                <Space orientation="vertical" size={16} style={{ width: '100%' }}>
                   <Descriptions
                     bordered
                     size="small"
@@ -1697,7 +1696,7 @@ export function AuditLogsPage() {
       dataIndex: 'actorName',
       width: 160,
       render: (_: string, record: AuditLog) => (
-        <Space direction="vertical" size={0}>
+        <Space orientation="vertical" size={0}>
           <Text strong>{record.actorName || record.actorId || '-'}</Text>
           {record.actorId && record.actorId !== record.actorName ? <Text type="secondary">{record.actorId}</Text> : null}
         </Space>
@@ -1857,7 +1856,7 @@ function OperationLogDrawer({ record, open, onClose }: { record: OperationLog | 
               key: 'overview',
               label: '概览',
               children: (
-                <Space direction="vertical" size={16} style={{ width: '100%' }}>
+                <Space orientation="vertical" size={16} style={{ width: '100%' }}>
                   <Descriptions
                     bordered
                     size="small"
@@ -1865,8 +1864,8 @@ function OperationLogDrawer({ record, open, onClose }: { record: OperationLog | 
                     items={[
                       { key: 'time', label: '发生时间', children: formatDateTime(record.createdAt) },
                       { key: 'actor', label: '操作者', children: record.actorName || record.actorId || '-' },
-                      { key: 'operation', label: '操作', children: <Space direction="vertical" size={0}><Text strong>{prettifyOperationType(record.operationType).primary}</Text><Text type="secondary">{record.operationType}</Text></Space> },
-                      { key: 'target', label: '目标', children: <Space direction="vertical" size={0}><Text strong>{buildTargetScopeLabel(record.targetScope || {}).primary}</Text><Text type="secondary">{buildTargetScopeLabel(record.targetScope || {}).secondary || '-'}</Text></Space> },
+                      { key: 'operation', label: '操作', children: <Space orientation="vertical" size={0}><Text strong>{prettifyOperationType(record.operationType).primary}</Text><Text type="secondary">{record.operationType}</Text></Space> },
+                      { key: 'target', label: '目标', children: <Space orientation="vertical" size={0}><Text strong>{buildTargetScopeLabel(record.targetScope || {}).primary}</Text><Text type="secondary">{buildTargetScopeLabel(record.targetScope || {}).secondary || '-'}</Text></Space> },
                       { key: 'result', label: '结果', children: <StatusTag value={record.result} /> },
                       { key: 'summary', label: '摘要', children: record.summary || '-' },
                     ]}
@@ -1911,7 +1910,7 @@ function OperationLogDrawer({ record, open, onClose }: { record: OperationLog | 
 export function OperationLogsPage() {
   const [operationTypeFilter, setOperationTypeFilter] = useState<string>('')
   const [resultFilter, setResultFilter] = useState<string>('')
-  const [moduleView, setModuleView] = useState<'all' | 'system' | 'access' | 'platform' | 'delivery'>('all')
+  const [moduleView, setModuleView] = useState<'all' | 'system' | 'access' | 'platform' | 'virtualization' | 'delivery'>('all')
   const [activeRecord, setActiveRecord] = useState<OperationLog | null>(null)
   const { data, isLoading } = useQuery({
     queryKey: ['operation-logs', operationTypeFilter, resultFilter],
@@ -1938,7 +1937,7 @@ export function OperationLogsPage() {
       dataIndex: 'actorName',
       width: 160,
       render: (_: string, record: OperationLog) => (
-        <Space direction="vertical" size={0}>
+        <Space orientation="vertical" size={0}>
           <Text strong>{record.actorName || record.actorId || '-'}</Text>
           {record.actorId && record.actorId !== record.actorName ? <Text type="secondary">{record.actorId}</Text> : null}
         </Space>
@@ -2033,12 +2032,13 @@ export function OperationLogsPage() {
             <Segmented
               size="small"
               value={moduleView}
-              onChange={(value) => setModuleView(value as 'all' | 'system' | 'access' | 'platform' | 'delivery')}
+              onChange={(value) => setModuleView(value as 'all' | 'system' | 'access' | 'platform' | 'virtualization' | 'delivery')}
               options={[
                 { value: 'all', label: '全部' },
                 { value: 'system', label: '系统' },
                 { value: 'access', label: '访问控制' },
                 { value: 'platform', label: '平台' },
+                { value: 'virtualization', label: '虚拟化' },
                 { value: 'delivery', label: '交付' },
               ]}
             />

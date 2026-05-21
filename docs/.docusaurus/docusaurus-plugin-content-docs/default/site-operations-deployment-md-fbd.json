@@ -15,8 +15,8 @@
   "frontMatter": {},
   "sidebar": "mainSidebar",
   "previous": {
-    "title": "Agent Runtime",
-    "permalink": "/docs/operations/agent-runtime"
+    "title": "KubeVirt / PVE 虚拟化实验环境 Runbook",
+    "permalink": "/docs/operations/virtualization-lab-runbook"
   },
   "next": {
     "title": "Environment Overrides",

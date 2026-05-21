@@ -91,6 +91,16 @@ function setDefaultResponses() {
         sortOrder: 40,
         enabled: true,
       },
+      {
+        id: 'virtualization-workbench',
+        labelZh: '虚拟化管理工作台',
+        labelEn: 'Virtualization',
+        path: '/virtualization',
+        iconKey: 'server',
+        section: 'Dashboard',
+        sortOrder: 50,
+        enabled: true,
+      },
     ],
     '/access/roles': [],
   }
@@ -258,11 +268,16 @@ describe('menus page modal state', () => {
     await renderWithProviders(<MenusPage />, '/system/menus')
 
     expect(document.body.textContent).toContain('平台工作台')
+    expect(document.body.textContent).toContain('虚拟化管理工作台')
     expect(document.body.textContent).toContain('系统管理')
 
     await clickButton(getRowEditButton('configuration'))
 
     expect(document.body.textContent).toContain('当前菜单会在 平台工作台 的导航树内展示。')
+
+    await clickButton(getRowEditButton('virtualization-workbench'))
+
+    expect(document.body.textContent).toContain('当前菜单会在 虚拟化管理工作台 的导航树内展示。')
   })
 
   it('submits an empty section as an ungrouped menu', async () => {

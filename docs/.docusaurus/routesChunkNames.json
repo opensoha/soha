@@ -1,15 +1,15 @@
 {
-  "/docs/-34f": {
+  "/docs/-ecb": {
     "__comp": "5e95c892",
     "__context": {
       "plugin": "aba21aa0"
     }
   },
-  "/docs/-618": {
+  "/docs/-872": {
     "__comp": "a7bd4aaa",
     "__props": "11b43341"
   },
-  "/docs/-6fb": {
+  "/docs/-aa5": {
     "__comp": "a94703ab"
   },
   "/docs/api/auth-and-errors/-83d": {
@@ -24,7 +24,7 @@
     "__comp": "17896441",
     "content": "e7c8172f"
   },
-  "/docs/architecture/-c21": {
+  "/docs/architecture/-860": {
     "__comp": "17896441",
     "content": "abf8ab6a"
   },
@@ -48,7 +48,7 @@
     "__comp": "17896441",
     "content": "734e9963"
   },
-  "/docs/architecture/authorization/-0f5": {
+  "/docs/architecture/authorization/-9f8": {
     "__comp": "17896441",
     "content": "fae30f0d"
   },
@@ -56,7 +56,7 @@
     "__comp": "17896441",
     "content": "26d1d4d8"
   },
-  "/docs/architecture/login-and-identity/-466": {
+  "/docs/architecture/login-and-identity/-d71": {
     "__comp": "17896441",
     "content": "0625878c"
   },
@@ -108,7 +108,7 @@
     "__comp": "17896441",
     "content": "36682ff3"
   },
-  "/docs/operations/configuration/-86c": {
+  "/docs/operations/configuration/-bb2": {
     "__comp": "17896441",
     "content": "7385f29e"
   },
@@ -139,6 +139,10 @@
   "/docs/operations/role-authorization-assignment/-63a": {
     "__comp": "17896441",
     "content": "f7a31dc9"
+  },
+  "/docs/operations/virtualization-lab-runbook/-1e8": {
+    "__comp": "17896441",
+    "content": "665b5388"
   },
   "/docs/reference/database-schema/-6ef": {
     "__comp": "17896441",

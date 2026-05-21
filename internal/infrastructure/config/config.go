@@ -23,6 +23,7 @@ type Config struct {
 	Swagger    SwaggerConfig    `mapstructure:"swagger"`
 	MCP        MCPConfig        `mapstructure:"mcp"`
 	Modules    ModulesConfig    `mapstructure:"modules"`
+	Security   SecurityConfig   `mapstructure:"security"`
 	Bootstrap  BootstrapConfig  `mapstructure:"bootstrap"`
 	Kubernetes KubernetesConfig `mapstructure:"kubernetes"`
 }
@@ -145,11 +146,17 @@ type ModuleToggleConfig struct {
 }
 
 type ModulesConfig struct {
-	Delivery   ModuleToggleConfig `mapstructure:"delivery"`
-	Monitoring ModuleToggleConfig `mapstructure:"monitoring"`
-	AI         ModuleToggleConfig `mapstructure:"ai"`
-	Security   ModuleToggleConfig `mapstructure:"security"`
-	CMDB       ModuleToggleConfig `mapstructure:"cmdb"`
+	Delivery       ModuleToggleConfig `mapstructure:"delivery"`
+	Monitoring     ModuleToggleConfig `mapstructure:"monitoring"`
+	AI             ModuleToggleConfig `mapstructure:"ai"`
+	Virtualization ModuleToggleConfig `mapstructure:"virtualization"`
+	Security       ModuleToggleConfig `mapstructure:"security"`
+	CMDB           ModuleToggleConfig `mapstructure:"cmdb"`
+}
+
+type SecurityConfig struct {
+	CredentialEncryptionKey string `mapstructure:"credential_encryption_key"`
+	SecretProvider          string `mapstructure:"secret_provider"`
 }
 
 type BootstrapConfig struct {
@@ -314,8 +321,11 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("modules.delivery.enabled", true)
 	v.SetDefault("modules.monitoring.enabled", true)
 	v.SetDefault("modules.ai.enabled", true)
+	v.SetDefault("modules.virtualization.enabled", true)
 	v.SetDefault("modules.security.enabled", false)
 	v.SetDefault("modules.cmdb.enabled", false)
+	v.SetDefault("security.credential_encryption_key", "")
+	v.SetDefault("security.secret_provider", "")
 	v.SetDefault("bootstrap.seed_defaults", true)
 	v.SetDefault("kubernetes.clusters", []map[string]any{})
 }

@@ -5,6 +5,7 @@
 ### Workbenches
 
 - Platform Workbench
+- Virtualization Workbench
 - Delivery Workbench
 - AI Workbench
 - Monitoring Workbench
@@ -33,6 +34,15 @@
 - application-environment bindings
 - release board
 - execution tasks
+
+### Virtualization Workbench
+
+- virtualization overview
+- virtual machine inventory
+- virtualization cluster catalog
+- image catalog
+- flavor catalog
+- operation records
 
 ### AI Workbench
 
@@ -68,11 +78,12 @@
 ## Priority Order
 
 1. Platform Workbench
-2. Delivery Workbench
-3. AI Workbench
-4. Monitoring Workbench
-5. Global governance pages
-6. Remaining implementation gaps
+2. Virtualization Workbench
+3. Delivery Workbench
+4. AI Workbench
+5. Monitoring Workbench
+6. Global governance pages
+7. Remaining implementation gaps
 
 ## Placeholder Modules
 

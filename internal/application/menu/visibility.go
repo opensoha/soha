@@ -27,6 +27,7 @@ func workspacePermissionForMenu(item domainmenu.Record) string {
 		strings.HasPrefix(path, "/clusters") ||
 		strings.HasPrefix(path, "/monitoring-workbench") ||
 		strings.HasPrefix(path, "/ai-workbench") ||
+		strings.HasPrefix(path, "/virtualization") ||
 		strings.HasPrefix(path, "/observability") ||
 		strings.HasPrefix(path, "/ai-observe") ||
 		strings.HasPrefix(path, "/chat"):
@@ -121,6 +122,31 @@ func permissionRuleForMenu(item domainmenu.Record) (visibilityRule, bool) {
 		return visibilityRule{permissions: []string{appaccess.PermObserveAIChatUse}}, true
 	case item.ID == "ai-workbench-operations", item.ID == "ai-workbench-tools", item.ID == "assistant-operations", item.ID == "assistant-tools":
 		return visibilityRule{permissions: []string{appaccess.PermObserveAIView}}, true
+	case item.ID == "virtualization-workbench":
+		return visibilityRule{permissions: []string{
+			appaccess.PermVirtualizationOverviewView,
+			appaccess.PermVirtualizationVMsView,
+			appaccess.PermVirtualizationClustersView,
+			appaccess.PermVirtualizationImagesView,
+			appaccess.PermVirtualizationFlavorsView,
+			appaccess.PermVirtualizationOperationsView,
+			appaccess.PermVirtualizationSyncView,
+			appaccess.PermVirtualizationSyncManage,
+		}}, true
+	case item.ID == "virtualization-workbench-overview":
+		return visibilityRule{permissions: []string{appaccess.PermVirtualizationOverviewView}}, true
+	case item.ID == "virtualization-workbench-vms":
+		return visibilityRule{permissions: []string{appaccess.PermVirtualizationVMsView}}, true
+	case item.ID == "virtualization-workbench-clusters":
+		return visibilityRule{permissions: []string{appaccess.PermVirtualizationClustersView}}, true
+	case item.ID == "virtualization-workbench-images":
+		return visibilityRule{permissions: []string{appaccess.PermVirtualizationImagesView}}, true
+	case item.ID == "virtualization-workbench-flavors":
+		return visibilityRule{permissions: []string{appaccess.PermVirtualizationFlavorsView}}, true
+	case item.ID == "virtualization-workbench-operations":
+		return visibilityRule{permissions: []string{appaccess.PermVirtualizationOperationsView}}, true
+	case item.ID == "virtualization-workbench-sync":
+		return visibilityRule{permissions: []string{appaccess.PermVirtualizationSyncView, appaccess.PermVirtualizationSyncManage}}, true
 	case item.ID == "access":
 		return visibilityRule{permissions: []string{
 			appaccess.PermAccessUsersView,

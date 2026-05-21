@@ -115,3 +115,64 @@ func TestDefaultRolePermissionsIncludeWorkspaceEntryPermissions(t *testing.T) {
 		t.Fatalf("auditor role should not include %s", PermWorkspaceApplicationView)
 	}
 }
+
+func TestDefaultRolePermissionsVirtualizationViewGrants(t *testing.T) {
+	SetRolePermissionMatrix(nil)
+
+	virtualizationPermissions := []string{
+		PermVirtualizationOverviewView,
+		PermVirtualizationVMsView,
+		PermVirtualizationClustersView,
+		PermVirtualizationImagesView,
+		PermVirtualizationFlavorsView,
+		PermVirtualizationOperationsView,
+		PermVirtualizationSyncView,
+	}
+	for _, permission := range virtualizationPermissions {
+		if !HasPermission([]string{"admin"}, permission) {
+			t.Fatalf("admin role should include %s", permission)
+		}
+		if !HasPermission([]string{"ops"}, permission) {
+			t.Fatalf("ops role should include %s", permission)
+		}
+		for _, role := range []string{"developer", "readonly", "auditor"} {
+			if HasPermission([]string{role}, permission) {
+				t.Fatalf("%s role should not include %s", role, permission)
+			}
+		}
+	}
+}
+
+func TestDefaultRolePermissionsVirtualizationManageGrants(t *testing.T) {
+	SetRolePermissionMatrix(nil)
+
+	adminOnlyPermissions := []string{
+		PermVirtualizationClustersManage,
+		PermVirtualizationFlavorsManage,
+		PermVirtualizationOperationsManage,
+	}
+	for _, permission := range adminOnlyPermissions {
+		if !HasPermission([]string{"admin"}, permission) {
+			t.Fatalf("admin role should include %s", permission)
+		}
+		for _, role := range []string{"ops", "developer", "readonly", "auditor"} {
+			if HasPermission([]string{role}, permission) {
+				t.Fatalf("%s role should not include %s", role, permission)
+			}
+		}
+	}
+
+	for _, permission := range []string{PermVirtualizationVMsManage, PermVirtualizationSyncManage} {
+		if !HasPermission([]string{"admin"}, permission) {
+			t.Fatalf("admin role should include %s", permission)
+		}
+		if !HasPermission([]string{"ops"}, permission) {
+			t.Fatalf("ops role should include %s", permission)
+		}
+		for _, role := range []string{"developer", "readonly", "auditor"} {
+			if HasPermission([]string{role}, permission) {
+				t.Fatalf("%s role should not include %s", role, permission)
+			}
+		}
+	}
+}

@@ -6,9 +6,10 @@ import (
 )
 
 const (
-	ComponentClusterSync       = "cluster_sync"
-	ComponentWorkflowRunner    = "workflow_runner"
-	ComponentCopilotInspection = "copilot_inspection"
+	ComponentClusterSync          = "cluster_sync"
+	ComponentWorkflowRunner       = "workflow_runner"
+	ComponentCopilotInspection    = "copilot_inspection"
+	ComponentVirtualizationWorker = "virtualization_worker"
 )
 
 const (
@@ -32,10 +33,11 @@ type ComponentSnapshot struct {
 }
 
 type Snapshot struct {
-	GeneratedAt       string            `json:"generatedAt"`
-	ClusterSync       ComponentSnapshot `json:"clusterSync"`
-	WorkflowRunner    ComponentSnapshot `json:"workflowRunner"`
-	CopilotInspection ComponentSnapshot `json:"copilotInspection"`
+	GeneratedAt          string            `json:"generatedAt"`
+	ClusterSync          ComponentSnapshot `json:"clusterSync"`
+	WorkflowRunner       ComponentSnapshot `json:"workflowRunner"`
+	CopilotInspection    ComponentSnapshot `json:"copilotInspection"`
+	VirtualizationWorker ComponentSnapshot `json:"virtualizationWorker"`
 }
 
 type Registry struct {
@@ -105,6 +107,8 @@ func (r *Registry) component(name string) *ComponentSnapshot {
 		return &r.snapshot.ClusterSync
 	case ComponentCopilotInspection:
 		return &r.snapshot.CopilotInspection
+	case ComponentVirtualizationWorker:
+		return &r.snapshot.VirtualizationWorker
 	default:
 		return &r.snapshot.WorkflowRunner
 	}

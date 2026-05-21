@@ -29,6 +29,31 @@
 - `POST /api/v1/notification-channels`
 - `PUT /api/v1/notification-channels/:channelID`
 
+## Virtualization APIs
+
+- `GET /api/v1/virtualization/overview`
+- `GET /api/v1/virtualization/clusters?provider=<optional>&kubernetesClusterId=<optional>&limit=100`
+- `POST /api/v1/virtualization/clusters`
+- `PUT /api/v1/virtualization/clusters/:id`
+- `DELETE /api/v1/virtualization/clusters/:id`
+- `POST /api/v1/virtualization/clusters/:id/test`
+- `POST /api/v1/virtualization/clusters/:id/sync`
+- `GET /api/v1/virtualization/vms?provider=<optional>&connectionId=<optional>&namespace=<optional>&status=<optional>&limit=100`
+- `POST /api/v1/virtualization/vms`
+- `GET /api/v1/virtualization/vms/:id`
+- `POST /api/v1/virtualization/vms/:id/actions`
+- `GET /api/v1/virtualization/images?provider=<optional>&connectionId=<optional>&status=<optional>&limit=100`
+- `GET /api/v1/virtualization/flavors?provider=<optional>&connectionId=<optional>&status=<optional>&limit=100`
+- `POST /api/v1/virtualization/flavors`
+- `PUT /api/v1/virtualization/flavors/:id`
+- `DELETE /api/v1/virtualization/flavors/:id`
+- `GET /api/v1/virtualization/operations?taskKind=<optional>&status=<optional>&connectionId=<optional>&vmId=<optional>&limit=100`
+- `GET /api/v1/virtualization/operations/:taskID`
+- `GET /api/v1/virtualization/operations/:taskID/logs`
+- `POST /api/v1/virtualization/sync`
+
+PVE credentials are accepted only on create or update payloads and are never returned by API responses. Responses expose only `credentialConfigured`.
+
 ## Application APIs
 
 - `GET /api/v1/applications?search=<optional>&limit=100`

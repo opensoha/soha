@@ -82,7 +82,7 @@ type clusterCredentialSeed struct {
 // While the stored version matches this constant, the static seed block is
 // skipped entirely. Config-driven sync (admin user, clusters) runs separately
 // during startup so runtime config updates do not depend on replaying defaults.
-const bootstrapSeedVersion = "2026-05-19-1"
+const bootstrapSeedVersion = "2026-05-21-2"
 
 const bootstrapSeedVersionKey = "bootstrap.seed_version"
 
@@ -245,6 +245,14 @@ func defaultMenuSeeds() []menuSeed {
 		{ID: "ai-workbench-investigation", ParentID: "ai-workbench", Path: "/ai-workbench/investigation", LabelZH: "调查工作台", LabelEN: "Investigation Workbench", IconKey: "bot", Section: "ops", SortOrder: 16, Enabled: true},
 		{ID: "ai-workbench-operations", ParentID: "ai-workbench", Path: "/ai-workbench/automation", LabelZH: "巡检与自动化", LabelEN: "Automation", IconKey: "bot", Section: "ops", SortOrder: 17, Enabled: true},
 		{ID: "ai-workbench-tools", ParentID: "ai-workbench", Path: "/ai-workbench/tools", LabelZH: "工具与技能", LabelEN: "Tools & Skills", IconKey: "bot", Section: "ops", SortOrder: 18, Enabled: true},
+		{ID: "virtualization-workbench", Path: "/virtualization", LabelZH: "虚拟化管理工作台", LabelEN: "Virtualization Workbench", IconKey: "server", Section: "ops", SortOrder: 80, Enabled: true},
+		{ID: "virtualization-workbench-overview", ParentID: "virtualization-workbench", Path: "/virtualization/overview", LabelZH: "总览", LabelEN: "Overview", IconKey: "gauge", Section: "ops", SortOrder: 81, Enabled: true},
+		{ID: "virtualization-workbench-vms", ParentID: "virtualization-workbench", Path: "/virtualization/vms", LabelZH: "虚拟机", LabelEN: "Virtual Machines", IconKey: "server", Section: "ops", SortOrder: 82, Enabled: true},
+		{ID: "virtualization-workbench-clusters", ParentID: "virtualization-workbench", Path: "/virtualization/clusters", LabelZH: "集群", LabelEN: "Clusters", IconKey: "globe", Section: "ops", SortOrder: 83, Enabled: true},
+		{ID: "virtualization-workbench-images", ParentID: "virtualization-workbench", Path: "/virtualization/images", LabelZH: "镜像", LabelEN: "Images", IconKey: "blocks", Section: "ops", SortOrder: 84, Enabled: true},
+		{ID: "virtualization-workbench-flavors", ParentID: "virtualization-workbench", Path: "/virtualization/flavors", LabelZH: "规格", LabelEN: "Flavors", IconKey: "code", Section: "ops", SortOrder: 85, Enabled: true},
+		{ID: "virtualization-workbench-operations", ParentID: "virtualization-workbench", Path: "/virtualization/operations", LabelZH: "操作记录", LabelEN: "Operations", IconKey: "activity", Section: "ops", SortOrder: 86, Enabled: true},
+		{ID: "virtualization-workbench-sync", ParentID: "virtualization-workbench", Path: "/virtualization/sync", LabelZH: "同步任务", LabelEN: "Sync Tasks", IconKey: "activity", Section: "ops", SortOrder: 87, Enabled: true},
 		{ID: "builds", Path: "/applications", LabelZH: "应用中心", LabelEN: "Application Center", IconKey: "blocks", Section: "deliver", SortOrder: 110, Enabled: true, Roles: []string{"admin", "ops", "developer"}},
 		{ID: "application-management", Path: "/application-management", LabelZH: "应用管理", LabelEN: "Application Management", IconKey: "blocks", Section: "deliver", SortOrder: 111, Enabled: true, Roles: []string{"admin", "ops", "developer"}},
 		{ID: "build-templates", Path: "/build-templates", LabelZH: "构建模板", LabelEN: "Build Templates", IconKey: "code", Section: "deliver", SortOrder: 112, Enabled: true, Roles: []string{"admin", "ops"}},
@@ -375,6 +383,8 @@ func filterSeedMenusByModules(items []menuSeed, modules cfgpkg.ModulesConfig) []
 			continue
 		case !modules.AI.Enabled && isAIMenuSeed(item):
 			continue
+		case !modules.Virtualization.Enabled && isVirtualizationMenuSeed(item):
+			continue
 		default:
 			filtered = append(filtered, item)
 		}
@@ -391,6 +401,8 @@ func deleteDisabledModuleMenus(ctx context.Context, db *gorm.DB, items []menuSee
 		case !modules.Monitoring.Enabled && isMonitoringMenuSeed(item):
 			menuIDs = append(menuIDs, item.ID)
 		case !modules.AI.Enabled && isAIMenuSeed(item):
+			menuIDs = append(menuIDs, item.ID)
+		case !modules.Virtualization.Enabled && isVirtualizationMenuSeed(item):
 			menuIDs = append(menuIDs, item.ID)
 		}
 	}
@@ -429,6 +441,11 @@ func isMonitoringMenuSeed(item menuSeed) bool {
 func isAIMenuSeed(item menuSeed) bool {
 	return item.ID == "ai-workbench" ||
 		strings.HasPrefix(item.Path, "/ai-workbench")
+}
+
+func isVirtualizationMenuSeed(item menuSeed) bool {
+	return item.ID == "virtualization-workbench" ||
+		strings.HasPrefix(item.Path, "/virtualization")
 }
 
 func upsertMenus(ctx context.Context, db *gorm.DB, items []menuSeed, now time.Time) error {

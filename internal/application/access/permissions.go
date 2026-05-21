@@ -68,6 +68,19 @@ const (
 	PermObserveAIRootCauseRun           = "observe.ai.root-cause.run"
 	PermObserveAIInspectionManage       = "observe.ai.inspection.manage"
 	PermObserveAIInspectionRun          = "observe.ai.inspection.run"
+	PermVirtualizationOverviewView      = "virtualization.overview.view"
+	PermVirtualizationVMsView           = "virtualization.vms.view"
+	PermVirtualizationVMsManage         = "virtualization.vms.manage"
+	PermVirtualizationClustersView      = "virtualization.clusters.view"
+	PermVirtualizationClustersManage    = "virtualization.clusters.manage"
+	PermVirtualizationImagesView        = "virtualization.images.view"
+	PermVirtualizationImagesManage      = "virtualization.images.manage"
+	PermVirtualizationFlavorsView       = "virtualization.flavors.view"
+	PermVirtualizationFlavorsManage     = "virtualization.flavors.manage"
+	PermVirtualizationOperationsView    = "virtualization.operations.view"
+	PermVirtualizationOperationsManage  = "virtualization.operations.manage"
+	PermVirtualizationSyncView          = "virtualization.sync.view"
+	PermVirtualizationSyncManage        = "virtualization.sync.manage"
 	PermAccessUsersView                 = "access.users.view"
 	PermAccessUsersManage               = "access.users.manage"
 	PermAccessRolesView                 = "access.roles.view"
@@ -163,6 +176,19 @@ func allPermissionKeys() []string {
 		PermObserveAIRootCauseRun,
 		PermObserveAIInspectionManage,
 		PermObserveAIInspectionRun,
+		PermVirtualizationOverviewView,
+		PermVirtualizationVMsView,
+		PermVirtualizationVMsManage,
+		PermVirtualizationClustersView,
+		PermVirtualizationClustersManage,
+		PermVirtualizationImagesView,
+		PermVirtualizationImagesManage,
+		PermVirtualizationFlavorsView,
+		PermVirtualizationFlavorsManage,
+		PermVirtualizationOperationsView,
+		PermVirtualizationOperationsManage,
+		PermVirtualizationSyncView,
+		PermVirtualizationSyncManage,
 		PermAccessUsersView,
 		PermAccessUsersManage,
 		PermAccessRolesView,
@@ -254,6 +280,16 @@ func defaultRolePermissions() map[string][]string {
 		PermObserveAIRootCauseRun,
 		PermObserveAIInspectionManage,
 		PermObserveAIInspectionRun,
+		PermVirtualizationOverviewView,
+		PermVirtualizationVMsView,
+		PermVirtualizationVMsManage,
+		PermVirtualizationClustersView,
+		PermVirtualizationImagesView,
+		PermVirtualizationImagesManage,
+		PermVirtualizationFlavorsView,
+		PermVirtualizationOperationsView,
+		PermVirtualizationSyncView,
+		PermVirtualizationSyncManage,
 		PermSystemAuditView,
 		PermSystemOperationsView,
 		PermAccessUsersView,

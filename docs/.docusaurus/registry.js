@@ -12,6 +12,7 @@ export default {
   "36682ff3": [() => import(/* webpackChunkName: "36682ff3" */ "@site/operations/agent-runtime.md"), "@site/operations/agent-runtime.md", require.resolveWeak("@site/operations/agent-runtime.md")],
   "53909347": [() => import(/* webpackChunkName: "53909347" */ "@site/architecture/access-model.md"), "@site/architecture/access-model.md", require.resolveWeak("@site/architecture/access-model.md")],
   "5e95c892": [() => import(/* webpackChunkName: "5e95c892" */ "@theme/DocsRoot"), "@theme/DocsRoot", require.resolveWeak("@theme/DocsRoot")],
+  "665b5388": [() => import(/* webpackChunkName: "665b5388" */ "@site/operations/virtualization-lab-runbook.md"), "@site/operations/virtualization-lab-runbook.md", require.resolveWeak("@site/operations/virtualization-lab-runbook.md")],
   "734e9963": [() => import(/* webpackChunkName: "734e9963" */ "@site/architecture/audit-model.md"), "@site/architecture/audit-model.md", require.resolveWeak("@site/architecture/audit-model.md")],
   "7385f29e": [() => import(/* webpackChunkName: "7385f29e" */ "@site/operations/configuration.md"), "@site/operations/configuration.md", require.resolveWeak("@site/operations/configuration.md")],
   "76de80cd": [() => import(/* webpackChunkName: "76de80cd" */ "@site/roadmap/index.md"), "@site/roadmap/index.md", require.resolveWeak("@site/roadmap/index.md")],

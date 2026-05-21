@@ -14,6 +14,7 @@ import {
   QuestionCircleOutlined,
   RobotOutlined,
   SettingOutlined,
+  SlidersOutlined,
   SunOutlined,
   TranslationOutlined,
 } from '@ant-design/icons'
@@ -234,6 +235,7 @@ function buildWorkbenchOptions(localeCode: 'zh_CN' | 'en_US'): WorkbenchOption[]
   if (localeCode === 'en_US') {
     return [
       { key: 'platform', label: 'Platform Workbench', description: 'Clusters, workloads, network, storage, and runtime resources', icon: <AppstoreOutlined /> },
+      { key: 'virtualization', label: 'Virtualization Workbench', description: 'Virtual machines, clusters, images, flavors, and operation records', icon: <SlidersOutlined /> },
       { key: 'delivery', label: 'Delivery Workbench', description: 'Applications, build sources, bindings, and release orchestration', icon: <CloudServerOutlined /> },
       { key: 'ai', label: 'AI Workbench', description: 'Investigation, automation, tools, and skills', icon: <RobotOutlined /> },
       { key: 'monitoring', label: 'Monitoring Workbench', description: 'Alerts, routes, notifications, and on-call flows', icon: <AlertOutlined /> },
@@ -241,6 +243,7 @@ function buildWorkbenchOptions(localeCode: 'zh_CN' | 'en_US'): WorkbenchOption[]
   }
   return [
     { key: 'platform', label: '平台工作台', description: '集群、工作负载、网络、存储与运行资源', icon: <AppstoreOutlined /> },
+    { key: 'virtualization', label: '虚拟化管理工作台', description: '虚拟机、集群、镜像、规格与操作记录', icon: <SlidersOutlined /> },
     { key: 'delivery', label: '应用交付工作台', description: '应用、构建来源、环境绑定与发布编排', icon: <CloudServerOutlined /> },
     { key: 'ai', label: 'AI工作台', description: '调查、自动化、工具与技能', icon: <RobotOutlined /> },
     { key: 'monitoring', label: '监控工作台', description: '告警、路由、通知和值班协同', icon: <AlertOutlined /> },
@@ -350,7 +353,7 @@ export function AppLayout() {
       return 'delivery'
     }
     if (activeWorkspace === 'resource') {
-      return (['platform', 'ai', 'monitoring'] as const).find((item) => accessibleWorkbenchIds.includes(item)) ?? null
+      return (['platform', 'virtualization', 'ai', 'monitoring'] as const).find((item) => accessibleWorkbenchIds.includes(item)) ?? null
     }
     return accessibleWorkbenchIds[0] ?? null
   }, [accessibleWorkbenchIds, activeWorkspace, currentWorkbenchId])

@@ -176,6 +176,11 @@
               "sidebar": "mainSidebar"
             },
             {
+              "id": "operations/virtualization-lab-runbook",
+              "path": "/docs/operations/virtualization-lab-runbook",
+              "sidebar": "mainSidebar"
+            },
+            {
               "id": "reference/database-schema",
               "path": "/docs/reference/database-schema",
               "sidebar": "mainSidebar"

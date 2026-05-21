@@ -18,25 +18,26 @@ import (
 )
 
 type Dependencies struct {
-	System        *apiHandlers.SystemHandler
-	Platform      *apiHandlers.PlatformHandler
-	Announcements *apiHandlers.AnnouncementHandler
-	Module        *apiHandlers.ModuleHandler
-	Monitoring    *apiHandlers.MonitoringHandler
-	Catalog       *apiHandlers.CatalogHandler
-	Delivery      *apiHandlers.DeliveryHandler
-	Applications  *apiHandlers.ApplicationHandler
-	Builds        *apiHandlers.BuildHandler
-	Workflows     *apiHandlers.WorkflowHandler
-	Registries    *apiHandlers.RegistryHandler
-	Releases      *apiHandlers.ReleaseHandler
-	Copilot       *apiHandlers.CopilotHandler
-	Access        *apiHandlers.AccessHandler
-	ScopeGrants   *apiHandlers.ScopeGrantHandler
-	Menu          *apiHandlers.MenuHandler
-	Settings      *apiHandlers.SettingsHandler
-	Auth          *apiHandlers.AuthHandler
-	Authn         apiMiddleware.AccessTokenParser
+	System         *apiHandlers.SystemHandler
+	Platform       *apiHandlers.PlatformHandler
+	Announcements  *apiHandlers.AnnouncementHandler
+	Module         *apiHandlers.ModuleHandler
+	Monitoring     *apiHandlers.MonitoringHandler
+	Catalog        *apiHandlers.CatalogHandler
+	Delivery       *apiHandlers.DeliveryHandler
+	Applications   *apiHandlers.ApplicationHandler
+	Builds         *apiHandlers.BuildHandler
+	Workflows      *apiHandlers.WorkflowHandler
+	Registries     *apiHandlers.RegistryHandler
+	Releases       *apiHandlers.ReleaseHandler
+	Copilot        *apiHandlers.CopilotHandler
+	Virtualization *apiHandlers.VirtualizationHandler
+	Access         *apiHandlers.AccessHandler
+	ScopeGrants    *apiHandlers.ScopeGrantHandler
+	Menu           *apiHandlers.MenuHandler
+	Settings       *apiHandlers.SettingsHandler
+	Auth           *apiHandlers.AuthHandler
+	Authn          apiMiddleware.AccessTokenParser
 }
 
 func New(cfg cfgpkg.Config, logger *zap.Logger, deps Dependencies) *http.Server {
@@ -354,6 +355,35 @@ func New(cfg cfgpkg.Config, logger *zap.Logger, deps Dependencies) *http.Server 
 			protected.GET("/integrations/gitlab/projects", deps.Applications.ListGitRepositories)
 			protected.GET("/integrations/gitlab/branches", deps.Applications.ListGitBranches)
 			protected.GET("/integrations/gitlab/tags", deps.Applications.ListGitTags)
+		}
+		if cfg.Modules.Virtualization.Enabled {
+			protected.GET("/virtualization/overview", deps.Virtualization.Overview)
+			protected.GET("/virtualization/clusters", deps.Virtualization.ListConnections)
+			protected.POST("/virtualization/clusters", deps.Virtualization.CreateConnection)
+			protected.PUT("/virtualization/clusters/:id", deps.Virtualization.UpdateConnection)
+			protected.DELETE("/virtualization/clusters/:id", deps.Virtualization.DeleteConnection)
+			protected.POST("/virtualization/clusters/:id/test", deps.Virtualization.TestConnection)
+			protected.POST("/virtualization/clusters/:id/sync", deps.Virtualization.SyncConnection)
+			protected.GET("/virtualization/vms", deps.Virtualization.ListVMs)
+			protected.POST("/virtualization/vms", deps.Virtualization.CreateVM)
+			protected.GET("/virtualization/vms/:id/detail", deps.Virtualization.GetVMDetail)
+			protected.GET("/virtualization/vms/:id", deps.Virtualization.GetVM)
+			protected.POST("/virtualization/vms/:id/actions", deps.Virtualization.VMAction)
+			protected.POST("/virtualization/vms/:id/power", deps.Virtualization.VMAction)
+			protected.GET("/virtualization/images", deps.Virtualization.ListImages)
+			protected.POST("/virtualization/images", deps.Virtualization.CreateImage)
+			protected.PUT("/virtualization/images/:id", deps.Virtualization.UpdateImage)
+			protected.DELETE("/virtualization/images/:id", deps.Virtualization.DeleteImage)
+			protected.GET("/virtualization/flavors", deps.Virtualization.ListFlavors)
+			protected.POST("/virtualization/flavors", deps.Virtualization.CreateFlavor)
+			protected.PUT("/virtualization/flavors/:id", deps.Virtualization.UpdateFlavor)
+			protected.DELETE("/virtualization/flavors/:id", deps.Virtualization.DeleteFlavor)
+			protected.GET("/virtualization/operations", deps.Virtualization.ListOperations)
+			protected.GET("/virtualization/operations/:taskID", deps.Virtualization.GetOperation)
+			protected.GET("/virtualization/operations/:taskID/logs", deps.Virtualization.ListOperationLogs)
+			protected.POST("/virtualization/operations/:taskID/cancel", deps.Virtualization.CancelOperation)
+			protected.POST("/virtualization/operations/:taskID/retry", deps.Virtualization.RetryOperation)
+			protected.POST("/virtualization/sync", deps.Virtualization.SyncAll)
 		}
 		if cfg.Modules.AI.Enabled {
 			protected.GET("/copilot/insights", deps.Copilot.ListInsights)

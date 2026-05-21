@@ -29,6 +29,36 @@ func TestResourceMenusRequireWorkspaceResourcePermission(t *testing.T) {
 	}
 }
 
+func TestVirtualizationMenusRequireWorkspaceResourcePermission(t *testing.T) {
+	item := domainmenu.Record{ID: "virtualization-workbench-vms", Path: "/virtualization/vms"}
+
+	if isVisibleByPermissions(item, []string{appaccess.PermVirtualizationVMsView}) {
+		t.Fatalf("virtualization menu should require %s", appaccess.PermWorkspaceResourceView)
+	}
+	if !isVisibleByPermissions(item, []string{appaccess.PermWorkspaceResourceView, appaccess.PermVirtualizationVMsView}) {
+		t.Fatalf("virtualization menu should be visible when workspace and page permissions are both present")
+	}
+}
+
+func TestVirtualizationRootMenuVisibleWithAnyVirtualizationPermission(t *testing.T) {
+	item := domainmenu.Record{ID: "virtualization-workbench", Path: "/virtualization"}
+
+	if !isVisibleByPermissions(item, []string{appaccess.PermWorkspaceResourceView, appaccess.PermVirtualizationSyncView}) {
+		t.Fatalf("virtualization root menu should be visible with any virtualization view permission")
+	}
+}
+
+func TestVirtualizationSyncMenuVisibleWithViewOrManagePermission(t *testing.T) {
+	item := domainmenu.Record{ID: "virtualization-workbench-sync", Path: "/virtualization/sync"}
+
+	if !isVisibleByPermissions(item, []string{appaccess.PermWorkspaceResourceView, appaccess.PermVirtualizationSyncView}) {
+		t.Fatalf("virtualization sync menu should be visible with sync view permission")
+	}
+	if !isVisibleByPermissions(item, []string{appaccess.PermWorkspaceResourceView, appaccess.PermVirtualizationSyncManage}) {
+		t.Fatalf("virtualization sync menu should be visible with sync manage permission")
+	}
+}
+
 func TestSystemMenusDoNotRequireWorkspacePermission(t *testing.T) {
 	item := domainmenu.Record{ID: "menus", Path: "/system/menus"}
 

@@ -28,6 +28,15 @@ func (s *Service) List(context.Context) ([]domainmodule.Status, error) {
 			SeedMenus:          []string{"dashboard", "clusters", "workloads", "configuration", "network", "storage", "platform-access-control", "extensions", "helm"},
 		},
 		{
+			ID:                 "virtualization",
+			Name:               "虚拟化管理工作台",
+			DefaultPath:        "/virtualization",
+			EnabledConfigKey:   "modules.virtualization.enabled",
+			Dependencies:       []string{},
+			VisiblePermissions: []string{"virtualization.overview.view", "virtualization.vms.view", "virtualization.clusters.view", "virtualization.images.view", "virtualization.flavors.view", "virtualization.operations.view", "virtualization.sync.view", "virtualization.sync.manage"},
+			SeedMenus:          []string{"virtualization-workbench", "virtualization-workbench-overview", "virtualization-workbench-vms", "virtualization-workbench-clusters", "virtualization-workbench-images", "virtualization-workbench-flavors", "virtualization-workbench-operations", "virtualization-workbench-sync"},
+		},
+		{
 			ID:                 "delivery",
 			Name:               "应用交付工作台",
 			DefaultPath:        "/applications",
@@ -87,6 +96,8 @@ func (s *Service) enabled(id string) bool {
 		return s.cfg.Monitoring.Enabled
 	case "ai":
 		return s.cfg.AI.Enabled
+	case "virtualization":
+		return s.cfg.Virtualization.Enabled
 	case "security":
 		return s.cfg.Security.Enabled
 	case "cmdb":

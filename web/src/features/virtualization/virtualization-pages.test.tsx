@@ -1,0 +1,323 @@
+/** @vitest-environment jsdom */
+
+import type { ReactNode } from 'react'
+import { act } from 'react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { createRoot } from 'react-dom/client'
+import { MemoryRouter } from 'react-router-dom'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { App } from 'antd'
+import { VirtualizationClustersPage, VirtualizationImagesPage, VirtualizationOperationsPage, VirtualizationSyncPage, VirtualizationVmDetailPage, VirtualizationVmsPage } from './virtualization-pages'
+
+const testState = vi.hoisted(() => ({
+  permissionSnapshot: {
+    permissionKeys: ['virtualization.vms.manage', 'virtualization.sync.manage', 'virtualization.clusters.manage', 'virtualization.operations.manage'],
+    visibleMenuIds: [],
+    visibleMenus: [],
+  },
+  apiGet: vi.fn(async (path: string) => {
+    if (path === '/virtualization/vms?page=1&pageSize=10') {
+      return { data: { items: [{ id: 'vm-1', name: 'build-vm', provider: 'kubevirt', status: 'running', flavorName: 'standard-2c4g', bootImageName: 'ubuntu-24.04', cpu: 2, memoryMiB: 4096, diskGiB: 40 }], total: 1, page: 1, pageSize: 10 } }
+    }
+    if (path === '/virtualization/vms/vm-1/detail') {
+      return { data: {
+        vm: { id: 'vm-1', name: 'build-vm', provider: 'kubevirt', status: 'running', flavorName: 'standard-2c4g', bootImageName: 'ubuntu-24.04', ipAddresses: ['10.0.0.8'] },
+        providerRaw: { kind: 'VirtualMachine', metadata: { name: 'build-vm' } },
+        operations: [{ id: 'op-vm', operationType: 'vm_create', status: 'completed', targetName: 'build-vm' }],
+        logs: [{ id: 'log-vm', taskId: 'op-vm', logLevel: 'info', message: 'vm ready', createdAt: '2026-05-21T00:00:00Z' }],
+      } }
+    }
+    if (path === '/virtualization/clusters') {
+      return { data: [
+        { id: 'conn-pve', name: 'pve-a', provider: 'pve', endpoint: 'https://pve.example:8006', enabled: true, verifyTls: true, config: { defaultNode: 'pve-1', defaultStorage: 'local-lvm' } },
+        { id: 'conn-1', name: 'kubevirt-a', provider: 'kubevirt', kubernetesClusterId: 'cluster-a', enabled: true, verifyTls: true },
+      ] }
+    }
+    if (path === '/clusters') {
+      return { data: [{ id: 'cluster-a', name: 'cluster-a', region: 'standard_kubernetes', environment: 'dev', labels: {}, connectionMode: 'direct_kubeconfig', version: 'v1.30', health: { status: 'healthy' } }] }
+    }
+    if (path === '/virtualization/images' || path === '/virtualization/images?page=1&pageSize=10') {
+      return { data: { items: [{ id: 'image-1', name: 'ubuntu-24.04', provider: 'kubevirt', connectionId: 'conn-1', sourceKind: 'datasource', sourceRef: 'default/ubuntu', osType: 'ubuntu' }], total: 1, page: 1, pageSize: 10 } }
+    }
+    if (path === '/virtualization/flavors') {
+      return { data: [{ id: 'flavor-1', name: 'standard-2c4g', cpu: 2, memoryMiB: 4096, diskGiB: 40, enabled: true }] }
+    }
+    if (path === '/virtualization/operations?assetType=asset_sync') {
+      return { data: [{ id: 'op-1', operationType: 'asset_sync', status: 'completed', targetName: 'kubevirt-a' }] }
+    }
+    if (path === '/virtualization/operations') {
+      return { data: [
+        { id: 'op-cancel', operationType: 'vm_create', status: 'running', targetName: 'vm-a', allowedActions: ['cancel'] },
+        { id: 'op-retry', operationType: 'asset_sync', status: 'failed', targetName: 'conn-a', allowedActions: ['retry'] },
+      ] }
+    }
+    if (path === '/virtualization/operations/op-1/logs') {
+      return { data: [{ id: 'log-1', taskId: 'op-1', logLevel: 'info', message: 'sync completed', createdAt: '2026-05-21T00:00:00Z' }] }
+    }
+    throw new Error(`Unhandled GET ${path}`)
+  }),
+  apiPost: vi.fn(async (_path: string, _body?: unknown) => ({ data: { id: 'op-new' } })),
+  apiPut: vi.fn(async (_path: string, _body?: unknown) => ({ data: { id: 'updated' } })),
+  apiDelete: vi.fn(async (_path: string) => ({ data: undefined })),
+}))
+
+vi.mock('@/features/auth/permission-snapshot', () => ({
+  hasAllowedAction: (actions: string[] | undefined, action: string) => actions?.includes(action) ?? false,
+  hasPermission: (snapshot: { permissionKeys?: string[] } | undefined, key: string) => snapshot?.permissionKeys?.includes(key) ?? false,
+  usePermissionSnapshot: () => ({
+    data: { data: testState.permissionSnapshot },
+    isLoading: false,
+  }),
+}))
+
+vi.mock('@/services/api-client', () => ({
+  api: {
+    get: (path: string) => testState.apiGet(path),
+    post: (path: string, body?: unknown) => testState.apiPost(path, body),
+    put: (path: string, body?: unknown) => testState.apiPut(path, body),
+    delete: (path: string) => testState.apiDelete(path),
+  },
+}))
+
+vi.mock('@/stores/preferences-store', () => ({
+  usePreferencesStore: {
+    getState: () => ({ localeCode: 'zh_CN' }),
+  },
+}))
+
+let containers: HTMLDivElement[] = []
+let roots: Array<ReturnType<typeof createRoot>> = []
+
+async function renderWithProviders(node: ReactNode, route = '/virtualization/vms') {
+  const container = document.createElement('div')
+  document.body.appendChild(container)
+  containers.push(container)
+
+  const root = createRoot(container)
+  roots.push(root)
+
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: { retry: false },
+    },
+  })
+
+  await act(async () => {
+    root.render(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={[route]}>
+          <App>{node}</App>
+        </MemoryRouter>
+      </QueryClientProvider>,
+    )
+  })
+
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  })
+
+  return container
+}
+
+async function waitForText(text: string) {
+  for (let index = 0; index < 10; index += 1) {
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+    if (document.body.textContent?.includes(text)) {
+      return
+    }
+  }
+}
+
+describe('virtualization pages', () => {
+  beforeEach(() => {
+    testState.permissionSnapshot = {
+      permissionKeys: ['virtualization.vms.manage', 'virtualization.sync.manage', 'virtualization.clusters.manage', 'virtualization.operations.manage'],
+      visibleMenuIds: [],
+      visibleMenus: [],
+    }
+    testState.apiGet.mockClear()
+    testState.apiPost.mockClear()
+    testState.apiPut.mockClear()
+    testState.apiDelete.mockClear()
+    class ResizeObserverMock {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    }
+    vi.stubGlobal('ResizeObserver', ResizeObserverMock)
+    Object.defineProperty(window, 'matchMedia', {
+      writable: true,
+      value: vi.fn().mockImplementation(() => ({
+        matches: false,
+        media: '',
+        onchange: null,
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      })),
+    })
+    vi.spyOn(window, 'getComputedStyle').mockImplementation(
+      () =>
+        ({
+          getPropertyValue: () => '',
+        }) as unknown as CSSStyleDeclaration,
+    )
+  })
+
+  afterEach(async () => {
+    await act(async () => {
+      for (const root of roots) {
+        root.unmount()
+      }
+    })
+    roots = []
+    for (const container of containers) {
+      container.remove()
+    }
+    containers = []
+    vi.clearAllMocks()
+  })
+
+  it('loads paginated VMs and creates from flavor plus image with provider fields', async () => {
+    const container = await renderWithProviders(<VirtualizationVmsPage />)
+
+    expect(testState.apiGet).toHaveBeenCalledWith('/virtualization/vms?page=1&pageSize=10')
+    expect(testState.apiGet).toHaveBeenCalledWith('/virtualization/clusters')
+    expect(testState.apiGet).toHaveBeenCalledWith('/virtualization/images')
+    expect(testState.apiGet).toHaveBeenCalledWith('/virtualization/flavors')
+    expect(container.textContent).toContain('build-vm')
+
+    await act(async () => {
+      container.querySelector('button')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    expect(document.body.textContent).toContain('Cloud Init')
+    expect(document.body.textContent).toContain('规格')
+    expect(document.body.textContent).toContain('启动镜像')
+    expect(document.body.textContent).toContain('StorageClass')
+    expect(document.body.textContent).not.toContain('raw YAML')
+    expect(document.body.textContent).not.toContain('raw PVE config')
+  })
+
+  it('renders VM detail with provider raw, operations, and logs', async () => {
+    const container = await renderWithProviders(<VirtualizationVmDetailPage />, '/virtualization/vms/vm-1')
+
+    expect(testState.apiGet).toHaveBeenCalledWith('/virtualization/vms/vm-1/detail')
+    expect(container.textContent).toContain('build-vm')
+    expect(container.textContent).toContain('standard-2c4g')
+    expect(container.textContent).toContain('ubuntu-24.04')
+    expect(container.textContent).toContain('10.0.0.8')
+    expect(container.textContent).toContain('Provider Raw')
+    expect(container.textContent).toContain('任务历史')
+    expect(container.textContent).toContain('vm ready')
+  })
+
+  it('hides VM actions without manage permission', async () => {
+    testState.permissionSnapshot = {
+      permissionKeys: ['virtualization.vms.view'],
+      visibleMenuIds: [],
+      visibleMenus: [],
+    }
+
+    const container = await renderWithProviders(<VirtualizationVmsPage />)
+
+    expect(container.textContent).not.toContain('创建虚拟机')
+    expect(container.textContent).not.toContain('启动')
+    expect(container.textContent).not.toContain('停止')
+  })
+
+  it('uses asset_sync filtering for the sync task page', async () => {
+    const container = await renderWithProviders(<VirtualizationSyncPage />, '/virtualization/sync')
+
+    expect(testState.apiGet).toHaveBeenCalledWith('/virtualization/operations?assetType=asset_sync')
+    expect(container.textContent).toContain('仅展示 asset_sync 类型任务')
+    expect(container.textContent).toContain('asset_sync')
+
+    await act(async () => {
+      const logsButton = Array.from(container.querySelectorAll('button')).find((button) => button.textContent?.includes('日志'))
+      logsButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await waitForText('sync completed')
+
+    expect(testState.apiGet).toHaveBeenCalledWith('/virtualization/operations/op-1/logs')
+    expect(document.body.textContent).toContain('sync completed')
+  })
+
+  it('shows provider-specific cluster connection fields', async () => {
+    const container = await renderWithProviders(<VirtualizationClustersPage />, '/virtualization/clusters')
+
+    await act(async () => {
+      const addButton = Array.from(container.querySelectorAll('button')).find((button) => button.textContent?.includes('新增连接'))
+      addButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    expect(testState.apiGet).toHaveBeenCalledWith('/clusters')
+    expect(document.body.textContent).toContain('Kubernetes 集群')
+    expect(document.body.textContent).not.toContain('Other')
+    expect(document.body.textContent).toContain('校验 TLS')
+  })
+
+  it('renders PVE credential fields without raw config editing', async () => {
+    const container = await renderWithProviders(<VirtualizationClustersPage />, '/virtualization/clusters')
+
+    await act(async () => {
+      const editButton = Array.from(container.querySelectorAll('button')).find((button) => button.textContent?.includes('编辑'))
+      editButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    expect(document.body.textContent).toContain('Token ID')
+    expect(document.body.textContent).toContain('Token Secret')
+    expect(document.body.textContent).toContain('默认节点')
+    expect(document.body.textContent).toContain('默认存储')
+    expect(document.body.textContent).not.toContain('raw JSON')
+  })
+
+  it('shows image management entries for KubeVirt and PVE sources', async () => {
+    testState.permissionSnapshot = {
+      permissionKeys: ['virtualization.images.view', 'virtualization.images.manage'],
+      visibleMenuIds: [],
+      visibleMenus: [],
+    }
+    const container = await renderWithProviders(<VirtualizationImagesPage />, '/virtualization/images')
+
+    expect(testState.apiGet).toHaveBeenCalledWith('/virtualization/images?page=1&pageSize=10')
+    expect(container.textContent).toContain('KubeVirt')
+    expect(container.textContent).toContain('datasource')
+    expect(container.textContent).toContain('新增镜像入口')
+
+    await act(async () => {
+      const addButton = Array.from(container.querySelectorAll('button')).find((button) => button.textContent?.includes('新增镜像入口'))
+      addButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    expect(document.body.textContent).toContain('KubeVirt DataSource')
+    expect(document.body.textContent).toContain('PVC')
+  })
+
+  it('gates operation cancel and retry by manage permission and allowed actions', async () => {
+    const container = await renderWithProviders(<VirtualizationOperationsPage />, '/virtualization/operations')
+
+    expect(container.textContent).toContain('取消')
+    expect(container.textContent).toContain('重试')
+
+    testState.permissionSnapshot = {
+      permissionKeys: ['virtualization.operations.view'],
+      visibleMenuIds: [],
+      visibleMenus: [],
+    }
+    const readonlyContainer = await renderWithProviders(<VirtualizationOperationsPage />, '/virtualization/operations')
+
+    expect(readonlyContainer.textContent).not.toContain('取消')
+    expect(readonlyContainer.textContent).not.toContain('重试')
+  })
+})

@@ -361,6 +361,39 @@ const RegistriesPage = lazyNamed(
   "RegistriesPage",
 );
 
+const VirtualizationOverviewPage = lazyNamed(
+  () => import("@/features/virtualization/virtualization-pages"),
+  "VirtualizationOverviewPage",
+);
+const VirtualizationVmsPage = lazyNamed(
+  () => import("@/features/virtualization/virtualization-pages"),
+  "VirtualizationVmsPage",
+);
+const VirtualizationVmDetailPage = lazyNamed(
+  () => import("@/features/virtualization/virtualization-pages"),
+  "VirtualizationVmDetailPage",
+);
+const VirtualizationClustersPage = lazyNamed(
+  () => import("@/features/virtualization/virtualization-pages"),
+  "VirtualizationClustersPage",
+);
+const VirtualizationImagesPage = lazyNamed(
+  () => import("@/features/virtualization/virtualization-pages"),
+  "VirtualizationImagesPage",
+);
+const VirtualizationFlavorsPage = lazyNamed(
+  () => import("@/features/virtualization/virtualization-pages"),
+  "VirtualizationFlavorsPage",
+);
+const VirtualizationOperationsPage = lazyNamed(
+  () => import("@/features/virtualization/virtualization-pages"),
+  "VirtualizationOperationsPage",
+);
+const VirtualizationSyncPage = lazyNamed(
+  () => import("@/features/virtualization/virtualization-pages"),
+  "VirtualizationSyncPage",
+);
+
 const MonitoringPage = lazyNamed(
   () => import("@/features/observability/monitoring-pages"),
   "MonitoringPage",
@@ -1203,6 +1236,75 @@ export function AppRouter() {
             element={
               <LazyPage>
                 <RegistriesPage />
+              </LazyPage>
+            }
+          />
+
+          <Route
+            path="/virtualization"
+            element={<Navigate to="/virtualization/overview" replace />}
+          />
+          <Route
+            path="/virtualization/overview"
+            element={
+              <LazyPage>
+                <VirtualizationOverviewPage />
+              </LazyPage>
+            }
+          />
+          <Route
+            path="/virtualization/vms"
+            element={
+              <LazyPage>
+                <VirtualizationVmsPage />
+              </LazyPage>
+            }
+          />
+          <Route
+            path="/virtualization/vms/:id"
+            element={
+              <LazyPage>
+                <VirtualizationVmDetailPage />
+              </LazyPage>
+            }
+          />
+          <Route
+            path="/virtualization/clusters"
+            element={
+              <LazyPage>
+                <VirtualizationClustersPage />
+              </LazyPage>
+            }
+          />
+          <Route
+            path="/virtualization/images"
+            element={
+              <LazyPage>
+                <VirtualizationImagesPage />
+              </LazyPage>
+            }
+          />
+          <Route
+            path="/virtualization/flavors"
+            element={
+              <LazyPage>
+                <VirtualizationFlavorsPage />
+              </LazyPage>
+            }
+          />
+          <Route
+            path="/virtualization/operations"
+            element={
+              <LazyPage>
+                <VirtualizationOperationsPage />
+              </LazyPage>
+            }
+          />
+          <Route
+            path="/virtualization/sync"
+            element={
+              <LazyPage>
+                <VirtualizationSyncPage />
               </LazyPage>
             }
           />

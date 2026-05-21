@@ -19,7 +19,7 @@
     "permalink": "/docs/operations/role-authorization-assignment"
   },
   "next": {
-    "title": "Deployment",
-    "permalink": "/docs/operations/deployment"
+    "title": "KubeVirt / PVE 虚拟化实验环境 Runbook",
+    "permalink": "/docs/operations/virtualization-lab-runbook"
   }
 }

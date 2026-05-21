@@ -138,6 +138,30 @@ Task-scoped execution logs persisted independently from build/release summary ro
 
 Provider callback history used to advance execution-task state.
 
+### virtualization_connections
+
+KubeVirt and PVE connection records for the virtualization workbench. PVE secret material is stored only in `encrypted_credential`; API responses expose `credentialConfigured` instead of plaintext.
+
+### virtualization_vms
+
+Synchronized virtual machine assets keyed by provider, connection, and external ID.
+
+### virtualization_images
+
+Synchronized image and template assets discovered from KubeVirt CDI/PVC sources or PVE template, ISO, and storage content.
+
+### virtualization_flavors
+
+Standard VM sizing catalog managed by kubecrux or discovered from providers.
+
+### virtualization_tasks
+
+Virtualization task queue for `vm_create`, `vm_action`, and `asset_sync`. This domain does not reuse delivery `execution_tasks`.
+
+### virtualization_task_logs
+
+Task-scoped logs for virtualization operations and sync runs.
+
 ### workflow_approvals
 
 Approval decisions for suspended workflow runs.

@@ -4,15 +4,15 @@ import ComponentCreator from '@docusaurus/ComponentCreator';
 export default [
   {
     path: '/docs/',
-    component: ComponentCreator('/docs/', '34f'),
+    component: ComponentCreator('/docs/', 'ecb'),
     routes: [
       {
         path: '/docs/',
-        component: ComponentCreator('/docs/', '618'),
+        component: ComponentCreator('/docs/', '872'),
         routes: [
           {
             path: '/docs/',
-            component: ComponentCreator('/docs/', '6fb'),
+            component: ComponentCreator('/docs/', 'aa5'),
             routes: [
               {
                 path: '/docs/api/auth-and-errors/',
@@ -34,7 +34,7 @@ export default [
               },
               {
                 path: '/docs/architecture/',
-                component: ComponentCreator('/docs/architecture/', 'c21'),
+                component: ComponentCreator('/docs/architecture/', '860'),
                 exact: true,
                 sidebar: "mainSidebar"
               },
@@ -70,7 +70,7 @@ export default [
               },
               {
                 path: '/docs/architecture/authorization/',
-                component: ComponentCreator('/docs/architecture/authorization/', '0f5'),
+                component: ComponentCreator('/docs/architecture/authorization/', '9f8'),
                 exact: true,
                 sidebar: "mainSidebar"
               },
@@ -82,7 +82,7 @@ export default [
               },
               {
                 path: '/docs/architecture/login-and-identity/',
-                component: ComponentCreator('/docs/architecture/login-and-identity/', '466'),
+                component: ComponentCreator('/docs/architecture/login-and-identity/', 'd71'),
                 exact: true,
                 sidebar: "mainSidebar"
               },
@@ -160,7 +160,7 @@ export default [
               },
               {
                 path: '/docs/operations/configuration/',
-                component: ComponentCreator('/docs/operations/configuration/', '86c'),
+                component: ComponentCreator('/docs/operations/configuration/', 'bb2'),
                 exact: true,
                 sidebar: "mainSidebar"
               },
@@ -203,6 +203,12 @@ export default [
               {
                 path: '/docs/operations/role-authorization-assignment/',
                 component: ComponentCreator('/docs/operations/role-authorization-assignment/', '63a'),
+                exact: true,
+                sidebar: "mainSidebar"
+              },
+              {
+                path: '/docs/operations/virtualization-lab-runbook/',
+                component: ComponentCreator('/docs/operations/virtualization-lab-runbook/', '1e8'),
                 exact: true,
                 sidebar: "mainSidebar"
               },

@@ -29,6 +29,7 @@ import (
 	appresource "github.com/kubecrux/kubecrux/internal/application/resource"
 	appscopegrant "github.com/kubecrux/kubecrux/internal/application/scopegrant"
 	appsettings "github.com/kubecrux/kubecrux/internal/application/settings"
+	appvirtualization "github.com/kubecrux/kubecrux/internal/application/virtualization"
 	appworkflow "github.com/kubecrux/kubecrux/internal/application/workflow"
 	agentinfra "github.com/kubecrux/kubecrux/internal/infrastructure/agent"
 	cfgpkg "github.com/kubecrux/kubecrux/internal/infrastructure/config"
@@ -38,6 +39,7 @@ import (
 	k8sinfra "github.com/kubecrux/kubecrux/internal/infrastructure/kubernetes"
 	loggerinfra "github.com/kubecrux/kubecrux/internal/infrastructure/logger"
 	mcpinfra "github.com/kubecrux/kubecrux/internal/infrastructure/mcp"
+	virtualizationinfra "github.com/kubecrux/kubecrux/internal/infrastructure/virtualization"
 	"github.com/kubecrux/kubecrux/internal/platform/runtimeobs"
 	"github.com/kubecrux/kubecrux/internal/policy"
 	alertrepo "github.com/kubecrux/kubecrux/internal/repository/alert"
@@ -59,18 +61,20 @@ import (
 	scopegrantrepo "github.com/kubecrux/kubecrux/internal/repository/scopegrant"
 	settingsrepo "github.com/kubecrux/kubecrux/internal/repository/settings"
 	userrepo "github.com/kubecrux/kubecrux/internal/repository/user"
+	virtualizationrepo "github.com/kubecrux/kubecrux/internal/repository/virtualization"
 	workflowrepo "github.com/kubecrux/kubecrux/internal/repository/workflow"
 	"go.uber.org/zap"
 )
 
 type App struct {
-	Config          cfgpkg.Config
-	Logger          *zap.Logger
-	Database        *dbinfra.Store
-	Informers       *informerinfra.Service
-	WorkflowService *appworkflow.Service
-	HTTP            *http.Server
-	cancel          context.CancelFunc
+	Config                cfgpkg.Config
+	Logger                *zap.Logger
+	Database              *dbinfra.Store
+	Informers             *informerinfra.Service
+	WorkflowService       *appworkflow.Service
+	VirtualizationService *appvirtualization.Service
+	HTTP                  *http.Server
+	cancel                context.CancelFunc
 }
 
 func New(ctx context.Context) (*App, error) {
@@ -142,6 +146,7 @@ func New(ctx context.Context) (*App, error) {
 	scopeGrantRepository := scopegrantrepo.New(databaseStore.DB())
 	policyRepository := policyrepo.New(databaseStore.DB())
 	clusterRepository := clusterrepo.New(databaseStore.DB())
+	virtualizationRepository := virtualizationrepo.New(databaseStore.DB())
 	permissionResolver := appaccess.NewPermissionResolver(policyRepository)
 	auditService := appaudit.New(auditRepository, permissionResolver)
 	operationService := appoperation.New(operationRepository, permissionResolver)
@@ -215,6 +220,23 @@ func New(ctx context.Context) (*App, error) {
 		copilotService.Start(lifecycleCtx)
 	}
 	integrationService := appintegration.New(mcpRegistry)
+	virtualizationService := appvirtualization.New(
+		virtualizationRepository,
+		map[string]appvirtualization.Adapter{
+			appvirtualization.ProviderKubeVirt: virtualizationinfra.NewKubeVirtAdapter(clusterManager),
+			appvirtualization.ProviderPVE:      virtualizationinfra.NewPVEAdapter(nil),
+		},
+		permissionResolver,
+		operationService,
+		appvirtualization.Options{
+			CredentialEncryptionKey: cfg.Security.CredentialEncryptionKey,
+			StartupSyncEnabled:      true,
+		},
+	)
+	virtualizationService.SetInstrumentation(runtimeMetrics)
+	if cfg.Modules.Virtualization.Enabled {
+		virtualizationService.Start(lifecycleCtx)
+	}
 
 	systemHandler := apiHandlers.NewSystemHandler(databaseStore, runtimeMetrics)
 	authHandler := apiHandlers.NewAuthHandler(identityService, accessConsoleService, settingsService)
@@ -230,40 +252,43 @@ func New(ctx context.Context) (*App, error) {
 	registryHandler := apiHandlers.NewRegistryHandler(registryService)
 	releaseHandler := apiHandlers.NewReleaseHandler(releaseService)
 	copilotHandler := apiHandlers.NewCopilotHandler(copilotService)
+	virtualizationHandler := apiHandlers.NewVirtualizationHandler(virtualizationService)
 	accessHandler := apiHandlers.NewAccessHandler(accessConsoleService)
 	scopeGrantHandler := apiHandlers.NewScopeGrantHandler(scopeGrantService)
 	settingsHandler := apiHandlers.NewSettingsHandler(settingsService, permissionResolver)
 	platformHandler := apiHandlers.NewPlatformHandler(clusterService, resourceService, auditService, eventService, operationService, integrationService)
 	httpServer := apiRoutes.New(cfg, logger, apiRoutes.Dependencies{
-		System:        systemHandler,
-		Platform:      platformHandler,
-		Announcements: announcementHandler,
-		Menu:          menuHandler,
-		Module:        moduleHandler,
-		Monitoring:    monitoringHandler,
-		Catalog:       catalogHandler,
-		Delivery:      deliveryHandler,
-		Applications:  applicationHandler,
-		Builds:        buildHandler,
-		Workflows:     workflowHandler,
-		Registries:    registryHandler,
-		Releases:      releaseHandler,
-		Copilot:       copilotHandler,
-		Access:        accessHandler,
-		ScopeGrants:   scopeGrantHandler,
-		Settings:      settingsHandler,
-		Auth:          authHandler,
-		Authn:         identityService,
+		System:         systemHandler,
+		Platform:       platformHandler,
+		Announcements:  announcementHandler,
+		Menu:           menuHandler,
+		Module:         moduleHandler,
+		Monitoring:     monitoringHandler,
+		Catalog:        catalogHandler,
+		Delivery:       deliveryHandler,
+		Applications:   applicationHandler,
+		Builds:         buildHandler,
+		Workflows:      workflowHandler,
+		Registries:     registryHandler,
+		Releases:       releaseHandler,
+		Copilot:        copilotHandler,
+		Virtualization: virtualizationHandler,
+		Access:         accessHandler,
+		ScopeGrants:    scopeGrantHandler,
+		Settings:       settingsHandler,
+		Auth:           authHandler,
+		Authn:          identityService,
 	})
 
 	return &App{
-		Config:          cfg,
-		Logger:          logger,
-		Database:        databaseStore,
-		Informers:       informers,
-		WorkflowService: workflowService,
-		HTTP:            httpServer,
-		cancel:          cancel,
+		Config:                cfg,
+		Logger:                logger,
+		Database:              databaseStore,
+		Informers:             informers,
+		WorkflowService:       workflowService,
+		VirtualizationService: virtualizationService,
+		HTTP:                  httpServer,
+		cancel:                cancel,
 	}, nil
 }
 
@@ -288,6 +313,9 @@ func (a *App) Shutdown(ctx context.Context) error {
 		if err := a.WorkflowService.Shutdown(ctx); err != nil {
 			return err
 		}
+	}
+	if a.VirtualizationService != nil {
+		a.VirtualizationService.Shutdown()
 	}
 	if a.Informers != nil {
 		a.Informers.Stop()

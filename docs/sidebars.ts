@@ -50,6 +50,7 @@ const sidebars: SidebarsConfig = {
         "operations/configuration",
         "operations/role-authorization-assignment",
         "operations/agent-runtime",
+        "operations/virtualization-lab-runbook",
         "operations/deployment",
         "operations/environment-variables",
         "operations/dependencies",
