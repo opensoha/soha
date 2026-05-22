@@ -2907,6 +2907,48 @@ a {
   font-size: 12px;
 }
 
+.kc-oncall-stats-row {
+  margin-block-end: 16px;
+}
+
+.kc-oncall-board-card .ant-picker-calendar-date-content {
+  min-height: 56px;
+}
+
+.kc-oncall-cell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-block-start: 4px;
+}
+
+.kc-oncall-cell-empty {
+  color: rgba(0, 0, 0, 0.45);
+  justify-content: center;
+}
+
+.kc-oncall-cell-override {
+  background: rgba(250, 140, 22, 0.08);
+  border-radius: 4px;
+  padding-inline: 4px;
+}
+
+.kc-oncall-cell-today {
+  font-weight: 600;
+}
+
+.kc-oncall-timeline {
+  padding-block-start: 8px;
+}
+
+.kc-oncall-step-card.ant-card {
+  margin-block-end: 12px;
+}
+
+.kc-oncall-tasks-card.ant-card {
+  margin-block-start: 16px;
+}
+
 .kc-overview-alert-stack {
   display: flex;
   flex-direction: column;
