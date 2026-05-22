@@ -2,7 +2,13 @@ package virtualization
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/url"
+	"strconv"
+	"strings"
+	"time"
 
 	kubeinfra "github.com/kubecrux/kubecrux/internal/infrastructure/kubernetes"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -296,4 +302,140 @@ func stringOption(options map[string]any, key string) (string, bool) {
 	}
 	text, ok := value.(string)
 	return text, ok
+}
+
+func (a *KubeVirtAdapter) GetVMMetrics(ctx context.Context, connection Connection, vm VM, rangeMinutes, stepSeconds int) (VMMetricsResult, error) {
+	prometheusURL := stringOptionValue(connection.Options, "prometheusUrl")
+	if prometheusURL == "" {
+		return VMMetricsResult{
+			Message: "KubeVirt metrics require Prometheus integration - configure prometheusUrl in cluster connection options",
+		}, nil
+	}
+
+	bearerToken := stringOptionValue(connection.Options, "prometheusBearerToken")
+	namespace := vm.Namespace
+	if namespace == "" {
+		namespace = namespaceOrDefault(connection, "default")
+	}
+
+	queries := []struct {
+		key   string
+		label string
+		unit  string
+		query string
+	}{
+		{"cpu", "CPU Usage", "cores", fmt.Sprintf(`sum(rate(kubevirt_vmi_cpu_usage_seconds_total{name="%s",namespace="%s"}[5m]))`, vm.Name, namespace)},
+		{"memory", "Memory Usage", "bytes", fmt.Sprintf(`kubevirt_vmi_memory_resident_bytes{name="%s",namespace="%s"}`, vm.Name, namespace)},
+		{"networkRx", "Network RX", "bytes/s", fmt.Sprintf(`rate(kubevirt_vmi_network_receive_bytes_total{name="%s",namespace="%s"}[5m])`, vm.Name, namespace)},
+		{"networkTx", "Network TX", "bytes/s", fmt.Sprintf(`rate(kubevirt_vmi_network_transmit_bytes_total{name="%s",namespace="%s"}[5m])`, vm.Name, namespace)},
+	}
+
+	now := time.Now().UTC()
+	start := now.Add(-time.Duration(rangeMinutes) * time.Minute)
+	step := stepSeconds
+	if step <= 0 {
+		step = 60
+	}
+
+	var series []MetricSeries
+	for _, q := range queries {
+		points, err := queryPrometheusRange(ctx, prometheusURL, bearerToken, q.query, start, now, step)
+		if err != nil || len(points) == 0 {
+			continue
+		}
+		series = append(series, MetricSeries{Key: q.key, Label: q.label, Unit: q.unit, Points: points})
+	}
+
+	if len(series) == 0 {
+		return VMMetricsResult{Message: "No metrics data available for this VM"}, nil
+	}
+	return VMMetricsResult{Series: series}, nil
+}
+
+func (a *KubeVirtAdapter) GetConsoleURL(ctx context.Context, connection Connection, vm VM) (ConsoleURLResult, error) {
+	bundle, err := a.bundle(ctx, connection)
+	if err != nil {
+		return ConsoleURLResult{Message: err.Error()}, err
+	}
+
+	_, err = bundle.Dynamic.Resource(kubeVirtVMIGVR).
+		Namespace(vm.Namespace).
+		Get(ctx, vm.Name, metav1.GetOptions{})
+
+	if err != nil {
+		return ConsoleURLResult{Message: "VM instance not running"}, nil
+	}
+
+	vncURL := fmt.Sprintf("/api/v1/virtualization/vms/%s/console/vnc", vm.ID)
+
+	return ConsoleURLResult{
+		Type: "vnc",
+		URL:  vncURL,
+	}, nil
+}
+
+var prometheusHTTPClient = &http.Client{Timeout: 10 * time.Second}
+
+func queryPrometheusRange(ctx context.Context, endpoint, bearerToken, query string, start, end time.Time, stepSeconds int) ([]MetricPoint, error) {
+	queryURL, err := url.Parse(strings.TrimRight(strings.TrimSpace(endpoint), "/") + "/api/v1/query_range")
+	if err != nil {
+		return nil, err
+	}
+	params := queryURL.Query()
+	params.Set("query", query)
+	params.Set("start", strconv.FormatInt(start.Unix(), 10))
+	params.Set("end", strconv.FormatInt(end.Unix(), 10))
+	params.Set("step", strconv.Itoa(stepSeconds))
+	queryURL.RawQuery = params.Encode()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(bearerToken) != "" {
+		req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(bearerToken))
+	}
+
+	resp, err := prometheusHTTPClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("prometheus query_range returned status %d", resp.StatusCode)
+	}
+
+	var payload struct {
+		Data struct {
+			Result []struct {
+				Values [][]json.RawMessage `json:"values"`
+			} `json:"result"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return nil, err
+	}
+
+	var points []MetricPoint
+	for _, result := range payload.Data.Result {
+		for _, pair := range result.Values {
+			if len(pair) < 2 {
+				continue
+			}
+			var ts float64
+			if err := json.Unmarshal(pair[0], &ts); err != nil {
+				continue
+			}
+			var valStr string
+			if err := json.Unmarshal(pair[1], &valStr); err != nil {
+				continue
+			}
+			val, err := strconv.ParseFloat(valStr, 64)
+			if err != nil {
+				continue
+			}
+			points = append(points, MetricPoint{Timestamp: int64(ts), Value: val})
+		}
+	}
+	return points, nil
 }

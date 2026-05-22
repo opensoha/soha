@@ -81,6 +81,8 @@ const (
 	PermVirtualizationOperationsManage  = "virtualization.operations.manage"
 	PermVirtualizationSyncView          = "virtualization.sync.view"
 	PermVirtualizationSyncManage        = "virtualization.sync.manage"
+	PermVirtualizationVMsMetrics        = "virtualization.vms.metrics"
+	PermVirtualizationVMsConsole        = "virtualization.vms.console"
 	PermAccessUsersView                 = "access.users.view"
 	PermAccessUsersManage               = "access.users.manage"
 	PermAccessRolesView                 = "access.roles.view"
@@ -189,6 +191,8 @@ func allPermissionKeys() []string {
 		PermVirtualizationOperationsManage,
 		PermVirtualizationSyncView,
 		PermVirtualizationSyncManage,
+		PermVirtualizationVMsMetrics,
+		PermVirtualizationVMsConsole,
 		PermAccessUsersView,
 		PermAccessUsersManage,
 		PermAccessRolesView,
@@ -290,6 +294,8 @@ func defaultRolePermissions() map[string][]string {
 		PermVirtualizationOperationsView,
 		PermVirtualizationSyncView,
 		PermVirtualizationSyncManage,
+		PermVirtualizationVMsMetrics,
+		PermVirtualizationVMsConsole,
 		PermSystemAuditView,
 		PermSystemOperationsView,
 		PermAccessUsersView,

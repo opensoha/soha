@@ -317,6 +317,69 @@ func TestImageManagementAndVMDetail(t *testing.T) {
 	}
 }
 
+func TestGetVMMetricsReturnsAdapterResult(t *testing.T) {
+	repo := newMemoryRepo()
+	conn := repo.addConnection(domainvirtualization.Connection{Provider: ProviderKubeVirt, Name: "kv", Enabled: true})
+	vm := domainvirtualization.VM{ID: "vm-1", Provider: ProviderKubeVirt, ConnectionID: conn.ID, ExternalID: "vm-1", Name: "vm-1", Namespace: "default", Status: "running"}
+	repo.vms[vm.ID] = vm
+
+	expected := infravirtualization.VMMetricsResult{
+		Series: []infravirtualization.MetricSeries{
+			{Key: "cpu", Label: "CPU", Unit: "cores", Points: []infravirtualization.MetricPoint{{Timestamp: 1700000000, Value: 0.42}}},
+		},
+	}
+	service := newTestService(repo, &captureOperations{}, fakeAdapter{metricsResult: expected})
+
+	result, err := service.GetVMMetrics(context.Background(), testPrincipal(), vm.ID, 60, 60)
+	if err != nil {
+		t.Fatalf("GetVMMetrics() error = %v", err)
+	}
+	if len(result.Series) != 1 || result.Series[0].Key != "cpu" || len(result.Series[0].Points) != 1 {
+		t.Fatalf("metrics series = %#v, want passthrough from adapter", result.Series)
+	}
+	if result.Series[0].Points[0].Value != 0.42 {
+		t.Fatalf("metrics point value = %v, want 0.42", result.Series[0].Points[0].Value)
+	}
+}
+
+func TestGetVMMetricsReturnsErrorWhenVMMissing(t *testing.T) {
+	repo := newMemoryRepo()
+	service := newTestService(repo, &captureOperations{}, fakeAdapter{})
+
+	_, err := service.GetVMMetrics(context.Background(), testPrincipal(), "missing-vm", 60, 60)
+	if err == nil {
+		t.Fatalf("GetVMMetrics() expected error for missing VM")
+	}
+}
+
+func TestGetConsoleURLReturnsAdapterResult(t *testing.T) {
+	repo := newMemoryRepo()
+	conn := repo.addConnection(domainvirtualization.Connection{Provider: ProviderKubeVirt, Name: "kv", Enabled: true})
+	vm := domainvirtualization.VM{ID: "vm-1", Provider: ProviderKubeVirt, ConnectionID: conn.ID, ExternalID: "vm-1", Name: "vm-1", Namespace: "default", Status: "running"}
+	repo.vms[vm.ID] = vm
+
+	expected := infravirtualization.ConsoleURLResult{Type: "vnc", URL: "/api/v1/virtualization/vms/vm-1/console/vnc", Token: "secret"}
+	service := newTestService(repo, &captureOperations{}, fakeAdapter{consoleResult: expected})
+
+	result, err := service.GetConsoleURL(context.Background(), testPrincipal(), vm.ID)
+	if err != nil {
+		t.Fatalf("GetConsoleURL() error = %v", err)
+	}
+	if result.Type != expected.Type || result.URL != expected.URL || result.Token != expected.Token {
+		t.Fatalf("console result = %#v, want %#v", result, expected)
+	}
+}
+
+func TestGetConsoleURLReturnsErrorWhenVMMissing(t *testing.T) {
+	repo := newMemoryRepo()
+	service := newTestService(repo, &captureOperations{}, fakeAdapter{})
+
+	_, err := service.GetConsoleURL(context.Background(), testPrincipal(), "missing-vm")
+	if err == nil {
+		t.Fatalf("GetConsoleURL() expected error for missing VM")
+	}
+}
+
 func newTestService(repo *memoryRepo, ops *captureOperations, adapter Adapter) *Service {
 	return New(repo, map[string]Adapter{
 		ProviderKubeVirt: adapter,
@@ -372,7 +435,9 @@ func (c *captureOperations) has(operationType string) bool {
 }
 
 type fakeAdapter struct {
-	syncResult infravirtualization.AssetSyncResult
+	syncResult    infravirtualization.AssetSyncResult
+	metricsResult infravirtualization.VMMetricsResult
+	consoleResult infravirtualization.ConsoleURLResult
 }
 
 func (a fakeAdapter) TestConnection(context.Context, infravirtualization.Connection) (infravirtualization.ConnectionTestResult, error) {
@@ -392,6 +457,20 @@ func (a fakeAdapter) CreateVM(_ context.Context, _ infravirtualization.Connectio
 
 func (a fakeAdapter) PowerAction(_ context.Context, _ infravirtualization.Connection, vm infravirtualization.VM, action infravirtualization.PowerAction) (infravirtualization.PowerActionResult, error) {
 	return infravirtualization.PowerActionResult{Accepted: true, Action: action}, nil
+}
+
+func (a fakeAdapter) GetVMMetrics(_ context.Context, _ infravirtualization.Connection, _ infravirtualization.VM, _, _ int) (infravirtualization.VMMetricsResult, error) {
+	if a.metricsResult.Series != nil || a.metricsResult.Message != "" {
+		return a.metricsResult, nil
+	}
+	return infravirtualization.VMMetricsResult{Series: []infravirtualization.MetricSeries{}}, nil
+}
+
+func (a fakeAdapter) GetConsoleURL(_ context.Context, _ infravirtualization.Connection, _ infravirtualization.VM) (infravirtualization.ConsoleURLResult, error) {
+	if a.consoleResult.Type != "" || a.consoleResult.Message != "" {
+		return a.consoleResult, nil
+	}
+	return infravirtualization.ConsoleURLResult{Type: "vnc", URL: "/console"}, nil
 }
 
 type memoryRepo struct {

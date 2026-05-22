@@ -3,16 +3,23 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/gorilla/websocket"
 	apiMiddleware "github.com/kubecrux/kubecrux/internal/api/middleware"
 	apiresponse "github.com/kubecrux/kubecrux/internal/api/response"
 	appvirtualization "github.com/kubecrux/kubecrux/internal/application/virtualization"
 	domainidentity "github.com/kubecrux/kubecrux/internal/domain/identity"
 	domainvirtualization "github.com/kubecrux/kubecrux/internal/domain/virtualization"
+	infravirtualization "github.com/kubecrux/kubecrux/internal/infrastructure/virtualization"
 )
 
 type VirtualizationService interface {
@@ -46,6 +53,8 @@ type VirtualizationService interface {
 	ListOperationLogs(context.Context, domainidentity.Principal, string, int) ([]domainvirtualization.TaskLog, error)
 	CancelOperation(context.Context, domainidentity.Principal, string) (domainvirtualization.Task, error)
 	RetryOperation(context.Context, domainidentity.Principal, string) (domainvirtualization.Task, error)
+	GetVMMetrics(context.Context, domainidentity.Principal, string, int, int) (infravirtualization.VMMetricsResult, error)
+	GetConsoleURL(context.Context, domainidentity.Principal, string) (infravirtualization.ConsoleURLResult, error)
 }
 
 type VirtualizationHandler struct {
@@ -733,4 +742,176 @@ func intValue(values map[string]any, key string) int {
 	default:
 		return 0
 	}
+}
+
+func (h *VirtualizationHandler) StreamTaskUpdates(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	taskID := c.Param("taskID")
+
+	c.Header("Content-Type", "text/event-stream")
+	c.Header("Cache-Control", "no-cache")
+	c.Header("Connection", "keep-alive")
+	c.Header("X-Accel-Buffering", "no")
+
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-c.Request.Context().Done():
+			return
+		case <-ticker.C:
+			task, err := h.service.GetOperation(c.Request.Context(), principal, taskID)
+			if err != nil {
+				continue
+			}
+
+			data, _ := json.Marshal(task)
+			fmt.Fprintf(c.Writer, "data: %s\n\n", data)
+			c.Writer.Flush()
+
+			if taskTerminal(task.Status) {
+				return
+			}
+		}
+	}
+}
+
+func taskTerminal(status string) bool {
+	return status == "completed" || status == "failed" || status == "canceled" || status == "callback_timeout"
+}
+
+func (h *VirtualizationHandler) GetVMMetrics(c *gin.Context) {
+	rangeMinutes, _ := strconv.Atoi(c.DefaultQuery("rangeMinutes", "60"))
+	stepSeconds, _ := strconv.Atoi(c.DefaultQuery("stepSeconds", "60"))
+
+	result, err := h.service.GetVMMetrics(
+		c.Request.Context(),
+		apiMiddleware.PrincipalFromContext(c),
+		c.Param("id"),
+		rangeMinutes,
+		stepSeconds,
+	)
+
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+
+	apiresponse.Item(c, http.StatusOK, result)
+}
+
+func (h *VirtualizationHandler) GetConsoleURL(c *gin.Context) {
+	result, err := h.service.GetConsoleURL(
+		c.Request.Context(),
+		apiMiddleware.PrincipalFromContext(c),
+		c.Param("id"),
+	)
+
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+
+	apiresponse.Item(c, http.StatusOK, result)
+}
+
+var vncUpgrader = websocket.Upgrader{
+	CheckOrigin: func(r *http.Request) bool {
+		return true
+	},
+}
+
+func (h *VirtualizationHandler) StreamVMConsole(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	vmID := c.Param("id")
+
+	consoleResult, err := h.service.GetConsoleURL(c.Request.Context(), principal, vmID)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+
+	if consoleResult.Message != "" {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": consoleResult.Message})
+		return
+	}
+
+	conn, err := vncUpgrader.Upgrade(c.Writer, c.Request, nil)
+	if err != nil {
+		return
+	}
+	defer conn.Close()
+
+	if consoleResult.Type == "novnc" && consoleResult.Token != "" {
+		proxyPVEVNC(conn, consoleResult.URL, consoleResult.Token)
+	} else {
+		conn.WriteMessage(websocket.TextMessage, []byte(`{"error":"VNC proxy not fully implemented for this provider"}`))
+	}
+}
+
+func proxyPVEVNC(clientConn *websocket.Conn, backendURL, ticket string) {
+	parsedURL, err := url.Parse(backendURL)
+	if err != nil {
+		clientConn.WriteMessage(websocket.TextMessage, []byte(fmt.Sprintf(`{"error":"invalid backend URL: %v"}`, err)))
+		return
+	}
+
+	parsedURL.Scheme = "wss"
+	if strings.HasPrefix(backendURL, "http://") {
+		parsedURL.Scheme = "ws"
+	}
+
+	header := http.Header{}
+	header.Set("Cookie", "PVEAuthCookie="+ticket)
+
+	backendConn, _, err := websocket.DefaultDialer.Dial(parsedURL.String(), header)
+	if err != nil {
+		clientConn.WriteMessage(websocket.TextMessage, []byte(fmt.Sprintf(`{"error":"failed to connect to backend: %v"}`, err)))
+		return
+	}
+	defer backendConn.Close()
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	go func() {
+		defer wg.Done()
+		io.Copy(&wsWriter{conn: clientConn}, &wsReader{conn: backendConn})
+	}()
+
+	go func() {
+		defer wg.Done()
+		io.Copy(&wsWriter{conn: backendConn}, &wsReader{conn: clientConn})
+	}()
+
+	wg.Wait()
+}
+
+type wsReader struct {
+	conn *websocket.Conn
+}
+
+func (r *wsReader) Read(p []byte) (int, error) {
+	_, data, err := r.conn.ReadMessage()
+	if err != nil {
+		return 0, err
+	}
+	n := copy(p, data)
+	return n, nil
+}
+
+type wsWriter struct {
+	conn *websocket.Conn
+	mu   sync.Mutex
+}
+
+func (w *wsWriter) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	err := w.conn.WriteMessage(websocket.BinaryMessage, p)
+	if err != nil {
+		return 0, err
+	}
+	return len(p), nil
 }

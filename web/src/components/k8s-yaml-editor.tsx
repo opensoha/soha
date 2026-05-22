@@ -68,7 +68,7 @@ export function K8sYamlEditor({
         validate: true,
         completion: true,
         hover: true,
-        format: true,
+        format: { enable: true },
         yamlVersion: '1.2',
         isKubernetes: true,
         schemas: [
@@ -86,7 +86,7 @@ export function K8sYamlEditor({
       validate: true,
       completion: true,
       hover: true,
-      format: true,
+      format: { enable: true },
       yamlVersion: '1.2',
       isKubernetes: true,
       schemas: [

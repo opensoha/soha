@@ -16,6 +16,8 @@ type Adapter interface {
 	SyncAssets(ctx context.Context, connection Connection) (AssetSyncResult, error)
 	CreateVM(ctx context.Context, connection Connection, input CreateVMInput) (VM, error)
 	PowerAction(ctx context.Context, connection Connection, vm VM, action PowerAction) (PowerActionResult, error)
+	GetVMMetrics(ctx context.Context, connection Connection, vm VM, rangeMinutes, stepSeconds int) (VMMetricsResult, error)
+	GetConsoleURL(ctx context.Context, connection Connection, vm VM) (ConsoleURLResult, error)
 }
 
 type Connection struct {
@@ -99,4 +101,28 @@ func invalidf(format string, args ...any) error {
 
 func unsupportedf(format string, args ...any) error {
 	return fmt.Errorf("%w: %s", ErrUnsupported, fmt.Sprintf(format, args...))
+}
+
+type MetricPoint struct {
+	Timestamp int64   `json:"timestamp"`
+	Value     float64 `json:"value"`
+}
+
+type MetricSeries struct {
+	Key    string        `json:"key"`
+	Label  string        `json:"label"`
+	Unit   string        `json:"unit"`
+	Points []MetricPoint `json:"points"`
+}
+
+type VMMetricsResult struct {
+	Series  []MetricSeries `json:"series"`
+	Message string         `json:"message,omitempty"`
+}
+
+type ConsoleURLResult struct {
+	Type    string `json:"type"`
+	URL     string `json:"url"`
+	Token   string `json:"token,omitempty"`
+	Message string `json:"message,omitempty"`
 }

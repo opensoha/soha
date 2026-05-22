@@ -103,6 +103,8 @@ export const consolePermissionGroups: PermissionCatalogGroup[] = [
       { value: "virtualization.operations.manage", label: "管理虚拟化操作" },
       { value: "virtualization.sync.view", label: "查看虚拟化同步任务" },
       { value: "virtualization.sync.manage", label: "管理虚拟化同步任务" },
+      { value: "virtualization.vms.metrics", label: "查看虚拟机指标" },
+      { value: "virtualization.vms.console", label: "访问虚拟机控制台" },
     ],
   },
   {

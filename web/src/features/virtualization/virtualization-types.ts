@@ -210,3 +210,27 @@ export interface VirtualMachineDetail {
   operations?: VirtualizationOperation[]
   logs?: VirtualizationOperationLog[]
 }
+
+export interface MetricPoint {
+  timestamp: number
+  value: number
+}
+
+export interface MetricSeries {
+  key: string
+  label: string
+  unit: string
+  points: MetricPoint[]
+}
+
+export interface VirtualizationVMMetrics {
+  series: MetricSeries[]
+  message?: string
+}
+
+export interface VirtualizationConsoleURL {
+  type: string
+  url: string
+  token?: string
+  message?: string
+}

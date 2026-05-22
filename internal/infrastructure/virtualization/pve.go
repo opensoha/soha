@@ -243,3 +243,97 @@ func stringFromAny(value any) string {
 		return ""
 	}
 }
+
+func (a *PVEAdapter) GetVMMetrics(ctx context.Context, connection Connection, vm VM, rangeMinutes, stepSeconds int) (VMMetricsResult, error) {
+	vmid := vm.Metadata["vmid"]
+	node := vm.Node
+	if vmid == "" || node == "" {
+		return VMMetricsResult{Message: "VM metadata incomplete"}, nil
+	}
+
+	var rrdData pveDataEnvelope
+	timeframe := "hour"
+	if rangeMinutes > 60 {
+		timeframe = "day"
+	}
+
+	err := a.do(ctx, connection, http.MethodGet,
+		fmt.Sprintf("/nodes/%s/qemu/%s/rrddata?timeframe=%s", url.PathEscape(node), url.PathEscape(vmid), timeframe),
+		nil, &rrdData)
+
+	if err != nil {
+		return VMMetricsResult{Message: err.Error()}, nil
+	}
+
+	var series []MetricSeries
+	cpuPoints := []MetricPoint{}
+	memPoints := []MetricPoint{}
+	netRxPoints := []MetricPoint{}
+	netTxPoints := []MetricPoint{}
+
+	for _, point := range rrdData.Data {
+		ts := int64(0)
+		if timeVal, ok := point["time"].(float64); ok {
+			ts = int64(timeVal)
+		}
+		if cpu, ok := point["cpu"].(float64); ok {
+			cpuPoints = append(cpuPoints, MetricPoint{Timestamp: ts, Value: cpu})
+		}
+		if mem, ok := point["mem"].(float64); ok {
+			memPoints = append(memPoints, MetricPoint{Timestamp: ts, Value: mem})
+		}
+		if netin, ok := point["netin"].(float64); ok {
+			netRxPoints = append(netRxPoints, MetricPoint{Timestamp: ts, Value: netin})
+		}
+		if netout, ok := point["netout"].(float64); ok {
+			netTxPoints = append(netTxPoints, MetricPoint{Timestamp: ts, Value: netout})
+		}
+	}
+
+	if len(cpuPoints) > 0 {
+		series = append(series, MetricSeries{Key: "cpu", Label: "CPU", Unit: "percent", Points: cpuPoints})
+	}
+	if len(memPoints) > 0 {
+		series = append(series, MetricSeries{Key: "memory", Label: "Memory", Unit: "bytes", Points: memPoints})
+	}
+	if len(netRxPoints) > 0 {
+		series = append(series, MetricSeries{Key: "networkRx", Label: "Network RX", Unit: "bytes/s", Points: netRxPoints})
+	}
+	if len(netTxPoints) > 0 {
+		series = append(series, MetricSeries{Key: "networkTx", Label: "Network TX", Unit: "bytes/s", Points: netTxPoints})
+	}
+
+	return VMMetricsResult{Series: series}, nil
+}
+
+func (a *PVEAdapter) GetConsoleURL(ctx context.Context, connection Connection, vm VM) (ConsoleURLResult, error) {
+	vmid := vm.Metadata["vmid"]
+	node := vm.Node
+	if vmid == "" || node == "" {
+		return ConsoleURLResult{Message: "VM metadata incomplete"}, nil
+	}
+
+	var ticketResponse struct {
+		Data struct {
+			Ticket string `json:"ticket"`
+			Port   int    `json:"port"`
+		} `json:"data"`
+	}
+
+	err := a.do(ctx, connection, http.MethodPost,
+		fmt.Sprintf("/nodes/%s/qemu/%s/vncproxy", url.PathEscape(node), url.PathEscape(vmid)),
+		map[string]any{"websocket": "1"},
+		&ticketResponse)
+
+	if err != nil {
+		return ConsoleURLResult{Message: err.Error()}, err
+	}
+
+	vncURL := fmt.Sprintf("/api/v1/virtualization/vms/%s/console/novnc", vm.ID)
+
+	return ConsoleURLResult{
+		Type:  "novnc",
+		URL:   vncURL,
+		Token: ticketResponse.Data.Ticket,
+	}, nil
+}

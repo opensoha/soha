@@ -15,11 +15,11 @@ type TabItem = NonNullable<TabsProps['items']>[number]
 const COMPACT_METRIC_CARD_HEIGHT = 300
 const COMPACT_METRIC_CHART_HEIGHT = 236
 
-type MetricLocale = 'zh_CN' | 'en_US'
+export type MetricLocale = 'zh_CN' | 'en_US'
 
-type ChartLineStyle = 'solid' | 'dashed' | 'dotted'
+export type ChartLineStyle = 'solid' | 'dashed' | 'dotted'
 
-interface CompactChartLine {
+export interface CompactChartLine {
   color: string
   fill?: boolean
   key: string
@@ -50,7 +50,7 @@ interface MetricPointRow {
   value: number
 }
 
-const compactMetricColors: Record<string, string> = {
+export const compactMetricColors: Record<string, string> = {
   connections: '#64748b',
   cpu: '#0ea5e9',
   cpuLimit: '#ef4444',
@@ -65,7 +65,7 @@ const compactMetricColors: Record<string, string> = {
   networkTx: '#f97316',
 }
 
-function formatBytes(value: number) {
+export function formatBytes(value: number) {
   if (!Number.isFinite(value)) return '-'
   const units = ['B', 'KB', 'MB', 'GB', 'TB']
   let current = value
@@ -77,7 +77,7 @@ function formatBytes(value: number) {
   return `${current >= 10 ? current.toFixed(0) : current.toFixed(1)} ${units[index]}`
 }
 
-function formatMetricValue(value: number, unit: string) {
+export function formatMetricValue(value: number, unit: string) {
   if (!Number.isFinite(value)) return '-'
   switch (unit) {
     case 'bytes':
@@ -225,7 +225,7 @@ function resolveMetricSeriesLabel(seriesKey: string, fallback: string, localeCod
   return dictionary[seriesKey]?.[localeCode] ?? fallback
 }
 
-function buildCompactChartSpec(lines: CompactChartLine[], unit: string, _localeCode: MetricLocale): any {
+export function buildCompactChartSpec(lines: CompactChartLine[], unit: string, _localeCode: MetricLocale): any {
   const values = buildChartValues(lines)
   const mirroredAxisDomain = lines.some((line) => line.negate) ? resolveMirroredAxisDomain(values) : undefined
   const colorDomain: string[] = []

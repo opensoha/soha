@@ -8,6 +8,7 @@ import type {
   VirtualizationListParams,
   VirtualizationCluster,
   VirtualizationClusterInput,
+  VirtualizationConsoleURL,
   VirtualizationFlavor,
   VirtualizationFlavorInput,
   VirtualizationImage,
@@ -16,6 +17,7 @@ import type {
   VirtualizationOperationLog,
   VirtualizationOverview,
   VirtualizationPage,
+  VirtualizationVMMetrics,
 } from './virtualization-types'
 
 const BASE = '/virtualization'
@@ -71,4 +73,10 @@ export const virtualizationApi = {
   retryOperation: (id: string) =>
     api.post<ApiResponse<VirtualizationOperation>>(`${BASE}/operations/${encodeURIComponent(id)}/retry`),
   syncAll: () => api.post<ApiResponse<VirtualizationOperation>>(`${BASE}/sync`),
+  vmMetrics: (id: string, rangeMinutes = 60, stepSeconds = 60) =>
+    api.get<ApiResponse<VirtualizationVMMetrics>>(
+      `${BASE}/vms/${encodeURIComponent(id)}/metrics?rangeMinutes=${rangeMinutes}&stepSeconds=${stepSeconds}`
+    ),
+  vmConsoleURL: (id: string) =>
+    api.get<ApiResponse<VirtualizationConsoleURL>>(`${BASE}/vms/${encodeURIComponent(id)}/console`),
 }

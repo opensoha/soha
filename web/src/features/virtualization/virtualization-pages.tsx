@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link, useLocation, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
@@ -15,6 +15,7 @@ import {
   Popconfirm,
   Select,
   Space,
+  Spin,
   Switch,
   Table,
   Tabs,
@@ -41,6 +42,15 @@ import { tableColumnPresets } from '@/utils/table-columns'
 import { api } from '@/services/api-client'
 import type { ApiResponse, Cluster } from '@/types'
 import { virtualizationApi } from './virtualization-api'
+import { VMConsole } from './vm-console'
+import { useTaskStream } from './use-task-stream'
+import { LineChart } from '@visactor/react-vchart'
+import {
+  buildCompactChartSpec,
+  compactMetricColors,
+  formatMetricValue,
+  type CompactChartLine,
+} from '@/components/resource-metrics-panel'
 import type {
   CreateVirtualMachineInput,
   VirtualMachine,
@@ -56,6 +66,7 @@ import type {
   VirtualizationOperation,
   VirtualizationOverview,
   VirtualizationPage,
+  VirtualizationVMMetrics,
 } from './virtualization-types'
 
 const { Paragraph, Text } = Typography
@@ -100,6 +111,93 @@ function refreshVirtualization(queryClient: ReturnType<typeof useQueryClient>) {
   return queryClient.invalidateQueries({ queryKey: ['virtualization'] })
 }
 
+const VM_METRIC_COLOR_MAP: Record<string, string> = {
+  cpu: compactMetricColors.cpu,
+  memory: compactMetricColors.memory,
+  networkRx: compactMetricColors.networkRx,
+  networkTx: compactMetricColors.networkTx,
+}
+
+function vmMetricColor(key: string): string {
+  return VM_METRIC_COLOR_MAP[key] ?? compactMetricColors.default
+}
+
+function VMMetricsChart({ data }: { data: VirtualizationVMMetrics }) {
+  if (data.message) {
+    return <Alert type="info" message={data.message} />
+  }
+  const series = data.series ?? []
+  if (series.length === 0) {
+    return <Empty description="暂无指标数据" />
+  }
+  return (
+    <div className="grid gap-4 md:grid-cols-2">
+      {series.map((item) => {
+        const points = (item.points ?? []).map((point) => ({
+          timestamp: new Date(point.timestamp * 1000).toISOString(),
+          value: point.value,
+        }))
+        const lines: CompactChartLine[] = [
+          {
+            color: vmMetricColor(item.key),
+            fill: true,
+            key: item.key,
+            label: item.label,
+            points,
+            unit: item.unit,
+          },
+        ]
+        const latest = points.length > 0 ? points[points.length - 1].value : null
+        return (
+          <Card key={item.key} size="small" title={item.label} extra={
+            <Text type="secondary">
+              最新: {latest !== null ? formatMetricValue(latest, item.unit) : '-'}
+            </Text>
+          }>
+            <div style={{ height: 240 }}>
+              <LineChart spec={buildCompactChartSpec(lines, item.unit, 'zh_CN')} />
+            </div>
+          </Card>
+        )
+      })}
+    </div>
+  )
+}
+
+interface TaskProgressBannerProps {
+  task: VirtualizationOperation | null
+  status: 'idle' | 'streaming' | 'done' | 'error'
+  title: string
+  onCancel?: () => void
+  cancelling?: boolean
+}
+
+function TaskProgressBanner({ task, status, title, onCancel, cancelling }: TaskProgressBannerProps) {
+  if (status === 'idle' || status === 'done') return null
+  const isError = status === 'error'
+  const description = task?.message || (isError ? '与服务器的实时连接已断开' : '正在等待任务完成...')
+  const taskStatus = task?.status ? <Tag color={STATUS_COLORS[task.status] ?? 'blue'}>{task.status}</Tag> : null
+  return (
+    <Alert
+      type={isError ? 'warning' : 'info'}
+      showIcon
+      icon={isError ? undefined : <Spin size="small" />}
+      message={
+        <Space>
+          <span>{title}</span>
+          {taskStatus}
+        </Space>
+      }
+      description={description}
+      action={
+        onCancel && task?.id ? (
+          <Button size="small" danger onClick={onCancel} loading={cancelling}>取消任务</Button>
+        ) : null
+      }
+    />
+  )
+}
+
 function normalizePage<T>(data: VirtualizationPage<T> | T[] | undefined, fallbackPage: number, fallbackPageSize: number): VirtualizationPage<T> {
   if (Array.isArray(data)) {
     return { items: data, total: data.length, page: fallbackPage, pageSize: fallbackPageSize }
@@ -130,6 +228,8 @@ function useVirtualizationPermissions() {
     canManageFlavors: hasPermission(snapshot, 'virtualization.flavors.manage') || hasPermission(snapshot, 'virtualization.manage'),
     canManageOperations: hasPermission(snapshot, 'virtualization.operations.manage') || hasPermission(snapshot, 'virtualization.manage'),
     canSync: hasPermission(snapshot, 'virtualization.sync.manage') || hasPermission(snapshot, 'virtualization.manage'),
+    canViewMetrics: hasPermission(snapshot, 'virtualization.vms.metrics') || hasPermission(snapshot, 'virtualization.vms.view') || hasPermission(snapshot, 'virtualization.manage'),
+    canAccessConsole: hasPermission(snapshot, 'virtualization.vms.console') || hasPermission(snapshot, 'virtualization.vms.view') || hasPermission(snapshot, 'virtualization.manage'),
   }
 }
 
@@ -345,14 +445,39 @@ export function VirtualizationOverviewPage() {
   const { canSync } = useVirtualizationPermissions()
   const queryClient = useQueryClient()
   const { message } = App.useApp()
+  const [syncTaskId, setSyncTaskId] = useState<string | null>(null)
+  const { task: syncTask, status: syncStreamStatus } = useTaskStream(syncTaskId)
+
+  useEffect(() => {
+    if (syncStreamStatus === 'done') {
+      const success = syncTask?.status === 'completed'
+      message[success ? 'success' : 'error'](success ? '同步完成' : `同步失败: ${syncTask?.message ?? '未知错误'}`)
+      setSyncTaskId(null)
+      refreshVirtualization(queryClient)
+    }
+  }, [syncStreamStatus, syncTask, message, queryClient])
+
+  const cancelSyncMutation = useMutation({
+    mutationFn: virtualizationApi.cancelOperation,
+    onSuccess: () => {
+      message.info('已请求取消同步任务')
+    },
+  })
+
   const overviewQuery = useQuery({
     queryKey: ['virtualization', 'overview'],
     queryFn: virtualizationApi.overview,
   })
   const syncMutation = useMutation({
     mutationFn: virtualizationApi.syncAll,
-    onSuccess: () => {
-      message.success('同步任务已提交')
+    onSuccess: (response) => {
+      const taskId = response?.data?.id
+      if (taskId) {
+        message.info('同步任务已提交，正在跟踪进度...')
+        setSyncTaskId(taskId)
+      } else {
+        message.success('同步任务已提交')
+      }
       refreshVirtualization(queryClient)
     },
   })
@@ -378,6 +503,13 @@ export function VirtualizationOverviewPage() {
             </Space>
           ) : null
         }
+      />
+      <TaskProgressBanner
+        task={syncTask}
+        status={syncStreamStatus}
+        title="正在同步虚拟化资源"
+        onCancel={syncTask?.id ? () => cancelSyncMutation.mutate(syncTask.id) : undefined}
+        cancelling={cancelSyncMutation.isPending}
       />
       <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
         <StatCard label="连接" value={health?.total ?? 0} extra={`健康 ${health?.healthy ?? 0} / 异常 ${(health?.degraded ?? 0) + (health?.unavailable ?? 0)}`} />
@@ -410,10 +542,27 @@ export function VirtualizationVmsPage() {
   const [filters, setFilters] = useState<VirtualizationListParams>({ page: 1, pageSize: 10 })
   const [filterForm] = Form.useForm<VirtualizationListParams>()
   const [form] = Form.useForm<VirtualMachineFormValues>()
+  const [pendingTaskId, setPendingTaskId] = useState<string | null>(null)
   const { canManageVMs } = useVirtualizationPermissions()
   const queryClient = useQueryClient()
   const { message } = App.useApp()
   const createProvider = Form.useWatch('provider', form) ?? 'kubevirt'
+  const { task: streamedTask, status: streamStatus } = useTaskStream(pendingTaskId)
+
+  useEffect(() => {
+    if (streamStatus === 'done') {
+      const success = streamedTask?.status === 'completed'
+      message[success ? 'success' : 'error'](success ? '虚拟机创建完成' : `虚拟机创建失败: ${streamedTask?.message ?? '未知错误'}`)
+      setPendingTaskId(null)
+      refreshVirtualization(queryClient)
+    }
+  }, [streamStatus, streamedTask, message, queryClient])
+  const cancelCreateMutation = useMutation({
+    mutationFn: virtualizationApi.cancelOperation,
+    onSuccess: () => {
+      message.info('已请求取消创建任务')
+    },
+  })
   const vmsQuery = useQuery({
     queryKey: ['virtualization', 'vms', filters],
     queryFn: () => virtualizationApi.vms(filters),
@@ -423,8 +572,14 @@ export function VirtualizationVmsPage() {
   const flavorsQuery = useQuery({ queryKey: ['virtualization', 'flavors'], queryFn: virtualizationApi.flavors })
   const createMutation = useMutation({
     mutationFn: (values: VirtualMachineFormValues) => virtualizationApi.createVm(buildCreateVmPayload(values)),
-    onSuccess: () => {
-      message.success('虚拟机创建任务已提交')
+    onSuccess: (response) => {
+      const taskId = response?.data?.id
+      if (taskId) {
+        message.info('虚拟机创建任务已提交，正在跟踪进度...')
+        setPendingTaskId(taskId)
+      } else {
+        message.success('虚拟机创建任务已提交')
+      }
       setDrawerOpen(false)
       form.resetFields()
       refreshVirtualization(queryClient)
@@ -489,6 +644,13 @@ export function VirtualizationVmsPage() {
         description="API 驱动的虚拟机实例列表与生命周期入口"
         showResourceScope={false}
         actions={canManageVMs ? <Button type="primary" icon={<PlusOutlined />} onClick={() => setDrawerOpen(true)}>创建虚拟机</Button> : null}
+      />
+      <TaskProgressBanner
+        task={streamedTask}
+        status={streamStatus}
+        title="正在创建虚拟机"
+        onCancel={streamedTask?.id ? () => cancelCreateMutation.mutate(streamedTask.id) : undefined}
+        cancelling={cancelCreateMutation.isPending}
       />
       <Card size="small">
         <Form
@@ -652,6 +814,8 @@ export function VirtualizationVmDetailPage() {
   const location = useLocation()
   const pathParts = location.pathname.split('/').filter(Boolean)
   const vmId = id ?? decodeURIComponent(pathParts[pathParts.length - 1] ?? '')
+  const { canViewMetrics, canAccessConsole } = useVirtualizationPermissions()
+  const [metricsRange, setMetricsRange] = useState(60)
   const detailQuery = useQuery({
     queryKey: ['virtualization', 'vms', vmId, 'detail'],
     queryFn: () => virtualizationApi.vmDetail(vmId),
@@ -660,6 +824,15 @@ export function VirtualizationVmDetailPage() {
   const detail = detailQuery.data?.data
   const vm = detail?.vm
   const providerRaw = stringifyRaw(detail?.providerRaw)
+
+  const isRunning = vm?.powerState === 'running' || vm?.status === 'running'
+
+  const metricsQuery = useQuery({
+    queryKey: ['virtualization', 'vm-metrics', vmId, metricsRange],
+    queryFn: () => virtualizationApi.vmMetrics(vmId, metricsRange, metricsRange <= 60 ? 60 : 300),
+    refetchInterval: 30000,
+    enabled: Boolean(vmId) && isRunning,
+  })
 
   return (
     <div className="space-y-4">
@@ -740,7 +913,52 @@ export function VirtualizationVmDetailPage() {
               </Card>
             ),
           },
-        ]}
+          canViewMetrics ? {
+            key: 'metrics',
+            label: '监控指标',
+            forceRender: true,
+            children: isRunning ? (
+              <Card
+                size="small"
+                loading={metricsQuery.isLoading}
+                extra={
+                  <Select
+                    value={metricsRange}
+                    onChange={setMetricsRange}
+                    style={{ width: 180 }}
+                    options={[
+                      { value: 15, label: '最近 15 分钟' },
+                      { value: 60, label: '最近 1 小时' },
+                      { value: 360, label: '最近 6 小时' },
+                      { value: 1440, label: '最近 24 小时' },
+                    ]}
+                  />
+                }
+              >
+                {metricsQuery.data?.data ? (
+                  <VMMetricsChart data={metricsQuery.data.data} />
+                ) : (
+                  <Empty description="暂无指标数据" />
+                )}
+              </Card>
+            ) : (
+              <Card size="small">
+                <Empty description="VM 未运行，无指标数据" />
+              </Card>
+            ),
+          } : null,
+          canAccessConsole ? {
+            key: 'console',
+            label: '控制台',
+            children: isRunning ? (
+              <VMConsole vmId={vmId} />
+            ) : (
+              <Card size="small">
+                <Empty description="VM 未运行，无法访问控制台" />
+              </Card>
+            ),
+          } : null,
+        ].filter((item): item is NonNullable<typeof item> => item !== null)}
       />
     </div>
   )

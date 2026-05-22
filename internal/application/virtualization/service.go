@@ -865,6 +865,94 @@ func (s *Service) RetryOperation(ctx context.Context, principal domainidentity.P
 	return updated, nil
 }
 
+func (s *Service) GetVMMetrics(ctx context.Context, principal domainidentity.Principal, vmID string, rangeMinutes, stepSeconds int) (infravirtualization.VMMetricsResult, error) {
+	if err := s.authorizeAny(ctx, principal, appaccess.PermVirtualizationVMsMetrics, appaccess.PermVirtualizationVMsView); err != nil {
+		return infravirtualization.VMMetricsResult{}, err
+	}
+
+	vm, err := s.repo.GetVM(ctx, vmID)
+	if err != nil {
+		return infravirtualization.VMMetricsResult{}, err
+	}
+
+	connection, err := s.repo.GetConnection(ctx, vm.ConnectionID)
+	if err != nil {
+		return infravirtualization.VMMetricsResult{}, err
+	}
+
+	adapter, err := s.adapterFor(connection.Provider)
+	if err != nil {
+		return infravirtualization.VMMetricsResult{}, err
+	}
+
+	adapterConn, err := s.adapterConnection(connection)
+	if err != nil {
+		return infravirtualization.VMMetricsResult{}, err
+	}
+
+	adapterVM := infravirtualization.VM{
+		ID:        vm.ID,
+		Name:      vm.Name,
+		Namespace: vm.Namespace,
+		Node:      vm.NodeName,
+		Status:    vm.Status,
+		Metadata:  make(map[string]string),
+	}
+	if vm.Config != nil {
+		for k, v := range vm.Config {
+			if str, ok := v.(string); ok {
+				adapterVM.Metadata[k] = str
+			}
+		}
+	}
+
+	return adapter.GetVMMetrics(ctx, adapterConn, adapterVM, rangeMinutes, stepSeconds)
+}
+
+func (s *Service) GetConsoleURL(ctx context.Context, principal domainidentity.Principal, vmID string) (infravirtualization.ConsoleURLResult, error) {
+	if err := s.authorizeAny(ctx, principal, appaccess.PermVirtualizationVMsConsole, appaccess.PermVirtualizationVMsView); err != nil {
+		return infravirtualization.ConsoleURLResult{}, err
+	}
+
+	vm, err := s.repo.GetVM(ctx, vmID)
+	if err != nil {
+		return infravirtualization.ConsoleURLResult{}, err
+	}
+
+	connection, err := s.repo.GetConnection(ctx, vm.ConnectionID)
+	if err != nil {
+		return infravirtualization.ConsoleURLResult{}, err
+	}
+
+	adapter, err := s.adapterFor(connection.Provider)
+	if err != nil {
+		return infravirtualization.ConsoleURLResult{}, err
+	}
+
+	adapterConn, err := s.adapterConnection(connection)
+	if err != nil {
+		return infravirtualization.ConsoleURLResult{}, err
+	}
+
+	adapterVM := infravirtualization.VM{
+		ID:        vm.ID,
+		Name:      vm.Name,
+		Namespace: vm.Namespace,
+		Node:      vm.NodeName,
+		Status:    vm.Status,
+		Metadata:  make(map[string]string),
+	}
+	if vm.Config != nil {
+		for k, v := range vm.Config {
+			if str, ok := v.(string); ok {
+				adapterVM.Metadata[k] = str
+			}
+		}
+	}
+
+	return adapter.GetConsoleURL(ctx, adapterConn, adapterVM)
+}
+
 func (s *Service) Start(ctx context.Context) {
 	s.workerOnce.Do(func() {
 		workerCtx, cancel := context.WithCancel(ctx)
