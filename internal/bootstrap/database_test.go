@@ -44,6 +44,29 @@ func TestDefaultMenuSeedsIncludeVirtualizationWorkbench(t *testing.T) {
 	}
 }
 
+func TestDefaultMenuSeedsPlaceApplicationCenterFirstInDelivery(t *testing.T) {
+	items := defaultMenuSeeds()
+	var applicationCenter *menuSeed
+	for i := range items {
+		if items[i].ID == "builds" {
+			applicationCenter = &items[i]
+			break
+		}
+	}
+	if applicationCenter == nil {
+		t.Fatal("default menu seeds missing builds")
+	}
+
+	for _, item := range items {
+		if item.Section != "deliver" || item.ID == applicationCenter.ID {
+			continue
+		}
+		if item.SortOrder <= applicationCenter.SortOrder {
+			t.Fatalf("application center sort order = %d, delivery menu %q sort order = %d", applicationCenter.SortOrder, item.ID, item.SortOrder)
+		}
+	}
+}
+
 func TestFilterSeedMenusByModulesRemovesVirtualizationWhenDisabled(t *testing.T) {
 	items := filterSeedMenusByModules(defaultMenuSeeds(), cfgpkg.ModulesConfig{
 		Delivery:       cfgpkg.ModuleToggleConfig{Enabled: true},

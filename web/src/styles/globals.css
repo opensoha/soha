@@ -3675,14 +3675,17 @@ a {
 
 .kc-application-card-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(320px, 360px));
-  gap: 18px;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, max(200px, calc((100% - 56px) / 5))), 1fr));
+  gap: 14px;
   align-items: stretch;
 }
 
 .kc-application-card.ant-card,
 .kc-application-empty-card.ant-card {
+  display: flex;
+  min-width: 0;
   height: 100%;
+  flex-direction: column;
 }
 
 .kc-application-card.ant-card,
@@ -3698,13 +3701,18 @@ a {
 .kc-application-empty-card.ant-card .ant-card-body,
 .kc-application-lane-card.ant-card .ant-card-body {
   display: flex;
+  flex: 1 1 auto;
   flex-direction: column;
-  gap: 16px;
-  min-height: 284px;
+  gap: 14px;
+  min-height: 0;
 }
 
 .kc-application-card.ant-card .ant-card-actions {
   background: transparent;
+}
+
+.kc-application-card.ant-card .ant-card-actions > li {
+  margin: 6px 0;
 }
 
 .kc-application-card.ant-card:hover {
@@ -3737,20 +3745,22 @@ a {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 8px;
+  min-width: 0;
 }
 
 .kc-application-card__title {
   margin: 0;
   color: var(--kc-text-primary);
-  font-size: 20px;
+  font-size: 17px;
   line-height: 1.25;
   font-weight: 700;
+  overflow-wrap: anywhere;
 }
 
 .kc-application-card__meta-chip {
   display: inline-flex;
-  width: fit-content;
+  max-width: 100%;
   align-items: center;
   gap: 6px;
   padding: 6px 10px;
@@ -3761,10 +3771,17 @@ a {
   font-weight: 600;
 }
 
+.kc-application-card__meta-chip span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .kc-application-card__stats {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(84px, 1fr));
+  gap: 8px;
   margin-top: auto;
 }
 
@@ -3773,9 +3790,9 @@ a {
   min-width: 0;
   flex-direction: column;
   gap: 6px;
-  padding: 12px;
+  padding: 10px;
   border: 1px solid var(--kc-border-color);
-  border-radius: 14px;
+  border-radius: 8px;
   background: color-mix(in srgb, var(--kc-bg-surface) 94%, var(--kc-fill-weak) 6%);
 }
 

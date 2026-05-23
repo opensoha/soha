@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
-import { Link, useLocation, useParams } from 'react-router-dom'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   App,
@@ -97,6 +97,151 @@ function statusTag(value?: string) {
   if (!value) return <Text type="secondary">-</Text>
   const key = value.toLowerCase()
   return <Tag color={STATUS_COLORS[key] ?? 'default'}>{value}</Tag>
+}
+
+const OPERATION_FILTER_PRESETS = [
+  { key: 'all', label: '全部任务' },
+  { key: 'pending', label: '待处理' },
+  { key: 'abnormal', label: '失败/超时' },
+  { key: 'asset_sync', label: '同步任务' },
+  { key: 'vm', label: 'VM 任务' },
+] as const
+
+type OperationFilterPreset = (typeof OPERATION_FILTER_PRESETS)[number]['key']
+
+function isAbnormalOperation(status?: string) {
+  return ['failed', 'callback_timeout'].includes(String(status || '').toLowerCase())
+}
+
+function isPendingOperation(status?: string) {
+  return ['queued', 'running'].includes(String(status || '').toLowerCase())
+}
+
+function isSyncOperation(record: VirtualizationOperation) {
+  return operationKind(record) === 'asset_sync'
+}
+
+function isVMOperation(record: VirtualizationOperation) {
+  return ['vm_create', 'vm_action'].includes(operationKind(record))
+}
+
+function formatOperationDuration(record: VirtualizationOperation) {
+  const startedAt = record.startedAt || record.createdAt
+  const endedAt = record.completedAt || record.updatedAt
+  if (!startedAt) return '-'
+  const start = new Date(startedAt).getTime()
+  const end = endedAt ? new Date(endedAt).getTime() : Date.now()
+  if (Number.isNaN(start) || Number.isNaN(end) || end < start) return '-'
+  const minutes = Math.floor((end - start) / 60000)
+  if (minutes < 1) return '少于 1 分钟'
+  if (minutes < 60) return `${minutes} 分钟`
+  const hours = Math.floor(minutes / 60)
+  const restMinutes = minutes % 60
+  return restMinutes > 0 ? `${hours} 小时 ${restMinutes} 分钟` : `${hours} 小时`
+}
+
+function buildOperationFilter(records: VirtualizationOperation[], preset: OperationFilterPreset) {
+  switch (preset) {
+    case 'pending':
+      return records.filter((record) => isPendingOperation(record.status))
+    case 'abnormal':
+      return records.filter((record) => isAbnormalOperation(record.status))
+    case 'asset_sync':
+      return records.filter((record) => isSyncOperation(record))
+    case 'vm':
+      return records.filter((record) => isVMOperation(record))
+    default:
+      return records
+  }
+}
+
+function riskReasons(record: VirtualizationCluster) {
+  if (record.riskReasons?.length) {
+    return record.riskReasons
+  }
+  const reasons: string[] = []
+  const health = String(record.health || record.status || '').toLowerCase()
+  if (health === 'unavailable') {
+    reasons.push('连接不可用')
+  } else if (health === 'degraded') {
+    reasons.push('连接降级')
+  }
+  if (record.enabled !== false && record.credentialConfigured === false) {
+    reasons.push('未配置凭证')
+  }
+  if (!record.lastSyncedAt) {
+    reasons.push('尚未同步')
+  }
+  return reasons
+}
+
+function clusterRiskScore(record: VirtualizationCluster) {
+  const health = String(record.health || record.status || '').toLowerCase()
+  if (health === 'unavailable') return 0
+  if (health === 'degraded') return 1
+  if (record.enabled !== false && record.credentialConfigured === false) return 2
+  if (!record.lastSyncedAt) return 3
+  return 4
+}
+
+function latestNonEmptyOperationMessage(record: VirtualizationOperation) {
+  return record.message || '-'
+}
+
+function OperationStatusChips({ counts }: { counts: Array<{ key: string; label: string; value: number; tone?: string }> }) {
+  return (
+    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+      {counts.map((item) => (
+        <div key={item.key} className="rounded border border-[var(--kc-border)] bg-[var(--kc-surface-muted)] p-3">
+          <div className="text-xs text-[var(--kc-text-secondary)]">{item.label}</div>
+          <div className={`mt-2 text-2xl font-semibold ${item.tone === 'danger' ? 'text-red-500' : item.tone === 'warning' ? 'text-amber-500' : ''}`}>{item.value}</div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function AttentionList({
+  title,
+  description,
+  emptyText,
+  action,
+  items,
+  renderMeta,
+  renderActions,
+}: {
+  title: string
+  description: string
+  emptyText: string
+  action?: React.ReactNode
+  items: Array<{ id: string; title: string; status?: string; message?: string }>
+  renderMeta?: (item: { id: string; title: string; status?: string; message?: string }) => React.ReactNode
+  renderActions?: (item: { id: string; title: string; status?: string; message?: string }) => React.ReactNode
+}) {
+  return (
+    <Card size="small" title={title} extra={action}>
+      <div className="mb-3 text-xs text-[var(--kc-text-secondary)]">{description}</div>
+      {items.length === 0 ? (
+        <Empty description={emptyText} image={Empty.PRESENTED_IMAGE_SIMPLE} />
+      ) : (
+        <div className="space-y-3">
+          {items.map((item) => (
+            <div key={item.id} className="rounded border border-[var(--kc-border)] p-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <Space wrap>
+                  <Text strong>{item.title}</Text>
+                  {statusTag(item.status)}
+                </Space>
+                {renderActions ? <Space wrap>{renderActions(item)}</Space> : null}
+              </div>
+              <div className="mt-2 text-xs text-[var(--kc-text-secondary)]">{item.message || '-'}</div>
+              {renderMeta ? <div className="mt-2 text-xs text-[var(--kc-text-secondary)]">{renderMeta(item)}</div> : null}
+            </div>
+          ))}
+        </div>
+      )}
+    </Card>
+  )
 }
 
 function operationKind(record: VirtualizationOperation) {
@@ -251,6 +396,24 @@ interface VirtualizationClusterFormValues {
   defaultStorage?: string
 }
 
+function operationPresetFromSearch(search: string): OperationFilterPreset {
+  const params = new URLSearchParams(search)
+  if (params.get('pending') === 'true') {
+    return 'pending'
+  }
+  if (params.get('abnormal') === 'true') {
+    return 'abnormal'
+  }
+  const taskKind = params.get('taskKind') || params.get('assetType')
+  if (taskKind === 'asset_sync') {
+    return 'asset_sync'
+  }
+  if (taskKind === 'vm_create' || taskKind === 'vm_action') {
+    return 'vm'
+  }
+  return 'all'
+}
+
 function buildVmPayload(values: CreateVirtualMachineInput): CreateVirtualMachineInput {
   return {
     name: values.name,
@@ -336,11 +499,13 @@ function buildClusterPayload(values: VirtualizationClusterFormValues): Virtualiz
   }
 }
 
-function OperationsTable({ assetType }: { assetType?: string }) {
+function OperationsTable({ assetType, initialPreset = 'all' }: { assetType?: string; initialPreset?: OperationFilterPreset }) {
   const [selectedOperation, setSelectedOperation] = useState<VirtualizationOperation | null>(null)
+  const [preset, setPreset] = useState<OperationFilterPreset>(initialPreset)
   const { canManageOperations } = useVirtualizationPermissions()
   const queryClient = useQueryClient()
   const { message } = App.useApp()
+  const navigate = useNavigate()
   const operationsQuery = useQuery({
     queryKey: ['virtualization', 'operations', assetType ?? 'all'],
     queryFn: () => virtualizationApi.operations({ assetType }),
@@ -351,6 +516,7 @@ function OperationsTable({ assetType }: { assetType?: string }) {
     enabled: Boolean(selectedOperation?.id),
   })
   const operations = operationsQuery.data?.data ?? []
+  const filteredOperations = useMemo(() => buildOperationFilter(operations, preset), [operations, preset])
   const logs = logsQuery.data?.data ?? []
   const cancelMutation = useMutation({
     mutationFn: virtualizationApi.cancelOperation,
@@ -368,23 +534,27 @@ function OperationsTable({ assetType }: { assetType?: string }) {
   })
   const columns: ColumnsType<VirtualizationOperation> = [
     { title: '类型', dataIndex: 'operationType', render: (_value, record) => operationKind(record), width: 150 },
-    { title: '资源', dataIndex: 'targetName', render: (value, record) => value || record.targetType || record.assetType || '-' },
-    { title: '连接', dataIndex: 'connectionName', render: (value, record) => value || record.connectionId || '-' },
-    { ...tableColumnPresets.status, title: '状态', dataIndex: 'status', render: statusTag },
-    { title: '操作者', dataIndex: 'actor', render: (value) => value || '-' },
-    { ...tableColumnPresets.datetime, title: '开始时间', dataIndex: 'startedAt', render: (_value, record) => formatDateTime(operationTime(record)) },
+    { title: '资源', dataIndex: 'targetName', render: (value, record) => value || record.targetType || record.assetType || '-', width: 160 },
+    { title: '连接', dataIndex: 'connectionName', render: (value, record) => value || record.connectionId || '-', width: 160 },
+    { ...tableColumnPresets.status, title: '状态', dataIndex: 'status', render: statusTag, width: 120 },
+    { title: '异常摘要', dataIndex: 'message', render: (_value, record) => latestNonEmptyOperationMessage(record), ellipsis: true },
+    { title: '运行时长', render: (_value, record) => formatOperationDuration(record), width: 140 },
+    { ...tableColumnPresets.datetime, title: '最近心跳', dataIndex: 'lastHeartbeatAt', render: formatDateTime, width: 180 },
+    { ...tableColumnPresets.datetime, title: '开始时间', dataIndex: 'startedAt', render: (_value, record) => formatDateTime(operationTime(record)), width: 180 },
     {
       ...tableColumnPresets.action,
       title: '操作',
       dataIndex: 'id',
+      width: 240,
       render: (_value, record) => {
         const canCancel = canManageOperations && hasAllowedAction(record.allowedActions, 'cancel')
         const canRetry = canManageOperations && hasAllowedAction(record.allowedActions, 'retry')
         return (
-          <Space>
+          <Space wrap>
             <Button size="small" type="text" icon={<FileTextOutlined />} onClick={() => setSelectedOperation(record)}>
               日志
             </Button>
+            {record.vmId ? <Button size="small" type="text" onClick={() => navigate(`/virtualization/vms/${encodeURIComponent(record.vmId || '')}`)}>VM</Button> : null}
             {canCancel ? (
               <Popconfirm title="确认取消任务？" onConfirm={() => cancelMutation.mutate(record.id)}>
                 <Button size="small" type="text" danger>取消</Button>
@@ -397,15 +567,35 @@ function OperationsTable({ assetType }: { assetType?: string }) {
     },
   ]
 
+  const counts = {
+    pending: operations.filter((record) => isPendingOperation(record.status)).length,
+    abnormal: operations.filter((record) => isAbnormalOperation(record.status)).length,
+    sync: operations.filter((record) => isSyncOperation(record)).length,
+    vm: operations.filter((record) => isVMOperation(record)).length,
+  }
+
   return (
     <>
+      <Space wrap className="mb-3">
+        {OPERATION_FILTER_PRESETS.map((item) => (
+          <Button key={item.key} type={preset === item.key ? 'primary' : 'default'} onClick={() => setPreset(item.key)}>
+            {item.label}
+          </Button>
+        ))}
+      </Space>
+      <OperationStatusChips counts={[
+        { key: 'pending', label: '待处理', value: counts.pending, tone: counts.pending > 0 ? 'warning' : 'default' },
+        { key: 'abnormal', label: '失败/超时', value: counts.abnormal, tone: counts.abnormal > 0 ? 'danger' : 'default' },
+        { key: 'sync', label: '同步任务', value: counts.sync },
+        { key: 'vm', label: 'VM 任务', value: counts.vm },
+      ]} />
       <Table
         rowKey="id"
         size="small"
         loading={operationsQuery.isLoading}
-        dataSource={operations}
+        dataSource={filteredOperations}
         columns={columns}
-        scroll={{ x: 940 }}
+        scroll={{ x: 1360 }}
       />
       <Drawer
         title="任务日志"
@@ -418,7 +608,27 @@ function OperationsTable({ assetType }: { assetType?: string }) {
           <Descriptions.Item label="类型">{selectedOperation ? operationKind(selectedOperation) : '-'}</Descriptions.Item>
           <Descriptions.Item label="状态">{statusTag(selectedOperation?.status)}</Descriptions.Item>
           <Descriptions.Item label="资源">{selectedOperation?.targetName || selectedOperation?.targetType || '-'}</Descriptions.Item>
+          <Descriptions.Item label="连接">{selectedOperation?.connectionName || selectedOperation?.connectionId || '-'}</Descriptions.Item>
+          <Descriptions.Item label="VM">{selectedOperation?.vmId || '-'}</Descriptions.Item>
+          <Descriptions.Item label="开始时间">{formatDateTime(selectedOperation?.startedAt || selectedOperation?.createdAt)}</Descriptions.Item>
+          <Descriptions.Item label="最近心跳">{formatDateTime(selectedOperation?.lastHeartbeatAt)}</Descriptions.Item>
+          <Descriptions.Item label="完成时间">{formatDateTime(selectedOperation?.completedAt)}</Descriptions.Item>
         </Descriptions>
+        {selectedOperation?.message ? <Alert className="mt-4" type={isAbnormalOperation(selectedOperation.status) ? 'error' : 'info'} message={selectedOperation.message} /> : null}
+        <div className="mt-4 flex justify-end">
+          <Button size="small" onClick={async () => {
+            const text = (logs.length
+              ? logs.map((item) => `[${formatDateTime(item.createdAt)}] ${item.logLevel ?? 'info'} ${item.message}`).join('\n')
+              : selectedOperation?.logs?.length
+                ? selectedOperation.logs.join('\n')
+                : selectedOperation?.logText) || selectedOperation?.message || ''
+            if (!text) return
+            await navigator.clipboard.writeText(text)
+            message.success('日志已复制')
+          }}>
+            复制日志
+          </Button>
+        </div>
         <pre className="mt-4 max-h-[520px] overflow-auto rounded border border-[var(--kc-border)] bg-[var(--kc-surface-muted)] p-3 text-xs">
           {(logs.length
             ? logs.map((item) => `[${formatDateTime(item.createdAt)}] ${item.logLevel ?? 'info'} ${item.message}`).join('\n')
@@ -442,10 +652,13 @@ function StatCard({ label, value, extra }: { label: string; value: number | stri
 }
 
 export function VirtualizationOverviewPage() {
-  const { canSync } = useVirtualizationPermissions()
+  const { canManageClusters, canManageOperations, canSync } = useVirtualizationPermissions()
   const queryClient = useQueryClient()
+  const navigate = useNavigate()
   const { message } = App.useApp()
   const [syncTaskId, setSyncTaskId] = useState<string | null>(null)
+  const [selectedOperation, setSelectedOperation] = useState<VirtualizationOperation | null>(null)
+  const [selectedCluster, setSelectedCluster] = useState<VirtualizationCluster | null>(null)
   const { task: syncTask, status: syncStreamStatus } = useTaskStream(syncTaskId)
 
   useEffect(() => {
@@ -468,6 +681,19 @@ export function VirtualizationOverviewPage() {
     queryKey: ['virtualization', 'overview'],
     queryFn: virtualizationApi.overview,
   })
+  const clustersQuery = useQuery({
+    queryKey: ['virtualization', 'clusters', 'overview'],
+    queryFn: virtualizationApi.clusters,
+  })
+  const operationsQuery = useQuery({
+    queryKey: ['virtualization', 'operations', 'overview'],
+    queryFn: () => virtualizationApi.operations(),
+  })
+  const logsQuery = useQuery({
+    queryKey: ['virtualization', 'operations', selectedOperation?.id, 'logs', 'overview'],
+    queryFn: () => virtualizationApi.operationLogs(selectedOperation?.id ?? ''),
+    enabled: Boolean(selectedOperation?.id),
+  })
   const syncMutation = useMutation({
     mutationFn: virtualizationApi.syncAll,
     onSuccess: (response) => {
@@ -481,15 +707,105 @@ export function VirtualizationOverviewPage() {
       refreshVirtualization(queryClient)
     },
   })
+  const retryMutation = useMutation({
+    mutationFn: virtualizationApi.retryOperation,
+    onSuccess: () => {
+      message.success('重试任务已提交')
+      refreshVirtualization(queryClient)
+    },
+  })
+  const testMutation = useMutation({
+    mutationFn: virtualizationApi.testCluster,
+    onSuccess: () => {
+      message.success('测试任务已提交')
+      refreshVirtualization(queryClient)
+    },
+  })
+  const syncClusterMutation = useMutation({
+    mutationFn: virtualizationApi.syncCluster,
+    onSuccess: () => {
+      message.success('同步任务已提交')
+      refreshVirtualization(queryClient)
+    },
+  })
+
   const overview: VirtualizationOverview = overviewQuery.data?.data ?? {}
   const stats = overview.stats ?? {}
   const health = stats.connections
+  const clusters = clustersQuery.data?.data ?? []
+  const operations = operationsQuery.data?.data ?? []
+  const attention = overview.attention
+  const connectionSummary = overview.connectionSummary
+  const taskSummary = overview.taskSummary
+  const abnormalClusters = useMemo(
+    () => (attention?.riskyConnections?.length ? attention.riskyConnections : [...clusters].filter((record) => riskReasons(record).length > 0).sort((left, right) => clusterRiskScore(left) - clusterRiskScore(right)).slice(0, 4)),
+    [attention?.riskyConnections, clusters],
+  )
+  const failedSyncOperations = useMemo(
+    () => (attention?.failedSyncTasks?.length ? attention.failedSyncTasks : operations.filter((record) => isSyncOperation(record) && isAbnormalOperation(record.status)).slice(0, 5)),
+    [attention?.failedSyncTasks, operations],
+  )
+  const failedOperations = useMemo(
+    () => (attention?.failedOperations?.length ? attention.failedOperations : operations.filter((record) => isAbnormalOperation(record.status)).slice(0, 5)),
+    [attention?.failedOperations, operations],
+  )
+  const pendingOperations = useMemo(
+    () => operations.filter((record) => isPendingOperation(record.status)).slice(0, 5),
+    [operations],
+  )
+  const recentAbnormal = useMemo(
+    () => operations.filter((record) => isAbnormalOperation(record.status)).slice(0, 8),
+    [operations],
+  )
+  const logs = logsQuery.data?.data ?? []
+  const heroStats = [
+    {
+      key: 'connections',
+      label: '异常连接',
+      value: (connectionSummary?.degraded ?? health?.degraded ?? 0) + (connectionSummary?.unavailable ?? health?.unavailable ?? 0),
+      helper: `健康 ${connectionSummary?.healthy ?? health?.healthy ?? 0} / 总计 ${connectionSummary?.total ?? health?.total ?? 0}`,
+      tone: ((connectionSummary?.degraded ?? health?.degraded ?? 0) + (connectionSummary?.unavailable ?? health?.unavailable ?? 0)) > 0 ? 'danger' : 'default',
+      action: () => navigate('/virtualization/clusters'),
+    },
+    {
+      key: 'pending',
+      label: '待处理任务',
+      value: stats.pendingTaskCount ?? ((taskSummary?.queued ?? 0) + (taskSummary?.running ?? 0) || pendingOperations.length),
+      helper: '正在运行或排队中的任务',
+      tone: (stats.pendingTaskCount ?? ((taskSummary?.queued ?? 0) + (taskSummary?.running ?? 0) || pendingOperations.length)) > 0 ? 'warning' : 'default',
+      action: () => navigate('/virtualization/operations?pending=true'),
+    },
+    {
+      key: 'failed',
+      label: '失败任务',
+      value: stats.failedTaskCount ?? ((taskSummary?.failed ?? 0) + (taskSummary?.timeout ?? 0) || failedOperations.length),
+      helper: '失败或超时任务需优先处理',
+      tone: (stats.failedTaskCount ?? ((taskSummary?.failed ?? 0) + (taskSummary?.timeout ?? 0) || failedOperations.length)) > 0 ? 'danger' : 'default',
+      action: () => navigate('/virtualization/operations?abnormal=true'),
+    },
+    {
+      key: 'sync',
+      label: '最近同步状态',
+      value: overview.lastSyncTask?.status === 'completed' ? '正常' : overview.lastSyncTask?.status ? '异常' : '未同步',
+      helper: overview.lastSyncTask ? `${operationKind(overview.lastSyncTask)} · ${formatDateTime(operationTime(overview.lastSyncTask))}` : '尚无同步记录',
+      tone: overview.lastSyncTask?.status === 'completed' ? 'default' : 'warning',
+      action: () => navigate('/virtualization/sync'),
+    },
+    {
+      key: 'vm',
+      label: '运行中 VM',
+      value: `${stats.runningVmCount ?? 0} / ${stats.vmCount ?? 0}`,
+      helper: `停机 ${stats.stoppedVmCount ?? 0}`,
+      tone: 'default',
+      action: () => navigate('/virtualization/vms'),
+    },
+  ]
 
   return (
     <div className="space-y-4">
       <PageHeader
         title="总览"
-        description="虚拟化连接健康、资源统计和近期任务"
+        description="优先聚焦异常连接、失败任务和同步风险的虚拟化运维总览。"
         showResourceScope={false}
         actions={
           canSync ? (
@@ -511,14 +827,120 @@ export function VirtualizationOverviewPage() {
         onCancel={syncTask?.id ? () => cancelSyncMutation.mutate(syncTask.id) : undefined}
         cancelling={cancelSyncMutation.isPending}
       />
-      <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
-        <StatCard label="连接" value={health?.total ?? 0} extra={`健康 ${health?.healthy ?? 0} / 异常 ${(health?.degraded ?? 0) + (health?.unavailable ?? 0)}`} />
-        <StatCard label="虚拟机" value={stats.vmCount ?? 0} extra={`运行 ${stats.runningVmCount ?? 0} / 停止 ${stats.stoppedVmCount ?? 0}`} />
-        <StatCard label="镜像" value={stats.imageCount ?? 0} />
-        <StatCard label="规格" value={stats.flavorCount ?? 0} />
-        <StatCard label="待处理任务" value={stats.pendingTaskCount ?? 0} />
-        <StatCard label="失败任务" value={stats.failedTaskCount ?? 0} />
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+        {heroStats.map((item) => (
+          <Card key={item.key} size="small" hoverable onClick={item.action} className="cursor-pointer">
+            <Text type="secondary">{item.label}</Text>
+            <div className={`mt-2 text-2xl font-semibold ${item.tone === 'danger' ? 'text-red-500' : item.tone === 'warning' ? 'text-amber-500' : ''}`}>{item.value}</div>
+            <Text type="secondary">{item.helper}</Text>
+          </Card>
+        ))}
       </div>
+      <div className="grid gap-4 xl:grid-cols-3">
+        <AttentionList
+          title="高风险连接"
+          description="优先处理不可用、降级、未配置凭证或尚未同步的连接。"
+          emptyText="暂无高风险连接"
+          action={<Button type="link" onClick={() => navigate('/virtualization/clusters')}>查看全部</Button>}
+          items={abnormalClusters.map((item) => ({
+            id: item.id,
+            title: item.name,
+            status: item.health || item.status,
+            message: riskReasons(item).join(' / '),
+          }))}
+          renderMeta={(item) => {
+            const cluster = abnormalClusters.find((record) => record.id === item.id)
+            return cluster ? `Provider: ${cluster.provider || '-'} · 最近同步: ${formatDateTime(cluster.lastSyncedAt)}` : null
+          }}
+          renderActions={(item) => {
+            const cluster = abnormalClusters.find((record) => record.id === item.id)
+            if (!cluster) return null
+            return (
+              <>
+                <Button size="small" onClick={() => setSelectedCluster(cluster)}>详情</Button>
+                {canManageClusters ? <Button size="small" onClick={() => testMutation.mutate(cluster.id)} loading={testMutation.isPending}>测试</Button> : null}
+                {canSync ? <Button size="small" onClick={() => syncClusterMutation.mutate(cluster.id)} loading={syncClusterMutation.isPending}>同步</Button> : null}
+              </>
+            )
+          }}
+        />
+        <AttentionList
+          title="最近失败同步"
+          description="快速定位失败或超时的资产同步任务。"
+          emptyText="暂无失败同步"
+          action={<Button type="link" onClick={() => navigate('/virtualization/sync')}>进入同步任务</Button>}
+          items={failedSyncOperations.map((item) => ({ id: item.id, title: item.targetName || item.connectionId || item.id, status: item.status, message: latestNonEmptyOperationMessage(item) }))}
+          renderMeta={(item) => {
+            const operation = failedSyncOperations.find((record) => record.id === item.id)
+            return operation ? `开始时间: ${formatDateTime(operationTime(operation))}` : null
+          }}
+          renderActions={(item) => {
+            const operation = failedSyncOperations.find((record) => record.id === item.id)
+            return operation ? (
+              <>
+                <Button size="small" onClick={() => setSelectedOperation(operation)}>日志</Button>
+                {canManageOperations && hasAllowedAction(operation.allowedActions, 'retry') ? <Button size="small" onClick={() => retryMutation.mutate(operation.id)} loading={retryMutation.isPending}>重试</Button> : null}
+              </>
+            ) : null
+          }}
+        />
+        <AttentionList
+          title="失败与超时任务"
+          description="失败任务会影响生命周期动作与资源一致性。"
+          emptyText="暂无失败任务"
+          action={<Button type="link" onClick={() => navigate('/virtualization/operations')}>查看任务中心</Button>}
+          items={failedOperations.map((item) => ({ id: item.id, title: item.targetName || item.vmId || item.id, status: item.status, message: latestNonEmptyOperationMessage(item) }))}
+          renderMeta={(item) => {
+            const operation = failedOperations.find((record) => record.id === item.id)
+            return operation ? `类型: ${operationKind(operation)} · 连接: ${operation.connectionId || '-'}` : null
+          }}
+          renderActions={(item) => {
+            const operation = failedOperations.find((record) => record.id === item.id)
+            return operation ? (
+              <>
+                <Button size="small" onClick={() => setSelectedOperation(operation)}>日志</Button>
+                {operation.vmId ? <Button size="small" onClick={() => navigate(`/virtualization/vms/${encodeURIComponent(operation.vmId || '')}`)}>VM</Button> : null}
+              </>
+            ) : null
+          }}
+        />
+      </div>
+      <div className="grid gap-4 xl:grid-cols-2">
+        <Card size="small" title="连接健康态势" extra={<Button type="link" onClick={() => navigate('/virtualization/clusters')}>连接页</Button>}>
+          <OperationStatusChips counts={[
+            { key: 'healthy', label: '健康连接', value: health?.healthy ?? 0 },
+            { key: 'degraded', label: '降级连接', value: health?.degraded ?? 0, tone: (health?.degraded ?? 0) > 0 ? 'warning' : 'default' },
+            { key: 'unavailable', label: '不可用连接', value: health?.unavailable ?? 0, tone: (health?.unavailable ?? 0) > 0 ? 'danger' : 'default' },
+            { key: 'neverSynced', label: '未同步连接', value: clusters.filter((item) => !item.lastSyncedAt).length, tone: clusters.some((item) => !item.lastSyncedAt) ? 'warning' : 'default' },
+          ]} />
+        </Card>
+        <Card size="small" title="任务处置态势" extra={<Button type="link" onClick={() => navigate('/virtualization/operations')}>任务中心</Button>}>
+          <OperationStatusChips counts={[
+            { key: 'queued', label: '排队中', value: operations.filter((item) => item.status === 'queued').length, tone: operations.some((item) => item.status === 'queued') ? 'warning' : 'default' },
+            { key: 'running', label: '执行中', value: operations.filter((item) => item.status === 'running').length, tone: operations.some((item) => item.status === 'running') ? 'warning' : 'default' },
+            { key: 'failed', label: '失败/超时', value: operations.filter((item) => isAbnormalOperation(item.status)).length, tone: operations.some((item) => isAbnormalOperation(item.status)) ? 'danger' : 'default' },
+            { key: 'sync', label: '同步任务', value: operations.filter((item) => isSyncOperation(item)).length },
+          ]} />
+        </Card>
+      </div>
+      <Card size="small" title="最近异常" extra={<Button type="link" onClick={() => navigate('/virtualization/operations')}>查看全部异常</Button>} loading={operationsQuery.isLoading}>
+        <Table
+          rowKey="id"
+          size="small"
+          pagination={false}
+          dataSource={recentAbnormal}
+          locale={{ emptyText: '暂无异常任务' }}
+          columns={[
+            { title: '类型', render: (_value, record: VirtualizationOperation) => operationKind(record), width: 150 },
+            { title: '资源', dataIndex: 'targetName', render: (value: string, record: VirtualizationOperation) => value || record.targetType || '-', width: 160 },
+            { title: '连接', dataIndex: 'connectionId', render: (value: string) => value || '-', width: 160 },
+            { title: '状态', dataIndex: 'status', render: statusTag, width: 120 },
+            { title: '摘要', render: (_value, record: VirtualizationOperation) => latestNonEmptyOperationMessage(record), ellipsis: true },
+            { title: '时间', render: (_value, record: VirtualizationOperation) => formatDateTime(operationTime(record)), width: 180 },
+            { title: '操作', render: (_value, record: VirtualizationOperation) => <Button size="small" onClick={() => setSelectedOperation(record)}>日志</Button>, width: 100 },
+          ]}
+        />
+      </Card>
       <Card size="small" title="最近操作" loading={overviewQuery.isLoading}>
         <Table
           rowKey="id"
@@ -533,6 +955,41 @@ export function VirtualizationOverviewPage() {
           ]}
         />
       </Card>
+      <Drawer title="异常任务详情" size="large" open={Boolean(selectedOperation)} onClose={() => setSelectedOperation(null)}>
+        <Descriptions size="small" column={1} bordered>
+          <Descriptions.Item label="任务 ID">{selectedOperation?.id}</Descriptions.Item>
+          <Descriptions.Item label="类型">{selectedOperation ? operationKind(selectedOperation) : '-'}</Descriptions.Item>
+          <Descriptions.Item label="状态">{statusTag(selectedOperation?.status)}</Descriptions.Item>
+          <Descriptions.Item label="资源">{selectedOperation?.targetName || selectedOperation?.targetType || '-'}</Descriptions.Item>
+          <Descriptions.Item label="连接">{selectedOperation?.connectionId || '-'}</Descriptions.Item>
+          <Descriptions.Item label="VM">{selectedOperation?.vmId || '-'}</Descriptions.Item>
+          <Descriptions.Item label="开始时间">{formatDateTime(selectedOperation?.startedAt || selectedOperation?.createdAt)}</Descriptions.Item>
+          <Descriptions.Item label="最近心跳">{formatDateTime(selectedOperation?.lastHeartbeatAt)}</Descriptions.Item>
+        </Descriptions>
+        {selectedOperation?.message ? <Alert className="mt-4" type={isAbnormalOperation(selectedOperation.status) ? 'error' : 'info'} message={selectedOperation.message} /> : null}
+        <pre className="mt-4 max-h-[520px] overflow-auto rounded border border-[var(--kc-border)] bg-[var(--kc-surface-muted)] p-3 text-xs">
+          {(logs.length
+            ? logs.map((item) => `[${formatDateTime(item.createdAt)}] ${item.logLevel ?? 'info'} ${item.message}`).join('\n')
+            : selectedOperation?.message) || (logsQuery.isLoading ? '日志加载中' : '暂无日志')}
+        </pre>
+      </Drawer>
+      <Drawer title="连接风险详情" size="large" open={Boolean(selectedCluster)} onClose={() => setSelectedCluster(null)}>
+        <Descriptions size="small" column={1} bordered>
+          <Descriptions.Item label="连接名称">{selectedCluster?.name || '-'}</Descriptions.Item>
+          <Descriptions.Item label="Provider">{selectedCluster?.provider || '-'}</Descriptions.Item>
+          <Descriptions.Item label="健康状态">{statusTag(selectedCluster?.health || selectedCluster?.status)}</Descriptions.Item>
+          <Descriptions.Item label="风险等级">{selectedCluster?.riskLevel || '-'}</Descriptions.Item>
+          <Descriptions.Item label="风险原因">{selectedCluster ? riskReasons(selectedCluster).join(' / ') || '正常' : '-'}</Descriptions.Item>
+          <Descriptions.Item label="接入目标">{selectedCluster?.provider === 'kubevirt' ? selectedCluster?.kubernetesClusterId || '-' : selectedCluster?.endpoint || '-'}</Descriptions.Item>
+          <Descriptions.Item label="默认命名空间">{selectedCluster?.defaultNamespace || '-'}</Descriptions.Item>
+          <Descriptions.Item label="最近同步">{formatDateTime(selectedCluster?.lastSyncedAt)}</Descriptions.Item>
+        </Descriptions>
+        <Space className="mt-4">
+          {selectedCluster && canManageClusters ? <Button onClick={() => testMutation.mutate(selectedCluster.id)} loading={testMutation.isPending}>测试连接</Button> : null}
+          {selectedCluster && canSync ? <Button onClick={() => syncClusterMutation.mutate(selectedCluster.id)} loading={syncClusterMutation.isPending}>重新同步</Button> : null}
+          {selectedCluster ? <Button onClick={() => navigate('/virtualization/clusters')}>前往连接页</Button> : null}
+        </Space>
+      </Drawer>
     </div>
   )
 }
@@ -968,6 +1425,10 @@ export function VirtualizationClustersPage() {
   const [editing, setEditing] = useState<VirtualizationCluster | null>(null)
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [form] = Form.useForm<VirtualizationClusterFormValues>()
+  const [showOnlyAbnormal, setShowOnlyAbnormal] = useState(false)
+  const [enabledFilter, setEnabledFilter] = useState<'all' | 'enabled' | 'disabled'>('all')
+  const [providerFilter, setProviderFilter] = useState<'all' | 'kubevirt' | 'pve'>('all')
+  const [showNeverSynced, setShowNeverSynced] = useState(false)
   const { canManageClusters, canSync } = useVirtualizationPermissions()
   const queryClient = useQueryClient()
   const { message } = App.useApp()
@@ -1018,19 +1479,30 @@ export function VirtualizationClustersPage() {
     setDrawerOpen(true)
   }
 
+  const clusterRows = useMemo(() => {
+    const records = clustersQuery.data?.data ?? []
+    return [...records]
+      .filter((record) => !showOnlyAbnormal || riskReasons(record).length > 0)
+      .filter((record) => enabledFilter === 'all' || (enabledFilter === 'enabled' ? record.enabled !== false : record.enabled === false))
+      .filter((record) => providerFilter === 'all' || record.provider === providerFilter)
+      .filter((record) => !showNeverSynced || !record.lastSyncedAt)
+      .sort((left, right) => clusterRiskScore(left) - clusterRiskScore(right) || left.name.localeCompare(right.name))
+  }, [clustersQuery.data?.data, enabledFilter, providerFilter, showNeverSynced, showOnlyAbnormal])
+
   const columns: ColumnsType<VirtualizationCluster> = [
     { title: '名称', dataIndex: 'name', fixed: 'left', width: 180 },
-    { title: 'Provider', dataIndex: 'provider', render: (value) => value || '-' },
+    { title: 'Provider', dataIndex: 'provider', render: (value) => value || '-', width: 120 },
     { title: '接入目标', render: (_value, record) => record.provider === 'kubevirt' ? record.kubernetesClusterId || '-' : record.endpoint || '-', ellipsis: true },
     { title: '健康', dataIndex: 'health', render: (value, record) => statusTag(value || record.status), width: 120 },
-    { title: '版本', dataIndex: 'version', render: (value) => value || '-' },
-    { ...tableColumnPresets.datetime, title: '最近同步', dataIndex: 'lastSyncedAt', render: formatDateTime },
+    { title: '风险', render: (_value, record) => riskReasons(record).join(' / ') || '正常', width: 220 },
+    { title: '凭证', dataIndex: 'credentialConfigured', render: (value: boolean | undefined) => value === false ? <Tag color="red">未配置</Tag> : <Tag color="green">已配置</Tag>, width: 120 },
+    { ...tableColumnPresets.datetime, title: '最近同步', dataIndex: 'lastSyncedAt', render: formatDateTime, width: 180 },
     {
       ...tableColumnPresets.action,
       title: '操作',
       width: 260,
       render: (_value, record) => (
-        <Space>
+        <Space wrap>
           {canManageClusters ? <Button size="small" type="text" icon={<ThunderboltOutlined />} onClick={() => testMutation.mutate(record.id)}>测试</Button> : null}
           {canSync ? <Button size="small" type="text" icon={<CloudSyncOutlined />} onClick={() => syncMutation.mutate(record.id)}>同步</Button> : null}
           {canManageClusters ? <Button size="small" type="text" icon={<EditOutlined />} onClick={() => openEditor(record)}>编辑</Button> : null}
@@ -1046,9 +1518,46 @@ export function VirtualizationClustersPage() {
 
   return (
     <div className="space-y-4">
-      <PageHeader title="虚拟化集群" description="虚拟化后端连接管理、健康测试和资产同步" showResourceScope={false} actions={canManageClusters ? <Button type="primary" icon={<PlusOutlined />} onClick={() => openEditor()}>新增连接</Button> : null} />
+      <PageHeader title="虚拟化集群" description="优先聚焦异常连接、同步风险与连接测试结果。" showResourceScope={false} actions={canManageClusters ? <Button type="primary" icon={<PlusOutlined />} onClick={() => openEditor()}>新增连接</Button> : null} />
       <Card size="small">
-        <Table rowKey="id" size="small" loading={clustersQuery.isLoading} dataSource={clustersQuery.data?.data ?? []} columns={columns} scroll={{ x: 1120 }} />
+        <div className="mb-3 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <div>
+            <div className="mb-1 text-xs text-[var(--kc-text-secondary)]">异常过滤</div>
+            <Switch checked={showOnlyAbnormal} onChange={setShowOnlyAbnormal} checkedChildren="仅异常" unCheckedChildren="全部" />
+          </div>
+          <div>
+            <div className="mb-1 text-xs text-[var(--kc-text-secondary)]">启用状态</div>
+            <Select value={enabledFilter} onChange={setEnabledFilter} options={[{ value: 'all', label: '全部' }, { value: 'enabled', label: '仅启用' }, { value: 'disabled', label: '仅禁用' }]} />
+          </div>
+          <div>
+            <div className="mb-1 text-xs text-[var(--kc-text-secondary)]">Provider</div>
+            <Select value={providerFilter} onChange={setProviderFilter} options={[{ value: 'all', label: '全部' }, { value: 'kubevirt', label: 'KubeVirt' }, { value: 'pve', label: 'PVE' }]} />
+          </div>
+          <div>
+            <div className="mb-1 text-xs text-[var(--kc-text-secondary)]">同步状态</div>
+            <Switch checked={showNeverSynced} onChange={setShowNeverSynced} checkedChildren="未同步" unCheckedChildren="全部" />
+          </div>
+        </div>
+        <Table
+          rowKey="id"
+          size="small"
+          loading={clustersQuery.isLoading}
+          dataSource={clusterRows}
+          columns={columns}
+          scroll={{ x: 1320 }}
+          expandable={{
+            expandedRowRender: (record) => (
+              <Descriptions size="small" column={{ xs: 1, md: 2 }} bordered>
+                <Descriptions.Item label="Endpoint / Cluster">{record.provider === 'kubevirt' ? record.kubernetesClusterId || '-' : record.endpoint || '-'}</Descriptions.Item>
+                <Descriptions.Item label="默认命名空间">{record.defaultNamespace || '-'}</Descriptions.Item>
+                <Descriptions.Item label="校验 TLS">{record.verifyTls === false ? '关闭' : '开启'}</Descriptions.Item>
+                <Descriptions.Item label="最近同步">{formatDateTime(record.lastSyncedAt)}</Descriptions.Item>
+                <Descriptions.Item label="Region">{record.region || '-'}</Descriptions.Item>
+                <Descriptions.Item label="风险说明">{riskReasons(record).join(' / ') || '正常'}</Descriptions.Item>
+              </Descriptions>
+            ),
+          }}
+        />
       </Card>
       <Drawer title={editing ? '编辑连接' : '新增连接'} size="large" open={drawerOpen} onClose={() => setDrawerOpen(false)}>
         <Form form={form} layout="vertical" initialValues={{ provider: 'kubevirt', enabled: true, verifyTls: true }} onFinish={(values) => saveMutation.mutate(values)}>
@@ -1401,11 +1910,12 @@ export function VirtualizationFlavorsPage() {
 }
 
 export function VirtualizationOperationsPage() {
+  const location = useLocation()
   return (
     <div className="space-y-4">
       <PageHeader title="操作记录" description="虚拟化任务与操作日志" showResourceScope={false} />
       <Card size="small">
-        <OperationsTable />
+        <OperationsTable initialPreset={operationPresetFromSearch(location.search)} />
       </Card>
     </div>
   )

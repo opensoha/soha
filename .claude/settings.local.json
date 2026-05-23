@@ -17,7 +17,18 @@
       "Bash(go vet *)",
       "Bash(echo \"vet=$?\")",
       "Bash(npx eslint *)",
-      "mcp__semi-mcp__get_file_code"
+      "mcp__semi-mcp__get_file_code",
+      "Skill(antd)",
+      "mcp__antd__antd_info",
+      "Bash(echo \"EXIT=$?\")",
+      "Bash(npm run *)",
+      "Bash(awk '/^export function OnCallBoardPage/,/^}$/' /Users/yamabuki/Downloads/kubecrux/web/src/features/observability/alerting-pages.tsx)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git push *)",
+      "Bash(pnpm *)",
+      "Bash(npm *)",
+      "Bash(go test *)"
     ]
   }
 }

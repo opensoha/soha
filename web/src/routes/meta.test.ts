@@ -335,6 +335,61 @@ describe("access route authorization", () => {
     expect(systemNav.map((item) => item.id)).toEqual(["system"]);
   });
 
+  it("pins application center to the first delivery workbench menu row", () => {
+    const snapshot = buildSnapshot({
+      permissionKeys: [
+        "workspace.application.view",
+        "delivery.applications.view",
+        "delivery.application-environments.view",
+        "delivery.release-board.view",
+      ],
+      visibleMenuIds: ["release-board", "application-environments", "builds"],
+      visibleMenus: [
+        {
+          id: "release-board",
+          path: "/release-board",
+          labelZh: "发布看板",
+          labelEn: "Release Board",
+          iconKey: "activity",
+          section: "deliver",
+          sortOrder: 1,
+          enabled: true,
+        },
+        {
+          id: "application-environments",
+          path: "/application-environments",
+          labelZh: "应用环境绑定",
+          labelEn: "Application Bindings",
+          iconKey: "blocks",
+          section: "deliver",
+          sortOrder: 2,
+          enabled: true,
+        },
+        {
+          id: "builds",
+          path: "/applications",
+          labelZh: "应用中心",
+          labelEn: "Applications",
+          iconKey: "blocks",
+          section: "deliver",
+          sortOrder: 99,
+          enabled: true,
+        },
+      ],
+    });
+
+    const deliveryNav = filterSidebarNavByWorkbench(
+      filterSidebarNavByWorkspace(getAccessibleSidebarNav(snapshot), "application"),
+      "delivery",
+    );
+
+    expect(deliveryNav.map((item) => item.id)).toEqual([
+      "builds",
+      "application-environments",
+      "release-board",
+    ]);
+  });
+
   it("preserves empty backend menu sections inside a workbench", () => {
     const snapshot = buildSnapshot({
       permissionKeys: [

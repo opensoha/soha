@@ -166,6 +166,9 @@ type TaskFilter struct {
 	ConnectionID string
 	VMID         string
 	Status       string
+	Statuses     []string
+	Abnormal     bool
+	Pending      bool
 	TaskKind     string
 	Search       string
 	Page         int

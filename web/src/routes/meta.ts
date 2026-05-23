@@ -867,7 +867,7 @@ export const routeMeta: RouteMeta[] = [
   {
     id: "applications",
     path: "/applications",
-    title: "应用交付工作台",
+    title: "应用中心",
     description: "应用入口视角",
     icon: "IconAppCenter",
     group: "delivery",
@@ -2536,6 +2536,7 @@ function sortRuntimeMenuTree(items: RuntimeMenuNode[]): RuntimeMenuNode[] {
 }
 
 const APPLICATION_SECTION_ORDER: Record<string, number> = {
+  builds: 10,
   applications: 10,
   "application-management": 15,
   "application-environments": 20,

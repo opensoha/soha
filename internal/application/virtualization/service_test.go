@@ -3,6 +3,7 @@ package virtualization
 import (
 	"context"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -227,6 +228,31 @@ func TestCancelAndRetryOperation(t *testing.T) {
 	}
 	if retried.Status != TaskStatusQueued || retried.StartedAt != nil || retried.FinishedAt != nil {
 		t.Fatalf("retry did not reset task: %#v", retried)
+	}
+}
+
+func TestOverviewIncludesAttentionAndSummaries(t *testing.T) {
+	repo := newMemoryRepo()
+	unavailableConn := repo.addConnection(domainvirtualization.Connection{Provider: ProviderPVE, Name: "pve-a", Enabled: true, Health: map[string]any{"status": "unavailable"}})
+	degradedConn := repo.addConnection(domainvirtualization.Connection{Provider: ProviderKubeVirt, Name: "kv-a", Enabled: true, CredentialConfigured: true, Health: map[string]any{"status": "degraded"}})
+	repo.addConnection(domainvirtualization.Connection{Provider: ProviderKubeVirt, Name: "kv-b", Enabled: true, CredentialConfigured: false, Health: map[string]any{"status": "healthy"}})
+	repo.tasks["sync-failed"] = domainvirtualization.Task{ID: "sync-failed", Provider: ProviderPVE, ConnectionID: unavailableConn.ID, TaskKind: TaskKindAssetSync, Status: TaskStatusFailed, Result: map[string]any{"message": "sync failed"}, CreatedAt: time.Now().UTC()}
+	repo.tasks["vm-failed"] = domainvirtualization.Task{ID: "vm-failed", Provider: ProviderKubeVirt, ConnectionID: degradedConn.ID, TaskKind: TaskKindVMAction, Status: TaskStatusTimeout, Result: map[string]any{"error": "timeout"}, CreatedAt: time.Now().UTC().Add(-time.Minute)}
+	repo.tasks["pending"] = domainvirtualization.Task{ID: "pending", Provider: ProviderKubeVirt, ConnectionID: degradedConn.ID, TaskKind: TaskKindVMCreate, Status: TaskStatusRunning, CreatedAt: time.Now().UTC().Add(-2 * time.Minute)}
+	service := newTestService(repo, &captureOperations{}, fakeAdapter{})
+
+	overview, err := service.Overview(context.Background(), testPrincipal())
+	if err != nil {
+		t.Fatalf("Overview() error = %v", err)
+	}
+	if overview.ConnectionSummary.Unavailable != 1 || overview.ConnectionSummary.Degraded != 1 || overview.ConnectionSummary.CredentialMissing != 2 || overview.ConnectionSummary.NeverSynced != 3 {
+		t.Fatalf("connection summary = %#v", overview.ConnectionSummary)
+	}
+	if overview.TaskSummary.Running != 1 || overview.TaskSummary.Failed != 1 || overview.TaskSummary.Timeout != 1 {
+		t.Fatalf("task summary = %#v", overview.TaskSummary)
+	}
+	if len(overview.Attention.RiskyConnections) == 0 || len(overview.Attention.FailedSyncTasks) != 1 || len(overview.Attention.FailedOperations) != 2 {
+		t.Fatalf("attention = %#v", overview.Attention)
 	}
 }
 
@@ -750,7 +776,23 @@ func (r *memoryRepo) ListTasks(_ context.Context, filter domainvirtualization.Ta
 	defer r.mu.Unlock()
 	items := []domainvirtualization.Task{}
 	for _, item := range r.tasks {
-		if filter.Status != "" && item.Status != filter.Status {
+		if filter.ConnectionID != "" && item.ConnectionID != filter.ConnectionID {
+			continue
+		}
+		if filter.VMID != "" && item.VMID != filter.VMID {
+			continue
+		}
+		if len(filter.Statuses) > 0 {
+			if !slices.Contains(filter.Statuses, item.Status) {
+				continue
+			}
+		} else if filter.Status != "" && item.Status != filter.Status {
+			continue
+		}
+		if filter.Abnormal && item.Status != TaskStatusFailed && item.Status != TaskStatusTimeout {
+			continue
+		}
+		if filter.Pending && item.Status != TaskStatusQueued && item.Status != TaskStatusRunning {
 			continue
 		}
 		if filter.TaskKind != "" && item.TaskKind != filter.TaskKind {
@@ -758,6 +800,15 @@ func (r *memoryRepo) ListTasks(_ context.Context, filter domainvirtualization.Ta
 		}
 		items = append(items, item)
 	}
+	slices.SortFunc(items, func(left, right domainvirtualization.Task) int {
+		if left.CreatedAt.After(right.CreatedAt) {
+			return -1
+		}
+		if left.CreatedAt.Before(right.CreatedAt) {
+			return 1
+		}
+		return strings.Compare(left.ID, right.ID)
+	})
 	return items, nil
 }
 

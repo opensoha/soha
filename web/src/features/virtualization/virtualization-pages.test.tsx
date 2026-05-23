@@ -7,7 +7,23 @@ import { createRoot } from 'react-dom/client'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { App } from 'antd'
-import { VirtualizationClustersPage, VirtualizationImagesPage, VirtualizationOperationsPage, VirtualizationSyncPage, VirtualizationVmDetailPage, VirtualizationVmsPage } from './virtualization-pages'
+import { VirtualizationClustersPage, VirtualizationImagesPage, VirtualizationOperationsPage, VirtualizationOverviewPage, VirtualizationSyncPage, VirtualizationVmDetailPage, VirtualizationVmsPage } from './virtualization-pages'
+
+vi.mock('@visactor/react-vchart', () => ({
+  LineChart: () => null,
+}))
+
+vi.mock('@/components/resource-metrics-panel', () => ({
+  buildCompactChartSpec: () => ({}),
+  compactMetricColors: {
+    cpu: '#000',
+    memory: '#000',
+    networkRx: '#000',
+    networkTx: '#000',
+    default: '#000',
+  },
+  formatMetricValue: (value: unknown) => String(value ?? '-'),
+}))
 
 const testState = vi.hoisted(() => ({
   permissionSnapshot: {
@@ -27,14 +43,36 @@ const testState = vi.hoisted(() => ({
         logs: [{ id: 'log-vm', taskId: 'op-vm', logLevel: 'info', message: 'vm ready', createdAt: '2026-05-21T00:00:00Z' }],
       } }
     }
+    if (path === '/virtualization/overview') {
+      return { data: {
+        stats: {
+          connections: { total: 2, healthy: 0, degraded: 1, unavailable: 1 },
+          vmCount: 3,
+          runningVmCount: 2,
+          stoppedVmCount: 1,
+          pendingTaskCount: 1,
+          failedTaskCount: 1,
+        },
+        connectionSummary: { total: 2, healthy: 0, degraded: 1, unavailable: 1, neverSynced: 1, credentialMissing: 1 },
+        taskSummary: { queued: 0, running: 1, failed: 1, timeout: 0, canceled: 0, completed: 1 },
+        attention: {
+          riskyConnections: [
+            { id: 'conn-pve', name: 'pve-a', provider: 'pve', endpoint: 'https://pve.example:8006', enabled: true, verifyTls: true, health: 'unavailable', credentialConfigured: false, riskLevel: 'critical', riskReasons: ['连接不可用', '未配置凭证', '尚未同步'] },
+          ],
+          failedSyncTasks: [
+            { id: 'op-retry', operationType: 'asset_sync', status: 'failed', targetName: 'conn-a', message: 'sync failed', allowedActions: ['retry'] },
+          ],
+          failedOperations: [
+            { id: 'op-retry', operationType: 'asset_sync', status: 'failed', targetName: 'conn-a', message: 'sync failed', allowedActions: ['retry'] },
+          ],
+        },
+      } }
+    }
     if (path === '/virtualization/clusters') {
       return { data: [
-        { id: 'conn-pve', name: 'pve-a', provider: 'pve', endpoint: 'https://pve.example:8006', enabled: true, verifyTls: true, config: { defaultNode: 'pve-1', defaultStorage: 'local-lvm' } },
-        { id: 'conn-1', name: 'kubevirt-a', provider: 'kubevirt', kubernetesClusterId: 'cluster-a', enabled: true, verifyTls: true },
+        { id: 'conn-pve', name: 'pve-a', provider: 'pve', endpoint: 'https://pve.example:8006', enabled: true, verifyTls: true, health: 'unavailable', credentialConfigured: false, config: { defaultNode: 'pve-1', defaultStorage: 'local-lvm' } },
+        { id: 'conn-1', name: 'kubevirt-a', provider: 'kubevirt', kubernetesClusterId: 'cluster-a', enabled: true, verifyTls: true, health: 'degraded', credentialConfigured: true, lastSyncedAt: '2026-05-21T00:00:00Z' },
       ] }
-    }
-    if (path === '/clusters') {
-      return { data: [{ id: 'cluster-a', name: 'cluster-a', region: 'standard_kubernetes', environment: 'dev', labels: {}, connectionMode: 'direct_kubeconfig', version: 'v1.30', health: { status: 'healthy' } }] }
     }
     if (path === '/virtualization/images' || path === '/virtualization/images?page=1&pageSize=10') {
       return { data: { items: [{ id: 'image-1', name: 'ubuntu-24.04', provider: 'kubevirt', connectionId: 'conn-1', sourceKind: 'datasource', sourceRef: 'default/ubuntu', osType: 'ubuntu' }], total: 1, page: 1, pageSize: 10 } }
@@ -48,7 +86,7 @@ const testState = vi.hoisted(() => ({
     if (path === '/virtualization/operations') {
       return { data: [
         { id: 'op-cancel', operationType: 'vm_create', status: 'running', targetName: 'vm-a', allowedActions: ['cancel'] },
-        { id: 'op-retry', operationType: 'asset_sync', status: 'failed', targetName: 'conn-a', allowedActions: ['retry'] },
+        { id: 'op-retry', operationType: 'asset_sync', status: 'failed', targetName: 'conn-a', message: 'sync failed', allowedActions: ['retry'] },
       ] }
     }
     if (path === '/virtualization/operations/op-1/logs') {
@@ -184,6 +222,18 @@ describe('virtualization pages', () => {
     vi.clearAllMocks()
   })
 
+  it('surfaces abnormal clusters and failed operations in overview', async () => {
+    const container = await renderWithProviders(<VirtualizationOverviewPage />, '/virtualization/overview')
+
+    expect(testState.apiGet).toHaveBeenCalledWith('/virtualization/overview')
+    expect(testState.apiGet).toHaveBeenCalledWith('/virtualization/clusters')
+    expect(testState.apiGet).toHaveBeenCalledWith('/virtualization/operations')
+    expect(container.textContent).toContain('高风险连接')
+    expect(container.textContent).toContain('失败与超时任务')
+    expect(container.textContent).toContain('连接不可用')
+    expect(container.textContent).toContain('sync failed')
+  })
+
   it('loads paginated VMs and creates from flavor plus image with provider fields', async () => {
     const container = await renderWithProviders(<VirtualizationVmsPage />)
 
@@ -302,6 +352,14 @@ describe('virtualization pages', () => {
 
     expect(document.body.textContent).toContain('KubeVirt DataSource')
     expect(document.body.textContent).toContain('PVC')
+  })
+
+  it('initializes operations view from abnormal query preset', async () => {
+    const container = await renderWithProviders(<VirtualizationOperationsPage />, '/virtualization/operations?abnormal=true')
+
+    expect(container.textContent).toContain('失败/超时')
+    expect(container.textContent).toContain('sync failed')
+    expect(container.textContent).not.toContain('vm-a')
   })
 
   it('gates operation cancel and retry by manage permission and allowed actions', async () => {

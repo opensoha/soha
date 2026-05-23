@@ -5,6 +5,30 @@ export interface VirtualizationConnectionHealth {
   unavailable: number
 }
 
+export interface VirtualizationOverviewConnectionSummary {
+  total?: number
+  healthy?: number
+  degraded?: number
+  unavailable?: number
+  neverSynced?: number
+  credentialMissing?: number
+}
+
+export interface VirtualizationOverviewTaskSummary {
+  queued?: number
+  running?: number
+  failed?: number
+  timeout?: number
+  canceled?: number
+  completed?: number
+}
+
+export interface VirtualizationOverviewAttention {
+  riskyConnections?: VirtualizationCluster[]
+  failedSyncTasks?: VirtualizationOperation[]
+  failedOperations?: VirtualizationOperation[]
+}
+
 export interface VirtualizationOverviewStats {
   connections?: VirtualizationConnectionHealth
   vmCount?: number
@@ -20,6 +44,9 @@ export interface VirtualizationOverview {
   stats?: VirtualizationOverviewStats
   recentOperations?: VirtualizationOperation[]
   lastSyncTask?: VirtualizationOperation | null
+  connectionSummary?: VirtualizationOverviewConnectionSummary
+  taskSummary?: VirtualizationOverviewTaskSummary
+  attention?: VirtualizationOverviewAttention
 }
 
 export interface VirtualMachine {
@@ -80,6 +107,8 @@ export interface VirtualizationCluster {
   version?: string
   region?: string
   description?: string
+  riskLevel?: 'normal' | 'attention' | 'warning' | 'critical'
+  riskReasons?: string[]
   lastSyncedAt?: string
   createdAt?: string
   updatedAt?: string

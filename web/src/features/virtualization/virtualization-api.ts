@@ -64,8 +64,16 @@ export const virtualizationApi = {
   updateFlavor: (id: string, payload: VirtualizationFlavorInput) =>
     api.put<ApiResponse<VirtualizationFlavor>>(`${BASE}/flavors/${encodeURIComponent(id)}`, payload),
   deleteFlavor: (id: string) => api.delete<ApiResponse<void>>(`${BASE}/flavors/${encodeURIComponent(id)}`),
-  operations: (params: { assetType?: string } = {}) =>
-    api.get<ApiResponse<VirtualizationOperation[]>>(withQuery(`${BASE}/operations`, Object.entries(params))),
+  operations: (params: { assetType?: string; taskKind?: string; abnormal?: boolean; pending?: boolean; statuses?: string[] } = {}) =>
+    api.get<ApiResponse<VirtualizationOperation[]>>(
+      withQuery(
+        `${BASE}/operations`,
+        Object.entries({
+          ...params,
+          statuses: params.statuses?.join(','),
+        }) as Array<[string, string | number | undefined]>,
+      ),
+    ),
   operationLogs: (id: string) =>
     api.get<ApiResponse<VirtualizationOperationLog[]>>(`${BASE}/operations/${encodeURIComponent(id)}/logs`),
   cancelOperation: (id: string) =>

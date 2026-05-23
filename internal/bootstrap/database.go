@@ -82,7 +82,7 @@ type clusterCredentialSeed struct {
 // While the stored version matches this constant, the static seed block is
 // skipped entirely. Config-driven sync (admin user, clusters) runs separately
 // during startup so runtime config updates do not depend on replaying defaults.
-const bootstrapSeedVersion = "2026-05-21-2"
+const bootstrapSeedVersion = "2026-05-23-1"
 
 const bootstrapSeedVersionKey = "bootstrap.seed_version"
 
@@ -253,7 +253,7 @@ func defaultMenuSeeds() []menuSeed {
 		{ID: "virtualization-workbench-flavors", ParentID: "virtualization-workbench", Path: "/virtualization/flavors", LabelZH: "规格", LabelEN: "Flavors", IconKey: "code", Section: "ops", SortOrder: 85, Enabled: true},
 		{ID: "virtualization-workbench-operations", ParentID: "virtualization-workbench", Path: "/virtualization/operations", LabelZH: "操作记录", LabelEN: "Operations", IconKey: "activity", Section: "ops", SortOrder: 86, Enabled: true},
 		{ID: "virtualization-workbench-sync", ParentID: "virtualization-workbench", Path: "/virtualization/sync", LabelZH: "同步任务", LabelEN: "Sync Tasks", IconKey: "activity", Section: "ops", SortOrder: 87, Enabled: true},
-		{ID: "builds", Path: "/applications", LabelZH: "应用中心", LabelEN: "Application Center", IconKey: "blocks", Section: "deliver", SortOrder: 110, Enabled: true, Roles: []string{"admin", "ops", "developer"}},
+		{ID: "builds", Path: "/applications", LabelZH: "应用中心", LabelEN: "Application Center", IconKey: "blocks", Section: "deliver", SortOrder: 1, Enabled: true, Roles: []string{"admin", "ops", "developer"}},
 		{ID: "application-management", Path: "/application-management", LabelZH: "应用管理", LabelEN: "Application Management", IconKey: "blocks", Section: "deliver", SortOrder: 111, Enabled: true, Roles: []string{"admin", "ops", "developer"}},
 		{ID: "build-templates", Path: "/build-templates", LabelZH: "构建模板", LabelEN: "Build Templates", IconKey: "code", Section: "deliver", SortOrder: 112, Enabled: true, Roles: []string{"admin", "ops"}},
 		{ID: "delivery-blueprints", Path: "/delivery/blueprints", LabelZH: "交付蓝图", LabelEN: "Delivery Blueprints", IconKey: "code", Section: "deliver", SortOrder: 112, Enabled: true, Roles: []string{"admin", "ops", "developer"}},

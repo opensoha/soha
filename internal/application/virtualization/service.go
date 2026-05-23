@@ -152,9 +152,12 @@ type FlavorInput struct {
 }
 
 type Overview struct {
-	Stats            OverviewStats               `json:"stats"`
-	RecentOperations []domainvirtualization.Task `json:"recentOperations"`
-	LastSyncTask     *domainvirtualization.Task  `json:"lastSyncTask,omitempty"`
+	Stats             OverviewStats               `json:"stats"`
+	RecentOperations  []domainvirtualization.Task `json:"recentOperations"`
+	LastSyncTask      *domainvirtualization.Task  `json:"lastSyncTask,omitempty"`
+	ConnectionSummary OverviewConnectionSummary   `json:"connectionSummary"`
+	TaskSummary       OverviewTaskSummary         `json:"taskSummary"`
+	Attention         OverviewAttention           `json:"attention"`
 }
 
 type OverviewStats struct {
@@ -166,6 +169,30 @@ type OverviewStats struct {
 	FlavorCount      int                   `json:"flavorCount"`
 	PendingTaskCount int                   `json:"pendingTaskCount"`
 	FailedTaskCount  int                   `json:"failedTaskCount"`
+}
+
+type OverviewConnectionSummary struct {
+	Total             int `json:"total"`
+	Healthy           int `json:"healthy"`
+	Degraded          int `json:"degraded"`
+	Unavailable       int `json:"unavailable"`
+	NeverSynced       int `json:"neverSynced"`
+	CredentialMissing int `json:"credentialMissing"`
+}
+
+type OverviewTaskSummary struct {
+	Queued    int `json:"queued"`
+	Running   int `json:"running"`
+	Failed    int `json:"failed"`
+	Timeout   int `json:"timeout"`
+	Canceled  int `json:"canceled"`
+	Completed int `json:"completed"`
+}
+
+type OverviewAttention struct {
+	RiskyConnections []domainvirtualization.Connection `json:"riskyConnections"`
+	FailedSyncTasks  []domainvirtualization.Task       `json:"failedSyncTasks"`
+	FailedOperations []domainvirtualization.Task       `json:"failedOperations"`
 }
 
 type VMDetail struct {
@@ -242,20 +269,35 @@ func (s *Service) Overview(ctx context.Context, principal domainidentity.Princip
 	if err != nil {
 		return Overview{}, err
 	}
-	tasks, err := s.repo.ListTasks(ctx, domainvirtualization.TaskFilter{Limit: 20})
+	recentTasks, err := s.repo.ListTasks(ctx, domainvirtualization.TaskFilter{Limit: 20})
 	if err != nil {
 		return Overview{}, err
 	}
-	out := Overview{RecentOperations: tasks}
+	attentionTasks, err := s.repo.ListTasks(ctx, domainvirtualization.TaskFilter{Limit: 100})
+	if err != nil {
+		return Overview{}, err
+	}
+	out := Overview{RecentOperations: recentTasks}
 	out.Stats.Connections.Total = len(connections)
+	out.ConnectionSummary.Total = len(connections)
 	for _, connection := range connections {
-		switch strings.ToLower(stringValue(connection.Health, "status")) {
+		healthStatus := strings.ToLower(stringValue(connection.Health, "status"))
+		switch healthStatus {
 		case "healthy":
 			out.Stats.Connections.Healthy++
+			out.ConnectionSummary.Healthy++
 		case "degraded":
 			out.Stats.Connections.Degraded++
+			out.ConnectionSummary.Degraded++
 		default:
 			out.Stats.Connections.Unavailable++
+			out.ConnectionSummary.Unavailable++
+		}
+		if connection.LastSyncedAt == nil {
+			out.ConnectionSummary.NeverSynced++
+		}
+		if connection.Enabled && !connection.CredentialConfigured {
+			out.ConnectionSummary.CredentialMissing++
 		}
 	}
 	out.Stats.VMCount = len(vms)
@@ -269,18 +311,36 @@ func (s *Service) Overview(ctx context.Context, principal domainidentity.Princip
 	}
 	out.Stats.ImageCount = len(images)
 	out.Stats.FlavorCount = countActiveFlavors(flavors)
-	for i := range tasks {
-		switch tasks[i].Status {
-		case TaskStatusQueued, TaskStatusRunning:
+	for i := range attentionTasks {
+		switch attentionTasks[i].Status {
+		case TaskStatusQueued:
 			out.Stats.PendingTaskCount++
+			out.TaskSummary.Queued++
+		case TaskStatusRunning:
+			out.Stats.PendingTaskCount++
+			out.TaskSummary.Running++
 		case TaskStatusFailed:
 			out.Stats.FailedTaskCount++
+			out.TaskSummary.Failed++
+		case TaskStatusTimeout:
+			out.TaskSummary.Timeout++
+		case TaskStatusCanceled:
+			out.TaskSummary.Canceled++
+		case TaskStatusSucceeded:
+			out.TaskSummary.Completed++
 		}
-		if tasks[i].TaskKind == TaskKindAssetSync && out.LastSyncTask == nil {
-			item := tasks[i]
+		if attentionTasks[i].TaskKind == TaskKindAssetSync && out.LastSyncTask == nil {
+			item := attentionTasks[i]
 			out.LastSyncTask = &item
 		}
 	}
+	out.Attention.RiskyConnections = topRiskyConnections(connections, 5)
+	out.Attention.FailedSyncTasks = topFailedTasks(attentionTasks, 5, func(task domainvirtualization.Task) bool {
+		return task.TaskKind == TaskKindAssetSync && isAbnormalTaskStatus(task.Status)
+	})
+	out.Attention.FailedOperations = topFailedTasks(attentionTasks, 5, func(task domainvirtualization.Task) bool {
+		return isAbnormalTaskStatus(task.Status)
+	})
 	return out, nil
 }
 
@@ -1214,6 +1274,85 @@ func countActiveFlavors(items []domainvirtualization.Flavor) int {
 		}
 	}
 	return count
+}
+
+func topRiskyConnections(items []domainvirtualization.Connection, limit int) []domainvirtualization.Connection {
+	sorted := slices.Clone(items)
+	slices.SortFunc(sorted, func(left, right domainvirtualization.Connection) int {
+		if score := compareInts(connectionRiskScore(left), connectionRiskScore(right)); score != 0 {
+			return score
+		}
+		return strings.Compare(left.Name, right.Name)
+	})
+	out := make([]domainvirtualization.Connection, 0, min(limit, len(sorted)))
+	for _, item := range sorted {
+		if connectionRiskScore(item) >= 4 {
+			continue
+		}
+		out = append(out, sanitizeConnection(item))
+		if len(out) >= limit {
+			break
+		}
+	}
+	return out
+}
+
+func topFailedTasks(items []domainvirtualization.Task, limit int, include func(domainvirtualization.Task) bool) []domainvirtualization.Task {
+	out := make([]domainvirtualization.Task, 0, limit)
+	for _, item := range items {
+		if include != nil && !include(item) {
+			continue
+		}
+		out = append(out, item)
+		if len(out) >= limit {
+			break
+		}
+	}
+	return out
+}
+
+func isAbnormalTaskStatus(status string) bool {
+	switch strings.TrimSpace(status) {
+	case TaskStatusFailed, TaskStatusTimeout:
+		return true
+	default:
+		return false
+	}
+}
+
+func connectionRiskScore(item domainvirtualization.Connection) int {
+	healthStatus := strings.ToLower(stringValue(item.Health, "status"))
+	switch healthStatus {
+	case "unavailable":
+		return 0
+	case "degraded":
+		return 1
+	}
+	if item.Enabled && !item.CredentialConfigured {
+		return 2
+	}
+	if item.LastSyncedAt == nil {
+		return 3
+	}
+	return 4
+}
+
+func compareInts(left, right int) int {
+	switch {
+	case left < right:
+		return -1
+	case left > right:
+		return 1
+	default:
+		return 0
+	}
+}
+
+func min(left, right int) int {
+	if left < right {
+		return left
+	}
+	return right
 }
 
 func mergeMaps(base map[string]any, patch map[string]any) map[string]any {

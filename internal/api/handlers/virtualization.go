@@ -367,11 +367,15 @@ func (h *VirtualizationHandler) DeleteFlavor(c *gin.Context) {
 
 func (h *VirtualizationHandler) ListOperations(c *gin.Context) {
 	taskKind := firstQuery(c, "taskKind", "assetType", "type")
+	statuses := splitQueryList(c.Query("statuses"))
 	filter := domainvirtualization.TaskFilter{
 		Provider:     c.Query("provider"),
 		ConnectionID: c.Query("connectionId"),
 		VMID:         c.Query("vmId"),
 		Status:       c.Query("status"),
+		Statuses:     statuses,
+		Abnormal:     queryBool(c, "abnormal"),
+		Pending:      queryBool(c, "pending"),
 		TaskKind:     taskKind,
 		Search:       c.Query("search"),
 		Page:         queryInt(c, "page", 0),
@@ -460,6 +464,29 @@ func queryInt(c *gin.Context, key string, fallback int) int {
 	return value
 }
 
+func queryBool(c *gin.Context, key string) bool {
+	raw := strings.TrimSpace(c.Query(key))
+	if raw == "" {
+		return false
+	}
+	value, err := strconv.ParseBool(raw)
+	if err != nil {
+		return false
+	}
+	return value
+}
+
+func splitQueryList(raw string) []string {
+	parts := strings.Split(raw, ",")
+	items := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if trimmed := strings.TrimSpace(part); trimmed != "" {
+			items = append(items, trimmed)
+		}
+	}
+	return items
+}
+
 func wantsPage(c *gin.Context) bool {
 	return strings.TrimSpace(c.Query("page")) != "" || strings.TrimSpace(c.Query("pageSize")) != "" || strings.TrimSpace(c.Query("search")) != ""
 }
@@ -482,6 +509,7 @@ func mapConnections(items []domainvirtualization.Connection) []gin.H {
 }
 
 func mapConnection(item domainvirtualization.Connection) gin.H {
+	riskLevel, riskReasons := connectionRiskMetadata(item)
 	return gin.H{
 		"id":                   item.ID,
 		"name":                 item.Name,
@@ -497,9 +525,38 @@ func mapConnection(item domainvirtualization.Connection) gin.H {
 		"status":               stringValue(item.Health, "status"),
 		"region":               stringValue(item.Config, "region"),
 		"description":          stringValue(item.Config, "description"),
+		"riskLevel":            riskLevel,
+		"riskReasons":          riskReasons,
 		"lastSyncedAt":         item.LastSyncedAt,
 		"createdAt":            item.CreatedAt,
 		"updatedAt":            item.UpdatedAt,
+	}
+}
+
+func connectionRiskMetadata(item domainvirtualization.Connection) (string, []string) {
+	reasons := make([]string, 0, 3)
+	health := strings.ToLower(stringValue(item.Health, "status"))
+	switch health {
+	case "unavailable":
+		reasons = append(reasons, "连接不可用")
+	case "degraded":
+		reasons = append(reasons, "连接降级")
+	}
+	if item.Enabled && !item.CredentialConfigured {
+		reasons = append(reasons, "未配置凭证")
+	}
+	if item.LastSyncedAt == nil {
+		reasons = append(reasons, "尚未同步")
+	}
+	switch {
+	case health == "unavailable":
+		return "critical", reasons
+	case health == "degraded":
+		return "warning", reasons
+	case len(reasons) > 0:
+		return "attention", reasons
+	default:
+		return "normal", reasons
 	}
 }
 

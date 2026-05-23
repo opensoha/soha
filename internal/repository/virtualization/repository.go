@@ -1068,9 +1068,30 @@ func taskClauses(filter domainvirtualization.TaskFilter) ([]string, []any) {
 		clauses = append(clauses, "vm_id = ?")
 		args = append(args, value)
 	}
-	if value := strings.TrimSpace(filter.Status); value != "" {
+	if len(filter.Statuses) > 0 {
+		statuses := make([]string, 0, len(filter.Statuses))
+		for _, status := range filter.Statuses {
+			if trimmed := strings.TrimSpace(status); trimmed != "" {
+				statuses = append(statuses, trimmed)
+			}
+		}
+		if len(statuses) > 0 {
+			clauses = append(clauses, fmt.Sprintf("status IN (%s)", placeholders(len(statuses))))
+			for _, status := range statuses {
+				args = append(args, status)
+			}
+		}
+	} else if value := strings.TrimSpace(filter.Status); value != "" {
 		clauses = append(clauses, "status = ?")
 		args = append(args, value)
+	}
+	if filter.Abnormal {
+		clauses = append(clauses, "status IN (?, ?)")
+		args = append(args, "failed", "callback_timeout")
+	}
+	if filter.Pending {
+		clauses = append(clauses, "status IN (?, ?)")
+		args = append(args, "queued", "running")
 	}
 	if value := strings.TrimSpace(filter.TaskKind); value != "" {
 		clauses = append(clauses, "task_kind = ?")
@@ -1082,6 +1103,17 @@ func taskClauses(filter domainvirtualization.TaskFilter) ([]string, []any) {
 		args = append(args, search, search, search, search)
 	}
 	return clauses, args
+}
+
+func placeholders(count int) string {
+	if count <= 0 {
+		return ""
+	}
+	items := make([]string, count)
+	for i := range items {
+		items[i] = "?"
+	}
+	return strings.Join(items, ", ")
 }
 
 func injectExtraClauses(query string, args []any, clauses []string, extraArgs []any) (string, []any) {
