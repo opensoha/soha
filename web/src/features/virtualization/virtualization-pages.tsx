@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
@@ -12,6 +12,7 @@ import {
   Form,
   Input,
   InputNumber,
+  Modal,
   Popconfirm,
   Select,
   Space,
@@ -188,6 +189,17 @@ function latestNonEmptyOperationMessage(record: VirtualizationOperation) {
   return record.message || '-'
 }
 
+function bulkActionSummary(label: string, items: string[]) {
+  if (items.length === 0) {
+    return `${label} 0 个对象`
+  }
+  return `${label} ${items.length} 个对象：${items.slice(0, 3).join('、')}${items.length > 3 ? ' 等' : ''}`
+}
+
+function selectableOperationIds(records: VirtualizationOperation[], action: 'cancel' | 'retry') {
+  return records.filter((record) => hasAllowedAction(record.allowedActions, action)).map((record) => record.id)
+}
+
 function OperationStatusChips({ counts }: { counts: Array<{ key: string; label: string; value: number; tone?: string }> }) {
   return (
     <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
@@ -268,8 +280,8 @@ function vmMetricColor(key: string): string {
 }
 
 function VMMetricsChart({ data }: { data: VirtualizationVMMetrics }) {
-  if (data.message) {
-    return <Alert type="info" message={data.message} />
+  if (!data.ready || data.message) {
+    return <Alert type="info" message={data.message || '当前暂无可用指标数据'} />
   }
   const series = data.series ?? []
   if (series.length === 0) {
@@ -394,6 +406,8 @@ interface VirtualizationClusterFormValues {
   csrfToken?: string
   defaultNode?: string
   defaultStorage?: string
+  prometheusUrl?: string
+  prometheusBearerToken?: string
 }
 
 function operationPresetFromSearch(search: string): OperationFilterPreset {
@@ -412,6 +426,78 @@ function operationPresetFromSearch(search: string): OperationFilterPreset {
     return 'vm'
   }
   return 'all'
+}
+
+function buildInvestigationPath(params: {
+  clusterId?: string
+  namespace?: string
+  workload?: string
+  connectionId?: string
+  vmId?: string
+  provider?: string
+  timeRangeMinutes?: number
+}) {
+  const search = new URLSearchParams()
+  search.set('mode', 'root_cause')
+  search.set('timeRangeMinutes', String(params.timeRangeMinutes ?? 60))
+  if (params.clusterId) search.set('clusterId', params.clusterId)
+  if (params.namespace) search.set('namespace', params.namespace)
+  if (params.workload) search.set('workload', params.workload)
+  if (params.connectionId) search.set('connectionId', params.connectionId)
+  if (params.vmId) search.set('vmId', params.vmId)
+  if (params.provider) search.set('provider', params.provider)
+  return `/ai-workbench/investigation?${search.toString()}`
+}
+
+function operationParamsFromSearch(search: string) {
+  const params = new URLSearchParams(search)
+  const abnormal = params.get('abnormal') === 'true'
+  const pending = params.get('pending') === 'true'
+  const taskKind = params.get('taskKind') || params.get('assetType') || undefined
+  const connectionId = params.get('connectionId') || undefined
+  const vmId = params.get('vmId') || undefined
+  const searchText = params.get('search') || undefined
+  const statuses = params.get('statuses')?.split(',').map((item) => item.trim()).filter(Boolean) || undefined
+  return {
+    preset: operationPresetFromSearch(search),
+    query: {
+      abnormal,
+      pending,
+      taskKind,
+      assetType: taskKind === 'asset_sync' ? taskKind : undefined,
+      connectionId,
+      vmId,
+      search: searchText,
+      statuses,
+    },
+  }
+}
+
+function nextOperationSearch(preset: OperationFilterPreset, base: { connectionId?: string; vmId?: string; taskKind?: string; search?: string; statuses?: string[] }) {
+  const params = new URLSearchParams()
+  if (base.connectionId) params.set('connectionId', base.connectionId)
+  if (base.vmId) params.set('vmId', base.vmId)
+  if (base.search) params.set('search', base.search)
+  if (base.statuses?.length) params.set('statuses', base.statuses.join(','))
+  switch (preset) {
+    case 'pending':
+      params.set('pending', 'true')
+      break
+    case 'abnormal':
+      params.set('abnormal', 'true')
+      break
+    case 'asset_sync':
+      params.set('taskKind', 'asset_sync')
+      break
+    case 'vm':
+      params.set('taskKind', 'vm_action')
+      break
+    default:
+      if (base.taskKind) params.set('taskKind', base.taskKind)
+      break
+  }
+  const query = params.toString()
+  return query ? `?${query}` : ''
 }
 
 function buildVmPayload(values: CreateVirtualMachineInput): CreateVirtualMachineInput {
@@ -434,6 +520,7 @@ function buildVmPayload(values: CreateVirtualMachineInput): CreateVirtualMachine
 
 interface VirtualMachineFormValues extends CreateVirtualMachineInput {
   provider?: string
+  sourceMode?: string
   pveStorage?: string
   pveBridge?: string
   pveIso?: string
@@ -449,8 +536,18 @@ function buildCreateVmPayload(values: VirtualMachineFormValues): CreateVirtualMa
     storageClass: values.kubevirtStorageClass,
     dataVolumeName: values.kubevirtDataVolumeName,
   })
+  const sourceMode = values.provider === 'pve'
+    ? values.pveIso
+      ? 'iso_install'
+      : 'template_clone'
+    : values.kubevirtDataVolumeName
+      ? 'pvc_clone'
+      : 'datasource_clone'
   return buildVmPayload({
     ...values,
+    sourceMode,
+    sourceId: values.bootImageId,
+    imageId: values.bootImageId,
     providerParams: Object.keys(providerParams).length ? providerParams : undefined,
   })
 }
@@ -483,6 +580,9 @@ function buildClusterPayload(values: VirtualizationClusterFormValues): Virtualiz
     if (values.tokenSecret) credential.tokenSecret = values.tokenSecret
     if (values.ticket) credential.ticket = values.ticket
     if (values.csrfToken) credential.csrfToken = values.csrfToken
+  } else {
+    if (values.prometheusUrl) config.prometheusUrl = values.prometheusUrl
+    if (values.prometheusBearerToken) config.prometheusBearerToken = values.prometheusBearerToken
   }
   return {
     name: values.name,
@@ -500,23 +600,41 @@ function buildClusterPayload(values: VirtualizationClusterFormValues): Virtualiz
 }
 
 function OperationsTable({ assetType, initialPreset = 'all' }: { assetType?: string; initialPreset?: OperationFilterPreset }) {
+  const location = useLocation()
+  const navigate = useNavigate()
+  const parsedSearch = useMemo(() => operationParamsFromSearch(location.search), [location.search])
   const [selectedOperation, setSelectedOperation] = useState<VirtualizationOperation | null>(null)
   const [preset, setPreset] = useState<OperationFilterPreset>(initialPreset)
+  const [selectedTaskRowKeys, setSelectedTaskRowKeys] = useState<React.Key[]>([])
   const { canManageOperations } = useVirtualizationPermissions()
   const queryClient = useQueryClient()
   const { message } = App.useApp()
-  const navigate = useNavigate()
   const operationsQuery = useQuery({
-    queryKey: ['virtualization', 'operations', assetType ?? 'all'],
-    queryFn: () => virtualizationApi.operations({ assetType }),
+    queryKey: ['virtualization', 'operations', assetType ?? 'all', parsedSearch.query],
+    queryFn: () => virtualizationApi.operations({
+      assetType: assetType ?? parsedSearch.query.assetType,
+      taskKind: assetType ? undefined : parsedSearch.query.taskKind,
+      abnormal: parsedSearch.query.abnormal,
+      pending: parsedSearch.query.pending,
+      statuses: parsedSearch.query.statuses,
+      connectionId: parsedSearch.query.connectionId,
+      vmId: parsedSearch.query.vmId,
+      search: parsedSearch.query.search,
+    } as Parameters<typeof virtualizationApi.operations>[0]),
   })
   const logsQuery = useQuery({
     queryKey: ['virtualization', 'operations', selectedOperation?.id, 'logs'],
     queryFn: () => virtualizationApi.operationLogs(selectedOperation?.id ?? ''),
     enabled: Boolean(selectedOperation?.id),
   })
+
+  useEffect(() => {
+    setPreset(assetType ? 'asset_sync' : parsedSearch.preset || initialPreset)
+  }, [assetType, initialPreset, parsedSearch.preset])
+
   const operations = operationsQuery.data?.data ?? []
-  const filteredOperations = useMemo(() => buildOperationFilter(operations, preset), [operations, preset])
+  const hasServerFilters = Boolean(parsedSearch.query.abnormal || parsedSearch.query.pending || parsedSearch.query.connectionId || parsedSearch.query.vmId || parsedSearch.query.search || parsedSearch.query.statuses?.length || parsedSearch.query.taskKind || parsedSearch.query.assetType)
+  const filteredOperations = useMemo(() => (hasServerFilters ? operations : buildOperationFilter(operations, preset)), [hasServerFilters, operations, preset])
   const logs = logsQuery.data?.data ?? []
   const cancelMutation = useMutation({
     mutationFn: virtualizationApi.cancelOperation,
@@ -529,6 +647,22 @@ function OperationsTable({ assetType, initialPreset = 'all' }: { assetType?: str
     mutationFn: virtualizationApi.retryOperation,
     onSuccess: () => {
       message.success('重试任务已提交')
+      refreshVirtualization(queryClient)
+    },
+  })
+  const batchCancelMutation = useMutation({
+    mutationFn: async (ids: string[]) => Promise.all(ids.map((id) => virtualizationApi.cancelOperation(id))),
+    onSuccess: (_response, ids) => {
+      message.success(`已提交 ${ids.length} 个任务的取消请求`)
+      setSelectedTaskRowKeys([])
+      refreshVirtualization(queryClient)
+    },
+  })
+  const batchRetryMutation = useMutation({
+    mutationFn: async (ids: string[]) => Promise.all(ids.map((id) => virtualizationApi.retryOperation(id))),
+    onSuccess: (_response, ids) => {
+      message.success(`已提交 ${ids.length} 个任务的重试请求`)
+      setSelectedTaskRowKeys([])
       refreshVirtualization(queryClient)
     },
   })
@@ -554,7 +688,19 @@ function OperationsTable({ assetType, initialPreset = 'all' }: { assetType?: str
             <Button size="small" type="text" icon={<FileTextOutlined />} onClick={() => setSelectedOperation(record)}>
               日志
             </Button>
-            {record.vmId ? <Button size="small" type="text" onClick={() => navigate(`/virtualization/vms/${encodeURIComponent(record.vmId || '')}`)}>VM</Button> : null}
+            <Button
+              size="small"
+              type="text"
+              onClick={() => navigate(buildInvestigationPath({
+                connectionId: record.connectionId,
+                vmId: record.vmId,
+                workload: record.targetName || record.vmId || record.connectionId,
+                timeRangeMinutes: 60,
+              }))}
+            >
+              AI调查
+            </Button>
+            {record.vmId ? <Button size="small" type="text" onClick={() => navigate(`/virtualization/vms/${encodeURIComponent(record.vmId || '')}?focus=operations`)}>VM</Button> : null}
             {canCancel ? (
               <Popconfirm title="确认取消任务？" onConfirm={() => cancelMutation.mutate(record.id)}>
                 <Button size="small" type="text" danger>取消</Button>
@@ -578,11 +724,47 @@ function OperationsTable({ assetType, initialPreset = 'all' }: { assetType?: str
     <>
       <Space wrap className="mb-3">
         {OPERATION_FILTER_PRESETS.map((item) => (
-          <Button key={item.key} type={preset === item.key ? 'primary' : 'default'} onClick={() => setPreset(item.key)}>
+          <Button key={item.key} type={preset === item.key ? 'primary' : 'default'} onClick={() => {
+            setPreset(item.key)
+            navigate({
+              pathname: location.pathname,
+              search: nextOperationSearch(item.key, {
+                connectionId: parsedSearch.query.connectionId,
+                vmId: parsedSearch.query.vmId,
+                taskKind: parsedSearch.query.taskKind,
+                search: parsedSearch.query.search,
+                statuses: parsedSearch.query.statuses,
+              }),
+            })
+          }}>
             {item.label}
           </Button>
         ))}
       </Space>
+      {selectedTaskRowKeys.length > 0 ? (
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded border border-[var(--kc-border)] bg-[var(--kc-surface-muted)] p-3">
+          <Text type="secondary">已选择 {selectedTaskRowKeys.length} 个任务</Text>
+          <Space wrap>
+            {canManageOperations ? <Button danger disabled={selectedTaskRowKeys.some((id) => !selectableOperationIds(filteredOperations, 'cancel').includes(String(id)))} onClick={() => {
+              const labels = filteredOperations.filter((record) => selectedTaskRowKeys.includes(record.id)).map((record) => record.targetName || record.id)
+              Modal.confirm({
+                title: '确认批量取消任务？',
+                content: bulkActionSummary('将取消', labels),
+                onOk: () => batchCancelMutation.mutate(selectedTaskRowKeys.map(String)),
+              })
+            }} loading={batchCancelMutation.isPending}>批量取消</Button> : null}
+            {canManageOperations ? <Button type="primary" disabled={selectedTaskRowKeys.some((id) => !selectableOperationIds(filteredOperations, 'retry').includes(String(id)))} onClick={() => {
+              const labels = filteredOperations.filter((record) => selectedTaskRowKeys.includes(record.id)).map((record) => record.targetName || record.id)
+              Modal.confirm({
+                title: '确认批量重试任务？',
+                content: bulkActionSummary('将重试', labels),
+                onOk: () => batchRetryMutation.mutate(selectedTaskRowKeys.map(String)),
+              })
+            }} loading={batchRetryMutation.isPending}>批量重试</Button> : null}
+            <Button onClick={() => setSelectedTaskRowKeys([])}>清空选择</Button>
+          </Space>
+        </div>
+      ) : null}
       <OperationStatusChips counts={[
         { key: 'pending', label: '待处理', value: counts.pending, tone: counts.pending > 0 ? 'warning' : 'default' },
         { key: 'abnormal', label: '失败/超时', value: counts.abnormal, tone: counts.abnormal > 0 ? 'danger' : 'default' },
@@ -591,6 +773,10 @@ function OperationsTable({ assetType, initialPreset = 'all' }: { assetType?: str
       ]} />
       <Table
         rowKey="id"
+        rowSelection={{
+          selectedRowKeys: selectedTaskRowKeys,
+          onChange: (keys) => setSelectedTaskRowKeys(keys),
+        }}
         size="small"
         loading={operationsQuery.isLoading}
         dataSource={filteredOperations}
@@ -641,15 +827,6 @@ function OperationsTable({ assetType, initialPreset = 'all' }: { assetType?: str
   )
 }
 
-function StatCard({ label, value, extra }: { label: string; value: number | string; extra?: string }) {
-  return (
-    <Card size="small">
-      <Text type="secondary">{label}</Text>
-      <div className="mt-2 text-2xl font-semibold">{value}</div>
-      {extra ? <Text type="secondary">{extra}</Text> : null}
-    </Card>
-  )
-}
 
 export function VirtualizationOverviewPage() {
   const { canManageClusters, canManageOperations, canSync } = useVirtualizationPermissions()
@@ -758,6 +935,20 @@ export function VirtualizationOverviewPage() {
     [operations],
   )
   const logs = logsQuery.data?.data ?? []
+  const providerCounts = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const cluster of clusters) {
+      const key = cluster.provider || 'unknown'
+      counts.set(key, (counts.get(key) ?? 0) + 1)
+    }
+    return Array.from(counts.entries())
+  }, [clusters])
+  const operationStats = [
+    { key: 'credentialMissing', label: '凭证缺失', value: connectionSummary?.credentialMissing ?? clusters.filter((item) => item.credentialConfigured === false).length, tone: (connectionSummary?.credentialMissing ?? 0) > 0 ? 'warning' : 'default' },
+    { key: 'neverSynced', label: '从未同步', value: connectionSummary?.neverSynced ?? clusters.filter((item) => !item.lastSyncedAt).length, tone: (connectionSummary?.neverSynced ?? 0) > 0 ? 'warning' : 'default' },
+    { key: 'completed', label: '已完成任务', value: taskSummary?.completed ?? operations.filter((item) => item.status === 'completed').length },
+    { key: 'providers', label: 'Provider 数', value: providerCounts.length },
+  ]
   const heroStats = [
     {
       key: 'connections',
@@ -858,6 +1049,7 @@ export function VirtualizationOverviewPage() {
             return (
               <>
                 <Button size="small" onClick={() => setSelectedCluster(cluster)}>详情</Button>
+                <Button size="small" onClick={() => navigate(buildInvestigationPath({ connectionId: cluster.id, provider: cluster.provider, clusterId: cluster.kubernetesClusterId, namespace: cluster.defaultNamespace, workload: cluster.name, timeRangeMinutes: 60 }))}>AI调查</Button>
                 {canManageClusters ? <Button size="small" onClick={() => testMutation.mutate(cluster.id)} loading={testMutation.isPending}>测试</Button> : null}
                 {canSync ? <Button size="small" onClick={() => syncClusterMutation.mutate(cluster.id)} loading={syncClusterMutation.isPending}>同步</Button> : null}
               </>
@@ -879,6 +1071,7 @@ export function VirtualizationOverviewPage() {
             return operation ? (
               <>
                 <Button size="small" onClick={() => setSelectedOperation(operation)}>日志</Button>
+                <Button size="small" onClick={() => navigate(buildInvestigationPath({ connectionId: operation.connectionId, vmId: operation.vmId, workload: operation.targetName || operation.vmId || operation.connectionId, timeRangeMinutes: 60 }))}>AI调查</Button>
                 {canManageOperations && hasAllowedAction(operation.allowedActions, 'retry') ? <Button size="small" onClick={() => retryMutation.mutate(operation.id)} loading={retryMutation.isPending}>重试</Button> : null}
               </>
             ) : null
@@ -899,7 +1092,8 @@ export function VirtualizationOverviewPage() {
             return operation ? (
               <>
                 <Button size="small" onClick={() => setSelectedOperation(operation)}>日志</Button>
-                {operation.vmId ? <Button size="small" onClick={() => navigate(`/virtualization/vms/${encodeURIComponent(operation.vmId || '')}`)}>VM</Button> : null}
+                <Button size="small" onClick={() => navigate(buildInvestigationPath({ connectionId: operation.connectionId, vmId: operation.vmId, workload: operation.targetName || operation.vmId || operation.connectionId, timeRangeMinutes: 60 }))}>AI调查</Button>
+                {operation.vmId ? <Button size="small" onClick={() => navigate(`/virtualization/vms/${encodeURIComponent(operation.vmId || '')}?focus=operations`)}>VM</Button> : null}
               </>
             ) : null
           }}
@@ -921,6 +1115,14 @@ export function VirtualizationOverviewPage() {
             { key: 'failed', label: '失败/超时', value: operations.filter((item) => isAbnormalOperation(item.status)).length, tone: operations.some((item) => isAbnormalOperation(item.status)) ? 'danger' : 'default' },
             { key: 'sync', label: '同步任务', value: operations.filter((item) => isSyncOperation(item)).length },
           ]} />
+        </Card>
+      </div>
+      <div className="grid gap-4 xl:grid-cols-2">
+        <Card size="small" title="Provider 分布">
+          <OperationStatusChips counts={providerCounts.map(([provider, value]) => ({ key: provider, label: provider.toUpperCase(), value }))} />
+        </Card>
+        <Card size="small" title="运维统计摘要">
+          <OperationStatusChips counts={operationStats} />
         </Card>
       </div>
       <Card size="small" title="最近异常" extra={<Button type="link" onClick={() => navigate('/virtualization/operations')}>查看全部异常</Button>} loading={operationsQuery.isLoading}>
@@ -987,6 +1189,7 @@ export function VirtualizationOverviewPage() {
         <Space className="mt-4">
           {selectedCluster && canManageClusters ? <Button onClick={() => testMutation.mutate(selectedCluster.id)} loading={testMutation.isPending}>测试连接</Button> : null}
           {selectedCluster && canSync ? <Button onClick={() => syncClusterMutation.mutate(selectedCluster.id)} loading={syncClusterMutation.isPending}>重新同步</Button> : null}
+          {selectedCluster ? <Button onClick={() => navigate(buildInvestigationPath({ connectionId: selectedCluster.id, provider: selectedCluster.provider, clusterId: selectedCluster.kubernetesClusterId, namespace: selectedCluster.defaultNamespace, workload: selectedCluster.name, timeRangeMinutes: 60 }))}>AI调查</Button> : null}
           {selectedCluster ? <Button onClick={() => navigate('/virtualization/clusters')}>前往连接页</Button> : null}
         </Space>
       </Drawer>
@@ -1004,6 +1207,7 @@ export function VirtualizationVmsPage() {
   const queryClient = useQueryClient()
   const { message } = App.useApp()
   const createProvider = Form.useWatch('provider', form) ?? 'kubevirt'
+  const createSourceMode = Form.useWatch('sourceMode', form) ?? (createProvider === 'pve' ? 'template_clone' : 'datasource_clone')
   const { task: streamedTask, status: streamStatus } = useTaskStream(pendingTaskId)
 
   useEffect(() => {
@@ -1052,6 +1256,9 @@ export function VirtualizationVmsPage() {
   const clusters = clustersQuery.data?.data ?? []
   const images = normalizePage(imagesQuery.data?.data, 1, 200).items
   const flavors = flavorsQuery.data?.data ?? []
+  const pveNodeOptions = useMemo(() => images.filter((item) => item.provider === 'pve' && item.node).map((item) => item.node as string).filter((value, index, items) => items.indexOf(value) === index).map((value) => ({ value, label: value })), [images])
+  const pveStorageOptions = useMemo(() => images.filter((item) => item.provider === 'pve' && item.assetKind === 'storage' && item.name).map((item) => item.name).filter((value, index, items) => items.indexOf(value) === index).map((value) => ({ value, label: value })), [images])
+  const pveBridgeOptions = useMemo(() => ['vmbr0', 'vmbr1'].map((value) => ({ value, label: value })), [])
   const vmPage = normalizePage(vmsQuery.data?.data, filters.page ?? 1, filters.pageSize ?? 10)
   const selectedFlavorId = Form.useWatch('flavorId', form)
   const selectedFlavor = flavors.find((item) => item.id === selectedFlavorId)
@@ -1172,7 +1379,7 @@ export function VirtualizationVmsPage() {
         />
       </Card>
       <Drawer title="创建虚拟机" size="large" open={drawerOpen} onClose={() => setDrawerOpen(false)}>
-        <Form form={form} layout="vertical" initialValues={{ provider: 'kubevirt', startAfterCreate: true }} onFinish={(values) => createMutation.mutate(values)}>
+        <Form form={form} layout="vertical" initialValues={{ provider: 'kubevirt', sourceMode: 'datasource_clone', startAfterCreate: true }} onFinish={(values) => createMutation.mutate(values)}>
           <Form.Item name="name" label="名称" rules={[{ required: true }]}>
             <Input />
           </Form.Item>
@@ -1190,6 +1397,19 @@ export function VirtualizationVmsPage() {
               />
             </Form.Item>
           </div>
+          <Form.Item name="sourceMode" label="创建模式" rules={[{ required: true }]}>
+            <Select
+              options={createProvider === 'pve'
+                ? [
+                    { value: 'template_clone', label: '模板克隆' },
+                    { value: 'iso_install', label: 'ISO 安装' },
+                  ]
+                : [
+                    { value: 'datasource_clone', label: 'DataSource 克隆' },
+                    { value: 'pvc_clone', label: 'PVC 克隆' },
+                  ]}
+            />
+          </Form.Item>
           <Form.Item name="flavorId" label="规格" rules={[{ required: true }]}>
             <Select
               showSearch
@@ -1208,12 +1428,13 @@ export function VirtualizationVmsPage() {
               message={`已选择 ${selectedFlavor.name}: ${selectedFlavor.cpu}C / ${selectedFlavor.memoryMiB}MiB / ${selectedFlavor.diskGiB}GiB`}
             />
           ) : null}
-          <Form.Item name="bootImageId" label="启动镜像" rules={[{ required: true }]}>
+          <Form.Item name="bootImageId" label={createProvider === 'pve' ? (createSourceMode === 'iso_install' ? '安装 ISO' : '模板') : '启动镜像'} rules={[{ required: true }]}>
             <Select
               showSearch
               optionFilterProp="label"
               options={images
                 .filter((item) => !createProvider || item.provider === createProvider || !item.provider)
+                .filter((item) => createProvider !== 'pve' || (createSourceMode === 'iso_install' ? item.assetKind === 'iso' || item.sourceKind === 'iso' : item.assetKind === 'template' || item.sourceKind === 'template'))
                 .map((item) => ({ value: item.id, label: item.connectionName ? `${item.name} (${item.connectionName})` : item.name }))}
             />
           </Form.Item>
@@ -1222,32 +1443,44 @@ export function VirtualizationVmsPage() {
               <Input />
             </Form.Item>
             <Form.Item name="node" label="节点">
-              <Input />
+              {createProvider === 'pve' && pveNodeOptions.length > 0 ? <Select allowClear options={pveNodeOptions} /> : <Input disabled={createProvider === 'kubevirt'} placeholder={createProvider === 'kubevirt' ? '当前由集群调度' : undefined} />}
             </Form.Item>
           </div>
           <Form.Item name="network" label="网络">
-            <Input />
+            <Input disabled={createProvider === 'kubevirt'} placeholder={createProvider === 'kubevirt' ? '当前仅支持默认 Pod 网络' : undefined} />
           </Form.Item>
           {createProvider === 'pve' ? (
             <div className="grid gap-3 md:grid-cols-3">
               <Form.Item name="pveStorage" label="PVE 存储">
-                <Input placeholder="local-lvm" />
+                {pveStorageOptions.length > 0 ? <Select allowClear options={pveStorageOptions} /> : <Input placeholder="local-lvm" />}
               </Form.Item>
               <Form.Item name="pveBridge" label="PVE 网桥">
-                <Input placeholder="vmbr0" />
+                <Select allowClear options={pveBridgeOptions} placeholder="vmbr0" />
               </Form.Item>
-              <Form.Item name="pveIso" label="ISO">
-                <Input placeholder="local:iso/ubuntu.iso" />
-              </Form.Item>
+              {createSourceMode === 'iso_install' ? (
+                <Form.Item name="pveIso" label="安装 ISO">
+                  <Input placeholder="local:iso/ubuntu.iso" />
+                </Form.Item>
+              ) : (
+                <Form.Item label="模板模式">
+                  <Alert type="info" showIcon message="当前将按模板克隆模式创建 VM，启动镜像字段会作为模板来源。" />
+                </Form.Item>
+              )}
             </div>
           ) : (
             <div className="grid gap-3 md:grid-cols-2">
               <Form.Item name="kubevirtStorageClass" label="StorageClass">
-                <Input />
+                <Input placeholder="fast-ssd" />
               </Form.Item>
-              <Form.Item name="kubevirtDataVolumeName" label="DataVolume">
-                <Input />
-              </Form.Item>
+              {createSourceMode === 'pvc_clone' ? (
+                <Form.Item name="kubevirtDataVolumeName" label="PVC 名称">
+                  <Input placeholder="existing-root-pvc" />
+                </Form.Item>
+              ) : (
+                <Form.Item name="kubevirtDataVolumeName" label="DataVolume 名称">
+                  <Input placeholder="demo-rootdisk" />
+                </Form.Item>
+              )}
             </div>
           )}
           <Form.Item name="cloudInit" label="Cloud Init">
@@ -1267,12 +1500,20 @@ export function VirtualizationVmsPage() {
 }
 
 export function VirtualizationVmDetailPage() {
+  const navigate = useNavigate()
   const { id } = useParams()
   const location = useLocation()
   const pathParts = location.pathname.split('/').filter(Boolean)
   const vmId = id ?? decodeURIComponent(pathParts[pathParts.length - 1] ?? '')
   const { canViewMetrics, canAccessConsole } = useVirtualizationPermissions()
   const [metricsRange, setMetricsRange] = useState(60)
+  const [activeTab, setActiveTab] = useState(() => {
+    const params = new URLSearchParams(location.search)
+    if (params.get('focus') === 'operations' || params.get('focus') === 'logs') {
+      return params.get('focus') || 'operations'
+    }
+    return 'raw'
+  })
   const detailQuery = useQuery({
     queryKey: ['virtualization', 'vms', vmId, 'detail'],
     queryFn: () => virtualizationApi.vmDetail(vmId),
@@ -1281,6 +1522,16 @@ export function VirtualizationVmDetailPage() {
   const detail = detailQuery.data?.data
   const vm = detail?.vm
   const providerRaw = stringifyRaw(detail?.providerRaw)
+  const sortedOperations = useMemo(() => {
+    const records = [...(detail?.operations ?? [])]
+    return records.sort((left, right) => {
+      const leftAbnormal = isAbnormalOperation(left.status) ? 0 : 1
+      const rightAbnormal = isAbnormalOperation(right.status) ? 0 : 1
+      if (leftAbnormal !== rightAbnormal) return leftAbnormal - rightAbnormal
+      return (operationTime(right) || '').localeCompare(operationTime(left) || '')
+    })
+  }, [detail?.operations])
+  const latestAbnormalOperation = sortedOperations.find((item) => isAbnormalOperation(item.status))
 
   const isRunning = vm?.powerState === 'running' || vm?.status === 'running'
 
@@ -1304,6 +1555,15 @@ export function VirtualizationVmDetailPage() {
           <Empty description="未找到虚拟机详情" />
         </Card>
       ) : null}
+      {latestAbnormalOperation ? (
+        <Alert
+          type="error"
+          showIcon
+          message={`最近异常任务：${operationKind(latestAbnormalOperation)}`}
+          description={latestNonEmptyOperationMessage(latestAbnormalOperation)}
+          action={<Space><Button size="small" onClick={() => setActiveTab('operations')}>查看任务历史</Button><Button size="small" onClick={() => navigate(buildInvestigationPath({ connectionId: vm?.connectionId, vmId: vm?.id, namespace: vm?.namespace, workload: vm?.name, timeRangeMinutes: 60 }))}>AI调查</Button></Space>}
+        />
+      ) : null}
       <Card size="small" loading={detailQuery.isLoading}>
         <Descriptions size="small" column={{ xs: 1, md: 2, xl: 3 }} bordered>
           <Descriptions.Item label="ID">{vm?.id ?? '-'}</Descriptions.Item>
@@ -1313,6 +1573,11 @@ export function VirtualizationVmDetailPage() {
           <Descriptions.Item label="命名空间">{vm?.namespace || '-'}</Descriptions.Item>
           <Descriptions.Item label="节点">{vm?.node || '-'}</Descriptions.Item>
           <Descriptions.Item label="规格">{vm?.flavorName || vm?.flavorId || '-'}</Descriptions.Item>
+          <Descriptions.Item label="来源模式">{vm?.sourceMode || '-'}</Descriptions.Item>
+          <Descriptions.Item label="来源引用">{vm?.sourceRef || '-'}</Descriptions.Item>
+          <Descriptions.Item label="来源资产">{detail?.image?.name || vm?.bootImageName || vm?.bootImageId || '-'}</Descriptions.Item>
+          <Descriptions.Item label="资产类型">{detail?.image?.assetKind || detail?.image?.sourceKind || '-'}</Descriptions.Item>
+          <Descriptions.Item label="StorageClass / 存储">{detail?.image ? [detail.image.storageClass, detail.image.storage].filter(Boolean).join(' / ') || '-' : '-'}</Descriptions.Item>
           <Descriptions.Item label="CPU">{vm?.cpu ?? '-'}</Descriptions.Item>
           <Descriptions.Item label="内存">{vm?.memoryMiB ? `${vm.memoryMiB} MiB` : '-'}</Descriptions.Item>
           <Descriptions.Item label="磁盘">{vm?.diskGiB ? `${vm.diskGiB} GiB` : '-'}</Descriptions.Item>
@@ -1322,8 +1587,18 @@ export function VirtualizationVmDetailPage() {
           <Descriptions.Item label="创建时间">{formatDateTime(vm?.createdAt)}</Descriptions.Item>
           <Descriptions.Item label="更新时间">{formatDateTime(vm?.updatedAt)}</Descriptions.Item>
         </Descriptions>
+        <div className="mt-4 grid gap-3 md:grid-cols-2">
+          <Card size="small" title="Console 能力摘要">
+            <Text type="secondary">{canAccessConsole ? `已启用控制台入口（Provider: ${vm?.provider || '-'})，运行中时可尝试建立连接。` : '当前角色无控制台权限。'}</Text>
+          </Card>
+          <Card size="small" title="Metrics 能力摘要">
+            <Text type="secondary">{canViewMetrics ? `已启用指标入口（Provider: ${vm?.provider || '-'})，是否可用取决于 provider 与连接配置。` : '当前角色无指标查看权限。'}</Text>
+          </Card>
+        </div>
       </Card>
       <Tabs
+        activeKey={activeTab}
+        onChange={setActiveTab}
         items={[
           {
             key: 'raw',
@@ -1346,13 +1621,14 @@ export function VirtualizationVmDetailPage() {
                 <Table
                   rowKey="id"
                   size="small"
-                  dataSource={detail?.operations ?? []}
+                  dataSource={sortedOperations}
                   pagination={{ pageSize: 10 }}
                   columns={[
                     { title: '类型', render: (_value, record: VirtualizationOperation) => operationKind(record), width: 150 },
                     { title: '状态', dataIndex: 'status', render: statusTag, width: 120 },
                     { title: '消息', dataIndex: 'message', render: (value: string) => value || '-' },
                     { title: '时间', render: (_value, record: VirtualizationOperation) => formatDateTime(operationTime(record)), width: 180 },
+                    { title: '操作', render: () => <Button size="small" onClick={() => navigate(buildInvestigationPath({ connectionId: vm?.connectionId, vmId: vm?.id, namespace: vm?.namespace, workload: vm?.name, timeRangeMinutes: 60 }))}>AI调查</Button>, width: 100 },
                   ]}
                 />
               </Card>
@@ -1422,6 +1698,7 @@ export function VirtualizationVmDetailPage() {
 }
 
 export function VirtualizationClustersPage() {
+  const navigate = useNavigate()
   const [editing, setEditing] = useState<VirtualizationCluster | null>(null)
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [form] = Form.useForm<VirtualizationClusterFormValues>()
@@ -1429,11 +1706,17 @@ export function VirtualizationClustersPage() {
   const [enabledFilter, setEnabledFilter] = useState<'all' | 'enabled' | 'disabled'>('all')
   const [providerFilter, setProviderFilter] = useState<'all' | 'kubevirt' | 'pve'>('all')
   const [showNeverSynced, setShowNeverSynced] = useState(false)
+  const [selectedConnectionOperation, setSelectedConnectionOperation] = useState<VirtualizationOperation | null>(null)
+  const [selectedClusterRowKeys, setSelectedClusterRowKeys] = useState<React.Key[]>([])
   const { canManageClusters, canSync } = useVirtualizationPermissions()
   const queryClient = useQueryClient()
   const { message } = App.useApp()
   const provider = Form.useWatch('provider', form) ?? 'kubevirt'
   const clustersQuery = useQuery({ queryKey: ['virtualization', 'clusters'], queryFn: virtualizationApi.clusters })
+  const clusterOperationsQuery = useQuery({
+    queryKey: ['virtualization', 'operations', 'clusters-page'],
+    queryFn: () => virtualizationApi.operations(),
+  })
   const platformClustersQuery = useQuery({
     queryKey: ['clusters'],
     queryFn: () => api.get<ApiResponse<Cluster[]>>('/clusters'),
@@ -1460,6 +1743,22 @@ export function VirtualizationClustersPage() {
   })
   const testMutation = useMutation({ mutationFn: virtualizationApi.testCluster, onSuccess: () => { message.success('测试任务已提交'); refreshVirtualization(queryClient) } })
   const syncMutation = useMutation({ mutationFn: virtualizationApi.syncCluster, onSuccess: () => { message.success('同步任务已提交'); refreshVirtualization(queryClient) } })
+  const batchSyncMutation = useMutation({
+    mutationFn: async (ids: string[]) => Promise.all(ids.map((id) => virtualizationApi.syncCluster(id))),
+    onSuccess: (_response, ids) => {
+      message.success(`已提交 ${ids.length} 个连接的同步任务`)
+      setSelectedClusterRowKeys([])
+      refreshVirtualization(queryClient)
+    },
+  })
+  const batchTestMutation = useMutation({
+    mutationFn: async (ids: string[]) => Promise.all(ids.map((id) => virtualizationApi.testCluster(id))),
+    onSuccess: (_response, ids) => {
+      message.success(`已提交 ${ids.length} 个连接的测试任务`)
+      setSelectedClusterRowKeys([])
+      refreshVirtualization(queryClient)
+    },
+  })
 
   function openEditor(record?: VirtualizationCluster) {
     setEditing(record ?? null)
@@ -1475,6 +1774,8 @@ export function VirtualizationClustersPage() {
       description: record.description,
       defaultNode: typeof record.config?.defaultNode === 'string' ? record.config.defaultNode : undefined,
       defaultStorage: typeof record.config?.defaultStorage === 'string' ? record.config.defaultStorage : undefined,
+      prometheusUrl: typeof record.config?.prometheusUrl === 'string' ? record.config.prometheusUrl : undefined,
+      prometheusBearerToken: typeof record.config?.prometheusBearerToken === 'string' ? record.config.prometheusBearerToken : undefined,
     } : { provider: 'kubevirt', enabled: true, verifyTls: true })
     setDrawerOpen(true)
   }
@@ -1488,6 +1789,20 @@ export function VirtualizationClustersPage() {
       .filter((record) => !showNeverSynced || !record.lastSyncedAt)
       .sort((left, right) => clusterRiskScore(left) - clusterRiskScore(right) || left.name.localeCompare(right.name))
   }, [clustersQuery.data?.data, enabledFilter, providerFilter, showNeverSynced, showOnlyAbnormal])
+  const clusterOperations = clusterOperationsQuery.data?.data ?? []
+
+  function operationsForConnection(connectionId?: string) {
+    if (!connectionId) return []
+    return clusterOperations.filter((item) => item.connectionId === connectionId)
+  }
+
+  function failedSyncForConnection(connectionId?: string) {
+    return operationsForConnection(connectionId).find((item) => isSyncOperation(item) && isAbnormalOperation(item.status))
+  }
+
+  function latestAbnormalForConnection(connectionId?: string) {
+    return operationsForConnection(connectionId).find((item) => isAbnormalOperation(item.status))
+  }
 
   const columns: ColumnsType<VirtualizationCluster> = [
     { title: '名称', dataIndex: 'name', fixed: 'left', width: 180 },
@@ -1495,6 +1810,19 @@ export function VirtualizationClustersPage() {
     { title: '接入目标', render: (_value, record) => record.provider === 'kubevirt' ? record.kubernetesClusterId || '-' : record.endpoint || '-', ellipsis: true },
     { title: '健康', dataIndex: 'health', render: (value, record) => statusTag(value || record.status), width: 120 },
     { title: '风险', render: (_value, record) => riskReasons(record).join(' / ') || '正常', width: 220 },
+    { title: '风险等级', dataIndex: 'riskLevel', render: (value: string | undefined) => value ? <Tag color={value === 'critical' ? 'red' : value === 'warning' ? 'gold' : value === 'attention' ? 'blue' : 'default'}>{value}</Tag> : '-', width: 120 },
+    { title: '最近失败同步', render: (_value, record) => {
+      const failedSync = failedSyncForConnection(record.id)
+      return failedSync ? (
+        <Button size="small" type="link" onClick={() => setSelectedConnectionOperation(failedSync)}>{latestNonEmptyOperationMessage(failedSync)}</Button>
+      ) : '-'
+    }, width: 200 },
+    { title: '最近异常任务', render: (_value, record) => {
+      const abnormal = latestAbnormalForConnection(record.id)
+      return abnormal ? (
+        <Button size="small" type="link" onClick={() => setSelectedConnectionOperation(abnormal)}>{operationKind(abnormal)}</Button>
+      ) : '-'
+    }, width: 160 },
     { title: '凭证', dataIndex: 'credentialConfigured', render: (value: boolean | undefined) => value === false ? <Tag color="red">未配置</Tag> : <Tag color="green">已配置</Tag>, width: 120 },
     { ...tableColumnPresets.datetime, title: '最近同步', dataIndex: 'lastSyncedAt', render: formatDateTime, width: 180 },
     {
@@ -1538,24 +1866,59 @@ export function VirtualizationClustersPage() {
             <Switch checked={showNeverSynced} onChange={setShowNeverSynced} checkedChildren="未同步" unCheckedChildren="全部" />
           </div>
         </div>
+        {selectedClusterRowKeys.length > 0 ? (
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded border border-[var(--kc-border)] bg-[var(--kc-surface-muted)] p-3">
+            <Text type="secondary">已选择 {selectedClusterRowKeys.length} 个连接</Text>
+            <Space wrap>
+              {canManageClusters ? <Button onClick={() => {
+                const labels = clusterRows.filter((record) => selectedClusterRowKeys.includes(record.id)).map((record) => record.name)
+                Modal.confirm({
+                  title: '确认批量测试连接？',
+                  content: bulkActionSummary('将测试', labels),
+                  onOk: () => batchTestMutation.mutate(selectedClusterRowKeys.map(String)),
+                })
+              }} loading={batchTestMutation.isPending}>批量测试</Button> : null}
+              {canSync ? <Button type="primary" onClick={() => {
+                const labels = clusterRows.filter((record) => selectedClusterRowKeys.includes(record.id)).map((record) => record.name)
+                Modal.confirm({
+                  title: '确认批量同步连接？',
+                  content: bulkActionSummary('将同步', labels),
+                  onOk: () => batchSyncMutation.mutate(selectedClusterRowKeys.map(String)),
+                })
+              }} loading={batchSyncMutation.isPending}>批量同步</Button> : null}
+              <Button onClick={() => setSelectedClusterRowKeys([])}>清空选择</Button>
+            </Space>
+          </div>
+        ) : null}
         <Table
           rowKey="id"
+          rowSelection={{
+            selectedRowKeys: selectedClusterRowKeys,
+            onChange: (keys) => setSelectedClusterRowKeys(keys),
+          }}
           size="small"
-          loading={clustersQuery.isLoading}
+          loading={clustersQuery.isLoading || clusterOperationsQuery.isLoading}
           dataSource={clusterRows}
           columns={columns}
           scroll={{ x: 1320 }}
           expandable={{
-            expandedRowRender: (record) => (
-              <Descriptions size="small" column={{ xs: 1, md: 2 }} bordered>
-                <Descriptions.Item label="Endpoint / Cluster">{record.provider === 'kubevirt' ? record.kubernetesClusterId || '-' : record.endpoint || '-'}</Descriptions.Item>
-                <Descriptions.Item label="默认命名空间">{record.defaultNamespace || '-'}</Descriptions.Item>
-                <Descriptions.Item label="校验 TLS">{record.verifyTls === false ? '关闭' : '开启'}</Descriptions.Item>
-                <Descriptions.Item label="最近同步">{formatDateTime(record.lastSyncedAt)}</Descriptions.Item>
-                <Descriptions.Item label="Region">{record.region || '-'}</Descriptions.Item>
-                <Descriptions.Item label="风险说明">{riskReasons(record).join(' / ') || '正常'}</Descriptions.Item>
-              </Descriptions>
-            ),
+            expandedRowRender: (record) => {
+              const failedSync = failedSyncForConnection(record.id)
+              const latestAbnormal = latestAbnormalForConnection(record.id)
+              return (
+                <Descriptions size="small" column={{ xs: 1, md: 2 }} bordered>
+                  <Descriptions.Item label="Endpoint / Cluster">{record.provider === 'kubevirt' ? record.kubernetesClusterId || '-' : record.endpoint || '-'}</Descriptions.Item>
+                  <Descriptions.Item label="默认命名空间">{record.defaultNamespace || '-'}</Descriptions.Item>
+                  <Descriptions.Item label="校验 TLS">{record.verifyTls === false ? '关闭' : '开启'}</Descriptions.Item>
+                  <Descriptions.Item label="最近同步">{formatDateTime(record.lastSyncedAt)}</Descriptions.Item>
+                  <Descriptions.Item label="Region">{record.region || '-'}</Descriptions.Item>
+                  <Descriptions.Item label="风险说明">{riskReasons(record).join(' / ') || '正常'}</Descriptions.Item>
+                  <Descriptions.Item label="Prometheus">{record.provider === 'kubevirt' ? String(record.config?.prometheusUrl || '-') : '-'}</Descriptions.Item>
+                  <Descriptions.Item label="最近失败同步">{failedSync ? `${operationKind(failedSync)} · ${latestNonEmptyOperationMessage(failedSync)}` : '-'}</Descriptions.Item>
+                  <Descriptions.Item label="最近异常任务">{latestAbnormal ? `${operationKind(latestAbnormal)} · ${latestNonEmptyOperationMessage(latestAbnormal)}` : '-'}</Descriptions.Item>
+                </Descriptions>
+              )
+            },
           }}
         />
       </Card>
@@ -1580,6 +1943,14 @@ export function VirtualizationClustersPage() {
               <Form.Item name="defaultNamespace" label="默认命名空间">
                 <Input />
               </Form.Item>
+              <div className="grid gap-3 md:grid-cols-2">
+                <Form.Item name="prometheusUrl" label="Prometheus URL">
+                  <Input placeholder="https://prometheus.example" />
+                </Form.Item>
+                <Form.Item name="prometheusBearerToken" label="Prometheus Bearer Token">
+                  <Input.Password />
+                </Form.Item>
+              </div>
             </>
           ) : (
             <>
@@ -1631,6 +2002,20 @@ export function VirtualizationClustersPage() {
             <Button onClick={() => setDrawerOpen(false)}>取消</Button>
           </Space>
         </Form>
+      </Drawer>
+      <Drawer title="连接关联异常任务" size="large" open={Boolean(selectedConnectionOperation)} onClose={() => setSelectedConnectionOperation(null)}>
+        <Descriptions size="small" column={1} bordered>
+          <Descriptions.Item label="任务 ID">{selectedConnectionOperation?.id}</Descriptions.Item>
+          <Descriptions.Item label="类型">{selectedConnectionOperation ? operationKind(selectedConnectionOperation) : '-'}</Descriptions.Item>
+          <Descriptions.Item label="状态">{statusTag(selectedConnectionOperation?.status)}</Descriptions.Item>
+          <Descriptions.Item label="连接">{selectedConnectionOperation?.connectionId || '-'}</Descriptions.Item>
+          <Descriptions.Item label="摘要">{selectedConnectionOperation?.message || '-'}</Descriptions.Item>
+          <Descriptions.Item label="开始时间">{formatDateTime(operationTime(selectedConnectionOperation || {} as VirtualizationOperation))}</Descriptions.Item>
+        </Descriptions>
+        {selectedConnectionOperation?.message ? <Alert className="mt-4" type={isAbnormalOperation(selectedConnectionOperation.status) ? 'error' : 'info'} message={selectedConnectionOperation.message} /> : null}
+        <div className="mt-4">
+          <Button onClick={() => navigate(`/virtualization/operations?connectionId=${encodeURIComponent(selectedConnectionOperation?.connectionId || '')}&abnormal=true`)}>查看该连接全部异常任务</Button>
+        </div>
       </Drawer>
     </div>
   )
@@ -1693,8 +2078,11 @@ export function VirtualizationImagesPage() {
     { title: 'Provider', dataIndex: 'provider', render: (value) => value || '-' },
     { title: '连接', dataIndex: 'connectionName', render: (value, record) => value || record.connectionId || '-' },
     { title: '命名空间', dataIndex: 'namespace', render: (value) => value || '-' },
-    { title: '来源', render: (_value, record) => record.sourceKind || record.source || '-' },
+    { title: '来源', render: (_value, record) => record.assetKind || record.sourceKind || record.source || '-' },
     { title: '引用', dataIndex: 'sourceRef', render: (value) => value || '-' },
+    { title: '节点/存储', render: (_value, record) => [record.node, record.storage].filter(Boolean).join(' / ') || '-' },
+    { title: 'StorageClass', dataIndex: 'storageClass', render: (value) => value || '-' },
+    { title: '可用性', render: (_value, record) => record.ready === false ? <Tag color="red">不可用</Tag> : <Tag color="green">可用</Tag> },
     { title: '系统', dataIndex: 'osType', render: (value) => value || '-' },
     { title: '大小', dataIndex: 'sizeGiB', render: (value) => value ? `${value} GiB` : '-' },
     { title: '状态', dataIndex: 'status', render: statusTag },

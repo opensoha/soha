@@ -3831,6 +3831,161 @@ a {
   border-top: 1px solid var(--kc-border-color);
 }
 
+.kc-application-runtime-service-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.kc-application-runtime-service-summary .ant-card-body {
+  display: flex;
+  min-height: 72px;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.kc-application-runtime-service-summary strong {
+  color: var(--kc-text-primary);
+  font-size: 24px;
+  line-height: 1;
+}
+
+.kc-application-runtime-overview-grid,
+.kc-application-runtime-delivery-grid,
+.kc-application-runtime-pipeline-grid,
+.kc-application-runtime-verification-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.kc-application-runtime-binding-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--kc-border-color);
+  border-radius: var(--kc-radius);
+  background: var(--kc-fill-weak);
+}
+
+.kc-application-runtime-binding-row__main {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.kc-application-runtime-binding-row__main strong {
+  color: var(--kc-text-primary);
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.kc-application-runtime-environment-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.kc-application-runtime-delivery-grid .ant-card,
+.kc-application-runtime-pipeline-grid .ant-card,
+.kc-application-runtime-verification-grid .ant-card,
+.kc-application-runtime-overview-grid .ant-card {
+  border-color: var(--kc-border-color);
+  border-radius: var(--kc-radius);
+  box-shadow: none;
+}
+
+.kc-application-service-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+  gap: 12px;
+}
+
+.kc-application-service-card.ant-card {
+  border-color: var(--kc-border-color);
+  border-radius: var(--kc-radius);
+  box-shadow: none;
+}
+
+.kc-application-service-card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.kc-application-service-card__body {
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.kc-application-container-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.kc-application-container-row {
+  display: grid;
+  grid-template-columns: minmax(72px, 0.7fr) minmax(0, 1.4fr) auto;
+  gap: 8px;
+  align-items: center;
+  min-height: 34px;
+  padding: 8px;
+  border: 1px solid var(--kc-border-color);
+  border-radius: var(--kc-radius);
+  background: var(--kc-fill-weak);
+}
+
+.kc-application-container-row > span,
+.kc-application-container-row .ant-typography {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kc-application-service-form-grid,
+.kc-application-service-container-editor__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.kc-application-service-form-grid .ant-form-item,
+.kc-application-service-container-editor__grid .ant-form-item {
+  margin-bottom: 0;
+}
+
+.kc-application-service-containers-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.kc-application-service-containers-editor__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.kc-application-service-container-editor.ant-card {
+  border-color: var(--kc-border-color);
+  border-radius: var(--kc-radius);
+  box-shadow: none;
+}
+
+.kc-application-service-container-editor .ant-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
 .kc-template-editor-card {
   margin-top: 16px;
 }
@@ -4462,7 +4617,18 @@ a {
   .kc-ai-workbench__workspace,
   .kc-application-workspace-hero,
   .kc-application-card-grid,
-  .kc-application-lane-grid {
+  .kc-application-lane-grid,
+  .kc-application-runtime-service-summary,
+  .kc-application-runtime-overview-grid,
+  .kc-application-runtime-delivery-grid,
+  .kc-application-runtime-pipeline-grid,
+  .kc-application-runtime-verification-grid,
+  .kc-application-service-form-grid,
+  .kc-application-service-container-editor__grid {
+    grid-template-columns: 1fr;
+  }
+
+  .kc-application-container-row {
     grid-template-columns: 1fr;
   }
 

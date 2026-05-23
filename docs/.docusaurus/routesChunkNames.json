@@ -1,22 +1,22 @@
 {
-  "/docs/-ecb": {
+  "/docs/-cb4": {
     "__comp": "5e95c892",
     "__context": {
       "plugin": "aba21aa0"
     }
   },
-  "/docs/-872": {
+  "/docs/-456": {
     "__comp": "a7bd4aaa",
     "__props": "11b43341"
   },
-  "/docs/-aa5": {
+  "/docs/-275": {
     "__comp": "a94703ab"
   },
   "/docs/api/auth-and-errors/-83d": {
     "__comp": "17896441",
     "content": "77412ce5"
   },
-  "/docs/api/core-endpoints/-dee": {
+  "/docs/api/core-endpoints/-24e": {
     "__comp": "17896441",
     "content": "e00ba162"
   },
@@ -51,6 +51,10 @@
   "/docs/architecture/authorization/-9f8": {
     "__comp": "17896441",
     "content": "fae30f0d"
+  },
+  "/docs/architecture/delivery-devops-workbench/-80e": {
+    "__comp": "17896441",
+    "content": "e35ced38"
   },
   "/docs/architecture/event-model/-f42": {
     "__comp": "17896441",
@@ -140,15 +144,15 @@
     "__comp": "17896441",
     "content": "f7a31dc9"
   },
-  "/docs/operations/virtualization-lab-runbook/-1e8": {
+  "/docs/operations/virtualization-lab-runbook/-d2f": {
     "__comp": "17896441",
     "content": "665b5388"
   },
-  "/docs/reference/database-schema/-6ef": {
+  "/docs/reference/database-schema/-e06": {
     "__comp": "17896441",
     "content": "9a4044ca"
   },
-  "/docs/reference/product-information-architecture/-ead": {
+  "/docs/reference/product-information-architecture/-17a": {
     "__comp": "17896441",
     "content": "2c450f4a"
   },

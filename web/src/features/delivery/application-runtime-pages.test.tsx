@@ -1,0 +1,532 @@
+/** @vitest-environment jsdom */
+
+import type { ReactNode } from 'react'
+import { act } from 'react'
+import { App as AntApp } from 'antd'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { createRoot } from 'react-dom/client'
+import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { ApplicationDetailPage } from './application-runtime-pages'
+
+const workflowDefinition = {
+  schemaVersion: 2,
+  mode: 'release_dag',
+  nodes: [
+    { id: 'approval', type: 'manual_approval', name: '审批', position: { x: 120, y: 120 }, timeoutSeconds: 300, continueOnFailure: false, config: {} },
+    { id: 'deploy', type: 'deploy_update_image', name: '更新镜像', position: { x: 320, y: 120 }, timeoutSeconds: 300, continueOnFailure: false, config: {} },
+  ],
+  edges: [
+    { id: 'edge-1', source: 'approval', target: 'deploy', condition: 'success' },
+  ],
+}
+
+const testState = vi.hoisted(() => ({
+  permissionSnapshot: {
+    permissionKeys: [
+      'delivery.applications.view',
+      'delivery.application-services.view',
+      'delivery.application-services.manage',
+    ],
+    visibleMenuIds: [],
+    visibleMenus: [],
+  },
+  apiGet: vi.fn(async (path: string) => {
+    if (path === '/applications/app-1/runtime') {
+      return {
+        data: {
+          application: {
+            id: 'app-1',
+            name: 'Checkout Platform',
+            key: 'checkout-platform',
+            group: 'commerce',
+            language: 'go',
+            repositoryPath: 'commerce/checkout',
+            defaultBranch: 'main',
+            enabled: true,
+            buildSources: [
+              {
+                id: 'source-api',
+                name: 'API Dockerfile',
+                type: 'repo_dockerfile',
+                enabled: true,
+                isDefault: true,
+              },
+            ],
+            createdAt: '2026-05-01T00:00:00Z',
+            updatedAt: '2026-05-10T00:00:00Z',
+          },
+          environments: [
+            {
+              applicationEnvironmentId: 'binding-test',
+              environmentId: 'env-test',
+              environmentName: '测试环境',
+              requiresApproval: false,
+              workloads: [
+                {
+                  applicationEnvironmentId: 'binding-test',
+                  clusterId: 'cluster-a',
+                  namespace: 'checkout-test',
+                  workloadKind: 'Deployment',
+                  workloadName: 'checkout-api',
+                  desiredReplicas: 2,
+                  readyReplicas: 2,
+                  updatedReplicas: 2,
+                  availableReplicas: 2,
+                },
+              ],
+            },
+          ],
+        },
+      }
+    }
+    if (path === '/applications/app-1/detail') {
+      return {
+        data: {
+          application: {
+            id: 'app-1',
+            name: 'Checkout Platform',
+            key: 'checkout-platform',
+            group: 'commerce',
+            language: 'go',
+            repositoryPath: 'commerce/checkout',
+            defaultBranch: 'main',
+            enabled: true,
+            buildSources: [
+              {
+                id: 'source-api',
+                name: 'API Dockerfile',
+                type: 'repo_dockerfile',
+                enabled: true,
+                isDefault: true,
+              },
+            ],
+            createdAt: '2026-05-01T00:00:00Z',
+            updatedAt: '2026-05-10T00:00:00Z',
+          },
+          bindings: [
+            {
+              applicationEnvironmentId: 'binding-test',
+              environmentId: 'env-test',
+              environmentName: '测试环境',
+              workflowTemplateId: 'wf-template-1',
+              workflowTemplateName: 'Release DAG',
+              workflowTemplate: {
+                id: 'wf-template-1',
+                key: 'release-dag',
+                name: 'Release DAG',
+                category: 'release',
+                definition: workflowDefinition,
+              },
+              targetCount: 1,
+              targets: [
+                {
+                  id: 'target-1',
+                  applicationEnvironmentId: 'binding-test',
+                  clusterId: 'cluster-a',
+                  namespace: 'checkout-test',
+                  workloadKind: 'Deployment',
+                  workloadName: 'checkout-api',
+                  containerName: 'api',
+                  enabled: true,
+                },
+              ],
+              latestBundle: {
+                id: 'bundle-1',
+                applicationId: 'app-1',
+                applicationEnvironmentId: 'binding-test',
+                version: '1.2.3',
+                sourceType: 'build',
+                status: 'completed',
+                artifactRef: 'registry.example.com/checkout/api:1.2.3',
+                artifactDigest: 'sha256:abc',
+                createdAt: '2026-05-10T00:00:00Z',
+                updatedAt: '2026-05-10T00:00:00Z',
+              },
+              latestExecutionTask: {
+                id: 'task-1',
+                applicationId: 'app-1',
+                releaseBundleId: 'bundle-1',
+                taskKind: 'build_release',
+                providerKind: 'ci_agent_runner',
+                targetKind: 'k8s_workload',
+                status: 'completed',
+                maxRetries: 1,
+                attemptCount: 1,
+                timeoutSeconds: 600,
+                artifacts: [
+                  { kind: 'image', name: 'checkout-api', ref: 'registry.example.com/checkout/api:1.2.3' },
+                ],
+                createdAt: '2026-05-10T00:00:00Z',
+                updatedAt: '2026-05-10T00:00:00Z',
+              },
+              latestBuild: {
+                id: 'build-1',
+                applicationId: 'app-1',
+                sourceSystem: 'application',
+                status: 'completed',
+                createdAt: '2026-05-10T00:00:00Z',
+              },
+              latestWorkflow: {
+                id: 'workflow-1',
+                applicationId: 'app-1',
+                workflowName: 'release-dag',
+                status: 'completed',
+                steps: [],
+                nodeRuns: [
+                  { nodeId: 'approval', name: '审批', type: 'manual_approval', status: 'completed' },
+                  { nodeId: 'deploy', name: '更新镜像', type: 'deploy_update_image', status: 'completed' },
+                ],
+                metadata: { nodes: workflowDefinition.nodes },
+                createdAt: '2026-05-10T00:00:00Z',
+                updatedAt: '2026-05-10T00:00:00Z',
+              },
+              latestRelease: {
+                id: 'release-1',
+                applicationId: 'app-1',
+                clusterId: 'cluster-a',
+                namespace: 'checkout-test',
+                deploymentName: 'checkout-api',
+                status: 'completed',
+                createdAt: '2026-05-10T00:00:00Z',
+              },
+            },
+          ],
+          latestBundle: {
+            id: 'bundle-1',
+            applicationId: 'app-1',
+            applicationEnvironmentId: 'binding-test',
+            version: '1.2.3',
+            sourceType: 'build',
+            status: 'completed',
+            artifactRef: 'registry.example.com/checkout/api:1.2.3',
+            artifactDigest: 'sha256:abc',
+            createdAt: '2026-05-10T00:00:00Z',
+            updatedAt: '2026-05-10T00:00:00Z',
+          },
+          latestExecutionTask: {
+            id: 'task-1',
+            applicationId: 'app-1',
+            releaseBundleId: 'bundle-1',
+            taskKind: 'build_release',
+            providerKind: 'ci_agent_runner',
+            targetKind: 'k8s_workload',
+            status: 'completed',
+            maxRetries: 1,
+            attemptCount: 1,
+            timeoutSeconds: 600,
+            artifacts: [
+              { kind: 'image', name: 'checkout-api', ref: 'registry.example.com/checkout/api:1.2.3' },
+            ],
+            createdAt: '2026-05-10T00:00:00Z',
+            updatedAt: '2026-05-10T00:00:00Z',
+          },
+          latestBuild: {
+            id: 'build-1',
+            applicationId: 'app-1',
+            sourceSystem: 'application',
+            status: 'completed',
+            createdAt: '2026-05-10T00:00:00Z',
+          },
+          latestWorkflow: {
+            id: 'workflow-1',
+            applicationId: 'app-1',
+            workflowName: 'release-dag',
+            status: 'completed',
+            steps: [],
+            nodeRuns: [
+              { nodeId: 'approval', name: '审批', type: 'manual_approval', status: 'completed' },
+              { nodeId: 'deploy', name: '更新镜像', type: 'deploy_update_image', status: 'completed' },
+            ],
+            metadata: { nodes: workflowDefinition.nodes },
+            createdAt: '2026-05-10T00:00:00Z',
+            updatedAt: '2026-05-10T00:00:00Z',
+          },
+          latestRelease: {
+            id: 'release-1',
+            applicationId: 'app-1',
+            clusterId: 'cluster-a',
+            namespace: 'checkout-test',
+            deploymentName: 'checkout-api',
+            status: 'completed',
+            createdAt: '2026-05-10T00:00:00Z',
+          },
+        },
+      }
+    }
+    if (path === '/applications/app-1/services') {
+      return {
+        data: [
+          {
+            id: 'svc-api',
+            applicationId: 'app-1',
+            key: 'api',
+            name: 'Checkout API',
+            serviceKind: 'kubernetes_workload',
+            ownerTeam: 'checkout-dev',
+            repositoryPath: 'commerce/checkout/api',
+            buildSourceId: 'source-api',
+            enabled: true,
+            containers: [
+              {
+                id: 'svc-api:api',
+                serviceId: 'svc-api',
+                name: 'api',
+                imageRepository: 'registry.example.com/checkout/api',
+                runtimePorts: [8080],
+              },
+            ],
+            createdAt: '2026-05-10T00:00:00Z',
+            updatedAt: '2026-05-10T00:00:00Z',
+          },
+        ],
+      }
+    }
+    if (path === '/delivery/release-bundles/bundle-1/artifacts') {
+      return {
+        data: [
+          {
+            id: 'artifact-1',
+            releaseBundleId: 'bundle-1',
+            applicationId: 'app-1',
+            kind: 'image',
+            name: 'checkout-api',
+            ref: 'registry.example.com/checkout/api:1.2.3',
+            digest: 'sha256:abc',
+            status: 'completed',
+          },
+        ],
+      }
+    }
+    if (path === '/delivery/execution-tasks/task-1/artifacts') {
+      return {
+        data: [
+          {
+            id: 'artifact-2',
+            executionTaskId: 'task-1',
+            applicationId: 'app-1',
+            kind: 'image',
+            name: 'checkout-api',
+            ref: 'registry.example.com/checkout/api:1.2.3',
+            digest: 'sha256:abc',
+            status: 'completed',
+          },
+        ],
+      }
+    }
+    if (path === '/builds?applicationId=app-1') {
+      return { items: [{ id: 'build-1', applicationId: 'app-1', sourceSystem: 'application', status: 'completed', createdAt: '2026-05-10T00:00:00Z' }] }
+    }
+    if (path === '/releases?applicationId=app-1') {
+      return { items: [{ id: 'release-1', applicationId: 'app-1', clusterId: 'cluster-a', namespace: 'checkout-test', deploymentName: 'checkout-api', status: 'completed', createdAt: '2026-05-10T00:00:00Z' }] }
+    }
+    if (path === '/workflows?applicationId=app-1') {
+      return {
+        items: [
+          {
+            id: 'workflow-1',
+            applicationId: 'app-1',
+            workflowName: 'release-dag',
+            status: 'completed',
+            steps: [],
+            nodeRuns: [
+              { nodeId: 'approval', name: '审批', type: 'manual_approval', status: 'completed' },
+              { nodeId: 'deploy', name: '更新镜像', type: 'deploy_update_image', status: 'completed' },
+            ],
+            metadata: { nodes: workflowDefinition.nodes },
+            createdAt: '2026-05-10T00:00:00Z',
+            updatedAt: '2026-05-10T00:00:00Z',
+          },
+        ],
+      }
+    }
+    throw new Error(`Unhandled GET ${path}`)
+  }),
+}))
+
+vi.mock('@/features/auth/permission-snapshot', () => ({
+  hasPermission: (snapshot: { permissionKeys?: string[] } | undefined, key: string) => snapshot?.permissionKeys?.includes(key) ?? false,
+  usePermissionSnapshot: () => ({
+    data: { data: testState.permissionSnapshot },
+    isLoading: false,
+  }),
+}))
+
+vi.mock('@/components/pod-log-viewer', () => ({
+  PodLogViewer: () => null,
+}))
+
+vi.mock('@/components/pod-terminal', () => ({
+  PodTerminal: () => null,
+}))
+
+vi.mock('@/components/resource-metrics-panel', () => ({
+  ResourceMetricsPanel: () => null,
+}))
+
+vi.mock('@/services/api-client', () => ({
+  api: {
+    get: async (path: string) => {
+      const body = await testState.apiGet(path)
+      if (body && typeof body === 'object' && 'items' in body && !('data' in body)) {
+        return { data: (body as { items: unknown }).items }
+      }
+      return body
+    },
+    post: vi.fn(),
+    put: vi.fn(),
+    delete: vi.fn(),
+  },
+}))
+
+let containers: HTMLDivElement[] = []
+let roots: Array<ReturnType<typeof createRoot>> = []
+
+async function renderWithProviders(node: ReactNode, route = '/applications/app-1') {
+  const container = document.createElement('div')
+  document.body.appendChild(container)
+  containers.push(container)
+
+  const root = createRoot(container)
+  roots.push(root)
+
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: { retry: false },
+    },
+  })
+
+  await act(async () => {
+    root.render(
+      <AntApp>
+        <QueryClientProvider client={queryClient}>
+          <MemoryRouter initialEntries={[route]}>
+            <Routes>
+              <Route path="/applications/:applicationId" element={node} />
+            </Routes>
+          </MemoryRouter>
+        </QueryClientProvider>
+      </AntApp>,
+    )
+  })
+
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  })
+
+  return container
+}
+
+function clickTab(container: HTMLElement, text: string) {
+  const tab = Array.from(container.querySelectorAll('[role="tab"]')).find((item) => item.textContent?.includes(text)) as HTMLElement | undefined
+  if (!tab) {
+    throw new Error(`tab not found: ${text}`)
+  }
+  act(() => {
+    tab.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+  })
+}
+
+describe('ApplicationDetailPage workbench', () => {
+  beforeEach(() => {
+    testState.apiGet.mockClear()
+    class ResizeObserverMock {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    }
+
+    Object.defineProperty(window, 'matchMedia', {
+      writable: true,
+      value: vi.fn().mockImplementation(() => ({
+        matches: false,
+        media: '',
+        onchange: null,
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      })),
+    })
+
+    Object.defineProperty(window, 'getComputedStyle', {
+      writable: true,
+      value: vi.fn().mockReturnValue({
+        width: '0px',
+        height: '0px',
+        overflow: 'auto',
+        getPropertyValue: () => '',
+      }),
+    })
+
+    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
+    vi.stubGlobal('ResizeObserver', ResizeObserverMock)
+  })
+
+  afterEach(async () => {
+    await act(async () => {
+      for (const root of roots) root.unmount()
+    })
+    roots = []
+    for (const container of containers) container.remove()
+    containers = []
+    vi.clearAllMocks()
+  })
+
+  it('renders overview, service, delivery artifact and verification views', async () => {
+    const container = await renderWithProviders(<ApplicationDetailPage />)
+
+    expect(testState.apiGet).toHaveBeenCalledWith('/applications/app-1/runtime')
+    expect(testState.apiGet).toHaveBeenCalledWith('/applications/app-1/detail')
+    expect(testState.apiGet).toHaveBeenCalledWith('/applications/app-1/services')
+    expect(testState.apiGet).toHaveBeenCalledWith('/delivery/release-bundles/bundle-1/artifacts')
+    expect(testState.apiGet).toHaveBeenCalledWith('/delivery/execution-tasks/task-1/artifacts')
+    expect(testState.apiGet).toHaveBeenCalledWith('/builds?applicationId=app-1')
+    expect(testState.apiGet).toHaveBeenCalledWith('/releases?applicationId=app-1')
+    expect(testState.apiGet).toHaveBeenCalledWith('/workflows?applicationId=app-1')
+    expect(container.textContent).toContain('Checkout Platform')
+    expect(container.textContent).toContain('总览')
+    expect(container.textContent).toContain('服务组件')
+    expect(container.textContent).toContain('流水线')
+
+    clickTab(container, '交付物')
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+    expect(container.textContent).toContain('Release Bundle')
+    expect(container.textContent).toContain('Task 交付物')
+    expect(container.textContent).toContain('build-1')
+    expect(container.textContent).toContain('release-1')
+    expect(container.textContent).toContain('workflow-1')
+    expect(container.querySelector('.kc-application-runtime-delivery-grid')).not.toBeNull()
+
+    clickTab(container, '流水线')
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+    expect(container.textContent).toContain('DAG 模板')
+    expect(container.textContent).toContain('最近工作流运行')
+    expect(container.textContent).toContain('release-dag')
+    expect(container.querySelector('.kc-application-runtime-pipeline-grid')).not.toBeNull()
+
+    clickTab(container, '测试验证')
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+    expect(container.textContent).toContain('验证门禁')
+    expect(container.textContent).toContain('DAG 节点数')
+    expect(container.querySelector('.kc-application-runtime-verification-grid')).not.toBeNull()
+
+    clickTab(container, '服务组件')
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+    expect(container.textContent).toContain('Checkout API')
+    expect(container.textContent).toContain('registry.example.com/checkout/api')
+    expect(container.querySelector('.kc-application-service-grid')).not.toBeNull()
+    expect(container.querySelector('.kc-application-container-row')).not.toBeNull()
+  })
+})

@@ -30,6 +30,7 @@ type Connection struct {
 	EncryptedCredential []byte
 	Credential          map[string]any
 	Options             map[string]any
+	BackendURL          string
 }
 
 type ConnectionTestResult struct {
@@ -69,6 +70,9 @@ type CreateVMInput struct {
 	CloudInit        string
 	StartAfterCreate bool
 	TemplateID       string
+	SourceMode       string
+	SourceRef        string
+	ProviderParams   map[string]any
 }
 
 type VM struct {
@@ -118,11 +122,17 @@ type MetricSeries struct {
 type VMMetricsResult struct {
 	Series  []MetricSeries `json:"series"`
 	Message string         `json:"message,omitempty"`
+	Ready   bool           `json:"ready"`
+	Source  string         `json:"source,omitempty"`
 }
 
 type ConsoleURLResult struct {
-	Type    string `json:"type"`
-	URL     string `json:"url"`
-	Token   string `json:"token,omitempty"`
-	Message string `json:"message,omitempty"`
+	Type       string `json:"type"`
+	URL        string `json:"url"`
+	BackendURL string `json:"backendUrl,omitempty"`
+	Token      string `json:"token,omitempty"`
+	Message    string `json:"message,omitempty"`
+	Ready      bool   `json:"ready"`
+	Provider   string `json:"provider,omitempty"`
+	ProxyMode  string `json:"proxyMode,omitempty"`
 }

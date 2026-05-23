@@ -117,6 +117,7 @@ func (s *Service) GetApplicationDetail(ctx context.Context, principal domainiden
 			RequiresApproval:         requiresApproval(binding, environment),
 			WorkflowTemplateID:       binding.WorkflowTemplateID,
 			WorkflowTemplateName:     workflowTemplateName(binding),
+			WorkflowTemplate:         binding.WorkflowTemplate,
 			TargetCount:              len(binding.Targets),
 			Targets:                  binding.Targets,
 			BuildSourceID:            binding.BuildPolicy.SourceID,

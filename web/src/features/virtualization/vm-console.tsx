@@ -126,8 +126,8 @@ export function VMConsole({ vmId }: { vmId: string }) {
   }
 
   const consoleData = consoleQuery.data?.data
-  if (consoleData?.message) {
-    return <Alert type="info" message={consoleData.message} />
+  if (!consoleData?.ready) {
+    return <Alert type="info" message={consoleData?.message || '当前 Provider 尚未提供控制台能力'} />
   }
 
   return (

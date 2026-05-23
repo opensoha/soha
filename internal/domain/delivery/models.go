@@ -237,23 +237,24 @@ type ApprovalPolicyInput struct {
 }
 
 type ApplicationBindingSummary struct {
-	ApplicationEnvironmentID string                        `json:"applicationEnvironmentId"`
-	EnvironmentID            string                        `json:"environmentId"`
-	EnvironmentName          string                        `json:"environmentName,omitempty"`
-	EnvironmentKey           string                        `json:"environmentKey,omitempty"`
-	ActionKind               string                        `json:"actionKind,omitempty"`
-	RequiresApproval         bool                          `json:"requiresApproval"`
-	WorkflowTemplateID       string                        `json:"workflowTemplateId,omitempty"`
-	WorkflowTemplateName     string                        `json:"workflowTemplateName,omitempty"`
-	TargetCount              int                           `json:"targetCount"`
-	Targets                  []domaincatalog.ReleaseTarget `json:"targets,omitempty"`
-	BuildSourceID            string                        `json:"buildSourceId,omitempty"`
-	BuildSource              *domainapp.BuildSource        `json:"buildSource,omitempty"`
-	LatestBundle             *ReleaseBundle                `json:"latestBundle,omitempty"`
-	LatestExecutionTask      *ExecutionTask                `json:"latestExecutionTask,omitempty"`
-	LatestBuild              *domainbuild.Record           `json:"latestBuild,omitempty"`
-	LatestWorkflow           *domainworkflow.Run           `json:"latestWorkflow,omitempty"`
-	LatestRelease            *domainrelease.Record         `json:"latestRelease,omitempty"`
+	ApplicationEnvironmentID string                          `json:"applicationEnvironmentId"`
+	EnvironmentID            string                          `json:"environmentId"`
+	EnvironmentName          string                          `json:"environmentName,omitempty"`
+	EnvironmentKey           string                          `json:"environmentKey,omitempty"`
+	ActionKind               string                          `json:"actionKind,omitempty"`
+	RequiresApproval         bool                            `json:"requiresApproval"`
+	WorkflowTemplateID       string                          `json:"workflowTemplateId,omitempty"`
+	WorkflowTemplateName     string                          `json:"workflowTemplateName,omitempty"`
+	WorkflowTemplate         *domaincatalog.WorkflowTemplate `json:"workflowTemplate,omitempty"`
+	TargetCount              int                             `json:"targetCount"`
+	Targets                  []domaincatalog.ReleaseTarget   `json:"targets,omitempty"`
+	BuildSourceID            string                          `json:"buildSourceId,omitempty"`
+	BuildSource              *domainapp.BuildSource          `json:"buildSource,omitempty"`
+	LatestBundle             *ReleaseBundle                  `json:"latestBundle,omitempty"`
+	LatestExecutionTask      *ExecutionTask                  `json:"latestExecutionTask,omitempty"`
+	LatestBuild              *domainbuild.Record             `json:"latestBuild,omitempty"`
+	LatestWorkflow           *domainworkflow.Run             `json:"latestWorkflow,omitempty"`
+	LatestRelease            *domainrelease.Record           `json:"latestRelease,omitempty"`
 }
 
 type ApplicationDetail struct {

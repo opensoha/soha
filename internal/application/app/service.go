@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	appaccess "github.com/kubecrux/kubecrux/internal/application/access"
 	domainaccess "github.com/kubecrux/kubecrux/internal/domain/access"
 	domainapp "github.com/kubecrux/kubecrux/internal/domain/application"
 	domainaudit "github.com/kubecrux/kubecrux/internal/domain/audit"
@@ -25,6 +26,11 @@ type Repository interface {
 	Create(context.Context, domainapp.UpsertInput) (domainapp.App, error)
 	Update(context.Context, string, domainapp.UpsertInput) (domainapp.App, error)
 	Delete(context.Context, string) error
+	ListServices(context.Context, string) ([]domainapp.Service, error)
+	GetService(context.Context, string, string) (domainapp.Service, error)
+	CreateService(context.Context, string, domainapp.ServiceInput) (domainapp.Service, error)
+	UpdateService(context.Context, string, string, domainapp.ServiceInput) (domainapp.Service, error)
+	DeleteService(context.Context, string, string) error
 }
 
 type GitLabClient interface {
@@ -42,15 +48,20 @@ type OperationRecorder interface {
 }
 
 type Service struct {
-	repo       Repository
-	gitlab     GitLabClient
-	authorizer domainaccess.Authorizer
-	audit      AuditRecorder
-	operations OperationRecorder
+	repo        Repository
+	gitlab      GitLabClient
+	authorizer  domainaccess.Authorizer
+	permissions *appaccess.PermissionResolver
+	audit       AuditRecorder
+	operations  OperationRecorder
 }
 
 func New(repo Repository, gitlab GitLabClient, authorizer domainaccess.Authorizer, audit AuditRecorder, operations OperationRecorder) *Service {
 	return &Service{repo: repo, gitlab: gitlab, authorizer: authorizer, audit: audit, operations: operations}
+}
+
+func (s *Service) SetPermissionResolver(permissions *appaccess.PermissionResolver) {
+	s.permissions = permissions
 }
 
 func (s *Service) List(ctx context.Context, principal domainidentity.Principal, filter domainapp.Filter) ([]domainapp.App, error) {
@@ -132,6 +143,107 @@ func (s *Service) Delete(ctx context.Context, principal domainidentity.Principal
 	return nil
 }
 
+func (s *Service) ListServices(ctx context.Context, principal domainidentity.Principal, applicationID string) ([]domainapp.Service, error) {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermDeliveryApplicationServicesView); err != nil {
+		return nil, err
+	}
+	app, err := s.Get(ctx, principal, applicationID)
+	if err != nil {
+		return nil, err
+	}
+	items, err := s.repo.ListServices(ctx, app.ID)
+	if err != nil {
+		return nil, normalizeRepoError(err)
+	}
+	_ = s.recordAudit(ctx, principal, "", "ApplicationService", app.Name, string(domainaccess.ActionList), "success", "listed application services")
+	return items, nil
+}
+
+func (s *Service) GetService(ctx context.Context, principal domainidentity.Principal, applicationID, serviceID string) (domainapp.Service, error) {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermDeliveryApplicationServicesView); err != nil {
+		return domainapp.Service{}, err
+	}
+	app, err := s.Get(ctx, principal, applicationID)
+	if err != nil {
+		return domainapp.Service{}, err
+	}
+	item, err := s.repo.GetService(ctx, app.ID, strings.TrimSpace(serviceID))
+	if err != nil {
+		return domainapp.Service{}, normalizeRepoError(err)
+	}
+	_ = s.recordAudit(ctx, principal, "", "ApplicationService", item.Name, string(domainaccess.ActionView), "success", "viewed application service")
+	return item, nil
+}
+
+func (s *Service) CreateService(ctx context.Context, principal domainidentity.Principal, applicationID string, input domainapp.ServiceInput) (domainapp.Service, error) {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermDeliveryApplicationServicesManage); err != nil {
+		return domainapp.Service{}, err
+	}
+	app, err := s.repo.Get(ctx, strings.TrimSpace(applicationID))
+	if err != nil {
+		return domainapp.Service{}, normalizeRepoError(err)
+	}
+	if err := validateServiceInput(input); err != nil {
+		return domainapp.Service{}, err
+	}
+	if err := s.authorize(ctx, principal, domainaccess.ActionUpdate, "ApplicationService", input.Name, input.Key, app.BusinessLineID, app.ID); err != nil {
+		return domainapp.Service{}, err
+	}
+	item, err := s.repo.CreateService(ctx, app.ID, input)
+	if err != nil {
+		return domainapp.Service{}, normalizeRepoError(err)
+	}
+	_ = s.recordAudit(ctx, principal, "", "ApplicationService", item.Name, string(domainaccess.ActionUpdate), "success", "created application service")
+	s.recordOperation(ctx, principal, "delivery.application-service.create", item.ID, item.Name, "created application service")
+	return item, nil
+}
+
+func (s *Service) UpdateService(ctx context.Context, principal domainidentity.Principal, applicationID, serviceID string, input domainapp.ServiceInput) (domainapp.Service, error) {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermDeliveryApplicationServicesManage); err != nil {
+		return domainapp.Service{}, err
+	}
+	app, err := s.repo.Get(ctx, strings.TrimSpace(applicationID))
+	if err != nil {
+		return domainapp.Service{}, normalizeRepoError(err)
+	}
+	if err := validateServiceInput(input); err != nil {
+		return domainapp.Service{}, err
+	}
+	if err := s.authorize(ctx, principal, domainaccess.ActionUpdate, "ApplicationService", input.Name, input.Key, app.BusinessLineID, app.ID); err != nil {
+		return domainapp.Service{}, err
+	}
+	item, err := s.repo.UpdateService(ctx, app.ID, strings.TrimSpace(serviceID), input)
+	if err != nil {
+		return domainapp.Service{}, normalizeRepoError(err)
+	}
+	_ = s.recordAudit(ctx, principal, "", "ApplicationService", item.Name, string(domainaccess.ActionUpdate), "success", "updated application service")
+	s.recordOperation(ctx, principal, "delivery.application-service.update", item.ID, item.Name, "updated application service")
+	return item, nil
+}
+
+func (s *Service) DeleteService(ctx context.Context, principal domainidentity.Principal, applicationID, serviceID string) error {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermDeliveryApplicationServicesManage); err != nil {
+		return err
+	}
+	app, err := s.repo.Get(ctx, strings.TrimSpace(applicationID))
+	if err != nil {
+		return normalizeRepoError(err)
+	}
+	item, err := s.repo.GetService(ctx, app.ID, strings.TrimSpace(serviceID))
+	if err != nil {
+		return normalizeRepoError(err)
+	}
+	if err := s.authorize(ctx, principal, domainaccess.ActionDelete, "ApplicationService", item.Name, item.Key, app.BusinessLineID, app.ID); err != nil {
+		return err
+	}
+	if err := s.repo.DeleteService(ctx, app.ID, item.ID); err != nil {
+		return normalizeRepoError(err)
+	}
+	_ = s.recordAudit(ctx, principal, "", "ApplicationService", item.Name, string(domainaccess.ActionDelete), "success", "deleted application service")
+	s.recordOperation(ctx, principal, "delivery.application-service.delete", item.ID, item.Name, "deleted application service")
+	return nil
+}
+
 func normalizeRepoError(err error) error {
 	if errors.Is(err, applicationrepo.ErrNotFound) {
 		return fmt.Errorf("%w: %v", apperrors.ErrNotFound, err)
@@ -199,6 +311,28 @@ func validateInput(input domainapp.UpsertInput) error {
 	}
 	if strings.TrimSpace(input.Language) == "" {
 		return fmt.Errorf("%w: application language is required", apperrors.ErrInvalidArgument)
+	}
+	return nil
+}
+
+func validateServiceInput(input domainapp.ServiceInput) error {
+	if strings.TrimSpace(input.Name) == "" {
+		return fmt.Errorf("%w: service name is required", apperrors.ErrInvalidArgument)
+	}
+	if strings.TrimSpace(input.Key) == "" {
+		return fmt.Errorf("%w: service key is required", apperrors.ErrInvalidArgument)
+	}
+	if input.ServiceKind != "" {
+		switch input.ServiceKind {
+		case domainapp.ServiceKindKubernetesWorkload, domainapp.ServiceKindHelmRelease, domainapp.ServiceKindExternalService, domainapp.ServiceKindJob:
+		default:
+			return fmt.Errorf("%w: unsupported serviceKind %s", apperrors.ErrInvalidArgument, input.ServiceKind)
+		}
+	}
+	for _, container := range input.Containers {
+		if strings.TrimSpace(container.Name) == "" {
+			return fmt.Errorf("%w: container name is required", apperrors.ErrInvalidArgument)
+		}
 	}
 	return nil
 }

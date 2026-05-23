@@ -18,6 +18,11 @@ type ApplicationService interface {
 	Create(context.Context, domainidentity.Principal, domainapp.UpsertInput) (domainapp.App, error)
 	Update(context.Context, domainidentity.Principal, string, domainapp.UpsertInput) (domainapp.App, error)
 	Delete(context.Context, domainidentity.Principal, string) error
+	ListServices(context.Context, domainidentity.Principal, string) ([]domainapp.Service, error)
+	GetService(context.Context, domainidentity.Principal, string, string) (domainapp.Service, error)
+	CreateService(context.Context, domainidentity.Principal, string, domainapp.ServiceInput) (domainapp.Service, error)
+	UpdateService(context.Context, domainidentity.Principal, string, string, domainapp.ServiceInput) (domainapp.Service, error)
+	DeleteService(context.Context, domainidentity.Principal, string, string) error
 	ListGitRepositories(context.Context, domainidentity.Principal, string, int) ([]domainapp.GitRepository, error)
 	ListGitBranches(context.Context, domainidentity.Principal, string, string, int) ([]domainapp.GitReference, error)
 	ListGitTags(context.Context, domainidentity.Principal, string, string, int) ([]domainapp.GitReference, error)
@@ -93,6 +98,65 @@ func (h *ApplicationHandler) DeleteApplication(c *gin.Context) {
 	apiresponse.JSON(c, http.StatusOK, gin.H{"status": "ok"})
 }
 
+func (h *ApplicationHandler) ListApplicationServices(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	items, err := h.service.ListServices(c.Request.Context(), principal, c.Param("applicationID"))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Items(c, http.StatusOK, items)
+}
+
+func (h *ApplicationHandler) GetApplicationService(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	item, err := h.service.GetService(c.Request.Context(), principal, c.Param("applicationID"), c.Param("serviceID"))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
+}
+
+func (h *ApplicationHandler) CreateApplicationService(c *gin.Context) {
+	var req dto.UpsertApplicationServiceRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid application service payload")
+		return
+	}
+	principal := apiMiddleware.PrincipalFromContext(c)
+	item, err := h.service.CreateService(c.Request.Context(), principal, c.Param("applicationID"), mapApplicationServiceInput(req))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusCreated, item)
+}
+
+func (h *ApplicationHandler) UpdateApplicationService(c *gin.Context) {
+	var req dto.UpsertApplicationServiceRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid application service payload")
+		return
+	}
+	principal := apiMiddleware.PrincipalFromContext(c)
+	item, err := h.service.UpdateService(c.Request.Context(), principal, c.Param("applicationID"), c.Param("serviceID"), mapApplicationServiceInput(req))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
+}
+
+func (h *ApplicationHandler) DeleteApplicationService(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	if err := h.service.DeleteService(c.Request.Context(), principal, c.Param("applicationID"), c.Param("serviceID")); err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.JSON(c, http.StatusOK, gin.H{"status": "ok"})
+}
+
 func (h *ApplicationHandler) ListGitRepositories(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	items, err := h.service.ListGitRepositories(c.Request.Context(), principal, c.Query("search"), parseLimit(c.Query("limit"), 50))
@@ -157,5 +221,40 @@ func mapApplicationInput(req dto.UpsertApplicationRequest) domainapp.UpsertInput
 		Enabled:             req.Enabled,
 		Metadata:            req.Metadata,
 		BuildSources:        buildSources,
+	}
+}
+
+func mapApplicationServiceInput(req dto.UpsertApplicationServiceRequest) domainapp.ServiceInput {
+	containers := make([]domainapp.ServiceContainerInput, 0, len(req.Containers))
+	for _, item := range req.Containers {
+		containers = append(containers, domainapp.ServiceContainerInput{
+			ID:                 item.ID,
+			Name:               item.Name,
+			ImageRepository:    item.ImageRepository,
+			DefaultTagTemplate: item.DefaultTagTemplate,
+			DockerfilePath:     item.DockerfilePath,
+			BuildContextDir:    item.BuildContextDir,
+			RuntimePorts:       item.RuntimePorts,
+			EnvSchema:          item.EnvSchema,
+			ResourceProfile:    item.ResourceProfile,
+			HealthCheck:        item.HealthCheck,
+			Metadata:           item.Metadata,
+		})
+	}
+	return domainapp.ServiceInput{
+		ID:                  req.ID,
+		Key:                 req.Key,
+		Name:                req.Name,
+		Description:         req.Description,
+		ServiceKind:         domainapp.ServiceKind(req.ServiceKind),
+		OwnerTeam:           req.OwnerTeam,
+		RepositoryProvider:  req.RepositoryProvider,
+		RepositoryProjectID: req.RepositoryProjectID,
+		RepositoryPath:      req.RepositoryPath,
+		DefaultBranch:       req.DefaultBranch,
+		BuildSourceID:       req.BuildSourceID,
+		Enabled:             req.Enabled,
+		Metadata:            req.Metadata,
+		Containers:          containers,
 	}
 }

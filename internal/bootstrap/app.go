@@ -178,6 +178,7 @@ func New(ctx context.Context) (*App, error) {
 	eventService := appevent.New(eventRepository)
 	monitoringService := appmonitoring.New(alertRepository, eventRepository, copilotRepository, permissionResolver, cfg.Monitoring.Enabled, cfg.Monitoring.WebhookToken)
 	applicationService := appregistry.New(applicationRepository, gitlabClient, accessService, auditService, operationService)
+	applicationService.SetPermissionResolver(permissionResolver)
 	executionService := appexecution.New(
 		deliveryRepository,
 		buildRepository,

@@ -583,6 +583,8 @@ func mapVM(item domainvirtualization.VM) gin.H {
 		"bootImageId":  item.ImageID,
 		"imageId":      item.ImageID,
 		"flavorId":     item.FlavorID,
+		"sourceMode":   firstNonEmpty(stringValue(item.Config, "sourceMode"), stringValue(item.Raw, "sourceMode")),
+		"sourceRef":    firstNonEmpty(stringValue(item.Config, "sourceRef"), stringValue(item.Raw, "sourceRef")),
 		"cpu":          cpu,
 		"memoryMiB":    memory,
 		"diskGiB":      disk,
@@ -663,9 +665,14 @@ func mapImage(item domainvirtualization.Image) gin.H {
 		"sizeBytes":      item.SizeBytes,
 		"sizeGiB":        bytesToGiB(item.SizeBytes),
 		"sourceKind":     stringValue(item.Config, "sourceKind"),
+		"assetKind":      firstNonEmpty(stringValue(item.Config, "sourceKind"), stringValue(item.Config, "assetKind")),
 		"source":         firstNonEmpty(stringValue(item.Config, "sourceKind"), stringValue(item.Config, "source")),
 		"sourceRef":      firstNonEmpty(stringValue(item.Config, "sourceRef"), item.ExternalID),
 		"namespace":      stringValue(item.Config, "namespace"),
+		"node":           stringValue(item.Config, "node"),
+		"storage":        stringValue(item.Config, "storage"),
+		"storageClass":   stringValue(item.Config, "storageClass"),
+		"ready":          item.Status != "stale" && item.Status != "deleted",
 		"description":    stringValue(item.Config, "description"),
 		"config":         item.Config,
 		"createdAt":      item.CreatedAt,
@@ -889,8 +896,8 @@ func (h *VirtualizationHandler) StreamVMConsole(c *gin.Context) {
 		return
 	}
 
-	if consoleResult.Message != "" {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": consoleResult.Message})
+	if consoleResult.Message != "" || !consoleResult.Ready {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": firstNonEmpty(consoleResult.Message, "console is not ready")})
 		return
 	}
 
@@ -901,7 +908,9 @@ func (h *VirtualizationHandler) StreamVMConsole(c *gin.Context) {
 	defer conn.Close()
 
 	if consoleResult.Type == "novnc" && consoleResult.Token != "" {
-		proxyPVEVNC(conn, consoleResult.URL, consoleResult.Token)
+		proxyPVEVNC(conn, firstNonEmpty(consoleResult.BackendURL, consoleResult.URL), consoleResult.Token)
+	} else if consoleResult.Type == "vnc" {
+		proxyKubeVirtVNC(conn, firstNonEmpty(consoleResult.BackendURL, consoleResult.URL))
 	} else {
 		conn.WriteMessage(websocket.TextMessage, []byte(`{"error":"VNC proxy not fully implemented for this provider"}`))
 	}
@@ -929,6 +938,29 @@ func proxyPVEVNC(clientConn *websocket.Conn, backendURL, ticket string) {
 	}
 	defer backendConn.Close()
 
+	proxyWebsocket(clientConn, backendConn)
+}
+
+func proxyKubeVirtVNC(clientConn *websocket.Conn, backendURL string) {
+	parsedURL, err := url.Parse(backendURL)
+	if err != nil {
+		clientConn.WriteMessage(websocket.TextMessage, []byte(fmt.Sprintf(`{"error":"invalid backend URL: %v"}`, err)))
+		return
+	}
+	parsedURL.Scheme = "wss"
+	if strings.HasPrefix(backendURL, "http://") {
+		parsedURL.Scheme = "ws"
+	}
+	backendConn, _, err := websocket.DefaultDialer.Dial(parsedURL.String(), nil)
+	if err != nil {
+		clientConn.WriteMessage(websocket.TextMessage, []byte(fmt.Sprintf(`{"error":"failed to connect to kubevirt backend: %v"}`, err)))
+		return
+	}
+	defer backendConn.Close()
+	proxyWebsocket(clientConn, backendConn)
+}
+
+func proxyWebsocket(clientConn, backendConn *websocket.Conn) {
 	var wg sync.WaitGroup
 	wg.Add(2)
 

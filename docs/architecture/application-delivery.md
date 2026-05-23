@@ -4,6 +4,8 @@
 
 kubecrux now owns application registration, multi-source build configuration, environment-scoped delivery orchestration, image replacement deployment, and deploy/release records.
 
+The developer/tester-facing DevOps workbench design is documented separately in [应用交付 DevOps 工作台方案](./delivery-devops-workbench.md). This file remains the implemented application-delivery baseline and compatibility contract.
+
 ## Current Implemented Surface
 
 The repository now has a delivery control-plane baseline centered on four stable objects:
@@ -21,6 +23,12 @@ The repository now has a delivery control-plane baseline centered on four stable
   - `GET /api/v1/applications/:applicationID/detail`
   - `PUT /api/v1/applications/:applicationID`
   - `DELETE /api/v1/applications/:applicationID`
+- application service and container APIs:
+  - `GET /api/v1/applications/:applicationID/services`
+  - `POST /api/v1/applications/:applicationID/services`
+  - `GET /api/v1/applications/:applicationID/services/:serviceID`
+  - `PUT /api/v1/applications/:applicationID/services/:serviceID`
+  - `DELETE /api/v1/applications/:applicationID/services/:serviceID`
 - build-template APIs:
   - `GET /api/v1/build-templates`
   - `POST /api/v1/build-templates`
@@ -75,6 +83,8 @@ The repository now has a delivery control-plane baseline centered on four stable
 - PostgreSQL tables:
 - `applications`
 - `application_build_sources`
+- `application_services`
+- `application_service_containers`
 - `build_templates`
 - `delivery_blueprints`
 - `release_bundles`
@@ -97,6 +107,13 @@ Application model now keeps:
 - buildSources
 - latest execution state via aggregate detail
 - environment coverage via release-board aggregate
+
+Application services now keep:
+
+- service key and display name
+- service kind such as Kubernetes workload, Helm release, external service, or job
+- optional service-level repository and build-source override
+- service-owned container definitions with image repository, tag template, Dockerfile path, build context, runtime ports, and metadata
 
 The backend still accepts legacy top-level application build fields for compatibility and migration, but the active web application center now edits delivery build configuration through `buildSources` only.
 
@@ -187,6 +204,8 @@ PostgreSQL now holds:
 
 - applications
 - application_build_sources
+- application_services
+- application_service_containers
 - build_templates
 - release_bundles
 - execution_tasks

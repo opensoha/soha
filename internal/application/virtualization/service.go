@@ -100,6 +100,8 @@ type CreateVMInput struct {
 	MemoryMiB         int            `json:"memoryMiB,omitempty"`
 	BootImageID       string         `json:"bootImageId,omitempty"`
 	ImageID           string         `json:"imageId,omitempty"`
+	SourceMode        string         `json:"sourceMode,omitempty"`
+	SourceID          string         `json:"sourceId,omitempty"`
 	FlavorID          string         `json:"flavorId,omitempty"`
 	DiskGiB           int            `json:"diskGiB,omitempty"`
 	Network           string         `json:"network,omitempty"`
@@ -622,6 +624,7 @@ func (s *Service) CreateVM(ctx context.Context, principal domainidentity.Princip
 		}
 		input.BootImageID = image.ID
 	}
+	sourceRef := firstNonEmpty(stringValue(image.Config, "sourceRef"), image.ExternalID, imageID)
 	task, err := s.repo.CreateTask(ctx, domainvirtualization.Task{
 		Provider:       connection.Provider,
 		ConnectionID:   connection.ID,
@@ -639,6 +642,8 @@ func (s *Service) CreateVM(ctx context.Context, principal domainidentity.Princip
 			"memoryMiB":        input.MemoryMiB,
 			"bootImageId":      input.BootImageID,
 			"imageId":          imageID,
+			"sourceMode":       firstNonEmpty(input.SourceMode, sourceModeForProvider(connection.Provider, input.TemplateID, image)),
+			"sourceId":         firstNonEmpty(strings.TrimSpace(input.SourceID), sourceRef),
 			"diskGiB":          input.DiskGiB,
 			"network":          input.Network,
 			"cloudInit":        input.CloudInit,
@@ -956,14 +961,7 @@ func (s *Service) GetVMMetrics(ctx context.Context, principal domainidentity.Pri
 		Namespace: vm.Namespace,
 		Node:      vm.NodeName,
 		Status:    vm.Status,
-		Metadata:  make(map[string]string),
-	}
-	if vm.Config != nil {
-		for k, v := range vm.Config {
-			if str, ok := v.(string); ok {
-				adapterVM.Metadata[k] = str
-			}
-		}
+		Metadata:  adapterVMMetadata(vm),
 	}
 
 	return adapter.GetVMMetrics(ctx, adapterConn, adapterVM, rangeMinutes, stepSeconds)
@@ -1000,14 +998,7 @@ func (s *Service) GetConsoleURL(ctx context.Context, principal domainidentity.Pr
 		Namespace: vm.Namespace,
 		Node:      vm.NodeName,
 		Status:    vm.Status,
-		Metadata:  make(map[string]string),
-	}
-	if vm.Config != nil {
-		for k, v := range vm.Config {
-			if str, ok := v.(string); ok {
-				adapterVM.Metadata[k] = str
-			}
-		}
+		Metadata:  adapterVMMetadata(vm),
 	}
 
 	return adapter.GetConsoleURL(ctx, adapterConn, adapterVM)
@@ -1180,7 +1171,25 @@ func (s *Service) adapterConnection(connection domainvirtualization.Connection) 
 		Endpoint:   connection.Endpoint,
 		Credential: credential,
 		Options:    options,
+		BackendURL: stringValue(options, "backendUrl"),
 	}, nil
+}
+
+func adapterVMMetadata(vm domainvirtualization.VM) map[string]string {
+	metadata := map[string]string{}
+	for _, source := range []map[string]any{vm.Config, vm.Labels, vm.Raw} {
+		for key := range source {
+			if value := stringValue(source, key); value != "" {
+				metadata[key] = value
+			}
+		}
+	}
+	if metadata["vmid"] == "" {
+		if value := firstNonEmpty(metadata["providerVmId"], vm.ExternalID); value != "" {
+			metadata["vmid"] = value
+		}
+	}
+	return metadata
 }
 
 func sanitizeConnections(items []domainvirtualization.Connection) []domainvirtualization.Connection {
@@ -1462,6 +1471,20 @@ func (s *Service) imageFromInput(ctx context.Context, input ImageInput, id strin
 		Config:       config,
 		Raw:          map[string]any{"managedBy": "kubecrux"},
 	}, nil
+}
+
+func sourceModeForProvider(provider, templateID string, image domainvirtualization.Image) string {
+	provider = normalizeProvider(provider)
+	if provider == ProviderPVE {
+		if strings.TrimSpace(templateID) != "" || strings.EqualFold(stringValue(image.Config, "sourceKind"), "template") {
+			return "template_clone"
+		}
+		return "iso_install"
+	}
+	if strings.EqualFold(stringValue(image.Config, "sourceKind"), "pvc") {
+		return "pvc_clone"
+	}
+	return "datasource_clone"
 }
 
 func normalizedPageRequest(page, pageSize, limit int) (int, int) {

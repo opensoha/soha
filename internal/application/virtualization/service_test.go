@@ -300,6 +300,9 @@ func TestCreateVMUsesFlavorAndImageSelection(t *testing.T) {
 	if task.Payload["flavorId"] != flavor.ID || task.Payload["imageId"] != image.ID {
 		t.Fatalf("task payload missing flavor/image: %#v", task.Payload)
 	}
+	if task.Payload["sourceId"] != image.ExternalID {
+		t.Fatalf("task payload sourceId = %#v, want %q", task.Payload["sourceId"], image.ExternalID)
+	}
 	if task.Payload["cpu"] != flavor.CPUCores || task.Payload["memoryMiB"] != flavor.MemoryMB || task.Payload["diskGiB"] != flavor.DiskGB {
 		t.Fatalf("task payload did not inherit flavor resources: %#v", task.Payload)
 	}

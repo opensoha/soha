@@ -61,6 +61,8 @@ export interface VirtualMachine {
   powerState?: string
   flavorId?: string
   flavorName?: string
+  sourceMode?: string
+  sourceRef?: string
   cpu?: number
   memoryMiB?: number
   diskGiB?: number
@@ -81,7 +83,10 @@ export interface CreateVirtualMachineInput {
   node?: string
   cpu?: number
   memoryMiB?: number
-  bootImageId: string
+  bootImageId?: string
+  imageId?: string
+  sourceMode?: string
+  sourceId?: string
   diskGiB?: number
   network?: string
   cloudInit?: string
@@ -139,6 +144,11 @@ export interface VirtualizationImage {
   source?: string
   sourceKind?: string
   sourceRef?: string
+  assetKind?: string
+  ready?: boolean
+  node?: string
+  storage?: string
+  storageClass?: string
   osType?: string
   status?: string
   sizeGiB?: number
@@ -197,6 +207,7 @@ export interface VirtualizationOperation {
   message?: string
   connectionId?: string
   connectionName?: string
+  vmId?: string
   actor?: string
   lastHeartbeatAt?: string
   startedAt?: string
@@ -235,6 +246,8 @@ export interface VirtualizationPage<T> {
 
 export interface VirtualMachineDetail {
   vm: VirtualMachine
+  connection?: VirtualizationCluster
+  image?: VirtualizationImage
   providerRaw?: Record<string, unknown> | string | null
   operations?: VirtualizationOperation[]
   logs?: VirtualizationOperationLog[]
@@ -255,11 +268,17 @@ export interface MetricSeries {
 export interface VirtualizationVMMetrics {
   series: MetricSeries[]
   message?: string
+  ready?: boolean
+  source?: string
 }
 
 export interface VirtualizationConsoleURL {
   type: string
   url: string
+  backendUrl?: string
   token?: string
   message?: string
+  ready?: boolean
+  provider?: string
+  proxyMode?: string
 }

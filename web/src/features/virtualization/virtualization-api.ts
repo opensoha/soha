@@ -64,16 +64,27 @@ export const virtualizationApi = {
   updateFlavor: (id: string, payload: VirtualizationFlavorInput) =>
     api.put<ApiResponse<VirtualizationFlavor>>(`${BASE}/flavors/${encodeURIComponent(id)}`, payload),
   deleteFlavor: (id: string) => api.delete<ApiResponse<void>>(`${BASE}/flavors/${encodeURIComponent(id)}`),
-  operations: (params: { assetType?: string; taskKind?: string; abnormal?: boolean; pending?: boolean; statuses?: string[] } = {}) =>
-    api.get<ApiResponse<VirtualizationOperation[]>>(
-      withQuery(
-        `${BASE}/operations`,
-        Object.entries({
-          ...params,
-          statuses: params.statuses?.join(','),
-        }) as Array<[string, string | number | undefined]>,
-      ),
-    ),
+  operations: (params: {
+    assetType?: string
+    taskKind?: string
+    abnormal?: boolean
+    pending?: boolean
+    statuses?: string[]
+    connectionId?: string
+    vmId?: string
+    search?: string
+  } = {}) => {
+    const queryParams: Array<[string, string | number | undefined]> = []
+    if (params.assetType) queryParams.push(['assetType', params.assetType])
+    if (params.taskKind) queryParams.push(['taskKind', params.taskKind])
+    if (params.abnormal) queryParams.push(['abnormal', 'true'])
+    if (params.pending) queryParams.push(['pending', 'true'])
+    if (params.statuses?.length) queryParams.push(['statuses', params.statuses.join(',')])
+    if (params.connectionId) queryParams.push(['connectionId', params.connectionId])
+    if (params.vmId) queryParams.push(['vmId', params.vmId])
+    if (params.search) queryParams.push(['search', params.search])
+    return api.get<ApiResponse<VirtualizationOperation[]>>(withQuery(`${BASE}/operations`, queryParams))
+  },
   operationLogs: (id: string) =>
     api.get<ApiResponse<VirtualizationOperationLog[]>>(`${BASE}/operations/${encodeURIComponent(id)}/logs`),
   cancelOperation: (id: string) =>

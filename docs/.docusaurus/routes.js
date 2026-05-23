@@ -4,15 +4,15 @@ import ComponentCreator from '@docusaurus/ComponentCreator';
 export default [
   {
     path: '/docs/',
-    component: ComponentCreator('/docs/', 'ecb'),
+    component: ComponentCreator('/docs/', 'cb4'),
     routes: [
       {
         path: '/docs/',
-        component: ComponentCreator('/docs/', '872'),
+        component: ComponentCreator('/docs/', '456'),
         routes: [
           {
             path: '/docs/',
-            component: ComponentCreator('/docs/', 'aa5'),
+            component: ComponentCreator('/docs/', '275'),
             routes: [
               {
                 path: '/docs/api/auth-and-errors/',
@@ -22,7 +22,7 @@ export default [
               },
               {
                 path: '/docs/api/core-endpoints/',
-                component: ComponentCreator('/docs/api/core-endpoints/', 'dee'),
+                component: ComponentCreator('/docs/api/core-endpoints/', '24e'),
                 exact: true,
                 sidebar: "mainSidebar"
               },
@@ -71,6 +71,12 @@ export default [
               {
                 path: '/docs/architecture/authorization/',
                 component: ComponentCreator('/docs/architecture/authorization/', '9f8'),
+                exact: true,
+                sidebar: "mainSidebar"
+              },
+              {
+                path: '/docs/architecture/delivery-devops-workbench/',
+                component: ComponentCreator('/docs/architecture/delivery-devops-workbench/', '80e'),
                 exact: true,
                 sidebar: "mainSidebar"
               },
@@ -208,19 +214,19 @@ export default [
               },
               {
                 path: '/docs/operations/virtualization-lab-runbook/',
-                component: ComponentCreator('/docs/operations/virtualization-lab-runbook/', '1e8'),
+                component: ComponentCreator('/docs/operations/virtualization-lab-runbook/', 'd2f'),
                 exact: true,
                 sidebar: "mainSidebar"
               },
               {
                 path: '/docs/reference/database-schema/',
-                component: ComponentCreator('/docs/reference/database-schema/', '6ef'),
+                component: ComponentCreator('/docs/reference/database-schema/', 'e06'),
                 exact: true,
                 sidebar: "mainSidebar"
               },
               {
                 path: '/docs/reference/product-information-architecture/',
-                component: ComponentCreator('/docs/reference/product-information-architecture/', 'ead'),
+                component: ComponentCreator('/docs/reference/product-information-architecture/', '17a'),
                 exact: true,
                 sidebar: "mainSidebar"
               },

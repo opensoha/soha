@@ -240,8 +240,8 @@ func (c DatabaseConfig) ResolveMigrationPath() string {
 
 	info, err := os.Stat(candidate)
 	if err == nil && info.IsDir() {
-		driverSpecific := filepath.Join(candidate, driver, "0001_init.sql")
-		if _, err := os.Stat(driverSpecific); err == nil {
+		driverSpecific := filepath.Join(candidate, driver)
+		if info, err := os.Stat(driverSpecific); err == nil && info.IsDir() {
 			return driverSpecific
 		}
 		fallback := filepath.Join(candidate, "0001_init.sql")

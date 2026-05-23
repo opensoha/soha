@@ -175,6 +175,9 @@ func (s *Service) executeVMCreate(ctx context.Context, task domainvirtualization
 		CloudInit:        payloadString(task.Payload, "cloudInit"),
 		StartAfterCreate: boolValue(task.Payload, "startAfterCreate"),
 		TemplateID:       payloadString(task.Payload, "templateId"),
+			SourceMode:       payloadString(task.Payload, "sourceMode"),
+			SourceRef:        firstNonEmpty(payloadString(task.Payload, "sourceId"), payloadString(task.Payload, "imageId"), payloadString(task.Payload, "bootImageId")),
+			ProviderParams:   mapValue(task.Payload, "providerParams"),
 	}
 	vm, err := adapter.CreateVM(ctx, adapterConnection, input)
 	if err != nil {
@@ -198,15 +201,19 @@ func (s *Service) executeVMCreate(ctx context.Context, task domainvirtualization
 		IPAddresses:  []string{},
 		Labels:       metadataMap(vm.Metadata),
 		Config: map[string]any{
-			"cpu":       payloadInt(task.Payload, "cpu"),
-			"memoryMiB": payloadInt(task.Payload, "memoryMiB"),
-			"diskGiB":   payloadInt(task.Payload, "diskGiB"),
-			"network":   payloadString(task.Payload, "network"),
+			"cpu":        payloadInt(task.Payload, "cpu"),
+			"memoryMiB":  payloadInt(task.Payload, "memoryMiB"),
+			"diskGiB":    payloadInt(task.Payload, "diskGiB"),
+			"network":    payloadString(task.Payload, "network"),
+			"sourceMode": payloadString(task.Payload, "sourceMode"),
+			"sourceRef":  payloadString(task.Payload, "sourceId"),
 		},
 		Raw: map[string]any{
 			"providerVmId":   vm.ID,
 			"providerParams": task.Payload["providerParams"],
 			"providerExtra":  task.Payload["providerExtra"],
+			"sourceMode":     payloadString(task.Payload, "sourceMode"),
+			"sourceRef":      payloadString(task.Payload, "sourceId"),
 		},
 	})
 	if err != nil {
@@ -449,13 +456,30 @@ func vmFromAsset(connection domainvirtualization.Connection, asset infravirtuali
 }
 
 func imageFromAsset(connection domainvirtualization.Connection, asset infravirtualization.Asset) domainvirtualization.Image {
+	config := metadataMap(asset.Metadata)
+	if asset.Node != "" {
+		config["node"] = asset.Node
+	}
+	sourceKind := asset.Type
+	switch asset.Type {
+	case "iso":
+		sourceKind = "iso"
+	case "template":
+		sourceKind = "template"
+	case "storage_content":
+		sourceKind = firstNonEmpty(asset.Metadata["contentType"], asset.Type)
+	}
+	config["sourceKind"] = sourceKind
+	if sourceRef := firstNonEmpty(asset.Metadata["volid"], asset.Name); sourceRef != "" {
+		config["sourceRef"] = sourceRef
+	}
 	return domainvirtualization.Image{
 		Provider:     connection.Provider,
 		ConnectionID: connection.ID,
 		ExternalID:   firstNonEmpty(asset.Metadata["uid"], asset.Metadata["volid"], asset.Name),
 		Name:         asset.Name,
 		Status:       firstNonEmpty(asset.Status, "active"),
-		Config:       metadataMap(asset.Metadata),
+		Config:       config,
 		Raw:          map[string]any{"assetType": asset.Type, "namespace": asset.Namespace, "node": asset.Node},
 	}
 }
@@ -489,6 +513,14 @@ func diskString(diskGiB int) string {
 func boolValue(payload map[string]any, key string) bool {
 	value, ok := payload[key].(bool)
 	return ok && value
+}
+
+func mapValue(payload map[string]any, key string) map[string]any {
+	value, ok := payload[key].(map[string]any)
+	if !ok || value == nil {
+		return map[string]any{}
+	}
+	return value
 }
 
 func metadataMap(values map[string]string) map[string]any {

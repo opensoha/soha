@@ -15,8 +15,8 @@
   "frontMatter": {},
   "sidebar": "mainSidebar",
   "previous": {
-    "title": "Application Delivery",
-    "permalink": "/docs/architecture/application-delivery"
+    "title": "应用交付 DevOps 工作台方案",
+    "permalink": "/docs/architecture/delivery-devops-workbench"
   },
   "next": {
     "title": "Authorization",

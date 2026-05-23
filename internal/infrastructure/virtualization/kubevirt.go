@@ -169,13 +169,7 @@ func BuildKubeVirtVM(input CreateVMInput) *unstructured.Unstructured {
 	disks := []any{
 		map[string]any{"name": "rootdisk", "disk": map[string]any{"bus": "virtio"}},
 	}
-	volumes := []any{
-		map[string]any{"name": "rootdisk", "containerDisk": map[string]any{"image": input.BootImage}},
-	}
-	if input.CloudInit != "" {
-		disks = append(disks, map[string]any{"name": "cloudinitdisk", "disk": map[string]any{"bus": "virtio"}})
-		volumes = append(volumes, map[string]any{"name": "cloudinitdisk", "cloudInitNoCloud": map[string]any{"userData": input.CloudInit}})
-	}
+	volumes := []any{}
 	spec := map[string]any{
 		"runStrategy": runStrategy,
 		"template": map[string]any{
@@ -192,6 +186,41 @@ func BuildKubeVirtVM(input CreateVMInput) *unstructured.Unstructured {
 			},
 		},
 	}
+	storageClass := stringOption(input.ProviderParams, "storageClass")
+	dataVolumeName := firstNonEmpty(stringOption(input.ProviderParams, "dataVolumeName"), input.Name+"-rootdisk")
+	sourceRef := firstNonEmpty(input.SourceRef, input.BootImage)
+	sourceMode := firstNonEmpty(input.SourceMode, "datasource_clone")
+	switch sourceMode {
+	case "pvc_clone":
+		volumes = append(volumes, map[string]any{"name": "rootdisk", "persistentVolumeClaim": map[string]any{"claimName": sourceRef}})
+	case "datasource_clone":
+		volumes = append(volumes, map[string]any{"name": "rootdisk", "dataVolume": map[string]any{"name": dataVolumeName}})
+		dataVolume := map[string]any{
+			"metadata": map[string]any{"name": dataVolumeName},
+			"spec": map[string]any{
+				"sourceRef": map[string]any{
+					"kind":      "DataSource",
+					"name":      sourceRef,
+					"namespace": input.Namespace,
+				},
+				"storage": map[string]any{
+					"resources": map[string]any{
+						"requests": map[string]any{"storage": input.DiskSize},
+					},
+				},
+			},
+		}
+		if storageClass != "" {
+			_ = unstructured.SetNestedField(dataVolume, storageClass, "spec", "storage", "storageClassName")
+		}
+		spec["dataVolumeTemplates"] = []any{dataVolume}
+	default:
+		volumes = append(volumes, map[string]any{"name": "rootdisk", "containerDisk": map[string]any{"image": input.BootImage}})
+	}
+	if input.CloudInit != "" {
+		disks = append(disks, map[string]any{"name": "cloudinitdisk", "disk": map[string]any{"bus": "virtio"}})
+		volumes = append(volumes, map[string]any{"name": "cloudinitdisk", "cloudInitNoCloud": map[string]any{"userData": input.CloudInit}})
+	}
 	if input.Node != "" {
 		_ = unstructured.SetNestedField(spec, map[string]any{"kubernetes.io/hostname": input.Node}, "template", "spec", "nodeSelector")
 	}
@@ -199,18 +228,7 @@ func BuildKubeVirtVM(input CreateVMInput) *unstructured.Unstructured {
 		_ = unstructured.SetNestedSlice(spec, []any{map[string]any{"name": "default", "pod": map[string]any{}}}, "template", "spec", "networks")
 		_ = unstructured.SetNestedSlice(spec, []any{map[string]any{"name": "default", "bridge": map[string]any{}}}, "template", "spec", "domain", "devices", "interfaces")
 	}
-	if input.DiskSize != "" {
-		spec["dataVolumeTemplates"] = []any{map[string]any{
-			"metadata": map[string]any{"name": input.Name + "-rootdisk"},
-			"spec": map[string]any{
-				"pvc": map[string]any{
-					"resources": map[string]any{
-						"requests": map[string]any{"storage": input.DiskSize},
-					},
-				},
-			},
-		}}
-	}
+	_ = unstructured.SetNestedSlice(spec, volumes, "template", "spec", "volumes")
 	return &unstructured.Unstructured{Object: map[string]any{
 		"apiVersion": "kubevirt.io/v1",
 		"kind":       "VirtualMachine",
@@ -279,29 +297,36 @@ func readStatus(item *unstructured.Unstructured) string {
 }
 
 func namespaceFromConnection(connection Connection) string {
-	if namespace, ok := stringOption(connection.Options, "namespace"); ok {
+	if namespace := stringOption(connection.Options, "namespace"); namespace != "" {
 		return namespace
 	}
 	return ""
 }
 
 func namespaceOrDefault(connection Connection, fallback string) string {
-	if namespace, ok := stringOption(connection.Options, "namespace"); ok && namespace != "" {
+	if namespace := stringOption(connection.Options, "namespace"); namespace != "" {
 		return namespace
 	}
 	return fallback
 }
 
-func stringOption(options map[string]any, key string) (string, bool) {
+func stringOption(options map[string]any, key string) string {
 	if options == nil {
-		return "", false
+		return ""
 	}
 	value, ok := options[key]
 	if !ok {
-		return "", false
+		return ""
 	}
 	text, ok := value.(string)
-	return text, ok
+	if !ok {
+		return ""
+	}
+	return text
+}
+
+func stringOptionValue(options map[string]any, key string) string {
+	return stringOption(options, key)
 }
 
 func (a *KubeVirtAdapter) GetVMMetrics(ctx context.Context, connection Connection, vm VM, rangeMinutes, stepSeconds int) (VMMetricsResult, error) {
@@ -309,6 +334,8 @@ func (a *KubeVirtAdapter) GetVMMetrics(ctx context.Context, connection Connectio
 	if prometheusURL == "" {
 		return VMMetricsResult{
 			Message: "KubeVirt metrics require Prometheus integration - configure prometheusUrl in cluster connection options",
+			Ready:   false,
+			Source:  "none",
 		}, nil
 	}
 
@@ -347,15 +374,15 @@ func (a *KubeVirtAdapter) GetVMMetrics(ctx context.Context, connection Connectio
 	}
 
 	if len(series) == 0 {
-		return VMMetricsResult{Message: "No metrics data available for this VM"}, nil
+		return VMMetricsResult{Message: "No metrics data available for this VM", Ready: false, Source: "prometheus"}, nil
 	}
-	return VMMetricsResult{Series: series}, nil
+	return VMMetricsResult{Series: series, Ready: true, Source: "prometheus"}, nil
 }
 
 func (a *KubeVirtAdapter) GetConsoleURL(ctx context.Context, connection Connection, vm VM) (ConsoleURLResult, error) {
 	bundle, err := a.bundle(ctx, connection)
 	if err != nil {
-		return ConsoleURLResult{Message: err.Error()}, err
+		return ConsoleURLResult{Message: err.Error(), Ready: false, Provider: "kubevirt", Type: "vnc", ProxyMode: "backend-ws-proxy"}, err
 	}
 
 	_, err = bundle.Dynamic.Resource(kubeVirtVMIGVR).
@@ -363,14 +390,27 @@ func (a *KubeVirtAdapter) GetConsoleURL(ctx context.Context, connection Connecti
 		Get(ctx, vm.Name, metav1.GetOptions{})
 
 	if err != nil {
-		return ConsoleURLResult{Message: "VM instance not running"}, nil
+		return ConsoleURLResult{Message: "VM instance not running", Ready: false, Provider: "kubevirt", Type: "vnc", ProxyMode: "backend-ws-proxy"}, nil
 	}
 
+	backendURL := firstNonEmpty(connection.BackendURL, connection.Endpoint)
+	if strings.TrimSpace(backendURL) == "" {
+		return ConsoleURLResult{Message: "cluster backend URL is required for kubevirt console", Ready: false, Provider: "kubevirt", Type: "vnc", ProxyMode: "backend-ws-proxy"}, nil
+	}
+	queryURL, err := url.Parse(strings.TrimRight(strings.TrimSpace(backendURL), "/"))
+	if err != nil || queryURL.Scheme == "" || queryURL.Host == "" {
+		return ConsoleURLResult{Message: "valid cluster backend URL is required for kubevirt console", Ready: false, Provider: "kubevirt", Type: "vnc", ProxyMode: "backend-ws-proxy"}, nil
+	}
+	queryURL.Path = fmt.Sprintf("/apis/subresources.kubevirt.io/v1/namespaces/%s/virtualmachineinstances/%s/vnc", url.PathEscape(vm.Namespace), url.PathEscape(vm.Name))
 	vncURL := fmt.Sprintf("/api/v1/virtualization/vms/%s/console/vnc", vm.ID)
 
 	return ConsoleURLResult{
-		Type: "vnc",
-		URL:  vncURL,
+		Type:       "vnc",
+		URL:        vncURL,
+		BackendURL: queryURL.String(),
+		Ready:      true,
+		Provider:   "kubevirt",
+		ProxyMode:  "backend-ws-proxy",
 	}, nil
 }
 

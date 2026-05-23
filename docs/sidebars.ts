@@ -12,6 +12,7 @@ const sidebars: SidebarsConfig = {
       },
       items: [
         "architecture/application-delivery",
+        "architecture/delivery-devops-workbench",
         "architecture/monitoring-and-alerting",
         "architecture/authorization",
         "architecture/login-and-identity",

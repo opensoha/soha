@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	domainapp "github.com/kubecrux/kubecrux/internal/domain/application"
 	"gorm.io/gorm"
 )
@@ -154,6 +155,108 @@ func (r *Repository) Delete(ctx context.Context, applicationID string) error {
 	return nil
 }
 
+func (r *Repository) ListServices(ctx context.Context, applicationID string) ([]domainapp.Service, error) {
+	rows, err := r.db.WithContext(ctx).Raw(`
+		SELECT id, application_id, service_key, service_name, description, service_kind, owner_team, repository_provider,
+			repository_project_id, repository_path, default_branch, build_source_id, enabled, metadata, created_at, updated_at
+		FROM application_services
+		WHERE application_id = ?
+		ORDER BY enabled DESC, service_key ASC, id ASC
+	`, strings.TrimSpace(applicationID)).Rows()
+	if err != nil {
+		return nil, fmt.Errorf("query application services: %w", err)
+	}
+	defer rows.Close()
+
+	items := make([]domainapp.Service, 0)
+	for rows.Next() {
+		item, scanErr := scanService(rows)
+		if scanErr != nil {
+			return nil, scanErr
+		}
+		item.Containers, scanErr = r.listServiceContainers(ctx, item.ID)
+		if scanErr != nil {
+			return nil, scanErr
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func (r *Repository) GetService(ctx context.Context, applicationID, serviceID string) (domainapp.Service, error) {
+	row := r.db.WithContext(ctx).Raw(`
+		SELECT id, application_id, service_key, service_name, description, service_kind, owner_team, repository_provider,
+			repository_project_id, repository_path, default_branch, build_source_id, enabled, metadata, created_at, updated_at
+		FROM application_services
+		WHERE application_id = ? AND id = ?
+		LIMIT 1
+	`, strings.TrimSpace(applicationID), strings.TrimSpace(serviceID)).Row()
+	item, err := scanServiceRow(row)
+	if err != nil {
+		return domainapp.Service{}, err
+	}
+	item.Containers, err = r.listServiceContainers(ctx, item.ID)
+	if err != nil {
+		return domainapp.Service{}, err
+	}
+	return item, nil
+}
+
+func (r *Repository) CreateService(ctx context.Context, applicationID string, input domainapp.ServiceInput) (domainapp.Service, error) {
+	now := time.Now().UTC()
+	item := normalizeServiceInput(strings.TrimSpace(applicationID), input, now)
+	if err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := insertServiceTx(tx, item); err != nil {
+			return err
+		}
+		return replaceServiceContainersTx(tx, item.ID, item.Containers, now)
+	}); err != nil {
+		return domainapp.Service{}, err
+	}
+	return item, nil
+}
+
+func (r *Repository) UpdateService(ctx context.Context, applicationID, serviceID string, input domainapp.ServiceInput) (domainapp.Service, error) {
+	now := time.Now().UTC()
+	item := normalizeServiceInput(strings.TrimSpace(applicationID), input, now)
+	item.ID = strings.TrimSpace(serviceID)
+	if err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		metadata, err := json.Marshal(item.Metadata)
+		if err != nil {
+			return fmt.Errorf("marshal application service metadata: %w", err)
+		}
+		result := tx.Exec(`
+			UPDATE application_services
+			SET service_key = ?, service_name = ?, description = ?, service_kind = ?, owner_team = ?, repository_provider = ?,
+				repository_project_id = ?, repository_path = ?, default_branch = ?, build_source_id = ?, enabled = ?, metadata = ?, updated_at = ?
+			WHERE application_id = ? AND id = ?
+		`, item.Key, item.Name, nullableString(item.Description), string(item.ServiceKind), nullableString(item.OwnerTeam), nullableString(item.RepositoryProvider),
+			nullableString(item.RepositoryProjectID), nullableString(item.RepositoryPath), nullableString(item.DefaultBranch), nullableString(item.BuildSourceID),
+			item.Enabled, string(metadata), item.UpdatedAt, item.ApplicationID, item.ID)
+		if result.Error != nil {
+			return fmt.Errorf("update application service: %w", result.Error)
+		}
+		if result.RowsAffected == 0 {
+			return ErrNotFound
+		}
+		return replaceServiceContainersTx(tx, item.ID, item.Containers, now)
+	}); err != nil {
+		return domainapp.Service{}, err
+	}
+	return r.GetService(ctx, item.ApplicationID, item.ID)
+}
+
+func (r *Repository) DeleteService(ctx context.Context, applicationID, serviceID string) error {
+	result := r.db.WithContext(ctx).Exec(`DELETE FROM application_services WHERE application_id = ? AND id = ?`, strings.TrimSpace(applicationID), strings.TrimSpace(serviceID))
+	if result.Error != nil {
+		return fmt.Errorf("delete application service: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 func scanApp(rows *sql.Rows) (domainapp.App, error) {
 	var item domainapp.App
 	var businessLineID sql.NullString
@@ -259,6 +362,115 @@ func scanBuildSource(rows *sql.Rows) (domainapp.BuildSource, error) {
 	_ = json.Unmarshal(config, &item.Config)
 	if item.Config == nil {
 		item.Config = map[string]any{}
+	}
+	return item, nil
+}
+
+func scanService(rows *sql.Rows) (domainapp.Service, error) {
+	var item domainapp.Service
+	var description sql.NullString
+	var ownerTeam sql.NullString
+	var repositoryProvider sql.NullString
+	var repositoryProjectID sql.NullString
+	var repositoryPath sql.NullString
+	var defaultBranch sql.NullString
+	var buildSourceID sql.NullString
+	var serviceKind string
+	var metadata []byte
+	if err := rows.Scan(&item.ID, &item.ApplicationID, &item.Key, &item.Name, &description, &serviceKind, &ownerTeam, &repositoryProvider,
+		&repositoryProjectID, &repositoryPath, &defaultBranch, &buildSourceID, &item.Enabled, &metadata, &item.CreatedAt, &item.UpdatedAt); err != nil {
+		return domainapp.Service{}, fmt.Errorf("scan application service: %w", err)
+	}
+	item.Description = description.String
+	item.ServiceKind = domainapp.ServiceKind(serviceKind)
+	item.OwnerTeam = ownerTeam.String
+	item.RepositoryProvider = repositoryProvider.String
+	item.RepositoryProjectID = repositoryProjectID.String
+	item.RepositoryPath = repositoryPath.String
+	item.DefaultBranch = defaultBranch.String
+	item.BuildSourceID = buildSourceID.String
+	if len(metadata) > 0 {
+		_ = json.Unmarshal(metadata, &item.Metadata)
+	}
+	if item.Metadata == nil {
+		item.Metadata = map[string]any{}
+	}
+	return item, nil
+}
+
+func scanServiceRow(row *sql.Row) (domainapp.Service, error) {
+	var item domainapp.Service
+	var description sql.NullString
+	var ownerTeam sql.NullString
+	var repositoryProvider sql.NullString
+	var repositoryProjectID sql.NullString
+	var repositoryPath sql.NullString
+	var defaultBranch sql.NullString
+	var buildSourceID sql.NullString
+	var serviceKind string
+	var metadata []byte
+	if err := row.Scan(&item.ID, &item.ApplicationID, &item.Key, &item.Name, &description, &serviceKind, &ownerTeam, &repositoryProvider,
+		&repositoryProjectID, &repositoryPath, &defaultBranch, &buildSourceID, &item.Enabled, &metadata, &item.CreatedAt, &item.UpdatedAt); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return domainapp.Service{}, ErrNotFound
+		}
+		return domainapp.Service{}, fmt.Errorf("scan application service row: %w", err)
+	}
+	item.Description = description.String
+	item.ServiceKind = domainapp.ServiceKind(serviceKind)
+	item.OwnerTeam = ownerTeam.String
+	item.RepositoryProvider = repositoryProvider.String
+	item.RepositoryProjectID = repositoryProjectID.String
+	item.RepositoryPath = repositoryPath.String
+	item.DefaultBranch = defaultBranch.String
+	item.BuildSourceID = buildSourceID.String
+	if len(metadata) > 0 {
+		_ = json.Unmarshal(metadata, &item.Metadata)
+	}
+	if item.Metadata == nil {
+		item.Metadata = map[string]any{}
+	}
+	return item, nil
+}
+
+func scanServiceContainer(rows *sql.Rows) (domainapp.ServiceContainer, error) {
+	var item domainapp.ServiceContainer
+	var imageRepository sql.NullString
+	var defaultTagTemplate sql.NullString
+	var dockerfilePath sql.NullString
+	var buildContextDir sql.NullString
+	var runtimePorts []byte
+	var envSchema []byte
+	var resourceProfile []byte
+	var healthCheck []byte
+	var metadata []byte
+	if err := rows.Scan(&item.ID, &item.ServiceID, &item.Name, &imageRepository, &defaultTagTemplate, &dockerfilePath, &buildContextDir,
+		&runtimePorts, &envSchema, &resourceProfile, &healthCheck, &metadata, &item.CreatedAt, &item.UpdatedAt); err != nil {
+		return domainapp.ServiceContainer{}, fmt.Errorf("scan application service container: %w", err)
+	}
+	item.ImageRepository = imageRepository.String
+	item.DefaultTagTemplate = defaultTagTemplate.String
+	item.DockerfilePath = dockerfilePath.String
+	item.BuildContextDir = buildContextDir.String
+	_ = json.Unmarshal(runtimePorts, &item.RuntimePorts)
+	_ = json.Unmarshal(envSchema, &item.EnvSchema)
+	_ = json.Unmarshal(resourceProfile, &item.ResourceProfile)
+	_ = json.Unmarshal(healthCheck, &item.HealthCheck)
+	_ = json.Unmarshal(metadata, &item.Metadata)
+	if item.RuntimePorts == nil {
+		item.RuntimePorts = []int{}
+	}
+	if item.EnvSchema == nil {
+		item.EnvSchema = map[string]any{}
+	}
+	if item.ResourceProfile == nil {
+		item.ResourceProfile = map[string]any{}
+	}
+	if item.HealthCheck == nil {
+		item.HealthCheck = map[string]any{}
+	}
+	if item.Metadata == nil {
+		item.Metadata = map[string]any{}
 	}
 	return item, nil
 }
@@ -426,6 +638,165 @@ func replaceBuildSourcesTx(tx *gorm.DB, applicationID string, items []domainapp.
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		`, item.ID, applicationID, item.Name, string(item.Type), item.Enabled, item.IsDefault, nullableString(item.BuildImage), nullableString(item.DefaultTag), string(config), now, now).Error; err != nil {
 			return fmt.Errorf("create application build source: %w", err)
+		}
+	}
+	return nil
+}
+
+func (r *Repository) listServiceContainers(ctx context.Context, serviceID string) ([]domainapp.ServiceContainer, error) {
+	rows, err := r.db.WithContext(ctx).Raw(`
+		SELECT id, service_id, container_name, image_repository, default_tag_template, dockerfile_path, build_context_dir,
+			runtime_ports, env_schema, resource_profile, health_check, metadata, created_at, updated_at
+		FROM application_service_containers
+		WHERE service_id = ?
+		ORDER BY container_name ASC, id ASC
+	`, strings.TrimSpace(serviceID)).Rows()
+	if err != nil {
+		return nil, fmt.Errorf("query application service containers: %w", err)
+	}
+	defer rows.Close()
+
+	items := make([]domainapp.ServiceContainer, 0)
+	for rows.Next() {
+		item, scanErr := scanServiceContainer(rows)
+		if scanErr != nil {
+			return nil, scanErr
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func normalizeServiceInput(applicationID string, input domainapp.ServiceInput, now time.Time) domainapp.Service {
+	metadata := input.Metadata
+	if metadata == nil {
+		metadata = map[string]any{}
+	}
+	id := strings.TrimSpace(input.ID)
+	if id == "" {
+		id = uuid.NewString()
+	}
+	serviceKind := input.ServiceKind
+	if serviceKind == "" {
+		serviceKind = domainapp.ServiceKindKubernetesWorkload
+	}
+	item := domainapp.Service{
+		ID:                  id,
+		ApplicationID:       strings.TrimSpace(applicationID),
+		Key:                 strings.TrimSpace(input.Key),
+		Name:                strings.TrimSpace(input.Name),
+		Description:         strings.TrimSpace(input.Description),
+		ServiceKind:         serviceKind,
+		OwnerTeam:           strings.TrimSpace(input.OwnerTeam),
+		RepositoryProvider:  strings.TrimSpace(input.RepositoryProvider),
+		RepositoryProjectID: strings.TrimSpace(input.RepositoryProjectID),
+		RepositoryPath:      strings.TrimSpace(input.RepositoryPath),
+		DefaultBranch:       strings.TrimSpace(input.DefaultBranch),
+		BuildSourceID:       strings.TrimSpace(input.BuildSourceID),
+		Enabled:             input.Enabled,
+		Metadata:            metadata,
+		CreatedAt:           now,
+		UpdatedAt:           now,
+	}
+	item.Containers = normalizeServiceContainers(item.ID, input.Containers, now)
+	return item
+}
+
+func normalizeServiceContainers(serviceID string, inputs []domainapp.ServiceContainerInput, now time.Time) []domainapp.ServiceContainer {
+	items := make([]domainapp.ServiceContainer, 0, len(inputs))
+	for _, input := range inputs {
+		metadata := input.Metadata
+		if metadata == nil {
+			metadata = map[string]any{}
+		}
+		envSchema := input.EnvSchema
+		if envSchema == nil {
+			envSchema = map[string]any{}
+		}
+		resourceProfile := input.ResourceProfile
+		if resourceProfile == nil {
+			resourceProfile = map[string]any{}
+		}
+		healthCheck := input.HealthCheck
+		if healthCheck == nil {
+			healthCheck = map[string]any{}
+		}
+		id := strings.TrimSpace(input.ID)
+		if id == "" {
+			id = uuid.NewString()
+		}
+		items = append(items, domainapp.ServiceContainer{
+			ID:                 id,
+			ServiceID:          strings.TrimSpace(serviceID),
+			Name:               strings.TrimSpace(input.Name),
+			ImageRepository:    strings.TrimSpace(input.ImageRepository),
+			DefaultTagTemplate: strings.TrimSpace(input.DefaultTagTemplate),
+			DockerfilePath:     strings.TrimSpace(input.DockerfilePath),
+			BuildContextDir:    strings.TrimSpace(input.BuildContextDir),
+			RuntimePorts:       input.RuntimePorts,
+			EnvSchema:          envSchema,
+			ResourceProfile:    resourceProfile,
+			HealthCheck:        healthCheck,
+			Metadata:           metadata,
+			CreatedAt:          now,
+			UpdatedAt:          now,
+		})
+	}
+	return items
+}
+
+func insertServiceTx(tx *gorm.DB, item domainapp.Service) error {
+	metadata, err := json.Marshal(item.Metadata)
+	if err != nil {
+		return fmt.Errorf("marshal application service metadata: %w", err)
+	}
+	if err := tx.Exec(`
+		INSERT INTO application_services (
+			id, application_id, service_key, service_name, description, service_kind, owner_team, repository_provider,
+			repository_project_id, repository_path, default_branch, build_source_id, enabled, metadata, created_at, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, item.ID, item.ApplicationID, item.Key, item.Name, nullableString(item.Description), string(item.ServiceKind), nullableString(item.OwnerTeam), nullableString(item.RepositoryProvider),
+		nullableString(item.RepositoryProjectID), nullableString(item.RepositoryPath), nullableString(item.DefaultBranch), nullableString(item.BuildSourceID),
+		item.Enabled, string(metadata), item.CreatedAt, item.UpdatedAt).Error; err != nil {
+		return fmt.Errorf("create application service: %w", err)
+	}
+	return nil
+}
+
+func replaceServiceContainersTx(tx *gorm.DB, serviceID string, items []domainapp.ServiceContainer, now time.Time) error {
+	if err := tx.Exec(`DELETE FROM application_service_containers WHERE service_id = ?`, strings.TrimSpace(serviceID)).Error; err != nil {
+		return fmt.Errorf("delete application service containers: %w", err)
+	}
+	for _, item := range items {
+		runtimePorts, err := json.Marshal(item.RuntimePorts)
+		if err != nil {
+			return fmt.Errorf("marshal service container runtime ports: %w", err)
+		}
+		envSchema, err := json.Marshal(item.EnvSchema)
+		if err != nil {
+			return fmt.Errorf("marshal service container env schema: %w", err)
+		}
+		resourceProfile, err := json.Marshal(item.ResourceProfile)
+		if err != nil {
+			return fmt.Errorf("marshal service container resource profile: %w", err)
+		}
+		healthCheck, err := json.Marshal(item.HealthCheck)
+		if err != nil {
+			return fmt.Errorf("marshal service container health check: %w", err)
+		}
+		metadata, err := json.Marshal(item.Metadata)
+		if err != nil {
+			return fmt.Errorf("marshal service container metadata: %w", err)
+		}
+		if err := tx.Exec(`
+			INSERT INTO application_service_containers (
+				id, service_id, container_name, image_repository, default_tag_template, dockerfile_path, build_context_dir,
+				runtime_ports, env_schema, resource_profile, health_check, metadata, created_at, updated_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?::jsonb, ?::jsonb, ?::jsonb, ?, ?)
+		`, item.ID, strings.TrimSpace(serviceID), item.Name, nullableString(item.ImageRepository), nullableString(item.DefaultTagTemplate),
+			nullableString(item.DockerfilePath), nullableString(item.BuildContextDir), string(runtimePorts), string(envSchema), string(resourceProfile),
+			string(healthCheck), string(metadata), now, now).Error; err != nil {
+			return fmt.Errorf("create application service container: %w", err)
 		}
 	}
 	return nil

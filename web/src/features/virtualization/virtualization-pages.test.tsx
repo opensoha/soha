@@ -39,7 +39,10 @@ const testState = vi.hoisted(() => ({
       return { data: {
         vm: { id: 'vm-1', name: 'build-vm', provider: 'kubevirt', status: 'running', flavorName: 'standard-2c4g', bootImageName: 'ubuntu-24.04', ipAddresses: ['10.0.0.8'] },
         providerRaw: { kind: 'VirtualMachine', metadata: { name: 'build-vm' } },
-        operations: [{ id: 'op-vm', operationType: 'vm_create', status: 'completed', targetName: 'build-vm' }],
+        operations: [
+          { id: 'op-vm-failed', operationType: 'vm_action', status: 'failed', targetName: 'build-vm', message: 'restart failed', createdAt: '2026-05-21T01:00:00Z' },
+          { id: 'op-vm', operationType: 'vm_create', status: 'completed', targetName: 'build-vm', createdAt: '2026-05-21T00:00:00Z' },
+        ],
         logs: [{ id: 'log-vm', taskId: 'op-vm', logLevel: 'info', message: 'vm ready', createdAt: '2026-05-21T00:00:00Z' }],
       } }
     }
@@ -83,10 +86,20 @@ const testState = vi.hoisted(() => ({
     if (path === '/virtualization/operations?assetType=asset_sync') {
       return { data: [{ id: 'op-1', operationType: 'asset_sync', status: 'completed', targetName: 'kubevirt-a' }] }
     }
+    if (path === '/virtualization/operations?abnormal=true') {
+      return { data: [
+        { id: 'op-retry', operationType: 'asset_sync', status: 'failed', targetName: 'conn-a', connectionId: 'conn-a', message: 'sync failed', allowedActions: ['retry'] },
+      ] }
+    }
+    if (path === '/virtualization/operations?abnormal=true&connectionId=conn-a') {
+      return { data: [
+        { id: 'op-retry', operationType: 'asset_sync', status: 'failed', targetName: 'conn-a', connectionId: 'conn-a', message: 'sync failed', allowedActions: ['retry'] },
+      ] }
+    }
     if (path === '/virtualization/operations') {
       return { data: [
         { id: 'op-cancel', operationType: 'vm_create', status: 'running', targetName: 'vm-a', allowedActions: ['cancel'] },
-        { id: 'op-retry', operationType: 'asset_sync', status: 'failed', targetName: 'conn-a', message: 'sync failed', allowedActions: ['retry'] },
+        { id: 'op-retry', operationType: 'asset_sync', status: 'failed', targetName: 'conn-a', connectionId: 'conn-a', message: 'sync failed', allowedActions: ['retry'] },
       ] }
     }
     if (path === '/virtualization/operations/op-1/logs') {
@@ -252,11 +265,13 @@ describe('virtualization pages', () => {
     expect(document.body.textContent).toContain('规格')
     expect(document.body.textContent).toContain('启动镜像')
     expect(document.body.textContent).toContain('StorageClass')
+    expect(document.body.textContent).toContain('DataSource 克隆')
+    expect(document.body.textContent).toContain('DataVolume')
     expect(document.body.textContent).not.toContain('raw YAML')
     expect(document.body.textContent).not.toContain('raw PVE config')
   })
 
-  it('renders VM detail with provider raw, operations, and logs', async () => {
+  it('renders VM detail with provider raw, operations, logs and AI investigation entry', async () => {
     const container = await renderWithProviders(<VirtualizationVmDetailPage />, '/virtualization/vms/vm-1')
 
     expect(testState.apiGet).toHaveBeenCalledWith('/virtualization/vms/vm-1/detail')
@@ -267,6 +282,13 @@ describe('virtualization pages', () => {
     expect(container.textContent).toContain('Provider Raw')
     expect(container.textContent).toContain('任务历史')
     expect(container.textContent).toContain('vm ready')
+    expect(container.textContent).toContain('最近异常任务')
+    expect(container.textContent).toContain('restart failed')
+    expect(container.textContent).toContain('AI调查')
+    expect(container.textContent).toContain('来源模式')
+    expect(container.textContent).toContain('来源引用')
+    expect(container.textContent).toContain('Console 能力摘要')
+    expect(container.textContent).toContain('Metrics 能力摘要')
   })
 
   it('hides VM actions without manage permission', async () => {
@@ -329,6 +351,9 @@ describe('virtualization pages', () => {
     expect(document.body.textContent).toContain('默认节点')
     expect(document.body.textContent).toContain('默认存储')
     expect(document.body.textContent).not.toContain('raw JSON')
+    expect(container.textContent).toContain('风险等级')
+    expect(container.textContent).toContain('最近失败同步')
+    expect(container.textContent).toContain('最近异常任务')
   })
 
   it('shows image management entries for KubeVirt and PVE sources', async () => {
@@ -358,6 +383,14 @@ describe('virtualization pages', () => {
     const container = await renderWithProviders(<VirtualizationOperationsPage />, '/virtualization/operations?abnormal=true')
 
     expect(container.textContent).toContain('失败/超时')
+    expect(container.textContent).toContain('sync failed')
+    expect(container.textContent).not.toContain('vm-a')
+  })
+
+  it('initializes operations view from connection abnormal query preset', async () => {
+    const container = await renderWithProviders(<VirtualizationOperationsPage />, '/virtualization/operations?connectionId=conn-a&abnormal=true')
+
+    expect(testState.apiGet).toHaveBeenCalledWith('/virtualization/operations?abnormal=true&connectionId=conn-a')
     expect(container.textContent).toContain('sync failed')
     expect(container.textContent).not.toContain('vm-a')
   })

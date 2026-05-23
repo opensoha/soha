@@ -29,9 +29,14 @@
 ### Delivery Workbench
 
 - application center
+- application service components
 - delivery blueprints
 - build templates
 - application-environment bindings
+- environment matrix
+- CI/CD DAG workflows
+- delivery artifacts
+- test plans and test runs
 - release board
 - execution tasks
 

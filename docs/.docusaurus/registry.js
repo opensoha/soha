@@ -35,6 +35,7 @@ export default {
   "d0d78531": [() => import(/* webpackChunkName: "d0d78531" */ "@site/architecture/ai-copilot.md"), "@site/architecture/ai-copilot.md", require.resolveWeak("@site/architecture/ai-copilot.md")],
   "dd639a17": [() => import(/* webpackChunkName: "dd639a17" */ "@site/operations/mcp.md"), "@site/operations/mcp.md", require.resolveWeak("@site/operations/mcp.md")],
   "e00ba162": [() => import(/* webpackChunkName: "e00ba162" */ "@site/api/core-endpoints.md"), "@site/api/core-endpoints.md", require.resolveWeak("@site/api/core-endpoints.md")],
+  "e35ced38": [() => import(/* webpackChunkName: "e35ced38" */ "@site/architecture/delivery-devops-workbench.md"), "@site/architecture/delivery-devops-workbench.md", require.resolveWeak("@site/architecture/delivery-devops-workbench.md")],
   "e7c8172f": [() => import(/* webpackChunkName: "e7c8172f" */ "@site/api/overview.md"), "@site/api/overview.md", require.resolveWeak("@site/api/overview.md")],
   "e8bc8711": [() => import(/* webpackChunkName: "e8bc8711" */ "@site/development/database-migrations.md"), "@site/development/database-migrations.md", require.resolveWeak("@site/development/database-migrations.md")],
   "f7a31dc9": [() => import(/* webpackChunkName: "f7a31dc9" */ "@site/operations/role-authorization-assignment.md"), "@site/operations/role-authorization-assignment.md", require.resolveWeak("@site/operations/role-authorization-assignment.md")],

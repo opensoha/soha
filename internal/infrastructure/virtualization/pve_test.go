@@ -61,6 +61,8 @@ func TestPVEAdapterUsesTokenHeaderAndExpectedPaths(t *testing.T) {
 			writePVEData(w, []map[string]any{{"node": "pve-a", "status": "online"}})
 		case "/api2/json/nodes/pve-a/qemu":
 			writePVEData(w, []map[string]any{{"vmid": 101, "name": "vm-a", "status": "running"}})
+		case "/api2/json/nodes/pve-a/storage":
+			writePVEData(w, []map[string]any{{"storage": "local", "type": "dir"}})
 		case "/api2/json/nodes/pve-a/storage/local/content":
 			writePVEData(w, []map[string]any{{"volid": "local:iso/demo.iso", "content": "iso"}})
 		default:
@@ -80,7 +82,7 @@ func TestPVEAdapterUsesTokenHeaderAndExpectedPaths(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SyncAssets() error = %v", err)
 	}
-	if result.Health.Status != "healthy" || len(result.Assets) != 3 {
+	if result.Health.Status != "healthy" || len(result.Assets) != 4 {
 		t.Fatalf("result = %#v", result)
 	}
 	for _, header := range authHeaders {
@@ -91,6 +93,7 @@ func TestPVEAdapterUsesTokenHeaderAndExpectedPaths(t *testing.T) {
 	want := []string{
 		"GET /api2/json/nodes",
 		"GET /api2/json/nodes/pve-a/qemu",
+		"GET /api2/json/nodes/pve-a/storage",
 		"GET /api2/json/nodes/pve-a/storage/local/content",
 	}
 	if strings.Join(seen, ",") != strings.Join(want, ",") {
@@ -129,6 +132,8 @@ func TestPVEAdapterCreateClonePayloadDoesNotLeakToken(t *testing.T) {
 		Memory:           "4096",
 		Network:          "virtio,bridge=vmbr0",
 		TemplateID:       "9000",
+		SourceMode:       "template_clone",
+		SourceRef:        "9000",
 		StartAfterCreate: true,
 	})
 	if err != nil {
@@ -143,9 +148,125 @@ func TestPVEAdapterCreateClonePayloadDoesNotLeakToken(t *testing.T) {
 	want := []string{
 		"POST /api2/json/nodes/pve-a/qemu/9000/clone",
 		"POST /api2/json/nodes/pve-a/qemu/200/status/start",
+		"GET /api2/json/nodes/pve-a/qemu/200/status/current",
 	}
 	if strings.Join(paths, ",") != strings.Join(want, ",") {
 		t.Fatalf("paths = %#v", paths)
+	}
+}
+
+func TestPVEAdapterCreateISOPayloadUsesProviderParams(t *testing.T) {
+	var body string
+	var paths []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.Method+" "+r.URL.Path)
+		raw, _ := io.ReadAll(r.Body)
+		if len(raw) > 0 {
+			body = string(raw)
+		}
+		writePVEData(w, []map[string]any{})
+	}))
+	defer server.Close()
+
+	adapter := NewPVEAdapter(server.Client())
+	vm, err := adapter.CreateVM(context.Background(), Connection{
+		Endpoint: server.URL,
+		Options:  map[string]any{"vmid": "201", "defaultNode": "pve-1", "defaultStorage": "local-lvm"},
+	}, CreateVMInput{
+		Name:       "iso-a",
+		SourceMode: "iso_install",
+		SourceRef:  "local:iso/ubuntu.iso",
+		DiskSize:   "20Gi",
+		ProviderParams: map[string]any{
+			"bridge":  "vmbr0",
+			"storage": "local-lvm",
+		},
+	})
+	if err != nil {
+		t.Fatalf("CreateVM() error = %v", err)
+	}
+	if vm.ID != "201" || vm.Node != "pve-1" || vm.Metadata["vmid"] != "201" {
+		t.Fatalf("vm = %#v", vm)
+	}
+	if !strings.Contains(body, `"ide2":"local:iso/ubuntu.iso"`) || !strings.Contains(body, `"net0":"virtio,bridge=vmbr0"`) || !strings.Contains(body, `"scsi0":"local-lvm:20Gi"`) {
+		t.Fatalf("payload = %s", body)
+	}
+	want := []string{"POST /api2/json/nodes/pve-1/qemu", "GET /api2/json/nodes/pve-1/qemu/201/status/current"}
+	if strings.Join(paths, ",") != strings.Join(want, ",") {
+		t.Fatalf("paths = %#v", paths)
+	}
+}
+
+func TestPVEAdapterCreateISOPayloadFallsBackToNextIDAndFetchesStatus(t *testing.T) {
+	var paths []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.Method+" "+r.URL.Path)
+		switch r.URL.Path {
+		case "/api2/json/cluster/nextid":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"data":"310"}`))
+		case "/api2/json/nodes/pve-a/qemu":
+			writePVEData(w, []map[string]any{})
+		case "/api2/json/nodes/pve-a/qemu/310/status/current":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"data":{"name":"iso-b","status":"running","qmpstatus":"running"}}`))
+		default:
+			writePVEData(w, []map[string]any{})
+		}
+	}))
+	defer server.Close()
+
+	adapter := NewPVEAdapter(server.Client())
+	vm, err := adapter.CreateVM(context.Background(), Connection{
+		Endpoint: server.URL,
+		Options:  map[string]any{"defaultNode": "pve-a", "defaultStorage": "local-lvm"},
+	}, CreateVMInput{
+		Name:       "iso-b",
+		SourceMode: "iso_install",
+		SourceRef:  "local:iso/debian.iso",
+		DiskSize:   "10Gi",
+	})
+	if err != nil {
+		t.Fatalf("CreateVM() error = %v", err)
+	}
+	if vm.ID != "310" || vm.Name != "iso-b" || vm.Status != "running" || vm.Metadata["qmpstatus"] != "running" {
+		t.Fatalf("vm = %#v", vm)
+	}
+	want := []string{
+		"GET /api2/json/cluster/nextid",
+		"POST /api2/json/nodes/pve-a/qemu",
+		"GET /api2/json/nodes/pve-a/qemu/310/status/current",
+	}
+	if strings.Join(paths[:3], ",") != strings.Join(want, ",") {
+		t.Fatalf("paths = %#v", paths)
+	}
+}
+
+func TestPVEAdapterGetConsoleURLReturnsBackendWebsocketURL(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api2/json/nodes/pve-a/qemu/101/vncproxy":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"data":{"ticket":"ticket-1","port":5901}}`))
+		default:
+			writePVEData(w, []map[string]any{})
+		}
+	}))
+	defer server.Close()
+
+	adapter := NewPVEAdapter(server.Client())
+	result, err := adapter.GetConsoleURL(context.Background(), Connection{Endpoint: server.URL}, VM{ID: "vm-local", Node: "pve-a", Metadata: map[string]string{"vmid": "101"}})
+	if err != nil {
+		t.Fatalf("GetConsoleURL() error = %v", err)
+	}
+	if !result.Ready || result.Provider != "pve" || result.ProxyMode != "backend-ws-proxy" {
+		t.Fatalf("result = %#v", result)
+	}
+	if result.URL != "/api/v1/virtualization/vms/vm-local/console/novnc" {
+		t.Fatalf("result.URL = %q", result.URL)
+	}
+	if !strings.Contains(result.BackendURL, "/api2/json/nodes/pve-a/qemu/101/vncwebsocket") || !strings.Contains(result.BackendURL, "port=5901") || !strings.Contains(result.BackendURL, "vncticket=ticket-1") {
+		t.Fatalf("result.BackendURL = %q", result.BackendURL)
 	}
 }
 

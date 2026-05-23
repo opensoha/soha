@@ -24,6 +24,53 @@ func (s stubBundleProvider) Bundle(context.Context, string) (*kubeinfra.Bundle, 
 	return s.bundle, s.err
 }
 
+func TestBuildKubeVirtVMUsesDataSourceClone(t *testing.T) {
+	vm := BuildKubeVirtVM(CreateVMInput{
+		Name:       "demo",
+		Namespace:  "apps",
+		CPU:        2,
+		Memory:     "4Gi",
+		DiskSize:   "20Gi",
+		SourceMode: "datasource_clone",
+		SourceRef:  "ubuntu-ds",
+		ProviderParams: map[string]any{
+			"storageClass":  "fast-ssd",
+			"dataVolumeName": "demo-rootdisk",
+		},
+	})
+	dataVolumes, _, _ := unstructured.NestedSlice(vm.Object, "spec", "dataVolumeTemplates")
+	if len(dataVolumes) != 1 {
+		t.Fatalf("dataVolumeTemplates len = %d, want 1", len(dataVolumes))
+	}
+	volumes, _, _ := unstructured.NestedSlice(vm.Object, "spec", "template", "spec", "volumes")
+	if len(volumes) == 0 {
+		t.Fatalf("volumes len = 0")
+	}
+	root := volumes[0].(map[string]any)
+	if _, ok := root["dataVolume"]; !ok {
+		t.Fatalf("root volume = %#v, want dataVolume", root)
+	}
+}
+
+func TestBuildKubeVirtVMUsesPVCClone(t *testing.T) {
+	vm := BuildKubeVirtVM(CreateVMInput{
+		Name:       "demo",
+		Namespace:  "apps",
+		CPU:        2,
+		Memory:     "4Gi",
+		SourceMode: "pvc_clone",
+		SourceRef:  "root-pvc",
+	})
+	volumes, _, _ := unstructured.NestedSlice(vm.Object, "spec", "template", "spec", "volumes")
+	if len(volumes) == 0 {
+		t.Fatalf("volumes len = 0")
+	}
+	root := volumes[0].(map[string]any)
+	if _, ok := root["persistentVolumeClaim"]; !ok {
+		t.Fatalf("root volume = %#v, want persistentVolumeClaim", root)
+	}
+}
+
 func TestBuildKubeVirtVM(t *testing.T) {
 	vm := BuildKubeVirtVM(CreateVMInput{
 		Name:             "demo",
@@ -146,6 +193,33 @@ func TestKubeVirtAdapterTestConnectionDegradesWhenCRDMissing(t *testing.T) {
 	}
 	if result.Healthy || result.Status != "degraded" {
 		t.Fatalf("result = %#v, want degraded", result)
+	}
+}
+
+func TestKubeVirtAdapterGetConsoleURLReturnsBackendURL(t *testing.T) {
+	scheme := runtime.NewScheme()
+	client := fake.NewSimpleDynamicClientWithCustomListKinds(scheme, map[schema.GroupVersionResource]string{
+		kubeVirtVMIGVR: "VirtualMachineInstanceList",
+	}, &unstructured.Unstructured{
+		Object: map[string]any{
+			"apiVersion": "kubevirt.io/v1",
+			"kind":       "VirtualMachineInstance",
+			"metadata": map[string]any{
+				"name":      "demo",
+				"namespace": "apps",
+			},
+		},
+	})
+	adapter := NewKubeVirtAdapter(stubBundleProvider{bundle: &kubeinfra.Bundle{Dynamic: client}})
+	result, err := adapter.GetConsoleURL(context.Background(), Connection{ClusterID: "c1", BackendURL: "https://k8s.example"}, VM{ID: "vm-1", Name: "demo", Namespace: "apps"})
+	if err != nil {
+		t.Fatalf("GetConsoleURL() error = %v", err)
+	}
+	if !result.Ready || result.URL != "/api/v1/virtualization/vms/vm-1/console/vnc" {
+		t.Fatalf("result = %#v", result)
+	}
+	if result.BackendURL != "https://k8s.example/apis/subresources.kubevirt.io/v1/namespaces/apps/virtualmachineinstances/demo/vnc" {
+		t.Fatalf("backendURL = %q", result.BackendURL)
 	}
 }
 

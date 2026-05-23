@@ -838,6 +838,45 @@ export interface BuildSource {
   config?: Record<string, unknown>
 }
 
+export type ApplicationServiceKind = 'kubernetes_workload' | 'helm_release' | 'external_service' | 'job'
+
+export interface ApplicationServiceContainer {
+  id: string
+  serviceId?: string
+  name: string
+  imageRepository?: string
+  defaultTagTemplate?: string
+  dockerfilePath?: string
+  buildContextDir?: string
+  runtimePorts?: number[]
+  envSchema?: Record<string, unknown>
+  resourceProfile?: Record<string, unknown>
+  healthCheck?: Record<string, unknown>
+  metadata?: Record<string, unknown>
+  createdAt?: string
+  updatedAt?: string
+}
+
+export interface ApplicationServiceComponent {
+  id: string
+  applicationId: string
+  key: string
+  name: string
+  description?: string
+  serviceKind: ApplicationServiceKind
+  ownerTeam?: string
+  repositoryProvider?: string
+  repositoryProjectId?: string
+  repositoryPath?: string
+  defaultBranch?: string
+  buildSourceId?: string
+  enabled: boolean
+  metadata?: Record<string, unknown>
+  containers?: ApplicationServiceContainer[]
+  createdAt: string
+  updatedAt: string
+}
+
 export interface BuildPolicy {
   sourceId?: string
   refType?: string
@@ -1043,6 +1082,7 @@ export interface DeliveryApplicationBindingSummary {
   requiresApproval: boolean
   workflowTemplateId?: string
   workflowTemplateName?: string
+  workflowTemplate?: WorkflowTemplate
   targetCount: number
   targets?: ReleaseTarget[]
   buildSourceId?: string

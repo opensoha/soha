@@ -56,6 +56,11 @@
               "sidebar": "mainSidebar"
             },
             {
+              "id": "architecture/delivery-devops-workbench",
+              "path": "/docs/architecture/delivery-devops-workbench",
+              "sidebar": "mainSidebar"
+            },
+            {
               "id": "architecture/event-model",
               "path": "/docs/architecture/event-model",
               "sidebar": "mainSidebar"
