@@ -60,6 +60,8 @@ func (a *KubeVirtAdapter) SyncAssets(ctx context.Context, connection Connection)
 	}{
 		{kubeVirtVMGVR, "virtualmachine", true},
 		{kubeVirtVMIGVR, "virtualmachineinstance", true},
+		{kubeVirtInstancetypeGVR, "flavor", true},
+		{kubeVirtClusterInstancetypeGVR, "flavor", false},
 		{kubeVirtDataSourceGVR, "datasource", true},
 		{pvcGVR, "persistentvolumeclaim", true},
 	} {
@@ -154,10 +156,12 @@ func (a *KubeVirtAdapter) bundle(ctx context.Context, connection Connection) (*k
 }
 
 var (
-	kubeVirtVMGVR         = schema.GroupVersionResource{Group: "kubevirt.io", Version: "v1", Resource: "virtualmachines"}
-	kubeVirtVMIGVR        = schema.GroupVersionResource{Group: "kubevirt.io", Version: "v1", Resource: "virtualmachineinstances"}
-	kubeVirtDataSourceGVR = schema.GroupVersionResource{Group: "cdi.kubevirt.io", Version: "v1beta1", Resource: "datasources"}
-	pvcGVR                = schema.GroupVersionResource{Group: "", Version: "v1", Resource: "persistentvolumeclaims"}
+	kubeVirtVMGVR                  = schema.GroupVersionResource{Group: "kubevirt.io", Version: "v1", Resource: "virtualmachines"}
+	kubeVirtVMIGVR                 = schema.GroupVersionResource{Group: "kubevirt.io", Version: "v1", Resource: "virtualmachineinstances"}
+	kubeVirtInstancetypeGVR        = schema.GroupVersionResource{Group: "instancetype.kubevirt.io", Version: "v1beta1", Resource: "virtualmachineinstancetypes"}
+	kubeVirtClusterInstancetypeGVR = schema.GroupVersionResource{Group: "instancetype.kubevirt.io", Version: "v1beta1", Resource: "virtualmachineclusterinstancetypes"}
+	kubeVirtDataSourceGVR          = schema.GroupVersionResource{Group: "cdi.kubevirt.io", Version: "v1beta1", Resource: "datasources"}
+	pvcGVR                         = schema.GroupVersionResource{Group: "", Version: "v1", Resource: "persistentvolumeclaims"}
 )
 
 func BuildKubeVirtVM(input CreateVMInput) *unstructured.Unstructured {
@@ -215,7 +219,7 @@ func BuildKubeVirtVM(input CreateVMInput) *unstructured.Unstructured {
 		}
 		spec["dataVolumeTemplates"] = []any{dataVolume}
 	default:
-		volumes = append(volumes, map[string]any{"name": "rootdisk", "containerDisk": map[string]any{"image": input.BootImage}})
+		volumes = append(volumes, map[string]any{"name": "rootdisk", "containerDisk": map[string]any{"image": sourceRef}})
 	}
 	if input.CloudInit != "" {
 		disks = append(disks, map[string]any{"name": "cloudinitdisk", "disk": map[string]any{"bus": "virtio"}})
@@ -268,10 +272,42 @@ func assetFromUnstructured(kind string, item *unstructured.Unstructured) Asset {
 		Name:      item.GetName(),
 		Namespace: item.GetNamespace(),
 		Status:    readStatus(item),
-		Metadata:  map[string]string{},
+		Metadata: map[string]string{
+			"uid": string(item.GetUID()),
+		},
+	}
+	if kind == "virtualmachineinstance" {
+		for _, owner := range item.GetOwnerReferences() {
+			if owner.Kind == "VirtualMachine" && owner.UID != "" {
+				asset.Metadata["uid"] = string(owner.UID)
+				asset.Metadata["vmiUid"] = string(item.GetUID())
+				break
+			}
+		}
+	}
+	if kind == "virtualmachine" {
+		if cpu := nestedInt64(item.Object, "spec", "template", "spec", "domain", "cpu", "cores"); cpu > 0 {
+			asset.Metadata["cpu"] = strconv.FormatInt(cpu, 10)
+		}
+		if memory := nestedString(item.Object, "spec", "template", "spec", "domain", "resources", "requests", "memory"); memory != "" {
+			asset.Metadata["memory"] = memory
+		}
+		if sourceMode, sourceRef := vmBootSource(item); sourceRef != "" {
+			asset.Metadata["sourceMode"] = sourceMode
+			asset.Metadata["sourceRef"] = sourceRef
+		}
 	}
 	if node, ok, _ := unstructured.NestedString(item.Object, "spec", "nodeName"); ok {
 		asset.Node = node
+	}
+	if kind == "flavor" {
+		asset.Metadata["cpu"] = strconv.FormatInt(nestedInt64(item.Object, "spec", "cpu", "guest"), 10)
+		asset.Metadata["memory"] = nestedString(item.Object, "spec", "memory", "guest")
+		if item.GetNamespace() == "" {
+			asset.Metadata["scope"] = "cluster"
+		} else {
+			asset.Metadata["scope"] = "namespace"
+		}
 	}
 	return asset
 }
@@ -294,6 +330,55 @@ func readStatus(item *unstructured.Unstructured) string {
 		return phase
 	}
 	return ""
+}
+
+func vmBootSource(item *unstructured.Unstructured) (string, string) {
+	volumes, ok, _ := unstructured.NestedSlice(item.Object, "spec", "template", "spec", "volumes")
+	if !ok {
+		return "", ""
+	}
+	for _, raw := range volumes {
+		volume, ok := raw.(map[string]any)
+		if !ok || volume["name"] != "rootdisk" {
+			continue
+		}
+		if containerDisk, ok := volume["containerDisk"].(map[string]any); ok {
+			if image, ok := containerDisk["image"].(string); ok {
+				return "containerdisk", image
+			}
+		}
+		if pvc, ok := volume["persistentVolumeClaim"].(map[string]any); ok {
+			if claimName, ok := pvc["claimName"].(string); ok {
+				return "pvc_clone", claimName
+			}
+		}
+		if dataVolume, ok := volume["dataVolume"].(map[string]any); ok {
+			if name, ok := dataVolume["name"].(string); ok {
+				return "datasource_clone", name
+			}
+		}
+	}
+	return "", ""
+}
+
+func nestedString(item map[string]any, fields ...string) string {
+	value, ok, _ := unstructured.NestedString(item, fields...)
+	if !ok {
+		return ""
+	}
+	return value
+}
+
+func nestedInt64(item map[string]any, fields ...string) int64 {
+	value, ok, _ := unstructured.NestedInt64(item, fields...)
+	if ok {
+		return value
+	}
+	floatValue, ok, _ := unstructured.NestedFloat64(item, fields...)
+	if ok {
+		return int64(floatValue)
+	}
+	return 0
 }
 
 func namespaceFromConnection(connection Connection) string {

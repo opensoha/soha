@@ -44,6 +44,24 @@ func TestDefaultMenuSeedsIncludeVirtualizationWorkbench(t *testing.T) {
 	}
 }
 
+func TestDefaultMenuSeedsIncludeDockerWorkbench(t *testing.T) {
+	items := defaultMenuSeeds()
+	for _, id := range []string{
+		"docker-workbench",
+		"docker-workbench-overview",
+		"docker-workbench-hosts",
+		"docker-workbench-projects",
+		"docker-workbench-services",
+		"docker-workbench-ports",
+		"docker-workbench-templates",
+		"docker-workbench-operations",
+	} {
+		if !slices.ContainsFunc(items, func(item menuSeed) bool { return item.ID == id }) {
+			t.Fatalf("default menu seeds missing %s", id)
+		}
+	}
+}
+
 func TestDefaultMenuSeedsPlaceApplicationCenterFirstInDelivery(t *testing.T) {
 	items := defaultMenuSeeds()
 	var applicationCenter *menuSeed
@@ -78,6 +96,22 @@ func TestFilterSeedMenusByModulesRemovesVirtualizationWhenDisabled(t *testing.T)
 	for _, item := range items {
 		if isVirtualizationMenuSeed(item) {
 			t.Fatalf("virtualization seed menu %q should be filtered when module is disabled", item.ID)
+		}
+	}
+}
+
+func TestFilterSeedMenusByModulesRemovesDockerWhenDisabled(t *testing.T) {
+	items := filterSeedMenusByModules(defaultMenuSeeds(), cfgpkg.ModulesConfig{
+		Delivery:       cfgpkg.ModuleToggleConfig{Enabled: true},
+		Monitoring:     cfgpkg.ModuleToggleConfig{Enabled: true},
+		AI:             cfgpkg.ModuleToggleConfig{Enabled: true},
+		Virtualization: cfgpkg.ModuleToggleConfig{Enabled: true},
+		Docker:         cfgpkg.ModuleToggleConfig{Enabled: false},
+	})
+
+	for _, item := range items {
+		if isDockerMenuSeed(item) {
+			t.Fatalf("docker seed menu %q should be filtered when module is disabled", item.ID)
 		}
 	}
 }

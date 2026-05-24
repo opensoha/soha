@@ -7,7 +7,7 @@ import { createRoot } from 'react-dom/client'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { App } from 'antd'
-import { VirtualizationClustersPage, VirtualizationImagesPage, VirtualizationOperationsPage, VirtualizationOverviewPage, VirtualizationSyncPage, VirtualizationVmDetailPage, VirtualizationVmsPage } from './virtualization-pages'
+import { VirtualizationClustersPage, VirtualizationImagesPage, VirtualizationOperationsPage, VirtualizationOverviewPage, VirtualizationSyncPage, VirtualizationVmDetailPage, VirtualizationVmsPage, buildCreateVmPayload } from './virtualization-pages'
 
 vi.mock('@visactor/react-vchart', () => ({
   LineChart: () => null,
@@ -58,6 +58,10 @@ const testState = vi.hoisted(() => ({
         },
         connectionSummary: { total: 2, healthy: 0, degraded: 1, unavailable: 1, neverSynced: 1, credentialMissing: 1 },
         taskSummary: { queued: 0, running: 1, failed: 1, timeout: 0, canceled: 0, completed: 1 },
+        providerSummary: [{ provider: 'pve', connections: 1, unavailable: 1 }, { provider: 'kubevirt', connections: 1, degraded: 1 }],
+        recentOperations: [
+          { id: 'op-recent', operationType: 'vm_create', status: 'running', targetName: 'build-vm', createdAt: '2026-05-21T00:00:00Z' },
+        ],
         attention: {
           riskyConnections: [
             { id: 'conn-pve', name: 'pve-a', provider: 'pve', endpoint: 'https://pve.example:8006', enabled: true, verifyTls: true, health: 'unavailable', credentialConfigured: false, riskLevel: 'critical', riskReasons: ['连接不可用', '未配置凭证', '尚未同步'] },
@@ -78,7 +82,10 @@ const testState = vi.hoisted(() => ({
       ] }
     }
     if (path === '/virtualization/images' || path === '/virtualization/images?page=1&pageSize=10') {
-      return { data: { items: [{ id: 'image-1', name: 'ubuntu-24.04', provider: 'kubevirt', connectionId: 'conn-1', sourceKind: 'datasource', sourceRef: 'default/ubuntu', osType: 'ubuntu' }], total: 1, page: 1, pageSize: 10 } }
+      return { data: { items: [
+        { id: 'image-1', name: 'ubuntu-24.04', provider: 'kubevirt', connectionId: 'conn-1', sourceKind: 'datasource', sourceRef: 'default/ubuntu', osType: 'ubuntu' },
+        { id: 'image-2', name: 'debian-template', provider: 'pve', connectionId: 'conn-pve', sourceKind: 'template', sourceRef: 'local:vztmpl/debian.tar.zst', node: 'pve-1', storage: 'local', osType: 'debian' },
+      ], total: 2, page: 1, pageSize: 10 } }
     }
     if (path === '/virtualization/flavors') {
       return { data: [{ id: 'flavor-1', name: 'standard-2c4g', cpu: 2, memoryMiB: 4096, diskGiB: 40, enabled: true }] }
@@ -239,12 +246,13 @@ describe('virtualization pages', () => {
     const container = await renderWithProviders(<VirtualizationOverviewPage />, '/virtualization/overview')
 
     expect(testState.apiGet).toHaveBeenCalledWith('/virtualization/overview')
-    expect(testState.apiGet).toHaveBeenCalledWith('/virtualization/clusters')
-    expect(testState.apiGet).toHaveBeenCalledWith('/virtualization/operations')
+    expect(testState.apiGet).not.toHaveBeenCalledWith('/virtualization/clusters')
+    expect(testState.apiGet).not.toHaveBeenCalledWith('/virtualization/operations')
     expect(container.textContent).toContain('高风险连接')
     expect(container.textContent).toContain('失败与超时任务')
     expect(container.textContent).toContain('连接不可用')
     expect(container.textContent).toContain('sync failed')
+    expect(container.textContent).toContain('Provider 分布')
   })
 
   it('loads paginated VMs and creates from flavor plus image with provider fields', async () => {
@@ -257,7 +265,8 @@ describe('virtualization pages', () => {
     expect(container.textContent).toContain('build-vm')
 
     await act(async () => {
-      container.querySelector('button')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      const createButton = Array.from(container.querySelectorAll('button')).find((button) => button.textContent?.includes('创建虚拟机'))
+      createButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
       await Promise.resolve()
     })
 
@@ -269,6 +278,22 @@ describe('virtualization pages', () => {
     expect(document.body.textContent).toContain('DataVolume')
     expect(document.body.textContent).not.toContain('raw YAML')
     expect(document.body.textContent).not.toContain('raw PVE config')
+  })
+
+  it('builds VM create payload from the selected source mode', () => {
+    const payload = buildCreateVmPayload({
+      provider: 'kubevirt',
+      connectionId: 'conn-1',
+      name: 'build-vm',
+      flavorId: 'flavor-1',
+      bootImageId: 'image-pvc',
+      sourceMode: 'pvc_clone',
+      startAfterCreate: true,
+    })
+
+    expect(payload.sourceMode).toBe('pvc_clone')
+    expect(payload.sourceId).toBe('image-pvc')
+    expect(payload.imageId).toBe('image-pvc')
   })
 
   it('renders VM detail with provider raw, operations, logs and AI investigation entry', async () => {
@@ -366,7 +391,9 @@ describe('virtualization pages', () => {
 
     expect(testState.apiGet).toHaveBeenCalledWith('/virtualization/images?page=1&pageSize=10')
     expect(container.textContent).toContain('KubeVirt')
+    expect(container.textContent).toContain('PVE')
     expect(container.textContent).toContain('datasource')
+    expect(container.textContent).toContain('template')
     expect(container.textContent).toContain('新增镜像入口')
 
     await act(async () => {
@@ -376,7 +403,7 @@ describe('virtualization pages', () => {
     })
 
     expect(document.body.textContent).toContain('KubeVirt DataSource')
-    expect(document.body.textContent).toContain('PVC')
+    expect(document.body.textContent).toContain('来源类型')
   })
 
   it('initializes operations view from abnormal query preset', async () => {

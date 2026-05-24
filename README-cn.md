@@ -113,7 +113,15 @@ make init
 ```
 
 这会执行 `go mod tidy`、安装 `web` 和 `docs` 的 npm 依赖，然后通过根目录 `docker-compose.yaml` 启动 `pgsql` 容器并等待 PostgreSQL 就绪。
-同时会启动一个本地 `k3s server` 调试集群，把 kubeconfig 写到 `./.dev/k3s/kubeconfig.yaml`，默认开发配置会把它注册为 `local-k3s`。
+同时会启动一个本地 `k3s server` 调试集群，把 kubeconfig 写到 `./.dev/k3s/kubeconfig.yaml`，默认开发配置会把它注册为 `local-k3s`。如果用于 KubeVirt 实验，底层 Linux 节点仍需暴露 `/dev/kvm`；Proxmox VE 可以作为 KubeVirt VM 或外部宿主机通过 API 接入，但不能作为 k3s 内的普通 Pod/workload 部署。
+
+如需在 KubeVirt 内运行 Proxmox VE 实验 VM：
+
+```bash
+make init-pve-vm
+```
+
+安装完成后通过 VNC 控制台完成 PVE ISO 安装，再执行 `make pve-vm-boot-root` 切回根盘启动。PVE API 默认暴露为 `https://127.0.0.1:8006`。
 
 ### 2. 启动前后端开发环境
 

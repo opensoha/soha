@@ -25,6 +25,18 @@ control_plane:
   provider_kinds:
     - ci_agent_runner
   workspace_root: .
+  docker:
+    enabled: true
+    worker_id: local-docker-runner
+    host_ids: []
+    operation_kinds:
+      - container_start
+      - project_deploy
+      - service_action
+      - port_reserve
+      - host_sync
+    compose_root: ./.kubecrux/docker
+    poll_interval: 5s
 
 kubernetes:
   id: local-agent

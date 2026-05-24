@@ -16,6 +16,109 @@
 - P1：上线或演示前必须完成
 - P2：建议完成，用于稳定性、排障和回归验证
 
+## 实验部署拓扑
+
+kubecrux 的虚拟化验证环境应拆成两个不同运行面：
+
+- KubeVirt 运行在 Kubernetes 集群内，可以使用 k3s 作为轻量 Kubernetes 发行版。
+- Proxmox VE 运行在 KubeVirt VM、独立裸金属宿主机、独立 Debian 宿主机，或仅用于实验的其他嵌套虚拟机中。
+- kubecrux server 不托管 PVE 本身，只通过 PVE API endpoint、token、节点名和存储池配置接入 PVE。
+
+推荐的本地实验拓扑：
+
+```text
+kubecrux server + PostgreSQL
+        |
+        +-- local-k3s or external k3s cluster with KubeVirt/CDI
+        |
+        +-- KubeVirt-backed pve-lab VM or external Proxmox VE node API
+```
+
+### KubeVirt on k3s
+
+k3s 可以作为 KubeVirt 的实验 Kubernetes 集群，但节点必须满足 KubeVirt 的虚拟化前提：
+
+- k3s 节点运行在 Linux 上，并使用支持 KVM 的 x86_64 CPU。
+- 宿主机已开启 VT-x 或 AMD-V，嵌套虚拟化环境还需要上层虚拟化平台透传 nested virtualization。
+- 节点上存在并可访问 `/dev/kvm`，`kvm` 和 `vhost_net` 等内核模块可用。
+- Kubernetes 允许 privileged workload；KubeVirt 需要运行 privileged DaemonSet。
+- 容器运行时使用 KubeVirt 支持的 containerd 或 CRI-O。
+- 至少有一个可用 StorageClass；如需 DataVolume、DataSource、上传或克隆镜像，需安装 CDI。
+
+根目录 `make init-cluster` 启动的 compose k3s 适合做 kubecrux 平台连接和 KubeVirt API 路径演示。若运行在 Docker Desktop for macOS 等没有向容器暴露 Linux KVM 的环境中，只能做控制面或软件模拟实验，不应作为性能或稳定性验收环境。KubeVirt 的 `useEmulation` 可以用于无 KVM 的开发验证，但启动和运行 VM 会明显变慢，不能代表生产能力。
+
+### PVE 是否能跑在 k3s 里
+
+结论：可以，但只能作为 KubeVirt VM 跑；不能作为普通 Pod 或 Deployment 跑。
+
+Proxmox VE 是完整虚拟化平台和宿主机操作系统栈，官方安装形态是 Proxmox ISO 裸金属安装，或在已有 Debian 系统上安装 PVE 软件包。它依赖 Proxmox VE Linux kernel、KVM、LXC、系统网络、存储管理、APT 仓库和长期运行的宿主机服务。Kubernetes Pod 共享节点内核，生命周期、网络、存储和 systemd 管理模型都不等价于 PVE 宿主机。
+
+即使通过 privileged Pod、hostPath、systemd-in-container 等方式强行拼出 PVE 组件，本质上也是把 Kubernetes 节点当宿主机改造，风险包括：
+
+- 覆盖或污染 k3s 节点的内核模块、网络桥、iptables/nftables 和存储配置。
+- PVE 的 LXC/QEMU 生命周期与 Kubernetes Pod 生命周期冲突。
+- VM、磁盘和网络状态无法被 Kubernetes 正确调度、迁移和恢复。
+- 升级、故障恢复和权限边界不可控。
+
+可接受的 PVE 实验形态包括：
+
+- 在 KubeVirt 中启动完整 PVE VM，并通过 Service 暴露 8006 API。
+- 独立 PVE 裸金属或独立 Debian 宿主机，kubecrux 通过 API 接入。
+- 在支持 nested virtualization 的外部虚拟化平台中启动一台完整 PVE VM，仅用于功能演示和适配测试。
+
+### KubeVirt PVE VM 快速启动
+
+本仓库提供了实验 manifest 和 make 目标，用于在 KubeVirt 内启动 `pve-lab`：
+
+```bash
+make init-pve-vm
+```
+
+该目标会：
+
+- 使用 `configs/k3s/docker-compose.kubevirt.yaml` 启动带 `/dev/kvm` 暴露的本地 k3s。
+- 安装 KubeVirt 和 CDI。
+- 应用 `configs/kubevirt/pve-vm.yaml`，创建 `virt-lab/pve-lab` VM、PVE ISO DataVolume、根盘 DataVolume 和 NodePort Service。
+
+安装步骤：
+
+1. 等待 DataVolume 导入完成，并确认 VM/VMI 启动。
+2. 通过 VNC 进入安装器：
+
+```bash
+KUBECONFIG=.dev/k3s/kubeconfig.yaml virtctl -n virt-lab vnc pve-lab
+```
+
+3. 在 Proxmox 安装器中完成系统安装。
+4. 安装完成后切回根盘启动：
+
+```bash
+make pve-vm-boot-root
+```
+
+5. PVE 启动后，从宿主机访问：
+
+```text
+https://127.0.0.1:8006
+```
+
+kubecrux 中新增 PVE 连接时使用该 endpoint。SSH 默认通过 `127.0.0.1:2222` 转发到 VM 的 22 端口。
+如果 kubecrux server 跑在 compose 的 `kubecrux` 容器里，PVE endpoint 使用 compose 内网地址 `https://k3s:30006`。
+
+状态检查：
+
+```bash
+make pve-vm-status
+```
+
+如果 `virt-handler` 卡在 `path "/var/run/kubevirt" is mounted on "/" but it is not a shared mount`，说明 k3s 节点容器根挂载不是 shared。执行：
+
+```bash
+make fix-kubevirt-mounts
+```
+
+该命令会在 k3s 容器内执行 `mount --make-rshared /`，并重建 `virt-handler` pod。
+
 ## P1 前置条件
 
 ### 通用条件

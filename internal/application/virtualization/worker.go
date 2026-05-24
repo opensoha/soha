@@ -3,6 +3,7 @@ package virtualization
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -10,6 +11,7 @@ import (
 	domainvirtualization "github.com/kubecrux/kubecrux/internal/domain/virtualization"
 	infravirtualization "github.com/kubecrux/kubecrux/internal/infrastructure/virtualization"
 	"github.com/kubecrux/kubecrux/internal/platform/runtimeobs"
+	"k8s.io/apimachinery/pkg/api/resource"
 )
 
 func (s *Service) runWorker(ctx context.Context) {
@@ -169,15 +171,15 @@ func (s *Service) executeVMCreate(ctx context.Context, task domainvirtualization
 		Node:             payloadString(task.Payload, "node"),
 		CPU:              payloadInt(task.Payload, "cpu"),
 		Memory:           memoryString(payloadInt(task.Payload, "memoryMiB")),
-		BootImage:        firstNonEmpty(payloadString(task.Payload, "imageId"), payloadString(task.Payload, "bootImageId")),
+		BootImage:        firstNonEmpty(payloadString(task.Payload, "sourceId"), payloadString(task.Payload, "imageId"), payloadString(task.Payload, "bootImageId")),
 		DiskSize:         diskString(payloadInt(task.Payload, "diskGiB")),
 		Network:          payloadString(task.Payload, "network"),
 		CloudInit:        payloadString(task.Payload, "cloudInit"),
 		StartAfterCreate: boolValue(task.Payload, "startAfterCreate"),
 		TemplateID:       payloadString(task.Payload, "templateId"),
-			SourceMode:       payloadString(task.Payload, "sourceMode"),
-			SourceRef:        firstNonEmpty(payloadString(task.Payload, "sourceId"), payloadString(task.Payload, "imageId"), payloadString(task.Payload, "bootImageId")),
-			ProviderParams:   mapValue(task.Payload, "providerParams"),
+		SourceMode:       payloadString(task.Payload, "sourceMode"),
+		SourceRef:        firstNonEmpty(payloadString(task.Payload, "sourceId"), payloadString(task.Payload, "imageId"), payloadString(task.Payload, "bootImageId")),
+		ProviderParams:   mapValue(task.Payload, "providerParams"),
 	}
 	vm, err := adapter.CreateVM(ctx, adapterConnection, input)
 	if err != nil {
@@ -196,7 +198,7 @@ func (s *Service) executeVMCreate(ctx context.Context, task domainvirtualization
 		Status:       firstNonEmpty(vm.Status, "created"),
 		PowerState:   powerStateFromStatus(vm.Status),
 		NodeName:     vm.Node,
-		ImageID:      input.BootImage,
+		ImageID:      firstNonEmpty(payloadString(task.Payload, "imageId"), payloadString(task.Payload, "bootImageId")),
 		FlavorID:     payloadString(task.Payload, "flavorId"),
 		IPAddresses:  []string{},
 		Labels:       metadataMap(vm.Metadata),
@@ -441,6 +443,13 @@ func (s *Service) adapterForConnection(connection domainvirtualization.Connectio
 
 func vmFromAsset(connection domainvirtualization.Connection, asset infravirtualization.Asset) domainvirtualization.VM {
 	externalID := firstNonEmpty(asset.Metadata["uid"], asset.Metadata["vmid"], asset.Name)
+	config := metadataMap(asset.Metadata)
+	if cpu := metadataInt(asset.Metadata, "cpu"); cpu > 0 {
+		config["cpu"] = cpu
+	}
+	if memoryMiB := metadataMemoryMiB(asset.Metadata, "memory"); memoryMiB > 0 {
+		config["memoryMiB"] = memoryMiB
+	}
 	return domainvirtualization.VM{
 		Provider:     connection.Provider,
 		ConnectionID: connection.ID,
@@ -451,6 +460,7 @@ func vmFromAsset(connection domainvirtualization.Connection, asset infravirtuali
 		PowerState:   powerStateFromStatus(asset.Status),
 		NodeName:     asset.Node,
 		Labels:       metadataMap(asset.Metadata),
+		Config:       config,
 		Raw:          map[string]any{"assetType": asset.Type},
 	}
 }
@@ -491,9 +501,35 @@ func flavorFromAsset(connection domainvirtualization.Connection, asset infravirt
 		ExternalID:   firstNonEmpty(asset.Metadata["uid"], asset.Name),
 		Name:         asset.Name,
 		Status:       firstNonEmpty(asset.Status, "active"),
+		CPUCores:     metadataInt(asset.Metadata, "cpu"),
+		MemoryMB:     metadataMemoryMiB(asset.Metadata, "memory"),
 		Config:       metadataMap(asset.Metadata),
 		Raw:          map[string]any{"assetType": asset.Type},
 	}
+}
+
+func metadataInt(values map[string]string, key string) int {
+	raw := strings.TrimSpace(values[key])
+	if raw == "" {
+		return 0
+	}
+	value, err := strconv.Atoi(raw)
+	if err != nil {
+		return 0
+	}
+	return value
+}
+
+func metadataMemoryMiB(values map[string]string, key string) int {
+	raw := strings.TrimSpace(values[key])
+	if raw == "" {
+		return 0
+	}
+	quantity, err := resource.ParseQuantity(raw)
+	if err != nil {
+		return 0
+	}
+	return int(quantity.Value() / (1024 * 1024))
 }
 
 func memoryString(memoryMiB int) string {

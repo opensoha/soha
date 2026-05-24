@@ -150,6 +150,7 @@ type ModulesConfig struct {
 	Monitoring     ModuleToggleConfig `mapstructure:"monitoring"`
 	AI             ModuleToggleConfig `mapstructure:"ai"`
 	Virtualization ModuleToggleConfig `mapstructure:"virtualization"`
+	Docker         ModuleToggleConfig `mapstructure:"docker"`
 	Security       ModuleToggleConfig `mapstructure:"security"`
 	CMDB           ModuleToggleConfig `mapstructure:"cmdb"`
 }
@@ -322,6 +323,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("modules.monitoring.enabled", true)
 	v.SetDefault("modules.ai.enabled", true)
 	v.SetDefault("modules.virtualization.enabled", true)
+	v.SetDefault("modules.docker.enabled", true)
 	v.SetDefault("modules.security.enabled", false)
 	v.SetDefault("modules.cmdb.enabled", false)
 	v.SetDefault("security.credential_encryption_key", "")

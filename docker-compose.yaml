@@ -30,6 +30,7 @@ services:
       - "6443:6443"
     volumes:
       - kubecrux-k3s-data:/var/lib/rancher/k3s
+      - ./configs/k3s/registries.yaml:/etc/rancher/k3s/registries.yaml:ro
     healthcheck:
       test: ["CMD-SHELL", "kubectl get nodes >/dev/null 2>&1"]
       interval: 10s

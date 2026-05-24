@@ -179,8 +179,11 @@ func (a *PVEAdapter) CreateVM(ctx context.Context, connection Connection, input 
 	if providerISO != "" {
 		payload["ide2"] = providerISO
 	}
-	if input.CloudInit != "" {
-		payload["ciuser"] = input.CloudInit
+	if ciuser := stringFromAny(input.ProviderParams["ciuser"]); ciuser != "" {
+		payload["ciuser"] = ciuser
+	}
+	if sshKeys := stringFromAny(input.ProviderParams["sshkeys"]); sshKeys != "" {
+		payload["sshkeys"] = sshKeys
 	}
 	endpoint := fmt.Sprintf("/nodes/%s/qemu", url.PathEscape(node))
 	if err := a.do(ctx, connection, http.MethodPost, endpoint, payload, nil); err != nil {

@@ -32,6 +32,7 @@ type Dependencies struct {
 	Releases       *apiHandlers.ReleaseHandler
 	Copilot        *apiHandlers.CopilotHandler
 	Virtualization *apiHandlers.VirtualizationHandler
+	Docker         *apiHandlers.DockerHandler
 	Access         *apiHandlers.AccessHandler
 	ScopeGrants    *apiHandlers.ScopeGrantHandler
 	Menu           *apiHandlers.MenuHandler
@@ -83,6 +84,11 @@ func New(cfg cfgpkg.Config, logger *zap.Logger, deps Dependencies) *http.Server 
 			v1.GET("/delivery/execution-tasks/:taskID/runner-status", deps.Delivery.GetExecutionTaskRunnerStatus)
 			v1.POST("/delivery/execution-callbacks", deps.Delivery.RecordExecutionCallback)
 			v1.POST("/delivery/execution-tasks/claim", deps.Delivery.ClaimExecutionTask)
+		}
+		if cfg.Modules.Docker.Enabled {
+			v1.POST("/docker/operations/claim", deps.Docker.ClaimOperation)
+			v1.GET("/docker/operations/:id/runner-status", deps.Docker.GetOperationRunnerStatus)
+			v1.POST("/docker/operation-callbacks", deps.Docker.RecordOperationCallback)
 		}
 	}
 
@@ -394,6 +400,37 @@ func New(cfg cfgpkg.Config, logger *zap.Logger, deps Dependencies) *http.Server 
 			protected.POST("/virtualization/operations/:taskID/cancel", deps.Virtualization.CancelOperation)
 			protected.POST("/virtualization/operations/:taskID/retry", deps.Virtualization.RetryOperation)
 			protected.POST("/virtualization/sync", deps.Virtualization.SyncAll)
+		}
+		if cfg.Modules.Docker.Enabled {
+			protected.GET("/docker/overview", deps.Docker.Overview)
+			protected.GET("/docker/hosts", deps.Docker.ListHosts)
+			protected.POST("/docker/hosts", deps.Docker.CreateHost)
+			protected.POST("/docker/hosts/quick-create", deps.Docker.QuickCreateHost)
+			protected.GET("/docker/hosts/:id", deps.Docker.GetHost)
+			protected.PUT("/docker/hosts/:id", deps.Docker.UpdateHost)
+			protected.DELETE("/docker/hosts/:id", deps.Docker.DeleteHost)
+			protected.GET("/docker/projects", deps.Docker.ListProjects)
+			protected.POST("/docker/projects", deps.Docker.CreateProject)
+			protected.GET("/docker/projects/:id", deps.Docker.GetProject)
+			protected.PUT("/docker/projects/:id", deps.Docker.UpdateProject)
+			protected.DELETE("/docker/projects/:id", deps.Docker.DeleteProject)
+			protected.POST("/docker/projects/:id/deploy", deps.Docker.DeployProject)
+			protected.POST("/docker/containers/start", deps.Docker.StartContainer)
+			protected.GET("/docker/services", deps.Docker.ListServices)
+			protected.POST("/docker/services/:id/actions", deps.Docker.ServiceAction)
+			protected.GET("/docker/ports", deps.Docker.ListPortMappings)
+			protected.POST("/docker/ports", deps.Docker.CreatePortMapping)
+			protected.PUT("/docker/ports/:id", deps.Docker.UpdatePortMapping)
+			protected.DELETE("/docker/ports/:id", deps.Docker.DeletePortMapping)
+			protected.GET("/docker/templates", deps.Docker.ListTemplates)
+			protected.POST("/docker/templates", deps.Docker.CreateTemplate)
+			protected.PUT("/docker/templates/:id", deps.Docker.UpdateTemplate)
+			protected.DELETE("/docker/templates/:id", deps.Docker.DeleteTemplate)
+			protected.GET("/docker/operations", deps.Docker.ListOperations)
+			protected.GET("/docker/operations/:id", deps.Docker.GetOperation)
+			protected.GET("/docker/operations/:id/logs", deps.Docker.ListOperationLogs)
+			protected.POST("/docker/operations/:id/cancel", deps.Docker.CancelOperation)
+			protected.POST("/docker/operations/:id/retry", deps.Docker.RetryOperation)
 		}
 		if cfg.Modules.AI.Enabled {
 			protected.GET("/copilot/insights", deps.Copilot.ListInsights)

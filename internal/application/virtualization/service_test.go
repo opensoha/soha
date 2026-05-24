@@ -236,6 +236,8 @@ func TestOverviewIncludesAttentionAndSummaries(t *testing.T) {
 	unavailableConn := repo.addConnection(domainvirtualization.Connection{Provider: ProviderPVE, Name: "pve-a", Enabled: true, Health: map[string]any{"status": "unavailable"}})
 	degradedConn := repo.addConnection(domainvirtualization.Connection{Provider: ProviderKubeVirt, Name: "kv-a", Enabled: true, CredentialConfigured: true, Health: map[string]any{"status": "degraded"}})
 	repo.addConnection(domainvirtualization.Connection{Provider: ProviderKubeVirt, Name: "kv-b", Enabled: true, CredentialConfigured: false, Health: map[string]any{"status": "healthy"}})
+	repo.vms["vm-pve"] = domainvirtualization.VM{ID: "vm-pve", Provider: ProviderPVE, ConnectionID: unavailableConn.ID, Name: "vm-pve", Status: "running"}
+	repo.vms["vm-kv"] = domainvirtualization.VM{ID: "vm-kv", Provider: ProviderKubeVirt, ConnectionID: degradedConn.ID, Name: "vm-kv", Status: "stopped"}
 	repo.tasks["sync-failed"] = domainvirtualization.Task{ID: "sync-failed", Provider: ProviderPVE, ConnectionID: unavailableConn.ID, TaskKind: TaskKindAssetSync, Status: TaskStatusFailed, Result: map[string]any{"message": "sync failed"}, CreatedAt: time.Now().UTC()}
 	repo.tasks["vm-failed"] = domainvirtualization.Task{ID: "vm-failed", Provider: ProviderKubeVirt, ConnectionID: degradedConn.ID, TaskKind: TaskKindVMAction, Status: TaskStatusTimeout, Result: map[string]any{"error": "timeout"}, CreatedAt: time.Now().UTC().Add(-time.Minute)}
 	repo.tasks["pending"] = domainvirtualization.Task{ID: "pending", Provider: ProviderKubeVirt, ConnectionID: degradedConn.ID, TaskKind: TaskKindVMCreate, Status: TaskStatusRunning, CreatedAt: time.Now().UTC().Add(-2 * time.Minute)}
@@ -253,6 +255,15 @@ func TestOverviewIncludesAttentionAndSummaries(t *testing.T) {
 	}
 	if len(overview.Attention.RiskyConnections) == 0 || len(overview.Attention.FailedSyncTasks) != 1 || len(overview.Attention.FailedOperations) != 2 {
 		t.Fatalf("attention = %#v", overview.Attention)
+	}
+	if len(overview.ProviderSummary) != 2 {
+		t.Fatalf("provider summary = %#v", overview.ProviderSummary)
+	}
+	if overview.ProviderSummary[0].Provider != ProviderKubeVirt || overview.ProviderSummary[0].Connections != 2 || overview.ProviderSummary[0].VMs != 1 {
+		t.Fatalf("kubevirt provider summary = %#v", overview.ProviderSummary[0])
+	}
+	if overview.ProviderSummary[1].Provider != ProviderPVE || overview.ProviderSummary[1].Unavailable != 1 || overview.ProviderSummary[1].RunningVMs != 1 {
+		t.Fatalf("pve provider summary = %#v", overview.ProviderSummary[1])
 	}
 }
 
@@ -343,6 +354,74 @@ func TestImageManagementAndVMDetail(t *testing.T) {
 	}
 	if len(detail.Operations) != 1 || len(detail.Logs) != 1 {
 		t.Fatalf("detail operations/logs = %d/%d, want 1/1", len(detail.Operations), len(detail.Logs))
+	}
+}
+
+func TestCreateImageAcceptsSourceRef(t *testing.T) {
+	repo := newMemoryRepo()
+	conn := repo.addConnection(domainvirtualization.Connection{Provider: ProviderKubeVirt, Name: "kv", Enabled: true})
+	service := newTestService(repo, &captureOperations{}, fakeAdapter{})
+
+	image, err := service.CreateImage(context.Background(), testPrincipal(), ImageInput{
+		ConnectionID: conn.ID,
+		Name:         "cirros-containerdisk",
+		SourceKind:   "containerdisk",
+		SourceRef:    "quay.io/containerdisks/cirros:latest",
+	})
+	if err != nil {
+		t.Fatalf("CreateImage() error = %v", err)
+	}
+	if got := image.Config["sourceRef"]; got != "quay.io/containerdisks/cirros:latest" {
+		t.Fatalf("sourceRef = %#v, want container disk image reference", got)
+	}
+	if image.ExternalID != "quay.io/containerdisks/cirros:latest" {
+		t.Fatalf("ExternalID = %q, want sourceRef", image.ExternalID)
+	}
+}
+
+func TestWorkerVMCreateUsesImageSourceRefForProviderBootImage(t *testing.T) {
+	repo := newMemoryRepo()
+	conn := repo.addConnection(domainvirtualization.Connection{Provider: ProviderKubeVirt, Name: "kv", Enabled: true})
+	flavor := domainvirtualization.Flavor{ID: "flavor-1", Provider: ProviderKubeVirt, Name: "tiny", CPUCores: 1, MemoryMB: 512, DiskGB: 1}
+	repo.flavors[flavor.ID] = flavor
+	image := domainvirtualization.Image{
+		ID:           "image-1",
+		Provider:     ProviderKubeVirt,
+		ConnectionID: conn.ID,
+		ExternalID:   "quay.io/containerdisks/cirros:latest",
+		Name:         "cirros-containerdisk",
+		Status:       "active",
+		Config:       map[string]any{"sourceKind": "containerdisk", "sourceRef": "quay.io/containerdisks/cirros:latest"},
+	}
+	repo.images[image.ID] = image
+	adapter := &recordingAdapter{}
+	service := newTestService(repo, &captureOperations{}, adapter)
+
+	_, err := service.CreateVM(context.Background(), testPrincipal(), CreateVMInput{
+		ConnectionID: conn.ID,
+		Name:         "vm-a",
+		FlavorID:     flavor.ID,
+		BootImageID:  image.ID,
+		SourceMode:   "containerdisk",
+	})
+	if err != nil {
+		t.Fatalf("CreateVM() error = %v", err)
+	}
+	service.runOnce(context.Background())
+
+	if adapter.createInput.BootImage != image.ExternalID {
+		t.Fatalf("BootImage = %q, want sourceRef %q", adapter.createInput.BootImage, image.ExternalID)
+	}
+	if adapter.createInput.SourceRef != image.ExternalID {
+		t.Fatalf("SourceRef = %q, want sourceRef %q", adapter.createInput.SourceRef, image.ExternalID)
+	}
+	var stored domainvirtualization.VM
+	for _, item := range repo.vms {
+		stored = item
+		break
+	}
+	if stored.ImageID != image.ID {
+		t.Fatalf("stored ImageID = %q, want original image id %q", stored.ImageID, image.ID)
 	}
 }
 
@@ -500,6 +579,16 @@ func (a fakeAdapter) GetConsoleURL(_ context.Context, _ infravirtualization.Conn
 		return a.consoleResult, nil
 	}
 	return infravirtualization.ConsoleURLResult{Type: "vnc", URL: "/console"}, nil
+}
+
+type recordingAdapter struct {
+	fakeAdapter
+	createInput infravirtualization.CreateVMInput
+}
+
+func (a *recordingAdapter) CreateVM(_ context.Context, _ infravirtualization.Connection, input infravirtualization.CreateVMInput) (infravirtualization.VM, error) {
+	a.createInput = input
+	return infravirtualization.VM{ID: "vm-1", Name: input.Name, Namespace: input.Namespace, Node: input.Node, Status: "running"}, nil
 }
 
 type memoryRepo struct {

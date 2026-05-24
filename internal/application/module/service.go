@@ -37,6 +37,15 @@ func (s *Service) List(context.Context) ([]domainmodule.Status, error) {
 			SeedMenus:          []string{"virtualization-workbench", "virtualization-workbench-overview", "virtualization-workbench-vms", "virtualization-workbench-clusters", "virtualization-workbench-images", "virtualization-workbench-flavors", "virtualization-workbench-operations", "virtualization-workbench-sync"},
 		},
 		{
+			ID:                 "docker",
+			Name:               "Docker 工作台",
+			DefaultPath:        "/docker",
+			EnabledConfigKey:   "modules.docker.enabled",
+			Dependencies:       []string{"virtualization"},
+			VisiblePermissions: []string{"docker.overview.view", "docker.hosts.view", "docker.projects.view", "docker.services.view", "docker.ports.view", "docker.templates.view", "docker.operations.view"},
+			SeedMenus:          []string{"docker-workbench", "docker-workbench-overview", "docker-workbench-hosts", "docker-workbench-projects", "docker-workbench-services", "docker-workbench-ports", "docker-workbench-templates", "docker-workbench-operations"},
+		},
+		{
 			ID:                 "delivery",
 			Name:               "应用交付工作台",
 			DefaultPath:        "/applications",
@@ -98,6 +107,8 @@ func (s *Service) enabled(id string) bool {
 		return s.cfg.AI.Enabled
 	case "virtualization":
 		return s.cfg.Virtualization.Enabled
+	case "docker":
+		return s.cfg.Docker.Enabled
 	case "security":
 		return s.cfg.Security.Enabled
 	case "cmdb":

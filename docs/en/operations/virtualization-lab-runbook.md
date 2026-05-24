@@ -16,6 +16,109 @@ Priority labels:
 - P1: required before demo or production-like validation
 - P2: recommended for stability, troubleshooting, and regression coverage
 
+## Lab Deployment Topology
+
+The kubecrux virtualization lab should use two separate runtime planes:
+
+- KubeVirt runs inside a Kubernetes cluster, and k3s can be used as a lightweight Kubernetes distribution.
+- Proxmox VE runs as a KubeVirt VM, an independent bare-metal host, an independent Debian host, or another nested VM for lab-only validation.
+- kubecrux server does not host PVE itself. It connects to PVE through the PVE API endpoint, token, node name, and storage pool settings.
+
+Recommended local lab topology:
+
+```text
+kubecrux server + PostgreSQL
+        |
+        +-- local-k3s or external k3s cluster with KubeVirt/CDI
+        |
+        +-- KubeVirt-backed pve-lab VM or external Proxmox VE node API
+```
+
+### KubeVirt on k3s
+
+k3s can be used as a KubeVirt lab Kubernetes cluster, but the nodes still need to satisfy KubeVirt virtualization requirements:
+
+- k3s nodes run on Linux with an x86_64 CPU that supports KVM.
+- VT-x or AMD-V is enabled on the host. Nested lab environments must also enable nested virtualization in the parent hypervisor.
+- `/dev/kvm` is present and accessible on the node, and kernel modules such as `kvm` and `vhost_net` are available.
+- Kubernetes allows privileged workloads. KubeVirt needs privileged DaemonSets.
+- The container runtime is containerd or CRI-O, which are supported by KubeVirt.
+- At least one StorageClass exists. Install CDI when DataVolume, DataSource, upload, or clone flows are required.
+
+The compose-backed k3s started by the root `make init-cluster` target is useful for kubecrux platform connection tests and KubeVirt API-path demos. When it runs on Docker Desktop for macOS or another environment that does not expose Linux KVM into the container, use it only for control-plane or software-emulation tests, not performance or stability validation. KubeVirt `useEmulation` can unblock development without KVM, but VM startup and runtime performance are much slower and do not represent production behavior.
+
+### Can PVE Run Inside k3s?
+
+Conclusion: yes, but only as a KubeVirt VM. It must not run as a regular Pod or Deployment.
+
+Proxmox VE is a complete virtualization platform and host operating-system stack. Its official installation shapes are the Proxmox ISO on bare metal, or PVE packages installed on an existing Debian system. It depends on the Proxmox VE Linux kernel, KVM, LXC, system networking, storage management, APT repositories, and long-running host services. Kubernetes Pods share the node kernel, and their lifecycle, networking, storage, and systemd model are not equivalent to a PVE host.
+
+Even if a privileged Pod, hostPath mounts, and systemd-in-container are forced together, the result effectively mutates the Kubernetes node into a virtualization host. Main risks include:
+
+- Polluting or overwriting k3s node kernel modules, network bridges, iptables/nftables rules, and storage settings.
+- Conflicting PVE LXC/QEMU lifecycles with Kubernetes Pod lifecycles.
+- VM, disk, and network state that Kubernetes cannot safely schedule, migrate, or recover.
+- Uncontrolled upgrade, recovery, and permission boundaries.
+
+These PVE lab shapes are acceptable:
+
+- A full PVE VM started inside KubeVirt, with port 8006 exposed through a Service.
+- Independent PVE bare metal or independent Debian host, with kubecrux connecting through the API.
+- A full PVE VM on an external hypervisor that supports nested virtualization, used only for demos and adapter validation.
+
+### Quick Start for a KubeVirt PVE VM
+
+This repository provides lab manifests and make targets for starting `pve-lab` inside KubeVirt:
+
+```bash
+make init-pve-vm
+```
+
+The target:
+
+- Starts local k3s with `/dev/kvm` exposed through `configs/k3s/docker-compose.kubevirt.yaml`.
+- Installs KubeVirt and CDI.
+- Applies `configs/kubevirt/pve-vm.yaml`, creating the `virt-lab/pve-lab` VM, PVE ISO DataVolume, root disk DataVolume, and NodePort Service.
+
+Install flow:
+
+1. Wait for the DataVolumes to import and for the VM/VMI to start.
+2. Open the installer through VNC:
+
+```bash
+KUBECONFIG=.dev/k3s/kubeconfig.yaml virtctl -n virt-lab vnc pve-lab
+```
+
+3. Complete the Proxmox installer.
+4. After installation, switch boot order back to the root disk:
+
+```bash
+make pve-vm-boot-root
+```
+
+5. After PVE boots, access it from the host:
+
+```text
+https://127.0.0.1:8006
+```
+
+Use that endpoint when creating the PVE connection in kubecrux. SSH is forwarded from `127.0.0.1:2222` to VM port 22.
+If kubecrux server runs inside the compose `kubecrux` container, use the compose-network endpoint `https://k3s:30006`.
+
+Status check:
+
+```bash
+make pve-vm-status
+```
+
+If `virt-handler` is stuck with `path "/var/run/kubevirt" is mounted on "/" but it is not a shared mount`, the k3s node container root mount is not shared. Run:
+
+```bash
+make fix-kubevirt-mounts
+```
+
+The target runs `mount --make-rshared /` inside the k3s container and recreates the `virt-handler` pods.
+
 ## P1 Prerequisites
 
 ### Common Prerequisites

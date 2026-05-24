@@ -113,7 +113,15 @@ make init
 ```
 
 This runs `go mod tidy`, installs the `web` and `docs` npm dependencies, then boots the `pgsql` container from the root `docker-compose.yaml` and waits until PostgreSQL is ready.
-It also starts a local `k3s server` debug cluster, writes its kubeconfig to `./.dev/k3s/kubeconfig.yaml`, and the default development config registers it as `local-k3s`.
+It also starts a local `k3s server` debug cluster, writes its kubeconfig to `./.dev/k3s/kubeconfig.yaml`, and the default development config registers it as `local-k3s`. For KubeVirt labs, the underlying Linux node must still expose `/dev/kvm`; Proxmox VE can be connected as a KubeVirt VM or an external host through its API, but it must not be deployed as a regular Pod/workload inside k3s.
+
+To run a Proxmox VE lab VM inside KubeVirt:
+
+```bash
+make init-pve-vm
+```
+
+After the ISO installer finishes through the VNC console, run `make pve-vm-boot-root` to boot from the installed root disk. The PVE API is exposed at `https://127.0.0.1:8006` by default.
 
 ### 2. Start the backend and frontend
 

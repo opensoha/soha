@@ -34,7 +34,7 @@ func TestBuildKubeVirtVMUsesDataSourceClone(t *testing.T) {
 		SourceMode: "datasource_clone",
 		SourceRef:  "ubuntu-ds",
 		ProviderParams: map[string]any{
-			"storageClass":  "fast-ssd",
+			"storageClass":   "fast-ssd",
 			"dataVolumeName": "demo-rootdisk",
 		},
 	})
@@ -101,6 +101,27 @@ func TestBuildKubeVirtVM(t *testing.T) {
 	}
 }
 
+func TestBuildKubeVirtVMUsesSourceRefForContainerDisk(t *testing.T) {
+	vm := BuildKubeVirtVM(CreateVMInput{
+		Name:       "demo",
+		Namespace:  "apps",
+		CPU:        1,
+		Memory:     "512Mi",
+		BootImage:  "image-record-id",
+		SourceMode: "containerdisk",
+		SourceRef:  "quay.io/containerdisks/cirros:latest",
+	})
+	volumes, _, _ := unstructured.NestedSlice(vm.Object, "spec", "template", "spec", "volumes")
+	if len(volumes) == 0 {
+		t.Fatalf("volumes len = 0")
+	}
+	root := volumes[0].(map[string]any)
+	containerDisk := root["containerDisk"].(map[string]any)
+	if containerDisk["image"] != "quay.io/containerdisks/cirros:latest" {
+		t.Fatalf("containerDisk image = %#v, want sourceRef", containerDisk["image"])
+	}
+}
+
 func TestKubeVirtAdapterRejectsAgentMode(t *testing.T) {
 	adapter := NewKubeVirtAdapter(stubBundleProvider{})
 	_, err := adapter.CreateVM(context.Background(), Connection{Mode: "agent", ClusterID: "c1"}, CreateVMInput{Name: "demo"})
@@ -112,10 +133,12 @@ func TestKubeVirtAdapterRejectsAgentMode(t *testing.T) {
 func TestKubeVirtAdapterSyncAssetsDegradesWhenCRDMissing(t *testing.T) {
 	scheme := runtime.NewScheme()
 	client := fake.NewSimpleDynamicClientWithCustomListKinds(scheme, map[schema.GroupVersionResource]string{
-		kubeVirtVMGVR:         "VirtualMachineList",
-		kubeVirtVMIGVR:        "VirtualMachineInstanceList",
-		kubeVirtDataSourceGVR: "DataSourceList",
-		pvcGVR:                "PersistentVolumeClaimList",
+		kubeVirtVMGVR:                  "VirtualMachineList",
+		kubeVirtVMIGVR:                 "VirtualMachineInstanceList",
+		kubeVirtInstancetypeGVR:        "VirtualMachineInstancetypeList",
+		kubeVirtClusterInstancetypeGVR: "VirtualMachineClusterInstancetypeList",
+		kubeVirtDataSourceGVR:          "DataSourceList",
+		pvcGVR:                         "PersistentVolumeClaimList",
 	}, &unstructured.Unstructured{
 		Object: map[string]any{
 			"apiVersion": "v1",
@@ -147,6 +170,104 @@ func TestKubeVirtAdapterSyncAssetsDegradesWhenCRDMissing(t *testing.T) {
 	if len(result.Assets) != 1 || result.Assets[0].Name != "disk-a" {
 		t.Fatalf("assets = %#v", result.Assets)
 	}
+}
+
+func TestKubeVirtAdapterSyncAssetsUsesOwnerUIDForVMInstance(t *testing.T) {
+	scheme := runtime.NewScheme()
+	client := fake.NewSimpleDynamicClientWithCustomListKinds(scheme, map[schema.GroupVersionResource]string{
+		kubeVirtVMGVR:                  "VirtualMachineList",
+		kubeVirtVMIGVR:                 "VirtualMachineInstanceList",
+		kubeVirtInstancetypeGVR:        "VirtualMachineInstancetypeList",
+		kubeVirtClusterInstancetypeGVR: "VirtualMachineClusterInstancetypeList",
+		kubeVirtDataSourceGVR:          "DataSourceList",
+		pvcGVR:                         "PersistentVolumeClaimList",
+	}, &unstructured.Unstructured{
+		Object: map[string]any{
+			"apiVersion": "kubevirt.io/v1",
+			"kind":       "VirtualMachine",
+			"metadata": map[string]any{
+				"name":      "demo",
+				"namespace": "apps",
+				"uid":       "vm-uid",
+			},
+			"status": map[string]any{"printableStatus": "Starting"},
+		},
+	}, &unstructured.Unstructured{
+		Object: map[string]any{
+			"apiVersion": "kubevirt.io/v1",
+			"kind":       "VirtualMachineInstance",
+			"metadata": map[string]any{
+				"name":      "demo",
+				"namespace": "apps",
+				"uid":       "vmi-uid",
+				"ownerReferences": []any{
+					map[string]any{
+						"apiVersion": "kubevirt.io/v1",
+						"kind":       "VirtualMachine",
+						"name":       "demo",
+						"uid":        "vm-uid",
+						"controller": true,
+					},
+				},
+			},
+			"status": map[string]any{"phase": "Running"},
+		},
+	})
+	adapter := NewKubeVirtAdapter(stubBundleProvider{bundle: &kubeinfra.Bundle{Dynamic: client}})
+
+	result, err := adapter.SyncAssets(context.Background(), Connection{ClusterID: "c1", Options: map[string]any{"namespace": "apps"}})
+	if err != nil {
+		t.Fatalf("SyncAssets() error = %v", err)
+	}
+	var vmUIDs []string
+	for _, asset := range result.Assets {
+		if asset.Type == "virtualmachine" || asset.Type == "virtualmachineinstance" {
+			vmUIDs = append(vmUIDs, asset.Metadata["uid"])
+		}
+	}
+	if len(vmUIDs) != 2 || vmUIDs[0] != "vm-uid" || vmUIDs[1] != "vm-uid" {
+		t.Fatalf("vm uids = %#v, want both assets keyed by VM uid", vmUIDs)
+	}
+}
+
+func TestKubeVirtAdapterSyncAssetsIncludesClusterInstancetypeFlavors(t *testing.T) {
+	scheme := runtime.NewScheme()
+	client := fake.NewSimpleDynamicClientWithCustomListKinds(scheme, map[schema.GroupVersionResource]string{
+		kubeVirtVMGVR:                  "VirtualMachineList",
+		kubeVirtVMIGVR:                 "VirtualMachineInstanceList",
+		kubeVirtInstancetypeGVR:        "VirtualMachineInstancetypeList",
+		kubeVirtClusterInstancetypeGVR: "VirtualMachineClusterInstancetypeList",
+		kubeVirtDataSourceGVR:          "DataSourceList",
+		pvcGVR:                         "PersistentVolumeClaimList",
+	}, &unstructured.Unstructured{
+		Object: map[string]any{
+			"apiVersion": "instancetype.kubevirt.io/v1beta1",
+			"kind":       "VirtualMachineClusterInstancetype",
+			"metadata": map[string]any{
+				"name": "cx1.medium",
+				"uid":  "flavor-uid",
+			},
+			"spec": map[string]any{
+				"cpu":    map[string]any{"guest": int64(2)},
+				"memory": map[string]any{"guest": "4Gi"},
+			},
+		},
+	})
+	adapter := NewKubeVirtAdapter(stubBundleProvider{bundle: &kubeinfra.Bundle{Dynamic: client}})
+
+	result, err := adapter.SyncAssets(context.Background(), Connection{ClusterID: "c1"})
+	if err != nil {
+		t.Fatalf("SyncAssets() error = %v", err)
+	}
+	for _, asset := range result.Assets {
+		if asset.Type == "flavor" && asset.Name == "cx1.medium" {
+			if asset.Metadata["uid"] != "flavor-uid" || asset.Metadata["cpu"] != "2" || asset.Metadata["memory"] != "4Gi" || asset.Metadata["scope"] != "cluster" {
+				t.Fatalf("flavor metadata = %#v", asset.Metadata)
+			}
+			return
+		}
+	}
+	t.Fatalf("cluster instancetype flavor missing from assets: %#v", result.Assets)
 }
 
 func TestKubeVirtAdapterTestConnection(t *testing.T) {

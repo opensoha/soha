@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -71,7 +72,7 @@ func (h *VirtualizationHandler) Overview(c *gin.Context) {
 		writeError(c, err)
 		return
 	}
-	apiresponse.Item(c, http.StatusOK, item)
+	apiresponse.Item(c, http.StatusOK, mapOverview(item))
 }
 
 func (h *VirtualizationHandler) ListConnections(c *gin.Context) {
@@ -500,6 +501,26 @@ func firstQuery(c *gin.Context, keys ...string) string {
 	return ""
 }
 
+func mapOverview(item appvirtualization.Overview) gin.H {
+	attention := gin.H{
+		"riskyConnections": mapConnections(item.Attention.RiskyConnections),
+		"failedSyncTasks":  mapOperations(item.Attention.FailedSyncTasks),
+		"failedOperations": mapOperations(item.Attention.FailedOperations),
+	}
+	out := gin.H{
+		"stats":             item.Stats,
+		"connectionSummary": item.ConnectionSummary,
+		"taskSummary":       item.TaskSummary,
+		"providerSummary":   item.ProviderSummary,
+		"attention":         attention,
+		"recentOperations":  mapOperations(item.RecentOperations),
+	}
+	if item.LastSyncTask != nil {
+		out["lastSyncTask"] = mapOperation(*item.LastSyncTask)
+	}
+	return out
+}
+
 func mapConnections(items []domainvirtualization.Connection) []gin.H {
 	out := make([]gin.H, 0, len(items))
 	for _, item := range items {
@@ -812,10 +833,27 @@ func (h *VirtualizationHandler) StreamTaskUpdates(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	taskID := c.Param("taskID")
 
+	task, err := h.service.GetOperation(c.Request.Context(), principal, taskID)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+
 	c.Header("Content-Type", "text/event-stream")
 	c.Header("Cache-Control", "no-cache")
 	c.Header("Connection", "keep-alive")
 	c.Header("X-Accel-Buffering", "no")
+
+	writeTaskEvent := func(task domainvirtualization.Task) bool {
+		data, _ := json.Marshal(mapOperation(task))
+		fmt.Fprintf(c.Writer, "data: %s\n\n", data)
+		c.Writer.Flush()
+		return taskTerminal(task.Status)
+	}
+
+	if writeTaskEvent(task) {
+		return
+	}
 
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
@@ -827,14 +865,12 @@ func (h *VirtualizationHandler) StreamTaskUpdates(c *gin.Context) {
 		case <-ticker.C:
 			task, err := h.service.GetOperation(c.Request.Context(), principal, taskID)
 			if err != nil {
-				continue
+				data, _ := json.Marshal(gin.H{"error": err.Error()})
+				fmt.Fprintf(c.Writer, "event: error\ndata: %s\n\n", data)
+				c.Writer.Flush()
+				return
 			}
-
-			data, _ := json.Marshal(task)
-			fmt.Fprintf(c.Writer, "data: %s\n\n", data)
-			c.Writer.Flush()
-
-			if taskTerminal(task.Status) {
+			if writeTaskEvent(task) {
 				return
 			}
 		}
@@ -882,8 +918,38 @@ func (h *VirtualizationHandler) GetConsoleURL(c *gin.Context) {
 
 var vncUpgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
-		return true
+		return allowWebSocketOrigin(r)
 	},
+}
+
+func allowWebSocketOrigin(r *http.Request) bool {
+	origin := strings.TrimSpace(r.Header.Get("Origin"))
+	if origin == "" {
+		return true
+	}
+	parsed, err := url.Parse(origin)
+	if err != nil || parsed.Host == "" {
+		return false
+	}
+	requestHost := hostName(r.Host)
+	originHost := hostName(parsed.Host)
+	if strings.EqualFold(originHost, requestHost) {
+		return true
+	}
+	return isLocalHost(originHost) && isLocalHost(requestHost)
+}
+
+func hostName(hostport string) string {
+	host, _, err := net.SplitHostPort(hostport)
+	if err == nil {
+		return strings.Trim(host, "[]")
+	}
+	return strings.Trim(hostport, "[]")
+}
+
+func isLocalHost(host string) bool {
+	host = strings.ToLower(strings.TrimSpace(host))
+	return host == "localhost" || host == "127.0.0.1" || host == "::1" || strings.HasSuffix(host, ".localhost")
 }
 
 func (h *VirtualizationHandler) StreamVMConsole(c *gin.Context) {

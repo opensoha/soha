@@ -28,7 +28,11 @@
       "Bash(git push *)",
       "Bash(pnpm *)",
       "Bash(npm *)",
-      "Bash(go test *)"
+      "Bash(go test *)",
+      "mcp__plugin_claude-mem_mcp-search__smart_search",
+      "mcp__plugin_claude-mem_mcp-search__smart_unfold",
+      "mcp__plugin_claude-mem_mcp-search__smart_outline",
+      "Bash(rg \"/\\(server|backend|api|internal|pkg\\)\\(/|$\\)\")"
     ]
   }
 }

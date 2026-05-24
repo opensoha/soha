@@ -443,7 +443,11 @@ describe("access route authorization", () => {
         "virtualization.overview.view",
         "virtualization.vms.view",
         "virtualization.operations.view",
-        "virtualization.sync.manage",
+        "virtualization.sync.view",
+        "docker.overview.view",
+        "docker.hosts.view",
+        "docker.projects.view",
+        "docker.operations.view",
         "observe.ai.view",
         "observe.ai.chat",
         "observe.monitoring.view",
@@ -456,6 +460,11 @@ describe("access route authorization", () => {
         "virtualization-workbench-vms",
         "virtualization-workbench-operations",
         "virtualization-workbench-sync",
+        "docker-workbench",
+        "docker-workbench-overview",
+        "docker-workbench-hosts",
+        "docker-workbench-projects",
+        "docker-workbench-operations",
         "ai-workbench",
         "ai-workbench-chat",
         "ai-workbench-root-cause",
@@ -529,6 +538,60 @@ describe("access route authorization", () => {
           iconKey: "activity",
           section: "ops",
           sortOrder: 14,
+          enabled: true,
+        },
+        {
+          id: "docker-workbench",
+          path: "/docker",
+          labelZh: "Docker 工作台",
+          labelEn: "Docker Workbench",
+          iconKey: "docker",
+          section: "ops",
+          sortOrder: 30,
+          enabled: true,
+        },
+        {
+          id: "docker-workbench-overview",
+          parentId: "docker-workbench",
+          path: "/docker/overview",
+          labelZh: "总览",
+          labelEn: "Overview",
+          iconKey: "gauge",
+          section: "ops",
+          sortOrder: 31,
+          enabled: true,
+        },
+        {
+          id: "docker-workbench-hosts",
+          parentId: "docker-workbench",
+          path: "/docker/hosts",
+          labelZh: "Docker 主机",
+          labelEn: "Docker Hosts",
+          iconKey: "server",
+          section: "ops",
+          sortOrder: 32,
+          enabled: true,
+        },
+        {
+          id: "docker-workbench-projects",
+          parentId: "docker-workbench",
+          path: "/docker/projects",
+          labelZh: "Compose 项目",
+          labelEn: "Compose Projects",
+          iconKey: "docker",
+          section: "ops",
+          sortOrder: 33,
+          enabled: true,
+        },
+        {
+          id: "docker-workbench-operations",
+          parentId: "docker-workbench",
+          path: "/docker/operations",
+          labelZh: "操作记录",
+          labelEn: "Operations",
+          iconKey: "history",
+          section: "ops",
+          sortOrder: 34,
           enabled: true,
         },
         {
@@ -639,6 +702,7 @@ describe("access route authorization", () => {
       resourceNav,
       "virtualization",
     );
+    const dockerNav = filterSidebarNavByWorkbench(resourceNav, "docker");
     const monitoringNav = filterSidebarNavByWorkbench(
       resourceNav,
       "monitoring",
@@ -655,6 +719,15 @@ describe("access route authorization", () => {
     expect(
       virtualizationNav.some((item) => item.id === "virtualization-workbench"),
     ).toBe(false);
+    expect(dockerNav.map((item) => item.id)).toEqual([
+      "docker-workbench-overview",
+      "docker-workbench-hosts",
+      "docker-workbench-projects",
+      "docker-workbench-operations",
+    ]);
+    expect(dockerNav.some((item) => item.id === "docker-workbench")).toBe(
+      false,
+    );
     expect(monitoringNav.map((item) => item.id)).toEqual([
       "monitoring-workbench-overview",
       "monitoring-workbench-rules",
@@ -690,6 +763,12 @@ describe("access route authorization", () => {
         path: "/virtualization/sync",
       }),
     ).toBe("virtualization");
+    expect(
+      getMenuWorkbenchId({
+        id: "docker-workbench-projects",
+        path: "/docker/projects",
+      }),
+    ).toBe("docker");
     expect(getMenuWorkbenchId({ id: "menus", path: "/system/menus" })).toBe(
       null,
     );
@@ -741,10 +820,10 @@ describe("access route authorization", () => {
     ).toBe(false);
   });
 
-  it("maps virtualization sync to backend menu id and manage permission", () => {
+  it("maps virtualization sync to backend menu id and view permission", () => {
     const route = getRoute("virtualization-workbench-sync");
     const snapshot = buildSnapshot({
-      permissionKeys: ["workspace.resource.view", "virtualization.sync.manage"],
+      permissionKeys: ["workspace.resource.view", "virtualization.sync.view"],
       visibleMenuIds: ["virtualization-workbench-sync"],
       visibleMenus: [
         {
@@ -756,10 +835,56 @@ describe("access route authorization", () => {
     });
 
     expect(route.menuId).toBe("virtualization-workbench-sync");
-    expect(route.permissionKey).toBe("virtualization.sync.manage");
+    expect(route.permissionKey).toBe("virtualization.sync.view");
     expect(getRouteWorkbenchId(route)).toBe("virtualization");
     expect(getRouteScopeMode(route)).toBe("passive");
     expect(canAccessRoute(route, snapshot)).toBe(true);
+  });
+
+  it("requires Docker workspace permission, route permission, and menu binding", () => {
+    const route = getRoute("docker-workbench-projects");
+    const allowedSnapshot = buildSnapshot({
+      permissionKeys: ["workspace.resource.view", "docker.projects.view"],
+      visibleMenuIds: ["docker-workbench-projects"],
+      visibleMenus: [
+        {
+          id: "docker-workbench-projects",
+          parentId: "docker-workbench",
+          path: "/docker/projects",
+        },
+      ],
+    });
+
+    expect(getRouteWorkspace(route)).toBe("resource");
+    expect(getRouteWorkbenchId(route)).toBe("docker");
+    expect(getRouteScopeMode(route)).toBe("passive");
+    expect(canAccessRoute(route, allowedSnapshot)).toBe(true);
+    expect(
+      canAccessRoute(
+        route,
+        buildSnapshot({
+          permissionKeys: ["workspace.resource.view", "docker.projects.view"],
+          visibleMenuIds: [],
+          visibleMenus: [],
+        }),
+      ),
+    ).toBe(false);
+    expect(
+      canAccessRoute(
+        route,
+        buildSnapshot({
+          permissionKeys: ["workspace.resource.view"],
+          visibleMenuIds: ["docker-workbench-projects"],
+          visibleMenus: [
+            {
+              id: "docker-workbench-projects",
+              parentId: "docker-workbench",
+              path: "/docker/projects",
+            },
+          ],
+        }),
+      ),
+    ).toBe(false);
   });
 
   it("resolves accessible workspaces and preferred landing path", () => {

@@ -1,0 +1,15 @@
+services:
+  k3s:
+    entrypoint:
+      - /bin/sh
+      - -c
+    command:
+      - >-
+        mount --make-rshared / && exec /bin/k3s server --node-name=local-k3s --disable=traefik --disable=servicelb --tls-san=127.0.0.1
+    devices:
+      - /dev/kvm:/dev/kvm
+    volumes:
+      - /lib/modules:/lib/modules:ro
+    ports:
+      - "8006:30006"
+      - "2222:30022"

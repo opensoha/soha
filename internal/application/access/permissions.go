@@ -85,6 +85,20 @@ const (
 	PermVirtualizationSyncManage          = "virtualization.sync.manage"
 	PermVirtualizationVMsMetrics          = "virtualization.vms.metrics"
 	PermVirtualizationVMsConsole          = "virtualization.vms.console"
+	PermDockerOverviewView                = "docker.overview.view"
+	PermDockerHostsView                   = "docker.hosts.view"
+	PermDockerHostsManage                 = "docker.hosts.manage"
+	PermDockerProjectsView                = "docker.projects.view"
+	PermDockerProjectsManage              = "docker.projects.manage"
+	PermDockerProjectsDeploy              = "docker.projects.deploy"
+	PermDockerServicesView                = "docker.services.view"
+	PermDockerServicesManage              = "docker.services.manage"
+	PermDockerPortsView                   = "docker.ports.view"
+	PermDockerPortsManage                 = "docker.ports.manage"
+	PermDockerTemplatesView               = "docker.templates.view"
+	PermDockerTemplatesManage             = "docker.templates.manage"
+	PermDockerOperationsView              = "docker.operations.view"
+	PermDockerOperationsManage            = "docker.operations.manage"
 	PermAccessUsersView                   = "access.users.view"
 	PermAccessUsersManage                 = "access.users.manage"
 	PermAccessRolesView                   = "access.roles.view"
@@ -197,6 +211,20 @@ func allPermissionKeys() []string {
 		PermVirtualizationSyncManage,
 		PermVirtualizationVMsMetrics,
 		PermVirtualizationVMsConsole,
+		PermDockerOverviewView,
+		PermDockerHostsView,
+		PermDockerHostsManage,
+		PermDockerProjectsView,
+		PermDockerProjectsManage,
+		PermDockerProjectsDeploy,
+		PermDockerServicesView,
+		PermDockerServicesManage,
+		PermDockerPortsView,
+		PermDockerPortsManage,
+		PermDockerTemplatesView,
+		PermDockerTemplatesManage,
+		PermDockerOperationsView,
+		PermDockerOperationsManage,
 		PermAccessUsersView,
 		PermAccessUsersManage,
 		PermAccessRolesView,
@@ -302,6 +330,20 @@ func defaultRolePermissions() map[string][]string {
 		PermVirtualizationSyncManage,
 		PermVirtualizationVMsMetrics,
 		PermVirtualizationVMsConsole,
+		PermDockerOverviewView,
+		PermDockerHostsView,
+		PermDockerHostsManage,
+		PermDockerProjectsView,
+		PermDockerProjectsManage,
+		PermDockerProjectsDeploy,
+		PermDockerServicesView,
+		PermDockerServicesManage,
+		PermDockerPortsView,
+		PermDockerPortsManage,
+		PermDockerTemplatesView,
+		PermDockerTemplatesManage,
+		PermDockerOperationsView,
+		PermDockerOperationsManage,
 		PermSystemAuditView,
 		PermSystemOperationsView,
 		PermAccessUsersView,
@@ -354,6 +396,17 @@ func defaultRolePermissions() map[string][]string {
 		PermDeliveryWorkflowsTrigger,
 		PermDeliveryReleasesView,
 		PermDeliveryReleasesTrigger,
+		PermDockerOverviewView,
+		PermDockerHostsView,
+		PermDockerProjectsView,
+		PermDockerProjectsManage,
+		PermDockerProjectsDeploy,
+		PermDockerServicesView,
+		PermDockerServicesManage,
+		PermDockerPortsView,
+		PermDockerPortsManage,
+		PermDockerTemplatesView,
+		PermDockerOperationsView,
 	}
 	readonly := []string{
 		PermWorkspaceApplicationView,
@@ -377,6 +430,13 @@ func defaultRolePermissions() map[string][]string {
 		PermObserveAlertsView,
 		PermObserveEventsView,
 		PermObserveAIView,
+		PermDockerOverviewView,
+		PermDockerHostsView,
+		PermDockerProjectsView,
+		PermDockerServicesView,
+		PermDockerPortsView,
+		PermDockerTemplatesView,
+		PermDockerOperationsView,
 	}
 	auditor := []string{
 		PermWorkspaceResourceView,

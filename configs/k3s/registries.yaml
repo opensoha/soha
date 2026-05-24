@@ -1,0 +1,10 @@
+mirrors:
+  docker.io:
+    endpoint:
+      - "https://docker.m.daocloud.io"
+      - "https://docker.1ms.run"
+      - "https://registry-1.docker.io"
+
+  registry.k8s.io:
+    endpoint:
+      - "https://registry.cn-hangzhou.aliyuncs.com/google_containers"

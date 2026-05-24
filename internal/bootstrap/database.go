@@ -82,7 +82,7 @@ type clusterCredentialSeed struct {
 // While the stored version matches this constant, the static seed block is
 // skipped entirely. Config-driven sync (admin user, clusters) runs separately
 // during startup so runtime config updates do not depend on replaying defaults.
-const bootstrapSeedVersion = "2026-05-23-1"
+const bootstrapSeedVersion = "2026-05-24-docker-workbench-1"
 
 const bootstrapSeedVersionKey = "bootstrap.seed_version"
 
@@ -247,12 +247,20 @@ func defaultMenuSeeds() []menuSeed {
 		{ID: "ai-workbench-tools", ParentID: "ai-workbench", Path: "/ai-workbench/tools", LabelZH: "工具与技能", LabelEN: "Tools & Skills", IconKey: "bot", Section: "ops", SortOrder: 18, Enabled: true},
 		{ID: "virtualization-workbench", Path: "/virtualization", LabelZH: "虚拟化管理工作台", LabelEN: "Virtualization Workbench", IconKey: "server", Section: "ops", SortOrder: 80, Enabled: true},
 		{ID: "virtualization-workbench-overview", ParentID: "virtualization-workbench", Path: "/virtualization/overview", LabelZH: "总览", LabelEN: "Overview", IconKey: "gauge", Section: "ops", SortOrder: 81, Enabled: true},
-		{ID: "virtualization-workbench-vms", ParentID: "virtualization-workbench", Path: "/virtualization/vms", LabelZH: "虚拟机", LabelEN: "Virtual Machines", IconKey: "server", Section: "ops", SortOrder: 82, Enabled: true},
-		{ID: "virtualization-workbench-clusters", ParentID: "virtualization-workbench", Path: "/virtualization/clusters", LabelZH: "集群", LabelEN: "Clusters", IconKey: "globe", Section: "ops", SortOrder: 83, Enabled: true},
-		{ID: "virtualization-workbench-images", ParentID: "virtualization-workbench", Path: "/virtualization/images", LabelZH: "镜像", LabelEN: "Images", IconKey: "blocks", Section: "ops", SortOrder: 84, Enabled: true},
-		{ID: "virtualization-workbench-flavors", ParentID: "virtualization-workbench", Path: "/virtualization/flavors", LabelZH: "规格", LabelEN: "Flavors", IconKey: "code", Section: "ops", SortOrder: 85, Enabled: true},
-		{ID: "virtualization-workbench-operations", ParentID: "virtualization-workbench", Path: "/virtualization/operations", LabelZH: "操作记录", LabelEN: "Operations", IconKey: "activity", Section: "ops", SortOrder: 86, Enabled: true},
-		{ID: "virtualization-workbench-sync", ParentID: "virtualization-workbench", Path: "/virtualization/sync", LabelZH: "同步任务", LabelEN: "Sync Tasks", IconKey: "activity", Section: "ops", SortOrder: 87, Enabled: true},
+		{ID: "virtualization-workbench-vms", ParentID: "virtualization-workbench", Path: "/virtualization/vms", LabelZH: "虚拟机", LabelEN: "Virtual Machines", IconKey: "desktop", Section: "ops", SortOrder: 82, Enabled: true},
+		{ID: "virtualization-workbench-clusters", ParentID: "virtualization-workbench", Path: "/virtualization/clusters", LabelZH: "集群", LabelEN: "Clusters", IconKey: "cluster", Section: "ops", SortOrder: 83, Enabled: true},
+		{ID: "virtualization-workbench-images", ParentID: "virtualization-workbench", Path: "/virtualization/images", LabelZH: "镜像", LabelEN: "Images", IconKey: "image", Section: "ops", SortOrder: 84, Enabled: true},
+		{ID: "virtualization-workbench-flavors", ParentID: "virtualization-workbench", Path: "/virtualization/flavors", LabelZH: "规格", LabelEN: "Flavors", IconKey: "flavor", Section: "ops", SortOrder: 85, Enabled: true},
+		{ID: "virtualization-workbench-operations", ParentID: "virtualization-workbench", Path: "/virtualization/operations", LabelZH: "操作记录", LabelEN: "Operations", IconKey: "history", Section: "ops", SortOrder: 86, Enabled: true},
+		{ID: "virtualization-workbench-sync", ParentID: "virtualization-workbench", Path: "/virtualization/sync", LabelZH: "同步任务", LabelEN: "Sync Tasks", IconKey: "sync", Section: "ops", SortOrder: 87, Enabled: true},
+		{ID: "docker-workbench", Path: "/docker", LabelZH: "Docker 工作台", LabelEN: "Docker Workbench", IconKey: "docker", Section: "ops", SortOrder: 90, Enabled: true, Roles: []string{"admin", "ops", "developer", "readonly"}},
+		{ID: "docker-workbench-overview", ParentID: "docker-workbench", Path: "/docker/overview", LabelZH: "总览", LabelEN: "Overview", IconKey: "gauge", Section: "ops", SortOrder: 91, Enabled: true, Roles: []string{"admin", "ops", "developer", "readonly"}},
+		{ID: "docker-workbench-hosts", ParentID: "docker-workbench", Path: "/docker/hosts", LabelZH: "Docker 主机", LabelEN: "Docker Hosts", IconKey: "server", Section: "ops", SortOrder: 92, Enabled: true, Roles: []string{"admin", "ops", "developer", "readonly"}},
+		{ID: "docker-workbench-projects", ParentID: "docker-workbench", Path: "/docker/projects", LabelZH: "Compose 项目", LabelEN: "Compose Projects", IconKey: "docker", Section: "ops", SortOrder: 93, Enabled: true, Roles: []string{"admin", "ops", "developer", "readonly"}},
+		{ID: "docker-workbench-services", ParentID: "docker-workbench", Path: "/docker/services", LabelZH: "容器服务", LabelEN: "Container Services", IconKey: "boxes", Section: "ops", SortOrder: 94, Enabled: true, Roles: []string{"admin", "ops", "developer", "readonly"}},
+		{ID: "docker-workbench-ports", ParentID: "docker-workbench", Path: "/docker/ports", LabelZH: "端口映射", LabelEN: "Port Mappings", IconKey: "network", Section: "ops", SortOrder: 95, Enabled: true, Roles: []string{"admin", "ops", "developer", "readonly"}},
+		{ID: "docker-workbench-templates", ParentID: "docker-workbench", Path: "/docker/templates", LabelZH: "模板", LabelEN: "Templates", IconKey: "code", Section: "ops", SortOrder: 96, Enabled: true, Roles: []string{"admin", "ops", "developer", "readonly"}},
+		{ID: "docker-workbench-operations", ParentID: "docker-workbench", Path: "/docker/operations", LabelZH: "操作记录", LabelEN: "Operations", IconKey: "history", Section: "ops", SortOrder: 97, Enabled: true, Roles: []string{"admin", "ops", "developer", "readonly"}},
 		{ID: "builds", Path: "/applications", LabelZH: "应用中心", LabelEN: "Application Center", IconKey: "blocks", Section: "deliver", SortOrder: 1, Enabled: true, Roles: []string{"admin", "ops", "developer"}},
 		{ID: "application-management", Path: "/application-management", LabelZH: "应用管理", LabelEN: "Application Management", IconKey: "blocks", Section: "deliver", SortOrder: 111, Enabled: true, Roles: []string{"admin", "ops", "developer"}},
 		{ID: "build-templates", Path: "/build-templates", LabelZH: "构建模板", LabelEN: "Build Templates", IconKey: "code", Section: "deliver", SortOrder: 112, Enabled: true, Roles: []string{"admin", "ops"}},
@@ -385,6 +393,8 @@ func filterSeedMenusByModules(items []menuSeed, modules cfgpkg.ModulesConfig) []
 			continue
 		case !modules.Virtualization.Enabled && isVirtualizationMenuSeed(item):
 			continue
+		case !modules.Docker.Enabled && isDockerMenuSeed(item):
+			continue
 		default:
 			filtered = append(filtered, item)
 		}
@@ -403,6 +413,8 @@ func deleteDisabledModuleMenus(ctx context.Context, db *gorm.DB, items []menuSee
 		case !modules.AI.Enabled && isAIMenuSeed(item):
 			menuIDs = append(menuIDs, item.ID)
 		case !modules.Virtualization.Enabled && isVirtualizationMenuSeed(item):
+			menuIDs = append(menuIDs, item.ID)
+		case !modules.Docker.Enabled && isDockerMenuSeed(item):
 			menuIDs = append(menuIDs, item.ID)
 		}
 	}
@@ -446,6 +458,11 @@ func isAIMenuSeed(item menuSeed) bool {
 func isVirtualizationMenuSeed(item menuSeed) bool {
 	return item.ID == "virtualization-workbench" ||
 		strings.HasPrefix(item.Path, "/virtualization")
+}
+
+func isDockerMenuSeed(item menuSeed) bool {
+	return item.ID == "docker-workbench" ||
+		strings.HasPrefix(item.Path, "/docker")
 }
 
 func upsertMenus(ctx context.Context, db *gorm.DB, items []menuSeed, now time.Time) error {

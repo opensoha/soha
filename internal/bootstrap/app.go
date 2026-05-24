@@ -16,6 +16,7 @@ import (
 	appcluster "github.com/kubecrux/kubecrux/internal/application/cluster"
 	appcopilot "github.com/kubecrux/kubecrux/internal/application/copilot"
 	appdelivery "github.com/kubecrux/kubecrux/internal/application/delivery"
+	appdocker "github.com/kubecrux/kubecrux/internal/application/docker"
 	appevent "github.com/kubecrux/kubecrux/internal/application/event"
 	appexecution "github.com/kubecrux/kubecrux/internal/application/execution"
 	appidentity "github.com/kubecrux/kubecrux/internal/application/identity"
@@ -31,6 +32,8 @@ import (
 	appsettings "github.com/kubecrux/kubecrux/internal/application/settings"
 	appvirtualization "github.com/kubecrux/kubecrux/internal/application/virtualization"
 	appworkflow "github.com/kubecrux/kubecrux/internal/application/workflow"
+	domainidentity "github.com/kubecrux/kubecrux/internal/domain/identity"
+	domainvirtualization "github.com/kubecrux/kubecrux/internal/domain/virtualization"
 	agentinfra "github.com/kubecrux/kubecrux/internal/infrastructure/agent"
 	cfgpkg "github.com/kubecrux/kubecrux/internal/infrastructure/config"
 	dbinfra "github.com/kubecrux/kubecrux/internal/infrastructure/db"
@@ -51,6 +54,7 @@ import (
 	clusterrepo "github.com/kubecrux/kubecrux/internal/repository/cluster"
 	copilotrepo "github.com/kubecrux/kubecrux/internal/repository/copilot"
 	deliveryrepo "github.com/kubecrux/kubecrux/internal/repository/delivery"
+	dockerrepo "github.com/kubecrux/kubecrux/internal/repository/docker"
 	eventrepo "github.com/kubecrux/kubecrux/internal/repository/eventstream"
 	menurepo "github.com/kubecrux/kubecrux/internal/repository/menu"
 	operationrepo "github.com/kubecrux/kubecrux/internal/repository/operationlog"
@@ -75,6 +79,39 @@ type App struct {
 	VirtualizationService *appvirtualization.Service
 	HTTP                  *http.Server
 	cancel                context.CancelFunc
+}
+
+type dockerHostProvisioner struct {
+	virtualization interface {
+		CreateVM(context.Context, domainidentity.Principal, appvirtualization.CreateVMInput) (domainvirtualization.Task, error)
+	}
+}
+
+func (p dockerHostProvisioner) ProvisionDockerHost(ctx context.Context, principal domainidentity.Principal, input appdocker.HostProvisionInput) (appdocker.HostProvisionTask, error) {
+	task, err := p.virtualization.CreateVM(ctx, principal, appvirtualization.CreateVMInput{
+		ConnectionID:      input.ConnectionID,
+		Name:              input.Name,
+		CPU:               input.CPU,
+		MemoryMiB:         input.MemoryMiB,
+		DiskGiB:           input.DiskGiB,
+		BootImageID:       input.BootImageID,
+		ImageID:           input.ImageID,
+		FlavorID:          input.FlavorID,
+		Network:           input.Network,
+		StartAfterCreate:  input.StartAfterCreate,
+		TemplateID:        input.TemplateID,
+		ProviderParams:    input.ProviderParams,
+		ProviderExtraJSON: input.ProviderExtraJSON,
+	})
+	if err != nil {
+		return appdocker.HostProvisionTask{}, err
+	}
+	return appdocker.HostProvisionTask{
+		ID:           task.ID,
+		Provider:     task.Provider,
+		ConnectionID: task.ConnectionID,
+		Status:       task.Status,
+	}, nil
 }
 
 func New(ctx context.Context) (*App, error) {
@@ -147,6 +184,7 @@ func New(ctx context.Context) (*App, error) {
 	policyRepository := policyrepo.New(databaseStore.DB())
 	clusterRepository := clusterrepo.New(databaseStore.DB())
 	virtualizationRepository := virtualizationrepo.New(databaseStore.DB())
+	dockerRepository := dockerrepo.New(databaseStore.DB())
 	permissionResolver := appaccess.NewPermissionResolver(policyRepository)
 	auditService := appaudit.New(auditRepository, permissionResolver)
 	operationService := appoperation.New(operationRepository, permissionResolver)
@@ -238,6 +276,7 @@ func New(ctx context.Context) (*App, error) {
 	if cfg.Modules.Virtualization.Enabled {
 		virtualizationService.Start(lifecycleCtx)
 	}
+	dockerService := appdocker.New(dockerRepository, permissionResolver, operationService, appdocker.WithHostProvisioner(dockerHostProvisioner{virtualization: virtualizationService}))
 
 	systemHandler := apiHandlers.NewSystemHandler(databaseStore, runtimeMetrics)
 	authHandler := apiHandlers.NewAuthHandler(identityService, accessConsoleService, settingsService)
@@ -254,6 +293,7 @@ func New(ctx context.Context) (*App, error) {
 	releaseHandler := apiHandlers.NewReleaseHandler(releaseService)
 	copilotHandler := apiHandlers.NewCopilotHandler(copilotService)
 	virtualizationHandler := apiHandlers.NewVirtualizationHandler(virtualizationService)
+	dockerHandler := apiHandlers.NewDockerHandler(dockerService, cfg.Runtime.ExecutionRunnerToken)
 	accessHandler := apiHandlers.NewAccessHandler(accessConsoleService)
 	scopeGrantHandler := apiHandlers.NewScopeGrantHandler(scopeGrantService)
 	settingsHandler := apiHandlers.NewSettingsHandler(settingsService, permissionResolver)
@@ -274,6 +314,7 @@ func New(ctx context.Context) (*App, error) {
 		Releases:       releaseHandler,
 		Copilot:        copilotHandler,
 		Virtualization: virtualizationHandler,
+		Docker:         dockerHandler,
 		Access:         accessHandler,
 		ScopeGrants:    scopeGrantHandler,
 		Settings:       settingsHandler,

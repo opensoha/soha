@@ -351,7 +351,7 @@ describe('app layout workspace navigation', () => {
         'virtualization.overview.view',
         'virtualization.vms.view',
         'virtualization.operations.view',
-        'virtualization.sync.manage',
+        'virtualization.sync.view',
         'observe.monitoring.view',
         'system.menus.view',
       ],
@@ -388,7 +388,51 @@ describe('app layout workspace navigation', () => {
     expect(container.textContent).toContain('同步任务')
     const businessNavText = container.querySelector('.kc-nav-business')?.textContent ?? ''
     expect((businessNavText.match(/虚拟化/g) ?? [])).toHaveLength(0)
+    expect(businessNavText).not.toContain('Observe')
     expect(container.textContent).not.toContain('监控工作台')
+    expect(container.textContent).not.toContain('系统管理')
+  })
+
+  it('shows docker workbench menus directly in the business sidebar', async () => {
+    const container = await renderWithProviders('/docker/projects', {
+      permissionKeys: [
+        'workspace.resource.view',
+        'overview.view',
+        'docker.overview.view',
+        'docker.hosts.view',
+        'docker.projects.view',
+        'docker.operations.view',
+        'system.menus.view',
+      ],
+      visibleMenuIds: [
+        'dashboard',
+        'docker-workbench',
+        'docker-workbench-overview',
+        'docker-workbench-hosts',
+        'docker-workbench-projects',
+        'docker-workbench-operations',
+        'system',
+        'menus',
+      ],
+      visibleMenus: [
+        { id: 'dashboard', path: '/', labelZh: '概览', labelEn: 'Overview', iconKey: 'gauge', section: 'platform', sortOrder: 1, enabled: true },
+        { id: 'docker-workbench', path: '/docker', labelZh: 'Docker 工作台', labelEn: 'Docker Workbench', iconKey: 'docker', section: 'ops', sortOrder: 20, enabled: true },
+        { id: 'docker-workbench-overview', parentId: 'docker-workbench', path: '/docker/overview', labelZh: '总览', labelEn: 'Overview', iconKey: 'gauge', section: 'ops', sortOrder: 21, enabled: true },
+        { id: 'docker-workbench-hosts', parentId: 'docker-workbench', path: '/docker/hosts', labelZh: 'Docker 主机', labelEn: 'Docker Hosts', iconKey: 'server', section: 'ops', sortOrder: 22, enabled: true },
+        { id: 'docker-workbench-projects', parentId: 'docker-workbench', path: '/docker/projects', labelZh: 'Compose 项目', labelEn: 'Compose Projects', iconKey: 'docker', section: 'ops', sortOrder: 23, enabled: true },
+        { id: 'docker-workbench-operations', parentId: 'docker-workbench', path: '/docker/operations', labelZh: '操作记录', labelEn: 'Operations', iconKey: 'history', section: 'ops', sortOrder: 24, enabled: true },
+        { id: 'system', path: '/system', labelZh: '系统管理', labelEn: 'System', iconKey: 'panels-top-left', section: 'admin', sortOrder: 99, enabled: true },
+        { id: 'menus', parentId: 'system', path: '/system/menus', labelZh: '菜单管理', labelEn: 'Menus', iconKey: 'menu-square', section: 'admin', sortOrder: 100, enabled: true },
+      ],
+    })
+
+    expect(container.querySelector('.kc-workbench-switcher__label')?.textContent).toBe('Docker 工作台')
+    expect(container.querySelector('.kc-nav-business')).not.toBeNull()
+    expect(container.textContent).toContain('Docker 主机')
+    expect(container.textContent).toContain('Compose 项目')
+    expect(container.textContent).toContain('操作记录')
+    const businessNavText = container.querySelector('.kc-nav-business')?.textContent ?? ''
+    expect((businessNavText.match(/Docker 工作台/g) ?? [])).toHaveLength(0)
     expect(container.textContent).not.toContain('系统管理')
   })
 

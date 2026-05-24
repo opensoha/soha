@@ -109,6 +109,8 @@ modules:
     enabled: true
   virtualization:
     enabled: true
+  docker:
+    enabled: true
   security:
     enabled: false
   cmdb:

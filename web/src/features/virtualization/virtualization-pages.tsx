@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   App,
   Alert,
+  Badge,
   Button,
   Card,
   Descriptions,
@@ -14,6 +15,8 @@ import {
   InputNumber,
   Modal,
   Popconfirm,
+  Progress,
+  Segmented,
   Select,
   Space,
   Spin,
@@ -25,7 +28,9 @@ import {
 } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import {
+  CheckCircleOutlined,
   CloudSyncOutlined,
+  CloseCircleOutlined,
   DeleteOutlined,
   EditOutlined,
   FileTextOutlined,
@@ -35,15 +40,14 @@ import {
   ReloadOutlined,
   SearchOutlined,
   ThunderboltOutlined,
+  WarningOutlined,
 } from '@ant-design/icons'
-import { PageHeader } from '@/components/page-header'
 import { hasAllowedAction, hasPermission, usePermissionSnapshot } from '@/features/auth/permission-snapshot'
 import { formatDateTime } from '@/utils/time'
 import { tableColumnPresets } from '@/utils/table-columns'
 import { api } from '@/services/api-client'
 import type { ApiResponse, Cluster } from '@/types'
 import { virtualizationApi } from './virtualization-api'
-import { VMConsole } from './vm-console'
 import { useTaskStream } from './use-task-stream'
 import { LineChart } from '@visactor/react-vchart'
 import {
@@ -70,7 +74,11 @@ import type {
   VirtualizationVMMetrics,
 } from './virtualization-types'
 
-const { Paragraph, Text } = Typography
+const { Text } = Typography
+
+const VMConsole = lazy(() =>
+  import('./vm-console').then((module) => ({ default: module.VMConsole })),
+)
 
 const STATUS_COLORS: Record<string, string> = {
   healthy: 'green',
@@ -94,10 +102,20 @@ const STATUS_COLORS: Record<string, string> = {
   stopped_vm: 'default',
 }
 
+const VIRTUALIZATION_PROVIDER_LABELS: Record<string, string> = {
+  kubevirt: 'KubeVirt',
+  pve: 'PVE',
+}
+
 function statusTag(value?: string) {
   if (!value) return <Text type="secondary">-</Text>
   const key = value.toLowerCase()
   return <Tag color={STATUS_COLORS[key] ?? 'default'}>{value}</Tag>
+}
+
+function providerLabel(provider?: string) {
+  if (!provider) return '-'
+  return VIRTUALIZATION_PROVIDER_LABELS[provider] ?? provider
 }
 
 const OPERATION_FILTER_PRESETS = [
@@ -109,6 +127,7 @@ const OPERATION_FILTER_PRESETS = [
 ] as const
 
 type OperationFilterPreset = (typeof OPERATION_FILTER_PRESETS)[number]['key']
+type OverviewTone = 'default' | 'success' | 'warning' | 'danger'
 
 function isAbnormalOperation(status?: string) {
   return ['failed', 'callback_timeout'].includes(String(status || '').toLowerCase())
@@ -200,13 +219,20 @@ function selectableOperationIds(records: VirtualizationOperation[], action: 'can
   return records.filter((record) => hasAllowedAction(record.allowedActions, action)).map((record) => record.id)
 }
 
-function OperationStatusChips({ counts }: { counts: Array<{ key: string; label: string; value: number; tone?: string }> }) {
+function badgeStatusForTone(tone: OverviewTone): 'success' | 'warning' | 'error' | 'default' {
+  if (tone === 'success') return 'success'
+  if (tone === 'warning') return 'warning'
+  if (tone === 'danger') return 'error'
+  return 'default'
+}
+
+function OperationStatusChips({ counts, compact = false }: { counts: Array<{ key: string; label: string; value: number; tone?: OverviewTone }>; compact?: boolean }) {
   return (
-    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+    <div className={`kc-vrt-chip-grid${compact ? ' is-compact' : ''}`}>
       {counts.map((item) => (
-        <div key={item.key} className="rounded border border-[var(--kc-border)] bg-[var(--kc-surface-muted)] p-3">
-          <div className="text-xs text-[var(--kc-text-secondary)]">{item.label}</div>
-          <div className={`mt-2 text-2xl font-semibold ${item.tone === 'danger' ? 'text-red-500' : item.tone === 'warning' ? 'text-amber-500' : ''}`}>{item.value}</div>
+        <div key={item.key} className={`kc-vrt-chip is-${item.tone ?? 'default'}`}>
+          <span className="kc-vrt-chip-label">{item.label}</span>
+          <span className="kc-vrt-chip-value">{item.value}</span>
         </div>
       ))}
     </div>
@@ -221,6 +247,7 @@ function AttentionList({
   items,
   renderMeta,
   renderActions,
+  tone = 'default',
 }: {
   title: string
   description: string
@@ -229,30 +256,39 @@ function AttentionList({
   items: Array<{ id: string; title: string; status?: string; message?: string }>
   renderMeta?: (item: { id: string; title: string; status?: string; message?: string }) => React.ReactNode
   renderActions?: (item: { id: string; title: string; status?: string; message?: string }) => React.ReactNode
+  tone?: OverviewTone
 }) {
   return (
-    <Card size="small" title={title} extra={action}>
-      <div className="mb-3 text-xs text-[var(--kc-text-secondary)]">{description}</div>
+    <section className={`kc-vrt-lane is-${tone}`}>
+      <div className="kc-vrt-lane-head">
+        <div>
+          <div className="kc-vrt-lane-title">{title}</div>
+          <div className="kc-vrt-lane-description">{description}</div>
+        </div>
+        {action ? <div className="kc-vrt-lane-action">{action}</div> : null}
+      </div>
       {items.length === 0 ? (
-        <Empty description={emptyText} image={Empty.PRESENTED_IMAGE_SIMPLE} />
+        <div className="kc-vrt-empty">
+          <Empty description={emptyText} image={Empty.PRESENTED_IMAGE_SIMPLE} />
+        </div>
       ) : (
-        <div className="space-y-3">
+        <div className="kc-vrt-lane-items">
           {items.map((item) => (
-            <div key={item.id} className="rounded border border-[var(--kc-border)] p-3">
-              <div className="flex flex-wrap items-center justify-between gap-2">
+            <div key={item.id} className="kc-vrt-attention-row">
+              <div className="kc-vrt-attention-row-head">
                 <Space wrap>
                   <Text strong>{item.title}</Text>
                   {statusTag(item.status)}
                 </Space>
-                {renderActions ? <Space wrap>{renderActions(item)}</Space> : null}
+                {renderActions ? <Space wrap className="kc-vrt-row-actions">{renderActions(item)}</Space> : null}
               </div>
-              <div className="mt-2 text-xs text-[var(--kc-text-secondary)]">{item.message || '-'}</div>
-              {renderMeta ? <div className="mt-2 text-xs text-[var(--kc-text-secondary)]">{renderMeta(item)}</div> : null}
+              <div className="kc-vrt-attention-message">{item.message || '-'}</div>
+              {renderMeta ? <div className="kc-vrt-attention-meta">{renderMeta(item)}</div> : null}
             </div>
           ))}
         </div>
       )}
-    </Card>
+    </section>
   )
 }
 
@@ -336,6 +372,7 @@ function TaskProgressBanner({ task, status, title, onCancel, cancelling }: TaskP
   const taskStatus = task?.status ? <Tag color={STATUS_COLORS[task.status] ?? 'blue'}>{task.status}</Tag> : null
   return (
     <Alert
+      className="kc-vrt-task-banner"
       type={isError ? 'warning' : 'info'}
       showIcon
       icon={isError ? undefined : <Spin size="small" />}
@@ -352,6 +389,70 @@ function TaskProgressBanner({ task, status, title, onCancel, cancelling }: TaskP
         ) : null
       }
     />
+  )
+}
+
+function VirtualizationPageHeader({
+  title,
+  meta = [],
+  actions,
+  tone = 'default',
+  status,
+}: {
+  title: string
+  meta?: string[]
+  actions?: React.ReactNode
+  tone?: OverviewTone
+  status?: string
+}) {
+  return (
+    <section className={`kc-vrt-commandbar kc-vrt-page-header is-${tone}`}>
+      <div className="kc-vrt-commandbar-main">
+        <div className="kc-vrt-title-row">
+          <h1 className="kc-overview-title">{title}</h1>
+          {status ? <Badge status={badgeStatusForTone(tone)} text={status} /> : null}
+        </div>
+        {meta.length > 0 ? (
+          <div className="kc-vrt-commandbar-meta">
+            {meta.map((item) => <span key={item}>{item}</span>)}
+          </div>
+        ) : null}
+      </div>
+      {actions ? <div className="kc-vrt-commandbar-actions">{actions}</div> : null}
+    </section>
+  )
+}
+
+function VirtualizationTableHeader({
+  title,
+  meta = [],
+  actions,
+  tone = 'default',
+  status,
+}: {
+  title: string
+  meta?: string[]
+  actions?: React.ReactNode
+  tone?: OverviewTone
+  status?: string
+}) {
+  return (
+    <div className={`kc-admin-table-header kc-vrt-table-header is-${tone}`}>
+      <div className="kc-admin-table-header-main">
+        <div className="kc-admin-table-title-block">
+          <div className="kc-vrt-title-row">
+            <Text strong>{title}</Text>
+            {status ? <Badge status={badgeStatusForTone(tone)} text={status} /> : null}
+          </div>
+          {meta.length > 0 ? (
+            <div className="kc-vrt-commandbar-meta">
+              {meta.map((item) => <span key={item}>{item}</span>)}
+            </div>
+          ) : null}
+        </div>
+      </div>
+      {actions ? <div className="kc-admin-table-header-extra">{actions}</div> : null}
+    </div>
   )
 }
 
@@ -500,7 +601,7 @@ function nextOperationSearch(preset: OperationFilterPreset, base: { connectionId
   return query ? `?${query}` : ''
 }
 
-function buildVmPayload(values: CreateVirtualMachineInput): CreateVirtualMachineInput {
+export function buildVmPayload(values: CreateVirtualMachineInput): CreateVirtualMachineInput {
   return {
     name: values.name,
     connectionId: values.connectionId,
@@ -511,6 +612,9 @@ function buildVmPayload(values: CreateVirtualMachineInput): CreateVirtualMachine
     memoryMiB: values.memoryMiB,
     bootImageId: values.bootImageId,
     diskGiB: values.diskGiB,
+    sourceMode: values.sourceMode,
+    sourceId: values.sourceId,
+    imageId: values.imageId,
     network: values.network || undefined,
     cloudInit: values.cloudInit || undefined,
     providerParams: values.providerParams,
@@ -524,25 +628,23 @@ interface VirtualMachineFormValues extends CreateVirtualMachineInput {
   pveStorage?: string
   pveBridge?: string
   pveIso?: string
+  pveCloudInitUser?: string
+  pveCloudInitSSHKeys?: string
   kubevirtStorageClass?: string
   kubevirtDataVolumeName?: string
 }
 
-function buildCreateVmPayload(values: VirtualMachineFormValues): CreateVirtualMachineInput {
+export function buildCreateVmPayload(values: VirtualMachineFormValues): CreateVirtualMachineInput {
   const providerParams = compactRecord({
     storage: values.pveStorage,
     bridge: values.pveBridge,
     iso: values.pveIso,
+    ciuser: values.pveCloudInitUser,
+    sshkeys: values.pveCloudInitSSHKeys,
     storageClass: values.kubevirtStorageClass,
     dataVolumeName: values.kubevirtDataVolumeName,
   })
-  const sourceMode = values.provider === 'pve'
-    ? values.pveIso
-      ? 'iso_install'
-      : 'template_clone'
-    : values.kubevirtDataVolumeName
-      ? 'pvc_clone'
-      : 'datasource_clone'
+  const sourceMode = values.sourceMode || (values.provider === 'pve' ? 'template_clone' : 'datasource_clone')
   return buildVmPayload({
     ...values,
     sourceMode,
@@ -599,7 +701,15 @@ function buildClusterPayload(values: VirtualizationClusterFormValues): Virtualiz
   }
 }
 
-function OperationsTable({ assetType, initialPreset = 'all' }: { assetType?: string; initialPreset?: OperationFilterPreset }) {
+function OperationsTable({
+  assetType,
+  initialPreset = 'all',
+  toolbarExtra,
+}: {
+  assetType?: string
+  initialPreset?: OperationFilterPreset
+  toolbarExtra?: React.ReactNode
+}) {
   const location = useLocation()
   const navigate = useNavigate()
   const parsedSearch = useMemo(() => operationParamsFromSearch(location.search), [location.search])
@@ -722,27 +832,32 @@ function OperationsTable({ assetType, initialPreset = 'all' }: { assetType?: str
 
   return (
     <>
-      <Space wrap className="mb-3">
-        {OPERATION_FILTER_PRESETS.map((item) => (
-          <Button key={item.key} type={preset === item.key ? 'primary' : 'default'} onClick={() => {
-            setPreset(item.key)
-            navigate({
-              pathname: location.pathname,
-              search: nextOperationSearch(item.key, {
-                connectionId: parsedSearch.query.connectionId,
-                vmId: parsedSearch.query.vmId,
-                taskKind: parsedSearch.query.taskKind,
-                search: parsedSearch.query.search,
-                statuses: parsedSearch.query.statuses,
-              }),
-            })
-          }}>
-            {item.label}
-          </Button>
-        ))}
-      </Space>
+      <div className={`kc-vrt-filterbar${toolbarExtra ? ' kc-vrt-filterbar--split' : ''}`}>
+        <div className="kc-vrt-filterbar-main">
+          <Segmented
+            size="small"
+            value={preset}
+            options={OPERATION_FILTER_PRESETS.map((item) => ({ label: item.label, value: item.key }))}
+            onChange={(value) => {
+              const nextPreset = value as OperationFilterPreset
+              setPreset(nextPreset)
+              navigate({
+                pathname: location.pathname,
+                search: nextOperationSearch(nextPreset, {
+                  connectionId: parsedSearch.query.connectionId,
+                  vmId: parsedSearch.query.vmId,
+                  taskKind: parsedSearch.query.taskKind,
+                  search: parsedSearch.query.search,
+                  statuses: parsedSearch.query.statuses,
+                }),
+              })
+            }}
+          />
+        </div>
+        {toolbarExtra ? <div className="kc-vrt-filterbar-extra">{toolbarExtra}</div> : null}
+      </div>
       {selectedTaskRowKeys.length > 0 ? (
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded border border-[var(--kc-border)] bg-[var(--kc-surface-muted)] p-3">
+        <div className="kc-vrt-selection-bar">
           <Text type="secondary">已选择 {selectedTaskRowKeys.length} 个任务</Text>
           <Space wrap>
             {canManageOperations ? <Button danger disabled={selectedTaskRowKeys.some((id) => !selectableOperationIds(filteredOperations, 'cancel').includes(String(id)))} onClick={() => {
@@ -773,6 +888,7 @@ function OperationsTable({ assetType, initialPreset = 'all' }: { assetType?: str
       ]} />
       <Table
         rowKey="id"
+        className="kc-admin-table kc-vrt-table"
         rowSelection={{
           selectedRowKeys: selectedTaskRowKeys,
           onChange: (keys) => setSelectedTaskRowKeys(keys),
@@ -858,14 +974,6 @@ export function VirtualizationOverviewPage() {
     queryKey: ['virtualization', 'overview'],
     queryFn: virtualizationApi.overview,
   })
-  const clustersQuery = useQuery({
-    queryKey: ['virtualization', 'clusters', 'overview'],
-    queryFn: virtualizationApi.clusters,
-  })
-  const operationsQuery = useQuery({
-    queryKey: ['virtualization', 'operations', 'overview'],
-    queryFn: () => virtualizationApi.operations(),
-  })
   const logsQuery = useQuery({
     queryKey: ['virtualization', 'operations', selectedOperation?.id, 'logs', 'overview'],
     queryFn: () => virtualizationApi.operationLogs(selectedOperation?.id ?? ''),
@@ -909,69 +1017,111 @@ export function VirtualizationOverviewPage() {
   const overview: VirtualizationOverview = overviewQuery.data?.data ?? {}
   const stats = overview.stats ?? {}
   const health = stats.connections
-  const clusters = clustersQuery.data?.data ?? []
-  const operations = operationsQuery.data?.data ?? []
+  const operations = overview.recentOperations ?? []
   const attention = overview.attention
   const connectionSummary = overview.connectionSummary
   const taskSummary = overview.taskSummary
+  const providerSummary = overview.providerSummary ?? []
   const abnormalClusters = useMemo(
-    () => (attention?.riskyConnections?.length ? attention.riskyConnections : [...clusters].filter((record) => riskReasons(record).length > 0).sort((left, right) => clusterRiskScore(left) - clusterRiskScore(right)).slice(0, 4)),
-    [attention?.riskyConnections, clusters],
+    () => [...(attention?.riskyConnections ?? [])].sort((left, right) => clusterRiskScore(left) - clusterRiskScore(right)).slice(0, 5),
+    [attention?.riskyConnections],
   )
   const failedSyncOperations = useMemo(
-    () => (attention?.failedSyncTasks?.length ? attention.failedSyncTasks : operations.filter((record) => isSyncOperation(record) && isAbnormalOperation(record.status)).slice(0, 5)),
-    [attention?.failedSyncTasks, operations],
+    () => attention?.failedSyncTasks ?? [],
+    [attention?.failedSyncTasks],
   )
   const failedOperations = useMemo(
-    () => (attention?.failedOperations?.length ? attention.failedOperations : operations.filter((record) => isAbnormalOperation(record.status)).slice(0, 5)),
-    [attention?.failedOperations, operations],
-  )
-  const pendingOperations = useMemo(
-    () => operations.filter((record) => isPendingOperation(record.status)).slice(0, 5),
-    [operations],
+    () => attention?.failedOperations ?? [],
+    [attention?.failedOperations],
   )
   const recentAbnormal = useMemo(
-    () => operations.filter((record) => isAbnormalOperation(record.status)).slice(0, 8),
-    [operations],
+    () => (failedOperations.length ? failedOperations : operations.filter((record) => isAbnormalOperation(record.status))).slice(0, 8),
+    [failedOperations, operations],
   )
   const logs = logsQuery.data?.data ?? []
-  const providerCounts = useMemo(() => {
-    const counts = new Map<string, number>()
-    for (const cluster of clusters) {
-      const key = cluster.provider || 'unknown'
-      counts.set(key, (counts.get(key) ?? 0) + 1)
-    }
-    return Array.from(counts.entries())
-  }, [clusters])
-  const operationStats = [
-    { key: 'credentialMissing', label: '凭证缺失', value: connectionSummary?.credentialMissing ?? clusters.filter((item) => item.credentialConfigured === false).length, tone: (connectionSummary?.credentialMissing ?? 0) > 0 ? 'warning' : 'default' },
-    { key: 'neverSynced', label: '从未同步', value: connectionSummary?.neverSynced ?? clusters.filter((item) => !item.lastSyncedAt).length, tone: (connectionSummary?.neverSynced ?? 0) > 0 ? 'warning' : 'default' },
-    { key: 'completed', label: '已完成任务', value: taskSummary?.completed ?? operations.filter((item) => item.status === 'completed').length },
-    { key: 'providers', label: 'Provider 数', value: providerCounts.length },
+  const totalConnections = connectionSummary?.total ?? health?.total ?? 0
+  const healthyConnections = connectionSummary?.healthy ?? health?.healthy ?? 0
+  const degradedConnections = connectionSummary?.degraded ?? health?.degraded ?? 0
+  const unavailableConnections = connectionSummary?.unavailable ?? health?.unavailable ?? 0
+  const unhealthyConnections = degradedConnections + unavailableConnections
+  const pendingTasks = stats.pendingTaskCount ?? ((taskSummary?.queued ?? 0) + (taskSummary?.running ?? 0))
+  const failedTaskTotal = stats.failedTaskCount ?? ((taskSummary?.failed ?? 0) + (taskSummary?.timeout ?? 0) || failedOperations.length)
+  const runningVmCount = stats.runningVmCount ?? 0
+  const vmCount = stats.vmCount ?? 0
+  const hasInventory = totalConnections > 0 || vmCount > 0 || providerSummary.length > 0
+  const lastSyncTone: OverviewTone = !overview.lastSyncTask
+    ? (hasInventory ? 'warning' : 'default')
+    : overview.lastSyncTask.status === 'completed'
+      ? 'success'
+      : isAbnormalOperation(overview.lastSyncTask.status)
+        ? 'danger'
+        : 'warning'
+  const overviewTone: OverviewTone = !hasInventory
+    ? 'default'
+    : unhealthyConnections > 0 || failedTaskTotal > 0
+      ? 'danger'
+      : pendingTasks > 0 || lastSyncTone === 'warning'
+        ? 'warning'
+        : 'success'
+  const overviewStatusLabel = overviewTone === 'danger'
+    ? '存在风险'
+    : overviewTone === 'warning'
+      ? '需要关注'
+      : overviewTone === 'success'
+        ? '运行正常'
+        : '待接入'
+  const providerRows = useMemo(
+    () => providerSummary.map((item) => {
+      const connections = item.connections ?? 0
+      const healthy = item.healthy ?? 0
+      const degraded = item.degraded ?? 0
+      const unavailable = item.unavailable ?? 0
+      const healthPercent = connections > 0 ? Math.round((healthy / connections) * 100) : 0
+      const tone: OverviewTone = unavailable > 0 ? 'danger' : degraded > 0 ? 'warning' : 'success'
+      return { ...item, connections, healthy, degraded, unavailable, healthPercent, tone }
+    }),
+    [providerSummary],
+  )
+  const operationStats: Array<{ key: string; label: string; value: number; tone?: OverviewTone }> = [
+    { key: 'credentialMissing', label: '凭证缺失', value: connectionSummary?.credentialMissing ?? 0, tone: (connectionSummary?.credentialMissing ?? 0) > 0 ? 'warning' : 'default' },
+    { key: 'neverSynced', label: '从未同步', value: connectionSummary?.neverSynced ?? 0, tone: (connectionSummary?.neverSynced ?? 0) > 0 ? 'warning' : 'default' },
+    { key: 'completed', label: '已完成任务', value: taskSummary?.completed ?? 0 },
+    { key: 'providers', label: 'Provider 数', value: providerSummary.length },
   ]
-  const heroStats = [
+  const heroStats: Array<{
+    key: string
+    label: string
+    value: React.ReactNode
+    helper: React.ReactNode
+    tone: OverviewTone
+    icon: React.ReactNode
+    action: () => void
+  }> = [
     {
       key: 'connections',
       label: '异常连接',
-      value: (connectionSummary?.degraded ?? health?.degraded ?? 0) + (connectionSummary?.unavailable ?? health?.unavailable ?? 0),
-      helper: `健康 ${connectionSummary?.healthy ?? health?.healthy ?? 0} / 总计 ${connectionSummary?.total ?? health?.total ?? 0}`,
-      tone: ((connectionSummary?.degraded ?? health?.degraded ?? 0) + (connectionSummary?.unavailable ?? health?.unavailable ?? 0)) > 0 ? 'danger' : 'default',
+      value: unhealthyConnections,
+      helper: `健康 ${healthyConnections} / 总计 ${totalConnections}`,
+      tone: unhealthyConnections > 0 ? 'danger' : totalConnections > 0 ? 'success' : 'default',
+      icon: unhealthyConnections > 0 ? <WarningOutlined /> : <CheckCircleOutlined />,
       action: () => navigate('/virtualization/clusters'),
     },
     {
       key: 'pending',
       label: '待处理任务',
-      value: stats.pendingTaskCount ?? ((taskSummary?.queued ?? 0) + (taskSummary?.running ?? 0) || pendingOperations.length),
-      helper: '正在运行或排队中的任务',
-      tone: (stats.pendingTaskCount ?? ((taskSummary?.queued ?? 0) + (taskSummary?.running ?? 0) || pendingOperations.length)) > 0 ? 'warning' : 'default',
+      value: pendingTasks,
+      helper: '排队与执行中任务',
+      tone: pendingTasks > 0 ? 'warning' : 'default',
+      icon: <CloudSyncOutlined />,
       action: () => navigate('/virtualization/operations?pending=true'),
     },
     {
       key: 'failed',
       label: '失败任务',
-      value: stats.failedTaskCount ?? ((taskSummary?.failed ?? 0) + (taskSummary?.timeout ?? 0) || failedOperations.length),
-      helper: '失败或超时任务需优先处理',
-      tone: (stats.failedTaskCount ?? ((taskSummary?.failed ?? 0) + (taskSummary?.timeout ?? 0) || failedOperations.length)) > 0 ? 'danger' : 'default',
+      value: failedTaskTotal,
+      helper: '失败与回调超时',
+      tone: failedTaskTotal > 0 ? 'danger' : 'default',
+      icon: failedTaskTotal > 0 ? <CloseCircleOutlined /> : <CheckCircleOutlined />,
       action: () => navigate('/virtualization/operations?abnormal=true'),
     },
     {
@@ -979,28 +1129,39 @@ export function VirtualizationOverviewPage() {
       label: '最近同步状态',
       value: overview.lastSyncTask?.status === 'completed' ? '正常' : overview.lastSyncTask?.status ? '异常' : '未同步',
       helper: overview.lastSyncTask ? `${operationKind(overview.lastSyncTask)} · ${formatDateTime(operationTime(overview.lastSyncTask))}` : '尚无同步记录',
-      tone: overview.lastSyncTask?.status === 'completed' ? 'default' : 'warning',
+      tone: lastSyncTone,
+      icon: <ReloadOutlined />,
       action: () => navigate('/virtualization/sync'),
     },
     {
       key: 'vm',
       label: '运行中 VM',
-      value: `${stats.runningVmCount ?? 0} / ${stats.vmCount ?? 0}`,
+      value: `${runningVmCount} / ${vmCount}`,
       helper: `停机 ${stats.stoppedVmCount ?? 0}`,
       tone: 'default',
+      icon: <PlayCircleOutlined />,
       action: () => navigate('/virtualization/vms'),
     },
   ]
 
   return (
-    <div className="space-y-4">
-      <PageHeader
-        title="总览"
-        description="优先聚焦异常连接、失败任务和同步风险的虚拟化运维总览。"
-        showResourceScope={false}
-        actions={
-          canSync ? (
-            <Space>
+    <div className="kc-page kc-virtualization-overview">
+      <section className={`kc-overview-hero kc-vrt-overview-hero is-${overviewTone}`}>
+        <div className="kc-overview-hero-header kc-vrt-overview-hero-header">
+          <div className="kc-vrt-commandbar-main">
+            <div className="kc-vrt-title-row">
+              <h1 className="kc-overview-title">虚拟化总览</h1>
+              <Badge status={badgeStatusForTone(overviewTone)} text={overviewStatusLabel} />
+            </div>
+            <div className="kc-vrt-commandbar-meta">
+              <span>连接 {healthyConnections}/{totalConnections}</span>
+              <span>Provider {providerSummary.length}</span>
+              <span>VM {runningVmCount}/{vmCount}</span>
+              <span>最近同步 {overview.lastSyncTask ? formatDateTime(operationTime(overview.lastSyncTask)) : '未同步'}</span>
+            </div>
+          </div>
+          {canSync ? (
+            <Space className="kc-vrt-commandbar-actions" wrap>
               <Link to="/virtualization/sync">
                 <Button icon={<CloudSyncOutlined />}>同步任务</Button>
               </Link>
@@ -1008,9 +1169,25 @@ export function VirtualizationOverviewPage() {
                 立即同步
               </Button>
             </Space>
-          ) : null
-        }
-      />
+          ) : null}
+        </div>
+        <div className="kc-overview-metric-grid kc-vrt-metric-grid" aria-label="虚拟化运行指标">
+          {heroStats.map((item) => (
+            <Card key={item.key} size="small" variant="outlined" className={`kc-overview-metric-card kc-vrt-metric-card is-${item.tone}`}>
+              <button type="button" className="kc-vrt-metric-card-button" onClick={item.action}>
+                <div className="kc-overview-metric-card-head">
+                  <div className="kc-overview-metric-copy">
+                    <Text className="kc-overview-metric-label">{item.label}</Text>
+                    <span className="kc-vrt-stat-value">{item.value}</span>
+                  </div>
+                  <span className="kc-overview-metric-icon">{item.icon}</span>
+                </div>
+                <Text className="kc-overview-metric-helper">{item.helper}</Text>
+              </button>
+            </Card>
+          ))}
+        </div>
+      </section>
       <TaskProgressBanner
         task={syncTask}
         status={syncStreamStatus}
@@ -1018,145 +1195,208 @@ export function VirtualizationOverviewPage() {
         onCancel={syncTask?.id ? () => cancelSyncMutation.mutate(syncTask.id) : undefined}
         cancelling={cancelSyncMutation.isPending}
       />
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-        {heroStats.map((item) => (
-          <Card key={item.key} size="small" hoverable onClick={item.action} className="cursor-pointer">
-            <Text type="secondary">{item.label}</Text>
-            <div className={`mt-2 text-2xl font-semibold ${item.tone === 'danger' ? 'text-red-500' : item.tone === 'warning' ? 'text-amber-500' : ''}`}>{item.value}</div>
-            <Text type="secondary">{item.helper}</Text>
-          </Card>
-        ))}
+
+      <div className="kc-vrt-workbench-grid">
+        <div className="kc-vrt-workbench-main">
+          <div className="kc-vrt-lane-grid">
+            <AttentionList
+              title="高风险连接"
+              description="不可用、降级、凭证缺失、未同步"
+              emptyText="暂无高风险连接"
+              tone={abnormalClusters.length > 0 ? 'danger' : 'default'}
+              action={<Button type="text" size="small" onClick={() => navigate('/virtualization/clusters')}>查看全部</Button>}
+              items={abnormalClusters.map((item) => ({
+                id: item.id,
+                title: item.name,
+                status: item.health || item.status,
+                message: riskReasons(item).join(' / '),
+              }))}
+              renderMeta={(item) => {
+                const cluster = abnormalClusters.find((record) => record.id === item.id)
+                return cluster ? `Provider: ${cluster.provider || '-'} · 最近同步: ${formatDateTime(cluster.lastSyncedAt)}` : null
+              }}
+              renderActions={(item) => {
+                const cluster = abnormalClusters.find((record) => record.id === item.id)
+                if (!cluster) return null
+                return (
+                  <>
+                    <Button size="small" onClick={() => setSelectedCluster(cluster)}>详情</Button>
+                    <Button size="small" onClick={() => navigate(buildInvestigationPath({ connectionId: cluster.id, provider: cluster.provider, clusterId: cluster.kubernetesClusterId, namespace: cluster.defaultNamespace, workload: cluster.name, timeRangeMinutes: 60 }))}>AI调查</Button>
+                    {canManageClusters ? <Button size="small" onClick={() => testMutation.mutate(cluster.id)} loading={testMutation.isPending}>测试</Button> : null}
+                    {canSync ? <Button size="small" onClick={() => syncClusterMutation.mutate(cluster.id)} loading={syncClusterMutation.isPending}>同步</Button> : null}
+                  </>
+                )
+              }}
+            />
+            <AttentionList
+              title="最近失败同步"
+              description="asset_sync 失败或超时"
+              emptyText="暂无失败同步"
+              tone={failedSyncOperations.length > 0 ? 'danger' : 'default'}
+              action={<Button type="text" size="small" onClick={() => navigate('/virtualization/sync')}>进入同步任务</Button>}
+              items={failedSyncOperations.map((item) => ({ id: item.id, title: item.targetName || item.connectionId || item.id, status: item.status, message: latestNonEmptyOperationMessage(item) }))}
+              renderMeta={(item) => {
+                const operation = failedSyncOperations.find((record) => record.id === item.id)
+                return operation ? `开始时间: ${formatDateTime(operationTime(operation))}` : null
+              }}
+              renderActions={(item) => {
+                const operation = failedSyncOperations.find((record) => record.id === item.id)
+                return operation ? (
+                  <>
+                    <Button size="small" onClick={() => setSelectedOperation(operation)}>日志</Button>
+                    <Button size="small" onClick={() => navigate(buildInvestigationPath({ connectionId: operation.connectionId, vmId: operation.vmId, workload: operation.targetName || operation.vmId || operation.connectionId, timeRangeMinutes: 60 }))}>AI调查</Button>
+                    {canManageOperations && hasAllowedAction(operation.allowedActions, 'retry') ? <Button size="small" onClick={() => retryMutation.mutate(operation.id)} loading={retryMutation.isPending}>重试</Button> : null}
+                  </>
+                ) : null
+              }}
+            />
+            <AttentionList
+              title="失败与超时任务"
+              description="生命周期任务失败或超时"
+              emptyText="暂无失败任务"
+              tone={failedOperations.length > 0 ? 'danger' : 'default'}
+              action={<Button type="text" size="small" onClick={() => navigate('/virtualization/operations')}>任务中心</Button>}
+              items={failedOperations.map((item) => ({ id: item.id, title: item.targetName || item.vmId || item.id, status: item.status, message: latestNonEmptyOperationMessage(item) }))}
+              renderMeta={(item) => {
+                const operation = failedOperations.find((record) => record.id === item.id)
+                return operation ? `类型: ${operationKind(operation)} · 连接: ${operation.connectionId || '-'}` : null
+              }}
+              renderActions={(item) => {
+                const operation = failedOperations.find((record) => record.id === item.id)
+                return operation ? (
+                  <>
+                    <Button size="small" onClick={() => setSelectedOperation(operation)}>日志</Button>
+                    <Button size="small" onClick={() => navigate(buildInvestigationPath({ connectionId: operation.connectionId, vmId: operation.vmId, workload: operation.targetName || operation.vmId || operation.connectionId, timeRangeMinutes: 60 }))}>AI调查</Button>
+                    {operation.vmId ? <Button size="small" onClick={() => navigate(`/virtualization/vms/${encodeURIComponent(operation.vmId || '')}?focus=operations`)}>VM</Button> : null}
+                  </>
+                ) : null
+              }}
+            />
+          </div>
+
+          <section className="kc-vrt-panel kc-vrt-table-panel">
+            <div className="kc-vrt-panel-head">
+              <div>
+                <div className="kc-vrt-panel-title">任务流水</div>
+                <div className="kc-vrt-panel-caption">最近操作与异常快照</div>
+              </div>
+              <Button type="text" size="small" onClick={() => navigate('/virtualization/operations')}>
+                查看全部
+              </Button>
+            </div>
+            <div className="kc-vrt-panel-body">
+              <Table
+                rowKey="id"
+                size="small"
+                pagination={false}
+                loading={overviewQuery.isLoading}
+                dataSource={operations.length > 0 ? operations.slice(0, 8) : recentAbnormal}
+                className="kc-admin-table kc-vrt-overview-table"
+                locale={{ emptyText: '暂无任务记录' }}
+                scroll={{ x: 920 }}
+                columns={[
+                  { title: '类型', render: (_value, record: VirtualizationOperation) => operationKind(record), width: 150 },
+                  { title: '资源', dataIndex: 'targetName', render: (value: string, record: VirtualizationOperation) => value || record.targetType || '-', width: 180 },
+                  { title: '连接', dataIndex: 'connectionId', render: (value: string) => value || '-', width: 180 },
+                  { title: '状态', dataIndex: 'status', render: statusTag, width: 120 },
+                  { title: '摘要', render: (_value, record: VirtualizationOperation) => latestNonEmptyOperationMessage(record), ellipsis: true },
+                  { title: '时间', render: (_value, record: VirtualizationOperation) => formatDateTime(operationTime(record)), width: 180 },
+                  { title: '操作', render: (_value, record: VirtualizationOperation) => <Button type="text" size="small" onClick={() => setSelectedOperation(record)}>日志</Button>, width: 100 },
+                ]}
+              />
+            </div>
+          </section>
+        </div>
+
+        <aside className="kc-vrt-side-stack">
+          <section className="kc-vrt-panel">
+            <div className="kc-vrt-panel-head">
+              <div>
+                <div className="kc-vrt-panel-title">连接健康态势</div>
+                <div className="kc-vrt-panel-caption">纳管连接状态</div>
+              </div>
+              <Button type="text" size="small" onClick={() => navigate('/virtualization/clusters')}>连接页</Button>
+            </div>
+            <div className="kc-vrt-panel-body">
+              <OperationStatusChips compact counts={[
+                { key: 'healthy', label: '健康连接', value: healthyConnections, tone: healthyConnections > 0 ? 'success' : 'default' },
+                { key: 'degraded', label: '降级连接', value: degradedConnections, tone: degradedConnections > 0 ? 'warning' : 'default' },
+                { key: 'unavailable', label: '不可用连接', value: unavailableConnections, tone: unavailableConnections > 0 ? 'danger' : 'default' },
+                { key: 'neverSynced', label: '未同步连接', value: connectionSummary?.neverSynced ?? 0, tone: (connectionSummary?.neverSynced ?? 0) > 0 ? 'warning' : 'default' },
+              ]} />
+            </div>
+          </section>
+
+          <section className="kc-vrt-panel">
+            <div className="kc-vrt-panel-head">
+              <div>
+                <div className="kc-vrt-panel-title">任务处置态势</div>
+                <div className="kc-vrt-panel-caption">队列、执行、失败</div>
+              </div>
+              <Button type="text" size="small" onClick={() => navigate('/virtualization/operations')}>任务中心</Button>
+            </div>
+            <div className="kc-vrt-panel-body">
+              <OperationStatusChips compact counts={[
+                { key: 'queued', label: '排队中', value: taskSummary?.queued ?? 0, tone: (taskSummary?.queued ?? 0) > 0 ? 'warning' : 'default' },
+                { key: 'running', label: '执行中', value: taskSummary?.running ?? 0, tone: (taskSummary?.running ?? 0) > 0 ? 'warning' : 'default' },
+                { key: 'failed', label: '失败/超时', value: (taskSummary?.failed ?? 0) + (taskSummary?.timeout ?? 0), tone: ((taskSummary?.failed ?? 0) + (taskSummary?.timeout ?? 0)) > 0 ? 'danger' : 'default' },
+                { key: 'sync', label: '最近同步任务', value: overview.lastSyncTask ? 1 : 0, tone: overview.lastSyncTask ? lastSyncTone : 'default' },
+              ]} />
+            </div>
+          </section>
+
+          <section className="kc-vrt-panel">
+            <div className="kc-vrt-panel-head">
+              <div>
+                <div className="kc-vrt-panel-title">Provider 分布</div>
+                <div className="kc-vrt-panel-caption">连接健康与 VM 覆盖</div>
+              </div>
+            </div>
+            <div className="kc-vrt-panel-body">
+              {providerRows.length > 0 ? (
+                <div className="kc-vrt-provider-list">
+                  {providerRows.map((item) => (
+                    <div key={item.provider} className={`kc-vrt-provider-row is-${item.tone}`}>
+                      <div className="kc-vrt-provider-row-head">
+                        <Text strong>{item.provider.toUpperCase()}</Text>
+                        <Text type="secondary">{item.runningVms ?? 0}/{item.vms ?? 0} VM</Text>
+                      </div>
+                      <Progress
+                        percent={item.healthPercent}
+                        showInfo={false}
+                        size="small"
+                        status={item.tone === 'danger' ? 'exception' : item.tone === 'success' ? 'success' : 'normal'}
+                        strokeColor={item.tone === 'warning' ? '#f97316' : undefined}
+                      />
+                      <div className="kc-vrt-provider-meta">
+                        <span>健康 {item.healthy}</span>
+                        <span>降级 {item.degraded}</span>
+                        <span>不可用 {item.unavailable}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="kc-vrt-empty">
+                  <Empty description="暂无 Provider 数据" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+                </div>
+              )}
+            </div>
+          </section>
+
+          <section className="kc-vrt-panel">
+            <div className="kc-vrt-panel-head">
+              <div>
+                <div className="kc-vrt-panel-title">运维统计摘要</div>
+                <div className="kc-vrt-panel-caption">凭证、同步、Provider</div>
+              </div>
+            </div>
+            <div className="kc-vrt-panel-body">
+              <OperationStatusChips compact counts={operationStats} />
+            </div>
+          </section>
+        </aside>
       </div>
-      <div className="grid gap-4 xl:grid-cols-3">
-        <AttentionList
-          title="高风险连接"
-          description="优先处理不可用、降级、未配置凭证或尚未同步的连接。"
-          emptyText="暂无高风险连接"
-          action={<Button type="link" onClick={() => navigate('/virtualization/clusters')}>查看全部</Button>}
-          items={abnormalClusters.map((item) => ({
-            id: item.id,
-            title: item.name,
-            status: item.health || item.status,
-            message: riskReasons(item).join(' / '),
-          }))}
-          renderMeta={(item) => {
-            const cluster = abnormalClusters.find((record) => record.id === item.id)
-            return cluster ? `Provider: ${cluster.provider || '-'} · 最近同步: ${formatDateTime(cluster.lastSyncedAt)}` : null
-          }}
-          renderActions={(item) => {
-            const cluster = abnormalClusters.find((record) => record.id === item.id)
-            if (!cluster) return null
-            return (
-              <>
-                <Button size="small" onClick={() => setSelectedCluster(cluster)}>详情</Button>
-                <Button size="small" onClick={() => navigate(buildInvestigationPath({ connectionId: cluster.id, provider: cluster.provider, clusterId: cluster.kubernetesClusterId, namespace: cluster.defaultNamespace, workload: cluster.name, timeRangeMinutes: 60 }))}>AI调查</Button>
-                {canManageClusters ? <Button size="small" onClick={() => testMutation.mutate(cluster.id)} loading={testMutation.isPending}>测试</Button> : null}
-                {canSync ? <Button size="small" onClick={() => syncClusterMutation.mutate(cluster.id)} loading={syncClusterMutation.isPending}>同步</Button> : null}
-              </>
-            )
-          }}
-        />
-        <AttentionList
-          title="最近失败同步"
-          description="快速定位失败或超时的资产同步任务。"
-          emptyText="暂无失败同步"
-          action={<Button type="link" onClick={() => navigate('/virtualization/sync')}>进入同步任务</Button>}
-          items={failedSyncOperations.map((item) => ({ id: item.id, title: item.targetName || item.connectionId || item.id, status: item.status, message: latestNonEmptyOperationMessage(item) }))}
-          renderMeta={(item) => {
-            const operation = failedSyncOperations.find((record) => record.id === item.id)
-            return operation ? `开始时间: ${formatDateTime(operationTime(operation))}` : null
-          }}
-          renderActions={(item) => {
-            const operation = failedSyncOperations.find((record) => record.id === item.id)
-            return operation ? (
-              <>
-                <Button size="small" onClick={() => setSelectedOperation(operation)}>日志</Button>
-                <Button size="small" onClick={() => navigate(buildInvestigationPath({ connectionId: operation.connectionId, vmId: operation.vmId, workload: operation.targetName || operation.vmId || operation.connectionId, timeRangeMinutes: 60 }))}>AI调查</Button>
-                {canManageOperations && hasAllowedAction(operation.allowedActions, 'retry') ? <Button size="small" onClick={() => retryMutation.mutate(operation.id)} loading={retryMutation.isPending}>重试</Button> : null}
-              </>
-            ) : null
-          }}
-        />
-        <AttentionList
-          title="失败与超时任务"
-          description="失败任务会影响生命周期动作与资源一致性。"
-          emptyText="暂无失败任务"
-          action={<Button type="link" onClick={() => navigate('/virtualization/operations')}>查看任务中心</Button>}
-          items={failedOperations.map((item) => ({ id: item.id, title: item.targetName || item.vmId || item.id, status: item.status, message: latestNonEmptyOperationMessage(item) }))}
-          renderMeta={(item) => {
-            const operation = failedOperations.find((record) => record.id === item.id)
-            return operation ? `类型: ${operationKind(operation)} · 连接: ${operation.connectionId || '-'}` : null
-          }}
-          renderActions={(item) => {
-            const operation = failedOperations.find((record) => record.id === item.id)
-            return operation ? (
-              <>
-                <Button size="small" onClick={() => setSelectedOperation(operation)}>日志</Button>
-                <Button size="small" onClick={() => navigate(buildInvestigationPath({ connectionId: operation.connectionId, vmId: operation.vmId, workload: operation.targetName || operation.vmId || operation.connectionId, timeRangeMinutes: 60 }))}>AI调查</Button>
-                {operation.vmId ? <Button size="small" onClick={() => navigate(`/virtualization/vms/${encodeURIComponent(operation.vmId || '')}?focus=operations`)}>VM</Button> : null}
-              </>
-            ) : null
-          }}
-        />
-      </div>
-      <div className="grid gap-4 xl:grid-cols-2">
-        <Card size="small" title="连接健康态势" extra={<Button type="link" onClick={() => navigate('/virtualization/clusters')}>连接页</Button>}>
-          <OperationStatusChips counts={[
-            { key: 'healthy', label: '健康连接', value: health?.healthy ?? 0 },
-            { key: 'degraded', label: '降级连接', value: health?.degraded ?? 0, tone: (health?.degraded ?? 0) > 0 ? 'warning' : 'default' },
-            { key: 'unavailable', label: '不可用连接', value: health?.unavailable ?? 0, tone: (health?.unavailable ?? 0) > 0 ? 'danger' : 'default' },
-            { key: 'neverSynced', label: '未同步连接', value: clusters.filter((item) => !item.lastSyncedAt).length, tone: clusters.some((item) => !item.lastSyncedAt) ? 'warning' : 'default' },
-          ]} />
-        </Card>
-        <Card size="small" title="任务处置态势" extra={<Button type="link" onClick={() => navigate('/virtualization/operations')}>任务中心</Button>}>
-          <OperationStatusChips counts={[
-            { key: 'queued', label: '排队中', value: operations.filter((item) => item.status === 'queued').length, tone: operations.some((item) => item.status === 'queued') ? 'warning' : 'default' },
-            { key: 'running', label: '执行中', value: operations.filter((item) => item.status === 'running').length, tone: operations.some((item) => item.status === 'running') ? 'warning' : 'default' },
-            { key: 'failed', label: '失败/超时', value: operations.filter((item) => isAbnormalOperation(item.status)).length, tone: operations.some((item) => isAbnormalOperation(item.status)) ? 'danger' : 'default' },
-            { key: 'sync', label: '同步任务', value: operations.filter((item) => isSyncOperation(item)).length },
-          ]} />
-        </Card>
-      </div>
-      <div className="grid gap-4 xl:grid-cols-2">
-        <Card size="small" title="Provider 分布">
-          <OperationStatusChips counts={providerCounts.map(([provider, value]) => ({ key: provider, label: provider.toUpperCase(), value }))} />
-        </Card>
-        <Card size="small" title="运维统计摘要">
-          <OperationStatusChips counts={operationStats} />
-        </Card>
-      </div>
-      <Card size="small" title="最近异常" extra={<Button type="link" onClick={() => navigate('/virtualization/operations')}>查看全部异常</Button>} loading={operationsQuery.isLoading}>
-        <Table
-          rowKey="id"
-          size="small"
-          pagination={false}
-          dataSource={recentAbnormal}
-          locale={{ emptyText: '暂无异常任务' }}
-          columns={[
-            { title: '类型', render: (_value, record: VirtualizationOperation) => operationKind(record), width: 150 },
-            { title: '资源', dataIndex: 'targetName', render: (value: string, record: VirtualizationOperation) => value || record.targetType || '-', width: 160 },
-            { title: '连接', dataIndex: 'connectionId', render: (value: string) => value || '-', width: 160 },
-            { title: '状态', dataIndex: 'status', render: statusTag, width: 120 },
-            { title: '摘要', render: (_value, record: VirtualizationOperation) => latestNonEmptyOperationMessage(record), ellipsis: true },
-            { title: '时间', render: (_value, record: VirtualizationOperation) => formatDateTime(operationTime(record)), width: 180 },
-            { title: '操作', render: (_value, record: VirtualizationOperation) => <Button size="small" onClick={() => setSelectedOperation(record)}>日志</Button>, width: 100 },
-          ]}
-        />
-      </Card>
-      <Card size="small" title="最近操作" loading={overviewQuery.isLoading}>
-        <Table
-          rowKey="id"
-          size="small"
-          pagination={false}
-          dataSource={overview.recentOperations ?? []}
-          columns={[
-            { title: '类型', render: (_value, record: VirtualizationOperation) => operationKind(record), width: 150 },
-            { title: '资源', dataIndex: 'targetName', render: (value: string, record: VirtualizationOperation) => value || record.targetType || '-' },
-            { title: '状态', dataIndex: 'status', render: statusTag, width: 120 },
-            { title: '时间', render: (_value, record: VirtualizationOperation) => formatDateTime(operationTime(record)), width: 180 },
-          ]}
-        />
-      </Card>
       <Drawer title="异常任务详情" size="large" open={Boolean(selectedOperation)} onClose={() => setSelectedOperation(null)}>
         <Descriptions size="small" column={1} bordered>
           <Descriptions.Item label="任务 ID">{selectedOperation?.id}</Descriptions.Item>
@@ -1302,13 +1542,7 @@ export function VirtualizationVmsPage() {
   ]
 
   return (
-    <div className="space-y-4">
-      <PageHeader
-        title="虚拟机"
-        description="API 驱动的虚拟机实例列表与生命周期入口"
-        showResourceScope={false}
-        actions={canManageVMs ? <Button type="primary" icon={<PlusOutlined />} onClick={() => setDrawerOpen(true)}>创建虚拟机</Button> : null}
-      />
+    <div className="kc-page kc-virtualization-page">
       <TaskProgressBanner
         task={streamedTask}
         status={streamStatus}
@@ -1316,54 +1550,67 @@ export function VirtualizationVmsPage() {
         onCancel={streamedTask?.id ? () => cancelCreateMutation.mutate(streamedTask.id) : undefined}
         cancelling={cancelCreateMutation.isPending}
       />
-      <Card size="small">
+      <Card size="small" variant="outlined" className="kc-vrt-list-card kc-vrt-table-card">
+        <VirtualizationTableHeader
+          title="虚拟机"
+        />
         <Form
           form={filterForm}
-          className="mb-3"
+          className="kc-vrt-filterbar kc-vrt-filterbar--split"
           layout="inline"
           onFinish={(values) => setFilters((current) => ({ ...current, ...values, page: 1 }))}
         >
-          <Form.Item name="search">
-            <Input allowClear prefix={<SearchOutlined />} placeholder="搜索名称、IP 或节点" />
-          </Form.Item>
-          <Form.Item name="provider">
-            <Select
-              allowClear
-              className="min-w-32"
-              placeholder="Provider"
-              options={[{ value: 'kubevirt', label: 'KubeVirt' }, { value: 'pve', label: 'PVE' }]}
-            />
-          </Form.Item>
-          <Form.Item name="connectionId">
-            <Select
-              allowClear
-              className="min-w-40"
-              placeholder="连接"
-              options={clusters.map((item) => ({ value: item.id, label: item.name }))}
-            />
-          </Form.Item>
-          <Form.Item name="status">
-            <Select
-              allowClear
-              className="min-w-32"
-              placeholder="状态"
-              options={['running', 'stopped', 'pending', 'failed'].map((item) => ({ value: item, label: item }))}
-            />
-          </Form.Item>
-          <Space>
-            <Button type="primary" htmlType="submit" icon={<SearchOutlined />}>筛选</Button>
-            <Button
-              onClick={() => {
-                filterForm.resetFields()
-                setFilters({ page: 1, pageSize: filters.pageSize ?? 10 })
-              }}
-            >
-              重置
-            </Button>
-          </Space>
+          <div className="kc-vrt-filterbar-main">
+            <Form.Item name="search">
+              <Input allowClear prefix={<SearchOutlined />} placeholder="搜索名称、IP 或节点" />
+            </Form.Item>
+            <Form.Item name="provider">
+              <Select
+                allowClear
+                className="min-w-32"
+                placeholder="Provider"
+                options={[{ value: 'kubevirt', label: 'KubeVirt' }, { value: 'pve', label: 'PVE' }]}
+              />
+            </Form.Item>
+            <Form.Item name="connectionId">
+              <Select
+                allowClear
+                className="min-w-40"
+                placeholder="连接"
+                options={clusters.map((item) => ({ value: item.id, label: item.name }))}
+              />
+            </Form.Item>
+            <Form.Item name="status">
+              <Select
+                allowClear
+                className="min-w-32"
+                placeholder="状态"
+                options={['running', 'stopped', 'pending', 'failed'].map((item) => ({ value: item, label: item }))}
+              />
+            </Form.Item>
+            <Space>
+              <Button type="primary" htmlType="submit" icon={<SearchOutlined />}>筛选</Button>
+              <Button
+                onClick={() => {
+                  filterForm.resetFields()
+                  setFilters({ page: 1, pageSize: filters.pageSize ?? 10 })
+                }}
+              >
+                重置
+              </Button>
+            </Space>
+          </div>
+          {canManageVMs ? (
+            <div className="kc-vrt-filterbar-extra">
+              <Button type="primary" icon={<PlusOutlined />} onClick={() => setDrawerOpen(true)}>
+                创建虚拟机
+              </Button>
+            </div>
+          ) : null}
         </Form>
         <Table
           rowKey="id"
+          className="kc-admin-table kc-vrt-table"
           size="small"
           loading={vmsQuery.isLoading}
           dataSource={vmPage.items}
@@ -1450,23 +1697,33 @@ export function VirtualizationVmsPage() {
             <Input disabled={createProvider === 'kubevirt'} placeholder={createProvider === 'kubevirt' ? '当前仅支持默认 Pod 网络' : undefined} />
           </Form.Item>
           {createProvider === 'pve' ? (
-            <div className="grid gap-3 md:grid-cols-3">
-              <Form.Item name="pveStorage" label="PVE 存储">
-                {pveStorageOptions.length > 0 ? <Select allowClear options={pveStorageOptions} /> : <Input placeholder="local-lvm" />}
-              </Form.Item>
-              <Form.Item name="pveBridge" label="PVE 网桥">
-                <Select allowClear options={pveBridgeOptions} placeholder="vmbr0" />
-              </Form.Item>
-              {createSourceMode === 'iso_install' ? (
-                <Form.Item name="pveIso" label="安装 ISO">
-                  <Input placeholder="local:iso/ubuntu.iso" />
+            <>
+              <div className="grid gap-3 md:grid-cols-3">
+                <Form.Item name="pveStorage" label="PVE 存储">
+                  {pveStorageOptions.length > 0 ? <Select allowClear options={pveStorageOptions} /> : <Input placeholder="local-lvm" />}
                 </Form.Item>
-              ) : (
-                <Form.Item label="模板模式">
-                  <Alert type="info" showIcon message="当前将按模板克隆模式创建 VM，启动镜像字段会作为模板来源。" />
+                <Form.Item name="pveBridge" label="PVE 网桥">
+                  <Select allowClear options={pveBridgeOptions} placeholder="vmbr0" />
                 </Form.Item>
-              )}
-            </div>
+                {createSourceMode === 'iso_install' ? (
+                  <Form.Item name="pveIso" label="安装 ISO">
+                    <Input placeholder="local:iso/ubuntu.iso" />
+                  </Form.Item>
+                ) : (
+                  <Form.Item label="模板模式">
+                    <Alert type="info" showIcon message="当前将按模板克隆模式创建 VM，启动镜像字段会作为模板来源。" />
+                  </Form.Item>
+                )}
+              </div>
+              <div className="grid gap-3 md:grid-cols-2">
+                <Form.Item name="pveCloudInitUser" label="PVE Cloud-Init 用户名">
+                  <Input placeholder="ubuntu" />
+                </Form.Item>
+                <Form.Item name="pveCloudInitSSHKeys" label="PVE Cloud-Init SSH Keys">
+                  <Input.TextArea rows={3} placeholder="ssh-rsa AAAA..." />
+                </Form.Item>
+              </div>
+            </>
           ) : (
             <div className="grid gap-3 md:grid-cols-2">
               <Form.Item name="kubevirtStorageClass" label="StorageClass">
@@ -1483,8 +1740,8 @@ export function VirtualizationVmsPage() {
               )}
             </div>
           )}
-          <Form.Item name="cloudInit" label="Cloud Init">
-            <Input.TextArea rows={5} />
+          <Form.Item name="cloudInit" label={createProvider === 'pve' ? 'KubeVirt 以外场景不建议使用原始 Cloud Init 文本' : 'Cloud Init userData'}>
+            <Input.TextArea rows={5} disabled={createProvider === 'pve'} placeholder={createProvider === 'pve' ? 'PVE 改用上方用户名 / SSH Keys 字段' : '#cloud-config'} />
           </Form.Item>
           <Form.Item name="startAfterCreate" label="创建后启动" valuePropName="checked">
             <Switch />
@@ -1543,15 +1800,16 @@ export function VirtualizationVmDetailPage() {
   })
 
   return (
-    <div className="space-y-4">
-      <PageHeader
+    <div className="kc-page kc-virtualization-page">
+      <VirtualizationPageHeader
         title={vm?.name ?? '虚拟机详情'}
-        description="规格、镜像、网络、Provider 原始视图和任务上下文"
-        showResourceScope={false}
+        tone={latestAbnormalOperation ? 'danger' : isRunning ? 'success' : 'default'}
+        status={vm?.powerState || vm?.status || (detailQuery.isLoading ? '加载中' : undefined)}
+        meta={[`Provider ${vm?.provider ?? '-'}`, `连接 ${vm?.connectionName || vm?.connectionId || '-'}`, `节点 ${vm?.node || '-'}`]}
         actions={<Link to="/virtualization/vms"><Button>返回列表</Button></Link>}
       />
       {!vm && !detailQuery.isLoading ? (
-        <Card size="small">
+        <Card size="small" className="kc-vrt-list-card">
           <Empty description="未找到虚拟机详情" />
         </Card>
       ) : null}
@@ -1564,7 +1822,7 @@ export function VirtualizationVmDetailPage() {
           action={<Space><Button size="small" onClick={() => setActiveTab('operations')}>查看任务历史</Button><Button size="small" onClick={() => navigate(buildInvestigationPath({ connectionId: vm?.connectionId, vmId: vm?.id, namespace: vm?.namespace, workload: vm?.name, timeRangeMinutes: 60 }))}>AI调查</Button></Space>}
         />
       ) : null}
-      <Card size="small" loading={detailQuery.isLoading}>
+      <Card size="small" className="kc-vrt-list-card" loading={detailQuery.isLoading}>
         <Descriptions size="small" column={{ xs: 1, md: 2, xl: 3 }} bordered>
           <Descriptions.Item label="ID">{vm?.id ?? '-'}</Descriptions.Item>
           <Descriptions.Item label="Provider">{vm?.provider ?? '-'}</Descriptions.Item>
@@ -1684,7 +1942,9 @@ export function VirtualizationVmDetailPage() {
             key: 'console',
             label: '控制台',
             children: isRunning ? (
-              <VMConsole vmId={vmId} />
+              <Suspense fallback={<Card size="small"><Spin tip="正在加载控制台..." /></Card>}>
+                <VMConsole vmId={vmId} />
+              </Suspense>
             ) : (
               <Card size="small">
                 <Empty description="VM 未运行，无法访问控制台" />
@@ -1790,7 +2050,6 @@ export function VirtualizationClustersPage() {
       .sort((left, right) => clusterRiskScore(left) - clusterRiskScore(right) || left.name.localeCompare(right.name))
   }, [clustersQuery.data?.data, enabledFilter, providerFilter, showNeverSynced, showOnlyAbnormal])
   const clusterOperations = clusterOperationsQuery.data?.data ?? []
-
   function operationsForConnection(connectionId?: string) {
     if (!connectionId) return []
     return clusterOperations.filter((item) => item.connectionId === connectionId)
@@ -1806,7 +2065,7 @@ export function VirtualizationClustersPage() {
 
   const columns: ColumnsType<VirtualizationCluster> = [
     { title: '名称', dataIndex: 'name', fixed: 'left', width: 180 },
-    { title: 'Provider', dataIndex: 'provider', render: (value) => value || '-', width: 120 },
+    { title: 'Provider', dataIndex: 'provider', render: providerLabel, width: 120 },
     { title: '接入目标', render: (_value, record) => record.provider === 'kubevirt' ? record.kubernetesClusterId || '-' : record.endpoint || '-', ellipsis: true },
     { title: '健康', dataIndex: 'health', render: (value, record) => statusTag(value || record.status), width: 120 },
     { title: '风险', render: (_value, record) => riskReasons(record).join(' / ') || '正常', width: 220 },
@@ -1845,29 +2104,36 @@ export function VirtualizationClustersPage() {
   ]
 
   return (
-    <div className="space-y-4">
-      <PageHeader title="虚拟化集群" description="优先聚焦异常连接、同步风险与连接测试结果。" showResourceScope={false} actions={canManageClusters ? <Button type="primary" icon={<PlusOutlined />} onClick={() => openEditor()}>新增连接</Button> : null} />
-      <Card size="small">
-        <div className="mb-3 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          <div>
-            <div className="mb-1 text-xs text-[var(--kc-text-secondary)]">异常过滤</div>
-            <Switch checked={showOnlyAbnormal} onChange={setShowOnlyAbnormal} checkedChildren="仅异常" unCheckedChildren="全部" />
+    <div className="kc-page kc-virtualization-page">
+      <Card size="small" variant="outlined" className="kc-vrt-list-card kc-vrt-table-card">
+        <VirtualizationTableHeader title="集群" />
+        <div className="kc-vrt-filterbar kc-vrt-filterbar--split">
+          <div className="kc-vrt-filterbar-main kc-vrt-filter-grid">
+            <div className="kc-vrt-filter-item">
+              <div className="kc-vrt-filter-label">异常过滤</div>
+              <Switch checked={showOnlyAbnormal} onChange={setShowOnlyAbnormal} checkedChildren="仅异常" unCheckedChildren="全部" />
+            </div>
+            <div className="kc-vrt-filter-item">
+              <div className="kc-vrt-filter-label">启用状态</div>
+              <Select value={enabledFilter} onChange={setEnabledFilter} options={[{ value: 'all', label: '全部' }, { value: 'enabled', label: '仅启用' }, { value: 'disabled', label: '仅禁用' }]} />
+            </div>
+            <div className="kc-vrt-filter-item">
+              <div className="kc-vrt-filter-label">Provider</div>
+              <Select value={providerFilter} onChange={setProviderFilter} options={[{ value: 'all', label: '全部' }, { value: 'kubevirt', label: 'KubeVirt' }, { value: 'pve', label: 'PVE' }]} />
+            </div>
+            <div className="kc-vrt-filter-item">
+              <div className="kc-vrt-filter-label">同步状态</div>
+              <Switch checked={showNeverSynced} onChange={setShowNeverSynced} checkedChildren="未同步" unCheckedChildren="全部" />
+            </div>
           </div>
-          <div>
-            <div className="mb-1 text-xs text-[var(--kc-text-secondary)]">启用状态</div>
-            <Select value={enabledFilter} onChange={setEnabledFilter} options={[{ value: 'all', label: '全部' }, { value: 'enabled', label: '仅启用' }, { value: 'disabled', label: '仅禁用' }]} />
-          </div>
-          <div>
-            <div className="mb-1 text-xs text-[var(--kc-text-secondary)]">Provider</div>
-            <Select value={providerFilter} onChange={setProviderFilter} options={[{ value: 'all', label: '全部' }, { value: 'kubevirt', label: 'KubeVirt' }, { value: 'pve', label: 'PVE' }]} />
-          </div>
-          <div>
-            <div className="mb-1 text-xs text-[var(--kc-text-secondary)]">同步状态</div>
-            <Switch checked={showNeverSynced} onChange={setShowNeverSynced} checkedChildren="未同步" unCheckedChildren="全部" />
-          </div>
+          {canManageClusters ? (
+            <div className="kc-vrt-filterbar-extra">
+              <Button type="primary" icon={<PlusOutlined />} onClick={() => openEditor()}>新增连接</Button>
+            </div>
+          ) : null}
         </div>
         {selectedClusterRowKeys.length > 0 ? (
-          <div className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded border border-[var(--kc-border)] bg-[var(--kc-surface-muted)] p-3">
+          <div className="kc-vrt-selection-bar">
             <Text type="secondary">已选择 {selectedClusterRowKeys.length} 个连接</Text>
             <Space wrap>
               {canManageClusters ? <Button onClick={() => {
@@ -1892,6 +2158,7 @@ export function VirtualizationClustersPage() {
         ) : null}
         <Table
           rowKey="id"
+          className="kc-admin-table kc-vrt-table"
           rowSelection={{
             selectedRowKeys: selectedClusterRowKeys,
             onChange: (keys) => setSelectedClusterRowKeys(keys),
@@ -2075,7 +2342,7 @@ export function VirtualizationImagesPage() {
   }
   const columns: ColumnsType<VirtualizationImage> = [
     { title: '名称', dataIndex: 'name', fixed: 'left', width: 180 },
-    { title: 'Provider', dataIndex: 'provider', render: (value) => value || '-' },
+    { title: 'Provider', dataIndex: 'provider', render: providerLabel },
     { title: '连接', dataIndex: 'connectionName', render: (value, record) => value || record.connectionId || '-' },
     { title: '命名空间', dataIndex: 'namespace', render: (value) => value || '-' },
     { title: '来源', render: (_value, record) => record.assetKind || record.sourceKind || record.source || '-' },
@@ -2101,43 +2368,46 @@ export function VirtualizationImagesPage() {
     },
   ]
   return (
-    <div className="space-y-4">
-      <PageHeader
-        title="镜像与模板"
-        description="管理 KubeVirt DataSource/PVC 与 PVE template/ISO 镜像入口"
-        showResourceScope={false}
-        actions={canManageImages ? <Button type="primary" icon={<PlusOutlined />} onClick={() => openImageEditor()}>新增镜像入口</Button> : null}
-      />
-      <Card size="small">
+    <div className="kc-page kc-virtualization-page">
+      <Card size="small" variant="outlined" className="kc-vrt-list-card kc-vrt-table-card">
+        <VirtualizationTableHeader title="镜像" />
         <Form
           form={filterForm}
-          className="mb-3"
+          className="kc-vrt-filterbar kc-vrt-filterbar--split"
           layout="inline"
           onFinish={(values) => setFilters((current) => ({ ...current, ...values, page: 1 }))}
         >
-          <Form.Item name="search">
-            <Input allowClear prefix={<SearchOutlined />} placeholder="搜索镜像、模板或 ISO" />
-          </Form.Item>
-          <Form.Item name="provider">
-            <Select allowClear className="min-w-32" placeholder="Provider" options={[{ value: 'kubevirt', label: 'KubeVirt' }, { value: 'pve', label: 'PVE' }]} />
-          </Form.Item>
-          <Form.Item name="connectionId">
-            <Select allowClear className="min-w-40" placeholder="连接" options={clusters.map((item) => ({ value: item.id, label: item.name }))} />
-          </Form.Item>
-          <Space>
-            <Button type="primary" htmlType="submit" icon={<SearchOutlined />}>筛选</Button>
-            <Button
-              onClick={() => {
-                filterForm.resetFields()
-                setFilters({ page: 1, pageSize: filters.pageSize ?? 10 })
-              }}
-            >
-              重置
-            </Button>
-          </Space>
+          <div className="kc-vrt-filterbar-main">
+            <Form.Item name="search">
+              <Input allowClear prefix={<SearchOutlined />} placeholder="搜索镜像、模板或 ISO" />
+            </Form.Item>
+            <Form.Item name="provider">
+              <Select allowClear className="min-w-32" placeholder="Provider" options={[{ value: 'kubevirt', label: 'KubeVirt' }, { value: 'pve', label: 'PVE' }]} />
+            </Form.Item>
+            <Form.Item name="connectionId">
+              <Select allowClear className="min-w-40" placeholder="连接" options={clusters.map((item) => ({ value: item.id, label: item.name }))} />
+            </Form.Item>
+            <Space>
+              <Button type="primary" htmlType="submit" icon={<SearchOutlined />}>筛选</Button>
+              <Button
+                onClick={() => {
+                  filterForm.resetFields()
+                  setFilters({ page: 1, pageSize: filters.pageSize ?? 10 })
+                }}
+              >
+                重置
+              </Button>
+            </Space>
+          </div>
+          {canManageImages ? (
+            <div className="kc-vrt-filterbar-extra">
+              <Button type="primary" icon={<PlusOutlined />} onClick={() => openImageEditor()}>新增镜像入口</Button>
+            </div>
+          ) : null}
         </Form>
         <Table
           rowKey="id"
+          className="kc-admin-table kc-vrt-table"
           size="small"
           loading={imagesQuery.isLoading}
           dataSource={imagesPage.items}
@@ -2217,6 +2487,7 @@ export function VirtualizationFlavorsPage() {
   const queryClient = useQueryClient()
   const { message } = App.useApp()
   const flavorsQuery = useQuery({ queryKey: ['virtualization', 'flavors'], queryFn: virtualizationApi.flavors })
+  const flavors = flavorsQuery.data?.data ?? []
   const saveMutation = useMutation({
     mutationFn: (values: VirtualizationFlavorInput) => editing ? virtualizationApi.updateFlavor(editing.id, values) : virtualizationApi.createFlavor(values),
     onSuccess: () => {
@@ -2260,10 +2531,18 @@ export function VirtualizationFlavorsPage() {
     },
   ]
   return (
-    <div className="space-y-4">
-      <PageHeader title="规格" description="虚拟机标准规格管理" showResourceScope={false} actions={canManageFlavors ? <Button type="primary" icon={<PlusOutlined />} onClick={() => openEditor()}>新增规格</Button> : null} />
-      <Card size="small">
-        <Table rowKey="id" size="small" loading={flavorsQuery.isLoading} dataSource={flavorsQuery.data?.data ?? []} columns={columns} scroll={{ x: 900 }} />
+    <div className="kc-page kc-virtualization-page">
+      <Card size="small" variant="outlined" className="kc-vrt-list-card kc-vrt-table-card">
+        <VirtualizationTableHeader title="规格" />
+        {canManageFlavors ? (
+          <div className="kc-vrt-filterbar kc-vrt-filterbar--split">
+            <div className="kc-vrt-filterbar-main" />
+            <div className="kc-vrt-filterbar-extra">
+              <Button type="primary" icon={<PlusOutlined />} onClick={() => openEditor()}>新增规格</Button>
+            </div>
+          </div>
+        ) : null}
+        <Table rowKey="id" className="kc-admin-table kc-vrt-table" size="small" loading={flavorsQuery.isLoading} dataSource={flavors} columns={columns} scroll={{ x: 900 }} />
       </Card>
       <Drawer title={editing ? '编辑规格' : '新增规格'} size="large" open={drawerOpen} onClose={() => setDrawerOpen(false)}>
         <Form form={form} layout="vertical" initialValues={{ cpu: 2, memoryMiB: 4096, diskGiB: 40, enabled: true }} onFinish={(values) => saveMutation.mutate(values)}>
@@ -2299,11 +2578,12 @@ export function VirtualizationFlavorsPage() {
 
 export function VirtualizationOperationsPage() {
   const location = useLocation()
+  const preset = operationPresetFromSearch(location.search)
   return (
-    <div className="space-y-4">
-      <PageHeader title="操作记录" description="虚拟化任务与操作日志" showResourceScope={false} />
-      <Card size="small">
-        <OperationsTable initialPreset={operationPresetFromSearch(location.search)} />
+    <div className="kc-page kc-virtualization-page">
+      <Card size="small" variant="outlined" className="kc-vrt-list-card kc-vrt-table-card">
+        <VirtualizationTableHeader title="操作记录" />
+        <OperationsTable initialPreset={preset} />
       </Card>
     </div>
   )
@@ -2326,11 +2606,11 @@ export function VirtualizationSyncPage() {
     </Button>
   ) : null, [canSync, syncMutation])
   return (
-    <div className="space-y-4">
-      <PageHeader title="同步任务" description="虚拟化资产同步任务与日志" showResourceScope={false} actions={headerActions} />
-      <Card size="small">
-        <Paragraph type="secondary">仅展示 asset_sync 类型任务。</Paragraph>
-        <OperationsTable assetType="asset_sync" />
+    <div className="kc-page kc-virtualization-page">
+      <Card size="small" variant="outlined" className="kc-vrt-list-card kc-vrt-table-card">
+        <VirtualizationTableHeader title="同步任务" />
+        <div className="kc-vrt-panel-note">仅展示 asset_sync 类型任务</div>
+        <OperationsTable assetType="asset_sync" toolbarExtra={headerActions} />
       </Card>
     </div>
   )

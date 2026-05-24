@@ -147,12 +147,27 @@ func (r *Repository) UpsertVM(ctx context.Context, item domainvirtualization.VM)
 			status = EXCLUDED.status,
 			power_state = EXCLUDED.power_state,
 			node_name = EXCLUDED.node_name,
-			image_id = EXCLUDED.image_id,
-			flavor_id = EXCLUDED.flavor_id,
+			image_id = COALESCE(EXCLUDED.image_id, virtualization_vms.image_id),
+			flavor_id = COALESCE(EXCLUDED.flavor_id, virtualization_vms.flavor_id),
 			ip_addresses = EXCLUDED.ip_addresses,
-			labels = EXCLUDED.labels,
-			config = EXCLUDED.config,
-			raw = EXCLUDED.raw,
+			labels = CASE
+				WHEN jsonb_typeof(EXCLUDED.labels) <> 'object' OR EXCLUDED.labels = '{}'::jsonb THEN
+					CASE WHEN jsonb_typeof(virtualization_vms.labels) = 'object' THEN virtualization_vms.labels ELSE '{}'::jsonb END
+				WHEN jsonb_typeof(virtualization_vms.labels) = 'object' THEN virtualization_vms.labels || EXCLUDED.labels
+				ELSE EXCLUDED.labels
+			END,
+			config = CASE
+				WHEN jsonb_typeof(EXCLUDED.config) <> 'object' OR EXCLUDED.config = '{}'::jsonb THEN
+					CASE WHEN jsonb_typeof(virtualization_vms.config) = 'object' THEN virtualization_vms.config ELSE '{}'::jsonb END
+				WHEN jsonb_typeof(virtualization_vms.config) = 'object' THEN virtualization_vms.config || EXCLUDED.config
+				ELSE EXCLUDED.config
+			END,
+			raw = CASE
+				WHEN jsonb_typeof(EXCLUDED.raw) <> 'object' OR EXCLUDED.raw = '{}'::jsonb THEN
+					CASE WHEN jsonb_typeof(virtualization_vms.raw) = 'object' THEN virtualization_vms.raw ELSE '{}'::jsonb END
+				WHEN jsonb_typeof(virtualization_vms.raw) = 'object' THEN virtualization_vms.raw || EXCLUDED.raw
+				ELSE EXCLUDED.raw
+			END,
 			last_seen_at = EXCLUDED.last_seen_at,
 			updated_at = EXCLUDED.updated_at
 	`, item.ID, item.Provider, item.ConnectionID, item.ExternalID, item.Name, nullableString(item.Namespace), item.Status, nullableString(item.PowerState), nullableString(item.NodeName), nullableString(item.ImageID), nullableString(item.FlavorID), string(ipAddresses), string(labels), string(config), string(raw), item.LastSeenAt, item.CreatedAt, item.UpdatedAt).Error; err != nil {

@@ -394,6 +394,35 @@ const VirtualizationSyncPage = lazyNamed(
   "VirtualizationSyncPage",
 );
 
+const DockerOverviewPage = lazyNamed(
+  () => import("@/features/docker/docker-pages"),
+  "DockerOverviewPage",
+);
+const DockerHostsPage = lazyNamed(
+  () => import("@/features/docker/docker-pages"),
+  "DockerHostsPage",
+);
+const DockerProjectsPage = lazyNamed(
+  () => import("@/features/docker/docker-pages"),
+  "DockerProjectsPage",
+);
+const DockerServicesPage = lazyNamed(
+  () => import("@/features/docker/docker-pages"),
+  "DockerServicesPage",
+);
+const DockerPortsPage = lazyNamed(
+  () => import("@/features/docker/docker-pages"),
+  "DockerPortsPage",
+);
+const DockerTemplatesPage = lazyNamed(
+  () => import("@/features/docker/docker-pages"),
+  "DockerTemplatesPage",
+);
+const DockerOperationsPage = lazyNamed(
+  () => import("@/features/docker/docker-pages"),
+  "DockerOperationsPage",
+);
+
 const MonitoringPage = lazyNamed(
   () => import("@/features/observability/monitoring-pages"),
   "MonitoringPage",
@@ -1309,6 +1338,67 @@ export function AppRouter() {
             element={
               <LazyPage>
                 <VirtualizationSyncPage />
+              </LazyPage>
+            }
+          />
+
+          <Route
+            path="/docker"
+            element={<Navigate to="/docker/overview" replace />}
+          />
+          <Route
+            path="/docker/overview"
+            element={
+              <LazyPage>
+                <DockerOverviewPage />
+              </LazyPage>
+            }
+          />
+          <Route
+            path="/docker/hosts"
+            element={
+              <LazyPage>
+                <DockerHostsPage />
+              </LazyPage>
+            }
+          />
+          <Route
+            path="/docker/projects"
+            element={
+              <LazyPage>
+                <DockerProjectsPage />
+              </LazyPage>
+            }
+          />
+          <Route
+            path="/docker/services"
+            element={
+              <LazyPage>
+                <DockerServicesPage />
+              </LazyPage>
+            }
+          />
+          <Route
+            path="/docker/ports"
+            element={
+              <LazyPage>
+                <DockerPortsPage />
+              </LazyPage>
+            }
+          />
+          <Route
+            path="/docker/templates"
+            element={
+              <LazyPage>
+                <DockerTemplatesPage />
+              </LazyPage>
+            }
+          />
+          <Route
+            path="/docker/operations"
+            element={
+              <LazyPage>
+                <DockerOperationsPage />
               </LazyPage>
             }
           />

@@ -34,14 +34,37 @@ type ExecutionTask struct {
 	Payload                  map[string]any `json:"payload"`
 }
 
+type DockerOperation struct {
+	ID                string         `json:"id"`
+	HostID            string         `json:"hostId,omitempty"`
+	ProjectID         string         `json:"projectId,omitempty"`
+	ServiceID         string         `json:"serviceId,omitempty"`
+	OperationKind     string         `json:"operationKind"`
+	Status            string         `json:"status"`
+	ClaimedByWorkerID string         `json:"claimedByWorkerId,omitempty"`
+	Payload           map[string]any `json:"payload"`
+	TimeoutSeconds    int            `json:"timeoutSeconds"`
+}
+
 type claimRequest struct {
 	AgentID         string   `json:"agentId"`
 	ProviderKinds   []string `json:"providerKinds"`
 	RuntimeEndpoint string   `json:"runtimeEndpoint"`
 }
 
+type dockerClaimRequest struct {
+	WorkerID       string   `json:"workerId"`
+	AgentID        string   `json:"agentId"`
+	HostIDs        []string `json:"hostIds,omitempty"`
+	OperationKinds []string `json:"operationKinds,omitempty"`
+}
+
 type claimResponse struct {
 	Data ExecutionTask `json:"data"`
+}
+
+type dockerClaimResponse struct {
+	Data DockerOperation `json:"data"`
 }
 
 type callbackRequest struct {
@@ -50,8 +73,20 @@ type callbackRequest struct {
 	Payload       map[string]any `json:"payload"`
 }
 
+type dockerCallbackRequest struct {
+	OperationID string         `json:"operationId"`
+	WorkerID    string         `json:"workerId"`
+	Status      string         `json:"status"`
+	Payload     map[string]any `json:"payload"`
+	Logs        []string       `json:"logs"`
+}
+
 type callbackResponse struct {
 	Data ExecutionTask `json:"data"`
+}
+
+type dockerCallbackResponse struct {
+	Data DockerOperation `json:"data"`
 }
 
 type workspaceSpec struct {
@@ -119,6 +154,9 @@ func (r *Runner) Start(ctx context.Context) {
 		return
 	}
 	go r.loop(ctx)
+	if r.cfg.Docker.Enabled {
+		go r.dockerLoop(ctx)
+	}
 }
 
 func (r *Runner) loop(ctx context.Context) {
@@ -135,6 +173,31 @@ func (r *Runner) loop(ctx context.Context) {
 				continue
 			}
 			r.execute(ctx, task)
+		}
+	}
+}
+
+func (r *Runner) dockerLoop(ctx context.Context) {
+	interval := r.cfg.Docker.PollInterval
+	if interval <= 0 {
+		interval = r.cfg.PollInterval
+	}
+	if interval <= 0 {
+		interval = 5 * time.Second
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			operation, ok := r.claimDockerOperation(ctx)
+			if !ok {
+				continue
+			}
+			r.executeDockerOperation(ctx, operation)
 		}
 	}
 }
@@ -165,6 +228,38 @@ func (r *Runner) claim(ctx context.Context) (ExecutionTask, bool) {
 	}
 	if strings.TrimSpace(payload.Data.ID) == "" {
 		return ExecutionTask{}, false
+	}
+	return payload.Data, true
+}
+
+func (r *Runner) claimDockerOperation(ctx context.Context) (DockerOperation, bool) {
+	workerID := dockerWorkerID(r.cfg)
+	body, _ := json.Marshal(dockerClaimRequest{
+		WorkerID:       workerID,
+		AgentID:        firstNonEmpty(strings.TrimSpace(r.cfg.AgentID), "local-agent"),
+		HostIDs:        r.cfg.Docker.HostIDs,
+		OperationKinds: r.cfg.Docker.OperationKinds,
+	})
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(r.cfg.BaseURL, "/")+"/api/v1/docker/operations/claim", bytes.NewReader(body))
+	if err != nil {
+		return DockerOperation{}, false
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+r.cfg.BearerToken)
+	resp, err := r.httpClient.Do(req)
+	if err != nil {
+		return DockerOperation{}, false
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		return DockerOperation{}, false
+	}
+	var payload dockerClaimResponse
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return DockerOperation{}, false
+	}
+	if strings.TrimSpace(payload.Data.ID) == "" {
+		return DockerOperation{}, false
 	}
 	return payload.Data, true
 }
@@ -334,6 +429,189 @@ func (r *Runner) execute(ctx context.Context, task ExecutionTask) {
 	r.callback(taskCtx, task, "completed", payload)
 }
 
+func (r *Runner) executeDockerOperation(ctx context.Context, operation DockerOperation) {
+	workerID := dockerWorkerID(r.cfg)
+	logs := []string{fmt.Sprintf("docker operation %s started: %s", operation.ID, operation.OperationKind)}
+	r.dockerCallback(ctx, operation, "running", map[string]any{
+		"agentId":        firstNonEmpty(strings.TrimSpace(r.cfg.AgentID), "local-agent"),
+		"workerId":       workerID,
+		"heartbeatAt":    time.Now().UTC().Format(time.RFC3339),
+		"dockerVersion":  commandVersion(ctx, "docker", "--version"),
+		"composeVersion": dockerComposeVersion(ctx),
+	}, logs)
+
+	var err error
+	var commandLogs []string
+	switch operation.OperationKind {
+	case "container_start", "project_deploy":
+		commandLogs, err = r.executeComposeAction(ctx, operation)
+	case "service_action":
+		commandLogs, err = r.executeComposeServiceAction(ctx, operation)
+	case "port_reserve":
+		commandLogs = []string{"port mapping reserved in control plane; no local Docker command required"}
+	case "host_sync":
+		commandLogs = []string{"host runtime heartbeat reported by docker runner"}
+	default:
+		err = fmt.Errorf("unsupported docker operation kind %q", operation.OperationKind)
+	}
+	logs = append(logs, commandLogs...)
+	if err != nil {
+		r.dockerCallback(ctx, operation, "failed", map[string]any{
+			"agentId":  firstNonEmpty(strings.TrimSpace(r.cfg.AgentID), "local-agent"),
+			"workerId": workerID,
+			"error":    err.Error(),
+		}, append(logs, "docker operation failed: "+err.Error()))
+		return
+	}
+
+	payload := map[string]any{
+		"agentId":        firstNonEmpty(strings.TrimSpace(r.cfg.AgentID), "local-agent"),
+		"workerId":       workerID,
+		"completedAt":    time.Now().UTC().Format(time.RFC3339),
+		"dockerVersion":  commandVersion(ctx, "docker", "--version"),
+		"composeVersion": dockerComposeVersion(ctx),
+	}
+	if operation.ProjectID != "" {
+		services, serviceErr := r.collectComposeServices(ctx, operation)
+		if serviceErr == nil && len(services) > 0 {
+			payload["services"] = services
+		}
+	}
+	r.dockerCallback(ctx, operation, "completed", payload, logs)
+}
+
+func (r *Runner) executeComposeAction(ctx context.Context, operation DockerOperation) ([]string, error) {
+	action := firstNonEmpty(strings.TrimSpace(fmt.Sprint(operation.Payload["action"])), "deploy")
+	dir, logs, err := r.prepareComposeWorkspace(operation)
+	if err != nil {
+		return logs, err
+	}
+	args := composeArgsForAction(action)
+	if len(args) == 0 {
+		return logs, fmt.Errorf("unsupported compose action %q", action)
+	}
+	commandLogs, err := runCommand(ctx, dir, "docker", args...)
+	logs = append(logs, commandLogs...)
+	return logs, err
+}
+
+func (r *Runner) executeComposeServiceAction(ctx context.Context, operation DockerOperation) ([]string, error) {
+	action := strings.TrimSpace(fmt.Sprint(operation.Payload["action"]))
+	serviceName := strings.TrimSpace(fmt.Sprint(operation.Payload["serviceName"]))
+	if serviceName == "" {
+		return nil, fmt.Errorf("serviceName is required for docker service action")
+	}
+	dir, logs, err := r.prepareComposeWorkspace(operation)
+	if err != nil {
+		return logs, err
+	}
+	args := composeServiceArgsForAction(action, serviceName)
+	if len(args) == 0 {
+		return logs, fmt.Errorf("unsupported docker service action %q", action)
+	}
+	commandLogs, err := runCommand(ctx, dir, "docker", args...)
+	logs = append(logs, commandLogs...)
+	return logs, err
+}
+
+func (r *Runner) prepareComposeWorkspace(operation DockerOperation) (string, []string, error) {
+	root := strings.TrimSpace(r.cfg.Docker.ComposeRoot)
+	if root == "" {
+		root = ".kubecrux/docker"
+	}
+	absRoot, err := filepath.Abs(root)
+	if err != nil {
+		return "", nil, fmt.Errorf("resolve docker compose root: %w", err)
+	}
+	slug := firstNonEmpty(strings.TrimSpace(fmt.Sprint(operation.Payload["projectSlug"])), operation.ProjectID, operation.ID)
+	dir, err := resolveWorkspacePath(absRoot, slug)
+	if err != nil {
+		return "", nil, err
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return dir, nil, fmt.Errorf("create docker compose workspace: %w", err)
+	}
+	composeContent := strings.TrimSpace(fmt.Sprint(operation.Payload["composeContent"]))
+	if composeContent == "" {
+		return dir, nil, fmt.Errorf("composeContent is required")
+	}
+	if err := os.WriteFile(filepath.Join(dir, "compose.yaml"), []byte(composeContent+"\n"), 0o600); err != nil {
+		return dir, nil, fmt.Errorf("write compose.yaml: %w", err)
+	}
+	envContent := strings.TrimSpace(fmt.Sprint(operation.Payload["envContent"]))
+	envPath := filepath.Join(dir, ".env")
+	if envContent != "" {
+		if err := os.WriteFile(envPath, []byte(envContent+"\n"), 0o600); err != nil {
+			return dir, nil, fmt.Errorf("write .env: %w", err)
+		}
+	} else if err := os.Remove(envPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return dir, nil, fmt.Errorf("remove stale .env: %w", err)
+	}
+	return dir, []string{fmt.Sprintf("compose workspace prepared at %s", dir)}, nil
+}
+
+func composeArgsForAction(action string) []string {
+	base := []string{"compose", "-f", "compose.yaml"}
+	switch strings.TrimSpace(action) {
+	case "", "deploy", "redeploy", "start":
+		return append(base, "up", "-d")
+	case "restart":
+		return append(base, "restart")
+	case "stop":
+		return append(base, "stop")
+	case "down", "destroy":
+		return append(base, "down", "--remove-orphans")
+	case "pull":
+		return append(base, "pull")
+	case "build":
+		return append(base, "build")
+	default:
+		return nil
+	}
+}
+
+func composeServiceArgsForAction(action, serviceName string) []string {
+	base := []string{"compose", "-f", "compose.yaml"}
+	switch strings.TrimSpace(action) {
+	case "start":
+		return append(base, "up", "-d", serviceName)
+	case "restart":
+		return append(base, "restart", serviceName)
+	case "stop":
+		return append(base, "stop", serviceName)
+	case "logs":
+		return append(base, "logs", "--tail", "200", serviceName)
+	default:
+		return nil
+	}
+}
+
+func (r *Runner) collectComposeServices(ctx context.Context, operation DockerOperation) ([]map[string]any, error) {
+	dir, _, err := r.prepareComposeWorkspace(operation)
+	if err != nil {
+		return nil, err
+	}
+	commandLogs, err := runCommand(ctx, dir, "docker", "compose", "-f", "compose.yaml", "ps", "--format", "json")
+	if err != nil {
+		return nil, err
+	}
+	services := make([]map[string]any, 0)
+	for _, line := range commandLogs {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "$ ") {
+			continue
+		}
+		for _, item := range strings.Split(trimmed, "\n") {
+			raw := strings.TrimSpace(item)
+			if raw == "" {
+				continue
+			}
+			services = append(services, dockerServiceRecordsFromJSON(raw)...)
+		}
+	}
+	return services, nil
+}
+
 func (r *Runner) streamHeartbeats(ctx context.Context, cancel context.CancelFunc, done <-chan struct{}, stopReason chan<- string, task ExecutionTask, agentID, command string, commandIndex, commandCount int, workspacePath string) {
 	ticker := time.NewTicker(commandHeartbeatInterval)
 	defer ticker.Stop()
@@ -453,6 +731,38 @@ func (r *Runner) callback(ctx context.Context, task ExecutionTask, status string
 	}
 	if strings.TrimSpace(result.Data.ID) == "" {
 		return ExecutionTask{}, false
+	}
+	return result.Data, true
+}
+
+func (r *Runner) dockerCallback(ctx context.Context, operation DockerOperation, status string, payload map[string]any, logs []string) (DockerOperation, bool) {
+	body, _ := json.Marshal(dockerCallbackRequest{
+		OperationID: operation.ID,
+		WorkerID:    dockerWorkerID(r.cfg),
+		Status:      status,
+		Payload:     payload,
+		Logs:        logs,
+	})
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(r.cfg.BaseURL, "/")+"/api/v1/docker/operation-callbacks", bytes.NewReader(body))
+	if err != nil {
+		return DockerOperation{}, false
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+r.cfg.BearerToken)
+	resp, err := r.httpClient.Do(req)
+	if err != nil {
+		return DockerOperation{}, false
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		return DockerOperation{}, false
+	}
+	var result dockerCallbackResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return DockerOperation{}, false
+	}
+	if strings.TrimSpace(result.Data.ID) == "" {
+		return DockerOperation{}, false
 	}
 	return result.Data, true
 }
@@ -915,6 +1225,76 @@ func shouldStopLocalExecution(status string) bool {
 	default:
 		return false
 	}
+}
+
+func dockerWorkerID(cfg cfgpkg.ControlPlaneConfig) string {
+	return firstNonEmpty(strings.TrimSpace(cfg.Docker.WorkerID), strings.TrimSpace(cfg.AgentID), "local-docker-runner")
+}
+
+func commandVersion(ctx context.Context, name string, args ...string) string {
+	commandLogs, err := runCommand(ctx, "", name, args...)
+	if err != nil || len(commandLogs) == 0 {
+		return ""
+	}
+	for _, line := range commandLogs {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "$ ") {
+			continue
+		}
+		return trimmed
+	}
+	return ""
+}
+
+func dockerComposeVersion(ctx context.Context) string {
+	return commandVersion(ctx, "docker", "compose", "version")
+}
+
+func composeServiceStatus(record map[string]any) string {
+	state := strings.ToLower(firstNonEmpty(strings.TrimSpace(fmt.Sprint(record["State"])), strings.TrimSpace(fmt.Sprint(record["Status"]))))
+	switch {
+	case strings.Contains(state, "running"):
+		return "running"
+	case strings.Contains(state, "exited"), strings.Contains(state, "stopped"):
+		return "stopped"
+	case strings.Contains(state, "paused"):
+		return "paused"
+	case state == "":
+		return "unknown"
+	default:
+		return state
+	}
+}
+
+func dockerServiceRecordsFromJSON(raw string) []map[string]any {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return nil
+	}
+	var records []map[string]any
+	if strings.HasPrefix(trimmed, "[") {
+		_ = json.Unmarshal([]byte(trimmed), &records)
+	} else {
+		record := map[string]any{}
+		if err := json.Unmarshal([]byte(trimmed), &record); err == nil {
+			records = []map[string]any{record}
+		}
+	}
+	out := make([]map[string]any, 0, len(records))
+	for _, record := range records {
+		name := firstNonEmpty(strings.TrimSpace(fmt.Sprint(record["Service"])), strings.TrimSpace(fmt.Sprint(record["Name"])))
+		if name == "" {
+			continue
+		}
+		out = append(out, map[string]any{
+			"name":        name,
+			"image":       firstNonEmpty(strings.TrimSpace(fmt.Sprint(record["Image"])), strings.TrimSpace(fmt.Sprint(record["Repository"]))),
+			"status":      composeServiceStatus(record),
+			"containerId": strings.TrimSpace(fmt.Sprint(record["ID"])),
+			"config":      record,
+		})
+	}
+	return out
 }
 
 func drainStopReason(stopReason <-chan string) string {

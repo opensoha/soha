@@ -7,6 +7,7 @@ import {
   AlertOutlined,
   AppstoreOutlined,
   CloudServerOutlined,
+  DockerOutlined,
   DownOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
@@ -101,19 +102,40 @@ function findAIWorkbenchMenuKey(pathname: string, search: string) {
 
 function buildMenuNodeItem(node: RuntimeMenuNode, localeCode: 'zh_CN' | 'en_US'): NonNullable<MenuProps['items']>[number] {
   const label = localeCode === 'en_US' && node.labelEn ? node.labelEn : node.labelZh
+  const icon = resolveMenuIcon(resolveRuntimeMenuIconKey(node))
   if (node.children?.length) {
     return {
       key: node.id,
-      icon: resolveMenuIcon(node.iconKey),
+      icon,
       label,
       children: node.children.map((child) => buildMenuNodeItem(child, localeCode)),
     }
   }
   return {
     key: node.id,
-    icon: resolveMenuIcon(node.iconKey),
+    icon,
     label,
   }
+}
+
+const VIRTUALIZATION_MENU_ICON_OVERRIDES: Record<string, { iconKey: string; legacy: string[] }> = {
+  'virtualization-workbench-overview': { iconKey: 'gauge', legacy: ['server', 'gauge'] },
+  'virtualization-workbench-vms': { iconKey: 'desktop', legacy: ['server'] },
+  'virtualization-workbench-clusters': { iconKey: 'cluster', legacy: ['globe'] },
+  'virtualization-workbench-images': { iconKey: 'image', legacy: ['blocks'] },
+  'virtualization-workbench-flavors': { iconKey: 'flavor', legacy: ['code'] },
+  'virtualization-workbench-operations': { iconKey: 'history', legacy: ['activity', 'file-clock'] },
+  'virtualization-workbench-sync': { iconKey: 'sync', legacy: ['activity', 'file-clock'] },
+}
+
+function resolveRuntimeMenuIconKey(node: RuntimeMenuNode) {
+  const override = VIRTUALIZATION_MENU_ICON_OVERRIDES[node.id]
+  if (!override) return node.iconKey
+  const iconKey = String(node.iconKey || '').trim()
+  if (!iconKey || override.legacy.includes(iconKey)) {
+    return override.iconKey
+  }
+  return iconKey
 }
 
 function buildMenuItems(
@@ -236,6 +258,7 @@ function buildWorkbenchOptions(localeCode: 'zh_CN' | 'en_US'): WorkbenchOption[]
     return [
       { key: 'platform', label: 'Platform Workbench', description: 'Clusters, workloads, network, storage, and runtime resources', icon: <AppstoreOutlined /> },
       { key: 'virtualization', label: 'Virtualization Workbench', description: 'Virtual machines, clusters, images, flavors, and operation records', icon: <SlidersOutlined /> },
+      { key: 'docker', label: 'Docker Workbench', description: 'Docker hosts, Compose projects, services, ports, and templates', icon: <DockerOutlined /> },
       { key: 'delivery', label: 'Delivery Workbench', description: 'Applications, build sources, bindings, and release orchestration', icon: <CloudServerOutlined /> },
       { key: 'ai', label: 'AI Workbench', description: 'Investigation, automation, tools, and skills', icon: <RobotOutlined /> },
       { key: 'monitoring', label: 'Monitoring Workbench', description: 'Alerts, routes, notifications, and on-call flows', icon: <AlertOutlined /> },
@@ -244,6 +267,7 @@ function buildWorkbenchOptions(localeCode: 'zh_CN' | 'en_US'): WorkbenchOption[]
   return [
     { key: 'platform', label: '平台工作台', description: '集群、工作负载、网络、存储与运行资源', icon: <AppstoreOutlined /> },
     { key: 'virtualization', label: '虚拟化管理工作台', description: '虚拟机、集群、镜像、规格与操作记录', icon: <SlidersOutlined /> },
+    { key: 'docker', label: 'Docker 工作台', description: '主机、Compose 项目、服务、端口与模板', icon: <DockerOutlined /> },
     { key: 'delivery', label: '应用交付工作台', description: '应用、构建来源、环境绑定与发布编排', icon: <CloudServerOutlined /> },
     { key: 'ai', label: 'AI工作台', description: '调查、自动化、工具与技能', icon: <RobotOutlined /> },
     { key: 'monitoring', label: '监控工作台', description: '告警、路由、通知和值班协同', icon: <AlertOutlined /> },
@@ -353,7 +377,7 @@ export function AppLayout() {
       return 'delivery'
     }
     if (activeWorkspace === 'resource') {
-      return (['platform', 'virtualization', 'ai', 'monitoring'] as const).find((item) => accessibleWorkbenchIds.includes(item)) ?? null
+      return (['platform', 'virtualization', 'docker', 'ai', 'monitoring'] as const).find((item) => accessibleWorkbenchIds.includes(item)) ?? null
     }
     return accessibleWorkbenchIds[0] ?? null
   }, [accessibleWorkbenchIds, activeWorkspace, currentWorkbenchId])
@@ -380,7 +404,7 @@ export function AppLayout() {
   const primaryMenuItems = useMemo(
     () => activeWorkbenchId === 'ai'
       ? buildAIWorkbenchMenuItems()
-      : buildMenuItems(primaryNav, localeCode, { grouped: !isSystemWorkspaceRoute }),
+      : buildMenuItems(primaryNav, localeCode, { grouped: !isSystemWorkspaceRoute && activeWorkbenchId !== 'virtualization' && activeWorkbenchId !== 'docker' }),
     [activeWorkbenchId, isSystemWorkspaceRoute, localeCode, primaryNav],
   )
   const primaryItemKeyToPath = useMemo(

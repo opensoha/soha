@@ -43,6 +43,7 @@ const APPLICATION_PATH_PREFIXES = [
 const WORKBENCH_DEFAULT_PATHS = {
   platform: "/",
   virtualization: "/virtualization",
+  docker: "/docker",
   delivery: "/applications",
   ai: "/ai-workbench",
   monitoring: "/monitoring-workbench",
@@ -1202,8 +1203,8 @@ export const routeMeta: RouteMeta[] = [
   {
     id: "virtualization-workbench-clusters",
     path: "/virtualization/clusters",
-    title: "虚拟化集群",
-    description: "虚拟化集群入口",
+    title: "集群",
+    description: "虚拟化连接与集群入口",
     icon: "IconServer",
     group: "virtualization",
     workbenchId: "virtualization",
@@ -1276,7 +1277,137 @@ export const routeMeta: RouteMeta[] = [
     navVisible: true,
     parentId: "virtualization-workbench",
     menuId: "virtualization-workbench-sync",
-    permissionKey: "virtualization.sync.manage",
+    permissionKey: "virtualization.sync.view",
+    scopeMode: "passive",
+  },
+
+  {
+    id: "docker-workbench",
+    path: "/docker",
+    title: "Docker 工作台",
+    description: "Docker 主机、Compose 项目、容器服务、端口映射、模板与操作记录",
+    icon: "IconServer",
+    group: "docker",
+    workbenchId: "docker",
+    requiresAuth: true,
+    tabbar: false,
+    navVisible: true,
+    redirectTo: "/docker/overview",
+    menuId: "docker-workbench",
+    permissionStrategy: "any-child",
+    scopeMode: "passive",
+    workspace: "resource",
+  },
+  {
+    id: "docker-workbench-overview",
+    path: "/docker/overview",
+    title: "总览",
+    description: "Docker 主机、Compose 与端口暴露概览",
+    icon: "IconServer",
+    group: "docker",
+    workbenchId: "docker",
+    requiresAuth: true,
+    tabbar: true,
+    navVisible: true,
+    parentId: "docker-workbench",
+    menuId: "docker-workbench-overview",
+    permissionKey: "docker.overview.view",
+    scopeMode: "passive",
+  },
+  {
+    id: "docker-workbench-hosts",
+    path: "/docker/hosts",
+    title: "Docker 主机",
+    description: "Docker 主机接入与 PVE 快速构建",
+    icon: "IconServer",
+    group: "docker",
+    workbenchId: "docker",
+    requiresAuth: true,
+    tabbar: true,
+    navVisible: true,
+    parentId: "docker-workbench",
+    menuId: "docker-workbench-hosts",
+    permissionKey: "docker.hosts.view",
+    scopeMode: "passive",
+  },
+  {
+    id: "docker-workbench-projects",
+    path: "/docker/projects",
+    title: "Compose 项目",
+    description: "Docker Compose 项目与部署动作",
+    icon: "IconGridView",
+    group: "docker",
+    workbenchId: "docker",
+    requiresAuth: true,
+    tabbar: true,
+    navVisible: true,
+    parentId: "docker-workbench",
+    menuId: "docker-workbench-projects",
+    permissionKey: "docker.projects.view",
+    scopeMode: "passive",
+  },
+  {
+    id: "docker-workbench-services",
+    path: "/docker/services",
+    title: "容器服务",
+    description: "Compose 服务与容器运行态",
+    icon: "IconGridView",
+    group: "docker",
+    workbenchId: "docker",
+    requiresAuth: true,
+    tabbar: true,
+    navVisible: true,
+    parentId: "docker-workbench",
+    menuId: "docker-workbench-services",
+    permissionKey: "docker.services.view",
+    scopeMode: "passive",
+  },
+  {
+    id: "docker-workbench-ports",
+    path: "/docker/ports",
+    title: "端口映射",
+    description: "Docker 主机端口池、访问地址与映射冲突校验",
+    icon: "IconShare",
+    group: "docker",
+    workbenchId: "docker",
+    requiresAuth: true,
+    tabbar: true,
+    navVisible: true,
+    parentId: "docker-workbench",
+    menuId: "docker-workbench-ports",
+    permissionKey: "docker.ports.view",
+    scopeMode: "passive",
+  },
+  {
+    id: "docker-workbench-templates",
+    path: "/docker/templates",
+    title: "模板",
+    description: "Compose 模板与环境变量模板",
+    icon: "IconCode",
+    group: "docker",
+    workbenchId: "docker",
+    requiresAuth: true,
+    tabbar: true,
+    navVisible: true,
+    parentId: "docker-workbench",
+    menuId: "docker-workbench-templates",
+    permissionKey: "docker.templates.view",
+    scopeMode: "passive",
+  },
+  {
+    id: "docker-workbench-operations",
+    path: "/docker/operations",
+    title: "操作记录",
+    description: "Docker 主机构建、Compose 与服务操作记录",
+    icon: "IconFileSearch",
+    group: "docker",
+    workbenchId: "docker",
+    requiresAuth: true,
+    tabbar: true,
+    navVisible: true,
+    parentId: "docker-workbench",
+    menuId: "docker-workbench-operations",
+    permissionKey: "docker.operations.view",
     scopeMode: "passive",
   },
 
@@ -2225,6 +2356,9 @@ function deriveWorkbenchIdFromPath(pathname: string): WorkbenchId | null {
   if (pathname.startsWith("/virtualization")) {
     return "virtualization";
   }
+  if (pathname.startsWith("/docker")) {
+    return "docker";
+  }
   if (
     pathname.startsWith("/ai-workbench") ||
     pathname.startsWith("/ai-observe") ||
@@ -2353,6 +2487,7 @@ export function getRouteScopeMode(
     pathname.startsWith("/monitoring-workbench") ||
     pathname.startsWith("/observability") ||
     pathname.startsWith("/virtualization") ||
+    pathname.startsWith("/docker") ||
     pathname.startsWith("/ai-workbench") ||
     pathname.startsWith("/ai-observe")
   ) {
@@ -2726,6 +2861,7 @@ export function filterSidebarNavByWorkbench(
   );
 
   const flattenedWorkbenchRootIds: Partial<Record<WorkbenchId, string>> = {
+    docker: "docker-workbench",
     monitoring: "monitoring-workbench",
     virtualization: "virtualization-workbench",
   };

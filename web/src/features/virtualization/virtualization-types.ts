@@ -23,6 +23,16 @@ export interface VirtualizationOverviewTaskSummary {
   completed?: number
 }
 
+export interface VirtualizationOverviewProviderSummary {
+  provider: string
+  connections?: number
+  healthy?: number
+  degraded?: number
+  unavailable?: number
+  vms?: number
+  runningVms?: number
+}
+
 export interface VirtualizationOverviewAttention {
   riskyConnections?: VirtualizationCluster[]
   failedSyncTasks?: VirtualizationOperation[]
@@ -46,6 +56,7 @@ export interface VirtualizationOverview {
   lastSyncTask?: VirtualizationOperation | null
   connectionSummary?: VirtualizationOverviewConnectionSummary
   taskSummary?: VirtualizationOverviewTaskSummary
+  providerSummary?: VirtualizationOverviewProviderSummary[]
   attention?: VirtualizationOverviewAttention
 }
 

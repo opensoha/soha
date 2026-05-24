@@ -1,0 +1,121 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: virt-lab
+---
+apiVersion: cdi.kubevirt.io/v1beta1
+kind: DataVolume
+metadata:
+  name: pve-installer-iso
+  namespace: virt-lab
+spec:
+  source:
+    http:
+      url: https://enterprise.proxmox.com/iso/proxmox-ve_9.2-1.iso
+  pvc:
+    accessModes:
+      - ReadWriteOnce
+    resources:
+      requests:
+        storage: 3Gi
+    volumeMode: Filesystem
+---
+apiVersion: cdi.kubevirt.io/v1beta1
+kind: DataVolume
+metadata:
+  name: pve-rootdisk
+  namespace: virt-lab
+spec:
+  source:
+    blank: {}
+  pvc:
+    accessModes:
+      - ReadWriteOnce
+    resources:
+      requests:
+        storage: 80Gi
+    volumeMode: Filesystem
+---
+apiVersion: kubevirt.io/v1
+kind: VirtualMachine
+metadata:
+  name: pve-lab
+  namespace: virt-lab
+  labels:
+    app.kubernetes.io/name: pve-lab
+    app.kubernetes.io/component: proxmox-ve
+spec:
+  runStrategy: Always
+  template:
+    metadata:
+      labels:
+        kubevirt.io/domain: pve-lab
+        app.kubernetes.io/name: pve-lab
+    spec:
+      architecture: amd64
+      terminationGracePeriodSeconds: 180
+      domain:
+        cpu:
+          cores: 4
+        devices:
+          disks:
+            - name: rootdisk
+              disk:
+                bus: virtio
+              bootOrder: 2
+            - name: installercdrom
+              cdrom:
+                bus: sata
+                readonly: true
+              bootOrder: 1
+          interfaces:
+            - name: default
+              masquerade: {}
+              ports:
+                - name: pve-api
+                  port: 8006
+                  protocol: TCP
+                - name: ssh
+                  port: 22
+                  protocol: TCP
+        features:
+          acpi: {}
+          apic: {}
+        machine:
+          type: q35
+        resources:
+          requests:
+            memory: 8Gi
+      networks:
+        - name: default
+          pod: {}
+      volumes:
+        - name: rootdisk
+          dataVolume:
+            name: pve-rootdisk
+        - name: installercdrom
+          dataVolume:
+            name: pve-installer-iso
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pve-lab
+  namespace: virt-lab
+  labels:
+    app.kubernetes.io/name: pve-lab
+spec:
+  type: NodePort
+  selector:
+    kubevirt.io/domain: pve-lab
+  ports:
+    - name: pve-api
+      port: 8006
+      targetPort: 8006
+      nodePort: 30006
+      protocol: TCP
+    - name: ssh
+      port: 22
+      targetPort: 22
+      nodePort: 30022
+      protocol: TCP

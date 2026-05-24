@@ -41,14 +41,24 @@ type AuthConfig struct {
 }
 
 type ControlPlaneConfig struct {
-	Enabled         bool          `mapstructure:"enabled"`
-	BaseURL         string        `mapstructure:"base_url"`
-	BearerToken     string        `mapstructure:"bearer_token"`
-	AgentID         string        `mapstructure:"agent_id"`
-	RuntimeEndpoint string        `mapstructure:"runtime_endpoint"`
-	PollInterval    time.Duration `mapstructure:"poll_interval"`
-	ProviderKinds   []string      `mapstructure:"provider_kinds"`
-	WorkspaceRoot   string        `mapstructure:"workspace_root"`
+	Enabled         bool               `mapstructure:"enabled"`
+	BaseURL         string             `mapstructure:"base_url"`
+	BearerToken     string             `mapstructure:"bearer_token"`
+	AgentID         string             `mapstructure:"agent_id"`
+	RuntimeEndpoint string             `mapstructure:"runtime_endpoint"`
+	PollInterval    time.Duration      `mapstructure:"poll_interval"`
+	ProviderKinds   []string           `mapstructure:"provider_kinds"`
+	WorkspaceRoot   string             `mapstructure:"workspace_root"`
+	Docker          DockerRunnerConfig `mapstructure:"docker"`
+}
+
+type DockerRunnerConfig struct {
+	Enabled        bool          `mapstructure:"enabled"`
+	WorkerID       string        `mapstructure:"worker_id"`
+	HostIDs        []string      `mapstructure:"host_ids"`
+	OperationKinds []string      `mapstructure:"operation_kinds"`
+	ComposeRoot    string        `mapstructure:"compose_root"`
+	PollInterval   time.Duration `mapstructure:"poll_interval"`
 }
 
 type KubernetesConfig struct {
@@ -114,6 +124,12 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("control_plane.poll_interval", "5s")
 	v.SetDefault("control_plane.provider_kinds", []string{"ci_agent_runner"})
 	v.SetDefault("control_plane.workspace_root", ".")
+	v.SetDefault("control_plane.docker.enabled", false)
+	v.SetDefault("control_plane.docker.worker_id", "")
+	v.SetDefault("control_plane.docker.host_ids", []string{})
+	v.SetDefault("control_plane.docker.operation_kinds", []string{})
+	v.SetDefault("control_plane.docker.compose_root", ".kubecrux/docker")
+	v.SetDefault("control_plane.docker.poll_interval", "5s")
 	v.SetDefault("kubernetes.id", "local-agent")
 	v.SetDefault("kubernetes.name", "Local Agent")
 	v.SetDefault("kubernetes.kubeconfig", "$HOME/.kube/config")

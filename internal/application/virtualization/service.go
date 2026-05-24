@@ -130,6 +130,7 @@ type ImageInput struct {
 	SizeBytes    int64          `json:"sizeBytes,omitempty"`
 	SizeGiB      int64          `json:"sizeGiB,omitempty"`
 	SourceKind   string         `json:"sourceKind,omitempty"`
+	SourceRef    string         `json:"sourceRef,omitempty"`
 	Namespace    string         `json:"namespace,omitempty"`
 	StorageClass string         `json:"storageClass,omitempty"`
 	URL          string         `json:"url,omitempty"`
@@ -159,6 +160,7 @@ type Overview struct {
 	LastSyncTask      *domainvirtualization.Task  `json:"lastSyncTask,omitempty"`
 	ConnectionSummary OverviewConnectionSummary   `json:"connectionSummary"`
 	TaskSummary       OverviewTaskSummary         `json:"taskSummary"`
+	ProviderSummary   []OverviewProviderSummary   `json:"providerSummary"`
 	Attention         OverviewAttention           `json:"attention"`
 }
 
@@ -189,6 +191,16 @@ type OverviewTaskSummary struct {
 	Timeout   int `json:"timeout"`
 	Canceled  int `json:"canceled"`
 	Completed int `json:"completed"`
+}
+
+type OverviewProviderSummary struct {
+	Provider    string `json:"provider"`
+	Connections int    `json:"connections"`
+	Healthy     int    `json:"healthy"`
+	Degraded    int    `json:"degraded"`
+	Unavailable int    `json:"unavailable"`
+	VMs         int    `json:"vms"`
+	RunningVMs  int    `json:"runningVms"`
 }
 
 type OverviewAttention struct {
@@ -280,20 +292,26 @@ func (s *Service) Overview(ctx context.Context, principal domainidentity.Princip
 		return Overview{}, err
 	}
 	out := Overview{RecentOperations: recentTasks}
+	providerSummaries := map[string]*OverviewProviderSummary{}
 	out.Stats.Connections.Total = len(connections)
 	out.ConnectionSummary.Total = len(connections)
 	for _, connection := range connections {
+		providerSummary := providerSummaryFor(providerSummaries, connection.Provider)
+		providerSummary.Connections++
 		healthStatus := strings.ToLower(stringValue(connection.Health, "status"))
 		switch healthStatus {
 		case "healthy":
 			out.Stats.Connections.Healthy++
 			out.ConnectionSummary.Healthy++
+			providerSummary.Healthy++
 		case "degraded":
 			out.Stats.Connections.Degraded++
 			out.ConnectionSummary.Degraded++
+			providerSummary.Degraded++
 		default:
 			out.Stats.Connections.Unavailable++
 			out.ConnectionSummary.Unavailable++
+			providerSummary.Unavailable++
 		}
 		if connection.LastSyncedAt == nil {
 			out.ConnectionSummary.NeverSynced++
@@ -304,9 +322,12 @@ func (s *Service) Overview(ctx context.Context, principal domainidentity.Princip
 	}
 	out.Stats.VMCount = len(vms)
 	for _, vm := range vms {
+		providerSummary := providerSummaryFor(providerSummaries, vm.Provider)
+		providerSummary.VMs++
 		switch strings.ToLower(firstNonEmpty(vm.PowerState, vm.Status)) {
 		case "running", "active", "started":
 			out.Stats.RunningVMCount++
+			providerSummary.RunningVMs++
 		case "stopped", "halted", "shutdown":
 			out.Stats.StoppedVMCount++
 		}
@@ -343,6 +364,7 @@ func (s *Service) Overview(ctx context.Context, principal domainidentity.Princip
 	out.Attention.FailedOperations = topFailedTasks(attentionTasks, 5, func(task domainvirtualization.Task) bool {
 		return isAbnormalTaskStatus(task.Status)
 	})
+	out.ProviderSummary = sortedProviderSummary(providerSummaries)
 	return out, nil
 }
 
@@ -935,14 +957,14 @@ func (s *Service) GetVMMetrics(ctx context.Context, principal domainidentity.Pri
 		return infravirtualization.VMMetricsResult{}, err
 	}
 
-	vm, err := s.repo.GetVM(ctx, vmID)
+	vm, err := s.repo.GetVM(ctx, strings.TrimSpace(vmID))
 	if err != nil {
-		return infravirtualization.VMMetricsResult{}, err
+		return infravirtualization.VMMetricsResult{}, mapNotFound(err)
 	}
 
 	connection, err := s.repo.GetConnection(ctx, vm.ConnectionID)
 	if err != nil {
-		return infravirtualization.VMMetricsResult{}, err
+		return infravirtualization.VMMetricsResult{}, mapNotFound(err)
 	}
 
 	adapter, err := s.adapterFor(connection.Provider)
@@ -972,14 +994,14 @@ func (s *Service) GetConsoleURL(ctx context.Context, principal domainidentity.Pr
 		return infravirtualization.ConsoleURLResult{}, err
 	}
 
-	vm, err := s.repo.GetVM(ctx, vmID)
+	vm, err := s.repo.GetVM(ctx, strings.TrimSpace(vmID))
 	if err != nil {
-		return infravirtualization.ConsoleURLResult{}, err
+		return infravirtualization.ConsoleURLResult{}, mapNotFound(err)
 	}
 
 	connection, err := s.repo.GetConnection(ctx, vm.ConnectionID)
 	if err != nil {
-		return infravirtualization.ConsoleURLResult{}, err
+		return infravirtualization.ConsoleURLResult{}, mapNotFound(err)
 	}
 
 	adapter, err := s.adapterFor(connection.Provider)
@@ -1320,6 +1342,27 @@ func topFailedTasks(items []domainvirtualization.Task, limit int, include func(d
 	return out
 }
 
+func providerSummaryFor(items map[string]*OverviewProviderSummary, provider string) *OverviewProviderSummary {
+	key := firstNonEmpty(normalizeProvider(provider), "unknown")
+	item := items[key]
+	if item == nil {
+		item = &OverviewProviderSummary{Provider: key}
+		items[key] = item
+	}
+	return item
+}
+
+func sortedProviderSummary(items map[string]*OverviewProviderSummary) []OverviewProviderSummary {
+	out := make([]OverviewProviderSummary, 0, len(items))
+	for _, item := range items {
+		out = append(out, *item)
+	}
+	slices.SortFunc(out, func(left, right OverviewProviderSummary) int {
+		return strings.Compare(left.Provider, right.Provider)
+	})
+	return out
+}
+
 func isAbnormalTaskStatus(status string) bool {
 	switch strings.TrimSpace(status) {
 	case TaskStatusFailed, TaskStatusTimeout:
@@ -1448,7 +1491,7 @@ func (s *Service) imageFromInput(ctx context.Context, input ImageInput, id strin
 	if input.URL != "" {
 		config["url"] = strings.TrimSpace(input.URL)
 	}
-	sourceRef := firstNonEmpty(stringValue(config, "sourceRef"), input.ExternalID)
+	sourceRef := firstNonEmpty(strings.TrimSpace(input.SourceRef), stringValue(config, "sourceRef"), input.ExternalID)
 	if sourceRef != "" {
 		config["sourceRef"] = sourceRef
 	}
