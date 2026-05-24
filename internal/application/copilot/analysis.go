@@ -38,7 +38,14 @@ func (s *Service) RunRootCauseAnalysis(ctx context.Context, principal domainiden
 	if err := s.authorizePrincipal(ctx, principal, appaccess.PermObserveAIRootCauseRun); err != nil {
 		return domaincopilot.RootCauseRun{}, err
 	}
-	return s.executeRootCauseRun(ctx, principal, principal.UserID, input, "", locale)
+	return s.executeRootCauseRun(ctx, principal, principal.UserID, input, "", domaincopilot.SessionToolset{}, locale)
+}
+
+func (s *Service) runRootCauseAnalysisWithToolset(ctx context.Context, principal domainidentity.Principal, input domaincopilot.RootCauseRunInput, toolset domaincopilot.SessionToolset, locale string) (domaincopilot.RootCauseRun, error) {
+	if err := s.authorizePrincipal(ctx, principal, appaccess.PermObserveAIRootCauseRun); err != nil {
+		return domaincopilot.RootCauseRun{}, err
+	}
+	return s.executeRootCauseRun(ctx, principal, principal.UserID, input, "", toolset, locale)
 }
 
 type rootCauseAnalysis struct {
@@ -51,7 +58,7 @@ type rootCauseAnalysis struct {
 	toolExecutions  []domaincopilot.ToolExecution
 }
 
-func (s *Service) executeRootCauseRun(ctx context.Context, principal domainidentity.Principal, createdBy string, input domaincopilot.RootCauseRunInput, dedupKey, locale string) (domaincopilot.RootCauseRun, error) {
+func (s *Service) executeRootCauseRun(ctx context.Context, principal domainidentity.Principal, createdBy string, input domaincopilot.RootCauseRunInput, dedupKey string, toolset domaincopilot.SessionToolset, locale string) (domaincopilot.RootCauseRun, error) {
 	input = normalizeRootCauseInput(input)
 	if strings.TrimSpace(input.AlertID) == "" && strings.TrimSpace(input.ClusterID) == "" && strings.TrimSpace(input.WorkloadName) == "" {
 		return domaincopilot.RootCauseRun{}, fmt.Errorf("%w: clusterId, alertId, or workloadName is required", aperrors.ErrInvalidArgument)
@@ -67,9 +74,9 @@ func (s *Service) executeRootCauseRun(ctx context.Context, principal domainident
 			input.TimeRangeMinutes = 60
 		}
 	}
-	analysis := s.collectRootCauseAnalysis(ctx, principal, input, profile, locale)
+	analysis := s.collectRootCauseAnalysis(ctx, principal, input, profile, toolset, locale)
 	startedAt := time.Now().UTC()
-	dataSourceSnapshot, remediationPlan := s.buildRootCauseExecutionMetadata(ctx, profile, analysis)
+	dataSourceSnapshot, remediationPlan := s.buildRootCauseExecutionMetadata(ctx, profile, toolset, analysis)
 	run := domaincopilot.RootCauseRun{
 		ID:                 "rca:" + uuid.NewString(),
 		Kind:               normalizeAnalysisKind(input.Kind),
@@ -134,7 +141,7 @@ func (s *Service) resolveRootCauseProfile(ctx context.Context, input domaincopil
 	}, nil
 }
 
-func (s *Service) buildRootCauseExecutionMetadata(ctx context.Context, profile domaincopilot.AnalysisProfile, analysis rootCauseAnalysis) (map[string]any, map[string]any) {
+func (s *Service) buildRootCauseExecutionMetadata(ctx context.Context, profile domaincopilot.AnalysisProfile, toolset domaincopilot.SessionToolset, analysis rootCauseAnalysis) (map[string]any, map[string]any) {
 	dataSources, _ := s.repo.ListDataSources(ctx)
 	available := make([]map[string]any, 0)
 	for _, item := range dataSources {
@@ -142,6 +149,9 @@ func (s *Service) buildRootCauseExecutionMetadata(ctx context.Context, profile d
 			continue
 		}
 		if len(profile.EnabledSources) > 0 && !containsString(profile.EnabledSources, item.ID) && !containsString(profile.EnabledSources, item.SourceKind) {
+			continue
+		}
+		if !toolsetAllowsAdapter(toolset, item.MCPAdapter) {
 			continue
 		}
 		available = append(available, map[string]any{
@@ -215,10 +225,10 @@ func sourceEnabled(enabledSources []string, expected string) bool {
 	return false
 }
 
-func (s *Service) collectRootCauseAnalysis(ctx context.Context, principal domainidentity.Principal, input domaincopilot.RootCauseRunInput, profile domaincopilot.AnalysisProfile, locale string) rootCauseAnalysis {
+func (s *Service) collectRootCauseAnalysis(ctx context.Context, principal domainidentity.Principal, input domaincopilot.RootCauseRunInput, profile domaincopilot.AnalysisProfile, toolset domaincopilot.SessionToolset, locale string) rootCauseAnalysis {
 	now := time.Now().UTC()
 	playbooks := enabledPlaybooks(profile.EnabledPlaybooks)
-	platformNativeEnabled := sourceEnabled(profile.EnabledSources, "platform-native")
+	platformNativeEnabled := sourceEnabled(profile.EnabledSources, "platform-native") && toolsetAllowsAdapter(toolset, "platform-native.v1")
 	clusters, _ := s.clusters.List(ctx)
 	alerts, _ := s.alerts.ListAlerts(ctx, principal, domainalert.Filter{ClusterID: input.ClusterID, Limit: 30})
 	events, _ := s.events.List(ctx, 50)
@@ -275,19 +285,19 @@ func (s *Service) collectRootCauseAnalysis(ctx context.Context, principal domain
 	buildEvidence := buildRootCauseEvidence(builds)
 	evidence = append(evidence, buildEvidence...)
 
-	logAnalysis := s.collectRootCauseLogEvidence(ctx, input, profile, locale)
+	logAnalysis := s.collectRootCauseLogEvidence(ctx, input, profile, toolset, locale)
 	evidence = append(evidence, logAnalysis.evidence...)
 	hypotheses = append(hypotheses, logAnalysis.hypotheses...)
 	playbookResults = mergePlaybookResults(playbookResults, logAnalysis.playbookResults)
 	toolExecutions := append([]domaincopilot.ToolExecution{}, logAnalysis.toolExecutions...)
 
-	metricAnalysis := s.collectRootCauseMetricEvidence(ctx, input, profile, locale)
+	metricAnalysis := s.collectRootCauseMetricEvidence(ctx, input, profile, toolset, locale)
 	evidence = append(evidence, metricAnalysis.evidence...)
 	hypotheses = append(hypotheses, metricAnalysis.hypotheses...)
 	playbookResults = mergePlaybookResults(playbookResults, metricAnalysis.playbookResults)
 	toolExecutions = append(toolExecutions, metricAnalysis.toolExecutions...)
 
-	traceAnalysis := s.collectRootCauseTraceEvidence(ctx, input, profile, locale)
+	traceAnalysis := s.collectRootCauseTraceEvidence(ctx, input, profile, toolset, locale)
 	evidence = append(evidence, traceAnalysis.evidence...)
 	hypotheses = append(hypotheses, traceAnalysis.hypotheses...)
 	playbookResults = mergePlaybookResults(playbookResults, traceAnalysis.playbookResults)
@@ -369,6 +379,8 @@ func (s *Service) collectRootCauseAnalysis(ctx context.Context, principal domain
 	if len(hypotheses) > 0 {
 		summary = hypotheses[0].Summary
 	}
+	evidence = limitEvidenceItems(evidence, evidenceBudget(toolset, len(evidence)))
+	hypotheses = pruneHypothesisEvidenceIDs(hypotheses, evidence)
 	severity = highestEvidenceSeverity(evidence)
 	return rootCauseAnalysis{
 		evidence:        evidence,

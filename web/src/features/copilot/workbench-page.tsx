@@ -56,9 +56,26 @@ import { StatusTag } from '@/components/status-tag'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth/permission-snapshot'
 import { api } from '@/services/api-client'
 import type { ApiResponse } from '@/types'
+import {
+  getAIModelSettingsPath,
+  getAIOperationsPath,
+  getAIToolsPath,
+  getAIWorkbenchPathForMode,
+  normalizeAIWorkbenchMode,
+} from './workbench-navigation'
+import {
+  TOOLSET_BUDGET_FIELDS,
+  buildDisabledToolOptions,
+  canonicalDisabledToolNames,
+  cleanToolsetPayload,
+  countObjectKeys,
+  numberRecord,
+  recommendedAdapterIds,
+  scopeOverrideState,
+} from './workbench-toolset'
 import type {
-  WorkbenchAdapter,
   WorkbenchArtifact,
+  WorkbenchCatalog,
   WorkbenchGraph,
   WorkbenchGraphNode,
   WorkbenchMessage,
@@ -70,8 +87,16 @@ import type {
 const { Paragraph, Text, Title } = Typography
 
 type InspectorView = 'context' | 'evidence' | 'hypotheses' | 'actions'
+type WorkbenchMode = NonNullable<NonNullable<WorkbenchSession['metadata']>['mode']>
 type WorkbenchFlowNode = Node<WorkbenchGraphNode & Record<string, unknown>, 'workbenchGraphNode'>
 type WorkbenchFlowEdge = Edge<{ relation: string; severity?: string }, 'smoothstep'>
+type ThoughtChainStatus = 'loading' | 'success' | 'error' | 'abort'
+type WorkbenchArtifactEntry = {
+  key: string
+  artifact: WorkbenchArtifact
+  message: WorkbenchMessage
+  index: number
+}
 
 const GRAPH_NODE_WIDTH = 248
 const GRAPH_NODE_HEIGHT = 104
@@ -83,6 +108,10 @@ const WORKBENCH_MODE_OPTIONS = [
   { value: 'trace', label: '链路分析' },
   { value: 'inspection_review', label: '巡检复盘' },
 ] as const
+
+export const RUNNABLE_ANALYSIS_MODE_OPTIONS = WORKBENCH_MODE_OPTIONS.filter((item) => (
+  item.value === 'root_cause' || item.value === 'performance' || item.value === 'trace'
+))
 
 function modeLabel(mode?: string) {
   switch (mode) {
@@ -111,6 +140,23 @@ function modeDescription(mode?: string) {
       return '把巡检发现整理成后续动作和交接结论。'
     default:
       return '沉淀一轮完整问答、证据和下一步排障动作。'
+  }
+}
+
+function defaultAnalysisQuestion(mode: WorkbenchMode, session?: WorkbenchSession) {
+  const summary = session?.metadata?.summary?.trim()
+  if (summary) return summary
+  switch (mode) {
+    case 'root_cause':
+      return '请基于当前会话范围执行一次根因分析，输出证据、假设、影响面和下一步动作。'
+    case 'performance':
+      return '请分析当前会话范围内的性能波动、容量风险和优化建议。'
+    case 'trace':
+      return '请围绕当前会话范围定位关键链路、热点 span 和可能的下游阻塞点。'
+    case 'inspection_review':
+      return '请复盘当前巡检发现，整理风险、证据和后续自动化动作。'
+    default:
+      return '请把当前会话上下文转成结构化分析，输出证据、结论和下一步建议。'
   }
 }
 
@@ -149,6 +195,14 @@ function bubbleItems(messages: WorkbenchMessage[]) {
     status: 'success' as const,
     extraInfo: { createdAt: item.createdAt },
   }))
+}
+
+function artifactTitle(entry: WorkbenchArtifactEntry) {
+  return entry.artifact.title || modeLabel(entry.artifact.kind) || entry.artifact.kind
+}
+
+function artifactMeta(entry: WorkbenchArtifactEntry) {
+  return `${entry.artifact.kind} · ${formatSessionTimestamp(entry.message.createdAt)}`
 }
 
 function graphAccent(kind: string) {
@@ -406,15 +460,26 @@ export function AIWorkbenchPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const permissionSnapshotQuery = usePermissionSnapshot()
   const canUseChat = hasPermission(permissionSnapshotQuery.data?.data, 'observe.ai.chat')
+  const canManageInspection = hasPermission(permissionSnapshotQuery.data?.data, 'observe.ai.inspection.manage')
+  const canCreateInspectionTask = canUseChat && canManageInspection
+  const canRunRootCause = hasPermission(permissionSnapshotQuery.data?.data, 'observe.ai.root-cause.run')
   const autoSessionScopeKeyRef = useRef<string>('')
+  const routeModePatchKeyRef = useRef<string>('')
 
   const requestedSessionId = searchParams.get('session') || undefined
-  const pathMode = useMemo<NonNullable<WorkbenchSession['metadata']>['mode']>(() => {
+  const searchMode = normalizeAIWorkbenchMode(searchParams.get('mode')) || 'general'
+  const pathMode = useMemo<WorkbenchMode>(() => {
     if (location.pathname === '/ai-workbench/root-cause') return 'root_cause'
     if (location.pathname === '/ai-workbench/performance') return 'performance'
+    if (location.pathname === '/ai-workbench/chat') {
+      return searchMode
+    }
     return 'general'
-  }, [location.pathname])
-  const initialMode = (searchParams.get('mode') as NonNullable<WorkbenchSession['metadata']>['mode']) || pathMode
+  }, [location.pathname, searchMode])
+  const isExplicitRouteMode = location.pathname === '/ai-workbench/root-cause'
+    || location.pathname === '/ai-workbench/performance'
+    || (location.pathname === '/ai-workbench/chat' && searchParams.has('mode'))
+  const initialMode = pathMode
   const draftScope = useMemo<WorkbenchSessionScope>(() => ({
     clusterId: searchParams.get('clusterId') || undefined,
     namespace: searchParams.get('namespace') || undefined,
@@ -430,14 +495,19 @@ export function AIWorkbenchPage() {
   const [toolsetOpen, setToolsetOpen] = useState(false)
   const [inspectorOpen, setInspectorOpen] = useState(false)
   const [inspectorView, setInspectorView] = useState<InspectorView>('context')
-  const [draftMode, setDraftMode] = useState<NonNullable<WorkbenchSession['metadata']>['mode']>(initialMode)
+  const [draftMode, setDraftMode] = useState<WorkbenchMode>(initialMode)
+  const [analysisOpen, setAnalysisOpen] = useState(false)
+  const [analysisMode, setAnalysisMode] = useState<WorkbenchMode>(initialMode)
+  const [analysisQuestion, setAnalysisQuestion] = useState('')
   const [selectedSkillIds, setSelectedSkillIds] = useState<string[]>([])
   const [selectedAdapterIds, setSelectedAdapterIds] = useState<string[]>([])
   const [disabledToolNames, setDisabledToolNames] = useState<string[]>([])
   const [budgetOverrides, setBudgetOverrides] = useState<Record<string, number>>({})
-  const [scopeOverrides, setScopeOverrides] = useState<Record<string, string>>({})
+  const [scopeOverrides, setScopeOverrides] = useState<Partial<WorkbenchSessionScope>>({})
   const [skillsDisclosureExpanded, setSkillsDisclosureExpanded] = useState<Record<string, boolean>>({})
   const [showAllSkills, setShowAllSkills] = useState(false)
+  const [selectedArtifactKey, setSelectedArtifactKey] = useState<string>()
+  const [selectedGraphNodeId, setSelectedGraphNodeId] = useState<string | null>(null)
 
   const updateSearchParams = (patch: Record<string, string | undefined>) => {
     const next = new URLSearchParams(searchParams)
@@ -455,17 +525,9 @@ export function AIWorkbenchPage() {
     queryKey: ['copilot-workbench-sessions'],
     queryFn: () => api.get<ApiResponse<WorkbenchSession[]>>('/copilot/sessions'),
   })
-  const adaptersQuery = useQuery({
-    queryKey: ['copilot-workbench-adapters'],
-    queryFn: () => api.get<ApiResponse<WorkbenchAdapter[]>>('/copilot/data-source-capabilities'),
-  })
-  const settingsQuery = useQuery({
-    queryKey: ['copilot-workbench-settings-ai'],
-    queryFn: () => api.get<ApiResponse<{ skillsRegistry?: Array<{ id: string; name: string; description?: string; enabled: boolean; scopes?: string[]; capabilityRefs?: string[]; scopeRules?: string[]; category?: string }> }>>('/settings/ai'),
-  })
-  const dataSourcesQuery = useQuery({
-    queryKey: ['copilot-workbench-datasources'],
-    queryFn: () => api.get<ApiResponse<Array<{ id: string; name: string; sourceKind: string; backendType: string; enabled: boolean; mcpAdapter: string; validationStatus?: string; validationMessage?: string }>>>('/copilot/data-sources'),
+  const catalogQuery = useQuery({
+    queryKey: ['copilot-workbench-catalog'],
+    queryFn: () => api.get<ApiResponse<WorkbenchCatalog>>('/copilot/workbench/catalog'),
   })
   const sessionDetailQuery = useQuery({
     queryKey: ['copilot-workbench-session-detail', requestedSessionId],
@@ -482,7 +544,12 @@ export function AIWorkbenchPage() {
   const currentSession = (sessionDetailQuery.data?.data && !isSyntheticSession(sessionDetailQuery.data.data) ? sessionDetailQuery.data.data : undefined)
     ?? visibleSessions.find((item) => item.id === requestedSessionId)
   const messages = messagesQuery.data?.data ?? []
-  const globalSkills = settingsQuery.data?.data?.skillsRegistry ?? []
+  const adapters = useMemo(() => catalogQuery.data?.data?.adapters ?? [], [catalogQuery.data?.data?.adapters])
+  const dataSources = useMemo(() => catalogQuery.data?.data?.dataSources ?? [], [catalogQuery.data?.data?.dataSources])
+  const globalSkills = useMemo(() => catalogQuery.data?.data?.skillsRegistry ?? [], [catalogQuery.data?.data?.skillsRegistry])
+  const defaultInspectionProfileId = useMemo(() => {
+    return (catalogQuery.data?.data?.analysisProfiles ?? []).find((item) => item.enabled && item.mode === 'inspection')?.id
+  }, [catalogQuery.data?.data?.analysisProfiles])
 
   useEffect(() => {
     if (!requestedSessionId && visibleSessions[0]?.id) {
@@ -491,10 +558,8 @@ export function AIWorkbenchPage() {
   }, [requestedSessionId, searchParams, setSearchParams, visibleSessions])
 
   useEffect(() => {
-    if (currentSession?.metadata?.mode) {
-      setDraftMode(currentSession.metadata.mode)
-    }
-  }, [currentSession?.id, currentSession?.metadata?.mode])
+    setDraftMode(isExplicitRouteMode ? pathMode : currentSession?.metadata?.mode || pathMode)
+  }, [currentSession?.id, currentSession?.metadata?.mode, isExplicitRouteMode, pathMode])
 
   const patchSessionMutation = useMutation({
     mutationFn: (payload: { sessionId: string; body: Record<string, unknown> }) =>
@@ -506,6 +571,26 @@ export function AIWorkbenchPage() {
     onError: (err: Error) => void message.error(err.message),
   })
 
+  useEffect(() => {
+    if (!currentSession || !isExplicitRouteMode || currentSession.metadata?.mode === pathMode) {
+      routeModePatchKeyRef.current = ''
+      return
+    }
+    const patchKey = `${currentSession.id}:${pathMode}`
+    if (patchSessionMutation.isPending || routeModePatchKeyRef.current === patchKey) {
+      return
+    }
+    routeModePatchKeyRef.current = patchKey
+    patchSessionMutation.mutate({ sessionId: currentSession.id, body: { mode: pathMode } })
+  }, [
+    currentSession?.id,
+    currentSession?.metadata?.mode,
+    isExplicitRouteMode,
+    pathMode,
+    patchSessionMutation.isPending,
+    patchSessionMutation.mutate,
+  ])
+
   const createSessionMutation = useMutation({
     mutationFn: (payload?: { title?: string; scope?: WorkbenchSessionScope }) => api.post<ApiResponse<WorkbenchSession>>('/copilot/sessions', {
       title: payload?.title || '',
@@ -515,7 +600,7 @@ export function AIWorkbenchPage() {
     }),
     onSuccess: async (response) => {
       await queryClient.invalidateQueries({ queryKey: ['copilot-workbench-sessions'] })
-      updateSearchParams({ session: response.data.id, mode: draftMode === 'general' ? undefined : draftMode })
+      navigate(getAIWorkbenchPathForMode(draftMode, new URLSearchParams({ session: response.data.id })))
       void message.success('已创建调查会话')
     },
     onError: (err: Error) => void message.error(err.message),
@@ -559,15 +644,21 @@ export function AIWorkbenchPage() {
   })
 
   const analyzeSessionMutation = useMutation({
-    mutationFn: () => api.post<ApiResponse<WorkbenchMessageEnvelope>>(`/copilot/sessions/${requestedSessionId}/analyze`, {
-      mode: currentSession?.metadata?.mode || draftMode,
-      question: currentSession?.metadata?.summary || 'Run analysis for current session scope',
-      scope: currentSession?.metadata?.scope || {},
-    }),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ['copilot-workbench-messages', requestedSessionId] })
-      await queryClient.invalidateQueries({ queryKey: ['copilot-workbench-session-detail', requestedSessionId] })
+    mutationFn: (payload: { sessionId: string; mode: WorkbenchMode; question: string; scope: WorkbenchSessionScope }) =>
+      api.post<ApiResponse<WorkbenchMessageEnvelope>>(`/copilot/sessions/${payload.sessionId}/analyze`, {
+        mode: payload.mode,
+        question: payload.question,
+        scope: payload.scope,
+      }),
+    onSuccess: async (response, payload) => {
+      await queryClient.invalidateQueries({ queryKey: ['copilot-workbench-messages', payload.sessionId] })
+      await queryClient.invalidateQueries({ queryKey: ['copilot-workbench-session-detail', payload.sessionId] })
       await queryClient.invalidateQueries({ queryKey: ['copilot-workbench-sessions'] })
+      const nextMode = typeof response.data.sessionPatch?.mode === 'string'
+        ? response.data.sessionPatch.mode
+        : payload.mode
+      navigate(getAIWorkbenchPathForMode(nextMode, new URLSearchParams({ session: payload.sessionId })))
+      setAnalysisOpen(false)
       setThinkingOpen(true)
       void message.success('已触发显式分析')
     },
@@ -583,19 +674,26 @@ export function AIWorkbenchPage() {
       checks: ['cluster_health', 'alert_pressure', 'audit_denials'],
       enabled: true,
       intervalMinutes: 30,
-      metadata: {},
+      metadata: {
+        ...(defaultInspectionProfileId ? { analysisProfileId: defaultInspectionProfileId } : {}),
+      },
     }),
-    onSuccess: () => void message.success('已从当前会话生成巡检任务'),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['ai-operations-tasks'] })
+      void message.success('已从当前会话生成巡检任务')
+      navigate(getAIOperationsPath(location.search))
+    },
     onError: (err: Error) => void message.error(err.message),
   })
 
   useEffect(() => {
     setSelectedSkillIds(currentSession?.metadata?.toolset?.enabledSkillIds ?? [])
     setSelectedAdapterIds(currentSession?.metadata?.toolset?.enabledAdapterIds ?? [])
-    setDisabledToolNames(currentSession?.metadata?.toolset?.disabledToolNames ?? [])
-    setBudgetOverrides((currentSession?.metadata?.toolset?.budgetOverrides as Record<string, number> | undefined) ?? {})
-    setScopeOverrides((currentSession?.metadata?.toolset?.scopeOverrides as Record<string, string> | undefined) ?? {})
+    setDisabledToolNames(canonicalDisabledToolNames(currentSession?.metadata?.toolset?.disabledToolNames ?? [], adapters))
+    setBudgetOverrides(numberRecord(currentSession?.metadata?.toolset?.budgetOverrides))
+    setScopeOverrides(scopeOverrideState(currentSession?.metadata?.toolset?.scopeOverrides))
   }, [
+    adapters,
     currentSession?.id,
     currentSession?.metadata?.toolset?.enabledSkillIds,
     currentSession?.metadata?.toolset?.enabledAdapterIds,
@@ -604,24 +702,41 @@ export function AIWorkbenchPage() {
     currentSession?.metadata?.toolset?.scopeOverrides,
   ])
 
-  const artifacts = useMemo(() => {
-    const lastAssistant = [...messages].reverse().find((item) => item.role === 'assistant')
-    const raw = lastAssistant?.metadata?.analysisArtifacts
-    return Array.isArray(raw) ? raw as WorkbenchArtifact[] : []
+  const artifactEntries = useMemo<WorkbenchArtifactEntry[]>(() => {
+    const entries: WorkbenchArtifactEntry[] = []
+    for (const item of [...messages].reverse()) {
+      if (item.role !== 'assistant') continue
+      const raw = item.metadata?.analysisArtifacts
+      if (!Array.isArray(raw)) continue
+      ;(raw as WorkbenchArtifact[]).forEach((artifact, index) => {
+        entries.push({
+          key: `${item.id}:${artifact.runId || artifact.kind}:${index}`,
+          artifact,
+          message: item,
+          index,
+        })
+      })
+    }
+    return entries
   }, [messages])
 
-  const toolCalls = useMemo(() => {
-    const lastAssistant = [...messages].reverse().find((item) => item.role === 'assistant')
-    const raw = lastAssistant?.metadata?.analysisArtifacts
-    if (!Array.isArray(raw)) return []
-    return (raw as WorkbenchArtifact[]).flatMap((item) => item.toolExecutions ?? [])
-  }, [messages])
+  useEffect(() => {
+    if (artifactEntries.length === 0) {
+      if (selectedArtifactKey) setSelectedArtifactKey(undefined)
+      return
+    }
+    if (!selectedArtifactKey || !artifactEntries.some((item) => item.key === selectedArtifactKey)) {
+      setSelectedArtifactKey(artifactEntries[0].key)
+    }
+  }, [artifactEntries, selectedArtifactKey])
 
-  const activeArtifact = artifacts[0]
+  const activeArtifactEntry = artifactEntries.find((item) => item.key === selectedArtifactKey) ?? artifactEntries[0]
+  const activeArtifact = activeArtifactEntry?.artifact
+  const toolCalls = activeArtifact?.toolExecutions ?? []
   const activeGraph = activeArtifact?.graph
-  const [selectedGraphNodeId, setSelectedGraphNodeId] = useState<string | null>(null)
-  const queryError = sessionsQuery.error || sessionDetailQuery.error || messagesQuery.error || adaptersQuery.error || dataSourcesQuery.error || settingsQuery.error
-  const promptItems = buildPromptItems(currentSession?.metadata?.mode || draftMode)
+  const queryError = sessionsQuery.error || sessionDetailQuery.error || messagesQuery.error || catalogQuery.error
+  const activeMode = isExplicitRouteMode ? pathMode : currentSession?.metadata?.mode || draftMode
+  const promptItems = buildPromptItems(activeMode)
   const conversationItems = useMemo(() => visibleSessions.map((item) => ({
     key: item.id,
     icon: modeIcon(item.metadata?.mode),
@@ -639,7 +754,7 @@ export function AIWorkbenchPage() {
     {
       key: 'context' as const,
       label: '上下文',
-      value: currentSession?.metadata?.analysisRunRefs?.length ?? 0,
+      value: artifactEntries.length,
       description: buildScopeSummary(currentSession?.metadata?.scope),
       icon: <EyeOutlined />,
     },
@@ -665,9 +780,49 @@ export function AIWorkbenchPage() {
       icon: <ToolOutlined />,
     },
   ]
-  const enabledDataSources = (dataSourcesQuery.data?.data ?? []).filter((item) => item.enabled)
+  const enabledDataSources = dataSources.filter((item) => item.enabled)
+  const disabledToolOptions = useMemo(() => buildDisabledToolOptions(adapters), [adapters])
+  const cleanedBudgetOverrides = useMemo(() => numberRecord(budgetOverrides), [budgetOverrides])
+  const cleanedScopeOverrides = useMemo(() => scopeOverrideState(scopeOverrides), [scopeOverrides])
+  const effectiveAdapterIds = selectedAdapterIds.length > 0 ? selectedAdapterIds : adapters.map((item) => item.id)
+  const activeDataSourceAdapters = [...new Set(enabledDataSources.map((item) => item.mcpAdapter).filter(Boolean))]
+  const unavailableSelectedAdapterIds = selectedAdapterIds.filter((adapterId) => (
+    adapterId !== 'platform-native.v1' && !activeDataSourceAdapters.includes(adapterId)
+  ))
+  const toolsetPolicySummary = [
+    {
+      label: 'Adapter',
+      value: selectedAdapterIds.length > 0 ? `${selectedAdapterIds.length} selected` : 'Auto',
+      detail: selectedAdapterIds.length > 0 ? selectedAdapterIds.join(', ') : '默认允许已注册 adapter，运行时按数据源可用性选择。',
+    },
+    {
+      label: 'Disabled Tools',
+      value: disabledToolNames.length,
+      detail: disabledToolNames.length > 0 ? disabledToolNames.join(', ') : '没有屏蔽具体工具。',
+    },
+    {
+      label: 'Budget',
+      value: countObjectKeys(cleanedBudgetOverrides),
+      detail: countObjectKeys(cleanedBudgetOverrides) > 0 ? Object.entries(cleanedBudgetOverrides).map(([key, value]) => `${key}=${value}`).join(', ') : '沿用 profile 和数据源默认预算。',
+    },
+    {
+      label: 'Scope Override',
+      value: countObjectKeys(cleanedScopeOverrides as Record<string, unknown>),
+      detail: countObjectKeys(cleanedScopeOverrides as Record<string, unknown>) > 0 ? buildScopeSummary(cleanedScopeOverrides) : '沿用会话固定范围。',
+    },
+  ]
   const selectedSkillNames = globalSkills.filter((item) => selectedSkillIds.includes(item.id)).map((item) => item.name)
-  const activeMode = currentSession?.metadata?.mode || draftMode
+  const canRunExplicitAnalysis = canUseChat && (activeMode !== 'root_cause' || canRunRootCause)
+  const explicitAnalysisTitle = canRunExplicitAnalysis
+    ? undefined
+    : activeMode === 'root_cause'
+      ? '缺少 observe.ai.root-cause.run 权限'
+      : '缺少 observe.ai.chat 权限'
+  const createInspectionTitle = canCreateInspectionTask
+    ? undefined
+    : !canUseChat
+      ? '缺少 observe.ai.chat 权限'
+      : '缺少 observe.ai.inspection.manage 权限'
   const enabledSkills = globalSkills.filter((item) => item.enabled)
   const skillRelevanceTokens = useMemo(() => {
     if (activeMode === 'root_cause') return ['logs', 'metrics', 'traces', 'events', 'alerts']
@@ -707,31 +862,105 @@ export function AIWorkbenchPage() {
     setSelectedGraphNodeId(activeGraph?.focusNodeId ?? activeGraph?.nodes?.[0]?.id ?? null)
   }, [activeGraph?.focusNodeId, activeGraph?.nodes])
 
+  const canSubmitExplicitAnalysis = canUseChat && (analysisMode !== 'root_cause' || canRunRootCause)
   const handleModeChange = (value: string | number) => {
-    const next = value as NonNullable<WorkbenchSession['metadata']>['mode']
+    const next = value as WorkbenchMode
     setDraftMode(next)
-    const nextSearch = new URLSearchParams(searchParams)
-    if (next === 'general') {
-      nextSearch.delete('mode')
-    } else {
-      nextSearch.set('mode', String(next))
-    }
-    const nextPath = next === 'root_cause'
-      ? '/ai-workbench/root-cause'
-      : next === 'performance'
-        ? '/ai-workbench/performance'
-        : '/ai-workbench/chat'
-    navigate({
-      pathname: nextPath,
-      search: nextSearch.toString() ? `?${nextSearch.toString()}` : '',
-    })
+    navigate(getAIWorkbenchPathForMode(next, searchParams))
     if (currentSession && currentSession.metadata?.mode !== next) {
       patchSessionMutation.mutate({ sessionId: currentSession.id, body: { mode: next } })
     }
   }
+  const openExplicitAnalysis = () => {
+    if (!currentSession || !canRunExplicitAnalysis) return
+    const nextMode = activeMode
+    const runnableMode = RUNNABLE_ANALYSIS_MODE_OPTIONS.some((item) => item.value === nextMode) ? nextMode : 'root_cause'
+    setAnalysisMode(runnableMode)
+    setAnalysisQuestion(defaultAnalysisQuestion(runnableMode, currentSession))
+    setAnalysisOpen(true)
+  }
+  const submitExplicitAnalysis = () => {
+    if (!currentSession || !canSubmitExplicitAnalysis) return
+    const question = analysisQuestion.trim() || defaultAnalysisQuestion(analysisMode, currentSession)
+    analyzeSessionMutation.mutate({
+      sessionId: currentSession.id,
+      mode: analysisMode,
+      question,
+      scope: currentSession.metadata?.scope || {},
+    })
+  }
   const openInspector = (view: InspectorView) => {
     setInspectorView(view)
     setInspectorOpen(true)
+  }
+  const setBudgetOverrideValue = (key: string, value: number | string | null) => {
+    setBudgetOverrides((current) => {
+      const next = { ...current }
+      const numberValue = Number(value)
+      if (Number.isFinite(numberValue) && numberValue > 0) {
+        next[key] = numberValue
+      } else {
+        delete next[key]
+      }
+      return next
+    })
+  }
+  const setScopeOverrideValue = (key: keyof WorkbenchSessionScope, value: string) => {
+    setScopeOverrides((current) => {
+      const next = { ...current }
+      const trimmed = value.trim()
+      if (trimmed) {
+        next[key] = trimmed as never
+      } else {
+        delete next[key]
+      }
+      return next
+    })
+  }
+  const setScopeOverrideNumberValue = (key: keyof WorkbenchSessionScope, value: number | string | null) => {
+    setScopeOverrides((current) => {
+      const next = { ...current }
+      const numberValue = Number(value)
+      if (Number.isFinite(numberValue) && numberValue > 0) {
+        next[key] = numberValue as never
+      } else {
+        delete next[key]
+      }
+      return next
+    })
+  }
+  const saveToolset = () => {
+    if (!currentSession) return
+    const payload = cleanToolsetPayload({
+      enabledAdapterIds: selectedAdapterIds,
+      enabledSkillIds: selectedSkillIds,
+      disabledToolNames: canonicalDisabledToolNames(disabledToolNames, adapters),
+      budgetOverrides: cleanedBudgetOverrides,
+      scopeOverrides: cleanedScopeOverrides,
+    })
+    patchSessionMutation.mutate(
+      {
+        sessionId: currentSession.id,
+        body: { toolset: payload },
+      },
+      {
+        onSuccess: () => void message.success('已更新会话级工具装配'),
+      },
+    )
+  }
+  const applyRecommendedToolset = () => {
+    setSelectedAdapterIds(recommendedAdapterIds(adapters, dataSources))
+    setSelectedSkillIds(globalSkills.filter((item) => item.enabled).map((item) => item.id))
+    setDisabledToolNames([])
+    setBudgetOverrides({ timeoutSeconds: 60, maxEvidenceItems: 20 })
+    setScopeOverrides({})
+  }
+  const clearToolset = () => {
+    setSelectedAdapterIds([])
+    setSelectedSkillIds([])
+    setDisabledToolNames([])
+    setBudgetOverrides({})
+    setScopeOverrides({})
   }
 
   const renderInspectorBody = () => {
@@ -822,7 +1051,7 @@ export function AIWorkbenchPage() {
           <Alert
             type="warning"
             showIcon
-            message="当前账号缺少 observe.ai.chat 权限，无法发送消息或创建会话。"
+            title="当前账号缺少 observe.ai.chat 权限，无法发送消息或创建会话。"
           />
         ) : null}
 
@@ -830,7 +1059,7 @@ export function AIWorkbenchPage() {
           <Alert
             type="error"
             showIcon
-            message="工作台数据加载失败"
+            title="工作台数据加载失败"
             description={queryError instanceof Error ? queryError.message : '请检查当前 API 服务和权限快照。'}
           />
         ) : null}
@@ -845,7 +1074,7 @@ export function AIWorkbenchPage() {
                   <Text type="secondary">{visibleSessions.length > 0 ? `${visibleSessions.length} 个调查会话` : '从这里切换当前调查'}</Text>
                 </span>
               </div>
-              <Button size="small" type="text" onClick={() => navigate('/ai-workbench/model-settings')}>
+              <Button size="small" type="text" onClick={() => navigate(getAIModelSettingsPath(location.search))}>
                 模型设置
               </Button>
             </div>
@@ -864,7 +1093,7 @@ export function AIWorkbenchPage() {
             />
 
             <div className="kc-ai-workbench-sidebar__footer">
-              <Button block onClick={() => navigate('/ai-workbench/automation')}>
+              <Button block onClick={() => navigate(getAIOperationsPath(location.search))}>
                 巡检与自动化
               </Button>
               <Button block onClick={() => setToolsetOpen(true)}>
@@ -893,7 +1122,7 @@ export function AIWorkbenchPage() {
                 <Button icon={<ToolOutlined />} onClick={() => setToolsetOpen(true)}>
                   工具装配
                 </Button>
-                <Button icon={<PlayCircleOutlined />} onClick={() => navigate('/ai-workbench/model-settings')}>
+                <Button icon={<PlayCircleOutlined />} onClick={() => navigate(getAIModelSettingsPath(location.search))}>
                   模型设置
                 </Button>
                 <Button type="primary" icon={<EditOutlined />} loading={createSessionMutation.isPending} onClick={() => createSessionMutation.mutate({ scope: draftScope })} disabled={!canUseChat}>
@@ -914,8 +1143,8 @@ export function AIWorkbenchPage() {
                         <Button type="primary" loading={createSessionMutation.isPending} onClick={() => createSessionMutation.mutate({ scope: draftScope })} disabled={!canUseChat}>
                           新建会话
                         </Button>
-                        <Button onClick={() => navigate('/ai-workbench/automation')}>查看巡检与自动化</Button>
-                        <Button onClick={() => navigate('/ai-workbench/tools')}>查看工具与技能</Button>
+                        <Button onClick={() => navigate(getAIOperationsPath(location.search))}>查看巡检与自动化</Button>
+                        <Button onClick={() => navigate(getAIToolsPath(location.search))}>查看工具与技能</Button>
                       </Space>
                     }
                   />
@@ -955,10 +1184,20 @@ export function AIWorkbenchPage() {
                           </Button>
                         ) : null}
                         <Button onClick={() => openInspector('context')}>查看上下文</Button>
-                        <Button loading={analyzeSessionMutation.isPending} onClick={() => analyzeSessionMutation.mutate()}>
+                        <Button
+                          loading={analyzeSessionMutation.isPending}
+                          onClick={openExplicitAnalysis}
+                          disabled={!canRunExplicitAnalysis}
+                          title={explicitAnalysisTitle}
+                        >
                           显式分析
                         </Button>
-                        <Button loading={createInspectionFromSessionMutation.isPending} onClick={() => createInspectionFromSessionMutation.mutate()}>
+                        <Button
+                          loading={createInspectionFromSessionMutation.isPending}
+                          onClick={() => createInspectionFromSessionMutation.mutate()}
+                          disabled={!canCreateInspectionTask}
+                          title={createInspectionTitle}
+                        >
                           生成巡检任务
                         </Button>
                         <Button icon={<BranchesOutlined />} onClick={() => setThinkingOpen(true)}>
@@ -986,17 +1225,46 @@ export function AIWorkbenchPage() {
                       </Space>
                     </div>
 
+                    {artifactEntries.length > 0 ? (
+                      <div className="kc-ai-workbench__artifact-strip">
+                        <div className="kc-ai-workbench__artifact-strip-head">
+                          <Text strong>分析工件历史</Text>
+                          <Tag>{artifactEntries.length}</Tag>
+                        </div>
+                        <div className="kc-ai-workbench__artifact-list">
+                          {artifactEntries.map((entry) => {
+                            const selected = entry.key === activeArtifactEntry?.key
+                            return (
+                              <button
+                                key={entry.key}
+                                type="button"
+                                className={`kc-ai-workbench__artifact-item ${selected ? 'is-active' : ''}`}
+                                onClick={() => setSelectedArtifactKey(entry.key)}
+                              >
+                                <span className="kc-ai-workbench__artifact-title">{artifactTitle(entry)}</span>
+                                <span className="kc-ai-workbench__artifact-meta">{artifactMeta(entry)}</span>
+                                <span className="kc-ai-workbench__artifact-counts">
+                                  {(entry.artifact.evidence?.length ?? 0)} 证据 · {(entry.artifact.recommendations?.length ?? 0)} 建议
+                                </span>
+                              </button>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    ) : null}
+
                     {activeGraph?.nodes?.length ? (
                       <div className="kc-ai-workbench__graph-panel">
                         <div className="kc-ai-workbench__graph-head">
                           <div>
-                            <Text strong>根因链路图</Text>
+                            <Text strong>分析工件图谱</Text>
                             <Paragraph className="kc-ai-workbench__conversation-subtitle">
-                              把 traces、logs、metrics 与假设收敛成一张会话内动态图。
+                              {activeArtifact?.summary || '把 traces、logs、metrics 与假设收敛成一张会话内动态图。'}
                             </Paragraph>
                           </div>
                           <Space size={8} wrap>
                             <Tag color="blue">{activeArtifact?.kind || activeMode}</Tag>
+                            {activeArtifact?.runId ? <Tag>{activeArtifact.runId}</Tag> : null}
                             <Tag>{activeGraph.nodes?.length || 0} 节点</Tag>
                             <Tag>{activeGraph.edges?.length || 0} 连线</Tag>
                           </Space>
@@ -1005,7 +1273,7 @@ export function AIWorkbenchPage() {
                           <Alert
                             type="info"
                             showIcon
-                            message="当前还没有可用的 logs / metrics / traces 数据源"
+                            title="当前还没有可用的 logs / metrics / traces 数据源"
                             description="现在展示的是会话范围根节点。配置 Elasticsearch/Loki、Prometheus、Jaeger 之后，根因图会自动扩展成错误链路、日志签名和指标挂件。"
                           />
                         ) : null}
@@ -1039,7 +1307,7 @@ export function AIWorkbenchPage() {
                                   <Alert
                                     type="info"
                                     showIcon
-                                    message="当前会话缺少这类观测源"
+                                    title="当前会话缺少这类观测源"
                                     description="先到“工具与技能”或“模型设置 / 数据源配置”里补上对应连接，再重新执行显式分析。"
                                   />
                                 ) : null}
@@ -1047,7 +1315,7 @@ export function AIWorkbenchPage() {
                                   <Alert
                                     type="success"
                                     showIcon
-                                    message="建议的下一步动作"
+                                    title="建议的下一步动作"
                                     description={selectedGraphNode.subtitle || '优先缩小 scope，再重新分析。'}
                                   />
                                 ) : null}
@@ -1092,7 +1360,10 @@ export function AIWorkbenchPage() {
                                 label: item.label,
                                 description: item.label,
                               }))}
-                              onItemClick={({ data }) => sendMessageMutation.mutate(String(data.label))}
+                              onItemClick={({ data }) => {
+                                if (!canUseChat || !currentSession) return
+                                sendMessageMutation.mutate(String(data.label))
+                              }}
                             />
                           }
                         />
@@ -1122,7 +1393,10 @@ export function AIWorkbenchPage() {
                         <Prompts
                           wrap
                           items={promptItems}
-                          onItemClick={({ data }) => sendMessageMutation.mutate(String(data.label))}
+                          onItemClick={({ data }) => {
+                            if (!canUseChat || !currentSession) return
+                            sendMessageMutation.mutate(String(data.label))
+                          }}
                         />
                       }
                     />
@@ -1167,10 +1441,10 @@ export function AIWorkbenchPage() {
               <div className="kc-ai-workbench__tool-stack">
                 <div className="kc-ai-workbench__tool-row">
                   <span>
-                    <Text strong>已选适配器</Text>
-                    <Text type="secondary">{selectedAdapterIds.length > 0 ? selectedAdapterIds.join(', ') : '默认自动选择'}</Text>
+                    <Text strong>有效适配器</Text>
+                    <Text type="secondary">{selectedAdapterIds.length > 0 ? selectedAdapterIds.join(', ') : '自动允许已注册 adapter'}</Text>
                   </span>
-                  <Tag>{selectedAdapterIds.length || 'Auto'}</Tag>
+                  <Tag>{selectedAdapterIds.length || effectiveAdapterIds.length || 'Auto'}</Tag>
                 </div>
                 <div className="kc-ai-workbench__tool-row">
                   <span>
@@ -1185,6 +1459,13 @@ export function AIWorkbenchPage() {
                     <Text type="secondary">{enabledDataSources.length > 0 ? enabledDataSources.map((item) => item.name).join(', ') : '暂无可用数据源'}</Text>
                   </span>
                   <Tag>{enabledDataSources.length}</Tag>
+                </div>
+                <div className="kc-ai-workbench__tool-row">
+                  <span>
+                    <Text strong>预算 / 屏蔽</Text>
+                    <Text type="secondary">{disabledToolNames.length} 个工具屏蔽，{countObjectKeys(cleanedBudgetOverrides)} 项预算覆盖</Text>
+                  </span>
+                  <Button size="small" onClick={() => setToolsetOpen(true)}>调整</Button>
                 </div>
                         </div>
                       </div>
@@ -1239,7 +1520,7 @@ export function AIWorkbenchPage() {
                       <div className="kc-ai-workbench__tool-section">
                         <div className="kc-ai-workbench__tool-section-title">
                           <Text strong>快捷动作</Text>
-                <Button size="small" type="text" onClick={() => navigate('/ai-workbench/tools')}>
+                <Button size="small" type="text" onClick={() => navigate(getAIToolsPath(location.search))}>
                   工具与技能
                 </Button>
               </div>
@@ -1256,14 +1537,30 @@ export function AIWorkbenchPage() {
                     <Text strong>显式分析</Text>
                     <Text type="secondary">把当前会话转成一轮结构化分析输出。</Text>
                   </span>
-                  <Button size="small" loading={analyzeSessionMutation.isPending} onClick={() => analyzeSessionMutation.mutate()} disabled={!currentSession}>运行</Button>
+                  <Button
+                    size="small"
+                    loading={analyzeSessionMutation.isPending}
+                    onClick={openExplicitAnalysis}
+                    disabled={!currentSession || !canRunExplicitAnalysis}
+                    title={explicitAnalysisTitle}
+                  >
+                    运行
+                  </Button>
                 </div>
                 <div className="kc-ai-workbench__tool-row">
                   <span>
                     <Text strong>生成巡检任务</Text>
                     <Text type="secondary">把会话结论转成后续巡检与自动化入口。</Text>
                   </span>
-                  <Button size="small" loading={createInspectionFromSessionMutation.isPending} onClick={() => createInspectionFromSessionMutation.mutate()} disabled={!currentSession}>生成</Button>
+                  <Button
+                    size="small"
+                    loading={createInspectionFromSessionMutation.isPending}
+                    onClick={() => createInspectionFromSessionMutation.mutate()}
+                    disabled={!currentSession || !canCreateInspectionTask}
+                    title={createInspectionTitle}
+                  >
+                    生成
+                  </Button>
                 </div>
               </div>
             </div>
@@ -1274,13 +1571,13 @@ export function AIWorkbenchPage() {
       <Drawer title="分析链路" placement="right" open={thinkingOpen} onClose={() => setThinkingOpen(false)} size="large">
         <ThoughtChain
           items={toolCalls.length === 0 ? [
-            { key: 'idle', title: '尚未执行工具', description: '发送消息后，这里会展示工具调用与分析步骤。', status: 'pending' as any },
+            { key: 'idle', title: '尚未执行工具', description: '发送消息后，这里会展示工具调用与分析步骤。', status: 'loading' satisfies ThoughtChainStatus },
           ] : toolCalls.map((item) => ({
             key: item.id,
             title: item.toolName,
             description: item.summary || item.adapterId,
             content: item.output ? <pre style={{ whiteSpace: 'pre-wrap', margin: 0 }}>{JSON.stringify(item.output, null, 2)}</pre> : undefined,
-            status: item.status === 'success' ? 'success' as any : 'error' as any,
+            status: (item.status === 'success' ? 'success' : 'error') satisfies ThoughtChainStatus,
           }))}
         />
       </Drawer>
@@ -1308,60 +1605,97 @@ export function AIWorkbenchPage() {
         {renderInspectorBody()}
       </Drawer>
 
-      <Drawer title="会话级工具集" placement="right" open={toolsetOpen} onClose={() => setToolsetOpen(false)} size="large">
-        <Space orientation="vertical" size={16} style={{ width: '100%' }}>
-          <Card size="small" title="已配置适配器">
-            <Space orientation="vertical" size={8} style={{ width: '100%' }}>
-              {(adaptersQuery.data?.data ?? []).map((item) => (
-                <Flex key={item.id} justify="space-between" align="start" gap={12}>
-                  <div>
-                    <Text strong>{item.name}</Text>
-                    <Paragraph type="secondary" style={{ margin: '4px 0 0' }}>{item.description}</Paragraph>
-                  </div>
-                  <Tag color={item.requiresConfig ? 'blue' : 'green'}>{item.sourceKind}</Tag>
-                </Flex>
-              ))}
+      <Drawer
+        title="会话级工具集"
+        placement="right"
+        open={toolsetOpen}
+        onClose={() => setToolsetOpen(false)}
+        size="large"
+        extra={<Tag color={currentSession ? 'blue' : 'default'}>{currentSession ? currentSession.title : '未选择会话'}</Tag>}
+        footer={(
+          <Flex justify="space-between" gap={12} wrap="wrap">
+            <Space wrap>
+              <Button onClick={clearToolset} disabled={!currentSession}>恢复自动选择</Button>
+              <Button onClick={applyRecommendedToolset} disabled={!currentSession}>应用推荐预设</Button>
             </Space>
-          </Card>
-          <Card size="small" title="全局数据源镜像">
-            <Space orientation="vertical" size={8} style={{ width: '100%' }}>
-              {(dataSourcesQuery.data?.data ?? []).map((item) => (
-                <Flex key={item.id} justify="space-between" align="start" gap={12}>
-                  <div>
-                    <Text strong>{item.name}</Text>
-                    <Paragraph type="secondary" style={{ margin: '4px 0 0' }}>{item.sourceKind} / {item.backendType}</Paragraph>
+            <Button type="primary" loading={patchSessionMutation.isPending} onClick={saveToolset} disabled={!currentSession}>
+              保存会话级装配
+            </Button>
+          </Flex>
+        )}
+      >
+        {!currentSession ? (
+          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="先选择会话，再配置工具装配。" />
+        ) : (
+          <Space orientation="vertical" size={16} style={{ width: '100%' }}>
+            <Card size="small" title="有效执行策略">
+              <div className="kc-ai-workbench__tool-stack">
+                {toolsetPolicySummary.map((item) => (
+                  <div key={item.label} className="kc-ai-workbench__tool-row">
+                    <span>
+                      <Text strong>{item.label}</Text>
+                      <Text type="secondary">{item.detail}</Text>
+                    </span>
+                    <Tag>{item.value}</Tag>
                   </div>
-                  <StatusTag value={item.validationStatus || (item.enabled ? 'enabled' : 'disabled')} />
-                </Flex>
-              ))}
-            </Space>
-          </Card>
-          <Card size="small" title="当前会话装配">
-            {!currentSession ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="先选择会话" /> : (
-              <Space orientation="vertical" size={8} style={{ width: '100%' }}>
-                <Paragraph type="secondary" style={{ marginBottom: 0 }}>已启用适配器：{(currentSession.metadata?.toolset?.enabledAdapterIds ?? []).join(', ') || '默认自动选择'}</Paragraph>
-                <Paragraph type="secondary" style={{ marginBottom: 0 }}>已启用 skills：{(currentSession.metadata?.toolset?.enabledSkillIds ?? []).join(', ') || '暂无'}</Paragraph>
-                <Paragraph type="secondary" style={{ marginBottom: 0 }}>全局可用 skills：{globalSkills.filter((item) => item.enabled).map((item) => item.id).join(', ') || '暂无'}</Paragraph>
-                <Paragraph type="secondary" style={{ marginBottom: 0 }}>没有 `observe.ai.chat` 权限时，工作台不会允许发送消息；没有 `observe.ai.view` 时，即使会话存在，也不应该依赖总览和运行视图。</Paragraph>
+                ))}
+              </div>
+              {unavailableSelectedAdapterIds.length > 0 ? (
+                <Alert
+                  style={{ marginTop: 12 }}
+                  type="warning"
+                  showIcon
+                  title="部分已选 adapter 当前没有启用数据源"
+                  description={`${unavailableSelectedAdapterIds.join(', ')} 会保留在会话策略中，但相关工具运行时会因为没有可用数据源而跳过或失败。`}
+                />
+              ) : null}
+            </Card>
+
+            <Card size="small" title="Adapters 与工具">
+              <Space orientation="vertical" size={12} style={{ width: '100%' }}>
                 <Select
                   mode="multiple"
-                  placeholder="选择会话级适配器"
+                  allowClear
+                  maxTagCount="responsive"
+                  optionFilterProp="label"
+                  placeholder="留空表示自动允许所有已注册 adapter"
                   value={selectedAdapterIds}
-                  onChange={(value) => setSelectedAdapterIds(value)}
-                  options={(adaptersQuery.data?.data ?? []).map((item) => ({ value: item.id, label: `${item.name} (${item.sourceKind})` }))}
+                  onChange={(value: string[]) => setSelectedAdapterIds(value)}
+                  options={adapters.map((item) => ({ value: item.id, label: `${item.name} (${item.sourceKind})` }))}
                 />
                 <Select
                   mode="multiple"
-                  placeholder="禁用当前会话中的具体工具"
+                  allowClear
+                  maxTagCount="responsive"
+                  optionFilterProp="label"
+                  placeholder="选择要屏蔽的工具，保存为 adapter.tool"
                   value={disabledToolNames}
-                  onChange={(value) => setDisabledToolNames(value)}
-                  options={(adaptersQuery.data?.data ?? []).flatMap((item) => (item.tools ?? []).map((tool) => ({
-                    value: tool.name,
-                    label: `${item.name} / ${tool.name}`,
-                  })))}
+                  onChange={(value: string[]) => setDisabledToolNames(canonicalDisabledToolNames(value, adapters))}
+                  options={disabledToolOptions}
                 />
+                <div className="kc-ai-workbench__tool-stack">
+                  {dataSources.length === 0 ? (
+                    <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无全局数据源" />
+                  ) : dataSources.map((item) => (
+                    <div key={item.id} className="kc-ai-workbench__tool-row">
+                      <span>
+                        <Text strong>{item.name}</Text>
+                        <Text type="secondary">{item.sourceKind} / {item.backendType} / {item.mcpAdapter}</Text>
+                      </span>
+                      <StatusTag value={item.validationStatus || (item.enabled ? 'enabled' : 'disabled')} />
+                    </div>
+                  ))}
+                </div>
+              </Space>
+            </Card>
+
+            <Card size="small" title="Skills">
+              <Space orientation="vertical" size={10} style={{ width: '100%' }}>
+                <Paragraph type="secondary" style={{ marginBottom: 0 }}>
+                  这里选择本会话允许暴露给 AI coding 客户端的企业 skills；不影响全局 registry 的启用状态。
+                </Paragraph>
                 <Space wrap>
-                  {globalSkills.map((item) => (
+                  {globalSkills.length === 0 ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无全局 skills 配置" /> : globalSkills.map((item) => (
                     <Tag.CheckableTag
                       key={item.id}
                       checked={selectedSkillIds.includes(item.id)}
@@ -1373,71 +1707,119 @@ export function AIWorkbenchPage() {
                     </Tag.CheckableTag>
                   ))}
                 </Space>
-                <Card size="small" title="Budget Overrides">
-                  <Space orientation="vertical" size={8} style={{ width: '100%' }}>
-                    <Flex justify="space-between" gap={12}>
-                      <Text type="secondary">Max Queries</Text>
-                      <InputNumber min={0} value={budgetOverrides.maxQueries} onChange={(value) => setBudgetOverrides((current) => ({ ...current, maxQueries: Number(value || 0) }))} />
-                    </Flex>
-                    <Flex justify="space-between" gap={12}>
-                      <Text type="secondary">Timeout Seconds</Text>
-                      <InputNumber min={0} value={budgetOverrides.timeoutSeconds} onChange={(value) => setBudgetOverrides((current) => ({ ...current, timeoutSeconds: Number(value || 0) }))} />
-                    </Flex>
-                    <Flex justify="space-between" gap={12}>
-                      <Text type="secondary">Max Log Bytes</Text>
-                      <InputNumber min={0} value={budgetOverrides.maxLogBytes} onChange={(value) => setBudgetOverrides((current) => ({ ...current, maxLogBytes: Number(value || 0) }))} />
-                    </Flex>
-                    <Flex justify="space-between" gap={12}>
-                      <Text type="secondary">Max Evidence Items</Text>
-                      <InputNumber min={0} value={budgetOverrides.maxEvidenceItems} onChange={(value) => setBudgetOverrides((current) => ({ ...current, maxEvidenceItems: Number(value || 0) }))} />
-                    </Flex>
-                  </Space>
-                </Card>
-                <Card size="small" title="Scope Overrides">
-                  <Space orientation="vertical" size={8} style={{ width: '100%' }}>
-                    <Input placeholder="Override cluster" value={scopeOverrides.clusterId || ''} onChange={(event) => setScopeOverrides((current) => ({ ...current, clusterId: event.target.value }))} />
-                    <Input placeholder="Override namespace" value={scopeOverrides.namespace || ''} onChange={(event) => setScopeOverrides((current) => ({ ...current, namespace: event.target.value }))} />
-                    <Input placeholder="Override workload/service" value={scopeOverrides.workload || ''} onChange={(event) => setScopeOverrides((current) => ({ ...current, workload: event.target.value }))} />
-                    <Input placeholder="Override alert ID" value={scopeOverrides.alertId || ''} onChange={(event) => setScopeOverrides((current) => ({ ...current, alertId: event.target.value }))} />
-                    <InputNumber min={0} placeholder="Override time range (minutes)" value={Number(scopeOverrides.timeRangeMinutes || 0) || undefined} onChange={(value) => setScopeOverrides((current) => ({ ...current, timeRangeMinutes: String(Number(value || 0)) }))} />
-                  </Space>
-                </Card>
-                <Button
-                  onClick={() => {
-                    if (!currentSession) return
-                    patchSessionMutation.mutate({
-                      sessionId: currentSession.id,
-                      body: {
-                        toolset: {
-                          enabledAdapterIds: selectedAdapterIds,
-                          enabledSkillIds: selectedSkillIds,
-                          disabledToolNames,
-                          budgetOverrides,
-                          scopeOverrides,
-                        },
-                      },
-                    })
-                    void message.success('已更新会话级工具装配')
-                  }}
-                >
-                  保存会话级装配
-                </Button>
-                <Button
-                  onClick={() => {
-                    setSelectedAdapterIds(['platform-native.v1', 'logs.v1', 'metrics.v1', 'traces.v1'])
-                    setSelectedSkillIds(globalSkills.filter((item) => item.enabled).map((item) => item.id))
-                    setDisabledToolNames([])
-                    setBudgetOverrides({})
-                    setScopeOverrides({})
-                  }}
-                >
-                  恢复推荐预设
-                </Button>
               </Space>
-            )}
-          </Card>
-        </Space>
+            </Card>
+
+            <Card size="small" title="Budget Overrides">
+              <Space orientation="vertical" size={8} style={{ width: '100%' }}>
+                {TOOLSET_BUDGET_FIELDS.map((field) => (
+                  <Flex key={field.key} justify="space-between" align="center" gap={12}>
+                    <span>
+                      <Text strong>{field.label}</Text>
+                      <Text type="secondary" style={{ display: 'block' }}>{field.description}</Text>
+                    </span>
+                    <InputNumber
+                      min={0}
+                      suffix={field.suffix}
+                      value={budgetOverrides[field.key]}
+                      onChange={(value) => setBudgetOverrideValue(field.key, value)}
+                    />
+                  </Flex>
+                ))}
+              </Space>
+            </Card>
+
+            <Card size="small" title="Scope Overrides">
+              <Space orientation="vertical" size={8} style={{ width: '100%' }}>
+                <Alert
+                  type="info"
+                  showIcon
+                  title="Scope override 会叠加到当前会话范围"
+                  description={`当前会话范围：${buildScopeSummary(currentSession.metadata?.scope)}`}
+                />
+                <Input placeholder="Override cluster" value={scopeOverrides.clusterId || ''} onChange={(event) => setScopeOverrideValue('clusterId', event.target.value)} />
+                <Input placeholder="Override namespace" value={scopeOverrides.namespace || ''} onChange={(event) => setScopeOverrideValue('namespace', event.target.value)} />
+                <Input placeholder="Override workload" value={scopeOverrides.workload || ''} onChange={(event) => setScopeOverrideValue('workload', event.target.value)} />
+                <Input placeholder="Override service" value={scopeOverrides.service || ''} onChange={(event) => setScopeOverrideValue('service', event.target.value)} />
+                <Input placeholder="Override alert ID" value={scopeOverrides.alertId || ''} onChange={(event) => setScopeOverrideValue('alertId', event.target.value)} />
+                <InputNumber
+                  min={0}
+                  suffix="minutes"
+                  placeholder="Override time range"
+                  value={scopeOverrides.timeRangeMinutes}
+                  onChange={(value) => setScopeOverrideNumberValue('timeRangeMinutes', value)}
+                />
+              </Space>
+            </Card>
+          </Space>
+        )}
       </Drawer>
+
+      <Modal
+        title="显式分析设置"
+        open={analysisOpen}
+        onCancel={() => setAnalysisOpen(false)}
+        onOk={submitExplicitAnalysis}
+        okText="开始分析"
+        cancelText="取消"
+        confirmLoading={analyzeSessionMutation.isPending}
+        okButtonProps={{ disabled: !currentSession || !canSubmitExplicitAnalysis }}
+        width={680}
+      >
+        {currentSession ? (
+          <Space orientation="vertical" size={14} style={{ width: '100%' }}>
+            <Alert
+              type="info"
+              showIcon
+              title="本次分析会写回当前会话"
+              description="分析结果会追加为 assistant 消息，并进入分析工件历史、图谱、证据和建议面板。"
+            />
+            <Space orientation="vertical" size={8} style={{ width: '100%' }}>
+              <Text strong>分析模式</Text>
+              <Segmented
+                block
+                value={analysisMode}
+                options={RUNNABLE_ANALYSIS_MODE_OPTIONS.map((item) => ({ value: item.value, label: item.label }))}
+                onChange={(value) => {
+                  const next = value as WorkbenchMode
+                  const currentDefault = defaultAnalysisQuestion(analysisMode, currentSession)
+                  setAnalysisMode(next)
+                  if (!analysisQuestion.trim() || analysisQuestion === currentDefault) {
+                    setAnalysisQuestion(defaultAnalysisQuestion(next, currentSession))
+                  }
+                }}
+              />
+            </Space>
+            <Space orientation="vertical" size={8} style={{ width: '100%' }}>
+              <Text strong>分析目标</Text>
+              <Input.TextArea
+                value={analysisQuestion}
+                onChange={(event) => setAnalysisQuestion(event.target.value)}
+                autoSize={{ minRows: 4, maxRows: 8 }}
+                maxLength={600}
+                showCount
+                placeholder="描述这轮分析要回答的问题"
+              />
+            </Space>
+            <Card size="small" title="执行上下文">
+              <Space size={[8, 8]} wrap>
+                <Tag color="blue">{modeLabel(analysisMode)}</Tag>
+                <Tag>{buildScopeSummary(currentSession.metadata?.scope)}</Tag>
+                <Tag>{currentSession.metadata?.toolset ? '会话级工具集' : '全局工具集'}</Tag>
+              </Space>
+            </Card>
+            {analysisMode === 'root_cause' && !canRunRootCause ? (
+              <Alert
+                type="warning"
+                showIcon
+                title="缺少 observe.ai.root-cause.run 权限，无法运行根因分析。"
+              />
+            ) : null}
+          </Space>
+        ) : (
+          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="先选择会话，再运行显式分析。" />
+        )}
+      </Modal>
 
       <Modal
         title="重命名会话"

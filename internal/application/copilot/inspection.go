@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -118,6 +119,13 @@ func (s *Service) UpdateInspectionTask(ctx context.Context, principal domainiden
 	return s.repo.UpdateInspectionTask(ctx, principal.UserID, task.ID, payload)
 }
 
+func (s *Service) DeleteInspectionTask(ctx context.Context, principal domainidentity.Principal, taskID string) error {
+	if err := s.authorizePrincipal(ctx, principal, appaccess.PermObserveAIInspectionManage); err != nil {
+		return err
+	}
+	return s.repo.DeleteInspectionTask(ctx, principal.UserID, strings.TrimSpace(taskID))
+}
+
 func (s *Service) ListInspectionRuns(ctx context.Context, principal domainidentity.Principal, filter domaincopilot.InspectionRunFilter) ([]domaincopilot.InspectionRun, error) {
 	if err := s.authorizePrincipal(ctx, principal, appaccess.PermObserveAIView); err != nil {
 		return nil, err
@@ -151,6 +159,9 @@ func (s *Service) CreateSessionFromInspectionRun(ctx context.Context, principal 
 	if err := s.authorizePrincipal(ctx, principal, appaccess.PermObserveAIChatUse); err != nil {
 		return domaincopilot.Session{}, err
 	}
+	if err := s.authorizePrincipal(ctx, principal, appaccess.PermObserveAIView); err != nil {
+		return domaincopilot.Session{}, err
+	}
 	runs, err := s.repo.ListInspectionRuns(ctx, principal.UserID, domaincopilot.InspectionRunFilter{Limit: 200})
 	if err != nil {
 		return domaincopilot.Session{}, err
@@ -165,12 +176,226 @@ func (s *Service) CreateSessionFromInspectionRun(ctx context.Context, principal 
 	if target == nil {
 		return domaincopilot.Session{}, fmt.Errorf("inspection run not found: %s", runID)
 	}
+	scope := map[string]any{}
+	task, taskErr := s.repo.GetInspectionTask(ctx, principal.UserID, target.TaskID)
+	if taskErr == nil {
+		if task.ClusterID != "" {
+			scope["clusterId"] = task.ClusterID
+		}
+		if task.Namespace != "" {
+			scope["namespace"] = task.Namespace
+		}
+	}
 	title := localize(locale, "巡检结果调查", "Inspection Investigation")
-	return s.CreateSession(ctx, principal, title, "inspection_review", map[string]any{}, []string{"inspection", "generated"}, locale)
+	session, err := s.CreateSession(ctx, principal, title, "inspection_review", scope, []string{"inspection", "generated"}, locale)
+	if err != nil {
+		return domaincopilot.Session{}, err
+	}
+	metadata := parseSessionMetadata(session.Metadata)
+	metadata.Summary = target.Summary
+	metadata.Source = "inspection_run"
+	metadata.PinnedContext = map[string]any{
+		"inspectionRunId":  target.ID,
+		"inspectionTaskId": target.TaskID,
+		"severity":         target.Severity,
+		"status":           target.Status,
+	}
+	metadata.AnalysisRunRefs = append(metadata.AnalysisRunRefs, domaincopilot.AnalysisRunRef{
+		ID:        target.ID,
+		Kind:      "inspection_review",
+		Status:    target.Status,
+		CreatedAt: target.StartedAt.Format(time.RFC3339),
+	})
+	session.Metadata = sessionMetadataMap(metadata)
+	session.UpdatedAt = time.Now().UTC()
+	updatedSession, err := s.repo.UpdateSession(ctx, principal.UserID, session.ID, session)
+	if err != nil {
+		return domaincopilot.Session{}, err
+	}
+	updatedMetadata := parseSessionMetadata(updatedSession.Metadata)
+	artifact := buildInspectionReviewArtifact(updatedMetadata.Scope, *target, locale)
+	if _, err := s.repo.CreateMessage(ctx, domaincopilot.Message{
+		ID:        uuid.NewString(),
+		SessionID: updatedSession.ID,
+		Role:      "assistant",
+		Content:   inspectionReviewInitialMessage(*target, locale),
+		Metadata: map[string]any{
+			"mode":              "inspection_review",
+			"source":            "inspection-run",
+			"locale":            normalizeLocale(locale),
+			"analysisArtifacts": []domaincopilot.AnalysisArtifact{artifact},
+		},
+		CreatedAt: time.Now().UTC(),
+	}); err != nil {
+		return domaincopilot.Session{}, err
+	}
+	return updatedSession, nil
+}
+
+func buildInspectionReviewArtifact(scope domaincopilot.SessionScope, run domaincopilot.InspectionRun, locale string) domaincopilot.AnalysisArtifact {
+	timestamp := run.StartedAt
+	evidence := make([]domaincopilot.RootCauseEvidence, 0, len(run.Findings))
+	recommendations := make([]string, 0, len(run.Findings))
+	seenRecommendations := map[string]struct{}{}
+	for index, finding := range run.Findings {
+		evidenceID := strings.TrimSpace(finding.ID)
+		if evidenceID == "" {
+			evidenceID = fmt.Sprintf("%s:finding:%d", run.ID, index+1)
+		}
+		attributes := map[string]any{
+			"inspectionRunId":  run.ID,
+			"inspectionTaskId": run.TaskID,
+			"source":           finding.Source,
+		}
+		if strings.TrimSpace(finding.Recommendation) != "" {
+			attributes["recommendation"] = strings.TrimSpace(finding.Recommendation)
+			if _, ok := seenRecommendations[strings.TrimSpace(finding.Recommendation)]; !ok {
+				seenRecommendations[strings.TrimSpace(finding.Recommendation)] = struct{}{}
+				recommendations = append(recommendations, strings.TrimSpace(finding.Recommendation))
+			}
+		}
+		if finding.Data != nil {
+			attributes["data"] = finding.Data
+		}
+		evidence = append(evidence, domaincopilot.RootCauseEvidence{
+			ID:         evidenceID,
+			Kind:       "inspection.finding",
+			Title:      finding.Title,
+			Summary:    finding.Summary,
+			Severity:   finding.Severity,
+			ClusterID:  scope.ClusterID,
+			Namespace:  scope.Namespace,
+			Timestamp:  &timestamp,
+			Attributes: attributes,
+		})
+	}
+	if len(recommendations) == 0 {
+		recommendations = append(recommendations, localize(locale, "复核巡检结果，并优先为高严重度项指定处理人。", "Review inspection findings and assign owners for high-severity items first."))
+	}
+	snapshot := map[string]any{
+		"inspectionRunId":  run.ID,
+		"inspectionTaskId": run.TaskID,
+		"status":           run.Status,
+		"severity":         run.Severity,
+	}
+	for key, value := range run.Report {
+		snapshot[key] = value
+	}
+	return domaincopilot.AnalysisArtifact{
+		Kind:               "inspection_review",
+		RunID:              run.ID,
+		Title:              localize(locale, "巡检复盘", "Inspection Review"),
+		Summary:            firstNonEmpty(run.Summary, localize(locale, "巡检复盘已创建。", "Inspection review created.")),
+		Scope:              scope,
+		Evidence:           evidence,
+		Recommendations:    recommendations,
+		Graph:              buildInspectionReviewGraph(scope, run, evidence),
+		DataSourceSnapshot: snapshot,
+	}
+}
+
+func inspectionReviewInitialMessage(run domaincopilot.InspectionRun, locale string) string {
+	summary := strings.TrimSpace(run.Summary)
+	if summary == "" {
+		return localize(locale, fmt.Sprintf("已从巡检运行 %s 创建复盘。", run.ID), fmt.Sprintf("Created an inspection review from run %s.", run.ID))
+	}
+	return localize(locale, fmt.Sprintf("已从巡检运行 %s 创建复盘。%s", run.ID, summary), fmt.Sprintf("Created an inspection review from run %s. %s", run.ID, summary))
+}
+
+func buildInspectionReviewGraph(scope domaincopilot.SessionScope, run domaincopilot.InspectionRun, evidence []domaincopilot.RootCauseEvidence) *domaincopilot.AnalysisGraph {
+	rootID := graphRootNodeID(scope)
+	runNodeID := "inspection-run:" + run.ID
+	nodes := []domaincopilot.AnalysisGraphNode{
+		{
+			ID:         rootID,
+			Kind:       "scope",
+			Title:      graphRootTitle(scope),
+			Subtitle:   graphRootSubtitle(scope),
+			SourceRefs: []string{"inspection"},
+			Attributes: map[string]any{
+				"clusterId": scope.ClusterID,
+				"namespace": scope.Namespace,
+			},
+		},
+		{
+			ID:         runNodeID,
+			Kind:       "inspection_run",
+			Title:      firstNonEmpty(run.Summary, run.ID),
+			Subtitle:   run.Status,
+			Severity:   run.Severity,
+			SourceRefs: []string{"inspection"},
+			Attributes: map[string]any{
+				"inspectionRunId":  run.ID,
+				"inspectionTaskId": run.TaskID,
+				"status":           run.Status,
+				"severity":         run.Severity,
+			},
+		},
+	}
+	edges := []domaincopilot.AnalysisGraphEdge{{
+		ID:       rootID + "->" + runNodeID,
+		Source:   rootID,
+		Target:   runNodeID,
+		Relation: "reviews",
+		Severity: run.Severity,
+	}}
+	for _, item := range evidence {
+		findingNodeID := "inspection-finding:" + item.ID
+		nodes = appendGraphNode(nodes, domaincopilot.AnalysisGraphNode{
+			ID:          findingNodeID,
+			Kind:        "inspection_finding",
+			Title:       item.Title,
+			Subtitle:    item.Summary,
+			Severity:    item.Severity,
+			EvidenceIDs: []string{item.ID},
+			SourceRefs:  []string{"inspection"},
+			Attributes:  item.Attributes,
+		})
+		edges = appendGraphEdge(edges, domaincopilot.AnalysisGraphEdge{
+			ID:          runNodeID + "->" + findingNodeID,
+			Source:      runNodeID,
+			Target:      findingNodeID,
+			Relation:    "finds",
+			Severity:    item.Severity,
+			EvidenceIDs: []string{item.ID},
+		})
+		recommendation := strings.TrimSpace(fmt.Sprint(item.Attributes["recommendation"]))
+		if recommendation == "" {
+			continue
+		}
+		recommendationNodeID := "inspection-recommendation:" + item.ID
+		nodes = appendGraphNode(nodes, domaincopilot.AnalysisGraphNode{
+			ID:          recommendationNodeID,
+			Kind:        "recommendation",
+			Title:       recommendation,
+			Severity:    item.Severity,
+			EvidenceIDs: []string{item.ID},
+			SourceRefs:  []string{"inspection"},
+		})
+		edges = appendGraphEdge(edges, domaincopilot.AnalysisGraphEdge{
+			ID:          findingNodeID + "->" + recommendationNodeID,
+			Source:      findingNodeID,
+			Target:      recommendationNodeID,
+			Relation:    "suggests",
+			Severity:    item.Severity,
+			EvidenceIDs: []string{item.ID},
+		})
+	}
+	sort.Slice(nodes, func(i, j int) bool { return nodes[i].ID < nodes[j].ID })
+	sort.Slice(edges, func(i, j int) bool { return edges[i].ID < edges[j].ID })
+	return &domaincopilot.AnalysisGraph{
+		Layout:      "LR",
+		FocusNodeID: rootID,
+		Nodes:       nodes,
+		Edges:       edges,
+	}
 }
 
 func (s *Service) CreateInspectionTaskFromSession(ctx context.Context, principal domainidentity.Principal, sessionID string, input domaincopilot.InspectionTaskInput, locale string) (domaincopilot.InspectionTask, error) {
 	if err := s.authorizePrincipal(ctx, principal, appaccess.PermObserveAIInspectionManage); err != nil {
+		return domaincopilot.InspectionTask{}, err
+	}
+	if err := s.authorizePrincipal(ctx, principal, appaccess.PermObserveAIChatUse); err != nil {
 		return domaincopilot.InspectionTask{}, err
 	}
 	session, err := s.repo.GetSession(ctx, principal.UserID, strings.TrimSpace(sessionID))

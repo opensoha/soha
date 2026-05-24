@@ -1,24 +1,28 @@
 package copilot
 
-import "time"
+import (
+	"time"
+
+	domainmcp "github.com/kubecrux/kubecrux/internal/domain/mcp"
+)
 
 type DataSource struct {
-	ID              string         `json:"id"`
-	Name            string         `json:"name"`
-	SourceKind      string         `json:"sourceKind"`
-	BackendType     string         `json:"backendType"`
-	Enabled         bool           `json:"enabled"`
-	CredentialRef   string         `json:"credentialRef,omitempty"`
-	Scope           map[string]any `json:"scope,omitempty"`
-	QueryBudget     map[string]any `json:"queryBudget,omitempty"`
-	RedactionPolicy map[string]any `json:"redactionPolicy,omitempty"`
-	MCPAdapter      string         `json:"mcpAdapter"`
-	Config          map[string]any `json:"config,omitempty"`
-	ValidationStatus  string     `json:"validationStatus,omitempty"`
-	ValidationMessage string     `json:"validationMessage,omitempty"`
-	LastValidatedAt   *time.Time `json:"lastValidatedAt,omitempty"`
-	CreatedAt       time.Time      `json:"createdAt"`
-	UpdatedAt       time.Time      `json:"updatedAt"`
+	ID                string         `json:"id"`
+	Name              string         `json:"name"`
+	SourceKind        string         `json:"sourceKind"`
+	BackendType       string         `json:"backendType"`
+	Enabled           bool           `json:"enabled"`
+	CredentialRef     string         `json:"credentialRef,omitempty"`
+	Scope             map[string]any `json:"scope,omitempty"`
+	QueryBudget       map[string]any `json:"queryBudget,omitempty"`
+	RedactionPolicy   map[string]any `json:"redactionPolicy,omitempty"`
+	MCPAdapter        string         `json:"mcpAdapter"`
+	Config            map[string]any `json:"config,omitempty"`
+	ValidationStatus  string         `json:"validationStatus,omitempty"`
+	ValidationMessage string         `json:"validationMessage,omitempty"`
+	LastValidatedAt   *time.Time     `json:"lastValidatedAt,omitempty"`
+	CreatedAt         time.Time      `json:"createdAt"`
+	UpdatedAt         time.Time      `json:"updatedAt"`
 }
 
 type DataSourceInput struct {
@@ -93,4 +97,42 @@ type AutomationPolicyInput struct {
 	RemediationPolicy  string         `json:"remediationPolicy"`
 	ApprovalPolicy     map[string]any `json:"approvalPolicy,omitempty"`
 	CooldownSeconds    int            `json:"cooldownSeconds"`
+}
+
+type WorkbenchSkill struct {
+	ID             string   `json:"id"`
+	Name           string   `json:"name"`
+	Category       string   `json:"category,omitempty"`
+	OwnerModule    string   `json:"ownerModule,omitempty"`
+	Description    string   `json:"description,omitempty"`
+	Enabled        bool     `json:"enabled"`
+	Scopes         []string `json:"scopes,omitempty"`
+	CapabilityRefs []string `json:"capabilityRefs,omitempty"`
+	BlueprintRefs  []string `json:"blueprintRefs,omitempty"`
+	ScopeRules     []string `json:"scopeRules,omitempty"`
+}
+
+type WorkbenchAnalysisProfile struct {
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Mode    string `json:"mode"`
+	Enabled bool   `json:"enabled"`
+}
+
+type WorkbenchDataSource struct {
+	ID                string `json:"id"`
+	Name              string `json:"name"`
+	SourceKind        string `json:"sourceKind"`
+	BackendType       string `json:"backendType"`
+	Enabled           bool   `json:"enabled"`
+	MCPAdapter        string `json:"mcpAdapter"`
+	ValidationStatus  string `json:"validationStatus,omitempty"`
+	ValidationMessage string `json:"validationMessage,omitempty"`
+}
+
+type WorkbenchCatalog struct {
+	Adapters         []domainmcp.Adapter        `json:"adapters"`
+	DataSources      []WorkbenchDataSource      `json:"dataSources"`
+	AnalysisProfiles []WorkbenchAnalysisProfile `json:"analysisProfiles"`
+	SkillsRegistry   []WorkbenchSkill           `json:"skillsRegistry,omitempty"`
 }

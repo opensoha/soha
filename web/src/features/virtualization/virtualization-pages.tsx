@@ -43,6 +43,7 @@ import {
   WarningOutlined,
 } from '@ant-design/icons'
 import { hasAllowedAction, hasPermission, usePermissionSnapshot } from '@/features/auth/permission-snapshot'
+import { getAIWorkbenchPathForMode } from '@/features/copilot/workbench-navigation'
 import { formatDateTime } from '@/utils/time'
 import { tableColumnPresets } from '@/utils/table-columns'
 import { api } from '@/services/api-client'
@@ -547,7 +548,7 @@ function buildInvestigationPath(params: {
   if (params.connectionId) search.set('connectionId', params.connectionId)
   if (params.vmId) search.set('vmId', params.vmId)
   if (params.provider) search.set('provider', params.provider)
-  return `/ai-workbench/investigation?${search.toString()}`
+  return getAIWorkbenchPathForMode('root_cause', search)
 }
 
 function operationParamsFromSearch(search: string) {

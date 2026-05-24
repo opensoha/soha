@@ -434,6 +434,7 @@ func New(cfg cfgpkg.Config, logger *zap.Logger, deps Dependencies) *http.Server 
 		}
 		if cfg.Modules.AI.Enabled {
 			protected.GET("/copilot/insights", deps.Copilot.ListInsights)
+			protected.GET("/copilot/workbench/catalog", deps.Copilot.GetWorkbenchCatalog)
 			protected.GET("/copilot/data-source-capabilities", deps.Copilot.ListDataSourceCapabilities)
 			protected.GET("/copilot/data-sources", deps.Copilot.ListDataSources)
 			protected.POST("/copilot/data-sources", deps.Copilot.CreateDataSource)
@@ -445,6 +446,7 @@ func New(cfg cfgpkg.Config, logger *zap.Logger, deps Dependencies) *http.Server 
 			protected.GET("/copilot/automation-policies", deps.Copilot.ListAutomationPolicies)
 			protected.POST("/copilot/automation-policies", deps.Copilot.CreateAutomationPolicy)
 			protected.PUT("/copilot/automation-policies/:policyID", deps.Copilot.UpdateAutomationPolicy)
+			protected.DELETE("/copilot/automation-policies/:policyID", deps.Copilot.DeleteAutomationPolicy)
 			protected.GET("/copilot/root-cause/runs", deps.Copilot.ListRootCauseRuns)
 			protected.GET("/copilot/analysis/runs", deps.Copilot.ListAnalysisRuns)
 			protected.POST("/copilot/root-cause/runs", deps.Copilot.CreateRootCauseRun)
@@ -460,6 +462,7 @@ func New(cfg cfgpkg.Config, logger *zap.Logger, deps Dependencies) *http.Server 
 			protected.GET("/copilot/inspection-tasks", deps.Copilot.ListInspectionTasks)
 			protected.POST("/copilot/inspection-tasks", deps.Copilot.CreateInspectionTask)
 			protected.PUT("/copilot/inspection-tasks/:taskID", deps.Copilot.UpdateInspectionTask)
+			protected.DELETE("/copilot/inspection-tasks/:taskID", deps.Copilot.DeleteInspectionTask)
 			protected.GET("/copilot/inspection-runs", deps.Copilot.ListInspectionRuns)
 			protected.POST("/copilot/inspection-tasks/:taskID/execute", deps.Copilot.ExecuteInspectionTask)
 			protected.POST("/copilot/inspection-runs/:runID/session", deps.Copilot.CreateSessionFromInspectionRun)

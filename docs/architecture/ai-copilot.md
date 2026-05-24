@@ -25,11 +25,14 @@ AI 层需要帮助完成：
 - 总入口:
   - `/ai-workbench`
 - 调查工作台:
-  - `/ai-workbench/investigation`
+  - `/ai-workbench/chat`
+  - `/ai-workbench/root-cause`
+  - `/ai-workbench/performance`
 - 巡检与自动化:
-  - `/ai-workbench/automation`
+  - `/ai-workbench/inspection`
 - 工具与技能:
-  - `/ai-workbench/tools`
+  - `/ai-workbench/tool-settings`
+  - `/ai-workbench/model-settings`
 
 兼容旧入口仍保留跳转：
 
@@ -42,6 +45,9 @@ AI 层需要帮助完成：
 - `/ai-observe/chat`
 - `/ai-observe/inspection`
 - `/chat`
+- `/ai-workbench/investigation`
+- `/ai-workbench/automation`
+- `/ai-workbench/tools`
 
 ## Session Model
 
@@ -71,6 +77,16 @@ AI 调查以会话为一等对象，而不是临时聊天记录。
 - `namespace`
 - `workload`
 - `timeRangeMinutes`
+
+其中 `toolset` 已经进入后端执行路径：
+
+- `enabledAdapterIds` 用于限制本会话可用 MCP adapter
+- `disabledToolNames` 用于屏蔽具体工具名或 `adapter.tool` 形式的工具
+- `budgetOverrides.maxEvidenceItems` 用于限制会话分析证据数量
+- `budgetOverrides.timeoutSeconds` 用于限制单次分析工具运行时长
+- `scopeOverrides` 会叠加到会话 scope，再进入根因、性能和链路分析
+
+会话工具装配读取 `/api/v1/copilot/workbench/catalog`，该接口面向 `observe.ai.chat` / `observe.ai.view` / `settings.ai.view` 用户返回安全目录摘要：adapter 元数据、数据源启用状态、分析模板摘要和 skill 摘要。全量 AI Provider 配置和密钥仍只允许通过 `settings.ai.view` 访问。
 
 当前会话模式：
 
@@ -141,6 +157,8 @@ AI 调查以会话为一等对象，而不是临时聊天记录。
 1. Settings > AI
    - 全局 provider、data source、analysis profile、automation policy 配置
 2. `/ai-workbench/tools`
+   - 兼容旧入口，实际跳转到 `/ai-workbench/tool-settings`
+3. `/ai-workbench/tool-settings`
    - 会话级临时 toolset 和 skill 装配入口
 
 全局 skill registry 现在采用企业 skill definition，而不是仅保留简单展示项：
@@ -168,7 +186,7 @@ AI 调查以会话为一等对象，而不是临时聊天记录。
 - 风险雷达
 - 快捷跳转到工作台、巡检自动化、工具技能
 
-### `/ai-workbench/investigation`
+### `/ai-workbench/chat`
 
 调查工作台使用 Ant Design X + antd 组合：
 
@@ -177,12 +195,42 @@ AI 调查以会话为一等对象，而不是临时聊天记录。
 - 右侧上下文 / 证据 / 假设 / 建议面板
 - `ThoughtChain` 抽屉显示工具链与分析步骤
 - 当当前会话 scope 携带 `alertId` 时，工作台支持回跳原始监控告警详情
+- 支持通过 `mode=trace` 和 `mode=inspection_review` 在同一会话画布内切换链路分析和巡检复盘
+- `会话级工具集` 抽屉现在直接展示有效执行策略，并可编辑 adapter 选择、`adapter.tool` 级禁用清单、预算覆盖和 scope override
+- `显式分析` 会先打开确认弹窗，让用户选择可运行分析模式、编辑本轮分析目标，并预览会话 scope 与工具集来源，然后再调用会话分析接口；当前可运行模式限定为 `root_cause`、`performance` 和 `trace`，后端会拒绝 `general` / `inspection_review` 这类不会产生显式分析工件的模式，成功后会把所选模式写回会话 metadata
+- 会话内所有 assistant 消息携带的 `analysisArtifacts` 会汇总成“分析工件历史”，用户可以在根因、性能、链路和巡检复盘工件之间切换图谱、证据和建议
 
-### `/ai-workbench/automation`
+### `/ai-workbench/root-cause` 与 `/ai-workbench/performance`
 
-当前基于原 `InspectionCenterPage` 扩展，为后续整合自动化策略预留统一入口。
+根因和性能模式复用同一个会话画布，但入口路径直接表达当前分析类型，避免通过旧 `investigation?mode=*` 私有跳转协议承载主要 IA。
 
-### `/ai-workbench/tools`
+### `/ai-workbench/inspection`
+
+当前是巡检任务、运行记录和自动化策略的统一入口。
+
+`/ai-workbench/inspection` 现在不是只读列表：
+
+- 支持在 AI 工作台内直接新建和编辑巡检任务
+- 巡检任务表单会按平台、集群、命名空间三种 scope 收敛输入
+- 巡检任务可选择 `mode=inspection` 的分析模板，写入 task metadata 的 `analysisProfileId`，后端执行时可据此覆盖巡检 playbooks 和数据源约束
+- 巡检任务现在支持删除；删除入口在工作台内受 `observe.ai.inspection.manage` 控制，后端按创建者隔离并依赖数据库级联清理关联巡检运行
+- 任务创建、编辑、立即执行和巡检运行转调查会话都在同一工作区完成，并继续受 `observe.ai.inspection.manage`、`observe.ai.inspection.run` 和 `observe.ai.chat` 权限控制；巡检运行转调查会话还必须具备 `observe.ai.view`，调查会话生成巡检任务还必须具备 `observe.ai.chat`
+- 从调查会话生成巡检任务时，工作台会优先附带当前可用的 inspection profile，避免会话转巡检后丢失 profile 驱动的检查契约
+- 自动化策略页签支持直接新建和编辑触发类型、分析类型、分析模板、修复策略、去重窗口、冷却时间和启用状态
+- 自动化策略读取、创建、编辑和删除继续使用后端 `/api/v1/copilot/automation-policies` 合约，并受 `settings.ai.manage` 权限控制；缺少该权限时工作台不得主动拉取策略列表，只展示明确的权限边界
+- 自动化策略表单必须从工作台安全目录里的分析模板摘要选择 `analysisProfileId`；当前执行器只支持 `alert_webhook` 触发类型，未接入执行器的触发类型不得作为可运行策略选项暴露
+- 自动化策略的可运行分析类型当前限定为 `root_cause`、`performance` 和 `trace`；`inspection_review` 仍是会话/巡检复盘工件模式，不属于告警自动化执行器的 analysis kind
+- 告警级别、状态、最小持续时间、标签匹配、分析时间范围和审批角色会写入结构化 `triggerConditions` / `approvalPolicy`，避免在工作台里只创建不可触发的空策略
+- 自动化执行器会把根因、性能和链路分析运行写入带 policy 前缀的 `dedupKey`；`dedupWindowSeconds` 负责同一告警指纹去重，`cooldownSeconds > 0` 负责策略级冷却，避免不同告警在冷却期内重复触发
+
+巡检结果进入会话时不再只创建一个空调查：
+
+- 后端会把巡检 task 的 `clusterId` / `namespace` 写入会话 scope
+- 会话 `pinnedContext` 保留 `inspectionRunId`、`inspectionTaskId`、严重度和状态
+- 首条 assistant 消息会携带 `inspection_review` 分析工件
+- 该工件把 findings 转成 evidence、recommendations 和左到右关系图，供会话右侧证据面板直接渲染
+
+### `/ai-workbench/tool-settings`
 
 当前展示：
 
@@ -190,6 +238,17 @@ AI 调查以会话为一等对象，而不是临时聊天记录。
 - 全局数据源镜像
 - 会话级 toolset 装配入口
 - 企业 skill registry
+
+工具装配入口必须与后端执行契约保持一致：
+
+- 禁用工具保存为 `adapter.tool` 形式，避免同名工具误伤其它 adapter
+- 空 adapter 列表表示自动选择；推荐预设会优先启用已注册且有数据源支撑的 adapter
+- 预算覆盖只保存正数，避免 `0` 被误解释成有效限制
+- scope override 写入结构化 `clusterId`、`namespace`、`workload`、`service`、`alertId` 和 `timeRangeMinutes`
+
+### `/ai-workbench/model-settings`
+
+在 AI 工作台内嵌全局 AI 设置，继续使用 `settings.ai.view` / `settings.ai.manage` 权限键。
 
 ## Safety And Execution Model
 

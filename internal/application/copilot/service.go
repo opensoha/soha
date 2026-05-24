@@ -22,6 +22,7 @@ import (
 	domainmcp "github.com/kubecrux/kubecrux/internal/domain/mcp"
 	domainrelease "github.com/kubecrux/kubecrux/internal/domain/release"
 	domainsettings "github.com/kubecrux/kubecrux/internal/domain/settings"
+	aperrors "github.com/kubecrux/kubecrux/internal/platform/apperrors"
 	"github.com/kubecrux/kubecrux/internal/platform/runtimeobs"
 	"go.uber.org/zap"
 )
@@ -46,6 +47,7 @@ type Repository interface {
 	ListAutomationPolicies(context.Context) ([]domaincopilot.AutomationPolicy, error)
 	CreateAutomationPolicy(context.Context, domaincopilot.AutomationPolicy) (domaincopilot.AutomationPolicy, error)
 	UpdateAutomationPolicy(context.Context, string, domaincopilot.AutomationPolicyInput) (domaincopilot.AutomationPolicy, error)
+	DeleteAutomationPolicy(context.Context, string) error
 	ListRootCauseRuns(context.Context, string, domaincopilot.RootCauseRunFilter) ([]domaincopilot.RootCauseRun, error)
 	GetRootCauseRun(context.Context, string, string) (domaincopilot.RootCauseRun, error)
 	CreateRootCauseRun(context.Context, domaincopilot.RootCauseRun) (domaincopilot.RootCauseRun, error)
@@ -54,6 +56,7 @@ type Repository interface {
 	ListDueInspectionTasks(context.Context, time.Time, int) ([]domaincopilot.InspectionTask, error)
 	CreateInspectionTask(context.Context, domaincopilot.InspectionTask) (domaincopilot.InspectionTask, error)
 	UpdateInspectionTask(context.Context, string, string, domaincopilot.InspectionTaskInput) (domaincopilot.InspectionTask, error)
+	DeleteInspectionTask(context.Context, string, string) error
 	TouchInspectionTaskRun(context.Context, string, time.Time) error
 	ListInspectionRuns(context.Context, string, domaincopilot.InspectionRunFilter) ([]domaincopilot.InspectionRun, error)
 	CreateInspectionRun(context.Context, domaincopilot.InspectionRun) (domaincopilot.InspectionRun, error)
@@ -253,7 +256,11 @@ func (s *Service) ListMessages(ctx context.Context, principal domainidentity.Pri
 	if err := s.authorizePrincipal(ctx, principal, appaccess.PermObserveAIChatUse); err != nil {
 		return nil, err
 	}
-	return s.repo.ListMessages(ctx, sessionID, 100)
+	trimmedSessionID := strings.TrimSpace(sessionID)
+	if _, err := s.repo.GetSession(ctx, principal.UserID, trimmedSessionID); err != nil {
+		return nil, err
+	}
+	return s.repo.ListMessages(ctx, trimmedSessionID, 100)
 }
 
 func (s *Service) SendMessage(ctx context.Context, principal domainidentity.Principal, sessionID, content, locale string) (domaincopilot.SessionMessageEnvelope, error) {
@@ -321,14 +328,29 @@ func (s *Service) RunSessionAnalysis(ctx context.Context, principal domainidenti
 	if err != nil {
 		return domaincopilot.SessionMessageEnvelope{}, err
 	}
-	scope := scopeFromMap(inputScopeMap(input))
+	metadata := parseSessionMetadata(session.Metadata)
+	scope := mergeSessionScope(metadata.Scope, metadata.Toolset.ScopeOverrides)
+	runCreatedBy, runTriggerType, runDedupKey := sessionAnalysisRunPersistence(session.ID, metadata)
+	if strings.TrimSpace(input.ClusterID) != "" ||
+		strings.TrimSpace(input.Namespace) != "" ||
+		strings.TrimSpace(input.WorkloadName) != "" ||
+		strings.TrimSpace(input.AlertID) != "" ||
+		input.TimeRangeMinutes > 0 {
+		scope = mergeSessionScope(scope, inputScopeMap(input))
+	}
 	mode := normalizeSessionMode(input.Kind)
+	if mode == "general" && strings.TrimSpace(metadata.Mode) != "" {
+		mode = normalizeSessionMode(metadata.Mode)
+	}
+	if !isRunnableSessionAnalysisMode(mode) {
+		return domaincopilot.SessionMessageEnvelope{}, fmt.Errorf("%w: analyze mode must be root_cause, performance, or trace", aperrors.ErrInvalidArgument)
+	}
 	toolCalls := make([]domaincopilot.ToolExecution, 0)
 	artifacts := make([]domaincopilot.AnalysisArtifact, 0)
-	refs := append([]domaincopilot.AnalysisRunRef{}, parseSessionMetadata(session.Metadata).AnalysisRunRefs...)
+	refs := append([]domaincopilot.AnalysisRunRef{}, metadata.AnalysisRunRefs...)
 	switch mode {
 	case "root_cause":
-		run, calls, artifact, runErr := s.runSessionRootCause(ctx, principal, session.ID, scope, input.Question, locale)
+		run, calls, artifact, runErr := s.runSessionRootCause(ctx, principal, session.ID, scope, metadata.Toolset, input.Question, locale)
 		if runErr != nil {
 			return domaincopilot.SessionMessageEnvelope{}, runErr
 		}
@@ -336,7 +358,7 @@ func (s *Service) RunSessionAnalysis(ctx context.Context, principal domainidenti
 		artifacts = append(artifacts, artifact)
 		refs = append(refs, domaincopilot.AnalysisRunRef{ID: run.ID, Kind: run.Kind, Status: run.Status, CreatedAt: run.CreatedAt.Format(time.RFC3339)})
 	case "performance":
-		calls, artifact, runErr := s.runSessionPerformance(ctx, session.ID, scope, input.Question)
+		calls, artifact, runErr := s.runSessionPerformance(ctx, session.ID, scope, metadata.Toolset, input.Question, runCreatedBy, runTriggerType, runDedupKey)
 		if runErr != nil {
 			return domaincopilot.SessionMessageEnvelope{}, runErr
 		}
@@ -344,7 +366,7 @@ func (s *Service) RunSessionAnalysis(ctx context.Context, principal domainidenti
 		artifacts = append(artifacts, artifact)
 		refs = append(refs, domaincopilot.AnalysisRunRef{ID: artifact.RunID, Kind: artifact.Kind, Status: "completed", CreatedAt: time.Now().UTC().Format(time.RFC3339)})
 	case "trace":
-		calls, artifact, runErr := s.runSessionTrace(ctx, session.ID, scope, input.Question)
+		calls, artifact, runErr := s.runSessionTrace(ctx, session.ID, scope, metadata.Toolset, input.Question, runCreatedBy, runTriggerType, runDedupKey)
 		if runErr != nil {
 			return domaincopilot.SessionMessageEnvelope{}, runErr
 		}
@@ -363,6 +385,7 @@ func (s *Service) RunSessionAnalysis(ctx context.Context, principal domainidenti
 	}
 	sessionPatch := map[string]any{}
 	if len(artifacts) > 0 {
+		sessionPatch["mode"] = mode
 		sessionPatch["summary"] = artifacts[0].Summary
 		sessionPatch["analysisRunRefs"] = refs
 	}
@@ -375,20 +398,14 @@ func (s *Service) RunSessionAnalysis(ctx context.Context, principal domainidenti
 		SessionID: sessionID,
 		Role:      "assistant",
 		Content:   reply,
-		Metadata:  map[string]any{"mode": normalizeSessionMode(input.Kind), "source": "explicit-analysis", "locale": locale, "analysisArtifacts": artifacts},
+		Metadata:  map[string]any{"mode": mode, "source": "explicit-analysis", "locale": locale, "analysisArtifacts": artifacts},
 		CreatedAt: time.Now().UTC(),
 	})
 	if err != nil {
 		return domaincopilot.SessionMessageEnvelope{}, err
 	}
 	if len(sessionPatch) > 0 {
-		merged := parseSessionMetadata(session.Metadata)
-		if summary, ok := sessionPatch["summary"].(string); ok && strings.TrimSpace(summary) != "" {
-			merged.Summary = strings.TrimSpace(summary)
-		}
-		if refs, ok := sessionPatch["analysisRunRefs"].([]domaincopilot.AnalysisRunRef); ok && len(refs) > 0 {
-			merged.AnalysisRunRefs = refs
-		}
+		merged := applySessionAnalysisPatch(parseSessionMetadata(session.Metadata), sessionPatch)
 		session.Metadata = sessionMetadataMap(merged)
 		session.UpdatedAt = time.Now().UTC()
 		_, _ = s.repo.UpdateSession(ctx, principal.UserID, session.ID, session)
@@ -401,6 +418,15 @@ func (s *Service) RunSessionAnalysis(ctx context.Context, principal domainidenti
 	}, nil
 }
 
+func isRunnableSessionAnalysisMode(mode string) bool {
+	switch normalizeSessionMode(mode) {
+	case "root_cause", "performance", "trace":
+		return true
+	default:
+		return false
+	}
+}
+
 func inputScopeMap(input domaincopilot.RootCauseRunInput) map[string]any {
 	return map[string]any{
 		"clusterId":        input.ClusterID,
@@ -409,6 +435,19 @@ func inputScopeMap(input domaincopilot.RootCauseRunInput) map[string]any {
 		"alertId":          input.AlertID,
 		"timeRangeMinutes": input.TimeRangeMinutes,
 	}
+}
+
+func applySessionAnalysisPatch(metadata domaincopilot.SessionMetadata, patch map[string]any) domaincopilot.SessionMetadata {
+	if value, ok := patch["mode"].(string); ok && strings.TrimSpace(value) != "" {
+		metadata.Mode = normalizeSessionMode(value)
+	}
+	if summary, ok := patch["summary"].(string); ok && strings.TrimSpace(summary) != "" {
+		metadata.Summary = strings.TrimSpace(summary)
+	}
+	if refs, ok := patch["analysisRunRefs"].([]domaincopilot.AnalysisRunRef); ok && len(refs) > 0 {
+		metadata.AnalysisRunRefs = refs
+	}
+	return metadata
 }
 
 func (s *Service) Insights(ctx context.Context, principal domainidentity.Principal, locale string) ([]domaincopilot.Insight, error) {

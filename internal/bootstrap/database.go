@@ -82,7 +82,7 @@ type clusterCredentialSeed struct {
 // While the stored version matches this constant, the static seed block is
 // skipped entirely. Config-driven sync (admin user, clusters) runs separately
 // during startup so runtime config updates do not depend on replaying defaults.
-const bootstrapSeedVersion = "2026-05-24-docker-workbench-1"
+const bootstrapSeedVersion = "2026-05-25-ai-workbench-1"
 
 const bootstrapSeedVersionKey = "bootstrap.seed_version"
 
@@ -242,9 +242,10 @@ func defaultMenuSeeds() []menuSeed {
 		{ID: "monitoring-workbench-oncall", ParentID: "monitoring-workbench", Path: "/monitoring-workbench/oncall", LabelZH: "值班协同", LabelEN: "On-Call Coordination", IconKey: "users", Section: "ops", SortOrder: 66, Enabled: true},
 		{ID: "monitoring-workbench-events", ParentID: "monitoring-workbench", Path: "/monitoring-workbench/events", LabelZH: "事件流", LabelEN: "Events", IconKey: "bell", Section: "ops", SortOrder: 67, Enabled: true},
 		{ID: "ai-workbench", Path: "/ai-workbench", LabelZH: "AI工作台", LabelEN: "AI Workbench", IconKey: "bot", Section: "ops", SortOrder: 15, Enabled: true},
-		{ID: "ai-workbench-investigation", ParentID: "ai-workbench", Path: "/ai-workbench/investigation", LabelZH: "调查工作台", LabelEN: "Investigation Workbench", IconKey: "bot", Section: "ops", SortOrder: 16, Enabled: true},
-		{ID: "ai-workbench-operations", ParentID: "ai-workbench", Path: "/ai-workbench/automation", LabelZH: "巡检与自动化", LabelEN: "Automation", IconKey: "bot", Section: "ops", SortOrder: 17, Enabled: true},
-		{ID: "ai-workbench-tools", ParentID: "ai-workbench", Path: "/ai-workbench/tools", LabelZH: "工具与技能", LabelEN: "Tools & Skills", IconKey: "bot", Section: "ops", SortOrder: 18, Enabled: true},
+		{ID: "ai-workbench-chat", ParentID: "ai-workbench", Path: "/ai-workbench/chat", LabelZH: "通用聊天", LabelEN: "Chat", IconKey: "bot", Section: "ops", SortOrder: 16, Enabled: true},
+		{ID: "ai-workbench-inspection", ParentID: "ai-workbench", Path: "/ai-workbench/inspection", LabelZH: "巡检", LabelEN: "Inspection", IconKey: "inspect", Section: "ops", SortOrder: 17, Enabled: true},
+		{ID: "ai-workbench-tool-settings", ParentID: "ai-workbench", Path: "/ai-workbench/tool-settings", LabelZH: "工具与技能", LabelEN: "Tools & Skills", IconKey: "wrench", Section: "ops", SortOrder: 18, Enabled: true},
+		{ID: "ai-workbench-model-settings", ParentID: "ai-workbench", Path: "/ai-workbench/model-settings", LabelZH: "AI 设置", LabelEN: "AI Settings", IconKey: "settings", Section: "ops", SortOrder: 19, Enabled: true},
 		{ID: "virtualization-workbench", Path: "/virtualization", LabelZH: "虚拟化管理工作台", LabelEN: "Virtualization Workbench", IconKey: "server", Section: "ops", SortOrder: 80, Enabled: true},
 		{ID: "virtualization-workbench-overview", ParentID: "virtualization-workbench", Path: "/virtualization/overview", LabelZH: "总览", LabelEN: "Overview", IconKey: "gauge", Section: "ops", SortOrder: 81, Enabled: true},
 		{ID: "virtualization-workbench-vms", ParentID: "virtualization-workbench", Path: "/virtualization/vms", LabelZH: "虚拟机", LabelEN: "Virtual Machines", IconKey: "desktop", Section: "ops", SortOrder: 82, Enabled: true},

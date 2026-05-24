@@ -23,6 +23,7 @@ type CopilotService interface {
 	SendMessage(context.Context, domainidentity.Principal, string, string, string) (domaincopilot.SessionMessageEnvelope, error)
 	Insights(context.Context, domainidentity.Principal, string) ([]domaincopilot.Insight, error)
 	ListDataSourceCapabilities(context.Context, domainidentity.Principal) ([]domainmcp.Adapter, error)
+	GetWorkbenchCatalog(context.Context, domainidentity.Principal) (domaincopilot.WorkbenchCatalog, error)
 	ListDataSources(context.Context, domainidentity.Principal) ([]domaincopilot.DataSource, error)
 	CreateDataSource(context.Context, domainidentity.Principal, domaincopilot.DataSourceInput) (domaincopilot.DataSource, error)
 	UpdateDataSource(context.Context, domainidentity.Principal, string, domaincopilot.DataSourceInput) (domaincopilot.DataSource, error)
@@ -33,6 +34,7 @@ type CopilotService interface {
 	ListAutomationPolicies(context.Context, domainidentity.Principal) ([]domaincopilot.AutomationPolicy, error)
 	CreateAutomationPolicy(context.Context, domainidentity.Principal, domaincopilot.AutomationPolicyInput) (domaincopilot.AutomationPolicy, error)
 	UpdateAutomationPolicy(context.Context, domainidentity.Principal, string, domaincopilot.AutomationPolicyInput) (domaincopilot.AutomationPolicy, error)
+	DeleteAutomationPolicy(context.Context, domainidentity.Principal, string) error
 	ListRootCauseRuns(context.Context, domainidentity.Principal, domaincopilot.RootCauseRunFilter) ([]domaincopilot.RootCauseRun, error)
 	ListAnalysisRuns(context.Context, domainidentity.Principal, domaincopilot.RootCauseRunFilter) ([]domaincopilot.RootCauseRun, error)
 	GetRootCauseRun(context.Context, domainidentity.Principal, string) (domaincopilot.RootCauseRun, error)
@@ -41,6 +43,7 @@ type CopilotService interface {
 	ListInspectionTasks(context.Context, domainidentity.Principal) ([]domaincopilot.InspectionTask, error)
 	CreateInspectionTask(context.Context, domainidentity.Principal, domaincopilot.InspectionTaskInput, string) (domaincopilot.InspectionTask, error)
 	UpdateInspectionTask(context.Context, domainidentity.Principal, string, domaincopilot.InspectionTaskInput, string) (domaincopilot.InspectionTask, error)
+	DeleteInspectionTask(context.Context, domainidentity.Principal, string) error
 	ListInspectionRuns(context.Context, domainidentity.Principal, domaincopilot.InspectionRunFilter) ([]domaincopilot.InspectionRun, error)
 	ExecuteInspectionTask(context.Context, domainidentity.Principal, string, string) (domaincopilot.InspectionRun, error)
 	CreateSessionFromInspectionRun(context.Context, domainidentity.Principal, string, string) (domaincopilot.Session, error)
@@ -73,6 +76,16 @@ func (h *CopilotHandler) ListDataSourceCapabilities(c *gin.Context) {
 		return
 	}
 	apiresponse.Items(c, http.StatusOK, items)
+}
+
+func (h *CopilotHandler) GetWorkbenchCatalog(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	item, err := h.service.GetWorkbenchCatalog(c.Request.Context(), principal)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
 }
 
 func (h *CopilotHandler) ListDataSources(c *gin.Context) {
@@ -277,6 +290,15 @@ func (h *CopilotHandler) UpdateAutomationPolicy(c *gin.Context) {
 	apiresponse.Item(c, http.StatusOK, item)
 }
 
+func (h *CopilotHandler) DeleteAutomationPolicy(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	if err := h.service.DeleteAutomationPolicy(c.Request.Context(), principal, c.Param("policyID")); err != nil {
+		writeError(c, err)
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
 func (h *CopilotHandler) ListSessions(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	items, err := h.service.ListSessions(c.Request.Context(), principal)
@@ -304,7 +326,17 @@ func (h *CopilotHandler) CreateSession(c *gin.Context) {
 		return
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.service.CreateSession(c.Request.Context(), principal, req.Title, req.Mode, req.Scope, req.Tags, localeFromRequest(c.GetHeader("Accept-Language")))
+	scope := req.Scope
+	if scope == nil {
+		scope = map[string]any{}
+	}
+	if req.AlertID != "" {
+		scope["alertId"] = req.AlertID
+	}
+	if req.Workload != "" {
+		scope["workload"] = req.Workload
+	}
+	item, err := h.service.CreateSession(c.Request.Context(), principal, req.Title, req.Mode, scope, req.Tags, localeFromRequest(c.GetHeader("Accept-Language")))
 	if err != nil {
 		writeError(c, err)
 		return
@@ -508,6 +540,15 @@ func (h *CopilotHandler) UpdateInspectionTask(c *gin.Context) {
 		return
 	}
 	apiresponse.Item(c, http.StatusOK, item)
+}
+
+func (h *CopilotHandler) DeleteInspectionTask(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	if err := h.service.DeleteInspectionTask(c.Request.Context(), principal, c.Param("taskID")); err != nil {
+		writeError(c, err)
+		return
+	}
+	c.Status(http.StatusNoContent)
 }
 
 func (h *CopilotHandler) ListInspectionRuns(c *gin.Context) {

@@ -18,22 +18,29 @@ type logEvidenceAnalysis struct {
 	toolExecutions  []domaincopilot.ToolExecution
 }
 
-func (s *Service) collectRootCauseLogEvidence(ctx context.Context, input domaincopilot.RootCauseRunInput, profile domaincopilot.AnalysisProfile, locale string) logEvidenceAnalysis {
+func (s *Service) collectRootCauseLogEvidence(ctx context.Context, input domaincopilot.RootCauseRunInput, profile domaincopilot.AnalysisProfile, toolset domaincopilot.SessionToolset, locale string) logEvidenceAnalysis {
 	result := logEvidenceAnalysis{
 		evidence:        []domaincopilot.RootCauseEvidence{},
 		hypotheses:      []domaincopilot.RootCauseHypothesis{},
 		recommendations: []string{},
 		playbookResults: map[string]any{},
 	}
+	const adapterID = "logs.v1"
+	const toolName = "logs.correlation"
+	if !toolsetAllowsTool(toolset, adapterID, toolName) {
+		result.playbookResults["logs"] = "tool_disabled"
+		return result
+	}
 	dataSources, err := s.repo.ListDataSources(ctx)
 	if err != nil {
 		result.playbookResults["logs"] = "datasource_list_failed"
 		return result
 	}
+	limit := evidenceBudget(toolset, 20)
 	timeTo := time.Now().UTC()
 	timeFrom := timeTo.Add(-time.Duration(input.TimeRangeMinutes) * time.Minute)
 	for _, source := range dataSources {
-		if !source.Enabled || source.SourceKind != "logs" || source.MCPAdapter != "logs.v1" {
+		if !source.Enabled || source.SourceKind != "logs" || source.MCPAdapter != adapterID || !toolsetAllowsAdapter(toolset, source.MCPAdapter) {
 			continue
 		}
 		if len(profile.EnabledSources) > 0 && !containsString(profile.EnabledSources, source.ID) && !containsString(profile.EnabledSources, "logs") {
@@ -50,7 +57,7 @@ func (s *Service) collectRootCauseLogEvidence(ctx context.Context, input domainc
 			TimeFrom: timeFrom,
 			TimeTo:   timeTo,
 			Query:    input.Question,
-			Limit:    20,
+			Limit:    limit,
 		})
 		if err != nil {
 			result.playbookResults["logs:"+source.ID] = "query_failed"
@@ -62,19 +69,27 @@ func (s *Service) collectRootCauseLogEvidence(ctx context.Context, input domainc
 		}
 		result.playbookResults["logs:"+source.ID] = "matched"
 		now := time.Now().UTC()
+		signatures := correlation.Signatures
+		if limit > 0 && len(signatures) > limit {
+			signatures = signatures[:limit]
+		}
+		sampleLimit := limit
+		if sampleLimit <= 0 || sampleLimit > 5 {
+			sampleLimit = 5
+		}
 		result.toolExecutions = append(result.toolExecutions, domaincopilot.ToolExecution{
-			ID:         "tool:logs:" + source.ID + ":" + now.Format("150405.000"),
-			AdapterID:  "logs.v1",
-			ToolName:   "logs.correlation",
-			Status:     "success",
-			Summary:    correlation.Summary,
-			Input:      map[string]any{"scope": input, "sourceId": source.ID},
-			Output:     map[string]any{"signatures": correlation.Signatures, "records": buildSampleRecordAttributes(correlation.Records, 5)},
-			StartedAt:  now,
+			ID:          "tool:logs:" + source.ID + ":" + now.Format("150405.000"),
+			AdapterID:   adapterID,
+			ToolName:    toolName,
+			Status:      "success",
+			Summary:     correlation.Summary,
+			Input:       map[string]any{"scope": input, "sourceId": source.ID},
+			Output:      map[string]any{"signatures": signatures, "records": buildSampleRecordAttributes(correlation.Records, sampleLimit)},
+			StartedAt:   now,
 			CompletedAt: &now,
 		})
-		signatureEvidence := make([]domaincopilot.RootCauseEvidence, 0, len(correlation.Signatures))
-		for index, item := range correlation.Signatures {
+		signatureEvidence := make([]domaincopilot.RootCauseEvidence, 0, len(signatures))
+		for index, item := range signatures {
 			attributes := map[string]any{
 				"sourceId":      source.ID,
 				"backendType":   source.BackendType,
@@ -105,7 +120,7 @@ func (s *Service) collectRootCauseLogEvidence(ctx context.Context, input domainc
 		if len(signatureEvidence) == 0 {
 			continue
 		}
-		if likelyDependencyTimeout(correlation.Signatures) {
+		if likelyDependencyTimeout(signatures) {
 			result.hypotheses = append(result.hypotheses, domaincopilot.RootCauseHypothesis{
 				ID:          "dependency-timeout",
 				Title:       localize(locale, "日志显示依赖超时或上游不可用", "Logs indicate dependency timeout or upstream unavailability"),
@@ -119,7 +134,7 @@ func (s *Service) collectRootCauseLogEvidence(ctx context.Context, input domainc
 			})
 			result.playbookResults["dependency-timeout"] = "matched"
 		}
-		if hasErrorBurst(correlation.Signatures) {
+		if hasErrorBurst(signatures) {
 			result.hypotheses = append(result.hypotheses, domaincopilot.RootCauseHypothesis{
 				ID:          "error-burst",
 				Title:       localize(locale, "应用日志存在错误突增", "Application logs show an error burst"),

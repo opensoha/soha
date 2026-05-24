@@ -151,3 +151,28 @@ export interface WorkbenchAdapter {
   tools?: Array<{ name: string; description: string }>
   defaultBudget?: Record<string, unknown>
 }
+
+export interface WorkbenchSkill {
+  id: string
+  name: string
+  description?: string
+  enabled: boolean
+  scopes?: string[]
+  capabilityRefs?: string[]
+  scopeRules?: string[]
+  category?: string
+}
+
+export interface WorkbenchAnalysisProfile {
+  id: string
+  name: string
+  mode: string
+  enabled: boolean
+}
+
+export interface WorkbenchCatalog {
+  adapters: WorkbenchAdapter[]
+  dataSources: WorkbenchDataSource[]
+  analysisProfiles: WorkbenchAnalysisProfile[]
+  skillsRegistry?: WorkbenchSkill[]
+}

@@ -44,7 +44,7 @@ import { useBrandingSettings } from '@/features/settings/use-branding-settings'
 import { useAuthStore } from '@/stores/auth-store'
 import { usePreferencesStore } from '@/stores/preferences-store'
 import { resolveThemeMode, watchSystemThemeMode } from '@/theme/app-theme'
-import type { BusinessWorkspaceType, RuntimeMenuNode } from '@/types'
+import type { BusinessWorkspaceType, PermissionSnapshot, RuntimeMenuNode } from '@/types'
 import { getNormalizedBranding } from '@/features/settings/use-branding-settings'
 
 const { Sider, Header, Content } = Layout
@@ -57,22 +57,36 @@ interface WorkbenchOption {
 }
 
 const AI_WORKBENCH_MENU_ENTRIES = [
-  { key: 'ai-workbench-chat', iconKey: 'bot', label: '通用聊天', path: '/ai-workbench/chat' },
-  { key: 'ai-workbench-inspection', iconKey: 'inspect', label: '巡检', path: '/ai-workbench/inspection' },
-  { key: 'ai-workbench-tool-settings', iconKey: 'wrench', label: '工具与技能', path: '/ai-workbench/tool-settings' },
-  { key: 'ai-workbench-model-settings', iconKey: 'settings', label: 'AI 设置', path: '/ai-workbench/model-settings' },
+  { key: 'ai-workbench-chat', iconKey: 'bot', label: '通用聊天', path: '/ai-workbench/chat', permissionKey: 'observe.ai.chat', legacyMenuIds: ['ai-workbench-investigation'] },
+  { key: 'ai-workbench-inspection', iconKey: 'inspect', label: '巡检', path: '/ai-workbench/inspection', permissionKey: 'observe.ai.view', legacyMenuIds: ['ai-workbench-operations'] },
+  { key: 'ai-workbench-tool-settings', iconKey: 'wrench', label: '工具与技能', path: '/ai-workbench/tool-settings', permissionKey: 'observe.ai.view', legacyMenuIds: ['ai-workbench-tools'] },
+  { key: 'ai-workbench-model-settings', iconKey: 'settings', label: 'AI 设置', path: '/ai-workbench/model-settings', permissionKey: 'settings.ai.view', legacyMenuIds: ['ai-workbench-tools'] },
 ] as const
 
-function buildAIWorkbenchMenuItems(): MenuProps['items'] {
-  return AI_WORKBENCH_MENU_ENTRIES.map((item) => ({
+function canUseAIWorkbenchMenuEntry(
+  item: (typeof AI_WORKBENCH_MENU_ENTRIES)[number],
+  snapshot?: PermissionSnapshot | null,
+) {
+  const hasPermissionKey = snapshot?.permissionKeys.includes(item.permissionKey) ?? false
+  const visibleMenuIds = snapshot?.visibleMenuIds ?? []
+  const hasVisibleMenu = visibleMenuIds.includes(item.key) || item.legacyMenuIds.some((id) => visibleMenuIds.includes(id))
+  return hasPermissionKey && hasVisibleMenu
+}
+
+function buildAIWorkbenchMenuItems(snapshot?: PermissionSnapshot | null): MenuProps['items'] {
+  return AI_WORKBENCH_MENU_ENTRIES.filter((item) => canUseAIWorkbenchMenuEntry(item, snapshot)).map((item) => ({
     key: item.key,
     icon: resolveMenuIcon(item.iconKey),
     label: item.label,
   }))
 }
 
-function buildAIWorkbenchItemKeyToPath() {
-  return Object.fromEntries(AI_WORKBENCH_MENU_ENTRIES.map((item) => [item.key, item.path])) as Record<string, string>
+function buildAIWorkbenchItemKeyToPath(snapshot?: PermissionSnapshot | null) {
+  return Object.fromEntries(
+    AI_WORKBENCH_MENU_ENTRIES
+      .filter((item) => canUseAIWorkbenchMenuEntry(item, snapshot))
+      .map((item) => [item.key, item.path]),
+  ) as Record<string, string>
 }
 
 function buildAIWorkbenchSearch(search: string) {
@@ -403,19 +417,19 @@ export function AppLayout() {
   }, [businessNav, isSystemWorkspaceRoute, systemNav])
   const primaryMenuItems = useMemo(
     () => activeWorkbenchId === 'ai'
-      ? buildAIWorkbenchMenuItems()
+      ? buildAIWorkbenchMenuItems(snapshot)
       : buildMenuItems(primaryNav, localeCode, { grouped: !isSystemWorkspaceRoute && activeWorkbenchId !== 'virtualization' && activeWorkbenchId !== 'docker' }),
-    [activeWorkbenchId, isSystemWorkspaceRoute, localeCode, primaryNav],
+    [activeWorkbenchId, isSystemWorkspaceRoute, localeCode, primaryNav, snapshot],
   )
   const primaryItemKeyToPath = useMemo(
     () => {
       if (activeWorkbenchId === 'ai') {
         const suffix = buildAIWorkbenchSearch(location.search)
-        return Object.fromEntries(Object.entries(buildAIWorkbenchItemKeyToPath()).map(([key, path]) => [key, `${path}${suffix}`]))
+        return Object.fromEntries(Object.entries(buildAIWorkbenchItemKeyToPath(snapshot)).map(([key, path]) => [key, `${path}${suffix}`]))
       }
       return buildItemKeyToPath(primaryNav)
     },
-    [activeWorkbenchId, location.search, primaryNav],
+    [activeWorkbenchId, location.search, primaryNav, snapshot],
   )
   const combinedNav = useMemo(() => [...businessNav, ...systemNav], [businessNav, systemNav])
   const combinedItemKeyToPath = useMemo(
@@ -441,6 +455,9 @@ export function AppLayout() {
   }, [activeWorkbenchId, combinedNav, currentMeta, location.pathname, location.search])
 
   const selectedKeys = useMemo(() => {
+    if (activeWorkbenchId === 'ai' && currentMenuID && primaryItemKeyToPath[currentMenuID]) {
+      return [currentMenuID]
+    }
     if (currentMenuID && combinedItemKeyToPath[currentMenuID]) {
       return [currentMenuID]
     }
@@ -448,7 +465,7 @@ export function AppLayout() {
       return [parentMeta.id]
     }
     return [currentMeta.id]
-  }, [combinedItemKeyToPath, currentMenuID, currentMeta, parentMeta])
+  }, [activeWorkbenchId, combinedItemKeyToPath, currentMenuID, currentMeta, parentMeta, primaryItemKeyToPath])
 
   const routeOpenKeys = useMemo(() => {
     if (activeWorkbenchId === 'ai') {
@@ -530,7 +547,8 @@ export function AppLayout() {
   const currentWorkbenchOption = workbenchOptions.find((option) => option.key === activeWorkbenchId) ?? workbenchOptions[0] ?? null
   const businessSelectedKeys = selectedKeys.filter((key) => businessNodeIDs.has(key))
   const systemSelectedKeys = selectedKeys.filter((key) => systemNodeIDs.has(key))
-  const primarySelectedKeys = isSystemWorkspaceRoute ? systemSelectedKeys : businessSelectedKeys
+  const aiSelectedKeys = selectedKeys.filter((key) => primaryItemKeyToPath[key])
+  const primarySelectedKeys = activeWorkbenchId === 'ai' ? aiSelectedKeys : isSystemWorkspaceRoute ? systemSelectedKeys : businessSelectedKeys
   const primaryOpenKeys = isSystemWorkspaceRoute ? systemOpenKeys : businessOpenKeys
 
   if (permissionSnapshotQuery.isLoading) {

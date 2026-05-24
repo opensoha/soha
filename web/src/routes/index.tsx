@@ -1,7 +1,13 @@
 import { lazy, Suspense } from "react";
-import { Navigate, Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { Spin } from "antd";
 import { AuthGuard } from "@/features/auth/auth-guard";
+import {
+  getAIModelSettingsPath,
+  getAIOperationsPath,
+  getAIToolsPath,
+  getAIWorkbenchPathForMode,
+} from "@/features/copilot/workbench-navigation";
 import { AppLayout } from "@/layouts/app-layout";
 
 function lazyNamed<T extends Record<string, any>, K extends keyof T>(
@@ -540,6 +546,36 @@ function LazyPage({ children }: { children: React.ReactNode }) {
       {children}
     </Suspense>
   );
+}
+
+function AIWorkbenchModeRedirect() {
+  const location = useLocation();
+  return (
+    <Navigate
+      to={getAIWorkbenchPathForMode(new URLSearchParams(location.search).get("mode"), location.search)}
+      replace
+    />
+  );
+}
+
+function AIWorkbenchFixedModeRedirect({ mode }: { mode: string }) {
+  const location = useLocation();
+  return <Navigate to={getAIWorkbenchPathForMode(mode, location.search)} replace />;
+}
+
+function AIWorkbenchOperationsRedirect() {
+  const location = useLocation();
+  return <Navigate to={getAIOperationsPath(location.search)} replace />;
+}
+
+function AIWorkbenchToolsRedirect() {
+  const location = useLocation();
+  return <Navigate to={getAIToolsPath(location.search)} replace />;
+}
+
+function AIWorkbenchModelSettingsRedirect() {
+  const location = useLocation();
+  return <Navigate to={getAIModelSettingsPath(location.search)} replace />;
 }
 
 export function AppRouter() {
@@ -1524,7 +1560,7 @@ export function AppRouter() {
 
           <Route
             path="/ai-workbench"
-            element={<Navigate to="/ai-workbench/chat" replace />}
+            element={<AIWorkbenchModeRedirect />}
           />
           <Route
             path="/ai-workbench/chat"
@@ -1536,7 +1572,7 @@ export function AppRouter() {
           />
           <Route
             path="/ai-workbench/investigation"
-            element={<Navigate to="/ai-workbench/chat" replace />}
+            element={<AIWorkbenchModeRedirect />}
           />
           <Route
             path="/ai-workbench/root-cause"
@@ -1580,47 +1616,47 @@ export function AppRouter() {
           />
           <Route
             path="/ai-workbench/automation"
-            element={<Navigate to="/ai-workbench/inspection" replace />}
+            element={<AIWorkbenchOperationsRedirect />}
           />
           <Route
             path="/ai-workbench/tools"
-            element={<Navigate to="/ai-workbench/tool-settings" replace />}
+            element={<AIWorkbenchToolsRedirect />}
           />
           <Route
             path="/ai-observe"
-            element={<Navigate to="/ai-workbench" replace />}
+            element={<AIWorkbenchModeRedirect />}
           />
           <Route
             path="/ai-observe/workbench"
-            element={<Navigate to="/ai-workbench/chat" replace />}
+            element={<AIWorkbenchModeRedirect />}
           />
           <Route
             path="/ai-observe/operations"
-            element={<Navigate to="/ai-workbench/inspection" replace />}
+            element={<AIWorkbenchOperationsRedirect />}
           />
           <Route
             path="/ai-observe/tools"
-            element={<Navigate to="/ai-workbench/tool-settings" replace />}
+            element={<AIWorkbenchToolsRedirect />}
           />
           <Route
             path="/ai-observe/root-cause"
-            element={<Navigate to="/ai-workbench/root-cause" replace />}
+            element={<AIWorkbenchFixedModeRedirect mode="root_cause" />}
           />
           <Route
             path="/ai-observe/performance"
-            element={<Navigate to="/ai-workbench/performance" replace />}
+            element={<AIWorkbenchFixedModeRedirect mode="performance" />}
           />
           <Route
             path="/ai-observe/chat"
-            element={<Navigate to="/ai-workbench/chat" replace />}
+            element={<AIWorkbenchModeRedirect />}
           />
           <Route
             path="/ai-observe/inspection"
-            element={<Navigate to="/ai-workbench/inspection" replace />}
+            element={<AIWorkbenchOperationsRedirect />}
           />
           <Route
             path="/chat"
-            element={<Navigate to="/ai-workbench/chat" replace />}
+            element={<AIWorkbenchModeRedirect />}
           />
 
           <Route
@@ -1751,7 +1787,7 @@ export function AppRouter() {
           />
           <Route
             path="/settings/ai"
-            element={<Navigate to="/ai-workbench/model-settings" replace />}
+            element={<AIWorkbenchModelSettingsRedirect />}
           />
 
           <Route path="*" element={<Navigate to="/" replace />} />

@@ -19,7 +19,7 @@ type metricEvidenceAnalysis struct {
 	toolExecutions  []domaincopilot.ToolExecution
 }
 
-func (s *Service) collectRootCauseMetricEvidence(ctx context.Context, input domaincopilot.RootCauseRunInput, profile domaincopilot.AnalysisProfile, locale string) metricEvidenceAnalysis {
+func (s *Service) collectRootCauseMetricEvidence(ctx context.Context, input domaincopilot.RootCauseRunInput, profile domaincopilot.AnalysisProfile, toolset domaincopilot.SessionToolset, locale string) metricEvidenceAnalysis {
 	result := metricEvidenceAnalysis{
 		evidence:        []domaincopilot.RootCauseEvidence{},
 		hypotheses:      []domaincopilot.RootCauseHypothesis{},
@@ -27,15 +27,22 @@ func (s *Service) collectRootCauseMetricEvidence(ctx context.Context, input doma
 		playbookResults: map[string]any{},
 		toolExecutions:  []domaincopilot.ToolExecution{},
 	}
+	const adapterID = "metrics.v1"
+	const toolName = "metrics.anomaly_summary"
+	if !toolsetAllowsTool(toolset, adapterID, toolName) {
+		result.playbookResults["metrics"] = "tool_disabled"
+		return result
+	}
 	dataSources, err := s.repo.ListDataSources(ctx)
 	if err != nil {
 		result.playbookResults["metrics"] = "datasource_list_failed"
 		return result
 	}
+	limit := evidenceBudget(toolset, 20)
 	timeTo := time.Now().UTC()
 	timeFrom := timeTo.Add(-time.Duration(input.TimeRangeMinutes) * time.Minute)
 	for _, source := range dataSources {
-		if !source.Enabled || source.SourceKind != "metrics" || source.MCPAdapter != "metrics.v1" {
+		if !source.Enabled || source.SourceKind != "metrics" || source.MCPAdapter != adapterID || !toolsetAllowsAdapter(toolset, source.MCPAdapter) {
 			continue
 		}
 		if len(profile.EnabledSources) > 0 && !containsString(profile.EnabledSources, source.ID) && !containsString(profile.EnabledSources, "metrics") {
@@ -56,26 +63,27 @@ func (s *Service) collectRootCauseMetricEvidence(ctx context.Context, input doma
 			result.playbookResults["metrics:"+source.ID] = "query_failed"
 			continue
 		}
+		signals := limitMapItems(summary.Signals, limit)
 		now := time.Now().UTC()
 		result.toolExecutions = append(result.toolExecutions, domaincopilot.ToolExecution{
-			ID:         "tool:" + uuid.NewString(),
-			AdapterID:  "metrics.v1",
-			ToolName:   "metrics.anomaly_summary",
-			Status:     "success",
-			Summary:    summary.Summary,
-			Input:      map[string]any{"scope": input, "sourceId": source.ID},
-			Output:     map[string]any{"signals": summary.Signals},
-			StartedAt:  now,
+			ID:          "tool:" + uuid.NewString(),
+			AdapterID:   adapterID,
+			ToolName:    toolName,
+			Status:      "success",
+			Summary:     summary.Summary,
+			Input:       map[string]any{"scope": input, "sourceId": source.ID},
+			Output:      map[string]any{"signals": signals},
+			StartedAt:   now,
 			CompletedAt: &now,
 		})
-		if len(summary.Signals) == 0 {
+		if len(signals) == 0 {
 			result.playbookResults["metrics:"+source.ID] = "no_signals"
 			continue
 		}
 		result.playbookResults["metrics:"+source.ID] = "matched"
-		sourceEvidence := make([]domaincopilot.RootCauseEvidence, 0, len(summary.Signals))
+		sourceEvidence := make([]domaincopilot.RootCauseEvidence, 0, len(signals))
 		spikingMetrics := make([]string, 0)
-		for _, signal := range summary.Signals {
+		for _, signal := range signals {
 			trend := strings.TrimSpace(fmt.Sprint(signal["trend"]))
 			metricKey := strings.TrimSpace(fmt.Sprint(signal["metricKey"]))
 			label := strings.TrimSpace(fmt.Sprint(signal["label"]))
@@ -91,19 +99,19 @@ func (s *Service) collectRootCauseMetricEvidence(ctx context.Context, input doma
 				Summary:  fmt.Sprintf("latest=%v average=%v trend=%v", signal["latest"], signal["average"], trend),
 				Severity: severity,
 				Attributes: map[string]any{
-					"sourceId":   source.ID,
+					"sourceId":    source.ID,
 					"backendType": source.BackendType,
-					"metricKey":  metricKey,
-					"label":      label,
-					"latest":     signal["latest"],
-					"average":    signal["average"],
-					"max":        signal["max"],
-					"min":        signal["min"],
-					"trend":      trend,
-					"clusterId":  input.ClusterID,
-					"namespace":  input.Namespace,
-					"workload":   input.WorkloadName,
-					"service":    input.WorkloadName,
+					"metricKey":   metricKey,
+					"label":       label,
+					"latest":      signal["latest"],
+					"average":     signal["average"],
+					"max":         signal["max"],
+					"min":         signal["min"],
+					"trend":       trend,
+					"clusterId":   input.ClusterID,
+					"namespace":   input.Namespace,
+					"workload":    input.WorkloadName,
+					"service":     input.WorkloadName,
 				},
 			}
 			sourceEvidence = append(sourceEvidence, evidence)

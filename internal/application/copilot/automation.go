@@ -25,11 +25,20 @@ func (s *Service) HandleAlertAutomation(ctx context.Context, instance domainaler
 		if err != nil || !matched {
 			continue
 		}
+		policyRuns, err := s.repo.ListRootCauseRuns(ctx, automationRootCauseCreatedBy, domaincopilot.RootCauseRunFilter{
+			TriggerType:    "alert_webhook",
+			DedupKeyPrefix: buildAlertAutomationDedupPrefix(policy.ID),
+			Limit:          1,
+		})
+		if err == nil && withinCooldownWindow(policyRuns, policy.CooldownSeconds) {
+			continue
+		}
 		dedupKey := buildAlertAutomationDedupKey(policy.ID, instance)
 		existing, err := s.repo.ListRootCauseRuns(ctx, automationRootCauseCreatedBy, domaincopilot.RootCauseRunFilter{
-			AlertID:  instance.ID,
-			DedupKey: dedupKey,
-			Limit:    5,
+			AlertID:     instance.ID,
+			TriggerType: "alert_webhook",
+			DedupKey:    dedupKey,
+			Limit:       5,
 		})
 		if err == nil && withinDedupWindow(existing, policy.DedupWindowSeconds) {
 			continue
@@ -39,6 +48,7 @@ func (s *Service) HandleAlertAutomation(ctx context.Context, instance domainaler
 			kinds = []string{"root_cause"}
 		}
 		for _, kind := range kinds {
+			var runErr error
 			switch strings.TrimSpace(kind) {
 			case "performance", "trace":
 				_, _, _ = s.analyzeConversation(ctx, systemPrincipal(), domaincopilot.Session{
@@ -47,6 +57,11 @@ func (s *Service) HandleAlertAutomation(ctx context.Context, instance domainaler
 					CreatedBy: automationRootCauseCreatedBy,
 					Metadata: map[string]any{
 						"mode": kind,
+						"pinnedContext": map[string]any{
+							"automationPolicyId": policy.ID,
+							"dedupKey":           dedupKey,
+							"triggerType":        "alert_webhook",
+						},
 						"scope": map[string]any{
 							"clusterId":        instance.ClusterID,
 							"namespace":        instance.Namespace,
@@ -56,8 +71,8 @@ func (s *Service) HandleAlertAutomation(ctx context.Context, instance domainaler
 						},
 					},
 				}, fmt.Sprintf("Investigate alert %s", instance.ID), "en-US")
-			default:
-				_, err = s.executeRootCauseRun(ctx, systemPrincipal(), automationRootCauseCreatedBy, domaincopilot.RootCauseRunInput{
+			case "root_cause":
+				_, runErr = s.executeRootCauseRun(ctx, systemPrincipal(), automationRootCauseCreatedBy, domaincopilot.RootCauseRunInput{
 					Kind:              "root_cause",
 					Title:             instance.Title,
 					AnalysisProfileID: policy.AnalysisProfileID,
@@ -69,10 +84,12 @@ func (s *Service) HandleAlertAutomation(ctx context.Context, instance domainaler
 					AlertID:           instance.ID,
 					TimeRangeMinutes:  policyTimeRangeMinutes(policy),
 					Question:          fmt.Sprintf("Investigate alert %s", instance.ID),
-				}, dedupKey, "en-US")
+				}, dedupKey, domaincopilot.SessionToolset{}, "en-US")
+			default:
+				continue
 			}
-			if err != nil {
-				return err
+			if runErr != nil {
+				return runErr
 			}
 		}
 	}
@@ -112,11 +129,30 @@ func buildAlertAutomationDedupKey(policyID string, instance domainalert.Instance
 	return strings.Join([]string{policyID, instance.Fingerprint, instance.ClusterID, instance.Namespace}, ":")
 }
 
+func buildAlertAutomationDedupPrefix(policyID string) string {
+	policyID = strings.TrimSpace(policyID)
+	if policyID == "" {
+		return ""
+	}
+	return policyID + ":"
+}
+
 func withinDedupWindow(runs []domaincopilot.RootCauseRun, dedupWindowSeconds int) bool {
 	if dedupWindowSeconds <= 0 {
 		dedupWindowSeconds = 900
 	}
-	windowStart := time.Now().UTC().Add(-time.Duration(dedupWindowSeconds) * time.Second)
+	return withinRunWindow(runs, dedupWindowSeconds)
+}
+
+func withinCooldownWindow(runs []domaincopilot.RootCauseRun, cooldownSeconds int) bool {
+	if cooldownSeconds <= 0 {
+		return false
+	}
+	return withinRunWindow(runs, cooldownSeconds)
+}
+
+func withinRunWindow(runs []domaincopilot.RootCauseRun, windowSeconds int) bool {
+	windowStart := time.Now().UTC().Add(-time.Duration(windowSeconds) * time.Second)
 	for _, item := range runs {
 		if item.CreatedAt.After(windowStart) || item.CreatedAt.Equal(windowStart) {
 			return true

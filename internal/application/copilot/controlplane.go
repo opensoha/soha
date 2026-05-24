@@ -3,6 +3,7 @@ package copilot
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -23,6 +24,87 @@ func (s *Service) ListDataSourceCapabilities(ctx context.Context, principal doma
 		return []domainmcp.Adapter{}, nil
 	}
 	return s.mcpRegistry.List(), nil
+}
+
+func (s *Service) GetWorkbenchCatalog(ctx context.Context, principal domainidentity.Principal) (domaincopilot.WorkbenchCatalog, error) {
+	if err := s.authorizeAnyWorkbenchPermission(ctx, principal); err != nil {
+		return domaincopilot.WorkbenchCatalog{}, err
+	}
+	catalog := domaincopilot.WorkbenchCatalog{
+		Adapters:         []domainmcp.Adapter{},
+		DataSources:      []domaincopilot.WorkbenchDataSource{},
+		AnalysisProfiles: []domaincopilot.WorkbenchAnalysisProfile{},
+		SkillsRegistry:   []domaincopilot.WorkbenchSkill{},
+	}
+	if s.mcpRegistry != nil {
+		catalog.Adapters = s.mcpRegistry.List()
+	}
+	dataSources, err := s.repo.ListDataSources(ctx)
+	if err != nil {
+		return domaincopilot.WorkbenchCatalog{}, err
+	}
+	for _, item := range dataSources {
+		catalog.DataSources = append(catalog.DataSources, domaincopilot.WorkbenchDataSource{
+			ID:                item.ID,
+			Name:              item.Name,
+			SourceKind:        item.SourceKind,
+			BackendType:       item.BackendType,
+			Enabled:           item.Enabled,
+			MCPAdapter:        item.MCPAdapter,
+			ValidationStatus:  item.ValidationStatus,
+			ValidationMessage: item.ValidationMessage,
+		})
+	}
+	profiles, err := s.repo.ListAnalysisProfiles(ctx)
+	if err != nil {
+		return domaincopilot.WorkbenchCatalog{}, err
+	}
+	for _, item := range profiles {
+		catalog.AnalysisProfiles = append(catalog.AnalysisProfiles, domaincopilot.WorkbenchAnalysisProfile{
+			ID:      item.ID,
+			Name:    item.Name,
+			Mode:    item.Mode,
+			Enabled: item.Enabled,
+		})
+	}
+	if s.settings != nil {
+		settings, err := s.settings.ResolveAISettings(ctx)
+		if err != nil {
+			return domaincopilot.WorkbenchCatalog{}, err
+		}
+		for _, item := range settings.SkillsRegistry {
+			catalog.SkillsRegistry = append(catalog.SkillsRegistry, domaincopilot.WorkbenchSkill{
+				ID:             item.ID,
+				Name:           item.Name,
+				Category:       item.Category,
+				OwnerModule:    item.OwnerModule,
+				Description:    item.Description,
+				Enabled:        item.Enabled,
+				Scopes:         item.Scopes,
+				CapabilityRefs: item.CapabilityRefs,
+				BlueprintRefs:  item.BlueprintRefs,
+				ScopeRules:     item.ScopeRules,
+			})
+		}
+	}
+	return catalog, nil
+}
+
+func (s *Service) authorizeAnyWorkbenchPermission(ctx context.Context, principal domainidentity.Principal) error {
+	keys, err := appaccess.RuntimePermissionKeys(ctx, s.permissions, principal)
+	if err != nil {
+		return err
+	}
+	for _, permission := range []string{
+		appaccess.PermObserveAIChatUse,
+		appaccess.PermObserveAIView,
+		appaccess.PermSettingsAIView,
+	} {
+		if slices.Contains(keys, permission) {
+			return nil
+		}
+	}
+	return s.authorizePrincipal(ctx, principal, appaccess.PermObserveAIChatUse)
 }
 
 func (s *Service) ListDataSources(ctx context.Context, principal domainidentity.Principal) ([]domaincopilot.DataSource, error) {
@@ -168,6 +250,7 @@ func (s *Service) CreateAutomationPolicy(ctx context.Context, principal domainid
 		Name:               item.Name,
 		Enabled:            item.Enabled,
 		TriggerType:        item.TriggerType,
+		AnalysisKinds:      item.AnalysisKinds,
 		TriggerConditions:  item.TriggerConditions,
 		DedupWindowSeconds: item.DedupWindowSeconds,
 		AnalysisProfileID:  item.AnalysisProfileID,
@@ -189,6 +272,13 @@ func (s *Service) UpdateAutomationPolicy(ctx context.Context, principal domainid
 		return domaincopilot.AutomationPolicy{}, err
 	}
 	return s.repo.UpdateAutomationPolicy(ctx, item.ID, item)
+}
+
+func (s *Service) DeleteAutomationPolicy(ctx context.Context, principal domainidentity.Principal, policyID string) error {
+	if err := s.authorizePrincipal(ctx, principal, appaccess.PermSettingsAIManage); err != nil {
+		return err
+	}
+	return s.repo.DeleteAutomationPolicy(ctx, strings.TrimSpace(policyID))
 }
 
 func (s *Service) normalizeDataSourceInput(input domaincopilot.DataSourceInput) (domaincopilot.DataSourceInput, error) {
@@ -293,6 +383,9 @@ func normalizeAutomationPolicyInput(input domaincopilot.AutomationPolicyInput) (
 	if input.TriggerType == "" {
 		return domaincopilot.AutomationPolicyInput{}, fmt.Errorf("%w: triggerType is required", aperrors.ErrInvalidArgument)
 	}
+	if input.TriggerType != "alert_webhook" {
+		return domaincopilot.AutomationPolicyInput{}, fmt.Errorf("%w: triggerType must be alert_webhook", aperrors.ErrInvalidArgument)
+	}
 	if input.AnalysisProfileID == "" {
 		return domaincopilot.AutomationPolicyInput{}, fmt.Errorf("%w: analysisProfileId is required", aperrors.ErrInvalidArgument)
 	}
@@ -308,8 +401,38 @@ func normalizeAutomationPolicyInput(input domaincopilot.AutomationPolicyInput) (
 	if len(input.AnalysisKinds) == 0 {
 		input.AnalysisKinds = []string{"root_cause"}
 	}
+	analysisKinds, err := normalizeAutomationAnalysisKinds(input.AnalysisKinds)
+	if err != nil {
+		return domaincopilot.AutomationPolicyInput{}, err
+	}
+	input.AnalysisKinds = analysisKinds
 	if input.ApprovalPolicy == nil {
 		input.ApprovalPolicy = map[string]any{}
 	}
 	return input, nil
+}
+
+func normalizeAutomationAnalysisKinds(items []string) ([]string, error) {
+	out := make([]string, 0, len(items))
+	seen := map[string]struct{}{}
+	for _, item := range items {
+		kind := strings.TrimSpace(item)
+		if kind == "" {
+			continue
+		}
+		switch kind {
+		case "root_cause", "performance", "trace":
+		default:
+			return nil, fmt.Errorf("%w: unsupported analysis kind %s", aperrors.ErrInvalidArgument, kind)
+		}
+		if _, ok := seen[kind]; ok {
+			continue
+		}
+		seen[kind] = struct{}{}
+		out = append(out, kind)
+	}
+	if len(out) == 0 {
+		out = append(out, "root_cause")
+	}
+	return out, nil
 }

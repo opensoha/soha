@@ -61,7 +61,7 @@ func (s *Service) List(context.Context) ([]domainmodule.Status, error) {
 			EnabledConfigKey:   "modules.ai.enabled",
 			Dependencies:       []string{"delivery"},
 			VisiblePermissions: []string{"observe.ai.view", "observe.ai.chat"},
-			SeedMenus:          []string{"ai-workbench", "ai-workbench-investigation", "ai-workbench-operations", "ai-workbench-tools"},
+			SeedMenus:          []string{"ai-workbench", "ai-workbench-chat", "ai-workbench-inspection", "ai-workbench-tool-settings", "ai-workbench-model-settings"},
 		},
 		{
 			ID:                 "monitoring",

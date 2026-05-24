@@ -17,6 +17,7 @@ import { hasPermission, usePermissionSnapshot } from '@/features/auth/permission
 import { PageHeader } from '@/components/page-header'
 import { BooleanTag, StatusTag } from '@/components/status-tag'
 import { api } from '@/services/api-client'
+import { getAIWorkbenchPathForMode } from '@/features/copilot/workbench-navigation'
 import { formatDateTime } from '@/utils/time'
 import { tableColumnPresets } from '@/utils/table-columns'
 import type { ApiResponse } from '@/types'
@@ -380,7 +381,20 @@ export function AlertsPage() {
       dataIndex: 'id',
       render: (_: unknown, record: Alert) =>
         <Space>
-          <Button size="small" type="primary" onClick={() => navigate(`/ai-workbench/investigation?mode=root_cause&alertId=${encodeURIComponent(record.id)}&clusterId=${encodeURIComponent(record.clusterId || '')}&namespace=${encodeURIComponent(record.namespace || '')}&timeRangeMinutes=60`)}>AI调查</Button>
+          <Button
+            size="small"
+            type="primary"
+            onClick={() => {
+              const search = new URLSearchParams()
+              search.set('alertId', record.id)
+              search.set('timeRangeMinutes', '60')
+              if (record.clusterId) search.set('clusterId', record.clusterId)
+              if (record.namespace) search.set('namespace', record.namespace)
+              navigate(getAIWorkbenchPathForMode('root_cause', search))
+            }}
+          >
+            AI调查
+          </Button>
           <Button size="small" icon={<EyeOutlined />} onClick={() => { setDetailEventId(record.id); setDetailOpen(true) }}>详情</Button>
           {canHeal ? <Button size="small" onClick={() => { setSelectedAlertId(record.id); setHealingPolicyId(''); setHealOpen(true) }}>自愈</Button> : null}
           {canAcknowledge && record.status !== 'acknowledged' ? <Button size="small" type="link" onClick={() => ackMutation.mutate(record.id)}>确认</Button> : null}

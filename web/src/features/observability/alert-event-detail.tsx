@@ -6,6 +6,7 @@ import { AdminTable } from '@/components/admin-table'
 import { PageHeader } from '@/components/page-header'
 import { BooleanTag, StatusTag } from '@/components/status-tag'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth/permission-snapshot'
+import { getAIWorkbenchPathForMode } from '@/features/copilot/workbench-navigation'
 import { api } from '@/services/api-client'
 import type { ApiResponse } from '@/types'
 import { formatDateTime } from '@/utils/time'
@@ -406,9 +407,16 @@ function AlertEventDetailActions({
 }) {
   const { acknowledgeMutation, canAcknowledge, canHeal, canManageAlerts, event, openHealModal, resolveMutation, rule } = detail
   const navigate = useNavigate()
-  const aiWorkbenchPath = event
-    ? `/ai-workbench/investigation?mode=root_cause&alertId=${encodeURIComponent(event.id)}&clusterId=${encodeURIComponent(event.clusterId || '')}&namespace=${encodeURIComponent(event.namespace || '')}&workload=${encodeURIComponent(event.labels?.workload || event.labels?.deployment || event.labels?.app || event.labels?.service || '')}&timeRangeMinutes=60`
-    : '/ai-workbench/investigation?mode=root_cause'
+  const aiWorkbenchSearch = new URLSearchParams()
+  aiWorkbenchSearch.set('timeRangeMinutes', '60')
+  if (event) {
+    aiWorkbenchSearch.set('alertId', event.id)
+    if (event.clusterId) aiWorkbenchSearch.set('clusterId', event.clusterId)
+    if (event.namespace) aiWorkbenchSearch.set('namespace', event.namespace)
+    const workload = event.labels?.workload || event.labels?.deployment || event.labels?.app || event.labels?.service
+    if (workload) aiWorkbenchSearch.set('workload', workload)
+  }
+  const aiWorkbenchPath = getAIWorkbenchPathForMode('root_cause', aiWorkbenchSearch)
 
   return (
     <Space wrap>

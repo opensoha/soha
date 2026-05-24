@@ -6,9 +6,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	domaincopilot "github.com/kubecrux/kubecrux/internal/domain/copilot"
+	"github.com/kubecrux/kubecrux/internal/platform/apperrors"
 	"gorm.io/gorm"
 )
 
@@ -404,6 +406,20 @@ func (r *Repository) UpdateAutomationPolicy(ctx context.Context, policyID string
 	return r.getAutomationPolicy(ctx, policyID)
 }
 
+func (r *Repository) DeleteAutomationPolicy(ctx context.Context, policyID string) error {
+	result := r.db.WithContext(ctx).Exec(`
+		DELETE FROM ai_automation_policies
+		WHERE id = ?
+	`, policyID)
+	if result.Error != nil {
+		return fmt.Errorf("delete automation policy: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return fmt.Errorf("%w: automation policy %s", apperrors.ErrNotFound, policyID)
+	}
+	return nil
+}
+
 func (r *Repository) ListRootCauseRuns(ctx context.Context, createdBy string, filter domaincopilot.RootCauseRunFilter) ([]domaincopilot.RootCauseRun, error) {
 	limit := filter.Limit
 	if limit <= 0 {
@@ -424,9 +440,17 @@ func (r *Repository) ListRootCauseRuns(ctx context.Context, createdBy string, fi
 		query += ` AND alert_id = ?`
 		args = append(args, filter.AlertID)
 	}
+	if filter.TriggerType != "" {
+		query += ` AND trigger_type = ?`
+		args = append(args, filter.TriggerType)
+	}
 	if filter.DedupKey != "" {
 		query += ` AND dedup_key = ?`
 		args = append(args, filter.DedupKey)
+	}
+	if filter.DedupKeyPrefix != "" {
+		query += ` AND dedup_key LIKE ? ESCAPE '!'`
+		args = append(args, escapeSQLLikePattern(filter.DedupKeyPrefix)+"%")
 	}
 	query += ` ORDER BY updated_at DESC, created_at DESC LIMIT ?`
 	args = append(args, limit)
@@ -655,6 +679,20 @@ func (r *Repository) UpdateInspectionTask(ctx context.Context, createdBy, taskID
 		return domaincopilot.InspectionTask{}, fmt.Errorf("inspection task not found: %s", taskID)
 	}
 	return r.GetInspectionTask(ctx, createdBy, taskID)
+}
+
+func (r *Repository) DeleteInspectionTask(ctx context.Context, createdBy, taskID string) error {
+	result := r.db.WithContext(ctx).Exec(`
+		DELETE FROM ai_inspection_tasks
+		WHERE created_by = ? AND id = ?
+	`, createdBy, taskID)
+	if result.Error != nil {
+		return fmt.Errorf("delete inspection task: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return fmt.Errorf("%w: inspection task %s", apperrors.ErrNotFound, taskID)
+	}
+	return nil
 }
 
 func (r *Repository) TouchInspectionTaskRun(ctx context.Context, taskID string, runAt time.Time) error {
@@ -1308,5 +1346,12 @@ func nullableString(value string) any {
 	if value == "" {
 		return nil
 	}
+	return value
+}
+
+func escapeSQLLikePattern(value string) string {
+	value = strings.ReplaceAll(value, "!", "!!")
+	value = strings.ReplaceAll(value, "%", "!%")
+	value = strings.ReplaceAll(value, "_", "!_")
 	return value
 }

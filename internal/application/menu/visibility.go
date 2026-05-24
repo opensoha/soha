@@ -118,10 +118,12 @@ func permissionRuleForMenu(item domainmenu.Record) (visibilityRule, bool) {
 		return visibilityRule{permissions: []string{appaccess.PermObserveEventsView}}, true
 	case item.ID == "ai-workbench":
 		return visibilityRule{permissions: []string{appaccess.PermObserveAIView, appaccess.PermObserveAIChatUse}}, true
-	case item.ID == "ai-workbench-investigation", item.ID == "assistant-workbench":
+	case item.ID == "ai-workbench-chat", item.ID == "ai-workbench-investigation", item.ID == "assistant-workbench":
 		return visibilityRule{permissions: []string{appaccess.PermObserveAIChatUse}}, true
-	case item.ID == "ai-workbench-operations", item.ID == "ai-workbench-tools", item.ID == "assistant-operations", item.ID == "assistant-tools":
+	case item.ID == "ai-workbench-inspection", item.ID == "ai-workbench-tool-settings", item.ID == "ai-workbench-operations", item.ID == "ai-workbench-tools", item.ID == "assistant-operations", item.ID == "assistant-tools":
 		return visibilityRule{permissions: []string{appaccess.PermObserveAIView}}, true
+	case item.ID == "ai-workbench-model-settings":
+		return visibilityRule{permissions: []string{appaccess.PermSettingsAIView}}, true
 	case item.ID == "virtualization-workbench":
 		return visibilityRule{permissions: []string{
 			appaccess.PermVirtualizationOverviewView,
