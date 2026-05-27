@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -330,6 +331,38 @@ func TestBuildPrincipalMiddlewareStripsBearerPrefix(t *testing.T) {
 	}
 	if apiMiddleware.BearerTokenFromContext(ctx) != "token-1" {
 		t.Fatalf("context token = %q, want token-1", apiMiddleware.BearerTokenFromContext(ctx))
+	}
+}
+
+func TestBuildPrincipalMiddlewareAllowsRunnerBearerToken(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+
+	called := false
+	middleware := apiMiddleware.BuildPrincipalMiddleware(
+		cfgpkg.AuthConfig{},
+		accessTokenParserFunc(func(_ context.Context, token string) (domainidentity.Principal, domainidentity.AccessContext, error) {
+			called = true
+			return domainidentity.Principal{}, domainidentity.AccessContext{}, errors.New("invalid jwt")
+		}),
+	)
+
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/api/v1/docker/operations/claim", nil)
+	ctx.Request.Header.Set("Authorization", "Bearer runner-token")
+
+	middleware(ctx)
+
+	if !called {
+		t.Fatal("parser was not called")
+	}
+	if recorder.Code == http.StatusUnauthorized {
+		t.Fatalf("status = %d, runner token endpoint should continue to handler", recorder.Code)
+	}
+	if ctx.IsAborted() {
+		t.Fatal("runner token endpoint was aborted")
 	}
 }
 

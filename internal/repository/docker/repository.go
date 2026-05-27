@@ -669,13 +669,17 @@ func (r *Repository) ClaimOperation(ctx context.Context, workerID string, agentI
 		if queryErr != nil {
 			return fmt.Errorf("claim docker operation query: %w", queryErr)
 		}
-		defer rows.Close()
 		if !rows.Next() {
+			_ = rows.Close()
 			return ErrNotFound
 		}
 		item, scanErr := scanOperation(rows)
+		closeErr := rows.Close()
 		if scanErr != nil {
 			return scanErr
+		}
+		if closeErr != nil {
+			return fmt.Errorf("close claimed docker operation rows: %w", closeErr)
 		}
 		item.Status = "running"
 		item.ClaimedByWorkerID = workerID

@@ -37,13 +37,23 @@ type Run struct {
 }
 
 type Input struct {
-	ApplicationID  string `json:"applicationId"`
-	WorkflowName   string `json:"workflowName"`
-	ClusterID      string `json:"clusterId,omitempty"`
-	Namespace      string `json:"namespace,omitempty"`
-	DeploymentName string `json:"deploymentName,omitempty"`
-	TriggerBuild   bool   `json:"triggerBuild"`
-	TriggerRelease bool   `json:"triggerRelease"`
+	ApplicationID            string         `json:"applicationId"`
+	ApplicationEnvironmentID string         `json:"applicationEnvironmentId,omitempty"`
+	WorkflowName             string         `json:"workflowName"`
+	ClusterID                string         `json:"clusterId,omitempty"`
+	Namespace                string         `json:"namespace,omitempty"`
+	DeploymentName           string         `json:"deploymentName,omitempty"`
+	BuildSourceID            string         `json:"buildSourceId,omitempty"`
+	RefType                  string         `json:"refType,omitempty"`
+	RefName                  string         `json:"refName,omitempty"`
+	ImageTag                 string         `json:"imageTag,omitempty"`
+	ReleaseName              string         `json:"releaseName,omitempty"`
+	ContainerName            string         `json:"containerName,omitempty"`
+	Variables                map[string]any `json:"variables,omitempty"`
+	BuildArgs                map[string]any `json:"buildArgs,omitempty"`
+	TriggerBuild             bool           `json:"triggerBuild"`
+	TriggerRelease           bool           `json:"triggerRelease"`
+	ValidationOnly           bool           `json:"validationOnly,omitempty"`
 }
 
 type Approval struct {

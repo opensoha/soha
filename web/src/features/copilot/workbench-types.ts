@@ -31,6 +31,7 @@ export interface WorkbenchSession {
   metadata?: {
     mode?: 'general' | 'root_cause' | 'performance' | 'trace' | 'inspection_review'
     status?: string
+    agentProviderId?: string
     summary?: string
     tags?: string[]
     archivedAt?: string
@@ -121,6 +122,59 @@ export interface WorkbenchArtifact {
   dataSourceSnapshot?: Record<string, unknown>
 }
 
+export interface WorkbenchAgentToolBinding {
+  id: string
+  capabilityId: string
+  providerId?: string
+  providerKind?: string
+  toolKind: string
+  adapterId?: string
+  toolName?: string
+  permissionKey?: string
+  config?: Record<string, unknown>
+}
+
+export interface WorkbenchAgentSkillBinding {
+  id: string
+  skillId: string
+  providerId?: string
+  providerKind?: string
+  providerSkillRef?: string
+  capabilityRefs?: string[]
+  promptTemplateId?: string
+  config?: Record<string, unknown>
+}
+
+export interface WorkbenchAgentRun {
+  id: string
+  providerId: string
+  providerKind: string
+  capabilityId: string
+  skillIds?: string[]
+  sessionId?: string
+  rootCauseRunId?: string
+  createdBy?: string
+  status: string
+  scope?: WorkbenchSessionScope
+  toolset?: WorkbenchSessionToolset
+  toolBindings?: WorkbenchAgentToolBinding[]
+  skillBindings?: WorkbenchAgentSkillBinding[]
+  input?: Record<string, unknown>
+  output?: Record<string, unknown>
+  toolExecutions?: WorkbenchToolCall[]
+  analysisArtifacts?: WorkbenchArtifact[]
+  claimedByAgentId?: string
+  externalRunId?: string
+  errorMessage?: string
+  timeoutSeconds?: number
+  queuedAt?: string
+  startedAt?: string
+  lastHeartbeatAt?: string
+  completedAt?: string
+  createdAt?: string
+  updatedAt?: string
+}
+
 export interface WorkbenchMessageEnvelope {
   messages: WorkbenchMessage[]
   toolCalls?: WorkbenchToolCall[]
@@ -170,9 +224,40 @@ export interface WorkbenchAnalysisProfile {
   enabled: boolean
 }
 
+export interface WorkbenchAgentProvider {
+  id: string
+  kind: string
+  name: string
+  description?: string
+  enabled: boolean
+  default?: boolean
+  capabilities?: string[]
+  supportedModes?: string[]
+  supportsAsync?: boolean
+  supportsSkills?: boolean
+  supportsToolsets?: boolean
+  config?: Record<string, unknown>
+}
+
+export interface WorkbenchAgentCapability {
+  id: string
+  name: string
+  category?: string
+  description?: string
+  analysisKinds?: string[]
+  requiredScopes?: string[]
+  toolRefs?: string[]
+  toolBindings?: WorkbenchAgentToolBinding[]
+  skillBindings?: WorkbenchAgentSkillBinding[]
+}
+
 export interface WorkbenchCatalog {
   adapters: WorkbenchAdapter[]
   dataSources: WorkbenchDataSource[]
   analysisProfiles: WorkbenchAnalysisProfile[]
   skillsRegistry?: WorkbenchSkill[]
+  agentProviders?: WorkbenchAgentProvider[]
+  capabilities?: WorkbenchAgentCapability[]
+  toolBindings?: WorkbenchAgentToolBinding[]
+  skillBindings?: WorkbenchAgentSkillBinding[]
 }

@@ -45,13 +45,22 @@ func (h *WorkflowHandler) Trigger(c *gin.Context) {
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
 	item, err := h.service.Trigger(c.Request.Context(), principal, domainworkflow.Input{
-		ApplicationID:  req.ApplicationID,
-		WorkflowName:   req.WorkflowName,
-		ClusterID:      req.ClusterID,
-		Namespace:      req.Namespace,
-		DeploymentName: req.DeploymentName,
-		TriggerBuild:   req.TriggerBuild,
-		TriggerRelease: req.TriggerRelease,
+		ApplicationID:            req.ApplicationID,
+		ApplicationEnvironmentID: req.ApplicationEnvironmentID,
+		WorkflowName:             req.WorkflowName,
+		ClusterID:                req.ClusterID,
+		Namespace:                req.Namespace,
+		DeploymentName:           req.DeploymentName,
+		BuildSourceID:            req.BuildSourceID,
+		RefType:                  req.RefType,
+		RefName:                  req.RefName,
+		ImageTag:                 req.ImageTag,
+		ReleaseName:              req.ReleaseName,
+		ContainerName:            req.ContainerName,
+		Variables:                req.Variables,
+		BuildArgs:                req.BuildArgs,
+		TriggerBuild:             req.TriggerBuild,
+		TriggerRelease:           req.TriggerRelease,
 	})
 	if err != nil {
 		writeError(c, err)

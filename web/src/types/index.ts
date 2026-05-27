@@ -1087,6 +1087,7 @@ export interface DeliveryApplicationBindingSummary {
   targets?: ReleaseTarget[]
   buildSourceId?: string
   buildSource?: BuildSource
+  buildPolicy?: BuildPolicy
   latestBundle?: ReleaseBundle
   latestExecutionTask?: ExecutionTask
   latestBuild?: BuildRecord
@@ -1102,6 +1103,36 @@ export interface DeliveryApplicationDetail {
   latestBuild?: BuildRecord
   latestWorkflow?: WorkflowRun
   latestRelease?: ReleaseRecord
+}
+
+export type ApplicationDeliveryActionKind = 'build' | 'deploy' | 'build_deploy' | 'workflow' | 'verify'
+
+export interface ApplicationDeliveryActionRequest {
+  action: ApplicationDeliveryActionKind
+  applicationEnvironmentId: string
+  targetId?: string
+  buildSourceId?: string
+  refType?: string
+  refName?: string
+  imageTag?: string
+  releaseName?: string
+  containerName?: string
+  variables?: Record<string, unknown>
+  buildArgs?: Record<string, unknown>
+}
+
+export interface ApplicationDeliveryActionResponse {
+  action: ApplicationDeliveryActionKind
+  applicationId: string
+  applicationEnvironmentId: string
+  target?: ReleaseTarget
+  build?: BuildRecord
+  workflow?: WorkflowRun
+  release?: ReleaseRecord
+  relatedIds?: {
+    releaseBundleId?: string
+    executionTaskId?: string
+  }
 }
 
 export interface ApplicationRuntimeWorkload {
@@ -1197,6 +1228,7 @@ export interface ReleaseBoardEntry {
   workflowTemplateName?: string
   buildSourceId?: string
   buildSource?: BuildSource
+  buildPolicy?: BuildPolicy
   latestBundle?: ReleaseBundle
   latestExecutionTask?: ExecutionTask
   targets?: ReleaseTarget[]

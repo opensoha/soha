@@ -4417,6 +4417,36 @@ a {
   line-height: 1;
 }
 
+.kc-application-delivery-actions.ant-card {
+  border-color: var(--kc-border-color);
+  border-radius: var(--kc-radius);
+  box-shadow: none;
+}
+
+.kc-application-delivery-actions__form {
+  width: 100%;
+}
+
+.kc-application-delivery-actions__grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.kc-application-delivery-actions__grid .ant-form-item {
+  margin-bottom: 0;
+}
+
+.kc-application-delivery-actions__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--kc-border-color);
+}
+
 .kc-application-runtime-overview-grid,
 .kc-application-runtime-delivery-grid,
 .kc-application-runtime-pipeline-grid,
@@ -5200,6 +5230,7 @@ a {
   .kc-application-card-grid,
   .kc-application-lane-grid,
   .kc-application-runtime-service-summary,
+  .kc-application-delivery-actions__grid,
   .kc-application-runtime-overview-grid,
   .kc-application-runtime-delivery-grid,
   .kc-application-runtime-pipeline-grid,
@@ -5207,6 +5238,11 @@ a {
   .kc-application-service-form-grid,
   .kc-application-service-container-editor__grid {
     grid-template-columns: 1fr;
+  }
+
+  .kc-application-delivery-actions__footer {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
   .kc-application-container-row {

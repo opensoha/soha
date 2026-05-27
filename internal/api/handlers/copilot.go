@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/kubecrux/kubecrux/internal/api/dto"
@@ -16,8 +17,8 @@ import (
 type CopilotService interface {
 	ListSessions(context.Context, domainidentity.Principal) ([]domaincopilot.Session, error)
 	GetSession(context.Context, domainidentity.Principal, string) (domaincopilot.Session, error)
-	CreateSession(context.Context, domainidentity.Principal, string, string, map[string]any, []string, string) (domaincopilot.Session, error)
-	UpdateSession(context.Context, domainidentity.Principal, string, string, string, string, string, map[string]any, map[string]any, []string, bool) (domaincopilot.Session, error)
+	CreateSession(context.Context, domainidentity.Principal, string, string, string, map[string]any, []string, string) (domaincopilot.Session, error)
+	UpdateSession(context.Context, domainidentity.Principal, string, string, string, string, string, string, map[string]any, map[string]any, []string, bool) (domaincopilot.Session, error)
 	DeleteSession(context.Context, domainidentity.Principal, string) error
 	ListMessages(context.Context, domainidentity.Principal, string) ([]domaincopilot.Message, error)
 	SendMessage(context.Context, domainidentity.Principal, string, string, string) (domaincopilot.SessionMessageEnvelope, error)
@@ -40,6 +41,11 @@ type CopilotService interface {
 	GetRootCauseRun(context.Context, domainidentity.Principal, string) (domaincopilot.RootCauseRun, error)
 	RunRootCauseAnalysis(context.Context, domainidentity.Principal, domaincopilot.RootCauseRunInput, string) (domaincopilot.RootCauseRun, error)
 	RunSessionAnalysis(context.Context, domainidentity.Principal, string, domaincopilot.RootCauseRunInput, string) (domaincopilot.SessionMessageEnvelope, error)
+	ListAgentProviders(context.Context, domainidentity.Principal) ([]domaincopilot.AgentProvider, error)
+	ListAgentRuns(context.Context, domainidentity.Principal) ([]domaincopilot.AgentRun, error)
+	ClaimAgentRun(context.Context, domaincopilot.AgentRunClaimInput) (domaincopilot.AgentRun, error)
+	RecordAgentRunCallback(context.Context, domaincopilot.AgentRunCallbackInput) (domaincopilot.AgentRun, error)
+	RecordAgentToolCall(context.Context, domaincopilot.AgentToolCallInput) (domaincopilot.AgentToolCallResult, error)
 	ListInspectionTasks(context.Context, domainidentity.Principal) ([]domaincopilot.InspectionTask, error)
 	CreateInspectionTask(context.Context, domainidentity.Principal, domaincopilot.InspectionTaskInput, string) (domaincopilot.InspectionTask, error)
 	UpdateInspectionTask(context.Context, domainidentity.Principal, string, domaincopilot.InspectionTaskInput, string) (domaincopilot.InspectionTask, error)
@@ -51,11 +57,16 @@ type CopilotService interface {
 }
 
 type CopilotHandler struct {
-	service CopilotService
+	service     CopilotService
+	runnerToken string
 }
 
-func NewCopilotHandler(service CopilotService) *CopilotHandler {
-	return &CopilotHandler{service: service}
+func NewCopilotHandler(service CopilotService, runnerToken ...string) *CopilotHandler {
+	token := ""
+	if len(runnerToken) > 0 {
+		token = runnerToken[0]
+	}
+	return &CopilotHandler{service: service, runnerToken: token}
 }
 
 func (h *CopilotHandler) ListInsights(c *gin.Context) {
@@ -86,6 +97,112 @@ func (h *CopilotHandler) GetWorkbenchCatalog(c *gin.Context) {
 		return
 	}
 	apiresponse.Item(c, http.StatusOK, item)
+}
+
+func (h *CopilotHandler) ListAgentProviders(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	items, err := h.service.ListAgentProviders(c.Request.Context(), principal)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Items(c, http.StatusOK, items)
+}
+
+func (h *CopilotHandler) ListAgentRuns(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	items, err := h.service.ListAgentRuns(c.Request.Context(), principal)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Items(c, http.StatusOK, items)
+}
+
+func (h *CopilotHandler) ClaimAgentRun(c *gin.Context) {
+	if !h.authorizeRunner(c.GetHeader("Authorization")) {
+		apiresponse.Error(c, http.StatusUnauthorized, "unauthorized", "invalid ai agent runner token")
+		return
+	}
+	var req dto.AgentRunClaimRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid ai agent run claim payload")
+		return
+	}
+	item, err := h.service.ClaimAgentRun(c.Request.Context(), domaincopilot.AgentRunClaimInput{
+		AgentID:     req.AgentID,
+		ProviderIDs: req.ProviderIDs,
+		Kinds:       req.Kinds,
+	})
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusAccepted, item)
+}
+
+func (h *CopilotHandler) RecordAgentRunCallback(c *gin.Context) {
+	if !h.authorizeRunner(c.GetHeader("Authorization")) {
+		apiresponse.Error(c, http.StatusUnauthorized, "unauthorized", "invalid ai agent runner token")
+		return
+	}
+	var req dto.AgentRunCallbackRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid ai agent run callback payload")
+		return
+	}
+	item, err := h.service.RecordAgentRunCallback(c.Request.Context(), domaincopilot.AgentRunCallbackInput{
+		RunID:             req.RunID,
+		CallbackToken:     req.CallbackToken,
+		AgentID:           req.AgentID,
+		Status:            req.Status,
+		Payload:           req.Payload,
+		ToolExecutions:    req.ToolExecutions,
+		AnalysisArtifacts: req.AnalysisArtifacts,
+		ExternalRunID:     req.ExternalRunID,
+		ErrorMessage:      req.ErrorMessage,
+	})
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusAccepted, item)
+}
+
+func (h *CopilotHandler) RecordAgentToolCall(c *gin.Context) {
+	if !h.authorizeRunner(c.GetHeader("Authorization")) {
+		apiresponse.Error(c, http.StatusUnauthorized, "unauthorized", "invalid ai agent runner token")
+		return
+	}
+	var req dto.AgentToolCallRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid ai agent tool call payload")
+		return
+	}
+	item, err := h.service.RecordAgentToolCall(c.Request.Context(), domaincopilot.AgentToolCallInput{
+		RunID:         req.RunID,
+		CallbackToken: req.CallbackToken,
+		AgentID:       req.AgentID,
+		ToolBindingID: req.ToolBindingID,
+		AdapterID:     req.AdapterID,
+		ToolName:      req.ToolName,
+		Input:         req.Input,
+	})
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusAccepted, item)
+}
+
+func (h *CopilotHandler) authorizeRunner(header string) bool {
+	if strings.TrimSpace(h.runnerToken) == "" {
+		return false
+	}
+	token := strings.TrimSpace(header)
+	token = strings.TrimPrefix(token, "Bearer ")
+	token = strings.TrimPrefix(token, "bearer ")
+	return strings.TrimSpace(token) == strings.TrimSpace(h.runnerToken)
 }
 
 func (h *CopilotHandler) ListDataSources(c *gin.Context) {
@@ -249,6 +366,7 @@ func (h *CopilotHandler) CreateAutomationPolicy(c *gin.Context) {
 		Enabled:            req.Enabled,
 		TriggerType:        req.TriggerType,
 		AnalysisKinds:      req.AnalysisKinds,
+		AgentProviderID:    req.AgentProviderID,
 		TriggerConditions:  req.TriggerConditions,
 		DedupWindowSeconds: req.DedupWindowSeconds,
 		AnalysisProfileID:  req.AnalysisProfileID,
@@ -276,6 +394,7 @@ func (h *CopilotHandler) UpdateAutomationPolicy(c *gin.Context) {
 		Enabled:            req.Enabled,
 		TriggerType:        req.TriggerType,
 		AnalysisKinds:      req.AnalysisKinds,
+		AgentProviderID:    req.AgentProviderID,
 		TriggerConditions:  req.TriggerConditions,
 		DedupWindowSeconds: req.DedupWindowSeconds,
 		AnalysisProfileID:  req.AnalysisProfileID,
@@ -336,7 +455,7 @@ func (h *CopilotHandler) CreateSession(c *gin.Context) {
 	if req.Workload != "" {
 		scope["workload"] = req.Workload
 	}
-	item, err := h.service.CreateSession(c.Request.Context(), principal, req.Title, req.Mode, scope, req.Tags, localeFromRequest(c.GetHeader("Accept-Language")))
+	item, err := h.service.CreateSession(c.Request.Context(), principal, req.Title, req.Mode, req.AgentProviderID, scope, req.Tags, localeFromRequest(c.GetHeader("Accept-Language")))
 	if err != nil {
 		writeError(c, err)
 		return
@@ -351,7 +470,7 @@ func (h *CopilotHandler) UpdateSession(c *gin.Context) {
 		return
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.service.UpdateSession(c.Request.Context(), principal, c.Param("sessionID"), req.Title, req.Mode, req.Status, req.Summary, req.Scope, req.Toolset, req.Tags, req.Archived)
+	item, err := h.service.UpdateSession(c.Request.Context(), principal, c.Param("sessionID"), req.Title, req.Mode, req.AgentProviderID, req.Status, req.Summary, req.Scope, req.Toolset, req.Tags, req.Archived)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -439,16 +558,19 @@ func (h *CopilotHandler) CreateRootCauseRun(c *gin.Context) {
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
 	item, err := h.service.RunRootCauseAnalysis(c.Request.Context(), principal, domaincopilot.RootCauseRunInput{
-		Title:            req.Title,
-		Kind:             req.Kind,
-		SessionID:        req.SessionID,
-		ClusterID:        req.ClusterID,
-		Namespace:        req.Namespace,
-		WorkloadKind:     req.WorkloadKind,
-		WorkloadName:     req.WorkloadName,
-		AlertID:          req.AlertID,
-		TimeRangeMinutes: req.TimeRangeMinutes,
-		Question:         req.Question,
+		Title:             req.Title,
+		Kind:              req.Kind,
+		SessionID:         req.SessionID,
+		AnalysisProfileID: req.AnalysisProfileID,
+		AgentProviderID:   req.AgentProviderID,
+		TriggerType:       req.TriggerType,
+		ClusterID:         req.ClusterID,
+		Namespace:         req.Namespace,
+		WorkloadKind:      req.WorkloadKind,
+		WorkloadName:      req.WorkloadName,
+		AlertID:           req.AlertID,
+		TimeRangeMinutes:  req.TimeRangeMinutes,
+		Question:          req.Question,
 	}, localeFromRequest(c.GetHeader("Accept-Language")))
 	if err != nil {
 		writeError(c, err)
@@ -467,6 +589,7 @@ func (h *CopilotHandler) AnalyzeSession(c *gin.Context) {
 	item, err := h.service.RunSessionAnalysis(c.Request.Context(), principal, c.Param("sessionID"), domaincopilot.RootCauseRunInput{
 		Kind:              req.Mode,
 		AnalysisProfileID: req.AnalysisProfileID,
+		AgentProviderID:   req.AgentProviderID,
 		TriggerType:       req.TriggerType,
 		Question:          req.Question,
 		ClusterID:         stringValueMap(req.Scope, "clusterId"),

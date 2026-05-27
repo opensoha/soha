@@ -37,6 +37,24 @@ control_plane:
       - host_sync
     compose_root: ./.kubecrux/docker
     poll_interval: 5s
+  agent_runtime:
+    enabled: false
+    worker_id: local-hermes-runner
+    provider_ids:
+      - hermes
+    provider_kinds:
+      - hermes
+    hermes_command: hermes
+    providers:
+      hermes:
+        command: hermes
+        args:
+          - chat
+        prompt_arg: -q
+        skill_arg: -s
+        provider_skill_arg: ""
+    workspace_root: ./.kubecrux/agent-runtime
+    poll_interval: 5s
 
 kubernetes:
   id: local-agent

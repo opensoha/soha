@@ -22,6 +22,7 @@ type DeliveryService interface {
 	GetApplicationRuntimeDetail(context.Context, domainidentity.Principal, string) (domaindelivery.ApplicationRuntimeDetail, error)
 	GetApplicationWorkloadRuntimeDetail(context.Context, domainidentity.Principal, string, string, string) (domaindelivery.ApplicationWorkloadRuntimeDetail, error)
 	GetApplicationEnvironmentDetail(context.Context, domainidentity.Principal, string) (domaindelivery.ApplicationEnvironmentDetail, error)
+	TriggerApplicationDeliveryAction(context.Context, domainidentity.Principal, string, domaindelivery.ApplicationDeliveryActionInput) (domaindelivery.ApplicationDeliveryActionResult, error)
 	ListReleaseBoard(context.Context, domainidentity.Principal) ([]domaindelivery.ReleaseBoardEntry, error)
 	ListTargetCandidates(context.Context, domainidentity.Principal, string, string, string) ([]domaindelivery.TargetCandidate, error)
 	ListReleaseBundles(context.Context, domainidentity.Principal, domaindelivery.ReleaseBundleFilter) ([]domaindelivery.ReleaseBundle, error)
@@ -100,6 +101,33 @@ func (h *DeliveryHandler) GetApplicationEnvironmentDetail(c *gin.Context) {
 		return
 	}
 	apiresponse.Item(c, http.StatusOK, item)
+}
+
+func (h *DeliveryHandler) TriggerApplicationDeliveryAction(c *gin.Context) {
+	var req dto.ApplicationDeliveryActionRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid application delivery action payload")
+		return
+	}
+	principal := apiMiddleware.PrincipalFromContext(c)
+	item, err := h.service.TriggerApplicationDeliveryAction(c.Request.Context(), principal, c.Param("applicationID"), domaindelivery.ApplicationDeliveryActionInput{
+		Action:                   domaindelivery.ApplicationDeliveryActionKind(req.Action),
+		ApplicationEnvironmentID: req.ApplicationEnvironmentID,
+		TargetID:                 req.TargetID,
+		BuildSourceID:            req.BuildSourceID,
+		RefType:                  req.RefType,
+		RefName:                  req.RefName,
+		ImageTag:                 req.ImageTag,
+		ReleaseName:              req.ReleaseName,
+		ContainerName:            req.ContainerName,
+		Variables:                req.Variables,
+		BuildArgs:                req.BuildArgs,
+	})
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusAccepted, item)
 }
 
 func (h *DeliveryHandler) ListReleaseBoard(c *gin.Context) {

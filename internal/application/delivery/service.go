@@ -16,6 +16,7 @@ import (
 	domainrelease "github.com/kubecrux/kubecrux/internal/domain/release"
 	domainresource "github.com/kubecrux/kubecrux/internal/domain/resource"
 	domainworkflow "github.com/kubecrux/kubecrux/internal/domain/workflow"
+	"github.com/kubecrux/kubecrux/internal/platform/apperrors"
 )
 
 type ApplicationReader interface {
@@ -35,14 +36,18 @@ type CatalogReader interface {
 
 type BuildReader interface {
 	List(context.Context, domainidentity.Principal, domainbuild.Filter) ([]domainbuild.Record, error)
+	Trigger(context.Context, domainidentity.Principal, domainbuild.TriggerInput) (domainbuild.Record, error)
 }
 
 type WorkflowReader interface {
 	List(context.Context, domainidentity.Principal, string, int) ([]domainworkflow.Run, error)
+	Trigger(context.Context, domainidentity.Principal, domainworkflow.Input) (domainworkflow.Run, error)
+	TriggerValidation(context.Context, domainidentity.Principal, domainworkflow.Input) (domainworkflow.Run, error)
 }
 
 type ReleaseReader interface {
 	List(context.Context, domainidentity.Principal, domainrelease.Filter) ([]domainrelease.Record, error)
+	Trigger(context.Context, domainidentity.Principal, domainrelease.TriggerInput) (domainrelease.Record, error)
 }
 
 type ExecutionController interface {
@@ -122,6 +127,7 @@ func (s *Service) GetApplicationDetail(ctx context.Context, principal domainiden
 			Targets:                  binding.Targets,
 			BuildSourceID:            binding.BuildPolicy.SourceID,
 			BuildSource:              resolveBuildSource(app, binding.BuildPolicy.SourceID),
+			BuildPolicy:              binding.BuildPolicy,
 			LatestBundle:             latestBundleForBinding(binding, bundles),
 			LatestExecutionTask:      latestExecutionTaskForBinding(binding, tasks),
 			LatestBuild:              latestBuildForBinding(binding, builds),
@@ -334,6 +340,7 @@ func (s *Service) ListReleaseBoard(ctx context.Context, principal domainidentity
 			WorkflowTemplateName:     workflowTemplateName(binding),
 			BuildSourceID:            binding.BuildPolicy.SourceID,
 			BuildSource:              resolveBuildSource(app, binding.BuildPolicy.SourceID),
+			BuildPolicy:              binding.BuildPolicy,
 			LatestBundle:             latestBundleForBinding(binding, bundles),
 			LatestExecutionTask:      latestExecutionTaskForBinding(binding, tasks),
 			Targets:                  binding.Targets,
@@ -583,6 +590,240 @@ func (s *Service) BootstrapApplicationFromBlueprint(ctx context.Context, princip
 	}, nil
 }
 
+func (s *Service) TriggerApplicationDeliveryAction(ctx context.Context, principal domainidentity.Principal, applicationID string, input domaindelivery.ApplicationDeliveryActionInput) (domaindelivery.ApplicationDeliveryActionResult, error) {
+	action := normalizeApplicationDeliveryAction(input.Action)
+	app, err := s.applications.Get(ctx, principal, strings.TrimSpace(applicationID))
+	if err != nil {
+		return domaindelivery.ApplicationDeliveryActionResult{}, err
+	}
+	bindingID := strings.TrimSpace(input.ApplicationEnvironmentID)
+	if bindingID == "" {
+		return domaindelivery.ApplicationDeliveryActionResult{}, fmt.Errorf("%w: applicationEnvironmentId is required", apperrors.ErrInvalidArgument)
+	}
+	binding, err := s.catalog.GetApplicationEnvironment(ctx, principal, bindingID)
+	if err != nil {
+		return domaindelivery.ApplicationDeliveryActionResult{}, err
+	}
+	if binding.ApplicationID != app.ID {
+		return domaindelivery.ApplicationDeliveryActionResult{}, fmt.Errorf("%w: application environment does not belong to application", apperrors.ErrInvalidArgument)
+	}
+	target, err := selectReleaseTarget(binding, input.TargetID)
+	if err != nil {
+		return domaindelivery.ApplicationDeliveryActionResult{}, err
+	}
+	if action != domaindelivery.ApplicationDeliveryActionBuild && target == nil {
+		return domaindelivery.ApplicationDeliveryActionResult{}, fmt.Errorf("%w: no enabled release target is configured", apperrors.ErrInvalidArgument)
+	}
+	if err := s.authorizeApplicationDeliveryAction(ctx, principal, action); err != nil {
+		return domaindelivery.ApplicationDeliveryActionResult{}, err
+	}
+	result := domaindelivery.ApplicationDeliveryActionResult{
+		Action:                   action,
+		ApplicationID:            app.ID,
+		ApplicationEnvironmentID: binding.ID,
+		Target:                   target,
+	}
+
+	switch action {
+	case domaindelivery.ApplicationDeliveryActionBuild:
+		buildRecord, buildErr := s.triggerApplicationBuild(ctx, principal, app, binding, input)
+		if buildErr != nil {
+			return domaindelivery.ApplicationDeliveryActionResult{}, buildErr
+		}
+		result.Build = &buildRecord
+		applyBuildRelatedIDs(&result, buildRecord)
+	case domaindelivery.ApplicationDeliveryActionDeploy:
+		if target == nil {
+			return domaindelivery.ApplicationDeliveryActionResult{}, fmt.Errorf("%w: no enabled release target is configured", apperrors.ErrInvalidArgument)
+		}
+		releaseRecord, releaseErr := s.triggerApplicationRelease(ctx, principal, app, binding, *target, input)
+		if releaseErr != nil {
+			return domaindelivery.ApplicationDeliveryActionResult{}, releaseErr
+		}
+		result.Release = &releaseRecord
+		applyReleaseRelatedIDs(&result, releaseRecord)
+	case domaindelivery.ApplicationDeliveryActionWorkflow:
+		if target == nil {
+			return domaindelivery.ApplicationDeliveryActionResult{}, fmt.Errorf("%w: no enabled release target is configured", apperrors.ErrInvalidArgument)
+		}
+		run, runErr := s.workflows.Trigger(ctx, principal, workflowInputForDeliveryAction(app, binding, *target, input, action, false))
+		if runErr != nil {
+			return domaindelivery.ApplicationDeliveryActionResult{}, runErr
+		}
+		result.Workflow = &run
+	case domaindelivery.ApplicationDeliveryActionBuildDeploy:
+		if target == nil {
+			return domaindelivery.ApplicationDeliveryActionResult{}, fmt.Errorf("%w: no enabled release target is configured", apperrors.ErrInvalidArgument)
+		}
+		if binding.WorkflowTemplate == nil || len(binding.WorkflowTemplate.Definition) == 0 {
+			return domaindelivery.ApplicationDeliveryActionResult{}, fmt.Errorf("%w: workflow template is required", apperrors.ErrInvalidArgument)
+		}
+		run, runErr := s.workflows.Trigger(ctx, principal, workflowInputForDeliveryAction(app, binding, *target, input, action, false))
+		if runErr != nil {
+			return domaindelivery.ApplicationDeliveryActionResult{}, runErr
+		}
+		result.Workflow = &run
+	case domaindelivery.ApplicationDeliveryActionVerify:
+		if target == nil {
+			return domaindelivery.ApplicationDeliveryActionResult{}, fmt.Errorf("%w: no enabled release target is configured", apperrors.ErrInvalidArgument)
+		}
+		if binding.WorkflowTemplate == nil || len(binding.WorkflowTemplate.Definition) == 0 {
+			return domaindelivery.ApplicationDeliveryActionResult{}, fmt.Errorf("%w: workflow template is required", apperrors.ErrInvalidArgument)
+		}
+		run, runErr := s.workflows.TriggerValidation(ctx, principal, workflowInputForDeliveryAction(app, binding, *target, input, action, true))
+		if runErr != nil {
+			return domaindelivery.ApplicationDeliveryActionResult{}, runErr
+		}
+		result.Workflow = &run
+	default:
+		return domaindelivery.ApplicationDeliveryActionResult{}, fmt.Errorf("%w: unsupported application delivery action %q", apperrors.ErrInvalidArgument, action)
+	}
+	return result, nil
+}
+
+func normalizeApplicationDeliveryAction(action domaindelivery.ApplicationDeliveryActionKind) domaindelivery.ApplicationDeliveryActionKind {
+	normalized := domaindelivery.ApplicationDeliveryActionKind(strings.TrimSpace(string(action)))
+	if normalized == "" {
+		return domaindelivery.ApplicationDeliveryActionBuildDeploy
+	}
+	return normalized
+}
+
+func (s *Service) authorizeApplicationDeliveryAction(ctx context.Context, principal domainidentity.Principal, action domaindelivery.ApplicationDeliveryActionKind) error {
+	switch action {
+	case domaindelivery.ApplicationDeliveryActionBuild:
+		return appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermDeliveryBuildsTrigger)
+	case domaindelivery.ApplicationDeliveryActionDeploy:
+		return appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermDeliveryReleasesTrigger)
+	case domaindelivery.ApplicationDeliveryActionWorkflow, domaindelivery.ApplicationDeliveryActionVerify:
+		return appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermDeliveryWorkflowsTrigger)
+	case domaindelivery.ApplicationDeliveryActionBuildDeploy:
+		if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermDeliveryBuildsTrigger); err != nil {
+			return err
+		}
+		return appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermDeliveryWorkflowsTrigger)
+	default:
+		return fmt.Errorf("%w: unsupported application delivery action %q", apperrors.ErrInvalidArgument, action)
+	}
+}
+
+func (s *Service) triggerApplicationBuild(ctx context.Context, principal domainidentity.Principal, app domainapp.App, binding domaincatalog.ApplicationEnvironment, input domaindelivery.ApplicationDeliveryActionInput) (domainbuild.Record, error) {
+	buildSourceID, _, refType, refName, imageTag := resolveDeliveryBuildDefaults(app, binding, input)
+	return s.builds.Trigger(ctx, principal, domainbuild.TriggerInput{
+		ApplicationID:            app.ID,
+		ApplicationEnvironmentID: binding.ID,
+		BuildSourceID:            buildSourceID,
+		RefType:                  refType,
+		RefName:                  refName,
+		ImageTag:                 imageTag,
+		BuildArgs:                mergeActionMaps(binding.BuildPolicy.BuildArgs, input.BuildArgs),
+		Variables:                mergeActionMaps(binding.BuildPolicy.Variables, input.Variables),
+	})
+}
+
+func (s *Service) triggerApplicationRelease(ctx context.Context, principal domainidentity.Principal, app domainapp.App, binding domaincatalog.ApplicationEnvironment, target domaincatalog.ReleaseTarget, input domaindelivery.ApplicationDeliveryActionInput) (domainrelease.Record, error) {
+	_, buildSource, _, _, imageTag := resolveDeliveryBuildDefaults(app, binding, input)
+	if imageTag == "" {
+		return domainrelease.Record{}, fmt.Errorf("%w: imageTag or defaultTag is required", apperrors.ErrInvalidArgument)
+	}
+	return s.releases.Trigger(ctx, principal, domainrelease.TriggerInput{
+		ApplicationID:            app.ID,
+		ApplicationEnvironmentID: binding.ID,
+		ReleaseBundleID:          metadataString(input.Variables, "releaseBundleId"),
+		ClusterID:                target.ClusterID,
+		Namespace:                target.Namespace,
+		DeploymentName:           target.WorkloadName,
+		ContainerName:            firstNonEmpty(input.ContainerName, target.ContainerName),
+		ImageTag:                 imageTag,
+		Image:                    resolveDeliveryImageRef(app, buildSource, imageTag),
+		ReleaseName:              firstNonEmpty(input.ReleaseName, imageTag, binding.ID),
+		ActionKind:               actionKindForBinding(binding, domaincatalog.Environment{}),
+	})
+}
+
+func workflowInputForDeliveryAction(app domainapp.App, binding domaincatalog.ApplicationEnvironment, target domaincatalog.ReleaseTarget, input domaindelivery.ApplicationDeliveryActionInput, action domaindelivery.ApplicationDeliveryActionKind, validationOnly bool) domainworkflow.Input {
+	workflowName := workflowTemplateName(binding)
+	if workflowName == "" {
+		workflowName = "build-release-verify"
+	}
+	buildSourceID, _, refType, refName, imageTag := resolveDeliveryBuildDefaults(app, binding, input)
+	return domainworkflow.Input{
+		ApplicationID:            app.ID,
+		ApplicationEnvironmentID: binding.ID,
+		WorkflowName:             workflowName,
+		ClusterID:                target.ClusterID,
+		Namespace:                target.Namespace,
+		DeploymentName:           target.WorkloadName,
+		BuildSourceID:            buildSourceID,
+		RefType:                  refType,
+		RefName:                  refName,
+		ImageTag:                 imageTag,
+		ReleaseName:              firstNonEmpty(input.ReleaseName, imageTag, binding.ID),
+		ContainerName:            firstNonEmpty(input.ContainerName, target.ContainerName),
+		Variables:                mergeActionMaps(binding.BuildPolicy.Variables, input.Variables),
+		BuildArgs:                mergeActionMaps(binding.BuildPolicy.BuildArgs, input.BuildArgs),
+		TriggerBuild:             action == domaindelivery.ApplicationDeliveryActionBuildDeploy || action == domaindelivery.ApplicationDeliveryActionWorkflow,
+		TriggerRelease:           action == domaindelivery.ApplicationDeliveryActionBuildDeploy,
+		ValidationOnly:           validationOnly,
+	}
+}
+
+func resolveDeliveryBuildDefaults(app domainapp.App, binding domaincatalog.ApplicationEnvironment, input domaindelivery.ApplicationDeliveryActionInput) (string, *domainapp.BuildSource, string, string, string) {
+	buildSourceID := firstNonEmpty(input.BuildSourceID, binding.BuildPolicy.SourceID)
+	buildSource := resolveBuildSource(app, buildSourceID)
+	if buildSourceID == "" && buildSource != nil {
+		buildSourceID = strings.TrimSpace(buildSource.ID)
+	}
+	refType := firstNonEmpty(input.RefType, binding.BuildPolicy.RefType, "branch")
+	refName := firstNonEmpty(input.RefName, binding.BuildPolicy.RefValue, app.DefaultBranch, "main")
+	imageTag := firstNonEmpty(input.ImageTag)
+	if imageTag == "" && buildSource != nil {
+		imageTag = strings.TrimSpace(buildSource.DefaultTag)
+	}
+	if imageTag == "" {
+		imageTag = strings.TrimSpace(app.DefaultTag)
+	}
+	return buildSourceID, buildSource, refType, refName, imageTag
+}
+
+func resolveDeliveryImageRef(app domainapp.App, source *domainapp.BuildSource, imageTag string) string {
+	base := strings.TrimSpace(app.BuildImage)
+	if source != nil && strings.TrimSpace(source.BuildImage) != "" {
+		base = strings.TrimSpace(source.BuildImage)
+	}
+	if base == "" {
+		return ""
+	}
+	if strings.TrimSpace(imageTag) == "" {
+		return base
+	}
+	return fmt.Sprintf("%s:%s", base, strings.TrimSpace(imageTag))
+}
+
+func selectReleaseTarget(binding domaincatalog.ApplicationEnvironment, targetID string) (*domaincatalog.ReleaseTarget, error) {
+	targetID = strings.TrimSpace(targetID)
+	if targetID != "" {
+		for _, item := range binding.Targets {
+			if item.ID != targetID {
+				continue
+			}
+			if !item.Enabled {
+				return nil, fmt.Errorf("%w: release target is disabled", apperrors.ErrInvalidArgument)
+			}
+			copyItem := item
+			return &copyItem, nil
+		}
+		return nil, fmt.Errorf("%w: release target %q not found", apperrors.ErrInvalidArgument, targetID)
+	}
+	for _, item := range binding.Targets {
+		if item.Enabled {
+			copyItem := item
+			return &copyItem, nil
+		}
+	}
+	return nil, nil
+}
+
 func (s *Service) ClaimExecutionTask(ctx context.Context, providerKinds []string, agentID, runtimeEndpoint string) (domaindelivery.ExecutionTask, error) {
 	if s.execution != nil {
 		return s.execution.ClaimExecutionTask(ctx, providerKinds, strings.TrimSpace(agentID), strings.TrimSpace(runtimeEndpoint))
@@ -670,6 +911,17 @@ func ensureMap(value map[string]any) map[string]any {
 	return value
 }
 
+func mergeActionMaps(base, override map[string]any) map[string]any {
+	result := make(map[string]any, len(base)+len(override))
+	for key, value := range base {
+		result[key] = value
+	}
+	for key, value := range override {
+		result[key] = value
+	}
+	return result
+}
+
 func mergeMaps(base, overlay map[string]any) map[string]any {
 	next := ensureMap(base)
 	for key, value := range ensureMap(overlay) {
@@ -695,6 +947,37 @@ func maxInt(values ...int) int {
 		}
 	}
 	return result
+}
+
+func metadataString(metadata map[string]any, key string) string {
+	if len(metadata) == 0 {
+		return ""
+	}
+	value, ok := metadata[key]
+	if !ok || value == nil {
+		return ""
+	}
+	return strings.TrimSpace(fmt.Sprint(value))
+}
+
+func applyBuildRelatedIDs(result *domaindelivery.ApplicationDeliveryActionResult, record domainbuild.Record) {
+	applyRelatedIDsFromMetadata(result, record.Metadata)
+}
+
+func applyReleaseRelatedIDs(result *domaindelivery.ApplicationDeliveryActionResult, record domainrelease.Record) {
+	applyRelatedIDsFromMetadata(result, record.Metadata)
+}
+
+func applyRelatedIDsFromMetadata(result *domaindelivery.ApplicationDeliveryActionResult, metadata map[string]any) {
+	if result == nil {
+		return
+	}
+	if bundleID := metadataString(metadata, "releaseBundleId"); bundleID != "" {
+		result.RelatedIDs.ReleaseBundleID = bundleID
+	}
+	if taskID := metadataString(metadata, "executionTaskId"); taskID != "" {
+		result.RelatedIDs.ExecutionTaskID = taskID
+	}
 }
 
 func (s *Service) loadDeliveryContext(ctx context.Context, principal domainidentity.Principal, applicationID string) ([]domaincatalog.ApplicationEnvironment, []domaincatalog.Environment, []domaindelivery.ReleaseBundle, []domaindelivery.ExecutionTask, []domainbuild.Record, []domainworkflow.Run, []domainrelease.Record, error) {

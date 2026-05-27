@@ -75,6 +75,7 @@ type AutomationPolicy struct {
 	Enabled            bool           `json:"enabled"`
 	TriggerType        string         `json:"triggerType"`
 	AnalysisKinds      []string       `json:"analysisKinds,omitempty"`
+	AgentProviderID    string         `json:"agentProviderId,omitempty"`
 	TriggerConditions  map[string]any `json:"triggerConditions,omitempty"`
 	DedupWindowSeconds int            `json:"dedupWindowSeconds"`
 	AnalysisProfileID  string         `json:"analysisProfileId"`
@@ -91,6 +92,7 @@ type AutomationPolicyInput struct {
 	Enabled            bool           `json:"enabled"`
 	TriggerType        string         `json:"triggerType"`
 	AnalysisKinds      []string       `json:"analysisKinds,omitempty"`
+	AgentProviderID    string         `json:"agentProviderId,omitempty"`
 	TriggerConditions  map[string]any `json:"triggerConditions,omitempty"`
 	DedupWindowSeconds int            `json:"dedupWindowSeconds"`
 	AnalysisProfileID  string         `json:"analysisProfileId"`
@@ -135,4 +137,8 @@ type WorkbenchCatalog struct {
 	DataSources      []WorkbenchDataSource      `json:"dataSources"`
 	AnalysisProfiles []WorkbenchAnalysisProfile `json:"analysisProfiles"`
 	SkillsRegistry   []WorkbenchSkill           `json:"skillsRegistry,omitempty"`
+	AgentProviders   []AgentProvider            `json:"agentProviders,omitempty"`
+	Capabilities     []AgentCapability          `json:"capabilities,omitempty"`
+	ToolBindings     []AgentToolBinding         `json:"toolBindings,omitempty"`
+	SkillBindings    []AgentSkillBinding        `json:"skillBindings,omitempty"`
 }

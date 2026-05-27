@@ -90,6 +90,11 @@ func New(cfg cfgpkg.Config, logger *zap.Logger, deps Dependencies) *http.Server 
 			v1.GET("/docker/operations/:id/runner-status", deps.Docker.GetOperationRunnerStatus)
 			v1.POST("/docker/operation-callbacks", deps.Docker.RecordOperationCallback)
 		}
+		if cfg.Modules.AI.Enabled {
+			v1.POST("/copilot/agent-runs/claim", deps.Copilot.ClaimAgentRun)
+			v1.POST("/copilot/agent-runs/callback", deps.Copilot.RecordAgentRunCallback)
+			v1.POST("/copilot/agent-runs/tool-call", deps.Copilot.RecordAgentToolCall)
+		}
 	}
 
 	protected := router.Group(cfg.HTTP.BasePath)
@@ -342,6 +347,7 @@ func New(cfg cfgpkg.Config, logger *zap.Logger, deps Dependencies) *http.Server 
 			protected.GET("/applications/:applicationID", deps.Applications.GetApplication)
 			protected.GET("/applications/:applicationID/detail", deps.Delivery.GetApplicationDetail)
 			protected.GET("/applications/:applicationID/runtime", deps.Delivery.GetApplicationRuntimeDetail)
+			protected.POST("/applications/:applicationID/delivery-actions", deps.Delivery.TriggerApplicationDeliveryAction)
 			protected.GET("/applications/:applicationID/application-environments/:applicationEnvironmentID/workloads/:workloadName/runtime", deps.Delivery.GetApplicationWorkloadRuntimeDetail)
 			protected.GET("/applications/:applicationID/services", deps.Applications.ListApplicationServices)
 			protected.POST("/applications/:applicationID/services", deps.Applications.CreateApplicationService)
@@ -435,6 +441,8 @@ func New(cfg cfgpkg.Config, logger *zap.Logger, deps Dependencies) *http.Server 
 		if cfg.Modules.AI.Enabled {
 			protected.GET("/copilot/insights", deps.Copilot.ListInsights)
 			protected.GET("/copilot/workbench/catalog", deps.Copilot.GetWorkbenchCatalog)
+			protected.GET("/copilot/agent-providers", deps.Copilot.ListAgentProviders)
+			protected.GET("/copilot/agent-runs", deps.Copilot.ListAgentRuns)
 			protected.GET("/copilot/data-source-capabilities", deps.Copilot.ListDataSourceCapabilities)
 			protected.GET("/copilot/data-sources", deps.Copilot.ListDataSources)
 			protected.POST("/copilot/data-sources", deps.Copilot.CreateDataSource)

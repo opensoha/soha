@@ -9,8 +9,12 @@ import (
 	"time"
 
 	appaccess "github.com/kubecrux/kubecrux/internal/application/access"
+	domainalert "github.com/kubecrux/kubecrux/internal/domain/alert"
+	domainbuild "github.com/kubecrux/kubecrux/internal/domain/build"
 	domaincopilot "github.com/kubecrux/kubecrux/internal/domain/copilot"
+	domainevent "github.com/kubecrux/kubecrux/internal/domain/event"
 	domainidentity "github.com/kubecrux/kubecrux/internal/domain/identity"
+	domainrelease "github.com/kubecrux/kubecrux/internal/domain/release"
 	domainsettings "github.com/kubecrux/kubecrux/internal/domain/settings"
 	"github.com/kubecrux/kubecrux/internal/platform/apperrors"
 )
@@ -96,6 +100,36 @@ func TestWithinCooldownWindowHonorsConfiguredSeconds(t *testing.T) {
 	}
 }
 
+func TestWithinAgentRunWindowsMirrorAutomationRunWindows(t *testing.T) {
+	recentRuns := []domaincopilot.AgentRun{{CreatedAt: time.Now().UTC().Add(-2 * time.Minute)}}
+
+	if !withinAgentRunDedupWindow(recentRuns, 300) {
+		t.Fatalf("expected recent external agent run to be inside the dedup window")
+	}
+	if withinAgentRunDedupWindow(recentRuns, 60) {
+		t.Fatalf("expected old external agent run to be outside the shorter dedup window")
+	}
+	if !withinAgentRunDedupWindow(recentRuns, 0) {
+		t.Fatalf("expected zero dedup window to fall back to the default dedup window")
+	}
+	if !withinAgentRunCooldownWindow(recentRuns, 300) {
+		t.Fatalf("expected recent external agent run to be inside the cooldown window")
+	}
+	if withinAgentRunCooldownWindow(recentRuns, 0) {
+		t.Fatalf("expected zero cooldown to disable external agent policy cooldown")
+	}
+}
+
+func TestAutomationAgentSkillIDsPreservePlaybooksAndAddProviderSkill(t *testing.T) {
+	skills := automationAgentSkillIDs("root_cause", []string{"release-correlation", "cluster-health"})
+	if !containsString(skills, "release-correlation") || !containsString(skills, "cluster-health") {
+		t.Fatalf("expected platform playbooks to be preserved, got %#v", skills)
+	}
+	if !containsString(skills, "root-cause-investigation") {
+		t.Fatalf("expected provider skill to be added, got %#v", skills)
+	}
+}
+
 func TestBuildAlertAutomationDedupPrefix(t *testing.T) {
 	if got := buildAlertAutomationDedupPrefix(" policy:one "); got != "policy:one:" {
 		t.Fatalf("unexpected dedup prefix: %q", got)
@@ -155,12 +189,12 @@ func TestApplySessionAnalysisPatchPersistsExplicitAnalysisMode(t *testing.T) {
 }
 
 func TestRunnableSessionAnalysisModeRejectsNonArtifactModes(t *testing.T) {
-	for _, mode := range []string{"root_cause", "performance", "trace"} {
+	for _, mode := range []string{"root_cause", "performance", "trace", "inspection_review"} {
 		if !isRunnableSessionAnalysisMode(mode) {
 			t.Fatalf("expected %q to be runnable", mode)
 		}
 	}
-	for _, mode := range []string{"", "general", "inspection_review", "unknown"} {
+	for _, mode := range []string{"", "general", "unknown"} {
 		if isRunnableSessionAnalysisMode(mode) {
 			t.Fatalf("expected %q to be rejected for explicit analysis", mode)
 		}
@@ -284,16 +318,19 @@ func TestNormalizeAutomationPolicyInputRequiresAlertWebhookTrigger(t *testing.T)
 	}
 }
 
-func TestNormalizeAutomationPolicyInputRejectsUnsupportedAnalysisKind(t *testing.T) {
-	_, err := normalizeAutomationPolicyInput(domaincopilot.AutomationPolicyInput{
+func TestNormalizeAutomationPolicyInputAllowsInspectionReview(t *testing.T) {
+	input, err := normalizeAutomationPolicyInput(domaincopilot.AutomationPolicyInput{
 		Name:              "Inspection policy",
 		TriggerType:       "alert_webhook",
 		AnalysisProfileID: "profile:root",
 		AnalysisKinds:     []string{"inspection_review"},
 	})
 
-	if err == nil {
-		t.Fatalf("expected unsupported automation analysis kind to be rejected")
+	if err != nil {
+		t.Fatalf("expected inspection_review automation kind to be accepted, got %v", err)
+	}
+	if len(input.AnalysisKinds) != 1 || input.AnalysisKinds[0] != "inspection_review" {
+		t.Fatalf("expected inspection_review kind, got %#v", input.AnalysisKinds)
 	}
 }
 
@@ -319,6 +356,663 @@ func TestNormalizeAutomationPolicyInputDeduplicatesSupportedAnalysisKinds(t *tes
 	}
 }
 
+func TestRecordAgentRunCallbackSynthesizesArtifactBeforePersist(t *testing.T) {
+	createdAt := time.Date(2026, 5, 27, 10, 0, 0, 0, time.UTC)
+	repo := &agentRuntimeCallbackTestRepository{
+		agentRun: domaincopilot.AgentRun{
+			ID:             "agent:run-1",
+			ProviderID:     "hermes",
+			ProviderKind:   "hermes",
+			CapabilityID:   "root_cause",
+			CreatedBy:      "user-1",
+			Status:         domaincopilot.AgentRunStatusRunning,
+			Scope:          domaincopilot.SessionScope{ClusterID: "cluster-a", Namespace: "default"},
+			Output:         map[string]any{"summary": "old summary"},
+			CallbackToken:  "callback-token",
+			TimeoutSeconds: 600,
+			CreatedAt:      createdAt,
+			UpdatedAt:      createdAt,
+		},
+	}
+	service := &Service{repo: repo}
+
+	updated, err := service.RecordAgentRunCallback(context.Background(), domaincopilot.AgentRunCallbackInput{
+		RunID:         "agent:run-1",
+		CallbackToken: "callback-token",
+		AgentID:       "local-hermes-runner",
+		Status:        "completed",
+		Payload: map[string]any{
+			"summary":         "Hermes found a likely release regression.",
+			"recommendations": []any{"Rollback the latest deployment"},
+		},
+		ExternalRunID: "hermes:123",
+	})
+	if err != nil {
+		t.Fatalf("record callback: %v", err)
+	}
+	if len(repo.callback.AnalysisArtifacts) != 1 {
+		t.Fatalf("expected synthesized artifact to be persisted through callback, got %#v", repo.callback.AnalysisArtifacts)
+	}
+	artifact := repo.callback.AnalysisArtifacts[0]
+	if artifact.RunID != "agent:run-1" || artifact.Kind != "root_cause" {
+		t.Fatalf("unexpected synthesized artifact identity: %#v", artifact)
+	}
+	if artifact.Summary != "Hermes found a likely release regression." {
+		t.Fatalf("expected callback payload summary in artifact, got %q", artifact.Summary)
+	}
+	if artifact.DataSourceSnapshot["providerId"] != "hermes" || artifact.DataSourceSnapshot["externalRunId"] != "hermes:123" {
+		t.Fatalf("expected provider snapshot in artifact, got %#v", artifact.DataSourceSnapshot)
+	}
+	if len(updated.AnalysisArtifacts) != 1 {
+		t.Fatalf("expected updated run to include synthesized artifact, got %#v", updated.AnalysisArtifacts)
+	}
+}
+
+func TestRecordAgentRunCallbackSynthesizesFailureArtifact(t *testing.T) {
+	createdAt := time.Date(2026, 5, 27, 10, 0, 0, 0, time.UTC)
+	repo := &agentRuntimeCallbackTestRepository{
+		agentRun: domaincopilot.AgentRun{
+			ID:             "agent:run-2",
+			ProviderID:     "hermes",
+			ProviderKind:   "hermes",
+			CapabilityID:   "trace",
+			CreatedBy:      "user-1",
+			Status:         domaincopilot.AgentRunStatusRunning,
+			Output:         map[string]any{},
+			CallbackToken:  "callback-token",
+			TimeoutSeconds: 600,
+			CreatedAt:      createdAt,
+			UpdatedAt:      createdAt,
+		},
+	}
+	service := &Service{repo: repo}
+
+	updated, err := service.RecordAgentRunCallback(context.Background(), domaincopilot.AgentRunCallbackInput{
+		RunID:         "agent:run-2",
+		CallbackToken: "callback-token",
+		AgentID:       "local-hermes-runner",
+		Status:        "failed",
+		Payload:       map[string]any{"error": "Hermes command exited with status 1"},
+		ErrorMessage:  "Hermes command exited with status 1",
+	})
+	if err != nil {
+		t.Fatalf("record failed callback: %v", err)
+	}
+	if len(repo.callback.AnalysisArtifacts) != 1 {
+		t.Fatalf("expected failed callback to persist synthesized artifact, got %#v", repo.callback.AnalysisArtifacts)
+	}
+	artifact := repo.callback.AnalysisArtifacts[0]
+	if artifact.Kind != "trace" || artifact.Summary != "Hermes command exited with status 1" {
+		t.Fatalf("unexpected failure artifact: %#v", artifact)
+	}
+	if len(updated.AnalysisArtifacts) != 1 {
+		t.Fatalf("expected updated failed run to include synthesized artifact, got %#v", updated.AnalysisArtifacts)
+	}
+}
+
+func TestRecordAgentRunCallbackSynthesizesStructuredArtifactFields(t *testing.T) {
+	createdAt := time.Date(2026, 5, 27, 10, 0, 0, 0, time.UTC)
+	repo := &agentRuntimeCallbackTestRepository{
+		agentRun: domaincopilot.AgentRun{
+			ID:             "agent:run-structured",
+			ProviderID:     "hermes",
+			ProviderKind:   "hermes",
+			CapabilityID:   "root_cause",
+			CreatedBy:      "user-1",
+			Status:         domaincopilot.AgentRunStatusRunning,
+			Output:         map[string]any{},
+			CallbackToken:  "callback-token",
+			TimeoutSeconds: 600,
+			CreatedAt:      createdAt,
+			UpdatedAt:      createdAt,
+		},
+	}
+	service := &Service{repo: repo}
+
+	_, err := service.RecordAgentRunCallback(context.Background(), domaincopilot.AgentRunCallbackInput{
+		RunID:         "agent:run-structured",
+		CallbackToken: "callback-token",
+		Status:        "completed",
+		Payload: map[string]any{
+			"summary": "Structured Hermes result",
+			"evidence": []any{map[string]any{
+				"id":      "evidence-1",
+				"kind":    "log.pattern",
+				"title":   "Error burst",
+				"summary": "Error rate increased.",
+			}},
+			"hypotheses": []any{map[string]any{
+				"id":         "hypothesis-1",
+				"title":      "Release regression",
+				"summary":    "A recent release likely caused the issue.",
+				"confidence": 82,
+			}},
+			"graph": map[string]any{
+				"nodes": []any{map[string]any{"id": "service:payment-api", "kind": "service", "title": "payment-api"}},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("record structured callback: %v", err)
+	}
+	artifact := repo.callback.AnalysisArtifacts[0]
+	if len(artifact.Evidence) != 1 || artifact.Evidence[0].ID != "evidence-1" {
+		t.Fatalf("expected evidence to be normalized, got %#v", artifact.Evidence)
+	}
+	if len(artifact.Hypotheses) != 1 || artifact.Hypotheses[0].Confidence != 82 {
+		t.Fatalf("expected hypotheses to be normalized, got %#v", artifact.Hypotheses)
+	}
+	if artifact.Graph == nil || len(artifact.Graph.Nodes) != 1 {
+		t.Fatalf("expected graph to be normalized, got %#v", artifact.Graph)
+	}
+}
+
+func TestRunRootCauseAnalysisQueuesExternalAgentAndCreatesBusinessRun(t *testing.T) {
+	defer appaccess.SetRolePermissionMatrix(nil)
+	service, repo := newInspectionAuthzTestService(map[string][]string{
+		"runner": {appaccess.PermObserveAIRootCauseRun},
+	})
+
+	run, err := service.RunRootCauseAnalysis(context.Background(), domainidentity.Principal{
+		UserID: "user-1",
+		Roles:  []string{"runner"},
+	}, domaincopilot.RootCauseRunInput{
+		Kind:            "root_cause",
+		AgentProviderID: "hermes",
+		ClusterID:       "cluster-a",
+		Namespace:       "payments",
+		WorkloadName:    "payment-api",
+		Question:        "Investigate alert pressure",
+	}, "en-US")
+	if err != nil {
+		t.Fatalf("queue external root cause run: %v", err)
+	}
+	if run.Status != domaincopilot.AgentRunStatusQueued {
+		t.Fatalf("expected queued business run, got %q", run.Status)
+	}
+	if repo.createdAgentRun.ProviderID != "hermes" || repo.createdAgentRun.RootCauseRunID != run.ID {
+		t.Fatalf("expected linked hermes agent run, got %#v", repo.createdAgentRun)
+	}
+	if repo.createdAgentRun.Scope.ClusterID != "cluster-a" || repo.createdAgentRun.Scope.Workload != "payment-api" {
+		t.Fatalf("unexpected agent run scope: %#v", repo.createdAgentRun.Scope)
+	}
+	if len(repo.createdAgentRun.ToolBindings) == 0 {
+		t.Fatalf("expected agent run to snapshot tool bindings")
+	}
+	if len(repo.createdAgentRun.SkillBindings) == 0 || repo.createdAgentRun.SkillBindings[0].ProviderSkillRef == "" {
+		t.Fatalf("expected agent run to snapshot provider skill bindings, got %#v", repo.createdAgentRun.SkillBindings)
+	}
+}
+
+func TestRunSessionAnalysisQueuesExternalRootCauseBusinessRun(t *testing.T) {
+	defer appaccess.SetRolePermissionMatrix(nil)
+	service, repo := newInspectionAuthzTestService(map[string][]string{
+		"chat": {appaccess.PermObserveAIChatUse},
+	})
+	session := domaincopilot.Session{
+		ID:        "session-1",
+		Title:     "Payment incident",
+		CreatedBy: "user-1",
+		Metadata: sessionMetadataMap(domaincopilot.SessionMetadata{
+			Mode:            "root_cause",
+			AgentProviderID: "hermes",
+			Scope: domaincopilot.SessionScope{
+				ClusterID:        "cluster-a",
+				Namespace:        "payments",
+				Workload:         "payment-api",
+				TimeRangeMinutes: 30,
+			},
+			Toolset: domaincopilot.SessionToolset{
+				EnabledAdapterIDs: []string{"logs.v1"},
+				EnabledSkillIDs:   []string{"root-cause-investigation"},
+				BudgetOverrides:   map[string]any{"timeoutSeconds": 180},
+			},
+		}),
+		CreatedAt: time.Now().UTC(),
+		UpdatedAt: time.Now().UTC(),
+	}
+	repo.session = session
+
+	envelope, err := service.RunSessionAnalysis(context.Background(), domainidentity.Principal{
+		UserID: "user-1",
+		Roles:  []string{"chat"},
+	}, "session-1", domaincopilot.RootCauseRunInput{
+		Kind:     "root_cause",
+		Question: "Investigate payment-api errors",
+	}, "en-US")
+	if err != nil {
+		t.Fatalf("queue session root cause agent run: %v", err)
+	}
+	if repo.createdRootCauseRun.ID == "" || repo.createdRootCauseRun.SessionID != "session-1" {
+		t.Fatalf("expected session-linked root cause business run, got %#v", repo.createdRootCauseRun)
+	}
+	if repo.createdRootCauseRun.CreatedBy != "session:session-1" {
+		t.Fatalf("expected root cause owner to remain session-scoped, got %q", repo.createdRootCauseRun.CreatedBy)
+	}
+	if repo.createdAgentRun.ProviderID != "hermes" || repo.createdAgentRun.RootCauseRunID != repo.createdRootCauseRun.ID {
+		t.Fatalf("expected linked hermes agent run, got %#v", repo.createdAgentRun)
+	}
+	if repo.createdAgentRun.CreatedBy != "user-1" {
+		t.Fatalf("expected agent run owner to stay session owner for callback message persistence, got %q", repo.createdAgentRun.CreatedBy)
+	}
+	if repo.createdAgentRun.Scope.ClusterID != "cluster-a" || repo.createdAgentRun.Scope.Workload != "payment-api" {
+		t.Fatalf("unexpected agent run scope: %#v", repo.createdAgentRun.Scope)
+	}
+	if envelope.SessionPatch["rootCauseRunId"] != repo.createdRootCauseRun.ID || envelope.SessionPatch["agentRunId"] != repo.createdAgentRun.ID {
+		t.Fatalf("expected session patch to expose both run ids, got %#v", envelope.SessionPatch)
+	}
+}
+
+func TestRecordAgentRunCallbackBackfillsRootCauseRun(t *testing.T) {
+	createdAt := time.Date(2026, 5, 27, 10, 0, 0, 0, time.UTC)
+	repo := &agentRuntimeCallbackTestRepository{
+		agentRun: domaincopilot.AgentRun{
+			ID:             "agent:run-3",
+			ProviderID:     "hermes",
+			ProviderKind:   "hermes",
+			CapabilityID:   "root_cause",
+			RootCauseRunID: "rca:run-1",
+			CreatedBy:      "user-1",
+			Status:         domaincopilot.AgentRunStatusRunning,
+			Output:         map[string]any{},
+			CallbackToken:  "callback-token",
+			TimeoutSeconds: 600,
+			CreatedAt:      createdAt,
+			UpdatedAt:      createdAt,
+		},
+		rootCauseRun: domaincopilot.RootCauseRun{
+			ID:        "rca:run-1",
+			Kind:      "root_cause",
+			CreatedBy: "user-1",
+			Status:    domaincopilot.AgentRunStatusQueued,
+			CreatedAt: createdAt,
+			UpdatedAt: createdAt,
+		},
+	}
+	service := &Service{repo: repo}
+
+	_, err := service.RecordAgentRunCallback(context.Background(), domaincopilot.AgentRunCallbackInput{
+		RunID:         "agent:run-3",
+		CallbackToken: "callback-token",
+		AgentID:       "local-hermes-runner",
+		Status:        "completed",
+		Payload:       map[string]any{"summary": "Hermes found release drift."},
+		AnalysisArtifacts: []domaincopilot.AnalysisArtifact{{
+			Kind:            "root_cause",
+			RunID:           "agent:run-3",
+			Summary:         "Hermes found release drift.",
+			Recommendations: []string{"Rollback release bundle"},
+			Evidence: []domaincopilot.RootCauseEvidence{{
+				ID:      "evidence-1",
+				Kind:    "delivery.release",
+				Title:   "Release changed",
+				Summary: "Latest release overlaps with alert start time.",
+			}},
+		}},
+		ExternalRunID: "hermes:456",
+	})
+	if err != nil {
+		t.Fatalf("record callback: %v", err)
+	}
+	if repo.rootCauseRun.Status != "completed" || repo.rootCauseRun.Summary != "Hermes found release drift." {
+		t.Fatalf("expected root cause run to be backfilled, got %#v", repo.rootCauseRun)
+	}
+	if len(repo.rootCauseRun.Evidence) != 1 || len(repo.rootCauseRun.Recommendations) != 1 {
+		t.Fatalf("expected evidence and recommendations to be copied, got %#v", repo.rootCauseRun)
+	}
+	if repo.rootCauseRun.DataSourceSnapshot["agentRunId"] != "agent:run-3" || repo.rootCauseRun.DataSourceSnapshot["externalRunId"] != "hermes:456" {
+		t.Fatalf("expected agent runtime snapshot, got %#v", repo.rootCauseRun.DataSourceSnapshot)
+	}
+}
+
+func TestRecordAgentRunCallbackBackfillsSessionOwnedRootCauseRun(t *testing.T) {
+	createdAt := time.Date(2026, 5, 27, 10, 0, 0, 0, time.UTC)
+	repo := &agentRuntimeCallbackTestRepository{
+		agentRun: domaincopilot.AgentRun{
+			ID:             "agent:run-session",
+			ProviderID:     "hermes",
+			ProviderKind:   "hermes",
+			CapabilityID:   "root_cause",
+			RootCauseRunID: "rca:session-run",
+			CreatedBy:      "user-1",
+			Status:         domaincopilot.AgentRunStatusRunning,
+			Input:          map[string]any{"rootCauseRunOwner": "session:session-1"},
+			CallbackToken:  "callback-token",
+			TimeoutSeconds: 600,
+			CreatedAt:      createdAt,
+			UpdatedAt:      createdAt,
+		},
+		rootCauseRun: domaincopilot.RootCauseRun{
+			ID:        "rca:session-run",
+			Kind:      "root_cause",
+			SessionID: "session-1",
+			CreatedBy: "session:session-1",
+			Status:    domaincopilot.AgentRunStatusQueued,
+			CreatedAt: createdAt,
+			UpdatedAt: createdAt,
+		},
+	}
+	service := &Service{repo: repo}
+
+	_, err := service.RecordAgentRunCallback(context.Background(), domaincopilot.AgentRunCallbackInput{
+		RunID:         "agent:run-session",
+		CallbackToken: "callback-token",
+		Status:        "completed",
+		Payload:       map[string]any{"summary": "Session-owned RCA backfilled."},
+	})
+	if err != nil {
+		t.Fatalf("record callback: %v", err)
+	}
+	if repo.rootCauseLookupCreatedBy != "session:session-1" {
+		t.Fatalf("expected callback to use root cause owner, got %q", repo.rootCauseLookupCreatedBy)
+	}
+	if repo.rootCauseRun.Status != "completed" || repo.rootCauseRun.Summary != "Session-owned RCA backfilled." {
+		t.Fatalf("expected session-owned root cause run to be backfilled, got %#v", repo.rootCauseRun)
+	}
+}
+
+func TestRecordAgentToolCallRejectsUnboundTool(t *testing.T) {
+	repo := &agentRuntimeCallbackTestRepository{
+		agentRun: domaincopilot.AgentRun{
+			ID:            "agent:tool-denied",
+			ProviderID:    "hermes",
+			ProviderKind:  "hermes",
+			CapabilityID:  "root_cause",
+			Status:        domaincopilot.AgentRunStatusRunning,
+			CallbackToken: "callback-token",
+			ToolBindings: []domaincopilot.AgentToolBinding{{
+				ID:           "observability.logs",
+				ToolKind:     "mcp",
+				AdapterID:    "logs.v1",
+				ToolName:     "logs.query",
+				CapabilityID: "root_cause",
+			}},
+			CreatedAt: time.Now().UTC(),
+			UpdatedAt: time.Now().UTC(),
+		},
+	}
+	service := &Service{repo: repo}
+
+	_, err := service.RecordAgentToolCall(context.Background(), domaincopilot.AgentToolCallInput{
+		RunID:         "agent:tool-denied",
+		CallbackToken: "callback-token",
+		AgentID:       "local-hermes-runner",
+		ToolName:      "events.query",
+		Input:         map[string]any{"limit": 5},
+	})
+	if !errors.Is(err, apperrors.ErrAccessDenied) {
+		t.Fatalf("expected access denied for unbound tool, got %v", err)
+	}
+	if repo.callback.RunID != "" {
+		t.Fatalf("expected denied tool call to skip callback persistence, got %#v", repo.callback)
+	}
+}
+
+func TestRecordAgentToolCallExecutesBoundEventsTool(t *testing.T) {
+	repo := &agentRuntimeCallbackTestRepository{
+		agentRun: domaincopilot.AgentRun{
+			ID:           "agent:tool-events",
+			ProviderID:   "hermes",
+			ProviderKind: "hermes",
+			CapabilityID: "root_cause",
+			Status:       domaincopilot.AgentRunStatusRunning,
+			Scope: domaincopilot.SessionScope{
+				ClusterID: "cluster-a",
+				Namespace: "payments",
+				Workload:  "payment-api",
+			},
+			CallbackToken: "callback-token",
+			ToolBindings: []domaincopilot.AgentToolBinding{{
+				ID:           "platform.events",
+				CapabilityID: "root_cause",
+				ToolKind:     "mcp",
+				AdapterID:    "platform-native.v1",
+				ToolName:     "events.query",
+			}},
+			CreatedAt: time.Now().UTC(),
+			UpdatedAt: time.Now().UTC(),
+		},
+	}
+	service := &Service{
+		repo: repo,
+		events: agentToolEventReader{items: []domainevent.Envelope{{
+			ID:        "event-1",
+			Source:    "kubernetes",
+			Category:  "workload",
+			Severity:  "warning",
+			ClusterID: "cluster-a",
+			Namespace: "payments",
+			Summary:   "payment-api restart backoff",
+		}, {
+			ID:        "event-2",
+			Source:    "kubernetes",
+			Category:  "workload",
+			Severity:  "warning",
+			ClusterID: "cluster-a",
+			Namespace: "orders",
+			Summary:   "orders-api restart backoff",
+		}}},
+	}
+
+	result, err := service.RecordAgentToolCall(context.Background(), domaincopilot.AgentToolCallInput{
+		RunID:         "agent:tool-events",
+		CallbackToken: "callback-token",
+		AgentID:       "local-hermes-runner",
+		ToolBindingID: "platform.events",
+		Input:         map[string]any{"limit": 5},
+	})
+	if err != nil {
+		t.Fatalf("record tool call: %v", err)
+	}
+	if result.ToolExecution.Status != "success" || result.ToolExecution.ToolName != "events.query" {
+		t.Fatalf("unexpected tool execution: %#v", result.ToolExecution)
+	}
+	if result.Output["count"] != 1 {
+		t.Fatalf("expected filtered event count, got %#v", result.Output)
+	}
+	if repo.callback.Status != domaincopilot.AgentRunStatusRunning || repo.callback.RunID != "agent:tool-events" {
+		t.Fatalf("expected running callback persistence, got %#v", repo.callback)
+	}
+	if len(repo.agentRun.ToolExecutions) != 1 || repo.agentRun.ToolExecutions[0].ToolName != "events.query" {
+		t.Fatalf("expected tool execution snapshot on run, got %#v", repo.agentRun.ToolExecutions)
+	}
+	if repo.agentRun.Status != domaincopilot.AgentRunStatusRunning {
+		t.Fatalf("expected tool call to keep run running, got %q", repo.agentRun.Status)
+	}
+}
+
+func TestRecordAgentToolCallExecutesDeliveryAndAlertTools(t *testing.T) {
+	repo := &agentRuntimeCallbackTestRepository{
+		agentRun: domaincopilot.AgentRun{
+			ID:            "agent:tool-delivery",
+			ProviderID:    "hermes",
+			ProviderKind:  "hermes",
+			CapabilityID:  "delivery_failure",
+			Status:        domaincopilot.AgentRunStatusRunning,
+			Scope:         domaincopilot.SessionScope{ClusterID: "cluster-a", Namespace: "payments", Workload: "payment-api"},
+			Input:         map[string]any{"applicationId": "app-payments"},
+			CallbackToken: "callback-token",
+			ToolBindings: []domaincopilot.AgentToolBinding{{
+				ID:           "delivery.releases",
+				CapabilityID: "delivery_failure",
+				ToolKind:     "internal_api",
+				ToolName:     "delivery.releases.list",
+			}, {
+				ID:           "delivery.builds",
+				CapabilityID: "delivery_failure",
+				ToolKind:     "internal_api",
+				ToolName:     "delivery.builds.list",
+			}, {
+				ID:           "observability.alerts",
+				CapabilityID: "delivery_failure",
+				ToolKind:     "internal_api",
+				ToolName:     "alerts.list",
+			}},
+			CreatedAt: time.Now().UTC(),
+			UpdatedAt: time.Now().UTC(),
+		},
+	}
+	service := &Service{
+		repo: repo,
+		releases: agentToolReleaseReader{items: []domainrelease.Record{{
+			ID:             "release-1",
+			ApplicationID:  "app-payments",
+			ClusterID:      "cluster-a",
+			Namespace:      "payments",
+			DeploymentName: "payment-api",
+			Status:         "failed",
+			CreatedAt:      time.Now().UTC(),
+		}, {
+			ID:             "release-2",
+			ApplicationID:  "app-payments",
+			ClusterID:      "cluster-a",
+			Namespace:      "orders",
+			DeploymentName: "orders-api",
+			Status:         "completed",
+			CreatedAt:      time.Now().UTC(),
+		}}},
+		builds: agentToolBuildReader{items: []domainbuild.Record{{
+			ID:            "build-1",
+			ApplicationID: "app-payments",
+			SourceSystem:  "ci",
+			Status:        "failed",
+			CreatedAt:     time.Now().UTC(),
+		}}},
+		alerts: agentToolAlertReader{items: []domainalert.Instance{{
+			ID:        "alert-1",
+			Title:     "payment-api high error rate",
+			Summary:   "payment-api has high 5xx rate",
+			Severity:  "critical",
+			Status:    "firing",
+			ClusterID: "cluster-a",
+			Namespace: "payments",
+			CreatedAt: time.Now().UTC(),
+			UpdatedAt: time.Now().UTC(),
+		}}},
+	}
+
+	releaseResult, err := service.RecordAgentToolCall(context.Background(), domaincopilot.AgentToolCallInput{
+		RunID:         "agent:tool-delivery",
+		CallbackToken: "callback-token",
+		ToolBindingID: "delivery.releases",
+		Input:         map[string]any{"limit": 5},
+	})
+	if err != nil {
+		t.Fatalf("record release tool call: %v", err)
+	}
+	if releaseResult.Output["count"] != 1 {
+		t.Fatalf("expected one scoped release, got %#v", releaseResult.Output)
+	}
+	buildResult, err := service.RecordAgentToolCall(context.Background(), domaincopilot.AgentToolCallInput{
+		RunID:         "agent:tool-delivery",
+		CallbackToken: "callback-token",
+		ToolBindingID: "delivery.builds",
+		Input:         map[string]any{"limit": 5},
+	})
+	if err != nil {
+		t.Fatalf("record build tool call: %v", err)
+	}
+	if buildResult.Output["count"] != 1 {
+		t.Fatalf("expected one build, got %#v", buildResult.Output)
+	}
+	alertResult, err := service.RecordAgentToolCall(context.Background(), domaincopilot.AgentToolCallInput{
+		RunID:         "agent:tool-delivery",
+		CallbackToken: "callback-token",
+		ToolBindingID: "observability.alerts",
+		Input:         map[string]any{"limit": 5},
+	})
+	if err != nil {
+		t.Fatalf("record alert tool call: %v", err)
+	}
+	if alertResult.Output["count"] != 1 {
+		t.Fatalf("expected one alert, got %#v", alertResult.Output)
+	}
+	alerts, ok := alertResult.Output["alerts"].([]map[string]any)
+	if !ok || len(alerts) != 1 {
+		t.Fatalf("expected one alert summary, got %#v", alertResult.Output["alerts"])
+	}
+	if alerts[0]["startsAt"] != "" || alerts[0]["lastSeenAt"] != "" {
+		t.Fatalf("expected zero alert times to be omitted, got %#v", alerts[0])
+	}
+	if len(repo.agentRun.ToolExecutions) != 3 {
+		t.Fatalf("expected three tool executions, got %#v", repo.agentRun.ToolExecutions)
+	}
+}
+
+func TestRecordAgentRunCallbackPreservesPriorToolCalls(t *testing.T) {
+	createdAt := time.Date(2026, 5, 27, 10, 0, 0, 0, time.UTC)
+	repo := &agentRuntimeCallbackTestRepository{
+		agentRun: domaincopilot.AgentRun{
+			ID:            "agent:run-tools",
+			ProviderID:    "hermes",
+			ProviderKind:  "hermes",
+			CapabilityID:  "root_cause",
+			Status:        domaincopilot.AgentRunStatusRunning,
+			Output:        map[string]any{},
+			CallbackToken: "callback-token",
+			ToolExecutions: []domaincopilot.ToolExecution{{
+				ID:       "tool:events",
+				ToolName: "events.query",
+				Status:   "success",
+			}},
+			CreatedAt: createdAt,
+			UpdatedAt: createdAt,
+		},
+	}
+	service := &Service{repo: repo}
+
+	updated, err := service.RecordAgentRunCallback(context.Background(), domaincopilot.AgentRunCallbackInput{
+		RunID:         "agent:run-tools",
+		CallbackToken: "callback-token",
+		Status:        "completed",
+		Payload:       map[string]any{"summary": "Hermes completed with tool context."},
+		ToolExecutions: []domaincopilot.ToolExecution{{
+			ID:       "tool:agent-analysis",
+			ToolName: "hermes.analysis",
+			Status:   "completed",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("record callback: %v", err)
+	}
+	if len(updated.ToolExecutions) != 2 {
+		t.Fatalf("expected prior tool calls and final provider execution to be preserved, got %#v", updated.ToolExecutions)
+	}
+	if updated.ToolExecutions[0].ID != "tool:events" || updated.ToolExecutions[1].ID != "tool:agent-analysis" {
+		t.Fatalf("unexpected merged tool executions: %#v", updated.ToolExecutions)
+	}
+}
+
+func TestAgentRunHeartbeatExpiredUsesQueuedStartedAndHeartbeatTimes(t *testing.T) {
+	now := time.Date(2026, 5, 27, 12, 0, 0, 0, time.UTC)
+	startedAt := now.Add(-11 * time.Minute)
+	heartbeatAt := now.Add(-2 * time.Minute)
+
+	if !agentRunHeartbeatExpired(domaincopilot.AgentRun{
+		Status:         domaincopilot.AgentRunStatusQueued,
+		QueuedAt:       now.Add(-11 * time.Minute),
+		TimeoutSeconds: 600,
+	}, now) {
+		t.Fatalf("expected queued run past timeout to expire")
+	}
+	if agentRunHeartbeatExpired(domaincopilot.AgentRun{
+		Status:          domaincopilot.AgentRunStatusRunning,
+		QueuedAt:        now.Add(-30 * time.Minute),
+		StartedAt:       &startedAt,
+		LastHeartbeatAt: &heartbeatAt,
+		TimeoutSeconds:  600,
+	}, now) {
+		t.Fatalf("expected recent heartbeat to keep running agent run alive")
+	}
+	if agentRunHeartbeatExpired(domaincopilot.AgentRun{
+		Status:         domaincopilot.AgentRunStatusCompleted,
+		QueuedAt:       now.Add(-30 * time.Minute),
+		TimeoutSeconds: 600,
+	}, now) {
+		t.Fatalf("expected terminal agent run to never expire")
+	}
+}
+
 func newInspectionAuthzTestService(matrix map[string][]string) (*Service, *inspectionAuthzTestRepository) {
 	repo := &inspectionAuthzTestRepository{}
 	return New(repo, nil, nil, nil, nil, nil, nil, nil, nil, appaccess.NewPermissionResolver(inspectionAuthzRoleReader{matrix: matrix})), repo
@@ -336,6 +1030,154 @@ type inspectionAuthzTestRepository struct {
 	listInspectionRunsCalled bool
 	getSessionCalled         bool
 	listDataSourcesCalled    bool
+	session                  domaincopilot.Session
+	createdMessage           domaincopilot.Message
+	createdRootCauseRun      domaincopilot.RootCauseRun
+	createdAgentRun          domaincopilot.AgentRun
+}
+
+type agentRuntimeCallbackTestRepository struct {
+	inspectionAuthzTestRepository
+	agentRun                 domaincopilot.AgentRun
+	rootCauseRun             domaincopilot.RootCauseRun
+	rootCauseLookupCreatedBy string
+	callback                 domaincopilot.AgentRunCallbackInput
+}
+
+func (r *agentRuntimeCallbackTestRepository) GetAgentRun(_ context.Context, _, runID string) (domaincopilot.AgentRun, error) {
+	if r.agentRun.ID == runID {
+		return r.agentRun, nil
+	}
+	return domaincopilot.AgentRun{}, apperrors.ErrNotFound
+}
+
+func (r *agentRuntimeCallbackTestRepository) GetRootCauseRun(_ context.Context, createdBy, runID string) (domaincopilot.RootCauseRun, error) {
+	r.rootCauseLookupCreatedBy = createdBy
+	if r.rootCauseRun.ID == runID && (createdBy == "" || r.rootCauseRun.CreatedBy == createdBy) {
+		return r.rootCauseRun, nil
+	}
+	return domaincopilot.RootCauseRun{}, apperrors.ErrNotFound
+}
+
+func (r *agentRuntimeCallbackTestRepository) UpdateRootCauseRun(_ context.Context, run domaincopilot.RootCauseRun) (domaincopilot.RootCauseRun, error) {
+	r.rootCauseRun = run
+	return run, nil
+}
+
+func (r *agentRuntimeCallbackTestRepository) UpdateAgentRunCallback(_ context.Context, input domaincopilot.AgentRunCallbackInput) (domaincopilot.AgentRun, error) {
+	r.callback = input
+	status := strings.TrimSpace(input.Status)
+	if status == "" {
+		status = domaincopilot.AgentRunStatusRunning
+	}
+	r.agentRun.Status = status
+	r.agentRun.Output = input.Payload
+	r.agentRun.ToolExecutions = mergeAgentRuntimeTestToolExecutions(r.agentRun.ToolExecutions, input.ToolExecutions)
+	r.agentRun.AnalysisArtifacts = input.AnalysisArtifacts
+	r.agentRun.ClaimedByAgentID = input.AgentID
+	r.agentRun.ExternalRunID = input.ExternalRunID
+	return r.agentRun, nil
+}
+
+func mergeAgentRuntimeTestToolExecutions(current []domaincopilot.ToolExecution, patch []domaincopilot.ToolExecution) []domaincopilot.ToolExecution {
+	merged := append([]domaincopilot.ToolExecution(nil), current...)
+	indexByID := map[string]int{}
+	for index, item := range merged {
+		if trimmed := strings.TrimSpace(item.ID); trimmed != "" {
+			indexByID[trimmed] = index
+		}
+	}
+	for _, item := range patch {
+		id := strings.TrimSpace(item.ID)
+		if id != "" {
+			if index, ok := indexByID[id]; ok {
+				merged[index] = item
+				continue
+			}
+			indexByID[id] = len(merged)
+		}
+		merged = append(merged, item)
+	}
+	return merged
+}
+
+type agentToolEventReader struct {
+	items []domainevent.Envelope
+}
+
+func (r agentToolEventReader) List(_ context.Context, limit int) ([]domainevent.Envelope, error) {
+	if limit > 0 && len(r.items) > limit {
+		return r.items[:limit], nil
+	}
+	return r.items, nil
+}
+
+type agentToolReleaseReader struct {
+	items []domainrelease.Record
+}
+
+func (r agentToolReleaseReader) List(_ context.Context, filter domainrelease.Filter) ([]domainrelease.Record, error) {
+	items := make([]domainrelease.Record, 0, len(r.items))
+	for _, item := range r.items {
+		if filter.ApplicationID != "" && item.ApplicationID != filter.ApplicationID {
+			continue
+		}
+		if filter.ClusterID != "" && item.ClusterID != filter.ClusterID {
+			continue
+		}
+		items = append(items, item)
+	}
+	if filter.Limit > 0 && len(items) > filter.Limit {
+		return items[:filter.Limit], nil
+	}
+	return items, nil
+}
+
+type agentToolBuildReader struct {
+	items []domainbuild.Record
+}
+
+func (r agentToolBuildReader) List(_ context.Context, filter domainbuild.Filter) ([]domainbuild.Record, error) {
+	items := make([]domainbuild.Record, 0, len(r.items))
+	for _, item := range r.items {
+		if filter.ApplicationID != "" && item.ApplicationID != filter.ApplicationID {
+			continue
+		}
+		items = append(items, item)
+	}
+	if filter.Limit > 0 && len(items) > filter.Limit {
+		return items[:filter.Limit], nil
+	}
+	return items, nil
+}
+
+type agentToolAlertReader struct {
+	items []domainalert.Instance
+}
+
+func (r agentToolAlertReader) Summary(context.Context, domainidentity.Principal) (domainalert.Summary, error) {
+	return domainalert.Summary{TotalCount: len(r.items)}, nil
+}
+
+func (r agentToolAlertReader) ListAlerts(_ context.Context, _ domainidentity.Principal, filter domainalert.Filter) ([]domainalert.Instance, error) {
+	items := make([]domainalert.Instance, 0, len(r.items))
+	for _, item := range r.items {
+		if filter.Status != "" && item.Status != filter.Status {
+			continue
+		}
+		if filter.ClusterID != "" && item.ClusterID != filter.ClusterID {
+			continue
+		}
+		items = append(items, item)
+	}
+	if filter.Limit > 0 && len(items) > filter.Limit {
+		return items[:filter.Limit], nil
+	}
+	return items, nil
+}
+
+func (r agentToolAlertReader) ListChannels(context.Context, domainidentity.Principal) ([]domainalert.NotificationChannel, error) {
+	return nil, nil
 }
 
 func (r *inspectionAuthzTestRepository) ListSessions(context.Context, string, int) ([]domaincopilot.Session, error) {
@@ -344,6 +1186,9 @@ func (r *inspectionAuthzTestRepository) ListSessions(context.Context, string, in
 
 func (r *inspectionAuthzTestRepository) GetSession(context.Context, string, string) (domaincopilot.Session, error) {
 	r.getSessionCalled = true
+	if r.session.ID != "" {
+		return r.session, nil
+	}
 	return domaincopilot.Session{}, errors.New("unexpected session read")
 }
 
@@ -351,7 +1196,11 @@ func (r *inspectionAuthzTestRepository) CreateSession(context.Context, domaincop
 	return domaincopilot.Session{}, errors.New("unexpected session create")
 }
 
-func (r *inspectionAuthzTestRepository) UpdateSession(context.Context, string, string, domaincopilot.Session) (domaincopilot.Session, error) {
+func (r *inspectionAuthzTestRepository) UpdateSession(_ context.Context, _, _ string, session domaincopilot.Session) (domaincopilot.Session, error) {
+	if r.session.ID != "" {
+		r.session = session
+		return r.session, nil
+	}
 	return domaincopilot.Session{}, errors.New("unexpected session update")
 }
 
@@ -363,7 +1212,11 @@ func (r *inspectionAuthzTestRepository) ListMessages(context.Context, string, in
 	return nil, nil
 }
 
-func (r *inspectionAuthzTestRepository) CreateMessage(context.Context, domaincopilot.Message) (domaincopilot.Message, error) {
+func (r *inspectionAuthzTestRepository) CreateMessage(_ context.Context, message domaincopilot.Message) (domaincopilot.Message, error) {
+	if r.session.ID != "" {
+		r.createdMessage = message
+		return r.createdMessage, nil
+	}
 	return domaincopilot.Message{}, errors.New("unexpected message create")
 }
 
@@ -400,15 +1253,39 @@ func (r *inspectionAuthzTestRepository) UpdateDataSourceValidation(context.Conte
 
 func (r *inspectionAuthzTestRepository) ListAnalysisProfiles(context.Context) ([]domaincopilot.AnalysisProfile, error) {
 	return []domaincopilot.AnalysisProfile{{
-		ID:      "profile:inspection",
-		Name:    "Inspection",
-		Mode:    "inspection",
-		Enabled: true,
+		ID:               "profile:inspection",
+		Name:             "Inspection",
+		Mode:             "inspection",
+		EnabledSources:   []string{"logs.v1", "metrics.v1", "traces.v1"},
+		EnabledPlaybooks: []string{"root-cause-investigation"},
+		TimeoutSeconds:   120,
+		Enabled:          true,
 	}}, nil
 }
 
-func (r *inspectionAuthzTestRepository) GetAnalysisProfile(context.Context, string) (domaincopilot.AnalysisProfile, error) {
-	return domaincopilot.AnalysisProfile{}, nil
+func (r *inspectionAuthzTestRepository) GetAnalysisProfile(_ context.Context, profileID string) (domaincopilot.AnalysisProfile, error) {
+	for _, profile := range []domaincopilot.AnalysisProfile{{
+		ID:               "profile:inspection",
+		Name:             "Inspection",
+		Mode:             "inspection",
+		EnabledSources:   []string{"logs.v1", "metrics.v1", "traces.v1"},
+		EnabledPlaybooks: []string{"root-cause-investigation"},
+		TimeoutSeconds:   120,
+		Enabled:          true,
+	}, {
+		ID:               "profile:root",
+		Name:             "Root Cause",
+		Mode:             "root_cause",
+		EnabledSources:   []string{"logs.v1", "metrics.v1", "traces.v1"},
+		EnabledPlaybooks: []string{"root-cause-investigation"},
+		TimeoutSeconds:   120,
+		Enabled:          true,
+	}} {
+		if profile.ID == profileID {
+			return profile, nil
+		}
+	}
+	return domaincopilot.AnalysisProfile{}, apperrors.ErrNotFound
 }
 
 func (r *inspectionAuthzTestRepository) CreateAnalysisProfile(context.Context, domaincopilot.AnalysisProfile) (domaincopilot.AnalysisProfile, error) {
@@ -443,8 +1320,35 @@ func (r *inspectionAuthzTestRepository) GetRootCauseRun(context.Context, string,
 	return domaincopilot.RootCauseRun{}, nil
 }
 
-func (r *inspectionAuthzTestRepository) CreateRootCauseRun(context.Context, domaincopilot.RootCauseRun) (domaincopilot.RootCauseRun, error) {
-	return domaincopilot.RootCauseRun{}, nil
+func (r *inspectionAuthzTestRepository) CreateRootCauseRun(_ context.Context, run domaincopilot.RootCauseRun) (domaincopilot.RootCauseRun, error) {
+	r.createdRootCauseRun = run
+	return run, nil
+}
+
+func (r *inspectionAuthzTestRepository) UpdateRootCauseRun(_ context.Context, run domaincopilot.RootCauseRun) (domaincopilot.RootCauseRun, error) {
+	r.createdRootCauseRun = run
+	return run, nil
+}
+
+func (r *inspectionAuthzTestRepository) ListAgentRuns(context.Context, domaincopilot.AgentRunFilter) ([]domaincopilot.AgentRun, error) {
+	return nil, nil
+}
+
+func (r *inspectionAuthzTestRepository) GetAgentRun(context.Context, string, string) (domaincopilot.AgentRun, error) {
+	return domaincopilot.AgentRun{}, nil
+}
+
+func (r *inspectionAuthzTestRepository) CreateAgentRun(_ context.Context, run domaincopilot.AgentRun) (domaincopilot.AgentRun, error) {
+	r.createdAgentRun = run
+	return run, nil
+}
+
+func (r *inspectionAuthzTestRepository) ClaimAgentRun(context.Context, domaincopilot.AgentRunClaimInput) (domaincopilot.AgentRun, error) {
+	return domaincopilot.AgentRun{}, nil
+}
+
+func (r *inspectionAuthzTestRepository) UpdateAgentRunCallback(context.Context, domaincopilot.AgentRunCallbackInput) (domaincopilot.AgentRun, error) {
+	return domaincopilot.AgentRun{}, nil
 }
 
 func (r *inspectionAuthzTestRepository) ListInspectionTasks(context.Context, string, int) ([]domaincopilot.InspectionTask, error) {

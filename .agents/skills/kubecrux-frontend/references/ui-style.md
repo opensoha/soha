@@ -28,12 +28,14 @@ Do not add a second design system or copy shadcn component APIs.
 - Keep tables flat and dense.
 - Anchor the primary identifying column to the left when horizontal scrolling is needed.
 - Keep mutation-heavy row actions fixed on the right when the table scrolls.
+- Prefer backend paging or aggregate DTOs for heavy operational lists. Avoid table-side joins that require one request per row or namespace.
 
 ### Detail Pages
 
 - Treat detail pages as operational workspaces, not read-only description sheets.
 - Group tabs or sections around overview, metrics, YAML, and actions.
 - Prefer incremental reveal of heavy panels such as logs, terminals, and editors.
+- Keep consoles, log streams, YAML editors, and analysis artifacts visually subordinate to the active task. They should not resize the whole layout unpredictably when content streams in.
 
 ### Forms and Drawers
 
@@ -46,3 +48,13 @@ Do not add a second design system or copy shadcn component APIs.
 - Use tags, alerts, and result states consistently with backend semantics.
 - Error and warning surfaces should be precise and actionable.
 - Empty states should explain whether the page is unsupported, backend-pending, or simply empty in the current scope.
+- Operation-driven pages should expose queued, dispatching, running, callback timeout, canceled, failed, and completed states distinctly when the backend provides them.
+- AI analysis pages should distinguish draft/session context, running analysis, completed artifacts, missing permission, missing datasource, and budget or timeout exhaustion.
+- Docker and virtualization pages should label lab-only, emulated, degraded, or unsupported states instead of presenting them as normal production readiness.
+
+## Workbench Chrome
+
+- AI-specific mode switching, conversation history, toolset, and skill controls belong inside the AI workbench page, not in the global sidebar.
+- Docker and virtualization workbench navigation should stay compact and operational. Avoid dashboard hero sections or marketing-style cards.
+- Monitoring and on-call pages should lead with active operational tasks or alert context before configuration tables.
+- System and settings pages can use dense forms and tables; avoid nesting cards inside larger page cards.

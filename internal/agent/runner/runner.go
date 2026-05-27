@@ -46,10 +46,46 @@ type DockerOperation struct {
 	TimeoutSeconds    int            `json:"timeoutSeconds"`
 }
 
+type AgentRun struct {
+	ID                string           `json:"id"`
+	ProviderID        string           `json:"providerId"`
+	ProviderKind      string           `json:"providerKind"`
+	CapabilityID      string           `json:"capabilityId"`
+	SkillIDs          []string         `json:"skillIds,omitempty"`
+	SessionID         string           `json:"sessionId,omitempty"`
+	Status            string           `json:"status"`
+	Scope             map[string]any   `json:"scope,omitempty"`
+	Toolset           map[string]any   `json:"toolset,omitempty"`
+	ToolBindings      []map[string]any `json:"toolBindings,omitempty"`
+	SkillBindings     []map[string]any `json:"skillBindings,omitempty"`
+	Input             map[string]any   `json:"input,omitempty"`
+	Output            map[string]any   `json:"output,omitempty"`
+	CallbackToken     string           `json:"callbackToken"`
+	TimeoutSeconds    int              `json:"timeoutSeconds"`
+	AnalysisArtifacts []map[string]any `json:"analysisArtifacts,omitempty"`
+}
+
+func (r AgentRun) withPrefetchedToolContext(items []AgentToolCallResult) AgentRun {
+	if len(items) == 0 {
+		return r
+	}
+	input := copyStringAnyMap(r.Input)
+	input["prefetchedToolResults"] = agentToolCallResultMaps(items)
+	input["toolContextRule"] = "Use prefetchedToolResults as kubecrux-controlled read-only evidence. Do not call kubecrux data sources directly."
+	r.Input = input
+	return r
+}
+
 type claimRequest struct {
 	AgentID         string   `json:"agentId"`
 	ProviderKinds   []string `json:"providerKinds"`
 	RuntimeEndpoint string   `json:"runtimeEndpoint"`
+}
+
+type agentRunClaimRequest struct {
+	AgentID     string   `json:"agentId"`
+	ProviderIDs []string `json:"providerIds,omitempty"`
+	Kinds       []string `json:"kinds,omitempty"`
 }
 
 type dockerClaimRequest struct {
@@ -67,10 +103,36 @@ type dockerClaimResponse struct {
 	Data DockerOperation `json:"data"`
 }
 
+type agentRunClaimResponse struct {
+	Data AgentRun `json:"data"`
+}
+
 type callbackRequest struct {
 	CallbackToken string         `json:"callbackToken"`
 	Status        string         `json:"status"`
 	Payload       map[string]any `json:"payload"`
+}
+
+type agentRunCallbackRequest struct {
+	RunID             string           `json:"runId"`
+	CallbackToken     string           `json:"callbackToken"`
+	AgentID           string           `json:"agentId"`
+	Status            string           `json:"status"`
+	Payload           map[string]any   `json:"payload"`
+	ToolExecutions    []map[string]any `json:"toolExecutions,omitempty"`
+	AnalysisArtifacts []map[string]any `json:"analysisArtifacts,omitempty"`
+	ExternalRunID     string           `json:"externalRunId,omitempty"`
+	ErrorMessage      string           `json:"errorMessage,omitempty"`
+}
+
+type agentRunToolCallRequest struct {
+	RunID         string         `json:"runId"`
+	CallbackToken string         `json:"callbackToken"`
+	AgentID       string         `json:"agentId"`
+	ToolBindingID string         `json:"toolBindingId,omitempty"`
+	AdapterID     string         `json:"adapterId,omitempty"`
+	ToolName      string         `json:"toolName,omitempty"`
+	Input         map[string]any `json:"input,omitempty"`
 }
 
 type dockerCallbackRequest struct {
@@ -87,6 +149,20 @@ type callbackResponse struct {
 
 type dockerCallbackResponse struct {
 	Data DockerOperation `json:"data"`
+}
+
+type agentRunCallbackResponse struct {
+	Data AgentRun `json:"data"`
+}
+
+type AgentToolCallResult struct {
+	RunID         string         `json:"runId"`
+	ToolExecution map[string]any `json:"toolExecution"`
+	Output        map[string]any `json:"output,omitempty"`
+}
+
+type agentRunToolCallResponse struct {
+	Data AgentToolCallResult `json:"data"`
 }
 
 type workspaceSpec struct {
@@ -157,6 +233,9 @@ func (r *Runner) Start(ctx context.Context) {
 	if r.cfg.Docker.Enabled {
 		go r.dockerLoop(ctx)
 	}
+	if r.cfg.AgentRuntime.Enabled {
+		go r.agentRuntimeLoop(ctx)
+	}
 }
 
 func (r *Runner) loop(ctx context.Context) {
@@ -202,6 +281,31 @@ func (r *Runner) dockerLoop(ctx context.Context) {
 	}
 }
 
+func (r *Runner) agentRuntimeLoop(ctx context.Context) {
+	interval := r.cfg.AgentRuntime.PollInterval
+	if interval <= 0 {
+		interval = r.cfg.PollInterval
+	}
+	if interval <= 0 {
+		interval = 5 * time.Second
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			run, ok := r.claimAgentRun(ctx)
+			if !ok {
+				continue
+			}
+			r.executeAgentRun(ctx, run)
+		}
+	}
+}
+
 func (r *Runner) claim(ctx context.Context) (ExecutionTask, bool) {
 	body, _ := json.Marshal(claimRequest{
 		AgentID:         firstNonEmpty(strings.TrimSpace(r.cfg.AgentID), "local-agent"),
@@ -228,6 +332,36 @@ func (r *Runner) claim(ctx context.Context) (ExecutionTask, bool) {
 	}
 	if strings.TrimSpace(payload.Data.ID) == "" {
 		return ExecutionTask{}, false
+	}
+	return payload.Data, true
+}
+
+func (r *Runner) claimAgentRun(ctx context.Context) (AgentRun, bool) {
+	body, _ := json.Marshal(agentRunClaimRequest{
+		AgentID:     agentRuntimeWorkerID(r.cfg),
+		ProviderIDs: r.cfg.AgentRuntime.ProviderIDs,
+		Kinds:       r.cfg.AgentRuntime.ProviderKinds,
+	})
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(r.cfg.BaseURL, "/")+"/api/v1/copilot/agent-runs/claim", bytes.NewReader(body))
+	if err != nil {
+		return AgentRun{}, false
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+r.cfg.BearerToken)
+	resp, err := r.httpClient.Do(req)
+	if err != nil {
+		return AgentRun{}, false
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		return AgentRun{}, false
+	}
+	var payload agentRunClaimResponse
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return AgentRun{}, false
+	}
+	if strings.TrimSpace(payload.Data.ID) == "" {
+		return AgentRun{}, false
 	}
 	return payload.Data, true
 }
@@ -478,6 +612,173 @@ func (r *Runner) executeDockerOperation(ctx context.Context, operation DockerOpe
 		}
 	}
 	r.dockerCallback(ctx, operation, "completed", payload, logs)
+}
+
+func (r *Runner) executeAgentRun(ctx context.Context, run AgentRun) {
+	workerID := agentRuntimeWorkerID(r.cfg)
+	startedAt := time.Now().UTC()
+	r.agentRunCallback(ctx, run, "running", map[string]any{
+		"agentId":     firstNonEmpty(strings.TrimSpace(r.cfg.AgentID), "local-agent"),
+		"workerId":    workerID,
+		"heartbeatAt": startedAt.Format(time.RFC3339),
+		"providerId":  run.ProviderID,
+	}, nil, nil, "", "")
+
+	timeoutSeconds := run.TimeoutSeconds
+	if timeoutSeconds <= 0 {
+		timeoutSeconds = 600
+	}
+	taskCtx, cancel := context.WithTimeout(ctx, time.Duration(timeoutSeconds)*time.Second)
+	defer cancel()
+
+	executor := r.resolveAgentProviderExecutor(run)
+	output, logs, err := executor(taskCtx, run)
+	if err != nil {
+		r.agentRunCallback(ctx, run, "failed", map[string]any{
+			"agentId":    firstNonEmpty(strings.TrimSpace(r.cfg.AgentID), "local-agent"),
+			"workerId":   workerID,
+			"logs":       logs,
+			"error":      err.Error(),
+			"providerId": run.ProviderID,
+		}, []map[string]any{agentRunToolExecution(run, startedAt, time.Now().UTC(), "failed", err.Error(), output)}, nil, "", err.Error())
+		return
+	}
+	completedAt := time.Now().UTC()
+	artifact := agentRunArtifact(run, output, logs)
+	payload := map[string]any{
+		"agentId":     firstNonEmpty(strings.TrimSpace(r.cfg.AgentID), "local-agent"),
+		"workerId":    workerID,
+		"providerId":  run.ProviderID,
+		"completedAt": completedAt.Format(time.RFC3339),
+		"summary":     firstNonEmpty(strings.TrimSpace(fmt.Sprint(output["summary"])), strings.TrimSpace(fmt.Sprint(output["rawOutput"]))),
+		"rawOutput":   strings.TrimSpace(fmt.Sprint(output["rawOutput"])),
+		"logs":        logs,
+	}
+	r.agentRunCallback(ctx, run, "completed", payload, []map[string]any{agentRunToolExecution(run, startedAt, completedAt, "completed", agentRunCompletionSummary(run), output)}, []map[string]any{artifact}, firstNonEmpty(strings.TrimSpace(fmt.Sprint(output["externalRunId"])), run.ID), "")
+}
+
+func (r *Runner) executeHermesAgentRun(ctx context.Context, run AgentRun) (map[string]any, []string, error) {
+	return r.executeCLIAgentRun(ctx, run, r.agentProviderCommandSpec("hermes"))
+}
+
+type agentProviderExecutor func(context.Context, AgentRun) (map[string]any, []string, error)
+
+type agentProviderCommandSpec struct {
+	Command          string
+	Args             []string
+	PromptArg        string
+	SkillArg         string
+	ProviderSkillArg string
+}
+
+func (r *Runner) resolveAgentProviderExecutor(run AgentRun) agentProviderExecutor {
+	providerKey := normalizedAgentProviderKey(run)
+	switch providerKey {
+	case "hermes":
+		return r.executeHermesAgentRun
+	default:
+		spec := r.agentProviderCommandSpec(providerKey)
+		if strings.TrimSpace(spec.Command) == "" {
+			return func(context.Context, AgentRun) (map[string]any, []string, error) {
+				return map[string]any{
+					"provider":     run.ProviderID,
+					"capabilityId": run.CapabilityID,
+					"error":        fmt.Sprintf("agent provider %q is not configured on this runner", firstNonEmpty(run.ProviderID, run.ProviderKind)),
+				}, nil, fmt.Errorf("agent provider %q is not configured on this runner", firstNonEmpty(run.ProviderID, run.ProviderKind))
+			}
+		}
+		return func(ctx context.Context, current AgentRun) (map[string]any, []string, error) {
+			return r.executeCLIAgentRun(ctx, current, spec)
+		}
+	}
+}
+
+func (r *Runner) executeCLIAgentRun(ctx context.Context, run AgentRun, spec agentProviderCommandSpec) (map[string]any, []string, error) {
+	command := strings.TrimSpace(spec.Command)
+	if command == "" {
+		return map[string]any{
+			"provider":     run.ProviderID,
+			"capabilityId": run.CapabilityID,
+			"error":        fmt.Sprintf("agent provider %q command is not configured", firstNonEmpty(run.ProviderID, run.ProviderKind)),
+		}, nil, fmt.Errorf("agent provider %q command is not configured", firstNonEmpty(run.ProviderID, run.ProviderKind))
+	}
+	prefetchedTools := r.prefetchAgentRunToolContext(ctx, run)
+	if len(prefetchedTools) > 0 {
+		run = run.withPrefetchedToolContext(prefetchedTools)
+	}
+	prompt := buildAgentProviderPrompt(run)
+	args := append([]string{}, spec.Args...)
+	promptArg := strings.TrimSpace(spec.PromptArg)
+	if promptArg == "" {
+		args = append(args, prompt)
+	} else {
+		args = append(args, promptArg, prompt)
+	}
+	if skillArg := strings.TrimSpace(spec.SkillArg); skillArg != "" {
+		for _, skill := range run.SkillIDs {
+			if trimmed := strings.TrimSpace(skill); trimmed != "" {
+				args = append(args, skillArg, trimmed)
+			}
+		}
+	}
+	if providerSkillArg := strings.TrimSpace(spec.ProviderSkillArg); providerSkillArg != "" {
+		for _, skill := range providerSkillRefs(run.SkillBindings) {
+			args = append(args, providerSkillArg, skill)
+		}
+	}
+	workspaceRoot := strings.TrimSpace(r.cfg.AgentRuntime.WorkspaceRoot)
+	if workspaceRoot == "" {
+		workspaceRoot = ".kubecrux/agent-runtime"
+	}
+	absRoot, err := filepath.Abs(workspaceRoot)
+	if err != nil {
+		return nil, nil, fmt.Errorf("resolve agent runtime workspace: %w", err)
+	}
+	workspace, err := resolveWorkspacePath(absRoot, run.ID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if err := os.MkdirAll(workspace, 0o755); err != nil {
+		return nil, nil, fmt.Errorf("create agent runtime workspace: %w", err)
+	}
+	logs, err := runCommand(ctx, workspace, command, args...)
+	output := map[string]any{
+		"provider":     run.ProviderID,
+		"providerKind": run.ProviderKind,
+		"capabilityId": run.CapabilityID,
+		"skillIds":     run.SkillIDs,
+		"logs":         logs,
+	}
+	if len(prefetchedTools) > 0 {
+		output["prefetchedToolResults"] = agentToolCallResultMaps(prefetchedTools)
+	}
+	rawOutput := strings.TrimSpace(joinCommandOutput(logs))
+	if rawOutput != "" {
+		output["rawOutput"] = rawOutput
+		output["summary"] = summarizeAgentOutput(rawOutput)
+	}
+	for key, value := range parseAgentOutputJSON(rawOutput) {
+		output[key] = value
+	}
+	return output, logs, err
+}
+
+func (r *Runner) prefetchAgentRunToolContext(ctx context.Context, run AgentRun) []AgentToolCallResult {
+	items := make([]AgentToolCallResult, 0)
+	for _, binding := range run.ToolBindings {
+		if len(items) >= 3 {
+			break
+		}
+		if !agentToolBindingPrefetchable(binding) {
+			continue
+		}
+		result, ok := r.agentRunToolCall(ctx, run, binding, map[string]any{"limit": 20})
+		if !ok {
+			continue
+		}
+		items = append(items, result)
+	}
+	return items
 }
 
 func (r *Runner) executeComposeAction(ctx context.Context, operation DockerOperation) ([]string, error) {
@@ -763,6 +1064,76 @@ func (r *Runner) dockerCallback(ctx context.Context, operation DockerOperation, 
 	}
 	if strings.TrimSpace(result.Data.ID) == "" {
 		return DockerOperation{}, false
+	}
+	return result.Data, true
+}
+
+func (r *Runner) agentRunCallback(ctx context.Context, run AgentRun, status string, payload map[string]any, toolExecutions []map[string]any, analysisArtifacts []map[string]any, externalRunID string, errorMessage string) (AgentRun, bool) {
+	body, _ := json.Marshal(agentRunCallbackRequest{
+		RunID:             run.ID,
+		CallbackToken:     run.CallbackToken,
+		AgentID:           agentRuntimeWorkerID(r.cfg),
+		Status:            status,
+		Payload:           payload,
+		ToolExecutions:    toolExecutions,
+		AnalysisArtifacts: analysisArtifacts,
+		ExternalRunID:     externalRunID,
+		ErrorMessage:      errorMessage,
+	})
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(r.cfg.BaseURL, "/")+"/api/v1/copilot/agent-runs/callback", bytes.NewReader(body))
+	if err != nil {
+		return AgentRun{}, false
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+r.cfg.BearerToken)
+	resp, err := r.httpClient.Do(req)
+	if err != nil {
+		return AgentRun{}, false
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		return AgentRun{}, false
+	}
+	var result agentRunCallbackResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return AgentRun{}, false
+	}
+	if strings.TrimSpace(result.Data.ID) == "" {
+		return AgentRun{}, false
+	}
+	return result.Data, true
+}
+
+func (r *Runner) agentRunToolCall(ctx context.Context, run AgentRun, binding map[string]any, input map[string]any) (AgentToolCallResult, bool) {
+	body, _ := json.Marshal(agentRunToolCallRequest{
+		RunID:         run.ID,
+		CallbackToken: run.CallbackToken,
+		AgentID:       agentRuntimeWorkerID(r.cfg),
+		ToolBindingID: strings.TrimSpace(fmt.Sprint(binding["id"])),
+		AdapterID:     strings.TrimSpace(fmt.Sprint(binding["adapterId"])),
+		ToolName:      strings.TrimSpace(fmt.Sprint(binding["toolName"])),
+		Input:         input,
+	})
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(r.cfg.BaseURL, "/")+"/api/v1/copilot/agent-runs/tool-call", bytes.NewReader(body))
+	if err != nil {
+		return AgentToolCallResult{}, false
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+r.cfg.BearerToken)
+	resp, err := r.httpClient.Do(req)
+	if err != nil {
+		return AgentToolCallResult{}, false
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		return AgentToolCallResult{}, false
+	}
+	var result agentRunToolCallResponse
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return AgentToolCallResult{}, false
+	}
+	if strings.TrimSpace(result.Data.RunID) == "" {
+		return AgentToolCallResult{}, false
 	}
 	return result.Data, true
 }
@@ -1135,6 +1506,230 @@ func firstNonEmptyStringSlice(candidates ...[]string) []string {
 	return nil
 }
 
+func compactStringSlice(items []string) []string {
+	out := make([]string, 0, len(items))
+	for _, item := range items {
+		if trimmed := strings.TrimSpace(item); trimmed != "" {
+			out = append(out, trimmed)
+		}
+	}
+	return out
+}
+
+func agentRuntimeWorkerID(cfg cfgpkg.ControlPlaneConfig) string {
+	return firstNonEmpty(strings.TrimSpace(cfg.AgentRuntime.WorkerID), strings.TrimSpace(cfg.AgentID), "local-hermes-runner")
+}
+
+func normalizedAgentProviderKey(run AgentRun) string {
+	return strings.ToLower(firstNonEmpty(strings.TrimSpace(run.ProviderKind), strings.TrimSpace(run.ProviderID)))
+}
+
+func (r *Runner) agentProviderCommandSpec(providerKey string) agentProviderCommandSpec {
+	providerKey = strings.ToLower(strings.TrimSpace(providerKey))
+	if providerKey == "" {
+		return agentProviderCommandSpec{}
+	}
+	if spec, ok := r.cfg.AgentRuntime.Providers[providerKey]; ok {
+		return normalizeAgentProviderCommandSpec(spec)
+	}
+	if providerKey == "hermes" {
+		command := strings.TrimSpace(r.cfg.AgentRuntime.HermesCommand)
+		if command == "" {
+			command = "hermes"
+		}
+		return agentProviderCommandSpec{Command: command, Args: []string{"chat"}, PromptArg: "-q", SkillArg: "-s"}
+	}
+	return agentProviderCommandSpec{}
+}
+
+func normalizeAgentProviderCommandSpec(input cfgpkg.AgentProviderConfig) agentProviderCommandSpec {
+	return agentProviderCommandSpec{
+		Command:          strings.TrimSpace(input.Command),
+		Args:             compactStringSlice(input.Args),
+		PromptArg:        strings.TrimSpace(input.PromptArg),
+		SkillArg:         strings.TrimSpace(input.SkillArg),
+		ProviderSkillArg: strings.TrimSpace(input.ProviderSkillArg),
+	}
+}
+
+func providerSkillRefs(bindings []map[string]any) []string {
+	out := make([]string, 0, len(bindings))
+	seen := map[string]struct{}{}
+	for _, binding := range bindings {
+		value := strings.TrimSpace(fmt.Sprint(binding["providerSkillRef"]))
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
+	}
+	return out
+}
+
+func agentRunCompletionSummary(run AgentRun) string {
+	return fmt.Sprintf("%s agent run completed", firstNonEmpty(run.ProviderKind, run.ProviderID, "provider"))
+}
+
+func buildAgentProviderPrompt(run AgentRun) string {
+	payload := map[string]any{
+		"contract":      "kubecrux.agentRuntime.v1",
+		"providerId":    run.ProviderID,
+		"providerKind":  run.ProviderKind,
+		"capabilityId":  run.CapabilityID,
+		"skillIds":      run.SkillIDs,
+		"scope":         run.Scope,
+		"toolset":       run.Toolset,
+		"toolBindings":  run.ToolBindings,
+		"skillBindings": run.SkillBindings,
+		"input":         run.Input,
+		"outputSchema":  "Return concise text or JSON with summary, recommendations, evidence, hypotheses, toolExecutions, and analysisArtifacts. kubecrux will normalize the final result into AnalysisArtifact.",
+		"resultRule":    "Do not execute destructive actions. Use only read-only context and report evidence, hypotheses, recommendations, and next steps.",
+		"toolCallRule":  "Tool bindings are authorization hints. Provider adapters must request actual tool execution through the kubecrux runner tool-call gateway and must not call kubecrux data sources directly.",
+	}
+	if len(run.ToolBindings) == 0 {
+		delete(payload, "toolBindings")
+	}
+	if len(run.SkillBindings) == 0 {
+		delete(payload, "skillBindings")
+	}
+	encoded, err := json.MarshalIndent(payload, "", "  ")
+	if err != nil {
+		return fmt.Sprintf("Run kubecrux %s analysis for scope %v. Question: %s", run.CapabilityID, run.Scope, fmt.Sprint(run.Input["question"]))
+	}
+	return "You are executing a kubecrux Agent Runtime analysis task. Analyze the provided context and return an operational report.\n\n" + string(encoded)
+}
+
+func agentToolBindingPrefetchable(binding map[string]any) bool {
+	toolName := strings.TrimSpace(fmt.Sprint(binding["toolName"]))
+	switch toolName {
+	case "events.query", "logs.query", "metrics.query", "traces.query",
+		"delivery.releases.list", "delivery.builds.list", "alerts.list":
+		return true
+	default:
+		return false
+	}
+}
+
+func agentToolCallResultMaps(items []AgentToolCallResult) []map[string]any {
+	out := make([]map[string]any, 0, len(items))
+	for _, item := range items {
+		out = append(out, map[string]any{
+			"runId":         item.RunID,
+			"toolExecution": item.ToolExecution,
+			"output":        item.Output,
+		})
+	}
+	return out
+}
+
+func copyStringAnyMap(input map[string]any) map[string]any {
+	out := map[string]any{}
+	for key, value := range input {
+		out[key] = value
+	}
+	return out
+}
+
+func joinCommandOutput(logs []string) string {
+	lines := make([]string, 0, len(logs))
+	for _, log := range logs {
+		trimmed := strings.TrimSpace(log)
+		if trimmed == "" || strings.HasPrefix(trimmed, "$ ") {
+			continue
+		}
+		lines = append(lines, trimmed)
+	}
+	return strings.Join(lines, "\n")
+}
+
+func summarizeAgentOutput(output string) string {
+	output = strings.TrimSpace(output)
+	if output == "" {
+		return ""
+	}
+	runes := []rune(output)
+	if len(runes) <= 600 {
+		return output
+	}
+	return string(runes[:600]) + "..."
+}
+
+func parseAgentOutputJSON(output string) map[string]any {
+	trimmed := strings.TrimSpace(output)
+	if trimmed == "" || !strings.HasPrefix(trimmed, "{") {
+		return nil
+	}
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(trimmed), &payload); err != nil {
+		return nil
+	}
+	return payload
+}
+
+func agentRunToolExecution(run AgentRun, startedAt, completedAt time.Time, status, summary string, output map[string]any) map[string]any {
+	input := map[string]any{
+		"capabilityId": run.CapabilityID,
+		"skillIds":     run.SkillIDs,
+		"scope":        run.Scope,
+	}
+	if len(run.ToolBindings) > 0 {
+		input["toolBindings"] = run.ToolBindings
+	}
+	if len(run.SkillBindings) > 0 {
+		input["skillBindings"] = run.SkillBindings
+	}
+	return map[string]any{
+		"id":          "tool:" + run.ID,
+		"adapterId":   "agent." + firstNonEmpty(run.ProviderKind, run.ProviderID),
+		"toolName":    firstNonEmpty(run.ProviderKind, run.ProviderID) + ".analysis",
+		"status":      status,
+		"summary":     summary,
+		"input":       input,
+		"output":      output,
+		"startedAt":   startedAt.Format(time.RFC3339),
+		"completedAt": completedAt.Format(time.RFC3339),
+	}
+}
+
+func agentRunArtifact(run AgentRun, output map[string]any, logs []string) map[string]any {
+	summary := firstNonEmpty(strings.TrimSpace(fmt.Sprint(output["summary"])), strings.TrimSpace(fmt.Sprint(output["rawOutput"])))
+	if summary == "" {
+		summary = fmt.Sprintf("%s analysis completed by %s", run.CapabilityID, run.ProviderID)
+	}
+	snapshot := map[string]any{
+		"providerId":   run.ProviderID,
+		"providerKind": run.ProviderKind,
+		"capabilityId": run.CapabilityID,
+		"skillIds":     run.SkillIDs,
+		"toolset":      run.Toolset,
+		"logCount":     len(logs),
+	}
+	if len(run.ToolBindings) > 0 {
+		snapshot["toolBindings"] = run.ToolBindings
+	}
+	if len(run.SkillBindings) > 0 {
+		snapshot["skillBindings"] = run.SkillBindings
+	}
+	return map[string]any{
+		"kind":       firstNonEmpty(run.CapabilityID, "agent_analysis"),
+		"runId":      run.ID,
+		"title":      fmt.Sprintf("%s analysis", firstNonEmpty(run.CapabilityID, "agent")),
+		"summary":    summary,
+		"scope":      run.Scope,
+		"evidence":   mapSliceValue(output["evidence"]),
+		"hypotheses": mapSliceValue(output["hypotheses"]),
+		"recommendations": firstNonEmptyStringSlice(
+			valueAsStringSlice(output["recommendations"]),
+			valueAsStringSlice(output["nextSteps"]),
+		),
+		"toolExecutions":     []map[string]any{},
+		"dataSourceSnapshot": snapshot,
+	}
+}
+
 func buildHeartbeatPayload(agentID, command string, commandIndex, commandCount int) map[string]any {
 	return map[string]any{
 		"agentId":        strings.TrimSpace(agentID),
@@ -1174,6 +1769,23 @@ func valueAsStringSlice(raw any) []string {
 		for _, item := range value {
 			if trimmed := strings.TrimSpace(fmt.Sprint(item)); trimmed != "" {
 				items = append(items, trimmed)
+			}
+		}
+		return items
+	default:
+		return nil
+	}
+}
+
+func mapSliceValue(raw any) []map[string]any {
+	switch value := raw.(type) {
+	case []map[string]any:
+		return append([]map[string]any(nil), value...)
+	case []any:
+		items := make([]map[string]any, 0, len(value))
+		for _, item := range value {
+			if current, ok := item.(map[string]any); ok {
+				items = append(items, current)
 			}
 		}
 		return items

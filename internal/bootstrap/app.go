@@ -291,7 +291,7 @@ func New(ctx context.Context) (*App, error) {
 	workflowHandler := apiHandlers.NewWorkflowHandler(workflowService)
 	registryHandler := apiHandlers.NewRegistryHandler(registryService)
 	releaseHandler := apiHandlers.NewReleaseHandler(releaseService)
-	copilotHandler := apiHandlers.NewCopilotHandler(copilotService)
+	copilotHandler := apiHandlers.NewCopilotHandler(copilotService, cfg.Runtime.ExecutionRunnerToken)
 	virtualizationHandler := apiHandlers.NewVirtualizationHandler(virtualizationService)
 	dockerHandler := apiHandlers.NewDockerHandler(dockerService, cfg.Runtime.ExecutionRunnerToken)
 	accessHandler := apiHandlers.NewAccessHandler(accessConsoleService)

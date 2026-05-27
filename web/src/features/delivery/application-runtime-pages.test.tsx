@@ -8,6 +8,7 @@ import { createRoot } from 'react-dom/client'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApplicationDetailPage } from './application-runtime-pages'
+import { api } from '@/services/api-client'
 
 const workflowDefinition = {
   schemaVersion: 2,
@@ -27,12 +28,19 @@ const testState = vi.hoisted(() => ({
       'delivery.applications.view',
       'delivery.application-services.view',
       'delivery.application-services.manage',
+      'delivery.builds.trigger',
+      'delivery.workflows.trigger',
+      'delivery.releases.trigger',
     ],
     visibleMenuIds: [],
     visibleMenus: [],
   },
+  detailWithoutWorkflow: false,
+  detailWithoutValidationNodes: false,
+  detailWithoutImageTagDefaults: false,
   apiGet: vi.fn(async (path: string) => {
     if (path === '/applications/app-1/runtime') {
+      const defaultTag = testState.detailWithoutImageTagDefaults ? undefined : 'latest'
       return {
         data: {
           application: {
@@ -43,6 +51,7 @@ const testState = vi.hoisted(() => ({
             language: 'go',
             repositoryPath: 'commerce/checkout',
             defaultBranch: 'main',
+            defaultTag,
             enabled: true,
             buildSources: [
               {
@@ -51,6 +60,7 @@ const testState = vi.hoisted(() => ({
                 type: 'repo_dockerfile',
                 enabled: true,
                 isDefault: true,
+                defaultTag,
               },
             ],
             createdAt: '2026-05-01T00:00:00Z',
@@ -81,6 +91,7 @@ const testState = vi.hoisted(() => ({
       }
     }
     if (path === '/applications/app-1/detail') {
+      const defaultTag = testState.detailWithoutImageTagDefaults ? undefined : 'latest'
       return {
         data: {
           application: {
@@ -91,6 +102,7 @@ const testState = vi.hoisted(() => ({
             language: 'go',
             repositoryPath: 'commerce/checkout',
             defaultBranch: 'main',
+            defaultTag,
             enabled: true,
             buildSources: [
               {
@@ -99,6 +111,7 @@ const testState = vi.hoisted(() => ({
                 type: 'repo_dockerfile',
                 enabled: true,
                 isDefault: true,
+                defaultTag,
               },
             ],
             createdAt: '2026-05-01T00:00:00Z',
@@ -111,12 +124,23 @@ const testState = vi.hoisted(() => ({
               environmentName: '测试环境',
               workflowTemplateId: 'wf-template-1',
               workflowTemplateName: 'Release DAG',
-              workflowTemplate: {
+              workflowTemplate: testState.detailWithoutWorkflow ? undefined : {
                 id: 'wf-template-1',
                 key: 'release-dag',
                 name: 'Release DAG',
                 category: 'release',
-                definition: workflowDefinition,
+                definition: testState.detailWithoutValidationNodes
+                  ? {
+                    ...workflowDefinition,
+                    nodes: workflowDefinition.nodes.filter((node) => node.type !== 'check_http' && node.type !== 'check_k8s_event' && node.type !== 'smoke_test' && node.type !== 'verify' && node.type !== 'check'),
+                  }
+                  : {
+                    ...workflowDefinition,
+                    nodes: [
+                      ...workflowDefinition.nodes,
+                      { id: 'verify', type: 'check_http', name: 'HTTP 验证', config: { url: 'https://example.com/healthz' } },
+                    ],
+                  },
               },
               targetCount: 1,
               targets: [
@@ -373,7 +397,7 @@ vi.mock('@/services/api-client', () => ({
       }
       return body
     },
-    post: vi.fn(),
+    post: vi.fn(async (path: string, body?: unknown) => ({ data: { id: 'ok', path, body } })),
     put: vi.fn(),
     delete: vi.fn(),
   },
@@ -429,9 +453,21 @@ function clickTab(container: HTMLElement, text: string) {
   })
 }
 
+function findButton(container: HTMLElement, text: string) {
+  const button = Array.from(container.querySelectorAll('button')).find((item) => item.textContent?.includes(text)) as HTMLButtonElement | undefined
+  if (!button) {
+    throw new Error(`button not found: ${text}`)
+  }
+  return button
+}
+
 describe('ApplicationDetailPage workbench', () => {
   beforeEach(() => {
     testState.apiGet.mockClear()
+    testState.detailWithoutWorkflow = false
+    testState.detailWithoutValidationNodes = false
+    testState.detailWithoutImageTagDefaults = false
+    vi.mocked(api.post).mockClear()
     class ResizeObserverMock {
       observe() {}
       unobserve() {}
@@ -491,6 +527,9 @@ describe('ApplicationDetailPage workbench', () => {
     expect(container.textContent).toContain('总览')
     expect(container.textContent).toContain('服务组件')
     expect(container.textContent).toContain('流水线')
+    expect(container.textContent).toContain('交付操作')
+    expect(container.textContent).toContain('构建并部署')
+    expect(container.textContent).toContain('运行验证')
 
     clickTab(container, '交付物')
     await act(async () => {
@@ -528,5 +567,64 @@ describe('ApplicationDetailPage workbench', () => {
     expect(container.textContent).toContain('registry.example.com/checkout/api')
     expect(container.querySelector('.kc-application-service-grid')).not.toBeNull()
     expect(container.querySelector('.kc-application-container-row')).not.toBeNull()
+  })
+
+  it('calls aggregated delivery action endpoint when build is clicked', async () => {
+    const container = await renderWithProviders(<ApplicationDetailPage />)
+    const buildButton = findButton(container, '构建')
+
+    await act(async () => {
+      buildButton.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    expect(api.post).toHaveBeenCalledWith('/applications/app-1/delivery-actions', expect.objectContaining({
+      action: 'build',
+      applicationEnvironmentId: 'binding-test',
+      targetId: 'target-1',
+      buildSourceId: 'source-api',
+      refType: 'branch',
+      refName: 'main',
+    }))
+  })
+
+  it('calls aggregated delivery action endpoint when deploy is clicked', async () => {
+    const container = await renderWithProviders(<ApplicationDetailPage />)
+    const deployButton = findButton(container, '部署')
+
+    await act(async () => {
+      deployButton.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    expect(api.post).toHaveBeenCalledWith('/applications/app-1/delivery-actions', expect.objectContaining({
+      action: 'deploy',
+      applicationEnvironmentId: 'binding-test',
+      targetId: 'target-1',
+      imageTag: expect.any(String),
+    }))
+  })
+
+  it('disables build and deploy when workflow template is missing', async () => {
+    testState.detailWithoutWorkflow = true
+    const container = await renderWithProviders(<ApplicationDetailPage />)
+
+    expect(findButton(container, '构建并部署').disabled).toBe(true)
+  })
+
+  it('disables image-producing actions when image tag defaults are missing', async () => {
+    testState.detailWithoutImageTagDefaults = true
+    const container = await renderWithProviders(<ApplicationDetailPage />)
+
+    expect(findButton(container, '构建').disabled).toBe(true)
+    expect(findButton(container, '部署').disabled).toBe(true)
+    expect(findButton(container, '构建并部署').disabled).toBe(true)
+  })
+
+  it('disables verification when workflow template has no validation nodes', async () => {
+    testState.detailWithoutValidationNodes = true
+    const container = await renderWithProviders(<ApplicationDetailPage />)
+
+    expect(findButton(container, '运行验证').disabled).toBe(true)
   })
 })

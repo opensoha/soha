@@ -71,6 +71,7 @@ Persistent base tables remain:
 - `scope`
 - `pinnedContext`
 - `toolset`
+- `agentProviderId`
 - `analysisRunRefs`
 - `summary`
 - `tags`
@@ -100,7 +101,7 @@ The `toolset` object is now honored by backend analysis execution:
 - `budgetOverrides.timeoutSeconds` bounds a single analysis tool run
 - `scopeOverrides` is merged into session scope before root-cause, performance, or trace analysis runs
 
-Session tool assembly reads `/api/v1/copilot/workbench/catalog`, a safe catalog endpoint for `observe.ai.chat`, `observe.ai.view`, or `settings.ai.view` users. It returns adapter metadata, data-source readiness summaries, analysis-profile summaries, and skill summaries; full AI provider settings and secrets stay behind `settings.ai.view`.
+Session tool assembly reads `/api/v1/copilot/workbench/catalog`, a safe catalog endpoint for `observe.ai.chat`, `observe.ai.view`, or `settings.ai.view` users. It returns adapter metadata, data-source readiness summaries, analysis-profile summaries, skill summaries, agent providers, capabilities, tool bindings, and skill bindings; full AI provider settings and secrets stay behind `settings.ai.view`.
 
 When a scoped handoff is opened, the workbench can create a fresh investigation session for that scope instead of silently reusing an unrelated active session.
 
@@ -138,6 +139,22 @@ The global skill registry now uses enterprise skill definitions, not just lightw
 - `scopeRules`
 - `enabled`
 
+## Agent Runtime
+
+kubecrux now models AI execution through Agent Runtime instead of binding pages or analysis flows directly to Hermes.
+
+Core objects:
+
+- `AgentProvider`: executor catalog; current providers are `internal` and `hermes`
+- `AgentCapability`: kubecrux platform capabilities including `root_cause`, `performance`, `trace`, `inspection_review`, `delivery_failure`, `post_deploy_observation`, `platform_resource_diagnosis`, `docker_diagnosis`, `virtualization_diagnosis`, and `oncall_brief`
+- `AgentToolBinding`: capability-to-MCP-adapter, platform read-tool, or provider-native-tool mapping
+- `AgentSkillBinding`: kubecrux skill mapping to Hermes skills, prompt templates, or future provider skill systems
+- `AgentRun`: durable asynchronous execution record for external providers, carrying status, scope, toolset, skills, callback token, tool executions, and output artifacts
+
+Hermes Agent is the first external provider. The AI workbench and automation policy select only `agentProviderId` and capability; the actual Hermes call is performed by an independent agent runner through claim/callback. Future OpenClaw, internal-agent, or other providers should extend provider adapters and runner executors without rewriting session pages, automation policy, or business analysis flows.
+
+Agent Runtime output is written back as kubecrux `AnalysisArtifact`, reusing evidence, hypotheses, recommendations, graph, tool-call records, and data-source snapshots. Permissions, menus, budgets, data redaction, audit, and high-risk operation boundaries remain owned by kubecrux.
+
 ## Product Surfaces
 
 ### `/ai-workbench`
@@ -156,7 +173,8 @@ The global skill registry now uses enterprise skill definitions, not just lightw
 - when scope includes `alertId`, the user can jump back to the original monitoring alert detail
 - supports `mode=trace` and `mode=inspection_review` in the same conversation canvas
 - the session-level toolset drawer now shows the effective execution policy and edits adapter selection, `adapter.tool` disables, budget overrides, and scope overrides
-- explicit analysis opens a confirmation modal before execution, so the user can choose a runnable analysis mode, edit the analysis target, and preview the session scope and toolset source; current runnable modes are limited to `root_cause`, `performance`, and `trace`, the backend rejects `general` / `inspection_review` requests that cannot produce explicit analysis artifacts, and successful runs write the selected mode back to session metadata
+- explicit analysis opens a confirmation modal before execution, so the user can choose provider, analysis profile, runnable analysis mode, edit the analysis target, and preview the session scope and toolset source; current runnable modes are `root_cause`, `performance`, `trace`, and `inspection_review`, the backend rejects `general`, and successful runs write the selected mode and `agentProviderId` back to session metadata
+- selecting the `internal` provider uses kubecrux in-process analysis; selecting `hermes` or another external provider creates an `AgentRun` and lets the runner write artifacts back asynchronously
 - all `analysisArtifacts` carried by assistant messages are collected into an artifact history, so users can switch graph, evidence, and recommendation context across root-cause, performance, trace, and inspection-review artifacts
 
 ### `/ai-workbench/root-cause` And `/ai-workbench/performance`
@@ -175,10 +193,10 @@ Root-cause and performance entries reuse the same session canvas, but the path n
 - session-to-inspection task generation prefers the current available inspection profile, so the profile-backed inspection contract is not lost during handoff
 - create and edit automation policies from the policy tab, including trigger type, analysis kinds, analysis profile, remediation policy, dedup window, cooldown, and enabled state
 - automation policy read, create, edit, and delete operations continue to use the backend `/api/v1/copilot/automation-policies` contract and remain gated by `settings.ai.manage`; without that permission, the workbench must not proactively fetch the policy list and should show the permission boundary instead
-- automation policy forms select `analysisProfileId` from safe workbench catalog profile summaries; the current runner only supports the `alert_webhook` trigger path, so trigger types without a runner must not be exposed as runnable policy options
-- runnable automation analysis kinds are currently limited to `root_cause`, `performance`, and `trace`; `inspection_review` remains a session and inspection-review artifact mode, not an alert automation analysis kind
+- automation policy forms select `analysisProfileId` from safe workbench catalog profile summaries and `agentProviderId` from the agent provider catalog; the current runner only supports the `alert_webhook` trigger path, so trigger types without a runner must not be exposed as runnable policy options
+- runnable automation analysis kinds include `root_cause`, `performance`, `trace`, and `inspection_review`; external providers can extend the same Agent Runtime into delivery failure analysis, post-deploy observation, platform resource diagnosis, Docker/virtualization diagnosis, and on-call briefing capabilities
 - severity, status, minimum duration, label matching, analysis time range, and approval roles are persisted as structured `triggerConditions` / `approvalPolicy` instead of creating inert empty policies
-- automation execution persists root-cause, performance, and trace runs with a policy-prefixed `dedupKey`; `dedupWindowSeconds` gates the same alert fingerprint, while `cooldownSeconds > 0` gates the whole policy across different alerts
+- automation execution persists built-in root-cause, performance, and trace runs with a policy-prefixed `dedupKey`; external providers write the same dedup context into `AgentRun.input`. `dedupWindowSeconds` gates the same alert fingerprint, while `cooldownSeconds > 0` gates the whole policy across different alerts
 
 Opening an inspection run as a session no longer creates an empty investigation:
 
@@ -193,6 +211,7 @@ Opening an inspection run as a session no longer creates an empty investigation:
 - mirrored data-source inventory
 - session-level toolset assembly
 - global skill registry visibility
+- Agent Provider / Capability / Tool Binding / Skill Binding safe catalog
 
 Toolset editing must stay aligned with backend execution contracts:
 
@@ -215,8 +234,9 @@ Current focus:
 - call read-oriented tools
 - generate evidence, hypotheses, and recommendations
 - persist tool calls and analysis artifacts into sessions
+- convert external agent output into kubecrux `AnalysisArtifact`
 
-Application onboarding specification rendering and delivery bootstrap do not belong to the AI workbench itself. Those belong to the Delivery Workbench. AI only exposes discoverable MCP and skill capabilities that enterprise AI coding clients can call.
+Application onboarding specification rendering and delivery bootstrap do not belong to the AI workbench itself. Those belong to the Delivery Workbench. AI only exposes discoverable MCP and skill capabilities that enterprise AI coding clients and Agent Runtime can call.
 
 ## Data Flow Direction
 
@@ -236,5 +256,6 @@ After this phase, AI work should default to these rules:
   - global configuration
   - session-level assembly
   - artifact persistence
-- root cause, performance, and trace analysis should keep converging on one artifact model
+- root cause, performance, trace, inspection review, and external agent analysis should keep converging on one artifact model
+- adding an agent provider should extend provider adapters, tool bindings, skill bindings, and runner executors only; pages and business analysis flows must not depend directly on provider SDKs or CLIs
 - monitoring-to-AI handoff should keep using the standard scope contract rather than page-specific ad hoc query params

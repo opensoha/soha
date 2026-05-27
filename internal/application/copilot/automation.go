@@ -33,6 +33,15 @@ func (s *Service) HandleAlertAutomation(ctx context.Context, instance domainaler
 		if err == nil && withinCooldownWindow(policyRuns, policy.CooldownSeconds) {
 			continue
 		}
+		policyAgentRuns, err := s.repo.ListAgentRuns(ctx, domaincopilot.AgentRunFilter{
+			CreatedBy:      automationRootCauseCreatedBy,
+			TriggerType:    "alert_webhook",
+			DedupKeyPrefix: buildAlertAutomationDedupPrefix(policy.ID),
+			Limit:          1,
+		})
+		if err == nil && withinAgentRunCooldownWindow(policyAgentRuns, policy.CooldownSeconds) {
+			continue
+		}
 		dedupKey := buildAlertAutomationDedupKey(policy.ID, instance)
 		existing, err := s.repo.ListRootCauseRuns(ctx, automationRootCauseCreatedBy, domaincopilot.RootCauseRunFilter{
 			AlertID:     instance.ID,
@@ -43,13 +52,47 @@ func (s *Service) HandleAlertAutomation(ctx context.Context, instance domainaler
 		if err == nil && withinDedupWindow(existing, policy.DedupWindowSeconds) {
 			continue
 		}
+		existingAgentRuns, err := s.repo.ListAgentRuns(ctx, domaincopilot.AgentRunFilter{
+			CreatedBy:   automationRootCauseCreatedBy,
+			TriggerType: "alert_webhook",
+			DedupKey:    dedupKey,
+			Limit:       5,
+		})
+		if err == nil && withinAgentRunDedupWindow(existingAgentRuns, policy.DedupWindowSeconds) {
+			continue
+		}
 		kinds := policy.AnalysisKinds
 		if len(kinds) == 0 {
 			kinds = []string{"root_cause"}
 		}
 		for _, kind := range kinds {
 			var runErr error
-			switch strings.TrimSpace(kind) {
+			kind = strings.TrimSpace(kind)
+			if s.shouldUseExternalAgent(policy.AgentProviderID) {
+				if normalizeAnalysisKind(kind) == "root_cause" {
+					_, runErr = s.queueRootCauseAgentRun(ctx, systemPrincipal(), automationRootCauseCreatedBy, domaincopilot.RootCauseRunInput{
+						Kind:              "root_cause",
+						Title:             instance.Title,
+						AnalysisProfileID: policy.AnalysisProfileID,
+						AgentProviderID:   policy.AgentProviderID,
+						TriggerType:       "alert_webhook",
+						ClusterID:         instance.ClusterID,
+						Namespace:         instance.Namespace,
+						WorkloadKind:      "Deployment",
+						WorkloadName:      resolveAlertWorkload(instance),
+						AlertID:           instance.ID,
+						TimeRangeMinutes:  policyTimeRangeMinutes(policy),
+						Question:          fmt.Sprintf("Investigate alert %s", instance.ID),
+					}, dedupKey, "en-US")
+				} else {
+					_, runErr = s.queueAutomationAgentRun(ctx, policy, kind, instance, dedupKey)
+				}
+				if runErr != nil {
+					return runErr
+				}
+				continue
+			}
+			switch kind {
 			case "performance", "trace":
 				_, _, _ = s.analyzeConversation(ctx, systemPrincipal(), domaincopilot.Session{
 					ID:        "automation:" + policy.ID,
@@ -94,6 +137,66 @@ func (s *Service) HandleAlertAutomation(ctx context.Context, instance domainaler
 		}
 	}
 	return nil
+}
+
+func (s *Service) queueAutomationAgentRun(ctx context.Context, policy domaincopilot.AutomationPolicy, kind string, instance domainalert.Instance, dedupKey string) (domaincopilot.AgentRun, error) {
+	kind = normalizeAnalysisKind(kind)
+	scope := domaincopilot.SessionScope{
+		ClusterID:        instance.ClusterID,
+		Namespace:        instance.Namespace,
+		Workload:         resolveAlertWorkload(instance),
+		AlertID:          instance.ID,
+		TimeRangeMinutes: policyTimeRangeMinutes(policy),
+	}
+	profile, _ := s.repo.GetAnalysisProfile(ctx, policy.AnalysisProfileID)
+	toolset := domaincopilot.SessionToolset{
+		EnabledAdapterIDs: profile.EnabledSources,
+		EnabledSkillIDs:   profile.EnabledPlaybooks,
+		BudgetOverrides: map[string]any{
+			"timeoutSeconds":   profile.TimeoutSeconds,
+			"maxEvidenceItems": intCondition(profile.QueryBudgets["maxEvidenceItems"]),
+		},
+		ScopeOverrides: map[string]any{
+			"clusterId":        scope.ClusterID,
+			"namespace":        scope.Namespace,
+			"workload":         scope.Workload,
+			"alertId":          scope.AlertID,
+			"timeRangeMinutes": scope.TimeRangeMinutes,
+		},
+	}
+	return s.createAgentRun(ctx, domaincopilot.AgentRunInput{
+		ProviderID:   policy.AgentProviderID,
+		CapabilityID: kind,
+		SkillIDs:     automationAgentSkillIDs(kind, toolset.EnabledSkillIDs),
+		CreatedBy:    automationRootCauseCreatedBy,
+		Scope:        scope,
+		Toolset:      toolset,
+		Input: map[string]any{
+			"question":           fmt.Sprintf("Investigate alert %s", instance.ID),
+			"mode":               kind,
+			"analysisProfileId":  policy.AnalysisProfileID,
+			"analysisProfile":    profile.Name,
+			"triggerType":        "alert_webhook",
+			"automationPolicyId": policy.ID,
+			"dedupKey":           dedupKey,
+			"alert": map[string]any{
+				"id":           instance.ID,
+				"fingerprint":  instance.Fingerprint,
+				"title":        instance.Title,
+				"summary":      instance.Summary,
+				"severity":     instance.Severity,
+				"status":       instance.Status,
+				"source":       instance.Source,
+				"labels":       instance.Labels,
+				"annotations":  instance.Annotations,
+				"generatorUrl": instance.GeneratorURL,
+				"startsAt":     instance.StartsAt,
+				"lastSeenAt":   instance.LastSeenAt,
+			},
+			"capabilityId": kind,
+		},
+		TimeoutSeconds: firstPositive(profile.TimeoutSeconds, 600),
+	})
 }
 
 func (s *Service) matchesAlertAutomationPolicy(instance domainalert.Instance, policy domaincopilot.AutomationPolicy) (bool, error) {
@@ -151,7 +254,31 @@ func withinCooldownWindow(runs []domaincopilot.RootCauseRun, cooldownSeconds int
 	return withinRunWindow(runs, cooldownSeconds)
 }
 
+func withinAgentRunDedupWindow(runs []domaincopilot.AgentRun, dedupWindowSeconds int) bool {
+	if dedupWindowSeconds <= 0 {
+		dedupWindowSeconds = 900
+	}
+	return withinAgentRunWindow(runs, dedupWindowSeconds)
+}
+
+func withinAgentRunCooldownWindow(runs []domaincopilot.AgentRun, cooldownSeconds int) bool {
+	if cooldownSeconds <= 0 {
+		return false
+	}
+	return withinAgentRunWindow(runs, cooldownSeconds)
+}
+
 func withinRunWindow(runs []domaincopilot.RootCauseRun, windowSeconds int) bool {
+	windowStart := time.Now().UTC().Add(-time.Duration(windowSeconds) * time.Second)
+	for _, item := range runs {
+		if item.CreatedAt.After(windowStart) || item.CreatedAt.Equal(windowStart) {
+			return true
+		}
+	}
+	return false
+}
+
+func withinAgentRunWindow(runs []domaincopilot.AgentRun, windowSeconds int) bool {
 	windowStart := time.Now().UTC().Add(-time.Duration(windowSeconds) * time.Second)
 	for _, item := range runs {
 		if item.CreatedAt.After(windowStart) || item.CreatedAt.Equal(windowStart) {
@@ -175,6 +302,42 @@ func policyTimeRangeMinutes(policy domaincopilot.AutomationPolicy) int {
 		return value
 	}
 	return 60
+}
+
+func automationAgentSkillIDs(kind string, configured []string) []string {
+	if len(configured) > 0 {
+		values := normalizeStringList(configured)
+		out := make([]string, 0, len(values)+1)
+		seen := map[string]struct{}{}
+		for _, value := range values {
+			trimmed := strings.TrimSpace(value)
+			if trimmed == "" {
+				continue
+			}
+			out = append(out, trimmed)
+			seen[trimmed] = struct{}{}
+		}
+		providerSkillID := agentProviderSkillIDForCapability(kind, "")
+		if providerSkillID != "" {
+			if _, ok := seen[providerSkillID]; !ok {
+				out = append(out, providerSkillID)
+			}
+		}
+		return out
+	}
+	if providerSkillID := agentProviderSkillIDForCapability(kind, ""); providerSkillID != "" {
+		return []string{providerSkillID}
+	}
+	return []string{strings.TrimSpace(kind) + "-analysis"}
+}
+
+func firstPositive(values ...int) int {
+	for _, value := range values {
+		if value > 0 {
+			return value
+		}
+	}
+	return 0
 }
 
 func stringSliceCondition(value any) []string {

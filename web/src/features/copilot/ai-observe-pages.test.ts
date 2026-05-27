@@ -41,6 +41,7 @@ describe('AI operations helpers', () => {
       name: ' P1 告警根因 ',
       triggerType: ' alert_webhook ',
       analysisKinds: ['', ' root_cause ', 'performance'],
+      agentProviderId: ' hermes ',
       analysisProfileId: ' profile:critical ',
       remediationPolicy: ' require_approval ',
       dedupWindowSeconds: 1,
@@ -58,6 +59,7 @@ describe('AI operations helpers', () => {
       name: 'P1 告警根因',
       triggerType: 'alert_webhook',
       analysisKinds: ['root_cause', 'performance'],
+      agentProviderId: 'hermes',
       triggerConditions: {
         severity: ['critical'],
         status: ['firing'],
@@ -85,6 +87,7 @@ describe('AI operations helpers', () => {
     })).toMatchObject({
       triggerType: 'alert_webhook',
       analysisKinds: ['root_cause'],
+      agentProviderId: 'internal',
       analysisProfileId: 'default',
       remediationPolicy: 'suggest_only',
       triggerConditions: {
@@ -101,7 +104,7 @@ describe('AI operations helpers', () => {
     })
   })
 
-  it('drops stale automation analysis kinds before persistence', () => {
+  it('keeps inspection-review automation analysis kinds before persistence', () => {
     expect(automationPolicyPayload({
       name: '旧策略',
       triggerType: 'manual',
@@ -109,7 +112,7 @@ describe('AI operations helpers', () => {
       enabled: true,
     })).toMatchObject({
       triggerType: 'alert_webhook',
-      analysisKinds: ['trace'],
+      analysisKinds: ['inspection_review', 'trace'],
     })
 
     expect(automationPolicyPayload({
@@ -117,7 +120,7 @@ describe('AI operations helpers', () => {
       analysisKinds: ['inspection_review'],
       enabled: true,
     })).toMatchObject({
-      analysisKinds: ['root_cause'],
+      analysisKinds: ['inspection_review'],
     })
   })
 
@@ -128,12 +131,14 @@ describe('AI operations helpers', () => {
       enabled: true,
       triggerType: 'manual',
       analysisKinds: ['inspection_review', ' trace '],
+      agentProviderId: 'hermes',
       triggerConditions: {},
       analysisProfileId: 'profile:root',
       remediationPolicy: 'suggest_only',
     })).toMatchObject({
       triggerType: 'alert_webhook',
-      analysisKinds: ['trace'],
+      analysisKinds: ['inspection_review', 'trace'],
+      agentProviderId: 'hermes',
     })
   })
 })

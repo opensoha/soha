@@ -296,6 +296,7 @@ describe('AIWorkbenchPage', () => {
       'root_cause',
       'performance',
       'trace',
+      'inspection_review',
     ])
   })
 
@@ -393,8 +394,8 @@ describe('AIWorkbenchPage', () => {
     const dialogText = dialog?.textContent ?? ''
     expect(dialogText).toContain('性能分析')
     expect(dialogText).toContain('链路分析')
+    expect(dialogText).toContain('巡检复盘')
     expect(dialogText).not.toContain('通用聊天')
-    expect(dialogText).not.toContain('巡检复盘')
     const analysisTextarea = Array.from(document.body.querySelectorAll('textarea')).find((textarea) => textarea.placeholder === '描述这轮分析要回答的问题')
     expect(analysisTextarea?.value).toBe('确认异常来源与影响面')
     expect(document.body.textContent).toContain('local-k3s / payments / payment-api')
@@ -410,6 +411,8 @@ describe('AIWorkbenchPage', () => {
     expect(apiPostMock).toHaveBeenCalledWith('/copilot/sessions/session-1/analyze', {
       mode: 'root_cause',
       question: '确认异常来源与影响面',
+      agentProviderId: 'internal',
+      analysisProfileId: 'profile:inspection',
       scope: {
         clusterId: 'local-k3s',
         namespace: 'payments',

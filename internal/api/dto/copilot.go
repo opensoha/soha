@@ -1,23 +1,27 @@
 package dto
 
+import domaincopilot "github.com/kubecrux/kubecrux/internal/domain/copilot"
+
 type CreateCopilotSessionRequest struct {
-	Title    string         `json:"title"`
-	Mode     string         `json:"mode"`
-	Scope    map[string]any `json:"scope"`
-	Tags     []string       `json:"tags"`
-	AlertID  string         `json:"alertId"`
-	Workload string         `json:"workload"`
+	Title           string         `json:"title"`
+	Mode            string         `json:"mode"`
+	AgentProviderID string         `json:"agentProviderId"`
+	Scope           map[string]any `json:"scope"`
+	Tags            []string       `json:"tags"`
+	AlertID         string         `json:"alertId"`
+	Workload        string         `json:"workload"`
 }
 
 type UpdateCopilotSessionRequest struct {
-	Title    string         `json:"title"`
-	Mode     string         `json:"mode"`
-	Status   string         `json:"status"`
-	Scope    map[string]any `json:"scope"`
-	Toolset  map[string]any `json:"toolset"`
-	Tags     []string       `json:"tags"`
-	Summary  string         `json:"summary"`
-	Archived bool           `json:"archived"`
+	Title           string         `json:"title"`
+	Mode            string         `json:"mode"`
+	AgentProviderID string         `json:"agentProviderId"`
+	Status          string         `json:"status"`
+	Scope           map[string]any `json:"scope"`
+	Toolset         map[string]any `json:"toolset"`
+	Tags            []string       `json:"tags"`
+	Summary         string         `json:"summary"`
+	Archived        bool           `json:"archived"`
 }
 
 type SendCopilotMessageRequest struct {
@@ -25,24 +29,56 @@ type SendCopilotMessageRequest struct {
 }
 
 type CreateRootCauseRunRequest struct {
-	Title            string `json:"title"`
-	Kind             string `json:"kind"`
-	SessionID        string `json:"sessionId"`
-	ClusterID        string `json:"clusterId"`
-	Namespace        string `json:"namespace"`
-	WorkloadKind     string `json:"workloadKind"`
-	WorkloadName     string `json:"workloadName"`
-	AlertID          string `json:"alertId"`
-	TimeRangeMinutes int    `json:"timeRangeMinutes"`
-	Question         string `json:"question"`
+	Title             string `json:"title"`
+	Kind              string `json:"kind"`
+	SessionID         string `json:"sessionId"`
+	AnalysisProfileID string `json:"analysisProfileId"`
+	AgentProviderID   string `json:"agentProviderId"`
+	TriggerType       string `json:"triggerType"`
+	ClusterID         string `json:"clusterId"`
+	Namespace         string `json:"namespace"`
+	WorkloadKind      string `json:"workloadKind"`
+	WorkloadName      string `json:"workloadName"`
+	AlertID           string `json:"alertId"`
+	TimeRangeMinutes  int    `json:"timeRangeMinutes"`
+	Question          string `json:"question"`
 }
 
 type AnalyzeSessionRequest struct {
-	Mode             string         `json:"mode"`
-	AnalysisProfileID string        `json:"analysisProfileId"`
-	TriggerType      string         `json:"triggerType"`
-	Question         string         `json:"question"`
-	Scope            map[string]any `json:"scope"`
+	Mode              string         `json:"mode"`
+	AnalysisProfileID string         `json:"analysisProfileId"`
+	AgentProviderID   string         `json:"agentProviderId"`
+	TriggerType       string         `json:"triggerType"`
+	Question          string         `json:"question"`
+	Scope             map[string]any `json:"scope"`
+}
+
+type AgentRunClaimRequest struct {
+	AgentID     string   `json:"agentId"`
+	ProviderIDs []string `json:"providerIds"`
+	Kinds       []string `json:"kinds"`
+}
+
+type AgentRunCallbackRequest struct {
+	RunID             string                           `json:"runId"`
+	CallbackToken     string                           `json:"callbackToken"`
+	AgentID           string                           `json:"agentId"`
+	Status            string                           `json:"status"`
+	Payload           map[string]any                   `json:"payload"`
+	ToolExecutions    []domaincopilot.ToolExecution    `json:"toolExecutions"`
+	AnalysisArtifacts []domaincopilot.AnalysisArtifact `json:"analysisArtifacts"`
+	ExternalRunID     string                           `json:"externalRunId"`
+	ErrorMessage      string                           `json:"errorMessage"`
+}
+
+type AgentToolCallRequest struct {
+	RunID         string         `json:"runId"`
+	CallbackToken string         `json:"callbackToken"`
+	AgentID       string         `json:"agentId"`
+	ToolBindingID string         `json:"toolBindingId"`
+	AdapterID     string         `json:"adapterId"`
+	ToolName      string         `json:"toolName"`
+	Input         map[string]any `json:"input"`
 }
 
 type DataSourceRequest struct {
@@ -79,6 +115,7 @@ type AutomationPolicyRequest struct {
 	Enabled            bool           `json:"enabled"`
 	TriggerType        string         `json:"triggerType"`
 	AnalysisKinds      []string       `json:"analysisKinds"`
+	AgentProviderID    string         `json:"agentProviderId"`
 	TriggerConditions  map[string]any `json:"triggerConditions"`
 	DedupWindowSeconds int            `json:"dedupWindowSeconds"`
 	AnalysisProfileID  string         `json:"analysisProfileId"`

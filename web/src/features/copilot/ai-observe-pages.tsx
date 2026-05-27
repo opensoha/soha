@@ -85,6 +85,7 @@ interface AutomationPolicy {
   enabled: boolean
   triggerType: string
   analysisKinds?: string[]
+  agentProviderId?: string
   triggerConditions?: Record<string, unknown>
   dedupWindowSeconds?: number
   analysisProfileId: string
@@ -97,6 +98,7 @@ interface AutomationPolicyFormValues {
   name?: string
   triggerType?: string
   analysisKinds?: string[]
+  agentProviderId?: string
   analysisProfileId?: string
   remediationPolicy?: string
   dedupWindowSeconds?: number
@@ -124,6 +126,7 @@ const AUTOMATION_ANALYSIS_KIND_OPTIONS = [
   { value: 'root_cause', label: 'Root Cause' },
   { value: 'performance', label: 'Performance' },
   { value: 'trace', label: 'Trace' },
+  { value: 'inspection_review', label: 'Inspection Review' },
 ]
 const SUPPORTED_AUTOMATION_ANALYSIS_KINDS = new Set(AUTOMATION_ANALYSIS_KIND_OPTIONS.map((item) => item.value))
 
@@ -180,6 +183,7 @@ function defaultAutomationPolicyValues(): AutomationPolicyFormValues {
     name: '',
     triggerType: 'alert_webhook',
     analysisKinds: ['root_cause'],
+    agentProviderId: 'internal',
     analysisProfileId: 'default',
     remediationPolicy: 'suggest_only',
     dedupWindowSeconds: 900,
@@ -217,6 +221,7 @@ export function automationPolicyPayload(values: AutomationPolicyFormValues) {
     name: String(values.name ?? '').trim(),
     triggerType: 'alert_webhook',
     analysisKinds: analysisKinds.length > 0 ? analysisKinds : ['root_cause'],
+    agentProviderId: String(values.agentProviderId ?? '').trim() || 'internal',
     triggerConditions,
     dedupWindowSeconds: secondsOrDefault(values.dedupWindowSeconds, 900),
     analysisProfileId: String(values.analysisProfileId ?? '').trim() || 'default',
@@ -242,6 +247,7 @@ export function policyFormValuesFromRecord(policy: AutomationPolicy): Automation
     name: policy.name,
     triggerType: policy.triggerType === 'alert_webhook' ? policy.triggerType : 'alert_webhook',
     analysisKinds: analysisKinds?.length ? analysisKinds : ['root_cause'],
+    agentProviderId: policy.agentProviderId || 'internal',
     analysisProfileId: policy.analysisProfileId || 'default',
     remediationPolicy: policy.remediationPolicy || 'suggest_only',
     dedupWindowSeconds: policy.dedupWindowSeconds || 900,
@@ -627,9 +633,13 @@ export function AIOperationsPage() {
   const runs = runsQuery.data?.data ?? []
   const policies = policiesQuery.data?.data ?? []
   const profiles: AnalysisProfile[] = catalogQuery.data?.data?.analysisProfiles ?? []
+  const agentProviders = catalogQuery.data?.data?.agentProviders ?? []
   const profileOptions = profiles
     .filter((item) => item.enabled)
     .map((item) => ({ value: item.id, label: `${item.name} (${item.mode})` }))
+  const agentProviderOptions = agentProviders
+    .filter((item) => item.enabled)
+    .map((item) => ({ value: item.id, label: `${item.name}${item.supportsAsync ? ' / async' : ' / inline'}` }))
   const watchedScopeType = Form.useWatch('scopeType', taskForm)
   const taskSaving = createTaskMutation.isPending || updateTaskMutation.isPending
   const policySaving = createPolicyMutation.isPending || updatePolicyMutation.isPending
@@ -909,6 +919,11 @@ export function AIOperationsPage() {
               { title: '触发类型', dataIndex: 'triggerType' },
               { title: '分析类型', dataIndex: 'analysisKinds', render: (value: string[]) => <Space wrap>{(value ?? []).map((item) => <Tag key={item}>{item}</Tag>)}</Space> },
               {
+                title: 'Agent',
+                dataIndex: 'agentProviderId',
+                render: (value: string) => agentProviders.find((item) => item.id === (value || 'internal'))?.name || value || 'internal',
+              },
+              {
                 title: '分析模板',
                 dataIndex: 'analysisProfileId',
                 render: (value: string) => profiles.find((item) => item.id === value)?.name || value,
@@ -971,6 +986,14 @@ export function AIOperationsPage() {
           </Form.Item>
           <Form.Item name="analysisKinds" label="分析类型" rules={[{ required: true, message: '请选择分析类型' }]}>
             <Select mode="multiple" options={AUTOMATION_ANALYSIS_KIND_OPTIONS} />
+          </Form.Item>
+          <Form.Item name="agentProviderId" label="Agent Provider" rules={[{ required: true, message: '请选择 Agent Provider' }]}>
+            <Select
+              showSearch
+              optionFilterProp="label"
+              loading={catalogQuery.isLoading}
+              options={agentProviderOptions.length > 0 ? agentProviderOptions : [{ value: 'internal', label: 'kubecrux 内置分析 / inline' }]}
+            />
           </Form.Item>
           <Form.Item name="analysisProfileId" label="分析模板" rules={[{ required: true, message: '请选择分析模板' }]}>
             <Select

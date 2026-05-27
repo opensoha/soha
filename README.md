@@ -10,8 +10,12 @@ kubecrux is a full-stack platform console built around a Go backend, a React + A
 
 - Multi-cluster Kubernetes console with direct-cluster and agent-connected runtime models
 - Platform management covering clusters, nodes, namespaces, workloads, network, storage, CRDs, and Helm
-- Delivery domain for applications, workflows, releases, registries, and catalog-style master data
-- Observability and AI workbench direction for alerts, events, root-cause analysis, and investigation workflows
+- Delivery workbench for applications, build templates, workflow templates, release bundles, execution tasks, approval policies, registries, and catalog-style master data
+- Monitoring workbench with alerts, events, notification policy, healing policy, and on-call collaboration surfaces
+- Session-first AI workbench for chat, root-cause analysis, performance analysis, inspections, MCP-backed evidence collection, tool or skill assembly, and Agent Runtime provider execution
+- Pluggable AI Agent Runtime with Hermes as the first external provider while kubecrux owns capabilities, tool bindings, skills, budgets, audit, and `AnalysisArtifact` output
+- Virtualization workbench for KubeVirt and Proxmox VE inventory, VM lifecycle, images, flavors, console access, metrics, operations, and sync tasks
+- Docker workbench for Docker hosts, Compose projects, services, port mappings, templates, and token-protected runner operations
 - Access control and system management with permission-aware menus, audit logs, operation logs, and settings
 - Single-project deployment assets for Docker, Docker Compose, raw Kubernetes YAML, and Helm
 
@@ -22,7 +26,7 @@ The repository follows a modular-monolith backend and a route-driven frontend sh
 ### Backend
 
 - `cmd/server`: API entrypoint
-- `cmd/agent`: remote cluster agent entrypoint
+- `cmd/agent`: remote cluster agent and local runner entrypoint
 - `internal/api`: routes, handlers, middleware, request parsing, response shaping
 - `internal/application`: use-case orchestration and platform-facing view models
 - `internal/policy`: RBAC, ABAC, and scope evaluation
@@ -93,9 +97,24 @@ The repository follows a modular-monolith backend and a route-driven frontend sh
 Current product scope centers on:
 
 - Platform management: clusters, nodes, namespaces, workloads, network, storage, CRDs, Helm
-- Application delivery: applications, build templates, workflow templates, releases, registries
-- Observability: monitoring, alerts, notifications, events, AI-assisted workflows
+- Application delivery: applications, application services and containers, build templates, workflow templates, release bundles, execution tasks, execution logs and artifacts, approval policies, releases, registries
+- Observability: monitoring, alerts, notification policy, self-healing policy, on-call routes, schedules, escalations, events
+- AI workbench: session-based investigation, root-cause, performance, trace and inspection-review analysis, MCP data sources, tools, skill registry, analysis profiles, automation policies, and Agent Runtime provider selection
+- Virtualization: KubeVirt and Proxmox VE connections, VMs, images, flavors, console and metrics, operations, and sync
+- Docker workbench: host inventory, quick host provisioning through the virtualization adapter, Compose projects, single-container startup, services, ports, templates, operation records, and agent-runner callbacks
 - Control plane: users, roles, teams, policies, menus, announcements, audit logs, settings
+
+## Current Workbench Surface
+
+- Platform workbench: `/`, `/clusters`, `/workloads/**`, `/network/**`, `/storage/**`, `/extensions/**`, `/helm/**`
+- Delivery workbench: `/applications`, `/application-management`, `/build-templates`, `/delivery/release-bundles`, `/delivery/execution-tasks`, `/delivery/approval-policies`, `/workflow-templates`, `/release-board`, `/registries`
+- Monitoring workbench: `/monitoring-workbench/**`
+- AI workbench: `/ai-workbench`, `/ai-workbench/chat`, `/ai-workbench/root-cause`, `/ai-workbench/performance`, `/ai-workbench/inspection`, `/ai-workbench/tool-settings`, `/ai-workbench/model-settings`
+- Virtualization workbench: `/virtualization/**`
+- Docker workbench: `/docker/**`
+- System, access, and settings: `/system/**`, `/access/**`, `/settings/**`
+
+`/api/v1/modules` reports module status from `configs/config.yaml` under `modules.*.enabled`. Route visibility, backend visible menus, and backend permission checks are separate gates and must stay aligned.
 
 ## Quick Start
 
@@ -169,7 +188,36 @@ make dev-docs
 make build
 make test-api
 make test-web
+make init-cluster-kubevirt
+make init-kubevirt
+make init-cdi
+make deploy-pve-mock
+make init-pve-vm
 ```
+
+## Engineering Rules
+
+- Keep backend transport thin. Handlers parse, bind, and map errors; application services own orchestration, permission checks, scope semantics, audit, operation logs, and view-model shaping.
+- Do not run build, release, Docker, Compose, or VM-control shell commands inside API handlers. Durable work is queued as execution, Docker, or virtualization operations and completed through runner claim, status, callback, cancel, and retry paths.
+- Frontend work belongs in `web`. `old_web` and `web_pro_backup` are reference-only. Use native `antd` and `@ant-design/icons`; do not reintroduce Semi Design or a parallel design system.
+- Route changes must update `web/src/routes/index.tsx`, `web/src/routes/meta.ts`, permission catalog or backend menu seeds when needed, and related tests together.
+- Permission visibility is not authorization. Frontend buttons may hide unavailable actions, but backend services must enforce explicit permission keys.
+- Platform APIs return aggregated kubecrux DTOs, not raw Kubernetes objects, except YAML or explicit passthrough routes. Empty namespace means all namespaces for namespaced resources; cluster-scoped resources ignore namespace filters.
+- Prefer backend aggregation and informer/cache reads over browser namespace fan-out or repeated live cluster queries.
+- AI investigation should use `/ai-workbench` as the canonical session-first surface. Legacy `/ai-observe/**`, `/chat`, and old AI workbench paths should remain compatibility redirects only.
+- AI Agent Runtime must keep pages, automation policy, and business modules bound to kubecrux provider/capability/tool/skill contracts. Hermes is only a provider runner behind claim/callback APIs, and agent output must be converted back to `AnalysisArtifact`.
+- Docker Engine and Compose execution are agent-runner responsibilities. The API persists desired state and operation records, then exposes token-protected claim, runner-status, and callback paths.
+- KubeVirt and PVE lab work requires a real virtualization runtime. Docker Desktop on macOS can validate control-plane paths, but it does not provide a production-like KVM environment.
+
+## Common Pitfalls
+
+- Adding a menu item without a matching permission key, backend seed menu, and route metadata will make navigation inconsistent.
+- Fetching one request per namespace from the browser usually means the backend aggregate endpoint is missing or should be expanded.
+- Treating module visibility as security is incorrect; disabled modules, menu visibility, and permission checks solve different problems.
+- Returning raw Kubernetes objects makes the UI brittle and leaks infrastructure schema into the platform contract.
+- Leaving delivery or Docker business records at `queued` while execution tasks finish creates split-brain status. Callback handlers must backfill related records.
+- Adding AI tools, skills, or external agent providers without budget, timeout, permission, redaction, and callback boundaries can make session analysis unpredictable.
+- Editing generated docs build output or generated frontend artifacts is usually the wrong target; update source files instead.
 
 ## Deployment
 
@@ -206,11 +254,13 @@ Primary project docs live in [docs](./docs/).
 - [Architecture Overview](./docs/architecture/index.md)
 - [Login And Identity Flow](./docs/architecture/login-and-identity.md)
 - [Application Delivery](./docs/architecture/application-delivery.md)
+- [AI Copilot](./docs/architecture/ai-copilot.md)
 - [Authorization](./docs/architecture/authorization.md)
 - [Monitoring and Alerting](./docs/architecture/monitoring-and-alerting.md)
 - [Configuration](./docs/operations/configuration.md)
 - [Deployment](./docs/operations/deployment.md)
 - [Agent Runtime](./docs/operations/agent-runtime.md)
+- [Virtualization Lab Runbook](./docs/operations/virtualization-lab-runbook.md)
 - [MCP](./docs/operations/mcp.md)
 
 ## Contributing

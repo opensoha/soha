@@ -38,6 +38,9 @@ func (s *Service) RunRootCauseAnalysis(ctx context.Context, principal domainiden
 	if err := s.authorizePrincipal(ctx, principal, appaccess.PermObserveAIRootCauseRun); err != nil {
 		return domaincopilot.RootCauseRun{}, err
 	}
+	if s.shouldUseExternalAgent(input.AgentProviderID) {
+		return s.queueRootCauseAgentRun(ctx, principal, principal.UserID, input, "", locale)
+	}
 	return s.executeRootCauseRun(ctx, principal, principal.UserID, input, "", domaincopilot.SessionToolset{}, locale)
 }
 
@@ -110,6 +113,165 @@ func (s *Service) executeRootCauseRun(ctx context.Context, principal domainident
 		run.Title = strings.TrimSpace(input.Title)
 	}
 	return s.repo.CreateRootCauseRun(ctx, run)
+}
+
+type queuedRootCauseAgentRun struct {
+	RootCauseRun domaincopilot.RootCauseRun
+	AgentRun     domaincopilot.AgentRun
+}
+
+func (s *Service) queueRootCauseAgentRun(ctx context.Context, principal domainidentity.Principal, createdBy string, input domaincopilot.RootCauseRunInput, dedupKey string, locale string) (domaincopilot.RootCauseRun, error) {
+	queued, err := s.queueRootCauseAgentRunWithToolset(ctx, principal, createdBy, createdBy, input, dedupKey, domaincopilot.SessionToolset{}, locale)
+	if err != nil {
+		return domaincopilot.RootCauseRun{}, err
+	}
+	return queued.RootCauseRun, nil
+}
+
+func (s *Service) queueRootCauseAgentRunWithToolset(ctx context.Context, principal domainidentity.Principal, rootCauseCreatedBy, agentCreatedBy string, input domaincopilot.RootCauseRunInput, dedupKey string, toolsetOverride domaincopilot.SessionToolset, locale string) (queuedRootCauseAgentRun, error) {
+	input = normalizeRootCauseInput(input)
+	if strings.TrimSpace(input.AlertID) == "" && strings.TrimSpace(input.ClusterID) == "" && strings.TrimSpace(input.WorkloadName) == "" {
+		return queuedRootCauseAgentRun{}, fmt.Errorf("%w: clusterId, alertId, or workloadName is required", aperrors.ErrInvalidArgument)
+	}
+	profile, err := s.resolveRootCauseProfile(ctx, input)
+	if err != nil {
+		return queuedRootCauseAgentRun{}, err
+	}
+	if input.TimeRangeMinutes <= 0 {
+		input.TimeRangeMinutes = profile.DefaultTimeRangeMinutes
+		if input.TimeRangeMinutes <= 0 {
+			input.TimeRangeMinutes = 60
+		}
+	}
+	rootCauseCreatedBy = strings.TrimSpace(rootCauseCreatedBy)
+	if rootCauseCreatedBy == "" {
+		rootCauseCreatedBy = automationRootCauseCreatedBy
+	}
+	agentCreatedBy = strings.TrimSpace(agentCreatedBy)
+	if agentCreatedBy == "" {
+		agentCreatedBy = rootCauseCreatedBy
+	}
+	now := time.Now().UTC()
+	provider := s.resolveAgentProvider(input.AgentProviderID)
+	run := domaincopilot.RootCauseRun{
+		ID:                 "rca:" + uuid.NewString(),
+		Kind:               normalizeAnalysisKind(input.Kind),
+		SessionID:          strings.TrimSpace(input.SessionID),
+		Title:              analysisTitle(input, locale),
+		CreatedBy:          rootCauseCreatedBy,
+		AnalysisProfileID:  profile.ID,
+		TriggerType:        normalizedTriggerType(input.TriggerType),
+		Status:             domaincopilot.AgentRunStatusQueued,
+		Severity:           "info",
+		Summary:            localize(locale, "已提交给 Agent Runtime，等待外部 agent runner 领取并回写根因分析结果。", "Queued for Agent Runtime. Waiting for an external agent runner to write back the root-cause result."),
+		ClusterID:          input.ClusterID,
+		Namespace:          input.Namespace,
+		WorkloadKind:       input.WorkloadKind,
+		WorkloadName:       input.WorkloadName,
+		AlertID:            input.AlertID,
+		TimeRangeMinutes:   input.TimeRangeMinutes,
+		Question:           input.Question,
+		Recommendations:    []string{localize(locale, "等待外部 agent 回写后再执行处置动作。", "Wait for the external agent callback before taking remediation action.")},
+		DataSourceSnapshot: map[string]any{"providerId": provider.ID, "providerKind": provider.Kind, "capabilityId": "root_cause", "status": domaincopilot.AgentRunStatusQueued},
+		DedupKey:           strings.TrimSpace(dedupKey),
+		CreatedAt:          now,
+		UpdatedAt:          now,
+	}
+	if strings.TrimSpace(input.Title) != "" {
+		run.Title = strings.TrimSpace(input.Title)
+	}
+	created, err := s.repo.CreateRootCauseRun(ctx, run)
+	if err != nil {
+		return queuedRootCauseAgentRun{}, err
+	}
+	toolset := mergeRootCauseAgentToolset(rootCauseAgentToolset(profile, input), toolsetOverride)
+	agentRun, err := s.createAgentRun(ctx, domaincopilot.AgentRunInput{
+		ProviderID:     input.AgentProviderID,
+		CapabilityID:   created.Kind,
+		SkillIDs:       automationAgentSkillIDs(created.Kind, toolset.EnabledSkillIDs),
+		SessionID:      created.SessionID,
+		RootCauseRunID: created.ID,
+		CreatedBy:      agentCreatedBy,
+		Scope: domaincopilot.SessionScope{
+			ClusterID:        created.ClusterID,
+			Namespace:        created.Namespace,
+			Workload:         created.WorkloadName,
+			AlertID:          created.AlertID,
+			TimeRangeMinutes: created.TimeRangeMinutes,
+		},
+		Toolset: toolset,
+		Input: map[string]any{
+			"question":          created.Question,
+			"mode":              created.Kind,
+			"analysisProfileId": profile.ID,
+			"analysisProfile":   profile.Name,
+			"triggerType":       created.TriggerType,
+			"locale":            normalizeLocale(locale),
+			"rootCauseRunId":    created.ID,
+			"rootCauseRunOwner": rootCauseCreatedBy,
+			"sessionOwnerId":    agentCreatedBy,
+			"dedupKey":          created.DedupKey,
+			"capabilityId":      created.Kind,
+		},
+		TimeoutSeconds: firstPositive(profile.TimeoutSeconds, 600),
+	})
+	if err != nil {
+		created.Status = domaincopilot.AgentRunStatusFailed
+		created.Summary = err.Error()
+		created.UpdatedAt = time.Now().UTC()
+		_, _ = s.repo.UpdateRootCauseRun(ctx, created)
+		return queuedRootCauseAgentRun{}, err
+	}
+	created.DataSourceSnapshot = mergeAgentRunCallbackPayload(created.DataSourceSnapshot, map[string]any{
+		"agentRunId":     agentRun.ID,
+		"agentRuntimeId": agentRun.ID,
+		"status":         agentRun.Status,
+		"skillIds":       agentRun.SkillIDs,
+		"toolset":        agentRun.Toolset,
+	})
+	created.UpdatedAt = time.Now().UTC()
+	updated, err := s.repo.UpdateRootCauseRun(ctx, created)
+	if err != nil {
+		return queuedRootCauseAgentRun{RootCauseRun: created, AgentRun: agentRun}, nil
+	}
+	return queuedRootCauseAgentRun{RootCauseRun: updated, AgentRun: agentRun}, nil
+}
+
+func rootCauseAgentToolset(profile domaincopilot.AnalysisProfile, input domaincopilot.RootCauseRunInput) domaincopilot.SessionToolset {
+	return domaincopilot.SessionToolset{
+		EnabledAdapterIDs: profile.EnabledSources,
+		EnabledSkillIDs:   profile.EnabledPlaybooks,
+		BudgetOverrides: map[string]any{
+			"timeoutSeconds":   profile.TimeoutSeconds,
+			"maxEvidenceItems": intCondition(profile.QueryBudgets["maxEvidenceItems"]),
+		},
+		ScopeOverrides: map[string]any{
+			"clusterId":        input.ClusterID,
+			"namespace":        input.Namespace,
+			"workload":         input.WorkloadName,
+			"alertId":          input.AlertID,
+			"timeRangeMinutes": input.TimeRangeMinutes,
+		},
+	}
+}
+
+func mergeRootCauseAgentToolset(base, override domaincopilot.SessionToolset) domaincopilot.SessionToolset {
+	if len(override.EnabledAdapterIDs) > 0 {
+		base.EnabledAdapterIDs = normalizeStringList(override.EnabledAdapterIDs)
+	}
+	if len(override.EnabledSkillIDs) > 0 {
+		base.EnabledSkillIDs = normalizeStringList(override.EnabledSkillIDs)
+	}
+	if len(override.DisabledToolNames) > 0 {
+		base.DisabledToolNames = normalizeStringList(append(base.DisabledToolNames, override.DisabledToolNames...))
+	}
+	if len(override.BudgetOverrides) > 0 {
+		base.BudgetOverrides = mergeAgentRunCallbackPayload(base.BudgetOverrides, override.BudgetOverrides)
+	}
+	if len(override.ScopeOverrides) > 0 {
+		base.ScopeOverrides = mergeAgentRunCallbackPayload(base.ScopeOverrides, override.ScopeOverrides)
+	}
+	return base
 }
 
 func (s *Service) resolveRootCauseProfile(ctx context.Context, input domaincopilot.RootCauseRunInput) (domaincopilot.AnalysisProfile, error) {
@@ -411,7 +573,7 @@ func normalizeRootCauseInput(input domaincopilot.RootCauseRunInput) domaincopilo
 
 func normalizeAnalysisKind(kind string) string {
 	switch strings.TrimSpace(kind) {
-	case "performance", "trace":
+	case "performance", "trace", "inspection_review":
 		return strings.TrimSpace(kind)
 	default:
 		return "root_cause"
