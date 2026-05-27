@@ -379,6 +379,48 @@ func (s *Service) Trigger(ctx context.Context, principal domainidentity.Principa
 	return s.repo.Create(ctx, item)
 }
 
+func (s *Service) TriggerValidation(ctx context.Context, principal domainidentity.Principal, input domainworkflow.Input) (domainworkflow.Run, error) {
+	if err := s.authorizePermission(ctx, principal, appaccess.PermDeliveryWorkflowsTrigger); err != nil {
+		return domainworkflow.Run{}, err
+	}
+	if strings.TrimSpace(input.ApplicationID) == "" {
+		return domainworkflow.Run{}, fmt.Errorf("%w: applicationId is required", apperrors.ErrInvalidArgument)
+	}
+	input.ValidationOnly = true
+	input.TriggerBuild = false
+	input.TriggerRelease = false
+	app, err := s.apps.Get(ctx, input.ApplicationID)
+	if err != nil {
+		if isApplicationMissing(err) {
+			return domainworkflow.Run{}, fmt.Errorf("%w: %v", apperrors.ErrNotFound, err)
+		}
+		return domainworkflow.Run{}, err
+	}
+	if err := s.authorize(ctx, principal, domainaccess.ActionTrigger, app, input.ApplicationID); err != nil {
+		return domainworkflow.Run{}, err
+	}
+	run, binding, definition, err := s.prepareValidationDAGRun(ctx, app, input)
+	if err != nil {
+		return domainworkflow.Run{}, err
+	}
+	created, err := s.repo.Create(ctx, run)
+	if err != nil {
+		return domainworkflow.Run{}, err
+	}
+	if err := s.enqueueDAGRun(ctx, dagRunTask{
+		principal:   principal,
+		app:         app,
+		input:       input,
+		binding:     *binding,
+		definition:  definition,
+		run:         created,
+		requestMeta: requestctx.FromContext(ctx),
+	}); err != nil {
+		return s.failRun(context.Background(), created, definition, fmt.Sprintf("workflow runner enqueue failed: %v", err)), nil
+	}
+	return created, nil
+}
+
 func (s *Service) ExecuteSystemDAG(ctx context.Context, principal domainidentity.Principal, applicationID, workflowName, workflowTemplateID string, definition map[string]any, input domainworkflow.Input, extraMetadata map[string]any) (domainworkflow.Run, error) {
 	parsed, ok := parseDAGWorkflowDefinition(definition)
 	if !ok {
@@ -661,6 +703,68 @@ func (s *Service) prepareBoundDAGRun(ctx context.Context, app domainapp.App, inp
 	return run, binding, definition, true, nil
 }
 
+func (s *Service) prepareValidationDAGRun(ctx context.Context, app domainapp.App, input domainworkflow.Input) (domainworkflow.Run, *domaincatalog.ApplicationEnvironment, dagWorkflowDefinition, error) {
+	binding, err := s.findApplicationEnvironmentBinding(ctx, input)
+	if err != nil {
+		return domainworkflow.Run{}, nil, dagWorkflowDefinition{}, err
+	}
+	if binding == nil {
+		return domainworkflow.Run{}, nil, dagWorkflowDefinition{}, fmt.Errorf("%w: application environment binding is missing", apperrors.ErrInvalidArgument)
+	}
+	if binding.WorkflowTemplate == nil || len(binding.WorkflowTemplate.Definition) == 0 {
+		return domainworkflow.Run{}, nil, dagWorkflowDefinition{}, fmt.Errorf("%w: workflow template is required", apperrors.ErrInvalidArgument)
+	}
+	sourceDefinition, ok := parseDAGWorkflowDefinition(binding.WorkflowTemplate.Definition)
+	if !ok {
+		return domainworkflow.Run{}, nil, dagWorkflowDefinition{}, fmt.Errorf("%w: workflow definition is not a supported DAG", apperrors.ErrInvalidArgument)
+	}
+	definition := validationOnlyDAGDefinition(sourceDefinition)
+	if len(definition.Nodes) == 0 {
+		return domainworkflow.Run{}, nil, dagWorkflowDefinition{}, fmt.Errorf("%w: workflow template has no validation nodes", apperrors.ErrInvalidArgument)
+	}
+	nodeRuns := initializeNodeRuns(definition)
+	now := time.Now().UTC().Format(time.RFC3339)
+	workflowName := strings.TrimSpace(input.WorkflowName)
+	if workflowName == "" {
+		workflowName = firstNonEmpty(strings.TrimSpace(binding.WorkflowTemplate.Key), strings.TrimSpace(binding.WorkflowTemplate.Name), "validation")
+	}
+	if !strings.Contains(strings.ToLower(workflowName), "validation") {
+		workflowName = workflowName + "-validation"
+	}
+
+	run := domainworkflow.Run{
+		ID:             "workflow:" + uuid.NewString(),
+		ApplicationID:  input.ApplicationID,
+		WorkflowName:   workflowName,
+		ClusterID:      strings.TrimSpace(input.ClusterID),
+		Namespace:      strings.TrimSpace(input.Namespace),
+		DeploymentName: strings.TrimSpace(input.DeploymentName),
+		Status:         "queued",
+		Steps:          buildStepsFromNodeRuns(definition, nodeRuns),
+		NodeRuns:       mapNodeRunsToSlice(definition, nodeRuns),
+		Metadata: map[string]any{
+			"applicationName":      app.Name,
+			"triggerBuild":         false,
+			"triggerRelease":       false,
+			"mode":                 "release_dag",
+			"runMode":              "validation",
+			"schemaVersion":        definition.SchemaVersion,
+			"workflowTemplateId":   binding.WorkflowTemplateID,
+			"workflowTemplateKey":  binding.WorkflowTemplate.Key,
+			"workflowTemplateName": binding.WorkflowTemplate.Name,
+			"bindingId":            binding.ID,
+			"nodes":                definition.Nodes,
+			"edges":                definition.Edges,
+			"sourceNodeCount":      len(sourceDefinition.Nodes),
+			"sourceEdgeCount":      len(sourceDefinition.Edges),
+		},
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	run.Metadata = withNodeRunsMetadata(run.Metadata, definition, nodeRuns)
+	return run, binding, definition, nil
+}
+
 func (s *Service) runDAGAsync(ctx context.Context, principal domainidentity.Principal, app domainapp.App, input domainworkflow.Input, binding domaincatalog.ApplicationEnvironment, definition dagWorkflowDefinition, run domainworkflow.Run) {
 	startedAt := time.Now()
 	if s.metrics != nil {
@@ -834,6 +938,15 @@ func (s *Service) findApplicationEnvironmentBinding(ctx context.Context, input d
 	if err != nil {
 		return nil, err
 	}
+	if bindingID := strings.TrimSpace(input.ApplicationEnvironmentID); bindingID != "" {
+		for _, item := range items {
+			if item.ID == bindingID && item.ApplicationID == input.ApplicationID {
+				copyItem := item
+				return &copyItem, nil
+			}
+		}
+		return nil, fmt.Errorf("%w: application environment binding not found", apperrors.ErrInvalidArgument)
+	}
 	for _, item := range items {
 		if item.ApplicationID != input.ApplicationID {
 			continue
@@ -889,6 +1002,43 @@ func parseDAGWorkflowDefinition(definition map[string]any) (dagWorkflowDefinitio
 		Nodes:         nodes,
 		Edges:         edges,
 	}, true
+}
+
+func validationOnlyDAGDefinition(definition dagWorkflowDefinition) dagWorkflowDefinition {
+	allowed := make(map[string]struct{})
+	nodes := make([]dagWorkflowNode, 0)
+	for _, node := range definition.Nodes {
+		if !isValidationDAGNode(node.Type) {
+			continue
+		}
+		nodes = append(nodes, node)
+		allowed[node.ID] = struct{}{}
+	}
+	edges := make([]dagWorkflowEdge, 0)
+	for _, edge := range definition.Edges {
+		if _, ok := allowed[edge.Source]; !ok {
+			continue
+		}
+		if _, ok := allowed[edge.Target]; !ok {
+			continue
+		}
+		edges = append(edges, edge)
+	}
+	return dagWorkflowDefinition{
+		SchemaVersion: definition.SchemaVersion,
+		Mode:          definition.Mode,
+		Nodes:         nodes,
+		Edges:         edges,
+	}
+}
+
+func isValidationDAGNode(nodeType string) bool {
+	switch strings.TrimSpace(nodeType) {
+	case "check_http", "check_k8s_event", "smoke_test", "verify", "check":
+		return true
+	default:
+		return false
+	}
 }
 
 func (s *Service) executeDAGWorkflow(
@@ -1287,26 +1437,31 @@ func (s *Service) executeDAGNode(
 		status = workflowStatusWaitingApproval
 		summary = "waiting for approval"
 	case "deploy_update_image", "release":
+		if input.ValidationOnly {
+			status = "skipped"
+			summary = "release node skipped in validation mode"
+			break
+		}
 		if s.releases == nil {
 			status = "failed"
 			summary = "release executor is not configured"
 			break
 		}
 		target := matchBindingTarget(binding, input)
-		containerName := strings.TrimSpace(fmt.Sprint(node.Config["containerName"]))
+		containerName := configString(node.Config, "containerName")
 		if containerName == "" && target != nil {
 			containerName = target.ContainerName
 		}
 		actionKind := strings.TrimSpace(binding.ReleasePolicy.ActionKind)
 		if actionKind == "" {
-			actionKind = strings.TrimSpace(fmt.Sprint(node.Config["actionKind"]))
+			actionKind = configString(node.Config, "actionKind")
 		}
 		if actionKind == "" {
 			actionKind = "deploy"
 		}
 		resolvedImage := strings.TrimSpace(fmt.Sprint(artifactState["image"]))
-		imageTag := strings.TrimSpace(fmt.Sprint(node.Config["imageTag"]))
-		imageTagSource := strings.TrimSpace(fmt.Sprint(node.Config["imageTagSource"]))
+		imageTag := configString(node.Config, "imageTag")
+		imageTagSource := configString(node.Config, "imageTagSource")
 		if imageTagSource == "build_artifact" && resolvedImage == "" {
 			status = "failed"
 			summary = "build artifact image is not available"
@@ -1318,9 +1473,10 @@ func (s *Service) executeDAGNode(
 			ClusterID:                input.ClusterID,
 			Namespace:                input.Namespace,
 			DeploymentName:           input.DeploymentName,
-			ContainerName:            containerName,
+			ContainerName:            firstNonEmpty(input.ContainerName, containerName),
 			Image:                    resolvedImage,
-			ImageTag:                 imageTag,
+			ImageTag:                 firstNonEmpty(input.ImageTag, imageTag),
+			ReleaseName:              input.ReleaseName,
 			ActionKind:               actionKind,
 			WorkflowRunID:            run.ID,
 		})
@@ -1331,31 +1487,27 @@ func (s *Service) executeDAGNode(
 		}
 		summary = fmt.Sprintf("release %s finished with status %s", record.ID, record.Status)
 	case "build":
+		if input.ValidationOnly {
+			status = "skipped"
+			summary = "build node skipped in validation mode"
+			break
+		}
 		if s.builds == nil {
 			status = "failed"
 			summary = "build executor is not configured"
 			break
 		}
-		refType := strings.TrimSpace(binding.BuildPolicy.RefType)
-		if refType == "" {
-			refType = "branch"
-		}
-		refName := strings.TrimSpace(binding.BuildPolicy.RefValue)
-		if refName == "" {
-			refName = app.DefaultBranch
-		}
-		if refName == "" {
-			refName = "main"
-		}
+		refType := firstNonEmpty(input.RefType, binding.BuildPolicy.RefType, "branch")
+		refName := firstNonEmpty(input.RefName, binding.BuildPolicy.RefValue, app.DefaultBranch, "main")
 		record, err := s.builds.Execute(ctx, principal, domainbuild.TriggerInput{
 			ApplicationID:            app.ID,
 			ApplicationEnvironmentID: binding.ID,
-			BuildSourceID:            binding.BuildPolicy.SourceID,
+			BuildSourceID:            firstNonEmpty(input.BuildSourceID, binding.BuildPolicy.SourceID),
 			RefType:                  refType,
 			RefName:                  refName,
-			ImageTag:                 app.DefaultTag,
-			BuildArgs:                binding.BuildPolicy.BuildArgs,
-			Variables:                binding.BuildPolicy.Variables,
+			ImageTag:                 firstNonEmpty(input.ImageTag, app.DefaultTag),
+			BuildArgs:                mergeDAGMaps(binding.BuildPolicy.BuildArgs, input.BuildArgs),
+			Variables:                mergeDAGMaps(binding.BuildPolicy.Variables, input.Variables),
 			TriggeredByWorkflowRunID: run.ID,
 		})
 		if err != nil {
@@ -1390,9 +1542,9 @@ func (s *Service) executeDAGNode(
 		}
 		summary = waitSummary
 	case "check_http", "smoke_test", "verify", "check":
-		checkURL := strings.TrimSpace(fmt.Sprint(node.Config["url"]))
+		checkURL := configString(node.Config, "url")
 		if checkURL == "" {
-			checkURL = strings.TrimSpace(fmt.Sprint(node.Config["endpoint"]))
+			checkURL = configString(node.Config, "endpoint")
 		}
 		if checkURL == "" {
 			status = "skipped"
@@ -1701,6 +1853,9 @@ func matchBindingTarget(binding domaincatalog.ApplicationEnvironment, input doma
 		if !target.Enabled {
 			continue
 		}
+		if bindingID := strings.TrimSpace(input.ApplicationEnvironmentID); bindingID != "" && binding.ID != bindingID {
+			continue
+		}
 		if target.ClusterID == strings.TrimSpace(input.ClusterID) &&
 			target.Namespace == strings.TrimSpace(input.Namespace) &&
 			target.WorkloadName == strings.TrimSpace(input.DeploymentName) {
@@ -1765,6 +1920,17 @@ func toConfigMap(value any) map[string]any {
 	return map[string]any{}
 }
 
+func configString(config map[string]any, key string) string {
+	if len(config) == 0 {
+		return ""
+	}
+	value, ok := config[key]
+	if !ok || value == nil {
+		return ""
+	}
+	return strings.TrimSpace(fmt.Sprint(value))
+}
+
 func firstNonEmpty(values ...string) string {
 	for _, value := range values {
 		if strings.TrimSpace(value) != "" {
@@ -1772,6 +1938,20 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func mergeDAGMaps(base, override map[string]any) map[string]any {
+	if len(base) == 0 && len(override) == 0 {
+		return nil
+	}
+	result := make(map[string]any, len(base)+len(override))
+	for key, value := range base {
+		result[key] = value
+	}
+	for key, value := range override {
+		result[key] = value
+	}
+	return result
 }
 
 func toInt(value any, fallback int) int {

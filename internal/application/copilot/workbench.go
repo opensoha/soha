@@ -23,6 +23,14 @@ func normalizeSessionMode(mode string) string {
 	}
 }
 
+func normalizeAgentProviderID(providerID string) string {
+	providerID = strings.TrimSpace(providerID)
+	if providerID == "" {
+		return "internal"
+	}
+	return providerID
+}
+
 func normalizeStringList(items []string) []string {
 	out := make([]string, 0, len(items))
 	seen := map[string]struct{}{}
@@ -44,6 +52,7 @@ func sessionMetadataMap(metadata domaincopilot.SessionMetadata) map[string]any {
 	return map[string]any{
 		"mode":            metadata.Mode,
 		"status":          metadata.Status,
+		"agentProviderId": metadata.AgentProviderID,
 		"scope":           metadata.Scope,
 		"pinnedContext":   metadata.PinnedContext,
 		"toolset":         metadata.Toolset,
@@ -62,6 +71,7 @@ func parseSessionMetadata(input map[string]any) domaincopilot.SessionMetadata {
 	}
 	metadata.Mode = stringValue(input["mode"])
 	metadata.Status = stringValue(input["status"])
+	metadata.AgentProviderID = stringValue(input["agentProviderId"])
 	metadata.Summary = stringValue(input["summary"])
 	metadata.ArchivedAt = stringValue(input["archivedAt"])
 	metadata.Source = stringValue(input["source"])
@@ -72,32 +82,71 @@ func parseSessionMetadata(input map[string]any) domaincopilot.SessionMetadata {
 		}
 		metadata.Tags = normalizeStringList(values)
 	}
-	if scope, ok := input["scope"].(map[string]any); ok {
-		metadata.Scope = scopeFromMap(scope)
-	}
+	metadata.Scope = scopeFromValue(input["scope"])
 	if pinnedContext, ok := input["pinnedContext"].(map[string]any); ok {
 		metadata.PinnedContext = pinnedContext
 	}
-	if toolset, ok := input["toolset"].(map[string]any); ok {
-		metadata.Toolset = toolsetFromMap(toolset)
+	metadata.Toolset = toolsetFromValue(input["toolset"])
+	metadata.AnalysisRunRefs = analysisRunRefsFromValue(input["analysisRunRefs"])
+	return metadata
+}
+
+func scopeFromValue(value any) domaincopilot.SessionScope {
+	switch current := value.(type) {
+	case domaincopilot.SessionScope:
+		return current
+	case map[string]any:
+		return scopeFromMap(current)
+	default:
+		var scope domaincopilot.SessionScope
+		if decodeStructuredValue(value, &scope) {
+			return scope
+		}
+		return domaincopilot.SessionScope{}
 	}
-	if refs, ok := input["analysisRunRefs"].([]any); ok {
-		items := make([]domaincopilot.AnalysisRunRef, 0, len(refs))
-		for _, item := range refs {
-			current, ok := item.(map[string]any)
+}
+
+func toolsetFromValue(value any) domaincopilot.SessionToolset {
+	switch current := value.(type) {
+	case domaincopilot.SessionToolset:
+		return current
+	case map[string]any:
+		return toolsetFromMap(current)
+	default:
+		var toolset domaincopilot.SessionToolset
+		if decodeStructuredValue(value, &toolset) {
+			return toolset
+		}
+		return domaincopilot.SessionToolset{}
+	}
+}
+
+func analysisRunRefsFromValue(value any) []domaincopilot.AnalysisRunRef {
+	switch current := value.(type) {
+	case []domaincopilot.AnalysisRunRef:
+		return current
+	case []any:
+		items := make([]domaincopilot.AnalysisRunRef, 0, len(current))
+		for _, item := range current {
+			payload, ok := item.(map[string]any)
 			if !ok {
 				continue
 			}
 			items = append(items, domaincopilot.AnalysisRunRef{
-				ID:        stringValue(current["id"]),
-				Kind:      stringValue(current["kind"]),
-				Status:    stringValue(current["status"]),
-				CreatedAt: stringValue(current["createdAt"]),
+				ID:        stringValue(payload["id"]),
+				Kind:      stringValue(payload["kind"]),
+				Status:    stringValue(payload["status"]),
+				CreatedAt: stringValue(payload["createdAt"]),
 			})
 		}
-		metadata.AnalysisRunRefs = items
+		return items
+	default:
+		var decoded []domaincopilot.AnalysisRunRef
+		if decodeStructuredValue(value, &decoded) {
+			return decoded
+		}
+		return nil
 	}
-	return metadata
 }
 
 func scopeFromMap(scope map[string]any) domaincopilot.SessionScope {
@@ -613,6 +662,142 @@ func (s *Service) runSessionTrace(ctx context.Context, sessionID string, scope d
 		}, nil
 	}
 	return nil, domaincopilot.AnalysisArtifact{}, fmt.Errorf("no enabled traces.v1 data source found")
+}
+
+func (s *Service) runSessionInspectionReview(sessionID string, scope domaincopilot.SessionScope, toolset domaincopilot.SessionToolset, prompt, locale string) ([]domaincopilot.ToolExecution, domaincopilot.AnalysisArtifact) {
+	now := time.Now().UTC()
+	runID := "inspection-review:" + uuid.NewString()
+	tool := domaincopilot.ToolExecution{
+		ID:        "tool:" + uuid.NewString(),
+		AdapterID: "platform-native.v1",
+		ToolName:  "inspection.review",
+		Status:    "completed",
+		Summary: localize(locale,
+			"基于当前会话 scope、已启用工具集和用户目标生成巡检复盘工件。",
+			"Generated an inspection review artifact from the current session scope, enabled toolset, and user objective.",
+		),
+		Input: map[string]any{
+			"sessionId": sessionID,
+			"scope":     scope,
+			"question":  prompt,
+		},
+		Output: map[string]any{
+			"enabledAdapterIds": toolset.EnabledAdapterIDs,
+			"enabledSkillIds":   toolset.EnabledSkillIDs,
+			"budgetOverrides":   toolset.BudgetOverrides,
+		},
+		StartedAt:   now,
+		CompletedAt: &now,
+	}
+	evidence := []domaincopilot.RootCauseEvidence{{
+		ID:         "session-scope",
+		Kind:       "inspection.session_context",
+		Title:      localize(locale, "会话复盘上下文", "Session review context"),
+		Summary:    inspectionReviewScopeSummary(scope, prompt, locale),
+		Severity:   "info",
+		ClusterID:  scope.ClusterID,
+		Namespace:  scope.Namespace,
+		Timestamp:  &now,
+		Attributes: map[string]any{"scope": scope, "question": prompt, "toolset": toolset, "source": "ai-workbench", "sourceRefs": []string{"ai-session:" + sessionID}},
+	}}
+	recommendations := []string{
+		localize(locale, "检查巡检发现是否已经关联到告警、事件或发布窗口。", "Check whether inspection findings are already linked to alerts, events, or release windows."),
+		localize(locale, "优先验证 high/critical 风险项，并将整改动作沉淀到自动化策略。", "Validate high and critical risks first, then encode remediation actions into automation policies."),
+	}
+	artifact := domaincopilot.AnalysisArtifact{
+		Kind:            "inspection_review",
+		RunID:           runID,
+		Title:           localize(locale, "巡检复盘", "Inspection Review"),
+		Summary:         inspectionReviewScopeSummary(scope, prompt, locale),
+		Scope:           scope,
+		Evidence:        evidence,
+		Recommendations: recommendations,
+		ToolExecutions:  []domaincopilot.ToolExecution{tool},
+		Graph:           buildSessionInspectionReviewGraph(scope, runID, evidence),
+		DataSourceSnapshot: map[string]any{
+			"sessionId":          sessionID,
+			"providerId":         agentProviderInternal,
+			"capabilityId":       "inspection_review",
+			"enabledAdapterIds":  toolset.EnabledAdapterIDs,
+			"enabledSkillIds":    toolset.EnabledSkillIDs,
+			"disabledToolNames":  toolset.DisabledToolNames,
+			"scopeOverrides":     toolset.ScopeOverrides,
+			"generatedAt":        now.Format(time.RFC3339),
+			"analysisRuntime":    "in_process",
+			"artifactContract":   "kubecrux.analysisArtifact.v1",
+			"redactionBoundary":  "kubecrux-controlled",
+			"operationBoundary":  "read_only_review",
+			"agentRuntimeMode":   "internal",
+			"agentRuntimeRunRef": runID,
+		},
+	}
+	return []domaincopilot.ToolExecution{tool}, artifact
+}
+
+func inspectionReviewScopeSummary(scope domaincopilot.SessionScope, prompt, locale string) string {
+	target := graphRootTitle(scope)
+	if strings.TrimSpace(prompt) != "" {
+		return localize(locale,
+			fmt.Sprintf("围绕 %s 生成巡检复盘：%s", target, strings.TrimSpace(prompt)),
+			fmt.Sprintf("Inspection review for %s: %s", target, strings.TrimSpace(prompt)),
+		)
+	}
+	return localize(locale,
+		fmt.Sprintf("围绕 %s 生成巡检复盘。", target),
+		fmt.Sprintf("Inspection review generated for %s.", target),
+	)
+}
+
+func buildSessionInspectionReviewGraph(scope domaincopilot.SessionScope, runID string, evidence []domaincopilot.RootCauseEvidence) *domaincopilot.AnalysisGraph {
+	rootID := graphRootNodeID(scope)
+	runNodeID := "inspection-run:" + runID
+	nodes := []domaincopilot.AnalysisGraphNode{
+		{
+			ID:         rootID,
+			Kind:       "scope",
+			Title:      graphRootTitle(scope),
+			Subtitle:   graphRootSubtitle(scope),
+			SourceRefs: []string{"ai-workbench"},
+			Attributes: map[string]any{"clusterId": scope.ClusterID, "namespace": scope.Namespace, "workload": scope.Workload, "alertId": scope.AlertID},
+		},
+		{
+			ID:         runNodeID,
+			Kind:       "inspection_review",
+			Title:      "Inspection Review",
+			Severity:   "info",
+			SourceRefs: []string{"agent-runtime:internal"},
+			Attributes: map[string]any{"runId": runID},
+		},
+	}
+	edges := []domaincopilot.AnalysisGraphEdge{{
+		ID:       rootID + "->" + runNodeID,
+		Source:   rootID,
+		Target:   runNodeID,
+		Relation: "reviews",
+		Severity: "info",
+	}}
+	for _, item := range evidence {
+		nodeID := "inspection-evidence:" + item.ID
+		nodes = appendGraphNode(nodes, domaincopilot.AnalysisGraphNode{
+			ID:          nodeID,
+			Kind:        item.Kind,
+			Title:       item.Title,
+			Subtitle:    item.Summary,
+			Severity:    item.Severity,
+			EvidenceIDs: []string{item.ID},
+			SourceRefs:  []string{"ai-workbench"},
+			Attributes:  item.Attributes,
+		})
+		edges = appendGraphEdge(edges, domaincopilot.AnalysisGraphEdge{
+			ID:          runNodeID + "->" + nodeID,
+			Source:      runNodeID,
+			Target:      nodeID,
+			Relation:    "uses",
+			Severity:    item.Severity,
+			EvidenceIDs: []string{item.ID},
+		})
+	}
+	return &domaincopilot.AnalysisGraph{Layout: "LR", FocusNodeID: runNodeID, Nodes: nodes, Edges: edges}
 }
 
 func buildRootCauseGraph(scope domaincopilot.SessionScope, evidence []domaincopilot.RootCauseEvidence, hypotheses []domaincopilot.RootCauseHypothesis, snapshot map[string]any) *domaincopilot.AnalysisGraph {

@@ -338,7 +338,7 @@ func (r *Repository) UpdateAnalysisProfile(ctx context.Context, profileID string
 
 func (r *Repository) ListAutomationPolicies(ctx context.Context) ([]domaincopilot.AutomationPolicy, error) {
 	rows, err := r.db.WithContext(ctx).Raw(`
-		SELECT id, name, enabled, trigger_type, analysis_kinds, trigger_conditions, dedup_window_seconds, analysis_profile_id, remediation_policy, approval_policy, cooldown_seconds, created_at, updated_at
+		SELECT id, name, enabled, trigger_type, analysis_kinds, agent_provider_id, trigger_conditions, dedup_window_seconds, analysis_profile_id, remediation_policy, approval_policy, cooldown_seconds, created_at, updated_at
 		FROM ai_automation_policies
 		ORDER BY updated_at DESC, created_at DESC
 	`).Rows()
@@ -371,9 +371,9 @@ func (r *Repository) CreateAutomationPolicy(ctx context.Context, item domaincopi
 		return domaincopilot.AutomationPolicy{}, fmt.Errorf("marshal approval policy: %w", err)
 	}
 	if err := r.db.WithContext(ctx).Exec(`
-		INSERT INTO ai_automation_policies (id, name, enabled, trigger_type, analysis_kinds, trigger_conditions, dedup_window_seconds, analysis_profile_id, remediation_policy, approval_policy, cooldown_seconds, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, item.ID, item.Name, item.Enabled, item.TriggerType, string(analysisKinds), string(triggerConditions), item.DedupWindowSeconds, item.AnalysisProfileID, item.RemediationPolicy, string(approvalPolicy), item.CooldownSeconds, item.CreatedAt, item.UpdatedAt).Error; err != nil {
+		INSERT INTO ai_automation_policies (id, name, enabled, trigger_type, analysis_kinds, agent_provider_id, trigger_conditions, dedup_window_seconds, analysis_profile_id, remediation_policy, approval_policy, cooldown_seconds, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, item.ID, item.Name, item.Enabled, item.TriggerType, string(analysisKinds), item.AgentProviderID, string(triggerConditions), item.DedupWindowSeconds, item.AnalysisProfileID, item.RemediationPolicy, string(approvalPolicy), item.CooldownSeconds, item.CreatedAt, item.UpdatedAt).Error; err != nil {
 		return domaincopilot.AutomationPolicy{}, fmt.Errorf("create automation policy: %w", err)
 	}
 	return item, nil
@@ -394,9 +394,9 @@ func (r *Repository) UpdateAutomationPolicy(ctx context.Context, policyID string
 	}
 	result := r.db.WithContext(ctx).Exec(`
 		UPDATE ai_automation_policies
-		SET name = ?, enabled = ?, trigger_type = ?, analysis_kinds = ?, trigger_conditions = ?, dedup_window_seconds = ?, analysis_profile_id = ?, remediation_policy = ?, approval_policy = ?, cooldown_seconds = ?, updated_at = ?
+		SET name = ?, enabled = ?, trigger_type = ?, analysis_kinds = ?, agent_provider_id = ?, trigger_conditions = ?, dedup_window_seconds = ?, analysis_profile_id = ?, remediation_policy = ?, approval_policy = ?, cooldown_seconds = ?, updated_at = ?
 		WHERE id = ?
-	`, input.Name, input.Enabled, input.TriggerType, string(analysisKinds), string(triggerConditions), input.DedupWindowSeconds, input.AnalysisProfileID, input.RemediationPolicy, string(approvalPolicy), input.CooldownSeconds, time.Now().UTC(), policyID)
+	`, input.Name, input.Enabled, input.TriggerType, string(analysisKinds), input.AgentProviderID, string(triggerConditions), input.DedupWindowSeconds, input.AnalysisProfileID, input.RemediationPolicy, string(approvalPolicy), input.CooldownSeconds, time.Now().UTC(), policyID)
 	if result.Error != nil {
 		return domaincopilot.AutomationPolicy{}, fmt.Errorf("update automation policy: %w", result.Error)
 	}
@@ -547,6 +547,321 @@ func (r *Repository) CreateRootCauseRun(ctx context.Context, run domaincopilot.R
 		return domaincopilot.RootCauseRun{}, fmt.Errorf("create root cause run: %w", err)
 	}
 	return run, nil
+}
+
+func (r *Repository) UpdateRootCauseRun(ctx context.Context, run domaincopilot.RootCauseRun) (domaincopilot.RootCauseRun, error) {
+	evidence, err := json.Marshal(run.Evidence)
+	if err != nil {
+		return domaincopilot.RootCauseRun{}, fmt.Errorf("marshal root cause evidence: %w", err)
+	}
+	hypotheses, err := json.Marshal(run.Hypotheses)
+	if err != nil {
+		return domaincopilot.RootCauseRun{}, fmt.Errorf("marshal root cause hypotheses: %w", err)
+	}
+	recommendations, err := json.Marshal(run.Recommendations)
+	if err != nil {
+		return domaincopilot.RootCauseRun{}, fmt.Errorf("marshal root cause recommendations: %w", err)
+	}
+	toolExecutions, err := json.Marshal(run.ToolExecutions)
+	if err != nil {
+		return domaincopilot.RootCauseRun{}, fmt.Errorf("marshal root cause tool executions: %w", err)
+	}
+	dataSourceSnapshot, err := json.Marshal(run.DataSourceSnapshot)
+	if err != nil {
+		return domaincopilot.RootCauseRun{}, fmt.Errorf("marshal root cause data source snapshot: %w", err)
+	}
+	playbookResults, err := json.Marshal(run.PlaybookResults)
+	if err != nil {
+		return domaincopilot.RootCauseRun{}, fmt.Errorf("marshal root cause playbook results: %w", err)
+	}
+	remediationPlan, err := json.Marshal(run.RemediationPlan)
+	if err != nil {
+		return domaincopilot.RootCauseRun{}, fmt.Errorf("marshal root cause remediation plan: %w", err)
+	}
+	result := r.db.WithContext(ctx).Exec(`
+		UPDATE ai_root_cause_runs
+		SET kind = ?, session_id = ?, title = ?, analysis_profile_id = ?, trigger_type = ?, status = ?, severity = ?, summary = ?,
+			cluster_id = ?, namespace = ?, workload_kind = ?, workload_name = ?, alert_id = ?, time_range_minutes = ?, question = ?,
+			evidence = ?, hypotheses = ?, recommendations = ?, tool_executions = ?, data_source_snapshot = ?, playbook_results = ?,
+			remediation_plan = ?, dedup_key = ?, updated_at = ?
+		WHERE id = ? AND created_by = ?
+	`, run.Kind, nullableString(run.SessionID), run.Title, nullableString(run.AnalysisProfileID), nullableString(run.TriggerType), run.Status, run.Severity, run.Summary,
+		nullableString(run.ClusterID), nullableString(run.Namespace), nullableString(run.WorkloadKind), nullableString(run.WorkloadName), nullableString(run.AlertID), run.TimeRangeMinutes, nullableString(run.Question),
+		string(evidence), string(hypotheses), string(recommendations), string(toolExecutions), string(dataSourceSnapshot), string(playbookResults), string(remediationPlan), nullableString(run.DedupKey), run.UpdatedAt, run.ID, run.CreatedBy)
+	if result.Error != nil {
+		return domaincopilot.RootCauseRun{}, fmt.Errorf("update root cause run: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return domaincopilot.RootCauseRun{}, fmt.Errorf("%w: root cause run %s", apperrors.ErrNotFound, run.ID)
+	}
+	return r.GetRootCauseRun(ctx, run.CreatedBy, run.ID)
+}
+
+func (r *Repository) ListAgentRuns(ctx context.Context, filter domaincopilot.AgentRunFilter) ([]domaincopilot.AgentRun, error) {
+	limit := filter.Limit
+	if limit <= 0 {
+		limit = 50
+	}
+	query := agentRunSelect()
+	clauses := make([]string, 0, 8)
+	args := make([]any, 0, 8)
+	if value := strings.TrimSpace(filter.CreatedBy); value != "" {
+		clauses = append(clauses, "created_by = ?")
+		args = append(args, value)
+	}
+	if value := strings.TrimSpace(filter.Status); value != "" {
+		clauses = append(clauses, "status = ?")
+		args = append(args, value)
+	}
+	if value := strings.TrimSpace(filter.ProviderID); value != "" {
+		clauses = append(clauses, "provider_id = ?")
+		args = append(args, value)
+	}
+	if value := strings.TrimSpace(filter.CapabilityID); value != "" {
+		clauses = append(clauses, "capability_id = ?")
+		args = append(args, value)
+	}
+	if value := strings.TrimSpace(filter.TriggerType); value != "" {
+		clauses = append(clauses, "input ->> 'triggerType' = ?")
+		args = append(args, value)
+	}
+	if value := strings.TrimSpace(filter.DedupKey); value != "" {
+		clauses = append(clauses, "input ->> 'dedupKey' = ?")
+		args = append(args, value)
+	}
+	if value := strings.TrimSpace(filter.DedupKeyPrefix); value != "" {
+		clauses = append(clauses, "input ->> 'dedupKey' LIKE ? ESCAPE '!'")
+		args = append(args, escapeSQLLikePattern(value)+"%")
+	}
+	if len(clauses) > 0 {
+		query += ` WHERE ` + strings.Join(clauses, " AND ")
+	}
+	query += `
+		ORDER BY updated_at DESC, created_at DESC
+		LIMIT ?
+	`
+	args = append(args, limit)
+	rows, err := r.db.WithContext(ctx).Raw(query, args...).Rows()
+	if err != nil {
+		return nil, fmt.Errorf("query ai agent runs: %w", err)
+	}
+	defer rows.Close()
+	items := make([]domaincopilot.AgentRun, 0, limit)
+	for rows.Next() {
+		item, err := scanAgentRun(rows)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func (r *Repository) GetAgentRun(ctx context.Context, createdBy, runID string) (domaincopilot.AgentRun, error) {
+	query := agentRunSelect() + ` WHERE id = ?`
+	args := []any{strings.TrimSpace(runID)}
+	if strings.TrimSpace(createdBy) != "" {
+		query += ` AND created_by = ?`
+		args = append(args, strings.TrimSpace(createdBy))
+	}
+	query += ` LIMIT 1`
+	row := r.db.WithContext(ctx).Raw(query, args...).Row()
+	return scanAgentRunRow(row)
+}
+
+func (r *Repository) CreateAgentRun(ctx context.Context, run domaincopilot.AgentRun) (domaincopilot.AgentRun, error) {
+	skillIDs, err := json.Marshal(run.SkillIDs)
+	if err != nil {
+		return domaincopilot.AgentRun{}, fmt.Errorf("marshal agent run skills: %w", err)
+	}
+	scope, err := json.Marshal(run.Scope)
+	if err != nil {
+		return domaincopilot.AgentRun{}, fmt.Errorf("marshal agent run scope: %w", err)
+	}
+	toolset, err := json.Marshal(run.Toolset)
+	if err != nil {
+		return domaincopilot.AgentRun{}, fmt.Errorf("marshal agent run toolset: %w", err)
+	}
+	toolBindings, err := json.Marshal(run.ToolBindings)
+	if err != nil {
+		return domaincopilot.AgentRun{}, fmt.Errorf("marshal agent run tool bindings: %w", err)
+	}
+	skillBindings, err := json.Marshal(run.SkillBindings)
+	if err != nil {
+		return domaincopilot.AgentRun{}, fmt.Errorf("marshal agent run skill bindings: %w", err)
+	}
+	input, err := json.Marshal(run.Input)
+	if err != nil {
+		return domaincopilot.AgentRun{}, fmt.Errorf("marshal agent run input: %w", err)
+	}
+	output, err := json.Marshal(run.Output)
+	if err != nil {
+		return domaincopilot.AgentRun{}, fmt.Errorf("marshal agent run output: %w", err)
+	}
+	toolExecutions, err := json.Marshal(run.ToolExecutions)
+	if err != nil {
+		return domaincopilot.AgentRun{}, fmt.Errorf("marshal agent run tool executions: %w", err)
+	}
+	analysisArtifacts, err := json.Marshal(run.AnalysisArtifacts)
+	if err != nil {
+		return domaincopilot.AgentRun{}, fmt.Errorf("marshal agent run artifacts: %w", err)
+	}
+	if err := r.db.WithContext(ctx).Exec(`
+		INSERT INTO ai_agent_runs (
+			id, provider_id, provider_kind, capability_id, skill_ids, session_id, root_cause_run_id, created_by, status, scope, toolset, tool_bindings, skill_bindings, input, output,
+			tool_executions, analysis_artifacts, callback_token, claimed_by_agent_id, external_run_id, error_message, timeout_seconds,
+			queued_at, started_at, last_heartbeat_at, completed_at, created_at, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`,
+		run.ID,
+		run.ProviderID,
+		run.ProviderKind,
+		run.CapabilityID,
+		string(skillIDs),
+		nullableString(run.SessionID),
+		nullableString(run.RootCauseRunID),
+		run.CreatedBy,
+		run.Status,
+		string(scope),
+		string(toolset),
+		string(toolBindings),
+		string(skillBindings),
+		string(input),
+		string(output),
+		string(toolExecutions),
+		string(analysisArtifacts),
+		run.CallbackToken,
+		nullableString(run.ClaimedByAgentID),
+		nullableString(run.ExternalRunID),
+		nullableString(run.ErrorMessage),
+		run.TimeoutSeconds,
+		run.QueuedAt,
+		run.StartedAt,
+		run.LastHeartbeatAt,
+		run.CompletedAt,
+		run.CreatedAt,
+		run.UpdatedAt,
+	).Error; err != nil {
+		return domaincopilot.AgentRun{}, fmt.Errorf("create ai agent run: %w", err)
+	}
+	return run, nil
+}
+
+func (r *Repository) ClaimAgentRun(ctx context.Context, input domaincopilot.AgentRunClaimInput) (domaincopilot.AgentRun, error) {
+	agentID := strings.TrimSpace(input.AgentID)
+	if agentID == "" {
+		return domaincopilot.AgentRun{}, apperrors.ErrNotFound
+	}
+	now := time.Now().UTC()
+	var claimed domaincopilot.AgentRun
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		clauses := []string{"status = ?"}
+		args := []any{domaincopilot.AgentRunStatusQueued}
+		if values := compactStringValues(input.ProviderIDs); len(values) > 0 {
+			clauses = append(clauses, fmt.Sprintf("provider_id IN (%s)", placeholders(len(values))))
+			for _, value := range values {
+				args = append(args, value)
+			}
+		}
+		if values := compactStringValues(input.Kinds); len(values) > 0 {
+			clauses = append(clauses, fmt.Sprintf("provider_kind IN (%s)", placeholders(len(values))))
+			for _, value := range values {
+				args = append(args, value)
+			}
+		}
+		rows, queryErr := tx.Raw(agentRunSelect()+" WHERE "+strings.Join(clauses, " AND ")+`
+			ORDER BY created_at ASC
+			LIMIT 1
+			FOR UPDATE SKIP LOCKED
+		`, args...).Rows()
+		if queryErr != nil {
+			return fmt.Errorf("claim ai agent run query: %w", queryErr)
+		}
+		defer rows.Close()
+		if !rows.Next() {
+			return apperrors.ErrNotFound
+		}
+		item, scanErr := scanAgentRun(rows)
+		if scanErr != nil {
+			return scanErr
+		}
+		result := tx.Exec(`
+			UPDATE ai_agent_runs
+			SET status = ?, claimed_by_agent_id = ?, started_at = COALESCE(started_at, ?), last_heartbeat_at = ?, updated_at = ?
+			WHERE id = ? AND status = ?
+		`, domaincopilot.AgentRunStatusRunning, agentID, now, now, now, item.ID, domaincopilot.AgentRunStatusQueued)
+		if result.Error != nil {
+			return fmt.Errorf("claim ai agent run update: %w", result.Error)
+		}
+		if result.RowsAffected == 0 {
+			return apperrors.ErrNotFound
+		}
+		item.Status = domaincopilot.AgentRunStatusRunning
+		item.ClaimedByAgentID = agentID
+		item.StartedAt = &now
+		item.LastHeartbeatAt = &now
+		item.UpdatedAt = now
+		claimed = item
+		return nil
+	})
+	if err != nil {
+		return domaincopilot.AgentRun{}, err
+	}
+	return claimed, nil
+}
+
+func (r *Repository) UpdateAgentRunCallback(ctx context.Context, input domaincopilot.AgentRunCallbackInput) (domaincopilot.AgentRun, error) {
+	current, err := r.GetAgentRun(ctx, "", input.RunID)
+	if err != nil {
+		return domaincopilot.AgentRun{}, err
+	}
+	if strings.TrimSpace(current.CallbackToken) == "" || strings.TrimSpace(current.CallbackToken) != strings.TrimSpace(input.CallbackToken) {
+		return domaincopilot.AgentRun{}, fmt.Errorf("%w: invalid ai agent callback token", apperrors.ErrAccessDenied)
+	}
+	if agentRunTerminal(current.Status) {
+		return current, nil
+	}
+	status := normalizeAgentRunStatus(input.Status)
+	if status == "" {
+		status = domaincopilot.AgentRunStatusRunning
+	}
+	now := time.Now().UTC()
+	output := mergeAgentRunOutput(current.Output, input.Payload)
+	toolExecutions := mergeAgentRunToolExecutions(current.ToolExecutions, input.ToolExecutions)
+	analysisArtifacts := input.AnalysisArtifacts
+	if len(analysisArtifacts) == 0 {
+		analysisArtifacts = current.AnalysisArtifacts
+	}
+	outputBytes, err := json.Marshal(output)
+	if err != nil {
+		return domaincopilot.AgentRun{}, fmt.Errorf("marshal agent run callback output: %w", err)
+	}
+	toolBytes, err := json.Marshal(toolExecutions)
+	if err != nil {
+		return domaincopilot.AgentRun{}, fmt.Errorf("marshal agent run callback tools: %w", err)
+	}
+	artifactBytes, err := json.Marshal(analysisArtifacts)
+	if err != nil {
+		return domaincopilot.AgentRun{}, fmt.Errorf("marshal agent run callback artifacts: %w", err)
+	}
+	completedAt := current.CompletedAt
+	if agentRunTerminal(status) {
+		completedAt = &now
+	}
+	result := r.db.WithContext(ctx).Exec(`
+		UPDATE ai_agent_runs
+		SET status = ?, output = ?, tool_executions = ?, analysis_artifacts = ?, claimed_by_agent_id = COALESCE(NULLIF(?, ''), claimed_by_agent_id),
+			external_run_id = COALESCE(NULLIF(?, ''), external_run_id), error_message = COALESCE(NULLIF(?, ''), error_message),
+			last_heartbeat_at = ?, completed_at = ?, updated_at = ?
+		WHERE id = ? AND callback_token = ?
+	`, status, string(outputBytes), string(toolBytes), string(artifactBytes), strings.TrimSpace(input.AgentID), strings.TrimSpace(input.ExternalRunID), strings.TrimSpace(input.ErrorMessage), now, completedAt, now, strings.TrimSpace(input.RunID), strings.TrimSpace(input.CallbackToken))
+	if result.Error != nil {
+		return domaincopilot.AgentRun{}, fmt.Errorf("update ai agent run callback: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return domaincopilot.AgentRun{}, fmt.Errorf("%w: ai agent run %s", apperrors.ErrNotFound, input.RunID)
+	}
+	return r.GetAgentRun(ctx, "", input.RunID)
 }
 
 func (r *Repository) GetAnalysisProfile(ctx context.Context, profileID string) (domaincopilot.AnalysisProfile, error) {
@@ -944,8 +1259,13 @@ func scanAutomationPolicy(rows *sql.Rows) (domaincopilot.AutomationPolicy, error
 	var triggerConditions []byte
 	var approvalPolicy []byte
 	var analysisKinds []byte
-	if err := rows.Scan(&item.ID, &item.Name, &item.Enabled, &item.TriggerType, &analysisKinds, &triggerConditions, &item.DedupWindowSeconds, &item.AnalysisProfileID, &item.RemediationPolicy, &approvalPolicy, &item.CooldownSeconds, &item.CreatedAt, &item.UpdatedAt); err != nil {
+	var agentProviderID sql.NullString
+	if err := rows.Scan(&item.ID, &item.Name, &item.Enabled, &item.TriggerType, &analysisKinds, &agentProviderID, &triggerConditions, &item.DedupWindowSeconds, &item.AnalysisProfileID, &item.RemediationPolicy, &approvalPolicy, &item.CooldownSeconds, &item.CreatedAt, &item.UpdatedAt); err != nil {
 		return domaincopilot.AutomationPolicy{}, fmt.Errorf("scan automation policy: %w", err)
+	}
+	item.AgentProviderID = "internal"
+	if agentProviderID.Valid && strings.TrimSpace(agentProviderID.String) != "" {
+		item.AgentProviderID = agentProviderID.String
 	}
 	if len(analysisKinds) > 0 {
 		_ = json.Unmarshal(analysisKinds, &item.AnalysisKinds)
@@ -964,8 +1284,13 @@ func scanAutomationPolicyRow(row *sql.Row) (domaincopilot.AutomationPolicy, erro
 	var triggerConditions []byte
 	var approvalPolicy []byte
 	var analysisKinds []byte
-	if err := row.Scan(&item.ID, &item.Name, &item.Enabled, &item.TriggerType, &analysisKinds, &triggerConditions, &item.DedupWindowSeconds, &item.AnalysisProfileID, &item.RemediationPolicy, &approvalPolicy, &item.CooldownSeconds, &item.CreatedAt, &item.UpdatedAt); err != nil {
+	var agentProviderID sql.NullString
+	if err := row.Scan(&item.ID, &item.Name, &item.Enabled, &item.TriggerType, &analysisKinds, &agentProviderID, &triggerConditions, &item.DedupWindowSeconds, &item.AnalysisProfileID, &item.RemediationPolicy, &approvalPolicy, &item.CooldownSeconds, &item.CreatedAt, &item.UpdatedAt); err != nil {
 		return domaincopilot.AutomationPolicy{}, fmt.Errorf("scan automation policy: %w", err)
+	}
+	item.AgentProviderID = "internal"
+	if agentProviderID.Valid && strings.TrimSpace(agentProviderID.String) != "" {
+		item.AgentProviderID = agentProviderID.String
 	}
 	if len(analysisKinds) > 0 {
 		_ = json.Unmarshal(analysisKinds, &item.AnalysisKinds)
@@ -991,7 +1316,7 @@ func (r *Repository) getAnalysisProfile(ctx context.Context, profileID string) (
 
 func (r *Repository) getAutomationPolicy(ctx context.Context, policyID string) (domaincopilot.AutomationPolicy, error) {
 	row := r.db.WithContext(ctx).Raw(`
-		SELECT id, name, enabled, trigger_type, trigger_conditions, dedup_window_seconds, analysis_profile_id, remediation_policy, approval_policy, cooldown_seconds, created_at, updated_at
+		SELECT id, name, enabled, trigger_type, analysis_kinds, agent_provider_id, trigger_conditions, dedup_window_seconds, analysis_profile_id, remediation_policy, approval_policy, cooldown_seconds, created_at, updated_at
 		FROM ai_automation_policies
 		WHERE id = ?
 		LIMIT 1
@@ -1211,6 +1536,182 @@ func scanRootCauseRunRow(row *sql.Row) (domaincopilot.RootCauseRun, error) {
 	return item, nil
 }
 
+func agentRunSelect() string {
+	return `
+		SELECT id, provider_id, provider_kind, capability_id, skill_ids, session_id, root_cause_run_id, created_by, status, scope, toolset, tool_bindings, skill_bindings, input, output,
+			tool_executions, analysis_artifacts, callback_token, claimed_by_agent_id, external_run_id, error_message, timeout_seconds,
+			queued_at, started_at, last_heartbeat_at, completed_at, created_at, updated_at
+		FROM ai_agent_runs
+	`
+}
+
+func scanAgentRun(rows *sql.Rows) (domaincopilot.AgentRun, error) {
+	var item domaincopilot.AgentRun
+	var skillIDs []byte
+	var sessionID sql.NullString
+	var rootCauseRunID sql.NullString
+	var scope []byte
+	var toolset []byte
+	var toolBindings []byte
+	var skillBindings []byte
+	var input []byte
+	var output []byte
+	var toolExecutions []byte
+	var analysisArtifacts []byte
+	var claimedByAgentID sql.NullString
+	var externalRunID sql.NullString
+	var errorMessage sql.NullString
+	var startedAt sql.NullTime
+	var lastHeartbeatAt sql.NullTime
+	var completedAt sql.NullTime
+	if err := rows.Scan(
+		&item.ID,
+		&item.ProviderID,
+		&item.ProviderKind,
+		&item.CapabilityID,
+		&skillIDs,
+		&sessionID,
+		&rootCauseRunID,
+		&item.CreatedBy,
+		&item.Status,
+		&scope,
+		&toolset,
+		&toolBindings,
+		&skillBindings,
+		&input,
+		&output,
+		&toolExecutions,
+		&analysisArtifacts,
+		&item.CallbackToken,
+		&claimedByAgentID,
+		&externalRunID,
+		&errorMessage,
+		&item.TimeoutSeconds,
+		&item.QueuedAt,
+		&startedAt,
+		&lastHeartbeatAt,
+		&completedAt,
+		&item.CreatedAt,
+		&item.UpdatedAt,
+	); err != nil {
+		return domaincopilot.AgentRun{}, fmt.Errorf("scan ai agent run: %w", err)
+	}
+	decodeAgentRunFields(&item, skillIDs, sessionID, rootCauseRunID, scope, toolset, toolBindings, skillBindings, input, output, toolExecutions, analysisArtifacts, claimedByAgentID, externalRunID, errorMessage, startedAt, lastHeartbeatAt, completedAt)
+	return item, nil
+}
+
+func scanAgentRunRow(row *sql.Row) (domaincopilot.AgentRun, error) {
+	var item domaincopilot.AgentRun
+	var skillIDs []byte
+	var sessionID sql.NullString
+	var rootCauseRunID sql.NullString
+	var scope []byte
+	var toolset []byte
+	var toolBindings []byte
+	var skillBindings []byte
+	var input []byte
+	var output []byte
+	var toolExecutions []byte
+	var analysisArtifacts []byte
+	var claimedByAgentID sql.NullString
+	var externalRunID sql.NullString
+	var errorMessage sql.NullString
+	var startedAt sql.NullTime
+	var lastHeartbeatAt sql.NullTime
+	var completedAt sql.NullTime
+	if err := row.Scan(
+		&item.ID,
+		&item.ProviderID,
+		&item.ProviderKind,
+		&item.CapabilityID,
+		&skillIDs,
+		&sessionID,
+		&rootCauseRunID,
+		&item.CreatedBy,
+		&item.Status,
+		&scope,
+		&toolset,
+		&toolBindings,
+		&skillBindings,
+		&input,
+		&output,
+		&toolExecutions,
+		&analysisArtifacts,
+		&item.CallbackToken,
+		&claimedByAgentID,
+		&externalRunID,
+		&errorMessage,
+		&item.TimeoutSeconds,
+		&item.QueuedAt,
+		&startedAt,
+		&lastHeartbeatAt,
+		&completedAt,
+		&item.CreatedAt,
+		&item.UpdatedAt,
+	); err != nil {
+		return domaincopilot.AgentRun{}, fmt.Errorf("scan ai agent run row: %w", err)
+	}
+	decodeAgentRunFields(&item, skillIDs, sessionID, rootCauseRunID, scope, toolset, toolBindings, skillBindings, input, output, toolExecutions, analysisArtifacts, claimedByAgentID, externalRunID, errorMessage, startedAt, lastHeartbeatAt, completedAt)
+	return item, nil
+}
+
+func decodeAgentRunFields(item *domaincopilot.AgentRun, skillIDs []byte, sessionID sql.NullString, rootCauseRunID sql.NullString, scope []byte, toolset []byte, toolBindings []byte, skillBindings []byte, input []byte, output []byte, toolExecutions []byte, analysisArtifacts []byte, claimedByAgentID sql.NullString, externalRunID sql.NullString, errorMessage sql.NullString, startedAt sql.NullTime, lastHeartbeatAt sql.NullTime, completedAt sql.NullTime) {
+	if len(skillIDs) > 0 {
+		_ = json.Unmarshal(skillIDs, &item.SkillIDs)
+	}
+	if sessionID.Valid {
+		item.SessionID = sessionID.String
+	}
+	if rootCauseRunID.Valid {
+		item.RootCauseRunID = rootCauseRunID.String
+	}
+	if len(scope) > 0 {
+		_ = json.Unmarshal(scope, &item.Scope)
+	}
+	if len(toolset) > 0 {
+		_ = json.Unmarshal(toolset, &item.Toolset)
+	}
+	if len(toolBindings) > 0 {
+		_ = json.Unmarshal(toolBindings, &item.ToolBindings)
+	}
+	if len(skillBindings) > 0 {
+		_ = json.Unmarshal(skillBindings, &item.SkillBindings)
+	}
+	if len(input) > 0 {
+		_ = json.Unmarshal(input, &item.Input)
+	}
+	if len(output) > 0 {
+		_ = json.Unmarshal(output, &item.Output)
+	}
+	if len(toolExecutions) > 0 {
+		_ = json.Unmarshal(toolExecutions, &item.ToolExecutions)
+	}
+	if len(analysisArtifacts) > 0 {
+		_ = json.Unmarshal(analysisArtifacts, &item.AnalysisArtifacts)
+	}
+	if claimedByAgentID.Valid {
+		item.ClaimedByAgentID = claimedByAgentID.String
+	}
+	if externalRunID.Valid {
+		item.ExternalRunID = externalRunID.String
+	}
+	if errorMessage.Valid {
+		item.ErrorMessage = errorMessage.String
+	}
+	if startedAt.Valid {
+		value := startedAt.Time
+		item.StartedAt = &value
+	}
+	if lastHeartbeatAt.Valid {
+		value := lastHeartbeatAt.Time
+		item.LastHeartbeatAt = &value
+	}
+	if completedAt.Valid {
+		value := completedAt.Time
+		item.CompletedAt = &value
+	}
+}
+
 func scanInspectionTask(rows *sql.Rows) (domaincopilot.InspectionTask, error) {
 	var item domaincopilot.InspectionTask
 	var checks []byte
@@ -1340,6 +1841,101 @@ func containsString(items []string, target string) bool {
 		}
 	}
 	return false
+}
+
+func compactStringValues(items []string) []string {
+	values := make([]string, 0, len(items))
+	seen := map[string]struct{}{}
+	for _, item := range items {
+		value := strings.TrimSpace(item)
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		values = append(values, value)
+	}
+	return values
+}
+
+func placeholders(count int) string {
+	if count <= 0 {
+		return ""
+	}
+	items := make([]string, count)
+	for i := range items {
+		items[i] = "?"
+	}
+	return strings.Join(items, ",")
+}
+
+func normalizeAgentRunStatus(status string) string {
+	switch strings.TrimSpace(status) {
+	case domaincopilot.AgentRunStatusQueued:
+		return domaincopilot.AgentRunStatusQueued
+	case domaincopilot.AgentRunStatusRunning, "":
+		return domaincopilot.AgentRunStatusRunning
+	case domaincopilot.AgentRunStatusCompleted, "succeeded", "success":
+		return domaincopilot.AgentRunStatusCompleted
+	case domaincopilot.AgentRunStatusFailed, "error":
+		return domaincopilot.AgentRunStatusFailed
+	case domaincopilot.AgentRunStatusCanceled, "cancelled":
+		return domaincopilot.AgentRunStatusCanceled
+	case domaincopilot.AgentRunStatusCallbackTimeout:
+		return domaincopilot.AgentRunStatusCallbackTimeout
+	default:
+		return domaincopilot.AgentRunStatusFailed
+	}
+}
+
+func agentRunTerminal(status string) bool {
+	switch strings.TrimSpace(status) {
+	case domaincopilot.AgentRunStatusCompleted, domaincopilot.AgentRunStatusFailed, domaincopilot.AgentRunStatusCanceled, domaincopilot.AgentRunStatusCallbackTimeout:
+		return true
+	default:
+		return false
+	}
+}
+
+func mergeAgentRunOutput(current map[string]any, patch map[string]any) map[string]any {
+	merged := map[string]any{}
+	for key, value := range current {
+		merged[key] = value
+	}
+	for key, value := range patch {
+		merged[key] = value
+	}
+	return merged
+}
+
+func mergeAgentRunToolExecutions(current []domaincopilot.ToolExecution, patch []domaincopilot.ToolExecution) []domaincopilot.ToolExecution {
+	if len(current) == 0 {
+		return append([]domaincopilot.ToolExecution(nil), patch...)
+	}
+	if len(patch) == 0 {
+		return append([]domaincopilot.ToolExecution(nil), current...)
+	}
+	merged := append([]domaincopilot.ToolExecution(nil), current...)
+	indexByID := map[string]int{}
+	for index, item := range merged {
+		if trimmed := strings.TrimSpace(item.ID); trimmed != "" {
+			indexByID[trimmed] = index
+		}
+	}
+	for _, item := range patch {
+		id := strings.TrimSpace(item.ID)
+		if id != "" {
+			if index, ok := indexByID[id]; ok {
+				merged[index] = item
+				continue
+			}
+			indexByID[id] = len(merged)
+		}
+		merged = append(merged, item)
+	}
+	return merged
 }
 
 func nullableString(value string) any {

@@ -1,5 +1,19 @@
 package dto
 
+type ApplicationDeliveryActionRequest struct {
+	Action                   string         `json:"action"`
+	ApplicationEnvironmentID string         `json:"applicationEnvironmentId"`
+	TargetID                 string         `json:"targetId"`
+	BuildSourceID            string         `json:"buildSourceId"`
+	RefType                  string         `json:"refType"`
+	RefName                  string         `json:"refName"`
+	ImageTag                 string         `json:"imageTag"`
+	ReleaseName              string         `json:"releaseName"`
+	ContainerName            string         `json:"containerName"`
+	Variables                map[string]any `json:"variables"`
+	BuildArgs                map[string]any `json:"buildArgs"`
+}
+
 type ApprovalPolicyRequest struct {
 	ID                string         `json:"id"`
 	Key               string         `json:"key"`

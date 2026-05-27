@@ -117,6 +117,39 @@ func TestRunnerClaimAndCallbackCompletesOperation(t *testing.T) {
 	}
 }
 
+func TestRunnerCallbackDoesNotWriteNilRuntimeFields(t *testing.T) {
+	repo := newMemoryDockerRepo()
+	repo.hosts["host-1"] = domaindocker.Host{ID: "host-1", Name: "dev-docker", Status: "online"}
+	repo.operations["operation-1"] = domaindocker.Operation{
+		ID:                "operation-1",
+		HostID:            "host-1",
+		OperationKind:     OperationKindHostSync,
+		Status:            OperationStatusRunning,
+		ClaimedByWorkerID: "worker-1",
+	}
+	service := New(repo, dockerTestPermissions(), nil)
+
+	_, err := service.RecordOperationCallback(context.Background(), domaindocker.OperationCallbackInput{
+		OperationID: "operation-1",
+		WorkerID:    "worker-1",
+		Status:      OperationStatusCompleted,
+		Payload: map[string]any{
+			"dockerVersion":  "Docker version 29.4.0",
+			"composeVersion": "Docker Compose version v5.1.2",
+		},
+	})
+	if err != nil {
+		t.Fatalf("RecordOperationCallback() error = %v", err)
+	}
+	host := repo.hosts["host-1"]
+	if host.Endpoint == "<nil>" || host.IPAddress == "<nil>" || host.AgentVersion == "<nil>" {
+		t.Fatalf("host runtime fields were polluted by nil payload values: %#v", host)
+	}
+	if host.Endpoint != "" || host.IPAddress != "" || host.AgentVersion != "" {
+		t.Fatalf("host runtime fields = endpoint %q ip %q agentVersion %q, want empty values", host.Endpoint, host.IPAddress, host.AgentVersion)
+	}
+}
+
 func TestStartContainerCreatesSingleContainerProjectAndDomainMapping(t *testing.T) {
 	repo := newMemoryDockerRepo()
 	repo.hosts["host-1"] = domaindocker.Host{ID: "host-1", Name: "dev-docker", Status: "online", IPAddress: "10.0.0.10"}
@@ -349,6 +382,21 @@ func (r *memoryDockerRepo) TouchHostRuntime(_ context.Context, id string, input 
 	}
 	if input.AgentID != "" {
 		item.AgentID = input.AgentID
+	}
+	if input.AgentVersion != "" {
+		item.AgentVersion = input.AgentVersion
+	}
+	if input.DockerVersion != "" {
+		item.DockerVersion = input.DockerVersion
+	}
+	if input.ComposeVersion != "" {
+		item.ComposeVersion = input.ComposeVersion
+	}
+	if input.Endpoint != "" {
+		item.Endpoint = input.Endpoint
+	}
+	if input.IPAddress != "" {
+		item.IPAddress = input.IPAddress
 	}
 	now := time.Now().UTC()
 	item.LastHeartbeatAt = &now

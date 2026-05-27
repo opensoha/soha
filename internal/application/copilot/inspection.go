@@ -52,6 +52,25 @@ func (s *Service) Start(ctx context.Context) {
 			}
 		}
 	}()
+	go func() {
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				count, err := s.sweepAgentRunTimeouts(ctx)
+				if err != nil {
+					s.logWarn("copilot agent runtime timeout sweep failed", zap.Error(err))
+					continue
+				}
+				if count > 0 {
+					s.logWarn("copilot agent runtime runs timed out", zap.Int("runs", count))
+				}
+			}
+		}
+	}()
 }
 
 func (s *Service) ListInspectionTasks(ctx context.Context, principal domainidentity.Principal) ([]domaincopilot.InspectionTask, error) {
@@ -187,7 +206,7 @@ func (s *Service) CreateSessionFromInspectionRun(ctx context.Context, principal 
 		}
 	}
 	title := localize(locale, "巡检结果调查", "Inspection Investigation")
-	session, err := s.CreateSession(ctx, principal, title, "inspection_review", scope, []string{"inspection", "generated"}, locale)
+	session, err := s.CreateSession(ctx, principal, title, "inspection_review", "", scope, []string{"inspection", "generated"}, locale)
 	if err != nil {
 		return domaincopilot.Session{}, err
 	}

@@ -85,6 +85,17 @@ func (stubWorkflowReleaseExecutor) Trigger(_ context.Context, _ domainidentity.P
 	return domainrelease.Record{ID: "release-1", Status: "deployed", ApplicationID: input.ApplicationID}, nil
 }
 
+type countingWorkflowReleaseExecutor struct {
+	count *int
+}
+
+func (s countingWorkflowReleaseExecutor) Trigger(_ context.Context, _ domainidentity.Principal, input domainrelease.TriggerInput) (domainrelease.Record, error) {
+	if s.count != nil {
+		*s.count = *s.count + 1
+	}
+	return domainrelease.Record{ID: "release-1", Status: "deployed", ApplicationID: input.ApplicationID}, nil
+}
+
 type stubWorkflowResourceExecutor struct{}
 
 func (stubWorkflowResourceExecutor) GetDeploymentRolloutStatus(context.Context, domainidentity.Principal, string, string, string) (domainresource.DeploymentRolloutStatusView, error) {
@@ -122,6 +133,24 @@ func (stubWorkflowBuildExecutor) Trigger(context.Context, domainidentity.Princip
 }
 
 func (stubWorkflowBuildExecutor) Execute(context.Context, domainidentity.Principal, domainbuild.TriggerInput) (domainbuild.Record, error) {
+	return domainbuild.Record{ID: "build-1", Status: "completed", Metadata: map[string]any{"image": "repo/demo:latest", "artifact": map[string]any{"ref": "repo/demo:latest"}}}, nil
+}
+
+type countingWorkflowBuildExecutor struct {
+	count *int
+}
+
+func (s countingWorkflowBuildExecutor) Trigger(context.Context, domainidentity.Principal, domainbuild.TriggerInput) (domainbuild.Record, error) {
+	if s.count != nil {
+		*s.count = *s.count + 1
+	}
+	return domainbuild.Record{ID: "build-1", Status: "queued"}, nil
+}
+
+func (s countingWorkflowBuildExecutor) Execute(context.Context, domainidentity.Principal, domainbuild.TriggerInput) (domainbuild.Record, error) {
+	if s.count != nil {
+		*s.count = *s.count + 1
+	}
 	return domainbuild.Record{ID: "build-1", Status: "completed", Metadata: map[string]any{"image": "repo/demo:latest", "artifact": map[string]any{"ref": "repo/demo:latest"}}}, nil
 }
 
@@ -273,7 +302,7 @@ func TestTriggerExecutesDAGWorkflowTemplate(t *testing.T) {
 		t.Fatalf("run.Steps = %+v, want 3 queued steps", run.Steps)
 	}
 	deadline := time.Now().Add(300 * time.Millisecond)
-	for len(repo.updated) == 0 && time.Now().Before(deadline) {
+	for (len(repo.updated) == 0 || repo.updated[len(repo.updated)-1].Status == "running") && time.Now().Before(deadline) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	if len(repo.updated) == 0 {
@@ -292,5 +321,129 @@ func TestTriggerExecutesDAGWorkflowTemplate(t *testing.T) {
 	}
 	if repo.updated[len(repo.updated)-1].Status != "completed" {
 		t.Fatalf("approved workflow final status = %q, want completed", repo.updated[len(repo.updated)-1].Status)
+	}
+}
+
+func TestTriggerValidationExecutesOnlyValidationNodes(t *testing.T) {
+	repo := &stubWorkflowRepository{}
+	buildCount := 0
+	releaseCount := 0
+	template := &domaincatalog.WorkflowTemplate{
+		ID:   "wf-verify",
+		Key:  "release-dag",
+		Name: "Release DAG",
+		Definition: map[string]any{
+			"mode": "release_dag",
+			"nodes": []map[string]any{
+				{"id": "build", "name": "Build", "type": "build"},
+				{"id": "deploy", "name": "Deploy", "type": "deploy_update_image"},
+				{"id": "verify", "name": "Verify", "type": "check"},
+			},
+			"edges": []map[string]any{
+				{"id": "e1", "source": "build", "target": "deploy", "condition": "success"},
+				{"id": "e2", "source": "deploy", "target": "verify", "condition": "success"},
+			},
+		},
+	}
+	binding := domaincatalog.ApplicationEnvironment{
+		ID:                 "binding-1",
+		ApplicationID:      "app-1",
+		WorkflowTemplateID: "wf-verify",
+		WorkflowTemplate:   template,
+		Targets: []domaincatalog.ReleaseTarget{
+			{ClusterID: "cluster-1", Namespace: "default", WorkloadKind: "Deployment", WorkloadName: "demo", Enabled: true},
+		},
+	}
+	service := &Service{
+		repo:        repo,
+		apps:        &stubWorkflowApps{},
+		catalog:     &stubWorkflowCatalog{items: []domaincatalog.ApplicationEnvironment{binding}},
+		releases:    countingWorkflowReleaseExecutor{count: &releaseCount},
+		resources:   stubWorkflowResourceExecutor{},
+		builds:      countingWorkflowBuildExecutor{count: &buildCount},
+		permissions: appaccess.NewPermissionResolver(stubWorkflowRolePermissionReader{matrix: map[string][]string{"developer": {appaccess.PermDeliveryWorkflowsTrigger}}}),
+	}
+	service.SetRuntimeOptions(1, 8, 1)
+	runnerCtx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	service.Start(runnerCtx)
+	defer func() {
+		_ = service.Shutdown(context.Background())
+	}()
+
+	run, err := service.TriggerValidation(context.Background(), domainidentity.Principal{UserName: "tester", Roles: []string{"developer"}}, domainworkflow.Input{
+		ApplicationID:            "app-1",
+		ApplicationEnvironmentID: "binding-1",
+		WorkflowName:             "release-dag",
+		ClusterID:                "cluster-1",
+		Namespace:                "default",
+		DeploymentName:           "demo",
+	})
+	if err != nil {
+		t.Fatalf("TriggerValidation() error = %v", err)
+	}
+	if run.Metadata["runMode"] != "validation" {
+		t.Fatalf("runMode = %v, want validation", run.Metadata["runMode"])
+	}
+	if len(run.NodeRuns) != 1 || run.NodeRuns[0].Type != "check" {
+		t.Fatalf("NodeRuns = %+v, want only check validation node", run.NodeRuns)
+	}
+	deadline := time.Now().Add(300 * time.Millisecond)
+	for len(repo.updated) == 0 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if buildCount != 0 || releaseCount != 0 {
+		t.Fatalf("build/release counts = %d/%d, want 0/0 for validation run", buildCount, releaseCount)
+	}
+	if len(repo.updated) == 0 {
+		t.Fatalf("expected validation workflow runner to persist updates")
+	}
+	if repo.updated[len(repo.updated)-1].Status != "completed" {
+		t.Fatalf("validation final status = %q, nodeRuns = %+v, want completed", repo.updated[len(repo.updated)-1].Status, repo.updated[len(repo.updated)-1].NodeRuns)
+	}
+}
+
+func TestTriggerValidationRequiresValidationNodes(t *testing.T) {
+	repo := &stubWorkflowRepository{}
+	template := &domaincatalog.WorkflowTemplate{
+		ID:   "wf-build",
+		Key:  "release-dag",
+		Name: "Release DAG",
+		Definition: map[string]any{
+			"mode": "release_dag",
+			"nodes": []map[string]any{
+				{"id": "build", "name": "Build", "type": "build"},
+				{"id": "deploy", "name": "Deploy", "type": "deploy_update_image"},
+			},
+		},
+	}
+	binding := domaincatalog.ApplicationEnvironment{
+		ID:                 "binding-1",
+		ApplicationID:      "app-1",
+		WorkflowTemplateID: "wf-build",
+		WorkflowTemplate:   template,
+		Targets: []domaincatalog.ReleaseTarget{
+			{ClusterID: "cluster-1", Namespace: "default", WorkloadKind: "Deployment", WorkloadName: "demo", Enabled: true},
+		},
+	}
+	service := &Service{
+		repo:        repo,
+		apps:        &stubWorkflowApps{},
+		catalog:     &stubWorkflowCatalog{items: []domaincatalog.ApplicationEnvironment{binding}},
+		permissions: appaccess.NewPermissionResolver(stubWorkflowRolePermissionReader{matrix: map[string][]string{"developer": {appaccess.PermDeliveryWorkflowsTrigger}}}),
+	}
+
+	_, err := service.TriggerValidation(context.Background(), domainidentity.Principal{UserName: "tester", Roles: []string{"developer"}}, domainworkflow.Input{
+		ApplicationID:            "app-1",
+		ApplicationEnvironmentID: "binding-1",
+		ClusterID:                "cluster-1",
+		Namespace:                "default",
+		DeploymentName:           "demo",
+	})
+	if !errors.Is(err, apperrors.ErrInvalidArgument) {
+		t.Fatalf("TriggerValidation() error = %v, want invalid argument", err)
+	}
+	if repo.createCalls != 0 {
+		t.Fatalf("Create() called %d times, want 0", repo.createCalls)
 	}
 }

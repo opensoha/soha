@@ -51,6 +51,12 @@ type Repository interface {
 	ListRootCauseRuns(context.Context, string, domaincopilot.RootCauseRunFilter) ([]domaincopilot.RootCauseRun, error)
 	GetRootCauseRun(context.Context, string, string) (domaincopilot.RootCauseRun, error)
 	CreateRootCauseRun(context.Context, domaincopilot.RootCauseRun) (domaincopilot.RootCauseRun, error)
+	UpdateRootCauseRun(context.Context, domaincopilot.RootCauseRun) (domaincopilot.RootCauseRun, error)
+	ListAgentRuns(context.Context, domaincopilot.AgentRunFilter) ([]domaincopilot.AgentRun, error)
+	GetAgentRun(context.Context, string, string) (domaincopilot.AgentRun, error)
+	CreateAgentRun(context.Context, domaincopilot.AgentRun) (domaincopilot.AgentRun, error)
+	ClaimAgentRun(context.Context, domaincopilot.AgentRunClaimInput) (domaincopilot.AgentRun, error)
+	UpdateAgentRunCallback(context.Context, domaincopilot.AgentRunCallbackInput) (domaincopilot.AgentRun, error)
 	ListInspectionTasks(context.Context, string, int) ([]domaincopilot.InspectionTask, error)
 	GetInspectionTask(context.Context, string, string) (domaincopilot.InspectionTask, error)
 	ListDueInspectionTasks(context.Context, time.Time, int) ([]domaincopilot.InspectionTask, error)
@@ -112,6 +118,7 @@ type Service struct {
 	metrics               *runtimeobs.Registry
 	inspectionParallelism int
 	mcpRegistry           MCPRegistry
+	agentProviders        []domaincopilot.AgentProvider
 }
 
 type MCPRegistry interface {
@@ -151,6 +158,10 @@ func (s *Service) SetMCPRegistry(registry MCPRegistry) {
 	s.mcpRegistry = registry
 }
 
+func (s *Service) SetAgentProviders(providers []domaincopilot.AgentProvider) {
+	s.agentProviders = append([]domaincopilot.AgentProvider(nil), providers...)
+}
+
 func (s *Service) logWarn(message string, fields ...zap.Field) {
 	if s.logger != nil {
 		s.logger.Warn(message, fields...)
@@ -181,7 +192,7 @@ func (s *Service) GetSession(ctx context.Context, principal domainidentity.Princ
 	return s.repo.GetSession(ctx, principal.UserID, strings.TrimSpace(sessionID))
 }
 
-func (s *Service) CreateSession(ctx context.Context, principal domainidentity.Principal, title, mode string, scope map[string]any, tags []string, locale string) (domaincopilot.Session, error) {
+func (s *Service) CreateSession(ctx context.Context, principal domainidentity.Principal, title, mode, agentProviderID string, scope map[string]any, tags []string, locale string) (domaincopilot.Session, error) {
 	if err := s.authorizePrincipal(ctx, principal, appaccess.PermObserveAIChatUse); err != nil {
 		return domaincopilot.Session{}, err
 	}
@@ -189,11 +200,12 @@ func (s *Service) CreateSession(ctx context.Context, principal domainidentity.Pr
 		title = localize(locale, "新的调查会话", "New Investigation")
 	}
 	metadata := sessionMetadataMap(domaincopilot.SessionMetadata{
-		Mode:   normalizeSessionMode(mode),
-		Status: "active",
-		Scope:  scopeFromMap(scope),
-		Tags:   normalizeStringList(tags),
-		Source: "manual",
+		Mode:            normalizeSessionMode(mode),
+		Status:          "active",
+		AgentProviderID: normalizeAgentProviderID(agentProviderID),
+		Scope:           scopeFromMap(scope),
+		Tags:            normalizeStringList(tags),
+		Source:          "manual",
 	})
 	metadata["locale"] = normalizeLocale(locale)
 	return s.repo.CreateSession(ctx, domaincopilot.Session{
@@ -206,7 +218,7 @@ func (s *Service) CreateSession(ctx context.Context, principal domainidentity.Pr
 	})
 }
 
-func (s *Service) UpdateSession(ctx context.Context, principal domainidentity.Principal, sessionID string, title, mode, status, summary string, scope, toolset map[string]any, tags []string, archived bool) (domaincopilot.Session, error) {
+func (s *Service) UpdateSession(ctx context.Context, principal domainidentity.Principal, sessionID string, title, mode, agentProviderID, status, summary string, scope, toolset map[string]any, tags []string, archived bool) (domaincopilot.Session, error) {
 	if err := s.authorizePrincipal(ctx, principal, appaccess.PermObserveAIChatUse); err != nil {
 		return domaincopilot.Session{}, err
 	}
@@ -217,6 +229,9 @@ func (s *Service) UpdateSession(ctx context.Context, principal domainidentity.Pr
 	metadata := parseSessionMetadata(current.Metadata)
 	if strings.TrimSpace(mode) != "" {
 		metadata.Mode = normalizeSessionMode(mode)
+	}
+	if strings.TrimSpace(agentProviderID) != "" {
+		metadata.AgentProviderID = normalizeAgentProviderID(agentProviderID)
 	}
 	if strings.TrimSpace(status) != "" {
 		metadata.Status = strings.TrimSpace(status)
@@ -343,7 +358,11 @@ func (s *Service) RunSessionAnalysis(ctx context.Context, principal domainidenti
 		mode = normalizeSessionMode(metadata.Mode)
 	}
 	if !isRunnableSessionAnalysisMode(mode) {
-		return domaincopilot.SessionMessageEnvelope{}, fmt.Errorf("%w: analyze mode must be root_cause, performance, or trace", aperrors.ErrInvalidArgument)
+		return domaincopilot.SessionMessageEnvelope{}, fmt.Errorf("%w: analyze mode must be root_cause, performance, trace, or inspection_review", aperrors.ErrInvalidArgument)
+	}
+	providerID := firstNonEmpty(input.AgentProviderID, metadata.AgentProviderID, agentProviderInternal)
+	if s.shouldUseExternalAgent(providerID) {
+		return s.queueSessionAgentAnalysis(ctx, principal, session, mode, providerID, scope, metadata.Toolset, input, locale)
 	}
 	toolCalls := make([]domaincopilot.ToolExecution, 0)
 	artifacts := make([]domaincopilot.AnalysisArtifact, 0)
@@ -370,6 +389,11 @@ func (s *Service) RunSessionAnalysis(ctx context.Context, principal domainidenti
 		if runErr != nil {
 			return domaincopilot.SessionMessageEnvelope{}, runErr
 		}
+		toolCalls = append(toolCalls, calls...)
+		artifacts = append(artifacts, artifact)
+		refs = append(refs, domaincopilot.AnalysisRunRef{ID: artifact.RunID, Kind: artifact.Kind, Status: "completed", CreatedAt: time.Now().UTC().Format(time.RFC3339)})
+	case "inspection_review":
+		calls, artifact := s.runSessionInspectionReview(session.ID, scope, metadata.Toolset, input.Question, locale)
 		toolCalls = append(toolCalls, calls...)
 		artifacts = append(artifacts, artifact)
 		refs = append(refs, domaincopilot.AnalysisRunRef{ID: artifact.RunID, Kind: artifact.Kind, Status: "completed", CreatedAt: time.Now().UTC().Format(time.RFC3339)})
@@ -418,9 +442,178 @@ func (s *Service) RunSessionAnalysis(ctx context.Context, principal domainidenti
 	}, nil
 }
 
+func (s *Service) queueSessionAgentAnalysis(ctx context.Context, principal domainidentity.Principal, session domaincopilot.Session, mode, providerID string, scope domaincopilot.SessionScope, toolset domaincopilot.SessionToolset, input domaincopilot.RootCauseRunInput, locale string) (domaincopilot.SessionMessageEnvelope, error) {
+	if normalizeSessionMode(mode) == "root_cause" {
+		return s.queueSessionRootCauseAgentAnalysis(ctx, principal, session, providerID, scope, toolset, input, locale)
+	}
+	capabilityID := normalizeAnalysisKind(mode)
+	if capabilityID == "" {
+		capabilityID = mode
+	}
+	run, err := s.createAgentRun(ctx, domaincopilot.AgentRunInput{
+		ProviderID:     providerID,
+		CapabilityID:   capabilityID,
+		SkillIDs:       toolset.EnabledSkillIDs,
+		SessionID:      session.ID,
+		RootCauseRunID: strings.TrimSpace(input.SessionID),
+		CreatedBy:      principal.UserID,
+		Scope:          scope,
+		Toolset:        toolset,
+		Input: map[string]any{
+			"question":          input.Question,
+			"mode":              mode,
+			"analysisProfileId": input.AnalysisProfileID,
+			"triggerType":       normalizedTriggerType(input.TriggerType),
+			"locale":            normalizeLocale(locale),
+			"sessionId":         session.ID,
+			"title":             session.Title,
+			"capabilityId":      capabilityID,
+		},
+		TimeoutSeconds: budgetInt(toolset, "timeoutSeconds", 600),
+	})
+	if err != nil {
+		return domaincopilot.SessionMessageEnvelope{}, err
+	}
+	artifact := domaincopilot.AnalysisArtifact{
+		Kind:    capabilityID,
+		RunID:   run.ID,
+		Title:   fmt.Sprintf("%s analysis queued", capabilityID),
+		Summary: localize(locale, "已提交给 Agent Runtime，等待外部 agent runner 领取并回写结果。", "Queued for Agent Runtime. Waiting for an external agent runner to claim the task and write back results."),
+		Scope:   scope,
+		DataSourceSnapshot: map[string]any{
+			"providerId":     run.ProviderID,
+			"providerKind":   run.ProviderKind,
+			"capabilityId":   run.CapabilityID,
+			"skillIds":       run.SkillIDs,
+			"agentRuntimeId": run.ID,
+			"status":         run.Status,
+		},
+	}
+	message, err := s.repo.CreateMessage(ctx, domaincopilot.Message{
+		ID:        uuid.NewString(),
+		SessionID: session.ID,
+		Role:      "assistant",
+		Content:   artifact.Summary,
+		Metadata: map[string]any{
+			"mode":              mode,
+			"source":            "agent-runtime",
+			"locale":            normalizeLocale(locale),
+			"agentRunId":        run.ID,
+			"agentProviderId":   run.ProviderID,
+			"analysisArtifacts": []domaincopilot.AnalysisArtifact{artifact},
+		},
+		CreatedAt: time.Now().UTC(),
+	})
+	if err != nil {
+		return domaincopilot.SessionMessageEnvelope{}, err
+	}
+	metadata := parseSessionMetadata(session.Metadata)
+	metadata.AgentProviderID = run.ProviderID
+	metadata.Mode = mode
+	metadata.AnalysisRunRefs = append(metadata.AnalysisRunRefs, domaincopilot.AnalysisRunRef{
+		ID:        run.ID,
+		Kind:      run.CapabilityID,
+		Status:    run.Status,
+		CreatedAt: run.CreatedAt.Format(time.RFC3339),
+	})
+	session.Metadata = sessionMetadataMap(metadata)
+	session.UpdatedAt = time.Now().UTC()
+	_, _ = s.repo.UpdateSession(ctx, principal.UserID, session.ID, session)
+	return domaincopilot.SessionMessageEnvelope{
+		Messages:          []domaincopilot.Message{message},
+		AnalysisArtifacts: []domaincopilot.AnalysisArtifact{artifact},
+		SessionPatch: map[string]any{
+			"mode":            mode,
+			"agentProviderId": run.ProviderID,
+			"analysisRunRefs": metadata.AnalysisRunRefs,
+			"agentRunId":      run.ID,
+		},
+	}, nil
+}
+
+func (s *Service) queueSessionRootCauseAgentAnalysis(ctx context.Context, principal domainidentity.Principal, session domaincopilot.Session, providerID string, scope domaincopilot.SessionScope, toolset domaincopilot.SessionToolset, input domaincopilot.RootCauseRunInput, locale string) (domaincopilot.SessionMessageEnvelope, error) {
+	metadata := parseSessionMetadata(session.Metadata)
+	rootCauseCreatedBy, triggerType, dedupKey := sessionAnalysisRunPersistence(session.ID, metadata)
+	mergedInput := input
+	mergedInput.Kind = "root_cause"
+	mergedInput.AgentProviderID = providerID
+	mergedInput.SessionID = session.ID
+	mergedInput.TriggerType = firstNonEmpty(input.TriggerType, triggerType)
+	mergedInput.ClusterID = firstNonEmpty(input.ClusterID, scope.ClusterID)
+	mergedInput.Namespace = firstNonEmpty(input.Namespace, scope.Namespace)
+	mergedInput.WorkloadName = firstNonEmpty(input.WorkloadName, scope.Workload)
+	mergedInput.AlertID = firstNonEmpty(input.AlertID, scope.AlertID)
+	if mergedInput.TimeRangeMinutes <= 0 {
+		mergedInput.TimeRangeMinutes = scope.TimeRangeMinutes
+	}
+	queued, err := s.queueRootCauseAgentRunWithToolset(ctx, principal, rootCauseCreatedBy, principal.UserID, mergedInput, dedupKey, toolset, locale)
+	if err != nil {
+		return domaincopilot.SessionMessageEnvelope{}, err
+	}
+	run := queued.AgentRun
+	rootRun := queued.RootCauseRun
+	artifact := domaincopilot.AnalysisArtifact{
+		Kind:    "root_cause",
+		RunID:   rootRun.ID,
+		Title:   rootRun.Title,
+		Summary: rootRun.Summary,
+		Scope: domaincopilot.SessionScope{
+			ClusterID:        rootRun.ClusterID,
+			Namespace:        rootRun.Namespace,
+			Workload:         rootRun.WorkloadName,
+			AlertID:          rootRun.AlertID,
+			TimeRangeMinutes: rootRun.TimeRangeMinutes,
+		},
+		Recommendations:    rootRun.Recommendations,
+		DataSourceSnapshot: rootRun.DataSourceSnapshot,
+	}
+	message, err := s.repo.CreateMessage(ctx, domaincopilot.Message{
+		ID:        uuid.NewString(),
+		SessionID: session.ID,
+		Role:      "assistant",
+		Content:   artifact.Summary,
+		Metadata: map[string]any{
+			"mode":              "root_cause",
+			"source":            "agent-runtime",
+			"locale":            normalizeLocale(locale),
+			"agentRunId":        run.ID,
+			"rootCauseRunId":    rootRun.ID,
+			"agentProviderId":   run.ProviderID,
+			"analysisArtifacts": []domaincopilot.AnalysisArtifact{artifact},
+		},
+		CreatedAt: time.Now().UTC(),
+	})
+	if err != nil {
+		return domaincopilot.SessionMessageEnvelope{}, err
+	}
+	metadata.AgentProviderID = run.ProviderID
+	metadata.Mode = "root_cause"
+	metadata.AnalysisRunRefs = append(metadata.AnalysisRunRefs, domaincopilot.AnalysisRunRef{
+		ID:        rootRun.ID,
+		Kind:      rootRun.Kind,
+		Status:    rootRun.Status,
+		CreatedAt: rootRun.CreatedAt.Format(time.RFC3339),
+	})
+	session.Metadata = sessionMetadataMap(metadata)
+	session.UpdatedAt = time.Now().UTC()
+	_, _ = s.repo.UpdateSession(ctx, principal.UserID, session.ID, session)
+	return domaincopilot.SessionMessageEnvelope{
+		Messages:          []domaincopilot.Message{message},
+		AnalysisArtifacts: []domaincopilot.AnalysisArtifact{artifact},
+		SessionPatch: map[string]any{
+			"mode":             "root_cause",
+			"agentProviderId":  run.ProviderID,
+			"analysisRunRefs":  metadata.AnalysisRunRefs,
+			"agentRunId":       run.ID,
+			"rootCauseRunId":   rootRun.ID,
+			"rootCauseRunKind": rootRun.Kind,
+		},
+	}, nil
+}
+
 func isRunnableSessionAnalysisMode(mode string) bool {
 	switch normalizeSessionMode(mode) {
-	case "root_cause", "performance", "trace":
+	case "root_cause", "performance", "trace", "inspection_review":
 		return true
 	default:
 		return false

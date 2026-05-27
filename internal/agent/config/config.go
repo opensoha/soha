@@ -50,6 +50,7 @@ type ControlPlaneConfig struct {
 	ProviderKinds   []string           `mapstructure:"provider_kinds"`
 	WorkspaceRoot   string             `mapstructure:"workspace_root"`
 	Docker          DockerRunnerConfig `mapstructure:"docker"`
+	AgentRuntime    AgentRuntimeConfig `mapstructure:"agent_runtime"`
 }
 
 type DockerRunnerConfig struct {
@@ -59,6 +60,25 @@ type DockerRunnerConfig struct {
 	OperationKinds []string      `mapstructure:"operation_kinds"`
 	ComposeRoot    string        `mapstructure:"compose_root"`
 	PollInterval   time.Duration `mapstructure:"poll_interval"`
+}
+
+type AgentRuntimeConfig struct {
+	Enabled       bool                           `mapstructure:"enabled"`
+	WorkerID      string                         `mapstructure:"worker_id"`
+	ProviderIDs   []string                       `mapstructure:"provider_ids"`
+	ProviderKinds []string                       `mapstructure:"provider_kinds"`
+	HermesCommand string                         `mapstructure:"hermes_command"`
+	WorkspaceRoot string                         `mapstructure:"workspace_root"`
+	PollInterval  time.Duration                  `mapstructure:"poll_interval"`
+	Providers     map[string]AgentProviderConfig `mapstructure:"providers"`
+}
+
+type AgentProviderConfig struct {
+	Command          string   `mapstructure:"command"`
+	Args             []string `mapstructure:"args"`
+	PromptArg        string   `mapstructure:"prompt_arg"`
+	SkillArg         string   `mapstructure:"skill_arg"`
+	ProviderSkillArg string   `mapstructure:"provider_skill_arg"`
 }
 
 type KubernetesConfig struct {
@@ -130,6 +150,18 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("control_plane.docker.operation_kinds", []string{})
 	v.SetDefault("control_plane.docker.compose_root", ".kubecrux/docker")
 	v.SetDefault("control_plane.docker.poll_interval", "5s")
+	v.SetDefault("control_plane.agent_runtime.enabled", false)
+	v.SetDefault("control_plane.agent_runtime.worker_id", "")
+	v.SetDefault("control_plane.agent_runtime.provider_ids", []string{"hermes"})
+	v.SetDefault("control_plane.agent_runtime.provider_kinds", []string{"hermes"})
+	v.SetDefault("control_plane.agent_runtime.hermes_command", "hermes")
+	v.SetDefault("control_plane.agent_runtime.workspace_root", ".kubecrux/agent-runtime")
+	v.SetDefault("control_plane.agent_runtime.poll_interval", "5s")
+	v.SetDefault("control_plane.agent_runtime.providers.hermes.command", "hermes")
+	v.SetDefault("control_plane.agent_runtime.providers.hermes.args", []string{"chat"})
+	v.SetDefault("control_plane.agent_runtime.providers.hermes.prompt_arg", "-q")
+	v.SetDefault("control_plane.agent_runtime.providers.hermes.skill_arg", "-s")
+	v.SetDefault("control_plane.agent_runtime.providers.hermes.provider_skill_arg", "")
 	v.SetDefault("kubernetes.id", "local-agent")
 	v.SetDefault("kubernetes.name", "Local Agent")
 	v.SetDefault("kubernetes.kubeconfig", "$HOME/.kube/config")

@@ -29,6 +29,10 @@ func BuildPrincipalMiddleware(cfg cfgpkg.AuthConfig, parser AccessTokenParser) g
 		if token != "" {
 			principal, _, err := parser.ParseAccessToken(c.Request.Context(), token)
 			if err != nil {
+				if allowsExternalBearerToken(c.Request.URL.Path) {
+					c.Next()
+					return
+				}
 				apiresponse.Error(c, http.StatusUnauthorized, "unauthorized", err.Error())
 				c.Abort()
 				return
@@ -85,4 +89,32 @@ func normalizeBearerToken(value string) string {
 		return strings.TrimSpace(value[7:])
 	}
 	return value
+}
+
+func allowsExternalBearerToken(path string) bool {
+	path = strings.TrimSpace(path)
+	switch {
+	case strings.HasSuffix(path, "/integrations/alerts/webhook"):
+		return true
+	case strings.HasSuffix(path, "/delivery/execution-callbacks"):
+		return true
+	case strings.HasSuffix(path, "/delivery/execution-tasks/claim"):
+		return true
+	case strings.Contains(path, "/delivery/execution-tasks/") && strings.HasSuffix(path, "/runner-status"):
+		return true
+	case strings.HasSuffix(path, "/docker/operations/claim"):
+		return true
+	case strings.Contains(path, "/docker/operations/") && strings.HasSuffix(path, "/runner-status"):
+		return true
+	case strings.HasSuffix(path, "/docker/operation-callbacks"):
+		return true
+	case strings.HasSuffix(path, "/copilot/agent-runs/claim"):
+		return true
+	case strings.HasSuffix(path, "/copilot/agent-runs/callback"):
+		return true
+	case strings.HasSuffix(path, "/copilot/agent-runs/tool-call"):
+		return true
+	default:
+		return false
+	}
 }

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
-import { App, Button, Card, Descriptions, Empty, Form, Input, Modal, Popconfirm, Select, Space, Switch, Tabs, Tag, Typography } from 'antd'
-import { ArrowRightOutlined, DeleteOutlined, EditOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons'
+import { App, Button, Card, Descriptions, Empty, Form, Input, Modal, Popconfirm, Select, Space, Switch, Tabs, Tag, Tooltip, Typography } from 'antd'
+import { ArrowRightOutlined, CloudUploadOutlined, DeleteOutlined, EditOutlined, PlayCircleOutlined, PlusOutlined, ReloadOutlined, RocketOutlined, SafetyCertificateOutlined } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams } from 'react-router-dom'
 import { AdminTable } from '@/components/admin-table'
@@ -15,6 +15,9 @@ import { api } from '@/services/api-client'
 import { countReleaseDagNodes } from '@/components/release-flow-dag-definition'
 import type {
   ApiResponse,
+  ApplicationDeliveryActionKind,
+  ApplicationDeliveryActionRequest,
+  ApplicationDeliveryActionResponse,
   DeliveryApplicationBindingSummary,
   ApplicationRuntimeDetail,
   ApplicationServiceComponent,
@@ -47,6 +50,24 @@ type ServiceFormValues = Omit<ApplicationServiceComponent, 'applicationId' | 'cr
     runtimePortsText?: string
   }>
 }
+
+type DeliveryActionFormValues = {
+  applicationEnvironmentId?: string
+  targetId?: string
+  buildSourceId?: string
+  refType?: 'branch' | 'tag' | 'commit'
+  refName?: string
+  imageTag?: string
+  releaseName?: string
+  containerName?: string
+}
+
+const VALIDATION_NODE_TYPES = new Set(['check_http', 'check_k8s_event', 'smoke_test', 'verify', 'check'])
+const REF_TYPE_OPTIONS = [
+  { value: 'branch', label: 'Branch' },
+  { value: 'tag', label: 'Tag' },
+  { value: 'commit', label: 'Commit' },
+]
 
 function firstPodName(pods?: Pod[]) {
   return pods?.[0]?.name || ''
@@ -115,7 +136,7 @@ function summarizeBindingStatus(binding?: DeliveryApplicationBindingSummary | nu
 }
 
 function countWorkflowValidationNodes(run?: WorkflowRun | null) {
-  return run?.nodeRuns?.filter((item) => ['smoke_test', 'check_http', 'check_k8s_event'].includes(item.type)).length ?? 0
+  return run?.nodeRuns?.filter((item) => VALIDATION_NODE_TYPES.has(item.type)).length ?? 0
 }
 
 function summarizeExecutionTask(task?: ExecutionTask | null) {
@@ -141,6 +162,16 @@ function summarizeReleaseBundle(bundle?: ReleaseBundle | null) {
 function workflowTemplateNodeCount(template?: DeliveryApplicationBindingSummary['workflowTemplate'] | null) {
   if (!template) return 0
   return countReleaseDagNodes(template.definition)
+}
+
+function workflowTemplateValidationNodeCount(template?: DeliveryApplicationBindingSummary['workflowTemplate'] | null) {
+  const nodes = template?.definition?.nodes
+  if (!Array.isArray(nodes)) return 0
+  return nodes.filter((node) => {
+    if (!node || typeof node !== 'object') return false
+    const type = String((node as { type?: unknown }).type ?? '')
+    return VALIDATION_NODE_TYPES.has(type)
+  }).length
 }
 
 function summarizeWorkflowRun(run?: WorkflowRun | null) {
@@ -170,6 +201,24 @@ function deliveryTargetSummary(target?: {
   return [parts.join(' / '), target.containerName, target.targetKind, target.executorKind]
     .filter(Boolean)
     .join(' · ')
+}
+
+function buildDeliveryActionPayload(action: ApplicationDeliveryActionKind, values: DeliveryActionFormValues): ApplicationDeliveryActionRequest {
+  return {
+    action,
+    applicationEnvironmentId: values.applicationEnvironmentId ?? '',
+    targetId: values.targetId,
+    buildSourceId: values.buildSourceId,
+    refType: values.refType,
+    refName: values.refName,
+    imageTag: values.imageTag,
+    releaseName: values.releaseName,
+    containerName: values.containerName,
+  }
+}
+
+function disabledReason(reasons: Array<string | false | undefined>) {
+  return reasons.find(Boolean) || ''
 }
 
 function DeploymentOverview({ deployment }: { deployment: DeploymentDetail }) {
@@ -208,8 +257,12 @@ export function ApplicationDetailPage() {
   const [serviceModalVisible, setServiceModalVisible] = useState(false)
   const [editingService, setEditingService] = useState<ApplicationServiceComponent | null>(null)
   const [serviceForm] = Form.useForm<ServiceFormValues>()
+  const [deliveryForm] = Form.useForm<DeliveryActionFormValues>()
   const permissionSnapshotQuery = usePermissionSnapshot()
   const canManageServices = hasPermission(permissionSnapshotQuery.data?.data, 'delivery.application-services.manage')
+  const canTriggerBuild = hasPermission(permissionSnapshotQuery.data?.data, 'delivery.builds.trigger')
+  const canTriggerWorkflow = hasPermission(permissionSnapshotQuery.data?.data, 'delivery.workflows.trigger')
+  const canTriggerRelease = hasPermission(permissionSnapshotQuery.data?.data, 'delivery.releases.trigger')
 
   const runtimeQuery = useQuery({
     queryKey: ['application-runtime', applicationId],
@@ -232,6 +285,10 @@ export function ApplicationDetailPage() {
   const environments = runtime?.environments ?? []
   const services = servicesQuery.data?.data ?? []
   const bindings = detail?.bindings ?? []
+  const selectedDeliveryBindingId = Form.useWatch('applicationEnvironmentId', deliveryForm)
+  const selectedTargetId = Form.useWatch('targetId', deliveryForm)
+  const selectedBuildSourceId = Form.useWatch('buildSourceId', deliveryForm)
+  const selectedImageTag = Form.useWatch('imageTag', deliveryForm)
   const serviceBuildSourceOptions = useMemo(() => (runtime?.application.buildSources ?? []).map((item) => ({
     value: item.id,
     label: item.name,
@@ -260,6 +317,27 @@ export function ApplicationDetailPage() {
     queryKey: ['application-workflows', applicationId],
     queryFn: () => api.get<ApiResponse<WorkflowRun[]>>(`/workflows?applicationId=${applicationId ?? ''}`),
     enabled: !!applicationId,
+  })
+  const deliveryActionMutation = useMutation({
+    mutationFn: (payload: ApplicationDeliveryActionRequest) => api.post<ApiResponse<ApplicationDeliveryActionResponse>>(`/applications/${applicationId}/delivery-actions`, payload),
+    onSuccess: (_data, payload) => {
+      const labels: Record<ApplicationDeliveryActionKind, string> = {
+        build: '构建',
+        deploy: '部署',
+        build_deploy: '构建并部署',
+        workflow: '工作流',
+        verify: '验证',
+      }
+      message.success(`${labels[payload.action]}已触发`)
+      void queryClient.invalidateQueries({ queryKey: ['application-detail', applicationId] })
+      void queryClient.invalidateQueries({ queryKey: ['application-runtime', applicationId] })
+      void queryClient.invalidateQueries({ queryKey: ['application-builds', applicationId] })
+      void queryClient.invalidateQueries({ queryKey: ['application-releases', applicationId] })
+      void queryClient.invalidateQueries({ queryKey: ['application-workflows', applicationId] })
+      void queryClient.invalidateQueries({ queryKey: ['delivery-release-board'] })
+      void queryClient.invalidateQueries({ queryKey: ['execution-tasks'] })
+    },
+    onError: (err: Error) => message.error(err.message),
   })
 
   const createServiceMutation = useMutation({
@@ -311,8 +389,71 @@ export function ApplicationDetailPage() {
     setActiveEnvironmentId(environments[0].applicationEnvironmentId)
   }, [activeEnvironmentId, environments])
 
+  useEffect(() => {
+    if (!bindings.length) {
+      deliveryForm.resetFields()
+      return
+    }
+    const currentBindingId = deliveryForm.getFieldValue('applicationEnvironmentId')
+    const nextBinding = bindings.find((item) => item.applicationEnvironmentId === currentBindingId) ?? bindings[0]
+    const enabledTarget = nextBinding.targets?.find((item) => item.enabled) ?? nextBinding.targets?.[0]
+    const defaultSource = nextBinding.buildSource ?? runtime?.application.buildSources?.find((item) => item.isDefault) ?? runtime?.application.buildSources?.[0]
+    deliveryForm.setFieldsValue({
+      applicationEnvironmentId: nextBinding.applicationEnvironmentId,
+      targetId: enabledTarget?.id,
+      buildSourceId: nextBinding.buildSourceId || defaultSource?.id,
+      refType: nextBinding.buildPolicy?.refType as DeliveryActionFormValues['refType'] || 'branch',
+      refName: nextBinding.buildPolicy?.refValue || runtime?.application.defaultBranch || 'main',
+      imageTag: defaultSource?.defaultTag || runtime?.application.defaultTag,
+      containerName: enabledTarget?.containerName,
+    })
+  }, [bindings, deliveryForm, runtime?.application.buildSources, runtime?.application.defaultBranch, runtime?.application.defaultTag])
+
   const activeEnvironment = environments.find((item) => item.applicationEnvironmentId === activeEnvironmentId) ?? environments[0]
   const workloads = activeEnvironment?.workloads ?? []
+  const selectedDeliveryBinding = bindings.find((item) => item.applicationEnvironmentId === selectedDeliveryBindingId) ?? bindings[0]
+  const enabledTargets = selectedDeliveryBinding?.targets?.filter((item) => item.enabled) ?? []
+  const selectedDeliveryTarget = selectedDeliveryBinding?.targets?.find((item) => item.id === selectedTargetId) ?? enabledTargets[0] ?? selectedDeliveryBinding?.targets?.[0]
+  const selectedBuildSource = runtime?.application.buildSources?.find((item) => item.id === selectedBuildSourceId)
+    ?? selectedDeliveryBinding?.buildSource
+    ?? runtime?.application.buildSources?.find((item) => item.isDefault)
+    ?? runtime?.application.buildSources?.[0]
+  const effectiveImageTag = selectedImageTag || selectedBuildSource?.defaultTag || runtime?.application.defaultTag || ''
+  const validationNodeCount = workflowTemplateValidationNodeCount(selectedDeliveryBinding?.workflowTemplate)
+  const triggerDeliveryAction = async (action: ApplicationDeliveryActionKind) => {
+    try {
+      const values = await deliveryForm.validateFields()
+      deliveryActionMutation.mutate(buildDeliveryActionPayload(action, values))
+    } catch {
+      // antd Form has already marked the invalid fields.
+    }
+  }
+  const buildDisabledReason = disabledReason([
+    !selectedDeliveryBinding && '无环境绑定',
+    !effectiveImageTag && '缺少 imageTag/defaultTag',
+    !canTriggerBuild && '缺少构建权限',
+  ])
+  const deployDisabledReason = disabledReason([
+    !selectedDeliveryBinding && '无环境绑定',
+    !selectedDeliveryTarget && '无 target',
+    !effectiveImageTag && '缺少 imageTag/defaultTag',
+    !canTriggerRelease && '缺少发布权限',
+  ])
+  const buildDeployDisabledReason = disabledReason([
+    !selectedDeliveryBinding && '无环境绑定',
+    !selectedDeliveryTarget && '无 target',
+    !selectedDeliveryBinding?.workflowTemplate && '无 workflow template',
+    !effectiveImageTag && '缺少 imageTag/defaultTag',
+    !canTriggerBuild && '缺少构建权限',
+    !canTriggerWorkflow && '缺少工作流权限',
+  ])
+  const verifyDisabledReason = disabledReason([
+    !selectedDeliveryBinding && '无环境绑定',
+    !selectedDeliveryTarget && '无 target',
+    !selectedDeliveryBinding?.workflowTemplate && '无 workflow template',
+    validationNodeCount === 0 && '无验证节点',
+    !canTriggerWorkflow && '缺少工作流权限',
+  ])
 
   if (runtimeQuery.isLoading) {
     return <div className="kc-page"><Card>Loading...</Card></div>
@@ -340,6 +481,82 @@ export function ApplicationDetailPage() {
         <Card size="small"><Text type="secondary">环境</Text><strong>{environments.length}</strong></Card>
         <Card size="small"><Text type="secondary">运行目标</Text><strong>{environments.reduce((sum, item) => sum + (item.workloads?.length ?? 0), 0)}</strong></Card>
       </div>
+      <Card className="kc-application-delivery-actions" title="交付操作">
+        <Form form={deliveryForm} layout="vertical" size="middle" className="kc-application-delivery-actions__form">
+          <div className="kc-application-delivery-actions__grid">
+            <Form.Item name="applicationEnvironmentId" label="环境绑定" rules={[{ required: true, message: '请选择环境绑定' }]}>
+              <Select
+                options={bindings.map((binding) => ({
+                  value: binding.applicationEnvironmentId,
+                  label: binding.environmentName || binding.environmentKey || binding.environmentId,
+                }))}
+                onChange={(value) => {
+                  const nextBinding = bindings.find((item) => item.applicationEnvironmentId === value)
+                  const nextTarget = nextBinding?.targets?.find((item) => item.enabled) ?? nextBinding?.targets?.[0]
+                  const nextSource = nextBinding?.buildSource ?? runtime.application.buildSources?.find((item) => item.isDefault) ?? runtime.application.buildSources?.[0]
+                  deliveryForm.setFieldsValue({
+                    targetId: nextTarget?.id,
+                    buildSourceId: nextBinding?.buildSourceId || nextSource?.id,
+                    imageTag: nextSource?.defaultTag || runtime.application.defaultTag,
+                    containerName: nextTarget?.containerName,
+                  })
+                }}
+              />
+            </Form.Item>
+            <Form.Item name="targetId" label="发布目标">
+              <Select
+                allowClear
+                placeholder="选择 target"
+                options={(selectedDeliveryBinding?.targets ?? []).map((target) => ({
+                  value: target.id,
+                  disabled: !target.enabled,
+                  label: deliveryTargetSummary(target),
+                }))}
+              />
+            </Form.Item>
+            <Form.Item name="buildSourceId" label="构建来源">
+              <Select allowClear options={serviceBuildSourceOptions} />
+            </Form.Item>
+            <Form.Item name="refType" label="Ref 类型">
+              <Select options={REF_TYPE_OPTIONS} />
+            </Form.Item>
+            <Form.Item name="refName" label="分支 / Tag / Commit">
+              <Input placeholder={runtime.application.defaultBranch || 'main'} />
+            </Form.Item>
+            <Form.Item name="imageTag" label="镜像 Tag">
+              <Input placeholder={selectedBuildSource?.defaultTag || runtime.application.defaultTag || '必填'} />
+            </Form.Item>
+            <Form.Item name="releaseName" label="发布名称">
+              <Input placeholder={effectiveImageTag || selectedDeliveryBinding?.applicationEnvironmentId || 'release'} />
+            </Form.Item>
+            <Form.Item name="containerName" label="容器">
+              <Input placeholder={selectedDeliveryTarget?.containerName || '默认容器'} />
+            </Form.Item>
+          </div>
+          <div className="kc-application-delivery-actions__footer">
+            <Space wrap>
+              <Tag>{selectedDeliveryBinding?.workflowTemplateName || selectedDeliveryBinding?.workflowTemplate?.name || '未绑定 workflow'}</Tag>
+              <Tag>{selectedDeliveryBinding?.targetCount ?? 0} targets</Tag>
+              <Tag>{validationNodeCount} 验证节点</Tag>
+              {effectiveImageTag ? <Tag>imageTag {effectiveImageTag}</Tag> : <Tag color="warning">缺少 imageTag</Tag>}
+            </Space>
+            <Space wrap>
+              <Tooltip title={buildDisabledReason || '触发构建'}>
+                <Button icon={<CloudUploadOutlined />} disabled={!!buildDisabledReason} loading={deliveryActionMutation.isPending} onClick={() => void triggerDeliveryAction('build')}>构建</Button>
+              </Tooltip>
+              <Tooltip title={deployDisabledReason || '触发部署'}>
+                <Button icon={<RocketOutlined />} disabled={!!deployDisabledReason} loading={deliveryActionMutation.isPending} onClick={() => void triggerDeliveryAction('deploy')}>部署</Button>
+              </Tooltip>
+              <Tooltip title={buildDeployDisabledReason || '通过 workflow template 编排'}>
+                <Button type="primary" icon={<PlayCircleOutlined />} disabled={!!buildDeployDisabledReason} loading={deliveryActionMutation.isPending} onClick={() => void triggerDeliveryAction('build_deploy')}>构建并部署</Button>
+              </Tooltip>
+              <Tooltip title={verifyDisabledReason || '只运行验证节点'}>
+                <Button icon={<SafetyCertificateOutlined />} disabled={!!verifyDisabledReason} loading={deliveryActionMutation.isPending} onClick={() => void triggerDeliveryAction('verify')}>运行验证</Button>
+              </Tooltip>
+            </Space>
+          </div>
+        </Form>
+      </Card>
       <Tabs
         activeKey={activeTab}
         onChange={setActiveTab}

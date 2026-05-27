@@ -65,6 +65,7 @@ AI 调查以会话为一等对象，而不是临时聊天记录。
 - `scope`
 - `pinnedContext`
 - `toolset`
+- `agentProviderId`
 - `analysisRunRefs`
 - `summary`
 - `tags`
@@ -86,7 +87,7 @@ AI 调查以会话为一等对象，而不是临时聊天记录。
 - `budgetOverrides.timeoutSeconds` 用于限制单次分析工具运行时长
 - `scopeOverrides` 会叠加到会话 scope，再进入根因、性能和链路分析
 
-会话工具装配读取 `/api/v1/copilot/workbench/catalog`，该接口面向 `observe.ai.chat` / `observe.ai.view` / `settings.ai.view` 用户返回安全目录摘要：adapter 元数据、数据源启用状态、分析模板摘要和 skill 摘要。全量 AI Provider 配置和密钥仍只允许通过 `settings.ai.view` 访问。
+会话工具装配读取 `/api/v1/copilot/workbench/catalog`，该接口面向 `observe.ai.chat` / `observe.ai.view` / `settings.ai.view` 用户返回安全目录摘要：adapter 元数据、数据源启用状态、分析模板摘要、skill 摘要、agent provider、capability、tool binding 和 skill binding。全量 AI Provider 配置和密钥仍只允许通过 `settings.ai.view` 访问。
 
 当前会话模式：
 
@@ -120,6 +121,11 @@ AI 调查以会话为一等对象，而不是临时聊天记录。
 - `GET /api/v1/copilot/root-cause/runs`
 - `POST /api/v1/copilot/root-cause/runs`
 - `GET /api/v1/copilot/root-cause/runs/:runID`
+- `POST /api/v1/copilot/sessions/:sessionID/analyze`
+- `GET /api/v1/copilot/agent-providers`
+- `GET /api/v1/copilot/agent-runs`
+- `POST /api/v1/copilot/agent-runs/claim`
+- `POST /api/v1/copilot/agent-runs/callback`
 
 当前 `ai_root_cause_runs` 已承载：
 
@@ -174,6 +180,22 @@ AI 调查以会话为一等对象，而不是临时聊天记录。
 - `scopeRules`
 - `enabled`
 
+## Agent Runtime
+
+kubecrux 现在把 AI 执行器抽象为 Agent Runtime，而不是把页面或分析流程直接绑定到 Hermes。
+
+核心对象：
+
+- `AgentProvider`: 执行器目录，当前内置 `internal` 和 `hermes`
+- `AgentCapability`: kubecrux 平台能力，包括 `root_cause`、`performance`、`trace`、`inspection_review`、`delivery_failure`、`post_deploy_observation`、`platform_resource_diagnosis`、`docker_diagnosis`、`virtualization_diagnosis`、`oncall_brief`
+- `AgentToolBinding`: capability 到 MCP adapter、平台只读工具或 provider 原生工具的映射
+- `AgentSkillBinding`: kubecrux skill 到 Hermes skill、prompt template 或后续 provider skill 的映射
+- `AgentRun`: 外部 provider 的 durable 异步执行记录，统一承载状态、scope、toolset、skills、回调 token、工具执行和输出工件
+
+Hermes Agent 是首个外部 provider。AI 工作台和 automation policy 只选择 `agentProviderId` 和 capability；真正的 Hermes 调用由独立 agent runner 通过 claim/callback 完成。后续接入 OpenClaw、internal agent 或其它 agent 时，只扩 provider adapter 和 runner 执行器，不重写会话页、自动化策略和业务分析流程。
+
+Agent Runtime 输出统一回写为 kubecrux `AnalysisArtifact`，继续复用证据、假设、建议、关系图、工具调用记录和数据源快照。权限、菜单、预算、数据源脱敏、审计和高风险操作边界仍由 kubecrux 控制。
+
 ## Frontend Shape
 
 ### `/ai-workbench`
@@ -197,7 +219,8 @@ AI 调查以会话为一等对象，而不是临时聊天记录。
 - 当当前会话 scope 携带 `alertId` 时，工作台支持回跳原始监控告警详情
 - 支持通过 `mode=trace` 和 `mode=inspection_review` 在同一会话画布内切换链路分析和巡检复盘
 - `会话级工具集` 抽屉现在直接展示有效执行策略，并可编辑 adapter 选择、`adapter.tool` 级禁用清单、预算覆盖和 scope override
-- `显式分析` 会先打开确认弹窗，让用户选择可运行分析模式、编辑本轮分析目标，并预览会话 scope 与工具集来源，然后再调用会话分析接口；当前可运行模式限定为 `root_cause`、`performance` 和 `trace`，后端会拒绝 `general` / `inspection_review` 这类不会产生显式分析工件的模式，成功后会把所选模式写回会话 metadata
+- `显式分析` 会先打开确认弹窗，让用户选择 provider、analysis profile、可运行分析模式、编辑本轮分析目标，并预览会话 scope 与工具集来源，然后再调用会话分析接口；当前可运行模式为 `root_cause`、`performance`、`trace` 和 `inspection_review`，后端会拒绝 `general`，成功后会把所选 mode 与 `agentProviderId` 写回会话 metadata
+- 选择 `internal` provider 时继续使用 kubecrux 内置同步分析；选择 `hermes` 或其它外部 provider 时创建 `AgentRun` 并由 runner 异步回写分析工件
 - 会话内所有 assistant 消息携带的 `analysisArtifacts` 会汇总成“分析工件历史”，用户可以在根因、性能、链路和巡检复盘工件之间切换图谱、证据和建议
 
 ### `/ai-workbench/root-cause` 与 `/ai-workbench/performance`
@@ -218,10 +241,10 @@ AI 调查以会话为一等对象，而不是临时聊天记录。
 - 从调查会话生成巡检任务时，工作台会优先附带当前可用的 inspection profile，避免会话转巡检后丢失 profile 驱动的检查契约
 - 自动化策略页签支持直接新建和编辑触发类型、分析类型、分析模板、修复策略、去重窗口、冷却时间和启用状态
 - 自动化策略读取、创建、编辑和删除继续使用后端 `/api/v1/copilot/automation-policies` 合约，并受 `settings.ai.manage` 权限控制；缺少该权限时工作台不得主动拉取策略列表，只展示明确的权限边界
-- 自动化策略表单必须从工作台安全目录里的分析模板摘要选择 `analysisProfileId`；当前执行器只支持 `alert_webhook` 触发类型，未接入执行器的触发类型不得作为可运行策略选项暴露
-- 自动化策略的可运行分析类型当前限定为 `root_cause`、`performance` 和 `trace`；`inspection_review` 仍是会话/巡检复盘工件模式，不属于告警自动化执行器的 analysis kind
+- 自动化策略表单必须从工作台安全目录里的分析模板摘要选择 `analysisProfileId`，并从 agent provider 目录选择 `agentProviderId`；当前执行器只支持 `alert_webhook` 触发类型，未接入执行器的触发类型不得作为可运行策略选项暴露
+- 自动化策略的可运行分析类型包括 `root_cause`、`performance`、`trace` 和 `inspection_review`；外部 provider 还可以通过 Agent Runtime 扩展到交付失败、发布后观察、平台资源诊断、Docker/虚拟化诊断和值班摘要等 capability
 - 告警级别、状态、最小持续时间、标签匹配、分析时间范围和审批角色会写入结构化 `triggerConditions` / `approvalPolicy`，避免在工作台里只创建不可触发的空策略
-- 自动化执行器会把根因、性能和链路分析运行写入带 policy 前缀的 `dedupKey`；`dedupWindowSeconds` 负责同一告警指纹去重，`cooldownSeconds > 0` 负责策略级冷却，避免不同告警在冷却期内重复触发
+- 自动化执行器会把内置根因、性能和链路分析运行写入带 policy 前缀的 `dedupKey`；外部 provider 会把相同去重上下文写入 `AgentRun.input`。`dedupWindowSeconds` 负责同一告警指纹去重，`cooldownSeconds > 0` 负责策略级冷却，避免不同告警在冷却期内重复触发
 
 巡检结果进入会话时不再只创建一个空调查：
 
@@ -238,6 +261,7 @@ AI 调查以会话为一等对象，而不是临时聊天记录。
 - 全局数据源镜像
 - 会话级 toolset 装配入口
 - 企业 skill registry
+- Agent Provider / Capability / Tool Binding / Skill Binding 安全目录
 
 工具装配入口必须与后端执行契约保持一致：
 
@@ -260,10 +284,11 @@ AI 层仍保持“分析与建议优先”的安全方向。
 - 调用读型工具
 - 生成证据、假设、建议
 - 把工具调用和分析工件沉淀进会话
+- 将外部 agent 输出转换成 kubecrux `AnalysisArtifact`
 
 当前没有把高风险执行动作直接挂入聊天自动执行链。
 
-应用接入规范生成与平台交付编排不归 AI 工作台，而归应用交付工作台；AI 工作台只负责暴露能被企业 AI coding 客户端发现和调用的 MCP/skills 能力。
+应用接入规范生成与平台交付编排不归 AI 工作台，而归应用交付工作台；AI 工作台只负责暴露能被企业 AI coding 客户端和 Agent Runtime 发现和调用的 MCP/skills 能力。
 
 ## Near-Term Expectations
 
@@ -275,5 +300,6 @@ AI 层仍保持“分析与建议优先”的安全方向。
   - 全局配置
   - 会话级装配
   - 分析工件落盘
-- root cause / performance / trace 三类分析应尽量共用统一 artifact 模型，而不是重复造页面协议
+- root cause / performance / trace / inspection review 以及外部 agent 分析应共用统一 artifact 模型，而不是重复造页面协议
+- 新增 agent provider 时只能扩 provider adapter、tool binding、skill binding 和 runner 执行器，不能让页面或业务分析流程直接依赖 provider SDK/CLI
 - 监控工作台到 AI 工作台的 handoff 应保持标准 scope 契约，不再由页面各自定义私有跳转协议

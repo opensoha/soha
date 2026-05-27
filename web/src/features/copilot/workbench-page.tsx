@@ -110,7 +110,7 @@ const WORKBENCH_MODE_OPTIONS = [
 ] as const
 
 export const RUNNABLE_ANALYSIS_MODE_OPTIONS = WORKBENCH_MODE_OPTIONS.filter((item) => (
-  item.value === 'root_cause' || item.value === 'performance' || item.value === 'trace'
+  item.value === 'root_cause' || item.value === 'performance' || item.value === 'trace' || item.value === 'inspection_review'
 ))
 
 function modeLabel(mode?: string) {
@@ -158,6 +158,16 @@ function defaultAnalysisQuestion(mode: WorkbenchMode, session?: WorkbenchSession
     default:
       return '请把当前会话上下文转成结构化分析，输出证据、结论和下一步建议。'
   }
+}
+
+function defaultAnalysisProfileIdForMode(
+  mode: WorkbenchMode,
+  profiles: Array<{ id: string; mode: string; enabled: boolean }>,
+) {
+  const expectedMode = mode === 'inspection_review' ? 'inspection' : mode
+  return profiles.find((item) => item.enabled && item.mode === expectedMode)?.id
+    ?? profiles.find((item) => item.enabled)?.id
+    ?? ''
 }
 
 function modeIcon(mode?: string) {
@@ -499,6 +509,8 @@ export function AIWorkbenchPage() {
   const [analysisOpen, setAnalysisOpen] = useState(false)
   const [analysisMode, setAnalysisMode] = useState<WorkbenchMode>(initialMode)
   const [analysisQuestion, setAnalysisQuestion] = useState('')
+  const [selectedAnalysisProfileId, setSelectedAnalysisProfileId] = useState('')
+  const [selectedAgentProviderId, setSelectedAgentProviderId] = useState('internal')
   const [selectedSkillIds, setSelectedSkillIds] = useState<string[]>([])
   const [selectedAdapterIds, setSelectedAdapterIds] = useState<string[]>([])
   const [disabledToolNames, setDisabledToolNames] = useState<string[]>([])
@@ -547,9 +559,17 @@ export function AIWorkbenchPage() {
   const adapters = useMemo(() => catalogQuery.data?.data?.adapters ?? [], [catalogQuery.data?.data?.adapters])
   const dataSources = useMemo(() => catalogQuery.data?.data?.dataSources ?? [], [catalogQuery.data?.data?.dataSources])
   const globalSkills = useMemo(() => catalogQuery.data?.data?.skillsRegistry ?? [], [catalogQuery.data?.data?.skillsRegistry])
+  const analysisProfiles = useMemo(() => catalogQuery.data?.data?.analysisProfiles ?? [], [catalogQuery.data?.data?.analysisProfiles])
+  const agentProviders = useMemo(() => catalogQuery.data?.data?.agentProviders ?? [], [catalogQuery.data?.data?.agentProviders])
+  const agentCapabilities = useMemo(() => catalogQuery.data?.data?.capabilities ?? [], [catalogQuery.data?.data?.capabilities])
+  const defaultAgentProviderId = useMemo(() => {
+    return agentProviders.find((item) => item.default && item.enabled)?.id
+      ?? agentProviders.find((item) => item.enabled)?.id
+      ?? 'internal'
+  }, [agentProviders])
   const defaultInspectionProfileId = useMemo(() => {
-    return (catalogQuery.data?.data?.analysisProfiles ?? []).find((item) => item.enabled && item.mode === 'inspection')?.id
-  }, [catalogQuery.data?.data?.analysisProfiles])
+    return analysisProfiles.find((item) => item.enabled && item.mode === 'inspection')?.id
+  }, [analysisProfiles])
 
   useEffect(() => {
     if (!requestedSessionId && visibleSessions[0]?.id) {
@@ -595,6 +615,7 @@ export function AIWorkbenchPage() {
     mutationFn: (payload?: { title?: string; scope?: WorkbenchSessionScope }) => api.post<ApiResponse<WorkbenchSession>>('/copilot/sessions', {
       title: payload?.title || '',
       mode: draftMode,
+      agentProviderId: selectedAgentProviderId || defaultAgentProviderId,
       scope: payload?.scope || draftScope,
       tags: [],
     }),
@@ -644,10 +665,12 @@ export function AIWorkbenchPage() {
   })
 
   const analyzeSessionMutation = useMutation({
-    mutationFn: (payload: { sessionId: string; mode: WorkbenchMode; question: string; scope: WorkbenchSessionScope }) =>
+    mutationFn: (payload: { sessionId: string; mode: WorkbenchMode; question: string; scope: WorkbenchSessionScope; agentProviderId: string; analysisProfileId?: string }) =>
       api.post<ApiResponse<WorkbenchMessageEnvelope>>(`/copilot/sessions/${payload.sessionId}/analyze`, {
         mode: payload.mode,
         question: payload.question,
+        agentProviderId: payload.agentProviderId,
+        analysisProfileId: payload.analysisProfileId,
         scope: payload.scope,
       }),
     onSuccess: async (response, payload) => {
@@ -701,6 +724,10 @@ export function AIWorkbenchPage() {
     currentSession?.metadata?.toolset?.budgetOverrides,
     currentSession?.metadata?.toolset?.scopeOverrides,
   ])
+
+  useEffect(() => {
+    setSelectedAgentProviderId(currentSession?.metadata?.agentProviderId || defaultAgentProviderId)
+  }, [currentSession?.id, currentSession?.metadata?.agentProviderId, defaultAgentProviderId])
 
   const artifactEntries = useMemo<WorkbenchArtifactEntry[]>(() => {
     const entries: WorkbenchArtifactEntry[] = []
@@ -781,6 +808,20 @@ export function AIWorkbenchPage() {
     },
   ]
   const enabledDataSources = dataSources.filter((item) => item.enabled)
+  const enabledAgentProviders = agentProviders.filter((item) => item.enabled)
+  const providerOptions = enabledAgentProviders.map((item) => ({
+    value: item.id,
+    label: `${item.name}${item.supportsAsync ? ' / async' : ' / inline'}`,
+  }))
+  const analysisProfileOptions = analysisProfiles
+    .filter((item) => item.enabled)
+    .map((item) => ({ value: item.id, label: `${item.name} / ${item.mode}` }))
+  const selectedAnalysisProfile = analysisProfiles.find((item) => item.id === selectedAnalysisProfileId)
+  const activeAgentProvider = agentProviders.find((item) => item.id === selectedAgentProviderId)
+    ?? agentProviders.find((item) => item.id === currentSession?.metadata?.agentProviderId)
+    ?? agentProviders.find((item) => item.id === defaultAgentProviderId)
+  const activeCapability = agentCapabilities.find((item) => (item.analysisKinds ?? []).includes(activeMode) || item.id === activeMode)
+  const analysisCapability = agentCapabilities.find((item) => (item.analysisKinds ?? []).includes(analysisMode) || item.id === analysisMode)
   const disabledToolOptions = useMemo(() => buildDisabledToolOptions(adapters), [adapters])
   const cleanedBudgetOverrides = useMemo(() => numberRecord(budgetOverrides), [budgetOverrides])
   const cleanedScopeOverrides = useMemo(() => scopeOverrideState(scopeOverrides), [scopeOverrides])
@@ -790,6 +831,16 @@ export function AIWorkbenchPage() {
     adapterId !== 'platform-native.v1' && !activeDataSourceAdapters.includes(adapterId)
   ))
   const toolsetPolicySummary = [
+    {
+      label: 'Agent Provider',
+      value: activeAgentProvider?.name || selectedAgentProviderId || 'Auto',
+      detail: activeAgentProvider?.description || '会话级 provider 决定显式分析由内置分析还是外部 agent runner 执行。',
+    },
+    {
+      label: 'Capability',
+      value: activeCapability?.name || activeMode,
+      detail: activeCapability?.toolRefs?.length ? activeCapability.toolRefs.join(', ') : '按当前分析模式自动选择 capability 与工具绑定。',
+    },
     {
       label: 'Adapter',
       value: selectedAdapterIds.length > 0 ? `${selectedAdapterIds.length} selected` : 'Auto',
@@ -876,6 +927,8 @@ export function AIWorkbenchPage() {
     const nextMode = activeMode
     const runnableMode = RUNNABLE_ANALYSIS_MODE_OPTIONS.some((item) => item.value === nextMode) ? nextMode : 'root_cause'
     setAnalysisMode(runnableMode)
+    setSelectedAgentProviderId(currentSession.metadata?.agentProviderId || defaultAgentProviderId)
+    setSelectedAnalysisProfileId(defaultAnalysisProfileIdForMode(runnableMode, analysisProfiles))
     setAnalysisQuestion(defaultAnalysisQuestion(runnableMode, currentSession))
     setAnalysisOpen(true)
   }
@@ -887,6 +940,8 @@ export function AIWorkbenchPage() {
       mode: analysisMode,
       question,
       scope: currentSession.metadata?.scope || {},
+      agentProviderId: selectedAgentProviderId || defaultAgentProviderId,
+      analysisProfileId: selectedAnalysisProfileId || undefined,
     })
   }
   const openInspector = (view: InspectorView) => {
@@ -941,7 +996,7 @@ export function AIWorkbenchPage() {
     patchSessionMutation.mutate(
       {
         sessionId: currentSession.id,
-        body: { toolset: payload },
+        body: { toolset: payload, agentProviderId: selectedAgentProviderId || defaultAgentProviderId },
       },
       {
         onSuccess: () => void message.success('已更新会话级工具装配'),
@@ -1172,6 +1227,7 @@ export function AIWorkbenchPage() {
                         </Paragraph>
                         <Space size={[8, 8]} wrap>
                           <Tag color="blue">{modeLabel(currentSession.metadata?.mode)}</Tag>
+                          <Tag color={activeAgentProvider?.supportsAsync ? 'purple' : 'default'}>{activeAgentProvider?.name || currentSession.metadata?.agentProviderId || '内置分析'}</Tag>
                           <Tag>{buildScopeSummary(currentSession.metadata?.scope)}</Tag>
                           {currentSession.metadata?.analysisRunRefs?.[0]?.status ? <StatusTag value={currentSession.metadata.analysisRunRefs[0].status} /> : null}
                           {(currentSession.metadata?.tags ?? []).map((item) => <Tag key={item}>{item}</Tag>)}
@@ -1651,6 +1707,30 @@ export function AIWorkbenchPage() {
               ) : null}
             </Card>
 
+            <Card size="small" title="Agent Provider">
+              <Space orientation="vertical" size={12} style={{ width: '100%' }}>
+                <Select
+                  value={selectedAgentProviderId || defaultAgentProviderId}
+                  options={providerOptions}
+                  onChange={(value: string) => setSelectedAgentProviderId(value)}
+                  placeholder="选择本会话默认执行器"
+                />
+                {activeAgentProvider ? (
+                  <Alert
+                    type={activeAgentProvider.supportsAsync ? 'info' : 'success'}
+                    showIcon
+                    title={`${activeAgentProvider.name} · ${activeAgentProvider.supportsAsync ? '异步 runner' : '内置同步分析'}`}
+                    description={activeAgentProvider.description}
+                  />
+                ) : null}
+                {agentCapabilities.length > 0 ? (
+                  <div className="kc-ai-workbench__tool-chip-list">
+                    {agentCapabilities.slice(0, 8).map((item) => <Tag key={item.id}>{item.name}</Tag>)}
+                  </div>
+                ) : null}
+              </Space>
+            </Card>
+
             <Card size="small" title="Adapters 与工具">
               <Space orientation="vertical" size={12} style={{ width: '100%' }}>
                 <Select
@@ -1784,11 +1864,38 @@ export function AIWorkbenchPage() {
                   const next = value as WorkbenchMode
                   const currentDefault = defaultAnalysisQuestion(analysisMode, currentSession)
                   setAnalysisMode(next)
+                  setSelectedAnalysisProfileId(defaultAnalysisProfileIdForMode(next, analysisProfiles))
                   if (!analysisQuestion.trim() || analysisQuestion === currentDefault) {
                     setAnalysisQuestion(defaultAnalysisQuestion(next, currentSession))
                   }
                 }}
               />
+            </Space>
+            <Space orientation="vertical" size={8} style={{ width: '100%' }}>
+              <Text strong>Agent Provider</Text>
+              <Select
+                value={selectedAgentProviderId || defaultAgentProviderId}
+                options={providerOptions}
+                onChange={(value: string) => setSelectedAgentProviderId(value)}
+              />
+              <Text type="secondary">
+                {agentProviders.find((item) => item.id === selectedAgentProviderId)?.description || '选择本次分析使用内置分析还是外部 agent runner。'}
+              </Text>
+            </Space>
+            <Space orientation="vertical" size={8} style={{ width: '100%' }}>
+              <Text strong>分析模板</Text>
+              <Select
+                allowClear
+                showSearch
+                optionFilterProp="label"
+                value={selectedAnalysisProfileId || undefined}
+                placeholder="使用当前模式的默认 profile"
+                options={analysisProfileOptions}
+                onChange={(value?: string) => setSelectedAnalysisProfileId(value || '')}
+              />
+              <Text type="secondary">
+                {selectedAnalysisProfile ? `${selectedAnalysisProfile.name} 会约束数据源、playbook、预算和输出风格。` : '未选择时由后端使用会话和 provider 默认策略。'}
+              </Text>
             </Space>
             <Space orientation="vertical" size={8} style={{ width: '100%' }}>
               <Text strong>分析目标</Text>
@@ -1804,6 +1911,11 @@ export function AIWorkbenchPage() {
             <Card size="small" title="执行上下文">
               <Space size={[8, 8]} wrap>
                 <Tag color="blue">{modeLabel(analysisMode)}</Tag>
+                <Tag color={agentProviders.find((item) => item.id === selectedAgentProviderId)?.supportsAsync ? 'purple' : 'default'}>
+                  {agentProviders.find((item) => item.id === selectedAgentProviderId)?.name || selectedAgentProviderId || '内置分析'}
+                </Tag>
+                {analysisCapability ? <Tag>{analysisCapability.name}</Tag> : null}
+                {selectedAnalysisProfile ? <Tag>{selectedAnalysisProfile.name}</Tag> : null}
                 <Tag>{buildScopeSummary(currentSession.metadata?.scope)}</Tag>
                 <Tag>{currentSession.metadata?.toolset ? '会话级工具集' : '全局工具集'}</Tag>
               </Space>

@@ -71,9 +71,41 @@ PVE credentials are accepted only on create or update payloads and are never ret
 
 - `GET /api/v1/copilot/insights`
 - `GET /api/v1/copilot/sessions`
+- `GET /api/v1/copilot/sessions/:sessionID`
 - `POST /api/v1/copilot/sessions`
+- `PATCH /api/v1/copilot/sessions/:sessionID`
+- `DELETE /api/v1/copilot/sessions/:sessionID`
 - `GET /api/v1/copilot/sessions/:sessionID/messages`
 - `POST /api/v1/copilot/sessions/:sessionID/messages`
+- `POST /api/v1/copilot/sessions/:sessionID/analyze`
+- `GET /api/v1/copilot/root-cause/runs`
+- `POST /api/v1/copilot/root-cause/runs`
+- `GET /api/v1/copilot/root-cause/runs/:runID`
+- `GET /api/v1/copilot/agent-providers`
+- `GET /api/v1/copilot/agent-runs`
+- `GET /api/v1/copilot/data-source-capabilities`
+- `GET /api/v1/copilot/data-sources`
+- `POST /api/v1/copilot/data-sources`
+- `PUT /api/v1/copilot/data-sources/:dataSourceID`
+- `POST /api/v1/copilot/data-sources/:dataSourceID/validate`
+- `GET /api/v1/copilot/analysis-profiles`
+- `POST /api/v1/copilot/analysis-profiles`
+- `PUT /api/v1/copilot/analysis-profiles/:profileID`
+- `GET /api/v1/copilot/automation-policies`
+- `POST /api/v1/copilot/automation-policies`
+- `PUT /api/v1/copilot/automation-policies/:policyID`
+- `GET /api/v1/copilot/inspection-tasks`
+- `POST /api/v1/copilot/inspection-tasks`
+- `PUT /api/v1/copilot/inspection-tasks/:taskID`
+- `GET /api/v1/copilot/inspection-runs`
+- `POST /api/v1/copilot/inspection-tasks/:taskID/execute`
+- `POST /api/v1/copilot/agent-runs/claim`
+- `POST /api/v1/copilot/agent-runs/callback`
+- `POST /api/v1/copilot/agent-runs/tool-call`
+
+`/copilot/agent-runs/claim`, `/copilot/agent-runs/callback`, and `/copilot/agent-runs/tool-call` are runner-facing APIs and require `Authorization: Bearer <runtime.execution_runner_token>`. Tool calls also require the per-run `callbackToken`; the control plane only executes tools present in the `AgentRun.toolBindings` snapshot and records the result as `ToolExecution`.
+
+`POST /copilot/root-cause/runs` accepts `agentProviderId`, `analysisProfileId`, and `triggerType`. `agentProviderId=internal` runs the built-in analyzer synchronously; external providers such as `hermes` create a queued root-cause business run plus a linked `AgentRun`, then backfill the business run from the runner callback.
 
 ## Application Payload
 

@@ -32,6 +32,7 @@ type AnalysisRunRef struct {
 type SessionMetadata struct {
 	Mode            string           `json:"mode,omitempty"`
 	Status          string           `json:"status,omitempty"`
+	AgentProviderID string           `json:"agentProviderId,omitempty"`
 	Scope           SessionScope     `json:"scope,omitempty"`
 	PinnedContext   map[string]any   `json:"pinnedContext,omitempty"`
 	Toolset         SessionToolset   `json:"toolset,omitempty"`
@@ -163,6 +164,7 @@ type RootCauseRunInput struct {
 	Kind              string `json:"kind,omitempty"`
 	SessionID         string `json:"sessionId,omitempty"`
 	AnalysisProfileID string `json:"analysisProfileId,omitempty"`
+	AgentProviderID   string `json:"agentProviderId,omitempty"`
 	TriggerType       string `json:"triggerType,omitempty"`
 	ClusterID         string `json:"clusterId,omitempty"`
 	Namespace         string `json:"namespace,omitempty"`
@@ -275,6 +277,7 @@ type Repository interface {
 	ListRootCauseRuns(context.Context, string, RootCauseRunFilter) ([]RootCauseRun, error)
 	GetRootCauseRun(context.Context, string, string) (RootCauseRun, error)
 	CreateRootCauseRun(context.Context, RootCauseRun) (RootCauseRun, error)
+	UpdateRootCauseRun(context.Context, RootCauseRun) (RootCauseRun, error)
 	GetAnalysisProfile(context.Context, string) (AnalysisProfile, error)
 	ListInspectionTasks(context.Context, string, int) ([]InspectionTask, error)
 	GetInspectionTask(context.Context, string, string) (InspectionTask, error)

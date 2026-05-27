@@ -206,6 +206,46 @@ type ExecutionTaskActionInput struct {
 	Reason string `json:"reason,omitempty"`
 }
 
+type ApplicationDeliveryActionKind string
+
+const (
+	ApplicationDeliveryActionBuild       ApplicationDeliveryActionKind = "build"
+	ApplicationDeliveryActionDeploy      ApplicationDeliveryActionKind = "deploy"
+	ApplicationDeliveryActionBuildDeploy ApplicationDeliveryActionKind = "build_deploy"
+	ApplicationDeliveryActionWorkflow    ApplicationDeliveryActionKind = "workflow"
+	ApplicationDeliveryActionVerify      ApplicationDeliveryActionKind = "verify"
+)
+
+type ApplicationDeliveryActionInput struct {
+	Action                   ApplicationDeliveryActionKind `json:"action"`
+	ApplicationEnvironmentID string                        `json:"applicationEnvironmentId"`
+	TargetID                 string                        `json:"targetId,omitempty"`
+	BuildSourceID            string                        `json:"buildSourceId,omitempty"`
+	RefType                  string                        `json:"refType,omitempty"`
+	RefName                  string                        `json:"refName,omitempty"`
+	ImageTag                 string                        `json:"imageTag,omitempty"`
+	ReleaseName              string                        `json:"releaseName,omitempty"`
+	ContainerName            string                        `json:"containerName,omitempty"`
+	Variables                map[string]any                `json:"variables,omitempty"`
+	BuildArgs                map[string]any                `json:"buildArgs,omitempty"`
+}
+
+type ApplicationDeliveryActionRelatedIDs struct {
+	ReleaseBundleID string `json:"releaseBundleId,omitempty"`
+	ExecutionTaskID string `json:"executionTaskId,omitempty"`
+}
+
+type ApplicationDeliveryActionResult struct {
+	Action                   ApplicationDeliveryActionKind       `json:"action"`
+	ApplicationID            string                              `json:"applicationId"`
+	ApplicationEnvironmentID string                              `json:"applicationEnvironmentId"`
+	Target                   *domaincatalog.ReleaseTarget        `json:"target,omitempty"`
+	Build                    *domainbuild.Record                 `json:"build,omitempty"`
+	Workflow                 *domainworkflow.Run                 `json:"workflow,omitempty"`
+	Release                  *domainrelease.Record               `json:"release,omitempty"`
+	RelatedIDs               ApplicationDeliveryActionRelatedIDs `json:"relatedIds,omitempty"`
+}
+
 type ApprovalPolicy struct {
 	ID                string         `json:"id"`
 	Key               string         `json:"key"`
@@ -250,6 +290,7 @@ type ApplicationBindingSummary struct {
 	Targets                  []domaincatalog.ReleaseTarget   `json:"targets,omitempty"`
 	BuildSourceID            string                          `json:"buildSourceId,omitempty"`
 	BuildSource              *domainapp.BuildSource          `json:"buildSource,omitempty"`
+	BuildPolicy              domaincatalog.BuildPolicy       `json:"buildPolicy,omitempty"`
 	LatestBundle             *ReleaseBundle                  `json:"latestBundle,omitempty"`
 	LatestExecutionTask      *ExecutionTask                  `json:"latestExecutionTask,omitempty"`
 	LatestBuild              *domainbuild.Record             `json:"latestBuild,omitempty"`
@@ -343,6 +384,7 @@ type ReleaseBoardEntry struct {
 	WorkflowTemplateName     string                        `json:"workflowTemplateName,omitempty"`
 	BuildSourceID            string                        `json:"buildSourceId,omitempty"`
 	BuildSource              *domainapp.BuildSource        `json:"buildSource,omitempty"`
+	BuildPolicy              domaincatalog.BuildPolicy     `json:"buildPolicy,omitempty"`
 	LatestBundle             *ReleaseBundle                `json:"latestBundle,omitempty"`
 	LatestExecutionTask      *ExecutionTask                `json:"latestExecutionTask,omitempty"`
 	Targets                  []domaincatalog.ReleaseTarget `json:"targets,omitempty"`

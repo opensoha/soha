@@ -71,6 +71,7 @@ export const consolePermissionGroups: PermissionCatalogGroup[] = [
       },
       { value: "delivery.build-templates.view", label: "查看构建模板" },
       { value: "delivery.build-templates.manage", label: "管理构建模板" },
+      { value: "delivery.builds.trigger", label: "触发构建" },
       { value: "delivery.release-bundles.view", label: "查看版本包" },
       { value: "delivery.execution-tasks.view", label: "查看执行任务" },
       { value: "delivery.execution-tasks.manage", label: "管理执行任务" },

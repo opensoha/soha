@@ -35,7 +35,11 @@ func (s *Service) GetWorkbenchCatalog(ctx context.Context, principal domainident
 		DataSources:      []domaincopilot.WorkbenchDataSource{},
 		AnalysisProfiles: []domaincopilot.WorkbenchAnalysisProfile{},
 		SkillsRegistry:   []domaincopilot.WorkbenchSkill{},
+		AgentProviders:   s.agentProviderCatalog(),
+		Capabilities:     defaultAgentCapabilities(),
 	}
+	catalog.ToolBindings = flattenToolBindings(catalog.Capabilities)
+	catalog.SkillBindings = flattenSkillBindings(catalog.Capabilities)
 	if s.mcpRegistry != nil {
 		catalog.Adapters = s.mcpRegistry.List()
 	}
@@ -251,6 +255,7 @@ func (s *Service) CreateAutomationPolicy(ctx context.Context, principal domainid
 		Enabled:            item.Enabled,
 		TriggerType:        item.TriggerType,
 		AnalysisKinds:      item.AnalysisKinds,
+		AgentProviderID:    item.AgentProviderID,
 		TriggerConditions:  item.TriggerConditions,
 		DedupWindowSeconds: item.DedupWindowSeconds,
 		AnalysisProfileID:  item.AnalysisProfileID,
@@ -373,6 +378,7 @@ func normalizeAutomationPolicyInput(input domaincopilot.AutomationPolicyInput) (
 	input.Name = strings.TrimSpace(input.Name)
 	input.TriggerType = strings.TrimSpace(input.TriggerType)
 	input.AnalysisProfileID = strings.TrimSpace(input.AnalysisProfileID)
+	input.AgentProviderID = normalizeAgentProviderID(input.AgentProviderID)
 	input.RemediationPolicy = strings.TrimSpace(input.RemediationPolicy)
 	if input.ID == "" {
 		input.ID = "policy:" + uuid.NewString()
@@ -421,7 +427,7 @@ func normalizeAutomationAnalysisKinds(items []string) ([]string, error) {
 			continue
 		}
 		switch kind {
-		case "root_cause", "performance", "trace":
+		case "root_cause", "performance", "trace", "inspection_review":
 		default:
 			return nil, fmt.Errorf("%w: unsupported analysis kind %s", aperrors.ErrInvalidArgument, kind)
 		}
