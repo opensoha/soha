@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := dev
 
-.PHONY: init init-go init-web init-docs init-db init-cluster init-cluster-kubevirt init-kubevirt init-cdi init-pve-vm deploy-pve-vm delete-pve-vm deploy-pve-mock delete-pve-mock fix-kubevirt-mounts enable-kubevirt-emulation pve-vm-boot-root pve-vm-status dev dev-api dev-web dev-docs dev-all build build-web build-docs clean deploy-image deploy-compose-up deploy-compose-down deploy-compose-config deploy-helm-lint
+.PHONY: init init-go init-web init-docs init-db init-cluster init-cluster-kubevirt init-kubevirt init-cdi init-pve-vm deploy-pve-vm delete-pve-vm deploy-pve-mock delete-pve-mock fix-kubevirt-mounts enable-kubevirt-emulation pve-vm-boot-root pve-vm-status dev dev-api dev-web dev-docs build build-web build-docs clean deploy-image deploy-compose-up deploy-compose-down deploy-compose-config deploy-helm-lint
 
 COMPOSE ?= docker compose
 ROOT_COMPOSE_FILE ?= docker-compose.yaml
@@ -143,14 +143,12 @@ dev-web:
 dev-docs:
 	cd docs && npm run dev
 
-dev-all: init-db init-cluster
+dev: init-db init-cluster
 	@echo "Starting api and web..."
 	@trap 'kill 0' INT TERM EXIT; \
 	$(MAKE) dev-api & \
 	$(MAKE) dev-web & \
 	wait
-
-dev: dev-all
 
 # Build
 build-web:
