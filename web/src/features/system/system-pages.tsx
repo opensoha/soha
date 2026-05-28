@@ -748,7 +748,7 @@ interface MenuWorkbenchSummary {
 const MENU_WORKBENCH_ORDER: MenuWorkbenchSurface[] = ['platform', 'virtualization', 'docker', 'delivery', 'ai', 'monitoring', 'system', 'unmapped']
 
 const MENU_WORKBENCH_LABELS: Record<MenuWorkbenchSurface, string> = {
-  platform: '平台工作台',
+  platform: 'k8s工作台',
   virtualization: '虚拟化管理工作台',
   docker: 'Docker 工作台',
   ai: 'AI工作台',

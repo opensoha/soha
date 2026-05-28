@@ -149,24 +149,24 @@ type NodeResourceSummaryView struct {
 }
 
 type PodDetailView struct {
-	Name               string                  `json:"name"`
-	Namespace          string                  `json:"namespace"`
-	Phase              string                  `json:"phase"`
-	PodIP              string                  `json:"podIp,omitempty"`
-	HostIP             string                  `json:"hostIp,omitempty"`
-	NodeName           string                  `json:"nodeName,omitempty"`
-	ServiceAccountName string                  `json:"serviceAccountName,omitempty"`
-	QOSClass           string                  `json:"qosClass,omitempty"`
-	StartTime          string                  `json:"startTime,omitempty"`
-	Requests           ResourceQuantityView    `json:"requests,omitempty"`
-	Limits             ResourceQuantityView    `json:"limits,omitempty"`
-	Labels             map[string]string       `json:"labels,omitempty"`
-	Annotations        map[string]string       `json:"annotations,omitempty"`
-	Containers         []WorkloadContainerView `json:"containers,omitempty"`
-	Conditions         []WorkloadConditionView `json:"conditions,omitempty"`
-	Volumes            []PodVolumeView         `json:"volumes,omitempty"`
+	Name               string                   `json:"name"`
+	Namespace          string                   `json:"namespace"`
+	Phase              string                   `json:"phase"`
+	PodIP              string                   `json:"podIp,omitempty"`
+	HostIP             string                   `json:"hostIp,omitempty"`
+	NodeName           string                   `json:"nodeName,omitempty"`
+	ServiceAccountName string                   `json:"serviceAccountName,omitempty"`
+	QOSClass           string                   `json:"qosClass,omitempty"`
+	StartTime          string                   `json:"startTime,omitempty"`
+	Requests           ResourceQuantityView     `json:"requests,omitempty"`
+	Limits             ResourceQuantityView     `json:"limits,omitempty"`
+	Labels             map[string]string        `json:"labels,omitempty"`
+	Annotations        map[string]string        `json:"annotations,omitempty"`
+	Containers         []WorkloadContainerView  `json:"containers,omitempty"`
+	Conditions         []WorkloadConditionView  `json:"conditions,omitempty"`
+	Volumes            []PodVolumeView          `json:"volumes,omitempty"`
 	RelatedResources   []PodRelatedResourceView `json:"relatedResources,omitempty"`
-	AllowedActions     []string                `json:"allowedActions,omitempty"`
+	AllowedActions     []string                 `json:"allowedActions,omitempty"`
 }
 
 type PodLogsView struct {
@@ -445,6 +445,15 @@ type GatewayView struct {
 	AllowedActions []string `json:"allowedActions,omitempty"`
 }
 
+type GatewayClassView struct {
+	Name           string   `json:"name"`
+	ControllerName string   `json:"controllerName"`
+	Accepted       string   `json:"accepted,omitempty"`
+	ParametersRef  string   `json:"parametersRef,omitempty"`
+	AgeSeconds     int64    `json:"ageSeconds"`
+	AllowedActions []string `json:"allowedActions,omitempty"`
+}
+
 type HTTPRouteView struct {
 	Name            string   `json:"name"`
 	Namespace       string   `json:"namespace"`
@@ -453,6 +462,37 @@ type HTTPRouteView struct {
 	BackendServices []string `json:"backendServices,omitempty"`
 	AgeSeconds      int64    `json:"ageSeconds"`
 	AllowedActions  []string `json:"allowedActions,omitempty"`
+}
+
+type BackendTLSPolicyView struct {
+	Name                    string   `json:"name"`
+	Namespace               string   `json:"namespace"`
+	TargetRefs              []string `json:"targetRefs,omitempty"`
+	Hostname                string   `json:"hostname,omitempty"`
+	CACertificateRefs       []string `json:"caCertificateRefs,omitempty"`
+	WellKnownCACertificates string   `json:"wellKnownCACertificates,omitempty"`
+	AgeSeconds              int64    `json:"ageSeconds"`
+	AllowedActions          []string `json:"allowedActions,omitempty"`
+}
+
+type GRPCRouteView struct {
+	Name            string   `json:"name"`
+	Namespace       string   `json:"namespace"`
+	Hostnames       []string `json:"hostnames,omitempty"`
+	ParentRefs      []string `json:"parentRefs,omitempty"`
+	BackendServices []string `json:"backendServices,omitempty"`
+	RuleCount       int32    `json:"ruleCount"`
+	AgeSeconds      int64    `json:"ageSeconds"`
+	AllowedActions  []string `json:"allowedActions,omitempty"`
+}
+
+type ReferenceGrantView struct {
+	Name           string   `json:"name"`
+	Namespace      string   `json:"namespace"`
+	From           []string `json:"from,omitempty"`
+	To             []string `json:"to,omitempty"`
+	AgeSeconds     int64    `json:"ageSeconds"`
+	AllowedActions []string `json:"allowedActions,omitempty"`
 }
 
 type NodeView struct {

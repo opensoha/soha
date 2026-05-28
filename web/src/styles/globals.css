@@ -2579,9 +2579,16 @@ a {
 .kc-workload-overview-hero.ant-card,
 .kc-workload-overview-events.ant-card {
   border: 1px solid var(--kc-border-color);
-  border-radius: 18px;
+  border-radius: 16px;
   background: var(--kc-bg-surface);
   box-shadow: none;
+}
+
+.kc-workload-overview-hero.ant-card {
+  background:
+    radial-gradient(circle at top right, rgba(var(--kc-primary-rgb), 0.06), transparent 30%),
+    linear-gradient(180deg, var(--kc-bg-surface) 0%, var(--kc-fill-weak) 100%);
+  box-shadow: var(--kc-shadow-soft);
 }
 
 .kc-workload-overview-hero.ant-card .ant-card-body {
@@ -2614,12 +2621,13 @@ a {
   flex: 0 0 auto;
 }
 
-.kc-workload-overview-stats-shell {
-  padding: 2px 0;
+.kc-workload-overview-metric-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .kc-workload-overview-events.ant-card .ant-card-head {
-  min-height: 52px;
+  min-height: 56px;
+  padding-inline: 18px;
   border-bottom-color: var(--kc-border-color);
 }
 
@@ -2628,7 +2636,7 @@ a {
 }
 
 .kc-workload-overview-events.ant-card .ant-card-body {
-  padding: 14px 16px 16px;
+  padding: 18px;
 }
 
 .kc-list-panel {

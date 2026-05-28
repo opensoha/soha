@@ -270,7 +270,7 @@ function findFirstNavigablePath(sidebarNav: RuntimeMenuNode[]): string | null {
 function buildWorkbenchOptions(localeCode: 'zh_CN' | 'en_US'): WorkbenchOption[] {
   if (localeCode === 'en_US') {
     return [
-      { key: 'platform', label: 'Platform Workbench', description: 'Clusters, workloads, network, storage, and runtime resources', icon: <AppstoreOutlined /> },
+      { key: 'platform', label: 'K8s Workbench', description: 'Operations dashboard for clusters, workloads, network, storage, and runtime resources', icon: <AppstoreOutlined /> },
       { key: 'virtualization', label: 'Virtualization Workbench', description: 'Virtual machines, clusters, images, flavors, and operation records', icon: <SlidersOutlined /> },
       { key: 'docker', label: 'Docker Workbench', description: 'Docker hosts, Compose projects, services, ports, and templates', icon: <DockerOutlined /> },
       { key: 'delivery', label: 'Delivery Workbench', description: 'Applications, build sources, bindings, and release orchestration', icon: <CloudServerOutlined /> },
@@ -279,7 +279,7 @@ function buildWorkbenchOptions(localeCode: 'zh_CN' | 'en_US'): WorkbenchOption[]
     ]
   }
   return [
-    { key: 'platform', label: '平台工作台', description: '集群、工作负载、网络、存储与运行资源', icon: <AppstoreOutlined /> },
+    { key: 'platform', label: 'k8s工作台', description: '面向运维视角的集群、工作负载、网络、存储与运行资源', icon: <AppstoreOutlined /> },
     { key: 'virtualization', label: '虚拟化管理工作台', description: '虚拟机、集群、镜像、规格与操作记录', icon: <SlidersOutlined /> },
     { key: 'docker', label: 'Docker 工作台', description: '主机、Compose 项目、服务、端口与模板', icon: <DockerOutlined /> },
     { key: 'delivery', label: '应用交付工作台', description: '应用、构建来源、环境绑定与发布编排', icon: <CloudServerOutlined /> },

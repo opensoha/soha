@@ -220,24 +220,44 @@ const NetworkIngressesPage = lazyNamed(
   () => import("@/features/platform/network-storage-pages"),
   "NetworkIngressesPage",
 );
+const NetworkGatewayClassesPage = lazyNamed(
+  () => import("@/features/platform/network-storage-pages"),
+  "NetworkGatewayClassesPage",
+);
 const NetworkGatewaysPage = lazyNamed(
   () => import("@/features/platform/network-storage-pages"),
   "NetworkGatewaysPage",
+);
+const NetworkHTTPRoutesPage = lazyNamed(
+  () => import("@/features/platform/network-storage-pages"),
+  "NetworkHTTPRoutesPage",
+);
+const NetworkBackendTLSPoliciesPage = lazyNamed(
+  () => import("@/features/platform/network-storage-pages"),
+  "NetworkBackendTLSPoliciesPage",
+);
+const NetworkGRPCRoutesPage = lazyNamed(
+  () => import("@/features/platform/network-storage-pages"),
+  "NetworkGRPCRoutesPage",
+);
+const NetworkReferenceGrantsPage = lazyNamed(
+  () => import("@/features/platform/network-storage-pages"),
+  "NetworkReferenceGrantsPage",
 );
 const NetworkTopologyPage = lazyNamed(
   () => import("@/features/platform/network-topology-page"),
   "NetworkTopologyPage",
 );
 const NetworkEndpointSlicesPage = lazyNamed(
-  () => import("@/features/platform/platform-management-pages"),
+  () => import("@/features/platform/network-storage-pages"),
   "NetworkEndpointSlicesPage",
 );
 const NetworkIngressClassesPage = lazyNamed(
-  () => import("@/features/platform/platform-management-pages"),
+  () => import("@/features/platform/network-storage-pages"),
   "NetworkIngressClassesPage",
 );
 const NetworkPoliciesPage = lazyNamed(
-  () => import("@/features/platform/platform-management-pages"),
+  () => import("@/features/platform/network-storage-pages"),
   "NetworkPoliciesPage",
 );
 const NetworkPortForwardPage = lazyNamed(
@@ -1019,9 +1039,57 @@ export function AppRouter() {
           />
           <Route
             path="/network/gateways"
+            element={<Navigate to="/network/gateway-api/gateways" replace />}
+          />
+          <Route
+            path="/network/gateway-api"
+            element={<Navigate to="/network/gateway-api/gatewayclasses" replace />}
+          />
+          <Route
+            path="/network/gateway-api/gatewayclasses"
+            element={
+              <LazyPage>
+                <NetworkGatewayClassesPage />
+              </LazyPage>
+            }
+          />
+          <Route
+            path="/network/gateway-api/gateways"
             element={
               <LazyPage>
                 <NetworkGatewaysPage />
+              </LazyPage>
+            }
+          />
+          <Route
+            path="/network/gateway-api/httproutes"
+            element={
+              <LazyPage>
+                <NetworkHTTPRoutesPage />
+              </LazyPage>
+            }
+          />
+          <Route
+            path="/network/gateway-api/backendtlspolicies"
+            element={
+              <LazyPage>
+                <NetworkBackendTLSPoliciesPage />
+              </LazyPage>
+            }
+          />
+          <Route
+            path="/network/gateway-api/grpcroutes"
+            element={
+              <LazyPage>
+                <NetworkGRPCRoutesPage />
+              </LazyPage>
+            }
+          />
+          <Route
+            path="/network/gateway-api/referencegrants"
+            element={
+              <LazyPage>
+                <NetworkReferenceGrantsPage />
               </LazyPage>
             }
           />

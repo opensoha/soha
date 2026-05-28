@@ -226,7 +226,7 @@ describe('app layout workspace navigation', () => {
       ],
     })
 
-    expect(container.querySelector('.kc-workbench-switcher__label')?.textContent).toBe('平台工作台')
+    expect(container.querySelector('.kc-workbench-switcher__label')?.textContent).toBe('k8s工作台')
     expect(container.querySelector('.kc-workspace-switcher-shell')).toBeNull()
   })
 
@@ -244,7 +244,7 @@ describe('app layout workspace navigation', () => {
     const container = await renderWithProviders('/system/menus')
 
     expect(container.querySelector('.kc-workbench-switcher-shell')).not.toBeNull()
-    expect(container.querySelector('.kc-workbench-switcher__label')?.textContent).toBe('平台工作台')
+    expect(container.querySelector('.kc-workbench-switcher__label')?.textContent).toBe('k8s工作台')
     expect(container.textContent).toContain('菜单管理')
     expect(container.textContent).not.toContain('概览')
     expect(container.querySelector('.kc-nav-system')).toBeNull()

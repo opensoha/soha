@@ -1,6 +1,6 @@
 import { lazy, Suspense, useDeferredValue, useMemo, useState } from 'react'
 import { PlusOutlined, ReloadOutlined } from '@ant-design/icons'
-import { Button, Card, Descriptions, Empty, Input, Spin, Tabs, Tooltip, Typography, message } from 'antd'
+import { Alert, Button, Card, Descriptions, Empty, Input, Spin, Tabs, Tag, Tooltip, Typography, message } from 'antd'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { AdminTable } from '@/components/admin-table'
@@ -78,6 +78,7 @@ interface Service {
   ports: string[]
   selector?: Record<string, string>
   ageSeconds: number
+  allowedActions?: string[]
 }
 
 interface ServiceBackendPod {
@@ -107,19 +108,101 @@ interface ServiceEvent {
 interface Ingress {
   name: string
   namespace: string
+  className?: string
   hosts: string[]
   address: string
-  ports: string
-  createdAt: string
+  backendServices?: string[]
+  ageSeconds: number
+  allowedActions?: string[]
+}
+
+interface GatewayClass {
+  name: string
+  controllerName: string
+  accepted?: string
+  parametersRef?: string
+  ageSeconds: number
+  allowedActions?: string[]
 }
 
 interface Gateway {
   name: string
   namespace: string
-  gatewayClassName: string
-  addresses: string
-  programmed: string
-  createdAt: string
+  gatewayClass?: string
+  addresses?: string[]
+  listenerCount: number
+  ageSeconds: number
+  allowedActions?: string[]
+}
+
+interface HTTPRoute {
+  name: string
+  namespace: string
+  hostnames?: string[]
+  parentRefs?: string[]
+  backendServices?: string[]
+  ageSeconds: number
+  allowedActions?: string[]
+}
+
+interface BackendTLSPolicy {
+  name: string
+  namespace: string
+  targetRefs?: string[]
+  hostname?: string
+  caCertificateRefs?: string[]
+  wellKnownCACertificates?: string
+  ageSeconds: number
+  allowedActions?: string[]
+}
+
+interface GRPCRoute {
+  name: string
+  namespace: string
+  hostnames?: string[]
+  parentRefs?: string[]
+  backendServices?: string[]
+  ruleCount: number
+  ageSeconds: number
+  allowedActions?: string[]
+}
+
+interface ReferenceGrant {
+  name: string
+  namespace: string
+  from?: string[]
+  to?: string[]
+  ageSeconds: number
+  allowedActions?: string[]
+}
+
+interface EndpointSlice {
+  name: string
+  namespace: string
+  addressType: string
+  endpoints: number
+  ports?: string[]
+  ageSeconds: number
+  allowedActions?: string[]
+}
+
+interface IngressClass {
+  name: string
+  controller: string
+  isDefault: boolean
+  parameters?: string
+  ageSeconds: number
+  allowedActions?: string[]
+}
+
+interface NetworkPolicy {
+  name: string
+  namespace: string
+  policyTypes?: string[]
+  ingressRules: number
+  egressRules: number
+  ageSeconds: number
+  allowedActions?: string[]
 }
 
 function normalizeSearchKeyword(value: string) {
@@ -180,6 +263,158 @@ function useScopedQuery<T>(resource: 'services' | 'ingresses' | 'gateways' | 'pe
   })
 }
 
+function usePlatformResourceQuery<T>(resourcePath: string, clusterScoped = false) {
+  const { clusterId, namespace } = usePlatformScopeStore()
+  return useQuery({
+    queryKey: ['platform-resource-list', resourcePath, clusterId, clusterScoped ? '' : namespace],
+    queryFn: () => api.get<ApiResponse<T[]>>(buildClusterScopedPath(clusterId!, resourcePath, clusterScoped ? undefined : namespace)),
+    enabled: !!clusterId,
+  })
+}
+
+function renderTextList(value?: string[], empty = '-') {
+  if (!value || value.length === 0) return <Text type="secondary">{empty}</Text>
+  return (
+    <div className="kc-rbac-subject-list">
+      {value.slice(0, 3).map((item) => <Tag key={item}>{item}</Tag>)}
+      {value.length > 3 ? (
+        <Tooltip title={value.slice(3).join(', ')}>
+          <Tag>{`+${value.length - 3}`}</Tag>
+        </Tooltip>
+      ) : null}
+    </div>
+  )
+}
+
+function renderConditionStatus(value?: string) {
+  if (!value) return <Text type="secondary">-</Text>
+  return <StatusTag value={value} />
+}
+
+function buildNetworkErrorDescription(localeCode: 'zh_CN' | 'en_US', error: unknown) {
+  if (error instanceof Error && error.message.trim()) {
+    return localeCode === 'zh_CN'
+      ? `网络资源请求失败：${error.message}`
+      : `Failed to load network resources: ${error.message}`
+  }
+  return localeCode === 'zh_CN' ? '网络资源请求失败。' : 'Failed to load network resources.'
+}
+
+function NetworkListTitle({ title, description, clusterScopedHint }: { title: string; description: string; clusterScopedHint?: string }) {
+  return (
+    <div className="kc-admin-table-title-block">
+      <Text strong>{title}</Text>
+      <Text type="secondary">{description}</Text>
+      {clusterScopedHint ? <Text type="secondary">{clusterScopedHint}</Text> : null}
+    </div>
+  )
+}
+
+function NetworkResourceListPage<T extends Record<string, any>>({
+  clusterScoped = false,
+  columns,
+  description,
+  emptyDescription,
+  resourcePath,
+  rowKey,
+  searchPlaceholder,
+  searchValues,
+  title,
+  actionConfig,
+}: {
+  clusterScoped?: boolean
+  columns: TableColumnsType<T>
+  description: string
+  emptyDescription: string
+  resourcePath: string
+  rowKey: string | ((record: T) => string)
+  searchPlaceholder: string
+  searchValues: (record: T) => Array<string | undefined | null>
+  title: string
+  actionConfig?: {
+    resourceKind: string
+    getName: (record: T) => string
+    getNamespace?: (record: T) => string | undefined
+  }
+}) {
+  const { localeCode } = useI18n()
+  const { clusterId, namespace } = usePlatformScopeStore()
+  const [searchKeyword, setSearchKeyword] = useState('')
+  const deferredSearchKeyword = useDeferredValue(searchKeyword)
+  const normalizedKeyword = normalizeSearchKeyword(deferredSearchKeyword)
+  const query = usePlatformResourceQuery<T>(resourcePath, clusterScoped)
+  const { column: actionColumn, modalNode } = useResourceActions<T>({
+    resourcePath,
+    resourceKind: actionConfig?.resourceKind ?? 'Resource',
+    getName: actionConfig?.getName ?? (() => ''),
+    getNamespace: actionConfig?.getNamespace,
+    canDelete: (record) => hasAllowedAction(record.allowedActions, 'delete'),
+    listInvalidationKey: ['platform-resource-list', resourcePath, clusterId, clusterScoped ? '' : namespace],
+  })
+  const rawItems = query.data?.data ?? []
+  const filteredItems = useMemo(
+    () => rawItems.filter((item) => includesSearch(searchValues(item), normalizedKeyword)),
+    [normalizedKeyword, rawItems, searchValues],
+  )
+  const effectiveColumns = actionConfig ? [...columns, actionColumn] : columns
+  const effectiveEmpty = !clusterId
+    ? (localeCode === 'zh_CN' ? '请选择集群' : 'Select a cluster')
+    : normalizedKeyword && rawItems.length > 0
+      ? (localeCode === 'zh_CN' ? '没有匹配的资源' : 'No matching resources')
+      : emptyDescription
+
+  return (
+    <div className="kc-page">
+      {actionConfig ? modalNode : null}
+      {query.isError ? (
+        <Alert
+          showIcon
+          type="error"
+          message={localeCode === 'zh_CN' ? '网络资源暂时不可用' : 'Network resources unavailable'}
+          description={buildNetworkErrorDescription(localeCode, query.error)}
+          style={{ marginBottom: 12 }}
+        />
+      ) : null}
+      <AdminTable
+        className="kc-platform-table"
+        columns={effectiveColumns}
+        dataSource={clusterId ? filteredItems : []}
+        rowKey={rowKey}
+        loading={query.isLoading}
+        enableColumnSelection={false}
+        scroll={{ x: 'max-content' }}
+        title={(
+          <NetworkListTitle
+            title={title}
+            description={description}
+            clusterScopedHint={clusterScoped ? (localeCode === 'zh_CN' ? '集群级资源，忽略命名空间筛选。' : 'Cluster-scoped resource; namespace scope is ignored.') : undefined}
+          />
+        )}
+        toolbar={(
+          <div className="kc-workload-table-filters">
+            <Input
+              className="kc-platform-compact-field"
+              size="small"
+              value={searchKeyword}
+              onChange={(event) => setSearchKeyword(event.target.value)}
+              placeholder={searchPlaceholder}
+              style={{ width: 300 }}
+            />
+          </div>
+        )}
+        toolbarExtra={(
+          <div className="kc-page-toolbar">
+            <Button size="small" icon={<ReloadOutlined />} variant="outlined" onClick={() => void query.refetch()}>
+              {localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
+            </Button>
+          </div>
+        )}
+        empty={<Empty description={effectiveEmpty} />}
+      />
+    </div>
+  )
+}
+
 function StorageListTitle({ title, description, clusterScopedHint }: { title: string; description: string; clusterScopedHint?: string }) {
   return (
     <div className="kc-admin-table-title-block">
@@ -231,10 +466,26 @@ function StorageYamlTab({ state }: { state: ReturnType<typeof useResourceYAMLSta
 }
 
 export function NetworkServicesPage() {
-  const { t } = useI18n()
+  const { localeCode, t } = useI18n()
   const navigate = useNavigate()
-  const { namespace } = usePlatformScopeStore()
-  const { data, isLoading } = useScopedQuery<Service>('services')
+  const { clusterId, namespace } = usePlatformScopeStore()
+  const [searchKeyword, setSearchKeyword] = useState('')
+  const deferredSearchKeyword = useDeferredValue(searchKeyword)
+  const normalizedKeyword = normalizeSearchKeyword(deferredSearchKeyword)
+  const query = usePlatformResourceQuery<Service>('network/services')
+  const rawItems = query.data?.data ?? []
+  const filteredItems = useMemo(
+    () => rawItems.filter((item) => includesSearch([item.name, item.namespace, item.type, item.clusterIp, ...(item.ports ?? [])], normalizedKeyword)),
+    [normalizedKeyword, rawItems],
+  )
+  const { column: actionColumn } = useResourceActions<Service>({
+    resourcePath: 'network/services',
+    resourceKind: 'Service',
+    getName: (record) => record.name,
+    getNamespace: (record) => record.namespace,
+    canDelete: (record) => hasAllowedAction(record.allowedActions, 'delete'),
+    listInvalidationKey: ['platform-resource-list', 'network/services', clusterId, namespace],
+  })
 
   const columns: TableColumnsType<Service> = [
     {
@@ -249,12 +500,37 @@ export function NetworkServicesPage() {
     { title: 'Cluster IP', dataIndex: 'clusterIp', render: (value: string) => value || '-' },
     { title: '端口', dataIndex: 'ports', render: (value: string[]) => value?.join(', ') || '-' },
     { title: 'Age', dataIndex: 'ageSeconds', render: (value: number) => formatAgeSeconds(value) },
+    actionColumn,
   ]
 
   return (
     <div className="kc-page">
-      <StorageDetailHeader title={t('page.network.services.title', 'Services')} description={t('page.network.services.desc', 'Inspect service exposure, access addresses, and ports by cluster and namespace.')} />
-      <AdminTable columns={columns} dataSource={data?.data ?? []} rowKey="name" loading={isLoading} />
+      {query.isError ? (
+        <Alert
+          showIcon
+          type="error"
+          message={localeCode === 'zh_CN' ? '网络资源暂时不可用' : 'Network resources unavailable'}
+          description={buildNetworkErrorDescription(localeCode, query.error)}
+          style={{ marginBottom: 12 }}
+        />
+      ) : null}
+      <AdminTable
+        className="kc-platform-table"
+        columns={columns}
+        dataSource={clusterId ? filteredItems : []}
+        rowKey={(record) => `${record.namespace}/${record.name}`}
+        loading={query.isLoading}
+        enableColumnSelection={false}
+        scroll={{ x: 'max-content' }}
+        title={<NetworkListTitle title={t('page.network.services.title', 'Services')} description={t('page.network.services.desc', 'Inspect service exposure, access addresses, and ports by cluster and namespace.')} />}
+        toolbar={(
+          <div className="kc-workload-table-filters">
+            <Input className="kc-platform-compact-field" size="small" value={searchKeyword} onChange={(event) => setSearchKeyword(event.target.value)} placeholder={localeCode === 'zh_CN' ? '搜索 Service / namespace / type / port' : 'Search service / namespace / type / port'} style={{ width: 300 }} />
+          </div>
+        )}
+        toolbarExtra={<div className="kc-page-toolbar"><Button size="small" icon={<ReloadOutlined />} variant="outlined" onClick={() => void query.refetch()}>{localeCode === 'zh_CN' ? '刷新' : 'Refresh'}</Button></div>}
+        empty={<Empty description={!clusterId ? (localeCode === 'zh_CN' ? '请选择集群' : 'Select a cluster') : (localeCode === 'zh_CN' ? '当前范围没有 Service' : 'No services in the current scope')} />}
+      />
     </div>
   )
 }
@@ -373,29 +649,255 @@ export function ServiceDetailPage() {
 }
 
 export function NetworkIngressesPage() {
-  const { data, isLoading } = useScopedQuery<Ingress>('ingresses')
+  const { localeCode } = useI18n()
   const columns: TableColumnsType<Ingress> = [
     { title: '名称', dataIndex: 'name' },
     { title: '命名空间', dataIndex: 'namespace' },
-    { title: 'Hosts', dataIndex: 'hosts', render: (value: string[]) => value?.join(', ') || '-' },
-    { title: 'Address', dataIndex: 'address' },
-    { title: '端口', dataIndex: 'ports' },
-    { title: 'Age', dataIndex: 'createdAt' },
+    { title: 'IngressClass', dataIndex: 'className', render: (value?: string) => value || '-' },
+    { title: 'Hosts', dataIndex: 'hosts', render: (value?: string[]) => renderTextList(value) },
+    { title: 'Address', dataIndex: 'address', render: (value?: string) => value || '-' },
+    { title: 'Backend Services', dataIndex: 'backendServices', render: (value?: string[]) => renderTextList(value) },
+    { title: 'Age', dataIndex: 'ageSeconds', render: (value: number) => formatAgeSeconds(value) },
   ]
-  return <AdminTable columns={columns} dataSource={data?.data ?? []} rowKey="name" loading={isLoading} />
+  return (
+    <NetworkResourceListPage<Ingress>
+      title="Ingresses"
+      description={localeCode === 'zh_CN' ? '按当前范围查看 Ingress 主机、地址与后端 Service。' : 'Inspect ingress hosts, addresses, and backend services in the current scope.'}
+      resourcePath="network/ingresses"
+      columns={columns}
+      rowKey={(record) => `${record.namespace}/${record.name}`}
+      searchPlaceholder={localeCode === 'zh_CN' ? '搜索 Ingress / namespace / host / service' : 'Search ingress / namespace / host / service'}
+      searchValues={(record) => [record.name, record.namespace, record.className, record.address, ...(record.hosts ?? []), ...(record.backendServices ?? [])]}
+      emptyDescription={localeCode === 'zh_CN' ? '当前范围没有 Ingress' : 'No ingresses in the current scope'}
+      actionConfig={{ resourceKind: 'Ingress', getName: (record) => record.name, getNamespace: (record) => record.namespace }}
+    />
+  )
+}
+
+export function NetworkGatewayClassesPage() {
+  const { localeCode } = useI18n()
+  const columns: TableColumnsType<GatewayClass> = [
+    { title: 'Name', dataIndex: 'name' },
+    { title: 'Controller', dataIndex: 'controllerName', render: (value?: string) => value || '-' },
+    { title: 'Accepted', dataIndex: 'accepted', render: (value?: string) => renderConditionStatus(value) },
+    { title: 'Parameters', dataIndex: 'parametersRef', render: (value?: string) => value || '-' },
+    { title: 'Age', dataIndex: 'ageSeconds', render: (value: number) => formatAgeSeconds(value) },
+  ]
+  return (
+    <NetworkResourceListPage<GatewayClass>
+      clusterScoped
+      title="GatewayClasses"
+      description={localeCode === 'zh_CN' ? '查看 Gateway API 控制器类、接收状态与参数引用。' : 'Inspect Gateway API controller classes, acceptance status, and parameter references.'}
+      resourcePath="network/gatewayclasses"
+      columns={columns}
+      rowKey="name"
+      searchPlaceholder={localeCode === 'zh_CN' ? '搜索 GatewayClass / controller' : 'Search GatewayClass / controller'}
+      searchValues={(record) => [record.name, record.controllerName, record.accepted, record.parametersRef]}
+      emptyDescription={localeCode === 'zh_CN' ? '当前集群没有 GatewayClass，或未安装 Gateway API CRD' : 'No GatewayClasses in this cluster, or Gateway API CRDs are not installed'}
+      actionConfig={{ resourceKind: 'GatewayClass', getName: (record) => record.name }}
+    />
+  )
 }
 
 export function NetworkGatewaysPage() {
-  const { data, isLoading } = useScopedQuery<Gateway>('gateways')
+  const { localeCode } = useI18n()
   const columns: TableColumnsType<Gateway> = [
     { title: '名称', dataIndex: 'name' },
     { title: '命名空间', dataIndex: 'namespace' },
-    { title: 'Gateway Class', dataIndex: 'gatewayClassName' },
-    { title: 'Addresses', dataIndex: 'addresses' },
-    { title: 'Programmed', dataIndex: 'programmed', render: (value: string) => <StatusTag value={value} /> },
-    { title: 'Age', dataIndex: 'createdAt' },
+    { title: 'GatewayClass', dataIndex: 'gatewayClass', render: (value?: string) => value || '-' },
+    { title: 'Addresses', dataIndex: 'addresses', render: (value?: string[]) => renderTextList(value) },
+    { title: 'Listeners', dataIndex: 'listenerCount' },
+    { title: 'Age', dataIndex: 'ageSeconds', render: (value: number) => formatAgeSeconds(value) },
   ]
-  return <AdminTable columns={columns} dataSource={data?.data ?? []} rowKey="name" loading={isLoading} />
+  return (
+    <NetworkResourceListPage<Gateway>
+      title="Gateways"
+      description={localeCode === 'zh_CN' ? '查看 Gateway API 网关实例、监听器与对外地址。' : 'Inspect Gateway API gateway instances, listeners, and addresses.'}
+      resourcePath="network/gateways"
+      columns={columns}
+      rowKey={(record) => `${record.namespace}/${record.name}`}
+      searchPlaceholder={localeCode === 'zh_CN' ? '搜索 Gateway / namespace / class / address' : 'Search gateway / namespace / class / address'}
+      searchValues={(record) => [record.name, record.namespace, record.gatewayClass, ...(record.addresses ?? [])]}
+      emptyDescription={localeCode === 'zh_CN' ? '当前范围没有 Gateway，或未安装 Gateway API CRD' : 'No Gateways in the current scope, or Gateway API CRDs are not installed'}
+      actionConfig={{ resourceKind: 'Gateway', getName: (record) => record.name, getNamespace: (record) => record.namespace }}
+    />
+  )
+}
+
+export function NetworkHTTPRoutesPage() {
+  const { localeCode } = useI18n()
+  const columns: TableColumnsType<HTTPRoute> = [
+    { title: 'Name', dataIndex: 'name' },
+    { title: 'Namespace', dataIndex: 'namespace' },
+    { title: 'Hostnames', dataIndex: 'hostnames', render: (value?: string[]) => renderTextList(value) },
+    { title: 'ParentRefs', dataIndex: 'parentRefs', render: (value?: string[]) => renderTextList(value) },
+    { title: 'Backend Services', dataIndex: 'backendServices', render: (value?: string[]) => renderTextList(value) },
+    { title: 'Age', dataIndex: 'ageSeconds', render: (value: number) => formatAgeSeconds(value) },
+  ]
+  return (
+    <NetworkResourceListPage<HTTPRoute>
+      title="HTTPRoutes"
+      description={localeCode === 'zh_CN' ? '查看 HTTPRoute 主机、父级 Gateway 与后端 Service 绑定。' : 'Inspect HTTPRoute hosts, parent Gateways, and backend service bindings.'}
+      resourcePath="network/httproutes"
+      columns={columns}
+      rowKey={(record) => `${record.namespace}/${record.name}`}
+      searchPlaceholder={localeCode === 'zh_CN' ? '搜索 HTTPRoute / host / Gateway / service' : 'Search HTTPRoute / host / Gateway / service'}
+      searchValues={(record) => [record.name, record.namespace, ...(record.hostnames ?? []), ...(record.parentRefs ?? []), ...(record.backendServices ?? [])]}
+      emptyDescription={localeCode === 'zh_CN' ? '当前范围没有 HTTPRoute，或未安装 Gateway API CRD' : 'No HTTPRoutes in the current scope, or Gateway API CRDs are not installed'}
+      actionConfig={{ resourceKind: 'HTTPRoute', getName: (record) => record.name, getNamespace: (record) => record.namespace }}
+    />
+  )
+}
+
+export function NetworkBackendTLSPoliciesPage() {
+  const { localeCode } = useI18n()
+  const columns: TableColumnsType<BackendTLSPolicy> = [
+    { title: 'Name', dataIndex: 'name' },
+    { title: 'Namespace', dataIndex: 'namespace' },
+    { title: 'TargetRefs', dataIndex: 'targetRefs', render: (value?: string[]) => renderTextList(value) },
+    { title: 'Hostname', dataIndex: 'hostname', render: (value?: string) => value || '-' },
+    { title: 'CA CertificateRefs', dataIndex: 'caCertificateRefs', render: (value?: string[]) => renderTextList(value) },
+    { title: 'Well Known CA', dataIndex: 'wellKnownCACertificates', render: (value?: string) => value || '-' },
+    { title: 'Age', dataIndex: 'ageSeconds', render: (value: number) => formatAgeSeconds(value) },
+  ]
+  return (
+    <NetworkResourceListPage<BackendTLSPolicy>
+      title="BackendTLSPolicies"
+      description={localeCode === 'zh_CN' ? '查看 Gateway API 后端 TLS 校验策略、目标引用与 CA 配置。' : 'Inspect Gateway API backend TLS validation policies, target refs, and CA settings.'}
+      resourcePath="network/backendtlspolicies"
+      columns={columns}
+      rowKey={(record) => `${record.namespace}/${record.name}`}
+      searchPlaceholder={localeCode === 'zh_CN' ? '搜索 BackendTLSPolicy / target / hostname' : 'Search BackendTLSPolicy / target / hostname'}
+      searchValues={(record) => [record.name, record.namespace, record.hostname, record.wellKnownCACertificates, ...(record.targetRefs ?? []), ...(record.caCertificateRefs ?? [])]}
+      emptyDescription={localeCode === 'zh_CN' ? '当前范围没有 BackendTLSPolicy，或未安装 Gateway API CRD' : 'No BackendTLSPolicies in the current scope, or Gateway API CRDs are not installed'}
+      actionConfig={{ resourceKind: 'BackendTLSPolicy', getName: (record) => record.name, getNamespace: (record) => record.namespace }}
+    />
+  )
+}
+
+export function NetworkGRPCRoutesPage() {
+  const { localeCode } = useI18n()
+  const columns: TableColumnsType<GRPCRoute> = [
+    { title: 'Name', dataIndex: 'name' },
+    { title: 'Namespace', dataIndex: 'namespace' },
+    { title: 'Hostnames', dataIndex: 'hostnames', render: (value?: string[]) => renderTextList(value) },
+    { title: 'ParentRefs', dataIndex: 'parentRefs', render: (value?: string[]) => renderTextList(value) },
+    { title: 'Backend Services', dataIndex: 'backendServices', render: (value?: string[]) => renderTextList(value) },
+    { title: 'Rules', dataIndex: 'ruleCount' },
+    { title: 'Age', dataIndex: 'ageSeconds', render: (value: number) => formatAgeSeconds(value) },
+  ]
+  return (
+    <NetworkResourceListPage<GRPCRoute>
+      title="GRPCRoutes"
+      description={localeCode === 'zh_CN' ? '查看 gRPC 路由、父级 Gateway 与后端 Service 绑定。' : 'Inspect gRPC routes, parent Gateways, and backend service bindings.'}
+      resourcePath="network/grpcroutes"
+      columns={columns}
+      rowKey={(record) => `${record.namespace}/${record.name}`}
+      searchPlaceholder={localeCode === 'zh_CN' ? '搜索 GRPCRoute / host / Gateway / service' : 'Search GRPCRoute / host / Gateway / service'}
+      searchValues={(record) => [record.name, record.namespace, ...(record.hostnames ?? []), ...(record.parentRefs ?? []), ...(record.backendServices ?? [])]}
+      emptyDescription={localeCode === 'zh_CN' ? '当前范围没有 GRPCRoute，或未安装 Gateway API CRD' : 'No GRPCRoutes in the current scope, or Gateway API CRDs are not installed'}
+      actionConfig={{ resourceKind: 'GRPCRoute', getName: (record) => record.name, getNamespace: (record) => record.namespace }}
+    />
+  )
+}
+
+export function NetworkReferenceGrantsPage() {
+  const { localeCode } = useI18n()
+  const columns: TableColumnsType<ReferenceGrant> = [
+    { title: 'Name', dataIndex: 'name' },
+    { title: 'Namespace', dataIndex: 'namespace' },
+    { title: 'From', dataIndex: 'from', render: (value?: string[]) => renderTextList(value) },
+    { title: 'To', dataIndex: 'to', render: (value?: string[]) => renderTextList(value) },
+    { title: 'Age', dataIndex: 'ageSeconds', render: (value: number) => formatAgeSeconds(value) },
+  ]
+  return (
+    <NetworkResourceListPage<ReferenceGrant>
+      title="ReferenceGrants"
+      description={localeCode === 'zh_CN' ? '查看跨 namespace 引用授权来源与目标资源。' : 'Inspect cross-namespace reference grants, sources, and target resources.'}
+      resourcePath="network/referencegrants"
+      columns={columns}
+      rowKey={(record) => `${record.namespace}/${record.name}`}
+      searchPlaceholder={localeCode === 'zh_CN' ? '搜索 ReferenceGrant / namespace / from / to' : 'Search ReferenceGrant / namespace / from / to'}
+      searchValues={(record) => [record.name, record.namespace, ...(record.from ?? []), ...(record.to ?? [])]}
+      emptyDescription={localeCode === 'zh_CN' ? '当前范围没有 ReferenceGrant，或未安装 Gateway API CRD' : 'No ReferenceGrants in the current scope, or Gateway API CRDs are not installed'}
+      actionConfig={{ resourceKind: 'ReferenceGrant', getName: (record) => record.name, getNamespace: (record) => record.namespace }}
+    />
+  )
+}
+
+export function NetworkEndpointSlicesPage() {
+  const { localeCode } = useI18n()
+  const columns: TableColumnsType<EndpointSlice> = [
+    { title: 'Name', dataIndex: 'name' },
+    { title: 'Namespace', dataIndex: 'namespace' },
+    { title: 'Address Type', dataIndex: 'addressType' },
+    { title: 'Endpoints', dataIndex: 'endpoints' },
+    { title: 'Ports', dataIndex: 'ports', render: (value?: string[]) => value?.join(', ') || '-' },
+    { title: 'Age', dataIndex: 'ageSeconds', render: (value: number) => formatAgeSeconds(value) },
+  ]
+  return (
+    <NetworkResourceListPage<EndpointSlice>
+      title="EndpointSlices"
+      description={localeCode === 'zh_CN' ? '查看 Service 后端地址切片、端口与 endpoint 数量。' : 'Inspect service backend endpoint slices, ports, and endpoint counts.'}
+      resourcePath="network/endpointslices"
+      columns={columns}
+      rowKey={(record) => `${record.namespace}/${record.name}`}
+      searchPlaceholder={localeCode === 'zh_CN' ? '搜索 EndpointSlice / namespace / address type / port' : 'Search EndpointSlice / namespace / address type / port'}
+      searchValues={(record) => [record.name, record.namespace, record.addressType, ...(record.ports ?? [])]}
+      emptyDescription={localeCode === 'zh_CN' ? '当前范围没有 EndpointSlice' : 'No EndpointSlices in the current scope'}
+      actionConfig={{ resourceKind: 'EndpointSlice', getName: (record) => record.name, getNamespace: (record) => record.namespace }}
+    />
+  )
+}
+
+export function NetworkIngressClassesPage() {
+  const { localeCode } = useI18n()
+  const columns: TableColumnsType<IngressClass> = [
+    { title: 'Name', dataIndex: 'name' },
+    { title: 'Controller', dataIndex: 'controller' },
+    { title: 'Default', dataIndex: 'isDefault', render: (value: boolean) => <BooleanTag value={value} trueLabel="Yes" falseLabel="No" /> },
+    { title: 'Parameters', dataIndex: 'parameters', render: (value?: string) => value || '-' },
+    { title: 'Age', dataIndex: 'ageSeconds', render: (value: number) => formatAgeSeconds(value) },
+  ]
+  return (
+    <NetworkResourceListPage<IngressClass>
+      clusterScoped
+      title="IngressClasses"
+      description={localeCode === 'zh_CN' ? '查看 Ingress 控制器类、默认标记与参数引用。' : 'Inspect ingress controller classes, default markers, and parameter references.'}
+      resourcePath="network/ingressclasses"
+      columns={columns}
+      rowKey="name"
+      searchPlaceholder={localeCode === 'zh_CN' ? '搜索 IngressClass / controller' : 'Search IngressClass / controller'}
+      searchValues={(record) => [record.name, record.controller, record.parameters]}
+      emptyDescription={localeCode === 'zh_CN' ? '当前集群没有 IngressClass' : 'No IngressClasses in this cluster'}
+      actionConfig={{ resourceKind: 'IngressClass', getName: (record) => record.name }}
+    />
+  )
+}
+
+export function NetworkPoliciesPage() {
+  const { localeCode } = useI18n()
+  const columns: TableColumnsType<NetworkPolicy> = [
+    { title: 'Name', dataIndex: 'name' },
+    { title: 'Namespace', dataIndex: 'namespace' },
+    { title: 'Policy Types', dataIndex: 'policyTypes', render: (value?: string[]) => renderTextList(value) },
+    { title: 'Ingress Rules', dataIndex: 'ingressRules' },
+    { title: 'Egress Rules', dataIndex: 'egressRules' },
+    { title: 'Age', dataIndex: 'ageSeconds', render: (value: number) => formatAgeSeconds(value) },
+  ]
+  return (
+    <NetworkResourceListPage<NetworkPolicy>
+      title="NetworkPolicies"
+      description={localeCode === 'zh_CN' ? '查看命名空间网络隔离策略、入站与出站规则数量。' : 'Inspect namespace network isolation policies and ingress or egress rule counts.'}
+      resourcePath="network/networkpolicies"
+      columns={columns}
+      rowKey={(record) => `${record.namespace}/${record.name}`}
+      searchPlaceholder={localeCode === 'zh_CN' ? '搜索 NetworkPolicy / namespace / type' : 'Search NetworkPolicy / namespace / type'}
+      searchValues={(record) => [record.name, record.namespace, ...(record.policyTypes ?? [])]}
+      emptyDescription={localeCode === 'zh_CN' ? '当前范围没有 NetworkPolicy' : 'No NetworkPolicies in the current scope'}
+      actionConfig={{ resourceKind: 'NetworkPolicy', getName: (record) => record.name, getNamespace: (record) => record.namespace }}
+    />
+  )
 }
 
 export function StoragePvcPage() {

@@ -1,9 +1,19 @@
 import { lazy, Suspense, useState, useEffect, useMemo } from 'react'
 import {
-  App, Tag, Button, Select, Tabs, Card, Spin, Empty, Input,
+  App, Tag, Button, Select, Tabs, Card, Spin, Empty, Input, Statistic,
   Descriptions, Typography, Space, Modal, InputNumber, Switch, Tooltip, message,
 } from 'antd'
-import { DeleteOutlined, EditOutlined, ReloadOutlined, UndoOutlined } from '@ant-design/icons'
+import {
+  AppstoreOutlined,
+  CheckCircleOutlined,
+  ClusterOutlined,
+  ClockCircleOutlined,
+  DeleteOutlined,
+  EditOutlined,
+  ReloadOutlined,
+  ScheduleOutlined,
+  UndoOutlined,
+} from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { AdminTable } from '@/components/admin-table'
@@ -24,7 +34,6 @@ import { formatAgeSeconds, formatDateTime, formatRelativeTime } from '@/utils/ti
 import { tableColumnPresets } from '@/utils/table-columns'
 import type { ApiResponse, DeploymentRolloutStatus, PodDetail, PodMetrics, PodRelatedResource, PodVolume, PodVolumeMount, ResourceMetrics, ResourceQuantity, ResourceYAMLView, RolloutHistory, WorkloadCondition, WorkloadContainer } from '@/types'
 import type { TableColumnsType, TabsProps } from 'antd'
-import { StatGrid } from '@/components/stat-grid'
 
 const { Link, Text } = Typography
 const DEPLOYMENT_ACTIONS_COLUMN_CLASS_NAME = `${TABLE_ACTIONS_COLUMN_CLASS_NAME} kc-deployment-actions-column`
@@ -399,7 +408,7 @@ export function WorkloadsOverviewPage() {
 
   if (!clusterId) {
     return (
-      <div className="kc-page">
+      <div className="kc-page kc-overview-page">
         <Card className="kc-workload-overview-hero" variant="borderless">
           <div className="kc-workload-overview-hero-copy">
             <Text className="kc-workload-overview-eyebrow">{localeCode === 'zh_CN' ? '工作负载' : 'Workloads'}</Text>
@@ -416,12 +425,54 @@ export function WorkloadsOverviewPage() {
   }
 
   const stats = [
-    { label: 'Deployments', value: deploymentsQuery.data?.data?.length ?? 0 },
-    { label: 'Pods', value: podsQuery.data?.data?.length ?? 0 },
-    { label: 'StatefulSets', value: statefulSetsQuery.data?.data?.length ?? 0 },
-    { label: 'DaemonSets', value: daemonSetsQuery.data?.data?.length ?? 0 },
-    { label: 'Jobs', value: jobsQuery.data?.data?.length ?? 0 },
-    { label: 'CronJobs', value: cronJobsQuery.data?.data?.length ?? 0 },
+    {
+      key: 'deployments',
+      label: 'Deployments',
+      helper: localeCode === 'zh_CN' ? '无状态应用副本控制面' : 'Stateless application controllers',
+      value: deploymentsQuery.data?.data?.length ?? 0,
+      icon: <AppstoreOutlined />,
+      tone: 'default',
+    },
+    {
+      key: 'pods',
+      label: 'Pods',
+      helper: localeCode === 'zh_CN' ? '当前范围内运行实例' : 'Runtime instances in scope',
+      value: podsQuery.data?.data?.length ?? 0,
+      icon: <ClusterOutlined />,
+      tone: 'success',
+    },
+    {
+      key: 'statefulsets',
+      label: 'StatefulSets',
+      helper: localeCode === 'zh_CN' ? '有状态服务控制面' : 'Stateful service controllers',
+      value: statefulSetsQuery.data?.data?.length ?? 0,
+      icon: <CheckCircleOutlined />,
+      tone: 'default',
+    },
+    {
+      key: 'daemonsets',
+      label: 'DaemonSets',
+      helper: localeCode === 'zh_CN' ? '节点级守护进程' : 'Node-level daemon workloads',
+      value: daemonSetsQuery.data?.data?.length ?? 0,
+      icon: <ClusterOutlined />,
+      tone: 'default',
+    },
+    {
+      key: 'jobs',
+      label: 'Jobs',
+      helper: localeCode === 'zh_CN' ? '一次性任务资源' : 'One-off workload runs',
+      value: jobsQuery.data?.data?.length ?? 0,
+      icon: <ClockCircleOutlined />,
+      tone: 'default',
+    },
+    {
+      key: 'cronjobs',
+      label: 'CronJobs',
+      helper: localeCode === 'zh_CN' ? '周期调度任务' : 'Scheduled workload runs',
+      value: cronJobsQuery.data?.data?.length ?? 0,
+      icon: <ScheduleOutlined />,
+      tone: 'default',
+    },
   ]
 
   const eventColumns: TableColumnsType<WorkloadOverviewEvent> = [
@@ -435,7 +486,7 @@ export function WorkloadsOverviewPage() {
   ]
 
   return (
-    <div className="kc-page">
+    <div className="kc-page kc-overview-page">
       <Card className="kc-workload-overview-hero" variant="borderless">
         <div className="kc-workload-overview-hero-copy">
           <Text className="kc-workload-overview-eyebrow">{localeCode === 'zh_CN' ? '工作负载' : 'Workloads'}</Text>
@@ -446,8 +497,19 @@ export function WorkloadsOverviewPage() {
         </div>
         <div className="kc-workload-overview-toolbar" />
       </Card>
-      <div className="kc-workload-overview-stats-shell">
-        <StatGrid items={stats} />
+      <div className="kc-overview-metric-grid kc-workload-overview-metric-grid">
+        {stats.map((item) => (
+          <Card key={item.key} size="small" variant="outlined" className={`kc-overview-metric-card is-${item.tone}`}>
+            <div className="kc-overview-metric-card-head">
+              <div className="kc-overview-metric-copy">
+                <Text className="kc-overview-metric-label">{item.label}</Text>
+                <Statistic value={item.value} />
+              </div>
+              <span className="kc-overview-metric-icon">{item.icon}</span>
+            </div>
+            <Text className="kc-overview-metric-helper">{item.helper}</Text>
+          </Card>
+        ))}
       </div>
       <Card className="kc-workload-overview-events" title={localeCode === 'zh_CN' ? '最近事件' : 'Recent Events'} variant="borderless">
         <AdminTable

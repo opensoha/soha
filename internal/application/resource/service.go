@@ -3648,6 +3648,8 @@ func resourceGVRForKind(kind string) (schema.GroupVersionResource, bool, error) 
 		return schema.GroupVersionResource{Group: "", Version: "v1", Resource: "serviceaccounts"}, true, nil
 	case "replicationcontroller":
 		return schema.GroupVersionResource{Group: "", Version: "v1", Resource: "replicationcontrollers"}, true, nil
+	case "service":
+		return schema.GroupVersionResource{Group: "", Version: "v1", Resource: "services"}, true, nil
 	case "role":
 		return schema.GroupVersionResource{Group: "rbac.authorization.k8s.io", Version: "v1", Resource: "roles"}, true, nil
 	case "rolebinding":
@@ -3658,8 +3660,26 @@ func resourceGVRForKind(kind string) (schema.GroupVersionResource, bool, error) 
 		return schema.GroupVersionResource{Group: "", Version: "v1", Resource: "limitranges"}, true, nil
 	case "lease":
 		return schema.GroupVersionResource{Group: "coordination.k8s.io", Version: "v1", Resource: "leases"}, true, nil
+	case "ingress":
+		return schema.GroupVersionResource{Group: "networking.k8s.io", Version: "v1", Resource: "ingresses"}, true, nil
+	case "endpointslice":
+		return schema.GroupVersionResource{Group: "discovery.k8s.io", Version: "v1", Resource: "endpointslices"}, true, nil
+	case "networkpolicy":
+		return schema.GroupVersionResource{Group: "networking.k8s.io", Version: "v1", Resource: "networkpolicies"}, true, nil
 	case "ingressclass":
 		return schema.GroupVersionResource{Group: "networking.k8s.io", Version: "v1", Resource: "ingressclasses"}, false, nil
+	case "gatewayclass":
+		return schema.GroupVersionResource{Group: "gateway.networking.k8s.io", Version: "v1", Resource: "gatewayclasses"}, false, nil
+	case "gateway":
+		return schema.GroupVersionResource{Group: "gateway.networking.k8s.io", Version: "v1", Resource: "gateways"}, true, nil
+	case "httproute":
+		return schema.GroupVersionResource{Group: "gateway.networking.k8s.io", Version: "v1", Resource: "httproutes"}, true, nil
+	case "backendtlspolicy":
+		return schema.GroupVersionResource{Group: "gateway.networking.k8s.io", Version: "v1", Resource: "backendtlspolicies"}, true, nil
+	case "grpcroute":
+		return schema.GroupVersionResource{Group: "gateway.networking.k8s.io", Version: "v1", Resource: "grpcroutes"}, true, nil
+	case "referencegrant":
+		return schema.GroupVersionResource{Group: "gateway.networking.k8s.io", Version: "v1", Resource: "referencegrants"}, true, nil
 	case "priorityclass":
 		return schema.GroupVersionResource{Group: "scheduling.k8s.io", Version: "v1", Resource: "priorityclasses"}, false, nil
 	case "runtimeclass":

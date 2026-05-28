@@ -15,10 +15,10 @@ export const consolePermissionGroups: PermissionCatalogGroup[] = [
   {
     key: "workspace",
     label: "工作台",
-    description: "控制应用工作台和资源工作台两个一级入口。",
+    description: "控制应用工作台和 k8s工作台两个一级入口。",
     options: [
       { value: "workspace.application.view", label: "查看应用工作台" },
-      { value: "workspace.resource.view", label: "查看资源工作台" },
+      { value: "workspace.resource.view", label: "查看 k8s工作台" },
     ],
   },
   {

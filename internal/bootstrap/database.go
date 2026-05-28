@@ -82,7 +82,7 @@ type clusterCredentialSeed struct {
 // While the stored version matches this constant, the static seed block is
 // skipped entirely. Config-driven sync (admin user, clusters) runs separately
 // during startup so runtime config updates do not depend on replaying defaults.
-const bootstrapSeedVersion = "2026-05-25-ai-workbench-1"
+const bootstrapSeedVersion = "2026-05-28-k8s-gateway-api-1"
 
 const bootstrapSeedVersionKey = "bootstrap.seed_version"
 
@@ -223,7 +223,13 @@ func defaultMenuSeeds() []menuSeed {
 		{ID: "network-topology", ParentID: "network", Path: "/network/topology", LabelZH: "网络拓扑", LabelEN: "Network Topology", IconKey: "network", SortOrder: 40, Enabled: true},
 		{ID: "network-services", ParentID: "network", Path: "/network/services", LabelZH: "Services", LabelEN: "Services", IconKey: "network", SortOrder: 41, Enabled: true},
 		{ID: "network-ingresses", ParentID: "network", Path: "/network/ingresses", LabelZH: "Ingresses", LabelEN: "Ingresses", IconKey: "network", SortOrder: 42, Enabled: true},
-		{ID: "network-gateways", ParentID: "network", Path: "/network/gateways", LabelZH: "Gateways", LabelEN: "Gateways", IconKey: "network", SortOrder: 43, Enabled: true},
+		{ID: "network-gateway-api", ParentID: "network", Path: "/network/gateway-api", LabelZH: "Gateway API", LabelEN: "Gateway API", IconKey: "network", SortOrder: 43, Enabled: true},
+		{ID: "network-gateway-api-gatewayclasses", ParentID: "network-gateway-api", Path: "/network/gateway-api/gatewayclasses", LabelZH: "GatewayClasses", LabelEN: "GatewayClasses", IconKey: "network", SortOrder: 44, Enabled: true},
+		{ID: "network-gateway-api-gateways", ParentID: "network-gateway-api", Path: "/network/gateway-api/gateways", LabelZH: "Gateways", LabelEN: "Gateways", IconKey: "network", SortOrder: 45, Enabled: true},
+		{ID: "network-gateway-api-httproutes", ParentID: "network-gateway-api", Path: "/network/gateway-api/httproutes", LabelZH: "HTTPRoutes", LabelEN: "HTTPRoutes", IconKey: "network", SortOrder: 46, Enabled: true},
+		{ID: "network-gateway-api-backendtlspolicies", ParentID: "network-gateway-api", Path: "/network/gateway-api/backendtlspolicies", LabelZH: "BackendTLSPolicies", LabelEN: "BackendTLSPolicies", IconKey: "network", SortOrder: 47, Enabled: true},
+		{ID: "network-gateway-api-grpcroutes", ParentID: "network-gateway-api", Path: "/network/gateway-api/grpcroutes", LabelZH: "GRPCRoutes", LabelEN: "GRPCRoutes", IconKey: "network", SortOrder: 48, Enabled: true},
+		{ID: "network-gateway-api-referencegrants", ParentID: "network-gateway-api", Path: "/network/gateway-api/referencegrants", LabelZH: "ReferenceGrants", LabelEN: "ReferenceGrants", IconKey: "network", SortOrder: 49, Enabled: true},
 		{ID: "network-endpointslices", ParentID: "network", Path: "/network/endpointslices", LabelZH: "EndpointSlices", LabelEN: "EndpointSlices", IconKey: "network", SortOrder: 53, Enabled: true},
 		{ID: "network-ingressclasses", ParentID: "network", Path: "/network/ingressclasses", LabelZH: "IngressClasses", LabelEN: "IngressClasses", IconKey: "network", SortOrder: 54, Enabled: true},
 		{ID: "network-networkpolicies", ParentID: "network", Path: "/network/networkpolicies", LabelZH: "NetworkPolicies", LabelEN: "NetworkPolicies", IconKey: "network", SortOrder: 55, Enabled: true},
@@ -300,6 +306,7 @@ func deprecatedMenuIDs() []string {
 		"assistant-performance",
 		"assistant-chat",
 		"assistant-inspection",
+		"network-gateways",
 		"network-http-routes",
 		"observability",
 		"monitoring",

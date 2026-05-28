@@ -103,8 +103,12 @@ type ResourceService interface {
 	ListIngresses(context.Context, domainidentity.Principal, string, string) ([]domainresource.IngressView, error)
 	ListEndpointSlices(context.Context, domainidentity.Principal, string, string) ([]domainresource.EndpointSliceView, error)
 	ListNetworkPolicies(context.Context, domainidentity.Principal, string, string) ([]domainresource.NetworkPolicyView, error)
+	ListGatewayClasses(context.Context, domainidentity.Principal, string) ([]domainresource.GatewayClassView, error)
 	ListGateways(context.Context, domainidentity.Principal, string, string) ([]domainresource.GatewayView, error)
 	ListHTTPRoutes(context.Context, domainidentity.Principal, string, string) ([]domainresource.HTTPRouteView, error)
+	ListBackendTLSPolicies(context.Context, domainidentity.Principal, string, string) ([]domainresource.BackendTLSPolicyView, error)
+	ListGRPCRoutes(context.Context, domainidentity.Principal, string, string) ([]domainresource.GRPCRouteView, error)
+	ListReferenceGrants(context.Context, domainidentity.Principal, string, string) ([]domainresource.ReferenceGrantView, error)
 	ListPersistentVolumeClaims(context.Context, domainidentity.Principal, string, string) ([]domainresource.PersistentVolumeClaimView, error)
 	GetPersistentVolumeClaimDetail(context.Context, domainidentity.Principal, string, string, string) (domainresource.PersistentVolumeClaimDetailView, error)
 	ListPersistentVolumes(context.Context, domainidentity.Principal, string) ([]domainresource.PersistentVolumeView, error)
@@ -1262,6 +1266,16 @@ func (h *PlatformHandler) ListNetworkPolicies(c *gin.Context) {
 	apiresponse.Items(c, http.StatusOK, items)
 }
 
+func (h *PlatformHandler) ListGatewayClasses(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	items, err := h.resources.ListGatewayClasses(c.Request.Context(), principal, c.Param("clusterID"))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Items(c, http.StatusOK, items)
+}
+
 func (h *PlatformHandler) ListGateways(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.Query("namespace")
@@ -1277,6 +1291,39 @@ func (h *PlatformHandler) ListHTTPRoutes(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.Query("namespace")
 	items, err := h.resources.ListHTTPRoutes(c.Request.Context(), principal, c.Param("clusterID"), namespace)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Items(c, http.StatusOK, items)
+}
+
+func (h *PlatformHandler) ListBackendTLSPolicies(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	namespace := c.Query("namespace")
+	items, err := h.resources.ListBackendTLSPolicies(c.Request.Context(), principal, c.Param("clusterID"), namespace)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Items(c, http.StatusOK, items)
+}
+
+func (h *PlatformHandler) ListGRPCRoutes(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	namespace := c.Query("namespace")
+	items, err := h.resources.ListGRPCRoutes(c.Request.Context(), principal, c.Param("clusterID"), namespace)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Items(c, http.StatusOK, items)
+}
+
+func (h *PlatformHandler) ListReferenceGrants(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	namespace := c.Query("namespace")
+	items, err := h.resources.ListReferenceGrants(c.Request.Context(), principal, c.Param("clusterID"), namespace)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -1535,10 +1582,14 @@ func (h *PlatformHandler) StopPortForward(c *gin.Context) {
 }
 
 func (h *PlatformHandler) genericResourceYAMLGet(kind string) gin.HandlerFunc {
+	return h.genericResourceYAMLGetWithParam(kind, "name")
+}
+
+func (h *PlatformHandler) genericResourceYAMLGetWithParam(kind, nameParam string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		principal := apiMiddleware.PrincipalFromContext(c)
 		namespace := c.Query("namespace")
-		item, err := h.resources.GetResourceYAML(c.Request.Context(), principal, c.Param("clusterID"), namespace, kind, c.Param("name"))
+		item, err := h.resources.GetResourceYAML(c.Request.Context(), principal, c.Param("clusterID"), namespace, kind, c.Param(nameParam))
 		if err != nil {
 			writeError(c, err)
 			return
@@ -1548,6 +1599,10 @@ func (h *PlatformHandler) genericResourceYAMLGet(kind string) gin.HandlerFunc {
 }
 
 func (h *PlatformHandler) genericResourceYAMLApply(kind string) gin.HandlerFunc {
+	return h.genericResourceYAMLApplyWithParam(kind, "name")
+}
+
+func (h *PlatformHandler) genericResourceYAMLApplyWithParam(kind, nameParam string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		principal := apiMiddleware.PrincipalFromContext(c)
 		namespace := c.Query("namespace")
@@ -1558,7 +1613,7 @@ func (h *PlatformHandler) genericResourceYAMLApply(kind string) gin.HandlerFunc 
 			apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid yaml payload")
 			return
 		}
-		item, err := h.resources.ApplyResourceYAMLByKind(c.Request.Context(), principal, c.Param("clusterID"), namespace, kind, c.Param("name"), payload.Content)
+		item, err := h.resources.ApplyResourceYAMLByKind(c.Request.Context(), principal, c.Param("clusterID"), namespace, kind, c.Param(nameParam), payload.Content)
 		if err != nil {
 			writeError(c, err)
 			return
@@ -1568,10 +1623,14 @@ func (h *PlatformHandler) genericResourceYAMLApply(kind string) gin.HandlerFunc 
 }
 
 func (h *PlatformHandler) genericResourceDelete(kind string) gin.HandlerFunc {
+	return h.genericResourceDeleteWithParam(kind, "name")
+}
+
+func (h *PlatformHandler) genericResourceDeleteWithParam(kind, nameParam string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		principal := apiMiddleware.PrincipalFromContext(c)
 		namespace := c.Query("namespace")
-		if err := h.resources.DeleteResourceByKind(c.Request.Context(), principal, c.Param("clusterID"), namespace, kind, c.Param("name")); err != nil {
+		if err := h.resources.DeleteResourceByKind(c.Request.Context(), principal, c.Param("clusterID"), namespace, kind, c.Param(nameParam)); err != nil {
 			writeError(c, err)
 			return
 		}
@@ -1579,37 +1638,52 @@ func (h *PlatformHandler) genericResourceDelete(kind string) gin.HandlerFunc {
 	}
 }
 
-// RegisterGenericResourceRoutes wires delete + yaml view/apply endpoints for all
-// kinds covered by the 11-resource batch. Called from the router.
+// RegisterGenericResourceRoutes wires delete + yaml view/apply endpoints for
+// platform resources backed by the generic dynamic-client path.
 func (h *PlatformHandler) RegisterGenericResourceRoutes(group gin.IRoutes) {
 	kinds := []struct {
-		path string
-		kind string
+		path      string
+		kind      string
+		nameParam string
 	}{
-		{"/clusters/:clusterID/access-control/serviceaccounts/:name", "ServiceAccount"},
-		{"/clusters/:clusterID/access-control/roles/:name", "Role"},
-		{"/clusters/:clusterID/access-control/rolebindings/:name", "RoleBinding"},
-		{"/clusters/:clusterID/network/ingressclasses/:name", "IngressClass"},
-		{"/clusters/:clusterID/configuration/priorityclasses/:name", "PriorityClass"},
-		{"/clusters/:clusterID/configuration/runtimeclasses/:name", "RuntimeClass"},
-		{"/clusters/:clusterID/access-control/clusterroles/:name", "ClusterRole"},
-		{"/clusters/:clusterID/access-control/clusterrolebindings/:name", "ClusterRoleBinding"},
-		{"/clusters/:clusterID/configuration/mutatingwebhookconfigurations/:name", "MutatingWebhookConfiguration"},
-		{"/clusters/:clusterID/configuration/validatingwebhookconfigurations/:name", "ValidatingWebhookConfiguration"},
-		{"/clusters/:clusterID/configuration/resourcequotas/:name", "ResourceQuota"},
-		{"/clusters/:clusterID/configuration/limitranges/:name", "LimitRange"},
-		{"/clusters/:clusterID/configuration/leases/:name", "Lease"},
-		{"/clusters/:clusterID/workloads/replicationcontrollers/:name", "ReplicationController"},
-		{"/clusters/:clusterID/configuration/configmaps/:name", "ConfigMap"},
-		{"/clusters/:clusterID/configuration/secrets/:name", "Secret"},
-		{"/clusters/:clusterID/storage/persistentvolumeclaims/:name", "PersistentVolumeClaim"},
-		{"/clusters/:clusterID/storage/persistentvolumes/:name", "PersistentVolume"},
-		{"/clusters/:clusterID/storage/storageclasses/:name", "StorageClass"},
+		{path: "/clusters/:clusterID/access-control/serviceaccounts/:name", kind: "ServiceAccount"},
+		{path: "/clusters/:clusterID/access-control/roles/:name", kind: "Role"},
+		{path: "/clusters/:clusterID/access-control/rolebindings/:name", kind: "RoleBinding"},
+		{path: "/clusters/:clusterID/network/services/:serviceName", kind: "Service", nameParam: "serviceName"},
+		{path: "/clusters/:clusterID/network/ingresses/:name", kind: "Ingress"},
+		{path: "/clusters/:clusterID/network/endpointslices/:name", kind: "EndpointSlice"},
+		{path: "/clusters/:clusterID/network/networkpolicies/:name", kind: "NetworkPolicy"},
+		{path: "/clusters/:clusterID/network/ingressclasses/:name", kind: "IngressClass"},
+		{path: "/clusters/:clusterID/network/gatewayclasses/:name", kind: "GatewayClass"},
+		{path: "/clusters/:clusterID/network/gateways/:name", kind: "Gateway"},
+		{path: "/clusters/:clusterID/network/httproutes/:name", kind: "HTTPRoute"},
+		{path: "/clusters/:clusterID/network/backendtlspolicies/:name", kind: "BackendTLSPolicy"},
+		{path: "/clusters/:clusterID/network/grpcroutes/:name", kind: "GRPCRoute"},
+		{path: "/clusters/:clusterID/network/referencegrants/:name", kind: "ReferenceGrant"},
+		{path: "/clusters/:clusterID/configuration/priorityclasses/:name", kind: "PriorityClass"},
+		{path: "/clusters/:clusterID/configuration/runtimeclasses/:name", kind: "RuntimeClass"},
+		{path: "/clusters/:clusterID/access-control/clusterroles/:name", kind: "ClusterRole"},
+		{path: "/clusters/:clusterID/access-control/clusterrolebindings/:name", kind: "ClusterRoleBinding"},
+		{path: "/clusters/:clusterID/configuration/mutatingwebhookconfigurations/:name", kind: "MutatingWebhookConfiguration"},
+		{path: "/clusters/:clusterID/configuration/validatingwebhookconfigurations/:name", kind: "ValidatingWebhookConfiguration"},
+		{path: "/clusters/:clusterID/configuration/resourcequotas/:name", kind: "ResourceQuota"},
+		{path: "/clusters/:clusterID/configuration/limitranges/:name", kind: "LimitRange"},
+		{path: "/clusters/:clusterID/configuration/leases/:name", kind: "Lease"},
+		{path: "/clusters/:clusterID/workloads/replicationcontrollers/:name", kind: "ReplicationController"},
+		{path: "/clusters/:clusterID/configuration/configmaps/:name", kind: "ConfigMap"},
+		{path: "/clusters/:clusterID/configuration/secrets/:name", kind: "Secret"},
+		{path: "/clusters/:clusterID/storage/persistentvolumeclaims/:name", kind: "PersistentVolumeClaim"},
+		{path: "/clusters/:clusterID/storage/persistentvolumes/:name", kind: "PersistentVolume"},
+		{path: "/clusters/:clusterID/storage/storageclasses/:name", kind: "StorageClass"},
 	}
 	for _, entry := range kinds {
-		group.GET(entry.path+"/yaml", h.genericResourceYAMLGet(entry.kind))
-		group.PUT(entry.path+"/yaml", h.genericResourceYAMLApply(entry.kind))
-		group.DELETE(entry.path, h.genericResourceDelete(entry.kind))
+		nameParam := entry.nameParam
+		if nameParam == "" {
+			nameParam = "name"
+		}
+		group.GET(entry.path+"/yaml", h.genericResourceYAMLGetWithParam(entry.kind, nameParam))
+		group.PUT(entry.path+"/yaml", h.genericResourceYAMLApplyWithParam(entry.kind, nameParam))
+		group.DELETE(entry.path, h.genericResourceDeleteWithParam(entry.kind, nameParam))
 	}
 }
 

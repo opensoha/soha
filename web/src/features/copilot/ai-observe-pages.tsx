@@ -351,7 +351,7 @@ export function AIObserveOverviewPage() {
     <div className="kc-page">
       <PageHeader
         title="AI工作台"
-        description="面向平台工作台的 AIOps 入口，统一承接调查、巡检、性能与工具链能力。"
+        description="面向 k8s工作台的 AIOps 入口，统一承接调查、巡检、性能与工具链能力。"
         actions={
           <Space>
             <Button icon={<ToolOutlined />} onClick={() => navigate(getAIToolsPath())}>工具与技能</Button>
@@ -363,9 +363,9 @@ export function AIObserveOverviewPage() {
       <section className="kc-ai-hub-hero">
         <div className="kc-ai-hub-hero__copy">
           <div className="kc-ai-hub-hero__eyebrow">AIOps Hub</div>
-          <h2 className="kc-ai-hub-hero__title">让 AI 观测成为资源工作台里的第一层排障入口</h2>
+          <h2 className="kc-ai-hub-hero__title">让 AI 观测成为 k8s工作台里的第一层排障入口</h2>
           <Paragraph className="kc-ai-hub-hero__description">
-            先判断是告警、性能、链路还是巡检复盘，再进入对应操作面。资源工作台里只保留一个 AI 主入口，避免左侧导航继续裂成第二套树。
+            先判断是告警、性能、链路还是巡检复盘，再进入对应操作面。k8s工作台里只保留一个 AI 主入口，避免左侧导航继续裂成第二套树。
           </Paragraph>
           <Space wrap>
             <Tag color="blue">会话优先</Tag>

@@ -448,6 +448,14 @@ func New(cfg cfgpkg.Config, logger *zap.Logger, client *k8sagent.Client, runtime
 			}
 			apiresponse.Items(c, http.StatusOK, items)
 		})
+		platform.GET("/network/gatewayclasses", func(c *gin.Context) {
+			items, err := client.ListGatewayClasses(c.Request.Context())
+			if err != nil {
+				writeError(c, err)
+				return
+			}
+			apiresponse.Items(c, http.StatusOK, items)
+		})
 		platform.GET("/network/gateways", func(c *gin.Context) {
 			namespace := c.Query("namespace")
 			items, err := client.ListGateways(c.Request.Context(), namespace)
@@ -460,6 +468,33 @@ func New(cfg cfgpkg.Config, logger *zap.Logger, client *k8sagent.Client, runtime
 		platform.GET("/network/httproutes", func(c *gin.Context) {
 			namespace := c.Query("namespace")
 			items, err := client.ListHTTPRoutes(c.Request.Context(), namespace)
+			if err != nil {
+				writeError(c, err)
+				return
+			}
+			apiresponse.Items(c, http.StatusOK, items)
+		})
+		platform.GET("/network/backendtlspolicies", func(c *gin.Context) {
+			namespace := c.Query("namespace")
+			items, err := client.ListBackendTLSPolicies(c.Request.Context(), namespace)
+			if err != nil {
+				writeError(c, err)
+				return
+			}
+			apiresponse.Items(c, http.StatusOK, items)
+		})
+		platform.GET("/network/grpcroutes", func(c *gin.Context) {
+			namespace := c.Query("namespace")
+			items, err := client.ListGRPCRoutes(c.Request.Context(), namespace)
+			if err != nil {
+				writeError(c, err)
+				return
+			}
+			apiresponse.Items(c, http.StatusOK, items)
+		})
+		platform.GET("/network/referencegrants", func(c *gin.Context) {
+			namespace := c.Query("namespace")
+			items, err := client.ListReferenceGrants(c.Request.Context(), namespace)
 			if err != nil {
 				writeError(c, err)
 				return

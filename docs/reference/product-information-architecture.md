@@ -4,7 +4,7 @@
 
 ### Workbenches
 
-- Platform Workbench
+- K8s Workbench
 - Virtualization Workbench
 - Delivery Workbench
 - AI Workbench
@@ -19,7 +19,7 @@
 
 ## MVP Page List
 
-### Platform Workbench
+### K8s Workbench
 
 - fleet summary cards
 - namespace distribution
@@ -82,7 +82,7 @@
 
 ## Priority Order
 
-1. Platform Workbench
+1. K8s Workbench
 2. Virtualization Workbench
 3. Delivery Workbench
 4. AI Workbench

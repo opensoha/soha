@@ -631,6 +631,16 @@ func (c *Client) ListNetworkPolicies(ctx context.Context, namespace string) ([]d
 	return payload.Items, nil
 }
 
+func (c *Client) ListGatewayClasses(ctx context.Context) ([]domainresource.GatewayClassView, error) {
+	var payload struct {
+		Items []domainresource.GatewayClassView `json:"items"`
+	}
+	if err := c.request(ctx, http.MethodGet, "/api/v1/platform/network/gatewayclasses", nil, &payload); err != nil {
+		return nil, err
+	}
+	return payload.Items, nil
+}
+
 func (c *Client) ListGateways(ctx context.Context, namespace string) ([]domainresource.GatewayView, error) {
 	var payload struct {
 		Items []domainresource.GatewayView `json:"items"`
@@ -647,6 +657,39 @@ func (c *Client) ListHTTPRoutes(ctx context.Context, namespace string) ([]domain
 		Items []domainresource.HTTPRouteView `json:"items"`
 	}
 	path := withNamespace("/api/v1/platform/network/httproutes", namespace)
+	if err := c.request(ctx, http.MethodGet, path, nil, &payload); err != nil {
+		return nil, err
+	}
+	return payload.Items, nil
+}
+
+func (c *Client) ListBackendTLSPolicies(ctx context.Context, namespace string) ([]domainresource.BackendTLSPolicyView, error) {
+	var payload struct {
+		Items []domainresource.BackendTLSPolicyView `json:"items"`
+	}
+	path := withNamespace("/api/v1/platform/network/backendtlspolicies", namespace)
+	if err := c.request(ctx, http.MethodGet, path, nil, &payload); err != nil {
+		return nil, err
+	}
+	return payload.Items, nil
+}
+
+func (c *Client) ListGRPCRoutes(ctx context.Context, namespace string) ([]domainresource.GRPCRouteView, error) {
+	var payload struct {
+		Items []domainresource.GRPCRouteView `json:"items"`
+	}
+	path := withNamespace("/api/v1/platform/network/grpcroutes", namespace)
+	if err := c.request(ctx, http.MethodGet, path, nil, &payload); err != nil {
+		return nil, err
+	}
+	return payload.Items, nil
+}
+
+func (c *Client) ListReferenceGrants(ctx context.Context, namespace string) ([]domainresource.ReferenceGrantView, error) {
+	var payload struct {
+		Items []domainresource.ReferenceGrantView `json:"items"`
+	}
+	path := withNamespace("/api/v1/platform/network/referencegrants", namespace)
 	if err := c.request(ctx, http.MethodGet, path, nil, &payload); err != nil {
 		return nil, err
 	}
