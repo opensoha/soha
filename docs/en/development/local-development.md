@@ -4,6 +4,7 @@
 
 ### PostgreSQL
 
+- version: PostgreSQL 18.4
 - host: `localhost`
 - port: `5432`
 - database: `soha`

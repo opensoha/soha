@@ -7,6 +7,7 @@
 - `docs` builds the Docusaurus site and is embedded into the server binary at build time
 - `cmd/server` serves the HTTP API, the SPA, and `/docs/`
 - PostgreSQL is the durable system of record
+- deployment assets pin PostgreSQL 18.4 for fresh local, manifest, and Helm installs
 - cluster credentials are provided by environment configuration or future secret providers
 
 ## Repo Deployment Assets
@@ -47,6 +48,10 @@ helm lint chart
 - kubeconfig available at `$HOME/.kube/config` unless overridden
 - frontend dev server at `http://localhost:5173`
 - docs dev server at `http://localhost:3000/docs/`
+
+## PostgreSQL 18.4 Upgrade Note
+
+New local volumes and fresh cluster installs use PostgreSQL 18.4. If an existing environment already has a PostgreSQL 16 data directory, do not point the 18.4 image at the same volume directly. Use `pg_dump`/`pg_restore`, logical backup restore, or a controlled `pg_upgrade` path. For disposable local development data, remove the old PostgreSQL volume and recreate the stack. Older compose runs may have created `kubecrux_soha-postgres-data`; current compose pins `soha-postgres-data`.
 
 ## Virtualization Lab Notes
 

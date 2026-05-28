@@ -16,7 +16,8 @@ ingress:
   tlsSecretName: ""
 
 postgres:
-  image: postgres:16
+  # Fresh installs use PostgreSQL 18.4. Migrate existing major-version data before reuse.
+  image: postgres:18.4
   database: soha
   username: pgsql
   password: change-me

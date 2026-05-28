@@ -2,6 +2,8 @@
 
 ## PostgreSQL
 
+Current deployment baseline: PostgreSQL 18.4.
+
 PostgreSQL is the durable store for:
 
 - users, teams, projects

@@ -55,6 +55,7 @@ Key backend fields now used by the runtime:
 
 ### PostgreSQL
 
+- version: PostgreSQL 18.4
 - host: `localhost`
 - port: `5432`
 - database: `soha`

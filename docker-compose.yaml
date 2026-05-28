@@ -1,6 +1,9 @@
+name: soha
+
 services:
   postgres:
-    image: postgres:16
+    # Existing PostgreSQL 16 volumes must be migrated or recreated before using 18.4.
+    image: postgres:18.4
     container_name: pgsql
     environment:
       POSTGRES_DB: soha
@@ -66,4 +69,6 @@ services:
 
 volumes:
   soha-postgres-data:
+    name: soha-postgres-data
   soha-k3s-data:
+    name: soha-k3s-data

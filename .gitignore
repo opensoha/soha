@@ -12,6 +12,11 @@ bin/
 tmp/
 .dev/
 .soha/
+.claude/
+.codex/
+graphify-out/
+.graphify_detect.json
+.graphify_python
 
 # IDE / OS
 .DS_Store
