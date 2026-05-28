@@ -499,6 +499,8 @@ The repository has already converged on these rules:
 - docs migration baseline is Docusaurus-first; new docs-site work must target Docusaurus config, sidebars, and MDX component conventions instead of VitePress
 - virtualization lab environments should treat KubeVirt and PVE as separate runtime planes: KubeVirt may run on k3s when Linux nodes expose KVM and support privileged workloads, while PVE may run only as a full KubeVirt VM or as an external bare-metal host, Debian host, or nested lab VM connected through the PVE API
 - PVE-in-k3s is supported only through the KubeVirt VM lab path; privileged Pod experiments that mutate k3s node kernel, networking, storage, or systemd behavior must not be documented as a valid runtime path
+- local virtualization development has two supported PVE lab shortcuts: `make init-pve-vm` for a KubeVirt-backed PVE installer VM, and `make pve-docker-up` for a containerized PVE API lab inspired by LongQT-sea/containerized-proxmox; the Docker PVE path is adapter/API-flow only and must stay isolated from production credentials and storage
+- KubeVirt and PVE control flows must remain regular backend operations that work without an AI provider; MCP skills are allowed only as an optional AI-assisted troubleshooting layer after model integration is configured
 
 ## 9. Change Rules
 

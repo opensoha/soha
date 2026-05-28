@@ -34,6 +34,37 @@ soha server + PostgreSQL
         +-- KubeVirt-backed pve-lab VM or external Proxmox VE node API
 ```
 
+### Local Development Quick Paths
+
+This repository now provides three local virtualization development paths:
+
+| Path | Command | Use case |
+| --- | --- | --- |
+| KubeVirt on k3s | `make init-kubevirt-lab` | Starts local k3s with KubeVirt-friendly mounts/devices, then installs KubeVirt and CDI. |
+| PVE as a KubeVirt VM | `make init-pve-vm` | Boots the real Proxmox VE installer inside KubeVirt for full nested-virtualization experiments. |
+| PVE as a Docker container | `make pve-docker-up` | Starts a containerized PVE endpoint based on `ghcr.io/longqt-sea/proxmox-ve` for adapter and API-flow development. |
+
+To start the KubeVirt lab and Docker PVE lab together:
+
+```bash
+make init-virtualization-lab
+```
+
+Docker PVE defaults:
+
+- host-run soha: `https://127.0.0.1:8006`
+- compose-run soha: `https://host.docker.internal:8006`
+- SSH: `127.0.0.1:2222`
+- root password: `soha`
+
+Override ports or the password with make variables:
+
+```bash
+make pve-docker-up PVE_DOCKER_PASSWORD=change-me PVE_DOCKER_UI_PORT=18006
+```
+
+The Docker PVE lab follows the privileged-container approach from [LongQT-sea/containerized-proxmox](https://github.com/LongQT-sea/containerized-proxmox). Use it only on isolated development machines for adapter testing. It is not a replacement for real PVE and must not be used with production VM storage or credentials.
+
 ### KubeVirt on k3s
 
 k3s can be used as a KubeVirt lab Kubernetes cluster, but the nodes still need to satisfy KubeVirt virtualization requirements:
@@ -65,6 +96,13 @@ These PVE lab shapes are acceptable:
 - A full PVE VM started inside KubeVirt, with port 8006 exposed through a Service.
 - Independent PVE bare metal or independent Debian host, with soha connecting through the API.
 - A full PVE VM on an external hypervisor that supports nested virtualization, used only for demos and adapter validation.
+- A containerized PVE endpoint started through `configs/proxmox/docker-compose.pve.yaml`, used only for local API adapter and connection-flow validation.
+
+### MCP Skills and Virtualization Control
+
+Regular KubeVirt and PVE control must continue to use soha backend APIs, durable tasks, and callback paths. VM creation, sync, power actions, cancel, retry, audit, and authorization must work without an AI provider or MCP.
+
+MCP skills are better suited as an AI-assisted troubleshooting layer after AI is configured. They can help combine PVE events, KubeVirt VMI state, pod logs, Prometheus metrics, and operation logs into an investigation context. Without a connected model, MCP must not be a prerequisite for core virtualization functionality.
 
 ### Quick Start for a KubeVirt PVE VM
 

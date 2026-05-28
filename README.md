@@ -1,11 +1,11 @@
-[English](./README.md) | [简体中文](./README-cn.md)
+<h1 align="center">soha</h1>
 
 <p align="center">
-  <strong>Soha</strong>
+  <strong>A unified Kubernetes platform console for modern platform teams.</strong>
 </p>
 
 <p align="center">
-  A multi-cluster Kubernetes platform console for operations, delivery, observability, access control, and AI-assisted investigation.
+  Operate clusters, ship applications, investigate incidents, and manage runtime work from one permission-aware control plane.
 </p>
 
 <p align="center">
@@ -18,18 +18,31 @@
 </p>
 
 <p align="center">
-  <a href="#features">Features</a>
-  · <a href="#architecture">Architecture</a>
+  <a href="#overview">Overview</a>
+  · <a href="#why-soha">Why soha</a>
+  · <a href="#features">Features</a>
   · <a href="#quick-start">Quick Start</a>
   · <a href="#deployment">Deployment</a>
   · <a href="#contributing">Contributing</a>
 </p>
 
+<p align="center">
+  <a href="./README.md">English</a> | <a href="./README-cn.md">简体中文</a>
+</p>
+
 ## Overview
 
-Soha is a full-stack control plane for platform teams that operate Kubernetes at scale. It combines a Go API server, a React + Ant Design console, and in-repo Docusaurus documentation into one deployable project.
+Soha is a full-stack control plane for platform teams operating Kubernetes and adjacent runtime infrastructure. It brings a Go API server, a React + Ant Design console, and in-repo Docusaurus documentation together as one deployable project.
 
-The project is designed to grow beyond a resource viewer. Soha brings cluster operations, application delivery, alerts, runtime evidence, permissions, AI investigation, virtualization, and Docker operations into one permission-aware console.
+The project is intentionally broader than a resource viewer. Soha connects cluster operations, application delivery, observability, runtime evidence, access control, AI investigation, virtualization, and Docker operations into one cohesive console.
+
+## Why soha
+
+- **One project, one runtime**: ship the API, console, and docs as a single application container when you want a compact deployment.
+- **Operator-first workflows**: list-first resource pages, scoped actions, YAML, events, metrics, logs, and long-running operation records are treated as first-class surfaces.
+- **Permission-aware by design**: menus, routes, buttons, API authorization, audit logs, and scope grants are modeled as separate but aligned control points.
+- **Agent-ready architecture**: remote clusters, AI providers, Docker operations, and durable execution tasks can run through token-protected runner claim/callback paths.
+- **Built to evolve**: platform, delivery, observability, AI, virtualization, and Docker workbench capabilities share one modular-monolith backend and one route-driven frontend shell.
 
 ## Features
 
@@ -195,6 +208,10 @@ make dev-docs
 make build
 make test-api
 make test-web
+make init-kubevirt-lab
+make init-virtualization-lab
+make pve-docker-up
+make pve-docker-status
 make deploy-image
 make deploy-compose-up
 make deploy-hermes-setup

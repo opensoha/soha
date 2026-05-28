@@ -34,6 +34,37 @@ soha server + PostgreSQL
         +-- KubeVirt-backed pve-lab VM or external Proxmox VE node API
 ```
 
+### 本地开发快速路径
+
+本仓库现在提供三条本地虚拟化开发路径：
+
+| 路径 | 命令 | 适用场景 |
+| --- | --- | --- |
+| KubeVirt on k3s | `make init-kubevirt-lab` | 启动带 KubeVirt 友好挂载和设备透传的本地 k3s，并安装 KubeVirt 与 CDI。 |
+| PVE as KubeVirt VM | `make init-pve-vm` | 在 KubeVirt 内启动真实 Proxmox VE 安装器，用于完整嵌套虚拟化实验。 |
+| PVE as Docker container | `make pve-docker-up` | 基于 `ghcr.io/longqt-sea/proxmox-ve` 启动容器化 PVE，用于 PVE 适配器和 API 流程开发。 |
+
+如果希望一次性拉起 KubeVirt lab 和 Docker PVE lab，可执行：
+
+```bash
+make init-virtualization-lab
+```
+
+Docker PVE 默认入口：
+
+- 宿主机运行的 soha：`https://127.0.0.1:8006`
+- compose 容器中的 soha：`https://host.docker.internal:8006`
+- SSH：`127.0.0.1:2222`
+- root 密码：`soha`
+
+需要修改端口或密码时可覆盖 make 变量：
+
+```bash
+make pve-docker-up PVE_DOCKER_PASSWORD=change-me PVE_DOCKER_UI_PORT=18006
+```
+
+Docker PVE 参考 [LongQT-sea/containerized-proxmox](https://github.com/LongQT-sea/containerized-proxmox) 的 privileged container 运行方式，只适合隔离开发机和适配测试。它不替代真实 PVE，也不应用于生产 VM 或生产存储。
+
 ### KubeVirt on k3s
 
 k3s 可以作为 KubeVirt 的实验 Kubernetes 集群，但节点必须满足 KubeVirt 的虚拟化前提：
@@ -65,6 +96,13 @@ Proxmox VE 是完整虚拟化平台和宿主机操作系统栈，官方安装形
 - 在 KubeVirt 中启动完整 PVE VM，并通过 Service 暴露 8006 API。
 - 独立 PVE 裸金属或独立 Debian 宿主机，soha 通过 API 接入。
 - 在支持 nested virtualization 的外部虚拟化平台中启动一台完整 PVE VM，仅用于功能演示和适配测试。
+- 通过 `configs/proxmox/docker-compose.pve.yaml` 启动容器化 PVE，仅用于本地 API 适配和连接流验证。
+
+### 关于 MCP skills 和虚拟化控制
+
+KubeVirt 与 PVE 的常规控制能力仍应走 soha 后端的标准 API、任务和回调路径，不依赖大模型或 MCP。创建、同步、电源操作、取消、重试、审计和权限判断都必须在无 AI provider 的情况下可用。
+
+MCP skills 更适合作为 AI 接入后的排障增强：例如把 PVE 事件、KubeVirt VMI 状态、Pod 日志、Prometheus 指标和操作日志组合成一次调查上下文。未接入大模型时，不应让 MCP 成为虚拟化基础功能的前置条件。
 
 ### KubeVirt PVE VM 快速启动
 

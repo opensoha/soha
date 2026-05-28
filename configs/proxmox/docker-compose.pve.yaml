@@ -1,0 +1,40 @@
+name: soha-pve-lab
+
+services:
+  pve-docker:
+    # Lab-only Proxmox VE container based on LongQT-sea/containerized-proxmox.
+    # It is useful for adapter development and API-flow testing, not production.
+    image: ${PVE_DOCKER_IMAGE:-ghcr.io/longqt-sea/proxmox-ve:latest}
+    container_name: soha-pve-docker
+    hostname: pve-docker
+    privileged: true
+    cgroup: private
+    cap_add:
+      - ALL
+    security_opt:
+      - seccomp=unconfined
+      - apparmor=unconfined
+      - systempaths=unconfined
+    device_cgroup_rules:
+      - "a *:* rwm"
+    environment:
+      PASSWORD: ${PVE_DOCKER_PASSWORD:-soha}
+    ports:
+      - "${PVE_DOCKER_UI_PORT:-8006}:8006"
+      - "${PVE_DOCKER_SSH_PORT:-2222}:22"
+      - "${PVE_DOCKER_SPICE_PORT:-3128}:3128"
+    volumes:
+      - soha-pve-dumps:/var/lib/vz/dump
+      - soha-pve-isos:/var/lib/vz/template/iso
+      - /sys/kernel/security:/sys/kernel/security:rw
+      - /lib/modules:/lib/modules:ro
+    tmpfs:
+      - /run
+      - /run/lock
+    restart: unless-stopped
+
+volumes:
+  soha-pve-dumps:
+    name: soha-pve-dumps
+  soha-pve-isos:
+    name: soha-pve-isos

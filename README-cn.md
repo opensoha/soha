@@ -1,11 +1,11 @@
-[English](./README.md) | [简体中文](./README-cn.md)
+<h1 align="center">soha</h1>
 
 <p align="center">
-  <strong>Soha</strong>
+  <strong>面向现代平台团队的一体化 Kubernetes 平台控制台。</strong>
 </p>
 
 <p align="center">
-  面向平台团队的多集群 Kubernetes 控制台，覆盖平台运维、应用交付、可观测性、访问控制与 AI 辅助分析。
+  在一个权限感知的控制平面中完成集群运维、应用交付、故障分析与运行时管理。
 </p>
 
 <p align="center">
@@ -18,18 +18,31 @@
 </p>
 
 <p align="center">
-  <a href="#功能特性">功能特性</a>
-  · <a href="#架构">架构</a>
+  <a href="#概览">概览</a>
+  · <a href="#为什么选择-soha">为什么选择 soha</a>
+  · <a href="#功能特性">功能特性</a>
   · <a href="#快速开始">快速开始</a>
   · <a href="#部署">部署</a>
   · <a href="#贡献">贡献</a>
 </p>
 
+<p align="center">
+  <a href="./README.md">English</a> | <a href="./README-cn.md">简体中文</a>
+</p>
+
 ## 概览
 
-Soha 是一个面向平台团队的全栈控制平面，用于管理大规模 Kubernetes 与周边运行时能力。项目由 Go API 服务、React + Ant Design 控制台和仓库内 Docusaurus 文档组成，并按单项目方式交付。
+Soha 是一个面向平台团队的全栈控制平面，用于管理 Kubernetes 以及周边运行时基础设施。项目将 Go API 服务、React + Ant Design 控制台和仓库内 Docusaurus 文档整合为一个可部署单元。
 
-Soha 的目标不只是资源浏览器。它将集群运维、应用交付、告警、运行证据、权限、AI 调查、虚拟化和 Docker 运维统一到一个权限感知的控制台中。
+Soha 的目标不只是资源浏览器。它把集群运维、应用交付、可观测性、运行证据、访问控制、AI 调查、虚拟化和 Docker 运维连接到同一个控制台中。
+
+## 为什么选择 soha
+
+- **一个项目，一个运行时**：需要紧凑部署时，可以用一个应用容器同时交付 API、控制台和文档。
+- **面向操作员的工作流**：资源列表、作用域动作、YAML、事件、指标、日志和长耗时操作记录都是一等能力。
+- **权限感知的设计**：菜单、路由、按钮、API 授权、审计日志与作用域授权是相互对齐但边界清晰的控制点。
+- **Agent-ready 架构**：远程集群、AI provider、Docker 操作和持久化执行任务都可以通过 token 保护的 runner claim/callback 路径运行。
+- **为持续演进而设计**：平台、交付、可观测性、AI、虚拟化和 Docker 工作台共享同一个模块化单体后端与路由驱动的前端壳层。
 
 ## 功能特性
 
@@ -195,6 +208,10 @@ make dev-docs
 make build
 make test-api
 make test-web
+make init-kubevirt-lab
+make init-virtualization-lab
+make pve-docker-up
+make pve-docker-status
 make deploy-image
 make deploy-compose-up
 make deploy-hermes-setup

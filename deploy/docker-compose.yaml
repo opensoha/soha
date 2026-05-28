@@ -62,6 +62,8 @@ services:
       - "8080:8080"
     volumes:
       - ../configs/config.compose.yaml:/app/configs/config.compose.yaml:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8080/readyz >/dev/null 2>&1 || exit 1"]
       interval: 10s
