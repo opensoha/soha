@@ -35,7 +35,7 @@ It is not only a resource viewer. It is intended to become a unified control pla
 Project summary:
 
 - `soha` is a multi-cluster Kubernetes platform console
-- backend baseline: Go + Gin + PostgreSQL + Redis + `client-go`
+- backend baseline: Go + Gin + PostgreSQL + `client-go`
 - frontend baseline: React 18 + TypeScript 5 + Ant Design 6 + Vite + React Router + TanStack Query 5 + Zustand 5
 - docs baseline: Docusaurus
 
@@ -46,7 +46,7 @@ Project summary:
 - language: Go
 - HTTP framework: Gin
 - persistence: PostgreSQL
-- cache/session/runtime support: Redis
+- runtime coordination: PostgreSQL-backed durable records and in-process state
 - Kubernetes access: `client-go`
 - remote cluster mode: agent HTTP connector
 - API style: aggregated platform view models, not raw Kubernetes objects
@@ -94,14 +94,13 @@ The system is organized as a modular monolith with clear layers.
    - RBAC, ABAC, scope filtering
 5. Infrastructure layer
    - `internal/infrastructure`
-   - config, logger, kubernetes, informer, database, redis, mcp, swagger
+   - config, logger, kubernetes, informer, database, mcp, swagger
 6. Repository layer
    - `internal/repository`
    - durable storage access
 7. External systems
    - Kubernetes clusters
    - PostgreSQL
-   - Redis
    - future CI/CD, alerting, MCP-capable integrations
 
 ## 5. Backend Technical Solution

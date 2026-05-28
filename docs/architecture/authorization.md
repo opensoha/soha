@@ -153,12 +153,7 @@ RBAC answers one question first: does the principal's role set ever permit this 
 - `sessions`
 - audit trail of allow, deny, and operation outcomes
 
-### Redis
-
-- session cache and token blacklist
-- OIDC and OAuth provider state, plus one-time frontend exchange payloads
-- optional short-lived policy evaluation cache for repeated read operations
-- lock state for mutable operations and future approvals
+Short-lived login and policy-evaluation state should use signed tokens, request context, process-local cache, or explicit PostgreSQL-backed records. No separate cache service is part of the current runtime baseline.
 
 ## Recommended Policy Schema
 

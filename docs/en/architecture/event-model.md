@@ -34,7 +34,7 @@
 
 - normalize source-specific events
 - persist durable event stream in PostgreSQL when historical search matters
-- buffer hot delivery in Redis for SSE consumers
+- keep hot delivery buffers process-local for SSE consumers
 - support correlation by cluster, namespace, project, release, or operation
 
 ## MVP Scope

@@ -21,6 +21,6 @@
 - `application`: orchestration and use-case services
 - `bootstrap`: dependency graph and database seed
 - `domain`: contracts and platform view models
-- `infrastructure`: config, logger, postgres, redis, kubernetes, informer, swagger, mcp
+- `infrastructure`: config, logger, postgres, kubernetes, informer, swagger, mcp
 - `policy`: RBAC, ABAC, and scope calculation
 - `repository`: durable persistence such as audit logs

@@ -7,7 +7,7 @@
 - `internal/api`: routes, handlers, DTOs, middleware, HTTP error and response shaping.
 - `internal/application`: business orchestration and view-model assembly.
 - `internal/domain`: shared contracts and domain-level types.
-- `internal/infrastructure`: config, DB, Redis, Kubernetes, informer, agent, Swagger, MCP, and logger wiring.
+- `internal/infrastructure`: config, DB, Kubernetes, informer, agent, Swagger, MCP, and logger wiring.
 - `internal/policy`: RBAC, ABAC, and scope evaluation.
 - `internal/repository`: durable persistence adapters.
 - `internal/bootstrap`: dependency graph, migrations, seed data, and runtime startup.

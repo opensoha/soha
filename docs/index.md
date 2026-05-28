@@ -44,7 +44,7 @@ soha 是一个多集群 Kubernetes 平台控制台。它不是对原生 Kubernet
 ### 后端
 
 ```bash
-docker compose up -d postgres redis
+docker compose up -d postgres
 go run ./cmd/server
 ```
 

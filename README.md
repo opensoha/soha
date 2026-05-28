@@ -63,7 +63,7 @@ Gin API Server
       +--> Kubernetes / Agent / Docker / Virtualization / MCP integrations
       |
       v
-PostgreSQL + Redis + Kubernetes clusters
+PostgreSQL + Kubernetes clusters
 ```
 
 ### Backend
@@ -73,7 +73,7 @@ PostgreSQL + Redis + Kubernetes clusters
 - `internal/api`: routes, handlers, middleware, request parsing, response shaping
 - `internal/application`: use-case orchestration, authorization, scope handling, audit, and view models
 - `internal/policy`: RBAC, ABAC, and scope evaluation
-- `internal/infrastructure`: config, database, Redis, Kubernetes, informer, agent, logger, Swagger, MCP
+- `internal/infrastructure`: config, database, Kubernetes, informer, agent, logger, Swagger, MCP
 - `internal/repository`: durable persistence
 - `internal/bootstrap`: dependency graph, migration, seed, and startup wiring
 
@@ -96,7 +96,7 @@ PostgreSQL + Redis + Kubernetes clusters
 
 | Layer | Stack |
 | --- | --- |
-| Backend | Go 1.23, Gin, PostgreSQL, Redis, Kubernetes `client-go` |
+| Backend | Go 1.23, Gin, PostgreSQL, Kubernetes `client-go` |
 | Frontend | React 18, TypeScript 5, Vite 6, React Router 6, TanStack Query 5, Zustand 5, Ant Design 6, Tailwind CSS 4 |
 | Docs | Docusaurus 3 |
 | Packaging | Docker, Docker Compose, raw Kubernetes YAML, Helm |

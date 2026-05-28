@@ -35,7 +35,7 @@ Implement backend changes through the repository's layered Go architecture. Keep
 - `internal/api` parses requests, maps errors, and returns HTTP responses. It must not own Kubernetes traversal or policy decisions.
 - `internal/application` owns orchestration, scope handling, authorization checks, audit recording, and view-model shaping.
 - `internal/repository` owns durable persistence details. Keep SQL and GORM concerns out of handlers and orchestration code.
-- `internal/infrastructure` owns external clients and vendor-specific wiring such as Kubernetes managers, informer startup, agent HTTP clients, config loading, DB, Redis, Swagger, and MCP registries.
+- `internal/infrastructure` owns external clients and vendor-specific wiring such as Kubernetes managers, informer startup, agent HTTP clients, config loading, DB, Swagger, and MCP registries.
 - `internal/bootstrap` wires dependencies and startup lifecycle. Do not hide new cross-module dependencies in ad hoc globals.
 - Prefer domain or platform view models for API output. Do not return raw Kubernetes schema objects unless the route is explicitly a YAML or passthrough surface.
 - Runtime shell work does not belong in handlers. Build, release, Docker Compose, Docker Engine, and VM-control execution must go through application services plus durable task/operation records and runner callbacks.

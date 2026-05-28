@@ -24,7 +24,7 @@ Every audit record should capture:
 ## Storage Strategy
 
 - PostgreSQL stores append-only records for retention and search
-- Redis may buffer short-lived event fanout but is not the source of truth
+- short-lived event fanout is process-local and not the source of truth
 
 ## High-Risk Actions
 

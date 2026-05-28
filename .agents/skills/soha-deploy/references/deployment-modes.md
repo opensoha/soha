@@ -51,4 +51,4 @@ Start from `chart/`.
 - same-origin console and API
 - docs served from the same container
 
-These assets are intentionally conservative. If the user later wants external PostgreSQL, separate web hosting, Redis, or ingress-controller-specific annotations, extend the templates instead of rebuilding deployment logic from scratch.
+These assets are intentionally conservative. If the user later wants external PostgreSQL, separate web hosting, additional runtime dependencies, or ingress-controller-specific annotations, extend the templates instead of rebuilding deployment logic from scratch.

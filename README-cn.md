@@ -63,7 +63,7 @@ Gin API Server
       +--> Kubernetes / Agent / Docker / Virtualization / MCP 集成
       |
       v
-PostgreSQL + Redis + Kubernetes 集群
+PostgreSQL + Kubernetes 集群
 ```
 
 ### 后端
@@ -73,7 +73,7 @@ PostgreSQL + Redis + Kubernetes 集群
 - `internal/api`: 路由、处理器、中间件、请求解析与响应封装
 - `internal/application`: 用例编排、授权、作用域处理、审计与视图模型
 - `internal/policy`: RBAC、ABAC 与作用域计算
-- `internal/infrastructure`: 配置、数据库、Redis、Kubernetes、informer、agent、日志、Swagger、MCP
+- `internal/infrastructure`: 配置、数据库、Kubernetes、informer、agent、日志、Swagger、MCP
 - `internal/repository`: 持久化访问层
 - `internal/bootstrap`: 依赖装配、迁移、初始化与启动流程
 
@@ -96,7 +96,7 @@ PostgreSQL + Redis + Kubernetes 集群
 
 | 层级 | 技术 |
 | --- | --- |
-| 后端 | Go 1.23、Gin、PostgreSQL、Redis、Kubernetes `client-go` |
+| 后端 | Go 1.23、Gin、PostgreSQL、Kubernetes `client-go` |
 | 前端 | React 18、TypeScript 5、Vite 6、React Router 6、TanStack Query 5、Zustand 5、Ant Design 6、Tailwind CSS 4 |
 | 文档 | Docusaurus 3 |
 | 打包部署 | Docker、Docker Compose、原生 Kubernetes YAML、Helm |

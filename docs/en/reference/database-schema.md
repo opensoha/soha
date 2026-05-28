@@ -182,7 +182,7 @@ User or team saved filters, tables, and dashboards.
 
 Persistent UI preferences and defaults.
 
-## PostgreSQL vs Redis
+## PostgreSQL Storage Boundary
 
 Use PostgreSQL when:
 
@@ -191,9 +191,4 @@ Use PostgreSQL when:
 - retention matters
 - auditability matters
 
-Use Redis when:
-
-- data is short-lived
-- low latency fanout matters
-- cache invalidation can be event-driven
-- distributed lock semantics are needed
+Short-lived UI state, request-scoped cache, and live fanout should stay in process memory or explicit durable task/event tables until a concrete external dependency is reintroduced.

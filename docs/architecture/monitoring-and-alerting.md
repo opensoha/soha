@@ -123,12 +123,12 @@ PostgreSQL should hold:
 - alert_delivery_logs
 - notification_channels
 
-Redis should hold:
+Short-lived alert processing state should stay in backend-owned runtime structures or durable rows:
 
-- short-lived dedup windows
-- burst buffering for inbound alerts
-- dispatch retry state
-- active websocket/subscription state
+- dedup windows derived from alert fingerprints and timestamps
+- bounded in-process burst buffers for inbound alerts
+- dispatch retry state persisted in delivery or notification records
+- active websocket/subscription state held in process memory
 
 ## Integration Strategy
 

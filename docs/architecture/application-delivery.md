@@ -220,11 +220,11 @@ PostgreSQL now holds:
 - deploy_records
 - registry_credentials_meta
 
-Redis should hold:
+Runtime execution state should be represented by durable rows plus runner callbacks:
 
-- running build heartbeat
-- distributed execution locks
-- short-lived live log stream state
+- running build heartbeat in `execution_tasks`
+- terminal status and retry ownership in `execution_tasks`
+- live and retained log evidence in `execution_logs` and artifacts
 
 ## Execution Direction
 

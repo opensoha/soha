@@ -23,7 +23,6 @@ http:
 logger:
 runtime:
 database:
-redis:
 auth:
 gitlab:
 swagger:
@@ -61,12 +60,6 @@ Key backend fields now used by the runtime:
 - database: `soha`
 - user: `pgsql`
 - password: `pgsql`
-
-### Redis
-
-- addr: `localhost:6379`
-- password: empty
-- db: `0`
 
 ## Identity Defaults
 
