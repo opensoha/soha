@@ -2,7 +2,7 @@
 
 ## Goal
 
-kubecrux now owns application registration, delivery templates, environment-scoped orchestration, and execution records.
+soha now owns application registration, delivery templates, environment-scoped orchestration, and execution records.
 
 ## Current Implemented Surface
 

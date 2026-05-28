@@ -36,12 +36,12 @@ type Span struct {
 }
 
 type Result struct {
-	SourceID        string         `json:"sourceId"`
-	Summary         string         `json:"summary"`
-	Spans           []Span         `json:"spans"`
-	Hotspots        []map[string]any `json:"hotspots,omitempty"`
-	QueryCost       map[string]any `json:"queryCost,omitempty"`
-	SampleWindow    map[string]any `json:"sampleWindow,omitempty"`
+	SourceID     string           `json:"sourceId"`
+	Summary      string           `json:"summary"`
+	Spans        []Span           `json:"spans"`
+	Hotspots     []map[string]any `json:"hotspots,omitempty"`
+	QueryCost    map[string]any   `json:"queryCost,omitempty"`
+	SampleWindow map[string]any   `json:"sampleWindow,omitempty"`
 }
 
 type Driver interface {

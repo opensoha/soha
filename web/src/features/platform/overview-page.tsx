@@ -299,31 +299,31 @@ export function OverviewPage() {
   ]
 
   return (
-    <div className="kc-page kc-overview-page">
-      <section className="kc-overview-hero">
-        <div className="kc-overview-hero-header">
-          <h1 className="kc-overview-title">{t('page.overview.title', 'Platform Overview')}</h1>
+    <div className="soha-page soha-overview-page">
+      <section className="soha-overview-hero">
+        <div className="soha-overview-hero-header">
+          <h1 className="soha-overview-title">{t('page.overview.title', 'Platform Overview')}</h1>
         </div>
 
-        <div className="kc-overview-metric-grid">
+        <div className="soha-overview-metric-grid">
           {overviewStats.map((item) => (
-            <Card key={item.key} size="small" variant="outlined" className={`kc-overview-metric-card is-${item.tone}`}>
-              <div className="kc-overview-metric-card-head">
-                <div className="kc-overview-metric-copy">
-                  <Text className="kc-overview-metric-label">{item.label}</Text>
+            <Card key={item.key} size="small" variant="outlined" className={`soha-overview-metric-card is-${item.tone}`}>
+              <div className="soha-overview-metric-card-head">
+                <div className="soha-overview-metric-copy">
+                  <Text className="soha-overview-metric-label">{item.label}</Text>
                   <Statistic value={item.value} />
                 </div>
-                <span className="kc-overview-metric-icon">{item.icon}</span>
+                <span className="soha-overview-metric-icon">{item.icon}</span>
               </div>
-              <Text className="kc-overview-metric-helper">{item.helper}</Text>
+              <Text className="soha-overview-metric-helper">{item.helper}</Text>
             </Card>
           ))}
         </div>
       </section>
 
-      <div className="kc-overview-summary-grid">
+      <div className="soha-overview-summary-grid">
         <Card
-          className="kc-overview-panel-card"
+          className="soha-overview-panel-card"
           title={localeCode === 'zh_CN' ? '告警摘要' : 'Alert Summary'}
           extra={
             <Text type="secondary" className="text-xs">
@@ -332,11 +332,11 @@ export function OverviewPage() {
           }
         >
           {summary ? (
-            <div className="kc-overview-alert-stack">
-              <div className="kc-overview-inline-banner">
+            <div className="soha-overview-alert-stack">
+              <div className="soha-overview-inline-banner">
                 <div>
                   <Text strong>{localeCode === 'zh_CN' ? '告警分布' : 'Alert Distribution'}</Text>
-                  <div className="kc-overview-inline-caption">
+                  <div className="soha-overview-inline-caption">
                     {summary.firingCount > 0
                       ? (localeCode === 'zh_CN' ? '当前仍有活跃告警，优先看 Critical 和 Warning。' : 'Active alerts remain. Start with Critical and Warning.')
                       : (localeCode === 'zh_CN' ? '当前没有活跃告警，保持通道与规则可用。' : 'No active alerts right now. Keep rules and channels healthy.')}
@@ -346,11 +346,11 @@ export function OverviewPage() {
                   {localeCode === 'zh_CN' ? '查看监控工作台' : 'Open Monitoring Workbench'}
                 </Button>
               </div>
-              <div className="kc-overview-chip-grid">
+              <div className="soha-overview-chip-grid">
                 {alertChips.map((item) => (
-                  <div key={item.key} className={`kc-overview-chip is-${item.tone}`}>
-                    <span className="kc-overview-chip-label">{item.label}</span>
-                    <span className="kc-overview-chip-value">{item.value}</span>
+                  <div key={item.key} className={`soha-overview-chip is-${item.tone}`}>
+                    <span className="soha-overview-chip-label">{item.label}</span>
+                    <span className="soha-overview-chip-value">{item.value}</span>
                   </div>
                 ))}
               </div>
@@ -361,7 +361,7 @@ export function OverviewPage() {
         </Card>
 
         <Card
-          className="kc-overview-panel-card"
+          className="soha-overview-panel-card"
           title={localeCode === 'zh_CN' ? '集群健康状态' : 'Cluster Health'}
           extra={
             <Text type="secondary" className="text-xs">
@@ -372,19 +372,19 @@ export function OverviewPage() {
           {clusters.length === 0 ? (
             <Empty description={t('page.overview.noClusters', 'No clusters')} />
           ) : (
-            <div className="kc-overview-cluster-list">
+            <div className="soha-overview-cluster-list">
               {clusters.map((cluster) => (
-                <div key={cluster.id} className="kc-overview-cluster-row">
-                  <div className="kc-overview-cluster-main">
-                    <div className="kc-overview-cluster-title-row">
+                <div key={cluster.id} className="soha-overview-cluster-row">
+                  <div className="soha-overview-cluster-main">
+                    <div className="soha-overview-cluster-title-row">
                       <Text strong>{cluster.name}</Text>
                       <StatusTag value={cluster.health?.status ?? 'unknown'} />
                     </div>
-                    <div className="kc-overview-cluster-caption">
+                    <div className="soha-overview-cluster-caption">
                       {localeCode === 'zh_CN' ? '类型' : 'Type'}: {formatClusterType(cluster, localeCode)}
                     </div>
                   </div>
-                  <div className="kc-overview-cluster-meta">
+                  <div className="soha-overview-cluster-meta">
                     <span>{`Env: ${cluster.environment || '-'}`}</span>
                     <span>{`Mode: ${cluster.connectionMode || '-'}`}</span>
                     <span>{`Version: ${cluster.version || '-'}`}</span>
@@ -397,10 +397,10 @@ export function OverviewPage() {
       </div>
 
       <Card
-        className="kc-overview-runtime-card"
+        className="soha-overview-runtime-card"
         title={localeCode === 'zh_CN' ? 'Pod 运行态势' : 'Pod Runtime'}
         extra={clusters.length > 0 ? (
-          <div className="kc-overview-runtime-card-extra">
+          <div className="soha-overview-runtime-card-extra">
             <Button type="text" icon={<ArrowRightOutlined />} onClick={() => navigate('/workloads/pods')}>
               {localeCode === 'zh_CN' ? '查看 Pod 列表' : 'Open Pods'}
             </Button>
@@ -416,49 +416,49 @@ export function OverviewPage() {
         ) : !workloadOverview ? (
           <Empty description={localeCode === 'zh_CN' ? '当前平台暂无运行态势摘要' : 'No workload runtime summary for the platform'} />
         ) : (
-          <div className="kc-overview-runtime-layout">
-            <div className="kc-overview-runtime-main">
-              <div className="kc-overview-runtime-banner">
+          <div className="soha-overview-runtime-layout">
+            <div className="soha-overview-runtime-main">
+              <div className="soha-overview-runtime-banner">
                 <div>
-                  <div className="kc-overview-section-kicker">
+                  <div className="soha-overview-section-kicker">
                     {localeCode === 'zh_CN' ? '运行面信号' : 'Runtime Signal'}
                   </div>
-                  <Text strong className="kc-overview-runtime-scope">
+                  <Text strong className="soha-overview-runtime-scope">
                     {currentCluster?.name || (localeCode === 'zh_CN' ? '当前集群' : 'Current Cluster')}
                   </Text>
                 </div>
-                <div className="kc-overview-hero-pills">
-                  <span className="kc-overview-pill">
-                    <span className="kc-overview-pill-label">{localeCode === 'zh_CN' ? '数据来源' : 'Source'}</span>
-                    <span className="kc-overview-pill-value">{formatWorkloadSource(workloadOverview.source, localeCode)}</span>
+                <div className="soha-overview-hero-pills">
+                  <span className="soha-overview-pill">
+                    <span className="soha-overview-pill-label">{localeCode === 'zh_CN' ? '数据来源' : 'Source'}</span>
+                    <span className="soha-overview-pill-value">{formatWorkloadSource(workloadOverview.source, localeCode)}</span>
                   </span>
-                  <span className="kc-overview-pill">
-                    <span className="kc-overview-pill-label">{localeCode === 'zh_CN' ? '更新时间' : 'Updated'}</span>
-                    <span className="kc-overview-pill-value">{updatedAt}</span>
+                  <span className="soha-overview-pill">
+                    <span className="soha-overview-pill-label">{localeCode === 'zh_CN' ? '更新时间' : 'Updated'}</span>
+                    <span className="soha-overview-pill-value">{updatedAt}</span>
                   </span>
                 </div>
               </div>
 
-              <div className="kc-overview-pod-grid">
+              <div className="soha-overview-pod-grid">
                 {podStats.map((item) => (
-                  <Card key={item.key} size="small" variant="outlined" className={`kc-overview-pod-card is-${item.tone}`}>
-                    <div className="kc-overview-pod-card-head">
-                      <div className="kc-overview-metric-copy">
-                        <Text className="kc-overview-metric-label">{item.label}</Text>
+                  <Card key={item.key} size="small" variant="outlined" className={`soha-overview-pod-card is-${item.tone}`}>
+                    <div className="soha-overview-pod-card-head">
+                      <div className="soha-overview-metric-copy">
+                        <Text className="soha-overview-metric-label">{item.label}</Text>
                         <Statistic value={item.value} />
                       </div>
-                      <span className="kc-overview-metric-icon">{item.icon}</span>
+                      <span className="soha-overview-metric-icon">{item.icon}</span>
                     </div>
-                    <Text className="kc-overview-metric-helper">{item.helper}</Text>
+                    <Text className="soha-overview-metric-helper">{item.helper}</Text>
                   </Card>
                 ))}
               </div>
 
-              <div className="kc-overview-subpanel">
-                <div className="kc-overview-subpanel-head">
+              <div className="soha-overview-subpanel">
+                <div className="soha-overview-subpanel-head">
                   <div>
                     <Text strong>{localeCode === 'zh_CN' ? '需关注的 Pod' : 'Pods Requiring Attention'}</Text>
-                    <div className="kc-overview-inline-caption">
+                    <div className="soha-overview-inline-caption">
                       {localeCode === 'zh_CN' ? '先看异常实例，再下钻到详情页定位节点、重启与就绪状态。' : 'Start with the exceptions, then drill into pod details for node, restart, and readiness context.'}
                     </div>
                   </div>
@@ -469,14 +469,14 @@ export function OverviewPage() {
                 {problematicPods.length === 0 ? (
                   <Empty description={localeCode === 'zh_CN' ? '当前平台没有需要关注的 Pod' : 'No pods require attention in the platform scope'} />
                 ) : (
-                  <div className="kc-overview-attention-list">
+                  <div className="soha-overview-attention-list">
                     {problematicPods.map((item) => (
-                      <div key={`${item.namespace}/${item.name}`} className="kc-overview-attention-row">
-                        <div className="kc-overview-attention-main">
+                      <div key={`${item.namespace}/${item.name}`} className="soha-overview-attention-row">
+                        <div className="soha-overview-attention-main">
                           <Text strong>{item.name}</Text>
                           <StatusTag value={item.phase} />
                         </div>
-                        <div className="kc-overview-attention-meta">
+                        <div className="soha-overview-attention-meta">
                           <span>{`Cluster: ${item.clusterName}`}</span>
                           <span>{`NS: ${item.namespace}`}</span>
                           <span>{`Node: ${item.nodeName || '-'}`}</span>
@@ -491,14 +491,14 @@ export function OverviewPage() {
               </div>
             </div>
 
-            <div className="kc-overview-runtime-side">
-              <div className="kc-overview-subpanel">
-                <div className="kc-overview-subpanel-head">
+            <div className="soha-overview-runtime-side">
+              <div className="soha-overview-subpanel">
+                <div className="soha-overview-subpanel-head">
                   <div>
                     <Text strong>
                       {localeCode === 'zh_CN' ? '命名空间热点' : 'Namespace Hotspots'}
                     </Text>
-                    <div className="kc-overview-inline-caption">
+                    <div className="soha-overview-inline-caption">
                       {localeCode === 'zh_CN' ? '先看哪些命名空间承载了更多 Pod 和风险信号。' : 'Use this to spot which namespaces carry most of the pod volume and risk pressure.'}
                     </div>
                   </div>
@@ -506,16 +506,16 @@ export function OverviewPage() {
                 {namespaceBreakdown.length === 0 ? (
                   <Empty description={localeCode === 'zh_CN' ? '当前平台暂无 Pod 分布数据' : 'No namespace distribution in the platform scope'} />
                 ) : (
-                  <div className="kc-overview-namespace-list">
+                  <div className="soha-overview-namespace-list">
                     {namespaceBreakdown.map((item) => (
-                      <div key={`${item.clusterId}:${item.namespace}`} className="kc-overview-namespace-row">
-                        <div className="kc-overview-namespace-main">
+                      <div key={`${item.clusterId}:${item.namespace}`} className="soha-overview-namespace-row">
+                        <div className="soha-overview-namespace-main">
                           <Text strong>{item.namespace}</Text>
-                          <div className="kc-overview-cluster-caption">
+                          <div className="soha-overview-cluster-caption">
                             {`Cluster: ${item.clusterName}`}
                           </div>
                         </div>
-                        <div className="kc-overview-namespace-meta">
+                        <div className="soha-overview-namespace-meta">
                           <span>{`Pods: ${item.totalPods}`}</span>
                           <span>{`Running: ${item.runningPods}`}</span>
                           <span>{`${localeCode === 'zh_CN' ? '需关注' : 'At-risk'}: ${item.atRiskPods}`}</span>

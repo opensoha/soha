@@ -675,7 +675,7 @@ export function AlertRulesPage() {
   }
 
   return (
-    <div className="kc-page">
+    <div className="soha-page">
       <PageHeader
         title="告警规则"
         description="按数据源、查询和阈值创建规则，并绑定通知策略与自愈策略。"
@@ -936,7 +936,7 @@ export function HealingPage() {
   ]
 
   return (
-    <div className="kc-page">
+    <div className="soha-page">
       <PageHeader
         title="自愈中心"
         description="维护自愈策略和审批运行记录，策略定义复用 DAG 编辑器。"
@@ -948,7 +948,7 @@ export function HealingPage() {
         </Paragraph>
       </Card>
       <AdminTable shellClassName="is-panel" columns={policyColumns} dataSource={policiesQuery.data?.data ?? []} rowKey="id" loading={policiesQuery.isLoading} />
-      <Card className="kc-overview-panel-card" title="自愈运行">
+      <Card className="soha-overview-panel-card" title="自愈运行">
         <AdminTable columns={runColumns} dataSource={runsQuery.data?.data ?? []} rowKey="id" loading={runsQuery.isLoading} pagination={{ pageSize: 10 }} />
       </Card>
 
@@ -1269,7 +1269,7 @@ export function OnCallSettingsPage() {
   }
 
   return (
-    <div className="kc-page">
+    <div className="soha-page">
       <PageHeader
         title="值班设置"
         description="集中维护值班排班、轮值策略、升级链与告警分派规则。"
@@ -1411,7 +1411,7 @@ export function OnCallSettingsPage() {
             {(fields, { add, remove }) => (
               <>
                 {fields.map(({ key, name, ...rest }, index) => (
-                  <Card key={key} size="small" className="kc-oncall-step-card" title={`步骤 ${index + 1}`} extra={fields.length > 1 ? <Button size="small" danger onClick={() => remove(name)}>删除</Button> : null}>
+                  <Card key={key} size="small" className="soha-oncall-step-card" title={`步骤 ${index + 1}`} extra={fields.length > 1 ? <Button size="small" danger onClick={() => remove(name)}>删除</Button> : null}>
                     <Row gutter={12}>
                       <Col span={12}>
                         <Form.Item {...rest} name={[name, 'scheduleId']} label="排班对象" rules={[{ required: true, message: '请选择排班' }]}>
@@ -1630,12 +1630,12 @@ export function OnCallBoardPage() {
     const assignment = assignmentForDate(selectedRotation, current)
     const list = assignment.participants
     if (list.length === 0) {
-      return <div className="kc-oncall-cell kc-oncall-cell-empty"><Text type="secondary">未排班</Text></div>
+      return <div className="soha-oncall-cell soha-oncall-cell-empty"><Text type="secondary">未排班</Text></div>
     }
     const isToday = current.isSame(today, 'day')
     return (
       <Tooltip title={list.join('、')}>
-        <div className={`kc-oncall-cell${assignment.override ? ' kc-oncall-cell-override' : ''}${isToday ? ' kc-oncall-cell-today' : ''}`}>
+        <div className={`soha-oncall-cell${assignment.override ? ' soha-oncall-cell-override' : ''}${isToday ? ' soha-oncall-cell-today' : ''}`}>
           <Avatar.Group size="small" max={{ count: 3 }}>
             {list.map((name) => (
               <Avatar key={name} style={{ backgroundColor: assignment.override ? '#fa8c16' : '#1677ff' }}>{participantAvatarText(name)}</Avatar>
@@ -1659,7 +1659,7 @@ export function OnCallBoardPage() {
   const drawerAssignment = drawerDate ? assignmentForDate(selectedRotation, drawerDate) : null
 
   return (
-    <div className="kc-page">
+    <div className="soha-page">
       <PageHeader
         title="值班协同"
         description="跟踪当前排班、轮值与待响应任务，必要时可临时覆盖某天的值班人。"
@@ -1685,7 +1685,7 @@ export function OnCallBoardPage() {
         </Card>
       ) : (
         <>
-          <Row gutter={16} className="kc-oncall-stats-row">
+          <Row gutter={16} className="soha-oncall-stats-row">
             <Col xs={24} sm={12} md={6}>
               <Card><Statistic title="今日值班" value={formatParticipantSummary(todayAssignment.participants)} valueStyle={{ fontSize: 18 }} /></Card>
             </Col>
@@ -1702,7 +1702,7 @@ export function OnCallBoardPage() {
             </Col>
           </Row>
           <Card
-            className="kc-oncall-board-card"
+            className="soha-oncall-board-card"
             title={(
               <Space>
                 <Text strong>{selectedSchedule?.name || '未选择排班'}</Text>
@@ -1735,7 +1735,7 @@ export function OnCallBoardPage() {
             ) : null}
             {view === 'timeline' ? (
               <Timeline
-                className="kc-oncall-timeline"
+                className="soha-oncall-timeline"
                 items={Array.from({ length: 14 }).map((_, idx) => {
                   const date = today.add(idx, 'day')
                   const a = assignmentForDate(selectedRotation, date)
@@ -1776,7 +1776,7 @@ export function OnCallBoardPage() {
               )
             ) : null}
           </Card>
-          <Card title="待响应任务" className="kc-oncall-tasks-card">
+          <Card title="待响应任务" className="soha-oncall-tasks-card">
             <AdminTable columns={taskColumns} dataSource={tasks} rowKey="id" loading={tasksQuery.isLoading} pagination={{ pageSize: 10 }} />
           </Card>
         </>

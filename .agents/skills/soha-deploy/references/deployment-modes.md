@@ -46,7 +46,7 @@ Start from `chart/`.
 
 ## Scope of the Starter Assets
 
-- one kubecrux application container
+- one soha application container
 - one PostgreSQL dependency
 - same-origin console and API
 - docs served from the same container

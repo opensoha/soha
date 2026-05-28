@@ -5,8 +5,8 @@ import (
 	"slices"
 	"testing"
 
-	domainmodule "github.com/kubecrux/kubecrux/internal/domain/module"
-	cfgpkg "github.com/kubecrux/kubecrux/internal/infrastructure/config"
+	domainmodule "github.com/soha/soha/internal/domain/module"
+	cfgpkg "github.com/soha/soha/internal/infrastructure/config"
 )
 
 func TestListIncludesVirtualizationDescriptor(t *testing.T) {

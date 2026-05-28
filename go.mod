@@ -1,4 +1,4 @@
-module github.com/kubecrux/kubecrux
+module github.com/soha/soha
 
 go 1.23.0
 

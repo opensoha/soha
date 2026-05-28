@@ -11,7 +11,7 @@
 - Replace placeholder passwords, JWT secrets, and webhook tokens.
 - Confirm PostgreSQL persistence size and storage class expectations.
 - Confirm the ingress host or external URL that the SPA will use.
-- Confirm `KC_CONFIG_FILE` points at the mounted config file when deployment does not rely purely on env overrides.
+- Confirm `SOHA_CONFIG_FILE` points at the mounted config file when deployment does not rely purely on env overrides.
 
 ## Smoke Tests
 

@@ -5,7 +5,7 @@ import (
 	"slices"
 	"sort"
 
-	domainaccess "github.com/kubecrux/kubecrux/internal/domain/access"
+	domainaccess "github.com/soha/soha/internal/domain/access"
 )
 
 type Engine struct{}

@@ -73,7 +73,7 @@ vi.mock('@/components/stat-grid', () => ({
 }))
 
 vi.mock('@/components/resource-actions', () => ({
-  TABLE_ACTIONS_COLUMN_CLASS_NAME: 'kc-actions',
+  TABLE_ACTIONS_COLUMN_CLASS_NAME: 'soha-actions',
   useResourceActions: () => ({
     column: { title: '', dataIndex: '__actions__', render: () => null },
     modalNode: null,

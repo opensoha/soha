@@ -4,11 +4,11 @@ import (
 	"context"
 	"fmt"
 
-	agentapi "github.com/kubecrux/kubecrux/internal/agent/api"
-	cfgpkg "github.com/kubecrux/kubecrux/internal/agent/config"
-	k8sagent "github.com/kubecrux/kubecrux/internal/agent/kubernetes"
-	loggerpkg "github.com/kubecrux/kubecrux/internal/agent/logger"
-	runnerpkg "github.com/kubecrux/kubecrux/internal/agent/runner"
+	agentapi "github.com/soha/soha/internal/agent/api"
+	cfgpkg "github.com/soha/soha/internal/agent/config"
+	k8sagent "github.com/soha/soha/internal/agent/kubernetes"
+	loggerpkg "github.com/soha/soha/internal/agent/logger"
+	runnerpkg "github.com/soha/soha/internal/agent/runner"
 	"go.uber.org/zap"
 )
 

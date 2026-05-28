@@ -5,11 +5,11 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	"github.com/kubecrux/kubecrux/internal/api/dto"
-	apiMiddleware "github.com/kubecrux/kubecrux/internal/api/middleware"
-	apiresponse "github.com/kubecrux/kubecrux/internal/api/response"
-	domainannouncement "github.com/kubecrux/kubecrux/internal/domain/announcement"
-	domainidentity "github.com/kubecrux/kubecrux/internal/domain/identity"
+	"github.com/soha/soha/internal/api/dto"
+	apiMiddleware "github.com/soha/soha/internal/api/middleware"
+	apiresponse "github.com/soha/soha/internal/api/response"
+	domainannouncement "github.com/soha/soha/internal/domain/announcement"
+	domainidentity "github.com/soha/soha/internal/domain/identity"
 )
 
 type AnnouncementService interface {

@@ -5,15 +5,15 @@ import (
 	"errors"
 	"testing"
 
-	appaccess "github.com/kubecrux/kubecrux/internal/application/access"
-	domainaccess "github.com/kubecrux/kubecrux/internal/domain/access"
-	domainapp "github.com/kubecrux/kubecrux/internal/domain/application"
-	domaincatalog "github.com/kubecrux/kubecrux/internal/domain/catalog"
-	domainidentity "github.com/kubecrux/kubecrux/internal/domain/identity"
-	domainscopegrant "github.com/kubecrux/kubecrux/internal/domain/scopegrant"
-	"github.com/kubecrux/kubecrux/internal/platform/apperrors"
-	"github.com/kubecrux/kubecrux/internal/policy"
-	apprepo "github.com/kubecrux/kubecrux/internal/repository/application"
+	appaccess "github.com/soha/soha/internal/application/access"
+	domainaccess "github.com/soha/soha/internal/domain/access"
+	domainapp "github.com/soha/soha/internal/domain/application"
+	domaincatalog "github.com/soha/soha/internal/domain/catalog"
+	domainidentity "github.com/soha/soha/internal/domain/identity"
+	domainscopegrant "github.com/soha/soha/internal/domain/scopegrant"
+	"github.com/soha/soha/internal/platform/apperrors"
+	"github.com/soha/soha/internal/policy"
+	apprepo "github.com/soha/soha/internal/repository/application"
 )
 
 type stubCatalogRepository struct {

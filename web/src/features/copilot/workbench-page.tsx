@@ -339,24 +339,24 @@ function layoutWorkbenchGraph(nodes: WorkbenchFlowNode[], edges: WorkbenchFlowEd
 function WorkbenchGraphNodeCard({ data, selected }: NodeProps<WorkbenchFlowNode>) {
   const accent = graphAccent(data.kind)
   return (
-    <div className={`kc-workbench-graph-node ${selected ? 'is-selected' : ''}`}>
+    <div className={`soha-workbench-graph-node ${selected ? 'is-selected' : ''}`}>
       <div
-        className="kc-workbench-graph-node__card"
+        className="soha-workbench-graph-node__card"
         style={{
           borderColor: selected ? accent : `${accent}44`,
           boxShadow: selected ? `0 0 0 2px ${accent}22` : undefined,
         }}
       >
-        <div className="kc-workbench-graph-node__head">
-          <span className="kc-workbench-graph-node__kind" style={{ color: accent, background: `${accent}1a` }}>
+        <div className="soha-workbench-graph-node__head">
+          <span className="soha-workbench-graph-node__kind" style={{ color: accent, background: `${accent}1a` }}>
             {graphNodeLabel(data.kind)}
           </span>
           {data.severity ? <StatusTag value={data.severity} /> : null}
         </div>
-        <div className="kc-workbench-graph-node__title">{data.title}</div>
-        {data.subtitle ? <div className="kc-workbench-graph-node__subtitle">{data.subtitle}</div> : null}
+        <div className="soha-workbench-graph-node__title">{data.title}</div>
+        {data.subtitle ? <div className="soha-workbench-graph-node__subtitle">{data.subtitle}</div> : null}
         {data.sourceRefs?.length ? (
-          <div className="kc-workbench-graph-node__refs">
+          <div className="soha-workbench-graph-node__refs">
             {data.sourceRefs.slice(0, 2).join(' · ')}
           </div>
         ) : null}
@@ -425,7 +425,7 @@ function WorkbenchGraphCanvasInner({
   })), [graph.edges])
 
   return (
-    <div className="kc-workbench-graph-canvas">
+    <div className="soha-workbench-graph-canvas">
       <ReactFlow<WorkbenchFlowNode, WorkbenchFlowEdge>
         nodes={nodes}
         edges={edges}
@@ -768,12 +768,12 @@ export function AIWorkbenchPage() {
     key: item.id,
     icon: modeIcon(item.metadata?.mode),
     label: (
-      <div className="kc-ai-workbench__conversation-label">
-        <span className="kc-ai-workbench__conversation-label-title">{item.title}</span>
-        <span className="kc-ai-workbench__conversation-label-meta">
+      <div className="soha-ai-workbench__conversation-label">
+        <span className="soha-ai-workbench__conversation-label-title">{item.title}</span>
+        <span className="soha-ai-workbench__conversation-label-meta">
           {modeLabel(item.metadata?.mode)} · {formatSessionTimestamp(item.updatedAt)}
         </span>
-        <span className="kc-ai-workbench__conversation-label-scope">{buildScopeSummary(item.metadata?.scope)}</span>
+        <span className="soha-ai-workbench__conversation-label-scope">{buildScopeSummary(item.metadata?.scope)}</span>
       </div>
     ),
   })), [visibleSessions])
@@ -1100,8 +1100,8 @@ export function AIWorkbenchPage() {
   }
 
   return (
-    <div className="kc-page kc-ai-workbench-page">
-      <div className="kc-ai-workbench">
+    <div className="soha-page soha-ai-workbench-page">
+      <div className="soha-ai-workbench">
         {!canUseChat ? (
           <Alert
             type="warning"
@@ -1119,11 +1119,11 @@ export function AIWorkbenchPage() {
           />
         ) : null}
 
-        <section className="kc-ai-workbench__workspace">
-          <aside className="kc-ai-workbench-sidebar">
-            <div className="kc-ai-workbench__tools-header">
-              <div className="kc-ai-workbench__tools-title">
-                <span className="kc-ai-workbench__tools-icon">{modeIcon(activeMode)}</span>
+        <section className="soha-ai-workbench__workspace">
+          <aside className="soha-ai-workbench-sidebar">
+            <div className="soha-ai-workbench__tools-header">
+              <div className="soha-ai-workbench__tools-title">
+                <span className="soha-ai-workbench__tools-icon">{modeIcon(activeMode)}</span>
                 <span>
                   <Text strong>会话记录</Text>
                   <Text type="secondary">{visibleSessions.length > 0 ? `${visibleSessions.length} 个调查会话` : '从这里切换当前调查'}</Text>
@@ -1138,7 +1138,7 @@ export function AIWorkbenchPage() {
               items={conversationItems}
               activeKey={currentSession?.id}
               onActiveChange={(value) => updateSearchParams({ session: String(value) })}
-              className="kc-ai-workbench__conversations"
+              className="soha-ai-workbench__conversations"
               creation={{
                 icon: <EditOutlined />,
                 label: '新建会话',
@@ -1147,7 +1147,7 @@ export function AIWorkbenchPage() {
               }}
             />
 
-            <div className="kc-ai-workbench-sidebar__footer">
+            <div className="soha-ai-workbench-sidebar__footer">
               <Button block onClick={() => navigate(getAIOperationsPath(location.search))}>
                 巡检与自动化
               </Button>
@@ -1157,10 +1157,10 @@ export function AIWorkbenchPage() {
             </div>
           </aside>
 
-          <main className="kc-ai-workbench__canvas">
-            <div className="kc-ai-workbench__function-bar">
-              <div className="kc-ai-workbench__function-main">
-                <div className="kc-ai-workbench__function-copy">
+          <main className="soha-ai-workbench__canvas">
+            <div className="soha-ai-workbench__function-bar">
+              <div className="soha-ai-workbench__function-main">
+                <div className="soha-ai-workbench__function-copy">
                   <Text type="secondary">调查模式</Text>
                   <Title level={5} style={{ margin: 0 }}>{modeLabel(activeMode)}</Title>
                   <Paragraph style={{ marginBottom: 0 }} type="secondary">
@@ -1173,7 +1173,7 @@ export function AIWorkbenchPage() {
                   onChange={handleModeChange}
                 />
               </div>
-              <Space wrap className="kc-ai-workbench__function-tabs">
+              <Space wrap className="soha-ai-workbench__function-tabs">
                 <Button icon={<ToolOutlined />} onClick={() => setToolsetOpen(true)}>
                   工具装配
                 </Button>
@@ -1186,9 +1186,9 @@ export function AIWorkbenchPage() {
               </Space>
             </div>
 
-            <div className="kc-ai-workbench__dialog-shell">
+            <div className="soha-ai-workbench__dialog-shell">
               {!currentSession ? (
-                <div className="kc-ai-workbench__empty-state">
+                <div className="soha-ai-workbench__empty-state">
                   <Welcome
                     icon={<ExperimentOutlined />}
                     title={visibleSessions.length > 0 ? '正在准备会话' : '开始一轮调查'}
@@ -1206,10 +1206,10 @@ export function AIWorkbenchPage() {
                 </div>
               ) : (
                 <>
-                  <div className="kc-ai-workbench__session-card">
+                  <div className="soha-ai-workbench__session-card">
                     <Flex justify="space-between" align="start" gap={16} wrap="wrap">
-                      <div className="kc-ai-workbench__session-copy">
-                        <div className="kc-ai-workbench__session-title-row">
+                      <div className="soha-ai-workbench__session-copy">
+                        <div className="soha-ai-workbench__session-title-row">
                           <Title level={4} style={{ margin: 0 }}>{currentSession.title}</Title>
                           <Button
                             type="text"
@@ -1222,7 +1222,7 @@ export function AIWorkbenchPage() {
                             }}
                           />
                         </div>
-                        <Paragraph className="kc-ai-workbench__session-description">
+                        <Paragraph className="soha-ai-workbench__session-description">
                           {currentSession.metadata?.summary || modeDescription(currentSession.metadata?.mode)}
                         </Paragraph>
                         <Space size={[8, 8]} wrap>
@@ -1266,11 +1266,11 @@ export function AIWorkbenchPage() {
                     </Flex>
                   </div>
 
-                  <div className="kc-ai-workbench__conversation-card">
-                    <div className="kc-ai-workbench__conversation-topbar">
+                  <div className="soha-ai-workbench__conversation-card">
+                    <div className="soha-ai-workbench__conversation-topbar">
                       <div>
                         <Text strong>对话流程</Text>
-                        <Paragraph className="kc-ai-workbench__conversation-subtitle">
+                        <Paragraph className="soha-ai-workbench__conversation-subtitle">
                           {buildScopeSummary(currentSession.metadata?.scope)} · {messages.length} 条消息
                         </Paragraph>
                       </div>
@@ -1282,24 +1282,24 @@ export function AIWorkbenchPage() {
                     </div>
 
                     {artifactEntries.length > 0 ? (
-                      <div className="kc-ai-workbench__artifact-strip">
-                        <div className="kc-ai-workbench__artifact-strip-head">
+                      <div className="soha-ai-workbench__artifact-strip">
+                        <div className="soha-ai-workbench__artifact-strip-head">
                           <Text strong>分析工件历史</Text>
                           <Tag>{artifactEntries.length}</Tag>
                         </div>
-                        <div className="kc-ai-workbench__artifact-list">
+                        <div className="soha-ai-workbench__artifact-list">
                           {artifactEntries.map((entry) => {
                             const selected = entry.key === activeArtifactEntry?.key
                             return (
                               <button
                                 key={entry.key}
                                 type="button"
-                                className={`kc-ai-workbench__artifact-item ${selected ? 'is-active' : ''}`}
+                                className={`soha-ai-workbench__artifact-item ${selected ? 'is-active' : ''}`}
                                 onClick={() => setSelectedArtifactKey(entry.key)}
                               >
-                                <span className="kc-ai-workbench__artifact-title">{artifactTitle(entry)}</span>
-                                <span className="kc-ai-workbench__artifact-meta">{artifactMeta(entry)}</span>
-                                <span className="kc-ai-workbench__artifact-counts">
+                                <span className="soha-ai-workbench__artifact-title">{artifactTitle(entry)}</span>
+                                <span className="soha-ai-workbench__artifact-meta">{artifactMeta(entry)}</span>
+                                <span className="soha-ai-workbench__artifact-counts">
                                   {(entry.artifact.evidence?.length ?? 0)} 证据 · {(entry.artifact.recommendations?.length ?? 0)} 建议
                                 </span>
                               </button>
@@ -1310,11 +1310,11 @@ export function AIWorkbenchPage() {
                     ) : null}
 
                     {activeGraph?.nodes?.length ? (
-                      <div className="kc-ai-workbench__graph-panel">
-                        <div className="kc-ai-workbench__graph-head">
+                      <div className="soha-ai-workbench__graph-panel">
+                        <div className="soha-ai-workbench__graph-head">
                           <div>
                             <Text strong>分析工件图谱</Text>
-                            <Paragraph className="kc-ai-workbench__conversation-subtitle">
+                            <Paragraph className="soha-ai-workbench__conversation-subtitle">
                               {activeArtifact?.summary || '把 traces、logs、metrics 与假设收敛成一张会话内动态图。'}
                             </Paragraph>
                           </div>
@@ -1333,13 +1333,13 @@ export function AIWorkbenchPage() {
                             description="现在展示的是会话范围根节点。配置 Elasticsearch/Loki、Prometheus、Jaeger 之后，根因图会自动扩展成错误链路、日志签名和指标挂件。"
                           />
                         ) : null}
-                        <div className="kc-ai-workbench__graph-layout">
+                        <div className="soha-ai-workbench__graph-layout">
                           <WorkbenchGraphCanvas
                             fitKey={graphFitKey}
                             graph={activeGraph}
                             onSelectNode={setSelectedGraphNodeId}
                           />
-                          <div className="kc-workbench-graph-selection">
+                          <div className="soha-workbench-graph-selection">
                             {selectedGraphNode ? (
                               <Space orientation="vertical" size={10} style={{ width: '100%' }}>
                                 <div>
@@ -1355,7 +1355,7 @@ export function AIWorkbenchPage() {
                                   ) : null}
                                 </div>
                                 {selectedGraphNode.sourceRefs?.length ? (
-                                  <div className="kc-ai-workbench__tool-chip-list">
+                                  <div className="soha-ai-workbench__tool-chip-list">
                                     {selectedGraphNode.sourceRefs.map((item) => <Tag key={`${selectedGraphNode.id}-${item}`}>{item}</Tag>)}
                                   </div>
                                 ) : null}
@@ -1389,7 +1389,7 @@ export function AIWorkbenchPage() {
                                 ) : null}
                                 {selectedGraphNode.attributes ? (
                                   <Card size="small" title="节点属性">
-                                    <pre className="kc-workbench-graph-json">{JSON.stringify(selectedGraphNode.attributes, null, 2)}</pre>
+                                    <pre className="soha-workbench-graph-json">{JSON.stringify(selectedGraphNode.attributes, null, 2)}</pre>
                                   </Card>
                                 ) : null}
                               </Space>
@@ -1401,7 +1401,7 @@ export function AIWorkbenchPage() {
                       </div>
                     ) : null}
 
-                    <div className="kc-ai-workbench__conversation-scroll">
+                    <div className="soha-ai-workbench__conversation-scroll">
                       {messages.length === 0 ? (
                         <Welcome
                           icon={<ExperimentOutlined />}
@@ -1461,10 +1461,10 @@ export function AIWorkbenchPage() {
               )}
             </div>
           </main>
-          <aside className="kc-ai-workbench__tools-pane">
-            <div className="kc-ai-workbench__tools-header">
-              <div className="kc-ai-workbench__tools-title">
-                <span className="kc-ai-workbench__tools-icon"><BranchesOutlined /></span>
+          <aside className="soha-ai-workbench__tools-pane">
+            <div className="soha-ai-workbench__tools-header">
+              <div className="soha-ai-workbench__tools-title">
+                <span className="soha-ai-workbench__tools-icon"><BranchesOutlined /></span>
                 <span>
                   <Text strong>调查焦点</Text>
                   <Text type="secondary">把上下文、证据和下一步动作收在右侧。</Text>
@@ -1475,48 +1475,48 @@ export function AIWorkbenchPage() {
               </Button>
             </div>
 
-            <div className="kc-ai-workbench__insight-list">
+            <div className="soha-ai-workbench__insight-list">
               {artifactSummary.map((item) => (
-                <button key={item.key} className="kc-ai-workbench__insight-item" type="button" onClick={() => openInspector(item.key)}>
-                  <span className="kc-ai-workbench__insight-icon">{item.icon}</span>
-                  <span className="kc-ai-workbench__insight-copy">
-                    <span className="kc-ai-workbench__insight-title">{item.label} · {item.value}</span>
-                    <span className="kc-ai-workbench__insight-detail">{item.description}</span>
+                <button key={item.key} className="soha-ai-workbench__insight-item" type="button" onClick={() => openInspector(item.key)}>
+                  <span className="soha-ai-workbench__insight-icon">{item.icon}</span>
+                  <span className="soha-ai-workbench__insight-copy">
+                    <span className="soha-ai-workbench__insight-title">{item.label} · {item.value}</span>
+                    <span className="soha-ai-workbench__insight-detail">{item.description}</span>
                   </span>
                 </button>
               ))}
             </div>
 
-                    <div className="kc-ai-workbench__tool-section">
-                      <div className="kc-ai-workbench__tool-section-title">
+                    <div className="soha-ai-workbench__tool-section">
+                      <div className="soha-ai-workbench__tool-section-title">
                         <Text strong>会话装配</Text>
                         <Button size="small" type="text" onClick={() => setToolsetOpen(true)}>
                           调整
                 </Button>
               </div>
-              <div className="kc-ai-workbench__tool-stack">
-                <div className="kc-ai-workbench__tool-row">
+              <div className="soha-ai-workbench__tool-stack">
+                <div className="soha-ai-workbench__tool-row">
                   <span>
                     <Text strong>有效适配器</Text>
                     <Text type="secondary">{selectedAdapterIds.length > 0 ? selectedAdapterIds.join(', ') : '自动允许已注册 adapter'}</Text>
                   </span>
                   <Tag>{selectedAdapterIds.length || effectiveAdapterIds.length || 'Auto'}</Tag>
                 </div>
-                <div className="kc-ai-workbench__tool-row">
+                <div className="soha-ai-workbench__tool-row">
                   <span>
                     <Text strong>会话技能</Text>
                     <Text type="secondary">{selectedSkillNames.length > 0 ? selectedSkillNames.join(', ') : '沿用全局技能'}</Text>
                   </span>
                   <Tag>{selectedSkillNames.length || globalSkills.filter((item) => item.enabled).length}</Tag>
                 </div>
-                <div className="kc-ai-workbench__tool-row">
+                <div className="soha-ai-workbench__tool-row">
                   <span>
                     <Text strong>活跃数据源</Text>
                     <Text type="secondary">{enabledDataSources.length > 0 ? enabledDataSources.map((item) => item.name).join(', ') : '暂无可用数据源'}</Text>
                   </span>
                   <Tag>{enabledDataSources.length}</Tag>
                 </div>
-                <div className="kc-ai-workbench__tool-row">
+                <div className="soha-ai-workbench__tool-row">
                   <span>
                     <Text strong>预算 / 屏蔽</Text>
                     <Text type="secondary">{disabledToolNames.length} 个工具屏蔽，{countObjectKeys(cleanedBudgetOverrides)} 项预算覆盖</Text>
@@ -1526,8 +1526,8 @@ export function AIWorkbenchPage() {
                         </div>
                       </div>
 
-                      <div className="kc-ai-workbench__tool-section">
-                        <div className="kc-ai-workbench__tool-section-title">
+                      <div className="soha-ai-workbench__tool-section">
+                        <div className="soha-ai-workbench__tool-section-title">
                           <Text strong>Skills 渐进式披露</Text>
                           {hiddenSkillCount > 0 ? (
                             <Button size="small" type="text" onClick={() => setShowAllSkills((current) => !current)}>
@@ -1538,14 +1538,14 @@ export function AIWorkbenchPage() {
                         <Paragraph type="secondary" style={{ marginBottom: 0 }}>
                           先展示当前模式最相关、或本会话已经启用的 skills；只有继续展开时才披露能力引用、范围规则和附加技能。
                         </Paragraph>
-                        <div className="kc-ai-workbench__tool-stack">
+                        <div className="soha-ai-workbench__tool-stack">
                           {primarySkills.length === 0 ? (
                             <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="当前没有启用的 skills" />
                           ) : primarySkills.map((skill) => {
                             const expanded = Boolean(skillsDisclosureExpanded[skill.id])
                             const selected = selectedSkillIds.includes(skill.id)
                             return (
-                              <div key={skill.id} className="kc-ai-workbench__tool-row is-skill">
+                              <div key={skill.id} className="soha-ai-workbench__tool-row is-skill">
                                 <span>
                                   <Space size={[6, 6]} wrap>
                                     <Text strong>{skill.name}</Text>
@@ -1554,7 +1554,7 @@ export function AIWorkbenchPage() {
                                   </Space>
                                   <Text type="secondary">{skill.description || (skill.scopes ?? []).join(', ') || '未填写说明'}</Text>
                                   {expanded ? (
-                                    <div className="kc-ai-workbench__tool-chip-list" style={{ marginTop: 8 }}>
+                                    <div className="soha-ai-workbench__tool-chip-list" style={{ marginTop: 8 }}>
                                       {(skill.capabilityRefs ?? []).map((item) => <Tag key={`${skill.id}-cap-${item}`}>{item}</Tag>)}
                                       {(skill.scopeRules ?? []).map((item) => <Tag key={`${skill.id}-scope-${item}`}>{item}</Tag>)}
                                       {(skill.scopes ?? []).map((item) => <Tag key={`${skill.id}-grant-${item}`}>{item}</Tag>)}
@@ -1573,22 +1573,22 @@ export function AIWorkbenchPage() {
                         </div>
                       </div>
 
-                      <div className="kc-ai-workbench__tool-section">
-                        <div className="kc-ai-workbench__tool-section-title">
+                      <div className="soha-ai-workbench__tool-section">
+                        <div className="soha-ai-workbench__tool-section-title">
                           <Text strong>快捷动作</Text>
                 <Button size="small" type="text" onClick={() => navigate(getAIToolsPath(location.search))}>
                   工具与技能
                 </Button>
               </div>
-              <div className="kc-ai-workbench__tool-stack">
-                <div className="kc-ai-workbench__tool-row">
+              <div className="soha-ai-workbench__tool-stack">
+                <div className="soha-ai-workbench__tool-row">
                   <span>
                     <Text strong>当前范围</Text>
                     <Text type="secondary">{buildScopeSummary(currentSession?.metadata?.scope)}</Text>
                   </span>
                   <Button size="small" onClick={() => openInspector('context')}>查看</Button>
                 </div>
-                <div className="kc-ai-workbench__tool-row">
+                <div className="soha-ai-workbench__tool-row">
                   <span>
                     <Text strong>显式分析</Text>
                     <Text type="secondary">把当前会话转成一轮结构化分析输出。</Text>
@@ -1603,7 +1603,7 @@ export function AIWorkbenchPage() {
                     运行
                   </Button>
                 </div>
-                <div className="kc-ai-workbench__tool-row">
+                <div className="soha-ai-workbench__tool-row">
                   <span>
                     <Text strong>生成巡检任务</Text>
                     <Text type="secondary">把会话结论转成后续巡检与自动化入口。</Text>
@@ -1685,9 +1685,9 @@ export function AIWorkbenchPage() {
         ) : (
           <Space orientation="vertical" size={16} style={{ width: '100%' }}>
             <Card size="small" title="有效执行策略">
-              <div className="kc-ai-workbench__tool-stack">
+              <div className="soha-ai-workbench__tool-stack">
                 {toolsetPolicySummary.map((item) => (
-                  <div key={item.label} className="kc-ai-workbench__tool-row">
+                  <div key={item.label} className="soha-ai-workbench__tool-row">
                     <span>
                       <Text strong>{item.label}</Text>
                       <Text type="secondary">{item.detail}</Text>
@@ -1724,7 +1724,7 @@ export function AIWorkbenchPage() {
                   />
                 ) : null}
                 {agentCapabilities.length > 0 ? (
-                  <div className="kc-ai-workbench__tool-chip-list">
+                  <div className="soha-ai-workbench__tool-chip-list">
                     {agentCapabilities.slice(0, 8).map((item) => <Tag key={item.id}>{item.name}</Tag>)}
                   </div>
                 ) : null}
@@ -1753,11 +1753,11 @@ export function AIWorkbenchPage() {
                   onChange={(value: string[]) => setDisabledToolNames(canonicalDisabledToolNames(value, adapters))}
                   options={disabledToolOptions}
                 />
-                <div className="kc-ai-workbench__tool-stack">
+                <div className="soha-ai-workbench__tool-stack">
                   {dataSources.length === 0 ? (
                     <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无全局数据源" />
                   ) : dataSources.map((item) => (
-                    <div key={item.id} className="kc-ai-workbench__tool-row">
+                    <div key={item.id} className="soha-ai-workbench__tool-row">
                       <span>
                         <Text strong>{item.name}</Text>
                         <Text type="secondary">{item.sourceKind} / {item.backendType} / {item.mcpAdapter}</Text>

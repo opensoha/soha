@@ -6,12 +6,12 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	"github.com/kubecrux/kubecrux/internal/api/dto"
-	apiMiddleware "github.com/kubecrux/kubecrux/internal/api/middleware"
-	apiresponse "github.com/kubecrux/kubecrux/internal/api/response"
-	domainaccess "github.com/kubecrux/kubecrux/internal/domain/access"
-	domainidentity "github.com/kubecrux/kubecrux/internal/domain/identity"
-	"github.com/kubecrux/kubecrux/internal/platform/apperrors"
+	"github.com/soha/soha/internal/api/dto"
+	apiMiddleware "github.com/soha/soha/internal/api/middleware"
+	apiresponse "github.com/soha/soha/internal/api/response"
+	domainaccess "github.com/soha/soha/internal/domain/access"
+	domainidentity "github.com/soha/soha/internal/domain/identity"
+	"github.com/soha/soha/internal/platform/apperrors"
 )
 
 type AccessCatalogService interface {

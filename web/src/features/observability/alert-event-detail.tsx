@@ -439,7 +439,7 @@ export function AlertEventDetailPageContent({
   const detail = useAlertEventDetailController(eventId, eventId !== '')
 
   return (
-    <div className="kc-page">
+    <div className="soha-page">
       <PageHeader
         title={detail.event?.title || '告警事件详情'}
         description={detail.event ? `${detail.event.sourceSystem || detail.event.sourceType} · ${detail.event.status}` : '查看告警事件、规则运行、自愈与通知链路'}

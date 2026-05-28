@@ -2,7 +2,7 @@
 
 ## Goals
 
-kubecrux uses RBAC plus ABAC.
+soha uses RBAC plus ABAC.
 
 - RBAC answers whether a role can perform a class of operation.
 - ABAC answers whether the operation is allowed for this principal, target, and runtime context.

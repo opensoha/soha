@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	domaincopilot "github.com/kubecrux/kubecrux/internal/domain/copilot"
-	"github.com/kubecrux/kubecrux/internal/platform/apperrors"
+	domaincopilot "github.com/soha/soha/internal/domain/copilot"
+	"github.com/soha/soha/internal/platform/apperrors"
 	"gorm.io/gorm"
 )
 

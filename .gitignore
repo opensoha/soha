@@ -11,7 +11,7 @@ docs/.vitepress/cache/
 bin/
 tmp/
 .dev/
-.kubecrux/
+.soha/
 
 # IDE / OS
 .DS_Store

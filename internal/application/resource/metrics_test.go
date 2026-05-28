@@ -12,8 +12,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	domaincluster "github.com/kubecrux/kubecrux/internal/domain/cluster"
-	domainsettings "github.com/kubecrux/kubecrux/internal/domain/settings"
+	domaincluster "github.com/soha/soha/internal/domain/cluster"
+	domainsettings "github.com/soha/soha/internal/domain/settings"
 )
 
 func TestQueryMetricSeriesWithFallbackAllowsUnambiguousFallback(t *testing.T) {

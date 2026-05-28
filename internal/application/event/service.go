@@ -3,7 +3,7 @@ package event
 import (
 	"context"
 
-	domainevent "github.com/kubecrux/kubecrux/internal/domain/event"
+	domainevent "github.com/soha/soha/internal/domain/event"
 )
 
 type Repository interface {

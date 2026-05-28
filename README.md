@@ -1,10 +1,10 @@
 [English](./README.md) | [简体中文](./README-cn.md)
 
-# kubecrux
+# soha
 
 > A multi-cluster Kubernetes platform console for platform operations, application delivery, observability, access control, and AI-assisted investigation.
 
-kubecrux is a full-stack platform console built around a Go backend, a React + Ant Design frontend, and in-repo Docusaurus documentation. It is designed to grow beyond a resource viewer into a unified control plane for multi-cluster platform teams.
+soha is a full-stack platform console built around a Go backend, a React + Ant Design frontend, and in-repo Docusaurus documentation. It is designed to grow beyond a resource viewer into a unified control plane for multi-cluster platform teams.
 
 ## Highlights
 
@@ -13,7 +13,7 @@ kubecrux is a full-stack platform console built around a Go backend, a React + A
 - Delivery workbench for applications, build templates, workflow templates, release bundles, execution tasks, approval policies, registries, and catalog-style master data
 - Monitoring workbench with alerts, events, notification policy, healing policy, and on-call collaboration surfaces
 - Session-first AI workbench for chat, root-cause analysis, performance analysis, inspections, MCP-backed evidence collection, tool or skill assembly, and Agent Runtime provider execution
-- Pluggable AI Agent Runtime with Hermes as the first external provider while kubecrux owns capabilities, tool bindings, skills, budgets, audit, and `AnalysisArtifact` output
+- Pluggable AI Agent Runtime with Hermes as the first external provider while soha owns capabilities, tool bindings, skills, budgets, audit, and `AnalysisArtifact` output
 - Virtualization workbench for KubeVirt and Proxmox VE inventory, VM lifecycle, images, flavors, console access, metrics, operations, and sync tasks
 - Docker workbench for Docker hosts, Compose projects, services, port mappings, templates, and token-protected runner operations
 - Access control and system management with permission-aware menus, audit logs, operation logs, and settings
@@ -89,7 +89,7 @@ The repository follows a modular-monolith backend and a route-driven frontend sh
 ├── Dockerfile           # single-project image build entry
 ├── Makefile             # common dev/build/deploy commands
 ├── deployment.yaml      # raw Kubernetes manifest
-└── docker-compose.yaml  # local compose stack for kubecrux and PostgreSQL
+└── docker-compose.yaml  # local compose stack for soha and PostgreSQL
 ```
 
 ## Features In Scope
@@ -148,7 +148,7 @@ After the ISO installer finishes through the VNC console, run `make pve-vm-boot-
 make
 ```
 
-The default `make` target starts the Go API and the Vite frontend together. The backend still reads [configs/config.yaml](./configs/config.yaml), and you can override it with `KC_CONFIG_FILE=/abs/path/to/config.yaml` when needed.
+The default `make` target starts the Go API and the Vite frontend together. The backend still reads [configs/config.yaml](./configs/config.yaml), and you can override it with `SOHA_CONFIG_FILE=/abs/path/to/config.yaml` when needed.
 
 ### 3. Run backend or frontend separately when needed
 
@@ -175,7 +175,7 @@ The docs site is served at `http://localhost:3000/docs/`.
 go run ./cmd/agent
 ```
 
-The default agent config is [configs/agent.config.yaml](./configs/agent.config.yaml). Override with `KC_AGENT_CONFIG_FILE=/abs/path/to/agent.config.yaml` when needed.
+The default agent config is [configs/agent.config.yaml](./configs/agent.config.yaml). Override with `SOHA_AGENT_CONFIG_FILE=/abs/path/to/agent.config.yaml` when needed.
 
 ## Common Commands
 
@@ -202,10 +202,10 @@ make init-pve-vm
 - Frontend work belongs in `web`. `old_web` and `web_pro_backup` are reference-only. Use native `antd` and `@ant-design/icons`; do not reintroduce Semi Design or a parallel design system.
 - Route changes must update `web/src/routes/index.tsx`, `web/src/routes/meta.ts`, permission catalog or backend menu seeds when needed, and related tests together.
 - Permission visibility is not authorization. Frontend buttons may hide unavailable actions, but backend services must enforce explicit permission keys.
-- Platform APIs return aggregated kubecrux DTOs, not raw Kubernetes objects, except YAML or explicit passthrough routes. Empty namespace means all namespaces for namespaced resources; cluster-scoped resources ignore namespace filters.
+- Platform APIs return aggregated soha DTOs, not raw Kubernetes objects, except YAML or explicit passthrough routes. Empty namespace means all namespaces for namespaced resources; cluster-scoped resources ignore namespace filters.
 - Prefer backend aggregation and informer/cache reads over browser namespace fan-out or repeated live cluster queries.
 - AI investigation should use `/ai-workbench` as the canonical session-first surface. Legacy `/ai-observe/**`, `/chat`, and old AI workbench paths should remain compatibility redirects only.
-- AI Agent Runtime must keep pages, automation policy, and business modules bound to kubecrux provider/capability/tool/skill contracts. Hermes is only a provider runner behind claim/callback APIs, and agent output must be converted back to `AnalysisArtifact`.
+- AI Agent Runtime must keep pages, automation policy, and business modules bound to soha provider/capability/tool/skill contracts. Hermes is only a provider runner behind claim/callback APIs, and agent output must be converted back to `AnalysisArtifact`.
 - Docker Engine and Compose execution are agent-runner responsibilities. The API persists desired state and operation records, then exposes token-protected claim, runner-status, and callback paths.
 - KubeVirt and PVE lab work requires a real virtualization runtime. Docker Desktop on macOS can validate control-plane paths, but it does not provide a production-like KVM environment.
 
@@ -224,7 +224,7 @@ make init-pve-vm
 The main image and local compose assets now live at the repo root.
 
 - [Dockerfile](./Dockerfile): multi-stage image build for the API server with embedded SPA and docs
-- [docker-compose.yaml](./docker-compose.yaml): local full-stack startup with kubecrux plus PostgreSQL
+- [docker-compose.yaml](./docker-compose.yaml): local full-stack startup with soha plus PostgreSQL
 - [configs/config.yaml](./configs/config.yaml): default application config used by local development and the container image
 - [deployment.yaml](./deployment.yaml): raw Kubernetes manifest set
 - [chart](./chart): Helm chart for repeatable installs
@@ -241,7 +241,7 @@ make deploy-helm-lint
 Or directly:
 
 ```bash
-docker build -t kubecrux:single-project .
+docker build -t soha:single-project .
 docker compose -f docker-compose.yaml up -d --build
 helm lint chart
 ```
@@ -274,7 +274,7 @@ Issues and pull requests are welcome. Before sending larger changes, align the i
 
 ## Project Status
 
-kubecrux is under active development. The platform, delivery, observability, and AI surfaces are evolving together, so some areas are more mature than others. The current engineering baseline and scope decisions are tracked in [AGENTS.md](./AGENTS.md).
+soha is under active development. The platform, delivery, observability, and AI surfaces are evolving together, so some areas are more mature than others. The current engineering baseline and scope decisions are tracked in [AGENTS.md](./AGENTS.md).
 
 ## License
 

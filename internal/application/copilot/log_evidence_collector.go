@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	domaincopilot "github.com/kubecrux/kubecrux/internal/domain/copilot"
-	mcplogs "github.com/kubecrux/kubecrux/internal/infrastructure/mcp/logs"
+	domaincopilot "github.com/soha/soha/internal/domain/copilot"
+	mcplogs "github.com/soha/soha/internal/infrastructure/mcp/logs"
 )
 
 type logEvidenceAnalysis struct {

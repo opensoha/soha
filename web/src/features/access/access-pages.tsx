@@ -448,7 +448,7 @@ function ScopeGrantManager({
   return (
     <>
       <Modal title={title} open={visible} onCancel={onClose} footer={null} width={880}>
-        <div className="kc-page">
+        <div className="soha-page">
           <div className="flex justify-end">
             {canManageScopeGrants ? (
               <Button icon={<PlusOutlined />} type="primary" onClick={() => { setEditing(null); setGrantModalVisible(true) }}>
@@ -628,7 +628,7 @@ export function AccessUsersPage() {
       key: 'avatar',
       width: 76,
       render: (_: unknown, record: AccessUser) => (
-        <Avatar className="kc-user-avatar" size="small">
+        <Avatar className="soha-user-avatar" size="small">
           {getUserInitial(record)}
         </Avatar>
       ),
@@ -696,19 +696,19 @@ export function AccessUsersPage() {
   ]
 
   if (!canViewUsers) {
-    return <div className="kc-page">当前账号没有用户管理权限。</div>
+    return <div className="soha-page">当前账号没有用户管理权限。</div>
   }
 
   return (
-    <div className="kc-page">
+    <div className="soha-page">
       <AdminTable
         title="用户管理"
-        className="kc-access-table"
+        className="soha-access-table"
         toolbar={(
-          <div className="kc-workload-table-filters">
+          <div className="soha-workload-table-filters">
             <Input
               allowClear
-              className="kc-platform-compact-field"
+              className="soha-platform-compact-field"
               size="small"
               placeholder="搜索用户名、显示名、邮箱、角色或用户组"
               value={searchText}
@@ -718,7 +718,7 @@ export function AccessUsersPage() {
           </div>
         )}
         toolbarExtra={canManageUsers ? (
-          <div className="kc-page-toolbar">
+          <div className="soha-page-toolbar">
             <Button
               size="small"
               icon={<PlusOutlined />}
@@ -887,11 +887,11 @@ export function AccessRolesPage() {
   }
 
   if (!canViewRoles) {
-    return <div className="kc-page">当前账号没有角色管理权限。</div>
+    return <div className="soha-page">当前账号没有角色管理权限。</div>
   }
 
   return (
-    <div className="kc-page">
+    <div className="soha-page">
       <Alert
         className="mb-4"
         type="info"
@@ -900,9 +900,9 @@ export function AccessRolesPage() {
       />
       <AdminTable
         title="角色管理"
-        className="kc-access-table"
+        className="soha-access-table"
         toolbarExtra={canManageRoles ? (
-          <div className="kc-page-toolbar">
+          <div className="soha-page-toolbar">
             <Button size="small" icon={<PlusOutlined />} type="primary" onClick={crud.openCreate}>
               添加角色
             </Button>
@@ -1029,16 +1029,16 @@ export function AccessTeamsPage() {
   }
 
   if (!canViewGroups) {
-    return <div className="kc-page">当前账号没有用户组管理权限。</div>
+    return <div className="soha-page">当前账号没有用户组管理权限。</div>
   }
 
   return (
-    <div className="kc-page">
+    <div className="soha-page">
       <AdminTable
         title="用户组管理"
-        className="kc-access-table"
+        className="soha-access-table"
         toolbarExtra={canManageGroups ? (
-          <div className="kc-page-toolbar">
+          <div className="soha-page-toolbar">
             <Button size="small" icon={<PlusOutlined />} type="primary" onClick={crud.openCreate}>
               添加用户组
             </Button>
@@ -1225,16 +1225,16 @@ export function AccessPoliciesPage() {
   }
 
   if (!canViewPolicies) {
-    return <div className="kc-page">当前账号没有策略管理权限。</div>
+    return <div className="soha-page">当前账号没有策略管理权限。</div>
   }
 
   return (
-    <div className="kc-page">
+    <div className="soha-page">
       <AdminTable
         title="策略管理"
-        className="kc-access-table"
+        className="soha-access-table"
         toolbarExtra={canManagePolicies ? (
-          <div className="kc-page-toolbar">
+          <div className="soha-page-toolbar">
             <Button size="small" icon={<PlusOutlined />} type="primary" onClick={crud.openCreate}>
               添加策略
             </Button>
@@ -1425,11 +1425,11 @@ export function AccessCenterPage() {
           : null
 
   if (permissionSnapshotQuery.isLoading) {
-    return <div className="kc-page"><div className="flex items-center justify-center h-32">加载中...</div></div>
+    return <div className="soha-page"><div className="flex items-center justify-center h-32">加载中...</div></div>
   }
 
   if (!firstAccessiblePath) {
-    return <div className="kc-page"><div className="text-[var(--kc-text-tertiary)]">当前账号没有访问控制页面权限。</div></div>
+    return <div className="soha-page"><div className="text-[var(--soha-text-tertiary)]">当前账号没有访问控制页面权限。</div></div>
   }
 
   return <Navigate to={firstAccessiblePath} replace />

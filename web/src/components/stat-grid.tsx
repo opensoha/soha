@@ -8,14 +8,14 @@ interface StatItem {
 
 export function StatGrid({ items }: { items: StatItem[] }) {
   return (
-    <div className="kc-stat-grid">
+    <div className="soha-stat-grid">
       {items.map((item) => (
-        <div key={item.label} className="kc-stat-card">
+        <div key={item.label} className="soha-stat-card">
           <div>
-            <div className="kc-stat-label">{item.label}</div>
-            <p className="kc-stat-value">{item.value}</p>
+            <div className="soha-stat-label">{item.label}</div>
+            <p className="soha-stat-value">{item.value}</p>
           </div>
-          {item.icon ? <div className="kc-stat-icon">{item.icon}</div> : null}
+          {item.icon ? <div className="soha-stat-icon">{item.icon}</div> : null}
         </div>
       ))}
     </div>

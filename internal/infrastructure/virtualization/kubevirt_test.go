@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	kubeinfra "github.com/kubecrux/kubecrux/internal/infrastructure/kubernetes"
+	kubeinfra "github.com/soha/soha/internal/infrastructure/kubernetes"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"

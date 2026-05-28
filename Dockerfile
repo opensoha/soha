@@ -36,15 +36,15 @@ RUN for attempt in 1 2 3; do \
 COPY . .
 COPY --from=web-build /src/web/dist ./web/dist
 COPY --from=docs-build /src/docs/build ./docs/build
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -tags embedassets -trimpath -ldflags="-s -w" -o /out/kubecrux ./cmd/server
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -tags embedassets -trimpath -ldflags="-s -w" -o /out/soha ./cmd/server
 
 FROM alpine:3.20
-RUN addgroup -S kubecrux && adduser -S -G kubecrux kubecrux && apk add --no-cache ca-certificates tzdata
+RUN addgroup -S soha && adduser -S -G soha soha && apk add --no-cache ca-certificates tzdata
 WORKDIR /app
-COPY --from=go-build /out/kubecrux /app/kubecrux
+COPY --from=go-build /out/soha /app/soha
 COPY configs /app/configs
 COPY migrations /app/migrations
-ENV KC_CONFIG_FILE=/app/configs/config.yaml
-USER kubecrux
+ENV SOHA_CONFIG_FILE=/app/configs/config.yaml
+USER soha
 EXPOSE 8080
-ENTRYPOINT ["/app/kubecrux"]
+ENTRYPOINT ["/app/soha"]

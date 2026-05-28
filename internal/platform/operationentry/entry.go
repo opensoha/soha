@@ -4,9 +4,9 @@ import (
 	"context"
 	"time"
 
-	domainidentity "github.com/kubecrux/kubecrux/internal/domain/identity"
-	domainoperation "github.com/kubecrux/kubecrux/internal/domain/operation"
-	"github.com/kubecrux/kubecrux/internal/platform/requestctx"
+	domainidentity "github.com/soha/soha/internal/domain/identity"
+	domainoperation "github.com/soha/soha/internal/domain/operation"
+	"github.com/soha/soha/internal/platform/requestctx"
 )
 
 func New(

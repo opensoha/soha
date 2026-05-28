@@ -12,11 +12,11 @@ import (
 	"strings"
 	"time"
 
-	appaccess "github.com/kubecrux/kubecrux/internal/application/access"
-	domainidentity "github.com/kubecrux/kubecrux/internal/domain/identity"
-	domainsettings "github.com/kubecrux/kubecrux/internal/domain/settings"
-	cfgpkg "github.com/kubecrux/kubecrux/internal/infrastructure/config"
-	"github.com/kubecrux/kubecrux/internal/platform/apperrors"
+	appaccess "github.com/soha/soha/internal/application/access"
+	domainidentity "github.com/soha/soha/internal/domain/identity"
+	domainsettings "github.com/soha/soha/internal/domain/settings"
+	cfgpkg "github.com/soha/soha/internal/infrastructure/config"
+	"github.com/soha/soha/internal/platform/apperrors"
 )
 
 type Service struct {
@@ -1341,8 +1341,8 @@ func (s *Service) geminiHello(ctx context.Context, provider domainsettings.AIPro
 
 func (s *Service) brandingSettings(ctx context.Context) (domainsettings.BrandingSettings, error) {
 	item := domainsettings.BrandingSettings{
-		AppTitle:     "KubeCrux",
-		SidebarTitle: "KubeCrux",
+		AppTitle:     "Soha",
+		SidebarTitle: "Soha",
 	}
 	if s.store == nil {
 		return item, nil

@@ -24,7 +24,7 @@ export const useAuthStore = create<AuthState>()(
       isAuthenticated: () => !!get().accessToken,
     }),
     {
-      name: 'kubecrux-auth',
+      name: 'soha-auth',
       partialize: (state) => ({
         accessToken: state.accessToken,
         refreshToken: state.refreshToken,

@@ -2,7 +2,7 @@
 
 ## Model
 
-kubecrux uses RBAC + ABAC.
+soha uses RBAC + ABAC.
 
 ### RBAC Roles
 

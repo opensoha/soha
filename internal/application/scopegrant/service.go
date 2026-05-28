@@ -6,15 +6,15 @@ import (
 	"fmt"
 	"strings"
 
-	appaccess "github.com/kubecrux/kubecrux/internal/application/access"
-	domainaudit "github.com/kubecrux/kubecrux/internal/domain/audit"
-	domainidentity "github.com/kubecrux/kubecrux/internal/domain/identity"
-	domainoperation "github.com/kubecrux/kubecrux/internal/domain/operation"
-	domainscopegrant "github.com/kubecrux/kubecrux/internal/domain/scopegrant"
-	"github.com/kubecrux/kubecrux/internal/platform/apperrors"
-	"github.com/kubecrux/kubecrux/internal/platform/operationentry"
-	"github.com/kubecrux/kubecrux/internal/platform/requestctx"
-	scopegrantrepo "github.com/kubecrux/kubecrux/internal/repository/scopegrant"
+	appaccess "github.com/soha/soha/internal/application/access"
+	domainaudit "github.com/soha/soha/internal/domain/audit"
+	domainidentity "github.com/soha/soha/internal/domain/identity"
+	domainoperation "github.com/soha/soha/internal/domain/operation"
+	domainscopegrant "github.com/soha/soha/internal/domain/scopegrant"
+	"github.com/soha/soha/internal/platform/apperrors"
+	"github.com/soha/soha/internal/platform/operationentry"
+	"github.com/soha/soha/internal/platform/requestctx"
+	scopegrantrepo "github.com/soha/soha/internal/repository/scopegrant"
 )
 
 type AuditRecorder interface {

@@ -3,7 +3,7 @@ package kubernetes
 import (
 	"testing"
 
-	cfgpkg "github.com/kubecrux/kubecrux/internal/infrastructure/config"
+	cfgpkg "github.com/soha/soha/internal/infrastructure/config"
 )
 
 func TestRegisterClusterKeepsBundleWhenConfigUnchanged(t *testing.T) {

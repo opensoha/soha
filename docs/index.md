@@ -1,13 +1,13 @@
 ---
 id: index
 slug: /
-title: kubecrux 文档
+title: soha 文档
 description: 多集群 Kubernetes 平台控制台的架构、开发、API 与运维文档。
 ---
 
-# kubecrux 文档
+# soha 文档
 
-kubecrux 是一个多集群 Kubernetes 平台控制台。它不是对原生 Kubernetes Dashboard 的简单封装，而是面向平台团队的统一控制面，覆盖集群接入、工作负载观测、交付编排、权限治理、告警协同和 AI 辅助分析。
+soha 是一个多集群 Kubernetes 平台控制台。它不是对原生 Kubernetes Dashboard 的简单封装，而是面向平台团队的统一控制面，覆盖集群接入、工作负载观测、交付编排、权限治理、告警协同和 AI 辅助分析。
 
 ## 文档站定位
 

@@ -10,20 +10,20 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	appaccess "github.com/kubecrux/kubecrux/internal/application/access"
-	domainalert "github.com/kubecrux/kubecrux/internal/domain/alert"
-	domainapp "github.com/kubecrux/kubecrux/internal/domain/application"
-	domainaudit "github.com/kubecrux/kubecrux/internal/domain/audit"
-	domainbuild "github.com/kubecrux/kubecrux/internal/domain/build"
-	domaincluster "github.com/kubecrux/kubecrux/internal/domain/cluster"
-	domaincopilot "github.com/kubecrux/kubecrux/internal/domain/copilot"
-	domainevent "github.com/kubecrux/kubecrux/internal/domain/event"
-	domainidentity "github.com/kubecrux/kubecrux/internal/domain/identity"
-	domainmcp "github.com/kubecrux/kubecrux/internal/domain/mcp"
-	domainrelease "github.com/kubecrux/kubecrux/internal/domain/release"
-	domainsettings "github.com/kubecrux/kubecrux/internal/domain/settings"
-	aperrors "github.com/kubecrux/kubecrux/internal/platform/apperrors"
-	"github.com/kubecrux/kubecrux/internal/platform/runtimeobs"
+	appaccess "github.com/soha/soha/internal/application/access"
+	domainalert "github.com/soha/soha/internal/domain/alert"
+	domainapp "github.com/soha/soha/internal/domain/application"
+	domainaudit "github.com/soha/soha/internal/domain/audit"
+	domainbuild "github.com/soha/soha/internal/domain/build"
+	domaincluster "github.com/soha/soha/internal/domain/cluster"
+	domaincopilot "github.com/soha/soha/internal/domain/copilot"
+	domainevent "github.com/soha/soha/internal/domain/event"
+	domainidentity "github.com/soha/soha/internal/domain/identity"
+	domainmcp "github.com/soha/soha/internal/domain/mcp"
+	domainrelease "github.com/soha/soha/internal/domain/release"
+	domainsettings "github.com/soha/soha/internal/domain/settings"
+	aperrors "github.com/soha/soha/internal/platform/apperrors"
+	"github.com/soha/soha/internal/platform/runtimeobs"
 	"go.uber.org/zap"
 )
 
@@ -816,9 +816,9 @@ func (s *Service) externalAIReply(ctx context.Context, settings domainsettings.A
 
 func systemPrompt(locale string) string {
 	if locale == "zh-CN" {
-		return "你是 kubecrux 的平台 AI 助手。回答时尽量简洁、可执行，优先根据平台上下文给出排查建议和结论。"
+		return "你是 soha 的平台 AI 助手。回答时尽量简洁、可执行，优先根据平台上下文给出排查建议和结论。"
 	}
-	return "You are the kubecrux platform AI assistant. Keep answers concise and actionable, and prioritize investigation guidance grounded in platform context."
+	return "You are the soha platform AI assistant. Keep answers concise and actionable, and prioritize investigation guidance grounded in platform context."
 }
 
 func ternarySeverity(condition bool, truthy, falsy string) string {

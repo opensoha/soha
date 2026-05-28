@@ -180,7 +180,7 @@ function renderEntries(
         const raw = entries?.[key] ?? ''
         const display = transform ? transform(raw) : raw
         return (
-          <Card key={key} className="kc-detail-card" bodyStyle={{ padding: 12 }}>
+          <Card key={key} className="soha-detail-card" bodyStyle={{ padding: 12 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
               <Text strong>{key}</Text>
               <Button size="small" type="text" icon={<CopyOutlined />} onClick={() => copyToClipboard(display, localeCode)}>
@@ -188,7 +188,7 @@ function renderEntries(
               </Button>
             </div>
             <Paragraph style={{ margin: 0 }}>
-              <pre className="kc-json-block" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all', margin: 0 }}>{display}</pre>
+              <pre className="soha-json-block" style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all', margin: 0 }}>{display}</pre>
             </Paragraph>
           </Card>
         )
@@ -222,7 +222,7 @@ export function ResourceMetaOverview({
 }) {
   const { t, localeCode } = useI18n()
   return (
-    <Card className="kc-detail-card">
+    <Card className="soha-detail-card">
       <Descriptions
         items={[
           { key: t('common.name', 'Name'), label: t('common.name', 'Name'), children: name },
@@ -232,9 +232,9 @@ export function ResourceMetaOverview({
         ]}
       />
       {labels && Object.keys(labels).length > 0 && (
-        <div className="kc-detail-meta">
+        <div className="soha-detail-meta">
           <Text strong>{`${t('common.labels', 'Labels')}:`}</Text>
-          <div className="kc-tag-list">
+          <div className="soha-tag-list">
             {Object.entries(labels).map(([k, v]) => (
               <Tag key={k}>{k}={v}</Tag>
             ))}
@@ -242,9 +242,9 @@ export function ResourceMetaOverview({
         </div>
       )}
       {annotations && Object.keys(annotations).length > 0 && (
-        <div className="kc-detail-meta">
+        <div className="soha-detail-meta">
           <Text strong>{`${localeCode === 'zh_CN' ? '注解' : 'Annotations'}:`}</Text>
-          <pre className="kc-json-block">{JSON.stringify(annotations, null, 2)}</pre>
+          <pre className="soha-json-block">{JSON.stringify(annotations, null, 2)}</pre>
         </div>
       )}
     </Card>
@@ -313,7 +313,7 @@ export function ConfigMapDetailPage() {
   }
 
   return (
-    <div className="kc-page">
+    <div className="soha-page">
       <PageHeader
         title={`ConfigMap: ${name}`}
         description={localeCode === 'zh_CN' ? '查看 ConfigMap 的键值数据与 YAML。' : 'Inspect ConfigMap data entries and YAML.'}
@@ -335,11 +335,11 @@ export function ConfigMapDetailPage() {
                   annotations={detail.annotations}
                   extra={[{ key: 'Immutable', value: detail.immutable ? 'Yes' : 'No' }]}
                 />
-                <Card className="kc-detail-card" title={localeCode === 'zh_CN' ? `数据 (${Object.keys(detail.data ?? {}).length})` : `Data (${Object.keys(detail.data ?? {}).length})`}>
+                <Card className="soha-detail-card" title={localeCode === 'zh_CN' ? `数据 (${Object.keys(detail.data ?? {}).length})` : `Data (${Object.keys(detail.data ?? {}).length})`}>
                   {renderEntries(detail.data, localeCode, undefined, localeCode === 'zh_CN' ? '暂无 data 键' : 'No data keys')}
                 </Card>
                 {detail.binaryData && Object.keys(detail.binaryData).length > 0 ? (
-                  <Card className="kc-detail-card" title={localeCode === 'zh_CN' ? `二进制数据 (base64, ${Object.keys(detail.binaryData).length})` : `Binary Data (base64, ${Object.keys(detail.binaryData).length})`}>
+                  <Card className="soha-detail-card" title={localeCode === 'zh_CN' ? `二进制数据 (base64, ${Object.keys(detail.binaryData).length})` : `Binary Data (base64, ${Object.keys(detail.binaryData).length})`}>
                     {renderEntries(detail.binaryData, localeCode)}
                   </Card>
                 ) : null}
@@ -350,7 +350,7 @@ export function ConfigMapDetailPage() {
             key: 'yaml',
             label: t('common.yaml', 'YAML'),
             children: (
-              <Suspense fallback={<Card className="kc-detail-card"><Spin size="large" /></Card>}>
+              <Suspense fallback={<Card className="soha-detail-card"><Spin size="large" /></Card>}>
                 <div style={{ height: 620 }}>
                   <K8sYamlEditor
                     value={yamlState.draft}
@@ -405,7 +405,7 @@ export function SecretDetailPage() {
   }
 
   return (
-    <div className="kc-page">
+    <div className="soha-page">
       <PageHeader
         title={`Secret: ${name}`}
         description={localeCode === 'zh_CN' ? '查看 Secret 的数据(默认 base64)与 YAML。敏感信息仅限授权查看。' : 'Inspect Secret data (base64 by default) and YAML.'}
@@ -431,7 +431,7 @@ export function SecretDetailPage() {
                   ]}
                 />
                 <Card
-                  className="kc-detail-card"
+                  className="soha-detail-card"
                   title={localeCode === 'zh_CN' ? `数据 (${Object.keys(detail.data ?? {}).length})` : `Data (${Object.keys(detail.data ?? {}).length})`}
                   extra={(
                     <Space>
@@ -454,7 +454,7 @@ export function SecretDetailPage() {
             key: 'yaml',
             label: t('common.yaml', 'YAML'),
             children: (
-              <Suspense fallback={<Card className="kc-detail-card"><Spin size="large" /></Card>}>
+              <Suspense fallback={<Card className="soha-detail-card"><Spin size="large" /></Card>}>
                 <div style={{ height: 620 }}>
                   <K8sYamlEditor
                     value={yamlState.draft}

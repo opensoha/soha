@@ -191,32 +191,32 @@ function DockerTableHeader({
   tone?: OverviewTone
 }) {
   return (
-    <div className={`kc-admin-table-header kc-vrt-table-header is-${tone}`}>
-      <div className="kc-admin-table-header-main">
-        <div className="kc-admin-table-title-block">
-          <div className="kc-vrt-title-row">
+    <div className={`soha-admin-table-header soha-vrt-table-header is-${tone}`}>
+      <div className="soha-admin-table-header-main">
+        <div className="soha-admin-table-title-block">
+          <div className="soha-vrt-title-row">
             <Text strong>{title}</Text>
             {status ? <Badge status={badgeStatusForTone(tone)} text={status} /> : null}
           </div>
           {meta.length > 0 ? (
-            <div className="kc-vrt-commandbar-meta">
+            <div className="soha-vrt-commandbar-meta">
               {meta.map((item) => <span key={item}>{item}</span>)}
             </div>
           ) : null}
         </div>
       </div>
-      {actions ? <div className="kc-admin-table-header-extra">{actions}</div> : null}
+      {actions ? <div className="soha-admin-table-header-extra">{actions}</div> : null}
     </div>
   )
 }
 
 function MetricCard({ label, value, helper, tone = 'default', onClick }: { label: string; value: number | string; helper?: string; tone?: OverviewTone; onClick?: () => void }) {
   return (
-    <Card size="small" variant="outlined" className={`kc-vrt-metric-card is-${tone}`}>
-      <button type="button" className="kc-vrt-metric-card-button" onClick={onClick} disabled={!onClick}>
-        <span className="kc-overview-metric-label">{label}</span>
-        <span className="kc-vrt-stat-value">{value}</span>
-        {helper ? <span className="kc-overview-metric-helper">{helper}</span> : null}
+    <Card size="small" variant="outlined" className={`soha-vrt-metric-card is-${tone}`}>
+      <button type="button" className="soha-vrt-metric-card-button" onClick={onClick} disabled={!onClick}>
+        <span className="soha-overview-metric-label">{label}</span>
+        <span className="soha-vrt-stat-value">{value}</span>
+        {helper ? <span className="soha-overview-metric-helper">{helper}</span> : null}
       </button>
     </Card>
   )
@@ -224,11 +224,11 @@ function MetricCard({ label, value, helper, tone = 'default', onClick }: { label
 
 function SummaryChips({ counts, compact = false }: { counts: Array<{ key: string; label: string; value?: number; tone?: OverviewTone }>; compact?: boolean }) {
   return (
-    <div className={`kc-vrt-chip-grid${compact ? ' is-compact' : ''}`}>
+    <div className={`soha-vrt-chip-grid${compact ? ' is-compact' : ''}`}>
       {counts.map((item) => (
-        <div key={item.key} className={`kc-vrt-chip is-${item.tone ?? 'default'}`}>
-          <span className="kc-vrt-chip-label">{item.label}</span>
-          <span className="kc-vrt-chip-value">{item.value ?? 0}</span>
+        <div key={item.key} className={`soha-vrt-chip is-${item.tone ?? 'default'}`}>
+          <span className="soha-vrt-chip-label">{item.label}</span>
+          <span className="soha-vrt-chip-value">{item.value ?? 0}</span>
         </div>
       ))}
     </div>
@@ -341,15 +341,15 @@ function FilterToolbar({
   extra?: ReactNode
 }) {
   return (
-    <Form form={form} className="kc-vrt-filterbar kc-vrt-filterbar--split" layout="inline" onFinish={onSubmit}>
-      <div className="kc-vrt-filterbar-main">
+    <Form form={form} className="soha-vrt-filterbar soha-vrt-filterbar--split" layout="inline" onFinish={onSubmit}>
+      <div className="soha-vrt-filterbar-main">
         {children}
         <Space>
           <Button type="primary" htmlType="submit" icon={<SearchOutlined />}>筛选</Button>
           <Button onClick={() => { form.resetFields(); onReset() }}>重置</Button>
         </Space>
       </div>
-      {extra ? <div className="kc-vrt-filterbar-extra">{extra}</div> : null}
+      {extra ? <div className="soha-vrt-filterbar-extra">{extra}</div> : null}
     </Form>
   )
 }
@@ -368,7 +368,7 @@ function OperationLogDrawer({ operation, logs, loading, open, onClose }: { opera
           <Descriptions.Item label="发起人">{operation.requestedBy || '-'}</Descriptions.Item>
         </Descriptions>
       ) : null}
-      <pre className="max-h-[560px] overflow-auto rounded border border-[var(--kc-border-color)] bg-[var(--kc-bg-surface-muted)] p-3 text-xs">
+      <pre className="max-h-[560px] overflow-auto rounded border border-[var(--soha-border-color)] bg-[var(--soha-bg-surface-muted)] p-3 text-xs">
         {loading ? '日志加载中' : (text || '暂无日志')}
       </pre>
     </Drawer>
@@ -439,7 +439,7 @@ function HostsTable({ embedded = false }: { embedded?: boolean }) {
   ]
   return (
     <>
-      <Card size="small" variant="outlined" className="kc-vrt-list-card kc-vrt-table-card">
+      <Card size="small" variant="outlined" className="soha-vrt-list-card soha-vrt-table-card">
         <DockerTableHeader
           title="Docker 主机"
           meta={[`共 ${page.total} 台`, '支持手动接入与 PVE 快速构建']}
@@ -463,7 +463,7 @@ function HostsTable({ embedded = false }: { embedded?: boolean }) {
         ) : null}
         <Table
           rowKey="id"
-          className="kc-admin-table kc-vrt-table"
+          className="soha-admin-table soha-vrt-table"
           size="small"
           loading={hostsQuery.isLoading}
           dataSource={page.items}
@@ -589,7 +589,7 @@ function ProjectsTable({ embedded = false }: { embedded?: boolean }) {
   ]
   return (
     <>
-      <Card size="small" variant="outlined" className="kc-vrt-list-card kc-vrt-table-card">
+      <Card size="small" variant="outlined" className="soha-vrt-list-card soha-vrt-table-card">
         <DockerTableHeader
           title="Compose 项目"
           meta={[`共 ${page.total} 个`, 'Compose 文件会解析服务清单；单容器会生成轻量 Compose']}
@@ -608,7 +608,7 @@ function ProjectsTable({ embedded = false }: { embedded?: boolean }) {
             <Form.Item name="environment"><Input allowClear placeholder="环境" /></Form.Item>
           </FilterToolbar>
         ) : null}
-        <Table rowKey="id" className="kc-admin-table kc-vrt-table" size="small" loading={projectsQuery.isLoading} dataSource={page.items} columns={columns} scroll={{ x: 1430 }} pagination={embedded ? false : { current: page.page, pageSize: page.pageSize, total: page.total, showSizeChanger: true, onChange: (pageNumber, pageSize) => setFilters((current) => ({ ...current, page: pageNumber, pageSize })) }} />
+        <Table rowKey="id" className="soha-admin-table soha-vrt-table" size="small" loading={projectsQuery.isLoading} dataSource={page.items} columns={columns} scroll={{ x: 1430 }} pagination={embedded ? false : { current: page.page, pageSize: page.pageSize, total: page.total, showSizeChanger: true, onChange: (pageNumber, pageSize) => setFilters((current) => ({ ...current, page: pageNumber, pageSize })) }} />
       </Card>
       <Drawer title={editing ? '编辑 Compose 项目' : '创建 Compose 项目'} size="large" open={drawerOpen} onClose={() => setDrawerOpen(false)} extra={<DrawerFooter form={form} loading={saveMutation.isPending} onCancel={() => setDrawerOpen(false)} />}>
         <Form form={form} layout="vertical" onFinish={(values) => saveMutation.mutate(values)}>
@@ -707,7 +707,7 @@ function ServicesTable({ embedded = false }: { embedded?: boolean }) {
     },
   ]
   return (
-    <Card size="small" variant="outlined" className="kc-vrt-list-card kc-vrt-table-card">
+    <Card size="small" variant="outlined" className="soha-vrt-list-card soha-vrt-table-card">
       <DockerTableHeader title="容器服务" meta={[`共 ${page.total} 个`, '由 Compose 项目解析或运行态同步生成']} />
       {!embedded ? (
         <FilterToolbar form={filterForm} onSubmit={(values) => setFilters((current) => ({ ...current, ...values, page: 1 }))} onReset={() => setFilters({ page: 1, pageSize: filters.pageSize ?? 10 })}>
@@ -717,7 +717,7 @@ function ServicesTable({ embedded = false }: { embedded?: boolean }) {
           <Form.Item name="status"><Select allowClear className="min-w-32" placeholder="状态" options={['defined', 'running', 'exited', 'failed', 'unknown'].map((item) => ({ value: item, label: item }))} /></Form.Item>
         </FilterToolbar>
       ) : null}
-      <Table rowKey="id" className="kc-admin-table kc-vrt-table" size="small" loading={servicesQuery.isLoading} dataSource={page.items} columns={columns} scroll={{ x: 1440 }} pagination={embedded ? false : { current: page.page, pageSize: page.pageSize, total: page.total, showSizeChanger: true, onChange: (pageNumber, pageSize) => setFilters((current) => ({ ...current, page: pageNumber, pageSize })) }} />
+      <Table rowKey="id" className="soha-admin-table soha-vrt-table" size="small" loading={servicesQuery.isLoading} dataSource={page.items} columns={columns} scroll={{ x: 1440 }} pagination={embedded ? false : { current: page.page, pageSize: page.pageSize, total: page.total, showSizeChanger: true, onChange: (pageNumber, pageSize) => setFilters((current) => ({ ...current, page: pageNumber, pageSize })) }} />
     </Card>
   )
 }
@@ -770,7 +770,7 @@ function PortsTable({ embedded = false }: { embedded?: boolean }) {
   ]
   return (
     <>
-      <Card size="small" variant="outlined" className="kc-vrt-list-card kc-vrt-table-card">
+      <Card size="small" variant="outlined" className="soha-vrt-list-card soha-vrt-table-card">
         <DockerTableHeader title="端口映射" meta={[`共 ${page.total} 条`, '按主机、IP、端口、协议和域名做冲突校验']} actions={canManagePorts && !embedded ? <Button type="primary" icon={<PlusOutlined />} onClick={() => { setEditing(null); form.setFieldsValue({ protocol: 'tcp', exposureScope: 'internal', status: 'active', domainScheme: 'http', domainTlsEnabled: false }); setDrawerOpen(true) }}>新增映射</Button> : null} />
         {!embedded ? (
           <FilterToolbar form={filterForm} onSubmit={(values) => setFilters((current) => ({ ...current, ...values, page: 1 }))} onReset={() => setFilters({ page: 1, pageSize: filters.pageSize ?? 10 })}>
@@ -780,7 +780,7 @@ function PortsTable({ embedded = false }: { embedded?: boolean }) {
             <Form.Item name="status"><Select allowClear className="min-w-32" placeholder="状态" options={['active', 'reserved', 'released', 'expired'].map((item) => ({ value: item, label: item }))} /></Form.Item>
           </FilterToolbar>
         ) : null}
-        <Table rowKey="id" className="kc-admin-table kc-vrt-table" size="small" loading={portsQuery.isLoading} dataSource={page.items} columns={columns} scroll={{ x: 1470 }} pagination={embedded ? false : { current: page.page, pageSize: page.pageSize, total: page.total, showSizeChanger: true, onChange: (pageNumber, pageSize) => setFilters((current) => ({ ...current, page: pageNumber, pageSize })) }} />
+        <Table rowKey="id" className="soha-admin-table soha-vrt-table" size="small" loading={portsQuery.isLoading} dataSource={page.items} columns={columns} scroll={{ x: 1470 }} pagination={embedded ? false : { current: page.page, pageSize: page.pageSize, total: page.total, showSizeChanger: true, onChange: (pageNumber, pageSize) => setFilters((current) => ({ ...current, page: pageNumber, pageSize })) }} />
       </Card>
       <Drawer title={editing ? '编辑端口映射' : '新增端口映射'} size="large" open={drawerOpen} onClose={() => setDrawerOpen(false)} extra={<DrawerFooter form={form} loading={saveMutation.isPending} onCancel={() => setDrawerOpen(false)} />}>
         <Form form={form} layout="vertical" onFinish={(values) => saveMutation.mutate(values)}>
@@ -849,14 +849,14 @@ function TemplatesTable() {
   ]
   return (
     <>
-      <Card size="small" variant="outlined" className="kc-vrt-list-card kc-vrt-table-card">
+      <Card size="small" variant="outlined" className="soha-vrt-list-card soha-vrt-table-card">
         <DockerTableHeader title="模板" meta={[`共 ${page.total} 个`, '用于快速生成 Compose 项目']} actions={canManageTemplates ? <Button type="primary" icon={<PlusOutlined />} onClick={() => { setEditing(null); form.setFieldsValue({ templateKind: 'compose', composeContent: DEFAULT_COMPOSE, enabled: true }); setDrawerOpen(true) }}>新增模板</Button> : null} />
         <FilterToolbar form={filterForm} onSubmit={(values) => setFilters((current) => ({ ...current, ...values, page: 1 }))} onReset={() => setFilters({ page: 1, pageSize: filters.pageSize ?? 10 })}>
           <Form.Item name="search"><Input allowClear prefix={<SearchOutlined />} placeholder="搜索模板" /></Form.Item>
           <Form.Item name="kind"><Select allowClear className="min-w-32" placeholder="类型" options={[{ value: 'compose', label: 'compose' }]} /></Form.Item>
           <Form.Item name="enabled"><Select allowClear className="min-w-32" placeholder="启用" options={[{ value: true, label: '启用' }, { value: false, label: '停用' }]} /></Form.Item>
         </FilterToolbar>
-        <Table rowKey="id" className="kc-admin-table kc-vrt-table" size="small" loading={templatesQuery.isLoading} dataSource={page.items} columns={columns} scroll={{ x: 860 }} pagination={{ current: page.page, pageSize: page.pageSize, total: page.total, showSizeChanger: true, onChange: (pageNumber, pageSize) => setFilters((current) => ({ ...current, page: pageNumber, pageSize })) }} />
+        <Table rowKey="id" className="soha-admin-table soha-vrt-table" size="small" loading={templatesQuery.isLoading} dataSource={page.items} columns={columns} scroll={{ x: 860 }} pagination={{ current: page.page, pageSize: page.pageSize, total: page.total, showSizeChanger: true, onChange: (pageNumber, pageSize) => setFilters((current) => ({ ...current, page: pageNumber, pageSize })) }} />
       </Card>
       <Drawer title={editing ? '编辑模板' : '新增模板'} size="large" open={drawerOpen} onClose={() => setDrawerOpen(false)} extra={<DrawerFooter form={form} loading={saveMutation.isPending} onCancel={() => setDrawerOpen(false)} />}>
         <Form form={form} layout="vertical" onFinish={(values) => saveMutation.mutate(values)}>
@@ -916,15 +916,15 @@ function OperationsTable({ embedded = false, initialPreset = 'all' as OperationP
   ]
   return (
     <>
-      <Card size="small" variant="outlined" className="kc-vrt-list-card kc-vrt-table-card">
+      <Card size="small" variant="outlined" className="soha-vrt-list-card soha-vrt-table-card">
         <DockerTableHeader title="操作记录" meta={[`共 ${page.total} 个`, 'Docker 控制面任务队列']} />
-        <div className="kc-vrt-filterbar kc-vrt-filterbar--split">
-          <div className="kc-vrt-filterbar-main">
+        <div className="soha-vrt-filterbar soha-vrt-filterbar--split">
+          <div className="soha-vrt-filterbar-main">
             <Segmented<OperationPreset> value={preset} onChange={(value) => { setPreset(value); setFilters((current) => ({ ...current, page: 1 })) }} options={[{ value: 'all', label: '全部' }, { value: 'pending', label: '待处理' }, { value: 'abnormal', label: '异常' }, { value: 'host', label: '主机构建' }, { value: 'project', label: 'Compose' }, { value: 'service', label: '服务' }]} />
             {!embedded ? <Input.Search allowClear className="max-w-72" placeholder="搜索任务或发起人" onSearch={(search) => setFilters((current) => ({ ...current, search, page: 1 }))} /> : null}
           </div>
         </div>
-        <Table rowKey="id" className="kc-admin-table kc-vrt-table" size="small" loading={operationsQuery.isLoading} dataSource={page.items} columns={columns} rowClassName={(record) => `kc-vrt-row-tone-${operationTone(record)}`} scroll={{ x: 1280 }} pagination={embedded ? false : { current: page.page, pageSize: page.pageSize, total: page.total, showSizeChanger: true, onChange: (pageNumber, pageSize) => setFilters((current) => ({ ...current, page: pageNumber, pageSize })) }} />
+        <Table rowKey="id" className="soha-admin-table soha-vrt-table" size="small" loading={operationsQuery.isLoading} dataSource={page.items} columns={columns} rowClassName={(record) => `soha-vrt-row-tone-${operationTone(record)}`} scroll={{ x: 1280 }} pagination={embedded ? false : { current: page.page, pageSize: page.pageSize, total: page.total, showSizeChanger: true, onChange: (pageNumber, pageSize) => setFilters((current) => ({ ...current, page: pageNumber, pageSize })) }} />
       </Card>
       <OperationLogDrawer operation={selectedOperation} logs={logs} loading={logsQuery.isLoading} open={Boolean(selectedOperation)} onClose={() => setSelectedOperation(null)} />
     </>
@@ -943,40 +943,40 @@ export function DockerOverviewPage() {
   const expiringProjects = overview?.expiringProjects ?? []
   const overviewTone: OverviewTone = (stats.failedTaskCount ?? 0) > 0 ? 'danger' : (stats.pendingTaskCount ?? 0) > 0 || (hostSummary.provisioning ?? 0) > 0 ? 'warning' : (stats.hostCount ?? 0) > 0 ? 'success' : 'default'
   return (
-    <div className="kc-page kc-virtualization-page">
-      <div className={`kc-vrt-commandbar is-${overviewTone}`}>
-        <div className="kc-vrt-commandbar-main">
-          <div className="kc-vrt-title-row"><DockerOutlined /><h1>Docker 工作台</h1><Badge status={badgeStatusForTone(overviewTone)} text={overviewTone === 'danger' ? '存在异常任务' : overviewTone === 'warning' ? '任务处理中' : overviewTone === 'success' ? '运行中' : '未接入'} /></div>
-          <div className="kc-vrt-commandbar-meta"><span>主机 {stats.hostCount ?? 0}</span><span>项目 {stats.projectCount ?? 0}</span><span>服务 {stats.serviceCount ?? 0}</span><span>端口 {stats.portMappingCount ?? 0}</span></div>
+    <div className="soha-page soha-virtualization-page">
+      <div className={`soha-vrt-commandbar is-${overviewTone}`}>
+        <div className="soha-vrt-commandbar-main">
+          <div className="soha-vrt-title-row"><DockerOutlined /><h1>Docker 工作台</h1><Badge status={badgeStatusForTone(overviewTone)} text={overviewTone === 'danger' ? '存在异常任务' : overviewTone === 'warning' ? '任务处理中' : overviewTone === 'success' ? '运行中' : '未接入'} /></div>
+          <div className="soha-vrt-commandbar-meta"><span>主机 {stats.hostCount ?? 0}</span><span>项目 {stats.projectCount ?? 0}</span><span>服务 {stats.serviceCount ?? 0}</span><span>端口 {stats.portMappingCount ?? 0}</span></div>
         </div>
-        <div className="kc-vrt-commandbar-actions"><Link to="/docker/projects"><Button type="primary" icon={<PlusOutlined />}>创建 Compose 项目</Button></Link></div>
+        <div className="soha-vrt-commandbar-actions"><Link to="/docker/projects"><Button type="primary" icon={<PlusOutlined />}>创建 Compose 项目</Button></Link></div>
       </div>
       {overviewQuery.isError ? <Alert type="error" showIcon message="Docker 总览加载失败" /> : null}
-      <div className="kc-vrt-metric-grid">
+      <div className="soha-vrt-metric-grid">
         <MetricCard label="在线主机" value={stats.onlineHostCount ?? 0} helper={`总计 ${stats.hostCount ?? 0}`} tone={(stats.onlineHostCount ?? 0) > 0 ? 'success' : 'default'} />
         <MetricCard label="运行项目" value={stats.runningProjectCount ?? 0} helper={`总计 ${stats.projectCount ?? 0}`} tone="success" />
         <MetricCard label="运行服务" value={stats.runningServiceCount ?? 0} helper={`总计 ${stats.serviceCount ?? 0}`} tone="success" />
         <MetricCard label="端口映射" value={stats.portMappingCount ?? 0} helper={`Public ${portSummary.public ?? 0} / VPN ${portSummary.vpn ?? 0}`} tone={(portSummary.public ?? 0) > 0 ? 'warning' : 'default'} />
         <MetricCard label="异常任务" value={stats.failedTaskCount ?? 0} helper={`处理中 ${stats.pendingTaskCount ?? 0}`} tone={(stats.failedTaskCount ?? 0) > 0 ? 'danger' : (stats.pendingTaskCount ?? 0) > 0 ? 'warning' : 'default'} />
       </div>
-      <div className="kc-vrt-workbench-grid">
-        <div className="kc-vrt-workbench-main">
-          <Card size="small" variant="outlined" className="kc-vrt-list-card">
+      <div className="soha-vrt-workbench-grid">
+        <div className="soha-vrt-workbench-main">
+          <Card size="small" variant="outlined" className="soha-vrt-list-card">
             <DockerTableHeader title="运行分布" />
             <SummaryChips counts={[{ key: 'hosts-online', label: '主机在线', value: hostSummary.online, tone: 'success' }, { key: 'hosts-provisioning', label: '主机构建中', value: hostSummary.provisioning, tone: 'warning' }, { key: 'projects-running', label: '项目运行', value: projectSummary.running, tone: 'success' }, { key: 'projects-pending', label: '项目待处理', value: projectSummary.pending, tone: 'warning' }, { key: 'services-running', label: '服务运行', value: serviceSummary.running, tone: 'success' }, { key: 'services-failed', label: '服务异常', value: serviceSummary.failed, tone: 'danger' }]} />
           </Card>
           <OperationsTable embedded initialPreset="pending" />
         </div>
-        <div className="kc-vrt-side-stack">
-          <Card size="small" variant="outlined" className="kc-vrt-list-card">
+        <div className="soha-vrt-side-stack">
+          <Card size="small" variant="outlined" className="soha-vrt-list-card">
             <DockerTableHeader title="端口暴露" />
             <SummaryChips compact counts={[{ key: 'internal', label: 'Internal', value: portSummary.internal }, { key: 'vpn', label: 'VPN', value: portSummary.vpn, tone: 'warning' }, { key: 'public', label: 'Public', value: portSummary.public, tone: 'danger' }, { key: 'expired', label: 'Expired', value: portSummary.expired, tone: 'danger' }]} />
           </Card>
-          <Card size="small" variant="outlined" className="kc-vrt-list-card kc-vrt-table-card">
+          <Card size="small" variant="outlined" className="soha-vrt-list-card soha-vrt-table-card">
             <DockerTableHeader title="即将到期项目" />
             <Table rowKey="id" size="small" pagination={false} dataSource={expiringProjects} locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无到期项目" /> }} columns={[{ title: '项目', dataIndex: 'name' }, { title: '状态', dataIndex: 'status', render: statusTag }, { title: '到期', dataIndex: 'expiresAt', render: formatDateTime }]} />
           </Card>
-          <Card size="small" variant="outlined" className="kc-vrt-list-card kc-vrt-table-card">
+          <Card size="small" variant="outlined" className="soha-vrt-list-card soha-vrt-table-card">
             <DockerTableHeader title="最近任务" />
             <Table rowKey="id" size="small" pagination={false} dataSource={recentOperations} locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无任务" /> }} columns={[{ title: '类型', dataIndex: 'operationKind' }, { title: '状态', dataIndex: 'status', render: statusTag }, { title: '创建', dataIndex: 'createdAt', render: formatDateTime }]} />
           </Card>
@@ -987,25 +987,25 @@ export function DockerOverviewPage() {
 }
 
 export function DockerHostsPage() {
-  return <div className="kc-page kc-virtualization-page"><HostsTable /></div>
+  return <div className="soha-page soha-virtualization-page"><HostsTable /></div>
 }
 
 export function DockerProjectsPage() {
-  return <div className="kc-page kc-virtualization-page"><ProjectsTable /></div>
+  return <div className="soha-page soha-virtualization-page"><ProjectsTable /></div>
 }
 
 export function DockerServicesPage() {
-  return <div className="kc-page kc-virtualization-page"><ServicesTable /></div>
+  return <div className="soha-page soha-virtualization-page"><ServicesTable /></div>
 }
 
 export function DockerPortsPage() {
-  return <div className="kc-page kc-virtualization-page"><PortsTable /></div>
+  return <div className="soha-page soha-virtualization-page"><PortsTable /></div>
 }
 
 export function DockerTemplatesPage() {
-  return <div className="kc-page kc-virtualization-page"><TemplatesTable /></div>
+  return <div className="soha-page soha-virtualization-page"><TemplatesTable /></div>
 }
 
 export function DockerOperationsPage() {
-  return <div className="kc-page kc-virtualization-page"><OperationsTable /></div>
+  return <div className="soha-page soha-virtualization-page"><OperationsTable /></div>
 }

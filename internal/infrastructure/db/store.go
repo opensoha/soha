@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	cfgpkg "github.com/kubecrux/kubecrux/internal/infrastructure/config"
+	cfgpkg "github.com/soha/soha/internal/infrastructure/config"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )

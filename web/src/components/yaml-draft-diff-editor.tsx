@@ -94,13 +94,13 @@ export function YamlDraftDiffEditor({
       ]
 
   return (
-    <Card className="kc-detail-card kc-yaml-card" style={{ marginTop: 0 }}>
-      <div className="kc-terminal-toolbar kc-yaml-toolbar">
-        <Space className="kc-yaml-toolbar-meta" direction="vertical" size={2}>
+    <Card className="soha-detail-card soha-yaml-card" style={{ marginTop: 0 }}>
+      <div className="soha-terminal-toolbar soha-yaml-toolbar">
+        <Space className="soha-yaml-toolbar-meta" direction="vertical" size={2}>
           <Text strong>{title}</Text>
           {description ? <Text type="secondary" style={{ fontSize: 12 }}>{description}</Text> : null}
         </Space>
-        <Space className="kc-yaml-toolbar-actions" wrap>
+        <Space className="soha-yaml-toolbar-actions" wrap>
           <Segmented<ViewMode>
             options={availableModes}
             value={viewMode}
@@ -111,10 +111,10 @@ export function YamlDraftDiffEditor({
         </Space>
       </div>
 
-      <div className="kc-yaml-editor-shell">
+      <div className="soha-yaml-editor-shell">
         {viewMode === 'diff' ? (
           <>
-            <div className="kc-tag-list" style={{ marginBottom: 12, marginTop: 0 }}>
+            <div className="soha-tag-list" style={{ marginBottom: 12, marginTop: 0 }}>
               <Tag color="default">{leftLabel || t('yamlDiffEditor.originalLabel', 'Original')}</Tag>
               <Tag color="blue">{rightLabel || t('yamlDiffEditor.modifiedLabel', 'Modified')}</Tag>
             </div>

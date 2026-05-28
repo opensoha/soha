@@ -145,7 +145,7 @@ export function ClustersPage() {
             onClick={() => {
               Modal.confirm({
                 title: `确认删除集群 ${record.name}？`,
-                content: '删除后会移除该集群在 KubeCrux 中的注册信息。',
+                content: '删除后会移除该集群在 Soha 中的注册信息。',
                 onOk: () => deleteMutation.mutate(record.id),
               })
             }}
@@ -187,7 +187,7 @@ export function ClustersPage() {
     : `cluster-create:${connectionMode}`
 
   const agentConfigExample = `app:
-  name: kubecrux-agent
+  name: soha-agent
 
 http:
   addr: :18080
@@ -221,7 +221,7 @@ kubernetes:
   }
 
   return (
-    <div className="kc-page">
+    <div className="soha-page">
       <PageHeader
         title={t('page.clusters.title', 'Cluster Management')}
         description={t('page.clusters.desc', 'Manage cluster onboarding, health state, and connection settings in one place.')}
@@ -305,18 +305,18 @@ kubernetes:
                 <Form.Item name="agentToken" label="Agent Token">
                   <Input.Password placeholder={editingCluster ? '留空则沿用现有 token' : '与 agent 配置中的 auth.bearer_token 一致'} />
                 </Form.Item>
-                <Card className="kc-detail-card">
-                  <div className="kc-detail-meta">
+                <Card className="soha-detail-card">
+                  <div className="soha-detail-meta">
                     <Text strong>Agent 部署方式</Text>
-                    <pre className="kc-code-block">{agentConfigExample}</pre>
-                    <pre className="kc-code-block">{`go run ./cmd/agent\nKC_AGENT_CONFIG_FILE=/abs/path/to/agent.config.yaml go run ./cmd/agent`}</pre>
+                    <pre className="soha-code-block">{agentConfigExample}</pre>
+                    <pre className="soha-code-block">{`go run ./cmd/agent\nKC_AGENT_CONFIG_FILE=/abs/path/to/agent.config.yaml go run ./cmd/agent`}</pre>
                   </div>
                 </Card>
               </>
             )}
 
-            <Card className="kc-detail-card">
-              <div className="kc-detail-meta">
+            <Card className="soha-detail-card">
+              <div className="soha-detail-meta">
                 <Text strong>Prometheus</Text>
               </div>
               <Form.Item name="prometheusBaseUrl" label="Prometheus URL">
@@ -327,7 +327,7 @@ kubernetes:
               </Form.Item>
             </Card>
 
-            <div className="kc-form-actions">
+            <div className="soha-form-actions">
               <Button onClick={() => setModalVisible(false)}>取消</Button>
               <Button htmlType="submit" type="primary" loading={createMutation.isPending || updateMutation.isPending}>
                 {editingCluster ? '更新' : '创建'}
@@ -411,7 +411,7 @@ export function ClusterDetailPage() {
 
   if (!detail || !summary) {
     return (
-      <div className="kc-page">
+      <div className="soha-page">
         <PageHeader title={localeCode === 'zh_CN' ? '集群详情' : 'Cluster Detail'} description={localeCode === 'zh_CN' ? '当前集群不存在或详情不可用。' : 'The cluster was not found or its detail is unavailable.'} />
         <Card>
           <Text type="secondary">{t('common.notFound', 'Not found')}</Text>
@@ -421,7 +421,7 @@ export function ClusterDetailPage() {
   }
 
   return (
-    <div className="kc-page">
+    <div className="soha-page">
       <PageHeader
         title={`${localeCode === 'zh_CN' ? '集群详情' : 'Cluster Detail'}: ${summary.name}`}
         description={localeCode === 'zh_CN' ? '查看集群标签、版本、连接方式和运行诊断信息。' : 'Inspect cluster labels, version, connectivity, and runtime diagnostics.'}
@@ -451,7 +451,7 @@ export function ClusterDetailPage() {
       />
 
       <div className="grid gap-4 xl:grid-cols-2">
-        <Card className="kc-detail-card" title={localeCode === 'zh_CN' ? '基础信息' : 'Summary'}>
+        <Card className="soha-detail-card" title={localeCode === 'zh_CN' ? '基础信息' : 'Summary'}>
           <Descriptions
             items={[
               { key: localeCode === 'zh_CN' ? '名称' : 'Name', label: localeCode === 'zh_CN' ? '名称' : 'Name', children: summary.name },
@@ -464,22 +464,22 @@ export function ClusterDetailPage() {
               { key: localeCode === 'zh_CN' ? '状态信息' : 'Message', label: localeCode === 'zh_CN' ? '状态信息' : 'Message', children: summary.health?.message || '-' },
             ]}
           />
-          <div className="kc-detail-meta">
+          <div className="soha-detail-meta">
             <Text strong>{localeCode === 'zh_CN' ? '集群 Labels:' : 'Cluster Labels:'}</Text>
             {Object.keys(summary.labels || {}).length === 0 ? (
               <Text type="secondary" className="text-xs">{localeCode === 'zh_CN' ? '未配置标签' : 'No labels configured'}</Text>
             ) : (
-              <div className="kc-tag-list">
+              <div className="soha-tag-list">
                 {Object.entries(summary.labels || {}).map(([key, value]) => (
                   <Tag key={key}>{key}={value}</Tag>
                 ))}
               </div>
             )}
           </div>
-          <div className="kc-detail-meta">
+          <div className="soha-detail-meta">
             <Text strong>{localeCode === 'zh_CN' ? '能力:' : 'Capabilities:'}</Text>
             {summary.capabilities?.length ? (
-              <div className="kc-tag-list">
+              <div className="soha-tag-list">
                 {summary.capabilities.map((item) => (
                   <Tag key={item}>{item}</Tag>
                 ))}
@@ -490,7 +490,7 @@ export function ClusterDetailPage() {
           </div>
         </Card>
 
-        <Card className="kc-detail-card" title={localeCode === 'zh_CN' ? '连接与诊断' : 'Connection & Diagnostics'}>
+        <Card className="soha-detail-card" title={localeCode === 'zh_CN' ? '连接与诊断' : 'Connection & Diagnostics'}>
           <Descriptions
             items={[
               { key: localeCode === 'zh_CN' ? '连接模式' : 'Connection Mode', label: localeCode === 'zh_CN' ? '连接模式' : 'Connection Mode', children: detail.connection.mode || '-' },
@@ -508,7 +508,7 @@ export function ClusterDetailPage() {
         </Card>
       </div>
 
-      <Card className="kc-detail-card" title={localeCode === 'zh_CN' ? '监控配置' : 'Monitoring'}>
+      <Card className="soha-detail-card" title={localeCode === 'zh_CN' ? '监控配置' : 'Monitoring'}>
         <Descriptions
           items={[
             { key: localeCode === 'zh_CN' ? 'Prometheus URL' : 'Prometheus URL', label: localeCode === 'zh_CN' ? 'Prometheus URL' : 'Prometheus URL', children: detail.monitoring.prometheus.baseUrl || '-' },
@@ -519,8 +519,8 @@ export function ClusterDetailPage() {
         />
       </Card>
 
-      <Card className="kc-detail-card" title={localeCode === 'zh_CN' ? '节点快照' : 'Node Snapshot'}>
-        <div className="kc-detail-meta">
+      <Card className="soha-detail-card" title={localeCode === 'zh_CN' ? '节点快照' : 'Node Snapshot'}>
+        <div className="soha-detail-meta">
           <Text type="secondary">
             {localeCode === 'zh_CN'
               ? '点击节点可进入独立详情页，继续查看污点、YAML、Labels 和承载 Pod。'

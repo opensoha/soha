@@ -5,9 +5,9 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	apiMiddleware "github.com/kubecrux/kubecrux/internal/api/middleware"
-	apiresponse "github.com/kubecrux/kubecrux/internal/api/response"
-	domainmodule "github.com/kubecrux/kubecrux/internal/domain/module"
+	apiMiddleware "github.com/soha/soha/internal/api/middleware"
+	apiresponse "github.com/soha/soha/internal/api/response"
+	domainmodule "github.com/soha/soha/internal/domain/module"
 )
 
 type ModuleService interface {

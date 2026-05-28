@@ -14,7 +14,7 @@ import (
 	"sync"
 	"time"
 
-	cfgpkg "github.com/kubecrux/kubecrux/internal/agent/config"
+	cfgpkg "github.com/soha/soha/internal/agent/config"
 	"go.uber.org/zap"
 )
 
@@ -71,7 +71,7 @@ func (r AgentRun) withPrefetchedToolContext(items []AgentToolCallResult) AgentRu
 	}
 	input := copyStringAnyMap(r.Input)
 	input["prefetchedToolResults"] = agentToolCallResultMaps(items)
-	input["toolContextRule"] = "Use prefetchedToolResults as kubecrux-controlled read-only evidence. Do not call kubecrux data sources directly."
+	input["toolContextRule"] = "Use prefetchedToolResults as soha-controlled read-only evidence. Do not call soha data sources directly."
 	r.Input = input
 	return r
 }
@@ -728,7 +728,7 @@ func (r *Runner) executeCLIAgentRun(ctx context.Context, run AgentRun, spec agen
 	}
 	workspaceRoot := strings.TrimSpace(r.cfg.AgentRuntime.WorkspaceRoot)
 	if workspaceRoot == "" {
-		workspaceRoot = ".kubecrux/agent-runtime"
+		workspaceRoot = ".soha/agent-runtime"
 	}
 	absRoot, err := filepath.Abs(workspaceRoot)
 	if err != nil {
@@ -818,7 +818,7 @@ func (r *Runner) executeComposeServiceAction(ctx context.Context, operation Dock
 func (r *Runner) prepareComposeWorkspace(operation DockerOperation) (string, []string, error) {
 	root := strings.TrimSpace(r.cfg.Docker.ComposeRoot)
 	if root == "" {
-		root = ".kubecrux/docker"
+		root = ".soha/docker"
 	}
 	absRoot, err := filepath.Abs(root)
 	if err != nil {
@@ -1575,7 +1575,7 @@ func agentRunCompletionSummary(run AgentRun) string {
 
 func buildAgentProviderPrompt(run AgentRun) string {
 	payload := map[string]any{
-		"contract":      "kubecrux.agentRuntime.v1",
+		"contract":      "soha.agentRuntime.v1",
 		"providerId":    run.ProviderID,
 		"providerKind":  run.ProviderKind,
 		"capabilityId":  run.CapabilityID,
@@ -1585,9 +1585,9 @@ func buildAgentProviderPrompt(run AgentRun) string {
 		"toolBindings":  run.ToolBindings,
 		"skillBindings": run.SkillBindings,
 		"input":         run.Input,
-		"outputSchema":  "Return concise text or JSON with summary, recommendations, evidence, hypotheses, toolExecutions, and analysisArtifacts. kubecrux will normalize the final result into AnalysisArtifact.",
+		"outputSchema":  "Return concise text or JSON with summary, recommendations, evidence, hypotheses, toolExecutions, and analysisArtifacts. soha will normalize the final result into AnalysisArtifact.",
 		"resultRule":    "Do not execute destructive actions. Use only read-only context and report evidence, hypotheses, recommendations, and next steps.",
-		"toolCallRule":  "Tool bindings are authorization hints. Provider adapters must request actual tool execution through the kubecrux runner tool-call gateway and must not call kubecrux data sources directly.",
+		"toolCallRule":  "Tool bindings are authorization hints. Provider adapters must request actual tool execution through the soha runner tool-call gateway and must not call soha data sources directly.",
 	}
 	if len(run.ToolBindings) == 0 {
 		delete(payload, "toolBindings")
@@ -1597,9 +1597,9 @@ func buildAgentProviderPrompt(run AgentRun) string {
 	}
 	encoded, err := json.MarshalIndent(payload, "", "  ")
 	if err != nil {
-		return fmt.Sprintf("Run kubecrux %s analysis for scope %v. Question: %s", run.CapabilityID, run.Scope, fmt.Sprint(run.Input["question"]))
+		return fmt.Sprintf("Run soha %s analysis for scope %v. Question: %s", run.CapabilityID, run.Scope, fmt.Sprint(run.Input["question"]))
 	}
-	return "You are executing a kubecrux Agent Runtime analysis task. Analyze the provided context and return an operational report.\n\n" + string(encoded)
+	return "You are executing a soha Agent Runtime analysis task. Analyze the provided context and return an operational report.\n\n" + string(encoded)
 }
 
 func agentToolBindingPrefetchable(binding map[string]any) bool {

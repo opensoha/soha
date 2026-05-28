@@ -3,8 +3,8 @@ package copilot
 import (
 	"context"
 
-	appaccess "github.com/kubecrux/kubecrux/internal/application/access"
-	domainidentity "github.com/kubecrux/kubecrux/internal/domain/identity"
+	appaccess "github.com/soha/soha/internal/application/access"
+	domainidentity "github.com/soha/soha/internal/domain/identity"
 )
 
 func (s *Service) authorizePrincipal(ctx context.Context, principal domainidentity.Principal, permissionKey string) error {

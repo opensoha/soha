@@ -8,16 +8,16 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	appaccess "github.com/kubecrux/kubecrux/internal/application/access"
-	domainalert "github.com/kubecrux/kubecrux/internal/domain/alert"
-	domainbuild "github.com/kubecrux/kubecrux/internal/domain/build"
-	domaincopilot "github.com/kubecrux/kubecrux/internal/domain/copilot"
-	domainidentity "github.com/kubecrux/kubecrux/internal/domain/identity"
-	domainrelease "github.com/kubecrux/kubecrux/internal/domain/release"
-	mcplogs "github.com/kubecrux/kubecrux/internal/infrastructure/mcp/logs"
-	mcpmetrics "github.com/kubecrux/kubecrux/internal/infrastructure/mcp/metrics"
-	mcptraces "github.com/kubecrux/kubecrux/internal/infrastructure/mcp/traces"
-	aperrors "github.com/kubecrux/kubecrux/internal/platform/apperrors"
+	appaccess "github.com/soha/soha/internal/application/access"
+	domainalert "github.com/soha/soha/internal/domain/alert"
+	domainbuild "github.com/soha/soha/internal/domain/build"
+	domaincopilot "github.com/soha/soha/internal/domain/copilot"
+	domainidentity "github.com/soha/soha/internal/domain/identity"
+	domainrelease "github.com/soha/soha/internal/domain/release"
+	mcplogs "github.com/soha/soha/internal/infrastructure/mcp/logs"
+	mcpmetrics "github.com/soha/soha/internal/infrastructure/mcp/metrics"
+	mcptraces "github.com/soha/soha/internal/infrastructure/mcp/traces"
+	aperrors "github.com/soha/soha/internal/platform/apperrors"
 	"go.uber.org/zap"
 )
 
@@ -168,7 +168,7 @@ func (s *Service) sweepAgentRunTimeouts(ctx context.Context) (int, error) {
 		_, callbackErr := s.RecordAgentRunCallback(ctx, domaincopilot.AgentRunCallbackInput{
 			RunID:             run.ID,
 			CallbackToken:     run.CallbackToken,
-			AgentID:           firstNonEmpty(strings.TrimSpace(run.ClaimedByAgentID), "kubecrux-control-plane"),
+			AgentID:           firstNonEmpty(strings.TrimSpace(run.ClaimedByAgentID), "soha-control-plane"),
 			Status:            domaincopilot.AgentRunStatusCallbackTimeout,
 			Payload:           payload,
 			AnalysisArtifacts: []domaincopilot.AnalysisArtifact{s.synthesizeAgentArtifact(agentRunWithOutput(run, payload))},
@@ -849,8 +849,8 @@ func defaultAgentProviders() []domaincopilot.AgentProvider {
 		{
 			ID:               agentProviderInternal,
 			Kind:             "internal",
-			Name:             "kubecrux 内置分析",
-			Description:      "使用 kubecrux 已有平台聚合、MCP 数据源和规则化 playbook 执行同步分析。",
+			Name:             "soha 内置分析",
+			Description:      "使用 soha 已有平台聚合、MCP 数据源和规则化 playbook 执行同步分析。",
 			Enabled:          true,
 			Default:          true,
 			Capabilities:     append([]string(nil), capabilities...),
@@ -866,7 +866,7 @@ func defaultAgentProviders() []domaincopilot.AgentProvider {
 			ID:               agentProviderHermes,
 			Kind:             "hermes",
 			Name:             "Hermes Agent",
-			Description:      "通过 kubecrux agent runner 领取任务并调用 Hermes CLI 或 Hermes Agent 能力执行深度分析。",
+			Description:      "通过 soha agent runner 领取任务并调用 Hermes CLI 或 Hermes Agent 能力执行深度分析。",
 			Enabled:          true,
 			Capabilities:     append([]string(nil), capabilities...),
 			SupportedModes:   []string{"root_cause", "performance", "trace", "inspection_review", "delivery_failure", "post_deploy_observation", "platform_resource_diagnosis", "docker_diagnosis", "virtualization_diagnosis", "oncall_brief"},
@@ -876,7 +876,7 @@ func defaultAgentProviders() []domaincopilot.AgentProvider {
 			Config: map[string]any{
 				"executionMode":  "runner_claim_callback",
 				"runnerRequired": true,
-				"resultContract": "kubecrux.analysisArtifact.v1",
+				"resultContract": "soha.analysisArtifact.v1",
 			},
 		},
 	}
@@ -1019,11 +1019,11 @@ func defaultAgentToolBindings() []domaincopilot.AgentToolBinding {
 
 func defaultAgentSkillBindings() []domaincopilot.AgentSkillBinding {
 	return []domaincopilot.AgentSkillBinding{
-		{ID: "skill.root-cause.hermes", SkillID: "root-cause-investigation", ProviderID: agentProviderHermes, ProviderKind: "hermes", ProviderSkillRef: "kubecrux-root-cause", CapabilityRefs: []string{"root_cause", "performance", "trace"}},
-		{ID: "skill.inspection.hermes", SkillID: "inspection-review", ProviderID: agentProviderHermes, ProviderKind: "hermes", ProviderSkillRef: "kubecrux-inspection-review", CapabilityRefs: []string{"inspection_review"}},
-		{ID: "skill.delivery.hermes", SkillID: "delivery-failure-analysis", ProviderID: agentProviderHermes, ProviderKind: "hermes", ProviderSkillRef: "kubecrux-delivery-failure", CapabilityRefs: []string{"delivery_failure", "post_deploy_observation"}},
-		{ID: "skill.platform.hermes", SkillID: "platform-diagnosis", ProviderID: agentProviderHermes, ProviderKind: "hermes", ProviderSkillRef: "kubecrux-platform-diagnosis", CapabilityRefs: []string{"platform_resource_diagnosis", "docker_diagnosis", "virtualization_diagnosis"}},
-		{ID: "skill.oncall.hermes", SkillID: "oncall-brief", ProviderID: agentProviderHermes, ProviderKind: "hermes", ProviderSkillRef: "kubecrux-oncall-brief", CapabilityRefs: []string{"oncall_brief"}},
+		{ID: "skill.root-cause.hermes", SkillID: "root-cause-investigation", ProviderID: agentProviderHermes, ProviderKind: "hermes", ProviderSkillRef: "soha-root-cause", CapabilityRefs: []string{"root_cause", "performance", "trace"}},
+		{ID: "skill.inspection.hermes", SkillID: "inspection-review", ProviderID: agentProviderHermes, ProviderKind: "hermes", ProviderSkillRef: "soha-inspection-review", CapabilityRefs: []string{"inspection_review"}},
+		{ID: "skill.delivery.hermes", SkillID: "delivery-failure-analysis", ProviderID: agentProviderHermes, ProviderKind: "hermes", ProviderSkillRef: "soha-delivery-failure", CapabilityRefs: []string{"delivery_failure", "post_deploy_observation"}},
+		{ID: "skill.platform.hermes", SkillID: "platform-diagnosis", ProviderID: agentProviderHermes, ProviderKind: "hermes", ProviderSkillRef: "soha-platform-diagnosis", CapabilityRefs: []string{"platform_resource_diagnosis", "docker_diagnosis", "virtualization_diagnosis"}},
+		{ID: "skill.oncall.hermes", SkillID: "oncall-brief", ProviderID: agentProviderHermes, ProviderKind: "hermes", ProviderSkillRef: "soha-oncall-brief", CapabilityRefs: []string{"oncall_brief"}},
 	}
 }
 

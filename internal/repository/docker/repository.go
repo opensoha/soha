@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	domaindocker "github.com/kubecrux/kubecrux/internal/domain/docker"
-	"github.com/kubecrux/kubecrux/internal/platform/apperrors"
+	domaindocker "github.com/soha/soha/internal/domain/docker"
+	"github.com/soha/soha/internal/platform/apperrors"
 	"gorm.io/gorm"
 )
 

@@ -158,7 +158,7 @@ export function DeliveryBlueprintsPage() {
   }
 
   return (
-    <div className="kc-page">
+    <div className="soha-page">
       <PageHeader
         title="交付蓝图"
         description="定义应用接入规范、构建来源、环境绑定模板和文件模板，用于企业 AI coding 与平台交付控制面协同。"
@@ -230,7 +230,7 @@ export function DeliveryBlueprintsPage() {
           <Form.Item name="enabled" label="启用" valuePropName="checked">
             <Switch />
           </Form.Item>
-          <div className="kc-form-actions">
+          <div className="soha-form-actions">
             <Button onClick={() => { setModalVisible(false); setEditing(null) }}>取消</Button>
             <Button htmlType="submit" type="primary" loading={createMutation.isPending || updateMutation.isPending}>保存</Button>
           </div>
@@ -238,11 +238,11 @@ export function DeliveryBlueprintsPage() {
       </Modal>
 
       <Modal width={960} title="渲染结果" open={specModalVisible} onCancel={() => setSpecModalVisible(false)} footer={null}>
-        <pre className="kc-json-block">{JSON.stringify(renderedSpec ?? {}, null, 2)}</pre>
+        <pre className="soha-json-block">{JSON.stringify(renderedSpec ?? {}, null, 2)}</pre>
       </Modal>
 
       <Modal width={960} title="平台接入结果" open={bootstrapModalVisible} onCancel={() => setBootstrapModalVisible(false)} footer={null}>
-        <pre className="kc-json-block">{JSON.stringify(bootstrapResult ?? {}, null, 2)}</pre>
+        <pre className="soha-json-block">{JSON.stringify(bootstrapResult ?? {}, null, 2)}</pre>
       </Modal>
     </div>
   )

@@ -15,11 +15,11 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	domainaccess "github.com/kubecrux/kubecrux/internal/domain/access"
-	domainidentity "github.com/kubecrux/kubecrux/internal/domain/identity"
-	domainresource "github.com/kubecrux/kubecrux/internal/domain/resource"
-	domainsettings "github.com/kubecrux/kubecrux/internal/domain/settings"
-	"github.com/kubecrux/kubecrux/internal/platform/apperrors"
+	domainaccess "github.com/soha/soha/internal/domain/access"
+	domainidentity "github.com/soha/soha/internal/domain/identity"
+	domainresource "github.com/soha/soha/internal/domain/resource"
+	domainsettings "github.com/soha/soha/internal/domain/settings"
+	"github.com/soha/soha/internal/platform/apperrors"
 )
 
 type prometheusRangeResponse struct {

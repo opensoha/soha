@@ -1,7 +1,7 @@
 ---
-name: kubecrux-deploy
+name: soha-deploy
 description: >-
-  Prepare kubecrux single-project deployment artifacts across container build,
+  Prepare soha single-project deployment artifacts across container build,
   Docker Compose, raw Kubernetes YAML, and Helm. Use when packaging local,
   demo, or small-environment deployments; creating or updating Dockerfiles;
   wiring backend config through files or Secrets; or changing service
@@ -12,11 +12,11 @@ description: >-
   now live at the repo root plus `chart/`.
 ---
 
-# Kubecrux Deploy
+# Soha Deploy
 
 ## Overview
 
-Use the root deployment assets to run kubecrux as a single-project runtime: one application container serving API, SPA, and docs, plus PostgreSQL as the required durable dependency. This matches the current codebase better than deploying the Vite dev server separately.
+Use the root deployment assets to run soha as a single-project runtime: one application container serving API, SPA, and docs, plus PostgreSQL as the required durable dependency. This matches the current codebase better than deploying the Vite dev server separately.
 
 ## Workflow
 
@@ -27,14 +27,14 @@ Use the root deployment assets to run kubecrux as a single-project runtime: one 
    - `docker-compose.yaml` for local or VM-style runs
    - `deployment.yaml` for raw-cluster delivery
    - `chart/` for repeatable cluster installs
-5. Verify `KC_CONFIG_FILE`, database settings, OIDC redirect URLs, and ingress hostnames before rollout.
+5. Verify `SOHA_CONFIG_FILE`, database settings, OIDC redirect URLs, and ingress hostnames before rollout.
 6. Smoke test `/healthz`, `/readyz`, `/`, and `/docs/` after deployment.
 
 ## Non-Negotiables
 
 - Do not deploy the Vite dev server for production-like installs.
 - Prefer the embedded single-container runtime unless the user explicitly wants API and web split apart.
-- Keep app config file-driven. The server expects `KC_CONFIG_FILE` or the default config path.
+- Keep app config file-driven. The server expects `SOHA_CONFIG_FILE` or the default config path.
 - Treat PostgreSQL as required for this starter deployment set.
 - Keep real credentials out of committed plain-text manifests. Replace the example values with Secrets, sealed secrets, or an external secret manager before real use.
 - If the deployment needs direct-cluster access, provide kubeconfig or cluster registration data explicitly. The starter assets do not magically register Kubernetes clusters.
@@ -53,7 +53,7 @@ Use the root deployment assets to run kubecrux as a single-project runtime: one 
 - Keep the single-project deployment story coherent across `Dockerfile`, `docker-compose.yaml`, `deployment.yaml`, and `chart/`.
 - If `docker-compose.yaml` also carries local cluster helpers such as `k3s`, preserve them unless the user explicitly wants a simpler compose file.
 - When changing deployment docs or examples, update `README.md`, `README-cn.md`, `docs/operations/deployment.md`, and `docs/en/operations/deployment.md` together.
-- When auth callback URLs or external login provider assumptions change, re-check deployment-facing hostname, ingress, and `KC_CONFIG_FILE` examples so redirect URLs stay coherent.
+- When auth callback URLs or external login provider assumptions change, re-check deployment-facing hostname, ingress, and `SOHA_CONFIG_FILE` examples so redirect URLs stay coherent.
 
 ## Read These References When Needed
 

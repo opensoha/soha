@@ -244,7 +244,7 @@ PVE credentials are accepted only on create or update payloads and are never ret
 
 Headers:
 
-- `X-Kubecrux-Webhook-Token: <monitoring.webhook_token>`
+- `X-Soha-Webhook-Token: <monitoring.webhook_token>`
   or
 - `Authorization: Bearer <monitoring.webhook_token>`
 

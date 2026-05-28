@@ -16,18 +16,18 @@ type Tool struct {
 }
 
 type Adapter struct {
-	ID                string   `json:"id"`
-	SourceKind        string   `json:"sourceKind"`
-	SupportedBackends []string `json:"supportedBackends,omitempty"`
-	Name              string   `json:"name"`
-	Description       string   `json:"description"`
-	Category          string   `json:"category,omitempty"`
-	RequiresConfig    bool     `json:"requiresConfig"`
-	SupportsSessionOverride bool `json:"supportsSessionOverride"`
-	Scopes            []string `json:"scopes"`
-	Tools             []Tool   `json:"tools,omitempty"`
-	DefaultBudget     map[string]any `json:"defaultBudget,omitempty"`
-	ToolSchemaSummary map[string]string `json:"toolSchemaSummary,omitempty"`
+	ID                      string            `json:"id"`
+	SourceKind              string            `json:"sourceKind"`
+	SupportedBackends       []string          `json:"supportedBackends,omitempty"`
+	Name                    string            `json:"name"`
+	Description             string            `json:"description"`
+	Category                string            `json:"category,omitempty"`
+	RequiresConfig          bool              `json:"requiresConfig"`
+	SupportsSessionOverride bool              `json:"supportsSessionOverride"`
+	Scopes                  []string          `json:"scopes"`
+	Tools                   []Tool            `json:"tools,omitempty"`
+	DefaultBudget           map[string]any    `json:"defaultBudget,omitempty"`
+	ToolSchemaSummary       map[string]string `json:"toolSchemaSummary,omitempty"`
 }
 
 type Service interface {

@@ -6,12 +6,12 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	"github.com/kubecrux/kubecrux/internal/api/dto"
-	apiMiddleware "github.com/kubecrux/kubecrux/internal/api/middleware"
-	apiresponse "github.com/kubecrux/kubecrux/internal/api/response"
-	domainaccess "github.com/kubecrux/kubecrux/internal/domain/access"
-	domainidentity "github.com/kubecrux/kubecrux/internal/domain/identity"
-	domainsettings "github.com/kubecrux/kubecrux/internal/domain/settings"
+	"github.com/soha/soha/internal/api/dto"
+	apiMiddleware "github.com/soha/soha/internal/api/middleware"
+	apiresponse "github.com/soha/soha/internal/api/response"
+	domainaccess "github.com/soha/soha/internal/domain/access"
+	domainidentity "github.com/soha/soha/internal/domain/identity"
+	domainsettings "github.com/soha/soha/internal/domain/settings"
 )
 
 type IdentityService interface {
@@ -345,7 +345,7 @@ func toProCurrentUser(principal domainidentity.Principal) proCurrentUser {
 		Name:      name,
 		UserID:    principal.UserID,
 		Email:     principal.Email,
-		Signature: "KubeCrux operator",
+		Signature: "Soha operator",
 		Title:     firstNonEmpty(principal.Roles...),
 		Group:     group,
 		Tags:      tags,
@@ -354,7 +354,7 @@ func toProCurrentUser(principal domainidentity.Principal) proCurrentUser {
 			Province: proCurrentGeoItem{Key: "shanghai", Label: "Shanghai"},
 			City:     proCurrentGeoItem{Key: "shanghai", Label: "Shanghai"},
 		},
-		Address: "KubeCrux Console",
+		Address: "Soha Console",
 		Phone:   "000-00000000",
 		Access:  access,
 		Notice:  []proCurrentNotice{},

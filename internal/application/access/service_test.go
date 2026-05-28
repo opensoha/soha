@@ -4,11 +4,11 @@ import (
 	"context"
 	"testing"
 
-	domainaccess "github.com/kubecrux/kubecrux/internal/domain/access"
-	domaincatalog "github.com/kubecrux/kubecrux/internal/domain/catalog"
-	domainidentity "github.com/kubecrux/kubecrux/internal/domain/identity"
-	domainscopegrant "github.com/kubecrux/kubecrux/internal/domain/scopegrant"
-	"github.com/kubecrux/kubecrux/internal/policy"
+	domainaccess "github.com/soha/soha/internal/domain/access"
+	domaincatalog "github.com/soha/soha/internal/domain/catalog"
+	domainidentity "github.com/soha/soha/internal/domain/identity"
+	domainscopegrant "github.com/soha/soha/internal/domain/scopegrant"
+	"github.com/soha/soha/internal/policy"
 )
 
 type stubScopeGrantReader struct {

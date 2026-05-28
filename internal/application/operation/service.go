@@ -5,9 +5,9 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	appaccess "github.com/kubecrux/kubecrux/internal/application/access"
-	domainidentity "github.com/kubecrux/kubecrux/internal/domain/identity"
-	domainoperation "github.com/kubecrux/kubecrux/internal/domain/operation"
+	appaccess "github.com/soha/soha/internal/application/access"
+	domainidentity "github.com/soha/soha/internal/domain/identity"
+	domainoperation "github.com/soha/soha/internal/domain/operation"
 )
 
 type Service struct {

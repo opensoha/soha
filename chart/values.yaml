@@ -1,5 +1,5 @@
 image:
-  repository: ghcr.io/example/kubecrux
+  repository: ghcr.io/example/soha
   tag: latest
   pullPolicy: IfNotPresent
 
@@ -11,13 +11,13 @@ ingress:
   enabled: true
   className: nginx
   annotations: {}
-  host: kubecrux.example.com
+  host: soha.example.com
   tls: false
   tlsSecretName: ""
 
 postgres:
   image: postgres:16
-  database: kubecrux
+  database: soha
   username: pgsql
   password: change-me
   storageSize: 10Gi
@@ -28,7 +28,7 @@ config:
   loggerFormat: json
   basePath: /api/v1
   corsAllowedOrigins:
-    - https://kubecrux.example.com
+    - https://soha.example.com
   runtime:
     workflowWorkers: 4
     workflowQueueSize: 64
@@ -40,13 +40,13 @@ config:
     enableDevAuth: false
     adminUserId: admin
     adminName: Admin
-    adminEmail: admin@kubecrux.local
+    adminEmail: admin@soha.local
     adminPassword: change-me
     adminRoles:
       - admin
       - ops
       - auditor
-    jwtIssuer: kubecrux
+    jwtIssuer: soha
     jwtSecret: change-me
     accessTTL: 15m
     refreshTTL: 168h
@@ -56,8 +56,8 @@ config:
       issuer: ""
       clientId: ""
       clientSecret: ""
-      redirectUrl: https://kubecrux.example.com/api/v1/auth/oidc/callback
-      frontendRedirectUrl: https://kubecrux.example.com/login/callback
+      redirectUrl: https://soha.example.com/api/v1/auth/oidc/callback
+      frontendRedirectUrl: https://soha.example.com/login/callback
       scopes:
         - openid
         - profile

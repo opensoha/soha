@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"time"
 
-	domainregistry "github.com/kubecrux/kubecrux/internal/domain/registry"
+	domainregistry "github.com/soha/soha/internal/domain/registry"
 	"gorm.io/gorm"
 )
 

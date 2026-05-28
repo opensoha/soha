@@ -134,13 +134,13 @@ export function ApplicationsPage() {
   ]
 
   return (
-    <div className="kc-page">
+    <div className="soha-page">
       <PageHeader
         title={t('page.delivery.applications.title', 'Applications')}
         description={t('page.delivery.applications.desc', 'Manage application repositories, Dockerfile build parameters, and recent deployment state.')}
         actions={canCreateApplication ? <Button icon={<PlusOutlined />} type="primary" onClick={() => { setEditing(null); setModalVisible(true) }}>新建应用</Button> : null}
       />
-      <Card className="kc-scope-hint-card">
+      <Card className="soha-scope-hint-card">
         <Text type="secondary">
           当前构建链路先只支持 `Dockerfile`。这里配置的是镜像仓库、默认 Tag、构建上下文目录和 Dockerfile 路径，后续发布流程会直接复用这些参数。
         </Text>
@@ -220,7 +220,7 @@ export function ApplicationsPage() {
           <Form.Item name="enabled" label="启用" valuePropName="checked">
             <Switch />
           </Form.Item>
-          <div className="kc-form-actions">
+          <div className="soha-form-actions">
             <Button onClick={() => setModalVisible(false)}>取消</Button>
             <Button htmlType="submit" type="primary" loading={createMutation.isPending || updateMutation.isPending}>
               {editing ? '更新' : '创建'}
@@ -324,7 +324,7 @@ export function WorkflowsPage() {
   ]
 
   return (
-    <div className="kc-page">
+    <div className="soha-page">
       <PageHeader title={t('page.delivery.workflows.title', 'Workflows')} description={t('page.delivery.workflows.desc', 'Inspect automation flow records, trigger methods, and recent execution state.')} />
       <AdminTable columns={columns} dataSource={data?.data ?? []} rowKey="id" loading={isLoading} />
     </div>
@@ -403,7 +403,7 @@ export function ReleasesPage() {
   ]
 
   return (
-    <div className="kc-page">
+    <div className="soha-page">
       <PageHeader title={t('page.delivery.releases.title', 'Releases')} description={t('page.delivery.releases.desc', 'Inspect environment release versions and trigger deployments when needed.')} />
       <AdminTable columns={columns} dataSource={data?.data ?? []} rowKey="id" loading={isLoading} />
     </div>
@@ -505,7 +505,7 @@ export function RegistriesPage() {
   ]
 
   return (
-    <div className="kc-page">
+    <div className="soha-page">
       <PageHeader
         title={t('page.delivery.registries.title', 'Registries')}
         description={t('page.delivery.registries.desc', 'Manage registry connections, credentials, and connectivity status.')}
@@ -547,7 +547,7 @@ export function RegistriesPage() {
           <Form.Item name="password" label="密码">
             <Input.Password />
           </Form.Item>
-          <div className="kc-form-actions">
+          <div className="soha-form-actions">
             <Button onClick={() => setModalVisible(false)}>取消</Button>
             <Button htmlType="submit" type="primary" loading={createMutation.isPending || updateMutation.isPending}>
               {editing ? '更新' : '创建'}

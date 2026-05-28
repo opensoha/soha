@@ -15,12 +15,12 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
-	apiMiddleware "github.com/kubecrux/kubecrux/internal/api/middleware"
-	apiresponse "github.com/kubecrux/kubecrux/internal/api/response"
-	appvirtualization "github.com/kubecrux/kubecrux/internal/application/virtualization"
-	domainidentity "github.com/kubecrux/kubecrux/internal/domain/identity"
-	domainvirtualization "github.com/kubecrux/kubecrux/internal/domain/virtualization"
-	infravirtualization "github.com/kubecrux/kubecrux/internal/infrastructure/virtualization"
+	apiMiddleware "github.com/soha/soha/internal/api/middleware"
+	apiresponse "github.com/soha/soha/internal/api/response"
+	appvirtualization "github.com/soha/soha/internal/application/virtualization"
+	domainidentity "github.com/soha/soha/internal/domain/identity"
+	domainvirtualization "github.com/soha/soha/internal/domain/virtualization"
+	infravirtualization "github.com/soha/soha/internal/infrastructure/virtualization"
 )
 
 type VirtualizationService interface {

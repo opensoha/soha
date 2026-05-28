@@ -2,22 +2,22 @@
 
 ## Backend
 
-kubecrux no longer uses `.env.example` as its primary configuration source.
+soha no longer uses `.env.example` as its primary configuration source.
 
 Backend configuration lives in `configs/config.yaml`. Environment variables are only used for overrides when deployment environments need to change file defaults.
 
 Typical overrides:
 
-- `KC_CONFIG_FILE`
-- `KC_HTTP_ADDR`
-- `KC_LOGGER_LEVEL`
-- `KC_DATABASE_HOST`
-- `KC_DATABASE_PORT`
-- `KC_DATABASE_NAME`
-- `KC_DATABASE_USER`
-- `KC_DATABASE_PASSWORD`
-- `KC_REDIS_ADDR`
-- `KC_AUTH_ENABLE_DEV_AUTH`
+- `SOHA_CONFIG_FILE`
+- `SOHA_HTTP_ADDR`
+- `SOHA_LOGGER_LEVEL`
+- `SOHA_DATABASE_HOST`
+- `SOHA_DATABASE_PORT`
+- `SOHA_DATABASE_NAME`
+- `SOHA_DATABASE_USER`
+- `SOHA_DATABASE_PASSWORD`
+- `SOHA_REDIS_ADDR`
+- `SOHA_AUTH_ENABLE_DEV_AUTH`
 
 ## Frontend
 

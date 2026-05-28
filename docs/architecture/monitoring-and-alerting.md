@@ -2,14 +2,14 @@
 
 ## Goal
 
-kubecrux should become the unified alert ingress and routing plane for the platform.
+soha should become the unified alert ingress and routing plane for the platform.
 
 The target model is:
 
 1. alerts arrive from Prometheus Alertmanager, Grafana Alerting, or future third-party systems
-2. kubecrux normalizes them into one internal alert envelope
+2. soha normalizes them into one internal alert envelope
 3. platform policies decide ownership, routing, suppression, grouping, and escalation
-4. kubecrux dispatches notifications to downstream channels
+4. soha dispatches notifications to downstream channels
 
 This keeps alert governance inside the platform instead of scattering logic across multiple tools.
 

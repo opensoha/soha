@@ -1,27 +1,27 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "kubecrux.fullname" . }}
+  name: {{ include "soha.fullname" . }}
   labels:
-    {{- include "kubecrux.labels" . | nindent 4 }}
+    {{- include "soha.labels" . | nindent 4 }}
 spec:
   replicas: 1
   selector:
     matchLabels:
       app.kubernetes.io/component: app
-      {{- include "kubecrux.selectorLabels" . | nindent 6 }}
+      {{- include "soha.selectorLabels" . | nindent 6 }}
   template:
     metadata:
       labels:
         app.kubernetes.io/component: app
-        {{- include "kubecrux.selectorLabels" . | nindent 8 }}
+        {{- include "soha.selectorLabels" . | nindent 8 }}
     spec:
       containers:
-        - name: kubecrux
+        - name: soha
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           env:
-            - name: KC_CONFIG_FILE
+            - name: SOHA_CONFIG_FILE
               value: /app/configs/config.yaml
           ports:
             - containerPort: 8080
@@ -42,4 +42,4 @@ spec:
       volumes:
         - name: app-config
           secret:
-            secretName: {{ include "kubecrux.fullname" . }}-config
+            secretName: {{ include "soha.fullname" . }}-config

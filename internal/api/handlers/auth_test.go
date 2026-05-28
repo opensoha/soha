@@ -10,11 +10,11 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-	apiMiddleware "github.com/kubecrux/kubecrux/internal/api/middleware"
-	domainaccess "github.com/kubecrux/kubecrux/internal/domain/access"
-	domainidentity "github.com/kubecrux/kubecrux/internal/domain/identity"
-	domainsettings "github.com/kubecrux/kubecrux/internal/domain/settings"
-	cfgpkg "github.com/kubecrux/kubecrux/internal/infrastructure/config"
+	apiMiddleware "github.com/soha/soha/internal/api/middleware"
+	domainaccess "github.com/soha/soha/internal/domain/access"
+	domainidentity "github.com/soha/soha/internal/domain/identity"
+	domainsettings "github.com/soha/soha/internal/domain/settings"
+	cfgpkg "github.com/soha/soha/internal/infrastructure/config"
 )
 
 type stubIdentityService struct {
@@ -111,8 +111,8 @@ func TestAuthBootstrapReturnsCurrentUserSnapshotAndBranding(t *testing.T) {
 		},
 	}
 	branding := domainsettings.BrandingSettings{
-		AppTitle:     "KubeCrux Pro",
-		SidebarTitle: "KC",
+		AppTitle:     "Soha Pro",
+		SidebarTitle: "SOHA",
 	}
 
 	handler := NewAuthHandler(

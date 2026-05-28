@@ -6,11 +6,11 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	"github.com/kubecrux/kubecrux/internal/api/dto"
-	apiMiddleware "github.com/kubecrux/kubecrux/internal/api/middleware"
-	apiresponse "github.com/kubecrux/kubecrux/internal/api/response"
-	domainalert "github.com/kubecrux/kubecrux/internal/domain/alert"
-	domainidentity "github.com/kubecrux/kubecrux/internal/domain/identity"
+	"github.com/soha/soha/internal/api/dto"
+	apiMiddleware "github.com/soha/soha/internal/api/middleware"
+	apiresponse "github.com/soha/soha/internal/api/response"
+	domainalert "github.com/soha/soha/internal/domain/alert"
+	domainidentity "github.com/soha/soha/internal/domain/identity"
 )
 
 type MonitoringService interface {
@@ -319,7 +319,7 @@ func (h *MonitoringHandler) ListDeliveryLogs(c *gin.Context) {
 }
 
 func (h *MonitoringHandler) IngestWebhook(c *gin.Context) {
-	token := strings.TrimSpace(c.GetHeader("X-Kubecrux-Webhook-Token"))
+	token := strings.TrimSpace(c.GetHeader("X-Soha-Webhook-Token"))
 	if token == "" {
 		token = strings.TrimSpace(strings.TrimPrefix(c.GetHeader("Authorization"), "Bearer "))
 	}

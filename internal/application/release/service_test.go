@@ -7,14 +7,14 @@ import (
 	"testing"
 	"time"
 
-	appaccess "github.com/kubecrux/kubecrux/internal/application/access"
-	domainapp "github.com/kubecrux/kubecrux/internal/domain/application"
-	domaincluster "github.com/kubecrux/kubecrux/internal/domain/cluster"
-	domainidentity "github.com/kubecrux/kubecrux/internal/domain/identity"
-	domainrelease "github.com/kubecrux/kubecrux/internal/domain/release"
-	"github.com/kubecrux/kubecrux/internal/platform/apperrors"
-	apprepo "github.com/kubecrux/kubecrux/internal/repository/application"
-	clusterrepo "github.com/kubecrux/kubecrux/internal/repository/cluster"
+	appaccess "github.com/soha/soha/internal/application/access"
+	domainapp "github.com/soha/soha/internal/domain/application"
+	domaincluster "github.com/soha/soha/internal/domain/cluster"
+	domainidentity "github.com/soha/soha/internal/domain/identity"
+	domainrelease "github.com/soha/soha/internal/domain/release"
+	"github.com/soha/soha/internal/platform/apperrors"
+	apprepo "github.com/soha/soha/internal/repository/application"
+	clusterrepo "github.com/soha/soha/internal/repository/cluster"
 )
 
 type stubReleaseRepository struct {

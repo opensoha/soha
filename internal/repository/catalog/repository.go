@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	domaincatalog "github.com/kubecrux/kubecrux/internal/domain/catalog"
+	domaincatalog "github.com/soha/soha/internal/domain/catalog"
 	"gorm.io/gorm"
 )
 

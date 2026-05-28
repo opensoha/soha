@@ -70,7 +70,7 @@ export function PlatformClusterScopeHint({ resourceLabel }: { resourceLabel: str
   }
 
   return (
-    <Card className="kc-scope-hint-card">
+    <Card className="soha-scope-hint-card">
       <Space direction="vertical" align="start" size={4}>
         <Text strong>{`${resourceLabel} 业务线范围说明`}</Text>
         <Text type="secondary">
@@ -84,7 +84,7 @@ export function PlatformClusterScopeHint({ resourceLabel }: { resourceLabel: str
             <Text type="secondary">
               {`当前集群命中了 ${scopeSummary.bindingsCount} 条应用环境绑定，覆盖 ${scopeSummary.businessLines.length} 条业务线、${scopeSummary.environments.length} 个环境、${scopeSummary.applications.length} 个应用。`}
             </Text>
-            <div className="kc-scope-hint-tags">
+            <div className="soha-scope-hint-tags">
               {scopeSummary.businessLines.map((item) => <Tag key={`bl:${item}`} color="blue">{item}</Tag>)}
               {scopeSummary.environments.map((item) => <Tag key={`env:${item}`} color="green">{item}</Tag>)}
             </div>

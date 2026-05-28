@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
-	accessapp "github.com/kubecrux/kubecrux/internal/application/access"
-	cfgpkg "github.com/kubecrux/kubecrux/internal/infrastructure/config"
-	dbinfra "github.com/kubecrux/kubecrux/internal/infrastructure/db"
+	accessapp "github.com/soha/soha/internal/application/access"
+	cfgpkg "github.com/soha/soha/internal/infrastructure/config"
+	dbinfra "github.com/soha/soha/internal/infrastructure/db"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )

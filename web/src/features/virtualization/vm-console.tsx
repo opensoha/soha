@@ -137,7 +137,7 @@ export function VMConsole({ vmId }: { vmId: string }) {
         <Space>
           <Badge status={STATUS_BADGE[status]} />
           <span>VNC 控制台</span>
-          <span className="text-xs text-[var(--kc-text-secondary)]">{STATUS_LABEL[status]}</span>
+          <span className="text-xs text-[var(--soha-text-secondary)]">{STATUS_LABEL[status]}</span>
         </Space>
       }
       extra={
@@ -162,7 +162,7 @@ export function VMConsole({ vmId }: { vmId: string }) {
       {status === 'error' && <Alert type="error" message="连接失败" description={errorMessage} className="mb-2" />}
       <div
         ref={containerRef}
-        className="relative w-full overflow-hidden rounded border border-[var(--kc-border)] bg-black"
+        className="relative w-full overflow-hidden rounded border border-[var(--soha-border)] bg-black"
         style={{ height: 'calc(100vh - 320px)', minHeight: 400 }}
       />
     </Card>

@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	cfgpkg "github.com/kubecrux/kubecrux/internal/agent/config"
+	cfgpkg "github.com/soha/soha/internal/agent/config"
 	"go.uber.org/zap"
 )
 
@@ -19,12 +19,12 @@ func TestExecuteHermesAgentRunUsesConfiguredCommandSkillsAndParsesJSON(t *testin
 	commandPath := filepath.Join(root, "fake-hermes")
 	command := `#!/bin/sh
 printf '%s' "$*" > command.args
-printf '%s' "$*" | grep 'kubecrux.agentRuntime.v1' >/dev/null || { echo "missing contract" >&2; exit 2; }
+printf '%s' "$*" | grep 'soha.agentRuntime.v1' >/dev/null || { echo "missing contract" >&2; exit 2; }
 printf '%s' "$*" | grep 'root_cause' >/dev/null || { echo "missing capability" >&2; exit 3; }
 printf '%s' "$*" | grep 'cluster-a' >/dev/null || { echo "missing scope" >&2; exit 4; }
 printf '%s' "$*" | grep -- '-s root-cause-investigation' >/dev/null || { echo "missing skill" >&2; exit 5; }
 printf '%s' "$*" | grep 'logs.query' >/dev/null || { echo "missing tool binding" >&2; exit 6; }
-printf '%s' "$*" | grep 'kubecrux-root-cause' >/dev/null || { echo "missing skill binding" >&2; exit 7; }
+printf '%s' "$*" | grep 'soha-root-cause' >/dev/null || { echo "missing skill binding" >&2; exit 7; }
 cat <<'JSON'
 {"summary":"Hermes identified a release regression.","recommendations":["Rollback release bundle"]}
 JSON
@@ -57,7 +57,7 @@ JSON
 		SkillBindings: []map[string]any{{
 			"id":               "skill.root-cause.hermes",
 			"skillId":          "root-cause-investigation",
-			"providerSkillRef": "kubecrux-root-cause",
+			"providerSkillRef": "soha-root-cause",
 		}},
 		Input: map[string]any{"question": "Investigate alert alert-1"},
 	})
@@ -93,7 +93,7 @@ printf '%s' "$*" > command.args
 printf '%s' "$*" | grep 'prefetchedToolResults' >/dev/null || { echo "missing prefetched tool context" >&2; exit 2; }
 printf '%s' "$*" | grep 'payment-api restart backoff' >/dev/null || { echo "missing event evidence" >&2; exit 3; }
 cat <<'JSON'
-{"summary":"Hermes used prefetched kubecrux tool context."}
+{"summary":"Hermes used prefetched soha tool context."}
 JSON
 `
 	if err := os.WriteFile(commandPath, []byte(command), 0o755); err != nil {
@@ -150,7 +150,7 @@ JSON
 	if err != nil {
 		t.Fatalf("executeHermesAgentRun() error = %v logs=%v", err, logs)
 	}
-	if output["summary"] != "Hermes used prefetched kubecrux tool context." {
+	if output["summary"] != "Hermes used prefetched soha tool context." {
 		t.Fatalf("summary = %#v", output["summary"])
 	}
 	results := valueAsMapSlice(output["prefetchedToolResults"])
@@ -164,12 +164,12 @@ func TestExecuteCLIAgentRunSupportsConfiguredProviderExecutor(t *testing.T) {
 	commandPath := filepath.Join(root, "fake-openclaw")
 	command := `#!/bin/sh
 printf '%s' "$*" > command.args
-printf '%s' "$*" | grep 'kubecrux.agentRuntime.v1' >/dev/null || { echo "missing contract" >&2; exit 2; }
+printf '%s' "$*" | grep 'soha.agentRuntime.v1' >/dev/null || { echo "missing contract" >&2; exit 2; }
 printf '%s' "$*" | grep 'openclaw' >/dev/null || { echo "missing provider" >&2; exit 3; }
 printf '%s' "$*" | grep -- '--prompt' >/dev/null || { echo "missing prompt arg" >&2; exit 4; }
 printf '%s' "$*" | grep -- '--skill openclaw-root-cause' >/dev/null || { echo "missing provider skill arg" >&2; exit 5; }
 cat <<'JSON'
-{"summary":"OpenClaw executor accepted the kubecrux contract."}
+{"summary":"OpenClaw executor accepted the soha contract."}
 JSON
 `
 	if err := os.WriteFile(commandPath, []byte(command), 0o755); err != nil {
@@ -206,7 +206,7 @@ JSON
 	if err != nil {
 		t.Fatalf("execute configured provider() error = %v logs=%v", err, logs)
 	}
-	if output["summary"] != "OpenClaw executor accepted the kubecrux contract." {
+	if output["summary"] != "OpenClaw executor accepted the soha contract." {
 		t.Fatalf("summary = %#v", output["summary"])
 	}
 	argsPath := filepath.Join(workspaceRoot, "agent-run-openclaw", "command.args")

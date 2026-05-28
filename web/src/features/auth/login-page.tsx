@@ -72,7 +72,7 @@ export function LoginPage() {
   const thirdPartyProviders = (providersQuery.data ?? []).filter(
     (item) => item.enabled !== false && item.type !== "password",
   );
-  const appTitle = branding.sidebarTitle || branding.appTitle || "KubeCrux";
+  const appTitle = branding.sidebarTitle || branding.appTitle || "Soha";
   const resolvePostLoginPath = async (
     roles: string[],
     explicitPath?: string,
@@ -126,20 +126,20 @@ export function LoginPage() {
   };
 
   return (
-    <div className="kc-auth-shell">
-      <div className="kc-auth-layout kc-auth-layout--pro">
-        <section className="kc-auth-hero kc-auth-hero--pro">
+    <div className="soha-auth-shell">
+      <div className="soha-auth-layout soha-auth-layout--pro">
+        <section className="soha-auth-hero soha-auth-hero--pro">
           <Space direction="vertical" size={20}>
             {branding.loginLogoUrl ? (
-              <div className="kc-auth-hero-logo">
+              <div className="soha-auth-hero-logo">
                 <img
                   src={branding.loginLogoUrl}
                   alt={branding.appTitle || "Logo"}
-                  className="kc-auth-hero-logo-img"
+                  className="soha-auth-hero-logo-img"
                 />
               </div>
             ) : null}
-            <span className="kc-auth-pill">KubeCrux Console</span>
+            <span className="soha-auth-pill">Soha Console</span>
             <div>
               <Title level={1} style={{ marginTop: 0, marginBottom: 12 }}>
                 平台、交付、观测与权限
@@ -153,27 +153,27 @@ export function LoginPage() {
               </Text>
             </div>
 
-            <div className="kc-auth-feature-grid">
-              <div className="kc-auth-feature">
-                <span className="kc-auth-feature-title">多集群平台治理</span>
+            <div className="soha-auth-feature-grid">
+              <div className="soha-auth-feature">
+                <span className="soha-auth-feature-title">多集群平台治理</span>
                 <Text type="secondary">
                   聚合查看集群、工作负载、网络、存储与扩展能力。
                 </Text>
               </div>
-              <div className="kc-auth-feature">
-                <span className="kc-auth-feature-title">交付与策略协同</span>
+              <div className="soha-auth-feature">
+                <span className="soha-auth-feature-title">交付与策略协同</span>
                 <Text type="secondary">
                   环境、流程、发布、权限和菜单策略沿同一信息架构运行。
                 </Text>
               </div>
-              <div className="kc-auth-feature">
-                <span className="kc-auth-feature-title">统一运维反馈</span>
+              <div className="soha-auth-feature">
+                <span className="soha-auth-feature-title">统一运维反馈</span>
                 <Text type="secondary">
                   观测、告警、事件和 AI 分析在同一操作上下文中联动。
                 </Text>
               </div>
-              <div className="kc-auth-feature">
-                <span className="kc-auth-feature-title">统一控制台体验</span>
+              <div className="soha-auth-feature">
+                <span className="soha-auth-feature-title">统一控制台体验</span>
                 <Text type="secondary">
                   导航、主题、权限和业务工作区共享同一套控制台结构与运行时上下文。
                 </Text>
@@ -182,19 +182,19 @@ export function LoginPage() {
           </Space>
         </section>
 
-        <Card className="kc-auth-panel kc-auth-panel--pro" bordered={false}>
-          <div className="kc-auth-panel-inner">
-            <div className="kc-auth-brand">
+        <Card className="soha-auth-panel soha-auth-panel--pro" bordered={false}>
+          <div className="soha-auth-panel-inner">
+            <div className="soha-auth-brand">
               {branding.expandedLogoUrl ? (
                 <img
                   src={branding.expandedLogoUrl}
                   alt={branding.sidebarTitle || "Logo"}
-                  className="kc-auth-brand-logo-img"
+                  className="soha-auth-brand-logo-img"
                 />
               ) : (
-                <div className="kc-auth-mark">KC</div>
+                <div className="soha-auth-mark">SOHA</div>
               )}
-              <div className="kc-auth-brand-copy">
+              <div className="soha-auth-brand-copy">
                 <Title level={3} style={{ margin: 0 }}>
                   {appTitle}
                 </Title>
@@ -202,7 +202,7 @@ export function LoginPage() {
               </div>
             </div>
 
-            <div className="kc-auth-panel-copy">
+            <div className="soha-auth-panel-copy">
               <Title level={4} style={{ marginTop: 0, marginBottom: 8 }}>
                 登录控制台
               </Title>
@@ -249,7 +249,7 @@ export function LoginPage() {
             </Form>
 
             <div
-              className="kc-auth-provider-slot"
+              className="soha-auth-provider-slot"
               aria-hidden={thirdPartyProviders.length === 0}
             >
               {thirdPartyProviders.length > 0 ? (
@@ -258,7 +258,7 @@ export function LoginPage() {
                     <Text type="secondary">第三方登录</Text>
                   </Divider>
 
-                  <div className="kc-auth-provider-list">
+                  <div className="soha-auth-provider-list">
                     {thirdPartyProviders.map((provider) => (
                       <Button
                         key={`${provider.type}-${provider.name}`}
@@ -266,17 +266,17 @@ export function LoginPage() {
                         size="large"
                         loading={providerLoadingKey === provider.loginURL}
                         onClick={() => handleProviderLogin(provider)}
-                        className="kc-auth-provider-button"
+                        className="soha-auth-provider-button"
                       >
-                        <span className="kc-auth-provider-button__content">
-                          <span className="kc-auth-provider-button__icon">
+                        <span className="soha-auth-provider-button__content">
+                          <span className="soha-auth-provider-button__icon">
                             {provider.type === "saml" && !provider.loginURL ? (
                               <WarningOutlined />
                             ) : (
                               getProviderIcon(provider.type)
                             )}
                           </span>
-                          <span className="kc-auth-provider-button__label">
+                          <span className="soha-auth-provider-button__label">
                             使用{" "}
                             {getProviderLabel(provider.type, provider.name)}{" "}
                             登录

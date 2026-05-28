@@ -1,10 +1,10 @@
 import type { BrandingSettings } from '@/types'
 
-const BRANDING_STORAGE_KEY = 'kubecrux-branding'
+const BRANDING_STORAGE_KEY = 'soha-branding'
 
 export const defaultBrandingSettings: BrandingSettings = {
-  appTitle: 'KubeCrux',
-  sidebarTitle: 'KubeCrux',
+  appTitle: 'Soha',
+  sidebarTitle: 'Soha',
   loginLogoUrl: '',
   expandedLogoUrl: '',
   collapsedLogoUrl: '',

@@ -2,7 +2,7 @@
 
 ## Goal
 
-The kubecrux agent protocol gives the platform a stable way to talk to remote clusters when direct kubeconfig connectivity is not desired or is not possible.
+The soha agent protocol gives the platform a stable way to talk to remote clusters when direct kubeconfig connectivity is not desired or is not possible.
 
 The backend stores agent connection metadata in PostgreSQL, then the Gin API calls the agent over HTTP for summary, resource list, and controlled execution requests.
 
@@ -117,7 +117,7 @@ Request:
 
 ## Authentication
 
-When `agentToken` is configured, kubecrux sends:
+When `agentToken` is configured, soha sends:
 
 ```http
 Authorization: Bearer <token>
@@ -131,7 +131,7 @@ Recommended agent behavior:
 
 ## Error Contract
 
-Agent errors should return normal HTTP error codes. kubecrux maps downstream connection or execution failures into `cluster_unavailable` when the remote agent cannot be reached or rejects the operation.
+Agent errors should return normal HTTP error codes. soha maps downstream connection or execution failures into `cluster_unavailable` when the remote agent cannot be reached or rejects the operation.
 
 ## Authorization Boundary
 
@@ -139,9 +139,9 @@ The platform remains the primary authorization decision point.
 
 That means:
 
-- RBAC + ABAC is evaluated in kubecrux before the agent call
+- RBAC + ABAC is evaluated in soha before the agent call
 - the agent should still validate its own bearer token
-- the agent should not assume the caller is trusted just because the request comes from kubecrux
+- the agent should not assume the caller is trusted just because the request comes from soha
 - high-risk actions should stay narrow and explicit
 
 ## Current Platform Usage

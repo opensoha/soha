@@ -6,8 +6,8 @@ import (
 	"slices"
 	"strings"
 
-	domainidentity "github.com/kubecrux/kubecrux/internal/domain/identity"
-	"github.com/kubecrux/kubecrux/internal/platform/apperrors"
+	domainidentity "github.com/soha/soha/internal/domain/identity"
+	"github.com/soha/soha/internal/platform/apperrors"
 )
 
 type RolePermissionReader interface {

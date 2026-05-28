@@ -305,7 +305,7 @@ function roleRefTag(value?: string) {
   if (!value) {
     return <Text type="secondary">-</Text>
   }
-  return <Text code className="kc-rbac-role-ref">{value}</Text>
+  return <Text code className="soha-rbac-role-ref">{value}</Text>
 }
 
 interface RBACSubjectSummary {
@@ -347,9 +347,9 @@ function renderRBACSubjectChips(subjects: string[] | undefined, emptyLabel: stri
   const overflow = subjects.slice(2).map(parseRBACSubject)
 
   return (
-    <div className="kc-rbac-subject-list">
+    <div className="soha-rbac-subject-list">
       {preview.map((subject) => (
-        <Tag key={subject.label} className="kc-rbac-subject-chip">
+        <Tag key={subject.label} className="soha-rbac-subject-chip">
           {subject.label}
         </Tag>
       ))}
@@ -357,16 +357,16 @@ function renderRBACSubjectChips(subjects: string[] | undefined, emptyLabel: stri
         <Popover
           placement="topLeft"
           content={(
-            <div className="kc-rbac-subject-popover">
+            <div className="soha-rbac-subject-popover">
               {overflow.map((subject) => (
-                <Tag key={subject.label} className="kc-rbac-subject-chip">
+                <Tag key={subject.label} className="soha-rbac-subject-chip">
                   {subject.label}
                 </Tag>
               ))}
             </div>
           )}
         >
-          <Tag className="kc-rbac-subject-chip">{`+${overflow.length}`}</Tag>
+          <Tag className="soha-rbac-subject-chip">{`+${overflow.length}`}</Tag>
         </Popover>
       ) : null}
     </div>
@@ -484,7 +484,7 @@ function ResourceListPage<T extends Record<string, any>>({
   const titleEn = localize('en_US', title)
 
   return (
-    <div className="kc-page">
+    <div className="soha-page">
       <PageHeader title={localize(localeCode, title)} description={localize(localeCode, buildInspectDescription(titleZh, titleEn))} />
       <ResourceTableCard<T>
         columns={columns}
@@ -526,7 +526,7 @@ function renderReplicaReadyCell(ready: number | undefined, desired: number | und
   const isComplete = desiredCount === 0 || readyCount >= desiredCount
 
   return (
-    <div className="kc-replica-progress-cell">
+    <div className="soha-replica-progress-cell">
       <Progress percent={percent} showInfo={false} size="small" status={isComplete ? 'success' : 'active'} />
       <Text type="secondary">{`${readyCount}/${desiredCount}`}</Text>
     </div>
@@ -583,7 +583,7 @@ function WorkloadReplicaListPage<T extends { allowedActions?: string[] }>({
   const titleEn = localize('en_US', title)
 
   return (
-    <div className="kc-page">
+    <div className="soha-page">
       {shouldShowActions ? modalNode : null}
       {query.isError ? (
         <Alert
@@ -595,7 +595,7 @@ function WorkloadReplicaListPage<T extends { allowedActions?: string[] }>({
         />
       ) : null}
       <AdminTable
-        className="kc-workload-replica-table kc-platform-table"
+        className="soha-workload-replica-table soha-platform-table"
         columns={effectiveColumns}
         dataSource={clusterId ? filteredItems : []}
         rowKey={rowKey}
@@ -604,28 +604,28 @@ function WorkloadReplicaListPage<T extends { allowedActions?: string[] }>({
         enableColumnSelection={false}
         scroll={{ x: 'max-content' }}
         title={(
-          <div className="kc-admin-table-title-block">
+          <div className="soha-admin-table-title-block">
             <Text strong>{localize(localeCode, title)}</Text>
             <Text type="secondary">{localize(localeCode, buildInspectDescription(titleZh, titleEn))}</Text>
           </div>
         )}
         toolbar={(
-          <div className="kc-workload-table-filters">
+          <div className="soha-workload-table-filters">
             <Input
-              className="kc-platform-compact-field"
+              className="soha-platform-compact-field"
               size="small"
               value={searchKeyword}
               onChange={(event) => setSearchKeyword(event.target.value)}
               placeholder={localize(localeCode, searchPlaceholder)}
               style={{ width: 300 }}
             />
-            <Text className="kc-workload-table-summary" type="secondary">
+            <Text className="soha-workload-table-summary" type="secondary">
               {localeCode === 'zh_CN' ? `当前 ${filteredItems.length} / ${rawItems.length} 条` : `${filteredItems.length} / ${rawItems.length} items`}
             </Text>
           </div>
         )}
         toolbarExtra={(
-          <div className="kc-page-toolbar">
+          <div className="soha-page-toolbar">
             <Button
               size="small"
               icon={<ReloadOutlined />}
@@ -777,7 +777,7 @@ function RBACListPage<T extends { allowedActions?: string[] }>({
       : ''
 
   return (
-    <div className="kc-page">
+    <div className="soha-page">
       {query.isError ? (
         <Alert
           showIcon
@@ -799,9 +799,9 @@ function RBACListPage<T extends { allowedActions?: string[] }>({
         />
       ) : null}
       <AdminTable
-        className="kc-rbac-table kc-platform-table"
+        className="soha-rbac-table soha-platform-table"
         title={(
-          <div className="kc-admin-table-title-block">
+          <div className="soha-admin-table-title-block">
             <Text strong>{localize(localeCode, title)}</Text>
             <Text type="secondary">{localize(localeCode, buildRBACInspectDescription({ zh_CN: titleZh, en_US: titleEn }))}</Text>
           </div>
@@ -814,9 +814,9 @@ function RBACListPage<T extends { allowedActions?: string[] }>({
         enableColumnSelection={false}
         scroll={{ x: 'max-content' }}
         toolbar={(
-          <div className="kc-workload-table-filters">
+          <div className="soha-workload-table-filters">
             <Input
-              className="kc-platform-compact-field"
+              className="soha-platform-compact-field"
               size="small"
               value={searchKeyword}
               onChange={(event) => setSearchKeyword(event.target.value)}
@@ -826,7 +826,7 @@ function RBACListPage<T extends { allowedActions?: string[] }>({
           </div>
         )}
         toolbarExtra={(
-          <div className="kc-page-toolbar">
+          <div className="soha-page-toolbar">
             {createConfig ? (
               <Tooltip title={createDisabled ? createDisabledReason : ''}>
                 <span>
@@ -1215,7 +1215,7 @@ export function ConfigurationConfigMapsPage() {
   const { localeCode } = useI18n()
   const [createVisible, setCreateVisible] = useState(false)
   return (
-    <div className="kc-page">
+    <div className="soha-page">
       <PageHeader
         title="ConfigMaps"
         description={localeCode === 'zh_CN' ? '查看当前 cluster / namespace scope 下的 ConfigMaps 资源和后续操作入口。' : 'Inspect ConfigMaps resources and follow-up operations in the current cluster and namespace scope.'}
@@ -1252,7 +1252,7 @@ export function ConfigurationSecretsPage() {
   const { localeCode } = useI18n()
   const [createVisible, setCreateVisible] = useState(false)
   return (
-    <div className="kc-page">
+    <div className="soha-page">
       <PageHeader
         title="Secrets"
         description={localeCode === 'zh_CN' ? '查看当前 cluster / namespace scope 下的 Secrets 资源和后续操作入口。' : 'Inspect Secrets resources and follow-up operations in the current cluster and namespace scope.'}
@@ -1520,7 +1520,7 @@ export function NetworkPortForwardPage() {
 
   if (!clusterId) {
     return (
-      <div className="kc-page">
+      <div className="soha-page">
         <PageHeader
           title={localeCode === 'zh_CN' ? 'Port Forward' : 'Port Forward'}
           description={localeCode === 'zh_CN' ? '查看当前已登记的 Port Forward 会话。' : 'Inspect registered port forward sessions.'}
@@ -1531,7 +1531,7 @@ export function NetworkPortForwardPage() {
   }
 
   return (
-    <div className="kc-page">
+    <div className="soha-page">
       <PageHeader
         title={localeCode === 'zh_CN' ? 'Port Forward' : 'Port Forward'}
         description={localeCode === 'zh_CN' ? '仅登记转发会话，不执行实际端口转发。' : 'Registers forward sessions as records without performing real forwarding.'}

@@ -11,7 +11,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	k8sfake "k8s.io/client-go/kubernetes/fake"
 
-	domainresource "github.com/kubecrux/kubecrux/internal/domain/resource"
+	domainresource "github.com/soha/soha/internal/domain/resource"
 )
 
 func TestBuildPodDetailIncludesVolumesAndRelatedResources(t *testing.T) {

@@ -3,7 +3,7 @@ package logger
 import (
 	"strings"
 
-	cfgpkg "github.com/kubecrux/kubecrux/internal/agent/config"
+	cfgpkg "github.com/soha/soha/internal/agent/config"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )

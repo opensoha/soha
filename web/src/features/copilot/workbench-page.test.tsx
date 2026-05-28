@@ -329,14 +329,14 @@ describe('AIWorkbenchPage', () => {
   it('lets explicit performance routes override and persist the selected session mode', async () => {
     const container = await renderPage('/ai-workbench/performance?session=session-1')
 
-    expect(container.querySelector('.kc-ai-workbench__function-copy h5')?.textContent).toBe('性能分析')
+    expect(container.querySelector('.soha-ai-workbench__function-copy h5')?.textContent).toBe('性能分析')
     expect(apiPatchMock).toHaveBeenCalledWith('/copilot/sessions/session-1', { mode: 'performance' })
   })
 
   it('keeps legacy investigation mode redirects authoritative for the selected session', async () => {
     const container = await renderPage('/ai-workbench/chat?session=session-1&mode=trace')
 
-    expect(container.querySelector('.kc-ai-workbench__function-copy h5')?.textContent).toBe('链路分析')
+    expect(container.querySelector('.soha-ai-workbench__function-copy h5')?.textContent).toBe('链路分析')
     expect(apiPatchMock).toHaveBeenCalledWith('/copilot/sessions/session-1', { mode: 'trace' })
   })
 

@@ -3,7 +3,7 @@ package copilot
 import (
 	"testing"
 
-	domaincopilot "github.com/kubecrux/kubecrux/internal/domain/copilot"
+	domaincopilot "github.com/soha/soha/internal/domain/copilot"
 )
 
 func TestMergeAgentRunToolExecutionsAppendsAndReplacesByID(t *testing.T) {

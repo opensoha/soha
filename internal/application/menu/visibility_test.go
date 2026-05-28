@@ -3,8 +3,8 @@ package menu
 import (
 	"testing"
 
-	appaccess "github.com/kubecrux/kubecrux/internal/application/access"
-	domainmenu "github.com/kubecrux/kubecrux/internal/domain/menu"
+	appaccess "github.com/soha/soha/internal/application/access"
+	domainmenu "github.com/soha/soha/internal/domain/menu"
 )
 
 func TestApplicationMenusRequireWorkspaceApplicationPermission(t *testing.T) {

@@ -35,11 +35,11 @@ import (
 	"k8s.io/client-go/tools/remotecommand"
 	"sigs.k8s.io/yaml"
 
-	cfgpkg "github.com/kubecrux/kubecrux/internal/agent/config"
-	domaincluster "github.com/kubecrux/kubecrux/internal/domain/cluster"
-	domainresource "github.com/kubecrux/kubecrux/internal/domain/resource"
-	helmrelease "github.com/kubecrux/kubecrux/internal/platform/helmrelease"
-	"github.com/kubecrux/kubecrux/internal/platform/streamlimit"
+	cfgpkg "github.com/soha/soha/internal/agent/config"
+	domaincluster "github.com/soha/soha/internal/domain/cluster"
+	domainresource "github.com/soha/soha/internal/domain/resource"
+	helmrelease "github.com/soha/soha/internal/platform/helmrelease"
+	"github.com/soha/soha/internal/platform/streamlimit"
 )
 
 type Client struct {

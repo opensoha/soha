@@ -585,12 +585,12 @@ export function ResourceMetricsPanel({
   const { localeCode } = useI18n()
 
   if (loading) {
-    return <Card className="kc-detail-card" loading />
+    return <Card className="soha-detail-card" loading />
   }
 
   if (errorMessage) {
     return (
-      <Card className="kc-detail-card" title={title}>
+      <Card className="soha-detail-card" title={title}>
         <Empty description={errorMessage} />
       </Card>
     )
@@ -598,7 +598,7 @@ export function ResourceMetricsPanel({
 
   if (!data) {
     return (
-      <Card className="kc-detail-card" title={title}>
+      <Card className="soha-detail-card" title={title}>
         <Empty description={localeCode === 'zh_CN' ? '暂无指标数据' : 'No metrics data'} />
       </Card>
     )
@@ -639,8 +639,8 @@ export function ResourceMetricsPanel({
   if (compact) {
     const compactCards = buildCompactChartCards(series, localeCode, resourceRequests, resourceLimits)
     return (
-      <div className="kc-page-section">
-        <Card className="kc-detail-card" title={title} extra={headerExtraContent}>
+      <div className="soha-page-section">
+        <Card className="soha-detail-card" title={title} extra={headerExtraContent}>
           <div
             className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3"
             style={{ gridAutoRows: `${COMPACT_METRIC_CARD_HEIGHT}px` }}
@@ -672,8 +672,8 @@ export function ResourceMetricsPanel({
   ]
 
   return (
-    <div className="kc-page-section">
-      <Card className="kc-detail-card" title={title} extra={headerExtraContent}>
+    <div className="soha-page-section">
+      <Card className="soha-detail-card" title={title} extra={headerExtraContent}>
         <Descriptions
           items={[
             { key: 'status', label: localeCode === 'zh_CN' ? '状态' : 'Status', children: data.configured ? (localeCode === 'zh_CN' ? '已配置' : 'Configured') : (localeCode === 'zh_CN' ? '未配置' : 'Not configured') },
@@ -700,7 +700,7 @@ export function ResourceMetricsPanel({
       {series.length > 0 ? (
         <>
           <StatGrid items={stats} />
-          <Card className="kc-detail-card" title={localeCode === 'zh_CN' ? '时序明细' : 'Series Detail'}>
+          <Card className="soha-detail-card" title={localeCode === 'zh_CN' ? '时序明细' : 'Series Detail'}>
             <Tabs
               type="card"
               items={series.map((item): TabItem => {
@@ -764,7 +764,7 @@ export function ResourceMetricsPanel({
           </Card>
         </>
       ) : (
-        <Card className="kc-detail-card">
+        <Card className="soha-detail-card">
           <Empty description={emptyDescription} />
         </Card>
       )}

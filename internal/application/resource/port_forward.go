@@ -17,13 +17,13 @@ import (
 	"k8s.io/client-go/tools/portforward"
 	"k8s.io/client-go/transport/spdy"
 
-	domainaccess "github.com/kubecrux/kubecrux/internal/domain/access"
-	domaincluster "github.com/kubecrux/kubecrux/internal/domain/cluster"
-	domainidentity "github.com/kubecrux/kubecrux/internal/domain/identity"
-	domainresource "github.com/kubecrux/kubecrux/internal/domain/resource"
-	k8sinfra "github.com/kubecrux/kubecrux/internal/infrastructure/kubernetes"
-	"github.com/kubecrux/kubecrux/internal/platform/apperrors"
-	portforwardrepo "github.com/kubecrux/kubecrux/internal/repository/portforward"
+	domainaccess "github.com/soha/soha/internal/domain/access"
+	domaincluster "github.com/soha/soha/internal/domain/cluster"
+	domainidentity "github.com/soha/soha/internal/domain/identity"
+	domainresource "github.com/soha/soha/internal/domain/resource"
+	k8sinfra "github.com/soha/soha/internal/infrastructure/kubernetes"
+	"github.com/soha/soha/internal/platform/apperrors"
+	portforwardrepo "github.com/soha/soha/internal/repository/portforward"
 )
 
 type portForwardSession struct {

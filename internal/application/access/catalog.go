@@ -4,9 +4,9 @@ import (
 	"context"
 	"slices"
 
-	domainaccess "github.com/kubecrux/kubecrux/internal/domain/access"
-	domainidentity "github.com/kubecrux/kubecrux/internal/domain/identity"
-	domainmenu "github.com/kubecrux/kubecrux/internal/domain/menu"
+	domainaccess "github.com/soha/soha/internal/domain/access"
+	domainidentity "github.com/soha/soha/internal/domain/identity"
+	domainmenu "github.com/soha/soha/internal/domain/menu"
 )
 
 type UserReader interface {

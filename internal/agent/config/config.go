@@ -95,11 +95,11 @@ type KubernetesConfig struct {
 func Load() (Config, error) {
 	v := viper.New()
 	v.SetConfigType("yaml")
-	v.SetEnvPrefix("KC_AGENT")
+	v.SetEnvPrefix("SOHA_AGENT")
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	setDefaults(v)
 
-	configFile := os.Getenv("KC_AGENT_CONFIG_FILE")
+	configFile := os.Getenv("SOHA_AGENT_CONFIG_FILE")
 	if configFile != "" {
 		v.SetConfigFile(configFile)
 	} else {
@@ -127,7 +127,7 @@ func Load() (Config, error) {
 }
 
 func setDefaults(v *viper.Viper) {
-	v.SetDefault("app.name", "kubecrux-agent")
+	v.SetDefault("app.name", "soha-agent")
 	v.SetDefault("app.env", "development")
 	v.SetDefault("http.addr", ":18080")
 	v.SetDefault("http.base_path", "/api/v1")
@@ -148,14 +148,14 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("control_plane.docker.worker_id", "")
 	v.SetDefault("control_plane.docker.host_ids", []string{})
 	v.SetDefault("control_plane.docker.operation_kinds", []string{})
-	v.SetDefault("control_plane.docker.compose_root", ".kubecrux/docker")
+	v.SetDefault("control_plane.docker.compose_root", ".soha/docker")
 	v.SetDefault("control_plane.docker.poll_interval", "5s")
 	v.SetDefault("control_plane.agent_runtime.enabled", false)
 	v.SetDefault("control_plane.agent_runtime.worker_id", "")
 	v.SetDefault("control_plane.agent_runtime.provider_ids", []string{"hermes"})
 	v.SetDefault("control_plane.agent_runtime.provider_kinds", []string{"hermes"})
 	v.SetDefault("control_plane.agent_runtime.hermes_command", "hermes")
-	v.SetDefault("control_plane.agent_runtime.workspace_root", ".kubecrux/agent-runtime")
+	v.SetDefault("control_plane.agent_runtime.workspace_root", ".soha/agent-runtime")
 	v.SetDefault("control_plane.agent_runtime.poll_interval", "5s")
 	v.SetDefault("control_plane.agent_runtime.providers.hermes.command", "hermes")
 	v.SetDefault("control_plane.agent_runtime.providers.hermes.args", []string{"chat"})

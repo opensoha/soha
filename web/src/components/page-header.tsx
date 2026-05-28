@@ -21,17 +21,17 @@ export function PageHeader({ title, description, actions, showResourceScope = tr
   const shouldShowResourceScope = showResourceScope && workspace === 'resource' && scopeMode !== 'hidden'
 
   return (
-    <div className="kc-page-header-shell">
-      <div className="kc-page-container-header">
-        <div className="kc-page-container-header-main">
-          <div className="kc-page-title-wrap">
-            <Title className="kc-page-title" level={4}>
+    <div className="soha-page-header-shell">
+      <div className="soha-page-container-header">
+        <div className="soha-page-container-header-main">
+          <div className="soha-page-title-wrap">
+            <Title className="soha-page-title" level={4}>
               {title}
             </Title>
-            {description ? <Text className="kc-page-description">{description}</Text> : null}
+            {description ? <Text className="soha-page-description">{description}</Text> : null}
           </div>
         </div>
-        {actions ? <div className="kc-page-toolbar">{actions}</div> : null}
+        {actions ? <div className="soha-page-toolbar">{actions}</div> : null}
       </div>
       {shouldShowResourceScope ? <ResourceWorkspaceScopeBar scopeMode={scopeMode} /> : null}
     </div>

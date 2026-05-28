@@ -144,7 +144,7 @@ export function ClusterNodesPage() {
   ]
 
   return (
-    <div className="kc-page">
+    <div className="soha-page">
       <PageHeader
         title={t('page.nodes.title', 'Node Resources')}
         description={t('page.nodes.desc', 'Inspect node resources in the current cluster scope and edit labels / taints.')}
@@ -161,7 +161,7 @@ export function ClusterNodesPage() {
           </Card>
           <AdminTable
             title={(
-              <div className="kc-admin-table-title-block">
+              <div className="soha-admin-table-title-block">
                 <Text strong>{t('page.nodes.title', 'Node Resources')}</Text>
                 <Text type="secondary">{t('page.nodes.desc', 'Inspect node resources in the current cluster scope and edit labels / taints.')}</Text>
               </div>
@@ -196,7 +196,7 @@ export function ClusterNodesPage() {
             <Form.Item name="taints" label="Taints(JSON Array)">
               <Input.TextArea rows={8} />
             </Form.Item>
-            <div className="kc-form-actions">
+            <div className="soha-form-actions">
               <Button onClick={() => setEditingNodeName(null)}>取消</Button>
               <Button htmlType="submit" type="primary" loading={updateNodeMutation.isPending}>
                 保存
@@ -360,7 +360,7 @@ export function ClusterNamespacesPage() {
   ]
 
   return (
-    <div className="kc-page">
+    <div className="soha-page">
       <PageHeader
         title={t('page.namespaces.title', 'Namespaces')}
         description={t('page.namespaces.desc', 'Manage namespaces in the current cluster scope and jump into related workload views.')}
@@ -370,7 +370,7 @@ export function ClusterNamespacesPage() {
       ) : (
         <AdminTable
           title={(
-            <div className="kc-admin-table-title-block">
+            <div className="soha-admin-table-title-block">
               <Text strong>{t('page.namespaces.title', 'Namespaces')}</Text>
               <Text type="secondary">{t('page.namespaces.desc', 'Manage namespaces in the current cluster scope and jump into related workload views.')}</Text>
             </div>
@@ -381,7 +381,7 @@ export function ClusterNamespacesPage() {
           loading={namespacesQuery.isLoading}
           pageSize={10}
           toolbarExtra={(
-            <div className="kc-page-toolbar">
+            <div className="soha-page-toolbar">
               <Button
                 size="small"
                 icon={<PlusOutlined />}
@@ -431,7 +431,7 @@ export function ClusterNamespacesPage() {
           <Form.Item name="annotations" label="Annotations(JSON)">
             <Input.TextArea rows={8} />
           </Form.Item>
-          <div className="kc-form-actions">
+          <div className="soha-form-actions">
             <Button
               onClick={() => {
                 setNamespaceModalVisible(false)

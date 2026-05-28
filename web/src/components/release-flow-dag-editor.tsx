@@ -209,10 +209,10 @@ function ReleaseStepNode({ data, selected }: NodeProps<FlowNode>) {
   const { localeCode } = useI18n()
   const option = DAG_NODE_OPTIONS.find((item) => item.value === data.type)
   return (
-    <div className={`kc-dag-node ${selected ? 'is-selected' : ''}`}>
+    <div className={`soha-dag-node ${selected ? 'is-selected' : ''}`}>
       <Handle type="target" position={Position.Top} />
-      <div className="kc-dag-node-card">
-        <div className="kc-dag-node-head">
+      <div className="soha-dag-node-card">
+        <div className="soha-dag-node-head">
           <Text strong>{data.name}</Text>
           <Tag color={option ? DAG_NODE_TAG_COLORS[option.color] : 'blue'}>{getDagNodeLabel(data.type, localeCode)}</Tag>
         </div>
@@ -260,7 +260,7 @@ function StepConfigInspector({
             placeholder="release-manager, ops-lead"
             onChange={(event) => patch('approverRoles', event.target.value.split(',').map((item) => item.trim()).filter(Boolean))}
           />
-          <div className="kc-step-inline">
+          <div className="soha-step-inline">
             <Text type="secondary" className="text-xs">{localeCode === 'zh_CN' ? '必须审批' : 'Required approval'}</Text>
             <Switch checked={config.required !== false} onChange={(checked) => patch('required', checked)} />
           </div>
@@ -436,9 +436,9 @@ function ReleaseFlowDagEditorInner({
   }, [selectedEdgeId, selectedNodeId, setEdges, setNodes])
 
   return (
-    <div className="kc-dag-editor-shell">
-      <Card className="kc-dag-panel" title={localeCode === 'zh_CN' ? '节点面板' : 'Node Palette'}>
-        <div className="kc-dag-palette">
+    <div className="soha-dag-editor-shell">
+      <Card className="soha-dag-panel" title={localeCode === 'zh_CN' ? '节点面板' : 'Node Palette'}>
+        <div className="soha-dag-palette">
           {DAG_NODE_OPTIONS.map((item) => (
             <Button key={item.value} onClick={() => addNode(item.value)}>
               {getDagNodeLabel(item.value, localeCode)}
@@ -459,8 +459,8 @@ function ReleaseFlowDagEditorInner({
         </Text>
       </Card>
 
-      <Card className="kc-dag-canvas-card" title={localeCode === 'zh_CN' ? 'DAG 画布' : 'DAG Canvas'}>
-        <div className="kc-dag-canvas">
+      <Card className="soha-dag-canvas-card" title={localeCode === 'zh_CN' ? 'DAG 画布' : 'DAG Canvas'}>
+        <div className="soha-dag-canvas">
           <ReactFlow<FlowNode, FlowEdge>
             nodes={nodes}
             edges={edges}
@@ -481,9 +481,9 @@ function ReleaseFlowDagEditorInner({
         </div>
       </Card>
 
-      <Card className="kc-dag-panel" title={localeCode === 'zh_CN' ? '属性面板' : 'Inspector'}>
+      <Card className="soha-dag-panel" title={localeCode === 'zh_CN' ? '属性面板' : 'Inspector'}>
         {selectedNode ? (
-          <div className="kc-dag-inspector">
+          <div className="soha-dag-inspector">
             <Text strong>{localeCode === 'zh_CN' ? '节点属性' : 'Node Properties'}</Text>
             <Input
               value={selectedNode.data.name}
@@ -512,7 +512,7 @@ function ReleaseFlowDagEditorInner({
               step={30}
               onChange={(value) => setNodes((current) => current.map((node) => node.id === selectedNode.id ? { ...node, data: { ...node.data, timeoutSeconds: Number(value || 300) } } : node))}
             />
-            <div className="kc-step-inline">
+            <div className="soha-step-inline">
               <Text type="secondary" className="text-xs">{localeCode === 'zh_CN' ? '失败继续' : 'Continue on Failure'}</Text>
               <Switch
                 checked={Boolean(selectedNode.data.continueOnFailure)}
@@ -525,7 +525,7 @@ function ReleaseFlowDagEditorInner({
             />
           </div>
         ) : selectedEdge ? (
-          <div className="kc-dag-inspector">
+          <div className="soha-dag-inspector">
             <Text strong>{localeCode === 'zh_CN' ? '连线属性' : 'Edge Properties'}</Text>
             <Select
               style={FULL_WIDTH_STYLE}

@@ -6,9 +6,9 @@ import (
 	"slices"
 	"strings"
 
-	domainaccess "github.com/kubecrux/kubecrux/internal/domain/access"
-	domaincatalog "github.com/kubecrux/kubecrux/internal/domain/catalog"
-	domainscopegrant "github.com/kubecrux/kubecrux/internal/domain/scopegrant"
+	domainaccess "github.com/soha/soha/internal/domain/access"
+	domaincatalog "github.com/soha/soha/internal/domain/catalog"
+	domainscopegrant "github.com/soha/soha/internal/domain/scopegrant"
 )
 
 type Repository interface {

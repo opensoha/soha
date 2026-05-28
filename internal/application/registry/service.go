@@ -7,10 +7,10 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	appaccess "github.com/kubecrux/kubecrux/internal/application/access"
-	domainidentity "github.com/kubecrux/kubecrux/internal/domain/identity"
-	domainregistry "github.com/kubecrux/kubecrux/internal/domain/registry"
-	"github.com/kubecrux/kubecrux/internal/platform/apperrors"
+	appaccess "github.com/soha/soha/internal/application/access"
+	domainidentity "github.com/soha/soha/internal/domain/identity"
+	domainregistry "github.com/soha/soha/internal/domain/registry"
+	"github.com/soha/soha/internal/platform/apperrors"
 	"gorm.io/gorm"
 )
 

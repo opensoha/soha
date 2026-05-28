@@ -138,11 +138,11 @@ export function AccessScopeGrantsPage() {
   ]
 
   if (!canViewScopeGrants) {
-    return <div className="kc-page">当前账号没有授权范围页面权限。</div>
+    return <div className="soha-page">当前账号没有授权范围页面权限。</div>
   }
 
   return (
-    <div className="kc-page">
+    <div className="soha-page">
       <PageHeader
         title="授权范围"
         description="按用户或用户组维护业务线、环境、应用级别的可管理范围。"

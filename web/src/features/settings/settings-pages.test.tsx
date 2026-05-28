@@ -109,8 +109,8 @@ function setDefaultResponses() {
       defaultProviderId: "oidc-default",
     },
     "/settings/branding": {
-      appTitle: "KubeCrux",
-      sidebarTitle: "KubeCrux",
+      appTitle: "Soha",
+      sidebarTitle: "Soha",
     },
     "/settings/ai": {
       provider: {

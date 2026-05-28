@@ -241,9 +241,9 @@ export function PodTerminal({
   }
 
   return (
-    <Card className="kc-detail-card">
-      <div className="kc-terminal-toolbar">
-        <div className="kc-terminal-toolbar-group">
+    <Card className="soha-detail-card">
+      <div className="soha-terminal-toolbar">
+        <div className="soha-terminal-toolbar-group">
           <Text strong>{container ? `${t('common.container', 'Container')}: ${container}` : t('podTerminal.defaultContainer', 'Container: default')}</Text>
           <TagByState state={connectionState} />
         </div>
@@ -251,8 +251,8 @@ export function PodTerminal({
           {t('podTerminal.reconnect', 'Reconnect')}
         </Button>
       </div>
-      <div className="kc-terminal-shell">
-        <div ref={containerRef} className="kc-terminal-shell-inner" />
+      <div className="soha-terminal-shell">
+        <div ref={containerRef} className="soha-terminal-shell-inner" />
       </div>
     </Card>
   )

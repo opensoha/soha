@@ -33,6 +33,6 @@ export const usePreferencesStore = create<PreferencesState>()(
       setThemeMode: (themeMode) => set({ themeMode }),
       setLocaleCode: (localeCode) => set({ localeCode }),
     }),
-    { name: 'kubecrux-prefs' },
+    { name: 'soha-prefs' },
   ),
 )

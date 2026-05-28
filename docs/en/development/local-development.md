@@ -6,7 +6,7 @@
 
 - host: `localhost`
 - port: `5432`
-- database: `kubecrux`
+- database: `soha`
 - username: `pgsql`
 - password: `pgsql`
 

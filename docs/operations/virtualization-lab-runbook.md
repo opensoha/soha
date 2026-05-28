@@ -2,7 +2,7 @@
 
 ## 目标
 
-本 runbook 用于在真实实验环境中验证 kubecrux 的虚拟化闭环能力。
+本 runbook 用于在真实实验环境中验证 soha 的虚拟化闭环能力。
 
 覆盖范围：
 
@@ -18,16 +18,16 @@
 
 ## 实验部署拓扑
 
-kubecrux 的虚拟化验证环境应拆成两个不同运行面：
+soha 的虚拟化验证环境应拆成两个不同运行面：
 
 - KubeVirt 运行在 Kubernetes 集群内，可以使用 k3s 作为轻量 Kubernetes 发行版。
 - Proxmox VE 运行在 KubeVirt VM、独立裸金属宿主机、独立 Debian 宿主机，或仅用于实验的其他嵌套虚拟机中。
-- kubecrux server 不托管 PVE 本身，只通过 PVE API endpoint、token、节点名和存储池配置接入 PVE。
+- soha server 不托管 PVE 本身，只通过 PVE API endpoint、token、节点名和存储池配置接入 PVE。
 
 推荐的本地实验拓扑：
 
 ```text
-kubecrux server + PostgreSQL
+soha server + PostgreSQL
         |
         +-- local-k3s or external k3s cluster with KubeVirt/CDI
         |
@@ -45,7 +45,7 @@ k3s 可以作为 KubeVirt 的实验 Kubernetes 集群，但节点必须满足 Ku
 - 容器运行时使用 KubeVirt 支持的 containerd 或 CRI-O。
 - 至少有一个可用 StorageClass；如需 DataVolume、DataSource、上传或克隆镜像，需安装 CDI。
 
-根目录 `make init-cluster` 启动的 compose k3s 适合做 kubecrux 平台连接和 KubeVirt API 路径演示。若运行在 Docker Desktop for macOS 等没有向容器暴露 Linux KVM 的环境中，只能做控制面或软件模拟实验，不应作为性能或稳定性验收环境。KubeVirt 的 `useEmulation` 可以用于无 KVM 的开发验证，但启动和运行 VM 会明显变慢，不能代表生产能力。
+根目录 `make init-cluster` 启动的 compose k3s 适合做 soha 平台连接和 KubeVirt API 路径演示。若运行在 Docker Desktop for macOS 等没有向容器暴露 Linux KVM 的环境中，只能做控制面或软件模拟实验，不应作为性能或稳定性验收环境。KubeVirt 的 `useEmulation` 可以用于无 KVM 的开发验证，但启动和运行 VM 会明显变慢，不能代表生产能力。
 
 ### PVE 是否能跑在 k3s 里
 
@@ -63,7 +63,7 @@ Proxmox VE 是完整虚拟化平台和宿主机操作系统栈，官方安装形
 可接受的 PVE 实验形态包括：
 
 - 在 KubeVirt 中启动完整 PVE VM，并通过 Service 暴露 8006 API。
-- 独立 PVE 裸金属或独立 Debian 宿主机，kubecrux 通过 API 接入。
+- 独立 PVE 裸金属或独立 Debian 宿主机，soha 通过 API 接入。
 - 在支持 nested virtualization 的外部虚拟化平台中启动一台完整 PVE VM，仅用于功能演示和适配测试。
 
 ### KubeVirt PVE VM 快速启动
@@ -102,8 +102,8 @@ make pve-vm-boot-root
 https://127.0.0.1:8006
 ```
 
-kubecrux 中新增 PVE 连接时使用该 endpoint。SSH 默认通过 `127.0.0.1:2222` 转发到 VM 的 22 端口。
-如果 kubecrux server 跑在 compose 的 `kubecrux` 容器里，PVE endpoint 使用 compose 内网地址 `https://k3s:30006`。
+soha 中新增 PVE 连接时使用该 endpoint。SSH 默认通过 `127.0.0.1:2222` 转发到 VM 的 22 端口。
+如果 soha server 跑在 compose 的 `soha` 容器里，PVE endpoint 使用 compose 内网地址 `https://k3s:30006`。
 
 状态检查：
 
@@ -123,11 +123,11 @@ make fix-kubevirt-mounts
 
 ### 通用条件
 
-- kubecrux server 已启动，数据库迁移已完成。
+- soha server 已启动，数据库迁移已完成。
 - 操作账号具备虚拟化资源查看、创建、更新、删除或电源操作所需权限。
-- 实验网络允许 kubecrux server 访问目标 Kubernetes API Server 或 PVE API。
+- 实验网络允许 soha server 访问目标 Kubernetes API Server 或 PVE API。
 - 已确认实验环境不会影响生产 VM、生产模板或生产存储池。
-- 所有实验 VM 使用明确前缀，例如 `kc-lab-*`。
+- 所有实验 VM 使用明确前缀，例如 `soha-lab-*`。
 - 为每次演练准备记录表，至少包含操作人、环境、集群或 PVE endpoint、VM 名称、开始时间、结束时间和结果。
 
 ### KubeVirt 条件
@@ -136,7 +136,7 @@ make fix-kubevirt-mounts
 - 如需使用 DataVolume、DataSource 或克隆能力，已安装 CDI。
 - 至少存在一个可用 StorageClass。
 - 实验 namespace 已创建，例如 `virt-lab`。
-- kubecrux 使用的 kubeconfig 或 agent 账号具备以下资源权限：
+- soha 使用的 kubeconfig 或 agent 账号具备以下资源权限：
   - `kubevirt.io` 下的 `virtualmachines`、`virtualmachineinstances`
   - `cdi.kubevirt.io` 下的 `datavolumes`、`datasources`
   - 核心资源 `persistentvolumeclaims`、`pods`、`events`
@@ -154,7 +154,7 @@ kubectl auth can-i create datavolumes.cdi.kubevirt.io -n virt-lab
 
 ### PVE 条件
 
-- Proxmox VE 节点或集群 API 可从 kubecrux server 访问。
+- Proxmox VE 节点或集群 API 可从 soha server 访问。
 - 已准备 API Token 或受控账号，建议只授予实验资源池、实验存储池和实验节点权限。
 - PVE 节点已配置可用存储：
   - VM 磁盘存储，例如 `local-lvm`
@@ -175,7 +175,7 @@ pvesh get /storage
 
 ### KubeVirt 直连 Kubernetes
 
-1. 在 kubecrux 集群管理中新增集群。
+1. 在 soha 集群管理中新增集群。
 2. 选择直连 kubeconfig 模式。
 3. 填写集群名称、环境、标签和 kubeconfig。
 4. 保存后执行连接测试。
@@ -185,27 +185,27 @@ pvesh get /storage
 
 - 集群状态为健康或可用。
 - `virt-lab` namespace 可见。
-- kubecrux 能读取 KubeVirt 和 CDI 资源；如果页面尚未显示专用虚拟化对象，至少后端连接和基础资源读取必须成功。
+- soha 能读取 KubeVirt 和 CDI 资源；如果页面尚未显示专用虚拟化对象，至少后端连接和基础资源读取必须成功。
 
 ### KubeVirt Agent 模式
 
-1. 在目标集群网络内启动 kubecrux agent。
+1. 在目标集群网络内启动 soha agent。
 2. agent 使用可访问 KubeVirt 资源的 kubeconfig。
-3. 在 kubecrux 中注册 agent 模式集群。
+3. 在 soha 中注册 agent 模式集群。
 4. 确认 agent endpoint 和 token 匹配。
 5. 执行连接测试和资源同步。
 
 验收点：
 
 - agent health endpoint 正常。
-- kubecrux 集群状态不应显示为离线。
+- soha 集群状态不应显示为离线。
 - 如果当前 agent 还未支持某些 KubeVirt CRUD 能力，页面或操作结果必须明确提示不支持，而不是伪装成功。
 
 ### PVE 连接
 
 1. 在 PVE 中创建实验用 API Token。
 2. 记录 endpoint、realm、token id、token secret、节点名、默认存储池。
-3. 在 kubecrux 虚拟化连接配置中新增 PVE 连接。
+3. 在 soha 虚拟化连接配置中新增 PVE 连接。
 4. 保存后执行连接测试。
 5. 同步节点、存储、template、ISO 和 VM 列表。
 
@@ -274,7 +274,7 @@ kubectl describe pvc ubuntu-2204-golden -n virt-lab
 2. 安装 cloud-init 或实验所需 agent。
 3. 清理机器唯一标识、临时文件和 shell history。
 4. 转换为 template。
-5. 标记模板名称，例如 `kc-lab-ubuntu-2204-template`。
+5. 标记模板名称，例如 `soha-lab-ubuntu-2204-template`。
 
 检查：
 
@@ -303,7 +303,7 @@ pvesh get /nodes/<node>/storage/local/content --content iso
 
 验收点：
 
-- ISO 列表可被 kubecrux 同步。
+- ISO 列表可被 soha 同步。
 - ISO 名称和路径在页面显示一致。
 
 ## P1 同步流程
@@ -323,7 +323,7 @@ kubectl get vm,vmi,datasource,pvc -n virt-lab
 
 验收点：
 
-- kubecrux 列表数量与 kubectl 输出一致。
+- soha 列表数量与 kubectl 输出一致。
 - namespace 过滤生效。
 - 空 namespace 表示全 namespace 聚合时，结果必须带 namespace 字段。
 
@@ -352,7 +352,7 @@ pvesh get /nodes/<node>/storage
 
 1. 选择 KubeVirt 集群和 `virt-lab` namespace。
 2. 选择 DataSource，例如 `ubuntu-2204`。
-3. 输入 VM 名称，例如 `kc-lab-kv-001`。
+3. 输入 VM 名称，例如 `soha-lab-kv-001`。
 4. 配置 CPU、内存、磁盘容量、网络和 cloud-init。
 5. 提交创建。
 6. 等待 DataVolume / PVC 准备完成。
@@ -361,10 +361,10 @@ pvesh get /nodes/<node>/storage
 检查：
 
 ```bash
-kubectl get vm kc-lab-kv-001 -n virt-lab
-kubectl get vmi kc-lab-kv-001 -n virt-lab
-kubectl get dv,pvc -n virt-lab | grep kc-lab-kv-001
-kubectl describe vm kc-lab-kv-001 -n virt-lab
+kubectl get vm soha-lab-kv-001 -n virt-lab
+kubectl get vmi soha-lab-kv-001 -n virt-lab
+kubectl get dv,pvc -n virt-lab | grep soha-lab-kv-001
+kubectl describe vm soha-lab-kv-001 -n virt-lab
 ```
 
 验收点：
@@ -390,7 +390,7 @@ kubectl describe vm kc-lab-kv-001 -n virt-lab
 ### PVE 从 Template 创建
 
 1. 选择 PVE 连接、节点和 template。
-2. 输入 VM 名称，例如 `kc-lab-pve-001`。
+2. 输入 VM 名称，例如 `soha-lab-pve-001`。
 3. 选择 VMID 自动分配或实验 VMID 范围。
 4. 配置 CPU、内存、磁盘、网络和 cloud-init。
 5. 提交 clone。
@@ -459,7 +459,7 @@ qm status <vmid>
 验收点：
 
 - power task 成功返回。
-- kubecrux 状态同步能反映最新电源状态。
+- soha 状态同步能反映最新电源状态。
 - 重复点击同一电源操作不会造成不可解释的状态翻转。
 
 ## P1 取消 / 重试
@@ -520,7 +520,7 @@ kubectl get vmi -n virt-lab
 
 验收点：
 
-- kubecrux 页面指标与 Prometheus 或 kubectl 抽样结果趋势一致。
+- soha 页面指标与 Prometheus 或 kubectl 抽样结果趋势一致。
 - 指标缺失时显示未配置或暂无数据，不显示为 0。
 
 ### PVE 指标
@@ -561,7 +561,7 @@ kubectl get kubevirt -A
 处理：
 
 - 确认 kubeconfig endpoint、证书和 context。
-- 确认 kubecrux server 或 agent 到 API Server 的网络。
+- 确认 soha server 或 agent 到 API Server 的网络。
 - 确认 RBAC 覆盖 `kubevirt.io` 和 `cdi.kubevirt.io` API group。
 
 ### DataSource 或 PVC 不可用
@@ -639,7 +639,7 @@ pvesh get /nodes/<node>/tasks/<upid>/status
 处理：
 
 - 确认 metrics-server、Prometheus 或 PVE RRD 可用。
-- 确认 kubecrux 监控配置指向正确 endpoint。
+- 确认 soha 监控配置指向正确 endpoint。
 - 确认查询时间窗口内 VM 处于 running。
 - 页面应区分未配置、暂无数据和查询失败。
 
@@ -648,8 +648,8 @@ pvesh get /nodes/<node>/tasks/<upid>/status
 ### KubeVirt
 
 ```bash
-kubectl delete vm kc-lab-kv-001 -n virt-lab
-kubectl delete dv,pvc -n virt-lab -l app.kubernetes.io/managed-by=kubecrux-lab
+kubectl delete vm soha-lab-kv-001 -n virt-lab
+kubectl delete dv,pvc -n virt-lab -l app.kubernetes.io/managed-by=soha-lab
 kubectl get vm,vmi,dv,pvc -n virt-lab
 ```
 
@@ -677,7 +677,7 @@ qm list
 
 ### KubeVirt P1
 
-- [ ] kubecrux 能连接 KubeVirt 集群。
+- [ ] soha 能连接 KubeVirt 集群。
 - [ ] `virt-lab` namespace 可读取。
 - [ ] DataSource 或 golden PVC 可读取。
 - [ ] 从 DataSource 创建 VM 成功。
@@ -686,11 +686,11 @@ qm list
 - [ ] 创建中的任务可取消，取消结果可追踪。
 - [ ] 失败任务修复原因后可重试成功。
 - [ ] VM 指标显示真实数据或明确未配置状态。
-- [ ] kubectl 与 kubecrux 列表、状态和关键字段一致。
+- [ ] kubectl 与 soha 列表、状态和关键字段一致。
 
 ### PVE P1
 
-- [ ] kubecrux 能连接 PVE API。
+- [ ] soha 能连接 PVE API。
 - [ ] 节点、存储、template、ISO、VM 列表可同步。
 - [ ] 从 template clone VM 成功。
 - [ ] 从 ISO 创建 VM 成功。
@@ -698,7 +698,7 @@ qm list
 - [ ] clone 或创建任务可取消，取消结果可追踪。
 - [ ] 失败任务修复原因后可重试成功。
 - [ ] VM 指标显示真实数据或明确未配置状态。
-- [ ] PVE 控制台、`qm` / `pvesh` 与 kubecrux 状态一致。
+- [ ] PVE 控制台、`qm` / `pvesh` 与 soha 状态一致。
 
 ### P2 回归
 

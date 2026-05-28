@@ -40,18 +40,18 @@ type ReleaseTargetRequest struct {
 }
 
 type ApplicationEnvironmentRequest struct {
-	ID                 string                 `json:"id"`
-	ApplicationID      string                 `json:"applicationId"`
-	EnvironmentID      string                 `json:"environmentId"`
-	StrategyProfileID  string                 `json:"strategyProfileId"`
-	PromotionPolicyID  string                 `json:"promotionPolicyId"`
-	ApprovalPolicyID   string                 `json:"approvalPolicyId"`
-	ArtifactPolicyID   string                 `json:"artifactPolicyId"`
-	WorkflowTemplateID string                 `json:"workflowTemplateId"`
-	BuildPolicy        BuildPolicyRequest     `json:"buildPolicy"`
-	ReleasePolicy      ReleasePolicyRequest   `json:"releasePolicy"`
+	ID                 string                  `json:"id"`
+	ApplicationID      string                  `json:"applicationId"`
+	EnvironmentID      string                  `json:"environmentId"`
+	StrategyProfileID  string                  `json:"strategyProfileId"`
+	PromotionPolicyID  string                  `json:"promotionPolicyId"`
+	ApprovalPolicyID   string                  `json:"approvalPolicyId"`
+	ArtifactPolicyID   string                  `json:"artifactPolicyId"`
+	WorkflowTemplateID string                  `json:"workflowTemplateId"`
+	BuildPolicy        BuildPolicyRequest      `json:"buildPolicy"`
+	ReleasePolicy      ReleasePolicyRequest    `json:"releasePolicy"`
 	ResourceSelector   ResourceSelectorRequest `json:"resourceSelector"`
-	Targets            []ReleaseTargetRequest `json:"targets"`
+	Targets            []ReleaseTargetRequest  `json:"targets"`
 }
 
 type ResourceSelectorRequest struct {

@@ -2,7 +2,7 @@
 
 ## Goal
 
-This runbook verifies the kubecrux virtualization workflow in a real lab environment.
+This runbook verifies the soha virtualization workflow in a real lab environment.
 
 Scope:
 
@@ -18,16 +18,16 @@ Priority labels:
 
 ## Lab Deployment Topology
 
-The kubecrux virtualization lab should use two separate runtime planes:
+The soha virtualization lab should use two separate runtime planes:
 
 - KubeVirt runs inside a Kubernetes cluster, and k3s can be used as a lightweight Kubernetes distribution.
 - Proxmox VE runs as a KubeVirt VM, an independent bare-metal host, an independent Debian host, or another nested VM for lab-only validation.
-- kubecrux server does not host PVE itself. It connects to PVE through the PVE API endpoint, token, node name, and storage pool settings.
+- soha server does not host PVE itself. It connects to PVE through the PVE API endpoint, token, node name, and storage pool settings.
 
 Recommended local lab topology:
 
 ```text
-kubecrux server + PostgreSQL
+soha server + PostgreSQL
         |
         +-- local-k3s or external k3s cluster with KubeVirt/CDI
         |
@@ -45,7 +45,7 @@ k3s can be used as a KubeVirt lab Kubernetes cluster, but the nodes still need t
 - The container runtime is containerd or CRI-O, which are supported by KubeVirt.
 - At least one StorageClass exists. Install CDI when DataVolume, DataSource, upload, or clone flows are required.
 
-The compose-backed k3s started by the root `make init-cluster` target is useful for kubecrux platform connection tests and KubeVirt API-path demos. When it runs on Docker Desktop for macOS or another environment that does not expose Linux KVM into the container, use it only for control-plane or software-emulation tests, not performance or stability validation. KubeVirt `useEmulation` can unblock development without KVM, but VM startup and runtime performance are much slower and do not represent production behavior.
+The compose-backed k3s started by the root `make init-cluster` target is useful for soha platform connection tests and KubeVirt API-path demos. When it runs on Docker Desktop for macOS or another environment that does not expose Linux KVM into the container, use it only for control-plane or software-emulation tests, not performance or stability validation. KubeVirt `useEmulation` can unblock development without KVM, but VM startup and runtime performance are much slower and do not represent production behavior.
 
 ### Can PVE Run Inside k3s?
 
@@ -63,7 +63,7 @@ Even if a privileged Pod, hostPath mounts, and systemd-in-container are forced t
 These PVE lab shapes are acceptable:
 
 - A full PVE VM started inside KubeVirt, with port 8006 exposed through a Service.
-- Independent PVE bare metal or independent Debian host, with kubecrux connecting through the API.
+- Independent PVE bare metal or independent Debian host, with soha connecting through the API.
 - A full PVE VM on an external hypervisor that supports nested virtualization, used only for demos and adapter validation.
 
 ### Quick Start for a KubeVirt PVE VM
@@ -102,8 +102,8 @@ make pve-vm-boot-root
 https://127.0.0.1:8006
 ```
 
-Use that endpoint when creating the PVE connection in kubecrux. SSH is forwarded from `127.0.0.1:2222` to VM port 22.
-If kubecrux server runs inside the compose `kubecrux` container, use the compose-network endpoint `https://k3s:30006`.
+Use that endpoint when creating the PVE connection in soha. SSH is forwarded from `127.0.0.1:2222` to VM port 22.
+If soha server runs inside the compose `soha` container, use the compose-network endpoint `https://k3s:30006`.
 
 Status check:
 
@@ -123,11 +123,11 @@ The target runs `mount --make-rshared /` inside the k3s container and recreates 
 
 ### Common Prerequisites
 
-- kubecrux server is running and database migrations are complete.
+- soha server is running and database migrations are complete.
 - The operator account has the required permissions for virtualization read, create, update, delete, and power operations.
-- The lab network allows kubecrux server to reach the Kubernetes API Server or PVE API.
+- The lab network allows soha server to reach the Kubernetes API Server or PVE API.
 - The lab environment is isolated from production VMs, production templates, and production storage pools.
-- All lab VMs use a clear prefix, for example `kc-lab-*`.
+- All lab VMs use a clear prefix, for example `soha-lab-*`.
 - Prepare an execution record for each run, including operator, environment, cluster or PVE endpoint, VM name, start time, end time, and result.
 
 ### KubeVirt Prerequisites
@@ -136,7 +136,7 @@ The target runs `mount --make-rshared /` inside the k3s container and recreates 
 - CDI is installed when DataVolume, DataSource, or clone flows are required.
 - At least one StorageClass is available.
 - The lab namespace exists, for example `virt-lab`.
-- The kubeconfig or agent account used by kubecrux can access:
+- The kubeconfig or agent account used by soha can access:
   - `virtualmachines` and `virtualmachineinstances` under `kubevirt.io`
   - `datavolumes` and `datasources` under `cdi.kubevirt.io`
   - core `persistentvolumeclaims`, `pods`, and `events`
@@ -154,7 +154,7 @@ kubectl auth can-i create datavolumes.cdi.kubevirt.io -n virt-lab
 
 ### PVE Prerequisites
 
-- The Proxmox VE node or cluster API is reachable from kubecrux server.
+- The Proxmox VE node or cluster API is reachable from soha server.
 - An API Token or controlled account is available. Prefer granting only lab resource pool, lab storage pool, and lab node permissions.
 - PVE has usable storage:
   - VM disk storage, for example `local-lvm`
@@ -175,7 +175,7 @@ pvesh get /storage
 
 ### KubeVirt Direct Kubernetes Mode
 
-1. Add a cluster in kubecrux cluster management.
+1. Add a cluster in soha cluster management.
 2. Select direct kubeconfig mode.
 3. Fill in cluster name, environment, labels, and kubeconfig.
 4. Save and run the connection test.
@@ -185,27 +185,27 @@ Acceptance:
 
 - The cluster status is healthy or available.
 - The `virt-lab` namespace is visible.
-- kubecrux can read KubeVirt and CDI resources. If the dedicated virtualization page is not available yet, backend connection and base resource reads must still pass.
+- soha can read KubeVirt and CDI resources. If the dedicated virtualization page is not available yet, backend connection and base resource reads must still pass.
 
 ### KubeVirt Agent Mode
 
-1. Start kubecrux agent inside the target cluster network.
+1. Start soha agent inside the target cluster network.
 2. Configure the agent with a kubeconfig that can access KubeVirt resources.
-3. Register the cluster in kubecrux with agent mode.
+3. Register the cluster in soha with agent mode.
 4. Confirm the agent endpoint and token match.
 5. Run connection test and resource sync.
 
 Acceptance:
 
 - The agent health endpoint is healthy.
-- kubecrux does not mark the cluster as offline.
+- soha does not mark the cluster as offline.
 - If the current agent does not support specific KubeVirt CRUD operations, the UI or operation result must state unsupported instead of pretending success.
 
 ### PVE Connection
 
 1. Create a lab API Token in PVE.
 2. Record endpoint, realm, token id, token secret, node name, and default storage pool.
-3. Add a PVE connection in kubecrux virtualization connection settings.
+3. Add a PVE connection in soha virtualization connection settings.
 4. Save and run the connection test.
 5. Sync nodes, storage, templates, ISOs, and VM list.
 
@@ -274,7 +274,7 @@ Acceptance:
 2. Install cloud-init or the required lab agent.
 3. Clean machine identity, temporary files, and shell history.
 4. Convert the VM to a template.
-5. Mark the template clearly, for example `kc-lab-ubuntu-2204-template`.
+5. Mark the template clearly, for example `soha-lab-ubuntu-2204-template`.
 
 Checks:
 
@@ -303,7 +303,7 @@ pvesh get /nodes/<node>/storage/local/content --content iso
 
 Acceptance:
 
-- The ISO list can be synced into kubecrux.
+- The ISO list can be synced into soha.
 - ISO name and path are displayed consistently.
 
 ## P1 Sync Flow
@@ -323,7 +323,7 @@ kubectl get vm,vmi,datasource,pvc -n virt-lab
 
 Acceptance:
 
-- kubecrux list counts match kubectl output.
+- soha list counts match kubectl output.
 - Namespace filtering works.
 - Empty namespace means all-namespace aggregation, and returned rows must include namespace.
 
@@ -352,7 +352,7 @@ Acceptance:
 
 1. Select the KubeVirt cluster and `virt-lab` namespace.
 2. Select a DataSource, for example `ubuntu-2204`.
-3. Enter VM name, for example `kc-lab-kv-001`.
+3. Enter VM name, for example `soha-lab-kv-001`.
 4. Configure CPU, memory, disk size, network, and cloud-init.
 5. Submit create.
 6. Wait for DataVolume / PVC preparation.
@@ -361,10 +361,10 @@ Acceptance:
 Checks:
 
 ```bash
-kubectl get vm kc-lab-kv-001 -n virt-lab
-kubectl get vmi kc-lab-kv-001 -n virt-lab
-kubectl get dv,pvc -n virt-lab | grep kc-lab-kv-001
-kubectl describe vm kc-lab-kv-001 -n virt-lab
+kubectl get vm soha-lab-kv-001 -n virt-lab
+kubectl get vmi soha-lab-kv-001 -n virt-lab
+kubectl get dv,pvc -n virt-lab | grep soha-lab-kv-001
+kubectl describe vm soha-lab-kv-001 -n virt-lab
 ```
 
 Acceptance:
@@ -390,7 +390,7 @@ Acceptance:
 ### PVE From Template
 
 1. Select PVE connection, node, and template.
-2. Enter VM name, for example `kc-lab-pve-001`.
+2. Enter VM name, for example `soha-lab-pve-001`.
 3. Select auto VMID assignment or the reserved lab VMID range.
 4. Configure CPU, memory, disk, network, and cloud-init.
 5. Submit clone.
@@ -459,7 +459,7 @@ qm status <vmid>
 Acceptance:
 
 - Power task succeeds.
-- kubecrux sync reflects the latest power state.
+- soha sync reflects the latest power state.
 - Repeated clicks on the same power action do not cause unexplained state flips.
 
 ## P1 Cancel / Retry
@@ -520,7 +520,7 @@ kubectl get vmi -n virt-lab
 
 Acceptance:
 
-- kubecrux metric trends match sampled Prometheus or kubectl results.
+- soha metric trends match sampled Prometheus or kubectl results.
 - Missing metrics are shown as not configured or no data, not as zero.
 
 ### PVE Metrics
@@ -561,7 +561,7 @@ kubectl get kubevirt -A
 Actions:
 
 - Confirm kubeconfig endpoint, certificate, and context.
-- Confirm kubecrux server or agent network access to the API Server.
+- Confirm soha server or agent network access to the API Server.
 - Confirm RBAC covers `kubevirt.io` and `cdi.kubevirt.io` API groups.
 
 ### DataSource or PVC Unavailable
@@ -639,7 +639,7 @@ Actions:
 Actions:
 
 - Confirm metrics-server, Prometheus, or PVE RRD is available.
-- Confirm kubecrux monitoring settings point to the correct endpoint.
+- Confirm soha monitoring settings point to the correct endpoint.
 - Confirm the VM was running during the query window.
 - The page should distinguish not configured, no data, and query failure.
 
@@ -648,8 +648,8 @@ Actions:
 ### KubeVirt
 
 ```bash
-kubectl delete vm kc-lab-kv-001 -n virt-lab
-kubectl delete dv,pvc -n virt-lab -l app.kubernetes.io/managed-by=kubecrux-lab
+kubectl delete vm soha-lab-kv-001 -n virt-lab
+kubectl delete dv,pvc -n virt-lab -l app.kubernetes.io/managed-by=soha-lab
 kubectl get vm,vmi,dv,pvc -n virt-lab
 ```
 
@@ -677,7 +677,7 @@ Acceptance:
 
 ### KubeVirt P1
 
-- [ ] kubecrux can connect to the KubeVirt cluster.
+- [ ] soha can connect to the KubeVirt cluster.
 - [ ] `virt-lab` namespace can be read.
 - [ ] DataSource or golden PVC can be read.
 - [ ] VM creation from DataSource succeeds.
@@ -686,11 +686,11 @@ Acceptance:
 - [ ] A creating task can be canceled and the result is traceable.
 - [ ] A failed task can be retried successfully after fixing the root cause.
 - [ ] VM metrics show real data or an explicit not configured state.
-- [ ] kubectl and kubecrux list, status, and key fields are consistent.
+- [ ] kubectl and soha list, status, and key fields are consistent.
 
 ### PVE P1
 
-- [ ] kubecrux can connect to PVE API.
+- [ ] soha can connect to PVE API.
 - [ ] Nodes, storage, templates, ISOs, and VMs can be synced.
 - [ ] VM clone from template succeeds.
 - [ ] VM creation from ISO succeeds.
@@ -698,7 +698,7 @@ Acceptance:
 - [ ] Clone or create task can be canceled and the result is traceable.
 - [ ] A failed task can be retried successfully after fixing the root cause.
 - [ ] VM metrics show real data or an explicit not configured state.
-- [ ] PVE console, `qm` / `pvesh`, and kubecrux state are consistent.
+- [ ] PVE console, `qm` / `pvesh`, and soha state are consistent.
 
 ### P2 Regression
 

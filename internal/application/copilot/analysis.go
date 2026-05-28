@@ -8,16 +8,16 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	appaccess "github.com/kubecrux/kubecrux/internal/application/access"
-	domainalert "github.com/kubecrux/kubecrux/internal/domain/alert"
-	domainaudit "github.com/kubecrux/kubecrux/internal/domain/audit"
-	domainbuild "github.com/kubecrux/kubecrux/internal/domain/build"
-	domaincluster "github.com/kubecrux/kubecrux/internal/domain/cluster"
-	domaincopilot "github.com/kubecrux/kubecrux/internal/domain/copilot"
-	domainevent "github.com/kubecrux/kubecrux/internal/domain/event"
-	domainidentity "github.com/kubecrux/kubecrux/internal/domain/identity"
-	domainrelease "github.com/kubecrux/kubecrux/internal/domain/release"
-	aperrors "github.com/kubecrux/kubecrux/internal/platform/apperrors"
+	appaccess "github.com/soha/soha/internal/application/access"
+	domainalert "github.com/soha/soha/internal/domain/alert"
+	domainaudit "github.com/soha/soha/internal/domain/audit"
+	domainbuild "github.com/soha/soha/internal/domain/build"
+	domaincluster "github.com/soha/soha/internal/domain/cluster"
+	domaincopilot "github.com/soha/soha/internal/domain/copilot"
+	domainevent "github.com/soha/soha/internal/domain/event"
+	domainidentity "github.com/soha/soha/internal/domain/identity"
+	domainrelease "github.com/soha/soha/internal/domain/release"
+	aperrors "github.com/soha/soha/internal/platform/apperrors"
 )
 
 func (s *Service) ListRootCauseRuns(ctx context.Context, principal domainidentity.Principal, filter domaincopilot.RootCauseRunFilter) ([]domaincopilot.RootCauseRun, error) {

@@ -540,7 +540,7 @@ describe('ApplicationDetailPage workbench', () => {
     expect(container.textContent).toContain('build-1')
     expect(container.textContent).toContain('release-1')
     expect(container.textContent).toContain('workflow-1')
-    expect(container.querySelector('.kc-application-runtime-delivery-grid')).not.toBeNull()
+    expect(container.querySelector('.soha-application-runtime-delivery-grid')).not.toBeNull()
 
     clickTab(container, '流水线')
     await act(async () => {
@@ -549,7 +549,7 @@ describe('ApplicationDetailPage workbench', () => {
     expect(container.textContent).toContain('DAG 模板')
     expect(container.textContent).toContain('最近工作流运行')
     expect(container.textContent).toContain('release-dag')
-    expect(container.querySelector('.kc-application-runtime-pipeline-grid')).not.toBeNull()
+    expect(container.querySelector('.soha-application-runtime-pipeline-grid')).not.toBeNull()
 
     clickTab(container, '测试验证')
     await act(async () => {
@@ -557,7 +557,7 @@ describe('ApplicationDetailPage workbench', () => {
     })
     expect(container.textContent).toContain('验证门禁')
     expect(container.textContent).toContain('DAG 节点数')
-    expect(container.querySelector('.kc-application-runtime-verification-grid')).not.toBeNull()
+    expect(container.querySelector('.soha-application-runtime-verification-grid')).not.toBeNull()
 
     clickTab(container, '服务组件')
     await act(async () => {
@@ -565,8 +565,8 @@ describe('ApplicationDetailPage workbench', () => {
     })
     expect(container.textContent).toContain('Checkout API')
     expect(container.textContent).toContain('registry.example.com/checkout/api')
-    expect(container.querySelector('.kc-application-service-grid')).not.toBeNull()
-    expect(container.querySelector('.kc-application-container-row')).not.toBeNull()
+    expect(container.querySelector('.soha-application-service-grid')).not.toBeNull()
+    expect(container.querySelector('.soha-application-container-row')).not.toBeNull()
   })
 
   it('calls aggregated delivery action endpoint when build is clicked', async () => {

@@ -348,7 +348,7 @@ export function AIObserveOverviewPage() {
   const inspectionRuns = inspectionRunsQuery.data?.data ?? []
 
   return (
-    <div className="kc-page">
+    <div className="soha-page">
       <PageHeader
         title="AI工作台"
         description="面向 k8s工作台的 AIOps 入口，统一承接调查、巡检、性能与工具链能力。"
@@ -360,11 +360,11 @@ export function AIObserveOverviewPage() {
         }
       />
 
-      <section className="kc-ai-hub-hero">
-        <div className="kc-ai-hub-hero__copy">
-          <div className="kc-ai-hub-hero__eyebrow">AIOps Hub</div>
-          <h2 className="kc-ai-hub-hero__title">让 AI 观测成为 k8s工作台里的第一层排障入口</h2>
-          <Paragraph className="kc-ai-hub-hero__description">
+      <section className="soha-ai-hub-hero">
+        <div className="soha-ai-hub-hero__copy">
+          <div className="soha-ai-hub-hero__eyebrow">AIOps Hub</div>
+          <h2 className="soha-ai-hub-hero__title">让 AI 观测成为 k8s工作台里的第一层排障入口</h2>
+          <Paragraph className="soha-ai-hub-hero__description">
             先判断是告警、性能、链路还是巡检复盘，再进入对应操作面。k8s工作台里只保留一个 AI 主入口，避免左侧导航继续裂成第二套树。
           </Paragraph>
           <Space wrap>
@@ -374,49 +374,49 @@ export function AIObserveOverviewPage() {
             <Tag>工具装配可见</Tag>
           </Space>
         </div>
-        <div className="kc-ai-hub-hero__rail">
+        <div className="soha-ai-hub-hero__rail">
           {AI_HUB_MODES.map((item) => (
             <button
               key={item.key}
-              className="kc-ai-hub-mode"
+              className="soha-ai-hub-mode"
               onClick={() => navigate(item.href)}
               type="button"
             >
-              <span className="kc-ai-hub-mode__icon">{item.icon}</span>
-              <span className="kc-ai-hub-mode__copy">
-                <span className="kc-ai-hub-mode__label">{item.label}</span>
-                <span className="kc-ai-hub-mode__detail">{item.detail}</span>
+              <span className="soha-ai-hub-mode__icon">{item.icon}</span>
+              <span className="soha-ai-hub-mode__copy">
+                <span className="soha-ai-hub-mode__label">{item.label}</span>
+                <span className="soha-ai-hub-mode__detail">{item.detail}</span>
               </span>
             </button>
           ))}
         </div>
       </section>
 
-      <section className="kc-ai-hub-lanes">
+      <section className="soha-ai-hub-lanes">
         {AI_HUB_LANES.map((lane) => (
           <Card
             key={lane.key}
-            className="kc-ai-hub-lane"
+            className="soha-ai-hub-lane"
             extra={<Button type={lane.key === 'workbench' ? 'primary' : 'default'} onClick={() => navigate(lane.href)}>{lane.cta}</Button>}
           >
-            <div className="kc-ai-hub-lane__icon">{lane.icon}</div>
-            <div className="kc-ai-hub-lane__title">{lane.title}</div>
-            <Paragraph className="kc-ai-hub-lane__description">{lane.description}</Paragraph>
+            <div className="soha-ai-hub-lane__icon">{lane.icon}</div>
+            <div className="soha-ai-hub-lane__title">{lane.title}</div>
+            <Paragraph className="soha-ai-hub-lane__description">{lane.description}</Paragraph>
           </Card>
         ))}
       </section>
 
-      <section className="kc-ai-signal-strip-grid">
+      <section className="soha-ai-signal-strip-grid">
         {AI_SIGNAL_STRIPS.map((item) => (
           <button
             key={item.title}
-            className="kc-ai-signal-strip"
+            className="soha-ai-signal-strip"
             onClick={() => navigate(item.href)}
             type="button"
           >
-            <span className="kc-ai-signal-strip__title">{item.title}</span>
-            <span className="kc-ai-signal-strip__detail">{item.detail}</span>
-            <span className="kc-ai-signal-strip__action">{item.action}</span>
+            <span className="soha-ai-signal-strip__title">{item.title}</span>
+            <span className="soha-ai-signal-strip__detail">{item.detail}</span>
+            <span className="soha-ai-signal-strip__action">{item.action}</span>
           </button>
         ))}
       </section>
@@ -703,7 +703,7 @@ export function AIOperationsPage() {
   }
 
   return (
-    <div className="kc-page">
+    <div className="soha-page">
       <PageHeader
         title="巡检与自动化"
         description="统一查看巡检任务、巡检运行、自动化策略，并把发现结果送入调查工作台。"
@@ -992,7 +992,7 @@ export function AIOperationsPage() {
               showSearch
               optionFilterProp="label"
               loading={catalogQuery.isLoading}
-              options={agentProviderOptions.length > 0 ? agentProviderOptions : [{ value: 'internal', label: 'kubecrux 内置分析 / inline' }]}
+              options={agentProviderOptions.length > 0 ? agentProviderOptions : [{ value: 'internal', label: 'soha 内置分析 / inline' }]}
             />
           </Form.Item>
           <Form.Item name="analysisProfileId" label="分析模板" rules={[{ required: true, message: '请选择分析模板' }]}>
@@ -1185,7 +1185,7 @@ export function AIToolsPage() {
   }
 
   return (
-    <div className="kc-page">
+    <div className="soha-page">
       <PageHeader
         title="工具与技能"
         description="全局配置镜像与会话级装配入口，统一查看 MCP adapters、数据源和技能能力。"
@@ -1369,7 +1369,7 @@ export function AIToolsPage() {
 
 export function AIModelSettingsPage() {
   return (
-    <div className="kc-page">
+    <div className="soha-page">
       <PageHeader
         title="AI 设置"
         description="在 AI 工作台内查看和调整 Provider、数据源、技能与自动化策略。"

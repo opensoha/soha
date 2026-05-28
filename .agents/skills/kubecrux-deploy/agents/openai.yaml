@@ -1,4 +1,0 @@
-interface:
-  display_name: "Kubecrux Deploy"
-  short_description: "Single-project compose, Kubernetes, and Helm deployment patterns"
-  default_prompt: "Use $kubecrux-deploy to prepare or update kubecrux deployment artifacts."

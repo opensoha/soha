@@ -275,7 +275,7 @@ function usePlatformResourceQuery<T>(resourcePath: string, clusterScoped = false
 function renderTextList(value?: string[], empty = '-') {
   if (!value || value.length === 0) return <Text type="secondary">{empty}</Text>
   return (
-    <div className="kc-rbac-subject-list">
+    <div className="soha-rbac-subject-list">
       {value.slice(0, 3).map((item) => <Tag key={item}>{item}</Tag>)}
       {value.length > 3 ? (
         <Tooltip title={value.slice(3).join(', ')}>
@@ -302,7 +302,7 @@ function buildNetworkErrorDescription(localeCode: 'zh_CN' | 'en_US', error: unkn
 
 function NetworkListTitle({ title, description, clusterScopedHint }: { title: string; description: string; clusterScopedHint?: string }) {
   return (
-    <div className="kc-admin-table-title-block">
+    <div className="soha-admin-table-title-block">
       <Text strong>{title}</Text>
       <Text type="secondary">{description}</Text>
       {clusterScopedHint ? <Text type="secondary">{clusterScopedHint}</Text> : null}
@@ -364,7 +364,7 @@ function NetworkResourceListPage<T extends Record<string, any>>({
       : emptyDescription
 
   return (
-    <div className="kc-page">
+    <div className="soha-page">
       {actionConfig ? modalNode : null}
       {query.isError ? (
         <Alert
@@ -376,7 +376,7 @@ function NetworkResourceListPage<T extends Record<string, any>>({
         />
       ) : null}
       <AdminTable
-        className="kc-platform-table"
+        className="soha-platform-table"
         columns={effectiveColumns}
         dataSource={clusterId ? filteredItems : []}
         rowKey={rowKey}
@@ -391,9 +391,9 @@ function NetworkResourceListPage<T extends Record<string, any>>({
           />
         )}
         toolbar={(
-          <div className="kc-workload-table-filters">
+          <div className="soha-workload-table-filters">
             <Input
-              className="kc-platform-compact-field"
+              className="soha-platform-compact-field"
               size="small"
               value={searchKeyword}
               onChange={(event) => setSearchKeyword(event.target.value)}
@@ -403,7 +403,7 @@ function NetworkResourceListPage<T extends Record<string, any>>({
           </div>
         )}
         toolbarExtra={(
-          <div className="kc-page-toolbar">
+          <div className="soha-page-toolbar">
             <Button size="small" icon={<ReloadOutlined />} variant="outlined" onClick={() => void query.refetch()}>
               {localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
             </Button>
@@ -417,7 +417,7 @@ function NetworkResourceListPage<T extends Record<string, any>>({
 
 function StorageListTitle({ title, description, clusterScopedHint }: { title: string; description: string; clusterScopedHint?: string }) {
   return (
-    <div className="kc-admin-table-title-block">
+    <div className="soha-admin-table-title-block">
       <Text strong>{title}</Text>
       <Text type="secondary">{description}</Text>
       {clusterScopedHint ? <Text type="secondary">{clusterScopedHint}</Text> : null}
@@ -432,15 +432,15 @@ function StorageListToolbar({ clusterScoped = false }: { clusterScoped?: boolean
 
 function StorageDetailHeader({ title, description, actions }: { title: string; description: string; actions?: React.ReactNode }) {
   return (
-    <div className="kc-admin-table-shell is-panel" style={{ marginBottom: 16 }}>
-      <div className="kc-admin-table-header">
-        <div className="kc-admin-table-header-main">
-          <div className="kc-admin-table-title-block">
+    <div className="soha-admin-table-shell is-panel" style={{ marginBottom: 16 }}>
+      <div className="soha-admin-table-header">
+        <div className="soha-admin-table-header-main">
+          <div className="soha-admin-table-title-block">
             <Text strong>{title}</Text>
             <Text type="secondary">{description}</Text>
           </div>
         </div>
-        {actions ? <div className="kc-admin-table-header-extra">{actions}</div> : null}
+        {actions ? <div className="soha-admin-table-header-extra">{actions}</div> : null}
       </div>
     </div>
   )
@@ -448,7 +448,7 @@ function StorageDetailHeader({ title, description, actions }: { title: string; d
 
 function StorageYamlTab({ state }: { state: ReturnType<typeof useResourceYAMLState> }) {
   return (
-    <Suspense fallback={<Card className="kc-detail-card"><Spin size="large" /></Card>}>
+    <Suspense fallback={<Card className="soha-detail-card"><Spin size="large" /></Card>}>
       <div style={{ height: 620 }}>
         <K8sYamlEditor
           value={state.draft}
@@ -504,7 +504,7 @@ export function NetworkServicesPage() {
   ]
 
   return (
-    <div className="kc-page">
+    <div className="soha-page">
       {query.isError ? (
         <Alert
           showIcon
@@ -515,7 +515,7 @@ export function NetworkServicesPage() {
         />
       ) : null}
       <AdminTable
-        className="kc-platform-table"
+        className="soha-platform-table"
         columns={columns}
         dataSource={clusterId ? filteredItems : []}
         rowKey={(record) => `${record.namespace}/${record.name}`}
@@ -524,11 +524,11 @@ export function NetworkServicesPage() {
         scroll={{ x: 'max-content' }}
         title={<NetworkListTitle title={t('page.network.services.title', 'Services')} description={t('page.network.services.desc', 'Inspect service exposure, access addresses, and ports by cluster and namespace.')} />}
         toolbar={(
-          <div className="kc-workload-table-filters">
-            <Input className="kc-platform-compact-field" size="small" value={searchKeyword} onChange={(event) => setSearchKeyword(event.target.value)} placeholder={localeCode === 'zh_CN' ? '搜索 Service / namespace / type / port' : 'Search service / namespace / type / port'} style={{ width: 300 }} />
+          <div className="soha-workload-table-filters">
+            <Input className="soha-platform-compact-field" size="small" value={searchKeyword} onChange={(event) => setSearchKeyword(event.target.value)} placeholder={localeCode === 'zh_CN' ? '搜索 Service / namespace / type / port' : 'Search service / namespace / type / port'} style={{ width: 300 }} />
           </div>
         )}
-        toolbarExtra={<div className="kc-page-toolbar"><Button size="small" icon={<ReloadOutlined />} variant="outlined" onClick={() => void query.refetch()}>{localeCode === 'zh_CN' ? '刷新' : 'Refresh'}</Button></div>}
+        toolbarExtra={<div className="soha-page-toolbar"><Button size="small" icon={<ReloadOutlined />} variant="outlined" onClick={() => void query.refetch()}>{localeCode === 'zh_CN' ? '刷新' : 'Refresh'}</Button></div>}
         empty={<Empty description={!clusterId ? (localeCode === 'zh_CN' ? '请选择集群' : 'Select a cluster') : (localeCode === 'zh_CN' ? '当前范围没有 Service' : 'No services in the current scope')} />}
       />
     </div>
@@ -609,11 +609,11 @@ export function ServiceDetailPage() {
   if (!clusterId || !detailNamespace) {
     return <Empty description={localeCode === 'zh_CN' ? '请选择集群和命名空间' : 'Select a cluster and namespace'} />
   }
-  if (servicesQuery.isLoading) return <Card loading className="kc-detail-card" />
+  if (servicesQuery.isLoading) return <Card loading className="soha-detail-card" />
   if (!service) return <Empty description={localeCode === 'zh_CN' ? '未找到服务' : 'Service not found'} />
 
   return (
-    <div className="kc-page">
+    <div className="soha-page">
       <StorageDetailHeader
         title={`Service: ${service.name}`}
         description={localeCode === 'zh_CN' ? '查看服务暴露信息、后端 Pod、事件与指标。' : 'Inspect service exposure, backend pods, events, and metrics.'}
@@ -625,7 +625,7 @@ export function ServiceDetailPage() {
           label: localeCode === 'zh_CN' ? '概览' : 'Overview',
           children: (
             <>
-              <Card className="kc-detail-card">
+              <Card className="soha-detail-card">
                 <Descriptions items={[
                   { key: 'name', label: localeCode === 'zh_CN' ? '名称' : 'Name', children: service.name },
                   { key: 'namespace', label: localeCode === 'zh_CN' ? '命名空间' : 'Namespace', children: service.namespace },
@@ -635,7 +635,7 @@ export function ServiceDetailPage() {
                   { key: 'age', label: 'Age', children: formatAgeSeconds(service.ageSeconds) },
                 ]} />
               </Card>
-              <Card className="kc-detail-card" title={localeCode === 'zh_CN' ? '后端 Pods' : 'Backend Pods'}>
+              <Card className="soha-detail-card" title={localeCode === 'zh_CN' ? '后端 Pods' : 'Backend Pods'}>
                 <AdminTable columns={backendPodColumns} dataSource={backendPodsQuery.data?.data ?? []} rowKey={(record) => `${record.namespace}/${record.name}`} loading={backendPodsQuery.isLoading} pageSize={10} enableColumnSelection={false} />
               </Card>
             </>
@@ -930,7 +930,7 @@ export function StoragePvcPage() {
     actionColumn,
   ]
   return (
-    <div className="kc-page">
+    <div className="soha-page">
       <CreateResourceModal visible={createVisible} onClose={() => setCreateVisible(false)} kind="PersistentVolumeClaim" resourcePath="storage/persistentvolumeclaims" defaultTemplate={PVC_DEFAULT_TEMPLATE} invalidationKeys={[['platform-resource', 'storage/persistentvolumeclaims']]} />
       <AdminTable
         columns={columns}
@@ -940,8 +940,8 @@ export function StoragePvcPage() {
         enableColumnSelection={false}
         scroll={{ x: 'max-content' }}
         title={<StorageListTitle title="PersistentVolumeClaims" description="" />}
-        toolbar={<div className="kc-workload-table-filters"><StorageListToolbar /><Input className="kc-platform-compact-field" size="small" value={searchKeyword} onChange={(event) => setSearchKeyword(event.target.value)} placeholder={localeCode === 'zh_CN' ? '搜索 PVC / namespace / storageClass' : 'Search PVC / namespace / storageClass'} style={{ width: 280 }} /></div>}
-        toolbarExtra={<div className="kc-page-toolbar"><Tooltip title={!clusterId ? (localeCode === 'zh_CN' ? '请先选择集群。' : 'Select a cluster first.') : ''}><span><Button size="small" type="primary" icon={<PlusOutlined />} disabled={!clusterId} onClick={() => setCreateVisible(true)}>{localeCode === 'zh_CN' ? '新增' : 'Create'}</Button></span></Tooltip><Button size="small" icon={<ReloadOutlined />} variant="outlined" onClick={() => void query.refetch()}>{localeCode === 'zh_CN' ? '刷新' : 'Refresh'}</Button></div>}
+        toolbar={<div className="soha-workload-table-filters"><StorageListToolbar /><Input className="soha-platform-compact-field" size="small" value={searchKeyword} onChange={(event) => setSearchKeyword(event.target.value)} placeholder={localeCode === 'zh_CN' ? '搜索 PVC / namespace / storageClass' : 'Search PVC / namespace / storageClass'} style={{ width: 280 }} /></div>}
+        toolbarExtra={<div className="soha-page-toolbar"><Tooltip title={!clusterId ? (localeCode === 'zh_CN' ? '请先选择集群。' : 'Select a cluster first.') : ''}><span><Button size="small" type="primary" icon={<PlusOutlined />} disabled={!clusterId} onClick={() => setCreateVisible(true)}>{localeCode === 'zh_CN' ? '新增' : 'Create'}</Button></span></Tooltip><Button size="small" icon={<ReloadOutlined />} variant="outlined" onClick={() => void query.refetch()}>{localeCode === 'zh_CN' ? '刷新' : 'Refresh'}</Button></div>}
         empty={<Empty description={clusterId ? (localeCode === 'zh_CN' ? '当前范围没有 PVC' : 'No PVCs in the current scope') : (localeCode === 'zh_CN' ? '请选择集群' : 'Select a cluster')} />}
       />
     </div>
@@ -972,7 +972,7 @@ export function StoragePvPage() {
     actionColumn,
   ]
   return (
-    <div className="kc-page">
+    <div className="soha-page">
       <CreateResourceModal visible={createVisible} onClose={() => setCreateVisible(false)} kind="PersistentVolume" resourcePath="storage/persistentvolumes" defaultTemplate={PV_DEFAULT_TEMPLATE} invalidationKeys={[['platform-resource', 'storage/persistentvolumes']]} namespaceScope="cluster" />
       <AdminTable
         columns={columns}
@@ -982,8 +982,8 @@ export function StoragePvPage() {
         enableColumnSelection={false}
         scroll={{ x: 'max-content' }}
         title={<StorageListTitle title="PersistentVolumes" description="" />}
-        toolbar={<div className="kc-workload-table-filters"><StorageListToolbar clusterScoped /><Input className="kc-platform-compact-field" size="small" value={searchKeyword} onChange={(event) => setSearchKeyword(event.target.value)} placeholder={localeCode === 'zh_CN' ? '搜索 PV / claim / storageClass' : 'Search PV / claim / storageClass'} style={{ width: 280 }} /></div>}
-        toolbarExtra={<div className="kc-page-toolbar"><Tooltip title={!clusterId ? (localeCode === 'zh_CN' ? '请先选择集群。' : 'Select a cluster first.') : ''}><span><Button size="small" type="primary" icon={<PlusOutlined />} disabled={!clusterId} onClick={() => setCreateVisible(true)}>{localeCode === 'zh_CN' ? '新增' : 'Create'}</Button></span></Tooltip><Button size="small" icon={<ReloadOutlined />} variant="outlined" onClick={() => void query.refetch()}>{localeCode === 'zh_CN' ? '刷新' : 'Refresh'}</Button></div>}
+        toolbar={<div className="soha-workload-table-filters"><StorageListToolbar clusterScoped /><Input className="soha-platform-compact-field" size="small" value={searchKeyword} onChange={(event) => setSearchKeyword(event.target.value)} placeholder={localeCode === 'zh_CN' ? '搜索 PV / claim / storageClass' : 'Search PV / claim / storageClass'} style={{ width: 280 }} /></div>}
+        toolbarExtra={<div className="soha-page-toolbar"><Tooltip title={!clusterId ? (localeCode === 'zh_CN' ? '请先选择集群。' : 'Select a cluster first.') : ''}><span><Button size="small" type="primary" icon={<PlusOutlined />} disabled={!clusterId} onClick={() => setCreateVisible(true)}>{localeCode === 'zh_CN' ? '新增' : 'Create'}</Button></span></Tooltip><Button size="small" icon={<ReloadOutlined />} variant="outlined" onClick={() => void query.refetch()}>{localeCode === 'zh_CN' ? '刷新' : 'Refresh'}</Button></div>}
         empty={<Empty description={clusterId ? (localeCode === 'zh_CN' ? '当前集群没有 PV' : 'No PVs in this cluster') : (localeCode === 'zh_CN' ? '请选择集群' : 'Select a cluster')} />}
       />
     </div>
@@ -1012,7 +1012,7 @@ export function StorageClassesPage() {
     actionColumn,
   ]
   return (
-    <div className="kc-page">
+    <div className="soha-page">
       <CreateResourceModal visible={createVisible} onClose={() => setCreateVisible(false)} kind="StorageClass" resourcePath="storage/storageclasses" defaultTemplate={STORAGE_CLASS_DEFAULT_TEMPLATE} invalidationKeys={[['platform-resource', 'storage/storageclasses']]} namespaceScope="cluster" />
       <AdminTable
         columns={columns}
@@ -1022,8 +1022,8 @@ export function StorageClassesPage() {
         enableColumnSelection={false}
         scroll={{ x: 'max-content' }}
         title={<StorageListTitle title="StorageClasses" description="" />}
-        toolbar={<div className="kc-workload-table-filters"><StorageListToolbar clusterScoped /><Input className="kc-platform-compact-field" size="small" value={searchKeyword} onChange={(event) => setSearchKeyword(event.target.value)} placeholder={localeCode === 'zh_CN' ? '搜索 StorageClass / provisioner' : 'Search StorageClass / provisioner'} style={{ width: 280 }} /></div>}
-        toolbarExtra={<div className="kc-page-toolbar"><Tooltip title={!clusterId ? (localeCode === 'zh_CN' ? '请先选择集群。' : 'Select a cluster first.') : ''}><span><Button size="small" type="primary" icon={<PlusOutlined />} disabled={!clusterId} onClick={() => setCreateVisible(true)}>{localeCode === 'zh_CN' ? '新增' : 'Create'}</Button></span></Tooltip><Button size="small" icon={<ReloadOutlined />} variant="outlined" onClick={() => void query.refetch()}>{localeCode === 'zh_CN' ? '刷新' : 'Refresh'}</Button></div>}
+        toolbar={<div className="soha-workload-table-filters"><StorageListToolbar clusterScoped /><Input className="soha-platform-compact-field" size="small" value={searchKeyword} onChange={(event) => setSearchKeyword(event.target.value)} placeholder={localeCode === 'zh_CN' ? '搜索 StorageClass / provisioner' : 'Search StorageClass / provisioner'} style={{ width: 280 }} /></div>}
+        toolbarExtra={<div className="soha-page-toolbar"><Tooltip title={!clusterId ? (localeCode === 'zh_CN' ? '请先选择集群。' : 'Select a cluster first.') : ''}><span><Button size="small" type="primary" icon={<PlusOutlined />} disabled={!clusterId} onClick={() => setCreateVisible(true)}>{localeCode === 'zh_CN' ? '新增' : 'Create'}</Button></span></Tooltip><Button size="small" icon={<ReloadOutlined />} variant="outlined" onClick={() => void query.refetch()}>{localeCode === 'zh_CN' ? '刷新' : 'Refresh'}</Button></div>}
         empty={<Empty description={clusterId ? (localeCode === 'zh_CN' ? '当前集群没有 StorageClass' : 'No storage classes in this cluster') : (localeCode === 'zh_CN' ? '请选择集群' : 'Select a cluster')} />}
       />
     </div>
@@ -1042,10 +1042,10 @@ export function StoragePvcDetailPage() {
   const yamlState = useResourceYAMLState(yamlPath, 'storage-pvc', name, detailNamespace)
   const detail = detailQuery.data?.data
   if (!clusterId || !detailNamespace) return <Empty description={localeCode === 'zh_CN' ? '请选择集群和命名空间' : 'Select a cluster and namespace'} />
-  if (detailQuery.isLoading) return <Card loading className="kc-detail-card" />
+  if (detailQuery.isLoading) return <Card loading className="soha-detail-card" />
   if (!detail) return <Empty description={localeCode === 'zh_CN' ? 'PVC 未找到' : 'PVC not found'} />
   return (
-    <div className="kc-page">
+    <div className="soha-page">
       <StorageDetailHeader title={`PVC: ${detail.name}`} description={localeCode === 'zh_CN' ? '查看 PVC 绑定状态、容量与 YAML。' : 'Inspect PVC binding status, capacity, and YAML.'} />
       <Tabs items={[
         { key: 'overview', label: localeCode === 'zh_CN' ? '概览' : 'Overview', children: <ResourceMetaOverview name={detail.name} namespace={detail.namespace} createdAt={detail.createdAt} labels={detail.labels} annotations={detail.annotations} extra={[{ key: localeCode === 'zh_CN' ? '状态' : 'Status', value: <StatusTag value={detail.status} /> }, { key: 'Volume', value: detail.volumeName || '-' }, { key: 'StorageClass', value: detail.storageClass || '-' }, { key: localeCode === 'zh_CN' ? '申请容量' : 'Requested', value: detail.requested || '-' }, { key: localeCode === 'zh_CN' ? '已分配容量' : 'Capacity', value: detail.capacity || '-' }, { key: 'VolumeMode', value: detail.volumeMode || '-' }, { key: 'AccessModes', value: detail.accessModes?.join(', ') || '-' }]} /> },
@@ -1066,10 +1066,10 @@ export function StoragePvDetailPage() {
   const yamlState = useResourceYAMLState(yamlPath, 'storage-pv', name, '')
   const detail = detailQuery.data?.data
   if (!clusterId) return <Empty description={localeCode === 'zh_CN' ? '请选择集群' : 'Select a cluster'} />
-  if (detailQuery.isLoading) return <Card loading className="kc-detail-card" />
+  if (detailQuery.isLoading) return <Card loading className="soha-detail-card" />
   if (!detail) return <Empty description={localeCode === 'zh_CN' ? 'PV 未找到' : 'PV not found'} />
   return (
-    <div className="kc-page">
+    <div className="soha-page">
       <StorageDetailHeader title={`PV: ${detail.name}`} description={localeCode === 'zh_CN' ? '查看 PV 容量、绑定关系、回收策略与 YAML。' : 'Inspect PV capacity, claim linkage, reclaim policy, and YAML.'} />
       <PlatformClusterScopeHint resourceLabel="PersistentVolume" />
       <Tabs items={[
@@ -1091,14 +1091,14 @@ export function StorageClassDetailPage() {
   const yamlState = useResourceYAMLState(yamlPath, 'storageclass', name, '')
   const detail = detailQuery.data?.data
   if (!clusterId) return <Empty description={localeCode === 'zh_CN' ? '请选择集群' : 'Select a cluster'} />
-  if (detailQuery.isLoading) return <Card loading className="kc-detail-card" />
+  if (detailQuery.isLoading) return <Card loading className="soha-detail-card" />
   if (!detail) return <Empty description={localeCode === 'zh_CN' ? 'StorageClass 未找到' : 'StorageClass not found'} />
   return (
-    <div className="kc-page">
+    <div className="soha-page">
       <StorageDetailHeader title={`StorageClass: ${detail.name}`} description={localeCode === 'zh_CN' ? '查看 provisioner、绑定模式、参数与 YAML。' : 'Inspect provisioner, binding mode, parameters, and YAML.'} />
       <PlatformClusterScopeHint resourceLabel="StorageClass" />
       <Tabs items={[
-        { key: 'overview', label: localeCode === 'zh_CN' ? '概览' : 'Overview', children: <><ResourceMetaOverview name={detail.name} namespace="-" createdAt={detail.createdAt} labels={detail.labels} annotations={detail.annotations} extra={[{ key: 'Provisioner', value: detail.provisioner }, { key: 'ReclaimPolicy', value: detail.reclaimPolicy || '-' }, { key: 'BindingMode', value: detail.volumeBindingMode || '-' }, { key: localeCode === 'zh_CN' ? '允许扩容' : 'Expansion', value: <BooleanTag value={detail.allowVolumeExpansion} trueLabel="Yes" falseLabel="No" /> }]} /><Card className="kc-detail-card" title={localeCode === 'zh_CN' ? '参数' : 'Parameters'}>{detail.parameters && Object.keys(detail.parameters).length > 0 ? <Descriptions column={1} items={Object.entries(detail.parameters).map(([key, value]) => ({ key, label: key, children: value }))} /> : <Empty description={localeCode === 'zh_CN' ? '暂无参数' : 'No parameters'} />}</Card></> },
+        { key: 'overview', label: localeCode === 'zh_CN' ? '概览' : 'Overview', children: <><ResourceMetaOverview name={detail.name} namespace="-" createdAt={detail.createdAt} labels={detail.labels} annotations={detail.annotations} extra={[{ key: 'Provisioner', value: detail.provisioner }, { key: 'ReclaimPolicy', value: detail.reclaimPolicy || '-' }, { key: 'BindingMode', value: detail.volumeBindingMode || '-' }, { key: localeCode === 'zh_CN' ? '允许扩容' : 'Expansion', value: <BooleanTag value={detail.allowVolumeExpansion} trueLabel="Yes" falseLabel="No" /> }]} /><Card className="soha-detail-card" title={localeCode === 'zh_CN' ? '参数' : 'Parameters'}>{detail.parameters && Object.keys(detail.parameters).length > 0 ? <Descriptions column={1} items={Object.entries(detail.parameters).map(([key, value]) => ({ key, label: key, children: value }))} /> : <Empty description={localeCode === 'zh_CN' ? '暂无参数' : 'No parameters'} />}</Card></> },
         { key: 'yaml', label: 'YAML', children: <StorageYamlTab state={yamlState} /> },
       ]} />
     </div>

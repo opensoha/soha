@@ -2,7 +2,7 @@
 
 ## Positioning
 
-MCP is not placed directly inside handlers or Kubernetes resource services. kubecrux reserves MCP at the infrastructure and integration boundary so external tools can be connected without bypassing authorization, audit, or request tracing.
+MCP is not placed directly inside handlers or Kubernetes resource services. soha reserves MCP at the infrastructure and integration boundary so external tools can be connected without bypassing authorization, audit, or request tracing.
 
 ## Current Extension Point
 

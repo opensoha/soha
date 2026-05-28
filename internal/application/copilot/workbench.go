@@ -8,10 +8,10 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	domaincopilot "github.com/kubecrux/kubecrux/internal/domain/copilot"
-	domainidentity "github.com/kubecrux/kubecrux/internal/domain/identity"
-	mcpmetrics "github.com/kubecrux/kubecrux/internal/infrastructure/mcp/metrics"
-	mcptraces "github.com/kubecrux/kubecrux/internal/infrastructure/mcp/traces"
+	domaincopilot "github.com/soha/soha/internal/domain/copilot"
+	domainidentity "github.com/soha/soha/internal/domain/identity"
+	mcpmetrics "github.com/soha/soha/internal/infrastructure/mcp/metrics"
+	mcptraces "github.com/soha/soha/internal/infrastructure/mcp/traces"
 )
 
 func normalizeSessionMode(mode string) string {
@@ -724,8 +724,8 @@ func (s *Service) runSessionInspectionReview(sessionID string, scope domaincopil
 			"scopeOverrides":     toolset.ScopeOverrides,
 			"generatedAt":        now.Format(time.RFC3339),
 			"analysisRuntime":    "in_process",
-			"artifactContract":   "kubecrux.analysisArtifact.v1",
-			"redactionBoundary":  "kubecrux-controlled",
+			"artifactContract":   "soha.analysisArtifact.v1",
+			"redactionBoundary":  "soha-controlled",
 			"operationBoundary":  "read_only_review",
 			"agentRuntimeMode":   "internal",
 			"agentRuntimeRunRef": runID,

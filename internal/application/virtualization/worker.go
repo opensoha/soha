@@ -7,10 +7,10 @@ import (
 	"strings"
 	"time"
 
-	domainidentity "github.com/kubecrux/kubecrux/internal/domain/identity"
-	domainvirtualization "github.com/kubecrux/kubecrux/internal/domain/virtualization"
-	infravirtualization "github.com/kubecrux/kubecrux/internal/infrastructure/virtualization"
-	"github.com/kubecrux/kubecrux/internal/platform/runtimeobs"
+	domainidentity "github.com/soha/soha/internal/domain/identity"
+	domainvirtualization "github.com/soha/soha/internal/domain/virtualization"
+	infravirtualization "github.com/soha/soha/internal/infrastructure/virtualization"
+	"github.com/soha/soha/internal/platform/runtimeobs"
 	"k8s.io/apimachinery/pkg/api/resource"
 )
 

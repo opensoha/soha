@@ -152,7 +152,7 @@ Synchronized image and template assets discovered from KubeVirt CDI/PVC sources 
 
 ### virtualization_flavors
 
-Standard VM sizing catalog managed by kubecrux or discovered from providers.
+Standard VM sizing catalog managed by soha or discovered from providers.
 
 ### virtualization_tasks
 

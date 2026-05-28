@@ -108,14 +108,14 @@ export function PlatformScopeToolbar({
   const { clusterId, namespace, setClusterId, setNamespace, clusters, namespaces } = usePlatformScopeData()
 
   return (
-    <div className={['kc-scopebar', embedded ? 'is-embedded' : '', className].filter(Boolean).join(' ')}>
+    <div className={['soha-scopebar', embedded ? 'is-embedded' : '', className].filter(Boolean).join(' ')}>
       {showLabel ? (
         <Text strong style={{ fontSize: 12 }}>
           {t('platformScope.scope', 'Resource Scope')}
         </Text>
       ) : null}
       <Select
-        className="kc-platform-compact-field"
+        className="soha-platform-compact-field"
         size="small"
         placeholder={t('platformScope.clusterPlaceholder', 'Select cluster')}
         value={clusterId ?? undefined}
@@ -128,7 +128,7 @@ export function PlatformScopeToolbar({
         allowClear
       />
       <Select
-        className="kc-platform-compact-field"
+        className="soha-platform-compact-field"
         size="small"
         placeholder={t('platformScope.namespacePlaceholder', 'Select namespace')}
         value={namespace ?? undefined}
@@ -158,8 +158,8 @@ export function ScopeSummary({ className, scopeMode = 'passive' }: ScopeSummaryP
 
   return (
     <Space size={[6, 6]} wrap className={className}>
-      {scopeMode === 'namespace' ? <Tag className="kc-scope-summary-tag">{`${t('common.namespace', 'Namespace')} ${scopeLabels.namespace}`}</Tag> : null}
-      <Tag className="kc-scope-summary-tag">{`${t('common.cluster', 'Cluster')} ${scopeLabels.cluster}`}</Tag>
+      {scopeMode === 'namespace' ? <Tag className="soha-scope-summary-tag">{`${t('common.namespace', 'Namespace')} ${scopeLabels.namespace}`}</Tag> : null}
+      <Tag className="soha-scope-summary-tag">{`${t('common.cluster', 'Cluster')} ${scopeLabels.cluster}`}</Tag>
     </Space>
   )
 }
@@ -180,12 +180,12 @@ export function ResourceWorkspaceScopeBar({
   const showClusterSelector = scopeMode === 'cluster' || scopeMode === 'namespace'
 
   return (
-    <div className={['kc-page-context-bar', sticky ? 'is-sticky' : '', className].filter(Boolean).join(' ')}>
-      <div className="kc-page-context-bar__header">
-        <Text strong className="kc-page-context-bar__title">
+    <div className={['soha-page-context-bar', sticky ? 'is-sticky' : '', className].filter(Boolean).join(' ')}>
+      <div className="soha-page-context-bar__header">
+        <Text strong className="soha-page-context-bar__title">
           {t('platformScope.scope', 'Resource Scope')}
         </Text>
-        <Text type="secondary" className="kc-page-context-bar__subtitle">
+        <Text type="secondary" className="soha-page-context-bar__subtitle">
           {scopeMode === 'namespace'
             ? t('platformScope.namespaceHint', 'Use namespace and cluster as the current resource context')
             : showClusterSelector
@@ -195,10 +195,10 @@ export function ResourceWorkspaceScopeBar({
       </div>
 
       {showClusterSelector ? (
-        <div className="kc-page-context-bar__controls">
+        <div className="soha-page-context-bar__controls">
           {showNamespaceSelector ? (
             <Select
-              className="kc-platform-compact-field"
+              className="soha-platform-compact-field"
               size="small"
               placeholder={t('platformScope.namespacePlaceholder', 'Select namespace')}
               value={namespace ?? undefined}
@@ -216,7 +216,7 @@ export function ResourceWorkspaceScopeBar({
             />
           ) : null}
           <Select
-            className="kc-platform-compact-field"
+            className="soha-platform-compact-field"
             size="small"
             placeholder={t('platformScope.clusterPlaceholder', 'Select cluster')}
             value={clusterId ?? undefined}
@@ -230,9 +230,9 @@ export function ResourceWorkspaceScopeBar({
           />
         </div>
       ) : (
-        <div className="kc-page-context-bar__summary">
-          <Tag className="kc-scope-summary-tag">{`${t('common.cluster', 'Cluster')} ${scopeLabels.cluster}`}</Tag>
-          <Tag className="kc-scope-summary-tag">{`${t('common.namespace', 'Namespace')} ${scopeLabels.namespace}`}</Tag>
+        <div className="soha-page-context-bar__summary">
+          <Tag className="soha-scope-summary-tag">{`${t('common.cluster', 'Cluster')} ${scopeLabels.cluster}`}</Tag>
+          <Tag className="soha-scope-summary-tag">{`${t('common.namespace', 'Namespace')} ${scopeLabels.namespace}`}</Tag>
         </div>
       )}
     </div>
@@ -251,12 +251,12 @@ export function GlobalScopeBar({ className, scopeMode = 'hidden' }: GlobalScopeB
   const showClusterSelector = scopeMode === 'cluster' || scopeMode === 'namespace'
 
   return (
-    <div className={['kc-global-scopebar', className].filter(Boolean).join(' ')}>
+    <div className={['soha-global-scopebar', className].filter(Boolean).join(' ')}>
       {showClusterSelector ? (
-        <div className="kc-global-scopebar-controls">
+        <div className="soha-global-scopebar-controls">
           {showNamespaceSelector ? (
             <Select
-              className="kc-platform-compact-field kc-global-scopebar-namespace"
+              className="soha-platform-compact-field soha-global-scopebar-namespace"
               size="small"
               placeholder={t('platformScope.namespacePlaceholder', 'Select namespace')}
               value={namespace ?? undefined}
@@ -274,7 +274,7 @@ export function GlobalScopeBar({ className, scopeMode = 'hidden' }: GlobalScopeB
             />
           ) : null}
           <Select
-            className="kc-platform-compact-field kc-global-scopebar-cluster"
+            className="soha-platform-compact-field soha-global-scopebar-cluster"
             size="small"
             placeholder={t('platformScope.clusterPlaceholder', 'Select cluster')}
             value={clusterId ?? undefined}
@@ -288,9 +288,9 @@ export function GlobalScopeBar({ className, scopeMode = 'hidden' }: GlobalScopeB
           />
         </div>
       ) : (
-        <div className="kc-global-scopebar-summary">
-          <Tag className="kc-scope-summary-tag">{`${t('common.namespace', 'Namespace')} ${scopeLabels.namespace}`}</Tag>
-          <Tag className="kc-scope-summary-tag">{`${t('common.cluster', 'Cluster')} ${scopeLabels.cluster}`}</Tag>
+        <div className="soha-global-scopebar-summary">
+          <Tag className="soha-scope-summary-tag">{`${t('common.namespace', 'Namespace')} ${scopeLabels.namespace}`}</Tag>
+          <Tag className="soha-scope-summary-tag">{`${t('common.cluster', 'Cluster')} ${scopeLabels.cluster}`}</Tag>
         </div>
       )}
     </div>

@@ -16,6 +16,6 @@ export const usePlatformScopeStore = create<PlatformScopeState>()(
       setClusterId: (clusterId) => set({ clusterId, namespace: null }),
       setNamespace: (namespace) => set({ namespace }),
     }),
-    { name: 'kubecrux-scope' },
+    { name: 'soha-scope' },
   ),
 )

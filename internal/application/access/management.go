@@ -7,14 +7,14 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
-	domainaccess "github.com/kubecrux/kubecrux/internal/domain/access"
-	domainaudit "github.com/kubecrux/kubecrux/internal/domain/audit"
-	domainidentity "github.com/kubecrux/kubecrux/internal/domain/identity"
-	domainoperation "github.com/kubecrux/kubecrux/internal/domain/operation"
-	"github.com/kubecrux/kubecrux/internal/platform/operationentry"
-	"github.com/kubecrux/kubecrux/internal/platform/requestctx"
-	"github.com/kubecrux/kubecrux/internal/platform/apperrors"
-	userrepo "github.com/kubecrux/kubecrux/internal/repository/user"
+	domainaccess "github.com/soha/soha/internal/domain/access"
+	domainaudit "github.com/soha/soha/internal/domain/audit"
+	domainidentity "github.com/soha/soha/internal/domain/identity"
+	domainoperation "github.com/soha/soha/internal/domain/operation"
+	"github.com/soha/soha/internal/platform/apperrors"
+	"github.com/soha/soha/internal/platform/operationentry"
+	"github.com/soha/soha/internal/platform/requestctx"
+	userrepo "github.com/soha/soha/internal/repository/user"
 	"gorm.io/gorm"
 )
 

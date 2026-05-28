@@ -7,16 +7,16 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	appaccess "github.com/kubecrux/kubecrux/internal/application/access"
-	domainapp "github.com/kubecrux/kubecrux/internal/domain/application"
-	domainbuild "github.com/kubecrux/kubecrux/internal/domain/build"
-	domaincatalog "github.com/kubecrux/kubecrux/internal/domain/catalog"
-	domaindelivery "github.com/kubecrux/kubecrux/internal/domain/delivery"
-	domainidentity "github.com/kubecrux/kubecrux/internal/domain/identity"
-	domainrelease "github.com/kubecrux/kubecrux/internal/domain/release"
-	domainresource "github.com/kubecrux/kubecrux/internal/domain/resource"
-	domainworkflow "github.com/kubecrux/kubecrux/internal/domain/workflow"
-	"github.com/kubecrux/kubecrux/internal/platform/apperrors"
+	appaccess "github.com/soha/soha/internal/application/access"
+	domainapp "github.com/soha/soha/internal/domain/application"
+	domainbuild "github.com/soha/soha/internal/domain/build"
+	domaincatalog "github.com/soha/soha/internal/domain/catalog"
+	domaindelivery "github.com/soha/soha/internal/domain/delivery"
+	domainidentity "github.com/soha/soha/internal/domain/identity"
+	domainrelease "github.com/soha/soha/internal/domain/release"
+	domainresource "github.com/soha/soha/internal/domain/resource"
+	domainworkflow "github.com/soha/soha/internal/domain/workflow"
+	"github.com/soha/soha/internal/platform/apperrors"
 )
 
 type ApplicationReader interface {

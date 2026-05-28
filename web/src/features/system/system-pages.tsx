@@ -310,16 +310,16 @@ export function OnlineUsersPage() {
   ]
 
   return (
-    <div className="kc-page">
+    <div className="soha-page">
       <AdminTable
         title={(
-          <div className="kc-admin-table-title-block">
+          <div className="soha-admin-table-title-block">
             <Text strong>在线用户</Text>
             <Text type="secondary">查看当前在线会话、登录来源、最后活跃时间与会话到期信息。</Text>
           </div>
         )}
         headerExtra={canManageOnlineUsers ? (
-          <div className="kc-page-toolbar">
+          <div className="soha-page-toolbar">
             <Button
               size="small"
               danger
@@ -338,9 +338,9 @@ export function OnlineUsersPage() {
         loading={isLoading}
         pageSize={20}
         toolbar={(
-          <div className="kc-workload-table-filters">
+          <div className="soha-workload-table-filters">
             <Select
-              className="kc-platform-compact-field"
+              className="soha-platform-compact-field"
               allowClear
               size="small"
               placeholder="登录方式"
@@ -350,7 +350,7 @@ export function OnlineUsersPage() {
               options={providerOptions}
             />
             <Input.Search
-              className="kc-platform-compact-field"
+              className="soha-platform-compact-field"
               allowClear
               size="small"
               placeholder="搜索用户 / 邮箱 / IP / 设备"
@@ -524,7 +524,7 @@ export function AnnouncementsPage() {
   )
 
   return (
-    <div className="kc-page">
+    <div className="soha-page">
       <PageHeader
         title="公告管理"
         description="按发布状态管理公告内容、发布时间窗与置顶优先级。"
@@ -534,26 +534,26 @@ export function AnnouncementsPage() {
           </Button>
         ) : null}
       />
-      <div className="kc-system-overview-grid">
-        <Card variant="outlined" className="kc-system-metric-card">
+      <div className="soha-system-overview-grid">
+        <Card variant="outlined" className="soha-system-metric-card">
           <Statistic title="已发布" value={announcementSummary.published} />
           <Text type="secondary">当前对用户可见的公告</Text>
         </Card>
-        <Card variant="outlined" className="kc-system-metric-card">
+        <Card variant="outlined" className="soha-system-metric-card">
           <Statistic title="草稿" value={announcementSummary.draft} />
           <Text type="secondary">仍在编辑，尚未推送</Text>
         </Card>
-        <Card variant="outlined" className="kc-system-metric-card">
+        <Card variant="outlined" className="soha-system-metric-card">
           <Statistic title="待生效" value={announcementSummary.scheduled} />
           <Text type="secondary">已配置时间窗，等待生效</Text>
         </Card>
-        <Card variant="outlined" className="kc-system-metric-card">
+        <Card variant="outlined" className="soha-system-metric-card">
           <Statistic title="置顶公告" value={announcementSummary.sticky} />
           <Text type="secondary">优先出现在用户端弹窗与铃铛中</Text>
         </Card>
       </div>
 
-      <Card variant="outlined" className="kc-system-panel-card">
+      <Card variant="outlined" className="soha-system-panel-card">
         <Tabs
           activeKey={statusView}
           onChange={setStatusView}
@@ -562,7 +562,7 @@ export function AnnouncementsPage() {
             label: item.label,
             children: (
               <List
-                className="kc-system-announcement-list"
+                className="soha-system-announcement-list"
                 itemLayout="vertical"
                 loading={isLoading}
                 dataSource={filteredAnnouncements}
@@ -574,7 +574,7 @@ export function AnnouncementsPage() {
                       key={record.id}
                       actions={[renderAnnouncementActions(record)]}
                       extra={(
-                        <div className="kc-system-announcement-extra">
+                        <div className="soha-system-announcement-extra">
                           <Text type="secondary">{`发布时间 ${formatDateTime(record.publishedAt || record.updatedAt || record.createdAt)}`}</Text>
                           <Text type="secondary">{`生效窗口 ${formatDateTime(record.startsAt)} ~ ${formatDateTime(record.endsAt)}`}</Text>
                         </div>
@@ -583,7 +583,7 @@ export function AnnouncementsPage() {
                       <List.Item.Meta
                         title={(
                           <Space size={8} wrap>
-                            <Button type="link" className="kc-system-linklike" onClick={() => setPreviewing(record)}>
+                            <Button type="link" className="soha-system-linklike" onClick={() => setPreviewing(record)}>
                               {record.title}
                             </Button>
                             <StatusTag value={record.level} />
@@ -595,7 +595,7 @@ export function AnnouncementsPage() {
                         )}
                         description={record.summary ? <Text>{record.summary}</Text> : <Text type="secondary">无摘要</Text>}
                       />
-                      <Paragraph className="kc-system-announcement-content" ellipsis={{ rows: 3, expandable: true, symbol: '展开正文' }}>
+                      <Paragraph className="soha-system-announcement-content" ellipsis={{ rows: 3, expandable: true, symbol: '展开正文' }}>
                         {record.content}
                       </Paragraph>
                     </List.Item>
@@ -660,7 +660,7 @@ export function AnnouncementsPage() {
           <Form.Item name="endsAt" label="生效结束">
             <DatePicker showTime style={{ width: '100%' }} />
           </Form.Item>
-          <div className="kc-form-actions">
+          <div className="soha-form-actions">
             <Button onClick={() => setModalVisible(false)}>取消</Button>
             {canManageAnnouncements ? (
               <Button htmlType="submit" type="primary" loading={createMutation.isPending || updateMutation.isPending}>
@@ -1333,7 +1333,7 @@ export function MenusPage() {
   ]
 
   return (
-    <div className="kc-page">
+    <div className="soha-page">
       <AdminTable
         key={treeView}
         columns={columns}
@@ -1344,7 +1344,7 @@ export function MenusPage() {
         pagination={false}
         scroll={{ x: 1320 }}
         title={(
-          <div className="kc-admin-table-title-block">
+          <div className="soha-admin-table-title-block">
             <Text strong>菜单管理</Text>
           </div>
         )}
@@ -1353,8 +1353,8 @@ export function MenusPage() {
           rowExpandable: (record: MenuItem) => countDirectMenuChildren(record) > 0,
         }}
         toolbar={(
-          <div className="kc-admin-table-toolbar-main">
-            <div className="kc-workload-table-filters">
+          <div className="soha-admin-table-toolbar-main">
+            <div className="soha-workload-table-filters">
               <Segmented
                 size="small"
                 value={treeView}
@@ -1366,7 +1366,7 @@ export function MenusPage() {
                 ]}
               />
               <Select
-                className="kc-platform-compact-field"
+                className="soha-platform-compact-field"
                 allowClear
                 size="small"
                 placeholder="按分组筛选"
@@ -1376,7 +1376,7 @@ export function MenusPage() {
                 options={sectionOptions}
               />
               <Select
-                className="kc-platform-compact-field"
+                className="soha-platform-compact-field"
                 allowClear
                 size="small"
                 placeholder="按工作台筛选"
@@ -1386,7 +1386,7 @@ export function MenusPage() {
                 options={workbenchOptions}
               />
               <Select
-                className="kc-platform-compact-field"
+                className="soha-platform-compact-field"
                 size="small"
                 value={enabledFilter}
                 style={{ width: 160 }}
@@ -1398,7 +1398,7 @@ export function MenusPage() {
                 ]}
               />
               <Select
-                className="kc-platform-compact-field"
+                className="soha-platform-compact-field"
                 size="small"
                 value={visibilityFilter}
                 style={{ width: 180 }}
@@ -1412,7 +1412,7 @@ export function MenusPage() {
               />
             </div>
             {canManageMenus ? (
-              <div className="kc-page-toolbar">
+              <div className="soha-page-toolbar">
                 <Button size="small" icon={<PlusOutlined />} type="primary" onClick={() => { setEditing(null); setModalVisible(true) }}>
                   新建菜单
                 </Button>
@@ -1571,7 +1571,7 @@ export function MenusPage() {
           <Form.Item name="enabled" label="是否启用" valuePropName="checked">
             <Switch />
           </Form.Item>
-          <div className="kc-form-actions">
+          <div className="soha-form-actions">
             <Button onClick={() => { setModalVisible(false); setEditing(null); form.resetFields() }}>取消</Button>
             {canManageMenus ? (
               <Button htmlType="submit" type="primary" loading={createMutation.isPending || updateMutation.isPending}>
@@ -1630,7 +1630,7 @@ function AuditLogDrawer({ record, open, onClose }: { record: AuditLog | null; op
                       { key: 'summary', label: '摘要', children: record.summary || '-' },
                     ]}
                   />
-                  <Card variant="outlined" className="kc-system-payload-card">
+                  <Card variant="outlined" className="soha-system-payload-card">
                     <Title level={5} style={{ marginTop: 0 }}>访问上下文</Title>
                     <Descriptions
                       size="small"
@@ -1652,7 +1652,7 @@ function AuditLogDrawer({ record, open, onClose }: { record: AuditLog | null; op
               key: 'metadata',
               label: '原始元数据',
               children: (
-                <pre className="kc-system-json-block">{stringifyPayload(record.metadata)}</pre>
+                <pre className="soha-system-json-block">{stringifyPayload(record.metadata)}</pre>
               ),
             },
           ]}
@@ -1710,7 +1710,7 @@ export function AuditLogsPage() {
       render: (_: string, record: AuditLog) => {
         const resource = buildAuditResourceLabel(record.resourceKind, record.resourceName)
         return (
-          <div className="kc-log-event-cell">
+          <div className="soha-log-event-cell">
             <Space size={8} wrap>
               <StatusTag value={record.action} />
               {resource.secondary ? <Text type="secondary">{resource.secondary}</Text> : null}
@@ -1730,7 +1730,7 @@ export function AuditLogsPage() {
       title: '摘要',
       dataIndex: 'summary',
       render: (value: string) => (
-        <Paragraph className="kc-log-summary" ellipsis={{ rows: 2, tooltip: value }}>
+        <Paragraph className="soha-log-summary" ellipsis={{ rows: 2, tooltip: value }}>
           {value || '-'}
         </Paragraph>
       ),
@@ -1746,22 +1746,22 @@ export function AuditLogsPage() {
   ]
 
   return (
-    <div className="kc-page">
+    <div className="soha-page">
       <PageHeader title="审计日志" description="先看重点，再下钻查看请求上下文和原始元数据。" />
-      <div className="kc-system-overview-grid">
-        <Card variant="outlined" className="kc-system-metric-card">
+      <div className="soha-system-overview-grid">
+        <Card variant="outlined" className="soha-system-metric-card">
           <Statistic title="总记录" value={overview.total} />
           <Text type="secondary">当前查询条件下的审计流水</Text>
         </Card>
-        <Card variant="outlined" className="kc-system-metric-card">
+        <Card variant="outlined" className="soha-system-metric-card">
           <Statistic title="异常 / 拒绝" value={overview.abnormal} />
           <Text type="secondary">优先关注 deny、failure 等记录</Text>
         </Card>
-        <Card variant="outlined" className="kc-system-metric-card">
+        <Card variant="outlined" className="soha-system-metric-card">
           <Statistic title="涉及用户" value={overview.actors} />
           <Text type="secondary">本页记录触达的操作者数量</Text>
         </Card>
-        <Card variant="outlined" className="kc-system-metric-card">
+        <Card variant="outlined" className="soha-system-metric-card">
           <Statistic title="今日新增" value={overview.today} />
           <Text type="secondary">今天发生的审计事件</Text>
         </Card>
@@ -1777,7 +1777,7 @@ export function AuditLogsPage() {
           style: { cursor: 'pointer' },
         })}
         toolbar={(
-          <div className="kc-workload-table-filters">
+          <div className="soha-workload-table-filters">
             <Segmented
               size="small"
               value={viewMode}
@@ -1789,7 +1789,7 @@ export function AuditLogsPage() {
               ]}
             />
             <Select
-              className="kc-platform-compact-field"
+              className="soha-platform-compact-field"
               allowClear
               size="small"
               placeholder="动作"
@@ -1808,7 +1808,7 @@ export function AuditLogsPage() {
               ]}
             />
             <Select
-              className="kc-platform-compact-field"
+              className="soha-platform-compact-field"
               allowClear
               size="small"
               placeholder="结果"
@@ -1877,7 +1877,7 @@ function OperationLogDrawer({ record, open, onClose }: { record: OperationLog | 
             {
               key: 'scope',
               label: '目标范围',
-              children: <pre className="kc-system-json-block">{stringifyPayload(record.targetScope)}</pre>,
+              children: <pre className="soha-system-json-block">{stringifyPayload(record.targetScope)}</pre>,
             },
             {
               key: 'request',
@@ -1899,7 +1899,7 @@ function OperationLogDrawer({ record, open, onClose }: { record: OperationLog | 
             {
               key: 'metadata',
               label: '元数据',
-              children: <pre className="kc-system-json-block">{stringifyPayload(record.metadata)}</pre>,
+              children: <pre className="soha-system-json-block">{stringifyPayload(record.metadata)}</pre>,
             },
           ]}
         />
@@ -1951,7 +1951,7 @@ export function OperationLogsPage() {
       render: (value: string) => {
         const pretty = prettifyOperationType(value)
         return (
-          <div className="kc-log-event-cell">
+          <div className="soha-log-event-cell">
             <Text strong>{pretty.primary}</Text>
             <Text type="secondary">{pretty.secondary}</Text>
           </div>
@@ -1965,7 +1965,7 @@ export function OperationLogsPage() {
       render: (value: Record<string, unknown>) => {
         const target = buildTargetScopeLabel(value || {})
         return (
-          <div className="kc-log-event-cell">
+          <div className="soha-log-event-cell">
             <Text strong>{target.primary}</Text>
             <Text type="secondary">{target.secondary || '-'}</Text>
           </div>
@@ -1982,7 +1982,7 @@ export function OperationLogsPage() {
       title: '摘要',
       dataIndex: 'summary',
       render: (value: string) => (
-        <Paragraph className="kc-log-summary" ellipsis={{ rows: 2, tooltip: value }}>
+        <Paragraph className="soha-log-summary" ellipsis={{ rows: 2, tooltip: value }}>
           {value || '-'}
         </Paragraph>
       ),
@@ -1998,22 +1998,22 @@ export function OperationLogsPage() {
   ]
 
   return (
-    <div className="kc-page">
+    <div className="soha-page">
       <PageHeader title="操作日志" description="把变更动作和目标对象拆开看，先看发生了什么，再看打到了哪里。" />
-      <div className="kc-system-overview-grid">
-        <Card variant="outlined" className="kc-system-metric-card">
+      <div className="soha-system-overview-grid">
+        <Card variant="outlined" className="soha-system-metric-card">
           <Statistic title="总操作" value={overview.total} />
           <Text type="secondary">可追踪的后台变更流水</Text>
         </Card>
-        <Card variant="outlined" className="kc-system-metric-card">
+        <Card variant="outlined" className="soha-system-metric-card">
           <Statistic title="失败操作" value={overview.failed} />
           <Text type="secondary">优先排查执行失败的流程</Text>
         </Card>
-        <Card variant="outlined" className="kc-system-metric-card">
+        <Card variant="outlined" className="soha-system-metric-card">
           <Statistic title="系统变更" value={overview.system} />
           <Text type="secondary">公告、菜单、会话等系统域操作</Text>
         </Card>
-        <Card variant="outlined" className="kc-system-metric-card">
+        <Card variant="outlined" className="soha-system-metric-card">
           <Statistic title="平台变更" value={overview.platform} />
           <Text type="secondary">集群、命名空间、资源 YAML 等平台域操作</Text>
         </Card>
@@ -2029,7 +2029,7 @@ export function OperationLogsPage() {
           style: { cursor: 'pointer' },
         })}
         toolbar={(
-          <div className="kc-workload-table-filters">
+          <div className="soha-workload-table-filters">
             <Segmented
               size="small"
               value={moduleView}
@@ -2044,7 +2044,7 @@ export function OperationLogsPage() {
               ]}
             />
             <Input
-              className="kc-platform-compact-field"
+              className="soha-platform-compact-field"
               size="small"
               placeholder="按操作类型过滤"
               value={operationTypeFilter}
@@ -2052,7 +2052,7 @@ export function OperationLogsPage() {
               style={{ width: 220 }}
             />
             <Select
-              className="kc-platform-compact-field"
+              className="soha-platform-compact-field"
               allowClear
               size="small"
               placeholder="按结果过滤"

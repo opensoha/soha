@@ -9,7 +9,7 @@ import { buildClusterScopedPath } from '@/features/platform/platform-scope-query
 import type { TableColumnsType } from 'antd'
 
 type ColumnProps<T> = TableColumnsType<T>[number]
-export const TABLE_ACTIONS_COLUMN_CLASS_NAME = 'kc-table-actions-column'
+export const TABLE_ACTIONS_COLUMN_CLASS_NAME = 'soha-table-actions-column'
 
 export function useResourceActions<T extends Record<string, any>>(options: {
   resourcePath: string

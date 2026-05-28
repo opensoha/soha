@@ -1,16 +1,16 @@
-# kubecrux Repo Skills
+# soha Repo Skills
 
-This directory stores repo-local Codex skills that define repeatable execution rules for kubecrux work.
+This directory stores repo-local Codex skills that define repeatable execution rules for soha work.
 
 Current skill families:
 
-- `kubecrux-backend`
-- `kubecrux-frontend`
-- `kubecrux-deploy`
+- `soha-backend`
+- `soha-frontend`
+- `soha-deploy`
 
 ## Scope
 
-Repo-local skills exist to carry kubecrux-specific engineering rules that should not live only in the global Codex environment.
+Repo-local skills exist to carry soha-specific engineering rules that should not live only in the global Codex environment.
 
 Use them for:
 
@@ -45,7 +45,7 @@ Each skill directory must contain:
 When adding or updating repo-local skills:
 
 1. Keep the trigger description narrow and concrete.
-2. Put only kubecrux-specific guidance in the body.
+2. Put only soha-specific guidance in the body.
 3. Prefer short workflow bullets over long prose.
 4. Point to real repo paths instead of abstract layers whenever possible.
 5. Keep validation commands current with the active repo toolchain.

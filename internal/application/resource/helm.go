@@ -10,12 +10,12 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	domainaccess "github.com/kubecrux/kubecrux/internal/domain/access"
-	domaincluster "github.com/kubecrux/kubecrux/internal/domain/cluster"
-	domainidentity "github.com/kubecrux/kubecrux/internal/domain/identity"
-	domainresource "github.com/kubecrux/kubecrux/internal/domain/resource"
-	"github.com/kubecrux/kubecrux/internal/platform/apperrors"
-	helmrelease "github.com/kubecrux/kubecrux/internal/platform/helmrelease"
+	domainaccess "github.com/soha/soha/internal/domain/access"
+	domaincluster "github.com/soha/soha/internal/domain/cluster"
+	domainidentity "github.com/soha/soha/internal/domain/identity"
+	domainresource "github.com/soha/soha/internal/domain/resource"
+	"github.com/soha/soha/internal/platform/apperrors"
+	helmrelease "github.com/soha/soha/internal/platform/helmrelease"
 )
 
 type helmReleaseRecord struct {

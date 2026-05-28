@@ -1,6 +1,6 @@
 package abac
 
-import legacy "github.com/kubecrux/kubecrux/internal/policy"
+import legacy "github.com/soha/soha/internal/policy"
 
 type Evaluator = legacy.Engine
 

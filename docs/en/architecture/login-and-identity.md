@@ -2,7 +2,7 @@
 
 ## Goal
 
-`kubecrux` now treats login as two coordinated layers:
+`soha` now treats login as two coordinated layers:
 
 - local username/password login
 - aggregated third-party login providers
@@ -160,7 +160,7 @@ The preset endpoints are practical defaults, not a guarantee that every Feishu a
 
 The current implementation uses OAuth2 code exchange and then fetches user information through configured open-platform endpoints.
 
-DingTalk app modes and user-info surfaces vary enough that kubecrux treats it as a configurable provider instead of hard-coding one universal contract.
+DingTalk app modes and user-info surfaces vary enough that soha treats it as a configurable provider instead of hard-coding one universal contract.
 
 ### WeCom
 
@@ -218,7 +218,7 @@ On first successful external login the backend:
 - otherwise creates a new local user
 - assigns provider `defaultRoles` when the local user has no roles yet
 
-Authorization still belongs to kubecrux. The external IdP identifies the user source, but it does not bypass the local permission model.
+Authorization still belongs to soha. The external IdP identifies the user source, but it does not bypass the local permission model.
 
 ## Frontend And Permission Boundary
 

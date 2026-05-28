@@ -24,4 +24,4 @@ The bootstrap migration creates:
 - announcement receipt and port-forward tables
 - future build, deploy, notification, and preference tables
 
-It does not seed the default login account. The bootstrap user is created by backend startup from `auth.dev_principal`, and the current repository baseline is `admin / kubecrux` only.
+It does not seed the default login account. The bootstrap user is created by backend startup from `auth.dev_principal`, and the current repository baseline is `admin / soha` only.

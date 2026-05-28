@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	domainmenu "github.com/kubecrux/kubecrux/internal/domain/menu"
+	domainmenu "github.com/soha/soha/internal/domain/menu"
 	"gorm.io/gorm"
 )
 

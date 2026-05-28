@@ -6,9 +6,9 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	apiresponse "github.com/kubecrux/kubecrux/internal/api/response"
-	domainidentity "github.com/kubecrux/kubecrux/internal/domain/identity"
-	cfgpkg "github.com/kubecrux/kubecrux/internal/infrastructure/config"
+	apiresponse "github.com/soha/soha/internal/api/response"
+	domainidentity "github.com/soha/soha/internal/domain/identity"
+	cfgpkg "github.com/soha/soha/internal/infrastructure/config"
 )
 
 const (

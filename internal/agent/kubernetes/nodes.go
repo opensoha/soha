@@ -10,7 +10,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apiresource "k8s.io/apimachinery/pkg/api/resource"
 
-	domainresource "github.com/kubecrux/kubecrux/internal/domain/resource"
+	domainresource "github.com/soha/soha/internal/domain/resource"
 )
 
 type nodeResourceTotals struct {

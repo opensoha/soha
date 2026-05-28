@@ -17,11 +17,11 @@ type Scope struct {
 }
 
 type RangeQuery struct {
-	Scope      Scope
-	MetricKey  string
-	TimeFrom   time.Time
-	TimeTo     time.Time
-	Step       time.Duration
+	Scope     Scope
+	MetricKey string
+	TimeFrom  time.Time
+	TimeTo    time.Time
+	Step      time.Duration
 }
 
 type Point struct {
@@ -38,13 +38,13 @@ type Series struct {
 }
 
 type AnomalySummary struct {
-	MetricKey      string             `json:"metricKey"`
-	Scope          Scope              `json:"scope"`
-	Series         []Series           `json:"series"`
-	Signals        []map[string]any   `json:"signals"`
-	Summary        string             `json:"summary"`
-	QueryCost      map[string]any     `json:"queryCost"`
-	SampleWindow   map[string]any     `json:"sampleWindow"`
+	MetricKey    string           `json:"metricKey"`
+	Scope        Scope            `json:"scope"`
+	Series       []Series         `json:"series"`
+	Signals      []map[string]any `json:"signals"`
+	Summary      string           `json:"summary"`
+	QueryCost    map[string]any   `json:"queryCost"`
+	SampleWindow map[string]any   `json:"sampleWindow"`
 }
 
 type Driver interface {

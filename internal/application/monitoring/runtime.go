@@ -12,11 +12,11 @@ import (
 	"text/template"
 	"time"
 
-	appaccess "github.com/kubecrux/kubecrux/internal/application/access"
-	domainalert "github.com/kubecrux/kubecrux/internal/domain/alert"
-	domainidentity "github.com/kubecrux/kubecrux/internal/domain/identity"
-	domainworkflow "github.com/kubecrux/kubecrux/internal/domain/workflow"
-	"github.com/kubecrux/kubecrux/internal/platform/apperrors"
+	appaccess "github.com/soha/soha/internal/application/access"
+	domainalert "github.com/soha/soha/internal/domain/alert"
+	domainidentity "github.com/soha/soha/internal/domain/identity"
+	domainworkflow "github.com/soha/soha/internal/domain/workflow"
+	"github.com/soha/soha/internal/platform/apperrors"
 )
 
 type WorkflowExecutor interface {
@@ -249,7 +249,7 @@ func (s *Service) upsertInternalRuleEvent(ctx context.Context, rule domainalert.
 	}
 	event.RuleID = rule.ID
 	event.SourceType = "internal_rule"
-	event.SourceSystem = "kubecrux"
+	event.SourceSystem = "soha"
 	event.Fingerprint = match.Fingerprint
 	event.Title = firstNonEmpty(match.Title, strings.TrimSpace(rule.Name), "Alert Rule")
 	event.Summary = firstNonEmpty(match.Summary, strings.TrimSpace(result.Summary), event.Title)

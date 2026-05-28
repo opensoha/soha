@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	domainapp "github.com/kubecrux/kubecrux/internal/domain/application"
-	domaindelivery "github.com/kubecrux/kubecrux/internal/domain/delivery"
+	domainapp "github.com/soha/soha/internal/domain/application"
+	domaindelivery "github.com/soha/soha/internal/domain/delivery"
 	"gorm.io/gorm"
 )
 

@@ -1,7 +1,7 @@
 ---
-name: kubecrux-frontend
+name: soha-frontend
 description: >-
-  Implement and refactor the kubecrux console in `web/src/**` with React 18,
+  Implement and refactor the soha console in `web/src/**` with React 18,
   TypeScript 5, Vite, TanStack Query 5, Zustand 5, Tailwind 4, and native Ant
   Design 6. Use when adding or changing routes, feature pages, shared
   components, scoped queries, theme tokens, permission-aware navigation, or
@@ -15,7 +15,7 @@ description: >-
   residue.
 ---
 
-# Kubecrux Frontend
+# Soha Frontend
 
 ## Overview
 
@@ -36,7 +36,7 @@ Implement console work inside the active Vite app under `web`. Keep the UI antd-
 
 - Work in `web`. Do not treat `old_web` or `web_pro_backup` as active implementation targets.
 - Import directly from `antd` and `@ant-design/icons`. Do not introduce Semi Design packages, compat layers, variables, or naming back into `web`.
-- Keep `web/src/theme/app-theme.ts` as the single source for antd theme tokens and shared `--kc-*` CSS variables.
+- Keep `web/src/theme/app-theme.ts` as the single source for antd theme tokens and shared `--soha-*` CSS variables.
 - Do not reintroduce removed legacy theme assets, old static sync scripts, historical token aliases, or outdated file naming unless the user explicitly asks for legacy compatibility.
 - Route registration lives in `web/src/routes/index.tsx`. Navigation ownership, breadcrumbs, and permission-aware metadata live in `web/src/routes/meta.ts`.
 - Server state belongs to TanStack Query. Persisted UI and runtime preferences belong to Zustand. Avoid storing fetched API payloads in local stores.
@@ -59,9 +59,9 @@ Implement console work inside the active Vite app under `web`. Keep the UI antd-
 - Delivery pages should prefer backend aggregate endpoints for release boards, application detail, environment bindings, release bundles, execution tasks, logs, and artifacts instead of fan-out joins from the browser.
 - AI workbench canonical routes are `/ai-workbench`, `/ai-workbench/chat`, `/ai-workbench/root-cause`, `/ai-workbench/performance`, `/ai-workbench/inspection`, `/ai-workbench/tool-settings`, and `/ai-workbench/model-settings`. Legacy `/ai-observe/**`, `/chat`, `/ai-workbench/investigation`, `/ai-workbench/automation`, and `/ai-workbench/tools` should remain redirects or compatibility routes only.
 - AI investigation is session-first. Preserve session query parameters, mode selection, scope handoff, toolset drawer behavior, analysis artifact history, and inspection-to-session flows when changing the canvas.
-- AI Agent Runtime UI must consume kubecrux catalog contracts for `agentProviders`, `capabilities`, `toolBindings`, `skillBindings`, analysis profiles, and session toolsets. Do not call Hermes, OpenClaw, or provider-specific endpoints directly from pages.
+- AI Agent Runtime UI must consume soha catalog contracts for `agentProviders`, `capabilities`, `toolBindings`, `skillBindings`, analysis profiles, and session toolsets. Do not call Hermes, OpenClaw, or provider-specific endpoints directly from pages.
 - Provider selection belongs to session metadata, explicit-analysis requests, and automation policy forms as `agentProviderId`; pages should treat Hermes as one provider option, not as a special page mode.
-- Agent output shown in the workbench should come from kubecrux `AnalysisArtifact`, `ToolExecution`, and message metadata. Provider-native payloads should stay behind backend normalization.
+- Agent output shown in the workbench should come from soha `AnalysisArtifact`, `ToolExecution`, and message metadata. Provider-native payloads should stay behind backend normalization.
 - Continuous analysis controls should stay automation-policy-driven. Frontend forms may choose provider, profile, analysis kinds, budgets, dedup, and cooldown, but should not expose Hermes cron as the platform scheduler.
 - Keep permission, module, and empty-state boundaries explicit for Agent Runtime. External provider availability, runner absence, permission denial, unsupported capability, and truly empty data should not be presented as the same state.
 - Docker workbench pages should show operation state and runner boundaries plainly. Do not imply Docker Engine or Compose has run until operation callbacks report runtime state.
@@ -76,7 +76,7 @@ Implement console work inside the active Vite app under `web`. Keep the UI antd-
 - Copying old `ai-observe` or legacy AI page structure into `/ai-workbench` will duplicate navigation; AI-specific switching belongs inside the workbench page chrome.
 - Fetching raw Kubernetes rows to render dashboard cards usually means the backend overview DTO should be used or expanded.
 - Storing server responses in Zustand creates stale and duplicated state. Use TanStack Query and invalidate keys after mutations.
-- Styling with page-level hero cards, saturated gradients, or new token systems breaks the console baseline. Use the existing `kc-*` CSS variables and compact antd surfaces.
+- Styling with page-level hero cards, saturated gradients, or new token systems breaks the console baseline. Use the existing `soha-*` CSS variables and compact antd surfaces.
 - Showing unavailable backend capabilities as normal empty tables confuses operators. Empty states must distinguish unsupported, backend-pending, permission-denied, and truly empty data.
 
 ## Read These References When Needed

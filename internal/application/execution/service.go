@@ -8,13 +8,13 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	appaccess "github.com/kubecrux/kubecrux/internal/application/access"
-	domainbuild "github.com/kubecrux/kubecrux/internal/domain/build"
-	domaindelivery "github.com/kubecrux/kubecrux/internal/domain/delivery"
-	domainidentity "github.com/kubecrux/kubecrux/internal/domain/identity"
-	domainrelease "github.com/kubecrux/kubecrux/internal/domain/release"
-	k8sinfra "github.com/kubecrux/kubecrux/internal/infrastructure/kubernetes"
-	"github.com/kubecrux/kubecrux/internal/platform/apperrors"
+	appaccess "github.com/soha/soha/internal/application/access"
+	domainbuild "github.com/soha/soha/internal/domain/build"
+	domaindelivery "github.com/soha/soha/internal/domain/delivery"
+	domainidentity "github.com/soha/soha/internal/domain/identity"
+	domainrelease "github.com/soha/soha/internal/domain/release"
+	k8sinfra "github.com/soha/soha/internal/infrastructure/kubernetes"
+	"github.com/soha/soha/internal/platform/apperrors"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
@@ -57,7 +57,7 @@ type artifactBundleGetter interface {
 
 func New(repo Repository, builds BuildRecordRepository, releases ReleaseRecordRepository, clusters *k8sinfra.Manager, jobClusterID, jobNamespace, jobImage, jobGitImage string, jobTTLSeconds int, runnerToken string, permissions *appaccess.PermissionResolver) *Service {
 	if strings.TrimSpace(jobNamespace) == "" {
-		jobNamespace = "kubecrux-system"
+		jobNamespace = "soha-system"
 	}
 	if strings.TrimSpace(jobImage) == "" {
 		jobImage = "alpine:3.20"
@@ -995,9 +995,9 @@ func (s *Service) buildExecutionJob(task domaindelivery.ExecutionTask, namespace
 			Name:      jobName,
 			Namespace: namespace,
 			Labels: map[string]string{
-				"app.kubernetes.io/managed-by": "kubecrux",
-				"kubecrux.io/execution-task":   task.ID,
-				"kubecrux.io/task-kind":        task.TaskKind,
+				"app.kubernetes.io/managed-by": "soha",
+				"soha.io/execution-task":       task.ID,
+				"soha.io/task-kind":            task.TaskKind,
 			},
 		},
 		Spec: batchv1.JobSpec{
@@ -1006,8 +1006,8 @@ func (s *Service) buildExecutionJob(task domaindelivery.ExecutionTask, namespace
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: map[string]string{
-						"app.kubernetes.io/managed-by": "kubecrux",
-						"kubecrux.io/execution-task":   task.ID,
+						"app.kubernetes.io/managed-by": "soha",
+						"soha.io/execution-task":       task.ID,
 					},
 				},
 				Spec: spec,
@@ -1021,7 +1021,7 @@ func buildExecutionJobName(task domaindelivery.ExecutionTask) string {
 	if len(base) > 38 {
 		base = base[len(base)-38:]
 	}
-	return fmt.Sprintf("kc-exec-%s-%d", base, time.Now().UTC().Unix()%100000)
+	return fmt.Sprintf("soha-exec-%s-%d", base, time.Now().UTC().Unix()%100000)
 }
 
 func buildCheckoutScript(checkout map[string]any, repositoryURL string) string {

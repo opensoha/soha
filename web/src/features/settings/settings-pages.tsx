@@ -58,7 +58,7 @@ function SectionCallout({
   description: string;
 }) {
   return (
-    <div className="mb-4 rounded border border-[var(--kc-border-color)] bg-[var(--kc-fill-weak)] p-3 text-sm">
+    <div className="mb-4 rounded border border-[var(--soha-border-color)] bg-[var(--soha-fill-weak)] p-3 text-sm">
       <div className="font-medium">{title}</div>
       <div className="mt-1 text-[var(--ant-colorTextSecondary)]">
         {description}
@@ -312,7 +312,7 @@ export function BrandingSettingsPage({
 
   if (!canViewBrandingSettings) {
     return (
-      <div className="kc-page">
+      <div className="soha-page">
         <SettingsCard>当前账号没有查看品牌设置的权限。</SettingsCard>
       </div>
     );
@@ -328,7 +328,7 @@ export function BrandingSettingsPage({
           saveMutation.mutate(values as Record<string, unknown>);
         }}
         initialValues={
-          settings ?? { appTitle: "KubeCrux", sidebarTitle: "KubeCrux" }
+          settings ?? { appTitle: "Soha", sidebarTitle: "Soha" }
         }
       >
         <Form.Item name="appTitle" label="网页标题">
@@ -338,8 +338,8 @@ export function BrandingSettingsPage({
           <Input placeholder="左侧品牌栏文字" />
         </Form.Item>
 
-        <div className="kc-branding-section-title">企业 Logo</div>
-        <div className="kc-branding-upload-grid">
+        <div className="soha-branding-section-title">企业 Logo</div>
+        <div className="soha-branding-upload-grid">
           <BrandingUploadField
             field="loginLogoUrl"
             label="登录页面使用的图标（浅色）"
@@ -374,7 +374,7 @@ export function BrandingSettingsPage({
           />
         </div>
 
-        <div className="kc-form-actions">
+        <div className="soha-form-actions">
           {canManageBrandingSettings ? (
             <Button
               htmlType="submit"
@@ -394,7 +394,7 @@ export function BrandingSettingsPage({
   }
 
   return (
-    <div className="kc-page">
+    <div className="soha-page">
       <PageHeader
         title="品牌设置"
         description="配置品牌 Logo、Favicon 与网页标题。"
@@ -462,14 +462,14 @@ function BrandingUploadField({
   };
 
   return (
-    <div className="kc-branding-upload-zone">
-      <div className="kc-branding-upload-label">{label}</div>
+    <div className="soha-branding-upload-zone">
+      <div className="soha-branding-upload-label">{label}</div>
       <Form.Item name={field} hidden>
         <Input />
       </Form.Item>
-      <div className="kc-branding-upload-area-wrap">
+      <div className="soha-branding-upload-area-wrap">
         <div
-          className={`kc-branding-upload-area ${disabled ? "is-disabled" : ""}`}
+          className={`soha-branding-upload-area ${disabled ? "is-disabled" : ""}`}
           style={{
             width: Math.max(previewWidth + 40, 160),
             height: Math.max(previewHeight + 40, 100),
@@ -480,15 +480,15 @@ function BrandingUploadField({
             <img
               src={currentValue}
               alt={label}
-              className="kc-branding-upload-preview"
+              className="soha-branding-upload-preview"
               style={{ maxWidth: previewWidth, maxHeight: previewHeight }}
             />
           ) : (
-            <div className="kc-branding-upload-placeholder">
+            <div className="soha-branding-upload-placeholder">
               {uploading ? (
                 <Spin size="small" />
               ) : (
-                <span className="kc-branding-upload-plus">+</span>
+                <span className="soha-branding-upload-plus">+</span>
               )}
             </div>
           )}
@@ -498,14 +498,14 @@ function BrandingUploadField({
             size="small"
             danger
             variant="outlined"
-            className="kc-branding-upload-remove"
+            className="soha-branding-upload-remove"
             onClick={handleRemove}
           >
             移除
           </Button>
         ) : null}
       </div>
-      <div className="kc-branding-upload-hint">{hint}</div>
+      <div className="soha-branding-upload-hint">{hint}</div>
     </div>
   );
 }
@@ -588,7 +588,7 @@ export function LoginSettingsPage({
 
   if (!canViewLoginSettings) {
     return (
-      <div className="kc-page">
+      <div className="soha-page">
         <SettingsCard>当前账号没有查看登陆设置的权限。</SettingsCard>
       </div>
     );
@@ -691,7 +691,7 @@ export function LoginSettingsPage({
         title="登陆设置"
         extra={
           canManageLoginSettings ? (
-            <div className="kc-page-toolbar">
+            <div className="soha-page-toolbar">
               <Button
                 size="small"
                 type="primary"
@@ -854,7 +854,7 @@ export function LoginSettingsPage({
                         <Input placeholder="https://idp.example.com/metadata" />
                       </Form.Item>
                       <Form.Item name="entityId" label="Entity ID">
-                        <Input placeholder="https://kubecrux.example.com/saml/sp" />
+                        <Input placeholder="https://soha.example.com/saml/sp" />
                       </Form.Item>
                       <Form.Item name="certificate" label="证书">
                         <Input.TextArea
@@ -895,7 +895,7 @@ export function LoginSettingsPage({
           <Form.Item name="emailField" label="邮箱字段">
             <Input placeholder="email / enterprise_email" />
           </Form.Item>
-          <div className="kc-form-actions">
+          <div className="soha-form-actions">
             <Button
               onClick={() => {
                 setProviderModalVisible(false);
@@ -923,7 +923,7 @@ export function LoginSettingsPage({
     return content;
   }
 
-  return <div className="kc-page">{content}</div>;
+  return <div className="soha-page">{content}</div>;
 }
 
 /* ─── Monitoring Settings (Prometheus) ─── */
@@ -979,7 +979,7 @@ export function MonitoringSettingsPage() {
 
   if (!canViewMonitoringSettings) {
     return (
-      <div className="kc-page">
+      <div className="soha-page">
         <SettingsCard>当前账号没有查看监控设置的权限。</SettingsCard>
       </div>
     );
@@ -988,7 +988,7 @@ export function MonitoringSettingsPage() {
   const settings = data?.data;
 
   return (
-    <div className="kc-page">
+    <div className="soha-page">
       <PageHeader
         title="监控设置"
         description="配置 Prometheus 地址、默认查询范围和访问凭证。"
@@ -1027,7 +1027,7 @@ export function MonitoringSettingsPage() {
           <Form.Item name="grafanaBaseUrl" label="Grafana URL">
             <Input />
           </Form.Item>
-          <div className="kc-form-actions">
+          <div className="soha-form-actions">
             {canManageMonitoringSettings ? (
               <Button
                 htmlType="submit"
@@ -1689,7 +1689,7 @@ export function AISettingsPage({ embedded = false }: SettingsPageProps = {}) {
 
   if (!canViewAISettings) {
     return (
-      <div className="kc-page">
+      <div className="soha-page">
         <SettingsCard>当前账号没有查看 AI 设置的权限。</SettingsCard>
       </div>
     );
@@ -1985,7 +1985,7 @@ export function AISettingsPage({ embedded = false }: SettingsPageProps = {}) {
       <SettingsCard title="Provider Connections">
         <div
           data-testid="ai-provider-connections-actions"
-          className="kc-form-actions"
+          className="soha-form-actions"
           style={{ marginBottom: 12 }}
         >
           {canManageAISettings ? (
@@ -2027,7 +2027,7 @@ export function AISettingsPage({ embedded = false }: SettingsPageProps = {}) {
     <Modal
       title={editingProvider ? "编辑 Provider 连接" : "新增 Provider 连接"}
       open={providerModalVisible}
-      className="kc-ai-provider-modal"
+      className="soha-ai-provider-modal"
       footer={null}
       onCancel={() => {
         setProviderModalVisible(false);
@@ -2152,7 +2152,7 @@ export function AISettingsPage({ embedded = false }: SettingsPageProps = {}) {
         <Form.Item name="enabled" label="启用" valuePropName="checked">
           <Switch data-testid="ai-provider-enabled" />
         </Form.Item>
-        <div data-testid="ai-provider-actions" className="kc-form-actions">
+        <div data-testid="ai-provider-actions" className="soha-form-actions">
           <Button
             data-testid="ai-provider-fetch-models"
             onClick={async () => {
@@ -2625,7 +2625,7 @@ export function AISettingsPage({ embedded = false }: SettingsPageProps = {}) {
             ID 需要在全局 registry 中唯一；作用域用于提示这个 skill
             主要服务于哪些工作区或资源，不直接替代权限判断。
           </div>
-          <div className="kc-form-actions">
+          <div className="soha-form-actions">
             <Button
               onClick={() => {
                 setSkillsModalVisible(false);
@@ -2899,7 +2899,7 @@ export function AISettingsPage({ embedded = false }: SettingsPageProps = {}) {
           <Form.Item name="enabled" label="启用" valuePropName="checked">
             <Switch />
           </Form.Item>
-          <div className="kc-form-actions">
+          <div className="soha-form-actions">
             <Button
               onClick={() => {
                 setDataSourceModalVisible(false);
@@ -3027,7 +3027,7 @@ export function AISettingsPage({ embedded = false }: SettingsPageProps = {}) {
           <Form.Item name="enabled" label="启用" valuePropName="checked">
             <Switch />
           </Form.Item>
-          <div className="kc-form-actions">
+          <div className="soha-form-actions">
             <Button
               onClick={() => {
                 setProfileModalVisible(false);
@@ -3143,7 +3143,7 @@ export function AISettingsPage({ embedded = false }: SettingsPageProps = {}) {
           <Form.Item name="enabled" label="启用" valuePropName="checked">
             <Switch />
           </Form.Item>
-          <div className="kc-form-actions">
+          <div className="soha-form-actions">
             <Button
               onClick={() => {
                 setPolicyModalVisible(false);
@@ -3172,7 +3172,7 @@ export function AISettingsPage({ embedded = false }: SettingsPageProps = {}) {
   }
 
   return (
-    <div className="kc-page">
+    <div className="soha-page">
       <PageHeader
         title="AI 设置"
         description="配置 AI 提供商、模型、API Key 与基础接入地址。"
@@ -3198,7 +3198,7 @@ export function SettingsCenterPage() {
 
   if (permissionSnapshotQuery.isLoading) {
     return (
-      <div className="kc-page">
+      <div className="soha-page">
         <PageHeader title="设置中心" description="集中配置登陆与品牌能力。" />
         <Card>
           <Spin size="large" />
@@ -3209,7 +3209,7 @@ export function SettingsCenterPage() {
 
   if (!canViewLoginSettings && !canViewBrandingSettings) {
     return (
-      <div className="kc-page">
+      <div className="soha-page">
         <PageHeader title="设置中心" description="集中配置登陆与品牌能力。" />
         <SettingsCard>当前账号没有可访问的设置页权限。</SettingsCard>
       </div>
@@ -3225,7 +3225,7 @@ export function SettingsCenterPage() {
   }
 
   return (
-    <div className="kc-page">
+    <div className="soha-page">
       <PageHeader title="设置中心" description="集中配置登陆与品牌能力。" />
       <SettingsCard title="可用设置">
         <Space orientation="vertical" size={12}>

@@ -20,7 +20,7 @@ The VM boots from the installer ISO first. After the Proxmox installer completes
 make pve-vm-boot-root
 ```
 
-Then connect kubecrux to PVE with endpoint `https://127.0.0.1:8006` when kubecrux runs on the host. If kubecrux runs in the compose app container, use `https://k3s:30006`.
+Then connect soha to PVE with endpoint `https://127.0.0.1:8006` when soha runs on the host. If soha runs in the compose app container, use `https://k3s:30006`.
 
 This lab path requires a Linux k3s node with `/dev/kvm` exposed. It is not expected to work on Docker Desktop for macOS unless the environment provides Linux KVM passthrough.
 
@@ -40,10 +40,10 @@ make fix-kubevirt-mounts
 
 ## PVE API Mock
 
-On arm64 lab hosts, the amd64 Proxmox VE ISO cannot be scheduled as a real KubeVirt VM. Use the mock API for kubecrux connection-flow validation:
+On arm64 lab hosts, the amd64 Proxmox VE ISO cannot be scheduled as a real KubeVirt VM. Use the mock API for soha connection-flow validation:
 
 ```bash
 make deploy-pve-mock
 ```
 
-Use `http://127.0.0.1:8006` from a host-run kubecrux server, or `http://k3s:30006` from the compose app container.
+Use `http://127.0.0.1:8006` from a host-run soha server, or `http://k3s:30006` from the compose app container.

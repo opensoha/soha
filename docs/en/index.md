@@ -1,13 +1,13 @@
 ---
 id: index
 slug: /
-title: kubecrux Docs
-description: Architecture, development, API, and operations documentation for the kubecrux platform console.
+title: soha Docs
+description: Architecture, development, API, and operations documentation for the soha platform console.
 ---
 
-# kubecrux Docs
+# soha Docs
 
-kubecrux is a multi-cluster Kubernetes platform console. It is not a thin wrapper around the upstream Kubernetes Dashboard. The product is meant to act as a unified control surface for platform teams across cluster access, workload operations, delivery workflows, authorization, alert collaboration, and AI-assisted analysis.
+soha is a multi-cluster Kubernetes platform console. It is not a thin wrapper around the upstream Kubernetes Dashboard. The product is meant to act as a unified control surface for platform teams across cluster access, workload operations, delivery workflows, authorization, alert collaboration, and AI-assisted analysis.
 
 ## Site Baseline
 

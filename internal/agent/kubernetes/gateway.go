@@ -12,7 +12,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
-	domainresource "github.com/kubecrux/kubecrux/internal/domain/resource"
+	domainresource "github.com/soha/soha/internal/domain/resource"
 )
 
 var gatewayVersions = []string{"v1", "v1beta1"}

@@ -5,9 +5,9 @@ import (
 	"errors"
 	"testing"
 
-	domainaccess "github.com/kubecrux/kubecrux/internal/domain/access"
-	domainidentity "github.com/kubecrux/kubecrux/internal/domain/identity"
-	userrepo "github.com/kubecrux/kubecrux/internal/repository/user"
+	domainaccess "github.com/soha/soha/internal/domain/access"
+	domainidentity "github.com/soha/soha/internal/domain/identity"
+	userrepo "github.com/soha/soha/internal/repository/user"
 )
 
 type stubUserManager struct{}

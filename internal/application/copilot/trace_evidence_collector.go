@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	domaincopilot "github.com/kubecrux/kubecrux/internal/domain/copilot"
-	mcptraces "github.com/kubecrux/kubecrux/internal/infrastructure/mcp/traces"
+	domaincopilot "github.com/soha/soha/internal/domain/copilot"
+	mcptraces "github.com/soha/soha/internal/infrastructure/mcp/traces"
 )
 
 type traceEvidenceAnalysis struct {

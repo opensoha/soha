@@ -1,6 +1,6 @@
 package dto
 
-import domaincopilot "github.com/kubecrux/kubecrux/internal/domain/copilot"
+import domaincopilot "github.com/soha/soha/internal/domain/copilot"
 
 type CreateCopilotSessionRequest struct {
 	Title           string         `json:"title"`

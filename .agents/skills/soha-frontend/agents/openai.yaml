@@ -1,0 +1,4 @@
+interface:
+  display_name: "Soha Frontend"
+  short_description: "Ant Design 6 workbench UI, routing, menus, and permissions"
+  default_prompt: "Use $soha-frontend to implement or refactor a soha web console feature."

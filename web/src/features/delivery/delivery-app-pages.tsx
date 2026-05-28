@@ -156,18 +156,18 @@ export function ApplicationsPage() {
   )
 
   return (
-    <div className="kc-page">
-      <section className="kc-page-section">
-        <div className="kc-application-center-shell">
-          <div className="kc-application-center-header">
-            <div className="kc-application-center-header__main">
-              <h2 className="kc-application-center-header__title">应用中心</h2>
+    <div className="soha-page">
+      <section className="soha-page-section">
+        <div className="soha-application-center-shell">
+          <div className="soha-application-center-header">
+            <div className="soha-application-center-header__main">
+              <h2 className="soha-application-center-header__title">应用中心</h2>
               <Text type="secondary">按应用查看构建来源、环境覆盖，并进入对应应用页。</Text>
-              <div className="kc-application-group-tags">
+              <div className="soha-application-group-tags">
                 {groupOptions.map((group) => (
                   <Tag
                     key={group}
-                    className={`kc-application-group-tag ${activeGroup === group ? 'is-active' : ''}`}
+                    className={`soha-application-group-tag ${activeGroup === group ? 'is-active' : ''}`}
                     variant="filled"
                     onClick={() => setActiveGroup(group)}
                   >
@@ -183,52 +183,52 @@ export function ApplicationsPage() {
         </div>
       </section>
 
-      <section className="kc-page-section">
-        <div className="kc-application-card-grid">
+      <section className="soha-page-section">
+        <div className="soha-application-card-grid">
           {visibleApplicationCards.length > 0 ? visibleApplicationCards.map(({ app, bindings, lastStatus, activeTargets, latestEnvironmentName }) => {
             const defaultBuildSource = (app.buildSources ?? []).find((item) => item.isDefault)
             return (
               <Card
                 key={app.id}
-                className="kc-application-card"
+                className="soha-application-card"
                 hoverable
                 onClick={() => navigate(`/applications/${app.id}`)}
                 actions={[
                   <Button key="detail" type="link" icon={<EyeOutlined />} onClick={(event) => { event.stopPropagation(); navigate(`/applications/${app.id}`) }}>进入应用</Button>,
                 ]}
               >
-                <div className="kc-application-card__header">
-                  <div className="kc-application-card__title-wrap">
-                    <div className="kc-application-card__title-row">
-                      <h3 className="kc-application-card__title">{app.name}</h3>
+                <div className="soha-application-card__header">
+                  <div className="soha-application-card__title-wrap">
+                    <div className="soha-application-card__title-row">
+                      <h3 className="soha-application-card__title">{app.name}</h3>
                       <StatusTag value={lastStatus} />
                     </div>
                     <Text type="secondary">{summarizeApplicationRole(app)}</Text>
                   </div>
-                  <div className="kc-application-card__meta-chip">
+                  <div className="soha-application-card__meta-chip">
                     <CodeOutlined />
                     <span>{summarizeBuildSource(defaultBuildSource)}</span>
                   </div>
                 </div>
 
-                <div className="kc-application-card__stats">
-                  <div className="kc-application-card__stat">
-                    <span className="kc-application-card__stat-label">环境覆盖</span>
-                    <span className="kc-application-card__stat-value">{bindings.length || app.environmentCount || 0}</span>
+                <div className="soha-application-card__stats">
+                  <div className="soha-application-card__stat">
+                    <span className="soha-application-card__stat-label">环境覆盖</span>
+                    <span className="soha-application-card__stat-value">{bindings.length || app.environmentCount || 0}</span>
                   </div>
-                  <div className="kc-application-card__stat">
-                    <span className="kc-application-card__stat-label">部署目标</span>
-                    <span className="kc-application-card__stat-value">{activeTargets}</span>
+                  <div className="soha-application-card__stat">
+                    <span className="soha-application-card__stat-label">部署目标</span>
+                    <span className="soha-application-card__stat-value">{activeTargets}</span>
                   </div>
-                  <div className="kc-application-card__stat is-wide">
-                    <span className="kc-application-card__stat-label">环境描述</span>
-                    <span className="kc-application-card__stat-value">{latestEnvironmentName}</span>
+                  <div className="soha-application-card__stat is-wide">
+                    <span className="soha-application-card__stat-label">环境描述</span>
+                    <span className="soha-application-card__stat-value">{latestEnvironmentName}</span>
                   </div>
                 </div>
               </Card>
             )
           }) : (
-            <Card className="kc-application-empty-card">
+            <Card className="soha-application-empty-card">
               <Empty description={activeGroup === 'all' ? '当前还没有应用，先创建第一个应用并接入仓库、构建来源和环境。' : '当前分组下还没有应用。'} />
             </Card>
           )}
@@ -250,7 +250,7 @@ export function ApplicationDetailPage() {
   const application = detail?.application
 
   return (
-    <div className="kc-page">
+    <div className="soha-page">
       <PageHeader title={application?.name || 'Application Detail'} description="应用总览、构建来源、环境矩阵与最近执行记录。" actions={<Button onClick={() => navigate('/applications')}>返回应用中心</Button>} />
       <Card>
         <Descriptions items={[
@@ -344,7 +344,7 @@ export function BuildTemplatesPage() {
   })
 
   return (
-    <div className="kc-page">
+    <div className="soha-page">
       <PageHeader title="构建模板" description="维护平台级 Dockerfile 模板、构建命令和默认变量。" actions={canManage ? <Button icon={<PlusOutlined />} type="primary" onClick={() => { setEditing(null); setModalVisible(true) }}>新建模板</Button> : null} />
       <AdminTable
         rowKey="id"
@@ -394,7 +394,7 @@ export function BuildTemplatesPage() {
           <Form.Item name="variableSchemaText" label="变量 Schema(JSON)"><Input.TextArea rows={6} /></Form.Item>
           <Form.Item name="defaultVariablesText" label="默认变量(JSON)"><Input.TextArea rows={6} /></Form.Item>
           <Form.Item name="enabled" label="启用" valuePropName="checked"><Switch /></Form.Item>
-          <div className="kc-form-actions">
+          <div className="soha-form-actions">
             <Button onClick={() => setModalVisible(false)}>取消</Button>
             <Button htmlType="submit" type="primary" loading={createMutation.isPending || updateMutation.isPending}>保存</Button>
           </div>
@@ -467,7 +467,7 @@ export function WorkflowsPage() {
   ]
 
   return (
-    <div className="kc-page">
+    <div className="soha-page">
       <PageHeader title={t('page.delivery.workflows.title', 'Workflows')} description={t('page.delivery.workflows.desc', 'Inspect automation flow records, trigger methods, and recent execution state.')} />
       <AdminTable columns={columns} dataSource={workflowsQuery.data?.data ?? []} rowKey="id" loading={workflowsQuery.isLoading} />
     </div>
@@ -481,7 +481,7 @@ export function ReleaseBundlesPage() {
   })
 
   return (
-    <div className="kc-page">
+    <div className="soha-page">
       <PageHeader title="版本包" description="查看不可变交付版本包、制品引用和当前状态。" />
       <AdminTable
         rowKey="id"
@@ -563,7 +563,7 @@ export function ExecutionTasksPage() {
   })
 
   return (
-    <div className="kc-page">
+    <div className="soha-page">
       <PageHeader title="执行任务" description="查看执行平面任务、provider 状态和任务日志。" />
       <AdminTable
         rowKey="id"
@@ -626,15 +626,15 @@ export function ExecutionTasksPage() {
           </Space>
         ) : null}
         <Card size="small" title="Execution Logs">
-          <pre className="kc-json-block">
+          <pre className="soha-json-block">
             {logsQuery.data?.data?.map((item) => `[${item.createdAt}] ${item.logLevel.toUpperCase()} ${item.message}`).join('\n') || 'No logs'}
           </pre>
         </Card>
         <Card size="small" title="Artifacts">
-          <pre className="kc-json-block">{JSON.stringify(selectedTask?.artifacts ?? [], null, 2)}</pre>
+          <pre className="soha-json-block">{JSON.stringify(selectedTask?.artifacts ?? [], null, 2)}</pre>
         </Card>
         <Card size="small" title="Result">
-          <pre className="kc-json-block">{JSON.stringify(selectedTask?.result ?? {}, null, 2)}</pre>
+          <pre className="soha-json-block">{JSON.stringify(selectedTask?.result ?? {}, null, 2)}</pre>
         </Card>
       </Modal>
     </div>
@@ -684,7 +684,7 @@ export function ApprovalPoliciesPage() {
   })
 
   return (
-    <div className="kc-page">
+    <div className="soha-page">
       <PageHeader title="审批策略" description="维护 delivery 审批策略、会签模式和 SLA。" actions={canManage ? <Button icon={<PlusOutlined />} type="primary" onClick={() => { setEditing(null); setModalVisible(true) }}>新建策略</Button> : null} />
       <AdminTable
         rowKey="id"
@@ -737,7 +737,7 @@ export function ApprovalPoliciesPage() {
           <Form.Item name="changeWindowText" label="变更窗口(JSON)"><Input.TextArea rows={5} /></Form.Item>
           <Form.Item name="metadataText" label="Metadata(JSON)"><Input.TextArea rows={5} /></Form.Item>
           <Form.Item name="enabled" label="启用" valuePropName="checked"><Switch /></Form.Item>
-          <div className="kc-form-actions">
+          <div className="soha-form-actions">
             <Button onClick={() => setModalVisible(false)}>取消</Button>
             <Button htmlType="submit" type="primary" loading={createMutation.isPending || updateMutation.isPending}>保存</Button>
           </div>

@@ -1,8 +1,8 @@
-# kubecrux Engineering Spec
+# soha Engineering Spec
 
 ## 1. Purpose
 
-This file is the repository-level engineering memory for `kubecrux`.
+This file is the repository-level engineering memory for `soha`.
 It acts as the single working spec for:
 
 - architecture design
@@ -21,7 +21,7 @@ The style follows a Harness-like engineering convention:
 
 ## 2. Product Positioning
 
-`kubecrux` is a multi-cluster Kubernetes platform console.
+`soha` is a multi-cluster Kubernetes platform console.
 It is not only a resource viewer. It is intended to become a unified control plane for:
 
 - platform management
@@ -34,7 +34,7 @@ It is not only a resource viewer. It is intended to become a unified control pla
 
 Project summary:
 
-- `kubecrux` is a multi-cluster Kubernetes platform console
+- `soha` is a multi-cluster Kubernetes platform console
 - backend baseline: Go + Gin + PostgreSQL + Redis + `client-go`
 - frontend baseline: React 18 + TypeScript 5 + Ant Design 6 + Vite + React Router + TanStack Query 5 + Zustand 5
 - docs baseline: Docusaurus
@@ -180,7 +180,7 @@ The frontend active baseline has been reset to the Vite application.
 - `web/src/routes`
   - React Router route registration and route metadata
 - `web/src/features`
-  - kubecrux business logic and route-level feature implementations
+  - soha business logic and route-level feature implementations
 - `web/src/components`
   - shared antd primitives and complex reusable widgets
 - `web/src/services`
@@ -197,7 +197,7 @@ Current structure summary:
 - `web_pro_backup` preserves the previous frontend backup and must not be treated as the active shell
 - `old_web` remains as migration/reference material only after the reset
 - `web/src/routes/**` defines the active route surface for the Vite app
-- `web/src/features/**` provides kubecrux business logic behind that route surface
+- `web/src/features/**` provides soha business logic behind that route surface
 - `internal/api`, `internal/application`, `internal/policy`, `internal/infrastructure`, and `internal/repository` keep strict backend layer responsibilities
 - `docs/architecture` is the public architecture document set
 
@@ -382,7 +382,7 @@ The repository has already converged on these rules:
 - one shared platform scope model drives platform resource pages
 - platform collection pages should use shared scoped path construction
 - backend all-namespaces aggregation is preferred over frontend namespace fan-out
-- identity bootstrap baseline is a single `admin / kubecrux` seed from `auth.dev_principal`; legacy bootstrap migration and login fallback are removed
+- identity bootstrap baseline is a single `admin / soha` seed from `auth.dev_principal`; legacy bootstrap migration and login fallback are removed
 - PostgreSQL bootstrap schema is now consolidated into `migrations/postgres/0001_init.sql`; duplicate legacy root migration mirrors are migration debt and should stay removed
 - built-in bootstrap defaults should be version-gated: first-time initialization and seed-version upgrades replay static roles/menus/policies/templates, while config-driven admin user and cluster sync stay as separate startup work
 - pod detail is now expected to be an operational workspace, not only a static detail page
@@ -432,7 +432,7 @@ The repository has already converged on these rules:
 - AI工作台 and 监控工作台 are first-class workbench switcher entries; their child menus belong inside their own workbench trees and must not remain duplicated under k8s工作台 / resource navigation
 - Docker 工作台 is now a first-class, module-gated resource workbench at `/docker`; it owns Docker host inventory, PVE-backed quick host provisioning requests, Compose project management, service inventory, port mapping, templates, and Docker operation records, and its menus/routes/permissions must stay aligned with `modules.docker.enabled` and `docker.*.(view|manage|deploy)` permission keys
 - Docker 工作台 control-plane APIs persist desired state and enqueue operations; Docker Engine and Compose execution must stay outside API handlers and run through the token-protected agent runner claim/callback path at `/api/v1/docker/operations/claim`, `/api/v1/docker/operations/:id/runner-status`, and `/api/v1/docker/operation-callbacks`
-- The kubecrux agent can optionally enable `control_plane.docker` to claim Docker operations, materialize Compose workspaces under `compose_root`, run whitelisted `docker compose` actions, and callback logs/runtime service state to the Docker operation record
+- The soha agent can optionally enable `control_plane.docker` to claim Docker operations, materialize Compose workspaces under `compose_root`, run whitelisted `docker compose` actions, and callback logs/runtime service state to the Docker operation record
 - Docker 工作台 single-container startup is modeled as a generated `single_container` Compose project plus service and port-mapping records; domain access belongs to `docker_port_mappings` via `domainName`, `domainScheme`, `domainTlsEnabled`, and `accessUrl`, and generated Compose may include Traefik labels when a domain is provided while DNS/reverse-proxy ownership remains external to API handlers
 - Docker 工作台 should remain independent from the virtualization workbench, but its host quick-create flow may call the virtualization application service through a narrow `HostProvisioner` adapter when a `virtualizationConnectionId` is provided, so PVE/KubeVirt VM creation is queued in the virtualization worker and linked back to the Docker host provision operation
 - AI工作台根入口 `/ai-workbench` is now the canonical session-first investigation surface; legacy `/ai-workbench/investigation` and `/ai-observe/workbench` paths should only remain as compatibility redirects instead of hosting a separate overview shell
@@ -445,15 +445,15 @@ The repository has already converged on these rules:
 - AI investigation is now session-first: `ai_sessions.metadata` carries mode, scope, toolset, tags, summary, archive status, and analysis run references, and the workbench must treat a session as the primary investigation object
 - AI workbench message flows now return structured envelopes with messages, tool calls, analysis artifacts, and session patch hints instead of plain assistant text only
 - MCP capability control is now dual-entry: Settings > AI remains the global control plane for provider, adapters, data sources, profiles, and policies, while the AIOps workbench exposes session-level temporary toolset assembly
-- AI Agent Runtime is now the stable abstraction for external agent execution: pages, automation policy, and business modules must depend on kubecrux `AgentProvider`, `AgentRun`, `AgentCapability`, `AgentToolBinding`, `AgentSkillBinding`, toolset, analysis profile, and `AnalysisArtifact` contracts instead of calling Hermes or another provider directly
+- AI Agent Runtime is now the stable abstraction for external agent execution: pages, automation policy, and business modules must depend on soha `AgentProvider`, `AgentRun`, `AgentCapability`, `AgentToolBinding`, `AgentSkillBinding`, toolset, analysis profile, and `AnalysisArtifact` contracts instead of calling Hermes or another provider directly
 - Hermes Agent is only the first external provider behind the runner claim/callback path; future OpenClaw, internal agent, or third-party providers must be added by extending provider adapters, tool bindings, skill bindings, and runner executors, not by rewriting AI workbench pages or business analysis flows
-- Agent Runtime capabilities should turn existing logs, metrics, traces, platform events, delivery context, on-call context, Docker context, and virtualization context into kubecrux capability and MCP/tool entries; skills remain platform-level methodology definitions that may map to Hermes skills, MCP capabilities, prompt templates, or future provider-native skill systems
-- External Agent Runtime providers must invoke kubecrux read-only tools through the runner `agent-runs/tool-call` gateway using the runner token and per-run callback token; they must not bypass kubecrux data-source credentials, scope, toolset, or `AgentRun.toolBindings` snapshots
+- Agent Runtime capabilities should turn existing logs, metrics, traces, platform events, delivery context, on-call context, Docker context, and virtualization context into soha capability and MCP/tool entries; skills remain platform-level methodology definitions that may map to Hermes skills, MCP capabilities, prompt templates, or future provider-native skill systems
+- External Agent Runtime providers must invoke soha read-only tools through the runner `agent-runs/tool-call` gateway using the runner token and per-run callback token; they must not bypass soha data-source credentials, scope, toolset, or `AgentRun.toolBindings` snapshots
 - Hermes/CLI provider POC may prefetch a small read-only tool context into the provider prompt; currently executable prefetch/tool-call backends include events, logs, metrics, traces, delivery releases, delivery builds, and alerts, while Docker, virtualization, execution-task, platform-resource, and on-call route bindings remain catalog contracts until their readers/adapters are wired
-- future provider-native or MCP client tool protocols must still terminate at the same kubecrux `agent-runs/tool-call` gateway
-- Agent Runtime output must be normalized into kubecrux `AnalysisArtifact` with evidence, hypotheses, recommendations, graph, tool-execution records, and data-source snapshots; provider-native output should not leak directly into frontend contracts
-- Continuous AI analysis is scheduled and audited by kubecrux automation policy; Hermes cron or provider-native schedulers are optional experiments and must not become the platform source of truth for policy matching, dedup, cooldown, budget, permission, or audit behavior
-- kubecrux owns permissions, menus, audit, budget, data redaction, and operation boundaries for Agent Runtime. Agents are pluggable executors only, and high-risk write actions must still route through the owning module's durable operation or approval flow
+- future provider-native or MCP client tool protocols must still terminate at the same soha `agent-runs/tool-call` gateway
+- Agent Runtime output must be normalized into soha `AnalysisArtifact` with evidence, hypotheses, recommendations, graph, tool-execution records, and data-source snapshots; provider-native output should not leak directly into frontend contracts
+- Continuous AI analysis is scheduled and audited by soha automation policy; Hermes cron or provider-native schedulers are optional experiments and must not become the platform source of truth for policy matching, dedup, cooldown, budget, permission, or audit behavior
+- soha owns permissions, menus, audit, budget, data redaction, and operation boundaries for Agent Runtime. Agents are pluggable executors only, and high-risk write actions must still route through the owning module's durable operation or approval flow
 - `metrics.v1` and `traces.v1` have moved from registry-only placeholders to real execution backends, with Prometheus-backed metric analysis and Jaeger-backed trace hotspot analysis expected to remain available to the workbench
 - AI automation policies can now declare supported analysis kinds (`root_cause`, `performance`, `trace`, `inspection_review`) and select an `agentProviderId` instead of implying root-cause-only or internal-only orchestration
 - settings center should consistently use `settings.<domain>.view` for route visibility and `settings.<domain>.manage` for save/update actions instead of mixing permission keys with legacy admin-only checks
@@ -467,8 +467,8 @@ The repository has already converged on these rules:
 - the backend login-provider contract must stay backward-compatible with the legacy single-OIDC setting key while multi-provider settings are taking over; runtime OIDC flows may still reuse the legacy config resolver, but the stored source of truth is the multi-provider login settings document
 - SAML is currently configuration-visible but runtime-incomplete: the settings model and menu/login entry may expose it, but the server must not imply that ACS/assertion handling is already implemented
 - branding settings remain a dedicated console-level child menu under settings; they are distinct from cluster-level monitoring settings and should be applied globally in the web shell
-- the console shell theme keeps a fixed kubecrux theme variant with brand overrides, while the header may expose a light/dark mode toggle as a user preference; theme-brand switching should still stay disabled unless it is intentionally restored end-to-end
-- frontend theme customization now uses `web/src/theme/app-theme.ts` as the single source for both antd `ThemeConfig` and shared `--kc-*` CSS variables; avoid duplicating theme tokens in `main.tsx` or standalone style files
+- the console shell theme keeps a fixed soha theme variant with brand overrides, while the header may expose a light/dark mode toggle as a user preference; theme-brand switching should still stay disabled unless it is intentionally restored end-to-end
+- frontend theme customization now uses `web/src/theme/app-theme.ts` as the single source for both antd `ThemeConfig` and shared `--soha-*` CSS variables; avoid duplicating theme tokens in `main.tsx` or standalone style files
 - the console visual baseline has shifted from the older purple brand palette to a neutral shadcn-like grayscale palette, while still preserving light/dark mode support and shared CSS variable contracts for non-antd surfaces
 - shared platform filters such as resource scope and workload search bars should use compact, square-edged controls rather than pill-shaped fields
 - frontend migration baseline is now antd-first: new or migrated pages must import directly from `antd` and `@ant-design/icons`
@@ -576,7 +576,7 @@ Reusable repo-specific Codex skills may also live under `.agents/skills/` when t
 - `.codex/state/results/` stores concise role outputs instead of full transcripts or raw long logs
 - `.codex/handoffs/` stores explicit handoff notes between `main`, `coder`, `tester`, and `reviewer`
 - `.codex/prompts/` stores reusable role prompt templates for child threads
-- `.agents/skills/` stores repo-local skill definitions and bundled references or assets for kubecrux-specific workflows such as frontend, backend, and deployment work
+- `.agents/skills/` stores repo-local skill definitions and bundled references or assets for soha-specific workflows such as frontend, backend, and deployment work
 - `.agents/` should not duplicate `.codex/` task snapshots, handoffs, queues, or prompt templates; subagent execution state belongs under `.codex/` only
 - multi-track migrations should assign disjoint write ownership by directory or module family in `queue.md`; shared foundation ownership must be resolved before compat-file deletion or docs migration begins
 - child threads must not assume access to the full parent-thread conversation; they should rely on `current_task`, relevant handoff files, result files, and the referenced code files

@@ -4,7 +4,7 @@ import (
 	"errors"
 	"net/http"
 
-	legacy "github.com/kubecrux/kubecrux/internal/platform/apperrors"
+	legacy "github.com/soha/soha/internal/platform/apperrors"
 )
 
 var (

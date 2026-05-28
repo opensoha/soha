@@ -5,10 +5,10 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	"github.com/kubecrux/kubecrux/internal/api/dto"
-	apiMiddleware "github.com/kubecrux/kubecrux/internal/api/middleware"
-	apiresponse "github.com/kubecrux/kubecrux/internal/api/response"
-	domainalert "github.com/kubecrux/kubecrux/internal/domain/alert"
+	"github.com/soha/soha/internal/api/dto"
+	apiMiddleware "github.com/soha/soha/internal/api/middleware"
+	apiresponse "github.com/soha/soha/internal/api/response"
+	domainalert "github.com/soha/soha/internal/domain/alert"
 )
 
 func (h *MonitoringHandler) ListRules(c *gin.Context) {

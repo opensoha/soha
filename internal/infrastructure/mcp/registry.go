@@ -3,7 +3,7 @@ package mcp
 import (
 	"time"
 
-	domainmcp "github.com/kubecrux/kubecrux/internal/domain/mcp"
+	domainmcp "github.com/soha/soha/internal/domain/mcp"
 )
 
 type Adapter = domainmcp.Adapter

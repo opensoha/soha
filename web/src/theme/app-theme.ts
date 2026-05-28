@@ -1,7 +1,7 @@
 import { theme as antdTheme } from 'antd'
 import type { ThemeConfig } from 'antd'
 
-export type AppThemeId = 'kubecrux'
+export type AppThemeId = 'soha'
 
 export type ThemeMode = 'light' | 'dark' | 'system'
 export type ResolvedThemeMode = 'light' | 'dark'
@@ -45,13 +45,13 @@ export interface ThemePalette {
   boxShadowSecondary: string
 }
 
-const PREFERENCES_STORAGE_KEY = 'kubecrux-prefs'
+const PREFERENCES_STORAGE_KEY = 'soha-prefs'
 
-export const DEFAULT_APP_THEME_ID: AppThemeId = 'kubecrux'
+export const DEFAULT_APP_THEME_ID: AppThemeId = 'soha'
 export const DEFAULT_THEME_MODE: ThemeMode = 'light'
 
 export const appThemeOptions: Array<{ id: AppThemeId; label: string }> = [
-  { id: 'kubecrux', label: 'KubeCrux' },
+  { id: 'soha', label: 'Soha' },
 ]
 
 export const themeModeOptions: Array<{ value: ThemeMode; label: string }> = [
@@ -397,7 +397,7 @@ export function getAntdTheme(themeMode: ThemeMode | ResolvedThemeMode): ThemeCon
 }
 
 export function getAppThemeLabel(): string {
-  return 'KubeCrux'
+  return 'Soha'
 }
 
 export function applyAppTheme(_themeId: AppThemeId, themeMode: ThemeMode) {
@@ -406,49 +406,49 @@ export function applyAppTheme(_themeId: AppThemeId, themeMode: ThemeMode) {
   const palette = getThemePalette(resolvedMode)
   const root = document.documentElement
 
-  root.style.setProperty('--kc-primary-rgb', palette.primaryRgb)
-  root.style.setProperty('--kc-primary', palette.primary)
-  root.style.setProperty('--kc-primary-hover', palette.primaryHover)
-  root.style.setProperty('--kc-primary-active', palette.primaryActive)
-  root.style.setProperty('--kc-primary-light-default', palette.primaryLightDefault)
-  root.style.setProperty('--kc-primary-light-hover', palette.primaryLightHover)
-  root.style.setProperty('--kc-primary-light-active', palette.primaryLightActive)
-  root.style.setProperty('--kc-primary-disabled', palette.primaryDisabled)
-  root.style.setProperty('--kc-bg-base', palette.colorBgBase)
-  root.style.setProperty('--kc-bg-canvas', palette.colorBgLayout)
-  root.style.setProperty('--kc-bg-layout', palette.colorBgLayout)
-  root.style.setProperty('--kc-bg-surface', palette.colorBgContainer)
-  root.style.setProperty('--kc-bg-surface-elevated', palette.colorBgElevated)
-  root.style.setProperty('--kc-bg-surface-muted', palette.colorBgMuted)
-  root.style.setProperty('--kc-surface', palette.colorBgContainer)
-  root.style.setProperty('--kc-surface-elevated', palette.colorBgElevated)
-  root.style.setProperty('--kc-surface-muted', palette.colorBgMuted)
-  root.style.setProperty('--kc-fill-strong', palette.colorFill)
-  root.style.setProperty('--kc-fill-medium', palette.colorFillSecondary)
-  root.style.setProperty('--kc-fill-weak', palette.colorFillQuaternary)
-  root.style.setProperty('--kc-fill-subtle', palette.colorFillQuaternary)
-  root.style.setProperty('--kc-border-color', palette.colorBorder)
-  root.style.setProperty('--kc-border-color-strong', palette.colorBorderSecondary)
-  root.style.setProperty('--kc-border', palette.colorBorder)
-  root.style.setProperty('--kc-border-strong', palette.colorBorderSecondary)
-  root.style.setProperty('--kc-text-primary', palette.colorText)
-  root.style.setProperty('--kc-text-secondary', palette.colorTextSecondary)
-  root.style.setProperty('--kc-text-tertiary', palette.colorTextTertiary)
-  root.style.setProperty('--kc-text-quaternary', palette.colorTextQuaternary)
-  root.style.setProperty('--kc-text-inverse', '#ffffff')
-  root.style.setProperty('--kc-code-bg', palette.colorCodeBg)
-  root.style.setProperty('--kc-code-fg', palette.colorCodeText)
-  root.style.setProperty('--kc-shadow-soft', palette.boxShadowSecondary)
-  root.style.setProperty('--kc-shadow-strong', palette.boxShadow)
-  root.style.setProperty('--kc-shadow-panel', palette.boxShadowSecondary)
-  root.style.setProperty('--kc-danger', palette.colorDanger)
-  root.style.setProperty('--kc-table-header-bg', palette.colorBgMuted)
-  root.style.setProperty('--kc-table-header-sort-bg', palette.colorFillSecondary)
-  root.style.setProperty('--kc-table-row-hover-bg', palette.colorFillQuaternary)
-  root.style.setProperty('--kc-table-row-selected-bg', palette.colorPrimaryBg)
-  root.style.setProperty('--kc-table-row-selected-hover-bg', palette.colorPrimaryBgHover)
-  root.style.setProperty('--kc-menu-item-hover-bg', palette.colorFillQuaternary)
-  root.style.setProperty('--kc-menu-item-selected-bg', palette.colorPrimaryBg)
+  root.style.setProperty('--soha-primary-rgb', palette.primaryRgb)
+  root.style.setProperty('--soha-primary', palette.primary)
+  root.style.setProperty('--soha-primary-hover', palette.primaryHover)
+  root.style.setProperty('--soha-primary-active', palette.primaryActive)
+  root.style.setProperty('--soha-primary-light-default', palette.primaryLightDefault)
+  root.style.setProperty('--soha-primary-light-hover', palette.primaryLightHover)
+  root.style.setProperty('--soha-primary-light-active', palette.primaryLightActive)
+  root.style.setProperty('--soha-primary-disabled', palette.primaryDisabled)
+  root.style.setProperty('--soha-bg-base', palette.colorBgBase)
+  root.style.setProperty('--soha-bg-canvas', palette.colorBgLayout)
+  root.style.setProperty('--soha-bg-layout', palette.colorBgLayout)
+  root.style.setProperty('--soha-bg-surface', palette.colorBgContainer)
+  root.style.setProperty('--soha-bg-surface-elevated', palette.colorBgElevated)
+  root.style.setProperty('--soha-bg-surface-muted', palette.colorBgMuted)
+  root.style.setProperty('--soha-surface', palette.colorBgContainer)
+  root.style.setProperty('--soha-surface-elevated', palette.colorBgElevated)
+  root.style.setProperty('--soha-surface-muted', palette.colorBgMuted)
+  root.style.setProperty('--soha-fill-strong', palette.colorFill)
+  root.style.setProperty('--soha-fill-medium', palette.colorFillSecondary)
+  root.style.setProperty('--soha-fill-weak', palette.colorFillQuaternary)
+  root.style.setProperty('--soha-fill-subtle', palette.colorFillQuaternary)
+  root.style.setProperty('--soha-border-color', palette.colorBorder)
+  root.style.setProperty('--soha-border-color-strong', palette.colorBorderSecondary)
+  root.style.setProperty('--soha-border', palette.colorBorder)
+  root.style.setProperty('--soha-border-strong', palette.colorBorderSecondary)
+  root.style.setProperty('--soha-text-primary', palette.colorText)
+  root.style.setProperty('--soha-text-secondary', palette.colorTextSecondary)
+  root.style.setProperty('--soha-text-tertiary', palette.colorTextTertiary)
+  root.style.setProperty('--soha-text-quaternary', palette.colorTextQuaternary)
+  root.style.setProperty('--soha-text-inverse', '#ffffff')
+  root.style.setProperty('--soha-code-bg', palette.colorCodeBg)
+  root.style.setProperty('--soha-code-fg', palette.colorCodeText)
+  root.style.setProperty('--soha-shadow-soft', palette.boxShadowSecondary)
+  root.style.setProperty('--soha-shadow-strong', palette.boxShadow)
+  root.style.setProperty('--soha-shadow-panel', palette.boxShadowSecondary)
+  root.style.setProperty('--soha-danger', palette.colorDanger)
+  root.style.setProperty('--soha-table-header-bg', palette.colorBgMuted)
+  root.style.setProperty('--soha-table-header-sort-bg', palette.colorFillSecondary)
+  root.style.setProperty('--soha-table-row-hover-bg', palette.colorFillQuaternary)
+  root.style.setProperty('--soha-table-row-selected-bg', palette.colorPrimaryBg)
+  root.style.setProperty('--soha-table-row-selected-hover-bg', palette.colorPrimaryBgHover)
+  root.style.setProperty('--soha-menu-item-hover-bg', palette.colorFillQuaternary)
+  root.style.setProperty('--soha-menu-item-selected-bg', palette.colorPrimaryBg)
   root.style.setProperty('color-scheme', resolvedMode)
 
   document.body.setAttribute('theme-mode', resolvedMode)

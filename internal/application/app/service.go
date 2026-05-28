@@ -8,16 +8,16 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	appaccess "github.com/kubecrux/kubecrux/internal/application/access"
-	domainaccess "github.com/kubecrux/kubecrux/internal/domain/access"
-	domainapp "github.com/kubecrux/kubecrux/internal/domain/application"
-	domainaudit "github.com/kubecrux/kubecrux/internal/domain/audit"
-	domainidentity "github.com/kubecrux/kubecrux/internal/domain/identity"
-	domainoperation "github.com/kubecrux/kubecrux/internal/domain/operation"
-	"github.com/kubecrux/kubecrux/internal/platform/apperrors"
-	"github.com/kubecrux/kubecrux/internal/platform/operationentry"
-	"github.com/kubecrux/kubecrux/internal/platform/requestctx"
-	applicationrepo "github.com/kubecrux/kubecrux/internal/repository/application"
+	appaccess "github.com/soha/soha/internal/application/access"
+	domainaccess "github.com/soha/soha/internal/domain/access"
+	domainapp "github.com/soha/soha/internal/domain/application"
+	domainaudit "github.com/soha/soha/internal/domain/audit"
+	domainidentity "github.com/soha/soha/internal/domain/identity"
+	domainoperation "github.com/soha/soha/internal/domain/operation"
+	"github.com/soha/soha/internal/platform/apperrors"
+	"github.com/soha/soha/internal/platform/operationentry"
+	"github.com/soha/soha/internal/platform/requestctx"
+	applicationrepo "github.com/soha/soha/internal/repository/application"
 )
 
 type Repository interface {

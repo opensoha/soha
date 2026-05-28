@@ -8,12 +8,12 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	docsembed "github.com/kubecrux/kubecrux/docs"
-	apiHandlers "github.com/kubecrux/kubecrux/internal/api/handlers"
-	apiMiddleware "github.com/kubecrux/kubecrux/internal/api/middleware"
-	cfgpkg "github.com/kubecrux/kubecrux/internal/infrastructure/config"
-	swaggerinfra "github.com/kubecrux/kubecrux/internal/infrastructure/swagger"
-	webembed "github.com/kubecrux/kubecrux/web"
+	docsembed "github.com/soha/soha/docs"
+	apiHandlers "github.com/soha/soha/internal/api/handlers"
+	apiMiddleware "github.com/soha/soha/internal/api/middleware"
+	cfgpkg "github.com/soha/soha/internal/infrastructure/config"
+	swaggerinfra "github.com/soha/soha/internal/infrastructure/swagger"
+	webembed "github.com/soha/soha/web"
 	"go.uber.org/zap"
 )
 

@@ -7,7 +7,7 @@ const docsBaseUrl = process.env.DOCS_BASE_URL ?? '/docs/';
 const showDocsLastUpdateTime = process.env.DOCS_SHOW_LAST_UPDATE_TIME !== 'false';
 
 const config: Config = {
-  title: 'kubecrux Docs',
+  title: 'soha Docs',
   tagline: 'Multi-cluster Kubernetes platform console documentation',
   favicon: 'logo.svg',
   future: {
@@ -45,7 +45,7 @@ const config: Config = {
             'static/**',
           ],
           showLastUpdateTime: showDocsLastUpdateTime,
-          editUrl: 'https://github.com/kubecrux/kubecrux/tree/main/docs/',
+          editUrl: 'https://github.com/soha/soha/tree/main/docs/',
         },
         blog: false,
         theme: {
@@ -60,10 +60,10 @@ const config: Config = {
       respectPrefersColorScheme: true,
     },
     navbar: {
-      title: 'kubecrux Docs',
+      title: 'soha Docs',
       hideOnScroll: true,
       logo: {
-        alt: 'kubecrux logo',
+        alt: 'soha logo',
         src: 'logo.svg',
       },
       items: [
@@ -112,7 +112,7 @@ const config: Config = {
           ],
         },
       ],
-      copyright: `Copyright © ${new Date().getFullYear()} kubecrux contributors.`,
+      copyright: `Copyright © ${new Date().getFullYear()} soha contributors.`,
     },
     prism: {
       theme: prismThemes.github,

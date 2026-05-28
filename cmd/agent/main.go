@@ -8,7 +8,7 @@ import (
 	"syscall"
 	"time"
 
-	agentbootstrap "github.com/kubecrux/kubecrux/internal/agent/bootstrap"
+	agentbootstrap "github.com/soha/soha/internal/agent/bootstrap"
 	"go.uber.org/zap"
 )
 
@@ -16,7 +16,7 @@ func main() {
 	ctx := context.Background()
 	application, err := agentbootstrap.New(ctx)
 	if err != nil {
-		_, _ = fmt.Fprintf(os.Stderr, "bootstrap kubecrux agent: %v\n", err)
+		_, _ = fmt.Fprintf(os.Stderr, "bootstrap soha agent: %v\n", err)
 		os.Exit(1)
 	}
 
@@ -27,7 +27,7 @@ func main() {
 		}
 	}()
 
-	application.Logger.Info("kubecrux agent started")
+	application.Logger.Info("soha agent started")
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)

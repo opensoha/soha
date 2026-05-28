@@ -6,12 +6,12 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	"github.com/kubecrux/kubecrux/internal/api/dto"
-	apiMiddleware "github.com/kubecrux/kubecrux/internal/api/middleware"
-	apiresponse "github.com/kubecrux/kubecrux/internal/api/response"
-	domaincopilot "github.com/kubecrux/kubecrux/internal/domain/copilot"
-	domainidentity "github.com/kubecrux/kubecrux/internal/domain/identity"
-	domainmcp "github.com/kubecrux/kubecrux/internal/domain/mcp"
+	"github.com/soha/soha/internal/api/dto"
+	apiMiddleware "github.com/soha/soha/internal/api/middleware"
+	apiresponse "github.com/soha/soha/internal/api/response"
+	domaincopilot "github.com/soha/soha/internal/domain/copilot"
+	domainidentity "github.com/soha/soha/internal/domain/identity"
+	domainmcp "github.com/soha/soha/internal/domain/mcp"
 )
 
 type CopilotService interface {

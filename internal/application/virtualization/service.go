@@ -11,14 +11,14 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	appaccess "github.com/kubecrux/kubecrux/internal/application/access"
-	domainidentity "github.com/kubecrux/kubecrux/internal/domain/identity"
-	domainoperation "github.com/kubecrux/kubecrux/internal/domain/operation"
-	domainvirtualization "github.com/kubecrux/kubecrux/internal/domain/virtualization"
-	infravirtualization "github.com/kubecrux/kubecrux/internal/infrastructure/virtualization"
-	"github.com/kubecrux/kubecrux/internal/platform/apperrors"
-	"github.com/kubecrux/kubecrux/internal/platform/operationentry"
-	"github.com/kubecrux/kubecrux/internal/platform/runtimeobs"
+	appaccess "github.com/soha/soha/internal/application/access"
+	domainidentity "github.com/soha/soha/internal/domain/identity"
+	domainoperation "github.com/soha/soha/internal/domain/operation"
+	domainvirtualization "github.com/soha/soha/internal/domain/virtualization"
+	infravirtualization "github.com/soha/soha/internal/infrastructure/virtualization"
+	"github.com/soha/soha/internal/platform/apperrors"
+	"github.com/soha/soha/internal/platform/operationentry"
+	"github.com/soha/soha/internal/platform/runtimeobs"
 )
 
 const (
@@ -1512,7 +1512,7 @@ func (s *Service) imageFromInput(ctx context.Context, input ImageInput, id strin
 		Architecture: strings.TrimSpace(input.Architecture),
 		SizeBytes:    sizeBytes,
 		Config:       config,
-		Raw:          map[string]any{"managedBy": "kubecrux"},
+		Raw:          map[string]any{"managedBy": "soha"},
 	}, nil
 }
 

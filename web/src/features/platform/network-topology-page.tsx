@@ -1061,7 +1061,7 @@ function TopologyCanvasNode({ data, selected }: NodeProps<TopologyFlowNode>) {
   const accent = resolveNodeColor(data.kind)
 
   return (
-    <div className={`kc-topology-node ${selected ? 'is-selected' : ''} is-${data.state}`}>
+    <div className={`soha-topology-node ${selected ? 'is-selected' : ''} is-${data.state}`}>
       <Handle
         type="target"
         position={Position.Left}
@@ -1069,23 +1069,23 @@ function TopologyCanvasNode({ data, selected }: NodeProps<TopologyFlowNode>) {
         style={{ opacity: 0, background: 'transparent', border: 0 }}
       />
       <div
-        className="kc-topology-node-card"
+        className="soha-topology-node-card"
         style={{
           borderColor: hexToRgba(accent, selected ? 0.9 : 0.28),
           background: `linear-gradient(180deg, ${hexToRgba(accent, 0.14)} 0%, rgba(255, 255, 255, 0.96) 100%)`,
         }}
       >
-        <div className="kc-topology-node-head">
-          <span className="kc-topology-node-kind" style={{ color: accent, background: hexToRgba(accent, 0.12) }}>
+        <div className="soha-topology-node-head">
+          <span className="soha-topology-node-kind" style={{ color: accent, background: hexToRgba(accent, 0.12) }}>
             {getTopologyKindLabel(data.kind, localeCode)}
           </span>
-          <span className={`kc-topology-node-state is-${data.state}`}>
+          <span className={`soha-topology-node-state is-${data.state}`}>
             {getTopologyStateLabel(data.state, localeCode)}
           </span>
         </div>
-        <div className="kc-topology-node-title">{data.name}</div>
-        {data.subtitle ? <div className="kc-topology-node-subtitle">{data.subtitle}</div> : null}
-        {data.badge ? <div className="kc-topology-node-badge">{data.badge}</div> : null}
+        <div className="soha-topology-node-title">{data.name}</div>
+        {data.subtitle ? <div className="soha-topology-node-subtitle">{data.subtitle}</div> : null}
+        {data.badge ? <div className="soha-topology-node-badge">{data.badge}</div> : null}
       </div>
       <Handle
         type="source"
@@ -1127,7 +1127,7 @@ function TopologyCanvasInner({
   }, [fitKey, fitView, nodes.length])
 
   return (
-    <div className="kc-topology-canvas">
+    <div className="soha-topology-canvas">
       <ReactFlow<TopologyFlowNode, TopologyFlowEdge>
         nodes={nodes}
         edges={edges}
@@ -1491,7 +1491,7 @@ export function NetworkTopologyPage() {
   ]
 
   return (
-    <div className="kc-page">
+    <div className="soha-page">
       <PageHeader
         title={localeCode === 'zh_CN' ? '网络拓扑' : 'Network Topology'}
         description={localeCode === 'zh_CN'
@@ -1504,7 +1504,7 @@ export function NetworkTopologyPage() {
           </Space>
         )}
       />
-      <Card className="kc-detail-card">
+      <Card className="soha-detail-card">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex min-w-[280px] flex-1 flex-wrap items-center gap-3">
             <Input
@@ -1512,7 +1512,7 @@ export function NetworkTopologyPage() {
               onChange={(event) => setSearchKeyword(event.target.value)}
               placeholder={localeCode === 'zh_CN' ? '搜索入口 / 路由 / Service / Pod / 说明' : 'Search entry / route / service / pod / note'}
               style={{ width: 340 }}
-              className="kc-platform-compact-field"
+              className="soha-platform-compact-field"
             />
             <Text type="secondary" className="text-xs">
               {viewDescription}
@@ -1531,7 +1531,7 @@ export function NetworkTopologyPage() {
         </div>
         {liveErrors.length > 0 ? (
           <div style={{ marginTop: 12 }}>
-            <Text style={{ color: 'var(--kc-danger)' }}>
+            <Text style={{ color: 'var(--soha-danger)' }}>
               {localeCode === 'zh_CN' ? '实时数据错误：' : 'Live data error: '}
               {liveErrors.join(' / ')}
             </Text>
@@ -1549,7 +1549,7 @@ export function NetworkTopologyPage() {
       />
 
       <Card
-        className="kc-detail-card"
+        className="soha-detail-card"
         title={localeCode === 'zh_CN' ? '入口 -> 路由 -> Service -> Backend 拓扑' : 'Entry -> Route -> Service -> Backend topology'}
         extra={(
           <Space wrap>
@@ -1575,7 +1575,7 @@ export function NetworkTopologyPage() {
               fitKey={topologyGraph.fitKey}
               onSelectNode={setSelectedNodeID}
             />
-            <div className="kc-topology-selection">
+            <div className="soha-topology-selection">
               {selectedTopologyNode && selectionDetail ? (
                 <>
                   <div className="flex flex-wrap items-start justify-between gap-3">
@@ -1674,7 +1674,7 @@ export function NetworkTopologyPage() {
                   ) : null}
 
                   {selectionDetail.notes.length > 0 ? (
-                    <div className="kc-topology-note-list">
+                    <div className="soha-topology-note-list">
                       {selectionDetail.notes.slice(0, 3).map((item) => (
                         <Text key={item} type="secondary" className="text-xs">{item}</Text>
                       ))}
@@ -1701,7 +1701,7 @@ export function NetworkTopologyPage() {
       </Card>
 
       <Card
-        className="kc-detail-card"
+        className="soha-detail-card"
         title={localeCode === 'zh_CN' ? '网络拓扑明细' : 'Network topology detail'}
         extra={(
           <Text type="secondary" className="text-xs">

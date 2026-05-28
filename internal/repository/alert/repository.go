@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	domainalert "github.com/kubecrux/kubecrux/internal/domain/alert"
+	domainalert "github.com/soha/soha/internal/domain/alert"
 	"gorm.io/gorm"
 )
 

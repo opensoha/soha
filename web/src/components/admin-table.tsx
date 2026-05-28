@@ -140,8 +140,8 @@ export function AdminTable({
   const resolvedRowSelection = selectCurrentPageOnly && activeRowSelection
     ? {
         ...activeRowSelection,
-        columnTitle: currentPageSelectionLabel ? <span className="kc-admin-table-selection-label">{currentPageSelectionLabel}</span> : activeRowSelection.columnTitle,
-        title: currentPageSelectionLabel ? <span className="kc-admin-table-selection-label">{currentPageSelectionLabel}</span> : undefined,
+        columnTitle: currentPageSelectionLabel ? <span className="soha-admin-table-selection-label">{currentPageSelectionLabel}</span> : activeRowSelection.columnTitle,
+        title: currentPageSelectionLabel ? <span className="soha-admin-table-selection-label">{currentPageSelectionLabel}</span> : undefined,
         getTitleCheckboxProps: () => ({
           checked: pageAllSelected,
           indeterminate: pageIndeterminate,
@@ -185,8 +185,8 @@ export function AdminTable({
       trigger="click"
       placement="bottomRight"
       content={
-        <div className="kc-admin-table-column-popover">
-          <div className="kc-admin-table-column-actions">
+        <div className="soha-admin-table-column-popover">
+          <div className="soha-admin-table-column-actions">
             <Button size="small" type="text" onClick={() => setVisibleColumnIds(columnOptions.map((option) => option.id))}>
               全选
             </Button>
@@ -217,21 +217,21 @@ export function AdminTable({
 
   const hasHeader = Boolean(title || headerExtra)
   const hasToolbar = Boolean(toolbar || resolvedToolbarExtra)
-  const resolvedShellClassName = ['kc-admin-table-shell', shellClassName, hasHeader || hasToolbar ? 'is-panel' : ''].filter(Boolean).join(' ')
-  const resolvedTableClassName = ['kc-admin-table', className].filter(Boolean).join(' ')
+  const resolvedShellClassName = ['soha-admin-table-shell', shellClassName, hasHeader || hasToolbar ? 'is-panel' : ''].filter(Boolean).join(' ')
+  const resolvedTableClassName = ['soha-admin-table', className].filter(Boolean).join(' ')
 
   return (
     <div className={resolvedShellClassName}>
       {hasHeader ? (
-        <div className="kc-admin-table-header">
-          <div className="kc-admin-table-header-main">{title}</div>
-          {headerExtra ? <div className="kc-admin-table-header-extra">{headerExtra}</div> : null}
+        <div className="soha-admin-table-header">
+          <div className="soha-admin-table-header-main">{title}</div>
+          {headerExtra ? <div className="soha-admin-table-header-extra">{headerExtra}</div> : null}
         </div>
       ) : null}
       {hasToolbar ? (
-        <div className="kc-admin-table-toolbar">
-          {toolbar ? <div className="kc-admin-table-toolbar-main">{toolbar}</div> : null}
-          {resolvedToolbarExtra ? <div className="kc-admin-table-toolbar-extra">{resolvedToolbarExtra}</div> : null}
+        <div className="soha-admin-table-toolbar">
+          {toolbar ? <div className="soha-admin-table-toolbar-main">{toolbar}</div> : null}
+          {resolvedToolbarExtra ? <div className="soha-admin-table-toolbar-extra">{resolvedToolbarExtra}</div> : null}
         </div>
       ) : null}
       <Table

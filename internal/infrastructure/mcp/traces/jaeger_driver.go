@@ -92,16 +92,16 @@ func (d jaegerDriver) FindSlowSpans(ctx context.Context, sourceID string, config
 				ServiceName string `json:"serviceName"`
 			} `json:"processes"`
 			Spans []struct {
-				SpanID       string            `json:"spanID"`
-				References   []struct {
+				SpanID     string `json:"spanID"`
+				References []struct {
 					RefType string `json:"refType"`
 					SpanID  string `json:"spanID"`
 				} `json:"references"`
-				OperationName string           `json:"operationName"`
-				ProcessID    string            `json:"processID"`
-				StartTime    int64             `json:"startTime"`
-				Duration     int64             `json:"duration"`
-				Tags         []struct {
+				OperationName string `json:"operationName"`
+				ProcessID     string `json:"processID"`
+				StartTime     int64  `json:"startTime"`
+				Duration      int64  `json:"duration"`
+				Tags          []struct {
 					Key   string `json:"key"`
 					Type  string `json:"type"`
 					Value any    `json:"value"`

@@ -2,7 +2,7 @@
 
 ## Goal
 
-kubecrux now owns application registration, multi-source build configuration, environment-scoped delivery orchestration, image replacement deployment, and deploy/release records.
+soha now owns application registration, multi-source build configuration, environment-scoped delivery orchestration, image replacement deployment, and deploy/release records.
 
 The developer/tester-facing DevOps workbench design is documented separately in [应用交付 DevOps 工作台方案](./delivery-devops-workbench.md). This file remains the implemented application-delivery baseline and compatibility contract.
 
@@ -135,13 +135,13 @@ Current build surface:
 
 The current model is not GitOps-only and not a fake mock pipeline. It is a real platform workflow where:
 
-1. an application is registered in kubecrux
+1. an application is registered in soha
 2. one or more build sources are attached to the application
 3. an application-environment binding selects one build source, one workflow template, and explicit platform targets
 4. a manual build or workflow build node creates a release bundle and execution task in the execution plane
 5. the produced artifact image is recorded on both the build record and the release bundle metadata
 6. deployment replaces the target Deployment image in Kubernetes while execution task state is advanced in parallel
-7. kubecrux records workflow, execution-task, deploy, and release outcomes
+7. soha records workflow, execution-task, deploy, and release outcomes
 
 企业 AI coding 场景下，`delivery_blueprints` 作为控制平面模板对象存在，而不是仓库文件本身：
 

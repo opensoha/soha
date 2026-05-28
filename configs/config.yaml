@@ -1,5 +1,5 @@
 app:
-  name: kubecrux
+  name: soha
   env: development
 
 http:
@@ -24,7 +24,7 @@ runtime:
   alert_upsert_batch_size: 100
   execution_runner_token: demo-execution-runner-token
   execution_job_cluster_id: ""
-  execution_job_namespace: kubecrux-system
+  execution_job_namespace: soha-system
   execution_job_image: alpine:3.20
   execution_job_git_image: alpine/git:2.47.0
   execution_job_ttl_seconds: 3600
@@ -33,7 +33,7 @@ database:
   driver: postgres
   host: localhost
   port: 5432
-  name: kubecrux
+  name: soha
   user: pgsql
   password: pgsql
   sslmode: disable
@@ -48,14 +48,14 @@ auth:
   dev_principal:
     user_id: admin
     name: Admin
-    email: admin@kubecrux.local
-    password: kubecrux
+    email: admin@soha.local
+    password: soha
     roles:
       - admin
       - ops
       - auditor
   jwt:
-    issuer: kubecrux
+    issuer: soha
     secret: dev-only-change-me
     access_ttl: 15m
     refresh_ttl: 168h
@@ -117,8 +117,8 @@ modules:
     enabled: false
 
 security:
-  credential_encryption_key: ${KC_SECURITY_CREDENTIAL_ENCRYPTION_KEY}
-  secret_provider: ${KC_SECURITY_SECRET_PROVIDER}
+  credential_encryption_key: ${SOHA_SECURITY_CREDENTIAL_ENCRYPTION_KEY}
+  secret_provider: ${SOHA_SECURITY_SECRET_PROVIDER}
 
 bootstrap:
   seed_defaults: true

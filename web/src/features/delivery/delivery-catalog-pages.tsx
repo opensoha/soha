@@ -204,7 +204,7 @@ export function BusinessLinesPage() {
   ]
 
   return (
-    <div className="kc-page">
+    <div className="soha-page">
       <AdminTable
         title={t('page.delivery.businessLines.title', 'Business Lines')}
         headerExtra={canManageBusinessLines ? <Button icon={<PlusOutlined />} type="primary" onClick={() => { setEditing(null); setModalVisible(true) }}>新建业务线</Button> : null}
@@ -249,7 +249,7 @@ export function BusinessLinesPage() {
           <Form.Item name="enabled" label="启用" valuePropName="checked">
             <Switch />
           </Form.Item>
-          <div className="kc-form-actions">
+          <div className="soha-form-actions">
             <Button onClick={() => setModalVisible(false)}>取消</Button>
             <Button htmlType="submit" type="primary" loading={createMutation.isPending || updateMutation.isPending}>
               {editing ? '更新' : '创建'}
@@ -334,7 +334,7 @@ export function DeliveryEnvironmentsPage() {
   ]
 
   return (
-    <div className="kc-page">
+    <div className="soha-page">
       <AdminTable
         title={t('page.delivery.environments.title', 'Environments')}
         headerExtra={canManageEnvironments ? <Button icon={<PlusOutlined />} type="primary" onClick={() => { setEditing(null); setModalVisible(true) }}>新建环境</Button> : null}
@@ -375,7 +375,7 @@ export function DeliveryEnvironmentsPage() {
           <Form.Item name="enabled" label="启用" valuePropName="checked">
             <Switch />
           </Form.Item>
-          <div className="kc-form-actions">
+          <div className="soha-form-actions">
             <Button onClick={() => setModalVisible(false)}>取消</Button>
             <Button htmlType="submit" type="primary" loading={createMutation.isPending || updateMutation.isPending}>
               {editing ? '更新' : '创建'}
@@ -495,7 +495,7 @@ export function ApplicationEnvironmentsPage() {
   ]
 
   return (
-    <div className="kc-page">
+    <div className="soha-page">
       <AdminTable
         title={t('page.delivery.bindings.title', 'Application Environment Bindings')}
         headerExtra={canManageBindings ? <Button icon={<PlusOutlined />} type="primary" onClick={() => { setEditing(null); setModalVisible(true) }}>新建绑定</Button> : null}
@@ -697,7 +697,7 @@ export function ApplicationEnvironmentsPage() {
           <Form.Item name="targetMetadataText" label="目标元数据(JSON)">
             <Input.TextArea rows={5} placeholder='{"commands":["systemctl restart billing"],"serviceUnit":"billing.service"}' />
           </Form.Item>
-          <div className="kc-form-actions">
+          <div className="soha-form-actions">
             <Button onClick={() => setModalVisible(false)}>取消</Button>
             <Button htmlType="submit" type="primary" loading={createMutation.isPending || updateMutation.isPending}>
               {editing ? '更新' : '创建'}
@@ -743,7 +743,7 @@ export function ReleaseBoardPage() {
   ]
 
   return (
-    <div className="kc-page">
+    <div className="soha-page">
       <PageHeader title={t('page.releaseBoard.title', 'Release Board')} description={t('page.releaseBoard.desc', 'Inspect target bindings by application and environment as the entry point for workflow and deployment linkage.')} />
       <Card>
         <AdminTable columns={columns} dataSource={releaseBoardQuery.data?.data ?? []} rowKey="applicationEnvironmentId" loading={releaseBoardQuery.isLoading} />
@@ -950,7 +950,7 @@ export function ApplicationEnvironmentDetailPage() {
 
   if (bindingQuery.isLoading) {
     return (
-      <div className="kc-page">
+      <div className="soha-page">
         <PageHeader title={localeCode === 'zh_CN' ? '环境详情' : 'Environment Detail'} description={localeCode === 'zh_CN' ? '加载应用环境绑定详情。' : 'Loading application-environment binding details.'} />
         <Card><Text type="secondary">{t('common.loading', 'Loading...')}</Text></Card>
       </div>
@@ -959,7 +959,7 @@ export function ApplicationEnvironmentDetailPage() {
 
   if (!binding) {
     return (
-      <div className="kc-page">
+      <div className="soha-page">
         <PageHeader
           title={localeCode === 'zh_CN' ? '环境详情' : 'Environment Detail'}
           description={localeCode === 'zh_CN' ? '当前绑定不存在或已被删除。' : 'The current binding does not exist or has been removed.'}
@@ -996,7 +996,7 @@ export function ApplicationEnvironmentDetailPage() {
     : (localeCode === 'zh_CN' ? '触发部署' : 'Trigger Deploy')
 
   return (
-    <div className="kc-page">
+    <div className="soha-page">
       <PageHeader
         title={`${application?.name || binding.applicationId} / ${environment?.name || binding.environmentKey || binding.environmentId}`}
         description={localeCode === 'zh_CN' ? '查看单个应用环境绑定的工作流模板、发布目标和最新执行状态。' : 'Inspect the workflow template, release targets, and latest execution state for a single application-environment binding.'}
@@ -1022,8 +1022,8 @@ export function ApplicationEnvironmentDetailPage() {
         />
       </Card>
       <Card title={localeCode === 'zh_CN' ? '交付动作' : 'Delivery Actions'}>
-        <div className="kc-delivery-action-grid">
-          <div className="kc-delivery-action-block">
+        <div className="soha-delivery-action-grid">
+          <div className="soha-delivery-action-block">
             <Text strong>{localeCode === 'zh_CN' ? '发布目标' : 'Release Target'}</Text>
             <Select
               value={selectedTarget?.id}
@@ -1037,7 +1037,7 @@ export function ApplicationEnvironmentDetailPage() {
                 : localeCode === 'zh_CN' ? '当前未绑定工作流模板，将使用默认流程名' : 'No workflow template is bound. The default workflow name will be used.'}
             </Text>
           </div>
-          <div className="kc-delivery-action-block">
+          <div className="soha-delivery-action-block">
             <Text strong>{localeCode === 'zh_CN' ? '触发工作流' : 'Trigger Workflow'}</Text>
             <Text type="secondary" style={{ fontSize: 12 }}>{localeCode === 'zh_CN' ? '生成一条 workflow run，只做流程编排，不直接改 deployment 镜像。' : 'Create a workflow run for orchestration only without directly changing the deployment image.'}</Text>
             <Button
@@ -1050,7 +1050,7 @@ export function ApplicationEnvironmentDetailPage() {
               {localeCode === 'zh_CN' ? '触发工作流' : 'Trigger Workflow'}
             </Button>
           </div>
-          <div className="kc-delivery-action-block">
+          <div className="soha-delivery-action-block">
             <Text strong>{localeCode === 'zh_CN' ? '触发发布' : 'Trigger Release'}</Text>
             <Input value={imageTag} onChange={(event) => setImageTag(event.target.value)} placeholder={localeCode === 'zh_CN' ? 'Image Tag，默认取应用默认 Tag' : 'Image tag, defaulting to the application default tag'} />
             <Input value={releaseName} onChange={(event) => setReleaseName(event.target.value)} placeholder={localeCode === 'zh_CN' ? 'Release Name，可留空自动生成' : 'Release name, leave empty to auto-generate'} />
@@ -1067,7 +1067,7 @@ export function ApplicationEnvironmentDetailPage() {
               {releaseActionLabel}
             </Button>
           </div>
-          <div className="kc-delivery-action-block">
+          <div className="soha-delivery-action-block">
             <Text strong>{localeCode === 'zh_CN' ? '回滚' : 'Rollback'}</Text>
             <Select
               value={rollbackRevision || undefined}
@@ -1101,7 +1101,7 @@ export function ApplicationEnvironmentDetailPage() {
       </Card>
       <Card title={localeCode === 'zh_CN' ? 'Workflow Template 定义' : 'Workflow Template Definition'}>
         {binding.workflowTemplate?.definition ? (
-          <pre className="kc-json-block">{JSON.stringify(binding.workflowTemplate.definition, null, 2)}</pre>
+          <pre className="soha-json-block">{JSON.stringify(binding.workflowTemplate.definition, null, 2)}</pre>
         ) : (
           <Empty description={localeCode === 'zh_CN' ? '当前未配置工作流模板定义' : 'No workflow template definition is configured'} />
         )}
@@ -1109,8 +1109,8 @@ export function ApplicationEnvironmentDetailPage() {
       <Card title={localeCode === 'zh_CN' ? '构建与发布策略' : 'Build and Release Policy'}>
         <Descriptions
           items={[
-            { key: 'buildPolicy', label: 'Build Policy', children: <pre className="kc-json-block">{JSON.stringify(binding.buildPolicy ?? {}, null, 2)}</pre> },
-            { key: 'releasePolicy', label: 'Release Policy', children: <pre className="kc-json-block">{JSON.stringify(binding.releasePolicy ?? {}, null, 2)}</pre> },
+            { key: 'buildPolicy', label: 'Build Policy', children: <pre className="soha-json-block">{JSON.stringify(binding.buildPolicy ?? {}, null, 2)}</pre> },
+            { key: 'releasePolicy', label: 'Release Policy', children: <pre className="soha-json-block">{JSON.stringify(binding.releasePolicy ?? {}, null, 2)}</pre> },
           ]}
         />
       </Card>
@@ -1204,13 +1204,13 @@ export function WorkflowTemplatesPage() {
   ]
 
   return (
-    <div className="kc-page">
+    <div className="soha-page">
       <PageHeader
         title={t('page.workflowTemplates.title', 'Release Flow Templates')}
         description={t('page.workflowTemplates.desc', 'Maintain reusable DAG-based release flow templates with the React Flow canvas, including serial, parallel, and auto-layout patterns.')}
         actions={canManageWorkflowTemplates ? <Button icon={<PlusOutlined />} type="primary" onClick={() => { setEditing(null); setModalVisible(true) }}>{localeCode === 'zh_CN' ? '新建模板' : 'New Template'}</Button> : null}
       />
-      <Card className="kc-scope-hint-card">
+      <Card className="soha-scope-hint-card">
         <Text type="secondary">
           {t('page.workflowTemplates.hint', 'The canvas uses React Flow and dagre for auto-layout. Only fixed node types are allowed so backend execution and audit remain controllable.')}
         </Text>
@@ -1242,23 +1242,23 @@ export function WorkflowTemplatesPage() {
           }}
           initialValues={editing ? { ...editing, category: editing.category || 'release' } : { enabled: true, category: 'release' }}
         >
-          <div className="kc-delivery-action-grid">
-            <div className="kc-delivery-action-block">
+          <div className="soha-delivery-action-grid">
+            <div className="soha-delivery-action-block">
               <Form.Item name="key" label={localeCode === 'zh_CN' ? '模板 Key' : 'Template Key'} rules={[{ required: true, message: localeCode === 'zh_CN' ? '请输入模板 Key' : 'Enter the template key' }]}>
                 <Input />
               </Form.Item>
             </div>
-            <div className="kc-delivery-action-block">
+            <div className="soha-delivery-action-block">
               <Form.Item name="name" label={localeCode === 'zh_CN' ? '模板名称' : 'Template Name'} rules={[{ required: true, message: localeCode === 'zh_CN' ? '请输入模板名称' : 'Enter the template name' }]}>
                 <Input />
               </Form.Item>
             </div>
-            <div className="kc-delivery-action-block">
+            <div className="soha-delivery-action-block">
               <Form.Item name="description" label={localeCode === 'zh_CN' ? '描述' : 'Description'}>
                 <Input />
               </Form.Item>
             </div>
-            <div className="kc-delivery-action-block">
+            <div className="soha-delivery-action-block">
               <Form.Item name="category" label={localeCode === 'zh_CN' ? '分类' : 'Category'}>
                 <Select options={RELEASE_TEMPLATE_CATEGORY_OPTIONS} />
               </Form.Item>
@@ -1268,7 +1268,7 @@ export function WorkflowTemplatesPage() {
             </div>
           </div>
 
-          <Card className="kc-template-editor-card" title={localeCode === 'zh_CN' ? 'DAG 编排画布' : 'DAG Composer'}>
+          <Card className="soha-template-editor-card" title={localeCode === 'zh_CN' ? 'DAG 编排画布' : 'DAG Composer'}>
             <Suspense fallback={<Card><Text type="secondary">{t('common.loading', 'Loading...')}</Text></Card>}>
               <ReleaseFlowDagEditor
                 key={editing?.id ?? 'new-release-dag'}
@@ -1278,11 +1278,11 @@ export function WorkflowTemplatesPage() {
             </Suspense>
           </Card>
 
-          <Card className="kc-flow-stage-card" title={localeCode === 'zh_CN' ? 'JSON 预览' : 'JSON Preview'}>
-            <pre className="kc-json-block">{previewDefinition}</pre>
+          <Card className="soha-flow-stage-card" title={localeCode === 'zh_CN' ? 'JSON 预览' : 'JSON Preview'}>
+            <pre className="soha-json-block">{previewDefinition}</pre>
           </Card>
 
-          <div className="kc-form-actions">
+          <div className="soha-form-actions">
             <Button onClick={() => setModalVisible(false)}>{t('common.cancel', 'Cancel')}</Button>
             <Button htmlType="submit" type="primary" loading={createMutation.isPending || updateMutation.isPending}>
               {editing ? t('common.update', 'Update') : t('common.create', 'Create')}

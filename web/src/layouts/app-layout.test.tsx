@@ -47,8 +47,8 @@ vi.mock('@/features/settings/use-branding-settings', () => ({
   useBrandingSettings: () => ({
     data: {
       data: {
-        appTitle: 'KubeCrux',
-        sidebarTitle: 'KubeCrux',
+        appTitle: 'Soha',
+        sidebarTitle: 'Soha',
         loginLogoUrl: '',
         expandedLogoUrl: '',
         collapsedLogoUrl: '',
@@ -57,8 +57,8 @@ vi.mock('@/features/settings/use-branding-settings', () => ({
     },
   }),
   getNormalizedBranding: (value: any) => ({
-    appTitle: value?.appTitle || 'KubeCrux',
-    sidebarTitle: value?.sidebarTitle || 'KubeCrux',
+    appTitle: value?.appTitle || 'Soha',
+    sidebarTitle: value?.sidebarTitle || 'Soha',
     loginLogoUrl: value?.loginLogoUrl || '',
     expandedLogoUrl: value?.expandedLogoUrl || '',
     collapsedLogoUrl: value?.collapsedLogoUrl || '',
@@ -226,44 +226,44 @@ describe('app layout workspace navigation', () => {
       ],
     })
 
-    expect(container.querySelector('.kc-workbench-switcher__label')?.textContent).toBe('k8s工作台')
-    expect(container.querySelector('.kc-workspace-switcher-shell')).toBeNull()
+    expect(container.querySelector('.soha-workbench-switcher__label')?.textContent).toBe('k8s工作台')
+    expect(container.querySelector('.soha-workspace-switcher-shell')).toBeNull()
   })
 
   it('filters the business menu by the current application workspace', async () => {
     const container = await renderWithProviders('/applications')
 
-    expect(container.querySelector('.kc-workbench-switcher__label')?.textContent).toBe('应用交付工作台')
+    expect(container.querySelector('.soha-workbench-switcher__label')?.textContent).toBe('应用交付工作台')
     expect(container.textContent).toContain('应用中心')
     expect(container.textContent).not.toContain('概览')
-    expect(container.querySelector('.kc-nav-system')).toBeNull()
+    expect(container.querySelector('.soha-nav-system')).toBeNull()
     expect(testState.prefs.setCurrentWorkspace).toHaveBeenCalledWith('application')
   })
 
   it('switches the left nav into system workspace mode while visiting system pages', async () => {
     const container = await renderWithProviders('/system/menus')
 
-    expect(container.querySelector('.kc-workbench-switcher-shell')).not.toBeNull()
-    expect(container.querySelector('.kc-workbench-switcher__label')?.textContent).toBe('k8s工作台')
+    expect(container.querySelector('.soha-workbench-switcher-shell')).not.toBeNull()
+    expect(container.querySelector('.soha-workbench-switcher__label')?.textContent).toBe('k8s工作台')
     expect(container.textContent).toContain('菜单管理')
     expect(container.textContent).not.toContain('概览')
-    expect(container.querySelector('.kc-nav-system')).toBeNull()
-    expect(container.querySelector('.kc-nav-business.is-system')).not.toBeNull()
-    expect(container.querySelector('.kc-sider-topbar > button.kc-sider-brand')).not.toBeNull()
+    expect(container.querySelector('.soha-nav-system')).toBeNull()
+    expect(container.querySelector('.soha-nav-business.is-system')).not.toBeNull()
+    expect(container.querySelector('.soha-sider-topbar > button.soha-sider-brand')).not.toBeNull()
     expect(container.querySelector('button[aria-label="系统设置"]')?.className).not.toContain('is-active')
     expect(testState.prefs.setCurrentWorkspace).not.toHaveBeenCalled()
   })
 
   it('renders the workbench switcher below the brand bar and above the business menu', async () => {
     const container = await renderWithProviders('/')
-    const brandBar = container.querySelector('.kc-sider-topbar')
-    const workbenchShell = container.querySelector('.kc-workbench-switcher-shell')
-    const businessNav = container.querySelector('.kc-nav-business')
+    const brandBar = container.querySelector('.soha-sider-topbar')
+    const workbenchShell = container.querySelector('.soha-workbench-switcher-shell')
+    const businessNav = container.querySelector('.soha-nav-business')
 
     expect(brandBar).not.toBeNull()
     expect(workbenchShell).not.toBeNull()
     expect(businessNav).not.toBeNull()
-    expect(container.querySelector('.kc-workspace-switcher-shell')).toBeNull()
+    expect(container.querySelector('.soha-workspace-switcher-shell')).toBeNull()
     expect(brandBar?.nextElementSibling).toBe(workbenchShell)
     expect(workbenchShell?.nextElementSibling).toBe(businessNav)
   })
@@ -334,9 +334,9 @@ describe('app layout workspace navigation', () => {
       ],
     })
 
-    expect(container.querySelector('.kc-workbench-switcher__label')?.textContent).toBe('AI工作台')
-    expect(container.querySelector('.kc-nav-business')).not.toBeNull()
-    expect(container.querySelector('.kc-nav-system')).toBeNull()
+    expect(container.querySelector('.soha-workbench-switcher__label')?.textContent).toBe('AI工作台')
+    expect(container.querySelector('.soha-nav-business')).not.toBeNull()
+    expect(container.querySelector('.soha-nav-system')).toBeNull()
     expect(container.textContent).toContain('通用聊天')
     expect(container.textContent).toContain('巡检')
     expect(container.textContent).not.toContain('监控工作台')
@@ -381,12 +381,12 @@ describe('app layout workspace navigation', () => {
       ],
     })
 
-    expect(container.querySelector('.kc-workbench-switcher__label')?.textContent).toBe('虚拟化管理工作台')
-    expect(container.querySelector('.kc-nav-business')).not.toBeNull()
+    expect(container.querySelector('.soha-workbench-switcher__label')?.textContent).toBe('虚拟化管理工作台')
+    expect(container.querySelector('.soha-nav-business')).not.toBeNull()
     expect(container.textContent).toContain('虚拟机')
     expect(container.textContent).toContain('操作记录')
     expect(container.textContent).toContain('同步任务')
-    const businessNavText = container.querySelector('.kc-nav-business')?.textContent ?? ''
+    const businessNavText = container.querySelector('.soha-nav-business')?.textContent ?? ''
     expect((businessNavText.match(/虚拟化/g) ?? [])).toHaveLength(0)
     expect(businessNavText).not.toContain('Observe')
     expect(container.textContent).not.toContain('监控工作台')
@@ -426,12 +426,12 @@ describe('app layout workspace navigation', () => {
       ],
     })
 
-    expect(container.querySelector('.kc-workbench-switcher__label')?.textContent).toBe('Docker 工作台')
-    expect(container.querySelector('.kc-nav-business')).not.toBeNull()
+    expect(container.querySelector('.soha-workbench-switcher__label')?.textContent).toBe('Docker 工作台')
+    expect(container.querySelector('.soha-nav-business')).not.toBeNull()
     expect(container.textContent).toContain('Docker 主机')
     expect(container.textContent).toContain('Compose 项目')
     expect(container.textContent).toContain('操作记录')
-    const businessNavText = container.querySelector('.kc-nav-business')?.textContent ?? ''
+    const businessNavText = container.querySelector('.soha-nav-business')?.textContent ?? ''
     expect((businessNavText.match(/Docker 工作台/g) ?? [])).toHaveLength(0)
     expect(container.textContent).not.toContain('系统管理')
   })
@@ -450,6 +450,6 @@ describe('app layout workspace navigation', () => {
 
     const settingsButton = container.querySelector('button[aria-label="系统设置"]')
     expect(settingsButton).not.toBeNull()
-    expect(container.querySelector('.kc-nav-system')).toBeNull()
+    expect(container.querySelector('.soha-nav-system')).toBeNull()
   })
 })

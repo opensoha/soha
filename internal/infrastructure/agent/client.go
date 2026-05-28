@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	domaincluster "github.com/kubecrux/kubecrux/internal/domain/cluster"
-	domainresource "github.com/kubecrux/kubecrux/internal/domain/resource"
+	domaincluster "github.com/soha/soha/internal/domain/cluster"
+	domainresource "github.com/soha/soha/internal/domain/resource"
 )
 
 type Registry struct {

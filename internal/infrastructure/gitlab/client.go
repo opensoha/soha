@@ -10,9 +10,9 @@ import (
 	"strings"
 	"time"
 
-	domainapp "github.com/kubecrux/kubecrux/internal/domain/application"
-	cfgpkg "github.com/kubecrux/kubecrux/internal/infrastructure/config"
-	"github.com/kubecrux/kubecrux/internal/platform/apperrors"
+	domainapp "github.com/soha/soha/internal/domain/application"
+	cfgpkg "github.com/soha/soha/internal/infrastructure/config"
+	"github.com/soha/soha/internal/platform/apperrors"
 )
 
 type Client struct {

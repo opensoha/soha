@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This runbook standardizes how operators assign role-based access in kubecrux so that "the role is assigned but the page is still missing" and "the page is visible but the API still returns 403" are handled as expected outcomes of an incomplete authorization flow rather than as ambiguous bugs.
+This runbook standardizes how operators assign role-based access in soha so that "the role is assigned but the page is still missing" and "the page is visible but the API still returns 403" are handled as expected outcomes of an incomplete authorization flow rather than as ambiguous bugs.
 
 Console authorization has now converged on a permission-derived default path:
 

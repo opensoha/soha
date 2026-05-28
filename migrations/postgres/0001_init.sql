@@ -1,9 +1,9 @@
 -- Consolidated PostgreSQL bootstrap migration.
--- This file contains the full current schema baseline for fresh kubecrux databases.
+-- This file contains the full current schema baseline for fresh soha databases.
 -- It supersedes the previously split 0002-0007 postgres migration files.
 
 -- Schema only. The bootstrap account is seeded by backend startup from auth.dev_principal
--- and the repository baseline is admin / kubecrux with no legacy migration path.
+-- and the repository baseline is admin / soha with no legacy migration path.
 
 CREATE TABLE IF NOT EXISTS users (
     id TEXT PRIMARY KEY,

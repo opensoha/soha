@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	kubeinfra "github.com/kubecrux/kubecrux/internal/infrastructure/kubernetes"
+	kubeinfra "github.com/soha/soha/internal/infrastructure/kubernetes"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
@@ -169,7 +169,7 @@ func BuildKubeVirtVM(input CreateVMInput) *unstructured.Unstructured {
 	if input.StartAfterCreate {
 		runStrategy = "Always"
 	}
-	labels := map[string]any{"kubecrux.io/managed": "true"}
+	labels := map[string]any{"soha.io/managed": "true"}
 	disks := []any{
 		map[string]any{"name": "rootdisk", "disk": map[string]any{"bus": "virtio"}},
 	}

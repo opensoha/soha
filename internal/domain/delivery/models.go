@@ -4,12 +4,12 @@ import (
 	"context"
 	"time"
 
-	domainapp "github.com/kubecrux/kubecrux/internal/domain/application"
-	domainbuild "github.com/kubecrux/kubecrux/internal/domain/build"
-	domaincatalog "github.com/kubecrux/kubecrux/internal/domain/catalog"
-	domainrelease "github.com/kubecrux/kubecrux/internal/domain/release"
-	domainresource "github.com/kubecrux/kubecrux/internal/domain/resource"
-	domainworkflow "github.com/kubecrux/kubecrux/internal/domain/workflow"
+	domainapp "github.com/soha/soha/internal/domain/application"
+	domainbuild "github.com/soha/soha/internal/domain/build"
+	domaincatalog "github.com/soha/soha/internal/domain/catalog"
+	domainrelease "github.com/soha/soha/internal/domain/release"
+	domainresource "github.com/soha/soha/internal/domain/resource"
+	domainworkflow "github.com/soha/soha/internal/domain/workflow"
 )
 
 type ReleaseBundle struct {

@@ -13,7 +13,7 @@
 - Keep transport thin. Semantic interpretation belongs in application services.
 - Expose unsupported agent capabilities as unsupported instead of behaving inconsistently.
 - Keep all-namespaces aggregation on the backend when the UI needs cross-namespace data.
-- Use stable kubecrux DTOs for KubeVirt, PVE, Docker, and AI evidence surfaces as well; avoid returning provider-native objects directly.
+- Use stable soha DTOs for KubeVirt, PVE, Docker, and AI evidence surfaces as well; avoid returning provider-native objects directly.
 - If a config or module flag makes a capability visible before runtime support is complete, return an explicit unsupported or degraded response.
 
 ## Authorization and Logging

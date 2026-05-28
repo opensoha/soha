@@ -6,10 +6,10 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	apiMiddleware "github.com/kubecrux/kubecrux/internal/api/middleware"
-	apiresponse "github.com/kubecrux/kubecrux/internal/api/response"
-	domaindocker "github.com/kubecrux/kubecrux/internal/domain/docker"
-	domainidentity "github.com/kubecrux/kubecrux/internal/domain/identity"
+	apiMiddleware "github.com/soha/soha/internal/api/middleware"
+	apiresponse "github.com/soha/soha/internal/api/response"
+	domaindocker "github.com/soha/soha/internal/domain/docker"
+	domainidentity "github.com/soha/soha/internal/domain/identity"
 )
 
 type DockerService interface {

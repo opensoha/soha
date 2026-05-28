@@ -57,7 +57,7 @@ Key backend fields now used by the runtime:
 
 - host: `localhost`
 - port: `5432`
-- database: `kubecrux`
+- database: `soha`
 - user: `pgsql`
 - password: `pgsql`
 
@@ -72,8 +72,8 @@ Key backend fields now used by the runtime:
 The default local bootstrap account comes from `auth.dev_principal` inside `config.yaml`.
 
 - username: `admin`
-- email: `admin@kubecrux.local`
-- password: `kubecrux`
+- email: `admin@soha.local`
+- password: `soha`
 
 When `auth.enable_dev_auth` is `false`, this account is still seeded into PostgreSQL for real password login. The flag only controls whether the backend accepts an automatic development principal when no bearer token is present. The runtime no longer keeps a legacy bootstrap migration or password-login fallback path.
 
@@ -84,7 +84,7 @@ When `auth.enable_dev_auth` is `false`, this account is still seeded into Postgr
 - readiness check: `GET /readyz`
 - versioned API base path: `/api/v1`
 - swagger route reservation: `/swagger/*any`
-- config override file: `KC_CONFIG_FILE=/abs/path/to/config.yaml`
+- config override file: `SOHA_CONFIG_FILE=/abs/path/to/config.yaml`
 - frontend local dev port: `5173`
 - docs local dev port: `3000`
 
@@ -165,7 +165,7 @@ gitlab:
   timeout: 10s
 ```
 
-When enabled, kubecrux serves these routes from the backend:
+When enabled, soha serves these routes from the backend:
 
 - `GET /api/v1/applications`
 - `POST /api/v1/applications`
@@ -217,8 +217,8 @@ control_plane:
     provider_kinds:
       - hermes
     hermes_command: hermes
-    workspace_root: ./.kubecrux/agent-runtime
+    workspace_root: ./.soha/agent-runtime
     poll_interval: 5s
 ```
 
-The AI workbench and automation policy choose `agentProviderId`; the runner only executes matching `AgentRun` rows. Provider-specific commands and workspaces belong in agent config, not in browser payloads. External providers should invoke kubecrux read-only tools through `/api/v1/copilot/agent-runs/tool-call`, which validates the runner token, per-run callback token, and `AgentRun.toolBindings` snapshot before recording `ToolExecution`. The built-in Hermes/CLI POC prefetches a small read-only tool context into the provider prompt: events, logs, metrics, traces, delivery releases, delivery builds, and alerts are currently executable; Docker, virtualization, execution-task, platform-resource, and on-call route bindings remain catalog contracts until their readers/adapters are wired. Richer provider-native or MCP client tool protocols should still terminate at the same kubecrux tool-call gateway.
+The AI workbench and automation policy choose `agentProviderId`; the runner only executes matching `AgentRun` rows. Provider-specific commands and workspaces belong in agent config, not in browser payloads. External providers should invoke soha read-only tools through `/api/v1/copilot/agent-runs/tool-call`, which validates the runner token, per-run callback token, and `AgentRun.toolBindings` snapshot before recording `ToolExecution`. The built-in Hermes/CLI POC prefetches a small read-only tool context into the provider prompt: events, logs, metrics, traces, delivery releases, delivery builds, and alerts are currently executable; Docker, virtualization, execution-task, platform-resource, and on-call route bindings remain catalog contracts until their readers/adapters are wired. Richer provider-native or MCP client tool protocols should still terminate at the same soha tool-call gateway.

@@ -75,7 +75,7 @@ func TestPVEAdapterUsesTokenHeaderAndExpectedPaths(t *testing.T) {
 	result, err := adapter.SyncAssets(context.Background(), Connection{
 		Endpoint: server.URL,
 		Credential: map[string]any{
-			"tokenID":     "root@pam!kubecrux",
+			"tokenID":     "root@pam!soha",
 			"tokenSecret": "secret-token",
 		},
 	})
@@ -86,7 +86,7 @@ func TestPVEAdapterUsesTokenHeaderAndExpectedPaths(t *testing.T) {
 		t.Fatalf("result = %#v", result)
 	}
 	for _, header := range authHeaders {
-		if header != "PVEAPIToken=root@pam!kubecrux=secret-token" {
+		if header != "PVEAPIToken=root@pam!soha=secret-token" {
 			t.Fatalf("Authorization header = %q", header)
 		}
 	}
@@ -121,7 +121,7 @@ func TestPVEAdapterCreateClonePayloadDoesNotLeakToken(t *testing.T) {
 	vm, err := adapter.CreateVM(context.Background(), Connection{
 		Endpoint: server.URL,
 		Credential: map[string]any{
-			"tokenID":     "root@pam!kubecrux",
+			"tokenID":     "root@pam!soha",
 			"tokenSecret": "secret-token",
 		},
 		Options: map[string]any{"vmid": "200"},

@@ -1,7 +1,7 @@
 ---
-name: kubecrux-backend
+name: soha-backend
 description: >-
-  Implement and refactor kubecrux backend capabilities in `cmd/**`,
+  Implement and refactor soha backend capabilities in `cmd/**`,
   `internal/**`, and `configs/**` for Go 1.23, Gin, PostgreSQL, Kubernetes
   `client-go`, and agent-connected clusters. Use when adding or changing HTTP
   routes, handlers, application services, repositories, policy checks,
@@ -14,7 +14,7 @@ description: >-
   behavior rules, and durable runner-backed operation flows.
 ---
 
-# Kubecrux Backend
+# Soha Backend
 
 ## Overview
 
@@ -59,18 +59,18 @@ Implement backend changes through the repository's layered Go architecture. Keep
 - Docker quick host provisioning may call virtualization only through the narrow host-provisioner adapter. Keep Docker independent from virtualization data models except for explicit link fields such as `virtualizationConnectionId`.
 - Virtualization operations should stay task-based. KubeVirt and PVE adapter behavior belongs in `internal/infrastructure/virtualization`, while lifecycle orchestration, permissions, logs, and sync state belong in `internal/application/virtualization`.
 - AI workbench data should stay session-first. Global provider and datasource settings remain settings-controlled; session toolsets, evidence budgets, analysis artifacts, and inspection flows belong in the copilot application service.
-- AI Agent Runtime must stay provider-agnostic at the application boundary. Pages, handlers, and business flows should depend on kubecrux `AgentProvider`, `AgentRun`, `AgentCapability`, `AgentToolBinding`, `AgentSkillBinding`, `AnalysisArtifact`, toolset, and analysis profile contracts rather than Hermes, OpenClaw, or any provider SDK/CLI.
+- AI Agent Runtime must stay provider-agnostic at the application boundary. Pages, handlers, and business flows should depend on soha `AgentProvider`, `AgentRun`, `AgentCapability`, `AgentToolBinding`, `AgentSkillBinding`, `AnalysisArtifact`, toolset, and analysis profile contracts rather than Hermes, OpenClaw, or any provider SDK/CLI.
 - Hermes is only the first external provider behind the runner claim/callback path. New providers should extend provider catalogs, tool bindings, skill bindings, and runner executors without rewriting AI workbench flows or automation policy semantics.
-- Agent Runtime capabilities should expose logs, metrics, traces, platform events, delivery context, on-call context, Docker context, and virtualization context as kubecrux capability and MCP/tool entries. Skills are platform methodology definitions and may map to Hermes skills, MCP capabilities, prompt templates, or future provider skill systems.
-- Agent Runtime outputs must be normalized into kubecrux `AnalysisArtifact` with evidence, hypotheses, recommendations, graph, tool execution records, and data-source snapshots. Provider-native output should not leak directly into frontend contracts.
-- Continuous AI analysis is scheduled and audited by kubecrux automation policy. Hermes cron or other provider-native schedulers remain optional experiments and must not become the source of truth for dedup, cooldown, budget, permission, or audit behavior.
-- kubecrux owns permissions, menus, audit, budget, data redaction, and operation boundaries for Agent Runtime. Agents are pluggable executors only, and high-risk write actions must still route through the owning module's durable operation or approval flow.
+- Agent Runtime capabilities should expose logs, metrics, traces, platform events, delivery context, on-call context, Docker context, and virtualization context as soha capability and MCP/tool entries. Skills are platform methodology definitions and may map to Hermes skills, MCP capabilities, prompt templates, or future provider skill systems.
+- Agent Runtime outputs must be normalized into soha `AnalysisArtifact` with evidence, hypotheses, recommendations, graph, tool execution records, and data-source snapshots. Provider-native output should not leak directly into frontend contracts.
+- Continuous AI analysis is scheduled and audited by soha automation policy. Hermes cron or other provider-native schedulers remain optional experiments and must not become the source of truth for dedup, cooldown, budget, permission, or audit behavior.
+- soha owns permissions, menus, audit, budget, data redaction, and operation boundaries for Agent Runtime. Agents are pluggable executors only, and high-risk write actions must still route through the owning module's durable operation or approval flow.
 - On-call and notification flows should resolve active assignments in the backend from alert context and route rules. Do not reimplement route matching only in the frontend.
 
 ## Common Pitfalls
 
 - Adding a route without a permission key, seed menu, and permission catalog update creates a visible-but-forbidden or hidden-but-callable feature.
-- Returning raw Kubernetes, KubeVirt, Docker, or PVE objects leaks vendor schemas into the console contract; map them to kubecrux DTOs.
+- Returning raw Kubernetes, KubeVirt, Docker, or PVE objects leaks vendor schemas into the console contract; map them to soha DTOs.
 - Treating `admin` as a hard-coded backend bypass breaks custom role `permissionKeys`. Use the permission resolver.
 - Leaving related records in `queued`, `running`, or provider-native statuses after callbacks causes split-brain status. Callback paths must backfill bundle, build, deploy, Docker, or virtualization records as appropriate.
 - Accepting late callbacks after cancel, timeout, or retry can overwrite a newer attempt. Retry paths must rotate callback tokens and terminal tasks must reject stale updates.

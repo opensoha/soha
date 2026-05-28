@@ -184,40 +184,40 @@ export function MonitoringPage() {
   ]
 
   return (
-    <div className="kc-page kc-overview-page kc-monitoring-overview-page">
-      <section className="kc-overview-hero">
-        <div className="kc-overview-hero-header">
-          <h1 className="kc-overview-title">总览</h1>
+    <div className="soha-page soha-overview-page soha-monitoring-overview-page">
+      <section className="soha-overview-hero">
+        <div className="soha-overview-hero-header">
+          <h1 className="soha-overview-title">总览</h1>
         </div>
 
-        <div className="kc-overview-metric-grid">
+        <div className="soha-overview-metric-grid">
           {overviewStats.map((item) => (
-            <Card key={item.key} size="small" variant="outlined" className={`kc-overview-metric-card is-${item.tone}`} loading={isLoading}>
-              <div className="kc-overview-metric-card-head">
-                <div className="kc-overview-metric-copy">
-                  <Text className="kc-overview-metric-label">{item.label}</Text>
+            <Card key={item.key} size="small" variant="outlined" className={`soha-overview-metric-card is-${item.tone}`} loading={isLoading}>
+              <div className="soha-overview-metric-card-head">
+                <div className="soha-overview-metric-copy">
+                  <Text className="soha-overview-metric-label">{item.label}</Text>
                   <Statistic value={item.value} />
                 </div>
-                <span className="kc-overview-metric-icon">{item.icon}</span>
+                <span className="soha-overview-metric-icon">{item.icon}</span>
               </div>
-              <Text className="kc-overview-metric-helper">{item.helper}</Text>
+              <Text className="soha-overview-metric-helper">{item.helper}</Text>
             </Card>
           ))}
         </div>
       </section>
 
-      <div className="kc-overview-summary-grid">
+      <div className="soha-overview-summary-grid">
         <Card
-          className="kc-overview-panel-card"
+          className="soha-overview-panel-card"
           title="告警态势"
           extra={<Text type="secondary" className="text-xs">最近接收: {formatDateTime(summary?.lastReceivedAt)}</Text>}
         >
           {summary ? (
-            <div className="kc-overview-alert-stack">
-              <div className="kc-overview-inline-banner">
+            <div className="soha-overview-alert-stack">
+              <div className="soha-overview-inline-banner">
                 <div>
                   <Text strong>告警分布</Text>
-                  <div className="kc-overview-inline-caption">
+                  <div className="soha-overview-inline-caption">
                     {summary.firingCount > 0 ? '当前仍有活跃告警，优先处置 Critical 和 Warning。' : '当前没有活跃告警，继续关注规则、通知和值班链路。'}
                   </div>
                 </div>
@@ -225,11 +225,11 @@ export function MonitoringPage() {
                   查看活跃告警
                 </Button>
               </div>
-              <div className="kc-overview-chip-grid kc-monitoring-chip-grid">
+              <div className="soha-overview-chip-grid soha-monitoring-chip-grid">
                 {alertChips.map((item) => (
-                  <div key={item.key} className={`kc-overview-chip is-${item.tone}`}>
-                    <span className="kc-overview-chip-label">{item.label}</span>
-                    <span className="kc-overview-chip-value">{item.value}</span>
+                  <div key={item.key} className={`soha-overview-chip is-${item.tone}`}>
+                    <span className="soha-overview-chip-label">{item.label}</span>
+                    <span className="soha-overview-chip-value">{item.value}</span>
                   </div>
                 ))}
               </div>
@@ -239,14 +239,14 @@ export function MonitoringPage() {
           )}
         </Card>
 
-        <Card className="kc-overview-panel-card" title="运行链路">
-          <div className="kc-monitoring-operation-grid">
+        <Card className="soha-overview-panel-card" title="运行链路">
+          <div className="soha-monitoring-operation-grid">
             {operationStats.map((item) => (
-              <div key={item.key} className={`kc-overview-chip is-${item.tone}`}>
-                <span className="kc-overview-metric-icon">{item.icon}</span>
-                <span className="kc-overview-chip-label">{item.label}</span>
-                <span className="kc-overview-chip-value">{item.value}</span>
-                <span className="kc-overview-metric-helper">{item.helper}</span>
+              <div key={item.key} className={`soha-overview-chip is-${item.tone}`}>
+                <span className="soha-overview-metric-icon">{item.icon}</span>
+                <span className="soha-overview-chip-label">{item.label}</span>
+                <span className="soha-overview-chip-value">{item.value}</span>
+                <span className="soha-overview-metric-helper">{item.helper}</span>
               </div>
             ))}
           </div>
@@ -254,29 +254,29 @@ export function MonitoringPage() {
       </div>
 
       <Card
-        className="kc-overview-runtime-card"
+        className="soha-overview-runtime-card"
         title="最近告警"
         extra={<Button type="text" icon={<EyeOutlined />} onClick={() => navigate('/monitoring-workbench/alerts')}>进入告警处理</Button>}
       >
         {alertsQuery.isLoading ? (
-          <div className="kc-monitoring-alert-list">
+          <div className="soha-monitoring-alert-list">
             {[0, 1, 2].map((item) => <Card key={item} loading size="small" />)}
           </div>
         ) : recentAlerts.length === 0 ? (
           <Empty description="暂无最近告警" />
         ) : (
-          <div className="kc-monitoring-alert-list">
+          <div className="soha-monitoring-alert-list">
             {recentAlerts.map((item) => (
-              <div key={item.id} className="kc-overview-attention-row">
-                <div className="kc-overview-attention-main">
-                  <div className="kc-monitoring-alert-title-row">
+              <div key={item.id} className="soha-overview-attention-row">
+                <div className="soha-overview-attention-main">
+                  <div className="soha-monitoring-alert-title-row">
                     <Text strong>{item.title || item.id}</Text>
                     <StatusTag value={item.severity} />
                     <StatusTag value={item.status} />
                   </div>
-                  <div className="kc-overview-inline-caption">{item.summary || '-'}</div>
+                  <div className="soha-overview-inline-caption">{item.summary || '-'}</div>
                 </div>
-                <div className="kc-overview-attention-meta">
+                <div className="soha-overview-attention-meta">
                   <span>{[item.clusterId, item.namespace].filter(Boolean).join(' / ') || '-'}</span>
                   <span>{formatDateTime(item.lastSeenAt || item.startsAt)}</span>
                   <Button size="small" onClick={() => navigate(`/monitoring-workbench/alerts/${item.id}`)}>详情</Button>
@@ -404,7 +404,7 @@ export function AlertsPage() {
   ]
 
   return (
-    <div className="kc-page">
+    <div className="soha-page">
       <PageHeader title="活跃告警" description="查看当前告警事件、来源、状态以及确认/恢复/自愈操作。" />
       <AdminTable shellClassName="is-panel" columns={columns} dataSource={data?.data ?? []} rowKey="id" loading={isLoading} pageSize={20} />
       <Modal title="发起自愈" open={healOpen} onCancel={() => setHealOpen(false)} onOk={() => healMutation.mutate({ id: selectedAlertId, policyId: healingPolicyId })} okButtonProps={{ disabled: !healingPolicyId }} destroyOnHidden>
@@ -986,7 +986,7 @@ export function NotificationsPage() {
   }
 
   return (
-    <div className="kc-page">
+    <div className="soha-page">
       <PageHeader
         title="通知策略"
         description="维护通知策略、模板、渠道、路由规则与静默策略。"
@@ -1184,7 +1184,7 @@ export function EventsPage() {
   ]
 
   return (
-    <div className="kc-page">
+    <div className="soha-page">
       <PageHeader title="事件流" description="查看时间线上的平台事件、来源对象和详细消息。" />
       <AdminTable shellClassName="is-panel" columns={columns} dataSource={data?.data ?? []} rowKey="id" loading={isLoading} pageSize={50} />
     </div>

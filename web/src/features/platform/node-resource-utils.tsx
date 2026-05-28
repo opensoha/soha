@@ -126,8 +126,8 @@ export function ResourceProgressCell({
 }) {
   const value = clampPercent(percent)
   return (
-    <div className={['kc-resource-cell', compact ? 'is-compact' : '', className].filter(Boolean).join(' ')}>
-      <div className="kc-resource-cell-copy">
+    <div className={['soha-resource-cell', compact ? 'is-compact' : '', className].filter(Boolean).join(' ')}>
+      <div className="soha-resource-cell-copy">
         <Text strong>{primary}</Text>
         <Text type="secondary" className="text-xs">{secondary}</Text>
       </div>
@@ -145,7 +145,7 @@ export function ResourceProgressCell({
 
 export function NodeResourcePanel({ node }: { node: Node }) {
   return (
-    <div className="kc-node-expand-grid">
+    <div className="soha-node-expand-grid">
       <ResourceProgressCell
         primary={`${formatCpu(node.resources?.requests?.cpu)} / ${formatCpu(node.resources?.allocatable?.cpu)}`}
         secondary="CPU 已分配 / 总量"

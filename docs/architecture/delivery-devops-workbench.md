@@ -21,7 +21,7 @@
 - [Zadig 工作流任务](https://docs.koderover.com/zadig/cn/Zadig%20v4.1/project/workflow-jobs/)
 - [Zadig 构建配置](https://docs.koderover.com/zadig/en/Zadig%20v4.2/project/build/)
 
-kubecrux 不照搬 Zadig 的对象命名。当前控制面已经拥有 `applications`、`application_build_sources`、`application_environments`、`release_targets`、`workflow_templates`、`release_bundles`、`execution_tasks` 和 `execution_logs`，新的设计应优先复用这些对象，并补齐应用服务、容器组件、测试运行和交付物策略。
+soha 不照搬 Zadig 的对象命名。当前控制面已经拥有 `applications`、`application_build_sources`、`application_environments`、`release_targets`、`workflow_templates`、`release_bundles`、`execution_tasks` 和 `execution_logs`，新的设计应优先复用这些对象，并补齐应用服务、容器组件、测试运行和交付物策略。
 
 ## 设计原则
 
@@ -723,7 +723,7 @@ Release Bundle 是交付版本的主对象。
 
 ## 非目标
 
-- 不把 kubecrux 改造成 GitOps-only 平台。
+- 不把 soha 改造成 GitOps-only 平台。
 - 不让前端直接拼 Kubernetes manifest 作为主要发布路径。
 - 不在 API handler 内执行构建、测试、扫描或部署长任务。
 - 不把测试报告只作为 execution log 文本保存。

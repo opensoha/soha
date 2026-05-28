@@ -65,8 +65,8 @@ export function PodExecPanel({
   }
 
   return (
-    <div className="kc-page-section">
-      <Card className="kc-detail-card" title={localeCode === 'zh_CN' ? '命令执行' : 'Command Exec'}>
+    <div className="soha-page-section">
+      <Card className="soha-detail-card" title={localeCode === 'zh_CN' ? '命令执行' : 'Command Exec'}>
         <div className="flex flex-col gap-4">
           <div className="flex flex-wrap items-center gap-2">
             <Text strong>{localeCode === 'zh_CN' ? '快捷命令' : 'Presets'}</Text>
@@ -119,7 +119,7 @@ export function PodExecPanel({
       {result ? (
         <>
           <Card
-            className="kc-detail-card"
+            className="soha-detail-card"
             title={localeCode === 'zh_CN' ? '执行结果' : 'Execution Result'}
             extra={<Tag color={result.success ? 'green' : 'red'}>{result.success ? (localeCode === 'zh_CN' ? '成功' : 'Success') : (localeCode === 'zh_CN' ? '失败' : 'Failed')}</Tag>}
           >
@@ -136,16 +136,16 @@ export function PodExecPanel({
           </Card>
 
           <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-            <Card className="kc-detail-card" title="Stdout">
-              <pre className="kc-code-block kc-code-block-dark">{result.stdout || (localeCode === 'zh_CN' ? '无标准输出' : 'No stdout output')}</pre>
+            <Card className="soha-detail-card" title="Stdout">
+              <pre className="soha-code-block soha-code-block-dark">{result.stdout || (localeCode === 'zh_CN' ? '无标准输出' : 'No stdout output')}</pre>
             </Card>
-            <Card className="kc-detail-card" title="Stderr">
-              <pre className="kc-code-block">{result.stderr || (localeCode === 'zh_CN' ? '无标准错误输出' : 'No stderr output')}</pre>
+            <Card className="soha-detail-card" title="Stderr">
+              <pre className="soha-code-block">{result.stderr || (localeCode === 'zh_CN' ? '无标准错误输出' : 'No stderr output')}</pre>
             </Card>
           </div>
         </>
       ) : (
-        <Card className="kc-detail-card">
+        <Card className="soha-detail-card">
           <Empty description={localeCode === 'zh_CN' ? '执行命令后会在这里展示 stdout/stderr 输出' : 'Stdout and stderr output will appear here after execution'} />
         </Card>
       )}

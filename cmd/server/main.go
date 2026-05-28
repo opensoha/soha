@@ -8,7 +8,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/kubecrux/kubecrux/internal/bootstrap"
+	"github.com/soha/soha/internal/bootstrap"
 	"go.uber.org/zap"
 )
 
@@ -16,7 +16,7 @@ func main() {
 	ctx := context.Background()
 	application, err := bootstrap.New(ctx)
 	if err != nil {
-		_, _ = fmt.Fprintf(os.Stderr, "bootstrap kubecrux api: %v\n", err)
+		_, _ = fmt.Fprintf(os.Stderr, "bootstrap soha api: %v\n", err)
 		os.Exit(1)
 	}
 
@@ -27,7 +27,7 @@ func main() {
 		}
 	}()
 
-	application.Logger.Info("kubecrux api started")
+	application.Logger.Info("soha api started")
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)

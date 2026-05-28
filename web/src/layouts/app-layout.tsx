@@ -178,7 +178,7 @@ function buildMenuItems(
   const groupedItems = Array.from(groups.entries()).map(([groupKey, items]) => ({
     key: `group-${groupKey}`,
     type: 'group' as const,
-    label: <span className="kc-nav-section-title">{resolveMenuSectionLabel(groupKey, localeCode)}</span>,
+    label: <span className="soha-nav-section-title">{resolveMenuSectionLabel(groupKey, localeCode)}</span>,
     children: items,
   }))
 
@@ -302,26 +302,26 @@ function WorkbenchSwitcher({
   const dropdownItems: MenuProps['items'] = options.map((option) => ({
     key: option.key,
     label: (
-      <div className="kc-workspace-option">
-        <span className="kc-workspace-option__icon">{option.icon}</span>
-        <span className="kc-workspace-option__copy">
-          <span className="kc-workspace-option__label">{option.label}</span>
-          <span className="kc-workspace-option__desc">{option.description}</span>
+      <div className="soha-workspace-option">
+        <span className="soha-workspace-option__icon">{option.icon}</span>
+        <span className="soha-workspace-option__copy">
+          <span className="soha-workspace-option__label">{option.label}</span>
+          <span className="soha-workspace-option__desc">{option.description}</span>
         </span>
       </div>
     ),
   }))
 
   const trigger = (
-    <Button className="kc-workbench-switcher" type="text">
-      <span className="kc-workbench-switcher__icon">{current.icon}</span>
+    <Button className="soha-workbench-switcher" type="text">
+      <span className="soha-workbench-switcher__icon">{current.icon}</span>
       {!collapsed ? (
-        <span className="kc-workbench-switcher__copy">
-          <span className="kc-workbench-switcher__label">{current.label}</span>
-          <span className="kc-workbench-switcher__desc">{current.description}</span>
+        <span className="soha-workbench-switcher__copy">
+          <span className="soha-workbench-switcher__label">{current.label}</span>
+          <span className="soha-workbench-switcher__desc">{current.description}</span>
         </span>
       ) : null}
-      {options.length > 1 ? <DownOutlined className="kc-workbench-switcher__arrow" /> : null}
+      {options.length > 1 ? <DownOutlined className="soha-workbench-switcher__arrow" /> : null}
     </Button>
   )
 
@@ -560,9 +560,9 @@ export function AppLayout() {
   }
 
   return (
-    <Layout className="kc-shell">
+    <Layout className="soha-shell">
       <Sider
-        className="kc-sider"
+        className="soha-sider"
         collapsible
         collapsed={sidebarCollapsed}
         onCollapse={(collapsed) => setSidebarCollapsed(collapsed)}
@@ -570,24 +570,24 @@ export function AppLayout() {
         trigger={null}
         width={248}
       >
-          <div className="kc-nav" style={{ height: '100%' }}>
-            <div className="kc-sider-topbar">
+          <div className="soha-nav" style={{ height: '100%' }}>
+            <div className="soha-sider-topbar">
               <button
                 type="button"
-                className="kc-sider-brand"
+                className="soha-sider-brand"
                 aria-label={localeCode === 'zh_CN' ? '返回首页' : 'Go to overview'}
                 onClick={() => navigate('/')}
               >
                 {activeLogo ? (
-                  <img className="kc-brand-logo" src={activeLogo} alt={branding.sidebarTitle} />
+                  <img className="soha-brand-logo" src={activeLogo} alt={branding.sidebarTitle} />
                 ) : (
-                  <div className="kc-brand-mark">KC</div>
+                  <div className="soha-brand-mark">SOHA</div>
                 )}
               </button>
             </div>
 
           {workbenchOptions.length > 0 && currentWorkbenchOption ? (
-            <div className="kc-workbench-switcher-shell">
+            <div className="soha-workbench-switcher-shell">
               <WorkbenchSwitcher
                 collapsed={sidebarCollapsed}
                 current={currentWorkbenchOption}
@@ -604,9 +604,9 @@ export function AppLayout() {
           ) : null}
 
           {(
-            <div className={['kc-nav-business', isSystemWorkspaceRoute ? 'is-system' : ''].filter(Boolean).join(' ')}>
+            <div className={['soha-nav-business', isSystemWorkspaceRoute ? 'is-system' : ''].filter(Boolean).join(' ')}>
               <Menu
-                className={['kc-nav-menu', isSystemWorkspaceRoute ? 'kc-nav-menu--system-workspace' : 'kc-nav-menu--business'].join(' ')}
+                className={['soha-nav-menu', isSystemWorkspaceRoute ? 'soha-nav-menu--system-workspace' : 'soha-nav-menu--business'].join(' ')}
                 mode="inline"
                 items={primaryMenuItems}
                 selectedKeys={primarySelectedKeys}
@@ -631,14 +631,14 @@ export function AppLayout() {
         </div>
       </Sider>
 
-      <Layout className="kc-main">
-        <Header className="kc-header">
-          <div className="kc-header-top-row">
-            <div className="kc-header-main">
-              <div className="kc-header-breadcrumb-row">
+      <Layout className="soha-main">
+        <Header className="soha-header">
+          <div className="soha-header-top-row">
+            <div className="soha-header-main">
+              <div className="soha-header-breadcrumb-row">
                 <Button
                   aria-label={sidebarCollapsed ? t('layout.expand', 'Expand sidebar') : t('layout.collapse', 'Collapse sidebar')}
-                  className="kc-header-action kc-header-sider-toggle"
+                  className="soha-header-action soha-header-sider-toggle"
                   type="text"
                   icon={sidebarCollapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
                   onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
@@ -660,9 +660,9 @@ export function AppLayout() {
                 />
               </div>
             </div>
-            <div className="kc-header-right">
+            <div className="soha-header-right">
               <Button
-                className="kc-header-action"
+                className="soha-header-action"
                 size="small"
                 type="text"
                 icon={<QuestionCircleOutlined />}
@@ -670,7 +670,7 @@ export function AppLayout() {
               >
                 {t('layout.docs', 'Docs')}
               </Button>
-              <div className="kc-header-preferences">
+              <div className="soha-header-preferences">
                 <HeaderPreferenceButton
                   ariaLabel={languageSwitchTitle}
                   title={languageSwitchTitle}
@@ -691,7 +691,7 @@ export function AppLayout() {
               {settingsEntryPath ? (
                 <Button
                   aria-label={settingsTriggerTitle}
-                  className="kc-header-action"
+                  className="soha-header-action"
                   size="small"
                   type="text"
                   icon={<SettingOutlined />}
@@ -719,11 +719,11 @@ export function AppLayout() {
                 placement="bottomRight"
               >
                 <Button
-                  className="kc-header-action kc-user-trigger"
+                  className="soha-header-action soha-user-trigger"
                   size="small"
                   type="text"
                   icon={
-                    <Avatar className="kc-user-avatar" size="small">
+                    <Avatar className="soha-user-avatar" size="small">
                       {userDisplayName.charAt(0).toUpperCase()}
                     </Avatar>
                   }
@@ -735,8 +735,8 @@ export function AppLayout() {
           </div>
         </Header>
 
-        <Content className="kc-content">
-          <div className="kc-content-inner kc-pro-content-host">
+        <Content className="soha-content">
+          <div className="soha-content-inner soha-pro-content-host">
             <Outlet />
           </div>
         </Content>

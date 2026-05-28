@@ -1,5 +1,5 @@
 app:
-  name: kubecrux-agent
+  name: soha-agent
   env: development
 
 http:
@@ -35,7 +35,7 @@ control_plane:
       - service_action
       - port_reserve
       - host_sync
-    compose_root: ./.kubecrux/docker
+    compose_root: ./.soha/docker
     poll_interval: 5s
   agent_runtime:
     enabled: false
@@ -53,7 +53,7 @@ control_plane:
         prompt_arg: -q
         skill_arg: -s
         provider_skill_arg: ""
-    workspace_root: ./.kubecrux/agent-runtime
+    workspace_root: ./.soha/agent-runtime
     poll_interval: 5s
 
 kubernetes:

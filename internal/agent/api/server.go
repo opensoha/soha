@@ -9,11 +9,11 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	cfgpkg "github.com/kubecrux/kubecrux/internal/agent/config"
-	k8sagent "github.com/kubecrux/kubecrux/internal/agent/kubernetes"
-	runnerpkg "github.com/kubecrux/kubecrux/internal/agent/runner"
-	apiMiddleware "github.com/kubecrux/kubecrux/internal/api/middleware"
-	apiresponse "github.com/kubecrux/kubecrux/internal/api/response"
+	cfgpkg "github.com/soha/soha/internal/agent/config"
+	k8sagent "github.com/soha/soha/internal/agent/kubernetes"
+	runnerpkg "github.com/soha/soha/internal/agent/runner"
+	apiMiddleware "github.com/soha/soha/internal/api/middleware"
+	apiresponse "github.com/soha/soha/internal/api/response"
 	"go.uber.org/zap"
 )
 

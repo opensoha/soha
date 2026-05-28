@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"time"
 
-	domainoperation "github.com/kubecrux/kubecrux/internal/domain/operation"
+	domainoperation "github.com/soha/soha/internal/domain/operation"
 	"gorm.io/gorm"
 )
 

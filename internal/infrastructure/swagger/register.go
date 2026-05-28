@@ -25,9 +25,9 @@ func openAPISpec() gin.H {
 	return gin.H{
 		"openapi": "3.0.3",
 		"info": gin.H{
-			"title":       "kubecrux API",
+			"title":       "soha API",
 			"version":     "0.1.0",
-			"description": "kubecrux platform console API surface",
+			"description": "soha platform console API surface",
 		},
 		"paths": gin.H{
 			"/api/v1/auth/login":                                 gin.H{"post": gin.H{"summary": "Password login"}},

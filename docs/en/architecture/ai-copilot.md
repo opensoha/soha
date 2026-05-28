@@ -2,7 +2,7 @@
 
 ## Goal
 
-kubecrux now treats AI as a first-class workbench inside the platform shell.
+soha now treats AI as a first-class workbench inside the platform shell.
 
 The active target has two layers:
 
@@ -53,7 +53,7 @@ Legacy compatibility redirects still exist for:
 - `/ai-workbench/automation`
 - `/ai-workbench/tools`
 
-Current reply generation remains platform-native and read-oriented. It uses live data already persisted in kubecrux rather than calling an external model provider directly from the browser.
+Current reply generation remains platform-native and read-oriented. It uses live data already persisted in soha rather than calling an external model provider directly from the browser.
 
 ## Session Model
 
@@ -141,19 +141,19 @@ The global skill registry now uses enterprise skill definitions, not just lightw
 
 ## Agent Runtime
 
-kubecrux now models AI execution through Agent Runtime instead of binding pages or analysis flows directly to Hermes.
+soha now models AI execution through Agent Runtime instead of binding pages or analysis flows directly to Hermes.
 
 Core objects:
 
 - `AgentProvider`: executor catalog; current providers are `internal` and `hermes`
-- `AgentCapability`: kubecrux platform capabilities including `root_cause`, `performance`, `trace`, `inspection_review`, `delivery_failure`, `post_deploy_observation`, `platform_resource_diagnosis`, `docker_diagnosis`, `virtualization_diagnosis`, and `oncall_brief`
+- `AgentCapability`: soha platform capabilities including `root_cause`, `performance`, `trace`, `inspection_review`, `delivery_failure`, `post_deploy_observation`, `platform_resource_diagnosis`, `docker_diagnosis`, `virtualization_diagnosis`, and `oncall_brief`
 - `AgentToolBinding`: capability-to-MCP-adapter, platform read-tool, or provider-native-tool mapping
-- `AgentSkillBinding`: kubecrux skill mapping to Hermes skills, prompt templates, or future provider skill systems
+- `AgentSkillBinding`: soha skill mapping to Hermes skills, prompt templates, or future provider skill systems
 - `AgentRun`: durable asynchronous execution record for external providers, carrying status, scope, toolset, skills, callback token, tool executions, and output artifacts
 
 Hermes Agent is the first external provider. The AI workbench and automation policy select only `agentProviderId` and capability; the actual Hermes call is performed by an independent agent runner through claim/callback. Future OpenClaw, internal-agent, or other providers should extend provider adapters and runner executors without rewriting session pages, automation policy, or business analysis flows.
 
-Agent Runtime output is written back as kubecrux `AnalysisArtifact`, reusing evidence, hypotheses, recommendations, graph, tool-call records, and data-source snapshots. Permissions, menus, budgets, data redaction, audit, and high-risk operation boundaries remain owned by kubecrux.
+Agent Runtime output is written back as soha `AnalysisArtifact`, reusing evidence, hypotheses, recommendations, graph, tool-call records, and data-source snapshots. Permissions, menus, budgets, data redaction, audit, and high-risk operation boundaries remain owned by soha.
 
 ## Product Surfaces
 
@@ -174,7 +174,7 @@ Agent Runtime output is written back as kubecrux `AnalysisArtifact`, reusing evi
 - supports `mode=trace` and `mode=inspection_review` in the same conversation canvas
 - the session-level toolset drawer now shows the effective execution policy and edits adapter selection, `adapter.tool` disables, budget overrides, and scope overrides
 - explicit analysis opens a confirmation modal before execution, so the user can choose provider, analysis profile, runnable analysis mode, edit the analysis target, and preview the session scope and toolset source; current runnable modes are `root_cause`, `performance`, `trace`, and `inspection_review`, the backend rejects `general`, and successful runs write the selected mode and `agentProviderId` back to session metadata
-- selecting the `internal` provider uses kubecrux in-process analysis; selecting `hermes` or another external provider creates an `AgentRun` and lets the runner write artifacts back asynchronously
+- selecting the `internal` provider uses soha in-process analysis; selecting `hermes` or another external provider creates an `AgentRun` and lets the runner write artifacts back asynchronously
 - all `analysisArtifacts` carried by assistant messages are collected into an artifact history, so users can switch graph, evidence, and recommendation context across root-cause, performance, trace, and inspection-review artifacts
 
 ### `/ai-workbench/root-cause` And `/ai-workbench/performance`
@@ -234,7 +234,7 @@ Current focus:
 - call read-oriented tools
 - generate evidence, hypotheses, and recommendations
 - persist tool calls and analysis artifacts into sessions
-- convert external agent output into kubecrux `AnalysisArtifact`
+- convert external agent output into soha `AnalysisArtifact`
 
 Application onboarding specification rendering and delivery bootstrap do not belong to the AI workbench itself. Those belong to the Delivery Workbench. AI only exposes discoverable MCP and skill capabilities that enterprise AI coding clients and Agent Runtime can call.
 

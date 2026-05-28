@@ -223,16 +223,16 @@ function disabledReason(reasons: Array<string | false | undefined>) {
 
 function DeploymentOverview({ deployment }: { deployment: DeploymentDetail }) {
   return (
-    <Card className="kc-detail-card">
+    <Card className="soha-detail-card">
       <Space orientation="vertical" style={{ width: '100%' }} size={12}>
-        <div className="kc-application-runtime-overview">
+        <div className="soha-application-runtime-overview">
           <div>
             <Text type="secondary">Workload</Text>
-            <div className="kc-application-runtime-overview__title">{deployment.name}</div>
+            <div className="soha-application-runtime-overview__title">{deployment.name}</div>
           </div>
           <Tag color="blue">{deployment.strategy}</Tag>
         </div>
-        <div className="kc-application-runtime-statgrid">
+        <div className="soha-application-runtime-statgrid">
           <Card size="small"><Text type="secondary">Desired</Text><div>{deployment.desiredReplicas}</div></Card>
           <Card size="small"><Text type="secondary">Ready</Text><div>{deployment.readyReplicas}</div></Card>
           <Card size="small"><Text type="secondary">Available</Text><div>{deployment.availableReplicas}</div></Card>
@@ -456,11 +456,11 @@ export function ApplicationDetailPage() {
   ])
 
   if (runtimeQuery.isLoading) {
-    return <div className="kc-page"><Card>Loading...</Card></div>
+    return <div className="soha-page"><Card>Loading...</Card></div>
   }
 
   if (!runtime) {
-    return <div className="kc-page"><Card><Empty description="Application not found" /></Card></div>
+    return <div className="soha-page"><Card><Empty description="Application not found" /></Card></div>
   }
 
   const summaryBindings = bindings.slice(0, 4)
@@ -469,21 +469,21 @@ export function ApplicationDetailPage() {
   const latestWorkflows = latestWorkflowsQuery.data?.data ?? []
 
   return (
-    <div className="kc-page">
+    <div className="soha-page">
       <PageHeader
         title={runtime.application.name}
         description="围绕应用查看服务组件、容器、环境运行态和交付入口。"
         actions={<Button onClick={() => navigate('/applications')}>返回应用中心</Button>}
       />
-      <div className="kc-application-runtime-service-summary">
+      <div className="soha-application-runtime-service-summary">
         <Card size="small"><Text type="secondary">服务组件</Text><strong>{services.length}</strong></Card>
         <Card size="small"><Text type="secondary">容器</Text><strong>{services.reduce((sum, item) => sum + (item.containers?.length ?? 0), 0)}</strong></Card>
         <Card size="small"><Text type="secondary">环境</Text><strong>{environments.length}</strong></Card>
         <Card size="small"><Text type="secondary">运行目标</Text><strong>{environments.reduce((sum, item) => sum + (item.workloads?.length ?? 0), 0)}</strong></Card>
       </div>
-      <Card className="kc-application-delivery-actions" title="交付操作">
-        <Form form={deliveryForm} layout="vertical" size="middle" className="kc-application-delivery-actions__form">
-          <div className="kc-application-delivery-actions__grid">
+      <Card className="soha-application-delivery-actions" title="交付操作">
+        <Form form={deliveryForm} layout="vertical" size="middle" className="soha-application-delivery-actions__form">
+          <div className="soha-application-delivery-actions__grid">
             <Form.Item name="applicationEnvironmentId" label="环境绑定" rules={[{ required: true, message: '请选择环境绑定' }]}>
               <Select
                 options={bindings.map((binding) => ({
@@ -533,7 +533,7 @@ export function ApplicationDetailPage() {
               <Input placeholder={selectedDeliveryTarget?.containerName || '默认容器'} />
             </Form.Item>
           </div>
-          <div className="kc-application-delivery-actions__footer">
+          <div className="soha-application-delivery-actions__footer">
             <Space wrap>
               <Tag>{selectedDeliveryBinding?.workflowTemplateName || selectedDeliveryBinding?.workflowTemplate?.name || '未绑定 workflow'}</Tag>
               <Tag>{selectedDeliveryBinding?.targetCount ?? 0} targets</Tag>
@@ -565,7 +565,7 @@ export function ApplicationDetailPage() {
             key: 'overview',
             label: '总览',
             children: (
-              <div className="kc-application-runtime-overview-grid">
+              <div className="soha-application-runtime-overview-grid">
                 <Card title="最近执行">
                   <Space orientation="vertical" style={{ width: '100%' }} size={12}>
                     <Descriptions column={1} items={[
@@ -581,8 +581,8 @@ export function ApplicationDetailPage() {
                 <Card title="环境概览">
                   <Space orientation="vertical" style={{ width: '100%' }} size={12}>
                     {summaryBindings.length > 0 ? summaryBindings.map((binding) => (
-                      <div className="kc-application-runtime-binding-row" key={binding.applicationEnvironmentId}>
-                        <div className="kc-application-runtime-binding-row__main">
+                      <div className="soha-application-runtime-binding-row" key={binding.applicationEnvironmentId}>
+                        <div className="soha-application-runtime-binding-row__main">
                           <strong>{binding.environmentName || binding.environmentKey || binding.environmentId}</strong>
                           <Text type="secondary">{binding.workflowTemplate?.name || binding.workflowTemplateName || '未绑定工作流模板'}</Text>
                         </div>
@@ -603,17 +603,17 @@ export function ApplicationDetailPage() {
             label: '服务组件',
             children: (
               <Card
-                className="kc-detail-card"
+                className="soha-detail-card"
                 title="服务组件"
                 extra={canManageServices ? <Button type="primary" icon={<PlusOutlined />} onClick={() => openServiceModal()}>新建服务</Button> : null}
               >
                 {services.length > 0 ? (
-                  <div className="kc-application-service-grid">
+                  <div className="soha-application-service-grid">
                     {services.map((service) => (
                       <Card
                         key={service.id}
                         size="small"
-                        className="kc-application-service-card"
+                        className="soha-application-service-card"
                         title={service.name}
                         extra={<StatusTag value={service.enabled ? 'enabled' : 'disabled'} />}
                         actions={canManageServices ? [
@@ -623,16 +623,16 @@ export function ApplicationDetailPage() {
                           </Popconfirm>,
                         ] : undefined}
                       >
-                        <div className="kc-application-service-card__body">
-                          <div className="kc-application-service-card__meta">
+                        <div className="soha-application-service-card__body">
+                          <div className="soha-application-service-card__meta">
                             <Tag>{serviceKindLabel(service.serviceKind)}</Tag>
                             {service.ownerTeam ? <Tag>{service.ownerTeam}</Tag> : null}
                             {service.buildSourceId ? <Tag>{service.buildSourceId}</Tag> : null}
                           </div>
                           <Text type="secondary">{service.repositoryPath || runtime.application.repositoryPath || '未配置独立仓库'}</Text>
-                          <div className="kc-application-container-list">
+                          <div className="soha-application-container-list">
                             {(service.containers ?? []).map((container) => (
-                              <div className="kc-application-container-row" key={container.id || container.name}>
+                              <div className="soha-application-container-row" key={container.id || container.name}>
                                 <span>{container.name}</span>
                                 <Text type="secondary">{container.imageRepository || '未配置镜像仓库'}</Text>
                                 {container.runtimePorts?.length ? <Tag>{container.runtimePorts.join(', ')}</Tag> : null}
@@ -654,8 +654,8 @@ export function ApplicationDetailPage() {
             key: 'environments',
             label: '环境矩阵',
             children: (
-              <div className="kc-application-runtime-environment-stack">
-                <Card className="kc-detail-card">
+              <div className="soha-application-runtime-environment-stack">
+                <Card className="soha-detail-card">
                   <Space wrap>
                     {environments.map((item) => (
                       <Tag
@@ -668,12 +668,12 @@ export function ApplicationDetailPage() {
                     ))}
                   </Space>
                 </Card>
-                <div className="kc-application-runtime-grid">
+                <div className="soha-application-runtime-grid">
                   {workloads.length > 0 ? workloads.map((workload) => (
                     <Card
                       key={`${workload.clusterId}/${workload.namespace}/${workload.workloadName}`}
                       hoverable
-                      className="kc-application-runtime-card"
+                      className="soha-application-runtime-card"
                       onClick={() => navigate(`/applications/${runtime.application.id}/application-environments/${workload.applicationEnvironmentId}/workloads/${encodeURIComponent(workload.workloadName)}`)}
                       actions={[
                         <Button
@@ -690,7 +690,7 @@ export function ApplicationDetailPage() {
                       ]}
                     >
                       <Space orientation="vertical" style={{ width: '100%' }}>
-                        <div className="kc-application-runtime-card__head">
+                        <div className="soha-application-runtime-card__head">
                           <strong>{workload.workloadName}</strong>
                           <StatusTag value={summarizeStatus(workload)} />
                         </div>
@@ -703,7 +703,7 @@ export function ApplicationDetailPage() {
                       </Space>
                     </Card>
                   )) : (
-                    <Card className="kc-application-runtime-empty"><Empty description="当前环境下没有可显示的服务/Deployment" /></Card>
+                    <Card className="soha-application-runtime-empty"><Empty description="当前环境下没有可显示的服务/Deployment" /></Card>
                   )}
                 </div>
               </div>
@@ -713,7 +713,7 @@ export function ApplicationDetailPage() {
             key: 'delivery',
             label: '交付物',
             children: (
-              <div className="kc-application-runtime-delivery-grid">
+              <div className="soha-application-runtime-delivery-grid">
                 <Card title="Release Bundle">
                   <Descriptions column={1} items={[
                     { key: 'bundle', label: '当前 Bundle', children: summarizeReleaseBundle(detail?.latestBundle) },
@@ -747,12 +747,12 @@ export function ApplicationDetailPage() {
             key: 'pipeline',
             label: '流水线',
             children: (
-              <div className="kc-application-runtime-pipeline-grid">
+              <div className="soha-application-runtime-pipeline-grid">
                 <Card title="DAG 模板">
                   <Space orientation="vertical" style={{ width: '100%' }} size={12}>
                     {bindings.length > 0 ? bindings.map((binding) => (
-                      <div className="kc-application-runtime-binding-row" key={binding.applicationEnvironmentId}>
-                        <div className="kc-application-runtime-binding-row__main">
+                      <div className="soha-application-runtime-binding-row" key={binding.applicationEnvironmentId}>
+                        <div className="soha-application-runtime-binding-row__main">
                           <strong>{binding.environmentName || binding.environmentKey || binding.environmentId}</strong>
                           <Text type="secondary">{binding.workflowTemplate?.name || binding.workflowTemplateName || '未绑定工作流模板'}</Text>
                         </div>
@@ -785,7 +785,7 @@ export function ApplicationDetailPage() {
             key: 'verification',
             label: '测试验证',
             children: (
-              <div className="kc-application-runtime-verification-grid">
+              <div className="soha-application-runtime-verification-grid">
                 <Card title="验证门禁">
                   <Descriptions column={1} items={[
                     { key: 'workflowTemplate', label: 'Workflow Template', children: detail?.bindings?.[0]?.workflowTemplate?.name || detail?.bindings?.[0]?.workflowTemplateName || '-' },
@@ -830,7 +830,7 @@ export function ApplicationDetailPage() {
             }
           }}
         >
-          <div className="kc-application-service-form-grid">
+          <div className="soha-application-service-form-grid">
             <Form.Item name="key" label="服务 Key" rules={[{ required: true, message: '请输入服务 Key' }]}>
               <Input placeholder="api" />
             </Form.Item>
@@ -862,14 +862,14 @@ export function ApplicationDetailPage() {
 
           <Form.List name="containers">
             {(fields, { add, remove }) => (
-              <div className="kc-application-service-containers-editor">
-                <div className="kc-application-service-containers-editor__head">
+              <div className="soha-application-service-containers-editor">
+                <div className="soha-application-service-containers-editor__head">
                   <Text strong>容器</Text>
                   <Button size="small" icon={<PlusOutlined />} onClick={() => add({ name: 'main' })}>添加容器</Button>
                 </div>
                 {fields.map((field) => (
-                  <Card key={field.key} size="small" className="kc-application-service-container-editor">
-                    <div className="kc-application-service-container-editor__grid">
+                  <Card key={field.key} size="small" className="soha-application-service-container-editor">
+                    <div className="soha-application-service-container-editor__grid">
                       <Form.Item name={[field.name, 'name']} label="容器名" rules={[{ required: true, message: '请输入容器名' }]}>
                         <Input placeholder="main" />
                       </Form.Item>
@@ -896,7 +896,7 @@ export function ApplicationDetailPage() {
             )}
           </Form.List>
 
-          <div className="kc-form-actions">
+          <div className="soha-form-actions">
             <Button onClick={() => setServiceModalVisible(false)}>取消</Button>
             <Button htmlType="submit" type="primary" loading={createServiceMutation.isPending || updateServiceMutation.isPending}>
               保存
@@ -960,10 +960,10 @@ export function ApplicationWorkloadDetailPage() {
   })
 
   if (detailQuery.isLoading) {
-    return <div className="kc-page"><Card>Loading...</Card></div>
+    return <div className="soha-page"><Card>Loading...</Card></div>
   }
   if (!detail || !deployment) {
-    return <div className="kc-page"><Card><Empty description="未找到运行详情" /></Card></div>
+    return <div className="soha-page"><Card><Empty description="未找到运行详情" /></Card></div>
   }
 
   const tabItems = [
@@ -996,7 +996,7 @@ export function ApplicationWorkloadDetailPage() {
       key: 'network',
       label: '网络',
       children: (
-        <div className="kc-application-runtime-network">
+        <div className="soha-application-runtime-network">
           <Card title="Services">
             <AdminTable
               columns={[
@@ -1070,7 +1070,7 @@ export function ApplicationWorkloadDetailPage() {
   ]
 
   return (
-    <div className="kc-page">
+    <div className="soha-page">
       <PageHeader
         title={detail.application.name}
         description={`${detail.environment?.name || detail.binding.environmentKey || detail.binding.environmentId} · ${detail.workload.workloadName}`}

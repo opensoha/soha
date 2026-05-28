@@ -227,7 +227,7 @@ function CRDResourceEditorModal({
     : null
   const listQueryKey = ['crd-resources', clusterId, crd.name, isNamespacedCRD(crd) ? (namespace ?? '') : '__cluster__']
   const draftStorageKey = mode === 'edit' && resource
-    ? `kubecrux:crd-yaml:${clusterId || 'none'}:${crd.name}:${effectiveNamespace}:${resource.name}`
+    ? `soha:crd-yaml:${clusterId || 'none'}:${crd.name}:${effectiveNamespace}:${resource.name}`
     : null
 
   const yamlQuery = useQuery({
@@ -504,7 +504,7 @@ function CRDKindWorkspace({ crd }: { crd: CRD }) {
 
   return (
     <>
-      <Card className="kc-detail-card" style={{ marginTop: 0 }}>
+      <Card className="soha-detail-card" style={{ marginTop: 0 }}>
         <Space direction="vertical" size={16} style={{ width: '100%' }}>
           <Descriptions
             column={{ xs: 1, sm: 2, lg: 4 }}
@@ -615,14 +615,14 @@ export function CRDPage() {
       render: (_: string, record: CRDApiGroupSummary) => (
         <Button
           type="link"
-          className="kc-crd-group-link"
+          className="soha-crd-group-link"
           onClick={(event) => {
             event.stopPropagation()
             navigate(buildCRDApiGroupDetailPath(record.group))
           }}
         >
-          <span className="kc-crd-group-card">
-            <code className="kc-crd-group-card__value">{record.group}</code>
+          <span className="soha-crd-group-card">
+            <code className="soha-crd-group-card__value">{record.group}</code>
           </span>
         </Button>
       ),
@@ -632,12 +632,12 @@ export function CRDPage() {
       key: 'crdNames',
       width: 360,
       render: (_: unknown, record: CRDApiGroupSummary) => (
-        <div className="kc-crd-name-chip-list">
+        <div className="soha-crd-name-chip-list">
           {record.crdNames.slice(0, 2).map((value) => (
-            <code key={value} className="kc-crd-name-chip">{value}</code>
+            <code key={value} className="soha-crd-name-chip">{value}</code>
           ))}
           {record.crdNames.length > 2 ? (
-            <code className="kc-crd-name-chip is-summary">
+            <code className="soha-crd-name-chip is-summary">
               {localeCode === 'zh_CN'
                 ? `+${record.crdNames.length - 2} 个 CRD`
                 : `+${record.crdNames.length - 2} more CRDs`}
@@ -722,7 +722,7 @@ export function CRDPage() {
   ]
 
   return (
-    <div className="kc-page">
+    <div className="soha-page">
       <PlatformClusterScopeHint resourceLabel="CRD" />
       <AdminTable
         columns={columns}
@@ -737,7 +737,7 @@ export function CRDPage() {
           style: { cursor: 'pointer' },
         })}
         title={(
-          <div className="kc-admin-table-title-block">
+          <div className="soha-admin-table-title-block">
             <Text strong>{t('page.extensions.crd.title', 'CustomResourceDefinitions')}</Text>
             <Text type="secondary">{t('page.extensions.crd.desc', 'Review CRD API groups and definition names in the current cluster, then open one group to inspect its served kinds and resources.')}</Text>
           </div>
@@ -785,7 +785,7 @@ export function CRDApiGroupDetailPage() {
   }, [groupCRDs, selectedCRDName])
 
   return (
-    <div className="kc-page">
+    <div className="soha-page">
       <PageHeader
         title={decodedGroupName || t('route.extensions-group-detail.title', 'API Detail')}
         description={t('page.extensions.crd.groupDesc', 'Inspect the kinds served by this CRD entry and switch resources from the left-side CRD cards.')}
@@ -798,13 +798,13 @@ export function CRDApiGroupDetailPage() {
       <PlatformClusterScopeHint resourceLabel="CRD" />
 
       {!clusterId ? (
-        <Card className="kc-detail-card" style={{ marginTop: 0 }}>
+        <Card className="soha-detail-card" style={{ marginTop: 0 }}>
           <Empty description={t('platformScope.clusterPlaceholder', 'Select cluster')} />
         </Card>
       ) : isLoading ? (
-        <Card className="kc-detail-card" style={{ marginTop: 0 }} loading />
+        <Card className="soha-detail-card" style={{ marginTop: 0 }} loading />
       ) : !groupSummary ? (
-        <Card className="kc-detail-card" style={{ marginTop: 0 }}>
+        <Card className="soha-detail-card" style={{ marginTop: 0 }}>
           <Empty description={t('page.extensions.crd.groupEmpty', 'The selected API group is not available in the current cluster.')}>
             <Button onClick={() => navigate('/extensions')}>
               {t('page.extensions.crd.backToApis', localeCode === 'zh_CN' ? '返回 API 列表' : 'Back to API catalog')}
@@ -812,9 +812,9 @@ export function CRDApiGroupDetailPage() {
           </Empty>
         </Card>
       ) : (
-        <div className="kc-crd-workspace">
-          <Card className="kc-crd-sidebar-card" style={{ marginTop: 0 }}>
-            <div className="kc-crd-sidebar-body">
+        <div className="soha-crd-workspace">
+          <Card className="soha-crd-sidebar-card" style={{ marginTop: 0 }}>
+            <div className="soha-crd-sidebar-body">
               <div>
                 <Text strong>{t('page.extensions.crd.kindCatalogTitle', 'CRD Resources')}</Text>
                 <div>
@@ -824,7 +824,7 @@ export function CRDApiGroupDetailPage() {
                 </div>
               </div>
 
-              <div className="kc-tag-list">
+              <div className="soha-tag-list">
                 <Tag color="geekblue">{`${groupSummary.crdCount} ${localeCode === 'zh_CN' ? 'Kinds' : 'Kinds'}`}</Tag>
                 {groupSummary.namespacedCount > 0 ? (
                   <Tag color="gold">
@@ -838,7 +838,7 @@ export function CRDApiGroupDetailPage() {
                 ) : null}
               </div>
 
-              <div className="kc-tag-list">
+              <div className="soha-tag-list">
                 {groupSummary.versions.map((value) => (
                   <Tag key={value} color="blue">
                     {value}
@@ -846,31 +846,31 @@ export function CRDApiGroupDetailPage() {
                 ))}
               </div>
 
-              <div className="kc-crd-kind-list">
+              <div className="soha-crd-kind-list">
                 {groupCRDs.map((crd) => {
                   const isActive = selectedCRD?.name === crd.name
                   return (
                     <button
                       key={crd.name}
                       type="button"
-                      className={`kc-crd-kind-item ${isActive ? 'is-active' : ''}`}
+                      className={`soha-crd-kind-item ${isActive ? 'is-active' : ''}`}
                       onClick={() => setSelectedCRDName(crd.name)}
                     >
-                      <span className="kc-crd-kind-item__header">
-                        <span className="kc-crd-kind-item__name">{crd.name}</span>
+                      <span className="soha-crd-kind-item__header">
+                        <span className="soha-crd-kind-item__name">{crd.name}</span>
                         <Tag color={isNamespacedCRD(crd) ? 'gold' : 'blue'} bordered={false}>
                           {isNamespacedCRD(crd)
                             ? t('page.extensions.crd.namespacedScoped', 'Namespaced')
                             : t('page.extensions.crd.clusterScoped', 'Cluster scoped')}
                         </Tag>
                       </span>
-                      <span className="kc-crd-kind-item__meta">
+                      <span className="soha-crd-kind-item__meta">
                         {`${t('page.extensions.crd.kindLabel', 'Kind')}: ${crd.kind}`}
                       </span>
-                      <span className="kc-crd-kind-item__meta">
+                      <span className="soha-crd-kind-item__meta">
                         {`${t('page.extensions.crd.pluralLabel', 'Plural')}: ${crd.plural}`}
                       </span>
-                      <span className="kc-crd-kind-item__meta">{getServedVersions(crd).join(' · ')}</span>
+                      <span className="soha-crd-kind-item__meta">{getServedVersions(crd).join(' · ')}</span>
                     </button>
                   )
                 })}
@@ -878,11 +878,11 @@ export function CRDApiGroupDetailPage() {
             </div>
           </Card>
 
-          <div className="kc-crd-detail-column">
+          <div className="soha-crd-detail-column">
             {selectedCRD ? (
               <CRDKindWorkspace crd={selectedCRD} />
             ) : (
-              <Card className="kc-detail-card" style={{ marginTop: 0 }}>
+              <Card className="soha-detail-card" style={{ marginTop: 0 }}>
                 <Empty description={t('page.extensions.crd.emptySelection', 'Select a kind to inspect its resources.')} />
               </Card>
             )}
@@ -930,7 +930,7 @@ export function HelmReleasesPage() {
   ]
 
   return (
-    <div className="kc-page">
+    <div className="soha-page">
       <PageHeader title={t('page.extensions.helm.title', 'Helm Releases')} description={t('page.extensions.helm.desc', 'Inspect Helm release status, charts, and versions by cluster and namespace.')} />
       <AdminTable
         columns={columns}
@@ -1038,7 +1038,7 @@ export function HelmReleaseDetailPage() {
   ]
 
   return (
-    <div className="kc-page">
+    <div className="soha-page">
       <PageHeader
         title={detail?.name || releaseName}
         description={t('page.extensions.helm.detailDesc', 'Inspect Helm release summary, values.yaml, and revision history in one workspace.')}
@@ -1049,18 +1049,18 @@ export function HelmReleaseDetailPage() {
         )}
       />
       {!clusterId || !detailNamespace ? (
-        <Card className="kc-detail-card" style={{ marginTop: 0 }}>
+        <Card className="soha-detail-card" style={{ marginTop: 0 }}>
           <Empty description={t('platformScope.clusterPlaceholder', 'Select cluster')} />
         </Card>
       ) : detailQuery.isLoading ? (
-        <Card className="kc-detail-card" style={{ marginTop: 0 }} loading />
+        <Card className="soha-detail-card" style={{ marginTop: 0 }} loading />
       ) : !detail ? (
-        <Card className="kc-detail-card" style={{ marginTop: 0 }}>
+        <Card className="soha-detail-card" style={{ marginTop: 0 }}>
           <Empty description={t('common.notFound', 'Not found')} />
         </Card>
       ) : (
         <>
-          <Card className="kc-detail-card" style={{ marginTop: 0 }}>
+          <Card className="soha-detail-card" style={{ marginTop: 0 }}>
             <Descriptions
               column={{ xs: 1, sm: 2, lg: 4 }}
               items={[
@@ -1097,7 +1097,7 @@ export function HelmReleaseDetailPage() {
 export function HelmChartsPage() {
   const { t } = useI18n()
   return (
-    <div className="kc-page">
+    <div className="soha-page">
       <PageHeader title={t('page.extensions.helmCharts.title', 'Helm Charts')} description={t('page.extensions.helmCharts.desc', 'The backend does not provide a Helm Charts API yet, so this page remains a standard empty placeholder.')} />
       <Card>
         <Empty

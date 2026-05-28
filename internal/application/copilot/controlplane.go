@@ -8,12 +8,12 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	appaccess "github.com/kubecrux/kubecrux/internal/application/access"
-	domaincopilot "github.com/kubecrux/kubecrux/internal/domain/copilot"
-	domainidentity "github.com/kubecrux/kubecrux/internal/domain/identity"
-	domainmcp "github.com/kubecrux/kubecrux/internal/domain/mcp"
-	mcplogs "github.com/kubecrux/kubecrux/internal/infrastructure/mcp/logs"
-	aperrors "github.com/kubecrux/kubecrux/internal/platform/apperrors"
+	appaccess "github.com/soha/soha/internal/application/access"
+	domaincopilot "github.com/soha/soha/internal/domain/copilot"
+	domainidentity "github.com/soha/soha/internal/domain/identity"
+	domainmcp "github.com/soha/soha/internal/domain/mcp"
+	mcplogs "github.com/soha/soha/internal/infrastructure/mcp/logs"
+	aperrors "github.com/soha/soha/internal/platform/apperrors"
 )
 
 func (s *Service) ListDataSourceCapabilities(ctx context.Context, principal domainidentity.Principal) ([]domainmcp.Adapter, error) {

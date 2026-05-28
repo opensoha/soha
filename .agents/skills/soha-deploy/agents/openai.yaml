@@ -1,0 +1,4 @@
+interface:
+  display_name: "Soha Deploy"
+  short_description: "Single-project compose, Kubernetes, and Helm deployment patterns"
+  default_prompt: "Use $soha-deploy to prepare or update soha deployment artifacts."

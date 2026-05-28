@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	domainaccess "github.com/kubecrux/kubecrux/internal/domain/access"
+	domainaccess "github.com/soha/soha/internal/domain/access"
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"

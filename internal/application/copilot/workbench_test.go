@@ -8,15 +8,15 @@ import (
 	"testing"
 	"time"
 
-	appaccess "github.com/kubecrux/kubecrux/internal/application/access"
-	domainalert "github.com/kubecrux/kubecrux/internal/domain/alert"
-	domainbuild "github.com/kubecrux/kubecrux/internal/domain/build"
-	domaincopilot "github.com/kubecrux/kubecrux/internal/domain/copilot"
-	domainevent "github.com/kubecrux/kubecrux/internal/domain/event"
-	domainidentity "github.com/kubecrux/kubecrux/internal/domain/identity"
-	domainrelease "github.com/kubecrux/kubecrux/internal/domain/release"
-	domainsettings "github.com/kubecrux/kubecrux/internal/domain/settings"
-	"github.com/kubecrux/kubecrux/internal/platform/apperrors"
+	appaccess "github.com/soha/soha/internal/application/access"
+	domainalert "github.com/soha/soha/internal/domain/alert"
+	domainbuild "github.com/soha/soha/internal/domain/build"
+	domaincopilot "github.com/soha/soha/internal/domain/copilot"
+	domainevent "github.com/soha/soha/internal/domain/event"
+	domainidentity "github.com/soha/soha/internal/domain/identity"
+	domainrelease "github.com/soha/soha/internal/domain/release"
+	domainsettings "github.com/soha/soha/internal/domain/settings"
+	"github.com/soha/soha/internal/platform/apperrors"
 )
 
 func TestToolsetAllowsToolHonorsAdapterSelectionAndDisabledTools(t *testing.T) {

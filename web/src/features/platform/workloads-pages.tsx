@@ -36,7 +36,7 @@ import type { ApiResponse, DeploymentRolloutStatus, PodDetail, PodMetrics, PodRe
 import type { TableColumnsType, TabsProps } from 'antd'
 
 const { Link, Text } = Typography
-const DEPLOYMENT_ACTIONS_COLUMN_CLASS_NAME = `${TABLE_ACTIONS_COLUMN_CLASS_NAME} kc-deployment-actions-column`
+const DEPLOYMENT_ACTIONS_COLUMN_CLASS_NAME = `${TABLE_ACTIONS_COLUMN_CLASS_NAME} soha-deployment-actions-column`
 
 const K8sYamlEditor = lazy(async () => {
   const mod = await import('@/components/k8s-yaml-editor')
@@ -101,14 +101,14 @@ function renderVolumeMounts(mounts: PodVolumeMount[] | undefined) {
     return <Text type="secondary">N/A</Text>
   }
   return (
-    <div className="kc-volume-mount-list">
+    <div className="soha-volume-mount-list">
       {mounts.map((mount) => (
-        <div key={`${mount.name}:${mount.mountPath}:${mount.subPath || '-'}`} className="kc-volume-mount-item">
-          <Text className="kc-volume-mount-name">{mount.name}</Text>
-          <Text type="secondary" className="kc-volume-mount-path">
+        <div key={`${mount.name}:${mount.mountPath}:${mount.subPath || '-'}`} className="soha-volume-mount-item">
+          <Text className="soha-volume-mount-name">{mount.name}</Text>
+          <Text type="secondary" className="soha-volume-mount-path">
             {mount.subPath ? `${mount.mountPath} (${mount.subPath})` : mount.mountPath}
           </Text>
-          {mount.readOnly ? <Tag className="kc-volume-mount-badge">RO</Tag> : null}
+          {mount.readOnly ? <Tag className="soha-volume-mount-badge">RO</Tag> : null}
         </div>
       ))}
     </div>
@@ -151,10 +151,10 @@ function renderVolumeDetail(
   const targetPath = buildVolumeDetailPath(volume, detailNamespace)
   const summary = summarizeVolumeDetail(volume, localeCode)
   if (!targetPath) {
-    return <Text type="secondary" className="kc-volume-detail-value">{summary}</Text>
+    return <Text type="secondary" className="soha-volume-detail-value">{summary}</Text>
   }
   return (
-    <Link className="kc-volume-detail-link" onClick={() => navigate(targetPath)}>
+    <Link className="soha-volume-detail-link" onClick={() => navigate(targetPath)}>
       {summary}
     </Link>
   )
@@ -408,16 +408,16 @@ export function WorkloadsOverviewPage() {
 
   if (!clusterId) {
     return (
-      <div className="kc-page kc-overview-page">
-        <Card className="kc-workload-overview-hero" variant="borderless">
-          <div className="kc-workload-overview-hero-copy">
-            <Text className="kc-workload-overview-eyebrow">{localeCode === 'zh_CN' ? '工作负载' : 'Workloads'}</Text>
-            <div className="kc-admin-table-title-block">
+      <div className="soha-page soha-overview-page">
+        <Card className="soha-workload-overview-hero" variant="borderless">
+          <div className="soha-workload-overview-hero-copy">
+            <Text className="soha-workload-overview-eyebrow">{localeCode === 'zh_CN' ? '工作负载' : 'Workloads'}</Text>
+            <div className="soha-admin-table-title-block">
               <Text strong>{t('page.workloads.overview.title', 'Workload Overview')}</Text>
               <Text type="secondary">{t('page.workloads.overview.desc', 'Inspect workload counts and recent events under the current cluster and namespace scope.')}</Text>
             </div>
           </div>
-          <div className="kc-workload-overview-toolbar" />
+          <div className="soha-workload-overview-toolbar" />
         </Card>
         <Empty description={t('common.pleaseSelectClusterShort', 'Select a cluster')} />
       </div>
@@ -486,32 +486,32 @@ export function WorkloadsOverviewPage() {
   ]
 
   return (
-    <div className="kc-page kc-overview-page">
-      <Card className="kc-workload-overview-hero" variant="borderless">
-        <div className="kc-workload-overview-hero-copy">
-          <Text className="kc-workload-overview-eyebrow">{localeCode === 'zh_CN' ? '工作负载' : 'Workloads'}</Text>
-          <div className="kc-admin-table-title-block">
+    <div className="soha-page soha-overview-page">
+      <Card className="soha-workload-overview-hero" variant="borderless">
+        <div className="soha-workload-overview-hero-copy">
+          <Text className="soha-workload-overview-eyebrow">{localeCode === 'zh_CN' ? '工作负载' : 'Workloads'}</Text>
+          <div className="soha-admin-table-title-block">
             <Text strong>{t('page.workloads.overview.title', 'Workload Overview')}</Text>
             <Text type="secondary">{t('page.workloads.overview.desc', 'Inspect workload counts and recent events under the current cluster and namespace scope.')}</Text>
           </div>
         </div>
-        <div className="kc-workload-overview-toolbar" />
+        <div className="soha-workload-overview-toolbar" />
       </Card>
-      <div className="kc-overview-metric-grid kc-workload-overview-metric-grid">
+      <div className="soha-overview-metric-grid soha-workload-overview-metric-grid">
         {stats.map((item) => (
-          <Card key={item.key} size="small" variant="outlined" className={`kc-overview-metric-card is-${item.tone}`}>
-            <div className="kc-overview-metric-card-head">
-              <div className="kc-overview-metric-copy">
-                <Text className="kc-overview-metric-label">{item.label}</Text>
+          <Card key={item.key} size="small" variant="outlined" className={`soha-overview-metric-card is-${item.tone}`}>
+            <div className="soha-overview-metric-card-head">
+              <div className="soha-overview-metric-copy">
+                <Text className="soha-overview-metric-label">{item.label}</Text>
                 <Statistic value={item.value} />
               </div>
-              <span className="kc-overview-metric-icon">{item.icon}</span>
+              <span className="soha-overview-metric-icon">{item.icon}</span>
             </div>
-            <Text className="kc-overview-metric-helper">{item.helper}</Text>
+            <Text className="soha-overview-metric-helper">{item.helper}</Text>
           </Card>
         ))}
       </div>
-      <Card className="kc-workload-overview-events" title={localeCode === 'zh_CN' ? '最近事件' : 'Recent Events'} variant="borderless">
+      <Card className="soha-workload-overview-events" title={localeCode === 'zh_CN' ? '最近事件' : 'Recent Events'} variant="borderless">
         <AdminTable
           columns={eventColumns}
           dataSource={eventsQuery.data?.data ?? []}
@@ -617,7 +617,7 @@ function WorkloadDetailShell({
   if (!detail) return <Empty description={localeCode === 'zh_CN' ? `${title}未找到` : `${title} not found`} />
 
   return (
-    <div className="kc-page">
+    <div className="soha-page">
       <PageHeader
         title={`${title}: ${name}`}
         description={localeCode === 'zh_CN' ? `查看 ${title} 的资源概览、标签、注解与 YAML 等详情信息。` : `Inspect ${title} overview, labels, annotations, and YAML details.`}
@@ -632,7 +632,7 @@ function WorkloadDetailShell({
             label: t('common.overview', 'Overview'),
             children: (
               <>
-                <Card className="kc-detail-card">
+                <Card className="soha-detail-card">
                   <Descriptions
                     items={[
                       { key: t('common.name', 'Name'), label: t('common.name', 'Name'), children: detail.name },
@@ -641,9 +641,9 @@ function WorkloadDetailShell({
                     ]}
                   />
                   {detail.labels && Object.keys(detail.labels).length > 0 && (
-                    <div className="kc-detail-meta">
+                    <div className="soha-detail-meta">
                       <Text strong>{`${t('common.labels', 'Labels')}:`}</Text>
-                      <div className="kc-tag-list">
+                      <div className="soha-tag-list">
                         {Object.entries(detail.labels).map(([k, v]) => (
                           <Tag key={k}>{k}={v}</Tag>
                         ))}
@@ -651,9 +651,9 @@ function WorkloadDetailShell({
                     </div>
                   )}
                   {detail.annotations && Object.keys(detail.annotations).length > 0 && (
-                    <div className="kc-detail-meta">
+                    <div className="soha-detail-meta">
                       <Text strong>{`${localeCode === 'zh_CN' ? '注解' : 'Annotations'}:`}</Text>
-                      <pre className="kc-json-block">{JSON.stringify(detail.annotations, null, 2)}</pre>
+                      <pre className="soha-json-block">{JSON.stringify(detail.annotations, null, 2)}</pre>
                     </div>
                   )}
                 </Card>
@@ -666,7 +666,7 @@ function WorkloadDetailShell({
             key: 'yaml',
             label: t('common.yaml', 'YAML'),
             children: (
-              <Suspense fallback={<Card className="kc-detail-card"><Spin size="large" /></Card>}>
+              <Suspense fallback={<Card className="soha-detail-card"><Spin size="large" /></Card>}>
                 <K8sYamlEditor
                   value={yamlDraft}
                   onChange={setYamlDraft}
@@ -954,7 +954,7 @@ export function WorkloadsDeploymentsPage() {
         const canDelete = hasAllowedAction(record.allowedActions, 'delete')
         if (!canRestart && !canScale && !canRollback && !canDelete) return '-'
         return (
-          <Space size={4} className="kc-deployment-action-cell">
+          <Space size={4} className="soha-deployment-action-cell">
             {canRestart ? (
               <Tooltip title={localeCode === 'zh_CN' ? '重启' : 'Restart'}>
                 <Button
@@ -1014,9 +1014,9 @@ export function WorkloadsDeploymentsPage() {
   ]
 
   const deploymentToolbar = (
-    <div className="kc-workload-table-filters">
+    <div className="soha-workload-table-filters">
       <Input
-        className="kc-platform-compact-field"
+        className="soha-platform-compact-field"
         size="small"
         value={searchKeyword}
         onChange={(event) => setSearchKeyword(event.target.value)}
@@ -1024,7 +1024,7 @@ export function WorkloadsDeploymentsPage() {
         style={{ width: 220 }}
       />
       <Select
-        className="kc-platform-compact-field"
+        className="soha-platform-compact-field"
         size="small"
         value={healthFilter}
         onChange={(value) => setHealthFilter(String(value))}
@@ -1041,7 +1041,7 @@ export function WorkloadsDeploymentsPage() {
   )
 
   const deploymentToolbarExtra = (
-    <div className="kc-page-toolbar">
+    <div className="soha-page-toolbar">
       <Button
         size="small"
         variant="outlined"
@@ -1078,10 +1078,10 @@ export function WorkloadsDeploymentsPage() {
   )
 
   return (
-    <div className="kc-page">
+    <div className="soha-page">
       <AdminTable
         title={t('page.workloads.deployments.title', 'Deployments')}
-        className="kc-deployments-table kc-platform-table"
+        className="soha-deployments-table soha-platform-table"
         toolbar={deploymentToolbar}
         toolbarExtra={deploymentToolbarExtra}
         columns={columns}
@@ -1395,8 +1395,8 @@ export function DeploymentDetailPage() {
   ]
 
   const linkageOverview = (
-    <div className="kc-page-section">
-      <Card className="kc-detail-card" title={localeCode === 'zh_CN' ? '滚动发布状态' : 'Rollout Status'}>
+    <div className="soha-page-section">
+      <Card className="soha-detail-card" title={localeCode === 'zh_CN' ? '滚动发布状态' : 'Rollout Status'}>
         {rolloutStatus ? (
           <Descriptions
             items={[
@@ -1413,7 +1413,7 @@ export function DeploymentDetailPage() {
           <Empty description={localeCode === 'zh_CN' ? '暂无滚动状态' : 'No rollout status'} />
         )}
       </Card>
-      <Card className="kc-detail-card" title={localeCode === 'zh_CN' ? '滚动历史' : 'Rollout History'}>
+      <Card className="soha-detail-card" title={localeCode === 'zh_CN' ? '滚动历史' : 'Rollout History'}>
         <AdminTable
           columns={rolloutColumns}
           dataSource={rolloutHistory}
@@ -1422,7 +1422,7 @@ export function DeploymentDetailPage() {
           enableColumnSelection={false}
         />
       </Card>
-      <Card className="kc-detail-card" title={localeCode === 'zh_CN' ? '关联 Pods' : 'Related Pods'}>
+      <Card className="soha-detail-card" title={localeCode === 'zh_CN' ? '关联 Pods' : 'Related Pods'}>
         <AdminTable
           columns={deploymentPodColumns}
           dataSource={deploymentPods}
@@ -1432,11 +1432,11 @@ export function DeploymentDetailPage() {
           enableColumnSelection={false}
         />
       </Card>
-      <Card className="kc-detail-card" title="交付联动">
+      <Card className="soha-detail-card" title="交付联动">
         {matchedBindings.length === 0 ? (
           <Empty description="当前 Deployment 尚未绑定到任何应用环境" />
         ) : (
-          <div className="kc-list-panel">
+          <div className="soha-list-panel">
             {matchedBindings.map((binding) => {
               const application = applicationMap[binding.applicationId]
               const environment = environmentMap[binding.environmentId]
@@ -1455,13 +1455,13 @@ export function DeploymentDetailPage() {
               )
 
               return (
-                <div key={binding.id} className="kc-list-row">
-                  <div className="kc-list-row-meta">
+                <div key={binding.id} className="soha-list-row">
+                  <div className="soha-list-row-meta">
                     <Text strong>{application?.name || binding.applicationId}</Text>
                     <Tag color="blue">{environment?.name || binding.environmentId}</Tag>
                     {binding.workflowTemplate?.name ? <Tag color="cyan">{binding.workflowTemplate.name}</Tag> : null}
                   </div>
-                  <div className="kc-list-row-extra">
+                  <div className="soha-list-row-extra">
                     <StatusTag value={latestBuild?.status || 'unknown'} />
                     <StatusTag value={latestWorkflow?.status || 'unknown'} />
                     <StatusTag value={latestRelease?.status || 'unknown'} />
@@ -1663,8 +1663,8 @@ function renderPodResourceCell(record: Pod, resource: 'cpu' | 'memory', localeCo
   }
 
   return (
-    <div className="kc-resource-cell is-compact">
-      <div className="kc-resource-cell-copy">
+    <div className="soha-resource-cell is-compact">
+      <div className="soha-resource-cell-copy">
         <Text strong>{usageDisplay}</Text>
         <Text type="secondary" className="text-xs">{secondary}</Text>
       </div>
@@ -1843,7 +1843,7 @@ export function WorkloadsPodsPage() {
       onHeaderCell: () => ({ className: TABLE_ACTIONS_COLUMN_CLASS_NAME }),
       onCell: () => ({ className: TABLE_ACTIONS_COLUMN_CLASS_NAME }),
       render: (value: string, record: Pod) => (
-        <Space size={4} className="kc-deployment-action-cell">
+        <Space size={4} className="soha-deployment-action-cell">
           <Tooltip title={localeCode === 'zh_CN' ? '重建 Pod' : 'Rebuild Pod'}>
             <Button
               size="small"
@@ -1867,9 +1867,9 @@ export function WorkloadsPodsPage() {
   ]
 
   const podToolbar = (
-    <div className="kc-workload-table-filters">
+    <div className="soha-workload-table-filters">
       <Input
-        className="kc-platform-compact-field"
+        className="soha-platform-compact-field"
         size="small"
         value={searchKeyword}
         onChange={(event) => setSearchKeyword(event.target.value)}
@@ -1877,7 +1877,7 @@ export function WorkloadsPodsPage() {
         style={{ width: 220 }}
       />
       <Select
-        className="kc-platform-compact-field"
+        className="soha-platform-compact-field"
         size="small"
         value={phaseFilter}
         onChange={(value) => setPhaseFilter(String(value))}
@@ -1892,7 +1892,7 @@ export function WorkloadsPodsPage() {
         ]}
       />
       <Select
-        className="kc-platform-compact-field"
+        className="soha-platform-compact-field"
         size="small"
         value={restartFilter}
         onChange={(value) => setRestartFilter(String(value))}
@@ -1904,7 +1904,7 @@ export function WorkloadsPodsPage() {
         ]}
       />
       <Select
-        className="kc-platform-compact-field"
+        className="soha-platform-compact-field"
         size="small"
         value={pvcFilter}
         onChange={(value) => setPvcFilter(String(value))}
@@ -1916,7 +1916,7 @@ export function WorkloadsPodsPage() {
         ]}
       />
       <Select
-        className="kc-platform-compact-field"
+        className="soha-platform-compact-field"
         size="small"
         value={nodeFilter}
         onChange={(value) => setNodeFilter(String(value))}
@@ -1930,12 +1930,12 @@ export function WorkloadsPodsPage() {
   )
 
   const podToolbarExtra = (
-    <div className="kc-page-toolbar">
-      <Text className="kc-refresh-meta" type="secondary">
+    <div className="soha-page-toolbar">
+      <Text className="soha-refresh-meta" type="secondary">
         {refreshStatusLabel}
       </Text>
-      <div className="kc-refresh-controls">
-        <Text className="kc-refresh-meta" type="secondary">
+      <div className="soha-refresh-controls">
+        <Text className="soha-refresh-meta" type="secondary">
           {localeCode === 'zh_CN' ? '自动刷新' : 'Auto refresh'}
         </Text>
         <Switch
@@ -1945,7 +1945,7 @@ export function WorkloadsPodsPage() {
           disabled={!clusterId}
         />
         <Select
-          className="kc-platform-compact-field"
+          className="soha-platform-compact-field"
           size="small"
           value={autoRefreshIntervalSeconds}
           onChange={(value) => setAutoRefreshIntervalSeconds(Number(value))}
@@ -1972,9 +1972,9 @@ export function WorkloadsPodsPage() {
   )
 
   return (
-    <div className="kc-page">
+    <div className="soha-page">
       <AdminTable
-        className="kc-pods-table kc-platform-table"
+        className="soha-pods-table soha-platform-table"
         title={t('page.workloads.pods.title', 'Pods')}
         toolbar={podToolbar}
         toolbarExtra={podToolbarExtra}
@@ -2089,10 +2089,10 @@ export function PodDetailPage() {
       render: (value: string, record: PodVolume) => {
         const targetPath = buildVolumeDetailPath(record, detailNamespace)
         if (!targetPath) {
-          return <Text className="kc-volume-name-text">{value}</Text>
+          return <Text className="soha-volume-name-text">{value}</Text>
         }
         return (
-          <Link className="kc-volume-name-link" onClick={() => navigate(targetPath)}>
+          <Link className="soha-volume-name-link" onClick={() => navigate(targetPath)}>
             {value}
           </Link>
         )
@@ -2102,7 +2102,7 @@ export function PodDetailPage() {
       title: 'Type',
       dataIndex: 'type',
       width: 130,
-      render: (value: string) => <Tag className="kc-volume-type-tag">{formatVolumeTypeLabel(value)}</Tag>,
+      render: (value: string) => <Tag className="soha-volume-type-tag">{formatVolumeTypeLabel(value)}</Tag>,
     },
     {
       title: localeCode === 'zh_CN' ? '详情' : 'Details',
@@ -2171,9 +2171,9 @@ export function PodDetailPage() {
   ]
 
   const runtimeOverview = podDetail ? (
-    <div className="kc-pod-overview-stack">
+    <div className="soha-pod-overview-stack">
       <Card
-        className="kc-detail-card kc-pod-overview-card kc-pod-overview-status"
+        className="soha-detail-card soha-pod-overview-card soha-pod-overview-status"
         title={localeCode === 'zh_CN' ? '容器状态' : 'Containers'}
         extra={(
           <Space size={6}>
@@ -2191,7 +2191,7 @@ export function PodDetailPage() {
           enableColumnSelection={false}
         />
       </Card>
-      <Card className="kc-detail-card kc-pod-overview-card kc-pod-overview-summary" title={localeCode === 'zh_CN' ? '运行时概览' : 'Runtime Overview'}>
+      <Card className="soha-detail-card soha-pod-overview-card soha-pod-overview-summary" title={localeCode === 'zh_CN' ? '运行时概览' : 'Runtime Overview'}>
         <Descriptions
           items={[
             { key: localeCode === 'zh_CN' ? '阶段' : 'Phase', label: localeCode === 'zh_CN' ? '阶段' : 'Phase', children: <StatusTag value={podDetail.phase} /> },
@@ -2204,7 +2204,7 @@ export function PodDetailPage() {
           ]}
         />
       </Card>
-      <Card className="kc-detail-card kc-pod-overview-card kc-pod-overview-conditions" title={localeCode === 'zh_CN' ? '条件' : 'Conditions'}>
+      <Card className="soha-detail-card soha-pod-overview-card soha-pod-overview-conditions" title={localeCode === 'zh_CN' ? '条件' : 'Conditions'}>
         <AdminTable
           columns={conditionColumns}
           dataSource={podDetail.conditions ?? []}
@@ -2251,7 +2251,7 @@ export function PodDetailPage() {
     key: 'containers',
     label: localeCode === 'zh_CN' ? '容器' : 'Containers',
     children: (
-      <Card className="kc-detail-card" title={localeCode === 'zh_CN' ? '容器状态' : 'Container Status'}>
+      <Card className="soha-detail-card" title={localeCode === 'zh_CN' ? '容器状态' : 'Container Status'}>
         <AdminTable
           columns={containerColumns}
           dataSource={podDetail?.containers ?? []}
@@ -2267,9 +2267,9 @@ export function PodDetailPage() {
     key: 'volumes',
     label: localeCode === 'zh_CN' ? '卷' : 'Volumes',
     children: (
-      <Card className="kc-detail-card" title={localeCode === 'zh_CN' ? 'Pod 卷与挂载' : 'Pod Volumes & Mounts'}>
+      <Card className="soha-detail-card" title={localeCode === 'zh_CN' ? 'Pod 卷与挂载' : 'Pod Volumes & Mounts'}>
         <AdminTable
-          className="kc-pod-volumes-table"
+          className="soha-pod-volumes-table"
           columns={volumeColumns}
           dataSource={podVolumes}
           rowKey={(record) => record.name}
@@ -2285,7 +2285,7 @@ export function PodDetailPage() {
     key: 'related-resources',
     label: localeCode === 'zh_CN' ? '相关资源' : 'Related Resources',
     children: (
-      <Card className="kc-detail-card" title={localeCode === 'zh_CN' ? 'Pod 关联资源' : 'Pod Related Resources'}>
+      <Card className="soha-detail-card" title={localeCode === 'zh_CN' ? 'Pod 关联资源' : 'Pod Related Resources'}>
         <AdminTable
           columns={relatedResourceColumns}
           dataSource={podRelatedResources}
@@ -2343,8 +2343,8 @@ export function PodDetailPage() {
         footer={null}
         width={1080}
       >
-        <div className="kc-terminal-controls">
-          <div className="kc-terminal-control-group">
+        <div className="soha-terminal-controls">
+          <div className="soha-terminal-control-group">
             <Text strong className="text-xs">{localeCode === 'zh_CN' ? '容器:' : 'Container:'}</Text>
             <Select
               placeholder={localeCode === 'zh_CN' ? '选择容器' : 'Select container'}
@@ -2355,7 +2355,7 @@ export function PodDetailPage() {
               allowClear
             />
           </div>
-          <div className="kc-terminal-control-group">
+          <div className="soha-terminal-control-group">
             <Text strong className="text-xs">{localeCode === 'zh_CN' ? 'Shell:' : 'Shell:'}</Text>
             <Select
               value={terminalShell}
@@ -2370,7 +2370,7 @@ export function PodDetailPage() {
           </div>
         </div>
         {terminalMounted ? (
-          <Suspense fallback={<Card className="kc-detail-card"><Spin size="large" /></Card>}>
+          <Suspense fallback={<Card className="soha-detail-card"><Spin size="large" /></Card>}>
             <PodTerminal
               clusterId={clusterId}
               namespace={detailNamespace}
@@ -2435,28 +2435,28 @@ export function WorkloadsStatefulSetsPage() {
   columns.push(statefulSetActions)
 
   return (
-    <div className="kc-page">
+    <div className="soha-page">
       {statefulSetYamlModal}
       <AdminTable
-        className="kc-statefulsets-table kc-platform-table"
+        className="soha-statefulsets-table soha-platform-table"
         title={t('page.workloads.statefulsets.title', 'StatefulSets')}
         toolbar={(
-          <div className="kc-workload-table-filters">
+          <div className="soha-workload-table-filters">
             <Input
-              className="kc-platform-compact-field"
+              className="soha-platform-compact-field"
               size="small"
               value={searchKeyword}
               onChange={(event) => setSearchKeyword(event.target.value)}
               placeholder={localeCode === 'zh_CN' ? '搜索 StatefulSet / Namespace / Service' : 'Search stateful set / namespace / service'}
               style={{ width: 280 }}
             />
-            <Text className="kc-workload-table-summary" type="secondary">
+            <Text className="soha-workload-table-summary" type="secondary">
               {localeCode === 'zh_CN' ? `当前 ${filteredStatefulSets.length} / ${statefulSets.length} 条` : `${filteredStatefulSets.length} / ${statefulSets.length} items`}
             </Text>
           </div>
         )}
         toolbarExtra={(
-          <div className="kc-page-toolbar">
+          <div className="soha-page-toolbar">
             <Button icon={<ReloadOutlined />} variant="outlined" onClick={() => queryClient.invalidateQueries({ queryKey: ['statefulsets', clusterId, namespace] })}>
               {t('common.refresh', 'Refresh')}
             </Button>
@@ -2531,27 +2531,27 @@ export function WorkloadsDaemonSetsPage() {
   return (
     <>
       {daemonSetYamlModal}
-    <div className="kc-page">
+    <div className="soha-page">
       <AdminTable
-        className="kc-daemonsets-table kc-platform-table"
+        className="soha-daemonsets-table soha-platform-table"
         title="DaemonSets"
         toolbar={(
-          <div className="kc-workload-table-filters">
+          <div className="soha-workload-table-filters">
             <Input
-              className="kc-platform-compact-field"
+              className="soha-platform-compact-field"
               size="small"
               value={searchKeyword}
               onChange={(event) => setSearchKeyword(event.target.value)}
               placeholder={localeCode === 'zh_CN' ? '搜索 DaemonSet / Namespace' : 'Search daemon set / namespace'}
               style={{ width: 260 }}
             />
-            <Text className="kc-workload-table-summary" type="secondary">
+            <Text className="soha-workload-table-summary" type="secondary">
               {localeCode === 'zh_CN' ? `当前 ${filteredDaemonSets.length} / ${daemonSets.length} 条` : `${filteredDaemonSets.length} / ${daemonSets.length} items`}
             </Text>
           </div>
         )}
         toolbarExtra={(
-          <div className="kc-page-toolbar">
+          <div className="soha-page-toolbar">
             <Button icon={<ReloadOutlined />} variant="outlined" onClick={() => queryClient.invalidateQueries({ queryKey: ['daemonsets', clusterId, namespace] })}>
               {localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
             </Button>
@@ -2627,27 +2627,27 @@ export function WorkloadsJobsPage() {
   return (
     <>
     {jobYamlModal}
-    <div className="kc-page">
+    <div className="soha-page">
       <AdminTable
-        className="kc-jobs-table kc-platform-table"
+        className="soha-jobs-table soha-platform-table"
         title={t('page.workloads.jobs.title', 'Jobs')}
         toolbar={(
-          <div className="kc-workload-table-filters">
+          <div className="soha-workload-table-filters">
             <Input
-              className="kc-platform-compact-field"
+              className="soha-platform-compact-field"
               size="small"
               value={searchKeyword}
               onChange={(event) => setSearchKeyword(event.target.value)}
               placeholder={localeCode === 'zh_CN' ? '搜索 Job / Namespace / Mode' : 'Search job / namespace / mode'}
               style={{ width: 260 }}
             />
-            <Text className="kc-workload-table-summary" type="secondary">
+            <Text className="soha-workload-table-summary" type="secondary">
               {localeCode === 'zh_CN' ? `当前 ${filteredJobs.length} / ${jobs.length} 条` : `${filteredJobs.length} / ${jobs.length} items`}
             </Text>
           </div>
         )}
         toolbarExtra={(
-          <div className="kc-page-toolbar">
+          <div className="soha-page-toolbar">
             <Button icon={<ReloadOutlined />} variant="outlined" onClick={() => queryClient.invalidateQueries({ queryKey: ['jobs', clusterId, namespace] })}>
               {t('common.refresh', 'Refresh')}
             </Button>
@@ -2726,27 +2726,27 @@ export function WorkloadsCronJobsPage() {
   return (
     <>
     {cronJobYamlModal}
-    <div className="kc-page">
+    <div className="soha-page">
       <AdminTable
-        className="kc-cronjobs-table kc-platform-table"
+        className="soha-cronjobs-table soha-platform-table"
         title={t('page.workloads.cronjobs.title', 'CronJobs')}
         toolbar={(
-          <div className="kc-workload-table-filters">
+          <div className="soha-workload-table-filters">
             <Input
-              className="kc-platform-compact-field"
+              className="soha-platform-compact-field"
               size="small"
               value={searchKeyword}
               onChange={(event) => setSearchKeyword(event.target.value)}
               placeholder={localeCode === 'zh_CN' ? '搜索 CronJob / Namespace / Schedule' : 'Search cron job / namespace / schedule'}
               style={{ width: 280 }}
             />
-            <Text className="kc-workload-table-summary" type="secondary">
+            <Text className="soha-workload-table-summary" type="secondary">
               {localeCode === 'zh_CN' ? `当前 ${filteredCronJobs.length} / ${cronJobs.length} 条` : `${filteredCronJobs.length} / ${cronJobs.length} items`}
             </Text>
           </div>
         )}
         toolbarExtra={(
-          <div className="kc-page-toolbar">
+          <div className="soha-page-toolbar">
             <Button icon={<ReloadOutlined />} variant="outlined" onClick={() => queryClient.invalidateQueries({ queryKey: ['cronjobs', clusterId, namespace] })}>
               {t('common.refresh', 'Refresh')}
             </Button>

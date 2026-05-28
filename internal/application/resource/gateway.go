@@ -12,11 +12,11 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
-	domainaccess "github.com/kubecrux/kubecrux/internal/domain/access"
-	domaincluster "github.com/kubecrux/kubecrux/internal/domain/cluster"
-	domainidentity "github.com/kubecrux/kubecrux/internal/domain/identity"
-	domainresource "github.com/kubecrux/kubecrux/internal/domain/resource"
-	"github.com/kubecrux/kubecrux/internal/platform/apperrors"
+	domainaccess "github.com/soha/soha/internal/domain/access"
+	domaincluster "github.com/soha/soha/internal/domain/cluster"
+	domainidentity "github.com/soha/soha/internal/domain/identity"
+	domainresource "github.com/soha/soha/internal/domain/resource"
+	"github.com/soha/soha/internal/platform/apperrors"
 )
 
 var gatewayAPIVersions = []string{"v1", "v1beta1"}

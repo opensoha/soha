@@ -160,7 +160,7 @@ export function NodeDetailPage() {
 
   if (!clusterId) {
     return (
-      <div className="kc-page">
+      <div className="soha-page">
         <PageHeader
           title={localeCode === 'zh_CN' ? '节点详情' : 'Node Detail'}
           description={localeCode === 'zh_CN' ? '需要先选定集群，才能查看独立节点详情。' : 'Select a cluster before opening a standalone node detail page.'}
@@ -180,7 +180,7 @@ export function NodeDetailPage() {
 
   if (!nodeDetail || !nodeName) {
     return (
-      <div className="kc-page">
+      <div className="soha-page">
         <PageHeader
           title={localeCode === 'zh_CN' ? '节点详情' : 'Node Detail'}
           description={localeCode === 'zh_CN' ? '当前节点不存在或详情不可用。' : 'The node was not found or its detail is unavailable.'}
@@ -194,7 +194,7 @@ export function NodeDetailPage() {
   }
 
   return (
-    <div className="kc-page">
+    <div className="soha-page">
       <PageHeader
         title={`${localeCode === 'zh_CN' ? '节点详情' : 'Node Detail'}: ${nodeDetail.name}`}
         description={localeCode === 'zh_CN' ? '查看节点资源分配、污点、YAML 与承载 Pod，并支持独立编辑。' : 'Inspect node allocation, taints, YAML, and scheduled pods with standalone editing support.'}
@@ -214,7 +214,7 @@ export function NodeDetailPage() {
             children: (
               <>
                 <div className="grid gap-4 xl:grid-cols-2">
-                  <Card className="kc-detail-card" title={localeCode === 'zh_CN' ? '基础信息' : 'Summary'}>
+                  <Card className="soha-detail-card" title={localeCode === 'zh_CN' ? '基础信息' : 'Summary'}>
                     <Descriptions
                       items={[
                         { key: t('common.name', 'Name'), label: t('common.name', 'Name'), children: nodeDetail.name },
@@ -226,20 +226,20 @@ export function NodeDetailPage() {
                         { key: localeCode === 'zh_CN' ? '存活时长' : 'Age', label: localeCode === 'zh_CN' ? '存活时长' : 'Age', children: formatAgeSeconds(nodeDetail.ageSeconds) },
                       ]}
                     />
-                    <div className="kc-detail-meta">
+                    <div className="soha-detail-meta">
                       <Text strong>{localeCode === 'zh_CN' ? '节点角色:' : 'Roles:'}</Text>
                       {nodeDetail.roles?.length ? (
-                        <div className="kc-tag-list">
+                        <div className="soha-tag-list">
                           {nodeDetail.roles.map((role) => <Tag key={role}>{role}</Tag>)}
                         </div>
                       ) : (
                         <Text type="secondary" className="text-xs">{localeCode === 'zh_CN' ? '未声明角色标签' : 'No explicit node role labels'}</Text>
                       )}
                     </div>
-                    <div className="kc-detail-meta">
+                    <div className="soha-detail-meta">
                       <Text strong>{t('common.labels', 'Labels')}:</Text>
                       {Object.keys(nodeDetail.labels || {}).length ? (
-                        <div className="kc-tag-list">
+                        <div className="soha-tag-list">
                           {Object.entries(nodeDetail.labels || {}).map(([key, value]) => (
                             <Tag key={key}>{key}={value}</Tag>
                           ))}
@@ -248,10 +248,10 @@ export function NodeDetailPage() {
                         <Text type="secondary" className="text-xs">{localeCode === 'zh_CN' ? '未配置标签' : 'No labels configured'}</Text>
                       )}
                     </div>
-                    <div className="kc-detail-meta">
+                    <div className="soha-detail-meta">
                       <Text strong>{localeCode === 'zh_CN' ? '污点:' : 'Taints:'}</Text>
                       {nodeDetail.taints?.length ? (
-                        <div className="kc-tag-list">
+                        <div className="soha-tag-list">
                           {nodeDetail.taints.map((item) => (
                             <Tag key={`${item.key}:${item.effect}:${item.value || ''}`}>
                               {item.key}{item.value ? `=${item.value}` : ''}:{item.effect}
@@ -263,24 +263,24 @@ export function NodeDetailPage() {
                       )}
                     </div>
                     {nodeDetail.annotations && Object.keys(nodeDetail.annotations).length > 0 ? (
-                      <div className="kc-detail-meta">
+                      <div className="soha-detail-meta">
                         <Text strong>{localeCode === 'zh_CN' ? '注解:' : 'Annotations:'}</Text>
-                        <pre className="kc-json-block">{JSON.stringify(nodeDetail.annotations, null, 2)}</pre>
+                        <pre className="soha-json-block">{JSON.stringify(nodeDetail.annotations, null, 2)}</pre>
                       </div>
                     ) : null}
                   </Card>
 
-                  <Card className="kc-detail-card" title={localeCode === 'zh_CN' ? '资源分配' : 'Resource Allocation'}>
+                  <Card className="soha-detail-card" title={localeCode === 'zh_CN' ? '资源分配' : 'Resource Allocation'}>
                     <NodeResourcePanel node={nodeDetail} />
                     {nodeDetail.metricsMessage ? (
-                      <div className="kc-detail-meta">
+                      <div className="soha-detail-meta">
                         <Text type="secondary">{nodeDetail.metricsMessage}</Text>
                       </div>
                     ) : null}
                   </Card>
                 </div>
 
-                <Card className="kc-detail-card" title={localeCode === 'zh_CN' ? '快速编辑 Labels / 污点' : 'Quick Edit Labels / Taints'}>
+                <Card className="soha-detail-card" title={localeCode === 'zh_CN' ? '快速编辑 Labels / 污点' : 'Quick Edit Labels / Taints'}>
                   <Form
                     key={`node-edit:${clusterId}:${nodeName}:${nodeDetailQuery.dataUpdatedAt}`}
                     layout="vertical"
@@ -293,7 +293,7 @@ export function NodeDetailPage() {
                     <Form.Item name="taints" label="Taints(JSON Array)">
                       <Input.TextArea rows={8} />
                     </Form.Item>
-                    <div className="kc-form-actions">
+                    <div className="soha-form-actions">
                       <Button
                         onClick={() => {
                           queryClient.invalidateQueries({ queryKey: ['cluster-node-detail-page', clusterId, nodeName] })
@@ -308,7 +308,7 @@ export function NodeDetailPage() {
                   </Form>
                 </Card>
 
-                <Card className="kc-detail-card" title={localeCode === 'zh_CN' ? `承载 Pods (${nodeDetail.pods?.length ?? 0})` : `Scheduled Pods (${nodeDetail.pods?.length ?? 0})`}>
+                <Card className="soha-detail-card" title={localeCode === 'zh_CN' ? `承载 Pods (${nodeDetail.pods?.length ?? 0})` : `Scheduled Pods (${nodeDetail.pods?.length ?? 0})`}>
                   <AdminTable
                     columns={podColumns}
                     dataSource={nodeDetail.pods ?? []}
@@ -318,7 +318,7 @@ export function NodeDetailPage() {
                   />
                 </Card>
 
-                <Card className="kc-detail-card" title={localeCode === 'zh_CN' ? '节点 Conditions' : 'Node Conditions'}>
+                <Card className="soha-detail-card" title={localeCode === 'zh_CN' ? '节点 Conditions' : 'Node Conditions'}>
                   <AdminTable
                     columns={conditionColumns}
                     dataSource={nodeDetail.conditions ?? []}
@@ -334,17 +334,17 @@ export function NodeDetailPage() {
             key: 'yaml',
             label: t('common.yaml', 'YAML'),
             children: nodeYAMLQuery.isLoading ? (
-              <Card className="kc-detail-card">
+              <Card className="soha-detail-card">
                 <div className="flex items-center justify-center h-64">
                   <Spin size="large" />
                 </div>
               </Card>
             ) : nodeYAMLQuery.isError ? (
-              <Card className="kc-detail-card">
+              <Card className="soha-detail-card">
                 <Text type="warning">{(nodeYAMLQuery.error as Error)?.message || (localeCode === 'zh_CN' ? '节点 YAML 暂不可用' : 'Node YAML is unavailable')}</Text>
               </Card>
             ) : (
-              <Suspense fallback={<Card className="kc-detail-card"><Spin size="large" /></Card>}>
+              <Suspense fallback={<Card className="soha-detail-card"><Spin size="large" /></Card>}>
                 <K8sYamlEditor
                   value={yamlDraft}
                   onChange={setYamlDraft}

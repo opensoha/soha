@@ -4,9 +4,9 @@ import (
 	"context"
 	"testing"
 
-	appaccess "github.com/kubecrux/kubecrux/internal/application/access"
-	domainidentity "github.com/kubecrux/kubecrux/internal/domain/identity"
-	domainmenu "github.com/kubecrux/kubecrux/internal/domain/menu"
+	appaccess "github.com/soha/soha/internal/application/access"
+	domainidentity "github.com/soha/soha/internal/domain/identity"
+	domainmenu "github.com/soha/soha/internal/domain/menu"
 )
 
 type stubRepository struct {

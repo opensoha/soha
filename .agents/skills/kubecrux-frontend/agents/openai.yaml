@@ -1,4 +1,0 @@
-interface:
-  display_name: "Kubecrux Frontend"
-  short_description: "Ant Design 6 workbench UI, routing, menus, and permissions"
-  default_prompt: "Use $kubecrux-frontend to implement or refactor a kubecrux web console feature."

@@ -7,15 +7,15 @@ import (
 	"strings"
 	"time"
 
-	appaccess "github.com/kubecrux/kubecrux/internal/application/access"
-	domainalert "github.com/kubecrux/kubecrux/internal/domain/alert"
-	domaincopilot "github.com/kubecrux/kubecrux/internal/domain/copilot"
-	domainidentity "github.com/kubecrux/kubecrux/internal/domain/identity"
-	domainworkflow "github.com/kubecrux/kubecrux/internal/domain/workflow"
-	mcplogs "github.com/kubecrux/kubecrux/internal/infrastructure/mcp/logs"
-	mcpmetrics "github.com/kubecrux/kubecrux/internal/infrastructure/mcp/metrics"
-	mcptraces "github.com/kubecrux/kubecrux/internal/infrastructure/mcp/traces"
-	"github.com/kubecrux/kubecrux/internal/platform/apperrors"
+	appaccess "github.com/soha/soha/internal/application/access"
+	domainalert "github.com/soha/soha/internal/domain/alert"
+	domaincopilot "github.com/soha/soha/internal/domain/copilot"
+	domainidentity "github.com/soha/soha/internal/domain/identity"
+	domainworkflow "github.com/soha/soha/internal/domain/workflow"
+	mcplogs "github.com/soha/soha/internal/infrastructure/mcp/logs"
+	mcpmetrics "github.com/soha/soha/internal/infrastructure/mcp/metrics"
+	mcptraces "github.com/soha/soha/internal/infrastructure/mcp/traces"
+	"github.com/soha/soha/internal/platform/apperrors"
 )
 
 type DataSourceRepository interface {
@@ -860,7 +860,7 @@ func (s *Service) previewEventFromRule(rule domainalert.AlertRule, result domain
 		ID:           internalRuleEventID(rule, fingerprint),
 		RuleID:       rule.ID,
 		SourceType:   "internal_rule",
-		SourceSystem: "kubecrux",
+		SourceSystem: "soha",
 		Fingerprint:  fingerprint,
 		Title:        firstNonEmpty(strings.TrimSpace(rule.Name), "Alert Rule"),
 		Summary:      firstNonEmpty(result.Summary, rule.Name),

@@ -46,7 +46,7 @@ function renderStringList(values: string[] | undefined, emptyLabel: string) {
     return <Text type="secondary">{emptyLabel}</Text>
   }
   return (
-    <div className="kc-tag-list">
+    <div className="soha-tag-list">
       {values.map((value) => <Tag key={value}>{value}</Tag>)}
     </div>
   )
@@ -59,7 +59,7 @@ function renderRuleSummaries(values: string[] | undefined, emptyLabel: string) {
   return (
     <Space direction="vertical" style={{ width: '100%' }} size={8}>
       {values.map((value) => (
-        <Card key={value} className="kc-detail-card" bodyStyle={{ padding: 12 }}>
+        <Card key={value} className="soha-detail-card" bodyStyle={{ padding: 12 }}>
           <Paragraph style={{ margin: 0 }}>{value}</Paragraph>
         </Card>
       ))}
@@ -118,7 +118,7 @@ function RBACDetailPage<T>({
   }
 
   return (
-    <div className="kc-page">
+    <div className="soha-page">
       <PageHeader
         title={detailTitle}
         description={detailDescription}
@@ -138,7 +138,7 @@ function RBACDetailPage<T>({
             children: isAgentCluster || !yamlPath ? (
               <Alert showIcon type="info" description={yamlUnsupportedDescription(localeCode)} />
             ) : (
-              <Suspense fallback={<Card className="kc-detail-card"><Spin size="large" /></Card>}>
+              <Suspense fallback={<Card className="soha-detail-card"><Spin size="large" /></Card>}>
                 <div style={{ height: 620 }}>
                   <K8sYamlEditor
                     value={yamlState.draft}
@@ -258,7 +258,7 @@ export function PlatformAccessControlRoleDetailPage() {
               { key: localeCode === 'zh_CN' ? '规则数' : 'Rules', value: item.rules },
             ]}
           />
-          <Card className="kc-detail-card" title={localeCode === 'zh_CN' ? '规则摘要' : 'Rule Summaries'}>
+          <Card className="soha-detail-card" title={localeCode === 'zh_CN' ? '规则摘要' : 'Rule Summaries'}>
             {renderRuleSummaries(item.ruleSummaries, localeCode === 'zh_CN' ? '暂无规则摘要' : 'No rule summaries')}
           </Card>
         </>
@@ -363,7 +363,7 @@ export function PlatformAccessControlClusterRoleDetailPage() {
               { key: localeCode === 'zh_CN' ? '聚合规则' : 'Aggregation', value: item.aggregationRules },
             ]}
           />
-          <Card className="kc-detail-card" title={localeCode === 'zh_CN' ? '规则摘要' : 'Rule Summaries'}>
+          <Card className="soha-detail-card" title={localeCode === 'zh_CN' ? '规则摘要' : 'Rule Summaries'}>
             {renderRuleSummaries(item.ruleSummaries, localeCode === 'zh_CN' ? '暂无规则摘要' : 'No rule summaries')}
           </Card>
         </>

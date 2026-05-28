@@ -186,11 +186,11 @@ type ClusterConfig struct {
 func Load() (Config, error) {
 	v := viper.New()
 	v.SetConfigType("yaml")
-	v.SetEnvPrefix("KC")
+	v.SetEnvPrefix("SOHA")
 	v.SetEnvKeyReplacer(stringsReplacer())
 	setDefaults(v)
 
-	configFile := os.Getenv("KC_CONFIG_FILE")
+	configFile := os.Getenv("SOHA_CONFIG_FILE")
 	if configFile != "" {
 		v.SetConfigFile(configFile)
 	} else {
@@ -255,7 +255,7 @@ func (c DatabaseConfig) ResolveMigrationPath() string {
 }
 
 func setDefaults(v *viper.Viper) {
-	v.SetDefault("app.name", "kubecrux")
+	v.SetDefault("app.name", "soha")
 	v.SetDefault("app.env", "development")
 	v.SetDefault("http.addr", ":8080")
 	v.SetDefault("http.read_timeout", "15s")
@@ -272,14 +272,14 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("runtime.alert_upsert_batch_size", 100)
 	v.SetDefault("runtime.execution_runner_token", "")
 	v.SetDefault("runtime.execution_job_cluster_id", "")
-	v.SetDefault("runtime.execution_job_namespace", "kubecrux-system")
+	v.SetDefault("runtime.execution_job_namespace", "soha-system")
 	v.SetDefault("runtime.execution_job_image", "alpine:3.20")
 	v.SetDefault("runtime.execution_job_git_image", "alpine/git:2.47.0")
 	v.SetDefault("runtime.execution_job_ttl_seconds", 3600)
 	v.SetDefault("database.driver", "postgres")
 	v.SetDefault("database.host", "localhost")
 	v.SetDefault("database.port", 5432)
-	v.SetDefault("database.name", "kubecrux")
+	v.SetDefault("database.name", "soha")
 	v.SetDefault("database.user", "pgsql")
 	v.SetDefault("database.password", "pgsql")
 	v.SetDefault("database.sslmode", "disable")
@@ -292,10 +292,10 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("auth.enable_dev_auth", true)
 	v.SetDefault("auth.dev_principal.user_id", "admin")
 	v.SetDefault("auth.dev_principal.name", "Admin")
-	v.SetDefault("auth.dev_principal.email", "admin@kubecrux.local")
-	v.SetDefault("auth.dev_principal.password", "kubecrux")
+	v.SetDefault("auth.dev_principal.email", "admin@soha.local")
+	v.SetDefault("auth.dev_principal.password", "soha")
 	v.SetDefault("auth.dev_principal.roles", []string{"admin", "ops", "auditor"})
-	v.SetDefault("auth.jwt.issuer", "kubecrux")
+	v.SetDefault("auth.jwt.issuer", "soha")
 	v.SetDefault("auth.jwt.access_ttl", "15m")
 	v.SetDefault("auth.jwt.refresh_ttl", "168h")
 	v.SetDefault("auth.oidc.enabled", false)

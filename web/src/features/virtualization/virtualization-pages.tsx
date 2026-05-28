@@ -229,11 +229,11 @@ function badgeStatusForTone(tone: OverviewTone): 'success' | 'warning' | 'error'
 
 function OperationStatusChips({ counts, compact = false }: { counts: Array<{ key: string; label: string; value: number; tone?: OverviewTone }>; compact?: boolean }) {
   return (
-    <div className={`kc-vrt-chip-grid${compact ? ' is-compact' : ''}`}>
+    <div className={`soha-vrt-chip-grid${compact ? ' is-compact' : ''}`}>
       {counts.map((item) => (
-        <div key={item.key} className={`kc-vrt-chip is-${item.tone ?? 'default'}`}>
-          <span className="kc-vrt-chip-label">{item.label}</span>
-          <span className="kc-vrt-chip-value">{item.value}</span>
+        <div key={item.key} className={`soha-vrt-chip is-${item.tone ?? 'default'}`}>
+          <span className="soha-vrt-chip-label">{item.label}</span>
+          <span className="soha-vrt-chip-value">{item.value}</span>
         </div>
       ))}
     </div>
@@ -260,31 +260,31 @@ function AttentionList({
   tone?: OverviewTone
 }) {
   return (
-    <section className={`kc-vrt-lane is-${tone}`}>
-      <div className="kc-vrt-lane-head">
+    <section className={`soha-vrt-lane is-${tone}`}>
+      <div className="soha-vrt-lane-head">
         <div>
-          <div className="kc-vrt-lane-title">{title}</div>
-          <div className="kc-vrt-lane-description">{description}</div>
+          <div className="soha-vrt-lane-title">{title}</div>
+          <div className="soha-vrt-lane-description">{description}</div>
         </div>
-        {action ? <div className="kc-vrt-lane-action">{action}</div> : null}
+        {action ? <div className="soha-vrt-lane-action">{action}</div> : null}
       </div>
       {items.length === 0 ? (
-        <div className="kc-vrt-empty">
+        <div className="soha-vrt-empty">
           <Empty description={emptyText} image={Empty.PRESENTED_IMAGE_SIMPLE} />
         </div>
       ) : (
-        <div className="kc-vrt-lane-items">
+        <div className="soha-vrt-lane-items">
           {items.map((item) => (
-            <div key={item.id} className="kc-vrt-attention-row">
-              <div className="kc-vrt-attention-row-head">
+            <div key={item.id} className="soha-vrt-attention-row">
+              <div className="soha-vrt-attention-row-head">
                 <Space wrap>
                   <Text strong>{item.title}</Text>
                   {statusTag(item.status)}
                 </Space>
-                {renderActions ? <Space wrap className="kc-vrt-row-actions">{renderActions(item)}</Space> : null}
+                {renderActions ? <Space wrap className="soha-vrt-row-actions">{renderActions(item)}</Space> : null}
               </div>
-              <div className="kc-vrt-attention-message">{item.message || '-'}</div>
-              {renderMeta ? <div className="kc-vrt-attention-meta">{renderMeta(item)}</div> : null}
+              <div className="soha-vrt-attention-message">{item.message || '-'}</div>
+              {renderMeta ? <div className="soha-vrt-attention-meta">{renderMeta(item)}</div> : null}
             </div>
           ))}
         </div>
@@ -373,7 +373,7 @@ function TaskProgressBanner({ task, status, title, onCancel, cancelling }: TaskP
   const taskStatus = task?.status ? <Tag color={STATUS_COLORS[task.status] ?? 'blue'}>{task.status}</Tag> : null
   return (
     <Alert
-      className="kc-vrt-task-banner"
+      className="soha-vrt-task-banner"
       type={isError ? 'warning' : 'info'}
       showIcon
       icon={isError ? undefined : <Spin size="small" />}
@@ -407,19 +407,19 @@ function VirtualizationPageHeader({
   status?: string
 }) {
   return (
-    <section className={`kc-vrt-commandbar kc-vrt-page-header is-${tone}`}>
-      <div className="kc-vrt-commandbar-main">
-        <div className="kc-vrt-title-row">
-          <h1 className="kc-overview-title">{title}</h1>
+    <section className={`soha-vrt-commandbar soha-vrt-page-header is-${tone}`}>
+      <div className="soha-vrt-commandbar-main">
+        <div className="soha-vrt-title-row">
+          <h1 className="soha-overview-title">{title}</h1>
           {status ? <Badge status={badgeStatusForTone(tone)} text={status} /> : null}
         </div>
         {meta.length > 0 ? (
-          <div className="kc-vrt-commandbar-meta">
+          <div className="soha-vrt-commandbar-meta">
             {meta.map((item) => <span key={item}>{item}</span>)}
           </div>
         ) : null}
       </div>
-      {actions ? <div className="kc-vrt-commandbar-actions">{actions}</div> : null}
+      {actions ? <div className="soha-vrt-commandbar-actions">{actions}</div> : null}
     </section>
   )
 }
@@ -438,21 +438,21 @@ function VirtualizationTableHeader({
   status?: string
 }) {
   return (
-    <div className={`kc-admin-table-header kc-vrt-table-header is-${tone}`}>
-      <div className="kc-admin-table-header-main">
-        <div className="kc-admin-table-title-block">
-          <div className="kc-vrt-title-row">
+    <div className={`soha-admin-table-header soha-vrt-table-header is-${tone}`}>
+      <div className="soha-admin-table-header-main">
+        <div className="soha-admin-table-title-block">
+          <div className="soha-vrt-title-row">
             <Text strong>{title}</Text>
             {status ? <Badge status={badgeStatusForTone(tone)} text={status} /> : null}
           </div>
           {meta.length > 0 ? (
-            <div className="kc-vrt-commandbar-meta">
+            <div className="soha-vrt-commandbar-meta">
               {meta.map((item) => <span key={item}>{item}</span>)}
             </div>
           ) : null}
         </div>
       </div>
-      {actions ? <div className="kc-admin-table-header-extra">{actions}</div> : null}
+      {actions ? <div className="soha-admin-table-header-extra">{actions}</div> : null}
     </div>
   )
 }
@@ -833,8 +833,8 @@ function OperationsTable({
 
   return (
     <>
-      <div className={`kc-vrt-filterbar${toolbarExtra ? ' kc-vrt-filterbar--split' : ''}`}>
-        <div className="kc-vrt-filterbar-main">
+      <div className={`soha-vrt-filterbar${toolbarExtra ? ' soha-vrt-filterbar--split' : ''}`}>
+        <div className="soha-vrt-filterbar-main">
           <Segmented
             size="small"
             value={preset}
@@ -855,10 +855,10 @@ function OperationsTable({
             }}
           />
         </div>
-        {toolbarExtra ? <div className="kc-vrt-filterbar-extra">{toolbarExtra}</div> : null}
+        {toolbarExtra ? <div className="soha-vrt-filterbar-extra">{toolbarExtra}</div> : null}
       </div>
       {selectedTaskRowKeys.length > 0 ? (
-        <div className="kc-vrt-selection-bar">
+        <div className="soha-vrt-selection-bar">
           <Text type="secondary">已选择 {selectedTaskRowKeys.length} 个任务</Text>
           <Space wrap>
             {canManageOperations ? <Button danger disabled={selectedTaskRowKeys.some((id) => !selectableOperationIds(filteredOperations, 'cancel').includes(String(id)))} onClick={() => {
@@ -889,7 +889,7 @@ function OperationsTable({
       ]} />
       <Table
         rowKey="id"
-        className="kc-admin-table kc-vrt-table"
+        className="soha-admin-table soha-vrt-table"
         rowSelection={{
           selectedRowKeys: selectedTaskRowKeys,
           onChange: (keys) => setSelectedTaskRowKeys(keys),
@@ -932,7 +932,7 @@ function OperationsTable({
             复制日志
           </Button>
         </div>
-        <pre className="mt-4 max-h-[520px] overflow-auto rounded border border-[var(--kc-border)] bg-[var(--kc-surface-muted)] p-3 text-xs">
+        <pre className="mt-4 max-h-[520px] overflow-auto rounded border border-[var(--soha-border)] bg-[var(--soha-surface-muted)] p-3 text-xs">
           {(logs.length
             ? logs.map((item) => `[${formatDateTime(item.createdAt)}] ${item.logLevel ?? 'info'} ${item.message}`).join('\n')
             : selectedOperation?.logs?.length
@@ -1146,15 +1146,15 @@ export function VirtualizationOverviewPage() {
   ]
 
   return (
-    <div className="kc-page kc-virtualization-overview">
-      <section className={`kc-overview-hero kc-vrt-overview-hero is-${overviewTone}`}>
-        <div className="kc-overview-hero-header kc-vrt-overview-hero-header">
-          <div className="kc-vrt-commandbar-main">
-            <div className="kc-vrt-title-row">
-              <h1 className="kc-overview-title">虚拟化总览</h1>
+    <div className="soha-page soha-virtualization-overview">
+      <section className={`soha-overview-hero soha-vrt-overview-hero is-${overviewTone}`}>
+        <div className="soha-overview-hero-header soha-vrt-overview-hero-header">
+          <div className="soha-vrt-commandbar-main">
+            <div className="soha-vrt-title-row">
+              <h1 className="soha-overview-title">虚拟化总览</h1>
               <Badge status={badgeStatusForTone(overviewTone)} text={overviewStatusLabel} />
             </div>
-            <div className="kc-vrt-commandbar-meta">
+            <div className="soha-vrt-commandbar-meta">
               <span>连接 {healthyConnections}/{totalConnections}</span>
               <span>Provider {providerSummary.length}</span>
               <span>VM {runningVmCount}/{vmCount}</span>
@@ -1162,7 +1162,7 @@ export function VirtualizationOverviewPage() {
             </div>
           </div>
           {canSync ? (
-            <Space className="kc-vrt-commandbar-actions" wrap>
+            <Space className="soha-vrt-commandbar-actions" wrap>
               <Link to="/virtualization/sync">
                 <Button icon={<CloudSyncOutlined />}>同步任务</Button>
               </Link>
@@ -1172,18 +1172,18 @@ export function VirtualizationOverviewPage() {
             </Space>
           ) : null}
         </div>
-        <div className="kc-overview-metric-grid kc-vrt-metric-grid" aria-label="虚拟化运行指标">
+        <div className="soha-overview-metric-grid soha-vrt-metric-grid" aria-label="虚拟化运行指标">
           {heroStats.map((item) => (
-            <Card key={item.key} size="small" variant="outlined" className={`kc-overview-metric-card kc-vrt-metric-card is-${item.tone}`}>
-              <button type="button" className="kc-vrt-metric-card-button" onClick={item.action}>
-                <div className="kc-overview-metric-card-head">
-                  <div className="kc-overview-metric-copy">
-                    <Text className="kc-overview-metric-label">{item.label}</Text>
-                    <span className="kc-vrt-stat-value">{item.value}</span>
+            <Card key={item.key} size="small" variant="outlined" className={`soha-overview-metric-card soha-vrt-metric-card is-${item.tone}`}>
+              <button type="button" className="soha-vrt-metric-card-button" onClick={item.action}>
+                <div className="soha-overview-metric-card-head">
+                  <div className="soha-overview-metric-copy">
+                    <Text className="soha-overview-metric-label">{item.label}</Text>
+                    <span className="soha-vrt-stat-value">{item.value}</span>
                   </div>
-                  <span className="kc-overview-metric-icon">{item.icon}</span>
+                  <span className="soha-overview-metric-icon">{item.icon}</span>
                 </div>
-                <Text className="kc-overview-metric-helper">{item.helper}</Text>
+                <Text className="soha-overview-metric-helper">{item.helper}</Text>
               </button>
             </Card>
           ))}
@@ -1197,9 +1197,9 @@ export function VirtualizationOverviewPage() {
         cancelling={cancelSyncMutation.isPending}
       />
 
-      <div className="kc-vrt-workbench-grid">
-        <div className="kc-vrt-workbench-main">
-          <div className="kc-vrt-lane-grid">
+      <div className="soha-vrt-workbench-grid">
+        <div className="soha-vrt-workbench-main">
+          <div className="soha-vrt-lane-grid">
             <AttentionList
               title="高风险连接"
               description="不可用、降级、凭证缺失、未同步"
@@ -1275,24 +1275,24 @@ export function VirtualizationOverviewPage() {
             />
           </div>
 
-          <section className="kc-vrt-panel kc-vrt-table-panel">
-            <div className="kc-vrt-panel-head">
+          <section className="soha-vrt-panel soha-vrt-table-panel">
+            <div className="soha-vrt-panel-head">
               <div>
-                <div className="kc-vrt-panel-title">任务流水</div>
-                <div className="kc-vrt-panel-caption">最近操作与异常快照</div>
+                <div className="soha-vrt-panel-title">任务流水</div>
+                <div className="soha-vrt-panel-caption">最近操作与异常快照</div>
               </div>
               <Button type="text" size="small" onClick={() => navigate('/virtualization/operations')}>
                 查看全部
               </Button>
             </div>
-            <div className="kc-vrt-panel-body">
+            <div className="soha-vrt-panel-body">
               <Table
                 rowKey="id"
                 size="small"
                 pagination={false}
                 loading={overviewQuery.isLoading}
                 dataSource={operations.length > 0 ? operations.slice(0, 8) : recentAbnormal}
-                className="kc-admin-table kc-vrt-overview-table"
+                className="soha-admin-table soha-vrt-overview-table"
                 locale={{ emptyText: '暂无任务记录' }}
                 scroll={{ x: 920 }}
                 columns={[
@@ -1309,16 +1309,16 @@ export function VirtualizationOverviewPage() {
           </section>
         </div>
 
-        <aside className="kc-vrt-side-stack">
-          <section className="kc-vrt-panel">
-            <div className="kc-vrt-panel-head">
+        <aside className="soha-vrt-side-stack">
+          <section className="soha-vrt-panel">
+            <div className="soha-vrt-panel-head">
               <div>
-                <div className="kc-vrt-panel-title">连接健康态势</div>
-                <div className="kc-vrt-panel-caption">纳管连接状态</div>
+                <div className="soha-vrt-panel-title">连接健康态势</div>
+                <div className="soha-vrt-panel-caption">纳管连接状态</div>
               </div>
               <Button type="text" size="small" onClick={() => navigate('/virtualization/clusters')}>连接页</Button>
             </div>
-            <div className="kc-vrt-panel-body">
+            <div className="soha-vrt-panel-body">
               <OperationStatusChips compact counts={[
                 { key: 'healthy', label: '健康连接', value: healthyConnections, tone: healthyConnections > 0 ? 'success' : 'default' },
                 { key: 'degraded', label: '降级连接', value: degradedConnections, tone: degradedConnections > 0 ? 'warning' : 'default' },
@@ -1328,15 +1328,15 @@ export function VirtualizationOverviewPage() {
             </div>
           </section>
 
-          <section className="kc-vrt-panel">
-            <div className="kc-vrt-panel-head">
+          <section className="soha-vrt-panel">
+            <div className="soha-vrt-panel-head">
               <div>
-                <div className="kc-vrt-panel-title">任务处置态势</div>
-                <div className="kc-vrt-panel-caption">队列、执行、失败</div>
+                <div className="soha-vrt-panel-title">任务处置态势</div>
+                <div className="soha-vrt-panel-caption">队列、执行、失败</div>
               </div>
               <Button type="text" size="small" onClick={() => navigate('/virtualization/operations')}>任务中心</Button>
             </div>
-            <div className="kc-vrt-panel-body">
+            <div className="soha-vrt-panel-body">
               <OperationStatusChips compact counts={[
                 { key: 'queued', label: '排队中', value: taskSummary?.queued ?? 0, tone: (taskSummary?.queued ?? 0) > 0 ? 'warning' : 'default' },
                 { key: 'running', label: '执行中', value: taskSummary?.running ?? 0, tone: (taskSummary?.running ?? 0) > 0 ? 'warning' : 'default' },
@@ -1346,19 +1346,19 @@ export function VirtualizationOverviewPage() {
             </div>
           </section>
 
-          <section className="kc-vrt-panel">
-            <div className="kc-vrt-panel-head">
+          <section className="soha-vrt-panel">
+            <div className="soha-vrt-panel-head">
               <div>
-                <div className="kc-vrt-panel-title">Provider 分布</div>
-                <div className="kc-vrt-panel-caption">连接健康与 VM 覆盖</div>
+                <div className="soha-vrt-panel-title">Provider 分布</div>
+                <div className="soha-vrt-panel-caption">连接健康与 VM 覆盖</div>
               </div>
             </div>
-            <div className="kc-vrt-panel-body">
+            <div className="soha-vrt-panel-body">
               {providerRows.length > 0 ? (
-                <div className="kc-vrt-provider-list">
+                <div className="soha-vrt-provider-list">
                   {providerRows.map((item) => (
-                    <div key={item.provider} className={`kc-vrt-provider-row is-${item.tone}`}>
-                      <div className="kc-vrt-provider-row-head">
+                    <div key={item.provider} className={`soha-vrt-provider-row is-${item.tone}`}>
+                      <div className="soha-vrt-provider-row-head">
                         <Text strong>{item.provider.toUpperCase()}</Text>
                         <Text type="secondary">{item.runningVms ?? 0}/{item.vms ?? 0} VM</Text>
                       </div>
@@ -1369,7 +1369,7 @@ export function VirtualizationOverviewPage() {
                         status={item.tone === 'danger' ? 'exception' : item.tone === 'success' ? 'success' : 'normal'}
                         strokeColor={item.tone === 'warning' ? '#f97316' : undefined}
                       />
-                      <div className="kc-vrt-provider-meta">
+                      <div className="soha-vrt-provider-meta">
                         <span>健康 {item.healthy}</span>
                         <span>降级 {item.degraded}</span>
                         <span>不可用 {item.unavailable}</span>
@@ -1378,21 +1378,21 @@ export function VirtualizationOverviewPage() {
                   ))}
                 </div>
               ) : (
-                <div className="kc-vrt-empty">
+                <div className="soha-vrt-empty">
                   <Empty description="暂无 Provider 数据" image={Empty.PRESENTED_IMAGE_SIMPLE} />
                 </div>
               )}
             </div>
           </section>
 
-          <section className="kc-vrt-panel">
-            <div className="kc-vrt-panel-head">
+          <section className="soha-vrt-panel">
+            <div className="soha-vrt-panel-head">
               <div>
-                <div className="kc-vrt-panel-title">运维统计摘要</div>
-                <div className="kc-vrt-panel-caption">凭证、同步、Provider</div>
+                <div className="soha-vrt-panel-title">运维统计摘要</div>
+                <div className="soha-vrt-panel-caption">凭证、同步、Provider</div>
               </div>
             </div>
-            <div className="kc-vrt-panel-body">
+            <div className="soha-vrt-panel-body">
               <OperationStatusChips compact counts={operationStats} />
             </div>
           </section>
@@ -1410,7 +1410,7 @@ export function VirtualizationOverviewPage() {
           <Descriptions.Item label="最近心跳">{formatDateTime(selectedOperation?.lastHeartbeatAt)}</Descriptions.Item>
         </Descriptions>
         {selectedOperation?.message ? <Alert className="mt-4" type={isAbnormalOperation(selectedOperation.status) ? 'error' : 'info'} message={selectedOperation.message} /> : null}
-        <pre className="mt-4 max-h-[520px] overflow-auto rounded border border-[var(--kc-border)] bg-[var(--kc-surface-muted)] p-3 text-xs">
+        <pre className="mt-4 max-h-[520px] overflow-auto rounded border border-[var(--soha-border)] bg-[var(--soha-surface-muted)] p-3 text-xs">
           {(logs.length
             ? logs.map((item) => `[${formatDateTime(item.createdAt)}] ${item.logLevel ?? 'info'} ${item.message}`).join('\n')
             : selectedOperation?.message) || (logsQuery.isLoading ? '日志加载中' : '暂无日志')}
@@ -1543,7 +1543,7 @@ export function VirtualizationVmsPage() {
   ]
 
   return (
-    <div className="kc-page kc-virtualization-page">
+    <div className="soha-page soha-virtualization-page">
       <TaskProgressBanner
         task={streamedTask}
         status={streamStatus}
@@ -1551,17 +1551,17 @@ export function VirtualizationVmsPage() {
         onCancel={streamedTask?.id ? () => cancelCreateMutation.mutate(streamedTask.id) : undefined}
         cancelling={cancelCreateMutation.isPending}
       />
-      <Card size="small" variant="outlined" className="kc-vrt-list-card kc-vrt-table-card">
+      <Card size="small" variant="outlined" className="soha-vrt-list-card soha-vrt-table-card">
         <VirtualizationTableHeader
           title="虚拟机"
         />
         <Form
           form={filterForm}
-          className="kc-vrt-filterbar kc-vrt-filterbar--split"
+          className="soha-vrt-filterbar soha-vrt-filterbar--split"
           layout="inline"
           onFinish={(values) => setFilters((current) => ({ ...current, ...values, page: 1 }))}
         >
-          <div className="kc-vrt-filterbar-main">
+          <div className="soha-vrt-filterbar-main">
             <Form.Item name="search">
               <Input allowClear prefix={<SearchOutlined />} placeholder="搜索名称、IP 或节点" />
             </Form.Item>
@@ -1602,7 +1602,7 @@ export function VirtualizationVmsPage() {
             </Space>
           </div>
           {canManageVMs ? (
-            <div className="kc-vrt-filterbar-extra">
+            <div className="soha-vrt-filterbar-extra">
               <Button type="primary" icon={<PlusOutlined />} onClick={() => setDrawerOpen(true)}>
                 创建虚拟机
               </Button>
@@ -1611,7 +1611,7 @@ export function VirtualizationVmsPage() {
         </Form>
         <Table
           rowKey="id"
-          className="kc-admin-table kc-vrt-table"
+          className="soha-admin-table soha-vrt-table"
           size="small"
           loading={vmsQuery.isLoading}
           dataSource={vmPage.items}
@@ -1801,7 +1801,7 @@ export function VirtualizationVmDetailPage() {
   })
 
   return (
-    <div className="kc-page kc-virtualization-page">
+    <div className="soha-page soha-virtualization-page">
       <VirtualizationPageHeader
         title={vm?.name ?? '虚拟机详情'}
         tone={latestAbnormalOperation ? 'danger' : isRunning ? 'success' : 'default'}
@@ -1810,7 +1810,7 @@ export function VirtualizationVmDetailPage() {
         actions={<Link to="/virtualization/vms"><Button>返回列表</Button></Link>}
       />
       {!vm && !detailQuery.isLoading ? (
-        <Card size="small" className="kc-vrt-list-card">
+        <Card size="small" className="soha-vrt-list-card">
           <Empty description="未找到虚拟机详情" />
         </Card>
       ) : null}
@@ -1823,7 +1823,7 @@ export function VirtualizationVmDetailPage() {
           action={<Space><Button size="small" onClick={() => setActiveTab('operations')}>查看任务历史</Button><Button size="small" onClick={() => navigate(buildInvestigationPath({ connectionId: vm?.connectionId, vmId: vm?.id, namespace: vm?.namespace, workload: vm?.name, timeRangeMinutes: 60 }))}>AI调查</Button></Space>}
         />
       ) : null}
-      <Card size="small" className="kc-vrt-list-card" loading={detailQuery.isLoading}>
+      <Card size="small" className="soha-vrt-list-card" loading={detailQuery.isLoading}>
         <Descriptions size="small" column={{ xs: 1, md: 2, xl: 3 }} bordered>
           <Descriptions.Item label="ID">{vm?.id ?? '-'}</Descriptions.Item>
           <Descriptions.Item label="Provider">{vm?.provider ?? '-'}</Descriptions.Item>
@@ -1865,7 +1865,7 @@ export function VirtualizationVmDetailPage() {
             forceRender: true,
             children: (
               <Card size="small">
-                <pre className="max-h-[520px] overflow-auto rounded border border-[var(--kc-border)] bg-[var(--kc-surface-muted)] p-3 text-xs">
+                <pre className="max-h-[520px] overflow-auto rounded border border-[var(--soha-border)] bg-[var(--soha-surface-muted)] p-3 text-xs">
                   {providerRaw || '暂无 provider raw 数据'}
                 </pre>
               </Card>
@@ -1899,7 +1899,7 @@ export function VirtualizationVmDetailPage() {
             forceRender: true,
             children: (
               <Card size="small">
-                <pre className="max-h-[520px] overflow-auto rounded border border-[var(--kc-border)] bg-[var(--kc-surface-muted)] p-3 text-xs">
+                <pre className="max-h-[520px] overflow-auto rounded border border-[var(--soha-border)] bg-[var(--soha-surface-muted)] p-3 text-xs">
                   {(detail?.logs ?? []).map((item) => `[${formatDateTime(item.createdAt)}] ${item.logLevel ?? 'info'} ${item.message}`).join('\n') || '暂无日志'}
                 </pre>
               </Card>
@@ -2105,36 +2105,36 @@ export function VirtualizationClustersPage() {
   ]
 
   return (
-    <div className="kc-page kc-virtualization-page">
-      <Card size="small" variant="outlined" className="kc-vrt-list-card kc-vrt-table-card">
+    <div className="soha-page soha-virtualization-page">
+      <Card size="small" variant="outlined" className="soha-vrt-list-card soha-vrt-table-card">
         <VirtualizationTableHeader title="集群" />
-        <div className="kc-vrt-filterbar kc-vrt-filterbar--split">
-          <div className="kc-vrt-filterbar-main kc-vrt-filter-grid">
-            <div className="kc-vrt-filter-item">
-              <div className="kc-vrt-filter-label">异常过滤</div>
+        <div className="soha-vrt-filterbar soha-vrt-filterbar--split">
+          <div className="soha-vrt-filterbar-main soha-vrt-filter-grid">
+            <div className="soha-vrt-filter-item">
+              <div className="soha-vrt-filter-label">异常过滤</div>
               <Switch checked={showOnlyAbnormal} onChange={setShowOnlyAbnormal} checkedChildren="仅异常" unCheckedChildren="全部" />
             </div>
-            <div className="kc-vrt-filter-item">
-              <div className="kc-vrt-filter-label">启用状态</div>
+            <div className="soha-vrt-filter-item">
+              <div className="soha-vrt-filter-label">启用状态</div>
               <Select value={enabledFilter} onChange={setEnabledFilter} options={[{ value: 'all', label: '全部' }, { value: 'enabled', label: '仅启用' }, { value: 'disabled', label: '仅禁用' }]} />
             </div>
-            <div className="kc-vrt-filter-item">
-              <div className="kc-vrt-filter-label">Provider</div>
+            <div className="soha-vrt-filter-item">
+              <div className="soha-vrt-filter-label">Provider</div>
               <Select value={providerFilter} onChange={setProviderFilter} options={[{ value: 'all', label: '全部' }, { value: 'kubevirt', label: 'KubeVirt' }, { value: 'pve', label: 'PVE' }]} />
             </div>
-            <div className="kc-vrt-filter-item">
-              <div className="kc-vrt-filter-label">同步状态</div>
+            <div className="soha-vrt-filter-item">
+              <div className="soha-vrt-filter-label">同步状态</div>
               <Switch checked={showNeverSynced} onChange={setShowNeverSynced} checkedChildren="未同步" unCheckedChildren="全部" />
             </div>
           </div>
           {canManageClusters ? (
-            <div className="kc-vrt-filterbar-extra">
+            <div className="soha-vrt-filterbar-extra">
               <Button type="primary" icon={<PlusOutlined />} onClick={() => openEditor()}>新增连接</Button>
             </div>
           ) : null}
         </div>
         {selectedClusterRowKeys.length > 0 ? (
-          <div className="kc-vrt-selection-bar">
+          <div className="soha-vrt-selection-bar">
             <Text type="secondary">已选择 {selectedClusterRowKeys.length} 个连接</Text>
             <Space wrap>
               {canManageClusters ? <Button onClick={() => {
@@ -2159,7 +2159,7 @@ export function VirtualizationClustersPage() {
         ) : null}
         <Table
           rowKey="id"
-          className="kc-admin-table kc-vrt-table"
+          className="soha-admin-table soha-vrt-table"
           rowSelection={{
             selectedRowKeys: selectedClusterRowKeys,
             onChange: (keys) => setSelectedClusterRowKeys(keys),
@@ -2369,16 +2369,16 @@ export function VirtualizationImagesPage() {
     },
   ]
   return (
-    <div className="kc-page kc-virtualization-page">
-      <Card size="small" variant="outlined" className="kc-vrt-list-card kc-vrt-table-card">
+    <div className="soha-page soha-virtualization-page">
+      <Card size="small" variant="outlined" className="soha-vrt-list-card soha-vrt-table-card">
         <VirtualizationTableHeader title="镜像" />
         <Form
           form={filterForm}
-          className="kc-vrt-filterbar kc-vrt-filterbar--split"
+          className="soha-vrt-filterbar soha-vrt-filterbar--split"
           layout="inline"
           onFinish={(values) => setFilters((current) => ({ ...current, ...values, page: 1 }))}
         >
-          <div className="kc-vrt-filterbar-main">
+          <div className="soha-vrt-filterbar-main">
             <Form.Item name="search">
               <Input allowClear prefix={<SearchOutlined />} placeholder="搜索镜像、模板或 ISO" />
             </Form.Item>
@@ -2401,14 +2401,14 @@ export function VirtualizationImagesPage() {
             </Space>
           </div>
           {canManageImages ? (
-            <div className="kc-vrt-filterbar-extra">
+            <div className="soha-vrt-filterbar-extra">
               <Button type="primary" icon={<PlusOutlined />} onClick={() => openImageEditor()}>新增镜像入口</Button>
             </div>
           ) : null}
         </Form>
         <Table
           rowKey="id"
-          className="kc-admin-table kc-vrt-table"
+          className="soha-admin-table soha-vrt-table"
           size="small"
           loading={imagesQuery.isLoading}
           dataSource={imagesPage.items}
@@ -2532,18 +2532,18 @@ export function VirtualizationFlavorsPage() {
     },
   ]
   return (
-    <div className="kc-page kc-virtualization-page">
-      <Card size="small" variant="outlined" className="kc-vrt-list-card kc-vrt-table-card">
+    <div className="soha-page soha-virtualization-page">
+      <Card size="small" variant="outlined" className="soha-vrt-list-card soha-vrt-table-card">
         <VirtualizationTableHeader title="规格" />
         {canManageFlavors ? (
-          <div className="kc-vrt-filterbar kc-vrt-filterbar--split">
-            <div className="kc-vrt-filterbar-main" />
-            <div className="kc-vrt-filterbar-extra">
+          <div className="soha-vrt-filterbar soha-vrt-filterbar--split">
+            <div className="soha-vrt-filterbar-main" />
+            <div className="soha-vrt-filterbar-extra">
               <Button type="primary" icon={<PlusOutlined />} onClick={() => openEditor()}>新增规格</Button>
             </div>
           </div>
         ) : null}
-        <Table rowKey="id" className="kc-admin-table kc-vrt-table" size="small" loading={flavorsQuery.isLoading} dataSource={flavors} columns={columns} scroll={{ x: 900 }} />
+        <Table rowKey="id" className="soha-admin-table soha-vrt-table" size="small" loading={flavorsQuery.isLoading} dataSource={flavors} columns={columns} scroll={{ x: 900 }} />
       </Card>
       <Drawer title={editing ? '编辑规格' : '新增规格'} size="large" open={drawerOpen} onClose={() => setDrawerOpen(false)}>
         <Form form={form} layout="vertical" initialValues={{ cpu: 2, memoryMiB: 4096, diskGiB: 40, enabled: true }} onFinish={(values) => saveMutation.mutate(values)}>
@@ -2581,8 +2581,8 @@ export function VirtualizationOperationsPage() {
   const location = useLocation()
   const preset = operationPresetFromSearch(location.search)
   return (
-    <div className="kc-page kc-virtualization-page">
-      <Card size="small" variant="outlined" className="kc-vrt-list-card kc-vrt-table-card">
+    <div className="soha-page soha-virtualization-page">
+      <Card size="small" variant="outlined" className="soha-vrt-list-card soha-vrt-table-card">
         <VirtualizationTableHeader title="操作记录" />
         <OperationsTable initialPreset={preset} />
       </Card>
@@ -2607,10 +2607,10 @@ export function VirtualizationSyncPage() {
     </Button>
   ) : null, [canSync, syncMutation])
   return (
-    <div className="kc-page kc-virtualization-page">
-      <Card size="small" variant="outlined" className="kc-vrt-list-card kc-vrt-table-card">
+    <div className="soha-page soha-virtualization-page">
+      <Card size="small" variant="outlined" className="soha-vrt-list-card soha-vrt-table-card">
         <VirtualizationTableHeader title="同步任务" />
-        <div className="kc-vrt-panel-note">仅展示 asset_sync 类型任务</div>
+        <div className="soha-vrt-panel-note">仅展示 asset_sync 类型任务</div>
         <OperationsTable assetType="asset_sync" toolbarExtra={headerActions} />
       </Card>
     </div>

@@ -31,7 +31,7 @@ init-db:
 	@echo "Starting PostgreSQL..."
 	@$(COMPOSE) -f $(ROOT_COMPOSE_FILE) up -d postgres
 	@printf "Waiting for PostgreSQL"; \
-	until $(COMPOSE) -f $(ROOT_COMPOSE_FILE) exec -T postgres pg_isready -U pgsql -d kubecrux >/dev/null 2>&1; do \
+	until $(COMPOSE) -f $(ROOT_COMPOSE_FILE) exec -T postgres pg_isready -U pgsql -d soha >/dev/null 2>&1; do \
 		printf "."; \
 		sleep 2; \
 	done; \
@@ -92,7 +92,7 @@ deploy-pve-vm:
 	@echo "Deploying Proxmox VE lab VM into KubeVirt..."
 	@KUBECONFIG="$(KUBECONFIG)" $(KUBECTL) apply -f $(PVE_VM_MANIFEST)
 	@echo "PVE API will be reachable from the host at https://127.0.0.1:8006 after the installer finishes and PVE boots."
-	@echo "If kubecrux runs in the compose app container, use endpoint https://k3s:30006 instead."
+	@echo "If soha runs in the compose app container, use endpoint https://k3s:30006 instead."
 	@echo "Use: KUBECONFIG=$(KUBECONFIG) virtctl -n virt-lab vnc pve-lab"
 
 init-pve-vm: init-cluster-kubevirt init-kubevirt init-cdi deploy-pve-vm
@@ -117,8 +117,8 @@ deploy-pve-mock:
 	@KUBECONFIG="$(KUBECONFIG)" $(KUBECTL) -n virt-lab delete svc pve-lab --ignore-not-found=true
 	@KUBECONFIG="$(KUBECONFIG)" $(KUBECTL) apply -f $(PVE_MOCK_MANIFEST)
 	@KUBECONFIG="$(KUBECONFIG)" $(KUBECTL) -n virt-lab rollout status deployment/pve-mock --timeout=180s
-	@echo "PVE mock endpoint for host-run kubecrux: http://127.0.0.1:8006"
-	@echo "PVE mock endpoint for compose-run kubecrux: http://k3s:30006"
+	@echo "PVE mock endpoint for host-run soha: http://127.0.0.1:8006"
+	@echo "PVE mock endpoint for compose-run soha: http://k3s:30006"
 
 delete-pve-mock:
 	@KUBECONFIG="$(KUBECONFIG)" $(KUBECTL) delete -f $(PVE_MOCK_MANIFEST) --ignore-not-found=true
@@ -160,10 +160,10 @@ build-docs:
 	cd docs && npm run build
 
 build: build-web build-docs
-	CGO_ENABLED=0 go build -tags embedassets -o bin/kubecrux ./cmd/server
+	CGO_ENABLED=0 go build -tags embedassets -o bin/soha ./cmd/server
 
 deploy-image:
-	docker build -t kubecrux:single-project .
+	docker build -t soha:single-project .
 
 deploy-compose-up:
 	docker compose -f $(ROOT_COMPOSE_FILE) up -d --build

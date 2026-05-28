@@ -80,7 +80,7 @@ query QueryBasicTraces($condition: TraceQueryCondition!) {
 					"end":   query.TimeTo.UnixMilli(),
 					"step":  "MINUTE",
 				},
-				"traceState": "ALL",
+				"traceState":       "ALL",
 				"minTraceDuration": query.MinDuration.Milliseconds(),
 				"maxTraceDuration": query.TimeTo.Sub(query.TimeFrom).Milliseconds(),
 				"paging": map[string]any{
@@ -137,11 +137,11 @@ query QueryBasicTraces($condition: TraceQueryCondition!) {
 	spans := make([]Span, 0, len(payload.Data.QueryBasicTraces.Traces))
 	hotspots := map[string]map[string]any{}
 	for index, item := range payload.Data.QueryBasicTraces.Traces {
-			traceID := ""
-			if len(item.TraceIDs) > 0 {
-				traceID = strings.TrimSpace(item.TraceIDs[0])
-			}
-			operation := ""
+		traceID := ""
+		if len(item.TraceIDs) > 0 {
+			traceID = strings.TrimSpace(item.TraceIDs[0])
+		}
+		operation := ""
 		if len(item.EndpointNames) > 0 {
 			operation = strings.TrimSpace(item.EndpointNames[0])
 		}

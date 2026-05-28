@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	cfgpkg "github.com/kubecrux/kubecrux/internal/agent/config"
+	cfgpkg "github.com/soha/soha/internal/agent/config"
 	"go.uber.org/zap"
 )
 

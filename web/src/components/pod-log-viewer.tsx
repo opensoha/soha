@@ -425,9 +425,9 @@ export function PodLogViewer({
   }
 
   return (
-    <Card className="kc-detail-card kc-log-card">
-      <div className="kc-terminal-toolbar kc-log-toolbar">
-        <Space className="kc-log-toolbar-group kc-log-toolbar-meta">
+    <Card className="soha-detail-card soha-log-card">
+      <div className="soha-terminal-toolbar soha-log-toolbar">
+        <Space className="soha-log-toolbar-group soha-log-toolbar-meta">
           <Tag color={connectionState === 'connected' ? 'green' : connectionState === 'connecting' ? 'blue' : connectionState === 'error' ? 'red' : connectionState === 'closed' ? 'orange' : undefined}>
             {connectionState}
           </Tag>
@@ -437,7 +437,7 @@ export function PodLogViewer({
               : (localeCode === 'zh_CN' ? '当前日志' : 'Current logs')}
           </Tag>
         </Space>
-        <Space className="kc-log-toolbar-group kc-log-toolbar-actions">
+        <Space className="soha-log-toolbar-group soha-log-toolbar-actions">
           {containerOptions && containerOptions.length > 0 ? (
             <Select
               value={container || undefined}
@@ -466,11 +466,11 @@ export function PodLogViewer({
               { value: '21600', label: t('podLogViewer.time6h', 'Last 6 hours') },
             ]}
           />
-          <div className="kc-step-inline">
+          <div className="soha-step-inline">
             <Text type="secondary" style={{ fontSize: 12 }}>{t('podLogViewer.autoScroll', 'Auto scroll')}</Text>
             <Switch checked={autoScroll} onChange={(checked) => setAutoScroll(checked)} />
           </div>
-          <div className="kc-step-inline">
+          <div className="soha-step-inline">
             <Text type="secondary" style={{ fontSize: 12 }}>{localeCode === 'zh_CN' ? '历史日志' : 'Historical logs'}</Text>
             <Switch checked={previous} onChange={(checked) => setPrevious(checked)} />
           </div>
@@ -488,18 +488,18 @@ export function PodLogViewer({
           <Button icon={<ReloadOutlined />} size="small" type="text" onClick={() => fetchSnapshot(historyLines)}>{t('podLogViewer.reconnect', 'Reconnect')}</Button>
         </Space>
       </div>
-      <div ref={scrollerRef} className="kc-log-shell" onScroll={() => { void handleScroll() }}>
+      <div ref={scrollerRef} className="soha-log-shell" onScroll={() => { void handleScroll() }}>
         {loadingOlder ? (
-          <div className="kc-log-loading">{localeCode === 'zh_CN' ? '加载更早日志中...' : 'Loading older logs...'}</div>
+          <div className="soha-log-loading">{localeCode === 'zh_CN' ? '加载更早日志中...' : 'Loading older logs...'}</div>
         ) : null}
         {filteredLines.length > 0 ? (
           filteredLines.map((line, index) => (
-            <div key={`${index}:${line.slice(0, 32)}`} className="kc-log-row kc-log-row-plain">
-              <span className="kc-log-row-text">{line}</span>
+            <div key={`${index}:${line.slice(0, 32)}`} className="soha-log-row soha-log-row-plain">
+              <span className="soha-log-row-text">{line}</span>
             </div>
           ))
         ) : (
-          <div className="kc-log-loading">{emptyLogMessage}</div>
+          <div className="soha-log-loading">{emptyLogMessage}</div>
         )}
       </div>
     </Card>

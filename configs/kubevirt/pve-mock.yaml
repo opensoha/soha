@@ -18,8 +18,8 @@ data:
     NODE = "pve-mock-1"
     next_id = 9002
     vms = {
-        "9000": {"vmid": 9000, "name": "kc-lab-template", "status": "stopped", "template": 1, "cpus": 2, "maxmem": 2147483648},
-        "9001": {"vmid": 9001, "name": "kc-lab-demo", "status": "running", "cpus": 2, "maxmem": 4294967296},
+        "9000": {"vmid": 9000, "name": "soha-lab-template", "status": "stopped", "template": 1, "cpus": 2, "maxmem": 2147483648},
+        "9001": {"vmid": 9001, "name": "soha-lab-demo", "status": "running", "cpus": 2, "maxmem": 4294967296},
     }
 
     def envelope(data):
@@ -36,7 +36,7 @@ data:
             return {key: values[-1] for key, values in parse_qs(raw).items()}
 
     class Handler(BaseHTTPRequestHandler):
-        server_version = "kubecrux-pve-mock/0.1"
+        server_version = "soha-pve-mock/0.1"
 
         def log_message(self, fmt, *args):
             print("%s - %s" % (self.address_string(), fmt % args), flush=True)
@@ -77,7 +77,7 @@ data:
                         {"time": now, "cpu": 0.10, "mem": 734003200, "netin": 6144, "netout": 12288},
                     ])
                 if len(parts) == 6 and parts[4:6] == ["status", "current"]:
-                    vm = vms.get(vmid, {"vmid": int(vmid), "name": "kc-lab-" + vmid, "status": "stopped"})
+                    vm = vms.get(vmid, {"vmid": int(vmid), "name": "soha-lab-" + vmid, "status": "stopped"})
                     return self.send_json(vm)
             if parts == ["nodes", NODE, "storage"]:
                 return self.send_json([
@@ -87,7 +87,7 @@ data:
             if parts == ["nodes", NODE, "storage", "local", "content"]:
                 return self.send_json([
                     {"volid": "local:iso/debian-12.iso", "content": "iso", "size": 734003200},
-                    {"volid": "local:vztmpl/kc-lab-ubuntu-template.tar.zst", "content": "vztmpl", "size": 536870912},
+                    {"volid": "local:vztmpl/soha-lab-ubuntu-template.tar.zst", "content": "vztmpl", "size": 536870912},
                 ])
             return self.send_json({"error": "not found", "path": self.path}, 404)
 
@@ -98,17 +98,17 @@ data:
             if len(parts) == 3 and parts[:2] == ["nodes", NODE] and parts[2] == "qemu":
                 vmid = str(body.get("vmid") or next_id)
                 next_id = max(next_id, int(vmid) + 1)
-                vms[vmid] = {"vmid": int(vmid), "name": body.get("name", "kc-lab-" + vmid), "status": "stopped", "cpus": body.get("cores", 1), "maxmem": 2147483648}
+                vms[vmid] = {"vmid": int(vmid), "name": body.get("name", "soha-lab-" + vmid), "status": "stopped", "cpus": body.get("cores", 1), "maxmem": 2147483648}
                 return self.send_json("UPID:pve-mock:create:%s" % vmid)
             if len(parts) == 5 and parts[:2] == ["nodes", NODE] and parts[2] == "qemu" and parts[4] == "clone":
                 newid = str(body.get("newid") or next_id)
                 next_id = max(next_id, int(newid) + 1)
-                vms[newid] = {"vmid": int(newid), "name": body.get("name", "kc-lab-clone-" + newid), "status": "stopped", "cpus": 2, "maxmem": 2147483648}
+                vms[newid] = {"vmid": int(newid), "name": body.get("name", "soha-lab-clone-" + newid), "status": "stopped", "cpus": 2, "maxmem": 2147483648}
                 return self.send_json("UPID:pve-mock:clone:%s" % newid)
             if len(parts) == 6 and parts[:2] == ["nodes", NODE] and parts[2] == "qemu" and parts[4] == "status":
                 vmid = parts[3]
                 action = parts[5]
-                vm = vms.setdefault(vmid, {"vmid": int(vmid), "name": "kc-lab-" + vmid, "status": "stopped"})
+                vm = vms.setdefault(vmid, {"vmid": int(vmid), "name": "soha-lab-" + vmid, "status": "stopped"})
                 if action == "start":
                     vm["status"] = "running"
                 elif action == "stop":

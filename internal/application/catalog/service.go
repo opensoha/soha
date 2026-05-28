@@ -7,17 +7,17 @@ import (
 	"strings"
 	"time"
 
-	appaccess "github.com/kubecrux/kubecrux/internal/application/access"
-	domainaccess "github.com/kubecrux/kubecrux/internal/domain/access"
-	domainapp "github.com/kubecrux/kubecrux/internal/domain/application"
-	domainaudit "github.com/kubecrux/kubecrux/internal/domain/audit"
-	domaincatalog "github.com/kubecrux/kubecrux/internal/domain/catalog"
-	domainidentity "github.com/kubecrux/kubecrux/internal/domain/identity"
-	domainoperation "github.com/kubecrux/kubecrux/internal/domain/operation"
-	"github.com/kubecrux/kubecrux/internal/platform/apperrors"
-	"github.com/kubecrux/kubecrux/internal/platform/operationentry"
-	"github.com/kubecrux/kubecrux/internal/platform/requestctx"
-	catalogrepo "github.com/kubecrux/kubecrux/internal/repository/catalog"
+	appaccess "github.com/soha/soha/internal/application/access"
+	domainaccess "github.com/soha/soha/internal/domain/access"
+	domainapp "github.com/soha/soha/internal/domain/application"
+	domainaudit "github.com/soha/soha/internal/domain/audit"
+	domaincatalog "github.com/soha/soha/internal/domain/catalog"
+	domainidentity "github.com/soha/soha/internal/domain/identity"
+	domainoperation "github.com/soha/soha/internal/domain/operation"
+	"github.com/soha/soha/internal/platform/apperrors"
+	"github.com/soha/soha/internal/platform/operationentry"
+	"github.com/soha/soha/internal/platform/requestctx"
+	catalogrepo "github.com/soha/soha/internal/repository/catalog"
 )
 
 type AuditRecorder interface {

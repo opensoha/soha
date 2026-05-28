@@ -304,7 +304,7 @@ function ApplicationManagementCore() {
       key: 'bindings',
       label: '环境选择与发布',
       children: (
-        <Card className="kc-detail-card" extra={state.canManageBindings ? <Button icon={<PlusOutlined />} type="primary" onClick={() => { state.setEditingBinding(null); state.setBindingModalVisible(true) }}>新建绑定</Button> : null}>
+        <Card className="soha-detail-card" extra={state.canManageBindings ? <Button icon={<PlusOutlined />} type="primary" onClick={() => { state.setEditingBinding(null); state.setBindingModalVisible(true) }}>新建绑定</Button> : null}>
           <Descriptions
             column={1}
             items={[
@@ -329,7 +329,7 @@ function ApplicationManagementCore() {
       key: 'pipelines',
       label: '构建与流水线配置',
       children: (
-        <Card className="kc-detail-card">
+        <Card className="soha-detail-card">
           <Descriptions
             column={1}
             items={[
@@ -389,7 +389,7 @@ function ApplicationManagementCore() {
         <Form.Item name="repositoryPath" label="代码仓库路径"><Input /></Form.Item>
         <Form.Item name="defaultBranch" label="默认分支"><Input /></Form.Item>
         <Form.Item name="enabled" label="启用" valuePropName="checked"><Switch /></Form.Item>
-        <div className="kc-form-actions">
+        <div className="soha-form-actions">
           <Button onClick={() => state.setAppModalVisible(false)}>取消</Button>
           <Button htmlType="submit" type="primary" loading={state.createAppMutation.isPending || state.updateAppMutation.isPending}>保存</Button>
         </div>
@@ -506,7 +506,7 @@ function ApplicationManagementCore() {
           <Form.Item name="resourceSelectorText" label="资源选择器标签(JSON)">
             <Input.TextArea rows={4} placeholder={`{\n  "app": "erp-front"\n}`} />
           </Form.Item>
-        <div className="kc-form-actions">
+        <div className="soha-form-actions">
           <Button onClick={() => state.setBindingModalVisible(false)}>取消</Button>
           <Button htmlType="submit" type="primary" loading={state.createBindingMutation.isPending || state.updateBindingMutation.isPending}>保存</Button>
         </div>
@@ -515,18 +515,18 @@ function ApplicationManagementCore() {
   )
 
   return (
-    <div className="kc-page">
+    <div className="soha-page">
       <PageHeader
         title={state.selectedApplication?.name || '应用管理详情'}
         description="维护当前应用的环境选择、发布绑定和流水线配置。"
         actions={<Button onClick={() => state.navigate('/application-management')}>返回应用列表</Button>}
       />
       {state.selectedApplication ? (
-        <Card className="kc-ai-hub-lane" title={state.selectedApplication.name}>
+        <Card className="soha-ai-hub-lane" title={state.selectedApplication.name}>
           <Tabs items={tabs} />
         </Card>
       ) : (
-        <Card className="kc-ai-hub-lane">
+        <Card className="soha-ai-hub-lane">
           <Text type="secondary">未找到当前应用，请返回应用列表重新选择。</Text>
         </Card>
       )}
@@ -545,7 +545,7 @@ export function ApplicationManagementPage() {
       dataIndex: 'name',
       render: (value: string, record: DeliveryApplication) => (
         <Button
-          className="kc-application-management-name"
+          className="soha-application-management-name"
           type="link"
           onClick={() => state.navigate(`/application-management/${record.id}`)}
         >
@@ -590,13 +590,13 @@ export function ApplicationManagementPage() {
   ]
 
   return (
-    <div className="kc-page">
+    <div className="soha-page">
       <PageHeader
         title="应用管理"
         description="负责新增应用、维护分组、环境选择和发布流水线配置。"
         actions={state.canCreateApplication ? <Button icon={<PlusOutlined />} type="primary" onClick={() => { state.setEditingApp(null); state.setBuildSources(defaultBuildSources()); state.setAppModalVisible(true) }}>新建应用</Button> : null}
       />
-      <Card className="kc-ai-hub-lane" title="应用列表">
+      <Card className="soha-ai-hub-lane" title="应用列表">
         <AdminTable
           columns={appColumns}
           dataSource={state.applicationsQuery.data?.data ?? []}

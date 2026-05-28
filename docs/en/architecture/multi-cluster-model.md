@@ -56,4 +56,4 @@ Lifecycle rules:
 - surface last error state
 - close caches when a cluster is removed
 
-For agent clusters, kubecrux keeps the durable registry in PostgreSQL and creates HTTP clients on demand instead of `client-go` bundles.
+For agent clusters, soha keeps the durable registry in PostgreSQL and creates HTTP clients on demand instead of `client-go` bundles.

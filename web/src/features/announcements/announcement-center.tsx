@@ -79,7 +79,7 @@ function AnnouncementList({
       dataSource={items}
       renderItem={(item) => (
         <List.Item
-          className="kc-announcement-center-item"
+          className="soha-announcement-center-item"
           actions={[
             <Button key="preview" size="small" type="link" onClick={() => onPreview(item)}>查看</Button>,
             item.isRead
@@ -100,7 +100,7 @@ function AnnouncementList({
           <List.Item.Meta
             title={(
               <Space size={8} wrap>
-                <Button type="link" className="kc-system-linklike" onClick={() => onPreview(item)}>
+                <Button type="link" className="soha-system-linklike" onClick={() => onPreview(item)}>
                   {item.title}
                 </Button>
                 {item.sticky ? <Tag color="purple">置顶</Tag> : null}
@@ -208,7 +208,7 @@ export function AnnouncementBell() {
         )}
       >
         <Button
-          className="kc-header-action kc-header-bell"
+          className="soha-header-action soha-header-bell"
           size="small"
           type="text"
           icon={(

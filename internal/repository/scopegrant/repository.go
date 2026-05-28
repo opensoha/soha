@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	domainscopegrant "github.com/kubecrux/kubecrux/internal/domain/scopegrant"
+	domainscopegrant "github.com/soha/soha/internal/domain/scopegrant"
 	"gorm.io/gorm"
 )
 
