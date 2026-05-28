@@ -82,7 +82,7 @@ type clusterCredentialSeed struct {
 // While the stored version matches this constant, the static seed block is
 // skipped entirely. Config-driven sync (admin user, clusters) runs separately
 // during startup so runtime config updates do not depend on replaying defaults.
-const bootstrapSeedVersion = "2026-05-28-k8s-gateway-api-1"
+const bootstrapSeedVersion = "2026-05-29-ai-gateway-1"
 
 const bootstrapSeedVersionKey = "bootstrap.seed_version"
 

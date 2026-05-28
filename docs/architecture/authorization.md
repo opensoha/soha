@@ -97,6 +97,12 @@ RBAC answers one question first: does the principal's role set ever permit this 
 - copilot APIs are split into:
   - `observe.ai.*` for user-facing chat, root-cause runs, and inspection actions
   - `settings.ai.*` for control-plane configuration such as data sources, analysis profiles, and automation policies
+- AI Gateway APIs add a separate external-agent boundary:
+  - `ai.gateway.view` for reading the caller-specific capability manifest
+  - `ai.gateway.invoke` for invoking already-authorized MCP tools through Gateway
+  - `ai.gateway.manage` for managing AI clients, service accounts, access policies, tool grants, and skill bindings
+- AI Gateway permissions do not replace business permissions. A delivery tool still needs the relevant `delivery.*` key, and a Kubernetes diagnosis tool still needs the relevant workspace/platform key.
+- MCP tool grants are evaluated across the current subject, its roles, and the declared AI client. They only narrow access; deny grants take precedence over allow grants.
 - scheduled automation or inspection jobs may execute with a system principal internally, but interactive user requests must always be evaluated against the caller's permission keys
 
 ## Delivery Management

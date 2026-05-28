@@ -8,6 +8,7 @@ import (
 	apiHandlers "github.com/soha/soha/internal/api/handlers"
 	apiRoutes "github.com/soha/soha/internal/api/routes"
 	appaccess "github.com/soha/soha/internal/application/access"
+	appaigateway "github.com/soha/soha/internal/application/aigateway"
 	appannouncement "github.com/soha/soha/internal/application/announcement"
 	appregistry "github.com/soha/soha/internal/application/app"
 	appaudit "github.com/soha/soha/internal/application/audit"
@@ -45,6 +46,7 @@ import (
 	virtualizationinfra "github.com/soha/soha/internal/infrastructure/virtualization"
 	"github.com/soha/soha/internal/platform/runtimeobs"
 	"github.com/soha/soha/internal/policy"
+	aigatewayrepo "github.com/soha/soha/internal/repository/aigateway"
 	alertrepo "github.com/soha/soha/internal/repository/alert"
 	announcementrepo "github.com/soha/soha/internal/repository/announcement"
 	applicationrepo "github.com/soha/soha/internal/repository/application"
@@ -185,6 +187,7 @@ func New(ctx context.Context) (*App, error) {
 	clusterRepository := clusterrepo.New(databaseStore.DB())
 	virtualizationRepository := virtualizationrepo.New(databaseStore.DB())
 	dockerRepository := dockerrepo.New(databaseStore.DB())
+	aiGatewayRepository := aigatewayrepo.New(databaseStore.DB())
 	permissionResolver := appaccess.NewPermissionResolver(policyRepository)
 	auditService := appaudit.New(auditRepository, permissionResolver)
 	operationService := appoperation.New(operationRepository, permissionResolver)
@@ -193,7 +196,7 @@ func New(ctx context.Context) (*App, error) {
 	moduleService := appmodule.New(cfg.Modules)
 	settingsService := appsettings.New(settingsRepository, cfg.Auth, cfg.Monitoring, permissionResolver)
 
-	identityService, err := appidentity.New(ctx, cfg.Auth, identityRepository, auditService, operationService, settingsService, permissionResolver)
+	identityService, err := appidentity.New(ctx, cfg.Auth, identityRepository, auditService, operationService, settingsService, permissionResolver, aiGatewayRepository)
 	if err != nil {
 		return nil, fmt.Errorf("build identity service: %w", err)
 	}
@@ -278,9 +281,13 @@ func New(ctx context.Context) (*App, error) {
 	}
 	dockerService := appdocker.New(dockerRepository, permissionResolver, operationService, appdocker.WithHostProvisioner(dockerHostProvisioner{virtualization: virtualizationService}))
 	copilotService.SetAgentRuntimeReaders(executionService, resourceService, dockerService, virtualizationService, monitoringService)
+	aiGatewayService := appaigateway.New(permissionResolver, auditService, aiGatewayRepository)
+	aiGatewayService.SetDeliveryServices(applicationService, deliveryService)
+	aiGatewayService.SetResourceService(resourceService)
 
 	systemHandler := apiHandlers.NewSystemHandler(databaseStore, runtimeMetrics)
 	authHandler := apiHandlers.NewAuthHandler(identityService, accessConsoleService, settingsService)
+	aiGatewayHandler := apiHandlers.NewAIGatewayHandler(aiGatewayService)
 	announcementHandler := apiHandlers.NewAnnouncementHandler(announcementService)
 	menuHandler := apiHandlers.NewMenuHandler(menuService)
 	moduleHandler := apiHandlers.NewModuleHandler(moduleService)
@@ -314,6 +321,7 @@ func New(ctx context.Context) (*App, error) {
 		Registries:     registryHandler,
 		Releases:       releaseHandler,
 		Copilot:        copilotHandler,
+		AIGateway:      aiGatewayHandler,
 		Virtualization: virtualizationHandler,
 		Docker:         dockerHandler,
 		Access:         accessHandler,

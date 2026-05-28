@@ -64,7 +64,18 @@ func (r *PermissionResolver) PermissionKeys(ctx context.Context, principal domai
 			}
 		}
 	}
-	return normalizePermissionKeys(keys), nil
+	keys = normalizePermissionKeys(keys)
+	if len(principal.PermissionKeys) == 0 {
+		return keys, nil
+	}
+	capped := make([]string, 0, len(keys))
+	allowedCaps := normalizePermissionKeys(principal.PermissionKeys)
+	for _, key := range keys {
+		if slices.Contains(allowedCaps, key) {
+			capped = append(capped, key)
+		}
+	}
+	return normalizePermissionKeys(capped), nil
 }
 
 func (r *PermissionResolver) HasPermission(ctx context.Context, principal domainidentity.Principal, permissionKey string) (bool, error) {

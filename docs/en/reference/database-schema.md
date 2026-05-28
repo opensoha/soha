@@ -79,6 +79,25 @@ Operational task records for mutating workflows.
 
 Expected fields now include actor context, request context, and backend-owned `target_scope` JSON for UI formatting.
 
+### AI Gateway credential and policy tables
+
+AI-native external access is persisted under:
+
+- `personal_access_tokens`
+- `service_accounts`
+- `service_account_tokens`
+- `ai_clients`
+- `ai_access_policies`
+- `mcp_tool_grants`
+- `ai_gateway_skill_bindings`
+- `ai_gateway_audit_logs`
+
+Token tables store only hashes and display prefixes. The clear token value is returned once at creation time and must not be logged or persisted outside a caller-owned credential store.
+
+`mcp_tool_grants` supports `user`, `service_account`, `role`, and `ai_client` subjects. Runtime evaluation combines matching subject, role, and client grants, then applies deny-first and allow-list semantics on top of `permissionKeys`.
+
+`ai_access_policies` and `ai_gateway_skill_bindings` use the same subject model. Access policies narrow tools and skills by tool pattern, skill id, risk level, and effect; skill bindings narrow available Skills and capability refs. Neither table can expand RBAC or scope grants.
+
 ### event_stream
 
 Unified event envelope persistence.

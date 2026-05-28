@@ -71,6 +71,9 @@ const (
 	PermObserveAIRootCauseRun             = "observe.ai.root-cause.run"
 	PermObserveAIInspectionManage         = "observe.ai.inspection.manage"
 	PermObserveAIInspectionRun            = "observe.ai.inspection.run"
+	PermAIGatewayView                     = "ai.gateway.view"
+	PermAIGatewayInvoke                   = "ai.gateway.invoke"
+	PermAIGatewayManage                   = "ai.gateway.manage"
 	PermVirtualizationOverviewView        = "virtualization.overview.view"
 	PermVirtualizationVMsView             = "virtualization.vms.view"
 	PermVirtualizationVMsManage           = "virtualization.vms.manage"
@@ -198,6 +201,9 @@ func allPermissionKeys() []string {
 		PermObserveAIRootCauseRun,
 		PermObserveAIInspectionManage,
 		PermObserveAIInspectionRun,
+		PermAIGatewayView,
+		PermAIGatewayInvoke,
+		PermAIGatewayManage,
 		PermVirtualizationOverviewView,
 		PermVirtualizationVMsView,
 		PermVirtualizationVMsManage,
@@ -321,6 +327,9 @@ func defaultRolePermissions() map[string][]string {
 		PermObserveAIRootCauseRun,
 		PermObserveAIInspectionManage,
 		PermObserveAIInspectionRun,
+		PermAIGatewayView,
+		PermAIGatewayInvoke,
+		PermAIGatewayManage,
 		PermVirtualizationOverviewView,
 		PermVirtualizationVMsView,
 		PermVirtualizationVMsManage,
@@ -386,6 +395,8 @@ func defaultRolePermissions() map[string][]string {
 		PermObserveAIChatUse,
 		PermObserveAIRootCauseRun,
 		PermObserveAIInspectionRun,
+		PermAIGatewayView,
+		PermAIGatewayInvoke,
 		PermDeliveryApplicationsView,
 		PermDeliveryApplicationServicesView,
 		PermDeliveryApplicationEnvView,
@@ -434,6 +445,7 @@ func defaultRolePermissions() map[string][]string {
 		PermObserveAlertsView,
 		PermObserveEventsView,
 		PermObserveAIView,
+		PermAIGatewayView,
 		PermDockerOverviewView,
 		PermDockerHostsView,
 		PermDockerProjectsView,

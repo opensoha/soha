@@ -32,6 +32,7 @@ type Dependencies struct {
 	Registries     *apiHandlers.RegistryHandler
 	Releases       *apiHandlers.ReleaseHandler
 	Copilot        *apiHandlers.CopilotHandler
+	AIGateway      *apiHandlers.AIGatewayHandler
 	Virtualization *apiHandlers.VirtualizationHandler
 	Docker         *apiHandlers.DockerHandler
 	Access         *apiHandlers.AccessHandler
@@ -510,6 +511,31 @@ func New(cfg cfgpkg.Config, logger *zap.Logger, deps Dependencies) *http.Server 
 		protected.PUT("/access/users/:userID/roles", deps.Access.ReplaceUserRoles)
 		protected.PUT("/access/users/:userID/teams", deps.Access.ReplaceUserTeams)
 		protected.GET("/mcp/capabilities", deps.Platform.ListMCPCapabilities)
+		if deps.AIGateway != nil {
+			protected.GET("/ai-gateway/capabilities", deps.AIGateway.Capabilities)
+			protected.POST("/ai-gateway/tools/:toolName/invoke", deps.AIGateway.InvokeTool)
+			protected.GET("/ai-gateway/personal-access-tokens", deps.AIGateway.ListPersonalAccessTokens)
+			protected.POST("/ai-gateway/personal-access-tokens", deps.AIGateway.CreatePersonalAccessToken)
+			protected.POST("/ai-gateway/personal-access-tokens/:tokenID/revoke", deps.AIGateway.RevokePersonalAccessToken)
+			protected.GET("/ai-gateway/service-accounts", deps.AIGateway.ListServiceAccounts)
+			protected.POST("/ai-gateway/service-accounts", deps.AIGateway.CreateServiceAccount)
+			protected.POST("/ai-gateway/service-accounts/:serviceAccountID/tokens", deps.AIGateway.CreateServiceAccountToken)
+			protected.POST("/ai-gateway/service-account-tokens/:tokenID/revoke", deps.AIGateway.RevokeServiceAccountToken)
+			protected.GET("/ai-gateway/ai-clients", deps.AIGateway.ListAIClients)
+			protected.POST("/ai-gateway/ai-clients", deps.AIGateway.CreateAIClient)
+			protected.PUT("/ai-gateway/ai-clients/:clientID", deps.AIGateway.UpdateAIClient)
+			protected.GET("/ai-gateway/tool-grants", deps.AIGateway.ListToolGrants)
+			protected.POST("/ai-gateway/tool-grants", deps.AIGateway.CreateToolGrant)
+			protected.DELETE("/ai-gateway/tool-grants/:grantID", deps.AIGateway.DeleteToolGrant)
+			protected.GET("/ai-gateway/access-policies", deps.AIGateway.ListAccessPolicies)
+			protected.POST("/ai-gateway/access-policies", deps.AIGateway.CreateAccessPolicy)
+			protected.PUT("/ai-gateway/access-policies/:policyID", deps.AIGateway.UpdateAccessPolicy)
+			protected.DELETE("/ai-gateway/access-policies/:policyID", deps.AIGateway.DeleteAccessPolicy)
+			protected.GET("/ai-gateway/skill-bindings", deps.AIGateway.ListSkillBindings)
+			protected.POST("/ai-gateway/skill-bindings", deps.AIGateway.CreateSkillBinding)
+			protected.PUT("/ai-gateway/skill-bindings/:bindingID", deps.AIGateway.UpdateSkillBinding)
+			protected.DELETE("/ai-gateway/skill-bindings/:bindingID", deps.AIGateway.DeleteSkillBinding)
+		}
 		protected.GET("/settings/identity", deps.Settings.GetIdentitySettings)
 		protected.PUT("/settings/identity/oidc", deps.Settings.UpdateOIDCSettings)
 		protected.PUT("/settings/identity/providers", deps.Settings.UpdateLoginProvidersSettings)

@@ -3,19 +3,23 @@ package identity
 import "time"
 
 type Principal struct {
-	UserID   string   `json:"userId"`
-	UserName string   `json:"userName"`
-	Email    string   `json:"email"`
-	Roles    []string `json:"roles"`
-	Teams    []string `json:"teams"`
-	Projects []string `json:"projects"`
-	Tags     []string `json:"tags"`
+	UserID         string   `json:"userId"`
+	UserName       string   `json:"userName"`
+	Email          string   `json:"email"`
+	Roles          []string `json:"roles"`
+	Teams          []string `json:"teams"`
+	Projects       []string `json:"projects"`
+	Tags           []string `json:"tags"`
+	PermissionKeys []string `json:"permissionKeys,omitempty"`
 }
 
 type AccessContext struct {
-	TokenID   string    `json:"tokenId"`
-	SessionID string    `json:"sessionId"`
-	ExpiresAt time.Time `json:"expiresAt"`
+	TokenID     string    `json:"tokenId"`
+	TokenKind   string    `json:"tokenKind,omitempty"`
+	SessionID   string    `json:"sessionId,omitempty"`
+	SubjectType string    `json:"subjectType,omitempty"`
+	SubjectID   string    `json:"subjectId,omitempty"`
+	ExpiresAt   time.Time `json:"expiresAt"`
 }
 
 type TokenSet struct {

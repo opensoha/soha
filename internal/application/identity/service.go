@@ -16,6 +16,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	appaccess "github.com/soha/soha/internal/application/access"
+	domainaigateway "github.com/soha/soha/internal/domain/aigateway"
 	domainaudit "github.com/soha/soha/internal/domain/audit"
 	domainidentity "github.com/soha/soha/internal/domain/identity"
 	domainoperation "github.com/soha/soha/internal/domain/operation"
@@ -56,6 +57,14 @@ type UserRepository interface {
 	ConsumeEphemeralToken(context.Context, string, string) (userrepo.EphemeralToken, error)
 }
 
+type GatewayTokenRepository interface {
+	GetPersonalAccessTokenByHash(context.Context, string) (domainaigateway.PersonalAccessToken, error)
+	TouchPersonalAccessToken(context.Context, string, time.Time) error
+	GetServiceAccountTokenByHash(context.Context, string) (domainaigateway.ServiceAccountToken, error)
+	TouchServiceAccountToken(context.Context, string, time.Time) error
+	GetServiceAccount(context.Context, string) (domainaigateway.ServiceAccount, error)
+}
+
 type AuditRecorder interface {
 	Record(context.Context, domainaudit.Entry) error
 }
@@ -77,6 +86,7 @@ type Service struct {
 	operations  OperationRecorder
 	settings    SettingsReader
 	permissions *appaccess.PermissionResolver
+	gateway     GatewayTokenRepository
 }
 
 type tokenClaims struct {
@@ -132,8 +142,8 @@ type oidcProfile struct {
 	Nonce             string `json:"nonce"`
 }
 
-func New(_ context.Context, cfg cfgpkg.AuthConfig, users UserRepository, audit AuditRecorder, operations OperationRecorder, settings SettingsReader, permissions *appaccess.PermissionResolver) (*Service, error) {
-	return &Service{cfg: cfg, users: users, audit: audit, operations: operations, settings: settings, permissions: permissions}, nil
+func New(_ context.Context, cfg cfgpkg.AuthConfig, users UserRepository, audit AuditRecorder, operations OperationRecorder, settings SettingsReader, permissions *appaccess.PermissionResolver, gateway GatewayTokenRepository) (*Service, error) {
+	return &Service{cfg: cfg, users: users, audit: audit, operations: operations, settings: settings, permissions: permissions, gateway: gateway}, nil
 }
 
 func (s *Service) ListProviders(ctx context.Context) []domainidentity.Provider {
@@ -279,6 +289,12 @@ func (s *Service) Logout(ctx context.Context, accessToken, refreshToken string) 
 }
 
 func (s *Service) ParseAccessToken(ctx context.Context, accessToken string) (domainidentity.Principal, domainidentity.AccessContext, error) {
+	if strings.HasPrefix(accessToken, domainaigateway.PersonalAccessTokenPrefix) {
+		return s.parsePersonalAccessToken(ctx, accessToken)
+	}
+	if strings.HasPrefix(accessToken, domainaigateway.ServiceAccountTokenPrefix) {
+		return s.parseServiceAccountToken(ctx, accessToken)
+	}
 	claims, err := s.parseToken(accessToken, "access")
 	if err != nil {
 		return domainidentity.Principal{}, domainidentity.AccessContext{}, err
@@ -294,7 +310,74 @@ func (s *Service) ParseAccessToken(ctx context.Context, accessToken string) (dom
 		return domainidentity.Principal{}, domainidentity.AccessContext{}, fmt.Errorf("%w: session subject mismatch", apperrors.ErrUnauthorized)
 	}
 	principal := principalFromClaims(claims)
-	return principal, domainidentity.AccessContext{TokenID: claims.ID, SessionID: claims.SessionID, ExpiresAt: claims.ExpiresAt.Time}, nil
+	return principal, domainidentity.AccessContext{TokenID: claims.ID, TokenKind: "session_access", SessionID: claims.SessionID, SubjectType: "user", SubjectID: principal.UserID, ExpiresAt: claims.ExpiresAt.Time}, nil
+}
+
+func (s *Service) parsePersonalAccessToken(ctx context.Context, token string) (domainidentity.Principal, domainidentity.AccessContext, error) {
+	if s.gateway == nil {
+		return domainidentity.Principal{}, domainidentity.AccessContext{}, fmt.Errorf("%w: gateway token store is not configured", apperrors.ErrUnauthorized)
+	}
+	item, err := s.gateway.GetPersonalAccessTokenByHash(ctx, domainaigateway.HashToken(token))
+	if err != nil {
+		return domainidentity.Principal{}, domainidentity.AccessContext{}, fmt.Errorf("%w: personal access token not found", apperrors.ErrUnauthorized)
+	}
+	if item.RevokedAt != nil {
+		return domainidentity.Principal{}, domainidentity.AccessContext{}, fmt.Errorf("%w: personal access token revoked", apperrors.ErrUnauthorized)
+	}
+	if item.ExpiresAt != nil && item.ExpiresAt.Before(time.Now().UTC()) {
+		return domainidentity.Principal{}, domainidentity.AccessContext{}, fmt.Errorf("%w: personal access token expired", apperrors.ErrUnauthorized)
+	}
+	principal, err := s.loadPrincipal(ctx, item.UserID)
+	if err != nil {
+		return domainidentity.Principal{}, domainidentity.AccessContext{}, err
+	}
+	principal.PermissionKeys = append([]string(nil), item.PermissionKeys...)
+	_ = s.gateway.TouchPersonalAccessToken(ctx, item.ID, time.Now().UTC())
+	return principal, domainidentity.AccessContext{
+		TokenID:     item.ID,
+		TokenKind:   "personal_access_token",
+		SubjectType: "user",
+		SubjectID:   principal.UserID,
+		ExpiresAt:   timePointerValue(item.ExpiresAt),
+	}, nil
+}
+
+func (s *Service) parseServiceAccountToken(ctx context.Context, token string) (domainidentity.Principal, domainidentity.AccessContext, error) {
+	if s.gateway == nil {
+		return domainidentity.Principal{}, domainidentity.AccessContext{}, fmt.Errorf("%w: gateway token store is not configured", apperrors.ErrUnauthorized)
+	}
+	item, err := s.gateway.GetServiceAccountTokenByHash(ctx, domainaigateway.HashToken(token))
+	if err != nil {
+		return domainidentity.Principal{}, domainidentity.AccessContext{}, fmt.Errorf("%w: service account token not found", apperrors.ErrUnauthorized)
+	}
+	if item.RevokedAt != nil {
+		return domainidentity.Principal{}, domainidentity.AccessContext{}, fmt.Errorf("%w: service account token revoked", apperrors.ErrUnauthorized)
+	}
+	if item.ExpiresAt != nil && item.ExpiresAt.Before(time.Now().UTC()) {
+		return domainidentity.Principal{}, domainidentity.AccessContext{}, fmt.Errorf("%w: service account token expired", apperrors.ErrUnauthorized)
+	}
+	account, err := s.gateway.GetServiceAccount(ctx, item.ServiceAccountID)
+	if err != nil {
+		return domainidentity.Principal{}, domainidentity.AccessContext{}, fmt.Errorf("%w: service account not found", apperrors.ErrUnauthorized)
+	}
+	if strings.TrimSpace(account.Status) != "active" {
+		return domainidentity.Principal{}, domainidentity.AccessContext{}, fmt.Errorf("%w: service account is not active", apperrors.ErrUnauthorized)
+	}
+	principal := domainidentity.Principal{
+		UserID:         "service_account:" + account.ID,
+		UserName:       account.Name,
+		Roles:          append([]string(nil), account.RoleIDs...),
+		Teams:          append([]string(nil), account.TeamIDs...),
+		PermissionKeys: append([]string(nil), item.PermissionKeys...),
+	}
+	_ = s.gateway.TouchServiceAccountToken(ctx, item.ID, time.Now().UTC())
+	return principal, domainidentity.AccessContext{
+		TokenID:     item.ID,
+		TokenKind:   "service_account_token",
+		SubjectType: "service_account",
+		SubjectID:   account.ID,
+		ExpiresAt:   timePointerValue(item.ExpiresAt),
+	}, nil
 }
 
 func (s *Service) ListActiveSessions(ctx context.Context, principal domainidentity.Principal, limit int) ([]domainidentity.SessionRecord, error) {
@@ -1314,6 +1397,13 @@ func nestedString(raw map[string]any, field string) string {
 		return ""
 	}
 	return value
+}
+
+func timePointerValue(value *time.Time) time.Time {
+	if value == nil {
+		return time.Time{}
+	}
+	return *value
 }
 
 const (

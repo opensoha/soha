@@ -136,6 +136,59 @@ PVE credentials are accepted only on create or update payloads and are never ret
 
 `POST /copilot/root-cause/runs` accepts `agentProviderId`, `analysisProfileId`, and `triggerType`. `agentProviderId=internal` runs the built-in analyzer synchronously; external providers such as `hermes` create a queued root-cause business run plus a linked `AgentRun`, then backfill the business run from the runner callback.
 
+## AI Gateway APIs
+
+- `GET /api/v1/ai-gateway/capabilities`
+- `POST /api/v1/ai-gateway/tools/:toolName/invoke`
+- `GET /api/v1/ai-gateway/personal-access-tokens`
+- `POST /api/v1/ai-gateway/personal-access-tokens`
+- `POST /api/v1/ai-gateway/personal-access-tokens/:tokenID/revoke`
+- `GET /api/v1/ai-gateway/service-accounts`
+- `POST /api/v1/ai-gateway/service-accounts`
+- `POST /api/v1/ai-gateway/service-accounts/:serviceAccountID/tokens`
+- `POST /api/v1/ai-gateway/service-account-tokens/:tokenID/revoke`
+- `GET /api/v1/ai-gateway/ai-clients`
+- `POST /api/v1/ai-gateway/ai-clients`
+- `PUT /api/v1/ai-gateway/ai-clients/:clientID`
+- `GET /api/v1/ai-gateway/tool-grants`
+- `POST /api/v1/ai-gateway/tool-grants`
+- `DELETE /api/v1/ai-gateway/tool-grants/:grantID`
+- `GET /api/v1/ai-gateway/access-policies`
+- `POST /api/v1/ai-gateway/access-policies`
+- `PUT /api/v1/ai-gateway/access-policies/:policyID`
+- `DELETE /api/v1/ai-gateway/access-policies/:policyID`
+- `GET /api/v1/ai-gateway/skill-bindings`
+- `POST /api/v1/ai-gateway/skill-bindings`
+- `PUT /api/v1/ai-gateway/skill-bindings/:bindingID`
+- `DELETE /api/v1/ai-gateway/skill-bindings/:bindingID`
+
+`/ai-gateway/capabilities` returns the current caller's AI-native tools, resources, prompts, and skills after backend permission filtering. AI clients should send `X-Soha-AI-Client-ID`, `X-Soha-AI-Client`, and `X-Soha-Skill-ID` when available so audit records can distinguish human, service, client, skill, and tool context.
+
+`/ai-gateway/tools/:toolName/invoke` is the shared MCP/CLI/AI-agent tool invocation entry point. It must re-check Gateway permission, domain permission, scope, grants, and risk policy, then call the owning application service instead of bypassing soha control-plane logic.
+
+First-version tool names:
+
+- `delivery.applications.list`
+- `delivery.applications.create`
+- `delivery.application_environments.list`
+- `delivery.actions.trigger`
+- `delivery.release_bundles.list`
+- `delivery.execution_tasks.list`
+- `k8s.pods.list`
+- `k8s.pods.logs`
+- `k8s.deployments.list`
+- `k8s.services.list`
+- `k8s.events.list`
+- `diagnosis.release_failure.analyze`
+
+Kubernetes tools are read-only and are routed through the platform resource application service. Gateway applies basic sensitive-field redaction to log outputs before returning them to MCP/CLI callers.
+
+Personal and service-account token create responses return the opaque token value once. The database stores only the hash and prefix; callers must keep the returned value in their local CLI/MCP credential store.
+
+AI client, tool-grant, access-policy, and skill-binding endpoints require `ai.gateway.manage`. Tool grants, access policies, and skill bindings support `user`, `service_account`, `role`, and `ai_client` subjects; runtime evaluation combines subject, role, and client records. Deny policies and grants take precedence, allow records form allow-lists, and skill bindings narrow the exposed skill/capability refs without granting new permissions.
+
+Tool invocations write both the standard audit log and `ai_gateway_audit_logs`. The dedicated AI Gateway row records actor, AI client, skill, tool, risk level, resource scope, request/result, and related IDs without storing full tokens, kubeconfigs, raw logs, or complete tool input.
+
 ## Application Payload
 
 ```json

@@ -18,6 +18,7 @@
 - 应用交付 DevOps 工作台
 - 监控与告警
 - AI Copilot
+- soha AI Gateway
 - 登录与身份链路
 - Agent 协议
 - 权限模型

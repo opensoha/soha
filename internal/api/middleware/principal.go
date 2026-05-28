@@ -12,8 +12,9 @@ import (
 )
 
 const (
-	principalKey   = "principal"
-	accessTokenKey = "access_token"
+	principalKey     = "principal"
+	accessTokenKey   = "access_token"
+	accessContextKey = "access_context"
 )
 
 type AccessTokenParser interface {
@@ -27,7 +28,7 @@ func BuildPrincipalMiddleware(cfg cfgpkg.AuthConfig, parser AccessTokenParser) g
 			token = strings.TrimSpace(c.Query("access_token"))
 		}
 		if token != "" {
-			principal, _, err := parser.ParseAccessToken(c.Request.Context(), token)
+			principal, accessCtx, err := parser.ParseAccessToken(c.Request.Context(), token)
 			if err != nil {
 				if allowsExternalBearerToken(c.Request.URL.Path) {
 					c.Next()
@@ -39,6 +40,7 @@ func BuildPrincipalMiddleware(cfg cfgpkg.AuthConfig, parser AccessTokenParser) g
 			}
 			c.Set(principalKey, principal)
 			c.Set(accessTokenKey, token)
+			c.Set(accessContextKey, accessCtx)
 			c.Next()
 			return
 		}
@@ -77,6 +79,12 @@ func PrincipalFromContext(c *gin.Context) domainidentity.Principal {
 func BearerTokenFromContext(c *gin.Context) string {
 	token, _ := c.Get(accessTokenKey)
 	value, _ := token.(string)
+	return value
+}
+
+func AccessContextFromContext(c *gin.Context) domainidentity.AccessContext {
+	accessCtx, _ := c.Get(accessContextKey)
+	value, _ := accessCtx.(domainidentity.AccessContext)
 	return value
 }
 
