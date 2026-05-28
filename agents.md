@@ -209,6 +209,22 @@ Current structure summary:
 - route metadata in `web/src/routes/meta.ts` drives navigation, breadcrumb, and permission-aware route behavior
 - platform pages must share persisted cluster/namespace scope
 
+#### 6.2.1 Ant Design LLM Context
+
+Keep this Codex prompt active for frontend work:
+
+`阅读 https://ant.design/llms-full.txt 并理解 Ant Design 组件库，在编写 Ant Design 代码时使用这些知识。`
+
+Use official Ant Design LLM resources as the reference source before writing or refactoring `antd` code:
+
+- `https://ant.design/llms.txt` for the documentation index
+- `https://ant.design/llms-full.txt` and `https://ant.design/llms-full-cn.txt` for full component documentation
+- `https://ant.design/llms-semantic.md` and `https://ant.design/llms-semantic-cn.md` when customizing semantic DOM slots, `classNames`, or `styles`
+- component Markdown docs such as `https://ant.design/components/button.md` or `https://ant.design/components/button-cn.md`, replacing `button` with the target component route
+- component semantic docs such as `https://ant.design/components/button/semantic.md` or `https://ant.design/components/button-cn/semantic.md` when component structure matters
+
+Do not rely only on memory for component APIs. Confirm Ant Design 6 props, tokens, semantic slots, and examples through official LLM docs or local antd knowledge tools before changing UI.
+
 ### 6.3 Frontend Performance Rules
 
 - lazy-load route modules where practical inside the Vite shell
