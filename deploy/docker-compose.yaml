@@ -1,0 +1,120 @@
+name: soha
+
+services:
+  postgres:
+    # PostgreSQL 18 stores PGDATA below /var/lib/postgresql/18/docker.
+    # Mount the parent directory so the named volume owns the real data path.
+    image: postgres:18.4
+    container_name: pgsql
+    environment:
+      POSTGRES_DB: soha
+      POSTGRES_USER: pgsql
+      POSTGRES_PASSWORD: pgsql
+    ports:
+      - "5432:5432"
+    volumes:
+      - soha-postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pgsql -d soha"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  k3s:
+    image: rancher/k3s:v1.36.0-k3s1
+    container_name: soha-k3s
+    privileged: true
+    command:
+      - server
+      - --node-name=local-k3s
+      - --disable=traefik
+      - --disable=servicelb
+      - --tls-san=127.0.0.1
+    ports:
+      - "6443:6443"
+    volumes:
+      - soha-k3s-data:/var/lib/rancher/k3s
+      - ../configs/k3s/registries.yaml:/etc/rancher/k3s/registries.yaml:ro
+    healthcheck:
+      test: ["CMD-SHELL", "kubectl get nodes >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 30
+
+  soha:
+    container_name: soha
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: soha:local
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      SOHA_CONFIG_FILE: /app/configs/config.compose.yaml
+      SOHA_DATABASE_HOST: postgres
+      SOHA_DATABASE_PORT: "5432"
+      SOHA_DATABASE_NAME: soha
+      SOHA_DATABASE_USER: pgsql
+      SOHA_DATABASE_PASSWORD: pgsql
+      SOHA_DATABASE_SSLMODE: disable
+    ports:
+      - "8080:8080"
+    volumes:
+      - ../configs/config.compose.yaml:/app/configs/config.compose.yaml:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8080/readyz >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  hermes-agent-setup:
+    image: nousresearch/hermes-agent:latest
+    profiles:
+      - hermes-setup
+    command: setup
+    stdin_open: true
+    tty: true
+    volumes:
+      - soha-hermes-data:/opt/data
+
+  hermes-agent-runner:
+    profiles:
+      - hermes
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.hermes-agent-runner
+    image: soha-hermes-agent-runner:local
+    container_name: soha-hermes-agent-runner
+    restart: unless-stopped
+    environment:
+      SOHA_AGENT_CONFIG_FILE: /app/configs/agent.config.yaml
+      SOHA_AGENT_CONTROL_PLANE_ENABLED: "true"
+      SOHA_AGENT_CONTROL_PLANE_BASE_URL: ${SOHA_CONTROL_PLANE_URL:-http://soha:8080}
+      SOHA_AGENT_CONTROL_PLANE_BEARER_TOKEN: ${SOHA_EXECUTION_RUNNER_TOKEN:-demo-execution-runner-token}
+      SOHA_AGENT_CONTROL_PLANE_AGENT_ID: ${SOHA_HERMES_AGENT_ID:-hermes-docker-runner}
+      SOHA_AGENT_CONTROL_PLANE_RUNTIME_ENDPOINT: ${SOHA_HERMES_RUNTIME_ENDPOINT:-http://soha-hermes-agent-runner:18080}
+      SOHA_AGENT_CONTROL_PLANE_AGENT_RUNTIME_ENABLED: "true"
+      SOHA_AGENT_CONTROL_PLANE_AGENT_RUNTIME_WORKER_ID: ${SOHA_HERMES_WORKER_ID:-hermes-docker-runner}
+      SOHA_AGENT_CONTROL_PLANE_AGENT_RUNTIME_PROVIDER_IDS: hermes
+      SOHA_AGENT_CONTROL_PLANE_AGENT_RUNTIME_PROVIDER_KINDS: hermes
+      SOHA_AGENT_CONTROL_PLANE_AGENT_RUNTIME_HERMES_COMMAND: hermes
+      SOHA_AGENT_CONTROL_PLANE_AGENT_RUNTIME_WORKSPACE_ROOT: /var/lib/soha-agent-runtime
+      SOHA_AGENT_KUBERNETES_ENABLED: "false"
+    ports:
+      - "18080:18080"
+    volumes:
+      - soha-hermes-data:/opt/data
+      - soha-hermes-runtime:/var/lib/soha-agent-runtime
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+volumes:
+  soha-postgres-data:
+    name: soha-postgres-data
+  soha-k3s-data:
+    name: soha-k3s-data
+  soha-hermes-data:
+    name: soha-hermes-data
+  soha-hermes-runtime:
+    name: soha-hermes-runtime

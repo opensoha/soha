@@ -1,9 +1,12 @@
 .DEFAULT_GOAL := dev
 
-.PHONY: init init-go init-web init-docs init-db init-cluster init-cluster-kubevirt init-kubevirt init-cdi init-pve-vm deploy-pve-vm delete-pve-vm deploy-pve-mock delete-pve-mock fix-kubevirt-mounts enable-kubevirt-emulation pve-vm-boot-root pve-vm-status dev dev-api dev-web dev-docs build build-web build-docs clean deploy-image deploy-compose-up deploy-compose-down deploy-compose-config deploy-helm-lint
+.PHONY: init init-go init-web init-docs init-db init-cluster init-cluster-kubevirt init-kubevirt init-cdi init-pve-vm deploy-pve-vm delete-pve-vm deploy-pve-mock delete-pve-mock fix-kubevirt-mounts enable-kubevirt-emulation pve-vm-boot-root pve-vm-status dev dev-api dev-web dev-docs build build-web build-docs clean deploy-image deploy-compose-up deploy-compose-down deploy-compose-config deploy-helm-lint deploy-hermes-setup deploy-hermes-runner-up deploy-hermes-runner-down deploy-hermes-runner-config
 
 COMPOSE ?= docker compose
-ROOT_COMPOSE_FILE ?= docker-compose.yaml
+DEPLOY_DIR ?= deploy
+ROOT_COMPOSE_FILE ?= $(DEPLOY_DIR)/docker-compose.yaml
+APP_DOCKERFILE ?= $(DEPLOY_DIR)/Dockerfile
+HELM_CHART ?= $(DEPLOY_DIR)/chart
 KUBEVIRT_COMPOSE_FILE ?= configs/k3s/docker-compose.kubevirt.yaml
 KUBECTL ?= kubectl
 KUBECONFIG ?= .dev/k3s/kubeconfig.yaml
@@ -161,19 +164,32 @@ build: build-web build-docs
 	CGO_ENABLED=0 go build -tags embedassets -o bin/soha ./cmd/server
 
 deploy-image:
-	docker build -t soha:single-project .
+	docker build -f $(APP_DOCKERFILE) -t soha:single-project .
 
 deploy-compose-up:
-	docker compose -f $(ROOT_COMPOSE_FILE) up -d --build
+	$(COMPOSE) -f $(ROOT_COMPOSE_FILE) up -d --build
 
 deploy-compose-down:
-	docker compose -f $(ROOT_COMPOSE_FILE) down
+	$(COMPOSE) -f $(ROOT_COMPOSE_FILE) down
 
 deploy-compose-config:
-	docker compose -f $(ROOT_COMPOSE_FILE) config
+	$(COMPOSE) -f $(ROOT_COMPOSE_FILE) config
+
+deploy-hermes-setup:
+	$(COMPOSE) -f $(ROOT_COMPOSE_FILE) --profile hermes-setup run --rm hermes-agent-setup
+
+deploy-hermes-runner-up:
+	$(COMPOSE) -f $(ROOT_COMPOSE_FILE) --profile hermes up -d --build hermes-agent-runner
+
+deploy-hermes-runner-down:
+	$(COMPOSE) -f $(ROOT_COMPOSE_FILE) --profile hermes stop hermes-agent-runner
+	$(COMPOSE) -f $(ROOT_COMPOSE_FILE) --profile hermes rm -f hermes-agent-runner
+
+deploy-hermes-runner-config:
+	$(COMPOSE) -f $(ROOT_COMPOSE_FILE) --profile hermes --profile hermes-setup config
 
 deploy-helm-lint:
-	helm lint chart
+	helm lint $(HELM_CHART)
 
 # Test
 test-api:

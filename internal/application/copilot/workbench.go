@@ -210,9 +210,27 @@ func toolsetAllowsAdapter(toolset domaincopilot.SessionToolset, adapterID string
 		return true
 	}
 	for _, item := range toolset.EnabledAdapterIDs {
-		if strings.TrimSpace(item) == adapterID {
+		if adapterSelectionMatches(strings.TrimSpace(item), adapterID) {
 			return true
 		}
+	}
+	return false
+}
+
+func adapterSelectionMatches(selection, adapterID string) bool {
+	selection = strings.TrimSpace(selection)
+	adapterID = strings.TrimSpace(adapterID)
+	if selection == "" || adapterID == "" {
+		return false
+	}
+	if selection == adapterID {
+		return true
+	}
+	if strings.HasSuffix(adapterID, ".v1") && strings.TrimSuffix(adapterID, ".v1") == selection {
+		return true
+	}
+	if dot := strings.Index(adapterID, "."); dot > 0 && adapterID[:dot] == selection {
+		return true
 	}
 	return false
 }

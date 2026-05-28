@@ -34,10 +34,15 @@ func New(ctx context.Context) (*App, error) {
 		return nil, fmt.Errorf("build agent logger: %w", err)
 	}
 
-	client, err := k8sagent.New(cfg.Kubernetes)
-	if err != nil {
-		cancel()
-		return nil, fmt.Errorf("build kubernetes client: %w", err)
+	var client *k8sagent.Client
+	if cfg.Kubernetes.Enabled {
+		client, err = k8sagent.New(cfg.Kubernetes)
+		if err != nil {
+			cancel()
+			return nil, fmt.Errorf("build kubernetes client: %w", err)
+		}
+	} else {
+		logger.Info("agent kubernetes client disabled; platform proxy routes will be unavailable")
 	}
 
 	runner := runnerpkg.New(cfg.ControlPlane, logger)

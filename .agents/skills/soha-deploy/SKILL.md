@@ -9,24 +9,24 @@ description: >-
   skill assumes the current repo can ship as one application container because
   `cmd/server` serves embedded SPA and docs assets when `web/dist` and
   `docs/build` are present at build time, and the canonical deployment assets
-  now live at the repo root plus `chart/`.
+  now live under `deploy/`.
 ---
 
 # Soha Deploy
 
 ## Overview
 
-Use the root deployment assets to run soha as a single-project runtime: one application container serving API, SPA, and docs, plus PostgreSQL as the required durable dependency. This matches the current codebase better than deploying the Vite dev server separately.
+Use the `deploy/` assets to run soha as a single-project runtime: one application container serving API, SPA, and docs, plus PostgreSQL as the required durable dependency. This matches the current codebase better than deploying the Vite dev server separately.
 
 ## Workflow
 
 1. Confirm the target is a single-project deployment, not a multi-service platform split.
-2. Start from the repo-root `Dockerfile` so `web/dist` and `docs/build` are baked into the server binary during image build.
+2. Start from `deploy/Dockerfile` so `web/dist` and `docs/build` are baked into the server binary during image build.
 3. Reuse `configs/config.yaml` for local and container defaults, or provide overrides through environment variables or mounted config files when deployment needs differ.
 4. Choose one delivery form:
-   - `docker-compose.yaml` for local or VM-style runs
-   - `deployment.yaml` for raw-cluster delivery
-   - `chart/` for repeatable cluster installs
+   - `deploy/docker-compose.yaml` for local or VM-style runs
+   - `deploy/deployment.yaml` for raw-cluster delivery
+   - `deploy/chart/` for repeatable cluster installs
 5. Verify `SOHA_CONFIG_FILE`, database settings, OIDC redirect URLs, and ingress hostnames before rollout.
 6. Smoke test `/healthz`, `/readyz`, `/`, and `/docs/` after deployment.
 
@@ -41,17 +41,17 @@ Use the root deployment assets to run soha as a single-project runtime: one appl
 
 ## Deployment Map
 
-- `Dockerfile`: multi-stage image build for embedded SPA and docs.
-- `docker-compose.yaml`: local stack with app plus PostgreSQL, plus the current optional local `k3s` runtime if present in the file.
+- `deploy/Dockerfile`: multi-stage image build for embedded SPA and docs.
+- `deploy/Dockerfile.hermes-agent-runner`: optional Hermes Agent Runtime runner image.
+- `deploy/docker-compose.yaml`: local stack with app plus PostgreSQL, optional local `k3s`, and optional Hermes runner services.
 - `configs/config.yaml`: default backend config for local and container startup.
-- `deployment.yaml`: raw Kubernetes manifest for namespace, Secret, app, PostgreSQL, Service, and Ingress.
-- `chart/`: Helm chart for the same topology.
+- `deploy/deployment.yaml`: raw Kubernetes manifest for namespace, Secret, app, PostgreSQL, Service, and Ingress.
+- `deploy/chart/`: Helm chart for the same topology.
 
 ## Repo Reality Checks
 
-- Do not reintroduce a `deploy/` directory for container build, compose, raw YAML, or Helm unless the user explicitly asks for that structure back.
-- Keep the single-project deployment story coherent across `Dockerfile`, `docker-compose.yaml`, `deployment.yaml`, and `chart/`.
-- If `docker-compose.yaml` also carries local cluster helpers such as `k3s`, preserve them unless the user explicitly wants a simpler compose file.
+- Keep the single-project deployment story coherent across `deploy/Dockerfile`, `deploy/docker-compose.yaml`, `deploy/deployment.yaml`, and `deploy/chart/`.
+- If `deploy/docker-compose.yaml` also carries local cluster helpers such as `k3s` or optional Hermes runner services, preserve them unless the user explicitly wants a simpler compose file.
 - When changing deployment docs or examples, update `README.md`, `README-cn.md`, `docs/operations/deployment.md`, and `docs/en/operations/deployment.md` together.
 - When auth callback URLs or external login provider assumptions change, re-check deployment-facing hostname, ingress, and `SOHA_CONFIG_FILE` examples so redirect URLs stay coherent.
 

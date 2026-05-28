@@ -15,6 +15,30 @@ const testState = vi.hoisted(() => ({
     visibleMenuIds: [],
     visibleMenus: [],
   } as PermissionSnapshot,
+  sessionAgentProviderId: undefined as string | undefined,
+  agentProviders: [
+    {
+      id: 'internal',
+      kind: 'internal',
+      name: '内置分析',
+      description: '由 soha 内置分析链路同步执行。',
+      enabled: true,
+      default: true,
+      supportsAsync: false,
+      supportsSkills: true,
+      supportsToolsets: true,
+    },
+    {
+      id: 'hermes',
+      kind: 'hermes',
+      name: 'Hermes Agent',
+      description: '通过外部 Hermes runner 异步执行。',
+      enabled: true,
+      supportsAsync: true,
+      supportsSkills: true,
+      supportsToolsets: true,
+    },
+  ],
 }))
 
 const apiGetMock = vi.hoisted(() => vi.fn(async (path: string) => {
@@ -35,6 +59,7 @@ const apiGetMock = vi.hoisted(() => vi.fn(async (path: string) => {
             },
             analysisRunRefs: [{ id: 'run-1', kind: 'root_cause', status: 'completed' }],
             tags: ['P1'],
+            ...(testState.sessionAgentProviderId ? { agentProviderId: testState.sessionAgentProviderId } : {}),
             toolset: {
               enabledAdapterIds: ['metrics.v1'],
               enabledSkillIds: ['root-cause-skill'],
@@ -63,6 +88,7 @@ const apiGetMock = vi.hoisted(() => vi.fn(async (path: string) => {
           },
           analysisRunRefs: [{ id: 'run-1', kind: 'root_cause', status: 'completed' }],
           tags: ['P1'],
+          ...(testState.sessionAgentProviderId ? { agentProviderId: testState.sessionAgentProviderId } : {}),
           toolset: {
             enabledAdapterIds: ['metrics.v1'],
             enabledSkillIds: ['root-cause-skill'],
@@ -147,6 +173,8 @@ const apiGetMock = vi.hoisted(() => vi.fn(async (path: string) => {
         dataSources: [{ id: 'ds-1', name: 'Prometheus', sourceKind: 'metrics', backendType: 'prometheus', enabled: true, mcpAdapter: 'metrics.v1', validationStatus: 'enabled' }],
         analysisProfiles: [{ id: 'profile:inspection', name: '巡检模板', mode: 'inspection', enabled: true }],
         skillsRegistry: [{ id: 'root-cause-skill', name: 'Root Cause', enabled: true }],
+        agentProviders: testState.agentProviders,
+        capabilities: [{ id: 'root_cause', name: '根因分析能力', analysisKinds: ['root_cause'], toolRefs: ['metrics.v1.metrics.anomaly_summary'] }],
       },
     }
   }
@@ -285,6 +313,7 @@ describe('AIWorkbenchPage', () => {
       visibleMenuIds: [],
       visibleMenus: [],
     } as PermissionSnapshot
+    testState.sessionAgentProviderId = undefined
     apiGetMock.mockClear()
     apiPostMock.mockClear()
     apiPatchMock.mockClear()
@@ -372,6 +401,41 @@ describe('AIWorkbenchPage', () => {
     expect(document.body.textContent).toContain('payments-shadow')
   })
 
+  it('persists the session agent provider together with the toolset contract', async () => {
+    testState.sessionAgentProviderId = 'hermes'
+    const container = await renderPage()
+
+    const toolsetButton = Array.from(container.querySelectorAll('button')).find((button) => button.textContent?.includes('工具装配'))
+    expect(toolsetButton).toBeTruthy()
+
+    await act(async () => {
+      toolsetButton?.click()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    expect(document.body.textContent).toContain('Hermes Agent')
+    expect(document.body.textContent).toContain('异步 runner')
+
+    const saveButton = Array.from(document.body.querySelectorAll('button')).find((button) => button.textContent?.includes('保存会话级装配'))
+    expect(saveButton).toBeTruthy()
+
+    await act(async () => {
+      saveButton?.click()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    expect(apiPatchMock).toHaveBeenCalledWith('/copilot/sessions/session-1', {
+      agentProviderId: 'hermes',
+      toolset: {
+        enabledAdapterIds: ['metrics.v1'],
+        enabledSkillIds: ['root-cause-skill'],
+        disabledToolNames: ['metrics.v1.metrics.anomaly_summary'],
+        budgetOverrides: { timeoutSeconds: 45, maxEvidenceItems: 12 },
+        scopeOverrides: { namespace: 'payments-shadow', timeRangeMinutes: 30 },
+      },
+    })
+  })
+
   it('confirms explicit analysis mode and prompt before running the session analysis', async () => {
     testState.snapshot = {
       permissionKeys: ['observe.ai.view', 'observe.ai.chat', 'observe.ai.root-cause.run'],
@@ -420,6 +484,47 @@ describe('AIWorkbenchPage', () => {
       },
     })
     expect(latestRoute).toBe('/ai-workbench/root-cause?session=session-1')
+  })
+
+  it('runs explicit analysis through the session-level Hermes provider when selected', async () => {
+    testState.snapshot = {
+      permissionKeys: ['observe.ai.view', 'observe.ai.chat', 'observe.ai.root-cause.run'],
+      visibleMenuIds: [],
+      visibleMenus: [],
+    } as PermissionSnapshot
+    testState.sessionAgentProviderId = 'hermes'
+    const container = await renderPage()
+
+    const explicitAnalysisButton = Array.from(container.querySelectorAll('button')).find((button) => button.textContent?.includes('显式分析'))
+    expect(explicitAnalysisButton).toBeTruthy()
+
+    await act(async () => {
+      explicitAnalysisButton?.click()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    expect(document.body.textContent).toContain('Hermes Agent')
+    expect(document.body.textContent).toContain('通过外部 Hermes runner 异步执行。')
+
+    const startAnalysisButton = Array.from(document.body.querySelectorAll('button')).find((button) => button.textContent?.includes('开始分析'))
+    expect(startAnalysisButton).toBeTruthy()
+
+    await act(async () => {
+      startAnalysisButton?.click()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    expect(apiPostMock).toHaveBeenCalledWith('/copilot/sessions/session-1/analyze', {
+      mode: 'root_cause',
+      question: '确认异常来源与影响面',
+      agentProviderId: 'hermes',
+      analysisProfileId: 'profile:inspection',
+      scope: {
+        clusterId: 'local-k3s',
+        namespace: 'payments',
+        workload: 'payment-api',
+      },
+    })
   })
 
   it('creates an inspection task from the current session with the inspection profile', async () => {

@@ -277,6 +277,7 @@ func New(ctx context.Context) (*App, error) {
 		virtualizationService.Start(lifecycleCtx)
 	}
 	dockerService := appdocker.New(dockerRepository, permissionResolver, operationService, appdocker.WithHostProvisioner(dockerHostProvisioner{virtualization: virtualizationService}))
+	copilotService.SetAgentRuntimeReaders(executionService, resourceService, dockerService, virtualizationService, monitoringService)
 
 	systemHandler := apiHandlers.NewSystemHandler(databaseStore, runtimeMetrics)
 	authHandler := apiHandlers.NewAuthHandler(identityService, accessConsoleService, settingsService)

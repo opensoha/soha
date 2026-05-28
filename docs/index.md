@@ -44,7 +44,7 @@ soha 是一个多集群 Kubernetes 平台控制台。它不是对原生 Kubernet
 ### 后端
 
 ```bash
-docker compose up -d postgres
+docker compose -f deploy/docker-compose.yaml up -d postgres
 go run ./cmd/server
 ```
 
@@ -68,7 +68,7 @@ npm run dev
 
 ## 推荐阅读
 
-- 仓库级工程规范：根目录 `AGENTS.md`
+- 仓库级工程规范：根目录 `agents.md`
 - [架构入口](./architecture/index.md)
 - [应用交付](./architecture/application-delivery.md)
 - [监控与告警](./architecture/monitoring-and-alerting.md)

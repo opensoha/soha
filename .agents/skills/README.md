@@ -22,7 +22,7 @@ Use them for:
 
 Do not use them for:
 
-- duplicated copies of `AGENTS.md`
+- duplicated copies of `agents.md`
 - user-facing product docs
 - long changelog-style history
 - generic framework tutorials that Codex already knows
@@ -51,15 +51,15 @@ When adding or updating repo-local skills:
 5. Keep validation commands current with the active repo toolchain.
 6. Update skill text in the same task when architecture or workflow rules change.
 
-## Relationship To AGENTS.md
+## Relationship To agents.md
 
-`AGENTS.md` remains the top-level engineering memory.
+`agents.md` remains the top-level engineering memory.
 
 Repo-local skills should refine that memory for a specific execution area, not compete with it.
 
 A good rule:
 
-- global engineering baseline -> `AGENTS.md`
+- global engineering baseline -> `agents.md`
 - bounded implementation guidance -> `.agents/skills/*/SKILL.md`
 
 ## Update Requirement

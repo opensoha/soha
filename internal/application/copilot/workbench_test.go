@@ -12,10 +12,14 @@ import (
 	domainalert "github.com/soha/soha/internal/domain/alert"
 	domainbuild "github.com/soha/soha/internal/domain/build"
 	domaincopilot "github.com/soha/soha/internal/domain/copilot"
+	domaindelivery "github.com/soha/soha/internal/domain/delivery"
+	domaindocker "github.com/soha/soha/internal/domain/docker"
 	domainevent "github.com/soha/soha/internal/domain/event"
 	domainidentity "github.com/soha/soha/internal/domain/identity"
 	domainrelease "github.com/soha/soha/internal/domain/release"
+	domainresource "github.com/soha/soha/internal/domain/resource"
 	domainsettings "github.com/soha/soha/internal/domain/settings"
+	domainvirtualization "github.com/soha/soha/internal/domain/virtualization"
 	"github.com/soha/soha/internal/platform/apperrors"
 )
 
@@ -33,6 +37,9 @@ func TestToolsetAllowsToolHonorsAdapterSelectionAndDisabledTools(t *testing.T) {
 	}
 	if !toolsetAllowsTool(toolset, "metrics.v1", "metrics.list") {
 		t.Fatalf("expected other metrics tools to remain available")
+	}
+	if !toolsetAllowsTool(domaincopilot.SessionToolset{EnabledAdapterIDs: []string{"logs"}}, "logs.v1", "logs.query") {
+		t.Fatalf("expected source-kind adapter selection to allow versioned adapter id")
 	}
 }
 
@@ -510,7 +517,7 @@ func TestRecordAgentRunCallbackSynthesizesStructuredArtifactFields(t *testing.T)
 func TestRunRootCauseAnalysisQueuesExternalAgentAndCreatesBusinessRun(t *testing.T) {
 	defer appaccess.SetRolePermissionMatrix(nil)
 	service, repo := newInspectionAuthzTestService(map[string][]string{
-		"runner": {appaccess.PermObserveAIRootCauseRun},
+		"runner": {appaccess.PermObserveAIRootCauseRun, appaccess.PermObserveAIChatUse},
 	})
 
 	run, err := service.RunRootCauseAnalysis(context.Background(), domainidentity.Principal{
@@ -538,6 +545,11 @@ func TestRunRootCauseAnalysisQueuesExternalAgentAndCreatesBusinessRun(t *testing
 	}
 	if len(repo.createdAgentRun.ToolBindings) == 0 {
 		t.Fatalf("expected agent run to snapshot tool bindings")
+	}
+	for _, binding := range repo.createdAgentRun.ToolBindings {
+		if binding.PermissionKey != "" && binding.PermissionKey != appaccess.PermObserveAIChatUse {
+			t.Fatalf("expected tool bindings to be filtered by creator permissions, got %#v", repo.createdAgentRun.ToolBindings)
+		}
 	}
 	if len(repo.createdAgentRun.SkillBindings) == 0 || repo.createdAgentRun.SkillBindings[0].ProviderSkillRef == "" {
 		t.Fatalf("expected agent run to snapshot provider skill bindings, got %#v", repo.createdAgentRun.SkillBindings)
@@ -939,6 +951,105 @@ func TestRecordAgentToolCallExecutesDeliveryAndAlertTools(t *testing.T) {
 	}
 }
 
+func TestRecordAgentToolCallExecutesWorkbenchContextTools(t *testing.T) {
+	repo := &agentRuntimeCallbackTestRepository{
+		agentRun: domaincopilot.AgentRun{
+			ID:            "agent:tool-workbench-context",
+			ProviderID:    "hermes",
+			ProviderKind:  "hermes",
+			CapabilityID:  "platform_resource_diagnosis",
+			Status:        domaincopilot.AgentRunStatusRunning,
+			Scope:         domaincopilot.SessionScope{ClusterID: "cluster-a", Namespace: "payments", Workload: "payment-api", Service: "payment-api"},
+			Input:         map[string]any{"applicationId": "app-payments", "dockerHostId": "docker-host-1", "composeProjectId": "compose-1", "virtualizationConnectionId": "pve-1", "vmId": "vm-1"},
+			CallbackToken: "callback-token",
+			ToolBindings: []domaincopilot.AgentToolBinding{{
+				ID:           "delivery.execution_tasks",
+				CapabilityID: "delivery_failure",
+				ToolKind:     "internal_api",
+				ToolName:     "delivery.execution_tasks.list",
+			}, {
+				ID:           "platform.resources",
+				CapabilityID: "platform_resource_diagnosis",
+				ToolKind:     "internal_api",
+				ToolName:     "platform.resources.snapshot",
+			}, {
+				ID:           "docker.operations",
+				CapabilityID: "docker_diagnosis",
+				ToolKind:     "internal_api",
+				ToolName:     "docker.operations.list",
+			}, {
+				ID:           "docker.services",
+				CapabilityID: "docker_diagnosis",
+				ToolKind:     "internal_api",
+				ToolName:     "docker.services.list",
+			}, {
+				ID:           "virtualization.operations",
+				CapabilityID: "virtualization_diagnosis",
+				ToolKind:     "internal_api",
+				ToolName:     "virtualization.operations.list",
+			}, {
+				ID:           "oncall.routes",
+				CapabilityID: "oncall_brief",
+				ToolKind:     "internal_api",
+				ToolName:     "oncall.routes.resolve",
+			}},
+			CreatedAt: time.Now().UTC(),
+			UpdatedAt: time.Now().UTC(),
+		},
+	}
+	service := &Service{
+		repo: repo,
+		execution: agentToolExecutionReader{items: []domaindelivery.ExecutionTask{{
+			ID:            "task-1",
+			ApplicationID: "app-payments",
+			TaskKind:      "release",
+			ProviderKind:  "ci_agent_runner",
+			Status:        "failed",
+			CreatedAt:     time.Now().UTC(),
+		}}},
+		resources: agentToolResourceReader{
+			nodes:       []domainresource.NodeView{{Name: "node-1", Status: "Ready", PodCount: 12}},
+			pods:        []domainresource.PodView{{Name: "payment-api-abc", Namespace: "payments", Phase: "Running", ReadyContainers: "1/1"}},
+			deployments: []domainresource.DeploymentView{{Name: "payment-api", Namespace: "payments", DesiredReplicas: 2, ReadyReplicas: 1}},
+			services:    []domainresource.ServiceView{{Name: "payment-api", Namespace: "payments", Type: "ClusterIP", Selector: map[string]string{"app": "payment-api"}}},
+		},
+		docker: agentToolDockerReader{
+			operations: []domaindocker.Operation{{ID: "docker-op-1", HostID: "docker-host-1", ProjectID: "compose-1", OperationKind: "project_deploy", Status: "failed", CreatedAt: time.Now().UTC()}},
+			services:   []domaindocker.Service{{ID: "docker-svc-1", HostID: "docker-host-1", ProjectID: "compose-1", Name: "payment-api", Status: "exited"}},
+		},
+		virtualization: agentToolVirtualizationReader{items: []domainvirtualization.Task{{ID: "virt-task-1", Provider: "pve", ConnectionID: "pve-1", VMID: "vm-1", TaskKind: "vm_action", Status: "failed", CreatedAt: time.Now().UTC()}}},
+		oncall:         agentToolOnCallResolver{result: map[string]any{"routeId": "route-1", "targetRef": "schedule:payments"}},
+	}
+
+	for _, item := range []struct {
+		bindingID string
+		key       string
+	}{
+		{bindingID: "delivery.execution_tasks", key: "executionTasks"},
+		{bindingID: "platform.resources", key: "pods"},
+		{bindingID: "docker.operations", key: "operations"},
+		{bindingID: "docker.services", key: "services"},
+		{bindingID: "virtualization.operations", key: "operations"},
+		{bindingID: "oncall.routes", key: "resolution"},
+	} {
+		result, err := service.RecordAgentToolCall(context.Background(), domaincopilot.AgentToolCallInput{
+			RunID:         "agent:tool-workbench-context",
+			CallbackToken: "callback-token",
+			ToolBindingID: item.bindingID,
+			Input:         map[string]any{"limit": 5},
+		})
+		if err != nil {
+			t.Fatalf("record %s tool call: %v", item.bindingID, err)
+		}
+		if _, ok := result.Output[item.key]; !ok {
+			t.Fatalf("expected output key %s for %s, got %#v", item.key, item.bindingID, result.Output)
+		}
+	}
+	if len(repo.agentRun.ToolExecutions) != 6 {
+		t.Fatalf("expected six workbench context tool executions, got %#v", repo.agentRun.ToolExecutions)
+	}
+}
+
 func TestRecordAgentRunCallbackPreservesPriorToolCalls(t *testing.T) {
 	createdAt := time.Date(2026, 5, 27, 10, 0, 0, 0, time.UTC)
 	repo := &agentRuntimeCallbackTestRepository{
@@ -1149,6 +1260,148 @@ func (r agentToolBuildReader) List(_ context.Context, filter domainbuild.Filter)
 		return items[:filter.Limit], nil
 	}
 	return items, nil
+}
+
+type agentToolExecutionReader struct {
+	items []domaindelivery.ExecutionTask
+}
+
+func (r agentToolExecutionReader) ListExecutionTasks(_ context.Context, _ domainidentity.Principal, filter domaindelivery.ExecutionTaskFilter) ([]domaindelivery.ExecutionTask, error) {
+	items := make([]domaindelivery.ExecutionTask, 0, len(r.items))
+	for _, item := range r.items {
+		if filter.ApplicationID != "" && item.ApplicationID != filter.ApplicationID {
+			continue
+		}
+		if filter.Status != "" && item.Status != filter.Status {
+			continue
+		}
+		items = append(items, item)
+	}
+	if filter.Limit > 0 && len(items) > filter.Limit {
+		return items[:filter.Limit], nil
+	}
+	return items, nil
+}
+
+type agentToolResourceReader struct {
+	nodes       []domainresource.NodeView
+	pods        []domainresource.PodView
+	deployments []domainresource.DeploymentView
+	services    []domainresource.ServiceView
+}
+
+func (r agentToolResourceReader) ListNodes(context.Context, domainidentity.Principal, string) ([]domainresource.NodeView, error) {
+	return r.nodes, nil
+}
+
+func (r agentToolResourceReader) ListPods(_ context.Context, _ domainidentity.Principal, _, namespace string) ([]domainresource.PodView, error) {
+	out := make([]domainresource.PodView, 0, len(r.pods))
+	for _, item := range r.pods {
+		if namespace != "" && item.Namespace != namespace {
+			continue
+		}
+		out = append(out, item)
+	}
+	return out, nil
+}
+
+func (r agentToolResourceReader) ListDeployments(_ context.Context, _ domainidentity.Principal, _, namespace string) ([]domainresource.DeploymentView, error) {
+	out := make([]domainresource.DeploymentView, 0, len(r.deployments))
+	for _, item := range r.deployments {
+		if namespace != "" && item.Namespace != namespace {
+			continue
+		}
+		out = append(out, item)
+	}
+	return out, nil
+}
+
+func (r agentToolResourceReader) ListServices(_ context.Context, _ domainidentity.Principal, _, namespace string) ([]domainresource.ServiceView, error) {
+	out := make([]domainresource.ServiceView, 0, len(r.services))
+	for _, item := range r.services {
+		if namespace != "" && item.Namespace != namespace {
+			continue
+		}
+		out = append(out, item)
+	}
+	return out, nil
+}
+
+type agentToolDockerReader struct {
+	operations []domaindocker.Operation
+	services   []domaindocker.Service
+}
+
+func (r agentToolDockerReader) ListOperations(_ context.Context, _ domainidentity.Principal, filter domaindocker.OperationFilter) (domaindocker.Page[domaindocker.Operation], error) {
+	items := make([]domaindocker.Operation, 0, len(r.operations))
+	for _, item := range r.operations {
+		if filter.HostID != "" && item.HostID != filter.HostID {
+			continue
+		}
+		if filter.ProjectID != "" && item.ProjectID != filter.ProjectID {
+			continue
+		}
+		if filter.Status != "" && item.Status != filter.Status {
+			continue
+		}
+		items = append(items, item)
+	}
+	if filter.Limit > 0 && len(items) > filter.Limit {
+		items = items[:filter.Limit]
+	}
+	return domaindocker.Page[domaindocker.Operation]{Items: items, Total: len(items)}, nil
+}
+
+func (r agentToolDockerReader) ListServices(_ context.Context, _ domainidentity.Principal, filter domaindocker.ServiceFilter) (domaindocker.Page[domaindocker.Service], error) {
+	items := make([]domaindocker.Service, 0, len(r.services))
+	for _, item := range r.services {
+		if filter.HostID != "" && item.HostID != filter.HostID {
+			continue
+		}
+		if filter.ProjectID != "" && item.ProjectID != filter.ProjectID {
+			continue
+		}
+		if filter.Search != "" && !strings.Contains(item.Name, filter.Search) {
+			continue
+		}
+		items = append(items, item)
+	}
+	if filter.Limit > 0 && len(items) > filter.Limit {
+		items = items[:filter.Limit]
+	}
+	return domaindocker.Page[domaindocker.Service]{Items: items, Total: len(items)}, nil
+}
+
+type agentToolVirtualizationReader struct {
+	items []domainvirtualization.Task
+}
+
+func (r agentToolVirtualizationReader) ListOperations(_ context.Context, _ domainidentity.Principal, filter domainvirtualization.TaskFilter) ([]domainvirtualization.Task, error) {
+	items := make([]domainvirtualization.Task, 0, len(r.items))
+	for _, item := range r.items {
+		if filter.ConnectionID != "" && item.ConnectionID != filter.ConnectionID {
+			continue
+		}
+		if filter.VMID != "" && item.VMID != filter.VMID {
+			continue
+		}
+		if filter.Status != "" && item.Status != filter.Status {
+			continue
+		}
+		items = append(items, item)
+	}
+	if filter.Limit > 0 && len(items) > filter.Limit {
+		return items[:filter.Limit], nil
+	}
+	return items, nil
+}
+
+type agentToolOnCallResolver struct {
+	result map[string]any
+}
+
+func (r agentToolOnCallResolver) ResolveOnCall(context.Context, domainidentity.Principal, domainalert.OnCallResolveInput) (map[string]any, error) {
+	return r.result, nil
 }
 
 type agentToolAlertReader struct {

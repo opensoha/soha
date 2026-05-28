@@ -23,6 +23,8 @@ const (
 	runnerStatusPollInterval = 2 * time.Second
 )
 
+var agentRunHeartbeatInterval = commandHeartbeatInterval
+
 type ExecutionTask struct {
 	ID                       string         `json:"id"`
 	ApplicationID            string         `json:"applicationId"`
@@ -617,12 +619,14 @@ func (r *Runner) executeDockerOperation(ctx context.Context, operation DockerOpe
 func (r *Runner) executeAgentRun(ctx context.Context, run AgentRun) {
 	workerID := agentRuntimeWorkerID(r.cfg)
 	startedAt := time.Now().UTC()
-	r.agentRunCallback(ctx, run, "running", map[string]any{
+	if remoteRun, ok := r.agentRunCallback(ctx, run, "running", map[string]any{
 		"agentId":     firstNonEmpty(strings.TrimSpace(r.cfg.AgentID), "local-agent"),
 		"workerId":    workerID,
 		"heartbeatAt": startedAt.Format(time.RFC3339),
 		"providerId":  run.ProviderID,
-	}, nil, nil, "", "")
+	}, nil, nil, "", ""); ok && shouldStopLocalExecution(remoteRun.Status) {
+		return
+	}
 
 	timeoutSeconds := run.TimeoutSeconds
 	if timeoutSeconds <= 0 {
@@ -631,30 +635,80 @@ func (r *Runner) executeAgentRun(ctx context.Context, run AgentRun) {
 	taskCtx, cancel := context.WithTimeout(ctx, time.Duration(timeoutSeconds)*time.Second)
 	defer cancel()
 
+	done := make(chan struct{})
+	stopReason := make(chan string, 1)
+	go r.streamAgentRunHeartbeats(taskCtx, cancel, done, stopReason, run, workerID)
+
 	executor := r.resolveAgentProviderExecutor(run)
 	output, logs, err := executor(taskCtx, run)
+	close(done)
+	remoteStatus := drainStopReason(stopReason)
+	if remoteStatus != "" {
+		return
+	}
 	if err != nil {
-		r.agentRunCallback(ctx, run, "failed", map[string]any{
+		status := "failed"
+		errorMessage := err.Error()
+		if errors.Is(taskCtx.Err(), context.DeadlineExceeded) {
+			status = "callback_timeout"
+			errorMessage = fmt.Sprintf("agent run timed out after %d seconds", timeoutSeconds)
+		}
+		r.agentRunCallback(ctx, run, status, map[string]any{
 			"agentId":    firstNonEmpty(strings.TrimSpace(r.cfg.AgentID), "local-agent"),
 			"workerId":   workerID,
 			"logs":       logs,
-			"error":      err.Error(),
+			"error":      errorMessage,
 			"providerId": run.ProviderID,
-		}, []map[string]any{agentRunToolExecution(run, startedAt, time.Now().UTC(), "failed", err.Error(), output)}, nil, "", err.Error())
+		}, []map[string]any{agentRunToolExecution(run, startedAt, time.Now().UTC(), status, errorMessage, output)}, nil, "", errorMessage)
 		return
 	}
 	completedAt := time.Now().UTC()
-	artifact := agentRunArtifact(run, output, logs)
+	toolExecution := agentRunToolExecution(run, startedAt, completedAt, "completed", agentRunCompletionSummary(run), output)
+	artifact := agentRunArtifact(run, output, logs, []map[string]any{toolExecution})
 	payload := map[string]any{
 		"agentId":     firstNonEmpty(strings.TrimSpace(r.cfg.AgentID), "local-agent"),
 		"workerId":    workerID,
 		"providerId":  run.ProviderID,
 		"completedAt": completedAt.Format(time.RFC3339),
-		"summary":     firstNonEmpty(strings.TrimSpace(fmt.Sprint(output["summary"])), strings.TrimSpace(fmt.Sprint(output["rawOutput"]))),
-		"rawOutput":   strings.TrimSpace(fmt.Sprint(output["rawOutput"])),
+		"summary":     firstNonEmpty(stringMapValue(output, "summary"), stringMapValue(output, "rawOutput")),
+		"rawOutput":   stringMapValue(output, "rawOutput"),
 		"logs":        logs,
 	}
-	r.agentRunCallback(ctx, run, "completed", payload, []map[string]any{agentRunToolExecution(run, startedAt, completedAt, "completed", agentRunCompletionSummary(run), output)}, []map[string]any{artifact}, firstNonEmpty(strings.TrimSpace(fmt.Sprint(output["externalRunId"])), run.ID), "")
+	r.agentRunCallback(ctx, run, "completed", payload, []map[string]any{toolExecution}, []map[string]any{artifact}, firstNonEmpty(stringMapValue(output, "externalRunId"), run.ID), "")
+}
+
+func (r *Runner) streamAgentRunHeartbeats(ctx context.Context, cancel context.CancelFunc, done <-chan struct{}, stopReason chan<- string, run AgentRun, workerID string) {
+	interval := agentRunHeartbeatInterval
+	if interval <= 0 {
+		interval = commandHeartbeatInterval
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-done:
+			return
+		case <-ticker.C:
+			remoteRun, ok := r.agentRunCallback(ctx, run, "running", map[string]any{
+				"agentId":      firstNonEmpty(strings.TrimSpace(r.cfg.AgentID), "local-agent"),
+				"workerId":     workerID,
+				"heartbeatAt":  time.Now().UTC().Format(time.RFC3339),
+				"providerId":   run.ProviderID,
+				"capabilityId": run.CapabilityID,
+			}, nil, nil, "", "")
+			if ok && shouldStopLocalExecution(remoteRun.Status) {
+				select {
+				case stopReason <- strings.TrimSpace(remoteRun.Status):
+				default:
+				}
+				cancel()
+				return
+			}
+		}
+	}
 }
 
 func (r *Runner) executeHermesAgentRun(ctx context.Context, run AgentRun) (map[string]any, []string, error) {
@@ -715,14 +769,14 @@ func (r *Runner) executeCLIAgentRun(ctx context.Context, run AgentRun, spec agen
 		args = append(args, promptArg, prompt)
 	}
 	if skillArg := strings.TrimSpace(spec.SkillArg); skillArg != "" {
-		for _, skill := range run.SkillIDs {
+		for _, skill := range commandSkillArgs(run, spec) {
 			if trimmed := strings.TrimSpace(skill); trimmed != "" {
 				args = append(args, skillArg, trimmed)
 			}
 		}
 	}
 	if providerSkillArg := strings.TrimSpace(spec.ProviderSkillArg); providerSkillArg != "" {
-		for _, skill := range providerSkillRefs(run.SkillBindings) {
+		for _, skill := range commandProviderSkillArgs(run, spec) {
 			args = append(args, providerSkillArg, skill)
 		}
 	}
@@ -1497,6 +1551,17 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
+func stringMapValue(values map[string]any, key string) string {
+	if values == nil {
+		return ""
+	}
+	value, ok := values[key]
+	if !ok || value == nil {
+		return ""
+	}
+	return strings.TrimSpace(fmt.Sprint(value))
+}
+
 func firstNonEmptyStringSlice(candidates ...[]string) []string {
 	for _, items := range candidates {
 		if len(items) > 0 {
@@ -1537,7 +1602,7 @@ func (r *Runner) agentProviderCommandSpec(providerKey string) agentProviderComma
 		if command == "" {
 			command = "hermes"
 		}
-		return agentProviderCommandSpec{Command: command, Args: []string{"chat"}, PromptArg: "-q", SkillArg: "-s"}
+		return agentProviderCommandSpec{Command: command, Args: []string{"chat", "-Q"}, PromptArg: "-q", ProviderSkillArg: "-s"}
 	}
 	return agentProviderCommandSpec{}
 }
@@ -1567,6 +1632,29 @@ func providerSkillRefs(bindings []map[string]any) []string {
 		out = append(out, value)
 	}
 	return out
+}
+
+func commandSkillArgs(run AgentRun, spec agentProviderCommandSpec) []string {
+	// Backward compatibility: older Hermes configs used skill_arg=-s and left
+	// provider_skill_arg empty. In that case, pass provider-native refs through
+	// the skill arg so Hermes still receives its own skill names.
+	if strings.TrimSpace(spec.ProviderSkillArg) == "" {
+		if refs := providerSkillRefs(run.SkillBindings); len(refs) > 0 {
+			return refs
+		}
+	}
+	return compactStringSlice(run.SkillIDs)
+}
+
+func commandProviderSkillArgs(run AgentRun, spec agentProviderCommandSpec) []string {
+	refs := providerSkillRefs(run.SkillBindings)
+	if len(refs) > 0 {
+		return refs
+	}
+	if strings.TrimSpace(spec.SkillArg) == "" {
+		return compactStringSlice(run.SkillIDs)
+	}
+	return nil
 }
 
 func agentRunCompletionSummary(run AgentRun) string {
@@ -1606,7 +1694,9 @@ func agentToolBindingPrefetchable(binding map[string]any) bool {
 	toolName := strings.TrimSpace(fmt.Sprint(binding["toolName"]))
 	switch toolName {
 	case "events.query", "logs.query", "metrics.query", "traces.query",
-		"delivery.releases.list", "delivery.builds.list", "alerts.list":
+		"delivery.releases.list", "delivery.builds.list", "delivery.execution_tasks.list",
+		"platform.resources.snapshot", "docker.operations.list", "docker.services.list",
+		"virtualization.operations.list", "alerts.list", "oncall.routes.resolve":
 		return true
 	default:
 		return false
@@ -1694,25 +1784,39 @@ func agentRunToolExecution(run AgentRun, startedAt, completedAt time.Time, statu
 	}
 }
 
-func agentRunArtifact(run AgentRun, output map[string]any, logs []string) map[string]any {
-	summary := firstNonEmpty(strings.TrimSpace(fmt.Sprint(output["summary"])), strings.TrimSpace(fmt.Sprint(output["rawOutput"])))
+func agentRunArtifact(run AgentRun, output map[string]any, logs []string, toolExecutions []map[string]any) map[string]any {
+	summary := firstNonEmpty(stringMapValue(output, "summary"), stringMapValue(output, "rawOutput"))
 	if summary == "" {
 		summary = fmt.Sprintf("%s analysis completed by %s", run.CapabilityID, run.ProviderID)
 	}
-	snapshot := map[string]any{
+	snapshot := mapValue(output["dataSourceSnapshot"])
+	if snapshot == nil {
+		snapshot = map[string]any{}
+	}
+	for key, value := range map[string]any{
 		"providerId":   run.ProviderID,
 		"providerKind": run.ProviderKind,
 		"capabilityId": run.CapabilityID,
 		"skillIds":     run.SkillIDs,
 		"toolset":      run.Toolset,
 		"logCount":     len(logs),
+	} {
+		if _, exists := snapshot[key]; !exists {
+			snapshot[key] = value
+		}
 	}
 	if len(run.ToolBindings) > 0 {
-		snapshot["toolBindings"] = run.ToolBindings
+		if _, exists := snapshot["toolBindings"]; !exists {
+			snapshot["toolBindings"] = run.ToolBindings
+		}
 	}
 	if len(run.SkillBindings) > 0 {
-		snapshot["skillBindings"] = run.SkillBindings
+		if _, exists := snapshot["skillBindings"]; !exists {
+			snapshot["skillBindings"] = run.SkillBindings
+		}
 	}
+	artifactToolExecutions := valueAsMapSlice(output["toolExecutions"])
+	artifactToolExecutions = append(artifactToolExecutions, toolExecutions...)
 	return map[string]any{
 		"kind":       firstNonEmpty(run.CapabilityID, "agent_analysis"),
 		"runId":      run.ID,
@@ -1725,7 +1829,8 @@ func agentRunArtifact(run AgentRun, output map[string]any, logs []string) map[st
 			valueAsStringSlice(output["recommendations"]),
 			valueAsStringSlice(output["nextSteps"]),
 		),
-		"toolExecutions":     []map[string]any{},
+		"toolExecutions":     artifactToolExecutions,
+		"graph":              mapValue(output["graph"]),
 		"dataSourceSnapshot": snapshot,
 	}
 }
@@ -1807,6 +1912,18 @@ func valueAsMapSlice(raw any) []map[string]any {
 			}
 		}
 		return items
+	default:
+		return nil
+	}
+}
+
+func mapValue(raw any) map[string]any {
+	switch value := raw.(type) {
+	case map[string]any:
+		if len(value) == 0 {
+			return nil
+		}
+		return value
 	default:
 		return nil
 	}

@@ -50,13 +50,15 @@ control_plane:
         command: hermes
         args:
           - chat
+          - -Q
         prompt_arg: -q
-        skill_arg: -s
-        provider_skill_arg: ""
+        skill_arg: ""
+        provider_skill_arg: -s
     workspace_root: ./.soha/agent-runtime
     poll_interval: 5s
 
 kubernetes:
+  enabled: true
   id: local-agent
   name: Local Agent
   kubeconfig: $HOME/.kube/config

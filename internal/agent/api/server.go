@@ -77,674 +77,676 @@ func New(cfg cfgpkg.Config, logger *zap.Logger, client *k8sagent.Client, runtime
 		apiresponse.JSON(c, http.StatusOK, gin.H{"status": "ok"})
 	})
 
-	platform := router.Group(fmt.Sprintf("%s/platform", cfg.HTTP.BasePath))
-	platform.Use(authMiddleware(cfg.Auth.BearerToken))
-	{
-		platform.GET("/summary", func(c *gin.Context) {
-			apiresponse.Item(c, http.StatusOK, client.Summary(c.Request.Context()))
-		})
-		platform.GET("/namespaces", func(c *gin.Context) {
-			items, err := client.ListNamespaces(c.Request.Context())
-			if err != nil {
-				writeError(c, err)
-				return
-			}
-			apiresponse.Items(c, http.StatusOK, items)
-		})
-		platform.GET("/infrastructure/nodes", func(c *gin.Context) {
-			items, err := client.ListNodes(c.Request.Context())
-			if err != nil {
-				writeError(c, err)
-				return
-			}
-			apiresponse.Items(c, http.StatusOK, items)
-		})
-		platform.GET("/infrastructure/nodes/:name/detail", func(c *gin.Context) {
-			item, err := client.GetNodeDetail(c.Request.Context(), c.Param("name"))
-			if err != nil {
-				writeError(c, err)
-				return
-			}
-			apiresponse.Item(c, http.StatusOK, item)
-		})
-		platform.GET("/workloads/pods", func(c *gin.Context) {
-			namespace := c.DefaultQuery("namespace", "default")
-			items, err := client.ListPods(c.Request.Context(), namespace)
-			if err != nil {
-				writeError(c, err)
-				return
-			}
-			apiresponse.Items(c, http.StatusOK, items)
-		})
-		platform.GET("/workloads/pods/:name/detail", func(c *gin.Context) {
-			namespace := c.DefaultQuery("namespace", "default")
-			item, err := client.GetPodDetail(c.Request.Context(), namespace, c.Param("name"))
-			if err != nil {
-				writeError(c, err)
-				return
-			}
-			apiresponse.Item(c, http.StatusOK, item)
-		})
-		platform.GET("/workloads/pods/:name/logs", func(c *gin.Context) {
-			namespace := c.DefaultQuery("namespace", "default")
-			tailLines := int64(parseLimit(c.Query("tailLines"), 200))
-			sinceSeconds := int64(parseLimit(c.Query("sinceSeconds"), 0))
-			previous := c.Query("previous") == "true"
-			item, err := client.GetPodLogs(c.Request.Context(), namespace, c.Param("name"), c.Query("container"), tailLines, sinceSeconds, previous)
-			if err != nil {
-				writeError(c, err)
-				return
-			}
-			apiresponse.Item(c, http.StatusOK, item)
-		})
-		platform.GET("/workloads/pods/:name/yaml", func(c *gin.Context) {
-			namespace := c.DefaultQuery("namespace", "default")
-			item, err := client.GetPodYAML(c.Request.Context(), namespace, c.Param("name"))
-			if err != nil {
-				writeError(c, err)
-				return
-			}
-			apiresponse.Item(c, http.StatusOK, item)
-		})
-		platform.POST("/workloads/pods/:name/exec", func(c *gin.Context) {
-			namespace := c.DefaultQuery("namespace", "default")
-			var req execPodRequest
-			if err := c.ShouldBindJSON(&req); err != nil || req.Command == "" {
-				apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "command is required")
-				return
-			}
-			item, err := client.ExecPod(c.Request.Context(), namespace, c.Param("name"), req.Container, req.Command, req.TimeoutSeconds)
-			if err != nil {
-				writeError(c, err)
-				return
-			}
-			apiresponse.Item(c, http.StatusOK, item)
-		})
-		platform.GET("/workloads/deployments", func(c *gin.Context) {
-			namespace := c.DefaultQuery("namespace", "default")
-			items, err := client.ListDeployments(c.Request.Context(), namespace)
-			if err != nil {
-				writeError(c, err)
-				return
-			}
-			apiresponse.Items(c, http.StatusOK, items)
-		})
-		platform.GET("/workloads/deployments/:name/detail", func(c *gin.Context) {
-			namespace := c.DefaultQuery("namespace", "default")
-			item, err := client.GetDeploymentDetail(c.Request.Context(), namespace, c.Param("name"))
-			if err != nil {
-				writeError(c, err)
-				return
-			}
-			apiresponse.Item(c, http.StatusOK, item)
-		})
-		platform.GET("/workloads/deployments/:name/yaml", func(c *gin.Context) {
-			namespace := c.DefaultQuery("namespace", "default")
-			item, err := client.GetDeploymentYAML(c.Request.Context(), namespace, c.Param("name"))
-			if err != nil {
-				writeError(c, err)
-				return
-			}
-			apiresponse.Item(c, http.StatusOK, item)
-		})
-		platform.GET("/workloads/deployments/:name/rollout-status", func(c *gin.Context) {
-			namespace := c.DefaultQuery("namespace", "default")
-			item, err := client.GetDeploymentRolloutStatus(c.Request.Context(), namespace, c.Param("name"))
-			if err != nil {
-				writeError(c, err)
-				return
-			}
-			apiresponse.Item(c, http.StatusOK, item)
-		})
-		platform.GET("/workloads/deployments/:name/rollouts", func(c *gin.Context) {
-			namespace := c.DefaultQuery("namespace", "default")
-			items, err := client.ListDeploymentRolloutHistory(c.Request.Context(), namespace, c.Param("name"))
-			if err != nil {
-				writeError(c, err)
-				return
-			}
-			apiresponse.Items(c, http.StatusOK, items)
-		})
-		platform.GET("/workloads/statefulsets", func(c *gin.Context) {
-			namespace := c.Query("namespace")
-			items, err := client.ListStatefulSets(c.Request.Context(), namespace)
-			if err != nil {
-				writeError(c, err)
-				return
-			}
-			apiresponse.Items(c, http.StatusOK, items)
-		})
-		platform.GET("/workloads/statefulsets/:name/detail", func(c *gin.Context) {
-			namespace := c.Query("namespace")
-			item, err := client.GetStatefulSetDetail(c.Request.Context(), namespace, c.Param("name"))
-			if err != nil {
-				writeError(c, err)
-				return
-			}
-			apiresponse.Item(c, http.StatusOK, item)
-		})
-		platform.GET("/workloads/statefulsets/:name/yaml", func(c *gin.Context) {
-			namespace := c.Query("namespace")
-			item, err := client.GetStatefulSetYAML(c.Request.Context(), namespace, c.Param("name"))
-			if err != nil {
-				writeError(c, err)
-				return
-			}
-			apiresponse.Item(c, http.StatusOK, item)
-		})
-		platform.GET("/workloads/daemonsets", func(c *gin.Context) {
-			namespace := c.Query("namespace")
-			items, err := client.ListDaemonSets(c.Request.Context(), namespace)
-			if err != nil {
-				writeError(c, err)
-				return
-			}
-			apiresponse.Items(c, http.StatusOK, items)
-		})
-		platform.GET("/workloads/daemonsets/:name/detail", func(c *gin.Context) {
-			namespace := c.Query("namespace")
-			item, err := client.GetDaemonSetDetail(c.Request.Context(), namespace, c.Param("name"))
-			if err != nil {
-				writeError(c, err)
-				return
-			}
-			apiresponse.Item(c, http.StatusOK, item)
-		})
-		platform.GET("/workloads/daemonsets/:name/yaml", func(c *gin.Context) {
-			namespace := c.Query("namespace")
-			item, err := client.GetDaemonSetYAML(c.Request.Context(), namespace, c.Param("name"))
-			if err != nil {
-				writeError(c, err)
-				return
-			}
-			apiresponse.Item(c, http.StatusOK, item)
-		})
-		platform.GET("/workloads/jobs", func(c *gin.Context) {
-			namespace := c.Query("namespace")
-			items, err := client.ListJobs(c.Request.Context(), namespace)
-			if err != nil {
-				writeError(c, err)
-				return
-			}
-			apiresponse.Items(c, http.StatusOK, items)
-		})
-		platform.GET("/workloads/jobs/:name/detail", func(c *gin.Context) {
-			namespace := c.Query("namespace")
-			item, err := client.GetJobDetail(c.Request.Context(), namespace, c.Param("name"))
-			if err != nil {
-				writeError(c, err)
-				return
-			}
-			apiresponse.Item(c, http.StatusOK, item)
-		})
-		platform.GET("/workloads/jobs/:name/yaml", func(c *gin.Context) {
-			namespace := c.Query("namespace")
-			item, err := client.GetJobYAML(c.Request.Context(), namespace, c.Param("name"))
-			if err != nil {
-				writeError(c, err)
-				return
-			}
-			apiresponse.Item(c, http.StatusOK, item)
-		})
-		platform.GET("/workloads/cronjobs", func(c *gin.Context) {
-			namespace := c.Query("namespace")
-			items, err := client.ListCronJobs(c.Request.Context(), namespace)
-			if err != nil {
-				writeError(c, err)
-				return
-			}
-			apiresponse.Items(c, http.StatusOK, items)
-		})
-		platform.GET("/workloads/replicasets", func(c *gin.Context) {
-			namespace := c.Query("namespace")
-			items, err := client.ListReplicaSets(c.Request.Context(), namespace)
-			if err != nil {
-				writeError(c, err)
-				return
-			}
-			apiresponse.Items(c, http.StatusOK, items)
-		})
-		platform.GET("/workloads/cronjobs/:name/detail", func(c *gin.Context) {
-			namespace := c.Query("namespace")
-			item, err := client.GetCronJobDetail(c.Request.Context(), namespace, c.Param("name"))
-			if err != nil {
-				writeError(c, err)
-				return
-			}
-			apiresponse.Item(c, http.StatusOK, item)
-		})
-		platform.GET("/workloads/cronjobs/:name/yaml", func(c *gin.Context) {
-			namespace := c.Query("namespace")
-			item, err := client.GetCronJobYAML(c.Request.Context(), namespace, c.Param("name"))
-			if err != nil {
-				writeError(c, err)
-				return
-			}
-			apiresponse.Item(c, http.StatusOK, item)
-		})
-		platform.GET("/configuration/configmaps", func(c *gin.Context) {
-			namespace := c.Query("namespace")
-			items, err := client.ListConfigMaps(c.Request.Context(), namespace)
-			if err != nil {
-				writeError(c, err)
-				return
-			}
-			apiresponse.Items(c, http.StatusOK, items)
-		})
-		platform.GET("/configuration/secrets", func(c *gin.Context) {
-			namespace := c.Query("namespace")
-			items, err := client.ListSecrets(c.Request.Context(), namespace)
-			if err != nil {
-				writeError(c, err)
-				return
-			}
-			apiresponse.Items(c, http.StatusOK, items)
-		})
-		platform.GET("/configuration/hpas", func(c *gin.Context) {
-			namespace := c.Query("namespace")
-			items, err := client.ListHorizontalPodAutoscalers(c.Request.Context(), namespace)
-			if err != nil {
-				writeError(c, err)
-				return
-			}
-			apiresponse.Items(c, http.StatusOK, items)
-		})
-		platform.GET("/configuration/poddisruptionbudgets", func(c *gin.Context) {
-			namespace := c.Query("namespace")
-			items, err := client.ListPodDisruptionBudgets(c.Request.Context(), namespace)
-			if err != nil {
-				writeError(c, err)
-				return
-			}
-			apiresponse.Items(c, http.StatusOK, items)
-		})
-		platform.GET("/access-control/serviceaccounts", func(c *gin.Context) {
-			namespace := c.Query("namespace")
-			items, err := client.ListServiceAccounts(c.Request.Context(), namespace)
-			if err != nil {
-				writeError(c, err)
-				return
-			}
-			apiresponse.Items(c, http.StatusOK, items)
-		})
-		platform.GET("/access-control/serviceaccounts/:name/detail", func(c *gin.Context) {
-			namespace := c.Query("namespace")
-			item, err := client.GetServiceAccountDetail(c.Request.Context(), namespace, c.Param("name"))
-			if err != nil {
-				writeError(c, err)
-				return
-			}
-			apiresponse.Item(c, http.StatusOK, item)
-		})
-		platform.GET("/access-control/roles", func(c *gin.Context) {
-			namespace := c.Query("namespace")
-			items, err := client.ListRoles(c.Request.Context(), namespace)
-			if err != nil {
-				writeError(c, err)
-				return
-			}
-			apiresponse.Items(c, http.StatusOK, items)
-		})
-		platform.GET("/access-control/roles/:name/detail", func(c *gin.Context) {
-			namespace := c.Query("namespace")
-			item, err := client.GetRoleDetail(c.Request.Context(), namespace, c.Param("name"))
-			if err != nil {
-				writeError(c, err)
-				return
-			}
-			apiresponse.Item(c, http.StatusOK, item)
-		})
-		platform.GET("/access-control/rolebindings", func(c *gin.Context) {
-			namespace := c.Query("namespace")
-			items, err := client.ListRoleBindings(c.Request.Context(), namespace)
-			if err != nil {
-				writeError(c, err)
-				return
-			}
-			apiresponse.Items(c, http.StatusOK, items)
-		})
-		platform.GET("/access-control/rolebindings/:name/detail", func(c *gin.Context) {
-			namespace := c.Query("namespace")
-			item, err := client.GetRoleBindingDetail(c.Request.Context(), namespace, c.Param("name"))
-			if err != nil {
-				writeError(c, err)
-				return
-			}
-			apiresponse.Item(c, http.StatusOK, item)
-		})
-		platform.GET("/network/services", func(c *gin.Context) {
-			namespace := c.Query("namespace")
-			items, err := client.ListServices(c.Request.Context(), namespace)
-			if err != nil {
-				writeError(c, err)
-				return
-			}
-			apiresponse.Items(c, http.StatusOK, items)
-		})
-		platform.GET("/network/ingresses", func(c *gin.Context) {
-			namespace := c.Query("namespace")
-			items, err := client.ListIngresses(c.Request.Context(), namespace)
-			if err != nil {
-				writeError(c, err)
-				return
-			}
-			apiresponse.Items(c, http.StatusOK, items)
-		})
-		platform.GET("/network/endpointslices", func(c *gin.Context) {
-			namespace := c.Query("namespace")
-			items, err := client.ListEndpointSlices(c.Request.Context(), namespace)
-			if err != nil {
-				writeError(c, err)
-				return
-			}
-			apiresponse.Items(c, http.StatusOK, items)
-		})
-		platform.GET("/network/networkpolicies", func(c *gin.Context) {
-			namespace := c.Query("namespace")
-			items, err := client.ListNetworkPolicies(c.Request.Context(), namespace)
-			if err != nil {
-				writeError(c, err)
-				return
-			}
-			apiresponse.Items(c, http.StatusOK, items)
-		})
-		platform.GET("/network/gatewayclasses", func(c *gin.Context) {
-			items, err := client.ListGatewayClasses(c.Request.Context())
-			if err != nil {
-				writeError(c, err)
-				return
-			}
-			apiresponse.Items(c, http.StatusOK, items)
-		})
-		platform.GET("/network/gateways", func(c *gin.Context) {
-			namespace := c.Query("namespace")
-			items, err := client.ListGateways(c.Request.Context(), namespace)
-			if err != nil {
-				writeError(c, err)
-				return
-			}
-			apiresponse.Items(c, http.StatusOK, items)
-		})
-		platform.GET("/network/httproutes", func(c *gin.Context) {
-			namespace := c.Query("namespace")
-			items, err := client.ListHTTPRoutes(c.Request.Context(), namespace)
-			if err != nil {
-				writeError(c, err)
-				return
-			}
-			apiresponse.Items(c, http.StatusOK, items)
-		})
-		platform.GET("/network/backendtlspolicies", func(c *gin.Context) {
-			namespace := c.Query("namespace")
-			items, err := client.ListBackendTLSPolicies(c.Request.Context(), namespace)
-			if err != nil {
-				writeError(c, err)
-				return
-			}
-			apiresponse.Items(c, http.StatusOK, items)
-		})
-		platform.GET("/network/grpcroutes", func(c *gin.Context) {
-			namespace := c.Query("namespace")
-			items, err := client.ListGRPCRoutes(c.Request.Context(), namespace)
-			if err != nil {
-				writeError(c, err)
-				return
-			}
-			apiresponse.Items(c, http.StatusOK, items)
-		})
-		platform.GET("/network/referencegrants", func(c *gin.Context) {
-			namespace := c.Query("namespace")
-			items, err := client.ListReferenceGrants(c.Request.Context(), namespace)
-			if err != nil {
-				writeError(c, err)
-				return
-			}
-			apiresponse.Items(c, http.StatusOK, items)
-		})
-		platform.GET("/storage/persistentvolumeclaims", func(c *gin.Context) {
-			namespace := c.Query("namespace")
-			items, err := client.ListPersistentVolumeClaims(c.Request.Context(), namespace)
-			if err != nil {
-				writeError(c, err)
-				return
-			}
-			apiresponse.Items(c, http.StatusOK, items)
-		})
-		platform.GET("/storage/persistentvolumes", func(c *gin.Context) {
-			items, err := client.ListPersistentVolumes(c.Request.Context())
-			if err != nil {
-				writeError(c, err)
-				return
-			}
-			apiresponse.Items(c, http.StatusOK, items)
-		})
-		platform.GET("/storage/storageclasses", func(c *gin.Context) {
-			items, err := client.ListStorageClasses(c.Request.Context())
-			if err != nil {
-				writeError(c, err)
-				return
-			}
-			apiresponse.Items(c, http.StatusOK, items)
-		})
-		platform.GET("/network/ingressclasses", func(c *gin.Context) {
-			items, err := client.ListIngressClasses(c.Request.Context())
-			if err != nil {
-				writeError(c, err)
-				return
-			}
-			apiresponse.Items(c, http.StatusOK, items)
-		})
-		platform.GET("/configuration/priorityclasses", func(c *gin.Context) {
-			items, err := client.ListPriorityClasses(c.Request.Context())
-			if err != nil {
-				writeError(c, err)
-				return
-			}
-			apiresponse.Items(c, http.StatusOK, items)
-		})
-		platform.GET("/configuration/runtimeclasses", func(c *gin.Context) {
-			items, err := client.ListRuntimeClasses(c.Request.Context())
-			if err != nil {
-				writeError(c, err)
-				return
-			}
-			apiresponse.Items(c, http.StatusOK, items)
-		})
-		platform.GET("/access-control/clusterroles", func(c *gin.Context) {
-			items, err := client.ListClusterRoles(c.Request.Context())
-			if err != nil {
-				writeError(c, err)
-				return
-			}
-			apiresponse.Items(c, http.StatusOK, items)
-		})
-		platform.GET("/access-control/clusterroles/:name/detail", func(c *gin.Context) {
-			item, err := client.GetClusterRoleDetail(c.Request.Context(), c.Param("name"))
-			if err != nil {
-				writeError(c, err)
-				return
-			}
-			apiresponse.Item(c, http.StatusOK, item)
-		})
-		platform.GET("/access-control/clusterrolebindings", func(c *gin.Context) {
-			items, err := client.ListClusterRoleBindings(c.Request.Context())
-			if err != nil {
-				writeError(c, err)
-				return
-			}
-			apiresponse.Items(c, http.StatusOK, items)
-		})
-		platform.GET("/access-control/clusterrolebindings/:name/detail", func(c *gin.Context) {
-			item, err := client.GetClusterRoleBindingDetail(c.Request.Context(), c.Param("name"))
-			if err != nil {
-				writeError(c, err)
-				return
-			}
-			apiresponse.Item(c, http.StatusOK, item)
-		})
-		platform.GET("/configuration/mutatingwebhookconfigurations", func(c *gin.Context) {
-			items, err := client.ListMutatingWebhookConfigurations(c.Request.Context())
-			if err != nil {
-				writeError(c, err)
-				return
-			}
-			apiresponse.Items(c, http.StatusOK, items)
-		})
-		platform.GET("/configuration/validatingwebhookconfigurations", func(c *gin.Context) {
-			items, err := client.ListValidatingWebhookConfigurations(c.Request.Context())
-			if err != nil {
-				writeError(c, err)
-				return
-			}
-			apiresponse.Items(c, http.StatusOK, items)
-		})
-		platform.GET("/configuration/resourcequotas", func(c *gin.Context) {
-			namespace := c.Query("namespace")
-			items, err := client.ListResourceQuotas(c.Request.Context(), namespace)
-			if err != nil {
-				writeError(c, err)
-				return
-			}
-			apiresponse.Items(c, http.StatusOK, items)
-		})
-		platform.GET("/configuration/limitranges", func(c *gin.Context) {
-			namespace := c.Query("namespace")
-			items, err := client.ListLimitRanges(c.Request.Context(), namespace)
-			if err != nil {
-				writeError(c, err)
-				return
-			}
-			apiresponse.Items(c, http.StatusOK, items)
-		})
-		platform.GET("/configuration/leases", func(c *gin.Context) {
-			namespace := c.Query("namespace")
-			items, err := client.ListLeases(c.Request.Context(), namespace)
-			if err != nil {
-				writeError(c, err)
-				return
-			}
-			apiresponse.Items(c, http.StatusOK, items)
-		})
-		platform.GET("/workloads/replicationcontrollers", func(c *gin.Context) {
-			namespace := c.Query("namespace")
-			items, err := client.ListReplicationControllers(c.Request.Context(), namespace)
-			if err != nil {
-				writeError(c, err)
-				return
-			}
-			apiresponse.Items(c, http.StatusOK, items)
-		})
-		platform.GET("/extensions/crds", func(c *gin.Context) {
-			items, err := client.ListCRDs(c.Request.Context())
-			if err != nil {
-				writeError(c, err)
-				return
-			}
-			apiresponse.Items(c, http.StatusOK, items)
-		})
-		platform.GET("/helm/releases", func(c *gin.Context) {
-			namespace := c.Query("namespace")
-			items, err := client.ListHelmReleases(c.Request.Context(), namespace)
-			if err != nil {
-				writeError(c, err)
-				return
-			}
-			apiresponse.Items(c, http.StatusOK, items)
-		})
-		platform.GET("/helm/releases/:name/detail", func(c *gin.Context) {
-			namespace := c.Query("namespace")
-			item, err := client.GetHelmReleaseDetail(c.Request.Context(), namespace, c.Param("name"))
-			if err != nil {
-				writeError(c, err)
-				return
-			}
-			apiresponse.Item(c, http.StatusOK, item)
-		})
-		platform.GET("/helm/releases/:name/history", func(c *gin.Context) {
-			namespace := c.Query("namespace")
-			items, err := client.ListHelmReleaseHistory(c.Request.Context(), namespace, c.Param("name"))
-			if err != nil {
-				writeError(c, err)
-				return
-			}
-			apiresponse.Items(c, http.StatusOK, items)
-		})
-		platform.GET("/helm/releases/:name/values", func(c *gin.Context) {
-			namespace := c.Query("namespace")
-			revision := c.Query("revision")
-			item, err := client.GetHelmReleaseValues(c.Request.Context(), namespace, c.Param("name"), revision)
-			if err != nil {
-				writeError(c, err)
-				return
-			}
-			apiresponse.Item(c, http.StatusOK, item)
-		})
-		platform.GET("/events", func(c *gin.Context) {
-			namespace := c.Query("namespace")
-			limit := parseLimit(c.Query("limit"), 20)
-			items, err := client.ListClusterEvents(c.Request.Context(), namespace, limit)
-			if err != nil {
-				writeError(c, err)
-				return
-			}
-			apiresponse.Items(c, http.StatusOK, items)
-		})
-		platform.POST("/actions/deployments/restart", func(c *gin.Context) {
-			var req restartDeploymentRequest
-			if err := c.ShouldBindJSON(&req); err != nil || req.Namespace == "" || req.Name == "" {
-				apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "namespace and name are required")
-				return
-			}
-			if err := client.RestartDeployment(c.Request.Context(), req.Namespace, req.Name); err != nil {
-				writeError(c, err)
-				return
-			}
-			apiresponse.JSON(c, http.StatusOK, gin.H{"status": "ok"})
-		})
-		platform.POST("/actions/deployments/scale", func(c *gin.Context) {
-			var req scaleDeploymentRequest
-			if err := c.ShouldBindJSON(&req); err != nil || req.Namespace == "" || req.Name == "" {
-				apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "namespace, name, and replicas are required")
-				return
-			}
-			if req.Replicas < 0 {
-				apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "replicas must be greater than or equal to zero")
-				return
-			}
-			if err := client.ScaleDeployment(c.Request.Context(), req.Namespace, req.Name, req.Replicas); err != nil {
-				writeError(c, err)
-				return
-			}
-			apiresponse.JSON(c, http.StatusOK, gin.H{"status": "ok"})
-		})
-		platform.POST("/actions/deployments/image", func(c *gin.Context) {
-			var req updateDeploymentImageRequest
-			if err := c.ShouldBindJSON(&req); err != nil || req.Namespace == "" || req.Name == "" || req.Image == "" {
-				apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "namespace, name, and image are required")
-				return
-			}
-			containerName, previousImage, err := client.UpdateDeploymentImage(c.Request.Context(), req.Namespace, req.Name, req.ContainerName, req.Image)
-			if err != nil {
-				writeError(c, err)
-				return
-			}
-			apiresponse.Item(c, http.StatusOK, gin.H{
-				"containerName": containerName,
-				"previousImage": previousImage,
+	if client != nil {
+		platform := router.Group(fmt.Sprintf("%s/platform", cfg.HTTP.BasePath))
+		platform.Use(authMiddleware(cfg.Auth.BearerToken))
+		{
+			platform.GET("/summary", func(c *gin.Context) {
+				apiresponse.Item(c, http.StatusOK, client.Summary(c.Request.Context()))
 			})
-		})
-		platform.POST("/actions/deployments/rollback", func(c *gin.Context) {
-			var req rollbackDeploymentRequest
-			if err := c.ShouldBindJSON(&req); err != nil || req.Namespace == "" || req.Name == "" || req.Revision == "" {
-				apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "namespace, name, and revision are required")
-				return
-			}
-			if err := client.RollbackDeployment(c.Request.Context(), req.Namespace, req.Name, req.Revision); err != nil {
-				writeError(c, err)
-				return
-			}
-			apiresponse.JSON(c, http.StatusOK, gin.H{"status": "ok"})
-		})
+			platform.GET("/namespaces", func(c *gin.Context) {
+				items, err := client.ListNamespaces(c.Request.Context())
+				if err != nil {
+					writeError(c, err)
+					return
+				}
+				apiresponse.Items(c, http.StatusOK, items)
+			})
+			platform.GET("/infrastructure/nodes", func(c *gin.Context) {
+				items, err := client.ListNodes(c.Request.Context())
+				if err != nil {
+					writeError(c, err)
+					return
+				}
+				apiresponse.Items(c, http.StatusOK, items)
+			})
+			platform.GET("/infrastructure/nodes/:name/detail", func(c *gin.Context) {
+				item, err := client.GetNodeDetail(c.Request.Context(), c.Param("name"))
+				if err != nil {
+					writeError(c, err)
+					return
+				}
+				apiresponse.Item(c, http.StatusOK, item)
+			})
+			platform.GET("/workloads/pods", func(c *gin.Context) {
+				namespace := c.DefaultQuery("namespace", "default")
+				items, err := client.ListPods(c.Request.Context(), namespace)
+				if err != nil {
+					writeError(c, err)
+					return
+				}
+				apiresponse.Items(c, http.StatusOK, items)
+			})
+			platform.GET("/workloads/pods/:name/detail", func(c *gin.Context) {
+				namespace := c.DefaultQuery("namespace", "default")
+				item, err := client.GetPodDetail(c.Request.Context(), namespace, c.Param("name"))
+				if err != nil {
+					writeError(c, err)
+					return
+				}
+				apiresponse.Item(c, http.StatusOK, item)
+			})
+			platform.GET("/workloads/pods/:name/logs", func(c *gin.Context) {
+				namespace := c.DefaultQuery("namespace", "default")
+				tailLines := int64(parseLimit(c.Query("tailLines"), 200))
+				sinceSeconds := int64(parseLimit(c.Query("sinceSeconds"), 0))
+				previous := c.Query("previous") == "true"
+				item, err := client.GetPodLogs(c.Request.Context(), namespace, c.Param("name"), c.Query("container"), tailLines, sinceSeconds, previous)
+				if err != nil {
+					writeError(c, err)
+					return
+				}
+				apiresponse.Item(c, http.StatusOK, item)
+			})
+			platform.GET("/workloads/pods/:name/yaml", func(c *gin.Context) {
+				namespace := c.DefaultQuery("namespace", "default")
+				item, err := client.GetPodYAML(c.Request.Context(), namespace, c.Param("name"))
+				if err != nil {
+					writeError(c, err)
+					return
+				}
+				apiresponse.Item(c, http.StatusOK, item)
+			})
+			platform.POST("/workloads/pods/:name/exec", func(c *gin.Context) {
+				namespace := c.DefaultQuery("namespace", "default")
+				var req execPodRequest
+				if err := c.ShouldBindJSON(&req); err != nil || req.Command == "" {
+					apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "command is required")
+					return
+				}
+				item, err := client.ExecPod(c.Request.Context(), namespace, c.Param("name"), req.Container, req.Command, req.TimeoutSeconds)
+				if err != nil {
+					writeError(c, err)
+					return
+				}
+				apiresponse.Item(c, http.StatusOK, item)
+			})
+			platform.GET("/workloads/deployments", func(c *gin.Context) {
+				namespace := c.DefaultQuery("namespace", "default")
+				items, err := client.ListDeployments(c.Request.Context(), namespace)
+				if err != nil {
+					writeError(c, err)
+					return
+				}
+				apiresponse.Items(c, http.StatusOK, items)
+			})
+			platform.GET("/workloads/deployments/:name/detail", func(c *gin.Context) {
+				namespace := c.DefaultQuery("namespace", "default")
+				item, err := client.GetDeploymentDetail(c.Request.Context(), namespace, c.Param("name"))
+				if err != nil {
+					writeError(c, err)
+					return
+				}
+				apiresponse.Item(c, http.StatusOK, item)
+			})
+			platform.GET("/workloads/deployments/:name/yaml", func(c *gin.Context) {
+				namespace := c.DefaultQuery("namespace", "default")
+				item, err := client.GetDeploymentYAML(c.Request.Context(), namespace, c.Param("name"))
+				if err != nil {
+					writeError(c, err)
+					return
+				}
+				apiresponse.Item(c, http.StatusOK, item)
+			})
+			platform.GET("/workloads/deployments/:name/rollout-status", func(c *gin.Context) {
+				namespace := c.DefaultQuery("namespace", "default")
+				item, err := client.GetDeploymentRolloutStatus(c.Request.Context(), namespace, c.Param("name"))
+				if err != nil {
+					writeError(c, err)
+					return
+				}
+				apiresponse.Item(c, http.StatusOK, item)
+			})
+			platform.GET("/workloads/deployments/:name/rollouts", func(c *gin.Context) {
+				namespace := c.DefaultQuery("namespace", "default")
+				items, err := client.ListDeploymentRolloutHistory(c.Request.Context(), namespace, c.Param("name"))
+				if err != nil {
+					writeError(c, err)
+					return
+				}
+				apiresponse.Items(c, http.StatusOK, items)
+			})
+			platform.GET("/workloads/statefulsets", func(c *gin.Context) {
+				namespace := c.Query("namespace")
+				items, err := client.ListStatefulSets(c.Request.Context(), namespace)
+				if err != nil {
+					writeError(c, err)
+					return
+				}
+				apiresponse.Items(c, http.StatusOK, items)
+			})
+			platform.GET("/workloads/statefulsets/:name/detail", func(c *gin.Context) {
+				namespace := c.Query("namespace")
+				item, err := client.GetStatefulSetDetail(c.Request.Context(), namespace, c.Param("name"))
+				if err != nil {
+					writeError(c, err)
+					return
+				}
+				apiresponse.Item(c, http.StatusOK, item)
+			})
+			platform.GET("/workloads/statefulsets/:name/yaml", func(c *gin.Context) {
+				namespace := c.Query("namespace")
+				item, err := client.GetStatefulSetYAML(c.Request.Context(), namespace, c.Param("name"))
+				if err != nil {
+					writeError(c, err)
+					return
+				}
+				apiresponse.Item(c, http.StatusOK, item)
+			})
+			platform.GET("/workloads/daemonsets", func(c *gin.Context) {
+				namespace := c.Query("namespace")
+				items, err := client.ListDaemonSets(c.Request.Context(), namespace)
+				if err != nil {
+					writeError(c, err)
+					return
+				}
+				apiresponse.Items(c, http.StatusOK, items)
+			})
+			platform.GET("/workloads/daemonsets/:name/detail", func(c *gin.Context) {
+				namespace := c.Query("namespace")
+				item, err := client.GetDaemonSetDetail(c.Request.Context(), namespace, c.Param("name"))
+				if err != nil {
+					writeError(c, err)
+					return
+				}
+				apiresponse.Item(c, http.StatusOK, item)
+			})
+			platform.GET("/workloads/daemonsets/:name/yaml", func(c *gin.Context) {
+				namespace := c.Query("namespace")
+				item, err := client.GetDaemonSetYAML(c.Request.Context(), namespace, c.Param("name"))
+				if err != nil {
+					writeError(c, err)
+					return
+				}
+				apiresponse.Item(c, http.StatusOK, item)
+			})
+			platform.GET("/workloads/jobs", func(c *gin.Context) {
+				namespace := c.Query("namespace")
+				items, err := client.ListJobs(c.Request.Context(), namespace)
+				if err != nil {
+					writeError(c, err)
+					return
+				}
+				apiresponse.Items(c, http.StatusOK, items)
+			})
+			platform.GET("/workloads/jobs/:name/detail", func(c *gin.Context) {
+				namespace := c.Query("namespace")
+				item, err := client.GetJobDetail(c.Request.Context(), namespace, c.Param("name"))
+				if err != nil {
+					writeError(c, err)
+					return
+				}
+				apiresponse.Item(c, http.StatusOK, item)
+			})
+			platform.GET("/workloads/jobs/:name/yaml", func(c *gin.Context) {
+				namespace := c.Query("namespace")
+				item, err := client.GetJobYAML(c.Request.Context(), namespace, c.Param("name"))
+				if err != nil {
+					writeError(c, err)
+					return
+				}
+				apiresponse.Item(c, http.StatusOK, item)
+			})
+			platform.GET("/workloads/cronjobs", func(c *gin.Context) {
+				namespace := c.Query("namespace")
+				items, err := client.ListCronJobs(c.Request.Context(), namespace)
+				if err != nil {
+					writeError(c, err)
+					return
+				}
+				apiresponse.Items(c, http.StatusOK, items)
+			})
+			platform.GET("/workloads/replicasets", func(c *gin.Context) {
+				namespace := c.Query("namespace")
+				items, err := client.ListReplicaSets(c.Request.Context(), namespace)
+				if err != nil {
+					writeError(c, err)
+					return
+				}
+				apiresponse.Items(c, http.StatusOK, items)
+			})
+			platform.GET("/workloads/cronjobs/:name/detail", func(c *gin.Context) {
+				namespace := c.Query("namespace")
+				item, err := client.GetCronJobDetail(c.Request.Context(), namespace, c.Param("name"))
+				if err != nil {
+					writeError(c, err)
+					return
+				}
+				apiresponse.Item(c, http.StatusOK, item)
+			})
+			platform.GET("/workloads/cronjobs/:name/yaml", func(c *gin.Context) {
+				namespace := c.Query("namespace")
+				item, err := client.GetCronJobYAML(c.Request.Context(), namespace, c.Param("name"))
+				if err != nil {
+					writeError(c, err)
+					return
+				}
+				apiresponse.Item(c, http.StatusOK, item)
+			})
+			platform.GET("/configuration/configmaps", func(c *gin.Context) {
+				namespace := c.Query("namespace")
+				items, err := client.ListConfigMaps(c.Request.Context(), namespace)
+				if err != nil {
+					writeError(c, err)
+					return
+				}
+				apiresponse.Items(c, http.StatusOK, items)
+			})
+			platform.GET("/configuration/secrets", func(c *gin.Context) {
+				namespace := c.Query("namespace")
+				items, err := client.ListSecrets(c.Request.Context(), namespace)
+				if err != nil {
+					writeError(c, err)
+					return
+				}
+				apiresponse.Items(c, http.StatusOK, items)
+			})
+			platform.GET("/configuration/hpas", func(c *gin.Context) {
+				namespace := c.Query("namespace")
+				items, err := client.ListHorizontalPodAutoscalers(c.Request.Context(), namespace)
+				if err != nil {
+					writeError(c, err)
+					return
+				}
+				apiresponse.Items(c, http.StatusOK, items)
+			})
+			platform.GET("/configuration/poddisruptionbudgets", func(c *gin.Context) {
+				namespace := c.Query("namespace")
+				items, err := client.ListPodDisruptionBudgets(c.Request.Context(), namespace)
+				if err != nil {
+					writeError(c, err)
+					return
+				}
+				apiresponse.Items(c, http.StatusOK, items)
+			})
+			platform.GET("/access-control/serviceaccounts", func(c *gin.Context) {
+				namespace := c.Query("namespace")
+				items, err := client.ListServiceAccounts(c.Request.Context(), namespace)
+				if err != nil {
+					writeError(c, err)
+					return
+				}
+				apiresponse.Items(c, http.StatusOK, items)
+			})
+			platform.GET("/access-control/serviceaccounts/:name/detail", func(c *gin.Context) {
+				namespace := c.Query("namespace")
+				item, err := client.GetServiceAccountDetail(c.Request.Context(), namespace, c.Param("name"))
+				if err != nil {
+					writeError(c, err)
+					return
+				}
+				apiresponse.Item(c, http.StatusOK, item)
+			})
+			platform.GET("/access-control/roles", func(c *gin.Context) {
+				namespace := c.Query("namespace")
+				items, err := client.ListRoles(c.Request.Context(), namespace)
+				if err != nil {
+					writeError(c, err)
+					return
+				}
+				apiresponse.Items(c, http.StatusOK, items)
+			})
+			platform.GET("/access-control/roles/:name/detail", func(c *gin.Context) {
+				namespace := c.Query("namespace")
+				item, err := client.GetRoleDetail(c.Request.Context(), namespace, c.Param("name"))
+				if err != nil {
+					writeError(c, err)
+					return
+				}
+				apiresponse.Item(c, http.StatusOK, item)
+			})
+			platform.GET("/access-control/rolebindings", func(c *gin.Context) {
+				namespace := c.Query("namespace")
+				items, err := client.ListRoleBindings(c.Request.Context(), namespace)
+				if err != nil {
+					writeError(c, err)
+					return
+				}
+				apiresponse.Items(c, http.StatusOK, items)
+			})
+			platform.GET("/access-control/rolebindings/:name/detail", func(c *gin.Context) {
+				namespace := c.Query("namespace")
+				item, err := client.GetRoleBindingDetail(c.Request.Context(), namespace, c.Param("name"))
+				if err != nil {
+					writeError(c, err)
+					return
+				}
+				apiresponse.Item(c, http.StatusOK, item)
+			})
+			platform.GET("/network/services", func(c *gin.Context) {
+				namespace := c.Query("namespace")
+				items, err := client.ListServices(c.Request.Context(), namespace)
+				if err != nil {
+					writeError(c, err)
+					return
+				}
+				apiresponse.Items(c, http.StatusOK, items)
+			})
+			platform.GET("/network/ingresses", func(c *gin.Context) {
+				namespace := c.Query("namespace")
+				items, err := client.ListIngresses(c.Request.Context(), namespace)
+				if err != nil {
+					writeError(c, err)
+					return
+				}
+				apiresponse.Items(c, http.StatusOK, items)
+			})
+			platform.GET("/network/endpointslices", func(c *gin.Context) {
+				namespace := c.Query("namespace")
+				items, err := client.ListEndpointSlices(c.Request.Context(), namespace)
+				if err != nil {
+					writeError(c, err)
+					return
+				}
+				apiresponse.Items(c, http.StatusOK, items)
+			})
+			platform.GET("/network/networkpolicies", func(c *gin.Context) {
+				namespace := c.Query("namespace")
+				items, err := client.ListNetworkPolicies(c.Request.Context(), namespace)
+				if err != nil {
+					writeError(c, err)
+					return
+				}
+				apiresponse.Items(c, http.StatusOK, items)
+			})
+			platform.GET("/network/gatewayclasses", func(c *gin.Context) {
+				items, err := client.ListGatewayClasses(c.Request.Context())
+				if err != nil {
+					writeError(c, err)
+					return
+				}
+				apiresponse.Items(c, http.StatusOK, items)
+			})
+			platform.GET("/network/gateways", func(c *gin.Context) {
+				namespace := c.Query("namespace")
+				items, err := client.ListGateways(c.Request.Context(), namespace)
+				if err != nil {
+					writeError(c, err)
+					return
+				}
+				apiresponse.Items(c, http.StatusOK, items)
+			})
+			platform.GET("/network/httproutes", func(c *gin.Context) {
+				namespace := c.Query("namespace")
+				items, err := client.ListHTTPRoutes(c.Request.Context(), namespace)
+				if err != nil {
+					writeError(c, err)
+					return
+				}
+				apiresponse.Items(c, http.StatusOK, items)
+			})
+			platform.GET("/network/backendtlspolicies", func(c *gin.Context) {
+				namespace := c.Query("namespace")
+				items, err := client.ListBackendTLSPolicies(c.Request.Context(), namespace)
+				if err != nil {
+					writeError(c, err)
+					return
+				}
+				apiresponse.Items(c, http.StatusOK, items)
+			})
+			platform.GET("/network/grpcroutes", func(c *gin.Context) {
+				namespace := c.Query("namespace")
+				items, err := client.ListGRPCRoutes(c.Request.Context(), namespace)
+				if err != nil {
+					writeError(c, err)
+					return
+				}
+				apiresponse.Items(c, http.StatusOK, items)
+			})
+			platform.GET("/network/referencegrants", func(c *gin.Context) {
+				namespace := c.Query("namespace")
+				items, err := client.ListReferenceGrants(c.Request.Context(), namespace)
+				if err != nil {
+					writeError(c, err)
+					return
+				}
+				apiresponse.Items(c, http.StatusOK, items)
+			})
+			platform.GET("/storage/persistentvolumeclaims", func(c *gin.Context) {
+				namespace := c.Query("namespace")
+				items, err := client.ListPersistentVolumeClaims(c.Request.Context(), namespace)
+				if err != nil {
+					writeError(c, err)
+					return
+				}
+				apiresponse.Items(c, http.StatusOK, items)
+			})
+			platform.GET("/storage/persistentvolumes", func(c *gin.Context) {
+				items, err := client.ListPersistentVolumes(c.Request.Context())
+				if err != nil {
+					writeError(c, err)
+					return
+				}
+				apiresponse.Items(c, http.StatusOK, items)
+			})
+			platform.GET("/storage/storageclasses", func(c *gin.Context) {
+				items, err := client.ListStorageClasses(c.Request.Context())
+				if err != nil {
+					writeError(c, err)
+					return
+				}
+				apiresponse.Items(c, http.StatusOK, items)
+			})
+			platform.GET("/network/ingressclasses", func(c *gin.Context) {
+				items, err := client.ListIngressClasses(c.Request.Context())
+				if err != nil {
+					writeError(c, err)
+					return
+				}
+				apiresponse.Items(c, http.StatusOK, items)
+			})
+			platform.GET("/configuration/priorityclasses", func(c *gin.Context) {
+				items, err := client.ListPriorityClasses(c.Request.Context())
+				if err != nil {
+					writeError(c, err)
+					return
+				}
+				apiresponse.Items(c, http.StatusOK, items)
+			})
+			platform.GET("/configuration/runtimeclasses", func(c *gin.Context) {
+				items, err := client.ListRuntimeClasses(c.Request.Context())
+				if err != nil {
+					writeError(c, err)
+					return
+				}
+				apiresponse.Items(c, http.StatusOK, items)
+			})
+			platform.GET("/access-control/clusterroles", func(c *gin.Context) {
+				items, err := client.ListClusterRoles(c.Request.Context())
+				if err != nil {
+					writeError(c, err)
+					return
+				}
+				apiresponse.Items(c, http.StatusOK, items)
+			})
+			platform.GET("/access-control/clusterroles/:name/detail", func(c *gin.Context) {
+				item, err := client.GetClusterRoleDetail(c.Request.Context(), c.Param("name"))
+				if err != nil {
+					writeError(c, err)
+					return
+				}
+				apiresponse.Item(c, http.StatusOK, item)
+			})
+			platform.GET("/access-control/clusterrolebindings", func(c *gin.Context) {
+				items, err := client.ListClusterRoleBindings(c.Request.Context())
+				if err != nil {
+					writeError(c, err)
+					return
+				}
+				apiresponse.Items(c, http.StatusOK, items)
+			})
+			platform.GET("/access-control/clusterrolebindings/:name/detail", func(c *gin.Context) {
+				item, err := client.GetClusterRoleBindingDetail(c.Request.Context(), c.Param("name"))
+				if err != nil {
+					writeError(c, err)
+					return
+				}
+				apiresponse.Item(c, http.StatusOK, item)
+			})
+			platform.GET("/configuration/mutatingwebhookconfigurations", func(c *gin.Context) {
+				items, err := client.ListMutatingWebhookConfigurations(c.Request.Context())
+				if err != nil {
+					writeError(c, err)
+					return
+				}
+				apiresponse.Items(c, http.StatusOK, items)
+			})
+			platform.GET("/configuration/validatingwebhookconfigurations", func(c *gin.Context) {
+				items, err := client.ListValidatingWebhookConfigurations(c.Request.Context())
+				if err != nil {
+					writeError(c, err)
+					return
+				}
+				apiresponse.Items(c, http.StatusOK, items)
+			})
+			platform.GET("/configuration/resourcequotas", func(c *gin.Context) {
+				namespace := c.Query("namespace")
+				items, err := client.ListResourceQuotas(c.Request.Context(), namespace)
+				if err != nil {
+					writeError(c, err)
+					return
+				}
+				apiresponse.Items(c, http.StatusOK, items)
+			})
+			platform.GET("/configuration/limitranges", func(c *gin.Context) {
+				namespace := c.Query("namespace")
+				items, err := client.ListLimitRanges(c.Request.Context(), namespace)
+				if err != nil {
+					writeError(c, err)
+					return
+				}
+				apiresponse.Items(c, http.StatusOK, items)
+			})
+			platform.GET("/configuration/leases", func(c *gin.Context) {
+				namespace := c.Query("namespace")
+				items, err := client.ListLeases(c.Request.Context(), namespace)
+				if err != nil {
+					writeError(c, err)
+					return
+				}
+				apiresponse.Items(c, http.StatusOK, items)
+			})
+			platform.GET("/workloads/replicationcontrollers", func(c *gin.Context) {
+				namespace := c.Query("namespace")
+				items, err := client.ListReplicationControllers(c.Request.Context(), namespace)
+				if err != nil {
+					writeError(c, err)
+					return
+				}
+				apiresponse.Items(c, http.StatusOK, items)
+			})
+			platform.GET("/extensions/crds", func(c *gin.Context) {
+				items, err := client.ListCRDs(c.Request.Context())
+				if err != nil {
+					writeError(c, err)
+					return
+				}
+				apiresponse.Items(c, http.StatusOK, items)
+			})
+			platform.GET("/helm/releases", func(c *gin.Context) {
+				namespace := c.Query("namespace")
+				items, err := client.ListHelmReleases(c.Request.Context(), namespace)
+				if err != nil {
+					writeError(c, err)
+					return
+				}
+				apiresponse.Items(c, http.StatusOK, items)
+			})
+			platform.GET("/helm/releases/:name/detail", func(c *gin.Context) {
+				namespace := c.Query("namespace")
+				item, err := client.GetHelmReleaseDetail(c.Request.Context(), namespace, c.Param("name"))
+				if err != nil {
+					writeError(c, err)
+					return
+				}
+				apiresponse.Item(c, http.StatusOK, item)
+			})
+			platform.GET("/helm/releases/:name/history", func(c *gin.Context) {
+				namespace := c.Query("namespace")
+				items, err := client.ListHelmReleaseHistory(c.Request.Context(), namespace, c.Param("name"))
+				if err != nil {
+					writeError(c, err)
+					return
+				}
+				apiresponse.Items(c, http.StatusOK, items)
+			})
+			platform.GET("/helm/releases/:name/values", func(c *gin.Context) {
+				namespace := c.Query("namespace")
+				revision := c.Query("revision")
+				item, err := client.GetHelmReleaseValues(c.Request.Context(), namespace, c.Param("name"), revision)
+				if err != nil {
+					writeError(c, err)
+					return
+				}
+				apiresponse.Item(c, http.StatusOK, item)
+			})
+			platform.GET("/events", func(c *gin.Context) {
+				namespace := c.Query("namespace")
+				limit := parseLimit(c.Query("limit"), 20)
+				items, err := client.ListClusterEvents(c.Request.Context(), namespace, limit)
+				if err != nil {
+					writeError(c, err)
+					return
+				}
+				apiresponse.Items(c, http.StatusOK, items)
+			})
+			platform.POST("/actions/deployments/restart", func(c *gin.Context) {
+				var req restartDeploymentRequest
+				if err := c.ShouldBindJSON(&req); err != nil || req.Namespace == "" || req.Name == "" {
+					apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "namespace and name are required")
+					return
+				}
+				if err := client.RestartDeployment(c.Request.Context(), req.Namespace, req.Name); err != nil {
+					writeError(c, err)
+					return
+				}
+				apiresponse.JSON(c, http.StatusOK, gin.H{"status": "ok"})
+			})
+			platform.POST("/actions/deployments/scale", func(c *gin.Context) {
+				var req scaleDeploymentRequest
+				if err := c.ShouldBindJSON(&req); err != nil || req.Namespace == "" || req.Name == "" {
+					apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "namespace, name, and replicas are required")
+					return
+				}
+				if req.Replicas < 0 {
+					apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "replicas must be greater than or equal to zero")
+					return
+				}
+				if err := client.ScaleDeployment(c.Request.Context(), req.Namespace, req.Name, req.Replicas); err != nil {
+					writeError(c, err)
+					return
+				}
+				apiresponse.JSON(c, http.StatusOK, gin.H{"status": "ok"})
+			})
+			platform.POST("/actions/deployments/image", func(c *gin.Context) {
+				var req updateDeploymentImageRequest
+				if err := c.ShouldBindJSON(&req); err != nil || req.Namespace == "" || req.Name == "" || req.Image == "" {
+					apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "namespace, name, and image are required")
+					return
+				}
+				containerName, previousImage, err := client.UpdateDeploymentImage(c.Request.Context(), req.Namespace, req.Name, req.ContainerName, req.Image)
+				if err != nil {
+					writeError(c, err)
+					return
+				}
+				apiresponse.Item(c, http.StatusOK, gin.H{
+					"containerName": containerName,
+					"previousImage": previousImage,
+				})
+			})
+			platform.POST("/actions/deployments/rollback", func(c *gin.Context) {
+				var req rollbackDeploymentRequest
+				if err := c.ShouldBindJSON(&req); err != nil || req.Namespace == "" || req.Name == "" || req.Revision == "" {
+					apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "namespace, name, and revision are required")
+					return
+				}
+				if err := client.RollbackDeployment(c.Request.Context(), req.Namespace, req.Name, req.Revision); err != nil {
+					writeError(c, err)
+					return
+				}
+				apiresponse.JSON(c, http.StatusOK, gin.H{"status": "ok"})
+			})
+		}
 	}
 
 	if runtime != nil {

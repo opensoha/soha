@@ -111,11 +111,9 @@ PostgreSQL + Kubernetes 集群
 ├── internal/            # 后端分层与领域模块
 ├── migrations/          # PostgreSQL 初始化与迁移
 ├── web/                 # 当前活跃前端应用
-├── chart/               # Helm Chart
-├── Dockerfile           # 单项目镜像构建
+├── deploy/              # Docker、Compose、原生 Kubernetes 与 Helm 部署资产
 ├── Makefile             # 常用开发、构建、部署命令
-├── deployment.yaml      # 原生 Kubernetes 清单
-└── docker-compose.yaml  # 本地 compose 栈
+└── agents.md            # 工程规范与项目记忆
 ```
 
 ## 快速开始
@@ -133,9 +131,9 @@ PostgreSQL + Kubernetes 集群
 make init
 ```
 
-该命令会安装 Go、前端和文档依赖，并从 `docker-compose.yaml` 启动本地 PostgreSQL 服务。开发辅助流程也可以启动本地 k3s 调试集群，并把 kubeconfig 写入 `./.dev/k3s/kubeconfig.yaml`。
+该命令会安装 Go、前端和文档依赖，并从 `deploy/docker-compose.yaml` 启动本地 PostgreSQL 服务。开发辅助流程也可以启动本地 k3s 调试集群，并把 kubeconfig 写入 `./.dev/k3s/kubeconfig.yaml`。
 
-Compose 栈使用 `postgres:18.4`。由 PostgreSQL 16 创建的本地数据卷不能只改镜像标签后直接复用；可丢弃的本地数据卷请重建，需要保留的数据请通过 `pg_dump`/`pg_restore` 或 `pg_upgrade` 迁移。
+Compose 栈使用 `postgres:18.4`，并把命名卷挂载到 `/var/lib/postgresql`，以匹配 PostgreSQL 18 的默认数据目录布局。由 PostgreSQL 16 创建的本地数据卷不能只改镜像标签后直接复用；可丢弃的本地数据卷请重建，需要保留的数据请通过 `pg_dump`/`pg_restore` 或 `pg_upgrade` 迁移。
 
 ### 启动 API 和控制台
 
@@ -169,6 +167,23 @@ go run ./cmd/agent
 SOHA_AGENT_CONFIG_FILE=/abs/path/to/agent.config.yaml go run ./cmd/agent
 ```
 
+### 通过 Docker 部署 Hermes Agent Runner
+
+Hermes 作为外部 provider 时，推荐从统一 compose 栈运行 `soha-agent` 派生镜像：镜像继承官方 `nousresearch/hermes-agent`，并内置 soha 的 `cmd/agent` runner，通过 Agent Runtime claim/callback 协议连接控制面。
+
+```bash
+make deploy-hermes-setup
+make deploy-hermes-runner-up
+```
+
+默认连接同一 compose 网络中的 `http://soha:8080`，并使用 `demo-execution-runner-token`。真实环境请覆盖：
+
+```bash
+SOHA_CONTROL_PLANE_URL=http://host.docker.internal:8080 \
+SOHA_EXECUTION_RUNNER_TOKEN=replace-with-runtime-token \
+make deploy-hermes-runner-up
+```
+
 ## 常用命令
 
 ```bash
@@ -182,6 +197,8 @@ make test-api
 make test-web
 make deploy-image
 make deploy-compose-up
+make deploy-hermes-setup
+make deploy-hermes-runner-up
 make deploy-helm-lint
 ```
 
@@ -189,21 +206,23 @@ make deploy-helm-lint
 
 Soha 默认按单项目运行时交付：一个应用容器同时提供 API、内嵌 SPA 和文档。
 
-- [Dockerfile](./Dockerfile): 多阶段镜像构建
-- [docker-compose.yaml](./docker-compose.yaml): 包含 PostgreSQL 的本地完整栈
+- [deploy/Dockerfile](./deploy/Dockerfile): 多阶段镜像构建
+- [deploy/Dockerfile.hermes-agent-runner](./deploy/Dockerfile.hermes-agent-runner): Hermes Agent Runtime runner 镜像
+- [deploy/docker-compose.yaml](./deploy/docker-compose.yaml): 包含 PostgreSQL 与可选 Hermes runner 服务的本地完整栈
 - [configs/config.yaml](./configs/config.yaml): 默认应用配置
-- [deployment.yaml](./deployment.yaml): 原生 Kubernetes 清单基线
-- [chart](./chart): Helm Chart
+- [configs/config.compose.yaml](./configs/config.compose.yaml): compose 应用容器配置，使用 PostgreSQL service host 且不注入宿主机本地 kubeconfig
+- [deploy/deployment.yaml](./deploy/deployment.yaml): 原生 Kubernetes 清单基线
+- [deploy/chart](./deploy/chart): Helm Chart
 
 ```bash
-docker build -t soha:single-project .
-docker compose -f docker-compose.yaml up -d --build
-helm lint chart
+docker build -f deploy/Dockerfile -t soha:single-project .
+docker compose -f deploy/docker-compose.yaml up -d --build
+helm lint deploy/chart
 ```
 
 ## 文档
 
-- [工程规范](./AGENTS.md)
+- [工程规范](./agents.md)
 - [架构总览](./docs/architecture/index.md)
 - [应用交付](./docs/architecture/application-delivery.md)
 - [AI Copilot](./docs/architecture/ai-copilot.md)
@@ -225,7 +244,7 @@ helm lint chart
 
 ## 贡献
 
-欢迎提交 issue 与 pull request。较大改动建议先阅读 [AGENTS.md](./AGENTS.md)，以保持后端分层、前端路由、授权、作用域处理与文档更新一致。
+欢迎提交 issue 与 pull request。较大改动建议先阅读 [agents.md](./agents.md)，以保持后端分层、前端路由、授权、作用域处理与文档更新一致。
 
 常用验证命令：
 

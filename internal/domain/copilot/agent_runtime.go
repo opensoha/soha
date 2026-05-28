@@ -12,18 +12,33 @@ const (
 )
 
 type AgentProvider struct {
-	ID               string         `json:"id"`
-	Kind             string         `json:"kind"`
-	Name             string         `json:"name"`
-	Description      string         `json:"description,omitempty"`
-	Enabled          bool           `json:"enabled"`
-	Default          bool           `json:"default,omitempty"`
-	Capabilities     []string       `json:"capabilities,omitempty"`
-	SupportedModes   []string       `json:"supportedModes,omitempty"`
-	SupportsAsync    bool           `json:"supportsAsync"`
-	SupportsSkills   bool           `json:"supportsSkills"`
-	SupportsToolsets bool           `json:"supportsToolsets"`
-	Config           map[string]any `json:"config,omitempty"`
+	ID               string                      `json:"id"`
+	Kind             string                      `json:"kind"`
+	Name             string                      `json:"name"`
+	Description      string                      `json:"description,omitempty"`
+	Enabled          bool                        `json:"enabled"`
+	Default          bool                        `json:"default,omitempty"`
+	Capabilities     []string                    `json:"capabilities,omitempty"`
+	SupportedModes   []string                    `json:"supportedModes,omitempty"`
+	SupportsAsync    bool                        `json:"supportsAsync"`
+	SupportsSkills   bool                        `json:"supportsSkills"`
+	SupportsToolsets bool                        `json:"supportsToolsets"`
+	Config           map[string]any              `json:"config,omitempty"`
+	RuntimeStatus    *AgentProviderRuntimeStatus `json:"runtimeStatus,omitempty"`
+}
+
+type AgentProviderRuntimeStatus struct {
+	State           string     `json:"state"`
+	Reason          string     `json:"reason,omitempty"`
+	QueuedRuns      int        `json:"queuedRuns"`
+	RunningRuns     int        `json:"runningRuns"`
+	RecentFailures  int        `json:"recentFailures"`
+	LastRunID       string     `json:"lastRunId,omitempty"`
+	LastRunStatus   string     `json:"lastRunStatus,omitempty"`
+	LastAgentID     string     `json:"lastAgentId,omitempty"`
+	LastHeartbeatAt *time.Time `json:"lastHeartbeatAt,omitempty"`
+	LastCompletedAt *time.Time `json:"lastCompletedAt,omitempty"`
+	ObservedAt      time.Time  `json:"observedAt"`
 }
 
 type AgentToolBinding struct {

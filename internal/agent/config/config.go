@@ -82,6 +82,7 @@ type AgentProviderConfig struct {
 }
 
 type KubernetesConfig struct {
+	Enabled        bool              `mapstructure:"enabled"`
 	ID             string            `mapstructure:"id"`
 	Name           string            `mapstructure:"name"`
 	Kubeconfig     string            `mapstructure:"kubeconfig"`
@@ -158,10 +159,11 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("control_plane.agent_runtime.workspace_root", ".soha/agent-runtime")
 	v.SetDefault("control_plane.agent_runtime.poll_interval", "5s")
 	v.SetDefault("control_plane.agent_runtime.providers.hermes.command", "hermes")
-	v.SetDefault("control_plane.agent_runtime.providers.hermes.args", []string{"chat"})
+	v.SetDefault("control_plane.agent_runtime.providers.hermes.args", []string{"chat", "-Q"})
 	v.SetDefault("control_plane.agent_runtime.providers.hermes.prompt_arg", "-q")
-	v.SetDefault("control_plane.agent_runtime.providers.hermes.skill_arg", "-s")
-	v.SetDefault("control_plane.agent_runtime.providers.hermes.provider_skill_arg", "")
+	v.SetDefault("control_plane.agent_runtime.providers.hermes.skill_arg", "")
+	v.SetDefault("control_plane.agent_runtime.providers.hermes.provider_skill_arg", "-s")
+	v.SetDefault("kubernetes.enabled", true)
 	v.SetDefault("kubernetes.id", "local-agent")
 	v.SetDefault("kubernetes.name", "Local Agent")
 	v.SetDefault("kubernetes.kubeconfig", "$HOME/.kube/config")

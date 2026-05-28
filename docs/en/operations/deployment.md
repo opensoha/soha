@@ -11,30 +11,41 @@
 
 ## Repo Deployment Assets
 
-- `Dockerfile`
-- `docker-compose.yaml`
+- `deploy/Dockerfile`
+- `deploy/Dockerfile.hermes-agent-runner`
+- `deploy/docker-compose.yaml`
 - `configs/config.yaml`
-- `deployment.yaml`
-- `chart/`
+- `configs/config.compose.yaml`
+- `deploy/deployment.yaml`
+- `deploy/chart/`
+
+`configs/config.compose.yaml` is the app-container config for compose; it points the database host at the `postgres` service and does not seed host-local kubeconfig paths.
 
 ## Quick Commands
 
 Build the application image:
 
 ```bash
-docker build -t soha:single-project .
+docker build -f deploy/Dockerfile -t soha:single-project .
 ```
 
 Start the local single-project stack:
 
 ```bash
-docker compose -f docker-compose.yaml up -d --build
+docker compose -f deploy/docker-compose.yaml up -d --build
 ```
 
 Lint the Helm chart:
 
 ```bash
-helm lint chart
+helm lint deploy/chart
+```
+
+Run Hermes as the first external Agent Runtime provider:
+
+```bash
+make deploy-hermes-setup
+make deploy-hermes-runner-up
 ```
 
 ## Local Run Assumptions
@@ -44,9 +55,50 @@ helm lint chart
 - frontend dev server at `http://localhost:5173`
 - docs dev server at `http://localhost:3000/docs/`
 
+## Hermes Agent Runner with Docker
+
+Hermes is deployed as a provider runner, not as a browser-facing dependency of the console. The runner image in [../../deploy/Dockerfile.hermes-agent-runner](../../deploy/Dockerfile.hermes-agent-runner) inherits from the official `nousresearch/hermes-agent` image and adds the soha `cmd/agent` binary. The unified compose file in [../../deploy/docker-compose.yaml](../../deploy/docker-compose.yaml) defines both the local soha stack and the optional Hermes runner services:
+
+- mounts persistent Hermes state at the `soha-hermes-data` volume (`/opt/data`)
+- mounts provider workspaces at `soha-hermes-runtime` (`/var/lib/soha-agent-runtime`)
+- claims only `hermes` Agent Runtime runs
+- executes Hermes through `hermes chat -Q -q`
+- callbacks to the soha control plane with status, tool calls, and `AnalysisArtifact` results
+
+Initialize Hermes once before starting the runner:
+
+```bash
+make deploy-hermes-setup
+```
+
+Start the runner against the local compose stack:
+
+```bash
+docker compose -f deploy/docker-compose.yaml up -d postgres soha
+make deploy-hermes-runner-up
+```
+
+The default endpoint is `http://soha:8080` on the `soha_default` Docker network and the default runner token matches `configs/config.yaml` for local development. For a host-run or remote control plane, override both values:
+
+```bash
+SOHA_CONTROL_PLANE_URL=http://host.docker.internal:8080 \
+SOHA_EXECUTION_RUNNER_TOKEN=replace-with-runtime-token \
+make deploy-hermes-runner-up
+```
+
+Operational checks:
+
+```bash
+docker compose -f deploy/docker-compose.yaml logs -f hermes-agent-runner
+docker compose -f deploy/docker-compose.yaml exec hermes-agent-runner hermes --version
+curl -s http://localhost:8080/api/v1/copilot/agent-runs
+```
+
+Do not commit real provider keys or runner tokens. Store Hermes model credentials in the mounted Hermes data volume through `make deploy-hermes-setup` or inject them through your runtime secret manager.
+
 ## PostgreSQL 18.4 Upgrade Note
 
-New local volumes and fresh cluster installs use PostgreSQL 18.4. If an existing environment already has a PostgreSQL 16 data directory, do not point the 18.4 image at the same volume directly. Use `pg_dump`/`pg_restore`, logical backup restore, or a controlled `pg_upgrade` path. For disposable local development data, remove the old PostgreSQL volume and recreate the stack. Older compose runs may have created `kubecrux_soha-postgres-data`; current compose pins `soha-postgres-data`.
+New local volumes and fresh cluster installs use PostgreSQL 18.4. PostgreSQL 18 stores its default `PGDATA` below `/var/lib/postgresql/18/docker`, so compose, raw Kubernetes, and Helm mounts keep the persistent volume at `/var/lib/postgresql`. If an existing environment already has a PostgreSQL 16 data directory, do not point the 18.4 image at the same volume directly. Use `pg_dump`/`pg_restore`, logical backup restore, or a controlled `pg_upgrade` path. For disposable local development data, remove the old PostgreSQL volume and recreate the stack. Current compose pins `soha-postgres-data`.
 
 ## Virtualization Lab Notes
 

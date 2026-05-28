@@ -2,6 +2,7 @@ package routes
 
 import (
 	"io/fs"
+	"mime"
 	"net/http"
 	"path"
 	"strings"
@@ -554,8 +555,6 @@ func registerDocs(router *gin.Engine, logger *zap.Logger) {
 		return
 	}
 
-	docsServer := http.FileServer(http.FS(buildFS))
-
 	router.GET("/docs", func(c *gin.Context) {
 		c.Redirect(http.StatusPermanentRedirect, "/docs/")
 	})
@@ -573,15 +572,28 @@ func registerDocs(router *gin.Engine, logger *zap.Logger) {
 
 		for _, candidate := range candidates {
 			if info, err := fs.Stat(buildFS, candidate); err == nil && !info.IsDir() {
-				c.Request.URL.Path = "/" + candidate
-				docsServer.ServeHTTP(c.Writer, c.Request)
+				serveEmbeddedFile(c, buildFS, candidate)
 				return
 			}
 		}
 
-		c.Request.URL.Path = "/404.html"
-		docsServer.ServeHTTP(c.Writer, c.Request)
+		serveEmbeddedFile(c, buildFS, "404.html")
 	})
+}
+
+func serveEmbeddedFile(c *gin.Context, source fs.FS, name string) {
+	content, err := fs.ReadFile(source, name)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+		return
+	}
+
+	contentType := mime.TypeByExtension(path.Ext(name))
+	if contentType == "" {
+		contentType = http.DetectContentType(content)
+	}
+
+	c.Data(http.StatusOK, contentType, content)
 }
 
 func registerSPA(router *gin.Engine, logger *zap.Logger) {

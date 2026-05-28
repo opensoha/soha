@@ -71,10 +71,10 @@ Project summary:
 
 ### Deployment
 
-- root `Dockerfile` owns the single-project image build path
-- root `docker-compose.yaml` owns local app-plus-PostgreSQL startup
-- root `deployment.yaml` owns the raw Kubernetes manifest baseline
-- root `chart/` owns repeatable Helm installation assets
+- `deploy/Dockerfile` owns the single-project image build path
+- `deploy/docker-compose.yaml` owns local app-plus-PostgreSQL startup and optional Hermes runner services
+- `deploy/deployment.yaml` owns the raw Kubernetes manifest baseline
+- `deploy/chart/` owns repeatable Helm installation assets
 
 ## 4. System Architecture
 
@@ -191,7 +191,7 @@ The frontend active baseline has been reset to the Vite application.
 
 Current structure summary:
 
-- root-level `Dockerfile`, `docker-compose.yaml`, `deployment.yaml`, and `chart/` are the canonical repo-local deployment assets
+- `deploy/Dockerfile`, `deploy/docker-compose.yaml`, `deploy/deployment.yaml`, and `deploy/chart/` are the canonical repo-local deployment assets
 - `web` is the only active frontend target
 - `web_pro_backup` preserves the previous frontend backup and must not be treated as the active shell
 - `old_web` remains as migration/reference material only after the reset
@@ -383,6 +383,7 @@ The repository has already converged on these rules:
 - backend all-namespaces aggregation is preferred over frontend namespace fan-out
 - identity bootstrap baseline is a single `admin / soha` seed from `auth.dev_principal`; legacy bootstrap migration and login fallback are removed
 - PostgreSQL bootstrap schema is now consolidated into `migrations/postgres/0001_init.sql`; duplicate legacy root migration mirrors are migration debt and should stay removed
+- deployment assets pin PostgreSQL 18.4; compose, raw Kubernetes, and Helm must mount persistent data at `/var/lib/postgresql` because the official image stores the default `PGDATA` below `/var/lib/postgresql/18/docker`
 - built-in bootstrap defaults should be version-gated: first-time initialization and seed-version upgrades replay static roles/menus/policies/templates, while config-driven admin user and cluster sync stay as separate startup work
 - pod detail is now expected to be an operational workspace, not only a static detail page
 - workload list pages should support search/filter first, then batch action surfaces where backend capability already exists
@@ -447,10 +448,15 @@ The repository has already converged on these rules:
 - AI Agent Runtime is now the stable abstraction for external agent execution: pages, automation policy, and business modules must depend on soha `AgentProvider`, `AgentRun`, `AgentCapability`, `AgentToolBinding`, `AgentSkillBinding`, toolset, analysis profile, and `AnalysisArtifact` contracts instead of calling Hermes or another provider directly
 - Hermes Agent is only the first external provider behind the runner claim/callback path; future OpenClaw, internal agent, or third-party providers must be added by extending provider adapters, tool bindings, skill bindings, and runner executors, not by rewriting AI workbench pages or business analysis flows
 - Agent Runtime capabilities should turn existing logs, metrics, traces, platform events, delivery context, on-call context, Docker context, and virtualization context into soha capability and MCP/tool entries; skills remain platform-level methodology definitions that may map to Hermes skills, MCP capabilities, prompt templates, or future provider-native skill systems
+- Hermes provider execution should pass `AgentSkillBinding.providerSkillRef` to the Hermes CLI as the provider-native skill argument, falling back to soha skill ids only when no provider skill ref exists
 - External Agent Runtime providers must invoke soha read-only tools through the runner `agent-runs/tool-call` gateway using the runner token and per-run callback token; they must not bypass soha data-source credentials, scope, toolset, or `AgentRun.toolBindings` snapshots
-- Hermes/CLI provider POC may prefetch a small read-only tool context into the provider prompt; currently executable prefetch/tool-call backends include events, logs, metrics, traces, delivery releases, delivery builds, and alerts, while Docker, virtualization, execution-task, platform-resource, and on-call route bindings remain catalog contracts until their readers/adapters are wired
+- `AgentRun.toolBindings` snapshots must be filtered by the creator or system principal's runtime permission keys before runner claim; provider tokens cannot expand tools, data sources, or business context beyond that snapshot
+- Session/profile toolsets may reference exact adapter ids such as `logs.v1` or source-kind aliases such as `logs`, and adapter matching must remain explicit and test-covered
+- Hermes/CLI provider POC may prefetch a small read-only tool context into the provider prompt; currently executable prefetch/tool-call backends include events, logs, metrics, traces, delivery releases, delivery builds, execution tasks, platform resource snapshots, Docker operation/service context, virtualization operations, alerts, and OnCall route resolution
+- Agent Runtime runners must keep long-running provider commands alive with `running` heartbeat callbacks and must stop the local provider process if the control plane returns a terminal status such as `canceled` or `callback_timeout`
+- Agent Runtime runner smoke coverage should preserve the full claim, running callback, tool-call prefetch, CLI provider execution, completed callback, and `AnalysisArtifact` protocol chain even when a real Hermes binary is unavailable locally
 - future provider-native or MCP client tool protocols must still terminate at the same soha `agent-runs/tool-call` gateway
-- Agent Runtime output must be normalized into soha `AnalysisArtifact` with evidence, hypotheses, recommendations, graph, tool-execution records, and data-source snapshots; provider-native output should not leak directly into frontend contracts
+- Agent Runtime output must be normalized into soha `AnalysisArtifact` with evidence, hypotheses, recommendations, graph, tool-execution records, and data-source snapshots; runner-side synthesized artifacts must preserve provider structured fields plus runner tool records, and provider-native output should not leak directly into frontend contracts
 - Continuous AI analysis is scheduled and audited by soha automation policy; Hermes cron or provider-native schedulers are optional experiments and must not become the platform source of truth for policy matching, dedup, cooldown, budget, permission, or audit behavior
 - soha owns permissions, menus, audit, budget, data redaction, and operation boundaries for Agent Runtime. Agents are pluggable executors only, and high-risk write actions must still route through the owning module's durable operation or approval flow
 - `metrics.v1` and `traces.v1` have moved from registry-only placeholders to real execution backends, with Prometheus-backed metric analysis and Jaeger-backed trace hotspot analysis expected to remain available to the workbench
@@ -567,7 +573,7 @@ Primary supporting documents:
 ## 15. Codex Collaboration Baseline
 
 This repository may use repo-local collaboration files under `.codex/` for isolated Codex threads or agents.
-`AGENTS.md` remains the engineering baseline; `.codex/` carries task execution context.
+`agents.md` remains the engineering baseline; `.codex/` carries task execution context.
 Reusable repo-specific Codex skills may also live under `.agents/skills/` when the repository wants frontend, backend, or deployment guidance versioned alongside the codebase.
 
 - `.codex/state/current_task.md` is the canonical task snapshot for any spawned thread

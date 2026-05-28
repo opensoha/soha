@@ -164,7 +164,7 @@ func (s *Service) queueAutomationAgentRun(ctx context.Context, policy domaincopi
 			"timeRangeMinutes": scope.TimeRangeMinutes,
 		},
 	}
-	return s.createAgentRun(ctx, domaincopilot.AgentRunInput{
+	return s.createAgentRun(ctx, systemPrincipal(), domaincopilot.AgentRunInput{
 		ProviderID:   policy.AgentProviderID,
 		CapabilityID: kind,
 		SkillIDs:     automationAgentSkillIDs(kind, toolset.EnabledSkillIDs),

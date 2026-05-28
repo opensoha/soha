@@ -12,8 +12,12 @@ import (
 	domainalert "github.com/soha/soha/internal/domain/alert"
 	domainbuild "github.com/soha/soha/internal/domain/build"
 	domaincopilot "github.com/soha/soha/internal/domain/copilot"
+	domaindelivery "github.com/soha/soha/internal/domain/delivery"
+	domaindocker "github.com/soha/soha/internal/domain/docker"
 	domainidentity "github.com/soha/soha/internal/domain/identity"
 	domainrelease "github.com/soha/soha/internal/domain/release"
+	domainresource "github.com/soha/soha/internal/domain/resource"
+	domainvirtualization "github.com/soha/soha/internal/domain/virtualization"
 	mcplogs "github.com/soha/soha/internal/infrastructure/mcp/logs"
 	mcpmetrics "github.com/soha/soha/internal/infrastructure/mcp/metrics"
 	mcptraces "github.com/soha/soha/internal/infrastructure/mcp/traces"
@@ -321,8 +325,20 @@ func (s *Service) executeAgentToolBindingOutput(ctx context.Context, run domainc
 		return s.executeAgentDeliveryReleasesTool(ctx, run, input)
 	case "delivery.builds.list":
 		return s.executeAgentDeliveryBuildsTool(ctx, run, input)
+	case "delivery.execution_tasks.list":
+		return s.executeAgentExecutionTasksTool(ctx, run, input)
+	case "platform.resources.snapshot":
+		return s.executeAgentPlatformResourcesTool(ctx, run, input)
+	case "docker.operations.list":
+		return s.executeAgentDockerOperationsTool(ctx, run, input)
+	case "docker.services.list":
+		return s.executeAgentDockerServicesTool(ctx, run, input)
+	case "virtualization.operations.list":
+		return s.executeAgentVirtualizationOperationsTool(ctx, run, input)
 	case "alerts.list":
 		return s.executeAgentAlertsTool(ctx, run, input)
+	case "oncall.routes.resolve":
+		return s.executeAgentOnCallResolveTool(ctx, run, input)
 	default:
 		return nil, fmt.Errorf("%w: unsupported agent tool %s", aperrors.ErrInvalidArgument, binding.ToolName)
 	}
@@ -484,6 +500,141 @@ func (s *Service) executeAgentDeliveryBuildsTool(ctx context.Context, run domain
 	return map[string]any{"builds": agentBuildRecordSummaries(items), "count": len(items)}, nil
 }
 
+func (s *Service) executeAgentExecutionTasksTool(ctx context.Context, run domaincopilot.AgentRun, input map[string]any) (map[string]any, error) {
+	if s.execution == nil {
+		return nil, fmt.Errorf("%w: execution task reader is not configured", aperrors.ErrNotFound)
+	}
+	limit := firstPositive(intCondition(input["limit"]), 20)
+	items, err := s.execution.ListExecutionTasks(ctx, agentToolPrincipal(), domaindelivery.ExecutionTaskFilter{
+		ApplicationID:            firstNonEmpty(stringValue(input["applicationId"]), stringValue(run.Input["applicationId"])),
+		ApplicationEnvironmentID: firstNonEmpty(stringValue(input["applicationEnvironmentId"]), stringValue(run.Input["applicationEnvironmentId"])),
+		ReleaseBundleID:          firstNonEmpty(stringValue(input["releaseBundleId"]), stringValue(run.Input["releaseBundleId"])),
+		Status:                   stringValue(input["status"]),
+		ProviderKind:             stringValue(input["providerKind"]),
+		Limit:                    limit,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if len(items) > limit {
+		items = items[:limit]
+	}
+	return map[string]any{"executionTasks": agentExecutionTaskSummaries(items), "count": len(items)}, nil
+}
+
+func (s *Service) executeAgentPlatformResourcesTool(ctx context.Context, run domaincopilot.AgentRun, input map[string]any) (map[string]any, error) {
+	if s.resources == nil {
+		return nil, fmt.Errorf("%w: platform resource reader is not configured", aperrors.ErrNotFound)
+	}
+	clusterID := firstNonEmpty(stringValue(input["clusterId"]), run.Scope.ClusterID)
+	if strings.TrimSpace(clusterID) == "" {
+		return nil, fmt.Errorf("%w: clusterId is required for platform resource snapshot", aperrors.ErrInvalidArgument)
+	}
+	namespace := firstNonEmpty(stringValue(input["namespace"]), run.Scope.Namespace)
+	limit := firstPositive(intCondition(input["limit"]), evidenceBudget(run.Toolset, 20), 20)
+	principal := agentToolPrincipal()
+	out := map[string]any{
+		"clusterId":   clusterID,
+		"namespace":   namespace,
+		"generatedAt": time.Now().UTC().Format(time.RFC3339),
+	}
+	if nodes, err := s.resources.ListNodes(ctx, principal, clusterID); err == nil {
+		out["nodes"] = agentNodeSummaries(limitNodes(nodes, minPositive(limit, 5)))
+		out["nodeCount"] = len(nodes)
+	} else {
+		out["nodeError"] = err.Error()
+	}
+	if pods, err := s.resources.ListPods(ctx, principal, clusterID, namespace); err == nil {
+		pods = filterAgentPods(pods, run)
+		out["pods"] = agentPodSummaries(limitPods(pods, limit))
+		out["podCount"] = len(pods)
+	} else {
+		out["podError"] = err.Error()
+	}
+	if deployments, err := s.resources.ListDeployments(ctx, principal, clusterID, namespace); err == nil {
+		deployments = filterAgentDeployments(deployments, run)
+		out["deployments"] = agentDeploymentSummaries(limitDeployments(deployments, limit))
+		out["deploymentCount"] = len(deployments)
+	} else {
+		out["deploymentError"] = err.Error()
+	}
+	if services, err := s.resources.ListServices(ctx, principal, clusterID, namespace); err == nil {
+		services = filterAgentServices(services, run)
+		out["services"] = agentServiceSummaries(limitServices(services, limit))
+		out["serviceCount"] = len(services)
+	} else {
+		out["serviceError"] = err.Error()
+	}
+	return out, nil
+}
+
+func (s *Service) executeAgentDockerOperationsTool(ctx context.Context, run domaincopilot.AgentRun, input map[string]any) (map[string]any, error) {
+	if s.docker == nil {
+		return nil, fmt.Errorf("%w: docker reader is not configured", aperrors.ErrNotFound)
+	}
+	limit := firstPositive(intCondition(input["limit"]), 20)
+	page, err := s.docker.ListOperations(ctx, agentToolPrincipal(), domaindocker.OperationFilter{
+		HostID:        firstNonEmpty(stringValue(input["hostId"]), stringValue(run.Input["dockerHostId"])),
+		ProjectID:     firstNonEmpty(stringValue(input["projectId"]), stringValue(run.Input["composeProjectId"])),
+		ServiceID:     firstNonEmpty(stringValue(input["serviceId"]), stringValue(run.Input["dockerServiceId"])),
+		Status:        stringValue(input["status"]),
+		OperationKind: stringValue(input["operationKind"]),
+		Limit:         limit,
+	})
+	if err != nil {
+		return nil, err
+	}
+	items := page.Items
+	if len(items) > limit {
+		items = items[:limit]
+	}
+	return map[string]any{"operations": agentDockerOperationSummaries(items), "count": len(items), "total": page.Total}, nil
+}
+
+func (s *Service) executeAgentDockerServicesTool(ctx context.Context, run domaincopilot.AgentRun, input map[string]any) (map[string]any, error) {
+	if s.docker == nil {
+		return nil, fmt.Errorf("%w: docker reader is not configured", aperrors.ErrNotFound)
+	}
+	limit := firstPositive(intCondition(input["limit"]), 20)
+	page, err := s.docker.ListServices(ctx, agentToolPrincipal(), domaindocker.ServiceFilter{
+		HostID:    firstNonEmpty(stringValue(input["hostId"]), stringValue(run.Input["dockerHostId"])),
+		ProjectID: firstNonEmpty(stringValue(input["projectId"]), stringValue(run.Input["composeProjectId"])),
+		Status:    stringValue(input["status"]),
+		Search:    firstNonEmpty(stringValue(input["search"]), run.Scope.Service),
+		Limit:     limit,
+	})
+	if err != nil {
+		return nil, err
+	}
+	items := page.Items
+	if len(items) > limit {
+		items = items[:limit]
+	}
+	return map[string]any{"services": agentDockerServiceSummaries(items), "count": len(items), "total": page.Total}, nil
+}
+
+func (s *Service) executeAgentVirtualizationOperationsTool(ctx context.Context, run domaincopilot.AgentRun, input map[string]any) (map[string]any, error) {
+	if s.virtualization == nil {
+		return nil, fmt.Errorf("%w: virtualization reader is not configured", aperrors.ErrNotFound)
+	}
+	limit := firstPositive(intCondition(input["limit"]), 20)
+	items, err := s.virtualization.ListOperations(ctx, agentToolPrincipal(), domainvirtualization.TaskFilter{
+		Provider:     stringValue(input["provider"]),
+		ConnectionID: firstNonEmpty(stringValue(input["connectionId"]), stringValue(run.Input["virtualizationConnectionId"])),
+		VMID:         firstNonEmpty(stringValue(input["vmId"]), stringValue(run.Input["vmId"])),
+		Status:       stringValue(input["status"]),
+		TaskKind:     stringValue(input["taskKind"]),
+		Limit:        limit,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if len(items) > limit {
+		items = items[:limit]
+	}
+	return map[string]any{"operations": agentVirtualizationTaskSummaries(items), "count": len(items)}, nil
+}
+
 func (s *Service) executeAgentAlertsTool(ctx context.Context, run domaincopilot.AgentRun, input map[string]any) (map[string]any, error) {
 	if s.alerts == nil {
 		return nil, fmt.Errorf("%w: alert reader is not configured", aperrors.ErrNotFound)
@@ -502,6 +653,42 @@ func (s *Service) executeAgentAlertsTool(ctx context.Context, run domaincopilot.
 		items = items[:limit]
 	}
 	return map[string]any{"alerts": agentAlertSummaries(items), "count": len(items)}, nil
+}
+
+func (s *Service) executeAgentOnCallResolveTool(ctx context.Context, run domaincopilot.AgentRun, input map[string]any) (map[string]any, error) {
+	if s.oncall == nil {
+		return nil, fmt.Errorf("%w: on-call resolver is not configured", aperrors.ErrNotFound)
+	}
+	labels := map[string]string{}
+	if raw, ok := input["labels"].(map[string]string); ok {
+		for key, value := range raw {
+			labels[key] = value
+		}
+	} else if rawMap, ok := input["labels"].(map[string]any); ok {
+		for key, value := range rawMap {
+			if text := strings.TrimSpace(fmt.Sprint(value)); text != "" {
+				labels[key] = text
+			}
+		}
+	}
+	result, err := s.oncall.ResolveOnCall(ctx, agentToolPrincipal(), domainalert.OnCallResolveInput{
+		AlertID:         firstNonEmpty(stringValue(input["alertId"]), run.Scope.AlertID),
+		IntegrationID:   stringValue(input["integrationId"]),
+		IntegrationType: stringValue(input["integrationType"]),
+		BusinessLineID:  firstNonEmpty(stringValue(input["businessLineId"]), stringValue(run.Input["businessLineId"])),
+		AlertCategory:   stringValue(input["alertCategory"]),
+		AlertName:       firstNonEmpty(stringValue(input["alertName"]), stringValue(run.Input["alertName"])),
+		Severity:        stringValue(input["severity"]),
+		Service:         firstNonEmpty(stringValue(input["service"]), run.Scope.Service, run.Scope.Workload),
+		Role:            stringValue(input["role"]),
+		ClusterID:       firstNonEmpty(stringValue(input["clusterId"]), run.Scope.ClusterID),
+		Namespace:       firstNonEmpty(stringValue(input["namespace"]), run.Scope.Namespace),
+		Labels:          labels,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{"resolution": result}, nil
 }
 
 func (s *Service) findAgentDataSource(ctx context.Context, sourceKind, adapterID string, input map[string]any) (domaincopilot.DataSource, bool, error) {
@@ -611,6 +798,55 @@ func filterAgentAlerts(items []domainalert.Instance, run domaincopilot.AgentRun)
 	return out
 }
 
+func filterAgentPods(items []domainresource.PodView, run domaincopilot.AgentRun) []domainresource.PodView {
+	if strings.TrimSpace(run.Scope.Workload) == "" {
+		return items
+	}
+	workload := strings.ToLower(strings.TrimSpace(run.Scope.Workload))
+	out := make([]domainresource.PodView, 0, len(items))
+	for _, item := range items {
+		haystack := strings.ToLower(item.Name + " " + item.Namespace)
+		if strings.Contains(haystack, workload) {
+			out = append(out, item)
+		}
+	}
+	return out
+}
+
+func filterAgentDeployments(items []domainresource.DeploymentView, run domaincopilot.AgentRun) []domainresource.DeploymentView {
+	if strings.TrimSpace(run.Scope.Workload) == "" {
+		return items
+	}
+	out := make([]domainresource.DeploymentView, 0, len(items))
+	for _, item := range items {
+		if item.Name == run.Scope.Workload {
+			out = append(out, item)
+		}
+	}
+	return out
+}
+
+func filterAgentServices(items []domainresource.ServiceView, run domaincopilot.AgentRun) []domainresource.ServiceView {
+	if strings.TrimSpace(run.Scope.Service) == "" && strings.TrimSpace(run.Scope.Workload) == "" {
+		return items
+	}
+	needle := firstNonEmpty(run.Scope.Service, run.Scope.Workload)
+	out := make([]domainresource.ServiceView, 0, len(items))
+	for _, item := range items {
+		if item.Name == needle {
+			out = append(out, item)
+			continue
+		}
+		for _, value := range item.Selector {
+			if value == needle {
+				out = append(out, item)
+				break
+			}
+		}
+	}
+	return out
+}
+
 func agentReleaseRecordSummaries(items []domainrelease.Record) []map[string]any {
 	out := make([]map[string]any, 0, len(items))
 	for _, item := range items {
@@ -627,6 +863,202 @@ func agentReleaseRecordSummaries(items []domainrelease.Record) []map[string]any 
 		})
 	}
 	return out
+}
+
+func agentExecutionTaskSummaries(items []domaindelivery.ExecutionTask) []map[string]any {
+	out := make([]map[string]any, 0, len(items))
+	for _, item := range items {
+		out = append(out, map[string]any{
+			"id":                       item.ID,
+			"releaseBundleId":          item.ReleaseBundleID,
+			"applicationId":            item.ApplicationID,
+			"applicationEnvironmentId": item.ApplicationEnvironmentID,
+			"taskKind":                 item.TaskKind,
+			"providerKind":             item.ProviderKind,
+			"targetKind":               item.TargetKind,
+			"status":                   item.Status,
+			"attemptCount":             item.AttemptCount,
+			"maxRetries":               item.MaxRetries,
+			"timeoutSeconds":           item.TimeoutSeconds,
+			"claimedByAgentId":         item.ClaimedByAgentID,
+			"startedAt":                optionalAgentTime(item.StartedAt),
+			"lastHeartbeatAt":          optionalAgentTime(item.LastHeartbeatAt),
+			"finishedAt":               optionalAgentTime(item.FinishedAt),
+			"createdAt":                agentTime(item.CreatedAt),
+			"result":                   item.Result,
+			"artifacts":                item.Artifacts,
+		})
+	}
+	return out
+}
+
+func agentNodeSummaries(items []domainresource.NodeView) []map[string]any {
+	out := make([]map[string]any, 0, len(items))
+	for _, item := range items {
+		out = append(out, map[string]any{
+			"name":       item.Name,
+			"status":     item.Status,
+			"roles":      item.Roles,
+			"version":    item.Version,
+			"internalIp": item.InternalIP,
+			"podCount":   item.PodCount,
+			"resources":  item.Resources,
+			"ageSeconds": item.AgeSeconds,
+		})
+	}
+	return out
+}
+
+func agentPodSummaries(items []domainresource.PodView) []map[string]any {
+	out := make([]map[string]any, 0, len(items))
+	for _, item := range items {
+		out = append(out, map[string]any{
+			"name":            item.Name,
+			"namespace":       item.Namespace,
+			"phase":           item.Phase,
+			"nodeName":        item.NodeName,
+			"podIp":           item.PodIP,
+			"readyContainers": item.ReadyContainers,
+			"restarts":        item.Restarts,
+			"requests":        item.Requests,
+			"limits":          item.Limits,
+			"ageSeconds":      item.AgeSeconds,
+		})
+	}
+	return out
+}
+
+func agentDeploymentSummaries(items []domainresource.DeploymentView) []map[string]any {
+	out := make([]map[string]any, 0, len(items))
+	for _, item := range items {
+		out = append(out, map[string]any{
+			"name":            item.Name,
+			"namespace":       item.Namespace,
+			"desiredReplicas": item.DesiredReplicas,
+			"readyReplicas":   item.ReadyReplicas,
+			"updatedReplicas": item.UpdatedReplicas,
+			"available":       item.Available,
+			"labels":          item.Labels,
+			"ageSeconds":      item.AgeSeconds,
+		})
+	}
+	return out
+}
+
+func agentServiceSummaries(items []domainresource.ServiceView) []map[string]any {
+	out := make([]map[string]any, 0, len(items))
+	for _, item := range items {
+		out = append(out, map[string]any{
+			"name":       item.Name,
+			"namespace":  item.Namespace,
+			"type":       item.Type,
+			"clusterIp":  item.ClusterIP,
+			"ports":      item.Ports,
+			"selector":   item.Selector,
+			"ageSeconds": item.AgeSeconds,
+		})
+	}
+	return out
+}
+
+func agentDockerOperationSummaries(items []domaindocker.Operation) []map[string]any {
+	out := make([]map[string]any, 0, len(items))
+	for _, item := range items {
+		out = append(out, map[string]any{
+			"id":                item.ID,
+			"hostId":            item.HostID,
+			"projectId":         item.ProjectID,
+			"serviceId":         item.ServiceID,
+			"operationKind":     item.OperationKind,
+			"status":            item.Status,
+			"requestedBy":       item.RequestedBy,
+			"claimedByWorkerId": item.ClaimedByWorkerID,
+			"attemptCount":      item.AttemptCount,
+			"maxRetries":        item.MaxRetries,
+			"timeoutSeconds":    item.TimeoutSeconds,
+			"startedAt":         optionalAgentTime(item.StartedAt),
+			"lastHeartbeatAt":   optionalAgentTime(item.LastHeartbeatAt),
+			"finishedAt":        optionalAgentTime(item.FinishedAt),
+			"createdAt":         agentTime(item.CreatedAt),
+			"result":            item.Result,
+		})
+	}
+	return out
+}
+
+func agentDockerServiceSummaries(items []domaindocker.Service) []map[string]any {
+	out := make([]map[string]any, 0, len(items))
+	for _, item := range items {
+		out = append(out, map[string]any{
+			"id":             item.ID,
+			"hostId":         item.HostID,
+			"projectId":      item.ProjectID,
+			"name":           item.Name,
+			"image":          item.Image,
+			"status":         item.Status,
+			"containerId":    item.ContainerID,
+			"restartCount":   item.RestartCount,
+			"cpuPercent":     item.CPUPercent,
+			"memoryBytes":    item.MemoryBytes,
+			"networkRxBytes": item.NetworkRxBytes,
+			"networkTxBytes": item.NetworkTxBytes,
+			"lastSeenAt":     optionalAgentTime(item.LastSeenAt),
+		})
+	}
+	return out
+}
+
+func agentVirtualizationTaskSummaries(items []domainvirtualization.Task) []map[string]any {
+	out := make([]map[string]any, 0, len(items))
+	for _, item := range items {
+		out = append(out, map[string]any{
+			"id":                item.ID,
+			"provider":          item.Provider,
+			"connectionId":      item.ConnectionID,
+			"vmId":              item.VMID,
+			"taskKind":          item.TaskKind,
+			"status":            item.Status,
+			"requestedBy":       item.RequestedBy,
+			"claimedByWorkerId": item.ClaimedByWorkerID,
+			"attemptCount":      item.AttemptCount,
+			"maxRetries":        item.MaxRetries,
+			"timeoutSeconds":    item.TimeoutSeconds,
+			"startedAt":         optionalAgentTime(item.StartedAt),
+			"lastHeartbeatAt":   optionalAgentTime(item.LastHeartbeatAt),
+			"finishedAt":        optionalAgentTime(item.FinishedAt),
+			"createdAt":         agentTime(item.CreatedAt),
+			"result":            item.Result,
+		})
+	}
+	return out
+}
+
+func limitNodes(items []domainresource.NodeView, limit int) []domainresource.NodeView {
+	if limit > 0 && len(items) > limit {
+		return items[:limit]
+	}
+	return items
+}
+
+func limitPods(items []domainresource.PodView, limit int) []domainresource.PodView {
+	if limit > 0 && len(items) > limit {
+		return items[:limit]
+	}
+	return items
+}
+
+func limitDeployments(items []domainresource.DeploymentView, limit int) []domainresource.DeploymentView {
+	if limit > 0 && len(items) > limit {
+		return items[:limit]
+	}
+	return items
+}
+
+func limitServices(items []domainresource.ServiceView, limit int) []domainresource.ServiceView {
+	if limit > 0 && len(items) > limit {
+		return items[:limit]
+	}
+	return items
 }
 
 func agentBuildRecordSummaries(items []domainbuild.Record) []map[string]any {
@@ -682,7 +1114,7 @@ func optionalAgentTime(value *time.Time) string {
 	return value.UTC().Format(time.RFC3339)
 }
 
-func (s *Service) createAgentRun(ctx context.Context, input domaincopilot.AgentRunInput) (domaincopilot.AgentRun, error) {
+func (s *Service) createAgentRun(ctx context.Context, principal domainidentity.Principal, input domaincopilot.AgentRunInput) (domaincopilot.AgentRun, error) {
 	provider := s.resolveAgentProvider(input.ProviderID)
 	if !provider.Enabled {
 		return domaincopilot.AgentRun{}, fmt.Errorf("%w: agent provider %s is disabled", aperrors.ErrInvalidArgument, provider.ID)
@@ -698,6 +1130,10 @@ func (s *Service) createAgentRun(ctx context.Context, input domaincopilot.AgentR
 	toolBindings := input.ToolBindings
 	if len(toolBindings) == 0 {
 		toolBindings = s.agentToolBindingsForRun(provider, capabilityID, input.Toolset)
+	}
+	toolBindings, err := s.filterAgentToolBindingsByPrincipal(ctx, principal, toolBindings)
+	if err != nil {
+		return domaincopilot.AgentRun{}, err
 	}
 	skillBindings := input.SkillBindings
 	if len(skillBindings) == 0 {
@@ -735,10 +1171,6 @@ func (s *Service) createAgentRun(ctx context.Context, input domaincopilot.AgentR
 func (s *Service) agentToolBindingsForRun(provider domaincopilot.AgentProvider, capabilityID string, toolset domaincopilot.SessionToolset) []domaincopilot.AgentToolBinding {
 	bindings := filterToolBindings(defaultAgentToolBindings(), capabilityID)
 	out := make([]domaincopilot.AgentToolBinding, 0, len(bindings))
-	enabledAdapters := map[string]struct{}{}
-	for _, adapterID := range toolset.EnabledAdapterIDs {
-		enabledAdapters[strings.TrimSpace(adapterID)] = struct{}{}
-	}
 	for _, binding := range bindings {
 		if binding.ProviderID != "" && binding.ProviderID != provider.ID {
 			continue
@@ -746,17 +1178,38 @@ func (s *Service) agentToolBindingsForRun(provider domaincopilot.AgentProvider, 
 		if binding.ProviderKind != "" && binding.ProviderKind != provider.Kind {
 			continue
 		}
-		if len(enabledAdapters) > 0 && binding.AdapterID != "" {
-			if _, ok := enabledAdapters[strings.TrimSpace(binding.AdapterID)]; !ok {
-				continue
-			}
-		}
 		if !toolsetAllowsTool(toolset, binding.AdapterID, binding.ToolName) {
 			continue
 		}
 		out = append(out, binding)
 	}
 	return out
+}
+
+func (s *Service) filterAgentToolBindingsByPrincipal(ctx context.Context, principal domainidentity.Principal, bindings []domaincopilot.AgentToolBinding) ([]domaincopilot.AgentToolBinding, error) {
+	if len(bindings) == 0 {
+		return nil, nil
+	}
+	keys, err := appaccess.RuntimePermissionKeys(ctx, s.permissions, principal)
+	if err != nil {
+		return nil, err
+	}
+	allowed := make(map[string]struct{}, len(keys))
+	for _, key := range keys {
+		allowed[strings.TrimSpace(key)] = struct{}{}
+	}
+	out := make([]domaincopilot.AgentToolBinding, 0, len(bindings))
+	for _, binding := range bindings {
+		permissionKey := strings.TrimSpace(binding.PermissionKey)
+		if permissionKey == "" {
+			out = append(out, binding)
+			continue
+		}
+		if _, ok := allowed[permissionKey]; ok {
+			out = append(out, binding)
+		}
+	}
+	return out, nil
 }
 
 func (s *Service) agentSkillBindingsForRun(provider domaincopilot.AgentProvider, capabilityID string, skillIDs []string) []domaincopilot.AgentSkillBinding {

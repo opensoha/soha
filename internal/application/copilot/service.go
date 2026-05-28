@@ -17,11 +17,15 @@ import (
 	domainbuild "github.com/soha/soha/internal/domain/build"
 	domaincluster "github.com/soha/soha/internal/domain/cluster"
 	domaincopilot "github.com/soha/soha/internal/domain/copilot"
+	domaindelivery "github.com/soha/soha/internal/domain/delivery"
+	domaindocker "github.com/soha/soha/internal/domain/docker"
 	domainevent "github.com/soha/soha/internal/domain/event"
 	domainidentity "github.com/soha/soha/internal/domain/identity"
 	domainmcp "github.com/soha/soha/internal/domain/mcp"
 	domainrelease "github.com/soha/soha/internal/domain/release"
+	domainresource "github.com/soha/soha/internal/domain/resource"
 	domainsettings "github.com/soha/soha/internal/domain/settings"
+	domainvirtualization "github.com/soha/soha/internal/domain/virtualization"
 	aperrors "github.com/soha/soha/internal/platform/apperrors"
 	"github.com/soha/soha/internal/platform/runtimeobs"
 	"go.uber.org/zap"
@@ -98,6 +102,30 @@ type ReleaseReader interface {
 	List(context.Context, domainrelease.Filter) ([]domainrelease.Record, error)
 }
 
+type ExecutionTaskReader interface {
+	ListExecutionTasks(context.Context, domainidentity.Principal, domaindelivery.ExecutionTaskFilter) ([]domaindelivery.ExecutionTask, error)
+}
+
+type PlatformResourceReader interface {
+	ListNodes(context.Context, domainidentity.Principal, string) ([]domainresource.NodeView, error)
+	ListPods(context.Context, domainidentity.Principal, string, string) ([]domainresource.PodView, error)
+	ListDeployments(context.Context, domainidentity.Principal, string, string) ([]domainresource.DeploymentView, error)
+	ListServices(context.Context, domainidentity.Principal, string, string) ([]domainresource.ServiceView, error)
+}
+
+type DockerReader interface {
+	ListOperations(context.Context, domainidentity.Principal, domaindocker.OperationFilter) (domaindocker.Page[domaindocker.Operation], error)
+	ListServices(context.Context, domainidentity.Principal, domaindocker.ServiceFilter) (domaindocker.Page[domaindocker.Service], error)
+}
+
+type VirtualizationReader interface {
+	ListOperations(context.Context, domainidentity.Principal, domainvirtualization.TaskFilter) ([]domainvirtualization.Task, error)
+}
+
+type OnCallResolver interface {
+	ResolveOnCall(context.Context, domainidentity.Principal, domainalert.OnCallResolveInput) (map[string]any, error)
+}
+
 type AISettingsResolver interface {
 	ResolveAISettings(context.Context) (domainsettings.AISettings, error)
 }
@@ -111,6 +139,11 @@ type Service struct {
 	apps                  ApplicationReader
 	builds                BuildReader
 	releases              ReleaseReader
+	execution             ExecutionTaskReader
+	resources             PlatformResourceReader
+	docker                DockerReader
+	virtualization        VirtualizationReader
+	oncall                OnCallResolver
 	settings              AISettingsResolver
 	permissions           *appaccess.PermissionResolver
 	http                  *http.Client
@@ -160,6 +193,14 @@ func (s *Service) SetMCPRegistry(registry MCPRegistry) {
 
 func (s *Service) SetAgentProviders(providers []domaincopilot.AgentProvider) {
 	s.agentProviders = append([]domaincopilot.AgentProvider(nil), providers...)
+}
+
+func (s *Service) SetAgentRuntimeReaders(execution ExecutionTaskReader, resources PlatformResourceReader, docker DockerReader, virtualization VirtualizationReader, oncall OnCallResolver) {
+	s.execution = execution
+	s.resources = resources
+	s.docker = docker
+	s.virtualization = virtualization
+	s.oncall = oncall
 }
 
 func (s *Service) logWarn(message string, fields ...zap.Field) {
@@ -450,7 +491,7 @@ func (s *Service) queueSessionAgentAnalysis(ctx context.Context, principal domai
 	if capabilityID == "" {
 		capabilityID = mode
 	}
-	run, err := s.createAgentRun(ctx, domaincopilot.AgentRunInput{
+	run, err := s.createAgentRun(ctx, principal, domaincopilot.AgentRunInput{
 		ProviderID:     providerID,
 		CapabilityID:   capabilityID,
 		SkillIDs:       toolset.EnabledSkillIDs,

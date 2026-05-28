@@ -185,7 +185,7 @@ func (s *Service) queueRootCauseAgentRunWithToolset(ctx context.Context, princip
 		return queuedRootCauseAgentRun{}, err
 	}
 	toolset := mergeRootCauseAgentToolset(rootCauseAgentToolset(profile, input), toolsetOverride)
-	agentRun, err := s.createAgentRun(ctx, domaincopilot.AgentRunInput{
+	agentRun, err := s.createAgentRun(ctx, principal, domaincopilot.AgentRunInput{
 		ProviderID:     input.AgentProviderID,
 		CapabilityID:   created.Kind,
 		SkillIDs:       automationAgentSkillIDs(created.Kind, toolset.EnabledSkillIDs),

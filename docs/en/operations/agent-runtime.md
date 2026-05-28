@@ -37,11 +37,13 @@ Runner-facing APIs are protected by `runtime.execution_runner_token`:
 - `POST /api/v1/copilot/agent-runs/callback`
 - `POST /api/v1/copilot/agent-runs/tool-call`
 
-`tool-call` is the controlled gateway for external providers to invoke soha tools. Requests must include both the runner bearer token and the current `AgentRun.callbackToken`, and may only call read-only tools captured in that run's `toolBindings` snapshot. The control plane currently executes log, metric, trace, platform-event, delivery-release, delivery-build, and alert queries, then records each call as `ToolExecution` for the final `AnalysisArtifact`. Provider adapters should not bypass this gateway to reach soha data sources or credentials directly.
+`tool-call` is the controlled gateway for external providers to invoke soha tools. Requests must include both the runner bearer token and the current `AgentRun.callbackToken`, and may only call read-only tools captured in that run's `toolBindings` snapshot. The control plane currently executes log, metric, trace, platform-event, delivery-release, delivery-build, execution-task, platform-resource snapshot, Docker operation/service, virtualization operation, alert, and OnCall route-resolution queries, then records each call as `ToolExecution` for the final `AnalysisArtifact`. Provider adapters should not bypass this gateway to reach soha data sources or credentials directly.
 
-The current Hermes/CLI provider POC in the runner prefetches up to 3 prefetchable read-only tool results before invoking the provider command, such as `events.query`, `logs.query`, `metrics.query`, `traces.query`, `delivery.releases.list`, `delivery.builds.list`, and `alerts.list`, then injects those results as `prefetchedToolResults` into the provider prompt and final output. This lets a provider consume soha-controlled tool context before it supports a private tool-call protocol. If Hermes or another agent is later connected as an MCP client, the runner adapter should wrap the same `tool-call` gateway as the provider-visible MCP/tool server and still avoid exposing soha data-source credentials.
+The current Hermes/CLI provider POC in the runner prefetches up to 3 prefetchable read-only tool results before invoking the provider command, such as `events.query`, `logs.query`, `metrics.query`, `traces.query`, `delivery.releases.list`, `delivery.builds.list`, `delivery.execution_tasks.list`, `platform.resources.snapshot`, `docker.operations.list`, `docker.services.list`, `virtualization.operations.list`, `alerts.list`, and `oncall.routes.resolve`, then injects those results as `prefetchedToolResults` into the provider prompt and final output. This lets a provider consume soha-controlled tool context before it supports a private tool-call protocol. If Hermes or another agent is later connected as an MCP client, the runner adapter should wrap the same `tool-call` gateway as the provider-visible MCP/tool server and still avoid exposing soha data-source credentials.
 
-The catalog also declares capability bindings such as `delivery.execution_tasks.list`, `platform.resources.snapshot`, `docker.operations.list`, `docker.services.list`, `virtualization.operations.list`, and `oncall.routes.resolve`. These are stable Agent Runtime catalog contracts. They become executable only after the matching reader or adapter is wired into `executeAgentToolBindingOutput`; until then, the runner does not include them in the default prefetch set, and direct provider calls receive an explicit unsupported error.
+The `AgentRun.toolBindings` snapshot is filtered at creation time by the creator or system principal's runtime permission keys. The runner token and callback token can only execute that already-filtered snapshot; they cannot expand access to data sources, tools, or business context the user could not access. Toolset adapter selection supports exact adapter ids such as `logs.v1` and source-kind aliases such as `logs`, `metrics`, or `traces`, but matching rules must remain explicit and test-covered.
+
+These tools remain read-only and constrained by the `AgentRun.toolBindings` snapshot. Future providers or tools should still be wired through a reader/adapter in `executeAgentToolBindingOutput` before being added to the runner prefetch allowlist; high-risk write actions must not become direct chat tools.
 
 `ai_agent_runs` is the durable queue table for AI Agent Runtime. Status values are:
 
@@ -105,9 +107,10 @@ control_plane:
         command: hermes
         args:
           - chat
+          - -Q
         prompt_arg: -q
-        skill_arg: -s
-        provider_skill_arg: ""
+        skill_arg: ""
+        provider_skill_arg: -s
     workspace_root: ./.soha/agent-runtime
     poll_interval: 5s
 ```
@@ -128,9 +131,11 @@ Current Hermes provider POC rules:
 
 - The runner only claims `AgentRun` rows whose provider id or kind matches `hermes`.
 - The default command is `hermes`; override it with `control_plane.agent_runtime.hermes_command`.
-- The runner converts soha run input plus tool-binding and skill-binding snapshots into a prompt, and passes skill ids to Hermes.
+- The runner converts soha run input plus tool-binding and skill-binding snapshots into a prompt, and prefers `AgentSkillBinding.providerSkillRef` as the Hermes CLI skill argument. It only falls back to soha skill ids when no provider skill ref exists.
 - The runner exposes an `agent-runs/tool-call` client helper that provider adapters can use to execute authorized read-only tools from the run snapshot; the default Hermes CLI POC prefetches a small read-only tool context into the prompt, including logs, metrics, traces, events, delivery release/build, and alert context, but does not assume a private Hermes tool-call protocol.
-- Callback `analysisArtifacts` are preferred as final artifacts. If none are returned, the control plane synthesizes a basic `AnalysisArtifact` from the output summary.
+- While the provider command is running, the runner periodically sends `running` heartbeat callbacks so the control plane keeps `lastHeartbeatAt` fresh. If a callback response returns a terminal status such as `canceled`, `callback_timeout`, `failed`, or `completed`, the runner cancels the local provider process and does not submit a final completed callback.
+- `internal/agent/runner` has smoke coverage that does not require a real Hermes installation: a fake control plane verifies the full claim -> running callback -> tool-call prefetch -> CLI provider -> completed callback -> `AnalysisArtifact` protocol chain. Real environments should still point `hermes_command` at the Hermes CLI for final end-to-end validation.
+- Callback `analysisArtifacts` are preferred as final artifacts. If none are returned, the runner and control plane synthesize a basic `AnalysisArtifact` from provider output while preserving provider evidence, hypotheses, recommendations, graph, toolExecutions, dataSourceSnapshot, and the runner's own tool execution record.
 
 The runner now dispatches by provider executor. Hermes is the built-in default executor; other CLI-style providers can be connected through `control_plane.agent_runtime.providers.<providerKind>` first, for example:
 

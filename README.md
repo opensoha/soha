@@ -111,11 +111,9 @@ PostgreSQL + Kubernetes clusters
 ├── internal/            # backend layers and domain modules
 ├── migrations/          # PostgreSQL bootstrap and schema migrations
 ├── web/                 # active frontend app
-├── chart/               # Helm chart
-├── Dockerfile           # single-project image build
+├── deploy/              # Docker, Compose, raw Kubernetes, and Helm assets
 ├── Makefile             # common dev/build/deploy commands
-├── deployment.yaml      # raw Kubernetes manifest
-└── docker-compose.yaml  # local compose stack
+└── agents.md            # engineering spec and project memory
 ```
 
 ## Quick Start
@@ -133,9 +131,9 @@ PostgreSQL + Kubernetes clusters
 make init
 ```
 
-This installs Go, frontend, and docs dependencies, then starts the local PostgreSQL service from `docker-compose.yaml`. The development helper can also start a local k3s debug cluster and write its kubeconfig under `./.dev/k3s/kubeconfig.yaml`.
+This installs Go, frontend, and docs dependencies, then starts the local PostgreSQL service from `deploy/docker-compose.yaml`. The development helper can also start a local k3s debug cluster and write its kubeconfig under `./.dev/k3s/kubeconfig.yaml`.
 
-The compose stack uses `postgres:18.4`. Existing local volumes created by PostgreSQL 16 cannot be reused by changing only the image tag; recreate disposable volumes or migrate data with `pg_dump`/`pg_restore` or `pg_upgrade`.
+The compose stack uses `postgres:18.4` and mounts the named volume at `/var/lib/postgresql`, which is required for PostgreSQL 18's default data directory layout. Existing local volumes created by PostgreSQL 16 cannot be reused by changing only the image tag; recreate disposable volumes or migrate data with `pg_dump`/`pg_restore` or `pg_upgrade`.
 
 ### Start the API and console
 
@@ -169,6 +167,23 @@ The default agent config is [configs/agent.config.yaml](./configs/agent.config.y
 SOHA_AGENT_CONFIG_FILE=/abs/path/to/agent.config.yaml go run ./cmd/agent
 ```
 
+### Deploy the Hermes Agent runner with Docker
+
+When Hermes is used as an external provider, run the derived `soha-agent` image from the unified compose stack: it extends the official `nousresearch/hermes-agent` image, adds the soha `cmd/agent` runner, and connects back to the control plane through the Agent Runtime claim/callback protocol.
+
+```bash
+make deploy-hermes-setup
+make deploy-hermes-runner-up
+```
+
+By default it connects to `http://soha:8080` on the local compose network and uses `demo-execution-runner-token`. Override these in real environments:
+
+```bash
+SOHA_CONTROL_PLANE_URL=http://host.docker.internal:8080 \
+SOHA_EXECUTION_RUNNER_TOKEN=replace-with-runtime-token \
+make deploy-hermes-runner-up
+```
+
 ## Common Commands
 
 ```bash
@@ -182,6 +197,8 @@ make test-api
 make test-web
 make deploy-image
 make deploy-compose-up
+make deploy-hermes-setup
+make deploy-hermes-runner-up
 make deploy-helm-lint
 ```
 
@@ -189,21 +206,23 @@ make deploy-helm-lint
 
 Soha ships as a single-project runtime by default: one application container serves the API, embedded SPA, and docs.
 
-- [Dockerfile](./Dockerfile): multi-stage image build
-- [docker-compose.yaml](./docker-compose.yaml): local full-stack stack with PostgreSQL
+- [deploy/Dockerfile](./deploy/Dockerfile): multi-stage image build
+- [deploy/Dockerfile.hermes-agent-runner](./deploy/Dockerfile.hermes-agent-runner): Hermes Agent Runtime runner image
+- [deploy/docker-compose.yaml](./deploy/docker-compose.yaml): local full-stack stack with PostgreSQL and optional Hermes runner services
 - [configs/config.yaml](./configs/config.yaml): default application config
-- [deployment.yaml](./deployment.yaml): raw Kubernetes manifest baseline
-- [chart](./chart): Helm chart
+- [configs/config.compose.yaml](./configs/config.compose.yaml): compose app-container config with PostgreSQL service host and no host-local kubeconfig seed
+- [deploy/deployment.yaml](./deploy/deployment.yaml): raw Kubernetes manifest baseline
+- [deploy/chart](./deploy/chart): Helm chart
 
 ```bash
-docker build -t soha:single-project .
-docker compose -f docker-compose.yaml up -d --build
-helm lint chart
+docker build -f deploy/Dockerfile -t soha:single-project .
+docker compose -f deploy/docker-compose.yaml up -d --build
+helm lint deploy/chart
 ```
 
 ## Documentation
 
-- [Engineering Spec](./AGENTS.md)
+- [Engineering Spec](./agents.md)
 - [Architecture Overview](./docs/architecture/index.md)
 - [Application Delivery](./docs/architecture/application-delivery.md)
 - [AI Copilot](./docs/architecture/ai-copilot.md)
@@ -225,7 +244,7 @@ helm lint chart
 
 ## Contributing
 
-Issues and pull requests are welcome. For larger changes, read [AGENTS.md](./AGENTS.md) first so backend layering, frontend routing, authorization, scope handling, and documentation updates stay consistent.
+Issues and pull requests are welcome. For larger changes, read [agents.md](./agents.md) first so backend layering, frontend routing, authorization, scope handling, and documentation updates stay consistent.
 
 Useful validation commands:
 

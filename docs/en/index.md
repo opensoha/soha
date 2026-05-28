@@ -45,7 +45,7 @@ soha is a multi-cluster Kubernetes platform console. It is not a thin wrapper ar
 ### Backend
 
 ```bash
-docker compose up -d postgres
+docker compose -f deploy/docker-compose.yaml up -d postgres
 go run ./cmd/server
 ```
 
@@ -69,7 +69,7 @@ When `web` is running at the same time, Vite proxies same-origin `/docs/` traffi
 
 ## Recommended Reading
 
-- Repository engineering spec: root `AGENTS.md`
+- Repository engineering spec: root `agents.md`
 - [Architecture Entry](./architecture/index.md)
 - [Application Delivery](./architecture/application-delivery.md)
 - [Monitoring And Alerting](./architecture/monitoring-and-alerting.md)

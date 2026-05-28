@@ -6,6 +6,9 @@ docs/node_modules/
 # Build output
 dist/
 web/dist/
+web/src/.umi/
+docs/build/
+docs/.docusaurus/
 docs/.vitepress/dist/
 docs/.vitepress/cache/
 bin/
