@@ -101,7 +101,7 @@ a {
   height: var(--kc-app-chrome-height);
   min-height: var(--kc-app-chrome-height);
   padding: 10px 14px;
-  border-bottom: 1px solid var(--kc-border-color);
+  border-bottom: 1px solid transparent;
   background: var(--kc-bg-surface);
 }
 
@@ -456,7 +456,7 @@ a {
   min-height: var(--kc-app-chrome-height);
   line-height: normal;
   padding: 0 14px;
-  border-bottom: 1px solid var(--kc-border-color);
+  border-bottom: 1px solid transparent;
   background: var(--kc-bg-surface) !important;
 }
 
@@ -2276,6 +2276,23 @@ a {
 .kc-workload-table-summary {
   color: var(--kc-text-tertiary);
   font-size: 12px;
+}
+
+.kc-replica-progress-cell {
+  display: grid;
+  grid-template-columns: minmax(96px, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 150px;
+}
+
+.kc-replica-progress-cell .ant-progress {
+  min-width: 96px;
+}
+
+.kc-replica-progress-cell .ant-typography {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
 }
 
 .kc-rbac-table .ant-table-thead > tr > th,

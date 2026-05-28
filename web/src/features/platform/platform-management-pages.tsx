@@ -132,6 +132,7 @@ interface RoleBindingResource {
 
 interface ReplicaSetResource {
   ageSeconds: number
+  allowedActions?: string[]
   availableReplicas: number
   desiredReplicas: number
   name: string
@@ -258,6 +259,7 @@ interface LeaseResource {
 
 interface ReplicationControllerResource {
   ageSeconds: number
+  allowedActions?: string[]
   availableReplicas: number
   currentReplicas: number
   desiredReplicas: number
@@ -495,6 +497,156 @@ function ResourceListPage<T extends Record<string, any>>({
   )
 }
 
+interface WorkloadReplicaActionConfig<T extends { allowedActions?: string[] }> {
+  resourceKind: string
+  getName: (record: T) => string
+  getNamespace?: (record: T) => string | undefined
+}
+
+function buildWorkloadReplicaErrorDescription(localeCode: 'zh_CN' | 'en_US', error: unknown) {
+  if (error instanceof Error && error.message.trim()) {
+    return localeCode === 'zh_CN'
+      ? `工作负载资源请求失败：${error.message}`
+      : `Failed to load workload resources: ${error.message}`
+  }
+  return localeCode === 'zh_CN' ? '工作负载资源请求失败。' : 'Failed to load workload resources.'
+}
+
+function buildWorkloadReplicaSearchEmptyDescription(title: LocalizedCopy): LocalizedCopy {
+  return {
+    zh_CN: `没有匹配的 ${title.zh_CN}`,
+    en_US: `No matching ${title.en_US}`,
+  }
+}
+
+function renderReplicaReadyCell(ready: number | undefined, desired: number | undefined) {
+  const readyCount = Math.max(0, Number.isFinite(ready) ? Number(ready) : 0)
+  const desiredCount = Math.max(0, Number.isFinite(desired) ? Number(desired) : 0)
+  const percent = desiredCount > 0 ? Math.min(100, Math.round((readyCount / desiredCount) * 100)) : 0
+  const isComplete = desiredCount === 0 || readyCount >= desiredCount
+
+  return (
+    <div className="kc-replica-progress-cell">
+      <Progress percent={percent} showInfo={false} size="small" status={isComplete ? 'success' : 'active'} />
+      <Text type="secondary">{`${readyCount}/${desiredCount}`}</Text>
+    </div>
+  )
+}
+
+function WorkloadReplicaListPage<T extends { allowedActions?: string[] }>({
+  actionConfig,
+  columns,
+  emptyDescription,
+  resourcePath,
+  rowKey,
+  searchPlaceholder,
+  searchValues,
+  title,
+}: {
+  actionConfig?: WorkloadReplicaActionConfig<T>
+  columns: TableColumnsType<T>
+  emptyDescription: LocalizedCopy
+  resourcePath: string
+  rowKey: string | ((record: T) => string)
+  searchPlaceholder: LocalizedCopy
+  searchValues: (record: T) => Array<string | undefined | null>
+  title: LocalizedCopy
+}) {
+  const { localeCode } = useI18n()
+  const { clusterId, namespace } = usePlatformScopeStore()
+  const [searchKeyword, setSearchKeyword] = useState('')
+  const deferredSearchKeyword = useDeferredValue(searchKeyword)
+  const normalizedKeyword = normalizeSearchKeyword(deferredSearchKeyword)
+  const query = useScopedResourceQuery<T>(resourcePath)
+  const rawItems = query.data?.data ?? []
+  const filteredItems = useMemo(
+    () => rawItems.filter((item) => includesSearch(searchValues(item), normalizedKeyword)),
+    [normalizedKeyword, rawItems, searchValues],
+  )
+  const canDelete = (record: T) => hasAllowedAction(record.allowedActions, 'delete')
+  const shouldShowActions = Boolean(actionConfig && rawItems.some((item) => canDelete(item)))
+  const { column: actionColumn, modalNode } = useResourceActions<T>({
+    resourcePath,
+    resourceKind: actionConfig?.resourceKind ?? 'Resource',
+    getName: actionConfig?.getName ?? (() => ''),
+    getNamespace: actionConfig?.getNamespace,
+    canDelete,
+    listInvalidationKey: ['platform-resource', resourcePath, clusterId, namespace],
+  })
+  const effectiveColumns = shouldShowActions ? [...columns, actionColumn] : columns
+  const effectiveEmptyDescription = !clusterId
+    ? (localeCode === 'zh_CN' ? '请选择集群查看工作负载资源。' : 'Select a cluster to inspect workload resources.')
+    : normalizedKeyword && rawItems.length > 0
+      ? localize(localeCode, buildWorkloadReplicaSearchEmptyDescription(title))
+      : localize(localeCode, emptyDescription)
+  const titleZh = localize('zh_CN', title)
+  const titleEn = localize('en_US', title)
+
+  return (
+    <div className="kc-page">
+      {shouldShowActions ? modalNode : null}
+      {query.isError ? (
+        <Alert
+          showIcon
+          type="error"
+          message={localeCode === 'zh_CN' ? '工作负载资源暂时不可用' : 'Workload resources unavailable'}
+          description={buildWorkloadReplicaErrorDescription(localeCode, query.error)}
+          style={{ marginBottom: 12 }}
+        />
+      ) : null}
+      <AdminTable
+        className="kc-workload-replica-table kc-platform-table"
+        columns={effectiveColumns}
+        dataSource={clusterId ? filteredItems : []}
+        rowKey={rowKey}
+        loading={query.isLoading}
+        pageSize={10}
+        enableColumnSelection={false}
+        scroll={{ x: 'max-content' }}
+        title={(
+          <div className="kc-admin-table-title-block">
+            <Text strong>{localize(localeCode, title)}</Text>
+            <Text type="secondary">{localize(localeCode, buildInspectDescription(titleZh, titleEn))}</Text>
+          </div>
+        )}
+        toolbar={(
+          <div className="kc-workload-table-filters">
+            <Input
+              className="kc-platform-compact-field"
+              size="small"
+              value={searchKeyword}
+              onChange={(event) => setSearchKeyword(event.target.value)}
+              placeholder={localize(localeCode, searchPlaceholder)}
+              style={{ width: 300 }}
+            />
+            <Text className="kc-workload-table-summary" type="secondary">
+              {localeCode === 'zh_CN' ? `当前 ${filteredItems.length} / ${rawItems.length} 条` : `${filteredItems.length} / ${rawItems.length} items`}
+            </Text>
+          </div>
+        )}
+        toolbarExtra={(
+          <div className="kc-page-toolbar">
+            <Button
+              size="small"
+              icon={<ReloadOutlined />}
+              variant="outlined"
+              disabled={!clusterId}
+              onClick={() => {
+                if (clusterId) {
+                  void query.refetch()
+                }
+              }}
+            >
+              {localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
+            </Button>
+          </div>
+        )}
+        empty={<Empty description={effectiveEmptyDescription} />}
+      />
+    </div>
+  )
+}
+
 function buildNamespaceQuery(namespace: string | undefined | null) {
   if (!namespace) return ''
   return `?namespace=${encodeURIComponent(namespace)}`
@@ -725,14 +877,21 @@ const secretColumns: TableColumnsType<SecretResource> = [
   { ...tableColumnPresets.datetime, title: 'Age', dataIndex: 'ageSeconds', render: (value: number) => formatAgeSeconds(value) },
 ]
 
-const replicaSetColumns: TableColumnsType<ReplicaSetResource> = [
-  { title: 'Name', dataIndex: 'name' },
-  { title: 'Namespace', dataIndex: 'namespace' },
-  { title: 'Desired', dataIndex: 'desiredReplicas' },
-  { title: 'Ready', dataIndex: 'readyReplicas' },
-  { title: 'Available', dataIndex: 'availableReplicas' },
-  { ...tableColumnPresets.datetime, title: 'Age', dataIndex: 'ageSeconds', render: (value: number) => formatAgeSeconds(value) },
-]
+function buildReplicaSetColumns(localeCode: 'zh_CN' | 'en_US'): TableColumnsType<ReplicaSetResource> {
+  return [
+    { title: localeCode === 'zh_CN' ? '名称' : 'Name', dataIndex: 'name', width: 220 },
+    { title: localeCode === 'zh_CN' ? '命名空间' : 'Namespace', dataIndex: 'namespace', width: 160 },
+    {
+      title: 'Ready',
+      dataIndex: 'readyReplicas',
+      width: 190,
+      render: (_: number, record: ReplicaSetResource) => renderReplicaReadyCell(record.readyReplicas, record.desiredReplicas),
+    },
+    { title: 'Desired', dataIndex: 'desiredReplicas', width: 96 },
+    { title: 'Available', dataIndex: 'availableReplicas', width: 110 },
+    { ...tableColumnPresets.datetime, title: 'Age', dataIndex: 'ageSeconds', width: 120, render: (value: number) => formatAgeSeconds(value) },
+  ]
+}
 
 const hpaColumns: TableColumnsType<HorizontalPodAutoscalerResource> = [
   { title: 'Name', dataIndex: 'name' },
@@ -998,36 +1157,51 @@ const leaseColumns: TableColumnsType<LeaseResource> = [
   { ...tableColumnPresets.datetime, title: 'Age', dataIndex: 'ageSeconds', render: (value: number) => formatAgeSeconds(value) },
 ]
 
-const replicationControllerColumns: TableColumnsType<ReplicationControllerResource> = [
-  { title: 'Namespace', dataIndex: 'namespace' },
-  { title: 'Name', dataIndex: 'name' },
-  { title: 'Desired', dataIndex: 'desiredReplicas' },
-  { title: 'Current', dataIndex: 'currentReplicas' },
-  { title: 'Ready', dataIndex: 'readyReplicas' },
-  { title: 'Available', dataIndex: 'availableReplicas' },
-  { ...tableColumnPresets.datetime, title: 'Age', dataIndex: 'ageSeconds', render: (value: number) => formatAgeSeconds(value) },
-]
+function buildReplicationControllerColumns(localeCode: 'zh_CN' | 'en_US'): TableColumnsType<ReplicationControllerResource> {
+  return [
+    { title: localeCode === 'zh_CN' ? '名称' : 'Name', dataIndex: 'name', width: 240 },
+    { title: localeCode === 'zh_CN' ? '命名空间' : 'Namespace', dataIndex: 'namespace', width: 160 },
+    {
+      title: 'Ready',
+      dataIndex: 'readyReplicas',
+      width: 190,
+      render: (_: number, record: ReplicationControllerResource) => renderReplicaReadyCell(record.readyReplicas, record.desiredReplicas),
+    },
+    { title: 'Desired', dataIndex: 'desiredReplicas', width: 96 },
+    { title: 'Current', dataIndex: 'currentReplicas', width: 96 },
+    { title: 'Available', dataIndex: 'availableReplicas', width: 110 },
+    { ...tableColumnPresets.datetime, title: 'Age', dataIndex: 'ageSeconds', width: 120, render: (value: number) => formatAgeSeconds(value) },
+  ]
+}
 
 export function WorkloadsReplicaSetsPage() {
+  const { localeCode } = useI18n()
+
   return (
-    <ResourceListPage<ReplicaSetResource>
+    <WorkloadReplicaListPage<ReplicaSetResource>
       title={{ zh_CN: 'ReplicaSets', en_US: 'ReplicaSets' }}
       resourcePath="workloads/replicasets"
-      columns={replicaSetColumns}
+      columns={buildReplicaSetColumns(localeCode)}
       rowKey={(record) => `${record.namespace}/${record.name}`}
       emptyDescription={{ zh_CN: '当前范围没有 ReplicaSets', en_US: 'No replica sets in the current scope' }}
+      searchPlaceholder={{ zh_CN: '搜索 ReplicaSet / Namespace', en_US: 'Search replica set / namespace' }}
+      searchValues={(record) => [record.name, record.namespace]}
     />
   )
 }
 
 export function WorkloadsReplicationControllersPage() {
+  const { localeCode } = useI18n()
+
   return (
-    <ResourceListPage<ReplicationControllerResource>
+    <WorkloadReplicaListPage<ReplicationControllerResource>
       title={{ zh_CN: 'ReplicationControllers', en_US: 'ReplicationControllers' }}
       resourcePath="workloads/replicationcontrollers"
-      columns={replicationControllerColumns}
+      columns={buildReplicationControllerColumns(localeCode)}
       rowKey={(record) => `${record.namespace}/${record.name}`}
       emptyDescription={{ zh_CN: '当前范围没有 ReplicationController', en_US: 'No replication controllers in the current scope' }}
+      searchPlaceholder={{ zh_CN: '搜索 ReplicationController / Namespace', en_US: 'Search replication controller / namespace' }}
+      searchValues={(record) => [record.name, record.namespace]}
       actionConfig={{
         resourceKind: 'ReplicationController',
         getName: (record) => record.name,
