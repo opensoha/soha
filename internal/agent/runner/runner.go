@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -653,13 +654,19 @@ func (r *Runner) executeAgentRun(ctx context.Context, run AgentRun) {
 			status = "callback_timeout"
 			errorMessage = fmt.Sprintf("agent run timed out after %d seconds", timeoutSeconds)
 		}
+		safeErrorMessage := redactAgentRuntimeText(errorMessage)
+		safeLogs := redactAgentRuntimeLogs(logs)
+		safeOutput := redactAgentRuntimeValue(output).(map[string]any)
+		completedAt := time.Now().UTC()
+		toolExecution := agentRunToolExecution(run, startedAt, completedAt, status, safeErrorMessage, safeOutput)
+		artifact := agentRunFailedArtifact(run, safeOutput, safeLogs, []map[string]any{toolExecution}, status, safeErrorMessage)
 		r.agentRunCallback(ctx, run, status, map[string]any{
 			"agentId":    firstNonEmpty(strings.TrimSpace(r.cfg.AgentID), "local-agent"),
 			"workerId":   workerID,
-			"logs":       logs,
-			"error":      errorMessage,
+			"logs":       safeLogs,
+			"error":      safeErrorMessage,
 			"providerId": run.ProviderID,
-		}, []map[string]any{agentRunToolExecution(run, startedAt, time.Now().UTC(), status, errorMessage, output)}, nil, "", errorMessage)
+		}, []map[string]any{toolExecution}, []map[string]any{artifact}, "", safeErrorMessage)
 		return
 	}
 	completedAt := time.Now().UTC()
@@ -1833,6 +1840,94 @@ func agentRunArtifact(run AgentRun, output map[string]any, logs []string, toolEx
 		"graph":              mapValue(output["graph"]),
 		"dataSourceSnapshot": snapshot,
 	}
+}
+
+func agentRunFailedArtifact(run AgentRun, output map[string]any, logs []string, toolExecutions []map[string]any, status, errorMessage string) map[string]any {
+	if output == nil {
+		output = map[string]any{}
+	}
+	next := map[string]any{}
+	for key, value := range output {
+		next[key] = value
+	}
+	next["summary"] = fmt.Sprintf("%s analysis %s: %s", firstNonEmpty(run.CapabilityID, "agent"), status, errorMessage)
+	next["recommendations"] = firstNonEmptyStringSlice(
+		valueAsStringSlice(next["recommendations"]),
+		[]string{"Review the agent runtime logs, provider configuration, skill binding, and tool binding context before retrying."},
+	)
+	snapshot := mapValue(next["dataSourceSnapshot"])
+	if snapshot == nil {
+		snapshot = map[string]any{}
+	}
+	snapshot["status"] = status
+	snapshot["error"] = errorMessage
+	next["dataSourceSnapshot"] = snapshot
+	return agentRunArtifact(run, next, logs, toolExecutions)
+}
+
+func redactAgentRuntimeLogs(logs []string) []string {
+	if len(logs) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(logs))
+	for _, item := range logs {
+		out = append(out, redactAgentRuntimeText(item))
+	}
+	return out
+}
+
+func redactAgentRuntimeValue(value any) any {
+	switch typed := value.(type) {
+	case map[string]any:
+		out := make(map[string]any, len(typed))
+		for key, item := range typed {
+			if agentRuntimeSensitiveKey(key) {
+				out[key] = "[REDACTED]"
+				continue
+			}
+			out[key] = redactAgentRuntimeValue(item)
+		}
+		return out
+	case []map[string]any:
+		out := make([]map[string]any, 0, len(typed))
+		for _, item := range typed {
+			redacted, _ := redactAgentRuntimeValue(item).(map[string]any)
+			out = append(out, redacted)
+		}
+		return out
+	case []any:
+		out := make([]any, 0, len(typed))
+		for _, item := range typed {
+			out = append(out, redactAgentRuntimeValue(item))
+		}
+		return out
+	case []string:
+		out := make([]string, 0, len(typed))
+		for _, item := range typed {
+			out = append(out, redactAgentRuntimeText(item))
+		}
+		return out
+	case string:
+		return redactAgentRuntimeText(typed)
+	default:
+		return typed
+	}
+}
+
+func agentRuntimeSensitiveKey(key string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(key))
+	for _, needle := range []string{"token", "password", "passwd", "secret", "credential", "apikey", "api_key", "authorization", "kubeconfig", "envvar", "environmentvariable"} {
+		if strings.Contains(normalized, needle) {
+			return true
+		}
+	}
+	return false
+}
+
+var agentRuntimeSensitiveAssignments = regexp.MustCompile(`(?i)(token|password|passwd|secret|authorization|api[_-]?key)=([^ \t\n,;]+)`)
+
+func redactAgentRuntimeText(value string) string {
+	return agentRuntimeSensitiveAssignments.ReplaceAllString(value, "$1=[REDACTED]")
 }
 
 func buildHeartbeatPayload(agentID, command string, commandIndex, commandCount int) map[string]any {

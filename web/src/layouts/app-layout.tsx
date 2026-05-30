@@ -61,6 +61,7 @@ const AI_WORKBENCH_MENU_ENTRIES = [
   { key: 'ai-workbench-inspection', iconKey: 'inspect', label: '巡检', path: '/ai-workbench/inspection', permissionKey: 'observe.ai.view', legacyMenuIds: ['ai-workbench-operations'] },
   { key: 'ai-workbench-tool-settings', iconKey: 'wrench', label: '工具与技能', path: '/ai-workbench/tool-settings', permissionKey: 'observe.ai.view', legacyMenuIds: ['ai-workbench-tools'] },
   { key: 'ai-workbench-model-settings', iconKey: 'settings', label: 'AI 设置', path: '/ai-workbench/model-settings', permissionKey: 'settings.ai.view', legacyMenuIds: ['ai-workbench-tools'] },
+  { key: 'ai-workbench-gateway', iconKey: 'shield', label: 'AI Gateway', path: '/ai-workbench/gateway', permissionKey: 'ai.gateway.view', legacyMenuIds: [] },
 ] as const
 
 function canUseAIWorkbenchMenuEntry(

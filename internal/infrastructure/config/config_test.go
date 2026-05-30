@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/spf13/viper"
 )
 
 func TestResolveMigrationPathUsesDriverDirectoryForMigrationRoot(t *testing.T) {
@@ -46,5 +48,23 @@ func TestResolveMigrationPathKeepsLegacySingleFileRedirect(t *testing.T) {
 	cfg := DatabaseConfig{Driver: "postgres", MigrationFile: legacyPath}
 	if got := cfg.ResolveMigrationPath(); got != driverInit {
 		t.Fatalf("ResolveMigrationPath() = %q, want %q", got, driverInit)
+	}
+}
+
+func TestDefaultsConfigurePostgresGatewayRateLimitBackend(t *testing.T) {
+	v := viper.New()
+	setDefaults(v)
+	var cfg Config
+	if err := v.Unmarshal(&cfg); err != nil {
+		t.Fatalf("unmarshal config: %v", err)
+	}
+	if cfg.AIGateway.RateLimit.Backend != "postgres" {
+		t.Fatalf("expected postgres rate-limit backend default, got %q", cfg.AIGateway.RateLimit.Backend)
+	}
+	if cfg.AIGateway.RateLimit.Redis.KeyPrefix != "soha:ai-gateway:rate-limit" {
+		t.Fatalf("unexpected redis key prefix default: %q", cfg.AIGateway.RateLimit.Redis.KeyPrefix)
+	}
+	if v.GetString("ai_gateway.rate_limit.redis.timeout") != "500ms" {
+		t.Fatalf("unexpected redis timeout default: %s", v.GetString("ai_gateway.rate_limit.redis.timeout"))
 	}
 }

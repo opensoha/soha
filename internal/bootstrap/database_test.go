@@ -62,6 +62,29 @@ func TestDefaultMenuSeedsIncludeDockerWorkbench(t *testing.T) {
 	}
 }
 
+func TestDefaultMenuSeedsIncludeAIGatewayWorkbench(t *testing.T) {
+	items := defaultMenuSeeds()
+	var gateway *menuSeed
+	for i := range items {
+		if items[i].ID == "ai-workbench-gateway" {
+			gateway = &items[i]
+			break
+		}
+	}
+	if gateway == nil {
+		t.Fatal("default menu seeds missing ai-workbench-gateway")
+	}
+	if gateway.ParentID != "ai-workbench" {
+		t.Fatalf("AI Gateway parent = %q, want ai-workbench", gateway.ParentID)
+	}
+	if gateway.Path != "/ai-workbench/gateway" {
+		t.Fatalf("AI Gateway path = %q, want /ai-workbench/gateway", gateway.Path)
+	}
+	if gateway.Section != "ops" {
+		t.Fatalf("AI Gateway section = %q, want ops", gateway.Section)
+	}
+}
+
 func TestDefaultMenuSeedsPlaceApplicationCenterFirstInDelivery(t *testing.T) {
 	items := defaultMenuSeeds()
 	var applicationCenter *menuSeed

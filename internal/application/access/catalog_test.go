@@ -116,6 +116,39 @@ func TestDefaultRolePermissionsIncludeWorkspaceEntryPermissions(t *testing.T) {
 	}
 }
 
+func TestDefaultRolePermissionsAIGateway(t *testing.T) {
+	SetRolePermissionMatrix(nil)
+
+	for _, permission := range []string{PermAIGatewayView, PermAIGatewayInvoke, PermAIGatewayManage} {
+		for _, role := range []string{"admin", "ops"} {
+			if !HasPermission([]string{role}, permission) {
+				t.Fatalf("%s role should include %s", role, permission)
+			}
+		}
+	}
+	for _, permission := range []string{PermAIGatewayView, PermAIGatewayInvoke} {
+		if !HasPermission([]string{"developer"}, permission) {
+			t.Fatalf("developer role should include %s", permission)
+		}
+	}
+	if HasPermission([]string{"developer"}, PermAIGatewayManage) {
+		t.Fatalf("developer role should not include %s", PermAIGatewayManage)
+	}
+	if !HasPermission([]string{"readonly"}, PermAIGatewayView) {
+		t.Fatalf("readonly role should include %s", PermAIGatewayView)
+	}
+	for _, permission := range []string{PermAIGatewayInvoke, PermAIGatewayManage} {
+		if HasPermission([]string{"readonly"}, permission) {
+			t.Fatalf("readonly role should not include %s", permission)
+		}
+	}
+	for _, permission := range []string{PermAIGatewayView, PermAIGatewayInvoke, PermAIGatewayManage} {
+		if HasPermission([]string{"auditor"}, permission) {
+			t.Fatalf("auditor role should not include %s", permission)
+		}
+	}
+}
+
 func TestDefaultRolePermissionsVirtualizationViewGrants(t *testing.T) {
 	SetRolePermissionMatrix(nil)
 

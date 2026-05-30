@@ -502,6 +502,10 @@ const AIModelSettingsPage = lazyNamed(
   () => import("@/features/copilot/ai-observe-pages"),
   "AIModelSettingsPage",
 );
+const AIGatewayPage = lazyNamed(
+  () => import("@/features/copilot/ai-gateway-page"),
+  "AIGatewayPage",
+);
 
 const AccessCenterPage = lazyNamed(
   () => import("@/features/access/access-pages"),
@@ -1679,6 +1683,14 @@ export function AppRouter() {
             element={
               <LazyPage>
                 <AIModelSettingsPage />
+              </LazyPage>
+            }
+          />
+          <Route
+            path="/ai-workbench/gateway"
+            element={
+              <LazyPage>
+                <AIGatewayPage />
               </LazyPage>
             }
           />

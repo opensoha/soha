@@ -101,10 +101,17 @@ func (r *Repository) Update(ctx context.Context, item domainworkflow.Run) (domai
 }
 
 func (r *Repository) CreateApproval(ctx context.Context, item domainworkflow.Approval) error {
+	if item.Metadata == nil {
+		item.Metadata = map[string]any{}
+	}
+	metadata, err := json.Marshal(item.Metadata)
+	if err != nil {
+		return fmt.Errorf("marshal workflow approval metadata: %w", err)
+	}
 	if err := r.db.WithContext(ctx).Exec(`
-		INSERT INTO workflow_approvals (id, workflow_run_id, node_id, action, comment, actor_id, actor_name, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-	`, item.ID, item.WorkflowRunID, item.NodeID, item.Action, nullable(item.Comment), item.ActorID, nullable(item.ActorName), item.CreatedAt).Error; err != nil {
+		INSERT INTO workflow_approvals (id, workflow_run_id, node_id, action, comment, actor_id, actor_name, metadata, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?)
+	`, item.ID, item.WorkflowRunID, item.NodeID, item.Action, nullable(item.Comment), item.ActorID, nullable(item.ActorName), string(metadata), item.CreatedAt).Error; err != nil {
 		return fmt.Errorf("create workflow approval: %w", err)
 	}
 	return nil

@@ -214,6 +214,7 @@ const (
 	ApplicationDeliveryActionBuildDeploy ApplicationDeliveryActionKind = "build_deploy"
 	ApplicationDeliveryActionWorkflow    ApplicationDeliveryActionKind = "workflow"
 	ApplicationDeliveryActionVerify      ApplicationDeliveryActionKind = "verify"
+	ApplicationDeliveryActionRollback    ApplicationDeliveryActionKind = "rollback"
 )
 
 type ApplicationDeliveryActionInput struct {
@@ -221,6 +222,7 @@ type ApplicationDeliveryActionInput struct {
 	ApplicationEnvironmentID string                        `json:"applicationEnvironmentId"`
 	TargetID                 string                        `json:"targetId,omitempty"`
 	BuildSourceID            string                        `json:"buildSourceId,omitempty"`
+	ReleaseBundleID          string                        `json:"releaseBundleId,omitempty"`
 	RefType                  string                        `json:"refType,omitempty"`
 	RefName                  string                        `json:"refName,omitempty"`
 	ImageTag                 string                        `json:"imageTag,omitempty"`
@@ -233,6 +235,7 @@ type ApplicationDeliveryActionInput struct {
 type ApplicationDeliveryActionRelatedIDs struct {
 	ReleaseBundleID string `json:"releaseBundleId,omitempty"`
 	ExecutionTaskID string `json:"executionTaskId,omitempty"`
+	WorkflowRunID   string `json:"workflowRunId,omitempty"`
 }
 
 type ApplicationDeliveryActionResult struct {

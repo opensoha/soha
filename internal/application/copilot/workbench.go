@@ -341,6 +341,24 @@ func mapValue(value any) map[string]any {
 	return current
 }
 
+func analysisArtifactSnapshot(base map[string]any, links map[string]string) map[string]any {
+	snapshot := map[string]any{}
+	for key, value := range base {
+		snapshot[key] = value
+	}
+	for key, value := range links {
+		trimmed := strings.TrimSpace(value)
+		if trimmed == "" {
+			continue
+		}
+		if existing := strings.TrimSpace(stringValue(snapshot[key])); existing != "" {
+			continue
+		}
+		snapshot[key] = trimmed
+	}
+	return snapshot
+}
+
 func stringValue(value any) string {
 	current, ok := value.(string)
 	if !ok {
@@ -430,7 +448,13 @@ func (s *Service) runSessionRootCause(ctx context.Context, principal domainident
 		return domaincopilot.RootCauseRun{}, nil, domaincopilot.AnalysisArtifact{}, err
 	}
 	toolExecutions := filterToolExecutions(run.ToolExecutions, toolset)
-	graph := buildRootCauseGraph(scope, run.Evidence, run.Hypotheses, run.DataSourceSnapshot)
+	snapshot := analysisArtifactSnapshot(run.DataSourceSnapshot, map[string]string{
+		"sessionId":      sessionID,
+		"rootCauseRunId": run.ID,
+		"analysisRunId":  run.ID,
+		"analysisKind":   run.Kind,
+	})
+	graph := buildRootCauseGraph(scope, run.Evidence, run.Hypotheses, snapshot)
 	artifact := domaincopilot.AnalysisArtifact{
 		Kind:               "root_cause",
 		RunID:              run.ID,
@@ -442,7 +466,7 @@ func (s *Service) runSessionRootCause(ctx context.Context, principal domainident
 		Recommendations:    run.Recommendations,
 		ToolExecutions:     toolExecutions,
 		Graph:              graph,
-		DataSourceSnapshot: run.DataSourceSnapshot,
+		DataSourceSnapshot: snapshot,
 	}
 	return run, toolExecutions, artifact, nil
 }
@@ -532,6 +556,12 @@ func (s *Service) runSessionPerformance(ctx context.Context, sessionID string, s
 			})
 		}
 		runID := "perf:" + uuid.NewString()
+		snapshot := analysisArtifactSnapshot(map[string]any{"sourceId": source.ID, "backendType": source.BackendType}, map[string]string{
+			"sessionId":      sessionID,
+			"rootCauseRunId": runID,
+			"analysisRunId":  runID,
+			"analysisKind":   "performance",
+		})
 		run := domaincopilot.RootCauseRun{
 			ID:                 runID,
 			Kind:               "performance",
@@ -551,7 +581,7 @@ func (s *Service) runSessionPerformance(ctx context.Context, sessionID string, s
 			Evidence:           evidence,
 			Recommendations:    []string{"Review the top spiking metrics and compare them against deployment changes."},
 			ToolExecutions:     []domaincopilot.ToolExecution{tool},
-			DataSourceSnapshot: map[string]any{"sourceId": source.ID, "backendType": source.BackendType},
+			DataSourceSnapshot: snapshot,
 			PlaybookResults:    map[string]any{toolName: signals},
 			RemediationPlan:    map[string]any{"policy": "suggest_only"},
 			DedupKey:           strings.TrimSpace(dedupKey),
@@ -570,7 +600,7 @@ func (s *Service) runSessionPerformance(ctx context.Context, sessionID string, s
 			Recommendations:    run.Recommendations,
 			ToolExecutions:     []domaincopilot.ToolExecution{tool},
 			Graph:              graph,
-			DataSourceSnapshot: map[string]any{"sourceId": source.ID, "backendType": source.BackendType},
+			DataSourceSnapshot: snapshot,
 		}, nil
 	}
 	return nil, domaincopilot.AnalysisArtifact{}, fmt.Errorf("no enabled metrics.v1 data source found")
@@ -638,6 +668,12 @@ func (s *Service) runSessionTrace(ctx context.Context, sessionID string, scope d
 			})
 		}
 		runID := "trace:" + uuid.NewString()
+		snapshot := analysisArtifactSnapshot(map[string]any{"sourceId": source.ID, "backendType": source.BackendType, "hotspots": result.Hotspots}, map[string]string{
+			"sessionId":      sessionID,
+			"rootCauseRunId": runID,
+			"analysisRunId":  runID,
+			"analysisKind":   "trace",
+		})
 		run := domaincopilot.RootCauseRun{
 			ID:                 runID,
 			Kind:               "trace",
@@ -657,7 +693,7 @@ func (s *Service) runSessionTrace(ctx context.Context, sessionID string, scope d
 			Evidence:           evidence,
 			Recommendations:    []string{"Review the slowest spans and compare them against downstream dependency errors."},
 			ToolExecutions:     []domaincopilot.ToolExecution{tool},
-			DataSourceSnapshot: map[string]any{"sourceId": source.ID, "backendType": source.BackendType, "hotspots": result.Hotspots},
+			DataSourceSnapshot: snapshot,
 			PlaybookResults:    map[string]any{toolName: result.Hotspots},
 			RemediationPlan:    map[string]any{"policy": "suggest_only"},
 			DedupKey:           strings.TrimSpace(dedupKey),
@@ -676,7 +712,7 @@ func (s *Service) runSessionTrace(ctx context.Context, sessionID string, scope d
 			Recommendations:    run.Recommendations,
 			ToolExecutions:     []domaincopilot.ToolExecution{tool},
 			Graph:              graph,
-			DataSourceSnapshot: map[string]any{"sourceId": source.ID, "backendType": source.BackendType, "hotspots": result.Hotspots},
+			DataSourceSnapshot: snapshot,
 		}, nil
 	}
 	return nil, domaincopilot.AnalysisArtifact{}, fmt.Errorf("no enabled traces.v1 data source found")
@@ -743,6 +779,8 @@ func (s *Service) runSessionInspectionReview(sessionID string, scope domaincopil
 			"generatedAt":        now.Format(time.RFC3339),
 			"analysisRuntime":    "in_process",
 			"artifactContract":   "soha.analysisArtifact.v1",
+			"analysisRunId":      runID,
+			"analysisKind":       "inspection_review",
 			"redactionBoundary":  "soha-controlled",
 			"operationBoundary":  "read_only_review",
 			"agentRuntimeMode":   "internal",

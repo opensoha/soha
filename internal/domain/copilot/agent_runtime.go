@@ -122,6 +122,29 @@ type AgentRunInput struct {
 	TimeoutSeconds int                 `json:"timeoutSeconds,omitempty"`
 }
 
+type GatewayAnalysisArtifactInput struct {
+	CapabilityID       string                `json:"capabilityId"`
+	Title              string                `json:"title,omitempty"`
+	Summary            string                `json:"summary"`
+	SkillIDs           []string              `json:"skillIds,omitempty"`
+	Scope              SessionScope          `json:"scope,omitempty"`
+	Toolset            SessionToolset        `json:"toolset,omitempty"`
+	Input              map[string]any        `json:"input,omitempty"`
+	Output             map[string]any        `json:"output,omitempty"`
+	Evidence           []RootCauseEvidence   `json:"evidence,omitempty"`
+	Hypotheses         []RootCauseHypothesis `json:"hypotheses,omitempty"`
+	Recommendations    []string              `json:"recommendations,omitempty"`
+	ToolExecutions     []ToolExecution       `json:"toolExecutions,omitempty"`
+	Graph              *AnalysisGraph        `json:"graph,omitempty"`
+	DataSourceSnapshot map[string]any        `json:"dataSourceSnapshot,omitempty"`
+}
+
+type GatewayAnalysisAgentRunInput struct {
+	GatewayAnalysisArtifactInput
+	AgentProviderID string `json:"agentProviderId,omitempty"`
+	TimeoutSeconds  int    `json:"timeoutSeconds,omitempty"`
+}
+
 type AgentRunFilter struct {
 	CreatedBy      string
 	Status         string

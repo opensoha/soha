@@ -20,6 +20,19 @@ services:
       timeout: 5s
       retries: 20
 
+  redis:
+    image: redis:7.4-alpine
+    container_name: soha-redis
+    profiles:
+      - redis-rate-limit
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
   k3s:
     image: rancher/k3s:v1.36.0-k3s1
     container_name: soha-k3s
@@ -58,6 +71,8 @@ services:
       SOHA_DATABASE_USER: pgsql
       SOHA_DATABASE_PASSWORD: pgsql
       SOHA_DATABASE_SSLMODE: disable
+      SOHA_AI_GATEWAY_RATE_LIMIT_BACKEND: ${SOHA_AI_GATEWAY_RATE_LIMIT_BACKEND:-postgres}
+      SOHA_AI_GATEWAY_RATE_LIMIT_REDIS_ADDR: ${SOHA_AI_GATEWAY_RATE_LIMIT_REDIS_ADDR:-redis:6379}
     ports:
       - "8080:8080"
     volumes:

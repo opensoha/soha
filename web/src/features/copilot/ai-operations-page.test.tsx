@@ -116,7 +116,7 @@ async function flush() {
   })
 }
 
-async function renderOperationsPage() {
+async function renderOperationsPage(route = '/ai-workbench/inspection') {
   const container = document.createElement('div')
   document.body.appendChild(container)
   containers.push(container)
@@ -134,7 +134,7 @@ async function renderOperationsPage() {
     root.render(
       <QueryClientProvider client={queryClient}>
         <AntdApp>
-          <MemoryRouter initialEntries={['/ai-workbench/inspection']}>
+          <MemoryRouter initialEntries={[route]}>
             <AIOperationsPage />
           </MemoryRouter>
         </AntdApp>
@@ -268,6 +268,14 @@ describe('AIOperationsPage delete actions', () => {
     expect(createSessionButton).toBeTruthy()
     expect(createSessionButton?.disabled).toBe(true)
     expect(createSessionButton?.getAttribute('title')).toBe('缺少 observe.ai.view 权限')
+  })
+
+  it('opens directly on a linked inspection run from an artifact context link', async () => {
+    const container = await renderOperationsPage('/ai-workbench/inspection?view=runs&inspectionRunId=run-1&session=session-1')
+
+    expect(container.textContent).toContain('巡检运行记录')
+    expect(container.textContent).toContain('已定位巡检运行 run-1')
+    expect(container.textContent).toContain('该运行来自分析工件关联入口。')
   })
 
   it('does not fetch automation policies for users without AI settings management permission', async () => {

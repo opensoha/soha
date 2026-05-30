@@ -82,7 +82,7 @@ type clusterCredentialSeed struct {
 // While the stored version matches this constant, the static seed block is
 // skipped entirely. Config-driven sync (admin user, clusters) runs separately
 // during startup so runtime config updates do not depend on replaying defaults.
-const bootstrapSeedVersion = "2026-05-29-ai-gateway-1"
+const bootstrapSeedVersion = "2026-05-29-ai-gateway-2"
 
 const bootstrapSeedVersionKey = "bootstrap.seed_version"
 
@@ -252,6 +252,7 @@ func defaultMenuSeeds() []menuSeed {
 		{ID: "ai-workbench-inspection", ParentID: "ai-workbench", Path: "/ai-workbench/inspection", LabelZH: "巡检", LabelEN: "Inspection", IconKey: "inspect", Section: "ops", SortOrder: 17, Enabled: true},
 		{ID: "ai-workbench-tool-settings", ParentID: "ai-workbench", Path: "/ai-workbench/tool-settings", LabelZH: "工具与技能", LabelEN: "Tools & Skills", IconKey: "wrench", Section: "ops", SortOrder: 18, Enabled: true},
 		{ID: "ai-workbench-model-settings", ParentID: "ai-workbench", Path: "/ai-workbench/model-settings", LabelZH: "AI 设置", LabelEN: "AI Settings", IconKey: "settings", Section: "ops", SortOrder: 19, Enabled: true},
+		{ID: "ai-workbench-gateway", ParentID: "ai-workbench", Path: "/ai-workbench/gateway", LabelZH: "AI Gateway", LabelEN: "AI Gateway", IconKey: "shield", Section: "ops", SortOrder: 20, Enabled: true},
 		{ID: "virtualization-workbench", Path: "/virtualization", LabelZH: "虚拟化管理工作台", LabelEN: "Virtualization Workbench", IconKey: "server", Section: "ops", SortOrder: 80, Enabled: true},
 		{ID: "virtualization-workbench-overview", ParentID: "virtualization-workbench", Path: "/virtualization/overview", LabelZH: "总览", LabelEN: "Overview", IconKey: "gauge", Section: "ops", SortOrder: 81, Enabled: true},
 		{ID: "virtualization-workbench-vms", ParentID: "virtualization-workbench", Path: "/virtualization/vms", LabelZH: "虚拟机", LabelEN: "Virtual Machines", IconKey: "desktop", Section: "ops", SortOrder: 82, Enabled: true},

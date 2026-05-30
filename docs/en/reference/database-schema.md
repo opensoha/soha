@@ -183,7 +183,7 @@ Task-scoped logs for virtualization operations and sync runs.
 
 ### workflow_approvals
 
-Approval decisions for suspended workflow runs.
+Approval decisions for suspended workflow runs, including optional metadata that links delivery workflow manual approvals back to AI Gateway approval requests.
 
 ### approval_policies
 

@@ -6,6 +6,7 @@ import {
   EditOutlined,
   ExperimentOutlined,
   EyeOutlined,
+  LinkOutlined,
   PlayCircleOutlined,
   RadarChartOutlined,
   RobotOutlined,
@@ -61,6 +62,7 @@ import {
   getAIOperationsPath,
   getAIToolsPath,
   getAIWorkbenchPathForMode,
+  getAIWorkbenchPathForSession,
   normalizeAIWorkbenchMode,
 } from './workbench-navigation'
 import {
@@ -96,6 +98,14 @@ type WorkbenchArtifactEntry = {
   artifact: WorkbenchArtifact
   message: WorkbenchMessage
   index: number
+}
+type ArtifactLinkKind = 'session' | 'root_cause' | 'inspection' | 'agent'
+type ArtifactContextLink = {
+  key: string
+  kind: ArtifactLinkKind
+  label: string
+  value: string
+  path: string
 }
 
 const GRAPH_NODE_WIDTH = 248
@@ -213,6 +223,68 @@ function artifactTitle(entry: WorkbenchArtifactEntry) {
 
 function artifactMeta(entry: WorkbenchArtifactEntry) {
   return `${entry.artifact.kind} · ${formatSessionTimestamp(entry.message.createdAt)}`
+}
+
+function artifactSnapshotText(snapshot: Record<string, unknown> | undefined, ...keys: string[]) {
+  if (!snapshot) return ''
+  for (const key of keys) {
+    const value = snapshot[key]
+    if (typeof value === 'string' && value.trim()) return value.trim()
+    if (typeof value === 'number' || typeof value === 'boolean') return String(value)
+  }
+  return ''
+}
+
+function artifactContextLinks(entry: WorkbenchArtifactEntry, session?: WorkbenchSession): ArtifactContextLink[] {
+  const snapshot = entry.artifact.dataSourceSnapshot
+  const sessionId = artifactSnapshotText(snapshot, 'sessionId') || entry.message.sessionId || session?.id || ''
+  const rootCauseRunId = artifactSnapshotText(snapshot, 'rootCauseRunId')
+    || session?.metadata?.analysisRunRefs?.find((item) => item.id === entry.artifact.runId && item.kind === 'root_cause')?.id
+    || (entry.artifact.kind === 'root_cause' ? entry.artifact.runId : '')
+  const inspectionRunId = artifactSnapshotText(snapshot, 'inspectionRunId')
+    || session?.metadata?.analysisRunRefs?.find((item) => item.id === entry.artifact.runId && item.kind === 'inspection_review')?.id
+    || (entry.artifact.kind === 'inspection_review' && entry.artifact.runId.startsWith('inspection-') ? entry.artifact.runId : '')
+  const agentRunId = artifactSnapshotText(snapshot, 'agentRunId', 'agentRuntimeId')
+    || artifactSnapshotText(entry.message.metadata, 'agentRunId')
+    || (entry.artifact.runId.startsWith('agent:') ? entry.artifact.runId : '')
+  const links: ArtifactContextLink[] = []
+  if (sessionId) {
+    links.push({
+      key: 'session',
+      kind: 'session',
+      label: '会话',
+      value: sessionId,
+      path: getAIWorkbenchPathForSession({ id: sessionId, metadata: { mode: entry.artifact.kind as WorkbenchMode } }),
+    })
+  }
+  if (rootCauseRunId) {
+    links.push({
+      key: 'root-cause',
+      kind: 'root_cause',
+      label: '根因运行',
+      value: rootCauseRunId,
+      path: getAIWorkbenchPathForMode('root_cause', new URLSearchParams({ session: sessionId || '', rootCauseRunId })),
+    })
+  }
+  if (inspectionRunId) {
+    links.push({
+      key: 'inspection',
+      kind: 'inspection',
+      label: '巡检运行',
+      value: inspectionRunId,
+      path: `/ai-workbench/inspection?view=runs&inspectionRunId=${encodeURIComponent(inspectionRunId)}${sessionId ? `&session=${encodeURIComponent(sessionId)}` : ''}`,
+    })
+  }
+  if (agentRunId) {
+    links.push({
+      key: 'agent',
+      kind: 'agent',
+      label: 'Agent Run',
+      value: agentRunId,
+      path: getAIWorkbenchPathForMode(entry.artifact.kind, new URLSearchParams({ session: sessionId || '', agentRunId })),
+    })
+  }
+  return links
 }
 
 function graphAccent(kind: string) {
@@ -759,6 +831,7 @@ export function AIWorkbenchPage() {
 
   const activeArtifactEntry = artifactEntries.find((item) => item.key === selectedArtifactKey) ?? artifactEntries[0]
   const activeArtifact = activeArtifactEntry?.artifact
+  const activeArtifactLinks = activeArtifactEntry ? artifactContextLinks(activeArtifactEntry, currentSession) : []
   const toolCalls = activeArtifact?.toolExecutions ?? []
   const activeGraph = activeArtifact?.graph
   const queryError = sessionsQuery.error || sessionDetailQuery.error || messagesQuery.error || catalogQuery.error
@@ -920,6 +993,15 @@ export function AIWorkbenchPage() {
     navigate(getAIWorkbenchPathForMode(next, searchParams))
     if (currentSession && currentSession.metadata?.mode !== next) {
       patchSessionMutation.mutate({ sessionId: currentSession.id, body: { mode: next } })
+    }
+  }
+  const openArtifactLink = (link: ArtifactContextLink) => {
+    navigate(link.path)
+    if (link.kind === 'inspection') {
+      return
+    }
+    if (link.kind === 'root_cause' || link.kind === 'agent') {
+      setThinkingOpen(true)
     }
   }
   const openExplicitAnalysis = () => {
@@ -1290,6 +1372,7 @@ export function AIWorkbenchPage() {
                         <div className="soha-ai-workbench__artifact-list">
                           {artifactEntries.map((entry) => {
                             const selected = entry.key === activeArtifactEntry?.key
+                            const contextLinks = artifactContextLinks(entry, currentSession)
                             return (
                               <button
                                 key={entry.key}
@@ -1302,6 +1385,13 @@ export function AIWorkbenchPage() {
                                 <span className="soha-ai-workbench__artifact-counts">
                                   {(entry.artifact.evidence?.length ?? 0)} 证据 · {(entry.artifact.recommendations?.length ?? 0)} 建议
                                 </span>
+                                {contextLinks.length > 0 ? (
+                                  <span className="soha-ai-workbench__artifact-context">
+                                    {contextLinks.slice(0, 3).map((link) => (
+                                      <Tag key={`${entry.key}-${link.key}`} variant="filled">{link.label}</Tag>
+                                    ))}
+                                  </span>
+                                ) : null}
                               </button>
                             )
                           })}
@@ -1325,6 +1415,24 @@ export function AIWorkbenchPage() {
                             <Tag>{activeGraph.edges?.length || 0} 连线</Tag>
                           </Space>
                         </div>
+                        {activeArtifactLinks.length > 0 ? (
+                          <div className="soha-ai-workbench__artifact-linkbar">
+                            <Text type="secondary">关联入口</Text>
+                            <Space size={[6, 6]} wrap>
+                              {activeArtifactLinks.map((link) => (
+                                <Button
+                                  key={link.key}
+                                  size="small"
+                                  type="text"
+                                  icon={<LinkOutlined />}
+                                  onClick={() => openArtifactLink(link)}
+                                >
+                                  {`${link.label}: ${link.value}`}
+                                </Button>
+                              ))}
+                            </Space>
+                          </div>
+                        ) : null}
                         {!enabledDataSources.some((item) => ['logs', 'metrics', 'traces'].includes(item.sourceKind)) ? (
                           <Alert
                             type="info"

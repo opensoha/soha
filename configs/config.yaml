@@ -100,6 +100,19 @@ mcp:
   enabled: true
   default_timeout: 10s
 
+ai_gateway:
+  rate_limit:
+    # postgres uses durable fixed-window/GCRA tables. Set to redis for a high-throughput shared limiter.
+    backend: postgres
+    redis:
+      addr: ""
+      username: ""
+      password: ""
+      db: 0
+      tls: false
+      key_prefix: soha:ai-gateway:rate-limit
+      timeout: 500ms
+
 modules:
   delivery:
     enabled: true

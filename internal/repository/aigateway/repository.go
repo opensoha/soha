@@ -35,6 +35,19 @@ func (r *Repository) ListPersonalAccessTokens(ctx context.Context, userID string
 	return scanPersonalAccessTokenRows(rows)
 }
 
+func (r *Repository) ListAllPersonalAccessTokens(ctx context.Context) ([]domainaigateway.PersonalAccessToken, error) {
+	rows, err := r.db.WithContext(ctx).Raw(`
+		SELECT id, user_id, name, token_hash, token_prefix, scopes, permission_keys, metadata, expires_at, last_used_at, revoked_at, created_by, created_at, updated_at
+		FROM personal_access_tokens
+		ORDER BY created_at DESC, id ASC
+	`).Rows()
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanPersonalAccessTokenRows(rows)
+}
+
 func (r *Repository) CreatePersonalAccessToken(ctx context.Context, item domainaigateway.PersonalAccessToken) (domainaigateway.PersonalAccessToken, error) {
 	scopes, permissionKeys, metadata, err := marshalGatewayTokenJSON(item.Scopes, item.PermissionKeys, item.Metadata)
 	if err != nil {
@@ -154,6 +167,19 @@ func (r *Repository) CreateServiceAccountToken(ctx context.Context, item domaina
 	return item, nil
 }
 
+func (r *Repository) ListAllServiceAccountTokens(ctx context.Context) ([]domainaigateway.ServiceAccountToken, error) {
+	rows, err := r.db.WithContext(ctx).Raw(`
+		SELECT id, service_account_id, name, token_hash, token_prefix, scopes, permission_keys, metadata, expires_at, last_used_at, revoked_at, created_by, created_at, updated_at
+		FROM service_account_tokens
+		ORDER BY created_at DESC, id ASC
+	`).Rows()
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanServiceAccountTokenRows(rows)
+}
+
 func (r *Repository) GetServiceAccountTokenByHash(ctx context.Context, tokenHash string) (domainaigateway.ServiceAccountToken, error) {
 	row := r.db.WithContext(ctx).Raw(`
 		SELECT id, service_account_id, name, token_hash, token_prefix, scopes, permission_keys, metadata, expires_at, last_used_at, revoked_at, created_by, created_at, updated_at
@@ -198,6 +224,16 @@ func (r *Repository) ListAIClients(ctx context.Context) ([]domainaigateway.AICli
 	}
 	defer rows.Close()
 	return scanAIClientRows(rows)
+}
+
+func (r *Repository) GetAIClient(ctx context.Context, clientID string) (domainaigateway.AIClient, error) {
+	row := r.db.WithContext(ctx).Raw(`
+		SELECT id, name, kind, status, redirect_uris, allowed_origins, metadata, created_by, created_at, updated_at
+		FROM ai_clients
+		WHERE id = ?
+		LIMIT 1
+	`, clientID).Row()
+	return scanAIClient(row)
 }
 
 func (r *Repository) CreateAIClient(ctx context.Context, item domainaigateway.AIClient) (domainaigateway.AIClient, error) {
@@ -578,6 +614,360 @@ func (r *Repository) CreateAuditLog(ctx context.Context, item domainaigateway.Au
 	`, item.ID, item.ActorType, item.ActorID, nullableString(item.ActorName), nullableString(item.AIClientID), nullableString(item.AIClientName), nullableString(item.SkillID), nullableString(item.ToolName), nullableString(string(item.RiskLevel)), resourceScope, item.Action, item.Result, item.Summary, nullableString(item.RequestID), nullableString(item.SourceIP), metadata, item.CreatedAt).Error
 }
 
+func (r *Repository) ListAuditLogs(ctx context.Context, filter domainaigateway.AuditLogFilter) ([]domainaigateway.AuditLog, error) {
+	query := `
+		SELECT id, actor_type, actor_id, actor_name, ai_client_id, ai_client_name, skill_id, tool_name, risk_level, resource_scope, action, result, summary, request_id, source_ip, metadata, created_at
+		FROM ai_gateway_audit_logs
+		WHERE 1 = 1
+	`
+	args := make([]any, 0)
+	if filter.ActorType != "" {
+		query += " AND actor_type = ?"
+		args = append(args, filter.ActorType)
+	}
+	if filter.ActorID != "" {
+		query += " AND actor_id = ?"
+		args = append(args, filter.ActorID)
+	}
+	if filter.AIClientID != "" {
+		query += " AND ai_client_id = ?"
+		args = append(args, filter.AIClientID)
+	}
+	if filter.SkillID != "" {
+		query += " AND skill_id = ?"
+		args = append(args, filter.SkillID)
+	}
+	if filter.ToolName != "" {
+		query += " AND tool_name = ?"
+		args = append(args, filter.ToolName)
+	}
+	if filter.ApprovalRequestID != "" {
+		query += " AND (metadata::jsonb ->> 'approvalRequestId' = ? OR metadata::jsonb #>> '{relatedIds,approvalRequestId}' = ?)"
+		args = append(args, filter.ApprovalRequestID, filter.ApprovalRequestID)
+	}
+	if filter.RiskLevel != "" {
+		query += " AND risk_level = ?"
+		args = append(args, string(filter.RiskLevel))
+	}
+	if filter.Result != "" {
+		query += " AND result = ?"
+		args = append(args, filter.Result)
+	}
+	if filter.Action != "" {
+		query += " AND action = ?"
+		args = append(args, filter.Action)
+	}
+	if filter.From != nil {
+		query += " AND created_at >= ?"
+		args = append(args, *filter.From)
+	}
+	if filter.To != nil {
+		query += " AND created_at <= ?"
+		args = append(args, *filter.To)
+	}
+	limit := filter.Limit
+	if limit <= 0 || limit > 500 {
+		limit = 100
+	}
+	query += " ORDER BY created_at DESC, id ASC LIMIT ?"
+	args = append(args, limit)
+	rows, err := r.db.WithContext(ctx).Raw(query, args...).Rows()
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanAuditLogRows(rows)
+}
+
+func (r *Repository) IncrementRateLimitCounter(ctx context.Context, item domainaigateway.RateLimitCounter) (domainaigateway.RateLimitCounter, error) {
+	metadataRaw, err := json.Marshal(emptyMap(item.Metadata))
+	if err != nil {
+		return domainaigateway.RateLimitCounter{}, fmt.Errorf("marshal metadata: %w", err)
+	}
+	now := time.Now().UTC()
+	if item.CreatedAt.IsZero() {
+		item.CreatedAt = now
+	}
+	item.UpdatedAt = now
+	row := r.db.WithContext(ctx).Raw(`
+		INSERT INTO ai_gateway_rate_limit_counters (
+			key, policy_id, scope, actor_type, actor_id, ai_client_id, tool_name, window_start, window_end, limit_value, count, metadata, created_at, updated_at
+		)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?)
+		ON CONFLICT (key) DO UPDATE SET
+			count = ai_gateway_rate_limit_counters.count + 1,
+			limit_value = EXCLUDED.limit_value,
+			window_end = EXCLUDED.window_end,
+			metadata = EXCLUDED.metadata,
+			updated_at = EXCLUDED.updated_at
+		RETURNING key, policy_id, scope, actor_type, actor_id, ai_client_id, tool_name, window_start, window_end, limit_value, count, metadata, created_at, updated_at
+	`, item.Key, item.PolicyID, item.Scope, nullableString(item.ActorType), nullableString(item.ActorID), nullableString(item.AIClientID), nullableString(item.ToolName), item.WindowStart, item.WindowEnd, item.Limit, string(metadataRaw), item.CreatedAt, item.UpdatedAt).Row()
+	return scanRateLimitCounter(row)
+}
+
+func (r *Repository) ApplyRateLimitState(ctx context.Context, item domainaigateway.RateLimitState) (domainaigateway.RateLimitState, error) {
+	metadataRaw, err := json.Marshal(emptyMap(item.Metadata))
+	if err != nil {
+		return domainaigateway.RateLimitState{}, fmt.Errorf("marshal metadata: %w", err)
+	}
+	now := time.Now().UTC()
+	if item.CreatedAt.IsZero() {
+		item.CreatedAt = now
+	}
+	item.UpdatedAt = now
+	if item.Burst <= 0 {
+		item.Burst = 1
+	}
+	var state domainaigateway.RateLimitState
+	err = r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var lockAcquired int
+		if err := tx.Raw(`
+			SELECT 1
+			FROM (SELECT pg_advisory_xact_lock(hashtextextended(?::text, 0))) locked
+		`, item.Key).Row().Scan(&lockAcquired); err != nil {
+			return err
+		}
+		row := tx.Raw(`
+			WITH params AS (
+				SELECT
+					?::text AS key,
+					?::text AS policy_id,
+					?::text AS scope,
+					?::text AS actor_type,
+					?::text AS actor_id,
+					?::text AS ai_client_id,
+					?::text AS tool_name,
+					?::int AS limit_value,
+					?::int AS burst_value,
+					?::double precision AS interval_seconds,
+					?::json AS metadata,
+					?::timestamp AS now_at,
+					?::timestamp AS created_at,
+					?::timestamp AS updated_at
+			),
+			existing AS (
+				SELECT state.*
+				FROM ai_gateway_rate_limit_states state
+				JOIN params ON state.key = params.key
+				FOR UPDATE OF state
+			),
+			decision AS (
+				SELECT
+					params.*,
+					COALESCE(existing.tat, params.now_at) AS current_tat,
+					(COALESCE(existing.tat, params.now_at) - make_interval(secs => GREATEST(params.burst_value - 1, 0) * params.interval_seconds)) <= params.now_at AS allowed
+				FROM params
+				LEFT JOIN existing ON true
+			),
+			upserted AS (
+				INSERT INTO ai_gateway_rate_limit_states (
+					key, policy_id, scope, actor_type, actor_id, ai_client_id, tool_name, limit_value, burst_value, interval_seconds, tat, metadata, created_at, updated_at
+				)
+				SELECT
+					key, policy_id, scope, actor_type, actor_id, ai_client_id, tool_name, limit_value, burst_value, interval_seconds,
+					CASE WHEN allowed THEN GREATEST(current_tat, now_at) + make_interval(secs => interval_seconds) ELSE current_tat END,
+					metadata, created_at, updated_at
+				FROM decision
+				ON CONFLICT (key) DO UPDATE SET
+					policy_id = EXCLUDED.policy_id,
+					scope = EXCLUDED.scope,
+					actor_type = EXCLUDED.actor_type,
+					actor_id = EXCLUDED.actor_id,
+					ai_client_id = EXCLUDED.ai_client_id,
+					tool_name = EXCLUDED.tool_name,
+					limit_value = EXCLUDED.limit_value,
+					burst_value = EXCLUDED.burst_value,
+					interval_seconds = EXCLUDED.interval_seconds,
+					tat = EXCLUDED.tat,
+					metadata = EXCLUDED.metadata,
+					updated_at = EXCLUDED.updated_at
+				RETURNING key, policy_id, scope, actor_type, actor_id, ai_client_id, tool_name, limit_value, burst_value, interval_seconds, tat, metadata, created_at, updated_at
+			)
+			SELECT
+				upserted.key, upserted.policy_id, upserted.scope, upserted.actor_type, upserted.actor_id, upserted.ai_client_id, upserted.tool_name,
+				upserted.limit_value, upserted.burst_value, upserted.interval_seconds, upserted.tat,
+				decision.allowed,
+				CASE
+					WHEN decision.allowed THEN 0
+					ELSE EXTRACT(EPOCH FROM ((decision.current_tat - make_interval(secs => GREATEST(decision.burst_value - 1, 0) * decision.interval_seconds)) - decision.now_at))
+				END AS retry_after_seconds,
+				upserted.metadata, upserted.created_at, upserted.updated_at
+			FROM upserted
+			JOIN decision ON decision.key = upserted.key
+		`, item.Key, item.PolicyID, item.Scope, nullableString(item.ActorType), nullableString(item.ActorID), nullableString(item.AIClientID), nullableString(item.ToolName), item.Limit, item.Burst, item.IntervalSeconds, string(metadataRaw), now, item.CreatedAt, item.UpdatedAt).Row()
+		var scanErr error
+		state, scanErr = scanRateLimitState(row)
+		return scanErr
+	})
+	return state, err
+}
+
+func (r *Repository) CreateApprovalRequest(ctx context.Context, item domainaigateway.ApprovalRequest) (domainaigateway.ApprovalRequest, error) {
+	actorRoles, actorTeams, resourceScope, toolInput, relatedIDs, output, err := marshalApprovalRequestJSON(item.ActorRoles, item.ActorTeams, item.ResourceScope, item.ToolInput, item.RelatedIDs, item.Output)
+	if err != nil {
+		return domainaigateway.ApprovalRequest{}, err
+	}
+	now := time.Now().UTC()
+	if item.CreatedAt.IsZero() {
+		item.CreatedAt = now
+	}
+	if item.UpdatedAt.IsZero() {
+		item.UpdatedAt = now
+	}
+	if err := r.db.WithContext(ctx).Exec(`
+		INSERT INTO ai_gateway_approval_requests (
+			id, status, strategy, policy_id, approval_policy_ref, actor_type, actor_id, actor_name, actor_roles, actor_teams,
+			ai_client_id, ai_client_name, skill_id, tool_name, risk_level, requires_approval, resource_scope, tool_input, related_ids, output,
+			summary, request_id, source_ip, decided_by, decided_by_name, decided_at, decision_comment, expires_at, created_at, updated_at
+		)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, item.ID, item.Status, item.Strategy, nullableString(item.PolicyID), nullableString(item.ApprovalPolicyRef), item.ActorType, item.ActorID, nullableString(item.ActorName), actorRoles, actorTeams,
+		nullableString(item.AIClientID), nullableString(item.AIClientName), nullableString(item.SkillID), item.ToolName, string(item.RiskLevel), item.RequiresApproval, resourceScope, toolInput, relatedIDs, output,
+		item.Summary, nullableString(item.RequestID), nullableString(item.SourceIP), nullableString(item.DecidedBy), nullableString(item.DecidedByName), item.DecidedAt, nullableString(item.DecisionComment), item.ExpiresAt, item.CreatedAt, item.UpdatedAt).Error; err != nil {
+		return domainaigateway.ApprovalRequest{}, err
+	}
+	return item, nil
+}
+
+func (r *Repository) GetApprovalRequest(ctx context.Context, requestID string) (domainaigateway.ApprovalRequest, error) {
+	row := r.db.WithContext(ctx).Raw(`
+		SELECT id, status, strategy, policy_id, approval_policy_ref, actor_type, actor_id, actor_name, actor_roles, actor_teams,
+			ai_client_id, ai_client_name, skill_id, tool_name, risk_level, requires_approval, resource_scope, tool_input, related_ids, output,
+			summary, request_id, source_ip, decided_by, decided_by_name, decided_at, decision_comment, expires_at, created_at, updated_at
+		FROM ai_gateway_approval_requests
+		WHERE id = ?
+		LIMIT 1
+	`, requestID).Row()
+	return scanApprovalRequest(row)
+}
+
+func (r *Repository) ListApprovalRequests(ctx context.Context, filter domainaigateway.ApprovalRequestFilter) ([]domainaigateway.ApprovalRequest, error) {
+	query := `
+		SELECT id, status, strategy, policy_id, approval_policy_ref, actor_type, actor_id, actor_name, actor_roles, actor_teams,
+			ai_client_id, ai_client_name, skill_id, tool_name, risk_level, requires_approval, resource_scope, tool_input, related_ids, output,
+			summary, request_id, source_ip, decided_by, decided_by_name, decided_at, decision_comment, expires_at, created_at, updated_at
+		FROM ai_gateway_approval_requests
+		WHERE 1 = 1
+	`
+	args := make([]any, 0)
+	if filter.ID != "" {
+		query += " AND id = ?"
+		args = append(args, filter.ID)
+	}
+	if filter.Status != "" {
+		query += " AND status = ?"
+		args = append(args, filter.Status)
+	}
+	if filter.ActorType != "" {
+		query += " AND actor_type = ?"
+		args = append(args, filter.ActorType)
+	}
+	if filter.ActorID != "" {
+		query += " AND actor_id = ?"
+		args = append(args, filter.ActorID)
+	}
+	if filter.AIClientID != "" {
+		query += " AND ai_client_id = ?"
+		args = append(args, filter.AIClientID)
+	}
+	if filter.SkillID != "" {
+		query += " AND skill_id = ?"
+		args = append(args, filter.SkillID)
+	}
+	if filter.ToolName != "" {
+		query += " AND tool_name = ?"
+		args = append(args, filter.ToolName)
+	}
+	if filter.RiskLevel != "" {
+		query += " AND risk_level = ?"
+		args = append(args, string(filter.RiskLevel))
+	}
+	if filter.Strategy != "" {
+		query += " AND strategy = ?"
+		args = append(args, filter.Strategy)
+	}
+	if filter.From != nil {
+		query += " AND created_at >= ?"
+		args = append(args, *filter.From)
+	}
+	if filter.To != nil {
+		query += " AND created_at <= ?"
+		args = append(args, *filter.To)
+	}
+	if filter.ExpiresBefore != nil {
+		query += " AND expires_at IS NOT NULL AND expires_at <= ?"
+		args = append(args, *filter.ExpiresBefore)
+	}
+	limit := filter.Limit
+	if limit <= 0 || limit > 500 {
+		limit = 100
+	}
+	query += " ORDER BY created_at DESC, id ASC LIMIT ?"
+	args = append(args, limit)
+	rows, err := r.db.WithContext(ctx).Raw(query, args...).Rows()
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanApprovalRequestRows(rows)
+}
+
+func (r *Repository) UpdateApprovalRequest(ctx context.Context, requestID string, update domainaigateway.ApprovalRequestUpdate) (domainaigateway.ApprovalRequest, error) {
+	relatedIDs, output, err := marshalApprovalRequestUpdateJSON(update.RelatedIDs, update.Output)
+	if err != nil {
+		return domainaigateway.ApprovalRequest{}, err
+	}
+	if update.UpdatedAt.IsZero() {
+		update.UpdatedAt = time.Now().UTC()
+	}
+	expectedStatus := update.ExpectedStatus
+	if expectedStatus == "" {
+		expectedStatus = "pending"
+	}
+	result := r.db.WithContext(ctx).Exec(`
+		UPDATE ai_gateway_approval_requests
+		SET status = ?, summary = ?, related_ids = ?, output = ?, decided_by = ?, decided_by_name = ?, decided_at = ?, decision_comment = ?, updated_at = ?
+		WHERE id = ? AND status = ?
+	`, update.Status, update.Summary, relatedIDs, output, nullableString(update.DecidedBy), nullableString(update.DecidedByName), update.DecidedAt, nullableString(update.DecisionComment), update.UpdatedAt, requestID, expectedStatus)
+	if result.Error != nil {
+		return domainaigateway.ApprovalRequest{}, result.Error
+	}
+	if result.RowsAffected == 0 {
+		return domainaigateway.ApprovalRequest{}, apperrors.ErrInvalidArgument
+	}
+	return r.GetApprovalRequest(ctx, requestID)
+}
+
+func (r *Repository) ExpirePendingApprovalRequests(ctx context.Context, at time.Time) ([]domainaigateway.ApprovalRequest, error) {
+	pending, err := r.ListApprovalRequests(ctx, domainaigateway.ApprovalRequestFilter{
+		Status:        "pending",
+		ExpiresBefore: &at,
+		Limit:         500,
+	})
+	if err != nil {
+		return nil, err
+	}
+	expired := make([]domainaigateway.ApprovalRequest, 0, len(pending))
+	now := time.Now().UTC()
+	for _, item := range pending {
+		updated, err := r.UpdateApprovalRequest(ctx, item.ID, domainaigateway.ApprovalRequestUpdate{
+			Status:     "timeout",
+			Summary:    "AI Gateway approval request timed out",
+			RelatedIDs: item.RelatedIDs,
+			Output:     item.Output,
+			UpdatedAt:  now,
+		})
+		if err != nil {
+			if errors.Is(err, apperrors.ErrInvalidArgument) {
+				continue
+			}
+			return nil, err
+		}
+		expired = append(expired, updated)
+	}
+	return expired, nil
+}
+
 func scanPersonalAccessTokenRows(rows *sql.Rows) ([]domainaigateway.PersonalAccessToken, error) {
 	items := make([]domainaigateway.PersonalAccessToken, 0)
 	for rows.Next() {
@@ -588,6 +978,243 @@ func scanPersonalAccessTokenRows(rows *sql.Rows) ([]domainaigateway.PersonalAcce
 		items = append(items, item)
 	}
 	return items, rows.Err()
+}
+
+func scanAuditLogRows(rows *sql.Rows) ([]domainaigateway.AuditLog, error) {
+	items := make([]domainaigateway.AuditLog, 0)
+	for rows.Next() {
+		item, err := scanAuditLogScanner(rows)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func scanAuditLogScanner(scanner interface {
+	Scan(dest ...any) error
+}) (domainaigateway.AuditLog, error) {
+	var item domainaigateway.AuditLog
+	var actorName, aiClientID, aiClientName, skillID, toolName, riskLevel, requestID, sourceIP sql.NullString
+	var resourceScope, metadata []byte
+	if err := scanner.Scan(
+		&item.ID,
+		&item.ActorType,
+		&item.ActorID,
+		&actorName,
+		&aiClientID,
+		&aiClientName,
+		&skillID,
+		&toolName,
+		&riskLevel,
+		&resourceScope,
+		&item.Action,
+		&item.Result,
+		&item.Summary,
+		&requestID,
+		&sourceIP,
+		&metadata,
+		&item.CreatedAt,
+	); err != nil {
+		return domainaigateway.AuditLog{}, err
+	}
+	item.ActorName = actorName.String
+	item.AIClientID = aiClientID.String
+	item.AIClientName = aiClientName.String
+	item.SkillID = skillID.String
+	item.ToolName = toolName.String
+	item.RiskLevel = domainaigateway.RiskLevel(riskLevel.String)
+	item.RequestID = requestID.String
+	item.SourceIP = sourceIP.String
+	unmarshalJSON(resourceScope, &item.ResourceScope)
+	unmarshalJSON(metadata, &item.Metadata)
+	if item.ResourceScope == nil {
+		item.ResourceScope = map[string]any{}
+	}
+	if item.Metadata == nil {
+		item.Metadata = map[string]any{}
+	}
+	return item, nil
+}
+
+func scanRateLimitCounter(scanner interface {
+	Scan(dest ...any) error
+}) (domainaigateway.RateLimitCounter, error) {
+	var item domainaigateway.RateLimitCounter
+	var actorType, actorID, aiClientID, toolName sql.NullString
+	var metadata []byte
+	if err := scanner.Scan(
+		&item.Key,
+		&item.PolicyID,
+		&item.Scope,
+		&actorType,
+		&actorID,
+		&aiClientID,
+		&toolName,
+		&item.WindowStart,
+		&item.WindowEnd,
+		&item.Limit,
+		&item.Count,
+		&metadata,
+		&item.CreatedAt,
+		&item.UpdatedAt,
+	); err != nil {
+		return domainaigateway.RateLimitCounter{}, err
+	}
+	item.ActorType = actorType.String
+	item.ActorID = actorID.String
+	item.AIClientID = aiClientID.String
+	item.ToolName = toolName.String
+	unmarshalJSON(metadata, &item.Metadata)
+	if item.Metadata == nil {
+		item.Metadata = map[string]any{}
+	}
+	return item, nil
+}
+
+func scanRateLimitState(scanner interface {
+	Scan(dest ...any) error
+}) (domainaigateway.RateLimitState, error) {
+	var item domainaigateway.RateLimitState
+	var actorType, actorID, aiClientID, toolName sql.NullString
+	var metadata []byte
+	var retryAfterSeconds float64
+	if err := scanner.Scan(
+		&item.Key,
+		&item.PolicyID,
+		&item.Scope,
+		&actorType,
+		&actorID,
+		&aiClientID,
+		&toolName,
+		&item.Limit,
+		&item.Burst,
+		&item.IntervalSeconds,
+		&item.TAT,
+		&item.Allowed,
+		&retryAfterSeconds,
+		&metadata,
+		&item.CreatedAt,
+		&item.UpdatedAt,
+	); err != nil {
+		return domainaigateway.RateLimitState{}, err
+	}
+	item.ActorType = actorType.String
+	item.ActorID = actorID.String
+	item.AIClientID = aiClientID.String
+	item.ToolName = toolName.String
+	if retryAfterSeconds > 0 {
+		item.RetryAfter = time.Duration(retryAfterSeconds * float64(time.Second))
+	}
+	unmarshalJSON(metadata, &item.Metadata)
+	if item.Metadata == nil {
+		item.Metadata = map[string]any{}
+	}
+	return item, nil
+}
+
+func scanApprovalRequestRows(rows *sql.Rows) ([]domainaigateway.ApprovalRequest, error) {
+	items := make([]domainaigateway.ApprovalRequest, 0)
+	for rows.Next() {
+		item, err := scanApprovalRequestScanner(rows)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func scanApprovalRequest(row *sql.Row) (domainaigateway.ApprovalRequest, error) {
+	item, err := scanApprovalRequestScanner(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return domainaigateway.ApprovalRequest{}, apperrors.ErrNotFound
+	}
+	return item, err
+}
+
+func scanApprovalRequestScanner(scanner interface {
+	Scan(dest ...any) error
+}) (domainaigateway.ApprovalRequest, error) {
+	var item domainaigateway.ApprovalRequest
+	var policyID, approvalPolicyRef, actorName, aiClientID, aiClientName, skillID, requestID, sourceIP, decidedBy, decidedByName, decisionComment sql.NullString
+	var decidedAt, expiresAt sql.NullTime
+	var actorRoles, actorTeams, resourceScope, toolInput, relatedIDs, output []byte
+	var riskLevel string
+	if err := scanner.Scan(
+		&item.ID,
+		&item.Status,
+		&item.Strategy,
+		&policyID,
+		&approvalPolicyRef,
+		&item.ActorType,
+		&item.ActorID,
+		&actorName,
+		&actorRoles,
+		&actorTeams,
+		&aiClientID,
+		&aiClientName,
+		&skillID,
+		&item.ToolName,
+		&riskLevel,
+		&item.RequiresApproval,
+		&resourceScope,
+		&toolInput,
+		&relatedIDs,
+		&output,
+		&item.Summary,
+		&requestID,
+		&sourceIP,
+		&decidedBy,
+		&decidedByName,
+		&decidedAt,
+		&decisionComment,
+		&expiresAt,
+		&item.CreatedAt,
+		&item.UpdatedAt,
+	); err != nil {
+		return domainaigateway.ApprovalRequest{}, err
+	}
+	item.PolicyID = policyID.String
+	item.ApprovalPolicyRef = approvalPolicyRef.String
+	item.ActorName = actorName.String
+	item.AIClientID = aiClientID.String
+	item.AIClientName = aiClientName.String
+	item.SkillID = skillID.String
+	item.RiskLevel = domainaigateway.RiskLevel(riskLevel)
+	item.RequestID = requestID.String
+	item.SourceIP = sourceIP.String
+	item.DecidedBy = decidedBy.String
+	item.DecidedByName = decidedByName.String
+	item.DecisionComment = decisionComment.String
+	item.DecidedAt = nullTimePointer(decidedAt)
+	item.ExpiresAt = nullTimePointer(expiresAt)
+	unmarshalJSON(actorRoles, &item.ActorRoles)
+	unmarshalJSON(actorTeams, &item.ActorTeams)
+	unmarshalJSON(resourceScope, &item.ResourceScope)
+	unmarshalJSON(toolInput, &item.ToolInput)
+	unmarshalJSON(relatedIDs, &item.RelatedIDs)
+	unmarshalJSON(output, &item.Output)
+	if item.ActorRoles == nil {
+		item.ActorRoles = []string{}
+	}
+	if item.ActorTeams == nil {
+		item.ActorTeams = []string{}
+	}
+	if item.ResourceScope == nil {
+		item.ResourceScope = map[string]any{}
+	}
+	if item.ToolInput == nil {
+		item.ToolInput = map[string]any{}
+	}
+	if item.RelatedIDs == nil {
+		item.RelatedIDs = map[string]any{}
+	}
+	if item.Output == nil {
+		item.Output = map[string]any{}
+	}
+	return item, nil
 }
 
 func scanAIClientRows(rows *sql.Rows) ([]domainaigateway.AIClient, error) {
@@ -724,6 +1351,18 @@ func scanServiceAccountToken(row *sql.Row) (domainaigateway.ServiceAccountToken,
 		return domainaigateway.ServiceAccountToken{}, apperrors.ErrNotFound
 	}
 	return item, err
+}
+
+func scanServiceAccountTokenRows(rows *sql.Rows) ([]domainaigateway.ServiceAccountToken, error) {
+	items := make([]domainaigateway.ServiceAccountToken, 0)
+	for rows.Next() {
+		item, err := scanServiceAccountTokenScanner(rows)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
 }
 
 func scanServiceAccountTokenScanner(scanner interface {
@@ -1014,6 +1653,46 @@ func marshalAuditLogJSON(resourceScope, metadata map[string]any) (string, string
 	return string(resourceScopeRaw), string(metadataRaw), nil
 }
 
+func marshalApprovalRequestJSON(actorRoles, actorTeams []string, resourceScope, toolInput, relatedIDs map[string]any, output any) (string, string, string, string, string, string, error) {
+	actorRolesRaw, err := json.Marshal(emptyStringSlice(actorRoles))
+	if err != nil {
+		return "", "", "", "", "", "", fmt.Errorf("marshal actor roles: %w", err)
+	}
+	actorTeamsRaw, err := json.Marshal(emptyStringSlice(actorTeams))
+	if err != nil {
+		return "", "", "", "", "", "", fmt.Errorf("marshal actor teams: %w", err)
+	}
+	resourceScopeRaw, err := json.Marshal(emptyMap(resourceScope))
+	if err != nil {
+		return "", "", "", "", "", "", fmt.Errorf("marshal resource scope: %w", err)
+	}
+	toolInputRaw, err := json.Marshal(emptyMap(toolInput))
+	if err != nil {
+		return "", "", "", "", "", "", fmt.Errorf("marshal tool input: %w", err)
+	}
+	relatedIDsRaw, err := json.Marshal(emptyMap(relatedIDs))
+	if err != nil {
+		return "", "", "", "", "", "", fmt.Errorf("marshal related ids: %w", err)
+	}
+	outputRaw, err := json.Marshal(emptyAnyMap(output))
+	if err != nil {
+		return "", "", "", "", "", "", fmt.Errorf("marshal output: %w", err)
+	}
+	return string(actorRolesRaw), string(actorTeamsRaw), string(resourceScopeRaw), string(toolInputRaw), string(relatedIDsRaw), string(outputRaw), nil
+}
+
+func marshalApprovalRequestUpdateJSON(relatedIDs map[string]any, output any) (string, string, error) {
+	relatedIDsRaw, err := json.Marshal(emptyMap(relatedIDs))
+	if err != nil {
+		return "", "", fmt.Errorf("marshal related ids: %w", err)
+	}
+	outputRaw, err := json.Marshal(emptyAnyMap(output))
+	if err != nil {
+		return "", "", fmt.Errorf("marshal output: %w", err)
+	}
+	return string(relatedIDsRaw), string(outputRaw), nil
+}
+
 func unmarshalJSON(raw []byte, out any) {
 	if len(raw) == 0 {
 		return
@@ -1033,6 +1712,13 @@ func emptyMap(values map[string]any) map[string]any {
 		return map[string]any{}
 	}
 	return values
+}
+
+func emptyAnyMap(value any) any {
+	if value == nil {
+		return map[string]any{}
+	}
+	return value
 }
 
 func nullableString(value string) any {

@@ -526,7 +526,11 @@ func (s *Service) queueSessionAgentAnalysis(ctx context.Context, principal domai
 			"providerKind":   run.ProviderKind,
 			"capabilityId":   run.CapabilityID,
 			"skillIds":       run.SkillIDs,
+			"sessionId":      session.ID,
+			"agentRunId":     run.ID,
 			"agentRuntimeId": run.ID,
+			"analysisRunId":  run.ID,
+			"analysisKind":   capabilityID,
 			"status":         run.Status,
 		},
 	}

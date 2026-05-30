@@ -516,6 +516,7 @@ export function AIOperationsPage() {
   const { message } = App.useApp()
   const queryClient = useQueryClient()
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
   const [taskForm] = Form.useForm<InspectionTaskFormValues>()
   const [policyForm] = Form.useForm<AutomationPolicyFormValues>()
   const permissionSnapshotQuery = usePermissionSnapshot()
@@ -525,7 +526,9 @@ export function AIOperationsPage() {
   const canManageInspection = hasPermission(permissionSnapshotQuery.data?.data, 'observe.ai.inspection.manage')
   const canCreateSessionFromRun = canViewAI && canUseChat
   const canManageAISettings = hasPermission(permissionSnapshotQuery.data?.data, 'settings.ai.manage')
-  const [activeView, setActiveView] = useState<'tasks' | 'runs' | 'policies'>('tasks')
+  const requestedView = searchParams.get('view')
+  const requestedInspectionRunId = searchParams.get('inspectionRunId')?.trim() ?? ''
+  const [activeView, setActiveView] = useState<'tasks' | 'runs' | 'policies'>(requestedView === 'runs' ? 'runs' : requestedView === 'policies' ? 'policies' : 'tasks')
   const [taskModalOpen, setTaskModalOpen] = useState(false)
   const [editingTask, setEditingTask] = useState<InspectionTask | null>(null)
   const [policyModalOpen, setPolicyModalOpen] = useState(false)
@@ -643,6 +646,16 @@ export function AIOperationsPage() {
   const watchedScopeType = Form.useWatch('scopeType', taskForm)
   const taskSaving = createTaskMutation.isPending || updateTaskMutation.isPending
   const policySaving = createPolicyMutation.isPending || updatePolicyMutation.isPending
+
+  useEffect(() => {
+    if (requestedView === 'runs' || requestedInspectionRunId) {
+      setActiveView('runs')
+      return
+    }
+    if (requestedView === 'policies') {
+      setActiveView('policies')
+    }
+  }, [requestedInspectionRunId, requestedView])
 
   const openCreateTask = () => {
     setEditingTask(null)
@@ -859,12 +872,21 @@ export function AIOperationsPage() {
 
       {activeView === 'runs' ? (
         <Card title="巡检运行记录">
+          {requestedInspectionRunId ? (
+            <Alert
+              type={runs.some((item) => item.id === requestedInspectionRunId) ? 'info' : 'warning'}
+              showIcon
+              title={runs.some((item) => item.id === requestedInspectionRunId) ? `已定位巡检运行 ${requestedInspectionRunId}` : '未找到关联巡检运行'}
+              description={runs.some((item) => item.id === requestedInspectionRunId) ? '该运行来自分析工件关联入口。' : `inspectionRunId=${requestedInspectionRunId}`}
+              style={{ marginBottom: 12 }}
+            />
+          ) : null}
           <Table
             rowKey="id"
             dataSource={runs}
             pagination={{ pageSize: 10 }}
             columns={[
-              { title: '运行 ID', dataIndex: 'id' },
+              { title: '运行 ID', dataIndex: 'id', render: (value: string) => <Space size={6} wrap><Text>{value}</Text>{value === requestedInspectionRunId ? <Tag color="blue">已定位</Tag> : null}</Space> },
               { title: '任务', dataIndex: 'taskId' },
               { title: '状态', dataIndex: 'status', render: (value: string) => <StatusTag value={value} /> },
               { title: '严重度', dataIndex: 'severity', render: (value: string) => <StatusTag value={value} /> },

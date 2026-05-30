@@ -49,13 +49,21 @@ MCP must not bypass platform authorization. Every MCP capability maps to a platf
 - invocation audit
 - response filtering
 
-The first delivery-facing MCP tools are:
+The first delivery-facing Gateway tools are exposed to MCP clients with canonical tool names:
 
-- `delivery.blueprints.list`
-- `delivery.spec.render`
-- `delivery.targets.list`
-- `delivery.application.bootstrap`
-- `delivery.execution.start`
+- `delivery.applications.list`
+- `delivery.applications.detail`
+- `delivery.applications.create`
+- `delivery.application_environments.list`
+- `delivery.application_services.list`
+- `delivery.build_sources.list`
+- `delivery.release_targets.list`
+- `delivery.release_bundles.list`
+- `delivery.execution_tasks.list`
+- `delivery.execution_logs.list`
+- `delivery.release_context.diff`
+- `delivery.rollback.context`
+- `delivery.actions.trigger`
 
 These tools still must flow through platform permission, scope, audit, and response filtering. Gin handlers must not turn MCP invocations into direct repo writes or long-running shell execution.
 

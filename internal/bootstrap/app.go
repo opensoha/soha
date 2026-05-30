@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strings"
 
 	apiHandlers "github.com/soha/soha/internal/api/handlers"
 	apiRoutes "github.com/soha/soha/internal/api/routes"
@@ -43,6 +44,7 @@ import (
 	k8sinfra "github.com/soha/soha/internal/infrastructure/kubernetes"
 	loggerinfra "github.com/soha/soha/internal/infrastructure/logger"
 	mcpinfra "github.com/soha/soha/internal/infrastructure/mcp"
+	ratelimitinfra "github.com/soha/soha/internal/infrastructure/ratelimit"
 	virtualizationinfra "github.com/soha/soha/internal/infrastructure/virtualization"
 	"github.com/soha/soha/internal/platform/runtimeobs"
 	"github.com/soha/soha/internal/policy"
@@ -79,6 +81,7 @@ type App struct {
 	Informers             *informerinfra.Service
 	WorkflowService       *appworkflow.Service
 	VirtualizationService *appvirtualization.Service
+	RateLimitBackend      interface{ Close() error }
 	HTTP                  *http.Server
 	cancel                context.CancelFunc
 }
@@ -282,8 +285,22 @@ func New(ctx context.Context) (*App, error) {
 	dockerService := appdocker.New(dockerRepository, permissionResolver, operationService, appdocker.WithHostProvisioner(dockerHostProvisioner{virtualization: virtualizationService}))
 	copilotService.SetAgentRuntimeReaders(executionService, resourceService, dockerService, virtualizationService, monitoringService)
 	aiGatewayService := appaigateway.New(permissionResolver, auditService, aiGatewayRepository)
+	var rateLimitBackend interface{ Close() error }
+	if strings.EqualFold(strings.TrimSpace(cfg.AIGateway.RateLimit.Backend), "redis") {
+		redisRateLimitBackend, err := ratelimitinfra.NewRedisBackend(cfg.AIGateway.RateLimit)
+		if err != nil {
+			cancel()
+			return nil, fmt.Errorf("build AI Gateway Redis rate limit backend: %w", err)
+		}
+		rateLimitBackend = redisRateLimitBackend
+		aiGatewayService.SetRateLimitBackend(redisRateLimitBackend)
+	}
 	aiGatewayService.SetDeliveryServices(applicationService, deliveryService)
+	aiGatewayService.SetCatalogService(catalogService)
 	aiGatewayService.SetResourceService(resourceService)
+	aiGatewayService.SetAnalysisArtifactRecorder(copilotService)
+	aiGatewayService.SetOperationRecorder(operationService)
+	aiGatewayService.SetOnCallResolver(monitoringService)
 
 	systemHandler := apiHandlers.NewSystemHandler(databaseStore, runtimeMetrics)
 	authHandler := apiHandlers.NewAuthHandler(identityService, accessConsoleService, settingsService)
@@ -338,6 +355,7 @@ func New(ctx context.Context) (*App, error) {
 		Informers:             informers,
 		WorkflowService:       workflowService,
 		VirtualizationService: virtualizationService,
+		RateLimitBackend:      rateLimitBackend,
 		HTTP:                  httpServer,
 		cancel:                cancel,
 	}, nil
@@ -373,6 +391,9 @@ func (a *App) Shutdown(ctx context.Context) error {
 	}
 	if a.Database != nil {
 		_ = a.Database.Close()
+	}
+	if a.RateLimitBackend != nil {
+		_ = a.RateLimitBackend.Close()
 	}
 	if a.Logger != nil {
 		_ = a.Logger.Sync()

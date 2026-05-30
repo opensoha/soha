@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -391,6 +392,12 @@ func TestRecordAgentRunCallbackSynthesizesArtifactBeforePersist(t *testing.T) {
 		Payload: map[string]any{
 			"summary":         "Hermes found a likely release regression.",
 			"recommendations": []any{"Rollback the latest deployment"},
+			"usage": map[string]any{
+				"prompt_tokens":     40,
+				"completion_tokens": 60,
+				"estimatedCostUsd":  0.12,
+				"model":             "do-not-store",
+			},
 		},
 		ExternalRunID: "hermes:123",
 	})
@@ -410,8 +417,625 @@ func TestRecordAgentRunCallbackSynthesizesArtifactBeforePersist(t *testing.T) {
 	if artifact.DataSourceSnapshot["providerId"] != "hermes" || artifact.DataSourceSnapshot["externalRunId"] != "hermes:123" {
 		t.Fatalf("expected provider snapshot in artifact, got %#v", artifact.DataSourceSnapshot)
 	}
+	usage := mapValue(repo.callback.Payload["providerUsage"])
+	if usage["totalTokens"] != float64(100) || usage["inputTokens"] != float64(40) || usage["outputTokens"] != float64(60) || usage["totalCost"] != 0.12 {
+		t.Fatalf("expected normalized callback usage summary, got %#v", usage)
+	}
+	artifactUsage := mapValue(artifact.DataSourceSnapshot["providerUsage"])
+	if artifactUsage["totalTokens"] != float64(100) || artifactUsage["totalCost"] != 0.12 {
+		t.Fatalf("expected provider usage snapshot in artifact, got %#v", artifact.DataSourceSnapshot)
+	}
+	if text := fmt.Sprint(usage) + fmt.Sprint(artifactUsage); strings.Contains(text, "do-not-store") {
+		t.Fatalf("provider usage summary leaked raw provider metadata: %s", text)
+	}
 	if len(updated.AnalysisArtifacts) != 1 {
 		t.Fatalf("expected updated run to include synthesized artifact, got %#v", updated.AnalysisArtifacts)
+	}
+}
+
+func TestRecordAgentRunCallbackEnrichesProvidedArtifactUsage(t *testing.T) {
+	createdAt := time.Date(2026, 5, 27, 10, 0, 0, 0, time.UTC)
+	repo := &agentRuntimeCallbackTestRepository{
+		agentRun: domaincopilot.AgentRun{
+			ID:             "agent:run-usage",
+			ProviderID:     "hermes",
+			ProviderKind:   "hermes",
+			CapabilityID:   "root_cause",
+			CreatedBy:      "user-1",
+			Status:         domaincopilot.AgentRunStatusRunning,
+			CallbackToken:  "callback-token",
+			TimeoutSeconds: 600,
+			CreatedAt:      createdAt,
+			UpdatedAt:      createdAt,
+		},
+	}
+	service := &Service{repo: repo}
+
+	_, err := service.RecordAgentRunCallback(context.Background(), domaincopilot.AgentRunCallbackInput{
+		RunID:         "agent:run-usage",
+		CallbackToken: "callback-token",
+		Status:        "completed",
+		Payload: map[string]any{
+			"providerUsage": map[string]any{
+				"inputTokens":  10,
+				"outputTokens": 15,
+				"totalCost":    0.04,
+				"rawOutput":    "do-not-store",
+			},
+		},
+		AnalysisArtifacts: []domaincopilot.AnalysisArtifact{{
+			Kind:    "root_cause",
+			RunID:   "agent:run-usage",
+			Title:   "Provided artifact",
+			Summary: "Provider supplied an artifact.",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("record callback: %v", err)
+	}
+	if len(repo.callback.AnalysisArtifacts) != 1 {
+		t.Fatalf("expected provided artifact to be persisted, got %#v", repo.callback.AnalysisArtifacts)
+	}
+	usage := mapValue(repo.callback.AnalysisArtifacts[0].DataSourceSnapshot["providerUsage"])
+	if usage["totalTokens"] != float64(25) || usage["totalCost"] != 0.04 {
+		t.Fatalf("expected provided artifact usage snapshot, got %#v", repo.callback.AnalysisArtifacts[0].DataSourceSnapshot)
+	}
+	if text := fmt.Sprint(repo.callback.AnalysisArtifacts[0].DataSourceSnapshot); strings.Contains(text, "do-not-store") {
+		t.Fatalf("artifact usage snapshot leaked raw provider metadata: %s", text)
+	}
+}
+
+func TestRecordAgentRunCallbackMapsNativeProviderUsageFields(t *testing.T) {
+	createdAt := time.Date(2026, 5, 27, 10, 0, 0, 0, time.UTC)
+	repo := &agentRuntimeCallbackTestRepository{
+		agentRun: domaincopilot.AgentRun{
+			ID:             "agent:run-native-usage",
+			ProviderID:     "hermes",
+			ProviderKind:   "hermes",
+			CapabilityID:   "root_cause",
+			CreatedBy:      "user-1",
+			Status:         domaincopilot.AgentRunStatusRunning,
+			CallbackToken:  "callback-token",
+			TimeoutSeconds: 600,
+			CreatedAt:      createdAt,
+			UpdatedAt:      createdAt,
+		},
+	}
+	service := &Service{repo: repo}
+
+	_, err := service.RecordAgentRunCallback(context.Background(), domaincopilot.AgentRunCallbackInput{
+		RunID:         "agent:run-native-usage",
+		CallbackToken: "callback-token",
+		Status:        "completed",
+		Payload: map[string]any{
+			"usageMetadata": map[string]any{
+				"promptTokenCount":     12,
+				"candidatesTokenCount": 18,
+				"totalTokenCount":      30,
+				"estimatedCostUsd":     0.06,
+				"model":                "gemini-do-not-store",
+			},
+			"ollama": map[string]any{
+				"prompt_eval_count": 4,
+				"eval_count":        9,
+				"raw":               "ollama-do-not-store",
+			},
+			"anthropic": map[string]any{
+				"usage": map[string]any{
+					"input_tokens":                6,
+					"output_tokens":               14,
+					"cache_creation_input_tokens": 2,
+					"cache_read_input_tokens":     3,
+					"response_cost":               0.03,
+					"model":                       "claude-do-not-store",
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("record callback: %v", err)
+	}
+	usage := mapValue(repo.callback.Payload["providerUsage"])
+	if usage["totalTokens"] != float64(68) || usage["inputTokens"] != float64(27) || usage["outputTokens"] != float64(41) || usage["totalCost"] != 0.09 {
+		t.Fatalf("expected native provider usage summary, got %#v", usage)
+	}
+	artifactUsage := mapValue(repo.callback.AnalysisArtifacts[0].DataSourceSnapshot["providerUsage"])
+	if artifactUsage["totalTokens"] != float64(68) || artifactUsage["totalCost"] != 0.09 {
+		t.Fatalf("expected native provider usage artifact snapshot, got %#v", repo.callback.AnalysisArtifacts[0].DataSourceSnapshot)
+	}
+	if text := fmt.Sprint(usage) + fmt.Sprint(artifactUsage); strings.Contains(text, "do-not-store") {
+		t.Fatalf("native provider usage summary leaked raw provider metadata: %s", text)
+	}
+}
+
+func TestRecordAgentRunCallbackMapsAdditionalProviderUsageAliases(t *testing.T) {
+	createdAt := time.Date(2026, 5, 27, 10, 0, 0, 0, time.UTC)
+	repo := &agentRuntimeCallbackTestRepository{
+		agentRun: domaincopilot.AgentRun{
+			ID:             "agent:run-additional-usage",
+			ProviderID:     "hermes",
+			ProviderKind:   "hermes",
+			CapabilityID:   "root_cause",
+			CreatedBy:      "user-1",
+			Status:         domaincopilot.AgentRunStatusRunning,
+			CallbackToken:  "callback-token",
+			TimeoutSeconds: 600,
+			CreatedAt:      createdAt,
+			UpdatedAt:      createdAt,
+		},
+	}
+	service := &Service{repo: repo}
+
+	_, err := service.RecordAgentRunCallback(context.Background(), domaincopilot.AgentRunCallbackInput{
+		RunID:         "agent:run-additional-usage",
+		CallbackToken: "callback-token",
+		Status:        "completed",
+		Payload: map[string]any{
+			"openai": map[string]any{
+				"usage": map[string]any{
+					"prompt_tokens":     10,
+					"completion_tokens": 15,
+					"prompt_tokens_details": map[string]any{
+						"cached_tokens": 4,
+					},
+					"completion_tokens_details": map[string]any{
+						"reasoning_tokens": 3,
+					},
+					"billed_amount": 0.04,
+					"model":         "openai-do-not-store",
+				},
+			},
+			"bedrock": map[string]any{
+				"inputTextTokens":  8,
+				"outputTextTokens": 12,
+				"inputImageTokens": 5,
+				"estimatedCostUsd": 0.03,
+				"trace":            "bedrock-do-not-store",
+			},
+			"cohere": map[string]any{
+				"meta": map[string]any{
+					"billed_units": map[string]any{
+						"read_units":   7,
+						"write_units":  11,
+						"credits_used": 0.02,
+						"raw_response": "cohere-do-not-store",
+					},
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("record callback: %v", err)
+	}
+	usage := mapValue(repo.callback.Payload["providerUsage"])
+	if usage["totalTokens"] != float64(75) || usage["inputTokens"] != float64(34) || usage["outputTokens"] != float64(41) || !floatNear(usage["totalCost"], 0.09) {
+		t.Fatalf("expected additional provider usage aliases, got %#v", usage)
+	}
+	artifactUsage := mapValue(repo.callback.AnalysisArtifacts[0].DataSourceSnapshot["providerUsage"])
+	if artifactUsage["totalTokens"] != float64(75) || !floatNear(artifactUsage["totalCost"], 0.09) {
+		t.Fatalf("expected additional provider usage artifact snapshot, got %#v", repo.callback.AnalysisArtifacts[0].DataSourceSnapshot)
+	}
+	if text := fmt.Sprint(usage) + fmt.Sprint(artifactUsage); strings.Contains(text, "do-not-store") {
+		t.Fatalf("additional provider usage summary leaked raw provider metadata: %s", text)
+	}
+}
+
+func TestRecordAgentRunCallbackMapsExpandedProviderUsageAliases(t *testing.T) {
+	createdAt := time.Date(2026, 5, 27, 10, 0, 0, 0, time.UTC)
+	repo := &agentRuntimeCallbackTestRepository{
+		agentRun: domaincopilot.AgentRun{
+			ID:             "agent:run-expanded-usage",
+			ProviderID:     "hermes",
+			ProviderKind:   "hermes",
+			CapabilityID:   "root_cause",
+			CreatedBy:      "user-1",
+			Status:         domaincopilot.AgentRunStatusRunning,
+			CallbackToken:  "callback-token",
+			TimeoutSeconds: 600,
+			CreatedAt:      createdAt,
+			UpdatedAt:      createdAt,
+		},
+	}
+	service := &Service{repo: repo}
+
+	_, err := service.RecordAgentRunCallback(context.Background(), domaincopilot.AgentRunCallbackInput{
+		RunID:         "agent:run-expanded-usage",
+		CallbackToken: "callback-token",
+		Status:        "completed",
+		Payload: map[string]any{
+			"providerUsage": map[string]any{
+				"billable_tokens": 90,
+				"totalCostMicros": 120000,
+				"inputCostMicros": 50000,
+				"raw":             "provider-do-not-store",
+			},
+			"multimodal": map[string]any{
+				"usage": map[string]any{
+					"textInputTokens":             6,
+					"image_input_tokens":          4,
+					"audioInputTokens":            3,
+					"textOutputTokens":            8,
+					"image_output_tokens":         5,
+					"audioOutputTokens":           2,
+					"completion_reasoning_tokens": 7,
+					"outputCostMicros":            70000,
+					"trace":                       "multimodal-do-not-store",
+				},
+			},
+			"anthropic_variant": map[string]any{
+				"usage": map[string]any{
+					"prompt_tokens":             9,
+					"prompt_cache_read_tokens":  2,
+					"prompt_cache_write_tokens": 3,
+					"response_cost":             0.01,
+					"model":                     "claude-do-not-store",
+				},
+			},
+			"generic_cost_adapter": map[string]any{
+				"promptCost":     0.011,
+				"completionCost": 0.019,
+				"raw":            "generic-cost-do-not-store",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("record callback: %v", err)
+	}
+	usage := mapValue(repo.callback.Payload["providerUsage"])
+	if usage["totalTokens"] != float64(132) || usage["inputTokens"] != float64(27) || usage["outputTokens"] != float64(15) || !floatNear(usage["totalCost"], 0.23) || !floatNear(usage["inputCost"], 0.061) || !floatNear(usage["outputCost"], 0.089) {
+		t.Fatalf("expected expanded provider usage aliases, got %#v", usage)
+	}
+	artifactUsage := mapValue(repo.callback.AnalysisArtifacts[0].DataSourceSnapshot["providerUsage"])
+	if artifactUsage["totalTokens"] != float64(132) || !floatNear(artifactUsage["totalCost"], 0.23) || !floatNear(artifactUsage["inputCost"], 0.061) || !floatNear(artifactUsage["outputCost"], 0.089) {
+		t.Fatalf("expected expanded provider usage artifact snapshot, got %#v", repo.callback.AnalysisArtifacts[0].DataSourceSnapshot)
+	}
+	if text := fmt.Sprint(usage) + fmt.Sprint(artifactUsage); strings.Contains(text, "do-not-store") {
+		t.Fatalf("expanded provider usage summary leaked raw provider metadata: %s", text)
+	}
+}
+
+func TestRecordAgentRunCallbackMapsEmergingProviderUsageAliases(t *testing.T) {
+	createdAt := time.Date(2026, 5, 27, 10, 0, 0, 0, time.UTC)
+	repo := &agentRuntimeCallbackTestRepository{
+		agentRun: domaincopilot.AgentRun{
+			ID:             "agent:run-emerging-usage",
+			ProviderID:     "hermes",
+			ProviderKind:   "hermes",
+			CapabilityID:   "root_cause",
+			CreatedBy:      "user-1",
+			Status:         domaincopilot.AgentRunStatusRunning,
+			CallbackToken:  "callback-token",
+			TimeoutSeconds: 600,
+			CreatedAt:      createdAt,
+			UpdatedAt:      createdAt,
+		},
+	}
+	service := &Service{repo: repo}
+
+	_, err := service.RecordAgentRunCallback(context.Background(), domaincopilot.AgentRunCallbackInput{
+		RunID:         "agent:run-emerging-usage",
+		CallbackToken: "callback-token",
+		Status:        "completed",
+		Payload: map[string]any{
+			"gemini": map[string]any{
+				"usageMetadata": map[string]any{
+					"promptTokenCount":        40,
+					"cachedContentTokenCount": 12,
+					"toolUsePromptTokenCount": 5,
+					"candidatesTokenCount":    24,
+					"thoughtsTokenCount":      6,
+					"totalCostCents":          9,
+					"model":                   "gemini-do-not-store",
+				},
+			},
+			"openai": map[string]any{
+				"usage": map[string]any{
+					"prompt_tokens": 20,
+					"prompt_tokens_details": map[string]any{
+						"cached_tokens": 3,
+						"audio_tokens":  2,
+					},
+					"completion_tokens": 10,
+					"completion_tokens_details": map[string]any{
+						"reasoning_tokens":           4,
+						"accepted_prediction_tokens": 3,
+						"rejected_prediction_tokens": 1,
+						"raw":                        "provider-do-not-store",
+					},
+					"inputCostCents":  2,
+					"outputCostCents": 3,
+					"model":           "openai-do-not-store",
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("record callback: %v", err)
+	}
+	usage := mapValue(repo.callback.Payload["providerUsage"])
+	if usage["totalTokens"] != float64(130) || usage["inputTokens"] != float64(82) || usage["outputTokens"] != float64(48) || !floatNear(usage["totalCost"], 0.14) || !floatNear(usage["inputCost"], 0.02) || !floatNear(usage["outputCost"], 0.03) {
+		t.Fatalf("expected emerging provider usage aliases, got %#v", usage)
+	}
+	artifactUsage := mapValue(repo.callback.AnalysisArtifacts[0].DataSourceSnapshot["providerUsage"])
+	if artifactUsage["totalTokens"] != float64(130) || !floatNear(artifactUsage["totalCost"], 0.14) {
+		t.Fatalf("expected emerging provider usage artifact snapshot, got %#v", repo.callback.AnalysisArtifacts[0].DataSourceSnapshot)
+	}
+	if text := fmt.Sprint(usage) + fmt.Sprint(artifactUsage); strings.Contains(text, "do-not-store") {
+		t.Fatalf("emerging provider usage summary leaked raw provider metadata: %s", text)
+	}
+}
+
+func TestRecordAgentRunCallbackMapsChinaCloudProviderUsageAliases(t *testing.T) {
+	createdAt := time.Date(2026, 5, 27, 10, 0, 0, 0, time.UTC)
+	repo := &agentRuntimeCallbackTestRepository{
+		agentRun: domaincopilot.AgentRun{
+			ID:             "agent:run-china-cloud-usage",
+			ProviderID:     "hermes",
+			ProviderKind:   "hermes",
+			CapabilityID:   "root_cause",
+			CreatedBy:      "user-1",
+			Status:         domaincopilot.AgentRunStatusRunning,
+			CallbackToken:  "callback-token",
+			TimeoutSeconds: 600,
+			CreatedAt:      createdAt,
+			UpdatedAt:      createdAt,
+		},
+	}
+	service := &Service{repo: repo}
+
+	_, err := service.RecordAgentRunCallback(context.Background(), domaincopilot.AgentRunCallbackInput{
+		RunID:         "agent:run-china-cloud-usage",
+		CallbackToken: "callback-token",
+		Status:        "completed",
+		Payload: map[string]any{
+			"dashscope": map[string]any{
+				"usage": map[string]any{
+					"input_tokens_count":      10,
+					"output_tokens_count":     20,
+					"prompt_cache_hit_tokens": 3,
+					"raw":                     "dashscope-do-not-store",
+				},
+			},
+			"dashscope_multimodal": map[string]any{
+				"usage": map[string]any{
+					"image_tokens": 4,
+					"video_tokens": 5,
+					"audio_tokens": 6,
+					"raw":          "dashscope-multimodal-do-not-store",
+				},
+			},
+			"moonshot": map[string]any{
+				"usage": map[string]any{
+					"prompt_token_usage":     11,
+					"completion_token_usage": 13,
+					"total_cost_usd":         0.04,
+					"model":                  "moonshot-do-not-store",
+				},
+			},
+			"zhipu": map[string]any{
+				"usage": map[string]any{
+					"promptTokensCount":     7,
+					"completionTokensCount": 9,
+					"estimatedCostCents":    5,
+					"trace":                 "zhipu-do-not-store",
+				},
+			},
+			"qianfan": map[string]any{
+				"token_usage": map[string]any{
+					"input_token_usage":  8,
+					"output_token_usage": 12,
+					"total_cost_micros":  60000,
+					"raw_response":       "qianfan-do-not-store",
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("record callback: %v", err)
+	}
+	usage := mapValue(repo.callback.Payload["providerUsage"])
+	if usage["totalTokens"] != float64(108) || usage["inputTokens"] != float64(54) || usage["outputTokens"] != float64(54) || !floatNear(usage["totalCost"], 0.15) {
+		t.Fatalf("expected China cloud provider usage aliases, got %#v", usage)
+	}
+	artifactUsage := mapValue(repo.callback.AnalysisArtifacts[0].DataSourceSnapshot["providerUsage"])
+	if artifactUsage["totalTokens"] != float64(108) || !floatNear(artifactUsage["totalCost"], 0.15) {
+		t.Fatalf("expected China cloud provider usage artifact snapshot, got %#v", repo.callback.AnalysisArtifacts[0].DataSourceSnapshot)
+	}
+	if text := fmt.Sprint(usage) + fmt.Sprint(artifactUsage); strings.Contains(text, "do-not-store") {
+		t.Fatalf("China cloud provider usage summary leaked raw provider metadata: %s", text)
+	}
+}
+
+func TestRecordAgentRunCallbackPrefersBilledUsageUnits(t *testing.T) {
+	createdAt := time.Date(2026, 5, 27, 10, 0, 0, 0, time.UTC)
+	repo := &agentRuntimeCallbackTestRepository{
+		agentRun: domaincopilot.AgentRun{
+			ID:             "agent:run-billed-usage",
+			ProviderID:     "hermes",
+			ProviderKind:   "hermes",
+			CapabilityID:   "root_cause",
+			CreatedBy:      "user-1",
+			Status:         domaincopilot.AgentRunStatusRunning,
+			CallbackToken:  "callback-token",
+			TimeoutSeconds: 600,
+			CreatedAt:      createdAt,
+			UpdatedAt:      createdAt,
+		},
+	}
+	service := &Service{repo: repo}
+
+	_, err := service.RecordAgentRunCallback(context.Background(), domaincopilot.AgentRunCallbackInput{
+		RunID:         "agent:run-billed-usage",
+		CallbackToken: "callback-token",
+		Status:        "completed",
+		Payload: map[string]any{
+			"cohere_chat": map[string]any{
+				"usage": map[string]any{
+					"billed_units": map[string]any{
+						"input_tokens":  5,
+						"output_tokens": 26,
+						"raw":           "billed-do-not-store",
+					},
+					"tokens": map[string]any{
+						"input_tokens":  71,
+						"output_tokens": 26,
+						"raw":           "tokens-do-not-store",
+					},
+					"cost": 0.012,
+				},
+			},
+			"cohere_rerank": map[string]any{
+				"meta": map[string]any{
+					"billed_units": map[string]any{
+						"search_units": 2,
+						"raw":          "search-do-not-store",
+					},
+				},
+			},
+			"voyage_embedding": map[string]any{
+				"usage": map[string]any{
+					"embedding_tokens": 7,
+					"raw":              "embedding-do-not-store",
+				},
+			},
+			"custom_gateway": map[string]any{
+				"metering": map[string]any{
+					"request_units":  3,
+					"response_units": 4,
+					"raw":            "unit-do-not-store",
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("record callback: %v", err)
+	}
+	usage := mapValue(repo.callback.Payload["providerUsage"])
+	if usage["totalTokens"] != float64(47) || usage["inputTokens"] != float64(8) || usage["outputTokens"] != float64(30) || !floatNear(usage["totalCost"], 0.012) {
+		t.Fatalf("expected billed usage units without double counting generic tokens, got %#v", usage)
+	}
+	artifactUsage := mapValue(repo.callback.AnalysisArtifacts[0].DataSourceSnapshot["providerUsage"])
+	if artifactUsage["totalTokens"] != float64(47) || !floatNear(artifactUsage["totalCost"], 0.012) {
+		t.Fatalf("expected billed usage artifact snapshot, got %#v", repo.callback.AnalysisArtifacts[0].DataSourceSnapshot)
+	}
+	if text := fmt.Sprint(usage) + fmt.Sprint(artifactUsage); strings.Contains(text, "do-not-store") {
+		t.Fatalf("billed usage summary leaked raw provider metadata: %s", text)
+	}
+}
+
+func TestRecordAgentRunCallbackMapsAgentToolingUsageAliases(t *testing.T) {
+	createdAt := time.Date(2026, 5, 27, 10, 0, 0, 0, time.UTC)
+	repo := &agentRuntimeCallbackTestRepository{
+		agentRun: domaincopilot.AgentRun{
+			ID:             "agent:run-tooling-usage",
+			ProviderID:     "hermes",
+			ProviderKind:   "hermes",
+			CapabilityID:   "root_cause",
+			CreatedBy:      "user-1",
+			Status:         domaincopilot.AgentRunStatusRunning,
+			CallbackToken:  "callback-token",
+			TimeoutSeconds: 600,
+			CreatedAt:      createdAt,
+			UpdatedAt:      createdAt,
+		},
+	}
+	service := &Service{repo: repo}
+
+	_, err := service.RecordAgentRunCallback(context.Background(), domaincopilot.AgentRunCallbackInput{
+		RunID:         "agent:run-tooling-usage",
+		CallbackToken: "callback-token",
+		Status:        "completed",
+		Payload: map[string]any{
+			"brave_search": map[string]any{
+				"usage": map[string]any{
+					"queryUnits":       2,
+					"braveSearchUnits": 1,
+					"raw":              "brave-do-not-store",
+				},
+			},
+			"serpapi": map[string]any{
+				"metering": map[string]any{
+					"searchCredits":   3,
+					"serpapiSearches": 4,
+					"trace":           "serpapi-do-not-store",
+				},
+			},
+			"browserbase": map[string]any{
+				"usage": map[string]any{
+					"browserMinutes":  5,
+					"browserSessions": 6,
+					"pageLoads":       7,
+					"session":         "browserbase-do-not-store",
+				},
+			},
+			"rag_tools": map[string]any{
+				"providerUsage": map[string]any{
+					"documentPages":   8,
+					"parsePages":      9,
+					"llamaParsePages": 10,
+					"characters":      11,
+					"chunks":          12,
+					"source":          "rag-do-not-store",
+				},
+			},
+			"helicone": map[string]any{
+				"billing": map[string]any{
+					"requestCount":     13,
+					"providerRequests": 14,
+					"totalCostMicros":  90000,
+					"raw":              "helicone-do-not-store",
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("record callback: %v", err)
+	}
+	usage := mapValue(repo.callback.Payload["providerUsage"])
+	if usage["totalTokens"] != float64(39) || !floatNear(usage["totalCost"], 0.09) {
+		t.Fatalf("expected agent tooling usage aliases, got %#v", usage)
+	}
+	artifactUsage := mapValue(repo.callback.AnalysisArtifacts[0].DataSourceSnapshot["providerUsage"])
+	if artifactUsage["totalTokens"] != float64(39) || !floatNear(artifactUsage["totalCost"], 0.09) {
+		t.Fatalf("expected agent tooling usage artifact snapshot, got %#v", repo.callback.AnalysisArtifacts[0].DataSourceSnapshot)
+	}
+	if text := fmt.Sprint(usage) + fmt.Sprint(artifactUsage); strings.Contains(text, "do-not-store") {
+		t.Fatalf("agent tooling usage summary leaked raw provider metadata: %s", text)
+	}
+}
+
+func TestAgentProviderUsageSummaryIgnoresGenericCountsOutsideUsageContainers(t *testing.T) {
+	usage := agentProviderUsageSummary(map[string]any{
+		"observability": map[string]any{
+			"requests":   200,
+			"documents":  30,
+			"chunks":     40,
+			"characters": 5000,
+			"raw":        "do-not-store",
+		},
+	})
+
+	if usage != nil {
+		t.Fatalf("expected generic non-usage counters to be ignored, got %#v", usage)
+	}
+}
+
+func TestAgentUsageWithDerivedTotalsPrefersLargestCanonicalAlias(t *testing.T) {
+	values := agentUsageWithDerivedTotals(map[string]any{
+		"queryUnits":       2,
+		"requestCount":     13,
+		"providerRequests": 14,
+		"total_tokens":     "do-not-store",
+		"totalCostMicros":  90000,
+		"costCents":        12,
+		"cost":             "do-not-store",
+	})
+
+	if values["totalTokens"] != float64(14) || !floatNear(values["totalCost"], 0.12) {
+		t.Fatalf("expected largest canonical usage aliases, got %#v", values)
+	}
+	if text := fmt.Sprint(values); strings.Contains(text, "do-not-store") {
+		t.Fatalf("derived usage totals leaked non-numeric alias payload: %s", text)
 	}
 }
 
@@ -553,6 +1177,139 @@ func TestRunRootCauseAnalysisQueuesExternalAgentAndCreatesBusinessRun(t *testing
 	}
 	if len(repo.createdAgentRun.SkillBindings) == 0 || repo.createdAgentRun.SkillBindings[0].ProviderSkillRef == "" {
 		t.Fatalf("expected agent run to snapshot provider skill bindings, got %#v", repo.createdAgentRun.SkillBindings)
+	}
+}
+
+func TestRecordGatewayAnalysisArtifactCreatesCompletedAgentRun(t *testing.T) {
+	service, repo := newInspectionAuthzTestService(map[string][]string{
+		"gateway": {appaccess.PermObserveAIChatUse},
+	})
+
+	run, err := service.RecordGatewayAnalysisArtifact(context.Background(), domainidentity.Principal{
+		UserID: "user-1",
+		Roles:  []string{"gateway"},
+	}, domaincopilot.GatewayAnalysisArtifactInput{
+		CapabilityID: "delivery_failure",
+		Title:        "Gateway delivery diagnosis",
+		Summary:      "Gateway persisted release failure evidence.",
+		SkillIDs:     []string{"k8s-sre", "delivery-tester"},
+		Scope:        domaincopilot.SessionScope{ClusterID: "cluster-a", Namespace: "prod", Workload: "api"},
+		Input:        map[string]any{"password": "secret", "applicationId": "app-1"},
+		Output:       map[string]any{"executionLogCount": 1},
+		Evidence: []domaincopilot.RootCauseEvidence{{
+			ID:        "evidence-1",
+			Kind:      "delivery.execution_logs",
+			Title:     "Execution logs",
+			Summary:   "One redacted log entry collected.",
+			Severity:  "warning",
+			ClusterID: "cluster-a",
+			Namespace: "prod",
+		}},
+		Recommendations:    []string{"Check deployment events."},
+		DataSourceSnapshot: map[string]any{"rawLogsPersisted": false},
+	})
+	if err != nil {
+		t.Fatalf("record gateway artifact: %v", err)
+	}
+	if run.Status != domaincopilot.AgentRunStatusCompleted || run.ProviderID != "internal" || run.CapabilityID != "delivery_failure" {
+		t.Fatalf("expected completed internal delivery_failure run, got %#v", run)
+	}
+	if repo.createdAgentRun.ID != run.ID || len(repo.createdAgentRun.AnalysisArtifacts) != 1 {
+		t.Fatalf("expected created agent run with artifact, got %#v", repo.createdAgentRun)
+	}
+	artifact := repo.createdAgentRun.AnalysisArtifacts[0]
+	if artifact.Kind != "delivery_failure" || artifact.RunID != run.ID || len(artifact.Evidence) != 1 {
+		t.Fatalf("unexpected persisted artifact: %#v", artifact)
+	}
+	if artifact.DataSourceSnapshot["artifactContract"] != "soha.analysisArtifact.v1" || artifact.DataSourceSnapshot["rawLogsPersisted"] != false {
+		t.Fatalf("expected artifact contract and no raw logs marker, got %#v", artifact.DataSourceSnapshot)
+	}
+	if repo.createdAgentRun.Input["password"] != "[REDACTED]" {
+		t.Fatalf("expected Gateway artifact input to be redacted, got %#v", repo.createdAgentRun.Input)
+	}
+}
+
+func TestQueueGatewayAnalysisAgentRunCreatesQueuedExternalRun(t *testing.T) {
+	service, repo := newInspectionAuthzTestService(map[string][]string{
+		"gateway": {
+			appaccess.PermObserveAIChatUse,
+			appaccess.PermDeliveryExecutionTasksView,
+			appaccess.PermDeliveryApplicationsView,
+			appaccess.PermDeliveryReleasesView,
+		},
+	})
+
+	run, err := service.QueueGatewayAnalysisAgentRun(context.Background(), domainidentity.Principal{
+		UserID: "user-1",
+		Roles:  []string{"gateway"},
+	}, domaincopilot.GatewayAnalysisAgentRunInput{
+		AgentProviderID: "hermes",
+		TimeoutSeconds:  900,
+		GatewayAnalysisArtifactInput: domaincopilot.GatewayAnalysisArtifactInput{
+			CapabilityID: "delivery_failure",
+			Title:        "Gateway delivery diagnosis",
+			Summary:      "Gateway queued release failure evidence.",
+			SkillIDs:     []string{"k8s-sre", "delivery-tester"},
+			Scope:        domaincopilot.SessionScope{ClusterID: "cluster-a", Namespace: "prod", Workload: "api"},
+			Input:        map[string]any{"apiKey": "secret", "applicationId": "app-1"},
+			Output:       map[string]any{"executionLogCount": 1},
+			Evidence: []domaincopilot.RootCauseEvidence{{
+				ID:        "evidence-1",
+				Kind:      "delivery.execution_logs",
+				Title:     "Execution logs",
+				Summary:   "One redacted log entry collected.",
+				Severity:  "warning",
+				ClusterID: "cluster-a",
+				Namespace: "prod",
+			}},
+			Recommendations:    []string{"Check deployment events."},
+			DataSourceSnapshot: map[string]any{"rawLogsPersisted": false},
+		},
+	})
+	if err != nil {
+		t.Fatalf("queue gateway agent run: %v", err)
+	}
+	if run.Status != domaincopilot.AgentRunStatusQueued || run.ProviderID != "hermes" || run.CapabilityID != "delivery_failure" {
+		t.Fatalf("expected queued hermes delivery_failure run, got %#v", run)
+	}
+	if repo.createdAgentRun.ID != run.ID || repo.createdAgentRun.TimeoutSeconds != 900 {
+		t.Fatalf("expected created queued agent run, got %#v", repo.createdAgentRun)
+	}
+	if repo.createdAgentRun.Input["apiKey"] != "[REDACTED]" {
+		t.Fatalf("expected Gateway queue input to be redacted, got %#v", repo.createdAgentRun.Input)
+	}
+	if repo.createdAgentRun.Input["evidence"] == nil || repo.createdAgentRun.Input["recommendations"] == nil {
+		t.Fatalf("expected queued run to carry structured evidence, got %#v", repo.createdAgentRun.Input)
+	}
+	snapshot := mapValue(repo.createdAgentRun.Input["dataSourceSnapshot"])
+	if snapshot["analysisRuntime"] != "agent_runtime_claim_callback" || snapshot["providerId"] != "hermes" || snapshot["rawLogsPersisted"] != false {
+		t.Fatalf("expected Agent Runtime snapshot, got %#v", snapshot)
+	}
+	if len(repo.createdAgentRun.ToolBindings) == 0 || len(repo.createdAgentRun.SkillBindings) == 0 {
+		t.Fatalf("expected tool and skill bindings for external delivery analysis, got tools=%#v skills=%#v", repo.createdAgentRun.ToolBindings, repo.createdAgentRun.SkillBindings)
+	}
+}
+
+func TestQueueGatewayAnalysisAgentRunDefaultsExternalProvider(t *testing.T) {
+	service, repo := newInspectionAuthzTestService(map[string][]string{
+		"gateway": {appaccess.PermObserveAIChatUse},
+	})
+
+	run, err := service.QueueGatewayAnalysisAgentRun(context.Background(), domainidentity.Principal{
+		UserID: "user-1",
+		Roles:  []string{"gateway"},
+	}, domaincopilot.GatewayAnalysisAgentRunInput{
+		GatewayAnalysisArtifactInput: domaincopilot.GatewayAnalysisArtifactInput{
+			CapabilityID: "delivery_failure",
+			Summary:      "Queue with default external provider.",
+			Input:        map[string]any{"applicationId": "app-1"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("queue gateway agent run with default provider: %v", err)
+	}
+	if run.ProviderID != "hermes" || repo.createdAgentRun.ProviderID != "hermes" || run.Status != domaincopilot.AgentRunStatusQueued {
+		t.Fatalf("expected default async external provider, got run=%#v created=%#v", run, repo.createdAgentRun)
 	}
 }
 
@@ -1656,6 +2413,15 @@ func graphHasNode(graph *domaincopilot.AnalysisGraph, nodeID string) bool {
 		}
 	}
 	return false
+}
+
+func floatNear(value any, expected float64) bool {
+	number, ok := positiveFloat(value)
+	if !ok {
+		return false
+	}
+	diff := number - expected
+	return diff < 0.000001 && diff > -0.000001
 }
 
 func graphHasEdge(graph *domaincopilot.AnalysisGraph, edgeID string) bool {

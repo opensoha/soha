@@ -40,17 +40,20 @@ type ToolCapability struct {
 }
 
 type ResourceCapability struct {
-	Name           string   `json:"name"`
-	Description    string   `json:"description"`
-	PermissionKeys []string `json:"permissionKeys"`
-	RequiredScopes []string `json:"requiredScopes,omitempty"`
+	Name           string         `json:"name"`
+	Description    string         `json:"description"`
+	PermissionKeys []string       `json:"permissionKeys"`
+	RequiredScopes []string       `json:"requiredScopes,omitempty"`
+	ContextSchema  map[string]any `json:"contextSchema,omitempty"`
 }
 
 type PromptCapability struct {
-	Name           string   `json:"name"`
-	Description    string   `json:"description"`
-	PermissionKeys []string `json:"permissionKeys"`
-	RequiredScopes []string `json:"requiredScopes,omitempty"`
+	Name           string         `json:"name"`
+	Description    string         `json:"description"`
+	PermissionKeys []string       `json:"permissionKeys"`
+	RequiredScopes []string       `json:"requiredScopes,omitempty"`
+	ArgumentSchema map[string]any `json:"argumentSchema,omitempty"`
+	ContextSchema  map[string]any `json:"contextSchema,omitempty"`
 }
 
 type SkillCapability struct {
@@ -126,6 +129,49 @@ type ToolInvocationResult struct {
 	Output           any            `json:"output,omitempty"`
 	RelatedIDs       map[string]any `json:"relatedIds,omitempty"`
 	Audit            map[string]any `json:"audit,omitempty"`
+}
+
+type ResourceReadRequest struct {
+	Name         string         `json:"name,omitempty"`
+	URI          string         `json:"uri,omitempty"`
+	Context      map[string]any `json:"context,omitempty"`
+	AIClientID   string         `json:"aiClientId,omitempty"`
+	AIClientName string         `json:"aiClientName,omitempty"`
+	SkillID      string         `json:"skillId,omitempty"`
+	RequestID    string         `json:"requestId,omitempty"`
+}
+
+type ResourceReadResult struct {
+	Name       string         `json:"name"`
+	URI        string         `json:"uri"`
+	MIMEType   string         `json:"mimeType"`
+	Text       string         `json:"text,omitempty"`
+	Data       any            `json:"data,omitempty"`
+	RelatedIDs map[string]any `json:"relatedIds,omitempty"`
+	Audit      map[string]any `json:"audit,omitempty"`
+}
+
+type PromptGetRequest struct {
+	Name         string         `json:"name"`
+	Arguments    map[string]any `json:"arguments,omitempty"`
+	Context      map[string]any `json:"context,omitempty"`
+	AIClientID   string         `json:"aiClientId,omitempty"`
+	AIClientName string         `json:"aiClientName,omitempty"`
+	SkillID      string         `json:"skillId,omitempty"`
+	RequestID    string         `json:"requestId,omitempty"`
+}
+
+type PromptMessage struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
+
+type PromptGetResult struct {
+	Name        string          `json:"name"`
+	Description string          `json:"description"`
+	Messages    []PromptMessage `json:"messages"`
+	RelatedIDs  map[string]any  `json:"relatedIds,omitempty"`
+	Audit       map[string]any  `json:"audit,omitempty"`
 }
 
 type AIClient struct {
@@ -215,6 +261,331 @@ type AccessPolicyFilter struct {
 	AIClientID      string
 	Effect          string
 	IncludeDisabled bool
+}
+
+type AuditLogFilter struct {
+	ActorType         string
+	ActorID           string
+	AIClientID        string
+	SkillID           string
+	ToolName          string
+	ApprovalRequestID string
+	RiskLevel         RiskLevel
+	Result            string
+	Action            string
+	From              *time.Time
+	To                *time.Time
+	Limit             int
+}
+
+type ApprovalRequest struct {
+	ID                string         `json:"id"`
+	Status            string         `json:"status"`
+	Strategy          string         `json:"strategy"`
+	PolicyID          string         `json:"policyId,omitempty"`
+	ApprovalPolicyRef string         `json:"approvalPolicyRef,omitempty"`
+	ActorType         string         `json:"actorType"`
+	ActorID           string         `json:"actorId"`
+	ActorName         string         `json:"actorName,omitempty"`
+	ActorRoles        []string       `json:"actorRoles,omitempty"`
+	ActorTeams        []string       `json:"actorTeams,omitempty"`
+	AIClientID        string         `json:"aiClientId,omitempty"`
+	AIClientName      string         `json:"aiClientName,omitempty"`
+	SkillID           string         `json:"skillId,omitempty"`
+	ToolName          string         `json:"toolName"`
+	RiskLevel         RiskLevel      `json:"riskLevel"`
+	RequiresApproval  bool           `json:"requiresApproval"`
+	ResourceScope     map[string]any `json:"resourceScope,omitempty"`
+	ToolInput         map[string]any `json:"toolInput,omitempty"`
+	RelatedIDs        map[string]any `json:"relatedIds,omitempty"`
+	ApprovalTrace     *ApprovalTrace `json:"approvalTrace,omitempty"`
+	Output            any            `json:"output,omitempty"`
+	Summary           string         `json:"summary"`
+	RequestID         string         `json:"requestId,omitempty"`
+	SourceIP          string         `json:"sourceIp,omitempty"`
+	DecidedBy         string         `json:"decidedBy,omitempty"`
+	DecidedByName     string         `json:"decidedByName,omitempty"`
+	DecidedAt         *time.Time     `json:"decidedAt,omitempty"`
+	DecisionComment   string         `json:"decisionComment,omitempty"`
+	ExpiresAt         *time.Time     `json:"expiresAt,omitempty"`
+	CreatedAt         time.Time      `json:"createdAt"`
+	UpdatedAt         time.Time      `json:"updatedAt"`
+}
+
+type ApprovalRequestFilter struct {
+	ID            string
+	Status        string
+	ActorType     string
+	ActorID       string
+	AIClientID    string
+	SkillID       string
+	ToolName      string
+	RiskLevel     RiskLevel
+	Strategy      string
+	From          *time.Time
+	To            *time.Time
+	ExpiresBefore *time.Time
+	Limit         int
+}
+
+type ApprovalRequestUpdate struct {
+	ExpectedStatus  string
+	Status          string
+	Summary         string
+	RelatedIDs      map[string]any
+	Output          any
+	DecidedBy       string
+	DecidedByName   string
+	DecidedAt       *time.Time
+	DecisionComment string
+	UpdatedAt       time.Time
+}
+
+type ApprovalDecisionInput struct {
+	Comment string `json:"comment,omitempty"`
+}
+
+type ApprovalDecisionResult struct {
+	Request    ApprovalRequest       `json:"request"`
+	Invocation *ToolInvocationResult `json:"invocation,omitempty"`
+}
+
+type ApprovalTrace struct {
+	ApprovalMode           string                  `json:"approvalMode,omitempty"`
+	CurrentStageIndex      *int                    `json:"currentStageIndex,omitempty"`
+	CurrentStageName       string                  `json:"currentStageName,omitempty"`
+	StageCount             int                     `json:"stageCount,omitempty"`
+	ApprovedCount          int                     `json:"approvedCount,omitempty"`
+	RequiredApprovals      int                     `json:"requiredApprovals,omitempty"`
+	PendingRequirements    []string                `json:"pendingRequirements,omitempty"`
+	SatisfiedRequirements  []string                `json:"satisfiedRequirements,omitempty"`
+	RoleApprovedCounts     map[string]int          `json:"roleApprovedCounts,omitempty"`
+	TeamApprovedCounts     map[string]int          `json:"teamApprovedCounts,omitempty"`
+	CandidateUserIDs       []string                `json:"candidateUserIds,omitempty"`
+	CandidateRoles         []string                `json:"candidateRoles,omitempty"`
+	CandidateTeams         []string                `json:"candidateTeams,omitempty"`
+	OnCallCandidateUserIDs []string                `json:"onCallCandidateUserIds,omitempty"`
+	WorkflowRunID          string                  `json:"workflowRunId,omitempty"`
+	ExecutionTaskID        string                  `json:"executionTaskId,omitempty"`
+	ReleaseBundleID        string                  `json:"releaseBundleId,omitempty"`
+	Decisions              []ApprovalDecisionTrace `json:"decisions,omitempty"`
+	StageHistory           []ApprovalStageTrace    `json:"stageHistory,omitempty"`
+}
+
+type ApprovalDecisionTrace struct {
+	UserID     string     `json:"userId,omitempty"`
+	UserName   string     `json:"userName,omitempty"`
+	Roles      []string   `json:"roles,omitempty"`
+	Teams      []string   `json:"teams,omitempty"`
+	Result     string     `json:"result,omitempty"`
+	Comment    string     `json:"comment,omitempty"`
+	StageIndex *int       `json:"stageIndex,omitempty"`
+	StageName  string     `json:"stageName,omitempty"`
+	DecidedAt  *time.Time `json:"decidedAt,omitempty"`
+}
+
+type ApprovalStageTrace struct {
+	StageIndex  *int       `json:"stageIndex,omitempty"`
+	StageName   string     `json:"stageName,omitempty"`
+	Result      string     `json:"result,omitempty"`
+	CompletedAt *time.Time `json:"completedAt,omitempty"`
+}
+
+type ApprovalTimelineEvent struct {
+	ID         string         `json:"id"`
+	Kind       string         `json:"kind"`
+	Action     string         `json:"action"`
+	Result     string         `json:"result"`
+	Summary    string         `json:"summary,omitempty"`
+	ActorType  string         `json:"actorType,omitempty"`
+	ActorID    string         `json:"actorId,omitempty"`
+	ActorName  string         `json:"actorName,omitempty"`
+	StageIndex *int           `json:"stageIndex,omitempty"`
+	StageName  string         `json:"stageName,omitempty"`
+	Metadata   map[string]any `json:"metadata,omitempty"`
+	CreatedAt  time.Time      `json:"createdAt"`
+}
+
+type ApprovalTimeline struct {
+	Request ApprovalRequest         `json:"request"`
+	Trace   *ApprovalTrace          `json:"trace,omitempty"`
+	Events  []ApprovalTimelineEvent `json:"events,omitempty"`
+}
+
+type GovernanceStatusRequest struct {
+	WindowHours int `json:"windowHours,omitempty"`
+}
+
+type GovernanceStatus struct {
+	GeneratedAt           time.Time                        `json:"generatedAt"`
+	WindowHours           int                              `json:"windowHours"`
+	Health                GovernanceHealth                 `json:"health"`
+	Metrics               GovernanceMetrics                `json:"metrics"`
+	Tokens                GovernanceTokenSummary           `json:"tokens"`
+	Clients               GovernanceClientSummary          `json:"clients"`
+	Approvals             GovernanceApprovalSummary        `json:"approvals"`
+	PolicyCoverage        GovernancePolicyCoverage         `json:"policyCoverage"`
+	Redaction             GovernanceRedactionSummary       `json:"redaction"`
+	Anomalies             []GovernanceFinding              `json:"anomalies,omitempty"`
+	Recommendations       []string                         `json:"recommendations,omitempty"`
+	RecommendationActions []GovernanceRecommendationAction `json:"recommendationActions,omitempty"`
+	Metadata              map[string]any                   `json:"metadata,omitempty"`
+}
+
+type GovernanceHealth struct {
+	Status  string                  `json:"status"`
+	Message string                  `json:"message"`
+	Checks  []GovernanceHealthCheck `json:"checks,omitempty"`
+}
+
+type GovernanceHealthCheck struct {
+	Name    string `json:"name"`
+	Status  string `json:"status"`
+	Message string `json:"message"`
+	Count   int    `json:"count,omitempty"`
+}
+
+type GovernanceMetrics struct {
+	TotalCalls            int                     `json:"totalCalls"`
+	SuccessCount          int                     `json:"successCount"`
+	DenyCount             int                     `json:"denyCount"`
+	FailureCount          int                     `json:"failureCount"`
+	PendingApprovalCount  int                     `json:"pendingApprovalCount"`
+	DryRunCount           int                     `json:"dryRunCount"`
+	RiskCounts            map[RiskLevel]int       `json:"riskCounts,omitempty"`
+	TopTools              []GovernanceMetricCount `json:"topTools,omitempty"`
+	TopAIClients          []GovernanceMetricCount `json:"topAiClients,omitempty"`
+	TopActors             []GovernanceMetricCount `json:"topActors,omitempty"`
+	RecentResultBreakdown map[string]int          `json:"recentResultBreakdown,omitempty"`
+	RecentActionBreakdown map[string]int          `json:"recentActionBreakdown,omitempty"`
+}
+
+type GovernanceMetricCount struct {
+	Key   string `json:"key"`
+	Count int    `json:"count"`
+}
+
+type GovernanceRedactionSummary struct {
+	TotalMatches            int                     `json:"totalMatches"`
+	AuditsWithRedaction     int                     `json:"auditsWithRedaction"`
+	InputAudits             int                     `json:"inputAudits"`
+	OutputAudits            int                     `json:"outputAudits"`
+	FieldMatches            int                     `json:"fieldMatches"`
+	SensitiveKeyMatches     int                     `json:"sensitiveKeyMatches"`
+	SensitiveTextMatches    int                     `json:"sensitiveTextMatches"`
+	ValuePatternMatches     int                     `json:"valuePatternMatches"`
+	SecretClassifierMatches int                     `json:"secretClassifierMatches"`
+	StructuredSecretMatches int                     `json:"structuredSecretMatches"`
+	TopTargets              []GovernanceMetricCount `json:"topTargets,omitempty"`
+	TopFieldPaths           []GovernanceMetricCount `json:"topFieldPaths,omitempty"`
+	TopMatchTypes           []GovernanceMetricCount `json:"topMatchTypes,omitempty"`
+	TopClassifiers          []GovernanceMetricCount `json:"topClassifiers,omitempty"`
+	TopPolicies             []GovernanceMetricCount `json:"topPolicies,omitempty"`
+	TopTools                []GovernanceMetricCount `json:"topTools,omitempty"`
+}
+
+type GovernanceTokenSummary struct {
+	PersonalAccessTokens  GovernanceTokenCounts    `json:"personalAccessTokens"`
+	ServiceAccountTokens  GovernanceTokenCounts    `json:"serviceAccountTokens"`
+	ExpiringSoon          []GovernanceTokenFinding `json:"expiringSoon,omitempty"`
+	ExpiredActive         []GovernanceTokenFinding `json:"expiredActive,omitempty"`
+	Stale                 []GovernanceTokenFinding `json:"stale,omitempty"`
+	NeverUsed             []GovernanceTokenFinding `json:"neverUsed,omitempty"`
+	LastUsedTrackingState string                   `json:"lastUsedTrackingState"`
+}
+
+type GovernanceTokenCounts struct {
+	Total        int `json:"total"`
+	Active       int `json:"active"`
+	Revoked      int `json:"revoked"`
+	Expired      int `json:"expired"`
+	ExpiringSoon int `json:"expiringSoon"`
+	Stale        int `json:"stale"`
+	NeverUsed    int `json:"neverUsed"`
+}
+
+type GovernanceTokenFinding struct {
+	Kind         string     `json:"kind"`
+	ID           string     `json:"id"`
+	Name         string     `json:"name"`
+	OwnerID      string     `json:"ownerId,omitempty"`
+	TokenPrefix  string     `json:"tokenPrefix"`
+	Severity     string     `json:"severity"`
+	Message      string     `json:"message"`
+	ExpiresAt    *time.Time `json:"expiresAt,omitempty"`
+	LastUsedAt   *time.Time `json:"lastUsedAt,omitempty"`
+	DaysUntilDue int        `json:"daysUntilDue,omitempty"`
+	StaleDays    int        `json:"staleDays,omitempty"`
+}
+
+type GovernanceClientSummary struct {
+	Total                    int      `json:"total"`
+	Active                   int      `json:"active"`
+	Disabled                 int      `json:"disabled"`
+	PendingApproval          int      `json:"pendingApproval"`
+	RegistrationApproval     string   `json:"registrationApproval"`
+	PendingApprovalClientIDs []string `json:"pendingApprovalClientIds,omitempty"`
+}
+
+type GovernanceApprovalSummary struct {
+	Pending                int        `json:"pending"`
+	DueSoon                int        `json:"dueSoon"`
+	StalePending           int        `json:"stalePending"`
+	Overdue                int        `json:"overdue"`
+	OldestPendingHours     int        `json:"oldestPendingHours,omitempty"`
+	OldestPendingRequestID string     `json:"oldestPendingRequestId,omitempty"`
+	NextDueAt              *time.Time `json:"nextDueAt,omitempty"`
+	NextDueRequestID       string     `json:"nextDueRequestId,omitempty"`
+	DueSoonRequestIDs      []string   `json:"dueSoonRequestIds,omitempty"`
+	StalePendingRequestIDs []string   `json:"stalePendingRequestIds,omitempty"`
+	OverdueRequestIDs      []string   `json:"overdueRequestIds,omitempty"`
+}
+
+type GovernancePolicyCoverage struct {
+	AccessPolicies               int    `json:"accessPolicies"`
+	ToolGrants                   int    `json:"toolGrants"`
+	SkillBindings                int    `json:"skillBindings"`
+	ActiveAccessPolicies         int    `json:"activeAccessPolicies"`
+	ActiveToolGrants             int    `json:"activeToolGrants"`
+	ActiveSkillBindings          int    `json:"activeSkillBindings"`
+	BudgetPolicies               int    `json:"budgetPolicies"`
+	RateLimitPolicies            int    `json:"rateLimitPolicies"`
+	RedactionPolicies            int    `json:"redactionPolicies"`
+	ResourceScopedAccessPolicies int    `json:"resourceScopedAccessPolicies"`
+	ResourceScopedToolGrants     int    `json:"resourceScopedToolGrants"`
+	BudgetState                  string `json:"budgetState"`
+	RateLimitState               string `json:"rateLimitState"`
+	RedactionPolicyState         string `json:"redactionPolicyState"`
+	ResourceScopeState           string `json:"resourceScopeState"`
+}
+
+type GovernanceFinding struct {
+	Type              string    `json:"type"`
+	Severity          string    `json:"severity"`
+	Summary           string    `json:"summary"`
+	Count             int       `json:"count,omitempty"`
+	ActorType         string    `json:"actorType,omitempty"`
+	ActorID           string    `json:"actorId,omitempty"`
+	SubjectType       string    `json:"subjectType,omitempty"`
+	SubjectID         string    `json:"subjectId,omitempty"`
+	AIClientID        string    `json:"aiClientId,omitempty"`
+	PolicyID          string    `json:"policyId,omitempty"`
+	ApprovalRequestID string    `json:"approvalRequestId,omitempty"`
+	GrantID           string    `json:"grantId,omitempty"`
+	ToolName          string    `json:"toolName,omitempty"`
+	RiskLevel         RiskLevel `json:"riskLevel,omitempty"`
+}
+
+type GovernanceRecommendationAction struct {
+	Type       string         `json:"type"`
+	Severity   string         `json:"severity"`
+	Summary    string         `json:"summary"`
+	Action     string         `json:"action"`
+	TargetKind string         `json:"targetKind,omitempty"`
+	TargetID   string         `json:"targetId,omitempty"`
+	Refs       []string       `json:"refs,omitempty"`
+	Count      int            `json:"count,omitempty"`
+	Metadata   map[string]any `json:"metadata,omitempty"`
 }
 
 type AccessPolicyInput struct {
@@ -370,6 +741,42 @@ type AuditLog struct {
 	SourceIP      string         `json:"sourceIp,omitempty"`
 	Metadata      map[string]any `json:"metadata,omitempty"`
 	CreatedAt     time.Time      `json:"createdAt"`
+}
+
+type RateLimitCounter struct {
+	Key         string         `json:"key"`
+	PolicyID    string         `json:"policyId"`
+	Scope       string         `json:"scope"`
+	ActorType   string         `json:"actorType,omitempty"`
+	ActorID     string         `json:"actorId,omitempty"`
+	AIClientID  string         `json:"aiClientId,omitempty"`
+	ToolName    string         `json:"toolName,omitempty"`
+	WindowStart time.Time      `json:"windowStart"`
+	WindowEnd   time.Time      `json:"windowEnd"`
+	Limit       int            `json:"limit"`
+	Count       int            `json:"count"`
+	Metadata    map[string]any `json:"metadata,omitempty"`
+	CreatedAt   time.Time      `json:"createdAt"`
+	UpdatedAt   time.Time      `json:"updatedAt"`
+}
+
+type RateLimitState struct {
+	Key             string         `json:"key"`
+	PolicyID        string         `json:"policyId"`
+	Scope           string         `json:"scope"`
+	ActorType       string         `json:"actorType,omitempty"`
+	ActorID         string         `json:"actorId,omitempty"`
+	AIClientID      string         `json:"aiClientId,omitempty"`
+	ToolName        string         `json:"toolName,omitempty"`
+	Limit           int            `json:"limit"`
+	Burst           int            `json:"burst"`
+	IntervalSeconds float64        `json:"intervalSeconds"`
+	TAT             time.Time      `json:"tat"`
+	Allowed         bool           `json:"allowed"`
+	RetryAfter      time.Duration  `json:"retryAfter,omitempty"`
+	Metadata        map[string]any `json:"metadata,omitempty"`
+	CreatedAt       time.Time      `json:"createdAt"`
+	UpdatedAt       time.Time      `json:"updatedAt"`
 }
 
 func HashToken(token string) string {

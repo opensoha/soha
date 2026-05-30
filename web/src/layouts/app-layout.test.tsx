@@ -306,6 +306,7 @@ describe('app layout workspace navigation', () => {
         'workspace.resource.view',
         'observe.ai.view',
         'observe.ai.chat',
+        'ai.gateway.view',
         'observe.monitoring.view',
         'overview.view',
         'system.menus.view',
@@ -316,6 +317,7 @@ describe('app layout workspace navigation', () => {
         'ai-workbench-chat',
         'ai-workbench-inspection',
         'ai-workbench-model-settings',
+        'ai-workbench-gateway',
         'monitoring-workbench',
         'monitoring-workbench-overview',
         'system',
@@ -327,6 +329,7 @@ describe('app layout workspace navigation', () => {
         { id: 'ai-workbench-chat', parentId: 'ai-workbench', path: '/ai-workbench/chat', labelZh: '通用聊天', labelEn: 'Chat', iconKey: 'bot', section: 'ops', sortOrder: 16, enabled: true },
         { id: 'ai-workbench-inspection', parentId: 'ai-workbench', path: '/ai-workbench/inspection', labelZh: '巡检', labelEn: 'Inspection', iconKey: 'bot', section: 'ops', sortOrder: 19, enabled: true },
         { id: 'ai-workbench-model-settings', parentId: 'ai-workbench', path: '/ai-workbench/model-settings', labelZh: '模型设置', labelEn: 'Model Settings', iconKey: 'bot', section: 'ops', sortOrder: 20, enabled: true },
+        { id: 'ai-workbench-gateway', parentId: 'ai-workbench', path: '/ai-workbench/gateway', labelZh: 'AI Gateway', labelEn: 'AI Gateway', iconKey: 'shield', section: 'ops', sortOrder: 21, enabled: true },
         { id: 'monitoring-workbench', path: '/monitoring-workbench', labelZh: '监控工作台', labelEn: 'Monitoring Workbench', iconKey: 'gauge', section: 'ops', sortOrder: 60, enabled: true },
         { id: 'monitoring-workbench-overview', parentId: 'monitoring-workbench', path: '/monitoring-workbench/overview', labelZh: '总览', labelEn: 'Overview', iconKey: 'gauge', section: 'ops', sortOrder: 61, enabled: true },
         { id: 'system', path: '/system', labelZh: '系统管理', labelEn: 'System', iconKey: 'panels-top-left', section: 'admin', sortOrder: 99, enabled: true },
@@ -339,6 +342,7 @@ describe('app layout workspace navigation', () => {
     expect(container.querySelector('.soha-nav-system')).toBeNull()
     expect(container.textContent).toContain('通用聊天')
     expect(container.textContent).toContain('巡检')
+    expect(container.textContent).toContain('AI Gateway')
     expect(container.textContent).not.toContain('监控工作台')
     expect(container.textContent).not.toContain('系统管理')
   })

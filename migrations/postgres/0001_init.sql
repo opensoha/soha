@@ -1144,6 +1144,7 @@ CREATE TABLE IF NOT EXISTS workflow_approvals (
     comment TEXT,
     actor_id TEXT NOT NULL,
     actor_name TEXT,
+    metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 

@@ -786,6 +786,68 @@ describe("access route authorization", () => {
     );
   });
 
+  it("requires resource workspace, AI Gateway view permission, and menu binding", () => {
+    const route = getRoute("ai-workbench-gateway");
+    const allowedSnapshot = buildSnapshot({
+      permissionKeys: ["workspace.resource.view", "ai.gateway.view"],
+      visibleMenuIds: ["ai-workbench-gateway"],
+      visibleMenus: [
+        {
+          id: "ai-workbench-gateway",
+          parentId: "ai-workbench",
+          path: "/ai-workbench/gateway",
+        },
+      ],
+    });
+
+    expect(getRouteWorkspace(route)).toBe("resource");
+    expect(getRouteWorkbenchId(route)).toBe("ai");
+    expect(getRouteScopeMode(route)).toBe("passive");
+    expect(canAccessRoute(route, allowedSnapshot)).toBe(true);
+    expect(
+      canAccessRoute(
+        route,
+        buildSnapshot({
+          permissionKeys: ["ai.gateway.view"],
+          visibleMenuIds: ["ai-workbench-gateway"],
+          visibleMenus: [
+            {
+              id: "ai-workbench-gateway",
+              parentId: "ai-workbench",
+              path: "/ai-workbench/gateway",
+            },
+          ],
+        }),
+      ),
+    ).toBe(false);
+    expect(
+      canAccessRoute(
+        route,
+        buildSnapshot({
+          permissionKeys: ["workspace.resource.view"],
+          visibleMenuIds: ["ai-workbench-gateway"],
+          visibleMenus: [
+            {
+              id: "ai-workbench-gateway",
+              parentId: "ai-workbench",
+              path: "/ai-workbench/gateway",
+            },
+          ],
+        }),
+      ),
+    ).toBe(false);
+    expect(
+      canAccessRoute(
+        route,
+        buildSnapshot({
+          permissionKeys: ["workspace.resource.view", "ai.gateway.view"],
+          visibleMenuIds: [],
+          visibleMenus: [],
+        }),
+      ),
+    ).toBe(false);
+  });
+
   it("requires virtualization workspace permission, route permission, and menu binding", () => {
     const route = getRoute("virtualization-workbench-vms");
     const allowedSnapshot = buildSnapshot({

@@ -155,6 +155,9 @@ export const consolePermissionGroups: PermissionCatalogGroup[] = [
       { value: "observe.ai.root-cause.run", label: "运行根因分析" },
       { value: "observe.ai.inspection.manage", label: "管理巡检任务" },
       { value: "observe.ai.inspection.run", label: "运行巡检任务" },
+      { value: "ai.gateway.view", label: "查看 AI Gateway" },
+      { value: "ai.gateway.invoke", label: "调用 AI Gateway 工具" },
+      { value: "ai.gateway.manage", label: "管理 AI Gateway" },
     ],
   },
   {

@@ -34,6 +34,15 @@ const (
 	workflowStatusWaitingApproval = "waiting_approval"
 )
 
+var gatewayApprovalWorkflowMetadataKeys = []string{
+	"aiGatewayApprovalRequestId",
+	"aiGatewayApprovalPolicyRef",
+	"aiGatewayPolicyId",
+	"aiGatewayToolName",
+	"aiGatewaySkillId",
+	"aiGatewayAIClientId",
+}
+
 type Repository interface {
 	List(context.Context, string, int) ([]domainworkflow.Run, error)
 	Get(context.Context, string) (domainworkflow.Run, error)
@@ -356,6 +365,11 @@ func (s *Service) Trigger(ctx context.Context, principal domainidentity.Principa
 	}
 	steps = append(steps, domainworkflow.Step{Name: "verify", Status: "pending", Summary: "post-release verification is waiting"})
 	now := time.Now().UTC().Format(time.RFC3339)
+	metadata := withGatewayApprovalWorkflowMetadata(map[string]any{
+		"applicationName": app.Name,
+		"triggerBuild":    input.TriggerBuild,
+		"triggerRelease":  input.TriggerRelease,
+	}, input)
 	item := domainworkflow.Run{
 		ID:             "workflow:" + uuid.NewString(),
 		ApplicationID:  input.ApplicationID,
@@ -365,13 +379,9 @@ func (s *Service) Trigger(ctx context.Context, principal domainidentity.Principa
 		DeploymentName: strings.TrimSpace(input.DeploymentName),
 		Status:         "running",
 		Steps:          steps,
-		Metadata: map[string]any{
-			"applicationName": app.Name,
-			"triggerBuild":    input.TriggerBuild,
-			"triggerRelease":  input.TriggerRelease,
-		},
-		CreatedAt: now,
-		UpdatedAt: now,
+		Metadata:       metadata,
+		CreatedAt:      now,
+		UpdatedAt:      now,
 	}
 	if item.WorkflowName == "" {
 		item.WorkflowName = "build-release-verify"
@@ -400,6 +410,49 @@ func (s *Service) TriggerValidation(ctx context.Context, principal domainidentit
 		return domainworkflow.Run{}, err
 	}
 	run, binding, definition, err := s.prepareValidationDAGRun(ctx, app, input)
+	if err != nil {
+		return domainworkflow.Run{}, err
+	}
+	created, err := s.repo.Create(ctx, run)
+	if err != nil {
+		return domainworkflow.Run{}, err
+	}
+	if err := s.enqueueDAGRun(ctx, dagRunTask{
+		principal:   principal,
+		app:         app,
+		input:       input,
+		binding:     *binding,
+		definition:  definition,
+		run:         created,
+		requestMeta: requestctx.FromContext(ctx),
+	}); err != nil {
+		return s.failRun(context.Background(), created, definition, fmt.Sprintf("workflow runner enqueue failed: %v", err)), nil
+	}
+	return created, nil
+}
+
+func (s *Service) TriggerRollback(ctx context.Context, principal domainidentity.Principal, input domainworkflow.Input) (domainworkflow.Run, error) {
+	if err := s.authorizePermission(ctx, principal, appaccess.PermDeliveryWorkflowsTrigger); err != nil {
+		return domainworkflow.Run{}, err
+	}
+	if strings.TrimSpace(input.ApplicationID) == "" {
+		return domainworkflow.Run{}, fmt.Errorf("%w: applicationId is required", apperrors.ErrInvalidArgument)
+	}
+	input.RollbackOnly = true
+	input.TriggerBuild = false
+	input.TriggerRelease = false
+	input.ValidationOnly = false
+	app, err := s.apps.Get(ctx, input.ApplicationID)
+	if err != nil {
+		if isApplicationMissing(err) {
+			return domainworkflow.Run{}, fmt.Errorf("%w: %v", apperrors.ErrNotFound, err)
+		}
+		return domainworkflow.Run{}, err
+	}
+	if err := s.authorize(ctx, principal, domainaccess.ActionTrigger, app, input.ApplicationID); err != nil {
+		return domainworkflow.Run{}, err
+	}
+	run, binding, definition, err := s.prepareRollbackDAGRun(ctx, app, input)
 	if err != nil {
 		return domainworkflow.Run{}, err
 	}
@@ -459,6 +512,7 @@ func (s *Service) ExecuteSystemDAG(ctx context.Context, principal domainidentity
 	for key, value := range extraMetadata {
 		runMetadata[key] = value
 	}
+	runMetadata = withGatewayApprovalWorkflowMetadata(runMetadata, input)
 	run := domainworkflow.Run{
 		ID:             "workflow:" + uuid.NewString(),
 		ApplicationID:  applicationID,
@@ -550,6 +604,7 @@ func (s *Service) resolveApproval(ctx context.Context, principal domainidentity.
 		Comment:       strings.TrimSpace(comment),
 		ActorID:       principal.UserID,
 		ActorName:     principal.UserName,
+		Metadata:      workflowApprovalGatewayMetadata(run, pendingNodeID),
 		CreatedAt:     time.Now().UTC(),
 	}
 	if err := s.repo.CreateApproval(ctx, approval); err != nil {
@@ -673,6 +728,19 @@ func (s *Service) prepareBoundDAGRun(ctx context.Context, app domainapp.App, inp
 		workflowName = "release-dag"
 	}
 
+	runMetadata := withGatewayApprovalWorkflowMetadata(map[string]any{
+		"applicationName":      app.Name,
+		"triggerBuild":         input.TriggerBuild,
+		"triggerRelease":       input.TriggerRelease,
+		"mode":                 "release_dag",
+		"schemaVersion":        definition.SchemaVersion,
+		"workflowTemplateId":   binding.WorkflowTemplateID,
+		"workflowTemplateKey":  binding.WorkflowTemplate.Key,
+		"workflowTemplateName": binding.WorkflowTemplate.Name,
+		"bindingId":            binding.ID,
+		"nodes":                definition.Nodes,
+		"edges":                definition.Edges,
+	}, input)
 	run := domainworkflow.Run{
 		ID:             "workflow:" + uuid.NewString(),
 		ApplicationID:  input.ApplicationID,
@@ -683,21 +751,9 @@ func (s *Service) prepareBoundDAGRun(ctx context.Context, app domainapp.App, inp
 		Status:         "queued",
 		Steps:          buildStepsFromNodeRuns(definition, nodeRuns),
 		NodeRuns:       mapNodeRunsToSlice(definition, nodeRuns),
-		Metadata: map[string]any{
-			"applicationName":      app.Name,
-			"triggerBuild":         input.TriggerBuild,
-			"triggerRelease":       input.TriggerRelease,
-			"mode":                 "release_dag",
-			"schemaVersion":        definition.SchemaVersion,
-			"workflowTemplateId":   binding.WorkflowTemplateID,
-			"workflowTemplateKey":  binding.WorkflowTemplate.Key,
-			"workflowTemplateName": binding.WorkflowTemplate.Name,
-			"bindingId":            binding.ID,
-			"nodes":                definition.Nodes,
-			"edges":                definition.Edges,
-		},
-		CreatedAt: now,
-		UpdatedAt: now,
+		Metadata:       runMetadata,
+		CreatedAt:      now,
+		UpdatedAt:      now,
 	}
 	run.Metadata = withNodeRunsMetadata(run.Metadata, definition, nodeRuns)
 	return run, binding, definition, true, nil
@@ -732,6 +788,22 @@ func (s *Service) prepareValidationDAGRun(ctx context.Context, app domainapp.App
 		workflowName = workflowName + "-validation"
 	}
 
+	runMetadata := withGatewayApprovalWorkflowMetadata(map[string]any{
+		"applicationName":      app.Name,
+		"triggerBuild":         false,
+		"triggerRelease":       false,
+		"mode":                 "release_dag",
+		"runMode":              "validation",
+		"schemaVersion":        definition.SchemaVersion,
+		"workflowTemplateId":   binding.WorkflowTemplateID,
+		"workflowTemplateKey":  binding.WorkflowTemplate.Key,
+		"workflowTemplateName": binding.WorkflowTemplate.Name,
+		"bindingId":            binding.ID,
+		"nodes":                definition.Nodes,
+		"edges":                definition.Edges,
+		"sourceNodeCount":      len(sourceDefinition.Nodes),
+		"sourceEdgeCount":      len(sourceDefinition.Edges),
+	}, input)
 	run := domainworkflow.Run{
 		ID:             "workflow:" + uuid.NewString(),
 		ApplicationID:  input.ApplicationID,
@@ -742,24 +814,76 @@ func (s *Service) prepareValidationDAGRun(ctx context.Context, app domainapp.App
 		Status:         "queued",
 		Steps:          buildStepsFromNodeRuns(definition, nodeRuns),
 		NodeRuns:       mapNodeRunsToSlice(definition, nodeRuns),
-		Metadata: map[string]any{
-			"applicationName":      app.Name,
-			"triggerBuild":         false,
-			"triggerRelease":       false,
-			"mode":                 "release_dag",
-			"runMode":              "validation",
-			"schemaVersion":        definition.SchemaVersion,
-			"workflowTemplateId":   binding.WorkflowTemplateID,
-			"workflowTemplateKey":  binding.WorkflowTemplate.Key,
-			"workflowTemplateName": binding.WorkflowTemplate.Name,
-			"bindingId":            binding.ID,
-			"nodes":                definition.Nodes,
-			"edges":                definition.Edges,
-			"sourceNodeCount":      len(sourceDefinition.Nodes),
-			"sourceEdgeCount":      len(sourceDefinition.Edges),
-		},
-		CreatedAt: now,
-		UpdatedAt: now,
+		Metadata:       runMetadata,
+		CreatedAt:      now,
+		UpdatedAt:      now,
+	}
+	run.Metadata = withNodeRunsMetadata(run.Metadata, definition, nodeRuns)
+	return run, binding, definition, nil
+}
+
+func (s *Service) prepareRollbackDAGRun(ctx context.Context, app domainapp.App, input domainworkflow.Input) (domainworkflow.Run, *domaincatalog.ApplicationEnvironment, dagWorkflowDefinition, error) {
+	binding, err := s.findApplicationEnvironmentBinding(ctx, input)
+	if err != nil {
+		return domainworkflow.Run{}, nil, dagWorkflowDefinition{}, err
+	}
+	if binding == nil {
+		return domainworkflow.Run{}, nil, dagWorkflowDefinition{}, fmt.Errorf("%w: application environment binding is missing", apperrors.ErrInvalidArgument)
+	}
+	if binding.WorkflowTemplate == nil || len(binding.WorkflowTemplate.Definition) == 0 {
+		return domainworkflow.Run{}, nil, dagWorkflowDefinition{}, fmt.Errorf("%w: workflow template is required", apperrors.ErrInvalidArgument)
+	}
+	sourceDefinition, ok := parseDAGWorkflowDefinition(binding.WorkflowTemplate.Definition)
+	if !ok {
+		return domainworkflow.Run{}, nil, dagWorkflowDefinition{}, fmt.Errorf("%w: workflow definition is not a supported DAG", apperrors.ErrInvalidArgument)
+	}
+	definition := rollbackOnlyDAGDefinition(sourceDefinition)
+	if len(definition.Nodes) == 0 {
+		return domainworkflow.Run{}, nil, dagWorkflowDefinition{}, fmt.Errorf("%w: workflow template has no rollback nodes", apperrors.ErrInvalidArgument)
+	}
+	nodeRuns := initializeNodeRuns(definition)
+	now := time.Now().UTC().Format(time.RFC3339)
+	workflowName := strings.TrimSpace(input.WorkflowName)
+	if workflowName == "" {
+		workflowName = firstNonEmpty(strings.TrimSpace(binding.WorkflowTemplate.Key), strings.TrimSpace(binding.WorkflowTemplate.Name), "rollback")
+	}
+	if !strings.Contains(strings.ToLower(workflowName), "rollback") {
+		workflowName = workflowName + "-rollback"
+	}
+
+	runMetadata := withGatewayApprovalWorkflowMetadata(map[string]any{
+		"applicationName":      app.Name,
+		"triggerBuild":         false,
+		"triggerRelease":       false,
+		"rollbackOnly":         true,
+		"mode":                 "release_dag",
+		"runMode":              "rollback",
+		"schemaVersion":        definition.SchemaVersion,
+		"workflowTemplateId":   binding.WorkflowTemplateID,
+		"workflowTemplateKey":  binding.WorkflowTemplate.Key,
+		"workflowTemplateName": binding.WorkflowTemplate.Name,
+		"bindingId":            binding.ID,
+		"nodes":                definition.Nodes,
+		"edges":                definition.Edges,
+		"sourceNodeCount":      len(sourceDefinition.Nodes),
+		"sourceEdgeCount":      len(sourceDefinition.Edges),
+	}, input)
+	if releaseBundleID := workflowMetadataString(input.Variables, "releaseBundleId"); releaseBundleID != "" {
+		runMetadata["releaseBundleId"] = releaseBundleID
+	}
+	run := domainworkflow.Run{
+		ID:             "workflow:" + uuid.NewString(),
+		ApplicationID:  input.ApplicationID,
+		WorkflowName:   workflowName,
+		ClusterID:      strings.TrimSpace(input.ClusterID),
+		Namespace:      strings.TrimSpace(input.Namespace),
+		DeploymentName: strings.TrimSpace(input.DeploymentName),
+		Status:         "queued",
+		Steps:          buildStepsFromNodeRuns(definition, nodeRuns),
+		NodeRuns:       mapNodeRunsToSlice(definition, nodeRuns),
+		Metadata:       runMetadata,
+		CreatedAt:      now,
+		UpdatedAt:      now,
 	}
 	run.Metadata = withNodeRunsMetadata(run.Metadata, definition, nodeRuns)
 	return run, binding, definition, nil
@@ -1005,10 +1129,18 @@ func parseDAGWorkflowDefinition(definition map[string]any) (dagWorkflowDefinitio
 }
 
 func validationOnlyDAGDefinition(definition dagWorkflowDefinition) dagWorkflowDefinition {
+	return filterDAGDefinition(definition, isValidationDAGNode)
+}
+
+func rollbackOnlyDAGDefinition(definition dagWorkflowDefinition) dagWorkflowDefinition {
+	return filterDAGDefinition(definition, isRollbackDAGNode)
+}
+
+func filterDAGDefinition(definition dagWorkflowDefinition, keep func(string) bool) dagWorkflowDefinition {
 	allowed := make(map[string]struct{})
 	nodes := make([]dagWorkflowNode, 0)
 	for _, node := range definition.Nodes {
-		if !isValidationDAGNode(node.Type) {
+		if !keep(node.Type) {
 			continue
 		}
 		nodes = append(nodes, node)
@@ -1035,6 +1167,15 @@ func validationOnlyDAGDefinition(definition dagWorkflowDefinition) dagWorkflowDe
 func isValidationDAGNode(nodeType string) bool {
 	switch strings.TrimSpace(nodeType) {
 	case "check_http", "check_k8s_event", "smoke_test", "verify", "check":
+		return true
+	default:
+		return false
+	}
+}
+
+func isRollbackDAGNode(nodeType string) bool {
+	switch strings.TrimSpace(nodeType) {
+	case "rollback_to_previous":
 		return true
 	default:
 		return false
@@ -1077,6 +1218,7 @@ func (s *Service) executeDAGWorkflow(
 		"nodes":                definition.Nodes,
 		"edges":                definition.Edges,
 	}
+	metadata = withGatewayApprovalWorkflowMetadata(metadata, input)
 
 	for len(statuses) < len(definition.Nodes) {
 		ready := make([]dagWorkflowNode, 0)
@@ -1319,6 +1461,46 @@ func withNodeRunsMetadata(metadata map[string]any, definition dagWorkflowDefinit
 	}
 	next["nodeStatus"] = statuses
 	return next
+}
+
+func withGatewayApprovalWorkflowMetadata(metadata map[string]any, input domainworkflow.Input) map[string]any {
+	if metadata == nil {
+		metadata = map[string]any{}
+	}
+	for _, key := range gatewayApprovalWorkflowMetadataKeys {
+		if value := workflowMetadataString(input.Variables, key); value != "" {
+			metadata[key] = value
+		}
+	}
+	return metadata
+}
+
+func workflowApprovalGatewayMetadata(run domainworkflow.Run, nodeID string) map[string]any {
+	metadata := map[string]any{
+		"workflowRunId": run.ID,
+		"nodeId":        nodeID,
+	}
+	for _, key := range gatewayApprovalWorkflowMetadataKeys {
+		if value := workflowMetadataString(run.Metadata, key); value != "" {
+			metadata[key] = value
+		}
+	}
+	return metadata
+}
+
+func workflowMetadataString(metadata map[string]any, key string) string {
+	if metadata == nil {
+		return ""
+	}
+	value, ok := metadata[key]
+	if !ok || value == nil {
+		return ""
+	}
+	text := strings.TrimSpace(fmt.Sprint(value))
+	if text == "<nil>" {
+		return ""
+	}
+	return text
 }
 
 func syncRunNodeState(run domainworkflow.Run, definition dagWorkflowDefinition, nodeRuns map[string]dagNodeRun) domainworkflow.Run {

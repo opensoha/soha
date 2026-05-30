@@ -124,6 +124,8 @@ func permissionRuleForMenu(item domainmenu.Record) (visibilityRule, bool) {
 		return visibilityRule{permissions: []string{appaccess.PermObserveAIView}}, true
 	case item.ID == "ai-workbench-model-settings":
 		return visibilityRule{permissions: []string{appaccess.PermSettingsAIView}}, true
+	case item.ID == "ai-workbench-gateway":
+		return visibilityRule{permissions: []string{appaccess.PermAIGatewayView}}, true
 	case item.ID == "virtualization-workbench":
 		return visibilityRule{permissions: []string{
 			appaccess.PermVirtualizationOverviewView,

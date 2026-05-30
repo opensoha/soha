@@ -59,6 +59,20 @@ func TestVirtualizationSyncMenuVisibleWithViewOrManagePermission(t *testing.T) {
 	}
 }
 
+func TestAIGatewayMenuRequiresWorkspaceAndGatewayViewPermission(t *testing.T) {
+	item := domainmenu.Record{ID: "ai-workbench-gateway", Path: "/ai-workbench/gateway"}
+
+	if isVisibleByPermissions(item, []string{appaccess.PermWorkspaceResourceView}) {
+		t.Fatalf("AI Gateway menu should require %s", appaccess.PermAIGatewayView)
+	}
+	if isVisibleByPermissions(item, []string{appaccess.PermAIGatewayView}) {
+		t.Fatalf("AI Gateway menu should require %s", appaccess.PermWorkspaceResourceView)
+	}
+	if !isVisibleByPermissions(item, []string{appaccess.PermWorkspaceResourceView, appaccess.PermAIGatewayView}) {
+		t.Fatalf("AI Gateway menu should be visible when workspace and gateway view permissions are both present")
+	}
+}
+
 func TestSystemMenusDoNotRequireWorkspacePermission(t *testing.T) {
 	item := domainmenu.Record{ID: "menus", Path: "/system/menus"}
 

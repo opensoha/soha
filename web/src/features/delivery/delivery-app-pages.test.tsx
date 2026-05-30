@@ -6,7 +6,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { createRoot } from 'react-dom/client'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { ApplicationsPage } from './delivery-app-pages'
+import { ApplicationsPage, WorkflowsPage } from './delivery-app-pages'
 
 const testState = vi.hoisted(() => ({
   permissionSnapshot: {
@@ -100,6 +100,39 @@ const testState = vi.hoisted(() => ({
     }
     if (path === '/build-templates') {
       return { data: [{ id: 'tpl-1', key: 'docker-node', name: 'Node Docker', enabled: true, createdAt: '2026-05-01T00:00:00Z', updatedAt: '2026-05-01T00:00:00Z' }] }
+    }
+    if (path === '/workflows') {
+      return {
+        data: [
+          {
+            id: 'workflow-1',
+            applicationId: 'app-1',
+            workflowName: 'deploy-prod',
+            clusterId: 'cluster-a',
+            namespace: 'prod',
+            deploymentName: 'erp-front',
+            status: 'waiting_approval',
+            steps: [],
+            nodeRuns: [
+              {
+                nodeId: 'approve',
+                name: '人工审批',
+                type: 'manual_approval',
+                status: 'waiting_approval',
+                summary: 'Waiting for production approver',
+                startedAt: '2026-05-08T11:10:00Z',
+              },
+            ],
+            metadata: {
+              aiGatewayApprovalRequestId: 'approval-1',
+              aiGatewayToolName: 'delivery.actions.trigger',
+              aiGatewayApprovalPolicyRef: 'policy-prod',
+            },
+            createdAt: '2026-05-08T11:00:00Z',
+            updatedAt: '2026-05-08T11:30:00Z',
+          },
+        ],
+      }
     }
     throw new Error(`Unhandled GET ${path}`)
   }),
@@ -227,5 +260,24 @@ describe('ApplicationsPage workspace layout', () => {
     expect(container.textContent).not.toContain('围绕应用聚合研发、测试和交付上下文')
     expect(container.textContent).not.toContain('应用详细清单')
     expect(container.querySelector('.soha-admin-table-shell')).toBeNull()
+  })
+
+  it('shows Gateway approval drilldown context on workflow list', async () => {
+    const container = await renderWithProviders(
+      <WorkflowsPage />,
+      '/workflows?workflowRunId=workflow-1&gatewayApprovalRequestId=approval-1',
+    )
+
+    expect(testState.apiGet).toHaveBeenCalledWith('/workflows')
+    expect(container.textContent).toContain('已定位工作流 workflow-1')
+    expect(container.textContent).toContain('gatewayApprovalRequestId=approval-1')
+    expect(container.textContent).toContain('approval-1')
+    expect(container.textContent).toContain('delivery.actions.trigger')
+    expect(container.textContent).toContain('已定位')
+    expect(container.textContent).toContain('Manual approval detail')
+    expect(container.textContent).toContain('Workflow node timeline')
+    expect(container.textContent).toContain('Raw trace')
+    expect(container.textContent).toContain('approve')
+    expect(container.textContent).toContain('Waiting for production approver')
   })
 })

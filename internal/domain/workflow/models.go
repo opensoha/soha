@@ -54,17 +54,19 @@ type Input struct {
 	TriggerBuild             bool           `json:"triggerBuild"`
 	TriggerRelease           bool           `json:"triggerRelease"`
 	ValidationOnly           bool           `json:"validationOnly,omitempty"`
+	RollbackOnly             bool           `json:"rollbackOnly,omitempty"`
 }
 
 type Approval struct {
-	ID            string    `json:"id"`
-	WorkflowRunID string    `json:"workflowRunId"`
-	NodeID        string    `json:"nodeId"`
-	Action        string    `json:"action"`
-	Comment       string    `json:"comment,omitempty"`
-	ActorID       string    `json:"actorId"`
-	ActorName     string    `json:"actorName,omitempty"`
-	CreatedAt     time.Time `json:"createdAt"`
+	ID            string         `json:"id"`
+	WorkflowRunID string         `json:"workflowRunId"`
+	NodeID        string         `json:"nodeId"`
+	Action        string         `json:"action"`
+	Comment       string         `json:"comment,omitempty"`
+	ActorID       string         `json:"actorId"`
+	ActorName     string         `json:"actorName,omitempty"`
+	Metadata      map[string]any `json:"metadata,omitempty"`
+	CreatedAt     time.Time      `json:"createdAt"`
 }
 
 type Repository interface {

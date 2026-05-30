@@ -115,6 +115,11 @@ const apiGetMock = vi.hoisted(() => vi.fn(async (path: string) => {
               runId: 'inspection-run-1',
               title: '巡检复盘',
               summary: '巡检完成，发现一项配置风险。',
+              dataSourceSnapshot: {
+                sessionId: 'session-1',
+                inspectionRunId: 'inspection-run-1',
+                analysisKind: 'inspection_review',
+              },
               evidence: [{ id: 'inspection-e1', kind: 'inspection.finding', title: '巡检发现', summary: '发布窗口内存在异常告警' }],
               recommendations: ['先确认发布窗口内的告警是否已经恢复'],
               graph: {
@@ -144,6 +149,12 @@ const apiGetMock = vi.hoisted(() => vi.fn(async (path: string) => {
               runId: 'run-1',
               title: '根因分析',
               summary: '发现数据库连接异常',
+              dataSourceSnapshot: {
+                sessionId: 'session-1',
+                rootCauseRunId: 'run-1',
+                agentRunId: 'agent-run-1',
+                analysisKind: 'root_cause',
+              },
               evidence: [{ id: 'e1', kind: 'metric', title: '连接数升高', summary: '连接池在 5 分钟内升高到上限' }],
               hypotheses: [{ id: 'h1', title: '连接池泄漏', summary: '连接未及时释放', confidence: 81, evidenceIds: ['e1'] }],
               recommendations: ['先限制新流量并检查连接归还链路'],
@@ -373,6 +384,9 @@ describe('AIWorkbenchPage', () => {
     const container = await renderPage()
 
     expect(container.textContent).toContain('数据库连接数')
+    expect(container.textContent).toContain('关联入口')
+    expect(container.textContent).toContain('根因运行: run-1')
+    expect(container.textContent).toContain('Agent Run: agent-run-1')
 
     const inspectionArtifactButton = Array.from(container.querySelectorAll('button')).find((button) => button.textContent?.includes('巡检复盘'))
     expect(inspectionArtifactButton).toBeTruthy()
@@ -383,6 +397,40 @@ describe('AIWorkbenchPage', () => {
 
     expect(container.textContent).toContain('巡检发现')
     expect(container.textContent).toContain('巡检完成，发现一项配置风险。')
+    expect(container.textContent).toContain('巡检运行: inspection-run-1')
+  })
+
+  it('opens artifact context links from the active artifact graph', async () => {
+    const container = await renderPage()
+
+    const rootCauseLink = Array.from(container.querySelectorAll('button')).find((button) => button.textContent?.includes('根因运行: run-1'))
+    expect(rootCauseLink).toBeTruthy()
+
+    await act(async () => {
+      rootCauseLink?.click()
+    })
+
+    expect(latestRoute).toContain('/ai-workbench/root-cause')
+    expect(latestRoute).toContain('session=session-1')
+    expect(latestRoute).toContain('rootCauseRunId=run-1')
+
+    const inspectionArtifactButton = Array.from(container.querySelectorAll('button')).find((button) => button.textContent?.includes('巡检复盘'))
+    expect(inspectionArtifactButton).toBeTruthy()
+
+    await act(async () => {
+      inspectionArtifactButton?.click()
+    })
+
+    const inspectionLink = Array.from(container.querySelectorAll('button')).find((button) => button.textContent?.includes('巡检运行: inspection-run-1'))
+    expect(inspectionLink).toBeTruthy()
+
+    await act(async () => {
+      inspectionLink?.click()
+    })
+
+    expect(latestRoute).toContain('/ai-workbench/inspection')
+    expect(latestRoute).toContain('view=runs')
+    expect(latestRoute).toContain('inspectionRunId=inspection-run-1')
   })
 
   it('opens the session toolset drawer with canonical execution policy details', async () => {

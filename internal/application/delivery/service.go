@@ -43,6 +43,7 @@ type WorkflowReader interface {
 	List(context.Context, domainidentity.Principal, string, int) ([]domainworkflow.Run, error)
 	Trigger(context.Context, domainidentity.Principal, domainworkflow.Input) (domainworkflow.Run, error)
 	TriggerValidation(context.Context, domainidentity.Principal, domainworkflow.Input) (domainworkflow.Run, error)
+	TriggerRollback(context.Context, domainidentity.Principal, domainworkflow.Input) (domainworkflow.Run, error)
 }
 
 type ReleaseReader interface {
@@ -447,6 +448,10 @@ func (s *Service) ListApprovalPolicies(ctx context.Context, principal domainiden
 	return s.repository.ListApprovalPolicies(ctx)
 }
 
+func (s *Service) GetApprovalPolicy(ctx context.Context, policyID string) (domaindelivery.ApprovalPolicy, error) {
+	return s.repository.GetApprovalPolicy(ctx, strings.TrimSpace(policyID))
+}
+
 func (s *Service) CreateApprovalPolicy(ctx context.Context, principal domainidentity.Principal, input domaindelivery.ApprovalPolicyInput) (domaindelivery.ApprovalPolicy, error) {
 	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermDeliveryApprovalPoliciesManage); err != nil {
 		return domaindelivery.ApprovalPolicy{}, err
@@ -651,6 +656,7 @@ func (s *Service) TriggerApplicationDeliveryAction(ctx context.Context, principa
 			return domaindelivery.ApplicationDeliveryActionResult{}, runErr
 		}
 		result.Workflow = &run
+		applyWorkflowRelatedIDs(&result, run)
 	case domaindelivery.ApplicationDeliveryActionBuildDeploy:
 		if target == nil {
 			return domaindelivery.ApplicationDeliveryActionResult{}, fmt.Errorf("%w: no enabled release target is configured", apperrors.ErrInvalidArgument)
@@ -663,6 +669,7 @@ func (s *Service) TriggerApplicationDeliveryAction(ctx context.Context, principa
 			return domaindelivery.ApplicationDeliveryActionResult{}, runErr
 		}
 		result.Workflow = &run
+		applyWorkflowRelatedIDs(&result, run)
 	case domaindelivery.ApplicationDeliveryActionVerify:
 		if target == nil {
 			return domaindelivery.ApplicationDeliveryActionResult{}, fmt.Errorf("%w: no enabled release target is configured", apperrors.ErrInvalidArgument)
@@ -675,6 +682,20 @@ func (s *Service) TriggerApplicationDeliveryAction(ctx context.Context, principa
 			return domaindelivery.ApplicationDeliveryActionResult{}, runErr
 		}
 		result.Workflow = &run
+		applyWorkflowRelatedIDs(&result, run)
+	case domaindelivery.ApplicationDeliveryActionRollback:
+		if target == nil {
+			return domaindelivery.ApplicationDeliveryActionResult{}, fmt.Errorf("%w: no enabled release target is configured", apperrors.ErrInvalidArgument)
+		}
+		if binding.WorkflowTemplate == nil || len(binding.WorkflowTemplate.Definition) == 0 {
+			return domaindelivery.ApplicationDeliveryActionResult{}, fmt.Errorf("%w: rollback workflow template is required", apperrors.ErrInvalidArgument)
+		}
+		run, runErr := s.workflows.TriggerRollback(ctx, principal, workflowInputForDeliveryAction(app, binding, *target, input, action, false))
+		if runErr != nil {
+			return domaindelivery.ApplicationDeliveryActionResult{}, runErr
+		}
+		result.Workflow = &run
+		applyWorkflowRelatedIDs(&result, run)
 	default:
 		return domaindelivery.ApplicationDeliveryActionResult{}, fmt.Errorf("%w: unsupported application delivery action %q", apperrors.ErrInvalidArgument, action)
 	}
@@ -695,7 +716,7 @@ func (s *Service) authorizeApplicationDeliveryAction(ctx context.Context, princi
 		return appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermDeliveryBuildsTrigger)
 	case domaindelivery.ApplicationDeliveryActionDeploy:
 		return appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermDeliveryReleasesTrigger)
-	case domaindelivery.ApplicationDeliveryActionWorkflow, domaindelivery.ApplicationDeliveryActionVerify:
+	case domaindelivery.ApplicationDeliveryActionWorkflow, domaindelivery.ApplicationDeliveryActionVerify, domaindelivery.ApplicationDeliveryActionRollback:
 		return appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermDeliveryWorkflowsTrigger)
 	case domaindelivery.ApplicationDeliveryActionBuildDeploy:
 		if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermDeliveryBuildsTrigger); err != nil {
@@ -747,6 +768,10 @@ func workflowInputForDeliveryAction(app domainapp.App, binding domaincatalog.App
 		workflowName = "build-release-verify"
 	}
 	buildSourceID, _, refType, refName, imageTag := resolveDeliveryBuildDefaults(app, binding, input)
+	variables := mergeActionMaps(binding.BuildPolicy.Variables, input.Variables)
+	if strings.TrimSpace(input.ReleaseBundleID) != "" {
+		variables["releaseBundleId"] = strings.TrimSpace(input.ReleaseBundleID)
+	}
 	return domainworkflow.Input{
 		ApplicationID:            app.ID,
 		ApplicationEnvironmentID: binding.ID,
@@ -760,11 +785,12 @@ func workflowInputForDeliveryAction(app domainapp.App, binding domaincatalog.App
 		ImageTag:                 imageTag,
 		ReleaseName:              firstNonEmpty(input.ReleaseName, imageTag, binding.ID),
 		ContainerName:            firstNonEmpty(input.ContainerName, target.ContainerName),
-		Variables:                mergeActionMaps(binding.BuildPolicy.Variables, input.Variables),
+		Variables:                variables,
 		BuildArgs:                mergeActionMaps(binding.BuildPolicy.BuildArgs, input.BuildArgs),
 		TriggerBuild:             action == domaindelivery.ApplicationDeliveryActionBuildDeploy || action == domaindelivery.ApplicationDeliveryActionWorkflow,
 		TriggerRelease:           action == domaindelivery.ApplicationDeliveryActionBuildDeploy,
 		ValidationOnly:           validationOnly,
+		RollbackOnly:             action == domaindelivery.ApplicationDeliveryActionRollback,
 	}
 }
 
@@ -966,6 +992,15 @@ func applyBuildRelatedIDs(result *domaindelivery.ApplicationDeliveryActionResult
 
 func applyReleaseRelatedIDs(result *domaindelivery.ApplicationDeliveryActionResult, record domainrelease.Record) {
 	applyRelatedIDsFromMetadata(result, record.Metadata)
+}
+
+func applyWorkflowRelatedIDs(result *domaindelivery.ApplicationDeliveryActionResult, run domainworkflow.Run) {
+	if result == nil {
+		return
+	}
+	if strings.TrimSpace(run.ID) != "" {
+		result.RelatedIDs.WorkflowRunID = strings.TrimSpace(run.ID)
+	}
 }
 
 func applyRelatedIDsFromMetadata(result *domaindelivery.ApplicationDeliveryActionResult, metadata map[string]any) {

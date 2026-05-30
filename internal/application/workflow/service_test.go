@@ -126,6 +126,41 @@ func (stubWorkflowResourceExecutor) DeletePod(context.Context, domainidentity.Pr
 	return nil
 }
 
+type countingWorkflowResourceExecutor struct {
+	rollbackCount *int
+}
+
+func (s countingWorkflowResourceExecutor) GetDeploymentRolloutStatus(context.Context, domainidentity.Principal, string, string, string) (domainresource.DeploymentRolloutStatusView, error) {
+	return domainresource.DeploymentRolloutStatusView{Status: "healthy", Message: "deployment is fully available"}, nil
+}
+
+func (s countingWorkflowResourceExecutor) ListDeploymentRolloutHistory(context.Context, domainidentity.Principal, string, string, string) ([]domainresource.RolloutHistoryView, error) {
+	return []domainresource.RolloutHistoryView{{Revision: "2"}, {Revision: "1"}}, nil
+}
+
+func (s countingWorkflowResourceExecutor) RollbackDeployment(context.Context, domainidentity.Principal, string, string, string, string) (domainresource.DeploymentRollbackView, error) {
+	if s.rollbackCount != nil {
+		*s.rollbackCount = *s.rollbackCount + 1
+	}
+	return domainresource.DeploymentRollbackView{Message: "rollback requested"}, nil
+}
+
+func (s countingWorkflowResourceExecutor) ListClusterEvents(context.Context, domainidentity.Principal, string, string, int) ([]domainresource.ClusterEventView, error) {
+	return nil, nil
+}
+
+func (s countingWorkflowResourceExecutor) RestartDeployment(context.Context, domainidentity.Principal, string, string, string) error {
+	return nil
+}
+
+func (s countingWorkflowResourceExecutor) ScaleDeployment(context.Context, domainidentity.Principal, string, string, string, int32) error {
+	return nil
+}
+
+func (s countingWorkflowResourceExecutor) DeletePod(context.Context, domainidentity.Principal, string, string, string) error {
+	return nil
+}
+
 type stubWorkflowBuildExecutor struct{}
 
 func (stubWorkflowBuildExecutor) Trigger(context.Context, domainidentity.Principal, domainbuild.TriggerInput) (domainbuild.Record, error) {
@@ -291,6 +326,11 @@ func TestTriggerExecutesDAGWorkflowTemplate(t *testing.T) {
 		ClusterID:      "cluster-1",
 		Namespace:      "default",
 		DeploymentName: "demo",
+		Variables: map[string]any{
+			"aiGatewayApprovalRequestId": "approval-1",
+			"aiGatewayApprovalPolicyRef": "policy-standard",
+			"aiGatewayToolName":          "delivery.actions.trigger",
+		},
 	})
 	if err != nil {
 		t.Fatalf("Trigger() error = %v", err)
@@ -311,9 +351,18 @@ func TestTriggerExecutesDAGWorkflowTemplate(t *testing.T) {
 	if repo.updated[len(repo.updated)-1].Status != workflowStatusWaitingApproval {
 		t.Fatalf("final updated status = %q, want waiting_approval", repo.updated[len(repo.updated)-1].Status)
 	}
+	if repo.updated[len(repo.updated)-1].Metadata["aiGatewayApprovalRequestId"] != "approval-1" {
+		t.Fatalf("expected workflow run metadata to keep gateway approval id, got %#v", repo.updated[len(repo.updated)-1].Metadata)
+	}
 	repo.items = []domainworkflow.Run{repo.updated[len(repo.updated)-1]}
 	if _, err := service.Approve(context.Background(), domainidentity.Principal{UserID: "u-1", UserName: "approver", Roles: []string{"developer"}}, run.ID, "approved"); err != nil {
 		t.Fatalf("Approve() error = %v", err)
+	}
+	if len(repo.approvals) != 1 {
+		t.Fatalf("approvals len = %d, want 1", len(repo.approvals))
+	}
+	if repo.approvals[0].Metadata["aiGatewayApprovalRequestId"] != "approval-1" || repo.approvals[0].Metadata["aiGatewayToolName"] != "delivery.actions.trigger" {
+		t.Fatalf("expected workflow approval metadata to keep gateway linkage, got %#v", repo.approvals[0].Metadata)
 	}
 	deadline = time.Now().Add(300 * time.Millisecond)
 	for repo.updated[len(repo.updated)-1].Status != "completed" && time.Now().Before(deadline) {
@@ -442,6 +491,132 @@ func TestTriggerValidationRequiresValidationNodes(t *testing.T) {
 	})
 	if !errors.Is(err, apperrors.ErrInvalidArgument) {
 		t.Fatalf("TriggerValidation() error = %v, want invalid argument", err)
+	}
+	if repo.createCalls != 0 {
+		t.Fatalf("Create() called %d times, want 0", repo.createCalls)
+	}
+}
+
+func TestTriggerRollbackExecutesOnlyRollbackNodes(t *testing.T) {
+	repo := &stubWorkflowRepository{}
+	buildCount := 0
+	releaseCount := 0
+	rollbackCount := 0
+	template := &domaincatalog.WorkflowTemplate{
+		ID:   "wf-rollback",
+		Key:  "release-dag",
+		Name: "Release DAG",
+		Definition: map[string]any{
+			"mode": "release_dag",
+			"nodes": []map[string]any{
+				{"id": "build", "name": "Build", "type": "build"},
+				{"id": "deploy", "name": "Deploy", "type": "deploy_update_image"},
+				{"id": "rollback", "name": "Rollback", "type": "rollback_to_previous"},
+			},
+			"edges": []map[string]any{
+				{"id": "e1", "source": "build", "target": "deploy", "condition": "success"},
+				{"id": "e2", "source": "deploy", "target": "rollback", "condition": "failure"},
+			},
+		},
+	}
+	binding := domaincatalog.ApplicationEnvironment{
+		ID:                 "binding-1",
+		ApplicationID:      "app-1",
+		WorkflowTemplateID: "wf-rollback",
+		WorkflowTemplate:   template,
+		Targets: []domaincatalog.ReleaseTarget{
+			{ClusterID: "cluster-1", Namespace: "default", WorkloadKind: "Deployment", WorkloadName: "demo", Enabled: true},
+		},
+	}
+	service := &Service{
+		repo:        repo,
+		apps:        &stubWorkflowApps{},
+		catalog:     &stubWorkflowCatalog{items: []domaincatalog.ApplicationEnvironment{binding}},
+		releases:    countingWorkflowReleaseExecutor{count: &releaseCount},
+		resources:   countingWorkflowResourceExecutor{rollbackCount: &rollbackCount},
+		builds:      countingWorkflowBuildExecutor{count: &buildCount},
+		permissions: appaccess.NewPermissionResolver(stubWorkflowRolePermissionReader{matrix: map[string][]string{"developer": {appaccess.PermDeliveryWorkflowsTrigger}}}),
+	}
+	service.SetRuntimeOptions(1, 8, 1)
+	runnerCtx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	service.Start(runnerCtx)
+	defer func() {
+		_ = service.Shutdown(context.Background())
+	}()
+
+	run, err := service.TriggerRollback(context.Background(), domainidentity.Principal{UserName: "tester", Roles: []string{"developer"}}, domainworkflow.Input{
+		ApplicationID:            "app-1",
+		ApplicationEnvironmentID: "binding-1",
+		WorkflowName:             "release-dag",
+		ClusterID:                "cluster-1",
+		Namespace:                "default",
+		DeploymentName:           "demo",
+		Variables:                map[string]any{"releaseBundleId": "bundle-prev"},
+	})
+	if err != nil {
+		t.Fatalf("TriggerRollback() error = %v", err)
+	}
+	if run.Metadata["runMode"] != "rollback" || run.Metadata["releaseBundleId"] != "bundle-prev" {
+		t.Fatalf("metadata = %#v, want rollback run mode and bundle", run.Metadata)
+	}
+	if len(run.NodeRuns) != 1 || run.NodeRuns[0].Type != "rollback_to_previous" {
+		t.Fatalf("NodeRuns = %+v, want only rollback node", run.NodeRuns)
+	}
+	deadline := time.Now().Add(300 * time.Millisecond)
+	for len(repo.updated) == 0 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if buildCount != 0 || releaseCount != 0 || rollbackCount != 1 {
+		t.Fatalf("build/release/rollback counts = %d/%d/%d, want 0/0/1", buildCount, releaseCount, rollbackCount)
+	}
+	if len(repo.updated) == 0 {
+		t.Fatalf("expected rollback workflow runner to persist updates")
+	}
+	if repo.updated[len(repo.updated)-1].Status != "completed" {
+		t.Fatalf("rollback final status = %q, nodeRuns = %+v, want completed", repo.updated[len(repo.updated)-1].Status, repo.updated[len(repo.updated)-1].NodeRuns)
+	}
+}
+
+func TestTriggerRollbackRequiresRollbackNodes(t *testing.T) {
+	repo := &stubWorkflowRepository{}
+	template := &domaincatalog.WorkflowTemplate{
+		ID:   "wf-build",
+		Key:  "release-dag",
+		Name: "Release DAG",
+		Definition: map[string]any{
+			"mode": "release_dag",
+			"nodes": []map[string]any{
+				{"id": "build", "name": "Build", "type": "build"},
+				{"id": "deploy", "name": "Deploy", "type": "deploy_update_image"},
+			},
+		},
+	}
+	binding := domaincatalog.ApplicationEnvironment{
+		ID:                 "binding-1",
+		ApplicationID:      "app-1",
+		WorkflowTemplateID: "wf-build",
+		WorkflowTemplate:   template,
+		Targets: []domaincatalog.ReleaseTarget{
+			{ClusterID: "cluster-1", Namespace: "default", WorkloadKind: "Deployment", WorkloadName: "demo", Enabled: true},
+		},
+	}
+	service := &Service{
+		repo:        repo,
+		apps:        &stubWorkflowApps{},
+		catalog:     &stubWorkflowCatalog{items: []domaincatalog.ApplicationEnvironment{binding}},
+		permissions: appaccess.NewPermissionResolver(stubWorkflowRolePermissionReader{matrix: map[string][]string{"developer": {appaccess.PermDeliveryWorkflowsTrigger}}}),
+	}
+
+	_, err := service.TriggerRollback(context.Background(), domainidentity.Principal{UserName: "tester", Roles: []string{"developer"}}, domainworkflow.Input{
+		ApplicationID:            "app-1",
+		ApplicationEnvironmentID: "binding-1",
+		ClusterID:                "cluster-1",
+		Namespace:                "default",
+		DeploymentName:           "demo",
+	})
+	if !errors.Is(err, apperrors.ErrInvalidArgument) {
+		t.Fatalf("TriggerRollback() error = %v, want invalid argument", err)
 	}
 	if repo.createCalls != 0 {
 		t.Fatalf("Create() called %d times, want 0", repo.createCalls)

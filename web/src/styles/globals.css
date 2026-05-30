@@ -1863,6 +1863,24 @@ a {
   line-height: 1.4;
 }
 
+.soha-ai-workbench__artifact-context {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 3px;
+}
+
+.soha-ai-workbench__artifact-linkbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--soha-border-color);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--soha-bg-surface) 92%, var(--soha-fill-weak) 8%);
+}
+
 .soha-ai-workbench__conversation-scroll {
   display: flex;
   min-height: 260px;

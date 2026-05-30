@@ -3,6 +3,7 @@ package runner
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -84,6 +85,91 @@ JSON
 	}
 	if !strings.Contains(string(args), "-s soha-root-cause") {
 		t.Fatalf("expected provider skill arg in command args, got %q", args)
+	}
+}
+
+func TestExecuteAgentRunSendsFailedAnalysisArtifact(t *testing.T) {
+	root := t.TempDir()
+	commandPath := filepath.Join(root, "failing-hermes")
+	command := `#!/bin/sh
+echo "provider failed after collecting context token=raw-secret api_key=raw-key" >&2
+exit 2
+`
+	if err := os.WriteFile(commandPath, []byte(command), 0o755); err != nil {
+		t.Fatalf("write failing hermes: %v", err)
+	}
+
+	var failedRequest agentRunCallbackRequest
+	transport := roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		if r.URL.Path != "/api/v1/copilot/agent-runs/callback" {
+			t.Fatalf("unexpected path %s", r.URL.Path)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer runner-token" {
+			t.Fatalf("unexpected authorization header %q", got)
+		}
+		var req agentRunCallbackRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatalf("decode callback request: %v", err)
+		}
+		if req.Status == "failed" {
+			failedRequest = req
+		}
+		responseBody, _ := json.Marshal(map[string]any{"data": map[string]any{"id": "agent-run-failed", "status": req.Status}})
+		return &http.Response{
+			StatusCode: http.StatusAccepted,
+			Header:     make(http.Header),
+			Body:       io.NopCloser(strings.NewReader(string(responseBody))),
+		}, nil
+	})
+	runner := New(cfgpkg.ControlPlaneConfig{
+		BaseURL:     "http://control-plane",
+		BearerToken: "runner-token",
+		AgentRuntime: cfgpkg.AgentRuntimeConfig{
+			WorkerID:      "failed-runner",
+			HermesCommand: commandPath,
+			WorkspaceRoot: filepath.Join(root, "workspace"),
+		},
+	}, zap.NewNop())
+	runner.httpClient = &http.Client{Transport: transport}
+
+	runner.executeAgentRun(context.Background(), AgentRun{
+		ID:             "agent-run-failed",
+		ProviderID:     "hermes",
+		ProviderKind:   "hermes",
+		CapabilityID:   "root_cause",
+		CallbackToken:  "callback-token",
+		TimeoutSeconds: 30,
+		Scope:          map[string]any{"clusterId": "cluster-a", "namespace": "payments"},
+	})
+
+	if failedRequest.Status != "failed" {
+		t.Fatalf("expected failed callback, got %#v", failedRequest)
+	}
+	if len(failedRequest.ToolExecutions) != 1 || len(failedRequest.AnalysisArtifacts) != 1 {
+		t.Fatalf("expected failed callback tool execution and artifact, got tools=%#v artifacts=%#v", failedRequest.ToolExecutions, failedRequest.AnalysisArtifacts)
+	}
+	artifact := failedRequest.AnalysisArtifacts[0]
+	if artifact["runId"] != "agent-run-failed" || artifact["kind"] != "root_cause" {
+		t.Fatalf("unexpected failed artifact identity: %#v", artifact)
+	}
+	if !strings.Contains(fmt.Sprint(artifact["summary"]), "exit status 2") {
+		t.Fatalf("expected failed artifact summary to include provider error, got %#v", artifact["summary"])
+	}
+	if strings.Contains(fmt.Sprint(failedRequest.Payload), "raw-secret") || strings.Contains(fmt.Sprint(failedRequest.ToolExecutions), "raw-secret") || strings.Contains(fmt.Sprint(artifact), "raw-secret") || strings.Contains(fmt.Sprint(artifact), "raw-key") {
+		t.Fatalf("failed callback leaked provider secret: payload=%#v tools=%#v artifact=%#v", failedRequest.Payload, failedRequest.ToolExecutions, artifact)
+	}
+	if !strings.Contains(fmt.Sprint(failedRequest.Payload["logs"]), "token=[REDACTED]") {
+		t.Fatalf("expected failed callback logs to be redacted, got %#v", failedRequest.Payload["logs"])
+	}
+	snapshot := mapValue(artifact["dataSourceSnapshot"])
+	if snapshot["providerId"] != "hermes" || snapshot["capabilityId"] != "root_cause" || snapshot["status"] != "failed" || snapshot["error"] != failedRequest.ErrorMessage {
+		t.Fatalf("unexpected failed artifact snapshot: %#v", snapshot)
+	}
+	if len(valueAsMapSlice(artifact["toolExecutions"])) != 1 {
+		t.Fatalf("expected failed tool execution in artifact, got %#v", artifact["toolExecutions"])
+	}
+	if recommendations := valueAsStringSlice(artifact["recommendations"]); len(recommendations) == 0 {
+		t.Fatalf("expected failed artifact recommendation, got %#v", artifact["recommendations"])
 	}
 }
 

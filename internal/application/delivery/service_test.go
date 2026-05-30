@@ -134,6 +134,19 @@ func (s stubWorkflowReader) TriggerValidation(_ context.Context, _ domainidentit
 	return domainworkflow.Run{}, nil
 }
 
+func (s stubWorkflowReader) TriggerRollback(_ context.Context, _ domainidentity.Principal, input domainworkflow.Input) (domainworkflow.Run, error) {
+	if s.triggerInput != nil {
+		*s.triggerInput = input
+	}
+	if s.triggerCount != nil {
+		*s.triggerCount = *s.triggerCount + 1
+	}
+	if s.record.ID != "" || s.record.Metadata != nil {
+		return s.record, nil
+	}
+	return domainworkflow.Run{}, nil
+}
+
 type stubReleaseReader struct {
 	record       domainrelease.Record
 	triggerInput *domainrelease.TriggerInput
@@ -429,6 +442,9 @@ func TestTriggerApplicationDeliveryActionBuildDeployTriggersWorkflowWithBindingD
 	if result.Workflow == nil || result.Workflow.ID != "workflow-1" {
 		t.Fatalf("Workflow = %+v, want triggered workflow", result.Workflow)
 	}
+	if result.RelatedIDs.WorkflowRunID != "workflow-1" {
+		t.Fatalf("RelatedIDs.WorkflowRunID = %q, want workflow-1", result.RelatedIDs.WorkflowRunID)
+	}
 }
 
 func TestTriggerApplicationDeliveryActionBuildDoesNotRequireReleaseTarget(t *testing.T) {
@@ -621,6 +637,105 @@ func TestTriggerApplicationDeliveryActionVerifyRunsWorkflowOnly(t *testing.T) {
 	}
 	if result.Workflow == nil || result.Workflow.ID != "workflow-1" {
 		t.Fatalf("Workflow = %+v, want triggered workflow", result.Workflow)
+	}
+}
+
+func TestTriggerApplicationDeliveryActionRollbackRunsRollbackWorkflowOnly(t *testing.T) {
+	buildCount := 0
+	releaseCount := 0
+	workflowCount := 0
+	var workflowInput domainworkflow.Input
+	service := New(
+		stubApplicationReader{app: domainapp.App{ID: "app-1", Name: "demo", DefaultBranch: "main"}},
+		stubCatalogReader{
+			bindings: []domaincatalog.ApplicationEnvironment{
+				{
+					ID:                 "binding-1",
+					ApplicationID:      "app-1",
+					WorkflowTemplateID: "rollback-template",
+					WorkflowTemplate: &domaincatalog.WorkflowTemplate{
+						ID:   "rollback-template",
+						Name: "rollback-template",
+						Definition: map[string]any{
+							"mode": "release_dag",
+							"nodes": []map[string]any{
+								{"id": "build", "name": "Build", "type": "build"},
+								{"id": "rollback", "name": "Rollback", "type": "rollback_to_previous"},
+							},
+						},
+					},
+					Targets: []domaincatalog.ReleaseTarget{
+						{ID: "target-1", ClusterID: "cluster-a", Namespace: "namespace-a", WorkloadKind: "Deployment", WorkloadName: "demo-api", Enabled: true},
+					},
+				},
+			},
+		},
+		stubBuildReader{triggerCount: &buildCount},
+		stubWorkflowReader{triggerInput: &workflowInput, triggerCount: &workflowCount, record: domainworkflow.Run{ID: "workflow-rollback-1"}},
+		stubReleaseReader{triggerCount: &releaseCount},
+		stubRepository{},
+		nil,
+		nil,
+		deliveryActionPermissions(appaccess.PermDeliveryWorkflowsTrigger),
+	)
+
+	result, err := service.TriggerApplicationDeliveryAction(context.Background(), deliveryActionPrincipal(), "app-1", domaindelivery.ApplicationDeliveryActionInput{
+		Action:                   domaindelivery.ApplicationDeliveryActionRollback,
+		ApplicationEnvironmentID: "binding-1",
+		ReleaseBundleID:          "bundle-prev",
+		Variables:                map[string]any{"reason": "bad deploy"},
+	})
+	if err != nil {
+		t.Fatalf("TriggerApplicationDeliveryAction returned error: %v", err)
+	}
+	if workflowCount != 1 || buildCount != 0 || releaseCount != 0 {
+		t.Fatalf("trigger counts workflow=%d build=%d release=%d, want 1/0/0", workflowCount, buildCount, releaseCount)
+	}
+	if !workflowInput.RollbackOnly || workflowInput.TriggerBuild || workflowInput.TriggerRelease || workflowInput.ValidationOnly {
+		t.Fatalf("workflow flags = rollback:%v build:%v release:%v validation:%v, want rollback-only workflow", workflowInput.RollbackOnly, workflowInput.TriggerBuild, workflowInput.TriggerRelease, workflowInput.ValidationOnly)
+	}
+	if workflowInput.Variables["releaseBundleId"] != "bundle-prev" || workflowInput.Variables["reason"] != "bad deploy" {
+		t.Fatalf("workflow variables = %+v, want rollback bundle and caller reason", workflowInput.Variables)
+	}
+	if result.Workflow == nil || result.Workflow.ID != "workflow-rollback-1" {
+		t.Fatalf("Workflow = %+v, want rollback workflow", result.Workflow)
+	}
+	if result.RelatedIDs.WorkflowRunID != "workflow-rollback-1" {
+		t.Fatalf("RelatedIDs.WorkflowRunID = %q, want workflow-rollback-1", result.RelatedIDs.WorkflowRunID)
+	}
+}
+
+func TestTriggerApplicationDeliveryActionRollbackRequiresWorkflowPermission(t *testing.T) {
+	workflowCount := 0
+	service := New(
+		stubApplicationReader{app: domainapp.App{ID: "app-1", Name: "demo"}},
+		stubCatalogReader{bindings: []domaincatalog.ApplicationEnvironment{
+			{
+				ID:                 "binding-1",
+				ApplicationID:      "app-1",
+				WorkflowTemplateID: "rollback-template",
+				WorkflowTemplate:   &domaincatalog.WorkflowTemplate{ID: "rollback-template", Name: "rollback-template", Definition: map[string]any{"mode": "release_dag", "nodes": []map[string]any{{"id": "rollback", "name": "Rollback", "type": "rollback_to_previous"}}}},
+				Targets:            []domaincatalog.ReleaseTarget{{ID: "target-1", ClusterID: "cluster-a", Namespace: "namespace-a", WorkloadName: "demo-api", Enabled: true}},
+			},
+		}},
+		stubBuildReader{},
+		stubWorkflowReader{triggerCount: &workflowCount},
+		stubReleaseReader{},
+		stubRepository{},
+		nil,
+		nil,
+		deliveryActionPermissions(appaccess.PermDeliveryReleasesTrigger),
+	)
+
+	_, err := service.TriggerApplicationDeliveryAction(context.Background(), deliveryActionPrincipal(), "app-1", domaindelivery.ApplicationDeliveryActionInput{
+		Action:                   domaindelivery.ApplicationDeliveryActionRollback,
+		ApplicationEnvironmentID: "binding-1",
+	})
+	if !errors.Is(err, apperrors.ErrAccessDenied) {
+		t.Fatalf("error = %v, want access denied", err)
+	}
+	if workflowCount != 0 {
+		t.Fatalf("workflow trigger count = %d, want 0", workflowCount)
 	}
 }
 

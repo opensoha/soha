@@ -828,10 +828,7 @@ func (r *Repository) UpdateAgentRunCallback(ctx context.Context, input domaincop
 	now := time.Now().UTC()
 	output := mergeAgentRunOutput(current.Output, input.Payload)
 	toolExecutions := mergeAgentRunToolExecutions(current.ToolExecutions, input.ToolExecutions)
-	analysisArtifacts := input.AnalysisArtifacts
-	if len(analysisArtifacts) == 0 {
-		analysisArtifacts = current.AnalysisArtifacts
-	}
+	analysisArtifacts := mergeAgentRunAnalysisArtifacts(current.AnalysisArtifacts, input.AnalysisArtifacts)
 	outputBytes, err := json.Marshal(output)
 	if err != nil {
 		return domaincopilot.AgentRun{}, fmt.Errorf("marshal agent run callback output: %w", err)
@@ -1936,6 +1933,47 @@ func mergeAgentRunToolExecutions(current []domaincopilot.ToolExecution, patch []
 		merged = append(merged, item)
 	}
 	return merged
+}
+
+func mergeAgentRunAnalysisArtifacts(current []domaincopilot.AnalysisArtifact, patch []domaincopilot.AnalysisArtifact) []domaincopilot.AnalysisArtifact {
+	if len(current) == 0 {
+		return append([]domaincopilot.AnalysisArtifact(nil), patch...)
+	}
+	if len(patch) == 0 {
+		return append([]domaincopilot.AnalysisArtifact(nil), current...)
+	}
+	merged := append([]domaincopilot.AnalysisArtifact(nil), current...)
+	indexByKey := map[string]int{}
+	for index, item := range merged {
+		if key := agentRunAnalysisArtifactKey(item); key != "" {
+			indexByKey[key] = index
+		}
+	}
+	for _, item := range patch {
+		key := agentRunAnalysisArtifactKey(item)
+		if key != "" {
+			if index, ok := indexByKey[key]; ok {
+				merged[index] = item
+				continue
+			}
+			indexByKey[key] = len(merged)
+		}
+		merged = append(merged, item)
+	}
+	return merged
+}
+
+func agentRunAnalysisArtifactKey(item domaincopilot.AnalysisArtifact) string {
+	runID := strings.TrimSpace(item.RunID)
+	kind := strings.TrimSpace(item.Kind)
+	title := strings.TrimSpace(item.Title)
+	if kind == "" && title == "" {
+		return ""
+	}
+	if runID != "" {
+		return strings.Join([]string{runID, kind, title}, "\x00")
+	}
+	return strings.Join([]string{kind, title}, "\x00")
 }
 
 func nullableString(value string) any {

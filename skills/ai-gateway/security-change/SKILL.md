@@ -4,6 +4,9 @@ name: Security Change
 category: security
 capabilityRefs:
   - delivery.actions.trigger
+  - delivery.approval_policies.list
+  - delivery.workflow_templates.list
+  - delivery.rollback.context
   - delivery.execution_tasks.list
   - k8s.events.list
 requiredScopes:

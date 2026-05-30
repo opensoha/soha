@@ -453,9 +453,9 @@ func (r *Repository) GetApprovalPolicy(ctx context.Context, id string) (domainde
 	row := r.db.WithContext(ctx).Raw(`
 		SELECT id, policy_key, name, description, mode, required_approvals, sla_minutes, approver_roles, change_window, enabled, metadata, created_at, updated_at
 		FROM approval_policies
-		WHERE id = ?
+		WHERE id = ? OR policy_key = ?
 		LIMIT 1
-	`, strings.TrimSpace(id)).Row()
+	`, strings.TrimSpace(id), strings.TrimSpace(id)).Row()
 	return scanApprovalPolicyRow(row)
 }
 

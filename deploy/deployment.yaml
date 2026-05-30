@@ -97,6 +97,17 @@ stringData:
     mcp:
       enabled: true
       default_timeout: 10s
+    ai_gateway:
+      rate_limit:
+        backend: postgres
+        redis:
+          addr: ""
+          username: ""
+          password: ""
+          db: 0
+          tls: false
+          key_prefix: soha:ai-gateway:rate-limit
+          timeout: 500ms
     bootstrap:
       seed_defaults: true
     kubernetes:

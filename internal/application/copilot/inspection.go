@@ -294,6 +294,8 @@ func buildInspectionReviewArtifact(scope domaincopilot.SessionScope, run domainc
 	snapshot := map[string]any{
 		"inspectionRunId":  run.ID,
 		"inspectionTaskId": run.TaskID,
+		"analysisRunId":    run.ID,
+		"analysisKind":     "inspection_review",
 		"status":           run.Status,
 		"severity":         run.Severity,
 	}

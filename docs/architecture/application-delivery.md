@@ -255,7 +255,7 @@ This keeps frontend and application service code from dealing with raw manifest 
 - `dev/test/pre` use deploy semantics in the UI even when they run the same orchestration model
 - `prod` uses release semantics in the UI
 - `manual_approval` nodes now suspend a workflow run with status `waiting_approval`
-- approval resolution uses explicit approve/reject APIs and persists `workflow_approvals`
+- approval resolution uses explicit approve/reject APIs and persists `workflow_approvals`; when a workflow was started by AI Gateway approval replay, the approval row metadata keeps the Gateway approval request linkage
 - build and release actions now start creating `releaseBundleId` and `executionTaskId` metadata so the execution plane can evolve without breaking the current UI flow
 - execution tasks now expose a minimal provider lifecycle: `queued`, `dispatching` or `running`, then callback-driven or direct completion, and task logs are queryable from the delivery control plane
 - `ci_agent_runner` now has a first runnable path: the control plane exposes task claim and callback endpoints, the agent can poll for `ci_agent_runner` tasks, execute command payloads locally, and push logs/results back through execution callbacks

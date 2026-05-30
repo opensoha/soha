@@ -9,6 +9,10 @@ const AI_WORKBENCH_CONTEXT_KEYS = [
   'workload',
   'alertId',
   'timeRangeMinutes',
+  'rootCauseRunId',
+  'agentRunId',
+  'inspectionRunId',
+  'artifactRunId',
 ] as const
 
 function asSearchParams(search?: string | URLSearchParams | null) {

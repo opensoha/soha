@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -29,6 +31,8 @@ const (
 	agentProviderInternal = "internal"
 	agentProviderHermes   = "hermes"
 )
+
+var gatewayArtifactSensitiveValuePattern = regexp.MustCompile(`(?i)(token|password|passwd|secret|api[_-]?key|authorization|credential)(\s*[:=]\s*)([^\s,;]+)`)
 
 func (s *Service) ListAgentProviders(ctx context.Context, principal domainidentity.Principal) ([]domaincopilot.AgentProvider, error) {
 	if err := s.authorizePrincipal(ctx, principal, appaccess.PermObserveAIView); err != nil {
@@ -66,6 +70,8 @@ func (s *Service) RecordAgentRunCallback(ctx context.Context, input domaincopilo
 	if strings.TrimSpace(input.RunID) == "" || strings.TrimSpace(input.CallbackToken) == "" {
 		return domaincopilot.AgentRun{}, fmt.Errorf("%w: runId and callbackToken are required", aperrors.ErrInvalidArgument)
 	}
+	input.Payload = normalizeAgentRunCallbackProviderUsage(input.Payload)
+	input.AnalysisArtifacts = normalizeAgentRunCallbackProviderUsageArtifacts(input.AnalysisArtifacts, input.Payload)
 	if agentRunCallbackProducesArtifact(input.Status) && len(input.AnalysisArtifacts) == 0 {
 		if current, err := s.repo.GetAgentRun(ctx, "", input.RunID); err == nil {
 			synthetic := current
@@ -245,6 +251,592 @@ func mergeAgentRunCallbackPayload(current map[string]any, patch map[string]any) 
 		merged[key] = value
 	}
 	return merged
+}
+
+func normalizeAgentRunCallbackProviderUsage(payload map[string]any) map[string]any {
+	if payload == nil {
+		return nil
+	}
+	out := mergeAgentRunCallbackPayload(payload, nil)
+	if usage := agentProviderUsageSummaryFromRawCallback(out); len(usage) > 0 {
+		out["providerUsage"] = usage
+		out["usage"] = usage
+	}
+	return out
+}
+
+func normalizeAgentRunCallbackProviderUsageArtifacts(items []domaincopilot.AnalysisArtifact, payload map[string]any) []domaincopilot.AnalysisArtifact {
+	if len(items) == 0 {
+		return items
+	}
+	usage := agentProviderUsageSummaryFromPayload(payload)
+	if len(usage) == 0 {
+		return items
+	}
+	out := append([]domaincopilot.AnalysisArtifact(nil), items...)
+	for index := range out {
+		if out[index].DataSourceSnapshot == nil {
+			out[index].DataSourceSnapshot = map[string]any{}
+		}
+		if len(mapValue(out[index].DataSourceSnapshot["providerUsage"])) == 0 {
+			out[index].DataSourceSnapshot["providerUsage"] = usage
+		}
+		if len(mapValue(out[index].DataSourceSnapshot["usage"])) == 0 {
+			out[index].DataSourceSnapshot["usage"] = usage
+		}
+	}
+	return out
+}
+
+func agentProviderUsageSummaryFromPayload(payload map[string]any) map[string]any {
+	if payload == nil {
+		return nil
+	}
+	for _, key := range []string{"providerUsage", "usage"} {
+		if usage := agentUsageNumbersOnly(mapValue(payload[key])); len(usage) > 0 {
+			return normalizeAgentProviderUsageSummary(usage)
+		}
+	}
+	return agentProviderUsageSummary(payload)
+}
+
+func agentProviderUsageSummaryFromRawCallback(payload map[string]any) map[string]any {
+	if payload == nil {
+		return nil
+	}
+	var standard map[string]any
+	for _, key := range []string{"providerUsage", "usage"} {
+		if usage := agentUsageNumbersOnly(mapValue(payload[key])); len(usage) > 0 {
+			standard = normalizeAgentProviderUsageSummary(usage)
+			break
+		}
+	}
+	rawPayload := mergeAgentRunCallbackPayload(payload, nil)
+	delete(rawPayload, "providerUsage")
+	delete(rawPayload, "usage")
+	if usage := agentProviderUsageSummary(rawPayload); len(usage) > 0 {
+		if len(standard) > 0 {
+			mergeAgentProviderUsageSummary(usage, standard)
+			return normalizeAgentProviderUsageSummary(usage)
+		}
+		return usage
+	}
+	return standard
+}
+
+func agentProviderUsageSummary(value any) map[string]any {
+	summary := map[string]any{}
+	for _, usage := range agentProviderUsageCandidates(value) {
+		mergeAgentProviderUsageSummary(summary, usage)
+	}
+	if len(summary) == 0 {
+		return nil
+	}
+	return normalizeAgentProviderUsageSummary(summary)
+}
+
+func normalizeAgentProviderUsageSummary(summary map[string]any) map[string]any {
+	if len(summary) == 0 {
+		return nil
+	}
+	if _, ok := positiveFloat(summary["totalTokens"]); !ok {
+		if total := positiveFloatSum(summary, "inputTokens", "outputTokens"); total > 0 {
+			summary["totalTokens"] = total
+		}
+	}
+	if _, ok := positiveFloat(summary["totalCost"]); !ok {
+		if total := positiveFloatSum(summary, "inputCost", "outputCost"); total > 0 {
+			summary["totalCost"] = total
+		}
+	}
+	out := map[string]any{}
+	for _, key := range []string{"totalTokens", "inputTokens", "outputTokens", "totalCost", "inputCost", "outputCost"} {
+		if value, ok := positiveFloat(summary[key]); ok {
+			out[key] = value
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func agentProviderUsageCandidates(value any) []map[string]any {
+	out := make([]map[string]any, 0)
+	collectAgentProviderUsageCandidates(value, "$", 0, &out)
+	return out
+}
+
+func collectAgentProviderUsageCandidates(value any, key string, depth int, out *[]map[string]any) {
+	if out == nil || depth > 5 || value == nil {
+		return
+	}
+	switch typed := value.(type) {
+	case map[string]any:
+		if context := agentUsageDetailContext(key); context != "" {
+			if usage := agentProviderUsageDetailNumbers(typed, context); len(usage) > 0 {
+				*out = append(*out, usage)
+				for childKey, child := range typed {
+					switch child.(type) {
+					case map[string]any, []any, []map[string]any:
+						collectAgentProviderUsageCandidates(child, childKey, depth+1, out)
+					}
+				}
+				return
+			}
+		}
+		if agentUsageContainerKey(key) {
+			if usage := preferredAgentBilledUsageNumbers(typed); len(usage) > 0 {
+				*out = append(*out, usage)
+				for childKey, child := range typed {
+					switch normalizeAgentUsageKey(childKey) {
+					case "billedunits", "billedunit", "tokens":
+						continue
+					}
+					switch child.(type) {
+					case map[string]any, []any, []map[string]any:
+						collectAgentProviderUsageCandidates(child, childKey, depth+1, out)
+					}
+				}
+				return
+			}
+			if usage := agentUsageNumbersOnly(typed); len(usage) > 0 {
+				*out = append(*out, usage)
+				for childKey, child := range typed {
+					switch child.(type) {
+					case map[string]any, []any, []map[string]any:
+						collectAgentProviderUsageCandidates(child, childKey, depth+1, out)
+					}
+				}
+				return
+			}
+		}
+		if usage := agentProviderNativeUsageNumbers(typed); len(usage) > 0 {
+			*out = append(*out, usage)
+			return
+		}
+		for childKey, child := range typed {
+			collectAgentProviderUsageCandidates(child, childKey, depth+1, out)
+		}
+	case []any:
+		for _, item := range typed {
+			collectAgentProviderUsageCandidates(item, key, depth+1, out)
+		}
+	case []map[string]any:
+		for _, item := range typed {
+			collectAgentProviderUsageCandidates(item, key, depth+1, out)
+		}
+	}
+}
+
+func preferredAgentBilledUsageNumbers(values map[string]any) map[string]any {
+	rawBilled, ok := conditionRaw(values, "billed_units")
+	if !ok {
+		return nil
+	}
+	rawTokens, ok := conditionRaw(values, "tokens")
+	if !ok || len(mapValue(rawTokens)) == 0 {
+		return nil
+	}
+	billed := mapValue(rawBilled)
+	if len(billed) == 0 {
+		return nil
+	}
+	out := agentUsageNumbersOnly(values)
+	if out == nil {
+		out = map[string]any{}
+	}
+	mergeAgentProviderUsageSummary(out, agentUsageNumbersOnly(billed))
+	if len(out) == 0 {
+		return nil
+	}
+	return normalizeAgentProviderUsageSummary(out)
+}
+
+func agentUsageContainerKey(key string) bool {
+	switch normalizeAgentUsageKey(key) {
+	case "usage", "tokenusage", "aiusage", "providerusage", "llmusage", "metering", "billing", "costusage", "usagemetadata", "tokenmetadata", "tokencount", "tokencounts", "tokens", "billedunits", "billedunit":
+		return true
+	default:
+		return false
+	}
+}
+
+func agentUsageDetailContext(key string) string {
+	switch normalizeAgentUsageKey(key) {
+	case "prompttokendetails", "prompttokensdetails", "inputtokendetails", "inputtokensdetails", "requesttokendetails", "requesttokensdetails":
+		return "input"
+	case "completiontokendetails", "completiontokensdetails", "outputtokendetails", "outputtokensdetails", "responsetokendetails", "responsetokensdetails", "candidatestokendetails", "candidatestokensdetails":
+		return "output"
+	default:
+		return ""
+	}
+}
+
+func agentProviderUsageDetailNumbers(values map[string]any, context string) map[string]any {
+	out := map[string]any{}
+	for key, value := range values {
+		number, ok := positiveFloat(value)
+		if !ok {
+			continue
+		}
+		normalized := normalizeAgentUsageKey(key)
+		switch context {
+		case "input":
+			switch normalized {
+			case "cachedtokens", "cachetokens", "cachecreationtokens", "cachereadtokens", "cachewritetokens", "audiotokens", "texttokens", "imagetokens":
+				existing, _ := positiveFloat(out["inputTokens"])
+				out["inputTokens"] = existing + normalizeNativeAgentUsageNumber(key, number)
+			}
+		case "output":
+			switch normalized {
+			case "reasoningtokens", "acceptedpredictiontokens", "rejectedpredictiontokens", "audiotokens", "texttokens", "imagetokens":
+				existing, _ := positiveFloat(out["outputTokens"])
+				out["outputTokens"] = existing + normalizeNativeAgentUsageNumber(key, number)
+			}
+		}
+	}
+	return normalizeAgentProviderUsageSummary(out)
+}
+
+func agentUsageNumbersOnly(values map[string]any) map[string]any {
+	out := map[string]any{}
+	hasGenericInput := agentNativeUsageHasAny(values, "inputTokens", "input_tokens", "inputTokensCount", "input_tokens_count", "inputTokenUsage", "input_token_usage", "promptTokens", "prompt_tokens", "promptTokensCount", "prompt_tokens_count", "promptTokenUsage", "prompt_token_usage", "promptTokenCount", "prompt_token_count", "inputTokenCount", "input_token_count", "promptEvalCount", "prompt_eval_count")
+	hasGenericOutput := agentNativeUsageHasAny(values, "outputTokens", "output_tokens", "outputTokensCount", "output_tokens_count", "outputTokenUsage", "output_token_usage", "completionTokens", "completion_tokens", "completionTokensCount", "completion_tokens_count", "completionTokenUsage", "completion_token_usage", "candidatesTokenCount", "candidates_token_count", "outputTokenCount", "output_token_count", "evalCount", "eval_count")
+	seen := map[string]struct{}{}
+	for _, key := range agentUsageSummaryKeys() {
+		normalized := normalizeAgentUsageKey(key)
+		if _, ok := seen[normalized]; ok {
+			continue
+		}
+		value, ok := conditionRaw(values, key)
+		if !ok {
+			continue
+		}
+		seen[normalized] = struct{}{}
+		number, ok := positiveFloat(value)
+		if !ok {
+			continue
+		}
+		addNativeAgentUsageNumber(out, key, number, hasGenericInput, hasGenericOutput)
+	}
+	if supplemental := supplementalAgentInputTokenUsage(values); supplemental > 0 {
+		existing, _ := positiveFloat(out["inputTokens"])
+		out["inputTokens"] = existing + supplemental
+	}
+	if supplemental := supplementalAgentOutputTokenUsage(values); supplemental > 0 {
+		existing, _ := positiveFloat(out["outputTokens"])
+		out["outputTokens"] = existing + supplemental
+	}
+	return out
+}
+
+func mergeAgentProviderUsageSummary(dst map[string]any, src map[string]any) {
+	if dst == nil || len(src) == 0 {
+		return
+	}
+	for key, value := range agentUsageWithDerivedTotals(src) {
+		number, ok := positiveFloat(value)
+		if !ok {
+			continue
+		}
+		canonical := canonicalAgentUsageKey(key)
+		if existing, ok := positiveFloat(dst[canonical]); ok {
+			dst[canonical] = existing + number
+		} else {
+			dst[canonical] = number
+		}
+	}
+}
+
+func agentProviderNativeUsageNumbers(values map[string]any) map[string]any {
+	out := map[string]any{}
+	hasGenericInput := agentNativeUsageHasAny(values, "inputTokens", "input_tokens", "inputTokensCount", "input_tokens_count", "inputTokenUsage", "input_token_usage", "promptTokens", "prompt_tokens", "promptTokensCount", "prompt_tokens_count", "promptTokenUsage", "prompt_token_usage", "promptTokenCount", "prompt_token_count", "inputTokenCount", "input_token_count", "promptEvalCount", "prompt_eval_count")
+	hasGenericOutput := agentNativeUsageHasAny(values, "outputTokens", "output_tokens", "outputTokensCount", "output_tokens_count", "outputTokenUsage", "output_token_usage", "completionTokens", "completion_tokens", "completionTokensCount", "completion_tokens_count", "completionTokenUsage", "completion_token_usage", "candidatesTokenCount", "candidates_token_count", "outputTokenCount", "output_token_count", "evalCount", "eval_count")
+	tokenKeys := []string{
+		"promptTokenCount", "prompt_token_count", "promptTokensCount", "prompt_tokens_count", "promptTokenUsage", "prompt_token_usage", "inputTokenCount", "input_token_count", "inputTokensCount", "input_tokens_count", "inputTokenUsage", "input_token_usage",
+		"cachedContentTokenCount", "cached_content_token_count", "cachedContentTokens", "cached_content_tokens",
+		"toolUsePromptTokenCount", "tool_use_prompt_token_count", "toolUsePromptTokens", "tool_use_prompt_tokens",
+		"promptTokensDetailsCachedTokens", "prompt_tokens_details_cached_tokens",
+		"cachedTokens", "cached_tokens", "promptCacheHitTokens", "prompt_cache_hit_tokens", "promptCacheMissTokens", "prompt_cache_miss_tokens",
+		"cacheReadTokens", "cache_read_tokens",
+		"readUnits", "read_units", "inputUnits", "input_units", "requestUnits", "request_units",
+		"textInputTokens", "text_input_tokens", "imageInputTokens", "image_input_tokens", "imageTokens", "image_tokens", "videoTokens", "video_tokens", "audioInputTokens", "audio_input_tokens", "audioTokens", "audio_tokens",
+		"candidatesTokenCount", "candidates_token_count", "outputTokenCount", "output_token_count", "outputTokensCount", "output_tokens_count", "outputTokenUsage", "output_token_usage", "completionTokensCount", "completion_tokens_count", "completionTokenUsage", "completion_token_usage",
+		"completionTokensDetailsReasoningTokens", "completion_tokens_details_reasoning_tokens",
+		"reasoningTokens", "reasoning_tokens",
+		"thoughtsTokenCount", "thoughts_token_count", "thoughtsTokens", "thoughts_tokens",
+		"acceptedPredictionTokens", "accepted_prediction_tokens", "rejectedPredictionTokens", "rejected_prediction_tokens",
+		"outputTokenDetailsReasoningTokens", "output_token_details_reasoning_tokens",
+		"completionReasoningTokens", "completion_reasoning_tokens", "outputReasoningTokens", "output_reasoning_tokens",
+		"writeUnits", "write_units", "outputUnits", "output_units", "responseUnits", "response_units",
+		"totalTokenCount", "total_token_count", "billableTokens", "billable_tokens", "billedTokens", "billed_tokens", "usageTokens", "usage_tokens",
+		"totalUnits", "total_units", "usageUnits", "usage_units", "searchUnits", "search_units", "classificationUnits", "classification_units", "classifications",
+		"embeddingTokens", "embedding_tokens", "rerankTokens", "rerank_tokens",
+		"queryUnits", "query_units", "searchRequests", "search_requests", "searchCredits", "search_credits", "serpapiSearches", "serpapi_searches", "braveSearchUnits", "brave_search_units",
+		"browserMinutes", "browser_minutes", "browserSessions", "browser_sessions", "sessionMinutes", "session_minutes", "browserbaseMinutes", "browserbase_minutes", "pageLoads", "page_loads",
+		"documentPages", "document_pages", "parsePages", "parse_pages", "llamaParsePages", "llama_parse_pages",
+		"promptEvalCount", "prompt_eval_count", "evalCount", "eval_count",
+		"inputTextTokens", "outputTextTokens",
+		"inputImageTokens", "outputImageTokens",
+		"inputAudioTokens", "outputAudioTokens",
+		"textOutputTokens", "text_output_tokens", "imageOutputTokens", "image_output_tokens", "audioOutputTokens", "audio_output_tokens",
+	}
+	seen := map[string]struct{}{}
+	for _, key := range tokenKeys {
+		normalized := normalizeAgentUsageKey(key)
+		if _, ok := seen[normalized]; ok {
+			continue
+		}
+		raw, ok := conditionRaw(values, key)
+		if !ok {
+			continue
+		}
+		seen[normalized] = struct{}{}
+		number, ok := positiveFloat(raw)
+		if !ok {
+			continue
+		}
+		addNativeAgentUsageNumber(out, key, number, hasGenericInput, hasGenericOutput)
+	}
+	if supplemental := supplementalAgentInputTokenUsage(values); supplemental > 0 {
+		existing, _ := positiveFloat(out["inputTokens"])
+		out["inputTokens"] = existing + supplemental
+	}
+	if supplemental := supplementalAgentOutputTokenUsage(values); supplemental > 0 {
+		existing, _ := positiveFloat(out["outputTokens"])
+		out["outputTokens"] = existing + supplemental
+	}
+	costKeys := []string{"responseCost", "response_cost", "totalCostUsd", "total_cost_usd", "totalCostUSD", "total_cost_USD", "estimatedCost", "estimated_cost", "estimatedCostUsd", "estimated_cost_usd", "billedAmount", "billed_amount", "chargeAmount", "charge_amount", "creditsUsed", "credits_used", "costMicros", "cost_micros", "totalCostMicros", "total_cost_micros", "estimatedCostMicros", "estimated_cost_micros", "costCents", "cost_cents", "totalCostCents", "total_cost_cents", "estimatedCostCents", "estimated_cost_cents", "inputCost", "input_cost", "promptCost", "prompt_cost", "inputCostUsd", "input_cost_usd", "promptCostUsd", "prompt_cost_usd", "inputCostMicros", "input_cost_micros", "promptCostMicros", "prompt_cost_micros", "inputCostCents", "input_cost_cents", "promptCostCents", "prompt_cost_cents", "outputCost", "output_cost", "completionCost", "completion_cost", "outputCostUsd", "output_cost_usd", "completionCostUsd", "completion_cost_usd", "outputCostMicros", "output_cost_micros", "completionCostMicros", "completion_cost_micros", "outputCostCents", "output_cost_cents", "completionCostCents", "completion_cost_cents"}
+	clear(seen)
+	for _, key := range costKeys {
+		normalized := normalizeAgentUsageKey(key)
+		if _, ok := seen[normalized]; ok {
+			continue
+		}
+		raw, ok := conditionRaw(values, key)
+		if !ok {
+			continue
+		}
+		seen[normalized] = struct{}{}
+		number, ok := positiveFloat(raw)
+		if !ok {
+			continue
+		}
+		addNativeAgentUsageNumber(out, key, number, false, false)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return normalizeAgentProviderUsageSummary(out)
+}
+
+func agentNativeUsageHasAny(values map[string]any, keys ...string) bool {
+	for _, key := range keys {
+		if _, ok := conditionRaw(values, key); ok {
+			return true
+		}
+	}
+	return false
+}
+
+func addNativeAgentUsageNumber(out map[string]any, key string, number float64, hasGenericInput, hasGenericOutput bool) {
+	canonical := canonicalAgentUsageKey(key)
+	if !canonicalAgentUsageKeyEnabled(canonical) {
+		return
+	}
+	number = normalizeNativeAgentUsageNumber(key, number)
+	normalized := normalizeAgentUsageKey(key)
+	if supplementalAgentInputTokenKey(normalized) || supplementalAgentOutputTokenKey(normalized) {
+		return
+	}
+	additiveInput := !hasGenericInput && (normalized == "inputtexttokens" || normalized == "inputimagetokens" || normalized == "inputaudiotokens" || normalized == "textinputtokens" || normalized == "imageinputtokens" || normalized == "audioinputtokens" || normalized == "imagetokens" || normalized == "videotokens" || normalized == "audiotokens")
+	additiveOutput := !hasGenericOutput && (normalized == "outputtexttokens" || normalized == "outputimagetokens" || normalized == "outputaudiotokens" || normalized == "textoutputtokens" || normalized == "imageoutputtokens" || normalized == "audiooutputtokens")
+	if additiveInput || additiveOutput {
+		existing, _ := positiveFloat(out[canonical])
+		out[canonical] = existing + number
+		return
+	}
+	if existing, ok := positiveFloat(out[canonical]); !ok || number > existing {
+		out[canonical] = number
+	}
+}
+
+func normalizeNativeAgentUsageNumber(key string, number float64) float64 {
+	switch normalizeAgentUsageKey(key) {
+	case "costmicros", "totalcostmicros", "estimatedcostmicros", "inputcostmicros", "promptcostmicros", "outputcostmicros", "completioncostmicros":
+		return number / 1_000_000
+	case "costcents", "totalcostcents", "estimatedcostcents", "inputcostcents", "promptcostcents", "outputcostcents", "completioncostcents":
+		return number / 100
+	default:
+		return number
+	}
+}
+
+func agentUsageWithDerivedTotals(values map[string]any) map[string]any {
+	out := map[string]any{}
+	for key, value := range values {
+		canonical := canonicalAgentUsageKey(key)
+		if number, ok := positiveFloat(value); ok {
+			number = normalizeNativeAgentUsageNumber(key, number)
+			if existing, ok := positiveFloat(out[canonical]); !ok || number > existing {
+				out[canonical] = number
+			}
+			continue
+		}
+		if _, exists := out[canonical]; !exists {
+			out[canonical] = value
+		}
+	}
+	if _, ok := positiveFloat(out["totalTokens"]); !ok {
+		if total := positiveFloatSum(out, "inputTokens", "outputTokens"); total > 0 {
+			out["totalTokens"] = total
+		}
+	}
+	if _, ok := positiveFloat(out["totalCost"]); !ok {
+		if total := positiveFloatSum(out, "inputCost", "outputCost"); total > 0 {
+			out["totalCost"] = total
+		}
+	}
+	return out
+}
+
+func supplementalAgentInputTokenUsage(values map[string]any) float64 {
+	total := 0.0
+	for key, value := range values {
+		if supplementalAgentInputTokenKey(normalizeAgentUsageKey(key)) {
+			if number, ok := positiveFloat(value); ok {
+				total += number
+			}
+		}
+	}
+	return total
+}
+
+func supplementalAgentOutputTokenUsage(values map[string]any) float64 {
+	total := 0.0
+	for key, value := range values {
+		if supplementalAgentOutputTokenKey(normalizeAgentUsageKey(key)) {
+			if number, ok := positiveFloat(value); ok {
+				total += number
+			}
+		}
+	}
+	return total
+}
+
+func supplementalAgentInputTokenKey(normalized string) bool {
+	switch normalized {
+	case "cachedtokens", "cachetokens", "cachecreationinputtokens", "cachereadinputtokens", "cachewriteinputtokens", "cachecreationtokens", "cachereadtokens", "cachewritetokens", "cachedcontenttokencount", "cachedcontenttokens", "tooluseprompttokencount", "tooluseprompttokens", "promptcachereadtokens", "promptcachewritetokens", "promptcachehittokens", "promptcachemisstokens", "inputcachereadtokens", "inputcachewritetokens", "inputcachedtokens":
+		return true
+	default:
+		return false
+	}
+}
+
+func supplementalAgentOutputTokenKey(normalized string) bool {
+	switch normalized {
+	case "thoughtstokencount", "thoughtstokens", "acceptedpredictiontokens", "rejectedpredictiontokens":
+		return true
+	default:
+		return false
+	}
+}
+
+func agentUsageSummaryKeys() []string {
+	return []string{
+		"totalTokens", "total_tokens", "tokens", "tokenCount", "totalTokenCount", "total_token_count", "tokenUsage", "token_usage", "billableTokens", "billable_tokens", "billedTokens", "billed_tokens", "usageTokens", "usage_tokens", "totalUnits", "total_units", "usageUnits", "usage_units", "searchUnits", "search_units", "classificationUnits", "classification_units", "classifications", "embeddingTokens", "embedding_tokens", "rerankTokens", "rerank_tokens", "queryUnits", "query_units", "queries", "searchRequests", "search_requests", "searchCredits", "search_credits", "serpapiSearches", "serpapi_searches", "braveSearchUnits", "brave_search_units", "browserMinutes", "browser_minutes", "browserSessions", "browser_sessions", "sessionMinutes", "session_minutes", "browserbaseMinutes", "browserbase_minutes", "pageLoads", "page_loads", "documentPages", "document_pages", "parsePages", "parse_pages", "llamaParsePages", "llama_parse_pages", "documents", "chunks", "characters", "chars", "requestCount", "request_count", "requests", "providerRequests", "provider_requests",
+		"inputTokens", "input_tokens", "inputTokensCount", "input_tokens_count", "inputTokenUsage", "input_token_usage", "promptTokens", "prompt_tokens", "promptTokensCount", "prompt_tokens_count", "promptTokenUsage", "prompt_token_usage", "promptTokenCount", "prompt_token_count", "inputTokenCount", "input_token_count", "promptEvalCount", "prompt_eval_count", "cachedContentTokenCount", "cached_content_token_count", "cachedContentTokens", "cached_content_tokens", "toolUsePromptTokenCount", "tool_use_prompt_token_count", "toolUsePromptTokens", "tool_use_prompt_tokens", "inputTextTokens", "input_text_tokens", "textInputTokens", "text_input_tokens", "inputImageTokens", "input_image_tokens", "imageInputTokens", "image_input_tokens", "imageTokens", "image_tokens", "videoTokens", "video_tokens", "inputAudioTokens", "input_audio_tokens", "audioInputTokens", "audio_input_tokens", "audioTokens", "audio_tokens", "readUnits", "read_units", "inputUnits", "input_units", "requestUnits", "request_units", "promptCacheReadTokens", "prompt_cache_read_tokens", "promptCacheWriteTokens", "prompt_cache_write_tokens", "promptCacheHitTokens", "prompt_cache_hit_tokens", "promptCacheMissTokens", "prompt_cache_miss_tokens", "inputCacheReadTokens", "input_cache_read_tokens", "inputCacheWriteTokens", "input_cache_write_tokens", "inputCachedTokens", "input_cached_tokens",
+		"outputTokens", "output_tokens", "outputTokensCount", "output_tokens_count", "outputTokenUsage", "output_token_usage", "completionTokens", "completion_tokens", "completionTokensCount", "completion_tokens_count", "completionTokenUsage", "completion_token_usage", "candidatesTokenCount", "candidates_token_count", "outputTokenCount", "output_token_count", "evalCount", "eval_count", "outputTextTokens", "output_text_tokens", "textOutputTokens", "text_output_tokens", "outputImageTokens", "output_image_tokens", "imageOutputTokens", "image_output_tokens", "outputAudioTokens", "output_audio_tokens", "audioOutputTokens", "audio_output_tokens", "thoughtsTokenCount", "thoughts_token_count", "thoughtsTokens", "thoughts_tokens", "reasoningTokens", "reasoning_tokens", "completionReasoningTokens", "completion_reasoning_tokens", "outputReasoningTokens", "output_reasoning_tokens", "acceptedPredictionTokens", "accepted_prediction_tokens", "rejectedPredictionTokens", "rejected_prediction_tokens", "writeUnits", "write_units", "outputUnits", "output_units", "responseUnits", "response_units",
+		"totalCost", "total_cost", "cost", "costUsd", "costUSD", "usd", "estimatedCost", "estimated_cost", "estimatedCostUsd", "estimated_cost_usd", "responseCost", "response_cost", "totalCostUsd", "total_cost_usd", "totalCostUSD", "total_cost_USD", "billedAmount", "billed_amount", "chargeAmount", "charge_amount", "creditsUsed", "credits_used", "costMicros", "cost_micros", "totalCostMicros", "total_cost_micros", "estimatedCostMicros", "estimated_cost_micros", "costCents", "cost_cents", "totalCostCents", "total_cost_cents", "estimatedCostCents", "estimated_cost_cents",
+		"inputCost", "input_cost", "promptCost", "prompt_cost", "inputCostUsd", "input_cost_usd", "promptCostUsd", "prompt_cost_usd", "inputCostMicros", "input_cost_micros", "promptCostMicros", "prompt_cost_micros", "inputCostCents", "input_cost_cents", "promptCostCents", "prompt_cost_cents",
+		"outputCost", "output_cost", "completionCost", "completion_cost", "outputCostUsd", "output_cost_usd", "completionCostUsd", "completion_cost_usd", "outputCostMicros", "output_cost_micros", "completionCostMicros", "completion_cost_micros", "outputCostCents", "output_cost_cents", "completionCostCents", "completion_cost_cents",
+	}
+}
+
+func canonicalAgentUsageKey(key string) string {
+	switch normalizeAgentUsageKey(key) {
+	case "totaltokens", "tokens", "tokencount", "totaltokencount", "tokenusage", "billabletokens", "billedtokens", "usagetokens", "totalunits", "usageunits", "searchunits", "classificationunits", "classifications", "embeddingtokens", "reranktokens", "queryunits", "queries", "searchrequests", "searchcredits", "serpapisearches", "bravesearchunits", "browserminutes", "browsersessions", "sessionminutes", "browserbaseminutes", "pageloads", "documentpages", "parsepages", "llamaparsepages", "documents", "chunks", "characters", "chars", "requestcount", "requests", "providerrequests":
+		return "totalTokens"
+	case "inputtokens", "inputtokenscount", "inputtokenusage", "prompttokens", "prompttokenscount", "prompttokenusage", "prompttokencount", "inputtokencount", "promptevalcount", "cachedcontenttokencount", "cachedcontenttokens", "tooluseprompttokencount", "tooluseprompttokens", "inputtexttokens", "textinputtokens", "inputimagetokens", "imageinputtokens", "imagetokens", "videotokens", "inputaudiotokens", "audioinputtokens", "audiotokens", "prompttokensdetailscachedtokens", "cachedtokens", "cachereadtokens", "promptcachehittokens", "promptcachemisstokens", "readunits", "inputunits", "requestunits":
+		return "inputTokens"
+	case "outputtokens", "outputtokenscount", "outputtokenusage", "completiontokens", "completiontokenscount", "completiontokenusage", "candidatestokencount", "outputtokencount", "evalcount", "outputtexttokens", "textoutputtokens", "outputimagetokens", "imageoutputtokens", "outputaudiotokens", "audiooutputtokens", "thoughtstokencount", "thoughtstokens", "completiontokensdetailsreasoningtokens", "completionreasoningtokens", "outputtokendetailsreasoningtokens", "outputreasoningtokens", "reasoningtokens", "acceptedpredictiontokens", "rejectedpredictiontokens", "writeunits", "outputunits", "responseunits":
+		return "outputTokens"
+	case "totalcost", "cost", "costusd", "usd", "estimatedcost", "estimatedcostusd", "responsecost", "totalcostusd", "billedamount", "chargeamount", "creditsused", "costmicros", "totalcostmicros", "estimatedcostmicros", "costcents", "totalcostcents", "estimatedcostcents":
+		return "totalCost"
+	case "inputcost", "promptcost", "inputcostusd", "promptcostusd", "inputcostmicros", "promptcostmicros", "inputcostcents", "promptcostcents":
+		return "inputCost"
+	case "outputcost", "completioncost", "outputcostusd", "completioncostusd", "outputcostmicros", "completioncostmicros", "outputcostcents", "completioncostcents":
+		return "outputCost"
+	default:
+		return strings.TrimSpace(key)
+	}
+}
+
+func canonicalAgentUsageKeyEnabled(key string) bool {
+	switch key {
+	case "totalTokens", "inputTokens", "outputTokens", "totalCost", "inputCost", "outputCost":
+		return true
+	default:
+		return false
+	}
+}
+
+func normalizeAgentUsageKey(key string) string {
+	replacer := strings.NewReplacer("_", "", "-", "", " ", "", ".", "")
+	return replacer.Replace(strings.ToLower(strings.TrimSpace(key)))
+}
+
+func conditionRaw(values map[string]any, key string) (any, bool) {
+	if values == nil {
+		return nil, false
+	}
+	if value, ok := values[key]; ok {
+		return value, true
+	}
+	normalized := normalizeAgentUsageKey(key)
+	for candidate, value := range values {
+		if normalizeAgentUsageKey(candidate) == normalized {
+			return value, true
+		}
+	}
+	return nil, false
+}
+
+func positiveFloatSum(values map[string]any, keys ...string) float64 {
+	total := 0.0
+	for _, key := range keys {
+		if value, ok := positiveFloat(values[key]); ok {
+			total += value
+		}
+	}
+	return total
+}
+
+func positiveFloat(value any) (float64, bool) {
+	switch typed := value.(type) {
+	case int:
+		return float64(typed), typed > 0
+	case int32:
+		return float64(typed), typed > 0
+	case int64:
+		return float64(typed), typed > 0
+	case float32:
+		return float64(typed), typed > 0
+	case float64:
+		return typed, typed > 0
+	case json.Number:
+		parsed, err := typed.Float64()
+		return parsed, err == nil && parsed > 0
+	case string:
+		parsed, err := strconv.ParseFloat(strings.TrimSpace(typed), 64)
+		if err != nil {
+			return 0, false
+		}
+		return parsed, parsed > 0
+	default:
+		return 0, false
+	}
 }
 
 func resolveAgentToolBinding(run domaincopilot.AgentRun, input domaincopilot.AgentToolCallInput) (domaincopilot.AgentToolBinding, bool) {
@@ -1168,6 +1760,191 @@ func (s *Service) createAgentRun(ctx context.Context, principal domainidentity.P
 	return s.repo.CreateAgentRun(ctx, run)
 }
 
+func (s *Service) RecordGatewayAnalysisArtifact(ctx context.Context, principal domainidentity.Principal, input domaincopilot.GatewayAnalysisArtifactInput) (domaincopilot.AgentRun, error) {
+	if err := s.authorizePrincipal(ctx, principal, appaccess.PermObserveAIChatUse); err != nil {
+		return domaincopilot.AgentRun{}, err
+	}
+	capabilityID := strings.TrimSpace(input.CapabilityID)
+	if capabilityID == "" {
+		capabilityID = "delivery_failure"
+	}
+	summary := strings.TrimSpace(input.Summary)
+	if summary == "" {
+		summary = "Gateway analysis artifact recorded."
+	}
+	now := time.Now().UTC()
+	runID := "agent:" + uuid.NewString()
+	snapshot := sanitizeGatewayArtifactSnapshot(input.DataSourceSnapshot)
+	snapshot["providerId"] = agentProviderInternal
+	snapshot["providerKind"] = "internal"
+	snapshot["capabilityId"] = capabilityID
+	snapshot["agentRuntimeId"] = runID
+	snapshot["generatedAt"] = now.Format(time.RFC3339)
+	snapshot["analysisRuntime"] = "gateway_in_process"
+	snapshot["artifactContract"] = "soha.analysisArtifact.v1"
+	snapshot["redactionBoundary"] = "soha-gateway"
+	snapshot["operationBoundary"] = "read_only_analysis"
+	artifact := domaincopilot.AnalysisArtifact{
+		Kind:               capabilityID,
+		RunID:              runID,
+		Title:              firstNonEmpty(input.Title, "Gateway analysis"),
+		Summary:            summary,
+		Scope:              input.Scope,
+		Evidence:           append([]domaincopilot.RootCauseEvidence(nil), input.Evidence...),
+		Hypotheses:         append([]domaincopilot.RootCauseHypothesis(nil), input.Hypotheses...),
+		Recommendations:    normalizeStringList(input.Recommendations),
+		ToolExecutions:     append([]domaincopilot.ToolExecution(nil), input.ToolExecutions...),
+		Graph:              input.Graph,
+		DataSourceSnapshot: snapshot,
+	}
+	run := domaincopilot.AgentRun{
+		ID:                runID,
+		ProviderID:        agentProviderInternal,
+		ProviderKind:      "internal",
+		CapabilityID:      capabilityID,
+		SkillIDs:          normalizeStringList(input.SkillIDs),
+		CreatedBy:         firstNonEmpty(principal.UserID, automationRootCauseCreatedBy),
+		Status:            domaincopilot.AgentRunStatusCompleted,
+		Scope:             input.Scope,
+		Toolset:           input.Toolset,
+		Input:             sanitizeGatewayArtifactSnapshot(input.Input),
+		Output:            sanitizeGatewayArtifactSnapshot(input.Output),
+		ToolExecutions:    artifact.ToolExecutions,
+		AnalysisArtifacts: []domaincopilot.AnalysisArtifact{artifact},
+		CallbackToken:     uuid.NewString(),
+		TimeoutSeconds:    0,
+		QueuedAt:          now,
+		StartedAt:         &now,
+		LastHeartbeatAt:   &now,
+		CompletedAt:       &now,
+		CreatedAt:         now,
+		UpdatedAt:         now,
+	}
+	return s.repo.CreateAgentRun(ctx, run)
+}
+
+func (s *Service) QueueGatewayAnalysisAgentRun(ctx context.Context, principal domainidentity.Principal, input domaincopilot.GatewayAnalysisAgentRunInput) (domaincopilot.AgentRun, error) {
+	if err := s.authorizePrincipal(ctx, principal, appaccess.PermObserveAIChatUse); err != nil {
+		return domaincopilot.AgentRun{}, err
+	}
+	providerID := strings.TrimSpace(input.AgentProviderID)
+	if providerID == "" {
+		providerID = s.defaultExternalAgentProviderID()
+	} else {
+		providerID = normalizeAgentProviderID(providerID)
+	}
+	if !s.shouldUseExternalAgent(providerID) {
+		return domaincopilot.AgentRun{}, fmt.Errorf("%w: enabled external agent provider is required", aperrors.ErrInvalidArgument)
+	}
+	capabilityID := strings.TrimSpace(input.CapabilityID)
+	if capabilityID == "" {
+		capabilityID = "delivery_failure"
+	}
+	summary := strings.TrimSpace(input.Summary)
+	if summary == "" {
+		summary = "Gateway analysis queued for external Agent Runtime provider."
+	}
+	snapshot := sanitizeGatewayArtifactSnapshot(input.DataSourceSnapshot)
+	snapshot["source"] = firstNonEmpty(stringValue(snapshot["source"]), "ai-gateway")
+	snapshot["providerId"] = providerID
+	snapshot["capabilityId"] = capabilityID
+	snapshot["analysisRuntime"] = "agent_runtime_claim_callback"
+	snapshot["artifactContract"] = "soha.analysisArtifact.v1"
+	snapshot["redactionBoundary"] = "soha-gateway"
+	snapshot["operationBoundary"] = "read_only_analysis"
+	agentInput := sanitizeGatewayArtifactSnapshot(input.Input)
+	agentInput["summary"] = summary
+	agentInput["title"] = firstNonEmpty(input.Title, "Gateway analysis")
+	agentInput["capabilityId"] = capabilityID
+	agentInput["dataSourceSnapshot"] = snapshot
+	agentInput["output"] = sanitizeGatewayArtifactSnapshot(input.Output)
+	agentInput["evidence"] = input.Evidence
+	agentInput["hypotheses"] = input.Hypotheses
+	agentInput["recommendations"] = normalizeStringList(input.Recommendations)
+	agentInput["toolExecutions"] = input.ToolExecutions
+	if input.Graph != nil {
+		agentInput["graph"] = input.Graph
+	}
+	agentInput = sanitizeGatewayArtifactSnapshot(agentInput)
+	return s.createAgentRun(ctx, principal, domaincopilot.AgentRunInput{
+		ProviderID:     providerID,
+		CapabilityID:   capabilityID,
+		SkillIDs:       automationAgentSkillIDs(capabilityID, input.SkillIDs),
+		CreatedBy:      firstNonEmpty(principal.UserID, automationRootCauseCreatedBy),
+		Scope:          input.Scope,
+		Toolset:        input.Toolset,
+		Input:          agentInput,
+		TimeoutSeconds: firstPositive(input.TimeoutSeconds, 600),
+	})
+}
+
+func (s *Service) defaultExternalAgentProviderID() string {
+	for _, provider := range s.agentProviderCatalog() {
+		if !provider.Enabled || !provider.SupportsAsync {
+			continue
+		}
+		if !s.shouldUseExternalAgent(provider.ID) {
+			continue
+		}
+		return provider.ID
+	}
+	return ""
+}
+
+func sanitizeGatewayArtifactSnapshot(values map[string]any) map[string]any {
+	if values == nil {
+		return map[string]any{}
+	}
+	bytes, err := json.Marshal(values)
+	if err != nil {
+		return map[string]any{}
+	}
+	var out map[string]any
+	if err := json.Unmarshal(bytes, &out); err != nil {
+		return map[string]any{}
+	}
+	return sanitizeGatewayArtifactMap(out)
+}
+
+func sanitizeGatewayArtifactMap(values map[string]any) map[string]any {
+	out := make(map[string]any, len(values))
+	for key, value := range values {
+		if gatewayArtifactSensitiveKey(key) {
+			out[key] = "[REDACTED]"
+			continue
+		}
+		out[key] = sanitizeGatewayArtifactValue(value)
+	}
+	return out
+}
+
+func sanitizeGatewayArtifactValue(value any) any {
+	switch typed := value.(type) {
+	case map[string]any:
+		return sanitizeGatewayArtifactMap(typed)
+	case []any:
+		out := make([]any, len(typed))
+		for index, item := range typed {
+			out[index] = sanitizeGatewayArtifactValue(item)
+		}
+		return out
+	case string:
+		return gatewayArtifactSensitiveValuePattern.ReplaceAllString(typed, "$1$2[REDACTED]")
+	default:
+		return typed
+	}
+}
+
+func gatewayArtifactSensitiveKey(key string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(key))
+	for _, needle := range []string{"token", "password", "passwd", "secret", "credential", "apikey", "api_key", "authorization", "kubeconfig", "envvar", "environmentvariable"} {
+		if strings.Contains(normalized, needle) {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *Service) agentToolBindingsForRun(provider domaincopilot.AgentProvider, capabilityID string, toolset domaincopilot.SessionToolset) []domaincopilot.AgentToolBinding {
 	bindings := filterToolBindings(defaultAgentToolBindings(), capabilityID)
 	out := make([]domaincopilot.AgentToolBinding, 0, len(bindings))
@@ -1571,26 +2348,36 @@ func (s *Service) synthesizeAgentArtifact(run domaincopilot.AgentRun) domaincopi
 	if len(toolExecutions) == 0 {
 		toolExecutions = anyListToToolExecutions(run.Output["toolExecutions"])
 	}
+	snapshot := map[string]any{
+		"providerId":     run.ProviderID,
+		"providerKind":   run.ProviderKind,
+		"capabilityId":   run.CapabilityID,
+		"skillIds":       run.SkillIDs,
+		"toolset":        run.Toolset,
+		"sessionId":      run.SessionID,
+		"rootCauseRunId": run.RootCauseRunID,
+		"externalRunId":  run.ExternalRunID,
+		"agentRuntimeId": run.ID,
+		"agentRunId":     run.ID,
+		"analysisRunId":  firstNonEmpty(run.RootCauseRunID, run.ID),
+		"analysisKind":   firstNonEmpty(run.CapabilityID, "agent_analysis"),
+	}
+	if usage := agentProviderUsageSummaryFromPayload(run.Output); len(usage) > 0 {
+		snapshot["providerUsage"] = usage
+		snapshot["usage"] = usage
+	}
 	return domaincopilot.AnalysisArtifact{
-		Kind:            firstNonEmpty(run.CapabilityID, "agent_analysis"),
-		RunID:           run.ID,
-		Title:           fmt.Sprintf("%s analysis", firstNonEmpty(run.CapabilityID, "agent")),
-		Summary:         summary,
-		Scope:           run.Scope,
-		Evidence:        anyListToEvidence(run.Output["evidence"]),
-		Hypotheses:      anyListToHypotheses(run.Output["hypotheses"]),
-		ToolExecutions:  toolExecutions,
-		Graph:           anyToAnalysisGraph(run.Output["graph"]),
-		Recommendations: anyListToStrings(run.Output["recommendations"]),
-		DataSourceSnapshot: map[string]any{
-			"providerId":     run.ProviderID,
-			"providerKind":   run.ProviderKind,
-			"capabilityId":   run.CapabilityID,
-			"skillIds":       run.SkillIDs,
-			"toolset":        run.Toolset,
-			"externalRunId":  run.ExternalRunID,
-			"agentRuntimeId": run.ID,
-		},
+		Kind:               firstNonEmpty(run.CapabilityID, "agent_analysis"),
+		RunID:              run.ID,
+		Title:              fmt.Sprintf("%s analysis", firstNonEmpty(run.CapabilityID, "agent")),
+		Summary:            summary,
+		Scope:              run.Scope,
+		Evidence:           anyListToEvidence(run.Output["evidence"]),
+		Hypotheses:         anyListToHypotheses(run.Output["hypotheses"]),
+		ToolExecutions:     toolExecutions,
+		Graph:              anyToAnalysisGraph(run.Output["graph"]),
+		Recommendations:    anyListToStrings(run.Output["recommendations"]),
+		DataSourceSnapshot: snapshot,
 	}
 }
 

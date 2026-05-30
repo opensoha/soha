@@ -54,6 +54,7 @@ const sidebars: SidebarsConfig = {
         "operations/agent-runtime",
         "operations/virtualization-lab-runbook",
         "operations/soha-cli",
+        "operations/ai-gateway-examples",
         "operations/deployment",
         "operations/environment-variables",
         "operations/dependencies",

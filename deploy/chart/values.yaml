@@ -88,4 +88,15 @@ config:
       enabled: false
   swaggerEnabled: false
   mcpEnabled: true
+  aiGateway:
+    rateLimit:
+      backend: postgres
+      redis:
+        addr: ""
+        username: ""
+        password: ""
+        db: 0
+        tls: false
+        keyPrefix: soha:ai-gateway:rate-limit
+        timeout: 500ms
   seedDefaults: true

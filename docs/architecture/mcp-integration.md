@@ -49,13 +49,21 @@ MCP must not bypass platform authorization. Every MCP capability maps to a platf
 - invocation audit
 - response filtering
 
-`delivery.v1` 当前首批工具：
+`delivery.v1` 当前首批 Gateway 工具使用 canonical tool name 暴露给 MCP client：
 
-- `delivery.blueprints.list`
-- `delivery.spec.render`
-- `delivery.targets.list`
-- `delivery.application.bootstrap`
-- `delivery.execution.start`
+- `delivery.applications.list`
+- `delivery.applications.detail`
+- `delivery.applications.create`
+- `delivery.application_environments.list`
+- `delivery.application_services.list`
+- `delivery.build_sources.list`
+- `delivery.release_targets.list`
+- `delivery.release_bundles.list`
+- `delivery.execution_tasks.list`
+- `delivery.execution_logs.list`
+- `delivery.release_context.diff`
+- `delivery.rollback.context`
+- `delivery.actions.trigger`
 
 这些能力必须仍然经过平台权限、scope、审计和操作日志边界；Gin handler 不得直接执行 repo 写入或长时 shell。
 

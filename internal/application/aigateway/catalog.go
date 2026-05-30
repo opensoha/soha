@@ -18,6 +18,23 @@ func defaultTools() []domainaigateway.ToolCapability {
 			RequiredScopes: []string{"businessLine", "application"},
 			MCPAdapterID:   "delivery.v1",
 			MCPToolName:    "delivery.applications.list",
+			InputSchema: gatewayObjectSchema(nil, map[string]any{
+				"search": gatewayStringSchema("Optional application name, key, or repository search text."),
+				"limit":  gatewayIntegerSchema("Maximum applications to return."),
+			}),
+		},
+		{
+			Name:           "delivery.applications.detail",
+			Title:          "Get Application Detail",
+			Description:    "Read one delivery application detail with bindings, targets, latest release bundle, and execution summary.",
+			Domain:         "delivery",
+			Action:         "read",
+			RiskLevel:      domainaigateway.RiskLevelRead,
+			PermissionKeys: []string{appaccess.PermAIGatewayInvoke, appaccess.PermDeliveryApplicationsView},
+			RequiredScopes: []string{"businessLine", "application"},
+			MCPAdapterID:   "delivery.v1",
+			MCPToolName:    "delivery.applications.detail",
+			InputSchema:    gatewayObjectSchema([]string{"applicationId"}, gatewayApplicationIDProperties()),
 		},
 		{
 			Name:             "delivery.applications.create",
@@ -29,8 +46,29 @@ func defaultTools() []domainaigateway.ToolCapability {
 			PermissionKeys:   []string{appaccess.PermAIGatewayInvoke, appaccess.PermDeliveryApplicationsCreate},
 			RequiredScopes:   []string{"businessLine"},
 			MCPAdapterID:     "delivery.v1",
-			MCPToolName:      "delivery.application.bootstrap",
+			MCPToolName:      "delivery.applications.create",
 			RequiresApproval: false,
+			InputSchema: gatewayObjectSchema([]string{"name", "key"}, map[string]any{
+				"id":                  gatewayStringSchema("Optional caller-provided application id."),
+				"name":                gatewayStringSchema("Application display name."),
+				"key":                 gatewayStringSchema("Stable application key."),
+				"group":               gatewayStringSchema("Optional application group."),
+				"businessLineId":      gatewayStringSchema("Business line id."),
+				"language":            gatewayStringSchema("Primary language or runtime."),
+				"description":         gatewayStringSchema("Application description."),
+				"ownerTeam":           gatewayStringSchema("Owning team."),
+				"repositoryProvider":  gatewayStringSchema("Repository provider key."),
+				"repositoryProjectId": gatewayStringSchema("Repository project id."),
+				"repositoryPath":      gatewayStringSchema("Repository path."),
+				"defaultBranch":       gatewayStringSchema("Default source branch."),
+				"defaultTag":          gatewayStringSchema("Default image or release tag."),
+				"buildImage":          gatewayStringSchema("Default build image."),
+				"buildContextDir":     gatewayStringSchema("Build context directory."),
+				"dockerfilePath":      gatewayStringSchema("Dockerfile path."),
+				"enabled":             gatewayBooleanSchema("Whether the application is enabled."),
+				"metadata":            gatewayFreeformObjectSchema("Application metadata."),
+				"buildSources":        gatewayArraySchema("Optional build source definitions."),
+			}),
 		},
 		{
 			Name:           "delivery.application_environments.list",
@@ -42,20 +80,77 @@ func defaultTools() []domainaigateway.ToolCapability {
 			PermissionKeys: []string{appaccess.PermAIGatewayInvoke, appaccess.PermDeliveryApplicationEnvView},
 			RequiredScopes: []string{"application", "environment"},
 			MCPAdapterID:   "delivery.v1",
-			MCPToolName:    "delivery.targets.list",
+			MCPToolName:    "delivery.application_environments.list",
+			InputSchema:    gatewayObjectSchema(nil, gatewayApplicationBindingProperties()),
+		},
+		{
+			Name:           "delivery.application_services.list",
+			Title:          "List Application Services",
+			Description:    "List service components and container configuration summaries for an application.",
+			Domain:         "delivery",
+			Action:         "list",
+			RiskLevel:      domainaigateway.RiskLevelRead,
+			PermissionKeys: []string{appaccess.PermAIGatewayInvoke, appaccess.PermDeliveryApplicationServicesView},
+			RequiredScopes: []string{"application"},
+			MCPAdapterID:   "delivery.v1",
+			MCPToolName:    "delivery.application_services.list",
+			InputSchema:    gatewayObjectSchema([]string{"applicationId"}, gatewayApplicationIDProperties()),
+		},
+		{
+			Name:           "delivery.build_sources.list",
+			Title:          "List Build Sources",
+			Description:    "List build sources for a delivery application and optionally show binding usage.",
+			Domain:         "delivery",
+			Action:         "list",
+			RiskLevel:      domainaigateway.RiskLevelRead,
+			PermissionKeys: []string{appaccess.PermAIGatewayInvoke, appaccess.PermDeliveryApplicationsView},
+			RequiredScopes: []string{"application"},
+			MCPAdapterID:   "delivery.v1",
+			MCPToolName:    "delivery.build_sources.list",
+			InputSchema: gatewayObjectSchema([]string{"applicationId"}, map[string]any{
+				"applicationId": gatewayStringSchema("Delivery application id."),
+				"withBindings":  gatewayBooleanSchema("Include application environment binding usage for each build source."),
+			}),
+		},
+		{
+			Name:           "delivery.release_targets.list",
+			Title:          "List Release Targets",
+			Description:    "List release targets from application environment bindings.",
+			Domain:         "delivery",
+			Action:         "list",
+			RiskLevel:      domainaigateway.RiskLevelRead,
+			PermissionKeys: []string{appaccess.PermAIGatewayInvoke, appaccess.PermDeliveryApplicationEnvView},
+			RequiredScopes: []string{"application", "environment"},
+			MCPAdapterID:   "delivery.v1",
+			MCPToolName:    "delivery.release_targets.list",
+			InputSchema:    gatewayObjectSchema(nil, gatewayApplicationBindingProperties()),
 		},
 		{
 			Name:             "delivery.actions.trigger",
 			Title:            "Trigger Delivery Action",
-			Description:      "Trigger build, deploy, build_deploy, workflow, or verify actions through the delivery service.",
+			Description:      "Trigger build, deploy, build_deploy, workflow, verify, or rollback actions through the delivery service.",
 			Domain:           "delivery",
 			Action:           "execute",
 			RiskLevel:        domainaigateway.RiskLevelExecute,
 			PermissionKeys:   []string{appaccess.PermAIGatewayInvoke, appaccess.PermDeliveryBuildsTrigger, appaccess.PermDeliveryReleasesTrigger},
 			RequiredScopes:   []string{"application", "environment"},
 			MCPAdapterID:     "delivery.v1",
-			MCPToolName:      "delivery.execution.start",
+			MCPToolName:      "delivery.actions.trigger",
 			RequiresApproval: true,
+			InputSchema: gatewayObjectSchema([]string{"applicationId", "action"}, map[string]any{
+				"applicationId":            gatewayStringSchema("Delivery application id."),
+				"applicationEnvironmentId": gatewayStringSchema("Target application environment binding id."),
+				"action": map[string]any{
+					"type":        "string",
+					"description": "Delivery action to trigger.",
+					"enum":        []any{"build", "deploy", "build_deploy", "workflow", "verify", "rollback"},
+				},
+				"buildSourceId":   gatewayStringSchema("Optional build source id for build-oriented actions."),
+				"workflowId":      gatewayStringSchema("Optional workflow template id for workflow actions."),
+				"releaseBundleId": gatewayStringSchema("Release bundle id, required for rollback and often used for deploy."),
+				"reason":          gatewayStringSchema("Human-readable reason for audit and approval context."),
+				"variables":       gatewayFreeformObjectSchema("Workflow or action variables."),
+			}),
 		},
 		{
 			Name:           "delivery.release_bundles.list",
@@ -68,6 +163,7 @@ func defaultTools() []domainaigateway.ToolCapability {
 			RequiredScopes: []string{"application", "environment"},
 			MCPAdapterID:   "delivery.v1",
 			MCPToolName:    "delivery.release_bundles.list",
+			InputSchema:    gatewayObjectSchema(nil, gatewayReleaseBundleListProperties()),
 		},
 		{
 			Name:           "delivery.execution_tasks.list",
@@ -80,6 +176,89 @@ func defaultTools() []domainaigateway.ToolCapability {
 			RequiredScopes: []string{"application", "environment"},
 			MCPAdapterID:   "delivery.v1",
 			MCPToolName:    "delivery.execution_tasks.list",
+			InputSchema:    gatewayObjectSchema(nil, gatewayExecutionTaskListProperties()),
+		},
+		{
+			Name:           "delivery.execution_logs.list",
+			Title:          "List Execution Logs",
+			Description:    "Read redacted logs for a durable execution task.",
+			Domain:         "delivery",
+			Action:         "logs",
+			RiskLevel:      domainaigateway.RiskLevelRead,
+			PermissionKeys: []string{appaccess.PermAIGatewayInvoke, appaccess.PermDeliveryExecutionTasksView},
+			RequiredScopes: []string{"application", "environment", "executionTask"},
+			MCPAdapterID:   "delivery.v1",
+			MCPToolName:    "delivery.execution_logs.list",
+			InputSchema: gatewayObjectSchema([]string{"taskId"}, map[string]any{
+				"taskId": gatewayStringSchema("Execution task id."),
+				"limit":  gatewayIntegerSchema("Maximum log records to return."),
+			}),
+		},
+		{
+			Name:           "delivery.approval_policies.list",
+			Title:          "List Approval Policies",
+			Description:    "List delivery approval policies available for release governance and Gateway approval linkage.",
+			Domain:         "delivery",
+			Action:         "list",
+			RiskLevel:      domainaigateway.RiskLevelRead,
+			PermissionKeys: []string{appaccess.PermAIGatewayInvoke, appaccess.PermDeliveryApprovalPoliciesView},
+			RequiredScopes: []string{"application", "environment"},
+			MCPAdapterID:   "delivery.v1",
+			MCPToolName:    "delivery.approval_policies.list",
+			InputSchema:    gatewayObjectSchema(nil, map[string]any{}),
+		},
+		{
+			Name:           "delivery.workflow_templates.list",
+			Title:          "List Workflow Templates",
+			Description:    "List delivery workflow templates for build, release, verification, and approval planning.",
+			Domain:         "delivery",
+			Action:         "list",
+			RiskLevel:      domainaigateway.RiskLevelRead,
+			PermissionKeys: []string{appaccess.PermAIGatewayInvoke, appaccess.PermDeliveryWorkflowTemplatesView},
+			RequiredScopes: []string{"application", "environment"},
+			MCPAdapterID:   "delivery.v1",
+			MCPToolName:    "delivery.workflow_templates.list",
+			InputSchema:    gatewayObjectSchema(nil, map[string]any{}),
+		},
+		{
+			Name:           "delivery.release_context.diff",
+			Title:          "Build Release Diff Context",
+			Description:    "Collect read-only candidate promotion context and compare release bundles, bindings, targets, and recent execution state.",
+			Domain:         "delivery",
+			Action:         "analyze",
+			RiskLevel:      domainaigateway.RiskLevelAnalyze,
+			PermissionKeys: []string{appaccess.PermAIGatewayInvoke, appaccess.PermDeliveryApplicationsView, appaccess.PermDeliveryReleaseBundlesView, appaccess.PermDeliveryExecutionTasksView},
+			RequiredScopes: []string{"application", "environment", "releaseBundle"},
+			MCPAdapterID:   "delivery.v1",
+			MCPToolName:    "delivery.release_context.diff",
+			InputSchema: gatewayObjectSchema([]string{"applicationId"}, map[string]any{
+				"applicationId":            gatewayStringSchema("Delivery application id."),
+				"applicationEnvironmentId": gatewayStringSchema("Optional application environment binding id."),
+				"sourceBundleId":           gatewayStringSchema("Optional source release bundle id."),
+				"targetBundleId":           gatewayStringSchema("Optional target release bundle id."),
+				"releaseBundleId":          gatewayStringSchema("Alias for targetBundleId."),
+				"limit":                    gatewayIntegerSchema("Maximum release bundle and task records to inspect."),
+			}),
+		},
+		{
+			Name:           "delivery.rollback.context",
+			Title:          "Build Rollback Context",
+			Description:    "Collect read-only rollback suggestion context from release bundles, execution tasks, logs, and environment targets.",
+			Domain:         "delivery",
+			Action:         "analyze",
+			RiskLevel:      domainaigateway.RiskLevelAnalyze,
+			PermissionKeys: []string{appaccess.PermAIGatewayInvoke, appaccess.PermDeliveryApplicationsView, appaccess.PermDeliveryReleaseBundlesView, appaccess.PermDeliveryExecutionTasksView},
+			RequiredScopes: []string{"application", "environment", "releaseBundle", "executionTask"},
+			MCPAdapterID:   "delivery.v1",
+			MCPToolName:    "delivery.rollback.context",
+			InputSchema: gatewayObjectSchema([]string{"applicationId"}, map[string]any{
+				"applicationId":            gatewayStringSchema("Delivery application id."),
+				"applicationEnvironmentId": gatewayStringSchema("Optional application environment binding id."),
+				"releaseBundleId":          gatewayStringSchema("Optional release bundle id to inspect."),
+				"executionTaskId":          gatewayStringSchema("Optional execution task id to anchor rollback evidence."),
+				"limit":                    gatewayIntegerSchema("Maximum release bundle and task records to inspect."),
+				"logLimit":                 gatewayIntegerSchema("Maximum execution log records to include."),
+			}),
 		},
 		{
 			Name:           "k8s.pods.list",
@@ -92,6 +271,7 @@ func defaultTools() []domainaigateway.ToolCapability {
 			RequiredScopes: []string{"cluster", "namespace"},
 			MCPAdapterID:   "platform-native.v1",
 			MCPToolName:    "k8s.pods.list",
+			InputSchema:    gatewayObjectSchema([]string{"clusterId"}, gatewayClusterNamespaceProperties("Pod namespace. Empty means all namespaces when allowed.")),
 		},
 		{
 			Name:           "k8s.pods.logs",
@@ -104,6 +284,32 @@ func defaultTools() []domainaigateway.ToolCapability {
 			RequiredScopes: []string{"cluster", "namespace", "pod"},
 			MCPAdapterID:   "platform-native.v1",
 			MCPToolName:    "k8s.pods.logs",
+			InputSchema: gatewayObjectSchema([]string{"clusterId", "namespace", "podName"}, map[string]any{
+				"clusterId":    gatewayStringSchema("Cluster id."),
+				"namespace":    gatewayStringSchema("Pod namespace."),
+				"podName":      gatewayStringSchema("Pod name."),
+				"container":    gatewayStringSchema("Optional container name."),
+				"tailLines":    gatewayIntegerSchema("Number of recent log lines to read."),
+				"sinceSeconds": gatewayIntegerSchema("Only return logs newer than this many seconds."),
+				"previous":     gatewayBooleanSchema("Read previous terminated container logs."),
+			}),
+		},
+		{
+			Name:           "k8s.pods.describe",
+			Title:          "Describe Pod",
+			Description:    "Read a describe-style pod summary with containers, conditions, volumes, and related resources.",
+			Domain:         "k8s",
+			Action:         "read",
+			RiskLevel:      domainaigateway.RiskLevelRead,
+			PermissionKeys: []string{appaccess.PermAIGatewayInvoke, appaccess.PermWorkspaceResourceView, appaccess.PermPlatformWorkloadsView},
+			RequiredScopes: []string{"cluster", "namespace", "pod"},
+			MCPAdapterID:   "platform-native.v1",
+			MCPToolName:    "k8s.pods.describe",
+			InputSchema: gatewayObjectSchema([]string{"clusterId", "namespace", "podName"}, map[string]any{
+				"clusterId": gatewayStringSchema("Cluster id."),
+				"namespace": gatewayStringSchema("Pod namespace."),
+				"podName":   gatewayStringSchema("Pod name."),
+			}),
 		},
 		{
 			Name:           "k8s.deployments.list",
@@ -116,6 +322,42 @@ func defaultTools() []domainaigateway.ToolCapability {
 			RequiredScopes: []string{"cluster", "namespace"},
 			MCPAdapterID:   "platform-native.v1",
 			MCPToolName:    "k8s.deployments.list",
+			InputSchema:    gatewayObjectSchema([]string{"clusterId"}, gatewayClusterNamespaceProperties("Deployment namespace. Empty means all namespaces when allowed.")),
+		},
+		{
+			Name:           "k8s.deployments.rollout_status",
+			Title:          "Read Deployment Rollout Status",
+			Description:    "Read rollout status, replica progress, revision, and conditions for one deployment.",
+			Domain:         "k8s",
+			Action:         "read",
+			RiskLevel:      domainaigateway.RiskLevelRead,
+			PermissionKeys: []string{appaccess.PermAIGatewayInvoke, appaccess.PermWorkspaceResourceView, appaccess.PermPlatformWorkloadsView},
+			RequiredScopes: []string{"cluster", "namespace", "deployment"},
+			MCPAdapterID:   "platform-native.v1",
+			MCPToolName:    "k8s.deployments.rollout_status",
+			InputSchema: gatewayObjectSchema([]string{"clusterId", "namespace", "deploymentName"}, map[string]any{
+				"clusterId":      gatewayStringSchema("Cluster id."),
+				"namespace":      gatewayStringSchema("Deployment namespace."),
+				"deploymentName": gatewayStringSchema("Deployment name."),
+			}),
+		},
+		{
+			Name:           "k8s.deployments.events",
+			Title:          "List Deployment Events",
+			Description:    "List cluster events related to one deployment in the selected namespace.",
+			Domain:         "k8s",
+			Action:         "list",
+			RiskLevel:      domainaigateway.RiskLevelRead,
+			PermissionKeys: []string{appaccess.PermAIGatewayInvoke, appaccess.PermWorkspaceResourceView, appaccess.PermObserveEventsView},
+			RequiredScopes: []string{"cluster", "namespace", "deployment", "timeRange"},
+			MCPAdapterID:   "platform-native.v1",
+			MCPToolName:    "k8s.deployments.events",
+			InputSchema: gatewayObjectSchema([]string{"clusterId", "namespace", "deploymentName"}, map[string]any{
+				"clusterId":      gatewayStringSchema("Cluster id."),
+				"namespace":      gatewayStringSchema("Deployment namespace."),
+				"deploymentName": gatewayStringSchema("Deployment name."),
+				"limit":          gatewayIntegerSchema("Maximum events to inspect."),
+			}),
 		},
 		{
 			Name:           "k8s.services.list",
@@ -128,6 +370,70 @@ func defaultTools() []domainaigateway.ToolCapability {
 			RequiredScopes: []string{"cluster", "namespace"},
 			MCPAdapterID:   "platform-native.v1",
 			MCPToolName:    "k8s.services.list",
+			InputSchema:    gatewayObjectSchema([]string{"clusterId"}, gatewayClusterNamespaceProperties("Service namespace. Empty means all namespaces when allowed.")),
+		},
+		{
+			Name:           "k8s.services.backends",
+			Title:          "Read Service Backends",
+			Description:    "Read service selector, matching pods, and related ingress route hints for one service.",
+			Domain:         "k8s",
+			Action:         "read",
+			RiskLevel:      domainaigateway.RiskLevelRead,
+			PermissionKeys: []string{appaccess.PermAIGatewayInvoke, appaccess.PermWorkspaceResourceView, appaccess.PermPlatformNetworkView, appaccess.PermPlatformWorkloadsView},
+			RequiredScopes: []string{"cluster", "namespace", "service"},
+			MCPAdapterID:   "platform-native.v1",
+			MCPToolName:    "k8s.services.backends",
+			InputSchema: gatewayObjectSchema([]string{"clusterId", "namespace", "serviceName"}, map[string]any{
+				"clusterId":   gatewayStringSchema("Cluster id."),
+				"namespace":   gatewayStringSchema("Service namespace."),
+				"serviceName": gatewayStringSchema("Service name."),
+			}),
+		},
+		{
+			Name:           "k8s.routes.context",
+			Title:          "Read Route Context",
+			Description:    "Read ingress and Gateway API route context for a namespace or service without returning raw Kubernetes objects.",
+			Domain:         "k8s",
+			Action:         "read",
+			RiskLevel:      domainaigateway.RiskLevelRead,
+			PermissionKeys: []string{appaccess.PermAIGatewayInvoke, appaccess.PermWorkspaceResourceView, appaccess.PermPlatformNetworkView},
+			RequiredScopes: []string{"cluster", "namespace", "service"},
+			MCPAdapterID:   "platform-native.v1",
+			MCPToolName:    "k8s.routes.context",
+			InputSchema: gatewayObjectSchema([]string{"clusterId"}, map[string]any{
+				"clusterId":   gatewayStringSchema("Cluster id."),
+				"namespace":   gatewayStringSchema("Namespace for route context. Empty means all namespaces when allowed."),
+				"serviceName": gatewayStringSchema("Optional service name to focus route context."),
+			}),
+		},
+		{
+			Name:           "k8s.storage.context",
+			Title:          "Read Storage Context",
+			Description:    "Read PVC, PV, and storage class summaries for storage diagnosis.",
+			Domain:         "k8s",
+			Action:         "read",
+			RiskLevel:      domainaigateway.RiskLevelRead,
+			PermissionKeys: []string{appaccess.PermAIGatewayInvoke, appaccess.PermWorkspaceResourceView, appaccess.PermPlatformStorageView},
+			RequiredScopes: []string{"cluster", "namespace", "storage"},
+			MCPAdapterID:   "platform-native.v1",
+			MCPToolName:    "k8s.storage.context",
+			InputSchema:    gatewayObjectSchema([]string{"clusterId"}, gatewayClusterNamespaceProperties("Namespace for PVC context. Empty includes cluster storage summary when allowed.")),
+		},
+		{
+			Name:           "k8s.nodes.detail",
+			Title:          "Read Node Detail",
+			Description:    "Read node conditions, resource summary, taints, and scheduled pod context.",
+			Domain:         "k8s",
+			Action:         "read",
+			RiskLevel:      domainaigateway.RiskLevelRead,
+			PermissionKeys: []string{appaccess.PermAIGatewayInvoke, appaccess.PermWorkspaceResourceView, appaccess.PermPlatformNodesView},
+			RequiredScopes: []string{"cluster", "node"},
+			MCPAdapterID:   "platform-native.v1",
+			MCPToolName:    "k8s.nodes.detail",
+			InputSchema: gatewayObjectSchema([]string{"clusterId", "nodeName"}, map[string]any{
+				"clusterId": gatewayStringSchema("Cluster id."),
+				"nodeName":  gatewayStringSchema("Node name."),
+			}),
 		},
 		{
 			Name:           "k8s.events.list",
@@ -139,7 +445,12 @@ func defaultTools() []domainaigateway.ToolCapability {
 			PermissionKeys: []string{appaccess.PermAIGatewayInvoke, appaccess.PermWorkspaceResourceView, appaccess.PermObserveEventsView},
 			RequiredScopes: []string{"cluster", "namespace", "timeRange"},
 			MCPAdapterID:   "platform-native.v1",
-			MCPToolName:    "k8s.events",
+			MCPToolName:    "k8s.events.list",
+			InputSchema: gatewayObjectSchema([]string{"clusterId"}, map[string]any{
+				"clusterId": gatewayStringSchema("Cluster id."),
+				"namespace": gatewayStringSchema("Event namespace. Empty means all namespaces when allowed."),
+				"limit":     gatewayIntegerSchema("Maximum events to return."),
+			}),
 		},
 		{
 			Name:             "diagnosis.release_failure.analyze",
@@ -153,6 +464,25 @@ func defaultTools() []domainaigateway.ToolCapability {
 			MCPAdapterID:     "platform-native.v1",
 			MCPToolName:      "diagnosis.release_failure.analyze",
 			RequiresApproval: false,
+			InputSchema: gatewayObjectSchema([]string{"applicationId"}, map[string]any{
+				"applicationId":            gatewayStringSchema("Delivery application id."),
+				"applicationEnvironmentId": gatewayStringSchema("Optional application environment binding id."),
+				"releaseBundleId":          gatewayStringSchema("Optional release bundle id."),
+				"executionTaskId":          gatewayStringSchema("Optional execution task id."),
+				"clusterId":                gatewayStringSchema("Optional cluster id for runtime context."),
+				"namespace":                gatewayStringSchema("Optional namespace for runtime context."),
+				"workloadKind":             gatewayStringSchema("Optional workload kind, such as Deployment or Pod."),
+				"workloadName":             gatewayStringSchema("Optional workload name."),
+				"podName":                  gatewayStringSchema("Optional pod name for log evidence."),
+				"container":                gatewayStringSchema("Optional container name."),
+				"logLimit":                 gatewayIntegerSchema("Maximum log records to include."),
+				"eventLimit":               gatewayIntegerSchema("Maximum event records to include."),
+				"agentProviderId":          gatewayStringSchema("Optional external Agent Runtime provider id for deep analysis, such as hermes."),
+				"providerId":               gatewayStringSchema("Alias for agentProviderId."),
+				"deepAnalysis":             gatewayBooleanSchema("Queue external Agent Runtime deep analysis instead of only recording an internal artifact."),
+				"externalAnalysis":         gatewayBooleanSchema("Alias for deepAnalysis."),
+				"timeoutSeconds":           gatewayIntegerSchema("Agent Runtime timeout for external deep analysis."),
+			}),
 		},
 	}
 }
@@ -164,18 +494,21 @@ func defaultResources() []domainaigateway.ResourceCapability {
 			Description:    "Delivery applications, build sources, service components, and environment bindings.",
 			PermissionKeys: []string{appaccess.PermAIGatewayInvoke, appaccess.PermDeliveryApplicationsView},
 			RequiredScopes: []string{"businessLine", "application"},
+			ContextSchema:  gatewayObjectSchema(nil, gatewayDeliveryContextProperties()),
 		},
 		{
 			Name:           "soha://delivery/execution-tasks",
 			Description:    "Durable delivery execution tasks, callbacks, artifacts, and logs.",
 			PermissionKeys: []string{appaccess.PermAIGatewayInvoke, appaccess.PermDeliveryExecutionTasksView},
 			RequiredScopes: []string{"application", "environment"},
+			ContextSchema:  gatewayObjectSchema(nil, gatewayDeliveryExecutionContextProperties()),
 		},
 		{
 			Name:           "soha://k8s/runtime",
-			Description:    "Scoped Kubernetes runtime inventory, events, logs, and workload status.",
+			Description:    "Scoped Kubernetes runtime inventory, events, logs, route, storage, and workload status.",
 			PermissionKeys: []string{appaccess.PermAIGatewayInvoke, appaccess.PermWorkspaceResourceView},
 			RequiredScopes: []string{"cluster", "namespace"},
+			ContextSchema:  gatewayObjectSchema([]string{"clusterId"}, gatewayKubernetesRuntimeContextProperties()),
 		},
 	}
 }
@@ -187,13 +520,153 @@ func defaultPrompts() []domainaigateway.PromptCapability {
 			Description:    "Guide an AI client through application environment checks before triggering a release.",
 			PermissionKeys: []string{appaccess.PermAIGatewayInvoke, appaccess.PermDeliveryApplicationsView},
 			RequiredScopes: []string{"application", "environment"},
+			ArgumentSchema: gatewayObjectSchema([]string{"applicationId"}, gatewayDeliveryPromptArgumentProperties()),
+			ContextSchema:  gatewayObjectSchema(nil, gatewayDeliveryContextProperties()),
 		},
 		{
 			Name:           "soha.k8s.diagnose_workload",
-			Description:    "Collect scoped workload evidence and generate a diagnosis plan without mutating cluster state.",
+			Description:    "Collect scoped workload, network route, storage, node, and event evidence without mutating cluster state.",
 			PermissionKeys: []string{appaccess.PermAIGatewayInvoke, appaccess.PermWorkspaceResourceView},
 			RequiredScopes: []string{"cluster", "namespace", "workload"},
+			ArgumentSchema: gatewayObjectSchema([]string{"clusterId"}, gatewayKubernetesPromptArgumentProperties()),
+			ContextSchema:  gatewayObjectSchema([]string{"clusterId"}, gatewayKubernetesRuntimeContextProperties()),
 		},
+	}
+}
+
+func gatewayDeliveryContextProperties() map[string]any {
+	return map[string]any{
+		"businessLineId":            gatewayStringSchema("Optional business line id for delivery scope."),
+		"applicationId":             gatewayStringSchema("Optional delivery application id."),
+		"applicationEnvironmentId":  gatewayStringSchema("Optional application environment binding id."),
+		"environmentId":             gatewayStringSchema("Optional delivery environment id."),
+		"releaseBundleId":           gatewayStringSchema("Optional release bundle id."),
+		"executionTaskId":           gatewayStringSchema("Optional execution task id."),
+		"workflowRunId":             gatewayStringSchema("Optional workflow run id."),
+		"gatewayApprovalRequestId":  gatewayStringSchema("Optional AI Gateway approval request id."),
+		"workflowApprovalRequestId": gatewayStringSchema("Optional workflow approval request id."),
+	}
+}
+
+func gatewayDeliveryExecutionContextProperties() map[string]any {
+	out := gatewayDeliveryContextProperties()
+	out["taskId"] = gatewayStringSchema("Alias for executionTaskId.")
+	out["status"] = gatewayStringSchema("Optional execution task status.")
+	return out
+}
+
+func gatewayDeliveryPromptArgumentProperties() map[string]any {
+	return map[string]any{
+		"applicationId":            gatewayStringSchema("Delivery application id."),
+		"applicationEnvironmentId": gatewayStringSchema("Optional application environment binding id."),
+		"environmentId":            gatewayStringSchema("Optional delivery environment id."),
+		"releaseBundleId":          gatewayStringSchema("Optional candidate release bundle id."),
+		"executionTaskId":          gatewayStringSchema("Optional execution task id for recent evidence."),
+		"targetEnvironmentId":      gatewayStringSchema("Optional target environment id for promotion planning."),
+	}
+}
+
+func gatewayKubernetesRuntimeContextProperties() map[string]any {
+	return map[string]any{
+		"clusterId":      gatewayStringSchema("Cluster id."),
+		"namespace":      gatewayStringSchema("Namespace. Empty means all namespaces when allowed."),
+		"workloadKind":   gatewayStringSchema("Optional workload kind, such as Deployment, StatefulSet, DaemonSet, Job, or Pod."),
+		"workloadName":   gatewayStringSchema("Optional workload name."),
+		"podName":        gatewayStringSchema("Optional pod name."),
+		"container":      gatewayStringSchema("Optional container name."),
+		"deploymentName": gatewayStringSchema("Optional deployment name."),
+		"serviceName":    gatewayStringSchema("Optional service name."),
+		"nodeName":       gatewayStringSchema("Optional node name."),
+		"tailLines":      gatewayIntegerSchema("Optional log tail line count."),
+		"eventLimit":     gatewayIntegerSchema("Optional event limit."),
+	}
+}
+
+func gatewayKubernetesPromptArgumentProperties() map[string]any {
+	out := gatewayKubernetesRuntimeContextProperties()
+	out["symptom"] = gatewayStringSchema("Optional short problem statement or observed symptom.")
+	out["sinceSeconds"] = gatewayIntegerSchema("Optional event or log lookback in seconds.")
+	return out
+}
+
+func gatewayObjectSchema(required []string, properties map[string]any) map[string]any {
+	out := map[string]any{
+		"type":                 "object",
+		"additionalProperties": true,
+		"properties":           properties,
+	}
+	if len(required) > 0 {
+		items := make([]any, 0, len(required))
+		for _, item := range required {
+			items = append(items, item)
+		}
+		out["required"] = items
+	}
+	return out
+}
+
+func gatewayStringSchema(description string) map[string]any {
+	return map[string]any{"type": "string", "description": description}
+}
+
+func gatewayIntegerSchema(description string) map[string]any {
+	return map[string]any{"type": "integer", "description": description}
+}
+
+func gatewayBooleanSchema(description string) map[string]any {
+	return map[string]any{"type": "boolean", "description": description}
+}
+
+func gatewayArraySchema(description string) map[string]any {
+	return map[string]any{"type": "array", "description": description}
+}
+
+func gatewayFreeformObjectSchema(description string) map[string]any {
+	return map[string]any{"type": "object", "description": description, "additionalProperties": true}
+}
+
+func gatewayApplicationIDProperties() map[string]any {
+	return map[string]any{
+		"applicationId": gatewayStringSchema("Delivery application id."),
+	}
+}
+
+func gatewayApplicationBindingProperties() map[string]any {
+	return map[string]any{
+		"applicationId":            gatewayStringSchema("Delivery application id."),
+		"applicationEnvironmentId": gatewayStringSchema("Optional application environment binding id."),
+		"bindingId":                gatewayStringSchema("Alias for applicationEnvironmentId."),
+	}
+}
+
+func gatewayReleaseBundleListProperties() map[string]any {
+	return map[string]any{
+		"applicationId":            gatewayStringSchema("Optional delivery application id filter."),
+		"applicationEnvironmentId": gatewayStringSchema("Optional application environment binding id filter."),
+		"bundleId":                 gatewayStringSchema("Release bundle id to inspect artifacts when artifacts=true."),
+		"artifacts":                gatewayBooleanSchema("Return artifacts for bundleId instead of listing bundles."),
+		"limit":                    gatewayIntegerSchema("Maximum release bundle records to return."),
+	}
+}
+
+func gatewayExecutionTaskListProperties() map[string]any {
+	return map[string]any{
+		"applicationId":            gatewayStringSchema("Optional delivery application id filter."),
+		"applicationEnvironmentId": gatewayStringSchema("Optional application environment binding id filter."),
+		"releaseBundleId":          gatewayStringSchema("Optional release bundle id filter."),
+		"status":                   gatewayStringSchema("Optional execution task status filter."),
+		"providerKind":             gatewayStringSchema("Optional execution provider kind filter."),
+		"taskId":                   gatewayStringSchema("Execution task id to inspect logs when logs=true."),
+		"logs":                     gatewayBooleanSchema("Return logs for taskId instead of listing tasks."),
+		"limit":                    gatewayIntegerSchema("Maximum execution task records to return."),
+		"logLimit":                 gatewayIntegerSchema("Maximum log records to return when logs=true."),
+	}
+}
+
+func gatewayClusterNamespaceProperties(namespaceDescription string) map[string]any {
+	return map[string]any{
+		"clusterId": gatewayStringSchema("Cluster id."),
+		"namespace": gatewayStringSchema(namespaceDescription),
 	}
 }
 
@@ -203,8 +676,8 @@ func defaultSkills() []domainaigateway.SkillCapability {
 			ID:             "delivery-developer",
 			Name:           "Delivery Developer",
 			Category:       "delivery",
-			Description:    "Application onboarding and self-service build/deploy workflow for AI coding tools.",
-			CapabilityRefs: []string{"delivery.applications.list", "delivery.applications.create", "delivery.actions.trigger"},
+			Description:    "Application onboarding, delivery context review, and self-service build/deploy/rollback workflow for AI coding tools.",
+			CapabilityRefs: []string{"delivery.applications.list", "delivery.applications.detail", "delivery.applications.create", "delivery.application_environments.list", "delivery.application_services.list", "delivery.build_sources.list", "delivery.release_targets.list", "delivery.release_bundles.list", "delivery.execution_tasks.list", "delivery.execution_logs.list", "delivery.release_context.diff", "delivery.rollback.context", "delivery.actions.trigger"},
 			PermissionKeys: []string{appaccess.PermAIGatewayInvoke, appaccess.PermDeliveryApplicationsView},
 			RequiredScopes: []string{"businessLine", "application", "environment"},
 		},
@@ -213,7 +686,7 @@ func defaultSkills() []domainaigateway.SkillCapability {
 			Name:           "Delivery Tester",
 			Category:       "delivery",
 			Description:    "Test environment release verification, execution task review, and promotion evidence collection.",
-			CapabilityRefs: []string{"delivery.application_environments.list", "delivery.execution_tasks.list", "diagnosis.release_failure.analyze"},
+			CapabilityRefs: []string{"delivery.application_environments.list", "delivery.release_targets.list", "delivery.release_bundles.list", "delivery.execution_tasks.list", "delivery.execution_logs.list", "delivery.release_context.diff", "diagnosis.release_failure.analyze"},
 			PermissionKeys: []string{appaccess.PermAIGatewayInvoke, appaccess.PermDeliveryExecutionTasksView},
 			RequiredScopes: []string{"application", "environment"},
 		},
@@ -222,7 +695,7 @@ func defaultSkills() []domainaigateway.SkillCapability {
 			Name:           "K8s SRE",
 			Category:       "platform",
 			Description:    "Read-only Kubernetes runtime diagnosis for pods, services, events, and deployment status.",
-			CapabilityRefs: []string{"k8s.pods.list", "k8s.pods.logs", "k8s.deployments.list", "k8s.events.list"},
+			CapabilityRefs: []string{"k8s.pods.list", "k8s.pods.logs", "k8s.pods.describe", "k8s.deployments.list", "k8s.deployments.rollout_status", "k8s.deployments.events", "k8s.services.list", "k8s.services.backends", "k8s.routes.context", "k8s.storage.context", "k8s.nodes.detail", "k8s.events.list"},
 			PermissionKeys: []string{appaccess.PermAIGatewayInvoke, appaccess.PermWorkspaceResourceView},
 			RequiredScopes: []string{"cluster", "namespace"},
 		},
@@ -231,7 +704,7 @@ func defaultSkills() []domainaigateway.SkillCapability {
 			Name:           "Security Change",
 			Category:       "security",
 			Description:    "Security-sensitive change planning, approval handoff, rollback criteria, and evidence collection.",
-			CapabilityRefs: []string{"delivery.actions.trigger", "delivery.execution_tasks.list", "k8s.events.list"},
+			CapabilityRefs: []string{"delivery.actions.trigger", "delivery.approval_policies.list", "delivery.workflow_templates.list", "delivery.rollback.context", "delivery.execution_tasks.list", "k8s.events.list"},
 			PermissionKeys: []string{appaccess.PermAIGatewayInvoke},
 			RequiredScopes: []string{"application", "environment", "cluster", "namespace"},
 		},

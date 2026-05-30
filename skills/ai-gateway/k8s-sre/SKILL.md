@@ -5,8 +5,15 @@ category: platform
 capabilityRefs:
   - k8s.pods.list
   - k8s.pods.logs
+  - k8s.pods.describe
   - k8s.deployments.list
+  - k8s.deployments.rollout_status
+  - k8s.deployments.events
   - k8s.services.list
+  - k8s.services.backends
+  - k8s.routes.context
+  - k8s.storage.context
+  - k8s.nodes.detail
   - k8s.events.list
 requiredScopes:
   - cluster
@@ -27,11 +34,13 @@ Use this skill when an AI assistant is helping SREs perform read-only Kubernetes
 ## Workflow
 
 1. Confirm cluster, namespace, workload kind, workload name, and time window.
-2. Read pods, deployment status, services, events, and recent logs using visible Gateway tools.
-3. Correlate events and logs by workload, pod, container, restart count, image, node, and timestamp.
-4. Separate confirmed evidence from hypotheses.
-5. Produce a short RCA draft with likely cause, blast radius, confidence, missing evidence, and safe next checks.
-6. If a release is involved, reference the related application, release bundle, and execution task IDs when available.
+2. Read rollout status, deployment events, pod describe context, service backends, route context, storage context, node detail, and recent logs using visible Gateway tools.
+3. Correlate events and logs by workload, pod, container, restart count, image, service selector, route backend, PVC binding, node condition, and timestamp.
+4. Treat `capabilityWarnings` as explicit evidence of an unavailable optional API family, not as a successful empty result.
+5. Separate confirmed evidence from hypotheses.
+6. Produce a short RCA draft with likely cause, blast radius, confidence, missing evidence, and safe next checks.
+7. If a release is involved, reference the related application, release bundle, and execution task IDs when available.
+8. For deeper release-failure reasoning, call `diagnosis.release_failure.analyze` with `deepAnalysis=true` and an external `agentProviderId` only after collecting the bounded context; treat the returned `agentRunId` as queued Agent Runtime work until a runner callback writes artifacts.
 
 ## Guardrails
 

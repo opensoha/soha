@@ -22,6 +22,7 @@ type Config struct {
 	Monitoring MonitoringConfig `mapstructure:"monitoring"`
 	Swagger    SwaggerConfig    `mapstructure:"swagger"`
 	MCP        MCPConfig        `mapstructure:"mcp"`
+	AIGateway  AIGatewayConfig  `mapstructure:"ai_gateway"`
 	Modules    ModulesConfig    `mapstructure:"modules"`
 	Security   SecurityConfig   `mapstructure:"security"`
 	Bootstrap  BootstrapConfig  `mapstructure:"bootstrap"`
@@ -139,6 +140,25 @@ type SwaggerConfig struct {
 type MCPConfig struct {
 	Enabled        bool          `mapstructure:"enabled"`
 	DefaultTimeout time.Duration `mapstructure:"default_timeout"`
+}
+
+type AIGatewayConfig struct {
+	RateLimit AIGatewayRateLimitConfig `mapstructure:"rate_limit"`
+}
+
+type AIGatewayRateLimitConfig struct {
+	Backend string                        `mapstructure:"backend"`
+	Redis   AIGatewayRateLimitRedisConfig `mapstructure:"redis"`
+}
+
+type AIGatewayRateLimitRedisConfig struct {
+	Addr      string        `mapstructure:"addr"`
+	Username  string        `mapstructure:"username"`
+	Password  string        `mapstructure:"password"`
+	DB        int           `mapstructure:"db"`
+	TLS       bool          `mapstructure:"tls"`
+	KeyPrefix string        `mapstructure:"key_prefix"`
+	Timeout   time.Duration `mapstructure:"timeout"`
 }
 
 type ModuleToggleConfig struct {
@@ -319,6 +339,14 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("swagger.path", "/swagger/*any")
 	v.SetDefault("mcp.enabled", true)
 	v.SetDefault("mcp.default_timeout", "10s")
+	v.SetDefault("ai_gateway.rate_limit.backend", "postgres")
+	v.SetDefault("ai_gateway.rate_limit.redis.addr", "")
+	v.SetDefault("ai_gateway.rate_limit.redis.username", "")
+	v.SetDefault("ai_gateway.rate_limit.redis.password", "")
+	v.SetDefault("ai_gateway.rate_limit.redis.db", 0)
+	v.SetDefault("ai_gateway.rate_limit.redis.tls", false)
+	v.SetDefault("ai_gateway.rate_limit.redis.key_prefix", "soha:ai-gateway:rate-limit")
+	v.SetDefault("ai_gateway.rate_limit.redis.timeout", "500ms")
 	v.SetDefault("modules.delivery.enabled", true)
 	v.SetDefault("modules.monitoring.enabled", true)
 	v.SetDefault("modules.ai.enabled", true)
