@@ -50,6 +50,7 @@ Implement console work inside the active Vite app under `web`. Keep the UI antd-
 - Do not import `shadcn/ui` or invent a parallel token system.
 - Keep page chrome compact. Toolbars should usually live inside the table or card panel instead of in stacked external headers.
 - Favor list-first operational pages. Detail pages should expose actions, metrics, YAML, and diagnostics where the backend already supports them.
+- Management list pages may use the clusters-page Pro-style pattern when a richer table workflow is needed: one outer operational surface, an independent vertical antd query form above the table, a separate table management toolbar with batch/refresh/create/column actions, then the data table. Do not place the query form inside the table header or inside `AdminTable` toolbar when following this pattern.
 - When adding forms or drawers, keep copy short and field grouping tight. Avoid decorative layouts that work against data density.
 - Preserve light and dark behavior. Any visual change must work in both modes.
 

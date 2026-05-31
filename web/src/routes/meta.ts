@@ -48,6 +48,7 @@ const WORKBENCH_DEFAULT_PATHS = {
   ai: "/ai-workbench",
   aiGateway: "/ai-gateway/overview",
   monitoring: "/monitoring-workbench",
+  settings: "/settings",
 } as const;
 
 export type WorkbenchId = keyof typeof WORKBENCH_DEFAULT_PATHS;
@@ -2185,6 +2186,7 @@ export const routeMeta: RouteMeta[] = [
     tabbar: false,
     navVisible: false,
     menuId: "access",
+    workbenchId: "settings",
     permissionKey: "access.users.view",
     permissionStrategy: "any-child",
     scopeMode: "passive",
@@ -2275,6 +2277,8 @@ export const routeMeta: RouteMeta[] = [
     tabbar: false,
     navVisible: false,
     redirectTo: "/system/online-users",
+    workbenchId: "settings",
+    permissionStrategy: "any-child",
     scopeMode: "passive",
     workspace: "system",
   },
@@ -2361,6 +2365,7 @@ export const routeMeta: RouteMeta[] = [
     navVisible: false,
     redirectTo: "/settings/login",
     menuId: "settings",
+    workbenchId: "settings",
     permissionStrategy: "any-child",
     scopeMode: "passive",
     workspace: "system",
@@ -2593,6 +2598,9 @@ function deriveWorkbenchIdFromPath(pathname: string): WorkbenchId | null {
   ) {
     return "monitoring";
   }
+  if (pathname.startsWith("/system") || pathname.startsWith("/settings")) {
+    return "settings";
+  }
   return null;
 }
 
@@ -2732,7 +2740,9 @@ export function getAccessibleWorkbenchIds(
     }
     seen.add(workbenchId);
   }
-  return Array.from(seen);
+  return Array.from(seen).filter((workbenchId) =>
+    Boolean(findFirstAccessiblePathForWorkbench(workbenchId, snapshot)),
+  );
 }
 
 export function findFirstAccessiblePathForWorkbench(
@@ -3085,19 +3095,24 @@ export function filterSidebarNavByWorkbench(
   );
 
   const flattenedWorkbenchRootIds: Partial<Record<WorkbenchId, string>> = {
+    aiGateway: "ai-gateway",
     docker: "docker-workbench",
     monitoring: "monitoring-workbench",
+    settings: "settings",
     virtualization: "virtualization-workbench",
   };
-  const flattenedRootId = flattenedWorkbenchRootIds[workbenchId];
+  const flattenedRootIds = [
+    flattenedWorkbenchRootIds[workbenchId],
+    ...(workbenchId === "settings" ? ["system"] : []),
+  ].filter((item): item is string => Boolean(item));
 
-  if (!flattenedRootId) {
+  if (flattenedRootIds.length === 0) {
     return filteredTree;
   }
 
   return sortRuntimeMenuTree(
     filteredTree.flatMap((node) => {
-      if (node.id === flattenedRootId && node.children?.length) {
+      if (flattenedRootIds.includes(node.id) && node.children?.length) {
         return node.children;
       }
       return [node];

@@ -244,7 +244,7 @@ describe('app layout workspace navigation', () => {
     const container = await renderWithProviders('/system/menus')
 
     expect(container.querySelector('.soha-workbench-switcher-shell')).not.toBeNull()
-    expect(container.querySelector('.soha-workbench-switcher__label')?.textContent).toBe('k8s工作台')
+    expect(container.querySelector('.soha-workbench-switcher__label')?.textContent).toBe('设置中心')
     expect(container.textContent).toContain('菜单管理')
     expect(container.textContent).not.toContain('概览')
     expect(container.querySelector('.soha-nav-system')).toBeNull()
@@ -344,7 +344,7 @@ describe('app layout workspace navigation', () => {
     expect(container.textContent).not.toContain('AI Gateway')
   })
 
-  it('shows AI Gateway child menus in the standard business sidebar when the AI Gateway workbench is active', async () => {
+  it('shows AI Gateway child menus directly in the standard business sidebar when the AI Gateway workbench is active', async () => {
     const container = await renderWithProviders('/ai-gateway/overview', {
       permissionKeys: [
         'workspace.resource.view',
@@ -397,11 +397,15 @@ describe('app layout workspace navigation', () => {
     expect(container.querySelector('.soha-workbench-switcher__label')?.textContent).toBe('AI Gateway')
     expect(container.querySelector('.soha-nav-business')).not.toBeNull()
     expect(container.querySelector('.soha-nav-system')).toBeNull()
+    const businessMenu = container.querySelector('.soha-nav-menu--business')
+    expect(businessMenu?.querySelector('.ant-menu-submenu')).toBeNull()
+    expect(businessMenu?.textContent).not.toContain('AI Gateway')
+    expect(businessMenu?.textContent).toContain('概览')
+    expect(businessMenu?.textContent).toContain('能力清单')
+    expect(businessMenu?.textContent).toContain('Tokens')
+    expect(businessMenu?.textContent).toContain('Governance')
+    expect(businessMenu?.textContent).toContain('调用日志')
     expect(container.textContent).toContain('AI Gateway')
-    expect(container.textContent).toContain('能力清单')
-    expect(container.textContent).toContain('Tokens')
-    expect(container.textContent).toContain('Governance')
-    expect(container.textContent).toContain('调用日志')
     expect(container.textContent).not.toContain('通用聊天')
     expect(container.textContent).not.toContain('巡检')
     expect(container.textContent).not.toContain('系统管理')

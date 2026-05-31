@@ -9,8 +9,9 @@ import {
   findLandingPath,
   findPreferredWorkspace,
   getAccessibleSidebarNav,
-  getMenuWorkbenchId,
+  getAccessibleWorkbenchIds,
   getAccessibleWorkspaces,
+  getMenuWorkbenchId,
   getRouteScopeMode,
   getRouteWorkbenchId,
   getRouteWorkspace,
@@ -67,6 +68,120 @@ describe("access route authorization", () => {
     expect(canAccessRoute(getRoute("settings"))).toBe(false);
     expect(canAccessRoute(getRoute("settings-login"), snapshot)).toBe(true);
     expect(canAccessRoute(getRoute("settings-branding"), snapshot)).toBe(true);
+  });
+
+  it("treats settings center as a workbench with access-control, system, and setting menus", () => {
+    const snapshot = buildSnapshot({
+      permissionKeys: [
+        "access.users.view",
+        "access.roles.view",
+        "system.online-users.view",
+        "system.announcements.view",
+        "system.menus.view",
+        "system.audit.view",
+        "system.operations.view",
+        "settings.identity.view",
+        "settings.branding.view",
+      ],
+      visibleMenuIds: [
+        "access",
+        "access-users",
+        "access-roles",
+        "system",
+        "system-online-users",
+        "announcements",
+        "menus",
+        "audit",
+        "operations",
+        "settings",
+        "settings-login",
+        "settings-branding",
+      ],
+      visibleMenus: [
+        { id: "access", path: "/access" },
+        { id: "access-users", parentId: "access", path: "/access/users" },
+        { id: "access-roles", parentId: "access", path: "/access/roles" },
+        { id: "system", path: "/system" },
+        { id: "system-online-users", parentId: "system", path: "/system/online-users" },
+        { id: "announcements", parentId: "system", path: "/system/announcements" },
+        { id: "menus", parentId: "system", path: "/system/menus" },
+        { id: "audit", parentId: "system", path: "/system/audit" },
+        { id: "operations", parentId: "system", path: "/system/operations" },
+        { id: "settings", path: "/settings" },
+        { id: "settings-login", parentId: "settings", path: "/settings/login" },
+        {
+          id: "settings-branding",
+          parentId: "settings",
+          path: "/settings/branding",
+        },
+      ],
+    });
+
+    const systemNav = filterSidebarNavByWorkspace(
+      getAccessibleSidebarNav(snapshot),
+      "system",
+    );
+    const settingsNav = filterSidebarNavByWorkbench(systemNav, "settings");
+
+    expect(getRouteWorkbenchId(getRoute("settings-login"))).toBe("settings");
+    expect(getRouteWorkbenchId(getRoute("access-users"))).toBe("settings");
+    expect(getRouteWorkbenchId(getRoute("system-menus"))).toBe("settings");
+    expect(
+      getMenuWorkbenchId({ id: "settings-login", path: "/settings/login" }),
+    ).toBe("settings");
+    expect(getMenuWorkbenchId({ id: "access", path: "/access" })).toBe(
+      "settings",
+    );
+    expect(getMenuWorkbenchId({ id: "menus", path: "/system/menus" })).toBe(
+      "settings",
+    );
+    expect(getAccessibleWorkbenchIds(snapshot)).toContain("settings");
+    expect(findFirstAccessiblePathForWorkbench("settings", snapshot)).toBe(
+      "/settings/login",
+    );
+    expect(settingsNav.map((item) => item.id).sort()).toEqual([
+      "access",
+      "announcements",
+      "audit",
+      "menus",
+      "operations",
+      "settings-branding",
+      "settings-login",
+      "system-online-users",
+    ]);
+    expect(settingsNav.find((item) => item.id === "access")?.children?.map((item) => item.id)).toEqual([
+      "access-roles",
+      "access-users",
+    ]);
+  });
+
+  it("does not expose settings center without a navigable settings route", () => {
+    const resourceOnlySnapshot = buildSnapshot({
+      permissionKeys: ["workspace.resource.view", "overview.view"],
+      visibleMenuIds: ["dashboard"],
+      visibleMenus: [{ id: "dashboard", path: "/" }],
+    });
+    const hiddenSettingsOnlySnapshot = buildSnapshot({
+      permissionKeys: ["settings.ai.view"],
+      visibleMenuIds: ["settings"],
+      visibleMenus: [{ id: "settings", path: "/settings" }],
+    });
+
+    expect(canAccessRoute(getRoute("system"), resourceOnlySnapshot)).toBe(
+      false,
+    );
+    expect(getAccessibleWorkbenchIds(resourceOnlySnapshot)).not.toContain(
+      "settings",
+    );
+    expect(
+      getAccessibleWorkbenchIds(hiddenSettingsOnlySnapshot),
+    ).not.toContain("settings");
+    expect(
+      findFirstAccessiblePathForWorkbench(
+        "settings",
+        hiddenSettingsOnlySnapshot,
+      ),
+    ).toBeNull();
   });
 
   it("keeps the access parent route blocked when the access menu binding is missing", () => {
@@ -827,8 +942,7 @@ describe("access route authorization", () => {
     expect(dockerNav.some((item) => item.id === "docker-workbench")).toBe(
       false,
     );
-    expect(aiGatewayNav.map((item) => item.id)).toEqual(["ai-gateway"]);
-    expect(aiGatewayNav[0]?.children?.map((item) => item.id)).toEqual([
+    expect(aiGatewayNav.map((item) => item.id)).toEqual([
       "ai-gateway-overview",
       "ai-gateway-manifest",
       "ai-gateway-clients",
@@ -836,6 +950,7 @@ describe("access route authorization", () => {
       "ai-gateway-governance",
       "ai-gateway-call-logs",
     ]);
+    expect(aiGatewayNav.some((item) => item.id === "ai-gateway")).toBe(false);
     expect(monitoringNav.map((item) => item.id)).toEqual([
       "monitoring-workbench-overview",
       "monitoring-workbench-rules",
@@ -890,7 +1005,7 @@ describe("access route authorization", () => {
       }),
     ).toBe("aiGateway");
     expect(getMenuWorkbenchId({ id: "menus", path: "/system/menus" })).toBe(
-      null,
+      "settings",
     );
   });
 

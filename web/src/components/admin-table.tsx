@@ -24,6 +24,7 @@ interface AdminTableProps {
   rowKey: string | ((record: any) => string)
   rowSelection?: any
   shellClassName?: string
+  columnSettingPlacement?: 'toolbar' | 'header' | 'outside' | 'hidden'
   scroll?: {
     x?: string | number
     y?: string | number
@@ -76,6 +77,7 @@ export function AdminTable({
   rowKey,
   rowSelection,
   shellClassName,
+  columnSettingPlacement = 'toolbar',
   scroll,
   selectCurrentPageOnly = false,
   title,
@@ -180,7 +182,7 @@ export function AdminTable({
     y: scroll?.y,
   }), [estimatedScrollWidth, scroll?.x, scroll?.y])
 
-  const columnSetting = enableColumnSelection && columnOptions.length > 1 ? (
+  const columnSetting = enableColumnSelection && columnSettingPlacement !== 'hidden' && columnOptions.length > 1 ? (
     <Popover
       trigger="click"
       placement="bottomRight"
@@ -208,24 +210,33 @@ export function AdminTable({
     </Popover>
   ) : null
 
-  const resolvedToolbarExtra = toolbarExtra || columnSetting ? (
+  const toolbarColumnSetting = columnSettingPlacement === 'toolbar' ? columnSetting : null
+  const headerColumnSetting = columnSettingPlacement === 'header' ? columnSetting : null
+  const outsideColumnSetting = columnSettingPlacement === 'outside' ? columnSetting : null
+  const resolvedHeaderExtra = headerExtra || headerColumnSetting ? (
+    <>
+      {headerExtra}
+      {headerColumnSetting}
+    </>
+  ) : null
+  const resolvedToolbarExtra = toolbarExtra || toolbarColumnSetting ? (
     <>
       {toolbarExtra}
-      {columnSetting}
+      {toolbarColumnSetting}
     </>
   ) : null
 
-  const hasHeader = Boolean(title || headerExtra)
+  const hasHeader = Boolean(title || resolvedHeaderExtra)
   const hasToolbar = Boolean(toolbar || resolvedToolbarExtra)
   const resolvedShellClassName = ['soha-admin-table-shell', shellClassName, hasHeader || hasToolbar ? 'is-panel' : ''].filter(Boolean).join(' ')
   const resolvedTableClassName = ['soha-admin-table', className].filter(Boolean).join(' ')
 
-  return (
+  const tableShell = (
     <div className={resolvedShellClassName}>
       {hasHeader ? (
         <div className="soha-admin-table-header">
           <div className="soha-admin-table-header-main">{title}</div>
-          {headerExtra ? <div className="soha-admin-table-header-extra">{headerExtra}</div> : null}
+          {resolvedHeaderExtra ? <div className="soha-admin-table-header-extra">{resolvedHeaderExtra}</div> : null}
         </div>
       ) : null}
       {hasToolbar ? (
@@ -249,4 +260,15 @@ export function AdminTable({
       />
     </div>
   )
+
+  if (outsideColumnSetting) {
+    return (
+      <div className="soha-admin-table-host">
+        <div className="soha-admin-table-outside-toolbar">{outsideColumnSetting}</div>
+        {tableShell}
+      </div>
+    )
+  }
+
+  return tableShell
 }

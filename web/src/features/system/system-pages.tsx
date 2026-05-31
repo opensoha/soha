@@ -745,7 +745,7 @@ interface MenuWorkbenchSummary {
   workspace: WorkspaceType | null
 }
 
-const MENU_WORKBENCH_ORDER: MenuWorkbenchSurface[] = ['platform', 'virtualization', 'docker', 'delivery', 'ai', 'aiGateway', 'monitoring', 'system', 'unmapped']
+const MENU_WORKBENCH_ORDER: MenuWorkbenchSurface[] = ['platform', 'virtualization', 'docker', 'delivery', 'ai', 'aiGateway', 'monitoring', 'settings', 'system', 'unmapped']
 
 const MENU_WORKBENCH_LABELS: Record<MenuWorkbenchSurface, string> = {
   platform: 'k8s工作台',
@@ -754,6 +754,7 @@ const MENU_WORKBENCH_LABELS: Record<MenuWorkbenchSurface, string> = {
   ai: 'AI工作台',
   aiGateway: 'AI Gateway',
   monitoring: '监控工作台',
+  settings: '设置中心',
   delivery: '应用交付工作台',
   system: '系统管理',
   unmapped: '未映射',
@@ -762,11 +763,15 @@ const MENU_WORKBENCH_LABELS: Record<MenuWorkbenchSurface, string> = {
 const MENU_UNGROUPED_FILTER = '__ungrouped__'
 
 function resolveMenuWorkbenchKey(item: Pick<MenuItem, 'id' | 'path'>): MenuWorkbenchSurface {
+  const workbenchId = getMenuWorkbenchId(item)
+  if (workbenchId) {
+    return workbenchId
+  }
   const workspace = getMenuWorkspace(item)
   if (workspace === 'system') {
     return 'system'
   }
-  return getMenuWorkbenchId(item) ?? 'unmapped'
+  return 'unmapped'
 }
 
 function summarizeMenuWorkbench(

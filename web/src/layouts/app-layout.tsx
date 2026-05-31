@@ -49,6 +49,8 @@ import type { BusinessWorkspaceType, PermissionSnapshot, RuntimeMenuNode } from 
 import { getNormalizedBranding } from '@/features/settings/use-branding-settings'
 
 const { Sider, Header, Content } = Layout
+const SIDEBAR_WIDTH = 200
+const SIDEBAR_COLLAPSED_WIDTH = 55
 
 interface WorkbenchOption {
   description: string
@@ -278,6 +280,7 @@ function buildWorkbenchOptions(localeCode: 'zh_CN' | 'en_US'): WorkbenchOption[]
       { key: 'ai', label: 'AI Workbench', description: 'Investigation, automation, tools, and skills', icon: <RobotOutlined /> },
       { key: 'aiGateway', label: 'AI Gateway', description: 'AI clients, MCP access, tokens, policies, approvals, and call logs', icon: <SafetyOutlined /> },
       { key: 'monitoring', label: 'Monitoring Workbench', description: 'Alerts, routes, notifications, and on-call flows', icon: <AlertOutlined /> },
+      { key: 'settings', label: 'Settings Center', description: 'Login, branding, monitoring, and AI settings', icon: <SettingOutlined /> },
     ]
   }
   return [
@@ -288,6 +291,7 @@ function buildWorkbenchOptions(localeCode: 'zh_CN' | 'en_US'): WorkbenchOption[]
     { key: 'ai', label: 'AI工作台', description: '调查、自动化、工具与技能', icon: <RobotOutlined /> },
     { key: 'aiGateway', label: 'AI Gateway', description: '外部 AI 客户端、MCP、令牌、策略、审批与调用日志', icon: <SafetyOutlined /> },
     { key: 'monitoring', label: '监控工作台', description: '告警、路由、通知和值班协同', icon: <AlertOutlined /> },
+    { key: 'settings', label: '设置中心', description: '登录、品牌、监控与 AI 设置', icon: <SettingOutlined /> },
   ]
 }
 
@@ -309,7 +313,6 @@ function WorkbenchSwitcher({
         <span className="soha-workspace-option__icon">{option.icon}</span>
         <span className="soha-workspace-option__copy">
           <span className="soha-workspace-option__label">{option.label}</span>
-          <span className="soha-workspace-option__desc">{option.description}</span>
         </span>
       </div>
     ),
@@ -324,7 +327,7 @@ function WorkbenchSwitcher({
           <span className="soha-workbench-switcher__desc">{current.description}</span>
         </span>
       ) : null}
-      {options.length > 1 ? <DownOutlined className="soha-workbench-switcher__arrow" /> : null}
+      {!collapsed && options.length > 1 ? <DownOutlined className="soha-workbench-switcher__arrow" /> : null}
     </Button>
   )
 
@@ -412,12 +415,18 @@ export function AppLayout() {
     () => filterSidebarNavByWorkspace(fullSidebarNav, 'system'),
     [fullSidebarNav],
   )
-  const primaryNav = useMemo(() => {
-    if (isSystemWorkspaceRoute) {
+  const systemWorkbenchNav = useMemo(() => {
+    if (!activeWorkbenchId) {
       return systemNav
     }
+    return filterSidebarNavByWorkbench(systemNav, activeWorkbenchId)
+  }, [activeWorkbenchId, systemNav])
+  const primaryNav = useMemo(() => {
+    if (isSystemWorkspaceRoute) {
+      return systemWorkbenchNav.length > 0 ? systemWorkbenchNav : systemNav
+    }
     return businessNav
-  }, [businessNav, isSystemWorkspaceRoute, systemNav])
+  }, [businessNav, isSystemWorkspaceRoute, systemNav, systemWorkbenchNav])
   const primaryMenuItems = useMemo(
     () => activeWorkbenchId === 'ai'
       ? buildAIWorkbenchMenuItems(snapshot)
@@ -568,10 +577,11 @@ export function AppLayout() {
         className="soha-sider"
         collapsible
         collapsed={sidebarCollapsed}
+        collapsedWidth={SIDEBAR_COLLAPSED_WIDTH}
         onCollapse={(collapsed) => setSidebarCollapsed(collapsed)}
         style={{ backgroundColor: 'transparent' }}
         trigger={null}
-        width={248}
+        width={SIDEBAR_WIDTH}
       >
           <div className="soha-nav" style={{ height: '100%' }}>
             <div className="soha-sider-topbar">
@@ -625,7 +635,7 @@ export function AppLayout() {
                   const path = primaryItemKeyToPath[String(key)]
                   if (path) navigate(path)
                 }}
-                inlineIndent={isSystemWorkspaceRoute ? 16 : 24}
+                inlineIndent={isSystemWorkspaceRoute ? 16 : 8}
                 inlineCollapsed={sidebarCollapsed}
                 theme={resolvedThemeMode}
               />
