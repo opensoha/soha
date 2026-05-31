@@ -46,6 +46,7 @@ const WORKBENCH_DEFAULT_PATHS = {
   docker: "/docker",
   delivery: "/applications",
   ai: "/ai-workbench",
+  aiGateway: "/ai-gateway/overview",
   monitoring: "/monitoring-workbench",
 } as const;
 
@@ -1878,20 +1879,142 @@ export const routeMeta: RouteMeta[] = [
     scopeMode: "passive",
   },
   {
-    id: "ai-workbench-gateway",
-    path: "/ai-workbench/gateway",
+    id: "ai-gateway",
+    path: "/ai-gateway",
     title: "AI Gateway",
-    description: "管理 AI Gateway 客户端、授权、策略和审计",
-    icon: "IconComment",
-    group: "observe",
-    workbenchId: "ai",
+    description: "AI Gateway 独立工作台",
+    icon: "IconShield",
+    group: "ai-gateway",
+    workbenchId: "aiGateway",
+    requiresAuth: true,
+    tabbar: false,
+    navVisible: true,
+    redirectTo: "/ai-gateway/overview",
+    menuId: "ai-gateway",
+    permissionStrategy: "any-child",
+    scopeMode: "passive",
+    workspace: "resource",
+  },
+  {
+    id: "ai-gateway-overview",
+    path: "/ai-gateway/overview",
+    title: "概览",
+    description: "AI Gateway 能力、身份与治理摘要",
+    icon: "IconShield",
+    group: "ai-gateway",
+    workbenchId: "aiGateway",
     requiresAuth: true,
     tabbar: true,
     navVisible: true,
-    parentId: "ai-workbench",
-    menuId: "ai-workbench-gateway",
+    parentId: "ai-gateway",
+    menuId: "ai-gateway-overview",
     permissionKey: "ai.gateway.view",
     scopeMode: "passive",
+  },
+  {
+    id: "ai-gateway-manifest",
+    path: "/ai-gateway/manifest",
+    title: "能力清单",
+    description: "查看当前身份可见的 MCP tools、resources、prompts 和 skills",
+    icon: "IconShield",
+    group: "ai-gateway",
+    workbenchId: "aiGateway",
+    requiresAuth: true,
+    tabbar: true,
+    navVisible: true,
+    parentId: "ai-gateway",
+    menuId: "ai-gateway-manifest",
+    permissionKey: "ai.gateway.view",
+    scopeMode: "passive",
+  },
+  {
+    id: "ai-gateway-clients",
+    path: "/ai-gateway/clients",
+    title: "AI Clients",
+    description: "管理外部 AI 客户端注册入口",
+    icon: "IconShield",
+    group: "ai-gateway",
+    workbenchId: "aiGateway",
+    requiresAuth: true,
+    tabbar: true,
+    navVisible: true,
+    parentId: "ai-gateway",
+    menuId: "ai-gateway-clients",
+    permissionKey: "ai.gateway.manage",
+    scopeMode: "passive",
+  },
+  {
+    id: "ai-gateway-tokens",
+    path: "/ai-gateway/tokens",
+    title: "Tokens",
+    description: "管理 personal access tokens 与服务账号 token",
+    icon: "IconShield",
+    group: "ai-gateway",
+    workbenchId: "aiGateway",
+    requiresAuth: true,
+    tabbar: true,
+    navVisible: true,
+    parentId: "ai-gateway",
+    menuId: "ai-gateway-tokens",
+    permissionKeysAny: [
+      "ai.gateway.view",
+      "ai.gateway.invoke",
+      "ai.gateway.manage",
+    ],
+    scopeMode: "passive",
+  },
+  {
+    id: "ai-gateway-governance",
+    path: "/ai-gateway/governance",
+    title: "Governance",
+    description: "管理 Gateway 授权、策略与审批治理",
+    icon: "IconShield",
+    group: "ai-gateway",
+    workbenchId: "aiGateway",
+    requiresAuth: true,
+    tabbar: true,
+    navVisible: true,
+    parentId: "ai-gateway",
+    menuId: "ai-gateway-governance",
+    permissionKey: "ai.gateway.manage",
+    scopeMode: "passive",
+  },
+  {
+    id: "ai-gateway-call-logs",
+    path: "/ai-gateway/call-logs",
+    title: "调用日志",
+    description: "查看 AI Gateway 调用者、调用内容与结果",
+    icon: "IconShield",
+    group: "ai-gateway",
+    workbenchId: "aiGateway",
+    requiresAuth: true,
+    tabbar: true,
+    navVisible: true,
+    parentId: "ai-gateway",
+    menuId: "ai-gateway-call-logs",
+    permissionKey: "ai.gateway.manage",
+    scopeMode: "passive",
+  },
+  {
+    id: "ai-workbench-gateway-compat",
+    path: "/ai-workbench/gateway",
+    title: "AI Gateway",
+    description: "兼容旧入口，跳转到独立 AI Gateway 工作台",
+    icon: "IconShield",
+    group: "ai-gateway",
+    workbenchId: "aiGateway",
+    requiresAuth: true,
+    tabbar: false,
+    navVisible: false,
+    redirectTo: "/ai-gateway/overview",
+    menuId: "ai-gateway",
+    permissionKeysAny: [
+      "ai.gateway.view",
+      "ai.gateway.invoke",
+      "ai.gateway.manage",
+    ],
+    scopeMode: "passive",
+    workspace: "resource",
   },
   {
     id: "ai-workbench-tools",
@@ -2454,6 +2577,9 @@ function deriveWorkbenchIdFromPath(pathname: string): WorkbenchId | null {
   if (pathname.startsWith("/docker")) {
     return "docker";
   }
+  if (pathname.startsWith("/ai-gateway")) {
+    return "aiGateway";
+  }
   if (
     pathname.startsWith("/ai-workbench") ||
     pathname.startsWith("/ai-observe") ||
@@ -2583,6 +2709,7 @@ export function getRouteScopeMode(
     pathname.startsWith("/observability") ||
     pathname.startsWith("/virtualization") ||
     pathname.startsWith("/docker") ||
+    pathname.startsWith("/ai-gateway") ||
     pathname.startsWith("/ai-workbench") ||
     pathname.startsWith("/ai-observe")
   ) {
@@ -2727,14 +2854,16 @@ export function canAccessRoute(
       .some((child) => canAccessRoute(child, snapshot));
   }
   const permissionKey = resolveRoutePermission(route);
+  const permissionKeysAny = route.permissionKeysAny ?? [];
   const menuId = resolveRouteMenuId(route);
   const workspace = getRouteWorkspace(route);
   const hasWorkspacePermission =
     workspace === "application" || workspace === "resource"
       ? hasWorkspaceAccess(workspace, snapshot)
       : true;
-  const hasPermission =
-    !permissionKey || snapshot.permissionKeys.includes(permissionKey);
+  const hasPermission = permissionKeysAny.length > 0
+    ? permissionKeysAny.some((key) => snapshot.permissionKeys.includes(key))
+    : !permissionKey || snapshot.permissionKeys.includes(permissionKey);
   const hasMenu = !menuId || snapshot.visibleMenuIds.includes(menuId);
   return hasWorkspacePermission && hasPermission && hasMenu;
 }

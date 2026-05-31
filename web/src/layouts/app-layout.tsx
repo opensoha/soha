@@ -14,6 +14,7 @@ import {
   MoonOutlined,
   QuestionCircleOutlined,
   RobotOutlined,
+  SafetyOutlined,
   SettingOutlined,
   SlidersOutlined,
   SunOutlined,
@@ -61,7 +62,6 @@ const AI_WORKBENCH_MENU_ENTRIES = [
   { key: 'ai-workbench-inspection', iconKey: 'inspect', label: '巡检', path: '/ai-workbench/inspection', permissionKey: 'observe.ai.view', legacyMenuIds: ['ai-workbench-operations'] },
   { key: 'ai-workbench-tool-settings', iconKey: 'wrench', label: '工具与技能', path: '/ai-workbench/tool-settings', permissionKey: 'observe.ai.view', legacyMenuIds: ['ai-workbench-tools'] },
   { key: 'ai-workbench-model-settings', iconKey: 'settings', label: 'AI 设置', path: '/ai-workbench/model-settings', permissionKey: 'settings.ai.view', legacyMenuIds: ['ai-workbench-tools'] },
-  { key: 'ai-workbench-gateway', iconKey: 'shield', label: 'AI Gateway', path: '/ai-workbench/gateway', permissionKey: 'ai.gateway.view', legacyMenuIds: [] },
 ] as const
 
 function canUseAIWorkbenchMenuEntry(
@@ -276,6 +276,7 @@ function buildWorkbenchOptions(localeCode: 'zh_CN' | 'en_US'): WorkbenchOption[]
       { key: 'docker', label: 'Docker Workbench', description: 'Docker hosts, Compose projects, services, ports, and templates', icon: <DockerOutlined /> },
       { key: 'delivery', label: 'Delivery Workbench', description: 'Applications, build sources, bindings, and release orchestration', icon: <CloudServerOutlined /> },
       { key: 'ai', label: 'AI Workbench', description: 'Investigation, automation, tools, and skills', icon: <RobotOutlined /> },
+      { key: 'aiGateway', label: 'AI Gateway', description: 'AI clients, MCP access, tokens, policies, approvals, and call logs', icon: <SafetyOutlined /> },
       { key: 'monitoring', label: 'Monitoring Workbench', description: 'Alerts, routes, notifications, and on-call flows', icon: <AlertOutlined /> },
     ]
   }
@@ -285,6 +286,7 @@ function buildWorkbenchOptions(localeCode: 'zh_CN' | 'en_US'): WorkbenchOption[]
     { key: 'docker', label: 'Docker 工作台', description: '主机、Compose 项目、服务、端口与模板', icon: <DockerOutlined /> },
     { key: 'delivery', label: '应用交付工作台', description: '应用、构建来源、环境绑定与发布编排', icon: <CloudServerOutlined /> },
     { key: 'ai', label: 'AI工作台', description: '调查、自动化、工具与技能', icon: <RobotOutlined /> },
+    { key: 'aiGateway', label: 'AI Gateway', description: '外部 AI 客户端、MCP、令牌、策略、审批与调用日志', icon: <SafetyOutlined /> },
     { key: 'monitoring', label: '监控工作台', description: '告警、路由、通知和值班协同', icon: <AlertOutlined /> },
   ]
 }
@@ -392,7 +394,7 @@ export function AppLayout() {
       return 'delivery'
     }
     if (activeWorkspace === 'resource') {
-      return (['platform', 'virtualization', 'docker', 'ai', 'monitoring'] as const).find((item) => accessibleWorkbenchIds.includes(item)) ?? null
+      return (['platform', 'virtualization', 'docker', 'ai', 'aiGateway', 'monitoring'] as const).find((item) => accessibleWorkbenchIds.includes(item)) ?? null
     }
     return accessibleWorkbenchIds[0] ?? null
   }, [accessibleWorkbenchIds, activeWorkspace, currentWorkbenchId])

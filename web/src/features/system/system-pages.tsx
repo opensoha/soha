@@ -745,13 +745,14 @@ interface MenuWorkbenchSummary {
   workspace: WorkspaceType | null
 }
 
-const MENU_WORKBENCH_ORDER: MenuWorkbenchSurface[] = ['platform', 'virtualization', 'docker', 'delivery', 'ai', 'monitoring', 'system', 'unmapped']
+const MENU_WORKBENCH_ORDER: MenuWorkbenchSurface[] = ['platform', 'virtualization', 'docker', 'delivery', 'ai', 'aiGateway', 'monitoring', 'system', 'unmapped']
 
 const MENU_WORKBENCH_LABELS: Record<MenuWorkbenchSurface, string> = {
   platform: 'k8s工作台',
   virtualization: '虚拟化管理工作台',
   docker: 'Docker 工作台',
   ai: 'AI工作台',
+  aiGateway: 'AI Gateway',
   monitoring: '监控工作台',
   delivery: '应用交付工作台',
   system: '系统管理',

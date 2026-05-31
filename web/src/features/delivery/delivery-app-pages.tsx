@@ -141,7 +141,7 @@ function workflowGatewayPath(approvalRequestId: string) {
   const search = new URLSearchParams()
   if (approvalRequestId) search.set('approvalRequestId', approvalRequestId)
   const suffix = search.toString()
-  return `/ai-workbench/gateway${suffix ? `?${suffix}` : ''}`
+  return `/ai-gateway/governance${suffix ? `?${suffix}` : ''}`
 }
 
 function workflowManualApprovalNode(run: WorkflowRun) {

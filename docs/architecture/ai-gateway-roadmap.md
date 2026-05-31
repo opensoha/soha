@@ -97,13 +97,13 @@
   - `POST /api/v1/ai-gateway/approval-requests/:requestID/reject`
   - `POST /api/v1/ai-gateway/approval-requests/:requestID/cancel`
 - Console 管理面：
-  - `/ai-workbench/gateway` 已提供 AI clients、personal access tokens、service accounts、service account token 明细、MCP tool grants、access policies、skill bindings、manifest preview、Gateway audit 查询和审批请求处理。
+  - `/ai-gateway` 已作为独立 AI Gateway 工作台提供 AI clients、personal access tokens、service accounts、service account token 明细、MCP tool grants、access policies、skill bindings、manifest preview、Gateway audit 查询和审批请求处理。
   - route、菜单和权限可见性已对齐 `ai.gateway.view` / `ai.gateway.invoke` / `ai.gateway.manage`。
-  - backend seed、默认角色权限、菜单可见性以及 frontend route/layout 测试已守护 `/ai-workbench/gateway` 的 `ai-workbench-gateway` 菜单和 `ai.gateway.view` 入口。
+  - backend seed、默认角色权限、菜单可见性以及 frontend route/layout 测试已守护 `/ai-gateway` 的 `ai-gateway` 菜单和 `ai.gateway.view` 入口；旧 Gateway workbench 路径只允许作为隐藏兼容跳转。
   - token 明文仅在创建后一次性展示，不写入浏览器持久状态。
   - policy、grant、binding 使用结构化控件编辑 resource scopes 和审批策略；access policy 抽屉已支持常用审批路由字段，包括 `approvalPolicyRef`、候选用户/角色/团队、`onCallRef`、`approvalMode=all|any`、`requiredApprovals` 和 change window；常用治理条件也已覆盖 fixed-window、sliding-window、GCRA rateLimit、每日调用/token/cost budget、input redactionPolicy，以及 outputRedactionPolicy 的字段、Secret classifier、正则值、replacement 和 preserveFormat 控件；Secret classifier 多选项已和 backend 内置分类器同步到 OpenRouter、Fireworks AI、Voyage AI、Brave Search、SerpAPI、Browserbase、Exa、Jina AI、Unstructured、LlamaCloud、Helicone、DashScope、Moonshot、智谱 AI、SiliconFlow、腾讯混元、百度千帆、火山方舟、Grafana、Sentry、New Relic、Azure OpenAI、Azure DevOps PAT、Datadog、PagerDuty、PostHog、Splunk、Elastic 和 Terraform Cloud。
   - Governance 标签页已接入 `GET /api/v1/ai-gateway/governance/status`，支持按 1h/6h/24h/48h/7d 窗口查看 health、recent calls、token/client/approval 摘要、policy coverage、redaction hit summary、token findings、approval queue、top tools / AI clients / actors、anomaly findings、recommendations 和结构化 `recommendationActions`；redaction hit summary 来自 Gateway audit metadata 的 `redaction` 摘要，展示 total matches、命中 audit 数、input/output target、match type、classifier、field path、policy 和 tool TopN，只保留计数和定位字段，不暴露原始敏感值；token finding 可定位到 PAT 过滤视图、service account token 明细过滤视图或预填 service token 吊销抽屉，redaction policy/tool 可定位到 policy 或 audit 过滤视图，approval 队列、anomaly finding 和 recommendation action 可直接定位到对应 approval、AI client、policy、grant 或 audit 过滤视图，coverage 缺口和高风险 finding/action 可打开预填 access policy 草案以补 budget、rate limit、redaction、resource scope 或审批 guardrail。
-  - Gateway approval request 与 delivery workflow run 已能通过 Console drilldown 双向定位：审批列表展示 `workflowRunId` 并跳转 `/workflows?workflowRunId=...&gatewayApprovalRequestId=...`，工作流列表展示 Gateway approval metadata 和 manual approval node 摘要，并可回跳 `/ai-workbench/gateway?approvalRequestId=...`；审批请求和 Gateway audit 工具栏都已支持 created-time range 过滤，便于按事故窗口排查。
+  - Gateway approval request 与 delivery workflow run 已能通过 Console drilldown 双向定位：审批列表展示 `workflowRunId` 并跳转 `/workflows?workflowRunId=...&gatewayApprovalRequestId=...`，工作流列表展示 Gateway approval metadata 和 manual approval node 摘要，并可回跳 `/ai-gateway?approvalRequestId=...`；审批请求和 Gateway audit 工具栏都已支持 created-time range 过滤，便于按事故窗口排查。
 - 验证基线：
   - `go test ./...`
   - `go run ./cmd/soha-cli help`
@@ -113,7 +113,7 @@
   - `cd web && npm test`
   - `cd web && npm run build`
 - 人工 Console 验证：
-  - 2026-05-30 Chrome 登录态浏览器核对已完成：本地 backend `127.0.0.1:8080` health 正常，Vite console 运行在 `127.0.0.1:5174`，使用 `admin / soha` 登录后返回 `/ai-workbench/gateway`，左侧 `AI工作台` 下 `AI Gateway` 菜单项可见并处于选中状态，页面展示 Gateway 管理面、Manifest / AI Clients / Tokens / Service Accounts / Tool Grants / Access Policies / Skill Bindings / Governance / Approvals / Audit 标签以及可见 tool 清单。
+  - 2026-05-30 Chrome 登录态浏览器核对已完成：本地 backend `127.0.0.1:8080` health 正常，Vite console 运行在 `127.0.0.1:5174`，使用 `admin / soha` 登录后返回 `/ai-gateway`，独立 `AI Gateway` 工作台菜单项可见并处于选中状态，页面展示 Gateway 管理面、Manifest / AI Clients / Tokens / Service Accounts / Tool Grants / Access Policies / Skill Bindings / Governance / Approvals / Audit 标签以及可见 tool 清单。
   - 本次只记录登录态浏览器核对结果，未提交正式截图制品；如后续需要对外发布或视觉验收材料，可基于同一登录路径补充截图。
 
 ## 继续目标
@@ -294,7 +294,7 @@
 - access policy cookbook 已覆盖 read-only、mutating approval、approval routing/change window、high-risk deny、cluster/namespace scope、fixed-window、sliding-window、GCRA/token-bucket 与 Redis rateLimit、调用次数型 budget、token/cost budget、strict redaction、sanitize/mask redaction policy、字段级 allow-list、格式保留 mask、正则值规则、结构化 secret 分类器、按 tool 定制的 redaction rule 和 output redaction policy。
 - skill binding cookbook 已覆盖 AI client 绑定 delivery-developer 与 role 绑定 k8s-sre。
 - `docs/en/operations/ai-gateway-examples.md` 已同步英文版核心示例，`docs/operations/soha-cli.md` 和英文 CLI 文档已链接到示例文档。
-- Console 字段映射已补入 `docs/operations/ai-gateway-examples.md` 和英文示例文档，覆盖 `/ai-workbench/gateway` 的 manifest、AI clients、PAT、service accounts、MCP tool grants、access policies、常用治理 conditions、skill bindings、governance status、approval requests、audit 和 Redis rate-limit runtime config 边界。
+- Console 字段映射已补入 `docs/operations/ai-gateway-examples.md` 和英文示例文档，覆盖 `/ai-gateway` 的 manifest、AI clients、PAT、service accounts、MCP tool grants、access policies、常用治理 conditions、skill bindings、governance status、approval requests、audit 和 Redis rate-limit runtime config 边界。
 - resource/prompt 人工排查示例已补入中英文示例文档：`soha-cli resource read`、`soha-cli prompt get`、`diagnose --resource` 和 `diagnose --prompt` 都明确只通过 Gateway `resources/read` / `prompts/get` 边界，并提示按 runtime permission、skill binding、AI client context 和 resource scope 排查。
 - `docs/ai_gateway_examples_test.go` 和 AI Gateway application tests 已守护操作文档、架构文档、roadmap 与默认 capability registry 的当前 CLI/tool 清单一致性，防止回退到旧命令面或漏写新增默认 tool。
 

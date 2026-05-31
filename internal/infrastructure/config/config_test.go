@@ -67,4 +67,7 @@ func TestDefaultsConfigurePostgresGatewayRateLimitBackend(t *testing.T) {
 	if v.GetString("ai_gateway.rate_limit.redis.timeout") != "500ms" {
 		t.Fatalf("unexpected redis timeout default: %s", v.GetString("ai_gateway.rate_limit.redis.timeout"))
 	}
+	if !cfg.Modules.AIGateway.Enabled {
+		t.Fatalf("AI Gateway module should be enabled by default")
+	}
 }

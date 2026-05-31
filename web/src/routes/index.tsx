@@ -602,6 +602,38 @@ function AIWorkbenchModelSettingsRedirect() {
   return <Navigate to={getAIModelSettingsPath(location.search)} replace />;
 }
 
+const AI_GATEWAY_TAB_PATHS: Record<string, string> = {
+  overview: "/ai-gateway/overview",
+  manifest: "/ai-gateway/manifest",
+  clients: "/ai-gateway/clients",
+  tokens: "/ai-gateway/tokens",
+  "service-accounts": "/ai-gateway/tokens",
+  grants: "/ai-gateway/governance",
+  policies: "/ai-gateway/governance",
+  bindings: "/ai-gateway/governance",
+  governance: "/ai-gateway/governance",
+  approvals: "/ai-gateway/governance",
+  audit: "/ai-gateway/call-logs",
+  "call-logs": "/ai-gateway/call-logs",
+};
+
+function getAIGatewayRedirectTarget(search: string) {
+  const params = new URLSearchParams(search);
+  const requestedTab = params.get("tab")?.trim() ?? "";
+  const hasApprovalFocus = Boolean(params.get("approvalRequestId")?.trim());
+  const targetPath = AI_GATEWAY_TAB_PATHS[requestedTab] ?? (hasApprovalFocus ? "/ai-gateway/governance" : "/ai-gateway/overview");
+  if (["overview", "manifest", "clients", "tokens", "governance", "call-logs"].includes(requestedTab)) {
+    params.delete("tab");
+  }
+  const suffix = params.toString();
+  return `${targetPath}${suffix ? `?${suffix}` : ""}`;
+}
+
+function AIGatewayRedirect() {
+  const location = useLocation();
+  return <Navigate to={getAIGatewayRedirectTarget(location.search)} replace />;
+}
+
 export function AppRouter() {
   return (
     <Routes>
@@ -1687,12 +1719,64 @@ export function AppRouter() {
             }
           />
           <Route
-            path="/ai-workbench/gateway"
+            path="/ai-gateway"
+            element={<AIGatewayRedirect />}
+          />
+          <Route
+            path="/ai-gateway/overview"
             element={
               <LazyPage>
                 <AIGatewayPage />
               </LazyPage>
             }
+          />
+          <Route
+            path="/ai-gateway/manifest"
+            element={
+              <LazyPage>
+                <AIGatewayPage />
+              </LazyPage>
+            }
+          />
+          <Route
+            path="/ai-gateway/clients"
+            element={
+              <LazyPage>
+                <AIGatewayPage />
+              </LazyPage>
+            }
+          />
+          <Route
+            path="/ai-gateway/tokens"
+            element={
+              <LazyPage>
+                <AIGatewayPage />
+              </LazyPage>
+            }
+          />
+          <Route
+            path="/ai-gateway/governance"
+            element={
+              <LazyPage>
+                <AIGatewayPage />
+              </LazyPage>
+            }
+          />
+          <Route
+            path="/ai-gateway/call-logs"
+            element={
+              <LazyPage>
+                <AIGatewayPage />
+              </LazyPage>
+            }
+          />
+          <Route
+            path="/ai-gateway/*"
+            element={<Navigate to="/ai-gateway/overview" replace />}
+          />
+          <Route
+            path="/ai-workbench/gateway"
+            element={<AIGatewayRedirect />}
           />
           <Route
             path="/ai-workbench/automation"

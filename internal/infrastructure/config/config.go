@@ -169,6 +169,7 @@ type ModulesConfig struct {
 	Delivery       ModuleToggleConfig `mapstructure:"delivery"`
 	Monitoring     ModuleToggleConfig `mapstructure:"monitoring"`
 	AI             ModuleToggleConfig `mapstructure:"ai"`
+	AIGateway      ModuleToggleConfig `mapstructure:"ai_gateway"`
 	Virtualization ModuleToggleConfig `mapstructure:"virtualization"`
 	Docker         ModuleToggleConfig `mapstructure:"docker"`
 	Security       ModuleToggleConfig `mapstructure:"security"`
@@ -350,6 +351,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("modules.delivery.enabled", true)
 	v.SetDefault("modules.monitoring.enabled", true)
 	v.SetDefault("modules.ai.enabled", true)
+	v.SetDefault("modules.ai_gateway.enabled", true)
 	v.SetDefault("modules.virtualization.enabled", true)
 	v.SetDefault("modules.docker.enabled", true)
 	v.SetDefault("modules.security.enabled", false)

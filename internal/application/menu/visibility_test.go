@@ -60,7 +60,7 @@ func TestVirtualizationSyncMenuVisibleWithViewOrManagePermission(t *testing.T) {
 }
 
 func TestAIGatewayMenuRequiresWorkspaceAndGatewayViewPermission(t *testing.T) {
-	item := domainmenu.Record{ID: "ai-workbench-gateway", Path: "/ai-workbench/gateway"}
+	item := domainmenu.Record{ID: "ai-gateway", Path: "/ai-gateway"}
 
 	if isVisibleByPermissions(item, []string{appaccess.PermWorkspaceResourceView}) {
 		t.Fatalf("AI Gateway menu should require %s", appaccess.PermAIGatewayView)
@@ -70,6 +70,36 @@ func TestAIGatewayMenuRequiresWorkspaceAndGatewayViewPermission(t *testing.T) {
 	}
 	if !isVisibleByPermissions(item, []string{appaccess.PermWorkspaceResourceView, appaccess.PermAIGatewayView}) {
 		t.Fatalf("AI Gateway menu should be visible when workspace and gateway view permissions are both present")
+	}
+}
+
+func TestAIGatewayChildMenusUseSpecificPermissions(t *testing.T) {
+	overview := domainmenu.Record{ID: "ai-gateway-overview", Path: "/ai-gateway/overview"}
+	clients := domainmenu.Record{ID: "ai-gateway-clients", Path: "/ai-gateway/clients"}
+	tokens := domainmenu.Record{ID: "ai-gateway-tokens", Path: "/ai-gateway/tokens"}
+	governance := domainmenu.Record{ID: "ai-gateway-governance", Path: "/ai-gateway/governance"}
+	callLogs := domainmenu.Record{ID: "ai-gateway-call-logs", Path: "/ai-gateway/call-logs"}
+
+	if !isVisibleByPermissions(overview, []string{appaccess.PermWorkspaceResourceView, appaccess.PermAIGatewayView}) {
+		t.Fatalf("AI Gateway overview should be visible with view permission")
+	}
+	if isVisibleByPermissions(clients, []string{appaccess.PermWorkspaceResourceView, appaccess.PermAIGatewayView}) {
+		t.Fatalf("AI Gateway clients should require manage permission")
+	}
+	if !isVisibleByPermissions(clients, []string{appaccess.PermWorkspaceResourceView, appaccess.PermAIGatewayManage}) {
+		t.Fatalf("AI Gateway clients should be visible with manage permission")
+	}
+	if !isVisibleByPermissions(tokens, []string{appaccess.PermWorkspaceResourceView, appaccess.PermAIGatewayInvoke}) {
+		t.Fatalf("AI Gateway tokens should be visible with invoke permission")
+	}
+	if !isVisibleByPermissions(governance, []string{appaccess.PermWorkspaceResourceView, appaccess.PermAIGatewayManage}) {
+		t.Fatalf("AI Gateway governance should be visible with manage permission")
+	}
+	if isVisibleByPermissions(callLogs, []string{appaccess.PermWorkspaceResourceView, appaccess.PermAIGatewayView}) {
+		t.Fatalf("AI Gateway call logs should require manage permission")
+	}
+	if !isVisibleByPermissions(callLogs, []string{appaccess.PermWorkspaceResourceView, appaccess.PermAIGatewayManage}) {
+		t.Fatalf("AI Gateway call logs should be visible with manage permission")
 	}
 }
 

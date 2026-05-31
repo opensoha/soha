@@ -4,6 +4,7 @@ import {
   CloseOutlined,
   DeleteOutlined,
   EditOutlined,
+  HistoryOutlined,
   LinkOutlined,
   KeyOutlined,
   PlusOutlined,
@@ -30,13 +31,12 @@ import {
   Modal,
   Select,
   Space,
-  Statistic,
   Table,
   Tabs,
   Tag,
   Typography,
 } from 'antd'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { StatusTag } from '@/components/status-tag'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth/permission-snapshot'
 import { api } from '@/services/api-client'
@@ -52,7 +52,127 @@ type GatewayTimeRangeValue = readonly [
 
 type RiskLevel = 'read' | 'analyze' | 'mutate' | 'execute' | 'high'
 type GatewayEffect = 'allow' | 'deny'
+type GatewaySectionKey = 'overview' | 'manifest' | 'clients' | 'tokens' | 'governance' | 'call-logs'
 export type GatewayTabKey = 'manifest' | 'clients' | 'tokens' | 'service-accounts' | 'grants' | 'policies' | 'bindings' | 'governance' | 'approvals' | 'audit'
+
+const gatewayMenuMeta: Record<GatewayTabKey, { description: string; title: string }> = {
+  manifest: {
+    title: 'Manifest',
+    description: '当前身份可见的 MCP tools、resources、prompts 和 skills。',
+  },
+  clients: {
+    title: 'AI Clients',
+    description: '外部 IDE、CI、Agent 平台和 MCP 客户端注册入口。',
+  },
+  tokens: {
+    title: 'Tokens',
+    description: '个人访问令牌与一次性明文创建流程。',
+  },
+  'service-accounts': {
+    title: 'Service Accounts',
+    description: '服务账号、服务账号 token 和自动化调用身份。',
+  },
+  grants: {
+    title: 'Tool Grants',
+    description: '按主体、角色和客户端收窄可调用工具。',
+  },
+  policies: {
+    title: 'Access Policies',
+    description: 'Gateway allow/deny、审批、限流、预算和脱敏治理策略。',
+  },
+  bindings: {
+    title: 'Skill Bindings',
+    description: '约束 skill 能暴露的能力引用，不扩权。',
+  },
+  governance: {
+    title: 'Governance',
+    description: '健康检查、风险 finding、policy coverage 和治理建议。',
+  },
+  approvals: {
+    title: 'Approvals',
+    description: '高风险工具审批、决策轨迹和 workflow 关联。',
+  },
+  audit: {
+    title: '调用日志',
+    description: '按调用者、入口 client、调用内容、结果和 request 追踪 Gateway 调用。',
+  },
+}
+
+const gatewaySectionMeta: Record<GatewaySectionKey, { description: string; title: string }> = {
+  overview: {
+    title: '概览',
+    description: '汇总 AI Gateway 的能力入口、身份对象、授权策略和治理状态。',
+  },
+  manifest: {
+    title: '能力清单',
+    description: '查看当前身份可见的 MCP tools、resources、prompts 和 skills。',
+  },
+  clients: {
+    title: 'AI Clients',
+    description: '管理外部 IDE、CI、Agent 平台和 MCP 客户端注册入口。',
+  },
+  tokens: {
+    title: 'Tokens',
+    description: '管理 personal access tokens、service accounts 与自动化调用 token。',
+  },
+  governance: {
+    title: 'Governance',
+    description: '管理 tool grants、access policies、skill bindings 与审批治理。',
+  },
+  'call-logs': {
+    title: '调用日志',
+    description: '查看谁通过 AI Gateway 调用了什么能力，以及每次调用的结果和上下文。',
+  },
+}
+
+const gatewayTabSectionMap: Record<GatewayTabKey, GatewaySectionKey> = {
+  manifest: 'manifest',
+  clients: 'clients',
+  tokens: 'tokens',
+  'service-accounts': 'tokens',
+  grants: 'governance',
+  policies: 'governance',
+  bindings: 'governance',
+  governance: 'governance',
+  approvals: 'governance',
+  audit: 'call-logs',
+}
+
+const gatewaySectionPaths: Record<GatewaySectionKey, string> = {
+  overview: '/ai-gateway/overview',
+  manifest: '/ai-gateway/manifest',
+  clients: '/ai-gateway/clients',
+  tokens: '/ai-gateway/tokens',
+  governance: '/ai-gateway/governance',
+  'call-logs': '/ai-gateway/call-logs',
+}
+
+function gatewaySectionFromPath(pathname: string): GatewaySectionKey {
+  if (pathname.startsWith('/ai-gateway/manifest')) return 'manifest'
+  if (pathname.startsWith('/ai-gateway/clients')) return 'clients'
+  if (pathname.startsWith('/ai-gateway/tokens')) return 'tokens'
+  if (pathname.startsWith('/ai-gateway/governance')) return 'governance'
+  if (pathname.startsWith('/ai-gateway/call-logs')) return 'call-logs'
+  return 'overview'
+}
+
+function normalizeGatewayTabKey(value: string | null): GatewayTabKey | null {
+  if (!value) return null
+  return Object.prototype.hasOwnProperty.call(gatewayTabSectionMap, value) ? (value as GatewayTabKey) : null
+}
+
+function defaultGatewayTabForSection(section: GatewaySectionKey, focusedApprovalRequestId: string): GatewayTabKey {
+  if (focusedApprovalRequestId) return 'approvals'
+  if (section === 'manifest') return 'manifest'
+  if (section === 'clients') return 'clients'
+  if (section === 'tokens') return 'tokens'
+  if (section === 'call-logs') return 'audit'
+  return 'governance'
+}
+
+function gatewayTabBelongsToSection(tab: GatewayTabKey, section: GatewaySectionKey) {
+  return gatewayTabSectionMap[tab] === section
+}
 
 interface AIClient {
   id: string
@@ -230,6 +350,7 @@ interface GatewayAuditLog {
   summary: string
   requestId?: string
   sourceIp?: string
+  metadata?: Record<string, unknown>
   createdAt: string
 }
 
@@ -482,6 +603,7 @@ interface AuditFilterState {
   actor: string
   aiClientId: string
   toolName: string
+  action: string
   riskLevel: string
   result: string
   from: string
@@ -577,6 +699,30 @@ const approvalStatusOptions = [
   { label: '已超时', value: 'timeout' },
   { label: '执行失败', value: 'failed' },
 ]
+
+const auditActionOptions = [
+  { label: '工具调用', value: 'ai_gateway.tool.invoke' },
+  { label: '资源读取', value: 'ai_gateway.resource.read' },
+  { label: 'Prompt 获取', value: 'ai_gateway.prompt.get' },
+  { label: '审批请求', value: 'ai_gateway.approval.request' },
+  { label: '审批决策', value: 'ai_gateway.approval.decision' },
+  { label: '审批超时', value: 'ai_gateway.approval.timeout' },
+]
+
+const auditResultOptions = [
+  'success',
+  'failure',
+  'deny',
+  'pending',
+  'pending_approval',
+  'pending_human_confirm',
+  'dry_run',
+  'approved',
+  'executed',
+  'rejected',
+  'canceled',
+  'timeout',
+].map((value) => ({ label: value, value }))
 
 const governanceWindowOptions = [
   { label: '1h', value: '1' },
@@ -1035,6 +1181,107 @@ function scopeSummary(scopes?: Record<string, unknown>) {
   )
 }
 
+function auditActionLabel(action?: string) {
+  const value = String(action ?? '').trim()
+  return auditActionOptions.find((item) => item.value === value)?.label ?? value
+}
+
+function auditCallTarget(record: GatewayAuditLog) {
+  const metadata = asRecord(record.metadata)
+  return (
+    record.toolName ||
+    firstString(metadata, 'resourceUri', 'promptName', 'mcpToolName', 'resourceName') ||
+    firstString(asRecord(metadata.relatedIds), 'toolName', 'resourceName') ||
+    record.action ||
+    '-'
+  )
+}
+
+function primitiveScopeValue(value: unknown): string {
+  if (typeof value === 'string') return value.trim()
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value)
+  if (Array.isArray(value)) return value.map((item) => primitiveScopeValue(item)).filter(Boolean).join(',')
+  return ''
+}
+
+function auditScopeItems(record: GatewayAuditLog) {
+  const scope = asRecord(record.resourceScope)
+  const orderedKeys = [
+    'businessLineId',
+    'applicationId',
+    'applicationEnvironmentId',
+    'environmentId',
+    'clusterId',
+    'namespace',
+    'podName',
+    'deploymentName',
+    'serviceName',
+    'releaseBundleId',
+    'executionTaskId',
+  ]
+  const seen = new Set<string>()
+  const items: string[] = []
+  orderedKeys.forEach((key) => {
+    const value = primitiveScopeValue(scope[key])
+    if (value) {
+      seen.add(key)
+      items.push(`${key}:${value}`)
+    }
+  })
+  Object.entries(scope).forEach(([key, value]) => {
+    if (seen.has(key)) return
+    const text = primitiveScopeValue(value)
+    if (text) items.push(`${key}:${text}`)
+  })
+  return items
+}
+
+function auditScopeSummary(record: GatewayAuditLog) {
+  const items = auditScopeItems(record)
+  return items.length ? compactList(items, 3) : <Text type="secondary">全局</Text>
+}
+
+function auditCaller(record: GatewayAuditLog) {
+  return (
+    <Space orientation="vertical" size={0}>
+      <Text strong>{record.actorName || record.actorId}</Text>
+      <Text type="secondary">{record.actorType}:{record.actorId}</Text>
+      {record.sourceIp ? <Text type="secondary">{record.sourceIp}</Text> : null}
+    </Space>
+  )
+}
+
+function auditEntryPoint(record: GatewayAuditLog) {
+  return (
+    <Space orientation="vertical" size={0}>
+      <Text>{record.aiClientName || record.aiClientId || '-'}</Text>
+      <Text type="secondary">{record.skillId ? `skill:${record.skillId}` : 'skill:-'}</Text>
+    </Space>
+  )
+}
+
+function auditInvocation(record: GatewayAuditLog) {
+  const target = auditCallTarget(record)
+  return (
+    <Space orientation="vertical" size={4}>
+      <Space size={4} wrap>
+        <Text strong>{target}</Text>
+        {record.action ? <Tag>{auditActionLabel(record.action)}</Tag> : null}
+      </Space>
+      {auditScopeSummary(record)}
+    </Space>
+  )
+}
+
+function auditResult(record: GatewayAuditLog) {
+  return (
+    <Space orientation="vertical" size={4}>
+      <StatusTag value={record.result} />
+      {record.riskLevel ? <StatusTag value={record.riskLevel} /> : null}
+    </Space>
+  )
+}
+
 function policyConditionSummary(conditions?: Record<string, unknown>) {
   const items: string[] = []
   const source = asRecord(conditions)
@@ -1391,6 +1638,7 @@ function auditDrilldownFilters(filters: Partial<AuditFilterState>): AuditFilterS
     actor: '',
     aiClientId: '',
     toolName: '',
+    action: '',
     riskLevel: '',
     result: '',
     from: '',
@@ -1562,7 +1810,7 @@ export function governanceFindingDrilldownActions(record: GovernanceFinding): Go
   }
   if (record.actorId || record.aiClientId || record.toolName || record.riskLevel) {
     actions.push({
-      label: '查 audit',
+      label: '查日志',
       target: {
         tab: 'audit',
         auditFilters: auditDrilldownFilters({
@@ -1760,11 +2008,18 @@ export function AIGatewayPage() {
   const [drawer, setDrawer] = useState<DrawerState | null>(null)
   const [oneTimeToken, setOneTimeToken] = useState<{ title: string; value: string; prefix?: string } | null>(null)
   const [decisionTarget, setDecisionTarget] = useState<{ action: 'approve' | 'reject' | 'cancel'; record: ApprovalRequest } | null>(null)
+  const location = useLocation()
   const [searchParams] = useSearchParams()
+  const section = gatewaySectionFromPath(location.pathname)
+  const requestedTab = normalizeGatewayTabKey(searchParams.get('tab'))
   const focusedApprovalRequestId = searchParams.get('approvalRequestId')?.trim() ?? ''
-  const [activeTab, setActiveTab] = useState<GatewayTabKey>(focusedApprovalRequestId ? 'approvals' : 'manifest')
+  const [activeTab, setActiveTab] = useState<GatewayTabKey>(() => (
+    requestedTab && gatewayTabBelongsToSection(requestedTab, section)
+      ? requestedTab
+      : defaultGatewayTabForSection(section, focusedApprovalRequestId)
+  ))
   const [manifestFilters, setManifestFilters] = useState({ aiClientId: '', skillId: '', source: 'console' })
-  const [auditFilters, setAuditFilters] = useState<AuditFilterState>({ actor: '', aiClientId: '', toolName: '', riskLevel: '', result: '', from: '', to: '' })
+  const [auditFilters, setAuditFilters] = useState<AuditFilterState>({ actor: '', aiClientId: '', toolName: '', action: '', riskLevel: '', result: '', from: '', to: '' })
   const [approvalFilters, setApprovalFilters] = useState<ApprovalFilterState>({ id: focusedApprovalRequestId, status: focusedApprovalRequestId ? '' : 'pending', actor: '', aiClientId: '', toolName: '', riskLevel: '', strategy: '', from: '', to: '' })
   const [clientFilter, setClientFilter] = useState('')
   const [tokenFilter, setTokenFilter] = useState('')
@@ -1774,8 +2029,10 @@ export function AIGatewayPage() {
   const [governanceWindowHours, setGovernanceWindowHours] = useState('24')
   const permissionSnapshot = usePermissionSnapshot()
   const snapshot = permissionSnapshot.data?.data
+  const canView = hasPermission(snapshot, 'ai.gateway.view')
   const canManage = hasPermission(snapshot, 'ai.gateway.manage')
   const canInvoke = hasPermission(snapshot, 'ai.gateway.invoke')
+  const canUseGateway = canView || canInvoke || canManage
 
   const clientsQuery = useQuery({
     queryKey: ['ai-gateway', 'ai-clients'],
@@ -1785,6 +2042,7 @@ export function AIGatewayPage() {
   const personalTokensQuery = useQuery({
     queryKey: ['ai-gateway', 'personal-access-tokens'],
     queryFn: () => api.get<ApiResponse<PersonalAccessToken[]>>('/ai-gateway/personal-access-tokens'),
+    enabled: canView,
   })
   const serviceAccountsQuery = useQuery({
     queryKey: ['ai-gateway', 'service-accounts'],
@@ -1814,6 +2072,7 @@ export function AIGatewayPage() {
   const manifestQuery = useQuery({
     queryKey: ['ai-gateway', 'capabilities', manifestFilters],
     queryFn: () => api.get<ApiResponse<GatewayManifest>>(`/ai-gateway/capabilities${queryString(manifestFilters)}`),
+    enabled: canView,
   })
   const auditQuery = useQuery({
     queryKey: ['ai-gateway', 'audit-logs', auditFilters],
@@ -1886,7 +2145,26 @@ export function AIGatewayPage() {
     }))
   }, [focusedApprovalRequestId])
 
+  useEffect(() => {
+    const nextTab = requestedTab && gatewayTabBelongsToSection(requestedTab, section)
+      ? requestedTab
+      : defaultGatewayTabForSection(section, focusedApprovalRequestId)
+    setActiveTab((current) => {
+      if (requestedTab) {
+        return current === requestedTab ? current : nextTab
+      }
+      if (focusedApprovalRequestId && current !== 'approvals') {
+        return 'approvals'
+      }
+      return gatewayTabBelongsToSection(current, section) ? current : nextTab
+    })
+  }, [focusedApprovalRequestId, requestedTab, section])
+
   const applyGovernanceDrilldown = (target: GovernanceDrilldownTarget) => {
+    const targetSection = gatewayTabSectionMap[target.tab]
+    if (targetSection !== section) {
+      navigate(gatewaySectionPaths[targetSection])
+    }
     setActiveTab(target.tab)
     if (target.approvalFilters) {
       setApprovalFilters((prev) => ({ ...prev, ...target.approvalFilters }))
@@ -2082,6 +2360,10 @@ export function AIGatewayPage() {
     bindings: bindings.length,
     tools: manifest?.summary.toolCount ?? 0,
   }), [bindings.length, clients.length, grants.length, manifest, policies.length, serviceAccounts.length])
+  const gatewayPanelMeta = gatewaySectionMeta[section]
+  const sectionActiveTab = gatewayTabBelongsToSection(activeTab, section)
+    ? activeTab
+    : defaultGatewayTabForSection(section, focusedApprovalRequestId)
 
   const confirmDelete = (kind: 'grant' | 'policy' | 'binding' | 'personal-token', id: string, title: string) => {
     modal.confirm({
@@ -2208,11 +2490,10 @@ export function AIGatewayPage() {
 
   const auditColumns: TableColumnsType<GatewayAuditLog> = [
     { title: '时间', dataIndex: 'createdAt', width: 140, render: formatDateTime },
-    { title: 'Actor', dataIndex: 'actorId', width: 190, render: (_, record) => <Space orientation="vertical" size={0}><Text strong>{record.actorName || record.actorId}</Text><Text type="secondary">{record.actorType}:{record.actorId}</Text></Space> },
-    { title: 'Client / Skill', dataIndex: 'aiClientId', width: 180, render: (_, record) => <Space orientation="vertical" size={0}><Text>{record.aiClientName || record.aiClientId || '-'}</Text><Text type="secondary">{record.skillId || '-'}</Text></Space> },
-    { title: 'Tool', dataIndex: 'toolName', width: 240, render: (value) => value ? <Tag>{value}</Tag> : '-' },
-    { title: 'Risk', dataIndex: 'riskLevel', width: 100, render: (value) => value ? <StatusTag value={value} /> : '-' },
-    { title: 'Result', dataIndex: 'result', width: 100, render: (value) => <StatusTag value={value} /> },
+    { title: '调用者', dataIndex: 'actorId', width: 210, render: (_, record) => auditCaller(record) },
+    { title: '调用入口', dataIndex: 'aiClientId', width: 200, render: (_, record) => auditEntryPoint(record) },
+    { title: '调用内容', dataIndex: 'toolName', width: 340, render: (_, record) => auditInvocation(record) },
+    { title: '结果', dataIndex: 'result', width: 120, render: (_, record) => auditResult(record) },
     { title: '摘要', dataIndex: 'summary', render: (value) => <Paragraph style={{ marginBottom: 0 }} ellipsis={{ rows: 2, tooltip: value }}>{value}</Paragraph> },
   ]
 
@@ -2402,8 +2683,8 @@ export function AIGatewayPage() {
     },
   ]
 
-  if (!hasPermission(snapshot, 'ai.gateway.view') && !permissionSnapshot.isLoading) {
-    return <div className="soha-page"><Alert type="warning" title="当前账号没有 AI Gateway 查看权限。" /></div>
+  if (!canUseGateway && !permissionSnapshot.isLoading) {
+    return <div className="soha-page"><Alert type="warning" title="当前账号没有 AI Gateway 权限。" /></div>
   }
 
   return (
@@ -2413,28 +2694,50 @@ export function AIGatewayPage() {
           <Text type="secondary">AI Gateway</Text>
           <Typography.Title level={3} style={{ margin: 0 }}>企业 AI 运维控制面</Typography.Title>
           <Paragraph type="secondary" style={{ marginBottom: 0 }}>
-            统一管理 AI client、token、service account、tool grant、access policy、skill binding 与 Gateway 审计。
+            统一管理 AI client、token、service account、tool grant、access policy、skill binding、审批与调用日志。
           </Paragraph>
         </Space>
       </section>
 
-      <div className="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
-        <Card size="small"><Statistic title="AI clients" value={summary.clients} /></Card>
-        <Card size="small"><Statistic title="Service accounts" value={summary.serviceAccounts} /></Card>
-        <Card size="small"><Statistic title="Tool grants" value={summary.grants} /></Card>
-        <Card size="small"><Statistic title="Policies" value={summary.policies} /></Card>
-        <Card size="small"><Statistic title="Skill bindings" value={summary.bindings} /></Card>
-        <Card size="small"><Statistic title="Visible tools" value={summary.tools} /></Card>
-      </div>
-
       <Card
-        title={cardTitle(<SafetyCertificateOutlined />, 'Gateway 管理')}
+        title={cardTitle(<SafetyCertificateOutlined />, gatewayPanelMeta.title)}
         extra={<Button size="small" icon={<ReloadOutlined />} onClick={() => void refreshAll()}>刷新</Button>}
       >
-        <Tabs
-          activeKey={activeTab}
-          onChange={(key) => setActiveTab(key as GatewayTabKey)}
-          items={[
+        <Space orientation="vertical" size={12} style={{ width: '100%' }}>
+          <Text type="secondary">{gatewayPanelMeta.description}</Text>
+          {section === 'tokens' || section === 'governance' || section === 'call-logs' ? (
+            <Text type="secondary">{gatewayMenuMeta[sectionActiveTab].description}</Text>
+          ) : null}
+          {section === 'overview' ? (
+            <Space orientation="vertical" size={12} style={{ width: '100%' }}>
+              <div className="grid gap-3 lg:grid-cols-2">
+                <Descriptions size="small" column={2} bordered items={[
+                  { key: 'tools', label: 'Visible tools', children: summary.tools },
+                  { key: 'clients', label: 'AI clients', children: summary.clients },
+                  { key: 'tokens', label: 'PAT', children: personalTokens.length },
+                  { key: 'serviceAccounts', label: 'Service accounts', children: summary.serviceAccounts },
+                ]} />
+                <Descriptions size="small" column={2} bordered items={[
+                  { key: 'policies', label: 'Policies', children: summary.policies },
+                  { key: 'grants', label: 'Tool grants', children: summary.grants },
+                  { key: 'bindings', label: 'Skill bindings', children: summary.bindings },
+                  { key: 'approvals', label: 'Approvals', children: approvalRequests.length },
+                ]} />
+              </div>
+              <Space wrap>
+                <Button icon={<SafetyCertificateOutlined />} onClick={() => navigate(gatewaySectionPaths.manifest)}>能力清单</Button>
+                <Button icon={<LinkOutlined />} disabled={!canManage} onClick={() => navigate(gatewaySectionPaths.clients)}>AI Clients</Button>
+                <Button icon={<KeyOutlined />} onClick={() => navigate(gatewaySectionPaths.tokens)}>Tokens</Button>
+                <Button icon={<StopOutlined />} disabled={!canManage} onClick={() => navigate(gatewaySectionPaths.governance)}>Governance</Button>
+                <Button icon={<HistoryOutlined />} disabled={!canManage} onClick={() => navigate(gatewaySectionPaths['call-logs'])}>调用日志</Button>
+              </Space>
+            </Space>
+          ) : (
+            <Tabs
+              activeKey={sectionActiveTab}
+              onChange={(key) => setActiveTab(key as GatewayTabKey)}
+              renderTabBar={section === 'manifest' || section === 'clients' || section === 'call-logs' ? () => <></> : undefined}
+              items={[
             {
               key: 'manifest',
               label: 'Manifest',
@@ -2663,23 +2966,27 @@ export function AIGatewayPage() {
             },
             {
               key: 'audit',
-              label: 'Audit',
+              label: '调用日志',
               children: (
                 <Space orientation="vertical" size={12} style={{ width: '100%' }}>
                   <Space wrap>
-                    <Input style={{ width: 180 }} placeholder="actorId" value={auditFilters.actor} onChange={(event) => setAuditFilters((prev) => ({ ...prev, actor: event.target.value }))} />
-                    <Select allowClear style={{ width: 220 }} placeholder="AI client" options={clientOptions} value={auditFilters.aiClientId || undefined} onChange={(value) => setAuditFilters((prev) => ({ ...prev, aiClientId: value ?? '' }))} />
-                    <Select allowClear style={{ width: 260 }} placeholder="Tool" options={toolOptions} value={auditFilters.toolName || undefined} onChange={(value) => setAuditFilters((prev) => ({ ...prev, toolName: value ?? '' }))} />
+                    <Input style={{ width: 190 }} placeholder="调用者 ID" value={auditFilters.actor} onChange={(event) => setAuditFilters((prev) => ({ ...prev, actor: event.target.value }))} />
+                    <Select allowClear style={{ width: 220 }} placeholder="调用入口 client" options={clientOptions} value={auditFilters.aiClientId || undefined} onChange={(value) => setAuditFilters((prev) => ({ ...prev, aiClientId: value ?? '' }))} />
+                    <Select allowClear style={{ width: 260 }} placeholder="调用内容 / Tool" options={toolOptions} value={auditFilters.toolName || undefined} onChange={(value) => setAuditFilters((prev) => ({ ...prev, toolName: value ?? '' }))} />
+                    <Select allowClear style={{ width: 180 }} placeholder="动作" options={auditActionOptions} value={auditFilters.action || undefined} onChange={(value) => setAuditFilters((prev) => ({ ...prev, action: value ?? '' }))} />
                     <Select allowClear style={{ width: 140 }} placeholder="Risk" options={riskLevelOptions} value={auditFilters.riskLevel || undefined} onChange={(value) => setAuditFilters((prev) => ({ ...prev, riskLevel: value ?? '' }))} />
-                    <Select allowClear style={{ width: 190 }} placeholder="Result" options={['success', 'failure', 'deny', 'pending_approval', 'pending_human_confirm', 'dry_run', 'canceled', 'timeout'].map((value) => ({ label: value, value }))} value={auditFilters.result || undefined} onChange={(value) => setAuditFilters((prev) => ({ ...prev, result: value ?? '' }))} />
+                    <Select allowClear style={{ width: 190 }} placeholder="Result" options={auditResultOptions} value={auditFilters.result || undefined} onChange={(value) => setAuditFilters((prev) => ({ ...prev, result: value ?? '' }))} />
                     <RangePicker showTime allowClear style={{ width: 340 }} placeholder={['开始时间', '结束时间']} onChange={(value) => setAuditFilters((prev) => ({ ...prev, ...gatewayTimeRangeQuery(value) }))} />
+                    <Button icon={<ReloadOutlined />} onClick={() => void auditQuery.refetch()}>刷新</Button>
                   </Space>
-                  <Table rowKey="id" size="small" columns={auditColumns} dataSource={auditLogs} loading={auditQuery.isLoading} scroll={{ x: 1040 }} expandable={{ expandedRowRender: (record) => <JsonBlock value={{ resourceScope: record.resourceScope, requestId: record.requestId, sourceIp: record.sourceIp }} /> }} />
+                  <Table rowKey="id" size="small" columns={auditColumns} dataSource={auditLogs} loading={auditQuery.isLoading} scroll={{ x: 1220 }} expandable={{ expandedRowRender: (record) => <JsonBlock value={{ requestId: record.requestId, sourceIp: record.sourceIp, resourceScope: record.resourceScope, metadata: record.metadata }} /> }} />
                 </Space>
               ),
             },
-          ]}
-        />
+          ].filter((item) => gatewayTabBelongsToSection(item.key as GatewayTabKey, section))}
+            />
+          )}
+        </Space>
       </Card>
 
       <Drawer

@@ -80,6 +80,62 @@ func TestListReflectsDisabledVirtualizationModule(t *testing.T) {
 	}
 }
 
+func TestListIncludesAIGatewayDescriptor(t *testing.T) {
+	service := New(cfgpkg.ModulesConfig{AIGateway: cfgpkg.ModuleToggleConfig{Enabled: true}})
+
+	items, err := service.List(context.Background())
+	if err != nil {
+		t.Fatalf("List returned error: %v", err)
+	}
+
+	status, ok := moduleStatusByID(items, "aiGateway")
+	if !ok {
+		t.Fatalf("AI Gateway module descriptor missing")
+	}
+	if !status.Enabled {
+		t.Fatalf("AI Gateway module should be enabled from config")
+	}
+	if status.Descriptor.DefaultPath != "/ai-gateway/overview" {
+		t.Fatalf("AI Gateway default path = %q", status.Descriptor.DefaultPath)
+	}
+	if status.Descriptor.EnabledConfigKey != "modules.ai_gateway.enabled" {
+		t.Fatalf("AI Gateway enabled config key = %q", status.Descriptor.EnabledConfigKey)
+	}
+	if len(status.Descriptor.Dependencies) != 0 {
+		t.Fatalf("AI Gateway should be independently toggleable, dependencies = %v", status.Descriptor.Dependencies)
+	}
+	for _, permission := range []string{"ai.gateway.view", "ai.gateway.invoke", "ai.gateway.manage"} {
+		if !slices.Contains(status.Descriptor.VisiblePermissions, permission) {
+			t.Fatalf("AI Gateway visible permissions = %v, missing %s", status.Descriptor.VisiblePermissions, permission)
+		}
+	}
+	for _, id := range []string{"ai-gateway", "ai-gateway-overview", "ai-gateway-manifest", "ai-gateway-clients", "ai-gateway-tokens", "ai-gateway-governance", "ai-gateway-call-logs"} {
+		if !slices.Contains(status.Descriptor.SeedMenus, id) {
+			t.Fatalf("AI Gateway seed menus = %v, missing %s", status.Descriptor.SeedMenus, id)
+		}
+	}
+	if slices.Contains(status.Descriptor.SeedMenus, "ai-workbench-gateway") {
+		t.Fatalf("AI Gateway seed menus should not include deprecated ai-workbench-gateway: %v", status.Descriptor.SeedMenus)
+	}
+}
+
+func TestListReflectsDisabledAIGatewayModule(t *testing.T) {
+	service := New(cfgpkg.ModulesConfig{AIGateway: cfgpkg.ModuleToggleConfig{Enabled: false}})
+
+	items, err := service.List(context.Background())
+	if err != nil {
+		t.Fatalf("List returned error: %v", err)
+	}
+
+	status, ok := moduleStatusByID(items, "aiGateway")
+	if !ok {
+		t.Fatalf("AI Gateway module descriptor missing")
+	}
+	if status.Enabled {
+		t.Fatalf("AI Gateway module should be disabled from config")
+	}
+}
+
 func moduleStatusByID(items []domainmodule.Status, id string) (domainmodule.Status, bool) {
 	for _, item := range items {
 		if item.Descriptor.ID == id {

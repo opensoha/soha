@@ -64,6 +64,15 @@ func (s *Service) List(context.Context) ([]domainmodule.Status, error) {
 			SeedMenus:          []string{"ai-workbench", "ai-workbench-chat", "ai-workbench-inspection", "ai-workbench-tool-settings", "ai-workbench-model-settings"},
 		},
 		{
+			ID:                 "aiGateway",
+			Name:               "AI Gateway",
+			DefaultPath:        "/ai-gateway/overview",
+			EnabledConfigKey:   "modules.ai_gateway.enabled",
+			Dependencies:       []string{},
+			VisiblePermissions: []string{"ai.gateway.view", "ai.gateway.invoke", "ai.gateway.manage"},
+			SeedMenus:          []string{"ai-gateway", "ai-gateway-overview", "ai-gateway-manifest", "ai-gateway-clients", "ai-gateway-tokens", "ai-gateway-governance", "ai-gateway-call-logs"},
+		},
+		{
 			ID:                 "monitoring",
 			Name:               "监控工作台",
 			DefaultPath:        "/monitoring-workbench",
@@ -105,6 +114,8 @@ func (s *Service) enabled(id string) bool {
 		return s.cfg.Monitoring.Enabled
 	case "ai":
 		return s.cfg.AI.Enabled
+	case "aiGateway", "ai-gateway":
+		return s.cfg.AIGateway.Enabled
 	case "virtualization":
 		return s.cfg.Virtualization.Enabled
 	case "docker":

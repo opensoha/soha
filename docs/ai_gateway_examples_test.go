@@ -303,6 +303,8 @@ func TestAIGatewayDocsAvoidObsoleteFirstVersionPhrases(t *testing.T) {
 		"first-version command surface",
 		"first-version CLI",
 		"  - 浏览器验证 `/ai-workbench/gateway`",
+		"/ai-workbench/gateway",
+		"ai-workbench-gateway",
 		"待可登录演示环境补充",
 		"有可登录演示环境后",
 	}
@@ -330,8 +332,8 @@ func TestAIGatewayRoadmapMentionsLoggedInConsoleVerification(t *testing.T) {
 	text := string(raw)
 	required := []string{
 		"2026-05-30 Chrome 登录态浏览器核对已完成",
-		"`admin / soha` 登录后返回 `/ai-workbench/gateway`",
-		"`AI工作台` 下 `AI Gateway` 菜单项可见并处于选中状态",
+		"`admin / soha` 登录后返回 `/ai-gateway`",
+		"独立 `AI Gateway` 工作台菜单项可见并处于选中状态",
 		"Manifest / AI Clients / Tokens / Service Accounts / Tool Grants / Access Policies / Skill Bindings / Governance / Approvals / Audit",
 		"未提交正式截图制品",
 	}

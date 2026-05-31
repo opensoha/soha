@@ -82,6 +82,8 @@ config:
       enabled: true
     ai:
       enabled: true
+    aiGateway:
+      enabled: true
     security:
       enabled: false
     cmdb:

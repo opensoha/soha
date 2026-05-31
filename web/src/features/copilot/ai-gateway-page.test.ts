@@ -511,7 +511,7 @@ describe('AI Gateway policy condition helpers', () => {
       riskLevel: 'execute',
     })
 
-    expect(actions.map((item) => item.label)).toEqual(['查看审批', '查看 client', '查看 policy', '查看 grant', '查 audit'])
+    expect(actions.map((item) => item.label)).toEqual(['查看审批', '查看 client', '查看 policy', '查看 grant', '查日志'])
     expect(actions[0].target).toEqual({
       tab: 'approvals',
       approvalFilters: {
@@ -535,6 +535,7 @@ describe('AI Gateway policy condition helpers', () => {
         actor: 'user-1',
         aiClientId: 'codex-local',
         toolName: 'delivery.actions.trigger',
+        action: '',
         riskLevel: 'execute',
         result: '',
         from: '',
@@ -553,7 +554,7 @@ describe('AI Gateway policy condition helpers', () => {
       toolName: 'delivery.actions.trigger',
       riskLevel: 'execute',
     })
-    expect(grantGuardrailActions.map((item) => item.label)).toEqual(['查看 client', '查看 grant', '补 guardrail', '查 audit'])
+    expect(grantGuardrailActions.map((item) => item.label)).toEqual(['查看 client', '查看 grant', '补 guardrail', '查日志'])
     expect(grantGuardrailActions[2].target).toMatchObject({
       tab: 'policies',
       grantFilter: 'grant-risk-open',

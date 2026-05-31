@@ -108,6 +108,23 @@ stringData:
           tls: false
           key_prefix: soha:ai-gateway:rate-limit
           timeout: 500ms
+    modules:
+      delivery:
+        enabled: true
+      monitoring:
+        enabled: true
+      ai:
+        enabled: true
+      ai_gateway:
+        enabled: true
+      virtualization:
+        enabled: true
+      docker:
+        enabled: true
+      security:
+        enabled: false
+      cmdb:
+        enabled: false
     bootstrap:
       seed_defaults: true
     kubernetes:

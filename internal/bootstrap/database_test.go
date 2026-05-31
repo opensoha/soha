@@ -65,23 +65,49 @@ func TestDefaultMenuSeedsIncludeDockerWorkbench(t *testing.T) {
 func TestDefaultMenuSeedsIncludeAIGatewayWorkbench(t *testing.T) {
 	items := defaultMenuSeeds()
 	var gateway *menuSeed
+	children := map[string]string{
+		"ai-gateway-overview":   "/ai-gateway/overview",
+		"ai-gateway-manifest":   "/ai-gateway/manifest",
+		"ai-gateway-clients":    "/ai-gateway/clients",
+		"ai-gateway-tokens":     "/ai-gateway/tokens",
+		"ai-gateway-governance": "/ai-gateway/governance",
+		"ai-gateway-call-logs":  "/ai-gateway/call-logs",
+	}
 	for i := range items {
-		if items[i].ID == "ai-workbench-gateway" {
+		if items[i].ID == "ai-gateway" {
 			gateway = &items[i]
-			break
+			continue
+		}
+		if wantPath, ok := children[items[i].ID]; ok {
+			if items[i].ParentID != "ai-gateway" {
+				t.Fatalf("%s parent = %q, want ai-gateway", items[i].ID, items[i].ParentID)
+			}
+			if items[i].Path != wantPath {
+				t.Fatalf("%s path = %q, want %s", items[i].ID, items[i].Path, wantPath)
+			}
+			delete(children, items[i].ID)
 		}
 	}
 	if gateway == nil {
-		t.Fatal("default menu seeds missing ai-workbench-gateway")
+		t.Fatal("default menu seeds missing ai-gateway")
 	}
-	if gateway.ParentID != "ai-workbench" {
-		t.Fatalf("AI Gateway parent = %q, want ai-workbench", gateway.ParentID)
+	if gateway.ParentID != "" {
+		t.Fatalf("AI Gateway parent = %q, want root menu", gateway.ParentID)
 	}
-	if gateway.Path != "/ai-workbench/gateway" {
-		t.Fatalf("AI Gateway path = %q, want /ai-workbench/gateway", gateway.Path)
+	if gateway.Path != "/ai-gateway" {
+		t.Fatalf("AI Gateway path = %q, want /ai-gateway", gateway.Path)
 	}
 	if gateway.Section != "ops" {
 		t.Fatalf("AI Gateway section = %q, want ops", gateway.Section)
+	}
+	if len(children) > 0 {
+		t.Fatalf("default menu seeds missing AI Gateway child menus: %v", children)
+	}
+}
+
+func TestDeprecatedMenusIncludeOldAIGatewayWorkbenchID(t *testing.T) {
+	if !slices.Contains(deprecatedMenuIDs(), "ai-workbench-gateway") {
+		t.Fatal("deprecated menu IDs should clean up ai-workbench-gateway")
 	}
 }
 
@@ -135,6 +161,92 @@ func TestFilterSeedMenusByModulesRemovesDockerWhenDisabled(t *testing.T) {
 	for _, item := range items {
 		if isDockerMenuSeed(item) {
 			t.Fatalf("docker seed menu %q should be filtered when module is disabled", item.ID)
+		}
+	}
+}
+
+func TestFilterSeedMenusByModulesRemovesAIGatewayWhenDisabled(t *testing.T) {
+	items := filterSeedMenusByModules(defaultMenuSeeds(), cfgpkg.ModulesConfig{
+		Delivery:       cfgpkg.ModuleToggleConfig{Enabled: true},
+		Monitoring:     cfgpkg.ModuleToggleConfig{Enabled: true},
+		AI:             cfgpkg.ModuleToggleConfig{Enabled: true},
+		AIGateway:      cfgpkg.ModuleToggleConfig{Enabled: false},
+		Virtualization: cfgpkg.ModuleToggleConfig{Enabled: true},
+		Docker:         cfgpkg.ModuleToggleConfig{Enabled: true},
+	})
+
+	foundAIWorkbench := false
+	for _, item := range items {
+		if isAIGatewayMenuSeed(item) {
+			t.Fatalf("AI Gateway seed menu %q should be filtered when module is disabled", item.ID)
+		}
+		if isAIMenuSeed(item) && item.ID == "ai-workbench" {
+			foundAIWorkbench = true
+		}
+	}
+	if !foundAIWorkbench {
+		t.Fatal("AI workbench root should remain when only AI Gateway is disabled")
+	}
+}
+
+func TestDisabledModuleMenuIDsIncludesAIGatewayWhenSeedVersionIsCurrent(t *testing.T) {
+	menuIDs := disabledModuleMenuIDs(defaultMenuSeeds(), cfgpkg.ModulesConfig{
+		Delivery:       cfgpkg.ModuleToggleConfig{Enabled: true},
+		Monitoring:     cfgpkg.ModuleToggleConfig{Enabled: true},
+		AI:             cfgpkg.ModuleToggleConfig{Enabled: true},
+		AIGateway:      cfgpkg.ModuleToggleConfig{Enabled: false},
+		Virtualization: cfgpkg.ModuleToggleConfig{Enabled: true},
+		Docker:         cfgpkg.ModuleToggleConfig{Enabled: true},
+	})
+
+	for _, id := range []string{
+		"ai-gateway",
+		"ai-gateway-overview",
+		"ai-gateway-manifest",
+		"ai-gateway-clients",
+		"ai-gateway-tokens",
+		"ai-gateway-governance",
+		"ai-gateway-call-logs",
+	} {
+		if !slices.Contains(menuIDs, id) {
+			t.Fatalf("disabled module menu IDs = %v, missing %s", menuIDs, id)
+		}
+	}
+	if slices.Contains(menuIDs, "ai-workbench") {
+		t.Fatalf("disabled module menu IDs should keep AI workbench when only AI Gateway is disabled: %v", menuIDs)
+	}
+}
+
+func TestFilterSeedMenusByModulesKeepsAIGatewayWhenAIModuleDisabled(t *testing.T) {
+	items := filterSeedMenusByModules(defaultMenuSeeds(), cfgpkg.ModulesConfig{
+		Delivery:       cfgpkg.ModuleToggleConfig{Enabled: true},
+		Monitoring:     cfgpkg.ModuleToggleConfig{Enabled: true},
+		AI:             cfgpkg.ModuleToggleConfig{Enabled: false},
+		AIGateway:      cfgpkg.ModuleToggleConfig{Enabled: true},
+		Virtualization: cfgpkg.ModuleToggleConfig{Enabled: true},
+		Docker:         cfgpkg.ModuleToggleConfig{Enabled: true},
+	})
+
+	foundGatewayIDs := map[string]bool{
+		"ai-gateway":            false,
+		"ai-gateway-overview":   false,
+		"ai-gateway-manifest":   false,
+		"ai-gateway-clients":    false,
+		"ai-gateway-tokens":     false,
+		"ai-gateway-governance": false,
+		"ai-gateway-call-logs":  false,
+	}
+	for _, item := range items {
+		if isAIMenuSeed(item) {
+			t.Fatalf("AI workbench seed menu %q should be filtered when AI module is disabled", item.ID)
+		}
+		if _, ok := foundGatewayIDs[item.ID]; ok {
+			foundGatewayIDs[item.ID] = true
+		}
+	}
+	for id, found := range foundGatewayIDs {
+		if !found {
+			t.Fatalf("AI Gateway menu %s should remain when AI module is disabled but AI Gateway is enabled", id)
 		}
 	}
 }

@@ -120,6 +120,8 @@ modules:
     enabled: true
   ai:
     enabled: true
+  ai_gateway:
+    enabled: true
   virtualization:
     enabled: true
   docker:

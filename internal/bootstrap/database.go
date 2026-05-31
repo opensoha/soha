@@ -82,7 +82,7 @@ type clusterCredentialSeed struct {
 // While the stored version matches this constant, the static seed block is
 // skipped entirely. Config-driven sync (admin user, clusters) runs separately
 // during startup so runtime config updates do not depend on replaying defaults.
-const bootstrapSeedVersion = "2026-05-29-ai-gateway-2"
+const bootstrapSeedVersion = "2026-05-31-ai-gateway-call-logs"
 
 const bootstrapSeedVersionKey = "bootstrap.seed_version"
 
@@ -92,7 +92,7 @@ func seedDefaults(ctx context.Context, store *dbinfra.Store, cfg cfgpkg.Config) 
 		return err
 	}
 	if storedVersion == bootstrapSeedVersion {
-		return nil
+		return syncDisabledModuleMenus(ctx, store.DB(), cfg.Modules)
 	}
 
 	return store.DB().WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -101,7 +101,7 @@ func seedDefaults(ctx context.Context, store *dbinfra.Store, cfg cfgpkg.Config) 
 			return err
 		}
 		if storedVersion == bootstrapSeedVersion {
-			return nil
+			return syncDisabledModuleMenus(ctx, tx, cfg.Modules)
 		}
 		if err := seedRoles(ctx, tx); err != nil {
 			return err
@@ -123,6 +123,14 @@ func seedDefaults(ctx context.Context, store *dbinfra.Store, cfg cfgpkg.Config) 
 		}
 		return nil
 	})
+}
+
+func syncDisabledModuleMenus(ctx context.Context, db *gorm.DB, modules cfgpkg.ModulesConfig) error {
+	items := defaultMenuSeeds()
+	if err := validateMenuSeeds(items); err != nil {
+		return err
+	}
+	return deleteDisabledModuleMenus(ctx, db, items, modules)
 }
 
 func syncBootstrapRuntime(ctx context.Context, store *dbinfra.Store, cfg cfgpkg.Config) error {
@@ -252,7 +260,13 @@ func defaultMenuSeeds() []menuSeed {
 		{ID: "ai-workbench-inspection", ParentID: "ai-workbench", Path: "/ai-workbench/inspection", LabelZH: "巡检", LabelEN: "Inspection", IconKey: "inspect", Section: "ops", SortOrder: 17, Enabled: true},
 		{ID: "ai-workbench-tool-settings", ParentID: "ai-workbench", Path: "/ai-workbench/tool-settings", LabelZH: "工具与技能", LabelEN: "Tools & Skills", IconKey: "wrench", Section: "ops", SortOrder: 18, Enabled: true},
 		{ID: "ai-workbench-model-settings", ParentID: "ai-workbench", Path: "/ai-workbench/model-settings", LabelZH: "AI 设置", LabelEN: "AI Settings", IconKey: "settings", Section: "ops", SortOrder: 19, Enabled: true},
-		{ID: "ai-workbench-gateway", ParentID: "ai-workbench", Path: "/ai-workbench/gateway", LabelZH: "AI Gateway", LabelEN: "AI Gateway", IconKey: "shield", Section: "ops", SortOrder: 20, Enabled: true},
+		{ID: "ai-gateway", Path: "/ai-gateway", LabelZH: "AI Gateway", LabelEN: "AI Gateway", IconKey: "shield", Section: "ops", SortOrder: 20, Enabled: true},
+		{ID: "ai-gateway-overview", ParentID: "ai-gateway", Path: "/ai-gateway/overview", LabelZH: "概览", LabelEN: "Overview", IconKey: "gauge", Section: "ops", SortOrder: 21, Enabled: true},
+		{ID: "ai-gateway-manifest", ParentID: "ai-gateway", Path: "/ai-gateway/manifest", LabelZH: "能力清单", LabelEN: "Manifest", IconKey: "shield", Section: "ops", SortOrder: 22, Enabled: true},
+		{ID: "ai-gateway-clients", ParentID: "ai-gateway", Path: "/ai-gateway/clients", LabelZH: "AI Clients", LabelEN: "AI Clients", IconKey: "link", Section: "ops", SortOrder: 23, Enabled: true},
+		{ID: "ai-gateway-tokens", ParentID: "ai-gateway", Path: "/ai-gateway/tokens", LabelZH: "Tokens", LabelEN: "Tokens", IconKey: "key", Section: "ops", SortOrder: 24, Enabled: true},
+		{ID: "ai-gateway-governance", ParentID: "ai-gateway", Path: "/ai-gateway/governance", LabelZH: "Governance", LabelEN: "Governance", IconKey: "shield", Section: "ops", SortOrder: 25, Enabled: true},
+		{ID: "ai-gateway-call-logs", ParentID: "ai-gateway", Path: "/ai-gateway/call-logs", LabelZH: "调用日志", LabelEN: "Call Logs", IconKey: "history", Section: "ops", SortOrder: 26, Enabled: true},
 		{ID: "virtualization-workbench", Path: "/virtualization", LabelZH: "虚拟化管理工作台", LabelEN: "Virtualization Workbench", IconKey: "server", Section: "ops", SortOrder: 80, Enabled: true},
 		{ID: "virtualization-workbench-overview", ParentID: "virtualization-workbench", Path: "/virtualization/overview", LabelZH: "总览", LabelEN: "Overview", IconKey: "gauge", Section: "ops", SortOrder: 81, Enabled: true},
 		{ID: "virtualization-workbench-vms", ParentID: "virtualization-workbench", Path: "/virtualization/vms", LabelZH: "虚拟机", LabelEN: "Virtual Machines", IconKey: "desktop", Section: "ops", SortOrder: 82, Enabled: true},
@@ -320,6 +334,7 @@ func deprecatedMenuIDs() []string {
 		"assistant-workbench",
 		"assistant-operations",
 		"assistant-tools",
+		"ai-workbench-gateway",
 		"events",
 	}
 }
@@ -400,6 +415,8 @@ func filterSeedMenusByModules(items []menuSeed, modules cfgpkg.ModulesConfig) []
 			continue
 		case !modules.AI.Enabled && isAIMenuSeed(item):
 			continue
+		case !modules.AIGateway.Enabled && isAIGatewayMenuSeed(item):
+			continue
 		case !modules.Virtualization.Enabled && isVirtualizationMenuSeed(item):
 			continue
 		case !modules.Docker.Enabled && isDockerMenuSeed(item):
@@ -412,6 +429,17 @@ func filterSeedMenusByModules(items []menuSeed, modules cfgpkg.ModulesConfig) []
 }
 
 func deleteDisabledModuleMenus(ctx context.Context, db *gorm.DB, items []menuSeed, modules cfgpkg.ModulesConfig) error {
+	menuIDs := disabledModuleMenuIDs(items, modules)
+	if len(menuIDs) == 0 {
+		return nil
+	}
+	if err := db.WithContext(ctx).Exec(`DELETE FROM menu_role_bindings WHERE menu_id IN ?`, menuIDs).Error; err != nil {
+		return err
+	}
+	return db.WithContext(ctx).Exec(`DELETE FROM menus WHERE id IN ?`, menuIDs).Error
+}
+
+func disabledModuleMenuIDs(items []menuSeed, modules cfgpkg.ModulesConfig) []string {
 	menuIDs := make([]string, 0)
 	for _, item := range items {
 		switch {
@@ -421,19 +449,15 @@ func deleteDisabledModuleMenus(ctx context.Context, db *gorm.DB, items []menuSee
 			menuIDs = append(menuIDs, item.ID)
 		case !modules.AI.Enabled && isAIMenuSeed(item):
 			menuIDs = append(menuIDs, item.ID)
+		case !modules.AIGateway.Enabled && isAIGatewayMenuSeed(item):
+			menuIDs = append(menuIDs, item.ID)
 		case !modules.Virtualization.Enabled && isVirtualizationMenuSeed(item):
 			menuIDs = append(menuIDs, item.ID)
 		case !modules.Docker.Enabled && isDockerMenuSeed(item):
 			menuIDs = append(menuIDs, item.ID)
 		}
 	}
-	if len(menuIDs) == 0 {
-		return nil
-	}
-	if err := db.WithContext(ctx).Exec(`DELETE FROM menu_role_bindings WHERE menu_id IN ?`, menuIDs).Error; err != nil {
-		return err
-	}
-	return db.WithContext(ctx).Exec(`DELETE FROM menus WHERE id IN ?`, menuIDs).Error
+	return menuIDs
 }
 
 func isDeliveryMenuSeed(item menuSeed) bool {
@@ -462,6 +486,11 @@ func isMonitoringMenuSeed(item menuSeed) bool {
 func isAIMenuSeed(item menuSeed) bool {
 	return item.ID == "ai-workbench" ||
 		strings.HasPrefix(item.Path, "/ai-workbench")
+}
+
+func isAIGatewayMenuSeed(item menuSeed) bool {
+	return item.ID == "ai-gateway" ||
+		strings.HasPrefix(item.Path, "/ai-gateway")
 }
 
 func isVirtualizationMenuSeed(item menuSeed) bool {

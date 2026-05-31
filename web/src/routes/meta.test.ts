@@ -4,6 +4,7 @@ import {
   canAccessRoute,
   filterSidebarNavByWorkbench,
   filterSidebarNavByWorkspace,
+  findFirstAccessiblePathForWorkbench,
   findFirstAccessiblePathForWorkspace,
   findLandingPath,
   findPreferredWorkspace,
@@ -450,6 +451,8 @@ describe("access route authorization", () => {
         "docker.operations.view",
         "observe.ai.view",
         "observe.ai.chat",
+        "ai.gateway.view",
+        "ai.gateway.manage",
         "observe.monitoring.view",
         "observe.alert-rules.view",
       ],
@@ -472,6 +475,13 @@ describe("access route authorization", () => {
         "ai-workbench-inspection",
         "ai-workbench-tool-settings",
         "ai-workbench-model-settings",
+        "ai-gateway",
+        "ai-gateway-overview",
+        "ai-gateway-manifest",
+        "ai-gateway-clients",
+        "ai-gateway-tokens",
+        "ai-gateway-governance",
+        "ai-gateway-call-logs",
         "monitoring-workbench",
         "monitoring-workbench-overview",
         "monitoring-workbench-rules",
@@ -672,6 +682,82 @@ describe("access route authorization", () => {
           enabled: true,
         },
         {
+          id: "ai-gateway",
+          path: "/ai-gateway",
+          labelZh: "AI Gateway",
+          labelEn: "AI Gateway",
+          iconKey: "shield",
+          section: "ops",
+          sortOrder: 22,
+          enabled: true,
+        },
+        {
+          id: "ai-gateway-overview",
+          parentId: "ai-gateway",
+          path: "/ai-gateway/overview",
+          labelZh: "概览",
+          labelEn: "Overview",
+          iconKey: "gauge",
+          section: "ops",
+          sortOrder: 23,
+          enabled: true,
+        },
+        {
+          id: "ai-gateway-manifest",
+          parentId: "ai-gateway",
+          path: "/ai-gateway/manifest",
+          labelZh: "能力清单",
+          labelEn: "Manifest",
+          iconKey: "shield",
+          section: "ops",
+          sortOrder: 24,
+          enabled: true,
+        },
+        {
+          id: "ai-gateway-clients",
+          parentId: "ai-gateway",
+          path: "/ai-gateway/clients",
+          labelZh: "AI Clients",
+          labelEn: "AI Clients",
+          iconKey: "link",
+          section: "ops",
+          sortOrder: 25,
+          enabled: true,
+        },
+        {
+          id: "ai-gateway-tokens",
+          parentId: "ai-gateway",
+          path: "/ai-gateway/tokens",
+          labelZh: "Tokens",
+          labelEn: "Tokens",
+          iconKey: "key",
+          section: "ops",
+          sortOrder: 26,
+          enabled: true,
+        },
+        {
+          id: "ai-gateway-governance",
+          parentId: "ai-gateway",
+          path: "/ai-gateway/governance",
+          labelZh: "Governance",
+          labelEn: "Governance",
+          iconKey: "shield",
+          section: "ops",
+          sortOrder: 27,
+          enabled: true,
+        },
+        {
+          id: "ai-gateway-call-logs",
+          parentId: "ai-gateway",
+          path: "/ai-gateway/call-logs",
+          labelZh: "调用日志",
+          labelEn: "Call Logs",
+          iconKey: "history",
+          section: "ops",
+          sortOrder: 28,
+          enabled: true,
+        },
+        {
           id: "monitoring-workbench",
           path: "/monitoring-workbench",
           labelZh: "监控工作台",
@@ -715,6 +801,7 @@ describe("access route authorization", () => {
       "virtualization",
     );
     const dockerNav = filterSidebarNavByWorkbench(resourceNav, "docker");
+    const aiGatewayNav = filterSidebarNavByWorkbench(resourceNav, "aiGateway");
     const monitoringNav = filterSidebarNavByWorkbench(
       resourceNav,
       "monitoring",
@@ -740,6 +827,15 @@ describe("access route authorization", () => {
     expect(dockerNav.some((item) => item.id === "docker-workbench")).toBe(
       false,
     );
+    expect(aiGatewayNav.map((item) => item.id)).toEqual(["ai-gateway"]);
+    expect(aiGatewayNav[0]?.children?.map((item) => item.id)).toEqual([
+      "ai-gateway-overview",
+      "ai-gateway-manifest",
+      "ai-gateway-clients",
+      "ai-gateway-tokens",
+      "ai-gateway-governance",
+      "ai-gateway-call-logs",
+    ]);
     expect(monitoringNav.map((item) => item.id)).toEqual([
       "monitoring-workbench-overview",
       "monitoring-workbench-rules",
@@ -781,40 +877,72 @@ describe("access route authorization", () => {
         path: "/docker/projects",
       }),
     ).toBe("docker");
+    expect(
+      getMenuWorkbenchId({
+        id: "ai-gateway",
+        path: "/ai-gateway",
+      }),
+    ).toBe("aiGateway");
+    expect(
+      getMenuWorkbenchId({
+        id: "ai-gateway-governance",
+        path: "/ai-gateway/governance",
+      }),
+    ).toBe("aiGateway");
     expect(getMenuWorkbenchId({ id: "menus", path: "/system/menus" })).toBe(
       null,
     );
   });
 
   it("requires resource workspace, AI Gateway view permission, and menu binding", () => {
-    const route = getRoute("ai-workbench-gateway");
+    const route = getRoute("ai-gateway-overview");
+    const parentRoute = getRoute("ai-gateway");
     const allowedSnapshot = buildSnapshot({
       permissionKeys: ["workspace.resource.view", "ai.gateway.view"],
-      visibleMenuIds: ["ai-workbench-gateway"],
+      visibleMenuIds: ["ai-gateway", "ai-gateway-overview"],
       visibleMenus: [
         {
-          id: "ai-workbench-gateway",
-          parentId: "ai-workbench",
-          path: "/ai-workbench/gateway",
+          id: "ai-gateway",
+          path: "/ai-gateway",
+        },
+        {
+          id: "ai-gateway-overview",
+          parentId: "ai-gateway",
+          path: "/ai-gateway/overview",
         },
       ],
     });
 
     expect(getRouteWorkspace(route)).toBe("resource");
-    expect(getRouteWorkbenchId(route)).toBe("ai");
+    expect(getRouteWorkbenchId(route)).toBe("aiGateway");
     expect(getRouteScopeMode(route)).toBe("passive");
     expect(canAccessRoute(route, allowedSnapshot)).toBe(true);
+    expect(parentRoute.redirectTo).toBe("/ai-gateway/overview");
+    expect(canAccessRoute(parentRoute, allowedSnapshot)).toBe(true);
+    expect(
+      findFirstAccessiblePathForWorkbench("aiGateway", allowedSnapshot),
+    ).toBe("/ai-gateway/overview");
+
+    const compatRoute = getRoute("ai-workbench-gateway-compat");
+    expect(compatRoute.navVisible).toBe(false);
+    expect(compatRoute.redirectTo).toBe("/ai-gateway/overview");
+    expect(getRouteWorkbenchId(compatRoute)).toBe("aiGateway");
+    expect(canAccessRoute(compatRoute, allowedSnapshot)).toBe(true);
     expect(
       canAccessRoute(
         route,
         buildSnapshot({
           permissionKeys: ["ai.gateway.view"],
-          visibleMenuIds: ["ai-workbench-gateway"],
+          visibleMenuIds: ["ai-gateway", "ai-gateway-overview"],
           visibleMenus: [
             {
-              id: "ai-workbench-gateway",
-              parentId: "ai-workbench",
-              path: "/ai-workbench/gateway",
+              id: "ai-gateway",
+              path: "/ai-gateway",
+            },
+            {
+              id: "ai-gateway-overview",
+              parentId: "ai-gateway",
+              path: "/ai-gateway/overview",
             },
           ],
         }),
@@ -825,12 +953,16 @@ describe("access route authorization", () => {
         route,
         buildSnapshot({
           permissionKeys: ["workspace.resource.view"],
-          visibleMenuIds: ["ai-workbench-gateway"],
+          visibleMenuIds: ["ai-gateway", "ai-gateway-overview"],
           visibleMenus: [
             {
-              id: "ai-workbench-gateway",
-              parentId: "ai-workbench",
-              path: "/ai-workbench/gateway",
+              id: "ai-gateway",
+              path: "/ai-gateway",
+            },
+            {
+              id: "ai-gateway-overview",
+              parentId: "ai-gateway",
+              path: "/ai-gateway/overview",
             },
           ],
         }),
@@ -843,6 +975,67 @@ describe("access route authorization", () => {
           permissionKeys: ["workspace.resource.view", "ai.gateway.view"],
           visibleMenuIds: [],
           visibleMenus: [],
+        }),
+      ),
+    ).toBe(false);
+  });
+
+  it("allows AI Gateway token routing from invoke-only permission", () => {
+    const tokenRoute = getRoute("ai-gateway-tokens");
+    const parentRoute = getRoute("ai-gateway");
+    const snapshot = buildSnapshot({
+      permissionKeys: ["workspace.resource.view", "ai.gateway.invoke"],
+      visibleMenuIds: ["ai-gateway", "ai-gateway-tokens"],
+      visibleMenus: [
+        {
+          id: "ai-gateway",
+          path: "/ai-gateway",
+        },
+        {
+          id: "ai-gateway-tokens",
+          parentId: "ai-gateway",
+          path: "/ai-gateway/tokens",
+        },
+      ],
+    });
+
+    expect(canAccessRoute(tokenRoute, snapshot)).toBe(true);
+    expect(canAccessRoute(parentRoute, snapshot)).toBe(true);
+    expect(findFirstAccessiblePathForWorkbench("aiGateway", snapshot)).toBe(
+      "/ai-gateway/tokens",
+    );
+    expect(canAccessRoute(getRoute("ai-gateway-overview"), snapshot)).toBe(
+      false,
+    );
+  });
+
+  it("requires AI Gateway manage permission for call logs", () => {
+    const route = getRoute("ai-gateway-call-logs");
+    const snapshot = buildSnapshot({
+      permissionKeys: ["workspace.resource.view", "ai.gateway.manage"],
+      visibleMenuIds: ["ai-gateway", "ai-gateway-call-logs"],
+      visibleMenus: [
+        {
+          id: "ai-gateway",
+          path: "/ai-gateway",
+        },
+        {
+          id: "ai-gateway-call-logs",
+          parentId: "ai-gateway",
+          path: "/ai-gateway/call-logs",
+        },
+      ],
+    });
+
+    expect(getRouteWorkbenchId(route)).toBe("aiGateway");
+    expect(canAccessRoute(route, snapshot)).toBe(true);
+    expect(
+      canAccessRoute(
+        route,
+        buildSnapshot({
+          permissionKeys: ["workspace.resource.view", "ai.gateway.view"],
+          visibleMenuIds: ["ai-gateway", "ai-gateway-call-logs"],
+          visibleMenus: snapshot.visibleMenus,
         }),
       ),
     ).toBe(false);

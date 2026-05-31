@@ -110,7 +110,7 @@ soha-cli capabilities --profile ci --output names
 
 ## Console Field Mapping
 
-The Console management page is `/ai-workbench/gateway`. It is the operator surface for the same Gateway API objects used by `soha-cli` and MCP. `ai.gateway.view` can inspect the page, `ai.gateway.invoke` can create personal tokens, and `ai.gateway.manage` is required for AI clients, service accounts, grants, policies, bindings, and approval decisions.
+The Console management page is `/ai-gateway`. It is the operator surface for the same Gateway API objects used by `soha-cli` and MCP. `ai.gateway.view` can inspect the page, `ai.gateway.invoke` can create personal tokens, and `ai.gateway.manage` is required for AI clients, service accounts, grants, policies, bindings, and approval decisions.
 
 Use this mapping when translating an operational change request into Console input fields:
 

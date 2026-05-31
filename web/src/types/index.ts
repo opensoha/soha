@@ -16,6 +16,7 @@ export interface RouteMeta {
   redirectTo?: string
   menuId?: string
   permissionKey?: string
+  permissionKeysAny?: string[]
   permissionStrategy?: 'self' | 'any-child'
   scopeMode?: 'hidden' | 'passive' | 'cluster' | 'namespace'
   workspace?: WorkspaceType

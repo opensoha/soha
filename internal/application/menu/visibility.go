@@ -26,6 +26,7 @@ func workspacePermissionForMenu(item domainmenu.Record) string {
 		strings.HasPrefix(path, "/extensions") ||
 		strings.HasPrefix(path, "/clusters") ||
 		strings.HasPrefix(path, "/monitoring-workbench") ||
+		strings.HasPrefix(path, "/ai-gateway") ||
 		strings.HasPrefix(path, "/ai-workbench") ||
 		strings.HasPrefix(path, "/virtualization") ||
 		strings.HasPrefix(path, "/observability") ||
@@ -124,8 +125,14 @@ func permissionRuleForMenu(item domainmenu.Record) (visibilityRule, bool) {
 		return visibilityRule{permissions: []string{appaccess.PermObserveAIView}}, true
 	case item.ID == "ai-workbench-model-settings":
 		return visibilityRule{permissions: []string{appaccess.PermSettingsAIView}}, true
-	case item.ID == "ai-workbench-gateway":
+	case item.ID == "ai-gateway":
+		return visibilityRule{permissions: []string{appaccess.PermAIGatewayView, appaccess.PermAIGatewayInvoke, appaccess.PermAIGatewayManage}}, true
+	case item.ID == "ai-gateway-overview", item.ID == "ai-gateway-manifest":
 		return visibilityRule{permissions: []string{appaccess.PermAIGatewayView}}, true
+	case item.ID == "ai-gateway-tokens":
+		return visibilityRule{permissions: []string{appaccess.PermAIGatewayView, appaccess.PermAIGatewayInvoke, appaccess.PermAIGatewayManage}}, true
+	case item.ID == "ai-gateway-clients", item.ID == "ai-gateway-governance", item.ID == "ai-gateway-call-logs":
+		return visibilityRule{permissions: []string{appaccess.PermAIGatewayManage}}, true
 	case item.ID == "virtualization-workbench":
 		return visibilityRule{permissions: []string{
 			appaccess.PermVirtualizationOverviewView,
