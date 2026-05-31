@@ -24,7 +24,9 @@ interface AdminTableProps {
   rowKey: string | ((record: any) => string)
   rowSelection?: any
   shellClassName?: string
+  tableSize?: 'large' | 'middle' | 'small'
   columnSettingPlacement?: 'toolbar' | 'header' | 'outside' | 'hidden'
+  columnSettingIconOnly?: boolean
   scroll?: {
     x?: string | number
     y?: string | number
@@ -77,7 +79,9 @@ export function AdminTable({
   rowKey,
   rowSelection,
   shellClassName,
+  tableSize = 'middle',
   columnSettingPlacement = 'toolbar',
+  columnSettingIconOnly = false,
   scroll,
   selectCurrentPageOnly = false,
   title,
@@ -206,7 +210,16 @@ export function AdminTable({
         </div>
       }
     >
-      <Button size="small" icon={<SettingOutlined />}>列设置</Button>
+      <Button
+        aria-label="列设置"
+        className={columnSettingIconOnly ? 'soha-admin-table-column-setting-button is-icon-only' : 'soha-admin-table-column-setting-button'}
+        icon={<SettingOutlined />}
+        size="small"
+        title="列设置"
+        type={columnSettingIconOnly ? 'text' : 'default'}
+      >
+        {columnSettingIconOnly ? null : '列设置'}
+      </Button>
     </Popover>
   ) : null
 
@@ -256,7 +269,7 @@ export function AdminTable({
         rowKey={rowKey}
         rowSelection={resolvedRowSelection}
         scroll={resolvedScroll}
-        size="middle"
+        size={tableSize}
       />
     </div>
   )

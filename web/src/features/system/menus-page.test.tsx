@@ -269,7 +269,7 @@ describe('menus page modal state', () => {
 
     expect(document.body.textContent).toContain('k8s工作台')
     expect(document.body.textContent).toContain('虚拟化管理工作台')
-    expect(document.body.textContent).toContain('系统管理')
+    expect(document.body.textContent).toContain('设置中心')
 
     await clickButton(getRowEditButton('configuration'))
 

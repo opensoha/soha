@@ -83,7 +83,7 @@ const zhCN: Dictionary = {
   "route.extensions-group-detail.title": "CRD API 详情",
   "route.helm.title": "Helm",
   "route.helm-release-detail.title": "Helm 发布详情",
-  "route.clusters.title": "集群管理",
+  "route.clusters.title": "集群",
   "route.cluster-detail.title": "集群详情",
   "route.applications.title": "应用中心",
   "route.application-management.title": "应用管理",
@@ -203,7 +203,7 @@ const zhCN: Dictionary = {
   "page.extensions.helmCharts.emptyTitle": "Helm Charts 暂未开放",
   "page.extensions.helmCharts.emptyDesc":
     "后端当前没有提供 /helm/charts 接口。建议后续补后端能力后再恢复列表展示。",
-  "page.clusters.title": "集群管理",
+  "page.clusters.title": "集群",
   "page.clusters.desc": "统一管理集群接入、健康状态与基础连接信息。",
   "page.nodes.title": "节点资源",
   "page.nodes.desc":
@@ -421,7 +421,7 @@ const enUS: Dictionary = {
   "route.extensions-group-detail.title": "CRD API Detail",
   "route.helm.title": "Helm",
   "route.helm-release-detail.title": "Helm Release Detail",
-  "route.clusters.title": "Cluster Management",
+  "route.clusters.title": "Clusters",
   "route.cluster-detail.title": "Cluster Detail",
   "route.applications.title": "Application Center",
   "route.application-management.title": "Application Management",
@@ -548,7 +548,7 @@ const enUS: Dictionary = {
   "page.extensions.helmCharts.emptyTitle": "Helm Charts not available",
   "page.extensions.helmCharts.emptyDesc":
     "The backend currently has no /helm/charts endpoint. Restore the list view after the backend capability is added.",
-  "page.clusters.title": "Cluster Management",
+  "page.clusters.title": "Clusters",
   "page.clusters.desc":
     "Manage cluster onboarding, health state, and connection settings in one place.",
   "page.nodes.title": "Node Resources",

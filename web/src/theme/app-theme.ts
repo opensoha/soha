@@ -60,6 +60,10 @@ export const themeModeOptions: Array<{ value: ThemeMode; label: string }> = [
   { value: 'system', label: '跟随系统' },
 ]
 
+const APP_FONT_FAMILY = "'Inter', 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Helvetica Neue', Arial, sans-serif"
+const APP_FONT_SIZE = 12
+const APP_LINE_HEIGHT = 20 / APP_FONT_SIZE
+
 const THEME_PALETTES: Record<ResolvedThemeMode, ThemePalette> = {
   light: {
     primaryRgb: '17, 24, 39',
@@ -235,6 +239,24 @@ export function getAntdTheme(themeMode: ThemeMode | ResolvedThemeMode): ThemeCon
       controlItemBgActive: palette.colorPrimaryBg,
       controlItemBgActiveHover: palette.colorPrimaryBgHover,
       controlOutline: palette.controlOutline,
+      fontFamily: APP_FONT_FAMILY,
+      fontSize: APP_FONT_SIZE,
+      fontSizeSM: 11,
+      fontSizeLG: 14,
+      fontSizeXL: 16,
+      fontSizeHeading1: 30,
+      fontSizeHeading2: 24,
+      fontSizeHeading3: 20,
+      fontSizeHeading4: 16,
+      fontSizeHeading5: 14,
+      lineHeight: APP_LINE_HEIGHT,
+      lineHeightSM: 18 / 11,
+      lineHeightLG: 22 / 14,
+      lineHeightHeading1: 38 / 30,
+      lineHeightHeading2: 32 / 24,
+      lineHeightHeading3: 28 / 20,
+      lineHeightHeading4: 24 / 16,
+      lineHeightHeading5: 22 / 14,
       borderRadius: 10,
       borderRadiusXS: 2,
       borderRadiusSM: 6,
@@ -285,6 +307,8 @@ export function getAntdTheme(themeMode: ThemeMode | ResolvedThemeMode): ThemeCon
         subMenuItemBorderRadius: 10,
         itemMarginInline: 8,
         itemHeight: 38,
+        groupTitleFontSize: APP_FONT_SIZE,
+        groupTitleLineHeight: '20px',
       },
       Table: {
         borderColor: palette.colorBorder,

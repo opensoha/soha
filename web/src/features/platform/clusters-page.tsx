@@ -3,10 +3,8 @@ import type { Key } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { App, Button, Card, Descriptions, Form, Input, Modal, Select, Space, Spin, Tag, Typography } from 'antd'
 import {
-  DeleteOutlined,
+  ColumnHeightOutlined,
   DownOutlined,
-  EditOutlined,
-  InfoCircleOutlined,
   PlusOutlined,
   ReloadOutlined,
   UpOutlined,
@@ -19,6 +17,7 @@ import { api } from '@/services/api-client'
 import { usePlatformScopeStore } from '@/stores/platform-scope-store'
 import { StatusTag } from '@/components/status-tag'
 import { tableColumnPresets } from '@/utils/table-columns'
+import { formatDateTime } from '@/utils/time'
 import type { Cluster, ClusterDetail, ApiResponse, Node } from '@/types'
 import type { TableColumnsType } from 'antd'
 
@@ -65,6 +64,25 @@ function formatConnectionMode(value: string | undefined, localeCode: string) {
   return value || '-'
 }
 
+function clusterHealthTone(value?: string) {
+  const normalized = (value || '').trim().toLowerCase()
+  if (['healthy', 'connected', 'ready', 'available', 'running', 'normal'].includes(normalized)) return 'success'
+  if (['error', 'failed', 'disconnected', 'critical', 'notready', 'lost'].includes(normalized)) return 'error'
+  if (['pending', 'warning', 'queued', 'waiting'].includes(normalized)) return 'warning'
+  if (['syncing', 'checking', 'initializing'].includes(normalized)) return 'processing'
+  return 'muted'
+}
+
+function formatClusterHealth(value: string | undefined, localeCode: string) {
+  const normalized = (value || '').trim().toLowerCase()
+  if (localeCode !== 'zh_CN') return value || 'unknown'
+  if (['healthy', 'connected', 'ready', 'available', 'running', 'normal'].includes(normalized)) return '正常'
+  if (['error', 'failed', 'disconnected', 'critical', 'notready', 'lost'].includes(normalized)) return '异常'
+  if (['pending', 'warning', 'queued', 'waiting'].includes(normalized)) return '等待'
+  if (['syncing', 'checking', 'initializing'].includes(normalized)) return '同步中'
+  return value || '未知'
+}
+
 export function ClustersPage() {
   const { t } = useI18n()
   const { localeCode } = useI18n()
@@ -82,8 +100,9 @@ export function ClustersPage() {
   const [appliedStatusFilter, setAppliedStatusFilter] = useState<string>()
   const [appliedTypeFilter, setAppliedTypeFilter] = useState<string>()
   const [appliedModeFilter, setAppliedModeFilter] = useState<string>()
-  const [queryExpanded, setQueryExpanded] = useState(true)
+  const [queryExpanded, setQueryExpanded] = useState(false)
   const [selectedRowKeys, setSelectedRowKeys] = useState<string[]>([])
+  const [tableSize, setTableSize] = useState<'middle' | 'small'>('middle')
   const setClusterId = usePlatformScopeStore((state) => state.setClusterId)
 
   const { data, isLoading, isFetching, refetch } = useQuery({
@@ -186,13 +205,12 @@ export function ClustersPage() {
     {
       title: '名称',
       dataIndex: 'name',
-      width: 200,
+      width: 180,
       render: (_: unknown, record: Cluster) => (
         <div className="soha-cluster-name-cell">
-          <Button type="text" onClick={() => navigate(`/clusters/${record.id}`)}>
+          <Button className="soha-cluster-name-link" type="link" onClick={() => navigate(`/clusters/${record.id}`)}>
             {record.name}
           </Button>
-          {record.version ? <Text type="secondary" className="text-xs">{record.version}</Text> : null}
         </div>
       ),
     },
@@ -201,7 +219,15 @@ export function ClustersPage() {
       title: '状态',
       dataIndex: 'health',
       width: 104,
-      render: (health: Cluster['health']) => <StatusTag value={health?.status ?? 'unknown'} />,
+      render: (health: Cluster['health']) => {
+        const status = health?.status ?? 'unknown'
+        return (
+          <span className={`soha-cluster-status is-${clusterHealthTone(status)}`}>
+            <span className="soha-cluster-status-dot" />
+            {formatClusterHealth(status, localeCode)}
+          </span>
+        )
+      },
     },
     {
       title: localeCode === 'zh_CN' ? '类型' : 'Type',
@@ -209,6 +235,7 @@ export function ClustersPage() {
       width: 120,
       render: (_: string, record: Cluster) => formatClusterType(clusterTypeOf(record), localeCode),
     },
+    { title: localeCode === 'zh_CN' ? '版本' : 'Version', dataIndex: 'version', width: 124, render: (value: string) => value || '-' },
     { title: 'Env', dataIndex: 'environment', width: 132, render: (value: string) => value || '-' },
     {
       title: localeCode === 'zh_CN' ? '连接方式' : 'Mode',
@@ -217,26 +244,40 @@ export function ClustersPage() {
       render: (value: string) => <Tag>{formatConnectionMode(value, localeCode)}</Tag>,
     },
     {
+      ...tableColumnPresets.datetime,
+      title: localeCode === 'zh_CN' ? '最近检查' : 'Last Checked',
+      dataIndex: ['health', 'lastChecked'],
+      sorter: (a, b) => {
+        const left = a.health?.lastChecked ? new Date(a.health.lastChecked).getTime() : 0
+        const right = b.health?.lastChecked ? new Date(b.health.lastChecked).getTime() : 0
+        return left - right
+      },
+      render: (_: unknown, record: Cluster) => record.health?.lastChecked ? formatDateTime(record.health.lastChecked) : '-',
+    },
+    {
       ...tableColumnPresets.action,
       title: '操作',
       dataIndex: 'id',
-      width: 96,
+      width: 152,
       render: (_: unknown, record: Cluster) => (
-        <Space size={4}>
+        <Space size={0} className="soha-cluster-action-links">
+          <Button type="link" size="small" onClick={() => navigate(`/clusters/${record.id}`)}>
+            {localeCode === 'zh_CN' ? '详情' : 'Detail'}
+          </Button>
           <Button
             aria-label={localeCode === 'zh_CN' ? '编辑集群' : 'Edit cluster'}
-            icon={<EditOutlined />}
-            type="text"
+            type="link"
             size="small"
             onClick={() => {
               setEditingCluster(record)
               setModalVisible(true)
             }}
-          />
+          >
+            {localeCode === 'zh_CN' ? '编辑' : 'Edit'}
+          </Button>
           <Button
             aria-label={localeCode === 'zh_CN' ? '删除集群' : 'Delete cluster'}
-            icon={<DeleteOutlined />}
-            type="text"
+            type="link"
             danger
             size="small"
             onClick={() => {
@@ -246,7 +287,9 @@ export function ClustersPage() {
                 onOk: () => deleteMutation.mutate(record.id),
               })
             }}
-          />
+          >
+            {localeCode === 'zh_CN' ? '删除' : 'Delete'}
+          </Button>
         </Space>
       ),
     },
@@ -332,7 +375,6 @@ kubernetes:
     appliedTypeFilter ||
     appliedModeFilter,
   )
-
   const applyFilters = () => {
     setAppliedSearchText(searchText)
     setAppliedStatusFilter(statusFilter)
@@ -376,137 +418,146 @@ kubernetes:
     navigate('/cluster-resources/nodes')
   }
 
-  const filterToolbar = (
-    <Form className="soha-clusters-pro-query-form" component={false} layout="vertical">
-      <Form.Item label={localeCode === 'zh_CN' ? '集群名称' : 'Cluster Name'} className="soha-clusters-pro-query-field">
-        <Input
-          allowClear
-          placeholder={localeCode === 'zh_CN' ? '请输入' : 'Enter'}
-          value={searchText}
-          onChange={(event) => setSearchText(event.target.value)}
-          onPressEnter={applyFilters}
-        />
-      </Form.Item>
-      <Form.Item label={localeCode === 'zh_CN' ? '集群类型' : 'Cluster Type'} className="soha-clusters-pro-query-field">
-        <Select
-          allowClear
-          options={typeOptions}
-          placeholder={localeCode === 'zh_CN' ? '请选择' : 'Select'}
-          value={typeFilter}
-          onChange={setTypeFilter}
-        />
-      </Form.Item>
-      {queryExpanded ? (
-        <>
-          <Form.Item label={localeCode === 'zh_CN' ? '状态' : 'Status'} className="soha-clusters-pro-query-field">
-            <Select
+  const queryPanel = (
+    <Card className="soha-clusters-query-card" variant="outlined">
+      <Form className="soha-clusters-query-form" layout="horizontal" onFinish={applyFilters}>
+        <div className={`soha-clusters-query-grid ${queryExpanded ? 'is-expanded' : 'is-collapsed'}`}>
+          <Form.Item className="soha-clusters-query-field" label={localeCode === 'zh_CN' ? '集群名称' : 'Cluster Name'}>
+            <Input
               allowClear
-              options={statusOptions}
-              placeholder={localeCode === 'zh_CN' ? '全部' : 'All'}
-              value={statusFilter}
-              onChange={setStatusFilter}
+              className="soha-clusters-search-input"
+              placeholder={localeCode === 'zh_CN' ? '请输入' : 'Search'}
+              value={searchText}
+              variant="filled"
+              onChange={(event) => setSearchText(event.target.value)}
+              onPressEnter={applyFilters}
             />
           </Form.Item>
-          <Form.Item label={localeCode === 'zh_CN' ? '连接方式' : 'Connection Mode'} className="soha-clusters-pro-query-field">
+          <Form.Item className="soha-clusters-query-field" label={localeCode === 'zh_CN' ? '集群类型' : 'Cluster Type'}>
             <Select
               allowClear
-              options={modeOptions}
+              className="soha-clusters-filter-control"
+              options={typeOptions}
               placeholder={localeCode === 'zh_CN' ? '请选择' : 'Select'}
-              value={modeFilter}
-              onChange={setModeFilter}
+              value={typeFilter}
+              variant="filled"
+              onChange={(value) => setTypeFilter(value)}
             />
           </Form.Item>
-        </>
-      ) : null}
-      <div className="soha-clusters-pro-query-actions">
-        <Button disabled={!hasActiveFilters} onClick={resetFilters}>
-          {localeCode === 'zh_CN' ? '重置' : 'Reset'}
-        </Button>
-        <Button type="primary" onClick={applyFilters}>
-          {localeCode === 'zh_CN' ? '查询' : 'Search'}
-        </Button>
-        <Button
-          icon={queryExpanded ? <UpOutlined /> : <DownOutlined />}
-          iconPosition="end"
-          type="link"
-          onClick={() => setQueryExpanded((current) => !current)}
-        >
-          {queryExpanded
-            ? (localeCode === 'zh_CN' ? '收起' : 'Collapse')
-            : (localeCode === 'zh_CN' ? '展开' : 'Expand')}
-        </Button>
-      </div>
-    </Form>
+          {queryExpanded ? (
+            <>
+              <Form.Item className="soha-clusters-query-field" label={localeCode === 'zh_CN' ? '状态' : 'Status'}>
+                <Select
+                  allowClear
+                  className="soha-clusters-filter-control"
+                  options={statusOptions}
+                  placeholder={localeCode === 'zh_CN' ? '请选择' : 'Select'}
+                  value={statusFilter}
+                  variant="filled"
+                  onChange={(value) => setStatusFilter(value)}
+                />
+              </Form.Item>
+              <Form.Item className="soha-clusters-query-field" label={localeCode === 'zh_CN' ? '连接方式' : 'Mode'}>
+                <Select
+                  allowClear
+                  className="soha-clusters-filter-control"
+                  options={modeOptions}
+                  placeholder={localeCode === 'zh_CN' ? '请选择' : 'Select'}
+                  value={modeFilter}
+                  variant="filled"
+                  onChange={(value) => setModeFilter(value)}
+                />
+              </Form.Item>
+            </>
+          ) : null}
+          <div className="soha-clusters-query-actions">
+            <Button autoInsertSpace={false} disabled={!hasActiveFilters} htmlType="button" onClick={resetFilters}>
+              {localeCode === 'zh_CN' ? '重置' : 'Reset'}
+            </Button>
+            <Button autoInsertSpace={false} htmlType="submit" type="primary">
+              {localeCode === 'zh_CN' ? '查询' : 'Search'}
+            </Button>
+            <Button
+              autoInsertSpace={false}
+              icon={queryExpanded ? <UpOutlined /> : <DownOutlined />}
+              iconPlacement="end"
+              type="link"
+              onClick={() => setQueryExpanded((current) => !current)}
+            >
+              {queryExpanded
+                ? (localeCode === 'zh_CN' ? '收起' : 'Collapse')
+                : (localeCode === 'zh_CN' ? '展开' : 'Expand')}
+            </Button>
+          </div>
+        </div>
+      </Form>
+    </Card>
   )
 
-  const tableHeaderExtra = (
-    <Space wrap size={8} className="soha-clusters-table-header-actions">
-      {selectedRowKeys.length > 0 ? (
-        <Space size={6} className="soha-clusters-selected-hint">
-          <Text type="secondary">{localeCode === 'zh_CN' ? `已选 ${selectedRowKeys.length} 项` : `${selectedRowKeys.length} selected`}</Text>
-          <Button size="small" type="link" onClick={() => setSelectedRowKeys([])}>
-            {localeCode === 'zh_CN' ? '清空' : 'Clear'}
-          </Button>
-        </Space>
-      ) : null}
-      <Button danger disabled={selectedRowKeys.length === 0} onClick={handleBatchDelete}>
-        {localeCode === 'zh_CN' ? '批量删除' : 'Batch Delete'}
-      </Button>
-      <Button disabled={selectedRowKeys.length !== 1} onClick={openSelectedNodes}>
+  const tableToolbarExtra = selectedRowKeys.length > 0 ? (
+    <div className="soha-clusters-batchbar">
+      <Text type="secondary">{localeCode === 'zh_CN' ? `已选 ${selectedRowKeys.length} 项` : `${selectedRowKeys.length} selected`}</Text>
+      <Button autoInsertSpace={false} size="small" onClick={openSelectedNodes} disabled={selectedRowKeys.length !== 1}>
         {localeCode === 'zh_CN' ? '查看节点' : 'Open Nodes'}
       </Button>
-      <Button icon={<ReloadOutlined />} loading={isFetching} onClick={() => void refetch()}>
-        {localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
+      <Button autoInsertSpace={false} size="small" danger onClick={handleBatchDelete}>
+        {localeCode === 'zh_CN' ? '批量删除' : 'Batch Delete'}
       </Button>
-      <Button icon={<PlusOutlined />} type="primary" onClick={openCreateModal}>
+      <Button autoInsertSpace={false} size="small" type="text" onClick={() => setSelectedRowKeys([])}>
+        {localeCode === 'zh_CN' ? '清空' : 'Clear'}
+      </Button>
+    </div>
+  ) : null
+
+  const tableHeaderExtra = (
+    <Space wrap size={8} className="soha-clusters-table-toolbar-actions">
+      {tableToolbarExtra}
+      <Button autoInsertSpace={false} icon={<PlusOutlined />} type="primary" onClick={openCreateModal}>
         {t('common.create', 'Create')}
       </Button>
+      <Button
+        aria-label={localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
+        className="soha-clusters-icon-action"
+        icon={<ReloadOutlined />}
+        loading={isFetching}
+        title={localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
+        type="text"
+        onClick={() => void refetch()}
+      />
+      <Button
+        aria-label={localeCode === 'zh_CN' ? '切换表格密度' : 'Toggle table density'}
+        className="soha-clusters-icon-action"
+        icon={<ColumnHeightOutlined />}
+        title={localeCode === 'zh_CN' ? '切换表格密度' : 'Toggle table density'}
+        type="text"
+        onClick={() => setTableSize((current) => current === 'middle' ? 'small' : 'middle')}
+      />
     </Space>
   )
 
   return (
     <div className="soha-page soha-clusters-page">
-      <PageHeader
-        title={t('page.clusters.title', 'Cluster Management')}
-        description={undefined}
-        showResourceScope={false}
+      {queryPanel}
+      <AdminTable
+        columnSettingIconOnly
+        columnSettingPlacement="header"
+        shellClassName="soha-clusters-table-shell"
+        title={localeCode === 'zh_CN' ? '查询表格' : 'Query Table'}
+        headerExtra={tableHeaderExtra}
+        columns={columns}
+        dataSource={filteredClusters}
+        rowKey="id"
+        loading={isLoading}
+        pageSize={20}
+        tableSize={tableSize}
+        scroll={{ x: 'max-content' }}
+        rowSelection={{
+          selectedRowKeys,
+          onChange: (nextSelectedRowKeys: Key[]) => {
+            setSelectedRowKeys(nextSelectedRowKeys.filter((key): key is string => typeof key === 'string'))
+          },
+        }}
       />
-
-      <div className="soha-clusters-pro-surface">
-        <div className="soha-clusters-query-panel">
-          {filterToolbar}
-        </div>
-
-        <AdminTable
-          columnSettingPlacement="header"
-          shellClassName="soha-clusters-table-shell"
-          columns={columns}
-          dataSource={filteredClusters}
-          rowKey="id"
-          loading={isLoading}
-          headerExtra={tableHeaderExtra}
-          scroll={{ x: 'max-content' }}
-          title={(
-            <div className="soha-clusters-table-title">
-              <Space size={6}>
-                <Text strong>{localeCode === 'zh_CN' ? '集群管理' : 'Cluster Management'}</Text>
-                <InfoCircleOutlined />
-              </Space>
-              <Text type="secondary" className="text-xs">
-                {localeCode === 'zh_CN'
-                  ? `第 1-${filteredClusters.length} 条/总共 ${clusters.length} 条`
-                  : `Showing ${filteredClusters.length} of ${clusters.length}`}
-              </Text>
-            </div>
-          )}
-          rowSelection={{
-            selectedRowKeys,
-            onChange: (nextSelectedRowKeys: Key[]) => {
-              setSelectedRowKeys(nextSelectedRowKeys.filter((key): key is string => typeof key === 'string'))
-            },
-          }}
-        />
-      </div>
 
       <Modal
         title={editingCluster ? '编辑集群' : '添加集群'}

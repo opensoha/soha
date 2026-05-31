@@ -920,7 +920,7 @@ export const routeMeta: RouteMeta[] = [
   {
     id: "clusters",
     path: "/clusters",
-    title: "集群管理",
+    title: "集群",
     description: "集群生命周期管理",
     icon: "IconGlobe",
     group: "platform",
