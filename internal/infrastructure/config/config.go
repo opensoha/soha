@@ -79,10 +79,15 @@ type DatabaseConfig struct {
 }
 
 type AuthConfig struct {
-	EnableDevAuth bool               `mapstructure:"enable_dev_auth"`
-	DevPrincipal  DevPrincipalConfig `mapstructure:"dev_principal"`
-	JWT           JWTConfig          `mapstructure:"jwt"`
-	OIDC          OIDCConfig         `mapstructure:"oidc"`
+	EnableDevAuth     bool                    `mapstructure:"enable_dev_auth"`
+	LoginVerification LoginVerificationConfig `mapstructure:"login_verification"`
+	DevPrincipal      DevPrincipalConfig      `mapstructure:"dev_principal"`
+	JWT               JWTConfig               `mapstructure:"jwt"`
+	OIDC              OIDCConfig              `mapstructure:"oidc"`
+}
+
+type LoginVerificationConfig struct {
+	SliderEnabled bool `mapstructure:"slider_enabled"`
 }
 
 type GitLabConfig struct {
@@ -311,6 +316,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("database.migration_path", "migrations")
 	v.SetDefault("database.migration_file", "migrations/postgres/0001_init.sql")
 	v.SetDefault("auth.enable_dev_auth", true)
+	v.SetDefault("auth.login_verification.slider_enabled", false)
 	v.SetDefault("auth.dev_principal.user_id", "admin")
 	v.SetDefault("auth.dev_principal.name", "Admin")
 	v.SetDefault("auth.dev_principal.email", "admin@soha.local")

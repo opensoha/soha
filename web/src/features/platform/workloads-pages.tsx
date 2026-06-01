@@ -436,11 +436,7 @@ export function WorkloadsOverviewPage() {
 
   if (!clusterId) {
     return (
-      <div className="soha-page soha-overview-page">
-        <ManagementDetailHeader
-          title={t('page.workloads.overview.title', 'Workload Overview')}
-          description={t('page.workloads.overview.desc', 'Inspect workload counts and recent events under the current cluster and namespace scope.')}
-        />
+      <div className="soha-page soha-overview-page soha-workloads-overview-page">
         <ManagementState compact kind="select-scope" title={t('common.pleaseSelectClusterShort', 'Select a cluster')} />
       </div>
     )
@@ -508,11 +504,7 @@ export function WorkloadsOverviewPage() {
   ]
 
   return (
-    <div className="soha-page soha-overview-page">
-      <ManagementDetailHeader
-        title={t('page.workloads.overview.title', 'Workload Overview')}
-        description={t('page.workloads.overview.desc', 'Inspect workload counts and recent events under the current cluster and namespace scope.')}
-      />
+    <div className="soha-page soha-overview-page soha-workloads-overview-page">
       <div className="soha-overview-metric-grid soha-workload-overview-metric-grid">
         {stats.map((item) => (
           <Card key={item.key} size="small" variant="outlined" className={`soha-overview-metric-card is-${item.tone}`}>

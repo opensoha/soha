@@ -12,7 +12,6 @@ import {
   ManagementState,
   ManagementTableToolbar,
 } from '@/components/management-list'
-import { ResourceWorkspaceScopeBar } from '@/components/platform-scope-toolbar'
 import { useI18n } from '@/i18n'
 import { StatusTag } from '@/components/status-tag'
 import { api } from '@/services/api-client'
@@ -177,7 +176,6 @@ export function ClusterNodesPage() {
 
   return (
     <div className="soha-page">
-      <ResourceWorkspaceScopeBar scopeMode="cluster" />
       {!clusterId ? (
         <ManagementState compact kind="select-scope" title={t('common.pleaseSelectCluster', 'Please select a cluster')} />
       ) : (
@@ -388,7 +386,6 @@ export function ClusterNamespacesPage() {
         title={t('page.namespaces.title', 'Namespaces')}
         description={t('page.namespaces.desc', 'Manage namespaces in the current cluster scope and jump into related workload views.')}
       />
-      <ResourceWorkspaceScopeBar scopeMode="cluster" />
       {!clusterId ? (
         <ManagementState compact kind="select-scope" title={t('common.pleaseSelectClusterShort', 'Select a cluster')} />
       ) : (

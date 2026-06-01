@@ -70,4 +70,7 @@ func TestDefaultsConfigurePostgresGatewayRateLimitBackend(t *testing.T) {
 	if !cfg.Modules.AIGateway.Enabled {
 		t.Fatalf("AI Gateway module should be enabled by default")
 	}
+	if cfg.Auth.LoginVerification.SliderEnabled {
+		t.Fatal("login slider verification should be disabled by default")
+	}
 }

@@ -8,9 +8,20 @@ export const API_BASE_URL = import.meta.env.DEV
 interface AuthProvider {
   enabled: boolean;
   id?: string;
-  loginURL?: string;
+  loginUrl?: string;
   name: string;
   type: string;
+}
+
+interface LoginOptions {
+  verification: {
+    sliderEnabled: boolean;
+  };
+}
+
+interface LoginVerificationChallenge {
+  expiresIn: number;
+  token: string;
 }
 
 interface AuthFetchOptions extends RequestInit {
@@ -111,14 +122,37 @@ export function clearAuthSession() {
 
 export async function fetchAuthProviders() {
   const response =
-    await fetchAuthJSON<ApiResponse<AuthProvider[]>>("/auth/providers");
+    await fetchAuthJSON<ApiResponse<AuthProvider[]> | { items: AuthProvider[] }>(
+      "/auth/providers",
+    );
+  return "data" in response ? response.data : response.items;
+}
+
+export async function fetchLoginOptions() {
+  const response =
+    await fetchAuthJSON<ApiResponse<LoginOptions>>("/auth/login-options");
   return response.data;
 }
 
-export async function loginWithPassword(login: string, password: string) {
+export async function issueLoginVerificationChallenge(sliderValue: number) {
+  const response = await fetchAuthJSON<ApiResponse<LoginVerificationChallenge>>(
+    "/auth/login-verification/challenge",
+    {
+      method: "POST",
+      body: JSON.stringify({ type: "slider", sliderValue }),
+    },
+  );
+  return response.data;
+}
+
+export async function loginWithPassword(
+  login: string,
+  password: string,
+  verificationToken?: string,
+) {
   const response = await fetchAuthJSON<ApiResponse<AuthResult>>("/auth/login", {
     method: "POST",
-    body: JSON.stringify({ login, password }),
+    body: JSON.stringify({ login, password, verificationToken }),
   });
   return response.data;
 }

@@ -8,6 +8,8 @@ The current backend uses real identity and session handling.
 - Token refresh: `POST /api/v1/auth/refresh`
 - Current user: `GET /api/v1/auth/me`
 - Logout: `POST /api/v1/auth/logout`
+- Login options: `GET /api/v1/auth/login-options`
+- Login verification challenge: `POST /api/v1/auth/login-verification/challenge`
 - OIDC browser entry: `GET /api/v1/auth/oidc/login`
 - OIDC callback: `GET /api/v1/auth/oidc/callback`
 - OIDC frontend exchange: `POST /api/v1/auth/oidc/exchange`
@@ -15,6 +17,8 @@ The current backend uses real identity and session handling.
 Production-style requests use `Authorization: Bearer <access-token>`.
 
 When `auth.enable_dev_auth` is enabled in `config.yaml`, the backend can still attach the configured bootstrap principal to requests without a bearer token. That fallback is for local development only and does not replace the real password or OIDC paths.
+
+`auth.login_verification.slider_enabled` controls whether the login page should render the slider verification gate before password submission. When enabled, password login must include a short-lived `verificationToken` from `POST /api/v1/auth/login-verification/challenge`; the token is single-use and expires quickly.
 
 ## Error Envelope
 

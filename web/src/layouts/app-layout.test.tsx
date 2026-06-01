@@ -74,6 +74,12 @@ vi.mock('@/components/header-preference-button', () => ({
   HeaderPreferenceButton: ({ label, title }: { label?: string; title?: string }) => <button>{label || title}</button>,
 }))
 
+vi.mock('@/components/platform-scope-toolbar', () => ({
+  PlatformScopeTrigger: ({ scopeMode }: { scopeMode?: string }) => (
+    <div data-testid="platform-scope-trigger">{scopeMode}</div>
+  ),
+}))
+
 vi.mock('@/features/system/menu-icons', () => ({
   resolveMenuIcon: () => null,
 }))
@@ -227,14 +233,32 @@ describe('app layout workspace navigation', () => {
     })
 
     expect(container.querySelector('.soha-workbench-switcher__label')?.textContent).toBe('k8s工作台')
-    expect(container.querySelector('.soha-header-main .ant-breadcrumb')?.textContent).toContain('k8s工作台/总览')
+    expect(container.querySelector('.soha-header-main .ant-breadcrumb')?.textContent).toContain('k8s工作台/概览')
+    expect(container.querySelector('[data-testid="platform-scope-trigger"]')?.textContent).toBe('cluster')
     expect(container.querySelector('.soha-workspace-switcher-shell')).toBeNull()
+  })
+
+  it('uses namespace scope in the k8s workbench header for namespaced routes', async () => {
+    const container = await renderWithProviders('/workloads/overview', {
+      permissionKeys: ['workspace.resource.view', 'platform.workloads.view', 'system.menus.view'],
+      visibleMenuIds: ['workloads', 'workloads-overview', 'system', 'menus'],
+      visibleMenus: [
+        { id: 'workloads', path: '/workloads', labelZh: '工作负载', labelEn: 'Workloads', iconKey: 'boxes', section: 'platform', sortOrder: 1, enabled: true },
+        { id: 'workloads-overview', parentId: 'workloads', path: '/workloads/overview', labelZh: '概览', labelEn: 'Overview', iconKey: 'gauge', section: 'platform', sortOrder: 2, enabled: true },
+        { id: 'system', path: '/system', labelZh: '系统管理', labelEn: 'System', iconKey: 'panels-top-left', section: 'admin', sortOrder: 3, enabled: true },
+        { id: 'menus', parentId: 'system', path: '/system/menus', labelZh: '菜单管理', labelEn: 'Menus', iconKey: 'menu-square', section: 'admin', sortOrder: 4, enabled: true },
+      ],
+    })
+
+    expect(container.querySelector('[data-testid="platform-scope-trigger"]')?.textContent).toBe('namespace')
+    expect(container.querySelector('.soha-header-main .ant-breadcrumb')?.textContent).toContain('k8s工作台/工作负载/概览')
   })
 
   it('filters the business menu by the current application workspace', async () => {
     const container = await renderWithProviders('/applications')
 
     expect(container.querySelector('.soha-workbench-switcher__label')?.textContent).toBe('应用交付工作台')
+    expect(container.querySelector('[data-testid="platform-scope-trigger"]')).toBeNull()
     expect(container.textContent).toContain('应用中心')
     expect(container.textContent).not.toContain('概览')
     expect(container.querySelector('.soha-nav-system')).toBeNull()

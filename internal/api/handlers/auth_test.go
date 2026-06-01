@@ -119,6 +119,7 @@ func TestAuthBootstrapReturnsCurrentUserSnapshotAndBranding(t *testing.T) {
 		stubIdentityService{current: current},
 		stubAuthBootstrapAccessService{snapshot: snapshot},
 		stubAuthBootstrapSettingsService{branding: branding},
+		cfgpkg.AuthConfig{},
 	)
 
 	recorder := httptest.NewRecorder()
@@ -149,6 +150,158 @@ func TestAuthBootstrapReturnsCurrentUserSnapshotAndBranding(t *testing.T) {
 	}
 	if payload.Data.Branding.AppTitle != branding.AppTitle {
 		t.Fatalf("branding.appTitle = %q, want %q", payload.Data.Branding.AppTitle, branding.AppTitle)
+	}
+}
+
+func TestLoginOptionsReturnSliderVerificationConfig(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+
+	handler := NewAuthHandler(stubIdentityService{}, nil, nil, cfgpkg.AuthConfig{
+		LoginVerification: cfgpkg.LoginVerificationConfig{SliderEnabled: true},
+	})
+
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/api/v1/auth/login-options", nil)
+
+	handler.LoginOptions(ctx)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusOK)
+	}
+
+	var payload struct {
+		Data struct {
+			Verification struct {
+				SliderEnabled bool `json:"sliderEnabled"`
+			} `json:"verification"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if !payload.Data.Verification.SliderEnabled {
+		t.Fatal("sliderEnabled = false, want true")
+	}
+}
+
+func TestPasswordLoginRequiresVerificationTokenWhenSliderEnabled(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+
+	identity := &recordingIdentityService{}
+	handler := NewAuthHandler(identity, nil, nil, cfgpkg.AuthConfig{
+		LoginVerification: cfgpkg.LoginVerificationConfig{SliderEnabled: true},
+	})
+
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", strings.NewReader(`{"login":"admin","password":"secret"}`))
+	ctx.Request.Header.Set("Content-Type", "application/json")
+
+	handler.Login(ctx)
+
+	if recorder.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusUnauthorized)
+	}
+	if identity.loginLogin != "" {
+		t.Fatalf("login service was called with %q", identity.loginLogin)
+	}
+}
+
+func TestPasswordLoginConsumesVerificationTokenWhenSliderEnabled(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+
+	identity := &recordingIdentityService{
+		stubIdentityService: stubIdentityService{
+			loginResult: domainidentity.AuthResult{
+				User: domainidentity.Principal{UserID: "u-1", UserName: "admin"},
+			},
+		},
+	}
+	handler := NewAuthHandler(identity, nil, nil, cfgpkg.AuthConfig{
+		LoginVerification: cfgpkg.LoginVerificationConfig{SliderEnabled: true},
+	})
+
+	challengeRecorder := httptest.NewRecorder()
+	challengeCtx, _ := gin.CreateTestContext(challengeRecorder)
+	challengeCtx.Request = httptest.NewRequest(http.MethodPost, "/api/v1/auth/login-verification/challenge", strings.NewReader(`{"type":"slider","sliderValue":100}`))
+	challengeCtx.Request.Header.Set("Content-Type", "application/json")
+	challengeCtx.Request.Header.Set("User-Agent", "soha-test")
+
+	handler.IssueLoginVerification(challengeCtx)
+
+	if challengeRecorder.Code != http.StatusOK {
+		t.Fatalf("challenge status = %d, want %d: %s", challengeRecorder.Code, http.StatusOK, challengeRecorder.Body.String())
+	}
+	var challengePayload struct {
+		Data struct {
+			Token string `json:"token"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(challengeRecorder.Body.Bytes(), &challengePayload); err != nil {
+		t.Fatalf("decode challenge response: %v", err)
+	}
+	if challengePayload.Data.Token == "" {
+		t.Fatal("verification token is empty")
+	}
+
+	loginBody := `{"login":"admin","password":"secret","verificationToken":"` + challengePayload.Data.Token + `"}`
+	loginRecorder := httptest.NewRecorder()
+	loginCtx, _ := gin.CreateTestContext(loginRecorder)
+	loginCtx.Request = httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", strings.NewReader(loginBody))
+	loginCtx.Request.Header.Set("Content-Type", "application/json")
+	loginCtx.Request.Header.Set("User-Agent", "soha-test")
+
+	handler.Login(loginCtx)
+
+	if loginRecorder.Code != http.StatusOK {
+		t.Fatalf("login status = %d, want %d: %s", loginRecorder.Code, http.StatusOK, loginRecorder.Body.String())
+	}
+	if identity.loginLogin != "admin" || identity.loginPassword != "secret" {
+		t.Fatalf("login call = (%q, %q)", identity.loginLogin, identity.loginPassword)
+	}
+
+	replayRecorder := httptest.NewRecorder()
+	replayCtx, _ := gin.CreateTestContext(replayRecorder)
+	replayCtx.Request = httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", strings.NewReader(loginBody))
+	replayCtx.Request.Header.Set("Content-Type", "application/json")
+	replayCtx.Request.Header.Set("User-Agent", "soha-test")
+
+	handler.Login(replayCtx)
+
+	if replayRecorder.Code != http.StatusUnauthorized {
+		t.Fatalf("replay status = %d, want %d", replayRecorder.Code, http.StatusUnauthorized)
+	}
+}
+
+func TestProLoginRequiresVerificationTokenWhenSliderEnabled(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+
+	identity := &recordingIdentityService{}
+	handler := NewAuthHandler(identity, nil, nil, cfgpkg.AuthConfig{
+		LoginVerification: cfgpkg.LoginVerificationConfig{SliderEnabled: true},
+	})
+
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/api/login/account", strings.NewReader(`{"username":"admin","password":"secret","type":"account"}`))
+	ctx.Request.Header.Set("Content-Type", "application/json")
+
+	handler.ProLogin(ctx)
+
+	if recorder.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusUnauthorized)
+	}
+	if identity.loginLogin != "" {
+		t.Fatalf("login service was called with %q", identity.loginLogin)
 	}
 }
 
@@ -184,7 +337,7 @@ func TestProLoginUsesUsernameAndReturnsAuthorityShape(t *testing.T) {
 			},
 		},
 	}
-	handler := NewAuthHandler(identity, nil, nil)
+	handler := NewAuthHandler(identity, nil, nil, cfgpkg.AuthConfig{})
 
 	recorder := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(recorder)
@@ -228,7 +381,7 @@ func TestProCurrentUserMapsPrincipalToProShape(t *testing.T) {
 		Teams:    []string{"platform"},
 		Tags:     []string{"oncall"},
 	}
-	handler := NewAuthHandler(stubIdentityService{current: current}, nil, nil)
+	handler := NewAuthHandler(stubIdentityService{current: current}, nil, nil, cfgpkg.AuthConfig{})
 
 	recorder := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(recorder)
@@ -270,7 +423,7 @@ func TestProLogoutUsesNormalizedBearerToken(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	identity := &recordingIdentityService{}
-	handler := NewAuthHandler(identity, nil, nil)
+	handler := NewAuthHandler(identity, nil, nil, cfgpkg.AuthConfig{})
 
 	recorder := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(recorder)

@@ -84,6 +84,12 @@ The response now includes:
 
 The frontend renders every enabled third-party provider instead of filtering down to one OIDC button.
 
+The login page also reads `/api/v1/auth/login-options`. When
+`auth.login_verification.slider_enabled` is `true` in the config file, the
+frontend renders a slider verification gate before password login and requests
+a one-time token from `/api/v1/auth/login-verification/challenge` after the
+slider completes.
+
 ### 2. Browser entry
 
 Each provider login entry is:

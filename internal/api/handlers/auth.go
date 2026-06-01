@@ -2,8 +2,13 @@ package handlers
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/base64"
+	"fmt"
 	"net/http"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/soha/soha/internal/api/dto"
@@ -12,7 +17,11 @@ import (
 	domainaccess "github.com/soha/soha/internal/domain/access"
 	domainidentity "github.com/soha/soha/internal/domain/identity"
 	domainsettings "github.com/soha/soha/internal/domain/settings"
+	cfgpkg "github.com/soha/soha/internal/infrastructure/config"
+	"github.com/soha/soha/internal/platform/apperrors"
 )
+
+const loginVerificationTokenTTL = 2 * time.Minute
 
 type IdentityService interface {
 	ListProviders(context.Context) []domainidentity.Provider
@@ -95,24 +104,91 @@ type proLoginResponse struct {
 	CurrentAuthority string `json:"currentAuthority"`
 }
 
-type AuthHandler struct {
-	identity IdentityService
-	access   AuthBootstrapAccessService
-	settings AuthBootstrapSettingsService
+type loginVerificationChallenge struct {
+	ExpiresAt time.Time
+	ClientIP  string
+	UserAgent string
 }
 
-func NewAuthHandler(identity IdentityService, access AuthBootstrapAccessService, settings AuthBootstrapSettingsService) *AuthHandler {
-	return &AuthHandler{identity: identity, access: access, settings: settings}
+type AuthHandler struct {
+	identity                      IdentityService
+	access                        AuthBootstrapAccessService
+	settings                      AuthBootstrapSettingsService
+	loginOptions                  dto.LoginOptionsResponse
+	loginVerificationMu           sync.Mutex
+	loginVerificationChallenges   map[string]loginVerificationChallenge
+	loginVerificationTokenExpires time.Duration
+}
+
+func NewAuthHandler(identity IdentityService, access AuthBootstrapAccessService, settings AuthBootstrapSettingsService, authCfg cfgpkg.AuthConfig) *AuthHandler {
+	return &AuthHandler{
+		identity: identity,
+		access:   access,
+		settings: settings,
+		loginOptions: dto.LoginOptionsResponse{
+			Verification: dto.LoginVerificationOptions{
+				SliderEnabled: authCfg.LoginVerification.SliderEnabled,
+			},
+		},
+		loginVerificationChallenges:   map[string]loginVerificationChallenge{},
+		loginVerificationTokenExpires: loginVerificationTokenTTL,
+	}
 }
 
 func (h *AuthHandler) ListProviders(c *gin.Context) {
 	apiresponse.Items(c, http.StatusOK, h.identity.ListProviders(c.Request.Context()))
 }
 
+func (h *AuthHandler) LoginOptions(c *gin.Context) {
+	apiresponse.Item(c, http.StatusOK, h.loginOptions)
+}
+
+func (h *AuthHandler) IssueLoginVerification(c *gin.Context) {
+	if !h.loginOptions.Verification.SliderEnabled {
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "login verification is not enabled")
+		return
+	}
+
+	var req dto.LoginVerificationChallengeRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid login verification payload")
+		return
+	}
+	if strings.TrimSpace(req.Type) != "slider" || req.SliderValue < 98 {
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "slider verification is incomplete")
+		return
+	}
+
+	token, err := randomURLToken(32)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+
+	expiresAt := time.Now().Add(h.loginVerificationTokenExpires)
+	h.loginVerificationMu.Lock()
+	h.pruneLoginVerificationChallengesLocked(time.Now())
+	h.loginVerificationChallenges[token] = loginVerificationChallenge{
+		ExpiresAt: expiresAt,
+		ClientIP:  c.ClientIP(),
+		UserAgent: c.GetHeader("User-Agent"),
+	}
+	h.loginVerificationMu.Unlock()
+
+	apiresponse.Item(c, http.StatusOK, dto.LoginVerificationChallengeResponse{
+		Token:     token,
+		ExpiresIn: int64(h.loginVerificationTokenExpires.Seconds()),
+	})
+}
+
 func (h *AuthHandler) Login(c *gin.Context) {
 	var req dto.PasswordLoginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid login payload")
+		return
+	}
+	if err := h.consumeLoginVerification(c, req.VerificationToken); err != nil {
+		writeError(c, err)
 		return
 	}
 	result, err := h.identity.LoginWithPassword(c.Request.Context(), req.Login, req.Password)
@@ -132,6 +208,10 @@ func (h *AuthHandler) ProLogin(c *gin.Context) {
 	login := strings.TrimSpace(req.Username)
 	if login == "" {
 		login = strings.TrimSpace(req.Login)
+	}
+	if err := h.consumeLoginVerification(c, req.VerificationToken); err != nil {
+		writeError(c, err)
+		return
 	}
 	result, err := h.identity.LoginWithPassword(c.Request.Context(), login, req.Password)
 	if err != nil {
@@ -368,4 +448,50 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func randomURLToken(byteCount int) (string, error) {
+	buffer := make([]byte, byteCount)
+	if _, err := rand.Read(buffer); err != nil {
+		return "", fmt.Errorf("generate login verification token: %w", err)
+	}
+	return base64.RawURLEncoding.EncodeToString(buffer), nil
+}
+
+func (h *AuthHandler) consumeLoginVerification(c *gin.Context, token string) error {
+	if !h.loginOptions.Verification.SliderEnabled {
+		return nil
+	}
+
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return fmt.Errorf("%w: login verification token is required", apperrors.ErrUnauthorized)
+	}
+
+	now := time.Now()
+	h.loginVerificationMu.Lock()
+	defer h.loginVerificationMu.Unlock()
+
+	h.pruneLoginVerificationChallengesLocked(now)
+	challenge, ok := h.loginVerificationChallenges[token]
+	if !ok {
+		return fmt.Errorf("%w: login verification token is invalid or expired", apperrors.ErrUnauthorized)
+	}
+	delete(h.loginVerificationChallenges, token)
+
+	if challenge.ExpiresAt.Before(now) {
+		return fmt.Errorf("%w: login verification token is invalid or expired", apperrors.ErrUnauthorized)
+	}
+	if challenge.ClientIP != c.ClientIP() || challenge.UserAgent != c.GetHeader("User-Agent") {
+		return fmt.Errorf("%w: login verification token does not match this client", apperrors.ErrUnauthorized)
+	}
+	return nil
+}
+
+func (h *AuthHandler) pruneLoginVerificationChallengesLocked(now time.Time) {
+	for token, challenge := range h.loginVerificationChallenges {
+		if challenge.ExpiresAt.Before(now) {
+			delete(h.loginVerificationChallenges, token)
+		}
+	}
 }

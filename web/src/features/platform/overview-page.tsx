@@ -11,7 +11,7 @@ import {
   WarningOutlined,
 } from '@ant-design/icons'
 import { useQuery } from '@tanstack/react-query'
-import { ManagementDetailHeader, ManagementState } from '@/components/management-list'
+import { ManagementState } from '@/components/management-list'
 import { StatusTag } from '@/components/status-tag'
 import { buildClusterScopedPath } from '@/features/platform/platform-scope-query'
 import { useI18n } from '@/i18n'
@@ -300,12 +300,7 @@ export function OverviewPage() {
   ]
 
   return (
-    <div className="soha-page soha-overview-page">
-      <ManagementDetailHeader
-        title={t('page.overview.title', 'Platform Overview')}
-        description={localeCode === 'zh_CN' ? '集群、告警和 Pod 运行态势的统一入口。' : 'Unified entry for clusters, alerts, and pod runtime posture.'}
-      />
-
+    <div className="soha-page soha-overview-page soha-platform-overview-page">
       <div className="soha-overview-metric-grid">
         {overviewStats.map((item) => (
           <Card key={item.key} size="small" variant="outlined" className={`soha-overview-metric-card is-${item.tone}`}>

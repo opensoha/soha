@@ -21,6 +21,7 @@ import {
   TranslationOutlined,
 } from '@ant-design/icons'
 import { HeaderPreferenceButton } from '@/components/header-preference-button'
+import { PlatformScopeTrigger } from '@/components/platform-scope-toolbar'
 import { AnnouncementBell } from '@/features/announcements/announcement-center'
 import { usePermissionSnapshot } from '@/features/auth/permission-snapshot'
 import { resolveMenuIcon } from '@/features/system/menu-icons'
@@ -36,6 +37,7 @@ import {
   getAccessibleWorkbenchIds,
   getParentRouteMeta,
   getRouteMeta,
+  getRouteScopeMode,
   getRouteWorkbenchId,
   getRouteWorkspace,
   resolveRouteMenuId,
@@ -220,6 +222,20 @@ function buildParentMap(sidebarNav: RuntimeMenuNode[]) {
   return parentByID
 }
 
+function buildNodeByID(sidebarNav: RuntimeMenuNode[]) {
+  const nodeByID = new Map<string, RuntimeMenuNode>()
+  const visit = (node: RuntimeMenuNode) => {
+    nodeByID.set(node.id, node)
+    node.children?.forEach(visit)
+  }
+  sidebarNav.forEach(visit)
+  return nodeByID
+}
+
+function getRuntimeMenuNodeLabel(node: RuntimeMenuNode, localeCode: 'zh_CN' | 'en_US') {
+  return localeCode === 'en_US' && node.labelEn ? node.labelEn : node.labelZh
+}
+
 function findMenuIDByRoutePath(sidebarNav: RuntimeMenuNode[], routePath: string) {
   let matched: string | null = null
   const visit = (node: RuntimeMenuNode) => {
@@ -389,6 +405,7 @@ export function AppLayout() {
   )
   const currentMeta = getRouteMeta(location.pathname)
   const currentWorkbenchId = getRouteWorkbenchId(currentMeta)
+  const currentScopeMode = getRouteScopeMode(currentMeta)
   const currentRouteWorkspace = getRouteWorkspace(currentMeta)
   const isSystemWorkspaceRoute = currentRouteWorkspace === 'system'
   const activeWorkspace = useMemo<BusinessWorkspaceType | null>(() => {
@@ -457,6 +474,7 @@ export function AppLayout() {
     [businessNav, systemNav],
   )
   const parentByID = useMemo(() => buildParentMap(combinedNav), [combinedNav])
+  const nodeByID = useMemo(() => buildNodeByID(combinedNav), [combinedNav])
   const businessNodeIDs = useMemo(() => collectNodeIDs(businessNav), [businessNav])
   const businessExpandableNodeIDs = useMemo(() => collectExpandableNodeIDs(businessNav), [businessNav])
   const systemNodeIDs = useMemo(() => collectNodeIDs(systemNav), [systemNav])
@@ -541,6 +559,13 @@ export function AppLayout() {
   const breadcrumbRoutes = useMemo(() => {
     const routes: Array<{ name: string; path?: string }> = []
     const resolveBreadcrumbTitle = (route: typeof currentMeta) => {
+      const menuID = route.navVisible !== false
+        ? findMenuIDByRoutePath(combinedNav, route.path) ?? route.menuId
+        : undefined
+      const menuNode = menuID ? nodeByID.get(menuID) : null
+      if (menuNode) {
+        return getRuntimeMenuNodeLabel(menuNode, localeCode)
+      }
       if (route.id === 'overview') {
         return t('route.overview.breadcrumbTitle', localeCode === 'zh_CN' ? '总览' : 'Overview')
       }
@@ -578,7 +603,7 @@ export function AppLayout() {
     }
 
     return routes
-  }, [activeWorkbenchId, currentMeta, currentWorkbenchOption, localeCode, t])
+  }, [activeWorkbenchId, combinedNav, currentMeta, currentWorkbenchOption, localeCode, nodeByID, t])
 
   const userDisplayName = user?.userName ?? user?.email ?? 'User'
   const branding = getNormalizedBranding(brandingQuery.data?.data)
@@ -603,6 +628,9 @@ export function AppLayout() {
   const aiSelectedKeys = selectedKeys.filter((key) => primaryItemKeyToPath[key])
   const primarySelectedKeys = activeWorkbenchId === 'ai' ? aiSelectedKeys : isSystemWorkspaceRoute ? systemSelectedKeys : businessSelectedKeys
   const primaryOpenKeys = isSystemWorkspaceRoute ? systemOpenKeys : businessOpenKeys
+  const platformHeaderScopeMode = activeWorkbenchId === 'platform' && (currentScopeMode === 'cluster' || currentScopeMode === 'namespace')
+    ? currentScopeMode
+    : 'hidden'
 
   if (permissionSnapshotQuery.isLoading) {
     return (
@@ -714,6 +742,11 @@ export function AppLayout() {
                 />
               </div>
             </div>
+            {platformHeaderScopeMode !== 'hidden' ? (
+              <div className="soha-header-context">
+                <PlatformScopeTrigger scopeMode={platformHeaderScopeMode} />
+              </div>
+            ) : null}
             <div className="soha-header-right">
               <Button
                 className="soha-header-action"

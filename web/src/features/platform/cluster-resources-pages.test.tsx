@@ -39,12 +39,6 @@ vi.mock('@/services/api-client', () => ({
   },
 }))
 
-vi.mock('@/components/platform-scope-toolbar', () => ({
-  ResourceWorkspaceScopeBar: ({ scopeMode }: { scopeMode?: string }) => (
-    <div data-testid="resource-workspace-scopebar">{scopeMode}</div>
-  ),
-}))
-
 vi.mock('@/components/platform-cluster-scope-hint', () => ({
   PlatformClusterScopeHint: () => <div data-testid="scope-hint">scope-hint</div>,
 }))
@@ -152,17 +146,17 @@ describe('cluster resource pages', () => {
     vi.clearAllMocks()
   })
 
-  it('shows the cluster scope selector on the nodes page before a cluster is selected', async () => {
+  it('shows the select-cluster state on the nodes page without a page-level scope bar', async () => {
     const container = await renderWithProviders(<ClusterNodesPage />)
 
-    expect(container.querySelector('[data-testid="resource-workspace-scopebar"]')?.textContent).toBe('cluster')
+    expect(container.querySelector('[data-testid="resource-workspace-scopebar"]')).toBeNull()
     expect(container.textContent).toContain('Please select a cluster')
   })
 
-  it('shows the cluster scope selector on the namespaces page before a cluster is selected', async () => {
+  it('shows the select-cluster state on the namespaces page without a page-level scope bar', async () => {
     const container = await renderWithProviders(<ClusterNamespacesPage />)
 
-    expect(container.querySelector('[data-testid="resource-workspace-scopebar"]')?.textContent).toBe('cluster')
+    expect(container.querySelector('[data-testid="resource-workspace-scopebar"]')).toBeNull()
     expect(container.textContent).toContain('Select a cluster')
   })
 })

@@ -49,6 +49,9 @@ Implement console work inside the active Vite app under `web`. Keep the UI antd-
 - Use Ant Design components with a shadcn-like grayscale treatment: neutral surfaces, restrained accents, crisp borders, compact square-edged controls, and quiet shadows.
 - Do not import `shadcn/ui` or invent a parallel token system.
 - Keep page chrome compact. Toolbars should usually live inside the table or card panel instead of in stacked external headers.
+- In the k8s workbench, resource-scope controls belong in the app header instead of repeated page-level context bars. Use compact native antd `Select` controls, not a secondary popover/dropdown that hides the active scope.
+- Namespace and cluster are independent scope controls. On namespace-scoped pages, place namespace first and cluster second inside one compact inline group; on cluster-only pages, show only the cluster selector and keep its width identical to the cluster control used in the namespace-plus-cluster group.
+- Header scope controls should visually merge with the header/content background, avoid dark or high-contrast focus/open outlines, and never push, wrap, or overlap right-side header actions. Prefer tight gaps, stable widths, ellipsis, icon affordances, and tooltips over long inline labels such as "资源上下文".
 - Favor list-first operational pages. Detail pages should expose actions, metrics, YAML, and diagnostics where the backend already supports them.
 - Management list pages may use the clusters-page Pro-style pattern when a richer table workflow is needed: one outer operational surface, an independent compact antd query form above the table, a separate table management toolbar with batch/refresh/create/column actions, then the data table. Do not place the query form inside the table header or inside `AdminTable` toolbar when following this pattern.
 - Business data tables should follow the clusters-page table treatment: compact `AdminTable`, quiet border-only shell, small pagination, column settings in the toolbar, fixed right-side action column, and no decorative left-header table title. Do not pass `title` to `AdminTable` for ordinary business tables unless the table is one of several sibling tables in the same panel and the label is needed to distinguish them.
@@ -58,6 +61,7 @@ Implement console work inside the active Vite app under `web`. Keep the UI antd-
 - List pages without search or create forms should still keep standard table utility controls such as refresh, density toggle, and column visibility in the table header when using the management table shell, unless the table is intentionally static or embedded.
 - Scope-plus-table resource pages should keep the table inside the management table shell/card frame even when there is no query form or create action. Avoid bare tables directly on the page because status tags, pagination, and fixed action columns need the same visual boundary and alignment as richer management lists.
 - Do not stack explanatory cards above simple operational resource lists when the sidebar, breadcrumb, scope selector, and table already explain the page. Remove redundant detail headers, business-line scope notes, and creation caveats unless they communicate a real permission boundary, unsupported capability, destructive risk, or next action.
+- Overview and dashboard pages inside operational workbenches should stay dense. If sidebar, breadcrumb, and header scope already establish context, remove banner-like page descriptions and use compact metric cards, tighter panel spacing, and readable 3- or 4-column desktop grids instead of oversized 2-by-2 cards that dominate the first viewport.
 - For resources that are not created from Soha, omit create controls and query panels that do not fit the workflow, but keep operational row actions and the table utility rail consistent with other management tables.
 - Prefer `web/src/components/management-list.tsx` for the management-list baseline: compact query panel, table toolbar, batch bar, density/refresh buttons, and icon-only action controls. When following the clusters-page pattern, keep the query card and table footer compressed, align form labels and input placeholder text on the same vertical center line, avoid decorative table titles such as "查询表格" when the table is already obvious, do not enable default column sorting unless the user workflow explicitly needs it, render row operations as icon buttons with tooltips, and use antd `Popconfirm` for lightweight destructive confirmations instead of `Modal.confirm`.
 - When adding forms or drawers, keep copy short and field grouping tight. Avoid decorative layouts that work against data density.
@@ -66,6 +70,8 @@ Implement console work inside the active Vite app under `web`. Keep the UI antd-
 ## Workbench Rules
 
 - Platform pages share persisted cluster and namespace scope. List pages should keep scope filters, search, refresh, and batch actions in the table or panel toolbar.
+- K8s workbench pages should derive header scope UI from route scope semantics: cluster-scoped pages show the cluster selector only, namespace-scoped pages show namespace plus cluster, and pages must not create their own duplicate scope selectors.
+- Global breadcrumbs should be driven by route metadata plus runtime backend menu labels. Visible menu routes may prefer the current menu label, but detail or synthetic routes should keep their route title so entity/detail breadcrumbs are not collapsed into a parent menu name.
 - Delivery pages should prefer backend aggregate endpoints for release boards, application detail, environment bindings, release bundles, execution tasks, logs, and artifacts instead of fan-out joins from the browser.
 - AI workbench canonical routes are `/ai-workbench`, `/ai-workbench/chat`, `/ai-workbench/root-cause`, `/ai-workbench/performance`, `/ai-workbench/inspection`, `/ai-workbench/tool-settings`, and `/ai-workbench/model-settings`. Legacy `/ai-observe/**`, `/chat`, `/ai-workbench/investigation`, `/ai-workbench/automation`, and `/ai-workbench/tools` should remain redirects or compatibility routes only.
 - AI investigation is session-first. Preserve session query parameters, mode selection, scope handoff, toolset drawer behavior, analysis artifact history, and inspection-to-session flows when changing the canvas.
@@ -87,6 +93,9 @@ Implement console work inside the active Vite app under `web`. Keep the UI antd-
 - Fetching raw Kubernetes rows to render dashboard cards usually means the backend overview DTO should be used or expanded.
 - Storing server responses in Zustand creates stale and duplicated state. Use TanStack Query and invalidate keys after mutations.
 - Styling with page-level hero cards, saturated gradients, or new token systems breaks the console baseline. Use the existing `soha-*` CSS variables and compact antd surfaces.
+- Reintroducing page-level resource-scope bars in the k8s workbench makes operators switch context per page and visually competes with the shell. Keep scope in the header and keep list-page controls inside the table/panel surface.
+- Applying backend menu labels to every breadcrumb segment can hide detail-route titles such as resource names or overview labels. Only replace labels for real visible menu routes.
+- Oversized overview cards and repeated explanatory headers are regressions for operational console pages; compact scanability is preferred over marketing-style page composition.
 - Showing unavailable backend capabilities as normal empty tables confuses operators. Empty states must distinguish unsupported, backend-pending, permission-denied, and truly empty data.
 
 ## Read These References When Needed
@@ -110,3 +119,5 @@ Implement console work inside the active Vite app under `web`. Keep the UI antd-
 - No new frontend query fan-out or duplicated scope state is introduced.
 - Workbench navigation, module visibility, and compatibility redirects still behave as expected.
 - Affected pages typecheck, and tests are updated when semantics change.
+- Header, breadcrumb, and scope-selector changes are verified at the target browser viewport for wrapping, overlap, truncation, focus/open states, and parity between cluster-only and namespace-plus-cluster modes.
+- Breadcrumb/menu/scope semantics changes include focused layout or route tests, especially around runtime menu labels and detail-route titles.

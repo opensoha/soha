@@ -45,6 +45,8 @@ database:
 
 auth:
   enable_dev_auth: false
+  login_verification:
+    slider_enabled: true
   dev_principal:
     user_id: admin
     name: Admin

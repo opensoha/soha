@@ -86,6 +86,10 @@
 
 前端会展示所有启用的第三方登录源，而不是只筛选 OIDC。
 
+登录页还会读取 `/api/v1/auth/login-options`。当配置文件里的
+`auth.login_verification.slider_enabled` 为 `true` 时，前端会在密码登录前展示滑块验证，并在完成后向
+`/api/v1/auth/login-verification/challenge` 申请一次性验证 token。
+
 ### 2. 浏览器跳转
 
 每个 provider 的登录入口是：

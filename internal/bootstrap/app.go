@@ -303,7 +303,7 @@ func New(ctx context.Context) (*App, error) {
 	aiGatewayService.SetOnCallResolver(monitoringService)
 
 	systemHandler := apiHandlers.NewSystemHandler(databaseStore, runtimeMetrics)
-	authHandler := apiHandlers.NewAuthHandler(identityService, accessConsoleService, settingsService)
+	authHandler := apiHandlers.NewAuthHandler(identityService, accessConsoleService, settingsService, cfg.Auth)
 	aiGatewayHandler := apiHandlers.NewAIGatewayHandler(aiGatewayService)
 	announcementHandler := apiHandlers.NewAnnouncementHandler(announcementService)
 	menuHandler := apiHandlers.NewMenuHandler(menuService)

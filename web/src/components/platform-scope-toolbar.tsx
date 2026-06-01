@@ -1,5 +1,6 @@
 import { useEffect, useMemo } from 'react'
 import { Select, Space, Tag, Typography } from 'antd'
+import { ApartmentOutlined, KubernetesOutlined } from '@ant-design/icons'
 import { useQuery } from '@tanstack/react-query'
 import { useI18n } from '@/i18n'
 import { api } from '@/services/api-client'
@@ -19,6 +20,11 @@ interface PlatformScopeToolbarProps {
 }
 
 interface GlobalScopeBarProps {
+  className?: string
+  scopeMode?: ScopeMode
+}
+
+interface PlatformScopeTriggerProps {
   className?: string
   scopeMode?: ScopeMode
 }
@@ -91,10 +97,95 @@ function usePlatformScopeData() {
     setClusterId,
     setNamespace,
     clusters,
+    clustersLoading: clustersQuery.isLoading,
     namespaces,
+    namespacesLoading: namespacesQuery.isLoading,
     currentCluster,
     scopeLabels,
   }
+}
+
+function isEditableScopeMode(scopeMode: ScopeMode) {
+  return scopeMode === 'cluster' || scopeMode === 'namespace'
+}
+
+export function PlatformScopeTrigger({
+  className,
+  scopeMode = 'hidden',
+}: PlatformScopeTriggerProps = {}) {
+  const { t } = useI18n()
+  const {
+    clusterId,
+    namespace,
+    setClusterId,
+    setNamespace,
+    clusters,
+    clustersLoading,
+    namespaces,
+    namespacesLoading,
+  } = usePlatformScopeData()
+
+  if (!isEditableScopeMode(scopeMode)) {
+    return null
+  }
+
+  const showNamespaceSelector = scopeMode === 'namespace'
+
+  return (
+    <div
+      className={[
+        'soha-platform-scope-inline',
+        showNamespaceSelector ? 'has-namespace' : 'is-cluster-only',
+        className,
+      ].filter(Boolean).join(' ')}
+      role="group"
+      aria-label={t('platformScope.scope', 'Resource Scope')}
+    >
+      {showNamespaceSelector ? (
+        <Select
+          aria-label={t('platformScope.namespacePlaceholder', 'Select namespace')}
+          className="soha-platform-compact-field soha-platform-scope-select is-namespace"
+          disabled={!clusterId}
+          loading={namespacesLoading}
+          optionFilterProp="label"
+          options={[
+            { value: '', label: t('platformScope.allNamespaces', 'All namespaces') },
+            ...namespaces.map((item) => ({
+              value: item.name,
+              label: item.name,
+            })),
+          ]}
+          placeholder={t('platformScope.namespacePlaceholder', 'Select namespace')}
+          popupMatchSelectWidth={220}
+          prefix={<ApartmentOutlined />}
+          showSearch
+          size="small"
+          value={namespace ?? ''}
+          variant="filled"
+          onChange={(value) => setNamespace(typeof value === 'string' ? value : null)}
+        />
+      ) : null}
+
+      <Select
+        aria-label={t('platformScope.clusterPlaceholder', 'Select cluster')}
+        className="soha-platform-compact-field soha-platform-scope-select is-cluster"
+        loading={clustersLoading}
+        optionFilterProp="label"
+        options={clusters.map((cluster) => ({
+          value: cluster.id,
+          label: cluster.name,
+        }))}
+        placeholder={t('platformScope.clusterPlaceholder', 'Select cluster')}
+        popupMatchSelectWidth={200}
+        prefix={<KubernetesOutlined />}
+        showSearch
+        size="small"
+        value={clusterId ?? undefined}
+        variant="filled"
+        onChange={(value) => setClusterId(typeof value === 'string' ? value : null)}
+      />
+    </div>
+  )
 }
 
 export function PlatformScopeToolbar({
@@ -240,59 +331,5 @@ export function ResourceWorkspaceScopeBar({
 }
 
 export function GlobalScopeBar({ className, scopeMode = 'hidden' }: GlobalScopeBarProps = {}) {
-  const { t } = useI18n()
-  const { clusterId, namespace, setClusterId, setNamespace, clusters, namespaces, scopeLabels } = usePlatformScopeData()
-
-  if (scopeMode === 'hidden') {
-    return null
-  }
-
-  const showNamespaceSelector = scopeMode === 'namespace'
-  const showClusterSelector = scopeMode === 'cluster' || scopeMode === 'namespace'
-
-  return (
-    <div className={['soha-global-scopebar', className].filter(Boolean).join(' ')}>
-      {showClusterSelector ? (
-        <div className="soha-global-scopebar-controls">
-          {showNamespaceSelector ? (
-            <Select
-              className="soha-platform-compact-field soha-global-scopebar-namespace"
-              size="small"
-              placeholder={t('platformScope.namespacePlaceholder', 'Select namespace')}
-              value={namespace ?? undefined}
-              onChange={(value) => setNamespace(typeof value === 'string' ? value : null)}
-              style={{ width: 200 }}
-              options={[
-                { value: '', label: t('platformScope.allNamespaces', 'All namespaces') },
-                ...namespaces.map((item) => ({
-                  value: item.name,
-                  label: item.name,
-                })),
-              ]}
-              disabled={!clusterId}
-              allowClear
-            />
-          ) : null}
-          <Select
-            className="soha-platform-compact-field soha-global-scopebar-cluster"
-            size="small"
-            placeholder={t('platformScope.clusterPlaceholder', 'Select cluster')}
-            value={clusterId ?? undefined}
-            onChange={(value) => setClusterId(typeof value === 'string' ? value : null)}
-            style={{ width: 180 }}
-            options={clusters.map((cluster) => ({
-              value: cluster.id,
-              label: cluster.name,
-            }))}
-            allowClear
-          />
-        </div>
-      ) : (
-        <div className="soha-global-scopebar-summary">
-          <Tag className="soha-scope-summary-tag">{`${t('common.namespace', 'Namespace')} ${scopeLabels.namespace}`}</Tag>
-          <Tag className="soha-scope-summary-tag">{`${t('common.cluster', 'Cluster')} ${scopeLabels.cluster}`}</Tag>
-        </div>
-      )}
-    </div>
-  )
+  return <PlatformScopeTrigger className={className} scopeMode={scopeMode} />
 }
