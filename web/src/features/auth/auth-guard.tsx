@@ -1,5 +1,6 @@
 import { Navigate, Outlet, useLocation } from 'react-router-dom'
-import { Empty, Spin } from 'antd'
+import { Spin } from 'antd'
+import { ManagementState } from '@/components/management-list'
 import { permissionSnapshotQueryKey, usePermissionSnapshot } from '@/features/auth/permission-snapshot'
 import { canAccessRoute, findFirstAccessiblePath, findPreferredWorkspace, getRouteMeta } from '@/routes/meta'
 import { useAuthStore } from '@/stores/auth-store'
@@ -36,7 +37,7 @@ export function AuthGuard() {
     }
     return (
       <div className="flex items-center justify-center h-screen">
-        <Empty description="当前账号没有可访问的页面权限" />
+        <ManagementState className="max-w-[520px]" kind="no-permission" description="当前账号没有可访问的页面权限" />
       </div>
     )
   }

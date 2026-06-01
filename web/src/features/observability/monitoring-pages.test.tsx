@@ -41,16 +41,6 @@ vi.mock('@/services/api-client', () => ({
   },
 }))
 
-vi.mock('@/components/page-header', () => ({
-  PageHeader: ({ title, description, actions }: { title: React.ReactNode; description?: React.ReactNode; actions?: React.ReactNode }) => (
-    <div data-testid="page-header">
-      <h1>{title}</h1>
-      {description ? <p>{description}</p> : null}
-      {actions ? <div>{actions}</div> : null}
-    </div>
-  ),
-}))
-
 vi.mock('@/components/stat-grid', () => ({
   StatGrid: ({ items }: { items: Array<{ label: string; value: number }> }) => <div>{items.map((item) => `${item.label}:${item.value}`).join('|')}</div>,
 }))
@@ -208,10 +198,10 @@ async function flushAsyncWork() {
   })
 }
 
-async function clickButtonByText(text: string) {
-  const button = Array.from(document.querySelectorAll('button')).find((node) => node.textContent?.includes(text))
+async function clickButtonByLabel(label: string) {
+  const button = Array.from(document.querySelectorAll('button')).find((node) => node.getAttribute('aria-label') === label)
   if (!(button instanceof HTMLButtonElement)) {
-    throw new Error(`button not found: ${text}`)
+    throw new Error(`button not found by aria-label: ${label}`)
   }
   await act(async () => {
     button.dispatchEvent(new MouseEvent('click', { bubbles: true }))
@@ -312,7 +302,7 @@ describe('observability monitoring pages', () => {
     const container = await renderWithProviders(<AlertsPage />, '/observability/alerts')
 
     expect(container.textContent).toContain('活跃告警')
-    await clickButtonByText('详情')
+    await clickButtonByLabel('查看告警详情')
     await flushAsyncWork()
 
     expect(document.body.textContent).toContain('CPU High')

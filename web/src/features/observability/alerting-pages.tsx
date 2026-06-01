@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { App, Avatar, Badge, Button, Calendar, Card, Col, DatePicker, Descriptions, Drawer, Empty, Form, Input, InputNumber, Modal, Radio, Row, Segmented, Select, Space, Statistic, Switch, Tag, Tabs, Timeline, Tooltip, Typography } from 'antd'
+import { App, Avatar, Badge, Button, Calendar, Card, Col, DatePicker, Descriptions, Drawer, Form, Input, InputNumber, Modal, Radio, Row, Segmented, Select, Space, Statistic, Switch, Tag, Tabs, Timeline, Tooltip, Typography } from 'antd'
 import type { CalendarProps } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { PlusOutlined, PlayCircleOutlined, EditOutlined, CheckOutlined, CloseOutlined, ReloadOutlined } from '@ant-design/icons'
@@ -7,7 +7,12 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import dayjs from 'dayjs'
 import type { Dayjs } from 'dayjs'
 import { AdminTable } from '@/components/admin-table'
-import { PageHeader } from '@/components/page-header'
+import {
+  ManagementDetailHeader,
+  ManagementIconButton,
+  ManagementState,
+  ManagementTableToolbar,
+} from '@/components/management-list'
 import { StatusTag, BooleanTag } from '@/components/status-tag'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth/permission-snapshot'
 import { api } from '@/services/api-client'
@@ -593,9 +598,11 @@ export function AlertRulesPage() {
       title: '操作',
       dataIndex: 'id',
       render: (_: string, record: AlertRule) => (
-        <Space>
-          <Button
+        <Space className="soha-row-action-icons" size={2}>
+          <ManagementIconButton
+            aria-label="测试告警规则"
             size="small"
+            tooltip="测试"
             icon={<PlayCircleOutlined />}
             onClick={() => {
               try {
@@ -604,11 +611,23 @@ export function AlertRulesPage() {
                 message.error(error instanceof Error ? error.message : '规则测试失败')
               }
             }}
-          >
-            测试
-          </Button>
-          <Button size="small" onClick={() => { setSelectedRuleId(record.id); setRunsOpen(true) }}>运行记录</Button>
-          {canManageRules ? <Button size="small" icon={<EditOutlined />} onClick={() => openEditor(record)}>编辑</Button> : null}
+          />
+          <ManagementIconButton
+            aria-label="查看运行记录"
+            size="small"
+            tooltip="运行记录"
+            icon={<ReloadOutlined />}
+            onClick={() => { setSelectedRuleId(record.id); setRunsOpen(true) }}
+          />
+          {canManageRules ? (
+            <ManagementIconButton
+              aria-label="编辑告警规则"
+              size="small"
+              tooltip="编辑"
+              icon={<EditOutlined />}
+              onClick={() => openEditor(record)}
+            />
+          ) : null}
         </Space>
       ),
     },
@@ -676,7 +695,7 @@ export function AlertRulesPage() {
 
   return (
     <div className="soha-page">
-      <PageHeader
+      <ManagementDetailHeader
         title="告警规则"
         description="按数据源、查询和阈值创建规则，并绑定通知策略与自愈策略。"
         actions={canManageRules ? <Button icon={<PlusOutlined />} type="primary" onClick={() => openEditor(null)}>新建规则</Button> : null}
@@ -686,7 +705,7 @@ export function AlertRulesPage() {
           规则支持 `metrics` / `logs` / `traces` / `external_passthrough`。测试会按选择的数据源执行一次预览查询。
         </Paragraph>
       </Card>
-      <AdminTable shellClassName="is-panel" columns={ruleColumns} dataSource={rulesQuery.data?.data ?? []} rowKey="id" loading={rulesQuery.isLoading} />
+      <AdminTable shellClassName="soha-management-table-shell" columns={ruleColumns} dataSource={rulesQuery.data?.data ?? []} rowKey="id" loading={rulesQuery.isLoading} />
 
       <Modal
         title={editing ? '编辑告警规则' : '新建告警规则'}
@@ -694,7 +713,7 @@ export function AlertRulesPage() {
         onCancel={() => { setOpen(false); setEditing(null) }}
         footer={null}
         width={920}
-        destroyOnClose
+        destroyOnHidden
       >
         <Form layout="vertical" form={form} onFinish={submit} initialValues={{ ruleType: 'metrics', forSeconds: 60, groupBy: '', enabled: true }}>
           <Form.Item name="name" label="名称" rules={[{ required: true, message: '请输入规则名称' }]}><Input /></Form.Item>
@@ -742,7 +761,7 @@ export function AlertRulesPage() {
           </Space>
         </Form>
       </Modal>
-      <Modal title="规则测试结果" open={testOpen} onCancel={() => setTestOpen(false)} footer={null} width={920} destroyOnClose>
+      <Modal title="规则测试结果" open={testOpen} onCancel={() => setTestOpen(false)} footer={null} width={920} destroyOnHidden>
         <Space orientation="vertical" style={{ width: '100%' }} size={16}>
           <Card size="small" title="摘要">
             <Paragraph className="mb-0">{String(testResult?.summary || '-')}</Paragraph>
@@ -759,7 +778,7 @@ export function AlertRulesPage() {
           </Card>
         </Space>
       </Modal>
-      <Modal title="最近运行记录" open={runsOpen} onCancel={() => setRunsOpen(false)} footer={null} width={920} destroyOnClose>
+      <Modal title="最近运行记录" open={runsOpen} onCancel={() => setRunsOpen(false)} footer={null} width={920} destroyOnHidden>
         <AdminTable
           columns={[
             { title: '运行ID', dataIndex: 'id' },
@@ -931,13 +950,21 @@ export function HealingPage() {
     {
       title: '操作',
       dataIndex: 'id',
-      render: (_: string, record: HealingPolicy) => canManageHealing ? <Button size="small" icon={<EditOutlined />} onClick={() => openEditor(record)}>编辑</Button> : null,
+      render: (_: string, record: HealingPolicy) => canManageHealing ? (
+        <ManagementIconButton
+          aria-label="编辑自愈策略"
+          size="small"
+          tooltip="编辑"
+          icon={<EditOutlined />}
+          onClick={() => openEditor(record)}
+        />
+      ) : null,
     },
   ]
 
   return (
     <div className="soha-page">
-      <PageHeader
+      <ManagementDetailHeader
         title="自愈中心"
         description="维护自愈策略和审批运行记录，策略定义复用 DAG 编辑器。"
         actions={canManageHealing ? <Button icon={<PlusOutlined />} type="primary" onClick={() => openEditor(null)}>新建自愈策略</Button> : null}
@@ -947,9 +974,9 @@ export function HealingPage() {
           自愈策略以 `approval_then_auto` 为默认触发模式，审批通过后由运行记录推进。当前版本先做策略和审批台，执行可在后续接入工作流执行器。
         </Paragraph>
       </Card>
-      <AdminTable shellClassName="is-panel" columns={policyColumns} dataSource={policiesQuery.data?.data ?? []} rowKey="id" loading={policiesQuery.isLoading} />
+      <AdminTable shellClassName="soha-management-table-shell" columns={policyColumns} dataSource={policiesQuery.data?.data ?? []} rowKey="id" loading={policiesQuery.isLoading} />
       <Card className="soha-overview-panel-card" title="自愈运行">
-        <AdminTable columns={runColumns} dataSource={runsQuery.data?.data ?? []} rowKey="id" loading={runsQuery.isLoading} pagination={{ pageSize: 10 }} />
+        <AdminTable shellClassName="soha-management-table-shell" columns={runColumns} dataSource={runsQuery.data?.data ?? []} rowKey="id" loading={runsQuery.isLoading} pagination={{ pageSize: 10 }} />
       </Card>
 
       <Modal
@@ -958,7 +985,7 @@ export function HealingPage() {
         onCancel={() => { setOpen(false); setEditing(null) }}
         footer={null}
         width={1180}
-        destroyOnClose
+        destroyOnHidden
       >
         <Form layout="vertical" form={form} onFinish={submit} initialValues={{ triggerMode: 'approval_then_auto', cooldownSeconds: 300, safetyWindowSeconds: 600, enabled: true }}>
           <Space size={16} style={{ width: '100%' }}>
@@ -1113,7 +1140,7 @@ export function OnCallSettingsPage() {
     { title: '描述', dataIndex: 'description', render: (value: string) => value || '-' },
     { title: '启用', dataIndex: 'enabled', render: (value: boolean) => <BooleanTag value={value} trueLabel="启用" falseLabel="禁用" /> },
     { title: '更新时间', dataIndex: 'updatedAt', render: (value: string) => formatDateTime(value) },
-    { title: '操作', dataIndex: 'id', render: (_: string, record: OnCallSchedule) => canManageOnCall ? <Button size="small" icon={<EditOutlined />} onClick={() => { setEditingSchedule(record); scheduleForm.setFieldsValue({ ...record }); setScheduleOpen(true) }}>编辑</Button> : null },
+    { title: '操作', dataIndex: 'id', render: (_: string, record: OnCallSchedule) => canManageOnCall ? <ManagementIconButton aria-label="编辑排班" size="small" tooltip="编辑" icon={<EditOutlined />} onClick={() => { setEditingSchedule(record); scheduleForm.setFieldsValue({ ...record }); setScheduleOpen(true) }} /> : null },
   ]
 
   const rotationColumns: ColumnsType<OnCallRotation> = [
@@ -1122,7 +1149,7 @@ export function OnCallSettingsPage() {
     { title: '参与人', dataIndex: 'participants', render: (value: string[]) => <Space wrap>{(value ?? []).map((item) => <Tag key={item}>{item}</Tag>)}</Space> },
     { title: '启用', dataIndex: 'enabled', render: (value: boolean) => <BooleanTag value={value} trueLabel="启用" falseLabel="禁用" /> },
     { title: '更新时间', dataIndex: 'updatedAt', render: (value: string) => formatDateTime(value) },
-    { title: '操作', dataIndex: 'id', render: (_: string, record: OnCallRotation) => canManageOnCall ? <Button size="small" icon={<EditOutlined />} onClick={() => { setEditingRotation(record); rotationForm.setFieldsValue(toOnCallRotationFormValues(record)); setRotationOpen(true) }}>编辑</Button> : null },
+    { title: '操作', dataIndex: 'id', render: (_: string, record: OnCallRotation) => canManageOnCall ? <ManagementIconButton aria-label="编辑轮值" size="small" tooltip="编辑" icon={<EditOutlined />} onClick={() => { setEditingRotation(record); rotationForm.setFieldsValue(toOnCallRotationFormValues(record)); setRotationOpen(true) }} /> : null },
   ]
 
   const escalationColumns: ColumnsType<OnCallEscalationPolicy> = [
@@ -1130,7 +1157,7 @@ export function OnCallSettingsPage() {
     { title: '步骤数', dataIndex: 'steps', render: (value: Array<Record<string, unknown>>) => value?.length ?? 0 },
     { title: '启用', dataIndex: 'enabled', render: (value: boolean) => <BooleanTag value={value} trueLabel="启用" falseLabel="禁用" /> },
     { title: '更新时间', dataIndex: 'updatedAt', render: (value: string) => formatDateTime(value) },
-    { title: '操作', dataIndex: 'id', render: (_: string, record: OnCallEscalationPolicy) => canManageOnCall ? <Button size="small" icon={<EditOutlined />} onClick={() => { setEditingPolicy(record); policyForm.setFieldsValue({ name: record.name, steps: toOnCallEscalationStepFormValues(record.steps), enabled: record.enabled }); setPolicyOpen(true) }}>编辑</Button> : null },
+    { title: '操作', dataIndex: 'id', render: (_: string, record: OnCallEscalationPolicy) => canManageOnCall ? <ManagementIconButton aria-label="编辑升级策略" size="small" tooltip="编辑" icon={<EditOutlined />} onClick={() => { setEditingPolicy(record); policyForm.setFieldsValue({ name: record.name, steps: toOnCallEscalationStepFormValues(record.steps), enabled: record.enabled }); setPolicyOpen(true) }} /> : null },
   ]
 
   const assignmentColumns: ColumnsType<OnCallAssignmentRule> = [
@@ -1169,7 +1196,13 @@ export function OnCallSettingsPage() {
       title: '操作',
       dataIndex: 'id',
       render: (_: string, record: OnCallAssignmentRule) => canManageOnCall ? (
-        <Button size="small" icon={<EditOutlined />} onClick={() => openAssignmentEditor(record)}>编辑</Button>
+        <ManagementIconButton
+          aria-label="编辑分派规则"
+          size="small"
+          tooltip="编辑"
+          icon={<EditOutlined />}
+          onClick={() => openAssignmentEditor(record)}
+        />
       ) : null,
     },
   ]
@@ -1270,17 +1303,16 @@ export function OnCallSettingsPage() {
 
   return (
     <div className="soha-page">
-      <PageHeader
+      <ManagementDetailHeader
         title="值班设置"
         description="集中维护值班排班、轮值策略、升级链与告警分派规则。"
-        showResourceScope={false}
         actions={(
-          <Space>
+          <ManagementTableToolbar>
             {canManageOnCall ? <Button icon={<PlusOutlined />} onClick={() => { setEditingAssignment(null); assignmentForm.resetFields(); setAssignmentOpen(true) }}>新增分派规则</Button> : null}
             {canManageOnCall ? <Button icon={<PlusOutlined />} onClick={() => { setEditingPolicy(null); policyForm.setFieldsValue({ name: '', steps: [defaultEscalationStep()], enabled: true }); setPolicyOpen(true) }}>新增升级链</Button> : null}
             {canManageOnCall ? <Button icon={<PlusOutlined />} onClick={() => { setEditingRotation(null); rotationForm.setFieldsValue(defaultOnCallRotationFormValues()); setRotationOpen(true) }}>新增轮值</Button> : null}
             {canManageOnCall ? <Button icon={<PlusOutlined />} onClick={() => { setEditingSchedule(null); scheduleForm.resetFields(); setScheduleOpen(true) }}>新增排班</Button> : null}
-          </Space>
+          </ManagementTableToolbar>
         )}
       />
       <Tabs
@@ -1288,27 +1320,27 @@ export function OnCallSettingsPage() {
           {
             key: 'assignments',
             label: '告警分派',
-            children: <AdminTable shellClassName="is-panel" columns={assignmentColumns} dataSource={assignmentsQuery.data?.data ?? []} rowKey="id" loading={assignmentsQuery.isLoading} />,
+            children: <AdminTable shellClassName="soha-management-table-shell" columns={assignmentColumns} dataSource={assignmentsQuery.data?.data ?? []} rowKey="id" loading={assignmentsQuery.isLoading} />,
           },
           {
             key: 'schedules',
             label: '排班',
-            children: <AdminTable shellClassName="is-panel" columns={scheduleColumns} dataSource={schedulesQuery.data?.data ?? []} rowKey="id" loading={schedulesQuery.isLoading} />,
+            children: <AdminTable shellClassName="soha-management-table-shell" columns={scheduleColumns} dataSource={schedulesQuery.data?.data ?? []} rowKey="id" loading={schedulesQuery.isLoading} />,
           },
           {
             key: 'rotations',
             label: '轮值',
-            children: <AdminTable shellClassName="is-panel" columns={rotationColumns} dataSource={rotationsQuery.data?.data ?? []} rowKey="id" loading={rotationsQuery.isLoading} />,
+            children: <AdminTable shellClassName="soha-management-table-shell" columns={rotationColumns} dataSource={rotationsQuery.data?.data ?? []} rowKey="id" loading={rotationsQuery.isLoading} />,
           },
           {
             key: 'policies',
             label: '升级链',
-            children: <AdminTable shellClassName="is-panel" columns={escalationColumns} dataSource={policiesQuery.data?.data ?? []} rowKey="id" loading={policiesQuery.isLoading} />,
+            children: <AdminTable shellClassName="soha-management-table-shell" columns={escalationColumns} dataSource={policiesQuery.data?.data ?? []} rowKey="id" loading={policiesQuery.isLoading} />,
           },
         ]}
       />
 
-      <Modal title={editingSchedule ? '编辑排班' : '新建排班'} open={scheduleOpen} onCancel={() => setScheduleOpen(false)} footer={null} destroyOnClose>
+      <Modal title={editingSchedule ? '编辑排班' : '新建排班'} open={scheduleOpen} onCancel={() => setScheduleOpen(false)} footer={null} destroyOnHidden>
         <Form layout="vertical" form={scheduleForm} onFinish={submitSchedule} initialValues={{ enabled: true }}>
           <Form.Item name="name" label="名称" rules={[{ required: true }]}><Input /></Form.Item>
           <Form.Item name="timeZone" label="时区"><Input /></Form.Item>
@@ -1321,7 +1353,7 @@ export function OnCallSettingsPage() {
         </Form>
       </Modal>
 
-      <Modal title={editingAssignment ? '编辑告警分派规则' : '新建告警分派规则'} open={assignmentOpen} onCancel={() => setAssignmentOpen(false)} footer={null} destroyOnClose width={960}>
+      <Modal title={editingAssignment ? '编辑告警分派规则' : '新建告警分派规则'} open={assignmentOpen} onCancel={() => setAssignmentOpen(false)} footer={null} destroyOnHidden width={960}>
         <Form layout="vertical" form={assignmentForm} onFinish={submitAssignment} initialValues={{ targetType: 'escalation', integrationType: 'prometheus', routeOrder: 100, groupBy: ['alertName', 'clusterId', 'namespace', 'service'], enabled: true }}>
           <Space size={16} style={{ width: '100%' }}>
             <Form.Item name="name" label="规则名称" rules={[{ required: true }]} style={{ flex: 1 }}><Input /></Form.Item>
@@ -1366,7 +1398,7 @@ export function OnCallSettingsPage() {
         </Form>
       </Modal>
 
-      <Modal title={editingRotation ? '编辑轮值' : '新建轮值'} open={rotationOpen} onCancel={() => setRotationOpen(false)} footer={null} destroyOnClose width={720}>
+      <Modal title={editingRotation ? '编辑轮值' : '新建轮值'} open={rotationOpen} onCancel={() => setRotationOpen(false)} footer={null} destroyOnHidden width={720}>
         <Form layout="vertical" form={rotationForm} onFinish={submitRotation} initialValues={defaultOnCallRotationFormValues()}>
           <Form.Item name="name" label="名称" rules={[{ required: true }]}><Input /></Form.Item>
           <Form.Item name="scheduleId" label="排班" rules={[{ required: true }]}>
@@ -1404,7 +1436,7 @@ export function OnCallSettingsPage() {
         </Form>
       </Modal>
 
-      <Modal title={editingPolicy ? '编辑升级链' : '新建升级链'} open={policyOpen} onCancel={() => setPolicyOpen(false)} footer={null} destroyOnClose width={840}>
+      <Modal title={editingPolicy ? '编辑升级链' : '新建升级链'} open={policyOpen} onCancel={() => setPolicyOpen(false)} footer={null} destroyOnHidden width={840}>
         <Form layout="vertical" form={policyForm} onFinish={submitPolicy} initialValues={{ enabled: true, steps: [defaultEscalationStep()] }}>
           <Form.Item name="name" label="名称" rules={[{ required: true }]}><Input /></Form.Item>
           <Form.List name="steps">
@@ -1660,12 +1692,11 @@ export function OnCallBoardPage() {
 
   return (
     <div className="soha-page">
-      <PageHeader
+      <ManagementDetailHeader
         title="值班协同"
         description="跟踪当前排班、轮值与待响应任务，必要时可临时覆盖某天的值班人。"
-        showResourceScope={false}
         actions={(
-          <Space>
+          <ManagementTableToolbar>
             <Select
               style={{ minWidth: 220 }}
               placeholder="选择排班"
@@ -1674,14 +1705,18 @@ export function OnCallBoardPage() {
               onChange={(value) => setSelectedScheduleId(value)}
             />
             <Button onClick={() => navigate('/monitoring-workbench/oncall/settings')}>值班设置</Button>
-          </Space>
+          </ManagementTableToolbar>
         )}
       />
       {schedules.length === 0 ? (
         <Card>
-          <Empty description="尚未创建排班，请前往值班设置新增。">
-            {canManageOnCall ? <Button type="primary" onClick={() => navigate('/monitoring-workbench/oncall/settings')}>前往设置</Button> : null}
-          </Empty>
+          <ManagementState
+            bordered={false}
+            compact
+            description="尚未创建排班，请前往值班设置新增。"
+            kind="not-configured"
+            actions={canManageOnCall ? <Button type="primary" onClick={() => navigate('/monitoring-workbench/oncall/settings')}>前往设置</Button> : null}
+          />
         </Card>
       ) : (
         <>
@@ -1742,7 +1777,7 @@ export function OnCallBoardPage() {
                   return {
                     color: a.override ? 'orange' : idx === 0 ? 'blue' : 'gray',
                     children: (
-                      <Space direction="vertical" size={2}>
+                      <Space orientation="vertical" size={2}>
                         <Text strong>{date.format('MM-DD ddd')}{idx === 0 ? ' · 今日' : ''}</Text>
                         <Text>{formatParticipantSummary(a.participants)}</Text>
                         {a.override ? <Tag color="orange">手动覆盖</Tag> : null}
@@ -1754,10 +1789,10 @@ export function OnCallBoardPage() {
             ) : null}
             {view === 'list' ? (
               overrideEntries.length === 0 ? (
-                <Empty description="暂无覆盖记录" />
+                <ManagementState bordered={false} compact description="暂无覆盖记录" />
               ) : (
                 <AdminTable
-                  shellClassName="is-panel"
+                  shellClassName="soha-management-table-shell"
                   columns={[
                     { title: '日期', dataIndex: 'date', render: (value: string) => value },
                     { title: '值班人', dataIndex: 'participants', render: (value: string[]) => formatParticipantSummary(value) },
@@ -1765,7 +1800,13 @@ export function OnCallBoardPage() {
                       title: '操作',
                       dataIndex: 'date',
                       render: (value: string) => canManageOnCall ? (
-                        <Button size="small" icon={<EditOutlined />} onClick={() => openOverride(dayjs(value))}>编辑</Button>
+                        <ManagementIconButton
+                          aria-label="编辑覆盖记录"
+                          size="small"
+                          tooltip="编辑"
+                          icon={<EditOutlined />}
+                          onClick={() => openOverride(dayjs(value))}
+                        />
                       ) : null,
                     },
                   ]}
@@ -1777,7 +1818,7 @@ export function OnCallBoardPage() {
             ) : null}
           </Card>
           <Card title="待响应任务" className="soha-oncall-tasks-card">
-            <AdminTable columns={taskColumns} dataSource={tasks} rowKey="id" loading={tasksQuery.isLoading} pagination={{ pageSize: 10 }} />
+            <AdminTable shellClassName="soha-management-table-shell" columns={taskColumns} dataSource={tasks} rowKey="id" loading={tasksQuery.isLoading} pagination={{ pageSize: 10 }} />
           </Card>
         </>
       )}
@@ -1788,7 +1829,7 @@ export function OnCallBoardPage() {
         width={420}
       >
         {drawerDate && drawerAssignment ? (
-          <Space direction="vertical" size={16} style={{ width: '100%' }}>
+          <Space orientation="vertical" size={16} style={{ width: '100%' }}>
             <Descriptions column={1} size="small" bordered>
               <Descriptions.Item label="排班">{selectedSchedule?.name || '-'}</Descriptions.Item>
               <Descriptions.Item label="轮值">{selectedRotation?.name || '未配置'}</Descriptions.Item>
@@ -1818,7 +1859,7 @@ export function OnCallBoardPage() {
         open={overrideOpen}
         onCancel={() => setOverrideOpen(false)}
         footer={null}
-        destroyOnClose
+        destroyOnHidden
       >
         <Form layout="vertical" form={overrideForm} onFinish={submitOverride}>
           <Form.Item name="participants" label="当日值班人员">

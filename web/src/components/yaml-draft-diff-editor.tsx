@@ -96,7 +96,7 @@ export function YamlDraftDiffEditor({
   return (
     <Card className="soha-detail-card soha-yaml-card" style={{ marginTop: 0 }}>
       <div className="soha-terminal-toolbar soha-yaml-toolbar">
-        <Space className="soha-yaml-toolbar-meta" direction="vertical" size={2}>
+        <Space className="soha-yaml-toolbar-meta" orientation="vertical" size={2}>
           <Text strong>{title}</Text>
           {description ? <Text type="secondary" style={{ fontSize: 12 }}>{description}</Text> : null}
         </Space>

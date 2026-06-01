@@ -4,6 +4,7 @@ import { Alert, App, Badge, Button, Card, Space, Spin } from 'antd'
 import { CopyOutlined, FullscreenOutlined, FullscreenExitOutlined } from '@ant-design/icons'
 import RFB from '@novnc/novnc'
 import { virtualizationApi } from './virtualization-api'
+import { ManagementState } from '@/components/management-list'
 import { useAuthStore } from '@/stores/auth-store'
 
 const STATUS_BADGE: Record<string, 'success' | 'processing' | 'warning' | 'error' | 'default'> = {
@@ -122,12 +123,19 @@ export function VMConsole({ vmId }: { vmId: string }) {
   }
 
   if (consoleQuery.error) {
-    return <Alert type="error" message="获取控制台信息失败" description={String(consoleQuery.error)} />
+    return <ManagementState compact kind="error" title="获取控制台信息失败" description={String(consoleQuery.error)} />
   }
 
   const consoleData = consoleQuery.data?.data
   if (!consoleData?.ready) {
-    return <Alert type="info" message={consoleData?.message || '当前 Provider 尚未提供控制台能力'} />
+    return (
+      <ManagementState
+        compact
+        kind="unsupported"
+        title="控制台暂不可用"
+        description={consoleData?.message || '当前 Provider 尚未提供控制台能力。'}
+      />
+    )
   }
 
   return (

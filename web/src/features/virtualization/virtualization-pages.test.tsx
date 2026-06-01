@@ -190,6 +190,21 @@ async function waitForText(text: string) {
   }
 }
 
+async function clickButtonByLabel(container: ParentNode, label: string) {
+  const button = Array.from(container.querySelectorAll('button')).find((node) => node.getAttribute('aria-label') === label)
+  if (!(button instanceof HTMLButtonElement)) {
+    throw new Error(`button not found by aria-label: ${label}`)
+  }
+  await act(async () => {
+    button.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    await Promise.resolve()
+  })
+}
+
+function hasButtonByLabel(container: ParentNode, label: string) {
+  return Array.from(container.querySelectorAll('button')).some((node) => node.getAttribute('aria-label') === label)
+}
+
 describe('virtualization pages', () => {
   beforeEach(() => {
     testState.permissionSnapshot = {
@@ -337,10 +352,7 @@ describe('virtualization pages', () => {
     expect(container.textContent).toContain('仅展示 asset_sync 类型任务')
     expect(container.textContent).toContain('asset_sync')
 
-    await act(async () => {
-      const logsButton = Array.from(container.querySelectorAll('button')).find((button) => button.textContent?.includes('日志'))
-      logsButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
+    await clickButtonByLabel(container, '查看日志')
     await waitForText('sync completed')
 
     expect(testState.apiGet).toHaveBeenCalledWith('/virtualization/operations/op-1/logs')
@@ -365,11 +377,7 @@ describe('virtualization pages', () => {
   it('renders PVE credential fields without raw config editing', async () => {
     const container = await renderWithProviders(<VirtualizationClustersPage />, '/virtualization/clusters')
 
-    await act(async () => {
-      const editButton = Array.from(container.querySelectorAll('button')).find((button) => button.textContent?.includes('编辑'))
-      editButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-      await Promise.resolve()
-    })
+    await clickButtonByLabel(container, '编辑连接')
 
     expect(document.body.textContent).toContain('Token ID')
     expect(document.body.textContent).toContain('Token Secret')
@@ -425,8 +433,8 @@ describe('virtualization pages', () => {
   it('gates operation cancel and retry by manage permission and allowed actions', async () => {
     const container = await renderWithProviders(<VirtualizationOperationsPage />, '/virtualization/operations')
 
-    expect(container.textContent).toContain('取消')
-    expect(container.textContent).toContain('重试')
+    expect(hasButtonByLabel(container, '取消任务')).toBe(true)
+    expect(hasButtonByLabel(container, '重试任务')).toBe(true)
 
     testState.permissionSnapshot = {
       permissionKeys: ['virtualization.operations.view'],
@@ -435,7 +443,7 @@ describe('virtualization pages', () => {
     }
     const readonlyContainer = await renderWithProviders(<VirtualizationOperationsPage />, '/virtualization/operations')
 
-    expect(readonlyContainer.textContent).not.toContain('取消')
-    expect(readonlyContainer.textContent).not.toContain('重试')
+    expect(hasButtonByLabel(readonlyContainer, '取消任务')).toBe(false)
+    expect(hasButtonByLabel(readonlyContainer, '重试任务')).toBe(false)
   })
 })

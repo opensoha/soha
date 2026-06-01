@@ -1,12 +1,18 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
-import { App, Button, Card, Descriptions, Empty, Form, Input, InputNumber, Modal, Popconfirm, Select, Space, Switch, Tag, Typography } from 'antd'
+import { App, Button, Card, Descriptions, Form, Input, InputNumber, Modal, Popconfirm, Select, Space, Switch, Tag, Typography } from 'antd'
 import { ArrowRightOutlined, DeleteOutlined, EditOutlined, PlayCircleOutlined, PlusOutlined, ReloadOutlined, SendOutlined } from '@ant-design/icons'
 import type { TableColumnsType } from 'antd'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams } from 'react-router-dom'
 import { AdminTable } from '@/components/admin-table'
+import {
+  ManagementDetailHeader,
+  ManagementIconButton,
+  ManagementState,
+  ManagementRefreshButton,
+  ManagementTableToolbar,
+} from '@/components/management-list'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth/permission-snapshot'
-import { PageHeader } from '@/components/page-header'
 import { useI18n } from '@/i18n'
 import {
   createDefaultReleaseDagDefinition,
@@ -138,7 +144,7 @@ export function BusinessLinesPage() {
   const [editing, setEditing] = useState<BusinessLine | null>(null)
   const canManageBusinessLines = hasPermission(permissionSnapshotQuery.data?.data, 'delivery.business-lines.manage')
 
-  const { data, isLoading } = useQuery({
+  const { data, isFetching, isLoading, refetch } = useQuery({
     queryKey: ['business-lines'],
     queryFn: () => api.get<ApiResponse<BusinessLine[]>>('/business-lines'),
   })
@@ -190,11 +196,25 @@ export function BusinessLinesPage() {
       title: '操作',
       dataIndex: 'id',
       render: (_: unknown, record: BusinessLine) => (
-        <Space>
-          {canManageBusinessLines ? <Button icon={<EditOutlined />} type="text" size="small" onClick={() => { setEditing(record); setModalVisible(true) }} /> : null}
+        <Space className="soha-row-action-icons" size={2}>
           {canManageBusinessLines ? (
-            <Popconfirm title="确认删除？" onConfirm={() => deleteMutation.mutate(record.id)}>
-              <Button icon={<DeleteOutlined />} type="text" danger size="small" />
+            <ManagementIconButton
+              aria-label="编辑业务线"
+              icon={<EditOutlined />}
+              size="small"
+              tooltip="编辑"
+              onClick={() => { setEditing(record); setModalVisible(true) }}
+            />
+          ) : null}
+          {canManageBusinessLines ? (
+            <Popconfirm title="确认删除？" onConfirm={() => deleteMutation.mutate(record.id)} placement="topRight">
+              <ManagementIconButton
+                aria-label="删除业务线"
+                danger
+                icon={<DeleteOutlined />}
+                size="small"
+                tooltip="删除"
+              />
             </Popconfirm>
           ) : null}
           {!canManageBusinessLines ? '-' : null}
@@ -206,14 +226,32 @@ export function BusinessLinesPage() {
   return (
     <div className="soha-page">
       <AdminTable
+        columnSettingIconOnly
+        columnSettingPlacement="header"
+        shellClassName="soha-management-table-shell"
         title={t('page.delivery.businessLines.title', 'Business Lines')}
-        headerExtra={canManageBusinessLines ? <Button icon={<PlusOutlined />} type="primary" onClick={() => { setEditing(null); setModalVisible(true) }}>新建业务线</Button> : null}
+        headerExtra={(
+          <ManagementTableToolbar>
+            {canManageBusinessLines ? (
+              <Button icon={<PlusOutlined />} type="primary" onClick={() => { setEditing(null); setModalVisible(true) }}>
+                新建业务线
+              </Button>
+            ) : null}
+            <ManagementRefreshButton
+              aria-label="刷新"
+              loading={isFetching}
+              tooltip="刷新"
+              onClick={() => void refetch()}
+            />
+          </ManagementTableToolbar>
+        )}
         columns={columns}
         dataSource={data?.data ?? []}
         rowKey="id"
         loading={isLoading}
+        scroll={{ x: 'max-content' }}
       />
-      <Modal title={editing ? '编辑业务线' : '新建业务线'} open={modalVisible} onCancel={() => { setModalVisible(false); setEditing(null) }} footer={null} destroyOnClose>
+      <Modal title={editing ? '编辑业务线' : '新建业务线'} open={modalVisible} onCancel={() => { setModalVisible(false); setEditing(null) }} footer={null} destroyOnHidden>
         <Form
           form={form}
           key={editing?.id ?? 'create-business-line'}
@@ -271,7 +309,7 @@ export function DeliveryEnvironmentsPage() {
   const [editing, setEditing] = useState<DeliveryEnvironment | null>(null)
   const canManageEnvironments = hasPermission(permissionSnapshotQuery.data?.data, 'delivery.environments.manage')
 
-  const { data, isLoading } = useQuery({
+  const { data, isFetching, isLoading, refetch } = useQuery({
     queryKey: ['delivery-environments'],
     queryFn: () => api.get<ApiResponse<DeliveryEnvironment[]>>('/delivery-environments'),
   })
@@ -320,11 +358,25 @@ export function DeliveryEnvironmentsPage() {
       title: '操作',
       dataIndex: 'id',
       render: (_: unknown, record: DeliveryEnvironment) => (
-        <Space>
-          {canManageEnvironments ? <Button icon={<EditOutlined />} type="text" size="small" onClick={() => { setEditing(record); setModalVisible(true) }} /> : null}
+        <Space className="soha-row-action-icons" size={2}>
           {canManageEnvironments ? (
-            <Popconfirm title="确认删除？" onConfirm={() => deleteMutation.mutate(record.id)}>
-              <Button icon={<DeleteOutlined />} type="text" danger size="small" />
+            <ManagementIconButton
+              aria-label="编辑环境"
+              icon={<EditOutlined />}
+              size="small"
+              tooltip="编辑"
+              onClick={() => { setEditing(record); setModalVisible(true) }}
+            />
+          ) : null}
+          {canManageEnvironments ? (
+            <Popconfirm title="确认删除？" onConfirm={() => deleteMutation.mutate(record.id)} placement="topRight">
+              <ManagementIconButton
+                aria-label="删除环境"
+                danger
+                icon={<DeleteOutlined />}
+                size="small"
+                tooltip="删除"
+              />
             </Popconfirm>
           ) : null}
           {!canManageEnvironments ? '-' : null}
@@ -336,14 +388,32 @@ export function DeliveryEnvironmentsPage() {
   return (
     <div className="soha-page">
       <AdminTable
+        columnSettingIconOnly
+        columnSettingPlacement="header"
+        shellClassName="soha-management-table-shell"
         title={t('page.delivery.environments.title', 'Environments')}
-        headerExtra={canManageEnvironments ? <Button icon={<PlusOutlined />} type="primary" onClick={() => { setEditing(null); setModalVisible(true) }}>新建环境</Button> : null}
+        headerExtra={(
+          <ManagementTableToolbar>
+            {canManageEnvironments ? (
+              <Button icon={<PlusOutlined />} type="primary" onClick={() => { setEditing(null); setModalVisible(true) }}>
+                新建环境
+              </Button>
+            ) : null}
+            <ManagementRefreshButton
+              aria-label="刷新"
+              loading={isFetching}
+              tooltip="刷新"
+              onClick={() => void refetch()}
+            />
+          </ManagementTableToolbar>
+        )}
         columns={columns}
         dataSource={data?.data ?? []}
         rowKey="id"
         loading={isLoading}
+        scroll={{ x: 'max-content' }}
       />
-      <Modal title={editing ? '编辑环境' : '新建环境'} open={modalVisible} onCancel={() => { setModalVisible(false); setEditing(null) }} footer={null} destroyOnClose>
+      <Modal title={editing ? '编辑环境' : '新建环境'} open={modalVisible} onCancel={() => { setModalVisible(false); setEditing(null) }} footer={null} destroyOnHidden>
         <Form form={form} key={editing?.id ?? 'create-environment'} layout="vertical" onFinish={(values) => {
           if (editing) {
             updateMutation.mutate({ id: editing.id, values })
@@ -481,11 +551,25 @@ export function ApplicationEnvironmentsPage() {
       title: '操作',
       dataIndex: 'id',
       render: (_: unknown, record: ApplicationEnvironment) => (
-        <Space>
-          {canManageBindings ? <Button icon={<EditOutlined />} type="text" size="small" onClick={() => { setEditing(record); setModalVisible(true) }} /> : null}
+        <Space className="soha-row-action-icons" size={2}>
           {canManageBindings ? (
-            <Popconfirm title="确认删除？" onConfirm={() => deleteMutation.mutate(record.id)}>
-              <Button icon={<DeleteOutlined />} type="text" danger size="small" />
+            <ManagementIconButton
+              aria-label="编辑绑定"
+              icon={<EditOutlined />}
+              size="small"
+              tooltip="编辑"
+              onClick={() => { setEditing(record); setModalVisible(true) }}
+            />
+          ) : null}
+          {canManageBindings ? (
+            <Popconfirm title="确认删除？" onConfirm={() => deleteMutation.mutate(record.id)} placement="topRight">
+              <ManagementIconButton
+                aria-label="删除绑定"
+                danger
+                icon={<DeleteOutlined />}
+                size="small"
+                tooltip="删除"
+              />
             </Popconfirm>
           ) : null}
           {!canManageBindings ? '-' : null}
@@ -497,14 +581,32 @@ export function ApplicationEnvironmentsPage() {
   return (
     <div className="soha-page">
       <AdminTable
+        columnSettingIconOnly
+        columnSettingPlacement="header"
+        shellClassName="soha-management-table-shell"
         title={t('page.delivery.bindings.title', 'Application Environment Bindings')}
-        headerExtra={canManageBindings ? <Button icon={<PlusOutlined />} type="primary" onClick={() => { setEditing(null); setModalVisible(true) }}>新建绑定</Button> : null}
+        headerExtra={(
+          <ManagementTableToolbar>
+            {canManageBindings ? (
+              <Button icon={<PlusOutlined />} type="primary" onClick={() => { setEditing(null); setModalVisible(true) }}>
+                新建绑定
+              </Button>
+            ) : null}
+            <ManagementRefreshButton
+              aria-label="刷新"
+              loading={bindingsQuery.isFetching}
+              tooltip="刷新"
+              onClick={() => void bindingsQuery.refetch()}
+            />
+          </ManagementTableToolbar>
+        )}
         columns={columns}
         dataSource={bindingsQuery.data?.data ?? []}
         rowKey="id"
         loading={bindingsQuery.isLoading}
+        scroll={{ x: 'max-content' }}
       />
-      <Modal title={editing ? '编辑应用环境绑定' : '新建应用环境绑定'} open={modalVisible} onCancel={() => { setModalVisible(false); setEditing(null) }} footer={null} width={760} destroyOnClose>
+      <Modal title={editing ? '编辑应用环境绑定' : '新建应用环境绑定'} open={modalVisible} onCancel={() => { setModalVisible(false); setEditing(null) }} footer={null} width={760} destroyOnHidden>
         <Form
           form={form}
           key={editing?.id ?? 'create-application-environment'}
@@ -744,10 +846,27 @@ export function ReleaseBoardPage() {
 
   return (
     <div className="soha-page">
-      <PageHeader title={t('page.releaseBoard.title', 'Release Board')} description={t('page.releaseBoard.desc', 'Inspect target bindings by application and environment as the entry point for workflow and deployment linkage.')} />
-      <Card>
-        <AdminTable columns={columns} dataSource={releaseBoardQuery.data?.data ?? []} rowKey="applicationEnvironmentId" loading={releaseBoardQuery.isLoading} />
-      </Card>
+      <AdminTable
+        columnSettingIconOnly
+        columnSettingPlacement="header"
+        shellClassName="soha-management-table-shell"
+        title={t('page.releaseBoard.title', 'Release Board')}
+        headerExtra={(
+          <ManagementTableToolbar>
+            <ManagementRefreshButton
+              aria-label={localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
+              loading={releaseBoardQuery.isFetching}
+              tooltip={localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
+              onClick={() => void releaseBoardQuery.refetch()}
+            />
+          </ManagementTableToolbar>
+        )}
+        columns={columns}
+        dataSource={releaseBoardQuery.data?.data ?? []}
+        rowKey="applicationEnvironmentId"
+        loading={releaseBoardQuery.isLoading}
+        scroll={{ x: 'max-content' }}
+      />
     </div>
   )
 }
@@ -951,8 +1070,11 @@ export function ApplicationEnvironmentDetailPage() {
   if (bindingQuery.isLoading) {
     return (
       <div className="soha-page">
-        <PageHeader title={localeCode === 'zh_CN' ? '环境详情' : 'Environment Detail'} description={localeCode === 'zh_CN' ? '加载应用环境绑定详情。' : 'Loading application-environment binding details.'} />
-        <Card><Text type="secondary">{t('common.loading', 'Loading...')}</Text></Card>
+        <ManagementDetailHeader
+          title={localeCode === 'zh_CN' ? '环境详情' : 'Environment Detail'}
+          description={localeCode === 'zh_CN' ? '加载应用环境绑定详情。' : 'Loading application-environment binding details.'}
+        />
+        <ManagementState kind="loading" title={t('common.loading', 'Loading...')} />
       </div>
     )
   }
@@ -960,12 +1082,12 @@ export function ApplicationEnvironmentDetailPage() {
   if (!binding) {
     return (
       <div className="soha-page">
-        <PageHeader
+        <ManagementDetailHeader
           title={localeCode === 'zh_CN' ? '环境详情' : 'Environment Detail'}
           description={localeCode === 'zh_CN' ? '当前绑定不存在或已被删除。' : 'The current binding does not exist or has been removed.'}
           actions={<Button onClick={() => navigate(backPath)}>{backLabel}</Button>}
         />
-        <Card><Empty description={localeCode === 'zh_CN' ? '未找到应用环境绑定' : 'Application-environment binding not found'} /></Card>
+        <ManagementState kind="not-found" description={localeCode === 'zh_CN' ? '未找到应用环境绑定' : 'Application-environment binding not found'} />
       </div>
     )
   }
@@ -997,12 +1119,12 @@ export function ApplicationEnvironmentDetailPage() {
 
   return (
     <div className="soha-page">
-      <PageHeader
+      <ManagementDetailHeader
         title={`${application?.name || binding.applicationId} / ${environment?.name || binding.environmentKey || binding.environmentId}`}
         description={localeCode === 'zh_CN' ? '查看单个应用环境绑定的工作流模板、发布目标和最新执行状态。' : 'Inspect the workflow template, release targets, and latest execution state for a single application-environment binding.'}
         actions={<Button onClick={() => navigate(backPath)}>{backLabel}</Button>}
       />
-      <Card>
+      <Card className="soha-management-panel-card">
         <Descriptions
           items={[
             { key: 'businessLine', label: localeCode === 'zh_CN' ? '业务线' : 'Business Line', children: businessLineMap[binding.businessLineId || ''] || binding.businessLineId || '-' },
@@ -1021,7 +1143,7 @@ export function ApplicationEnvironmentDetailPage() {
           ]}
         />
       </Card>
-      <Card title={localeCode === 'zh_CN' ? '交付动作' : 'Delivery Actions'}>
+      <Card className="soha-management-panel-card" title={localeCode === 'zh_CN' ? '交付动作' : 'Delivery Actions'}>
         <div className="soha-delivery-action-grid">
           <div className="soha-delivery-action-block">
             <Text strong>{localeCode === 'zh_CN' ? '发布目标' : 'Release Target'}</Text>
@@ -1096,17 +1218,22 @@ export function ApplicationEnvironmentDetailPage() {
           </div>
         </div>
       </Card>
-      <Card title={localeCode === 'zh_CN' ? '发布目标' : 'Release Targets'}>
-        <AdminTable columns={targetColumns} dataSource={targetRows} rowKey="id" pagination={false} />
-      </Card>
-      <Card title={localeCode === 'zh_CN' ? 'Workflow Template 定义' : 'Workflow Template Definition'}>
+      <AdminTable
+        title={localeCode === 'zh_CN' ? '发布目标' : 'Release Targets'}
+        shellClassName="soha-management-table-shell"
+        columns={targetColumns}
+        dataSource={targetRows}
+        rowKey="id"
+        pagination={false}
+      />
+      <Card className="soha-management-panel-card" title={localeCode === 'zh_CN' ? 'Workflow Template 定义' : 'Workflow Template Definition'}>
         {binding.workflowTemplate?.definition ? (
           <pre className="soha-json-block">{JSON.stringify(binding.workflowTemplate.definition, null, 2)}</pre>
         ) : (
-          <Empty description={localeCode === 'zh_CN' ? '当前未配置工作流模板定义' : 'No workflow template definition is configured'} />
+          <ManagementState bordered={false} compact kind="not-configured" description={localeCode === 'zh_CN' ? '当前未配置工作流模板定义' : 'No workflow template definition is configured'} />
         )}
       </Card>
-      <Card title={localeCode === 'zh_CN' ? '构建与发布策略' : 'Build and Release Policy'}>
+      <Card className="soha-management-panel-card" title={localeCode === 'zh_CN' ? '构建与发布策略' : 'Build and Release Policy'}>
         <Descriptions
           items={[
             { key: 'buildPolicy', label: 'Build Policy', children: <pre className="soha-json-block">{JSON.stringify(binding.buildPolicy ?? {}, null, 2)}</pre> },
@@ -1129,7 +1256,7 @@ export function WorkflowTemplatesPage() {
   const [editorDefinition, setEditorDefinition] = useState<ReleaseDagDefinition>(createDefaultReleaseDagDefinition())
   const canManageWorkflowTemplates = hasPermission(permissionSnapshotQuery.data?.data, 'delivery.workflow-templates.manage')
 
-  const { data, isLoading } = useQuery({
+  const { data, isFetching, isLoading, refetch } = useQuery({
     queryKey: ['workflow-templates'],
     queryFn: () => api.get<ApiResponse<WorkflowTemplate[]>>('/workflow-templates'),
   })
@@ -1190,11 +1317,25 @@ export function WorkflowTemplatesPage() {
       title: t('common.actions', 'Actions'),
       dataIndex: 'id',
       render: (_: unknown, record: WorkflowTemplate) => (
-        <Space>
-          {canManageWorkflowTemplates ? <Button icon={<EditOutlined />} type="text" size="small" onClick={() => { setEditing(record); setModalVisible(true) }} /> : null}
+        <Space className="soha-row-action-icons" size={2}>
+          {canManageWorkflowTemplates ? (
+            <ManagementIconButton
+              aria-label="编辑工作流模板"
+              icon={<EditOutlined />}
+              size="small"
+              tooltip="编辑"
+              onClick={() => { setEditing(record); setModalVisible(true) }}
+            />
+          ) : null}
           {canManageWorkflowTemplates ? (
             <Popconfirm title="确认删除？" onConfirm={() => deleteMutation.mutate(record.id)}>
-              <Button icon={<DeleteOutlined />} type="text" danger size="small" />
+              <ManagementIconButton
+                aria-label="删除工作流模板"
+                danger
+                icon={<DeleteOutlined />}
+                size="small"
+                tooltip="删除"
+              />
             </Popconfirm>
           ) : null}
           {!canManageWorkflowTemplates ? '-' : null}
@@ -1205,24 +1346,39 @@ export function WorkflowTemplatesPage() {
 
   return (
     <div className="soha-page">
-      <PageHeader
+      <AdminTable
+        columnSettingIconOnly
+        columnSettingPlacement="header"
+        shellClassName="soha-management-table-shell"
         title={t('page.workflowTemplates.title', 'Release Flow Templates')}
-        description={t('page.workflowTemplates.desc', 'Maintain reusable DAG-based release flow templates with the React Flow canvas, including serial, parallel, and auto-layout patterns.')}
-        actions={canManageWorkflowTemplates ? <Button icon={<PlusOutlined />} type="primary" onClick={() => { setEditing(null); setModalVisible(true) }}>{localeCode === 'zh_CN' ? '新建模板' : 'New Template'}</Button> : null}
+        headerExtra={(
+          <ManagementTableToolbar>
+            {canManageWorkflowTemplates ? (
+              <Button icon={<PlusOutlined />} type="primary" onClick={() => { setEditing(null); setModalVisible(true) }}>
+                {localeCode === 'zh_CN' ? '新建模板' : 'New Template'}
+              </Button>
+            ) : null}
+            <ManagementRefreshButton
+              aria-label={localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
+              loading={isFetching}
+              tooltip={localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
+              onClick={() => void refetch()}
+            />
+          </ManagementTableToolbar>
+        )}
+        columns={columns}
+        dataSource={data?.data ?? []}
+        rowKey="id"
+        loading={isLoading}
+        scroll={{ x: 'max-content' }}
       />
-      <Card className="soha-scope-hint-card">
-        <Text type="secondary">
-          {t('page.workflowTemplates.hint', 'The canvas uses React Flow and dagre for auto-layout. Only fixed node types are allowed so backend execution and audit remain controllable.')}
-        </Text>
-      </Card>
-      <AdminTable columns={columns} dataSource={data?.data ?? []} rowKey="id" loading={isLoading} />
       <Modal
         title={editing ? (localeCode === 'zh_CN' ? '编辑 DAG 发布流程模板' : 'Edit DAG Release Flow Template') : (localeCode === 'zh_CN' ? '新建 DAG 发布流程模板' : 'New DAG Release Flow Template')}
         open={modalVisible}
         onCancel={() => { setModalVisible(false); setEditing(null) }}
         footer={null}
         width={1440}
-        destroyOnClose
+        destroyOnHidden
       >
         <Form
           form={form}
@@ -1268,8 +1424,8 @@ export function WorkflowTemplatesPage() {
             </div>
           </div>
 
-          <Card className="soha-template-editor-card" title={localeCode === 'zh_CN' ? 'DAG 编排画布' : 'DAG Composer'}>
-            <Suspense fallback={<Card><Text type="secondary">{t('common.loading', 'Loading...')}</Text></Card>}>
+          <Card className="soha-template-editor-card soha-management-panel-card" title={localeCode === 'zh_CN' ? 'DAG 编排画布' : 'DAG Composer'}>
+            <Suspense fallback={<ManagementState kind="loading" title={t('common.loading', 'Loading...')} />}>
               <ReleaseFlowDagEditor
                 key={editing?.id ?? 'new-release-dag'}
                 initialDefinition={modalVisible ? normalizeReleaseDagDefinition(editing?.definition) : createDefaultReleaseDagDefinition()}
@@ -1278,7 +1434,7 @@ export function WorkflowTemplatesPage() {
             </Suspense>
           </Card>
 
-          <Card className="soha-flow-stage-card" title={localeCode === 'zh_CN' ? 'JSON 预览' : 'JSON Preview'}>
+          <Card className="soha-flow-stage-card soha-management-panel-card" title={localeCode === 'zh_CN' ? 'JSON 预览' : 'JSON Preview'}>
             <pre className="soha-json-block">{previewDefinition}</pre>
           </Card>
 

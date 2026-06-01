@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
-import { App, Button, Card, Descriptions, Empty, Input, InputNumber, Select, Tag, Typography } from 'antd'
+import { App, Button, Card, Descriptions, Input, InputNumber, Select, Tag, Typography } from 'antd'
 import { useMutation } from '@tanstack/react-query'
+import { ManagementState } from '@/components/management-list'
 import { useI18n } from '@/i18n'
 import { api } from '@/services/api-client'
 import { formatDateTime } from '@/utils/time'
@@ -61,7 +62,13 @@ export function PodExecPanel({
   })
 
   if (!clusterId || !namespace) {
-    return <Empty description={localeCode === 'zh_CN' ? '请选择有效的集群和命名空间后再执行命令' : 'Select a valid cluster and namespace before running commands'} />
+    return (
+      <ManagementState
+        compact
+        kind="select-scope"
+        title={localeCode === 'zh_CN' ? '请选择有效的集群和命名空间后再执行命令' : 'Select a valid cluster and namespace before running commands'}
+      />
+    )
   }
 
   return (
@@ -146,7 +153,12 @@ export function PodExecPanel({
         </>
       ) : (
         <Card className="soha-detail-card">
-          <Empty description={localeCode === 'zh_CN' ? '执行命令后会在这里展示 stdout/stderr 输出' : 'Stdout and stderr output will appear here after execution'} />
+          <ManagementState
+            bordered={false}
+            compact
+            title={localeCode === 'zh_CN' ? '等待命令执行' : 'Waiting for command execution'}
+            description={localeCode === 'zh_CN' ? '执行命令后会在这里展示 stdout/stderr 输出' : 'Stdout and stderr output will appear here after execution'}
+          />
         </Card>
       )}
     </div>

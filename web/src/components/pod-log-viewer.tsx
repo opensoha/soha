@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { DeleteOutlined, ReloadOutlined } from '@ant-design/icons'
-import { Button, Card, Empty, Input, Select, Space, Switch, Tag, Typography } from 'antd'
+import { Button, Card, Input, Select, Space, Switch, Tag, Typography } from 'antd'
+import { ManagementState } from '@/components/management-list'
 import { useI18n } from '@/i18n'
 import { api } from '@/services/api-client'
 import { useAuthStore } from '@/stores/auth-store'
@@ -417,11 +418,11 @@ export function PodLogViewer({
   }, [connect, disconnect, lines, previous])
 
   if (!clusterId || !namespace) {
-    return <Empty description={t('podLogViewer.notReady', 'Select a valid cluster and namespace before opening live logs')} />
+    return <ManagementState compact kind="select-scope" title={t('podLogViewer.notReady', 'Select a valid cluster and namespace before opening live logs')} />
   }
 
   if (!active) {
-    return <Empty description={t('podLogViewer.idle', 'Log stream has not been connected yet')} />
+    return <ManagementState compact title={t('podLogViewer.idle', 'Log stream has not been connected yet')} />
   }
 
   return (

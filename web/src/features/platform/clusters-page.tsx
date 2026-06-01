@@ -1,18 +1,29 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { Key } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { App, Button, Card, Descriptions, Form, Input, Modal, Select, Space, Spin, Tag, Typography } from 'antd'
+import { App, Button, Card, Descriptions, Form, Input, Modal, Popconfirm, Select, Space, Spin, Tag, Typography } from 'antd'
 import {
-  ColumnHeightOutlined,
+  DeleteOutlined,
   DownOutlined,
+  EditOutlined,
+  EyeOutlined,
   PlusOutlined,
-  ReloadOutlined,
   UpOutlined,
 } from '@ant-design/icons'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { AdminTable } from '@/components/admin-table'
+import {
+  ManagementBatchBar,
+  ManagementDensityButton,
+  ManagementDetailHeader,
+  ManagementIconButton,
+  ManagementQueryField,
+  ManagementQueryPanel,
+  ManagementRefreshButton,
+  ManagementState,
+  ManagementTableToolbar,
+} from '@/components/management-list'
 import { useI18n } from '@/i18n'
-import { PageHeader } from '@/components/page-header'
 import { api } from '@/services/api-client'
 import { usePlatformScopeStore } from '@/stores/platform-scope-store'
 import { StatusTag } from '@/components/status-tag'
@@ -102,7 +113,7 @@ export function ClustersPage() {
   const [appliedModeFilter, setAppliedModeFilter] = useState<string>()
   const [queryExpanded, setQueryExpanded] = useState(false)
   const [selectedRowKeys, setSelectedRowKeys] = useState<string[]>([])
-  const [tableSize, setTableSize] = useState<'middle' | 'small'>('middle')
+  const [tableSize, setTableSize] = useState<'middle' | 'small'>('small')
   const setClusterId = usePlatformScopeStore((state) => state.setClusterId)
 
   const { data, isLoading, isFetching, refetch } = useQuery({
@@ -247,49 +258,50 @@ export function ClustersPage() {
       ...tableColumnPresets.datetime,
       title: localeCode === 'zh_CN' ? '最近检查' : 'Last Checked',
       dataIndex: ['health', 'lastChecked'],
-      sorter: (a, b) => {
-        const left = a.health?.lastChecked ? new Date(a.health.lastChecked).getTime() : 0
-        const right = b.health?.lastChecked ? new Date(b.health.lastChecked).getTime() : 0
-        return left - right
-      },
       render: (_: unknown, record: Cluster) => record.health?.lastChecked ? formatDateTime(record.health.lastChecked) : '-',
     },
     {
       ...tableColumnPresets.action,
       title: '操作',
       dataIndex: 'id',
-      width: 152,
+      width: 112,
       render: (_: unknown, record: Cluster) => (
-        <Space size={0} className="soha-cluster-action-links">
-          <Button type="link" size="small" onClick={() => navigate(`/clusters/${record.id}`)}>
-            {localeCode === 'zh_CN' ? '详情' : 'Detail'}
-          </Button>
-          <Button
-            aria-label={localeCode === 'zh_CN' ? '编辑集群' : 'Edit cluster'}
-            type="link"
+        <Space size={2} className="soha-cluster-action-links">
+          <ManagementIconButton
+            aria-label={localeCode === 'zh_CN' ? '查看集群详情' : 'View cluster detail'}
+            icon={<EyeOutlined />}
             size="small"
+            tooltip={localeCode === 'zh_CN' ? '详情' : 'Detail'}
+            onClick={() => navigate(`/clusters/${record.id}`)}
+          />
+          <ManagementIconButton
+            aria-label={localeCode === 'zh_CN' ? '编辑集群' : 'Edit cluster'}
+            icon={<EditOutlined />}
+            size="small"
+            tooltip={localeCode === 'zh_CN' ? '编辑' : 'Edit'}
             onClick={() => {
               setEditingCluster(record)
               setModalVisible(true)
             }}
+          />
+          <Popconfirm
+            title={localeCode === 'zh_CN' ? `确认删除集群 ${record.name}？` : `Delete cluster ${record.name}?`}
+            description={localeCode === 'zh_CN' ? '删除后会移除该集群在 Soha 中的注册信息。' : 'This removes the cluster registration from Soha.'}
+            okText={localeCode === 'zh_CN' ? '删除' : 'Delete'}
+            cancelText={localeCode === 'zh_CN' ? '取消' : 'Cancel'}
+            okButtonProps={{ danger: true, loading: deleteMutation.isPending && deleteMutation.variables === record.id }}
+            placement="topRight"
+            onConfirm={() => deleteMutation.mutate(record.id)}
           >
-            {localeCode === 'zh_CN' ? '编辑' : 'Edit'}
-          </Button>
-          <Button
-            aria-label={localeCode === 'zh_CN' ? '删除集群' : 'Delete cluster'}
-            type="link"
-            danger
-            size="small"
-            onClick={() => {
-              Modal.confirm({
-                title: `确认删除集群 ${record.name}？`,
-                content: '删除后会移除该集群在 Soha 中的注册信息。',
-                onOk: () => deleteMutation.mutate(record.id),
-              })
-            }}
-          >
-            {localeCode === 'zh_CN' ? '删除' : 'Delete'}
-          </Button>
+            <ManagementIconButton
+              aria-label={localeCode === 'zh_CN' ? '删除集群' : 'Delete cluster'}
+              danger
+              icon={<DeleteOutlined />}
+              loading={deleteMutation.isPending && deleteMutation.variables === record.id}
+              size="small"
+              tooltip={localeCode === 'zh_CN' ? '删除' : 'Delete'}
+            />
+          </Popconfirm>
         </Space>
       ),
     },
@@ -393,23 +405,17 @@ kubernetes:
     setAppliedModeFilter(undefined)
   }
 
-  const handleBatchDelete = () => {
+  const handleBatchDelete = async () => {
     if (selectedRowKeys.length === 0) return
-    Modal.confirm({
-      title: `确认删除 ${selectedRowKeys.length} 个集群？`,
-      content: '删除后会移除这些集群在 Soha 中的注册信息。',
-      onOk: async () => {
-        try {
-          await Promise.all(selectedRowKeys.map((id) => api.delete(`/clusters/${id}`)))
-          void message.success('集群已删除')
-          setSelectedRowKeys([])
-          await queryClient.invalidateQueries({ queryKey: ['clusters'] })
-        } catch (err) {
-          void message.error((err as Error).message)
-          throw err
-        }
-      },
-    })
+    try {
+      await Promise.all(selectedRowKeys.map((id) => api.delete(`/clusters/${id}`)))
+      void message.success('集群已删除')
+      setSelectedRowKeys([])
+      await queryClient.invalidateQueries({ queryKey: ['clusters'] })
+    } catch (err) {
+      void message.error((err as Error).message)
+      throw err
+    }
   }
 
   const openSelectedNodes = () => {
@@ -419,120 +425,128 @@ kubernetes:
   }
 
   const queryPanel = (
-    <Card className="soha-clusters-query-card" variant="outlined">
-      <Form className="soha-clusters-query-form" layout="horizontal" onFinish={applyFilters}>
-        <div className={`soha-clusters-query-grid ${queryExpanded ? 'is-expanded' : 'is-collapsed'}`}>
-          <Form.Item className="soha-clusters-query-field" label={localeCode === 'zh_CN' ? '集群名称' : 'Cluster Name'}>
-            <Input
-              allowClear
-              className="soha-clusters-search-input"
-              placeholder={localeCode === 'zh_CN' ? '请输入' : 'Search'}
-              value={searchText}
-              variant="filled"
-              onChange={(event) => setSearchText(event.target.value)}
-              onPressEnter={applyFilters}
-            />
-          </Form.Item>
-          <Form.Item className="soha-clusters-query-field" label={localeCode === 'zh_CN' ? '集群类型' : 'Cluster Type'}>
+    <ManagementQueryPanel
+      expanded={queryExpanded}
+      onFinish={applyFilters}
+      actions={(
+        <>
+          <Button autoInsertSpace={false} disabled={!hasActiveFilters} htmlType="button" onClick={resetFilters}>
+            {localeCode === 'zh_CN' ? '重置' : 'Reset'}
+          </Button>
+          <Button autoInsertSpace={false} htmlType="submit" type="primary">
+            {localeCode === 'zh_CN' ? '查询' : 'Search'}
+          </Button>
+          <Button
+            autoInsertSpace={false}
+            icon={queryExpanded ? <UpOutlined /> : <DownOutlined />}
+            iconPlacement="end"
+            type="link"
+            onClick={() => setQueryExpanded((current) => !current)}
+          >
+            {queryExpanded
+              ? (localeCode === 'zh_CN' ? '收起' : 'Collapse')
+              : (localeCode === 'zh_CN' ? '展开' : 'Expand')}
+          </Button>
+        </>
+      )}
+    >
+      <ManagementQueryField label={localeCode === 'zh_CN' ? '集群名称' : 'Cluster Name'}>
+        <Input
+          allowClear
+          className="soha-clusters-search-input"
+          placeholder={localeCode === 'zh_CN' ? '请输入' : 'Search'}
+          value={searchText}
+          variant="filled"
+          onChange={(event) => setSearchText(event.target.value)}
+          onPressEnter={applyFilters}
+        />
+      </ManagementQueryField>
+      <ManagementQueryField label={localeCode === 'zh_CN' ? '集群类型' : 'Cluster Type'}>
+        <Select
+          allowClear
+          className="soha-clusters-filter-control"
+          options={typeOptions}
+          placeholder={localeCode === 'zh_CN' ? '请选择' : 'Select'}
+          value={typeFilter}
+          variant="filled"
+          onChange={(value) => setTypeFilter(value)}
+        />
+      </ManagementQueryField>
+      {queryExpanded ? (
+        <>
+          <ManagementQueryField label={localeCode === 'zh_CN' ? '状态' : 'Status'}>
             <Select
               allowClear
               className="soha-clusters-filter-control"
-              options={typeOptions}
+              options={statusOptions}
               placeholder={localeCode === 'zh_CN' ? '请选择' : 'Select'}
-              value={typeFilter}
+              value={statusFilter}
               variant="filled"
-              onChange={(value) => setTypeFilter(value)}
+              onChange={(value) => setStatusFilter(value)}
             />
-          </Form.Item>
-          {queryExpanded ? (
-            <>
-              <Form.Item className="soha-clusters-query-field" label={localeCode === 'zh_CN' ? '状态' : 'Status'}>
-                <Select
-                  allowClear
-                  className="soha-clusters-filter-control"
-                  options={statusOptions}
-                  placeholder={localeCode === 'zh_CN' ? '请选择' : 'Select'}
-                  value={statusFilter}
-                  variant="filled"
-                  onChange={(value) => setStatusFilter(value)}
-                />
-              </Form.Item>
-              <Form.Item className="soha-clusters-query-field" label={localeCode === 'zh_CN' ? '连接方式' : 'Mode'}>
-                <Select
-                  allowClear
-                  className="soha-clusters-filter-control"
-                  options={modeOptions}
-                  placeholder={localeCode === 'zh_CN' ? '请选择' : 'Select'}
-                  value={modeFilter}
-                  variant="filled"
-                  onChange={(value) => setModeFilter(value)}
-                />
-              </Form.Item>
-            </>
-          ) : null}
-          <div className="soha-clusters-query-actions">
-            <Button autoInsertSpace={false} disabled={!hasActiveFilters} htmlType="button" onClick={resetFilters}>
-              {localeCode === 'zh_CN' ? '重置' : 'Reset'}
-            </Button>
-            <Button autoInsertSpace={false} htmlType="submit" type="primary">
-              {localeCode === 'zh_CN' ? '查询' : 'Search'}
-            </Button>
-            <Button
-              autoInsertSpace={false}
-              icon={queryExpanded ? <UpOutlined /> : <DownOutlined />}
-              iconPlacement="end"
-              type="link"
-              onClick={() => setQueryExpanded((current) => !current)}
-            >
-              {queryExpanded
-                ? (localeCode === 'zh_CN' ? '收起' : 'Collapse')
-                : (localeCode === 'zh_CN' ? '展开' : 'Expand')}
-            </Button>
-          </div>
-        </div>
-      </Form>
-    </Card>
+          </ManagementQueryField>
+          <ManagementQueryField label={localeCode === 'zh_CN' ? '连接方式' : 'Mode'}>
+            <Select
+              allowClear
+              className="soha-clusters-filter-control"
+              options={modeOptions}
+              placeholder={localeCode === 'zh_CN' ? '请选择' : 'Select'}
+              value={modeFilter}
+              variant="filled"
+              onChange={(value) => setModeFilter(value)}
+            />
+          </ManagementQueryField>
+        </>
+      ) : null}
+    </ManagementQueryPanel>
   )
 
   const tableToolbarExtra = selectedRowKeys.length > 0 ? (
-    <div className="soha-clusters-batchbar">
-      <Text type="secondary">{localeCode === 'zh_CN' ? `已选 ${selectedRowKeys.length} 项` : `${selectedRowKeys.length} selected`}</Text>
+    <ManagementBatchBar
+      selectedCount={selectedRowKeys.length}
+      selectedLabel={localeCode === 'zh_CN' ? `已选 ${selectedRowKeys.length} 项` : `${selectedRowKeys.length} selected`}
+    >
       <Button autoInsertSpace={false} size="small" onClick={openSelectedNodes} disabled={selectedRowKeys.length !== 1}>
         {localeCode === 'zh_CN' ? '查看节点' : 'Open Nodes'}
       </Button>
-      <Button autoInsertSpace={false} size="small" danger onClick={handleBatchDelete}>
-        {localeCode === 'zh_CN' ? '批量删除' : 'Batch Delete'}
-      </Button>
+      <Popconfirm
+        title={localeCode === 'zh_CN' ? `确认删除 ${selectedRowKeys.length} 个集群？` : `Delete ${selectedRowKeys.length} clusters?`}
+        description={localeCode === 'zh_CN' ? '删除后会移除这些集群在 Soha 中的注册信息。' : 'This removes these cluster registrations from Soha.'}
+        okText={localeCode === 'zh_CN' ? '删除' : 'Delete'}
+        cancelText={localeCode === 'zh_CN' ? '取消' : 'Cancel'}
+        okButtonProps={{ danger: true }}
+        placement="top"
+        onConfirm={handleBatchDelete}
+      >
+        <Button autoInsertSpace={false} size="small" danger>
+          {localeCode === 'zh_CN' ? '批量删除' : 'Batch Delete'}
+        </Button>
+      </Popconfirm>
       <Button autoInsertSpace={false} size="small" type="text" onClick={() => setSelectedRowKeys([])}>
         {localeCode === 'zh_CN' ? '清空' : 'Clear'}
       </Button>
-    </div>
+    </ManagementBatchBar>
   ) : null
 
   const tableHeaderExtra = (
-    <Space wrap size={8} className="soha-clusters-table-toolbar-actions">
-      {tableToolbarExtra}
+    <ManagementTableToolbar batchBar={tableToolbarExtra}>
       <Button autoInsertSpace={false} icon={<PlusOutlined />} type="primary" onClick={openCreateModal}>
         {t('common.create', 'Create')}
       </Button>
-      <Button
+      <ManagementRefreshButton
         aria-label={localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
-        className="soha-clusters-icon-action"
-        icon={<ReloadOutlined />}
         loading={isFetching}
         title={localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
-        type="text"
+        tooltip={localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
         onClick={() => void refetch()}
       />
-      <Button
+      <ManagementDensityButton
         aria-label={localeCode === 'zh_CN' ? '切换表格密度' : 'Toggle table density'}
-        className="soha-clusters-icon-action"
-        icon={<ColumnHeightOutlined />}
         title={localeCode === 'zh_CN' ? '切换表格密度' : 'Toggle table density'}
-        type="text"
+        tooltip={localeCode === 'zh_CN' ? '切换表格密度' : 'Toggle table density'}
         onClick={() => setTableSize((current) => current === 'middle' ? 'small' : 'middle')}
       />
-    </Space>
+    </ManagementTableToolbar>
   )
 
   return (
@@ -541,8 +555,7 @@ kubernetes:
       <AdminTable
         columnSettingIconOnly
         columnSettingPlacement="header"
-        shellClassName="soha-clusters-table-shell"
-        title={localeCode === 'zh_CN' ? '查询表格' : 'Query Table'}
+        shellClassName="soha-management-table-shell"
         headerExtra={tableHeaderExtra}
         columns={columns}
         dataSource={filteredClusters}
@@ -725,17 +738,18 @@ export function ClusterDetailPage() {
   if (!detail || !summary) {
     return (
       <div className="soha-page">
-        <PageHeader title={localeCode === 'zh_CN' ? '集群详情' : 'Cluster Detail'} description={localeCode === 'zh_CN' ? '当前集群不存在或详情不可用。' : 'The cluster was not found or its detail is unavailable.'} />
-        <Card>
-          <Text type="secondary">{t('common.notFound', 'Not found')}</Text>
-        </Card>
+        <ManagementDetailHeader
+          title={localeCode === 'zh_CN' ? '集群详情' : 'Cluster Detail'}
+          description={localeCode === 'zh_CN' ? '当前集群不存在或详情不可用。' : 'The cluster was not found or its detail is unavailable.'}
+        />
+        <ManagementState kind="not-found" description={t('common.notFound', 'Not found')} />
       </div>
     )
   }
 
   return (
     <div className="soha-page">
-      <PageHeader
+      <ManagementDetailHeader
         title={`${localeCode === 'zh_CN' ? '集群详情' : 'Cluster Detail'}: ${summary.name}`}
         description={localeCode === 'zh_CN' ? '查看集群标签、版本、连接方式和运行诊断信息。' : 'Inspect cluster labels, version, connectivity, and runtime diagnostics.'}
         actions={(
@@ -841,9 +855,15 @@ export function ClusterDetailPage() {
           </Text>
         </div>
         {nodesQuery.isError ? (
-          <Text type="warning">{(nodesQuery.error as Error)?.message || (localeCode === 'zh_CN' ? '节点快照加载失败' : 'Failed to load node snapshot')}</Text>
+          <ManagementState
+            compact
+            description={(nodesQuery.error as Error)?.message || (localeCode === 'zh_CN' ? '节点快照加载失败' : 'Failed to load node snapshot')}
+            kind="error"
+            title={localeCode === 'zh_CN' ? '节点快照加载失败' : 'Failed to load node snapshot'}
+          />
         ) : (
           <AdminTable
+            shellClassName="soha-management-table-shell"
             columns={nodeColumns}
             dataSource={nodesQuery.data?.data ?? []}
             rowKey="name"

@@ -12,16 +12,25 @@ const captured = vi.hoisted(() => ({
 }))
 
 vi.mock('antd', () => ({
+  Alert: ({ description, message }: { description?: ReactNode; message?: ReactNode }) => <div>{message}{description}</div>,
   Button: ({ children, ...props }: { children?: ReactNode }) => <button {...props}>{children}</button>,
   Checkbox: {
     Group: () => <div data-testid="checkbox-group" />,
   },
-  Empty: ({ description }: { description?: ReactNode }) => <div>{description}</div>,
+  Empty: Object.assign(
+    ({ children, description }: { children?: ReactNode; description?: ReactNode }) => <div>{description}{children}</div>,
+    { PRESENTED_IMAGE_SIMPLE: 'simple-empty' },
+  ),
+  Form: {
+    Item: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
+  },
   Popover: ({ children }: { children?: ReactNode }) => <>{children}</>,
+  Space: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
   Table: (props: any) => {
     captured.tableProps = props
     return <div data-testid="table-proxy" />
   },
+  Tooltip: ({ children }: { children?: ReactNode }) => <>{children}</>,
   Typography: {
     Text: ({ children }: { children?: ReactNode }) => <span>{children}</span>,
   },
@@ -78,6 +87,14 @@ describe('AdminTable', () => {
     )
 
     expect(captured.tableProps?.scroll).toEqual({ x: 960, y: undefined })
+    expect(captured.tableProps?.size).toBe('small')
+    expect(captured.tableProps?.pagination).toMatchObject({
+      current: 1,
+      pageSize: 10,
+      showLessItems: true,
+      showSizeChanger: true,
+      size: 'small',
+    })
   })
 
   it('keeps an explicit horizontal scroll width when provided', async () => {

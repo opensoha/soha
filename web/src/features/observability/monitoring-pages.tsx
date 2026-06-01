@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import {
   AlertOutlined,
   BellOutlined,
+  EditOutlined,
   EyeOutlined,
   FireOutlined,
   NotificationOutlined,
@@ -9,12 +10,17 @@ import {
   ReloadOutlined,
   TeamOutlined,
 } from '@ant-design/icons'
-import { App, Button, Card, Empty, Form, Input, InputNumber, Modal, Select, Space, Statistic, Switch, Tabs, Tag, Typography } from 'antd'
+import { App, Button, Card, Form, Input, InputNumber, Modal, Select, Space, Statistic, Switch, Tabs, Tag, Typography } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { AdminTable } from '@/components/admin-table'
+import {
+  ManagementDetailHeader,
+  ManagementIconButton,
+  ManagementState,
+  ManagementTableToolbar,
+} from '@/components/management-list'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth/permission-snapshot'
-import { PageHeader } from '@/components/page-header'
 import { BooleanTag, StatusTag } from '@/components/status-tag'
 import { api } from '@/services/api-client'
 import { getAIWorkbenchPathForMode } from '@/features/copilot/workbench-navigation'
@@ -185,26 +191,25 @@ export function MonitoringPage() {
 
   return (
     <div className="soha-page soha-overview-page soha-monitoring-overview-page">
-      <section className="soha-overview-hero">
-        <div className="soha-overview-hero-header">
-          <h1 className="soha-overview-title">总览</h1>
-        </div>
+      <ManagementDetailHeader
+        title="总览"
+        description="告警任务、事件、通知和值班链路的统一运行视图。"
+      />
 
-        <div className="soha-overview-metric-grid">
-          {overviewStats.map((item) => (
-            <Card key={item.key} size="small" variant="outlined" className={`soha-overview-metric-card is-${item.tone}`} loading={isLoading}>
-              <div className="soha-overview-metric-card-head">
-                <div className="soha-overview-metric-copy">
-                  <Text className="soha-overview-metric-label">{item.label}</Text>
-                  <Statistic value={item.value} />
-                </div>
-                <span className="soha-overview-metric-icon">{item.icon}</span>
+      <div className="soha-overview-metric-grid">
+        {overviewStats.map((item) => (
+          <Card key={item.key} size="small" variant="outlined" className={`soha-overview-metric-card is-${item.tone}`} loading={isLoading}>
+            <div className="soha-overview-metric-card-head">
+              <div className="soha-overview-metric-copy">
+                <Text className="soha-overview-metric-label">{item.label}</Text>
+                <Statistic value={item.value} />
               </div>
-              <Text className="soha-overview-metric-helper">{item.helper}</Text>
-            </Card>
-          ))}
-        </div>
-      </section>
+              <span className="soha-overview-metric-icon">{item.icon}</span>
+            </div>
+            <Text className="soha-overview-metric-helper">{item.helper}</Text>
+          </Card>
+        ))}
+      </div>
 
       <div className="soha-overview-summary-grid">
         <Card
@@ -214,7 +219,7 @@ export function MonitoringPage() {
         >
           {summary ? (
             <div className="soha-overview-alert-stack">
-              <div className="soha-overview-inline-banner">
+              <div className="soha-overview-section-bar">
                 <div>
                   <Text strong>告警分布</Text>
                   <div className="soha-overview-inline-caption">
@@ -235,7 +240,7 @@ export function MonitoringPage() {
               </div>
             </div>
           ) : (
-            <Empty description="暂无告警摘要" />
+            <ManagementState bordered={false} compact description="暂无告警摘要" />
           )}
         </Card>
 
@@ -256,14 +261,22 @@ export function MonitoringPage() {
       <Card
         className="soha-overview-runtime-card"
         title="最近告警"
-        extra={<Button type="text" icon={<EyeOutlined />} onClick={() => navigate('/monitoring-workbench/alerts')}>进入告警处理</Button>}
+        extra={
+          <ManagementIconButton
+            aria-label="进入告警处理"
+            icon={<EyeOutlined />}
+            size="small"
+            tooltip="进入告警处理"
+            onClick={() => navigate('/monitoring-workbench/alerts')}
+          />
+        }
       >
         {alertsQuery.isLoading ? (
           <div className="soha-monitoring-alert-list">
             {[0, 1, 2].map((item) => <Card key={item} loading size="small" />)}
           </div>
         ) : recentAlerts.length === 0 ? (
-          <Empty description="暂无最近告警" />
+          <ManagementState bordered={false} compact description="暂无最近告警" />
         ) : (
           <div className="soha-monitoring-alert-list">
             {recentAlerts.map((item) => (
@@ -380,10 +393,12 @@ export function AlertsPage() {
       title: '操作',
       dataIndex: 'id',
       render: (_: unknown, record: Alert) =>
-        <Space>
-          <Button
+        <Space className="soha-row-action-icons" size={2}>
+          <ManagementIconButton
+            aria-label="发起 AI 调查"
+            icon={<AlertOutlined />}
             size="small"
-            type="primary"
+            tooltip="AI调查"
             onClick={() => {
               const search = new URLSearchParams()
               search.set('alertId', record.id)
@@ -392,21 +407,59 @@ export function AlertsPage() {
               if (record.namespace) search.set('namespace', record.namespace)
               navigate(getAIWorkbenchPathForMode('root_cause', search))
             }}
-          >
-            AI调查
-          </Button>
-          <Button size="small" icon={<EyeOutlined />} onClick={() => { setDetailEventId(record.id); setDetailOpen(true) }}>详情</Button>
-          {canHeal ? <Button size="small" onClick={() => { setSelectedAlertId(record.id); setHealingPolicyId(''); setHealOpen(true) }}>自愈</Button> : null}
-          {canAcknowledge && record.status !== 'acknowledged' ? <Button size="small" type="link" onClick={() => ackMutation.mutate(record.id)}>确认</Button> : null}
-          {canResolve && record.status !== 'resolved' ? <Button size="small" type="link" onClick={() => resolveMutation.mutate(record.id)}>恢复</Button> : null}
+          />
+          <ManagementIconButton
+            aria-label="查看告警详情"
+            icon={<EyeOutlined />}
+            size="small"
+            tooltip="详情"
+            onClick={() => { setDetailEventId(record.id); setDetailOpen(true) }}
+          />
+          {canHeal ? (
+            <ManagementIconButton
+              aria-label="触发自愈"
+              icon={<FireOutlined />}
+              size="small"
+              tooltip="自愈"
+              onClick={() => { setSelectedAlertId(record.id); setHealingPolicyId(''); setHealOpen(true) }}
+            />
+          ) : null}
+          {canAcknowledge && record.status !== 'acknowledged' ? (
+            <ManagementIconButton
+              aria-label="确认告警"
+              icon={<BellOutlined />}
+              size="small"
+              tooltip="确认"
+              onClick={() => ackMutation.mutate(record.id)}
+            />
+          ) : null}
+          {canResolve && record.status !== 'resolved' ? (
+            <ManagementIconButton
+              aria-label="恢复告警"
+              icon={<ReloadOutlined />}
+              size="small"
+              tooltip="恢复"
+              onClick={() => resolveMutation.mutate(record.id)}
+            />
+          ) : null}
         </Space>,
     },
   ]
 
   return (
     <div className="soha-page">
-      <PageHeader title="活跃告警" description="查看当前告警事件、来源、状态以及确认/恢复/自愈操作。" />
-      <AdminTable shellClassName="is-panel" columns={columns} dataSource={data?.data ?? []} rowKey="id" loading={isLoading} pageSize={20} />
+      <AdminTable
+        columnSettingIconOnly
+        columnSettingPlacement="header"
+        shellClassName="soha-management-table-shell"
+        title="活跃告警"
+        columns={columns}
+        dataSource={data?.data ?? []}
+        rowKey="id"
+        loading={isLoading}
+        pageSize={20}
+        scroll={{ x: 'max-content' }}
+      />
       <Modal title="发起自愈" open={healOpen} onCancel={() => setHealOpen(false)} onOk={() => healMutation.mutate({ id: selectedAlertId, policyId: healingPolicyId })} okButtonProps={{ disabled: !healingPolicyId }} destroyOnHidden>
         <Select
           style={{ width: '100%' }}
@@ -700,7 +753,15 @@ export function NotificationsPage() {
       ...tableColumnPresets.action,
       title: '操作',
       dataIndex: 'id',
-      render: (_: string, record: NotificationChannel) => canManageNotifications ? <Button size="small" onClick={() => openChannelEditor(record)}>编辑</Button> : null,
+      render: (_: string, record: NotificationChannel) => canManageNotifications ? (
+        <ManagementIconButton
+          aria-label="编辑通知渠道"
+          icon={<BellOutlined />}
+          size="small"
+          tooltip="编辑"
+          onClick={() => openChannelEditor(record)}
+        />
+      ) : null,
     },
   ]
 
@@ -726,7 +787,15 @@ export function NotificationsPage() {
       ...tableColumnPresets.action,
       title: '操作',
       dataIndex: 'id',
-      render: (_: string, record: NotificationRoute) => canManageNotifications ? <Button size="small" onClick={() => openRouteEditor(record)}>编辑</Button> : null,
+      render: (_: string, record: NotificationRoute) => canManageNotifications ? (
+        <ManagementIconButton
+          aria-label="编辑通知路由"
+          icon={<NotificationOutlined />}
+          size="small"
+          tooltip="编辑"
+          onClick={() => openRouteEditor(record)}
+        />
+      ) : null,
     },
   ]
 
@@ -746,7 +815,15 @@ export function NotificationsPage() {
       ...tableColumnPresets.action,
       title: '操作',
       dataIndex: 'id',
-      render: (_: string, record: Silence) => canManageNotifications ? <Button size="small" onClick={() => openSilenceEditor(record)}>编辑</Button> : null,
+      render: (_: string, record: Silence) => canManageNotifications ? (
+        <ManagementIconButton
+          aria-label="编辑静默规则"
+          icon={<EditOutlined />}
+          size="small"
+          tooltip="编辑"
+          onClick={() => openSilenceEditor(record)}
+        />
+      ) : null,
     },
   ]
 
@@ -763,10 +840,21 @@ export function NotificationsPage() {
       title: '操作',
       dataIndex: 'id',
       render: (_: string, record: NotificationPolicy) => (
-        <Space>
-          {canManageNotifications ? <Button size="small" onClick={() => openPolicyEditor(record)}>编辑</Button> : null}
-          <Button
+        <Space className="soha-row-action-icons" size={2}>
+          {canManageNotifications ? (
+            <ManagementIconButton
+              aria-label="编辑通知策略"
+              icon={<EditOutlined />}
+              size="small"
+              tooltip="编辑"
+              onClick={() => openPolicyEditor(record)}
+            />
+          ) : null}
+          <ManagementIconButton
+            aria-label="预览通知策略"
+            icon={<EyeOutlined />}
             size="small"
+            tooltip="预览"
             onClick={() => {
               const firstEvent = alertEventsQuery.data?.data?.[0]?.id || ''
               setPreviewPolicy(record)
@@ -778,9 +866,7 @@ export function NotificationsPage() {
                 setPreviewOpen(true)
               }
             }}
-          >
-            预览
-          </Button>
+          />
         </Space>
       ),
     },
@@ -795,7 +881,15 @@ export function NotificationsPage() {
       ...tableColumnPresets.action,
       title: '操作',
       dataIndex: 'id',
-      render: (_: string, record: NotificationTemplate) => canManageNotifications ? <Button size="small" onClick={() => openTemplateEditor(record)}>编辑</Button> : null,
+      render: (_: string, record: NotificationTemplate) => canManageNotifications ? (
+        <ManagementIconButton
+          aria-label="编辑通知模板"
+          icon={<EditOutlined />}
+          size="small"
+          tooltip="编辑"
+          onClick={() => openTemplateEditor(record)}
+        />
+      ) : null,
     },
   ]
 
@@ -987,16 +1081,16 @@ export function NotificationsPage() {
 
   return (
     <div className="soha-page">
-      <PageHeader
+      <ManagementDetailHeader
         title="通知策略"
         description="维护通知策略、模板、渠道、路由规则与静默策略。"
         actions={canManageNotifications ? (
-          <Space>
+          <ManagementTableToolbar>
             <Button icon={<PlusOutlined />} onClick={() => openSilenceEditor(null)}>新建静默</Button>
             <Button icon={<PlusOutlined />} onClick={() => openChannelEditor(null)}>新建渠道</Button>
             <Button icon={<PlusOutlined />} onClick={() => openTemplateEditor(null)}>新建模板</Button>
             <Button icon={<PlusOutlined />} type="primary" onClick={() => openPolicyEditor(null)}>新建策略</Button>
-          </Space>
+          </ManagementTableToolbar>
         ) : null}
       />
       <Tabs
@@ -1004,24 +1098,24 @@ export function NotificationsPage() {
           {
             key: 'policies',
             label: '通知策略',
-            children: <AdminTable shellClassName="is-panel" columns={policyColumns} dataSource={policiesQuery.data?.data ?? []} rowKey="id" loading={policiesQuery.isLoading} />,
+            children: <AdminTable shellClassName="soha-management-table-shell" columns={policyColumns} dataSource={policiesQuery.data?.data ?? []} rowKey="id" loading={policiesQuery.isLoading} />,
           },
           {
             key: 'templates',
             label: '通知模板',
-            children: <AdminTable shellClassName="is-panel" columns={templateColumns} dataSource={templatesQuery.data?.data ?? []} rowKey="id" loading={templatesQuery.isLoading} />,
+            children: <AdminTable shellClassName="soha-management-table-shell" columns={templateColumns} dataSource={templatesQuery.data?.data ?? []} rowKey="id" loading={templatesQuery.isLoading} />,
           },
           {
             key: 'channels',
             label: '通知渠道',
-            children: <AdminTable shellClassName="is-panel" columns={channelColumns} dataSource={channelsQuery.data?.data ?? []} rowKey="id" loading={channelsQuery.isLoading} />,
+            children: <AdminTable shellClassName="soha-management-table-shell" columns={channelColumns} dataSource={channelsQuery.data?.data ?? []} rowKey="id" loading={channelsQuery.isLoading} />,
           },
           {
             key: 'routes',
             label: '路由规则',
             children: (
               <AdminTable
-                shellClassName="is-panel"
+                shellClassName="soha-management-table-shell"
                 columns={routeColumns}
                 dataSource={routesQuery.data?.data ?? []}
                 rowKey="id"
@@ -1033,7 +1127,7 @@ export function NotificationsPage() {
           {
             key: 'silences',
             label: '静默规则',
-            children: <AdminTable shellClassName="is-panel" columns={silenceColumns} dataSource={silencesQuery.data?.data ?? []} rowKey="id" loading={silencesQuery.isLoading} />,
+            children: <AdminTable shellClassName="soha-management-table-shell" columns={silenceColumns} dataSource={silencesQuery.data?.data ?? []} rowKey="id" loading={silencesQuery.isLoading} />,
           },
         ]}
       />
@@ -1185,8 +1279,18 @@ export function EventsPage() {
 
   return (
     <div className="soha-page">
-      <PageHeader title="事件流" description="查看时间线上的平台事件、来源对象和详细消息。" />
-      <AdminTable shellClassName="is-panel" columns={columns} dataSource={data?.data ?? []} rowKey="id" loading={isLoading} pageSize={50} />
+      <AdminTable
+        columnSettingIconOnly
+        columnSettingPlacement="header"
+        shellClassName="soha-management-table-shell"
+        title="事件流"
+        columns={columns}
+        dataSource={data?.data ?? []}
+        rowKey="id"
+        loading={isLoading}
+        pageSize={50}
+        scroll={{ x: 'max-content' }}
+      />
     </div>
   )
 }

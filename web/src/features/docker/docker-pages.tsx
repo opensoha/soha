@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { useMemo, useState } from 'react'
-import { App, Alert, Badge, Button, Card, Descriptions, Drawer, Empty, Form, Input, InputNumber, Popconfirm, Segmented, Select, Space, Switch, Table, Tabs, Tag, Typography } from 'antd'
+import { App, Alert, Badge, Button, Card, Descriptions, Drawer, Form, Input, InputNumber, Popconfirm, Segmented, Select, Space, Switch, Tabs, Tag, Typography } from 'antd'
 import type { FormInstance } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
 import { CloudServerOutlined, DeleteOutlined, DockerOutlined, EditOutlined, FileTextOutlined, PlayCircleOutlined, PlusOutlined, PoweroffOutlined, ReloadOutlined, SearchOutlined } from '@ant-design/icons'
@@ -8,6 +8,12 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth/permission-snapshot'
 import { formatDateTime } from '@/utils/time'
+import { AdminTable } from '@/components/admin-table'
+import {
+  ManagementDetailHeader,
+  ManagementIconButton,
+  ManagementTableToolbar,
+} from '@/components/management-list'
 import { dockerApi } from './docker-api'
 import type { DockerContainerStartInput, DockerHost, DockerHostInput, DockerListParams, DockerOperation, DockerOperationLog, DockerPage, DockerPortMapping, DockerPortMappingInput, DockerProject, DockerProjectInput, DockerQuickCreateHostInput, DockerService, DockerTemplate, DockerTemplateInput } from './docker-types'
 
@@ -123,6 +129,21 @@ function queryData<T>(response: { data: T } | undefined, fallback: T) {
   return response?.data ?? fallback
 }
 
+function pageTablePagination<T>(
+  page: DockerPage<T>,
+  embedded: boolean,
+  setFilters: React.Dispatch<React.SetStateAction<DockerFilterState>>,
+) {
+  if (embedded) return false
+  return {
+    current: page.page,
+    pageSize: page.pageSize,
+    total: page.total,
+    onPageChange: (pageNumber: number) => setFilters((current) => ({ ...current, page: pageNumber })),
+    onPageSizeChange: (pageSize: number) => setFilters((current) => ({ ...current, page: 1, pageSize })),
+  }
+}
+
 function refreshDocker(queryClient: ReturnType<typeof useQueryClient>) {
   return queryClient.invalidateQueries({ queryKey: DOCKER_QUERY_ROOT })
 }
@@ -191,21 +212,41 @@ function DockerTableHeader({
   tone?: OverviewTone
 }) {
   return (
-    <div className={`soha-admin-table-header soha-vrt-table-header is-${tone}`}>
-      <div className="soha-admin-table-header-main">
-        <div className="soha-admin-table-title-block">
-          <div className="soha-vrt-title-row">
-            <Text strong>{title}</Text>
-            {status ? <Badge status={badgeStatusForTone(tone)} text={status} /> : null}
-          </div>
-          {meta.length > 0 ? (
-            <div className="soha-vrt-commandbar-meta">
-              {meta.map((item) => <span key={item}>{item}</span>)}
-            </div>
-          ) : null}
-        </div>
+    <ManagementDetailHeader
+      title={(
+        <Space size={8} wrap>
+          <span>{title}</span>
+          {status ? <Badge status={badgeStatusForTone(tone)} text={status} /> : null}
+        </Space>
+      )}
+      meta={meta.length > 0 ? meta.map((item) => <span key={item}>{item}</span>) : undefined}
+      actions={actions ? <ManagementTableToolbar>{actions}</ManagementTableToolbar> : undefined}
+    />
+  )
+}
+
+function DockerTableTitle({
+  meta = [],
+  status,
+  title,
+  tone = 'default',
+}: {
+  meta?: string[]
+  status?: string
+  title: string
+  tone?: OverviewTone
+}) {
+  return (
+    <div className="soha-docker-table-title">
+      <div className="soha-docker-table-title-main">
+        <span>{title}</span>
+        {status ? <Badge status={badgeStatusForTone(tone)} text={status} /> : null}
       </div>
-      {actions ? <div className="soha-admin-table-header-extra">{actions}</div> : null}
+      {meta.length > 0 ? (
+        <div className="soha-docker-table-title-meta">
+          {meta.map((item) => <span key={item}>{item}</span>)}
+        </div>
+      ) : null}
     </div>
   )
 }
@@ -341,7 +382,7 @@ function FilterToolbar({
   extra?: ReactNode
 }) {
   return (
-    <Form form={form} className="soha-vrt-filterbar soha-vrt-filterbar--split" layout="inline" onFinish={onSubmit}>
+    <Form form={form} className="soha-docker-table-filterbar soha-management-table-filterbar" layout="inline" onFinish={onSubmit}>
       <div className="soha-vrt-filterbar-main">
         {children}
         <Space>
@@ -426,12 +467,12 @@ function HostsTable({ embedded = false }: { embedded?: boolean }) {
     {
       title: '操作',
       fixed: 'right',
-      width: 130,
+      width: 96,
       render: (_value, record) => canManageHosts ? (
-        <Space>
-          <Button size="small" type="text" icon={<EditOutlined />} onClick={() => { setEditing(record); form.setFieldsValue(hostToForm(record)); setDrawerOpen(true) }} />
+        <Space className="soha-row-action-icons">
+          <ManagementIconButton aria-label="编辑主机" size="small" tooltip="编辑" icon={<EditOutlined />} onClick={() => { setEditing(record); form.setFieldsValue(hostToForm(record)); setDrawerOpen(true) }} />
           <Popconfirm title="确认删除 Docker 主机？" onConfirm={() => deleteMutation.mutate(record.id)}>
-            <Button size="small" type="text" danger icon={<DeleteOutlined />} />
+            <ManagementIconButton aria-label="删除主机" size="small" tooltip="删除" danger icon={<DeleteOutlined />} />
           </Popconfirm>
         </Space>
       ) : null,
@@ -439,18 +480,27 @@ function HostsTable({ embedded = false }: { embedded?: boolean }) {
   ]
   return (
     <>
-      <Card size="small" variant="outlined" className="soha-vrt-list-card soha-vrt-table-card">
-        <DockerTableHeader
-          title="Docker 主机"
-          meta={[`共 ${page.total} 台`, '支持手动接入与 PVE 快速构建']}
-          actions={canManageHosts && !embedded ? (
-            <Space>
-              <Button icon={<CloudServerOutlined />} onClick={() => { quickForm.setFieldsValue({ availablePortStart: 20000, availablePortEnd: 39999, cpuCoreCount: 4, memoryGiB: 8, diskGiB: 80 }); setQuickDrawerOpen(true) }}>PVE 快速构建</Button>
-              <Button type="primary" icon={<PlusOutlined />} onClick={() => { setEditing(null); form.setFieldsValue(hostToForm()); setDrawerOpen(true) }}>接入主机</Button>
-            </Space>
-          ) : null}
-        />
-        {!embedded ? (
+      <AdminTable
+        rowKey="id"
+        className="soha-vrt-table"
+        columnSettingIconOnly
+        columnSettingPlacement="header"
+        enableColumnSelection={!embedded}
+        tableSize="small"
+        loading={hostsQuery.isLoading}
+        dataSource={page.items}
+        columns={columns}
+        scroll={{ x: 1220 }}
+        pagination={pageTablePagination(page, embedded, setFilters)}
+        shellClassName="soha-management-table-shell soha-docker-table-shell"
+        title={<DockerTableTitle title="Docker 主机" meta={[`共 ${page.total} 台`, '支持手动接入与 PVE 快速构建']} />}
+        headerExtra={canManageHosts && !embedded ? (
+          <ManagementTableToolbar>
+            <Button icon={<CloudServerOutlined />} onClick={() => { quickForm.setFieldsValue({ availablePortStart: 20000, availablePortEnd: 39999, cpuCoreCount: 4, memoryGiB: 8, diskGiB: 80 }); setQuickDrawerOpen(true) }}>PVE 快速构建</Button>
+            <Button type="primary" icon={<PlusOutlined />} onClick={() => { setEditing(null); form.setFieldsValue(hostToForm()); setDrawerOpen(true) }}>接入主机</Button>
+          </ManagementTableToolbar>
+        ) : null}
+        toolbar={!embedded ? (
           <FilterToolbar
             form={filterForm}
             onSubmit={(values) => setFilters((current) => ({ ...current, ...values, page: 1 }))}
@@ -461,17 +511,7 @@ function HostsTable({ embedded = false }: { embedded?: boolean }) {
             <Form.Item name="environment"><Input allowClear placeholder="环境" /></Form.Item>
           </FilterToolbar>
         ) : null}
-        <Table
-          rowKey="id"
-          className="soha-admin-table soha-vrt-table"
-          size="small"
-          loading={hostsQuery.isLoading}
-          dataSource={page.items}
-          columns={columns}
-          scroll={{ x: 1220 }}
-          pagination={embedded ? false : { current: page.page, pageSize: page.pageSize, total: page.total, showSizeChanger: true, onChange: (pageNumber, pageSize) => setFilters((current) => ({ ...current, page: pageNumber, pageSize })) }}
-        />
-      </Card>
+      />
       <Drawer title={editing ? '编辑 Docker 主机' : '接入 Docker 主机'} size="large" open={drawerOpen} onClose={() => setDrawerOpen(false)} extra={<DrawerFooter form={form} loading={createMutation.isPending} onCancel={() => setDrawerOpen(false)} />}>
         <Form form={form} layout="vertical" onFinish={(values) => createMutation.mutate(values)}>
           <Form.Item name="name" label="名称" rules={[{ required: true }]}><Input /></Form.Item>
@@ -575,32 +615,41 @@ function ProjectsTable({ embedded = false }: { embedded?: boolean }) {
     {
       title: '操作',
       fixed: 'right',
-      width: 270,
+      width: 160,
       render: (_value, record) => (
-        <Space>
-          {canDeployProjects ? <Button size="small" type="text" icon={<PlayCircleOutlined />} loading={deployMutation.isPending} onClick={() => deployMutation.mutate({ id: record.id, action: 'deploy' })}>部署</Button> : null}
-          {canDeployProjects ? <Button size="small" type="text" icon={<ReloadOutlined />} loading={deployMutation.isPending} onClick={() => deployMutation.mutate({ id: record.id, action: 'restart' })}>重启</Button> : null}
-          {canDeployProjects ? <Button size="small" type="text" icon={<PoweroffOutlined />} loading={deployMutation.isPending} onClick={() => deployMutation.mutate({ id: record.id, action: 'down' })}>停止</Button> : null}
-          {canManageProjects ? <Button size="small" type="text" icon={<EditOutlined />} onClick={() => { setEditing(record); form.setFieldsValue(record); setDrawerOpen(true) }} /> : null}
-          {canManageProjects ? <Popconfirm title="确认删除 Compose 项目？" onConfirm={() => deleteMutation.mutate(record.id)}><Button size="small" type="text" danger icon={<DeleteOutlined />} /></Popconfirm> : null}
+        <Space className="soha-row-action-icons">
+          {canDeployProjects ? <ManagementIconButton aria-label="部署项目" size="small" tooltip="部署" icon={<PlayCircleOutlined />} loading={deployMutation.isPending} onClick={() => deployMutation.mutate({ id: record.id, action: 'deploy' })} /> : null}
+          {canDeployProjects ? <ManagementIconButton aria-label="重启项目" size="small" tooltip="重启" icon={<ReloadOutlined />} loading={deployMutation.isPending} onClick={() => deployMutation.mutate({ id: record.id, action: 'restart' })} /> : null}
+          {canDeployProjects ? <ManagementIconButton aria-label="停止项目" size="small" tooltip="停止" icon={<PoweroffOutlined />} loading={deployMutation.isPending} onClick={() => deployMutation.mutate({ id: record.id, action: 'down' })} /> : null}
+          {canManageProjects ? <ManagementIconButton aria-label="编辑项目" size="small" tooltip="编辑" icon={<EditOutlined />} onClick={() => { setEditing(record); form.setFieldsValue(record); setDrawerOpen(true) }} /> : null}
+          {canManageProjects ? <Popconfirm title="确认删除 Compose 项目？" onConfirm={() => deleteMutation.mutate(record.id)}><ManagementIconButton aria-label="删除项目" size="small" tooltip="删除" danger icon={<DeleteOutlined />} /></Popconfirm> : null}
         </Space>
       ),
     },
   ]
   return (
     <>
-      <Card size="small" variant="outlined" className="soha-vrt-list-card soha-vrt-table-card">
-        <DockerTableHeader
-          title="Compose 项目"
-          meta={[`共 ${page.total} 个`, 'Compose 文件会解析服务清单；单容器会生成轻量 Compose']}
-          actions={!embedded ? (
-            <Space>
-              {canStartContainer ? <Button icon={<PlayCircleOutlined />} onClick={() => { containerForm.setFieldsValue({ protocol: 'tcp', exposureScope: 'internal', restartPolicy: 'unless-stopped', domainScheme: 'http', domainTlsEnabled: false, containerPort: 80 }); setContainerDrawerOpen(true) }}>启动容器</Button> : null}
-              {canManageProjects ? <Button type="primary" icon={<PlusOutlined />} onClick={() => { setEditing(null); form.setFieldsValue({ composeContent: DEFAULT_COMPOSE, status: 'draft', sourceKind: 'inline_compose' }); setDrawerOpen(true) }}>创建项目</Button> : null}
-            </Space>
-          ) : null}
-        />
-        {!embedded ? (
+      <AdminTable
+        rowKey="id"
+        className="soha-vrt-table"
+        columnSettingIconOnly
+        columnSettingPlacement="header"
+        enableColumnSelection={!embedded}
+        tableSize="small"
+        loading={projectsQuery.isLoading}
+        dataSource={page.items}
+        columns={columns}
+        scroll={{ x: 1430 }}
+        pagination={pageTablePagination(page, embedded, setFilters)}
+        shellClassName="soha-management-table-shell soha-docker-table-shell"
+        title={<DockerTableTitle title="Compose 项目" meta={[`共 ${page.total} 个`, 'Compose 文件会解析服务清单；单容器会生成轻量 Compose']} />}
+        headerExtra={!embedded ? (
+          <ManagementTableToolbar>
+            {canStartContainer ? <Button icon={<PlayCircleOutlined />} onClick={() => { containerForm.setFieldsValue({ protocol: 'tcp', exposureScope: 'internal', restartPolicy: 'unless-stopped', domainScheme: 'http', domainTlsEnabled: false, containerPort: 80 }); setContainerDrawerOpen(true) }}>启动容器</Button> : null}
+            {canManageProjects ? <Button type="primary" icon={<PlusOutlined />} onClick={() => { setEditing(null); form.setFieldsValue({ composeContent: DEFAULT_COMPOSE, status: 'draft', sourceKind: 'inline_compose' }); setDrawerOpen(true) }}>创建项目</Button> : null}
+          </ManagementTableToolbar>
+        ) : null}
+        toolbar={!embedded ? (
           <FilterToolbar form={filterForm} onSubmit={(values) => setFilters((current) => ({ ...current, ...values, page: 1 }))} onReset={() => setFilters({ page: 1, pageSize: filters.pageSize ?? 10 })}>
             <Form.Item name="search"><Input allowClear prefix={<SearchOutlined />} placeholder="搜索项目、Slug 或来源" /></Form.Item>
             <Form.Item name="hostId"><Select allowClear showSearch optionFilterProp="label" className="min-w-44" placeholder="主机" options={hostOptions} /></Form.Item>
@@ -608,8 +657,7 @@ function ProjectsTable({ embedded = false }: { embedded?: boolean }) {
             <Form.Item name="environment"><Input allowClear placeholder="环境" /></Form.Item>
           </FilterToolbar>
         ) : null}
-        <Table rowKey="id" className="soha-admin-table soha-vrt-table" size="small" loading={projectsQuery.isLoading} dataSource={page.items} columns={columns} scroll={{ x: 1430 }} pagination={embedded ? false : { current: page.page, pageSize: page.pageSize, total: page.total, showSizeChanger: true, onChange: (pageNumber, pageSize) => setFilters((current) => ({ ...current, page: pageNumber, pageSize })) }} />
-      </Card>
+      />
       <Drawer title={editing ? '编辑 Compose 项目' : '创建 Compose 项目'} size="large" open={drawerOpen} onClose={() => setDrawerOpen(false)} extra={<DrawerFooter form={form} loading={saveMutation.isPending} onCancel={() => setDrawerOpen(false)} />}>
         <Form form={form} layout="vertical" onFinish={(values) => saveMutation.mutate(values)}>
           <Form.Item name="name" label="名称" rules={[{ required: true }]}><Input /></Form.Item>
@@ -695,21 +743,41 @@ function ServicesTable({ embedded = false }: { embedded?: boolean }) {
     {
       title: '操作',
       fixed: 'right',
-      width: 230,
+      width: 130,
       render: (_value, record) => canManageServices ? (
-        <Space>
+        <Space className="soha-row-action-icons">
           {['restart', 'start', 'stop'].map((action) => (
-            <Button key={action} size="small" type="text" loading={actionMutation.isPending} onClick={() => actionMutation.mutate({ id: record.id, action })}>{operationActionLabel(action)}</Button>
+            <ManagementIconButton
+              key={action}
+              aria-label={operationActionLabel(action)}
+              size="small"
+              tooltip={operationActionLabel(action)}
+              icon={action === 'restart' ? <ReloadOutlined /> : action === 'start' ? <PlayCircleOutlined /> : <PoweroffOutlined />}
+              loading={actionMutation.isPending}
+              onClick={() => actionMutation.mutate({ id: record.id, action })}
+            />
           ))}
-          <Button size="small" type="text" icon={<FileTextOutlined />} loading={actionMutation.isPending} onClick={() => actionMutation.mutate({ id: record.id, action: 'logs' })} />
+          <ManagementIconButton aria-label="查看日志" size="small" tooltip="日志" icon={<FileTextOutlined />} loading={actionMutation.isPending} onClick={() => actionMutation.mutate({ id: record.id, action: 'logs' })} />
         </Space>
       ) : null,
     },
   ]
   return (
-    <Card size="small" variant="outlined" className="soha-vrt-list-card soha-vrt-table-card">
-      <DockerTableHeader title="容器服务" meta={[`共 ${page.total} 个`, '由 Compose 项目解析或运行态同步生成']} />
-      {!embedded ? (
+    <AdminTable
+      rowKey="id"
+      className="soha-vrt-table"
+      columnSettingIconOnly
+      columnSettingPlacement="header"
+      enableColumnSelection={!embedded}
+      tableSize="small"
+      loading={servicesQuery.isLoading}
+      dataSource={page.items}
+      columns={columns}
+      scroll={{ x: 1440 }}
+      pagination={pageTablePagination(page, embedded, setFilters)}
+      shellClassName="soha-management-table-shell soha-docker-table-shell"
+      title={<DockerTableTitle title="容器服务" meta={[`共 ${page.total} 个`, '由 Compose 项目解析或运行态同步生成']} />}
+      toolbar={!embedded ? (
         <FilterToolbar form={filterForm} onSubmit={(values) => setFilters((current) => ({ ...current, ...values, page: 1 }))} onReset={() => setFilters({ page: 1, pageSize: filters.pageSize ?? 10 })}>
           <Form.Item name="search"><Input allowClear prefix={<SearchOutlined />} placeholder="搜索服务、镜像或容器" /></Form.Item>
           <Form.Item name="hostId"><Select allowClear showSearch optionFilterProp="label" className="min-w-44" placeholder="主机" options={hostOptions} /></Form.Item>
@@ -717,8 +785,7 @@ function ServicesTable({ embedded = false }: { embedded?: boolean }) {
           <Form.Item name="status"><Select allowClear className="min-w-32" placeholder="状态" options={['defined', 'running', 'exited', 'failed', 'unknown'].map((item) => ({ value: item, label: item }))} /></Form.Item>
         </FilterToolbar>
       ) : null}
-      <Table rowKey="id" className="soha-admin-table soha-vrt-table" size="small" loading={servicesQuery.isLoading} dataSource={page.items} columns={columns} scroll={{ x: 1440 }} pagination={embedded ? false : { current: page.page, pageSize: page.pageSize, total: page.total, showSizeChanger: true, onChange: (pageNumber, pageSize) => setFilters((current) => ({ ...current, page: pageNumber, pageSize })) }} />
-    </Card>
+    />
   )
 }
 
@@ -759,20 +826,37 @@ function PortsTable({ embedded = false }: { embedded?: boolean }) {
     {
       title: '操作',
       fixed: 'right',
-      width: 130,
+      width: 96,
       render: (_value, record) => canManagePorts ? (
-        <Space>
-          <Button size="small" type="text" icon={<EditOutlined />} onClick={() => { setEditing(record); form.setFieldsValue(record); setDrawerOpen(true) }} />
-          <Popconfirm title="确认删除端口映射？" onConfirm={() => deleteMutation.mutate(record.id)}><Button size="small" type="text" danger icon={<DeleteOutlined />} /></Popconfirm>
+        <Space className="soha-row-action-icons">
+          <ManagementIconButton aria-label="编辑端口映射" size="small" tooltip="编辑" icon={<EditOutlined />} onClick={() => { setEditing(record); form.setFieldsValue(record); setDrawerOpen(true) }} />
+          <Popconfirm title="确认删除端口映射？" onConfirm={() => deleteMutation.mutate(record.id)}><ManagementIconButton aria-label="删除端口映射" size="small" tooltip="删除" danger icon={<DeleteOutlined />} /></Popconfirm>
         </Space>
       ) : null,
     },
   ]
   return (
     <>
-      <Card size="small" variant="outlined" className="soha-vrt-list-card soha-vrt-table-card">
-        <DockerTableHeader title="端口映射" meta={[`共 ${page.total} 条`, '按主机、IP、端口、协议和域名做冲突校验']} actions={canManagePorts && !embedded ? <Button type="primary" icon={<PlusOutlined />} onClick={() => { setEditing(null); form.setFieldsValue({ protocol: 'tcp', exposureScope: 'internal', status: 'active', domainScheme: 'http', domainTlsEnabled: false }); setDrawerOpen(true) }}>新增映射</Button> : null} />
-        {!embedded ? (
+      <AdminTable
+        rowKey="id"
+        className="soha-vrt-table"
+        columnSettingIconOnly
+        columnSettingPlacement="header"
+        enableColumnSelection={!embedded}
+        tableSize="small"
+        loading={portsQuery.isLoading}
+        dataSource={page.items}
+        columns={columns}
+        scroll={{ x: 1470 }}
+        pagination={pageTablePagination(page, embedded, setFilters)}
+        shellClassName="soha-management-table-shell soha-docker-table-shell"
+        title={<DockerTableTitle title="端口映射" meta={[`共 ${page.total} 条`, '按主机、IP、端口、协议和域名做冲突校验']} />}
+        headerExtra={canManagePorts && !embedded ? (
+          <ManagementTableToolbar>
+            <Button type="primary" icon={<PlusOutlined />} onClick={() => { setEditing(null); form.setFieldsValue({ protocol: 'tcp', exposureScope: 'internal', status: 'active', domainScheme: 'http', domainTlsEnabled: false }); setDrawerOpen(true) }}>新增映射</Button>
+          </ManagementTableToolbar>
+        ) : null}
+        toolbar={!embedded ? (
           <FilterToolbar form={filterForm} onSubmit={(values) => setFilters((current) => ({ ...current, ...values, page: 1 }))} onReset={() => setFilters({ page: 1, pageSize: filters.pageSize ?? 10 })}>
             <Form.Item name="search"><Input allowClear prefix={<SearchOutlined />} placeholder="搜索名称、访问地址或负责人" /></Form.Item>
             <Form.Item name="hostId"><Select allowClear showSearch optionFilterProp="label" className="min-w-44" placeholder="主机" options={hostOptions} /></Form.Item>
@@ -780,8 +864,7 @@ function PortsTable({ embedded = false }: { embedded?: boolean }) {
             <Form.Item name="status"><Select allowClear className="min-w-32" placeholder="状态" options={['active', 'reserved', 'released', 'expired'].map((item) => ({ value: item, label: item }))} /></Form.Item>
           </FilterToolbar>
         ) : null}
-        <Table rowKey="id" className="soha-admin-table soha-vrt-table" size="small" loading={portsQuery.isLoading} dataSource={page.items} columns={columns} scroll={{ x: 1470 }} pagination={embedded ? false : { current: page.page, pageSize: page.pageSize, total: page.total, showSizeChanger: true, onChange: (pageNumber, pageSize) => setFilters((current) => ({ ...current, page: pageNumber, pageSize })) }} />
-      </Card>
+      />
       <Drawer title={editing ? '编辑端口映射' : '新增端口映射'} size="large" open={drawerOpen} onClose={() => setDrawerOpen(false)} extra={<DrawerFooter form={form} loading={saveMutation.isPending} onCancel={() => setDrawerOpen(false)} />}>
         <Form form={form} layout="vertical" onFinish={(values) => saveMutation.mutate(values)}>
           <Form.Item name="name" label="名称" rules={[{ required: true }]}><Input /></Form.Item>
@@ -839,25 +922,42 @@ function TemplatesTable() {
     { title: '变量', dataIndex: 'variables', width: 130, render: (value) => Object.keys(value ?? {}).length },
     { title: '更新时间', dataIndex: 'updatedAt', width: 155, render: formatDateTime },
     {
-      title: '操作', fixed: 'right', width: 130, render: (_value, record) => canManageTemplates ? (
-        <Space>
-          <Button size="small" type="text" icon={<EditOutlined />} onClick={() => { setEditing(record); form.setFieldsValue(record); setDrawerOpen(true) }} />
-          <Popconfirm title="确认删除模板？" onConfirm={() => deleteMutation.mutate(record.id)}><Button size="small" type="text" danger icon={<DeleteOutlined />} /></Popconfirm>
+      title: '操作', fixed: 'right', width: 96, render: (_value, record) => canManageTemplates ? (
+        <Space className="soha-row-action-icons">
+          <ManagementIconButton aria-label="编辑模板" size="small" tooltip="编辑" icon={<EditOutlined />} onClick={() => { setEditing(record); form.setFieldsValue(record); setDrawerOpen(true) }} />
+          <Popconfirm title="确认删除模板？" onConfirm={() => deleteMutation.mutate(record.id)}><ManagementIconButton aria-label="删除模板" size="small" tooltip="删除" danger icon={<DeleteOutlined />} /></Popconfirm>
         </Space>
       ) : null,
     },
   ]
   return (
     <>
-      <Card size="small" variant="outlined" className="soha-vrt-list-card soha-vrt-table-card">
-        <DockerTableHeader title="模板" meta={[`共 ${page.total} 个`, '用于快速生成 Compose 项目']} actions={canManageTemplates ? <Button type="primary" icon={<PlusOutlined />} onClick={() => { setEditing(null); form.setFieldsValue({ templateKind: 'compose', composeContent: DEFAULT_COMPOSE, enabled: true }); setDrawerOpen(true) }}>新增模板</Button> : null} />
-        <FilterToolbar form={filterForm} onSubmit={(values) => setFilters((current) => ({ ...current, ...values, page: 1 }))} onReset={() => setFilters({ page: 1, pageSize: filters.pageSize ?? 10 })}>
-          <Form.Item name="search"><Input allowClear prefix={<SearchOutlined />} placeholder="搜索模板" /></Form.Item>
-          <Form.Item name="kind"><Select allowClear className="min-w-32" placeholder="类型" options={[{ value: 'compose', label: 'compose' }]} /></Form.Item>
-          <Form.Item name="enabled"><Select allowClear className="min-w-32" placeholder="启用" options={[{ value: true, label: '启用' }, { value: false, label: '停用' }]} /></Form.Item>
-        </FilterToolbar>
-        <Table rowKey="id" className="soha-admin-table soha-vrt-table" size="small" loading={templatesQuery.isLoading} dataSource={page.items} columns={columns} scroll={{ x: 860 }} pagination={{ current: page.page, pageSize: page.pageSize, total: page.total, showSizeChanger: true, onChange: (pageNumber, pageSize) => setFilters((current) => ({ ...current, page: pageNumber, pageSize })) }} />
-      </Card>
+      <AdminTable
+        rowKey="id"
+        className="soha-vrt-table"
+        columnSettingIconOnly
+        columnSettingPlacement="header"
+        tableSize="small"
+        loading={templatesQuery.isLoading}
+        dataSource={page.items}
+        columns={columns}
+        scroll={{ x: 860 }}
+        pagination={pageTablePagination(page, false, setFilters)}
+        shellClassName="soha-management-table-shell soha-docker-table-shell"
+        title={<DockerTableTitle title="模板" meta={[`共 ${page.total} 个`, '用于快速生成 Compose 项目']} />}
+        headerExtra={canManageTemplates ? (
+          <ManagementTableToolbar>
+            <Button type="primary" icon={<PlusOutlined />} onClick={() => { setEditing(null); form.setFieldsValue({ templateKind: 'compose', composeContent: DEFAULT_COMPOSE, enabled: true }); setDrawerOpen(true) }}>新增模板</Button>
+          </ManagementTableToolbar>
+        ) : null}
+        toolbar={(
+          <FilterToolbar form={filterForm} onSubmit={(values) => setFilters((current) => ({ ...current, ...values, page: 1 }))} onReset={() => setFilters({ page: 1, pageSize: filters.pageSize ?? 10 })}>
+            <Form.Item name="search"><Input allowClear prefix={<SearchOutlined />} placeholder="搜索模板" /></Form.Item>
+            <Form.Item name="kind"><Select allowClear className="min-w-32" placeholder="类型" options={[{ value: 'compose', label: 'compose' }]} /></Form.Item>
+            <Form.Item name="enabled"><Select allowClear className="min-w-32" placeholder="启用" options={[{ value: true, label: '启用' }, { value: false, label: '停用' }]} /></Form.Item>
+          </FilterToolbar>
+        )}
+      />
       <Drawer title={editing ? '编辑模板' : '新增模板'} size="large" open={drawerOpen} onClose={() => setDrawerOpen(false)} extra={<DrawerFooter form={form} loading={saveMutation.isPending} onCancel={() => setDrawerOpen(false)} />}>
         <Form form={form} layout="vertical" onFinish={(values) => saveMutation.mutate(values)}>
           <Form.Item name="name" label="名称" rules={[{ required: true }]}><Input /></Form.Item>
@@ -905,27 +1005,41 @@ function OperationsTable({ embedded = false, initialPreset = 'all' as OperationP
     { title: '开始', dataIndex: 'startedAt', width: 155, render: formatDateTime },
     { title: '结束', dataIndex: 'finishedAt', width: 155, render: formatDateTime },
     {
-      title: '操作', fixed: 'right', width: 190, render: (_value, record) => (
-        <Space>
-          <Button size="small" type="text" icon={<FileTextOutlined />} onClick={() => setSelectedOperation(record)}>日志</Button>
-          {canManageOperations && isPendingOperation(record.status) ? <Button size="small" type="text" danger loading={cancelMutation.isPending} onClick={() => cancelMutation.mutate(record.id)}>取消</Button> : null}
-          {canManageOperations && isAbnormalOperation(record.status) ? <Button size="small" type="text" loading={retryMutation.isPending} onClick={() => retryMutation.mutate(record.id)}>重试</Button> : null}
+      title: '操作', fixed: 'right', width: 116, render: (_value, record) => (
+        <Space className="soha-row-action-icons">
+          <ManagementIconButton aria-label="查看日志" size="small" tooltip="日志" icon={<FileTextOutlined />} onClick={() => setSelectedOperation(record)} />
+          {canManageOperations && isPendingOperation(record.status) ? <ManagementIconButton aria-label="取消任务" size="small" tooltip="取消" danger icon={<PoweroffOutlined />} loading={cancelMutation.isPending} onClick={() => cancelMutation.mutate(record.id)} /> : null}
+          {canManageOperations && isAbnormalOperation(record.status) ? <ManagementIconButton aria-label="重试任务" size="small" tooltip="重试" icon={<ReloadOutlined />} loading={retryMutation.isPending} onClick={() => retryMutation.mutate(record.id)} /> : null}
         </Space>
       ),
     },
   ]
   return (
     <>
-      <Card size="small" variant="outlined" className="soha-vrt-list-card soha-vrt-table-card">
-        <DockerTableHeader title="操作记录" meta={[`共 ${page.total} 个`, 'Docker 控制面任务队列']} />
-        <div className="soha-vrt-filterbar soha-vrt-filterbar--split">
-          <div className="soha-vrt-filterbar-main">
-            <Segmented<OperationPreset> value={preset} onChange={(value) => { setPreset(value); setFilters((current) => ({ ...current, page: 1 })) }} options={[{ value: 'all', label: '全部' }, { value: 'pending', label: '待处理' }, { value: 'abnormal', label: '异常' }, { value: 'host', label: '主机构建' }, { value: 'project', label: 'Compose' }, { value: 'service', label: '服务' }]} />
-            {!embedded ? <Input.Search allowClear className="max-w-72" placeholder="搜索任务或发起人" onSearch={(search) => setFilters((current) => ({ ...current, search, page: 1 }))} /> : null}
+      <AdminTable
+        rowKey="id"
+        className="soha-vrt-table"
+        columnSettingIconOnly
+        columnSettingPlacement="header"
+        enableColumnSelection={!embedded}
+        tableSize="small"
+        loading={operationsQuery.isLoading}
+        dataSource={page.items}
+        columns={columns}
+        rowClassName={(record: DockerOperation) => `soha-vrt-row-tone-${operationTone(record)}`}
+        scroll={{ x: 1280 }}
+        pagination={pageTablePagination(page, embedded, setFilters)}
+        shellClassName="soha-management-table-shell soha-docker-table-shell"
+        title={<DockerTableTitle title="操作记录" meta={[`共 ${page.total} 个`, 'Docker 控制面任务队列']} />}
+        toolbar={(
+          <div className="soha-docker-table-filterbar">
+            <div className="soha-vrt-filterbar-main">
+              <Segmented<OperationPreset> value={preset} onChange={(value) => { setPreset(value); setFilters((current) => ({ ...current, page: 1 })) }} options={[{ value: 'all', label: '全部' }, { value: 'pending', label: '待处理' }, { value: 'abnormal', label: '异常' }, { value: 'host', label: '主机构建' }, { value: 'project', label: 'Compose' }, { value: 'service', label: '服务' }]} />
+              {!embedded ? <Input.Search allowClear className="max-w-72" placeholder="搜索任务或发起人" onSearch={(search) => setFilters((current) => ({ ...current, search, page: 1 }))} /> : null}
+            </div>
           </div>
-        </div>
-        <Table rowKey="id" className="soha-admin-table soha-vrt-table" size="small" loading={operationsQuery.isLoading} dataSource={page.items} columns={columns} rowClassName={(record) => `soha-vrt-row-tone-${operationTone(record)}`} scroll={{ x: 1280 }} pagination={embedded ? false : { current: page.page, pageSize: page.pageSize, total: page.total, showSizeChanger: true, onChange: (pageNumber, pageSize) => setFilters((current) => ({ ...current, page: pageNumber, pageSize })) }} />
-      </Card>
+        )}
+      />
       <OperationLogDrawer operation={selectedOperation} logs={logs} loading={logsQuery.isLoading} open={Boolean(selectedOperation)} onClose={() => setSelectedOperation(null)} />
     </>
   )
@@ -961,25 +1075,49 @@ export function DockerOverviewPage() {
       </div>
       <div className="soha-vrt-workbench-grid">
         <div className="soha-vrt-workbench-main">
-          <Card size="small" variant="outlined" className="soha-vrt-list-card">
+          <Card size="small" variant="outlined" className="soha-docker-panel-card">
             <DockerTableHeader title="运行分布" />
             <SummaryChips counts={[{ key: 'hosts-online', label: '主机在线', value: hostSummary.online, tone: 'success' }, { key: 'hosts-provisioning', label: '主机构建中', value: hostSummary.provisioning, tone: 'warning' }, { key: 'projects-running', label: '项目运行', value: projectSummary.running, tone: 'success' }, { key: 'projects-pending', label: '项目待处理', value: projectSummary.pending, tone: 'warning' }, { key: 'services-running', label: '服务运行', value: serviceSummary.running, tone: 'success' }, { key: 'services-failed', label: '服务异常', value: serviceSummary.failed, tone: 'danger' }]} />
           </Card>
           <OperationsTable embedded initialPreset="pending" />
         </div>
         <div className="soha-vrt-side-stack">
-          <Card size="small" variant="outlined" className="soha-vrt-list-card">
+          <Card size="small" variant="outlined" className="soha-docker-panel-card">
             <DockerTableHeader title="端口暴露" />
             <SummaryChips compact counts={[{ key: 'internal', label: 'Internal', value: portSummary.internal }, { key: 'vpn', label: 'VPN', value: portSummary.vpn, tone: 'warning' }, { key: 'public', label: 'Public', value: portSummary.public, tone: 'danger' }, { key: 'expired', label: 'Expired', value: portSummary.expired, tone: 'danger' }]} />
           </Card>
-          <Card size="small" variant="outlined" className="soha-vrt-list-card soha-vrt-table-card">
-            <DockerTableHeader title="即将到期项目" />
-            <Table rowKey="id" size="small" pagination={false} dataSource={expiringProjects} locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无到期项目" /> }} columns={[{ title: '项目', dataIndex: 'name' }, { title: '状态', dataIndex: 'status', render: statusTag }, { title: '到期', dataIndex: 'expiresAt', render: formatDateTime }]} />
-          </Card>
-          <Card size="small" variant="outlined" className="soha-vrt-list-card soha-vrt-table-card">
-            <DockerTableHeader title="最近任务" />
-            <Table rowKey="id" size="small" pagination={false} dataSource={recentOperations} locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无任务" /> }} columns={[{ title: '类型', dataIndex: 'operationKind' }, { title: '状态', dataIndex: 'status', render: statusTag }, { title: '创建', dataIndex: 'createdAt', render: formatDateTime }]} />
-          </Card>
+          <AdminTable
+            rowKey="id"
+            className="soha-vrt-table"
+            shellClassName="soha-management-table-shell soha-docker-table-shell"
+            title={<DockerTableTitle title="即将到期项目" />}
+            tableSize="small"
+            pagination={false}
+            enableColumnSelection={false}
+            dataSource={expiringProjects}
+            empty="暂无到期项目"
+            columns={[
+              { title: '项目', dataIndex: 'name' },
+              { title: '状态', dataIndex: 'status', render: statusTag },
+              { title: '到期', dataIndex: 'expiresAt', render: formatDateTime },
+            ]}
+          />
+          <AdminTable
+            rowKey="id"
+            className="soha-vrt-table"
+            shellClassName="soha-management-table-shell soha-docker-table-shell"
+            title={<DockerTableTitle title="最近任务" />}
+            tableSize="small"
+            pagination={false}
+            enableColumnSelection={false}
+            dataSource={recentOperations}
+            empty="暂无任务"
+            columns={[
+              { title: '类型', dataIndex: 'operationKind' },
+              { title: '状态', dataIndex: 'status', render: statusTag },
+              { title: '创建', dataIndex: 'createdAt', render: formatDateTime },
+            ]}
+          />
         </div>
       </div>
     </div>

@@ -71,7 +71,7 @@ export function PlatformClusterScopeHint({ resourceLabel }: { resourceLabel: str
 
   return (
     <Card className="soha-scope-hint-card">
-      <Space direction="vertical" align="start" size={4}>
+      <Space orientation="vertical" align="start" size={4}>
         <Text strong>{`${resourceLabel} 业务线范围说明`}</Text>
         <Text type="secondary">
           {`${resourceLabel} 属于集群级共享资源，不会按单个 workload 再拆分。页面可见性由你在当前集群已绑定的发布目标范围决定。`}

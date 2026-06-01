@@ -13,13 +13,13 @@ import {
   type NodeProps,
 } from '@xyflow/react'
 import dagre from 'dagre'
-import { Button, Card, Empty, Input, Space, Tag, Typography } from 'antd'
+import { Button, Card, Input, Space, Tag, Typography } from 'antd'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import type { TableColumnsType } from 'antd'
 import '@xyflow/react/dist/style.css'
 import { AdminTable } from '@/components/admin-table'
-import { PageHeader } from '@/components/page-header'
+import { ManagementDetailHeader, ManagementState } from '@/components/management-list'
 import { StatGrid } from '@/components/stat-grid'
 import { useI18n } from '@/i18n'
 import { buildClusterScopedPath } from '@/features/platform/platform-scope-query'
@@ -1492,7 +1492,7 @@ export function NetworkTopologyPage() {
 
   return (
     <div className="soha-page">
-      <PageHeader
+      <ManagementDetailHeader
         title={localeCode === 'zh_CN' ? '网络拓扑' : 'Network Topology'}
         description={localeCode === 'zh_CN'
           ? '把 Ingress、Gateway / HTTPRoute、Service 与后端汇总进一张入口网络拓扑里，先看路径，再继续向 Service 和 Pod 钻取。'
@@ -1682,20 +1682,19 @@ export function NetworkTopologyPage() {
                   ) : null}
                 </>
               ) : (
-                <Empty description={localeCode === 'zh_CN' ? '点击上方拓扑节点，查看它的上下游关系和跳转动作' : 'Click a topology node above to inspect its upstream and downstream relations'} />
+                <ManagementState
+                  bordered={false}
+                  compact
+                  kind="select-scope"
+                  title={localeCode === 'zh_CN' ? '请选择拓扑节点' : 'Select a topology node'}
+                  description={localeCode === 'zh_CN' ? '点击上方拓扑节点，查看它的上下游关系和跳转动作' : 'Click a topology node above to inspect its upstream and downstream relations'}
+                />
               )}
             </div>
           </>
         ) : (
           <div className="flex min-h-[320px] items-center justify-center">
-            <Empty
-              description={(
-                <div className="flex flex-col items-center gap-1">
-                  <Text strong>{emptyStateTitle}</Text>
-                  <Text type="secondary" className="text-xs">{emptyStateDescription}</Text>
-                </div>
-              )}
-            />
+            <ManagementState bordered={false} compact title={emptyStateTitle} description={emptyStateDescription} />
           </div>
         )}
       </Card>
@@ -1716,6 +1715,7 @@ export function NetworkTopologyPage() {
         )}
       >
         <AdminTable
+          shellClassName="soha-management-table-shell"
           columns={columns}
           dataSource={tableRows}
           rowKey="id"

@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Button, Card, Empty, Spin, Statistic, Typography } from 'antd'
+import { Button, Card, Spin, Statistic, Typography } from 'antd'
 import {
   AppstoreOutlined,
   ArrowRightOutlined,
@@ -11,6 +11,7 @@ import {
   WarningOutlined,
 } from '@ant-design/icons'
 import { useQuery } from '@tanstack/react-query'
+import { ManagementDetailHeader, ManagementState } from '@/components/management-list'
 import { StatusTag } from '@/components/status-tag'
 import { buildClusterScopedPath } from '@/features/platform/platform-scope-query'
 import { useI18n } from '@/i18n'
@@ -300,26 +301,25 @@ export function OverviewPage() {
 
   return (
     <div className="soha-page soha-overview-page">
-      <section className="soha-overview-hero">
-        <div className="soha-overview-hero-header">
-          <h1 className="soha-overview-title">{t('page.overview.title', 'Platform Overview')}</h1>
-        </div>
+      <ManagementDetailHeader
+        title={t('page.overview.title', 'Platform Overview')}
+        description={localeCode === 'zh_CN' ? '集群、告警和 Pod 运行态势的统一入口。' : 'Unified entry for clusters, alerts, and pod runtime posture.'}
+      />
 
-        <div className="soha-overview-metric-grid">
-          {overviewStats.map((item) => (
-            <Card key={item.key} size="small" variant="outlined" className={`soha-overview-metric-card is-${item.tone}`}>
-              <div className="soha-overview-metric-card-head">
-                <div className="soha-overview-metric-copy">
-                  <Text className="soha-overview-metric-label">{item.label}</Text>
-                  <Statistic value={item.value} />
-                </div>
-                <span className="soha-overview-metric-icon">{item.icon}</span>
+      <div className="soha-overview-metric-grid">
+        {overviewStats.map((item) => (
+          <Card key={item.key} size="small" variant="outlined" className={`soha-overview-metric-card is-${item.tone}`}>
+            <div className="soha-overview-metric-card-head">
+              <div className="soha-overview-metric-copy">
+                <Text className="soha-overview-metric-label">{item.label}</Text>
+                <Statistic value={item.value} />
               </div>
-              <Text className="soha-overview-metric-helper">{item.helper}</Text>
-            </Card>
-          ))}
-        </div>
-      </section>
+              <span className="soha-overview-metric-icon">{item.icon}</span>
+            </div>
+            <Text className="soha-overview-metric-helper">{item.helper}</Text>
+          </Card>
+        ))}
+      </div>
 
       <div className="soha-overview-summary-grid">
         <Card
@@ -333,7 +333,7 @@ export function OverviewPage() {
         >
           {summary ? (
             <div className="soha-overview-alert-stack">
-              <div className="soha-overview-inline-banner">
+              <div className="soha-overview-section-bar">
                 <div>
                   <Text strong>{localeCode === 'zh_CN' ? '告警分布' : 'Alert Distribution'}</Text>
                   <div className="soha-overview-inline-caption">
@@ -356,7 +356,7 @@ export function OverviewPage() {
               </div>
             </div>
           ) : (
-            <Empty description={t('page.overview.noAlerts', 'No alert summary')} />
+            <ManagementState bordered={false} compact title={t('page.overview.noAlerts', 'No alert summary')} />
           )}
         </Card>
 
@@ -370,7 +370,7 @@ export function OverviewPage() {
           }
         >
           {clusters.length === 0 ? (
-            <Empty description={t('page.overview.noClusters', 'No clusters')} />
+            <ManagementState bordered={false} compact title={t('page.overview.noClusters', 'No clusters')} />
           ) : (
             <div className="soha-overview-cluster-list">
               {clusters.map((cluster) => (
@@ -408,17 +408,17 @@ export function OverviewPage() {
         ) : null}
       >
         {clusters.length === 0 ? (
-          <Empty description={localeCode === 'zh_CN' ? '暂无可用集群' : 'No cluster available'} />
+          <ManagementState bordered={false} compact kind="select-scope" title={localeCode === 'zh_CN' ? '暂无可用集群' : 'No cluster available'} />
         ) : workloadOverviewLoading ? (
           <div className="flex items-center justify-center h-56">
             <Spin size="large" />
           </div>
         ) : !workloadOverview ? (
-          <Empty description={localeCode === 'zh_CN' ? '当前平台暂无运行态势摘要' : 'No workload runtime summary for the platform'} />
+          <ManagementState bordered={false} compact title={localeCode === 'zh_CN' ? '当前平台暂无运行态势摘要' : 'No workload runtime summary for the platform'} />
         ) : (
           <div className="soha-overview-runtime-layout">
             <div className="soha-overview-runtime-main">
-              <div className="soha-overview-runtime-banner">
+              <div className="soha-overview-section-bar">
                 <div>
                   <div className="soha-overview-section-kicker">
                     {localeCode === 'zh_CN' ? '运行面信号' : 'Runtime Signal'}
@@ -427,7 +427,7 @@ export function OverviewPage() {
                     {currentCluster?.name || (localeCode === 'zh_CN' ? '当前集群' : 'Current Cluster')}
                   </Text>
                 </div>
-                <div className="soha-overview-hero-pills">
+                <div className="soha-overview-meta-pills">
                   <span className="soha-overview-pill">
                     <span className="soha-overview-pill-label">{localeCode === 'zh_CN' ? '数据来源' : 'Source'}</span>
                     <span className="soha-overview-pill-value">{formatWorkloadSource(workloadOverview.source, localeCode)}</span>
@@ -467,7 +467,7 @@ export function OverviewPage() {
                   </Text>
                 </div>
                 {problematicPods.length === 0 ? (
-                  <Empty description={localeCode === 'zh_CN' ? '当前平台没有需要关注的 Pod' : 'No pods require attention in the platform scope'} />
+                  <ManagementState bordered={false} compact title={localeCode === 'zh_CN' ? '当前平台没有需要关注的 Pod' : 'No pods require attention in the platform scope'} />
                 ) : (
                   <div className="soha-overview-attention-list">
                     {problematicPods.map((item) => (
@@ -504,7 +504,7 @@ export function OverviewPage() {
                   </div>
                 </div>
                 {namespaceBreakdown.length === 0 ? (
-                  <Empty description={localeCode === 'zh_CN' ? '当前平台暂无 Pod 分布数据' : 'No namespace distribution in the platform scope'} />
+                  <ManagementState bordered={false} compact title={localeCode === 'zh_CN' ? '当前平台暂无 Pod 分布数据' : 'No namespace distribution in the platform scope'} />
                 ) : (
                   <div className="soha-overview-namespace-list">
                     {namespaceBreakdown.map((item) => (

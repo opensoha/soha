@@ -17,8 +17,9 @@ import {
   type NodeProps,
 } from '@xyflow/react'
 import dagre from 'dagre'
-import { Button, Card, Empty, Input, InputNumber, Select, Space, Switch, Tag, Typography } from 'antd'
+import { Button, Card, Input, InputNumber, Select, Space, Switch, Tag, Typography } from 'antd'
 import '@xyflow/react/dist/style.css'
+import { ManagementState } from '@/components/management-list'
 import { useI18n } from '@/i18n'
 import {
   createDagNode,
@@ -539,7 +540,13 @@ function ReleaseFlowDagEditorInner({
             <Text type="secondary" className="text-xs">{`${selectedEdge.source} -> ${selectedEdge.target}`}</Text>
           </div>
         ) : (
-          <Empty description={localeCode === 'zh_CN' ? '选择节点或连线后，可在这里编辑属性' : 'Select a node or edge to edit its properties here'} />
+          <ManagementState
+            bordered={false}
+            compact
+            kind="select-scope"
+            title={localeCode === 'zh_CN' ? '请选择节点或连线' : 'Select a node or edge'}
+            description={localeCode === 'zh_CN' ? '选择节点或连线后，可在这里编辑属性' : 'Select a node or edge to edit its properties here'}
+          />
         )}
       </Card>
     </div>

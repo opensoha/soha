@@ -1,12 +1,19 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { AppstoreOutlined, DeleteOutlined, EditOutlined, PlayCircleOutlined, PlusOutlined, RadarChartOutlined, RobotOutlined, ToolOutlined } from '@ant-design/icons'
-import { Alert, App, Button, Card, Col, Empty, Flex, Form, Input, InputNumber, List, Modal, Popconfirm, Row, Segmented, Select, Space, Statistic, Switch, Table, Tag, Typography } from 'antd'
+import { Alert, App, Button, Card, Col, Flex, Form, Input, InputNumber, List, Modal, Popconfirm, Row, Segmented, Select, Space, Statistic, Switch, Tag, Typography } from 'antd'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { PageHeader } from '@/components/page-header'
+import { AdminTable } from '@/components/admin-table'
+import {
+  ManagementDetailHeader,
+  ManagementIconButton,
+  ManagementState,
+  ManagementTableToolbar,
+} from '@/components/management-list'
 import { StatusTag } from '@/components/status-tag'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth/permission-snapshot'
 import { api } from '@/services/api-client'
+import { tableColumnPresets } from '@/utils/table-columns'
 import { AISettingsPage } from '@/features/settings/settings-pages'
 import type { ApiResponse } from '@/types'
 import { AIWorkbenchPage } from './workbench-page'
@@ -94,6 +101,17 @@ interface AutomationPolicy {
   cooldownSeconds?: number
 }
 
+interface InspectionRun {
+  id: string
+  taskId: string
+  status: string
+  severity: string
+  summary: string
+  findings?: Array<{ id: string; title: string; severity: string }>
+  startedAt: string
+  completedAt?: string
+}
+
 interface AutomationPolicyFormValues {
   name?: string
   triggerType?: string
@@ -150,6 +168,14 @@ const AUTOMATION_STATUS_OPTIONS = [
   { value: 'firing', label: 'firing' },
   { value: 'resolved', label: 'resolved' },
 ]
+
+const AI_OVERVIEW_ACTIONS = [
+  { key: 'root_cause', label: '根因调查', detail: '告警、事件、异常波动', href: getAIWorkbenchPathForMode('root_cause'), icon: <RobotOutlined /> },
+  { key: 'performance', label: '性能分析', detail: '容量、时延、吞吐', href: getAIWorkbenchPathForMode('performance'), icon: <RadarChartOutlined /> },
+  { key: 'trace', label: '链路分析', detail: '跨服务路径与热点', href: getAIWorkbenchPathForMode('trace'), icon: <AppstoreOutlined /> },
+  { key: 'operations', label: '巡检与自动化', detail: '任务、运行、策略', href: getAIOperationsPath(), icon: <PlayCircleOutlined /> },
+  { key: 'tools', label: '工具与技能', detail: 'MCP、数据源、Skills', href: getAIToolsPath(), icon: <ToolOutlined /> },
+] as const
 
 function defaultInspectionTaskValues(): InspectionTaskFormValues {
   return {
@@ -264,60 +290,6 @@ export function policyFormValuesFromRecord(policy: AutomationPolicy): Automation
   }
 }
 
-const AI_HUB_MODES = [
-  { key: 'root_cause', label: '根因', detail: '面向告警、事件、异常波动', href: getAIWorkbenchPathForMode('root_cause'), icon: <RobotOutlined /> },
-  { key: 'performance', label: '性能', detail: '面向容量、时延、吞吐分析', href: getAIWorkbenchPathForMode('performance'), icon: <RadarChartOutlined /> },
-  { key: 'trace', label: '链路', detail: '面向跨服务路径与热点定位', href: getAIWorkbenchPathForMode('trace'), icon: <AppstoreOutlined /> },
-] as const
-
-const AI_HUB_LANES = [
-  {
-    key: 'workbench',
-    title: '调查工作台',
-    description: '把 AI Chat、根因、性能、链路和巡检复盘都收进一个主调查面板。',
-    cta: '进入调查',
-    href: getAIWorkbenchPathForMode('general'),
-    icon: <RobotOutlined />,
-  },
-  {
-    key: 'operations',
-    title: '巡检与自动化',
-    description: '管理巡检任务、运行结果和自动化策略，并把结论送回调查会话。',
-    cta: '进入巡检',
-    href: getAIOperationsPath(),
-    icon: <PlayCircleOutlined />,
-  },
-  {
-    key: 'tools',
-    title: '工具与技能',
-    description: '查看 MCP adapters、数据源和技能装配，把工具层能力变成调查输入。',
-    cta: '进入工具',
-    href: getAIToolsPath(),
-    icon: <ToolOutlined />,
-  },
-] as const
-
-const AI_SIGNAL_STRIPS = [
-  {
-    title: '告警起因',
-    detail: '先从告警、事件、最近异常切入，决定是直接开调查还是先做巡检复盘。',
-    action: '查看监控工作台',
-    href: '/monitoring-workbench/alerts',
-  },
-  {
-    title: '运行画像',
-    detail: '从性能、链路和服务热点快速确定本轮观察范围，再进入调查工作台。',
-    action: '按性能模式进入',
-    href: getAIWorkbenchPathForMode('performance'),
-  },
-  {
-    title: '工具装配',
-    detail: '确认当前数据源、技能和 MCP adapter 可用性，避免调查入口进来后再补工具。',
-    action: '查看工具与技能',
-    href: getAIToolsPath(),
-  },
-] as const
-
 function buildScopeSummary(scope?: WorkbenchSessionScope) {
   if (!scope) return '未固定上下文'
   return [scope.clusterId, scope.namespace, scope.workload || scope.service, scope.alertId].filter(Boolean).join(' / ') || '未固定上下文'
@@ -349,119 +321,43 @@ export function AIObserveOverviewPage() {
 
   return (
     <div className="soha-page">
-      <PageHeader
+      <ManagementDetailHeader
         title="AI工作台"
         description="面向 k8s工作台的 AIOps 入口，统一承接调查、巡检、性能与工具链能力。"
         actions={
-          <Space>
+          <ManagementTableToolbar>
             <Button icon={<ToolOutlined />} onClick={() => navigate(getAIToolsPath())}>工具与技能</Button>
             <Button type="primary" icon={<RobotOutlined />} onClick={() => navigate(getAIWorkbenchPathForMode('general'))}>进入调查工作台</Button>
-          </Space>
+          </ManagementTableToolbar>
         }
       />
 
-      <section className="soha-ai-hub-hero">
-        <div className="soha-ai-hub-hero__copy">
-          <div className="soha-ai-hub-hero__eyebrow">AIOps Hub</div>
-          <h2 className="soha-ai-hub-hero__title">让 AI 观测成为 k8s工作台里的第一层排障入口</h2>
-          <Paragraph className="soha-ai-hub-hero__description">
-            先判断是告警、性能、链路还是巡检复盘，再进入对应操作面。k8s工作台里只保留一个 AI 主入口，避免左侧导航继续裂成第二套树。
-          </Paragraph>
-          <Space wrap>
-            <Tag color="blue">会话优先</Tag>
-            <Tag>调查中心化</Tag>
-            <Tag>巡检复盘回流</Tag>
-            <Tag>工具装配可见</Tag>
-          </Space>
-        </div>
-        <div className="soha-ai-hub-hero__rail">
-          {AI_HUB_MODES.map((item) => (
-            <button
-              key={item.key}
-              className="soha-ai-hub-mode"
-              onClick={() => navigate(item.href)}
-              type="button"
-            >
-              <span className="soha-ai-hub-mode__icon">{item.icon}</span>
-              <span className="soha-ai-hub-mode__copy">
-                <span className="soha-ai-hub-mode__label">{item.label}</span>
-                <span className="soha-ai-hub-mode__detail">{item.detail}</span>
+      <Card size="small" variant="outlined" className="soha-management-panel-card soha-ai-overview-console">
+        <div className="soha-ai-overview-actions">
+          {AI_OVERVIEW_ACTIONS.map((item) => (
+            <button key={item.key} className="soha-ai-overview-action" type="button" onClick={() => navigate(item.href)}>
+              <span className="soha-ai-overview-action-icon">{item.icon}</span>
+              <span className="soha-ai-overview-action-main">
+                <span className="soha-ai-overview-action-label">{item.label}</span>
+                <span className="soha-ai-overview-action-detail">{item.detail}</span>
               </span>
             </button>
           ))}
         </div>
-      </section>
+        <div className="soha-ai-overview-metrics">
+          <Statistic title="调查会话" value={sessions.length} prefix={<RobotOutlined />} />
+          <Statistic title="根因运行" value={runs.length} prefix={<RadarChartOutlined />} />
+          <Statistic title="巡检运行" value={inspectionRuns.length} prefix={<AppstoreOutlined />} />
+          <Statistic title="AI 洞察" value={insights.length} prefix={<ToolOutlined />} />
+        </div>
+      </Card>
 
-      <section className="soha-ai-hub-lanes">
-        {AI_HUB_LANES.map((lane) => (
-          <Card
-            key={lane.key}
-            className="soha-ai-hub-lane"
-            extra={<Button type={lane.key === 'workbench' ? 'primary' : 'default'} onClick={() => navigate(lane.href)}>{lane.cta}</Button>}
-          >
-            <div className="soha-ai-hub-lane__icon">{lane.icon}</div>
-            <div className="soha-ai-hub-lane__title">{lane.title}</div>
-            <Paragraph className="soha-ai-hub-lane__description">{lane.description}</Paragraph>
-          </Card>
-        ))}
-      </section>
-
-      <section className="soha-ai-signal-strip-grid">
-        {AI_SIGNAL_STRIPS.map((item) => (
-          <button
-            key={item.title}
-            className="soha-ai-signal-strip"
-            onClick={() => navigate(item.href)}
-            type="button"
-          >
-            <span className="soha-ai-signal-strip__title">{item.title}</span>
-            <span className="soha-ai-signal-strip__detail">{item.detail}</span>
-            <span className="soha-ai-signal-strip__action">{item.action}</span>
-          </button>
-        ))}
-      </section>
-
-      <Row gutter={[16, 16]}>
-        <Col xs={24} xl={12}>
-          <Card>
-            <Space direction="vertical" size={12} style={{ width: '100%' }}>
-              <Space align="start">
-                <RobotOutlined style={{ fontSize: 24 }} />
-                <div>
-                  <Text strong>调查入口</Text>
-                  <Paragraph type="secondary" style={{ marginBottom: 0 }}>
-                    当前 AI 能力已覆盖会话调查、根因分析、性能分析、链路分析与巡检复盘。
-                  </Paragraph>
-                </div>
-              </Space>
-              <Paragraph type="secondary" style={{ marginBottom: 0 }}>
-                不再把 AI 入口拆成左侧第二层功能树，而是先通过这个总入口判断该走调查、巡检还是工具装配。
-              </Paragraph>
-              <Space>
-                <Button onClick={() => navigate(getAIWorkbenchPathForMode('root_cause'))}>按根因模式开始</Button>
-                <Button onClick={() => navigate(getAIWorkbenchPathForMode('performance'))}>按性能模式开始</Button>
-                <Button onClick={() => navigate(getAIWorkbenchPathForMode('trace'))}>按链路模式开始</Button>
-              </Space>
-            </Space>
-          </Card>
-        </Col>
-        <Col xs={24} xl={12}>
-          <Card title="运行态概览">
-            <Row gutter={[12, 12]}>
-              <Col span={12}><Statistic title="调查会话" value={sessions.length} prefix={<RobotOutlined />} /></Col>
-              <Col span={12}><Statistic title="根因运行" value={runs.length} prefix={<RadarChartOutlined />} /></Col>
-              <Col span={12}><Statistic title="巡检运行" value={inspectionRuns.length} prefix={<AppstoreOutlined />} /></Col>
-              <Col span={12}><Statistic title="AI 洞察" value={insights.length} prefix={<ToolOutlined />} /></Col>
-            </Row>
-            <Paragraph type="secondary" style={{ marginTop: 16, marginBottom: 0 }}>
-              入口层负责快速判断当前平台是否需要立即进入调查、巡检复盘或工具配置。
-            </Paragraph>
-          </Card>
-        </Col>
-
+      <Row gutter={[12, 12]}>
         <Col xs={24} xl={8}>
-          <Card title="最近调查">
-            {sessions.length === 0 ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无会话" /> : (
+          <Card size="small" variant="outlined" className="soha-compact-note-card" title="最近调查">
+            {sessions.length === 0 ? (
+              <ManagementState bordered={false} compact title="暂无会话" description="创建或进入调查工作台后，这里会展示最近会话。" />
+            ) : (
               <List
                 dataSource={sessions.slice(0, 5)}
                 renderItem={(item) => (
@@ -475,14 +371,16 @@ export function AIObserveOverviewPage() {
           </Card>
         </Col>
         <Col xs={24} xl={8}>
-          <Card title="最近分析">
-            {runs.length === 0 ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无根因运行" /> : (
+          <Card size="small" variant="outlined" className="soha-compact-note-card" title="最近分析">
+            {runs.length === 0 ? (
+              <ManagementState bordered={false} compact title="暂无根因运行" description="运行根因分析后，这里会展示最近结果。" />
+            ) : (
               <List
                 dataSource={runs.slice(0, 5)}
                 renderItem={(item) => (
                   <List.Item>
                     <List.Item.Meta title={item.title} description={item.summary} />
-                    <Space direction="vertical" size={4}>
+                    <Space orientation="vertical" size={4}>
                       <StatusTag value={item.status} />
                       <StatusTag value={item.severity} />
                     </Space>
@@ -493,8 +391,10 @@ export function AIObserveOverviewPage() {
           </Card>
         </Col>
         <Col xs={24} xl={8}>
-          <Card title="风险雷达">
-            {insights.length === 0 ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无风险信号" /> : (
+          <Card size="small" variant="outlined" className="soha-compact-note-card" title="风险雷达">
+            {insights.length === 0 ? (
+              <ManagementState bordered={false} compact title="暂无风险信号" description="AI 洞察产生后，这里会展示需要关注的信号。" />
+            ) : (
               <List
                 dataSource={insights.slice(0, 5)}
                 renderItem={(item) => (
@@ -539,7 +439,7 @@ export function AIOperationsPage() {
   })
   const runsQuery = useQuery({
     queryKey: ['ai-operations-runs'],
-    queryFn: () => api.get<ApiResponse<Array<{ id: string; taskId: string; status: string; severity: string; summary: string; findings?: Array<{ id: string; title: string; severity: string }>; startedAt: string; completedAt?: string }>>>('/copilot/inspection-runs'),
+    queryFn: () => api.get<ApiResponse<InspectionRun[]>>('/copilot/inspection-runs'),
   })
   const policiesQuery = useQuery({
     queryKey: ['ai-operations-policies'],
@@ -717,17 +617,17 @@ export function AIOperationsPage() {
 
   return (
     <div className="soha-page">
-      <PageHeader
+      <ManagementDetailHeader
         title="巡检与自动化"
         description="统一查看巡检任务、巡检运行、自动化策略，并把发现结果送入调查工作台。"
         actions={
-          <Space>
+          <ManagementTableToolbar>
             <Button onClick={() => navigate(getAIWorkbenchPathForMode('inspection_review'))} disabled={!canUseChat}>进入巡检复盘工作台</Button>
             <Button icon={<PlusOutlined />} onClick={openCreateTask} disabled={!canManageInspection} title={canManageInspection ? undefined : '缺少 observe.ai.inspection.manage 权限'}>
               新建巡检任务
             </Button>
             <Button type="primary" onClick={() => navigate(getAIWorkbenchPathForMode('general'))} disabled={!canUseChat}>新建调查</Button>
-          </Space>
+          </ManagementTableToolbar>
         }
       />
       <Card styles={{ body: { paddingBottom: 8 } }}>
@@ -747,6 +647,9 @@ export function AIOperationsPage() {
 
       {activeView === 'tasks' ? (
         <Card
+          size="small"
+          variant="outlined"
+          className="soha-management-panel-card"
           title="巡检任务"
           extra={(
             <Button size="small" icon={<PlusOutlined />} onClick={openCreateTask} disabled={!canManageInspection}>
@@ -754,53 +657,61 @@ export function AIOperationsPage() {
             </Button>
           )}
         >
-          <Table
+          <AdminTable
+            shellClassName="soha-management-table-shell"
+            columnSettingIconOnly
+            columnSettingPlacement="header"
             rowKey="id"
             dataSource={tasks}
             loading={tasksQuery.isLoading}
-            pagination={{ pageSize: 10 }}
+            tableSize="small"
+            pageSize={10}
             columns={[
               { title: '任务名称', dataIndex: 'title' },
-              { title: '范围', dataIndex: 'scopeType', render: (_value, record) => [record.scopeType, record.clusterId, record.namespace].filter(Boolean).join(' / ') },
+              { title: '范围', dataIndex: 'scopeType', render: (_value: string, record: InspectionTask) => [record.scopeType, record.clusterId, record.namespace].filter(Boolean).join(' / ') },
               { title: '检查项', dataIndex: 'checks', render: (value: string[]) => <Space wrap>{(value ?? []).map((item) => <Tag key={item}>{item}</Tag>)}</Space> },
               { title: '间隔', dataIndex: 'intervalMinutes', render: (value: number) => `${value} min` },
               { title: '启用', dataIndex: 'enabled', render: (value: boolean) => <StatusTag value={value ? 'enabled' : 'disabled'} /> },
               {
+                ...tableColumnPresets.action,
                 title: '操作',
                 dataIndex: 'id',
-                render: (_value: string, record) => (
-                  <Space>
-                    <Button
+                render: (_value: string, record: InspectionTask) => (
+                  <Space className="soha-row-action-icons">
+                    <ManagementIconButton
+                      aria-label="编辑巡检任务"
+                      size="small"
+                      tooltip="编辑"
                       icon={<EditOutlined />}
                       onClick={() => openEditTask(record)}
                       disabled={!canManageInspection}
                       title={canManageInspection ? undefined : '缺少 observe.ai.inspection.manage 权限'}
-                    >
-                      编辑
-                    </Button>
-                    <Button
+                    />
+                    <ManagementIconButton
+                      aria-label="立即执行巡检"
+                      size="small"
+                      tooltip="立即执行"
                       icon={<PlayCircleOutlined />}
                       loading={executeMutation.isPending}
                       onClick={() => executeMutation.mutate(record.id)}
                       disabled={!canRunInspection}
                       title={canRunInspection ? undefined : '缺少 observe.ai.inspection.run 权限'}
-                    >
-                      立即执行
-                    </Button>
+                    />
                     <Popconfirm
                       title="确认删除巡检任务？"
                       description="关联巡检运行记录会一并删除。"
                       onConfirm={() => deleteTaskMutation.mutate(record.id)}
                       okButtonProps={{ danger: true, loading: deleteTaskMutation.isPending }}
                     >
-                      <Button
+                      <ManagementIconButton
+                        aria-label="删除巡检任务"
+                        size="small"
+                        tooltip="删除"
                         icon={<DeleteOutlined />}
                         danger
                         disabled={!canManageInspection}
                         title={canManageInspection ? undefined : '缺少 observe.ai.inspection.manage 权限'}
-                      >
-                        删除
-                      </Button>
+                      />
                     </Popconfirm>
                   </Space>
                 ),
@@ -871,7 +782,7 @@ export function AIOperationsPage() {
       </Modal>
 
       {activeView === 'runs' ? (
-        <Card title="巡检运行记录">
+        <Card size="small" variant="outlined" className="soha-management-panel-card" title="巡检运行记录">
           {requestedInspectionRunId ? (
             <Alert
               type={runs.some((item) => item.id === requestedInspectionRunId) ? 'info' : 'warning'}
@@ -881,10 +792,15 @@ export function AIOperationsPage() {
               style={{ marginBottom: 12 }}
             />
           ) : null}
-          <Table
+          <AdminTable
+            shellClassName="soha-management-table-shell"
+            columnSettingIconOnly
+            columnSettingPlacement="header"
             rowKey="id"
             dataSource={runs}
-            pagination={{ pageSize: 10 }}
+            loading={runsQuery.isLoading}
+            tableSize="small"
+            pageSize={10}
             columns={[
               { title: '运行 ID', dataIndex: 'id', render: (value: string) => <Space size={6} wrap><Text>{value}</Text>{value === requestedInspectionRunId ? <Tag color="blue">已定位</Tag> : null}</Space> },
               { title: '任务', dataIndex: 'taskId' },
@@ -893,16 +809,19 @@ export function AIOperationsPage() {
               { title: '发现项', dataIndex: 'findings', render: (value: Array<{ id: string }>) => value?.length ?? 0 },
               { title: '摘要', dataIndex: 'summary' },
               {
+                ...tableColumnPresets.action,
                 title: '联动',
                 dataIndex: 'id',
                 render: (value: string) => (
-                  <Button
+                  <ManagementIconButton
+                    aria-label="创建调查会话"
+                    size="small"
+                    tooltip="创建调查会话"
+                    icon={<RobotOutlined />}
                     onClick={() => createSessionMutation.mutate(value)}
                     disabled={!canCreateSessionFromRun}
                     title={canCreateSessionFromRun ? undefined : !canUseChat ? '缺少 observe.ai.chat 权限' : '缺少 observe.ai.view 权限'}
-                  >
-                    创建调查会话
-                  </Button>
+                  />
                 ),
               },
             ]}
@@ -912,6 +831,9 @@ export function AIOperationsPage() {
 
       {activeView === 'policies' ? (
         <Card
+          size="small"
+          variant="outlined"
+          className="soha-management-panel-card"
           title="自动化策略"
           extra={(
             <Button size="small" icon={<PlusOutlined />} onClick={openCreatePolicy} disabled={!canManageAISettings} title={canManageAISettings ? undefined : '缺少 settings.ai.manage 权限'}>
@@ -931,11 +853,15 @@ export function AIOperationsPage() {
               style={{ marginBottom: 16 }}
             />
           ) : null}
-          <Table
+          <AdminTable
+            shellClassName="soha-management-table-shell"
+            columnSettingIconOnly
+            columnSettingPlacement="header"
             rowKey="id"
             dataSource={policies}
             loading={policiesQuery.isLoading}
-            pagination={{ pageSize: 10 }}
+            tableSize="small"
+            pageSize={10}
             columns={[
               { title: '名称', dataIndex: 'name' },
               { title: '触发类型', dataIndex: 'triggerType' },
@@ -953,32 +879,35 @@ export function AIOperationsPage() {
               { title: '修复策略', dataIndex: 'remediationPolicy' },
               { title: '启用', dataIndex: 'enabled', render: (value: boolean) => <StatusTag value={value ? 'enabled' : 'disabled'} /> },
               {
+                ...tableColumnPresets.action,
                 title: '操作',
                 dataIndex: 'id',
-                render: (_value: string, record) => (
-                  <Space>
-                    <Button
+                render: (_value: string, record: AutomationPolicy) => (
+                  <Space className="soha-row-action-icons">
+                    <ManagementIconButton
+                      aria-label="编辑自动化策略"
+                      size="small"
+                      tooltip="编辑"
                       icon={<EditOutlined />}
                       onClick={() => openEditPolicy(record)}
                       disabled={!canManageAISettings}
                       title={canManageAISettings ? undefined : '缺少 settings.ai.manage 权限'}
-                    >
-                      编辑
-                    </Button>
+                    />
                     <Popconfirm
                       title="确认删除自动化策略？"
                       description="删除后不会再由该策略触发新的 AI 分析。"
                       onConfirm={() => deletePolicyMutation.mutate(record.id)}
                       okButtonProps={{ danger: true, loading: deletePolicyMutation.isPending }}
                     >
-                      <Button
+                      <ManagementIconButton
+                        aria-label="删除自动化策略"
+                        size="small"
+                        tooltip="删除"
                         icon={<DeleteOutlined />}
                         danger
                         disabled={!canManageAISettings}
                         title={canManageAISettings ? undefined : '缺少 settings.ai.manage 权限'}
-                      >
-                        删除
-                      </Button>
+                      />
                     </Popconfirm>
                   </Space>
                 ),
@@ -1208,7 +1137,7 @@ export function AIToolsPage() {
 
   return (
     <div className="soha-page">
-      <PageHeader
+      <ManagementDetailHeader
         title="工具与技能"
         description="全局配置镜像与会话级装配入口，统一查看 MCP adapters、数据源和技能能力。"
       />
@@ -1247,9 +1176,9 @@ export function AIToolsPage() {
         <Col xs={24}>
           <Card title="会话级装配">
             {!requestedSessionId || !currentSession ? (
-              <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="先从左侧菜单进入一个会话，再配置工具装配。" />
+              <ManagementState bordered={false} compact kind="select-scope" title="未选择会话" description="先从左侧菜单进入一个会话，再配置工具装配。" />
             ) : (
-              <Space direction="vertical" size={16} style={{ width: '100%' }}>
+              <Space orientation="vertical" size={16} style={{ width: '100%' }}>
                 <Flex justify="space-between" align="start" gap={12} wrap="wrap">
                   <Space size={[8, 8]} wrap>
                     <Tag color="blue">{currentSession.title}</Tag>
@@ -1278,7 +1207,7 @@ export function AIToolsPage() {
                 ) : null}
 
                 <Card size="small" title="Adapters 与工具">
-                  <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                  <Space orientation="vertical" size={12} style={{ width: '100%' }}>
                     <Select
                       mode="multiple"
                       allowClear
@@ -1319,7 +1248,7 @@ export function AIToolsPage() {
                 </Card>
 
                 <Card size="small" title="Budget Overrides">
-                  <Space direction="vertical" size={8} style={{ width: '100%' }}>
+                  <Space orientation="vertical" size={8} style={{ width: '100%' }}>
                     {TOOLSET_BUDGET_FIELDS.map((field) => (
                       <Flex key={field.key} justify="space-between" align="center" gap={12}>
                         <span>
@@ -1338,7 +1267,7 @@ export function AIToolsPage() {
                 </Card>
 
                 <Card size="small" title="Scope Overrides">
-                  <Space direction="vertical" size={8} style={{ width: '100%' }}>
+                  <Space orientation="vertical" size={8} style={{ width: '100%' }}>
                     <Alert
                       type="info"
                       showIcon
@@ -1392,7 +1321,7 @@ export function AIToolsPage() {
 export function AIModelSettingsPage() {
   return (
     <div className="soha-page">
-      <PageHeader
+      <ManagementDetailHeader
         title="AI 设置"
         description="在 AI 工作台内查看和调整 Provider、数据源、技能与自动化策略。"
       />

@@ -1,6 +1,7 @@
-import { Button, Card, Descriptions, Empty, Select, Space, Tabs, Typography } from 'antd'
+import { Button, Card, Descriptions, Select, Space, Tabs, Typography } from 'antd'
 import { LineChart } from '@visactor/react-vchart'
 import { AdminTable } from '@/components/admin-table'
+import { ManagementState } from '@/components/management-list'
 import { StatGrid } from '@/components/stat-grid'
 import { useI18n } from '@/i18n'
 import { formatDateTime } from '@/utils/time'
@@ -554,7 +555,7 @@ function CompactMetricCard({ card, localeCode }: { card: CompactChartCard; local
         </div>
       ) : (
         <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <Empty description={localeCode === 'zh_CN' ? '暂无数据' : 'No data'} />
+          <ManagementState bordered={false} compact title={localeCode === 'zh_CN' ? '暂无数据' : 'No data'} />
         </div>
       )}
     </div>
@@ -591,7 +592,7 @@ export function ResourceMetricsPanel({
   if (errorMessage) {
     return (
       <Card className="soha-detail-card" title={title}>
-        <Empty description={errorMessage} />
+        <ManagementState bordered={false} compact kind="error" title={errorMessage} />
       </Card>
     )
   }
@@ -599,7 +600,7 @@ export function ResourceMetricsPanel({
   if (!data) {
     return (
       <Card className="soha-detail-card" title={title}>
-        <Empty description={localeCode === 'zh_CN' ? '暂无指标数据' : 'No metrics data'} />
+        <ManagementState bordered={false} compact title={localeCode === 'zh_CN' ? '暂无指标数据' : 'No metrics data'} />
       </Card>
     )
   }
@@ -749,6 +750,7 @@ export function ResourceMetricsPanel({
                       </div>
                       <div style={{ marginTop: 16 }}>
                         <AdminTable
+                          shellClassName="soha-management-table-shell"
                           columns={columns}
                           dataSource={rows}
                           rowKey={(record) => record.timestamp}
@@ -765,7 +767,7 @@ export function ResourceMetricsPanel({
         </>
       ) : (
         <Card className="soha-detail-card">
-          <Empty description={emptyDescription} />
+          <ManagementState bordered={false} compact title={emptyDescription} />
         </Card>
       )}
     </div>

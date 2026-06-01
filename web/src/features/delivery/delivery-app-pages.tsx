@@ -1,12 +1,18 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { Key } from 'react'
-import { Alert, App, Button, Card, Collapse, Descriptions, Empty, Form, Input, Modal, Popconfirm, Select, Space, Switch, Tag, Timeline, Typography } from 'antd'
-import { CodeOutlined, DeleteOutlined, EditOutlined, EyeOutlined, LinkOutlined, PlayCircleOutlined, PlusOutlined } from '@ant-design/icons'
+import { Alert, App, Button, Card, Collapse, Descriptions, Form, Input, Modal, Popconfirm, Select, Space, Switch, Tag, Timeline, Typography } from 'antd'
+import { ApiOutlined, CheckOutlined, CloseOutlined, CodeOutlined, DeleteOutlined, EditOutlined, EyeOutlined, FileTextOutlined, LinkOutlined, PlayCircleOutlined, PlusOutlined, ReloadOutlined, StopOutlined } from '@ant-design/icons'
 import type { TableColumnsType } from 'antd'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { AdminTable } from '@/components/admin-table'
-import { PageHeader } from '@/components/page-header'
+import {
+  ManagementDetailHeader,
+  ManagementIconButton,
+  ManagementState,
+  ManagementRefreshButton,
+  ManagementTableToolbar,
+} from '@/components/management-list'
 import { BooleanTag, StatusTag } from '@/components/status-tag'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth/permission-snapshot'
 import { useI18n } from '@/i18n'
@@ -163,7 +169,7 @@ function workflowNodeSummary(node: WorkflowNodeRun) {
 
 function WorkflowNodeTimeline({ nodes }: { nodes?: WorkflowNodeRun[] }) {
   if (!nodes?.length) {
-    return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No workflow nodes" />
+    return <ManagementState bordered={false} compact description="No workflow nodes" />
   }
   return (
     <Timeline
@@ -191,7 +197,7 @@ function WorkflowManualApprovalDetail({ run }: { run: WorkflowRun }) {
   const trace = workflowGatewayTrace(run)
   const approvalNode = workflowManualApprovalNode(run)
   if (!approvalNode) {
-    return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No manual approval node" />
+    return <ManagementState bordered={false} compact description="No manual approval node" />
   }
   return (
     <Descriptions
@@ -298,34 +304,31 @@ export function ApplicationsPage() {
 
   return (
     <div className="soha-page">
-      <section className="soha-page-section">
-        <div className="soha-application-center-shell">
-          <div className="soha-application-center-header">
-            <div className="soha-application-center-header__main">
-              <h2 className="soha-application-center-header__title">应用中心</h2>
-              <Text type="secondary">按应用查看构建来源、环境覆盖，并进入对应应用页。</Text>
-              <div className="soha-application-group-tags">
-                {groupOptions.map((group) => (
-                  <Tag
-                    key={group}
-                    className={`soha-application-group-tag ${activeGroup === group ? 'is-active' : ''}`}
-                    variant="filled"
-                    onClick={() => setActiveGroup(group)}
-                  >
-                    {group === 'all' ? '全部' : group}
-                  </Tag>
-                ))}
-              </div>
-            </div>
-            <Button type="primary" icon={<PlusOutlined />} onClick={() => navigate('/application-management')}>
-              新建应用
-            </Button>
+      <ManagementDetailHeader
+        title="应用中心"
+        description="按应用查看构建来源、环境覆盖，并进入对应应用页。"
+        meta={(
+          <div className="soha-application-group-tags">
+            {groupOptions.map((group) => (
+              <Tag
+                key={group}
+                className={`soha-application-group-tag ${activeGroup === group ? 'is-active' : ''}`}
+                variant="filled"
+                onClick={() => setActiveGroup(group)}
+              >
+                {group === 'all' ? '全部' : group}
+              </Tag>
+            ))}
           </div>
-        </div>
-      </section>
+        )}
+        actions={(
+          <Button type="primary" icon={<PlusOutlined />} onClick={() => navigate('/application-management')}>
+            新建应用
+          </Button>
+        )}
+      />
 
-      <section className="soha-page-section">
-        <div className="soha-application-card-grid">
+      <div className="soha-application-card-grid">
           {visibleApplicationCards.length > 0 ? visibleApplicationCards.map(({ app, bindings, lastStatus, activeTargets, latestEnvironmentName }) => {
             const defaultBuildSource = (app.buildSources ?? []).find((item) => item.isDefault)
             return (
@@ -370,11 +373,10 @@ export function ApplicationsPage() {
             )
           }) : (
             <Card className="soha-application-empty-card">
-              <Empty description={activeGroup === 'all' ? '当前还没有应用，先创建第一个应用并接入仓库、构建来源和环境。' : '当前分组下还没有应用。'} />
+              <ManagementState bordered={false} compact description={activeGroup === 'all' ? '当前还没有应用，先创建第一个应用并接入仓库、构建来源和环境。' : '当前分组下还没有应用。'} />
             </Card>
           )}
-        </div>
-      </section>
+      </div>
     </div>
   )
 }
@@ -392,8 +394,12 @@ export function ApplicationDetailPage() {
 
   return (
     <div className="soha-page">
-      <PageHeader title={application?.name || 'Application Detail'} description="应用总览、构建来源、环境矩阵与最近执行记录。" actions={<Button onClick={() => navigate('/applications')}>返回应用中心</Button>} />
-      <Card>
+      <ManagementDetailHeader
+        title={application?.name || 'Application Detail'}
+        description="应用总览、构建来源、环境矩阵与最近执行记录。"
+        actions={<Button onClick={() => navigate('/applications')}>返回应用中心</Button>}
+      />
+      <Card className="soha-management-panel-card">
         <Descriptions items={[
           { key: 'group', label: '分组', children: application?.group || '-' },
           { key: 'language', label: '语言', children: application?.language || '-' },
@@ -402,42 +408,55 @@ export function ApplicationDetailPage() {
           { key: 'status', label: '最近状态', children: <StatusTag value={detail?.latestRelease?.status || detail?.latestWorkflow?.status || detail?.latestBuild?.status || 'unknown'} /> },
         ]} />
       </Card>
-      <Card title="构建来源">
-        <AdminTable
-          rowKey="id"
-          pagination={false}
-          dataSource={application?.buildSources ?? []}
-          loading={detailQuery.isLoading}
-          columns={[
-            { title: '名称', dataIndex: 'name' },
-            { title: '类型', dataIndex: 'type', render: (value: string) => <Tag>{value}</Tag> },
-            { title: '镜像', dataIndex: 'buildImage', render: (value: string) => value || '-' },
-            { title: '默认', dataIndex: 'isDefault', render: (value: boolean) => <BooleanTag value={value} /> },
-            { title: '启用', dataIndex: 'enabled', render: (value: boolean) => <BooleanTag value={value} /> },
-          ]}
-        />
-      </Card>
-      <Card title="环境矩阵">
-        <AdminTable
-          rowKey="applicationEnvironmentId"
-          pagination={false}
-          dataSource={detail?.bindings ?? []}
-          loading={detailQuery.isLoading}
-          columns={[
-            { title: '环境', dataIndex: 'environmentName', render: (value: string, record: ApplicationBindingRow) => value || record.environmentKey || record.environmentId },
-            { title: '部署目标', dataIndex: 'targets', render: (value: ApplicationBindingRow['targets']) => renderTargetSummary(value) },
-            { title: '动作', dataIndex: 'actionKind', render: (value: string) => value || 'deploy' },
-            { title: '构建来源', dataIndex: 'buildSource', render: (value: BuildSource | undefined) => summarizeBuildSource(value) },
-            { title: '目标数', dataIndex: 'targetCount' },
-            { title: '审批', dataIndex: 'requiresApproval', render: (value: boolean) => <BooleanTag value={value} /> },
-            { title: 'Bundle', dataIndex: 'latestBundle', render: (value: ApplicationBindingRow['latestBundle']) => <StatusTag value={value?.status || 'unknown'} /> },
-            { title: 'Task', dataIndex: 'latestExecutionTask', render: (value: ApplicationBindingRow['latestExecutionTask']) => <StatusTag value={value?.status || 'unknown'} /> },
-            { title: 'Workflow', dataIndex: 'latestWorkflow', render: (value: WorkflowRun | undefined) => <StatusTag value={value?.status || 'unknown'} /> },
-            { title: 'Release', dataIndex: 'latestRelease', render: (value: ApplicationBindingRow['latestRelease']) => <StatusTag value={value?.status || 'unknown'} /> },
-            { ...tableColumnPresets.action, title: '操作', dataIndex: 'applicationEnvironmentId', render: (_: unknown, record: ApplicationBindingRow) => <Button type="link" onClick={() => navigate(`/application-environments/${record.applicationEnvironmentId}`)}>查看绑定</Button> },
-          ]}
-        />
-      </Card>
+      <AdminTable
+        title="构建来源"
+        shellClassName="soha-management-table-shell"
+        rowKey="id"
+        pagination={false}
+        dataSource={application?.buildSources ?? []}
+        loading={detailQuery.isLoading}
+        columns={[
+          { title: '名称', dataIndex: 'name' },
+          { title: '类型', dataIndex: 'type', render: (value: string) => <Tag>{value}</Tag> },
+          { title: '镜像', dataIndex: 'buildImage', render: (value: string) => value || '-' },
+          { title: '默认', dataIndex: 'isDefault', render: (value: boolean) => <BooleanTag value={value} /> },
+          { title: '启用', dataIndex: 'enabled', render: (value: boolean) => <BooleanTag value={value} /> },
+        ]}
+      />
+      <AdminTable
+        title="环境矩阵"
+        shellClassName="soha-management-table-shell"
+        rowKey="applicationEnvironmentId"
+        pagination={false}
+        dataSource={detail?.bindings ?? []}
+        loading={detailQuery.isLoading}
+        columns={[
+          { title: '环境', dataIndex: 'environmentName', render: (value: string, record: ApplicationBindingRow) => value || record.environmentKey || record.environmentId },
+          { title: '部署目标', dataIndex: 'targets', render: (value: ApplicationBindingRow['targets']) => renderTargetSummary(value) },
+          { title: '动作', dataIndex: 'actionKind', render: (value: string) => value || 'deploy' },
+          { title: '构建来源', dataIndex: 'buildSource', render: (value: BuildSource | undefined) => summarizeBuildSource(value) },
+          { title: '目标数', dataIndex: 'targetCount' },
+          { title: '审批', dataIndex: 'requiresApproval', render: (value: boolean) => <BooleanTag value={value} /> },
+          { title: 'Bundle', dataIndex: 'latestBundle', render: (value: ApplicationBindingRow['latestBundle']) => <StatusTag value={value?.status || 'unknown'} /> },
+          { title: 'Task', dataIndex: 'latestExecutionTask', render: (value: ApplicationBindingRow['latestExecutionTask']) => <StatusTag value={value?.status || 'unknown'} /> },
+          { title: 'Workflow', dataIndex: 'latestWorkflow', render: (value: WorkflowRun | undefined) => <StatusTag value={value?.status || 'unknown'} /> },
+          { title: 'Release', dataIndex: 'latestRelease', render: (value: ApplicationBindingRow['latestRelease']) => <StatusTag value={value?.status || 'unknown'} /> },
+          {
+            ...tableColumnPresets.action,
+            title: '操作',
+            dataIndex: 'applicationEnvironmentId',
+            render: (_: unknown, record: ApplicationBindingRow) => (
+              <ManagementIconButton
+                aria-label="查看绑定"
+                icon={<LinkOutlined />}
+                size="small"
+                tooltip="查看绑定"
+                onClick={() => navigate(`/application-environments/${record.applicationEnvironmentId}`)}
+              />
+            ),
+          },
+        ]}
+      />
     </div>
   )
 }
@@ -486,9 +505,27 @@ export function BuildTemplatesPage() {
 
   return (
     <div className="soha-page">
-      <PageHeader title="构建模板" description="维护平台级 Dockerfile 模板、构建命令和默认变量。" actions={canManage ? <Button icon={<PlusOutlined />} type="primary" onClick={() => { setEditing(null); setModalVisible(true) }}>新建模板</Button> : null} />
       <AdminTable
         rowKey="id"
+        columnSettingIconOnly
+        columnSettingPlacement="header"
+        shellClassName="soha-management-table-shell"
+        title="构建模板"
+        headerExtra={(
+          <ManagementTableToolbar>
+            {canManage ? (
+              <Button icon={<PlusOutlined />} type="primary" onClick={() => { setEditing(null); setModalVisible(true) }}>
+                新建模板
+              </Button>
+            ) : null}
+            <ManagementRefreshButton
+              aria-label="刷新"
+              loading={templatesQuery.isFetching}
+              tooltip="刷新"
+              onClick={() => void templatesQuery.refetch()}
+            />
+          </ManagementTableToolbar>
+        )}
         loading={templatesQuery.isLoading}
         dataSource={templatesQuery.data?.data ?? []}
         columns={[
@@ -497,10 +534,39 @@ export function BuildTemplatesPage() {
           { title: 'Builder', dataIndex: 'builderKind' },
           { title: '命令数', dataIndex: 'buildCommands', render: (value: string[]) => value?.length ?? 0 },
           { title: '启用', dataIndex: 'enabled', render: (value: boolean) => <BooleanTag value={value} /> },
-          { ...tableColumnPresets.action, title: '操作', dataIndex: 'id', render: (_: unknown, record: BuildTemplate) => <Space>{canManage ? <Button icon={<EditOutlined />} size="small" type="text" onClick={() => { setEditing(record); setModalVisible(true) }} /> : null}{canManage ? <Popconfirm title="确认删除？" onConfirm={() => deleteMutation.mutate(record.id)}><Button icon={<DeleteOutlined />} size="small" type="text" danger /></Popconfirm> : null}</Space> },
+          {
+            ...tableColumnPresets.action,
+            title: '操作',
+            dataIndex: 'id',
+            render: (_: unknown, record: BuildTemplate) => (
+              <Space className="soha-row-action-icons" size={2}>
+                {canManage ? (
+                  <ManagementIconButton
+                    aria-label="编辑构建模板"
+                    icon={<EditOutlined />}
+                    size="small"
+                    tooltip="编辑"
+                    onClick={() => { setEditing(record); setModalVisible(true) }}
+                  />
+                ) : null}
+                {canManage ? (
+                  <Popconfirm title="确认删除？" onConfirm={() => deleteMutation.mutate(record.id)} placement="topRight">
+                    <ManagementIconButton
+                      aria-label="删除构建模板"
+                      danger
+                      icon={<DeleteOutlined />}
+                      size="small"
+                      tooltip="删除"
+                    />
+                  </Popconfirm>
+                ) : null}
+              </Space>
+            ),
+          },
         ]}
+        scroll={{ x: 'max-content' }}
       />
-      <Modal title={editing ? '编辑构建模板' : '新建构建模板'} open={modalVisible} onCancel={() => { setModalVisible(false); setEditing(null) }} footer={null} destroyOnClose width={960}>
+      <Modal title={editing ? '编辑构建模板' : '新建构建模板'} open={modalVisible} onCancel={() => { setModalVisible(false); setEditing(null) }} footer={null} destroyOnHidden width={960}>
         <Form
           form={form}
           key={editing?.id ?? 'build-template'}
@@ -636,12 +702,37 @@ export function WorkflowsPage() {
     {
       ...tableColumnPresets.action,
       title: t('common.actions', 'Actions'),
-      dataIndex: 'id',
-      render: (_: unknown, record: WorkflowRun) => (
-        <Space>
-          {canTriggerWorkflow ? <Button icon={<PlayCircleOutlined />} size="small" type="text" onClick={() => triggerMutation.mutate(record)}>{localeCode === 'zh_CN' ? '触发' : 'Trigger'}</Button> : null}
-          {canTriggerWorkflow && record.status === 'waiting_approval' ? <Button size="small" type="link" onClick={() => approveMutation.mutate(record)}>批准</Button> : null}
-          {canTriggerWorkflow && record.status === 'waiting_approval' ? <Button size="small" type="link" danger onClick={() => rejectMutation.mutate(record)}>拒绝</Button> : null}
+            dataIndex: 'id',
+            render: (_: unknown, record: WorkflowRun) => (
+        <Space className="soha-row-action-icons" size={2}>
+          {canTriggerWorkflow ? (
+            <ManagementIconButton
+              aria-label={localeCode === 'zh_CN' ? '触发工作流' : 'Trigger workflow'}
+              icon={<PlayCircleOutlined />}
+              size="small"
+              tooltip={localeCode === 'zh_CN' ? '触发' : 'Trigger'}
+              onClick={() => triggerMutation.mutate(record)}
+            />
+          ) : null}
+          {canTriggerWorkflow && record.status === 'waiting_approval' ? (
+            <ManagementIconButton
+              aria-label="批准工作流"
+              icon={<CheckOutlined />}
+              size="small"
+              tooltip="批准"
+              onClick={() => approveMutation.mutate(record)}
+            />
+          ) : null}
+          {canTriggerWorkflow && record.status === 'waiting_approval' ? (
+            <ManagementIconButton
+              aria-label="拒绝工作流"
+              danger
+              icon={<CloseOutlined />}
+              size="small"
+              tooltip="拒绝"
+              onClick={() => rejectMutation.mutate(record)}
+            />
+          ) : null}
         </Space>
       ),
     },
@@ -649,7 +740,6 @@ export function WorkflowsPage() {
 
   return (
     <div className="soha-page">
-      <PageHeader title={t('page.delivery.workflows.title', 'Workflows')} description={t('page.delivery.workflows.desc', 'Inspect automation flow records, trigger methods, and recent execution state.')} />
       {focusedWorkflowRunId || focusedGatewayApprovalRequestId ? (
         <Alert
           type={focusedWorkflowRunId && !workflowsQuery.isLoading && !focusedRun ? 'warning' : 'info'}
@@ -662,6 +752,20 @@ export function WorkflowsPage() {
         />
       ) : null}
       <AdminTable
+        columnSettingIconOnly
+        columnSettingPlacement="header"
+        shellClassName="soha-management-table-shell"
+        title={t('page.delivery.workflows.title', 'Workflows')}
+        headerExtra={(
+          <ManagementTableToolbar>
+            <ManagementRefreshButton
+              aria-label={localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
+              loading={workflowsQuery.isFetching}
+              tooltip={localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
+              onClick={() => void workflowsQuery.refetch()}
+            />
+          </ManagementTableToolbar>
+        )}
         columns={columns}
         dataSource={workflows}
         rowKey="id"
@@ -671,6 +775,7 @@ export function WorkflowsPage() {
           expandedRowRender: (record: WorkflowRun) => <WorkflowGatewayTracePanel run={record} />,
           onExpandedRowsChange: (keys: readonly Key[]) => setExpandedWorkflowRunIds(keys.map(String)),
         }}
+        scroll={{ x: 'max-content' }}
       />
     </div>
   )
@@ -684,9 +789,22 @@ export function ReleaseBundlesPage() {
 
   return (
     <div className="soha-page">
-      <PageHeader title="版本包" description="查看不可变交付版本包、制品引用和当前状态。" />
       <AdminTable
         rowKey="id"
+        columnSettingIconOnly
+        columnSettingPlacement="header"
+        shellClassName="soha-management-table-shell"
+        title="版本包"
+        headerExtra={(
+          <ManagementTableToolbar>
+            <ManagementRefreshButton
+              aria-label="刷新"
+              loading={bundlesQuery.isFetching}
+              tooltip="刷新"
+              onClick={() => void bundlesQuery.refetch()}
+            />
+          </ManagementTableToolbar>
+        )}
         loading={bundlesQuery.isLoading}
         dataSource={bundlesQuery.data?.data ?? []}
         columns={[
@@ -699,6 +817,7 @@ export function ReleaseBundlesPage() {
           { title: 'Status', dataIndex: 'status', render: (value: string) => <StatusTag value={value} /> },
           { ...tableColumnPresets.datetime, title: 'Updated', dataIndex: 'updatedAt', render: (value: string) => formatDateTime(value) },
         ]}
+        scroll={{ x: 'max-content' }}
       />
     </div>
   )
@@ -766,9 +885,22 @@ export function ExecutionTasksPage() {
 
   return (
     <div className="soha-page">
-      <PageHeader title="执行任务" description="查看执行平面任务、provider 状态和任务日志。" />
       <AdminTable
         rowKey="id"
+        columnSettingIconOnly
+        columnSettingPlacement="header"
+        shellClassName="soha-management-table-shell"
+        title="执行任务"
+        headerExtra={(
+          <ManagementTableToolbar>
+            <ManagementRefreshButton
+              aria-label="刷新"
+              loading={tasksQuery.isFetching}
+              tooltip="刷新"
+              onClick={() => void tasksQuery.refetch()}
+            />
+          </ManagementTableToolbar>
+        )}
         loading={tasksQuery.isLoading}
         dataSource={tasksQuery.data?.data ?? []}
         columns={[
@@ -788,21 +920,48 @@ export function ExecutionTasksPage() {
             title: '操作',
             dataIndex: 'id',
             render: (_: unknown, record: ExecutionTask) => (
-              <Space>
-                <Button type="link" size="small" onClick={() => setSelectedTask(record)}>日志</Button>
+              <Space className="soha-row-action-icons" size={2}>
+                <ManagementIconButton
+                  aria-label="查看执行日志"
+                  icon={<FileTextOutlined />}
+                  size="small"
+                  tooltip="日志"
+                  onClick={() => setSelectedTask(record)}
+                />
                 {canManage && canCancelExecutionTask(record) ? (
                   <Popconfirm title="确认取消该任务？" onConfirm={() => cancelMutation.mutate(record)}>
-                    <Button type="link" size="small" danger>取消</Button>
+                    <ManagementIconButton
+                      aria-label="取消执行任务"
+                      danger
+                      icon={<StopOutlined />}
+                      size="small"
+                      tooltip="取消"
+                    />
                   </Popconfirm>
                 ) : null}
                 {canManage && canRetryExecutionTask(record) ? (
-                  <Button type="link" size="small" onClick={() => retryMutation.mutate(record)}>重试</Button>
+                  <ManagementIconButton
+                    aria-label="重试执行任务"
+                    icon={<ReloadOutlined />}
+                    size="small"
+                    tooltip="重试"
+                    onClick={() => retryMutation.mutate(record)}
+                  />
                 ) : null}
-                {canManage && record.providerKind !== 'k8s_job_runner' && record.callbackToken ? <Button type="link" size="small" onClick={() => callbackMutation.mutate(record)}>模拟回调</Button> : null}
+                {canManage && record.providerKind !== 'k8s_job_runner' && record.callbackToken ? (
+                  <ManagementIconButton
+                    aria-label="模拟执行回调"
+                    icon={<ApiOutlined />}
+                    size="small"
+                    tooltip="模拟回调"
+                    onClick={() => callbackMutation.mutate(record)}
+                  />
+                ) : null}
               </Space>
             ),
           },
         ]}
+        scroll={{ x: 'max-content' }}
       />
       <Modal
         title={selectedTask ? `任务日志 · ${selectedTask.id}` : '任务日志'}
@@ -810,7 +969,7 @@ export function ExecutionTasksPage() {
         onCancel={() => setSelectedTask(null)}
         footer={null}
         width={920}
-        destroyOnClose
+        destroyOnHidden
       >
         <Descriptions
           items={selectedTask ? [
@@ -823,19 +982,38 @@ export function ExecutionTasksPage() {
         />
         {canManage && selectedTask ? (
           <Space style={{ marginBottom: 12 }}>
-            {canCancelExecutionTask(selectedTask) ? <Button danger onClick={() => cancelMutation.mutate(selectedTask)} loading={cancelMutation.isPending}>取消任务</Button> : null}
-            {canRetryExecutionTask(selectedTask) ? <Button onClick={() => retryMutation.mutate(selectedTask)} loading={retryMutation.isPending}>重新入队</Button> : null}
+            {canCancelExecutionTask(selectedTask) ? (
+              <Button
+                danger
+                icon={<StopOutlined />}
+                loading={cancelMutation.isPending}
+                onClick={() => cancelMutation.mutate(selectedTask)}
+                size="small"
+              >
+                取消任务
+              </Button>
+            ) : null}
+            {canRetryExecutionTask(selectedTask) ? (
+              <Button
+                icon={<ReloadOutlined />}
+                loading={retryMutation.isPending}
+                onClick={() => retryMutation.mutate(selectedTask)}
+                size="small"
+              >
+                重新入队
+              </Button>
+            ) : null}
           </Space>
         ) : null}
-        <Card size="small" title="Execution Logs">
+        <Card className="soha-management-panel-card" size="small" title="Execution Logs">
           <pre className="soha-json-block">
             {logsQuery.data?.data?.map((item) => `[${item.createdAt}] ${item.logLevel.toUpperCase()} ${item.message}`).join('\n') || 'No logs'}
           </pre>
         </Card>
-        <Card size="small" title="Artifacts">
+        <Card className="soha-management-panel-card" size="small" title="Artifacts">
           <pre className="soha-json-block">{JSON.stringify(selectedTask?.artifacts ?? [], null, 2)}</pre>
         </Card>
-        <Card size="small" title="Result">
+        <Card className="soha-management-panel-card" size="small" title="Result">
           <pre className="soha-json-block">{JSON.stringify(selectedTask?.result ?? {}, null, 2)}</pre>
         </Card>
       </Modal>
@@ -887,9 +1065,27 @@ export function ApprovalPoliciesPage() {
 
   return (
     <div className="soha-page">
-      <PageHeader title="审批策略" description="维护 delivery 审批策略、会签模式和 SLA。" actions={canManage ? <Button icon={<PlusOutlined />} type="primary" onClick={() => { setEditing(null); setModalVisible(true) }}>新建策略</Button> : null} />
       <AdminTable
         rowKey="id"
+        columnSettingIconOnly
+        columnSettingPlacement="header"
+        shellClassName="soha-management-table-shell"
+        title="审批策略"
+        headerExtra={(
+          <ManagementTableToolbar>
+            {canManage ? (
+              <Button icon={<PlusOutlined />} type="primary" onClick={() => { setEditing(null); setModalVisible(true) }}>
+                新建策略
+              </Button>
+            ) : null}
+            <ManagementRefreshButton
+              aria-label="刷新"
+              loading={policiesQuery.isFetching}
+              tooltip="刷新"
+              onClick={() => void policiesQuery.refetch()}
+            />
+          </ManagementTableToolbar>
+        )}
         loading={policiesQuery.isLoading}
         dataSource={policiesQuery.data?.data ?? []}
         columns={[
@@ -900,10 +1096,39 @@ export function ApprovalPoliciesPage() {
           { title: 'SLA(min)', dataIndex: 'slaMinutes' },
           { title: '角色', dataIndex: 'approverRoles', render: (value: string[]) => value?.join(', ') || '-' },
           { title: '启用', dataIndex: 'enabled', render: (value: boolean) => <BooleanTag value={value} /> },
-          { ...tableColumnPresets.action, title: '操作', dataIndex: 'id', render: (_: unknown, record: ApprovalPolicy) => <Space>{canManage ? <Button icon={<EditOutlined />} size="small" type="text" onClick={() => { setEditing(record); setModalVisible(true) }} /> : null}{canManage ? <Popconfirm title="确认删除？" onConfirm={() => deleteMutation.mutate(record.id)}><Button icon={<DeleteOutlined />} size="small" type="text" danger /></Popconfirm> : null}</Space> },
+          {
+            ...tableColumnPresets.action,
+            title: '操作',
+            dataIndex: 'id',
+            render: (_: unknown, record: ApprovalPolicy) => (
+              <Space className="soha-row-action-icons" size={2}>
+                {canManage ? (
+                  <ManagementIconButton
+                    aria-label="编辑审批策略"
+                    icon={<EditOutlined />}
+                    size="small"
+                    tooltip="编辑"
+                    onClick={() => { setEditing(record); setModalVisible(true) }}
+                  />
+                ) : null}
+                {canManage ? (
+                  <Popconfirm title="确认删除？" onConfirm={() => deleteMutation.mutate(record.id)} placement="topRight">
+                    <ManagementIconButton
+                      aria-label="删除审批策略"
+                      danger
+                      icon={<DeleteOutlined />}
+                      size="small"
+                      tooltip="删除"
+                    />
+                  </Popconfirm>
+                ) : null}
+              </Space>
+            ),
+          },
         ]}
+        scroll={{ x: 'max-content' }}
       />
-      <Modal title={editing ? '编辑审批策略' : '新建审批策略'} open={modalVisible} onCancel={() => { setModalVisible(false); setEditing(null) }} footer={null} destroyOnClose width={860}>
+      <Modal title={editing ? '编辑审批策略' : '新建审批策略'} open={modalVisible} onCancel={() => { setModalVisible(false); setEditing(null) }} footer={null} destroyOnHidden width={860}>
         <Form
           form={form}
           key={editing?.id ?? 'approval-policy'}

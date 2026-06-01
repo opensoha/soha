@@ -104,7 +104,7 @@ export function K8sYamlEditor({
   return (
     <Card className="soha-detail-card soha-yaml-card">
       <div className="soha-terminal-toolbar soha-yaml-toolbar">
-        <Space className="soha-yaml-toolbar-meta" direction="vertical" size={2}>
+        <Space className="soha-yaml-toolbar-meta" orientation="vertical" size={2}>
           <Text strong>{t('yamlEditor.title', 'Kubernetes YAML Editor')}</Text>
           <Text type="secondary" style={{ fontSize: 12 }}>{t('yamlEditor.hint', 'Monaco + monaco-yaml with local schema assistance enabled')}</Text>
         </Space>

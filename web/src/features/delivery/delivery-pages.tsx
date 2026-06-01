@@ -4,9 +4,13 @@ import { DeleteOutlined, EditOutlined, PlayCircleOutlined, PlusOutlined } from '
 import type { TableColumnsType } from 'antd'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { AdminTable } from '@/components/admin-table'
+import {
+  ManagementIconButton,
+  ManagementRefreshButton,
+  ManagementTableToolbar,
+} from '@/components/management-list'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth/permission-snapshot'
 import { useI18n } from '@/i18n'
-import { PageHeader } from '@/components/page-header'
 import { StatusTag } from '@/components/status-tag'
 import { api } from '@/services/api-client'
 import { formatDateTime } from '@/utils/time'
@@ -45,7 +49,7 @@ export function ApplicationsPage() {
   const [modalVisible, setModalVisible] = useState(false)
   const [editing, setEditing] = useState<Application | null>(null)
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isFetching, refetch } = useQuery({
     queryKey: ['applications'],
     queryFn: () => api.get<ApiResponse<Application[]>>('/applications'),
   })
@@ -120,11 +124,25 @@ export function ApplicationsPage() {
       title: '操作',
       dataIndex: 'id',
       render: (_: unknown, record: Application) => (
-        <Space>
-          {canUpdateApplication ? <Button icon={<EditOutlined />} type="text" size="small" onClick={() => { setEditing(record); setModalVisible(true) }} /> : null}
+        <Space className="soha-row-action-icons" size={2}>
+          {canUpdateApplication ? (
+            <ManagementIconButton
+              aria-label="编辑应用"
+              icon={<EditOutlined />}
+              size="small"
+              tooltip="编辑"
+              onClick={() => { setEditing(record); setModalVisible(true) }}
+            />
+          ) : null}
           {canDeleteApplication ? (
-            <Popconfirm title="确认删除？" onConfirm={() => deleteMutation.mutate(record.id)}>
-              <Button icon={<DeleteOutlined />} type="text" danger size="small" />
+            <Popconfirm title="确认删除？" onConfirm={() => deleteMutation.mutate(record.id)} placement="topRight">
+              <ManagementIconButton
+                aria-label="删除应用"
+                danger
+                icon={<DeleteOutlined />}
+                size="small"
+                tooltip="删除"
+              />
             </Popconfirm>
           ) : null}
           {!canUpdateApplication && !canDeleteApplication ? '-' : null}
@@ -135,23 +153,43 @@ export function ApplicationsPage() {
 
   return (
     <div className="soha-page">
-      <PageHeader
-        title={t('page.delivery.applications.title', 'Applications')}
-        description={t('page.delivery.applications.desc', 'Manage application repositories, Dockerfile build parameters, and recent deployment state.')}
-        actions={canCreateApplication ? <Button icon={<PlusOutlined />} type="primary" onClick={() => { setEditing(null); setModalVisible(true) }}>新建应用</Button> : null}
-      />
       <Card className="soha-scope-hint-card">
         <Text type="secondary">
           当前构建链路先只支持 `Dockerfile`。这里配置的是镜像仓库、默认 Tag、构建上下文目录和 Dockerfile 路径，后续发布流程会直接复用这些参数。
         </Text>
       </Card>
-      <AdminTable columns={columns} dataSource={data?.data ?? []} rowKey="id" loading={isLoading} />
+      <AdminTable
+        columnSettingIconOnly
+        columnSettingPlacement="header"
+        shellClassName="soha-management-table-shell"
+        title={t('page.delivery.applications.title', 'Applications')}
+        headerExtra={(
+          <ManagementTableToolbar>
+            {canCreateApplication ? (
+              <Button icon={<PlusOutlined />} type="primary" onClick={() => { setEditing(null); setModalVisible(true) }}>
+                新建应用
+              </Button>
+            ) : null}
+            <ManagementRefreshButton
+              aria-label="刷新"
+              loading={isFetching}
+              tooltip="刷新"
+              onClick={() => void refetch()}
+            />
+          </ManagementTableToolbar>
+        )}
+        columns={columns}
+        dataSource={data?.data ?? []}
+        rowKey="id"
+        loading={isLoading}
+        scroll={{ x: 'max-content' }}
+      />
       <Modal
         title={editing ? '编辑应用' : '新建应用'}
         open={modalVisible}
         onCancel={() => { setModalVisible(false); setEditing(null) }}
         footer={null}
-        destroyOnClose
+        destroyOnHidden
       >
         <Form
           form={form}
@@ -259,7 +297,7 @@ export function WorkflowsPage() {
   const permissionSnapshotQuery = usePermissionSnapshot()
   const canTriggerWorkflow = hasPermission(permissionSnapshotQuery.data?.data, 'delivery.workflows.trigger')
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isFetching, refetch } = useQuery({
     queryKey: ['workflows'],
     queryFn: () => api.get<ApiResponse<Workflow[]>>('/workflows'),
   })
@@ -315,9 +353,13 @@ export function WorkflowsPage() {
       dataIndex: 'id',
       render: (_: unknown, record: Workflow) => (
         canTriggerWorkflow ? (
-          <Button icon={<PlayCircleOutlined />} size="small" type="text" onClick={() => triggerMutation.mutate(record)}>
-            {localeCode === 'zh_CN' ? '触发' : 'Trigger'}
-          </Button>
+          <ManagementIconButton
+            aria-label={localeCode === 'zh_CN' ? '触发工作流' : 'Trigger workflow'}
+            icon={<PlayCircleOutlined />}
+            size="small"
+            tooltip={localeCode === 'zh_CN' ? '触发' : 'Trigger'}
+            onClick={() => triggerMutation.mutate(record)}
+          />
         ) : '-'
       ),
     },
@@ -325,8 +367,27 @@ export function WorkflowsPage() {
 
   return (
     <div className="soha-page">
-      <PageHeader title={t('page.delivery.workflows.title', 'Workflows')} description={t('page.delivery.workflows.desc', 'Inspect automation flow records, trigger methods, and recent execution state.')} />
-      <AdminTable columns={columns} dataSource={data?.data ?? []} rowKey="id" loading={isLoading} />
+      <AdminTable
+        columnSettingIconOnly
+        columnSettingPlacement="header"
+        shellClassName="soha-management-table-shell"
+        title={t('page.delivery.workflows.title', 'Workflows')}
+        headerExtra={(
+          <ManagementTableToolbar>
+            <ManagementRefreshButton
+              aria-label={localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
+              loading={isFetching}
+              tooltip={localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
+              onClick={() => void refetch()}
+            />
+          </ManagementTableToolbar>
+        )}
+        columns={columns}
+        dataSource={data?.data ?? []}
+        rowKey="id"
+        loading={isLoading}
+        scroll={{ x: 'max-content' }}
+      />
     </div>
   )
 }
@@ -352,7 +413,7 @@ export function ReleasesPage() {
   const permissionSnapshotQuery = usePermissionSnapshot()
   const canTriggerRelease = hasPermission(permissionSnapshotQuery.data?.data, 'delivery.releases.trigger')
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isFetching, refetch } = useQuery({
     queryKey: ['releases'],
     queryFn: () => api.get<ApiResponse<Release[]>>('/releases'),
   })
@@ -394,9 +455,13 @@ export function ReleasesPage() {
       dataIndex: 'id',
       render: (_: unknown, record: Release) => (
         canTriggerRelease ? (
-          <Button icon={<PlayCircleOutlined />} size="small" type="text" onClick={() => triggerMutation.mutate(record)}>
-            部署
-          </Button>
+          <ManagementIconButton
+            aria-label="部署"
+            icon={<PlayCircleOutlined />}
+            size="small"
+            tooltip="部署"
+            onClick={() => triggerMutation.mutate(record)}
+          />
         ) : '-'
       ),
     },
@@ -404,8 +469,27 @@ export function ReleasesPage() {
 
   return (
     <div className="soha-page">
-      <PageHeader title={t('page.delivery.releases.title', 'Releases')} description={t('page.delivery.releases.desc', 'Inspect environment release versions and trigger deployments when needed.')} />
-      <AdminTable columns={columns} dataSource={data?.data ?? []} rowKey="id" loading={isLoading} />
+      <AdminTable
+        columnSettingIconOnly
+        columnSettingPlacement="header"
+        shellClassName="soha-management-table-shell"
+        title={t('page.delivery.releases.title', 'Releases')}
+        headerExtra={(
+          <ManagementTableToolbar>
+            <ManagementRefreshButton
+              aria-label="刷新"
+              loading={isFetching}
+              tooltip="刷新"
+              onClick={() => void refetch()}
+            />
+          </ManagementTableToolbar>
+        )}
+        columns={columns}
+        dataSource={data?.data ?? []}
+        rowKey="id"
+        loading={isLoading}
+        scroll={{ x: 'max-content' }}
+      />
     </div>
   )
 }
@@ -431,7 +515,7 @@ export function RegistriesPage() {
   const [editing, setEditing] = useState<Registry | null>(null)
   const canManageRegistry = hasPermission(permissionSnapshotQuery.data?.data, 'delivery.registries.manage')
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isFetching, refetch } = useQuery({
     queryKey: ['registries'],
     queryFn: () => api.get<ApiResponse<Registry[]>>('/registries'),
   })
@@ -491,11 +575,25 @@ export function RegistriesPage() {
       title: '操作',
       dataIndex: 'id',
       render: (_: unknown, record: Registry) => (
-        <Space>
-          {canManageRegistry ? <Button icon={<EditOutlined />} type="text" size="small" onClick={() => { setEditing(record); setModalVisible(true) }} /> : null}
+        <Space className="soha-row-action-icons" size={2}>
           {canManageRegistry ? (
-            <Popconfirm title="确认删除？" onConfirm={() => deleteMutation.mutate(record.id)}>
-              <Button icon={<DeleteOutlined />} type="text" danger size="small" />
+            <ManagementIconButton
+              aria-label="编辑仓库"
+              icon={<EditOutlined />}
+              size="small"
+              tooltip="编辑"
+              onClick={() => { setEditing(record); setModalVisible(true) }}
+            />
+          ) : null}
+          {canManageRegistry ? (
+            <Popconfirm title="确认删除？" onConfirm={() => deleteMutation.mutate(record.id)} placement="topRight">
+              <ManagementIconButton
+                aria-label="删除仓库"
+                danger
+                icon={<DeleteOutlined />}
+                size="small"
+                tooltip="删除"
+              />
             </Popconfirm>
           ) : null}
           {!canManageRegistry ? '-' : null}
@@ -506,18 +604,38 @@ export function RegistriesPage() {
 
   return (
     <div className="soha-page">
-      <PageHeader
+      <AdminTable
+        columnSettingIconOnly
+        columnSettingPlacement="header"
+        shellClassName="soha-management-table-shell"
         title={t('page.delivery.registries.title', 'Registries')}
-        description={t('page.delivery.registries.desc', 'Manage registry connections, credentials, and connectivity status.')}
-        actions={canManageRegistry ? <Button icon={<PlusOutlined />} type="primary" onClick={() => { setEditing(null); setModalVisible(true) }}>添加仓库</Button> : null}
+        headerExtra={(
+          <ManagementTableToolbar>
+            {canManageRegistry ? (
+              <Button icon={<PlusOutlined />} type="primary" onClick={() => { setEditing(null); setModalVisible(true) }}>
+                添加仓库
+              </Button>
+            ) : null}
+            <ManagementRefreshButton
+              aria-label="刷新"
+              loading={isFetching}
+              tooltip="刷新"
+              onClick={() => void refetch()}
+            />
+          </ManagementTableToolbar>
+        )}
+        columns={columns}
+        dataSource={data?.data ?? []}
+        rowKey="id"
+        loading={isLoading}
+        scroll={{ x: 'max-content' }}
       />
-      <AdminTable columns={columns} dataSource={data?.data ?? []} rowKey="id" loading={isLoading} />
       <Modal
         title={editing ? '编辑仓库' : '添加仓库'}
         open={modalVisible}
         onCancel={() => { setModalVisible(false); setEditing(null) }}
         footer={null}
-        destroyOnClose
+        destroyOnHidden
       >
         <Form
           form={form}

@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ReloadOutlined } from '@ant-design/icons'
-import { Button, Card, Empty, Tag, Typography } from 'antd'
+import { Button, Card, Tag, Typography } from 'antd'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
+import { ManagementState } from '@/components/management-list'
 import { useI18n } from '@/i18n'
 import { useAuthStore } from '@/stores/auth-store'
 
@@ -237,7 +238,7 @@ export function PodTerminal({
   }, [canConnect, container, shell, t])
 
   if (!canConnect) {
-    return <Empty description={t('podTerminal.notReady', 'Select a valid cluster and namespace before connecting the terminal')} />
+    return <ManagementState compact kind="select-scope" title={t('podTerminal.notReady', 'Select a valid cluster and namespace before connecting the terminal')} />
   }
 
   return (

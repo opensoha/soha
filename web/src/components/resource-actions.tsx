@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { DeleteOutlined } from '@ant-design/icons'
-import { Button, message, Modal, Tooltip } from 'antd'
+import { Button, message, Popconfirm, Tooltip } from 'antd'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useI18n } from '@/i18n'
 import { api } from '@/services/api-client'
@@ -66,24 +66,26 @@ export function useResourceActions<T extends Record<string, any>>(options: {
       const namespace = options.getNamespace?.(record)
       const key = `${namespace || ''}/${name}`
       return (
-        <Tooltip title={localeCode === 'zh_CN' ? '删除' : 'Delete'}>
-          <Button
-            size="small"
-            type="text"
-            danger
-            icon={<DeleteOutlined />}
-            aria-label={localeCode === 'zh_CN' ? '删除' : 'Delete'}
-            loading={deleting === key}
-            onClick={() => {
-              Modal.confirm({
-                title: localeCode === 'zh_CN' ? `确认删除 ${name}？` : `Delete ${name}?`,
-                content: localeCode === 'zh_CN' ? '此操作不可恢复，删除后集群资源立即消失。' : 'This deletes the resource immediately and cannot be undone.',
-                okButtonProps: { danger: true },
-                onOk: () => deleteMutation.mutate({ name, namespace }),
-              })
-            }}
-          />
-        </Tooltip>
+        <Popconfirm
+          title={localeCode === 'zh_CN' ? `确认删除 ${name}？` : `Delete ${name}?`}
+          description={localeCode === 'zh_CN' ? '此操作不可恢复，删除后集群资源立即消失。' : 'This deletes the resource immediately and cannot be undone.'}
+          okText={localeCode === 'zh_CN' ? '删除' : 'Delete'}
+          cancelText={localeCode === 'zh_CN' ? '取消' : 'Cancel'}
+          okButtonProps={{ danger: true, loading: deleting === key }}
+          placement="topRight"
+          onConfirm={() => deleteMutation.mutate({ name, namespace })}
+        >
+          <Tooltip title={localeCode === 'zh_CN' ? '删除' : 'Delete'}>
+            <Button
+              size="small"
+              type="text"
+              danger
+              icon={<DeleteOutlined />}
+              aria-label={localeCode === 'zh_CN' ? '删除' : 'Delete'}
+              loading={deleting === key}
+            />
+          </Tooltip>
+        </Popconfirm>
       )
     },
   }

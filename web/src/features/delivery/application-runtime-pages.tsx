@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
-import { App, Button, Card, Descriptions, Empty, Form, Input, Modal, Popconfirm, Select, Space, Switch, Tabs, Tag, Tooltip, Typography } from 'antd'
-import { ArrowRightOutlined, CloudUploadOutlined, DeleteOutlined, EditOutlined, PlayCircleOutlined, PlusOutlined, ReloadOutlined, RocketOutlined, SafetyCertificateOutlined } from '@ant-design/icons'
+import { App, Button, Card, Descriptions, Form, Input, Modal, Popconfirm, Select, Space, Switch, Tabs, Tag, Tooltip, Typography } from 'antd'
+import { ArrowRightOutlined, CloudUploadOutlined, DeleteOutlined, EditOutlined, LinkOutlined, MinusCircleOutlined, PlayCircleOutlined, PlusOutlined, ReloadOutlined, RocketOutlined, SafetyCertificateOutlined } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams } from 'react-router-dom'
 import { AdminTable } from '@/components/admin-table'
-import { PageHeader } from '@/components/page-header'
+import { ManagementDetailHeader, ManagementIconButton, ManagementState } from '@/components/management-list'
 import { PodLogViewer } from '@/components/pod-log-viewer'
 import { PodTerminal } from '@/components/pod-terminal'
 import { ResourceMetricsPanel } from '@/components/resource-metrics-panel'
@@ -223,7 +223,7 @@ function disabledReason(reasons: Array<string | false | undefined>) {
 
 function DeploymentOverview({ deployment }: { deployment: DeploymentDetail }) {
   return (
-    <Card className="soha-detail-card">
+    <Card className="soha-management-panel-card">
       <Space orientation="vertical" style={{ width: '100%' }} size={12}>
         <div className="soha-application-runtime-overview">
           <div>
@@ -233,11 +233,11 @@ function DeploymentOverview({ deployment }: { deployment: DeploymentDetail }) {
           <Tag color="blue">{deployment.strategy}</Tag>
         </div>
         <div className="soha-application-runtime-statgrid">
-          <Card size="small"><Text type="secondary">Desired</Text><div>{deployment.desiredReplicas}</div></Card>
-          <Card size="small"><Text type="secondary">Ready</Text><div>{deployment.readyReplicas}</div></Card>
-          <Card size="small"><Text type="secondary">Available</Text><div>{deployment.availableReplicas}</div></Card>
+          <Card className="soha-management-panel-card" size="small"><Text type="secondary">Desired</Text><div>{deployment.desiredReplicas}</div></Card>
+          <Card className="soha-management-panel-card" size="small"><Text type="secondary">Ready</Text><div>{deployment.readyReplicas}</div></Card>
+          <Card className="soha-management-panel-card" size="small"><Text type="secondary">Available</Text><div>{deployment.availableReplicas}</div></Card>
         </div>
-        <Card size="small" title="Labels">
+        <Card className="soha-management-panel-card" size="small" title="Labels">
           <Space wrap>
             {Object.entries(deployment.labels ?? {}).map(([key, value]) => <Tag key={key}>{`${key}=${value}`}</Tag>)}
           </Space>
@@ -456,11 +456,11 @@ export function ApplicationDetailPage() {
   ])
 
   if (runtimeQuery.isLoading) {
-    return <div className="soha-page"><Card>Loading...</Card></div>
+    return <div className="soha-page"><ManagementState kind="loading" title="Loading..." /></div>
   }
 
   if (!runtime) {
-    return <div className="soha-page"><Card><Empty description="Application not found" /></Card></div>
+    return <div className="soha-page"><ManagementState kind="not-found" description="Application not found" /></div>
   }
 
   const summaryBindings = bindings.slice(0, 4)
@@ -470,18 +470,18 @@ export function ApplicationDetailPage() {
 
   return (
     <div className="soha-page">
-      <PageHeader
+      <ManagementDetailHeader
         title={runtime.application.name}
         description="围绕应用查看服务组件、容器、环境运行态和交付入口。"
         actions={<Button onClick={() => navigate('/applications')}>返回应用中心</Button>}
       />
       <div className="soha-application-runtime-service-summary">
-        <Card size="small"><Text type="secondary">服务组件</Text><strong>{services.length}</strong></Card>
-        <Card size="small"><Text type="secondary">容器</Text><strong>{services.reduce((sum, item) => sum + (item.containers?.length ?? 0), 0)}</strong></Card>
-        <Card size="small"><Text type="secondary">环境</Text><strong>{environments.length}</strong></Card>
-        <Card size="small"><Text type="secondary">运行目标</Text><strong>{environments.reduce((sum, item) => sum + (item.workloads?.length ?? 0), 0)}</strong></Card>
+        <Card className="soha-management-panel-card" size="small"><Text type="secondary">服务组件</Text><strong>{services.length}</strong></Card>
+        <Card className="soha-management-panel-card" size="small"><Text type="secondary">容器</Text><strong>{services.reduce((sum, item) => sum + (item.containers?.length ?? 0), 0)}</strong></Card>
+        <Card className="soha-management-panel-card" size="small"><Text type="secondary">环境</Text><strong>{environments.length}</strong></Card>
+        <Card className="soha-management-panel-card" size="small"><Text type="secondary">运行目标</Text><strong>{environments.reduce((sum, item) => sum + (item.workloads?.length ?? 0), 0)}</strong></Card>
       </div>
-      <Card className="soha-application-delivery-actions" title="交付操作">
+      <Card className="soha-application-delivery-actions soha-management-panel-card" title="交付操作">
         <Form form={deliveryForm} layout="vertical" size="middle" className="soha-application-delivery-actions__form">
           <div className="soha-application-delivery-actions__grid">
             <Form.Item name="applicationEnvironmentId" label="环境绑定" rules={[{ required: true, message: '请选择环境绑定' }]}>
@@ -566,7 +566,7 @@ export function ApplicationDetailPage() {
             label: '总览',
             children: (
               <div className="soha-application-runtime-overview-grid">
-                <Card title="最近执行">
+                <Card className="soha-management-panel-card" title="最近执行">
                   <Space orientation="vertical" style={{ width: '100%' }} size={12}>
                     <Descriptions column={1} items={[
                       { key: 'build', label: 'Build', children: summarizeBuildRecord(latestBuilds[0]) },
@@ -578,7 +578,7 @@ export function ApplicationDetailPage() {
                     ]} />
                   </Space>
                 </Card>
-                <Card title="环境概览">
+                <Card className="soha-management-panel-card" title="环境概览">
                   <Space orientation="vertical" style={{ width: '100%' }} size={12}>
                     {summaryBindings.length > 0 ? summaryBindings.map((binding) => (
                       <div className="soha-application-runtime-binding-row" key={binding.applicationEnvironmentId}>
@@ -589,10 +589,16 @@ export function ApplicationDetailPage() {
                         <Space wrap>
                           <Tag>{summarizeBindingStatus(binding)}</Tag>
                           <Tag>{binding.targetCount} targets</Tag>
-                          <Button size="small" type="link" onClick={() => navigate(`/application-environments/${binding.applicationEnvironmentId}`)}>绑定详情</Button>
+                          <ManagementIconButton
+                            aria-label="查看绑定详情"
+                            icon={<LinkOutlined />}
+                            size="small"
+                            tooltip="绑定详情"
+                            onClick={() => navigate(`/application-environments/${binding.applicationEnvironmentId}`)}
+                          />
                         </Space>
                       </div>
-                    )) : <Empty description="尚未绑定任何环境" />}
+                    )) : <ManagementState bordered={false} compact description="尚未绑定任何环境" kind="not-configured" />}
                   </Space>
                 </Card>
               </div>
@@ -603,7 +609,7 @@ export function ApplicationDetailPage() {
             label: '服务组件',
             children: (
               <Card
-                className="soha-detail-card"
+                className="soha-management-panel-card"
                 title="服务组件"
                 extra={canManageServices ? <Button type="primary" icon={<PlusOutlined />} onClick={() => openServiceModal()}>新建服务</Button> : null}
               >
@@ -617,9 +623,22 @@ export function ApplicationDetailPage() {
                         title={service.name}
                         extra={<StatusTag value={service.enabled ? 'enabled' : 'disabled'} />}
                         actions={canManageServices ? [
-                          <Button key="edit" type="link" size="small" icon={<EditOutlined />} onClick={() => openServiceModal(service)}>编辑</Button>,
+                          <ManagementIconButton
+                            key="edit"
+                            aria-label="编辑服务组件"
+                            icon={<EditOutlined />}
+                            size="small"
+                            tooltip="编辑"
+                            onClick={() => openServiceModal(service)}
+                          />,
                           <Popconfirm key="delete" title="确认删除该服务组件？" onConfirm={() => deleteServiceMutation.mutate(service)}>
-                            <Button type="link" size="small" danger icon={<DeleteOutlined />}>删除</Button>
+                            <ManagementIconButton
+                              aria-label="删除服务组件"
+                              danger
+                              icon={<DeleteOutlined />}
+                              size="small"
+                              tooltip="删除"
+                            />
                           </Popconfirm>,
                         ] : undefined}
                       >
@@ -645,7 +664,7 @@ export function ApplicationDetailPage() {
                     ))}
                   </div>
                 ) : (
-                  <Empty description="尚未配置服务组件。先把应用拆成服务和容器，后续 CI/CD DAG 才能按服务选择构建、测试和部署目标。" />
+                  <ManagementState bordered={false} compact description="尚未配置服务组件。先把应用拆成服务和容器，后续 CI/CD DAG 才能按服务选择构建、测试和部署目标。" kind="not-configured" />
                 )}
               </Card>
             ),
@@ -655,7 +674,7 @@ export function ApplicationDetailPage() {
             label: '环境矩阵',
             children: (
               <div className="soha-application-runtime-environment-stack">
-                <Card className="soha-detail-card">
+                <Card className="soha-management-panel-card">
                   <Space wrap>
                     {environments.map((item) => (
                       <Tag
@@ -703,7 +722,7 @@ export function ApplicationDetailPage() {
                       </Space>
                     </Card>
                   )) : (
-                    <Card className="soha-application-runtime-empty"><Empty description="当前环境下没有可显示的服务/Deployment" /></Card>
+                    <ManagementState className="soha-application-runtime-empty" bordered={false} compact description="当前环境下没有可显示的服务/Deployment" />
                   )}
                 </div>
               </div>
@@ -714,7 +733,7 @@ export function ApplicationDetailPage() {
             label: '交付物',
             children: (
               <div className="soha-application-runtime-delivery-grid">
-                <Card title="Release Bundle">
+                <Card className="soha-management-panel-card" title="Release Bundle">
                   <Descriptions column={1} items={[
                     { key: 'bundle', label: '当前 Bundle', children: summarizeReleaseBundle(detail?.latestBundle) },
                     { key: 'bundleArtifacts', label: 'Bundle 交付物', children: summarizeArtifacts(releaseBundleArtifactsQuery.data?.data) },
@@ -722,24 +741,24 @@ export function ApplicationDetailPage() {
                     { key: 'taskArtifacts', label: 'Task 交付物', children: summarizeArtifacts(latestExecutionArtifactsQuery.data?.data) },
                   ]} />
                 </Card>
-                <Card title="Build / Release / Workflow">
-                  <AdminTable
-                    rowKey="id"
-                    pagination={false}
-                    dataSource={[
-                      ...latestBuilds.map((item) => ({ kind: 'build', id: item.id, status: item.status, label: item.sourceSystem, summary: item.metadata?.artifact ? 'artifact ready' : 'build record' })),
-                      ...latestReleases.map((item) => ({ kind: 'release', id: item.id, status: item.status, label: `${item.clusterId}/${item.namespace}`, summary: item.deploymentName })),
-                      ...latestWorkflows.map((item) => ({ kind: 'workflow', id: item.id, status: item.status, label: item.workflowName, summary: `${item.steps?.length ?? 0} steps` })),
-                    ]}
-                    columns={[
-                      { title: '类型', dataIndex: 'kind' },
-                      { title: 'ID', dataIndex: 'id' },
-                      { title: '状态', dataIndex: 'status', render: (value: string) => <StatusTag value={value} /> },
-                      { title: '主体', dataIndex: 'label' },
-                      { title: '说明', dataIndex: 'summary' },
-                    ]}
-                  />
-                </Card>
+                <AdminTable
+                  title="Build / Release / Workflow"
+                  shellClassName="soha-management-table-shell"
+                  rowKey="id"
+                  pagination={false}
+                  dataSource={[
+                    ...latestBuilds.map((item) => ({ kind: 'build', id: item.id, status: item.status, label: item.sourceSystem, summary: item.metadata?.artifact ? 'artifact ready' : 'build record' })),
+                    ...latestReleases.map((item) => ({ kind: 'release', id: item.id, status: item.status, label: `${item.clusterId}/${item.namespace}`, summary: item.deploymentName })),
+                    ...latestWorkflows.map((item) => ({ kind: 'workflow', id: item.id, status: item.status, label: item.workflowName, summary: `${item.steps?.length ?? 0} steps` })),
+                  ]}
+                  columns={[
+                    { title: '类型', dataIndex: 'kind' },
+                    { title: 'ID', dataIndex: 'id' },
+                    { title: '状态', dataIndex: 'status', render: (value: string) => <StatusTag value={value} /> },
+                    { title: '主体', dataIndex: 'label' },
+                    { title: '说明', dataIndex: 'summary' },
+                  ]}
+                />
               </div>
             ),
           },
@@ -748,7 +767,7 @@ export function ApplicationDetailPage() {
             label: '流水线',
             children: (
               <div className="soha-application-runtime-pipeline-grid">
-                <Card title="DAG 模板">
+                <Card className="soha-management-panel-card" title="DAG 模板">
                   <Space orientation="vertical" style={{ width: '100%' }} size={12}>
                     {bindings.length > 0 ? bindings.map((binding) => (
                       <div className="soha-application-runtime-binding-row" key={binding.applicationEnvironmentId}>
@@ -761,23 +780,23 @@ export function ApplicationDetailPage() {
                           <Tag>{binding.requiresApproval ? 'approval required' : 'no approval'}</Tag>
                         </Space>
                       </div>
-                    )) : <Empty description="尚未绑定 CI/CD DAG 模板" />}
+                    )) : <ManagementState bordered={false} compact description="尚未绑定 CI/CD DAG 模板" kind="not-configured" />}
                   </Space>
                 </Card>
-                <Card title="最近工作流运行">
-                  <AdminTable
-                    rowKey="id"
-                    pagination={false}
-                    dataSource={latestWorkflows}
-                    columns={[
-                      { title: 'ID', dataIndex: 'id' },
-                      { title: '工作流', dataIndex: 'workflowName' },
-                      { title: '状态', dataIndex: 'status', render: (value: string) => <StatusTag value={value} /> },
-                      { title: '步骤', dataIndex: 'steps', render: (_: unknown, record: WorkflowRun) => `${record.steps?.length ?? 0} steps` },
-                      { title: '验证节点', dataIndex: 'nodeRuns', render: (_: unknown, record: WorkflowRun) => countWorkflowValidationNodes(record) },
-                    ]}
-                  />
-                </Card>
+                <AdminTable
+                  title="最近工作流运行"
+                  shellClassName="soha-management-table-shell"
+                  rowKey="id"
+                  pagination={false}
+                  dataSource={latestWorkflows}
+                  columns={[
+                    { title: 'ID', dataIndex: 'id' },
+                    { title: '工作流', dataIndex: 'workflowName' },
+                    { title: '状态', dataIndex: 'status', render: (value: string) => <StatusTag value={value} /> },
+                    { title: '步骤', dataIndex: 'steps', render: (_: unknown, record: WorkflowRun) => `${record.steps?.length ?? 0} steps` },
+                    { title: '验证节点', dataIndex: 'nodeRuns', render: (_: unknown, record: WorkflowRun) => countWorkflowValidationNodes(record) },
+                  ]}
+                />
               </div>
             ),
           },
@@ -786,7 +805,7 @@ export function ApplicationDetailPage() {
             label: '测试验证',
             children: (
               <div className="soha-application-runtime-verification-grid">
-                <Card title="验证门禁">
+                <Card className="soha-management-panel-card" title="验证门禁">
                   <Descriptions column={1} items={[
                     { key: 'workflowTemplate', label: 'Workflow Template', children: detail?.bindings?.[0]?.workflowTemplate?.name || detail?.bindings?.[0]?.workflowTemplateName || '-' },
                     { key: 'workflowNodes', label: 'DAG 节点数', children: workflowTemplateNodeCount(detail?.bindings?.[0]?.workflowTemplate) },
@@ -794,7 +813,7 @@ export function ApplicationDetailPage() {
                     { key: 'releaseTarget', label: '当前目标', children: deliveryTargetSummary(detail?.bindings?.[0]?.targets?.[0]) },
                   ]} />
                 </Card>
-                <Card title="测试入口">
+                <Card className="soha-management-panel-card" title="测试入口">
                   <Space orientation="vertical" style={{ width: '100%' }}>
                     <Button type="primary" onClick={() => navigate(`/application-environments/${bindings[0]?.applicationEnvironmentId ?? ''}`)} disabled={!bindings[0]?.applicationEnvironmentId}>进入环境绑定</Button>
                     <Button onClick={() => navigate('/workflow-templates')}>查看 DAG 模板</Button>
@@ -889,7 +908,14 @@ export function ApplicationDetailPage() {
                         <Input placeholder="." />
                       </Form.Item>
                     </div>
-                    <Button type="text" danger icon={<DeleteOutlined />} onClick={() => remove(field.name)}>移除容器</Button>
+                    <ManagementIconButton
+                      aria-label="移除容器"
+                      danger
+                      icon={<MinusCircleOutlined />}
+                      size="small"
+                      tooltip="移除容器"
+                      onClick={() => remove(field.name)}
+                    />
                   </Card>
                 ))}
               </div>
@@ -960,10 +986,10 @@ export function ApplicationWorkloadDetailPage() {
   })
 
   if (detailQuery.isLoading) {
-    return <div className="soha-page"><Card>Loading...</Card></div>
+    return <div className="soha-page"><ManagementState kind="loading" title="Loading..." /></div>
   }
   if (!detail || !deployment) {
-    return <div className="soha-page"><Card><Empty description="未找到运行详情" /></Card></div>
+    return <div className="soha-page"><ManagementState kind="not-found" description="未找到运行详情" /></div>
   }
 
   const tabItems = [
@@ -977,6 +1003,7 @@ export function ApplicationWorkloadDetailPage() {
       label: 'Pods',
       children: (
         <AdminTable
+          shellClassName="soha-management-table-shell"
           columns={[
             { title: '名称', dataIndex: 'name' },
             { title: '状态', dataIndex: 'phase' },
@@ -997,30 +1024,30 @@ export function ApplicationWorkloadDetailPage() {
       label: '网络',
       children: (
         <div className="soha-application-runtime-network">
-          <Card title="Services">
-            <AdminTable
-              columns={[
-                { title: '名称', dataIndex: 'name' },
-                { title: '类型', dataIndex: 'type' },
-                { title: 'Cluster IP', dataIndex: 'clusterIp', render: (value?: string) => value || '-' },
-              ]}
-              dataSource={serviceList}
-              rowKey="name"
-              pageSize={10}
-            />
-          </Card>
-          <Card title="Ingresses">
-            <AdminTable
-              columns={[
-                { title: '名称', dataIndex: 'name' },
-                { title: '主机', dataIndex: 'hosts', render: (value?: string[]) => (value ?? []).join(', ') || '-' },
-                { title: '后端', dataIndex: 'backendServices', render: (value?: string[]) => (value ?? []).join(', ') || '-' },
-              ]}
-              dataSource={ingressList}
-              rowKey="name"
-              pageSize={10}
-            />
-          </Card>
+          <AdminTable
+            title="Services"
+            shellClassName="soha-management-table-shell"
+            columns={[
+              { title: '名称', dataIndex: 'name' },
+              { title: '类型', dataIndex: 'type' },
+              { title: 'Cluster IP', dataIndex: 'clusterIp', render: (value?: string) => value || '-' },
+            ]}
+            dataSource={serviceList}
+            rowKey="name"
+            pageSize={10}
+          />
+          <AdminTable
+            title="Ingresses"
+            shellClassName="soha-management-table-shell"
+            columns={[
+              { title: '名称', dataIndex: 'name' },
+              { title: '主机', dataIndex: 'hosts', render: (value?: string[]) => (value ?? []).join(', ') || '-' },
+              { title: '后端', dataIndex: 'backendServices', render: (value?: string[]) => (value ?? []).join(', ') || '-' },
+            ]}
+            dataSource={ingressList}
+            rowKey="name"
+            pageSize={10}
+          />
         </div>
       ),
     },
@@ -1034,7 +1061,7 @@ export function ApplicationWorkloadDetailPage() {
           podName={selectedPod.name}
         />
       ) : (
-        <Empty description="请选择一个 Pod" />
+        <ManagementState bordered={false} compact kind="select-scope" description="请选择一个 Pod" />
       ),
     },
     {
@@ -1051,7 +1078,7 @@ export function ApplicationWorkloadDetailPage() {
           </Modal>
         </Space>
       ) : (
-        <Empty description="请选择一个 Pod" />
+        <ManagementState bordered={false} compact kind="select-scope" description="请选择一个 Pod" />
       ),
     },
     {
@@ -1071,7 +1098,7 @@ export function ApplicationWorkloadDetailPage() {
 
   return (
     <div className="soha-page">
-      <PageHeader
+      <ManagementDetailHeader
         title={detail.application.name}
         description={`${detail.environment?.name || detail.binding.environmentKey || detail.binding.environmentId} · ${detail.workload.workloadName}`}
         actions={(

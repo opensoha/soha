@@ -129,7 +129,7 @@ export function LoginPage() {
     <div className="soha-auth-shell">
       <div className="soha-auth-layout soha-auth-layout--pro">
         <section className="soha-auth-hero soha-auth-hero--pro">
-          <Space direction="vertical" size={20}>
+          <Space orientation="vertical" size={20}>
             {branding.loginLogoUrl ? (
               <div className="soha-auth-hero-logo">
                 <img

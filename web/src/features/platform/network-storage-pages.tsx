@@ -1,9 +1,15 @@
 import { lazy, Suspense, useDeferredValue, useMemo, useState } from 'react'
-import { PlusOutlined, ReloadOutlined } from '@ant-design/icons'
-import { Alert, Button, Card, Descriptions, Empty, Input, Spin, Tabs, Tag, Tooltip, Typography, message } from 'antd'
+import { PlusOutlined } from '@ant-design/icons'
+import { Button, Card, Descriptions, Input, Spin, Tabs, Tag, Tooltip, Typography, message } from 'antd'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { AdminTable } from '@/components/admin-table'
+import {
+  ManagementDetailHeader,
+  ManagementState,
+  ManagementRefreshButton,
+  ManagementTableToolbar,
+} from '@/components/management-list'
 import { PlatformClusterScopeHint } from '@/components/platform-cluster-scope-hint'
 import { ResourceEventsTimeline } from '@/components/resource-events-timeline'
 import { ResourceMetricsPanel } from '@/components/resource-metrics-panel'
@@ -30,6 +36,22 @@ import type {
 import type { TableColumnsType } from 'antd'
 
 const { Text } = Typography
+
+function PlatformResourceState({
+  description,
+  kind,
+  title,
+}: {
+  description: React.ReactNode
+  kind?: 'empty' | 'error' | 'not-found' | 'select-scope'
+  title?: React.ReactNode
+}) {
+  return <ManagementState bordered={false} compact description={description} kind={kind ?? 'empty'} title={title} />
+}
+
+function resourceEmptyKind(clusterId: string | null | undefined, description: string): 'empty' | 'select-scope' {
+  return !clusterId || description.includes('请选择') || description.includes('Select a cluster') ? 'select-scope' : 'empty'
+}
 
 const K8sYamlEditor = lazy(async () => {
   const mod = await import('@/components/k8s-yaml-editor')
@@ -300,20 +322,9 @@ function buildNetworkErrorDescription(localeCode: 'zh_CN' | 'en_US', error: unkn
   return localeCode === 'zh_CN' ? '网络资源请求失败。' : 'Failed to load network resources.'
 }
 
-function NetworkListTitle({ title, description, clusterScopedHint }: { title: string; description: string; clusterScopedHint?: string }) {
-  return (
-    <div className="soha-admin-table-title-block">
-      <Text strong>{title}</Text>
-      <Text type="secondary">{description}</Text>
-      {clusterScopedHint ? <Text type="secondary">{clusterScopedHint}</Text> : null}
-    </div>
-  )
-}
-
 function NetworkResourceListPage<T extends Record<string, any>>({
   clusterScoped = false,
   columns,
-  description,
   emptyDescription,
   resourcePath,
   rowKey,
@@ -324,7 +335,6 @@ function NetworkResourceListPage<T extends Record<string, any>>({
 }: {
   clusterScoped?: boolean
   columns: TableColumnsType<T>
-  description: string
   emptyDescription: string
   resourcePath: string
   rowKey: string | ((record: T) => string)
@@ -367,29 +377,25 @@ function NetworkResourceListPage<T extends Record<string, any>>({
     <div className="soha-page">
       {actionConfig ? modalNode : null}
       {query.isError ? (
-        <Alert
-          showIcon
-          type="error"
-          message={localeCode === 'zh_CN' ? '网络资源暂时不可用' : 'Network resources unavailable'}
+        <ManagementState
+          className="mb-3"
           description={buildNetworkErrorDescription(localeCode, query.error)}
-          style={{ marginBottom: 12 }}
+          kind="error"
+          title={localeCode === 'zh_CN' ? '网络资源暂时不可用' : 'Network resources unavailable'}
         />
       ) : null}
       <AdminTable
         className="soha-platform-table"
+        columnSettingIconOnly
+        columnSettingPlacement="header"
+        shellClassName="soha-management-table-shell"
         columns={effectiveColumns}
         dataSource={clusterId ? filteredItems : []}
         rowKey={rowKey}
         loading={query.isLoading}
-        enableColumnSelection={false}
+        tableSize="small"
         scroll={{ x: 'max-content' }}
-        title={(
-          <NetworkListTitle
-            title={title}
-            description={description}
-            clusterScopedHint={clusterScoped ? (localeCode === 'zh_CN' ? '集群级资源，忽略命名空间筛选。' : 'Cluster-scoped resource; namespace scope is ignored.') : undefined}
-          />
-        )}
+        title={title}
         toolbar={(
           <div className="soha-workload-table-filters">
             <Input
@@ -403,46 +409,38 @@ function NetworkResourceListPage<T extends Record<string, any>>({
           </div>
         )}
         toolbarExtra={(
-          <div className="soha-page-toolbar">
-            <Button size="small" icon={<ReloadOutlined />} variant="outlined" onClick={() => void query.refetch()}>
-              {localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
-            </Button>
-          </div>
+          <ManagementTableToolbar>
+            {clusterScoped ? (
+              <Text className="soha-workload-table-summary" type="secondary">
+                {localeCode === 'zh_CN' ? '集群级资源' : 'Cluster-scoped'}
+              </Text>
+            ) : null}
+            <ManagementRefreshButton
+              aria-label={localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
+              disabled={!clusterId}
+              loading={query.isFetching}
+              tooltip={localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
+              onClick={() => {
+                if (clusterId) {
+                  void query.refetch()
+                }
+              }}
+            />
+          </ManagementTableToolbar>
         )}
-        empty={<Empty description={effectiveEmpty} />}
+        empty={<PlatformResourceState description={effectiveEmpty} kind={resourceEmptyKind(clusterId, effectiveEmpty)} />}
       />
     </div>
   )
 }
 
-function StorageListTitle({ title, description, clusterScopedHint }: { title: string; description: string; clusterScopedHint?: string }) {
-  return (
-    <div className="soha-admin-table-title-block">
-      <Text strong>{title}</Text>
-      <Text type="secondary">{description}</Text>
-      {clusterScopedHint ? <Text type="secondary">{clusterScopedHint}</Text> : null}
-    </div>
-  )
-}
-
-function StorageListToolbar({ clusterScoped = false }: { clusterScoped?: boolean }) {
-  void clusterScoped
-  return null
-}
-
 function StorageDetailHeader({ title, description, actions }: { title: string; description: string; actions?: React.ReactNode }) {
   return (
-    <div className="soha-admin-table-shell is-panel" style={{ marginBottom: 16 }}>
-      <div className="soha-admin-table-header">
-        <div className="soha-admin-table-header-main">
-          <div className="soha-admin-table-title-block">
-            <Text strong>{title}</Text>
-            <Text type="secondary">{description}</Text>
-          </div>
-        </div>
-        {actions ? <div className="soha-admin-table-header-extra">{actions}</div> : null}
-      </div>
-    </div>
+    <ManagementDetailHeader
+      actions={actions}
+      description={description}
+      title={title}
+    />
   )
 }
 
@@ -506,30 +504,46 @@ export function NetworkServicesPage() {
   return (
     <div className="soha-page">
       {query.isError ? (
-        <Alert
-          showIcon
-          type="error"
-          message={localeCode === 'zh_CN' ? '网络资源暂时不可用' : 'Network resources unavailable'}
+        <ManagementState
+          className="mb-3"
           description={buildNetworkErrorDescription(localeCode, query.error)}
-          style={{ marginBottom: 12 }}
+          kind="error"
+          title={localeCode === 'zh_CN' ? '网络资源暂时不可用' : 'Network resources unavailable'}
         />
       ) : null}
       <AdminTable
         className="soha-platform-table"
+        columnSettingIconOnly
+        columnSettingPlacement="header"
+        shellClassName="soha-management-table-shell"
         columns={columns}
         dataSource={clusterId ? filteredItems : []}
         rowKey={(record) => `${record.namespace}/${record.name}`}
         loading={query.isLoading}
-        enableColumnSelection={false}
+        tableSize="small"
         scroll={{ x: 'max-content' }}
-        title={<NetworkListTitle title={t('page.network.services.title', 'Services')} description={t('page.network.services.desc', 'Inspect service exposure, access addresses, and ports by cluster and namespace.')} />}
+        title={t('page.network.services.title', 'Services')}
         toolbar={(
           <div className="soha-workload-table-filters">
             <Input className="soha-platform-compact-field" size="small" value={searchKeyword} onChange={(event) => setSearchKeyword(event.target.value)} placeholder={localeCode === 'zh_CN' ? '搜索 Service / namespace / type / port' : 'Search service / namespace / type / port'} style={{ width: 300 }} />
           </div>
         )}
-        toolbarExtra={<div className="soha-page-toolbar"><Button size="small" icon={<ReloadOutlined />} variant="outlined" onClick={() => void query.refetch()}>{localeCode === 'zh_CN' ? '刷新' : 'Refresh'}</Button></div>}
-        empty={<Empty description={!clusterId ? (localeCode === 'zh_CN' ? '请选择集群' : 'Select a cluster') : (localeCode === 'zh_CN' ? '当前范围没有 Service' : 'No services in the current scope')} />}
+        toolbarExtra={(
+          <ManagementTableToolbar>
+            <ManagementRefreshButton
+              aria-label={localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
+              disabled={!clusterId}
+              loading={query.isFetching}
+              tooltip={localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
+              onClick={() => {
+                if (clusterId) {
+                  void query.refetch()
+                }
+              }}
+            />
+          </ManagementTableToolbar>
+        )}
+        empty={<PlatformResourceState description={!clusterId ? (localeCode === 'zh_CN' ? '请选择集群' : 'Select a cluster') : (localeCode === 'zh_CN' ? '当前范围没有 Service' : 'No services in the current scope')} kind={!clusterId ? 'select-scope' : 'empty'} />}
       />
     </div>
   )
@@ -607,10 +621,10 @@ export function ServiceDetailPage() {
   }), [backendPodsQuery.data, clusterId, detailNamespace, eventsQuery.data, metricsQuery.data, service])
 
   if (!clusterId || !detailNamespace) {
-    return <Empty description={localeCode === 'zh_CN' ? '请选择集群和命名空间' : 'Select a cluster and namespace'} />
+    return <div className="soha-page"><ManagementState kind="select-scope" description={localeCode === 'zh_CN' ? '请选择集群和命名空间' : 'Select a cluster and namespace'} /></div>
   }
   if (servicesQuery.isLoading) return <Card loading className="soha-detail-card" />
-  if (!service) return <Empty description={localeCode === 'zh_CN' ? '未找到服务' : 'Service not found'} />
+  if (!service) return <div className="soha-page"><ManagementState kind="not-found" description={localeCode === 'zh_CN' ? '未找到服务' : 'Service not found'} /></div>
 
   return (
     <div className="soha-page">
@@ -635,9 +649,20 @@ export function ServiceDetailPage() {
                   { key: 'age', label: 'Age', children: formatAgeSeconds(service.ageSeconds) },
                 ]} />
               </Card>
-              <Card className="soha-detail-card" title={localeCode === 'zh_CN' ? '后端 Pods' : 'Backend Pods'}>
-                <AdminTable columns={backendPodColumns} dataSource={backendPodsQuery.data?.data ?? []} rowKey={(record) => `${record.namespace}/${record.name}`} loading={backendPodsQuery.isLoading} pageSize={10} enableColumnSelection={false} />
-              </Card>
+              <AdminTable
+                className="soha-platform-table"
+                columnSettingIconOnly
+                columnSettingPlacement="header"
+                shellClassName="soha-management-table-shell"
+                title={localeCode === 'zh_CN' ? '后端 Pods' : 'Backend Pods'}
+                columns={backendPodColumns}
+                dataSource={backendPodsQuery.data?.data ?? []}
+                rowKey={(record) => `${record.namespace}/${record.name}`}
+                loading={backendPodsQuery.isLoading}
+                pageSize={10}
+                tableSize="small"
+                scroll={{ x: 'max-content' }}
+              />
             </>
           ),
         },
@@ -662,7 +687,6 @@ export function NetworkIngressesPage() {
   return (
     <NetworkResourceListPage<Ingress>
       title="Ingresses"
-      description={localeCode === 'zh_CN' ? '按当前范围查看 Ingress 主机、地址与后端 Service。' : 'Inspect ingress hosts, addresses, and backend services in the current scope.'}
       resourcePath="network/ingresses"
       columns={columns}
       rowKey={(record) => `${record.namespace}/${record.name}`}
@@ -687,7 +711,6 @@ export function NetworkGatewayClassesPage() {
     <NetworkResourceListPage<GatewayClass>
       clusterScoped
       title="GatewayClasses"
-      description={localeCode === 'zh_CN' ? '查看 Gateway API 控制器类、接收状态与参数引用。' : 'Inspect Gateway API controller classes, acceptance status, and parameter references.'}
       resourcePath="network/gatewayclasses"
       columns={columns}
       rowKey="name"
@@ -712,7 +735,6 @@ export function NetworkGatewaysPage() {
   return (
     <NetworkResourceListPage<Gateway>
       title="Gateways"
-      description={localeCode === 'zh_CN' ? '查看 Gateway API 网关实例、监听器与对外地址。' : 'Inspect Gateway API gateway instances, listeners, and addresses.'}
       resourcePath="network/gateways"
       columns={columns}
       rowKey={(record) => `${record.namespace}/${record.name}`}
@@ -737,7 +759,6 @@ export function NetworkHTTPRoutesPage() {
   return (
     <NetworkResourceListPage<HTTPRoute>
       title="HTTPRoutes"
-      description={localeCode === 'zh_CN' ? '查看 HTTPRoute 主机、父级 Gateway 与后端 Service 绑定。' : 'Inspect HTTPRoute hosts, parent Gateways, and backend service bindings.'}
       resourcePath="network/httproutes"
       columns={columns}
       rowKey={(record) => `${record.namespace}/${record.name}`}
@@ -763,7 +784,6 @@ export function NetworkBackendTLSPoliciesPage() {
   return (
     <NetworkResourceListPage<BackendTLSPolicy>
       title="BackendTLSPolicies"
-      description={localeCode === 'zh_CN' ? '查看 Gateway API 后端 TLS 校验策略、目标引用与 CA 配置。' : 'Inspect Gateway API backend TLS validation policies, target refs, and CA settings.'}
       resourcePath="network/backendtlspolicies"
       columns={columns}
       rowKey={(record) => `${record.namespace}/${record.name}`}
@@ -789,7 +809,6 @@ export function NetworkGRPCRoutesPage() {
   return (
     <NetworkResourceListPage<GRPCRoute>
       title="GRPCRoutes"
-      description={localeCode === 'zh_CN' ? '查看 gRPC 路由、父级 Gateway 与后端 Service 绑定。' : 'Inspect gRPC routes, parent Gateways, and backend service bindings.'}
       resourcePath="network/grpcroutes"
       columns={columns}
       rowKey={(record) => `${record.namespace}/${record.name}`}
@@ -813,7 +832,6 @@ export function NetworkReferenceGrantsPage() {
   return (
     <NetworkResourceListPage<ReferenceGrant>
       title="ReferenceGrants"
-      description={localeCode === 'zh_CN' ? '查看跨 namespace 引用授权来源与目标资源。' : 'Inspect cross-namespace reference grants, sources, and target resources.'}
       resourcePath="network/referencegrants"
       columns={columns}
       rowKey={(record) => `${record.namespace}/${record.name}`}
@@ -838,7 +856,6 @@ export function NetworkEndpointSlicesPage() {
   return (
     <NetworkResourceListPage<EndpointSlice>
       title="EndpointSlices"
-      description={localeCode === 'zh_CN' ? '查看 Service 后端地址切片、端口与 endpoint 数量。' : 'Inspect service backend endpoint slices, ports, and endpoint counts.'}
       resourcePath="network/endpointslices"
       columns={columns}
       rowKey={(record) => `${record.namespace}/${record.name}`}
@@ -863,7 +880,6 @@ export function NetworkIngressClassesPage() {
     <NetworkResourceListPage<IngressClass>
       clusterScoped
       title="IngressClasses"
-      description={localeCode === 'zh_CN' ? '查看 Ingress 控制器类、默认标记与参数引用。' : 'Inspect ingress controller classes, default markers, and parameter references.'}
       resourcePath="network/ingressclasses"
       columns={columns}
       rowKey="name"
@@ -888,7 +904,6 @@ export function NetworkPoliciesPage() {
   return (
     <NetworkResourceListPage<NetworkPolicy>
       title="NetworkPolicies"
-      description={localeCode === 'zh_CN' ? '查看命名空间网络隔离策略、入站与出站规则数量。' : 'Inspect namespace network isolation policies and ingress or egress rule counts.'}
       resourcePath="network/networkpolicies"
       columns={columns}
       rowKey={(record) => `${record.namespace}/${record.name}`}
@@ -933,16 +948,41 @@ export function StoragePvcPage() {
     <div className="soha-page">
       <CreateResourceModal visible={createVisible} onClose={() => setCreateVisible(false)} kind="PersistentVolumeClaim" resourcePath="storage/persistentvolumeclaims" defaultTemplate={PVC_DEFAULT_TEMPLATE} invalidationKeys={[['platform-resource', 'storage/persistentvolumeclaims']]} />
       <AdminTable
+        className="soha-platform-table"
+        columnSettingIconOnly
+        columnSettingPlacement="header"
+        shellClassName="soha-management-table-shell"
         columns={columns}
         dataSource={clusterId ? filteredItems : []}
         rowKey={(record) => `${record.namespace}/${record.name}`}
         loading={query.isLoading}
-        enableColumnSelection={false}
+        tableSize="small"
         scroll={{ x: 'max-content' }}
-        title={<StorageListTitle title="PersistentVolumeClaims" description="" />}
-        toolbar={<div className="soha-workload-table-filters"><StorageListToolbar /><Input className="soha-platform-compact-field" size="small" value={searchKeyword} onChange={(event) => setSearchKeyword(event.target.value)} placeholder={localeCode === 'zh_CN' ? '搜索 PVC / namespace / storageClass' : 'Search PVC / namespace / storageClass'} style={{ width: 280 }} /></div>}
-        toolbarExtra={<div className="soha-page-toolbar"><Tooltip title={!clusterId ? (localeCode === 'zh_CN' ? '请先选择集群。' : 'Select a cluster first.') : ''}><span><Button size="small" type="primary" icon={<PlusOutlined />} disabled={!clusterId} onClick={() => setCreateVisible(true)}>{localeCode === 'zh_CN' ? '新增' : 'Create'}</Button></span></Tooltip><Button size="small" icon={<ReloadOutlined />} variant="outlined" onClick={() => void query.refetch()}>{localeCode === 'zh_CN' ? '刷新' : 'Refresh'}</Button></div>}
-        empty={<Empty description={clusterId ? (localeCode === 'zh_CN' ? '当前范围没有 PVC' : 'No PVCs in the current scope') : (localeCode === 'zh_CN' ? '请选择集群' : 'Select a cluster')} />}
+        title="PersistentVolumeClaims"
+        toolbar={<div className="soha-workload-table-filters"><Input className="soha-platform-compact-field" size="small" value={searchKeyword} onChange={(event) => setSearchKeyword(event.target.value)} placeholder={localeCode === 'zh_CN' ? '搜索 PVC / namespace / storageClass' : 'Search PVC / namespace / storageClass'} style={{ width: 280 }} /></div>}
+        toolbarExtra={(
+          <ManagementTableToolbar>
+            <Tooltip title={!clusterId ? (localeCode === 'zh_CN' ? '请先选择集群。' : 'Select a cluster first.') : ''}>
+              <span>
+                <Button autoInsertSpace={false} size="small" type="primary" icon={<PlusOutlined />} disabled={!clusterId} onClick={() => setCreateVisible(true)}>
+                  {localeCode === 'zh_CN' ? '新增' : 'Create'}
+                </Button>
+              </span>
+            </Tooltip>
+            <ManagementRefreshButton
+              aria-label={localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
+              disabled={!clusterId}
+              loading={query.isFetching}
+              tooltip={localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
+              onClick={() => {
+                if (clusterId) {
+                  void query.refetch()
+                }
+              }}
+            />
+          </ManagementTableToolbar>
+        )}
+        empty={<PlatformResourceState description={clusterId ? (localeCode === 'zh_CN' ? '当前范围没有 PVC' : 'No PVCs in the current scope') : (localeCode === 'zh_CN' ? '请选择集群' : 'Select a cluster')} kind={clusterId ? 'empty' : 'select-scope'} />}
       />
     </div>
   )
@@ -975,16 +1015,44 @@ export function StoragePvPage() {
     <div className="soha-page">
       <CreateResourceModal visible={createVisible} onClose={() => setCreateVisible(false)} kind="PersistentVolume" resourcePath="storage/persistentvolumes" defaultTemplate={PV_DEFAULT_TEMPLATE} invalidationKeys={[['platform-resource', 'storage/persistentvolumes']]} namespaceScope="cluster" />
       <AdminTable
+        className="soha-platform-table"
+        columnSettingIconOnly
+        columnSettingPlacement="header"
+        shellClassName="soha-management-table-shell"
         columns={columns}
         dataSource={clusterId ? filteredItems : []}
         rowKey="name"
         loading={query.isLoading}
-        enableColumnSelection={false}
+        tableSize="small"
         scroll={{ x: 'max-content' }}
-        title={<StorageListTitle title="PersistentVolumes" description="" />}
-        toolbar={<div className="soha-workload-table-filters"><StorageListToolbar clusterScoped /><Input className="soha-platform-compact-field" size="small" value={searchKeyword} onChange={(event) => setSearchKeyword(event.target.value)} placeholder={localeCode === 'zh_CN' ? '搜索 PV / claim / storageClass' : 'Search PV / claim / storageClass'} style={{ width: 280 }} /></div>}
-        toolbarExtra={<div className="soha-page-toolbar"><Tooltip title={!clusterId ? (localeCode === 'zh_CN' ? '请先选择集群。' : 'Select a cluster first.') : ''}><span><Button size="small" type="primary" icon={<PlusOutlined />} disabled={!clusterId} onClick={() => setCreateVisible(true)}>{localeCode === 'zh_CN' ? '新增' : 'Create'}</Button></span></Tooltip><Button size="small" icon={<ReloadOutlined />} variant="outlined" onClick={() => void query.refetch()}>{localeCode === 'zh_CN' ? '刷新' : 'Refresh'}</Button></div>}
-        empty={<Empty description={clusterId ? (localeCode === 'zh_CN' ? '当前集群没有 PV' : 'No PVs in this cluster') : (localeCode === 'zh_CN' ? '请选择集群' : 'Select a cluster')} />}
+        title="PersistentVolumes"
+        toolbar={<div className="soha-workload-table-filters"><Input className="soha-platform-compact-field" size="small" value={searchKeyword} onChange={(event) => setSearchKeyword(event.target.value)} placeholder={localeCode === 'zh_CN' ? '搜索 PV / claim / storageClass' : 'Search PV / claim / storageClass'} style={{ width: 280 }} /></div>}
+        toolbarExtra={(
+          <ManagementTableToolbar>
+            <Text className="soha-workload-table-summary" type="secondary">
+              {localeCode === 'zh_CN' ? '集群级资源' : 'Cluster-scoped'}
+            </Text>
+            <Tooltip title={!clusterId ? (localeCode === 'zh_CN' ? '请先选择集群。' : 'Select a cluster first.') : ''}>
+              <span>
+                <Button autoInsertSpace={false} size="small" type="primary" icon={<PlusOutlined />} disabled={!clusterId} onClick={() => setCreateVisible(true)}>
+                  {localeCode === 'zh_CN' ? '新增' : 'Create'}
+                </Button>
+              </span>
+            </Tooltip>
+            <ManagementRefreshButton
+              aria-label={localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
+              disabled={!clusterId}
+              loading={query.isFetching}
+              tooltip={localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
+              onClick={() => {
+                if (clusterId) {
+                  void query.refetch()
+                }
+              }}
+            />
+          </ManagementTableToolbar>
+        )}
+        empty={<PlatformResourceState description={clusterId ? (localeCode === 'zh_CN' ? '当前集群没有 PV' : 'No PVs in this cluster') : (localeCode === 'zh_CN' ? '请选择集群' : 'Select a cluster')} kind={clusterId ? 'empty' : 'select-scope'} />}
       />
     </div>
   )
@@ -1015,16 +1083,44 @@ export function StorageClassesPage() {
     <div className="soha-page">
       <CreateResourceModal visible={createVisible} onClose={() => setCreateVisible(false)} kind="StorageClass" resourcePath="storage/storageclasses" defaultTemplate={STORAGE_CLASS_DEFAULT_TEMPLATE} invalidationKeys={[['platform-resource', 'storage/storageclasses']]} namespaceScope="cluster" />
       <AdminTable
+        className="soha-platform-table"
+        columnSettingIconOnly
+        columnSettingPlacement="header"
+        shellClassName="soha-management-table-shell"
         columns={columns}
         dataSource={clusterId ? filteredItems : []}
         rowKey="name"
         loading={query.isLoading}
-        enableColumnSelection={false}
+        tableSize="small"
         scroll={{ x: 'max-content' }}
-        title={<StorageListTitle title="StorageClasses" description="" />}
-        toolbar={<div className="soha-workload-table-filters"><StorageListToolbar clusterScoped /><Input className="soha-platform-compact-field" size="small" value={searchKeyword} onChange={(event) => setSearchKeyword(event.target.value)} placeholder={localeCode === 'zh_CN' ? '搜索 StorageClass / provisioner' : 'Search StorageClass / provisioner'} style={{ width: 280 }} /></div>}
-        toolbarExtra={<div className="soha-page-toolbar"><Tooltip title={!clusterId ? (localeCode === 'zh_CN' ? '请先选择集群。' : 'Select a cluster first.') : ''}><span><Button size="small" type="primary" icon={<PlusOutlined />} disabled={!clusterId} onClick={() => setCreateVisible(true)}>{localeCode === 'zh_CN' ? '新增' : 'Create'}</Button></span></Tooltip><Button size="small" icon={<ReloadOutlined />} variant="outlined" onClick={() => void query.refetch()}>{localeCode === 'zh_CN' ? '刷新' : 'Refresh'}</Button></div>}
-        empty={<Empty description={clusterId ? (localeCode === 'zh_CN' ? '当前集群没有 StorageClass' : 'No storage classes in this cluster') : (localeCode === 'zh_CN' ? '请选择集群' : 'Select a cluster')} />}
+        title="StorageClasses"
+        toolbar={<div className="soha-workload-table-filters"><Input className="soha-platform-compact-field" size="small" value={searchKeyword} onChange={(event) => setSearchKeyword(event.target.value)} placeholder={localeCode === 'zh_CN' ? '搜索 StorageClass / provisioner' : 'Search StorageClass / provisioner'} style={{ width: 280 }} /></div>}
+        toolbarExtra={(
+          <ManagementTableToolbar>
+            <Text className="soha-workload-table-summary" type="secondary">
+              {localeCode === 'zh_CN' ? '集群级资源' : 'Cluster-scoped'}
+            </Text>
+            <Tooltip title={!clusterId ? (localeCode === 'zh_CN' ? '请先选择集群。' : 'Select a cluster first.') : ''}>
+              <span>
+                <Button autoInsertSpace={false} size="small" type="primary" icon={<PlusOutlined />} disabled={!clusterId} onClick={() => setCreateVisible(true)}>
+                  {localeCode === 'zh_CN' ? '新增' : 'Create'}
+                </Button>
+              </span>
+            </Tooltip>
+            <ManagementRefreshButton
+              aria-label={localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
+              disabled={!clusterId}
+              loading={query.isFetching}
+              tooltip={localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
+              onClick={() => {
+                if (clusterId) {
+                  void query.refetch()
+                }
+              }}
+            />
+          </ManagementTableToolbar>
+        )}
+        empty={<PlatformResourceState description={clusterId ? (localeCode === 'zh_CN' ? '当前集群没有 StorageClass' : 'No storage classes in this cluster') : (localeCode === 'zh_CN' ? '请选择集群' : 'Select a cluster')} kind={clusterId ? 'empty' : 'select-scope'} />}
       />
     </div>
   )
@@ -1041,9 +1137,9 @@ export function StoragePvcDetailPage() {
   const detailQuery = useQuery({ queryKey: ['storage-pvc', 'detail', name, detailNamespace], queryFn: () => api.get<ApiResponse<PersistentVolumeClaimDetail>>(detailPath!), enabled: !!detailPath })
   const yamlState = useResourceYAMLState(yamlPath, 'storage-pvc', name, detailNamespace)
   const detail = detailQuery.data?.data
-  if (!clusterId || !detailNamespace) return <Empty description={localeCode === 'zh_CN' ? '请选择集群和命名空间' : 'Select a cluster and namespace'} />
+  if (!clusterId || !detailNamespace) return <div className="soha-page"><ManagementState kind="select-scope" description={localeCode === 'zh_CN' ? '请选择集群和命名空间' : 'Select a cluster and namespace'} /></div>
   if (detailQuery.isLoading) return <Card loading className="soha-detail-card" />
-  if (!detail) return <Empty description={localeCode === 'zh_CN' ? 'PVC 未找到' : 'PVC not found'} />
+  if (!detail) return <div className="soha-page"><ManagementState kind="not-found" description={localeCode === 'zh_CN' ? 'PVC 未找到' : 'PVC not found'} /></div>
   return (
     <div className="soha-page">
       <StorageDetailHeader title={`PVC: ${detail.name}`} description={localeCode === 'zh_CN' ? '查看 PVC 绑定状态、容量与 YAML。' : 'Inspect PVC binding status, capacity, and YAML.'} />
@@ -1065,9 +1161,9 @@ export function StoragePvDetailPage() {
   const detailQuery = useQuery({ queryKey: ['storage-pv', 'detail', name, clusterId], queryFn: () => api.get<ApiResponse<PersistentVolumeDetail>>(detailPath!), enabled: !!detailPath })
   const yamlState = useResourceYAMLState(yamlPath, 'storage-pv', name, '')
   const detail = detailQuery.data?.data
-  if (!clusterId) return <Empty description={localeCode === 'zh_CN' ? '请选择集群' : 'Select a cluster'} />
+  if (!clusterId) return <div className="soha-page"><ManagementState kind="select-scope" description={localeCode === 'zh_CN' ? '请选择集群' : 'Select a cluster'} /></div>
   if (detailQuery.isLoading) return <Card loading className="soha-detail-card" />
-  if (!detail) return <Empty description={localeCode === 'zh_CN' ? 'PV 未找到' : 'PV not found'} />
+  if (!detail) return <div className="soha-page"><ManagementState kind="not-found" description={localeCode === 'zh_CN' ? 'PV 未找到' : 'PV not found'} /></div>
   return (
     <div className="soha-page">
       <StorageDetailHeader title={`PV: ${detail.name}`} description={localeCode === 'zh_CN' ? '查看 PV 容量、绑定关系、回收策略与 YAML。' : 'Inspect PV capacity, claim linkage, reclaim policy, and YAML.'} />
@@ -1090,15 +1186,15 @@ export function StorageClassDetailPage() {
   const detailQuery = useQuery({ queryKey: ['storageclass', 'detail', name, clusterId], queryFn: () => api.get<ApiResponse<StorageClassDetail>>(detailPath!), enabled: !!detailPath })
   const yamlState = useResourceYAMLState(yamlPath, 'storageclass', name, '')
   const detail = detailQuery.data?.data
-  if (!clusterId) return <Empty description={localeCode === 'zh_CN' ? '请选择集群' : 'Select a cluster'} />
+  if (!clusterId) return <div className="soha-page"><ManagementState kind="select-scope" description={localeCode === 'zh_CN' ? '请选择集群' : 'Select a cluster'} /></div>
   if (detailQuery.isLoading) return <Card loading className="soha-detail-card" />
-  if (!detail) return <Empty description={localeCode === 'zh_CN' ? 'StorageClass 未找到' : 'StorageClass not found'} />
+  if (!detail) return <div className="soha-page"><ManagementState kind="not-found" description={localeCode === 'zh_CN' ? 'StorageClass 未找到' : 'StorageClass not found'} /></div>
   return (
     <div className="soha-page">
       <StorageDetailHeader title={`StorageClass: ${detail.name}`} description={localeCode === 'zh_CN' ? '查看 provisioner、绑定模式、参数与 YAML。' : 'Inspect provisioner, binding mode, parameters, and YAML.'} />
       <PlatformClusterScopeHint resourceLabel="StorageClass" />
       <Tabs items={[
-        { key: 'overview', label: localeCode === 'zh_CN' ? '概览' : 'Overview', children: <><ResourceMetaOverview name={detail.name} namespace="-" createdAt={detail.createdAt} labels={detail.labels} annotations={detail.annotations} extra={[{ key: 'Provisioner', value: detail.provisioner }, { key: 'ReclaimPolicy', value: detail.reclaimPolicy || '-' }, { key: 'BindingMode', value: detail.volumeBindingMode || '-' }, { key: localeCode === 'zh_CN' ? '允许扩容' : 'Expansion', value: <BooleanTag value={detail.allowVolumeExpansion} trueLabel="Yes" falseLabel="No" /> }]} /><Card className="soha-detail-card" title={localeCode === 'zh_CN' ? '参数' : 'Parameters'}>{detail.parameters && Object.keys(detail.parameters).length > 0 ? <Descriptions column={1} items={Object.entries(detail.parameters).map(([key, value]) => ({ key, label: key, children: value }))} /> : <Empty description={localeCode === 'zh_CN' ? '暂无参数' : 'No parameters'} />}</Card></> },
+        { key: 'overview', label: localeCode === 'zh_CN' ? '概览' : 'Overview', children: <><ResourceMetaOverview name={detail.name} namespace="-" createdAt={detail.createdAt} labels={detail.labels} annotations={detail.annotations} extra={[{ key: 'Provisioner', value: detail.provisioner }, { key: 'ReclaimPolicy', value: detail.reclaimPolicy || '-' }, { key: 'BindingMode', value: detail.volumeBindingMode || '-' }, { key: localeCode === 'zh_CN' ? '允许扩容' : 'Expansion', value: <BooleanTag value={detail.allowVolumeExpansion} trueLabel="Yes" falseLabel="No" /> }]} /><Card className="soha-detail-card" title={localeCode === 'zh_CN' ? '参数' : 'Parameters'}>{detail.parameters && Object.keys(detail.parameters).length > 0 ? <Descriptions column={1} items={Object.entries(detail.parameters).map(([key, value]) => ({ key, label: key, children: value }))} /> : <ManagementState bordered={false} compact description={localeCode === 'zh_CN' ? '暂无参数' : 'No parameters'} />}</Card></> },
         { key: 'yaml', label: 'YAML', children: <StorageYamlTab state={yamlState} /> },
       ]} />
     </div>

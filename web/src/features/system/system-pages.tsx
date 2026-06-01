@@ -28,10 +28,14 @@ import { DeleteOutlined, EditOutlined, EyeOutlined, PauseCircleOutlined, PlusOut
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import dayjs from 'dayjs'
 import { AdminTable } from '@/components/admin-table'
+import {
+  ManagementDetailHeader,
+  ManagementIconButton,
+  ManagementTableToolbar,
+} from '@/components/management-list'
 import { hasPermission, permissionSnapshotQueryKey, usePermissionSnapshot } from '@/features/auth/permission-snapshot'
 import { MENU_ICON_OPTIONS, isKnownMenuIcon, resolveMenuIcon } from '@/features/system/menu-icons'
 import { buildMenuSectionOptions, getMenuSectionOrder, normalizeMenuSection, resolveMenuSectionLabel } from '@/features/system/menu-schema'
-import { PageHeader } from '@/components/page-header'
 import { BooleanTag, StatusTag } from '@/components/status-tag'
 import { getMenuWorkbenchId, getMenuWorkspace, resolveRouteMenuId, resolveRoutePermission, routeMeta, type WorkbenchId } from '@/routes/meta'
 import { api } from '@/services/api-client'
@@ -311,15 +315,17 @@ export function OnlineUsersPage() {
 
   return (
     <div className="soha-page">
+      <ManagementDetailHeader
+        title="在线用户"
+        description="查看当前在线会话、登录来源、最后活跃时间与会话到期信息。"
+      />
       <AdminTable
-        title={(
-          <div className="soha-admin-table-title-block">
-            <Text strong>在线用户</Text>
-            <Text type="secondary">查看当前在线会话、登录来源、最后活跃时间与会话到期信息。</Text>
-          </div>
-        )}
+        columnSettingIconOnly
+        columnSettingPlacement="header"
+        shellClassName="soha-management-table-shell"
+        title="在线会话"
         headerExtra={canManageOnlineUsers ? (
-          <div className="soha-page-toolbar">
+          <ManagementTableToolbar>
             <Button
               size="small"
               danger
@@ -330,7 +336,7 @@ export function OnlineUsersPage() {
             >
               {`批量下线 (${selectedSessions.length})`}
             </Button>
-          </div>
+          </ManagementTableToolbar>
         ) : null}
         columns={columns}
         dataSource={filteredSessions}
@@ -494,30 +500,52 @@ export function AnnouncementsPage() {
   ]
 
   const renderAnnouncementActions = (record: Announcement) => (
-    <Space>
-      <Button icon={<EyeOutlined />} type="text" size="small" onClick={() => setPreviewing(record)} />
-      {canManageAnnouncements ? <Button icon={<EditOutlined />} type="text" size="small" onClick={() => { setEditing(record); setModalVisible(true) }} /> : null}
-      {canManageAnnouncements && buildAnnouncementLifecycle(record) !== 'published' ? (
-        <Button
-          icon={<SendOutlined />}
-          type="text"
+    <Space className="soha-row-action-icons">
+      <ManagementIconButton
+        aria-label="预览公告"
+        icon={<EyeOutlined />}
+        size="small"
+        tooltip="预览"
+        onClick={() => setPreviewing(record)}
+      />
+      {canManageAnnouncements ? (
+        <ManagementIconButton
+          aria-label="编辑公告"
+          icon={<EditOutlined />}
           size="small"
+          tooltip="编辑"
+          onClick={() => { setEditing(record); setModalVisible(true) }}
+        />
+      ) : null}
+      {canManageAnnouncements && buildAnnouncementLifecycle(record) !== 'published' ? (
+        <ManagementIconButton
+          aria-label="发布公告"
+          icon={<SendOutlined />}
+          size="small"
+          tooltip="发布"
           onClick={() => publishMutation.mutate(record.id)}
           loading={publishMutation.isPending && publishMutation.variables === record.id}
         />
       ) : null}
       {canManageAnnouncements && buildAnnouncementLifecycle(record) === 'published' ? (
-        <Button
+        <ManagementIconButton
+          aria-label="撤回公告"
           icon={<PauseCircleOutlined />}
-          type="text"
           size="small"
+          tooltip="撤回"
           onClick={() => withdrawMutation.mutate(record.id)}
           loading={withdrawMutation.isPending && withdrawMutation.variables === record.id}
         />
       ) : null}
       {canManageAnnouncements ? (
         <Popconfirm title="确认删除？" onConfirm={() => deleteMutation.mutate(record.id)}>
-          <Button icon={<DeleteOutlined />} type="text" danger size="small" />
+          <ManagementIconButton
+            aria-label="删除公告"
+            danger
+            icon={<DeleteOutlined />}
+            size="small"
+            tooltip="删除"
+          />
         </Popconfirm>
       ) : null}
     </Space>
@@ -525,7 +553,7 @@ export function AnnouncementsPage() {
 
   return (
     <div className="soha-page">
-      <PageHeader
+      <ManagementDetailHeader
         title="公告管理"
         description="按发布状态管理公告内容、发布时间窗与置顶优先级。"
         actions={canManageAnnouncements ? (
@@ -566,7 +594,7 @@ export function AnnouncementsPage() {
                 itemLayout="vertical"
                 loading={isLoading}
                 dataSource={filteredAnnouncements}
-                locale={{ emptyText: <Alert type="info" showIcon title="当前分组下暂无公告" /> }}
+                locale={{ emptyText: <Alert type="info" showIcon message="当前分组下暂无公告" /> }}
                 renderItem={(record: Announcement) => {
                   const lifecycle = buildAnnouncementLifecycle(record)
                   return (
@@ -689,7 +717,7 @@ export function AnnouncementsPage() {
                 { key: 'window', label: '生效窗口', children: `${formatDateTime(previewing.startsAt)} ~ ${formatDateTime(previewing.endsAt)}` },
               ]}
             />
-            {previewing.summary ? <Alert type="info" showIcon title={previewing.summary} /> : null}
+            {previewing.summary ? <Alert type="info" showIcon message={previewing.summary} /> : null}
             <Paragraph style={{ marginBottom: 0, whiteSpace: 'pre-wrap' }}>{previewing.content}</Paragraph>
           </Space>
         ) : null}
@@ -1325,11 +1353,25 @@ export function MenusPage() {
       title: '操作',
       dataIndex: 'id',
       render: (_: unknown, record: MenuItem) => (
-        <Space>
-          {canManageMenus && !record.syntheticKind ? <Button icon={<EditOutlined />} type="text" size="small" onClick={() => { setEditing(findMenuItemByID(menuTree, record.id) ?? record); setModalVisible(true) }} /> : null}
+        <Space className="soha-row-action-icons">
+          {canManageMenus && !record.syntheticKind ? (
+            <ManagementIconButton
+              aria-label="编辑菜单"
+              icon={<EditOutlined />}
+              size="small"
+              tooltip="编辑"
+              onClick={() => { setEditing(findMenuItemByID(menuTree, record.id) ?? record); setModalVisible(true) }}
+            />
+          ) : null}
           {canManageMenus && !record.syntheticKind ? (
             <Popconfirm title="确认删除？" onConfirm={() => deleteMutation.mutate(record.id)}>
-              <Button icon={<DeleteOutlined />} type="text" danger size="small" />
+              <ManagementIconButton
+                aria-label="删除菜单"
+                danger
+                icon={<DeleteOutlined />}
+                size="small"
+                tooltip="删除"
+              />
             </Popconfirm>
           ) : null}
           {!canManageMenus || record.syntheticKind ? '-' : null}
@@ -1340,8 +1382,15 @@ export function MenusPage() {
 
   return (
     <div className="soha-page">
+      <ManagementDetailHeader
+        title="菜单管理"
+        description="维护工作台菜单、父子结构、排序、图标和可见性策略。"
+      />
       <AdminTable
         key={treeView}
+        columnSettingIconOnly
+        columnSettingPlacement="header"
+        shellClassName="soha-management-table-shell"
         columns={columns}
         dataSource={filteredMenuTree}
         rowKey="id"
@@ -1349,17 +1398,13 @@ export function MenusPage() {
         pageSize={menuPageSize}
         pagination={false}
         scroll={{ x: 1320 }}
-        title={(
-          <div className="soha-admin-table-title-block">
-            <Text strong>菜单管理</Text>
-          </div>
-        )}
+        title="菜单树"
         expandable={{
           defaultExpandAllRows: treeView !== 'top',
           rowExpandable: (record: MenuItem) => countDirectMenuChildren(record) > 0,
         }}
         toolbar={(
-          <div className="soha-admin-table-toolbar-main">
+          <ManagementTableToolbar>
             <div className="soha-workload-table-filters">
               <Segmented
                 size="small"
@@ -1418,13 +1463,11 @@ export function MenusPage() {
               />
             </div>
             {canManageMenus ? (
-              <div className="soha-page-toolbar">
-                <Button size="small" icon={<PlusOutlined />} type="primary" onClick={() => { setEditing(null); setModalVisible(true) }}>
-                  新建菜单
-                </Button>
-              </div>
+              <Button size="small" icon={<PlusOutlined />} type="primary" onClick={() => { setEditing(null); setModalVisible(true) }}>
+                新建菜单
+              </Button>
             ) : null}
-          </div>
+          </ManagementTableToolbar>
         )}
       />
       <Modal
@@ -1746,14 +1789,20 @@ export function AuditLogsPage() {
       title: '详情',
       dataIndex: 'id',
       render: (_: string, record: AuditLog) => (
-        <Button size="small" type="text" icon={<EyeOutlined />} onClick={() => setActiveRecord(record)} />
+        <ManagementIconButton
+          aria-label="查看审计详情"
+          icon={<EyeOutlined />}
+          size="small"
+          tooltip="详情"
+          onClick={() => setActiveRecord(record)}
+        />
       ),
     },
   ]
 
   return (
     <div className="soha-page">
-      <PageHeader title="审计日志" description="先看重点，再下钻查看请求上下文和原始元数据。" />
+      <ManagementDetailHeader title="审计日志" description="先看重点，再下钻查看请求上下文和原始元数据。" />
       <div className="soha-system-overview-grid">
         <Card variant="outlined" className="soha-system-metric-card">
           <Statistic title="总记录" value={overview.total} />
@@ -1773,6 +1822,9 @@ export function AuditLogsPage() {
         </Card>
       </div>
       <AdminTable
+        columnSettingIconOnly
+        columnSettingPlacement="header"
+        shellClassName="soha-management-table-shell"
         columns={columns}
         dataSource={filteredLogs}
         rowKey="id"
@@ -1998,14 +2050,20 @@ export function OperationLogsPage() {
       title: '详情',
       dataIndex: 'id',
       render: (_: string, record: OperationLog) => (
-        <Button size="small" type="text" icon={<EyeOutlined />} onClick={() => setActiveRecord(record)} />
+        <ManagementIconButton
+          aria-label="查看操作详情"
+          icon={<EyeOutlined />}
+          size="small"
+          tooltip="详情"
+          onClick={() => setActiveRecord(record)}
+        />
       ),
     },
   ]
 
   return (
     <div className="soha-page">
-      <PageHeader title="操作日志" description="把变更动作和目标对象拆开看，先看发生了什么，再看打到了哪里。" />
+      <ManagementDetailHeader title="操作日志" description="把变更动作和目标对象拆开看，先看发生了什么，再看打到了哪里。" />
       <div className="soha-system-overview-grid">
         <Card variant="outlined" className="soha-system-metric-card">
           <Statistic title="总操作" value={overview.total} />
@@ -2025,6 +2083,9 @@ export function OperationLogsPage() {
         </Card>
       </div>
       <AdminTable
+        columnSettingIconOnly
+        columnSettingPlacement="header"
+        shellClassName="soha-management-table-shell"
         columns={columns}
         dataSource={filteredLogs}
         rowKey="id"

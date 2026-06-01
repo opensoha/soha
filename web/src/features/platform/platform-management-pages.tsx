@@ -1,12 +1,17 @@
 import { useDeferredValue, useMemo, useState } from 'react'
-import { Alert, App, Button, Empty, Input, InputNumber, Modal, Popover, Progress, Select, Space, Tag, Tooltip, Typography } from 'antd'
-import { DeleteOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons'
+import type { ReactNode } from 'react'
+import { App, Button, Input, InputNumber, Modal, Popconfirm, Popover, Progress, Select, Space, Tag, Tooltip, Typography } from 'antd'
+import { DeleteOutlined, PlusOutlined } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { AdminTable } from '@/components/admin-table'
+import {
+  ManagementState,
+  ManagementRefreshButton,
+  ManagementTableToolbar,
+} from '@/components/management-list'
 import { useResourceActions } from '@/components/resource-actions'
 import { BooleanTag } from '@/components/status-tag'
-import { PageHeader } from '@/components/page-header'
 import { hasAllowedAction } from '@/features/auth/permission-snapshot'
 import { buildClusterScopedPath } from '@/features/platform/platform-scope-query'
 import {
@@ -23,6 +28,14 @@ import type { ApiResponse, Cluster } from '@/types'
 import type { TableColumnsType } from 'antd'
 
 const { Text } = Typography
+
+function PlatformTableState({ description, kind }: { description: ReactNode; kind?: 'empty' | 'error' | 'select-scope' }) {
+  return <ManagementState bordered={false} compact description={description} kind={kind ?? 'empty'} />
+}
+
+function buildTableStateKind(clusterId: string | null | undefined, description: string): 'empty' | 'select-scope' {
+  return !clusterId || description.includes('请选择') || description.includes('Select a cluster') ? 'select-scope' : 'empty'
+}
 
 
 
@@ -285,13 +298,6 @@ function localize(localeCode: 'zh_CN' | 'en_US', copy: LocalizedCopy) {
   return copy[localeCode]
 }
 
-function buildInspectDescription(resourceZh: string, resourceEn: string): LocalizedCopy {
-  return {
-    zh_CN: `查看当前 cluster / namespace scope 下的 ${resourceZh} 资源和后续操作入口。`,
-    en_US: `Inspect ${resourceEn} resources and follow-up operations in the current cluster and namespace scope.`,
-  }
-}
-
 function normalizeSearchKeyword(value: string) {
   return value.trim().toLowerCase()
 }
@@ -407,15 +413,19 @@ function useScopedResourceQuery<T>(resourcePath: string) {
 
 function ResourceTableCard<T extends Record<string, any>>({
   columns,
+  headerExtra,
   emptyDescription,
   resourcePath,
   rowKey,
+  title,
   actionConfig,
 }: {
   columns: TableColumnsType<T>
+  headerExtra?: ReactNode
   emptyDescription: LocalizedCopy
   resourcePath: string
   rowKey: string | ((record: T) => string)
+  title: LocalizedCopy
   actionConfig?: {
     resourceKind: string
     resourceLabel?: string
@@ -435,25 +445,30 @@ function ResourceTableCard<T extends Record<string, any>>({
     getNamespace: actionConfig?.getNamespace,
   })
 
-  if (!clusterId) {
-    return <Empty description={localeCode === 'zh_CN' ? '请选择集群' : 'Select a cluster'} />
-  }
-
   const effectiveColumns = actionConfig ? [...columns, actionColumn] : columns
   const scroll = actionConfig ? { x: 'max-content' as const } : undefined
+  const effectiveEmptyDescription = !clusterId
+    ? (localeCode === 'zh_CN' ? '请选择集群' : 'Select a cluster')
+    : localize(localeCode, emptyDescription)
 
   return (
     <>
       {actionConfig ? modalNode : null}
       <AdminTable
+        className="soha-platform-table"
+        columnSettingIconOnly
+        columnSettingPlacement="header"
+        shellClassName="soha-management-table-shell"
+        headerExtra={headerExtra}
+        title={localize(localeCode, title)}
         columns={effectiveColumns}
-        dataSource={query.data?.data ?? []}
+        dataSource={clusterId ? (query.data?.data ?? []) : []}
         rowKey={rowKey}
         loading={query.isLoading}
-        empty={<Empty description={localize(localeCode, emptyDescription)} />}
+        empty={<PlatformTableState description={effectiveEmptyDescription} kind={buildTableStateKind(clusterId, effectiveEmptyDescription)} />}
         pageSize={10}
-        enableColumnSelection={false}
-        scroll={scroll}
+        tableSize="small"
+        scroll={scroll ?? { x: 'max-content' }}
       />
     </>
   )
@@ -461,6 +476,7 @@ function ResourceTableCard<T extends Record<string, any>>({
 
 function ResourceListPage<T extends Record<string, any>>({
   columns,
+  headerExtra,
   emptyDescription,
   resourcePath,
   rowKey,
@@ -468,6 +484,7 @@ function ResourceListPage<T extends Record<string, any>>({
   actionConfig,
 }: {
   columns: TableColumnsType<T>
+  headerExtra?: ReactNode
   emptyDescription: LocalizedCopy
   resourcePath: string
   rowKey: string | ((record: T) => string)
@@ -479,17 +496,14 @@ function ResourceListPage<T extends Record<string, any>>({
     getNamespace?: (record: T) => string | undefined
   }
 }) {
-  const { localeCode } = useI18n()
-  const titleZh = localize('zh_CN', title)
-  const titleEn = localize('en_US', title)
-
   return (
     <div className="soha-page">
-      <PageHeader title={localize(localeCode, title)} description={localize(localeCode, buildInspectDescription(titleZh, titleEn))} />
       <ResourceTableCard<T>
         columns={columns}
+        headerExtra={headerExtra}
         resourcePath={resourcePath}
         rowKey={rowKey}
+        title={title}
         emptyDescription={emptyDescription}
         actionConfig={actionConfig}
       />
@@ -579,36 +593,31 @@ function WorkloadReplicaListPage<T extends { allowedActions?: string[] }>({
     : normalizedKeyword && rawItems.length > 0
       ? localize(localeCode, buildWorkloadReplicaSearchEmptyDescription(title))
       : localize(localeCode, emptyDescription)
-  const titleZh = localize('zh_CN', title)
-  const titleEn = localize('en_US', title)
 
   return (
     <div className="soha-page">
       {shouldShowActions ? modalNode : null}
       {query.isError ? (
-        <Alert
-          showIcon
-          type="error"
-          message={localeCode === 'zh_CN' ? '工作负载资源暂时不可用' : 'Workload resources unavailable'}
+        <ManagementState
+          className="mb-3"
           description={buildWorkloadReplicaErrorDescription(localeCode, query.error)}
-          style={{ marginBottom: 12 }}
+          kind="error"
+          title={localeCode === 'zh_CN' ? '工作负载资源暂时不可用' : 'Workload resources unavailable'}
         />
       ) : null}
       <AdminTable
         className="soha-workload-replica-table soha-platform-table"
+        columnSettingIconOnly
+        columnSettingPlacement="header"
+        shellClassName="soha-management-table-shell"
         columns={effectiveColumns}
         dataSource={clusterId ? filteredItems : []}
         rowKey={rowKey}
         loading={query.isLoading}
         pageSize={10}
-        enableColumnSelection={false}
+        tableSize="small"
         scroll={{ x: 'max-content' }}
-        title={(
-          <div className="soha-admin-table-title-block">
-            <Text strong>{localize(localeCode, title)}</Text>
-            <Text type="secondary">{localize(localeCode, buildInspectDescription(titleZh, titleEn))}</Text>
-          </div>
-        )}
+        title={localize(localeCode, title)}
         toolbar={(
           <div className="soha-workload-table-filters">
             <Input
@@ -625,23 +634,21 @@ function WorkloadReplicaListPage<T extends { allowedActions?: string[] }>({
           </div>
         )}
         toolbarExtra={(
-          <div className="soha-page-toolbar">
-            <Button
-              size="small"
-              icon={<ReloadOutlined />}
-              variant="outlined"
+          <ManagementTableToolbar>
+            <ManagementRefreshButton
+              aria-label={localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
               disabled={!clusterId}
+              loading={query.isFetching}
+              tooltip={localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
               onClick={() => {
                 if (clusterId) {
                   void query.refetch()
                 }
               }}
-            >
-              {localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
-            </Button>
-          </div>
+            />
+          </ManagementTableToolbar>
         )}
-        empty={<Empty description={effectiveEmptyDescription} />}
+        empty={<PlatformTableState description={effectiveEmptyDescription} kind={buildTableStateKind(clusterId, effectiveEmptyDescription)} />}
       />
     </div>
   )
@@ -663,13 +670,6 @@ function ResourceNameLink({ to, name }: { to: string; name: string }) {
   return (
     <Button type="text" onClick={() => navigate(to)}>{name}</Button>
   )
-}
-
-function buildRBACInspectDescription(title: LocalizedCopy): LocalizedCopy {
-  return {
-    zh_CN: `按当前集群与命名空间范围审查 ${title.zh_CN} 资源关系。`,
-    en_US: `Review ${title.en_US} relationships in the current cluster and namespace scope.`,
-  }
 }
 
 function buildRBACSearchPlaceholder(title: LocalizedCopy): LocalizedCopy {
@@ -767,8 +767,9 @@ function RBACListPage<T extends { allowedActions?: string[] }>({
     : normalizedKeyword && rawItems.length > 0
       ? localize(localeCode, buildRBACSearchEmptyDescription(title))
       : localize(localeCode, emptyDescription)
-  const titleZh = localize('zh_CN', title)
-  const titleEn = localize('en_US', title)
+  const scopeSummary = localeCode === 'zh_CN'
+    ? `按当前集群与命名空间范围审查 ${title.zh_CN} 资源关系。`
+    : `Review ${title.en_US} resource relationships in the current cluster and namespace scope.`
   const createDisabled = !clusterId || isAgentCluster
   const createDisabledReason = !clusterId
     ? (localeCode === 'zh_CN' ? '请先选择集群。' : 'Select a cluster first.')
@@ -779,11 +780,11 @@ function RBACListPage<T extends { allowedActions?: string[] }>({
   return (
     <div className="soha-page">
       {query.isError ? (
-        <Alert
-          showIcon
-          type="error"
-          message={buildRBACErrorMessage(localeCode)}
+        <ManagementState
+          className="mb-3"
           description={buildRequestErrorDescription(localeCode, query.error)}
+          kind="error"
+          title={buildRBACErrorMessage(localeCode)}
         />
       ) : null}
       {modalNode}
@@ -800,18 +801,16 @@ function RBACListPage<T extends { allowedActions?: string[] }>({
       ) : null}
       <AdminTable
         className="soha-rbac-table soha-platform-table"
-        title={(
-          <div className="soha-admin-table-title-block">
-            <Text strong>{localize(localeCode, title)}</Text>
-            <Text type="secondary">{localize(localeCode, buildRBACInspectDescription({ zh_CN: titleZh, en_US: titleEn }))}</Text>
-          </div>
-        )}
+        columnSettingIconOnly
+        columnSettingPlacement="header"
+        shellClassName="soha-management-table-shell"
+        title={localize(localeCode, title)}
         columns={effectiveColumns}
         dataSource={clusterId ? filteredItems : []}
         rowKey={rowKey}
         loading={query.isLoading}
         pageSize={10}
-        enableColumnSelection={false}
+        tableSize="small"
         scroll={{ x: 'max-content' }}
         toolbar={(
           <div className="soha-workload-table-filters">
@@ -823,25 +822,31 @@ function RBACListPage<T extends { allowedActions?: string[] }>({
               placeholder={localize(localeCode, searchPlaceholder ?? buildRBACSearchPlaceholder(title))}
               style={{ width: 240 }}
             />
+            <Text className="soha-workload-table-summary" type="secondary">
+              {scopeSummary}
+            </Text>
           </div>
         )}
         toolbarExtra={(
-          <div className="soha-page-toolbar">
+          <ManagementTableToolbar>
             {createConfig ? (
               <Tooltip title={createDisabled ? createDisabledReason : ''}>
                 <span>
-                  <Button size="small" type="primary" disabled={createDisabled} onClick={() => setCreateVisible(true)}>
+                  <Button autoInsertSpace={false} size="small" type="primary" disabled={createDisabled} onClick={() => setCreateVisible(true)}>
                     {localeCode === 'zh_CN' ? '新增' : 'Create'}
                   </Button>
                 </span>
               </Tooltip>
             ) : null}
-            <Button size="small" icon={<ReloadOutlined />} variant="outlined" onClick={() => void query.refetch()}>
-              {buildRBACRefreshLabel(localeCode)}
-            </Button>
-          </div>
+            <ManagementRefreshButton
+              aria-label={buildRBACRefreshLabel(localeCode)}
+              loading={query.isFetching}
+              tooltip={buildRBACRefreshLabel(localeCode)}
+              onClick={() => void query.refetch()}
+            />
+          </ManagementTableToolbar>
         )}
-        empty={<Empty description={effectiveEmptyDescription} />}
+        empty={<PlatformTableState description={effectiveEmptyDescription} kind={buildTableStateKind(clusterId, effectiveEmptyDescription)} />}
       />
     </div>
   )
@@ -1216,19 +1221,18 @@ export function ConfigurationConfigMapsPage() {
   const [createVisible, setCreateVisible] = useState(false)
   return (
     <div className="soha-page">
-      <PageHeader
-        title="ConfigMaps"
-        description={localeCode === 'zh_CN' ? '查看当前 cluster / namespace scope 下的 ConfigMaps 资源和后续操作入口。' : 'Inspect ConfigMaps resources and follow-up operations in the current cluster and namespace scope.'}
-        actions={(
-          <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateVisible(true)}>
-            {localeCode === 'zh_CN' ? '新增' : 'Create'}
-          </Button>
-        )}
-      />
       <ResourceTableCard<ConfigMapResource>
         columns={configMapColumns}
+        headerExtra={(
+          <ManagementTableToolbar>
+            <Button autoInsertSpace={false} type="primary" icon={<PlusOutlined />} onClick={() => setCreateVisible(true)}>
+              {localeCode === 'zh_CN' ? '新增' : 'Create'}
+            </Button>
+          </ManagementTableToolbar>
+        )}
         resourcePath="configuration/configmaps"
         rowKey={(record) => `${record.namespace}/${record.name}`}
+        title={{ zh_CN: 'ConfigMaps', en_US: 'ConfigMaps' }}
         emptyDescription={{ zh_CN: '当前范围没有 ConfigMaps', en_US: 'No configmaps in the current scope' }}
         actionConfig={{
           resourceKind: 'ConfigMap',
@@ -1253,19 +1257,18 @@ export function ConfigurationSecretsPage() {
   const [createVisible, setCreateVisible] = useState(false)
   return (
     <div className="soha-page">
-      <PageHeader
-        title="Secrets"
-        description={localeCode === 'zh_CN' ? '查看当前 cluster / namespace scope 下的 Secrets 资源和后续操作入口。' : 'Inspect Secrets resources and follow-up operations in the current cluster and namespace scope.'}
-        actions={(
-          <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateVisible(true)}>
-            {localeCode === 'zh_CN' ? '新增' : 'Create'}
-          </Button>
-        )}
-      />
       <ResourceTableCard<SecretResource>
         columns={secretColumns}
+        headerExtra={(
+          <ManagementTableToolbar>
+            <Button autoInsertSpace={false} type="primary" icon={<PlusOutlined />} onClick={() => setCreateVisible(true)}>
+              {localeCode === 'zh_CN' ? '新增' : 'Create'}
+            </Button>
+          </ManagementTableToolbar>
+        )}
         resourcePath="configuration/secrets"
         rowKey={(record) => `${record.namespace}/${record.name}`}
+        title={{ zh_CN: 'Secrets', en_US: 'Secrets' }}
         emptyDescription={{ zh_CN: '当前范围没有 Secrets', en_US: 'No secrets in the current scope' }}
         actionConfig={{
           resourceKind: 'Secret',
@@ -1502,53 +1505,78 @@ export function NetworkPortForwardPage() {
     {
       title: localeCode === 'zh_CN' ? '操作' : 'Actions',
       dataIndex: 'sessionId',
-      width: 96,
+      fixed: 'right',
+      align: 'center',
+      width: 64,
       render: (value: string) => (
-        <Button
-          size="small"
-          type="text"
-          danger
-          icon={<DeleteOutlined />}
-          loading={stopMutation.isPending}
-          onClick={() => stopMutation.mutate(value)}
+        <Popconfirm
+          title={localeCode === 'zh_CN' ? '确认停止该 Port Forward？' : 'Stop this port forward?'}
+          description={localeCode === 'zh_CN' ? '这只会停止 Soha 中登记的转发会话记录。' : 'This stops the registered forward session record in Soha.'}
+          okText={localeCode === 'zh_CN' ? '停止' : 'Stop'}
+          cancelText={localeCode === 'zh_CN' ? '取消' : 'Cancel'}
+          okButtonProps={{ danger: true, loading: stopMutation.isPending && stopMutation.variables === value }}
+          placement="topRight"
+          onConfirm={() => stopMutation.mutate(value)}
         >
-          {localeCode === 'zh_CN' ? '停止' : 'Stop'}
-        </Button>
+          <Tooltip title={localeCode === 'zh_CN' ? '停止' : 'Stop'}>
+            <Button
+              aria-label={localeCode === 'zh_CN' ? '停止 Port Forward' : 'Stop port forward'}
+              size="small"
+              type="text"
+              danger
+              icon={<DeleteOutlined />}
+              loading={stopMutation.isPending && stopMutation.variables === value}
+            />
+          </Tooltip>
+        </Popconfirm>
       ),
     },
   ]
 
-  if (!clusterId) {
-    return (
-      <div className="soha-page">
-        <PageHeader
-          title={localeCode === 'zh_CN' ? 'Port Forward' : 'Port Forward'}
-          description={localeCode === 'zh_CN' ? '查看当前已登记的 Port Forward 会话。' : 'Inspect registered port forward sessions.'}
-        />
-        <Empty description={localeCode === 'zh_CN' ? '请选择集群' : 'Select a cluster'} />
-      </div>
-    )
-  }
-
   return (
     <div className="soha-page">
-      <PageHeader
-        title={localeCode === 'zh_CN' ? 'Port Forward' : 'Port Forward'}
-        description={localeCode === 'zh_CN' ? '仅登记转发会话，不执行实际端口转发。' : 'Registers forward sessions as records without performing real forwarding.'}
-        actions={(
-          <Button type="primary" icon={<PlusOutlined />} onClick={() => setModalVisible(true)}>
-            {localeCode === 'zh_CN' ? '新建 Port Forward' : 'New Port Forward'}
-          </Button>
-        )}
-      />
       <AdminTable
+        className="soha-platform-table"
+        columnSettingIconOnly
+        columnSettingPlacement="header"
+        shellClassName="soha-management-table-shell"
+        title={localeCode === 'zh_CN' ? 'Port Forward' : 'Port Forward'}
+        headerExtra={(
+          <ManagementTableToolbar>
+            <Tooltip title={!clusterId ? (localeCode === 'zh_CN' ? '请先选择集群' : 'Select a cluster first') : ''}>
+              <span>
+                <Button
+                  autoInsertSpace={false}
+                  type="primary"
+                  icon={<PlusOutlined />}
+                  disabled={!clusterId}
+                  onClick={() => setModalVisible(true)}
+                >
+                  {localeCode === 'zh_CN' ? '新建 Port Forward' : 'New Port Forward'}
+                </Button>
+              </span>
+            </Tooltip>
+            <ManagementRefreshButton
+              aria-label={localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
+              disabled={!clusterId}
+              loading={query.isFetching}
+              tooltip={localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
+              onClick={() => {
+                if (clusterId) {
+                  void query.refetch()
+                }
+              }}
+            />
+          </ManagementTableToolbar>
+        )}
         columns={columns}
-        dataSource={query.data?.data ?? []}
+        dataSource={clusterId ? (query.data?.data ?? []) : []}
         rowKey="sessionId"
         loading={query.isLoading}
         pageSize={10}
-        enableColumnSelection={false}
-        empty={<Empty description={localeCode === 'zh_CN' ? '当前集群没有登记的 Port Forward' : 'No port forward sessions registered'} />}
+        tableSize="small"
+        scroll={{ x: 'max-content' }}
+        empty={<PlatformTableState description={!clusterId ? (localeCode === 'zh_CN' ? '请选择集群' : 'Select a cluster') : (localeCode === 'zh_CN' ? '当前集群没有登记的 Port Forward' : 'No port forward sessions registered')} kind={!clusterId ? 'select-scope' : 'empty'} />}
       />
       <Modal
         title={localeCode === 'zh_CN' ? '新建 Port Forward' : 'New Port Forward'}
@@ -1557,7 +1585,7 @@ export function NetworkPortForwardPage() {
         onCancel={() => setModalVisible(false)}
         confirmLoading={registerMutation.isPending}
       >
-        <Space vertical align="start" style={{ width: '100%' }}>
+        <Space orientation="vertical" align="start" style={{ width: '100%' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%' }}>
             <Text style={{ width: 96 }}>{localeCode === 'zh_CN' ? '目标类型' : 'Target kind'}</Text>
             <Select

@@ -1,9 +1,9 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
-import { App, Button, Card, Descriptions, Empty, Form, Input, Space, Spin, Tabs, Tag, Typography } from 'antd'
+import { App, Button, Card, Descriptions, Form, Input, Space, Spin, Tabs, Tag, Typography } from 'antd'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { AdminTable } from '@/components/admin-table'
-import { PageHeader } from '@/components/page-header'
+import { ManagementDetailHeader, ManagementState } from '@/components/management-list'
 import { PlatformClusterScopeHint } from '@/components/platform-cluster-scope-hint'
 import { StatusTag } from '@/components/status-tag'
 import { useI18n } from '@/i18n'
@@ -161,11 +161,11 @@ export function NodeDetailPage() {
   if (!clusterId) {
     return (
       <div className="soha-page">
-        <PageHeader
+        <ManagementDetailHeader
           title={localeCode === 'zh_CN' ? '节点详情' : 'Node Detail'}
           description={localeCode === 'zh_CN' ? '需要先选定集群，才能查看独立节点详情。' : 'Select a cluster before opening a standalone node detail page.'}
         />
-        <Empty description={t('common.pleaseSelectCluster', 'Please select a cluster')} />
+        <ManagementState compact kind="select-scope" title={t('common.pleaseSelectCluster', 'Please select a cluster')} />
       </div>
     )
   }
@@ -181,7 +181,7 @@ export function NodeDetailPage() {
   if (!nodeDetail || !nodeName) {
     return (
       <div className="soha-page">
-        <PageHeader
+        <ManagementDetailHeader
           title={localeCode === 'zh_CN' ? '节点详情' : 'Node Detail'}
           description={localeCode === 'zh_CN' ? '当前节点不存在或详情不可用。' : 'The node was not found or its detail is unavailable.'}
           actions={<Button onClick={() => navigate('/cluster-resources/nodes')}>{t('common.back', 'Back')}</Button>}
@@ -195,7 +195,7 @@ export function NodeDetailPage() {
 
   return (
     <div className="soha-page">
-      <PageHeader
+      <ManagementDetailHeader
         title={`${localeCode === 'zh_CN' ? '节点详情' : 'Node Detail'}: ${nodeDetail.name}`}
         description={localeCode === 'zh_CN' ? '查看节点资源分配、污点、YAML 与承载 Pod，并支持独立编辑。' : 'Inspect node allocation, taints, YAML, and scheduled pods with standalone editing support.'}
         actions={(
@@ -310,6 +310,7 @@ export function NodeDetailPage() {
 
                 <Card className="soha-detail-card" title={localeCode === 'zh_CN' ? `承载 Pods (${nodeDetail.pods?.length ?? 0})` : `Scheduled Pods (${nodeDetail.pods?.length ?? 0})`}>
                   <AdminTable
+                    shellClassName="soha-management-table-shell"
                     columns={podColumns}
                     dataSource={nodeDetail.pods ?? []}
                     rowKey={(record) => `${record.namespace}/${record.name}`}
@@ -320,6 +321,7 @@ export function NodeDetailPage() {
 
                 <Card className="soha-detail-card" title={localeCode === 'zh_CN' ? '节点 Conditions' : 'Node Conditions'}>
                   <AdminTable
+                    shellClassName="soha-management-table-shell"
                     columns={conditionColumns}
                     dataSource={nodeDetail.conditions ?? []}
                     rowKey={(record) => `${record.type}:${record.lastTransitionTime || ''}`}

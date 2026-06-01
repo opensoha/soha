@@ -4,8 +4,13 @@ import { DeleteOutlined, EditOutlined, PlusOutlined } from '@ant-design/icons'
 import type { TableColumnsType } from 'antd'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AdminTable } from '@/components/admin-table'
+import {
+  ManagementIconButton,
+  ManagementRefreshButton,
+  ManagementState,
+  ManagementTableToolbar,
+} from '@/components/management-list'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth/permission-snapshot'
-import { PageHeader } from '@/components/page-header'
 import { BooleanTag } from '@/components/status-tag'
 import { api } from '@/services/api-client'
 import { formatDateTime } from '@/utils/time'
@@ -123,12 +128,24 @@ export function AccessScopeGrantsPage() {
       title: '操作',
       dataIndex: 'id',
       render: (_: unknown, record: ScopeGrant) => (
-        <Space>
+        <Space className="soha-row-action-icons" size={2}>
           {canManageScopeGrants ? (
             <>
-              <Button icon={<EditOutlined />} type="text" size="small" onClick={() => { setEditing(record); setModalVisible(true) }} />
-              <Popconfirm title="确认删除？" onConfirm={() => deleteMutation.mutate(record.id)}>
-                <Button icon={<DeleteOutlined />} type="text" danger size="small" />
+              <ManagementIconButton
+                aria-label="编辑授权项"
+                icon={<EditOutlined />}
+                size="small"
+                tooltip="编辑"
+                onClick={() => { setEditing(record); setModalVisible(true) }}
+              />
+              <Popconfirm title="确认删除？" onConfirm={() => deleteMutation.mutate(record.id)} placement="topRight">
+                <ManagementIconButton
+                  aria-label="删除授权项"
+                  danger
+                  icon={<DeleteOutlined />}
+                  size="small"
+                  tooltip="删除"
+                />
               </Popconfirm>
             </>
           ) : '-'}
@@ -138,17 +155,37 @@ export function AccessScopeGrantsPage() {
   ]
 
   if (!canViewScopeGrants) {
-    return <div className="soha-page">当前账号没有授权范围页面权限。</div>
+    return <div className="soha-page"><ManagementState kind="no-permission" description="当前账号没有授权范围页面权限。" /></div>
   }
 
   return (
     <div className="soha-page">
-      <PageHeader
+      <AdminTable
+        columnSettingIconOnly
+        columnSettingPlacement="header"
+        shellClassName="soha-management-table-shell"
         title="授权范围"
-        description="按用户或用户组维护业务线、环境、应用级别的可管理范围。"
-        actions={canManageScopeGrants ? <Button icon={<PlusOutlined />} type="primary" onClick={() => { setEditing(null); setModalVisible(true) }}>新建授权项</Button> : null}
+        headerExtra={(
+          <ManagementTableToolbar>
+            {canManageScopeGrants ? (
+              <Button icon={<PlusOutlined />} type="primary" onClick={() => { setEditing(null); setModalVisible(true) }}>
+                新建授权项
+              </Button>
+            ) : null}
+            <ManagementRefreshButton
+              aria-label="刷新"
+              loading={grantsQuery.isFetching}
+              tooltip="刷新"
+              onClick={() => void grantsQuery.refetch()}
+            />
+          </ManagementTableToolbar>
+        )}
+        columns={columns}
+        dataSource={grantsQuery.data?.data ?? []}
+        rowKey="id"
+        loading={grantsQuery.isLoading}
+        scroll={{ x: 'max-content' }}
       />
-      <AdminTable columns={columns} dataSource={grantsQuery.data?.data ?? []} rowKey="id" loading={grantsQuery.isLoading} />
       <Modal
         title={editing ? '编辑授权项' : '新建授权项'}
         open={modalVisible}
@@ -174,8 +211,8 @@ export function AccessScopeGrantsPage() {
         cancelText="取消"
         confirmLoading={createMutation.isPending || updateMutation.isPending}
         width={760}
-        maskClosable={false}
-        destroyOnClose
+        destroyOnHidden
+        mask={{ closable: false }}
         styles={{ body: { maxHeight: '65vh', overflow: 'auto' } }}
       >
         <Form

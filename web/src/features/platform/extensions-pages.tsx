@@ -5,8 +5,8 @@ import {
   Button,
   Card,
   Descriptions,
-  Empty,
   Modal,
+  Popconfirm,
   Space,
   Spin,
   Tabs,
@@ -24,8 +24,14 @@ import {
 } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AdminTable } from '@/components/admin-table'
+import {
+  ManagementDetailHeader,
+  ManagementIconButton,
+  ManagementRefreshButton,
+  ManagementState,
+  ManagementTableToolbar,
+} from '@/components/management-list'
 import { useI18n } from '@/i18n'
-import { PageHeader } from '@/components/page-header'
 import { PlatformClusterScopeHint } from '@/components/platform-cluster-scope-hint'
 import { StatusTag } from '@/components/status-tag'
 import { YamlDraftDiffEditor } from '@/components/yaml-draft-diff-editor'
@@ -304,11 +310,11 @@ function CRDResourceEditorModal({
       onCancel={onClose}
       footer={null}
       width={1080}
-      destroyOnClose
-      maskClosable={false}
+      destroyOnHidden
+      mask={{ closable: false }}
     >
       {!clusterId ? (
-        <Empty description={localeCode === 'zh_CN' ? '请先选择集群' : 'Select a cluster first'} />
+        <ManagementState bordered={false} compact kind="select-scope" title={localeCode === 'zh_CN' ? '请先选择集群' : 'Select a cluster first'} />
       ) : mode === 'edit' && yamlQuery.isLoading ? (
         <div style={{ height: 520, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <Spin size="large" />
@@ -317,7 +323,7 @@ function CRDResourceEditorModal({
         <Alert
           type="error"
           showIcon
-          message={localeCode === 'zh_CN' ? 'YAML 加载失败' : 'Failed to load YAML'}
+          title={localeCode === 'zh_CN' ? 'YAML 加载失败' : 'Failed to load YAML'}
           description={(yamlQuery.error as Error)?.message}
         />
       ) : (
@@ -446,41 +452,41 @@ function CRDKindWorkspace({ crd }: { crd: CRD }) {
       key: 'actions',
       fixed: 'right',
       align: 'center',
-      width: 88,
+      width: 76,
       render: (_: unknown, record: CRDResourceInstance) => {
         const resourceKey = `${record.namespace || ''}/${record.name}`
         return (
-          <Space size={4}>
-            <Button
-              size="small"
-              type="text"
+          <Space size={2} className="soha-row-action-icons">
+            <ManagementIconButton
               icon={<EditOutlined />}
               aria-label={t('common.edit', 'Edit')}
+              tooltip={t('common.edit', 'Edit')}
               onClick={() => setEditingResource(record)}
             />
-            <Button
-              size="small"
-              type="text"
-              danger
-              icon={<DeleteOutlined />}
-              aria-label={t('common.delete', 'Delete')}
-              loading={deletingKey === resourceKey}
-              onClick={() => {
-                Modal.confirm({
-                  title: t('common.deleteConfirm', `Delete ${record.name}?`),
-                  content: isNamespacedCRD(crd)
-                    ? (record.namespace
-                        ? `${record.name} (${record.namespace})`
-                        : record.name)
-                    : record.name,
-                  okButtonProps: { danger: true },
-                  onOk: () => deleteMutation.mutate({
-                    resourceName: record.name,
-                    resourceNamespace: record.namespace,
-                  }),
-                })
-              }}
-            />
+            <Popconfirm
+              title={t('common.deleteConfirm', `Delete ${record.name}?`)}
+              description={isNamespacedCRD(crd)
+                ? (record.namespace
+                    ? `${record.name} (${record.namespace})`
+                    : record.name)
+                : record.name}
+              okText={t('common.delete', 'Delete')}
+              cancelText={t('common.cancel', 'Cancel')}
+              okButtonProps={{ danger: true, loading: deletingKey === resourceKey }}
+              placement="topRight"
+              onConfirm={() => deleteMutation.mutate({
+                resourceName: record.name,
+                resourceNamespace: record.namespace,
+              })}
+            >
+              <ManagementIconButton
+                danger
+                icon={<DeleteOutlined />}
+                aria-label={t('common.delete', 'Delete')}
+                loading={deletingKey === resourceKey}
+                tooltip={t('common.delete', 'Delete')}
+              />
+            </Popconfirm>
           </Space>
         )
       },
@@ -488,8 +494,8 @@ function CRDKindWorkspace({ crd }: { crd: CRD }) {
   ]
 
   const instanceToolbar = (
-    <Space wrap>
-      <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>
+    <ManagementTableToolbar>
+      <Button autoInsertSpace={false} type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>
         {t('common.create', 'Create')}
       </Button>
       <Tag color={isNamespacedCRD(crd) ? 'gold' : 'blue'}>
@@ -499,13 +505,19 @@ function CRDKindWorkspace({ crd }: { crd: CRD }) {
               : t('platformScope.allNamespaces', 'All namespaces'))
           : t('page.extensions.crd.clusterScoped', 'Cluster scoped')}
       </Tag>
-    </Space>
+      <ManagementRefreshButton
+        aria-label={t('common.refresh', 'Refresh')}
+        loading={resourcesQuery.isFetching}
+        tooltip={t('common.refresh', 'Refresh')}
+        onClick={() => void resourcesQuery.refetch()}
+      />
+    </ManagementTableToolbar>
   )
 
   return (
     <>
       <Card className="soha-detail-card" style={{ marginTop: 0 }}>
-        <Space direction="vertical" size={16} style={{ width: '100%' }}>
+        <Space orientation="vertical" size={16} style={{ width: '100%' }}>
           <Descriptions
             column={{ xs: 1, sm: 2, lg: 4 }}
             items={[
@@ -534,7 +546,7 @@ function CRDKindWorkspace({ crd }: { crd: CRD }) {
           <Alert
             type="info"
             showIcon
-            message={isNamespacedCRD(crd)
+            title={isNamespacedCRD(crd)
               ? t('page.extensions.crd.namespacedTitle', 'Namespaced custom resources')
               : t('page.extensions.crd.clusterTitle', 'Cluster-scoped custom resources')}
             description={isNamespacedCRD(crd)
@@ -547,6 +559,10 @@ function CRDKindWorkspace({ crd }: { crd: CRD }) {
       </Card>
 
       <AdminTable
+        className="soha-platform-table"
+        columnSettingIconOnly
+        columnSettingPlacement="header"
+        shellClassName="soha-management-table-shell"
         columns={resourceColumns}
         dataSource={resourcesQuery.data?.data ?? []}
         rowKey={(record) => `${record.namespace || '__cluster__'}:${record.name}`}
@@ -556,22 +572,15 @@ function CRDKindWorkspace({ crd }: { crd: CRD }) {
             <Alert
               type="warning"
               showIcon
-              message={t('page.extensions.crd.resourcesUnavailable', 'Custom resource list unavailable')}
+              title={t('page.extensions.crd.resourcesUnavailable', 'Custom resource list unavailable')}
               description={(resourcesQuery.error as Error)?.message}
             />
           )
-          : <Empty description={t('page.extensions.crd.resourcesEmpty', 'No custom resources found for the selected CRD in the current scope.')} />}
-        enableColumnSelection={false}
+          : <ManagementState bordered={false} compact title={t('page.extensions.crd.resourcesEmpty', 'No custom resources found for the selected CRD in the current scope.')} />}
+        tableSize="small"
         scroll={{ x: 'max-content' }}
-        title={(
-          <Space direction="vertical" size={0}>
-            <Text strong>{`${crd.kind} ${t('page.extensions.crd.resourcesTitle', 'Resources')}`}</Text>
-            <Text type="secondary">
-              {t('page.extensions.crd.resourcesDesc', 'Create, edit, or delete resources through generic YAML flows driven by the selected CRD metadata.')}
-            </Text>
-          </Space>
-        )}
-        toolbar={instanceToolbar}
+        title={`${crd.kind} ${t('page.extensions.crd.resourcesTitle', 'Resources')}`}
+        headerExtra={instanceToolbar}
       />
 
       <CRDResourceEditorModal
@@ -599,7 +608,7 @@ export function CRDPage() {
   const { clusterId } = usePlatformScopeStore()
   const navigate = useNavigate()
 
-  const { data, isLoading } = useQuery({
+  const { data, isFetching, isLoading, refetch } = useQuery({
     queryKey: ['crds', clusterId],
     queryFn: () => api.get<ApiResponse<CRD[]>>(buildClusterScopedPath(clusterId!, 'extensions/crds')),
     enabled: !!clusterId,
@@ -709,7 +718,7 @@ export function CRDPage() {
         <Button
           type="link"
           icon={<RightOutlined />}
-          iconPosition="end"
+          iconPlacement="end"
           onClick={(event) => {
             event.stopPropagation()
             navigate(buildCRDApiGroupDetailPath(record.group))
@@ -725,22 +734,36 @@ export function CRDPage() {
     <div className="soha-page">
       <PlatformClusterScopeHint resourceLabel="CRD" />
       <AdminTable
+        className="soha-platform-table"
+        columnSettingIconOnly
+        columnSettingPlacement="header"
+        shellClassName="soha-management-table-shell"
         columns={columns}
         dataSource={apiGroups}
         rowKey="group"
         loading={isLoading}
         pageSize={10}
-        enableColumnSelection={false}
+        tableSize="small"
         scroll={{ x: 'max-content' }}
         onRow={(record: CRDApiGroupSummary) => ({
           onClick: () => navigate(buildCRDApiGroupDetailPath(record.group)),
           style: { cursor: 'pointer' },
         })}
-        title={(
-          <div className="soha-admin-table-title-block">
-            <Text strong>{t('page.extensions.crd.title', 'CustomResourceDefinitions')}</Text>
-            <Text type="secondary">{t('page.extensions.crd.desc', 'Review CRD API groups and definition names in the current cluster, then open one group to inspect its served kinds and resources.')}</Text>
-          </div>
+        title={t('page.extensions.crd.title', 'CustomResourceDefinitions')}
+        headerExtra={(
+          <ManagementTableToolbar>
+            <ManagementRefreshButton
+              aria-label={t('common.refresh', 'Refresh')}
+              disabled={!clusterId}
+              loading={isFetching}
+              tooltip={t('common.refresh', 'Refresh')}
+              onClick={() => {
+                if (clusterId) {
+                  void refetch()
+                }
+              }}
+            />
+          </ManagementTableToolbar>
         )}
       />
     </div>
@@ -786,30 +809,37 @@ export function CRDApiGroupDetailPage() {
 
   return (
     <div className="soha-page">
-      <PageHeader
+      <ManagementDetailHeader
         title={decodedGroupName || t('route.extensions-group-detail.title', 'API Detail')}
-        description={t('page.extensions.crd.groupDesc', 'Inspect the kinds served by this CRD entry and switch resources from the left-side CRD cards.')}
+        description={t('page.extensions.crd.kindCatalogDesc', 'Select a CRD resource card to inspect its kind and resource instances.')}
         actions={(
-          <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/extensions')}>
-            {t('page.extensions.crd.backToApis', localeCode === 'zh_CN' ? '返回 API 列表' : 'Back to API catalog')}
-          </Button>
+          <ManagementTableToolbar>
+            <Button autoInsertSpace={false} size="small" icon={<ArrowLeftOutlined />} onClick={() => navigate('/extensions')}>
+              {t('page.extensions.crd.backToApis', localeCode === 'zh_CN' ? '返回 API 列表' : 'Back to API catalog')}
+            </Button>
+          </ManagementTableToolbar>
         )}
       />
       <PlatformClusterScopeHint resourceLabel="CRD" />
 
       {!clusterId ? (
         <Card className="soha-detail-card" style={{ marginTop: 0 }}>
-          <Empty description={t('platformScope.clusterPlaceholder', 'Select cluster')} />
+          <ManagementState compact kind="select-scope" title={t('platformScope.clusterPlaceholder', 'Select cluster')} />
         </Card>
       ) : isLoading ? (
         <Card className="soha-detail-card" style={{ marginTop: 0 }} loading />
       ) : !groupSummary ? (
         <Card className="soha-detail-card" style={{ marginTop: 0 }}>
-          <Empty description={t('page.extensions.crd.groupEmpty', 'The selected API group is not available in the current cluster.')}>
-            <Button onClick={() => navigate('/extensions')}>
-              {t('page.extensions.crd.backToApis', localeCode === 'zh_CN' ? '返回 API 列表' : 'Back to API catalog')}
-            </Button>
-          </Empty>
+          <ManagementState
+            compact
+            kind="not-found"
+            title={t('page.extensions.crd.groupEmpty', 'The selected API group is not available in the current cluster.')}
+            actions={(
+              <Button onClick={() => navigate('/extensions')}>
+                {t('page.extensions.crd.backToApis', localeCode === 'zh_CN' ? '返回 API 列表' : 'Back to API catalog')}
+              </Button>
+            )}
+          />
         </Card>
       ) : (
         <div className="soha-crd-workspace">
@@ -883,7 +913,7 @@ export function CRDApiGroupDetailPage() {
               <CRDKindWorkspace crd={selectedCRD} />
             ) : (
               <Card className="soha-detail-card" style={{ marginTop: 0 }}>
-                <Empty description={t('page.extensions.crd.emptySelection', 'Select a kind to inspect its resources.')} />
+                <ManagementState compact kind="select-scope" title={t('page.extensions.crd.emptySelection', 'Select a kind to inspect its resources.')} />
               </Card>
             )}
           </div>
@@ -900,7 +930,7 @@ export function HelmReleasesPage() {
   const { clusterId, namespace } = usePlatformScopeStore()
   const navigate = useNavigate()
 
-  const { data, isLoading } = useQuery({
+  const { data, isFetching, isLoading, refetch } = useQuery({
     queryKey: ['helm-releases', clusterId, namespace],
     queryFn: () => api.get<ApiResponse<HelmRelease[]>>(buildClusterScopedPath(clusterId!, 'helm/releases', namespace)),
     enabled: !!clusterId,
@@ -931,16 +961,38 @@ export function HelmReleasesPage() {
 
   return (
     <div className="soha-page">
-      <PageHeader title={t('page.extensions.helm.title', 'Helm Releases')} description={t('page.extensions.helm.desc', 'Inspect Helm release status, charts, and versions by cluster and namespace.')} />
       <AdminTable
+        className="soha-platform-table"
+        columnSettingIconOnly
+        columnSettingPlacement="header"
+        shellClassName="soha-management-table-shell"
         columns={columns}
-        dataSource={data?.data ?? []}
+        dataSource={clusterId ? (data?.data ?? []) : []}
         rowKey={(record) => `${record.namespace}:${record.name}`}
         loading={isLoading}
+        tableSize="small"
+        scroll={{ x: 'max-content' }}
         onRow={(record: HelmRelease) => ({
           onClick: () => navigate(buildHelmReleaseDetailPath(record.name, record.namespace)),
           style: { cursor: 'pointer' },
         })}
+        title={t('page.extensions.helm.title', 'Helm Releases')}
+        headerExtra={(
+          <ManagementTableToolbar>
+            <ManagementRefreshButton
+              aria-label={t('common.refresh', 'Refresh')}
+              disabled={!clusterId}
+              loading={isFetching}
+              tooltip={t('common.refresh', 'Refresh')}
+              onClick={() => {
+                if (clusterId) {
+                  void refetch()
+                }
+              }}
+            />
+          </ManagementTableToolbar>
+        )}
+        empty={<ManagementState bordered={false} compact kind={!clusterId ? 'select-scope' : 'empty'} title={!clusterId ? t('platformScope.clusterPlaceholder', 'Select cluster') : t('page.extensions.helm.empty', 'No Helm releases in the current scope.')} />}
       />
     </div>
   )
@@ -1027,11 +1079,17 @@ export function HelmReleaseDetailPage() {
       ),
       children: (
         <AdminTable
+          className="soha-platform-table"
+          columnSettingIconOnly
+          columnSettingPlacement="header"
+          shellClassName="soha-management-table-shell"
+          title={t('page.extensions.helm.historyTitle', 'Revision History')}
           columns={historyColumns}
           dataSource={history}
           rowKey={(record) => record.revision}
-          enableColumnSelection={false}
           pageSize={10}
+          tableSize="small"
+          scroll={{ x: 'max-content' }}
         />
       ),
     },
@@ -1039,24 +1097,26 @@ export function HelmReleaseDetailPage() {
 
   return (
     <div className="soha-page">
-      <PageHeader
+      <ManagementDetailHeader
         title={detail?.name || releaseName}
-        description={t('page.extensions.helm.detailDesc', 'Inspect Helm release summary, values.yaml, and revision history in one workspace.')}
+        description={detailNamespace}
         actions={(
-          <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/helm/releases')}>
-            {t('common.back', 'Back')}
-          </Button>
+          <ManagementTableToolbar>
+            <Button autoInsertSpace={false} size="small" icon={<ArrowLeftOutlined />} onClick={() => navigate('/helm/releases')}>
+              {t('common.back', 'Back')}
+            </Button>
+          </ManagementTableToolbar>
         )}
       />
       {!clusterId || !detailNamespace ? (
         <Card className="soha-detail-card" style={{ marginTop: 0 }}>
-          <Empty description={t('platformScope.clusterPlaceholder', 'Select cluster')} />
+          <ManagementState compact kind="select-scope" title={t('platformScope.clusterPlaceholder', 'Select cluster')} />
         </Card>
       ) : detailQuery.isLoading ? (
         <Card className="soha-detail-card" style={{ marginTop: 0 }} loading />
       ) : !detail ? (
         <Card className="soha-detail-card" style={{ marginTop: 0 }}>
-          <Empty description={t('common.notFound', 'Not found')} />
+          <ManagementState compact kind="not-found" title={t('common.notFound', 'Not found')} />
         </Card>
       ) : (
         <>
@@ -1079,7 +1139,7 @@ export function HelmReleaseDetailPage() {
                 style={{ marginTop: 16 }}
                 type="info"
                 showIcon
-                message={localeCode === 'zh_CN' ? 'Release 描述' : 'Release Description'}
+                title={localeCode === 'zh_CN' ? 'Release 描述' : 'Release Description'}
                 description={detail.description}
               />
             ) : null}
@@ -1098,12 +1158,13 @@ export function HelmChartsPage() {
   const { t } = useI18n()
   return (
     <div className="soha-page">
-      <PageHeader title={t('page.extensions.helmCharts.title', 'Helm Charts')} description={t('page.extensions.helmCharts.desc', 'The backend does not provide a Helm Charts API yet, so this page remains a standard empty placeholder.')} />
-      <Card>
-        <Empty
+      <Card className="soha-compact-note-card">
+        <ManagementState
+          compact
+          kind="not-configured"
+          title={t('page.extensions.helmCharts.emptyTitle', 'Helm Charts not available')}
           description={(
             <div>
-              <div>{t('page.extensions.helmCharts.emptyTitle', 'Helm Charts not available')}</div>
               <div>{t('page.extensions.helmCharts.emptyDesc', 'The backend currently has no /helm/charts endpoint. Restore the list view after the backend capability is added.')}</div>
             </div>
           )}

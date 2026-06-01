@@ -146,8 +146,8 @@ async function renderOperationsPage(route = '/ai-workbench/inspection') {
   return container
 }
 
-function findButton(container: ParentNode, text: string) {
-  return Array.from(container.querySelectorAll('button')).find((button) => button.textContent?.includes(text)) as HTMLButtonElement | undefined
+function findButtonByLabel(container: ParentNode, label: string) {
+  return Array.from(container.querySelectorAll('button')).find((button) => button.getAttribute('aria-label') === label) as HTMLButtonElement | undefined
 }
 
 async function confirmPopconfirm() {
@@ -220,7 +220,7 @@ describe('AIOperationsPage delete actions', () => {
     const container = await renderOperationsPage()
 
     expect(container.textContent).toContain('支付命名空间巡检')
-    const deleteTaskButton = findButton(container, '删除')
+    const deleteTaskButton = findButtonByLabel(container, '删除巡检任务')
     expect(deleteTaskButton).toBeTruthy()
 
     await act(async () => {
@@ -238,7 +238,7 @@ describe('AIOperationsPage delete actions', () => {
     await flush()
 
     expect(container.textContent).toContain('P1 告警根因分析')
-    const deletePolicyButton = findButton(container, '删除')
+    const deletePolicyButton = findButtonByLabel(container, '删除自动化策略')
     expect(deletePolicyButton).toBeTruthy()
 
     await act(async () => {
@@ -264,7 +264,7 @@ describe('AIOperationsPage delete actions', () => {
     })
     await flush()
 
-    const createSessionButton = findButton(container, '创建调查会话')
+    const createSessionButton = findButtonByLabel(container, '创建调查会话')
     expect(createSessionButton).toBeTruthy()
     expect(createSessionButton?.disabled).toBe(true)
     expect(createSessionButton?.getAttribute('title')).toBe('缺少 observe.ai.view 权限')

@@ -227,6 +227,7 @@ describe('app layout workspace navigation', () => {
     })
 
     expect(container.querySelector('.soha-workbench-switcher__label')?.textContent).toBe('k8s工作台')
+    expect(container.querySelector('.soha-header-main .ant-breadcrumb')?.textContent).toContain('k8s工作台/总览')
     expect(container.querySelector('.soha-workspace-switcher-shell')).toBeNull()
   })
 
@@ -450,6 +451,7 @@ describe('app layout workspace navigation', () => {
     })
 
     expect(container.querySelector('.soha-workbench-switcher__label')?.textContent).toBe('虚拟化管理工作台')
+    expect(container.querySelector('.soha-header-main .ant-breadcrumb')?.textContent).toContain('虚拟化管理工作台/虚拟机')
     expect(container.querySelector('.soha-nav-business')).not.toBeNull()
     expect(container.textContent).toContain('虚拟机')
     expect(container.textContent).toContain('操作记录')
@@ -459,6 +461,68 @@ describe('app layout workspace navigation', () => {
     expect(businessNavText).not.toContain('Observe')
     expect(container.textContent).not.toContain('监控工作台')
     expect(container.textContent).not.toContain('系统管理')
+  })
+
+  it('does not repeat flattened workbench root menu in breadcrumbs', async () => {
+    const container = await renderWithProviders('/virtualization/overview', {
+      permissionKeys: [
+        'workspace.resource.view',
+        'overview.view',
+        'virtualization.overview.view',
+        'virtualization.vms.view',
+        'system.menus.view',
+      ],
+      visibleMenuIds: [
+        'dashboard',
+        'virtualization-workbench',
+        'virtualization-workbench-overview',
+        'virtualization-workbench-vms',
+        'system',
+        'menus',
+      ],
+      visibleMenus: [
+        { id: 'dashboard', path: '/', labelZh: '概览', labelEn: 'Overview', iconKey: 'gauge', section: 'platform', sortOrder: 1, enabled: true },
+        { id: 'virtualization-workbench', path: '/virtualization', labelZh: '虚拟化管理工作台', labelEn: 'Virtualization Workbench', iconKey: 'server', section: 'ops', sortOrder: 10, enabled: true },
+        { id: 'virtualization-workbench-overview', parentId: 'virtualization-workbench', path: '/virtualization/overview', labelZh: '总览', labelEn: 'Overview', iconKey: 'server', section: 'ops', sortOrder: 11, enabled: true },
+        { id: 'virtualization-workbench-vms', parentId: 'virtualization-workbench', path: '/virtualization/vms', labelZh: '虚拟机', labelEn: 'Virtual Machines', iconKey: 'server', section: 'ops', sortOrder: 12, enabled: true },
+        { id: 'system', path: '/system', labelZh: '系统管理', labelEn: 'System', iconKey: 'panels-top-left', section: 'admin', sortOrder: 99, enabled: true },
+        { id: 'menus', parentId: 'system', path: '/system/menus', labelZh: '菜单管理', labelEn: 'Menus', iconKey: 'menu-square', section: 'admin', sortOrder: 100, enabled: true },
+      ],
+    })
+
+    const breadcrumbText = container.querySelector('.soha-header-main .ant-breadcrumb')?.textContent ?? ''
+    expect(breadcrumbText).toContain('虚拟化管理工作台/总览')
+    expect((breadcrumbText.match(/虚拟化管理工作台/g) ?? [])).toHaveLength(1)
+  })
+
+  it('renders breadcrumb ancestry for nested route content', async () => {
+    const container = await renderWithProviders('/virtualization/vms/vm-1', {
+      permissionKeys: [
+        'workspace.resource.view',
+        'overview.view',
+        'virtualization.overview.view',
+        'virtualization.vms.view',
+        'system.menus.view',
+      ],
+      visibleMenuIds: [
+        'dashboard',
+        'virtualization-workbench',
+        'virtualization-workbench-overview',
+        'virtualization-workbench-vms',
+        'system',
+        'menus',
+      ],
+      visibleMenus: [
+        { id: 'dashboard', path: '/', labelZh: '概览', labelEn: 'Overview', iconKey: 'gauge', section: 'platform', sortOrder: 1, enabled: true },
+        { id: 'virtualization-workbench', path: '/virtualization', labelZh: '虚拟化管理工作台', labelEn: 'Virtualization Workbench', iconKey: 'server', section: 'ops', sortOrder: 10, enabled: true },
+        { id: 'virtualization-workbench-overview', parentId: 'virtualization-workbench', path: '/virtualization/overview', labelZh: '总览', labelEn: 'Overview', iconKey: 'server', section: 'ops', sortOrder: 11, enabled: true },
+        { id: 'virtualization-workbench-vms', parentId: 'virtualization-workbench', path: '/virtualization/vms', labelZh: '虚拟机', labelEn: 'Virtual Machines', iconKey: 'server', section: 'ops', sortOrder: 12, enabled: true },
+        { id: 'system', path: '/system', labelZh: '系统管理', labelEn: 'System', iconKey: 'panels-top-left', section: 'admin', sortOrder: 99, enabled: true },
+        { id: 'menus', parentId: 'system', path: '/system/menus', labelZh: '菜单管理', labelEn: 'Menus', iconKey: 'menu-square', section: 'admin', sortOrder: 100, enabled: true },
+      ],
+    })
+
+    expect(container.querySelector('.soha-header-main .ant-breadcrumb')?.textContent).toContain('虚拟化管理工作台/虚拟机/虚拟机详情')
   })
 
   it('shows docker workbench menus directly in the business sidebar', async () => {

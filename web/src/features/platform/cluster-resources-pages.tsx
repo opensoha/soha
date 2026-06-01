@@ -1,11 +1,12 @@
 import { useMemo, useState } from 'react'
-import { App, Button, Card, Empty, Form, Input, Modal, Space, Spin, Tag, Typography } from 'antd'
-import { DeleteOutlined, EditOutlined, PlusOutlined, SendOutlined } from '@ant-design/icons'
+import { App, Button, Card, Form, Input, Modal, Popconfirm, Space, Spin, Tag, Typography } from 'antd'
+import { ApartmentOutlined, DeleteOutlined, EditOutlined, EyeOutlined, PlusOutlined, SendOutlined } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { AdminTable } from '@/components/admin-table'
+import { ManagementDetailHeader, ManagementIconButton, ManagementState, ManagementTableToolbar } from '@/components/management-list'
+import { ResourceWorkspaceScopeBar } from '@/components/platform-scope-toolbar'
 import { useI18n } from '@/i18n'
-import { PageHeader } from '@/components/page-header'
 import { PlatformClusterScopeHint } from '@/components/platform-cluster-scope-hint'
 import { StatusTag } from '@/components/status-tag'
 import { api } from '@/services/api-client'
@@ -111,33 +112,41 @@ export function ClusterNodesPage() {
       ...tableColumnPresets.action,
       title: '操作',
       dataIndex: 'name',
+      width: 112,
       render: (name: string) => (
-        <Space>
-          <Button
+        <Space size={2} className="soha-row-action-icons">
+          <ManagementIconButton
+            aria-label={`查看节点 ${name}`}
+            icon={<EyeOutlined />}
             size="small"
-            type="text"
+            tooltip="详情"
             onClick={() => navigate(`/cluster-resources/nodes/${encodeURIComponent(name)}?clusterId=${encodeURIComponent(clusterId || '')}`)}
-          >
-            详情
-          </Button>
-          <Button size="small" type="text" icon={<EditOutlined />} onClick={() => setEditingNodeName(name)}>
-            编辑
-          </Button>
-          <Button
+          />
+          <ManagementIconButton
+            aria-label={`编辑节点 ${name}`}
+            icon={<EditOutlined />}
             size="small"
-            type="text"
-            danger
-            icon={<DeleteOutlined />}
-            onClick={() => {
-              Modal.confirm({
-                title: `确认删除节点 ${name}？`,
-                content: '这会删除 Kubernetes 中的 Node 对象，不会自动回收底层机器。',
-                onOk: () => deleteNodeMutation.mutate(name),
-              })
-            }}
+            tooltip="编辑"
+            onClick={() => setEditingNodeName(name)}
+          />
+          <Popconfirm
+            title={`确认删除节点 ${name}？`}
+            description="这会删除 Kubernetes 中的 Node 对象，不会自动回收底层机器。"
+            okText="删除"
+            cancelText="取消"
+            okButtonProps={{ danger: true, loading: deleteNodeMutation.isPending && deleteNodeMutation.variables === name }}
+            placement="topRight"
+            onConfirm={() => deleteNodeMutation.mutate(name)}
           >
-            删除
-          </Button>
+            <ManagementIconButton
+              aria-label={`删除节点 ${name}`}
+              danger
+              icon={<DeleteOutlined />}
+              loading={deleteNodeMutation.isPending && deleteNodeMutation.variables === name}
+              size="small"
+              tooltip="删除"
+            />
+          </Popconfirm>
         </Space>
       ),
     },
@@ -145,35 +154,35 @@ export function ClusterNodesPage() {
 
   return (
     <div className="soha-page">
-      <PageHeader
+      <ManagementDetailHeader
         title={t('page.nodes.title', 'Node Resources')}
         description={t('page.nodes.desc', 'Inspect node resources in the current cluster scope and edit labels / taints.')}
       />
+      <ResourceWorkspaceScopeBar scopeMode="cluster" />
       <PlatformClusterScopeHint resourceLabel="节点" />
       {!clusterId ? (
-        <Empty description={t('common.pleaseSelectCluster', 'Please select a cluster')} />
+        <ManagementState compact kind="select-scope" title={t('common.pleaseSelectCluster', 'Please select a cluster')} />
       ) : (
         <>
-          <Card>
+          <Card className="soha-compact-note-card">
             <Text type="secondary" className="text-xs">
               新增节点需要通过云平台、虚拟机编排或集群扩容工具完成；这里支持编辑 labels/taints 和删除 Node 对象。
             </Text>
           </Card>
           <AdminTable
-            title={(
-              <div className="soha-admin-table-title-block">
-                <Text strong>{t('page.nodes.title', 'Node Resources')}</Text>
-                <Text type="secondary">{t('page.nodes.desc', 'Inspect node resources in the current cluster scope and edit labels / taints.')}</Text>
-              </div>
-            )}
+            columnSettingIconOnly
+            columnSettingPlacement="header"
+            shellClassName="soha-management-table-shell"
             columns={nodeColumns}
             dataSource={nodesQuery.data?.data ?? []}
             rowKey="name"
             loading={nodesQuery.isLoading}
             pageSize={10}
+            tableSize="small"
+            scroll={{ x: 'max-content' }}
             expandedRowRender={(record: Node) => <NodeResourcePanel node={record} />}
             hideExpandedColumn={false}
-        />
+          />
         </>
       )}
 
@@ -305,55 +314,57 @@ export function ClusterNamespacesPage() {
       ...tableColumnPresets.action,
       title: '操作',
       dataIndex: 'name',
+      width: 150,
       render: (name: string, record: Namespace) => (
-        <Space>
-          <Button
+        <Space size={2} className="soha-row-action-icons">
+          <ManagementIconButton
+            aria-label={`查看命名空间 ${name} 资源`}
             size="small"
-            type="text"
+            tooltip="查看资源"
             icon={<SendOutlined />}
             onClick={() => {
               setNamespace(name)
               navigate('/workloads/overview')
             }}
-          >
-            查看资源
-          </Button>
-          <Button
+          />
+          <ManagementIconButton
+            aria-label={`查看命名空间 ${name} Helm`}
             size="small"
-            type="text"
+            tooltip="Helm"
+            icon={<ApartmentOutlined />}
             onClick={() => {
               setNamespace(name)
               navigate('/helm/releases')
             }}
-          >
-            Helm
-          </Button>
-          <Button
+          />
+          <ManagementIconButton
+            aria-label={`编辑命名空间 ${name}`}
             size="small"
-            type="text"
+            tooltip="编辑"
             icon={<EditOutlined />}
             onClick={() => {
               setEditingNamespace(record)
               setNamespaceModalVisible(true)
             }}
+          />
+          <Popconfirm
+            title={`确认删除命名空间 ${name}？`}
+            description="删除后该命名空间下的资源会一并回收，请确认。"
+            okText="删除"
+            cancelText="取消"
+            okButtonProps={{ danger: true, loading: deleteNamespaceMutation.isPending && deleteNamespaceMutation.variables === name }}
+            placement="topRight"
+            onConfirm={() => deleteNamespaceMutation.mutate(name)}
           >
-            编辑
-          </Button>
-          <Button
-            size="small"
-            type="text"
-            danger
-            icon={<DeleteOutlined />}
-            onClick={() => {
-              Modal.confirm({
-                title: `确认删除命名空间 ${name}？`,
-                content: '删除后该命名空间下的资源会一并回收，请确认。',
-                onOk: () => deleteNamespaceMutation.mutate(name),
-              })
-            }}
-          >
-            删除
-          </Button>
+            <ManagementIconButton
+              aria-label={`删除命名空间 ${name}`}
+              danger
+              icon={<DeleteOutlined />}
+              loading={deleteNamespaceMutation.isPending && deleteNamespaceMutation.variables === name}
+              size="small"
+              tooltip="删除"
+            />
+          </Popconfirm>
         </Space>
       ),
     },
@@ -361,29 +372,28 @@ export function ClusterNamespacesPage() {
 
   return (
     <div className="soha-page">
-      <PageHeader
+      <ManagementDetailHeader
         title={t('page.namespaces.title', 'Namespaces')}
         description={t('page.namespaces.desc', 'Manage namespaces in the current cluster scope and jump into related workload views.')}
       />
+      <ResourceWorkspaceScopeBar scopeMode="cluster" />
       {!clusterId ? (
-        <Empty description={t('common.pleaseSelectClusterShort', 'Select a cluster')} />
+        <ManagementState compact kind="select-scope" title={t('common.pleaseSelectClusterShort', 'Select a cluster')} />
       ) : (
         <AdminTable
-          title={(
-            <div className="soha-admin-table-title-block">
-              <Text strong>{t('page.namespaces.title', 'Namespaces')}</Text>
-              <Text type="secondary">{t('page.namespaces.desc', 'Manage namespaces in the current cluster scope and jump into related workload views.')}</Text>
-            </div>
-          )}
+          columnSettingIconOnly
+          columnSettingPlacement="header"
+          shellClassName="soha-management-table-shell"
           columns={nsColumns}
           dataSource={namespacesQuery.data?.data ?? []}
           rowKey="name"
           loading={namespacesQuery.isLoading}
           pageSize={10}
-          toolbarExtra={(
-            <div className="soha-page-toolbar">
+          tableSize="small"
+          scroll={{ x: 'max-content' }}
+          headerExtra={(
+            <ManagementTableToolbar>
               <Button
-                size="small"
                 icon={<PlusOutlined />}
                 type="primary"
                 onClick={() => {
@@ -393,7 +403,7 @@ export function ClusterNamespacesPage() {
               >
                 {t('common.create', 'Create')}
               </Button>
-            </div>
+            </ManagementTableToolbar>
           )}
         />
       )}

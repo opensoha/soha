@@ -1,10 +1,10 @@
 import { Button } from 'antd'
-import { PageHeader } from '@/components/page-header'
+import { ManagementDetailHeader } from '@/components/management-list'
 
 export function DocsPage() {
   return (
     <div className="soha-page" style={{ minHeight: '100%' }}>
-      <PageHeader
+      <ManagementDetailHeader
         title="项目文档"
         description="在控制台内嵌浏览项目文档，也可以在独立窗口中直接打开文档站。"
         actions={

@@ -1,4 +1,5 @@
-import { Card, Empty, Timeline, Typography } from 'antd'
+import { Card, Timeline, Typography } from 'antd'
+import { ManagementState } from '@/components/management-list'
 import { useI18n } from '@/i18n'
 import { formatAgeSeconds, formatDateTime } from '@/utils/time'
 
@@ -55,7 +56,7 @@ export function ResourceEventsTimeline({
   return (
     <Card className="soha-detail-card" title={title} loading={loading}>
       {events.length === 0 ? (
-        <Empty description={emptyDescription || (localeCode === 'zh_CN' ? '暂无事件' : 'No events')} />
+        <ManagementState bordered={false} compact title={emptyDescription || (localeCode === 'zh_CN' ? '暂无事件' : 'No events')} />
       ) : (
         <div className="soha-events-timeline-shell">
           <Timeline

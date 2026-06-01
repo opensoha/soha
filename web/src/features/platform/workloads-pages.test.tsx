@@ -45,10 +45,6 @@ vi.mock('@/components/platform-scope-toolbar', () => ({
   PlatformScopeToolbar: () => <div data-testid="scope-toolbar">scope-toolbar</div>,
 }))
 
-vi.mock('@/components/page-header', () => ({
-  PageHeader: () => <div data-testid="page-header">page-header</div>,
-}))
-
 vi.mock('@/components/resource-events-timeline', () => ({
   ResourceEventsTimeline: () => <div data-testid="resource-events-timeline">resource-events-timeline</div>,
 }))
@@ -232,7 +228,7 @@ describe('workloads pods page refresh controls', () => {
     const container = await renderWithProviders(<WorkloadsPodsPage />)
     expect(apiGetMock).toHaveBeenCalledTimes(1)
 
-    const refreshButton = Array.from(container.querySelectorAll('button')).find((button) => button.textContent?.includes('Refresh'))
+    const refreshButton = container.querySelector('button[aria-label="Refresh"]')
     if (!refreshButton) {
       throw new Error('refresh button not found')
     }

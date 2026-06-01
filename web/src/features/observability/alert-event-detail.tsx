@@ -3,7 +3,7 @@ import { App, Button, Card, Descriptions, Drawer, Modal, Select, Space, Tabs, Ty
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { AdminTable } from '@/components/admin-table'
-import { PageHeader } from '@/components/page-header'
+import { ManagementDetailHeader, ManagementState } from '@/components/management-list'
 import { BooleanTag, StatusTag } from '@/components/status-tag'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth/permission-snapshot'
 import { getAIWorkbenchPathForMode } from '@/features/copilot/workbench-navigation'
@@ -11,7 +11,7 @@ import { api } from '@/services/api-client'
 import type { ApiResponse } from '@/types'
 import { formatDateTime } from '@/utils/time'
 
-const { Paragraph, Text } = Typography
+const { Paragraph } = Typography
 
 interface AlertRule {
   id: string
@@ -279,6 +279,7 @@ function AlertEventDetailBody({ detail, inDrawer = false }: { detail: AlertEvent
             label: '规则运行',
             children: (
               <AdminTable
+                shellClassName="soha-management-table-shell"
                 rowKey="id"
                 loading={ruleRunsQuery.isLoading}
                 dataSource={ruleRunsQuery.data?.data ?? []}
@@ -300,6 +301,7 @@ function AlertEventDetailBody({ detail, inDrawer = false }: { detail: AlertEvent
             label: '自愈运行',
             children: (
               <AdminTable
+                shellClassName="soha-management-table-shell"
                 rowKey="id"
                 loading={healingRunsQuery.isLoading}
                 dataSource={healingRunsQuery.data?.data ?? []}
@@ -321,6 +323,7 @@ function AlertEventDetailBody({ detail, inDrawer = false }: { detail: AlertEvent
             label: '通知预览',
             children: (
               <AdminTable
+                shellClassName="soha-management-table-shell"
                 rowKey={(record) => `${String(record.channelId || 'channel')}:${String(record.templateId || 'template')}:${String(record.url || 'url')}`}
                 loading={previewQuery.isLoading}
                 dataSource={previewRows}
@@ -341,6 +344,7 @@ function AlertEventDetailBody({ detail, inDrawer = false }: { detail: AlertEvent
             label: '投递日志',
             children: (
               <AdminTable
+                shellClassName="soha-management-table-shell"
                 rowKey="id"
                 loading={deliveryLogsQuery.isLoading}
                 dataSource={deliveryLogs}
@@ -440,7 +444,7 @@ export function AlertEventDetailPageContent({
 
   return (
     <div className="soha-page">
-      <PageHeader
+      <ManagementDetailHeader
         title={detail.event?.title || '告警事件详情'}
         description={detail.event ? `${detail.event.sourceSystem || detail.event.sourceType} · ${detail.event.status}` : '查看告警事件、规则运行、自愈与通知链路'}
         actions={(
@@ -490,7 +494,7 @@ export function AlertEventDetailDrawer({
           </Paragraph>
           <AlertEventDetailBody detail={detail} inDrawer />
         </>
-      ) : <Text type="secondary">请选择一条告警事件。</Text>}
+      ) : <ManagementState bordered={false} compact kind="select-scope" description="请选择一条告警事件。" />}
     </Drawer>
   )
 }

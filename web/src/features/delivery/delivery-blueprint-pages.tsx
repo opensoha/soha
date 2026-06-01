@@ -1,11 +1,15 @@
 import { useState } from 'react'
 import { App, Button, Form, Input, Modal, Space, Switch, Tag } from 'antd'
-import { EyeOutlined, PlayCircleOutlined, PlusOutlined } from '@ant-design/icons'
+import { EditOutlined, EyeOutlined, PlayCircleOutlined, PlusOutlined } from '@ant-design/icons'
 import type { TableColumnsType } from 'antd'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AdminTable } from '@/components/admin-table'
+import {
+  ManagementIconButton,
+  ManagementRefreshButton,
+  ManagementTableToolbar,
+} from '@/components/management-list'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth/permission-snapshot'
-import { PageHeader } from '@/components/page-header'
 import { StatusTag } from '@/components/status-tag'
 import { api } from '@/services/api-client'
 import type {
@@ -123,7 +127,15 @@ export function DeliveryBlueprintsPage() {
         <Space>
           <Button size="small" icon={<EyeOutlined />} onClick={() => renderMutation.mutate(record.id)}>渲染规范</Button>
           <Button size="small" icon={<PlayCircleOutlined />} onClick={() => bootstrapMutation.mutate(record.id)}>平台接入</Button>
-          {canManage ? <Button size="small" type="text" onClick={() => { setEditing(record); setModalVisible(true) }}>编辑</Button> : null}
+          {canManage ? (
+            <ManagementIconButton
+              aria-label="编辑蓝图"
+              icon={<EditOutlined />}
+              size="small"
+              tooltip="编辑"
+              onClick={() => { setEditing(record); setModalVisible(true) }}
+            />
+          ) : null}
         </Space>
       ),
     },
@@ -159,12 +171,32 @@ export function DeliveryBlueprintsPage() {
 
   return (
     <div className="soha-page">
-      <PageHeader
+      <AdminTable
+        rowKey="id"
+        columnSettingIconOnly
+        columnSettingPlacement="header"
+        shellClassName="soha-management-table-shell"
+        loading={blueprintsQuery.isLoading}
+        columns={columns}
+        dataSource={blueprintsQuery.data?.data ?? []}
         title="交付蓝图"
-        description="定义应用接入规范、构建来源、环境绑定模板和文件模板，用于企业 AI coding 与平台交付控制面协同。"
-        actions={canManage ? <Button type="primary" icon={<PlusOutlined />} onClick={() => { setEditing(null); setModalVisible(true) }}>新建蓝图</Button> : null}
+        headerExtra={(
+          <ManagementTableToolbar>
+            {canManage ? (
+              <Button type="primary" icon={<PlusOutlined />} onClick={() => { setEditing(null); setModalVisible(true) }}>
+                新建蓝图
+              </Button>
+            ) : null}
+            <ManagementRefreshButton
+              aria-label="刷新"
+              loading={blueprintsQuery.isFetching}
+              tooltip="刷新"
+              onClick={() => void blueprintsQuery.refetch()}
+            />
+          </ManagementTableToolbar>
+        )}
+        scroll={{ x: 'max-content' }}
       />
-      <AdminTable rowKey="id" loading={blueprintsQuery.isLoading} columns={columns} dataSource={blueprintsQuery.data?.data ?? []} />
 
       <Modal
         width={960}

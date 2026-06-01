@@ -9,11 +9,9 @@ import {
   Card,
   Descriptions,
   Drawer,
-  Empty,
   Form,
   Input,
   InputNumber,
-  Modal,
   Popconfirm,
   Progress,
   Segmented,
@@ -21,18 +19,19 @@ import {
   Space,
   Spin,
   Switch,
-  Table,
   Tabs,
   Tag,
   Typography,
 } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
+import type { Key } from 'react'
 import {
   CheckCircleOutlined,
   CloudSyncOutlined,
   CloseCircleOutlined,
   DeleteOutlined,
   EditOutlined,
+  EyeOutlined,
   FileTextOutlined,
   PlayCircleOutlined,
   PlusOutlined,
@@ -47,6 +46,8 @@ import { getAIWorkbenchPathForMode } from '@/features/copilot/workbench-navigati
 import { formatDateTime } from '@/utils/time'
 import { tableColumnPresets } from '@/utils/table-columns'
 import { api } from '@/services/api-client'
+import { AdminTable } from '@/components/admin-table'
+import { ManagementDetailHeader, ManagementIconButton, ManagementState, ManagementTableToolbar } from '@/components/management-list'
 import type { ApiResponse, Cluster } from '@/types'
 import { virtualizationApi } from './virtualization-api'
 import { useTaskStream } from './use-task-stream'
@@ -270,7 +271,7 @@ function AttentionList({
       </div>
       {items.length === 0 ? (
         <div className="soha-vrt-empty">
-          <Empty description={emptyText} image={Empty.PRESENTED_IMAGE_SIMPLE} />
+          <ManagementState bordered={false} compact title={emptyText} description={description} />
         </div>
       ) : (
         <div className="soha-vrt-lane-items">
@@ -322,7 +323,7 @@ function VMMetricsChart({ data }: { data: VirtualizationVMMetrics }) {
   }
   const series = data.series ?? []
   if (series.length === 0) {
-    return <Empty description="暂无指标数据" />
+    return <ManagementState bordered={false} compact title="暂无指标数据" description="Provider 暂未返回可展示的指标序列。" />
   }
   return (
     <div className="grid gap-4 md:grid-cols-2">
@@ -393,66 +394,28 @@ function TaskProgressBanner({ task, status, title, onCancel, cancelling }: TaskP
   )
 }
 
-function VirtualizationPageHeader({
+function VirtualizationTableTitle({
   title,
   meta = [],
-  actions,
   tone = 'default',
   status,
 }: {
   title: string
   meta?: string[]
-  actions?: React.ReactNode
   tone?: OverviewTone
   status?: string
 }) {
   return (
-    <section className={`soha-vrt-commandbar soha-vrt-page-header is-${tone}`}>
-      <div className="soha-vrt-commandbar-main">
-        <div className="soha-vrt-title-row">
-          <h1 className="soha-overview-title">{title}</h1>
-          {status ? <Badge status={badgeStatusForTone(tone)} text={status} /> : null}
-        </div>
-        {meta.length > 0 ? (
-          <div className="soha-vrt-commandbar-meta">
-            {meta.map((item) => <span key={item}>{item}</span>)}
-          </div>
-        ) : null}
+    <div className="soha-vrt-table-title">
+      <div className="soha-vrt-title-row">
+        <Text strong>{title}</Text>
+        {status ? <Badge status={badgeStatusForTone(tone)} text={status} /> : null}
       </div>
-      {actions ? <div className="soha-vrt-commandbar-actions">{actions}</div> : null}
-    </section>
-  )
-}
-
-function VirtualizationTableHeader({
-  title,
-  meta = [],
-  actions,
-  tone = 'default',
-  status,
-}: {
-  title: string
-  meta?: string[]
-  actions?: React.ReactNode
-  tone?: OverviewTone
-  status?: string
-}) {
-  return (
-    <div className={`soha-admin-table-header soha-vrt-table-header is-${tone}`}>
-      <div className="soha-admin-table-header-main">
-        <div className="soha-admin-table-title-block">
-          <div className="soha-vrt-title-row">
-            <Text strong>{title}</Text>
-            {status ? <Badge status={badgeStatusForTone(tone)} text={status} /> : null}
-          </div>
-          {meta.length > 0 ? (
-            <div className="soha-vrt-commandbar-meta">
-              {meta.map((item) => <span key={item}>{item}</span>)}
-            </div>
-          ) : null}
+      {meta.length > 0 ? (
+        <div className="soha-vrt-commandbar-meta">
+          {meta.map((item) => <span key={item}>{item}</span>)}
         </div>
-      </div>
-      {actions ? <div className="soha-admin-table-header-extra">{actions}</div> : null}
+      ) : null}
     </div>
   )
 }
@@ -462,6 +425,19 @@ function normalizePage<T>(data: VirtualizationPage<T> | T[] | undefined, fallbac
     return { items: data, total: data.length, page: fallbackPage, pageSize: fallbackPageSize }
   }
   return data ?? { items: [], total: 0, page: fallbackPage, pageSize: fallbackPageSize }
+}
+
+function pageTablePagination<T>(
+  page: VirtualizationPage<T>,
+  setFilters: React.Dispatch<React.SetStateAction<VirtualizationListParams>>,
+) {
+  return {
+    current: page.page,
+    pageSize: page.pageSize,
+    total: page.total,
+    onPageChange: (pageNumber: number) => setFilters((current) => ({ ...current, page: pageNumber })),
+    onPageSizeChange: (pageSize: number) => setFilters((current) => ({ ...current, page: 1, pageSize })),
+  }
 }
 
 function compactRecord(values: Record<string, unknown>) {
@@ -790,34 +766,32 @@ function OperationsTable({
       ...tableColumnPresets.action,
       title: '操作',
       dataIndex: 'id',
-      width: 240,
+      width: 176,
       render: (_value, record) => {
         const canCancel = canManageOperations && hasAllowedAction(record.allowedActions, 'cancel')
         const canRetry = canManageOperations && hasAllowedAction(record.allowedActions, 'retry')
         return (
-          <Space wrap>
-            <Button size="small" type="text" icon={<FileTextOutlined />} onClick={() => setSelectedOperation(record)}>
-              日志
-            </Button>
-            <Button
+          <Space className="soha-row-action-icons" wrap>
+            <ManagementIconButton aria-label="查看日志" size="small" tooltip="日志" icon={<FileTextOutlined />} onClick={() => setSelectedOperation(record)} />
+            <ManagementIconButton
+              aria-label="AI 调查"
               size="small"
-              type="text"
+              tooltip="AI 调查"
+              icon={<SearchOutlined />}
               onClick={() => navigate(buildInvestigationPath({
                 connectionId: record.connectionId,
                 vmId: record.vmId,
                 workload: record.targetName || record.vmId || record.connectionId,
                 timeRangeMinutes: 60,
               }))}
-            >
-              AI调查
-            </Button>
-            {record.vmId ? <Button size="small" type="text" onClick={() => navigate(`/virtualization/vms/${encodeURIComponent(record.vmId || '')}?focus=operations`)}>VM</Button> : null}
+            />
+            {record.vmId ? <ManagementIconButton aria-label="查看虚拟机" size="small" tooltip="VM" icon={<FileTextOutlined />} onClick={() => navigate(`/virtualization/vms/${encodeURIComponent(record.vmId || '')}?focus=operations`)} /> : null}
             {canCancel ? (
               <Popconfirm title="确认取消任务？" onConfirm={() => cancelMutation.mutate(record.id)}>
-                <Button size="small" type="text" danger>取消</Button>
+                <ManagementIconButton aria-label="取消任务" size="small" tooltip="取消" danger icon={<PoweroffOutlined />} />
               </Popconfirm>
             ) : null}
-            {canRetry ? <Button size="small" type="text" icon={<ReloadOutlined />} onClick={() => retryMutation.mutate(record.id)}>重试</Button> : null}
+            {canRetry ? <ManagementIconButton aria-label="重试任务" size="small" tooltip="重试" icon={<ReloadOutlined />} onClick={() => retryMutation.mutate(record.id)} /> : null}
           </Space>
         )
       },
@@ -833,68 +807,76 @@ function OperationsTable({
 
   return (
     <>
-      <div className={`soha-vrt-filterbar${toolbarExtra ? ' soha-vrt-filterbar--split' : ''}`}>
-        <div className="soha-vrt-filterbar-main">
-          <Segmented
-            size="small"
-            value={preset}
-            options={OPERATION_FILTER_PRESETS.map((item) => ({ label: item.label, value: item.key }))}
-            onChange={(value) => {
-              const nextPreset = value as OperationFilterPreset
-              setPreset(nextPreset)
-              navigate({
-                pathname: location.pathname,
-                search: nextOperationSearch(nextPreset, {
-                  connectionId: parsedSearch.query.connectionId,
-                  vmId: parsedSearch.query.vmId,
-                  taskKind: parsedSearch.query.taskKind,
-                  search: parsedSearch.query.search,
-                  statuses: parsedSearch.query.statuses,
-                }),
-              })
-            }}
-          />
-        </div>
-        {toolbarExtra ? <div className="soha-vrt-filterbar-extra">{toolbarExtra}</div> : null}
-      </div>
-      {selectedTaskRowKeys.length > 0 ? (
-        <div className="soha-vrt-selection-bar">
-          <Text type="secondary">已选择 {selectedTaskRowKeys.length} 个任务</Text>
-          <Space wrap>
-            {canManageOperations ? <Button danger disabled={selectedTaskRowKeys.some((id) => !selectableOperationIds(filteredOperations, 'cancel').includes(String(id)))} onClick={() => {
-              const labels = filteredOperations.filter((record) => selectedTaskRowKeys.includes(record.id)).map((record) => record.targetName || record.id)
-              Modal.confirm({
-                title: '确认批量取消任务？',
-                content: bulkActionSummary('将取消', labels),
-                onOk: () => batchCancelMutation.mutate(selectedTaskRowKeys.map(String)),
-              })
-            }} loading={batchCancelMutation.isPending}>批量取消</Button> : null}
-            {canManageOperations ? <Button type="primary" disabled={selectedTaskRowKeys.some((id) => !selectableOperationIds(filteredOperations, 'retry').includes(String(id)))} onClick={() => {
-              const labels = filteredOperations.filter((record) => selectedTaskRowKeys.includes(record.id)).map((record) => record.targetName || record.id)
-              Modal.confirm({
-                title: '确认批量重试任务？',
-                content: bulkActionSummary('将重试', labels),
-                onOk: () => batchRetryMutation.mutate(selectedTaskRowKeys.map(String)),
-              })
-            }} loading={batchRetryMutation.isPending}>批量重试</Button> : null}
-            <Button onClick={() => setSelectedTaskRowKeys([])}>清空选择</Button>
-          </Space>
-        </div>
-      ) : null}
-      <OperationStatusChips counts={[
-        { key: 'pending', label: '待处理', value: counts.pending, tone: counts.pending > 0 ? 'warning' : 'default' },
-        { key: 'abnormal', label: '失败/超时', value: counts.abnormal, tone: counts.abnormal > 0 ? 'danger' : 'default' },
-        { key: 'sync', label: '同步任务', value: counts.sync },
-        { key: 'vm', label: 'VM 任务', value: counts.vm },
-      ]} />
-      <Table
+      <AdminTable
         rowKey="id"
-        className="soha-admin-table soha-vrt-table"
+        className="soha-vrt-table"
+        columnSettingIconOnly
+        columnSettingPlacement="header"
+        shellClassName="soha-management-table-shell"
+        title={<VirtualizationTableTitle title={assetType === 'asset_sync' ? '同步任务' : '操作记录'} />}
+        headerExtra={toolbarExtra ? <ManagementTableToolbar>{toolbarExtra}</ManagementTableToolbar> : null}
+        toolbar={(
+          <div className="soha-vrt-filterbar soha-management-table-filterbar">
+            <div className="soha-vrt-filterbar-main">
+              <Segmented
+                size="small"
+                value={preset}
+                options={OPERATION_FILTER_PRESETS.map((item) => ({ label: item.label, value: item.key }))}
+                onChange={(value) => {
+                  const nextPreset = value as OperationFilterPreset
+                  setPreset(nextPreset)
+                  navigate({
+                    pathname: location.pathname,
+                    search: nextOperationSearch(nextPreset, {
+                      connectionId: parsedSearch.query.connectionId,
+                      vmId: parsedSearch.query.vmId,
+                      taskKind: parsedSearch.query.taskKind,
+                      search: parsedSearch.query.search,
+                      statuses: parsedSearch.query.statuses,
+                    }),
+                  })
+                }}
+              />
+              <OperationStatusChips counts={[
+                { key: 'pending', label: '待处理', value: counts.pending, tone: counts.pending > 0 ? 'warning' : 'default' },
+                { key: 'abnormal', label: '失败/超时', value: counts.abnormal, tone: counts.abnormal > 0 ? 'danger' : 'default' },
+                { key: 'sync', label: '同步任务', value: counts.sync },
+                { key: 'vm', label: 'VM 任务', value: counts.vm },
+              ]} />
+            </div>
+          </div>
+        )}
+        toolbarExtra={selectedTaskRowKeys.length > 0 ? (
+          <div className="soha-vrt-selection-bar">
+            <Text type="secondary">已选择 {selectedTaskRowKeys.length} 个任务</Text>
+            <Space wrap>
+              {canManageOperations ? (
+                <Popconfirm
+                  title="确认批量取消任务？"
+                  description={bulkActionSummary('将取消', filteredOperations.filter((record) => selectedTaskRowKeys.includes(record.id)).map((record) => record.targetName || record.id))}
+                  onConfirm={() => batchCancelMutation.mutate(selectedTaskRowKeys.map(String))}
+                >
+                  <Button danger disabled={selectedTaskRowKeys.some((id) => !selectableOperationIds(filteredOperations, 'cancel').includes(String(id)))} loading={batchCancelMutation.isPending}>批量取消</Button>
+                </Popconfirm>
+              ) : null}
+              {canManageOperations ? (
+                <Popconfirm
+                  title="确认批量重试任务？"
+                  description={bulkActionSummary('将重试', filteredOperations.filter((record) => selectedTaskRowKeys.includes(record.id)).map((record) => record.targetName || record.id))}
+                  onConfirm={() => batchRetryMutation.mutate(selectedTaskRowKeys.map(String))}
+                >
+                  <Button type="primary" disabled={selectedTaskRowKeys.some((id) => !selectableOperationIds(filteredOperations, 'retry').includes(String(id)))} loading={batchRetryMutation.isPending}>批量重试</Button>
+                </Popconfirm>
+              ) : null}
+              <Button onClick={() => setSelectedTaskRowKeys([])}>清空选择</Button>
+            </Space>
+          </div>
+        ) : null}
         rowSelection={{
           selectedRowKeys: selectedTaskRowKeys,
-          onChange: (keys) => setSelectedTaskRowKeys(keys),
+          onChange: (keys: Key[]) => setSelectedTaskRowKeys(keys),
         }}
-        size="small"
+        tableSize="small"
         loading={operationsQuery.isLoading}
         dataSource={filteredOperations}
         columns={columns}
@@ -1089,7 +1071,7 @@ export function VirtualizationOverviewPage() {
     { key: 'completed', label: '已完成任务', value: taskSummary?.completed ?? 0 },
     { key: 'providers', label: 'Provider 数', value: providerSummary.length },
   ]
-  const heroStats: Array<{
+  const metricStats: Array<{
     key: string
     label: string
     value: React.ReactNode
@@ -1147,48 +1129,48 @@ export function VirtualizationOverviewPage() {
 
   return (
     <div className="soha-page soha-virtualization-overview">
-      <section className={`soha-overview-hero soha-vrt-overview-hero is-${overviewTone}`}>
-        <div className="soha-overview-hero-header soha-vrt-overview-hero-header">
-          <div className="soha-vrt-commandbar-main">
-            <div className="soha-vrt-title-row">
-              <h1 className="soha-overview-title">虚拟化总览</h1>
-              <Badge status={badgeStatusForTone(overviewTone)} text={overviewStatusLabel} />
-            </div>
-            <div className="soha-vrt-commandbar-meta">
-              <span>连接 {healthyConnections}/{totalConnections}</span>
-              <span>Provider {providerSummary.length}</span>
-              <span>VM {runningVmCount}/{vmCount}</span>
-              <span>最近同步 {overview.lastSyncTask ? formatDateTime(operationTime(overview.lastSyncTask)) : '未同步'}</span>
-            </div>
-          </div>
-          {canSync ? (
-            <Space className="soha-vrt-commandbar-actions" wrap>
-              <Link to="/virtualization/sync">
-                <Button icon={<CloudSyncOutlined />}>同步任务</Button>
-              </Link>
-              <Button type="primary" icon={<ReloadOutlined />} loading={syncMutation.isPending} onClick={() => syncMutation.mutate()}>
-                立即同步
-              </Button>
-            </Space>
-          ) : null}
-        </div>
-        <div className="soha-overview-metric-grid soha-vrt-metric-grid" aria-label="虚拟化运行指标">
-          {heroStats.map((item) => (
-            <Card key={item.key} size="small" variant="outlined" className={`soha-overview-metric-card soha-vrt-metric-card is-${item.tone}`}>
-              <button type="button" className="soha-vrt-metric-card-button" onClick={item.action}>
-                <div className="soha-overview-metric-card-head">
-                  <div className="soha-overview-metric-copy">
-                    <Text className="soha-overview-metric-label">{item.label}</Text>
-                    <span className="soha-vrt-stat-value">{item.value}</span>
-                  </div>
-                  <span className="soha-overview-metric-icon">{item.icon}</span>
+      <ManagementDetailHeader
+        title={(
+          <Space size={8} wrap>
+            <span>虚拟化总览</span>
+            <Badge status={badgeStatusForTone(overviewTone)} text={overviewStatusLabel} />
+          </Space>
+        )}
+        meta={(
+          <>
+            <span>连接 {healthyConnections}/{totalConnections}</span>
+            <span>Provider {providerSummary.length}</span>
+            <span>VM {runningVmCount}/{vmCount}</span>
+            <span>最近同步 {overview.lastSyncTask ? formatDateTime(operationTime(overview.lastSyncTask)) : '未同步'}</span>
+          </>
+        )}
+        actions={canSync ? (
+          <>
+            <Link to="/virtualization/sync">
+              <Button icon={<CloudSyncOutlined />}>同步任务</Button>
+            </Link>
+            <Button type="primary" icon={<ReloadOutlined />} loading={syncMutation.isPending} onClick={() => syncMutation.mutate()}>
+              立即同步
+            </Button>
+          </>
+        ) : undefined}
+      />
+      <div className="soha-overview-metric-grid soha-vrt-metric-grid" aria-label="虚拟化运行指标">
+        {metricStats.map((item) => (
+          <Card key={item.key} size="small" variant="outlined" className={`soha-overview-metric-card soha-vrt-metric-card is-${item.tone}`}>
+            <button type="button" className="soha-vrt-metric-card-button" onClick={item.action}>
+              <div className="soha-overview-metric-card-head">
+                <div className="soha-overview-metric-copy">
+                  <Text className="soha-overview-metric-label">{item.label}</Text>
+                  <span className="soha-vrt-stat-value">{item.value}</span>
                 </div>
-                <Text className="soha-overview-metric-helper">{item.helper}</Text>
-              </button>
-            </Card>
-          ))}
-        </div>
-      </section>
+                <span className="soha-overview-metric-icon">{item.icon}</span>
+              </div>
+              <Text className="soha-overview-metric-helper">{item.helper}</Text>
+            </button>
+          </Card>
+        ))}
+      </div>
       <TaskProgressBanner
         task={syncTask}
         status={syncStreamStatus}
@@ -1205,7 +1187,7 @@ export function VirtualizationOverviewPage() {
               description="不可用、降级、凭证缺失、未同步"
               emptyText="暂无高风险连接"
               tone={abnormalClusters.length > 0 ? 'danger' : 'default'}
-              action={<Button type="text" size="small" onClick={() => navigate('/virtualization/clusters')}>查看全部</Button>}
+              action={<ManagementIconButton aria-label="查看全部连接" tooltip="查看全部" icon={<EyeOutlined />} size="small" onClick={() => navigate('/virtualization/clusters')} />}
               items={abnormalClusters.map((item) => ({
                 id: item.id,
                 title: item.name,
@@ -1221,10 +1203,10 @@ export function VirtualizationOverviewPage() {
                 if (!cluster) return null
                 return (
                   <>
-                    <Button size="small" onClick={() => setSelectedCluster(cluster)}>详情</Button>
-                    <Button size="small" onClick={() => navigate(buildInvestigationPath({ connectionId: cluster.id, provider: cluster.provider, clusterId: cluster.kubernetesClusterId, namespace: cluster.defaultNamespace, workload: cluster.name, timeRangeMinutes: 60 }))}>AI调查</Button>
-                    {canManageClusters ? <Button size="small" onClick={() => testMutation.mutate(cluster.id)} loading={testMutation.isPending}>测试</Button> : null}
-                    {canSync ? <Button size="small" onClick={() => syncClusterMutation.mutate(cluster.id)} loading={syncClusterMutation.isPending}>同步</Button> : null}
+                    <ManagementIconButton aria-label="查看连接详情" tooltip="详情" icon={<EyeOutlined />} size="small" onClick={() => setSelectedCluster(cluster)} />
+                    <ManagementIconButton aria-label="发起 AI 调查" tooltip="AI调查" icon={<PlayCircleOutlined />} size="small" onClick={() => navigate(buildInvestigationPath({ connectionId: cluster.id, provider: cluster.provider, clusterId: cluster.kubernetesClusterId, namespace: cluster.defaultNamespace, workload: cluster.name, timeRangeMinutes: 60 }))} />
+                    {canManageClusters ? <ManagementIconButton aria-label="测试连接" tooltip="测试" icon={<ThunderboltOutlined />} size="small" onClick={() => testMutation.mutate(cluster.id)} loading={testMutation.isPending} /> : null}
+                    {canSync ? <ManagementIconButton aria-label="同步连接" tooltip="同步" icon={<CloudSyncOutlined />} size="small" onClick={() => syncClusterMutation.mutate(cluster.id)} loading={syncClusterMutation.isPending} /> : null}
                   </>
                 )
               }}
@@ -1234,7 +1216,7 @@ export function VirtualizationOverviewPage() {
               description="asset_sync 失败或超时"
               emptyText="暂无失败同步"
               tone={failedSyncOperations.length > 0 ? 'danger' : 'default'}
-              action={<Button type="text" size="small" onClick={() => navigate('/virtualization/sync')}>进入同步任务</Button>}
+              action={<ManagementIconButton aria-label="进入同步任务" tooltip="进入同步任务" icon={<CloudSyncOutlined />} size="small" onClick={() => navigate('/virtualization/sync')} />}
               items={failedSyncOperations.map((item) => ({ id: item.id, title: item.targetName || item.connectionId || item.id, status: item.status, message: latestNonEmptyOperationMessage(item) }))}
               renderMeta={(item) => {
                 const operation = failedSyncOperations.find((record) => record.id === item.id)
@@ -1244,9 +1226,9 @@ export function VirtualizationOverviewPage() {
                 const operation = failedSyncOperations.find((record) => record.id === item.id)
                 return operation ? (
                   <>
-                    <Button size="small" onClick={() => setSelectedOperation(operation)}>日志</Button>
-                    <Button size="small" onClick={() => navigate(buildInvestigationPath({ connectionId: operation.connectionId, vmId: operation.vmId, workload: operation.targetName || operation.vmId || operation.connectionId, timeRangeMinutes: 60 }))}>AI调查</Button>
-                    {canManageOperations && hasAllowedAction(operation.allowedActions, 'retry') ? <Button size="small" onClick={() => retryMutation.mutate(operation.id)} loading={retryMutation.isPending}>重试</Button> : null}
+                    <ManagementIconButton aria-label="查看同步日志" tooltip="日志" icon={<FileTextOutlined />} size="small" onClick={() => setSelectedOperation(operation)} />
+                    <ManagementIconButton aria-label="发起 AI 调查" tooltip="AI调查" icon={<PlayCircleOutlined />} size="small" onClick={() => navigate(buildInvestigationPath({ connectionId: operation.connectionId, vmId: operation.vmId, workload: operation.targetName || operation.vmId || operation.connectionId, timeRangeMinutes: 60 }))} />
+                    {canManageOperations && hasAllowedAction(operation.allowedActions, 'retry') ? <ManagementIconButton aria-label="重试同步任务" tooltip="重试" icon={<ReloadOutlined />} size="small" onClick={() => retryMutation.mutate(operation.id)} loading={retryMutation.isPending} /> : null}
                   </>
                 ) : null
               }}
@@ -1256,7 +1238,7 @@ export function VirtualizationOverviewPage() {
               description="生命周期任务失败或超时"
               emptyText="暂无失败任务"
               tone={failedOperations.length > 0 ? 'danger' : 'default'}
-              action={<Button type="text" size="small" onClick={() => navigate('/virtualization/operations')}>任务中心</Button>}
+              action={<ManagementIconButton aria-label="进入任务中心" tooltip="任务中心" icon={<FileTextOutlined />} size="small" onClick={() => navigate('/virtualization/operations')} />}
               items={failedOperations.map((item) => ({ id: item.id, title: item.targetName || item.vmId || item.id, status: item.status, message: latestNonEmptyOperationMessage(item) }))}
               renderMeta={(item) => {
                 const operation = failedOperations.find((record) => record.id === item.id)
@@ -1266,9 +1248,9 @@ export function VirtualizationOverviewPage() {
                 const operation = failedOperations.find((record) => record.id === item.id)
                 return operation ? (
                   <>
-                    <Button size="small" onClick={() => setSelectedOperation(operation)}>日志</Button>
-                    <Button size="small" onClick={() => navigate(buildInvestigationPath({ connectionId: operation.connectionId, vmId: operation.vmId, workload: operation.targetName || operation.vmId || operation.connectionId, timeRangeMinutes: 60 }))}>AI调查</Button>
-                    {operation.vmId ? <Button size="small" onClick={() => navigate(`/virtualization/vms/${encodeURIComponent(operation.vmId || '')}?focus=operations`)}>VM</Button> : null}
+                    <ManagementIconButton aria-label="查看任务日志" tooltip="日志" icon={<FileTextOutlined />} size="small" onClick={() => setSelectedOperation(operation)} />
+                    <ManagementIconButton aria-label="发起 AI 调查" tooltip="AI调查" icon={<PlayCircleOutlined />} size="small" onClick={() => navigate(buildInvestigationPath({ connectionId: operation.connectionId, vmId: operation.vmId, workload: operation.targetName || operation.vmId || operation.connectionId, timeRangeMinutes: 60 }))} />
+                    {operation.vmId ? <ManagementIconButton aria-label="查看 VM" tooltip="VM" icon={<EyeOutlined />} size="small" onClick={() => navigate(`/virtualization/vms/${encodeURIComponent(operation.vmId || '')}?focus=operations`)} /> : null}
                   </>
                 ) : null
               }}
@@ -1281,28 +1263,40 @@ export function VirtualizationOverviewPage() {
                 <div className="soha-vrt-panel-title">任务流水</div>
                 <div className="soha-vrt-panel-caption">最近操作与异常快照</div>
               </div>
-              <Button type="text" size="small" onClick={() => navigate('/virtualization/operations')}>
-                查看全部
-              </Button>
+              <ManagementIconButton aria-label="查看全部任务" tooltip="查看全部" icon={<EyeOutlined />} size="small" onClick={() => navigate('/virtualization/operations')} />
             </div>
             <div className="soha-vrt-panel-body">
-              <Table
+              <AdminTable
                 rowKey="id"
-                size="small"
+                tableSize="small"
                 pagination={false}
                 loading={overviewQuery.isLoading}
                 dataSource={operations.length > 0 ? operations.slice(0, 8) : recentAbnormal}
-                className="soha-admin-table soha-vrt-overview-table"
-                locale={{ emptyText: '暂无任务记录' }}
+                className="soha-vrt-overview-table"
+                empty="暂无任务记录"
+                enableColumnSelection={false}
                 scroll={{ x: 920 }}
                 columns={[
-                  { title: '类型', render: (_value, record: VirtualizationOperation) => operationKind(record), width: 150 },
+                  { title: '类型', render: (_value: unknown, record: VirtualizationOperation) => operationKind(record), width: 150 },
                   { title: '资源', dataIndex: 'targetName', render: (value: string, record: VirtualizationOperation) => value || record.targetType || '-', width: 180 },
                   { title: '连接', dataIndex: 'connectionId', render: (value: string) => value || '-', width: 180 },
                   { title: '状态', dataIndex: 'status', render: statusTag, width: 120 },
-                  { title: '摘要', render: (_value, record: VirtualizationOperation) => latestNonEmptyOperationMessage(record), ellipsis: true },
-                  { title: '时间', render: (_value, record: VirtualizationOperation) => formatDateTime(operationTime(record)), width: 180 },
-                  { title: '操作', render: (_value, record: VirtualizationOperation) => <Button type="text" size="small" onClick={() => setSelectedOperation(record)}>日志</Button>, width: 100 },
+                  { title: '摘要', render: (_value: unknown, record: VirtualizationOperation) => latestNonEmptyOperationMessage(record), ellipsis: true },
+                  { title: '时间', render: (_value: unknown, record: VirtualizationOperation) => formatDateTime(operationTime(record)), width: 180 },
+                  {
+                    ...tableColumnPresets.action,
+                    title: '操作',
+                    render: (_value: unknown, record: VirtualizationOperation) => (
+                      <ManagementIconButton
+                        aria-label="查看任务日志"
+                        tooltip="日志"
+                        icon={<FileTextOutlined />}
+                        size="small"
+                        onClick={() => setSelectedOperation(record)}
+                      />
+                    ),
+                    width: 100,
+                  },
                 ]}
               />
             </div>
@@ -1316,7 +1310,7 @@ export function VirtualizationOverviewPage() {
                 <div className="soha-vrt-panel-title">连接健康态势</div>
                 <div className="soha-vrt-panel-caption">纳管连接状态</div>
               </div>
-              <Button type="text" size="small" onClick={() => navigate('/virtualization/clusters')}>连接页</Button>
+              <ManagementIconButton aria-label="打开连接页" tooltip="连接页" icon={<EyeOutlined />} size="small" onClick={() => navigate('/virtualization/clusters')} />
             </div>
             <div className="soha-vrt-panel-body">
               <OperationStatusChips compact counts={[
@@ -1334,7 +1328,7 @@ export function VirtualizationOverviewPage() {
                 <div className="soha-vrt-panel-title">任务处置态势</div>
                 <div className="soha-vrt-panel-caption">队列、执行、失败</div>
               </div>
-              <Button type="text" size="small" onClick={() => navigate('/virtualization/operations')}>任务中心</Button>
+              <ManagementIconButton aria-label="打开任务中心" tooltip="任务中心" icon={<FileTextOutlined />} size="small" onClick={() => navigate('/virtualization/operations')} />
             </div>
             <div className="soha-vrt-panel-body">
               <OperationStatusChips compact counts={[
@@ -1379,7 +1373,7 @@ export function VirtualizationOverviewPage() {
                 </div>
               ) : (
                 <div className="soha-vrt-empty">
-                  <Empty description="暂无 Provider 数据" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+                  <ManagementState bordered={false} compact title="暂无 Provider 数据" description="虚拟化连接同步完成后会在这里展示 Provider 分布。" />
                 </div>
               )}
             </div>
@@ -1522,18 +1516,18 @@ export function VirtualizationVmsPage() {
     {
       ...tableColumnPresets.action,
       title: '操作',
-      width: 220,
+      width: 130,
       render: (_value, record) => {
         if (!canManageVMs) return null
         const canPower = (action: string) => !record.allowedActions || hasAllowedAction(record.allowedActions, action)
         return (
-          <Space>
-            {canPower('start') ? <Button size="small" type="text" icon={<PlayCircleOutlined />} onClick={() => powerMutation.mutate({ id: record.id, action: 'start' })}>启动</Button> : null}
-            {canPower('stop') ? <Button size="small" type="text" icon={<PoweroffOutlined />} onClick={() => powerMutation.mutate({ id: record.id, action: 'stop' })}>停止</Button> : null}
-            {canPower('restart') ? <Button size="small" type="text" icon={<ReloadOutlined />} onClick={() => powerMutation.mutate({ id: record.id, action: 'restart' })}>重启</Button> : null}
+          <Space className="soha-row-action-icons">
+            {canPower('start') ? <ManagementIconButton aria-label="启动虚拟机" size="small" tooltip="启动" icon={<PlayCircleOutlined />} onClick={() => powerMutation.mutate({ id: record.id, action: 'start' })} /> : null}
+            {canPower('stop') ? <ManagementIconButton aria-label="停止虚拟机" size="small" tooltip="停止" icon={<PoweroffOutlined />} onClick={() => powerMutation.mutate({ id: record.id, action: 'stop' })} /> : null}
+            {canPower('restart') ? <ManagementIconButton aria-label="重启虚拟机" size="small" tooltip="重启" icon={<ReloadOutlined />} onClick={() => powerMutation.mutate({ id: record.id, action: 'restart' })} /> : null}
             {canPower('delete') ? (
               <Popconfirm title="确认删除虚拟机？" onConfirm={() => powerMutation.mutate({ id: record.id, action: 'delete' })}>
-                <Button size="small" type="text" danger icon={<DeleteOutlined />} />
+                <ManagementIconButton aria-label="删除虚拟机" size="small" tooltip="删除" danger icon={<DeleteOutlined />} />
               </Popconfirm>
             ) : null}
           </Space>
@@ -1551,81 +1545,76 @@ export function VirtualizationVmsPage() {
         onCancel={streamedTask?.id ? () => cancelCreateMutation.mutate(streamedTask.id) : undefined}
         cancelling={cancelCreateMutation.isPending}
       />
-      <Card size="small" variant="outlined" className="soha-vrt-list-card soha-vrt-table-card">
-        <VirtualizationTableHeader
-          title="虚拟机"
-        />
-        <Form
-          form={filterForm}
-          className="soha-vrt-filterbar soha-vrt-filterbar--split"
-          layout="inline"
-          onFinish={(values) => setFilters((current) => ({ ...current, ...values, page: 1 }))}
-        >
-          <div className="soha-vrt-filterbar-main">
-            <Form.Item name="search">
-              <Input allowClear prefix={<SearchOutlined />} placeholder="搜索名称、IP 或节点" />
-            </Form.Item>
-            <Form.Item name="provider">
-              <Select
-                allowClear
-                className="min-w-32"
-                placeholder="Provider"
-                options={[{ value: 'kubevirt', label: 'KubeVirt' }, { value: 'pve', label: 'PVE' }]}
-              />
-            </Form.Item>
-            <Form.Item name="connectionId">
-              <Select
-                allowClear
-                className="min-w-40"
-                placeholder="连接"
-                options={clusters.map((item) => ({ value: item.id, label: item.name }))}
-              />
-            </Form.Item>
-            <Form.Item name="status">
-              <Select
-                allowClear
-                className="min-w-32"
-                placeholder="状态"
-                options={['running', 'stopped', 'pending', 'failed'].map((item) => ({ value: item, label: item }))}
-              />
-            </Form.Item>
-            <Space>
-              <Button type="primary" htmlType="submit" icon={<SearchOutlined />}>筛选</Button>
-              <Button
-                onClick={() => {
-                  filterForm.resetFields()
-                  setFilters({ page: 1, pageSize: filters.pageSize ?? 10 })
-                }}
-              >
-                重置
-              </Button>
-            </Space>
-          </div>
-          {canManageVMs ? (
-            <div className="soha-vrt-filterbar-extra">
-              <Button type="primary" icon={<PlusOutlined />} onClick={() => setDrawerOpen(true)}>
-                创建虚拟机
-              </Button>
+      <AdminTable
+        rowKey="id"
+        className="soha-vrt-table"
+        columnSettingIconOnly
+        columnSettingPlacement="header"
+        shellClassName="soha-management-table-shell"
+        title={<VirtualizationTableTitle title="虚拟机" />}
+        headerExtra={canManageVMs ? (
+          <ManagementTableToolbar>
+            <Button type="primary" icon={<PlusOutlined />} onClick={() => setDrawerOpen(true)}>
+              创建虚拟机
+            </Button>
+          </ManagementTableToolbar>
+        ) : null}
+        toolbar={(
+          <Form
+            form={filterForm}
+            className="soha-vrt-filterbar soha-vrt-filterbar--split soha-management-table-filterbar"
+            layout="inline"
+            onFinish={(values) => setFilters((current) => ({ ...current, ...values, page: 1 }))}
+          >
+            <div className="soha-vrt-filterbar-main">
+              <Form.Item name="search">
+                <Input allowClear prefix={<SearchOutlined />} placeholder="搜索名称、IP 或节点" />
+              </Form.Item>
+              <Form.Item name="provider">
+                <Select
+                  allowClear
+                  className="min-w-32"
+                  placeholder="Provider"
+                  options={[{ value: 'kubevirt', label: 'KubeVirt' }, { value: 'pve', label: 'PVE' }]}
+                />
+              </Form.Item>
+              <Form.Item name="connectionId">
+                <Select
+                  allowClear
+                  className="min-w-40"
+                  placeholder="连接"
+                  options={clusters.map((item) => ({ value: item.id, label: item.name }))}
+                />
+              </Form.Item>
+              <Form.Item name="status">
+                <Select
+                  allowClear
+                  className="min-w-32"
+                  placeholder="状态"
+                  options={['running', 'stopped', 'pending', 'failed'].map((item) => ({ value: item, label: item }))}
+                />
+              </Form.Item>
+              <Space>
+                <Button type="primary" htmlType="submit" icon={<SearchOutlined />}>筛选</Button>
+                <Button
+                  onClick={() => {
+                    filterForm.resetFields()
+                    setFilters({ page: 1, pageSize: filters.pageSize ?? 10 })
+                  }}
+                >
+                  重置
+                </Button>
+              </Space>
             </div>
-          ) : null}
-        </Form>
-        <Table
-          rowKey="id"
-          className="soha-admin-table soha-vrt-table"
-          size="small"
-          loading={vmsQuery.isLoading}
-          dataSource={vmPage.items}
-          columns={columns}
-          scroll={{ x: 1340 }}
-          pagination={{
-            current: vmPage.page,
-            pageSize: vmPage.pageSize,
-            total: vmPage.total,
-            showSizeChanger: true,
-            onChange: (page, pageSize) => setFilters((current) => ({ ...current, page, pageSize })),
-          }}
-        />
-      </Card>
+          </Form>
+        )}
+        tableSize="small"
+        loading={vmsQuery.isLoading}
+        dataSource={vmPage.items}
+        columns={columns}
+        scroll={{ x: 1340 }}
+        pagination={pageTablePagination(vmPage, setFilters)}
+      />
       <Drawer title="创建虚拟机" size="large" open={drawerOpen} onClose={() => setDrawerOpen(false)}>
         <Form form={form} layout="vertical" initialValues={{ provider: 'kubevirt', sourceMode: 'datasource_clone', startAfterCreate: true }} onFinish={(values) => createMutation.mutate(values)}>
           <Form.Item name="name" label="名称" rules={[{ required: true }]}>
@@ -1673,7 +1662,7 @@ export function VirtualizationVmsPage() {
               className="mb-3"
               type="info"
               showIcon
-              message={`已选择 ${selectedFlavor.name}: ${selectedFlavor.cpu}C / ${selectedFlavor.memoryMiB}MiB / ${selectedFlavor.diskGiB}GiB`}
+              title={`已选择 ${selectedFlavor.name}: ${selectedFlavor.cpu}C / ${selectedFlavor.memoryMiB}MiB / ${selectedFlavor.diskGiB}GiB`}
             />
           ) : null}
           <Form.Item name="bootImageId" label={createProvider === 'pve' ? (createSourceMode === 'iso_install' ? '安装 ISO' : '模板') : '启动镜像'} rules={[{ required: true }]}>
@@ -1802,28 +1791,40 @@ export function VirtualizationVmDetailPage() {
 
   return (
     <div className="soha-page soha-virtualization-page">
-      <VirtualizationPageHeader
+      <ManagementDetailHeader
         title={vm?.name ?? '虚拟机详情'}
-        tone={latestAbnormalOperation ? 'danger' : isRunning ? 'success' : 'default'}
-        status={vm?.powerState || vm?.status || (detailQuery.isLoading ? '加载中' : undefined)}
-        meta={[`Provider ${vm?.provider ?? '-'}`, `连接 ${vm?.connectionName || vm?.connectionId || '-'}`, `节点 ${vm?.node || '-'}`]}
+        description={
+          <Space size={8} wrap>
+            <Badge
+              status={badgeStatusForTone(latestAbnormalOperation ? 'danger' : isRunning ? 'success' : 'default')}
+              text={vm?.powerState || vm?.status || (detailQuery.isLoading ? '加载中' : '-')}
+            />
+          </Space>
+        }
+        meta={
+          <>
+            <span>{`Provider ${vm?.provider ?? '-'}`}</span>
+            <span>{`连接 ${vm?.connectionName || vm?.connectionId || '-'}`}</span>
+            <span>{`节点 ${vm?.node || '-'}`}</span>
+          </>
+        }
         actions={<Link to="/virtualization/vms"><Button>返回列表</Button></Link>}
       />
       {!vm && !detailQuery.isLoading ? (
-        <Card size="small" className="soha-vrt-list-card">
-          <Empty description="未找到虚拟机详情" />
+        <Card size="small" variant="outlined" className="soha-management-panel-card">
+          <ManagementState compact kind="not-found" title="未找到虚拟机详情" description="目标虚拟机不存在，或当前账号无法访问该资源。" />
         </Card>
       ) : null}
       {latestAbnormalOperation ? (
         <Alert
           type="error"
           showIcon
-          message={`最近异常任务：${operationKind(latestAbnormalOperation)}`}
+          title={`最近异常任务：${operationKind(latestAbnormalOperation)}`}
           description={latestNonEmptyOperationMessage(latestAbnormalOperation)}
           action={<Space><Button size="small" onClick={() => setActiveTab('operations')}>查看任务历史</Button><Button size="small" onClick={() => navigate(buildInvestigationPath({ connectionId: vm?.connectionId, vmId: vm?.id, namespace: vm?.namespace, workload: vm?.name, timeRangeMinutes: 60 }))}>AI调查</Button></Space>}
         />
       ) : null}
-      <Card size="small" className="soha-vrt-list-card" loading={detailQuery.isLoading}>
+      <Card size="small" variant="outlined" className="soha-management-panel-card" loading={detailQuery.isLoading}>
         <Descriptions size="small" column={{ xs: 1, md: 2, xl: 3 }} bordered>
           <Descriptions.Item label="ID">{vm?.id ?? '-'}</Descriptions.Item>
           <Descriptions.Item label="Provider">{vm?.provider ?? '-'}</Descriptions.Item>
@@ -1877,17 +1878,32 @@ export function VirtualizationVmDetailPage() {
             forceRender: true,
             children: (
               <Card size="small">
-                <Table
+                <AdminTable
                   rowKey="id"
-                  size="small"
+                  tableSize="small"
                   dataSource={sortedOperations}
-                  pagination={{ pageSize: 10 }}
+                  pageSize={10}
+                  columnSettingIconOnly
+                  columnSettingPlacement="header"
                   columns={[
-                    { title: '类型', render: (_value, record: VirtualizationOperation) => operationKind(record), width: 150 },
+                    { title: '类型', render: (_value: unknown, record: VirtualizationOperation) => operationKind(record), width: 150 },
                     { title: '状态', dataIndex: 'status', render: statusTag, width: 120 },
                     { title: '消息', dataIndex: 'message', render: (value: string) => value || '-' },
-                    { title: '时间', render: (_value, record: VirtualizationOperation) => formatDateTime(operationTime(record)), width: 180 },
-                    { title: '操作', render: () => <Button size="small" onClick={() => navigate(buildInvestigationPath({ connectionId: vm?.connectionId, vmId: vm?.id, namespace: vm?.namespace, workload: vm?.name, timeRangeMinutes: 60 }))}>AI调查</Button>, width: 100 },
+                    { title: '时间', render: (_value: unknown, record: VirtualizationOperation) => formatDateTime(operationTime(record)), width: 180 },
+                    {
+                      ...tableColumnPresets.action,
+                      title: '操作',
+                      render: () => (
+                        <ManagementIconButton
+                          aria-label="发起 AI 调查"
+                          tooltip="AI调查"
+                          icon={<PlayCircleOutlined />}
+                          size="small"
+                          onClick={() => navigate(buildInvestigationPath({ connectionId: vm?.connectionId, vmId: vm?.id, namespace: vm?.namespace, workload: vm?.name, timeRangeMinutes: 60 }))}
+                        />
+                      ),
+                      width: 100,
+                    },
                   ]}
                 />
               </Card>
@@ -1930,12 +1946,12 @@ export function VirtualizationVmDetailPage() {
                 {metricsQuery.data?.data ? (
                   <VMMetricsChart data={metricsQuery.data.data} />
                 ) : (
-                  <Empty description="暂无指标数据" />
+                  <ManagementState bordered={false} compact title="暂无指标数据" description="指标查询完成后这里会展示 VM 运行曲线。" />
                 )}
               </Card>
             ) : (
               <Card size="small">
-                <Empty description="VM 未运行，无指标数据" />
+                <ManagementState bordered={false} compact kind="unsupported" title="VM 未运行" description="VM 进入运行状态后才能采集指标数据。" />
               </Card>
             ),
           } : null,
@@ -1948,7 +1964,7 @@ export function VirtualizationVmDetailPage() {
               </Suspense>
             ) : (
               <Card size="small">
-                <Empty description="VM 未运行，无法访问控制台" />
+                <ManagementState bordered={false} compact kind="unsupported" title="VM 未运行" description="VM 进入运行状态后才能访问控制台。" />
               </Card>
             ),
           } : null,
@@ -2088,15 +2104,15 @@ export function VirtualizationClustersPage() {
     {
       ...tableColumnPresets.action,
       title: '操作',
-      width: 260,
+      width: 130,
       render: (_value, record) => (
-        <Space wrap>
-          {canManageClusters ? <Button size="small" type="text" icon={<ThunderboltOutlined />} onClick={() => testMutation.mutate(record.id)}>测试</Button> : null}
-          {canSync ? <Button size="small" type="text" icon={<CloudSyncOutlined />} onClick={() => syncMutation.mutate(record.id)}>同步</Button> : null}
-          {canManageClusters ? <Button size="small" type="text" icon={<EditOutlined />} onClick={() => openEditor(record)}>编辑</Button> : null}
+        <Space className="soha-row-action-icons" wrap>
+          {canManageClusters ? <ManagementIconButton aria-label="测试连接" size="small" tooltip="测试" icon={<ThunderboltOutlined />} onClick={() => testMutation.mutate(record.id)} /> : null}
+          {canSync ? <ManagementIconButton aria-label="同步连接" size="small" tooltip="同步" icon={<CloudSyncOutlined />} onClick={() => syncMutation.mutate(record.id)} /> : null}
+          {canManageClusters ? <ManagementIconButton aria-label="编辑连接" size="small" tooltip="编辑" icon={<EditOutlined />} onClick={() => openEditor(record)} /> : null}
           {canManageClusters ? (
             <Popconfirm title="确认删除连接？" onConfirm={() => deleteMutation.mutate(record.id)}>
-              <Button size="small" type="text" danger icon={<DeleteOutlined />} />
+              <ManagementIconButton aria-label="删除连接" size="small" tooltip="删除" danger icon={<DeleteOutlined />} />
             </Popconfirm>
           ) : null}
         </Space>
@@ -2106,90 +2122,95 @@ export function VirtualizationClustersPage() {
 
   return (
     <div className="soha-page soha-virtualization-page">
-      <Card size="small" variant="outlined" className="soha-vrt-list-card soha-vrt-table-card">
-        <VirtualizationTableHeader title="集群" />
-        <div className="soha-vrt-filterbar soha-vrt-filterbar--split">
-          <div className="soha-vrt-filterbar-main soha-vrt-filter-grid">
-            <div className="soha-vrt-filter-item">
-              <div className="soha-vrt-filter-label">异常过滤</div>
-              <Switch checked={showOnlyAbnormal} onChange={setShowOnlyAbnormal} checkedChildren="仅异常" unCheckedChildren="全部" />
-            </div>
-            <div className="soha-vrt-filter-item">
-              <div className="soha-vrt-filter-label">启用状态</div>
-              <Select value={enabledFilter} onChange={setEnabledFilter} options={[{ value: 'all', label: '全部' }, { value: 'enabled', label: '仅启用' }, { value: 'disabled', label: '仅禁用' }]} />
-            </div>
-            <div className="soha-vrt-filter-item">
-              <div className="soha-vrt-filter-label">Provider</div>
-              <Select value={providerFilter} onChange={setProviderFilter} options={[{ value: 'all', label: '全部' }, { value: 'kubevirt', label: 'KubeVirt' }, { value: 'pve', label: 'PVE' }]} />
-            </div>
-            <div className="soha-vrt-filter-item">
-              <div className="soha-vrt-filter-label">同步状态</div>
-              <Switch checked={showNeverSynced} onChange={setShowNeverSynced} checkedChildren="未同步" unCheckedChildren="全部" />
+      <AdminTable
+        rowKey="id"
+        className="soha-vrt-table"
+        columnSettingIconOnly
+        columnSettingPlacement="header"
+        shellClassName="soha-management-table-shell"
+        title={<VirtualizationTableTitle title="集群" />}
+        headerExtra={canManageClusters ? (
+          <ManagementTableToolbar>
+            <Button type="primary" icon={<PlusOutlined />} onClick={() => openEditor()}>新增连接</Button>
+          </ManagementTableToolbar>
+        ) : null}
+        toolbar={(
+          <div className="soha-vrt-filterbar soha-vrt-filterbar--split soha-management-table-filterbar">
+            <div className="soha-vrt-filterbar-main soha-vrt-filter-grid">
+              <div className="soha-vrt-filter-item">
+                <div className="soha-vrt-filter-label">异常过滤</div>
+                <Switch checked={showOnlyAbnormal} onChange={setShowOnlyAbnormal} checkedChildren="仅异常" unCheckedChildren="全部" />
+              </div>
+              <div className="soha-vrt-filter-item">
+                <div className="soha-vrt-filter-label">启用状态</div>
+                <Select value={enabledFilter} onChange={setEnabledFilter} options={[{ value: 'all', label: '全部' }, { value: 'enabled', label: '仅启用' }, { value: 'disabled', label: '仅禁用' }]} />
+              </div>
+              <div className="soha-vrt-filter-item">
+                <div className="soha-vrt-filter-label">Provider</div>
+                <Select value={providerFilter} onChange={setProviderFilter} options={[{ value: 'all', label: '全部' }, { value: 'kubevirt', label: 'KubeVirt' }, { value: 'pve', label: 'PVE' }]} />
+              </div>
+              <div className="soha-vrt-filter-item">
+                <div className="soha-vrt-filter-label">同步状态</div>
+                <Switch checked={showNeverSynced} onChange={setShowNeverSynced} checkedChildren="未同步" unCheckedChildren="全部" />
+              </div>
             </div>
           </div>
-          {canManageClusters ? (
-            <div className="soha-vrt-filterbar-extra">
-              <Button type="primary" icon={<PlusOutlined />} onClick={() => openEditor()}>新增连接</Button>
-            </div>
-          ) : null}
-        </div>
-        {selectedClusterRowKeys.length > 0 ? (
+        )}
+        toolbarExtra={selectedClusterRowKeys.length > 0 ? (
           <div className="soha-vrt-selection-bar">
             <Text type="secondary">已选择 {selectedClusterRowKeys.length} 个连接</Text>
             <Space wrap>
-              {canManageClusters ? <Button onClick={() => {
-                const labels = clusterRows.filter((record) => selectedClusterRowKeys.includes(record.id)).map((record) => record.name)
-                Modal.confirm({
-                  title: '确认批量测试连接？',
-                  content: bulkActionSummary('将测试', labels),
-                  onOk: () => batchTestMutation.mutate(selectedClusterRowKeys.map(String)),
-                })
-              }} loading={batchTestMutation.isPending}>批量测试</Button> : null}
-              {canSync ? <Button type="primary" onClick={() => {
-                const labels = clusterRows.filter((record) => selectedClusterRowKeys.includes(record.id)).map((record) => record.name)
-                Modal.confirm({
-                  title: '确认批量同步连接？',
-                  content: bulkActionSummary('将同步', labels),
-                  onOk: () => batchSyncMutation.mutate(selectedClusterRowKeys.map(String)),
-                })
-              }} loading={batchSyncMutation.isPending}>批量同步</Button> : null}
+              {canManageClusters ? (
+                <Popconfirm
+                  title="确认批量测试连接？"
+                  description={bulkActionSummary('将测试', clusterRows.filter((record) => selectedClusterRowKeys.includes(record.id)).map((record) => record.name))}
+                  onConfirm={() => batchTestMutation.mutate(selectedClusterRowKeys.map(String))}
+                >
+                  <Button loading={batchTestMutation.isPending}>批量测试</Button>
+                </Popconfirm>
+              ) : null}
+              {canSync ? (
+                <Popconfirm
+                  title="确认批量同步连接？"
+                  description={bulkActionSummary('将同步', clusterRows.filter((record) => selectedClusterRowKeys.includes(record.id)).map((record) => record.name))}
+                  onConfirm={() => batchSyncMutation.mutate(selectedClusterRowKeys.map(String))}
+                >
+                  <Button type="primary" loading={batchSyncMutation.isPending}>批量同步</Button>
+                </Popconfirm>
+              ) : null}
               <Button onClick={() => setSelectedClusterRowKeys([])}>清空选择</Button>
             </Space>
           </div>
         ) : null}
-        <Table
-          rowKey="id"
-          className="soha-admin-table soha-vrt-table"
-          rowSelection={{
-            selectedRowKeys: selectedClusterRowKeys,
-            onChange: (keys) => setSelectedClusterRowKeys(keys),
-          }}
-          size="small"
-          loading={clustersQuery.isLoading || clusterOperationsQuery.isLoading}
-          dataSource={clusterRows}
-          columns={columns}
-          scroll={{ x: 1320 }}
-          expandable={{
-            expandedRowRender: (record) => {
-              const failedSync = failedSyncForConnection(record.id)
-              const latestAbnormal = latestAbnormalForConnection(record.id)
-              return (
-                <Descriptions size="small" column={{ xs: 1, md: 2 }} bordered>
-                  <Descriptions.Item label="Endpoint / Cluster">{record.provider === 'kubevirt' ? record.kubernetesClusterId || '-' : record.endpoint || '-'}</Descriptions.Item>
-                  <Descriptions.Item label="默认命名空间">{record.defaultNamespace || '-'}</Descriptions.Item>
-                  <Descriptions.Item label="校验 TLS">{record.verifyTls === false ? '关闭' : '开启'}</Descriptions.Item>
-                  <Descriptions.Item label="最近同步">{formatDateTime(record.lastSyncedAt)}</Descriptions.Item>
-                  <Descriptions.Item label="Region">{record.region || '-'}</Descriptions.Item>
-                  <Descriptions.Item label="风险说明">{riskReasons(record).join(' / ') || '正常'}</Descriptions.Item>
-                  <Descriptions.Item label="Prometheus">{record.provider === 'kubevirt' ? String(record.config?.prometheusUrl || '-') : '-'}</Descriptions.Item>
-                  <Descriptions.Item label="最近失败同步">{failedSync ? `${operationKind(failedSync)} · ${latestNonEmptyOperationMessage(failedSync)}` : '-'}</Descriptions.Item>
-                  <Descriptions.Item label="最近异常任务">{latestAbnormal ? `${operationKind(latestAbnormal)} · ${latestNonEmptyOperationMessage(latestAbnormal)}` : '-'}</Descriptions.Item>
-                </Descriptions>
-              )
-            },
-          }}
-        />
-      </Card>
+        rowSelection={{
+          selectedRowKeys: selectedClusterRowKeys,
+          onChange: (keys: Key[]) => setSelectedClusterRowKeys(keys),
+        }}
+        tableSize="small"
+        loading={clustersQuery.isLoading || clusterOperationsQuery.isLoading}
+        dataSource={clusterRows}
+        columns={columns}
+        scroll={{ x: 1320 }}
+        expandable={{
+          expandedRowRender: (record: VirtualizationCluster) => {
+            const failedSync = failedSyncForConnection(record.id)
+            const latestAbnormal = latestAbnormalForConnection(record.id)
+            return (
+              <Descriptions size="small" column={{ xs: 1, md: 2 }} bordered>
+                <Descriptions.Item label="Endpoint / Cluster">{record.provider === 'kubevirt' ? record.kubernetesClusterId || '-' : record.endpoint || '-'}</Descriptions.Item>
+                <Descriptions.Item label="默认命名空间">{record.defaultNamespace || '-'}</Descriptions.Item>
+                <Descriptions.Item label="校验 TLS">{record.verifyTls === false ? '关闭' : '开启'}</Descriptions.Item>
+                <Descriptions.Item label="最近同步">{formatDateTime(record.lastSyncedAt)}</Descriptions.Item>
+                <Descriptions.Item label="Region">{record.region || '-'}</Descriptions.Item>
+                <Descriptions.Item label="风险说明">{riskReasons(record).join(' / ') || '正常'}</Descriptions.Item>
+                <Descriptions.Item label="Prometheus">{record.provider === 'kubevirt' ? String(record.config?.prometheusUrl || '-') : '-'}</Descriptions.Item>
+                <Descriptions.Item label="最近失败同步">{failedSync ? `${operationKind(failedSync)} · ${latestNonEmptyOperationMessage(failedSync)}` : '-'}</Descriptions.Item>
+                <Descriptions.Item label="最近异常任务">{latestAbnormal ? `${operationKind(latestAbnormal)} · ${latestNonEmptyOperationMessage(latestAbnormal)}` : '-'}</Descriptions.Item>
+              </Descriptions>
+            )
+          },
+        }}
+      />
       <Drawer title={editing ? '编辑连接' : '新增连接'} size="large" open={drawerOpen} onClose={() => setDrawerOpen(false)}>
         <Form form={form} layout="vertical" initialValues={{ provider: 'kubevirt', enabled: true, verifyTls: true }} onFinish={(values) => saveMutation.mutate(values)}>
           <Form.Item name="name" label="名称" rules={[{ required: true }]}>
@@ -2359,10 +2380,10 @@ export function VirtualizationImagesPage() {
       ...tableColumnPresets.action,
       title: '操作',
       render: (_value, record) => canManageImages ? (
-        <Space>
-          <Button size="small" type="text" icon={<EditOutlined />} onClick={() => openImageEditor(record)}>编辑</Button>
+        <Space className="soha-row-action-icons">
+          <ManagementIconButton aria-label="编辑镜像" size="small" tooltip="编辑" icon={<EditOutlined />} onClick={() => openImageEditor(record)} />
           <Popconfirm title="确认删除镜像入口？" onConfirm={() => deleteMutation.mutate(record.id)}>
-            <Button size="small" type="text" danger icon={<DeleteOutlined />} />
+            <ManagementIconButton aria-label="删除镜像" size="small" tooltip="删除" danger icon={<DeleteOutlined />} />
           </Popconfirm>
         </Space>
       ) : null,
@@ -2370,59 +2391,56 @@ export function VirtualizationImagesPage() {
   ]
   return (
     <div className="soha-page soha-virtualization-page">
-      <Card size="small" variant="outlined" className="soha-vrt-list-card soha-vrt-table-card">
-        <VirtualizationTableHeader title="镜像" />
-        <Form
-          form={filterForm}
-          className="soha-vrt-filterbar soha-vrt-filterbar--split"
-          layout="inline"
-          onFinish={(values) => setFilters((current) => ({ ...current, ...values, page: 1 }))}
-        >
-          <div className="soha-vrt-filterbar-main">
-            <Form.Item name="search">
-              <Input allowClear prefix={<SearchOutlined />} placeholder="搜索镜像、模板或 ISO" />
-            </Form.Item>
-            <Form.Item name="provider">
-              <Select allowClear className="min-w-32" placeholder="Provider" options={[{ value: 'kubevirt', label: 'KubeVirt' }, { value: 'pve', label: 'PVE' }]} />
-            </Form.Item>
-            <Form.Item name="connectionId">
-              <Select allowClear className="min-w-40" placeholder="连接" options={clusters.map((item) => ({ value: item.id, label: item.name }))} />
-            </Form.Item>
-            <Space>
-              <Button type="primary" htmlType="submit" icon={<SearchOutlined />}>筛选</Button>
-              <Button
-                onClick={() => {
-                  filterForm.resetFields()
-                  setFilters({ page: 1, pageSize: filters.pageSize ?? 10 })
-                }}
-              >
-                重置
-              </Button>
-            </Space>
-          </div>
-          {canManageImages ? (
-            <div className="soha-vrt-filterbar-extra">
-              <Button type="primary" icon={<PlusOutlined />} onClick={() => openImageEditor()}>新增镜像入口</Button>
+      <AdminTable
+        rowKey="id"
+        className="soha-vrt-table"
+        columnSettingIconOnly
+        columnSettingPlacement="header"
+        shellClassName="soha-management-table-shell"
+        title={<VirtualizationTableTitle title="镜像" />}
+        headerExtra={canManageImages ? (
+          <ManagementTableToolbar>
+            <Button type="primary" icon={<PlusOutlined />} onClick={() => openImageEditor()}>新增镜像入口</Button>
+          </ManagementTableToolbar>
+        ) : null}
+        toolbar={(
+          <Form
+            form={filterForm}
+            className="soha-vrt-filterbar soha-vrt-filterbar--split soha-management-table-filterbar"
+            layout="inline"
+            onFinish={(values) => setFilters((current) => ({ ...current, ...values, page: 1 }))}
+          >
+            <div className="soha-vrt-filterbar-main">
+              <Form.Item name="search">
+                <Input allowClear prefix={<SearchOutlined />} placeholder="搜索镜像、模板或 ISO" />
+              </Form.Item>
+              <Form.Item name="provider">
+                <Select allowClear className="min-w-32" placeholder="Provider" options={[{ value: 'kubevirt', label: 'KubeVirt' }, { value: 'pve', label: 'PVE' }]} />
+              </Form.Item>
+              <Form.Item name="connectionId">
+                <Select allowClear className="min-w-40" placeholder="连接" options={clusters.map((item) => ({ value: item.id, label: item.name }))} />
+              </Form.Item>
+              <Space>
+                <Button type="primary" htmlType="submit" icon={<SearchOutlined />}>筛选</Button>
+                <Button
+                  onClick={() => {
+                    filterForm.resetFields()
+                    setFilters({ page: 1, pageSize: filters.pageSize ?? 10 })
+                  }}
+                >
+                  重置
+                </Button>
+              </Space>
             </div>
-          ) : null}
-        </Form>
-        <Table
-          rowKey="id"
-          className="soha-admin-table soha-vrt-table"
-          size="small"
-          loading={imagesQuery.isLoading}
-          dataSource={imagesPage.items}
-          columns={columns}
-          scroll={{ x: 1220 }}
-          pagination={{
-            current: imagesPage.page,
-            pageSize: imagesPage.pageSize,
-            total: imagesPage.total,
-            showSizeChanger: true,
-            onChange: (page, pageSize) => setFilters((current) => ({ ...current, page, pageSize })),
-          }}
-        />
-      </Card>
+          </Form>
+        )}
+        tableSize="small"
+        loading={imagesQuery.isLoading}
+        dataSource={imagesPage.items}
+        columns={columns}
+        scroll={{ x: 1220 }}
+        pagination={pageTablePagination(imagesPage, setFilters)}
+      />
       <Drawer title={editing ? '编辑镜像入口' : '新增镜像入口'} size="large" open={drawerOpen} onClose={() => setDrawerOpen(false)}>
         <Form form={form} layout="vertical" initialValues={{ provider: 'kubevirt', sourceKind: 'datasource' }} onFinish={(values) => saveMutation.mutate(values)}>
           <Form.Item name="name" label="名称" rules={[{ required: true }]}>
@@ -2522,10 +2540,10 @@ export function VirtualizationFlavorsPage() {
       ...tableColumnPresets.action,
       title: '操作',
       render: (_value, record) => canManageFlavors ? (
-        <Space>
-          <Button size="small" type="text" icon={<EditOutlined />} onClick={() => openEditor(record)}>编辑</Button>
+        <Space className="soha-row-action-icons">
+          <ManagementIconButton aria-label="编辑规格" size="small" tooltip="编辑" icon={<EditOutlined />} onClick={() => openEditor(record)} />
           <Popconfirm title="确认删除规格？" onConfirm={() => deleteMutation.mutate(record.id)}>
-            <Button size="small" type="text" danger icon={<DeleteOutlined />} />
+            <ManagementIconButton aria-label="删除规格" size="small" tooltip="删除" danger icon={<DeleteOutlined />} />
           </Popconfirm>
         </Space>
       ) : null,
@@ -2533,18 +2551,24 @@ export function VirtualizationFlavorsPage() {
   ]
   return (
     <div className="soha-page soha-virtualization-page">
-      <Card size="small" variant="outlined" className="soha-vrt-list-card soha-vrt-table-card">
-        <VirtualizationTableHeader title="规格" />
-        {canManageFlavors ? (
-          <div className="soha-vrt-filterbar soha-vrt-filterbar--split">
-            <div className="soha-vrt-filterbar-main" />
-            <div className="soha-vrt-filterbar-extra">
-              <Button type="primary" icon={<PlusOutlined />} onClick={() => openEditor()}>新增规格</Button>
-            </div>
-          </div>
+      <AdminTable
+        rowKey="id"
+        className="soha-vrt-table"
+        columnSettingIconOnly
+        columnSettingPlacement="header"
+        shellClassName="soha-management-table-shell"
+        title={<VirtualizationTableTitle title="规格" />}
+        headerExtra={canManageFlavors ? (
+          <ManagementTableToolbar>
+            <Button type="primary" icon={<PlusOutlined />} onClick={() => openEditor()}>新增规格</Button>
+          </ManagementTableToolbar>
         ) : null}
-        <Table rowKey="id" className="soha-admin-table soha-vrt-table" size="small" loading={flavorsQuery.isLoading} dataSource={flavors} columns={columns} scroll={{ x: 900 }} />
-      </Card>
+        tableSize="small"
+        loading={flavorsQuery.isLoading}
+        dataSource={flavors}
+        columns={columns}
+        scroll={{ x: 900 }}
+      />
       <Drawer title={editing ? '编辑规格' : '新增规格'} size="large" open={drawerOpen} onClose={() => setDrawerOpen(false)}>
         <Form form={form} layout="vertical" initialValues={{ cpu: 2, memoryMiB: 4096, diskGiB: 40, enabled: true }} onFinish={(values) => saveMutation.mutate(values)}>
           <Form.Item name="name" label="名称" rules={[{ required: true }]}>
@@ -2582,10 +2606,7 @@ export function VirtualizationOperationsPage() {
   const preset = operationPresetFromSearch(location.search)
   return (
     <div className="soha-page soha-virtualization-page">
-      <Card size="small" variant="outlined" className="soha-vrt-list-card soha-vrt-table-card">
-        <VirtualizationTableHeader title="操作记录" />
-        <OperationsTable initialPreset={preset} />
-      </Card>
+      <OperationsTable initialPreset={preset} />
     </div>
   )
 }
@@ -2608,11 +2629,8 @@ export function VirtualizationSyncPage() {
   ) : null, [canSync, syncMutation])
   return (
     <div className="soha-page soha-virtualization-page">
-      <Card size="small" variant="outlined" className="soha-vrt-list-card soha-vrt-table-card">
-        <VirtualizationTableHeader title="同步任务" />
-        <div className="soha-vrt-panel-note">仅展示 asset_sync 类型任务</div>
-        <OperationsTable assetType="asset_sync" toolbarExtra={headerActions} />
-      </Card>
+      <ManagementState bordered={false} compact description="仅展示 asset_sync 类型任务" title="同步任务范围" />
+      <OperationsTable assetType="asset_sync" toolbarExtra={headerActions} />
     </div>
   )
 }

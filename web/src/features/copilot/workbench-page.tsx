@@ -39,11 +39,11 @@ import {
   Button,
   Card,
   Drawer,
-  Empty,
   Flex,
   Input,
   InputNumber,
   Modal,
+  Popconfirm,
   Segmented,
   Select,
   Space,
@@ -53,6 +53,7 @@ import {
 import '@xyflow/react/dist/style.css'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
+import { ManagementState } from '@/components/management-list'
 import { StatusTag } from '@/components/status-tag'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth/permission-snapshot'
 import { api } from '@/services/api-client'
@@ -1102,7 +1103,7 @@ export function AIWorkbenchPage() {
 
   const renderInspectorBody = () => {
     if (!currentSession && inspectorView === 'context') {
-      return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无会话" />
+      return <ManagementState bordered={false} compact kind="select-scope" title="未选择会话" description="选择一个 AI 会话后查看调查范围、证据和建议。" />
     }
 
     if (inspectorView === 'context') {
@@ -1117,7 +1118,9 @@ export function AIWorkbenchPage() {
             ) : null}
           </Card>
           <Card size="small" title="分析运行">
-            {(currentSession.metadata?.analysisRunRefs ?? []).length === 0 ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="还没有运行记录" /> : (
+            {(currentSession.metadata?.analysisRunRefs ?? []).length === 0 ? (
+              <ManagementState bordered={false} compact title="暂无运行记录" description="当前会话还没有关联的分析运行。" />
+            ) : (
               <Space orientation="vertical" size={8} style={{ width: '100%' }}>
                 {(currentSession.metadata?.analysisRunRefs ?? []).map((item) => (
                   <Flex key={item.id} justify="space-between">
@@ -1129,13 +1132,15 @@ export function AIWorkbenchPage() {
             )}
           </Card>
         </Space>
-      ) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无会话" />
+      ) : <ManagementState bordered={false} compact kind="select-scope" title="未选择会话" description="选择一个 AI 会话后查看上下文。" />
     }
 
     if (inspectorView === 'evidence') {
       return activeArtifact ? (
         <Space orientation="vertical" size={12} style={{ width: '100%' }}>
-          {(activeArtifact.evidence ?? []).length === 0 ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无证据" /> : (
+          {(activeArtifact.evidence ?? []).length === 0 ? (
+            <ManagementState bordered={false} compact title="暂无证据" description="当前分析工件还没有结构化证据。" />
+          ) : (
             (activeArtifact.evidence ?? []).map((item) => (
               <Card key={item.id} size="small">
                 <Flex justify="space-between">
@@ -1147,13 +1152,15 @@ export function AIWorkbenchPage() {
             ))
           )}
         </Space>
-      ) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无分析工件" />
+      ) : <ManagementState bordered={false} compact title="暂无分析工件" description="会话产生分析结果后这里会展示证据。" />
     }
 
     if (inspectorView === 'hypotheses') {
       return activeArtifact ? (
         <Space orientation="vertical" size={12} style={{ width: '100%' }}>
-          {(activeArtifact.hypotheses ?? []).length === 0 ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无假设" /> : (
+          {(activeArtifact.hypotheses ?? []).length === 0 ? (
+            <ManagementState bordered={false} compact title="暂无假设" description="当前分析工件还没有形成候选根因。" />
+          ) : (
             (activeArtifact.hypotheses ?? []).map((item) => (
               <Card key={item.id} size="small">
                 <Flex justify="space-between">
@@ -1165,12 +1172,14 @@ export function AIWorkbenchPage() {
             ))
           )}
         </Space>
-      ) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无假设" />
+      ) : <ManagementState bordered={false} compact title="暂无假设" description="选择一个分析工件后查看候选根因。" />
     }
 
     return activeArtifact ? (
       <Space orientation="vertical" size={8} style={{ width: '100%' }}>
-        {(activeArtifact.recommendations ?? []).length === 0 ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无建议动作" /> : (
+        {(activeArtifact.recommendations ?? []).length === 0 ? (
+          <ManagementState bordered={false} compact title="暂无建议动作" description="当前分析工件还没有生成下一步操作。" />
+        ) : (
           (activeArtifact.recommendations ?? []).map((item) => (
             <Card key={item} size="small">
               <Paragraph style={{ marginBottom: 0 }}>{item}</Paragraph>
@@ -1178,7 +1187,7 @@ export function AIWorkbenchPage() {
           ))
         )}
       </Space>
-    ) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无建议" />
+    ) : <ManagementState bordered={false} compact title="暂无建议" description="选择一个分析工件后查看建议动作。" />
   }
 
   return (
@@ -1341,9 +1350,16 @@ export function AIWorkbenchPage() {
                         <Button icon={<BranchesOutlined />} onClick={() => setThinkingOpen(true)}>
                           分析链路
                         </Button>
-                        <Button danger icon={<DeleteOutlined />} onClick={() => deleteSessionMutation.mutate(currentSession.id)}>
-                          归档
-                        </Button>
+                        <Popconfirm
+                          title="确认归档当前会话？"
+                          description="归档后会话将从当前工作台列表移除。"
+                          okButtonProps={{ danger: true, loading: deleteSessionMutation.isPending }}
+                          onConfirm={() => deleteSessionMutation.mutate(currentSession.id)}
+                        >
+                          <Button danger icon={<DeleteOutlined />} loading={deleteSessionMutation.isPending}>
+                            归档
+                          </Button>
+                        </Popconfirm>
                       </Space>
                     </Flex>
                   </div>
@@ -1502,7 +1518,13 @@ export function AIWorkbenchPage() {
                                 ) : null}
                               </Space>
                             ) : (
-                              <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="点击图中的节点，查看链路明细" />
+                              <ManagementState
+                                bordered={false}
+                                compact
+                                kind="select-scope"
+                                title="未选择图谱节点"
+                                description="点击图中的节点查看链路明细。"
+                              />
                             )}
                           </div>
                         </div>
@@ -1648,7 +1670,7 @@ export function AIWorkbenchPage() {
                         </Paragraph>
                         <div className="soha-ai-workbench__tool-stack">
                           {primarySkills.length === 0 ? (
-                            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="当前没有启用的 skills" />
+                            <ManagementState bordered={false} compact title="暂无启用 Skills" description="当前会话和全局配置没有可用 skills。" />
                           ) : primarySkills.map((skill) => {
                             const expanded = Boolean(skillsDisclosureExpanded[skill.id])
                             const selected = selectedSkillIds.includes(skill.id)
@@ -1789,7 +1811,7 @@ export function AIWorkbenchPage() {
         )}
       >
         {!currentSession ? (
-          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="先选择会话，再配置工具装配。" />
+          <ManagementState bordered={false} compact kind="select-scope" title="未选择会话" description="先选择会话，再配置工具装配。" />
         ) : (
           <Space orientation="vertical" size={16} style={{ width: '100%' }}>
             <Card size="small" title="有效执行策略">
@@ -1863,7 +1885,7 @@ export function AIWorkbenchPage() {
                 />
                 <div className="soha-ai-workbench__tool-stack">
                   {dataSources.length === 0 ? (
-                    <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无全局数据源" />
+                    <ManagementState bordered={false} compact title="暂无全局数据源" description="全局数据源配置完成后会在这里展示。" />
                   ) : dataSources.map((item) => (
                     <div key={item.id} className="soha-ai-workbench__tool-row">
                       <span>
@@ -1883,7 +1905,9 @@ export function AIWorkbenchPage() {
                   这里选择本会话允许暴露给 AI coding 客户端的企业 skills；不影响全局 registry 的启用状态。
                 </Paragraph>
                 <Space wrap>
-                  {globalSkills.length === 0 ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无全局 skills 配置" /> : globalSkills.map((item) => (
+                  {globalSkills.length === 0 ? (
+                    <ManagementState bordered={false} compact title="暂无全局 Skills 配置" description="全局 registry 尚未启用可分配的 skills。" />
+                  ) : globalSkills.map((item) => (
                     <Tag.CheckableTag
                       key={item.id}
                       checked={selectedSkillIds.includes(item.id)}
@@ -2037,7 +2061,7 @@ export function AIWorkbenchPage() {
             ) : null}
           </Space>
         ) : (
-          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="先选择会话，再运行显式分析。" />
+          <ManagementState bordered={false} compact kind="select-scope" title="未选择会话" description="先选择会话，再运行显式分析。" />
         )}
       </Modal>
 

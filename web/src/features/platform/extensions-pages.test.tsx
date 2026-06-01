@@ -50,10 +50,6 @@ vi.mock('@/components/platform-cluster-scope-hint', () => ({
   PlatformClusterScopeHint: () => <div data-testid="scope-hint">scope-hint</div>,
 }))
 
-vi.mock('@/components/page-header', () => ({
-  PageHeader: () => <div data-testid="page-header">page-header</div>,
-}))
-
 vi.mock('@/components/admin-table', () => ({
   AdminTable: ({
     columns,

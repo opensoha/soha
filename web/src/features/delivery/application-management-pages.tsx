@@ -1,11 +1,17 @@
 import { useEffect, useMemo, useState } from 'react'
 import { App, Button, Card, Descriptions, Form, Input, Modal, Popconfirm, Select, Space, Switch, Tabs, Tag, Typography } from 'antd'
-import { DeleteOutlined, EditOutlined, PlusOutlined } from '@ant-design/icons'
+import { DeleteOutlined, EditOutlined, EyeOutlined, PlusOutlined } from '@ant-design/icons'
 import type { TableColumnsType, TabsProps } from 'antd'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams } from 'react-router-dom'
 import { AdminTable } from '@/components/admin-table'
-import { PageHeader } from '@/components/page-header'
+import {
+  ManagementDetailHeader,
+  ManagementIconButton,
+  ManagementState,
+  ManagementRefreshButton,
+  ManagementTableToolbar,
+} from '@/components/management-list'
 import { StatusTag } from '@/components/status-tag'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth/permission-snapshot'
 import { api } from '@/services/api-client'
@@ -279,10 +285,11 @@ function ApplicationManagementCore() {
       render: (_: unknown, record: ApplicationEnvironment) => (
         <Space>
           {state.canManageBindings ? (
-            <Button
+            <ManagementIconButton
+              aria-label="编辑绑定"
               icon={<EditOutlined />}
-              type="text"
               size="small"
+              tooltip="编辑"
               onClick={() => {
                 state.setEditingBinding(record)
                 state.setBindingModalVisible(true)
@@ -290,8 +297,14 @@ function ApplicationManagementCore() {
             />
           ) : null}
           {state.canManageBindings ? (
-            <Popconfirm title="确认删除？" onConfirm={() => state.deleteBindingMutation.mutate(record.id)}>
-              <Button icon={<DeleteOutlined />} type="text" danger size="small" />
+            <Popconfirm title="确认删除？" onConfirm={() => state.deleteBindingMutation.mutate(record.id)} placement="topRight">
+              <ManagementIconButton
+                aria-label="删除绑定"
+                danger
+                icon={<DeleteOutlined />}
+                size="small"
+                tooltip="删除"
+              />
             </Popconfirm>
           ) : null}
         </Space>
@@ -304,32 +317,35 @@ function ApplicationManagementCore() {
       key: 'bindings',
       label: '环境选择与发布',
       children: (
-        <Card className="soha-detail-card" extra={state.canManageBindings ? <Button icon={<PlusOutlined />} type="primary" onClick={() => { state.setEditingBinding(null); state.setBindingModalVisible(true) }}>新建绑定</Button> : null}>
-          <Descriptions
-            column={1}
-            items={[
-              { key: 'group', label: '分组', children: state.selectedApplication.group || '-' },
-              { key: 'language', label: '语言', children: state.selectedApplication.language || '-' },
-              { key: 'status', label: '状态', children: <StatusTag value={state.selectedApplication.enabled ? 'enabled' : 'disabled'} /> },
-            ]}
-          />
-          <div style={{ marginTop: 16 }}>
-            <AdminTable
-              title={<Text strong>环境绑定列表</Text>}
-              columns={bindingColumns}
-              dataSource={state.filteredBindings}
-              rowKey="id"
-              loading={state.bindingsQuery.isLoading}
+        <Space direction="vertical" size={12} style={{ width: '100%' }}>
+          <Card className="soha-management-panel-card" extra={state.canManageBindings ? <Button icon={<PlusOutlined />} type="primary" onClick={() => { state.setEditingBinding(null); state.setBindingModalVisible(true) }}>新建绑定</Button> : null}>
+            <Descriptions
+              column={1}
+              items={[
+                { key: 'group', label: '分组', children: state.selectedApplication.group || '-' },
+                { key: 'language', label: '语言', children: state.selectedApplication.language || '-' },
+                { key: 'status', label: '状态', children: <StatusTag value={state.selectedApplication.enabled ? 'enabled' : 'disabled'} /> },
+              ]}
             />
-          </div>
-        </Card>
+          </Card>
+          <AdminTable
+            columnSettingIconOnly
+            columnSettingPlacement="header"
+            shellClassName="soha-management-table-shell"
+            title={<Text strong>环境绑定列表</Text>}
+            columns={bindingColumns}
+            dataSource={state.filteredBindings}
+            rowKey="id"
+            loading={state.bindingsQuery.isLoading}
+          />
+        </Space>
       ),
     },
     {
       key: 'pipelines',
       label: '构建与流水线配置',
       children: (
-        <Card className="soha-detail-card">
+        <Card className="soha-management-panel-card">
           <Descriptions
             column={1}
             items={[
@@ -516,19 +532,15 @@ function ApplicationManagementCore() {
 
   return (
     <div className="soha-page">
-      <PageHeader
+      <ManagementDetailHeader
         title={state.selectedApplication?.name || '应用管理详情'}
         description="维护当前应用的环境选择、发布绑定和流水线配置。"
         actions={<Button onClick={() => state.navigate('/application-management')}>返回应用列表</Button>}
       />
       {state.selectedApplication ? (
-        <Card className="soha-ai-hub-lane" title={state.selectedApplication.name}>
-          <Tabs items={tabs} />
-        </Card>
+        <Tabs items={tabs} />
       ) : (
-        <Card className="soha-ai-hub-lane">
-          <Text type="secondary">未找到当前应用，请返回应用列表重新选择。</Text>
-        </Card>
+        <ManagementState kind="not-found" description="未找到当前应用，请返回应用列表重新选择。" />
       )}
       {appModal}
       {bindingModal}
@@ -563,15 +575,20 @@ export function ApplicationManagementPage() {
       title: '操作',
       dataIndex: 'id',
       render: (_: unknown, record: DeliveryApplication) => (
-        <Space>
-          <Button type="text" size="small" onClick={() => state.navigate(`/application-management/${record.id}`)}>
-            打开
-          </Button>
+        <Space className="soha-row-action-icons" size={2}>
+          <ManagementIconButton
+            aria-label="打开应用"
+            icon={<EyeOutlined />}
+            size="small"
+            tooltip="打开"
+            onClick={() => state.navigate(`/application-management/${record.id}`)}
+          />
           {state.canUpdateApplication ? (
-            <Button
+            <ManagementIconButton
+              aria-label="编辑应用"
               icon={<EditOutlined />}
-              type="text"
               size="small"
+              tooltip="编辑"
               onClick={() => {
                 state.setEditingApp(record)
                 state.setBuildSources(record.buildSources ?? [])
@@ -580,8 +597,14 @@ export function ApplicationManagementPage() {
             />
           ) : null}
           {state.canDeleteApplication ? (
-            <Popconfirm title="确认删除？" onConfirm={() => state.deleteAppMutation.mutate(record.id)}>
-              <Button icon={<DeleteOutlined />} type="text" danger size="small" />
+            <Popconfirm title="确认删除？" onConfirm={() => state.deleteAppMutation.mutate(record.id)} placement="topRight">
+              <ManagementIconButton
+                aria-label="删除应用"
+                danger
+                icon={<DeleteOutlined />}
+                size="small"
+                tooltip="删除"
+              />
             </Popconfirm>
           ) : null}
         </Space>
@@ -591,19 +614,32 @@ export function ApplicationManagementPage() {
 
   return (
     <div className="soha-page">
-      <PageHeader
+      <AdminTable
+        columnSettingIconOnly
+        columnSettingPlacement="header"
+        shellClassName="soha-management-table-shell"
         title="应用管理"
-        description="负责新增应用、维护分组、环境选择和发布流水线配置。"
-        actions={state.canCreateApplication ? <Button icon={<PlusOutlined />} type="primary" onClick={() => { state.setEditingApp(null); state.setBuildSources(defaultBuildSources()); state.setAppModalVisible(true) }}>新建应用</Button> : null}
+        headerExtra={(
+          <ManagementTableToolbar>
+            {state.canCreateApplication ? (
+              <Button icon={<PlusOutlined />} type="primary" onClick={() => { state.setEditingApp(null); state.setBuildSources(defaultBuildSources()); state.setAppModalVisible(true) }}>
+                新建应用
+              </Button>
+            ) : null}
+            <ManagementRefreshButton
+              aria-label="刷新"
+              loading={state.applicationsQuery.isFetching}
+              tooltip="刷新"
+              onClick={() => void state.applicationsQuery.refetch()}
+            />
+          </ManagementTableToolbar>
+        )}
+        columns={appColumns}
+        dataSource={state.applicationsQuery.data?.data ?? []}
+        rowKey="id"
+        loading={state.applicationsQuery.isLoading}
+        scroll={{ x: 'max-content' }}
       />
-      <Card className="soha-ai-hub-lane" title="应用列表">
-        <AdminTable
-          columns={appColumns}
-          dataSource={state.applicationsQuery.data?.data ?? []}
-          rowKey="id"
-          loading={state.applicationsQuery.isLoading}
-        />
-      </Card>
     </div>
   )
 }

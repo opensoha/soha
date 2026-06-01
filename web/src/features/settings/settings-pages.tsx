@@ -4,16 +4,15 @@ import {
   Alert,
   Button,
   Card,
-  Empty,
   Form,
   Input,
   InputNumber,
   Modal,
+  Popconfirm,
   Select,
   Space,
   Spin,
   Switch,
-  Table,
   Tag,
   message,
 } from "antd";
@@ -22,15 +21,28 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocation, useNavigate } from "react-router-dom";
 import { AdminTable } from "@/components/admin-table";
 import {
+  ManagementDetailHeader,
+  ManagementIconButton,
+  ManagementState,
+  ManagementTableToolbar,
+} from "@/components/management-list";
+import {
   hasPermission,
   usePermissionSnapshot,
 } from "@/features/auth/permission-snapshot";
-import { PageHeader } from "@/components/page-header";
 import { api } from "@/services/api-client";
 import { StatusTag } from "@/components/status-tag";
 import { formatDateTime } from "@/utils/time";
 import { tableColumnPresets } from "@/utils/table-columns";
 import type { ApiResponse, BrandingSettings } from "@/types";
+import {
+  ArrowDownOutlined,
+  ArrowUpOutlined,
+  CheckCircleOutlined,
+  DeleteOutlined,
+  EditOutlined,
+  StarOutlined,
+} from "@ant-design/icons";
 
 const WIDE_FORM_LAYOUT = {
   labelAlign: "left" as const,
@@ -313,7 +325,7 @@ export function BrandingSettingsPage({
   if (!canViewBrandingSettings) {
     return (
       <div className="soha-page">
-        <SettingsCard>当前账号没有查看品牌设置的权限。</SettingsCard>
+        <ManagementState kind="no-permission" description="当前账号没有查看品牌设置的权限。" />
       </div>
     );
   }
@@ -395,7 +407,7 @@ export function BrandingSettingsPage({
 
   return (
     <div className="soha-page">
-      <PageHeader
+      <ManagementDetailHeader
         title="品牌设置"
         description="配置品牌 Logo、Favicon 与网页标题。"
       />
@@ -589,7 +601,7 @@ export function LoginSettingsPage({
   if (!canViewLoginSettings) {
     return (
       <div className="soha-page">
-        <SettingsCard>当前账号没有查看登陆设置的权限。</SettingsCard>
+        <ManagementState kind="no-permission" description="当前账号没有查看登陆设置的权限。" />
       </div>
     );
   }
@@ -636,21 +648,22 @@ export function LoginSettingsPage({
       dataIndex: "id",
       render: (_: unknown, record: LoginProviderSettings) =>
         canManageLoginSettings ? (
-          <Space>
-            <Button
+          <Space className="soha-row-action-icons">
+            <ManagementIconButton
+              aria-label="编辑登录源"
+              tooltip="编辑"
+              icon={<EditOutlined />}
               size="small"
-              type="text"
               onClick={() => {
                 setEditingProvider(record);
                 setProviderModalVisible(true);
               }}
-            >
-              编辑
-            </Button>
-            <Button
-              size="small"
-              type="text"
-              onClick={() => {
+            />
+            <Popconfirm
+              title="确认删除登录源？"
+              description="删除后会立即保存登录设置。"
+              okButtonProps={{ danger: true, loading: saveMutation.isPending }}
+              onConfirm={() => {
                 const nextProviders = providers.filter(
                   (item) => item.id !== record.id,
                 );
@@ -663,21 +676,28 @@ export function LoginSettingsPage({
                 });
               }}
             >
-              删除
-            </Button>
-            {settings?.defaultProviderId !== record.id ? (
-              <Button
+              <ManagementIconButton
+                aria-label="删除登录源"
+                tooltip="删除"
+                danger
+                icon={<DeleteOutlined />}
+                loading={saveMutation.isPending}
                 size="small"
-                type="text"
+              />
+            </Popconfirm>
+            {settings?.defaultProviderId !== record.id ? (
+              <ManagementIconButton
+                aria-label="设为默认登录源"
+                tooltip="设为默认"
+                icon={<StarOutlined />}
+                size="small"
                 onClick={() =>
                   saveMutation.mutate({
                     providers,
                     defaultProviderId: record.id,
                   })
                 }
-              >
-                设为默认
-              </Button>
+              />
             ) : null}
           </Space>
         ) : (
@@ -691,7 +711,7 @@ export function LoginSettingsPage({
         title="登陆设置"
         extra={
           canManageLoginSettings ? (
-            <div className="soha-page-toolbar">
+            <ManagementTableToolbar>
               <Button
                 size="small"
                 type="primary"
@@ -702,23 +722,20 @@ export function LoginSettingsPage({
               >
                 新增登录源
               </Button>
-            </div>
+            </ManagementTableToolbar>
           ) : null
         }
       >
-        <Table
+        <AdminTable
+          shellClassName="soha-management-table-shell"
+          columnSettingIconOnly
+          columnSettingPlacement="header"
           rowKey="id"
+          tableSize="small"
           pagination={false}
           dataSource={providers}
           columns={providerColumns}
-          locale={{
-            emptyText: (
-              <Empty
-                image={Empty.PRESENTED_IMAGE_SIMPLE}
-                description="暂无登录源配置"
-              />
-            ),
-          }}
+          empty={<ManagementState bordered={false} compact title="暂无登录源配置" description="新增登录源后，登录入口会按启用状态展示。" />}
         />
       </SettingsCard>
       <Modal
@@ -729,7 +746,7 @@ export function LoginSettingsPage({
           setEditingProvider(null);
         }}
         footer={null}
-        destroyOnClose
+        destroyOnHidden
       >
         <Form
           form={providerForm}
@@ -823,7 +840,7 @@ export function LoginSettingsPage({
                       type="warning"
                       showIcon
                       style={{ marginBottom: 16 }}
-                      message="SAML 当前为配置态"
+                      title="SAML 当前为配置态"
                       description="本次改动已支持 SAML 配置保存和菜单/登录入口展示，但后端断言消费与 ACS 运行链路尚未启用。"
                     />
                   ) : null}
@@ -980,7 +997,7 @@ export function MonitoringSettingsPage() {
   if (!canViewMonitoringSettings) {
     return (
       <div className="soha-page">
-        <SettingsCard>当前账号没有查看监控设置的权限。</SettingsCard>
+        <ManagementState kind="no-permission" description="当前账号没有查看监控设置的权限。" />
       </div>
     );
   }
@@ -989,7 +1006,7 @@ export function MonitoringSettingsPage() {
 
   return (
     <div className="soha-page">
-      <PageHeader
+      <ManagementDetailHeader
         title="监控设置"
         description="配置 Prometheus 地址、默认查询范围和访问凭证。"
       />
@@ -1690,7 +1707,7 @@ export function AISettingsPage({ embedded = false }: SettingsPageProps = {}) {
   if (!canViewAISettings) {
     return (
       <div className="soha-page">
-        <SettingsCard>当前账号没有查看 AI 设置的权限。</SettingsCard>
+        <ManagementState kind="no-permission" description="当前账号没有查看 AI 设置的权限。" />
       </div>
     );
   }
@@ -1775,38 +1792,36 @@ export function AISettingsPage({ embedded = false }: SettingsPageProps = {}) {
       ...tableColumnPresets.action,
       title: "操作",
       dataIndex: "id",
-      render: (_: unknown, record: DataSource) => (
-        <Space>
-          {canManageAISettings ? (
-            <Button
-              size="small"
-              variant="outlined"
+      render: (_: unknown, record: DataSource) =>
+        canManageAISettings ? (
+          <Space className="soha-row-action-icons">
+            <ManagementIconButton
+              aria-label="校验数据源连接"
+              tooltip="校验连接"
+              icon={<CheckCircleOutlined />}
               loading={
                 validateDataSourceMutation.isPending &&
                 validateDataSourceMutation.variables === record.id
               }
-              onClick={() => validateDataSourceMutation.mutate(record.id)}
-            >
-              校验连接
-            </Button>
-          ) : null}
-          {canManageAISettings ? (
-            <Button
               size="small"
-              type="text"
+              onClick={() => validateDataSourceMutation.mutate(record.id)}
+            />
+            <ManagementIconButton
+              aria-label="编辑数据源"
+              tooltip="编辑"
+              icon={<EditOutlined />}
+              size="small"
               onClick={() => {
                 setEditingDataSource(record);
                 setDataSourceSourceKind(record.sourceKind);
                 setDataSourceBackendType(record.backendType);
                 setDataSourceModalVisible(true);
               }}
-            >
-              编辑
-            </Button>
-          ) : null}
-          {!canManageAISettings ? "-" : null}
-        </Space>
-      ),
+            />
+          </Space>
+        ) : (
+          "-"
+        ),
     },
   ];
 
@@ -1842,16 +1857,16 @@ export function AISettingsPage({ embedded = false }: SettingsPageProps = {}) {
       dataIndex: "id",
       render: (_: unknown, record: AnalysisProfile) =>
         canManageAISettings ? (
-          <Button
+          <ManagementIconButton
+            aria-label="编辑分析模板"
+            tooltip="编辑"
+            icon={<EditOutlined />}
             size="small"
-            type="text"
             onClick={() => {
               setEditingProfile(record);
               setProfileModalVisible(true);
             }}
-          >
-            编辑
-          </Button>
+          />
         ) : (
           "-"
         ),
@@ -1877,16 +1892,16 @@ export function AISettingsPage({ embedded = false }: SettingsPageProps = {}) {
       dataIndex: "id",
       render: (_: unknown, record: AutomationPolicy) =>
         canManageAISettings ? (
-          <Button
+          <ManagementIconButton
+            aria-label="编辑自动化策略"
+            tooltip="编辑"
+            icon={<EditOutlined />}
             size="small"
-            type="text"
             onClick={() => {
               setEditingPolicy(record);
               setPolicyModalVisible(true);
             }}
-          >
-            编辑
-          </Button>
+          />
         ) : (
           "-"
         ),
@@ -1925,24 +1940,24 @@ export function AISettingsPage({ embedded = false }: SettingsPageProps = {}) {
       dataIndex: "id",
       render: (_: unknown, record: AIProviderConnection) =>
         canManageAISettings ? (
-          <Space>
-            <Button
+          <Space className="soha-row-action-icons">
+            <ManagementIconButton
               data-testid={`ai-provider-edit-${record.id}`}
+              aria-label="编辑 Provider 连接"
+              tooltip="编辑"
+              icon={<EditOutlined />}
               size="small"
-              type="text"
               onClick={() => {
                 setEditingProvider(record);
                 setProviderModels([]);
                 setProviderModalVisible(true);
               }}
-            >
-              编辑
-            </Button>
-            <Button
-              data-testid={`ai-provider-delete-${record.id}`}
-              size="small"
-              type="text"
-              onClick={() => {
+            />
+            <Popconfirm
+              title="确认删除 Provider 连接？"
+              description="删除后会立即保存 AI 设置。"
+              okButtonProps={{ danger: true, loading: saveMutation.isPending }}
+              onConfirm={() => {
                 saveMutation.mutate({
                   providers: (settings?.providers ?? []).filter(
                     (item) => item.id !== record.id,
@@ -1956,22 +1971,30 @@ export function AISettingsPage({ embedded = false }: SettingsPageProps = {}) {
                 });
               }}
             >
-              删除
-            </Button>
-            {settings?.defaultProviderId !== record.id ? (
-              <Button
-                data-testid={`ai-provider-default-${record.id}`}
+              <ManagementIconButton
+                data-testid={`ai-provider-delete-${record.id}`}
+                aria-label="删除 Provider 连接"
+                tooltip="删除"
+                danger
+                icon={<DeleteOutlined />}
+                loading={saveMutation.isPending}
                 size="small"
-                type="text"
+              />
+            </Popconfirm>
+            {settings?.defaultProviderId !== record.id ? (
+              <ManagementIconButton
+                data-testid={`ai-provider-default-${record.id}`}
+                aria-label="设为默认 Provider"
+                tooltip="设为默认"
+                icon={<StarOutlined />}
+                size="small"
                 onClick={() => {
                   saveMutation.mutate({
                     providers: settings?.providers ?? [],
                     defaultProviderId: record.id,
                   });
                 }}
-              >
-                设为默认
-              </Button>
+              />
             ) : null}
           </Space>
         ) : (
@@ -1985,8 +2008,8 @@ export function AISettingsPage({ embedded = false }: SettingsPageProps = {}) {
       <SettingsCard title="Provider Connections">
         <div
           data-testid="ai-provider-connections-actions"
-          className="soha-form-actions"
-          style={{ marginBottom: 12 }}
+          className="soha-management-table-toolbar-actions"
+          style={{ justifyContent: "flex-end", marginBottom: 12 }}
         >
           {canManageAISettings ? (
             <Button
@@ -2003,20 +2026,17 @@ export function AISettingsPage({ embedded = false }: SettingsPageProps = {}) {
           ) : null}
         </div>
         <div data-testid="ai-provider-table-shell">
-          <Table
+          <AdminTable
             data-testid="ai-provider-table"
+            shellClassName="soha-management-table-shell"
+            columnSettingIconOnly
+            columnSettingPlacement="header"
             rowKey="id"
+            tableSize="small"
             pagination={false}
             dataSource={settings?.providers ?? []}
             columns={providerColumns}
-            locale={{
-              emptyText: (
-                <Empty
-                  image={Empty.PRESENTED_IMAGE_SIMPLE}
-                  description="暂无 Provider 连接"
-                />
-              ),
-            }}
+            empty={<ManagementState bordered={false} compact title="暂无 Provider 连接" description="新增 Provider 后，AI 工作台可选择对应模型执行分析。" />}
           />
         </div>
       </SettingsCard>
@@ -2034,7 +2054,7 @@ export function AISettingsPage({ embedded = false }: SettingsPageProps = {}) {
         setEditingProvider(null);
         setProviderModels([]);
       }}
-      destroyOnClose
+      destroyOnHidden
       modalRender={(node) => <div data-testid="ai-provider-modal">{node}</div>}
     >
       <Form
@@ -2268,10 +2288,11 @@ export function AISettingsPage({ embedded = false }: SettingsPageProps = {}) {
           控制；它们决定工作台可装配的默认能力集合，但不会自动绕过会话级选择与预算限制。
         </div>
         <AdminTable
+          shellClassName="soha-management-table-shell"
           rowKey="id"
           dataSource={skillsRegistryDraft}
           empty={
-            <Empty description="还没有全局 skills，可先新增 MCP、logs、metrics、traces 这类技能条目。" />
+            <ManagementState bordered={false} compact title="暂无全局 Skills" description="可先新增 MCP、logs、metrics、traces 这类技能条目。" />
           }
           columns={[
             { title: "ID", dataIndex: "id" },
@@ -2325,10 +2346,12 @@ export function AISettingsPage({ embedded = false }: SettingsPageProps = {}) {
               dataIndex: "id",
               render: (_: unknown, record: AISkillSetting) =>
                 canManageAISettings ? (
-                  <Space>
-                    <Button
+                  <Space className="soha-row-action-icons">
+                    <ManagementIconButton
+                      aria-label="上移 Skill"
+                      tooltip="上移"
+                      icon={<ArrowUpOutlined />}
                       size="small"
-                      type="text"
                       disabled={skillsRegistryDraft[0]?.id === record.id}
                       onClick={() => {
                         setSkillsRegistryDraft((current) => {
@@ -2344,12 +2367,12 @@ export function AISettingsPage({ embedded = false }: SettingsPageProps = {}) {
                           return next;
                         });
                       }}
-                    >
-                      上移
-                    </Button>
-                    <Button
+                    />
+                    <ManagementIconButton
+                      aria-label="下移 Skill"
+                      tooltip="下移"
+                      icon={<ArrowDownOutlined />}
                       size="small"
-                      type="text"
                       disabled={
                         skillsRegistryDraft[skillsRegistryDraft.length - 1]
                           ?.id === record.id
@@ -2369,9 +2392,7 @@ export function AISettingsPage({ embedded = false }: SettingsPageProps = {}) {
                           return next;
                         });
                       }}
-                    >
-                      下移
-                    </Button>
+                    />
                   </Space>
                 ) : (
                   "-"
@@ -2383,29 +2404,35 @@ export function AISettingsPage({ embedded = false }: SettingsPageProps = {}) {
               dataIndex: "id",
               render: (_: unknown, record: AISkillSetting) =>
                 canManageAISettings ? (
-                  <Space>
-                    <Button
+                  <Space className="soha-row-action-icons">
+                    <ManagementIconButton
+                      aria-label="编辑 Skill"
+                      tooltip="编辑"
+                      icon={<EditOutlined />}
                       size="small"
-                      type="text"
                       onClick={() => {
                         setEditingSkill(record);
                         setSkillsModalVisible(true);
                       }}
-                    >
-                      编辑
-                    </Button>
-                    <Button
-                      size="small"
-                      type="text"
-                      danger
-                      onClick={() =>
+                    />
+                    <Popconfirm
+                      title="确认删除 Skill？"
+                      description="删除后会从当前草稿列表移除，保存设置后生效。"
+                      okButtonProps={{ danger: true }}
+                      onConfirm={() =>
                         setSkillsRegistryDraft((current) =>
                           current.filter((item) => item.id !== record.id),
                         )
                       }
                     >
-                      删除
-                    </Button>
+                      <ManagementIconButton
+                        aria-label="删除 Skill"
+                        tooltip="删除"
+                        danger
+                        icon={<DeleteOutlined />}
+                        size="small"
+                      />
+                    </Popconfirm>
                   </Space>
                 ) : (
                   "-"
@@ -2433,6 +2460,7 @@ export function AISettingsPage({ embedded = false }: SettingsPageProps = {}) {
         }
       >
         <AdminTable
+          shellClassName="soha-management-table-shell"
           columns={dataSourceColumns}
           dataSource={dataSources}
           rowKey="id"
@@ -2456,6 +2484,7 @@ export function AISettingsPage({ embedded = false }: SettingsPageProps = {}) {
         }
       >
         <AdminTable
+          shellClassName="soha-management-table-shell"
           columns={profileColumns}
           dataSource={profiles}
           rowKey="id"
@@ -2479,6 +2508,7 @@ export function AISettingsPage({ embedded = false }: SettingsPageProps = {}) {
         }
       >
         <AdminTable
+          shellClassName="soha-management-table-shell"
           columns={policyColumns}
           dataSource={policies}
           rowKey="id"
@@ -2496,7 +2526,7 @@ export function AISettingsPage({ embedded = false }: SettingsPageProps = {}) {
           setSkillsModalVisible(false);
           setEditingSkill(null);
         }}
-        destroyOnClose
+        destroyOnHidden
       >
         <Form
           {...DEFAULT_FORM_LAYOUT}
@@ -2651,7 +2681,7 @@ export function AISettingsPage({ embedded = false }: SettingsPageProps = {}) {
           setDataSourceSourceKind("logs");
           setDataSourceBackendType("es");
         }}
-        destroyOnClose
+        destroyOnHidden
       >
         <Form
           {...DEFAULT_FORM_LAYOUT}
@@ -2765,7 +2795,7 @@ export function AISettingsPage({ embedded = false }: SettingsPageProps = {}) {
               type="info"
               showIcon
               style={{ marginBottom: 16 }}
-              message="SkyWalking 作为 trace 查询后端"
+              title="SkyWalking 作为 trace 查询后端"
               description="OpenTelemetry 是采集/导出标准，不是直接查询 backend。这里的 traces backend 请选择 Jaeger 或 SkyWalking，并填它们各自的查询入口。"
             />
           ) : null}
@@ -2931,7 +2961,7 @@ export function AISettingsPage({ embedded = false }: SettingsPageProps = {}) {
           setProfileModalVisible(false);
           setEditingProfile(null);
         }}
-        destroyOnClose
+        destroyOnHidden
       >
         <Form
           {...DEFAULT_FORM_LAYOUT}
@@ -3057,7 +3087,7 @@ export function AISettingsPage({ embedded = false }: SettingsPageProps = {}) {
           setPolicyModalVisible(false);
           setEditingPolicy(null);
         }}
-        destroyOnClose
+        destroyOnHidden
       >
         <Form
           {...DEFAULT_FORM_LAYOUT}
@@ -3173,7 +3203,7 @@ export function AISettingsPage({ embedded = false }: SettingsPageProps = {}) {
 
   return (
     <div className="soha-page">
-      <PageHeader
+      <ManagementDetailHeader
         title="AI 设置"
         description="配置 AI 提供商、模型、API Key 与基础接入地址。"
       />
@@ -3199,7 +3229,7 @@ export function SettingsCenterPage() {
   if (permissionSnapshotQuery.isLoading) {
     return (
       <div className="soha-page">
-        <PageHeader title="设置中心" description="集中配置登陆与品牌能力。" />
+        <ManagementDetailHeader title="设置中心" description="集中配置登陆与品牌能力。" />
         <Card>
           <Spin size="large" />
         </Card>
@@ -3210,8 +3240,8 @@ export function SettingsCenterPage() {
   if (!canViewLoginSettings && !canViewBrandingSettings) {
     return (
       <div className="soha-page">
-        <PageHeader title="设置中心" description="集中配置登陆与品牌能力。" />
-        <SettingsCard>当前账号没有可访问的设置页权限。</SettingsCard>
+        <ManagementDetailHeader title="设置中心" description="集中配置登陆与品牌能力。" />
+        <ManagementState kind="no-permission" description="当前账号没有可访问的设置页权限。" />
       </div>
     );
   }
@@ -3226,7 +3256,7 @@ export function SettingsCenterPage() {
 
   return (
     <div className="soha-page">
-      <PageHeader title="设置中心" description="集中配置登陆与品牌能力。" />
+      <ManagementDetailHeader title="设置中心" description="集中配置登陆与品牌能力。" />
       <SettingsCard title="可用设置">
         <Space orientation="vertical" size={12}>
           {canViewLoginSettings ? (

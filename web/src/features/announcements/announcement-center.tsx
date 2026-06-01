@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from 'react'
 import {
   Badge,
   Button,
-  Empty,
   List,
   Modal,
   Popover,
@@ -14,6 +13,7 @@ import {
 } from 'antd'
 import { BellOutlined } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { ManagementState } from '@/components/management-list'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth/permission-snapshot'
 import { api } from '@/services/api-client'
 import { formatDateTime } from '@/utils/time'
@@ -71,7 +71,7 @@ function AnnouncementList({
   readingID?: string | null
 }) {
   if (items.length === 0) {
-    return <Empty description="暂无公告" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+    return <ManagementState bordered={false} compact title="暂无公告" description="当前没有需要处理的公告。" />
   }
 
   return (
@@ -108,7 +108,7 @@ function AnnouncementList({
               </Space>
             )}
             description={(
-              <Space direction="vertical" size={4} style={{ width: '100%' }}>
+              <Space orientation="vertical" size={4} style={{ width: '100%' }}>
                 {item.summary ? <Text>{item.summary}</Text> : null}
                 <Paragraph style={{ marginBottom: 0, whiteSpace: 'pre-wrap' }} ellipsis={{ rows: 2, expandable: true, symbol: '展开' }}>
                   {item.content}
@@ -239,7 +239,7 @@ export function AnnouncementBell() {
         destroyOnHidden
       >
         {modalItem ? (
-          <Space direction="vertical" size={12} style={{ width: '100%' }}>
+          <Space orientation="vertical" size={12} style={{ width: '100%' }}>
             <Space size={8} wrap>
               {modalItem.sticky ? <Tag color="purple">置顶</Tag> : null}
               {levelTag(modalItem.level)}

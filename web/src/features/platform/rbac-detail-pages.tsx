@@ -1,9 +1,9 @@
 import { lazy, Suspense } from 'react'
 import type { ReactNode } from 'react'
-import { Alert, Button, Card, Empty, Space, Spin, Tabs, Tag, Typography } from 'antd'
+import { Button, Card, Space, Spin, Tabs, Tag, Typography } from 'antd'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { PageHeader } from '@/components/page-header'
+import { ManagementDetailHeader, ManagementState } from '@/components/management-list'
 import { BooleanTag } from '@/components/status-tag'
 import { ResourceMetaOverview, useResourceYAMLState } from '@/features/platform/configuration-detail-pages'
 import { api } from '@/services/api-client'
@@ -57,7 +57,7 @@ function renderRuleSummaries(values: string[] | undefined, emptyLabel: string) {
     return <Text type="secondary">{emptyLabel}</Text>
   }
   return (
-    <Space direction="vertical" style={{ width: '100%' }} size={8}>
+    <Space orientation="vertical" style={{ width: '100%' }} size={8}>
       {values.map((value) => (
         <Card key={value} className="soha-detail-card" bodyStyle={{ padding: 12 }}>
           <Paragraph style={{ margin: 0 }}>{value}</Paragraph>
@@ -114,12 +114,12 @@ function RBACDetailPage<T>({
   const yamlState = useResourceYAMLState(yamlPath, yamlResourceKey, resourceName, namespace)
 
   if (!detail) {
-    return <Empty description={emptyDescription} />
+    return <div className="soha-page"><ManagementState kind="not-found" description={emptyDescription} /></div>
   }
 
   return (
     <div className="soha-page">
-      <PageHeader
+      <ManagementDetailHeader
         title={detailTitle}
         description={detailDescription}
         actions={<Button onClick={() => navigate(backPath)}>{localeCode === 'zh_CN' ? '返回列表' : 'Back to list'}</Button>}
@@ -136,7 +136,7 @@ function RBACDetailPage<T>({
             key: 'yaml',
             label: yamlTitle,
             children: isAgentCluster || !yamlPath ? (
-              <Alert showIcon type="info" description={yamlUnsupportedDescription(localeCode)} />
+              <ManagementState kind="unsupported" description={yamlUnsupportedDescription(localeCode)} />
             ) : (
               <Suspense fallback={<Card className="soha-detail-card"><Spin size="large" /></Card>}>
                 <div style={{ height: 620 }}>

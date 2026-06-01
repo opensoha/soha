@@ -1,10 +1,11 @@
 import { useMemo, useState } from 'react'
 import { Alert, App, Avatar, Button, Col, Form, Input, InputNumber, Modal, Popconfirm, Row, Select, Space, Switch, Tag, Typography } from 'antd'
-import { DeleteOutlined, EditOutlined, PlusOutlined } from '@ant-design/icons'
+import { DeleteOutlined, EditOutlined, FolderOpenOutlined, PlusOutlined } from '@ant-design/icons'
 import type { TableColumnsType } from 'antd'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Navigate } from 'react-router-dom'
 import { AdminTable } from '@/components/admin-table'
+import { ManagementIconButton, ManagementState, ManagementTableToolbar } from '@/components/management-list'
 import { consolePermissionGroups, consolePermissionLabelMap } from '@/features/auth/permission-catalog'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth/permission-snapshot'
 import { StatusTag } from '@/components/status-tag'
@@ -431,12 +432,24 @@ function ScopeGrantManager({
       title: '操作',
       dataIndex: 'id',
       render: (_: unknown, record: ScopeGrant) => (
-        <Space>
+        <Space className="soha-row-action-icons">
           {canManageScopeGrants ? (
             <>
-              <Button icon={<EditOutlined />} type="text" size="small" onClick={() => { setEditing(record); setGrantModalVisible(true) }} />
+              <ManagementIconButton
+                aria-label="编辑授权项"
+                icon={<EditOutlined />}
+                size="small"
+                tooltip="编辑"
+                onClick={() => { setEditing(record); setGrantModalVisible(true) }}
+              />
               <Popconfirm title="确认删除？" onConfirm={() => deleteMutation.mutate(record.id)}>
-                <Button icon={<DeleteOutlined />} type="text" danger size="small" />
+                <ManagementIconButton
+                  aria-label="删除授权项"
+                  danger
+                  icon={<DeleteOutlined />}
+                  size="small"
+                  tooltip="删除"
+                />
               </Popconfirm>
             </>
           ) : '-'}
@@ -475,8 +488,8 @@ function ScopeGrantManager({
         cancelText="取消"
         confirmLoading={createMutation.isPending || updateMutation.isPending}
         width={760}
-        maskClosable={false}
-        destroyOnClose
+        destroyOnHidden
+        mask={{ closable: false }}
         styles={{ body: { maxHeight: '65vh', overflow: 'auto' } }}
       >
         <Form
@@ -678,14 +691,36 @@ export function AccessUsersPage() {
       width: 164,
       dataIndex: 'id',
       render: (_: unknown, record: AccessUser) => (
-        <Space>
+        <Space className="soha-row-action-icons">
           {canManageUsers || canManageScopeGrants ? (
             <>
-              {canManageScopeGrants ? <Button type="text" size="small" onClick={() => setGrantUser(record)}>授权范围</Button> : null}
-              {canManageUsers ? <Button icon={<EditOutlined />} type="text" size="small" onClick={() => { setEditing(record); setModalVisible(true) }} /> : null}
+              {canManageScopeGrants ? (
+                <ManagementIconButton
+                  aria-label="授权范围"
+                  icon={<FolderOpenOutlined />}
+                  size="small"
+                  tooltip="授权范围"
+                  onClick={() => setGrantUser(record)}
+                />
+              ) : null}
+              {canManageUsers ? (
+                <ManagementIconButton
+                  aria-label="编辑用户"
+                  icon={<EditOutlined />}
+                  size="small"
+                  tooltip="编辑"
+                  onClick={() => { setEditing(record); setModalVisible(true) }}
+                />
+              ) : null}
               {canManageUsers ? (
                 <Popconfirm title="确认删除？" onConfirm={() => deleteMutation.mutate(record.id)}>
-                  <Button icon={<DeleteOutlined />} type="text" danger size="small" />
+                  <ManagementIconButton
+                    aria-label="删除用户"
+                    danger
+                    icon={<DeleteOutlined />}
+                    size="small"
+                    tooltip="删除"
+                  />
                 </Popconfirm>
               ) : null}
             </>
@@ -696,12 +731,15 @@ export function AccessUsersPage() {
   ]
 
   if (!canViewUsers) {
-    return <div className="soha-page">当前账号没有用户管理权限。</div>
+    return <div className="soha-page"><ManagementState kind="no-permission" description="当前账号没有用户管理权限。" /></div>
   }
 
   return (
     <div className="soha-page">
       <AdminTable
+        columnSettingIconOnly
+        columnSettingPlacement="header"
+        shellClassName="soha-management-table-shell"
         title="用户管理"
         className="soha-access-table"
         toolbar={(
@@ -718,7 +756,7 @@ export function AccessUsersPage() {
           </div>
         )}
         toolbarExtra={canManageUsers ? (
-          <div className="soha-page-toolbar">
+          <ManagementTableToolbar>
             <Button
               size="small"
               icon={<PlusOutlined />}
@@ -730,7 +768,7 @@ export function AccessUsersPage() {
             >
               添加用户
             </Button>
-          </div>
+          </ManagementTableToolbar>
         ) : null}
         columns={columns}
         dataSource={filteredUsers}
@@ -753,8 +791,8 @@ export function AccessUsersPage() {
         cancelText="取消"
         confirmLoading={createMutation.isPending || updateMutation.isPending}
         width={860}
-        maskClosable={false}
-        destroyOnClose
+        destroyOnHidden
+        mask={{ closable: false }}
         styles={{ body: { maxHeight: '70vh', overflow: 'auto' } }}
       >
         <Form
@@ -863,12 +901,24 @@ export function AccessRolesPage() {
       title: '操作',
       dataIndex: 'id',
       render: (_: unknown, record: AccessRole) => (
-        <Space>
+        <Space className="soha-row-action-icons">
           {canManageRoles ? (
             <>
-              <Button icon={<EditOutlined />} type="text" size="small" onClick={() => crud.openEdit(record)} />
+              <ManagementIconButton
+                aria-label="编辑角色"
+                icon={<EditOutlined />}
+                size="small"
+                tooltip="编辑"
+                onClick={() => crud.openEdit(record)}
+              />
               <Popconfirm title="确认删除？" onConfirm={() => crud.deleteMutation.mutate(record.id)}>
-                <Button icon={<DeleteOutlined />} type="text" danger size="small" />
+                <ManagementIconButton
+                  aria-label="删除角色"
+                  danger
+                  icon={<DeleteOutlined />}
+                  size="small"
+                  tooltip="删除"
+                />
               </Popconfirm>
             </>
           ) : '-'}
@@ -887,7 +937,7 @@ export function AccessRolesPage() {
   }
 
   if (!canViewRoles) {
-    return <div className="soha-page">当前账号没有角色管理权限。</div>
+    return <div className="soha-page"><ManagementState kind="no-permission" description="当前账号没有角色管理权限。" /></div>
   }
 
   return (
@@ -896,17 +946,20 @@ export function AccessRolesPage() {
         className="mb-4"
         type="info"
         showIcon
-        message="角色控制台权限通过 permissionKeys 提交。当前环境若尚未部署后端映射与持久化，保存后可能不会立即回显该字段。"
+        title="角色控制台权限通过 permissionKeys 提交。当前环境若尚未部署后端映射与持久化，保存后可能不会立即回显该字段。"
       />
       <AdminTable
+        columnSettingIconOnly
+        columnSettingPlacement="header"
+        shellClassName="soha-management-table-shell"
         title="角色管理"
         className="soha-access-table"
         toolbarExtra={canManageRoles ? (
-          <div className="soha-page-toolbar">
+          <ManagementTableToolbar>
             <Button size="small" icon={<PlusOutlined />} type="primary" onClick={crud.openCreate}>
               添加角色
             </Button>
-          </div>
+          </ManagementTableToolbar>
         ) : null}
         columns={columns}
         dataSource={crud.data}
@@ -929,8 +982,8 @@ export function AccessRolesPage() {
         cancelText="取消"
         confirmLoading={crud.isSaving}
         width={720}
-        maskClosable={false}
-        destroyOnClose
+        destroyOnHidden
+        mask={{ closable: false }}
       >
         <Form
           form={form}
@@ -1000,14 +1053,36 @@ export function AccessTeamsPage() {
       title: '操作',
       dataIndex: 'id',
       render: (_: unknown, record: AccessTeam) => (
-        <Space>
+        <Space className="soha-row-action-icons">
           {canManageGroups || canManageScopeGrants ? (
             <>
-              {canManageScopeGrants ? <Button type="text" size="small" onClick={() => setGrantTeam(record)}>授权范围</Button> : null}
-              {canManageGroups ? <Button icon={<EditOutlined />} type="text" size="small" onClick={() => crud.openEdit(record)} /> : null}
+              {canManageScopeGrants ? (
+                <ManagementIconButton
+                  aria-label="授权范围"
+                  icon={<FolderOpenOutlined />}
+                  size="small"
+                  tooltip="授权范围"
+                  onClick={() => setGrantTeam(record)}
+                />
+              ) : null}
+              {canManageGroups ? (
+                <ManagementIconButton
+                  aria-label="编辑用户组"
+                  icon={<EditOutlined />}
+                  size="small"
+                  tooltip="编辑"
+                  onClick={() => crud.openEdit(record)}
+                />
+              ) : null}
               {canManageGroups ? (
                 <Popconfirm title="确认删除？" onConfirm={() => crud.deleteMutation.mutate(record.id)}>
-                  <Button icon={<DeleteOutlined />} type="text" danger size="small" />
+                  <ManagementIconButton
+                    aria-label="删除用户组"
+                    danger
+                    icon={<DeleteOutlined />}
+                    size="small"
+                    tooltip="删除"
+                  />
                 </Popconfirm>
               ) : null}
             </>
@@ -1029,20 +1104,23 @@ export function AccessTeamsPage() {
   }
 
   if (!canViewGroups) {
-    return <div className="soha-page">当前账号没有用户组管理权限。</div>
+    return <div className="soha-page"><ManagementState kind="no-permission" description="当前账号没有用户组管理权限。" /></div>
   }
 
   return (
     <div className="soha-page">
       <AdminTable
+        columnSettingIconOnly
+        columnSettingPlacement="header"
+        shellClassName="soha-management-table-shell"
         title="用户组管理"
         className="soha-access-table"
         toolbarExtra={canManageGroups ? (
-          <div className="soha-page-toolbar">
+          <ManagementTableToolbar>
             <Button size="small" icon={<PlusOutlined />} type="primary" onClick={crud.openCreate}>
               添加用户组
             </Button>
-          </div>
+          </ManagementTableToolbar>
         ) : null}
         columns={columns}
         dataSource={crud.data}
@@ -1065,8 +1143,8 @@ export function AccessTeamsPage() {
         cancelText="取消"
         confirmLoading={crud.isSaving}
         width={720}
-        maskClosable={false}
-        destroyOnClose
+        destroyOnHidden
+        mask={{ closable: false }}
       >
         <Form
           form={form}
@@ -1165,12 +1243,24 @@ export function AccessPoliciesPage() {
       title: '操作',
       dataIndex: 'id',
       render: (_: unknown, record: AccessPolicy) => (
-        <Space>
+        <Space className="soha-row-action-icons">
           {canManagePolicies ? (
             <>
-              <Button icon={<EditOutlined />} type="text" size="small" onClick={() => crud.openEdit(record)} />
+              <ManagementIconButton
+                aria-label="编辑策略"
+                icon={<EditOutlined />}
+                size="small"
+                tooltip="编辑"
+                onClick={() => crud.openEdit(record)}
+              />
               <Popconfirm title="确认删除？" onConfirm={() => crud.deleteMutation.mutate(record.id)}>
-                <Button icon={<DeleteOutlined />} type="text" danger size="small" />
+                <ManagementIconButton
+                  aria-label="删除策略"
+                  danger
+                  icon={<DeleteOutlined />}
+                  size="small"
+                  tooltip="删除"
+                />
               </Popconfirm>
             </>
           ) : '-'}
@@ -1225,20 +1315,23 @@ export function AccessPoliciesPage() {
   }
 
   if (!canViewPolicies) {
-    return <div className="soha-page">当前账号没有策略管理权限。</div>
+    return <div className="soha-page"><ManagementState kind="no-permission" description="当前账号没有策略管理权限。" /></div>
   }
 
   return (
     <div className="soha-page">
       <AdminTable
+        columnSettingIconOnly
+        columnSettingPlacement="header"
+        shellClassName="soha-management-table-shell"
         title="策略管理"
         className="soha-access-table"
         toolbarExtra={canManagePolicies ? (
-          <div className="soha-page-toolbar">
+          <ManagementTableToolbar>
             <Button size="small" icon={<PlusOutlined />} type="primary" onClick={crud.openCreate}>
               添加策略
             </Button>
-          </div>
+          </ManagementTableToolbar>
         ) : null}
         columns={columns}
         dataSource={crud.data}
@@ -1261,8 +1354,8 @@ export function AccessPoliciesPage() {
         cancelText="取消"
         confirmLoading={crud.isSaving}
         width={920}
-        maskClosable={false}
-        destroyOnClose
+        destroyOnHidden
+        mask={{ closable: false }}
         styles={{ body: { maxHeight: '72vh', overflow: 'auto' } }}
       >
         <Form
@@ -1429,7 +1522,7 @@ export function AccessCenterPage() {
   }
 
   if (!firstAccessiblePath) {
-    return <div className="soha-page"><div className="text-[var(--soha-text-tertiary)]">当前账号没有访问控制页面权限。</div></div>
+    return <div className="soha-page"><ManagementState kind="no-permission" description="当前账号没有访问控制页面权限。" /></div>
   }
 
   return <Navigate to={firstAccessiblePath} replace />

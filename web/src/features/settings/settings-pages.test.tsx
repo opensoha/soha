@@ -77,6 +77,9 @@ vi.mock("@/components/admin-table", () => ({
     <div data-testid="admin-table">
       {title ? <div>{title}</div> : null}
       <div>{`rows:${dataSource.length}`}</div>
+      {dataSource.map((item, index) => (
+        <div key={index}>{JSON.stringify(item)}</div>
+      ))}
     </div>
   ),
 }));
@@ -195,6 +198,15 @@ describe("settings ai page rendering", () => {
 
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     vi.stubGlobal("ResizeObserver", ResizeObserverMock);
+    Object.defineProperty(window, "getComputedStyle", {
+      writable: true,
+      value: vi.fn().mockReturnValue({
+        getPropertyValue: () => "",
+        overflow: "auto",
+        overflowX: "auto",
+        overflowY: "auto",
+      }),
+    });
   });
 
   beforeEach(() => {

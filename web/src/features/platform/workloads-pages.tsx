@@ -1,7 +1,7 @@
 import { lazy, Suspense, useState, useEffect, useMemo } from 'react'
 import {
-  App, Tag, Button, Select, Tabs, Card, Spin, Empty, Input, Statistic,
-  Descriptions, Typography, Space, Modal, InputNumber, Switch, Tooltip, message,
+  App, Tag, Button, Select, Tabs, Card, Spin, Input, Statistic,
+  Descriptions, Typography, Space, Modal, Popconfirm, InputNumber, Switch, Tooltip, message,
 } from 'antd'
 import {
   AppstoreOutlined,
@@ -17,11 +17,17 @@ import {
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { AdminTable } from '@/components/admin-table'
+import {
+  ManagementDetailHeader,
+  ManagementIconButton,
+  ManagementRefreshButton,
+  ManagementState,
+  ManagementTableToolbar,
+} from '@/components/management-list'
 import { useResourceActions } from '@/components/resource-actions'
 import { TABLE_ACTIONS_COLUMN_CLASS_NAME } from '@/components/resource-actions'
 import { hasAllowedAction } from '@/features/auth/permission-snapshot'
 import { useI18n } from '@/i18n'
-import { PageHeader } from '@/components/page-header'
 import { ResourceEventsTimeline } from '@/components/resource-events-timeline'
 import { BooleanTag, StatusTag } from '@/components/status-tag'
 import { ResourceMetricsPanel } from '@/components/resource-metrics-panel'
@@ -269,6 +275,28 @@ function includesSearch(values: Array<string | undefined | null>, keyword: strin
   return values.some((value) => (value ?? '').toLowerCase().includes(keyword))
 }
 
+function WorkloadRefreshButton({
+  disabled,
+  label,
+  loading,
+  onRefresh,
+}: {
+  disabled?: boolean
+  label: string
+  loading?: boolean
+  onRefresh: () => void
+}) {
+  return (
+    <ManagementRefreshButton
+      aria-label={label}
+      disabled={disabled}
+      loading={loading}
+      tooltip={label}
+      onClick={onRefresh}
+    />
+  )
+}
+
 function formatRefreshTimestamp(value: number, localeCode: 'zh_CN' | 'en_US') {
   if (!value) {
     return localeCode === 'zh_CN' ? '尚未刷新' : 'Not refreshed yet'
@@ -409,17 +437,11 @@ export function WorkloadsOverviewPage() {
   if (!clusterId) {
     return (
       <div className="soha-page soha-overview-page">
-        <Card className="soha-workload-overview-hero" variant="borderless">
-          <div className="soha-workload-overview-hero-copy">
-            <Text className="soha-workload-overview-eyebrow">{localeCode === 'zh_CN' ? '工作负载' : 'Workloads'}</Text>
-            <div className="soha-admin-table-title-block">
-              <Text strong>{t('page.workloads.overview.title', 'Workload Overview')}</Text>
-              <Text type="secondary">{t('page.workloads.overview.desc', 'Inspect workload counts and recent events under the current cluster and namespace scope.')}</Text>
-            </div>
-          </div>
-          <div className="soha-workload-overview-toolbar" />
-        </Card>
-        <Empty description={t('common.pleaseSelectClusterShort', 'Select a cluster')} />
+        <ManagementDetailHeader
+          title={t('page.workloads.overview.title', 'Workload Overview')}
+          description={t('page.workloads.overview.desc', 'Inspect workload counts and recent events under the current cluster and namespace scope.')}
+        />
+        <ManagementState compact kind="select-scope" title={t('common.pleaseSelectClusterShort', 'Select a cluster')} />
       </div>
     )
   }
@@ -487,16 +509,10 @@ export function WorkloadsOverviewPage() {
 
   return (
     <div className="soha-page soha-overview-page">
-      <Card className="soha-workload-overview-hero" variant="borderless">
-        <div className="soha-workload-overview-hero-copy">
-          <Text className="soha-workload-overview-eyebrow">{localeCode === 'zh_CN' ? '工作负载' : 'Workloads'}</Text>
-          <div className="soha-admin-table-title-block">
-            <Text strong>{t('page.workloads.overview.title', 'Workload Overview')}</Text>
-            <Text type="secondary">{t('page.workloads.overview.desc', 'Inspect workload counts and recent events under the current cluster and namespace scope.')}</Text>
-          </div>
-        </div>
-        <div className="soha-workload-overview-toolbar" />
-      </Card>
+      <ManagementDetailHeader
+        title={t('page.workloads.overview.title', 'Workload Overview')}
+        description={t('page.workloads.overview.desc', 'Inspect workload counts and recent events under the current cluster and namespace scope.')}
+      />
       <div className="soha-overview-metric-grid soha-workload-overview-metric-grid">
         {stats.map((item) => (
           <Card key={item.key} size="small" variant="outlined" className={`soha-overview-metric-card is-${item.tone}`}>
@@ -511,15 +527,20 @@ export function WorkloadsOverviewPage() {
           </Card>
         ))}
       </div>
-      <Card className="soha-workload-overview-events" title={localeCode === 'zh_CN' ? '最近事件' : 'Recent Events'} variant="borderless">
-        <AdminTable
-          columns={eventColumns}
-          dataSource={eventsQuery.data?.data ?? []}
-          rowKey={(record) => `${record.namespace || ''}/${record.name}`}
-          loading={eventsQuery.isLoading}
-          pageSize={10}
-        />
-      </Card>
+      <AdminTable
+        className="soha-workload-overview-events soha-platform-table"
+        columnSettingIconOnly
+        columnSettingPlacement="header"
+        shellClassName="soha-management-table-shell"
+        title={localeCode === 'zh_CN' ? '最近事件' : 'Recent Events'}
+        columns={eventColumns}
+        dataSource={eventsQuery.data?.data ?? []}
+        rowKey={(record) => `${record.namespace || ''}/${record.name}`}
+        loading={eventsQuery.isLoading}
+        pageSize={10}
+        tableSize="small"
+        scroll={{ x: 'max-content' }}
+      />
     </div>
   )
 }
@@ -614,11 +635,11 @@ function WorkloadDetailShell({
   }, [yamlDraftStorageKey, yamlPath, yamlServerValue])
 
   if (detailQuery.isLoading) return <div className="flex items-center justify-center h-64"><Spin size="large" /></div>
-  if (!detail) return <Empty description={localeCode === 'zh_CN' ? `${title}未找到` : `${title} not found`} />
+  if (!detail) return <ManagementState compact kind="not-found" title={localeCode === 'zh_CN' ? `${title}未找到` : `${title} not found`} />
 
   return (
     <div className="soha-page">
-      <PageHeader
+      <ManagementDetailHeader
         title={`${title}: ${name}`}
         description={localeCode === 'zh_CN' ? `查看 ${title} 的资源概览、标签、注解与 YAML 等详情信息。` : `Inspect ${title} overview, labels, annotations, and YAML details.`}
         actions={actions}
@@ -956,56 +977,47 @@ export function WorkloadsDeploymentsPage() {
         return (
           <Space size={4} className="soha-deployment-action-cell">
             {canRestart ? (
-              <Tooltip title={localeCode === 'zh_CN' ? '重启' : 'Restart'}>
-                <Button
-                  size="small"
-                  type="text"
-                  icon={<ReloadOutlined />}
-                  aria-label={localeCode === 'zh_CN' ? '重启' : 'Restart'}
-                  onClick={() => restartMutation.mutate({ name, namespace: record.namespace })}
-                />
-              </Tooltip>
+              <ManagementIconButton
+                icon={<ReloadOutlined />}
+                aria-label={localeCode === 'zh_CN' ? '重启' : 'Restart'}
+                tooltip={localeCode === 'zh_CN' ? '重启' : 'Restart'}
+                onClick={() => restartMutation.mutate({ name, namespace: record.namespace })}
+              />
             ) : null}
             {canScale ? (
-              <Tooltip title={localeCode === 'zh_CN' ? '扩缩' : 'Scale'}>
-                <Button
-                  size="small"
-                  type="text"
-                  icon={<EditOutlined />}
-                  aria-label={localeCode === 'zh_CN' ? '扩缩' : 'Scale'}
-                  onClick={() => setScaleTarget({ name, namespace: record.namespace, replicas: record.desiredReplicas })}
-                />
-              </Tooltip>
+              <ManagementIconButton
+                icon={<EditOutlined />}
+                aria-label={localeCode === 'zh_CN' ? '扩缩' : 'Scale'}
+                tooltip={localeCode === 'zh_CN' ? '扩缩' : 'Scale'}
+                onClick={() => setScaleTarget({ name, namespace: record.namespace, replicas: record.desiredReplicas })}
+              />
             ) : null}
             {canRollback ? (
-              <Tooltip title={localeCode === 'zh_CN' ? '回滚' : 'Rollback'}>
-                <Button
-                  size="small"
-                  type="text"
-                  icon={<UndoOutlined />}
-                  aria-label={localeCode === 'zh_CN' ? '回滚' : 'Rollback'}
-                  onClick={() => rollbackMutation.mutate({ name, namespace: record.namespace })}
-                />
-              </Tooltip>
+              <ManagementIconButton
+                icon={<UndoOutlined />}
+                aria-label={localeCode === 'zh_CN' ? '回滚' : 'Rollback'}
+                tooltip={localeCode === 'zh_CN' ? '回滚' : 'Rollback'}
+                onClick={() => rollbackMutation.mutate({ name, namespace: record.namespace })}
+              />
             ) : null}
             {canDelete ? (
-              <Tooltip title={localeCode === 'zh_CN' ? '删除' : 'Delete'}>
-                <Button
-                  size="small"
-                  type="text"
+              <Popconfirm
+                title={localeCode === 'zh_CN' ? `确认删除 ${name}？` : `Delete ${name}?`}
+                description={localeCode === 'zh_CN' ? '此操作不可恢复，删除后集群资源立即消失。' : 'This deletes the resource immediately and cannot be undone.'}
+                okText={localeCode === 'zh_CN' ? '删除' : 'Delete'}
+                cancelText={localeCode === 'zh_CN' ? '取消' : 'Cancel'}
+                okButtonProps={{ danger: true, loading: deleteMutation.isPending && deleteMutation.variables?.name === name && deleteMutation.variables?.namespace === record.namespace }}
+                placement="topRight"
+                onConfirm={() => deleteMutation.mutate({ name, namespace: record.namespace })}
+              >
+                <ManagementIconButton
                   danger
                   icon={<DeleteOutlined />}
                   aria-label={localeCode === 'zh_CN' ? '删除' : 'Delete'}
                   loading={deleteMutation.isPending && deleteMutation.variables?.name === name && deleteMutation.variables?.namespace === record.namespace}
-                  onClick={() => {
-                    Modal.confirm({
-                      title: localeCode === 'zh_CN' ? `确认删除 ${name}？` : `Delete ${name}?`,
-                      content: localeCode === 'zh_CN' ? '此操作不可恢复，删除后集群资源立即消失。' : 'This deletes the resource immediately and cannot be undone.',
-                      onOk: () => deleteMutation.mutate({ name, namespace: record.namespace }),
-                    })
-                  }}
+                  tooltip={localeCode === 'zh_CN' ? '删除' : 'Delete'}
                 />
-              </Tooltip>
+              </Popconfirm>
             ) : null}
           </Space>
         )
@@ -1041,8 +1053,9 @@ export function WorkloadsDeploymentsPage() {
   )
 
   const deploymentToolbarExtra = (
-    <div className="soha-page-toolbar">
+    <ManagementTableToolbar>
       <Button
+        autoInsertSpace={false}
         size="small"
         variant="outlined"
         disabled={!canBatchRestart}
@@ -1052,6 +1065,7 @@ export function WorkloadsDeploymentsPage() {
         {localeCode === 'zh_CN' ? `批量重启 (${selectedDeployments.length})` : `Batch Restart (${selectedDeployments.length})`}
       </Button>
       <Button
+        autoInsertSpace={false}
         size="small"
         variant="outlined"
         disabled={!canBatchRollback}
@@ -1061,6 +1075,7 @@ export function WorkloadsDeploymentsPage() {
         {localeCode === 'zh_CN' ? `批量回滚 (${selectedDeployments.length})` : `Batch Rollback (${selectedDeployments.length})`}
       </Button>
       <Button
+        autoInsertSpace={false}
         size="small"
         variant="outlined"
         disabled={!canBatchScale}
@@ -1071,17 +1086,22 @@ export function WorkloadsDeploymentsPage() {
       >
         {localeCode === 'zh_CN' ? `批量扩缩 (${selectedDeployments.length})` : `Batch Scale (${selectedDeployments.length})`}
       </Button>
-      <Button size="small" icon={<ReloadOutlined />} variant="outlined" onClick={() => queryClient.invalidateQueries({ queryKey: ['deployments', clusterId, namespace] })}>
-        {t('common.refresh', 'Refresh')}
-      </Button>
-    </div>
+      <WorkloadRefreshButton
+        disabled={!clusterId}
+        label={t('common.refresh', 'Refresh')}
+        onRefresh={() => queryClient.invalidateQueries({ queryKey: ['deployments', clusterId, namespace] })}
+      />
+    </ManagementTableToolbar>
   )
 
   return (
     <div className="soha-page">
       <AdminTable
-        title={t('page.workloads.deployments.title', 'Deployments')}
         className="soha-deployments-table soha-platform-table"
+        columnSettingIconOnly
+        columnSettingPlacement="header"
+        shellClassName="soha-management-table-shell"
+        title={t('page.workloads.deployments.title', 'Deployments')}
         toolbar={deploymentToolbar}
         toolbarExtra={deploymentToolbarExtra}
         columns={columns}
@@ -1089,6 +1109,7 @@ export function WorkloadsDeploymentsPage() {
         rowKey={(record) => `${record.namespace}/${record.name}`}
         loading={isLoading}
         pageSize={10}
+        tableSize="small"
         scroll={{ x: 'max-content' }}
         selectCurrentPageOnly
         rowSelection={{
@@ -1128,6 +1149,7 @@ export function WorkloadsDeploymentsPage() {
           <div className="flex items-center justify-center h-48"><Spin size="large" /></div>
         ) : (
           <AdminTable
+            shellClassName="soha-management-table-shell"
             columns={[
               { title: localeCode === 'zh_CN' ? 'Deployment' : 'Deployment', dataIndex: 'name' },
               { title: localeCode === 'zh_CN' ? '命名空间' : 'Namespace', dataIndex: 'namespace' },
@@ -1395,7 +1417,7 @@ export function DeploymentDetailPage() {
   ]
 
   const linkageOverview = (
-    <div className="soha-page-section">
+    <div className="soha-detail-stack">
       <Card className="soha-detail-card" title={localeCode === 'zh_CN' ? '滚动发布状态' : 'Rollout Status'}>
         {rolloutStatus ? (
           <Descriptions
@@ -1410,11 +1432,12 @@ export function DeploymentDetailPage() {
             ]}
           />
         ) : (
-          <Empty description={localeCode === 'zh_CN' ? '暂无滚动状态' : 'No rollout status'} />
+          <ManagementState bordered={false} compact title={localeCode === 'zh_CN' ? '暂无滚动状态' : 'No rollout status'} />
         )}
       </Card>
       <Card className="soha-detail-card" title={localeCode === 'zh_CN' ? '滚动历史' : 'Rollout History'}>
         <AdminTable
+          shellClassName="soha-management-table-shell"
           columns={rolloutColumns}
           dataSource={rolloutHistory}
           rowKey={(record) => record.revision}
@@ -1424,6 +1447,7 @@ export function DeploymentDetailPage() {
       </Card>
       <Card className="soha-detail-card" title={localeCode === 'zh_CN' ? '关联 Pods' : 'Related Pods'}>
         <AdminTable
+          shellClassName="soha-management-table-shell"
           columns={deploymentPodColumns}
           dataSource={deploymentPods}
           rowKey={(record) => `${record.namespace}/${record.name}`}
@@ -1434,7 +1458,7 @@ export function DeploymentDetailPage() {
       </Card>
       <Card className="soha-detail-card" title="交付联动">
         {matchedBindings.length === 0 ? (
-          <Empty description="当前 Deployment 尚未绑定到任何应用环境" />
+          <ManagementState bordered={false} compact title="当前 Deployment 尚未绑定到任何应用环境" />
         ) : (
           <div className="soha-list-panel">
             {matchedBindings.map((binding) => {
@@ -1844,23 +1868,23 @@ export function WorkloadsPodsPage() {
       onCell: () => ({ className: TABLE_ACTIONS_COLUMN_CLASS_NAME }),
       render: (value: string, record: Pod) => (
         <Space size={4} className="soha-deployment-action-cell">
-          <Tooltip title={localeCode === 'zh_CN' ? '重建 Pod' : 'Rebuild Pod'}>
-            <Button
-              size="small"
-              type="text"
+          <Popconfirm
+            title={localeCode === 'zh_CN' ? `确认重建 Pod ${value}？` : `Rebuild pod ${value}?`}
+            description={localeCode === 'zh_CN' ? '这会删除当前 Pod，由控制器自动重建。' : 'This deletes the current pod and lets the controller recreate it.'}
+            okText={localeCode === 'zh_CN' ? '重建' : 'Rebuild'}
+            cancelText={localeCode === 'zh_CN' ? '取消' : 'Cancel'}
+            okButtonProps={{ danger: true, loading: rebuildPodMutation.isPending }}
+            placement="topRight"
+            onConfirm={() => rebuildPodMutation.mutate({ name: value, namespace: record.namespace })}
+          >
+            <ManagementIconButton
               danger
               icon={<DeleteOutlined />}
               aria-label={localeCode === 'zh_CN' ? '重建 Pod' : 'Rebuild Pod'}
               loading={rebuildPodMutation.isPending}
-              onClick={() => {
-                Modal.confirm({
-                  title: localeCode === 'zh_CN' ? `确认重建 Pod ${value}？` : `Rebuild pod ${value}?`,
-                  content: localeCode === 'zh_CN' ? '这会删除当前 Pod，由控制器自动重建。' : 'This deletes the current pod and lets the controller recreate it.',
-                  onOk: () => rebuildPodMutation.mutate({ name: value, namespace: record.namespace }),
-                })
-              }}
+              tooltip={localeCode === 'zh_CN' ? '重建 Pod' : 'Rebuild Pod'}
             />
-          </Tooltip>
+          </Popconfirm>
         </Space>
       ),
     },
@@ -1930,7 +1954,7 @@ export function WorkloadsPodsPage() {
   )
 
   const podToolbarExtra = (
-    <div className="soha-page-toolbar">
+    <ManagementTableToolbar>
       <Text className="soha-refresh-meta" type="secondary">
         {refreshStatusLabel}
       </Text>
@@ -1958,23 +1982,22 @@ export function WorkloadsPodsPage() {
           ]}
         />
       </div>
-      <Button
-        size="small"
-        icon={<ReloadOutlined />}
-        variant="outlined"
+      <WorkloadRefreshButton
+        label={t('common.refresh', 'Refresh')}
         loading={manualRefreshPending}
         disabled={!clusterId || manualRefreshPending}
-        onClick={() => void handleRefresh()}
-      >
-        {t('common.refresh', 'Refresh')}
-      </Button>
-    </div>
+        onRefresh={() => void handleRefresh()}
+      />
+    </ManagementTableToolbar>
   )
 
   return (
     <div className="soha-page">
       <AdminTable
         className="soha-pods-table soha-platform-table"
+        columnSettingIconOnly
+        columnSettingPlacement="header"
+        shellClassName="soha-management-table-shell"
         title={t('page.workloads.pods.title', 'Pods')}
         toolbar={podToolbar}
         toolbarExtra={podToolbarExtra}
@@ -1983,6 +2006,7 @@ export function WorkloadsPodsPage() {
         rowKey={(record) => `${record.namespace}/${record.name}`}
         loading={isLoading}
         pageSize={10}
+        tableSize="small"
         scroll={{ x: 'max-content' }}
       />
     </div>
@@ -2184,6 +2208,7 @@ export function PodDetailPage() {
         )}
       >
         <AdminTable
+          shellClassName="soha-management-table-shell"
           columns={containerColumns}
           dataSource={podDetail.containers ?? []}
           rowKey="name"
@@ -2206,6 +2231,7 @@ export function PodDetailPage() {
       </Card>
       <Card className="soha-detail-card soha-pod-overview-card soha-pod-overview-conditions" title={localeCode === 'zh_CN' ? '条件' : 'Conditions'}>
         <AdminTable
+          shellClassName="soha-management-table-shell"
           columns={conditionColumns}
           dataSource={podDetail.conditions ?? []}
           rowKey={(record) => `${record.type}:${record.lastTransitionTime || 'na'}`}
@@ -2253,6 +2279,7 @@ export function PodDetailPage() {
     children: (
       <Card className="soha-detail-card" title={localeCode === 'zh_CN' ? '容器状态' : 'Container Status'}>
         <AdminTable
+          shellClassName="soha-management-table-shell"
           columns={containerColumns}
           dataSource={podDetail?.containers ?? []}
           rowKey={(record) => record.name}
@@ -2270,12 +2297,13 @@ export function PodDetailPage() {
       <Card className="soha-detail-card" title={localeCode === 'zh_CN' ? 'Pod 卷与挂载' : 'Pod Volumes & Mounts'}>
         <AdminTable
           className="soha-pod-volumes-table"
+          shellClassName="soha-management-table-shell"
           columns={volumeColumns}
           dataSource={podVolumes}
           rowKey={(record) => record.name}
           pageSize={10}
           enableColumnSelection={false}
-          empty={<Empty description={localeCode === 'zh_CN' ? '当前 Pod 没有关联卷' : 'No pod volumes found'} />}
+          empty={<ManagementState bordered={false} compact title={localeCode === 'zh_CN' ? '当前 Pod 没有关联卷' : 'No pod volumes found'} />}
         />
       </Card>
     ),
@@ -2287,12 +2315,13 @@ export function PodDetailPage() {
     children: (
       <Card className="soha-detail-card" title={localeCode === 'zh_CN' ? 'Pod 关联资源' : 'Pod Related Resources'}>
         <AdminTable
+          shellClassName="soha-management-table-shell"
           columns={relatedResourceColumns}
           dataSource={podRelatedResources}
           rowKey={(record) => `${record.kind}:${record.namespace || 'cluster'}:${record.name}`}
           pageSize={10}
           enableColumnSelection={false}
-          empty={<Empty description={localeCode === 'zh_CN' ? '当前 Pod 暂无可识别的关联资源' : 'No related resources detected for this pod'} />}
+          empty={<ManagementState bordered={false} compact title={localeCode === 'zh_CN' ? '当前 Pod 暂无可识别的关联资源' : 'No related resources detected for this pod'} />}
         />
       </Card>
     ),
@@ -2439,6 +2468,9 @@ export function WorkloadsStatefulSetsPage() {
       {statefulSetYamlModal}
       <AdminTable
         className="soha-statefulsets-table soha-platform-table"
+        columnSettingIconOnly
+        columnSettingPlacement="header"
+        shellClassName="soha-management-table-shell"
         title={t('page.workloads.statefulsets.title', 'StatefulSets')}
         toolbar={(
           <div className="soha-workload-table-filters">
@@ -2456,16 +2488,19 @@ export function WorkloadsStatefulSetsPage() {
           </div>
         )}
         toolbarExtra={(
-          <div className="soha-page-toolbar">
-            <Button icon={<ReloadOutlined />} variant="outlined" onClick={() => queryClient.invalidateQueries({ queryKey: ['statefulsets', clusterId, namespace] })}>
-              {t('common.refresh', 'Refresh')}
-            </Button>
-          </div>
+          <ManagementTableToolbar>
+            <WorkloadRefreshButton
+              disabled={!clusterId}
+              label={t('common.refresh', 'Refresh')}
+              onRefresh={() => queryClient.invalidateQueries({ queryKey: ['statefulsets', clusterId, namespace] })}
+            />
+          </ManagementTableToolbar>
         )}
         columns={columns}
         dataSource={filteredStatefulSets}
         rowKey={(record) => `${record.namespace}/${record.name}`}
         loading={isLoading}
+        tableSize="small"
         scroll={{ x: 'max-content' }}
       />
     </div>
@@ -2534,6 +2569,9 @@ export function WorkloadsDaemonSetsPage() {
     <div className="soha-page">
       <AdminTable
         className="soha-daemonsets-table soha-platform-table"
+        columnSettingIconOnly
+        columnSettingPlacement="header"
+        shellClassName="soha-management-table-shell"
         title="DaemonSets"
         toolbar={(
           <div className="soha-workload-table-filters">
@@ -2551,16 +2589,19 @@ export function WorkloadsDaemonSetsPage() {
           </div>
         )}
         toolbarExtra={(
-          <div className="soha-page-toolbar">
-            <Button icon={<ReloadOutlined />} variant="outlined" onClick={() => queryClient.invalidateQueries({ queryKey: ['daemonsets', clusterId, namespace] })}>
-              {localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
-            </Button>
-          </div>
+          <ManagementTableToolbar>
+            <WorkloadRefreshButton
+              disabled={!clusterId}
+              label={localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
+              onRefresh={() => queryClient.invalidateQueries({ queryKey: ['daemonsets', clusterId, namespace] })}
+            />
+          </ManagementTableToolbar>
         )}
         columns={columns}
         dataSource={filteredDaemonSets}
         rowKey={(record) => `${record.namespace}/${record.name}`}
         loading={isLoading}
+        tableSize="small"
         scroll={{ x: 'max-content' }}
       />
     </div>
@@ -2630,6 +2671,9 @@ export function WorkloadsJobsPage() {
     <div className="soha-page">
       <AdminTable
         className="soha-jobs-table soha-platform-table"
+        columnSettingIconOnly
+        columnSettingPlacement="header"
+        shellClassName="soha-management-table-shell"
         title={t('page.workloads.jobs.title', 'Jobs')}
         toolbar={(
           <div className="soha-workload-table-filters">
@@ -2647,16 +2691,19 @@ export function WorkloadsJobsPage() {
           </div>
         )}
         toolbarExtra={(
-          <div className="soha-page-toolbar">
-            <Button icon={<ReloadOutlined />} variant="outlined" onClick={() => queryClient.invalidateQueries({ queryKey: ['jobs', clusterId, namespace] })}>
-              {t('common.refresh', 'Refresh')}
-            </Button>
-          </div>
+          <ManagementTableToolbar>
+            <WorkloadRefreshButton
+              disabled={!clusterId}
+              label={t('common.refresh', 'Refresh')}
+              onRefresh={() => queryClient.invalidateQueries({ queryKey: ['jobs', clusterId, namespace] })}
+            />
+          </ManagementTableToolbar>
         )}
         columns={columns}
         dataSource={filteredJobs}
         rowKey={(record) => `${record.namespace}/${record.name}`}
         loading={isLoading}
+        tableSize="small"
         scroll={{ x: 'max-content' }}
       />
     </div>
@@ -2729,6 +2776,9 @@ export function WorkloadsCronJobsPage() {
     <div className="soha-page">
       <AdminTable
         className="soha-cronjobs-table soha-platform-table"
+        columnSettingIconOnly
+        columnSettingPlacement="header"
+        shellClassName="soha-management-table-shell"
         title={t('page.workloads.cronjobs.title', 'CronJobs')}
         toolbar={(
           <div className="soha-workload-table-filters">
@@ -2746,16 +2796,19 @@ export function WorkloadsCronJobsPage() {
           </div>
         )}
         toolbarExtra={(
-          <div className="soha-page-toolbar">
-            <Button icon={<ReloadOutlined />} variant="outlined" onClick={() => queryClient.invalidateQueries({ queryKey: ['cronjobs', clusterId, namespace] })}>
-              {t('common.refresh', 'Refresh')}
-            </Button>
-          </div>
+          <ManagementTableToolbar>
+            <WorkloadRefreshButton
+              disabled={!clusterId}
+              label={t('common.refresh', 'Refresh')}
+              onRefresh={() => queryClient.invalidateQueries({ queryKey: ['cronjobs', clusterId, namespace] })}
+            />
+          </ManagementTableToolbar>
         )}
         columns={columns}
         dataSource={filteredCronJobs}
         rowKey={(record) => `${record.namespace}/${record.name}`}
         loading={isLoading}
+        tableSize="small"
         scroll={{ x: 'max-content' }}
       />
     </div>

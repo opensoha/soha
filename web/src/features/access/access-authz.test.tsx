@@ -40,9 +40,20 @@ vi.mock('@/services/api-client', () => ({
 }))
 
 vi.mock('@/components/admin-table', () => ({
-  AdminTable: ({ dataSource, title, toolbarExtra }: { dataSource: unknown[]; title?: React.ReactNode; toolbarExtra?: React.ReactNode }) => (
+  AdminTable: ({
+    dataSource,
+    headerExtra,
+    title,
+    toolbarExtra,
+  }: {
+    dataSource: unknown[]
+    headerExtra?: React.ReactNode
+    title?: React.ReactNode
+    toolbarExtra?: React.ReactNode
+  }) => (
     <div data-testid="admin-table">
       {title ? <div>{title}</div> : null}
+      {headerExtra ? <div>{headerExtra}</div> : null}
       {toolbarExtra ? <div>{toolbarExtra}</div> : null}
       {`rows:${dataSource.length}`}
     </div>

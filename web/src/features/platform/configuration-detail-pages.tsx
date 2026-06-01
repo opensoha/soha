@@ -1,12 +1,12 @@
 import { lazy, Suspense, useEffect, useState } from 'react'
 import {
-  Alert, Button, Card, Descriptions, Empty, Modal, Space,
+  Alert, Button, Card, Descriptions, Modal, Space,
   Spin, Switch, Tabs, Tag, Typography, message,
 } from 'antd'
 import { CopyOutlined } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { PageHeader } from '@/components/page-header'
+import { ManagementDetailHeader, ManagementState } from '@/components/management-list'
 import { useI18n } from '@/i18n'
 import { api } from '@/services/api-client'
 import { buildClusterScopedPath } from '@/features/platform/platform-scope-query'
@@ -110,10 +110,10 @@ export function CreateResourceModal({
       onCancel={onClose}
       footer={null}
       width={960}
-      maskClosable={false}
+      mask={{ closable: false }}
     >
       {!clusterId ? (
-        <Empty description={localeCode === 'zh_CN' ? '请先选择集群' : 'Select a cluster first'} />
+        <ManagementState compact kind="select-scope" description={localeCode === 'zh_CN' ? '请先选择集群' : 'Select a cluster first'} />
       ) : (
         <Suspense fallback={<div style={{ height: 520, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Spin size="large" /></div>}>
           <Alert
@@ -172,7 +172,7 @@ function renderEntries(
 ) {
   const keys = Object.keys(entries ?? {})
   if (keys.length === 0) {
-    return <Empty description={emptyHint ?? (localeCode === 'zh_CN' ? '暂无数据' : 'No data')} />
+    return <ManagementState bordered={false} compact description={emptyHint ?? (localeCode === 'zh_CN' ? '暂无数据' : 'No data')} />
   }
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -309,12 +309,12 @@ export function ConfigMapDetailPage() {
     return <div className="flex items-center justify-center h-64"><Spin size="large" /></div>
   }
   if (!detail) {
-    return <Empty description={localeCode === 'zh_CN' ? 'ConfigMap 未找到' : 'ConfigMap not found'} />
+    return <div className="soha-page"><ManagementState kind="not-found" description={localeCode === 'zh_CN' ? 'ConfigMap 未找到' : 'ConfigMap not found'} /></div>
   }
 
   return (
     <div className="soha-page">
-      <PageHeader
+      <ManagementDetailHeader
         title={`ConfigMap: ${name}`}
         description={localeCode === 'zh_CN' ? '查看 ConfigMap 的键值数据与 YAML。' : 'Inspect ConfigMap data entries and YAML.'}
         actions={<Button onClick={() => navigate('/configuration/configmaps')}>{localeCode === 'zh_CN' ? '返回列表' : 'Back to list'}</Button>}
@@ -401,12 +401,12 @@ export function SecretDetailPage() {
     return <div className="flex items-center justify-center h-64"><Spin size="large" /></div>
   }
   if (!detail) {
-    return <Empty description={localeCode === 'zh_CN' ? 'Secret 未找到' : 'Secret not found'} />
+    return <div className="soha-page"><ManagementState kind="not-found" description={localeCode === 'zh_CN' ? 'Secret 未找到' : 'Secret not found'} /></div>
   }
 
   return (
     <div className="soha-page">
-      <PageHeader
+      <ManagementDetailHeader
         title={`Secret: ${name}`}
         description={localeCode === 'zh_CN' ? '查看 Secret 的数据(默认 base64)与 YAML。敏感信息仅限授权查看。' : 'Inspect Secret data (base64 by default) and YAML.'}
         actions={<Button onClick={() => navigate('/configuration/secrets')}>{localeCode === 'zh_CN' ? '返回列表' : 'Back to list'}</Button>}

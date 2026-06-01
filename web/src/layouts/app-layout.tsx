@@ -51,6 +51,14 @@ import { getNormalizedBranding } from '@/features/settings/use-branding-settings
 const { Sider, Header, Content } = Layout
 const SIDEBAR_WIDTH = 200
 const SIDEBAR_COLLAPSED_WIDTH = 55
+const BREADCRUMB_WORKBENCH_ROOT_ROUTE_IDS: Partial<Record<WorkbenchId, string[]>> = {
+  ai: ['ai-workbench'],
+  aiGateway: ['ai-gateway'],
+  docker: ['docker-workbench'],
+  monitoring: ['monitoring-workbench'],
+  settings: ['settings'],
+  virtualization: ['virtualization-workbench'],
+}
 
 interface WorkbenchOption {
   description: string
@@ -529,14 +537,48 @@ export function AppLayout() {
     }
   }, [accessibleWorkspaces, currentRouteWorkspace, currentWorkspace, preferredWorkspace, setCurrentWorkspace, snapshot])
 
+  const currentWorkbenchOption = workbenchOptions.find((option) => option.key === activeWorkbenchId) ?? workbenchOptions[0] ?? null
   const breadcrumbRoutes = useMemo(() => {
     const routes: Array<{ name: string; path?: string }> = []
-    if (parentMeta) {
-      routes.push({ name: t(`route.${parentMeta.id}.title`, parentMeta.title), path: parentMeta.redirectTo ?? parentMeta.path })
+    const resolveBreadcrumbTitle = (route: typeof currentMeta) => {
+      if (route.id === 'overview') {
+        return t('route.overview.breadcrumbTitle', localeCode === 'zh_CN' ? '总览' : 'Overview')
+      }
+      return t(`route.${route.id}.title`, route.title)
     }
-    routes.push({ name: t(`route.${currentMeta.id}.title`, currentMeta.title) })
+
+    if (currentWorkbenchOption) {
+      routes.push({ name: currentWorkbenchOption.label })
+    }
+
+    const routeChain: typeof currentMeta[] = []
+    const seenRouteIds = new Set<string>()
+    let pointer: typeof currentMeta | null = currentMeta
+    while (pointer && !seenRouteIds.has(pointer.id)) {
+      routeChain.unshift(pointer)
+      seenRouteIds.add(pointer.id)
+      pointer = getParentRouteMeta(pointer)
+    }
+
+    const workbenchRootRouteIds = activeWorkbenchId ? (BREADCRUMB_WORKBENCH_ROOT_ROUTE_IDS[activeWorkbenchId] ?? []) : []
+
+    for (const route of routeChain) {
+      if (workbenchRootRouteIds.includes(route.id)) {
+        continue
+      }
+      const name = resolveBreadcrumbTitle(route)
+      const previous = routes[routes.length - 1]
+      if (currentWorkbenchOption?.label === name || previous?.name === name) {
+        continue
+      }
+      routes.push({
+        name,
+        path: route.id === currentMeta.id ? undefined : route.redirectTo ?? route.path,
+      })
+    }
+
     return routes
-  }, [currentMeta, parentMeta, t])
+  }, [activeWorkbenchId, currentMeta, currentWorkbenchOption, localeCode, t])
 
   const userDisplayName = user?.userName ?? user?.email ?? 'User'
   const branding = getNormalizedBranding(brandingQuery.data?.data)
@@ -556,7 +598,6 @@ export function AppLayout() {
     const preferredSettingsPath = settingsNode ? findFirstNavigablePath([settingsNode]) : null
     return preferredSettingsPath ?? findFirstNavigablePath(systemNav)
   }, [systemNav])
-  const currentWorkbenchOption = workbenchOptions.find((option) => option.key === activeWorkbenchId) ?? workbenchOptions[0] ?? null
   const businessSelectedKeys = selectedKeys.filter((key) => businessNodeIDs.has(key))
   const systemSelectedKeys = selectedKeys.filter((key) => systemNodeIDs.has(key))
   const aiSelectedKeys = selectedKeys.filter((key) => primaryItemKeyToPath[key])

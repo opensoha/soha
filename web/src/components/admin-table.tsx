@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
-import { Button, Checkbox, Empty, Popover, Table, Typography } from 'antd'
+import { Button, Checkbox, Popover, Table, Typography } from 'antd'
 import { SettingOutlined } from '@ant-design/icons'
+import { ManagementState } from '@/components/management-list'
 
 const DEFAULT_PAGE_SIZE_OPTIONS = [10, 20, 50, 100]
 const { Text } = Typography
@@ -22,6 +23,7 @@ interface AdminTableProps {
   pageSize?: number
   pagination?: any
   rowKey: string | ((record: any) => string)
+  rowClassName?: any
   rowSelection?: any
   shellClassName?: string
   tableSize?: 'large' | 'middle' | 'small'
@@ -79,7 +81,7 @@ export function AdminTable({
   rowKey,
   rowSelection,
   shellClassName,
-  tableSize = 'middle',
+  tableSize = 'small',
   columnSettingPlacement = 'toolbar',
   columnSettingIconOnly = false,
   scroll,
@@ -170,6 +172,8 @@ export function AdminTable({
     : {
         pageSize: currentPageSize,
         current: currentPage,
+        size: 'small' as const,
+        showLessItems: true,
         showSizeChanger: true,
         pageSizeOptions: DEFAULT_PAGE_SIZE_OPTIONS,
         ...pagination,
@@ -198,6 +202,7 @@ export function AdminTable({
             </Button>
           </div>
           <Checkbox.Group
+            className="soha-admin-table-column-options"
             options={columnOptions.map((option) => ({ label: option.label, value: option.id }))}
             value={activeColumnIds}
             onChange={(value) => {
@@ -264,7 +269,7 @@ export function AdminTable({
         columns={activeColumns}
         dataSource={dataSource}
         loading={loading}
-        locale={{ emptyText: empty ?? <Empty description="暂无数据" /> }}
+        locale={{ emptyText: empty ?? <ManagementState bordered={false} compact /> }}
         pagination={resolvedPagination}
         rowKey={rowKey}
         rowSelection={resolvedRowSelection}

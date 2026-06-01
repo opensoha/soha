@@ -24,19 +24,20 @@ import {
   Descriptions,
   Divider,
   Drawer,
-  Empty,
   Form,
   Input,
   InputNumber,
   Modal,
+  Popconfirm,
   Select,
   Space,
-  Table,
   Tabs,
   Tag,
   Typography,
 } from 'antd'
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
+import { AdminTable } from '@/components/admin-table'
+import { ManagementDetailHeader, ManagementIconButton, ManagementState, ManagementTableToolbar } from '@/components/management-list'
 import { StatusTag } from '@/components/status-tag'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth/permission-snapshot'
 import { api } from '@/services/api-client'
@@ -2000,7 +2001,7 @@ function PolicyConditionFields() {
 }
 
 export function AIGatewayPage() {
-  const { message, modal } = App.useApp()
+  const { message } = App.useApp()
   const [form] = Form.useForm()
   const [decisionForm] = Form.useForm()
   const queryClient = useQueryClient()
@@ -2365,16 +2366,6 @@ export function AIGatewayPage() {
     ? activeTab
     : defaultGatewayTabForSection(section, focusedApprovalRequestId)
 
-  const confirmDelete = (kind: 'grant' | 'policy' | 'binding' | 'personal-token', id: string, title: string) => {
-    modal.confirm({
-      title,
-      content: '该操作会立即更新 AI Gateway 控制面。',
-      okText: '确认',
-      cancelText: '取消',
-      onOk: () => deleteMutation.mutate({ kind, id }),
-    })
-  }
-
   const clientOptions = clients.map((item) => ({ label: `${item.name} (${item.id})`, value: item.id }))
   const skillOptions = manifest?.skills?.map((item) => ({ label: `${item.name} (${item.id})`, value: item.id })) ?? []
   const toolOptions = manifest?.tools.map((item) => ({ label: item.name, value: item.name })) ?? []
@@ -2391,9 +2382,11 @@ export function AIGatewayPage() {
       fixed: 'right',
       width: 120,
       render: (_, record) => (
-        <Space>
-          <Button size="small" icon={<EditOutlined />} disabled={!canManage} onClick={() => setDrawer({ kind: 'ai-client', record })} />
-          <Button size="small" danger icon={<StopOutlined />} loading={disableClientMutation.isPending} disabled={!canManage || record.status === 'disabled'} onClick={() => disableClientMutation.mutate(record)} />
+        <Space className="soha-row-action-icons">
+          <ManagementIconButton size="small" tooltip="编辑" aria-label="编辑 client" icon={<EditOutlined />} disabled={!canManage} onClick={() => setDrawer({ kind: 'ai-client', record })} />
+          <Popconfirm title="确认禁用 client？" description="该操作会立即更新 AI Gateway 控制面。" okButtonProps={{ danger: true, loading: disableClientMutation.isPending }} onConfirm={() => disableClientMutation.mutate(record)}>
+            <ManagementIconButton size="small" tooltip="禁用" aria-label="禁用 client" danger icon={<StopOutlined />} loading={disableClientMutation.isPending} disabled={!canManage || record.status === 'disabled'} />
+          </Popconfirm>
         </Space>
       ),
     },
@@ -2405,7 +2398,17 @@ export function AIGatewayPage() {
     { title: '过期', dataIndex: 'expiresAt', width: 140, render: formatDateTime },
     { title: '最近使用', dataIndex: 'lastUsedAt', width: 140, render: formatDateTime },
     { title: '状态', dataIndex: 'revokedAt', width: 110, render: (value) => <StatusTag value={value ? 'revoked' : 'active'} /> },
-    { title: '', key: 'actions', fixed: 'right', width: 80, render: (_, record) => <Button size="small" danger icon={<StopOutlined />} disabled={!canInvoke || !!record.revokedAt} onClick={() => confirmDelete('personal-token', record.id, '吊销 personal access token')} /> },
+    {
+      title: '',
+      key: 'actions',
+      fixed: 'right',
+      width: 80,
+      render: (_, record) => (
+        <Popconfirm title="吊销 personal access token？" description="该操作会立即更新 AI Gateway 控制面。" okButtonProps={{ danger: true, loading: deleteMutation.isPending }} onConfirm={() => deleteMutation.mutate({ kind: 'personal-token', id: record.id })}>
+          <ManagementIconButton size="small" tooltip="吊销" aria-label="吊销 personal access token" danger icon={<StopOutlined />} disabled={!canInvoke || !!record.revokedAt} />
+        </Popconfirm>
+      ),
+    },
   ]
 
   const serviceAccountColumns: TableColumnsType<ServiceAccount> = [
@@ -2440,8 +2443,10 @@ export function AIGatewayPage() {
       fixed: 'right',
       width: 90,
       render: (_, record) => (
-        <Button
+        <ManagementIconButton
           size="small"
+          tooltip="吊销"
+          aria-label="吊销服务 token"
           danger
           icon={<StopOutlined />}
           disabled={!canManage || !!record.revokedAt}
@@ -2457,7 +2462,17 @@ export function AIGatewayPage() {
     { title: 'Effect', dataIndex: 'effect', width: 100, render: (value) => <StatusTag value={value} /> },
     { title: 'Risk', dataIndex: 'riskLevel', width: 100, render: (value) => <StatusTag value={value} /> },
     { title: 'Scope', dataIndex: 'resourceScopes', render: scopeSummary },
-    { title: '', key: 'actions', fixed: 'right', width: 80, render: (_, record) => <Button size="small" danger icon={<DeleteOutlined />} disabled={!canManage} onClick={() => confirmDelete('grant', record.id, '删除 MCP tool grant')} /> },
+    {
+      title: '',
+      key: 'actions',
+      fixed: 'right',
+      width: 80,
+      render: (_, record) => (
+        <Popconfirm title="删除 MCP tool grant？" description="该操作会立即更新 AI Gateway 控制面。" okButtonProps={{ danger: true, loading: deleteMutation.isPending }} onConfirm={() => deleteMutation.mutate({ kind: 'grant', id: record.id })}>
+          <ManagementIconButton size="small" tooltip="删除" aria-label="删除 MCP tool grant" danger icon={<DeleteOutlined />} disabled={!canManage} />
+        </Popconfirm>
+      ),
+    },
   ]
 
   const policyColumns: TableColumnsType<AccessPolicy> = [
@@ -2468,7 +2483,20 @@ export function AIGatewayPage() {
     { title: 'Conditions', dataIndex: 'conditions', width: 220, render: policyConditionSummary },
     { title: 'Scope', dataIndex: 'resourceScopes', render: scopeSummary },
     { title: '启用', dataIndex: 'enabled', width: 90, render: (value) => <StatusTag value={value ? 'enabled' : 'disabled'} /> },
-    { title: '', key: 'actions', fixed: 'right', width: 120, render: (_, record) => <Space><Button size="small" icon={<EditOutlined />} disabled={!canManage} onClick={() => setDrawer({ kind: 'access-policy', record })} /><Button size="small" danger icon={<DeleteOutlined />} disabled={!canManage} onClick={() => confirmDelete('policy', record.id, '删除 access policy')} /></Space> },
+    {
+      title: '',
+      key: 'actions',
+      fixed: 'right',
+      width: 96,
+      render: (_, record) => (
+        <Space className="soha-row-action-icons">
+          <ManagementIconButton size="small" tooltip="编辑" aria-label="编辑 access policy" icon={<EditOutlined />} disabled={!canManage} onClick={() => setDrawer({ kind: 'access-policy', record })} />
+          <Popconfirm title="删除 access policy？" description="该操作会立即更新 AI Gateway 控制面。" okButtonProps={{ danger: true, loading: deleteMutation.isPending }} onConfirm={() => deleteMutation.mutate({ kind: 'policy', id: record.id })}>
+            <ManagementIconButton size="small" tooltip="删除" aria-label="删除 access policy" danger icon={<DeleteOutlined />} disabled={!canManage} />
+          </Popconfirm>
+        </Space>
+      ),
+    },
   ]
 
   const bindingColumns: TableColumnsType<SkillBinding> = [
@@ -2476,7 +2504,20 @@ export function AIGatewayPage() {
     { title: 'Skill', dataIndex: 'skillId', width: 180, render: (value) => <Tag>{value}</Tag> },
     { title: 'Capabilities', dataIndex: 'capabilityRefs', render: (value) => compactList(value, 4) },
     { title: '启用', dataIndex: 'enabled', width: 90, render: (value) => <StatusTag value={value ? 'enabled' : 'disabled'} /> },
-    { title: '', key: 'actions', fixed: 'right', width: 120, render: (_, record) => <Space><Button size="small" icon={<EditOutlined />} disabled={!canManage} onClick={() => setDrawer({ kind: 'skill-binding', record })} /><Button size="small" danger icon={<DeleteOutlined />} disabled={!canManage} onClick={() => confirmDelete('binding', record.id, '删除 skill binding')} /></Space> },
+    {
+      title: '',
+      key: 'actions',
+      fixed: 'right',
+      width: 96,
+      render: (_, record) => (
+        <Space className="soha-row-action-icons">
+          <ManagementIconButton size="small" tooltip="编辑" aria-label="编辑 skill binding" icon={<EditOutlined />} disabled={!canManage} onClick={() => setDrawer({ kind: 'skill-binding', record })} />
+          <Popconfirm title="删除 skill binding？" description="该操作会立即更新 AI Gateway 控制面。" okButtonProps={{ danger: true, loading: deleteMutation.isPending }} onConfirm={() => deleteMutation.mutate({ kind: 'binding', id: record.id })}>
+            <ManagementIconButton size="small" tooltip="删除" aria-label="删除 skill binding" danger icon={<DeleteOutlined />} disabled={!canManage} />
+          </Popconfirm>
+        </Space>
+      ),
+    },
   ]
 
   const toolColumns: TableColumnsType<GatewayTool> = [
@@ -2684,24 +2725,26 @@ export function AIGatewayPage() {
   ]
 
   if (!canUseGateway && !permissionSnapshot.isLoading) {
-    return <div className="soha-page"><Alert type="warning" title="当前账号没有 AI Gateway 权限。" /></div>
+    return <div className="soha-page"><ManagementState kind="no-permission" description="当前账号没有 AI Gateway 权限。" /></div>
   }
 
   return (
     <div className="soha-page">
-      <section className="soha-page-section">
-        <Space orientation="vertical" size={4}>
-          <Text type="secondary">AI Gateway</Text>
-          <Typography.Title level={3} style={{ margin: 0 }}>企业 AI 运维控制面</Typography.Title>
-          <Paragraph type="secondary" style={{ marginBottom: 0 }}>
-            统一管理 AI client、token、service account、tool grant、access policy、skill binding、审批与调用日志。
-          </Paragraph>
-        </Space>
-      </section>
+      <ManagementDetailHeader
+        title="企业 AI 运维控制面"
+        description="统一管理 AI client、token、service account、tool grant、access policy、skill binding、审批与调用日志。"
+        actions={(
+          <ManagementTableToolbar>
+            <Button size="small" icon={<ReloadOutlined />} onClick={() => void refreshAll()}>刷新</Button>
+          </ManagementTableToolbar>
+        )}
+      />
 
       <Card
+        size="small"
+        variant="outlined"
+        className="soha-management-panel-card"
         title={cardTitle(<SafetyCertificateOutlined />, gatewayPanelMeta.title)}
-        extra={<Button size="small" icon={<ReloadOutlined />} onClick={() => void refreshAll()}>刷新</Button>}
       >
         <Space orientation="vertical" size={12} style={{ width: '100%' }}>
           <Text type="secondary">{gatewayPanelMeta.description}</Text>
@@ -2757,9 +2800,11 @@ export function AIGatewayPage() {
                         { key: 'permissions', label: 'Permissions', children: manifest.permissionKeys.length },
                         { key: 'denied', label: 'Denied', children: manifest.summary.deniedCount },
                       ]} />
-                      <Table rowKey="name" size="small" columns={toolColumns} dataSource={manifest.tools} loading={manifestQuery.isLoading} pagination={{ pageSize: 8 }} scroll={{ x: 960 }} />
+                      <AdminTable shellClassName="soha-management-table-shell" columnSettingIconOnly columnSettingPlacement="header" rowKey="name" tableSize="small" columns={toolColumns} dataSource={manifest.tools} loading={manifestQuery.isLoading} pagination={{ pageSize: 8 }} scroll={{ x: 960 }} />
                     </>
-                  ) : <Empty />}
+                  ) : (
+                    <ManagementState bordered={false} compact title="暂无 Manifest" description="选择 AI client、skill 或 source 后查看可调用工具清单。" />
+                  )}
                 </Space>
               ),
             },
@@ -2767,18 +2812,22 @@ export function AIGatewayPage() {
               key: 'clients',
               label: 'AI Clients',
               children: (
-                <Table
+                <AdminTable
+                  shellClassName="soha-management-table-shell"
+                  columnSettingIconOnly
+                  columnSettingPlacement="header"
                   rowKey="id"
-                  size="small"
+                  tableSize="small"
                   columns={aiClientColumns}
                   dataSource={filteredClients}
                   loading={clientsQuery.isLoading}
                   scroll={{ x: 920 }}
-                  title={() => (
-                    <Space wrap>
+                  title="AI Clients"
+                  headerExtra={(
+                    <ManagementTableToolbar>
                       <Button type="primary" size="small" icon={<PlusOutlined />} disabled={!canManage} onClick={() => setDrawer({ kind: 'ai-client' })}>新增 client</Button>
                       <Input allowClear size="small" style={{ width: 220 }} placeholder="过滤 client" value={clientFilter} onChange={(event) => setClientFilter(event.target.value)} />
-                    </Space>
+                    </ManagementTableToolbar>
                   )}
                 />
               ),
@@ -2787,18 +2836,22 @@ export function AIGatewayPage() {
               key: 'tokens',
               label: 'Tokens',
               children: (
-                <Table
+                <AdminTable
+                  shellClassName="soha-management-table-shell"
+                  columnSettingIconOnly
+                  columnSettingPlacement="header"
                   rowKey="id"
-                  size="small"
+                  tableSize="small"
                   columns={tokenColumns}
                   dataSource={filteredPersonalTokens}
                   loading={personalTokensQuery.isLoading}
                   scroll={{ x: 900 }}
-                  title={() => (
-                    <Space wrap>
+                  title="Personal Access Tokens"
+                  headerExtra={(
+                    <ManagementTableToolbar>
                       <Button type="primary" size="small" icon={<PlusOutlined />} disabled={!canInvoke} onClick={() => setDrawer({ kind: 'personal-token' })}>创建 PAT</Button>
                       <Input allowClear size="small" style={{ width: 240 }} placeholder="过滤 token" value={tokenFilter} onChange={(event) => setTokenFilter(event.target.value)} />
-                    </Space>
+                    </ManagementTableToolbar>
                   )}
                 />
               ),
@@ -2808,31 +2861,39 @@ export function AIGatewayPage() {
               label: 'Service Accounts',
               children: (
                 <Space orientation="vertical" size={12} style={{ width: '100%' }}>
-                  <Table
+                  <AdminTable
+                    shellClassName="soha-management-table-shell"
+                    columnSettingIconOnly
+                    columnSettingPlacement="header"
                     rowKey="id"
-                    size="small"
+                    tableSize="small"
                     columns={serviceAccountColumns}
                     dataSource={serviceAccounts}
                     loading={serviceAccountsQuery.isLoading}
                     scroll={{ x: 860 }}
-                    title={() => (
-                      <Space wrap>
+                    title="Service Accounts"
+                    headerExtra={(
+                      <ManagementTableToolbar>
                         <Button type="primary" size="small" icon={<PlusOutlined />} disabled={!canManage} onClick={() => setDrawer({ kind: 'service-account' })}>新增服务账号</Button>
-                      </Space>
+                      </ManagementTableToolbar>
                     )}
                   />
-                  <Table
+                  <AdminTable
+                    shellClassName="soha-management-table-shell"
+                    columnSettingIconOnly
+                    columnSettingPlacement="header"
                     rowKey="id"
-                    size="small"
+                    tableSize="small"
                     columns={serviceAccountTokenColumns}
                     dataSource={filteredServiceAccountTokens}
                     loading={serviceAccountTokensQuery.isLoading}
                     scroll={{ x: 1180 }}
-                    title={() => (
-                      <Space wrap>
+                    title="Service Tokens"
+                    headerExtra={(
+                      <ManagementTableToolbar>
                         <Button size="small" danger icon={<StopOutlined />} disabled={!canManage} onClick={() => setDrawer({ kind: 'service-token-revoke' })}>吊销服务 token</Button>
                         <Input allowClear size="small" style={{ width: 260 }} placeholder="过滤 service token" value={serviceTokenFilter} onChange={(event) => setServiceTokenFilter(event.target.value)} />
-                      </Space>
+                      </ManagementTableToolbar>
                     )}
                   />
                 </Space>
@@ -2841,27 +2902,27 @@ export function AIGatewayPage() {
             {
               key: 'grants',
               label: 'Tool Grants',
-              children: <Table rowKey="id" size="small" columns={grantColumns} dataSource={filteredGrants} loading={grantsQuery.isLoading} scroll={{ x: 1000 }} title={() => (
-                <Space wrap>
+              children: <AdminTable shellClassName="soha-management-table-shell" columnSettingIconOnly columnSettingPlacement="header" rowKey="id" tableSize="small" columns={grantColumns} dataSource={filteredGrants} loading={grantsQuery.isLoading} scroll={{ x: 1000 }} title="Tool Grants" headerExtra={(
+                <ManagementTableToolbar>
                   <Button type="primary" size="small" icon={<PlusOutlined />} disabled={!canManage} onClick={() => setDrawer({ kind: 'tool-grant' })}>新增 grant</Button>
                   <Input allowClear size="small" style={{ width: 240 }} placeholder="过滤 grant" value={grantFilter} onChange={(event) => setGrantFilter(event.target.value)} />
-                </Space>
+                </ManagementTableToolbar>
               )} />,
             },
             {
               key: 'policies',
               label: 'Access Policies',
-              children: <Table rowKey="id" size="small" columns={policyColumns} dataSource={filteredPolicies} loading={policiesQuery.isLoading} scroll={{ x: 1080 }} title={() => (
-                <Space wrap>
+              children: <AdminTable shellClassName="soha-management-table-shell" columnSettingIconOnly columnSettingPlacement="header" rowKey="id" tableSize="small" columns={policyColumns} dataSource={filteredPolicies} loading={policiesQuery.isLoading} scroll={{ x: 1080 }} title="Access Policies" headerExtra={(
+                <ManagementTableToolbar>
                   <Button type="primary" size="small" icon={<PlusOutlined />} disabled={!canManage} onClick={() => setDrawer({ kind: 'access-policy' })}>新增 policy</Button>
                   <Input allowClear size="small" style={{ width: 240 }} placeholder="过滤 policy" value={policyFilter} onChange={(event) => setPolicyFilter(event.target.value)} />
-                </Space>
+                </ManagementTableToolbar>
               )} />,
             },
             {
               key: 'bindings',
               label: 'Skill Bindings',
-              children: <Table rowKey="id" size="small" columns={bindingColumns} dataSource={bindings} loading={bindingsQuery.isLoading} scroll={{ x: 920 }} title={() => <Button type="primary" size="small" icon={<PlusOutlined />} disabled={!canManage} onClick={() => setDrawer({ kind: 'skill-binding' })}>新增 binding</Button>} />,
+              children: <AdminTable shellClassName="soha-management-table-shell" columnSettingIconOnly columnSettingPlacement="header" rowKey="id" tableSize="small" columns={bindingColumns} dataSource={bindings} loading={bindingsQuery.isLoading} scroll={{ x: 920 }} title="Skill Bindings" headerExtra={<ManagementTableToolbar><Button type="primary" size="small" icon={<PlusOutlined />} disabled={!canManage} onClick={() => setDrawer({ kind: 'skill-binding' })}>新增 binding</Button></ManagementTableToolbar>} />,
             },
             {
               key: 'governance',
@@ -2900,10 +2961,13 @@ export function AIGatewayPage() {
                         { key: 'redactionTargets', label: 'Redaction targets', children: `${governanceStatus.redaction?.inputAudits ?? 0} input / ${governanceStatus.redaction?.outputAudits ?? 0} output` },
                       ]} />
                       {governanceStatus.recommendationActions?.length ? (
-                        <Table
+                        <AdminTable
+                          shellClassName="soha-management-table-shell"
+                          columnSettingIconOnly
+                          columnSettingPlacement="header"
                           rowKey={(record) => `${record.type}:${record.action}:${record.targetKind || ''}:${record.targetId || ''}`}
-                          size="small"
-                          title={() => <Text strong>Recommendation actions</Text>}
+                          tableSize="small"
+                          title="Recommendation actions"
                           columns={governanceRecommendationColumns}
                           dataSource={governanceStatus.recommendationActions}
                           pagination={{ pageSize: 6 }}
@@ -2918,20 +2982,31 @@ export function AIGatewayPage() {
                       ) : (
                         <Alert type="success" showIcon message="AI Gateway governance controls are healthy" />
                       )}
-                      <Table rowKey="name" size="small" columns={governanceHealthColumns} dataSource={governanceStatus.health.checks ?? []} loading={governanceQuery.isLoading} pagination={false} scroll={{ x: 860 }} />
-                      <Table rowKey="key" size="small" columns={governanceCoverageColumns} dataSource={governanceCoverageRows(governanceStatus.policyCoverage)} pagination={false} scroll={{ x: 760 }} />
-                      <Table rowKey="key" size="small" title={() => <Text strong>Redaction hits</Text>} columns={governanceRedactionColumns} dataSource={governanceRedactionRows(governanceStatus.redaction)} pagination={false} scroll={{ x: 820 }} />
-                      <Table rowKey="key" size="small" title={() => <Text strong>Token findings</Text>} columns={governanceTokenFindingColumns} dataSource={governanceTokenFindingRows(governanceStatus.tokens)} pagination={{ pageSize: 6 }} scroll={{ x: 1160 }} />
-                      <Table rowKey="key" size="small" columns={governanceQueueColumns} dataSource={governanceApprovalQueueRows(governanceStatus.approvals, governanceStatus.clients)} pagination={false} scroll={{ x: 720 }} />
+                      <AdminTable shellClassName="soha-management-table-shell" columnSettingIconOnly columnSettingPlacement="header" rowKey="name" tableSize="small" columns={governanceHealthColumns} dataSource={governanceStatus.health.checks ?? []} loading={governanceQuery.isLoading} pagination={false} scroll={{ x: 860 }} />
+                      <AdminTable shellClassName="soha-management-table-shell" columnSettingIconOnly columnSettingPlacement="header" rowKey="key" tableSize="small" columns={governanceCoverageColumns} dataSource={governanceCoverageRows(governanceStatus.policyCoverage)} pagination={false} scroll={{ x: 760 }} />
+                      <AdminTable shellClassName="soha-management-table-shell" columnSettingIconOnly columnSettingPlacement="header" rowKey="key" tableSize="small" title="Redaction hits" columns={governanceRedactionColumns} dataSource={governanceRedactionRows(governanceStatus.redaction)} pagination={false} scroll={{ x: 820 }} />
+                      <AdminTable shellClassName="soha-management-table-shell" columnSettingIconOnly columnSettingPlacement="header" rowKey="key" tableSize="small" title="Token findings" columns={governanceTokenFindingColumns} dataSource={governanceTokenFindingRows(governanceStatus.tokens)} pagination={{ pageSize: 6 }} scroll={{ x: 1160 }} />
+                      <AdminTable shellClassName="soha-management-table-shell" columnSettingIconOnly columnSettingPlacement="header" rowKey="key" tableSize="small" columns={governanceQueueColumns} dataSource={governanceApprovalQueueRows(governanceStatus.approvals, governanceStatus.clients)} pagination={false} scroll={{ x: 720 }} />
                       <div className="grid gap-3 lg:grid-cols-3">
-                        <Table rowKey="key" size="small" title={() => <Text strong>Top tools</Text>} columns={governanceMetricColumns} dataSource={governanceStatus.metrics.topTools ?? []} pagination={false} />
-                        <Table rowKey="key" size="small" title={() => <Text strong>Top AI clients</Text>} columns={governanceMetricColumns} dataSource={governanceStatus.metrics.topAiClients ?? []} pagination={false} />
-                        <Table rowKey="key" size="small" title={() => <Text strong>Top actors</Text>} columns={governanceMetricColumns} dataSource={governanceStatus.metrics.topActors ?? []} pagination={false} />
+                        <AdminTable shellClassName="soha-management-table-shell" columnSettingIconOnly columnSettingPlacement="header" rowKey="key" tableSize="small" title="Top tools" columns={governanceMetricColumns} dataSource={governanceStatus.metrics.topTools ?? []} pagination={false} />
+                        <AdminTable shellClassName="soha-management-table-shell" columnSettingIconOnly columnSettingPlacement="header" rowKey="key" tableSize="small" title="Top AI clients" columns={governanceMetricColumns} dataSource={governanceStatus.metrics.topAiClients ?? []} pagination={false} />
+                        <AdminTable shellClassName="soha-management-table-shell" columnSettingIconOnly columnSettingPlacement="header" rowKey="key" tableSize="small" title="Top actors" columns={governanceMetricColumns} dataSource={governanceStatus.metrics.topActors ?? []} pagination={false} />
                       </div>
-                      <Table rowKey={(record) => `${record.type}:${record.policyId || record.grantId || record.approvalRequestId || record.actorId || record.aiClientId || record.toolName || record.summary}`} size="small" columns={governanceFindingColumns} dataSource={governanceStatus.anomalies ?? []} pagination={{ pageSize: 8 }} scroll={{ x: 1180 }} />
+                      <AdminTable shellClassName="soha-management-table-shell" columnSettingIconOnly columnSettingPlacement="header" rowKey={(record) => `${record.type}:${record.policyId || record.grantId || record.approvalRequestId || record.actorId || record.aiClientId || record.toolName || record.summary}`} tableSize="small" columns={governanceFindingColumns} dataSource={governanceStatus.anomalies ?? []} pagination={{ pageSize: 8 }} scroll={{ x: 1180 }} />
                     </>
                   ) : (
-                    <Table rowKey="name" size="small" columns={governanceHealthColumns} dataSource={[]} loading={governanceQuery.isLoading} pagination={false} locale={{ emptyText: <Empty /> }} />
+                    <AdminTable
+                      shellClassName="soha-management-table-shell"
+                      columnSettingIconOnly
+                      columnSettingPlacement="header"
+                      rowKey="name"
+                      tableSize="small"
+                      columns={governanceHealthColumns}
+                      dataSource={[]}
+                      loading={governanceQuery.isLoading}
+                      pagination={false}
+                      empty={<ManagementState bordered={false} compact title="暂无治理状态" description="治理状态生成后会展示健康检查和建议动作。" />}
+                    />
                   )}
                 </Space>
               ),
@@ -2952,14 +3027,17 @@ export function AIGatewayPage() {
                     <RangePicker showTime allowClear style={{ width: 340 }} placeholder={['开始时间', '结束时间']} onChange={(value) => setApprovalFilters((prev) => ({ ...prev, ...gatewayTimeRangeQuery(value) }))} />
                     <Button icon={<ReloadOutlined />} onClick={() => void approvalsQuery.refetch()}>刷新</Button>
                   </Space>
-                  <Table
+                  <AdminTable
+                    shellClassName="soha-management-table-shell"
+                    columnSettingIconOnly
+                    columnSettingPlacement="header"
                     rowKey="id"
-                    size="small"
+                    tableSize="small"
                     columns={approvalColumns}
                     dataSource={approvalRequests}
                     loading={approvalsQuery.isLoading}
                     scroll={{ x: 1560 }}
-                    expandable={{ expandedRowRender: (record) => <ApprovalTracePanel record={record} /> }}
+                    expandable={{ expandedRowRender: (record: ApprovalRequest) => <ApprovalTracePanel record={record} /> }}
                   />
                 </Space>
               ),
@@ -2979,7 +3057,7 @@ export function AIGatewayPage() {
                     <RangePicker showTime allowClear style={{ width: 340 }} placeholder={['开始时间', '结束时间']} onChange={(value) => setAuditFilters((prev) => ({ ...prev, ...gatewayTimeRangeQuery(value) }))} />
                     <Button icon={<ReloadOutlined />} onClick={() => void auditQuery.refetch()}>刷新</Button>
                   </Space>
-                  <Table rowKey="id" size="small" columns={auditColumns} dataSource={auditLogs} loading={auditQuery.isLoading} scroll={{ x: 1220 }} expandable={{ expandedRowRender: (record) => <JsonBlock value={{ requestId: record.requestId, sourceIp: record.sourceIp, resourceScope: record.resourceScope, metadata: record.metadata }} /> }} />
+                  <AdminTable shellClassName="soha-management-table-shell" columnSettingIconOnly columnSettingPlacement="header" rowKey="id" tableSize="small" columns={auditColumns} dataSource={auditLogs} loading={auditQuery.isLoading} scroll={{ x: 1220 }} expandable={{ expandedRowRender: (record: GatewayAuditLog) => <JsonBlock value={{ requestId: record.requestId, sourceIp: record.sourceIp, resourceScope: record.resourceScope, metadata: record.metadata }} /> }} />
                 </Space>
               ),
             },
