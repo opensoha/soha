@@ -530,7 +530,13 @@ kubernetes:
 
   const tableHeaderExtra = (
     <ManagementTableToolbar batchBar={tableToolbarExtra}>
-      <Button autoInsertSpace={false} icon={<PlusOutlined />} type="primary" onClick={openCreateModal}>
+      <Button
+        autoInsertSpace={false}
+        className="soha-clusters-create-button"
+        icon={<PlusOutlined />}
+        type="primary"
+        onClick={openCreateModal}
+      >
         {t('common.create', 'Create')}
       </Button>
       <ManagementRefreshButton

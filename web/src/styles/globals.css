@@ -1082,6 +1082,13 @@ a {
   background: var(--soha-bg-surface);
 }
 
+.soha-management-table-shell-plain.soha-admin-table-shell {
+  overflow: hidden;
+  border: 1px solid var(--soha-border-color);
+  border-radius: 8px;
+  background: var(--soha-bg-surface);
+}
+
 .soha-management-table-shell .soha-admin-table-header {
   min-height: 40px;
   padding: 8px 16px 6px;
@@ -1419,6 +1426,11 @@ a {
   font-weight: 600;
 }
 
+.soha-clusters-create-button.ant-btn {
+  gap: 4px;
+  padding-inline: 10px;
+}
+
 .soha-cluster-status {
   display: inline-flex;
   align-items: center;
@@ -1749,21 +1761,27 @@ a {
 /* Right-fixed column: force an opaque sticky surface so underlying cells never bleed through */
 .soha-table-actions-column,
 .soha-deployment-actions-column,
+.soha-admin-table .ant-table-cell-fix-end,
 .soha-admin-table .ant-table-cell-fix-right,
 .soha-admin-table .ant-table-cell-fix-right-first,
 .soha-admin-table .ant-table-cell-fix-right-last,
+.soha-admin-table th.ant-table-cell-fix-end,
 .soha-admin-table th.ant-table-cell-fix-right,
 .soha-admin-table th.ant-table-cell-fix-right-first,
 .soha-admin-table th.ant-table-cell-fix-right-last,
+.soha-pods-table .ant-table-cell-fix-end,
 .soha-pods-table .ant-table-cell-fix-right,
 .soha-pods-table .ant-table-cell-fix-right-first,
 .soha-pods-table .ant-table-cell-fix-right-last,
+.soha-platform-table .ant-table-cell-fix-end,
 .soha-platform-table .ant-table-cell-fix-right,
 .soha-platform-table .ant-table-cell-fix-right-first,
 .soha-platform-table .ant-table-cell-fix-right-last,
+.soha-pods-table th.ant-table-cell-fix-end,
 .soha-pods-table th.ant-table-cell-fix-right,
 .soha-pods-table th.ant-table-cell-fix-right-first,
 .soha-pods-table th.ant-table-cell-fix-right-last,
+.soha-platform-table th.ant-table-cell-fix-end,
 .soha-platform-table th.ant-table-cell-fix-right,
 .soha-platform-table th.ant-table-cell-fix-right-first,
 .soha-platform-table th.ant-table-cell-fix-right-last {
@@ -1773,36 +1791,93 @@ a {
   background-clip: padding-box;
 }
 
+.soha-admin-table .ant-table-cell-fix-end-shadow::before,
+.soha-admin-table .ant-table-cell-fix-end-shadow-show::before,
+.soha-pods-table .ant-table-cell-fix-end-shadow::before,
+.soha-pods-table .ant-table-cell-fix-end-shadow-show::before,
+.soha-platform-table .ant-table-cell-fix-end-shadow::before,
+.soha-platform-table .ant-table-cell-fix-end-shadow-show::before {
+  box-shadow: none !important;
+}
+
+.soha-admin-table .ant-table-cell-fix-end-shadow::after,
+.soha-admin-table .ant-table-cell-fix-end-shadow-show::after,
+.soha-pods-table .ant-table-cell-fix-end-shadow::after,
+.soha-pods-table .ant-table-cell-fix-end-shadow-show::after,
+.soha-platform-table .ant-table-cell-fix-end-shadow::after,
+.soha-platform-table .ant-table-cell-fix-end-shadow-show::after {
+  box-shadow: none !important;
+}
+
+.soha-admin-table .ant-table-tbody > tr.ant-table-row-selected > td.ant-table-cell-fix-end,
+.soha-admin-table .ant-table-tbody > tr.ant-table-row-selected > td.ant-table-cell-fix-right,
+.soha-admin-table .ant-table-tbody > tr.ant-table-row-selected > td.ant-table-cell-fix-right-first,
+.soha-admin-table .ant-table-tbody > tr.ant-table-row-selected > td.ant-table-cell-fix-right-last,
+.soha-pods-table .ant-table-tbody > tr.ant-table-row-selected > td.ant-table-cell-fix-end,
+.soha-pods-table .ant-table-tbody > tr.ant-table-row-selected > td.ant-table-cell-fix-right,
+.soha-pods-table .ant-table-tbody > tr.ant-table-row-selected > td.ant-table-cell-fix-right-first,
+.soha-pods-table .ant-table-tbody > tr.ant-table-row-selected > td.ant-table-cell-fix-right-last,
+.soha-platform-table .ant-table-tbody > tr.ant-table-row-selected > td.ant-table-cell-fix-end,
+.soha-platform-table .ant-table-tbody > tr.ant-table-row-selected > td.ant-table-cell-fix-right,
+.soha-platform-table .ant-table-tbody > tr.ant-table-row-selected > td.ant-table-cell-fix-right-first,
+.soha-platform-table .ant-table-tbody > tr.ant-table-row-selected > td.ant-table-cell-fix-right-last {
+  background: var(--soha-table-row-selected-bg) !important;
+}
+
+.soha-admin-table .ant-table-tbody > tr.ant-table-row-selected:hover > td.ant-table-cell-fix-end,
+.soha-admin-table .ant-table-tbody > tr.ant-table-row-selected:hover > td.ant-table-cell-fix-right,
+.soha-admin-table .ant-table-tbody > tr.ant-table-row-selected:hover > td.ant-table-cell-fix-right-first,
+.soha-admin-table .ant-table-tbody > tr.ant-table-row-selected:hover > td.ant-table-cell-fix-right-last,
+.soha-pods-table .ant-table-tbody > tr.ant-table-row-selected:hover > td.ant-table-cell-fix-end,
+.soha-pods-table .ant-table-tbody > tr.ant-table-row-selected:hover > td.ant-table-cell-fix-right,
+.soha-pods-table .ant-table-tbody > tr.ant-table-row-selected:hover > td.ant-table-cell-fix-right-first,
+.soha-pods-table .ant-table-tbody > tr.ant-table-row-selected:hover > td.ant-table-cell-fix-right-last,
+.soha-platform-table .ant-table-tbody > tr.ant-table-row-selected:hover > td.ant-table-cell-fix-end,
+.soha-platform-table .ant-table-tbody > tr.ant-table-row-selected:hover > td.ant-table-cell-fix-right,
+.soha-platform-table .ant-table-tbody > tr.ant-table-row-selected:hover > td.ant-table-cell-fix-right-first,
+.soha-platform-table .ant-table-tbody > tr.ant-table-row-selected:hover > td.ant-table-cell-fix-right-last {
+  background: var(--soha-table-row-selected-hover-bg) !important;
+}
+
 .soha-admin-table .ant-table-thead > tr > th.ant-table-cell-fix-right,
+.soha-admin-table .ant-table-thead > tr > th.ant-table-cell-fix-end,
 .soha-admin-table .ant-table-thead > tr > th.ant-table-cell-fix-right-first,
 .soha-admin-table .ant-table-thead > tr > th.ant-table-cell-fix-right-last,
+.soha-pods-table .ant-table-thead > tr > th.ant-table-cell-fix-end,
 .soha-pods-table .ant-table-thead > tr > th.ant-table-cell-fix-right,
 .soha-pods-table .ant-table-thead > tr > th.ant-table-cell-fix-right-first,
 .soha-pods-table .ant-table-thead > tr > th.ant-table-cell-fix-right-last,
+.soha-platform-table .ant-table-thead > tr > th.ant-table-cell-fix-end,
 .soha-platform-table .ant-table-thead > tr > th.ant-table-cell-fix-right,
 .soha-platform-table .ant-table-thead > tr > th.ant-table-cell-fix-right-first,
 .soha-platform-table .ant-table-thead > tr > th.ant-table-cell-fix-right-last {
   background: var(--soha-bg-surface-muted) !important;
 }
 
+.soha-admin-table .ant-table-tbody > tr:hover > td.ant-table-cell-fix-end,
 .soha-admin-table .ant-table-tbody > tr:hover > td.ant-table-cell-fix-right,
 .soha-admin-table .ant-table-tbody > tr:hover > td.ant-table-cell-fix-right-first,
 .soha-admin-table .ant-table-tbody > tr:hover > td.ant-table-cell-fix-right-last,
+.soha-pods-table .ant-table-tbody > tr:hover > td.ant-table-cell-fix-end,
 .soha-pods-table .ant-table-tbody > tr:hover > td.ant-table-cell-fix-right,
 .soha-pods-table .ant-table-tbody > tr:hover > td.ant-table-cell-fix-right-first,
 .soha-pods-table .ant-table-tbody > tr:hover > td.ant-table-cell-fix-right-last,
+.soha-platform-table .ant-table-tbody > tr:hover > td.ant-table-cell-fix-end,
 .soha-platform-table .ant-table-tbody > tr:hover > td.ant-table-cell-fix-right,
 .soha-platform-table .ant-table-tbody > tr:hover > td.ant-table-cell-fix-right-first,
 .soha-platform-table .ant-table-tbody > tr:hover > td.ant-table-cell-fix-right-last {
   background: var(--soha-bg-surface) !important;
 }
 
+.soha-admin-table .ant-table-cell-fix-end::after,
 .soha-admin-table .ant-table-cell-fix-right::after,
 .soha-admin-table .ant-table-cell-fix-right-first::after,
 .soha-admin-table .ant-table-cell-fix-right-last::after,
+.soha-pods-table .ant-table-cell-fix-end::after,
 .soha-pods-table .ant-table-cell-fix-right::after,
 .soha-pods-table .ant-table-cell-fix-right-first::after,
 .soha-pods-table .ant-table-cell-fix-right-last::after,
+.soha-platform-table .ant-table-cell-fix-end::after,
 .soha-platform-table .ant-table-cell-fix-right::after,
 .soha-platform-table .ant-table-cell-fix-right-first::after,
 .soha-platform-table .ant-table-cell-fix-right-last::after {
@@ -1845,7 +1920,7 @@ a {
 
 .soha-admin-table .ant-table-cell-fix-right-first .ant-space {
   width: 100%;
-  justify-content: flex-end;
+  justify-content: center;
 }
 
 .soha-content-inner > .p-6.space-y-4,

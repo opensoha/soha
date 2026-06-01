@@ -1,13 +1,19 @@
 import { useMemo, useState } from 'react'
-import { App, Button, Card, Form, Input, Modal, Popconfirm, Space, Spin, Tag, Typography } from 'antd'
+import { App, Button, Form, Input, Modal, Popconfirm, Space, Spin, Tag } from 'antd'
 import { ApartmentOutlined, DeleteOutlined, EditOutlined, EyeOutlined, PlusOutlined, SendOutlined } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { AdminTable } from '@/components/admin-table'
-import { ManagementDetailHeader, ManagementIconButton, ManagementState, ManagementTableToolbar } from '@/components/management-list'
+import {
+  ManagementDensityButton,
+  ManagementDetailHeader,
+  ManagementIconButton,
+  ManagementRefreshButton,
+  ManagementState,
+  ManagementTableToolbar,
+} from '@/components/management-list'
 import { ResourceWorkspaceScopeBar } from '@/components/platform-scope-toolbar'
 import { useI18n } from '@/i18n'
-import { PlatformClusterScopeHint } from '@/components/platform-cluster-scope-hint'
 import { StatusTag } from '@/components/status-tag'
 import { api } from '@/services/api-client'
 import { usePlatformScopeStore } from '@/stores/platform-scope-store'
@@ -23,8 +29,6 @@ import {
 import type { ApiResponse, Namespace, Node, NodeDetail } from '@/types'
 import type { TableColumnsType } from 'antd'
 
-const { Text } = Typography
-
 export function ClusterNodesPage() {
   const { t } = useI18n()
   const { message } = App.useApp()
@@ -32,6 +36,7 @@ export function ClusterNodesPage() {
   const queryClient = useQueryClient()
   const { clusterId } = usePlatformScopeStore()
   const [editingNodeName, setEditingNodeName] = useState<string | null>(null)
+  const [nodeTableSize, setNodeTableSize] = useState<'middle' | 'small'>('small')
 
   const nodesQuery = useQuery({
     queryKey: ['cluster-nodes', clusterId],
@@ -152,38 +157,45 @@ export function ClusterNodesPage() {
     },
   ]
 
+  const nodeTableHeaderExtra = (
+    <ManagementTableToolbar>
+      <ManagementRefreshButton
+        aria-label="刷新"
+        loading={nodesQuery.isFetching}
+        title="刷新"
+        tooltip="刷新"
+        onClick={() => void nodesQuery.refetch()}
+      />
+      <ManagementDensityButton
+        aria-label="切换表格密度"
+        title="切换表格密度"
+        tooltip="切换表格密度"
+        onClick={() => setNodeTableSize((current) => current === 'middle' ? 'small' : 'middle')}
+      />
+    </ManagementTableToolbar>
+  )
+
   return (
     <div className="soha-page">
-      <ManagementDetailHeader
-        title={t('page.nodes.title', 'Node Resources')}
-        description={t('page.nodes.desc', 'Inspect node resources in the current cluster scope and edit labels / taints.')}
-      />
       <ResourceWorkspaceScopeBar scopeMode="cluster" />
-      <PlatformClusterScopeHint resourceLabel="节点" />
       {!clusterId ? (
         <ManagementState compact kind="select-scope" title={t('common.pleaseSelectCluster', 'Please select a cluster')} />
       ) : (
-        <>
-          <Card className="soha-compact-note-card">
-            <Text type="secondary" className="text-xs">
-              新增节点需要通过云平台、虚拟机编排或集群扩容工具完成；这里支持编辑 labels/taints 和删除 Node 对象。
-            </Text>
-          </Card>
-          <AdminTable
-            columnSettingIconOnly
-            columnSettingPlacement="header"
-            shellClassName="soha-management-table-shell"
-            columns={nodeColumns}
-            dataSource={nodesQuery.data?.data ?? []}
-            rowKey="name"
-            loading={nodesQuery.isLoading}
-            pageSize={10}
-            tableSize="small"
-            scroll={{ x: 'max-content' }}
-            expandedRowRender={(record: Node) => <NodeResourcePanel node={record} />}
-            hideExpandedColumn={false}
-          />
-        </>
+        <AdminTable
+          columnSettingIconOnly
+          columnSettingPlacement="header"
+          shellClassName="soha-management-table-shell"
+          headerExtra={nodeTableHeaderExtra}
+          columns={nodeColumns}
+          dataSource={nodesQuery.data?.data ?? []}
+          rowKey="name"
+          loading={nodesQuery.isLoading}
+          pageSize={10}
+          tableSize={nodeTableSize}
+          scroll={{ x: 'max-content' }}
+          expandedRowRender={(record: Node) => <NodeResourcePanel node={record} />}
+          hideExpandedColumn={false}
+        />
       )}
 
       <Modal

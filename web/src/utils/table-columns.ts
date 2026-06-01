@@ -7,7 +7,7 @@ export const tableColumnPresets = {
   },
   action: {
     width: 140,
-    align: 'right' as const,
+    align: 'center' as const,
     fixed: 'right' as const,
   },
 }
