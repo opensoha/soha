@@ -6180,8 +6180,8 @@ a {
 @media (max-width: 960px) {
   .soha-auth-layout {
     grid-template-columns: 1fr;
-    width: min(720px, 100%);
-    gap: 26px;
+    width: min(420px, 100%);
+    gap: 0;
   }
 
   .soha-auth-panel {
@@ -6191,24 +6191,7 @@ a {
   }
 
   .soha-auth-flow {
-    order: 2;
-  }
-
-  .soha-auth-flow-copy {
-    max-width: none;
-  }
-
-  .soha-auth-flow-title.ant-typography,
-  .soha-auth-flow-subtitle.ant-typography {
-    max-width: none;
-  }
-
-  .soha-auth-flow-map {
-    min-height: 430px;
-  }
-
-  .soha-auth-flow-node {
-    width: min(236px, 43vw);
+    display: none;
   }
 
   .soha-workloads-overview-page .soha-workload-overview-metric-grid {
@@ -6235,41 +6218,17 @@ a {
 
 @media (max-width: 768px) {
   .soha-auth-shell {
-    align-items: flex-start;
+    align-items: center;
     height: auto;
     min-height: 100vh;
     overflow-x: hidden;
     overflow-y: auto;
-    padding-top: 58px;
+    padding: 58px 16px 24px;
   }
 
   .soha-auth-theme-toggle.ant-btn {
     top: 12px;
     right: 12px;
-  }
-
-  .soha-auth-flow-title.ant-typography {
-    font-size: 26px;
-  }
-
-  .soha-auth-flow-map {
-    min-height: 0;
-  }
-
-  .soha-auth-flow-lines {
-    display: none;
-  }
-
-  .soha-auth-flow-map {
-    display: grid;
-    grid-template-columns: 1fr;
-    gap: 10px;
-  }
-
-  .soha-auth-flow-node {
-    position: relative;
-    inset: auto;
-    width: 100%;
   }
 
   .soha-system-overview-grid {
@@ -6572,10 +6531,6 @@ a {
     position: static;
     max-height: none;
     overflow: visible;
-  }
-
-  .soha-auth-shell {
-    padding: 16px;
   }
 
   .soha-auth-panel-inner {

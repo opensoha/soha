@@ -73,7 +73,6 @@ func New(cfg cfgpkg.Config, logger *zap.Logger, deps Dependencies) *http.Server 
 		v1.GET("/readyz", deps.System.Readyz)
 		v1.GET("/auth/providers", deps.Auth.ListProviders)
 		v1.GET("/auth/login-options", deps.Auth.LoginOptions)
-		v1.POST("/auth/login-verification/challenge", deps.Auth.IssueLoginVerification)
 		v1.POST("/auth/login", deps.Auth.Login)
 		v1.POST("/auth/refresh", deps.Auth.Refresh)
 		v1.GET("/auth/oidc/login", deps.Auth.OIDCLogin)

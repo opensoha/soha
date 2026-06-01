@@ -25,7 +25,6 @@ import {
   fetchAuthProviders,
   fetchLoginOptions,
   fetchPermissionSnapshot,
-  issueLoginVerificationChallenge,
   loginWithPassword,
 } from "@/features/auth/auth-api";
 import { findLandingPath } from "@/routes/meta";
@@ -377,8 +376,6 @@ export function LoginPage() {
   );
   const [sliderValue, setSliderValue] = useState(0);
   const [sliderVerified, setSliderVerified] = useState(false);
-  const [sliderToken, setSliderToken] = useState<string | null>(null);
-  const [sliderIssuing, setSliderIssuing] = useState(false);
   const themeMode = usePreferencesStore((state) => state.themeMode);
   const setThemeMode = usePreferencesStore((state) => state.setThemeMode);
 
@@ -430,7 +427,6 @@ export function LoginPage() {
   const resetSliderVerification = () => {
     setSliderValue(0);
     setSliderVerified(false);
-    setSliderToken(null);
   };
 
   const handleSliderChange = (value: number | number[]) => {
@@ -438,32 +434,21 @@ export function LoginPage() {
     setSliderValue(nextValue);
     if (nextValue < 98 && sliderVerified) {
       setSliderVerified(false);
-      setSliderToken(null);
     }
   };
 
-  const handleSliderComplete = async (value: number | number[]) => {
+  const handleSliderComplete = (value: number | number[]) => {
     const nextValue = normalizeSliderValue(value);
     if (nextValue >= 98) {
-      setSliderIssuing(true);
-      try {
-        const challenge = await issueLoginVerificationChallenge(100);
-        setSliderValue(100);
-        setSliderVerified(true);
-        setSliderToken(challenge.token);
-      } catch (err: any) {
-        resetSliderVerification();
-        message.error(err?.message ?? "滑块验证失败，请重试");
-      } finally {
-        setSliderIssuing(false);
-      }
+      setSliderValue(100);
+      setSliderVerified(true);
       return;
     }
     resetSliderVerification();
   };
 
   const handleLogin = async (values: LoginFormValues) => {
-    if (sliderVerificationEnabled && (!sliderVerified || !sliderToken)) {
+    if (sliderVerificationEnabled && !sliderVerified) {
       message.warning("请先完成滑块验证");
       return;
     }
@@ -473,7 +458,6 @@ export function LoginPage() {
       const authResult = await loginWithPassword(
         values.username,
         values.password,
-        sliderToken ?? undefined,
       );
       commitAuthResult(authResult);
       const nextPath = await resolvePostLoginPath(authResult.user.roles, from);
@@ -586,26 +570,18 @@ export function LoginPage() {
                         )}
                       </span>
                       <span>
-                        {sliderIssuing
-                          ? "正在确认验证"
-                          : sliderVerified
-                            ? "验证通过"
-                            : "拖动滑块完成验证"}
+                        {sliderVerified ? "验证通过" : "拖动滑块完成验证"}
                       </span>
                     </div>
                     <div className="soha-auth-slider-track-shell">
                       <span className="soha-auth-slider-shine" />
                       <span className="soha-auth-slider-track-copy">
-                        {sliderIssuing
-                          ? "正在生成登录验证令牌"
-                          : sliderVerified
-                            ? "身份环境检查完成"
-                            : "按住滑块向右拖动"}
+                        {sliderVerified ? "身份环境检查完成" : "按住滑块向右拖动"}
                       </span>
                     </div>
                     <Slider
                       className="soha-auth-slider-control"
-                      disabled={sliderVerified || loading || sliderIssuing}
+                      disabled={sliderVerified || loading}
                       max={100}
                       min={0}
                       onChange={handleSliderChange}
@@ -627,7 +603,7 @@ export function LoginPage() {
                 htmlType="submit"
                 loading={loading}
                 block
-                disabled={sliderVerificationEnabled && (!sliderVerified || !sliderToken)}
+                disabled={sliderVerificationEnabled && !sliderVerified}
                 className="soha-auth-submit"
               >
                 登录控制台

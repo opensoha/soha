@@ -19,11 +19,6 @@ interface LoginOptions {
   };
 }
 
-interface LoginVerificationChallenge {
-  expiresIn: number;
-  token: string;
-}
-
 interface AuthFetchOptions extends RequestInit {
   accessToken?: string | null;
 }
@@ -134,25 +129,10 @@ export async function fetchLoginOptions() {
   return response.data;
 }
 
-export async function issueLoginVerificationChallenge(sliderValue: number) {
-  const response = await fetchAuthJSON<ApiResponse<LoginVerificationChallenge>>(
-    "/auth/login-verification/challenge",
-    {
-      method: "POST",
-      body: JSON.stringify({ type: "slider", sliderValue }),
-    },
-  );
-  return response.data;
-}
-
-export async function loginWithPassword(
-  login: string,
-  password: string,
-  verificationToken?: string,
-) {
+export async function loginWithPassword(login: string, password: string) {
   const response = await fetchAuthJSON<ApiResponse<AuthResult>>("/auth/login", {
     method: "POST",
-    body: JSON.stringify({ login, password, verificationToken }),
+    body: JSON.stringify({ login, password }),
   });
   return response.data;
 }
