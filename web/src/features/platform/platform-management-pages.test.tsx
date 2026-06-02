@@ -8,6 +8,8 @@ import { createRoot } from 'react-dom/client'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
+  ConfigurationConfigMapsPage,
+  NetworkPortForwardPage,
   PlatformAccessControlClusterRoleBindingsPage,
   PlatformAccessControlClusterRolesPage,
   PlatformAccessControlRoleBindingsPage,
@@ -56,6 +58,8 @@ vi.mock('@/components/admin-table', () => ({
     columns,
     dataSource,
     empty,
+    headerExtra,
+    paginationSummary,
     title,
     toolbar,
     toolbarExtra,
@@ -63,14 +67,22 @@ vi.mock('@/components/admin-table', () => ({
     columns: Array<Record<string, any>>
     dataSource: Array<Record<string, any>>
     empty?: ReactNode
+    headerExtra?: ReactNode
+    paginationSummary?: ReactNode | ((total: number, range: [number, number]) => ReactNode)
     title?: ReactNode
     toolbar?: ReactNode
     toolbarExtra?: ReactNode
   }) => (
     <div data-testid="admin-table">
       {title ? <div data-testid="table-title">{title}</div> : null}
+      {headerExtra ? <div data-testid="header-extra">{headerExtra}</div> : null}
       {toolbar ? <div data-testid="toolbar">{toolbar}</div> : null}
       {toolbarExtra ? <div data-testid="toolbar-extra">{toolbarExtra}</div> : null}
+      {paginationSummary ? (
+        <div data-testid="pagination-summary">
+          {typeof paginationSummary === 'function' ? paginationSummary(dataSource.length, [1, dataSource.length]) : paginationSummary}
+        </div>
+      ) : null}
       <div data-testid="row-count">{dataSource.length}</div>
       {dataSource.length === 0 ? <div data-testid="empty">{empty}</div> : null}
       {dataSource.map((record, rowIndex) => (
@@ -147,29 +159,33 @@ async function renderWithProviders(node: ReactNode, route = '/platform-access-co
   return container
 }
 
+function installDomMocks() {
+  class ResizeObserverMock {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  }
+
+  Object.defineProperty(window, 'matchMedia', {
+    writable: true,
+    value: vi.fn().mockImplementation(() => ({
+      matches: false,
+      media: '',
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })),
+  })
+  vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
+  vi.stubGlobal('ResizeObserver', ResizeObserverMock)
+}
+
 describe('platform RBAC list pages', () => {
   beforeAll(() => {
-    class ResizeObserverMock {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
-    }
-
-    Object.defineProperty(window, 'matchMedia', {
-      writable: true,
-      value: vi.fn().mockImplementation(() => ({
-        matches: false,
-        media: '',
-        onchange: null,
-        addListener: vi.fn(),
-        removeListener: vi.fn(),
-        addEventListener: vi.fn(),
-        removeEventListener: vi.fn(),
-        dispatchEvent: vi.fn(),
-      })),
-    })
-    vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
-    vi.stubGlobal('ResizeObserver', ResizeObserverMock)
+    installDomMocks()
   })
 
   beforeEach(() => {
@@ -240,11 +256,24 @@ describe('platform RBAC list pages', () => {
     expect(container.textContent).not.toContain('editor-binding')
   })
 
-  it('renders the RBAC table title inside the panel header', async () => {
+  it('keeps RBAC search controls in a query card and summarizes results in pagination', async () => {
+    setResponses({
+      '/clusters/cluster-a/access-control/serviceaccounts?namespace=team-a': [
+        { name: 'default', namespace: 'team-a', secrets: 0, imagePullSecrets: 0, ageSeconds: 60, allowedActions: ['view'] },
+      ],
+    })
+
     const container = await renderWithProviders(<PlatformAccessControlServiceAccountsPage />)
 
-    expect(container.querySelector('[data-testid="table-title"]')?.textContent).toContain('ServiceAccounts')
-    expect(container.textContent).toContain('按当前集群与命名空间范围审查 ServiceAccounts 资源关系。')
+    expect(container.querySelector('[data-testid="table-title"]')).toBeNull()
+    expect(container.querySelector('[data-testid="toolbar"]')).toBeNull()
+    expect(container.querySelector('input[placeholder="搜索 ServiceAccounts"]')).not.toBeNull()
+    expect(container.querySelector('[data-testid="pagination-summary"]')?.textContent).toContain('当前 1 / 1 条')
+
+    const headerButtons = Array.from(container.querySelectorAll('[data-testid="header-extra"] button')).map((button) =>
+      button.textContent?.trim() || button.getAttribute('aria-label'),
+    )
+    expect(headerButtons).toEqual(['新增', '切换表格密度', '刷新'])
   })
 
   it('shows subject chips with overflow summary', async () => {
@@ -279,5 +308,135 @@ describe('platform RBAC list pages', () => {
 
     expect(container.textContent).not.toContain('删除')
     expect(container.querySelector('button[aria-label="删除"]')).toBeNull()
+  })
+})
+
+describe('platform configuration list pages', () => {
+  beforeAll(() => {
+    installDomMocks()
+  })
+
+  beforeEach(() => {
+    testState.scope.clusterId = 'cluster-a'
+    testState.scope.namespace = 'team-a'
+    setResponses({})
+  })
+
+  afterEach(async () => {
+    await act(async () => {
+      for (const root of roots) {
+        root.unmount()
+      }
+    })
+    roots = []
+    for (const container of containers) {
+      container.remove()
+    }
+    containers = []
+    vi.clearAllMocks()
+  })
+
+  it('keeps configuration query controls in a separate card and summarizes results in pagination', async () => {
+    setResponses({
+      '/clusters/cluster-a/configuration/configmaps?namespace=team-a': [
+        { name: 'app-config', namespace: 'team-a', dataEntries: 2, binaryEntries: 0, immutable: false, ageSeconds: 60 },
+        { name: 'platform-config', namespace: 'team-a', dataEntries: 1, binaryEntries: 0, immutable: false, ageSeconds: 120 },
+      ],
+    })
+
+    const container = await renderWithProviders(<ConfigurationConfigMapsPage />, '/configuration/configmaps')
+
+    expect(container.querySelector('[data-testid="table-title"]')).toBeNull()
+    expect(container.querySelector('[data-testid="toolbar"]')).toBeNull()
+    expect(container.querySelector('input[placeholder="搜索 ConfigMaps 名称 / 命名空间"]')).not.toBeNull()
+    expect(container.querySelector('[data-testid="pagination-summary"]')?.textContent).toContain('当前 2 / 2 条')
+
+    const headerButtons = Array.from(container.querySelectorAll('[data-testid="header-extra"] button')).map((button) =>
+      button.textContent?.trim() || button.getAttribute('aria-label'),
+    )
+    expect(headerButtons).toEqual(['新增', '切换表格密度', '刷新'])
+
+    const input = container.querySelector('input[placeholder="搜索 ConfigMaps 名称 / 命名空间"]') as HTMLInputElement | null
+    if (!input) {
+      throw new Error('config search input not found')
+    }
+
+    await act(async () => {
+      setNativeInputValue(input, 'app')
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+      input.dispatchEvent(new Event('change', { bubbles: true }))
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(container.querySelector('[data-testid="row-count"]')?.textContent).toBe('1')
+    expect(container.querySelector('[data-testid="pagination-summary"]')?.textContent).toContain('当前 1 / 2 条')
+    expect(container.textContent).toContain('app-config')
+    expect(container.textContent).not.toContain('platform-config')
+  })
+})
+
+describe('platform network port forward page', () => {
+  beforeAll(() => {
+    installDomMocks()
+  })
+
+  beforeEach(() => {
+    testState.scope.clusterId = 'cluster-a'
+    testState.scope.namespace = 'team-a'
+    setResponses({})
+  })
+
+  afterEach(async () => {
+    await act(async () => {
+      for (const root of roots) {
+        root.unmount()
+      }
+    })
+    roots = []
+    for (const container of containers) {
+      container.remove()
+    }
+    containers = []
+    vi.clearAllMocks()
+  })
+
+  it('uses the management query card and keeps create before utility actions', async () => {
+    setResponses({
+      '/clusters/cluster-a/network/port-forwards': [
+        { sessionId: 'session-a', namespace: 'team-a', targetKind: 'Pod', targetName: 'api', localPort: 8080, remotePort: 80, status: 'active', createdAt: '2026-06-02T00:00:00Z' },
+        { sessionId: 'session-b', namespace: 'team-a', targetKind: 'Service', targetName: 'web', localPort: 8081, remotePort: 80, status: 'stopped', createdAt: '2026-06-02T00:01:00Z' },
+      ],
+    })
+
+    const container = await renderWithProviders(<NetworkPortForwardPage />, '/network/port-forward')
+
+    expect(container.querySelector('[data-testid="table-title"]')).toBeNull()
+    expect(container.querySelector('[data-testid="toolbar"]')).toBeNull()
+    expect(container.querySelector('input[placeholder="搜索会话 / Namespace / 目标 / 状态 / 端口"]')).not.toBeNull()
+    expect(container.querySelector('[data-testid="pagination-summary"]')?.textContent).toContain('当前 2 / 2 条')
+
+    const headerButtons = Array.from(container.querySelectorAll('[data-testid="header-extra"] button')).map((button) =>
+      button.textContent?.trim() || button.getAttribute('aria-label'),
+    )
+    expect(headerButtons).toEqual(['新建 Port Forward', '切换表格密度', '刷新'])
+
+    const input = container.querySelector('input[placeholder="搜索会话 / Namespace / 目标 / 状态 / 端口"]') as HTMLInputElement | null
+    if (!input) {
+      throw new Error('port forward search input not found')
+    }
+
+    await act(async () => {
+      setNativeInputValue(input, 'api')
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+      input.dispatchEvent(new Event('change', { bubbles: true }))
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(container.querySelector('[data-testid="row-count"]')?.textContent).toBe('1')
+    expect(container.querySelector('[data-testid="pagination-summary"]')?.textContent).toContain('当前 1 / 2 条')
+    expect(container.textContent).toContain('Pod/api')
+    expect(container.textContent).not.toContain('Service/web')
   })
 })

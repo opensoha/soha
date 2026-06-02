@@ -22,6 +22,7 @@ interface AdminTableProps {
   onRow?: any
   pageSize?: number
   pagination?: any
+  paginationSummary?: ReactNode | ((total: number, range: [number, number]) => ReactNode)
   rowKey: string | ((record: any) => string)
   rowClassName?: any
   rowSelection?: any
@@ -78,6 +79,7 @@ export function AdminTable({
   loading,
   pageSize = 10,
   pagination,
+  paginationSummary,
   rowKey,
   rowSelection,
   shellClassName,
@@ -167,6 +169,7 @@ export function AdminTable({
       }
     : rowSelection
 
+  const inheritedPagination = pagination && pagination !== false ? pagination : undefined
   const resolvedPagination = pagination === false
     ? false
     : {
@@ -176,12 +179,19 @@ export function AdminTable({
         showLessItems: true,
         showSizeChanger: true,
         pageSizeOptions: DEFAULT_PAGE_SIZE_OPTIONS,
-        ...pagination,
+        ...inheritedPagination,
+        showTotal: paginationSummary
+          ? (total: number, range: [number, number]) => (
+              typeof paginationSummary === 'function'
+                ? paginationSummary(total, range)
+                : paginationSummary
+            )
+          : inheritedPagination?.showTotal,
         onChange: (nextPage: number, nextPageSize: number) => {
           setCurrentPage(nextPage)
           setCurrentPageSize(nextPageSize)
-          pagination?.onPageChange?.(nextPage)
-          pagination?.onPageSizeChange?.(nextPageSize)
+          inheritedPagination?.onPageChange?.(nextPage)
+          inheritedPagination?.onPageSizeChange?.(nextPageSize)
         },
       }
 

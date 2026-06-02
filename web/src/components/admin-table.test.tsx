@@ -110,6 +110,19 @@ describe('AdminTable', () => {
     expect(captured.tableProps?.scroll).toEqual({ x: 1440, y: undefined })
   })
 
+  it('passes pagination summary into Ant Design showTotal', async () => {
+    await renderNode(
+      <AdminTable
+        columns={[{ title: 'A', dataIndex: 'a', width: 220 }]}
+        dataSource={[{ id: '1', a: 'a' }]}
+        paginationSummary="当前 1 / 3 条"
+        rowKey="id"
+      />,
+    )
+
+    expect(captured.tableProps?.pagination.showTotal(1, [1, 1])).toBe('当前 1 / 3 条')
+  })
+
   it('pins the shared action preset to the right side', () => {
     expect(tableColumnPresets.action.fixed).toBe('right')
   })

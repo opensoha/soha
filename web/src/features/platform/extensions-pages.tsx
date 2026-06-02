@@ -1,53 +1,144 @@
-import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
+import { lazy, Suspense, useDeferredValue, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
   Alert,
   Button,
   Card,
+  Checkbox,
   Descriptions,
+  Drawer,
+  Form,
+  Input,
+  InputNumber,
   Modal,
   Popconfirm,
+  Select,
   Space,
   Spin,
   Tabs,
+  Table,
   Tag,
   Typography,
   message,
 } from 'antd'
 import {
   ArrowLeftOutlined,
+  CloudDownloadOutlined,
   DeleteOutlined,
   EditOutlined,
   HistoryOutlined,
+  LinkOutlined,
   PlusOutlined,
   RightOutlined,
+  RocketOutlined,
+  SearchOutlined,
 } from '@ant-design/icons'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AdminTable } from '@/components/admin-table'
 import {
   ManagementDetailHeader,
+  ManagementDensityButton,
   ManagementIconButton,
+  ManagementQueryField,
+  ManagementQueryPanel,
   ManagementRefreshButton,
   ManagementState,
   ManagementTableToolbar,
 } from '@/components/management-list'
 import { useI18n } from '@/i18n'
-import { PlatformClusterScopeHint } from '@/components/platform-cluster-scope-hint'
 import { StatusTag } from '@/components/status-tag'
 import { YamlDraftDiffEditor } from '@/components/yaml-draft-diff-editor'
+import { hasAllowedAction } from '@/features/auth/permission-snapshot'
 import { buildClusterScopedPath } from '@/features/platform/platform-scope-query'
 import { api } from '@/services/api-client'
 import { usePlatformScopeStore } from '@/stores/platform-scope-store'
 import { formatAgeSeconds, formatDateTime, formatRelativeTime } from '@/utils/time'
 import { tableColumnPresets } from '@/utils/table-columns'
-import type { ApiResponse, HelmRelease, HelmReleaseDetail, HelmReleaseHistory, HelmValues } from '@/types'
+import type {
+  ApiResponse,
+  HelmChart,
+  HelmChartCatalog,
+  HelmChartDetail,
+  HelmChartInstallResource,
+  HelmChartInstallResult,
+  HelmChartValuesTemplate,
+  HelmRelease,
+  HelmReleaseDetail,
+  HelmReleaseHistory,
+  HelmValues,
+} from '@/types'
 import type { TableColumnsType, TabsProps } from 'antd'
 
 const { Text } = Typography
+const HELM_CHART_DEFAULT_PAGE_SIZE = 20
+const HELM_CHART_MAX_PAGE_SIZE = 60
+const HELM_CHART_PAGE_SIZE_OPTIONS = [20, 40, 60]
+
 const K8sYamlEditor = lazy(async () => {
   const mod = await import('@/components/k8s-yaml-editor')
   return { default: mod.K8sYamlEditor }
 })
+
+type SearchableValue = string | number | boolean | null | undefined
+
+interface HelmChartInstallTarget {
+  chartName: string
+  namespace: string
+  releaseName: string
+  timeoutSeconds?: number
+  version: string
+  wait?: boolean
+}
+
+function normalizeSearchKeyword(value: string) {
+  return value.trim().toLowerCase()
+}
+
+function includesSearch(values: SearchableValue[], keyword: string) {
+  if (!keyword) return true
+  return values.some((value) => String(value ?? '').toLowerCase().includes(keyword))
+}
+
+function ResourceQueryPanel({
+  placeholder,
+  searchKeyword,
+  setSearchKeyword,
+}: {
+  placeholder: string
+  searchKeyword: string
+  setSearchKeyword: (value: string) => void
+}) {
+  const { localeCode } = useI18n()
+
+  return (
+    <ManagementQueryPanel
+      onFinish={() => undefined}
+      actions={(
+        <>
+          <Button autoInsertSpace={false} disabled={!searchKeyword.trim()} htmlType="button" onClick={() => setSearchKeyword('')}>
+            {localeCode === 'zh_CN' ? '重置' : 'Reset'}
+          </Button>
+          <Button autoInsertSpace={false} htmlType="submit" type="primary">
+            {localeCode === 'zh_CN' ? '查询' : 'Search'}
+          </Button>
+        </>
+      )}
+    >
+      <ManagementQueryField label={localeCode === 'zh_CN' ? '关键词' : 'Keyword'}>
+        <Input
+          allowClear
+          className="soha-platform-compact-field soha-workload-search-input"
+          prefix={<SearchOutlined />}
+          size="small"
+          value={searchKeyword}
+          variant="filled"
+          onChange={(event) => setSearchKeyword(event.target.value)}
+          placeholder={placeholder}
+        />
+      </ManagementQueryField>
+    </ManagementQueryPanel>
+  )
+}
 /* ─── CRDs ─── */
 
 interface CRD {
@@ -368,12 +459,16 @@ function CRDResourceEditorModal({
 }
 
 function CRDKindWorkspace({ crd }: { crd: CRD }) {
-  const { t } = useI18n()
+  const { t, localeCode } = useI18n()
   const { clusterId, namespace } = usePlatformScopeStore()
   const queryClient = useQueryClient()
   const [createOpen, setCreateOpen] = useState(false)
   const [editingResource, setEditingResource] = useState<CRDResourceInstance | null>(null)
   const [deletingKey, setDeletingKey] = useState<string | null>(null)
+  const [searchKeyword, setSearchKeyword] = useState('')
+  const [tableSize, setTableSize] = useState<'small' | 'middle'>('small')
+  const deferredSearchKeyword = useDeferredValue(searchKeyword)
+  const normalizedKeyword = normalizeSearchKeyword(deferredSearchKeyword)
 
   const selectedScopeNamespace = isNamespacedCRD(crd) ? (namespace ?? '') : null
   const selectedListQueryKey = ['crd-resources', clusterId, crd.name, selectedScopeNamespace ?? '__cluster__']
@@ -403,6 +498,20 @@ function CRDKindWorkspace({ crd }: { crd: CRD }) {
     },
     onError: (err: Error) => void message.error(err.message),
   })
+
+  const rawResources = resourcesQuery.data?.data ?? []
+  const filteredResources = useMemo(
+    () => rawResources.filter((item) => includesSearch([
+      item.name,
+      item.namespace,
+      item.kind || crd.kind,
+      item.apiVersion || `${crd.group}/${crd.version}`,
+      item.status,
+      ...Object.entries(item.summary ?? {}).flatMap(([key, value]) => [key, value]),
+    ], normalizedKeyword)),
+    [crd.group, crd.kind, crd.version, normalizedKeyword, rawResources],
+  )
+  const densityLabel = localeCode === 'zh_CN' ? '切换表格密度' : 'Toggle table density'
 
   const resourceColumns: TableColumnsType<CRDResourceInstance> = [
     {
@@ -495,16 +604,15 @@ function CRDKindWorkspace({ crd }: { crd: CRD }) {
 
   const instanceToolbar = (
     <ManagementTableToolbar>
-      <Button autoInsertSpace={false} type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>
+      <Button autoInsertSpace={false} size="small" type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>
         {t('common.create', 'Create')}
       </Button>
-      <Tag color={isNamespacedCRD(crd) ? 'gold' : 'blue'}>
-        {isNamespacedCRD(crd)
-          ? (namespace
-              ? `${t('common.namespace', 'Namespace')}: ${namespace}`
-              : t('platformScope.allNamespaces', 'All namespaces'))
-          : t('page.extensions.crd.clusterScoped', 'Cluster scoped')}
-      </Tag>
+      <ManagementDensityButton
+        aria-label={densityLabel}
+        title={densityLabel}
+        tooltip={densityLabel}
+        onClick={() => setTableSize((current) => current === 'middle' ? 'small' : 'middle')}
+      />
       <ManagementRefreshButton
         aria-label={t('common.refresh', 'Refresh')}
         loading={resourcesQuery.isFetching}
@@ -554,19 +662,29 @@ function CRDKindWorkspace({ crd }: { crd: CRD }) {
                   ? t('page.extensions.crd.namespacedDesc', `The lower table is filtered by namespace ${namespace}. Clear the namespace selector to inspect all namespaces for this CRD.`)
                   : t('page.extensions.crd.namespacedAllDesc', 'The lower table spans all namespaces for this CRD because no namespace filter is active.'))
               : t('page.extensions.crd.clusterDesc', 'The lower table ignores the namespace selector because the selected CRD is cluster-scoped.')}
-          />
-        </Space>
-      </Card>
+        />
+      </Space>
+    </Card>
 
+      <ResourceQueryPanel
+        placeholder={localeCode === 'zh_CN' ? '搜索资源名称 / Namespace / Kind / 状态 / 摘要' : 'Search resource name / namespace / kind / status / summary'}
+        searchKeyword={searchKeyword}
+        setSearchKeyword={setSearchKeyword}
+      />
       <AdminTable
         className="soha-platform-table"
         columnSettingIconOnly
         columnSettingPlacement="header"
         shellClassName="soha-management-table-shell"
         columns={resourceColumns}
-        dataSource={resourcesQuery.data?.data ?? []}
+        dataSource={filteredResources}
         rowKey={(record) => `${record.namespace || '__cluster__'}:${record.name}`}
         loading={resourcesQuery.isLoading}
+        paginationSummary={(
+          <Text className="soha-workload-table-summary" type="secondary">
+            {localeCode === 'zh_CN' ? `当前 ${filteredResources.length} / ${rawResources.length} 条` : `${filteredResources.length} / ${rawResources.length} items`}
+          </Text>
+        )}
         empty={resourcesQuery.isError
           ? (
             <Alert
@@ -577,9 +695,8 @@ function CRDKindWorkspace({ crd }: { crd: CRD }) {
             />
           )
           : <ManagementState bordered={false} compact title={t('page.extensions.crd.resourcesEmpty', 'No custom resources found for the selected CRD in the current scope.')} />}
-        tableSize="small"
+        tableSize={tableSize}
         scroll={{ x: 'max-content' }}
-        title={`${crd.kind} ${t('page.extensions.crd.resourcesTitle', 'Resources')}`}
         headerExtra={instanceToolbar}
       />
 
@@ -607,6 +724,10 @@ export function CRDPage() {
   const { t, localeCode } = useI18n()
   const { clusterId } = usePlatformScopeStore()
   const navigate = useNavigate()
+  const [searchKeyword, setSearchKeyword] = useState('')
+  const [tableSize, setTableSize] = useState<'small' | 'middle'>('small')
+  const deferredSearchKeyword = useDeferredValue(searchKeyword)
+  const normalizedKeyword = normalizeSearchKeyword(deferredSearchKeyword)
 
   const { data, isFetching, isLoading, refetch } = useQuery({
     queryKey: ['crds', clusterId],
@@ -615,6 +736,16 @@ export function CRDPage() {
   })
 
   const apiGroups = useMemo(() => groupCRDsByApi(data?.data ?? []), [data?.data])
+  const filteredApiGroups = useMemo(
+    () => apiGroups.filter((item) => includesSearch([
+      item.group,
+      ...item.crdNames,
+      ...item.kindNames,
+      ...item.versions,
+    ], normalizedKeyword)),
+    [apiGroups, normalizedKeyword],
+  )
+  const densityLabel = localeCode === 'zh_CN' ? '切换表格密度' : 'Toggle table density'
 
   const columns: TableColumnsType<CRDApiGroupSummary> = [
     {
@@ -732,26 +863,40 @@ export function CRDPage() {
 
   return (
     <div className="soha-page">
-      <PlatformClusterScopeHint resourceLabel="CRD" />
+      <ResourceQueryPanel
+        placeholder={localeCode === 'zh_CN' ? '搜索 API Group / CRD / Kind / Version' : 'Search API group / CRD / kind / version'}
+        searchKeyword={searchKeyword}
+        setSearchKeyword={setSearchKeyword}
+      />
       <AdminTable
         className="soha-platform-table"
         columnSettingIconOnly
         columnSettingPlacement="header"
         shellClassName="soha-management-table-shell"
         columns={columns}
-        dataSource={apiGroups}
+        dataSource={clusterId ? filteredApiGroups : []}
         rowKey="group"
         loading={isLoading}
+        paginationSummary={(
+          <Text className="soha-workload-table-summary" type="secondary">
+            {localeCode === 'zh_CN' ? `当前 ${filteredApiGroups.length} / ${apiGroups.length} 条` : `${filteredApiGroups.length} / ${apiGroups.length} items`}
+          </Text>
+        )}
         pageSize={10}
-        tableSize="small"
+        tableSize={tableSize}
         scroll={{ x: 'max-content' }}
         onRow={(record: CRDApiGroupSummary) => ({
           onClick: () => navigate(buildCRDApiGroupDetailPath(record.group)),
           style: { cursor: 'pointer' },
         })}
-        title={t('page.extensions.crd.title', 'CustomResourceDefinitions')}
         headerExtra={(
           <ManagementTableToolbar>
+            <ManagementDensityButton
+              aria-label={densityLabel}
+              title={densityLabel}
+              tooltip={densityLabel}
+              onClick={() => setTableSize((current) => current === 'middle' ? 'small' : 'middle')}
+            />
             <ManagementRefreshButton
               aria-label={t('common.refresh', 'Refresh')}
               disabled={!clusterId}
@@ -765,6 +910,7 @@ export function CRDPage() {
             />
           </ManagementTableToolbar>
         )}
+        empty={<ManagementState bordered={false} compact kind={!clusterId ? 'select-scope' : 'empty'} title={!clusterId ? t('platformScope.clusterPlaceholder', 'Select cluster') : t('page.extensions.crd.empty', 'No CRDs in the current cluster.')} />}
       />
     </div>
   )
@@ -820,8 +966,6 @@ export function CRDApiGroupDetailPage() {
           </ManagementTableToolbar>
         )}
       />
-      <PlatformClusterScopeHint resourceLabel="CRD" />
-
       {!clusterId ? (
         <Card className="soha-detail-card" style={{ marginTop: 0 }}>
           <ManagementState compact kind="select-scope" title={t('platformScope.clusterPlaceholder', 'Select cluster')} />
@@ -926,15 +1070,37 @@ export function CRDApiGroupDetailPage() {
 /* ─── Helm Releases ─── */
 
 export function HelmReleasesPage() {
-  const { t } = useI18n()
+  const { t, localeCode } = useI18n()
   const { clusterId, namespace } = usePlatformScopeStore()
   const navigate = useNavigate()
+  const [searchKeyword, setSearchKeyword] = useState('')
+  const [tableSize, setTableSize] = useState<'small' | 'middle'>('small')
+  const deferredSearchKeyword = useDeferredValue(searchKeyword)
+  const normalizedKeyword = normalizeSearchKeyword(deferredSearchKeyword)
 
   const { data, isFetching, isLoading, refetch } = useQuery({
     queryKey: ['helm-releases', clusterId, namespace],
     queryFn: () => api.get<ApiResponse<HelmRelease[]>>(buildClusterScopedPath(clusterId!, 'helm/releases', namespace)),
     enabled: !!clusterId,
   })
+  const rawItems = data?.data ?? []
+  const filteredItems = useMemo(
+    () => rawItems.filter((item) => includesSearch([
+      item.name,
+      item.namespace,
+      item.chart,
+      item.revision,
+      item.status,
+      item.appVersion,
+    ], normalizedKeyword)),
+    [normalizedKeyword, rawItems],
+  )
+  const emptyTitle = !clusterId
+    ? t('platformScope.clusterPlaceholder', 'Select cluster')
+    : normalizedKeyword && rawItems.length > 0
+      ? (localeCode === 'zh_CN' ? '没有匹配的 Helm Release' : 'No matching Helm releases')
+      : t('page.extensions.helm.empty', 'No Helm releases in the current scope.')
+  const densityLabel = localeCode === 'zh_CN' ? '切换表格密度' : 'Toggle table density'
 
   const columns: TableColumnsType<HelmRelease> = [
     {
@@ -961,24 +1127,39 @@ export function HelmReleasesPage() {
 
   return (
     <div className="soha-page">
+      <ResourceQueryPanel
+        placeholder={localeCode === 'zh_CN' ? '搜索 Release / Namespace / Chart / 状态 / 版本' : 'Search release / namespace / chart / status / version'}
+        searchKeyword={searchKeyword}
+        setSearchKeyword={setSearchKeyword}
+      />
       <AdminTable
         className="soha-platform-table"
         columnSettingIconOnly
         columnSettingPlacement="header"
         shellClassName="soha-management-table-shell"
         columns={columns}
-        dataSource={clusterId ? (data?.data ?? []) : []}
+        dataSource={clusterId ? filteredItems : []}
         rowKey={(record) => `${record.namespace}:${record.name}`}
         loading={isLoading}
-        tableSize="small"
+        paginationSummary={(
+          <Text className="soha-workload-table-summary" type="secondary">
+            {localeCode === 'zh_CN' ? `当前 ${filteredItems.length} / ${rawItems.length} 条` : `${filteredItems.length} / ${rawItems.length} items`}
+          </Text>
+        )}
+        tableSize={tableSize}
         scroll={{ x: 'max-content' }}
         onRow={(record: HelmRelease) => ({
           onClick: () => navigate(buildHelmReleaseDetailPath(record.name, record.namespace)),
           style: { cursor: 'pointer' },
         })}
-        title={t('page.extensions.helm.title', 'Helm Releases')}
         headerExtra={(
           <ManagementTableToolbar>
+            <ManagementDensityButton
+              aria-label={densityLabel}
+              title={densityLabel}
+              tooltip={densityLabel}
+              onClick={() => setTableSize((current) => current === 'middle' ? 'small' : 'middle')}
+            />
             <ManagementRefreshButton
               aria-label={t('common.refresh', 'Refresh')}
               disabled={!clusterId}
@@ -992,7 +1173,7 @@ export function HelmReleasesPage() {
             />
           </ManagementTableToolbar>
         )}
-        empty={<ManagementState bordered={false} compact kind={!clusterId ? 'select-scope' : 'empty'} title={!clusterId ? t('platformScope.clusterPlaceholder', 'Select cluster') : t('page.extensions.helm.empty', 'No Helm releases in the current scope.')} />}
+        empty={<ManagementState bordered={false} compact kind={!clusterId ? 'select-scope' : 'empty'} title={emptyTitle} />}
       />
     </div>
   )
@@ -1154,22 +1335,748 @@ export function HelmReleaseDetailPage() {
 
 /* ─── Helm Charts ─── */
 
+interface HelmChartInstallFormValues {
+  repositoryName?: string
+  repositoryUrl: string
+  chartName: string
+  version: string
+  releaseName: string
+  namespace: string
+  createNamespace: boolean
+  wait: boolean
+  timeoutSeconds: number
+}
+
+function buildHelmChartDetailResourcePath(chart: HelmChart) {
+  return `helm/charts/${encodeURIComponent(chart.repositoryName ?? '')}/${encodeURIComponent(chart.name)}`
+}
+
+function defaultHelmReleaseName(chartName?: string) {
+  const normalized = (chartName || 'release')
+    .toLowerCase()
+    .replace(/[^a-z0-9-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+  return normalized || 'release'
+}
+
+function defaultHelmChartInstallForm(chart: HelmChart, namespace?: string | null): HelmChartInstallFormValues {
+  return {
+    repositoryName: chart.repositoryName,
+    repositoryUrl: chart.repositoryUrl || chart.urls?.[0] || '',
+    chartName: chart.name,
+    version: chart.latestVersion || '',
+    releaseName: defaultHelmReleaseName(chart.name),
+    namespace: namespace || 'default',
+    createNamespace: true,
+    wait: true,
+    timeoutSeconds: 300,
+  }
+}
+
+function getHelmChartVersionOptions(detail?: HelmChartDetail, chart?: HelmChart | null) {
+  const versions = detail?.availableVersions?.length
+    ? detail.availableVersions.map((item) => ({
+        label: item.appVersion ? `${item.version} · ${item.appVersion}` : item.version,
+        value: item.version,
+      }))
+    : (detail?.versions ?? chart?.versions ?? []).map((version) => ({ label: version, value: version }))
+  const latest = detail?.latestVersion || chart?.latestVersion
+  if (latest && !versions.some((item) => item.value === latest)) {
+    versions.unshift({ label: latest, value: latest })
+  }
+  return versions
+}
+
+function getHelmChartBadges(chart: HelmChart) {
+  const badges: Array<{ color?: string; label: string }> = []
+  if (chart.official) badges.push({ color: 'blue', label: 'Official' })
+  if (chart.verifiedPublisher) badges.push({ color: 'green', label: 'Verified' })
+  if (chart.cncf) badges.push({ color: 'cyan', label: 'CNCF' })
+  if (chart.signed) badges.push({ color: 'purple', label: 'Signed' })
+  if (chart.deprecated) badges.push({ color: 'warning', label: 'Deprecated' })
+  return badges
+}
+
+function hasHelmChartSecuritySummary(chart: HelmChart) {
+  return Boolean((chart.securityCritical ?? 0) + (chart.securityHigh ?? 0) + (chart.securityMedium ?? 0) + (chart.securityLow ?? 0) + (chart.securityUnknown ?? 0))
+}
+
+function renderHelmReadme(readme?: string) {
+  if (!readme?.trim()) {
+    return <Text type="secondary">-</Text>
+  }
+  return (
+    <pre style={{
+      background: 'var(--soha-color-surface-muted)',
+      border: '1px solid var(--soha-color-border)',
+      borderRadius: 6,
+      fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+      fontSize: 12,
+      lineHeight: 1.55,
+      maxHeight: 420,
+      overflow: 'auto',
+      padding: 12,
+      whiteSpace: 'pre-wrap',
+    }}>
+      {readme}
+    </pre>
+  )
+}
+
+function formatHelmChartCount(value: number, localeCode: string) {
+  return new Intl.NumberFormat(localeCode === 'zh_CN' ? 'zh-CN' : 'en-US').format(value)
+}
+
 export function HelmChartsPage() {
-  const { t } = useI18n()
+  const { t, localeCode } = useI18n()
+  const { clusterId, namespace } = usePlatformScopeStore()
+  const queryClient = useQueryClient()
+  const [installForm] = Form.useForm<HelmChartInstallFormValues>()
+  const [searchKeyword, setSearchKeyword] = useState('')
+  const [chartPage, setChartPage] = useState(1)
+  const [chartPageSize, setChartPageSize] = useState(HELM_CHART_DEFAULT_PAGE_SIZE)
+  const [tableSize, setTableSize] = useState<'small' | 'middle'>('small')
+  const [selectedChart, setSelectedChart] = useState<HelmChart | null>(null)
+  const [selectedVersion, setSelectedVersion] = useState('')
+  const [valuesDraft, setValuesDraft] = useState('')
+  const [drawerTabKey, setDrawerTabKey] = useState('overview')
+  const [installTarget, setInstallTarget] = useState<HelmChartInstallTarget | null>(null)
+  const [installResult, setInstallResult] = useState<HelmChartInstallResult | null>(null)
+  const [installError, setInstallError] = useState('')
+  const [installStartedAt, setInstallStartedAt] = useState<number | null>(null)
+  const [installElapsedSeconds, setInstallElapsedSeconds] = useState(0)
+  const deferredSearchKeyword = useDeferredValue(searchKeyword)
+  const normalizedKeyword = normalizeSearchKeyword(deferredSearchKeyword)
+  const chartOffset = (chartPage - 1) * chartPageSize
+
+  const chartsQuery = useQuery({
+    queryKey: ['helm-charts', clusterId, normalizedKeyword, chartPage, chartPageSize],
+    queryFn: () => api.get<ApiResponse<HelmChartCatalog>>(buildClusterScopedPath(clusterId!, 'helm/charts', null, {
+      keyword: normalizedKeyword,
+      limit: chartPageSize,
+      offset: chartOffset,
+    })),
+    enabled: !!clusterId,
+  })
+
+  const detailQuery = useQuery({
+    queryKey: ['helm-chart-detail', clusterId, selectedChart?.repositoryName, selectedChart?.name, selectedVersion],
+    queryFn: () => api.get<ApiResponse<HelmChartDetail>>(buildClusterScopedPath(clusterId!, buildHelmChartDetailResourcePath(selectedChart!), null, {
+      version: selectedVersion,
+    })),
+    enabled: !!clusterId && !!selectedChart?.repositoryName && !!selectedChart?.name,
+  })
+
+  const catalog = chartsQuery.data?.data
+  const rawItems = catalog?.charts ?? []
+  const totalChartCount = catalog?.totalCount ?? catalog?.chartCount ?? rawItems.length
+  const loadedChartCount = catalog?.loadedCount ?? catalog?.chartCount ?? rawItems.length
+  const currentOffset = catalog?.offset ?? chartOffset
+  const currentRangeStart = loadedChartCount > 0 ? currentOffset + 1 : 0
+  const currentRangeEnd = loadedChartCount > 0 ? currentOffset + loadedChartCount : 0
+  const formattedTotalChartCount = formatHelmChartCount(totalChartCount, localeCode)
+  const detail = detailQuery.data?.data
+  const activeChart = detail ?? selectedChart
+  const activeVersion = selectedVersion || activeChart?.latestVersion || ''
+  const canInstallActiveChart = hasAllowedAction(activeChart?.allowedActions, 'create')
+
+  const valuesQuery = useQuery({
+    queryKey: ['helm-chart-values-template', clusterId, activeChart?.packageId, activeChart?.name, activeVersion],
+    queryFn: () => api.get<ApiResponse<HelmChartValuesTemplate>>(buildClusterScopedPath(clusterId!, 'helm/charts/values', null, {
+      packageId: activeChart?.packageId,
+      name: activeChart?.name,
+      version: activeVersion,
+    })),
+    enabled: !!clusterId && !!activeChart?.packageId && !!activeVersion && Boolean(selectedChart),
+  })
+
+  const installReleaseQuery = useQuery({
+    queryKey: ['helm-install-release-progress', clusterId, installTarget?.namespace, installTarget?.releaseName],
+    queryFn: () => api.get<ApiResponse<HelmReleaseDetail>>(
+      `/clusters/${clusterId}/helm/releases/${encodeURIComponent(installTarget!.releaseName)}/detail?namespace=${encodeURIComponent(installTarget!.namespace)}`,
+    ),
+    enabled: !!clusterId && Boolean(installStartedAt && !installResult && !installError) && !!installTarget?.namespace && !!installTarget?.releaseName,
+    retry: false,
+    refetchInterval: 5000,
+  })
+
+  const installMutation = useMutation({
+    mutationFn: (values: HelmChartInstallFormValues) => api.post<ApiResponse<HelmChartInstallResult>>(buildClusterScopedPath(clusterId!, 'helm/charts/install'), {
+      ...values,
+      valuesYaml: valuesDraft,
+    }),
+    onSuccess: (response) => {
+      const item = response.data
+      setInstallResult(item)
+      setInstallError('')
+      message.success(localeCode === 'zh_CN' ? `已安装 ${item.name}` : `Installed ${item.name}`)
+      void queryClient.invalidateQueries({ queryKey: ['helm-releases', clusterId] })
+    },
+    onError: (error) => {
+      setInstallError(error instanceof Error ? error.message : String(error))
+    },
+  })
+
+  useEffect(() => {
+    if (!selectedChart) return
+    installForm.resetFields()
+    installForm.setFieldsValue(defaultHelmChartInstallForm(selectedChart, namespace))
+  }, [installForm, namespace, selectedChart])
+
+  useEffect(() => {
+    setChartPage(1)
+  }, [clusterId, normalizedKeyword])
+
+  useEffect(() => {
+    if (!selectedChart) return
+    const nextVersion = selectedVersion || detail?.latestVersion || selectedChart.latestVersion || ''
+    installForm.setFieldsValue({
+      repositoryName: activeChart?.repositoryName || selectedChart.repositoryName,
+      repositoryUrl: activeChart?.repositoryUrl || selectedChart.repositoryUrl || selectedChart.urls?.[0] || '',
+      chartName: activeChart?.name || selectedChart.name,
+      version: nextVersion,
+    })
+  }, [activeChart?.name, activeChart?.repositoryName, activeChart?.repositoryUrl, detail?.latestVersion, installForm, selectedChart, selectedVersion])
+
+  useEffect(() => {
+    if (!selectedChart) return
+    const content = valuesQuery.data?.data.content
+    if (typeof content === 'string') {
+      setValuesDraft(content)
+    }
+  }, [selectedChart, valuesQuery.data?.data.content])
+
+  useEffect(() => {
+    if (!installStartedAt || installResult || installError) return
+    setInstallElapsedSeconds(Math.max(0, Math.floor((Date.now() - installStartedAt) / 1000)))
+    const timer = window.setInterval(() => {
+      setInstallElapsedSeconds(Math.max(0, Math.floor((Date.now() - installStartedAt) / 1000)))
+    }, 1000)
+    return () => window.clearInterval(timer)
+  }, [installError, installResult, installStartedAt])
+
+  const errorMessage = chartsQuery.error instanceof Error ? chartsQuery.error.message : ''
+  const emptyTitle = !clusterId
+    ? t('platformScope.clusterPlaceholder', 'Select cluster')
+    : chartsQuery.isError
+      ? t('page.extensions.helmCharts.errorTitle', 'Chart catalog unavailable')
+      : normalizedKeyword
+        ? (localeCode === 'zh_CN' ? '没有匹配的 Helm Chart' : 'No matching Helm charts')
+        : t('page.extensions.helmCharts.emptyTitle', 'No Helm charts')
+  const emptyDescription = chartsQuery.isError
+    ? errorMessage
+    : t('page.extensions.helmCharts.emptyDesc', 'No charts were returned by Artifact Hub.')
+  const densityLabel = localeCode === 'zh_CN' ? '切换表格密度' : 'Toggle table density'
+  const versionOptions = getHelmChartVersionOptions(detail, selectedChart)
+  const drawerTitle = activeChart
+    ? `Chart: ${activeChart.repositoryName ? `${activeChart.repositoryName}/` : ''}${activeChart.name}`
+    : 'Chart'
+
+  const openChartDrawer = (chart: HelmChart) => {
+    setSelectedChart(chart)
+    setSelectedVersion(chart.latestVersion || '')
+    setValuesDraft('')
+    setDrawerTabKey('overview')
+    setInstallTarget(null)
+    setInstallResult(null)
+    setInstallError('')
+    setInstallStartedAt(null)
+    setInstallElapsedSeconds(0)
+  }
+
+  const submitInstall = async () => {
+    if (!canInstallActiveChart) {
+      setDrawerTabKey('install')
+      return
+    }
+    const values = await installForm.validateFields()
+    setDrawerTabKey('install')
+    setInstallTarget({
+      chartName: values.chartName,
+      namespace: values.namespace,
+      releaseName: values.releaseName,
+      timeoutSeconds: values.timeoutSeconds,
+      version: values.version,
+      wait: values.wait,
+    })
+    setInstallResult(null)
+    setInstallError('')
+    setInstallStartedAt(Date.now())
+    setInstallElapsedSeconds(0)
+    installMutation.mutate(values)
+  }
+
+  const columns: TableColumnsType<HelmChart> = [
+    {
+      title: 'Chart',
+      dataIndex: 'name',
+      width: 300,
+      render: (value: string, record: HelmChart) => (
+        <Space size={10} align="start">
+          {record.logoImageUrl ? (
+            <img
+              src={record.logoImageUrl}
+              alt=""
+              style={{ width: 32, height: 32, borderRadius: 4, objectFit: 'contain', border: '1px solid var(--soha-color-border)' }}
+            />
+          ) : null}
+          <Space orientation="vertical" size={2}>
+            <Space size={6} wrap>
+              <Text strong>{value}</Text>
+              {getHelmChartBadges(record).slice(0, 3).map((badge) => <Tag key={badge.label} color={badge.color}>{badge.label}</Tag>)}
+            </Space>
+            <Text type="secondary" style={{ fontSize: 12 }}>{record.repositoryDisplay || record.repositoryName || '-'}</Text>
+          </Space>
+        </Space>
+      ),
+    },
+    { title: localeCode === 'zh_CN' ? '仓库' : 'Repository', dataIndex: 'repositoryName', width: 180, render: (_value, record) => record.repositoryName || '-' },
+    { title: localeCode === 'zh_CN' ? '最新版本' : 'Latest Version', dataIndex: 'latestVersion', width: 140 },
+    { title: 'App Version', dataIndex: 'appVersion', width: 140, render: (value?: string) => value || '-' },
+    {
+      title: localeCode === 'zh_CN' ? '描述' : 'Description',
+      dataIndex: 'description',
+      width: 420,
+      render: (value?: string) => value ? <Text type="secondary">{value}</Text> : '-',
+    },
+    {
+      title: localeCode === 'zh_CN' ? '关键词' : 'Keywords',
+      dataIndex: 'keywords',
+      width: 240,
+      render: (values?: string[]) => values?.length ? (
+        <Space size={[4, 4]} wrap>
+          {values.slice(0, 4).map((value) => <Tag key={value}>{value}</Tag>)}
+          {values.length > 4 ? <Tag>+{values.length - 4}</Tag> : null}
+        </Space>
+      ) : '-',
+    },
+    {
+      title: localeCode === 'zh_CN' ? '状态' : 'Signals',
+      dataIndex: 'stars',
+      width: 180,
+      render: (_value, record) => (
+        <Space size={[4, 4]} wrap>
+          {typeof record.stars === 'number' ? <Tag>{localeCode === 'zh_CN' ? `Stars ${record.stars}` : `${record.stars} stars`}</Tag> : null}
+          {record.hasValuesSchema ? <Tag color="processing">values.schema</Tag> : null}
+          {hasHelmChartSecuritySummary(record) ? <Tag color={(record.securityCritical ?? 0) > 0 || (record.securityHigh ?? 0) > 0 ? 'error' : 'default'}>CVEs {(record.securityCritical ?? 0) + (record.securityHigh ?? 0)}</Tag> : null}
+        </Space>
+      ),
+    },
+    { title: localeCode === 'zh_CN' ? '版本数' : 'Versions', dataIndex: 'versionCount', width: 100 },
+    {
+      title: localeCode === 'zh_CN' ? '操作' : 'Actions',
+      dataIndex: 'artifactHubUrl',
+      width: 112,
+      fixed: 'right',
+      align: 'center',
+      render: (_value, record) => (
+        <Space size={2}>
+          {record.artifactHubUrl ? (
+            <Button
+              autoInsertSpace={false}
+              href={record.artifactHubUrl}
+              icon={<LinkOutlined />}
+              size="small"
+              target="_blank"
+              type="text"
+              aria-label={localeCode === 'zh_CN' ? '打开 Artifact Hub' : 'Open Artifact Hub'}
+              onClick={(event) => event.stopPropagation()}
+            />
+          ) : null}
+          <Button
+            autoInsertSpace={false}
+            icon={<RocketOutlined />}
+            size="small"
+            type="text"
+            aria-label={localeCode === 'zh_CN' ? '预览并安装 Chart' : 'Preview and install chart'}
+            onClick={(event) => {
+              event.stopPropagation()
+              openChartDrawer(record)
+            }}
+          />
+          {hasAllowedAction(record.allowedActions, 'create') ? (
+            <Button
+              autoInsertSpace={false}
+              icon={<CloudDownloadOutlined />}
+              size="small"
+              type="text"
+              aria-label={localeCode === 'zh_CN' ? '安装 Chart' : 'Install chart'}
+              onClick={(event) => {
+                event.stopPropagation()
+                openChartDrawer(record)
+                setDrawerTabKey('install')
+              }}
+            />
+          ) : null}
+        </Space>
+      ),
+    },
+  ]
+
+  const installResourceColumns: TableColumnsType<HelmChartInstallResource> = [
+    { title: 'Kind', dataIndex: 'kind', width: 150 },
+    { title: 'Name', dataIndex: 'name', render: (value?: string) => value || '-' },
+    { title: localeCode === 'zh_CN' ? '命名空间' : 'Namespace', dataIndex: 'namespace', width: 160, render: (value?: string) => value || '-' },
+    { title: 'API Version', dataIndex: 'apiVersion', width: 160, render: (value?: string) => value || '-' },
+  ]
+
+  const observedInstallRelease = installReleaseQuery.data?.data
+  const installInFlight = Boolean(installStartedAt && !installResult && !installError)
+  const installStatusColor = installMutation.isPending
+    ? 'processing'
+    : installResult
+      ? 'success'
+      : installError
+        ? 'error'
+        : 'default'
+  const installStatusLabel = installMutation.isPending
+    ? (localeCode === 'zh_CN' ? '安装中' : 'Installing')
+    : installResult
+      ? (localeCode === 'zh_CN' ? '已完成' : 'Completed')
+      : installError
+        ? (localeCode === 'zh_CN' ? '失败' : 'Failed')
+        : (localeCode === 'zh_CN' ? '未开始' : 'Not started')
+  const installTimeoutSeconds = installTarget?.timeoutSeconds ?? 300
+
   return (
     <div className="soha-page">
-      <Card className="soha-compact-note-card">
-        <ManagementState
-          compact
-          kind="not-configured"
-          title={t('page.extensions.helmCharts.emptyTitle', 'Helm Charts not available')}
-          description={(
-            <div>
-              <div>{t('page.extensions.helmCharts.emptyDesc', 'The backend currently has no /helm/charts endpoint. Restore the list view after the backend capability is added.')}</div>
-            </div>
-          )}
-        />
-      </Card>
+      <ResourceQueryPanel
+        placeholder={localeCode === 'zh_CN' ? '搜索 Chart / 版本 / 描述 / 关键词 / 维护者' : 'Search chart / version / description / keyword / maintainer'}
+        searchKeyword={searchKeyword}
+        setSearchKeyword={(value) => {
+          setSearchKeyword(value)
+          setChartPage(1)
+        }}
+      />
+      <AdminTable
+        className="soha-platform-table"
+        columnSettingIconOnly
+        columnSettingPlacement="toolbar"
+        shellClassName="soha-management-table-shell soha-helm-chart-table-shell"
+        columns={columns}
+        dataSource={clusterId && !chartsQuery.isError ? rawItems : []}
+        rowKey={(record) => record.packageId || `${record.repositoryName}:${record.name}:${record.latestVersion}`}
+        loading={chartsQuery.isLoading}
+        pagination={{
+          current: chartPage,
+          currentPage: chartPage,
+          pageSize: chartPageSize,
+          pageSizeOptions: HELM_CHART_PAGE_SIZE_OPTIONS,
+          showQuickJumper: totalChartCount > chartPageSize,
+          total: totalChartCount,
+          onPageChange: (nextPage: number) => {
+            setChartPage(nextPage)
+          },
+          onPageSizeChange: (nextPageSize: number) => {
+            setChartPage(1)
+            setChartPageSize(Math.min(nextPageSize, HELM_CHART_MAX_PAGE_SIZE))
+          },
+        }}
+        paginationSummary={(
+          <Text className="soha-workload-table-summary" type="secondary">
+            {localeCode === 'zh_CN'
+              ? `当前 ${currentRangeStart}-${currentRangeEnd} / 总计 ${formattedTotalChartCount} 条`
+              : `${currentRangeStart}-${currentRangeEnd} / ${formattedTotalChartCount} total`}
+          </Text>
+        )}
+        toolbar={catalog?.repository ? (
+          <Space className="soha-helm-chart-catalog-toolbar" size={8}>
+            <Tag color="processing">Artifact Hub</Tag>
+            <Tag>{localeCode === 'zh_CN' ? '仅 Helm packages' : 'Helm packages only'}</Tag>
+            <Text className="soha-helm-chart-catalog-url" type="secondary" title={catalog.repository.url}>{catalog.repository.url}</Text>
+            <Text className="soha-helm-chart-catalog-total" type="secondary">
+              {localeCode === 'zh_CN' ? `总计 ${formattedTotalChartCount} 个` : `${formattedTotalChartCount} total`}
+            </Text>
+          </Space>
+        ) : null}
+        tableSize={tableSize}
+        scroll={{ x: 'max-content' }}
+        onRow={(record: HelmChart) => ({
+          onClick: () => openChartDrawer(record),
+          style: { cursor: 'pointer' },
+        })}
+        toolbarExtra={(
+          <ManagementTableToolbar>
+            <ManagementDensityButton
+              aria-label={densityLabel}
+              title={densityLabel}
+              tooltip={densityLabel}
+              onClick={() => setTableSize((current) => current === 'middle' ? 'small' : 'middle')}
+            />
+            <ManagementRefreshButton
+              aria-label={t('common.refresh', 'Refresh')}
+              disabled={!clusterId}
+              loading={chartsQuery.isFetching}
+              tooltip={t('common.refresh', 'Refresh')}
+              onClick={() => {
+                if (clusterId) {
+                  void chartsQuery.refetch()
+                }
+              }}
+            />
+          </ManagementTableToolbar>
+        )}
+        empty={(
+          <ManagementState
+            bordered={false}
+            compact
+            kind={!clusterId ? 'select-scope' : chartsQuery.isError ? 'error' : 'empty'}
+            title={emptyTitle}
+            description={emptyDescription}
+          />
+        )}
+      />
+      <Drawer
+        destroyOnHidden
+        open={Boolean(selectedChart)}
+        title={drawerTitle}
+        size="large"
+        onClose={() => {
+          setSelectedChart(null)
+          setSelectedVersion('')
+          setValuesDraft('')
+          setDrawerTabKey('overview')
+          setInstallTarget(null)
+          setInstallResult(null)
+          setInstallError('')
+          setInstallStartedAt(null)
+          setInstallElapsedSeconds(0)
+        }}
+        extra={(
+          <Space>
+            <Button autoInsertSpace={false} onClick={() => setSelectedChart(null)}>
+              {localeCode === 'zh_CN' ? '取消' : 'Cancel'}
+            </Button>
+            <Button
+              autoInsertSpace={false}
+              icon={<CloudDownloadOutlined />}
+              disabled={!canInstallActiveChart}
+              loading={installMutation.isPending}
+              type="primary"
+              onClick={() => { void submitInstall() }}
+            >
+              {localeCode === 'zh_CN' ? '安装' : 'Install'}
+            </Button>
+          </Space>
+        )}
+      >
+        {activeChart ? (
+          <Space orientation="vertical" size={14} style={{ width: '100%' }}>
+            <Space align="start" size={14}>
+              {activeChart.logoImageUrl ? (
+                <img
+                  src={activeChart.logoImageUrl}
+                  alt=""
+                  style={{ width: 72, height: 72, borderRadius: 6, objectFit: 'contain', border: '1px solid var(--soha-color-border)' }}
+                />
+              ) : null}
+              <Space orientation="vertical" size={6}>
+                <Space size={6} wrap>
+                  <Text strong style={{ fontSize: 16 }}>{activeChart.name}</Text>
+                  {getHelmChartBadges(activeChart).map((badge) => <Tag key={badge.label} color={badge.color}>{badge.label}</Tag>)}
+                </Space>
+                <Text type="secondary">{activeChart.description || '-'}</Text>
+                <Space size={8} wrap>
+                  <Text type="secondary">{activeChart.repositoryDisplay || activeChart.repositoryName}</Text>
+                  {activeChart.artifactHubUrl ? (
+                    <Button autoInsertSpace={false} href={activeChart.artifactHubUrl} icon={<LinkOutlined />} size="small" target="_blank" type="link">
+                      Artifact Hub
+                    </Button>
+                  ) : null}
+                </Space>
+              </Space>
+            </Space>
+            <Tabs
+              size="small"
+              activeKey={drawerTabKey}
+              onChange={setDrawerTabKey}
+              items={[
+                {
+                  key: 'overview',
+                  label: localeCode === 'zh_CN' ? '包信息' : 'Package',
+                  children: (
+                    <Space orientation="vertical" size={12} style={{ width: '100%' }}>
+                      <Descriptions bordered column={1} size="small">
+                        <Descriptions.Item label={localeCode === 'zh_CN' ? 'Chart' : 'Chart'}>{activeChart.name}</Descriptions.Item>
+                        <Descriptions.Item label={localeCode === 'zh_CN' ? '仓库' : 'Repository'}>
+                          <Space wrap size={6}>
+                            <Text>{activeChart.repositoryName || '-'}</Text>
+                            {activeChart.repositoryUrl ? <Text type="secondary">{activeChart.repositoryUrl}</Text> : null}
+                          </Space>
+                        </Descriptions.Item>
+                        <Descriptions.Item label={localeCode === 'zh_CN' ? '版本' : 'Version'}>{activeChart.latestVersion || '-'}</Descriptions.Item>
+                        <Descriptions.Item label="App Version">{activeChart.appVersion || '-'}</Descriptions.Item>
+                        <Descriptions.Item label="Home">{activeChart.homeUrl || activeChart.home || '-'}</Descriptions.Item>
+                        <Descriptions.Item label={localeCode === 'zh_CN' ? '关键词' : 'Keywords'}>
+                          {activeChart.keywords?.length ? (
+                            <Space wrap size={[4, 4]}>
+                              {activeChart.keywords.map((item) => <Tag key={item}>{item}</Tag>)}
+                            </Space>
+                          ) : '-'}
+                        </Descriptions.Item>
+                        <Descriptions.Item label={localeCode === 'zh_CN' ? '安全摘要' : 'Security'}>
+                          {hasHelmChartSecuritySummary(activeChart)
+                            ? `critical ${activeChart.securityCritical ?? 0} / high ${activeChart.securityHigh ?? 0} / medium ${activeChart.securityMedium ?? 0} / low ${activeChart.securityLow ?? 0}`
+                            : '-'}
+                        </Descriptions.Item>
+                      </Descriptions>
+                      {detailQuery.isLoading ? <Spin size="small" /> : null}
+                      {detail?.links?.length ? (
+                        <Space wrap size={8}>
+                          {detail.links.map((link) => link.url ? (
+                            <Button key={`${link.name}-${link.url}`} autoInsertSpace={false} href={link.url} target="_blank" size="small">
+                              {link.name || link.url}
+                            </Button>
+                          ) : null)}
+                        </Space>
+                      ) : null}
+                    </Space>
+                  ),
+                },
+                {
+                  key: 'readme',
+                  label: 'README',
+                  children: detailQuery.isLoading ? <Spin /> : renderHelmReadme(detail?.readme),
+                },
+                {
+                  key: 'values',
+                  label: 'Values',
+                  children: (
+                    <Space orientation="vertical" size={8} style={{ width: '100%' }}>
+                      {valuesQuery.isLoading ? <Spin size="small" /> : null}
+                      {valuesQuery.isError ? <Text type="secondary">{localeCode === 'zh_CN' ? 'Artifact Hub 未返回默认 values。' : 'Artifact Hub did not return default values.'}</Text> : null}
+                      <Input.TextArea
+                        value={valuesDraft}
+                        onChange={(event) => setValuesDraft(event.target.value)}
+                        rows={18}
+                        style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace', fontSize: 12 }}
+                        placeholder={localeCode === 'zh_CN' ? '填写 Helm values YAML' : 'Enter Helm values YAML'}
+                      />
+                    </Space>
+                  ),
+                },
+                {
+                  key: 'install',
+                  label: localeCode === 'zh_CN' ? '安装' : 'Install',
+                  forceRender: true,
+                  children: (
+                    <Space orientation="vertical" size={12} style={{ width: '100%' }}>
+                      {!canInstallActiveChart ? (
+                        <Alert
+                          showIcon
+                          type="warning"
+                          title={localeCode === 'zh_CN' ? '无安装权限' : 'Install permission required'}
+                          description={localeCode === 'zh_CN'
+                            ? '当前账号没有在所选集群创建 Helm Release 的权限。'
+                            : 'The current account cannot create Helm releases in the selected cluster.'}
+                        />
+                      ) : null}
+                      <Form form={installForm} layout="vertical" size="small">
+                        <Form.Item name="releaseName" label="Release" rules={[{ required: true }]}>
+                          <Input disabled={!canInstallActiveChart || installMutation.isPending} />
+                        </Form.Item>
+                        <Form.Item name="namespace" label={localeCode === 'zh_CN' ? '命名空间' : 'Namespace'} rules={[{ required: true }]}>
+                          <Input disabled={!canInstallActiveChart || installMutation.isPending} />
+                        </Form.Item>
+                        <Form.Item name="version" label={localeCode === 'zh_CN' ? '版本' : 'Version'} rules={[{ required: true }]}>
+                          <Select
+                            showSearch
+                            disabled={!canInstallActiveChart || installMutation.isPending}
+                            options={versionOptions}
+                            onChange={(value) => {
+                              setSelectedVersion(value)
+                              setValuesDraft('')
+                            }}
+                          />
+                        </Form.Item>
+                        <Form.Item name="repositoryUrl" label={localeCode === 'zh_CN' ? 'Chart 仓库 URL' : 'Chart Repository URL'} rules={[{ required: true }]}>
+                          <Input disabled={!canInstallActiveChart || installMutation.isPending} />
+                        </Form.Item>
+                        <Form.Item name="chartName" label="Chart" rules={[{ required: true }]}>
+                          <Input disabled={!canInstallActiveChart || installMutation.isPending} />
+                        </Form.Item>
+                        <Form.Item name="timeoutSeconds" label={localeCode === 'zh_CN' ? '超时秒数' : 'Timeout seconds'} rules={[{ required: true }]}>
+                          <InputNumber disabled={!canInstallActiveChart || installMutation.isPending} min={30} max={3600} step={30} style={{ width: '100%' }} />
+                        </Form.Item>
+                        <Space size={16} wrap>
+                          <Form.Item name="createNamespace" valuePropName="checked">
+                            <Checkbox disabled={!canInstallActiveChart || installMutation.isPending}>{localeCode === 'zh_CN' ? '创建命名空间' : 'Create namespace'}</Checkbox>
+                          </Form.Item>
+                          <Form.Item name="wait" valuePropName="checked">
+                            <Checkbox disabled={!canInstallActiveChart || installMutation.isPending}>{localeCode === 'zh_CN' ? '等待资源就绪' : 'Wait for resources'}</Checkbox>
+                          </Form.Item>
+                        </Space>
+                      </Form>
+
+                      {installTarget ? (
+                        <Card size="small" title={localeCode === 'zh_CN' ? '安装进度' : 'Install progress'}>
+                          <Space orientation="vertical" size={10} style={{ width: '100%' }}>
+                            <Space wrap size={8}>
+                              <Tag color={installStatusColor}>{installStatusLabel}</Tag>
+                              <Text strong>{installTarget.releaseName}</Text>
+                              <Text type="secondary">{installTarget.namespace}</Text>
+                              <Text type="secondary">
+                                {localeCode === 'zh_CN'
+                                  ? `已等待 ${installElapsedSeconds}s / 超时 ${installTimeoutSeconds}s`
+                                  : `${installElapsedSeconds}s elapsed / ${installTimeoutSeconds}s timeout`}
+                              </Text>
+                            </Space>
+                            <Descriptions bordered column={1} size="small">
+                              <Descriptions.Item label={localeCode === 'zh_CN' ? '提交 Helm install' : 'Submit Helm install'}>
+                                <Tag color={installStartedAt ? 'success' : 'default'}>{installStartedAt ? 'OK' : '-'}</Tag>
+                              </Descriptions.Item>
+                              <Descriptions.Item label={localeCode === 'zh_CN' ? '集群 Release' : 'Cluster release'}>
+                                {observedInstallRelease ? (
+                                  <Space size={6}>
+                                    <StatusTag value={observedInstallRelease.status || 'detected'} />
+                                    <Text type="secondary">rev {observedInstallRelease.revision || '-'}</Text>
+                                  </Space>
+                                ) : installInFlight ? (
+                                  <Space size={6}>
+                                    <Spin size="small" />
+                                    <Text type="secondary">{localeCode === 'zh_CN' ? '等待 Helm release 出现' : 'Waiting for Helm release'}</Text>
+                                  </Space>
+                                ) : '-'}
+                              </Descriptions.Item>
+                              <Descriptions.Item label={localeCode === 'zh_CN' ? '等待资源' : 'Wait for resources'}>
+                                {installTarget.wait
+                                  ? (installResult ? <Tag color="success">OK</Tag> : installError ? <Tag color="error">Failed</Tag> : <Tag color="processing">{localeCode === 'zh_CN' ? '等待中' : 'Waiting'}</Tag>)
+                                  : <Tag>{localeCode === 'zh_CN' ? '未启用' : 'Disabled'}</Tag>}
+                              </Descriptions.Item>
+                            </Descriptions>
+                            {installError ? <Alert type="error" showIcon title={localeCode === 'zh_CN' ? '安装失败' : 'Install failed'} description={installError} /> : null}
+                            {installResult ? (
+                              <Space orientation="vertical" size={10} style={{ width: '100%' }}>
+                                <Descriptions bordered column={1} size="small">
+                                  <Descriptions.Item label="Status"><StatusTag value={installResult.status || 'unknown'} /></Descriptions.Item>
+                                  <Descriptions.Item label="Revision">{installResult.revision || '-'}</Descriptions.Item>
+                                  <Descriptions.Item label="Chart">{installResult.chart || installResult.chartName || '-'}</Descriptions.Item>
+                                  <Descriptions.Item label={localeCode === 'zh_CN' ? '说明' : 'Description'}>{installResult.description || '-'}</Descriptions.Item>
+                                </Descriptions>
+                                <Table
+                                  columns={installResourceColumns}
+                                  dataSource={installResult.resources ?? []}
+                                  rowKey={(record) => `${record.apiVersion}:${record.kind}:${record.namespace}:${record.name}`}
+                                  size="small"
+                                  pagination={{ pageSize: 8, size: 'small', showSizeChanger: false }}
+                                  scroll={{ x: 720 }}
+                                />
+                                {installResult.notes ? (
+                                  <pre className="soha-helm-install-output">{installResult.notes}</pre>
+                                ) : null}
+                              </Space>
+                            ) : null}
+                          </Space>
+                        </Card>
+                      ) : null}
+                    </Space>
+                  ),
+                },
+              ]}
+            />
+          </Space>
+        ) : null}
+      </Drawer>
     </div>
   )
 }

@@ -86,12 +86,14 @@ vi.mock('@/utils/download', () => ({
 
 vi.mock('@/components/admin-table', () => ({
   AdminTable: ({
+    headerExtra,
     title,
     toolbar,
     toolbarExtra,
     dataSource,
     loading,
   }: {
+    headerExtra?: ReactNode
     title?: ReactNode
     toolbar?: ReactNode
     toolbarExtra?: ReactNode
@@ -100,6 +102,7 @@ vi.mock('@/components/admin-table', () => ({
   }) => (
     <div data-testid="admin-table">
       {title ? <div data-testid="table-title">{title}</div> : null}
+      {headerExtra ? <div data-testid="table-header-extra">{headerExtra}</div> : null}
       {toolbar ? <div data-testid="table-toolbar">{toolbar}</div> : null}
       {toolbarExtra ? <div data-testid="table-toolbar-extra">{toolbarExtra}</div> : null}
       <div data-testid="table-loading">{String(Boolean(loading))}</div>

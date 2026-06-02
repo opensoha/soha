@@ -200,10 +200,11 @@ const zhCN: Dictionary = {
   "page.extensions.helm.historyTitle": "Revision 历史",
   "page.extensions.helmCharts.title": "Helm Charts",
   "page.extensions.helmCharts.desc":
-    "当前后端尚未提供 Helm Charts API，先按标准 Semi 空状态占位。",
-  "page.extensions.helmCharts.emptyTitle": "Helm Charts 暂未开放",
+    "从 Artifact Hub 搜索 Helm Chart，预览 package 信息、默认 values，并部署到当前集群。",
+  "page.extensions.helmCharts.emptyTitle": "没有 Helm Charts",
   "page.extensions.helmCharts.emptyDesc":
-    "后端当前没有提供 /helm/charts 接口。建议后续补后端能力后再恢复列表展示。",
+    "Artifact Hub 没有返回可展示的 Chart。",
+  "page.extensions.helmCharts.errorTitle": "Chart 目录不可用",
   "page.clusters.title": "集群",
   "page.clusters.desc": "统一管理集群接入、健康状态与基础连接信息。",
   "page.nodes.title": "节点资源",
@@ -546,10 +547,11 @@ const enUS: Dictionary = {
   "page.extensions.helm.historyTitle": "Revision History",
   "page.extensions.helmCharts.title": "Helm Charts",
   "page.extensions.helmCharts.desc":
-    "The backend does not provide a Helm Charts API yet, so this page remains a standard empty placeholder.",
-  "page.extensions.helmCharts.emptyTitle": "Helm Charts not available",
+    "Search Helm charts from Artifact Hub, preview package metadata and default values, and deploy into the current cluster.",
+  "page.extensions.helmCharts.emptyTitle": "No Helm charts",
   "page.extensions.helmCharts.emptyDesc":
-    "The backend currently has no /helm/charts endpoint. Restore the list view after the backend capability is added.",
+    "Artifact Hub did not return any displayable charts.",
+  "page.extensions.helmCharts.errorTitle": "Chart catalog unavailable",
   "page.clusters.title": "Clusters",
   "page.clusters.desc":
     "Manage cluster onboarding, health state, and connection settings in one place.",

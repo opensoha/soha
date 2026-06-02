@@ -735,6 +735,144 @@ type HelmValuesView struct {
 	AllowedActions []string `json:"allowedActions,omitempty"`
 }
 
+type HelmChartRepositoryView struct {
+	ID                      string `json:"id"`
+	Name                    string `json:"name"`
+	DisplayName             string `json:"displayName,omitempty"`
+	URL                     string `json:"url"`
+	IndexURL                string `json:"indexUrl,omitempty"`
+	OrganizationName        string `json:"organizationName,omitempty"`
+	OrganizationDisplayName string `json:"organizationDisplayName,omitempty"`
+	Official                bool   `json:"official,omitempty"`
+	VerifiedPublisher       bool   `json:"verifiedPublisher,omitempty"`
+}
+
+type HelmChartMaintainerView struct {
+	Name  string `json:"name,omitempty"`
+	Email string `json:"email,omitempty"`
+	URL   string `json:"url,omitempty"`
+}
+
+type HelmChartView struct {
+	PackageID         string                    `json:"packageId,omitempty"`
+	Name              string                    `json:"name"`
+	NormalizedName    string                    `json:"normalizedName,omitempty"`
+	RepositoryName    string                    `json:"repositoryName,omitempty"`
+	RepositoryURL     string                    `json:"repositoryUrl,omitempty"`
+	RepositoryDisplay string                    `json:"repositoryDisplay,omitempty"`
+	LatestVersion     string                    `json:"latestVersion,omitempty"`
+	AppVersion        string                    `json:"appVersion,omitempty"`
+	Description       string                    `json:"description,omitempty"`
+	Type              string                    `json:"type,omitempty"`
+	Category          string                    `json:"category,omitempty"`
+	Deprecated        bool                      `json:"deprecated,omitempty"`
+	Home              string                    `json:"home,omitempty"`
+	HomeURL           string                    `json:"homeUrl,omitempty"`
+	Icon              string                    `json:"icon,omitempty"`
+	LogoImageID       string                    `json:"logoImageId,omitempty"`
+	LogoImageURL      string                    `json:"logoImageUrl,omitempty"`
+	ArtifactHubURL    string                    `json:"artifactHubUrl,omitempty"`
+	KubeVersion       string                    `json:"kubeVersion,omitempty"`
+	CreatedAt         string                    `json:"createdAt,omitempty"`
+	UpdatedAt         string                    `json:"updatedAt,omitempty"`
+	Digest            string                    `json:"digest,omitempty"`
+	URLs              []string                  `json:"urls,omitempty"`
+	Sources           []string                  `json:"sources,omitempty"`
+	Keywords          []string                  `json:"keywords,omitempty"`
+	Maintainers       []HelmChartMaintainerView `json:"maintainers,omitempty"`
+	Versions          []string                  `json:"versions,omitempty"`
+	VersionCount      int                       `json:"versionCount"`
+	Stars             int                       `json:"stars,omitempty"`
+	Official          bool                      `json:"official,omitempty"`
+	CNCF              bool                      `json:"cncf,omitempty"`
+	Signed            bool                      `json:"signed,omitempty"`
+	HasValuesSchema   bool                      `json:"hasValuesSchema,omitempty"`
+	VerifiedPublisher bool                      `json:"verifiedPublisher,omitempty"`
+	SecurityCritical  int                       `json:"securityCritical,omitempty"`
+	SecurityHigh      int                       `json:"securityHigh,omitempty"`
+	SecurityMedium    int                       `json:"securityMedium,omitempty"`
+	SecurityLow       int                       `json:"securityLow,omitempty"`
+	SecurityUnknown   int                       `json:"securityUnknown,omitempty"`
+	AllowedActions    []string                  `json:"allowedActions,omitempty"`
+}
+
+type HelmChartLinkView struct {
+	Name string `json:"name,omitempty"`
+	URL  string `json:"url,omitempty"`
+}
+
+type HelmChartVersionView struct {
+	Version                 string `json:"version"`
+	AppVersion              string `json:"appVersion,omitempty"`
+	CreatedAt               string `json:"createdAt,omitempty"`
+	Prerelease              bool   `json:"prerelease,omitempty"`
+	ContainsSecurityUpdates bool   `json:"containsSecurityUpdates,omitempty"`
+}
+
+type HelmChartDetailView struct {
+	HelmChartView
+	Readme            string                 `json:"readme,omitempty"`
+	ContentURL        string                 `json:"contentUrl,omitempty"`
+	Links             []HelmChartLinkView    `json:"links,omitempty"`
+	AvailableVersions []HelmChartVersionView `json:"availableVersions,omitempty"`
+}
+
+type HelmChartValuesTemplateView struct {
+	PackageID string `json:"packageId"`
+	Name      string `json:"name,omitempty"`
+	Version   string `json:"version"`
+	Content   string `json:"content"`
+}
+
+type HelmChartInstallInput struct {
+	RepositoryName  string `json:"repositoryName,omitempty"`
+	RepositoryURL   string `json:"repositoryUrl"`
+	ChartName       string `json:"chartName"`
+	Version         string `json:"version"`
+	ReleaseName     string `json:"releaseName"`
+	Namespace       string `json:"namespace"`
+	ValuesYAML      string `json:"valuesYaml,omitempty"`
+	CreateNamespace bool   `json:"createNamespace"`
+	Wait            bool   `json:"wait"`
+	TimeoutSeconds  int    `json:"timeoutSeconds,omitempty"`
+}
+
+type HelmChartInstallResourceView struct {
+	APIVersion string `json:"apiVersion,omitempty"`
+	Kind       string `json:"kind"`
+	Namespace  string `json:"namespace,omitempty"`
+	Name       string `json:"name"`
+}
+
+type HelmChartInstallResult struct {
+	Name         string                         `json:"name"`
+	Namespace    string                         `json:"namespace"`
+	Revision     string                         `json:"revision,omitempty"`
+	Status       string                         `json:"status,omitempty"`
+	Chart        string                         `json:"chart,omitempty"`
+	ChartName    string                         `json:"chartName,omitempty"`
+	ChartVersion string                         `json:"chartVersion,omitempty"`
+	AppVersion   string                         `json:"appVersion,omitempty"`
+	Description  string                         `json:"description,omitempty"`
+	Notes        string                         `json:"notes,omitempty"`
+	Resources    []HelmChartInstallResourceView `json:"resources,omitempty"`
+}
+
+type HelmChartCatalogView struct {
+	Repository   HelmChartRepositoryView `json:"repository"`
+	Source       string                  `json:"source,omitempty"`
+	Query        string                  `json:"query,omitempty"`
+	Limit        int                     `json:"limit,omitempty"`
+	Offset       int                     `json:"offset,omitempty"`
+	GeneratedAt  string                  `json:"generatedAt,omitempty"`
+	RefreshedAt  string                  `json:"refreshedAt"`
+	TotalCount   int                     `json:"totalCount,omitempty"`
+	LoadedCount  int                     `json:"loadedCount,omitempty"`
+	ChartCount   int                     `json:"chartCount"`
+	VersionCount int                     `json:"versionCount"`
+	Charts       []HelmChartView         `json:"charts"`
+}
+
 type ConfigMapView struct {
 	Name           string   `json:"name"`
 	Namespace      string   `json:"namespace"`

@@ -539,18 +539,18 @@ kubernetes:
       >
         {t('common.create', 'Create')}
       </Button>
+      <ManagementDensityButton
+        aria-label={localeCode === 'zh_CN' ? '切换表格密度' : 'Toggle table density'}
+        title={localeCode === 'zh_CN' ? '切换表格密度' : 'Toggle table density'}
+        tooltip={localeCode === 'zh_CN' ? '切换表格密度' : 'Toggle table density'}
+        onClick={() => setTableSize((current) => current === 'middle' ? 'small' : 'middle')}
+      />
       <ManagementRefreshButton
         aria-label={localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
         loading={isFetching}
         title={localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
         tooltip={localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
         onClick={() => void refetch()}
-      />
-      <ManagementDensityButton
-        aria-label={localeCode === 'zh_CN' ? '切换表格密度' : 'Toggle table density'}
-        title={localeCode === 'zh_CN' ? '切换表格密度' : 'Toggle table density'}
-        tooltip={localeCode === 'zh_CN' ? '切换表格密度' : 'Toggle table density'}
-        onClick={() => setTableSize((current) => current === 'middle' ? 'small' : 'middle')}
       />
     </ManagementTableToolbar>
   )
@@ -567,6 +567,7 @@ kubernetes:
         dataSource={filteredClusters}
         rowKey="id"
         loading={isLoading}
+        paginationSummary={localeCode === 'zh_CN' ? `当前 ${filteredClusters.length} / ${clusters.length} 条` : `${filteredClusters.length} / ${clusters.length} items`}
         pageSize={20}
         tableSize={tableSize}
         scroll={{ x: 'max-content' }}

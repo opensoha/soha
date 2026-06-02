@@ -140,6 +140,10 @@ type ResourceService interface {
 	GetCRDResourceYAML(context.Context, domainidentity.Principal, string, string, string, string) (domainresource.ResourceYAMLView, error)
 	ApplyCRDResourceYAML(context.Context, domainidentity.Principal, string, string, string, string, string) (domainresource.ResourceYAMLView, error)
 	DeleteCRDResource(context.Context, domainidentity.Principal, string, string, string, string) error
+	ListHelmCharts(context.Context, domainidentity.Principal, string, string, int, int) (domainresource.HelmChartCatalogView, error)
+	GetHelmChartDetail(context.Context, domainidentity.Principal, string, string, string, string) (domainresource.HelmChartDetailView, error)
+	GetHelmChartValuesTemplate(context.Context, domainidentity.Principal, string, string, string, string) (domainresource.HelmChartValuesTemplateView, error)
+	InstallHelmChart(context.Context, domainidentity.Principal, string, domainresource.HelmChartInstallInput) (domainresource.HelmChartInstallResult, error)
 	ListHelmReleases(context.Context, domainidentity.Principal, string, string) ([]domainresource.HelmReleaseView, error)
 	GetHelmReleaseDetail(context.Context, domainidentity.Principal, string, string, string) (domainresource.HelmReleaseDetailView, error)
 	ListHelmReleaseHistory(context.Context, domainidentity.Principal, string, string, string) ([]domainresource.HelmReleaseHistoryView, error)
@@ -1799,6 +1803,51 @@ func (h *PlatformHandler) DeleteCRDResource(c *gin.Context) {
 	c.Status(http.StatusNoContent)
 }
 
+func (h *PlatformHandler) ListHelmCharts(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	item, err := h.resources.ListHelmCharts(c.Request.Context(), principal, c.Param("clusterID"), c.Query("keyword"), parseLimit(c.Query("limit"), 100), parseOffset(c.Query("offset")))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
+}
+
+func (h *PlatformHandler) GetHelmChartDetail(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	item, err := h.resources.GetHelmChartDetail(c.Request.Context(), principal, c.Param("clusterID"), c.Param("repositoryName"), c.Param("chartName"), c.Query("version"))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
+}
+
+func (h *PlatformHandler) GetHelmChartValuesTemplate(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	item, err := h.resources.GetHelmChartValuesTemplate(c.Request.Context(), principal, c.Param("clusterID"), c.Query("packageId"), c.Query("name"), c.Query("version"))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
+}
+
+func (h *PlatformHandler) InstallHelmChart(c *gin.Context) {
+	var payload domainresource.HelmChartInstallInput
+	if err := c.ShouldBindJSON(&payload); err != nil {
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid helm chart install payload")
+		return
+	}
+	principal := apiMiddleware.PrincipalFromContext(c)
+	item, err := h.resources.InstallHelmChart(c.Request.Context(), principal, c.Param("clusterID"), payload)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusCreated, item)
+}
+
 func (h *PlatformHandler) ListHelmReleases(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.Query("namespace")
@@ -2135,6 +2184,14 @@ func parseLimit(value string, fallback int) int {
 		return fallback
 	}
 	return limit
+}
+
+func parseOffset(value string) int {
+	offset, err := strconv.Atoi(value)
+	if err != nil || offset < 0 {
+		return 0
+	}
+	return offset
 }
 
 func writeError(c *gin.Context, err error) {

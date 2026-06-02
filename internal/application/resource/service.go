@@ -4955,7 +4955,20 @@ func (s *Service) authorize(ctx context.Context, principal domainidentity.Princi
 	if err != nil {
 		return domaincluster.Connection{}, domainaccess.Decision{}, err
 	}
-	request := domainaccess.Request{
+	request := s.resourceAccessRequest(ctx, principal, connection, namespace, kind, action)
+	decision, err := s.authorizer.Authorize(ctx, request)
+	if err != nil {
+		return domaincluster.Connection{}, domainaccess.Decision{}, err
+	}
+	if !decision.Allowed {
+		_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, kind, "", string(action), "deny", decision.Reason)
+		return domaincluster.Connection{}, domainaccess.Decision{}, fmt.Errorf("%w: %s", apperrors.ErrAccessDenied, decision.Reason)
+	}
+	return connection, decision, nil
+}
+
+func (s *Service) resourceAccessRequest(ctx context.Context, principal domainidentity.Principal, connection domaincluster.Connection, namespace, kind string, action domainaccess.Action) domainaccess.Request {
+	return domainaccess.Request{
 		Principal: principal,
 		Action:    action,
 		Subject: domainaccess.SubjectAttributes{
@@ -4978,15 +4991,17 @@ func (s *Service) authorize(ctx context.Context, principal domainidentity.Princi
 			OccurredAt: time.Now().UTC(),
 		},
 	}
-	decision, err := s.authorizer.Authorize(ctx, request)
-	if err != nil {
-		return domaincluster.Connection{}, domainaccess.Decision{}, err
+}
+
+func (s *Service) allowedActionsForResource(ctx context.Context, principal domainidentity.Principal, connection domaincluster.Connection, namespace, kind string, action domainaccess.Action) []string {
+	if s == nil || s.authorizer == nil {
+		return nil
 	}
-	if !decision.Allowed {
-		_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, kind, "", string(action), "deny", decision.Reason)
-		return domaincluster.Connection{}, domainaccess.Decision{}, fmt.Errorf("%w: %s", apperrors.ErrAccessDenied, decision.Reason)
+	decision, err := s.authorizer.Authorize(ctx, s.resourceAccessRequest(ctx, principal, connection, namespace, kind, action))
+	if err != nil || !decision.Allowed {
+		return nil
 	}
-	return connection, decision, nil
+	return stringifyActions(decision.AllowedActions)
 }
 
 func (s *Service) recordAudit(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, kind, name, action, result, summary string) error {

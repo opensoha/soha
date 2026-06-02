@@ -158,18 +158,18 @@ export function ClusterNodesPage() {
 
   const nodeTableHeaderExtra = (
     <ManagementTableToolbar>
+      <ManagementDensityButton
+        aria-label="切换表格密度"
+        title="切换表格密度"
+        tooltip="切换表格密度"
+        onClick={() => setNodeTableSize((current) => current === 'middle' ? 'small' : 'middle')}
+      />
       <ManagementRefreshButton
         aria-label="刷新"
         loading={nodesQuery.isFetching}
         title="刷新"
         tooltip="刷新"
         onClick={() => void nodesQuery.refetch()}
-      />
-      <ManagementDensityButton
-        aria-label="切换表格密度"
-        title="切换表格密度"
-        tooltip="切换表格密度"
-        onClick={() => setNodeTableSize((current) => current === 'middle' ? 'small' : 'middle')}
       />
     </ManagementTableToolbar>
   )

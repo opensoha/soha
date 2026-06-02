@@ -698,6 +698,130 @@ export interface HelmValues {
   allowedActions?: string[]
 }
 
+export interface HelmChartRepository {
+  id: string
+  name: string
+  displayName?: string
+  url: string
+  indexUrl?: string
+  organizationName?: string
+  organizationDisplayName?: string
+  official?: boolean
+  verifiedPublisher?: boolean
+}
+
+export interface HelmChartMaintainer {
+  name?: string
+  email?: string
+  url?: string
+}
+
+export interface HelmChart {
+  packageId?: string
+  name: string
+  normalizedName?: string
+  repositoryName?: string
+  repositoryUrl?: string
+  repositoryDisplay?: string
+  latestVersion?: string
+  appVersion?: string
+  description?: string
+  type?: string
+  category?: string
+  deprecated?: boolean
+  home?: string
+  homeUrl?: string
+  icon?: string
+  logoImageId?: string
+  logoImageUrl?: string
+  artifactHubUrl?: string
+  kubeVersion?: string
+  createdAt?: string
+  updatedAt?: string
+  digest?: string
+  urls?: string[]
+  sources?: string[]
+  keywords?: string[]
+  maintainers?: HelmChartMaintainer[]
+  versions?: string[]
+  versionCount: number
+  stars?: number
+  official?: boolean
+  cncf?: boolean
+  signed?: boolean
+  hasValuesSchema?: boolean
+  verifiedPublisher?: boolean
+  securityCritical?: number
+  securityHigh?: number
+  securityMedium?: number
+  securityLow?: number
+  securityUnknown?: number
+  allowedActions?: string[]
+}
+
+export interface HelmChartLink {
+  name?: string
+  url?: string
+}
+
+export interface HelmChartVersion {
+  version: string
+  appVersion?: string
+  createdAt?: string
+  prerelease?: boolean
+  containsSecurityUpdates?: boolean
+}
+
+export interface HelmChartDetail extends HelmChart {
+  readme?: string
+  contentUrl?: string
+  links?: HelmChartLink[]
+  availableVersions?: HelmChartVersion[]
+}
+
+export interface HelmChartValuesTemplate {
+  packageId: string
+  name?: string
+  version: string
+  content: string
+}
+
+export interface HelmChartInstallResource {
+  apiVersion?: string
+  kind: string
+  namespace?: string
+  name: string
+}
+
+export interface HelmChartInstallResult {
+  name: string
+  namespace: string
+  revision?: string
+  status?: string
+  chart?: string
+  chartName?: string
+  chartVersion?: string
+  appVersion?: string
+  description?: string
+  notes?: string
+  resources?: HelmChartInstallResource[]
+}
+
+export interface HelmChartCatalog {
+  repository: HelmChartRepository
+  source?: string
+  query?: string
+  limit?: number
+  offset?: number
+  generatedAt?: string
+  refreshedAt: string
+  totalCount?: number
+  loadedCount?: number
+  chartCount: number
+  versionCount: number
+  charts: HelmChart[]
+}
+
 export interface WorkflowNodeRun {
   nodeId: string
   name: string

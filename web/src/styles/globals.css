@@ -1068,6 +1068,59 @@ a {
   margin-left: auto;
 }
 
+.soha-helm-chart-table-shell .soha-admin-table-toolbar {
+  flex-wrap: nowrap;
+}
+
+.soha-helm-chart-table-shell .soha-admin-table-toolbar-main {
+  flex: 1 1 auto;
+  flex-wrap: nowrap;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.soha-helm-chart-table-shell .soha-admin-table-toolbar-extra {
+  flex: 0 0 auto;
+}
+
+.soha-helm-chart-catalog-toolbar {
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.soha-helm-chart-catalog-toolbar .ant-space-item {
+  min-width: 0;
+}
+
+.soha-helm-chart-catalog-url {
+  display: inline-block;
+  max-width: clamp(120px, 24vw, 260px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: bottom;
+  white-space: nowrap;
+}
+
+.soha-helm-chart-catalog-total {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.soha-helm-install-output {
+  max-height: 240px;
+  padding: 12px;
+  overflow: auto;
+  color: var(--soha-text-secondary);
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  background: var(--soha-color-surface-muted);
+  border: 1px solid var(--soha-border-color);
+  border-radius: 6px;
+}
+
 .soha-admin-table-column-popover {
   display: flex;
   flex-direction: column;
@@ -1459,9 +1512,16 @@ a {
 }
 
 .soha-management-table-shell .soha-admin-table .ant-table-pagination {
+  width: 100%;
   min-height: 34px;
   padding: 6px 0;
   margin: 0 !important;
+}
+
+.soha-management-table-shell .soha-admin-table .ant-table-pagination .ant-pagination-total-text {
+  margin-inline-end: auto;
+  color: var(--soha-text-tertiary);
+  font-size: 12px;
 }
 
 .soha-management-table-shell .soha-admin-table .ant-table-thead > tr > th,
@@ -3018,9 +3078,22 @@ a {
   flex-wrap: wrap;
 }
 
+.soha-workload-search-input .ant-input-prefix {
+  color: var(--soha-text-tertiary);
+}
+
 .soha-workload-table-summary {
   color: var(--soha-text-tertiary);
   font-size: 12px;
+}
+
+.soha-workload-name-link.ant-typography,
+.soha-workload-name-text.ant-typography {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .soha-replica-progress-cell {
