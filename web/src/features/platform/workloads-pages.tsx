@@ -1,7 +1,7 @@
 import { lazy, Suspense, useState, useEffect, useMemo } from 'react'
 import type { ReactNode } from 'react'
 import {
-  App, Tag, Button, Select, Tabs, Card, Spin, Input, Statistic,
+  App, Tag, Button, Select, Tabs, Card, Spin, Input, Statistic, List,
   Descriptions, Typography, Space, Modal, Popconfirm, InputNumber, Switch, Tooltip, message,
 } from 'antd'
 import {
@@ -22,7 +22,6 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { AdminTable } from '@/components/admin-table'
 import {
-  ManagementDetailHeader,
   ManagementDensityButton,
   ManagementIconButton,
   ManagementQueryField,
@@ -38,11 +37,10 @@ import { useI18n } from '@/i18n'
 import { ResourceEventsTimeline } from '@/components/resource-events-timeline'
 import { BooleanTag, StatusTag } from '@/components/status-tag'
 import { ResourceMetricsPanel } from '@/components/resource-metrics-panel'
-import { ResourceProgressCell, formatBytesAsG, formatCpu } from '@/features/platform/node-resource-utils'
+import { formatBytesAsG, formatCpu } from '@/features/platform/node-resource-utils'
 import { api } from '@/services/api-client'
 import { buildClusterScopedPath } from '@/features/platform/platform-scope-query'
 import { usePlatformScopeStore } from '@/stores/platform-scope-store'
-import { downloadJSON } from '@/utils/download'
 import { formatAgeSeconds, formatDateTime, formatRelativeTime } from '@/utils/time'
 import { tableColumnPresets } from '@/utils/table-columns'
 import type { ApiResponse, DeploymentRolloutStatus, PodDetail, PodMetrics, PodRelatedResource, PodVolume, PodVolumeMount, ResourceMetrics, ResourceQuantity, ResourceYAMLView, RolloutHistory, WorkloadCondition, WorkloadContainer } from '@/types'
@@ -486,6 +484,7 @@ interface ApplicationEnvironment {
   id: string
   applicationId: string
   environmentId: string
+  environmentKey?: string
   workflowTemplate?: {
     id: string
     name: string
@@ -506,12 +505,6 @@ interface ApplicationSummary {
   id: string
   name: string
   businessLineId?: string
-}
-
-interface DeliveryEnvironment {
-  id: string
-  name: string
-  key: string
 }
 
 interface BuildRecord {
@@ -732,6 +725,44 @@ interface WorkloadMeta {
   [key: string]: unknown
 }
 
+function WorkloadMetadataSection({
+  items,
+  title,
+}: {
+  items?: Record<string, string>
+  title: ReactNode
+}) {
+  const entries = Object.entries(items ?? {}).filter(([key]) => key.trim())
+  if (entries.length === 0) return null
+
+  return (
+    <div className="soha-workload-metadata-section">
+      <Text strong className="soha-workload-metadata-title">{title}</Text>
+      <div className="soha-workload-kv-grid">
+        {entries.map(([key, value]) => {
+          const displayValue = value || '-'
+          return (
+            <Tooltip
+              key={key}
+              title={(
+                <div className="soha-workload-kv-tooltip">
+                  <div>{key}</div>
+                  <div>{displayValue}</div>
+                </div>
+              )}
+            >
+              <div className="soha-workload-kv-item" title={`${key}: ${displayValue}`}>
+                <span className="soha-workload-kv-key">{`${key}:`}</span>
+                <span className="soha-workload-kv-value">{displayValue}</span>
+              </div>
+            </Tooltip>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 function WorkloadDetailShell({
   title,
   resource,
@@ -813,15 +844,21 @@ function WorkloadDetailShell({
   if (!detail) return <ManagementState compact kind="not-found" title={localeCode === 'zh_CN' ? `${title}未找到` : `${title} not found`} />
 
   return (
-    <div className="soha-page">
-      <ManagementDetailHeader
-        title={`${title}: ${name}`}
-        description={localeCode === 'zh_CN' ? `查看 ${title} 的资源概览、标签、注解与 YAML 等详情信息。` : `Inspect ${title} overview, labels, annotations, and YAML details.`}
-        actions={actions}
-      />
+    <div className="soha-page soha-workload-detail-page">
+      <div className="soha-workload-detail-heading">
+        <div className="soha-workload-detail-heading-main">
+          <Text type="secondary" className="soha-workload-detail-kind">{title}</Text>
+          <Text strong className="soha-workload-detail-name">{name}</Text>
+        </div>
+        {actions ? <div className="soha-workload-detail-actions">{actions}</div> : null}
+      </div>
       <Tabs
         {...(activeTabKey != null ? { activeKey: activeTabKey } : { defaultActiveKey: 'overview' })}
+        className="soha-workload-detail-tabs"
         onChange={onTabChange}
+        indicator={{ size: (origin) => Math.max(16, origin - 16), align: 'center' }}
+        size="small"
+        tabBarGutter={18}
         items={[
           {
             key: 'overview',
@@ -836,22 +873,10 @@ function WorkloadDetailShell({
                       { key: t('common.createdAt', 'Created At'), label: t('common.createdAt', 'Created At'), children: detail.createdAt ? formatRelativeTime(detail.createdAt) : '-' },
                     ]}
                   />
-                  {detail.labels && Object.keys(detail.labels).length > 0 && (
-                    <div className="soha-detail-meta">
-                      <Text strong>{`${t('common.labels', 'Labels')}:`}</Text>
-                      <div className="soha-tag-list">
-                        {Object.entries(detail.labels).map(([k, v]) => (
-                          <Tag key={k}>{k}={v}</Tag>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                  {detail.annotations && Object.keys(detail.annotations).length > 0 && (
-                    <div className="soha-detail-meta">
-                      <Text strong>{`${localeCode === 'zh_CN' ? '注解' : 'Annotations'}:`}</Text>
-                      <pre className="soha-json-block">{JSON.stringify(detail.annotations, null, 2)}</pre>
-                    </div>
-                  )}
+                  <div className="soha-workload-metadata-stack">
+                    <WorkloadMetadataSection items={detail.labels} title={t('common.labels', 'Labels')} />
+                    <WorkloadMetadataSection items={detail.annotations} title={localeCode === 'zh_CN' ? '注解' : 'Annotations'} />
+                  </div>
                 </Card>
                 {extraOverview}
               </>
@@ -909,6 +934,7 @@ interface Deployment {
 interface DeploymentDetailMeta {
   name: string
   namespace: string
+  createdAt?: string
   selector?: Record<string, string>
 }
 
@@ -1416,10 +1442,6 @@ export function DeploymentDetailPage() {
     queryKey: ['applications'],
     queryFn: () => api.get<ApiResponse<ApplicationSummary[]>>('/applications'),
   })
-  const environmentsQuery = useQuery({
-    queryKey: ['delivery-environments'],
-    queryFn: () => api.get<ApiResponse<DeliveryEnvironment[]>>('/delivery-environments'),
-  })
   const buildsQuery = useQuery({
     queryKey: ['builds'],
     queryFn: () => api.get<ApiResponse<BuildRecord[]>>('/builds'),
@@ -1494,10 +1516,6 @@ export function DeploymentDetailPage() {
     () => Object.fromEntries((applicationsQuery.data?.data ?? []).map((item) => [item.id, item])),
     [applicationsQuery.data],
   )
-  const environmentMap = useMemo(
-    () => Object.fromEntries((environmentsQuery.data?.data ?? []).map((item) => [item.id, item])),
-    [environmentsQuery.data],
-  )
   const latestBuildByApplication = useMemo(
     () => Object.fromEntries((buildsQuery.data?.data ?? []).map((item) => [item.applicationId, item])),
     [buildsQuery.data],
@@ -1512,31 +1530,6 @@ export function DeploymentDetailPage() {
       : (rolloutStatus?.conditions ?? []).map(conditionToTimelineEvent)),
     [deploymentEventsQuery.data, rolloutStatus],
   )
-  const deploymentExportPayload = useMemo(() => ({
-    exportedAt: new Date().toISOString(),
-    clusterId,
-    namespace: detailNamespace,
-    deploymentName,
-    detail: deploymentDetailQuery.data?.data ?? null,
-    rolloutStatus: rolloutStatus ?? null,
-    rolloutHistory,
-    metrics: metricsQuery.data?.data ?? null,
-    events: deploymentEventsQuery.data?.data ?? [],
-    pods: deploymentPods,
-    bindings: matchedBindings,
-  }), [
-    clusterId,
-    deploymentDetailQuery.data,
-    deploymentEventsQuery.data,
-    deploymentName,
-    deploymentPods,
-    detailNamespace,
-    matchedBindings,
-    metricsQuery.data,
-    rolloutHistory,
-    rolloutStatus,
-  ])
-
   useEffect(() => {
     if (rolloutStatus?.desiredReplicas != null) {
       setScaleReplicas(rolloutStatus.desiredReplicas)
@@ -1550,7 +1543,7 @@ export function DeploymentDetailPage() {
         name: deploymentName,
       }),
     onSuccess: () => {
-      void message.success(localeCode === 'zh_CN' ? '已触发 Restart Deployment' : 'Restart Deployment triggered')
+      void message.success(localeCode === 'zh_CN' ? '已触发重启' : 'Restart triggered')
       queryClient.invalidateQueries({ queryKey: ['deployment-rollout-status', clusterId, detailNamespace, deploymentName] })
       queryClient.invalidateQueries({ queryKey: ['deployment-rollouts', clusterId, detailNamespace, deploymentName] })
       queryClient.invalidateQueries({ queryKey: ['deployments', clusterId, namespace] })
@@ -1575,73 +1568,121 @@ export function DeploymentDetailPage() {
     onError: (err: Error) => void message.error(err.message),
   })
 
-  const rolloutColumns: TableColumnsType<RolloutHistory> = [
-    { title: localeCode === 'zh_CN' ? 'Revision' : 'Revision', dataIndex: 'revision' },
-    { title: localeCode === 'zh_CN' ? '镜像' : 'Images', dataIndex: 'images', render: (value: string[]) => value?.join(', ') || '-' },
-    { title: localeCode === 'zh_CN' ? '副本' : 'Replicas', dataIndex: 'replicas' },
-    { title: localeCode === 'zh_CN' ? '就绪副本' : 'Ready', dataIndex: 'readyReplicas' },
-    { ...tableColumnPresets.datetime, title: localeCode === 'zh_CN' ? '创建时间' : 'Created', dataIndex: 'createdAt', render: (value: string) => value ? formatDateTime(value) : '-' },
-  ]
-
-  const deploymentPodColumns: TableColumnsType<Pod> = [
-    {
-      title: localeCode === 'zh_CN' ? 'Pod' : 'Pod',
-      dataIndex: 'name',
-      render: (value: string, record: Pod) => (
-        <Button
-          type="text"
-          onClick={() => navigate(buildWorkloadDetailPath('pods', value, detailNamespace, record.namespace))}
-        >
-          {value}
-        </Button>
-      ),
-    },
-    { title: localeCode === 'zh_CN' ? '状态' : 'Status', dataIndex: 'phase', render: (value: string) => <StatusTag value={value} /> },
-    { title: 'Ready', dataIndex: 'readyContainers' },
-    { title: localeCode === 'zh_CN' ? '重启次数' : 'Restarts', dataIndex: 'restarts' },
-    { title: localeCode === 'zh_CN' ? '节点' : 'Node', dataIndex: 'nodeName', render: (value: string) => value || '-' },
-    { ...tableColumnPresets.datetime, title: 'Age', dataIndex: 'ageSeconds', render: (value: number) => formatAgeSeconds(value) },
-  ]
-
   const linkageOverview = (
     <div className="soha-detail-stack">
-      <Card className="soha-detail-card" title={localeCode === 'zh_CN' ? '滚动发布状态' : 'Rollout Status'}>
-        {rolloutStatus ? (
-          <Descriptions
-            items={[
-              { key: localeCode === 'zh_CN' ? 'Revision' : 'Revision', label: localeCode === 'zh_CN' ? 'Revision' : 'Revision', children: rolloutStatus.revision || '-' },
-              { key: localeCode === 'zh_CN' ? '状态' : 'Status', label: localeCode === 'zh_CN' ? '状态' : 'Status', children: <StatusTag value={rolloutStatus.status} /> },
-              { key: localeCode === 'zh_CN' ? '消息' : 'Message', label: localeCode === 'zh_CN' ? '消息' : 'Message', children: rolloutStatus.message || '-' },
-              { key: localeCode === 'zh_CN' ? '副本' : 'Desired', label: localeCode === 'zh_CN' ? '副本' : 'Desired', children: rolloutStatus.desiredReplicas },
-              { key: localeCode === 'zh_CN' ? '更新副本' : 'Updated', label: localeCode === 'zh_CN' ? '更新副本' : 'Updated', children: rolloutStatus.updatedReplicas },
-              { key: localeCode === 'zh_CN' ? '就绪副本' : 'Ready', label: localeCode === 'zh_CN' ? '就绪副本' : 'Ready', children: rolloutStatus.readyReplicas },
-              { key: localeCode === 'zh_CN' ? '可用副本' : 'Available', label: localeCode === 'zh_CN' ? '可用副本' : 'Available', children: rolloutStatus.availableReplicas },
-            ]}
-          />
-        ) : (
-          <ManagementState bordered={false} compact title={localeCode === 'zh_CN' ? '暂无滚动状态' : 'No rollout status'} />
-        )}
-      </Card>
-      <Card className="soha-detail-card" title={localeCode === 'zh_CN' ? '滚动历史' : 'Rollout History'}>
-        <AdminTable
-          shellClassName="soha-management-table-shell"
-          columns={rolloutColumns}
-          dataSource={rolloutHistory}
-          rowKey={(record) => record.revision}
-          pageSize={10}
-          enableColumnSelection={false}
-        />
-      </Card>
-      <Card className="soha-detail-card" title={localeCode === 'zh_CN' ? '关联 Pods' : 'Related Pods'}>
-        <AdminTable
-          shellClassName="soha-management-table-shell"
-          columns={deploymentPodColumns}
+      <Card className="soha-detail-card soha-related-pod-card" title={localeCode === 'zh_CN' ? '关联 Pods' : 'Related Pods'}>
+        <List
+          className="soha-related-pod-list"
           dataSource={deploymentPods}
-          rowKey={(record) => `${record.namespace}/${record.name}`}
           loading={deploymentPodsQuery.isLoading}
-          pageSize={10}
-          enableColumnSelection={false}
+          rowKey={(record) => `${record.namespace}/${record.name}`}
+          locale={{
+            emptyText: (
+              <ManagementState
+                bordered={false}
+                compact
+                title={localeCode === 'zh_CN' ? '暂无关联 Pods' : 'No related Pods'}
+              />
+            ),
+          }}
+          renderItem={(pod: Pod) => (
+            <List.Item className="soha-related-pod-item">
+              <div className="soha-related-pod-line">
+                <Tooltip title={pod.name}>
+                  <Button
+                    type="link"
+                    className="soha-related-pod-name"
+                    onClick={() => navigate(buildWorkloadDetailPath('pods', pod.name, detailNamespace, pod.namespace))}
+                  >
+                    {pod.name}
+                  </Button>
+                </Tooltip>
+                <StatusTag value={pod.phase} />
+                <Tag color="blue" className="soha-related-pod-tag">
+                  {pod.namespace || detailNamespace || '-'}
+                </Tag>
+                <Tag color="cyan" className="soha-related-pod-tag">
+                  {pod.podIp || '-'}
+                </Tag>
+                <Tag color="success" className="soha-related-pod-tag">
+                  {`Ready ${pod.readyContainers || '-'}`}
+                </Tag>
+                <Tag color={(pod.restarts ?? 0) > 0 ? 'warning' : 'default'} className="soha-related-pod-tag">
+                  {`${localeCode === 'zh_CN' ? '重启' : 'Restarts'} ${pod.restarts ?? 0}`}
+                </Tag>
+                <Tooltip title={pod.nodeName || '-'}>
+                  <Tag color="purple" className="soha-related-pod-tag soha-related-pod-tag-node">
+                    {pod.nodeName || '-'}
+                  </Tag>
+                </Tooltip>
+                <Tag color="geekblue" className="soha-related-pod-tag">
+                  {formatAgeSeconds(pod.ageSeconds)}
+                </Tag>
+              </div>
+            </List.Item>
+          )}
         />
+      </Card>
+      <Card className="soha-detail-card soha-rollout-card" title={localeCode === 'zh_CN' ? '滚动发布' : 'Rollout'}>
+        <div className="soha-rollout-status-section">
+          {rolloutStatus ? (
+            <div className="soha-rollout-status-compact">
+              <span className="soha-rollout-status-chip">
+                <Text type="secondary">Revision</Text>
+                <Text strong>{rolloutStatus.revision || '-'}</Text>
+              </span>
+              <span className="soha-rollout-status-chip">
+                <Text type="secondary">{localeCode === 'zh_CN' ? '状态' : 'Status'}</Text>
+                <StatusTag value={rolloutStatus.status} />
+              </span>
+              <Tooltip title={rolloutStatus.message || '-'}>
+                <span className="soha-rollout-status-chip soha-rollout-status-chip-message">
+                  <Text type="secondary">{localeCode === 'zh_CN' ? '消息' : 'Message'}</Text>
+                  <Text className="soha-rollout-status-message">{rolloutStatus.message || '-'}</Text>
+                </span>
+              </Tooltip>
+              <span className="soha-rollout-status-chip">
+                <Text type="secondary">{localeCode === 'zh_CN' ? '副本' : 'Desired'}</Text>
+                <Text>{rolloutStatus.desiredReplicas}</Text>
+              </span>
+              <span className="soha-rollout-status-chip">
+                <Text type="secondary">{localeCode === 'zh_CN' ? '更新' : 'Updated'}</Text>
+                <Text>{rolloutStatus.updatedReplicas}</Text>
+              </span>
+              <span className="soha-rollout-status-chip">
+                <Text type="secondary">{localeCode === 'zh_CN' ? '就绪' : 'Ready'}</Text>
+                <Text>{rolloutStatus.readyReplicas}</Text>
+              </span>
+              <span className="soha-rollout-status-chip">
+                <Text type="secondary">{localeCode === 'zh_CN' ? '可用' : 'Available'}</Text>
+                <Text>{rolloutStatus.availableReplicas}</Text>
+              </span>
+            </div>
+          ) : (
+            <ManagementState bordered={false} compact title={localeCode === 'zh_CN' ? '暂无滚动状态' : 'No rollout status'} />
+          )}
+        </div>
+        <div className="soha-rollout-history-section">
+          {rolloutHistory.length === 0 ? (
+            <ManagementState bordered={false} compact title={localeCode === 'zh_CN' ? '暂无滚动历史' : 'No rollout history'} />
+          ) : (
+            <div className="soha-rollout-history-list">
+              {rolloutHistory.map((record) => (
+                <div key={record.revision} className="soha-rollout-history-row">
+                  <Text type="secondary" className="soha-rollout-history-time">
+                    {record.createdAt ? formatDateTime(record.createdAt) : '-'}
+                  </Text>
+                  <Text strong className="soha-rollout-history-revision">{`Revision ${record.revision || '-'}`}</Text>
+                  <Tag className="soha-rollout-history-tag">{`${localeCode === 'zh_CN' ? '副本' : 'Replicas'} ${record.replicas ?? '-'}`}</Tag>
+                  <Tag className="soha-rollout-history-tag">{`${localeCode === 'zh_CN' ? '就绪' : 'Ready'} ${record.readyReplicas ?? '-'}`}</Tag>
+                  <Text type="secondary" className="soha-rollout-history-image">
+                    {record.images?.length ? record.images.join(', ') : (localeCode === 'zh_CN' ? '未记录镜像' : 'No image recorded')}
+                  </Text>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </Card>
       <Card className="soha-detail-card" title="交付联动">
         {matchedBindings.length === 0 ? (
@@ -1650,7 +1691,6 @@ export function DeploymentDetailPage() {
           <div className="soha-list-panel">
             {matchedBindings.map((binding) => {
               const application = applicationMap[binding.applicationId]
-              const environment = environmentMap[binding.environmentId]
               const latestBuild = latestBuildByApplication[binding.applicationId]
               const latestWorkflow = (workflowsQuery.data?.data ?? []).find((item) =>
                 item.applicationId === binding.applicationId
@@ -1669,7 +1709,7 @@ export function DeploymentDetailPage() {
                 <div key={binding.id} className="soha-list-row">
                   <div className="soha-list-row-meta">
                     <Text strong>{application?.name || binding.applicationId}</Text>
-                    <Tag color="blue">{environment?.name || binding.environmentId}</Tag>
+                    <Tag color="blue">{binding.environmentKey || binding.environmentId}</Tag>
                     {binding.workflowTemplate?.name ? <Tag color="cyan">{binding.workflowTemplate.name}</Tag> : null}
                   </div>
                   <div className="soha-list-row-extra">
@@ -1731,17 +1771,11 @@ export function DeploymentDetailPage() {
         yamlLast
         actions={(
           <Space>
-            <Button variant="outlined" loading={restartDeploymentMutation.isPending} onClick={() => restartDeploymentMutation.mutate()}>
-              Restart Deployment
+            <Button autoInsertSpace={false} variant="outlined" loading={restartDeploymentMutation.isPending} onClick={() => restartDeploymentMutation.mutate()}>
+              {localeCode === 'zh_CN' ? '重启' : 'Restart'}
             </Button>
             <Button variant="outlined" onClick={() => setScaleVisible(true)}>
               {localeCode === 'zh_CN' ? '扩缩容' : 'Scale'}
-            </Button>
-            <Button
-              variant="outlined"
-              onClick={() => downloadJSON(`deployment-diagnostics-${deploymentName}.json`, deploymentExportPayload)}
-            >
-              {localeCode === 'zh_CN' ? '导出诊断' : 'Export Diagnostics'}
             </Button>
           </Space>
         )}
@@ -1831,54 +1865,57 @@ function formatMemoryDisplay(value?: string) {
   return formatted === '-' ? value : formatted
 }
 
-function buildPodResourceSecondary(localeCode: string, requestDisplay: string, limitDisplay: string, hasBaseline: boolean) {
-  if (hasBaseline) {
-    return localeCode === 'zh_CN'
-      ? `请求 ${requestDisplay} · 限制 ${limitDisplay}`
-      : `Req ${requestDisplay} · Lim ${limitDisplay}`
-  }
-  return localeCode === 'zh_CN' ? '未配置 request/limit' : 'No request/limit set'
-}
-
-function renderPodResourceCell(record: Pod, resource: 'cpu' | 'memory', localeCode: string) {
-  const usageRaw = resource === 'cpu' ? record.cpu : record.memory
-  const requestRaw = resource === 'cpu' ? record.requests?.cpu : record.requests?.memory
-  const limitRaw = resource === 'cpu' ? record.limits?.cpu : record.limits?.memory
-  const parseValue = resource === 'cpu' ? parseCpuValue : parseMemoryValue
-  const formatValue = resource === 'cpu' ? formatCpuDisplay : formatMemoryDisplay
-
-  const usageDisplay = formatValue(usageRaw)
-  const requestDisplay = formatValue(requestRaw)
-  const limitDisplay = formatValue(limitRaw)
-  const requestValue = parseValue(requestRaw)
-  const limitValue = parseValue(limitRaw)
-  const usageValue = parseValue(usageRaw)
-  const baselineValue = requestValue > 0 ? requestValue : limitValue > 0 ? limitValue : null
-  const baselineDisplay = requestValue > 0 ? requestDisplay : limitDisplay
-  const secondary = buildPodResourceSecondary(localeCode, requestDisplay, limitDisplay, baselineValue != null)
-
-  if (usageValue >= 0 && baselineValue != null) {
-    return (
-      <ResourceProgressCell
-        primary={`${usageDisplay} / ${baselineDisplay}`}
-        secondary={secondary}
-        percent={(usageValue / baselineValue) * 100}
-        ariaLabel={`${resource} usage for pod ${record.namespace}/${record.name}`}
-        compact
-      />
-    )
-  }
-
-  if (usageDisplay === '-' && baselineValue == null) {
-    return '-'
-  }
+function renderPodRuntimeCell(record: Pod) {
+  const ready = parseReadyContainers(record.readyContainers)
+  const readyHealthy = ready.total > 0 && ready.ready >= ready.total
 
   return (
-    <div className="soha-resource-cell is-compact">
-      <div className="soha-resource-cell-copy">
-        <Text strong>{usageDisplay}</Text>
-        <Text type="secondary" className="text-xs">{secondary}</Text>
-      </div>
+    <Space size={6} wrap={false} className="soha-pod-table-runtime">
+      <StatusTag value={record.phase} />
+      <Tag bordered={false} color={readyHealthy ? 'success' : 'warning'}>
+        {`Ready ${record.readyContainers || '-'}`}
+      </Tag>
+    </Space>
+  )
+}
+
+function renderPodResourceSummaryCell(record: Pod, localeCode: 'zh_CN' | 'en_US') {
+  return (
+    <Space size={6} wrap={false} className="soha-pod-table-resource-summary">
+      <Tag bordered={false} color="processing">
+        {`CPU ${formatCpuDisplay(record.cpu)}`}
+      </Tag>
+      <Tag bordered={false} color="purple">
+        {`${localeCode === 'zh_CN' ? '内存' : 'MEM'} ${formatMemoryDisplay(record.memory)}`}
+      </Tag>
+    </Space>
+  )
+}
+
+function renderPodNameCell(record: Pod, onClick: () => void, localeCode: 'zh_CN' | 'en_US') {
+  const podIp = record.podIp || '-'
+  const nodeName = record.nodeName || '-'
+  const age = formatAgeSeconds(record.ageSeconds)
+
+  return (
+    <div className="soha-pod-table-name-cell">
+      <Tooltip title={record.name} placement="topLeft">
+        <Link className="soha-pod-table-name-link" onClick={onClick}>
+          {record.name}
+        </Link>
+      </Tooltip>
+      <Space size={4} wrap={false} className="soha-pod-table-meta">
+        <Tag bordered={false} color="blue">{record.namespace || '-'}</Tag>
+        <Tag bordered={false} color="cyan">{`IP ${podIp}`}</Tag>
+        <Tooltip title={`${localeCode === 'zh_CN' ? '节点' : 'Node'}: ${nodeName}`} placement="topLeft">
+          <Tag bordered={false} color="geekblue" className="soha-pod-table-node-tag">
+            {nodeName}
+          </Tag>
+        </Tooltip>
+        <Tag bordered={false} className="soha-pod-table-age-tag">
+          {age}
+        </Tag>
+      </Space>
     </div>
   )
 }
@@ -1982,9 +2019,9 @@ export function WorkloadsPodsPage() {
 
   const columns: TableColumnsType<Pod> = [
     {
-      title: localeCode === 'zh_CN' ? '名称' : 'Name',
+      title: 'Pod',
       dataIndex: 'name',
-      width: 280,
+      width: 320,
       ellipsis: { showTitle: false },
       sorter: podSorter((left, right) => {
         const nameCompare = compareStrings(left.name, right.name)
@@ -1992,56 +2029,56 @@ export function WorkloadsPodsPage() {
         return compareStrings(left.namespace, right.namespace)
       }),
       defaultSortOrder: 'ascend',
-      render: (name: string, record: Pod) => (
-        renderWorkloadNameLink(name, () => navigate(buildWorkloadDetailPath('pods', name, namespace, record.namespace)))
+      render: (_name: string, record: Pod) => renderPodNameCell(
+        record,
+        () => navigate(buildWorkloadDetailPath('pods', record.name, namespace, record.namespace)),
+        localeCode,
       ),
     },
-    { title: t('common.namespace', 'Namespace'), dataIndex: 'namespace', sorter: podSorter((left, right) => compareStrings(left.namespace, right.namespace)) },
     {
-      title: t('common.status', 'Status'),
+      title: localeCode === 'zh_CN' ? '运行状态' : 'Runtime',
       dataIndex: 'phase',
-      width: 120,
-      sorter: podSorter((left, right) => compareStrings(left.phase, right.phase)),
-      render: (s: string) => <StatusTag value={s} />,
-    },
-    {
-      title: 'Ready',
-      dataIndex: 'readyContainers',
-      width: 80,
+      width: 150,
       sorter: podSorter((left, right) => {
+        const phaseCompare = compareStrings(left.phase, right.phase)
+        if (phaseCompare !== 0) return phaseCompare
         const leftReady = parseReadyContainers(left.readyContainers)
         const rightReady = parseReadyContainers(right.readyContainers)
-        if (leftReady.ready !== rightReady.ready) return leftReady.ready - rightReady.ready
-        return leftReady.total - rightReady.total
+        if (leftReady.total !== rightReady.total) return leftReady.total - rightReady.total
+        return leftReady.ready - rightReady.ready
       }),
-    },
-    { title: localeCode === 'zh_CN' ? '重启次数' : 'Restarts', dataIndex: 'restarts', width: 92, sorter: podSorter((left, right) => left.restarts - right.restarts) },
-    { title: 'Pod IP', dataIndex: 'podIp', width: 128, render: (value: string) => value || '-' },
-    { title: localeCode === 'zh_CN' ? '节点' : 'Node', dataIndex: 'nodeName', width: 152, ellipsis: { showTitle: true }, sorter: podSorter((left, right) => compareStrings(left.nodeName, right.nodeName)) },
-    {
-      title: 'CPU',
-      dataIndex: 'cpu',
-      width: 172,
-      sorter: podSorter((left, right) => parseCpuValue(left.cpu) - parseCpuValue(right.cpu)),
-      render: (_: string, record: Pod) => renderPodResourceCell(record, 'cpu', localeCode),
+      render: (_phase: string, record: Pod) => renderPodRuntimeCell(record),
     },
     {
-      title: localeCode === 'zh_CN' ? '内存' : 'Memory',
-      dataIndex: 'memory',
-      width: 172,
-      sorter: podSorter((left, right) => parseMemoryValue(left.memory) - parseMemoryValue(right.memory)),
-      render: (_: string, record: Pod) => renderPodResourceCell(record, 'memory', localeCode),
+      title: localeCode === 'zh_CN' ? '重启' : 'Restarts',
+      dataIndex: 'restarts',
+      width: 64,
+      sorter: podSorter((left, right) => left.restarts - right.restarts),
+      render: (value: number) => (
+        <Tag bordered={false} color={value > 0 ? 'warning' : 'default'}>{value}</Tag>
+      ),
     },
-    { title: 'Age', dataIndex: 'ageSeconds', width: 96, sorter: podSorter((left, right) => left.ageSeconds - right.ageSeconds), render: (value: number) => formatAgeSeconds(value) },
+    {
+      title: localeCode === 'zh_CN' ? '资源' : 'Resources',
+      key: 'resources',
+      width: 132,
+      sorter: podSorter((left, right) => {
+        const cpuCompare = parseCpuValue(left.cpu) - parseCpuValue(right.cpu)
+        if (cpuCompare !== 0) return cpuCompare
+        return parseMemoryValue(left.memory) - parseMemoryValue(right.memory)
+      }),
+      render: (_: unknown, record: Pod) => renderPodResourceSummaryCell(record, localeCode),
+    },
     {
       fixed: 'right',
-      title: '',
+      title: localeCode === 'zh_CN' ? '操作' : 'Actions',
       dataIndex: 'name',
       key: 'actions',
-      width: 52,
+      width: 64,
       align: 'center',
-      onHeaderCell: () => ({ className: TABLE_ACTIONS_COLUMN_CLASS_NAME }),
-      onCell: () => ({ className: TABLE_ACTIONS_COLUMN_CLASS_NAME }),
+      className: `${TABLE_ACTIONS_COLUMN_CLASS_NAME} soha-pod-actions-column`,
+      onHeaderCell: () => ({ className: `${TABLE_ACTIONS_COLUMN_CLASS_NAME} soha-pod-actions-column` }),
+      onCell: () => ({ className: `${TABLE_ACTIONS_COLUMN_CLASS_NAME} soha-pod-actions-column` }),
       render: (value: string, record: Pod) => (
         <Space size={4} className="soha-deployment-action-cell">
           <Popconfirm
@@ -2218,7 +2255,7 @@ export function WorkloadsPodsPage() {
         )}
         pageSize={10}
         tableSize={tableSize}
-        scroll={{ x: 'max-content' }}
+        scroll={{ x: 730 }}
       />
     </div>
   )

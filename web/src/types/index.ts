@@ -541,6 +541,7 @@ export interface PodDetail {
   nodeName?: string
   serviceAccountName?: string
   qosClass?: string
+  createdAt?: string
   startTime?: string
   requests?: ResourceQuantity
   limits?: ResourceQuantity
@@ -603,6 +604,7 @@ export interface DeploymentDetail {
   availableReplicas: number
   observedGeneration: number
   strategy: string
+  createdAt?: string
   labels?: Record<string, string>
   annotations?: Record<string, string>
   selector?: Record<string, string>
@@ -832,18 +834,6 @@ export interface WorkflowNodeRun {
   finishedAt?: string
 }
 
-export interface BusinessLine {
-  id: string
-  key: string
-  name: string
-  description?: string
-  owners?: string[]
-  sortOrder: number
-  enabled: boolean
-  createdAt: string
-  updatedAt: string
-}
-
 export interface DeliveryEnvironment {
   id: string
   key: string
@@ -1025,6 +1015,7 @@ export interface ApplicationEnvironment {
   id: string
   applicationId: string
   businessLineId?: string
+  applicationGroup?: string
   environmentId: string
   environmentKey?: string
   strategyProfileId?: string

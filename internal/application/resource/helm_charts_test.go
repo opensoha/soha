@@ -2,11 +2,16 @@ package resource
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"strings"
 	"testing"
 
+	domainresource "github.com/soha/soha/internal/domain/resource"
+	"github.com/soha/soha/internal/platform/apperrors"
+	sohahelmrelease "github.com/soha/soha/internal/platform/helmrelease"
+	helmchartpkg "helm.sh/helm/v3/pkg/chart"
 	helmreleasepkg "helm.sh/helm/v3/pkg/release"
 )
 
@@ -175,5 +180,63 @@ metadata:
 	}
 	if result.Resources[1].Kind != "ServiceAccount" || result.Resources[1].APIVersion != "v1" {
 		t.Fatalf("second resource = %#v", result.Resources[1])
+	}
+}
+
+func TestHelmSDKReleaseSatisfiesInstallRequiresDeployedSameChartVersion(t *testing.T) {
+	t.Parallel()
+
+	input := domainresource.HelmChartInstallInput{
+		ChartName:   "kube-prometheus-stack",
+		Version:     "86.1.0",
+		ReleaseName: "kube-prometheus-stack",
+		Namespace:   "default",
+	}
+	release := &helmreleasepkg.Release{
+		Name:      "kube-prometheus-stack",
+		Namespace: "default",
+		Version:   1,
+		Info:      &helmreleasepkg.Info{Status: helmreleasepkg.StatusDeployed},
+		Chart: &helmchartpkg.Chart{
+			Metadata: &helmchartpkg.Metadata{
+				Name:    "kube-prometheus-stack",
+				Version: "86.1.0",
+			},
+		},
+	}
+
+	if !helmSDKReleaseSatisfiesInstall(release, input) {
+		t.Fatalf("expected deployed matching SDK release to satisfy install")
+	}
+	release.Info.Status = helmreleasepkg.StatusPendingInstall
+	if helmSDKReleaseSatisfiesInstall(release, input) {
+		t.Fatalf("pending SDK release satisfied install")
+	}
+	release.Info.Status = helmreleasepkg.StatusDeployed
+	release.Chart.Metadata.Version = "86.0.0"
+	if helmSDKReleaseSatisfiesInstall(release, input) {
+		t.Fatalf("different SDK chart version satisfied install")
+	}
+}
+
+func TestHelmReleaseNameUnavailableErrorIsInvalidArgument(t *testing.T) {
+	t.Parallel()
+
+	err := helmReleaseNameUnavailableError("prometheus", "monitoring", helmReleaseRecord{
+		labels: map[string]string{"status": "pending-install"},
+		release: &sohahelmrelease.Release{
+			Name:    "prometheus",
+			Version: 2,
+		},
+	})
+
+	if err == nil {
+		t.Fatalf("helmReleaseNameUnavailableError returned nil")
+	}
+	if !errors.Is(err, apperrors.ErrInvalidArgument) {
+		t.Fatalf("error does not wrap ErrInvalidArgument: %v", err)
+	}
+	if !strings.Contains(err.Error(), "invalid argument") || !strings.Contains(err.Error(), "pending-install") || !strings.Contains(err.Error(), "revision 2") {
+		t.Fatalf("error message = %q", err.Error())
 	}
 }

@@ -41,8 +41,8 @@ describe("access route authorization", () => {
   it("allows the access parent route when any visible child permission is present", () => {
     const snapshot = buildSnapshot({
       permissionKeys: ["access.roles.view"],
-      visibleMenuIds: ["access"],
-      visibleMenus: [{ id: "access", path: "/access" }],
+      visibleMenuIds: ["access-roles"],
+      visibleMenus: [{ id: "access-roles", path: "/access/roles" }],
     });
 
     expect(canAccessRoute(getRoute("access"), snapshot)).toBe(true);
@@ -75,6 +75,8 @@ describe("access route authorization", () => {
       permissionKeys: [
         "access.users.view",
         "access.roles.view",
+        "access.groups.view",
+        "access.policies.view",
         "system.online-users.view",
         "system.announcements.view",
         "system.menus.view",
@@ -87,6 +89,8 @@ describe("access route authorization", () => {
         "access",
         "access-users",
         "access-roles",
+        "access-teams",
+        "access-policies",
         "system",
         "system-online-users",
         "announcements",
@@ -98,21 +102,25 @@ describe("access route authorization", () => {
         "settings-branding",
       ],
       visibleMenus: [
-        { id: "access", path: "/access" },
-        { id: "access-users", parentId: "access", path: "/access/users" },
-        { id: "access-roles", parentId: "access", path: "/access/roles" },
-        { id: "system", path: "/system" },
-        { id: "system-online-users", parentId: "system", path: "/system/online-users" },
-        { id: "announcements", parentId: "system", path: "/system/announcements" },
-        { id: "menus", parentId: "system", path: "/system/menus" },
-        { id: "audit", parentId: "system", path: "/system/audit" },
-        { id: "operations", parentId: "system", path: "/system/operations" },
-        { id: "settings", path: "/settings" },
-        { id: "settings-login", parentId: "settings", path: "/settings/login" },
+        { id: "access", path: "/access", section: "admin", sortOrder: 240 },
+        { id: "access-users", path: "/access/users", section: "admin", sortOrder: 226 },
+        { id: "access-roles", path: "/access/roles", section: "admin", sortOrder: 227 },
+        { id: "access-teams", path: "/access/teams", section: "admin", sortOrder: 228 },
+        { id: "access-policies", path: "/access/policies", section: "admin", sortOrder: 229 },
+        { id: "system", path: "/system", section: "admin", sortOrder: 225 },
+        { id: "system-online-users", parentId: "system", path: "/system/online-users", section: "admin", sortOrder: 256 },
+        { id: "announcements", parentId: "system", path: "/system/announcements", section: "admin", sortOrder: 230 },
+        { id: "menus", parentId: "system", path: "/system/menus", section: "admin", sortOrder: 250 },
+        { id: "audit", parentId: "system", path: "/system/audit", section: "admin", sortOrder: 258 },
+        { id: "operations", parentId: "system", path: "/system/operations", section: "admin", sortOrder: 257 },
+        { id: "settings", path: "/settings", section: "admin", sortOrder: 260 },
+        { id: "settings-login", parentId: "settings", path: "/settings/login", section: "admin", sortOrder: 261 },
         {
           id: "settings-branding",
           parentId: "settings",
           path: "/settings/branding",
+          section: "admin",
+          sortOrder: 262,
         },
       ],
     });
@@ -139,20 +147,21 @@ describe("access route authorization", () => {
     expect(findFirstAccessiblePathForWorkbench("settings", snapshot)).toBe(
       "/settings/login",
     );
-    expect(settingsNav.map((item) => item.id).sort()).toEqual([
-      "access",
-      "announcements",
-      "audit",
-      "menus",
-      "operations",
-      "settings-branding",
-      "settings-login",
-      "system-online-users",
-    ]);
-    expect(settingsNav.find((item) => item.id === "access")?.children?.map((item) => item.id)).toEqual([
-      "access-roles",
+    expect(settingsNav.map((item) => item.id)).toEqual([
       "access-users",
+      "access-roles",
+      "access-teams",
+      "access-policies",
+      "announcements",
+      "menus",
+      "system-online-users",
+      "operations",
+      "audit",
+      "settings-login",
+      "settings-branding",
     ]);
+    expect(settingsNav.find((item) => item.id === "access")).toBeUndefined();
+    expect(settingsNav.find((item) => item.id === "access-users")?.children).toBeUndefined();
   });
 
   it("does not expose settings center without a navigable settings route", () => {
@@ -444,10 +453,8 @@ describe("access route authorization", () => {
 
     expect(applicationNav.map((item) => item.id)).toEqual([
       "builds",
-      "application-environments",
     ]);
     expect(applicationNav[0].section).toBe("deliver");
-    expect(applicationNav[1].section).toBe("catalog");
     expect(systemNav.map((item) => item.id)).toEqual(["system"]);
   });
 
@@ -501,7 +508,6 @@ describe("access route authorization", () => {
 
     expect(deliveryNav.map((item) => item.id)).toEqual([
       "builds",
-      "application-environments",
       "release-board",
     ]);
   });

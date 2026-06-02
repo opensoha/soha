@@ -81,7 +81,7 @@ AI Gateway 采用四层授权：
    - `ai.gateway.invoke` 允许通过 Gateway 代理调用已授权工具。
    - `ai.gateway.manage` 允许管理 AI client、service account、tool grants、skill bindings 和 access policy。
 2. resource scopes
-   - 继续复用应用、环境、业务线、集群、namespace 等 scope grants。
+   - 继续复用应用、应用环境、环境 tag、范围 Key（兼容 `businessLineId`）、集群、namespace 等 scope grants。
 3. MCP tool grants
    - `mcp_tool_grants` 控制主体和 AI client 能调用哪些 tool。
    - tool grant 只能收窄能力，不能绕过已有 `permissionKeys`。
@@ -202,7 +202,7 @@ POST   /api/v1/ai-gateway/approval-requests/:requestID/cancel
 
 `access-policies` 和 `skill-bindings` 同样支持 `user`、`service_account`、`role` 和 `ai_client` subject。运行时 Gateway 会合并当前主体、角色和 AI client 的启用记录：access policy 先按 deny/allow 收窄 tools 和 skills，skill binding 再按绑定的 skill/capability refs 收窄 manifest 和 invocation。所有这些控制都发生在 `permissionKeys` 之后，因此不会扩大已有 RBAC 或 scope grant。
 
-tool invocation 会从输入提取标准资源 scope，包括 `businessLineId`、`applicationId`、`applicationEnvironmentId`、`environmentId`、`clusterId`、`namespace`、`releaseBundleId` 和 `executionTaskId`。`mcp_tool_grants.resource_scopes` 与 `ai_access_policies.resource_scopes` 在 invocation 前强制匹配；manifest 可以保守展示潜在能力，但实际调用必须通过 scoped grant/policy 与拥有该能力的业务 service 双重校验。
+tool invocation 会从输入提取标准资源 scope，包括兼容范围字段 `businessLineId`、应用与交付字段 `applicationId`、`applicationEnvironmentId`、`environmentId`，以及运行时字段 `clusterId`、`namespace`、`releaseBundleId` 和 `executionTaskId`。其中 `businessLineId` 与全局 `environmentId` 在当前模型下主要作为历史 scope / 兼容字段存在，新的控制面优先使用应用分组、应用环境绑定和环境 tag。`mcp_tool_grants.resource_scopes` 与 `ai_access_policies.resource_scopes` 在 invocation 前强制匹配；manifest 可以保守展示潜在能力，但实际调用必须通过 scoped grant/policy 与拥有该能力的业务 service 双重校验。
 
 高风险 tool 的 risk policy 会在进入业务 service 前执行。策略 `deny` 直接拒绝；`require_approval` 返回 `pending_approval` 和 `approvalRequestId`；`require_human_confirm` 返回 `pending_human_confirm` 和 `confirmationRequestId`；`dry_run_only` 返回 `dry_run` 和 `dryRunId`，且不会执行真实变更。策略 `allow` 可用于显式允许某个命中的风险范围继续进入 owning application service，但后续仍要通过业务 service 自身权限、scope 和 durable task 边界。需要持久审批的策略可以配置候选审批人、候选角色、候选团队、`onCallRef`、change window、`approvalMode=all|any`、`approvalStages`、`requiredApprovals` / `minApprovals` 总人数 quorum，以及 `requiredRoleApprovals` / `requiredTeamApprovals` 分组配额；Gateway 会把这些路由信息作为脱敏 metadata 持久化，并在决策入口拦截非候选操作者或不在变更窗口内的批准动作。配置 `approvalPolicyRef` 时，Gateway 会读取 delivery approval policy，把其 `mode` 映射为 Gateway 会签/或签模式，把 `requiredApprovals`、`approverRoles`、`changeWindow` 和 `metadata` 中的 routing 扩展合并进请求；AI access policy 中的显式候选人和更高 quorum 会继续叠加，但不会把 delivery policy 的人数配额降小。配置 `onCallRef` 时，Gateway 会先调用 monitoring on-call resolver 获取当前值班 `currentParticipant`，将其追加为审批候选 `userId`，并保存排班、轮值、route、窗口或 unresolved 状态摘要。多人审批只按唯一 `userId` 计数，同一审批人重复批准会替换自己的 decision，不会推进 quorum；默认会签要求总人数、角色配额和团队配额全部满足，或签模式下任一显式 quota 满足即可转入 approved/executed replay。分阶段审批会把每个阶段的候选人、角色/团队配额、审批模式、`onCallRef` 和 change window 作为当前 active routing，当前阶段满足后仍保持 `pending` 并推进下一阶段，直到最后阶段满足才执行。
 

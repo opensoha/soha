@@ -57,10 +57,6 @@ export const consolePermissionGroups: PermissionCatalogGroup[] = [
       { value: "delivery.application.delete", label: "删除应用" },
       { value: "delivery.application-services.view", label: "查看应用服务" },
       { value: "delivery.application-services.manage", label: "管理应用服务" },
-      { value: "delivery.business-lines.view", label: "查看业务线" },
-      { value: "delivery.business-lines.manage", label: "管理业务线" },
-      { value: "delivery.environments.view", label: "查看交付环境" },
-      { value: "delivery.environments.manage", label: "管理交付环境" },
       {
         value: "delivery.application-environments.view",
         label: "查看应用环境绑定",

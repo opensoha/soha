@@ -279,6 +279,67 @@ describe('app layout workspace navigation', () => {
     expect(testState.prefs.setCurrentWorkspace).not.toHaveBeenCalled()
   })
 
+  it('shows access-control pages as direct settings menu items', async () => {
+    const container = await renderWithProviders('/settings/login', {
+      permissionKeys: [
+        'access.users.view',
+        'access.roles.view',
+        'access.groups.view',
+        'access.policies.view',
+        'system.announcements.view',
+        'system.menus.view',
+        'system.online-users.view',
+        'system.operations.view',
+        'system.audit.view',
+        'settings.identity.view',
+        'settings.branding.view',
+      ],
+      visibleMenuIds: [
+        'access',
+        'access-users',
+        'access-roles',
+        'access-teams',
+        'access-policies',
+        'system',
+        'announcements',
+        'menus',
+        'system-online-users',
+        'operations',
+        'audit',
+        'settings',
+        'settings-login',
+        'settings-branding',
+      ],
+      visibleMenus: [
+        { id: 'access', path: '/access', labelZh: '访问控制', labelEn: 'Access Control', iconKey: 'shield', section: 'admin', sortOrder: 240, enabled: true },
+        { id: 'access-users', parentId: 'access', path: '/access/users', labelZh: '用户', labelEn: 'Users', iconKey: 'user', section: 'admin', sortOrder: 226, enabled: true },
+        { id: 'access-roles', parentId: 'access', path: '/access/roles', labelZh: '角色', labelEn: 'Roles', iconKey: 'shield', section: 'admin', sortOrder: 227, enabled: true },
+        { id: 'access-teams', parentId: 'access', path: '/access/teams', labelZh: '用户组', labelEn: 'User Groups', iconKey: 'users', section: 'admin', sortOrder: 228, enabled: true },
+        { id: 'access-policies', parentId: 'access', path: '/access/policies', labelZh: '策略', labelEn: 'Policies', iconKey: 'shield', section: 'admin', sortOrder: 229, enabled: true },
+        { id: 'system', path: '/system', labelZh: '系统', labelEn: 'System', iconKey: 'panels-top-left', section: 'admin', sortOrder: 225, enabled: true },
+        { id: 'announcements', parentId: 'system', path: '/system/announcements', labelZh: '通知公告', labelEn: 'Announcements', iconKey: 'megaphone', section: 'admin', sortOrder: 230, enabled: true },
+        { id: 'menus', parentId: 'system', path: '/system/menus', labelZh: '菜单管理', labelEn: 'Menus', iconKey: 'menu-square', section: 'admin', sortOrder: 250, enabled: true },
+        { id: 'system-online-users', parentId: 'system', path: '/system/online-users', labelZh: '在线用户', labelEn: 'Online Users', iconKey: 'users', section: 'admin', sortOrder: 256, enabled: true },
+        { id: 'operations', parentId: 'system', path: '/system/operations', labelZh: '操作', labelEn: 'Operations', iconKey: 'clipboard-list', section: 'admin', sortOrder: 257, enabled: true },
+        { id: 'audit', parentId: 'system', path: '/system/audit', labelZh: '审计', labelEn: 'Audit', iconKey: 'file-clock', section: 'admin', sortOrder: 258, enabled: true },
+        { id: 'settings', path: '/settings', labelZh: '设置中心', labelEn: 'Settings Center', iconKey: 'cog', section: 'admin', sortOrder: 260, enabled: true },
+        { id: 'settings-login', parentId: 'settings', path: '/settings/login', labelZh: '登陆设置', labelEn: 'Login Settings', iconKey: 'shield', section: 'admin', sortOrder: 261, enabled: true },
+        { id: 'settings-branding', parentId: 'settings', path: '/settings/branding', labelZh: '品牌设置', labelEn: 'Branding Settings', iconKey: 'palette', section: 'admin', sortOrder: 262, enabled: true },
+      ],
+    })
+
+    const menu = container.querySelector('.soha-nav-menu--system-workspace')
+    const menuText = menu?.textContent ?? ''
+    expect(menuText).toContain('用户')
+    expect(menuText).toContain('角色')
+    expect(menuText).toContain('用户组')
+    expect(menuText).toContain('策略')
+    expect(menuText).toContain('操作日志')
+    expect(menuText).toContain('审计日志')
+    expect(menuText).not.toContain('访问控制')
+    expect(menu?.querySelector('.ant-menu-submenu')).toBeNull()
+  })
+
   it('renders the workbench switcher below the brand bar and above the business menu', async () => {
     const container = await renderWithProviders('/')
     const brandBar = container.querySelector('.soha-sider-topbar')

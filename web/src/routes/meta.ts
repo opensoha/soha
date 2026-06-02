@@ -25,8 +25,6 @@ const RESOURCE_DEFAULT_ROLES = new Set(["admin", "ops", "readonly", "auditor"]);
 const APPLICATION_PATH_PREFIXES = [
   "/applications",
   "/application-management",
-  "/business-lines",
-  "/delivery-environments",
   "/application-environments",
   "/build-templates",
   "/delivery/blueprints",
@@ -965,22 +963,23 @@ export const routeMeta: RouteMeta[] = [
   {
     id: "application-management",
     path: "/application-management",
-    title: "应用管理",
+    title: "应用中心",
     description: "应用配置与发布管理",
     icon: "IconAppCenter",
     group: "delivery",
     requiresAuth: true,
     tabbar: true,
-    navVisible: true,
+    navVisible: false,
     menuId: "application-management",
     permissionKey: "delivery.applications.view",
+    redirectTo: "/applications",
     scopeMode: "passive",
     workspace: "application",
   },
   {
     id: "application-management-detail",
     path: "/application-management/:applicationId",
-    title: "应用管理详情",
+    title: "应用详情",
     description: "应用配置详情",
     icon: "IconAppCenter",
     group: "delivery",
@@ -1017,34 +1016,6 @@ export const routeMeta: RouteMeta[] = [
     scopeMode: "passive",
   },
   {
-    id: "business-lines",
-    path: "/business-lines",
-    title: "业务线管理",
-    description: "业务线主数据",
-    icon: "IconAppCenter",
-    group: "catalog",
-    requiresAuth: true,
-    tabbar: true,
-    navVisible: true,
-    permissionKey: "delivery.business-lines.view",
-    scopeMode: "passive",
-    workspace: "application",
-  },
-  {
-    id: "delivery-environments",
-    path: "/delivery-environments",
-    title: "环境管理",
-    description: "交付环境主数据",
-    icon: "IconAppCenter",
-    group: "catalog",
-    requiresAuth: true,
-    tabbar: true,
-    navVisible: true,
-    permissionKey: "delivery.environments.view",
-    scopeMode: "passive",
-    workspace: "application",
-  },
-  {
     id: "application-environments",
     path: "/application-environments",
     title: "应用环境绑定",
@@ -1053,7 +1024,7 @@ export const routeMeta: RouteMeta[] = [
     group: "delivery",
     requiresAuth: true,
     tabbar: true,
-    navVisible: true,
+    navVisible: false,
     permissionKey: "delivery.application-environments.view",
     scopeMode: "passive",
     workspace: "application",
@@ -2203,7 +2174,7 @@ export const routeMeta: RouteMeta[] = [
     tabbar: true,
     navVisible: true,
     parentId: "access",
-    menuId: "access",
+    menuId: "access-users",
     permissionKey: "access.users.view",
     scopeMode: "passive",
   },
@@ -2218,7 +2189,7 @@ export const routeMeta: RouteMeta[] = [
     tabbar: true,
     navVisible: true,
     parentId: "access",
-    menuId: "access",
+    menuId: "access-roles",
     permissionKey: "access.roles.view",
     scopeMode: "passive",
   },
@@ -2233,7 +2204,7 @@ export const routeMeta: RouteMeta[] = [
     tabbar: true,
     navVisible: true,
     parentId: "access",
-    menuId: "access",
+    menuId: "access-teams",
     permissionKey: "access.groups.view",
     scopeMode: "passive",
   },
@@ -2248,7 +2219,7 @@ export const routeMeta: RouteMeta[] = [
     tabbar: true,
     navVisible: true,
     parentId: "access",
-    menuId: "access",
+    menuId: "access-policies",
     permissionKey: "access.policies.view",
     scopeMode: "passive",
   },
@@ -2256,7 +2227,7 @@ export const routeMeta: RouteMeta[] = [
     id: "access-scope-grants",
     path: "/access/scope-grants",
     title: "授权范围",
-    description: "业务线环境应用授权",
+    description: "应用范围授权",
     icon: "IconShield",
     group: "access",
     requiresAuth: true,
@@ -2701,8 +2672,6 @@ export function getRouteScopeMode(
     pathname.startsWith("/system") ||
     pathname.startsWith("/settings") ||
     pathname.startsWith("/applications") ||
-    pathname.startsWith("/business-lines") ||
-    pathname.startsWith("/delivery-environments") ||
     pathname.startsWith("/application-environments") ||
     pathname.startsWith("/build-templates") ||
     pathname.startsWith("/delivery/blueprints") ||
@@ -2917,12 +2886,14 @@ const APPLICATION_SECTION_ORDER: Record<string, number> = {
   "release-bundles": 80,
   "execution-tasks": 90,
   registries: 100,
-  "business-lines": 110,
-  "delivery-environments": 120,
 };
 
 const SYSTEM_ROOT_ORDER: Record<string, number> = {
   access: 10,
+  "access-users": 11,
+  "access-roles": 12,
+  "access-teams": 13,
+  "access-policies": 14,
   system: 20,
   settings: 30,
 };
@@ -2940,7 +2911,7 @@ function deriveRuntimeMenuSortOrder(
   }
   if (
     workspace === "system" &&
-    !node.parentId &&
+    (!node.parentId || node.parentId === "access") &&
     node.id in SYSTEM_ROOT_ORDER
   ) {
     return SYSTEM_ROOT_ORDER[node.id];
@@ -3103,7 +3074,7 @@ export function filterSidebarNavByWorkbench(
   };
   const flattenedRootIds = [
     flattenedWorkbenchRootIds[workbenchId],
-    ...(workbenchId === "settings" ? ["system"] : []),
+    ...(workbenchId === "settings" ? ["system", "access"] : []),
   ].filter((item): item is string => Boolean(item));
 
   if (flattenedRootIds.length === 0) {

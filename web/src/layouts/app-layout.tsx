@@ -76,6 +76,11 @@ const AI_WORKBENCH_MENU_ENTRIES = [
   { key: 'ai-workbench-model-settings', iconKey: 'settings', label: 'AI 设置', path: '/ai-workbench/model-settings', permissionKey: 'settings.ai.view', legacyMenuIds: ['ai-workbench-tools'] },
 ] as const
 
+const SYSTEM_LOG_MENU_LABEL_OVERRIDES: Record<string, { en: string; legacyEn: string[]; legacyZh: string[]; zh: string }> = {
+  operations: { zh: '操作日志', en: 'Operation Logs', legacyZh: ['操作'], legacyEn: ['Operations'] },
+  audit: { zh: '审计日志', en: 'Audit Logs', legacyZh: ['审计'], legacyEn: ['Audit'] },
+}
+
 function canUseAIWorkbenchMenuEntry(
   item: (typeof AI_WORKBENCH_MENU_ENTRIES)[number],
   snapshot?: PermissionSnapshot | null,
@@ -127,8 +132,23 @@ function findAIWorkbenchMenuKey(pathname: string, search: string) {
   return AI_WORKBENCH_MENU_ENTRIES.find((item) => item.path === pathname)?.key ?? null
 }
 
+function resolveRuntimeMenuLabel(node: RuntimeMenuNode, localeCode: 'zh_CN' | 'en_US') {
+  const override = SYSTEM_LOG_MENU_LABEL_OVERRIDES[node.id]
+  if (override) {
+    if (localeCode === 'en_US') {
+      const label = String(node.labelEn || '').trim()
+      if (!label || override.legacyEn.includes(label)) return override.en
+      return node.labelEn
+    }
+    const label = String(node.labelZh || '').trim()
+    if (!label || override.legacyZh.includes(label)) return override.zh
+    return node.labelZh
+  }
+  return localeCode === 'en_US' && node.labelEn ? node.labelEn : node.labelZh
+}
+
 function buildMenuNodeItem(node: RuntimeMenuNode, localeCode: 'zh_CN' | 'en_US'): NonNullable<MenuProps['items']>[number] {
-  const label = localeCode === 'en_US' && node.labelEn ? node.labelEn : node.labelZh
+  const label = resolveRuntimeMenuLabel(node, localeCode)
   const icon = resolveMenuIcon(resolveRuntimeMenuIconKey(node))
   if (node.children?.length) {
     return {
@@ -233,7 +253,7 @@ function buildNodeByID(sidebarNav: RuntimeMenuNode[]) {
 }
 
 function getRuntimeMenuNodeLabel(node: RuntimeMenuNode, localeCode: 'zh_CN' | 'en_US') {
-  return localeCode === 'en_US' && node.labelEn ? node.labelEn : node.labelZh
+  return resolveRuntimeMenuLabel(node, localeCode)
 }
 
 function findMenuIDByRoutePath(sidebarNav: RuntimeMenuNode[], routePath: string) {

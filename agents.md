@@ -306,8 +306,8 @@ Design expectations:
 
 - applications
 - build templates
-- business lines
-- delivery environments
+- application groups
+- application-scoped environment tags
 - application environments
 - workflow templates
 - release board
@@ -350,7 +350,7 @@ Design expectation:
 - execution-task claims now include an agent runtime endpoint, and the control plane will attempt runtime cancellation directly before relying on subsequent heartbeats or status polling
 - `k8s_job_runner` now consumes execution-job settings from server runtime config and can dispatch a real Kubernetes Job for build execution when an execution cluster is configured; if no execution cluster exists, the service must fall back instead of pretending parity
 - execution-task rows now expose a first-class `artifacts[]` view built from task result payloads, so logs, image refs, and workspace evidence can be inspected from the console without parsing raw JSON
-- business lines, delivery environments, and application-environment bindings are now treated as a standalone master-data domain in frontend navigation; they still serve delivery and access-control scope flows, but their ownership is no longer represented as delivery-only in the console IA
+- standalone business line and delivery environment management are removed from the active delivery IA, HTTP surface, permission/menu surface, and catalog repository CRUD contracts; application grouping and application-scoped environment tags are maintained from the application center, while historical `businessLineId` and global `delivery_environments` data remain compatibility scope data rather than user-facing master data
 - environment binding and release orchestration must map to platform runtime context
 
 ### 7.3 Observability
@@ -415,6 +415,9 @@ The repository has already converged on these rules:
 - namespace-scoped platform capability expansion may ship as complete navigation plus placeholder pages before backend aggregation APIs are ready, but those placeholders must say that the backend platform API is still pending
 - Helm in platform management now focuses on releases and charts only; Kubernetes RBAC resources live under the standalone RBAC workspace
 - Helm Charts is now backend-backed through `/api/v1/clusters/:clusterID/helm/charts` using Artifact Hub package search/detail/default-values APIs; the console opens a right-side package/install drawer, and direct-kubeconfig clusters can install charts through the Helm SDK while agent-connected clusters must surface install as unsupported
+- Helm Chart install must preflight same-namespace Helm release history before calling the SDK; an occupied release name is an operator input conflict, not cluster unavailability, but a same release/chart/version record already in `deployed` state should be treated as an idempotent install success and the console must reconcile observed deployed releases instead of showing a false failure
+- Helm Releases must expose values.yaml view/edit/diff/apply and release delete as operational actions; values update and uninstall are direct-kubeconfig Helm SDK capabilities, agent-connected clusters must show them as unsupported, and destructive release delete should use lightweight inline confirmation such as antd Popconfirm instead of a modal dialog
+- Helm Release values.yaml should use a fixed two-panel editor: the left panel is the editable values draft, the right panel shows Helm's current runtime values with automatic diff against the draft; avoid separate Edit/Diff mode buttons for this workflow
 - network platform navigation no longer exposes HTTP Routes; unsupported resource families should be removed end-to-end from routes, menu seeds, and API handlers instead of staying as dead entries
 - network now lands on a `网络拓扑` workspace before the raw resource lists; the topology view may combine live ingress, Gateway API, service, and backend relationships with explicitly pending route placeholders, but it must not present missing backend aggregation as if it were verified
 - topology preview pages may fall back to clearly labeled demo traces when the current scope has no live entry path, so interaction and layout review do not depend on a pre-populated cluster
@@ -423,6 +426,7 @@ The repository has already converged on these rules:
 - platform overview runtime cards must consume a backend workload overview aggregation endpoint and keep the active cluster/namespace scope visible; frontend should not fetch all Pod rows just to render dashboard summaries
 - service pages should evolve from plain tables to operational workspaces when selector, metrics, and event context already exist
 - cluster management remains the registration surface, but each cluster row should drill into a lightweight detail page for labels, version, health, and handoff into node operations
+- cluster detail pages should keep compact page-scoped card spacing, and node snapshot tables should avoid redundant explanatory copy once the node drill-down action is clear
 - cluster registration forms should not ask operators to hand-enter cluster IDs; backend registration generates the stable ID automatically, and the direct-kubeconfig form should avoid exposing kube context unless an explicit context-selection workflow is restored end-to-end
 - cluster onboarding should present cloud or distribution choices such as `standard_kubernetes`, `gke`, `ack`, `tke`, and `aks` as provider-style metadata for UI display and filtering, while backend `region` semantics remain reserved for policy/runtime data
 - platform resource metrics should default to global monitoring settings, may accept cluster-level Prometheus/Grafana overrides from cluster registration data when present, and should not imply automatic in-cluster Prometheus discovery when operators have not configured either path
@@ -454,8 +458,8 @@ The repository has already converged on these rules:
 - Docker 工作台 should remain independent from the virtualization workbench, but its host quick-create flow may call the virtualization application service through a narrow `HostProvisioner` adapter when a `virtualizationConnectionId` is provided, so PVE/KubeVirt VM creation is queued in the virtualization worker and linked back to the Docker host provision operation
 - AI工作台根入口 `/ai-workbench` is now the canonical session-first investigation surface; legacy `/ai-workbench/investigation` and `/ai-observe/workbench` paths should only remain as compatibility redirects instead of hosting a separate overview shell
 - when the active workbench is AI, the global sidebar should not keep rendering duplicated AI child trees or the bottom system-management block; AI-specific function switching, session history, and tool-entry affordances belong inside the AI workbench page chrome so the right-side canvas can stay focused on conversation flow
-- delivery catalog writes such as business lines, environments, application-environment bindings, workflow templates, and registry connections must enforce backend permission keys, not just frontend button hiding
-- build-template reads/writes must enforce explicit `delivery.build-templates.(view|manage)` permission keys, and delivery navigation visibility should include build templates, workflow templates, release board, business lines, environments, and application-environment bindings through backend menu/permission resolution rather than relying on “unmapped menu” fallback
+- delivery catalog writes such as application-environment bindings, workflow templates, and registry connections must enforce backend permission keys, not just frontend button hiding
+- build-template reads/writes must enforce explicit `delivery.build-templates.(view|manage)` permission keys, and delivery navigation visibility should include build templates, workflow templates, release board, and application-environment bindings through backend menu/permission resolution rather than relying on “unmapped menu” fallback
 - AI settings now split into `settings.ai.view` and `settings.ai.manage`; the provider form and copilot control-plane sections must stay consistent with those keys
 - AI observability center now uses a two-layer IA: `/ai-observe` is the AIOps overview entry, while `/ai-observe/workbench`, `/ai-observe/operations`, and `/ai-observe/tools` own investigation, inspection/automation, and tool/skill workflows
 - Root cause analysis, performance analysis, and AI chat are now mode switches inside the single `/ai-observe/workbench` investigation workspace; they must not be reintroduced as separate first-class sibling menus in navigation
@@ -499,7 +503,8 @@ The repository has already converged on these rules:
 - audit logs now remain the durable broad-scope read/write/deny trail, while operation logs are a separate durable stream for authorized mutable actions only; `/api/v1/audit/logs` and `/api/v1/operations/logs` are principal-aware backend-authorized reads, and operation-log rows now persist actor/request context plus backend-owned `target_scope` payloads instead of frontend-only placeholders
 - announcement management is now a real publish workflow instead of a draft-only CRUD surface: managers can create, edit, publish, withdraw, and delete announcements; publish resets per-user read receipts, and withdraw removes the announcement from the user inbox without deleting the historical publish timestamp
 - the console shell header now exposes a bell-driven announcement center for users with `system.announcements.view`; the inbox is backed by persisted `announcement_receipts`, auto-opens the highest-priority unread published announcement once per shell load, and an announcement marked read must stop auto-popup behavior across refresh and re-login until it is explicitly re-published
-- access control should remain visible as a top-level console menu entry for admins, while its child pages can stay as nested routes beneath that entry
+- settings center navigation exposes access users, roles, user groups, and policies as direct sibling menu entries; `/access` may remain a hidden route container, but the sidebar should not render `访问控制` as a collapsible parent
+- system log navigation labels should use the full names `操作日志` and `审计日志` instead of shortened `操作` and `审计`
 - settings center remains the system-workspace container entry, but login settings and branding settings now resolve as independent child menu routes under `/settings/login` and `/settings/branding` instead of sharing one tab-only surface
 - login settings are now the active console identity-management surface: the route title is `登陆设置`, it supports concurrent provider configuration for OIDC, 飞书 OAuth2, 钉钉 OAuth2, 企业微信 OAuth2, generic OAuth2, and SAML metadata, and the login page should list every enabled third-party provider rather than assuming a single OIDC source
 - the backend login-provider contract must stay backward-compatible with the legacy single-OIDC setting key while multi-provider settings are taking over; runtime OIDC flows may still reuse the legacy config resolver, but the stored source of truth is the multi-provider login settings document

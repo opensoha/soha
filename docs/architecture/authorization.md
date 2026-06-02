@@ -107,7 +107,7 @@ RBAC answers one question first: does the principal's role set ever permit this 
 
 ## Delivery Management
 
-- delivery master-data APIs such as business lines, environments, application-environment bindings, workflow templates, and registry connections must enforce backend permission keys for write operations
+- delivery configuration APIs such as application-environment bindings, workflow templates, build templates, registries, and application delivery actions must enforce backend permission keys for write operations
 - workflow and release triggering are separate permissions from page visibility; a user may view release records without being allowed to trigger new workflow or release runs
 
 ## Settings Center

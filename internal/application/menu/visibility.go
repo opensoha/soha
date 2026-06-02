@@ -34,8 +34,6 @@ func workspacePermissionForMenu(item domainmenu.Record) string {
 		strings.HasPrefix(path, "/chat"):
 		return appaccess.PermWorkspaceResourceView
 	case strings.HasPrefix(path, "/applications") ||
-		strings.HasPrefix(path, "/business-lines") ||
-		strings.HasPrefix(path, "/delivery-environments") ||
 		strings.HasPrefix(path, "/application-environments") ||
 		strings.HasPrefix(path, "/build-templates") ||
 		strings.HasPrefix(path, "/delivery/blueprints") ||
@@ -83,10 +81,6 @@ func permissionRuleForMenu(item domainmenu.Record) (visibilityRule, bool) {
 		return visibilityRule{permissions: []string{appaccess.PermDeliveryReleaseBoardView}}, true
 	case item.ID == "application-environments":
 		return visibilityRule{permissions: []string{appaccess.PermDeliveryApplicationEnvView}}, true
-	case item.ID == "delivery-environments":
-		return visibilityRule{permissions: []string{appaccess.PermDeliveryEnvironmentsView}}, true
-	case item.ID == "business-lines":
-		return visibilityRule{permissions: []string{appaccess.PermDeliveryBusinessLinesView}}, true
 	case item.ID == "workflows":
 		return visibilityRule{permissions: []string{appaccess.PermDeliveryWorkflowsView}}, true
 	case item.ID == "releases":

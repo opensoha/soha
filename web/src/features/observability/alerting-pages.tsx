@@ -17,7 +17,7 @@ import { StatusTag, BooleanTag } from '@/components/status-tag'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth/permission-snapshot'
 import { api } from '@/services/api-client'
 import { formatDateTime } from '@/utils/time'
-import type { ApiResponse, BusinessLine } from '@/types'
+import type { ApiResponse } from '@/types'
 import { ReleaseFlowDagEditor } from '@/components/release-flow-dag-editor'
 import { createDefaultReleaseDagDefinition, normalizeReleaseDagDefinition } from '@/components/release-flow-dag-definition'
 import type { ReleaseDagDefinition } from '@/components/release-flow-dag-definition'
@@ -1039,10 +1039,6 @@ export function OnCallSettingsPage() {
   const [editingPolicy, setEditingPolicy] = useState<OnCallEscalationPolicy | null>(null)
   const [editingAssignment, setEditingAssignment] = useState<OnCallAssignmentRule | null>(null)
 
-  const businessLinesQuery = useQuery({
-    queryKey: ['business-lines'],
-    queryFn: () => api.get<ApiResponse<BusinessLine[]>>('/business-lines'),
-  })
   const usersQuery = useQuery({
     queryKey: ['access-users'],
     queryFn: () => api.get<ApiResponse<OnCallUser[]>>('/access/users'),
@@ -1105,10 +1101,6 @@ export function OnCallSettingsPage() {
     onError: (err: Error) => void message.error(err.message),
   })
 
-  const businessLineMap = useMemo(
-    () => Object.fromEntries((businessLinesQuery.data?.data ?? []).map((item) => [item.id, item.name])),
-    [businessLinesQuery.data?.data],
-  )
   const scheduleMap = useMemo(
     () => Object.fromEntries((schedulesQuery.data?.data ?? []).map((item) => [item.id, item.name])),
     [schedulesQuery.data?.data],
@@ -1178,7 +1170,7 @@ export function OnCallSettingsPage() {
       dataIndex: 'matchers',
       render: (_: Record<string, unknown>, record: OnCallAssignmentRule) => (
         <Space wrap>
-          {record.businessLineId ? <Tag>业务线:{businessLineMap[record.businessLineId] || record.businessLineId}</Tag> : null}
+          {record.businessLineId ? <Tag>范围:{record.businessLineId}</Tag> : null}
           {record.service ? <Tag>服务:{record.service}</Tag> : null}
           {record.severity ? <StatusTag value={record.severity} /> : null}
           {record.role ? <Tag>角色:{roleOptions.find((item) => item.value === record.role)?.label || record.role}</Tag> : null}
@@ -1370,8 +1362,8 @@ export function OnCallSettingsPage() {
             <Form.Item name="alertCategory" label="告警类型标签" style={{ flex: 1 }}><Input placeholder="business / platform / security" /></Form.Item>
           </Space>
           <Space size={16} style={{ width: '100%' }}>
-            <Form.Item name="businessLineId" label="业务线标签" style={{ flex: 1 }}>
-              <Select allowClear options={(businessLinesQuery.data?.data ?? []).map((item) => ({ value: item.id, label: item.name }))} />
+            <Form.Item name="businessLineId" label="范围标签" style={{ flex: 1 }}>
+              <Input allowClear placeholder="businessLineId / app group" />
             </Form.Item>
             <Form.Item name="role" label="响应角色标签" style={{ flex: 1 }}><Select allowClear options={roleOptions} /></Form.Item>
             <Form.Item name="groupBy" label="分组键" style={{ flex: 1 }}>

@@ -29,10 +29,6 @@ const (
 	PermDeliveryApplicationsDelete        = "delivery.application.delete"
 	PermDeliveryApplicationServicesView   = "delivery.application-services.view"
 	PermDeliveryApplicationServicesManage = "delivery.application-services.manage"
-	PermDeliveryBusinessLinesView         = "delivery.business-lines.view"
-	PermDeliveryBusinessLinesManage       = "delivery.business-lines.manage"
-	PermDeliveryEnvironmentsView          = "delivery.environments.view"
-	PermDeliveryEnvironmentsManage        = "delivery.environments.manage"
 	PermDeliveryApplicationEnvView        = "delivery.application-environments.view"
 	PermDeliveryApplicationEnvManage      = "delivery.application-environments.manage"
 	PermDeliveryWorkflowTemplatesView     = "delivery.workflow-templates.view"
@@ -159,10 +155,6 @@ func allPermissionKeys() []string {
 		PermDeliveryApplicationsDelete,
 		PermDeliveryApplicationServicesView,
 		PermDeliveryApplicationServicesManage,
-		PermDeliveryBusinessLinesView,
-		PermDeliveryBusinessLinesManage,
-		PermDeliveryEnvironmentsView,
-		PermDeliveryEnvironmentsManage,
 		PermDeliveryApplicationEnvView,
 		PermDeliveryApplicationEnvManage,
 		PermDeliveryWorkflowTemplatesView,
@@ -285,10 +277,6 @@ func defaultRolePermissions() map[string][]string {
 		PermDeliveryApplicationsUpdate,
 		PermDeliveryApplicationServicesView,
 		PermDeliveryApplicationServicesManage,
-		PermDeliveryBusinessLinesView,
-		PermDeliveryBusinessLinesManage,
-		PermDeliveryEnvironmentsView,
-		PermDeliveryEnvironmentsManage,
 		PermDeliveryApplicationEnvView,
 		PermDeliveryApplicationEnvManage,
 		PermDeliveryWorkflowTemplatesView,

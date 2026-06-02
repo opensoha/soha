@@ -3,12 +3,8 @@ import { App, Button, Form, Input, Modal, Space, Switch, Tag } from 'antd'
 import { EditOutlined, EyeOutlined, PlayCircleOutlined, PlusOutlined } from '@ant-design/icons'
 import type { TableColumnsType } from 'antd'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { AdminTable } from '@/components/admin-table'
-import {
-  ManagementIconButton,
-  ManagementRefreshButton,
-  ManagementTableToolbar,
-} from '@/components/management-list'
+import { ManagementIconButton } from '@/components/management-list'
+import { DeliveryTable } from '@/features/delivery/delivery-table'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth/permission-snapshot'
 import { StatusTag } from '@/components/status-tag'
 import { api } from '@/services/api-client'
@@ -124,9 +120,21 @@ export function DeliveryBlueprintsPage() {
       title: '操作',
       dataIndex: 'id',
       render: (_: unknown, record: DeliveryBlueprint) => (
-        <Space>
-          <Button size="small" icon={<EyeOutlined />} onClick={() => renderMutation.mutate(record.id)}>渲染规范</Button>
-          <Button size="small" icon={<PlayCircleOutlined />} onClick={() => bootstrapMutation.mutate(record.id)}>平台接入</Button>
+        <Space className="soha-row-action-icons" size={2}>
+          <ManagementIconButton
+            aria-label="渲染规范"
+            icon={<EyeOutlined />}
+            size="small"
+            tooltip="渲染规范"
+            onClick={() => renderMutation.mutate(record.id)}
+          />
+          <ManagementIconButton
+            aria-label="平台接入"
+            icon={<PlayCircleOutlined />}
+            size="small"
+            tooltip="平台接入"
+            onClick={() => bootstrapMutation.mutate(record.id)}
+          />
           {canManage ? (
             <ManagementIconButton
               aria-label="编辑蓝图"
@@ -171,31 +179,18 @@ export function DeliveryBlueprintsPage() {
 
   return (
     <div className="soha-page">
-      <AdminTable
+      <DeliveryTable
         rowKey="id"
-        columnSettingIconOnly
-        columnSettingPlacement="header"
-        shellClassName="soha-management-table-shell"
         loading={blueprintsQuery.isLoading}
         columns={columns}
         dataSource={blueprintsQuery.data?.data ?? []}
-        title="交付蓝图"
-        headerExtra={(
-          <ManagementTableToolbar>
-            {canManage ? (
-              <Button type="primary" icon={<PlusOutlined />} onClick={() => { setEditing(null); setModalVisible(true) }}>
-                新建蓝图
-              </Button>
-            ) : null}
-            <ManagementRefreshButton
-              aria-label="刷新"
-              loading={blueprintsQuery.isFetching}
-              tooltip="刷新"
-              onClick={() => void blueprintsQuery.refetch()}
-            />
-          </ManagementTableToolbar>
-        )}
-        scroll={{ x: 'max-content' }}
+        actions={canManage ? (
+          <Button type="primary" icon={<PlusOutlined />} onClick={() => { setEditing(null); setModalVisible(true) }}>
+            新建蓝图
+          </Button>
+        ) : null}
+        refreshing={blueprintsQuery.isFetching}
+        onRefresh={() => void blueprintsQuery.refetch()}
       />
 
       <Modal
@@ -218,7 +213,6 @@ export function DeliveryBlueprintsPage() {
               name: 'sample-app',
               key: 'sample-app',
               group: 'default',
-              businessLineId: '',
               language: 'go',
               enabled: true,
               metadata: {},

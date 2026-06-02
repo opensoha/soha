@@ -157,6 +157,7 @@ type PodDetailView struct {
 	NodeName           string                   `json:"nodeName,omitempty"`
 	ServiceAccountName string                   `json:"serviceAccountName,omitempty"`
 	QOSClass           string                   `json:"qosClass,omitempty"`
+	CreatedAt          string                   `json:"createdAt,omitempty"`
 	StartTime          string                   `json:"startTime,omitempty"`
 	Requests           ResourceQuantityView     `json:"requests,omitempty"`
 	Limits             ResourceQuantityView     `json:"limits,omitempty"`
@@ -266,6 +267,7 @@ type DeploymentDetailView struct {
 	AvailableReplicas  int32                   `json:"availableReplicas"`
 	ObservedGeneration int64                   `json:"observedGeneration"`
 	Strategy           string                  `json:"strategy"`
+	CreatedAt          string                  `json:"createdAt,omitempty"`
 	Labels             map[string]string       `json:"labels,omitempty"`
 	Annotations        map[string]string       `json:"annotations,omitempty"`
 	Selector           map[string]string       `json:"selector,omitempty"`
@@ -327,6 +329,7 @@ type StatefulSetDetailView struct {
 	UpdateStrategy  string            `json:"updateStrategy,omitempty"`
 	CurrentRevision string            `json:"currentRevision,omitempty"`
 	UpdateRevision  string            `json:"updateRevision,omitempty"`
+	CreatedAt       string            `json:"createdAt,omitempty"`
 	Labels          map[string]string `json:"labels,omitempty"`
 	Annotations     map[string]string `json:"annotations,omitempty"`
 	Selector        map[string]string `json:"selector,omitempty"`
@@ -354,6 +357,7 @@ type DaemonSetDetailView struct {
 	AvailableNumber int32             `json:"availableNumber"`
 	UpdatedNumber   int32             `json:"updatedNumber"`
 	UpdateStrategy  string            `json:"updateStrategy,omitempty"`
+	CreatedAt       string            `json:"createdAt,omitempty"`
 	Labels          map[string]string `json:"labels,omitempty"`
 	Annotations     map[string]string `json:"annotations,omitempty"`
 	Selector        map[string]string `json:"selector,omitempty"`
@@ -381,6 +385,7 @@ type JobDetailView struct {
 	Failed         int32             `json:"failed"`
 	Active         int32             `json:"active"`
 	CompletionMode string            `json:"completionMode,omitempty"`
+	CreatedAt      string            `json:"createdAt,omitempty"`
 	StartTime      string            `json:"startTime,omitempty"`
 	CompletionTime string            `json:"completionTime,omitempty"`
 	Labels         map[string]string `json:"labels,omitempty"`
@@ -408,6 +413,7 @@ type CronJobDetailView struct {
 	LastScheduleTime  string            `json:"lastScheduleTime,omitempty"`
 	ConcurrencyPolicy string            `json:"concurrencyPolicy,omitempty"`
 	TimeZone          string            `json:"timeZone,omitempty"`
+	CreatedAt         string            `json:"createdAt,omitempty"`
 	Labels            map[string]string `json:"labels,omitempty"`
 	Annotations       map[string]string `json:"annotations,omitempty"`
 	AllowedActions    []string          `json:"allowedActions,omitempty"`

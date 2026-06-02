@@ -65,7 +65,7 @@ func (s *Service) SetPermissionResolver(permissions *appaccess.PermissionResolve
 }
 
 func (s *Service) List(ctx context.Context, principal domainidentity.Principal, filter domainapp.Filter) ([]domainapp.App, error) {
-	if err := s.authorize(ctx, principal, domainaccess.ActionList, "Application", "", "", "", ""); err != nil {
+	if err := s.authorize(ctx, principal, domainaccess.ActionList, "Application", "", "", "", "", ""); err != nil {
 		return nil, err
 	}
 	items, err := s.repo.List(ctx, filter)
@@ -75,7 +75,7 @@ func (s *Service) List(ctx context.Context, principal domainidentity.Principal, 
 	_ = s.recordAudit(ctx, principal, "", "Application", "", string(domainaccess.ActionList), "success", "listed applications")
 	allowed := make([]domainapp.App, 0, len(items))
 	for _, item := range items {
-		if err := s.authorize(ctx, principal, domainaccess.ActionList, "Application", item.Name, item.Key, item.BusinessLineID, item.ID); err != nil {
+		if err := s.authorize(ctx, principal, domainaccess.ActionList, "Application", item.Name, item.Key, item.BusinessLineID, item.Group, item.ID); err != nil {
 			continue
 		}
 		allowed = append(allowed, item)
@@ -88,7 +88,7 @@ func (s *Service) Get(ctx context.Context, principal domainidentity.Principal, a
 	if err != nil {
 		return domainapp.App{}, normalizeRepoError(err)
 	}
-	if err := s.authorize(ctx, principal, domainaccess.ActionView, "Application", item.Name, item.Key, item.BusinessLineID, item.ID); err != nil {
+	if err := s.authorize(ctx, principal, domainaccess.ActionView, "Application", item.Name, item.Key, item.BusinessLineID, item.Group, item.ID); err != nil {
 		return domainapp.App{}, err
 	}
 	_ = s.recordAudit(ctx, principal, "", "Application", item.Name, string(domainaccess.ActionView), "success", "viewed application")
@@ -99,7 +99,7 @@ func (s *Service) Create(ctx context.Context, principal domainidentity.Principal
 	if err := validateInput(input); err != nil {
 		return domainapp.App{}, err
 	}
-	if err := s.authorize(ctx, principal, domainaccess.ActionUpdate, "Application", input.Name, input.Key, input.BusinessLineID, input.ID); err != nil {
+	if err := s.authorize(ctx, principal, domainaccess.ActionUpdate, "Application", input.Name, input.Key, input.BusinessLineID, input.Group, input.ID); err != nil {
 		return domainapp.App{}, err
 	}
 	item, err := s.repo.Create(ctx, input)
@@ -115,7 +115,7 @@ func (s *Service) Update(ctx context.Context, principal domainidentity.Principal
 	if err := validateInput(input); err != nil {
 		return domainapp.App{}, err
 	}
-	if err := s.authorize(ctx, principal, domainaccess.ActionUpdate, "Application", input.Name, input.Key, input.BusinessLineID, strings.TrimSpace(applicationID)); err != nil {
+	if err := s.authorize(ctx, principal, domainaccess.ActionUpdate, "Application", input.Name, input.Key, input.BusinessLineID, input.Group, strings.TrimSpace(applicationID)); err != nil {
 		return domainapp.App{}, err
 	}
 	item, err := s.repo.Update(ctx, strings.TrimSpace(applicationID), input)
@@ -132,7 +132,7 @@ func (s *Service) Delete(ctx context.Context, principal domainidentity.Principal
 	if err != nil {
 		return normalizeRepoError(err)
 	}
-	if err := s.authorize(ctx, principal, domainaccess.ActionDelete, "Application", item.Name, item.Key, item.BusinessLineID, item.ID); err != nil {
+	if err := s.authorize(ctx, principal, domainaccess.ActionDelete, "Application", item.Name, item.Key, item.BusinessLineID, item.Group, item.ID); err != nil {
 		return err
 	}
 	if err := s.repo.Delete(ctx, applicationID); err != nil {
@@ -186,7 +186,7 @@ func (s *Service) CreateService(ctx context.Context, principal domainidentity.Pr
 	if err := validateServiceInput(input); err != nil {
 		return domainapp.Service{}, err
 	}
-	if err := s.authorize(ctx, principal, domainaccess.ActionUpdate, "ApplicationService", input.Name, input.Key, app.BusinessLineID, app.ID); err != nil {
+	if err := s.authorize(ctx, principal, domainaccess.ActionUpdate, "ApplicationService", input.Name, input.Key, app.BusinessLineID, app.Group, app.ID); err != nil {
 		return domainapp.Service{}, err
 	}
 	item, err := s.repo.CreateService(ctx, app.ID, input)
@@ -209,7 +209,7 @@ func (s *Service) UpdateService(ctx context.Context, principal domainidentity.Pr
 	if err := validateServiceInput(input); err != nil {
 		return domainapp.Service{}, err
 	}
-	if err := s.authorize(ctx, principal, domainaccess.ActionUpdate, "ApplicationService", input.Name, input.Key, app.BusinessLineID, app.ID); err != nil {
+	if err := s.authorize(ctx, principal, domainaccess.ActionUpdate, "ApplicationService", input.Name, input.Key, app.BusinessLineID, app.Group, app.ID); err != nil {
 		return domainapp.Service{}, err
 	}
 	item, err := s.repo.UpdateService(ctx, app.ID, strings.TrimSpace(serviceID), input)
@@ -233,7 +233,7 @@ func (s *Service) DeleteService(ctx context.Context, principal domainidentity.Pr
 	if err != nil {
 		return normalizeRepoError(err)
 	}
-	if err := s.authorize(ctx, principal, domainaccess.ActionDelete, "ApplicationService", item.Name, item.Key, app.BusinessLineID, app.ID); err != nil {
+	if err := s.authorize(ctx, principal, domainaccess.ActionDelete, "ApplicationService", item.Name, item.Key, app.BusinessLineID, app.Group, app.ID); err != nil {
 		return err
 	}
 	if err := s.repo.DeleteService(ctx, app.ID, item.ID); err != nil {
@@ -255,7 +255,7 @@ func (s *Service) ListGitRepositories(ctx context.Context, principal domainident
 	if s.gitlab == nil {
 		return nil, fmt.Errorf("%w: gitlab client is not configured", apperrors.ErrInvalidArgument)
 	}
-	if err := s.authorize(ctx, principal, domainaccess.ActionList, "GitRepository", "", "", "", ""); err != nil {
+	if err := s.authorize(ctx, principal, domainaccess.ActionList, "GitRepository", "", "", "", "", ""); err != nil {
 		return nil, err
 	}
 	items, err := s.gitlab.ListProjects(ctx, search, limit)
@@ -270,7 +270,7 @@ func (s *Service) ListGitBranches(ctx context.Context, principal domainidentity.
 	if s.gitlab == nil {
 		return nil, fmt.Errorf("%w: gitlab client is not configured", apperrors.ErrInvalidArgument)
 	}
-	if err := s.authorize(ctx, principal, domainaccess.ActionList, "GitBranch", projectID, "", "", ""); err != nil {
+	if err := s.authorize(ctx, principal, domainaccess.ActionList, "GitBranch", projectID, "", "", "", ""); err != nil {
 		return nil, err
 	}
 	items, err := s.gitlab.ListBranches(ctx, projectID, search, limit)
@@ -285,7 +285,7 @@ func (s *Service) ListGitTags(ctx context.Context, principal domainidentity.Prin
 	if s.gitlab == nil {
 		return nil, fmt.Errorf("%w: gitlab client is not configured", apperrors.ErrInvalidArgument)
 	}
-	if err := s.authorize(ctx, principal, domainaccess.ActionList, "GitTag", projectID, "", "", ""); err != nil {
+	if err := s.authorize(ctx, principal, domainaccess.ActionList, "GitTag", projectID, "", "", "", ""); err != nil {
 		return nil, err
 	}
 	items, err := s.gitlab.ListTags(ctx, projectID, search, limit)
@@ -305,9 +305,6 @@ func validateInput(input domainapp.UpsertInput) error {
 	}
 	if strings.TrimSpace(input.Group) == "" {
 		return fmt.Errorf("%w: application group is required", apperrors.ErrInvalidArgument)
-	}
-	if strings.TrimSpace(input.BusinessLineID) == "" {
-		return fmt.Errorf("%w: businessLineId is required", apperrors.ErrInvalidArgument)
 	}
 	if strings.TrimSpace(input.Language) == "" {
 		return fmt.Errorf("%w: application language is required", apperrors.ErrInvalidArgument)
@@ -337,7 +334,7 @@ func validateServiceInput(input domainapp.ServiceInput) error {
 	return nil
 }
 
-func (s *Service) authorize(ctx context.Context, principal domainidentity.Principal, action domainaccess.Action, resourceKind, resourceName, owner, businessLineID, applicationID string) error {
+func (s *Service) authorize(ctx context.Context, principal domainidentity.Principal, action domainaccess.Action, resourceKind, resourceName, owner, businessLineID, applicationGroup, applicationID string) error {
 	if s.authorizer == nil {
 		return nil
 	}
@@ -357,8 +354,9 @@ func (s *Service) authorize(ctx context.Context, principal domainidentity.Princi
 			Owner: owner,
 		},
 		Delivery: domainaccess.DeliveryAttributes{
-			BusinessLineID: strings.TrimSpace(businessLineID),
-			ApplicationID:  strings.TrimSpace(applicationID),
+			BusinessLineID:   strings.TrimSpace(businessLineID),
+			ApplicationGroup: strings.TrimSpace(applicationGroup),
+			ApplicationID:    strings.TrimSpace(applicationID),
 		},
 		Context: domainaccess.ContextAttributes{
 			Source:     requestctx.FromContext(ctx).Source,

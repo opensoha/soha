@@ -3,19 +3,15 @@ import { App, Button, Card, Form, Input, Modal, Popconfirm, Select, Space, Switc
 import { DeleteOutlined, EditOutlined, PlayCircleOutlined, PlusOutlined } from '@ant-design/icons'
 import type { TableColumnsType } from 'antd'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { AdminTable } from '@/components/admin-table'
-import {
-  ManagementIconButton,
-  ManagementRefreshButton,
-  ManagementTableToolbar,
-} from '@/components/management-list'
+import { ManagementIconButton } from '@/components/management-list'
+import { DeliveryTable } from '@/features/delivery/delivery-table'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth/permission-snapshot'
 import { useI18n } from '@/i18n'
 import { StatusTag } from '@/components/status-tag'
 import { api } from '@/services/api-client'
 import { formatDateTime } from '@/utils/time'
 import { tableColumnPresets } from '@/utils/table-columns'
-import type { ApiResponse, BusinessLine, WorkflowNodeRun } from '@/types'
+import type { ApiResponse, WorkflowNodeRun } from '@/types'
 
 const { Text } = Typography
 type ColumnProps<T> = TableColumnsType<T>[number]
@@ -41,7 +37,6 @@ interface Application {
 }
 
 export function ApplicationsPage() {
-  const { t } = useI18n()
   const { message } = App.useApp()
   const queryClient = useQueryClient()
   const permissionSnapshotQuery = usePermissionSnapshot()
@@ -54,12 +49,6 @@ export function ApplicationsPage() {
     queryFn: () => api.get<ApiResponse<Application[]>>('/applications'),
   })
 
-  const businessLinesQuery = useQuery({
-    queryKey: ['business-lines'],
-    queryFn: () => api.get<ApiResponse<BusinessLine[]>>('/business-lines'),
-  })
-
-  const businessLineMap = Object.fromEntries((businessLinesQuery.data?.data ?? []).map((item) => [item.id, item.name]))
   const permissionSnapshot = permissionSnapshotQuery.data?.data
   const canCreateApplication = hasPermission(permissionSnapshot, 'delivery.application.create')
   const canUpdateApplication = hasPermission(permissionSnapshot, 'delivery.application.update')
@@ -108,10 +97,7 @@ export function ApplicationsPage() {
     { title: '名称', dataIndex: 'name' },
     { title: 'Key', dataIndex: 'key' },
     { title: '分组', dataIndex: 'group' },
-    { title: '业务线', dataIndex: 'businessLineId', render: (value: string) => businessLineMap[value] || value || '-' },
     { title: '语言', dataIndex: 'language' },
-    { title: '构建方式', dataIndex: 'dockerfilePath', render: () => <Tag color="cyan">Dockerfile</Tag> },
-    { title: '仓库路径', dataIndex: 'repositoryPath', ellipsis: true },
     {
       ...tableColumnPresets.status,
       title: '状态',
@@ -155,34 +141,21 @@ export function ApplicationsPage() {
     <div className="soha-page">
       <Card className="soha-scope-hint-card">
         <Text type="secondary">
-          当前构建链路先只支持 `Dockerfile`。这里配置的是镜像仓库、默认 Tag、构建上下文目录和 Dockerfile 路径，后续发布流程会直接复用这些参数。
+          应用作为服务集合维护基础信息；服务仓库、分支和构建参数在应用详情的服务配置中维护。
         </Text>
       </Card>
-      <AdminTable
-        columnSettingIconOnly
-        columnSettingPlacement="header"
-        shellClassName="soha-management-table-shell"
-        title={t('page.delivery.applications.title', 'Applications')}
-        headerExtra={(
-          <ManagementTableToolbar>
-            {canCreateApplication ? (
-              <Button icon={<PlusOutlined />} type="primary" onClick={() => { setEditing(null); setModalVisible(true) }}>
-                新建应用
-              </Button>
-            ) : null}
-            <ManagementRefreshButton
-              aria-label="刷新"
-              loading={isFetching}
-              tooltip="刷新"
-              onClick={() => void refetch()}
-            />
-          </ManagementTableToolbar>
-        )}
+      <DeliveryTable
+        actions={canCreateApplication ? (
+          <Button icon={<PlusOutlined />} type="primary" onClick={() => { setEditing(null); setModalVisible(true) }}>
+            新建应用
+          </Button>
+        ) : null}
+        refreshing={isFetching}
+        onRefresh={() => void refetch()}
         columns={columns}
         dataSource={data?.data ?? []}
         rowKey="id"
         loading={isLoading}
-        scroll={{ x: 'max-content' }}
       />
       <Modal
         title={editing ? '编辑应用' : '新建应用'}
@@ -200,19 +173,16 @@ export function ApplicationsPage() {
             editing
               ? {
                   name: editing.name,
-                  key: editing.key,
-                  group: editing.group,
-                  businessLineId: editing.businessLineId,
-                  language: editing.language,
-                  repositoryPath: editing.repositoryPath,
-                  defaultBranch: editing.defaultBranch,
-                  defaultTag: editing.defaultTag,
-                  buildImage: editing.buildImage,
-                  buildContextDir: editing.buildContextDir,
-                  dockerfilePath: editing.dockerfilePath,
-                  enabled: editing.enabled,
-                }
-              : { enabled: true, language: 'node', defaultBranch: 'main' }
+	                  key: editing.key,
+	                  group: editing.group,
+	                  language: editing.language,
+	                  defaultTag: editing.defaultTag,
+	                  buildImage: editing.buildImage,
+	                  buildContextDir: editing.buildContextDir,
+	                  dockerfilePath: editing.dockerfilePath,
+	                  enabled: editing.enabled,
+	                }
+	              : { enabled: true, language: 'node' }
           }
         >
           <Form.Item name="name" label="应用名称" rules={[{ required: true, message: '请输入应用名称' }]}>
@@ -224,9 +194,6 @@ export function ApplicationsPage() {
           <Form.Item name="group" label="应用分组" rules={[{ required: true, message: '请输入应用分组' }]}>
             <Input />
           </Form.Item>
-          <Form.Item name="businessLineId" label="业务线" rules={[{ required: true, message: '请选择业务线' }]}>
-            <Select options={(businessLinesQuery.data?.data ?? []).map((item) => ({ value: item.id, label: item.name }))} />
-          </Form.Item>
           <Form.Item name="language" label="语言">
             <Select
               options={[
@@ -236,12 +203,6 @@ export function ApplicationsPage() {
                 { value: 'python', label: 'Python' },
               ]}
             />
-          </Form.Item>
-          <Form.Item name="repositoryPath" label="代码仓库路径">
-            <Input />
-          </Form.Item>
-          <Form.Item name="defaultBranch" label="默认分支">
-            <Input />
           </Form.Item>
           <Form.Item name="defaultTag" label="默认镜像 Tag">
             <Input />
@@ -367,26 +328,13 @@ export function WorkflowsPage() {
 
   return (
     <div className="soha-page">
-      <AdminTable
-        columnSettingIconOnly
-        columnSettingPlacement="header"
-        shellClassName="soha-management-table-shell"
-        title={t('page.delivery.workflows.title', 'Workflows')}
-        headerExtra={(
-          <ManagementTableToolbar>
-            <ManagementRefreshButton
-              aria-label={localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
-              loading={isFetching}
-              tooltip={localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
-              onClick={() => void refetch()}
-            />
-          </ManagementTableToolbar>
-        )}
+      <DeliveryTable
+        refreshing={isFetching}
+        onRefresh={() => void refetch()}
         columns={columns}
         dataSource={data?.data ?? []}
         rowKey="id"
         loading={isLoading}
-        scroll={{ x: 'max-content' }}
       />
     </div>
   )
@@ -407,7 +355,6 @@ interface Release {
 }
 
 export function ReleasesPage() {
-  const { t } = useI18n()
   const { message } = App.useApp()
   const queryClient = useQueryClient()
   const permissionSnapshotQuery = usePermissionSnapshot()
@@ -469,26 +416,13 @@ export function ReleasesPage() {
 
   return (
     <div className="soha-page">
-      <AdminTable
-        columnSettingIconOnly
-        columnSettingPlacement="header"
-        shellClassName="soha-management-table-shell"
-        title={t('page.delivery.releases.title', 'Releases')}
-        headerExtra={(
-          <ManagementTableToolbar>
-            <ManagementRefreshButton
-              aria-label="刷新"
-              loading={isFetching}
-              tooltip="刷新"
-              onClick={() => void refetch()}
-            />
-          </ManagementTableToolbar>
-        )}
+      <DeliveryTable
+        refreshing={isFetching}
+        onRefresh={() => void refetch()}
         columns={columns}
         dataSource={data?.data ?? []}
         rowKey="id"
         loading={isLoading}
-        scroll={{ x: 'max-content' }}
       />
     </div>
   )
@@ -506,7 +440,6 @@ interface Registry {
 }
 
 export function RegistriesPage() {
-  const { t } = useI18n()
   const { message } = App.useApp()
   const queryClient = useQueryClient()
   const permissionSnapshotQuery = usePermissionSnapshot()
@@ -604,31 +537,18 @@ export function RegistriesPage() {
 
   return (
     <div className="soha-page">
-      <AdminTable
-        columnSettingIconOnly
-        columnSettingPlacement="header"
-        shellClassName="soha-management-table-shell"
-        title={t('page.delivery.registries.title', 'Registries')}
-        headerExtra={(
-          <ManagementTableToolbar>
-            {canManageRegistry ? (
-              <Button icon={<PlusOutlined />} type="primary" onClick={() => { setEditing(null); setModalVisible(true) }}>
-                添加仓库
-              </Button>
-            ) : null}
-            <ManagementRefreshButton
-              aria-label="刷新"
-              loading={isFetching}
-              tooltip="刷新"
-              onClick={() => void refetch()}
-            />
-          </ManagementTableToolbar>
-        )}
+      <DeliveryTable
+        actions={canManageRegistry ? (
+          <Button icon={<PlusOutlined />} type="primary" onClick={() => { setEditing(null); setModalVisible(true) }}>
+            添加仓库
+          </Button>
+        ) : null}
+        refreshing={isFetching}
+        onRefresh={() => void refetch()}
         columns={columns}
         dataSource={data?.data ?? []}
         rowKey="id"
         loading={isLoading}
-        scroll={{ x: 'max-content' }}
       />
       <Modal
         title={editing ? '编辑仓库' : '添加仓库'}

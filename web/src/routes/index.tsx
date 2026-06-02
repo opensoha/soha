@@ -1,5 +1,5 @@
 import { lazy, Suspense } from "react";
-import { Navigate, Route, Routes, useLocation } from "react-router-dom";
+import { Navigate, Route, Routes, useLocation, useParams } from "react-router-dom";
 import { Spin } from "antd";
 import { AuthGuard } from "@/features/auth/auth-guard";
 import {
@@ -314,14 +314,6 @@ const ApplicationsPage = lazyNamed(
   () => import("@/features/delivery/delivery-app-pages"),
   "ApplicationsPage",
 );
-const ApplicationManagementPage = lazyNamed(
-  () => import("@/features/delivery/application-management-pages"),
-  "ApplicationManagementPage",
-);
-const ApplicationManagementDetailPage = lazyNamed(
-  () => import("@/features/delivery/application-management-pages"),
-  "ApplicationManagementDetailPage",
-);
 const ApplicationDetailPage = lazyNamed(
   () => import("@/features/delivery/application-runtime-pages"),
   "ApplicationDetailPage",
@@ -349,14 +341,6 @@ const ExecutionTasksPage = lazyNamed(
 const ApprovalPoliciesPage = lazyNamed(
   () => import("@/features/delivery/delivery-app-pages"),
   "ApprovalPoliciesPage",
-);
-const BusinessLinesPage = lazyNamed(
-  () => import("@/features/delivery/delivery-catalog-pages"),
-  "BusinessLinesPage",
-);
-const DeliveryEnvironmentsPage = lazyNamed(
-  () => import("@/features/delivery/delivery-catalog-pages"),
-  "DeliveryEnvironmentsPage",
 );
 const ApplicationEnvironmentsPage = lazyNamed(
   () => import("@/features/delivery/delivery-catalog-pages"),
@@ -570,6 +554,11 @@ function LazyPage({ children }: { children: React.ReactNode }) {
       {children}
     </Suspense>
   );
+}
+
+function ApplicationManagementRedirect() {
+  const { applicationId } = useParams();
+  return <Navigate to={applicationId ? `/applications/${applicationId}` : "/applications"} replace />;
 }
 
 function AIWorkbenchModeRedirect() {
@@ -1270,19 +1259,11 @@ export function AppRouter() {
           />
           <Route
             path="/application-management"
-            element={
-              <LazyPage>
-                <ApplicationManagementPage />
-              </LazyPage>
-            }
+            element={<ApplicationManagementRedirect />}
           />
           <Route
             path="/application-management/:applicationId"
-            element={
-              <LazyPage>
-                <ApplicationManagementDetailPage />
-              </LazyPage>
-            }
+            element={<ApplicationManagementRedirect />}
           />
           <Route
             path="/applications/:applicationId"
@@ -1302,19 +1283,11 @@ export function AppRouter() {
           />
           <Route
             path="/business-lines"
-            element={
-              <LazyPage>
-                <BusinessLinesPage />
-              </LazyPage>
-            }
+            element={<Navigate to="/applications" replace />}
           />
           <Route
             path="/delivery-environments"
-            element={
-              <LazyPage>
-                <DeliveryEnvironmentsPage />
-              </LazyPage>
-            }
+            element={<Navigate to="/applications" replace />}
           />
           <Route
             path="/application-environments"

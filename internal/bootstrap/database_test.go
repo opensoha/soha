@@ -111,6 +111,61 @@ func TestDeprecatedMenusIncludeOldAIGatewayWorkbenchID(t *testing.T) {
 	}
 }
 
+func TestDefaultMenuSeedsExposeAccessPagesAsDirectMenus(t *testing.T) {
+	items := defaultMenuSeeds()
+	expected := map[string]int{
+		"access-users":    226,
+		"access-roles":    227,
+		"access-teams":    228,
+		"access-policies": 229,
+	}
+
+	for _, item := range items {
+		sortOrder, ok := expected[item.ID]
+		if !ok {
+			continue
+		}
+		if item.ParentID != "" {
+			t.Fatalf("access seed menu %q parent = %q, want direct menu", item.ID, item.ParentID)
+		}
+		if item.Section != "admin" {
+			t.Fatalf("access seed menu %q section = %q, want admin", item.ID, item.Section)
+		}
+		if item.SortOrder != sortOrder {
+			t.Fatalf("access seed menu %q sort order = %d, want %d", item.ID, item.SortOrder, sortOrder)
+		}
+		delete(expected, item.ID)
+	}
+	if len(expected) > 0 {
+		t.Fatalf("default menu seeds missing direct access menus: %v", expected)
+	}
+}
+
+func TestDefaultMenuSeedsUseFullSystemLogLabels(t *testing.T) {
+	items := defaultMenuSeeds()
+	expected := map[string]struct {
+		labelZH string
+		labelEN string
+	}{
+		"operations": {labelZH: "操作日志", labelEN: "Operation Logs"},
+		"audit":      {labelZH: "审计日志", labelEN: "Audit Logs"},
+	}
+
+	for _, item := range items {
+		labels, ok := expected[item.ID]
+		if !ok {
+			continue
+		}
+		if item.LabelZH != labels.labelZH || item.LabelEN != labels.labelEN {
+			t.Fatalf("system log menu %q labels = %q/%q, want %q/%q", item.ID, item.LabelZH, item.LabelEN, labels.labelZH, labels.labelEN)
+		}
+		delete(expected, item.ID)
+	}
+	if len(expected) > 0 {
+		t.Fatalf("default menu seeds missing system log menus: %v", expected)
+	}
+}
+
 func TestDefaultMenuSeedsPlaceApplicationCenterFirstInDelivery(t *testing.T) {
 	items := defaultMenuSeeds()
 	var applicationCenter *menuSeed

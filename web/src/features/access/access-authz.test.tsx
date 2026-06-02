@@ -78,8 +78,6 @@ function setDefaultResponses() {
     '/access/teams': [],
     '/access/policies': [],
     '/access/scope-grants': [],
-    '/business-lines': [],
-    '/delivery-environments': [],
     '/applications': [],
   }
 }

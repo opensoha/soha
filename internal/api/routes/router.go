@@ -246,6 +246,8 @@ func New(cfg cfgpkg.Config, logger *zap.Logger, deps Dependencies) *http.Server 
 		protected.GET("/clusters/:clusterID/helm/releases/:releaseName/detail", deps.Platform.GetHelmReleaseDetail)
 		protected.GET("/clusters/:clusterID/helm/releases/:releaseName/history", deps.Platform.ListHelmReleaseHistory)
 		protected.GET("/clusters/:clusterID/helm/releases/:releaseName/values", deps.Platform.GetHelmReleaseValues)
+		protected.PUT("/clusters/:clusterID/helm/releases/:releaseName/values", deps.Platform.UpdateHelmReleaseValues)
+		protected.DELETE("/clusters/:clusterID/helm/releases/:releaseName", deps.Platform.DeleteHelmRelease)
 		protected.GET("/clusters/:clusterID/events", deps.Platform.ListClusterEvents)
 		protected.POST("/clusters/:clusterID/workloads/deployments/restart", deps.Platform.RestartDeployment)
 		protected.POST("/clusters/:clusterID/workloads/deployments/rollback", deps.Platform.RollbackDeployment)
@@ -312,14 +314,6 @@ func New(cfg cfgpkg.Config, logger *zap.Logger, deps Dependencies) *http.Server 
 			protected.PUT("/alert-routes/:routeID", deps.Monitoring.UpdateRoute)
 		}
 		if cfg.Modules.Delivery.Enabled {
-			protected.GET("/business-lines", deps.Catalog.ListBusinessLines)
-			protected.POST("/business-lines", deps.Catalog.CreateBusinessLine)
-			protected.PUT("/business-lines/:businessLineID", deps.Catalog.UpdateBusinessLine)
-			protected.DELETE("/business-lines/:businessLineID", deps.Catalog.DeleteBusinessLine)
-			protected.GET("/delivery-environments", deps.Catalog.ListEnvironments)
-			protected.POST("/delivery-environments", deps.Catalog.CreateEnvironment)
-			protected.PUT("/delivery-environments/:environmentID", deps.Catalog.UpdateEnvironment)
-			protected.DELETE("/delivery-environments/:environmentID", deps.Catalog.DeleteEnvironment)
 			protected.GET("/application-environments", deps.Catalog.ListApplicationEnvironments)
 			protected.GET("/application-environments/:applicationEnvironmentID", deps.Catalog.GetApplicationEnvironment)
 			protected.GET("/application-environments/:applicationEnvironmentID/detail", deps.Delivery.GetApplicationEnvironmentDetail)

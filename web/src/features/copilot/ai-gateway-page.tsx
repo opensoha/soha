@@ -841,10 +841,10 @@ export const gatewaySecretTypeOptions = [
 ].map((value) => ({ label: value, value }))
 
 const scopeFieldDefs = [
-  { name: 'scopeBusinessLineIds', label: '业务线', key: 'businessLineIds' },
+  { name: 'scopeBusinessLineIds', label: '范围 Key', key: 'businessLineIds' },
   { name: 'scopeApplicationIds', label: '应用', key: 'applicationIds' },
   { name: 'scopeApplicationEnvironmentIds', label: '应用环境绑定', key: 'applicationEnvironmentIds' },
-  { name: 'scopeEnvironmentIds', label: '环境', key: 'environmentIds' },
+  { name: 'scopeEnvironmentIds', label: '环境 Tag', key: 'environmentIds' },
   { name: 'scopeClusterIds', label: '集群', key: 'clusterIds' },
   { name: 'scopeNamespaces', label: '命名空间', key: 'namespaces' },
   { name: 'scopeReleaseBundleIds', label: '版本包', key: 'releaseBundleIds' },

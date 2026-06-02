@@ -52,7 +52,7 @@ func (s *Service) List(context.Context) ([]domainmodule.Status, error) {
 			EnabledConfigKey:   "modules.delivery.enabled",
 			Dependencies:       []string{},
 			VisiblePermissions: []string{"workspace.application.view"},
-			SeedMenus:          []string{"builds", "application-management", "build-templates", "release-bundles", "execution-tasks", "approval-policies", "workflow-templates", "release-board", "business-lines", "delivery-environments", "application-environments", "workflows", "releases", "registries", "delivery-blueprints"},
+			SeedMenus:          []string{"builds", "application-management", "build-templates", "release-bundles", "execution-tasks", "approval-policies", "workflow-templates", "release-board", "application-environments", "workflows", "releases", "registries", "delivery-blueprints"},
 		},
 		{
 			ID:                 "ai",

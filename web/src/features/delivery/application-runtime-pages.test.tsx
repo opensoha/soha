@@ -26,6 +26,8 @@ const testState = vi.hoisted(() => ({
   permissionSnapshot: {
     permissionKeys: [
       'delivery.applications.view',
+      'delivery.application.update',
+      'delivery.application-environments.manage',
       'delivery.application-services.view',
       'delivery.application-services.manage',
       'delivery.builds.trigger',
@@ -39,6 +41,70 @@ const testState = vi.hoisted(() => ({
   detailWithoutValidationNodes: false,
   detailWithoutImageTagDefaults: false,
   apiGet: vi.fn(async (path: string) => {
+    if (path === '/applications') {
+      return {
+        data: [
+          {
+            id: 'app-1',
+            name: 'Checkout Platform',
+            key: 'checkout-platform',
+            group: 'commerce',
+            language: 'go',
+            repositoryPath: 'commerce/checkout',
+            defaultBranch: 'main',
+            defaultTag: testState.detailWithoutImageTagDefaults ? undefined : 'latest',
+            enabled: true,
+            buildSources: [
+              {
+                id: 'source-api',
+                name: 'API Dockerfile',
+                type: 'repo_dockerfile',
+                enabled: true,
+                isDefault: true,
+                defaultTag: testState.detailWithoutImageTagDefaults ? undefined : 'latest',
+              },
+            ],
+            createdAt: '2026-05-01T00:00:00Z',
+            updatedAt: '2026-05-10T00:00:00Z',
+          },
+        ],
+      }
+    }
+    if (path === '/application-environments') {
+      return {
+        data: [
+          {
+            id: 'binding-test',
+            applicationId: 'app-1',
+            environmentId: 'env-test',
+            workflowTemplateId: 'wf-template-1',
+            buildPolicy: { sourceId: 'source-api', refType: 'branch' },
+            releasePolicy: { actionKind: 'deploy', requiresApproval: false },
+            resourceSelector: { matchLabels: { app: 'checkout-api' } },
+            targets: [
+              {
+                id: 'target-1',
+                applicationEnvironmentId: 'binding-test',
+                clusterId: 'cluster-a',
+                namespace: 'checkout-test',
+                workloadKind: 'Deployment',
+                workloadName: 'checkout-api',
+                containerName: 'api',
+                enabled: true,
+              },
+            ],
+            createdAt: '2026-05-01T00:00:00Z',
+            updatedAt: '2026-05-10T00:00:00Z',
+          },
+        ],
+      }
+    }
+    if (path === '/workflow-templates') {
+      return { data: [{ id: 'wf-template-1', key: 'release-dag', name: 'Release DAG', enabled: true, definition: workflowDefinition, createdAt: '2026-05-01T00:00:00Z', updatedAt: '2026-05-10T00:00:00Z' }] }
+    }
+    if (path === '/clusters') {
+      return { data: [{ id: 'cluster-a', name: 'cluster-a', status: 'ready', createdAt: '2026-05-01T00:00:00Z', updatedAt: '2026-05-10T00:00:00Z' }] }
+    }
     if (path === '/applications/app-1/runtime') {
       const defaultTag = testState.detailWithoutImageTagDefaults ? undefined : 'latest'
       return {
@@ -523,13 +589,39 @@ describe('ApplicationDetailPage workbench', () => {
     expect(testState.apiGet).toHaveBeenCalledWith('/builds?applicationId=app-1')
     expect(testState.apiGet).toHaveBeenCalledWith('/releases?applicationId=app-1')
     expect(testState.apiGet).toHaveBeenCalledWith('/workflows?applicationId=app-1')
+    expect(testState.apiGet).toHaveBeenCalledWith('/applications')
+    expect(testState.apiGet).toHaveBeenCalledWith('/application-environments')
+    expect(testState.apiGet).not.toHaveBeenCalledWith('/delivery-environments')
+    expect(testState.apiGet).toHaveBeenCalledWith('/workflow-templates')
+    expect(testState.apiGet).toHaveBeenCalledWith('/clusters')
     expect(container.textContent).toContain('Checkout Platform')
     expect(container.textContent).toContain('总览')
+    expect(container.textContent).toContain('配置')
     expect(container.textContent).toContain('服务组件')
     expect(container.textContent).toContain('流水线')
     expect(container.textContent).toContain('交付操作')
+    expect(container.textContent).toContain('交付态势')
+    expect(container.textContent).toContain('门禁状态')
+    expect(container.textContent).toContain('候选版本')
+    expect(container.textContent).toContain('环境矩阵')
+    expect(container.textContent).toContain('构建完成')
+    expect(container.textContent).toContain('可验证')
+    expect(container.textContent).toContain('1.2.3')
+    expect(container.textContent).toContain('个交付物线索')
     expect(container.textContent).toContain('构建并部署')
     expect(container.textContent).toContain('运行验证')
+
+    clickTab(container, '配置')
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+    expect(container.textContent).toContain('应用配置')
+    expect(container.textContent).toContain('编辑应用')
+    expect(container.textContent).toContain('构建来源')
+    expect(container.textContent).toContain('环境绑定')
+    expect(container.textContent).toContain('新建绑定')
+    expect(container.textContent).toContain('app=checkout-api')
+    expect(container.querySelector('.soha-application-runtime-settings-grid')).not.toBeNull()
 
     clickTab(container, '交付物')
     await act(async () => {

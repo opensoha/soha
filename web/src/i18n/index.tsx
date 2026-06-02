@@ -87,10 +87,8 @@ const zhCN: Dictionary = {
   "route.clusters.title": "集群",
   "route.cluster-detail.title": "集群详情",
   "route.applications.title": "应用中心",
-  "route.application-management.title": "应用管理",
-  "route.application-management-detail.title": "应用管理详情",
-  "route.business-lines.title": "业务线管理",
-  "route.delivery-environments.title": "环境管理",
+  "route.application-management.title": "应用中心",
+  "route.application-management-detail.title": "应用详情",
   "route.application-environments.title": "应用环境绑定",
   "route.application-workload-detail.title": "服务详情",
   "route.workflows.title": "工作流",
@@ -196,7 +194,7 @@ const zhCN: Dictionary = {
   "page.extensions.helm.detailDesc":
     "在同一个工作区查看 Helm Release 概览、values.yaml 和 revision 历史。",
   "page.extensions.helm.valuesDesc":
-    "查看当前 values.yaml，编辑本地草稿，并在左右 diff 视图里确认修改位置。",
+    "左侧编辑将要应用的 values.yaml，右侧展示 Helm 当前运行 values 与草稿的差异。",
   "page.extensions.helm.historyTitle": "Revision 历史",
   "page.extensions.helmCharts.title": "Helm Charts",
   "page.extensions.helmCharts.desc":
@@ -226,15 +224,9 @@ const zhCN: Dictionary = {
     "查看环境发布版本、当前状态，并在需要时触发部署。",
   "page.delivery.registries.title": "镜像仓库",
   "page.delivery.registries.desc": "管理镜像仓库连接、认证信息与连通状态。",
-  "page.delivery.businessLines.title": "业务线管理",
-  "page.delivery.businessLines.desc":
-    "维护跨交付与授权范围复用的业务线主数据，作为独立主数据域的一部分。",
-  "page.delivery.environments.title": "环境管理",
-  "page.delivery.environments.desc":
-    "管理跨交付与授权范围复用的环境主数据，包括排序、生产标识和审批要求。",
   "page.delivery.bindings.title": "应用环境绑定",
   "page.delivery.bindings.desc":
-    "把应用、环境和发布目标绑定起来，作为独立主数据域与交付流程之间的桥接层。",
+    "在应用中心内维护应用、环境标签和发布目标的绑定关系。",
   "page.workloads.deployments.title": "Deployments",
   "page.workloads.deployments.desc":
     "查看部署副本数、滚动状态，并执行重启、扩缩与回滚操作。",
@@ -313,6 +305,13 @@ const zhCN: Dictionary = {
   "yamlDiffEditor.diffMode": "Diff",
   "yamlDiffEditor.originalLabel": "原始",
   "yamlDiffEditor.modifiedLabel": "修改后",
+  "yamlDiffEditor.draftLabel": "填写 values.yaml",
+  "yamlDiffEditor.runtimeLabel": "Helm 运行 values.yaml",
+  "yamlDiffEditor.editableLabel": "可编辑",
+  "yamlDiffEditor.readOnlyLabel": "只读",
+  "yamlDiffEditor.autoDiffLabel": "自动 Diff",
+  "yamlDiffEditor.changedLabel": "有修改",
+  "yamlDiffEditor.unchangedLabel": "无修改",
   "yamlEditor.saveSuccess": "YAML 草稿已保存到本地",
   "yamlEditor.resetSuccess": "YAML 草稿已重置",
   "yamlEditor.applySuccess": "YAML 已应用",
@@ -427,10 +426,8 @@ const enUS: Dictionary = {
   "route.clusters.title": "Clusters",
   "route.cluster-detail.title": "Cluster Detail",
   "route.applications.title": "Application Center",
-  "route.application-management.title": "Application Management",
-  "route.application-management-detail.title": "Application Management Detail",
-  "route.business-lines.title": "Business Lines",
-  "route.delivery-environments.title": "Environments",
+  "route.application-management.title": "Application Center",
+  "route.application-management-detail.title": "Application Detail",
   "route.application-environments.title": "App Environment Bindings",
   "route.application-workload-detail.title": "Service Detail",
   "route.workflows.title": "Workflows",
@@ -543,7 +540,7 @@ const enUS: Dictionary = {
   "page.extensions.helm.detailDesc":
     "Inspect Helm release summary, values.yaml, and revision history in one workspace.",
   "page.extensions.helm.valuesDesc":
-    "Review the current values.yaml, edit a local draft, and inspect a side-by-side diff before applying changes.",
+    "Edit the values.yaml draft on the left; compare it against the Helm runtime values on the right before applying changes.",
   "page.extensions.helm.historyTitle": "Revision History",
   "page.extensions.helmCharts.title": "Helm Charts",
   "page.extensions.helmCharts.desc":
@@ -576,15 +573,9 @@ const enUS: Dictionary = {
   "page.delivery.registries.title": "Registries",
   "page.delivery.registries.desc":
     "Manage registry connections, credentials, and connectivity status.",
-  "page.delivery.businessLines.title": "Business Lines",
-  "page.delivery.businessLines.desc":
-    "Maintain cross-domain business-line master data used by delivery flows and access scopes as part of the standalone master-data domain.",
-  "page.delivery.environments.title": "Environments",
-  "page.delivery.environments.desc":
-    "Maintain cross-domain environment master data, including ordering, production flags, and approval requirements.",
   "page.delivery.bindings.title": "Application Environment Bindings",
   "page.delivery.bindings.desc":
-    "Bind applications, environments, and release targets as the bridge between the standalone master-data domain and delivery execution.",
+    "Maintain application, environment tag, and release target bindings inside the application center.",
   "page.workloads.deployments.title": "Deployments",
   "page.workloads.deployments.desc":
     "Inspect replica counts, rollout state, and restart, scale, or rollback operations.",
@@ -666,6 +657,13 @@ const enUS: Dictionary = {
   "yamlDiffEditor.diffMode": "Diff",
   "yamlDiffEditor.originalLabel": "Original",
   "yamlDiffEditor.modifiedLabel": "Modified",
+  "yamlDiffEditor.draftLabel": "Values draft",
+  "yamlDiffEditor.runtimeLabel": "Helm runtime values",
+  "yamlDiffEditor.editableLabel": "Editable",
+  "yamlDiffEditor.readOnlyLabel": "Read-only",
+  "yamlDiffEditor.autoDiffLabel": "Auto diff",
+  "yamlDiffEditor.changedLabel": "Changed",
+  "yamlDiffEditor.unchangedLabel": "No changes",
   "yamlEditor.saveSuccess": "YAML draft saved locally",
   "yamlEditor.resetSuccess": "YAML draft reset",
   "yamlEditor.applySuccess": "YAML applied",

@@ -1,24 +1,38 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { Key } from 'react'
-import { Alert, App, Button, Card, Collapse, Descriptions, Form, Input, Modal, Popconfirm, Select, Space, Switch, Tag, Timeline, Typography } from 'antd'
-import { ApiOutlined, CheckOutlined, CloseOutlined, CodeOutlined, DeleteOutlined, EditOutlined, EyeOutlined, FileTextOutlined, LinkOutlined, PlayCircleOutlined, PlusOutlined, ReloadOutlined, StopOutlined } from '@ant-design/icons'
-import type { TableColumnsType } from 'antd'
+import { Alert, App, Button, Card, Collapse, Descriptions, Dropdown, Form, Input, Modal, Popconfirm, Select, Space, Switch, Tag, Timeline, Typography } from 'antd'
+import { ApiOutlined, CheckOutlined, CloseOutlined, DeleteOutlined, EditOutlined, FileTextOutlined, LinkOutlined, MoreOutlined, PlayCircleOutlined, PlusOutlined, ReloadOutlined, StopOutlined } from '@ant-design/icons'
+import type { MenuProps, TableColumnsType } from 'antd'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { AdminTable } from '@/components/admin-table'
 import {
   ManagementDetailHeader,
   ManagementIconButton,
   ManagementState,
-  ManagementRefreshButton,
-  ManagementTableToolbar,
 } from '@/components/management-list'
+import { DeliveryTable } from '@/features/delivery/delivery-table'
 import { BooleanTag, StatusTag } from '@/components/status-tag'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth/permission-snapshot'
 import { useI18n } from '@/i18n'
 import { api } from '@/services/api-client'
 import { formatDateTime } from '@/utils/time'
 import { tableColumnPresets } from '@/utils/table-columns'
+import {
+  canCancelExecutionTask,
+  canRetryExecutionTask,
+  summarizeDeliveryBuildSignal,
+  summarizeDeliveryValidationSignal,
+  summarizeExecutionTaskArtifacts,
+  summarizeExecutionTaskStatus,
+  summarizeReleaseBundleArtifact,
+  summarizeReleaseBundleStatus,
+} from '@/features/delivery/delivery-status'
+import {
+  ApplicationManagementModals,
+  defaultBuildSources,
+  splitApplicationGroups,
+  useApplicationManagementState,
+} from '@/features/delivery/application-management-pages'
 import type {
   ApprovalPolicy,
   ApiResponse,
@@ -40,7 +54,8 @@ type ApplicationBindingRow = NonNullable<DeliveryApplicationDetail['bindings']>[
 type ApplicationWorkspaceCard = {
   app: DeliveryApplication
   bindings: ReleaseBoardEntry[]
-  lastStatus: string
+  deliverySignal: { color: string; label: string }
+  gateSignal: { color: string; label: string }
   activeTargets: number
   latestEnvironmentName: string
 }
@@ -92,17 +107,9 @@ function renderTargetSummary(targets?: ApplicationBindingRow['targets']) {
   )
 }
 
-function buildStatus(entry?: ReleaseBoardEntry) {
-  if (entry?.latestRelease?.status) return entry.latestRelease.status
-  if (entry?.latestWorkflow?.status) return entry.latestWorkflow.status
-  if (entry?.latestBuild?.status) return entry.latestBuild.status
-  return 'unknown'
-}
-
 function summarizeApplicationRole(app: DeliveryApplication) {
   const language = app.language ? app.language.toUpperCase() : 'APP'
-  const group = app.group || '业务应用'
-  return `${language} · ${group}`
+  return language
 }
 
 function summarizeEnvironmentCoverage(bindings: ReleaseBoardEntry[]) {
@@ -112,14 +119,6 @@ function summarizeEnvironmentCoverage(bindings: ReleaseBoardEntry[]) {
   if (names.length === 0) return '尚未绑定环境'
   if (names.length === 1) return names[0]
   return `${names.slice(0, 2).join(' / ')}${names.length > 2 ? ` +${names.length - 2}` : ''}`
-}
-
-function canCancelExecutionTask(task?: ExecutionTask | null) {
-  return task ? ['queued', 'dispatching', 'running'].includes(task.status) : false
-}
-
-function canRetryExecutionTask(task?: ExecutionTask | null) {
-  return task ? ['failed', 'callback_timeout', 'canceled'].includes(task.status) : false
 }
 
 function metadataText(metadata: Record<string, unknown> | undefined, ...keys: string[]) {
@@ -263,7 +262,9 @@ function WorkflowGatewayTracePanel({ run }: { run: WorkflowRun }) {
 
 export function ApplicationsPage() {
   const navigate = useNavigate()
+  const managementState = useApplicationManagementState()
   const [activeGroup, setActiveGroup] = useState<string>('all')
+  const [deleteConfirmApp, setDeleteConfirmApp] = useState<DeliveryApplication | null>(null)
 
   const applicationsQuery = useQuery({
     queryKey: ['applications'],
@@ -287,72 +288,140 @@ export function ApplicationsPage() {
       return {
         app,
         bindings,
-        lastStatus: buildStatus(bindings[0]),
+        deliverySignal: summarizeDeliveryBuildSignal(bindings, { completedLabel: '最近已构建' }),
+        gateSignal: summarizeDeliveryValidationSignal(bindings, { readyLabel: '可验证' }),
         activeTargets: bindings.reduce((sum, item) => sum + (item.targets?.length ?? 0), 0),
         latestEnvironmentName: summarizeEnvironmentCoverage(bindings),
       }
     })
   }, [applicationsQuery.data, boardByApp])
   const groupOptions = useMemo(() => {
-    const groups = Array.from(new Set(applicationCards.map(({ app }) => app.group).filter(Boolean)))
-    return ['all', ...groups]
-  }, [applicationCards])
+    return ['all', ...managementState.applicationGroupOptions]
+  }, [managementState.applicationGroupOptions])
   const visibleApplicationCards = useMemo(
-    () => applicationCards.filter(({ app }) => activeGroup === 'all' || app.group === activeGroup),
+    () => applicationCards.filter(({ app }) => activeGroup === 'all' || splitApplicationGroups(app.group).includes(activeGroup)),
     [activeGroup, applicationCards],
   )
+  useEffect(() => {
+    if (!groupOptions.includes(activeGroup)) {
+      setActiveGroup('all')
+    }
+  }, [activeGroup, groupOptions])
+  const openCreateApplication = () => {
+    managementState.setEditingApp(null)
+    managementState.setBuildSources(defaultBuildSources())
+    managementState.setAppModalVisible(true)
+  }
+  const openEditApplication = (app: DeliveryApplication) => {
+    managementState.setEditingApp(app)
+    managementState.setBuildSources(app.buildSources ?? [])
+    managementState.setAppModalVisible(true)
+  }
 
   return (
     <div className="soha-page">
-      <ManagementDetailHeader
-        title="应用中心"
-        description="按应用查看构建来源、环境覆盖，并进入对应应用页。"
-        meta={(
-          <div className="soha-application-group-tags">
-            {groupOptions.map((group) => (
-              <Tag
-                key={group}
-                className={`soha-application-group-tag ${activeGroup === group ? 'is-active' : ''}`}
-                variant="filled"
-                onClick={() => setActiveGroup(group)}
-              >
-                {group === 'all' ? '全部' : group}
-              </Tag>
-            ))}
-          </div>
-        )}
-        actions={(
-          <Button type="primary" icon={<PlusOutlined />} onClick={() => navigate('/application-management')}>
-            新建应用
-          </Button>
-        )}
-      />
+      <div className="soha-application-center-toolbar">
+        <div className="soha-application-group-tags">
+          {groupOptions.map((group) => (
+            <Tag
+              key={group}
+              className={`soha-application-group-tag ${activeGroup === group ? 'is-active' : ''}`}
+              variant="filled"
+              onClick={() => setActiveGroup(group)}
+            >
+              {group === 'all' ? '全部' : group}
+            </Tag>
+          ))}
+        </div>
+        <Button type="primary" icon={<PlusOutlined />} disabled={!managementState.canCreateApplication} onClick={openCreateApplication}>
+          新建应用
+        </Button>
+      </div>
 
-      <div className="soha-application-card-grid">
-          {visibleApplicationCards.length > 0 ? visibleApplicationCards.map(({ app, bindings, lastStatus, activeTargets, latestEnvironmentName }) => {
-            const defaultBuildSource = (app.buildSources ?? []).find((item) => item.isDefault)
+      {applicationsQuery.isLoading || releaseBoardQuery.isLoading ? (
+        <ManagementState kind="loading" />
+      ) : visibleApplicationCards.length > 0 ? (
+        <div className="soha-application-card-list">
+          {visibleApplicationCards.map(({ app, bindings, deliverySignal, gateSignal, activeTargets, latestEnvironmentName }) => {
+            const actionMenuItems: MenuProps['items'] = [
+              ...(managementState.canUpdateApplication ? [{ key: 'edit', icon: <EditOutlined />, label: '编辑' }] : []),
+              ...(managementState.canDeleteApplication ? [{ key: 'delete', danger: true, icon: <DeleteOutlined />, label: '删除' }] : []),
+            ]
             return (
               <Card
                 key={app.id}
                 className="soha-application-card"
                 hoverable
                 onClick={() => navigate(`/applications/${app.id}`)}
-                actions={[
-                  <Button key="detail" type="link" icon={<EyeOutlined />} onClick={(event) => { event.stopPropagation(); navigate(`/applications/${app.id}`) }}>进入应用</Button>,
-                ]}
               >
                 <div className="soha-application-card__header">
                   <div className="soha-application-card__title-wrap">
                     <div className="soha-application-card__title-row">
                       <h3 className="soha-application-card__title">{app.name}</h3>
-                      <StatusTag value={lastStatus} />
                     </div>
-                    <Text type="secondary">{summarizeApplicationRole(app)}</Text>
+                    <div className="soha-application-card__subline">
+                      <Text type="secondary">{summarizeApplicationRole(app)}</Text>
+                      <Tag>{app.enabled ? 'enabled' : 'disabled'}</Tag>
+                    </div>
                   </div>
-                  <div className="soha-application-card__meta-chip">
-                    <CodeOutlined />
-                    <span>{summarizeBuildSource(defaultBuildSource)}</span>
+                  <div className="soha-application-card__header-actions">
+                    {actionMenuItems.length > 0 ? (
+                      <Popconfirm
+                        title="确认删除应用？"
+                        description={deleteConfirmApp?.id === app.id ? `删除 ${app.name} 后不可恢复。` : undefined}
+                        open={deleteConfirmApp?.id === app.id}
+                        okText="删除"
+                        cancelText="取消"
+                        okButtonProps={{ danger: true }}
+                        placement="bottomRight"
+                        onCancel={(event) => {
+                          event?.stopPropagation()
+                          setDeleteConfirmApp(null)
+                        }}
+                        onConfirm={(event) => {
+                          event?.stopPropagation()
+                          managementState.deleteAppMutation.mutate(app.id)
+                          setDeleteConfirmApp(null)
+                        }}
+                        onOpenChange={(open) => {
+                          if (!open && deleteConfirmApp?.id === app.id) {
+                            setDeleteConfirmApp(null)
+                          }
+                        }}
+                      >
+                        <Dropdown
+                          trigger={['click']}
+                          placement="bottomRight"
+                          menu={{
+                            items: actionMenuItems,
+                            onClick: ({ key, domEvent }) => {
+                              domEvent.stopPropagation()
+                              if (key === 'edit') {
+                                openEditApplication(app)
+                              }
+                              if (key === 'delete') {
+                                setDeleteConfirmApp(app)
+                              }
+                            },
+                          }}
+                        >
+                          <Button
+                            aria-label={`${app.name} 操作`}
+                            className="soha-application-card__more"
+                            icon={<MoreOutlined />}
+                            size="small"
+                            type="text"
+                            onClick={(event) => event.stopPropagation()}
+                          />
+                        </Dropdown>
+                      </Popconfirm>
+                    ) : null}
                   </div>
+                </div>
+
+                <div className="soha-application-card__signals">
+                  <Tag color={deliverySignal.color}>{`交付: ${deliverySignal.label}`}</Tag>
+                  <Tag color={gateSignal.color}>{`门禁: ${gateSignal.label}`}</Tag>
                 </div>
 
                 <div className="soha-application-card__stats">
@@ -371,12 +440,14 @@ export function ApplicationsPage() {
                 </div>
               </Card>
             )
-          }) : (
-            <Card className="soha-application-empty-card">
-              <ManagementState bordered={false} compact description={activeGroup === 'all' ? '当前还没有应用，先创建第一个应用并接入仓库、构建来源和环境。' : '当前分组下还没有应用。'} />
-            </Card>
-          )}
-      </div>
+          })}
+        </div>
+      ) : (
+        <Card className="soha-application-empty-card">
+          <ManagementState bordered={false} compact title={activeGroup === 'all' ? '暂无应用' : '分组暂无应用'} description="" />
+        </Card>
+      )}
+      <ApplicationManagementModals state={managementState} />
     </div>
   )
 }
@@ -403,14 +474,11 @@ export function ApplicationDetailPage() {
         <Descriptions items={[
           { key: 'group', label: '分组', children: application?.group || '-' },
           { key: 'language', label: '语言', children: application?.language || '-' },
-          { key: 'repo', label: '仓库', children: application?.repositoryPath || '-' },
-          { key: 'branch', label: '默认分支', children: application?.defaultBranch || '-' },
           { key: 'status', label: '最近状态', children: <StatusTag value={detail?.latestRelease?.status || detail?.latestWorkflow?.status || detail?.latestBuild?.status || 'unknown'} /> },
         ]} />
       </Card>
-      <AdminTable
+      <DeliveryTable
         title="构建来源"
-        shellClassName="soha-management-table-shell"
         rowKey="id"
         pagination={false}
         dataSource={application?.buildSources ?? []}
@@ -423,9 +491,8 @@ export function ApplicationDetailPage() {
           { title: '启用', dataIndex: 'enabled', render: (value: boolean) => <BooleanTag value={value} /> },
         ]}
       />
-      <AdminTable
+      <DeliveryTable
         title="环境矩阵"
-        shellClassName="soha-management-table-shell"
         rowKey="applicationEnvironmentId"
         pagination={false}
         dataSource={detail?.bindings ?? []}
@@ -445,13 +512,13 @@ export function ApplicationDetailPage() {
             ...tableColumnPresets.action,
             title: '操作',
             dataIndex: 'applicationEnvironmentId',
-            render: (_: unknown, record: ApplicationBindingRow) => (
+            render: () => (
               <ManagementIconButton
-                aria-label="查看绑定"
+                aria-label="查看应用配置"
                 icon={<LinkOutlined />}
                 size="small"
-                tooltip="查看绑定"
-                onClick={() => navigate(`/application-environments/${record.applicationEnvironmentId}`)}
+                tooltip="应用配置"
+                onClick={() => navigate(`/applications/${applicationId ?? ''}`)}
               />
             ),
           },
@@ -505,27 +572,15 @@ export function BuildTemplatesPage() {
 
   return (
     <div className="soha-page">
-      <AdminTable
+      <DeliveryTable
         rowKey="id"
-        columnSettingIconOnly
-        columnSettingPlacement="header"
-        shellClassName="soha-management-table-shell"
-        title="构建模板"
-        headerExtra={(
-          <ManagementTableToolbar>
-            {canManage ? (
-              <Button icon={<PlusOutlined />} type="primary" onClick={() => { setEditing(null); setModalVisible(true) }}>
-                新建模板
-              </Button>
-            ) : null}
-            <ManagementRefreshButton
-              aria-label="刷新"
-              loading={templatesQuery.isFetching}
-              tooltip="刷新"
-              onClick={() => void templatesQuery.refetch()}
-            />
-          </ManagementTableToolbar>
-        )}
+        actions={canManage ? (
+          <Button icon={<PlusOutlined />} type="primary" onClick={() => { setEditing(null); setModalVisible(true) }}>
+            新建模板
+          </Button>
+        ) : null}
+        refreshing={templatesQuery.isFetching}
+        onRefresh={() => void templatesQuery.refetch()}
         loading={templatesQuery.isLoading}
         dataSource={templatesQuery.data?.data ?? []}
         columns={[
@@ -564,7 +619,6 @@ export function BuildTemplatesPage() {
             ),
           },
         ]}
-        scroll={{ x: 'max-content' }}
       />
       <Modal title={editing ? '编辑构建模板' : '新建构建模板'} open={modalVisible} onCancel={() => { setModalVisible(false); setEditing(null) }} footer={null} destroyOnHidden width={960}>
         <Form
@@ -751,21 +805,9 @@ export function WorkflowsPage() {
           ].filter(Boolean).join(' / ') || undefined}
         />
       ) : null}
-      <AdminTable
-        columnSettingIconOnly
-        columnSettingPlacement="header"
-        shellClassName="soha-management-table-shell"
-        title={t('page.delivery.workflows.title', 'Workflows')}
-        headerExtra={(
-          <ManagementTableToolbar>
-            <ManagementRefreshButton
-              aria-label={localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
-              loading={workflowsQuery.isFetching}
-              tooltip={localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
-              onClick={() => void workflowsQuery.refetch()}
-            />
-          </ManagementTableToolbar>
-        )}
+      <DeliveryTable
+        refreshing={workflowsQuery.isFetching}
+        onRefresh={() => void workflowsQuery.refetch()}
         columns={columns}
         dataSource={workflows}
         rowKey="id"
@@ -775,7 +817,6 @@ export function WorkflowsPage() {
           expandedRowRender: (record: WorkflowRun) => <WorkflowGatewayTracePanel run={record} />,
           onExpandedRowsChange: (keys: readonly Key[]) => setExpandedWorkflowRunIds(keys.map(String)),
         }}
-        scroll={{ x: 'max-content' }}
       />
     </div>
   )
@@ -786,38 +827,58 @@ export function ReleaseBundlesPage() {
     queryKey: ['release-bundles'],
     queryFn: () => api.get<ApiResponse<ReleaseBundle[]>>('/delivery/release-bundles'),
   })
+  const bundles = bundlesQuery.data?.data ?? []
+  const bundleSummary = useMemo(() => summarizeReleaseBundleStatus(bundles), [bundles])
 
   return (
     <div className="soha-page">
-      <AdminTable
+      <div className="soha-release-bundle-summary">
+        <Card className="soha-management-panel-card" size="small">
+          <Text type="secondary">候选版本</Text>
+          <strong>{bundleSummary.total}</strong>
+          <Text type="secondary">{bundleSummary.ready} 个可验证 / 可推广</Text>
+        </Card>
+        <Card className="soha-management-panel-card" size="small">
+          <Text type="secondary">阻塞版本</Text>
+          <strong>{bundleSummary.blocked}</strong>
+          <Text type="secondary">构建或发布失败</Text>
+        </Card>
+        <Card className="soha-management-panel-card" size="small">
+          <Text type="secondary">交付物</Text>
+          <strong>{bundleSummary.artifacts}</strong>
+          <Text type="secondary">镜像 / 包 / digest</Text>
+        </Card>
+        <Card className="soha-management-panel-card" size="small">
+          <Text type="secondary">缺少交付物</Text>
+          <strong>{bundleSummary.missingArtifacts}</strong>
+          <Text type="secondary">需要回填 artifact</Text>
+        </Card>
+      </div>
+      <DeliveryTable
         rowKey="id"
-        columnSettingIconOnly
-        columnSettingPlacement="header"
-        shellClassName="soha-management-table-shell"
-        title="版本包"
-        headerExtra={(
-          <ManagementTableToolbar>
-            <ManagementRefreshButton
-              aria-label="刷新"
-              loading={bundlesQuery.isFetching}
-              tooltip="刷新"
-              onClick={() => void bundlesQuery.refetch()}
-            />
-          </ManagementTableToolbar>
-        )}
+        refreshing={bundlesQuery.isFetching}
+        onRefresh={() => void bundlesQuery.refetch()}
         loading={bundlesQuery.isLoading}
-        dataSource={bundlesQuery.data?.data ?? []}
+        dataSource={bundles}
         columns={[
-          { title: 'Version', dataIndex: 'version' },
+          {
+            title: 'Version',
+            dataIndex: 'version',
+            render: (value: string, record: ReleaseBundle) => (
+              <Space orientation="vertical" size={0}>
+                <Text strong>{value}</Text>
+                <Text type="secondary">{record.id}</Text>
+              </Space>
+            ),
+          },
           { title: 'Application', dataIndex: 'applicationId' },
           { title: 'Environment Binding', dataIndex: 'applicationEnvironmentId', render: (value: string) => value || '-' },
           { title: 'Source', dataIndex: 'sourceType' },
-          { title: 'Artifact', dataIndex: 'artifactRef', render: (value: string) => value || '-' },
+          { title: 'Artifact', dataIndex: 'artifactRef', render: (_: unknown, record: ReleaseBundle) => summarizeReleaseBundleArtifact(record) },
           { title: 'Digest', dataIndex: 'artifactDigest', render: (value: string) => value || '-' },
           { title: 'Status', dataIndex: 'status', render: (value: string) => <StatusTag value={value} /> },
           { ...tableColumnPresets.datetime, title: 'Updated', dataIndex: 'updatedAt', render: (value: string) => formatDateTime(value) },
         ]}
-        scroll={{ x: 'max-content' }}
       />
     </div>
   )
@@ -882,34 +943,64 @@ export function ExecutionTasksPage() {
     },
     onError: (err: Error) => message.error(err.message),
   })
+  const executionTasks = tasksQuery.data?.data ?? []
+  const executionSummary = useMemo(() => summarizeExecutionTaskStatus(executionTasks), [executionTasks])
 
   return (
     <div className="soha-page">
-      <AdminTable
+      <div className="soha-execution-task-summary">
+        <Card className="soha-management-panel-card" size="small">
+          <Text type="secondary">任务总数</Text>
+          <strong>{executionSummary.total}</strong>
+          <Text type="secondary">{executionSummary.active} 个执行中</Text>
+        </Card>
+        <Card className="soha-management-panel-card" size="small">
+          <Text type="secondary">阻塞任务</Text>
+          <strong>{executionSummary.blocked}</strong>
+          <Text type="secondary">{executionSummary.retryable} 个可重试</Text>
+        </Card>
+        <Card className="soha-management-panel-card" size="small">
+          <Text type="secondary">交付物线索</Text>
+          <strong>{executionSummary.artifacts}</strong>
+          <Text type="secondary">来自任务结果</Text>
+        </Card>
+        <Card className="soha-management-panel-card" size="small">
+          <Text type="secondary">回调可用</Text>
+          <strong>{executionSummary.callbackReady}</strong>
+          <Text type="secondary">agent / callback token</Text>
+        </Card>
+      </div>
+      <DeliveryTable
         rowKey="id"
-        columnSettingIconOnly
-        columnSettingPlacement="header"
-        shellClassName="soha-management-table-shell"
-        title="执行任务"
-        headerExtra={(
-          <ManagementTableToolbar>
-            <ManagementRefreshButton
-              aria-label="刷新"
-              loading={tasksQuery.isFetching}
-              tooltip="刷新"
-              onClick={() => void tasksQuery.refetch()}
-            />
-          </ManagementTableToolbar>
-        )}
+        refreshing={tasksQuery.isFetching}
+        onRefresh={() => void tasksQuery.refetch()}
         loading={tasksQuery.isLoading}
-        dataSource={tasksQuery.data?.data ?? []}
+        dataSource={executionTasks}
         columns={[
-          { title: 'Task', dataIndex: 'taskKind' },
+          {
+            title: 'Task',
+            dataIndex: 'taskKind',
+            render: (value: string, record: ExecutionTask) => (
+              <Space orientation="vertical" size={0}>
+                <Text strong>{value}</Text>
+                <Text type="secondary">{record.id}</Text>
+              </Space>
+            ),
+          },
           { title: 'Provider', dataIndex: 'providerKind' },
           { title: 'Target', dataIndex: 'targetKind' },
-          { title: 'Application', dataIndex: 'applicationId' },
+          {
+            title: 'Application',
+            dataIndex: 'applicationId',
+            render: (value: string, record: ExecutionTask) => (
+              <Space orientation="vertical" size={0}>
+                <Text>{value}</Text>
+                <Text type="secondary">{record.applicationEnvironmentId || '-'}</Text>
+              </Space>
+            ),
+          },
           { title: 'Bundle', dataIndex: 'releaseBundleId', render: (value: string) => value || '-' },
-          { title: 'Artifacts', dataIndex: 'artifacts', render: (value?: ExecutionArtifact[]) => value?.length ?? 0 },
+          { title: 'Artifacts', dataIndex: 'artifacts', render: (value?: ExecutionArtifact[]) => summarizeExecutionTaskArtifacts(value) },
           { title: 'Status', dataIndex: 'status', render: (value: string) => <StatusTag value={value} /> },
           { title: 'Retries', dataIndex: 'attemptCount', render: (value: number, record: ExecutionTask) => `${value}/${record.maxRetries}` },
           { title: 'Timeout(s)', dataIndex: 'timeoutSeconds' },
@@ -961,7 +1052,6 @@ export function ExecutionTasksPage() {
             ),
           },
         ]}
-        scroll={{ x: 'max-content' }}
       />
       <Modal
         title={selectedTask ? `任务日志 · ${selectedTask.id}` : '任务日志'}
@@ -1065,27 +1155,15 @@ export function ApprovalPoliciesPage() {
 
   return (
     <div className="soha-page">
-      <AdminTable
+      <DeliveryTable
         rowKey="id"
-        columnSettingIconOnly
-        columnSettingPlacement="header"
-        shellClassName="soha-management-table-shell"
-        title="审批策略"
-        headerExtra={(
-          <ManagementTableToolbar>
-            {canManage ? (
-              <Button icon={<PlusOutlined />} type="primary" onClick={() => { setEditing(null); setModalVisible(true) }}>
-                新建策略
-              </Button>
-            ) : null}
-            <ManagementRefreshButton
-              aria-label="刷新"
-              loading={policiesQuery.isFetching}
-              tooltip="刷新"
-              onClick={() => void policiesQuery.refetch()}
-            />
-          </ManagementTableToolbar>
-        )}
+        actions={canManage ? (
+          <Button icon={<PlusOutlined />} type="primary" onClick={() => { setEditing(null); setModalVisible(true) }}>
+            新建策略
+          </Button>
+        ) : null}
+        refreshing={policiesQuery.isFetching}
+        onRefresh={() => void policiesQuery.refetch()}
         loading={policiesQuery.isLoading}
         dataSource={policiesQuery.data?.data ?? []}
         columns={[
@@ -1126,7 +1204,6 @@ export function ApprovalPoliciesPage() {
             ),
           },
         ]}
-        scroll={{ x: 'max-content' }}
       />
       <Modal title={editing ? '编辑审批策略' : '新建审批策略'} open={modalVisible} onCancel={() => { setModalVisible(false); setEditing(null) }} footer={null} destroyOnHidden width={860}>
         <Form

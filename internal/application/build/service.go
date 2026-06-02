@@ -283,8 +283,9 @@ func (s *Service) authorize(ctx context.Context, principal domainidentity.Princi
 			Name: resourceName,
 		},
 		Delivery: domainaccess.DeliveryAttributes{
-			BusinessLineID: app.BusinessLineID,
-			ApplicationID:  app.ID,
+			BusinessLineID:   app.BusinessLineID,
+			ApplicationGroup: app.Group,
+			ApplicationID:    app.ID,
 		},
 		Context: domainaccess.ContextAttributes{
 			Source:     requestctx.FromContext(ctx).Source,

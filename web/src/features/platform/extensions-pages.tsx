@@ -26,6 +26,7 @@ import {
   CloudDownloadOutlined,
   DeleteOutlined,
   EditOutlined,
+  EyeOutlined,
   HistoryOutlined,
   LinkOutlined,
   PlusOutlined,
@@ -220,14 +221,19 @@ function buildCRDApiGroupDetailPath(group: string) {
   return `/extensions/apis/${encodeURIComponent(group)}`
 }
 
-function buildHelmReleaseDetailPath(name: string, namespace?: string | null) {
+function buildHelmReleaseDetailPath(name: string, namespace?: string | null, extraParams?: Record<string, string | null | undefined>) {
   const encodedName = encodeURIComponent(name)
-  if (!namespace) {
-    return `/helm/releases/${encodedName}`
-  }
   const params = new URLSearchParams()
-  params.set('namespace', namespace)
-  return `/helm/releases/${encodedName}?${params.toString()}`
+  if (namespace) {
+    params.set('namespace', namespace)
+  }
+  for (const [key, value] of Object.entries(extraParams ?? {})) {
+    if (value) {
+      params.set(key, value)
+    }
+  }
+  const query = params.toString()
+  return query ? `/helm/releases/${encodedName}?${query}` : `/helm/releases/${encodedName}`
 }
 
 function getServedVersions(crd: CRD) {
@@ -1073,8 +1079,10 @@ export function HelmReleasesPage() {
   const { t, localeCode } = useI18n()
   const { clusterId, namespace } = usePlatformScopeStore()
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const [searchKeyword, setSearchKeyword] = useState('')
   const [tableSize, setTableSize] = useState<'small' | 'middle'>('small')
+  const [deletingReleaseKey, setDeletingReleaseKey] = useState<string | null>(null)
   const deferredSearchKeyword = useDeferredValue(searchKeyword)
   const normalizedKeyword = normalizeSearchKeyword(deferredSearchKeyword)
 
@@ -1083,6 +1091,23 @@ export function HelmReleasesPage() {
     queryFn: () => api.get<ApiResponse<HelmRelease[]>>(buildClusterScopedPath(clusterId!, 'helm/releases', namespace)),
     enabled: !!clusterId,
   })
+
+  const deleteReleaseMutation = useMutation({
+    mutationFn: (record: HelmRelease) => {
+      if (!clusterId) {
+        throw new Error(t('platformScope.clusterPlaceholder', 'Select cluster'))
+      }
+      return api.delete(`/clusters/${clusterId}/helm/releases/${encodeURIComponent(record.name)}?namespace=${encodeURIComponent(record.namespace)}`)
+    },
+    onMutate: (record) => setDeletingReleaseKey(`${record.namespace}/${record.name}`),
+    onSettled: () => setDeletingReleaseKey(null),
+    onSuccess: () => {
+      void message.success(localeCode === 'zh_CN' ? 'Helm Release 已删除' : 'Helm release deleted')
+      void queryClient.invalidateQueries({ queryKey: ['helm-releases', clusterId] })
+    },
+    onError: (err: Error) => void message.error(err.message),
+  })
+
   const rawItems = data?.data ?? []
   const filteredItems = useMemo(
     () => rawItems.filter((item) => includesSearch([
@@ -1123,6 +1148,55 @@ export function HelmReleasesPage() {
     },
     { title: 'App Version', dataIndex: 'appVersion' },
     { ...tableColumnPresets.datetime, title: 'Age', dataIndex: 'ageSeconds', render: (value: number) => formatAgeSeconds(value) },
+    {
+      title: '',
+      key: 'actions',
+      fixed: 'right',
+      align: 'center',
+      width: 116,
+      render: (_: unknown, record: HelmRelease) => {
+        const releaseKey = `${record.namespace}/${record.name}`
+        const canUpdate = hasAllowedAction(record.allowedActions, 'update')
+        const canDelete = hasAllowedAction(record.allowedActions, 'delete')
+        return (
+          <Space size={2} className="soha-row-action-icons" onClick={(event) => event.stopPropagation()}>
+            <ManagementIconButton
+              icon={<EyeOutlined />}
+              aria-label={localeCode === 'zh_CN' ? '查看 values.yaml' : 'View values.yaml'}
+              tooltip={localeCode === 'zh_CN' ? '查看 values.yaml' : 'View values.yaml'}
+              onClick={() => navigate(buildHelmReleaseDetailPath(record.name, record.namespace, { tab: 'values', mode: 'diff' }))}
+            />
+            {canUpdate ? (
+              <ManagementIconButton
+                icon={<EditOutlined />}
+                aria-label={localeCode === 'zh_CN' ? '编辑并比对 values.yaml' : 'Edit and compare values.yaml'}
+                tooltip={localeCode === 'zh_CN' ? '编辑并比对 values.yaml' : 'Edit and compare values.yaml'}
+                onClick={() => navigate(buildHelmReleaseDetailPath(record.name, record.namespace, { tab: 'values', mode: 'edit' }))}
+              />
+            ) : null}
+            {canDelete ? (
+              <Popconfirm
+                title={localeCode === 'zh_CN' ? '删除 Helm Release?' : 'Delete Helm release?'}
+                description={`${record.name} (${record.namespace})`}
+                okText={localeCode === 'zh_CN' ? '删除' : 'Delete'}
+                cancelText={t('common.cancel', 'Cancel')}
+                okButtonProps={{ danger: true, loading: deletingReleaseKey === releaseKey }}
+                placement="topRight"
+                onConfirm={() => deleteReleaseMutation.mutate(record)}
+              >
+                <ManagementIconButton
+                  danger
+                  icon={<DeleteOutlined />}
+                  aria-label={localeCode === 'zh_CN' ? '删除 Helm Release' : 'Delete Helm release'}
+                  loading={deletingReleaseKey === releaseKey}
+                  tooltip={localeCode === 'zh_CN' ? '删除 Helm Release' : 'Delete Helm release'}
+                />
+              </Popconfirm>
+            ) : null}
+          </Space>
+        )
+      },
+    },
   ]
 
   return (
@@ -1185,8 +1259,11 @@ export function HelmReleaseDetailPage() {
   const params = useParams()
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const releaseName = params.releaseName as string
   const detailNamespace = searchParams.get('namespace') || namespace || ''
+  const requestedTab = searchParams.get('tab') === 'history' ? 'history' : 'values'
+  const [activeTab, setActiveTab] = useState(requestedTab)
   const [valuesDraft, setValuesDraft] = useState('')
 
   const detailQuery = useQuery({
@@ -1213,6 +1290,31 @@ export function HelmReleaseDetailPage() {
     enabled: !!clusterId && !!detailNamespace,
   })
 
+  const updateValuesMutation = useMutation({
+    mutationFn: () => {
+      if (!clusterId || !detailNamespace) {
+        throw new Error(t('platformScope.clusterPlaceholder', 'Select cluster'))
+      }
+      return api.put<ApiResponse<HelmValues>>(
+        `/clusters/${clusterId}/helm/releases/${encodeURIComponent(releaseName)}/values?namespace=${encodeURIComponent(detailNamespace)}`,
+        { content: valuesDraft },
+      )
+    },
+    onSuccess: (response) => {
+      setValuesDraft(response.data.content)
+      void message.success(localeCode === 'zh_CN' ? 'values.yaml 已应用' : 'values.yaml applied')
+      void queryClient.invalidateQueries({ queryKey: ['helm-release-values', clusterId, detailNamespace, releaseName] })
+      void queryClient.invalidateQueries({ queryKey: ['helm-release-detail', clusterId, detailNamespace, releaseName] })
+      void queryClient.invalidateQueries({ queryKey: ['helm-release-history', clusterId, detailNamespace, releaseName] })
+      void queryClient.invalidateQueries({ queryKey: ['helm-releases', clusterId] })
+    },
+    onError: (err: Error) => void message.error(err.message),
+  })
+
+  useEffect(() => {
+    setActiveTab(requestedTab)
+  }, [requestedTab])
+
   useEffect(() => {
     setValuesDraft(valuesQuery.data?.data?.content ?? '')
   }, [valuesQuery.data?.data?.content])
@@ -1230,22 +1332,35 @@ export function HelmReleaseDetailPage() {
   const detail = detailQuery.data?.data
   const values = valuesQuery.data?.data
   const history = historyQuery.data?.data ?? []
+  const valuesOriginal = values?.original || values?.content || ''
+  const canEditValues = Boolean((values?.editable || detail?.valuesEditable) && hasAllowedAction(values?.allowedActions ?? detail?.allowedActions, 'update'))
+  const valuesChanged = valuesDraft !== valuesOriginal
 
   const tabs: TabsProps['items'] = [
     {
       key: 'values',
       label: 'values.yaml',
-      children: (
+      children: valuesQuery.isError ? (
+        <Alert
+          type="error"
+          showIcon
+          title={localeCode === 'zh_CN' ? 'values.yaml 加载失败' : 'Failed to load values.yaml'}
+          description={(valuesQuery.error as Error)?.message}
+        />
+      ) : (
         <YamlDraftDiffEditor
           title="values.yaml"
-          description={t('page.extensions.helm.valuesDesc', 'Review the current values.yaml, edit a local draft, and inspect a side-by-side diff before applying changes.')}
-          original={values?.original || values?.content || ''}
+          description={t('page.extensions.helm.valuesDesc', 'Edit the values.yaml draft on the left; compare it against the Helm runtime values on the right before applying changes.')}
+          original={valuesOriginal}
           modified={valuesDraft}
           onChange={setValuesDraft}
-          onReset={() => setValuesDraft(values?.original || values?.content || '')}
-          leftLabel={t('yamlDiffEditor.originalLabel', 'Original')}
-          rightLabel={t('yamlDiffEditor.modifiedLabel', 'Modified')}
-          editable={true}
+          onReset={() => setValuesDraft(valuesOriginal)}
+          onApply={canEditValues ? () => updateValuesMutation.mutate() : undefined}
+          applying={updateValuesMutation.isPending}
+          applyDisabled={!canEditValues || !valuesDraft.trim() || !valuesChanged || updateValuesMutation.isPending}
+          leftLabel={t('yamlDiffEditor.draftLabel', 'Values draft')}
+          rightLabel={t('yamlDiffEditor.runtimeLabel', 'Helm runtime values')}
+          editable={canEditValues}
           saveDisabled
         />
       ),
@@ -1326,7 +1441,7 @@ export function HelmReleaseDetailPage() {
             ) : null}
           </Card>
 
-          <Tabs items={tabs} />
+          <Tabs activeKey={activeTab} onChange={setActiveTab} items={tabs} />
         </>
       )}
     </div>
@@ -1357,6 +1472,63 @@ function defaultHelmReleaseName(chartName?: string) {
     .replace(/[^a-z0-9-]+/g, '-')
     .replace(/^-+|-+$/g, '')
   return normalized || 'release'
+}
+
+function retryHelmReleaseName(releaseName?: string, chartName?: string) {
+  const base = defaultHelmReleaseName(releaseName || chartName)
+  const suffix = new Date().toISOString().slice(11, 19).replace(/:/g, '')
+  const maxBaseLength = Math.max(1, 53 - suffix.length - 1)
+  return `${base.slice(0, maxBaseLength).replace(/-+$/g, '') || 'release'}-${suffix}`
+}
+
+function isHelmReleaseNameConflictError(message?: string) {
+  const normalized = (message || '').toLowerCase()
+  return normalized.includes('cannot re-use a name that is still in use') || normalized.includes('already used by helm release history')
+}
+
+function formatHelmInstallError(message: string, localeCode: string, target?: HelmChartInstallTarget | null) {
+  if (isHelmReleaseNameConflictError(message)) {
+    if (localeCode === 'zh_CN') {
+      return `Release "${target?.releaseName || '-'}" 在命名空间 "${target?.namespace || '-'}" 已有 Helm 记录。请换一个 Release 名，或先到 Helm Releases 清理已有 release 后重试。`
+    }
+    return `Release "${target?.releaseName || '-'}" in namespace "${target?.namespace || '-'}" already has Helm history. Choose another release name, or clean up the existing release in Helm Releases before retrying.`
+  }
+  return message
+}
+
+function normalizeHelmCompareValue(value?: string | null) {
+  return (value || '').trim().toLowerCase()
+}
+
+function isHelmReleaseDeployed(status?: string) {
+  return normalizeHelmCompareValue(status) === 'deployed'
+}
+
+function helmReleaseMatchesInstallTarget(release?: HelmReleaseDetail, target?: HelmChartInstallTarget | null) {
+  if (!release || !target) return false
+  if (normalizeHelmCompareValue(release.name) !== normalizeHelmCompareValue(target.releaseName)) return false
+  if (normalizeHelmCompareValue(release.namespace) !== normalizeHelmCompareValue(target.namespace)) return false
+  if (target.chartName && normalizeHelmCompareValue(release.chartName) !== normalizeHelmCompareValue(target.chartName)) return false
+  if (target.version && (release.chartVersion || '').trim() !== target.version.trim()) return false
+  return true
+}
+
+function mapObservedHelmReleaseToInstallResult(release: HelmReleaseDetail, localeCode: string): HelmChartInstallResult {
+  return {
+    name: release.name,
+    namespace: release.namespace,
+    revision: release.revision,
+    status: release.status,
+    chart: release.chart,
+    chartName: release.chartName,
+    chartVersion: release.chartVersion,
+    appVersion: release.appVersion,
+    description: release.description || (localeCode === 'zh_CN'
+      ? '检测到同名 Helm Release 已部署，本次安装请求已满足。'
+      : 'Detected an already deployed Helm release; this install request is already satisfied.'),
+    notes: release.notes,
+    resources: [],
+  }
 }
 
 function defaultHelmChartInstallForm(chart: HelmChart, namespace?: string | null): HelmChartInstallFormValues {
@@ -1430,6 +1602,7 @@ function formatHelmChartCount(value: number, localeCode: string) {
 export function HelmChartsPage() {
   const { t, localeCode } = useI18n()
   const { clusterId, namespace } = usePlatformScopeStore()
+  const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [installForm] = Form.useForm<HelmChartInstallFormValues>()
   const [searchKeyword, setSearchKeyword] = useState('')
@@ -1479,6 +1652,7 @@ export function HelmChartsPage() {
   const activeChart = detail ?? selectedChart
   const activeVersion = selectedVersion || activeChart?.latestVersion || ''
   const canInstallActiveChart = hasAllowedAction(activeChart?.allowedActions, 'create')
+  const installHasRecoverableConflict = isHelmReleaseNameConflictError(installError)
 
   const valuesQuery = useQuery({
     queryKey: ['helm-chart-values-template', clusterId, activeChart?.packageId, activeChart?.name, activeVersion],
@@ -1495,7 +1669,10 @@ export function HelmChartsPage() {
     queryFn: () => api.get<ApiResponse<HelmReleaseDetail>>(
       `/clusters/${clusterId}/helm/releases/${encodeURIComponent(installTarget!.releaseName)}/detail?namespace=${encodeURIComponent(installTarget!.namespace)}`,
     ),
-    enabled: !!clusterId && Boolean(installStartedAt && !installResult && !installError) && !!installTarget?.namespace && !!installTarget?.releaseName,
+    enabled: !!clusterId
+      && Boolean(installStartedAt && !installResult && (!installError || installHasRecoverableConflict))
+      && !!installTarget?.namespace
+      && !!installTarget?.releaseName,
     retry: false,
     refetchInterval: 5000,
   })
@@ -1554,6 +1731,16 @@ export function HelmChartsPage() {
     }, 1000)
     return () => window.clearInterval(timer)
   }, [installError, installResult, installStartedAt])
+
+  useEffect(() => {
+    const release = installReleaseQuery.data?.data
+    if (!release || installResult || !installError || !installHasRecoverableConflict) return
+    if (!helmReleaseMatchesInstallTarget(release, installTarget) || !isHelmReleaseDeployed(release.status)) return
+    const item = mapObservedHelmReleaseToInstallResult(release, localeCode)
+    setInstallResult(item)
+    setInstallError('')
+    void queryClient.invalidateQueries({ queryKey: ['helm-releases', clusterId] })
+  }, [clusterId, installError, installHasRecoverableConflict, installReleaseQuery.data?.data, installResult, installTarget, localeCode, queryClient])
 
   const errorMessage = chartsQuery.error instanceof Error ? chartsQuery.error.message : ''
   const emptyTitle = !clusterId
@@ -1669,49 +1856,63 @@ export function HelmChartsPage() {
       width: 112,
       fixed: 'right',
       align: 'center',
-      render: (_value, record) => (
-        <Space size={2}>
-          {record.artifactHubUrl ? (
-            <Button
+      render: (_value, record) => {
+        const openArtifactHubLabel = localeCode === 'zh_CN'
+          ? '打开 Artifact Hub 外部页面'
+          : 'Open Artifact Hub package page'
+        const viewChartLabel = localeCode === 'zh_CN'
+          ? '查看 Chart 详情、README 和默认 values'
+          : 'View chart details, README, and default values'
+        const installChartLabel = localeCode === 'zh_CN'
+          ? '安装 Chart 到当前集群'
+          : 'Install chart to the current cluster'
+        return (
+          <Space size={2} className="soha-row-action-icons">
+            {record.artifactHubUrl ? (
+              <ManagementIconButton
+                autoInsertSpace={false}
+                href={record.artifactHubUrl}
+                icon={<LinkOutlined />}
+                size="small"
+                target="_blank"
+                tooltip={openArtifactHubLabel}
+                title={openArtifactHubLabel}
+                aria-label={openArtifactHubLabel}
+                onClick={(event) => event.stopPropagation()}
+              />
+            ) : null}
+            <ManagementIconButton
               autoInsertSpace={false}
-              href={record.artifactHubUrl}
-              icon={<LinkOutlined />}
+              icon={<RocketOutlined />}
               size="small"
-              target="_blank"
-              type="text"
-              aria-label={localeCode === 'zh_CN' ? '打开 Artifact Hub' : 'Open Artifact Hub'}
-              onClick={(event) => event.stopPropagation()}
-            />
-          ) : null}
-          <Button
-            autoInsertSpace={false}
-            icon={<RocketOutlined />}
-            size="small"
-            type="text"
-            aria-label={localeCode === 'zh_CN' ? '预览并安装 Chart' : 'Preview and install chart'}
-            onClick={(event) => {
-              event.stopPropagation()
-              openChartDrawer(record)
-            }}
-          />
-          {hasAllowedAction(record.allowedActions, 'create') ? (
-            <Button
-              autoInsertSpace={false}
-              icon={<CloudDownloadOutlined />}
-              size="small"
-              type="text"
-              aria-label={localeCode === 'zh_CN' ? '安装 Chart' : 'Install chart'}
+              tooltip={viewChartLabel}
+              title={viewChartLabel}
+              aria-label={viewChartLabel}
               onClick={(event) => {
                 event.stopPropagation()
                 openChartDrawer(record)
-                setDrawerTabKey('install')
               }}
             />
-          ) : null}
-        </Space>
-      ),
+            {hasAllowedAction(record.allowedActions, 'create') ? (
+              <ManagementIconButton
+                autoInsertSpace={false}
+                icon={<CloudDownloadOutlined />}
+                size="small"
+                tooltip={installChartLabel}
+                title={installChartLabel}
+                aria-label={installChartLabel}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  openChartDrawer(record)
+                  setDrawerTabKey('install')
+                }}
+              />
+            ) : null}
+          </Space>
+        )
+      },
     },
-  ]
+	  ]
 
   const installResourceColumns: TableColumnsType<HelmChartInstallResource> = [
     { title: 'Kind', dataIndex: 'kind', width: 150 },
@@ -1722,12 +1923,14 @@ export function HelmChartsPage() {
 
   const observedInstallRelease = installReleaseQuery.data?.data
   const installInFlight = Boolean(installStartedAt && !installResult && !installError)
+  const installReleaseNameConflict = installHasRecoverableConflict
+  const installErrorDescription = installError ? formatHelmInstallError(installError, localeCode, installTarget) : ''
   const installStatusColor = installMutation.isPending
     ? 'processing'
     : installResult
       ? 'success'
       : installError
-        ? 'error'
+        ? (installReleaseNameConflict ? 'warning' : 'error')
         : 'default'
   const installStatusLabel = installMutation.isPending
     ? (localeCode === 'zh_CN' ? '安装中' : 'Installing')
@@ -2040,11 +2243,52 @@ export function HelmChartsPage() {
                               </Descriptions.Item>
                               <Descriptions.Item label={localeCode === 'zh_CN' ? '等待资源' : 'Wait for resources'}>
                                 {installTarget.wait
-                                  ? (installResult ? <Tag color="success">OK</Tag> : installError ? <Tag color="error">Failed</Tag> : <Tag color="processing">{localeCode === 'zh_CN' ? '等待中' : 'Waiting'}</Tag>)
+                                  ? (installResult
+                                      ? <Tag color="success">OK</Tag>
+                                      : installError
+                                        ? <Tag color={installReleaseNameConflict ? 'default' : 'error'}>{installReleaseNameConflict ? (localeCode === 'zh_CN' ? '未开始' : 'Not started') : 'Failed'}</Tag>
+                                        : <Tag color="processing">{localeCode === 'zh_CN' ? '等待中' : 'Waiting'}</Tag>)
                                   : <Tag>{localeCode === 'zh_CN' ? '未启用' : 'Disabled'}</Tag>}
                               </Descriptions.Item>
                             </Descriptions>
-                            {installError ? <Alert type="error" showIcon title={localeCode === 'zh_CN' ? '安装失败' : 'Install failed'} description={installError} /> : null}
+                            {installError ? (
+                              <Alert
+                                type={installReleaseNameConflict ? 'warning' : 'error'}
+                                showIcon
+                                title={installReleaseNameConflict ? (localeCode === 'zh_CN' ? 'Release 名已被占用' : 'Release name already in use') : (localeCode === 'zh_CN' ? '安装失败' : 'Install failed')}
+                                description={installErrorDescription}
+                                action={installReleaseNameConflict ? (
+                                  <Space size={6}>
+                                    <Button
+                                      autoInsertSpace={false}
+                                      size="small"
+                                      onClick={() => {
+                                        installForm.setFieldsValue({
+                                          releaseName: retryHelmReleaseName(installTarget.releaseName, installTarget.chartName),
+                                        })
+                                        setInstallTarget(null)
+                                        setInstallResult(null)
+                                        setInstallError('')
+                                        setInstallStartedAt(null)
+                                        setInstallElapsedSeconds(0)
+                                      }}
+                                    >
+                                      {localeCode === 'zh_CN' ? '换名重试' : 'Use new name'}
+                                    </Button>
+                                    <Button
+                                      autoInsertSpace={false}
+                                      size="small"
+                                      onClick={() => {
+                                        setSelectedChart(null)
+                                        navigate('/helm/releases')
+                                      }}
+                                    >
+                                      {localeCode === 'zh_CN' ? '查看 Releases' : 'View releases'}
+                                    </Button>
+                                  </Space>
+                                ) : undefined}
+                              />
+                            ) : null}
                             {installResult ? (
                               <Space orientation="vertical" size={10} style={{ width: '100%' }}>
                                 <Descriptions bordered column={1} size="small">

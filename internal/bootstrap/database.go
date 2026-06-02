@@ -82,7 +82,7 @@ type clusterCredentialSeed struct {
 // While the stored version matches this constant, the static seed block is
 // skipped entirely. Config-driven sync (admin user, clusters) runs separately
 // during startup so runtime config updates do not depend on replaying defaults.
-const bootstrapSeedVersion = "2026-05-31-ai-gateway-call-logs"
+const bootstrapSeedVersion = "2026-06-03-settings-menu-structure"
 
 const bootstrapSeedVersionKey = "bootstrap.seed_version"
 
@@ -107,6 +107,9 @@ func seedDefaults(ctx context.Context, store *dbinfra.Store, cfg cfgpkg.Config) 
 			return err
 		}
 		if err := seedMenus(ctx, tx, cfg.Modules); err != nil {
+			return err
+		}
+		if err := syncBuiltinMenuSeedUpgrades(ctx, tx); err != nil {
 			return err
 		}
 		if err := seedPolicies(ctx, tx); err != nil {
@@ -292,22 +295,20 @@ func defaultMenuSeeds() []menuSeed {
 		{ID: "approval-policies", Path: "/delivery/approval-policies", LabelZH: "审批策略", LabelEN: "Approval Policies", IconKey: "shield", Section: "deliver", SortOrder: 115, Enabled: true, Roles: []string{"admin", "ops"}},
 		{ID: "workflow-templates", Path: "/workflow-templates", LabelZH: "发布流程模板", LabelEN: "Workflow Templates", IconKey: "activity", Section: "deliver", SortOrder: 116, Enabled: true, Roles: []string{"admin", "ops"}},
 		{ID: "release-board", Path: "/release-board", LabelZH: "发布看板", LabelEN: "Release Board", IconKey: "activity", Section: "deliver", SortOrder: 117, Enabled: true, Roles: []string{"admin", "ops", "developer"}},
-		{ID: "business-lines", Path: "/business-lines", LabelZH: "业务线管理", LabelEN: "Business Lines", IconKey: "blocks", Section: "catalog", SortOrder: 210, Enabled: true, Roles: []string{"admin", "ops"}},
-		{ID: "delivery-environments", Path: "/delivery-environments", LabelZH: "环境管理", LabelEN: "Environments", IconKey: "blocks", Section: "catalog", SortOrder: 220, Enabled: true, Roles: []string{"admin", "ops"}},
 		{ID: "application-environments", Path: "/application-environments", LabelZH: "应用环境绑定", LabelEN: "Application Environment Bindings", IconKey: "blocks", Section: "deliver", SortOrder: 111, Enabled: true, Roles: []string{"admin", "ops", "developer"}},
 		{ID: "workflows", Path: "/workflows", LabelZH: "工作流", LabelEN: "Workflows", IconKey: "activity", Section: "deliver", SortOrder: 118, Enabled: true, Roles: []string{"admin", "ops", "developer"}},
 		{ID: "releases", Path: "/releases", LabelZH: "发布", LabelEN: "Releases", IconKey: "activity", Section: "deliver", SortOrder: 120, Enabled: true, Roles: []string{"admin", "ops", "developer"}},
 		{ID: "system", Path: "/system", LabelZH: "系统", LabelEN: "System", IconKey: "panels-top-left", Section: "admin", SortOrder: 225, Enabled: true},
 		{ID: "announcements", ParentID: "system", Path: "/system/announcements", LabelZH: "通知公告", LabelEN: "Announcements", IconKey: "megaphone", Section: "admin", SortOrder: 230, Enabled: true, Roles: []string{"admin"}},
 		{ID: "access", Path: "/access", LabelZH: "访问控制", LabelEN: "Access Control", IconKey: "shield", Section: "admin", SortOrder: 240, Enabled: true, Roles: []string{"admin"}},
-		{ID: "access-users", ParentID: "access", Path: "/access/users", LabelZH: "用户", LabelEN: "Users", IconKey: "shield", Section: "admin", SortOrder: 241, Enabled: true, Roles: []string{"admin"}},
-		{ID: "access-roles", ParentID: "access", Path: "/access/roles", LabelZH: "角色", LabelEN: "Roles", IconKey: "shield", Section: "admin", SortOrder: 242, Enabled: true, Roles: []string{"admin"}},
-		{ID: "access-teams", ParentID: "access", Path: "/access/teams", LabelZH: "用户组", LabelEN: "User Groups", IconKey: "shield", Section: "admin", SortOrder: 243, Enabled: true, Roles: []string{"admin"}},
-		{ID: "access-policies", ParentID: "access", Path: "/access/policies", LabelZH: "策略", LabelEN: "Policies", IconKey: "shield", Section: "admin", SortOrder: 244, Enabled: true, Roles: []string{"admin"}},
+		{ID: "access-users", Path: "/access/users", LabelZH: "用户", LabelEN: "Users", IconKey: "user", Section: "admin", SortOrder: 226, Enabled: true, Roles: []string{"admin"}},
+		{ID: "access-roles", Path: "/access/roles", LabelZH: "角色", LabelEN: "Roles", IconKey: "shield", Section: "admin", SortOrder: 227, Enabled: true, Roles: []string{"admin"}},
+		{ID: "access-teams", Path: "/access/teams", LabelZH: "用户组", LabelEN: "User Groups", IconKey: "users", Section: "admin", SortOrder: 228, Enabled: true, Roles: []string{"admin"}},
+		{ID: "access-policies", Path: "/access/policies", LabelZH: "策略", LabelEN: "Policies", IconKey: "shield", Section: "admin", SortOrder: 229, Enabled: true, Roles: []string{"admin"}},
 		{ID: "menus", ParentID: "system", Path: "/system/menus", LabelZH: "菜单管理", LabelEN: "Menu Management", IconKey: "menu-square", Section: "admin", SortOrder: 250, Enabled: true, Roles: []string{"admin"}},
 		{ID: "system-online-users", ParentID: "system", Path: "/system/online-users", LabelZH: "在线用户", LabelEN: "Online Users", IconKey: "users", Section: "admin", SortOrder: 256, Enabled: true, Roles: []string{"admin"}},
-		{ID: "operations", ParentID: "system", Path: "/system/operations", LabelZH: "操作", LabelEN: "Operations", IconKey: "clipboard-list", Section: "admin", SortOrder: 257, Enabled: true},
-		{ID: "audit", ParentID: "system", Path: "/system/audit", LabelZH: "审计", LabelEN: "Audit", IconKey: "file-clock", Section: "admin", SortOrder: 258, Enabled: true},
+		{ID: "operations", ParentID: "system", Path: "/system/operations", LabelZH: "操作日志", LabelEN: "Operation Logs", IconKey: "clipboard-list", Section: "admin", SortOrder: 257, Enabled: true},
+		{ID: "audit", ParentID: "system", Path: "/system/audit", LabelZH: "审计日志", LabelEN: "Audit Logs", IconKey: "file-clock", Section: "admin", SortOrder: 258, Enabled: true},
 		{ID: "registries", Path: "/registries", LabelZH: "镜像仓库", LabelEN: "Registry Connections", IconKey: "menu-square", Section: "deliver", SortOrder: 121, Enabled: true, Roles: []string{"admin", "ops"}},
 		{ID: "settings", Path: "/settings", LabelZH: "设置中心", LabelEN: "Settings Center", IconKey: "cog", Section: "admin", SortOrder: 260, Enabled: true, Roles: []string{"admin"}},
 		{ID: "settings-login", ParentID: "settings", Path: "/settings/login", LabelZH: "登陆设置", LabelEN: "Login Settings", IconKey: "shield", Section: "admin", SortOrder: 261, Enabled: true, Roles: []string{"admin"}},
@@ -336,6 +337,8 @@ func deprecatedMenuIDs() []string {
 		"assistant-tools",
 		"ai-workbench-gateway",
 		"events",
+		"business-lines",
+		"delivery-environments",
 	}
 }
 
@@ -392,6 +395,55 @@ func seedMenus(ctx context.Context, db *gorm.DB, modules cfgpkg.ModulesConfig) e
 	}
 	if len(roleBindingValues) > 0 {
 		if err := insertMenuRoleBindings(ctx, db, roleBindingValues, now); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func syncBuiltinMenuSeedUpgrades(ctx context.Context, db *gorm.DB) error {
+	now := time.Now().UTC()
+	accessItems := []struct {
+		id        string
+		iconKey   string
+		sortOrder int
+	}{
+		{id: "access-users", iconKey: "user", sortOrder: 226},
+		{id: "access-roles", iconKey: "shield", sortOrder: 227},
+		{id: "access-teams", iconKey: "users", sortOrder: 228},
+		{id: "access-policies", iconKey: "shield", sortOrder: 229},
+	}
+	for _, item := range accessItems {
+		if err := db.WithContext(ctx).Exec(`
+			UPDATE menus
+			SET parent_id = NULL,
+				icon_key = CASE WHEN icon_key = 'shield' THEN ? ELSE icon_key END,
+				sort_order = ?,
+				updated_at = ?
+			WHERE id = ? AND parent_id = 'access'
+		`, item.iconKey, item.sortOrder, now, item.id).Error; err != nil {
+			return err
+		}
+	}
+
+	labelUpdates := []struct {
+		id      string
+		oldZH   string
+		oldEN   string
+		labelZH string
+		labelEN string
+	}{
+		{id: "operations", oldZH: "操作", oldEN: "Operations", labelZH: "操作日志", labelEN: "Operation Logs"},
+		{id: "audit", oldZH: "审计", oldEN: "Audit", labelZH: "审计日志", labelEN: "Audit Logs"},
+	}
+	for _, item := range labelUpdates {
+		if err := db.WithContext(ctx).Exec(`
+			UPDATE menus
+			SET label_zh = ?,
+				label_en = ?,
+				updated_at = ?
+			WHERE id = ? AND label_zh = ? AND label_en = ?
+		`, item.labelZH, item.labelEN, now, item.id, item.oldZH, item.oldEN).Error; err != nil {
 			return err
 		}
 	}
@@ -463,8 +515,6 @@ func disabledModuleMenuIDs(items []menuSeed, modules cfgpkg.ModulesConfig) []str
 func isDeliveryMenuSeed(item menuSeed) bool {
 	return strings.HasPrefix(item.Path, "/applications") ||
 		strings.HasPrefix(item.Path, "/application-management") ||
-		strings.HasPrefix(item.Path, "/business-lines") ||
-		strings.HasPrefix(item.Path, "/delivery-environments") ||
 		strings.HasPrefix(item.Path, "/application-environments") ||
 		strings.HasPrefix(item.Path, "/build-templates") ||
 		strings.HasPrefix(item.Path, "/delivery/blueprints") ||

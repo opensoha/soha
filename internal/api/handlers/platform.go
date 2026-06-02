@@ -148,6 +148,8 @@ type ResourceService interface {
 	GetHelmReleaseDetail(context.Context, domainidentity.Principal, string, string, string) (domainresource.HelmReleaseDetailView, error)
 	ListHelmReleaseHistory(context.Context, domainidentity.Principal, string, string, string) ([]domainresource.HelmReleaseHistoryView, error)
 	GetHelmReleaseValues(context.Context, domainidentity.Principal, string, string, string, string) (domainresource.HelmValuesView, error)
+	UpdateHelmReleaseValues(context.Context, domainidentity.Principal, string, string, string, string) (domainresource.HelmValuesView, error)
+	DeleteHelmRelease(context.Context, domainidentity.Principal, string, string, string) error
 	ListClusterEvents(context.Context, domainidentity.Principal, string, string, int) ([]domainresource.ClusterEventView, error)
 	RestartDeployment(context.Context, domainidentity.Principal, string, string, string) error
 	RollbackDeployment(context.Context, domainidentity.Principal, string, string, string, string) (domainresource.DeploymentRollbackView, error)
@@ -1891,6 +1893,34 @@ func (h *PlatformHandler) GetHelmReleaseValues(c *gin.Context) {
 		return
 	}
 	apiresponse.Item(c, http.StatusOK, item)
+}
+
+func (h *PlatformHandler) UpdateHelmReleaseValues(c *gin.Context) {
+	var payload struct {
+		Content string `json:"content"`
+	}
+	if err := c.ShouldBindJSON(&payload); err != nil {
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid helm release values payload")
+		return
+	}
+	principal := apiMiddleware.PrincipalFromContext(c)
+	namespace := c.Query("namespace")
+	item, err := h.resources.UpdateHelmReleaseValues(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("releaseName"), payload.Content)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
+}
+
+func (h *PlatformHandler) DeleteHelmRelease(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	namespace := c.Query("namespace")
+	if err := h.resources.DeleteHelmRelease(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("releaseName")); err != nil {
+		writeError(c, err)
+		return
+	}
+	c.Status(http.StatusNoContent)
 }
 
 func (h *PlatformHandler) ListClusterEvents(c *gin.Context) {

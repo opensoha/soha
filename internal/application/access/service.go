@@ -164,7 +164,7 @@ func (s *Service) applyScopeGrantConstraint(ctx context.Context, request domaina
 		return domainaccess.Decision{}, err
 	}
 
-	if request.Delivery.BusinessLineID != "" || request.Delivery.EnvironmentKey != "" || request.Delivery.ApplicationID != "" {
+	if hasDeliveryScopeAttributes(request) {
 		return s.applyDeliveryScopeGrantConstraint(request, decision, roleMatrix, subjectGrants, envKeyMap), nil
 	}
 	if !shouldApplyPlatformScope(request) {
@@ -304,7 +304,7 @@ func matchedSubjectScopeGrants(grants []domainscopegrant.Record, request domaina
 }
 
 func grantMatchesDeliveryScope(grant domainscopegrant.Record, delivery domainaccess.DeliveryAttributes, envKeyMap map[string]string) bool {
-	if grant.BusinessLineID != delivery.BusinessLineID {
+	if !grantMatchesScopeKey(grant.BusinessLineID, delivery.BusinessLineID, delivery.ApplicationGroup) {
 		return false
 	}
 	if len(grant.EnvironmentIDs) > 0 {
@@ -326,7 +326,7 @@ func grantMatchesDeliveryScope(grant domainscopegrant.Record, delivery domainacc
 }
 
 func bindingMatchesScopeGrant(binding domaincatalog.ApplicationEnvironment, grant domainscopegrant.Record, envKeyMap map[string]string) bool {
-	if grant.BusinessLineID != binding.BusinessLineID {
+	if !grantMatchesScopeKey(grant.BusinessLineID, binding.BusinessLineID, binding.ApplicationGroup) {
 		return false
 	}
 	if len(grant.EnvironmentIDs) > 0 {
@@ -345,6 +345,36 @@ func bindingMatchesScopeGrant(binding domaincatalog.ApplicationEnvironment, gran
 		return false
 	}
 	return true
+}
+
+func grantMatchesScopeKey(scopeKey, businessLineID, applicationGroup string) bool {
+	scopeKey = strings.TrimSpace(scopeKey)
+	if scopeKey == "" {
+		return false
+	}
+	if scopeKey == strings.TrimSpace(businessLineID) {
+		return true
+	}
+	for _, group := range splitApplicationGroups(applicationGroup) {
+		if scopeKey == group {
+			return true
+		}
+	}
+	return false
+}
+
+func splitApplicationGroups(value string) []string {
+	items := strings.FieldsFunc(value, func(r rune) bool {
+		return r == ',' || r == '，' || r == ';' || r == '；' || r == '/'
+	})
+	groups := make([]string, 0, len(items))
+	for _, item := range items {
+		item = strings.TrimSpace(item)
+		if item != "" {
+			groups = append(groups, item)
+		}
+	}
+	return groups
 }
 
 func shouldApplyPlatformScope(request domainaccess.Request) bool {
@@ -421,7 +451,12 @@ func isClusterlessDeliveryRequest(request domainaccess.Request) bool {
 	if strings.TrimSpace(request.Cluster.ClusterID) != "" {
 		return false
 	}
+	return hasDeliveryScopeAttributes(request)
+}
+
+func hasDeliveryScopeAttributes(request domainaccess.Request) bool {
 	return strings.TrimSpace(request.Delivery.BusinessLineID) != "" ||
+		strings.TrimSpace(request.Delivery.ApplicationGroup) != "" ||
 		strings.TrimSpace(request.Delivery.EnvironmentKey) != "" ||
 		strings.TrimSpace(request.Delivery.ApplicationID) != ""
 }

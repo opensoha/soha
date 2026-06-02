@@ -755,7 +755,7 @@ export function ClusterDetailPage() {
   }
 
   return (
-    <div className="soha-page">
+    <div className="soha-page soha-cluster-detail-page">
       <ManagementDetailHeader
         title={`${localeCode === 'zh_CN' ? '集群详情' : 'Cluster Detail'}: ${summary.name}`}
         description={localeCode === 'zh_CN' ? '查看集群标签、版本、连接方式和运行诊断信息。' : 'Inspect cluster labels, version, connectivity, and runtime diagnostics.'}
@@ -784,9 +784,10 @@ export function ClusterDetailPage() {
         )}
       />
 
-      <div className="grid gap-4 xl:grid-cols-2">
+      <div className="soha-cluster-detail-grid">
         <Card className="soha-detail-card" title={localeCode === 'zh_CN' ? '基础信息' : 'Summary'}>
           <Descriptions
+            size="small"
             items={[
               { key: localeCode === 'zh_CN' ? '名称' : 'Name', label: localeCode === 'zh_CN' ? '名称' : 'Name', children: summary.name },
               { key: localeCode === 'zh_CN' ? '状态' : 'Status', label: localeCode === 'zh_CN' ? '状态' : 'Status', children: <StatusTag value={summary.health?.status ?? 'unknown'} /> },
@@ -794,7 +795,7 @@ export function ClusterDetailPage() {
               { key: localeCode === 'zh_CN' ? '类型' : 'Type', label: localeCode === 'zh_CN' ? '类型' : 'Type', children: formatClusterType(clusterTypeOf(summary), localeCode) },
               { key: 'Environment', label: 'Environment', children: summary.environment || '-' },
               { key: localeCode === 'zh_CN' ? '连接方式' : 'Mode', label: localeCode === 'zh_CN' ? '连接方式' : 'Mode', children: summary.connectionMode || '-' },
-              { key: localeCode === 'zh_CN' ? '最近检查' : 'Last Checked', label: localeCode === 'zh_CN' ? '最近检查' : 'Last Checked', children: summary.health?.lastChecked || '-' },
+              { key: localeCode === 'zh_CN' ? '最近检查' : 'Last Checked', label: localeCode === 'zh_CN' ? '最近检查' : 'Last Checked', children: summary.health?.lastChecked ? formatDateTime(summary.health.lastChecked) : '-' },
               { key: localeCode === 'zh_CN' ? '状态信息' : 'Message', label: localeCode === 'zh_CN' ? '状态信息' : 'Message', children: summary.health?.message || '-' },
             ]}
           />
@@ -826,6 +827,7 @@ export function ClusterDetailPage() {
 
         <Card className="soha-detail-card" title={localeCode === 'zh_CN' ? '连接与诊断' : 'Connection & Diagnostics'}>
           <Descriptions
+            size="small"
             items={[
               { key: localeCode === 'zh_CN' ? '连接模式' : 'Connection Mode', label: localeCode === 'zh_CN' ? '连接模式' : 'Connection Mode', children: detail.connection.mode || '-' },
               { key: localeCode === 'zh_CN' ? '凭据类型' : 'Credential Type', label: localeCode === 'zh_CN' ? '凭据类型' : 'Credential Type', children: detail.connection.credentialType || '-' },
@@ -844,6 +846,7 @@ export function ClusterDetailPage() {
 
       <Card className="soha-detail-card" title={localeCode === 'zh_CN' ? '监控配置' : 'Monitoring'}>
         <Descriptions
+          size="small"
           items={[
             { key: localeCode === 'zh_CN' ? 'Prometheus URL' : 'Prometheus URL', label: localeCode === 'zh_CN' ? 'Prometheus URL' : 'Prometheus URL', children: detail.monitoring.prometheus.baseUrl || '-' },
             { key: localeCode === 'zh_CN' ? 'Prometheus Cluster Label' : 'Prometheus Cluster Label', label: localeCode === 'zh_CN' ? 'Prometheus Cluster Label' : 'Prometheus Cluster Label', children: detail.monitoring.prometheus.clusterLabel || '-' },
@@ -854,13 +857,6 @@ export function ClusterDetailPage() {
       </Card>
 
       <Card className="soha-detail-card" title={localeCode === 'zh_CN' ? '节点快照' : 'Node Snapshot'}>
-        <div className="soha-detail-meta">
-          <Text type="secondary">
-            {localeCode === 'zh_CN'
-              ? '点击节点可进入独立详情页，继续查看污点、YAML、Labels 和承载 Pod。'
-              : 'Open a node to inspect taints, YAML, labels, and scheduled pods in a dedicated workspace.'}
-          </Text>
-        </div>
         {nodesQuery.isError ? (
           <ManagementState
             compact

@@ -94,7 +94,8 @@ func (s *Service) List(ctx context.Context, principal domainidentity.Principal, 
 		return nil, err
 	}
 	if strings.TrimSpace(filter.ClusterID) != "" {
-		if err := s.authorize(ctx, principal, filter.ClusterID, "", "Release", filter.ApplicationID, "", filter.ApplicationID, domainaccess.ActionList); err != nil {
+		businessLineID, applicationGroup := s.lookupApplicationScope(ctx, filter.ApplicationID)
+		if err := s.authorize(ctx, principal, filter.ClusterID, "", "Release", filter.ApplicationID, businessLineID, applicationGroup, filter.ApplicationID, domainaccess.ActionList); err != nil {
 			return nil, err
 		}
 	}
@@ -129,7 +130,7 @@ func (s *Service) List(ctx context.Context, principal domainidentity.Principal, 
 		if appErr != nil {
 			continue
 		}
-		if err := s.authorize(ctx, principal, item.ClusterID, item.Namespace, "Release", item.DeploymentName, app.BusinessLineID, item.ApplicationID, domainaccess.ActionList); err != nil {
+		if err := s.authorize(ctx, principal, item.ClusterID, item.Namespace, "Release", item.DeploymentName, app.BusinessLineID, app.Group, item.ApplicationID, domainaccess.ActionList); err != nil {
 			continue
 		}
 		allowed = append(allowed, item)
@@ -171,7 +172,7 @@ func (s *Service) Trigger(ctx context.Context, principal domainidentity.Principa
 	if strings.TrimSpace(target.WorkloadKind) != "" {
 		resourceKind = strings.TrimSpace(target.WorkloadKind)
 	}
-	if err := s.authorize(ctx, principal, connection.Summary.ID, input.Namespace, resourceKind, input.DeploymentName, app.BusinessLineID, input.ApplicationID, domainaccess.ActionTrigger); err != nil {
+	if err := s.authorize(ctx, principal, connection.Summary.ID, input.Namespace, resourceKind, input.DeploymentName, app.BusinessLineID, app.Group, input.ApplicationID, domainaccess.ActionTrigger); err != nil {
 		return domainrelease.Record{}, err
 	}
 
@@ -727,6 +728,17 @@ func (s *Service) applicationExists(ctx context.Context, applicationID string) (
 	return false, normalized
 }
 
+func (s *Service) lookupApplicationScope(ctx context.Context, applicationID string) (string, string) {
+	if s.apps == nil || strings.TrimSpace(applicationID) == "" {
+		return "", ""
+	}
+	app, err := s.apps.Get(ctx, strings.TrimSpace(applicationID))
+	if err != nil {
+		return "", ""
+	}
+	return app.BusinessLineID, app.Group
+}
+
 func (s *Service) pruneReleaseRecords(ctx context.Context, ids []string) {
 	if len(ids) == 0 {
 		return
@@ -775,7 +787,7 @@ func uniqueStrings(values []string) []string {
 	return out
 }
 
-func (s *Service) authorize(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, kind, name, businessLineID, applicationID string, action domainaccess.Action) error {
+func (s *Service) authorize(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, kind, name, businessLineID, applicationGroup, applicationID string, action domainaccess.Action) error {
 	if s.authorizer == nil {
 		return nil
 	}
@@ -802,9 +814,10 @@ func (s *Service) authorize(ctx context.Context, principal domainidentity.Princi
 		Namespace: domainaccess.NamespaceAttributes{Namespace: namespace},
 		Resource:  domainaccess.ResourceAttributes{Kind: kind, Name: name, Owner: name},
 		Delivery: domainaccess.DeliveryAttributes{
-			BusinessLineID: strings.TrimSpace(businessLineID),
-			EnvironmentKey: strings.TrimSpace(connection.Summary.Environment),
-			ApplicationID:  strings.TrimSpace(applicationID),
+			BusinessLineID:   strings.TrimSpace(businessLineID),
+			ApplicationGroup: strings.TrimSpace(applicationGroup),
+			EnvironmentKey:   strings.TrimSpace(connection.Summary.Environment),
+			ApplicationID:    strings.TrimSpace(applicationID),
 		},
 		Context: domainaccess.ContextAttributes{
 			Source:     requestctx.FromContext(ctx).Source,

@@ -4,14 +4,12 @@ import { ArrowRightOutlined, DeleteOutlined, EditOutlined, PlayCircleOutlined, P
 import type { TableColumnsType } from 'antd'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate, useParams } from 'react-router-dom'
-import { AdminTable } from '@/components/admin-table'
 import {
   ManagementDetailHeader,
   ManagementIconButton,
   ManagementState,
-  ManagementRefreshButton,
-  ManagementTableToolbar,
 } from '@/components/management-list'
+import { DeliveryTable } from '@/features/delivery/delivery-table'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth/permission-snapshot'
 import { useI18n } from '@/i18n'
 import {
@@ -24,7 +22,12 @@ import { BooleanTag, StatusTag } from '@/components/status-tag'
 import { api } from '@/services/api-client'
 import { formatDateTime } from '@/utils/time'
 import { tableColumnPresets } from '@/utils/table-columns'
-import type { ApiResponse, ApplicationEnvironment, BusinessLine, BuildSource, DeliveryApplication, DeliveryApplicationEnvironmentDetail, DeliveryEnvironment, DeliveryTargetCandidate, ReleaseBoardEntry, WorkflowRun, WorkflowTemplate } from '@/types'
+import {
+  releaseBoardArtifactCount,
+  releaseBoardQualitySignal,
+  summarizeReleaseBoard,
+} from '@/features/delivery/delivery-status'
+import type { ApiResponse, ApplicationEnvironment, BuildSource, DeliveryApplication, DeliveryApplicationEnvironmentDetail, DeliveryTargetCandidate, ReleaseBoardEntry, WorkflowRun, WorkflowTemplate } from '@/types'
 
 function parseJSONObject(raw: unknown, field: string) {
   const value = typeof raw === 'string' ? raw.trim() : ''
@@ -38,6 +41,22 @@ function parseJSONObject(raw: unknown, field: string) {
   } catch {
     throw new Error(`${field} 需要是合法 JSON 对象`)
   }
+}
+
+function applicationEnvironmentLabel(binding: Pick<ApplicationEnvironment, 'environmentKey' | 'environmentId'>) {
+  return binding.environmentKey || binding.environmentId || '-'
+}
+
+function normalizeEnvironmentFormValue(value: unknown) {
+  if (Array.isArray(value)) {
+    return String(value[0] || '').trim()
+  }
+  return String(value || '').trim()
+}
+
+function initialEnvironmentFormValue(binding: Pick<ApplicationEnvironment, 'environmentKey' | 'environmentId'>) {
+  const label = applicationEnvironmentLabel(binding)
+  return label === '-' ? [] : [label]
 }
 
 interface BuildRecord {
@@ -134,331 +153,7 @@ function summarizeLatestActivity(localeCode: 'zh_CN' | 'en_US', build?: BuildRec
   return localeCode === 'zh_CN' ? '暂无执行记录' : 'No execution history'
 }
 
-export function BusinessLinesPage() {
-  const { t } = useI18n()
-  const { message } = App.useApp()
-  const queryClient = useQueryClient()
-  const permissionSnapshotQuery = usePermissionSnapshot()
-  const [form] = Form.useForm<Record<string, unknown>>()
-  const [modalVisible, setModalVisible] = useState(false)
-  const [editing, setEditing] = useState<BusinessLine | null>(null)
-  const canManageBusinessLines = hasPermission(permissionSnapshotQuery.data?.data, 'delivery.business-lines.manage')
-
-  const { data, isFetching, isLoading, refetch } = useQuery({
-    queryKey: ['business-lines'],
-    queryFn: () => api.get<ApiResponse<BusinessLine[]>>('/business-lines'),
-  })
-
-  const createMutation = useMutation({
-    mutationFn: (values: Record<string, unknown>) => api.post('/business-lines', values),
-    onSuccess: () => {
-      message.success('业务线创建成功')
-      queryClient.invalidateQueries({ queryKey: ['business-lines'] })
-      setModalVisible(false)
-    },
-    onError: (err: Error) => message.error(err.message),
-  })
-
-  const updateMutation = useMutation({
-    mutationFn: ({ id, values }: { id: string; values: Record<string, unknown> }) => api.put(`/business-lines/${id}`, values),
-    onSuccess: () => {
-      message.success('业务线更新成功')
-      queryClient.invalidateQueries({ queryKey: ['business-lines'] })
-      setModalVisible(false)
-      setEditing(null)
-    },
-    onError: (err: Error) => message.error(err.message),
-  })
-
-  const deleteMutation = useMutation({
-    mutationFn: (id: string) => api.delete(`/business-lines/${id}`),
-    onSuccess: () => {
-      message.success('业务线已删除')
-      queryClient.invalidateQueries({ queryKey: ['business-lines'] })
-    },
-    onError: (err: Error) => message.error(err.message),
-  })
-
-  const columns: ColumnProps<BusinessLine>[] = [
-    { title: '名称', dataIndex: 'name' },
-    { title: 'Key', dataIndex: 'key' },
-    { title: '描述', dataIndex: 'description', ellipsis: true },
-    {
-      title: 'Owners',
-      dataIndex: 'owners',
-      render: (owners: string[]) => owners?.map((item) => <Tag key={item}>{item}</Tag>) ?? '-',
-    },
-    { title: '排序', dataIndex: 'sortOrder' },
-    { title: '启用', dataIndex: 'enabled', render: (value: boolean) => <BooleanTag value={value} /> },
-    { ...tableColumnPresets.datetime, title: '更新时间', dataIndex: 'updatedAt', render: (value: string) => formatDateTime(value) },
-    {
-      ...tableColumnPresets.action,
-      title: '操作',
-      dataIndex: 'id',
-      render: (_: unknown, record: BusinessLine) => (
-        <Space className="soha-row-action-icons" size={2}>
-          {canManageBusinessLines ? (
-            <ManagementIconButton
-              aria-label="编辑业务线"
-              icon={<EditOutlined />}
-              size="small"
-              tooltip="编辑"
-              onClick={() => { setEditing(record); setModalVisible(true) }}
-            />
-          ) : null}
-          {canManageBusinessLines ? (
-            <Popconfirm title="确认删除？" onConfirm={() => deleteMutation.mutate(record.id)} placement="topRight">
-              <ManagementIconButton
-                aria-label="删除业务线"
-                danger
-                icon={<DeleteOutlined />}
-                size="small"
-                tooltip="删除"
-              />
-            </Popconfirm>
-          ) : null}
-          {!canManageBusinessLines ? '-' : null}
-        </Space>
-      ),
-    },
-  ]
-
-  return (
-    <div className="soha-page">
-      <AdminTable
-        columnSettingIconOnly
-        columnSettingPlacement="header"
-        shellClassName="soha-management-table-shell"
-        title={t('page.delivery.businessLines.title', 'Business Lines')}
-        headerExtra={(
-          <ManagementTableToolbar>
-            {canManageBusinessLines ? (
-              <Button icon={<PlusOutlined />} type="primary" onClick={() => { setEditing(null); setModalVisible(true) }}>
-                新建业务线
-              </Button>
-            ) : null}
-            <ManagementRefreshButton
-              aria-label="刷新"
-              loading={isFetching}
-              tooltip="刷新"
-              onClick={() => void refetch()}
-            />
-          </ManagementTableToolbar>
-        )}
-        columns={columns}
-        dataSource={data?.data ?? []}
-        rowKey="id"
-        loading={isLoading}
-        scroll={{ x: 'max-content' }}
-      />
-      <Modal title={editing ? '编辑业务线' : '新建业务线'} open={modalVisible} onCancel={() => { setModalVisible(false); setEditing(null) }} footer={null} destroyOnHidden>
-        <Form
-          form={form}
-          key={editing?.id ?? 'create-business-line'}
-          layout="vertical"
-          onFinish={(values) => {
-            const payload = {
-              ...values,
-              owners: String(values.owners ?? '').split(',').map((item) => item.trim()).filter(Boolean),
-            }
-            if (editing) {
-              updateMutation.mutate({ id: editing.id, values: payload })
-            } else {
-              createMutation.mutate(payload)
-            }
-          }}
-          initialValues={editing ? { ...editing, owners: editing.owners?.join(', ') } : { enabled: true, sortOrder: 0 }}
-        >
-          <Form.Item name="key" label="业务线 Key" rules={[{ required: true, message: '请输入业务线 Key' }]}>
-            <Input />
-          </Form.Item>
-          <Form.Item name="name" label="业务线名称" rules={[{ required: true, message: '请输入业务线名称' }]}>
-            <Input />
-          </Form.Item>
-          <Form.Item name="description" label="描述">
-            <Input />
-          </Form.Item>
-          <Form.Item name="owners" label="Owners">
-            <Input placeholder="alice,bob" />
-          </Form.Item>
-          <Form.Item name="sortOrder" label="排序">
-            <InputNumber style={{ width: '100%' }} />
-          </Form.Item>
-          <Form.Item name="enabled" label="启用" valuePropName="checked">
-            <Switch />
-          </Form.Item>
-          <div className="soha-form-actions">
-            <Button onClick={() => setModalVisible(false)}>取消</Button>
-            <Button htmlType="submit" type="primary" loading={createMutation.isPending || updateMutation.isPending}>
-              {editing ? '更新' : '创建'}
-            </Button>
-          </div>
-        </Form>
-      </Modal>
-    </div>
-  )
-}
-
-export function DeliveryEnvironmentsPage() {
-  const { t } = useI18n()
-  const { message } = App.useApp()
-  const queryClient = useQueryClient()
-  const permissionSnapshotQuery = usePermissionSnapshot()
-  const [form] = Form.useForm<Record<string, unknown>>()
-  const [modalVisible, setModalVisible] = useState(false)
-  const [editing, setEditing] = useState<DeliveryEnvironment | null>(null)
-  const canManageEnvironments = hasPermission(permissionSnapshotQuery.data?.data, 'delivery.environments.manage')
-
-  const { data, isFetching, isLoading, refetch } = useQuery({
-    queryKey: ['delivery-environments'],
-    queryFn: () => api.get<ApiResponse<DeliveryEnvironment[]>>('/delivery-environments'),
-  })
-
-  const createMutation = useMutation({
-    mutationFn: (values: Record<string, unknown>) => api.post('/delivery-environments', values),
-    onSuccess: () => {
-      message.success('环境创建成功')
-      queryClient.invalidateQueries({ queryKey: ['delivery-environments'] })
-      setModalVisible(false)
-    },
-    onError: (err: Error) => message.error(err.message),
-  })
-
-  const updateMutation = useMutation({
-    mutationFn: ({ id, values }: { id: string; values: Record<string, unknown> }) => api.put(`/delivery-environments/${id}`, values),
-    onSuccess: () => {
-      message.success('环境更新成功')
-      queryClient.invalidateQueries({ queryKey: ['delivery-environments'] })
-      setModalVisible(false)
-      setEditing(null)
-    },
-    onError: (err: Error) => message.error(err.message),
-  })
-
-  const deleteMutation = useMutation({
-    mutationFn: (id: string) => api.delete(`/delivery-environments/${id}`),
-    onSuccess: () => {
-      message.success('环境已删除')
-      queryClient.invalidateQueries({ queryKey: ['delivery-environments'] })
-    },
-    onError: (err: Error) => message.error(err.message),
-  })
-
-  const columns: ColumnProps<DeliveryEnvironment>[] = [
-    { title: '名称', dataIndex: 'name' },
-    { title: 'Key', dataIndex: 'key' },
-    { title: 'Tier', dataIndex: 'tier' },
-    { title: 'Stage', dataIndex: 'stageLevel' },
-    { title: '排序', dataIndex: 'sortOrder' },
-    { title: '生产', dataIndex: 'isProduction', render: (value: boolean) => <BooleanTag value={value} /> },
-    { title: '需审批', dataIndex: 'requiresApproval', render: (value: boolean) => <BooleanTag value={value} /> },
-    { title: '启用', dataIndex: 'enabled', render: (value: boolean) => <BooleanTag value={value} /> },
-    {
-      ...tableColumnPresets.action,
-      title: '操作',
-      dataIndex: 'id',
-      render: (_: unknown, record: DeliveryEnvironment) => (
-        <Space className="soha-row-action-icons" size={2}>
-          {canManageEnvironments ? (
-            <ManagementIconButton
-              aria-label="编辑环境"
-              icon={<EditOutlined />}
-              size="small"
-              tooltip="编辑"
-              onClick={() => { setEditing(record); setModalVisible(true) }}
-            />
-          ) : null}
-          {canManageEnvironments ? (
-            <Popconfirm title="确认删除？" onConfirm={() => deleteMutation.mutate(record.id)} placement="topRight">
-              <ManagementIconButton
-                aria-label="删除环境"
-                danger
-                icon={<DeleteOutlined />}
-                size="small"
-                tooltip="删除"
-              />
-            </Popconfirm>
-          ) : null}
-          {!canManageEnvironments ? '-' : null}
-        </Space>
-      ),
-    },
-  ]
-
-  return (
-    <div className="soha-page">
-      <AdminTable
-        columnSettingIconOnly
-        columnSettingPlacement="header"
-        shellClassName="soha-management-table-shell"
-        title={t('page.delivery.environments.title', 'Environments')}
-        headerExtra={(
-          <ManagementTableToolbar>
-            {canManageEnvironments ? (
-              <Button icon={<PlusOutlined />} type="primary" onClick={() => { setEditing(null); setModalVisible(true) }}>
-                新建环境
-              </Button>
-            ) : null}
-            <ManagementRefreshButton
-              aria-label="刷新"
-              loading={isFetching}
-              tooltip="刷新"
-              onClick={() => void refetch()}
-            />
-          </ManagementTableToolbar>
-        )}
-        columns={columns}
-        dataSource={data?.data ?? []}
-        rowKey="id"
-        loading={isLoading}
-        scroll={{ x: 'max-content' }}
-      />
-      <Modal title={editing ? '编辑环境' : '新建环境'} open={modalVisible} onCancel={() => { setModalVisible(false); setEditing(null) }} footer={null} destroyOnHidden>
-        <Form form={form} key={editing?.id ?? 'create-environment'} layout="vertical" onFinish={(values) => {
-          if (editing) {
-            updateMutation.mutate({ id: editing.id, values })
-          } else {
-            createMutation.mutate(values)
-          }
-        }} initialValues={editing ?? { enabled: true, sortOrder: 0, stageLevel: 0, isProduction: false, requiresApproval: false }}>
-          <Form.Item name="key" label="环境 Key" rules={[{ required: true, message: '请输入环境 Key' }]}>
-            <Input />
-          </Form.Item>
-          <Form.Item name="name" label="环境名称" rules={[{ required: true, message: '请输入环境名称' }]}>
-            <Input />
-          </Form.Item>
-          <Form.Item name="tier" label="Tier">
-            <Input />
-          </Form.Item>
-          <Form.Item name="stageLevel" label="Stage Level">
-            <InputNumber style={{ width: '100%' }} />
-          </Form.Item>
-          <Form.Item name="sortOrder" label="排序">
-            <InputNumber style={{ width: '100%' }} />
-          </Form.Item>
-          <Form.Item name="isProduction" label="生产环境" valuePropName="checked">
-            <Switch />
-          </Form.Item>
-          <Form.Item name="requiresApproval" label="发布需审批" valuePropName="checked">
-            <Switch />
-          </Form.Item>
-          <Form.Item name="enabled" label="启用" valuePropName="checked">
-            <Switch />
-          </Form.Item>
-          <div className="soha-form-actions">
-            <Button onClick={() => setModalVisible(false)}>取消</Button>
-            <Button htmlType="submit" type="primary" loading={createMutation.isPending || updateMutation.isPending}>
-              {editing ? '更新' : '创建'}
-            </Button>
-          </div>
-        </Form>
-      </Modal>
-    </div>
-  )
-}
-
 export function ApplicationEnvironmentsPage() {
-  const { t } = useI18n()
   const { message } = App.useApp()
   const queryClient = useQueryClient()
   const permissionSnapshotQuery = usePermissionSnapshot()
@@ -480,10 +175,6 @@ export function ApplicationEnvironmentsPage() {
     queryKey: ['applications'],
     queryFn: () => api.get<ApiResponse<DeliveryApplication[]>>('/applications'),
   })
-  const environmentsQuery = useQuery({
-    queryKey: ['delivery-environments'],
-    queryFn: () => api.get<ApiResponse<DeliveryEnvironment[]>>('/delivery-environments'),
-  })
   const workflowTemplatesQuery = useQuery({
     queryKey: ['workflow-templates'],
     queryFn: () => api.get<ApiResponse<WorkflowTemplate[]>>('/workflow-templates'),
@@ -498,10 +189,16 @@ export function ApplicationEnvironmentsPage() {
     () => Object.fromEntries((appsQuery.data?.data ?? []).map((item) => [item.id, item.name])),
     [appsQuery.data],
   )
-  const environmentNameMap = useMemo(
-    () => Object.fromEntries((environmentsQuery.data?.data ?? []).map((item) => [item.id, item.name])),
-    [environmentsQuery.data],
-  )
+  const environmentOptions = useMemo(() => {
+    return Array.from(
+      new Set(
+        (bindingsQuery.data?.data ?? [])
+          .filter((item) => !selectedApplicationId || item.applicationId === selectedApplicationId)
+          .map(applicationEnvironmentLabel)
+          .filter((item) => item !== '-'),
+      ),
+    ).map((item) => ({ value: item, label: item }))
+  }, [bindingsQuery.data, selectedApplicationId])
 
   const createMutation = useMutation({
     mutationFn: (values: Record<string, unknown>) => api.post('/application-environments', values),
@@ -538,7 +235,7 @@ export function ApplicationEnvironmentsPage() {
 
   const columns: ColumnProps<ApplicationEnvironment>[] = [
     { title: '应用', dataIndex: 'applicationId', render: (value: string) => appNameMap[value] || value },
-    { title: '环境', dataIndex: 'environmentId', render: (value: string) => environmentNameMap[value] || value },
+    { title: '环境', dataIndex: 'environmentId', render: (_: string, record: ApplicationEnvironment) => applicationEnvironmentLabel(record) },
     { title: '策略', dataIndex: 'strategyProfileId', render: (value: string) => value || '-' },
     { title: '审批策略', dataIndex: 'approvalPolicyId', render: (value: string) => value || '-' },
     { title: '构建来源', dataIndex: 'buildPolicy', render: (value: ApplicationEnvironment['buildPolicy']) => value?.sourceId || '-' },
@@ -580,31 +277,18 @@ export function ApplicationEnvironmentsPage() {
 
   return (
     <div className="soha-page">
-      <AdminTable
-        columnSettingIconOnly
-        columnSettingPlacement="header"
-        shellClassName="soha-management-table-shell"
-        title={t('page.delivery.bindings.title', 'Application Environment Bindings')}
-        headerExtra={(
-          <ManagementTableToolbar>
-            {canManageBindings ? (
-              <Button icon={<PlusOutlined />} type="primary" onClick={() => { setEditing(null); setModalVisible(true) }}>
-                新建绑定
-              </Button>
-            ) : null}
-            <ManagementRefreshButton
-              aria-label="刷新"
-              loading={bindingsQuery.isFetching}
-              tooltip="刷新"
-              onClick={() => void bindingsQuery.refetch()}
-            />
-          </ManagementTableToolbar>
-        )}
+      <DeliveryTable
+        actions={canManageBindings ? (
+          <Button icon={<PlusOutlined />} type="primary" onClick={() => { setEditing(null); setModalVisible(true) }}>
+            新建绑定
+          </Button>
+        ) : null}
+        refreshing={bindingsQuery.isFetching}
+        onRefresh={() => void bindingsQuery.refetch()}
         columns={columns}
         dataSource={bindingsQuery.data?.data ?? []}
         rowKey="id"
         loading={bindingsQuery.isLoading}
-        scroll={{ x: 'max-content' }}
       />
       <Modal title={editing ? '编辑应用环境绑定' : '新建应用环境绑定'} open={modalVisible} onCancel={() => { setModalVisible(false); setEditing(null) }} footer={null} width={760} destroyOnHidden>
         <Form
@@ -641,7 +325,7 @@ export function ApplicationEnvironmentsPage() {
                 }
             const payload: Record<string, unknown> = {
               applicationId: values.applicationId,
-              environmentId: values.environmentId,
+              environmentId: normalizeEnvironmentFormValue(values.environmentId),
               strategyProfileId: values.strategyProfileId || '',
               promotionPolicyId: values.promotionPolicyId || '',
               approvalPolicyId: values.approvalPolicyId || '',
@@ -688,7 +372,7 @@ export function ApplicationEnvironmentsPage() {
           }}
           initialValues={editing ? {
             applicationId: editing.applicationId,
-            environmentId: editing.environmentId,
+            environmentId: initialEnvironmentFormValue(editing),
             strategyProfileId: editing.strategyProfileId || '',
             promotionPolicyId: editing.promotionPolicyId || '',
             approvalPolicyId: editing.approvalPolicyId || '',
@@ -727,7 +411,13 @@ export function ApplicationEnvironmentsPage() {
             <Select options={(appsQuery.data?.data ?? []).map((item) => ({ value: item.id, label: item.name }))} />
           </Form.Item>
           <Form.Item name="environmentId" label="环境" rules={[{ required: true, message: '请选择环境' }]}>
-            <Select options={(environmentsQuery.data?.data ?? []).map((item) => ({ value: item.id, label: item.name }))} />
+            <Select
+              showSearch
+              mode="tags"
+              maxCount={1}
+              placeholder="dev / test / prod"
+              options={environmentOptions}
+            />
           </Form.Item>
           <Form.Item name="buildSourceId" label="构建来源" rules={[{ required: true, message: '请选择构建来源' }]}>
             <Select options={((appsQuery.data?.data ?? []).find((item) => item.id === selectedApplicationId)?.buildSources ?? []).map((item: BuildSource) => ({ value: item.id, label: `${item.name} / ${item.type}` }))} />
@@ -815,57 +505,96 @@ export function ReleaseBoardPage() {
   const { t, localeCode } = useI18n()
   const navigate = useNavigate()
   const permissionSnapshotQuery = usePermissionSnapshot()
-  const canViewApplicationEnvironments = hasPermission(permissionSnapshotQuery.data?.data, 'delivery.application-environments.view')
+  const canViewApplications = hasPermission(permissionSnapshotQuery.data?.data, 'delivery.applications.view')
   const releaseBoardQuery = useQuery({
     queryKey: ['delivery-release-board'],
     queryFn: () => api.get<ApiResponse<ReleaseBoardEntry[]>>('/delivery/release-board'),
   })
 
+  const rows = releaseBoardQuery.data?.data ?? []
+  const summary = useMemo(() => summarizeReleaseBoard(rows), [rows])
   const columns: ColumnProps<ReleaseBoardEntry>[] = [
-    { title: t('common.application', 'Application'), dataIndex: 'applicationName' },
+    {
+      title: t('common.application', 'Application'),
+      dataIndex: 'applicationName',
+      render: (value: string, record) => (
+        <Space orientation="vertical" size={0}>
+          <Text strong>{value}</Text>
+          <Text type="secondary">{record.applicationId}</Text>
+        </Space>
+      ),
+    },
     { title: localeCode === 'zh_CN' ? '环境' : 'Environment', dataIndex: 'environmentName', render: (value: string, record) => value || record.environmentKey || record.environmentId },
-    { title: localeCode === 'zh_CN' ? '动作' : 'Action', dataIndex: 'actionKind', render: (value: string) => value || 'deploy' },
-    { title: localeCode === 'zh_CN' ? '审批' : 'Approval', dataIndex: 'requiresApproval', render: (value: boolean) => <BooleanTag value={value} /> },
     { title: localeCode === 'zh_CN' ? '构建来源' : 'Build Source', dataIndex: 'buildSource', render: (_: unknown, record) => record.buildSource?.name || record.buildSourceId || '-' },
     { title: localeCode === 'zh_CN' ? '目标' : 'Targets', dataIndex: 'targets', render: (targets: ReleaseBoardEntry['targets']) => targets?.length ?? 0 },
+    { title: localeCode === 'zh_CN' ? '候选版本' : 'Candidate', dataIndex: 'latestBundle', render: (value: ReleaseBoardEntry['latestBundle']) => value?.version || '-' },
+    {
+      title: localeCode === 'zh_CN' ? '交付态势' : 'Delivery Signal',
+      key: 'quality',
+      render: (_: unknown, record) => {
+        const signal = releaseBoardQualitySignal(record)
+        return <Tag color={signal.color}>{signal.label}</Tag>
+      },
+    },
+    { title: localeCode === 'zh_CN' ? '交付物' : 'Artifacts', key: 'artifacts', render: (_: unknown, record) => releaseBoardArtifactCount(record) },
+    { title: localeCode === 'zh_CN' ? '审批' : 'Approval', dataIndex: 'requiresApproval', render: (value: boolean) => <BooleanTag value={value} /> },
     { title: 'Build', dataIndex: 'latestBuild', render: (value: ReleaseBoardEntry['latestBuild']) => <StatusTag value={value?.status || 'unknown'} /> },
     { title: 'Workflow', dataIndex: 'latestWorkflow', render: (value: ReleaseBoardEntry['latestWorkflow']) => <StatusTag value={value?.status || 'unknown'} /> },
+    { title: 'Task', dataIndex: 'latestExecutionTask', render: (value: ReleaseBoardEntry['latestExecutionTask']) => <StatusTag value={value?.status || 'unknown'} /> },
     { title: 'Release', dataIndex: 'latestRelease', render: (value: ReleaseBoardEntry['latestRelease']) => <StatusTag value={value?.status || 'unknown'} /> },
+    {
+      title: localeCode === 'zh_CN' ? '最近活动' : 'Latest Activity',
+      key: 'latestActivity',
+      render: (_: unknown, record) => summarizeLatestActivity(localeCode, record.latestBuild, record.latestWorkflow, record.latestRelease),
+    },
     {
       ...tableColumnPresets.action,
       title: t('common.actions', 'Actions'),
       dataIndex: 'applicationEnvironmentId',
       render: (_: unknown, record: ReleaseBoardEntry) =>
-        canViewApplicationEnvironments ? (
-          <Button icon={<ArrowRightOutlined />} type="text" size="small" onClick={() => navigate(`/application-environments/${record.applicationEnvironmentId}`)}>
-            {localeCode === 'zh_CN' ? '环境详情' : 'Environment Detail'}
-          </Button>
+        canViewApplications ? (
+          <ManagementIconButton
+            aria-label={localeCode === 'zh_CN' ? '进入应用' : 'Open application'}
+            icon={<ArrowRightOutlined />}
+            size="small"
+            tooltip={localeCode === 'zh_CN' ? '进入应用' : 'Open application'}
+            onClick={() => navigate(`/applications/${record.applicationId}`)}
+          />
         ) : '-',
     },
   ]
 
   return (
     <div className="soha-page">
-      <AdminTable
-        columnSettingIconOnly
-        columnSettingPlacement="header"
-        shellClassName="soha-management-table-shell"
-        title={t('page.releaseBoard.title', 'Release Board')}
-        headerExtra={(
-          <ManagementTableToolbar>
-            <ManagementRefreshButton
-              aria-label={localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
-              loading={releaseBoardQuery.isFetching}
-              tooltip={localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
-              onClick={() => void releaseBoardQuery.refetch()}
-            />
-          </ManagementTableToolbar>
-        )}
+      <div className="soha-release-board-summary">
+        <Card className="soha-application-signal-card" size="small">
+          <span className="soha-application-signal-card__label">环境绑定</span>
+          <strong>{summary.total}</strong>
+          <Text type="secondary">{summary.targets} 个发布目标</Text>
+        </Card>
+        <Card className="soha-application-signal-card" size="small">
+          <span className="soha-application-signal-card__label">执行中</span>
+          <strong>{summary.running}</strong>
+          <Text type="secondary">构建 / 工作流 / 发布</Text>
+        </Card>
+        <Card className="soha-application-signal-card" size="small">
+          <span className="soha-application-signal-card__label">待审批</span>
+          <strong>{summary.approval}</strong>
+          <Text type="secondary">人工审批门禁</Text>
+        </Card>
+        <Card className="soha-application-signal-card" size="small">
+          <span className="soha-application-signal-card__label">可推广</span>
+          <strong>{summary.ready}</strong>
+          <Text type="secondary">{summary.blocked} 个阻塞</Text>
+        </Card>
+      </div>
+      <DeliveryTable
+        refreshing={releaseBoardQuery.isFetching}
+        onRefresh={() => void releaseBoardQuery.refetch()}
         columns={columns}
-        dataSource={releaseBoardQuery.data?.data ?? []}
+        dataSource={rows}
         rowKey="applicationEnvironmentId"
         loading={releaseBoardQuery.isLoading}
-        scroll={{ x: 'max-content' }}
       />
     </div>
   )
@@ -897,10 +626,6 @@ export function ApplicationEnvironmentDetailPage() {
     queryFn: () => api.get<ApiResponse<DeliveryApplicationEnvironmentDetail>>(`/application-environments/${applicationEnvironmentId}/detail`),
     enabled: !!applicationEnvironmentId,
   })
-  const businessLinesQuery = useQuery({
-    queryKey: ['business-lines'],
-    queryFn: () => api.get<ApiResponse<BusinessLine[]>>('/business-lines'),
-  })
   const workflowsQuery = useQuery({
     queryKey: ['workflows'],
     queryFn: () => api.get<ApiResponse<WorkflowRecord[]>>('/workflows'),
@@ -912,10 +637,6 @@ export function ApplicationEnvironmentDetailPage() {
 
   const detail = bindingQuery.data?.data
   const binding = detail?.binding
-  const businessLineMap = useMemo(
-    () => Object.fromEntries((businessLinesQuery.data?.data ?? []).map((item) => [item.id, item.name])),
-    [businessLinesQuery.data],
-  )
   const latestBuild = detail?.latestBuild
   const latestWorkflow = detail?.latestWorkflow
   const latestRelease = detail?.latestRelease
@@ -1127,7 +848,6 @@ export function ApplicationEnvironmentDetailPage() {
       <Card className="soha-management-panel-card">
         <Descriptions
           items={[
-            { key: 'businessLine', label: localeCode === 'zh_CN' ? '业务线' : 'Business Line', children: businessLineMap[binding.businessLineId || ''] || binding.businessLineId || '-' },
             { key: 'environmentKey', label: localeCode === 'zh_CN' ? '环境 Key' : 'Environment Key', children: binding.environmentKey || environment?.key || '-' },
             { key: 'workflowTemplate', label: localeCode === 'zh_CN' ? '发布流程模板' : 'Workflow Template', children: binding.workflowTemplate?.name || '-' },
             { key: 'templateCategory', label: localeCode === 'zh_CN' ? '模板分类' : 'Template Category', children: binding.workflowTemplate?.category || '-' },
@@ -1218,9 +938,8 @@ export function ApplicationEnvironmentDetailPage() {
           </div>
         </div>
       </Card>
-      <AdminTable
+      <DeliveryTable
         title={localeCode === 'zh_CN' ? '发布目标' : 'Release Targets'}
-        shellClassName="soha-management-table-shell"
         columns={targetColumns}
         dataSource={targetRows}
         rowKey="id"
@@ -1346,31 +1065,18 @@ export function WorkflowTemplatesPage() {
 
   return (
     <div className="soha-page">
-      <AdminTable
-        columnSettingIconOnly
-        columnSettingPlacement="header"
-        shellClassName="soha-management-table-shell"
-        title={t('page.workflowTemplates.title', 'Release Flow Templates')}
-        headerExtra={(
-          <ManagementTableToolbar>
-            {canManageWorkflowTemplates ? (
-              <Button icon={<PlusOutlined />} type="primary" onClick={() => { setEditing(null); setModalVisible(true) }}>
-                {localeCode === 'zh_CN' ? '新建模板' : 'New Template'}
-              </Button>
-            ) : null}
-            <ManagementRefreshButton
-              aria-label={localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
-              loading={isFetching}
-              tooltip={localeCode === 'zh_CN' ? '刷新' : 'Refresh'}
-              onClick={() => void refetch()}
-            />
-          </ManagementTableToolbar>
-        )}
+      <DeliveryTable
+        actions={canManageWorkflowTemplates ? (
+          <Button icon={<PlusOutlined />} type="primary" onClick={() => { setEditing(null); setModalVisible(true) }}>
+            {localeCode === 'zh_CN' ? '新建模板' : 'New Template'}
+          </Button>
+        ) : null}
+        refreshing={isFetching}
+        onRefresh={() => void refetch()}
         columns={columns}
         dataSource={data?.data ?? []}
         rowKey="id"
         loading={isLoading}
-        scroll={{ x: 'max-content' }}
       />
       <Modal
         title={editing ? (localeCode === 'zh_CN' ? '编辑 DAG 发布流程模板' : 'Edit DAG Release Flow Template') : (localeCode === 'zh_CN' ? '新建 DAG 发布流程模板' : 'New DAG Release Flow Template')}

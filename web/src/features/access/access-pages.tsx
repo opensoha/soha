@@ -10,7 +10,7 @@ import { consolePermissionGroups, consolePermissionLabelMap } from '@/features/a
 import { hasPermission, usePermissionSnapshot } from '@/features/auth/permission-snapshot'
 import { StatusTag } from '@/components/status-tag'
 import { api } from '@/services/api-client'
-import type { ApiResponse, BusinessLine, DeliveryEnvironment, ScopeGrant } from '@/types'
+import type { ApiResponse, ScopeGrant } from '@/types'
 import { formatDateTime } from '@/utils/time'
 import { tableColumnPresets } from '@/utils/table-columns'
 
@@ -335,30 +335,12 @@ function ScopeGrantManager({
     queryFn: () => api.get<ApiResponse<ScopeGrant[]>>('/access/scope-grants'),
     enabled: visible,
   })
-  const businessLinesQuery = useQuery({
-    queryKey: ['business-lines'],
-    queryFn: () => api.get<ApiResponse<BusinessLine[]>>('/business-lines'),
-    enabled: visible,
-  })
-  const environmentsQuery = useQuery({
-    queryKey: ['delivery-environments'],
-    queryFn: () => api.get<ApiResponse<DeliveryEnvironment[]>>('/delivery-environments'),
-    enabled: visible,
-  })
   const applicationsQuery = useQuery({
     queryKey: ['applications'],
     queryFn: () => api.get<ApiResponse<Array<{ id: string; name: string }>>>('/applications'),
     enabled: visible,
   })
 
-  const businessLineMap = useMemo(
-    () => Object.fromEntries((businessLinesQuery.data?.data ?? []).map((item) => [item.id, item.name])),
-    [businessLinesQuery.data],
-  )
-  const environmentMap = useMemo(
-    () => Object.fromEntries((environmentsQuery.data?.data ?? []).map((item) => [item.id, item.name])),
-    [environmentsQuery.data],
-  )
   const applicationMap = useMemo(
     () => Object.fromEntries((applicationsQuery.data?.data ?? []).map((item) => [item.id, item.name])),
     [applicationsQuery.data],
@@ -413,11 +395,11 @@ function ScopeGrantManager({
   }
 
   const columns: ColumnProps<ScopeGrant>[] = [
-    { title: '业务线', dataIndex: 'businessLineId', render: (value: string) => businessLineMap[value] || value },
+    { title: '范围 Key', dataIndex: 'businessLineId', render: (value: string) => value || '-' },
     {
       title: '环境',
       dataIndex: 'environmentIds',
-      render: (values: string[]) => values?.length ? values.map((item) => <Tag key={item}>{environmentMap[item] || item}</Tag>) : '全部',
+      render: (values: string[]) => values?.length ? values.map((item) => <Tag key={item}>{item}</Tag>) : '全部',
     },
     {
       title: '应用',
@@ -502,8 +484,8 @@ function ScopeGrantManager({
             applicationIds: joinCSV(editing.applicationIds),
           } : { enabled: true, effect: 'allow', role: 'developer' }}
         >
-          <Form.Item name="businessLineId" label="业务线" rules={[{ required: true, message: '请选择业务线' }]}>
-            <Select options={(businessLinesQuery.data?.data ?? []).map((item) => ({ value: item.id, label: item.name }))} />
+          <Form.Item name="businessLineId" label="范围 Key" rules={[{ required: true, message: '请输入范围 Key' }]}>
+            <Input placeholder="应用组 / 历史 businessLineId" />
           </Form.Item>
           <Form.Item name="environmentIds" label="环境 IDs">
             <Input placeholder="留空表示全部环境，多个以逗号分隔" />

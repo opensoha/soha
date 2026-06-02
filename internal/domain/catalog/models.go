@@ -28,28 +28,6 @@ type ReleasePolicy struct {
 	VerificationMode      string   `json:"verificationMode,omitempty"`
 }
 
-type BusinessLine struct {
-	ID          string    `json:"id"`
-	Key         string    `json:"key"`
-	Name        string    `json:"name"`
-	Description string    `json:"description,omitempty"`
-	Owners      []string  `json:"owners,omitempty"`
-	SortOrder   int       `json:"sortOrder"`
-	Enabled     bool      `json:"enabled"`
-	CreatedAt   time.Time `json:"createdAt"`
-	UpdatedAt   time.Time `json:"updatedAt"`
-}
-
-type BusinessLineInput struct {
-	ID          string   `json:"id"`
-	Key         string   `json:"key"`
-	Name        string   `json:"name"`
-	Description string   `json:"description,omitempty"`
-	Owners      []string `json:"owners,omitempty"`
-	SortOrder   int      `json:"sortOrder"`
-	Enabled     bool     `json:"enabled"`
-}
-
 type Environment struct {
 	ID               string    `json:"id"`
 	Key              string    `json:"key"`
@@ -62,18 +40,6 @@ type Environment struct {
 	Enabled          bool      `json:"enabled"`
 	CreatedAt        time.Time `json:"createdAt"`
 	UpdatedAt        time.Time `json:"updatedAt"`
-}
-
-type EnvironmentInput struct {
-	ID               string `json:"id"`
-	Key              string `json:"key"`
-	Name             string `json:"name"`
-	Tier             string `json:"tier,omitempty"`
-	StageLevel       int    `json:"stageLevel"`
-	SortOrder        int    `json:"sortOrder"`
-	IsProduction     bool   `json:"isProduction"`
-	RequiresApproval bool   `json:"requiresApproval"`
-	Enabled          bool   `json:"enabled"`
 }
 
 type ReleaseTarget struct {
@@ -117,6 +83,7 @@ type ApplicationEnvironment struct {
 	ID                 string            `json:"id"`
 	ApplicationID      string            `json:"applicationId"`
 	BusinessLineID     string            `json:"businessLineId,omitempty"`
+	ApplicationGroup   string            `json:"applicationGroup,omitempty"`
 	EnvironmentID      string            `json:"environmentId"`
 	EnvironmentKey     string            `json:"environmentKey,omitempty"`
 	StrategyProfileID  string            `json:"strategyProfileId,omitempty"`
@@ -199,17 +166,7 @@ type WorkflowTemplateInput struct {
 }
 
 type Repository interface {
-	ListBusinessLines(context.Context) ([]BusinessLine, error)
-	GetBusinessLine(context.Context, string) (BusinessLine, error)
-	CreateBusinessLine(context.Context, BusinessLineInput) (BusinessLine, error)
-	UpdateBusinessLine(context.Context, string, BusinessLineInput) (BusinessLine, error)
-	DeleteBusinessLine(context.Context, string) error
-
 	ListEnvironments(context.Context) ([]Environment, error)
-	GetEnvironment(context.Context, string) (Environment, error)
-	CreateEnvironment(context.Context, EnvironmentInput) (Environment, error)
-	UpdateEnvironment(context.Context, string, EnvironmentInput) (Environment, error)
-	DeleteEnvironment(context.Context, string) error
 
 	ListApplicationEnvironments(context.Context) ([]ApplicationEnvironment, error)
 	GetApplicationEnvironment(context.Context, string) (ApplicationEnvironment, error)

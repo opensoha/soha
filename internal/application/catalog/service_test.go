@@ -20,49 +20,12 @@ type stubCatalogRepository struct {
 	lastWorkflowTemplate    domaincatalog.WorkflowTemplateInput
 	lastBuildTemplate       domaincatalog.BuildTemplateInput
 	applicationEnvironments map[string]domaincatalog.ApplicationEnvironment
-	environments            map[string]domaincatalog.Environment
 }
 
-func (s *stubCatalogRepository) ListBusinessLines(context.Context) ([]domaincatalog.BusinessLine, error) {
-	return nil, nil
-}
-
-func (s *stubCatalogRepository) GetBusinessLine(context.Context, string) (domaincatalog.BusinessLine, error) {
-	return domaincatalog.BusinessLine{}, nil
-}
-
-func (s *stubCatalogRepository) CreateBusinessLine(context.Context, domaincatalog.BusinessLineInput) (domaincatalog.BusinessLine, error) {
-	return domaincatalog.BusinessLine{}, nil
-}
-
-func (s *stubCatalogRepository) UpdateBusinessLine(context.Context, string, domaincatalog.BusinessLineInput) (domaincatalog.BusinessLine, error) {
-	return domaincatalog.BusinessLine{}, nil
-}
-
-func (s *stubCatalogRepository) DeleteBusinessLine(context.Context, string) error { return nil }
 func (s *stubCatalogRepository) ListEnvironments(context.Context) ([]domaincatalog.Environment, error) {
 	return nil, nil
 }
 
-func (s *stubCatalogRepository) GetEnvironment(context.Context, string) (domaincatalog.Environment, error) {
-	if s.environments == nil {
-		return domaincatalog.Environment{}, nil
-	}
-	for _, item := range s.environments {
-		return item, nil
-	}
-	return domaincatalog.Environment{}, nil
-}
-
-func (s *stubCatalogRepository) CreateEnvironment(context.Context, domaincatalog.EnvironmentInput) (domaincatalog.Environment, error) {
-	return domaincatalog.Environment{}, nil
-}
-
-func (s *stubCatalogRepository) UpdateEnvironment(context.Context, string, domaincatalog.EnvironmentInput) (domaincatalog.Environment, error) {
-	return domaincatalog.Environment{}, nil
-}
-
-func (s *stubCatalogRepository) DeleteEnvironment(context.Context, string) error { return nil }
 func (s *stubCatalogRepository) ListApplicationEnvironments(context.Context) ([]domaincatalog.ApplicationEnvironment, error) {
 	if len(s.applicationEnvironments) == 0 {
 		return nil, nil
@@ -264,9 +227,6 @@ func TestUpdateApplicationEnvironmentDeniesOutsideScopeGrant(t *testing.T) {
 				EnvironmentID:  "env-prod",
 				EnvironmentKey: "prod",
 			},
-		},
-		environments: map[string]domaincatalog.Environment{
-			"env-prod": {ID: "env-prod", Key: "prod"},
 		},
 	}
 	authorizer := accessServiceForCatalogTests([]domainscopegrant.Record{

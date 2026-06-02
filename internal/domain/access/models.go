@@ -61,9 +61,10 @@ type ResourceAttributes struct {
 }
 
 type DeliveryAttributes struct {
-	BusinessLineID string
-	EnvironmentKey string
-	ApplicationID  string
+	BusinessLineID   string
+	ApplicationGroup string
+	EnvironmentKey   string
+	ApplicationID    string
 }
 
 type ContextAttributes struct {

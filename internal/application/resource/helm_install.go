@@ -90,6 +90,11 @@ func (s *Service) installDirectHelmChart(ctx context.Context, clusterID string, 
 	if err := actionConfig.Init(getter, input.Namespace, "secrets", func(string, ...interface{}) {}); err != nil {
 		return domainresource.HelmChartInstallResult{}, fmt.Errorf("%w: initialize helm action: %v", apperrors.ErrClusterUnready, err)
 	}
+	if existing, ok, err := existingDirectHelmInstallResultFromSDK(actionConfig, input); err != nil {
+		return domainresource.HelmChartInstallResult{}, err
+	} else if ok {
+		return existing, nil
+	}
 
 	installer := action.NewInstall(actionConfig)
 	installer.ReleaseName = input.ReleaseName
@@ -112,9 +117,101 @@ func (s *Service) installDirectHelmChart(ctx context.Context, clusterID string, 
 	}
 	release, err := installer.RunWithContext(ctx, chart, values)
 	if err != nil {
+		if isHelmReleaseNameInUseError(err) {
+			if existing, ok, lookupErr := existingDirectHelmInstallResultFromSDK(actionConfig, input); lookupErr != nil {
+				return domainresource.HelmChartInstallResult{}, lookupErr
+			} else if ok {
+				return existing, nil
+			}
+			return domainresource.HelmChartInstallResult{}, helmReleaseNameUnavailableError(input.ReleaseName, input.Namespace, helmReleaseRecord{})
+		}
 		return domainresource.HelmChartInstallResult{}, fmt.Errorf("%w: install helm chart: %v", apperrors.ErrClusterUnready, err)
 	}
 	return mapHelmChartInstallResult(release), nil
+}
+
+func existingDirectHelmInstallResultFromSDK(actionConfig *action.Configuration, input domainresource.HelmChartInstallInput) (domainresource.HelmChartInstallResult, bool, error) {
+	release, err := action.NewGet(actionConfig).Run(input.ReleaseName)
+	if err != nil {
+		if isHelmReleaseNotFoundError(err) {
+			return domainresource.HelmChartInstallResult{}, false, nil
+		}
+		return domainresource.HelmChartInstallResult{}, false, fmt.Errorf("%w: inspect existing helm release: %v", apperrors.ErrClusterUnready, err)
+	}
+	if helmSDKReleaseSatisfiesInstall(release, input) {
+		result := mapHelmChartInstallResult(release)
+		result.Description = firstNonEmptyHelm(result.Description, "Release already deployed; install request already satisfied")
+		return result, true, nil
+	}
+	return domainresource.HelmChartInstallResult{}, false, helmReleaseNameUnavailableSDKError(input.ReleaseName, input.Namespace, release)
+}
+
+func helmReleaseNameUnavailableError(releaseName, namespace string, record helmReleaseRecord) error {
+	status := helmReleaseRecordStatus(record)
+	revision := ""
+	if record.release != nil && record.release.Version > 0 {
+		revision = strconv.Itoa(record.release.Version)
+	}
+	return helmReleaseNameUnavailableErrorParts(releaseName, namespace, status, revision)
+}
+
+func helmReleaseNameUnavailableSDKError(releaseName, namespace string, release *helmreleasepkg.Release) error {
+	status := ""
+	revision := ""
+	if release != nil {
+		if release.Info != nil {
+			status = strings.TrimSpace(string(release.Info.Status))
+		}
+		if release.Version > 0 {
+			revision = strconv.Itoa(release.Version)
+		}
+	}
+	return helmReleaseNameUnavailableErrorParts(releaseName, namespace, status, revision)
+}
+
+func helmReleaseNameUnavailableErrorParts(releaseName, namespace, status, revision string) error {
+	parts := []string{
+		fmt.Sprintf("releaseName %q in namespace %q is already used by Helm release history", strings.TrimSpace(releaseName), strings.TrimSpace(namespace)),
+	}
+	if status != "" {
+		parts = append(parts, fmt.Sprintf("status %q", status))
+	}
+	if revision != "" {
+		parts = append(parts, fmt.Sprintf("revision %s", revision))
+	}
+	return fmt.Errorf("%w: %s; choose another release name or uninstall the existing release before installing again", apperrors.ErrInvalidArgument, strings.Join(parts, ", "))
+}
+
+func helmReleaseRecordStatus(record helmReleaseRecord) string {
+	status := strings.TrimSpace(record.labels["status"])
+	if status == "" && record.release != nil && record.release.Info != nil {
+		status = strings.TrimSpace(record.release.Info.Status)
+	}
+	return status
+}
+
+func helmSDKReleaseSatisfiesInstall(release *helmreleasepkg.Release, input domainresource.HelmChartInstallInput) bool {
+	if release == nil || release.Chart == nil || release.Chart.Metadata == nil {
+		return false
+	}
+	status := ""
+	if release.Info != nil {
+		status = strings.TrimSpace(string(release.Info.Status))
+	}
+	if !strings.EqualFold(status, "deployed") {
+		return false
+	}
+	metadata := release.Chart.Metadata
+	chartName := strings.TrimSpace(metadata.Name)
+	chartVersion := strings.TrimSpace(metadata.Version)
+	return strings.EqualFold(chartName, strings.TrimSpace(input.ChartName)) && chartVersion == strings.TrimSpace(input.Version)
+}
+
+func isHelmReleaseNameInUseError(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(strings.ToLower(err.Error()), "cannot re-use a name that is still in use")
 }
 
 func normalizeHelmChartInstallInput(input domainresource.HelmChartInstallInput) domainresource.HelmChartInstallInput {

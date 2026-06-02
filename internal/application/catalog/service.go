@@ -39,7 +39,6 @@ type Service struct {
 
 type catalogLookupRepository interface {
 	domaincatalog.Repository
-	GetEnvironment(context.Context, string) (domaincatalog.Environment, error)
 	GetApplicationEnvironment(context.Context, string) (domaincatalog.ApplicationEnvironment, error)
 }
 
@@ -51,96 +50,11 @@ func New(repo domaincatalog.Repository, authorizer domainaccess.Authorizer, apps
 	return &Service{repo: repo, authorizer: authorizer, apps: apps, permissions: permissions, audit: audit, operations: operations}
 }
 
-func (s *Service) ListBusinessLines(ctx context.Context, principal domainidentity.Principal) ([]domaincatalog.BusinessLine, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermDeliveryBusinessLinesView); err != nil {
-		return nil, err
-	}
-	return s.repo.ListBusinessLines(ctx)
-}
-
-func (s *Service) CreateBusinessLine(ctx context.Context, principal domainidentity.Principal, input domaincatalog.BusinessLineInput) (domaincatalog.BusinessLine, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermDeliveryBusinessLinesManage); err != nil {
-		return domaincatalog.BusinessLine{}, err
-	}
-	if strings.TrimSpace(input.Key) == "" || strings.TrimSpace(input.Name) == "" {
-		return domaincatalog.BusinessLine{}, fmt.Errorf("%w: key and name are required", apperrors.ErrInvalidArgument)
-	}
-	item, err := s.repo.CreateBusinessLine(ctx, input)
-	if err == nil {
-		s.recordWriteLogs(ctx, principal, "delivery.business_line.create", "BusinessLine", item.ID, item.Name, "created business line")
-	}
-	return item, err
-}
-
-func (s *Service) UpdateBusinessLine(ctx context.Context, principal domainidentity.Principal, id string, input domaincatalog.BusinessLineInput) (domaincatalog.BusinessLine, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermDeliveryBusinessLinesManage); err != nil {
-		return domaincatalog.BusinessLine{}, err
-	}
-	if strings.TrimSpace(input.Key) == "" || strings.TrimSpace(input.Name) == "" {
-		return domaincatalog.BusinessLine{}, fmt.Errorf("%w: key and name are required", apperrors.ErrInvalidArgument)
-	}
-	item, err := s.repo.UpdateBusinessLine(ctx, id, input)
-	if err == nil {
-		s.recordWriteLogs(ctx, principal, "delivery.business_line.update", "BusinessLine", item.ID, item.Name, "updated business line")
-	}
-	return item, normalizeRepoError(err)
-}
-
-func (s *Service) DeleteBusinessLine(ctx context.Context, principal domainidentity.Principal, id string) error {
-	if err := s.authorize(ctx, principal, appaccess.PermDeliveryBusinessLinesManage); err != nil {
-		return err
-	}
-	if err := normalizeRepoError(s.repo.DeleteBusinessLine(ctx, id)); err != nil {
-		return err
-	}
-	s.recordWriteLogs(ctx, principal, "delivery.business_line.delete", "BusinessLine", id, id, "deleted business line")
-	return nil
-}
-
 func (s *Service) ListEnvironments(ctx context.Context, principal domainidentity.Principal) ([]domaincatalog.Environment, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermDeliveryEnvironmentsView); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.PermDeliveryApplicationEnvView); err != nil {
 		return nil, err
 	}
 	return s.repo.ListEnvironments(ctx)
-}
-
-func (s *Service) CreateEnvironment(ctx context.Context, principal domainidentity.Principal, input domaincatalog.EnvironmentInput) (domaincatalog.Environment, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermDeliveryEnvironmentsManage); err != nil {
-		return domaincatalog.Environment{}, err
-	}
-	if strings.TrimSpace(input.Key) == "" || strings.TrimSpace(input.Name) == "" {
-		return domaincatalog.Environment{}, fmt.Errorf("%w: key and name are required", apperrors.ErrInvalidArgument)
-	}
-	item, err := s.repo.CreateEnvironment(ctx, input)
-	if err == nil {
-		s.recordWriteLogs(ctx, principal, "delivery.environment.create", "Environment", item.ID, item.Name, "created environment")
-	}
-	return item, err
-}
-
-func (s *Service) UpdateEnvironment(ctx context.Context, principal domainidentity.Principal, id string, input domaincatalog.EnvironmentInput) (domaincatalog.Environment, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermDeliveryEnvironmentsManage); err != nil {
-		return domaincatalog.Environment{}, err
-	}
-	if strings.TrimSpace(input.Key) == "" || strings.TrimSpace(input.Name) == "" {
-		return domaincatalog.Environment{}, fmt.Errorf("%w: key and name are required", apperrors.ErrInvalidArgument)
-	}
-	item, err := s.repo.UpdateEnvironment(ctx, id, input)
-	if err == nil {
-		s.recordWriteLogs(ctx, principal, "delivery.environment.update", "Environment", item.ID, item.Name, "updated environment")
-	}
-	return item, normalizeRepoError(err)
-}
-
-func (s *Service) DeleteEnvironment(ctx context.Context, principal domainidentity.Principal, id string) error {
-	if err := s.authorize(ctx, principal, appaccess.PermDeliveryEnvironmentsManage); err != nil {
-		return err
-	}
-	if err := normalizeRepoError(s.repo.DeleteEnvironment(ctx, id)); err != nil {
-		return err
-	}
-	s.recordWriteLogs(ctx, principal, "delivery.environment.delete", "Environment", id, id, "deleted environment")
-	return nil
 }
 
 func (s *Service) ListApplicationEnvironments(ctx context.Context, principal domainidentity.Principal) ([]domaincatalog.ApplicationEnvironment, error) {
@@ -526,22 +440,14 @@ func (s *Service) authorizeApplicationEnvironment(ctx context.Context, principal
 	if s.authorizer == nil {
 		return nil
 	}
-	return s.authorizeDelivery(ctx, principal, action, "ApplicationEnvironment", item.ID, item.BusinessLineID, item.EnvironmentKey, item.ApplicationID)
+	return s.authorizeDelivery(ctx, principal, action, "ApplicationEnvironment", item.ID, item.BusinessLineID, item.ApplicationGroup, item.EnvironmentKey, item.ApplicationID)
 }
 
 func (s *Service) authorizeApplicationEnvironmentInput(ctx context.Context, principal domainidentity.Principal, action domainaccess.Action, input domaincatalog.ApplicationEnvironmentInput) error {
 	if s.authorizer == nil {
 		return nil
 	}
-	repo, ok := s.repo.(catalogLookupRepository)
-	if !ok {
-		return nil
-	}
-	environment, err := repo.GetEnvironment(ctx, input.EnvironmentID)
-	if err != nil {
-		return normalizeRepoError(err)
-	}
-	businessLineID, err := s.lookupApplicationBusinessLineID(ctx, input.ApplicationID)
+	businessLineID, applicationGroup, err := s.lookupApplicationScope(ctx, input.ApplicationID)
 	if err != nil {
 		return err
 	}
@@ -549,33 +455,33 @@ func (s *Service) authorizeApplicationEnvironmentInput(ctx context.Context, prin
 	if resourceName == "" {
 		resourceName = fmt.Sprintf("%s:%s", strings.TrimSpace(input.ApplicationID), strings.TrimSpace(input.EnvironmentID))
 	}
-	return s.authorizeDelivery(ctx, principal, action, "ApplicationEnvironment", resourceName, businessLineID, environment.Key, input.ApplicationID)
+	return s.authorizeDelivery(ctx, principal, action, "ApplicationEnvironment", resourceName, businessLineID, applicationGroup, input.EnvironmentID, input.ApplicationID)
 }
 
-func (s *Service) lookupApplicationBusinessLineID(ctx context.Context, applicationID string) (string, error) {
+func (s *Service) lookupApplicationScope(ctx context.Context, applicationID string) (string, string, error) {
 	if s.apps != nil {
 		app, err := s.apps.Get(ctx, applicationID)
 		if err == nil {
-			return app.BusinessLineID, nil
+			return app.BusinessLineID, app.Group, nil
 		}
 	}
 	repo, ok := s.repo.(catalogLookupRepository)
 	if !ok {
-		return "", nil
+		return "", "", nil
 	}
 	items, err := repo.ListApplicationEnvironments(ctx)
 	if err != nil {
-		return "", fmt.Errorf("list application environments: %w", err)
+		return "", "", fmt.Errorf("list application environments: %w", err)
 	}
 	for _, item := range items {
 		if item.ApplicationID == strings.TrimSpace(applicationID) {
-			return item.BusinessLineID, nil
+			return item.BusinessLineID, item.ApplicationGroup, nil
 		}
 	}
-	return "", nil
+	return "", "", nil
 }
 
-func (s *Service) authorizeDelivery(ctx context.Context, principal domainidentity.Principal, action domainaccess.Action, resourceKind, resourceName, businessLineID, environmentKey, applicationID string) error {
+func (s *Service) authorizeDelivery(ctx context.Context, principal domainidentity.Principal, action domainaccess.Action, resourceKind, resourceName, businessLineID, applicationGroup, environmentKey, applicationID string) error {
 	decision, err := s.authorizer.Authorize(ctx, domainaccess.Request{
 		Principal: principal,
 		Action:    action,
@@ -591,9 +497,10 @@ func (s *Service) authorizeDelivery(ctx context.Context, principal domainidentit
 			Name: resourceName,
 		},
 		Delivery: domainaccess.DeliveryAttributes{
-			BusinessLineID: strings.TrimSpace(businessLineID),
-			EnvironmentKey: strings.TrimSpace(environmentKey),
-			ApplicationID:  strings.TrimSpace(applicationID),
+			BusinessLineID:   strings.TrimSpace(businessLineID),
+			ApplicationGroup: strings.TrimSpace(applicationGroup),
+			EnvironmentKey:   strings.TrimSpace(environmentKey),
+			ApplicationID:    strings.TrimSpace(applicationID),
 		},
 		Context: domainaccess.ContextAttributes{
 			Source:     requestctx.FromContext(ctx).Source,
