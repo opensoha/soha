@@ -32,6 +32,7 @@ import {
   type Node,
   type NodeProps,
 } from '@xyflow/react'
+import './copilot-pages.css'
 import dagre from 'dagre'
 import {
   Alert,

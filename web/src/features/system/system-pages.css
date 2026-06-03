@@ -1,0 +1,88 @@
+/* Styles moved from web/src/styles/globals.css; keep scoped to this shared/component or feature owner. */
+
+.soha-system-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.soha-system-metric-card.ant-card {
+  border-color: var(--soha-border-color);
+  background: linear-gradient(180deg, var(--soha-bg-surface) 0%, var(--soha-bg-surface-muted) 100%);
+  box-shadow: none;
+}
+
+.soha-system-metric-card.ant-card .ant-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px;
+}
+
+.soha-system-metric-card .ant-statistic {
+  min-height: 60px;
+}
+
+.soha-system-metric-card .ant-statistic-content {
+  font-size: 28px;
+  font-weight: 700;
+}
+
+.soha-system-panel-card.ant-card {
+  border-color: var(--soha-border-color);
+  background: var(--soha-bg-surface);
+  box-shadow: none;
+}
+
+.soha-system-panel-card.ant-card .ant-card-body {
+  padding: 16px;
+}
+
+.soha-system-announcement-list .ant-list-item {
+  padding-top: 18px;
+  padding-bottom: 18px;
+}
+
+.soha-system-announcement-extra {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 180px;
+  text-align: right;
+}
+
+.soha-system-announcement-content {
+  margin-top: 8px;
+  margin-bottom: 0 !important;
+  color: var(--soha-text-secondary);
+}
+
+.soha-log-event-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.soha-log-summary {
+  margin-bottom: 0 !important;
+  color: var(--soha-text-secondary);
+}
+
+@media (max-width: 1200px) {
+
+  .soha-system-overview-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 768px) {
+
+  .soha-system-overview-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .soha-system-announcement-extra {
+    min-width: 0;
+    text-align: left;
+  }
+}

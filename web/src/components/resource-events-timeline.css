@@ -1,0 +1,42 @@
+/* Styles moved from web/src/styles/globals.css; keep scoped to this component or feature owner. */
+
+.soha-events-timeline-shell {
+  padding-inline: 16px;
+}
+
+.soha-events-timeline-item {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-inline: 8px 12px;
+  padding-block: 2px;
+}
+
+.soha-events-timeline-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.soha-events-timeline-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.soha-events-timeline-row {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  column-gap: 16px;
+  align-items: start;
+}
+
+.soha-events-timeline-label {
+  color: var(--soha-text-tertiary);
+}
+
+.soha-events-timeline-value {
+  color: var(--soha-text-primary);
+  line-height: 1.7;
+  word-break: break-word;
+}

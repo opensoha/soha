@@ -31,6 +31,7 @@ import { tableColumnPresets } from '@/utils/table-columns'
 import { formatDateTime } from '@/utils/time'
 import type { Cluster, ClusterDetail, ApiResponse, Node } from '@/types'
 import type { TableColumnsType } from 'antd'
+import './platform-pages.css'
 
 const { Text } = Typography
 

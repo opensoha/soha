@@ -18,6 +18,7 @@ import type {
   RoleDetail,
   ServiceAccountDetail,
 } from '@/types'
+import './platform-pages.css'
 
 const { Text, Paragraph } = Typography
 

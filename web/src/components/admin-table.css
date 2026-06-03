@@ -1,0 +1,286 @@
+/* Styles moved from web/src/styles/globals.css; keep scoped to this component or feature owner. */
+
+.soha-admin-table-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.soha-admin-table-host {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.soha-admin-table-outside-toolbar {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.soha-admin-table-shell.is-panel {
+  gap: 0;
+  border: 1px solid var(--soha-border-color);
+  border-radius: 16px;
+  background: var(--soha-bg-surface);
+  box-shadow: none;
+  overflow: hidden;
+}
+
+.soha-admin-table-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--soha-border-color);
+}
+
+.soha-admin-table-header-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: var(--soha-text-primary);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.soha-admin-table-header-extra {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.soha-admin-table-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.soha-admin-table-shell.is-panel .soha-admin-table-toolbar {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--soha-border-color);
+}
+
+.soha-admin-table-toolbar-main {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1 1 360px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.soha-admin-table-toolbar-extra {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+
+.soha-admin-table-column-popover {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 168px;
+  max-width: 168px;
+}
+
+.soha-admin-table-column-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.soha-admin-table-column-options.ant-checkbox-group {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+
+.soha-admin-table-column-options .ant-checkbox-wrapper {
+  margin-inline-start: 0;
+}
+
+.soha-admin-table-column-setting-button.is-icon-only.ant-btn {
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  padding-inline: 0;
+}
+
+.soha-admin-table-selection-header {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.soha-admin-table-selection-label {
+  color: var(--soha-text-tertiary);
+  font-size: 12px;
+  line-height: 1;
+}
+
+.soha-admin-table,
+.soha-admin-table .ant-table-wrapper,
+.soha-admin-table .ant-table-container,
+.soha-admin-table .ant-table-body {
+  width: 100%;
+}
+
+.soha-admin-table .ant-table-wrapper,
+.soha-admin-table .ant-table,
+.soha-admin-table .ant-table-container,
+.soha-admin-table .ant-table-content,
+.soha-admin-table .ant-table-body {
+  background: transparent;
+}
+
+.soha-admin-table .ant-table {
+  min-width: 100%;
+}
+
+.soha-admin-table .ant-table-content {
+  overflow-x: auto;
+}
+
+.soha-admin-table .ant-table-thead > tr > th {
+  background: var(--soha-bg-surface-muted);
+  color: var(--soha-text-secondary);
+  border-bottom-color: var(--soha-border-color) !important;
+}
+
+.soha-admin-table .ant-table-thead > tr > th,
+.soha-admin-table .ant-table-tbody > tr > td {
+  padding-left: 12px;
+  padding-right: 12px;
+  white-space: nowrap;
+  word-break: keep-all;
+}
+
+.soha-admin-table .ant-table-tbody > tr > td,
+.soha-admin-table .ant-table-placeholder .ant-table-cell {
+  color: var(--soha-text-primary);
+  background: transparent;
+  border-bottom-color: var(--soha-border-color) !important;
+}
+
+.soha-admin-table .ant-empty-description {
+  color: var(--soha-text-tertiary);
+}
+
+.soha-admin-table .ant-table-tbody a.ant-typography.ant-typography-link,
+.soha-admin-table .ant-table-tbody .ant-btn-link:not(.ant-btn-dangerous):not(.ant-btn-color-dangerous),
+.soha-admin-table .ant-table-tbody .ant-btn-text:not(.ant-btn-dangerous):not(.ant-btn-color-dangerous) {
+  color: #597ef7 !important;
+  font-weight: 600;
+}
+
+.soha-admin-table .ant-table-tbody a.ant-typography.ant-typography-link:hover,
+.soha-admin-table .ant-table-tbody a.ant-typography.ant-typography-link:focus-visible,
+.soha-admin-table .ant-table-tbody .ant-btn-link:not(.ant-btn-dangerous):not(.ant-btn-color-dangerous):hover,
+.soha-admin-table .ant-table-tbody .ant-btn-link:not(.ant-btn-dangerous):not(.ant-btn-color-dangerous):focus-visible,
+.soha-admin-table .ant-table-tbody .ant-btn-text:not(.ant-btn-dangerous):not(.ant-btn-color-dangerous):hover,
+.soha-admin-table .ant-table-tbody .ant-btn-text:not(.ant-btn-dangerous):not(.ant-btn-color-dangerous):focus-visible {
+  color: #3f6ae0 !important;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.soha-admin-table .ant-table-cell-fix-end,
+.soha-admin-table .ant-table-cell-fix-right,
+.soha-admin-table .ant-table-cell-fix-right-first,
+.soha-admin-table .ant-table-cell-fix-right-last,
+.soha-admin-table th.ant-table-cell-fix-end,
+.soha-admin-table th.ant-table-cell-fix-right,
+.soha-admin-table th.ant-table-cell-fix-right-first,
+.soha-admin-table th.ant-table-cell-fix-right-last {
+  border-left: 1px solid var(--soha-border-color) !important;
+  box-shadow: none !important;
+  background: var(--soha-bg-surface) !important;
+  background-clip: padding-box;
+}
+
+.soha-admin-table .ant-table-cell-fix-end-shadow::before,
+.soha-admin-table .ant-table-cell-fix-end-shadow-show::before {
+  box-shadow: none !important;
+}
+
+.soha-admin-table .ant-table-cell-fix-end-shadow::after,
+.soha-admin-table .ant-table-cell-fix-end-shadow-show::after {
+  box-shadow: none !important;
+}
+
+.soha-admin-table .ant-table-tbody > tr.ant-table-row-selected > td.ant-table-cell-fix-end,
+.soha-admin-table .ant-table-tbody > tr.ant-table-row-selected > td.ant-table-cell-fix-right,
+.soha-admin-table .ant-table-tbody > tr.ant-table-row-selected > td.ant-table-cell-fix-right-first,
+.soha-admin-table .ant-table-tbody > tr.ant-table-row-selected > td.ant-table-cell-fix-right-last {
+  background: var(--soha-table-row-selected-bg) !important;
+}
+
+.soha-admin-table .ant-table-tbody > tr.ant-table-row-selected:hover > td.ant-table-cell-fix-end,
+.soha-admin-table .ant-table-tbody > tr.ant-table-row-selected:hover > td.ant-table-cell-fix-right,
+.soha-admin-table .ant-table-tbody > tr.ant-table-row-selected:hover > td.ant-table-cell-fix-right-first,
+.soha-admin-table .ant-table-tbody > tr.ant-table-row-selected:hover > td.ant-table-cell-fix-right-last {
+  background: var(--soha-table-row-selected-hover-bg) !important;
+}
+
+.soha-admin-table .ant-table-thead > tr > th.ant-table-cell-fix-right,
+.soha-admin-table .ant-table-thead > tr > th.ant-table-cell-fix-end,
+.soha-admin-table .ant-table-thead > tr > th.ant-table-cell-fix-right-first,
+.soha-admin-table .ant-table-thead > tr > th.ant-table-cell-fix-right-last {
+  background: var(--soha-bg-surface-muted) !important;
+}
+
+.soha-admin-table .ant-table-tbody > tr:hover > td.ant-table-cell-fix-end,
+.soha-admin-table .ant-table-tbody > tr:hover > td.ant-table-cell-fix-right,
+.soha-admin-table .ant-table-tbody > tr:hover > td.ant-table-cell-fix-right-first,
+.soha-admin-table .ant-table-tbody > tr:hover > td.ant-table-cell-fix-right-last {
+  background: var(--soha-bg-surface) !important;
+}
+
+.soha-admin-table .ant-table-cell-fix-end::after,
+.soha-admin-table .ant-table-cell-fix-right::after,
+.soha-admin-table .ant-table-cell-fix-right-first::after,
+.soha-admin-table .ant-table-cell-fix-right-last::after {
+  box-shadow: none !important;
+}
+
+.soha-admin-table-shell.is-panel .soha-admin-table .ant-table-wrapper {
+  border: none;
+}
+
+.soha-admin-table-shell.is-panel .soha-admin-table .ant-table-container {
+  border: none;
+  border-radius: 0;
+}
+
+.soha-admin-table .ant-table-cell-fix-right-first .ant-space {
+  width: 100%;
+  justify-content: center;
+}
+
+@media (max-width: 768px) {
+
+  .soha-admin-table-header,
+.soha-admin-table-shell.is-panel .soha-admin-table-toolbar {
+    padding: 12px;
+  }
+
+  .soha-admin-table-toolbar-main,
+.soha-admin-table-toolbar-extra {
+    width: 100%;
+  }
+
+  .soha-admin-table-toolbar-extra {
+    justify-content: flex-start;
+    margin-left: 0;
+  }
+}

@@ -37,6 +37,7 @@ import type {
   StorageClassDetail,
 } from '@/types'
 import type { TableColumnsType } from 'antd'
+import './platform-pages.css'
 
 const { Text } = Typography
 

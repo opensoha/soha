@@ -5,6 +5,7 @@ import { Button, Card, Space, Typography } from 'antd'
 import { configureMonacoYaml, type MonacoYaml } from 'monaco-yaml'
 import EditorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker'
 import YamlWorker from 'monaco-yaml/yaml.worker?worker'
+import './resource-operation-panels.css'
 import { useI18n } from '@/i18n'
 import { k8sYamlSchema } from '@/schemas/k8s-yaml-schema'
 

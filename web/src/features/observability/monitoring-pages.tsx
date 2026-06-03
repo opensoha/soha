@@ -30,6 +30,7 @@ import { getAIWorkbenchPathForMode } from '@/features/copilot/workbench-navigati
 import { formatDateTime } from '@/utils/time'
 import { tableColumnPresets } from '@/utils/table-columns'
 import type { ApiResponse } from '@/types'
+import './observability-pages.css'
 import { useNavigate } from 'react-router-dom'
 import { AlertEventDetailDrawer } from '@/features/observability/alert-event-detail'
 

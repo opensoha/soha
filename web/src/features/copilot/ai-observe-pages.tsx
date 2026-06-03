@@ -35,6 +35,7 @@ import {
   scopeOverrideState,
 } from './workbench-toolset'
 import type { WorkbenchCatalog, WorkbenchSession, WorkbenchSessionScope } from './workbench-types'
+import './copilot-pages.css'
 
 const { Paragraph, Text } = Typography
 

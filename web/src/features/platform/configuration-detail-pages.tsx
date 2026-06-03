@@ -13,6 +13,7 @@ import { buildClusterScopedPath } from '@/features/platform/platform-scope-query
 import { usePlatformScopeStore } from '@/stores/platform-scope-store'
 import { formatRelativeTime } from '@/utils/time'
 import type { ApiResponse, ResourceYAMLView } from '@/types'
+import './platform-pages.css'
 
 const { Text, Paragraph } = Typography
 

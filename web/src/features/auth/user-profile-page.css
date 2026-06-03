@@ -1,0 +1,91 @@
+/* Styles moved from web/src/styles/globals.css; keep scoped to this component or feature owner. */
+
+.soha-profile-page {
+  gap: 12px;
+}
+
+.soha-profile-layout {
+  display: grid;
+  grid-template-columns: minmax(240px, 300px) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.soha-profile-summary-card {
+  position: sticky;
+  top: 12px;
+}
+
+.soha-profile-summary-card .ant-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.soha-profile-identity {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.soha-profile-avatar {
+  flex: 0 0 auto;
+  background: var(--soha-bg-surface-muted);
+  color: var(--soha-text-primary);
+  border: 1px solid var(--soha-border-color);
+}
+
+.soha-profile-identity__main {
+  min-width: 0;
+}
+
+.soha-profile-identity__main .ant-typography {
+  margin: 0;
+  max-width: 100%;
+}
+
+.soha-profile-identity__main span.ant-typography {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.soha-profile-summary-list,
+.soha-profile-tag-section,
+.soha-profile-main {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.soha-profile-summary-item {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  color: var(--soha-text-secondary);
+  font-size: 13px;
+}
+
+.soha-profile-summary-item span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.soha-profile-main .ant-card-body {
+  min-width: 0;
+}
+
+@media (max-width: 900px) {
+  .soha-profile-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .soha-profile-summary-card {
+    position: static;
+  }
+}

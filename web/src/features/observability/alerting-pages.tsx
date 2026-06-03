@@ -21,6 +21,7 @@ import type { ApiResponse } from '@/types'
 import { ReleaseFlowDagEditor } from '@/components/release-flow-dag-editor'
 import { createDefaultReleaseDagDefinition, normalizeReleaseDagDefinition } from '@/components/release-flow-dag-definition'
 import type { ReleaseDagDefinition } from '@/components/release-flow-dag-definition'
+import './observability-pages.css'
 import { useNavigate, useParams } from 'react-router-dom'
 import { AlertEventDetailPageContent } from '@/features/observability/alert-event-detail'
 

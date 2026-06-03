@@ -14,6 +14,7 @@ import { StatusTag } from '@/components/status-tag'
 import { api } from '@/services/api-client'
 import type { ApiResponse, LinkedIdentity, UserProfile, UserSession } from '@/types'
 import { formatDateTime, formatRelativeTime } from '@/utils/time'
+import './user-profile-page.css'
 
 const { Text, Title } = Typography
 

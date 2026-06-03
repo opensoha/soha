@@ -27,6 +27,7 @@ import {
 } from '@/features/platform/node-resource-utils'
 import type { ApiResponse, Namespace, Node, NodeDetail } from '@/types'
 import type { TableColumnsType } from 'antd'
+import './platform-pages.css'
 
 export function ClusterNodesPage() {
   const { t } = useI18n()

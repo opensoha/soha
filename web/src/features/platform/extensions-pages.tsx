@@ -46,6 +46,8 @@ import {
   ManagementState,
   ManagementTableToolbar,
 } from '@/components/management-list'
+import './extensions-pages.css'
+import './platform-pages.css'
 import { useI18n } from '@/i18n'
 import { StatusTag } from '@/components/status-tag'
 import { YamlDraftDiffEditor } from '@/components/yaml-draft-diff-editor'

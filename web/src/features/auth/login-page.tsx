@@ -31,6 +31,7 @@ import { findLandingPath } from "@/routes/meta";
 import { usePreferencesStore } from "@/stores/preferences-store";
 import { resolveThemeMode } from "@/theme/app-theme";
 import { readStoredBrandingSettings } from "@/utils/branding";
+import "./login-page.css";
 
 const { Title, Text } = Typography;
 

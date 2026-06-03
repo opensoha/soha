@@ -1,0 +1,785 @@
+/* Styles moved from web/src/styles/globals.css; keep scoped to this component or feature owner. */
+
+.soha-delivery-action-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.soha-delivery-action-block {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  border: 1px solid var(--soha-border-color);
+  border-radius: var(--soha-radius);
+  background: var(--soha-fill-weak);
+}
+
+.soha-application-signal-card.ant-card {
+  border-color: var(--soha-border-color);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--soha-bg-surface) 96%, var(--soha-fill-weak) 4%);
+  box-shadow: none;
+}
+
+.soha-application-signal-card.ant-card .ant-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.soha-application-signal-card__label {
+  color: var(--soha-text-tertiary);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.soha-application-signal-card__value {
+  color: var(--soha-text-primary);
+  font-size: 34px;
+  line-height: 1;
+  font-weight: 700;
+}
+
+.soha-release-board-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.soha-release-board-summary .soha-application-signal-card.ant-card .ant-card-body {
+  min-height: 78px;
+}
+
+.soha-release-board-summary strong {
+  color: var(--soha-text-primary);
+  font-size: 24px;
+  line-height: 1;
+}
+
+.soha-application-workspace-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.soha-application-workspace-summary__main {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 320px;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.soha-application-center-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.soha-application-center-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.soha-application-center-header__main {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.soha-application-center-header__title {
+  margin: 0;
+  color: var(--soha-text-primary);
+  font-size: 26px;
+  line-height: 1.2;
+  font-weight: 700;
+}
+
+.soha-application-management-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.soha-application-management-name.ant-btn-link {
+  padding: 0 !important;
+  color: var(--soha-text-primary) !important;
+  font-size: 15px;
+  font-weight: 700;
+  text-align: left;
+}
+
+.soha-application-management-name.ant-btn-link:hover,
+.soha-application-management-name.ant-btn-link:focus-visible {
+  color: var(--soha-primary) !important;
+  text-decoration: underline;
+}
+
+.soha-application-center-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.soha-application-center-toolbar .soha-application-group-tags {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.soha-application-center-toolbar .ant-btn {
+  flex: 0 0 auto;
+}
+
+.soha-application-group-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 0;
+}
+
+.soha-application-group-create {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.soha-application-group-create .ant-input {
+  width: 112px;
+  border-radius: 999px;
+}
+
+.soha-application-group-tag.ant-tag {
+  margin-inline-end: 0;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: var(--soha-fill-weak);
+  color: var(--soha-text-secondary);
+  cursor: pointer;
+  transition:
+    background 0.18s ease,
+    color 0.18s ease;
+}
+
+.soha-application-group-tag.ant-tag.is-active {
+  background: var(--soha-text-primary);
+  color: var(--soha-bg-surface);
+}
+
+.soha-application-card-grid,
+.soha-application-card-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+  gap: 14px;
+  align-items: stretch;
+}
+
+.soha-application-card-list {
+  grid-template-columns: repeat(auto-fill, minmax(220px, 260px));
+  justify-content: start;
+  align-items: start;
+}
+
+.soha-application-card.ant-card,
+.soha-application-empty-card.ant-card {
+  display: flex;
+  min-width: 0;
+  height: 100%;
+  flex-direction: column;
+}
+
+.soha-application-card.ant-card,
+.soha-application-empty-card.ant-card,
+.soha-application-lane-card.ant-card {
+  border-color: var(--soha-border-color);
+  border-radius: 8px;
+  background: var(--soha-bg-surface);
+  box-shadow: none;
+}
+
+.soha-application-card.ant-card {
+  height: auto;
+}
+
+.soha-application-card.ant-card .ant-card-body,
+.soha-application-empty-card.ant-card .ant-card-body,
+.soha-application-lane-card.ant-card .ant-card-body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+}
+
+.soha-application-card.ant-card .ant-card-body,
+.soha-application-card.ant-card .ant-card-actions {
+  padding-inline: 12px;
+}
+
+.soha-application-card.ant-card .ant-card-body {
+  min-height: 0;
+  padding-block: 12px 10px;
+}
+
+.soha-application-card.ant-card .ant-card-actions {
+  padding-block: 4px;
+  background: transparent;
+}
+
+.soha-application-card.ant-card .ant-card-actions .ant-btn {
+  height: 24px;
+  padding-inline: 6px;
+  font-size: 12px;
+}
+
+.soha-application-card.ant-card .ant-card-actions > li {
+  margin: 0;
+}
+
+.soha-application-card.ant-card:hover {
+  border-color: color-mix(in srgb, var(--soha-border-color) 55%, var(--soha-text-secondary) 45%);
+}
+
+.soha-application-card__header,
+.soha-application-card__title-wrap,
+.soha-application-lane-card__item {
+  display: flex;
+  flex-direction: column;
+}
+
+.soha-application-card__header {
+  flex-direction: row;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.soha-application-card__edit-trigger.ant-btn {
+  width: fit-content;
+  margin-left: auto;
+}
+
+.soha-application-card__title-wrap {
+  flex: 1 1 auto;
+  gap: 2px;
+  min-width: 0;
+}
+
+.soha-application-card__title-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  min-width: 0;
+}
+
+.soha-application-card__title {
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--soha-text-primary);
+  font-size: 15px;
+  line-height: 20px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.soha-application-card__subline {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  line-height: 18px;
+}
+
+.soha-application-card__subline .ant-typography {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.soha-application-card__subline .ant-tag {
+  margin-inline-end: 0;
+  padding-inline: 6px;
+  border-radius: 6px;
+  font-size: 11px;
+  line-height: 18px;
+}
+
+.soha-application-card__header-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: flex-end;
+  max-width: 28px;
+  gap: 4px;
+}
+
+.soha-application-card__more.ant-btn {
+  flex: 0 0 auto;
+  width: 22px;
+  min-width: 22px;
+  height: 22px;
+  padding: 0;
+  color: var(--soha-text-secondary);
+}
+
+.soha-application-card__more.ant-btn:hover,
+.soha-application-card__more.ant-btn:focus-visible {
+  color: var(--soha-text-primary);
+  background: var(--soha-fill-weak);
+}
+
+.soha-application-card__signals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.soha-application-card__signals .ant-tag {
+  margin-inline-end: 0;
+  padding-inline: 6px;
+  border-radius: 6px;
+  font-size: 11px;
+  line-height: 18px;
+}
+
+.soha-execution-task-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.soha-execution-task-summary .ant-card-body {
+  display: flex;
+  min-height: 78px;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.soha-execution-task-summary strong {
+  color: var(--soha-text-primary);
+  font-size: 24px;
+  line-height: 1;
+}
+
+.soha-release-bundle-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.soha-release-bundle-summary .ant-card-body {
+  display: flex;
+  min-height: 78px;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.soha-release-bundle-summary strong {
+  color: var(--soha-text-primary);
+  font-size: 24px;
+  line-height: 1;
+}
+
+.soha-application-card__stats {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  margin-top: 0;
+  padding-top: 6px;
+  border-top: 1px solid var(--soha-border-color);
+}
+
+.soha-application-card__stat {
+  display: flex;
+  min-width: 0;
+  flex: 0 0 auto;
+  align-items: baseline;
+  gap: 3px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.soha-application-card__stat.is-wide {
+  flex: 1 1 auto;
+}
+
+.soha-application-card__stat-label {
+  color: var(--soha-text-tertiary);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+  white-space: nowrap;
+}
+
+.soha-application-card__stat-label::after {
+  content: ":";
+}
+
+.soha-application-card__stat-value {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--soha-text-primary);
+  font-size: 12px;
+  line-height: 18px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.soha-application-lane-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.soha-application-lane-card__item {
+  gap: 4px;
+}
+
+.soha-application-lane-card__item + .soha-application-lane-card__item {
+  padding-top: 12px;
+  border-top: 1px solid var(--soha-border-color);
+}
+
+.soha-application-runtime-service-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.soha-application-runtime-service-summary .ant-card-body {
+  display: flex;
+  min-height: 72px;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.soha-application-runtime-service-summary strong {
+  color: var(--soha-text-primary);
+  font-size: 24px;
+  line-height: 1;
+}
+
+.soha-application-runtime-delivery-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.soha-application-runtime-delivery-summary .ant-card-body {
+  display: flex;
+  min-height: 82px;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.soha-application-runtime-delivery-summary__main {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.soha-application-runtime-delivery-summary__main strong {
+  color: var(--soha-text-primary);
+  font-size: 20px;
+  line-height: 1.1;
+}
+
+.soha-application-runtime-delivery-summary__main .ant-typography {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.soha-application-runtime-delivery-summary__main .ant-tag {
+  width: fit-content;
+  margin-inline-end: 0;
+}
+
+.soha-application-delivery-actions.ant-card {
+  border-color: var(--soha-border-color);
+  border-radius: var(--soha-radius);
+  box-shadow: none;
+}
+
+.soha-application-delivery-actions__form {
+  width: 100%;
+}
+
+.soha-application-delivery-actions__grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.soha-application-delivery-actions__grid .ant-form-item {
+  margin-bottom: 0;
+}
+
+.soha-application-delivery-actions__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--soha-border-color);
+}
+
+.soha-application-runtime-overview-grid,
+.soha-application-runtime-delivery-grid,
+.soha-application-runtime-pipeline-grid,
+.soha-application-runtime-settings-grid,
+.soha-application-runtime-verification-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.soha-application-runtime-settings-grid .soha-admin-table-shell {
+  grid-column: 1 / -1;
+}
+
+.soha-application-runtime-binding-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--soha-border-color);
+  border-radius: var(--soha-radius);
+  background: var(--soha-fill-weak);
+}
+
+.soha-application-runtime-binding-row__main {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.soha-application-runtime-binding-row__main strong {
+  color: var(--soha-text-primary);
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.soha-application-runtime-environment-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.soha-application-runtime-delivery-grid .ant-card,
+.soha-application-runtime-pipeline-grid .ant-card,
+.soha-application-runtime-settings-grid .ant-card,
+.soha-application-runtime-verification-grid .ant-card,
+.soha-application-runtime-overview-grid .ant-card {
+  border-color: var(--soha-border-color);
+  border-radius: var(--soha-radius);
+  box-shadow: none;
+}
+
+.soha-application-service-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+  gap: 12px;
+}
+
+.soha-application-service-card.ant-card {
+  border-color: var(--soha-border-color);
+  border-radius: var(--soha-radius);
+  box-shadow: none;
+}
+
+.soha-application-service-card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.soha-application-service-card__body {
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.soha-application-container-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.soha-application-container-row {
+  display: grid;
+  grid-template-columns: minmax(72px, 0.7fr) minmax(0, 1.4fr) auto;
+  gap: 8px;
+  align-items: center;
+  min-height: 34px;
+  padding: 8px;
+  border: 1px solid var(--soha-border-color);
+  border-radius: var(--soha-radius);
+  background: var(--soha-fill-weak);
+}
+
+.soha-application-container-row > span,
+.soha-application-container-row .ant-typography {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.soha-application-service-form-grid,
+.soha-application-service-container-editor__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.soha-application-service-form-grid .ant-form-item,
+.soha-application-service-container-editor__grid .ant-form-item {
+  margin-bottom: 0;
+}
+
+.soha-application-service-containers-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.soha-application-service-containers-editor__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.soha-application-service-container-editor.ant-card {
+  border-color: var(--soha-border-color);
+  border-radius: var(--soha-radius);
+  box-shadow: none;
+}
+
+.soha-application-service-container-editor .ant-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.soha-template-editor-card {
+  margin-top: 16px;
+}
+
+.soha-flow-stage-list,
+.soha-flow-step-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.soha-flow-stage-card,
+.soha-flow-step-card {
+  margin-top: 16px;
+}
+
+.soha-flow-step-config {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+@media (max-width: 1200px) {
+
+  .soha-release-board-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .soha-application-runtime-delivery-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .soha-execution-task-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .soha-release-bundle-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 768px) {
+
+  .soha-release-board-summary,
+.soha-execution-task-summary,
+.soha-release-bundle-summary,
+.soha-application-card-grid,
+.soha-application-card-list,
+.soha-application-lane-grid,
+.soha-application-runtime-service-summary,
+.soha-application-runtime-delivery-summary,
+.soha-application-delivery-actions__grid,
+.soha-application-runtime-overview-grid,
+.soha-application-runtime-delivery-grid,
+.soha-application-runtime-pipeline-grid,
+.soha-application-runtime-settings-grid,
+.soha-application-runtime-verification-grid,
+.soha-application-service-form-grid,
+.soha-application-service-container-editor__grid {
+    grid-template-columns: 1fr;
+  }
+
+  .soha-application-center-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .soha-application-center-toolbar .ant-btn {
+    width: 100%;
+  }
+
+  .soha-application-delivery-actions__footer {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .soha-application-container-row {
+    grid-template-columns: 1fr;
+  }
+
+  .soha-application-card-grid {
+    justify-content: stretch;
+  }
+
+  .soha-delivery-action-grid {
+    grid-template-columns: 1fr;
+  }
+}

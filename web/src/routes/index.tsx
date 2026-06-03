@@ -1,635 +1,7 @@
-import { lazy, Suspense } from "react";
-import { Navigate, Route, Routes, useLocation, useParams } from "react-router-dom";
-import { Spin } from "antd";
+import { Navigate, Route, Routes } from "react-router-dom";
 import { AuthGuard } from "@/features/auth/auth-guard";
-import {
-  getAIModelSettingsPath,
-  getAIOperationsPath,
-  getAIToolsPath,
-  getAIWorkbenchPathForMode,
-} from "@/features/copilot/workbench-navigation";
 import { AppLayout } from "@/layouts/app-layout";
-
-function lazyNamed<T extends Record<string, any>, K extends keyof T>(
-  importer: () => Promise<T>,
-  key: K,
-) {
-  return lazy(async () => {
-    const mod = await importer();
-    return { default: mod[key] as any };
-  });
-}
-
-const LoginPage = lazyNamed(
-  () => import("@/features/auth/login-page"),
-  "LoginPage",
-);
-const OIDCCallbackPage = lazyNamed(
-  () => import("@/features/auth/oidc-callback-page"),
-  "OIDCCallbackPage",
-);
-const UserProfilePage = lazyNamed(
-  () => import("@/features/auth/user-profile-page"),
-  "UserProfilePage",
-);
-
-const OverviewPage = lazyNamed(
-  () => import("@/features/platform/overview-page"),
-  "OverviewPage",
-);
-const ClustersPage = lazyNamed(
-  () => import("@/features/platform/clusters-page"),
-  "ClustersPage",
-);
-const ClusterDetailPage = lazyNamed(
-  () => import("@/features/platform/clusters-page"),
-  "ClusterDetailPage",
-);
-const ClusterNodesPage = lazyNamed(
-  () => import("@/features/platform/cluster-resources-pages"),
-  "ClusterNodesPage",
-);
-const ClusterNamespacesPage = lazyNamed(
-  () => import("@/features/platform/cluster-resources-pages"),
-  "ClusterNamespacesPage",
-);
-const NodeDetailPage = lazyNamed(
-  () => import("@/features/platform/node-detail-page"),
-  "NodeDetailPage",
-);
-
-const WorkloadsOverviewPage = lazyNamed(
-  () => import("@/features/platform/workloads-pages"),
-  "WorkloadsOverviewPage",
-);
-const WorkloadsDeploymentsPage = lazyNamed(
-  () => import("@/features/platform/workloads-pages"),
-  "WorkloadsDeploymentsPage",
-);
-const WorkloadsPodsPage = lazyNamed(
-  () => import("@/features/platform/workloads-pages"),
-  "WorkloadsPodsPage",
-);
-const WorkloadsStatefulSetsPage = lazyNamed(
-  () => import("@/features/platform/workloads-pages"),
-  "WorkloadsStatefulSetsPage",
-);
-const WorkloadsDaemonSetsPage = lazyNamed(
-  () => import("@/features/platform/workloads-pages"),
-  "WorkloadsDaemonSetsPage",
-);
-const WorkloadsJobsPage = lazyNamed(
-  () => import("@/features/platform/workloads-pages"),
-  "WorkloadsJobsPage",
-);
-const WorkloadsCronJobsPage = lazyNamed(
-  () => import("@/features/platform/workloads-pages"),
-  "WorkloadsCronJobsPage",
-);
-const WorkloadsReplicaSetsPage = lazyNamed(
-  () => import("@/features/platform/platform-management-pages"),
-  "WorkloadsReplicaSetsPage",
-);
-const WorkloadsReplicationControllersPage = lazyNamed(
-  () => import("@/features/platform/platform-management-pages"),
-  "WorkloadsReplicationControllersPage",
-);
-const PodDetailPage = lazyNamed(
-  () => import("@/features/platform/workloads-pages"),
-  "PodDetailPage",
-);
-const DeploymentDetailPage = lazyNamed(
-  () => import("@/features/platform/workloads-pages"),
-  "DeploymentDetailPage",
-);
-const StatefulSetDetailPage = lazyNamed(
-  () => import("@/features/platform/workloads-pages"),
-  "StatefulSetDetailPage",
-);
-const DaemonSetDetailPage = lazyNamed(
-  () => import("@/features/platform/workloads-pages"),
-  "DaemonSetDetailPage",
-);
-const JobDetailPage = lazyNamed(
-  () => import("@/features/platform/workloads-pages"),
-  "JobDetailPage",
-);
-const CronJobDetailPage = lazyNamed(
-  () => import("@/features/platform/workloads-pages"),
-  "CronJobDetailPage",
-);
-
-const ConfigurationConfigMapsPage = lazyNamed(
-  () => import("@/features/platform/platform-management-pages"),
-  "ConfigurationConfigMapsPage",
-);
-const ConfigurationSecretsPage = lazyNamed(
-  () => import("@/features/platform/platform-management-pages"),
-  "ConfigurationSecretsPage",
-);
-const ConfigMapDetailPage = lazyNamed(
-  () => import("@/features/platform/configuration-detail-pages"),
-  "ConfigMapDetailPage",
-);
-const SecretDetailPage = lazyNamed(
-  () => import("@/features/platform/configuration-detail-pages"),
-  "SecretDetailPage",
-);
-const ConfigurationResourceQuotasPage = lazyNamed(
-  () => import("@/features/platform/platform-management-pages"),
-  "ConfigurationResourceQuotasPage",
-);
-const ConfigurationLimitRangesPage = lazyNamed(
-  () => import("@/features/platform/platform-management-pages"),
-  "ConfigurationLimitRangesPage",
-);
-const ConfigurationHPAPage = lazyNamed(
-  () => import("@/features/platform/platform-management-pages"),
-  "ConfigurationHPAPage",
-);
-const ConfigurationPodDisruptionBudgetsPage = lazyNamed(
-  () => import("@/features/platform/platform-management-pages"),
-  "ConfigurationPodDisruptionBudgetsPage",
-);
-const ConfigurationPriorityClassesPage = lazyNamed(
-  () => import("@/features/platform/platform-management-pages"),
-  "ConfigurationPriorityClassesPage",
-);
-const ConfigurationRuntimeClassesPage = lazyNamed(
-  () => import("@/features/platform/platform-management-pages"),
-  "ConfigurationRuntimeClassesPage",
-);
-const ConfigurationLeasesPage = lazyNamed(
-  () => import("@/features/platform/platform-management-pages"),
-  "ConfigurationLeasesPage",
-);
-const ConfigurationMutatingWebhooksPage = lazyNamed(
-  () => import("@/features/platform/platform-management-pages"),
-  "ConfigurationMutatingWebhooksPage",
-);
-const ConfigurationValidatingWebhooksPage = lazyNamed(
-  () => import("@/features/platform/platform-management-pages"),
-  "ConfigurationValidatingWebhooksPage",
-);
-const PlatformAccessControlServiceAccountsPage = lazyNamed(
-  () => import("@/features/platform/platform-management-pages"),
-  "PlatformAccessControlServiceAccountsPage",
-);
-const PlatformAccessControlClusterRolesPage = lazyNamed(
-  () => import("@/features/platform/platform-management-pages"),
-  "PlatformAccessControlClusterRolesPage",
-);
-const PlatformAccessControlRolesPage = lazyNamed(
-  () => import("@/features/platform/platform-management-pages"),
-  "PlatformAccessControlRolesPage",
-);
-const PlatformAccessControlClusterRoleBindingsPage = lazyNamed(
-  () => import("@/features/platform/platform-management-pages"),
-  "PlatformAccessControlClusterRoleBindingsPage",
-);
-const PlatformAccessControlRoleBindingsPage = lazyNamed(
-  () => import("@/features/platform/platform-management-pages"),
-  "PlatformAccessControlRoleBindingsPage",
-);
-const PlatformAccessControlServiceAccountDetailPage = lazyNamed(
-  () => import("@/features/platform/rbac-detail-pages"),
-  "PlatformAccessControlServiceAccountDetailPage",
-);
-const PlatformAccessControlRoleDetailPage = lazyNamed(
-  () => import("@/features/platform/rbac-detail-pages"),
-  "PlatformAccessControlRoleDetailPage",
-);
-const PlatformAccessControlRoleBindingDetailPage = lazyNamed(
-  () => import("@/features/platform/rbac-detail-pages"),
-  "PlatformAccessControlRoleBindingDetailPage",
-);
-const PlatformAccessControlClusterRoleDetailPage = lazyNamed(
-  () => import("@/features/platform/rbac-detail-pages"),
-  "PlatformAccessControlClusterRoleDetailPage",
-);
-const PlatformAccessControlClusterRoleBindingDetailPage = lazyNamed(
-  () => import("@/features/platform/rbac-detail-pages"),
-  "PlatformAccessControlClusterRoleBindingDetailPage",
-);
-
-const NetworkServicesPage = lazyNamed(
-  () => import("@/features/platform/network-storage-pages"),
-  "NetworkServicesPage",
-);
-const ServiceDetailPage = lazyNamed(
-  () => import("@/features/platform/network-storage-pages"),
-  "ServiceDetailPage",
-);
-const NetworkIngressesPage = lazyNamed(
-  () => import("@/features/platform/network-storage-pages"),
-  "NetworkIngressesPage",
-);
-const NetworkGatewayClassesPage = lazyNamed(
-  () => import("@/features/platform/network-storage-pages"),
-  "NetworkGatewayClassesPage",
-);
-const NetworkGatewaysPage = lazyNamed(
-  () => import("@/features/platform/network-storage-pages"),
-  "NetworkGatewaysPage",
-);
-const NetworkHTTPRoutesPage = lazyNamed(
-  () => import("@/features/platform/network-storage-pages"),
-  "NetworkHTTPRoutesPage",
-);
-const NetworkBackendTLSPoliciesPage = lazyNamed(
-  () => import("@/features/platform/network-storage-pages"),
-  "NetworkBackendTLSPoliciesPage",
-);
-const NetworkGRPCRoutesPage = lazyNamed(
-  () => import("@/features/platform/network-storage-pages"),
-  "NetworkGRPCRoutesPage",
-);
-const NetworkReferenceGrantsPage = lazyNamed(
-  () => import("@/features/platform/network-storage-pages"),
-  "NetworkReferenceGrantsPage",
-);
-const NetworkTopologyPage = lazyNamed(
-  () => import("@/features/platform/network-topology-page"),
-  "NetworkTopologyPage",
-);
-const NetworkEndpointSlicesPage = lazyNamed(
-  () => import("@/features/platform/network-storage-pages"),
-  "NetworkEndpointSlicesPage",
-);
-const NetworkIngressClassesPage = lazyNamed(
-  () => import("@/features/platform/network-storage-pages"),
-  "NetworkIngressClassesPage",
-);
-const NetworkPoliciesPage = lazyNamed(
-  () => import("@/features/platform/network-storage-pages"),
-  "NetworkPoliciesPage",
-);
-const NetworkPortForwardPage = lazyNamed(
-  () => import("@/features/platform/platform-management-pages"),
-  "NetworkPortForwardPage",
-);
-const StoragePvcPage = lazyNamed(
-  () => import("@/features/platform/network-storage-pages"),
-  "StoragePvcPage",
-);
-const StoragePvPage = lazyNamed(
-  () => import("@/features/platform/network-storage-pages"),
-  "StoragePvPage",
-);
-const StorageClassesPage = lazyNamed(
-  () => import("@/features/platform/network-storage-pages"),
-  "StorageClassesPage",
-);
-const StoragePvcDetailPage = lazyNamed(
-  () => import("@/features/platform/network-storage-pages"),
-  "StoragePvcDetailPage",
-);
-const StoragePvDetailPage = lazyNamed(
-  () => import("@/features/platform/network-storage-pages"),
-  "StoragePvDetailPage",
-);
-const StorageClassDetailPage = lazyNamed(
-  () => import("@/features/platform/network-storage-pages"),
-  "StorageClassDetailPage",
-);
-
-const CRDPage = lazyNamed(
-  () => import("@/features/platform/extensions-pages"),
-  "CRDPage",
-);
-const CRDApiGroupDetailPage = lazyNamed(
-  () => import("@/features/platform/extensions-pages"),
-  "CRDApiGroupDetailPage",
-);
-const HelmReleasesPage = lazyNamed(
-  () => import("@/features/platform/extensions-pages"),
-  "HelmReleasesPage",
-);
-const HelmReleaseDetailPage = lazyNamed(
-  () => import("@/features/platform/extensions-pages"),
-  "HelmReleaseDetailPage",
-);
-const HelmChartsPage = lazyNamed(
-  () => import("@/features/platform/extensions-pages"),
-  "HelmChartsPage",
-);
-
-const ApplicationsPage = lazyNamed(
-  () => import("@/features/delivery/delivery-app-pages"),
-  "ApplicationsPage",
-);
-const ApplicationDetailPage = lazyNamed(
-  () => import("@/features/delivery/application-runtime-pages"),
-  "ApplicationDetailPage",
-);
-const ApplicationWorkloadDetailPage = lazyNamed(
-  () => import("@/features/delivery/application-runtime-pages"),
-  "ApplicationWorkloadDetailPage",
-);
-const BuildTemplatesPage = lazyNamed(
-  () => import("@/features/delivery/delivery-app-pages"),
-  "BuildTemplatesPage",
-);
-const DeliveryBlueprintsPage = lazyNamed(
-  () => import("@/features/delivery/delivery-blueprint-pages"),
-  "DeliveryBlueprintsPage",
-);
-const ReleaseBundlesPage = lazyNamed(
-  () => import("@/features/delivery/delivery-app-pages"),
-  "ReleaseBundlesPage",
-);
-const ExecutionTasksPage = lazyNamed(
-  () => import("@/features/delivery/delivery-app-pages"),
-  "ExecutionTasksPage",
-);
-const ApprovalPoliciesPage = lazyNamed(
-  () => import("@/features/delivery/delivery-app-pages"),
-  "ApprovalPoliciesPage",
-);
-const ApplicationEnvironmentsPage = lazyNamed(
-  () => import("@/features/delivery/delivery-catalog-pages"),
-  "ApplicationEnvironmentsPage",
-);
-const ApplicationEnvironmentDetailPage = lazyNamed(
-  () => import("@/features/delivery/delivery-catalog-pages"),
-  "ApplicationEnvironmentDetailPage",
-);
-const WorkflowTemplatesPage = lazyNamed(
-  () => import("@/features/delivery/delivery-catalog-pages"),
-  "WorkflowTemplatesPage",
-);
-const ReleaseBoardPage = lazyNamed(
-  () => import("@/features/delivery/delivery-catalog-pages"),
-  "ReleaseBoardPage",
-);
-const WorkflowsPage = lazyNamed(
-  () => import("@/features/delivery/delivery-app-pages"),
-  "WorkflowsPage",
-);
-const ReleasesPage = lazyNamed(
-  () => import("@/features/delivery/delivery-pages"),
-  "ReleasesPage",
-);
-const RegistriesPage = lazyNamed(
-  () => import("@/features/delivery/delivery-pages"),
-  "RegistriesPage",
-);
-
-const VirtualizationOverviewPage = lazyNamed(
-  () => import("@/features/virtualization/virtualization-pages"),
-  "VirtualizationOverviewPage",
-);
-const VirtualizationVmsPage = lazyNamed(
-  () => import("@/features/virtualization/virtualization-pages"),
-  "VirtualizationVmsPage",
-);
-const VirtualizationVmDetailPage = lazyNamed(
-  () => import("@/features/virtualization/virtualization-pages"),
-  "VirtualizationVmDetailPage",
-);
-const VirtualizationClustersPage = lazyNamed(
-  () => import("@/features/virtualization/virtualization-pages"),
-  "VirtualizationClustersPage",
-);
-const VirtualizationImagesPage = lazyNamed(
-  () => import("@/features/virtualization/virtualization-pages"),
-  "VirtualizationImagesPage",
-);
-const VirtualizationFlavorsPage = lazyNamed(
-  () => import("@/features/virtualization/virtualization-pages"),
-  "VirtualizationFlavorsPage",
-);
-const VirtualizationOperationsPage = lazyNamed(
-  () => import("@/features/virtualization/virtualization-pages"),
-  "VirtualizationOperationsPage",
-);
-const VirtualizationSyncPage = lazyNamed(
-  () => import("@/features/virtualization/virtualization-pages"),
-  "VirtualizationSyncPage",
-);
-
-const DockerOverviewPage = lazyNamed(
-  () => import("@/features/docker/docker-pages"),
-  "DockerOverviewPage",
-);
-const DockerHostsPage = lazyNamed(
-  () => import("@/features/docker/docker-pages"),
-  "DockerHostsPage",
-);
-const DockerProjectsPage = lazyNamed(
-  () => import("@/features/docker/docker-pages"),
-  "DockerProjectsPage",
-);
-const DockerServicesPage = lazyNamed(
-  () => import("@/features/docker/docker-pages"),
-  "DockerServicesPage",
-);
-const DockerPortsPage = lazyNamed(
-  () => import("@/features/docker/docker-pages"),
-  "DockerPortsPage",
-);
-const DockerTemplatesPage = lazyNamed(
-  () => import("@/features/docker/docker-pages"),
-  "DockerTemplatesPage",
-);
-const DockerOperationsPage = lazyNamed(
-  () => import("@/features/docker/docker-pages"),
-  "DockerOperationsPage",
-);
-
-const MonitoringPage = lazyNamed(
-  () => import("@/features/observability/monitoring-pages"),
-  "MonitoringPage",
-);
-const AlertIntegrationsPage = lazyNamed(
-  () => import("@/features/observability/monitoring-pages"),
-  "AlertIntegrationsPage",
-);
-const AlertsPage = lazyNamed(
-  () => import("@/features/observability/monitoring-pages"),
-  "AlertsPage",
-);
-const NotificationsPage = lazyNamed(
-  () => import("@/features/observability/monitoring-pages"),
-  "NotificationsPage",
-);
-const EventsPage = lazyNamed(
-  () => import("@/features/observability/monitoring-pages"),
-  "EventsPage",
-);
-const AlertRulesPage = lazyNamed(
-  () => import("@/features/observability/alerting-pages"),
-  "AlertRulesPage",
-);
-const HealingPage = lazyNamed(
-  () => import("@/features/observability/alerting-pages"),
-  "HealingPage",
-);
-const OnCallBoardPage = lazyNamed(
-  () => import("@/features/observability/alerting-pages"),
-  "OnCallBoardPage",
-);
-const OnCallSettingsPage = lazyNamed(
-  () => import("@/features/observability/alerting-pages"),
-  "OnCallSettingsPage",
-);
-const AlertEventDetailPage = lazyNamed(
-  () => import("@/features/observability/alerting-pages"),
-  "AlertEventDetailPage",
-);
-
-const AIWorkbenchPage = lazyNamed(
-  () => import("@/features/copilot/ai-observe-pages"),
-  "AIWorkbenchPage",
-);
-const AIOperationsPage = lazyNamed(
-  () => import("@/features/copilot/ai-observe-pages"),
-  "AIOperationsPage",
-);
-const AIToolsPage = lazyNamed(
-  () => import("@/features/copilot/ai-observe-pages"),
-  "AIToolsPage",
-);
-const AIModelSettingsPage = lazyNamed(
-  () => import("@/features/copilot/ai-observe-pages"),
-  "AIModelSettingsPage",
-);
-const AIGatewayPage = lazyNamed(
-  () => import("@/features/copilot/ai-gateway-page"),
-  "AIGatewayPage",
-);
-
-const AccessCenterPage = lazyNamed(
-  () => import("@/features/access/access-pages"),
-  "AccessCenterPage",
-);
-const AccessUsersPage = lazyNamed(
-  () => import("@/features/access/access-pages"),
-  "AccessUsersPage",
-);
-const AccessRolesPage = lazyNamed(
-  () => import("@/features/access/access-pages"),
-  "AccessRolesPage",
-);
-const AccessTeamsPage = lazyNamed(
-  () => import("@/features/access/access-pages"),
-  "AccessTeamsPage",
-);
-const AccessPoliciesPage = lazyNamed(
-  () => import("@/features/access/access-pages"),
-  "AccessPoliciesPage",
-);
-const AccessScopeGrantsPage = lazyNamed(
-  () => import("@/features/access/scope-grants-page"),
-  "AccessScopeGrantsPage",
-);
-
-const OnlineUsersPage = lazyNamed(
-  () => import("@/features/system/system-pages"),
-  "OnlineUsersPage",
-);
-const AnnouncementsPage = lazyNamed(
-  () => import("@/features/system/system-pages"),
-  "AnnouncementsPage",
-);
-const MenusPage = lazyNamed(
-  () => import("@/features/system/system-pages"),
-  "MenusPage",
-);
-const AuditLogsPage = lazyNamed(
-  () => import("@/features/system/system-pages"),
-  "AuditLogsPage",
-);
-const OperationLogsPage = lazyNamed(
-  () => import("@/features/system/system-pages"),
-  "OperationLogsPage",
-);
-
-const SettingsCenterPage = lazyNamed(
-  () => import("@/features/settings/settings-pages"),
-  "SettingsCenterPage",
-);
-
-function LazyPage({ children }: { children: React.ReactNode }) {
-  return (
-    <Suspense
-      fallback={
-        <div className="flex items-center justify-center h-full py-20">
-          <Spin size="large" />
-        </div>
-      }
-    >
-      {children}
-    </Suspense>
-  );
-}
-
-function ApplicationManagementRedirect() {
-  const { applicationId } = useParams();
-  return <Navigate to={applicationId ? `/applications/${applicationId}` : "/applications"} replace />;
-}
-
-function AIWorkbenchModeRedirect() {
-  const location = useLocation();
-  return (
-    <Navigate
-      to={getAIWorkbenchPathForMode(new URLSearchParams(location.search).get("mode"), location.search)}
-      replace
-    />
-  );
-}
-
-function AIWorkbenchFixedModeRedirect({ mode }: { mode: string }) {
-  const location = useLocation();
-  return <Navigate to={getAIWorkbenchPathForMode(mode, location.search)} replace />;
-}
-
-function AIWorkbenchOperationsRedirect() {
-  const location = useLocation();
-  return <Navigate to={getAIOperationsPath(location.search)} replace />;
-}
-
-function AIWorkbenchToolsRedirect() {
-  const location = useLocation();
-  return <Navigate to={getAIToolsPath(location.search)} replace />;
-}
-
-function AIWorkbenchModelSettingsRedirect() {
-  const location = useLocation();
-  return <Navigate to={getAIModelSettingsPath(location.search)} replace />;
-}
-
-const AI_GATEWAY_TAB_PATHS: Record<string, string> = {
-  overview: "/ai-gateway/overview",
-  manifest: "/ai-gateway/manifest",
-  clients: "/ai-gateway/clients",
-  tokens: "/ai-gateway/tokens",
-  "service-accounts": "/ai-gateway/tokens",
-  grants: "/ai-gateway/governance",
-  policies: "/ai-gateway/governance",
-  bindings: "/ai-gateway/governance",
-  governance: "/ai-gateway/governance",
-  approvals: "/ai-gateway/governance",
-  audit: "/ai-gateway/call-logs",
-  "call-logs": "/ai-gateway/call-logs",
-};
-
-function getAIGatewayRedirectTarget(search: string) {
-  const params = new URLSearchParams(search);
-  const requestedTab = params.get("tab")?.trim() ?? "";
-  const hasApprovalFocus = Boolean(params.get("approvalRequestId")?.trim());
-  const targetPath = AI_GATEWAY_TAB_PATHS[requestedTab] ?? (hasApprovalFocus ? "/ai-gateway/governance" : "/ai-gateway/overview");
-  if (["overview", "manifest", "clients", "tokens", "governance", "call-logs"].includes(requestedTab)) {
-    params.delete("tab");
-  }
-  const suffix = params.toString();
-  return `${targetPath}${suffix ? `?${suffix}` : ""}`;
-}
-
-function AIGatewayRedirect() {
-  const location = useLocation();
-  return <Navigate to={getAIGatewayRedirectTarget(location.search)} replace />;
-}
+import * as RoutePages from "./route-lazy-pages";
 
 export function AppRouter() {
   return (
@@ -637,25 +9,25 @@ export function AppRouter() {
       <Route
         path="/login"
         element={
-          <LazyPage>
-            <LoginPage />
-          </LazyPage>
+          <RoutePages.LazyPage>
+            <RoutePages.LoginPage />
+          </RoutePages.LazyPage>
         }
       />
       <Route
         path="/auth/oidc/callback"
         element={
-          <LazyPage>
-            <OIDCCallbackPage />
-          </LazyPage>
+          <RoutePages.LazyPage>
+            <RoutePages.OIDCCallbackPage />
+          </RoutePages.LazyPage>
         }
       />
       <Route
         path="/login/callback"
         element={
-          <LazyPage>
-            <OIDCCallbackPage />
-          </LazyPage>
+          <RoutePages.LazyPage>
+            <RoutePages.OIDCCallbackPage />
+          </RoutePages.LazyPage>
         }
       />
       <Route element={<AuthGuard />}>
@@ -663,25 +35,25 @@ export function AppRouter() {
           <Route
             path="/"
             element={
-              <LazyPage>
-                <OverviewPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.OverviewPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/clusters"
             element={
-              <LazyPage>
-                <ClustersPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.ClustersPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/clusters/:clusterId"
             element={
-              <LazyPage>
-                <ClusterDetailPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.ClusterDetailPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
@@ -691,25 +63,25 @@ export function AppRouter() {
           <Route
             path="/cluster-resources/nodes"
             element={
-              <LazyPage>
-                <ClusterNodesPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.ClusterNodesPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/cluster-resources/nodes/:nodeName"
             element={
-              <LazyPage>
-                <NodeDetailPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.NodeDetailPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/cluster-resources/namespaces"
             element={
-              <LazyPage>
-                <ClusterNamespacesPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.ClusterNamespacesPage />
+              </RoutePages.LazyPage>
             }
           />
 
@@ -720,121 +92,121 @@ export function AppRouter() {
           <Route
             path="/workloads/overview"
             element={
-              <LazyPage>
-                <WorkloadsOverviewPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.WorkloadsOverviewPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/workloads/deployments"
             element={
-              <LazyPage>
-                <WorkloadsDeploymentsPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.WorkloadsDeploymentsPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/workloads/pods"
             element={
-              <LazyPage>
-                <WorkloadsPodsPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.WorkloadsPodsPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/workloads/statefulsets"
             element={
-              <LazyPage>
-                <WorkloadsStatefulSetsPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.WorkloadsStatefulSetsPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/workloads/daemonsets"
             element={
-              <LazyPage>
-                <WorkloadsDaemonSetsPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.WorkloadsDaemonSetsPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/workloads/jobs"
             element={
-              <LazyPage>
-                <WorkloadsJobsPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.WorkloadsJobsPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/workloads/cronjobs"
             element={
-              <LazyPage>
-                <WorkloadsCronJobsPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.WorkloadsCronJobsPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/workloads/replicasets"
             element={
-              <LazyPage>
-                <WorkloadsReplicaSetsPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.WorkloadsReplicaSetsPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/workloads/replicationcontrollers"
             element={
-              <LazyPage>
-                <WorkloadsReplicationControllersPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.WorkloadsReplicationControllersPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/workloads/pods/:podName"
             element={
-              <LazyPage>
-                <PodDetailPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.PodDetailPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/workloads/deployments/:deploymentName"
             element={
-              <LazyPage>
-                <DeploymentDetailPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.DeploymentDetailPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/workloads/statefulsets/:statefulSetName"
             element={
-              <LazyPage>
-                <StatefulSetDetailPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.StatefulSetDetailPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/workloads/daemonsets/:daemonSetName"
             element={
-              <LazyPage>
-                <DaemonSetDetailPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.DaemonSetDetailPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/workloads/jobs/:jobName"
             element={
-              <LazyPage>
-                <JobDetailPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.JobDetailPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/workloads/cronjobs/:cronJobName"
             element={
-              <LazyPage>
-                <CronJobDetailPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.CronJobDetailPage />
+              </RoutePages.LazyPage>
             }
           />
 
@@ -845,105 +217,105 @@ export function AppRouter() {
           <Route
             path="/configuration/configmaps"
             element={
-              <LazyPage>
-                <ConfigurationConfigMapsPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.ConfigurationConfigMapsPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/configuration/configmaps/:configMapName"
             element={
-              <LazyPage>
-                <ConfigMapDetailPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.ConfigMapDetailPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/configuration/secrets"
             element={
-              <LazyPage>
-                <ConfigurationSecretsPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.ConfigurationSecretsPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/configuration/secrets/:secretName"
             element={
-              <LazyPage>
-                <SecretDetailPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.SecretDetailPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/configuration/resourcequotas"
             element={
-              <LazyPage>
-                <ConfigurationResourceQuotasPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.ConfigurationResourceQuotasPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/configuration/limitranges"
             element={
-              <LazyPage>
-                <ConfigurationLimitRangesPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.ConfigurationLimitRangesPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/configuration/hpas"
             element={
-              <LazyPage>
-                <ConfigurationHPAPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.ConfigurationHPAPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/configuration/poddisruptionbudgets"
             element={
-              <LazyPage>
-                <ConfigurationPodDisruptionBudgetsPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.ConfigurationPodDisruptionBudgetsPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/configuration/priorityclasses"
             element={
-              <LazyPage>
-                <ConfigurationPriorityClassesPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.ConfigurationPriorityClassesPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/configuration/runtimeclasses"
             element={
-              <LazyPage>
-                <ConfigurationRuntimeClassesPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.ConfigurationRuntimeClassesPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/configuration/leases"
             element={
-              <LazyPage>
-                <ConfigurationLeasesPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.ConfigurationLeasesPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/configuration/mutatingwebhookconfigurations"
             element={
-              <LazyPage>
-                <ConfigurationMutatingWebhooksPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.ConfigurationMutatingWebhooksPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/configuration/validatingwebhookconfigurations"
             element={
-              <LazyPage>
-                <ConfigurationValidatingWebhooksPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.ConfigurationValidatingWebhooksPage />
+              </RoutePages.LazyPage>
             }
           />
 
@@ -956,81 +328,81 @@ export function AppRouter() {
           <Route
             path="/platform-access-control/serviceaccounts"
             element={
-              <LazyPage>
-                <PlatformAccessControlServiceAccountsPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.PlatformAccessControlServiceAccountsPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/platform-access-control/serviceaccounts/:name"
             element={
-              <LazyPage>
-                <PlatformAccessControlServiceAccountDetailPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.PlatformAccessControlServiceAccountDetailPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/platform-access-control/clusterroles"
             element={
-              <LazyPage>
-                <PlatformAccessControlClusterRolesPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.PlatformAccessControlClusterRolesPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/platform-access-control/clusterroles/:name"
             element={
-              <LazyPage>
-                <PlatformAccessControlClusterRoleDetailPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.PlatformAccessControlClusterRoleDetailPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/platform-access-control/roles"
             element={
-              <LazyPage>
-                <PlatformAccessControlRolesPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.PlatformAccessControlRolesPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/platform-access-control/roles/:name"
             element={
-              <LazyPage>
-                <PlatformAccessControlRoleDetailPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.PlatformAccessControlRoleDetailPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/platform-access-control/clusterrolebindings"
             element={
-              <LazyPage>
-                <PlatformAccessControlClusterRoleBindingsPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.PlatformAccessControlClusterRoleBindingsPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/platform-access-control/clusterrolebindings/:name"
             element={
-              <LazyPage>
-                <PlatformAccessControlClusterRoleBindingDetailPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.PlatformAccessControlClusterRoleBindingDetailPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/platform-access-control/rolebindings"
             element={
-              <LazyPage>
-                <PlatformAccessControlRoleBindingsPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.PlatformAccessControlRoleBindingsPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/platform-access-control/rolebindings/:name"
             element={
-              <LazyPage>
-                <PlatformAccessControlRoleBindingDetailPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.PlatformAccessControlRoleBindingDetailPage />
+              </RoutePages.LazyPage>
             }
           />
 
@@ -1041,33 +413,33 @@ export function AppRouter() {
           <Route
             path="/network/topology"
             element={
-              <LazyPage>
-                <NetworkTopologyPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.NetworkTopologyPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/network/services"
             element={
-              <LazyPage>
-                <NetworkServicesPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.NetworkServicesPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/network/services/:serviceName"
             element={
-              <LazyPage>
-                <ServiceDetailPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.ServiceDetailPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/network/ingresses"
             element={
-              <LazyPage>
-                <NetworkIngressesPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.NetworkIngressesPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
@@ -1081,81 +453,81 @@ export function AppRouter() {
           <Route
             path="/network/gateway-api/gatewayclasses"
             element={
-              <LazyPage>
-                <NetworkGatewayClassesPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.NetworkGatewayClassesPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/network/gateway-api/gateways"
             element={
-              <LazyPage>
-                <NetworkGatewaysPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.NetworkGatewaysPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/network/gateway-api/httproutes"
             element={
-              <LazyPage>
-                <NetworkHTTPRoutesPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.NetworkHTTPRoutesPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/network/gateway-api/backendtlspolicies"
             element={
-              <LazyPage>
-                <NetworkBackendTLSPoliciesPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.NetworkBackendTLSPoliciesPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/network/gateway-api/grpcroutes"
             element={
-              <LazyPage>
-                <NetworkGRPCRoutesPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.NetworkGRPCRoutesPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/network/gateway-api/referencegrants"
             element={
-              <LazyPage>
-                <NetworkReferenceGrantsPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.NetworkReferenceGrantsPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/network/endpointslices"
             element={
-              <LazyPage>
-                <NetworkEndpointSlicesPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.NetworkEndpointSlicesPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/network/ingressclasses"
             element={
-              <LazyPage>
-                <NetworkIngressClassesPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.NetworkIngressClassesPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/network/networkpolicies"
             element={
-              <LazyPage>
-                <NetworkPoliciesPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.NetworkPoliciesPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/network/port-forward"
             element={
-              <LazyPage>
-                <NetworkPortForwardPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.NetworkPortForwardPage />
+              </RoutePages.LazyPage>
             }
           />
 
@@ -1166,66 +538,66 @@ export function AppRouter() {
           <Route
             path="/storage/persistentvolumeclaims"
             element={
-              <LazyPage>
-                <StoragePvcPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.StoragePvcPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/storage/persistentvolumeclaims/:name"
             element={
-              <LazyPage>
-                <StoragePvcDetailPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.StoragePvcDetailPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/storage/persistentvolumes"
             element={
-              <LazyPage>
-                <StoragePvPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.StoragePvPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/storage/persistentvolumes/:name"
             element={
-              <LazyPage>
-                <StoragePvDetailPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.StoragePvDetailPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/storage/storageclasses"
             element={
-              <LazyPage>
-                <StorageClassesPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.StorageClassesPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/storage/storageclasses/:name"
             element={
-              <LazyPage>
-                <StorageClassDetailPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.StorageClassDetailPage />
+              </RoutePages.LazyPage>
             }
           />
 
           <Route
             path="/extensions"
             element={
-              <LazyPage>
-                <CRDPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.CRDPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/extensions/apis/:groupName"
             element={
-              <LazyPage>
-                <CRDApiGroupDetailPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.CRDApiGroupDetailPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
@@ -1235,58 +607,58 @@ export function AppRouter() {
           <Route
             path="/helm/releases"
             element={
-              <LazyPage>
-                <HelmReleasesPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.HelmReleasesPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/helm/releases/:releaseName"
             element={
-              <LazyPage>
-                <HelmReleaseDetailPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.HelmReleaseDetailPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/helm/charts"
             element={
-              <LazyPage>
-                <HelmChartsPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.HelmChartsPage />
+              </RoutePages.LazyPage>
             }
           />
 
           <Route
             path="/applications"
             element={
-              <LazyPage>
-                <ApplicationsPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.ApplicationsPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/application-management"
-            element={<ApplicationManagementRedirect />}
+            element={<RoutePages.ApplicationManagementRedirect />}
           />
           <Route
             path="/application-management/:applicationId"
-            element={<ApplicationManagementRedirect />}
+            element={<RoutePages.ApplicationManagementRedirect />}
           />
           <Route
             path="/applications/:applicationId"
             element={
-              <LazyPage>
-                <ApplicationDetailPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.ApplicationDetailPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/applications/:applicationId/application-environments/:applicationEnvironmentId/workloads/:workloadName"
             element={
-              <LazyPage>
-                <ApplicationWorkloadDetailPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.ApplicationWorkloadDetailPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
@@ -1300,97 +672,97 @@ export function AppRouter() {
           <Route
             path="/application-environments"
             element={
-              <LazyPage>
-                <ApplicationEnvironmentsPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.ApplicationEnvironmentsPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/application-environments/:applicationEnvironmentId"
             element={
-              <LazyPage>
-                <ApplicationEnvironmentDetailPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.ApplicationEnvironmentDetailPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/build-templates"
             element={
-              <LazyPage>
-                <BuildTemplatesPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.BuildTemplatesPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/delivery/blueprints"
             element={
-              <LazyPage>
-                <DeliveryBlueprintsPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.DeliveryBlueprintsPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/delivery/release-bundles"
             element={
-              <LazyPage>
-                <ReleaseBundlesPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.ReleaseBundlesPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/delivery/execution-tasks"
             element={
-              <LazyPage>
-                <ExecutionTasksPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.ExecutionTasksPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/delivery/approval-policies"
             element={
-              <LazyPage>
-                <ApprovalPoliciesPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.ApprovalPoliciesPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/workflow-templates"
             element={
-              <LazyPage>
-                <WorkflowTemplatesPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.WorkflowTemplatesPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/release-board"
             element={
-              <LazyPage>
-                <ReleaseBoardPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.ReleaseBoardPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/workflows"
             element={
-              <LazyPage>
-                <WorkflowsPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.WorkflowsPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/releases"
             element={
-              <LazyPage>
-                <ReleasesPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.ReleasesPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/registries"
             element={
-              <LazyPage>
-                <RegistriesPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.RegistriesPage />
+              </RoutePages.LazyPage>
             }
           />
 
@@ -1401,65 +773,65 @@ export function AppRouter() {
           <Route
             path="/virtualization/overview"
             element={
-              <LazyPage>
-                <VirtualizationOverviewPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.VirtualizationOverviewPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/virtualization/vms"
             element={
-              <LazyPage>
-                <VirtualizationVmsPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.VirtualizationVmsPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/virtualization/vms/:id"
             element={
-              <LazyPage>
-                <VirtualizationVmDetailPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.VirtualizationVmDetailPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/virtualization/clusters"
             element={
-              <LazyPage>
-                <VirtualizationClustersPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.VirtualizationClustersPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/virtualization/images"
             element={
-              <LazyPage>
-                <VirtualizationImagesPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.VirtualizationImagesPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/virtualization/flavors"
             element={
-              <LazyPage>
-                <VirtualizationFlavorsPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.VirtualizationFlavorsPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/virtualization/operations"
             element={
-              <LazyPage>
-                <VirtualizationOperationsPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.VirtualizationOperationsPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/virtualization/sync"
             element={
-              <LazyPage>
-                <VirtualizationSyncPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.VirtualizationSyncPage />
+              </RoutePages.LazyPage>
             }
           />
 
@@ -1470,57 +842,57 @@ export function AppRouter() {
           <Route
             path="/docker/overview"
             element={
-              <LazyPage>
-                <DockerOverviewPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.DockerOverviewPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/docker/hosts"
             element={
-              <LazyPage>
-                <DockerHostsPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.DockerHostsPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/docker/projects"
             element={
-              <LazyPage>
-                <DockerProjectsPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.DockerProjectsPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/docker/services"
             element={
-              <LazyPage>
-                <DockerServicesPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.DockerServicesPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/docker/ports"
             element={
-              <LazyPage>
-                <DockerPortsPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.DockerPortsPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/docker/templates"
             element={
-              <LazyPage>
-                <DockerTemplatesPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.DockerTemplatesPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/docker/operations"
             element={
-              <LazyPage>
-                <DockerOperationsPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.DockerOperationsPage />
+              </RoutePages.LazyPage>
             }
           />
 
@@ -1531,81 +903,81 @@ export function AppRouter() {
           <Route
             path="/monitoring-workbench/overview"
             element={
-              <LazyPage>
-                <MonitoringPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.MonitoringPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/monitoring-workbench/integrations"
             element={
-              <LazyPage>
-                <AlertIntegrationsPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.AlertIntegrationsPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/monitoring-workbench/rules"
             element={
-              <LazyPage>
-                <AlertRulesPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.AlertRulesPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/monitoring-workbench/alerts"
             element={
-              <LazyPage>
-                <AlertsPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.AlertsPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/monitoring-workbench/alerts/:eventId"
             element={
-              <LazyPage>
-                <AlertEventDetailPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.AlertEventDetailPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/monitoring-workbench/notifications"
             element={
-              <LazyPage>
-                <NotificationsPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.NotificationsPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/monitoring-workbench/healing"
             element={
-              <LazyPage>
-                <HealingPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.HealingPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/monitoring-workbench/oncall"
             element={
-              <LazyPage>
-                <OnCallBoardPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.OnCallBoardPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/monitoring-workbench/oncall/settings"
             element={
-              <LazyPage>
-                <OnCallSettingsPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.OnCallSettingsPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/monitoring-workbench/events"
             element={
-              <LazyPage>
-                <EventsPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.EventsPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
@@ -1627,9 +999,9 @@ export function AppRouter() {
           <Route
             path="/observability/alerts/:eventId"
             element={
-              <LazyPage>
-                <AlertEventDetailPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.AlertEventDetailPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
@@ -1653,110 +1025,110 @@ export function AppRouter() {
 
           <Route
             path="/ai-workbench"
-            element={<AIWorkbenchModeRedirect />}
+            element={<RoutePages.AIWorkbenchModeRedirect />}
           />
           <Route
             path="/ai-workbench/chat"
             element={
-              <LazyPage>
-                <AIWorkbenchPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.AIWorkbenchPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/ai-workbench/investigation"
-            element={<AIWorkbenchModeRedirect />}
+            element={<RoutePages.AIWorkbenchModeRedirect />}
           />
           <Route
             path="/ai-workbench/root-cause"
             element={
-              <LazyPage>
-                <AIWorkbenchPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.AIWorkbenchPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/ai-workbench/performance"
             element={
-              <LazyPage>
-                <AIWorkbenchPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.AIWorkbenchPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/ai-workbench/inspection"
             element={
-              <LazyPage>
-                <AIOperationsPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.AIOperationsPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/ai-workbench/tool-settings"
             element={
-              <LazyPage>
-                <AIToolsPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.AIToolsPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/ai-workbench/model-settings"
             element={
-              <LazyPage>
-                <AIModelSettingsPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.AIModelSettingsPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/ai-gateway"
-            element={<AIGatewayRedirect />}
+            element={<RoutePages.AIGatewayRedirect />}
           />
           <Route
             path="/ai-gateway/overview"
             element={
-              <LazyPage>
-                <AIGatewayPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.AIGatewayPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/ai-gateway/manifest"
             element={
-              <LazyPage>
-                <AIGatewayPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.AIGatewayPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/ai-gateway/clients"
             element={
-              <LazyPage>
-                <AIGatewayPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.AIGatewayPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/ai-gateway/tokens"
             element={
-              <LazyPage>
-                <AIGatewayPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.AIGatewayPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/ai-gateway/governance"
             element={
-              <LazyPage>
-                <AIGatewayPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.AIGatewayPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/ai-gateway/call-logs"
             element={
-              <LazyPage>
-                <AIGatewayPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.AIGatewayPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
@@ -1765,99 +1137,99 @@ export function AppRouter() {
           />
           <Route
             path="/ai-workbench/gateway"
-            element={<AIGatewayRedirect />}
+            element={<RoutePages.AIGatewayRedirect />}
           />
           <Route
             path="/ai-workbench/automation"
-            element={<AIWorkbenchOperationsRedirect />}
+            element={<RoutePages.AIWorkbenchOperationsRedirect />}
           />
           <Route
             path="/ai-workbench/tools"
-            element={<AIWorkbenchToolsRedirect />}
+            element={<RoutePages.AIWorkbenchToolsRedirect />}
           />
           <Route
             path="/ai-observe"
-            element={<AIWorkbenchModeRedirect />}
+            element={<RoutePages.AIWorkbenchModeRedirect />}
           />
           <Route
             path="/ai-observe/workbench"
-            element={<AIWorkbenchModeRedirect />}
+            element={<RoutePages.AIWorkbenchModeRedirect />}
           />
           <Route
             path="/ai-observe/operations"
-            element={<AIWorkbenchOperationsRedirect />}
+            element={<RoutePages.AIWorkbenchOperationsRedirect />}
           />
           <Route
             path="/ai-observe/tools"
-            element={<AIWorkbenchToolsRedirect />}
+            element={<RoutePages.AIWorkbenchToolsRedirect />}
           />
           <Route
             path="/ai-observe/root-cause"
-            element={<AIWorkbenchFixedModeRedirect mode="root_cause" />}
+            element={<RoutePages.AIWorkbenchFixedModeRedirect mode="root_cause" />}
           />
           <Route
             path="/ai-observe/performance"
-            element={<AIWorkbenchFixedModeRedirect mode="performance" />}
+            element={<RoutePages.AIWorkbenchFixedModeRedirect mode="performance" />}
           />
           <Route
             path="/ai-observe/chat"
-            element={<AIWorkbenchModeRedirect />}
+            element={<RoutePages.AIWorkbenchModeRedirect />}
           />
           <Route
             path="/ai-observe/inspection"
-            element={<AIWorkbenchOperationsRedirect />}
+            element={<RoutePages.AIWorkbenchOperationsRedirect />}
           />
           <Route
             path="/chat"
-            element={<AIWorkbenchModeRedirect />}
+            element={<RoutePages.AIWorkbenchModeRedirect />}
           />
 
           <Route
             path="/access"
             element={
-              <LazyPage>
-                <AccessCenterPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.AccessCenterPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/access/users"
             element={
-              <LazyPage>
-                <AccessUsersPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.AccessUsersPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/access/roles"
             element={
-              <LazyPage>
-                <AccessRolesPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.AccessRolesPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/access/teams"
             element={
-              <LazyPage>
-                <AccessTeamsPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.AccessTeamsPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/access/policies"
             element={
-              <LazyPage>
-                <AccessPoliciesPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.AccessPoliciesPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/access/scope-grants"
             element={
-              <LazyPage>
-                <AccessScopeGrantsPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.AccessScopeGrantsPage />
+              </RoutePages.LazyPage>
             }
           />
 
@@ -1868,58 +1240,58 @@ export function AppRouter() {
           <Route
             path="/system/online-users"
             element={
-              <LazyPage>
-                <OnlineUsersPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.OnlineUsersPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/system/announcements"
             element={
-              <LazyPage>
-                <AnnouncementsPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.AnnouncementsPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/system/menus"
             element={
-              <LazyPage>
-                <MenusPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.MenusPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/system/audit"
             element={
-              <LazyPage>
-                <AuditLogsPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.AuditLogsPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/system/operations"
             element={
-              <LazyPage>
-                <OperationLogsPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.OperationLogsPage />
+              </RoutePages.LazyPage>
             }
           />
 
           <Route
             path="/settings"
             element={
-              <LazyPage>
-                <SettingsCenterPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.SettingsCenterPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/settings/login"
             element={
-              <LazyPage>
-                <SettingsCenterPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.SettingsCenterPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
@@ -1933,22 +1305,22 @@ export function AppRouter() {
           <Route
             path="/settings/branding"
             element={
-              <LazyPage>
-                <SettingsCenterPage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.SettingsCenterPage />
+              </RoutePages.LazyPage>
             }
           />
           <Route
             path="/settings/ai"
-            element={<AIWorkbenchModelSettingsRedirect />}
+            element={<RoutePages.AIWorkbenchModelSettingsRedirect />}
           />
 
           <Route
             path="/account/profile"
             element={
-              <LazyPage>
-                <UserProfilePage />
-              </LazyPage>
+              <RoutePages.LazyPage>
+                <RoutePages.UserProfilePage />
+              </RoutePages.LazyPage>
             }
           />
 

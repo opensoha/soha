@@ -1,0 +1,154 @@
+/* Styles moved from web/src/styles/globals.css; keep scoped to this component or feature owner. */
+
+.soha-oncall-calendar-card.ant-card .ant-card-extra {
+  max-width: 100%;
+}
+
+.soha-oncall-calendar-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.soha-oncall-calendar-card .ant-picker-calendar {
+  background: transparent;
+}
+
+.soha-oncall-calendar-card .ant-picker-calendar-header {
+  padding-inline: 0;
+}
+
+.soha-oncall-calendar-card .ant-picker-panel {
+  background: transparent;
+}
+
+.soha-oncall-calendar-card .ant-picker-calendar-date-content {
+  min-height: 78px;
+}
+
+.soha-oncall-calendar-cell {
+  display: flex;
+  min-width: 0;
+  height: 100%;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 6px;
+  padding-top: 2px;
+}
+
+.soha-oncall-calendar-duty-list {
+  min-width: 0;
+}
+
+.soha-oncall-duty-tag.ant-tag {
+  max-width: 100%;
+  margin-inline-end: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.soha-oncall-override-tag.ant-tag {
+  margin-inline-end: 0;
+}
+
+.soha-oncall-calendar-empty {
+  font-size: 12px;
+}
+
+.soha-oncall-stats-row {
+  margin-block-end: 16px;
+}
+
+.soha-oncall-board-card .ant-picker-calendar-date-content {
+  min-height: 56px;
+}
+
+.soha-oncall-cell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-block-start: 4px;
+}
+
+.soha-oncall-cell-empty {
+  color: rgba(0, 0, 0, 0.45);
+  justify-content: center;
+}
+
+.soha-oncall-cell-override {
+  background: rgba(250, 140, 22, 0.08);
+  border-radius: 4px;
+  padding-inline: 4px;
+}
+
+.soha-oncall-cell-today {
+  font-weight: 600;
+}
+
+.soha-oncall-timeline {
+  padding-block-start: 8px;
+}
+
+.soha-oncall-step-card.ant-card {
+  margin-block-end: 12px;
+}
+
+.soha-oncall-tasks-card.ant-card {
+  margin-block-start: 16px;
+}
+
+.soha-monitoring-chip-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.soha-monitoring-operation-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.soha-monitoring-alert-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.soha-monitoring-alert-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 1200px) {
+
+  .soha-monitoring-operation-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 768px) {
+
+  .soha-oncall-calendar-card.ant-card .ant-card-head-wrapper {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .soha-oncall-calendar-card.ant-card .ant-card-extra,
+.soha-oncall-calendar-card.ant-card .ant-card-extra .ant-select {
+    width: 100% !important;
+  }
+
+  .soha-oncall-calendar-card .ant-picker-calendar-date-content {
+    min-height: 64px;
+  }
+
+  .soha-monitoring-operation-grid {
+    grid-template-columns: 1fr;
+  }
+}

@@ -1,0 +1,67 @@
+/* Styles moved from web/src/styles/globals.css; keep scoped to this component or feature owner. */
+
+.soha-dag-editor-shell {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr) 320px;
+  gap: 16px;
+}
+
+.soha-dag-panel,
+.soha-dag-canvas-card {
+  min-height: 720px;
+}
+
+.soha-dag-palette {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.soha-dag-canvas {
+  height: 640px;
+  border: 1px solid var(--soha-border-color);
+  border-radius: var(--soha-radius);
+  overflow: hidden;
+  background:
+    linear-gradient(0deg, rgba(0, 0, 0, 0.01), rgba(0, 0, 0, 0.01)),
+    radial-gradient(circle at top left, rgba(var(--soha-primary-rgb), 0.12), transparent 35%);
+}
+
+.soha-dag-node {
+  min-width: 240px;
+}
+
+.soha-dag-node-card {
+  padding: 14px 16px;
+  border: 1px solid var(--soha-border-color);
+  border-radius: var(--soha-radius);
+  background: var(--soha-bg-surface-muted);
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+}
+
+.soha-dag-node.is-selected .soha-dag-node-card {
+  border-color: var(--soha-primary);
+  box-shadow: 0 0 0 2px rgba(var(--soha-primary-rgb), 0.16);
+}
+
+.soha-dag-node-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.soha-dag-inspector {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+@media (max-width: 1200px) {
+
+  .soha-dag-editor-shell {
+    grid-template-columns: 1fr;
+  }
+}

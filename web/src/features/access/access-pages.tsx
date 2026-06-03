@@ -13,6 +13,7 @@ import { api } from '@/services/api-client'
 import type { ApiResponse, ScopeGrant } from '@/types'
 import { formatDateTime } from '@/utils/time'
 import { tableColumnPresets } from '@/utils/table-columns'
+import './access-pages.css'
 
 const { Text } = Typography
 

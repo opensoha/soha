@@ -1,5 +1,6 @@
 import { Card, Timeline, Typography } from 'antd'
 import { ManagementState } from '@/components/management-list'
+import './resource-events-timeline.css'
 import { useI18n } from '@/i18n'
 import { formatAgeSeconds, formatDateTime } from '@/utils/time'
 

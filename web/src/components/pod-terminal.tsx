@@ -5,6 +5,7 @@ import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
 import { ManagementState } from '@/components/management-list'
+import './resource-operation-panels.css'
 import { useI18n } from '@/i18n'
 import { useAuthStore } from '@/stores/auth-store'
 

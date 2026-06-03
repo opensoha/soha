@@ -6,6 +6,7 @@ import {
   ManagementRefreshButton,
   ManagementTableToolbar,
 } from '@/components/management-list'
+import './delivery-pages.css'
 
 type AdminTableProps = ComponentProps<typeof AdminTable>
 

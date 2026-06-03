@@ -3,6 +3,7 @@ import type { CSSProperties, ReactNode } from 'react'
 import { Alert, Button, Card, Empty, Form, Space, Spin, Tooltip, Typography } from 'antd'
 import type { AlertProps, ButtonProps, FormProps } from 'antd'
 import { ColumnHeightOutlined, DownOutlined, ReloadOutlined, UpOutlined } from '@ant-design/icons'
+import './management-list.css'
 
 const { Text } = Typography
 

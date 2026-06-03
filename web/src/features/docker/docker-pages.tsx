@@ -16,7 +16,9 @@ import {
 } from '@/components/management-list'
 import { virtualizationApi } from '@/features/virtualization/virtualization-api'
 import type { VirtualizationCluster, VirtualizationFlavor, VirtualizationImage, VirtualizationPage } from '@/features/virtualization/virtualization-types'
+import '@/features/virtualization/virtualization-workbench.css'
 import { dockerApi } from './docker-api'
+import './docker-pages.css'
 import type { DockerContainerStartInput, DockerHost, DockerHostInput, DockerListParams, DockerOperation, DockerOperationLog, DockerPage, DockerPortMapping, DockerPortMappingInput, DockerProject, DockerProjectInput, DockerQuickCreateHostInput, DockerService, DockerTemplate, DockerTemplateInput } from './docker-types'
 
 const { Text } = Typography

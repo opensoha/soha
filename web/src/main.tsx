@@ -19,6 +19,7 @@ import {
 } from './theme/app-theme'
 import { applyBrandingSettings, persistBrandingSettings, readStoredBrandingSettings } from './utils/branding'
 import './styles/globals.css'
+import './styles/shared-surfaces.css'
 
 const queryClient = new QueryClient({
   defaultOptions: {

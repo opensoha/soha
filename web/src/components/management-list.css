@@ -1,0 +1,456 @@
+/* Styles moved from web/src/styles/globals.css; keep scoped to this component or feature owner. */
+
+.soha-management-query-card.ant-card {
+  border-color: var(--soha-border-color);
+  border-radius: 8px;
+  background: var(--soha-bg-surface);
+  box-shadow: none;
+}
+
+.soha-management-query-card .ant-card-body {
+  padding: 10px 18px;
+}
+
+.soha-management-query-form {
+  margin: 0;
+}
+
+.soha-management-query-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: 16px;
+  row-gap: 8px;
+  align-items: start;
+}
+
+.soha-management-query-fields {
+  display: flex;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  column-gap: 14px;
+  row-gap: 8px;
+  min-width: 0;
+}
+
+.soha-management-query-grid.is-collapsible.is-collapsed .soha-management-query-fields {
+  max-height: 28px;
+  overflow: hidden;
+}
+
+.soha-management-query-field.ant-form-item {
+  flex: 0 1 var(--soha-management-query-field-width, 220px);
+  max-width: 100%;
+  min-width: min(var(--soha-management-query-field-min-width, 176px), 100%);
+  margin-bottom: 0;
+}
+
+.soha-management-query-field.is-fluid.ant-form-item {
+  flex-grow: 1;
+}
+
+.soha-management-query-field .ant-form-item-row {
+  flex-wrap: nowrap;
+}
+
+.soha-management-query-field .ant-form-item-label {
+  flex: 0 0 76px;
+  padding-bottom: 0;
+  text-align: right;
+  line-height: 28px;
+}
+
+.soha-management-query-field .ant-form-item-label > label {
+  height: 28px;
+  color: var(--soha-text-primary);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.soha-management-query-field .ant-form-item-control {
+  min-width: 0;
+}
+
+.soha-management-query-field .ant-form-item-control-input {
+  min-height: 28px;
+}
+
+.soha-management-query-card .ant-input,
+.soha-management-query-card .ant-input-affix-wrapper,
+.soha-management-query-card .ant-select-selector {
+  height: 28px !important;
+  min-height: 28px;
+  border-radius: 6px !important;
+}
+
+.soha-management-query-card .ant-input {
+  line-height: 26px;
+}
+
+.soha-management-query-card .ant-input-affix-wrapper {
+  align-items: center;
+  padding-block: 0;
+}
+
+.soha-management-query-card .ant-input-affix-wrapper .ant-input {
+  height: 20px !important;
+  min-height: 20px;
+  padding-block: 0;
+  line-height: 20px;
+}
+
+.soha-management-query-card .ant-select {
+  width: 100%;
+  height: 28px;
+}
+
+.soha-management-query-card .ant-select-selection-search-input {
+  height: 26px !important;
+}
+
+.soha-management-query-card .ant-select-selection-item,
+.soha-management-query-card .ant-select-selection-placeholder {
+  line-height: 26px !important;
+}
+
+.soha-management-query-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  align-self: start;
+  white-space: nowrap;
+}
+
+.soha-management-query-actions .ant-btn {
+  height: 28px;
+}
+
+.soha-management-query-more-button.ant-btn {
+  padding-inline: 4px;
+}
+
+.soha-management-table-shell.soha-admin-table-shell.is-panel {
+  overflow: hidden;
+  border-radius: 8px;
+  background: var(--soha-bg-surface);
+}
+
+.soha-management-table-shell-plain.soha-admin-table-shell {
+  overflow: hidden;
+  border: 1px solid var(--soha-border-color);
+  border-radius: 8px;
+  background: var(--soha-bg-surface);
+}
+
+.soha-management-table-shell .soha-admin-table-header {
+  min-height: 40px;
+  padding: 8px 16px 6px;
+  border-bottom: none;
+  background: var(--soha-bg-surface);
+}
+
+.soha-management-table-shell .soha-admin-table-header-main {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 20px;
+}
+
+.soha-management-table-shell .soha-admin-table-header-extra {
+  gap: 8px;
+}
+
+.soha-management-table-toolbar-actions {
+  min-height: 28px;
+}
+
+.soha-management-table-toolbar-actions .ant-space-item {
+  display: inline-flex;
+  align-items: center;
+  height: 28px;
+}
+
+.soha-management-table-toolbar-actions .ant-btn {
+  height: 28px;
+}
+
+.soha-management-icon-action.ant-btn {
+  width: 28px;
+  min-width: 28px;
+  padding-inline: 0;
+}
+
+.soha-management-batchbar {
+  display: inline-flex;
+  min-height: 28px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px;
+  border: 1px solid var(--soha-border-color);
+  border-radius: 6px;
+  background: var(--soha-bg-surface-muted);
+}
+
+.soha-management-state {
+  width: 100%;
+  padding: 18px;
+  border: 1px solid var(--soha-border-color);
+  border-radius: 8px;
+  background: var(--soha-bg-surface);
+}
+
+.soha-management-state.is-borderless {
+  padding: 14px 8px;
+  border: none;
+  background: transparent;
+}
+
+.soha-management-state.is-compact {
+  padding-block: 12px;
+}
+
+.soha-management-state.is-loading {
+  display: flex;
+  min-height: 72px;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+
+.soha-management-state .ant-alert {
+  align-items: flex-start;
+  border-color: var(--soha-border-color);
+  border-radius: 8px;
+  background: var(--soha-bg-surface-muted);
+}
+
+.soha-management-state.is-borderless .ant-alert {
+  border-color: transparent;
+  background: transparent;
+}
+
+.soha-management-state .ant-alert-message {
+  color: var(--soha-text-primary);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 20px;
+}
+
+.soha-management-state .ant-alert-description {
+  color: var(--soha-text-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.soha-management-state .ant-empty {
+  margin-block: 0;
+}
+
+.soha-management-state .ant-empty-image {
+  height: 40px;
+  margin-bottom: 8px;
+}
+
+.soha-management-state.is-compact .ant-empty-image {
+  display: none;
+}
+
+.soha-management-state .ant-empty-description {
+  color: var(--soha-text-secondary);
+  font-size: 12px;
+}
+
+.soha-management-state-empty-copy {
+  width: 100%;
+}
+
+.soha-management-state-loading-copy {
+  min-width: 0;
+}
+
+.soha-management-panel-card.ant-card {
+  overflow: hidden;
+  border-color: var(--soha-border-color);
+  border-radius: 8px;
+  background: var(--soha-bg-surface);
+  box-shadow: none;
+}
+
+.soha-management-panel-card.ant-card .ant-card-head {
+  min-height: 40px;
+  padding: 0 16px;
+  border-bottom-color: var(--soha-border-color);
+}
+
+.soha-management-panel-card.ant-card .ant-card-head-title {
+  padding: 9px 0;
+  color: var(--soha-text-primary);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 20px;
+}
+
+.soha-management-panel-card.ant-card .ant-card-extra {
+  padding: 8px 0;
+}
+
+.soha-management-panel-card.ant-card .ant-card-body {
+  padding: 12px 14px;
+}
+
+.soha-management-detail-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 16px;
+  border: 1px solid var(--soha-border-color);
+  border-radius: 8px;
+  background: var(--soha-bg-surface);
+  box-shadow: none;
+}
+
+.soha-management-detail-header-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 4px;
+}
+
+.soha-management-detail-header-title {
+  color: var(--soha-text-primary);
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.soha-management-detail-header-description {
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.soha-management-detail-header-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-top: 2px;
+}
+
+.soha-management-detail-header-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+.soha-management-table-shell .soha-admin-table.ant-table-wrapper {
+  border-right: none;
+  border-left: none;
+  border-radius: 0;
+  padding: 0 16px 6px;
+}
+
+.soha-management-table-shell .soha-admin-table .ant-table-container {
+  border-right: none;
+  border-left: none;
+  border-radius: 0;
+}
+
+.soha-management-table-shell .soha-admin-table .ant-table-thead > tr > th,
+.soha-management-table-shell .soha-admin-table .ant-table-thead > tr:first-child > th:first-child,
+.soha-management-table-shell .soha-admin-table .ant-table-thead > tr:first-child > th:last-child {
+  border-radius: 0 !important;
+  border-start-start-radius: 0 !important;
+  border-start-end-radius: 0 !important;
+}
+
+.soha-management-table-shell .soha-admin-table .ant-table-pagination {
+  width: 100%;
+  min-height: 34px;
+  padding: 6px 0;
+  margin: 0 !important;
+}
+
+.soha-management-table-shell .soha-admin-table .ant-table-pagination .ant-pagination-total-text {
+  margin-inline-end: auto;
+  color: var(--soha-text-tertiary);
+  font-size: 12px;
+}
+
+.soha-management-table-shell .soha-admin-table .ant-table-thead > tr > th,
+.soha-management-table-shell .soha-admin-table .ant-table-tbody > tr > td {
+  padding-top: 7px;
+  padding-bottom: 7px;
+}
+
+.soha-cluster-detail-page .soha-management-detail-header {
+  padding-block: 8px;
+}
+
+.soha-workloads-overview-page .soha-management-table-shell .soha-admin-table-header {
+  min-height: 36px;
+  padding: 7px 14px 5px;
+}
+
+.soha-workloads-overview-page .soha-management-table-shell .soha-admin-table.ant-table-wrapper {
+  padding: 0 14px 4px;
+}
+
+.soha-workloads-overview-page .soha-management-table-shell .soha-admin-table .ant-table-pagination {
+  min-height: 30px;
+  padding: 4px 0;
+}
+
+.soha-workloads-overview-page .soha-management-table-shell .soha-admin-table .ant-table-thead > tr > th,
+.soha-workloads-overview-page .soha-management-table-shell .soha-admin-table .ant-table-tbody > tr > td {
+  padding-top: 6px;
+  padding-bottom: 6px;
+}
+
+@media (max-width: 640px) {
+
+  .soha-management-table-shell .soha-admin-table-header {
+    align-items: flex-start;
+    padding: 16px;
+  }
+
+  .soha-management-table-shell .soha-admin-table-header-extra {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .soha-management-query-card .ant-card-body {
+    padding: 16px;
+  }
+
+  .soha-management-query-grid,
+.soha-management-query-grid.is-expanded {
+    grid-template-columns: 1fr;
+    column-gap: 0;
+  }
+
+  .soha-management-query-fields {
+    column-gap: 0;
+  }
+
+  .soha-management-query-field.ant-form-item {
+    flex-basis: 100%;
+    width: 100%;
+  }
+
+  .soha-management-query-field .ant-form-item-label {
+    flex-basis: 68px;
+    text-align: left;
+  }
+
+  .soha-management-query-actions {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+    white-space: normal;
+  }
+
+  .soha-management-batchbar {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+}

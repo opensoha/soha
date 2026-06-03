@@ -4,6 +4,7 @@ import { CloudUploadOutlined, ReloadOutlined } from '@ant-design/icons'
 import { Button, Card, Space, Tag, Typography } from 'antd'
 import EditorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker'
 import YamlWorker from 'monaco-yaml/yaml.worker?worker'
+import './resource-operation-panels.css'
 import { useI18n } from '@/i18n'
 
 const { Text } = Typography

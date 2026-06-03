@@ -19,6 +19,7 @@ import { api } from '@/services/api-client'
 import { usePlatformScopeStore } from '@/stores/platform-scope-store'
 import { formatAgeSeconds, formatDateTime } from '@/utils/time'
 import type { ApiResponse, Cluster } from '@/types'
+import './platform-pages.css'
 
 const { Text } = Typography
 

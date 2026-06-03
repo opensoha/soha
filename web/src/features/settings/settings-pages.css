@@ -1,0 +1,99 @@
+/* Styles moved from web/src/styles/globals.css; keep scoped to this component or feature owner. */
+
+.soha-branding-section-title {
+  margin: 24px 0 12px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--soha-text-primary);
+}
+
+.soha-branding-upload-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.soha-branding-upload-zone {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px;
+  border: 1px solid var(--soha-border-color);
+  border-radius: var(--soha-radius);
+  background: var(--soha-bg-surface-muted);
+}
+
+.soha-branding-upload-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--soha-text-secondary);
+  line-height: 1.5;
+}
+
+.soha-branding-upload-area-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.soha-branding-upload-area {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px dashed var(--soha-border-color);
+  border-radius: var(--soha-radius);
+  background: var(--soha-bg-surface);
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+  overflow: hidden;
+}
+
+.soha-branding-upload-area:hover:not(.is-disabled) {
+  border-color: var(--soha-primary);
+  background: var(--soha-primary-light-default);
+}
+
+.soha-branding-upload-area.is-disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.soha-branding-upload-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+}
+
+.soha-branding-upload-plus {
+  font-size: 28px;
+  color: var(--soha-text-tertiary);
+  line-height: 1;
+  font-weight: 300;
+  user-select: none;
+}
+
+.soha-branding-upload-preview {
+  display: block;
+  object-fit: contain;
+  padding: 8px;
+}
+
+.soha-branding-upload-remove {
+  margin-top: 2px;
+}
+
+.soha-branding-upload-hint {
+  font-size: 12px;
+  color: var(--soha-text-tertiary);
+  line-height: 1.5;
+}
+
+@media (max-width: 768px) {
+
+  .soha-branding-upload-grid {
+    grid-template-columns: 1fr;
+  }
+}

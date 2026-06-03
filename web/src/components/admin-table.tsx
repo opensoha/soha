@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import { Button, Checkbox, Popover, Table, Typography } from 'antd'
 import { SettingOutlined } from '@ant-design/icons'
 import { ManagementState } from '@/components/management-list'
+import './admin-table.css'
 
 const DEFAULT_PAGE_SIZE_OPTIONS = [10, 20, 50, 100]
 const { Text } = Typography

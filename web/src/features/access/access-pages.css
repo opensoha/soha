@@ -1,0 +1,27 @@
+/* Styles moved from web/src/styles/globals.css; keep scoped to this shared/component or feature owner. */
+
+.soha-access-table .ant-table-thead > tr > th,
+.soha-access-table .ant-table-tbody > tr > td {
+  padding-left: 12px;
+  padding-right: 12px;
+}
+
+.soha-access-table .ant-table-thead > tr > th:first-child,
+.soha-access-table .ant-table-tbody > tr > td:first-child {
+  padding-left: 16px;
+}
+
+.soha-access-table .ant-table-thead > tr > th:last-child,
+.soha-access-table .ant-table-tbody > tr > td:last-child {
+  padding-right: 16px;
+}
+
+.soha-access-table .ant-table-thead > tr > th:last-child .ant-table-column-title,
+.soha-access-table .ant-table-tbody > tr > td:last-child {
+  text-align: right;
+}
+
+.soha-access-table .ant-table-tbody > tr > td:last-child .ant-space {
+  width: 100%;
+  justify-content: flex-end;
+}

@@ -19,6 +19,7 @@ import { usePlatformScopeStore } from '@/stores/platform-scope-store'
 import { formatAgeSeconds, formatDateTime } from '@/utils/time'
 import type { ApiResponse, NodeDetail, NodePod, ResourceYAMLView, WorkloadCondition } from '@/types'
 import type { TableColumnsType } from 'antd'
+import './platform-pages.css'
 
 const { Text } = Typography
 

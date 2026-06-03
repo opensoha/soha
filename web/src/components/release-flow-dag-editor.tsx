@@ -20,6 +20,7 @@ import dagre from 'dagre'
 import { Button, Card, Input, InputNumber, Select, Space, Switch, Tag, Typography } from 'antd'
 import '@xyflow/react/dist/style.css'
 import { ManagementState } from '@/components/management-list'
+import './release-flow-dag-editor.css'
 import { useI18n } from '@/i18n'
 import {
   createDagNode,
@@ -34,11 +35,11 @@ import {
 
 const { Text } = Typography
 
-type SemiTagColor = 'grey' | 'blue' | 'cyan' | 'green' | 'yellow' | 'purple' | 'pink' | 'red' | 'orange'
+type DagTagColor = 'grey' | 'blue' | 'cyan' | 'green' | 'yellow' | 'purple' | 'pink' | 'red' | 'orange'
 type FlowNode = Node<ReleaseDagNodeData, 'releaseStep'>
 type FlowEdge = Edge<{ condition: ReleaseDagEdgeCondition }>
 
-const DAG_NODE_TAG_COLORS: Record<SemiTagColor, string> = {
+const DAG_NODE_TAG_COLORS: Record<DagTagColor, string> = {
   grey: 'default',
   blue: 'blue',
   cyan: 'cyan',
@@ -50,7 +51,7 @@ const DAG_NODE_TAG_COLORS: Record<SemiTagColor, string> = {
   orange: 'orange',
 }
 
-const DAG_NODE_OPTIONS: Array<{ value: ReleaseDagNodeType; label: string; color: SemiTagColor }> = [
+const DAG_NODE_OPTIONS: Array<{ value: ReleaseDagNodeType; label: string; color: DagTagColor }> = [
   { value: 'build', label: '构建', color: 'green' },
   { value: 'manual_approval', label: '审批', color: 'orange' },
   { value: 'deploy_update_image', label: '更新镜像', color: 'blue' },
