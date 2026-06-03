@@ -864,20 +864,20 @@ export function AppRouter() {
             }
           />
           <Route
-            path="/docker/services"
+            path="/docker/projects/:projectId"
             element={
               <RoutePages.LazyPage>
-                <RoutePages.DockerServicesPage />
+                <RoutePages.DockerProjectDetailPage />
               </RoutePages.LazyPage>
             }
           />
           <Route
+            path="/docker/services"
+            element={<Navigate to="/docker/projects" replace />}
+          />
+          <Route
             path="/docker/ports"
-            element={
-              <RoutePages.LazyPage>
-                <RoutePages.DockerPortsPage />
-              </RoutePages.LazyPage>
-            }
+            element={<Navigate to="/docker/projects" replace />}
           />
           <Route
             path="/docker/templates"

@@ -119,7 +119,7 @@ func TestRunnerClaimAndCallbackCompletesOperation(t *testing.T) {
 
 func TestRunnerCallbackDoesNotWriteNilRuntimeFields(t *testing.T) {
 	repo := newMemoryDockerRepo()
-	repo.hosts["host-1"] = domaindocker.Host{ID: "host-1", Name: "dev-docker", Status: "online"}
+	repo.hosts["host-1"] = domaindocker.Host{ID: "host-1", Name: "dev-docker", Status: "online", AgentID: "agent-1"}
 	repo.operations["operation-1"] = domaindocker.Operation{
 		ID:                "operation-1",
 		HostID:            "host-1",
@@ -147,6 +147,9 @@ func TestRunnerCallbackDoesNotWriteNilRuntimeFields(t *testing.T) {
 	}
 	if host.Endpoint != "" || host.IPAddress != "" || host.AgentVersion != "" {
 		t.Fatalf("host runtime fields = endpoint %q ip %q agentVersion %q, want empty values", host.Endpoint, host.IPAddress, host.AgentVersion)
+	}
+	if host.AgentID != "agent-1" {
+		t.Fatalf("host agentId = %q, want existing agent-1", host.AgentID)
 	}
 }
 
@@ -196,6 +199,110 @@ func TestStartContainerCreatesSingleContainerProjectAndDomainMapping(t *testing.
 	}
 }
 
+func TestStartContainerCreatesStructuredDockerAppCompose(t *testing.T) {
+	repo := newMemoryDockerRepo()
+	repo.hosts["host-1"] = domaindocker.Host{ID: "host-1", Name: "dev-docker", Status: "online", Architecture: "amd64", IPAddress: "10.0.0.10"}
+	service := New(repo, dockerTestPermissions(), nil)
+
+	operation, err := service.StartContainer(context.Background(), dockerTestPrincipal(), domaindocker.ContainerStartInput{
+		HostID:          "host-1",
+		Name:            "Preview API",
+		Image:           "nginx:alpine",
+		Architecture:    "arm64",
+		ImagePullPolicy: "if-not-present",
+		Ports: []domaindocker.ContainerPortInput{
+			{Name: "http", HostIP: "0.0.0.0", HostPort: 18080, ContainerPort: 80, Protocol: "tcp", ExposureScope: "internal", DomainName: "preview.internal.example.com", DomainScheme: "https", DomainTLSEnabled: true},
+			{Name: "admin", HostIP: "127.0.0.1", HostPort: 18081, ContainerPort: 8080, Protocol: "tcp", ExposureScope: "vpn"},
+		},
+		Volumes: []domaindocker.ContainerVolumeInput{
+			{Name: "content", Type: "bind", Source: "/data/preview", Target: "/usr/share/nginx/html", ReadOnly: true},
+		},
+		EnvironmentVariables: []domaindocker.ContainerEnvironmentVariableInput{
+			{Name: "APP_ENV", Value: "test"},
+		},
+		Resources: domaindocker.ContainerResourceInput{
+			CPUS:        0.5,
+			MemoryBytes: 512 * 1024 * 1024,
+		},
+		EnvContent: "FEATURE_FLAG=true",
+	})
+	if err != nil {
+		t.Fatalf("StartContainer() error = %v", err)
+	}
+	if operation.Payload["architecture"] != "arm64" || operation.Payload["platform"] != "linux/arm64" {
+		t.Fatalf("operation architecture payload = %#v", operation.Payload)
+	}
+	var project domaindocker.Project
+	for _, item := range repo.projects {
+		project = item
+	}
+	for _, want := range []string{
+		"platform: linux/arm64",
+		"pull_policy: if_not_present",
+		"0.0.0.0:18080:80/tcp",
+		"127.0.0.1:18081:8080/tcp",
+		"/data/preview:/usr/share/nginx/html:ro",
+		"APP_ENV: test",
+		"mem_limit: 512m",
+	} {
+		if !strings.Contains(project.ComposeContent, want) {
+			t.Fatalf("compose content missing %q:\n%s", want, project.ComposeContent)
+		}
+	}
+	if len(repo.ports) != 2 {
+		t.Fatalf("created ports = %d, want 2", len(repo.ports))
+	}
+	portMappings, ok := operation.Payload["portMappings"].([]map[string]any)
+	if !ok || len(portMappings) != 2 {
+		t.Fatalf("operation portMappings = %#v, want 2 structured mappings", operation.Payload["portMappings"])
+	}
+}
+
+func TestContainerStartFailureMarksRuntimeRecordsFailed(t *testing.T) {
+	repo := newMemoryDockerRepo()
+	repo.hosts["host-1"] = domaindocker.Host{ID: "host-1", Name: "dev-docker", Status: "online"}
+	service := New(repo, dockerTestPermissions(), nil)
+
+	operation, err := service.StartContainer(context.Background(), dockerTestPrincipal(), domaindocker.ContainerStartInput{
+		HostID:        "host-1",
+		Name:          "Preview API",
+		Image:         "nginx:alpine",
+		ContainerPort: 80,
+		HostPort:      18080,
+	})
+	if err != nil {
+		t.Fatalf("StartContainer() error = %v", err)
+	}
+	claimed, err := service.ClaimOperation(context.Background(), domaindocker.OperationClaimInput{WorkerID: "worker-1", AgentID: "agent-1"})
+	if err != nil {
+		t.Fatalf("ClaimOperation() error = %v", err)
+	}
+	_, err = service.RecordOperationCallback(context.Background(), domaindocker.OperationCallbackInput{
+		OperationID: claimed.ID,
+		WorkerID:    "worker-1",
+		Status:      OperationStatusFailed,
+		Payload:     map[string]any{"agentId": "agent-1", "error": "compose failed"},
+		Logs:        []string{"compose failed"},
+	})
+	if err != nil {
+		t.Fatalf("RecordOperationCallback() error = %v", err)
+	}
+	if repo.projects[operation.ProjectID].Status != "failed" {
+		t.Fatalf("project status = %s, want failed", repo.projects[operation.ProjectID].Status)
+	}
+	if repo.services[operation.ProjectID+":preview-api"].Status != "failed" {
+		t.Fatalf("service status = %s, want failed", repo.services[operation.ProjectID+":preview-api"].Status)
+	}
+	for _, port := range repo.ports {
+		if port.Status != "failed" {
+			t.Fatalf("port status = %s, want failed", port.Status)
+		}
+	}
+	if repo.hosts["host-1"].AgentID != "agent-1" {
+		t.Fatalf("host agentId = %q, want agent-1", repo.hosts["host-1"].AgentID)
+	}
+}
+
 func TestStartContainerDoesNotLeavePartialRecordsWhenTransactionalCreateFails(t *testing.T) {
 	repo := newMemoryDockerRepo()
 	repo.hosts["host-1"] = domaindocker.Host{ID: "host-1", Name: "dev-docker", Status: "online"}
@@ -238,9 +345,11 @@ func TestQuickCreateHostEnqueuesVirtualizationVMWhenConnectionProvided(t *testin
 
 	operation, err := service.QuickCreateHost(context.Background(), dockerTestPrincipal(), domaindocker.QuickCreateHostInput{
 		Name:                       "docker-dev-1",
+		Architecture:               "arm64",
 		VirtualizationConnectionID: "pve-1",
 		ImageID:                    "image-1",
 		FlavorID:                   "flavor-1",
+		CloudInit:                  "#cloud-config\npackages:\n  - docker.io",
 		CPUCoreCount:               2,
 		MemoryBytes:                4 * 1024 * 1024 * 1024,
 		DiskBytes:                  40 * 1024 * 1024 * 1024,
@@ -249,8 +358,20 @@ func TestQuickCreateHostEnqueuesVirtualizationVMWhenConnectionProvided(t *testin
 	if err != nil {
 		t.Fatalf("QuickCreateHost() error = %v", err)
 	}
-	if provisioner.input.ConnectionID != "pve-1" || provisioner.input.MemoryMiB != 4096 || provisioner.input.DiskGiB != 40 {
+	if provisioner.input.ConnectionID != "pve-1" || provisioner.input.Architecture != "arm64" || provisioner.input.MemoryMiB != 4096 || provisioner.input.DiskGiB != 40 {
 		t.Fatalf("provisioner input = %#v", provisioner.input)
+	}
+	if provisioner.input.CloudInit == "" {
+		t.Fatalf("provisioner cloud-init was not propagated")
+	}
+	if host := repo.hosts["host-1"]; host.Architecture != "arm64" {
+		t.Fatalf("created docker host architecture = %q, want arm64", host.Architecture)
+	}
+	if operation.Payload["architecture"] != "arm64" {
+		t.Fatalf("operation architecture payload = %#v, want arm64", operation.Payload["architecture"])
+	}
+	if operation.Payload["cloudInitConfigured"] != true || operation.Payload["cloudInit"] != nil {
+		t.Fatalf("operation cloud-init payload = %#v", operation.Payload)
 	}
 	if operation.Status != OperationStatusRunning {
 		t.Fatalf("operation status = %s, want running", operation.Status)
@@ -283,7 +404,7 @@ func TestQuickCreateHostReconcilesCompletedVirtualizationTask(t *testing.T) {
 		Status:       OperationStatusCompleted,
 		VMID:         "vm-1",
 		VMName:       "docker-dev-1",
-		Result:       map[string]any{"vmId": "vm-1", "name": "docker-dev-1", "ipAddress": "10.0.0.21"},
+		Result:       map[string]any{"vmId": "vm-1", "name": "docker-dev-1", "ipAddress": "10.0.0.21", "architecture": "arm64"},
 	}
 
 	hosts, err := service.ListHosts(context.Background(), dockerTestPrincipal(), domaindocker.HostFilter{})
@@ -294,7 +415,7 @@ func TestQuickCreateHostReconcilesCompletedVirtualizationTask(t *testing.T) {
 		t.Fatalf("hosts total = %d, want 1", hosts.Total)
 	}
 	host := hosts.Items[0]
-	if host.Status != "ready" || host.VMID != "vm-1" || host.VMName != "docker-dev-1" || host.IPAddress != "10.0.0.21" {
+	if host.Status != "ready" || host.VMID != "vm-1" || host.VMName != "docker-dev-1" || host.IPAddress != "10.0.0.21" || host.Architecture != "arm64" {
 		t.Fatalf("host after reconcile = %#v", host)
 	}
 	updated := repo.operations[operation.ID]
@@ -538,9 +659,18 @@ func newMemoryDockerRepo() *memoryDockerRepo {
 	}
 }
 
-func (r *memoryDockerRepo) ListHosts(context.Context, domaindocker.HostFilter) ([]domaindocker.Host, error) {
+func (r *memoryDockerRepo) ListHosts(_ context.Context, filter domaindocker.HostFilter) ([]domaindocker.Host, error) {
 	items := make([]domaindocker.Host, 0, len(r.hosts))
 	for _, item := range r.hosts {
+		if filter.Status != "" && item.Status != filter.Status {
+			continue
+		}
+		if filter.Environment != "" && item.Environment != filter.Environment {
+			continue
+		}
+		if filter.Architecture != "" && item.Architecture != filter.Architecture {
+			continue
+		}
 		items = append(items, item)
 	}
 	return items, nil
@@ -560,7 +690,33 @@ func (r *memoryDockerRepo) GetHost(_ context.Context, id string) (domaindocker.H
 }
 
 func (r *memoryDockerRepo) CreateHost(_ context.Context, input domaindocker.HostInput) (domaindocker.Host, error) {
-	item := domaindocker.Host{ID: nextDockerID("host", len(r.hosts)), Name: input.Name, Status: firstNonEmpty(input.Status, "pending"), CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC()}
+	item := domaindocker.Host{
+		ID:                         nextDockerID("host", len(r.hosts)),
+		Name:                       input.Name,
+		Status:                     firstNonEmpty(input.Status, "pending"),
+		Endpoint:                   input.Endpoint,
+		AgentID:                    input.AgentID,
+		AgentVersion:               input.AgentVersion,
+		DockerVersion:              input.DockerVersion,
+		ComposeVersion:             input.ComposeVersion,
+		Architecture:               input.Architecture,
+		Environment:                input.Environment,
+		Owner:                      input.Owner,
+		Team:                       input.Team,
+		VirtualizationConnectionID: input.VirtualizationConnectionID,
+		VMID:                       input.VMID,
+		VMName:                     input.VMName,
+		IPAddress:                  input.IPAddress,
+		CPUCoreCount:               input.CPUCoreCount,
+		MemoryBytes:                input.MemoryBytes,
+		DiskBytes:                  input.DiskBytes,
+		AvailablePortStart:         input.AvailablePortStart,
+		AvailablePortEnd:           input.AvailablePortEnd,
+		Labels:                     input.Labels,
+		Config:                     input.Config,
+		CreatedAt:                  time.Now().UTC(),
+		UpdatedAt:                  time.Now().UTC(),
+	}
 	r.hosts[item.ID] = item
 	return item, nil
 }
@@ -572,6 +728,23 @@ func (r *memoryDockerRepo) UpdateHost(_ context.Context, id string, input domain
 	}
 	item.Name = input.Name
 	item.Status = firstNonEmpty(input.Status, item.Status)
+	item.Endpoint = input.Endpoint
+	item.AgentID = input.AgentID
+	item.DockerVersion = input.DockerVersion
+	item.ComposeVersion = input.ComposeVersion
+	item.Architecture = input.Architecture
+	item.Environment = input.Environment
+	item.Owner = input.Owner
+	item.Team = input.Team
+	item.VirtualizationConnectionID = input.VirtualizationConnectionID
+	item.VMID = input.VMID
+	item.VMName = input.VMName
+	item.IPAddress = input.IPAddress
+	item.CPUCoreCount = input.CPUCoreCount
+	item.MemoryBytes = input.MemoryBytes
+	item.DiskBytes = input.DiskBytes
+	item.AvailablePortStart = input.AvailablePortStart
+	item.AvailablePortEnd = input.AvailablePortEnd
 	r.hosts[id] = item
 	return item, nil
 }
@@ -595,6 +768,9 @@ func (r *memoryDockerRepo) TouchHostRuntime(_ context.Context, id string, input 
 	}
 	if input.ComposeVersion != "" {
 		item.ComposeVersion = input.ComposeVersion
+	}
+	if input.Architecture != "" {
+		item.Architecture = input.Architecture
 	}
 	if input.Endpoint != "" {
 		item.Endpoint = input.Endpoint
@@ -758,8 +934,22 @@ func (r *memoryDockerRepo) UpdatePortMapping(_ context.Context, id string, input
 		return domaindocker.PortMapping{}, apperrors.ErrNotFound
 	}
 	item.Name = input.Name
+	item.HostID = input.HostID
+	item.ProjectID = input.ProjectID
+	item.ServiceID = input.ServiceID
+	item.HostIP = input.HostIP
 	item.HostPort = input.HostPort
 	item.ContainerPort = input.ContainerPort
+	item.Protocol = firstNonEmpty(input.Protocol, item.Protocol)
+	item.ExposureScope = firstNonEmpty(input.ExposureScope, item.ExposureScope)
+	item.Status = firstNonEmpty(input.Status, item.Status)
+	item.DomainName = input.DomainName
+	item.DomainScheme = input.DomainScheme
+	item.DomainTLSEnabled = input.DomainTLSEnabled
+	item.AccessURL = input.AccessURL
+	item.Owner = input.Owner
+	item.ExpiresAt = input.ExpiresAt
+	item.Config = mergeMap(item.Config, input.Config)
 	r.ports[id] = item
 	return item, nil
 }
@@ -791,16 +981,26 @@ func (r *memoryDockerRepo) CreateContainerStart(ctx context.Context, input domai
 		r.operations = snapshotOperations
 		return domaindocker.ContainerStartCreateResult{}, err
 	}
-	portInput := input.PortMapping
-	portInput.ProjectID = project.ID
-	portInput.ServiceID = service.ID
-	port, err := r.CreatePortMapping(ctx, portInput)
-	if err != nil {
-		r.projects = snapshotProjects
-		r.services = snapshotServices
-		r.ports = snapshotPorts
-		r.operations = snapshotOperations
-		return domaindocker.ContainerStartCreateResult{}, err
+	portInputs := append([]domaindocker.PortMappingInput(nil), input.PortMappings...)
+	if len(portInputs) == 0 {
+		portInputs = append(portInputs, input.PortMapping)
+	}
+	ports := make([]domaindocker.PortMapping, 0, len(portInputs))
+	for _, portInput := range portInputs {
+		portInput.ProjectID = project.ID
+		portInput.ServiceID = service.ID
+		if portInput.HostID == "" {
+			portInput.HostID = project.HostID
+		}
+		port, err := r.CreatePortMapping(ctx, portInput)
+		if err != nil {
+			r.projects = snapshotProjects
+			r.services = snapshotServices
+			r.ports = snapshotPorts
+			r.operations = snapshotOperations
+			return domaindocker.ContainerStartCreateResult{}, err
+		}
+		ports = append(ports, port)
 	}
 	operationInput := input.Operation
 	operationInput.ProjectID = project.ID
@@ -816,7 +1016,11 @@ func (r *memoryDockerRepo) CreateContainerStart(ctx context.Context, input domai
 		r.operations = snapshotOperations
 		return domaindocker.ContainerStartCreateResult{}, err
 	}
-	return domaindocker.ContainerStartCreateResult{Project: project, Service: service, PortMapping: port, Operation: operation}, nil
+	result := domaindocker.ContainerStartCreateResult{Project: project, Service: service, PortMappings: ports, Operation: operation}
+	if len(ports) > 0 {
+		result.PortMapping = ports[0]
+	}
+	return result, nil
 }
 
 func (r *memoryDockerRepo) ListTemplates(context.Context, domaindocker.TemplateFilter) ([]domaindocker.Template, error) {

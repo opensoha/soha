@@ -81,6 +81,7 @@ func TestBuildKubeVirtVM(t *testing.T) {
 		Node:             "node-a",
 		CPU:              2,
 		Memory:           "4Gi",
+		Architecture:     "arm64",
 		BootImage:        "registry.local/vm:latest",
 		DiskSize:         "20Gi",
 		Network:          "pod",
@@ -97,6 +98,10 @@ func TestBuildKubeVirtVM(t *testing.T) {
 	node, _, _ := unstructured.NestedStringMap(vm.Object, "spec", "template", "spec", "nodeSelector")
 	if node["kubernetes.io/hostname"] != "node-a" {
 		t.Fatalf("nodeSelector = %#v", node)
+	}
+	architecture, _, _ := unstructured.NestedString(vm.Object, "spec", "template", "spec", "architecture")
+	if architecture != "arm64" {
+		t.Fatalf("architecture = %q, want arm64", architecture)
 	}
 	volumes, _, _ := unstructured.NestedSlice(vm.Object, "spec", "template", "spec", "volumes")
 	if len(volumes) != 2 {

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -46,6 +47,7 @@ type OperationRecorder interface {
 type HostProvisionInput struct {
 	ConnectionID      string
 	Name              string
+	Architecture      string
 	CPU               int
 	MemoryMiB         int
 	DiskGiB           int
@@ -53,6 +55,7 @@ type HostProvisionInput struct {
 	ImageID           string
 	FlavorID          string
 	Network           string
+	CloudInit         string
 	StartAfterCreate  bool
 	TemplateID        string
 	ProviderParams    map[string]any
@@ -90,11 +93,18 @@ func WithHostProvisioner(provisioner HostProvisioner) Option {
 	}
 }
 
+func WithRuntimeBearerToken(token string) Option {
+	return func(s *Service) {
+		s.runtimeBearerToken = strings.TrimSpace(token)
+	}
+}
+
 type Service struct {
-	repo            Repository
-	permissions     *appaccess.PermissionResolver
-	operations      OperationRecorder
-	hostProvisioner HostProvisioner
+	repo               Repository
+	permissions        *appaccess.PermissionResolver
+	operations         OperationRecorder
+	hostProvisioner    HostProvisioner
+	runtimeBearerToken string
 }
 
 func New(repo Repository, permissions *appaccess.PermissionResolver, operations OperationRecorder, opts ...Option) *Service {
@@ -237,11 +247,17 @@ func (s *Service) QuickCreateHost(ctx context.Context, principal domainidentity.
 	if strings.TrimSpace(input.Name) == "" {
 		return domaindocker.Operation{}, fmt.Errorf("%w: docker host name is required", apperrors.ErrInvalidArgument)
 	}
+	architecture, err := normalizeArchitecture(input.Architecture)
+	if err != nil {
+		return domaindocker.Operation{}, err
+	}
+	cloudInit := quickCreateCloudInit(input)
 	var vmTask *HostProvisionTask
 	if s.hostProvisioner != nil && strings.TrimSpace(input.VirtualizationConnectionID) != "" {
 		task, err := s.hostProvisioner.ProvisionDockerHost(ctx, principal, HostProvisionInput{
 			ConnectionID:     strings.TrimSpace(input.VirtualizationConnectionID),
 			Name:             strings.TrimSpace(input.Name),
+			Architecture:     architecture,
 			CPU:              input.CPUCoreCount,
 			MemoryMiB:        bytesToMiB(input.MemoryBytes),
 			DiskGiB:          bytesToGiB(input.DiskBytes),
@@ -249,6 +265,7 @@ func (s *Service) QuickCreateHost(ctx context.Context, principal domainidentity.
 			ImageID:          strings.TrimSpace(input.ImageID),
 			FlavorID:         strings.TrimSpace(input.FlavorID),
 			Network:          strings.TrimSpace(input.Network),
+			CloudInit:        cloudInit,
 			StartAfterCreate: true,
 			TemplateID:       strings.TrimSpace(input.VMTemplateID),
 			ProviderParams:   mapValueAny(input.Config["providerParams"]),
@@ -277,6 +294,7 @@ func (s *Service) QuickCreateHost(ctx context.Context, principal domainidentity.
 		Owner:                      firstNonEmpty(input.Owner, principal.UserName, principal.UserID),
 		Team:                       input.Team,
 		VirtualizationConnectionID: input.VirtualizationConnectionID,
+		Architecture:               architecture,
 		CPUCoreCount:               input.CPUCoreCount,
 		MemoryBytes:                input.MemoryBytes,
 		DiskBytes:                  input.DiskBytes,
@@ -295,7 +313,9 @@ func (s *Service) QuickCreateHost(ctx context.Context, principal domainidentity.
 		"vmTemplateId":               strings.TrimSpace(input.VMTemplateID),
 		"flavorId":                   strings.TrimSpace(input.FlavorID),
 		"imageId":                    strings.TrimSpace(input.ImageID),
+		"architecture":               architecture,
 		"network":                    strings.TrimSpace(input.Network),
+		"cloudInitConfigured":        cloudInit != "",
 		"ttlSeconds":                 input.TTLSeconds,
 	}
 	if vmTask != nil {
@@ -451,50 +471,66 @@ func (s *Service) StartContainer(ctx context.Context, principal domainidentity.P
 		return domaindocker.Operation{}, fmt.Errorf("%w: docker host %s", apperrors.ErrNotFound, strings.TrimSpace(input.HostID))
 	}
 	serviceName := NormalizeSlug(input.Name)
-	input.Protocol = normalizedProtocol(input.Protocol)
-	input.ExposureScope = firstNonEmpty(strings.TrimSpace(input.ExposureScope), "internal")
-	input.DomainName = strings.ToLower(strings.TrimSpace(input.DomainName))
-	if input.DomainName != "" {
-		input.DomainScheme = normalizedDomainScheme(input.DomainScheme, input.DomainTLSEnabled)
-	} else {
-		input.DomainScheme = ""
-		input.DomainTLSEnabled = false
-	}
-	input.RestartPolicy = normalizedRestartPolicy(input.RestartPolicy)
-	input.Owner = firstNonEmpty(input.Owner, principal.UserName, principal.UserID)
-	if input.HostIP == "" {
-		input.HostIP = "0.0.0.0"
-	}
-	portMappingID := uuid.NewString()
-
-	composeContent, err := singleContainerComposeContent(serviceName, input)
+	architecture, err := normalizeArchitecture(input.Architecture)
 	if err != nil {
 		return domaindocker.Operation{}, err
 	}
-	portInput := domaindocker.PortMappingInput{
-		HostID:           input.HostID,
-		Name:             input.Name,
-		HostIP:           input.HostIP,
-		HostPort:         input.HostPort,
-		ContainerPort:    input.ContainerPort,
-		Protocol:         input.Protocol,
-		ID:               portMappingID,
-		ExposureScope:    input.ExposureScope,
-		Status:           "active",
-		DomainName:       input.DomainName,
-		DomainScheme:     input.DomainScheme,
-		DomainTLSEnabled: input.DomainTLSEnabled,
-		AccessURL:        singleContainerAccessURL(input, host),
-		Owner:            input.Owner,
-		Config: mergeMap(input.Config, map[string]any{
-			"sourceKind":    "single_container",
-			"containerName": serviceName,
-			"image":         input.Image,
-		}),
+	if architecture == "" {
+		architecture = strings.TrimSpace(host.Architecture)
 	}
-	if err := s.validatePortMapping(ctx, portInput, ""); err != nil {
+	ports, err := normalizeContainerPorts(input)
+	if err != nil {
 		return domaindocker.Operation{}, err
 	}
+	volumes, err := normalizeContainerVolumes(input.Volumes)
+	if err != nil {
+		return domaindocker.Operation{}, err
+	}
+	envVars, err := normalizeContainerEnvironmentVariables(input.EnvironmentVariables)
+	if err != nil {
+		return domaindocker.Operation{}, err
+	}
+	resources := normalizeContainerResources(input.Resources)
+	input.RestartPolicy = normalizedRestartPolicy(input.RestartPolicy)
+	input.Owner = firstNonEmpty(input.Owner, principal.UserName, principal.UserID)
+
+	portSeen := map[string]struct{}{}
+	for _, port := range ports {
+		key := strings.Join([]string{input.HostID, firstNonEmpty(port.HostIP, "0.0.0.0"), strconv.Itoa(port.HostPort), normalizedProtocol(port.Protocol)}, "|")
+		if _, ok := portSeen[key]; ok {
+			return domaindocker.Operation{}, fmt.Errorf("%w: duplicate host port %d/%s in request", apperrors.ErrInvalidArgument, port.HostPort, normalizedProtocol(port.Protocol))
+		}
+		portSeen[key] = struct{}{}
+		if err := s.validatePortMapping(ctx, portMappingInputForContainer(input, serviceName, port, host, uuid.NewString()), ""); err != nil {
+			return domaindocker.Operation{}, err
+		}
+	}
+
+	composeContent, err := singleContainerComposeContent(serviceName, input, ports, volumes, envVars, resources, architecture)
+	if err != nil {
+		return domaindocker.Operation{}, err
+	}
+
+	portInputs := make([]domaindocker.PortMappingInput, 0, len(ports))
+	portSummaries := make([]map[string]any, 0, len(ports))
+	for _, port := range ports {
+		portMappingID := uuid.NewString()
+		portInput := portMappingInputForContainer(input, serviceName, port, host, portMappingID)
+		portInputs = append(portInputs, portInput)
+		portSummaries = append(portSummaries, map[string]any{
+			"id":            portMappingID,
+			"name":          firstNonEmpty(port.Name, input.Name),
+			"hostIp":        portInput.HostIP,
+			"hostPort":      portInput.HostPort,
+			"containerPort": portInput.ContainerPort,
+			"protocol":      portInput.Protocol,
+			"accessUrl":     portInput.AccessURL,
+			"domainName":    portInput.DomainName,
+		})
+	}
+	primaryPort := ports[0]
+	primaryPortMappingID := portInputs[0].ID
+	primaryAccessURL := portInputs[0].AccessURL
 	projectInput := domaindocker.ProjectInput{
 		HostID:         input.HostID,
 		Name:           input.Name,
@@ -511,15 +547,21 @@ func (s *Service) StartContainer(ctx context.Context, principal domainidentity.P
 		TTLSeconds:     input.TTLSeconds,
 		Labels:         input.Labels,
 		Config: mergeMap(input.Config, map[string]any{
-			"sourceKind":       "single_container",
-			"serviceName":      serviceName,
-			"image":            input.Image,
-			"containerPort":    input.ContainerPort,
-			"hostPort":         input.HostPort,
-			"protocol":         input.Protocol,
-			"domainName":       input.DomainName,
-			"domainScheme":     input.DomainScheme,
-			"domainTlsEnabled": input.DomainTLSEnabled,
+			"sourceKind":           "single_container",
+			"serviceName":          serviceName,
+			"image":                input.Image,
+			"architecture":         architecture,
+			"platform":             dockerPlatformForArchitecture(architecture),
+			"ports":                containerPortMaps(ports),
+			"volumes":              containerVolumeMaps(volumes),
+			"environmentVariables": containerEnvironmentVariableMaps(envVars),
+			"resources":            containerResourceMap(resources),
+			"containerPort":        primaryPort.ContainerPort,
+			"hostPort":             primaryPort.HostPort,
+			"protocol":             primaryPort.Protocol,
+			"domainName":           primaryPort.DomainName,
+			"domainScheme":         primaryPort.DomainScheme,
+			"domainTlsEnabled":     primaryPort.DomainTLSEnabled,
 		}),
 	}
 	serviceInput := domaindocker.ServiceInput{
@@ -529,10 +571,15 @@ func (s *Service) StartContainer(ctx context.Context, principal domainidentity.P
 		Status: "defined",
 		Config: map[string]any{
 			"sourceKind":    "single_container",
-			"containerPort": input.ContainerPort,
-			"hostPort":      input.HostPort,
-			"protocol":      input.Protocol,
-			"domainName":    input.DomainName,
+			"architecture":  architecture,
+			"platform":      dockerPlatformForArchitecture(architecture),
+			"containerPort": primaryPort.ContainerPort,
+			"hostPort":      primaryPort.HostPort,
+			"protocol":      primaryPort.Protocol,
+			"domainName":    primaryPort.DomainName,
+			"ports":         containerPortMaps(ports),
+			"volumes":       containerVolumeMaps(volumes),
+			"resources":     containerResourceMap(resources),
 		},
 	}
 	requestedBy := firstNonEmpty(principal.UserID, principal.UserName)
@@ -544,14 +591,20 @@ func (s *Service) StartContainer(ctx context.Context, principal domainidentity.P
 		"composeContent": projectInput.ComposeContent,
 		"envContent":     projectInput.EnvContent,
 		"image":          input.Image,
-		"portMappingId":  portMappingID,
-		"accessUrl":      portInput.AccessURL,
-		"domainName":     portInput.DomainName,
+		"architecture":   architecture,
+		"platform":       dockerPlatformForArchitecture(architecture),
+		"ports":          containerPortMaps(ports),
+		"volumes":        containerVolumeMaps(volumes),
+		"resources":      containerResourceMap(resources),
+		"portMappingId":  primaryPortMappingID,
+		"portMappings":   portSummaries,
+		"accessUrl":      primaryAccessURL,
+		"domainName":     primaryPort.DomainName,
 	}
 	created, err := s.repo.CreateContainerStart(ctx, domaindocker.ContainerStartCreateInput{
-		Project:     projectInput,
-		Service:     serviceInput,
-		PortMapping: portInput,
+		Project:      projectInput,
+		Service:      serviceInput,
+		PortMappings: portInputs,
 		Operation: domaindocker.OperationInput{
 			HostID:         input.HostID,
 			OperationKind:  OperationKindContainerStart,
@@ -573,7 +626,7 @@ func (s *Service) StartContainer(ctx context.Context, principal domainidentity.P
 		Payload:     map[string]any{"kind": OperationKindContainerStart},
 		CreatedAt:   time.Now().UTC(),
 	})
-	s.recordOperation(ctx, principal, "docker.container.start.enqueue", created.Project.ID, created.Project.Name, "success", "enqueued single container start", map[string]any{"operationId": created.Operation.ID, "serviceId": created.Service.ID, "portMappingId": created.PortMapping.ID, "domainName": created.PortMapping.DomainName})
+	s.recordOperation(ctx, principal, "docker.container.start.enqueue", created.Project.ID, created.Project.Name, "success", "enqueued single container start", map[string]any{"operationId": created.Operation.ID, "serviceId": created.Service.ID, "portMappingId": created.PortMapping.ID, "portMappingCount": len(created.PortMappings), "domainName": created.PortMapping.DomainName})
 	return created.Operation, nil
 }
 
@@ -963,10 +1016,11 @@ func (s *Service) touchHostFromCallback(ctx context.Context, hostID, workerID, s
 	}
 	_, _ = s.repo.TouchHostRuntime(ctx, hostID, domaindocker.HostInput{
 		Status:         hostStatus,
-		AgentID:        workerID,
+		AgentID:        stringValue(payload, "agentId"),
 		AgentVersion:   stringValue(payload, "agentVersion"),
 		DockerVersion:  stringValue(payload, "dockerVersion"),
 		ComposeVersion: stringValue(payload, "composeVersion"),
+		Architecture:   firstNonEmpty(stringValue(payload, "architecture"), stringValue(payload, "dockerArchitecture"), stringValue(payload, "hostArchitecture")),
 		Endpoint:       stringValue(payload, "endpoint"),
 		IPAddress:      stringValue(payload, "ipAddress"),
 		Config: map[string]any{
@@ -980,6 +1034,7 @@ func (s *Service) applyCallbackRuntimeState(ctx context.Context, item domaindock
 	if status == OperationStatusRunning {
 		return
 	}
+	s.applyPortMappingRuntimeState(ctx, item, status)
 	if item.ProjectID != "" {
 		nextStatus, desired := projectStatusForOperation(item, status)
 		var deployedAt *time.Time
@@ -991,13 +1046,12 @@ func (s *Service) applyCallbackRuntimeState(ctx context.Context, item domaindock
 			_, _ = s.repo.UpdateProjectRuntime(ctx, item.ProjectID, nextStatus, desired, deployedAt)
 		}
 	}
-	if item.ServiceID != "" && status == OperationStatusCompleted {
+	if item.ServiceID != "" {
 		if current, err := s.repo.GetService(ctx, item.ServiceID); err == nil {
-			nextStatus := serviceStatusForAction(stringValue(item.Payload, "action"))
-			if nextStatus == "" {
-				nextStatus = current.Status
+			nextStatus := serviceStatusForOperation(item, status, current.Status)
+			if nextStatus != "" {
+				current.Status = nextStatus
 			}
-			current.Status = nextStatus
 			current.Config = mergeMap(current.Config, map[string]any{"lastAction": stringValue(item.Payload, "action")})
 			_, _ = s.repo.UpsertService(ctx, domaindocker.ServiceInput{
 				ID:             current.ID,
@@ -1020,6 +1074,26 @@ func (s *Service) applyCallbackRuntimeState(ctx context.Context, item domaindock
 		for _, service := range services {
 			_, _ = s.repo.UpsertService(ctx, service)
 		}
+	}
+}
+
+func (s *Service) applyPortMappingRuntimeState(ctx context.Context, item domaindocker.Operation, status string) {
+	nextStatus := portMappingStatusForOperation(status)
+	if nextStatus == "" {
+		return
+	}
+	for _, id := range operationPortMappingIDs(item.Payload) {
+		current, err := s.repo.GetPortMapping(ctx, id)
+		if err != nil {
+			continue
+		}
+		current.Status = nextStatus
+		current.Config = mergeMap(current.Config, map[string]any{
+			"lastDockerOperationId":     item.ID,
+			"lastDockerOperationKind":   item.OperationKind,
+			"lastDockerOperationStatus": status,
+		})
+		_, _ = s.repo.UpdatePortMapping(ctx, current.ID, portMappingInputFromRuntime(current))
 	}
 }
 
@@ -1208,17 +1282,19 @@ func (s *Service) touchProvisionedDockerHost(ctx context.Context, item domaindoc
 	vmID := firstNonEmpty(task.VMID, stringValue(task.Result, "vmId"))
 	vmName := firstNonEmpty(task.VMName, stringValue(task.Result, "name"))
 	_, _ = s.repo.TouchHostRuntime(ctx, item.HostID, domaindocker.HostInput{
-		Status:    status,
-		VMID:      vmID,
-		VMName:    vmName,
-		Endpoint:  firstNonEmpty(stringValue(task.Result, "endpoint"), stringValue(task.Result, "accessUrl")),
-		IPAddress: firstNonEmpty(stringValue(task.Result, "ipAddress"), stringValue(task.Result, "ip")),
+		Status:       status,
+		VMID:         vmID,
+		VMName:       vmName,
+		Endpoint:     firstNonEmpty(stringValue(task.Result, "endpoint"), stringValue(task.Result, "accessUrl")),
+		IPAddress:    firstNonEmpty(stringValue(task.Result, "ipAddress"), stringValue(task.Result, "ip")),
+		Architecture: firstNonEmpty(stringValue(task.Result, "architecture"), stringValue(item.Payload, "architecture")),
 		Config: map[string]any{
 			"virtualizationTaskId":     task.ID,
 			"virtualizationTaskStatus": task.Status,
 			"virtualizationProvider":   task.Provider,
 			"vmId":                     vmID,
 			"vmName":                   vmName,
+			"architecture":             firstNonEmpty(stringValue(task.Result, "architecture"), stringValue(item.Payload, "architecture")),
 			"hostProvisionStatus":      status,
 			"hostProvisionUpdatedAt":   time.Now().UTC().Format(time.RFC3339),
 		},
@@ -1349,21 +1425,32 @@ func validateContainerStartInput(input domaindocker.ContainerStartInput) error {
 	if strings.TrimSpace(input.Image) == "" {
 		return fmt.Errorf("%w: image is required", apperrors.ErrInvalidArgument)
 	}
-	if input.ContainerPort <= 0 || input.ContainerPort > 65535 {
-		return fmt.Errorf("%w: containerPort must be between 1 and 65535", apperrors.ErrInvalidArgument)
-	}
-	if input.HostPort <= 0 || input.HostPort > 65535 {
-		return fmt.Errorf("%w: hostPort must be between 1 and 65535", apperrors.ErrInvalidArgument)
-	}
-	protocol := normalizedProtocol(input.Protocol)
-	if protocol != "tcp" && protocol != "udp" {
-		return fmt.Errorf("%w: protocol must be tcp or udp", apperrors.ErrInvalidArgument)
-	}
-	if err := validateDomainAccess(input.DomainName, input.DomainScheme); err != nil {
+	ports, err := normalizeContainerPorts(input)
+	if err != nil {
 		return err
+	}
+	for _, port := range ports {
+		if err := validateContainerPort(port); err != nil {
+			return err
+		}
 	}
 	if policy := normalizedRestartPolicy(input.RestartPolicy); policy == "" {
 		return fmt.Errorf("%w: restartPolicy is invalid", apperrors.ErrInvalidArgument)
+	}
+	if policy := strings.TrimSpace(input.ImagePullPolicy); policy != "" && normalizedImagePullPolicy(policy) == "" {
+		return fmt.Errorf("%w: imagePullPolicy is invalid", apperrors.ErrInvalidArgument)
+	}
+	if _, err := normalizeArchitecture(input.Architecture); err != nil {
+		return err
+	}
+	if _, err := normalizeContainerVolumes(input.Volumes); err != nil {
+		return err
+	}
+	if _, err := normalizeContainerEnvironmentVariables(input.EnvironmentVariables); err != nil {
+		return err
+	}
+	if resources := normalizeContainerResources(input.Resources); resources.CPUS < 0 || resources.MemoryBytes < 0 || resources.MemoryReservationBytes < 0 {
+		return fmt.Errorf("%w: resource limits cannot be negative", apperrors.ErrInvalidArgument)
 	}
 	return nil
 }
@@ -1384,19 +1471,27 @@ func normalizePortMappingInput(input domaindocker.PortMappingInput) domaindocker
 	return input
 }
 
-func singleContainerComposeContent(serviceName string, input domaindocker.ContainerStartInput) (string, error) {
+func singleContainerComposeContent(serviceName string, input domaindocker.ContainerStartInput, ports []domaindocker.ContainerPortInput, volumes []domaindocker.ContainerVolumeInput, envVars []domaindocker.ContainerEnvironmentVariableInput, resources domaindocker.ContainerResourceInput, architecture string) (string, error) {
+	portSpecs := make([]string, 0, len(ports))
+	for _, port := range ports {
+		portSpecs = append(portSpecs, composePortSpec(port))
+	}
 	service := map[string]any{
 		"image":   strings.TrimSpace(input.Image),
 		"restart": normalizedRestartPolicy(input.RestartPolicy),
-		"ports": []string{
-			fmt.Sprintf("%s:%d:%d/%s", firstNonEmpty(input.HostIP, "0.0.0.0"), input.HostPort, input.ContainerPort, normalizedProtocol(input.Protocol)),
-		},
+		"ports":   portSpecs,
 	}
-	if value := strings.TrimSpace(input.ImagePullPolicy); value != "" {
+	if platform := dockerPlatformForArchitecture(architecture); platform != "" {
+		service["platform"] = platform
+	}
+	if value := normalizedImagePullPolicy(input.ImagePullPolicy); value != "" {
 		service["pull_policy"] = value
 	}
 	if strings.TrimSpace(input.EnvContent) != "" {
 		service["env_file"] = []string{".env"}
+	}
+	if envMap := composeEnvironmentMap(envVars); len(envMap) > 0 {
+		service["environment"] = envMap
 	}
 	if value := strings.TrimSpace(input.Command); value != "" {
 		service["command"] = value
@@ -1404,10 +1499,22 @@ func singleContainerComposeContent(serviceName string, input domaindocker.Contai
 	if value := strings.TrimSpace(input.Entrypoint); value != "" {
 		service["entrypoint"] = value
 	}
+	if volumeSpecs := composeVolumeSpecs(volumes); len(volumeSpecs) > 0 {
+		service["volumes"] = volumeSpecs
+	}
+	if value := composeCPUS(resources.CPUS); value != "" {
+		service["cpus"] = value
+	}
+	if value := composeMemoryValue(resources.MemoryBytes); value != "" {
+		service["mem_limit"] = value
+	}
+	if value := composeMemoryValue(resources.MemoryReservationBytes); value != "" {
+		service["mem_reservation"] = value
+	}
 	if value := strings.TrimSpace(input.Network); value != "" {
 		service["networks"] = []string{value}
 	}
-	if labels := domainProxyLabels(serviceName, input); len(labels) > 0 {
+	if labels := domainProxyLabels(serviceName, ports); len(labels) > 0 {
 		service["labels"] = labels
 	}
 	doc := map[string]any{
@@ -1427,40 +1534,296 @@ func singleContainerComposeContent(serviceName string, input domaindocker.Contai
 	return string(raw), nil
 }
 
-func domainProxyLabels(serviceName string, input domaindocker.ContainerStartInput) []string {
-	domain := strings.ToLower(strings.TrimSpace(input.DomainName))
-	if domain == "" {
-		return nil
-	}
-	routerName := NormalizeSlug(serviceName + "-" + domain)
-	entrypoint := "web"
-	if input.DomainTLSEnabled || strings.EqualFold(input.DomainScheme, "https") {
-		entrypoint = "websecure"
-	}
-	labels := []string{
-		"traefik.enable=true",
-		fmt.Sprintf("traefik.http.routers.%s.rule=Host(`%s`)", routerName, domain),
-		fmt.Sprintf("traefik.http.routers.%s.entrypoints=%s", routerName, entrypoint),
-		fmt.Sprintf("traefik.http.services.%s.loadbalancer.server.port=%d", routerName, input.ContainerPort),
-	}
-	if entrypoint == "websecure" {
-		labels = append(labels, fmt.Sprintf("traefik.http.routers.%s.tls=true", routerName))
+func domainProxyLabels(serviceName string, ports []domaindocker.ContainerPortInput) []string {
+	labels := []string{}
+	for _, port := range ports {
+		domain := strings.ToLower(strings.TrimSpace(port.DomainName))
+		if domain == "" {
+			continue
+		}
+		routerName := NormalizeSlug(fmt.Sprintf("%s-%s-%d", serviceName, domain, port.ContainerPort))
+		entrypoint := "web"
+		if port.DomainTLSEnabled || strings.EqualFold(port.DomainScheme, "https") {
+			entrypoint = "websecure"
+		}
+		if len(labels) == 0 {
+			labels = append(labels, "traefik.enable=true")
+		}
+		labels = append(labels,
+			fmt.Sprintf("traefik.http.routers.%s.rule=Host(`%s`)", routerName, domain),
+			fmt.Sprintf("traefik.http.routers.%s.entrypoints=%s", routerName, entrypoint),
+			fmt.Sprintf("traefik.http.services.%s.loadbalancer.server.port=%d", routerName, port.ContainerPort),
+		)
+		if entrypoint == "websecure" {
+			labels = append(labels, fmt.Sprintf("traefik.http.routers.%s.tls=true", routerName))
+		}
 	}
 	return labels
 }
 
-func singleContainerAccessURL(input domaindocker.ContainerStartInput, host domaindocker.Host) string {
-	if domain := strings.TrimSpace(input.DomainName); domain != "" {
-		return normalizedDomainScheme(input.DomainScheme, input.DomainTLSEnabled) + "://" + strings.ToLower(domain)
+func singleContainerAccessURL(port domaindocker.ContainerPortInput, host domaindocker.Host) string {
+	if domain := strings.TrimSpace(port.DomainName); domain != "" {
+		return normalizedDomainScheme(port.DomainScheme, port.DomainTLSEnabled) + "://" + strings.ToLower(domain)
 	}
-	accessHost := strings.TrimSpace(input.HostIP)
+	accessHost := strings.TrimSpace(port.HostIP)
 	if accessHost == "" || accessHost == "0.0.0.0" {
 		accessHost = firstNonEmpty(host.IPAddress, endpointHost(host.Endpoint), host.ID)
 	}
 	if accessHost == "" {
 		return ""
 	}
-	return fmt.Sprintf("http://%s:%d", accessHost, input.HostPort)
+	return fmt.Sprintf("http://%s:%d", accessHost, port.HostPort)
+}
+
+func portMappingInputForContainer(input domaindocker.ContainerStartInput, serviceName string, port domaindocker.ContainerPortInput, host domaindocker.Host, id string) domaindocker.PortMappingInput {
+	return domaindocker.PortMappingInput{
+		ID:               id,
+		HostID:           input.HostID,
+		Name:             firstNonEmpty(port.Name, input.Name),
+		HostIP:           firstNonEmpty(port.HostIP, "0.0.0.0"),
+		HostPort:         port.HostPort,
+		ContainerPort:    port.ContainerPort,
+		Protocol:         normalizedProtocol(port.Protocol),
+		ExposureScope:    firstNonEmpty(port.ExposureScope, "internal"),
+		Status:           "active",
+		DomainName:       port.DomainName,
+		DomainScheme:     port.DomainScheme,
+		DomainTLSEnabled: port.DomainTLSEnabled,
+		AccessURL:        singleContainerAccessURL(port, host),
+		Owner:            input.Owner,
+		Config: mergeMap(input.Config, map[string]any{
+			"sourceKind":    "single_container",
+			"containerName": serviceName,
+			"image":         input.Image,
+			"portName":      port.Name,
+		}),
+	}
+}
+
+func normalizeContainerPorts(input domaindocker.ContainerStartInput) ([]domaindocker.ContainerPortInput, error) {
+	raw := append([]domaindocker.ContainerPortInput(nil), input.Ports...)
+	if len(raw) == 0 {
+		raw = append(raw, domaindocker.ContainerPortInput{
+			Name:             input.Name,
+			HostIP:           input.HostIP,
+			HostPort:         input.HostPort,
+			ContainerPort:    input.ContainerPort,
+			Protocol:         input.Protocol,
+			ExposureScope:    input.ExposureScope,
+			DomainName:       input.DomainName,
+			DomainScheme:     input.DomainScheme,
+			DomainTLSEnabled: input.DomainTLSEnabled,
+		})
+	}
+	out := make([]domaindocker.ContainerPortInput, 0, len(raw))
+	for index, port := range raw {
+		if port.HostIP == "" {
+			port.HostIP = firstNonEmpty(input.HostIP, "0.0.0.0")
+		}
+		port.Protocol = normalizedProtocol(firstNonEmpty(port.Protocol, input.Protocol))
+		port.ExposureScope = firstNonEmpty(strings.TrimSpace(port.ExposureScope), strings.TrimSpace(input.ExposureScope), "internal")
+		if strings.TrimSpace(port.Name) == "" {
+			if index == 0 {
+				port.Name = input.Name
+			} else {
+				port.Name = fmt.Sprintf("port-%d", port.ContainerPort)
+			}
+		}
+		if index == 0 && strings.TrimSpace(port.DomainName) == "" {
+			port.DomainName = input.DomainName
+			port.DomainScheme = input.DomainScheme
+			port.DomainTLSEnabled = input.DomainTLSEnabled
+		}
+		port.DomainName = strings.ToLower(strings.TrimSpace(port.DomainName))
+		if port.DomainName != "" {
+			port.DomainScheme = normalizedDomainScheme(port.DomainScheme, port.DomainTLSEnabled)
+		} else {
+			port.DomainScheme = ""
+			port.DomainTLSEnabled = false
+		}
+		if err := validateContainerPort(port); err != nil {
+			return nil, err
+		}
+		out = append(out, port)
+	}
+	return out, nil
+}
+
+func validateContainerPort(port domaindocker.ContainerPortInput) error {
+	if port.ContainerPort <= 0 || port.ContainerPort > 65535 {
+		return fmt.Errorf("%w: containerPort must be between 1 and 65535", apperrors.ErrInvalidArgument)
+	}
+	if port.HostPort <= 0 || port.HostPort > 65535 {
+		return fmt.Errorf("%w: hostPort must be between 1 and 65535", apperrors.ErrInvalidArgument)
+	}
+	protocol := normalizedProtocol(port.Protocol)
+	if protocol != "tcp" && protocol != "udp" {
+		return fmt.Errorf("%w: protocol must be tcp or udp", apperrors.ErrInvalidArgument)
+	}
+	return validateDomainAccess(port.DomainName, port.DomainScheme)
+}
+
+func normalizeContainerVolumes(volumes []domaindocker.ContainerVolumeInput) ([]domaindocker.ContainerVolumeInput, error) {
+	out := make([]domaindocker.ContainerVolumeInput, 0, len(volumes))
+	for _, volume := range volumes {
+		volume.Name = strings.TrimSpace(volume.Name)
+		volume.Type = strings.ToLower(strings.TrimSpace(volume.Type))
+		volume.Source = strings.TrimSpace(volume.Source)
+		volume.Target = strings.TrimSpace(volume.Target)
+		volume.SubPath = strings.TrimSpace(volume.SubPath)
+		if volume.Source == "" && volume.Target == "" {
+			continue
+		}
+		if volume.Type == "" {
+			if strings.HasPrefix(volume.Source, "/") || strings.HasPrefix(volume.Source, ".") {
+				volume.Type = "bind"
+			} else {
+				volume.Type = "volume"
+			}
+		}
+		if volume.Type != "bind" && volume.Type != "volume" {
+			return nil, fmt.Errorf("%w: volume type must be bind or volume", apperrors.ErrInvalidArgument)
+		}
+		if volume.Source == "" || volume.Target == "" {
+			return nil, fmt.Errorf("%w: volume source and target are required", apperrors.ErrInvalidArgument)
+		}
+		if !strings.HasPrefix(volume.Target, "/") {
+			return nil, fmt.Errorf("%w: volume target must be an absolute container path", apperrors.ErrInvalidArgument)
+		}
+		out = append(out, volume)
+	}
+	return out, nil
+}
+
+func normalizeContainerEnvironmentVariables(items []domaindocker.ContainerEnvironmentVariableInput) ([]domaindocker.ContainerEnvironmentVariableInput, error) {
+	out := make([]domaindocker.ContainerEnvironmentVariableInput, 0, len(items))
+	seen := map[string]struct{}{}
+	for _, item := range items {
+		name := strings.TrimSpace(item.Name)
+		if name == "" && strings.TrimSpace(item.Value) == "" {
+			continue
+		}
+		if !envNamePattern.MatchString(name) {
+			return nil, fmt.Errorf("%w: environment variable name %q is invalid", apperrors.ErrInvalidArgument, name)
+		}
+		if _, ok := seen[name]; ok {
+			return nil, fmt.Errorf("%w: duplicate environment variable %s", apperrors.ErrInvalidArgument, name)
+		}
+		seen[name] = struct{}{}
+		out = append(out, domaindocker.ContainerEnvironmentVariableInput{Name: name, Value: item.Value})
+	}
+	return out, nil
+}
+
+func normalizeContainerResources(resources domaindocker.ContainerResourceInput) domaindocker.ContainerResourceInput {
+	if resources.CPUS < 0 {
+		resources.CPUS = -1
+	}
+	if resources.MemoryBytes < 0 {
+		resources.MemoryBytes = -1
+	}
+	if resources.MemoryReservationBytes < 0 {
+		resources.MemoryReservationBytes = -1
+	}
+	return resources
+}
+
+func composePortSpec(port domaindocker.ContainerPortInput) string {
+	return fmt.Sprintf("%s:%d:%d/%s", firstNonEmpty(port.HostIP, "0.0.0.0"), port.HostPort, port.ContainerPort, normalizedProtocol(port.Protocol))
+}
+
+func composeVolumeSpecs(volumes []domaindocker.ContainerVolumeInput) []string {
+	out := make([]string, 0, len(volumes))
+	for _, volume := range volumes {
+		spec := volume.Source + ":" + volume.Target
+		if volume.ReadOnly {
+			spec += ":ro"
+		}
+		out = append(out, spec)
+	}
+	return out
+}
+
+func composeEnvironmentMap(items []domaindocker.ContainerEnvironmentVariableInput) map[string]string {
+	out := map[string]string{}
+	for _, item := range items {
+		if strings.TrimSpace(item.Name) != "" {
+			out[strings.TrimSpace(item.Name)] = item.Value
+		}
+	}
+	return out
+}
+
+func composeCPUS(value float64) string {
+	if value <= 0 {
+		return ""
+	}
+	return strconv.FormatFloat(value, 'f', -1, 64)
+}
+
+func composeMemoryValue(bytes int64) string {
+	if bytes <= 0 {
+		return ""
+	}
+	if bytes%(1024*1024) == 0 {
+		return fmt.Sprintf("%dm", bytes/(1024*1024))
+	}
+	return strconv.FormatInt(bytes, 10)
+}
+
+func containerPortMaps(ports []domaindocker.ContainerPortInput) []map[string]any {
+	out := make([]map[string]any, 0, len(ports))
+	for _, port := range ports {
+		out = append(out, map[string]any{
+			"name":             port.Name,
+			"hostIp":           port.HostIP,
+			"hostPort":         port.HostPort,
+			"containerPort":    port.ContainerPort,
+			"protocol":         port.Protocol,
+			"exposureScope":    port.ExposureScope,
+			"domainName":       port.DomainName,
+			"domainScheme":     port.DomainScheme,
+			"domainTlsEnabled": port.DomainTLSEnabled,
+		})
+	}
+	return out
+}
+
+func containerVolumeMaps(volumes []domaindocker.ContainerVolumeInput) []map[string]any {
+	out := make([]map[string]any, 0, len(volumes))
+	for _, volume := range volumes {
+		out = append(out, map[string]any{
+			"name":     volume.Name,
+			"type":     volume.Type,
+			"source":   volume.Source,
+			"target":   volume.Target,
+			"readOnly": volume.ReadOnly,
+			"subPath":  volume.SubPath,
+		})
+	}
+	return out
+}
+
+func containerEnvironmentVariableMaps(items []domaindocker.ContainerEnvironmentVariableInput) []map[string]any {
+	out := make([]map[string]any, 0, len(items))
+	for _, item := range items {
+		out = append(out, map[string]any{"name": item.Name, "value": item.Value})
+	}
+	return out
+}
+
+func containerResourceMap(resources domaindocker.ContainerResourceInput) map[string]any {
+	out := map[string]any{}
+	if resources.CPUS > 0 {
+		out["cpus"] = resources.CPUS
+	}
+	if resources.MemoryBytes > 0 {
+		out["memoryBytes"] = resources.MemoryBytes
+	}
+	if resources.MemoryReservationBytes > 0 {
+		out["memoryReservationBytes"] = resources.MemoryReservationBytes
+	}
+	return out
 }
 
 func validateDomainAccess(domainName string, domainScheme string) error {
@@ -1489,6 +1852,29 @@ func normalizedProtocol(value string) string {
 	return protocol
 }
 
+func normalizeArchitecture(value string) (string, error) {
+	arch := strings.ToLower(strings.TrimSpace(value))
+	arch = strings.TrimPrefix(arch, "linux/")
+	switch arch {
+	case "":
+		return "", nil
+	case "amd64", "x86_64", "x64", "x86":
+		return "amd64", nil
+	case "arm64", "aarch64":
+		return "arm64", nil
+	default:
+		return "", fmt.Errorf("%w: architecture must be amd64 or arm64", apperrors.ErrInvalidArgument)
+	}
+}
+
+func dockerPlatformForArchitecture(value string) string {
+	arch, err := normalizeArchitecture(value)
+	if err != nil || arch == "" {
+		return ""
+	}
+	return "linux/" + arch
+}
+
 func normalizedDomainScheme(value string, tlsEnabled bool) string {
 	scheme := strings.ToLower(strings.TrimSpace(value))
 	if scheme == "" {
@@ -1509,6 +1895,24 @@ func normalizedRestartPolicy(value string) string {
 		return policy
 	}
 	return ""
+}
+
+func normalizedImagePullPolicy(value string) string {
+	policy := strings.ToLower(strings.TrimSpace(value))
+	policy = strings.ReplaceAll(policy, "-", "_")
+	switch policy {
+	case "":
+		return ""
+	case "ifnotpresent":
+		return "if_not_present"
+	case "always", "never", "build", "if_not_present", "missing", "refresh", "daily", "weekly":
+		return policy
+	default:
+		if imagePullEveryPattern.MatchString(policy) {
+			return policy
+		}
+		return ""
+	}
 }
 
 func endpointHost(value string) string {
@@ -1703,6 +2107,90 @@ func serviceStatusForAction(action string) string {
 	}
 }
 
+func serviceStatusForOperation(item domaindocker.Operation, callbackStatus string, currentStatus string) string {
+	switch callbackStatus {
+	case OperationStatusFailed, OperationStatusTimeout:
+		return "failed"
+	case OperationStatusCanceled:
+		return "stopped"
+	case OperationStatusCompleted:
+		if nextStatus := serviceStatusForAction(stringValue(item.Payload, "action")); nextStatus != "" {
+			return nextStatus
+		}
+		return currentStatus
+	default:
+		return ""
+	}
+}
+
+func portMappingStatusForOperation(callbackStatus string) string {
+	switch callbackStatus {
+	case OperationStatusCompleted:
+		return "active"
+	case OperationStatusFailed, OperationStatusTimeout:
+		return "failed"
+	case OperationStatusCanceled:
+		return "canceled"
+	default:
+		return ""
+	}
+}
+
+func operationPortMappingIDs(payload map[string]any) []string {
+	ids := []string{}
+	seen := map[string]struct{}{}
+	appendID := func(value string) {
+		id := strings.TrimSpace(value)
+		if id == "" {
+			return
+		}
+		if _, ok := seen[id]; ok {
+			return
+		}
+		seen[id] = struct{}{}
+		ids = append(ids, id)
+	}
+	appendID(stringValue(payload, "portMappingId"))
+	switch records := payload["portMappings"].(type) {
+	case []map[string]any:
+		for _, record := range records {
+			appendID(stringValue(record, "id"))
+		}
+	case []any:
+		for _, raw := range records {
+			record, ok := raw.(map[string]any)
+			if !ok {
+				continue
+			}
+			appendID(stringValue(record, "id"))
+		}
+	}
+	return ids
+}
+
+func portMappingInputFromRuntime(item domaindocker.PortMapping) domaindocker.PortMappingInput {
+	return domaindocker.PortMappingInput{
+		ID:               item.ID,
+		HostID:           item.HostID,
+		ProjectID:        item.ProjectID,
+		ServiceID:        item.ServiceID,
+		Name:             item.Name,
+		HostIP:           item.HostIP,
+		HostPort:         item.HostPort,
+		ContainerPort:    item.ContainerPort,
+		Protocol:         item.Protocol,
+		ExposureScope:    item.ExposureScope,
+		Status:           item.Status,
+		DomainName:       item.DomainName,
+		DomainScheme:     item.DomainScheme,
+		DomainTLSEnabled: item.DomainTLSEnabled,
+		AccessURL:        item.AccessURL,
+		Owner:            item.Owner,
+		ExpiresAt:        item.ExpiresAt,
+		Config:           item.Config,
+	}
+}
+
 func serviceInputsFromPayload(item domaindocker.Operation, payload map[string]any) []domaindocker.ServiceInput {
 	raw, ok := payload["services"]
 	if !ok {
@@ -1807,6 +2295,17 @@ func mapValueAny(raw any) map[string]any {
 	return mapped
 }
 
+func quickCreateCloudInit(input domaindocker.QuickCreateHostInput) string {
+	if value := strings.TrimSpace(input.CloudInit); value != "" {
+		return value
+	}
+	if value := stringValue(input.Config, "cloudInit"); value != "" {
+		return value
+	}
+	providerParams := mapValueAny(input.Config["providerParams"])
+	return stringValue(providerParams, "cloudInit")
+}
+
 func firstNonNil(values ...any) any {
 	for _, value := range values {
 		if value != nil {
@@ -1848,8 +2347,10 @@ func stringSlice(raw any) []string {
 }
 
 var (
-	slugPattern   = regexp.MustCompile(`[^a-z0-9._-]+`)
-	domainPattern = regexp.MustCompile(`^(\*\.)?[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$`)
+	slugPattern           = regexp.MustCompile(`[^a-z0-9._-]+`)
+	domainPattern         = regexp.MustCompile(`^(\*\.)?[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$`)
+	envNamePattern        = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+	imagePullEveryPattern = regexp.MustCompile(`^every_([0-9]+[wdhms])+$`)
 )
 
 func NormalizeSlug(value string) string {

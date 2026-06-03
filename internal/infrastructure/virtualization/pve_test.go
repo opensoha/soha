@@ -256,14 +256,16 @@ func TestPVEAdapterCreateISOPayloadUsesProviderParams(t *testing.T) {
 		Endpoint: server.URL,
 		Options:  map[string]any{"vmid": "201", "defaultNode": "pve-1", "defaultStorage": "local-lvm"},
 	}, CreateVMInput{
-		Name:       "iso-a",
-		SourceMode: "iso_install",
-		SourceRef:  "local:iso/ubuntu.iso",
-		DiskSize:   "20Gi",
-		Memory:     "4096Mi",
+		Name:         "iso-a",
+		Architecture: "arm64",
+		SourceMode:   "iso_install",
+		SourceRef:    "local:iso/ubuntu.iso",
+		DiskSize:     "20Gi",
+		Memory:       "4096Mi",
 		ProviderParams: map[string]any{
-			"bridge":  "vmbr0",
-			"storage": "local-lvm",
+			"bridge":   "vmbr0",
+			"storage":  "local-lvm",
+			"cicustom": "user=local:snippets/docker-agent.yaml",
 		},
 	})
 	if err != nil {
@@ -272,10 +274,60 @@ func TestPVEAdapterCreateISOPayloadUsesProviderParams(t *testing.T) {
 	if vm.ID != "201" || vm.Node != "pve-1" || vm.Metadata["vmid"] != "201" {
 		t.Fatalf("vm = %#v", vm)
 	}
-	if !strings.Contains(body, `"ide2":"local:iso/ubuntu.iso,media=cdrom"`) || !strings.Contains(body, `"memory":4096`) || !strings.Contains(body, `"net0":"virtio,bridge=vmbr0"`) || !strings.Contains(body, `"scsi0":"local-lvm:20G"`) {
+	if !strings.Contains(body, `"arch":"aarch64"`) || !strings.Contains(body, `"cicustom":"user=local:snippets/docker-agent.yaml"`) || !strings.Contains(body, `"ide2":"local:iso/ubuntu.iso,media=cdrom"`) || !strings.Contains(body, `"memory":4096`) || !strings.Contains(body, `"net0":"virtio,bridge=vmbr0"`) || !strings.Contains(body, `"scsi0":"local-lvm:20G"`) {
 		t.Fatalf("payload = %s", body)
 	}
 	want := []string{"POST /api2/json/nodes/pve-1/qemu", "GET /api2/json/nodes/pve-1/qemu/201/status/current"}
+	if strings.Join(paths, ",") != strings.Join(want, ",") {
+		t.Fatalf("paths = %#v", paths)
+	}
+}
+
+func TestPVEAdapterUploadsRawCloudInitToSnippetStorage(t *testing.T) {
+	var createBody string
+	var uploadBody string
+	var uploadContentType string
+	var paths []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.Method+" "+r.URL.Path)
+		raw, _ := io.ReadAll(r.Body)
+		switch r.URL.Path {
+		case "/api2/json/nodes/pve-1/storage/local/upload":
+			uploadBody = string(raw)
+			uploadContentType = r.Header.Get("Content-Type")
+		case "/api2/json/nodes/pve-1/qemu":
+			createBody = string(raw)
+		}
+		writePVEData(w, []map[string]any{})
+	}))
+	defer server.Close()
+
+	adapter := NewPVEAdapter(server.Client())
+	_, err := adapter.CreateVM(context.Background(), Connection{
+		Endpoint: server.URL,
+		Options:  map[string]any{"vmid": "202", "defaultNode": "pve-1", "defaultStorage": "local-lvm", "defaultSnippetStorage": "local"},
+	}, CreateVMInput{
+		Name:       "docker-agent-a",
+		SourceMode: "iso_install",
+		SourceRef:  "local:iso/ubuntu.iso",
+		CloudInit:  "#cloud-config\npackages:\n  - docker.io",
+		DiskSize:   "20Gi",
+		Memory:     "4096Mi",
+	})
+	if err != nil {
+		t.Fatalf("CreateVM() error = %v", err)
+	}
+	if !strings.HasPrefix(uploadContentType, "multipart/form-data") || !strings.Contains(uploadBody, "#cloud-config") || !strings.Contains(uploadBody, "snippets") {
+		t.Fatalf("upload content type=%q body=%s", uploadContentType, uploadBody)
+	}
+	if !strings.Contains(createBody, `"cicustom":"user=local:snippets/soha-202-cloud-init.yaml"`) {
+		t.Fatalf("create body = %s", createBody)
+	}
+	want := []string{
+		"POST /api2/json/nodes/pve-1/storage/local/upload",
+		"POST /api2/json/nodes/pve-1/qemu",
+		"GET /api2/json/nodes/pve-1/qemu/202/status/current",
+	}
 	if strings.Join(paths, ",") != strings.Join(want, ",") {
 		t.Fatalf("paths = %#v", paths)
 	}

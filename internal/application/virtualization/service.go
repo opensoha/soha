@@ -94,6 +94,7 @@ type ConnectionInput struct {
 type CreateVMInput struct {
 	ConnectionID      string         `json:"connectionId"`
 	Name              string         `json:"name"`
+	Architecture      string         `json:"architecture,omitempty"`
 	Namespace         string         `json:"namespace,omitempty"`
 	Node              string         `json:"node,omitempty"`
 	CPU               int            `json:"cpu,omitempty"`
@@ -615,6 +616,11 @@ func (s *Service) CreateVM(ctx context.Context, principal domainidentity.Princip
 	if strings.TrimSpace(input.Name) == "" {
 		return domainvirtualization.Task{}, fmt.Errorf("%w: vm name is required", apperrors.ErrInvalidArgument)
 	}
+	architecture, err := normalizeArchitecture(input.Architecture)
+	if err != nil {
+		return domainvirtualization.Task{}, err
+	}
+	input.Architecture = architecture
 	flavor := domainvirtualization.Flavor{}
 	if strings.TrimSpace(input.FlavorID) != "" {
 		flavor, err = s.repo.GetFlavor(ctx, strings.TrimSpace(input.FlavorID))
@@ -657,6 +663,7 @@ func (s *Service) CreateVM(ctx context.Context, principal domainidentity.Princip
 		TimeoutSeconds: defaultTaskTimeoutSeconds,
 		Payload: map[string]any{
 			"name":             input.Name,
+			"architecture":     input.Architecture,
 			"namespace":        input.Namespace,
 			"node":             input.Node,
 			"flavorId":         input.FlavorID,
@@ -1529,6 +1536,21 @@ func sourceModeForProvider(provider, templateID string, image domainvirtualizati
 		return "pvc_clone"
 	}
 	return "datasource_clone"
+}
+
+func normalizeArchitecture(value string) (string, error) {
+	arch := strings.ToLower(strings.TrimSpace(value))
+	arch = strings.TrimPrefix(arch, "linux/")
+	switch arch {
+	case "":
+		return "", nil
+	case "amd64", "x86_64", "x64", "x86":
+		return "amd64", nil
+	case "arm64", "aarch64":
+		return "arm64", nil
+	default:
+		return "", fmt.Errorf("%w: architecture must be amd64 or arm64", apperrors.ErrInvalidArgument)
+	}
 }
 
 func normalizedPageRequest(page, pageSize, limit int) (int, int) {

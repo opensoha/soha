@@ -1832,6 +1832,10 @@ func isAllowedStreamTicketPath(path string) bool {
 		return true
 	case strings.Contains(path, "/virtualization/vms/") && strings.HasSuffix(path, "/console/novnc"):
 		return true
+	case strings.Contains(path, "/docker/projects/") && strings.HasSuffix(path, "/runtime/logs/stream"):
+		return true
+	case strings.Contains(path, "/docker/projects/") && strings.HasSuffix(path, "/runtime/terminal"):
+		return true
 	default:
 		return false
 	}

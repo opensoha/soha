@@ -200,6 +200,42 @@ func TestStreamTicketIsSingleUseAndPathBound(t *testing.T) {
 	}
 }
 
+func TestStreamTicketAllowsDockerRuntimeStreams(t *testing.T) {
+	ctx := context.Background()
+	repo := newLoginMappingUserRepo()
+	repo.usersByID["u1"] = userrepo.User{
+		ID:           "u1",
+		Username:     "user1",
+		Email:        "user1@example.com",
+		DisplayName:  "User One",
+		Status:       "active",
+		AuthzVersion: 1,
+	}
+	repo.sessionsByID["s1"] = userrepo.Session{
+		ID:           "s1",
+		UserID:       "u1",
+		Status:       "active",
+		ExpiresAt:    time.Now().UTC().Add(time.Hour),
+		AuthzVersion: 1,
+	}
+	service := &Service{users: repo}
+
+	for _, path := range []string{
+		"/api/v1/docker/projects/project-1/runtime/logs/stream",
+		"/api/v1/docker/projects/project-1/runtime/terminal",
+	} {
+		ticket, err := service.IssueStreamTicket(ctx, domainidentity.Principal{UserID: "u1"}, domainidentity.AccessContext{TokenKind: "session_access", SessionID: "s1"}, domainidentity.StreamTicketRequest{Path: path})
+		if err != nil {
+			t.Fatalf("IssueStreamTicket(%q) returned error: %v", path, err)
+		}
+		if _, accessCtx, err := service.ParseStreamTicket(ctx, ticket.Ticket, path); err != nil {
+			t.Fatalf("ParseStreamTicket(%q) returned error: %v", path, err)
+		} else if accessCtx.TokenKind != "stream_ticket" {
+			t.Fatalf("unexpected stream access context: %#v", accessCtx)
+		}
+	}
+}
+
 func TestStreamTicketRejectsMismatchedPath(t *testing.T) {
 	ctx := context.Background()
 	repo := newLoginMappingUserRepo()

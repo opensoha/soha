@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -568,22 +569,28 @@ func (r *Runner) execute(ctx context.Context, task ExecutionTask) {
 
 func (r *Runner) executeDockerOperation(ctx context.Context, operation DockerOperation) {
 	workerID := dockerWorkerID(r.cfg)
+	timeoutSeconds := operation.TimeoutSeconds
+	if timeoutSeconds <= 0 {
+		timeoutSeconds = 1800
+	}
+	taskCtx, cancel := context.WithTimeout(ctx, time.Duration(timeoutSeconds)*time.Second)
+	defer cancel()
 	logs := []string{fmt.Sprintf("docker operation %s started: %s", operation.ID, operation.OperationKind)}
-	r.dockerCallback(ctx, operation, "running", map[string]any{
-		"agentId":        firstNonEmpty(strings.TrimSpace(r.cfg.AgentID), "local-agent"),
-		"workerId":       workerID,
-		"heartbeatAt":    time.Now().UTC().Format(time.RFC3339),
-		"dockerVersion":  commandVersion(ctx, "docker", "--version"),
-		"composeVersion": dockerComposeVersion(ctx),
-	}, logs)
+	r.dockerCallback(taskCtx, operation, "running", dockerRuntimePayload(taskCtx, r.cfg, map[string]any{
+		"heartbeatAt": time.Now().UTC().Format(time.RFC3339),
+	}), logs)
+
+	done := make(chan struct{})
+	stopReason := make(chan string, 1)
+	go r.streamDockerHeartbeats(taskCtx, cancel, done, stopReason, operation)
 
 	var err error
 	var commandLogs []string
 	switch operation.OperationKind {
 	case "container_start", "project_deploy":
-		commandLogs, err = r.executeComposeAction(ctx, operation)
+		commandLogs, err = r.executeComposeAction(taskCtx, operation)
 	case "service_action":
-		commandLogs, err = r.executeComposeServiceAction(ctx, operation)
+		commandLogs, err = r.executeComposeServiceAction(taskCtx, operation)
 	case "port_reserve":
 		commandLogs = []string{"port mapping reserved in control plane; no local Docker command required"}
 	case "host_sync":
@@ -591,23 +598,26 @@ func (r *Runner) executeDockerOperation(ctx context.Context, operation DockerOpe
 	default:
 		err = fmt.Errorf("unsupported docker operation kind %q", operation.OperationKind)
 	}
+	close(done)
+	if remoteStatus := drainStopReason(stopReason); remoteStatus != "" {
+		return
+	}
 	logs = append(logs, commandLogs...)
 	if err != nil {
-		r.dockerCallback(ctx, operation, "failed", map[string]any{
-			"agentId":  firstNonEmpty(strings.TrimSpace(r.cfg.AgentID), "local-agent"),
-			"workerId": workerID,
+		status := "failed"
+		if errors.Is(taskCtx.Err(), context.DeadlineExceeded) {
+			status = "callback_timeout"
+		}
+		r.dockerCallback(ctx, operation, status, dockerRuntimePayload(ctx, r.cfg, map[string]any{
 			"error":    err.Error(),
-		}, append(logs, "docker operation failed: "+err.Error()))
+			"workerId": workerID,
+		}), append(logs, "docker operation failed: "+err.Error()))
 		return
 	}
 
-	payload := map[string]any{
-		"agentId":        firstNonEmpty(strings.TrimSpace(r.cfg.AgentID), "local-agent"),
-		"workerId":       workerID,
-		"completedAt":    time.Now().UTC().Format(time.RFC3339),
-		"dockerVersion":  commandVersion(ctx, "docker", "--version"),
-		"composeVersion": dockerComposeVersion(ctx),
-	}
+	payload := dockerRuntimePayload(ctx, r.cfg, map[string]any{
+		"completedAt": time.Now().UTC().Format(time.RFC3339),
+	})
 	if operation.ProjectID != "" {
 		services, serviceErr := r.collectComposeServices(ctx, operation)
 		if serviceErr == nil && len(services) > 0 {
@@ -615,6 +625,38 @@ func (r *Runner) executeDockerOperation(ctx context.Context, operation DockerOpe
 		}
 	}
 	r.dockerCallback(ctx, operation, "completed", payload, logs)
+}
+
+func (r *Runner) streamDockerHeartbeats(ctx context.Context, cancel context.CancelFunc, done <-chan struct{}, stopReason chan<- string, operation DockerOperation) {
+	ticker := time.NewTicker(commandHeartbeatInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-done:
+			return
+		case <-ticker.C:
+			if remoteOperation, ok := r.dockerCallback(ctx, operation, "running", dockerRuntimePayload(ctx, r.cfg, map[string]any{
+				"heartbeatAt": time.Now().UTC().Format(time.RFC3339),
+			}), nil); ok && shouldStopLocalExecution(remoteOperation.Status) {
+				select {
+				case stopReason <- strings.TrimSpace(remoteOperation.Status):
+				default:
+				}
+				cancel()
+				return
+			}
+			if remoteOperation, ok := r.fetchDockerRunnerStatus(ctx, operation.ID); ok && shouldStopLocalExecution(remoteOperation.Status) {
+				select {
+				case stopReason <- strings.TrimSpace(remoteOperation.Status):
+				default:
+				}
+				cancel()
+				return
+			}
+		}
+	}
 }
 
 func (r *Runner) executeAgentRun(ctx context.Context, run AgentRun) {
@@ -1219,6 +1261,30 @@ func (r *Runner) fetchRunnerTaskStatus(ctx context.Context, taskID string) (Exec
 	}
 	if strings.TrimSpace(payload.Data.ID) == "" {
 		return ExecutionTask{}, false
+	}
+	return payload.Data, true
+}
+
+func (r *Runner) fetchDockerRunnerStatus(ctx context.Context, operationID string) (DockerOperation, bool) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(r.cfg.BaseURL, "/")+"/api/v1/docker/operations/"+strings.TrimSpace(operationID)+"/runner-status", nil)
+	if err != nil {
+		return DockerOperation{}, false
+	}
+	req.Header.Set("Authorization", "Bearer "+r.cfg.BearerToken)
+	resp, err := r.httpClient.Do(req)
+	if err != nil {
+		return DockerOperation{}, false
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		return DockerOperation{}, false
+	}
+	var payload dockerCallbackResponse
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return DockerOperation{}, false
+	}
+	if strings.TrimSpace(payload.Data.ID) == "" {
+		return DockerOperation{}, false
 	}
 	return payload.Data, true
 }
@@ -2055,6 +2121,25 @@ func dockerWorkerID(cfg cfgpkg.ControlPlaneConfig) string {
 	return firstNonEmpty(strings.TrimSpace(cfg.Docker.WorkerID), strings.TrimSpace(cfg.AgentID), "local-docker-runner")
 }
 
+func dockerRuntimePayload(ctx context.Context, cfg cfgpkg.ControlPlaneConfig, extra map[string]any) map[string]any {
+	hostArch := normalizeRunnerArchitecture(runtime.GOARCH)
+	dockerArch := dockerArchitecture(ctx)
+	payload := map[string]any{
+		"agentId":            firstNonEmpty(strings.TrimSpace(cfg.AgentID), "local-agent"),
+		"workerId":           dockerWorkerID(cfg),
+		"endpoint":           strings.TrimSpace(cfg.RuntimeEndpoint),
+		"hostArchitecture":   hostArch,
+		"dockerArchitecture": dockerArch,
+		"architecture":       firstNonEmpty(dockerArch, hostArch),
+		"dockerVersion":      commandVersion(ctx, "docker", "--version"),
+		"composeVersion":     dockerComposeVersion(ctx),
+	}
+	for key, value := range extra {
+		payload[key] = value
+	}
+	return payload
+}
+
 func commandVersion(ctx context.Context, name string, args ...string) string {
 	commandLogs, err := runCommand(ctx, "", name, args...)
 	if err != nil || len(commandLogs) == 0 {
@@ -2072,6 +2157,24 @@ func commandVersion(ctx context.Context, name string, args ...string) string {
 
 func dockerComposeVersion(ctx context.Context) string {
 	return commandVersion(ctx, "docker", "compose", "version")
+}
+
+func dockerArchitecture(ctx context.Context) string {
+	value := commandVersion(ctx, "docker", "info", "--format", "{{.Architecture}}")
+	return normalizeRunnerArchitecture(value)
+}
+
+func normalizeRunnerArchitecture(value string) string {
+	arch := strings.ToLower(strings.TrimSpace(value))
+	arch = strings.TrimPrefix(arch, "linux/")
+	switch arch {
+	case "amd64", "x86_64", "x64", "x86":
+		return "amd64"
+	case "arm64", "aarch64":
+		return "arm64"
+	default:
+		return ""
+	}
 }
 
 func composeServiceStatus(record map[string]any) string {

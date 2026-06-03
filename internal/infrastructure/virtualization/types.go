@@ -63,6 +63,7 @@ type Asset struct {
 
 type CreateVMInput struct {
 	Name             string
+	Architecture     string
 	Namespace        string
 	Node             string
 	CPU              int

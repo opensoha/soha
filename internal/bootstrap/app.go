@@ -100,6 +100,7 @@ func (p dockerHostProvisioner) ProvisionDockerHost(ctx context.Context, principa
 	task, err := p.virtualization.CreateVM(ctx, dockerProvisionPrincipal(principal), appvirtualization.CreateVMInput{
 		ConnectionID:      input.ConnectionID,
 		Name:              input.Name,
+		Architecture:      input.Architecture,
 		CPU:               input.CPU,
 		MemoryMiB:         input.MemoryMiB,
 		DiskGiB:           input.DiskGiB,
@@ -107,6 +108,7 @@ func (p dockerHostProvisioner) ProvisionDockerHost(ctx context.Context, principa
 		ImageID:           input.ImageID,
 		FlavorID:          input.FlavorID,
 		Network:           input.Network,
+		CloudInit:         input.CloudInit,
 		StartAfterCreate:  input.StartAfterCreate,
 		TemplateID:        input.TemplateID,
 		ProviderParams:    input.ProviderParams,
@@ -356,7 +358,13 @@ func New(ctx context.Context) (*App, error) {
 	if cfg.Modules.Virtualization.Enabled {
 		virtualizationService.Start(lifecycleCtx)
 	}
-	dockerService := appdocker.New(dockerRepository, permissionResolver, operationService, appdocker.WithHostProvisioner(dockerHostProvisioner{virtualization: virtualizationService}))
+	dockerService := appdocker.New(
+		dockerRepository,
+		permissionResolver,
+		operationService,
+		appdocker.WithHostProvisioner(dockerHostProvisioner{virtualization: virtualizationService}),
+		appdocker.WithRuntimeBearerToken(cfg.Runtime.ExecutionRunnerToken),
+	)
 	copilotService.SetAgentRuntimeReaders(executionService, resourceService, dockerService, virtualizationService, monitoringService)
 	aiGatewayService := appaigateway.New(permissionResolver, auditService, aiGatewayRepository)
 	var rateLimitBackend interface{ Close() error }

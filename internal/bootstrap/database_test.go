@@ -26,18 +26,21 @@ func appdockerHostProvisionInput(connectionID string) appdocker.HostProvisionInp
 		MemoryMiB:        4096,
 		DiskGiB:          40,
 		ImageID:          "image-1",
+		CloudInit:        "#cloud-config\npackages:\n  - docker.io",
 		StartAfterCreate: true,
 	}
 }
 
 type captureDockerProvisionVirtualization struct {
 	createPrincipal domainidentity.Principal
+	createInput     appvirtualization.CreateVMInput
 	cancelPrincipal domainidentity.Principal
 	retryPrincipal  domainidentity.Principal
 }
 
 func (c *captureDockerProvisionVirtualization) CreateVM(_ context.Context, principal domainidentity.Principal, input appvirtualization.CreateVMInput) (domainvirtualization.Task, error) {
 	c.createPrincipal = principal
+	c.createInput = input
 	return domainvirtualization.Task{
 		ID:           "task-1",
 		Provider:     appvirtualization.ProviderPVE,
@@ -102,8 +105,6 @@ func TestDefaultMenuSeedsIncludeDockerWorkbench(t *testing.T) {
 		"docker-workbench-overview",
 		"docker-workbench-hosts",
 		"docker-workbench-projects",
-		"docker-workbench-services",
-		"docker-workbench-ports",
 		"docker-workbench-templates",
 		"docker-workbench-operations",
 	} {
@@ -134,6 +135,9 @@ func TestDockerHostProvisionerUsesPrivilegedVirtualizationBridge(t *testing.T) {
 	}
 	if len(virtualization.createPrincipal.PermissionKeys) != 0 {
 		t.Fatalf("create principal should not carry capped permission keys: %#v", virtualization.createPrincipal.PermissionKeys)
+	}
+	if virtualization.createInput.CloudInit == "" || virtualization.createInput.ImageID != "image-1" || virtualization.createInput.MemoryMiB != 4096 {
+		t.Fatalf("create vm input = %#v", virtualization.createInput)
 	}
 
 	if _, err := provisioner.CancelProvisionTask(context.Background(), principal, "task-1"); err != nil {

@@ -34,6 +34,7 @@ export interface DockerHost {
   agentVersion?: string
   dockerVersion?: string
   composeVersion?: string
+  architecture?: string
   environment?: string
   owner?: string
   team?: string
@@ -60,6 +61,7 @@ export interface DockerHostInput {
   agentId?: string
   dockerVersion?: string
   composeVersion?: string
+  architecture?: string
   environment?: string
   owner?: string
   team?: string
@@ -78,6 +80,7 @@ export interface DockerHostInput {
 
 export interface DockerQuickCreateHostInput {
   name: string
+  architecture?: string
   environment?: string
   owner?: string
   team?: string
@@ -85,6 +88,7 @@ export interface DockerQuickCreateHostInput {
   vmTemplateId?: string
   flavorId?: string
   imageId?: string
+  cloudInit?: string
   cpuCoreCount?: number
   memoryBytes?: number
   diskBytes?: number
@@ -92,6 +96,7 @@ export interface DockerQuickCreateHostInput {
   availablePortStart?: number
   availablePortEnd?: number
   ttlSeconds?: number
+  config?: Record<string, unknown>
 }
 
 export interface DockerProject {
@@ -137,6 +142,50 @@ export interface DockerProjectInput {
   ttlSeconds?: number
 }
 
+export interface DockerProjectRuntimeLogs {
+  projectId: string
+  serviceName?: string
+  tailLines: number
+  content: string
+  source?: string
+}
+
+export interface DockerProjectVolume {
+  name?: string
+  type?: string
+  source?: string
+  target: string
+  readOnly?: boolean
+  subPath?: string
+  browseSupported?: boolean
+}
+
+export interface DockerProjectVolumeFileEntry {
+  name: string
+  path: string
+  kind: 'directory' | 'file' | 'symlink' | string
+  sizeBytes?: number
+  modifiedAt?: string
+}
+
+export interface DockerProjectVolumeFileList {
+  projectId: string
+  serviceName?: string
+  target: string
+  path: string
+  items: DockerProjectVolumeFileEntry[]
+}
+
+export interface DockerProjectVolumeFileContent {
+  projectId: string
+  serviceName?: string
+  target: string
+  path: string
+  content: string
+  sizeBytes?: number
+  truncated?: boolean
+}
+
 export interface DockerService {
   id: string
   projectId: string
@@ -156,14 +205,47 @@ export interface DockerService {
   updatedAt?: string
 }
 
+export interface DockerContainerPortInput {
+  name?: string
+  hostIp?: string
+  hostPort: number
+  containerPort: number
+  protocol?: string
+  exposureScope?: string
+  domainName?: string
+  domainScheme?: string
+  domainTlsEnabled?: boolean
+}
+
+export interface DockerContainerVolumeInput {
+  name?: string
+  type?: string
+  source: string
+  target: string
+  readOnly?: boolean
+  subPath?: string
+}
+
+export interface DockerContainerEnvironmentVariableInput {
+  name: string
+  value?: string
+}
+
+export interface DockerContainerResourceInput {
+  cpus?: number
+  memoryBytes?: number
+  memoryReservationBytes?: number
+}
+
 export interface DockerContainerStartInput {
   hostId: string
   name: string
   image: string
+  architecture?: string
   imagePullPolicy?: string
-  containerPort: number
+  containerPort?: number
   hostIp?: string
-  hostPort: number
+  hostPort?: number
   protocol?: string
   exposureScope?: string
   domainName?: string
@@ -172,8 +254,12 @@ export interface DockerContainerStartInput {
   command?: string
   entrypoint?: string
   envContent?: string
+  environmentVariables?: DockerContainerEnvironmentVariableInput[]
   restartPolicy?: string
   network?: string
+  ports?: DockerContainerPortInput[]
+  volumes?: DockerContainerVolumeInput[]
+  resources?: DockerContainerResourceInput
   environment?: string
   owner?: string
   team?: string
@@ -281,6 +367,8 @@ export interface DockerOperationLog {
 export interface DockerListParams {
   search?: string
   status?: string
+  architecture?: string
+  sourceKind?: string
   hostId?: string
   projectId?: string
   serviceId?: string

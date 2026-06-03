@@ -776,6 +776,8 @@ func New(cfg cfgpkg.Config, logger *zap.Logger, client *k8sagent.Client, runtime
 		}
 	}
 
+	registerDockerRuntimeRoutes(router, cfg)
+
 	logger.Info("agent server configured",
 		zap.String("addr", cfg.HTTP.Addr),
 		zap.String("base_path", cfg.HTTP.BasePath),
@@ -819,27 +821,56 @@ func authMiddleware(token string) gin.HandlerFunc {
 }
 
 func authAnyMiddleware(tokens ...string) gin.HandlerFunc {
+	allowed := allowedAuthTokens(tokens...)
+	return func(c *gin.Context) {
+		if len(allowed) == 0 {
+			c.Next()
+			return
+		}
+		if requestHasAnyBearerToken(c, allowed) {
+			c.Next()
+			return
+		}
+		apiresponse.Error(c, http.StatusUnauthorized, "unauthorized", "invalid agent token")
+		c.Abort()
+	}
+}
+
+func authRequiredAnyMiddleware(tokens ...string) gin.HandlerFunc {
+	allowed := allowedAuthTokens(tokens...)
+	return func(c *gin.Context) {
+		if len(allowed) == 0 {
+			apiresponse.Error(c, http.StatusUnauthorized, "unauthorized", "agent token is required")
+			c.Abort()
+			return
+		}
+		if requestHasAnyBearerToken(c, allowed) {
+			c.Next()
+			return
+		}
+		apiresponse.Error(c, http.StatusUnauthorized, "unauthorized", "invalid agent token")
+		c.Abort()
+	}
+}
+
+func allowedAuthTokens(tokens ...string) []string {
 	allowed := make([]string, 0, len(tokens))
 	for _, token := range tokens {
 		if trimmed := strings.TrimSpace(token); trimmed != "" {
 			allowed = append(allowed, trimmed)
 		}
 	}
-	return func(c *gin.Context) {
-		if len(allowed) == 0 {
-			c.Next()
-			return
+	return allowed
+}
+
+func requestHasAnyBearerToken(c *gin.Context, allowed []string) bool {
+	header := strings.TrimSpace(c.GetHeader("Authorization"))
+	for _, token := range allowed {
+		if header == fmt.Sprintf("Bearer %s", token) {
+			return true
 		}
-		header := strings.TrimSpace(c.GetHeader("Authorization"))
-		for _, token := range allowed {
-			if header == fmt.Sprintf("Bearer %s", token) {
-				c.Next()
-				return
-			}
-		}
-		apiresponse.Error(c, http.StatusUnauthorized, "unauthorized", "invalid agent token")
-		c.Abort()
 	}
+	return false
 }
 
 func writeError(c *gin.Context, err error) {

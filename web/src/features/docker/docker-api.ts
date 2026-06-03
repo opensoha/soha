@@ -13,6 +13,10 @@ import type {
   DockerPortMappingInput,
   DockerProject,
   DockerProjectInput,
+  DockerProjectRuntimeLogs,
+  DockerProjectVolume,
+  DockerProjectVolumeFileContent,
+  DockerProjectVolumeFileList,
   DockerQuickCreateHostInput,
   DockerService,
   DockerTemplate,
@@ -52,6 +56,14 @@ export const dockerApi = {
   deleteProject: (id: string) => api.delete<ApiResponse<void>>(`${BASE}/projects/${encodeURIComponent(id)}`),
   deployProject: (id: string, action: string) =>
     api.post<ApiResponse<DockerOperation>>(`${BASE}/projects/${encodeURIComponent(id)}/deploy`, { action }),
+  projectLogs: (id: string, params: { serviceName?: string; tailLines?: number } = {}) =>
+    api.get<ApiResponse<DockerProjectRuntimeLogs>>(withQuery(`${BASE}/projects/${encodeURIComponent(id)}/runtime/logs`, params)),
+  projectVolumes: (id: string, params: { serviceName?: string } = {}) =>
+    api.get<ApiResponse<DockerProjectVolume[]>>(withQuery(`${BASE}/projects/${encodeURIComponent(id)}/runtime/volumes`, params)),
+  projectVolumeFiles: (id: string, params: { serviceName?: string; target: string; path?: string; limit?: number }) =>
+    api.get<ApiResponse<DockerProjectVolumeFileList>>(withQuery(`${BASE}/projects/${encodeURIComponent(id)}/runtime/volume-files`, params)),
+  projectVolumeFile: (id: string, params: { serviceName?: string; target: string; path: string; limitBytes?: number }) =>
+    api.get<ApiResponse<DockerProjectVolumeFileContent>>(withQuery(`${BASE}/projects/${encodeURIComponent(id)}/runtime/volume-file`, params)),
   startContainer: (payload: DockerContainerStartInput) =>
     api.post<ApiResponse<DockerOperation>>(`${BASE}/containers/start`, payload),
   services: (params: DockerListParams = {}) =>

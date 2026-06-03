@@ -21,6 +21,7 @@ type Host struct {
 	AgentVersion               string         `json:"agentVersion,omitempty"`
 	DockerVersion              string         `json:"dockerVersion,omitempty"`
 	ComposeVersion             string         `json:"composeVersion,omitempty"`
+	Architecture               string         `json:"architecture,omitempty"`
 	Environment                string         `json:"environment,omitempty"`
 	Owner                      string         `json:"owner,omitempty"`
 	Team                       string         `json:"team,omitempty"`
@@ -49,6 +50,7 @@ type HostInput struct {
 	AgentVersion               string         `json:"agentVersion,omitempty"`
 	DockerVersion              string         `json:"dockerVersion,omitempty"`
 	ComposeVersion             string         `json:"composeVersion,omitempty"`
+	Architecture               string         `json:"architecture,omitempty"`
 	Environment                string         `json:"environment,omitempty"`
 	Owner                      string         `json:"owner,omitempty"`
 	Team                       string         `json:"team,omitempty"`
@@ -66,12 +68,13 @@ type HostInput struct {
 }
 
 type HostFilter struct {
-	Status      string
-	Search      string
-	Environment string
-	Page        int
-	PageSize    int
-	Limit       int
+	Status       string
+	Search       string
+	Environment  string
+	Architecture string
+	Page         int
+	PageSize     int
+	Limit        int
 }
 
 type Project struct {
@@ -123,11 +126,70 @@ type ProjectInput struct {
 type ProjectFilter struct {
 	HostID      string
 	Status      string
+	SourceKind  string
 	Search      string
 	Environment string
 	Page        int
 	PageSize    int
 	Limit       int
+}
+
+type ProjectRuntimeLogs struct {
+	ProjectID   string `json:"projectId"`
+	ServiceName string `json:"serviceName,omitempty"`
+	TailLines   int    `json:"tailLines"`
+	Content     string `json:"content"`
+	Source      string `json:"source"`
+}
+
+type ProjectVolume struct {
+	Name            string `json:"name,omitempty"`
+	Type            string `json:"type,omitempty"`
+	Source          string `json:"source,omitempty"`
+	Target          string `json:"target"`
+	ReadOnly        bool   `json:"readOnly"`
+	SubPath         string `json:"subPath,omitempty"`
+	BrowseSupported bool   `json:"browseSupported"`
+}
+
+type ProjectVolumeFileListInput struct {
+	ServiceName string `json:"serviceName,omitempty"`
+	Target      string `json:"target"`
+	Path        string `json:"path,omitempty"`
+	Limit       int    `json:"limit,omitempty"`
+}
+
+type ProjectVolumeFileEntry struct {
+	Name       string `json:"name"`
+	Path       string `json:"path"`
+	Kind       string `json:"kind"`
+	SizeBytes  int64  `json:"sizeBytes"`
+	ModifiedAt string `json:"modifiedAt,omitempty"`
+}
+
+type ProjectVolumeFileList struct {
+	ProjectID   string                   `json:"projectId"`
+	ServiceName string                   `json:"serviceName"`
+	Target      string                   `json:"target"`
+	Path        string                   `json:"path"`
+	Items       []ProjectVolumeFileEntry `json:"items"`
+}
+
+type ProjectVolumeFileReadInput struct {
+	ServiceName string `json:"serviceName,omitempty"`
+	Target      string `json:"target"`
+	Path        string `json:"path"`
+	LimitBytes  int64  `json:"limitBytes,omitempty"`
+}
+
+type ProjectVolumeFileContent struct {
+	ProjectID   string `json:"projectId"`
+	ServiceName string `json:"serviceName"`
+	Target      string `json:"target"`
+	Path        string `json:"path"`
+	Content     string `json:"content"`
+	SizeBytes   int64  `json:"sizeBytes"`
+	Truncated   bool   `json:"truncated"`
 }
 
 type Service struct {
@@ -342,17 +404,19 @@ type OperationLog struct {
 }
 
 type ContainerStartCreateInput struct {
-	Project     ProjectInput
-	Service     ServiceInput
-	PortMapping PortMappingInput
-	Operation   OperationInput
+	Project      ProjectInput
+	Service      ServiceInput
+	PortMapping  PortMappingInput
+	PortMappings []PortMappingInput
+	Operation    OperationInput
 }
 
 type ContainerStartCreateResult struct {
-	Project     Project
-	Service     Service
-	PortMapping PortMapping
-	Operation   Operation
+	Project      Project
+	Service      Service
+	PortMapping  PortMapping
+	PortMappings []PortMapping
+	Operation    Operation
 }
 
 type QuickCreateHostInput struct {
@@ -364,6 +428,8 @@ type QuickCreateHostInput struct {
 	VMTemplateID               string         `json:"vmTemplateId,omitempty"`
 	FlavorID                   string         `json:"flavorId,omitempty"`
 	ImageID                    string         `json:"imageId,omitempty"`
+	Architecture               string         `json:"architecture,omitempty"`
+	CloudInit                  string         `json:"cloudInit,omitempty"`
 	CPUCoreCount               int            `json:"cpuCoreCount,omitempty"`
 	MemoryBytes                int64          `json:"memoryBytes,omitempty"`
 	DiskBytes                  int64          `json:"diskBytes,omitempty"`
@@ -375,30 +441,67 @@ type QuickCreateHostInput struct {
 	Config                     map[string]any `json:"config,omitempty"`
 }
 
+type ContainerPortInput struct {
+	Name             string `json:"name,omitempty"`
+	HostIP           string `json:"hostIp,omitempty"`
+	HostPort         int    `json:"hostPort"`
+	ContainerPort    int    `json:"containerPort"`
+	Protocol         string `json:"protocol,omitempty"`
+	ExposureScope    string `json:"exposureScope,omitempty"`
+	DomainName       string `json:"domainName,omitempty"`
+	DomainScheme     string `json:"domainScheme,omitempty"`
+	DomainTLSEnabled bool   `json:"domainTlsEnabled,omitempty"`
+}
+
+type ContainerVolumeInput struct {
+	Name     string `json:"name,omitempty"`
+	Type     string `json:"type,omitempty"`
+	Source   string `json:"source"`
+	Target   string `json:"target"`
+	ReadOnly bool   `json:"readOnly,omitempty"`
+	SubPath  string `json:"subPath,omitempty"`
+}
+
+type ContainerEnvironmentVariableInput struct {
+	Name  string `json:"name"`
+	Value string `json:"value,omitempty"`
+}
+
+type ContainerResourceInput struct {
+	CPUS                   float64 `json:"cpus,omitempty"`
+	MemoryBytes            int64   `json:"memoryBytes,omitempty"`
+	MemoryReservationBytes int64   `json:"memoryReservationBytes,omitempty"`
+}
+
 type ContainerStartInput struct {
-	HostID           string         `json:"hostId"`
-	Name             string         `json:"name"`
-	Image            string         `json:"image"`
-	ImagePullPolicy  string         `json:"imagePullPolicy,omitempty"`
-	ContainerPort    int            `json:"containerPort"`
-	HostIP           string         `json:"hostIp,omitempty"`
-	HostPort         int            `json:"hostPort"`
-	Protocol         string         `json:"protocol,omitempty"`
-	ExposureScope    string         `json:"exposureScope,omitempty"`
-	DomainName       string         `json:"domainName,omitempty"`
-	DomainScheme     string         `json:"domainScheme,omitempty"`
-	DomainTLSEnabled bool           `json:"domainTlsEnabled,omitempty"`
-	Command          string         `json:"command,omitempty"`
-	Entrypoint       string         `json:"entrypoint,omitempty"`
-	EnvContent       string         `json:"envContent,omitempty"`
-	RestartPolicy    string         `json:"restartPolicy,omitempty"`
-	Network          string         `json:"network,omitempty"`
-	Environment      string         `json:"environment,omitempty"`
-	Owner            string         `json:"owner,omitempty"`
-	Team             string         `json:"team,omitempty"`
-	TTLSeconds       int            `json:"ttlSeconds,omitempty"`
-	Labels           map[string]any `json:"labels,omitempty"`
-	Config           map[string]any `json:"config,omitempty"`
+	HostID               string                              `json:"hostId"`
+	Name                 string                              `json:"name"`
+	Image                string                              `json:"image"`
+	Architecture         string                              `json:"architecture,omitempty"`
+	ImagePullPolicy      string                              `json:"imagePullPolicy,omitempty"`
+	ContainerPort        int                                 `json:"containerPort"`
+	HostIP               string                              `json:"hostIp,omitempty"`
+	HostPort             int                                 `json:"hostPort"`
+	Protocol             string                              `json:"protocol,omitempty"`
+	ExposureScope        string                              `json:"exposureScope,omitempty"`
+	DomainName           string                              `json:"domainName,omitempty"`
+	DomainScheme         string                              `json:"domainScheme,omitempty"`
+	DomainTLSEnabled     bool                                `json:"domainTlsEnabled,omitempty"`
+	Command              string                              `json:"command,omitempty"`
+	Entrypoint           string                              `json:"entrypoint,omitempty"`
+	EnvContent           string                              `json:"envContent,omitempty"`
+	EnvironmentVariables []ContainerEnvironmentVariableInput `json:"environmentVariables,omitempty"`
+	RestartPolicy        string                              `json:"restartPolicy,omitempty"`
+	Network              string                              `json:"network,omitempty"`
+	Ports                []ContainerPortInput                `json:"ports,omitempty"`
+	Volumes              []ContainerVolumeInput              `json:"volumes,omitempty"`
+	Resources            ContainerResourceInput              `json:"resources,omitempty"`
+	Environment          string                              `json:"environment,omitempty"`
+	Owner                string                              `json:"owner,omitempty"`
+	Team                 string                              `json:"team,omitempty"`
+	TTLSeconds           int                                 `json:"ttlSeconds,omitempty"`
+	Labels               map[string]any                      `json:"labels,omitempty"`
+	Config               map[string]any                      `json:"config,omitempty"`
 }
 
 type Overview struct {
