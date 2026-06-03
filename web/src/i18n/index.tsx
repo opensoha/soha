@@ -24,6 +24,7 @@ const zhCN: Dictionary = {
   "layout.switchThemeToLight": "切换到浅色模式",
   "layout.switchThemeToDark": "切换到深色模式",
   "layout.logout": "退出登录",
+  "layout.profile": "个人信息",
   "layout.user": "用户",
   "route.workflow-templates.title": "发布流程模板",
   "route.workflow-templates.description": "交付发布流程模板",
@@ -120,6 +121,7 @@ const zhCN: Dictionary = {
   "route.settings-branding.title": "品牌设置",
   "route.settings-monitoring.title": "监控设置",
   "route.settings-ai.title": "AI 设置",
+  "route.account-profile.title": "个人信息",
   "page.overview.title": "平台概览",
   "page.overview.desc":
     "用统一的控制台视图查看平台资源规模、集群健康与告警状态。",
@@ -363,6 +365,7 @@ const enUS: Dictionary = {
   "layout.switchThemeToLight": "Switch to light mode",
   "layout.switchThemeToDark": "Switch to dark mode",
   "layout.logout": "Sign out",
+  "layout.profile": "Profile",
   "layout.user": "User",
   "route.workflow-templates.title": "Release Flow Templates",
   "route.workflow-templates.description": "Delivery release flow templates",
@@ -459,6 +462,7 @@ const enUS: Dictionary = {
   "route.settings-branding.title": "Branding Settings",
   "route.settings-monitoring.title": "Monitoring Settings",
   "route.settings-ai.title": "AI Settings",
+  "route.account-profile.title": "Profile",
   "page.overview.title": "Platform Overview",
   "page.overview.desc":
     "Inspect fleet size, cluster health, and alert pressure from one console view.",

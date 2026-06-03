@@ -7,6 +7,24 @@ type IngestAlertsRequest struct {
 	Alerts []IngestAlertInput `json:"alerts"`
 }
 
+type AlertIntegrationRequest struct {
+	ID              string         `json:"id"`
+	Name            string         `json:"name"`
+	IntegrationType string         `json:"integrationType"`
+	Description     string         `json:"description"`
+	Token           string         `json:"token"`
+	LabelMapping    map[string]any `json:"labelMapping"`
+	DedupeConfig    map[string]any `json:"dedupeConfig"`
+	Enabled         *bool          `json:"enabled"`
+}
+
+type AlertIntegrationTestRequest struct {
+	IntegrationType string         `json:"integrationType"`
+	LabelMapping    map[string]any `json:"labelMapping"`
+	DedupeConfig    map[string]any `json:"dedupeConfig"`
+	Payload         map[string]any `json:"payload"`
+}
+
 type IngestAlertInput struct {
 	Fingerprint  string            `json:"fingerprint"`
 	Title        string            `json:"title"`

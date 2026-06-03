@@ -1497,6 +1497,22 @@ export const routeMeta: RouteMeta[] = [
     scopeMode: "passive",
   },
   {
+    id: "monitoring-workbench-integrations",
+    path: "/monitoring-workbench/integrations",
+    title: "告警集成",
+    description: "Alertmanager、Grafana Alerting 与通用 Webhook 接入",
+    icon: "IconConnection",
+    group: "observe",
+    workbenchId: "monitoring",
+    requiresAuth: true,
+    tabbar: true,
+    navVisible: true,
+    parentId: "monitoring-workbench",
+    menuId: "monitoring-workbench-integrations",
+    permissionKey: "observe.alert-integrations.view",
+    scopeMode: "passive",
+  },
+  {
     id: "monitoring-workbench-rules",
     path: "/monitoring-workbench/rules",
     title: "告警规则",
@@ -2417,6 +2433,19 @@ export const routeMeta: RouteMeta[] = [
   },
 
   {
+    id: "account-profile",
+    path: "/account/profile",
+    title: "个人信息",
+    description: "当前账号资料、登录方式与活跃会话",
+    icon: "IconUser",
+    group: "account",
+    requiresAuth: true,
+    tabbar: false,
+    navVisible: false,
+    scopeMode: "passive",
+  },
+
+  {
     id: "login",
     path: "/login",
     title: "登录",
@@ -2501,7 +2530,8 @@ function deriveWorkspaceFromPath(
   if (
     pathname === "/login" ||
     pathname.startsWith("/auth/") ||
-    pathname.startsWith("/login/")
+    pathname.startsWith("/login/") ||
+    pathname.startsWith("/account/")
   ) {
     return null;
   }
@@ -2688,7 +2718,8 @@ export function getRouteScopeMode(
     pathname.startsWith("/docker") ||
     pathname.startsWith("/ai-gateway") ||
     pathname.startsWith("/ai-workbench") ||
-    pathname.startsWith("/ai-observe")
+    pathname.startsWith("/ai-observe") ||
+    pathname.startsWith("/account")
   ) {
     return "passive";
   }

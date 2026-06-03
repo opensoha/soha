@@ -2,8 +2,10 @@ package virtualization
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
+	"net/http"
 )
 
 var (
@@ -21,16 +23,17 @@ type Adapter interface {
 }
 
 type Connection struct {
-	ID                  string
-	Name                string
-	Provider            string
-	Mode                string
-	ClusterID           string
-	Endpoint            string
-	EncryptedCredential []byte
-	Credential          map[string]any
-	Options             map[string]any
-	BackendURL          string
+	ID                    string
+	Name                  string
+	Provider              string
+	Mode                  string
+	ClusterID             string
+	Endpoint              string
+	EncryptedCredential   []byte
+	Credential            map[string]any
+	Options               map[string]any
+	BackendURL            string
+	InsecureSkipTLSVerify bool
 }
 
 type ConnectionTestResult struct {
@@ -127,12 +130,15 @@ type VMMetricsResult struct {
 }
 
 type ConsoleURLResult struct {
-	Type       string `json:"type"`
-	URL        string `json:"url"`
-	BackendURL string `json:"backendUrl,omitempty"`
-	Token      string `json:"token,omitempty"`
-	Message    string `json:"message,omitempty"`
-	Ready      bool   `json:"ready"`
-	Provider   string `json:"provider,omitempty"`
-	ProxyMode  string `json:"proxyMode,omitempty"`
+	Type                  string      `json:"type"`
+	URL                   string      `json:"url"`
+	BackendURL            string      `json:"backendUrl,omitempty"`
+	Token                 string      `json:"token,omitempty"`
+	Message               string      `json:"message,omitempty"`
+	Ready                 bool        `json:"ready"`
+	Provider              string      `json:"provider,omitempty"`
+	ProxyMode             string      `json:"proxyMode,omitempty"`
+	BackendHeaders        http.Header `json:"-"`
+	BackendTLSConfig      *tls.Config `json:"-"`
+	InsecureSkipTLSVerify bool        `json:"-"`
 }

@@ -144,6 +144,12 @@ func (r *Repository) TouchHostRuntime(ctx context.Context, id string, input doma
 	if value := strings.TrimSpace(input.IPAddress); value != "" {
 		item.IPAddress = value
 	}
+	if value := strings.TrimSpace(input.VMID); value != "" {
+		item.VMID = value
+	}
+	if value := strings.TrimSpace(input.VMName); value != "" {
+		item.VMName = value
+	}
 	if len(input.Config) > 0 {
 		item.Config = mergeJSONMap(item.Config, input.Config)
 	}
@@ -161,11 +167,12 @@ func (r *Repository) TouchHostRuntime(ctx context.Context, id string, input doma
 	result := r.db.WithContext(ctx).Exec(`
 		UPDATE docker_hosts
 		SET status = ?, endpoint = ?, agent_id = ?, agent_version = ?, docker_version = ?, compose_version = ?,
-			ip_address = ?, labels = ?::jsonb, config = ?::jsonb, last_heartbeat_at = ?, updated_at = ?
+			ip_address = ?, vm_id = ?, vm_name = ?, labels = ?::jsonb, config = ?::jsonb, last_heartbeat_at = ?, updated_at = ?
 		WHERE id = ?
 	`, item.Status, nullableString(item.Endpoint), nullableString(item.AgentID), nullableString(item.AgentVersion),
 		nullableString(item.DockerVersion), nullableString(item.ComposeVersion), nullableString(item.IPAddress),
-		string(labels), string(config), item.LastHeartbeatAt, item.UpdatedAt, item.ID)
+		nullableString(item.VMID), nullableString(item.VMName), string(labels), string(config), item.LastHeartbeatAt,
+		item.UpdatedAt, item.ID)
 	if result.Error != nil {
 		return domaindocker.Host{}, fmt.Errorf("touch docker host runtime: %w", result.Error)
 	}

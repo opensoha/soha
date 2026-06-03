@@ -142,6 +142,56 @@ type IngestRequest struct {
 	Alerts []IngestAlert `json:"alerts"`
 }
 
+type AlertIntegration struct {
+	ID              string         `json:"id"`
+	Name            string         `json:"name"`
+	IntegrationType string         `json:"integrationType"`
+	Description     string         `json:"description,omitempty"`
+	Token           string         `json:"token,omitempty"`
+	TokenPreview    string         `json:"tokenPreview,omitempty"`
+	WebhookPath     string         `json:"webhookPath,omitempty"`
+	LabelMapping    map[string]any `json:"labelMapping,omitempty"`
+	DedupeConfig    map[string]any `json:"dedupeConfig,omitempty"`
+	Enabled         bool           `json:"enabled"`
+	Status          string         `json:"status"`
+	LastError       string         `json:"lastError,omitempty"`
+	LastReceivedAt  time.Time      `json:"lastReceivedAt,omitempty"`
+	CreatedAt       time.Time      `json:"createdAt"`
+	UpdatedAt       time.Time      `json:"updatedAt"`
+}
+
+type AlertIntegrationInput struct {
+	ID              string         `json:"id"`
+	Name            string         `json:"name"`
+	IntegrationType string         `json:"integrationType"`
+	Description     string         `json:"description,omitempty"`
+	Token           string         `json:"token,omitempty"`
+	LabelMapping    map[string]any `json:"labelMapping,omitempty"`
+	DedupeConfig    map[string]any `json:"dedupeConfig,omitempty"`
+	Enabled         bool           `json:"enabled"`
+}
+
+type AlertIntegrationStatusInput struct {
+	Status         string    `json:"status"`
+	LastError      string    `json:"lastError,omitempty"`
+	LastReceivedAt time.Time `json:"lastReceivedAt,omitempty"`
+}
+
+type AlertIntegrationTestInput struct {
+	IntegrationType string         `json:"integrationType"`
+	LabelMapping    map[string]any `json:"labelMapping,omitempty"`
+	DedupeConfig    map[string]any `json:"dedupeConfig,omitempty"`
+	Payload         map[string]any `json:"payload"`
+}
+
+type AlertIntegrationTestResult struct {
+	IntegrationType string        `json:"integrationType"`
+	Source          string        `json:"source"`
+	AcceptedCount   int           `json:"acceptedCount"`
+	Alerts          []IngestAlert `json:"alerts"`
+	Summary         string        `json:"summary,omitempty"`
+}
+
 type Filter struct {
 	Status    string
 	ClusterID string
@@ -202,6 +252,11 @@ type Repository interface {
 	ListOnCallAssignmentRules(context.Context) ([]OnCallAssignmentRule, error)
 	CreateOnCallAssignmentRule(context.Context, OnCallAssignmentRuleInput) (OnCallAssignmentRule, error)
 	UpdateOnCallAssignmentRule(context.Context, string, OnCallAssignmentRuleInput) (OnCallAssignmentRule, error)
+	ListAlertIntegrations(context.Context) ([]AlertIntegration, error)
+	GetAlertIntegration(context.Context, string) (AlertIntegration, error)
+	CreateAlertIntegration(context.Context, AlertIntegrationInput) (AlertIntegration, error)
+	UpdateAlertIntegration(context.Context, string, AlertIntegrationInput) (AlertIntegration, error)
+	UpdateAlertIntegrationStatus(context.Context, string, AlertIntegrationStatusInput) (AlertIntegration, error)
 }
 
 type AlertRule struct {

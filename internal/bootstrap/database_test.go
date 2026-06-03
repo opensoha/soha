@@ -1,9 +1,14 @@
 package bootstrap
 
 import (
+	"context"
 	"slices"
 	"testing"
 
+	appdocker "github.com/soha/soha/internal/application/docker"
+	appvirtualization "github.com/soha/soha/internal/application/virtualization"
+	domainidentity "github.com/soha/soha/internal/domain/identity"
+	domainvirtualization "github.com/soha/soha/internal/domain/virtualization"
 	cfgpkg "github.com/soha/soha/internal/infrastructure/config"
 )
 
@@ -11,6 +16,52 @@ func TestDefaultMenuSeedsValidate(t *testing.T) {
 	if err := validateMenuSeeds(defaultMenuSeeds()); err != nil {
 		t.Fatalf("default menu seeds must stay internally consistent: %v", err)
 	}
+}
+
+func appdockerHostProvisionInput(connectionID string) appdocker.HostProvisionInput {
+	return appdocker.HostProvisionInput{
+		ConnectionID:     connectionID,
+		Name:             "docker-dev",
+		CPU:              2,
+		MemoryMiB:        4096,
+		DiskGiB:          40,
+		ImageID:          "image-1",
+		StartAfterCreate: true,
+	}
+}
+
+type captureDockerProvisionVirtualization struct {
+	createPrincipal domainidentity.Principal
+	cancelPrincipal domainidentity.Principal
+	retryPrincipal  domainidentity.Principal
+}
+
+func (c *captureDockerProvisionVirtualization) CreateVM(_ context.Context, principal domainidentity.Principal, input appvirtualization.CreateVMInput) (domainvirtualization.Task, error) {
+	c.createPrincipal = principal
+	return domainvirtualization.Task{
+		ID:           "task-1",
+		Provider:     appvirtualization.ProviderPVE,
+		ConnectionID: input.ConnectionID,
+		Status:       appvirtualization.TaskStatusQueued,
+	}, nil
+}
+
+func (c *captureDockerProvisionVirtualization) GetOperation(_ context.Context, _ domainidentity.Principal, taskID string) (domainvirtualization.Task, error) {
+	return domainvirtualization.Task{ID: taskID, Provider: appvirtualization.ProviderPVE, ConnectionID: "conn-pve", Status: appvirtualization.TaskStatusQueued}, nil
+}
+
+func (c *captureDockerProvisionVirtualization) GetVM(_ context.Context, _ domainidentity.Principal, vmID string) (domainvirtualization.VM, error) {
+	return domainvirtualization.VM{ID: vmID, Name: "docker-dev"}, nil
+}
+
+func (c *captureDockerProvisionVirtualization) CancelOperation(_ context.Context, principal domainidentity.Principal, taskID string) (domainvirtualization.Task, error) {
+	c.cancelPrincipal = principal
+	return domainvirtualization.Task{ID: taskID, Provider: appvirtualization.ProviderPVE, ConnectionID: "conn-pve", Status: appvirtualization.TaskStatusCanceled}, nil
+}
+
+func (c *captureDockerProvisionVirtualization) RetryOperation(_ context.Context, principal domainidentity.Principal, taskID string) (domainvirtualization.Task, error) {
+	c.retryPrincipal = principal
+	return domainvirtualization.Task{ID: taskID, Provider: appvirtualization.ProviderPVE, ConnectionID: "conn-pve", Status: appvirtualization.TaskStatusQueued}, nil
 }
 
 func TestDefaultMenuSeedsExcludeDeprecatedIDs(t *testing.T) {
@@ -59,6 +110,37 @@ func TestDefaultMenuSeedsIncludeDockerWorkbench(t *testing.T) {
 		if !slices.ContainsFunc(items, func(item menuSeed) bool { return item.ID == id }) {
 			t.Fatalf("default menu seeds missing %s", id)
 		}
+	}
+}
+
+func TestDockerHostProvisionerUsesPrivilegedVirtualizationBridge(t *testing.T) {
+	virtualization := &captureDockerProvisionVirtualization{}
+	provisioner := dockerHostProvisioner{virtualization: virtualization}
+	principal := domainidentity.Principal{
+		UserID:         "docker-operator",
+		UserName:       "Docker Operator",
+		Roles:          []string{"docker-host-admin"},
+		PermissionKeys: []string{"docker.hosts.manage"},
+	}
+
+	if _, err := provisioner.ProvisionDockerHost(context.Background(), principal, appdockerHostProvisionInput("conn-pve")); err != nil {
+		t.Fatalf("ProvisionDockerHost() error = %v", err)
+	}
+	if virtualization.createPrincipal.UserID != "docker-operator" {
+		t.Fatalf("create principal user = %q, want docker-operator", virtualization.createPrincipal.UserID)
+	}
+	if !slices.Equal(virtualization.createPrincipal.Roles, []string{"admin"}) {
+		t.Fatalf("create principal roles = %#v, want admin bridge", virtualization.createPrincipal.Roles)
+	}
+	if len(virtualization.createPrincipal.PermissionKeys) != 0 {
+		t.Fatalf("create principal should not carry capped permission keys: %#v", virtualization.createPrincipal.PermissionKeys)
+	}
+
+	if _, err := provisioner.CancelProvisionTask(context.Background(), principal, "task-1"); err != nil {
+		t.Fatalf("CancelProvisionTask() error = %v", err)
+	}
+	if virtualization.cancelPrincipal.UserID != "docker-operator" || !slices.Equal(virtualization.cancelPrincipal.Roles, []string{"admin"}) {
+		t.Fatalf("cancel principal = %#v", virtualization.cancelPrincipal)
 	}
 }
 

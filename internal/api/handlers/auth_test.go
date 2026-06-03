@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	apiMiddleware "github.com/soha/soha/internal/api/middleware"
@@ -19,6 +20,7 @@ import (
 
 type stubIdentityService struct {
 	current       domainidentity.Principal
+	profile       domainidentity.UserProfile
 	loginResult   domainidentity.AuthResult
 	loginLogin    string
 	loginPassword string
@@ -46,6 +48,10 @@ func (s stubIdentityService) Logout(context.Context, string, string) error {
 
 func (s stubIdentityService) CurrentPrincipal(context.Context, string) (domainidentity.Principal, error) {
 	return s.current, nil
+}
+
+func (s stubIdentityService) CurrentProfile(context.Context, domainidentity.Principal) (domainidentity.UserProfile, error) {
+	return s.profile, nil
 }
 
 func (s stubIdentityService) BeginOIDCLogin(context.Context) (string, error) {
@@ -150,6 +156,77 @@ func TestAuthBootstrapReturnsCurrentUserSnapshotAndBranding(t *testing.T) {
 	}
 	if payload.Data.Branding.AppTitle != branding.AppTitle {
 		t.Fatalf("branding.appTitle = %q, want %q", payload.Data.Branding.AppTitle, branding.AppTitle)
+	}
+}
+
+func TestAuthProfileReturnsCurrentUserProfile(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+
+	lastLoginAt := time.Date(2026, 6, 3, 2, 20, 0, 0, time.UTC)
+	profile := domainidentity.UserProfile{
+		UserID:      "u-1",
+		Username:    "admin",
+		DisplayName: "Admin",
+		Email:       "admin@example.com",
+		Status:      "active",
+		Roles:       []string{"admin"},
+		Identities: []domainidentity.LinkedIdentity{
+			{
+				ID:             "password:u-1",
+				ProviderType:   "password",
+				ProviderID:     "local",
+				ProviderUserID: "admin",
+			},
+		},
+		Sessions: []domainidentity.SessionRecord{
+			{
+				ID:           "s-1",
+				UserID:       "u-1",
+				UserName:     "Admin",
+				Email:        "admin@example.com",
+				ProviderType: "password",
+				Status:       "active",
+				CreatedAt:    lastLoginAt,
+				LastSeenAt:   lastLoginAt,
+				ExpiresAt:    lastLoginAt.Add(time.Hour),
+			},
+		},
+		LastLoginAt: &lastLoginAt,
+	}
+	handler := NewAuthHandler(
+		stubIdentityService{profile: profile},
+		nil,
+		nil,
+		cfgpkg.AuthConfig{},
+	)
+
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/api/v1/auth/profile", nil)
+	ctx.Set("principal", domainidentity.Principal{UserID: profile.UserID, UserName: profile.DisplayName})
+
+	handler.Profile(ctx)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusOK)
+	}
+
+	var payload struct {
+		Data domainidentity.UserProfile `json:"data"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if payload.Data.Username != profile.Username {
+		t.Fatalf("username = %q, want %q", payload.Data.Username, profile.Username)
+	}
+	if len(payload.Data.Identities) != 1 || payload.Data.Identities[0].ProviderType != "password" {
+		t.Fatalf("identities = %#v", payload.Data.Identities)
+	}
+	if len(payload.Data.Sessions) != 1 || payload.Data.Sessions[0].ID != "s-1" {
+		t.Fatalf("sessions = %#v", payload.Data.Sessions)
 	}
 }
 

@@ -3,7 +3,7 @@
 import { act } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { createRoot } from 'react-dom/client'
-import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AppLayout } from './app-layout'
 import type { PermissionSnapshot } from '@/types'
@@ -119,6 +119,11 @@ vi.mock('@/stores/preferences-store', () => ({
 let containers: HTMLDivElement[] = []
 let roots: Array<ReturnType<typeof createRoot>> = []
 
+function LocationProbe() {
+  const location = useLocation()
+  return <div data-testid="page" data-pathname={location.pathname}>page</div>
+}
+
 async function renderWithProviders(route: string, snapshotOverrides?: Partial<PermissionSnapshot>) {
   testState.snapshot = {
     ...testState.snapshot,
@@ -146,7 +151,7 @@ async function renderWithProviders(route: string, snapshotOverrides?: Partial<Pe
         <MemoryRouter initialEntries={[route]}>
           <Routes>
             <Route element={<AppLayout />}>
-              <Route path="*" element={<div data-testid="page">page</div>} />
+              <Route path="*" element={<LocationProbe />} />
             </Route>
           </Routes>
         </MemoryRouter>
@@ -275,7 +280,7 @@ describe('app layout workspace navigation', () => {
     expect(container.querySelector('.soha-nav-system')).toBeNull()
     expect(container.querySelector('.soha-nav-business.is-system')).not.toBeNull()
     expect(container.querySelector('.soha-sider-topbar > button.soha-sider-brand')).not.toBeNull()
-    expect(container.querySelector('button[aria-label="系统设置"]')?.className).not.toContain('is-active')
+    expect(container.querySelector('button[aria-label="系统设置"]')).toBeNull()
     expect(testState.prefs.setCurrentWorkspace).not.toHaveBeenCalled()
   })
 
@@ -653,7 +658,7 @@ describe('app layout workspace navigation', () => {
     expect(container.textContent).not.toContain('系统管理')
   })
 
-  it('shows a settings entry in the header and routes system navigation through the main sidebar', async () => {
+  it('keeps settings out of the header and routes system navigation through the main sidebar', async () => {
     const container = await renderWithProviders('/', {
       permissionKeys: ['workspace.resource.view', 'overview.view', 'settings.identity.view', 'system.menus.view'],
       visibleMenuIds: ['dashboard', 'settings', 'system', 'menus'],
@@ -665,8 +670,30 @@ describe('app layout workspace navigation', () => {
       ],
     })
 
-    const settingsButton = container.querySelector('button[aria-label="系统设置"]')
-    expect(settingsButton).not.toBeNull()
+    expect(container.querySelector('button[aria-label="系统设置"]')).toBeNull()
     expect(container.querySelector('.soha-nav-system')).toBeNull()
+  })
+
+  it('opens profile from the avatar dropdown', async () => {
+    const container = await renderWithProviders('/')
+    const userButton = container.querySelector('.soha-user-trigger') as HTMLButtonElement | null
+    expect(userButton).not.toBeNull()
+
+    await act(async () => {
+      userButton?.click()
+      await Promise.resolve()
+    })
+
+    const profileItem = Array.from(document.querySelectorAll('.ant-dropdown-menu-item'))
+      .find((item) => item.textContent?.includes('个人信息')) as HTMLElement | undefined
+    expect(profileItem).not.toBeUndefined()
+
+    await act(async () => {
+      profileItem?.click()
+      await Promise.resolve()
+    })
+
+    expect(container.querySelector('[data-testid="page"]')?.getAttribute('data-pathname')).toBe('/account/profile')
+    expect(testState.auth.clearAuth).not.toHaveBeenCalled()
   })
 })

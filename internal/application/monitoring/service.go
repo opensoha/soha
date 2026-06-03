@@ -70,6 +70,11 @@ type Repository interface {
 	ListOnCallAssignmentRules(context.Context) ([]domainalert.OnCallAssignmentRule, error)
 	CreateOnCallAssignmentRule(context.Context, domainalert.OnCallAssignmentRuleInput) (domainalert.OnCallAssignmentRule, error)
 	UpdateOnCallAssignmentRule(context.Context, string, domainalert.OnCallAssignmentRuleInput) (domainalert.OnCallAssignmentRule, error)
+	ListAlertIntegrations(context.Context) ([]domainalert.AlertIntegration, error)
+	GetAlertIntegration(context.Context, string) (domainalert.AlertIntegration, error)
+	CreateAlertIntegration(context.Context, domainalert.AlertIntegrationInput) (domainalert.AlertIntegration, error)
+	UpdateAlertIntegration(context.Context, string, domainalert.AlertIntegrationInput) (domainalert.AlertIntegration, error)
+	UpdateAlertIntegrationStatus(context.Context, string, domainalert.AlertIntegrationStatusInput) (domainalert.AlertIntegration, error)
 }
 
 type EventWriter interface {

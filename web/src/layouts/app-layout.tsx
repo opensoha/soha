@@ -19,6 +19,8 @@ import {
   SlidersOutlined,
   SunOutlined,
   TranslationOutlined,
+  LogoutOutlined,
+  UserOutlined,
 } from '@ant-design/icons'
 import { HeaderPreferenceButton } from '@/components/header-preference-button'
 import { PlatformScopeTrigger } from '@/components/platform-scope-toolbar'
@@ -298,20 +300,6 @@ function mergeOpenKeys(current: string[], desired: string[]) {
   }
   const merged = Array.from(new Set([...current, ...desired]))
   return merged.length === current.length && merged.every((key, index) => key === current[index]) ? current : merged
-}
-
-function findFirstNavigablePath(sidebarNav: RuntimeMenuNode[]): string | null {
-  let matched: string | null = null
-  const visit = (node: RuntimeMenuNode) => {
-    if (matched) return
-    if (node.route && node.route.navVisible !== false) {
-      matched = node.route.redirectTo ?? node.route.path
-      return
-    }
-    node.children?.forEach(visit)
-  }
-  sidebarNav.forEach(visit)
-  return matched
 }
 
 function buildWorkbenchOptions(localeCode: 'zh_CN' | 'en_US'): WorkbenchOption[] {
@@ -637,12 +625,6 @@ export function AppLayout() {
   const themeSwitchTitle = resolvedThemeMode === 'dark'
     ? t('layout.switchThemeToLight', 'Switch to light mode')
     : t('layout.switchThemeToDark', '切换到深色模式')
-  const settingsTriggerTitle = localeCode === 'zh_CN' ? '系统设置' : 'System settings'
-  const settingsEntryPath = useMemo(() => {
-    const settingsNode = systemNav.find((item) => item.id === 'settings')
-    const preferredSettingsPath = settingsNode ? findFirstNavigablePath([settingsNode]) : null
-    return preferredSettingsPath ?? findFirstNavigablePath(systemNav)
-  }, [systemNav])
   const businessSelectedKeys = selectedKeys.filter((key) => businessNodeIDs.has(key))
   const systemSelectedKeys = selectedKeys.filter((key) => systemNodeIDs.has(key))
   const aiSelectedKeys = selectedKeys.filter((key) => primaryItemKeyToPath[key])
@@ -795,28 +777,20 @@ export function AppLayout() {
                 />
               </div>
               <AnnouncementBell />
-              {settingsEntryPath ? (
-                <Button
-                  aria-label={settingsTriggerTitle}
-                  className="soha-header-action"
-                  size="small"
-                  type="text"
-                  icon={<SettingOutlined />}
-                  title={settingsTriggerTitle}
-                  onClick={() => {
-                    setSidebarCollapsed(false)
-                    navigate(settingsEntryPath)
-                  }}
-                />
-              ) : null}
               <Dropdown
                 menu={{
                   items: [
                     { key: 'user', label: userDisplayName, disabled: true },
                     { type: 'divider' },
-                    { key: 'logout', label: t('layout.logout', 'Sign out') },
+                    { key: 'profile', icon: <UserOutlined />, label: t('layout.profile', '个人信息') },
+                    { type: 'divider' },
+                    { key: 'logout', icon: <LogoutOutlined />, label: t('layout.logout', 'Sign out') },
                   ],
                   onClick: ({ key }) => {
+                    if (key === 'profile') {
+                      navigate('/account/profile')
+                      return
+                    }
                     if (key === 'logout') {
                       clearAuth()
                       navigate('/login')
@@ -824,6 +798,7 @@ export function AppLayout() {
                   },
                 }}
                 placement="bottomRight"
+                trigger={['click']}
               >
                 <Button
                   className="soha-header-action soha-user-trigger"

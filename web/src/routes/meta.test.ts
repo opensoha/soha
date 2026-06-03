@@ -575,6 +575,7 @@ describe("access route authorization", () => {
         "ai.gateway.view",
         "ai.gateway.manage",
         "observe.monitoring.view",
+        "observe.alert-integrations.view",
         "observe.alert-rules.view",
       ],
       visibleMenuIds: [
@@ -605,6 +606,7 @@ describe("access route authorization", () => {
         "ai-gateway-call-logs",
         "monitoring-workbench",
         "monitoring-workbench-overview",
+        "monitoring-workbench-integrations",
         "monitoring-workbench-rules",
       ],
       visibleMenus: [
@@ -900,6 +902,17 @@ describe("access route authorization", () => {
           enabled: true,
         },
         {
+          id: "monitoring-workbench-integrations",
+          parentId: "monitoring-workbench",
+          path: "/monitoring-workbench/integrations",
+          labelZh: "告警集成",
+          labelEn: "Alert Integrations",
+          iconKey: "link",
+          section: "ops",
+          sortOrder: 62,
+          enabled: true,
+        },
+        {
           id: "monitoring-workbench-rules",
           parentId: "monitoring-workbench",
           path: "/monitoring-workbench/rules",
@@ -907,7 +920,7 @@ describe("access route authorization", () => {
           labelEn: "Alert Rules",
           iconKey: "siren",
           section: "ops",
-          sortOrder: 62,
+          sortOrder: 63,
           enabled: true,
         },
       ],
@@ -959,6 +972,7 @@ describe("access route authorization", () => {
     expect(aiGatewayNav.some((item) => item.id === "ai-gateway")).toBe(false);
     expect(monitoringNav.map((item) => item.id)).toEqual([
       "monitoring-workbench-overview",
+      "monitoring-workbench-integrations",
       "monitoring-workbench-rules",
     ]);
     expect(
@@ -978,6 +992,12 @@ describe("access route authorization", () => {
       getMenuWorkbenchId({
         id: "monitoring-workbench-rules",
         path: "/monitoring-workbench/rules",
+      }),
+    ).toBe("monitoring");
+    expect(
+      getMenuWorkbenchId({
+        id: "monitoring-workbench-integrations",
+        path: "/monitoring-workbench/integrations",
       }),
     ).toBe("monitoring");
     expect(

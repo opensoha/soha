@@ -7,7 +7,7 @@ import { createRoot } from 'react-dom/client'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { App } from 'antd'
-import { VirtualizationClustersPage, VirtualizationImagesPage, VirtualizationOperationsPage, VirtualizationOverviewPage, VirtualizationSyncPage, VirtualizationVmDetailPage, VirtualizationVmsPage, buildCreateVmPayload } from './virtualization-pages'
+import { VirtualizationClustersPage, VirtualizationFlavorsPage, VirtualizationImagesPage, VirtualizationOperationsPage, VirtualizationOverviewPage, VirtualizationSyncPage, VirtualizationVmDetailPage, VirtualizationVmsPage, buildClusterPayload, buildCreateVmPayload } from './virtualization-pages'
 
 vi.mock('@visactor/react-vchart', () => ({
   LineChart: () => null,
@@ -77,8 +77,8 @@ const testState = vi.hoisted(() => ({
     }
     if (path === '/virtualization/clusters') {
       return { data: [
-        { id: 'conn-pve', name: 'pve-a', provider: 'pve', endpoint: 'https://pve.example:8006', enabled: true, verifyTls: true, health: 'unavailable', credentialConfigured: false, config: { defaultNode: 'pve-1', defaultStorage: 'local-lvm' } },
-        { id: 'conn-1', name: 'kubevirt-a', provider: 'kubevirt', kubernetesClusterId: 'cluster-a', enabled: true, verifyTls: true, health: 'degraded', credentialConfigured: true, lastSyncedAt: '2026-05-21T00:00:00Z' },
+        { id: 'conn-pve', name: 'pve-a', provider: 'pve', endpoint: 'https://pve.example:8006', enabled: true, verifyTls: true, health: 'unavailable', credentialConfigured: false, config: { defaultNode: 'pve-1', defaultStorage: 'local-lvm', defaultBridge: 'vmbr0' } },
+        { id: 'conn-1', name: 'kubevirt-a', provider: 'kubevirt', kubernetesClusterId: 'cluster-a', enabled: true, verifyTls: true, health: 'degraded', credentialConfigured: true, lastSyncedAt: '2026-05-21T00:00:00Z', config: { backendUrl: 'https://kube.example:6443' } },
       ] }
     }
     if (path === '/virtualization/images' || path === '/virtualization/images?page=1&pageSize=10') {
@@ -295,6 +295,48 @@ describe('virtualization pages', () => {
     expect(document.body.textContent).not.toContain('raw PVE config')
   })
 
+  it('keeps the VM filter row on the compact aligned query layout', async () => {
+    const container = await renderWithProviders(<VirtualizationVmsPage />)
+    const query = container.querySelector('.soha-vrt-query.soha-vrt-vms-query')
+    const fields = Array.from(query?.querySelectorAll<HTMLElement>('.soha-management-query-field') ?? [])
+
+    expect(query).not.toBeNull()
+    expect(fields).toHaveLength(4)
+    expect(fields.map((field) => field.textContent)).toEqual([
+      expect.stringContaining('关键字'),
+      expect.stringContaining('连接'),
+      expect.stringContaining('状态'),
+      expect.stringContaining('Provider'),
+    ])
+    expect(fields.map((field) => field.style.getPropertyValue('--soha-management-query-field-width'))).toEqual([
+      '260px',
+      '180px',
+      '136px',
+      '160px',
+    ])
+    expect(fields.map((field) => field.style.getPropertyValue('--soha-management-query-field-min-width'))).toEqual([
+      '260px',
+      '180px',
+      '136px',
+      '160px',
+    ])
+  })
+
+  it('uses the aligned query shell across virtualization list pages', async () => {
+    const pages: Array<[ReactNode, string]> = [
+      [<VirtualizationClustersPage />, '/virtualization/clusters'],
+      [<VirtualizationImagesPage />, '/virtualization/images'],
+      [<VirtualizationFlavorsPage />, '/virtualization/flavors'],
+      [<VirtualizationOperationsPage />, '/virtualization/operations'],
+      [<VirtualizationSyncPage />, '/virtualization/sync'],
+    ]
+
+    for (const [page, route] of pages) {
+      const container = await renderWithProviders(page, route)
+      expect(container.querySelector('.soha-vrt-query .soha-management-query-card')).not.toBeNull()
+    }
+  })
+
   it('builds VM create payload from the selected source mode', () => {
     const payload = buildCreateVmPayload({
       provider: 'kubevirt',
@@ -309,6 +351,31 @@ describe('virtualization pages', () => {
     expect(payload.sourceMode).toBe('pvc_clone')
     expect(payload.sourceId).toBe('image-pvc')
     expect(payload.imageId).toBe('image-pvc')
+  })
+
+  it('builds provider connection config for PVE and KubeVirt runtime fields', () => {
+    const pvePayload = buildClusterPayload({
+      provider: 'pve',
+      name: 'pve-a',
+      endpoint: 'https://pve.example:8006',
+      defaultNode: 'pve-1',
+      defaultStorage: 'local-lvm',
+      defaultBridge: 'vmbr0',
+      tokenID: 'root@pam!soha',
+      tokenSecret: 'secret',
+    })
+    expect(pvePayload.config).toMatchObject({ defaultNode: 'pve-1', defaultStorage: 'local-lvm', defaultBridge: 'vmbr0' })
+    expect(pvePayload.credential).toMatchObject({ tokenID: 'root@pam!soha', tokenSecret: 'secret' })
+
+    const kubevirtPayload = buildClusterPayload({
+      provider: 'kubevirt',
+      name: 'kubevirt-a',
+      kubernetesClusterId: 'cluster-a',
+      backendUrl: 'https://kube.example:6443',
+      prometheusUrl: 'https://prometheus.example',
+    })
+    expect(kubevirtPayload.config).toMatchObject({ backendUrl: 'https://kube.example:6443', prometheusUrl: 'https://prometheus.example' })
+    expect(kubevirtPayload.endpoint).toBeUndefined()
   })
 
   it('renders VM detail with provider raw, operations, logs and AI investigation entry', async () => {
@@ -349,7 +416,6 @@ describe('virtualization pages', () => {
     const container = await renderWithProviders(<VirtualizationSyncPage />, '/virtualization/sync')
 
     expect(testState.apiGet).toHaveBeenCalledWith('/virtualization/operations?assetType=asset_sync')
-    expect(container.textContent).toContain('仅展示 asset_sync 类型任务')
     expect(container.textContent).toContain('asset_sync')
 
     await clickButtonByLabel(container, '查看日志')

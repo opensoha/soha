@@ -31,6 +31,12 @@ type MonitoringService interface {
 	ListDeliveryLogs(context.Context, domainidentity.Principal, domainalert.DeliveryFilter) ([]domainalert.DeliveryLog, error)
 	ValidateWebhookToken(string) error
 	Ingest(context.Context, domainalert.IngestRequest) (int, error)
+	ListAlertIntegrations(context.Context, domainidentity.Principal) ([]domainalert.AlertIntegration, error)
+	GetAlertIntegration(context.Context, domainidentity.Principal, string) (domainalert.AlertIntegration, error)
+	CreateAlertIntegration(context.Context, domainidentity.Principal, domainalert.AlertIntegrationInput) (domainalert.AlertIntegration, error)
+	UpdateAlertIntegration(context.Context, domainidentity.Principal, string, domainalert.AlertIntegrationInput) (domainalert.AlertIntegration, error)
+	TestAlertIntegration(context.Context, domainidentity.Principal, domainalert.AlertIntegrationTestInput) (domainalert.AlertIntegrationTestResult, error)
+	IngestAlertIntegration(context.Context, string, string, map[string]any) (int, error)
 	ListRules(context.Context, domainidentity.Principal) ([]domainalert.AlertRule, error)
 	GetRule(context.Context, domainidentity.Principal, string) (domainalert.AlertRule, error)
 	CreateRule(context.Context, domainidentity.Principal, domainalert.AlertRuleInput) (domainalert.AlertRule, error)
@@ -357,4 +363,112 @@ func (h *MonitoringHandler) IngestWebhook(c *gin.Context) {
 		return
 	}
 	apiresponse.JSON(c, http.StatusAccepted, gin.H{"accepted": count})
+}
+
+func (h *MonitoringHandler) ListAlertIntegrations(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	items, err := h.service.ListAlertIntegrations(c.Request.Context(), principal)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Items(c, http.StatusOK, items)
+}
+
+func (h *MonitoringHandler) GetAlertIntegration(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	item, err := h.service.GetAlertIntegration(c.Request.Context(), principal, c.Param("integrationID"))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
+}
+
+func (h *MonitoringHandler) CreateAlertIntegration(c *gin.Context) {
+	var req dto.AlertIntegrationRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid alert integration payload")
+		return
+	}
+	principal := apiMiddleware.PrincipalFromContext(c)
+	item, err := h.service.CreateAlertIntegration(c.Request.Context(), principal, alertIntegrationInput(req))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusCreated, item)
+}
+
+func (h *MonitoringHandler) UpdateAlertIntegration(c *gin.Context) {
+	var req dto.AlertIntegrationRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid alert integration payload")
+		return
+	}
+	principal := apiMiddleware.PrincipalFromContext(c)
+	item, err := h.service.UpdateAlertIntegration(c.Request.Context(), principal, c.Param("integrationID"), alertIntegrationInput(req))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
+}
+
+func (h *MonitoringHandler) TestAlertIntegration(c *gin.Context) {
+	var req dto.AlertIntegrationTestRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid alert integration test payload")
+		return
+	}
+	principal := apiMiddleware.PrincipalFromContext(c)
+	item, err := h.service.TestAlertIntegration(c.Request.Context(), principal, domainalert.AlertIntegrationTestInput{
+		IntegrationType: req.IntegrationType,
+		LabelMapping:    req.LabelMapping,
+		DedupeConfig:    req.DedupeConfig,
+		Payload:         req.Payload,
+	})
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
+}
+
+func (h *MonitoringHandler) IngestIntegrationWebhook(c *gin.Context) {
+	token := strings.TrimSpace(c.GetHeader("X-Soha-Webhook-Token"))
+	if token == "" {
+		token = strings.TrimSpace(strings.TrimPrefix(c.GetHeader("Authorization"), "Bearer "))
+	}
+	if token == "" {
+		token = strings.TrimSpace(c.Query("token"))
+	}
+	var payload map[string]any
+	if err := c.ShouldBindJSON(&payload); err != nil {
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid alert integration webhook payload")
+		return
+	}
+	count, err := h.service.IngestAlertIntegration(c.Request.Context(), c.Param("integrationID"), token, payload)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.JSON(c, http.StatusAccepted, gin.H{"accepted": count})
+}
+
+func alertIntegrationInput(req dto.AlertIntegrationRequest) domainalert.AlertIntegrationInput {
+	enabled := true
+	if req.Enabled != nil {
+		enabled = *req.Enabled
+	}
+	return domainalert.AlertIntegrationInput{
+		ID:              req.ID,
+		Name:            req.Name,
+		IntegrationType: req.IntegrationType,
+		Description:     req.Description,
+		Token:           req.Token,
+		LabelMapping:    req.LabelMapping,
+		DedupeConfig:    req.DedupeConfig,
+		Enabled:         enabled,
+	}
 }

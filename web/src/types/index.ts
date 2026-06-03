@@ -30,6 +30,50 @@ export interface User {
   teams: string[]
   projects: string[]
   tags: string[] | null
+  displayName?: string
+  phone?: string
+  status?: string
+  username?: string
+}
+
+export interface LinkedIdentity {
+  id: string
+  providerType: string
+  providerId: string
+  providerUserId: string
+  displayName?: string
+  email?: string
+  lastLoginAt?: string
+}
+
+export interface UserSession {
+  id: string
+  userId: string
+  userName: string
+  email: string
+  providerType: string
+  status: string
+  expiresAt: string
+  lastSeenAt: string
+  createdAt: string
+  refreshTokenId: string
+  metadata?: Record<string, unknown>
+}
+
+export interface UserProfile {
+  userId: string
+  username: string
+  displayName: string
+  email: string
+  phone?: string
+  status: string
+  roles: string[]
+  teams: string[]
+  projects: string[]
+  tags: string[]
+  identities: LinkedIdentity[]
+  sessions: UserSession[]
+  lastLoginAt?: string
 }
 
 export interface AuthTokens {

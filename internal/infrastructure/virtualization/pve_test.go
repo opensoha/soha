@@ -50,6 +50,28 @@ func TestPVEAdapterTestConnectionDegradesOnHTTPError(t *testing.T) {
 	}
 }
 
+func TestPVEAdapterHonorsInsecureSkipTLSVerify(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api2/json/nodes" {
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		writePVEData(w, []map[string]any{{"node": "pve-a", "status": "online"}})
+	}))
+	defer server.Close()
+
+	adapter := NewPVEAdapter(nil)
+	result, err := adapter.TestConnection(context.Background(), Connection{
+		Endpoint:              server.URL,
+		InsecureSkipTLSVerify: true,
+	})
+	if err != nil {
+		t.Fatalf("TestConnection() error = %v", err)
+	}
+	if !result.Healthy || result.Status != "healthy" {
+		t.Fatalf("result = %#v, want healthy", result)
+	}
+}
+
 func TestPVEAdapterUsesTokenHeaderAndExpectedPaths(t *testing.T) {
 	var seen []string
 	var authHeaders []string
@@ -64,7 +86,10 @@ func TestPVEAdapterUsesTokenHeaderAndExpectedPaths(t *testing.T) {
 		case "/api2/json/nodes/pve-a/storage":
 			writePVEData(w, []map[string]any{{"storage": "local", "type": "dir"}})
 		case "/api2/json/nodes/pve-a/storage/local/content":
-			writePVEData(w, []map[string]any{{"volid": "local:iso/demo.iso", "content": "iso"}})
+			writePVEData(w, []map[string]any{
+				{"volid": "local:iso/demo.iso", "content": "iso"},
+				{"volid": "local:vztmpl/debian.tar.zst", "content": "vztmpl"},
+			})
 		default:
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
@@ -82,7 +107,7 @@ func TestPVEAdapterUsesTokenHeaderAndExpectedPaths(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SyncAssets() error = %v", err)
 	}
-	if result.Health.Status != "healthy" || len(result.Assets) != 4 {
+	if result.Health.Status != "healthy" || len(result.Assets) != 5 {
 		t.Fatalf("result = %#v", result)
 	}
 	for _, header := range authHeaders {
@@ -97,6 +122,64 @@ func TestPVEAdapterUsesTokenHeaderAndExpectedPaths(t *testing.T) {
 		"GET /api2/json/nodes/pve-a/storage/local/content",
 	}
 	if strings.Join(seen, ",") != strings.Join(want, ",") {
+		t.Fatalf("seen paths = %#v", seen)
+	}
+}
+
+func TestPVEAdapterSyncAssetsScansAllStoragesAndQEMUTemplates(t *testing.T) {
+	var seen []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen = append(seen, r.Method+" "+r.URL.Path)
+		switch r.URL.Path {
+		case "/api2/json/nodes":
+			writePVEData(w, []map[string]any{{"node": "pve-a", "status": "online"}})
+		case "/api2/json/nodes/pve-a/qemu":
+			writePVEData(w, []map[string]any{
+				{"vmid": 101, "name": "vm-a", "status": "running", "cpus": 2, "maxmem": 4294967296},
+				{"vmid": 9000, "name": "ubuntu-template", "template": 1, "status": "stopped"},
+			})
+		case "/api2/json/nodes/pve-a/storage":
+			writePVEData(w, []map[string]any{
+				{"storage": "local", "type": "dir", "content": "iso,vztmpl"},
+				{"storage": "shared-nfs", "type": "nfs", "content": "iso,images"},
+			})
+		case "/api2/json/nodes/pve-a/storage/local/content":
+			writePVEData(w, []map[string]any{
+				{"volid": "local:iso/demo.iso", "content": "iso"},
+				{"volid": "local:vztmpl/debian.tar.zst", "content": "vztmpl"},
+			})
+		case "/api2/json/nodes/pve-a/storage/shared-nfs/content":
+			writePVEData(w, []map[string]any{{"volid": "shared-nfs:iso/ubuntu.iso", "content": "iso"}})
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	adapter := NewPVEAdapter(server.Client())
+	result, err := adapter.SyncAssets(context.Background(), Connection{Endpoint: server.URL})
+	if err != nil {
+		t.Fatalf("SyncAssets() error = %v", err)
+	}
+	var qemuTemplate, sharedISO, lxcTemplate bool
+	for _, asset := range result.Assets {
+		if asset.Type == "template" && asset.Metadata["sourceRef"] == "9000" {
+			qemuTemplate = true
+		}
+		if asset.Type == "iso" && asset.Metadata["storage"] == "shared-nfs" {
+			sharedISO = true
+		}
+		if asset.Type == "lxc_template" && asset.Metadata["sourceRef"] == "local:vztmpl/debian.tar.zst" {
+			lxcTemplate = true
+		}
+		if asset.Type == "template" && asset.Metadata["sourceRef"] == "local:vztmpl/debian.tar.zst" {
+			t.Fatalf("vztmpl storage content must not be exposed as a QEMU VM template: %#v", asset)
+		}
+	}
+	if !qemuTemplate || !sharedISO || !lxcTemplate {
+		t.Fatalf("assets missing qemuTemplate=%v sharedISO=%v lxcTemplate=%v: %#v", qemuTemplate, sharedISO, lxcTemplate, result.Assets)
+	}
+	if !strings.Contains(strings.Join(seen, ","), "GET /api2/json/nodes/pve-a/storage/shared-nfs/content") {
 		t.Fatalf("seen paths = %#v", seen)
 	}
 }
@@ -177,6 +260,7 @@ func TestPVEAdapterCreateISOPayloadUsesProviderParams(t *testing.T) {
 		SourceMode: "iso_install",
 		SourceRef:  "local:iso/ubuntu.iso",
 		DiskSize:   "20Gi",
+		Memory:     "4096Mi",
 		ProviderParams: map[string]any{
 			"bridge":  "vmbr0",
 			"storage": "local-lvm",
@@ -188,7 +272,7 @@ func TestPVEAdapterCreateISOPayloadUsesProviderParams(t *testing.T) {
 	if vm.ID != "201" || vm.Node != "pve-1" || vm.Metadata["vmid"] != "201" {
 		t.Fatalf("vm = %#v", vm)
 	}
-	if !strings.Contains(body, `"ide2":"local:iso/ubuntu.iso"`) || !strings.Contains(body, `"net0":"virtio,bridge=vmbr0"`) || !strings.Contains(body, `"scsi0":"local-lvm:20Gi"`) {
+	if !strings.Contains(body, `"ide2":"local:iso/ubuntu.iso,media=cdrom"`) || !strings.Contains(body, `"memory":4096`) || !strings.Contains(body, `"net0":"virtio,bridge=vmbr0"`) || !strings.Contains(body, `"scsi0":"local-lvm:20G"`) {
 		t.Fatalf("payload = %s", body)
 	}
 	want := []string{"POST /api2/json/nodes/pve-1/qemu", "GET /api2/json/nodes/pve-1/qemu/201/status/current"}
@@ -255,7 +339,7 @@ func TestPVEAdapterGetConsoleURLReturnsBackendWebsocketURL(t *testing.T) {
 	defer server.Close()
 
 	adapter := NewPVEAdapter(server.Client())
-	result, err := adapter.GetConsoleURL(context.Background(), Connection{Endpoint: server.URL}, VM{ID: "vm-local", Node: "pve-a", Metadata: map[string]string{"vmid": "101"}})
+	result, err := adapter.GetConsoleURL(context.Background(), Connection{Endpoint: server.URL, InsecureSkipTLSVerify: true}, VM{ID: "vm-local", Node: "pve-a", Metadata: map[string]string{"vmid": "101"}})
 	if err != nil {
 		t.Fatalf("GetConsoleURL() error = %v", err)
 	}
@@ -267,6 +351,9 @@ func TestPVEAdapterGetConsoleURLReturnsBackendWebsocketURL(t *testing.T) {
 	}
 	if !strings.Contains(result.BackendURL, "/api2/json/nodes/pve-a/qemu/101/vncwebsocket") || !strings.Contains(result.BackendURL, "port=5901") || !strings.Contains(result.BackendURL, "vncticket=ticket-1") {
 		t.Fatalf("result.BackendURL = %q", result.BackendURL)
+	}
+	if !result.InsecureSkipTLSVerify {
+		t.Fatalf("InsecureSkipTLSVerify = false, want true")
 	}
 }
 

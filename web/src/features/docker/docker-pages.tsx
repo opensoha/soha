@@ -14,6 +14,8 @@ import {
   ManagementIconButton,
   ManagementTableToolbar,
 } from '@/components/management-list'
+import { virtualizationApi } from '@/features/virtualization/virtualization-api'
+import type { VirtualizationCluster, VirtualizationFlavor, VirtualizationImage, VirtualizationPage } from '@/features/virtualization/virtualization-types'
 import { dockerApi } from './docker-api'
 import type { DockerContainerStartInput, DockerHost, DockerHostInput, DockerListParams, DockerOperation, DockerOperationLog, DockerPage, DockerPortMapping, DockerPortMappingInput, DockerProject, DockerProjectInput, DockerQuickCreateHostInput, DockerService, DockerTemplate, DockerTemplateInput } from './docker-types'
 
@@ -76,6 +78,10 @@ const STATUS_COLORS: Record<string, string> = {
 const DEFAULT_COMPOSE = `services:\n  web:\n    image: nginx:alpine\n    ports:\n      - "8080:80"\n`
 
 const DOCKER_QUERY_ROOT = ['docker'] as const
+const VIRTUALIZATION_PROVIDER_LABELS: Record<string, string> = {
+  kubevirt: 'KubeVirt',
+  pve: 'PVE',
+}
 
 function statusTag(value?: string) {
   if (!value) return <Text type="secondary">-</Text>
@@ -127,6 +133,37 @@ function normalizePage<T>(data: DockerPage<T> | undefined, fallbackPage: number,
 
 function queryData<T>(response: { data: T } | undefined, fallback: T) {
   return response?.data ?? fallback
+}
+
+function virtualizationItems<T>(data: VirtualizationPage<T> | T[] | undefined): T[] {
+  if (!data) return []
+  return Array.isArray(data) ? data : data.items ?? []
+}
+
+function stringConfigValue(config: Record<string, unknown> | undefined, key: string) {
+  const value = config?.[key]
+  return typeof value === 'string' ? value.trim() : ''
+}
+
+function providerLabel(provider?: string) {
+  return VIRTUALIZATION_PROVIDER_LABELS[String(provider || '').toLowerCase()] ?? provider ?? '-'
+}
+
+function isProvisionConnection(item: VirtualizationCluster) {
+  const provider = String(item.provider || '').toLowerCase()
+  return item.enabled !== false && (provider === 'pve' || provider === 'kubevirt')
+}
+
+function isProvisionImage(item: VirtualizationImage) {
+  const provider = String(item.provider || '').toLowerCase()
+  const sourceKind = String(item.sourceKind || item.assetKind || '').toLowerCase()
+  if (provider === 'pve') {
+    return sourceKind === '' || sourceKind === 'template' || sourceKind === 'iso'
+  }
+  if (provider === 'kubevirt') {
+    return sourceKind === '' || sourceKind === 'datasource' || sourceKind === 'pvc' || sourceKind === 'containerdisk' || sourceKind === 'container_disk'
+  }
+  return false
 }
 
 function pageTablePagination<T>(
@@ -302,6 +339,33 @@ function useDockerOptions() {
   }
 }
 
+function useVirtualizationProvisionOptions(enabled: boolean) {
+  const clustersQuery = useQuery({
+    queryKey: ['virtualization', 'clusters', 'docker-provision-options'],
+    queryFn: virtualizationApi.clusters,
+    enabled,
+  })
+  const imagesQuery = useQuery({
+    queryKey: ['virtualization', 'images', 'docker-provision-options'],
+    queryFn: () => virtualizationApi.images({ page: 1, pageSize: 500 }),
+    enabled,
+  })
+  const flavorsQuery = useQuery({
+    queryKey: ['virtualization', 'flavors', 'docker-provision-options'],
+    queryFn: virtualizationApi.flavors,
+    enabled,
+  })
+  const connections = queryData(clustersQuery.data, [] as VirtualizationCluster[]).filter(isProvisionConnection)
+  const images = virtualizationItems(imagesQuery.data?.data).filter(isProvisionImage)
+  const flavors = queryData(flavorsQuery.data, [] as VirtualizationFlavor[]).filter((item) => item.enabled !== false)
+  return {
+    connections,
+    images,
+    flavors,
+    loading: clustersQuery.isLoading || imagesQuery.isLoading || flavorsQuery.isLoading,
+  }
+}
+
 function buildHostPayload(values: HostFormValues): DockerHostInput {
   return compactRecord({
     ...values,
@@ -321,7 +385,7 @@ function hostToForm(record?: DockerHost): Partial<HostFormValues> {
   }
 }
 
-function buildQuickHostPayload(values: QuickCreateHostFormValues): DockerQuickCreateHostInput {
+export function buildQuickHostPayload(values: QuickCreateHostFormValues): DockerQuickCreateHostInput {
   return compactRecord({
     ...values,
     memoryBytes: values.memoryGiB ? Math.round(values.memoryGiB * 1024 ** 3) : values.memoryBytes,
@@ -425,6 +489,8 @@ function HostsTable({ embedded = false }: { embedded?: boolean }) {
   const [quickDrawerOpen, setQuickDrawerOpen] = useState(false)
   const [editing, setEditing] = useState<DockerHost | null>(null)
   const { canManageHosts } = useDockerPermissions()
+  const provisionOptions = useVirtualizationProvisionOptions(canManageHosts)
+  const selectedProvisionConnectionID = Form.useWatch('virtualizationConnectionId', quickForm)
   const queryClient = useQueryClient()
   const { message } = App.useApp()
   const hostsQuery = useQuery({ queryKey: ['docker', 'hosts', filters], queryFn: () => dockerApi.hosts(filters) })
@@ -441,7 +507,7 @@ function HostsTable({ embedded = false }: { embedded?: boolean }) {
   const quickCreateMutation = useMutation({
     mutationFn: (values: QuickCreateHostFormValues) => dockerApi.quickCreateHost(buildQuickHostPayload(values)),
     onSuccess: () => {
-      message.success('PVE 快速构建任务已提交')
+      message.success('虚拟化构建任务已提交')
       setQuickDrawerOpen(false)
       quickForm.resetFields()
       refreshDocker(queryClient)
@@ -455,6 +521,38 @@ function HostsTable({ embedded = false }: { embedded?: boolean }) {
     },
   })
   const page = normalizePage(hostsQuery.data?.data, filters.page ?? 1, filters.pageSize ?? 10)
+  const selectedProvisionConnection = provisionOptions.connections.find((item) => item.id === selectedProvisionConnectionID)
+  const selectedProvisionProvider = String(selectedProvisionConnection?.provider || '').toLowerCase()
+  const quickConnectionOptions = provisionOptions.connections.map((item) => ({
+    value: item.id,
+    label: `${item.name || item.id} (${providerLabel(item.provider)})`,
+  }))
+  const quickImageOptions = provisionOptions.images
+    .filter((item) => !selectedProvisionConnectionID || item.connectionId === selectedProvisionConnectionID)
+    .map((item) => ({
+      value: item.id,
+      label: [item.name || item.id, item.sourceKind || item.assetKind, item.sourceRef].filter(Boolean).join(' / '),
+    }))
+  const quickFlavorOptions = provisionOptions.flavors.map((item) => ({
+    value: item.id,
+    label: `${item.name || item.id} (${item.cpu}C / ${formatBytes(item.memoryMiB * 1024 ** 2)} / ${item.diskGiB || '-'}GiB)`,
+  }))
+  const applyProvisionConnectionDefaults = (connectionID?: string) => {
+    const connection = provisionOptions.connections.find((item) => item.id === connectionID)
+    const provider = String(connection?.provider || '').toLowerCase()
+    quickForm.setFieldsValue({
+      imageId: undefined,
+      vmTemplateId: undefined,
+      network: provider === 'pve' ? stringConfigValue(connection?.config, 'defaultBridge') || undefined : undefined,
+    })
+  }
+  const applyProvisionImageDefaults = (imageID?: string) => {
+    const image = provisionOptions.images.find((item) => item.id === imageID)
+    const sourceKind = String(image?.sourceKind || image?.assetKind || '').toLowerCase()
+    quickForm.setFieldsValue({
+      vmTemplateId: image?.provider === 'pve' && sourceKind === 'template' && image.sourceRef ? image.sourceRef : undefined,
+    })
+  }
   const columns: ColumnsType<DockerHost> = [
     { title: '名称', dataIndex: 'name', fixed: 'left', width: 190, render: (value, record) => <Text strong>{value || record.id}</Text> },
     { title: '状态', dataIndex: 'status', width: 110, render: statusTag },
@@ -493,10 +591,10 @@ function HostsTable({ embedded = false }: { embedded?: boolean }) {
         scroll={{ x: 1220 }}
         pagination={pageTablePagination(page, embedded, setFilters)}
         shellClassName="soha-management-table-shell soha-docker-table-shell"
-        title={<DockerTableTitle title="Docker 主机" meta={[`共 ${page.total} 台`, '支持手动接入与 PVE 快速构建']} />}
+        title={<DockerTableTitle title="Docker 主机" meta={[`共 ${page.total} 台`, '支持手动接入与虚拟化快速构建']} />}
         headerExtra={canManageHosts && !embedded ? (
           <ManagementTableToolbar>
-            <Button icon={<CloudServerOutlined />} onClick={() => { quickForm.setFieldsValue({ availablePortStart: 20000, availablePortEnd: 39999, cpuCoreCount: 4, memoryGiB: 8, diskGiB: 80 }); setQuickDrawerOpen(true) }}>PVE 快速构建</Button>
+            <Button icon={<CloudServerOutlined />} onClick={() => { quickForm.setFieldsValue({ availablePortStart: 20000, availablePortEnd: 39999, cpuCoreCount: 4, memoryGiB: 8, diskGiB: 80 }); setQuickDrawerOpen(true) }}>虚拟化快速构建</Button>
             <Button type="primary" icon={<PlusOutlined />} onClick={() => { setEditing(null); form.setFieldsValue(hostToForm()); setDrawerOpen(true) }}>接入主机</Button>
           </ManagementTableToolbar>
         ) : null}
@@ -536,15 +634,40 @@ function HostsTable({ embedded = false }: { embedded?: boolean }) {
           </div>
         </Form>
       </Drawer>
-      <Drawer title="PVE 快速构建 Docker 主机" size="large" open={quickDrawerOpen} onClose={() => setQuickDrawerOpen(false)} extra={<DrawerFooter form={quickForm} loading={quickCreateMutation.isPending} onCancel={() => setQuickDrawerOpen(false)} submitLabel="提交构建" />}>
+      <Drawer title="虚拟化快速构建 Docker 主机" size="large" open={quickDrawerOpen} onClose={() => setQuickDrawerOpen(false)} extra={<DrawerFooter form={quickForm} loading={quickCreateMutation.isPending} onCancel={() => setQuickDrawerOpen(false)} submitLabel="提交构建" />}>
         <Form form={quickForm} layout="vertical" onFinish={(values) => quickCreateMutation.mutate(values)}>
           <Form.Item name="name" label="名称" rules={[{ required: true }]}><Input /></Form.Item>
           <div className="grid gap-3 md:grid-cols-2">
-            <Form.Item name="virtualizationConnectionId" label="PVE 连接 ID"><Input /></Form.Item>
-            <Form.Item name="vmTemplateId" label="VM 模板 ID"><Input /></Form.Item>
-            <Form.Item name="flavorId" label="规格 ID"><Input /></Form.Item>
-            <Form.Item name="imageId" label="镜像 ID"><Input /></Form.Item>
-            <Form.Item name="network" label="网络"><Input placeholder="vmbr0" /></Form.Item>
+            <Form.Item name="virtualizationConnectionId" label="虚拟化连接" rules={[{ required: true }]}>
+              <Select
+                allowClear
+                showSearch
+                optionFilterProp="label"
+                loading={provisionOptions.loading}
+                options={quickConnectionOptions}
+                placeholder="选择 PVE 或 KubeVirt 连接"
+                onChange={applyProvisionConnectionDefaults}
+              />
+            </Form.Item>
+            <Form.Item name="imageId" label="镜像 / 模板" rules={[{ required: true }]}>
+              <Select
+                allowClear
+                showSearch
+                optionFilterProp="label"
+                disabled={!selectedProvisionConnectionID}
+                loading={provisionOptions.loading}
+                options={quickImageOptions}
+                placeholder={selectedProvisionConnectionID ? '选择已同步镜像、ISO 或模板' : '先选择虚拟化连接'}
+                onChange={applyProvisionImageDefaults}
+              />
+            </Form.Item>
+            <Form.Item name="flavorId" label="规格">
+              <Select allowClear showSearch optionFilterProp="label" loading={provisionOptions.loading} options={quickFlavorOptions} placeholder="选择规格或手动填写资源" />
+            </Form.Item>
+            <Form.Item name="network" label={selectedProvisionProvider === 'kubevirt' ? '网络' : 'PVE 网桥'}>
+              <Input disabled={selectedProvisionProvider === 'kubevirt'} placeholder={selectedProvisionProvider === 'kubevirt' ? 'KubeVirt 使用默认 Pod 网络' : 'vmbr0'} />
+            </Form.Item>
+            <Form.Item name="vmTemplateId" hidden><Input /></Form.Item>
             <Form.Item name="environment" label="环境"><Input /></Form.Item>
             <Form.Item name="owner" label="负责人"><Input /></Form.Item>
             <Form.Item name="team" label="团队"><Input /></Form.Item>

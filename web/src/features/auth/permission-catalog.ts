@@ -139,6 +139,8 @@ export const consolePermissionGroups: PermissionCatalogGroup[] = [
       { value: "observe.alerts.manage", label: "管理告警" },
       { value: "observe.alert-rules.view", label: "查看告警规则" },
       { value: "observe.alert-rules.manage", label: "管理告警规则" },
+      { value: "observe.alert-integrations.view", label: "查看告警集成" },
+      { value: "observe.alert-integrations.manage", label: "管理告警集成" },
       { value: "observe.notifications.view", label: "查看通知策略" },
       { value: "observe.notifications.manage", label: "管理通知策略" },
       { value: "observe.oncall.view", label: "查看值班协同" },

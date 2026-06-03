@@ -21,6 +21,7 @@ type IdentityService interface {
 	RefreshSession(context.Context, string) (domainidentity.AuthResult, error)
 	Logout(context.Context, string, string) error
 	CurrentPrincipal(context.Context, string) (domainidentity.Principal, error)
+	CurrentProfile(context.Context, domainidentity.Principal) (domainidentity.UserProfile, error)
 	BeginOIDCLogin(context.Context) (string, error)
 	BeginProviderLogin(context.Context, string) (string, error)
 	HandleOIDCCallback(context.Context, string, string) (string, error)
@@ -209,6 +210,16 @@ func (h *AuthHandler) Me(c *gin.Context) {
 		return
 	}
 	apiresponse.Item(c, http.StatusOK, current)
+}
+
+func (h *AuthHandler) Profile(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	profile, err := h.identity.CurrentProfile(c.Request.Context(), principal)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, profile)
 }
 
 func (h *AuthHandler) ProCurrentUser(c *gin.Context) {

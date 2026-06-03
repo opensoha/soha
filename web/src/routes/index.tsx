@@ -28,6 +28,10 @@ const OIDCCallbackPage = lazyNamed(
   () => import("@/features/auth/oidc-callback-page"),
   "OIDCCallbackPage",
 );
+const UserProfilePage = lazyNamed(
+  () => import("@/features/auth/user-profile-page"),
+  "UserProfilePage",
+);
 
 const OverviewPage = lazyNamed(
   () => import("@/features/platform/overview-page"),
@@ -436,6 +440,10 @@ const DockerOperationsPage = lazyNamed(
 const MonitoringPage = lazyNamed(
   () => import("@/features/observability/monitoring-pages"),
   "MonitoringPage",
+);
+const AlertIntegrationsPage = lazyNamed(
+  () => import("@/features/observability/monitoring-pages"),
+  "AlertIntegrationsPage",
 );
 const AlertsPage = lazyNamed(
   () => import("@/features/observability/monitoring-pages"),
@@ -1529,6 +1537,14 @@ export function AppRouter() {
             }
           />
           <Route
+            path="/monitoring-workbench/integrations"
+            element={
+              <LazyPage>
+                <AlertIntegrationsPage />
+              </LazyPage>
+            }
+          />
+          <Route
             path="/monitoring-workbench/rules"
             element={
               <LazyPage>
@@ -1925,6 +1941,15 @@ export function AppRouter() {
           <Route
             path="/settings/ai"
             element={<AIWorkbenchModelSettingsRedirect />}
+          />
+
+          <Route
+            path="/account/profile"
+            element={
+              <LazyPage>
+                <UserProfilePage />
+              </LazyPage>
+            }
           />
 
           <Route path="*" element={<Navigate to="/" replace />} />

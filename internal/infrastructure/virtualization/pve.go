@@ -3,12 +3,14 @@ package virtualization
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"path"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -49,52 +51,90 @@ func (a *PVEAdapter) SyncAssets(ctx context.Context, connection Connection) (Ass
 			return AssetSyncResult{Health: AssetHealth{Status: "degraded", Message: err.Error()}, Assets: assets}, nil
 		}
 		for _, vm := range qemu.Data {
+			vmid := stringFromAny(vm["vmid"])
+			vmName := firstNonEmpty(stringFromAny(vm["name"]), "vm-"+vmid)
+			assetType := "qemu"
+			status := stringFromMap(vm, "status")
+			if boolFromAny(vm["template"]) {
+				assetType = "template"
+				status = firstNonEmpty(status, "template")
+			}
+			metadata := map[string]string{
+				"vmid":      vmid,
+				"sourceRef": vmid,
+				"node":      nodeName,
+			}
+			if cpus := stringFromAny(firstNonNil(vm["cpus"], vm["cores"])); cpus != "" {
+				metadata["cpu"] = cpus
+			}
+			if memory := stringFromAny(firstNonNil(vm["maxmem"], vm["mem"])); memory != "" {
+				metadata["memory"] = memory
+			}
 			assets = append(assets, Asset{
-				Type:   "qemu",
-				Name:   stringFromAny(vm["name"]),
-				Node:   nodeName,
-				Status: stringFromMap(vm, "status"),
-				Metadata: map[string]string{
-					"vmid": stringFromAny(vm["vmid"]),
-				},
+				Type:     assetType,
+				Name:     vmName,
+				Node:     nodeName,
+				Status:   status,
+				Metadata: metadata,
 			})
 		}
 		var storages pveDataEnvelope
 		if err := a.do(ctx, connection, http.MethodGet, fmt.Sprintf("/nodes/%s/storage", url.PathEscape(nodeName)), nil, &storages); err == nil {
 			for _, item := range storages.Data {
+				storageName := stringFromAny(item["storage"])
 				assets = append(assets, Asset{
 					Type:   "storage",
-					Name:   stringFromAny(item["storage"]),
+					Name:   storageName,
 					Node:   nodeName,
 					Status: stringFromMap(item, "type"),
 					Metadata: map[string]string{
-						"storage": stringFromAny(item["storage"]),
+						"storage": storageName,
 						"type":    stringFromMap(item, "type"),
+						"content": stringFromMap(item, "content"),
 					},
 				})
-			}
-		}
-		var storageContent pveDataEnvelope
-		if err := a.do(ctx, connection, http.MethodGet, fmt.Sprintf("/nodes/%s/storage/local/content", url.PathEscape(nodeName)), nil, &storageContent); err == nil {
-			for _, item := range storageContent.Data {
-				contentType := stringFromMap(item, "content")
-				assetType := "storage_content"
-				if contentType == "iso" {
-					assetType = "iso"
-				} else if contentType == "vztmpl" || strings.Contains(strings.ToLower(stringFromAny(item["volid"])), "template") {
-					assetType = "template"
+				if storageName == "" || !pveStorageSupportsContent(item) {
+					continue
 				}
-				assets = append(assets, Asset{
-					Type:   assetType,
-					Name:   stringFromAny(item["volid"]),
-					Node:   nodeName,
-					Status: contentType,
-					Metadata: map[string]string{
-						"volid":       stringFromAny(item["volid"]),
+				var storageContent pveDataEnvelope
+				if err := a.do(ctx, connection, http.MethodGet, fmt.Sprintf("/nodes/%s/storage/%s/content", url.PathEscape(nodeName), url.PathEscape(storageName)), nil, &storageContent); err != nil {
+					continue
+				}
+				for _, content := range storageContent.Data {
+					contentType := stringFromMap(content, "content")
+					volID := firstNonEmpty(stringFromAny(content["volid"]), stringFromAny(content["name"]))
+					assetType := "storage_content"
+					lowerVolID := strings.ToLower(volID)
+					if contentType == "iso" {
+						assetType = "iso"
+					} else if contentType == "vztmpl" {
+						assetType = "lxc_template"
+					} else if strings.Contains(lowerVolID, "template") {
+						assetType = "template"
+					} else if contentType == "images" || contentType == "rootdir" {
+						assetType = "image"
+					}
+					metadata := map[string]string{
+						"volid":       volID,
+						"sourceRef":   volID,
 						"contentType": contentType,
 						"node":        nodeName,
-					},
-				})
+						"storage":     storageName,
+					}
+					if format := stringFromAny(content["format"]); format != "" {
+						metadata["format"] = format
+					}
+					if size := stringFromAny(content["size"]); size != "" {
+						metadata["size"] = size
+					}
+					assets = append(assets, Asset{
+						Type:     assetType,
+						Name:     volID,
+						Node:     nodeName,
+						Status:   contentType,
+						Metadata: metadata,
+					})
+				}
 			}
 		}
 	}
@@ -135,10 +175,12 @@ func (a *PVEAdapter) CreateVM(ctx context.Context, connection Connection, input 
 		}
 		vmid = nextID
 	}
-	payload := map[string]any{
-		"name":   input.Name,
-		"cores":  input.CPU,
-		"memory": input.Memory,
+	payload := map[string]any{"name": input.Name}
+	if input.CPU > 0 {
+		payload["cores"] = input.CPU
+	}
+	if memoryMB := normalizePVEMemoryMB(input.Memory); memoryMB > 0 {
+		payload["memory"] = memoryMB
 	}
 	if input.SourceMode == "template_clone" || input.TemplateID != "" {
 		templateID := firstNonEmpty(input.TemplateID, input.SourceRef, input.BootImage)
@@ -162,9 +204,9 @@ func (a *PVEAdapter) CreateVM(ctx context.Context, connection Connection, input 
 	}
 	payload["vmid"] = vmid
 	if input.DiskSize != "" {
-		diskRef := input.DiskSize
+		diskRef := normalizePVEDiskSize(input.DiskSize)
 		if providerStorage != "" {
-			diskRef = fmt.Sprintf("%s:%s", providerStorage, input.DiskSize)
+			diskRef = fmt.Sprintf("%s:%s", providerStorage, diskRef)
 		}
 		payload["scsi0"] = diskRef
 	}
@@ -177,7 +219,7 @@ func (a *PVEAdapter) CreateVM(ctx context.Context, connection Connection, input 
 		providerISO = firstNonEmpty(input.SourceRef, input.BootImage)
 	}
 	if providerISO != "" {
-		payload["ide2"] = providerISO
+		payload["ide2"] = normalizePVEISORef(providerISO)
 	}
 	if ciuser := stringFromAny(input.ProviderParams["ciuser"]); ciuser != "" {
 		payload["ciuser"] = ciuser
@@ -248,7 +290,7 @@ func (a *PVEAdapter) do(ctx context.Context, connection Connection, method strin
 		req.Header.Set("Content-Type", "application/json")
 	}
 	applyPVEAuth(req, connection.Credential)
-	resp, err := a.client.Do(req)
+	resp, err := a.clientFor(connection).Do(req)
 	if err != nil {
 		return err
 	}
@@ -264,6 +306,30 @@ func (a *PVEAdapter) do(ctx context.Context, connection Connection, method strin
 		return fmt.Errorf("decode pve response: %w", err)
 	}
 	return nil
+}
+
+func (a *PVEAdapter) clientFor(connection Connection) *http.Client {
+	if !connection.InsecureSkipTLSVerify {
+		return a.client
+	}
+	clone := *a.client
+	clone.Transport = pveInsecureTransport(a.client.Transport)
+	return &clone
+}
+
+func pveInsecureTransport(base http.RoundTripper) http.RoundTripper {
+	transport, ok := base.(*http.Transport)
+	if !ok || transport == nil {
+		transport = http.DefaultTransport.(*http.Transport)
+	}
+	clone := transport.Clone()
+	if clone.TLSClientConfig == nil {
+		clone.TLSClientConfig = &tls.Config{}
+	} else {
+		clone.TLSClientConfig = clone.TLSClientConfig.Clone()
+	}
+	clone.TLSClientConfig.InsecureSkipVerify = true
+	return clone
 }
 
 func applyPVEAuth(req *http.Request, credential map[string]any) {
@@ -305,6 +371,33 @@ func stringFromAny(value any) string {
 	}
 }
 
+func boolFromAny(value any) bool {
+	switch typed := value.(type) {
+	case bool:
+		return typed
+	case string:
+		normalized := strings.ToLower(strings.TrimSpace(typed))
+		return normalized == "1" || normalized == "true" || normalized == "yes"
+	case float64:
+		return typed != 0
+	case int:
+		return typed != 0
+	case int64:
+		return typed != 0
+	default:
+		return false
+	}
+}
+
+func firstNonNil(values ...any) any {
+	for _, value := range values {
+		if value != nil {
+			return value
+		}
+	}
+	return nil
+}
+
 func firstNonEmpty(values ...string) string {
 	for _, value := range values {
 		if strings.TrimSpace(value) != "" {
@@ -312,6 +405,94 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func pveStorageSupportsContent(item map[string]any) bool {
+	content := strings.ToLower(strings.TrimSpace(stringFromMap(item, "content")))
+	if content == "" {
+		return true
+	}
+	for _, part := range strings.Split(content, ",") {
+		switch strings.TrimSpace(part) {
+		case "iso", "vztmpl", "images", "rootdir", "snippets":
+			return true
+		}
+	}
+	return false
+}
+
+func normalizePVEMemoryMB(value string) int {
+	raw := strings.TrimSpace(strings.ToLower(value))
+	if raw == "" {
+		return 0
+	}
+	multiplier := 1.0
+	for _, suffix := range []struct {
+		text       string
+		multiplier float64
+	}{
+		{"gib", 1024},
+		{"gi", 1024},
+		{"gb", 1024},
+		{"g", 1024},
+		{"mib", 1},
+		{"mi", 1},
+		{"mb", 1},
+		{"m", 1},
+	} {
+		if strings.HasSuffix(raw, suffix.text) {
+			raw = strings.TrimSpace(strings.TrimSuffix(raw, suffix.text))
+			multiplier = suffix.multiplier
+			break
+		}
+	}
+	parsed, err := strconv.ParseFloat(raw, 64)
+	if err != nil || parsed <= 0 {
+		return 0
+	}
+	return int(parsed*multiplier + 0.5)
+}
+
+func normalizePVEDiskSize(value string) string {
+	raw := strings.TrimSpace(value)
+	lower := strings.ToLower(raw)
+	for _, suffix := range []struct {
+		text string
+		unit string
+	}{
+		{"gib", "G"},
+		{"gi", "G"},
+		{"gb", "G"},
+		{"g", "G"},
+		{"mib", "M"},
+		{"mi", "M"},
+		{"mb", "M"},
+		{"m", "M"},
+	} {
+		if strings.HasSuffix(lower, suffix.text) {
+			number := strings.TrimSpace(raw[:len(raw)-len(suffix.text)])
+			if number == "" {
+				return raw
+			}
+			return number + suffix.unit
+		}
+	}
+	if _, err := strconv.ParseFloat(raw, 64); err == nil {
+		return raw + "G"
+	}
+	return raw
+}
+
+func normalizePVEISORef(value string) string {
+	raw := strings.TrimSpace(value)
+	if raw == "" || strings.Contains(strings.ToLower(raw), "media=") {
+		return raw
+	}
+	lower := strings.ToLower(raw)
+	if strings.Contains(lower, ":iso/") || strings.HasSuffix(lower, ".iso") {
+		return raw + ",media=cdrom"
+	}
+	return raw
 }
 
 func (a *PVEAdapter) nextVMID(ctx context.Context, connection Connection) (string, error) {
@@ -440,12 +621,13 @@ func (a *PVEAdapter) GetConsoleURL(ctx context.Context, connection Connection, v
 	base.RawQuery = query.Encode()
 
 	return ConsoleURLResult{
-		Type:       "novnc",
-		URL:        fmt.Sprintf("/api/v1/virtualization/vms/%s/console/novnc", vm.ID),
-		BackendURL: base.String(),
-		Token:      ticketResponse.Data.Ticket,
-		Ready:      true,
-		Provider:   "pve",
-		ProxyMode:  "backend-ws-proxy",
+		Type:                  "novnc",
+		URL:                   fmt.Sprintf("/api/v1/virtualization/vms/%s/console/novnc", vm.ID),
+		BackendURL:            base.String(),
+		Token:                 ticketResponse.Data.Ticket,
+		Ready:                 true,
+		Provider:              "pve",
+		ProxyMode:             "backend-ws-proxy",
+		InsecureSkipTLSVerify: connection.InsecureSkipTLSVerify,
 	}, nil
 }

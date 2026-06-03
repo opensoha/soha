@@ -55,6 +55,8 @@ const (
 	PermObserveAlertsManage               = "observe.alerts.manage"
 	PermObserveAlertRulesView             = "observe.alert-rules.view"
 	PermObserveAlertRulesManage           = "observe.alert-rules.manage"
+	PermObserveAlertIntegrationsView      = "observe.alert-integrations.view"
+	PermObserveAlertIntegrationsManage    = "observe.alert-integrations.manage"
 	PermObserveNotificationsView          = "observe.notifications.view"
 	PermObserveNotificationsManage        = "observe.notifications.manage"
 	PermObserveOncallView                 = "observe.oncall.view"
@@ -181,6 +183,8 @@ func allPermissionKeys() []string {
 		PermObserveAlertsManage,
 		PermObserveAlertRulesView,
 		PermObserveAlertRulesManage,
+		PermObserveAlertIntegrationsView,
+		PermObserveAlertIntegrationsManage,
 		PermObserveNotificationsView,
 		PermObserveNotificationsManage,
 		PermObserveOncallView,
@@ -303,6 +307,8 @@ func defaultRolePermissions() map[string][]string {
 		PermObserveAlertsManage,
 		PermObserveAlertRulesView,
 		PermObserveAlertRulesManage,
+		PermObserveAlertIntegrationsView,
+		PermObserveAlertIntegrationsManage,
 		PermObserveNotificationsView,
 		PermObserveNotificationsManage,
 		PermObserveOncallView,
@@ -378,6 +384,7 @@ func defaultRolePermissions() map[string][]string {
 		PermObserveMonitoringView,
 		PermObserveAlertsView,
 		PermObserveAlertsAcknowledge,
+		PermObserveAlertIntegrationsView,
 		PermObserveEventsView,
 		PermObserveAIView,
 		PermObserveAIChatUse,
@@ -431,6 +438,7 @@ func defaultRolePermissions() map[string][]string {
 		PermDeliveryReleasesView,
 		PermObserveMonitoringView,
 		PermObserveAlertsView,
+		PermObserveAlertIntegrationsView,
 		PermObserveEventsView,
 		PermObserveAIView,
 		PermAIGatewayView,
@@ -447,6 +455,7 @@ func defaultRolePermissions() map[string][]string {
 		PermOverviewView,
 		PermObserveMonitoringView,
 		PermObserveAlertsView,
+		PermObserveAlertIntegrationsView,
 		PermObserveNotificationsView,
 		PermObserveEventsView,
 		PermSystemAuditView,

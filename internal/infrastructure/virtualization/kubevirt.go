@@ -2,8 +2,10 @@ package virtualization
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -16,6 +18,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/rest"
 )
 
 type KubeBundleProvider interface {
@@ -470,8 +473,13 @@ func (a *KubeVirtAdapter) GetConsoleURL(ctx context.Context, connection Connecti
 		return ConsoleURLResult{Message: err.Error(), Ready: false, Provider: "kubevirt", Type: "vnc", ProxyMode: "backend-ws-proxy"}, err
 	}
 
+	namespace := vm.Namespace
+	if namespace == "" {
+		namespace = namespaceOrDefault(connection, "default")
+	}
+
 	_, err = bundle.Dynamic.Resource(kubeVirtVMIGVR).
-		Namespace(vm.Namespace).
+		Namespace(namespace).
 		Get(ctx, vm.Name, metav1.GetOptions{})
 
 	if err != nil {
@@ -479,6 +487,9 @@ func (a *KubeVirtAdapter) GetConsoleURL(ctx context.Context, connection Connecti
 	}
 
 	backendURL := firstNonEmpty(connection.BackendURL, connection.Endpoint)
+	if backendURL == "" && bundle.RESTConfig != nil {
+		backendURL = bundle.RESTConfig.Host
+	}
 	if strings.TrimSpace(backendURL) == "" {
 		return ConsoleURLResult{Message: "cluster backend URL is required for kubevirt console", Ready: false, Provider: "kubevirt", Type: "vnc", ProxyMode: "backend-ws-proxy"}, nil
 	}
@@ -486,17 +497,78 @@ func (a *KubeVirtAdapter) GetConsoleURL(ctx context.Context, connection Connecti
 	if err != nil || queryURL.Scheme == "" || queryURL.Host == "" {
 		return ConsoleURLResult{Message: "valid cluster backend URL is required for kubevirt console", Ready: false, Provider: "kubevirt", Type: "vnc", ProxyMode: "backend-ws-proxy"}, nil
 	}
-	queryURL.Path = fmt.Sprintf("/apis/subresources.kubevirt.io/v1/namespaces/%s/virtualmachineinstances/%s/vnc", url.PathEscape(vm.Namespace), url.PathEscape(vm.Name))
+	queryURL.Path = strings.TrimRight(queryURL.Path, "/") + fmt.Sprintf("/apis/subresources.kubevirt.io/v1/namespaces/%s/virtualmachineinstances/%s/vnc", url.PathEscape(namespace), url.PathEscape(vm.Name))
+	queryURL.RawPath = ""
+	headers, err := kubeVirtConsoleHeaders(ctx, bundle.RESTConfig, queryURL.String())
+	if err != nil {
+		return ConsoleURLResult{Message: fmt.Sprintf("build kubevirt console auth headers: %v", err), Ready: false, Provider: "kubevirt", Type: "vnc", ProxyMode: "backend-ws-proxy"}, nil
+	}
+	tlsConfig, err := kubeVirtConsoleTLSConfig(bundle.RESTConfig)
+	if err != nil {
+		return ConsoleURLResult{Message: fmt.Sprintf("build kubevirt console TLS config: %v", err), Ready: false, Provider: "kubevirt", Type: "vnc", ProxyMode: "backend-ws-proxy"}, nil
+	}
 	vncURL := fmt.Sprintf("/api/v1/virtualization/vms/%s/console/vnc", vm.ID)
 
 	return ConsoleURLResult{
-		Type:       "vnc",
-		URL:        vncURL,
-		BackendURL: queryURL.String(),
-		Ready:      true,
-		Provider:   "kubevirt",
-		ProxyMode:  "backend-ws-proxy",
+		Type:                  "vnc",
+		URL:                   vncURL,
+		BackendURL:            queryURL.String(),
+		Ready:                 true,
+		Provider:              "kubevirt",
+		ProxyMode:             "backend-ws-proxy",
+		BackendHeaders:        headers,
+		BackendTLSConfig:      tlsConfig,
+		InsecureSkipTLSVerify: connection.InsecureSkipTLSVerify,
 	}, nil
+}
+
+func kubeVirtConsoleHeaders(ctx context.Context, config *rest.Config, backendURL string) (http.Header, error) {
+	if config == nil {
+		return http.Header{}, nil
+	}
+	capture := &headerCaptureRoundTripper{}
+	roundTripper, err := rest.HTTPWrappersForConfig(config, capture)
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, backendURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := roundTripper.RoundTrip(req)
+	if err != nil {
+		return nil, err
+	}
+	_ = resp.Body.Close()
+	return capture.headers.Clone(), nil
+}
+
+type headerCaptureRoundTripper struct {
+	headers http.Header
+}
+
+func (r *headerCaptureRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	r.headers = req.Header.Clone()
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Header:     http.Header{},
+		Body:       io.NopCloser(strings.NewReader("")),
+		Request:    req,
+	}, nil
+}
+
+func kubeVirtConsoleTLSConfig(config *rest.Config) (*tls.Config, error) {
+	if config == nil {
+		return nil, nil
+	}
+	tlsConfig, err := rest.TLSConfigFor(config)
+	if err != nil {
+		return nil, err
+	}
+	if tlsConfig == nil {
+		return nil, nil
+	}
+	return tlsConfig.Clone(), nil
 }
 
 var prometheusHTTPClient = &http.Client{Timeout: 10 * time.Second}

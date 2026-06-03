@@ -82,6 +82,7 @@ func New(cfg cfgpkg.Config, logger *zap.Logger, deps Dependencies) *http.Server 
 		v1.POST("/auth/oidc/exchange", deps.Auth.OIDCExchange)
 		if cfg.Modules.Monitoring.Enabled {
 			v1.POST("/integrations/alerts/webhook", deps.Monitoring.IngestWebhook)
+			v1.POST("/integrations/alerts/:integrationID/webhook", deps.Monitoring.IngestIntegrationWebhook)
 		}
 		if cfg.Modules.Delivery.Enabled {
 			v1.GET("/delivery/execution-tasks/:taskID/runner-status", deps.Delivery.GetExecutionTaskRunnerStatus)
@@ -104,6 +105,7 @@ func New(cfg cfgpkg.Config, logger *zap.Logger, deps Dependencies) *http.Server 
 	protected.Use(apiMiddleware.RequireAuth())
 	{
 		protected.GET("/auth/me", deps.Auth.Me)
+		protected.GET("/auth/profile", deps.Auth.Profile)
 		protected.GET("/auth/bootstrap", deps.Auth.Bootstrap)
 		protected.POST("/auth/logout", deps.Auth.Logout)
 		protected.GET("/auth/sessions", deps.Auth.ListSessions)
@@ -258,6 +260,11 @@ func New(cfg cfgpkg.Config, logger *zap.Logger, deps Dependencies) *http.Server 
 			protected.GET("/alerts/:alertID", deps.Monitoring.GetAlert)
 			protected.PUT("/alerts/:alertID/ownership", deps.Monitoring.UpdateAlertOwnership)
 			protected.POST("/alerts/:alertID/acknowledge", deps.Monitoring.AcknowledgeAlert)
+			protected.GET("/alert-integrations", deps.Monitoring.ListAlertIntegrations)
+			protected.POST("/alert-integrations", deps.Monitoring.CreateAlertIntegration)
+			protected.POST("/alert-integrations/test", deps.Monitoring.TestAlertIntegration)
+			protected.GET("/alert-integrations/:integrationID", deps.Monitoring.GetAlertIntegration)
+			protected.PUT("/alert-integrations/:integrationID", deps.Monitoring.UpdateAlertIntegration)
 			protected.GET("/alert-rules", deps.Monitoring.ListRules)
 			protected.POST("/alert-rules", deps.Monitoring.CreateRule)
 			protected.PUT("/alert-rules/:ruleID", deps.Monitoring.UpdateRule)

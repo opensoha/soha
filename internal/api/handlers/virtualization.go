@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -974,15 +975,15 @@ func (h *VirtualizationHandler) StreamVMConsole(c *gin.Context) {
 	defer conn.Close()
 
 	if consoleResult.Type == "novnc" && consoleResult.Token != "" {
-		proxyPVEVNC(conn, firstNonEmpty(consoleResult.BackendURL, consoleResult.URL), consoleResult.Token)
+		proxyPVEVNC(conn, firstNonEmpty(consoleResult.BackendURL, consoleResult.URL), consoleResult.Token, consoleResult)
 	} else if consoleResult.Type == "vnc" {
-		proxyKubeVirtVNC(conn, firstNonEmpty(consoleResult.BackendURL, consoleResult.URL))
+		proxyKubeVirtVNC(conn, firstNonEmpty(consoleResult.BackendURL, consoleResult.URL), consoleResult)
 	} else {
 		conn.WriteMessage(websocket.TextMessage, []byte(`{"error":"VNC proxy not fully implemented for this provider"}`))
 	}
 }
 
-func proxyPVEVNC(clientConn *websocket.Conn, backendURL, ticket string) {
+func proxyPVEVNC(clientConn *websocket.Conn, backendURL, ticket string, consoleResult infravirtualization.ConsoleURLResult) {
 	parsedURL, err := url.Parse(backendURL)
 	if err != nil {
 		clientConn.WriteMessage(websocket.TextMessage, []byte(fmt.Sprintf(`{"error":"invalid backend URL: %v"}`, err)))
@@ -997,7 +998,7 @@ func proxyPVEVNC(clientConn *websocket.Conn, backendURL, ticket string) {
 	header := http.Header{}
 	header.Set("Cookie", "PVEAuthCookie="+ticket)
 
-	backendConn, _, err := websocket.DefaultDialer.Dial(parsedURL.String(), header)
+	backendConn, _, err := backendWebSocketDialer(consoleResult).Dial(parsedURL.String(), header)
 	if err != nil {
 		clientConn.WriteMessage(websocket.TextMessage, []byte(fmt.Sprintf(`{"error":"failed to connect to backend: %v"}`, err)))
 		return
@@ -1007,7 +1008,7 @@ func proxyPVEVNC(clientConn *websocket.Conn, backendURL, ticket string) {
 	proxyWebsocket(clientConn, backendConn)
 }
 
-func proxyKubeVirtVNC(clientConn *websocket.Conn, backendURL string) {
+func proxyKubeVirtVNC(clientConn *websocket.Conn, backendURL string, consoleResult infravirtualization.ConsoleURLResult) {
 	parsedURL, err := url.Parse(backendURL)
 	if err != nil {
 		clientConn.WriteMessage(websocket.TextMessage, []byte(fmt.Sprintf(`{"error":"invalid backend URL: %v"}`, err)))
@@ -1017,13 +1018,28 @@ func proxyKubeVirtVNC(clientConn *websocket.Conn, backendURL string) {
 	if strings.HasPrefix(backendURL, "http://") {
 		parsedURL.Scheme = "ws"
 	}
-	backendConn, _, err := websocket.DefaultDialer.Dial(parsedURL.String(), nil)
+	headers := consoleResult.BackendHeaders.Clone()
+	backendConn, _, err := backendWebSocketDialer(consoleResult).Dial(parsedURL.String(), headers)
 	if err != nil {
 		clientConn.WriteMessage(websocket.TextMessage, []byte(fmt.Sprintf(`{"error":"failed to connect to kubevirt backend: %v"}`, err)))
 		return
 	}
 	defer backendConn.Close()
 	proxyWebsocket(clientConn, backendConn)
+}
+
+func backendWebSocketDialer(consoleResult infravirtualization.ConsoleURLResult) *websocket.Dialer {
+	dialer := *websocket.DefaultDialer
+	if consoleResult.BackendTLSConfig != nil {
+		tlsConfig := consoleResult.BackendTLSConfig.Clone()
+		if consoleResult.InsecureSkipTLSVerify {
+			tlsConfig.InsecureSkipVerify = true
+		}
+		dialer.TLSClientConfig = tlsConfig
+	} else if consoleResult.InsecureSkipTLSVerify {
+		dialer.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
+	}
+	return &dialer
 }
 
 func proxyWebsocket(clientConn, backendConn *websocket.Conn) {

@@ -64,10 +64,22 @@ type HostProvisionTask struct {
 	Provider     string
 	ConnectionID string
 	Status       string
+	VMID         string
+	VMName       string
+	Result       map[string]any
 }
 
 type HostProvisioner interface {
 	ProvisionDockerHost(context.Context, domainidentity.Principal, HostProvisionInput) (HostProvisionTask, error)
+}
+
+type HostProvisionTaskReader interface {
+	GetProvisionTask(context.Context, string) (HostProvisionTask, error)
+}
+
+type HostProvisionTaskController interface {
+	CancelProvisionTask(context.Context, domainidentity.Principal, string) (HostProvisionTask, error)
+	RetryProvisionTask(context.Context, domainidentity.Principal, string) (HostProvisionTask, error)
 }
 
 type Option func(*Service)
@@ -97,6 +109,7 @@ func (s *Service) Overview(ctx context.Context, principal domainidentity.Princip
 	if err := s.authorize(ctx, principal, appaccess.PermDockerOverviewView); err != nil {
 		return domaindocker.Overview{}, err
 	}
+	s.reconcileHostProvisionOperations(ctx)
 	hosts, err := s.repo.ListHosts(ctx, domaindocker.HostFilter{Limit: 500})
 	if err != nil {
 		return domaindocker.Overview{}, err
@@ -155,6 +168,7 @@ func (s *Service) ListHosts(ctx context.Context, principal domainidentity.Princi
 	if err := s.authorize(ctx, principal, appaccess.PermDockerHostsView); err != nil {
 		return domaindocker.Page[domaindocker.Host]{}, err
 	}
+	s.reconcileHostProvisionOperations(ctx)
 	items, err := s.repo.ListHosts(ctx, filter)
 	if err != nil {
 		return domaindocker.Page[domaindocker.Host]{}, err
@@ -170,6 +184,7 @@ func (s *Service) GetHost(ctx context.Context, principal domainidentity.Principa
 	if err := s.authorize(ctx, principal, appaccess.PermDockerHostsView); err != nil {
 		return domaindocker.Host{}, err
 	}
+	s.reconcileHostProvisionOperations(ctx)
 	return s.repo.GetHost(ctx, id)
 }
 
@@ -729,6 +744,7 @@ func (s *Service) ListOperations(ctx context.Context, principal domainidentity.P
 	if err := s.authorize(ctx, principal, appaccess.PermDockerOperationsView); err != nil {
 		return domaindocker.Page[domaindocker.Operation]{}, err
 	}
+	s.reconcileHostProvisionOperations(ctx)
 	items, err := s.repo.ListOperations(ctx, filter)
 	if err != nil {
 		return domaindocker.Page[domaindocker.Operation]{}, err
@@ -744,6 +760,7 @@ func (s *Service) GetOperation(ctx context.Context, principal domainidentity.Pri
 	if err := s.authorize(ctx, principal, appaccess.PermDockerOperationsView); err != nil {
 		return domaindocker.Operation{}, err
 	}
+	s.reconcileHostProvisionOperations(ctx)
 	return s.repo.GetOperation(ctx, id)
 }
 
@@ -773,6 +790,7 @@ func (s *Service) CancelOperation(ctx context.Context, principal domainidentity.
 	if err != nil {
 		return domaindocker.Operation{}, err
 	}
+	updated = s.cancelLinkedHostProvisionTask(ctx, principal, updated)
 	_ = s.repo.CreateOperationLog(ctx, domaindocker.OperationLog{ID: uuid.NewString(), OperationID: updated.ID, LogLevel: "warn", Message: "operation canceled by control plane", Payload: map[string]any{"userId": principal.UserID}})
 	s.recordOperation(ctx, principal, "docker.operation.cancel", updated.ID, updated.OperationKind, "success", "canceled docker operation", map[string]any{"operationId": updated.ID})
 	return updated, nil
@@ -800,6 +818,7 @@ func (s *Service) RetryOperation(ctx context.Context, principal domainidentity.P
 	if err != nil {
 		return domaindocker.Operation{}, err
 	}
+	updated = s.retryLinkedHostProvisionTask(ctx, principal, updated)
 	_ = s.repo.CreateOperationLog(ctx, domaindocker.OperationLog{ID: uuid.NewString(), OperationID: updated.ID, LogLevel: "info", Message: "operation retry queued", Payload: map[string]any{"userId": principal.UserID}})
 	s.recordOperation(ctx, principal, "docker.operation.retry", updated.ID, updated.OperationKind, "success", "queued docker operation retry", map[string]any{"operationId": updated.ID})
 	return updated, nil
@@ -836,6 +855,7 @@ func (s *Service) ClaimOperation(ctx context.Context, input domaindocker.Operati
 }
 
 func (s *Service) GetOperationForRunner(ctx context.Context, id string) (domaindocker.Operation, error) {
+	s.reconcileHostProvisionOperations(ctx)
 	return s.repo.GetOperation(ctx, id)
 }
 
@@ -1001,6 +1021,208 @@ func (s *Service) applyCallbackRuntimeState(ctx context.Context, item domaindock
 			_, _ = s.repo.UpsertService(ctx, service)
 		}
 	}
+}
+
+func (s *Service) cancelLinkedHostProvisionTask(ctx context.Context, principal domainidentity.Principal, item domaindocker.Operation) domaindocker.Operation {
+	if item.OperationKind != OperationKindHostProvision {
+		return item
+	}
+	controller, ok := s.hostProvisioner.(HostProvisionTaskController)
+	if !ok || controller == nil {
+		return item
+	}
+	taskID := stringValue(item.Payload, "virtualizationTaskId")
+	if taskID == "" {
+		return item
+	}
+	task, err := controller.CancelProvisionTask(ctx, principal, taskID)
+	if err != nil {
+		_ = s.repo.CreateOperationLog(ctx, domaindocker.OperationLog{
+			ID:          uuid.NewString(),
+			OperationID: item.ID,
+			LogLevel:    "warn",
+			Message:     "failed to cancel linked virtualization task",
+			Payload:     map[string]any{"virtualizationTaskId": taskID, "error": err.Error()},
+		})
+		return item
+	}
+	item.Result = mergeMap(item.Result, map[string]any{
+		"virtualizationTaskId":     task.ID,
+		"virtualizationTaskStatus": task.Status,
+		"virtualizationProvider":   task.Provider,
+	})
+	if updated, updateErr := s.repo.UpdateOperation(ctx, item); updateErr == nil {
+		item = updated
+	}
+	_ = s.repo.CreateOperationLog(ctx, domaindocker.OperationLog{
+		ID:          uuid.NewString(),
+		OperationID: item.ID,
+		LogLevel:    "warn",
+		Message:     "linked virtualization task canceled",
+		Payload:     map[string]any{"virtualizationTaskId": task.ID, "status": task.Status},
+	})
+	return item
+}
+
+func (s *Service) retryLinkedHostProvisionTask(ctx context.Context, principal domainidentity.Principal, item domaindocker.Operation) domaindocker.Operation {
+	if item.OperationKind != OperationKindHostProvision {
+		return item
+	}
+	controller, ok := s.hostProvisioner.(HostProvisionTaskController)
+	if !ok || controller == nil {
+		return item
+	}
+	taskID := stringValue(item.Payload, "virtualizationTaskId")
+	if taskID == "" {
+		return item
+	}
+	task, err := controller.RetryProvisionTask(ctx, principal, taskID)
+	if err != nil {
+		_ = s.repo.CreateOperationLog(ctx, domaindocker.OperationLog{
+			ID:          uuid.NewString(),
+			OperationID: item.ID,
+			LogLevel:    "warn",
+			Message:     "failed to retry linked virtualization task",
+			Payload:     map[string]any{"virtualizationTaskId": taskID, "error": err.Error()},
+		})
+		return item
+	}
+	item.Payload = mergeMap(item.Payload, map[string]any{
+		"virtualizationTaskId": task.ID,
+	})
+	item.Result = mergeMap(item.Result, map[string]any{
+		"virtualizationTaskId":     task.ID,
+		"virtualizationTaskStatus": task.Status,
+		"virtualizationProvider":   task.Provider,
+	})
+	if updated, updateErr := s.repo.UpdateOperation(ctx, item); updateErr == nil {
+		item = updated
+	}
+	_ = s.repo.CreateOperationLog(ctx, domaindocker.OperationLog{
+		ID:          uuid.NewString(),
+		OperationID: item.ID,
+		LogLevel:    "info",
+		Message:     "linked virtualization task retry queued",
+		Payload:     map[string]any{"virtualizationTaskId": task.ID, "status": task.Status},
+	})
+	return item
+}
+
+func (s *Service) reconcileHostProvisionOperations(ctx context.Context) {
+	reader, ok := s.hostProvisioner.(HostProvisionTaskReader)
+	if !ok || reader == nil {
+		return
+	}
+	items, err := s.repo.ListOperations(ctx, domaindocker.OperationFilter{
+		OperationKind: OperationKindHostProvision,
+		Statuses:      []string{OperationStatusQueued, OperationStatusRunning},
+		Limit:         100,
+	})
+	if err != nil {
+		return
+	}
+	for _, item := range items {
+		s.reconcileHostProvisionOperation(ctx, reader, item)
+	}
+}
+
+func (s *Service) reconcileHostProvisionOperation(ctx context.Context, reader HostProvisionTaskReader, item domaindocker.Operation) {
+	if item.OperationKind != OperationKindHostProvision || operationTerminal(item.Status) {
+		return
+	}
+	taskID := stringValue(item.Payload, "virtualizationTaskId")
+	if taskID == "" {
+		return
+	}
+	task, err := reader.GetProvisionTask(ctx, taskID)
+	if err != nil {
+		_ = s.repo.CreateOperationLog(ctx, domaindocker.OperationLog{
+			ID:          uuid.NewString(),
+			OperationID: item.ID,
+			LogLevel:    "warn",
+			Message:     "failed to inspect virtualization provision task",
+			Payload:     map[string]any{"virtualizationTaskId": taskID, "error": err.Error()},
+		})
+		return
+	}
+	status := strings.TrimSpace(task.Status)
+	if status == "" {
+		status = OperationStatusRunning
+	}
+	now := time.Now().UTC()
+	item.Result = mergeMap(item.Result, map[string]any{
+		"virtualizationTaskId":     task.ID,
+		"virtualizationTaskStatus": status,
+		"virtualizationProvider":   task.Provider,
+		"vmId":                     firstNonEmpty(task.VMID, stringValue(task.Result, "vmId")),
+		"vmName":                   firstNonEmpty(task.VMName, stringValue(task.Result, "name")),
+	})
+	if item.StartedAt == nil {
+		item.StartedAt = &now
+	}
+	item.LastHeartbeatAt = &now
+	switch status {
+	case OperationStatusCompleted:
+		item.Status = OperationStatusCompleted
+		item.FinishedAt = &now
+		item.Result = mergeMap(item.Result, map[string]any{"message": "virtualization VM provision completed"})
+		if updated, err := s.repo.UpdateOperation(ctx, item); err == nil {
+			item = updated
+		}
+		s.touchProvisionedDockerHost(ctx, item, task, "ready")
+		_ = s.repo.CreateOperationLog(ctx, domaindocker.OperationLog{
+			ID:          uuid.NewString(),
+			OperationID: item.ID,
+			LogLevel:    "info",
+			Message:     "virtualization VM provision completed",
+			Payload:     map[string]any{"virtualizationTaskId": task.ID, "vmId": firstNonEmpty(task.VMID, stringValue(task.Result, "vmId"))},
+		})
+	case OperationStatusFailed, OperationStatusTimeout, OperationStatusCanceled:
+		item.Status = status
+		item.FinishedAt = &now
+		item.Result = mergeMap(item.Result, map[string]any{
+			"message": firstNonEmpty(stringValue(task.Result, "error"), stringValue(task.Result, "message"), "virtualization VM provision failed"),
+		})
+		if updated, err := s.repo.UpdateOperation(ctx, item); err == nil {
+			item = updated
+		}
+		s.touchProvisionedDockerHost(ctx, item, task, "degraded")
+		_ = s.repo.CreateOperationLog(ctx, domaindocker.OperationLog{
+			ID:          uuid.NewString(),
+			OperationID: item.ID,
+			LogLevel:    "error",
+			Message:     "virtualization VM provision failed",
+			Payload:     map[string]any{"virtualizationTaskId": task.ID, "status": status},
+		})
+	default:
+		item.Status = OperationStatusRunning
+		item.Result = mergeMap(item.Result, map[string]any{"message": "waiting for virtualization VM provision"})
+		_, _ = s.repo.UpdateOperation(ctx, item)
+	}
+}
+
+func (s *Service) touchProvisionedDockerHost(ctx context.Context, item domaindocker.Operation, task HostProvisionTask, status string) {
+	if item.HostID == "" {
+		return
+	}
+	vmID := firstNonEmpty(task.VMID, stringValue(task.Result, "vmId"))
+	vmName := firstNonEmpty(task.VMName, stringValue(task.Result, "name"))
+	_, _ = s.repo.TouchHostRuntime(ctx, item.HostID, domaindocker.HostInput{
+		Status:    status,
+		VMID:      vmID,
+		VMName:    vmName,
+		Endpoint:  firstNonEmpty(stringValue(task.Result, "endpoint"), stringValue(task.Result, "accessUrl")),
+		IPAddress: firstNonEmpty(stringValue(task.Result, "ipAddress"), stringValue(task.Result, "ip")),
+		Config: map[string]any{
+			"virtualizationTaskId":     task.ID,
+			"virtualizationTaskStatus": task.Status,
+			"virtualizationProvider":   task.Provider,
+			"vmId":                     vmID,
+			"vmName":                   vmName,
+			"hostProvisionStatus":      status,
+			"hostProvisionUpdatedAt":   time.Now().UTC().Format(time.RFC3339),
+		},
+	})
 }
 
 func (s *Service) upsertServicesFromCompose(ctx context.Context, project domaindocker.Project) error {

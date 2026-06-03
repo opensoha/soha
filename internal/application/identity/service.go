@@ -44,12 +44,14 @@ type UserRepository interface {
 	ListTeams(context.Context, string) ([]string, error)
 	ListProjects(context.Context, string) ([]string, error)
 	FindIdentity(context.Context, string, string, string) (userrepo.OIDCIdentity, error)
+	ListIdentitiesByUserID(context.Context, string) ([]userrepo.OIDCIdentity, error)
 	UpsertOIDCIdentity(context.Context, userrepo.OIDCIdentity) error
 	CreateSession(context.Context, userrepo.Session) error
 	GetSessionByRefreshID(context.Context, string) (userrepo.Session, error)
 	GetAuthSessionByID(context.Context, string) (userrepo.Session, error)
 	GetSessionByID(context.Context, string) (domainidentity.SessionRecord, error)
 	ListSessionRecords(context.Context, int) ([]domainidentity.SessionRecord, error)
+	ListSessionRecordsByUserID(context.Context, string, int) ([]domainidentity.SessionRecord, error)
 	RevokeSessionByID(context.Context, string) error
 	TouchSession(context.Context, string, time.Time) error
 	RevokeSession(context.Context, string) error
@@ -441,6 +443,112 @@ func (s *Service) RevokeSessionByID(ctx context.Context, principal domainidentit
 
 func (s *Service) CurrentPrincipal(ctx context.Context, userID string) (domainidentity.Principal, error) {
 	return s.loadPrincipal(ctx, userID)
+}
+
+func (s *Service) CurrentProfile(ctx context.Context, principal domainidentity.Principal) (domainidentity.UserProfile, error) {
+	userID := strings.TrimSpace(principal.UserID)
+	if userID == "" {
+		return domainidentity.UserProfile{}, fmt.Errorf("%w: current user is required", apperrors.ErrUnauthorized)
+	}
+	user, err := s.users.GetByID(ctx, userID)
+	if err != nil {
+		return domainidentity.UserProfile{}, fmt.Errorf("%w: user not found", apperrors.ErrUnauthorized)
+	}
+	roles, err := s.users.ListRoles(ctx, userID)
+	if err != nil {
+		return domainidentity.UserProfile{}, fmt.Errorf("list user roles: %w", err)
+	}
+	teams, err := s.users.ListTeams(ctx, userID)
+	if err != nil {
+		return domainidentity.UserProfile{}, fmt.Errorf("list user teams: %w", err)
+	}
+	projects, err := s.users.ListProjects(ctx, userID)
+	if err != nil {
+		return domainidentity.UserProfile{}, fmt.Errorf("list user projects: %w", err)
+	}
+	identities, err := s.users.ListIdentitiesByUserID(ctx, userID)
+	if err != nil {
+		return domainidentity.UserProfile{}, fmt.Errorf("list user identities: %w", err)
+	}
+	sessions, err := s.users.ListSessionRecordsByUserID(ctx, userID, 20)
+	if err != nil {
+		return domainidentity.UserProfile{}, fmt.Errorf("list user sessions: %w", err)
+	}
+
+	now := time.Now().UTC()
+	activeSessions := make([]domainidentity.SessionRecord, 0, len(sessions))
+	for _, session := range sessions {
+		if session.Status == "active" && session.ExpiresAt.After(now) {
+			activeSessions = append(activeSessions, session)
+		}
+	}
+
+	linkedIdentities := make([]domainidentity.LinkedIdentity, 0, len(identities)+1)
+	if _, err := s.users.GetPasswordHash(ctx, userID); err == nil {
+		linkedIdentities = append(linkedIdentities, domainidentity.LinkedIdentity{
+			ID:             "password:" + userID,
+			ProviderType:   "password",
+			ProviderID:     "local",
+			ProviderUserID: user.Username,
+			DisplayName:    firstNonEmpty(user.DisplayName, user.Username),
+			Email:          user.Email,
+		})
+	} else if err != nil && !errors.Is(err, userrepo.ErrNotFound) {
+		return domainidentity.UserProfile{}, fmt.Errorf("load password credential: %w", err)
+	}
+	for _, identity := range identities {
+		linkedIdentities = append(linkedIdentities, toLinkedIdentity(identity))
+	}
+
+	return domainidentity.UserProfile{
+		UserID:      user.ID,
+		Username:    user.Username,
+		DisplayName: firstNonEmpty(user.DisplayName, user.Username),
+		Email:       user.Email,
+		Status:      user.Status,
+		Roles:       roles,
+		Teams:       teams,
+		Projects:    projects,
+		Tags:        append([]string(nil), user.Tags...),
+		Identities:  linkedIdentities,
+		Sessions:    activeSessions,
+		LastLoginAt: latestLoginAt(linkedIdentities, activeSessions),
+	}, nil
+}
+
+func toLinkedIdentity(identity userrepo.OIDCIdentity) domainidentity.LinkedIdentity {
+	var lastLoginAt *time.Time
+	if !identity.LastLoginAt.IsZero() {
+		value := identity.LastLoginAt
+		lastLoginAt = &value
+	}
+	return domainidentity.LinkedIdentity{
+		ID:             identity.ID,
+		ProviderType:   identity.ProviderType,
+		ProviderID:     identity.ProviderID,
+		ProviderUserID: identity.ProviderUserID,
+		DisplayName:    firstNonEmpty(nestedString(identity.Profile, "name"), nestedString(identity.Profile, "nick"), nestedString(identity.Profile, "preferred_username")),
+		Email:          firstNonEmpty(nestedString(identity.Profile, "email"), nestedString(identity.Profile, "enterprise_email")),
+		LastLoginAt:    lastLoginAt,
+	}
+}
+
+func latestLoginAt(identities []domainidentity.LinkedIdentity, sessions []domainidentity.SessionRecord) *time.Time {
+	var latest time.Time
+	for _, identity := range identities {
+		if identity.LastLoginAt != nil && identity.LastLoginAt.After(latest) {
+			latest = *identity.LastLoginAt
+		}
+	}
+	for _, session := range sessions {
+		if session.CreatedAt.After(latest) {
+			latest = session.CreatedAt
+		}
+	}
+	if latest.IsZero() {
+		return nil
+	}
+	return &latest
 }
 
 func (s *Service) authorize(ctx context.Context, principal domainidentity.Principal, permissionKey string) error {

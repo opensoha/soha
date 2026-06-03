@@ -480,7 +480,7 @@ func imageFromAsset(connection domainvirtualization.Connection, asset infravirtu
 		sourceKind = firstNonEmpty(asset.Metadata["contentType"], asset.Type)
 	}
 	config["sourceKind"] = sourceKind
-	if sourceRef := firstNonEmpty(asset.Metadata["volid"], asset.Name); sourceRef != "" {
+	if sourceRef := firstNonEmpty(asset.Metadata["sourceRef"], asset.Metadata["volid"], asset.Metadata["vmid"], asset.Name); sourceRef != "" {
 		config["sourceRef"] = sourceRef
 	}
 	return domainvirtualization.Image{

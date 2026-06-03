@@ -2,7 +2,9 @@ package virtualization
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 
 	kubeinfra "github.com/soha/soha/internal/infrastructure/kubernetes"
@@ -12,6 +14,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic/fake"
+	"k8s.io/client-go/rest"
 	ktesting "k8s.io/client-go/testing"
 )
 
@@ -331,8 +334,17 @@ func TestKubeVirtAdapterGetConsoleURLReturnsBackendURL(t *testing.T) {
 			},
 		},
 	})
-	adapter := NewKubeVirtAdapter(stubBundleProvider{bundle: &kubeinfra.Bundle{Dynamic: client}})
-	result, err := adapter.GetConsoleURL(context.Background(), Connection{ClusterID: "c1", BackendURL: "https://k8s.example"}, VM{ID: "vm-1", Name: "demo", Namespace: "apps"})
+	adapter := NewKubeVirtAdapter(stubBundleProvider{bundle: &kubeinfra.Bundle{
+		Dynamic: client,
+		RESTConfig: &rest.Config{
+			Host:        "https://k8s.example",
+			BearerToken: "token-1",
+			TLSClientConfig: rest.TLSClientConfig{
+				Insecure: true,
+			},
+		},
+	}})
+	result, err := adapter.GetConsoleURL(context.Background(), Connection{ClusterID: "c1"}, VM{ID: "vm-1", Name: "demo", Namespace: "apps"})
 	if err != nil {
 		t.Fatalf("GetConsoleURL() error = %v", err)
 	}
@@ -341,6 +353,19 @@ func TestKubeVirtAdapterGetConsoleURLReturnsBackendURL(t *testing.T) {
 	}
 	if result.BackendURL != "https://k8s.example/apis/subresources.kubevirt.io/v1/namespaces/apps/virtualmachineinstances/demo/vnc" {
 		t.Fatalf("backendURL = %q", result.BackendURL)
+	}
+	if result.BackendHeaders.Get("Authorization") != "Bearer token-1" {
+		t.Fatalf("Authorization header = %q", result.BackendHeaders.Get("Authorization"))
+	}
+	if result.BackendTLSConfig == nil || !result.BackendTLSConfig.InsecureSkipVerify {
+		t.Fatalf("BackendTLSConfig = %#v, want kube REST TLS config", result.BackendTLSConfig)
+	}
+	raw, err := json.Marshal(result)
+	if err != nil {
+		t.Fatalf("marshal console result: %v", err)
+	}
+	if strings.Contains(string(raw), "token-1") || strings.Contains(string(raw), "BackendHeaders") || strings.Contains(string(raw), "BackendTLSConfig") {
+		t.Fatalf("console result leaked backend internals: %s", raw)
 	}
 }
 

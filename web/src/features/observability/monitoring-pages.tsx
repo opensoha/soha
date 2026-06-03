@@ -2,9 +2,12 @@ import { useMemo, useState } from 'react'
 import {
   AlertOutlined,
   BellOutlined,
+  CopyOutlined,
   EditOutlined,
+  ExperimentOutlined,
   EyeOutlined,
   FireOutlined,
+  LinkOutlined,
   NotificationOutlined,
   PlusOutlined,
   ReloadOutlined,
@@ -100,6 +103,106 @@ interface MonitoringSummary {
   lastReceivedAt?: string
 }
 
+interface AlertIntegration {
+  id: string
+  name: string
+  integrationType: string
+  description?: string
+  token?: string
+  tokenPreview?: string
+  webhookPath?: string
+  labelMapping?: Record<string, unknown>
+  dedupeConfig?: Record<string, unknown>
+  enabled: boolean
+  status: string
+  lastError?: string
+  lastReceivedAt?: string
+  createdAt?: string
+  updatedAt?: string
+}
+
+interface AlertIntegrationTestResult {
+  integrationType: string
+  source: string
+  acceptedCount: number
+  alerts: Array<Record<string, unknown>>
+  summary?: string
+}
+
+const alertIntegrationTypeOptions = [
+  { value: 'alertmanager_v1', label: 'Alertmanager v1' },
+  { value: 'grafana_alerting_v1', label: 'Grafana Alerting' },
+  { value: 'generic_json', label: 'Generic Webhook' },
+]
+
+function alertIntegrationTypeLabel(value?: string) {
+  return alertIntegrationTypeOptions.find((item) => item.value === value)?.label || value || '-'
+}
+
+function alertIntegrationSamplePayload(type: string) {
+  if (type === 'alertmanager_v1') {
+    return prettyJson({
+      receiver: 'soha',
+      status: 'firing',
+      groupLabels: { alertname: 'HighCPU' },
+      commonLabels: { severity: 'critical', cluster: 'prod-a', namespace: 'checkout', service: 'api' },
+      commonAnnotations: { summary: 'CPU 使用率过高' },
+      externalURL: 'https://alertmanager.example.com',
+      alerts: [
+        {
+          status: 'firing',
+          labels: { alertname: 'HighCPU', pod: 'checkout-api-0' },
+          annotations: { description: 'checkout-api CPU 使用率超过阈值' },
+          startsAt: new Date().toISOString(),
+          generatorURL: 'https://prometheus.example.com/graph',
+        },
+      ],
+    })
+  }
+  if (type === 'grafana_alerting_v1') {
+    return prettyJson({
+      receiver: 'soha',
+      status: 'firing',
+      title: 'Grafana alert',
+      message: 'Grafana rule entered alerting state',
+      commonLabels: { severity: 'warning', cluster: 'prod-a', service: 'checkout' },
+      commonAnnotations: { summary: 'Grafana 指标异常' },
+      externalURL: 'https://grafana.example.com',
+      alerts: [
+        {
+          status: 'firing',
+          labels: { alertname: 'LatencyHigh', rule_uid: 'rule-001', namespace: 'checkout' },
+          annotations: { description: 'p95 延迟超过阈值' },
+          startsAt: new Date().toISOString(),
+          dashboardURL: 'https://grafana.example.com/d/checkout',
+        },
+      ],
+    })
+  }
+  return prettyJson({
+    source: 'external-system',
+    alerts: [
+      {
+        title: 'External alert',
+        summary: '第三方系统告警',
+        severity: 'warning',
+        status: 'firing',
+        clusterId: 'prod-a',
+        namespace: 'checkout',
+        labels: { service: 'checkout', role: 'ops' },
+        annotations: { summary: '第三方系统告警' },
+        startsAt: new Date().toISOString(),
+      },
+    ],
+  })
+}
+
+function buildWebhookURL(path?: string) {
+  if (!path) return ''
+  if (typeof window === 'undefined') return path
+  return `${window.location.origin}${path}`
+}
+
 export function MonitoringPage() {
   const navigate = useNavigate()
   const summaryQuery = useQuery({
@@ -113,6 +216,10 @@ export function MonitoringPage() {
   const rulesQuery = useQuery({
     queryKey: ['monitoring-overview-rules'],
     queryFn: () => api.get<ApiResponse<Array<{ id: string; name: string; enabled: boolean; updatedAt?: string }>>>('/alert-rules'),
+  })
+  const integrationsQuery = useQuery({
+    queryKey: ['monitoring-overview-integrations'],
+    queryFn: () => api.get<ApiResponse<AlertIntegration[]>>('/alert-integrations'),
   })
   const policiesQuery = useQuery({
     queryKey: ['monitoring-overview-policies'],
@@ -130,10 +237,12 @@ export function MonitoringPage() {
   const summary = summaryQuery.data?.data
   const recentAlerts = alertsQuery.data?.data ?? []
   const rules = rulesQuery.data?.data ?? []
+  const integrations = integrationsQuery.data?.data ?? []
   const policies = policiesQuery.data?.data ?? []
   const oncallSchedules = oncallQuery.data?.data ?? []
   const healingRuns = healingRunsQuery.data?.data ?? []
   const enabledRules = rules.filter((item) => item.enabled).length
+  const enabledIntegrations = integrations.filter((item) => item.enabled).length
   const enabledPolicies = policies.filter((item) => item.enabled).length
   const enabledOncall = oncallSchedules.filter((item) => item.enabled).length
   const pendingHealing = healingRuns.filter((item) => !isTerminalStatus(item.status)).length
@@ -184,6 +293,7 @@ export function MonitoringPage() {
   ]
 
   const operationStats = [
+    { key: 'integrations', label: '启用集成', value: enabledIntegrations, helper: `共 ${integrations.length} 个来源`, icon: <LinkOutlined />, tone: 'default' },
     { key: 'policies', label: '启用通知策略', value: enabledPolicies, helper: `共 ${policies.length} 条策略`, icon: <NotificationOutlined />, tone: 'default' },
     { key: 'oncall', label: '启用值班表', value: enabledOncall, helper: `共 ${oncallSchedules.length} 张值班表`, icon: <TeamOutlined />, tone: 'default' },
     { key: 'healing', label: '待处理自愈', value: pendingHealing, helper: `最近 ${healingRuns.length} 条运行`, icon: <ReloadOutlined />, tone: pendingHealing > 0 ? 'warning' : 'default' },
@@ -299,6 +409,342 @@ export function MonitoringPage() {
           </div>
         )}
       </Card>
+    </div>
+  )
+}
+
+export function AlertIntegrationsPage() {
+  const { message } = App.useApp()
+  const queryClient = useQueryClient()
+  const permissionSnapshotQuery = usePermissionSnapshot()
+  const canManageIntegrations = hasPermission(permissionSnapshotQuery.data?.data, 'observe.alert-integrations.manage')
+  const [editorForm] = Form.useForm<Record<string, unknown>>()
+  const [testForm] = Form.useForm<Record<string, unknown>>()
+  const [editorOpen, setEditorOpen] = useState(false)
+  const [testOpen, setTestOpen] = useState(false)
+  const [editingIntegration, setEditingIntegration] = useState<AlertIntegration | null>(null)
+  const [createdSecret, setCreatedSecret] = useState<AlertIntegration | null>(null)
+  const [testResult, setTestResult] = useState<AlertIntegrationTestResult | null>(null)
+
+  const integrationsQuery = useQuery({
+    queryKey: ['alert-integrations'],
+    queryFn: () => api.get<ApiResponse<AlertIntegration[]>>('/alert-integrations'),
+  })
+
+  const createIntegration = useMutation({
+    mutationFn: (payload: Record<string, unknown>) => api.post<ApiResponse<AlertIntegration>>('/alert-integrations', payload),
+    onSuccess: (payload) => {
+      message.success('告警集成已创建')
+      queryClient.invalidateQueries({ queryKey: ['alert-integrations'] })
+      queryClient.invalidateQueries({ queryKey: ['monitoring-overview-integrations'] })
+      setEditorOpen(false)
+      setEditingIntegration(null)
+      if (payload.data?.token) {
+        setCreatedSecret(payload.data)
+      }
+    },
+    onError: (err: Error) => message.error(err.message),
+  })
+
+  const updateIntegration = useMutation({
+    mutationFn: ({ id, payload }: { id: string; payload: Record<string, unknown> }) => api.put<ApiResponse<AlertIntegration>>(`/alert-integrations/${id}`, payload),
+    onSuccess: (payload) => {
+      message.success('告警集成已更新')
+      queryClient.invalidateQueries({ queryKey: ['alert-integrations'] })
+      queryClient.invalidateQueries({ queryKey: ['monitoring-overview-integrations'] })
+      setEditorOpen(false)
+      setEditingIntegration(null)
+      if (payload.data?.token) {
+        setCreatedSecret(payload.data)
+      }
+    },
+    onError: (err: Error) => message.error(err.message),
+  })
+
+  const testIntegration = useMutation({
+    mutationFn: (payload: Record<string, unknown>) => api.post<ApiResponse<AlertIntegrationTestResult>>('/alert-integrations/test', payload),
+    onSuccess: (payload) => {
+      setTestResult(payload.data ?? null)
+      message.success('Payload 已归一化')
+    },
+    onError: (err: Error) => message.error(err.message),
+  })
+
+  function copyText(value: string, label: string) {
+    const text = value.trim()
+    if (!text || !navigator.clipboard) {
+      message.warning(`${label}不可复制`)
+      return
+    }
+    navigator.clipboard.writeText(text).then(
+      () => message.success(`${label}已复制`),
+      () => message.error('复制失败'),
+    )
+  }
+
+  function openEditor(record: AlertIntegration | null) {
+    setEditingIntegration(record)
+    setEditorOpen(true)
+    editorForm.setFieldsValue(record ? {
+      id: record.id,
+      name: record.name,
+      integrationType: record.integrationType,
+      description: record.description || '',
+      token: '',
+      labelMapping: prettyJson(record.labelMapping ?? {}),
+      dedupeConfig: prettyJson(record.dedupeConfig ?? {}),
+      enabled: record.enabled,
+    } : {
+      id: '',
+      name: '',
+      integrationType: 'alertmanager_v1',
+      description: '',
+      token: '',
+      labelMapping: '{\n  "clusterId": "cluster",\n  "namespace": "namespace",\n  "service": "service",\n  "role": "role"\n}',
+      dedupeConfig: '{\n  "fingerprintLabels": ["alertname", "cluster", "namespace", "service"]\n}',
+      enabled: true,
+    })
+  }
+
+  function openTest(record?: AlertIntegration) {
+    const integrationType = record?.integrationType || 'alertmanager_v1'
+    setTestResult(null)
+    setTestOpen(true)
+    testForm.setFieldsValue({
+      integrationType,
+      labelMapping: prettyJson(record?.labelMapping ?? {}),
+      dedupeConfig: prettyJson(record?.dedupeConfig ?? {}),
+      payload: alertIntegrationSamplePayload(integrationType),
+    })
+  }
+
+  function submitEditor(values: Record<string, unknown>) {
+    try {
+      const payload = {
+        id: values.id,
+        name: values.name,
+        integrationType: values.integrationType,
+        description: values.description || '',
+        token: values.token || '',
+        labelMapping: safeParseJson(String(values.labelMapping || '{}'), {}),
+        dedupeConfig: safeParseJson(String(values.dedupeConfig || '{}'), {}),
+        enabled: Boolean(values.enabled),
+      }
+      if (editingIntegration?.id) {
+        updateIntegration.mutate({ id: editingIntegration.id, payload })
+        return
+      }
+      createIntegration.mutate(payload)
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : '保存失败')
+    }
+  }
+
+  function submitTest(values: Record<string, unknown>) {
+    try {
+      testIntegration.mutate({
+        integrationType: values.integrationType,
+        labelMapping: safeParseJson(String(values.labelMapping || '{}'), {}),
+        dedupeConfig: safeParseJson(String(values.dedupeConfig || '{}'), {}),
+        payload: safeParseJson(String(values.payload || '{}'), {}),
+      })
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : '测试失败')
+    }
+  }
+
+  const columns: ColumnsType<AlertIntegration> = [
+    {
+      title: '名称',
+      dataIndex: 'name',
+      width: 220,
+      render: (value: string, record) => (
+        <Space orientation="vertical" size={2}>
+          <Text strong>{value || record.id}</Text>
+          <Text type="secondary" className="text-xs">{record.id}</Text>
+        </Space>
+      ),
+    },
+    { title: '来源类型', dataIndex: 'integrationType', width: 180, render: (value: string) => <Tag>{alertIntegrationTypeLabel(value)}</Tag> },
+    {
+      title: 'Webhook',
+      dataIndex: 'webhookPath',
+      width: 360,
+      ellipsis: true,
+      render: (value: string) => {
+        const webhookURL = buildWebhookURL(value)
+        return webhookURL ? (
+          <Space size={4}>
+            <Text code ellipsis style={{ maxWidth: 290 }}>{webhookURL}</Text>
+            <ManagementIconButton
+              aria-label="复制 Webhook 地址"
+              icon={<CopyOutlined />}
+              size="small"
+              tooltip="复制地址"
+              onClick={() => copyText(webhookURL, 'Webhook 地址')}
+            />
+          </Space>
+        ) : '-'
+      },
+    },
+    { title: 'Token', dataIndex: 'tokenPreview', width: 140, render: (value: string) => value ? <Text code>{value}</Text> : '-' },
+    {
+      ...tableColumnPresets.status,
+      title: '状态',
+      dataIndex: 'status',
+      render: (value: string, record) => (
+        <Space size={4}>
+          <StatusTag value={value || 'pending'} />
+          <BooleanTag value={record.enabled} trueLabel="启用" falseLabel="禁用" />
+        </Space>
+      ),
+    },
+    { title: '最近接收', dataIndex: 'lastReceivedAt', width: 180, render: (value: string) => formatDateTime(value) },
+    { title: '错误', dataIndex: 'lastError', ellipsis: true, render: (value: string) => value || '-' },
+    {
+      ...tableColumnPresets.action,
+      title: '操作',
+      dataIndex: 'id',
+      render: (_: string, record) => (
+        <Space className="soha-row-action-icons" size={2}>
+          <ManagementIconButton
+            aria-label="测试告警集成"
+            icon={<ExperimentOutlined />}
+            size="small"
+            tooltip="测试"
+            onClick={() => openTest(record)}
+          />
+          <ManagementIconButton
+            aria-label="复制 Webhook 地址"
+            icon={<CopyOutlined />}
+            size="small"
+            tooltip="复制地址"
+            onClick={() => copyText(buildWebhookURL(record.webhookPath), 'Webhook 地址')}
+          />
+          {canManageIntegrations ? (
+            <ManagementIconButton
+              aria-label="编辑告警集成"
+              icon={<EditOutlined />}
+              size="small"
+              tooltip="编辑"
+              onClick={() => openEditor(record)}
+            />
+          ) : null}
+        </Space>
+      ),
+    },
+  ]
+
+  return (
+    <div className="soha-page">
+      <ManagementDetailHeader
+        title="告警集成"
+        description="接入 Alertmanager、Grafana Alerting 和第三方 Webhook，并归一化为 Soha 告警事件。"
+        actions={canManageIntegrations ? (
+          <ManagementTableToolbar>
+            <Button icon={<ExperimentOutlined />} onClick={() => openTest()}>测试 Payload</Button>
+            <Button icon={<PlusOutlined />} type="primary" onClick={() => openEditor(null)}>新建集成</Button>
+          </ManagementTableToolbar>
+        ) : null}
+      />
+      <AdminTable
+        columnSettingIconOnly
+        columnSettingPlacement="header"
+        shellClassName="soha-management-table-shell"
+        columns={columns}
+        dataSource={integrationsQuery.data?.data ?? []}
+        empty={<ManagementState bordered={false} compact description="暂无告警集成" />}
+        rowKey="id"
+        loading={integrationsQuery.isLoading}
+        pageSize={20}
+        scroll={{ x: 'max-content' }}
+      />
+
+      <Modal
+        title={editingIntegration ? '编辑告警集成' : '新建告警集成'}
+        open={editorOpen}
+        onCancel={() => setEditorOpen(false)}
+        footer={null}
+        destroyOnHidden
+        width={820}
+      >
+        <Form layout="vertical" form={editorForm} onFinish={submitEditor} initialValues={{ integrationType: 'alertmanager_v1', enabled: true }}>
+          <Form.Item name="name" label="名称" rules={[{ required: true }]}><Input /></Form.Item>
+          <Space size={16} style={{ width: '100%' }}>
+            <Form.Item name="id" label="集成 ID" style={{ flex: 1 }}>
+              <Input disabled={Boolean(editingIntegration)} placeholder="留空自动生成" />
+            </Form.Item>
+            <Form.Item name="integrationType" label="来源类型" rules={[{ required: true }]} style={{ flex: 1 }}>
+              <Select options={alertIntegrationTypeOptions} />
+            </Form.Item>
+          </Space>
+          <Form.Item name="description" label="描述"><Input.TextArea rows={2} /></Form.Item>
+          <Form.Item name="token" label="Token">
+            <Input.Password placeholder={editingIntegration ? '留空则不轮换' : '留空自动生成'} />
+          </Form.Item>
+          <Form.Item name="labelMapping" label="标签映射(JSON)"><Input.TextArea rows={5} /></Form.Item>
+          <Form.Item name="dedupeConfig" label="去重配置(JSON)"><Input.TextArea rows={4} /></Form.Item>
+          <Form.Item name="enabled" label="启用" valuePropName="checked"><Switch /></Form.Item>
+          <Space>
+            <Button type="primary" htmlType="submit" loading={createIntegration.isPending || updateIntegration.isPending}>保存</Button>
+            <Button onClick={() => setEditorOpen(false)}>取消</Button>
+          </Space>
+        </Form>
+      </Modal>
+
+      <Modal
+        title="测试 Payload"
+        open={testOpen}
+        onCancel={() => setTestOpen(false)}
+        footer={null}
+        destroyOnHidden
+        width={920}
+      >
+        <Form layout="vertical" form={testForm} onFinish={submitTest} initialValues={{ integrationType: 'alertmanager_v1' }}>
+          <Form.Item name="integrationType" label="来源类型" rules={[{ required: true }]}>
+            <Select
+              options={alertIntegrationTypeOptions}
+              onChange={(value) => testForm.setFieldValue('payload', alertIntegrationSamplePayload(String(value)))}
+            />
+          </Form.Item>
+          <Space size={16} style={{ width: '100%' }} align="start">
+            <Form.Item name="labelMapping" label="标签映射(JSON)" style={{ flex: 1 }}><Input.TextArea rows={5} /></Form.Item>
+            <Form.Item name="dedupeConfig" label="去重配置(JSON)" style={{ flex: 1 }}><Input.TextArea rows={5} /></Form.Item>
+          </Space>
+          <Form.Item name="payload" label="Payload(JSON)" rules={[{ required: true }]}><Input.TextArea rows={10} /></Form.Item>
+          <Space>
+            <Button type="primary" htmlType="submit" loading={testIntegration.isPending}>归一化测试</Button>
+            <Button onClick={() => setTestOpen(false)}>关闭</Button>
+          </Space>
+        </Form>
+        {testResult ? (
+          <Input.TextArea
+            style={{ marginTop: 16 }}
+            rows={8}
+            readOnly
+            value={prettyJson(testResult)}
+          />
+        ) : null}
+      </Modal>
+
+      <Modal
+        title="集成 Token"
+        open={Boolean(createdSecret)}
+        onCancel={() => setCreatedSecret(null)}
+        footer={<Button type="primary" onClick={() => setCreatedSecret(null)}>完成</Button>}
+        destroyOnHidden
+      >
+        <Space orientation="vertical" style={{ width: '100%' }} size={12}>
+          <Input readOnly value={createdSecret?.token || ''} />
+          <Button
+            icon={<CopyOutlined />}
+            onClick={() => copyText(createdSecret?.token || '', 'Token')}
+          >
+            复制 Token
+          </Button>
+          <Text type="secondary">关闭后仅显示 Token 摘要。</Text>
+        </Space>
+      </Modal>
     </div>
   )
 }

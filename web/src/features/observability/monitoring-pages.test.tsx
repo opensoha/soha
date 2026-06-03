@@ -7,7 +7,7 @@ import { createRoot } from 'react-dom/client'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { PermissionSnapshot } from '@/types'
-import { AlertsPage, EventsPage, NotificationsPage } from './monitoring-pages'
+import { AlertIntegrationsPage, AlertsPage, EventsPage, NotificationsPage } from './monitoring-pages'
 
 const testState = vi.hoisted(() => ({
   snapshot: {
@@ -95,6 +95,18 @@ function setDefaultResponses() {
     '/alert-silences': [],
     '/alert-events': [
       { id: 'evt-1', title: 'CPU High', summary: 'CPU > 90%', severity: 'critical', status: 'firing', sourceType: 'prometheus', sourceSystem: 'prometheus-main', clusterId: 'cluster-a', namespace: 'default', startsAt: '2026-05-06T10:00:00Z', lastSeenAt: '2026-05-06T10:05:00Z' },
+    ],
+    '/alert-integrations': [
+      {
+        id: 'integration:alertmanager',
+        name: 'Alertmanager',
+        integrationType: 'alertmanager_v1',
+        tokenPreview: 'secret...0001',
+        webhookPath: '/api/v1/integrations/alerts/integration:alertmanager/webhook',
+        enabled: true,
+        status: 'active',
+        lastReceivedAt: '2026-05-06T10:05:00Z',
+      },
     ],
     '/healing-policies': [
       { id: 'heal-1', name: 'Restart Workload', enabled: true },
@@ -268,6 +280,8 @@ describe('observability monitoring pages', () => {
       'observe.notifications.manage',
       'observe.alerts.view',
       'observe.healing.manage',
+      'observe.alert-integrations.view',
+      'observe.alert-integrations.manage',
     ])
     setDefaultResponses()
   })
@@ -296,6 +310,17 @@ describe('observability monitoring pages', () => {
     expect(container.textContent).toContain('Primary Slack')
     expect(container.textContent).toContain('{"severity":"critical"}')
     expect(apiGetMock).toHaveBeenCalledWith('/alert-routes')
+  })
+
+  it('renders alert integrations from the backend integration registry', async () => {
+    const container = await renderWithProviders(<AlertIntegrationsPage />, '/monitoring-workbench/integrations')
+
+    expect(container.textContent).toContain('告警集成')
+    expect(container.textContent).toContain('Alertmanager')
+    expect(container.textContent).toContain('Alertmanager v1')
+    expect(container.textContent).toContain('secret...0001')
+    expect(container.textContent).toContain('rows:1')
+    expect(apiGetMock).toHaveBeenCalledWith('/alert-integrations')
   })
 
   it('opens the unified alert event drawer and loads detail fan-out queries from the list page', async () => {

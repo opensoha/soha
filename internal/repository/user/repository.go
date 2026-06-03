@@ -262,6 +262,29 @@ func (r *Repository) FindIdentity(ctx context.Context, providerType, providerID,
 	return scanIdentity(row)
 }
 
+func (r *Repository) ListIdentitiesByUserID(ctx context.Context, userID string) ([]OIDCIdentity, error) {
+	rows, err := r.db.WithContext(ctx).Raw(`
+		SELECT id, user_id, provider_type, provider_id, provider_user_id, profile, last_login_at
+		FROM user_identities
+		WHERE user_id = ?
+		ORDER BY provider_type ASC, provider_id ASC, provider_user_id ASC
+	`, userID).Rows()
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := make([]OIDCIdentity, 0)
+	for rows.Next() {
+		item, err := scanIdentityRows(rows)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
 func (r *Repository) UpsertOIDCIdentity(ctx context.Context, identity OIDCIdentity) error {
 	profile, err := json.Marshal(identity.Profile)
 	if err != nil {
@@ -368,6 +391,42 @@ func (r *Repository) ListSessionRecords(ctx context.Context, limit int) ([]domai
 		ORDER BY CASE WHEN s.last_seen_at IS NULL THEN 1 ELSE 0 END ASC, s.last_seen_at DESC, s.created_at DESC
 		LIMIT ?
 	`, limit).Rows()
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := make([]domainidentity.SessionRecord, 0, limit)
+	for rows.Next() {
+		item, err := scanSessionRecordRows(rows)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+func (r *Repository) ListSessionRecordsByUserID(ctx context.Context, userID string, limit int) ([]domainidentity.SessionRecord, error) {
+	rows, err := r.db.WithContext(ctx).Raw(`
+		SELECT
+			s.id,
+			s.user_id,
+			u.display_name,
+			u.email,
+			s.provider_type,
+			s.status,
+			s.expires_at,
+			s.last_seen_at,
+			s.created_at,
+			s.refresh_token_id,
+			s.metadata
+		FROM sessions s
+		JOIN users u ON u.id = s.user_id
+		WHERE s.user_id = ?
+		ORDER BY CASE WHEN s.last_seen_at IS NULL THEN 1 ELSE 0 END ASC, s.last_seen_at DESC, s.created_at DESC
+		LIMIT ?
+	`, userID, limit).Rows()
 	if err != nil {
 		return nil, err
 	}
@@ -808,6 +867,22 @@ func scanIdentity(row *sql.Row) (OIDCIdentity, error) {
 		if errors.Is(err, sql.ErrNoRows) {
 			return OIDCIdentity{}, ErrNotFound
 		}
+		return OIDCIdentity{}, err
+	}
+	if len(profile) > 0 {
+		_ = json.Unmarshal(profile, &identity.Profile)
+	}
+	if lastLoginAt.Valid {
+		identity.LastLoginAt = lastLoginAt.Time
+	}
+	return identity, nil
+}
+
+func scanIdentityRows(rows *sql.Rows) (OIDCIdentity, error) {
+	var identity OIDCIdentity
+	var profile []byte
+	var lastLoginAt sql.NullTime
+	if err := rows.Scan(&identity.ID, &identity.UserID, &identity.ProviderType, &identity.ProviderID, &identity.ProviderUserID, &profile, &lastLoginAt); err != nil {
 		return OIDCIdentity{}, err
 	}
 	if len(profile) > 0 {

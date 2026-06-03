@@ -1,21 +1,31 @@
-import { forwardRef } from 'react'
-import type { ReactNode } from 'react'
+import { forwardRef, useEffect, useRef, useState } from 'react'
+import type { CSSProperties, ReactNode } from 'react'
 import { Alert, Button, Card, Empty, Form, Space, Spin, Tooltip, Typography } from 'antd'
 import type { AlertProps, ButtonProps, FormProps } from 'antd'
-import { ColumnHeightOutlined, ReloadOutlined } from '@ant-design/icons'
+import { ColumnHeightOutlined, DownOutlined, ReloadOutlined, UpOutlined } from '@ant-design/icons'
 
 const { Text } = Typography
 
-interface ManagementQueryPanelProps extends Pick<FormProps, 'onFinish'> {
+interface ManagementQueryPanelProps extends Pick<FormProps, 'form' | 'initialValues' | 'onFinish'> {
   actions: ReactNode
   children: ReactNode
+  collapsible?: boolean
+  defaultExpanded?: boolean
   expanded?: boolean
+  lessLabel?: ReactNode
+  moreLabel?: ReactNode
+  onExpandedChange?: (expanded: boolean) => void
 }
 
 interface ManagementQueryGridProps {
   actions: ReactNode
   children: ReactNode
+  collapsible?: boolean
+  defaultExpanded?: boolean
   expanded?: boolean
+  lessLabel?: ReactNode
+  moreLabel?: ReactNode
+  onExpandedChange?: (expanded: boolean) => void
 }
 
 interface ManagementTableToolbarProps {
@@ -31,6 +41,12 @@ interface ManagementBatchBarProps {
 
 interface ManagementIconButtonProps extends Omit<ButtonProps, 'children' | 'type'> {
   tooltip: ReactNode
+}
+
+interface ManagementQueryFieldProps extends React.ComponentProps<typeof Form.Item> {
+  grow?: boolean
+  minWidth?: number | string
+  width?: number | string
 }
 
 interface ManagementDetailHeaderProps {
@@ -108,11 +124,35 @@ function classNames(...items: Array<string | false | null | undefined>) {
   return items.filter(Boolean).join(' ')
 }
 
-export function ManagementQueryPanel({ actions, children, expanded = false, onFinish }: ManagementQueryPanelProps) {
+function formatQueryFieldSize(value?: number | string) {
+  if (typeof value === 'number') return `${value}px`
+  return value
+}
+
+export function ManagementQueryPanel({
+  actions,
+  children,
+  collapsible = false,
+  defaultExpanded = false,
+  expanded,
+  lessLabel,
+  moreLabel,
+  onExpandedChange,
+  onFinish,
+  ...formProps
+}: ManagementQueryPanelProps) {
   return (
     <Card className="soha-management-query-card" variant="outlined">
-      <Form className="soha-management-query-form" layout="horizontal" onFinish={onFinish}>
-        <ManagementQueryGrid actions={actions} expanded={expanded}>
+      <Form {...formProps} className="soha-management-query-form" layout="horizontal" onFinish={onFinish}>
+        <ManagementQueryGrid
+          actions={actions}
+          collapsible={collapsible}
+          defaultExpanded={defaultExpanded}
+          expanded={expanded}
+          lessLabel={lessLabel}
+          moreLabel={moreLabel}
+          onExpandedChange={onExpandedChange}
+        >
           {children}
         </ManagementQueryGrid>
       </Form>
@@ -120,17 +160,98 @@ export function ManagementQueryPanel({ actions, children, expanded = false, onFi
   )
 }
 
-export function ManagementQueryGrid({ actions, children, expanded = false }: ManagementQueryGridProps) {
+export function ManagementQueryGrid({
+  actions,
+  children,
+  collapsible = false,
+  defaultExpanded = false,
+  expanded,
+  lessLabel = '收起',
+  moreLabel = '更多',
+  onExpandedChange,
+}: ManagementQueryGridProps) {
+  const fieldsRef = useRef<HTMLDivElement | null>(null)
+  const isControlled = typeof expanded === 'boolean'
+  const [internalExpanded, setInternalExpanded] = useState(defaultExpanded)
+  const [canExpand, setCanExpand] = useState(false)
+  const activeExpanded = isControlled ? Boolean(expanded) : internalExpanded
+
+  useEffect(() => {
+    if (!collapsible) return undefined
+    const fields = fieldsRef.current
+    if (!fields) return undefined
+
+    const measure = () => {
+      const firstField = fields.querySelector<HTMLElement>('.soha-management-query-field')
+      const collapsedHeight = firstField?.offsetHeight || 28
+      setCanExpand(fields.scrollHeight > collapsedHeight + 2)
+    }
+
+    measure()
+
+    if (typeof ResizeObserver !== 'undefined') {
+      const observer = new ResizeObserver(measure)
+      observer.observe(fields)
+      Array.from(fields.children).forEach((child) => observer.observe(child))
+      return () => observer.disconnect()
+    }
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener('resize', measure)
+      return () => window.removeEventListener('resize', measure)
+    }
+
+    return undefined
+  }, [children, collapsible])
+
+  const updateExpanded = (nextExpanded: boolean) => {
+    if (!isControlled) {
+      setInternalExpanded(nextExpanded)
+    }
+    onExpandedChange?.(nextExpanded)
+  }
+
+  const toggleButton = collapsible && canExpand ? (
+    <Button
+      aria-expanded={activeExpanded}
+      autoInsertSpace={false}
+      className="soha-management-query-more-button"
+      htmlType="button"
+      icon={activeExpanded ? <UpOutlined /> : <DownOutlined />}
+      iconPosition="end"
+      size="small"
+      type="link"
+      onClick={() => updateExpanded(!activeExpanded)}
+    >
+      {activeExpanded ? lessLabel : moreLabel}
+    </Button>
+  ) : null
+
   return (
-    <div className={classNames('soha-management-query-grid', expanded ? 'is-expanded' : 'is-collapsed')}>
-      <div className="soha-management-query-fields">{children}</div>
-      <div className="soha-management-query-actions">{actions}</div>
+    <div className={classNames('soha-management-query-grid', activeExpanded ? 'is-expanded' : 'is-collapsed', collapsible && 'is-collapsible')}>
+      <div ref={fieldsRef} className="soha-management-query-fields">{children}</div>
+      <div className="soha-management-query-actions">
+        {actions}
+        {toggleButton}
+      </div>
     </div>
   )
 }
 
-export function ManagementQueryField(props: React.ComponentProps<typeof Form.Item>) {
-  return <Form.Item {...props} className={classNames('soha-management-query-field', props.className)} />
+export function ManagementQueryField({ grow = false, minWidth, style, width, ...props }: ManagementQueryFieldProps) {
+  const fieldStyle = {
+    ...style,
+    ...(width ? { '--soha-management-query-field-width': formatQueryFieldSize(width) } : {}),
+    ...(minWidth ? { '--soha-management-query-field-min-width': formatQueryFieldSize(minWidth) } : {}),
+  } as CSSProperties
+
+  return (
+    <Form.Item
+      {...props}
+      className={classNames('soha-management-query-field', grow && 'is-fluid', props.className)}
+      style={fieldStyle}
+    />
+  )
 }
 
 export function ManagementTableToolbar({ batchBar, children }: ManagementTableToolbarProps) {

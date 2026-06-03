@@ -640,7 +640,7 @@ func onCallResolveInputFromEvent(event domainalert.AlertEvent) domainalert.OnCal
 	return normalizeOnCallResolveInput(domainalert.OnCallResolveInput{
 		AlertID:         event.ID,
 		IntegrationID:   firstNonEmpty(event.SourceSystem, labels["integrationId"], labels["integration"]),
-		IntegrationType: firstNonEmpty(event.SourceType, labels["integrationType"], labels["sourceType"]),
+		IntegrationType: firstNonEmpty(labels["integrationType"], labels["sourceType"], event.SourceType),
 		BusinessLineID:  firstNonEmpty(labels["businessLineId"], labels["business_line_id"], labels["businessLine"], labels["business"]),
 		AlertCategory:   firstNonEmpty(labels["alertCategory"], labels["category"], labels["alert_type"], labels["alertType"], event.SourceType),
 		AlertName:       firstNonEmpty(labels["alertName"], labels["alert"], event.Title),

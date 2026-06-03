@@ -17,6 +17,7 @@ This keeps alert governance inside the platform instead of scattering logic acro
 
 - `/monitoring-workbench`
 - `/monitoring-workbench/overview`
+- `/monitoring-workbench/integrations`
 - `/monitoring-workbench/alerts`
 - `/monitoring-workbench/rules`
 - `/monitoring-workbench/notifications`
@@ -31,6 +32,13 @@ This keeps alert governance inside the platform instead of scattering logic acro
 The repository now has a real monitoring ingress baseline, not just placeholders.
 
 - inbound webhook: `POST /api/v1/integrations/alerts/webhook`
+- registered integration webhook: `POST /api/v1/integrations/alerts/:integrationID/webhook`
+- alert integration management APIs:
+  - `GET /api/v1/alert-integrations`
+  - `GET /api/v1/alert-integrations/:integrationID`
+  - `POST /api/v1/alert-integrations`
+  - `PUT /api/v1/alert-integrations/:integrationID`
+  - `POST /api/v1/alert-integrations/test`
 - summary API: `GET /api/v1/monitoring/summary`
 - alert inventory API: `GET /api/v1/alerts`
 - alert governance APIs:
@@ -48,6 +56,7 @@ The repository now has a real monitoring ingress baseline, not just placeholders
   - `GET /api/v1/alert-delivery-logs`
 - frontend pages:
   - `/monitoring-workbench/overview`
+  - `/monitoring-workbench/integrations`
   - `/monitoring-workbench/alerts`
   - `/monitoring-workbench/notifications`
   - `/monitoring-workbench/oncall`
@@ -56,6 +65,7 @@ The repository now has a real monitoring ingress baseline, not just placeholders
 
 Current persistence behavior:
 
+- registered alert sources are written to `alert_integrations`
 - normalized alerts are written to `alert_instances`
 - notification channel definitions are written to `notification_channels`
 - silence windows are written to `alert_silences`
@@ -65,6 +75,7 @@ Current persistence behavior:
 This means the platform now owns:
 
 - alert ingestion
+- alert integration registration for Alertmanager, Grafana Alerting, and Generic Webhook payloads
 - route matching
 - downstream fan-out logging
 - silence-based suppression
@@ -86,16 +97,13 @@ This means the platform now owns:
 - `internal/application/monitoring`
   - alert ingestion orchestration
   - alert normalization
+  - alert integration registration and payload adapter orchestration
   - silence, ack, assign, resolve workflow
 - `internal/application/notification`
   - channel dispatch orchestration
   - retry and delivery status
-- `internal/infrastructure/integration/observability`
-  - Alertmanager adapter
-  - Grafana Alerting adapter
-  - Prometheus query adapter
 - `internal/repository/alert`
-  - alert instances and notification channels
+  - alert integrations, alert instances, and notification channels
 - future: `internal/repository/alerts`
   - silences, routing rules, delivery logs
 
@@ -103,6 +111,7 @@ This means the platform now owns:
 
 - `web/src/features/observability/monitoring-pages.tsx`
   - monitoring summary
+  - alert integration registry and payload normalization tester
   - alerts list
   - notification tabs
   - on-call placeholder
@@ -116,6 +125,7 @@ This means the platform now owns:
 
 PostgreSQL should hold:
 
+- alert_integrations
 - alert_instances
 - alert_rules_shadow
 - alert_routes
@@ -134,9 +144,11 @@ Short-lived alert processing state should stay in backend-owned runtime structur
 
 ### Inbound
 
-- Alertmanager webhook receiver
-- Grafana webhook receiver
-- future platform-native rule engine receiver
+- keep the legacy normalized webhook for compatibility: `/integrations/alerts/webhook`
+- register explicit Alertmanager, Grafana Alerting, or Generic Webhook integrations
+- use integration-specific tokens and `/integrations/alerts/:integrationID/webhook`
+- normalize provider-native payloads into Soha `IngestAlert` records before route resolution, notification, self-healing, on-call, and event fan-out
+- keep future platform-native rule evaluation in Soha, but do not reimplement a full external alerting engine inside the console
 
 ### Outbound
 

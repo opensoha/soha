@@ -1062,10 +1062,17 @@ func connectionClauses(filter domainvirtualization.ConnectionFilter) ([]string, 
 }
 
 func vmExtraClauses(filter domainvirtualization.VMFilter) ([]string, []any) {
+	clauses := []string{}
+	args := []any{}
 	if value := strings.TrimSpace(filter.Namespace); value != "" {
-		return []string{"namespace = ?"}, []any{value}
+		clauses = append(clauses, "namespace = ?")
+		args = append(args, value)
 	}
-	return nil, nil
+	if strings.TrimSpace(filter.Status) == "" {
+		clauses = append(clauses, "status <> ?")
+		args = append(args, "deleted")
+	}
+	return clauses, args
 }
 
 func taskClauses(filter domainvirtualization.TaskFilter) ([]string, []any) {

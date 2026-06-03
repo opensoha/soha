@@ -2,6 +2,7 @@ package monitoring
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -27,10 +28,43 @@ type stubMonitoringCompatRepository struct {
 	onCallRotations            []domainalert.OnCallRotation
 	onCallAssignmentRules      []domainalert.OnCallAssignmentRule
 	alertEvents                map[string]domainalert.AlertEvent
+	alertIntegrations          map[string]domainalert.AlertIntegration
+	upsertSource               string
+	upsertAlerts               []domainalert.IngestAlert
 }
 
-func (s *stubMonitoringCompatRepository) Upsert(context.Context, string, []domainalert.IngestAlert) ([]domainalert.Instance, error) {
-	return nil, nil
+func (s *stubMonitoringCompatRepository) Upsert(_ context.Context, source string, alerts []domainalert.IngestAlert) ([]domainalert.Instance, error) {
+	s.upsertSource = source
+	s.upsertAlerts = append([]domainalert.IngestAlert(nil), alerts...)
+	now := time.Now().UTC()
+	instances := make([]domainalert.Instance, 0, len(alerts))
+	for index, item := range alerts {
+		fingerprint := item.Fingerprint
+		if fingerprint == "" {
+			fingerprint = fmt.Sprintf("fingerprint-%d", index)
+		}
+		instances = append(instances, domainalert.Instance{
+			ID:           fmt.Sprintf("%s:%s", source, fingerprint),
+			Source:       source,
+			Fingerprint:  fingerprint,
+			Title:        item.Title,
+			Summary:      item.Summary,
+			Severity:     item.Severity,
+			Status:       item.Status,
+			ClusterID:    item.ClusterID,
+			Namespace:    item.Namespace,
+			Labels:       item.Labels,
+			Annotations:  item.Annotations,
+			Receiver:     item.Receiver,
+			GeneratorURL: item.GeneratorURL,
+			StartsAt:     item.StartsAt,
+			EndsAt:       item.EndsAt,
+			LastSeenAt:   now,
+			CreatedAt:    now,
+			UpdatedAt:    now,
+		})
+	}
+	return instances, nil
 }
 
 func (s *stubMonitoringCompatRepository) List(context.Context, domainalert.Filter) ([]domainalert.Instance, error) {
@@ -138,8 +172,31 @@ func (s *stubMonitoringCompatRepository) GetEvent(_ context.Context, eventID str
 	return domainalert.AlertEvent{}, nil
 }
 
-func (s *stubMonitoringCompatRepository) CreateEvent(context.Context, domainalert.AlertEventInput) (domainalert.AlertEvent, error) {
-	return domainalert.AlertEvent{}, nil
+func (s *stubMonitoringCompatRepository) CreateEvent(_ context.Context, input domainalert.AlertEventInput) (domainalert.AlertEvent, error) {
+	event := domainalert.AlertEvent{
+		ID:           input.ID,
+		RuleID:       input.RuleID,
+		SourceType:   input.SourceType,
+		SourceSystem: input.SourceSystem,
+		Fingerprint:  input.Fingerprint,
+		Title:        input.Title,
+		Summary:      input.Summary,
+		Severity:     input.Severity,
+		Status:       input.Status,
+		ClusterID:    input.ClusterID,
+		Namespace:    input.Namespace,
+		Labels:       input.Labels,
+		Annotations:  input.Annotations,
+		Receiver:     input.Receiver,
+		GeneratorURL: input.GeneratorURL,
+		StartsAt:     input.StartsAt,
+		EndsAt:       input.EndsAt,
+		LastSeenAt:   input.LastSeenAt,
+		CurrentState: input.CurrentState,
+		CreatedAt:    time.Now().UTC(),
+		UpdatedAt:    time.Now().UTC(),
+	}
+	return event, nil
 }
 
 func (s *stubMonitoringCompatRepository) UpdateEvent(context.Context, string, domainalert.AlertEventInput) (domainalert.AlertEvent, error) {
@@ -259,6 +316,79 @@ func (s *stubMonitoringCompatRepository) UpdateOnCallAssignmentRule(context.Cont
 	return domainalert.OnCallAssignmentRule{}, nil
 }
 
+func (s *stubMonitoringCompatRepository) ListAlertIntegrations(context.Context) ([]domainalert.AlertIntegration, error) {
+	items := make([]domainalert.AlertIntegration, 0, len(s.alertIntegrations))
+	for _, item := range s.alertIntegrations {
+		items = append(items, item)
+	}
+	return items, nil
+}
+
+func (s *stubMonitoringCompatRepository) GetAlertIntegration(_ context.Context, integrationID string) (domainalert.AlertIntegration, error) {
+	if s.alertIntegrations != nil {
+		if item, ok := s.alertIntegrations[integrationID]; ok {
+			return item, nil
+		}
+	}
+	return domainalert.AlertIntegration{}, fmt.Errorf("alert integration not found: %s", integrationID)
+}
+
+func (s *stubMonitoringCompatRepository) CreateAlertIntegration(_ context.Context, input domainalert.AlertIntegrationInput) (domainalert.AlertIntegration, error) {
+	now := time.Now().UTC()
+	item := domainalert.AlertIntegration{
+		ID:              input.ID,
+		Name:            input.Name,
+		IntegrationType: input.IntegrationType,
+		Description:     input.Description,
+		Token:           input.Token,
+		LabelMapping:    input.LabelMapping,
+		DedupeConfig:    input.DedupeConfig,
+		Enabled:         input.Enabled,
+		Status:          "pending",
+		CreatedAt:       now,
+		UpdatedAt:       now,
+	}
+	if s.alertIntegrations == nil {
+		s.alertIntegrations = map[string]domainalert.AlertIntegration{}
+	}
+	s.alertIntegrations[item.ID] = item
+	return item, nil
+}
+
+func (s *stubMonitoringCompatRepository) UpdateAlertIntegration(_ context.Context, integrationID string, input domainalert.AlertIntegrationInput) (domainalert.AlertIntegration, error) {
+	item, err := s.GetAlertIntegration(context.Background(), integrationID)
+	if err != nil {
+		return domainalert.AlertIntegration{}, err
+	}
+	item.Name = input.Name
+	item.IntegrationType = input.IntegrationType
+	item.Description = input.Description
+	if input.Token != "" {
+		item.Token = input.Token
+	}
+	item.LabelMapping = input.LabelMapping
+	item.DedupeConfig = input.DedupeConfig
+	item.Enabled = input.Enabled
+	item.UpdatedAt = time.Now().UTC()
+	s.alertIntegrations[integrationID] = item
+	return item, nil
+}
+
+func (s *stubMonitoringCompatRepository) UpdateAlertIntegrationStatus(_ context.Context, integrationID string, input domainalert.AlertIntegrationStatusInput) (domainalert.AlertIntegration, error) {
+	item, err := s.GetAlertIntegration(context.Background(), integrationID)
+	if err != nil {
+		return domainalert.AlertIntegration{}, err
+	}
+	item.Status = input.Status
+	item.LastError = input.LastError
+	if !input.LastReceivedAt.IsZero() {
+		item.LastReceivedAt = input.LastReceivedAt
+	}
+	item.UpdatedAt = time.Now().UTC()
+	s.alertIntegrations[integrationID] = item
+	return item, nil
+}
+
 var _ Repository = (*stubMonitoringCompatRepository)(nil)
 var _ EventWriter = (*stubMonitoringEventWriter)(nil)
 
@@ -278,6 +408,143 @@ func monitoringCompatPrincipal() domainidentity.Principal {
 	return domainidentity.Principal{
 		UserID: "user-1",
 		Roles:  []string{"ops"},
+	}
+}
+
+func TestServiceIngestAlertmanagerIntegrationNormalizesPayload(t *testing.T) {
+	repo := &stubMonitoringCompatRepository{
+		alertIntegrations: map[string]domainalert.AlertIntegration{
+			"integration:alertmanager": {
+				ID:              "integration:alertmanager",
+				Name:            "Alertmanager",
+				IntegrationType: "alertmanager_v1",
+				Token:           "secret-token",
+				LabelMapping: map[string]any{
+					"businessLineId": "team",
+				},
+				DedupeConfig: map[string]any{
+					"fingerprintLabels": []any{"alertname", "cluster", "namespace", "service"},
+				},
+				Enabled: true,
+				Status:  "pending",
+			},
+		},
+	}
+	service := &Service{
+		repo:    repo,
+		events:  &stubMonitoringEventWriter{},
+		enabled: true,
+	}
+
+	count, err := service.IngestAlertIntegration(context.Background(), "integration:alertmanager", "secret-token", map[string]any{
+		"receiver": "soha",
+		"status":   "firing",
+		"commonLabels": map[string]any{
+			"severity":  "critical",
+			"cluster":   "prod-a",
+			"namespace": "checkout",
+			"service":   "api",
+			"team":      "payments",
+		},
+		"commonAnnotations": map[string]any{
+			"summary": "latency exceeded",
+		},
+		"alerts": []any{
+			map[string]any{
+				"status": "firing",
+				"labels": map[string]any{
+					"alertname": "HighLatency",
+				},
+				"annotations": map[string]any{
+					"description": "p95 latency exceeded threshold",
+				},
+				"startsAt": "2026-06-03T08:00:00Z",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("IngestAlertIntegration returned error: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("accepted count = %d, want 1", count)
+	}
+	if repo.upsertSource != "integration:alertmanager" {
+		t.Fatalf("upsert source = %s, want integration:alertmanager", repo.upsertSource)
+	}
+	if len(repo.upsertAlerts) != 1 {
+		t.Fatalf("len(upsertAlerts) = %d, want 1", len(repo.upsertAlerts))
+	}
+	alert := repo.upsertAlerts[0]
+	if alert.Title != "HighLatency" {
+		t.Fatalf("alert title = %s, want HighLatency", alert.Title)
+	}
+	if alert.Severity != "critical" {
+		t.Fatalf("severity = %s, want critical", alert.Severity)
+	}
+	if alert.ClusterID != "prod-a" || alert.Namespace != "checkout" {
+		t.Fatalf("scope = %s/%s, want prod-a/checkout", alert.ClusterID, alert.Namespace)
+	}
+	if got := alert.Labels["integrationType"]; got != "alertmanager_v1" {
+		t.Fatalf("integrationType label = %s, want alertmanager_v1", got)
+	}
+	if got := alert.Labels["businessLineId"]; got != "payments" {
+		t.Fatalf("businessLineId label = %s, want payments", got)
+	}
+	if repo.alertIntegrations["integration:alertmanager"].Status != "active" {
+		t.Fatalf("integration status = %s, want active", repo.alertIntegrations["integration:alertmanager"].Status)
+	}
+	if repo.alertIntegrations["integration:alertmanager"].LastReceivedAt.IsZero() {
+		t.Fatalf("LastReceivedAt was not updated")
+	}
+}
+
+func TestServiceTestGrafanaIntegrationNormalizesPayload(t *testing.T) {
+	service := &Service{
+		repo:        &stubMonitoringCompatRepository{},
+		permissions: monitoringCompatPermissions(appaccess.PermObserveAlertIntegrationsManage),
+		enabled:     true,
+	}
+
+	result, err := service.TestAlertIntegration(context.Background(), monitoringCompatPrincipal(), domainalert.AlertIntegrationTestInput{
+		IntegrationType: "grafana_alerting_v1",
+		Payload: map[string]any{
+			"receiver": "soha",
+			"status":   "firing",
+			"commonLabels": map[string]any{
+				"severity": "warning",
+				"cluster":  "prod-a",
+				"service":  "checkout",
+			},
+			"alerts": []any{
+				map[string]any{
+					"labels": map[string]any{
+						"alertname": "LatencyHigh",
+						"rule_uid":  "rule-001",
+						"namespace": "checkout",
+					},
+					"annotations": map[string]any{
+						"description": "latency is high",
+					},
+					"dashboardURL": "https://grafana.example.com/d/checkout",
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("TestAlertIntegration returned error: %v", err)
+	}
+	if result.AcceptedCount != 1 {
+		t.Fatalf("AcceptedCount = %d, want 1", result.AcceptedCount)
+	}
+	alert := result.Alerts[0]
+	if alert.Title != "LatencyHigh" {
+		t.Fatalf("title = %s, want LatencyHigh", alert.Title)
+	}
+	if alert.ClusterID != "prod-a" || alert.Namespace != "checkout" {
+		t.Fatalf("scope = %s/%s, want prod-a/checkout", alert.ClusterID, alert.Namespace)
+	}
+	if got := alert.Annotations["dashboardURL"]; got != "https://grafana.example.com/d/checkout" {
+		t.Fatalf("dashboardURL annotation = %s", got)
 	}
 }
 

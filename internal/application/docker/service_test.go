@@ -260,6 +260,167 @@ func TestQuickCreateHostEnqueuesVirtualizationVMWhenConnectionProvided(t *testin
 	}
 }
 
+func TestQuickCreateHostReconcilesCompletedVirtualizationTask(t *testing.T) {
+	repo := newMemoryDockerRepo()
+	provisioner := &captureHostProvisioner{}
+	service := New(repo, dockerTestPermissions(), nil, WithHostProvisioner(provisioner))
+
+	operation, err := service.QuickCreateHost(context.Background(), dockerTestPrincipal(), domaindocker.QuickCreateHostInput{
+		Name:                       "docker-dev-1",
+		VirtualizationConnectionID: "pve-1",
+		ImageID:                    "image-1",
+		CPUCoreCount:               2,
+		MemoryBytes:                4 * 1024 * 1024 * 1024,
+		DiskBytes:                  40 * 1024 * 1024 * 1024,
+	})
+	if err != nil {
+		t.Fatalf("QuickCreateHost() error = %v", err)
+	}
+	provisioner.tasks["vm-task-1"] = HostProvisionTask{
+		ID:           "vm-task-1",
+		Provider:     "pve",
+		ConnectionID: "pve-1",
+		Status:       OperationStatusCompleted,
+		VMID:         "vm-1",
+		VMName:       "docker-dev-1",
+		Result:       map[string]any{"vmId": "vm-1", "name": "docker-dev-1", "ipAddress": "10.0.0.21"},
+	}
+
+	hosts, err := service.ListHosts(context.Background(), dockerTestPrincipal(), domaindocker.HostFilter{})
+	if err != nil {
+		t.Fatalf("ListHosts() error = %v", err)
+	}
+	if hosts.Total != 1 {
+		t.Fatalf("hosts total = %d, want 1", hosts.Total)
+	}
+	host := hosts.Items[0]
+	if host.Status != "ready" || host.VMID != "vm-1" || host.VMName != "docker-dev-1" || host.IPAddress != "10.0.0.21" {
+		t.Fatalf("host after reconcile = %#v", host)
+	}
+	updated := repo.operations[operation.ID]
+	if updated.Status != OperationStatusCompleted || updated.FinishedAt == nil {
+		t.Fatalf("operation after reconcile = %#v", updated)
+	}
+	if updated.Result["virtualizationTaskStatus"] != OperationStatusCompleted || updated.Result["vmId"] != "vm-1" {
+		t.Fatalf("operation result after reconcile = %#v", updated.Result)
+	}
+}
+
+func TestQuickCreateHostReconcilesFailedVirtualizationTask(t *testing.T) {
+	repo := newMemoryDockerRepo()
+	provisioner := &captureHostProvisioner{}
+	service := New(repo, dockerTestPermissions(), nil, WithHostProvisioner(provisioner))
+
+	operation, err := service.QuickCreateHost(context.Background(), dockerTestPrincipal(), domaindocker.QuickCreateHostInput{
+		Name:                       "docker-dev-failed",
+		VirtualizationConnectionID: "pve-1",
+		ImageID:                    "image-1",
+	})
+	if err != nil {
+		t.Fatalf("QuickCreateHost() error = %v", err)
+	}
+	provisioner.tasks["vm-task-1"] = HostProvisionTask{
+		ID:           "vm-task-1",
+		Provider:     "pve",
+		ConnectionID: "pve-1",
+		Status:       OperationStatusFailed,
+		Result:       map[string]any{"error": "pve api returned status 400"},
+	}
+
+	_, err = service.ListOperations(context.Background(), dockerTestPrincipal(), domaindocker.OperationFilter{})
+	if err != nil {
+		t.Fatalf("ListOperations() error = %v", err)
+	}
+	host := repo.hosts["host-1"]
+	if host.Status != "degraded" {
+		t.Fatalf("host status = %s, want degraded", host.Status)
+	}
+	updated := repo.operations[operation.ID]
+	if updated.Status != OperationStatusFailed || updated.FinishedAt == nil {
+		t.Fatalf("operation after reconcile = %#v", updated)
+	}
+	if updated.Result["message"] != "pve api returned status 400" {
+		t.Fatalf("operation result message = %#v", updated.Result)
+	}
+}
+
+func TestCancelHostProvisionCancelsVirtualizationTask(t *testing.T) {
+	repo := newMemoryDockerRepo()
+	provisioner := &captureHostProvisioner{}
+	service := New(repo, dockerTestPermissions(), nil, WithHostProvisioner(provisioner))
+
+	operation, err := service.QuickCreateHost(context.Background(), dockerTestPrincipal(), domaindocker.QuickCreateHostInput{
+		Name:                       "docker-dev-cancel",
+		VirtualizationConnectionID: "pve-1",
+		ImageID:                    "image-1",
+	})
+	if err != nil {
+		t.Fatalf("QuickCreateHost() error = %v", err)
+	}
+
+	canceled, err := service.CancelOperation(context.Background(), dockerTestPrincipal(), operation.ID)
+	if err != nil {
+		t.Fatalf("CancelOperation() error = %v", err)
+	}
+	if canceled.Status != OperationStatusCanceled || canceled.FinishedAt == nil {
+		t.Fatalf("canceled operation = %#v", canceled)
+	}
+	if len(provisioner.canceledIDs) != 1 || provisioner.canceledIDs[0] != "vm-task-1" {
+		t.Fatalf("canceled virtualization task ids = %#v", provisioner.canceledIDs)
+	}
+	if task := provisioner.tasks["vm-task-1"]; task.Status != OperationStatusCanceled {
+		t.Fatalf("linked virtualization task after cancel = %#v", task)
+	}
+	if canceled.Result["virtualizationTaskStatus"] != OperationStatusCanceled {
+		t.Fatalf("canceled operation result = %#v", canceled.Result)
+	}
+}
+
+func TestRetryHostProvisionRetriesVirtualizationTask(t *testing.T) {
+	repo := newMemoryDockerRepo()
+	provisioner := &captureHostProvisioner{}
+	service := New(repo, dockerTestPermissions(), nil, WithHostProvisioner(provisioner))
+
+	operation, err := service.QuickCreateHost(context.Background(), dockerTestPrincipal(), domaindocker.QuickCreateHostInput{
+		Name:                       "docker-dev-retry",
+		VirtualizationConnectionID: "pve-1",
+		ImageID:                    "image-1",
+	})
+	if err != nil {
+		t.Fatalf("QuickCreateHost() error = %v", err)
+	}
+	provisioner.tasks["vm-task-1"] = HostProvisionTask{
+		ID:           "vm-task-1",
+		Provider:     "pve",
+		ConnectionID: "pve-1",
+		Status:       OperationStatusFailed,
+		Result:       map[string]any{"error": "pve api returned status 400"},
+	}
+	if _, err := service.ListOperations(context.Background(), dockerTestPrincipal(), domaindocker.OperationFilter{}); err != nil {
+		t.Fatalf("ListOperations() error = %v", err)
+	}
+	if failed := repo.operations[operation.ID]; failed.Status != OperationStatusFailed {
+		t.Fatalf("operation before retry = %#v", failed)
+	}
+
+	retried, err := service.RetryOperation(context.Background(), dockerTestPrincipal(), operation.ID)
+	if err != nil {
+		t.Fatalf("RetryOperation() error = %v", err)
+	}
+	if retried.Status != OperationStatusQueued || retried.FinishedAt != nil {
+		t.Fatalf("retried operation = %#v", retried)
+	}
+	if len(provisioner.retriedIDs) != 1 || provisioner.retriedIDs[0] != "vm-task-1" {
+		t.Fatalf("retried virtualization task ids = %#v", provisioner.retriedIDs)
+	}
+	if task := provisioner.tasks["vm-task-1"]; task.Status != OperationStatusQueued {
+		t.Fatalf("linked virtualization task after retry = %#v", task)
+	}
+	if retried.Result["virtualizationTaskStatus"] != OperationStatusQueued {
+		t.Fatalf("retried operation result = %#v", retried.Result)
+	}
+}
+
 func dockerTestPermissions() *appaccess.PermissionResolver {
 	return appaccess.NewPermissionResolver(dockerTestRoleReader{matrix: map[string][]string{
 		"admin": {
@@ -303,12 +464,55 @@ func (c *captureDockerOperations) Record(_ context.Context, entry domainoperatio
 }
 
 type captureHostProvisioner struct {
-	input HostProvisionInput
+	input       HostProvisionInput
+	tasks       map[string]HostProvisionTask
+	canceledIDs []string
+	retriedIDs  []string
 }
 
 func (c *captureHostProvisioner) ProvisionDockerHost(_ context.Context, _ domainidentity.Principal, input HostProvisionInput) (HostProvisionTask, error) {
 	c.input = input
-	return HostProvisionTask{ID: "vm-task-1", Provider: "pve", ConnectionID: input.ConnectionID, Status: OperationStatusQueued}, nil
+	task := HostProvisionTask{ID: "vm-task-1", Provider: "pve", ConnectionID: input.ConnectionID, Status: OperationStatusQueued}
+	if c.tasks == nil {
+		c.tasks = map[string]HostProvisionTask{}
+	}
+	c.tasks[task.ID] = task
+	return task, nil
+}
+
+func (c *captureHostProvisioner) GetProvisionTask(_ context.Context, taskID string) (HostProvisionTask, error) {
+	if c.tasks == nil {
+		return HostProvisionTask{}, apperrors.ErrNotFound
+	}
+	task, ok := c.tasks[taskID]
+	if !ok {
+		return HostProvisionTask{}, apperrors.ErrNotFound
+	}
+	return task, nil
+}
+
+func (c *captureHostProvisioner) CancelProvisionTask(_ context.Context, _ domainidentity.Principal, taskID string) (HostProvisionTask, error) {
+	task, err := c.GetProvisionTask(context.Background(), taskID)
+	if err != nil {
+		return HostProvisionTask{}, err
+	}
+	task.Status = OperationStatusCanceled
+	task.Result = mergeMap(task.Result, map[string]any{"message": "operation canceled"})
+	c.tasks[taskID] = task
+	c.canceledIDs = append(c.canceledIDs, taskID)
+	return task, nil
+}
+
+func (c *captureHostProvisioner) RetryProvisionTask(_ context.Context, _ domainidentity.Principal, taskID string) (HostProvisionTask, error) {
+	task, err := c.GetProvisionTask(context.Background(), taskID)
+	if err != nil {
+		return HostProvisionTask{}, err
+	}
+	task.Status = OperationStatusQueued
+	task.Result = mergeMap(task.Result, map[string]any{"message": "operation queued for retry"})
+	c.tasks[taskID] = task
+	c.retriedIDs = append(c.retriedIDs, taskID)
+	return task, nil
 }
 
 type memoryDockerRepo struct {
@@ -397,6 +601,15 @@ func (r *memoryDockerRepo) TouchHostRuntime(_ context.Context, id string, input 
 	}
 	if input.IPAddress != "" {
 		item.IPAddress = input.IPAddress
+	}
+	if input.VMID != "" {
+		item.VMID = input.VMID
+	}
+	if input.VMName != "" {
+		item.VMName = input.VMName
+	}
+	if input.Config != nil {
+		item.Config = mergeMap(item.Config, input.Config)
 	}
 	now := time.Now().UTC()
 	item.LastHeartbeatAt = &now

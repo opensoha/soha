@@ -1185,15 +1185,16 @@ func (s *Service) adapterConnection(connection domainvirtualization.Connection) 
 		options["namespace"] = connection.DefaultNamespace
 	}
 	return infravirtualization.Connection{
-		ID:         connection.ID,
-		Name:       connection.Name,
-		Provider:   connection.Provider,
-		Mode:       stringValue(options, "mode"),
-		ClusterID:  connection.KubernetesClusterID,
-		Endpoint:   connection.Endpoint,
-		Credential: credential,
-		Options:    options,
-		BackendURL: stringValue(options, "backendUrl"),
+		ID:                    connection.ID,
+		Name:                  connection.Name,
+		Provider:              connection.Provider,
+		Mode:                  stringValue(options, "mode"),
+		ClusterID:             connection.KubernetesClusterID,
+		Endpoint:              connection.Endpoint,
+		Credential:            credential,
+		Options:               options,
+		BackendURL:            stringValue(options, "backendUrl"),
+		InsecureSkipTLSVerify: !connection.VerifyTLS,
 	}, nil
 }
 

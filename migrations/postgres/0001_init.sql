@@ -404,6 +404,22 @@ CREATE TABLE IF NOT EXISTS notification_channels (
     updated_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS alert_integrations (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    integration_type TEXT NOT NULL,
+    description TEXT,
+    token TEXT NOT NULL,
+    label_mapping JSON NOT NULL DEFAULT '{}',
+    dedupe_config JSON NOT NULL DEFAULT '{}',
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    status TEXT NOT NULL DEFAULT 'pending',
+    last_error TEXT,
+    last_received_at TIMESTAMP,
+    created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS alert_instances (
     id TEXT PRIMARY KEY,
     source TEXT NOT NULL,
@@ -780,6 +796,8 @@ CREATE INDEX IF NOT EXISTS idx_alert_instances_status ON alert_instances (status
 CREATE INDEX IF NOT EXISTS idx_alert_instances_last_seen_at ON alert_instances (last_seen_at DESC);
 CREATE INDEX IF NOT EXISTS idx_alert_instances_cluster_namespace ON alert_instances (cluster_id, namespace);
 CREATE INDEX IF NOT EXISTS idx_alert_instances_acknowledged_at ON alert_instances (acknowledged_at DESC);
+CREATE INDEX IF NOT EXISTS idx_alert_integrations_type_enabled ON alert_integrations (integration_type, enabled, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_alert_integrations_status_updated_at ON alert_integrations (status, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_alert_rules_enabled_updated_at ON alert_rules (enabled, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_alert_events_status_last_seen_at ON alert_events (status, last_seen_at DESC);
 CREATE INDEX IF NOT EXISTS idx_notification_policies_enabled_updated_at ON notification_policies (enabled, updated_at DESC);

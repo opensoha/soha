@@ -366,6 +366,7 @@ Design expectation:
 
 - observability is not isolated from platform data
 - cluster/application/runtime context should be composable
+- alert integrations are Soha-owned ingress adapters and registry records: keep the legacy normalized webhook, add provider-native Alertmanager/Grafana/Generic Webhook normalization, but do not reimplement a full external alerting engine inside Soha
 - on-call collaboration follows a Grafana IRM-style model: alert integrations enter ordered on-call routes, routes match alert labels/context, grouping keys produce alert groups, and matched routes target escalation chains or schedules
 - the on-call workspace is alert-task-first: the primary surface must be generated from active alert events and backend route resolution, while manual route parsing belongs to diagnostics or route editing rather than the first-screen workflow
 - on-call routes are backend-owned operational contracts exposed through `/api/v1/oncall/routes` with `/api/v1/oncall/assignment-rules` kept as a compatibility alias; business line, service, and duty role (`dev`, `qa`, `ops`, `sre`, `security`, `owner`) are optional route match labels rather than the primary IA
