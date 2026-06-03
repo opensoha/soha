@@ -22,12 +22,17 @@ type stubIdentityService struct {
 	current       domainidentity.Principal
 	profile       domainidentity.UserProfile
 	loginResult   domainidentity.AuthResult
+	refreshResult domainidentity.AuthResult
 	loginLogin    string
 	loginPassword string
 	logoutAccess  string
 	logoutRefresh string
+	streamReq     domainidentity.StreamTicketRequest
+	streamTicket  domainidentity.StreamTicket
 	loginErr      error
+	refreshErr    error
 	logoutErr     error
+	streamErr     error
 }
 
 func (s stubIdentityService) ListProviders(context.Context) []domainidentity.Provider {
@@ -39,7 +44,7 @@ func (s stubIdentityService) LoginWithPassword(context.Context, string, string) 
 }
 
 func (s stubIdentityService) RefreshSession(context.Context, string) (domainidentity.AuthResult, error) {
-	return domainidentity.AuthResult{}, nil
+	return s.refreshResult, s.refreshErr
 }
 
 func (s stubIdentityService) Logout(context.Context, string, string) error {
@@ -80,6 +85,10 @@ func (s stubIdentityService) ListActiveSessions(context.Context, domainidentity.
 
 func (s stubIdentityService) RevokeSessionByID(context.Context, domainidentity.Principal, string) error {
 	return nil
+}
+
+func (s stubIdentityService) IssueStreamTicket(context.Context, domainidentity.Principal, domainidentity.AccessContext, domainidentity.StreamTicketRequest) (domainidentity.StreamTicket, error) {
+	return s.streamTicket, s.streamErr
 }
 
 type stubAuthBootstrapAccessService struct {
@@ -266,6 +275,7 @@ func TestLoginOptionsReturnSliderVerificationConfig(t *testing.T) {
 
 type recordingIdentityService struct {
 	stubIdentityService
+	refreshToken string
 }
 
 func (s *recordingIdentityService) LoginWithPassword(_ context.Context, login, password string) (domainidentity.AuthResult, error) {
@@ -278,6 +288,16 @@ func (s *recordingIdentityService) Logout(_ context.Context, accessToken, refres
 	s.logoutAccess = accessToken
 	s.logoutRefresh = refreshToken
 	return s.logoutErr
+}
+
+func (s *recordingIdentityService) RefreshSession(_ context.Context, refreshToken string) (domainidentity.AuthResult, error) {
+	s.refreshToken = refreshToken
+	return s.refreshResult, s.refreshErr
+}
+
+func (s *recordingIdentityService) IssueStreamTicket(_ context.Context, _ domainidentity.Principal, _ domainidentity.AccessContext, req domainidentity.StreamTicketRequest) (domainidentity.StreamTicket, error) {
+	s.streamReq = req
+	return s.streamTicket, s.streamErr
 }
 
 func TestProLoginUsesUsernameAndReturnsAuthorityShape(t *testing.T) {
@@ -324,6 +344,109 @@ func TestProLoginUsesUsernameAndReturnsAuthorityShape(t *testing.T) {
 	}
 	if payload.Type != "account" {
 		t.Fatalf("type = %q, want account", payload.Type)
+	}
+}
+
+func TestLoginSetsHttpOnlyRefreshCookie(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+
+	identity := &recordingIdentityService{
+		stubIdentityService: stubIdentityService{
+			loginResult: domainidentity.AuthResult{
+				User: domainidentity.Principal{
+					UserID:   "u-1",
+					UserName: "admin",
+				},
+				Tokens: domainidentity.TokenSet{
+					AccessToken:  "access-1",
+					RefreshToken: "refresh-1",
+					TokenType:    "Bearer",
+					ExpiresIn:    3600,
+					ExpiresAt:    time.Now().Add(time.Hour),
+				},
+			},
+		},
+	}
+	handler := NewAuthHandler(identity, nil, nil, cfgpkg.AuthConfig{
+		JWT: cfgpkg.JWTConfig{RefreshTTL: time.Hour},
+	})
+
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", strings.NewReader(`{"login":"admin","password":"secret"}`))
+	ctx.Request.Header.Set("Content-Type", "application/json")
+
+	handler.Login(ctx)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusOK)
+	}
+	cookie := responseCookie(recorder, refreshCookieName)
+	if cookie == nil {
+		t.Fatalf("missing %s cookie", refreshCookieName)
+	}
+	if cookie.Value != "refresh-1" {
+		t.Fatalf("refresh cookie = %q, want refresh-1", cookie.Value)
+	}
+	if !cookie.HttpOnly {
+		t.Fatal("refresh cookie should be HttpOnly")
+	}
+	if cookie.Path != "/api/v1/auth" {
+		t.Fatalf("refresh cookie path = %q, want /api/v1/auth", cookie.Path)
+	}
+	if cookie.MaxAge != int(time.Hour/time.Second) {
+		t.Fatalf("refresh cookie maxAge = %d, want %d", cookie.MaxAge, int(time.Hour/time.Second))
+	}
+}
+
+func TestRefreshUsesRefreshCookieWhenBodyIsEmpty(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+
+	identity := &recordingIdentityService{
+		stubIdentityService: stubIdentityService{
+			refreshResult: domainidentity.AuthResult{
+				User: domainidentity.Principal{
+					UserID:   "u-1",
+					UserName: "admin",
+				},
+				Tokens: domainidentity.TokenSet{
+					AccessToken:  "access-2",
+					RefreshToken: "refresh-2",
+					TokenType:    "Bearer",
+					ExpiresIn:    3600,
+					ExpiresAt:    time.Now().Add(time.Hour),
+				},
+			},
+		},
+	}
+	handler := NewAuthHandler(identity, nil, nil, cfgpkg.AuthConfig{})
+
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/api/v1/auth/refresh", nil)
+	ctx.Request.AddCookie(&http.Cookie{Name: refreshCookieName, Value: "refresh-1"})
+
+	handler.Refresh(ctx)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusOK)
+	}
+	if identity.refreshToken != "refresh-1" {
+		t.Fatalf("refresh token = %q, want refresh-1", identity.refreshToken)
+	}
+	cookie := responseCookie(recorder, refreshCookieName)
+	if cookie == nil {
+		t.Fatalf("missing %s cookie", refreshCookieName)
+	}
+	if cookie.Value != "refresh-2" {
+		t.Fatalf("rotated refresh cookie = %q, want refresh-2", cookie.Value)
+	}
+	if !cookie.HttpOnly {
+		t.Fatal("rotated refresh cookie should be HttpOnly")
 	}
 }
 
@@ -398,6 +521,128 @@ func TestProLogoutUsesNormalizedBearerToken(t *testing.T) {
 	if identity.logoutAccess != "access-1" || identity.logoutRefresh != "refresh-1" {
 		t.Fatalf("logout call = (%q, %q)", identity.logoutAccess, identity.logoutRefresh)
 	}
+}
+
+func TestLogoutUsesRefreshCookieAndClearsCookie(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+
+	identity := &recordingIdentityService{}
+	handler := NewAuthHandler(identity, nil, nil, cfgpkg.AuthConfig{})
+
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/api/v1/auth/logout", nil)
+	ctx.Request.AddCookie(&http.Cookie{Name: refreshCookieName, Value: "refresh-1"})
+	ctx.Set("access_token", "access-1")
+
+	handler.Logout(ctx)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusOK)
+	}
+	if identity.logoutAccess != "access-1" || identity.logoutRefresh != "refresh-1" {
+		t.Fatalf("logout call = (%q, %q)", identity.logoutAccess, identity.logoutRefresh)
+	}
+	cookie := responseCookie(recorder, refreshCookieName)
+	if cookie == nil {
+		t.Fatalf("missing %s cookie clear header", refreshCookieName)
+	}
+	if cookie.MaxAge >= 0 {
+		t.Fatalf("clear cookie maxAge = %d, want negative", cookie.MaxAge)
+	}
+}
+
+func TestIssueStreamTicketPassesPrincipalAccessContextAndPath(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+
+	expiresAt := time.Now().UTC().Add(time.Minute)
+	identity := &recordingIdentityService{
+		stubIdentityService: stubIdentityService{
+			streamTicket: domainidentity.StreamTicket{
+				Ticket:    "ticket-1",
+				ExpiresAt: expiresAt,
+			},
+		},
+	}
+	handler := NewAuthHandler(identity, nil, nil, cfgpkg.AuthConfig{})
+
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/api/v1/auth/stream-ticket", strings.NewReader(`{"path":"/api/v1/virtualization/operations/task-1/stream"}`))
+	ctx.Request.Header.Set("Content-Type", "application/json")
+	ctx.Set("principal", domainidentity.Principal{UserID: "u-1"})
+	ctx.Set("access_context", domainidentity.AccessContext{TokenKind: "session_access", SessionID: "s-1"})
+
+	handler.IssueStreamTicket(ctx)
+
+	if recorder.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusCreated)
+	}
+	if identity.streamReq.Path != "/api/v1/virtualization/operations/task-1/stream" {
+		t.Fatalf("stream ticket path = %q", identity.streamReq.Path)
+	}
+	var payload struct {
+		Data domainidentity.StreamTicket `json:"data"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if payload.Data.Ticket != "ticket-1" {
+		t.Fatalf("ticket = %q, want ticket-1", payload.Data.Ticket)
+	}
+}
+
+type streamTicketParserStub struct {
+	ticket string
+	path   string
+}
+
+func (s *streamTicketParserStub) ParseAccessToken(context.Context, string) (domainidentity.Principal, domainidentity.AccessContext, error) {
+	return domainidentity.Principal{}, domainidentity.AccessContext{}, errors.New("unexpected access token")
+}
+
+func (s *streamTicketParserStub) ParseStreamTicket(_ context.Context, ticket, path string) (domainidentity.Principal, domainidentity.AccessContext, error) {
+	s.ticket = ticket
+	s.path = path
+	return domainidentity.Principal{UserID: "u-1"}, domainidentity.AccessContext{TokenKind: "stream_ticket", TokenID: ticket}, nil
+}
+
+func TestBuildPrincipalMiddlewareAcceptsStreamTicket(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+
+	parser := &streamTicketParserStub{}
+	middleware := apiMiddleware.BuildPrincipalMiddleware(cfgpkg.AuthConfig{}, parser)
+
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/api/v1/virtualization/operations/task-1/stream?stream_ticket=ticket-1", nil)
+
+	middleware(ctx)
+
+	if parser.ticket != "ticket-1" || parser.path != "/api/v1/virtualization/operations/task-1/stream" {
+		t.Fatalf("stream parser call = (%q, %q)", parser.ticket, parser.path)
+	}
+	if apiMiddleware.PrincipalFromContext(ctx).UserID != "u-1" {
+		t.Fatalf("principal = %#v", apiMiddleware.PrincipalFromContext(ctx))
+	}
+	if apiMiddleware.AccessContextFromContext(ctx).TokenKind != "stream_ticket" {
+		t.Fatalf("access context = %#v", apiMiddleware.AccessContextFromContext(ctx))
+	}
+}
+
+func responseCookie(recorder *httptest.ResponseRecorder, name string) *http.Cookie {
+	for _, cookie := range recorder.Result().Cookies() {
+		if cookie.Name == name {
+			return cookie
+		}
+	}
+	return nil
 }
 
 func TestNormalizeBearerTokenTrimsHeaderPrefix(t *testing.T) {

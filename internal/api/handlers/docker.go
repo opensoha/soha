@@ -438,7 +438,7 @@ func (h *DockerHandler) RetryOperation(c *gin.Context) {
 }
 
 func (h *DockerHandler) ClaimOperation(c *gin.Context) {
-	if !h.authorizeRunner(c.GetHeader("Authorization")) {
+	if !authorizeDockerRunner(c, h.runnerToken) {
 		apiresponse.Error(c, http.StatusUnauthorized, "unauthorized", "invalid docker runner token")
 		return
 	}
@@ -456,7 +456,7 @@ func (h *DockerHandler) ClaimOperation(c *gin.Context) {
 }
 
 func (h *DockerHandler) GetOperationRunnerStatus(c *gin.Context) {
-	if !h.authorizeRunner(c.GetHeader("Authorization")) {
+	if !authorizeDockerRunner(c, h.runnerToken) {
 		apiresponse.Error(c, http.StatusUnauthorized, "unauthorized", "invalid docker runner token")
 		return
 	}
@@ -469,7 +469,7 @@ func (h *DockerHandler) GetOperationRunnerStatus(c *gin.Context) {
 }
 
 func (h *DockerHandler) RecordOperationCallback(c *gin.Context) {
-	if !h.authorizeRunner(c.GetHeader("Authorization")) {
+	if !authorizeDockerRunner(c, h.runnerToken) {
 		apiresponse.Error(c, http.StatusUnauthorized, "unauthorized", "invalid docker runner token")
 		return
 	}
@@ -484,14 +484,4 @@ func (h *DockerHandler) RecordOperationCallback(c *gin.Context) {
 		return
 	}
 	apiresponse.Item(c, http.StatusAccepted, item)
-}
-
-func (h *DockerHandler) authorizeRunner(header string) bool {
-	if strings.TrimSpace(h.runnerToken) == "" {
-		return false
-	}
-	token := strings.TrimSpace(header)
-	token = strings.TrimPrefix(token, "Bearer ")
-	token = strings.TrimPrefix(token, "bearer ")
-	return strings.TrimSpace(token) == strings.TrimSpace(h.runnerToken)
 }

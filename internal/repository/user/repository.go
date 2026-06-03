@@ -19,13 +19,14 @@ import (
 var ErrNotFound = errors.New("user not found")
 
 type User struct {
-	ID          string
-	Username    string
-	Email       string
-	DisplayName string
-	Status      string
-	Tags        []string
-	Preferences map[string]any
+	ID           string
+	Username     string
+	Email        string
+	DisplayName  string
+	Status       string
+	Tags         []string
+	Preferences  map[string]any
+	AuthzVersion int64
 }
 
 type Session struct {
@@ -37,6 +38,13 @@ type Session struct {
 	ExpiresAt      time.Time
 	LastSeenAt     time.Time
 	Metadata       map[string]any
+	AuthzVersion   int64
+}
+
+type AuthzState struct {
+	UserID       string
+	Status       string
+	AuthzVersion int64
 }
 
 type EphemeralToken struct {
@@ -67,7 +75,7 @@ func New(db *gorm.DB) *Repository {
 
 func (r *Repository) FindByLogin(ctx context.Context, login string) (User, error) {
 	row := r.db.WithContext(ctx).Raw(`
-		SELECT id, username, email, display_name, status, tags, preferences
+		SELECT id, username, email, display_name, status, tags, preferences, authz_version
 		FROM users
 		WHERE username = ? OR email = ?
 		LIMIT 1
@@ -77,7 +85,7 @@ func (r *Repository) FindByLogin(ctx context.Context, login string) (User, error
 
 func (r *Repository) FindByEmail(ctx context.Context, email string) (User, error) {
 	row := r.db.WithContext(ctx).Raw(`
-		SELECT id, username, email, display_name, status, tags, preferences
+		SELECT id, username, email, display_name, status, tags, preferences, authz_version
 		FROM users
 		WHERE email = ?
 		LIMIT 1
@@ -87,12 +95,47 @@ func (r *Repository) FindByEmail(ctx context.Context, email string) (User, error
 
 func (r *Repository) GetByID(ctx context.Context, userID string) (User, error) {
 	row := r.db.WithContext(ctx).Raw(`
-		SELECT id, username, email, display_name, status, tags, preferences
+		SELECT id, username, email, display_name, status, tags, preferences, authz_version
 		FROM users
 		WHERE id = ?
 		LIMIT 1
 	`, userID).Row()
 	return scanUser(row)
+}
+
+func (r *Repository) GetAuthzState(ctx context.Context, userID string) (AuthzState, error) {
+	row := r.db.WithContext(ctx).Raw(`
+		SELECT id, status, authz_version
+		FROM users
+		WHERE id = ?
+		LIMIT 1
+	`, strings.TrimSpace(userID)).Row()
+	var item AuthzState
+	if err := row.Scan(&item.UserID, &item.Status, &item.AuthzVersion); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return AuthzState{}, ErrNotFound
+		}
+		return AuthzState{}, err
+	}
+	if item.AuthzVersion < 1 {
+		item.AuthzVersion = 1
+	}
+	return item, nil
+}
+
+func (r *Repository) BumpUserAuthzVersion(ctx context.Context, userID string) error {
+	result := r.db.WithContext(ctx).Exec(`
+		UPDATE users
+		SET authz_version = GREATEST(authz_version, 1) + 1, updated_at = ?
+		WHERE id = ?
+	`, time.Now().UTC(), strings.TrimSpace(userID))
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 func (r *Repository) UpsertUser(ctx context.Context, user User) error {
@@ -105,9 +148,13 @@ func (r *Repository) UpsertUser(ctx context.Context, user User) error {
 		return fmt.Errorf("marshal user preferences: %w", err)
 	}
 	now := time.Now().UTC()
+	authzVersion := user.AuthzVersion
+	if authzVersion < 1 {
+		authzVersion = 1
+	}
 	return r.db.WithContext(ctx).Exec(`
-		INSERT INTO users (id, username, email, display_name, status, tags, preferences, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO users (id, username, email, display_name, status, tags, preferences, authz_version, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (id) DO UPDATE SET
 			username = EXCLUDED.username,
 			email = EXCLUDED.email,
@@ -116,7 +163,7 @@ func (r *Repository) UpsertUser(ctx context.Context, user User) error {
 			tags = EXCLUDED.tags,
 			preferences = EXCLUDED.preferences,
 			updated_at = EXCLUDED.updated_at
-	`, user.ID, user.Username, strings.ToLower(user.Email), user.DisplayName, user.Status, string(tags), string(preferences), now, now).Error
+	`, user.ID, user.Username, strings.ToLower(user.Email), user.DisplayName, user.Status, string(tags), string(preferences), authzVersion, now, now).Error
 }
 
 func (r *Repository) SetPasswordHash(ctx context.Context, userID, passwordHash string) error {
@@ -186,6 +233,10 @@ func (r *Repository) ReplaceRoleBindings(ctx context.Context, userID string, rol
 			return err
 		}
 	}
+	if err := bumpUserAuthzVersionTx(tx, userID, time.Now().UTC()); err != nil {
+		tx.Rollback()
+		return err
+	}
 	return tx.Commit().Error
 }
 
@@ -201,6 +252,141 @@ func (r *Repository) ReplaceTeamBindings(ctx context.Context, userID string, tea
 	if len(teamIDs) > 0 {
 		now := time.Now().UTC()
 		if err := insertUserTeamBindings(tx, userID, teamIDs, now); err != nil {
+			tx.Rollback()
+			return err
+		}
+	}
+	if err := bumpUserAuthzVersionTx(tx, userID, time.Now().UTC()); err != nil {
+		tx.Rollback()
+		return err
+	}
+	return tx.Commit().Error
+}
+
+func (r *Repository) ResolveRoleIDs(ctx context.Context, refs []string) ([]string, error) {
+	refs = compactBindingRefs(refs)
+	if len(refs) == 0 {
+		return []string{}, nil
+	}
+	rows, err := r.db.WithContext(ctx).Raw(`
+		SELECT id
+		FROM roles
+		WHERE id IN ? OR name IN ?
+		ORDER BY id ASC
+	`, refs, refs).Rows()
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	roleIDs := make([]string, 0)
+	for rows.Next() {
+		var roleID string
+		if err := rows.Scan(&roleID); err != nil {
+			return nil, err
+		}
+		roleIDs = append(roleIDs, roleID)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return compactBindingRefs(roleIDs), nil
+}
+
+func (r *Repository) ResolveTeamIDsForExternalRefs(ctx context.Context, providerType, providerID string, refs []string) ([]string, error) {
+	refs = compactBindingRefs(refs)
+	if len(refs) == 0 {
+		return []string{}, nil
+	}
+	sources := compactBindingRefs([]string{providerType, providerID})
+	if len(sources) == 0 {
+		sources = []string{"__none__"}
+	}
+	rows, err := r.db.WithContext(ctx).Raw(`
+		SELECT id
+		FROM teams
+		WHERE id IN ?
+			OR slug IN ?
+			OR org_path IN ?
+			OR (external_id IN ? AND source IN ?)
+		ORDER BY COALESCE(org_path, '/' || slug) ASC, id ASC
+	`, refs, refs, refs, refs, sources).Rows()
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	teamIDs := make([]string, 0)
+	for rows.Next() {
+		var teamID string
+		if err := rows.Scan(&teamID); err != nil {
+			return nil, err
+		}
+		teamIDs = append(teamIDs, teamID)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return compactBindingRefs(teamIDs), nil
+}
+
+func (r *Repository) SyncExternalRoleBindings(ctx context.Context, userID, source, providerID string, roleIDs []string, replace bool) error {
+	roleIDs = compactBindingRefs(roleIDs)
+	source = externalBindingSource(source)
+	providerID = strings.TrimSpace(providerID)
+	tx := r.db.WithContext(ctx).Begin()
+	if tx.Error != nil {
+		return tx.Error
+	}
+	if replace {
+		if err := tx.Exec(`
+			DELETE FROM user_role_bindings
+			WHERE user_id = ? AND source = ? AND COALESCE(provider_id, '') = ?
+		`, userID, source, providerID).Error; err != nil {
+			tx.Rollback()
+			return err
+		}
+	}
+	if len(roleIDs) > 0 {
+		now := time.Now().UTC()
+		if err := insertExternalUserRoleBindings(tx, userID, source, providerID, roleIDs, now); err != nil {
+			tx.Rollback()
+			return err
+		}
+	}
+	if replace || len(roleIDs) > 0 {
+		if err := bumpUserAuthzVersionTx(tx, userID, time.Now().UTC()); err != nil {
+			tx.Rollback()
+			return err
+		}
+	}
+	return tx.Commit().Error
+}
+
+func (r *Repository) SyncExternalTeamBindings(ctx context.Context, userID, source, providerID string, teamIDs []string, replace bool) error {
+	teamIDs = compactBindingRefs(teamIDs)
+	source = externalBindingSource(source)
+	providerID = strings.TrimSpace(providerID)
+	tx := r.db.WithContext(ctx).Begin()
+	if tx.Error != nil {
+		return tx.Error
+	}
+	if replace {
+		if err := tx.Exec(`
+			DELETE FROM user_team_bindings
+			WHERE user_id = ? AND source = ? AND COALESCE(provider_id, '') = ?
+		`, userID, source, providerID).Error; err != nil {
+			tx.Rollback()
+			return err
+		}
+	}
+	if len(teamIDs) > 0 {
+		now := time.Now().UTC()
+		if err := insertExternalUserTeamBindings(tx, userID, source, providerID, teamIDs, now); err != nil {
+			tx.Rollback()
+			return err
+		}
+	}
+	if replace || len(teamIDs) > 0 {
+		if err := bumpUserAuthzVersionTx(tx, userID, time.Now().UTC()); err != nil {
 			tx.Rollback()
 			return err
 		}
@@ -308,15 +494,19 @@ func (r *Repository) CreateSession(ctx context.Context, session Session) error {
 		return fmt.Errorf("marshal session metadata: %w", err)
 	}
 	now := time.Now().UTC()
+	authzVersion := session.AuthzVersion
+	if authzVersion < 1 {
+		authzVersion = 1
+	}
 	return r.db.WithContext(ctx).Exec(`
-		INSERT INTO sessions (id, user_id, refresh_token_id, provider_type, status, expires_at, last_seen_at, metadata, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, session.ID, session.UserID, session.RefreshTokenID, session.ProviderType, session.Status, session.ExpiresAt, session.LastSeenAt, string(metadata), now, now).Error
+		INSERT INTO sessions (id, user_id, refresh_token_id, provider_type, status, expires_at, last_seen_at, metadata, authz_version, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, session.ID, session.UserID, session.RefreshTokenID, session.ProviderType, session.Status, session.ExpiresAt, session.LastSeenAt, string(metadata), authzVersion, now, now).Error
 }
 
 func (r *Repository) GetSessionByRefreshID(ctx context.Context, refreshID string) (Session, error) {
 	row := r.db.WithContext(ctx).Raw(`
-		SELECT id, user_id, refresh_token_id, provider_type, status, expires_at, last_seen_at, metadata
+		SELECT id, user_id, refresh_token_id, provider_type, status, expires_at, last_seen_at, metadata, authz_version
 		FROM sessions
 		WHERE refresh_token_id = ?
 		LIMIT 1
@@ -326,7 +516,7 @@ func (r *Repository) GetSessionByRefreshID(ctx context.Context, refreshID string
 
 func (r *Repository) GetAuthSessionByID(ctx context.Context, sessionID string) (Session, error) {
 	row := r.db.WithContext(ctx).Raw(`
-		SELECT id, user_id, refresh_token_id, provider_type, status, expires_at, last_seen_at, metadata
+		SELECT id, user_id, refresh_token_id, provider_type, status, expires_at, last_seen_at, metadata, authz_version
 		FROM sessions
 		WHERE id = ?
 		LIMIT 1
@@ -334,12 +524,15 @@ func (r *Repository) GetAuthSessionByID(ctx context.Context, sessionID string) (
 	return scanSession(row)
 }
 
-func (r *Repository) TouchSession(ctx context.Context, refreshID string, lastSeenAt time.Time) error {
+func (r *Repository) TouchSession(ctx context.Context, refreshID string, lastSeenAt time.Time, authzVersion int64) error {
+	if authzVersion < 1 {
+		authzVersion = 1
+	}
 	return r.db.WithContext(ctx).Exec(`
 		UPDATE sessions
-		SET last_seen_at = ?, updated_at = ?
+		SET last_seen_at = ?, authz_version = ?, updated_at = ?
 		WHERE refresh_token_id = ?
-	`, lastSeenAt, time.Now().UTC(), refreshID).Error
+	`, lastSeenAt, authzVersion, time.Now().UTC(), refreshID).Error
 }
 
 func (r *Repository) RevokeSession(ctx context.Context, refreshID string) error {
@@ -721,6 +914,10 @@ func (r *Repository) UpdateUser(ctx context.Context, userID string, input domain
 			return domainaccess.UserRecord{}, err
 		}
 	}
+	if err := bumpUserAuthzVersionTx(tx, userID, now); err != nil {
+		tx.Rollback()
+		return domainaccess.UserRecord{}, err
+	}
 	if err := tx.Commit().Error; err != nil {
 		return domainaccess.UserRecord{}, err
 	}
@@ -748,14 +945,18 @@ func (r *Repository) ListTeamsDetailed(ctx context.Context) ([]domainaccess.Team
 	rows, err := r.db.WithContext(ctx).Raw(`
 		SELECT
 			t.id,
+			COALESCE(t.parent_id, '') AS parent_id,
 			t.name,
 			t.slug,
+			COALESCE(t.org_path, '') AS org_path,
+			COALESCE(t.source, 'local') AS source,
+			COALESCE(t.external_id, '') AS external_id,
 			t.metadata,
 			COUNT(DISTINCT utb.user_id) AS user_count
 		FROM teams t
 		LEFT JOIN user_team_bindings utb ON utb.team_id = t.id
-		GROUP BY t.id, t.name, t.slug, t.metadata
-		ORDER BY t.name ASC, t.id ASC
+		GROUP BY t.id, t.parent_id, t.name, t.slug, t.org_path, t.source, t.external_id, t.metadata
+		ORDER BY COALESCE(t.org_path, '/' || t.slug) ASC, t.name ASC, t.id ASC
 	`).Rows()
 	if err != nil {
 		return nil, err
@@ -766,7 +967,7 @@ func (r *Repository) ListTeamsDetailed(ctx context.Context) ([]domainaccess.Team
 	for rows.Next() {
 		var item domainaccess.TeamRecord
 		var metadata []byte
-		if err := rows.Scan(&item.ID, &item.Name, &item.Slug, &metadata, &item.UserCount); err != nil {
+		if err := rows.Scan(&item.ID, &item.ParentID, &item.Name, &item.Slug, &item.Path, &item.Source, &item.ExternalID, &metadata, &item.UserCount); err != nil {
 			return nil, err
 		}
 		if len(metadata) > 0 {
@@ -786,18 +987,26 @@ func (r *Repository) CreateTeam(ctx context.Context, input domainaccess.TeamInpu
 		return domainaccess.TeamRecord{}, fmt.Errorf("marshal team metadata: %w", err)
 	}
 	now := time.Now().UTC()
+	path, err := r.resolveTeamPath(ctx, input.ParentID, input.Slug, input.Path)
+	if err != nil {
+		return domainaccess.TeamRecord{}, err
+	}
 	if err := r.db.WithContext(ctx).Exec(`
-		INSERT INTO teams (id, name, slug, metadata, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?)
-	`, strings.TrimSpace(input.ID), strings.TrimSpace(input.Name), strings.TrimSpace(input.Slug), string(metadata), now, now).Error; err != nil {
+		INSERT INTO teams (id, parent_id, name, slug, org_path, source, external_id, metadata, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`, strings.TrimSpace(input.ID), nullableString(input.ParentID), strings.TrimSpace(input.Name), strings.TrimSpace(input.Slug), path, teamSource(input.Source), nullableString(input.ExternalID), string(metadata), now, now).Error; err != nil {
 		return domainaccess.TeamRecord{}, err
 	}
 	return domainaccess.TeamRecord{
-		ID:        strings.TrimSpace(input.ID),
-		Name:      strings.TrimSpace(input.Name),
-		Slug:      strings.TrimSpace(input.Slug),
-		Metadata:  input.Metadata,
-		UserCount: 0,
+		ID:         strings.TrimSpace(input.ID),
+		ParentID:   strings.TrimSpace(input.ParentID),
+		Name:       strings.TrimSpace(input.Name),
+		Slug:       strings.TrimSpace(input.Slug),
+		Path:       path,
+		Source:     teamSource(input.Source),
+		ExternalID: strings.TrimSpace(input.ExternalID),
+		Metadata:   input.Metadata,
+		UserCount:  0,
 	}, nil
 }
 
@@ -806,16 +1015,26 @@ func (r *Repository) UpdateTeam(ctx context.Context, teamID string, input domain
 	if err != nil {
 		return domainaccess.TeamRecord{}, fmt.Errorf("marshal team metadata: %w", err)
 	}
+	path, err := r.resolveTeamPath(ctx, input.ParentID, input.Slug, input.Path)
+	if err != nil {
+		return domainaccess.TeamRecord{}, err
+	}
+	if err := r.ensureValidTeamParent(ctx, strings.TrimSpace(teamID), input.ParentID); err != nil {
+		return domainaccess.TeamRecord{}, err
+	}
 	result := r.db.WithContext(ctx).Exec(`
 		UPDATE teams
-		SET name = ?, slug = ?, metadata = ?, updated_at = ?
+		SET parent_id = ?, name = ?, slug = ?, org_path = ?, source = ?, external_id = ?, metadata = ?, updated_at = ?
 		WHERE id = ?
-	`, strings.TrimSpace(input.Name), strings.TrimSpace(input.Slug), string(metadata), time.Now().UTC(), strings.TrimSpace(teamID))
+	`, nullableString(input.ParentID), strings.TrimSpace(input.Name), strings.TrimSpace(input.Slug), path, teamSource(input.Source), nullableString(input.ExternalID), string(metadata), time.Now().UTC(), strings.TrimSpace(teamID))
 	if result.Error != nil {
 		return domainaccess.TeamRecord{}, result.Error
 	}
 	if result.RowsAffected == 0 {
 		return domainaccess.TeamRecord{}, gorm.ErrRecordNotFound
+	}
+	if err := r.refreshTeamSubtreePaths(ctx, strings.TrimSpace(teamID), path); err != nil {
+		return domainaccess.TeamRecord{}, err
 	}
 	items, err := r.ListTeamsDetailed(ctx)
 	if err != nil {
@@ -827,6 +1046,106 @@ func (r *Repository) UpdateTeam(ctx context.Context, teamID string, input domain
 		}
 	}
 	return domainaccess.TeamRecord{}, gorm.ErrRecordNotFound
+}
+
+func (r *Repository) ensureValidTeamParent(ctx context.Context, teamID, parentID string) error {
+	teamID = strings.TrimSpace(teamID)
+	parentID = strings.TrimSpace(parentID)
+	if teamID == "" || parentID == "" {
+		return nil
+	}
+	var count int
+	if err := r.db.WithContext(ctx).Raw(`
+		WITH RECURSIVE descendants AS (
+			SELECT id
+			FROM teams
+			WHERE parent_id = ?
+			UNION ALL
+			SELECT child.id
+			FROM teams child
+			JOIN descendants ON child.parent_id = descendants.id
+		)
+		SELECT COUNT(1)
+		FROM descendants
+		WHERE id = ?
+	`, teamID, parentID).Row().Scan(&count); err != nil {
+		return err
+	}
+	if count > 0 {
+		return fmt.Errorf("team parent cannot be one of its descendants")
+	}
+	return nil
+}
+
+func (r *Repository) resolveTeamPath(ctx context.Context, parentID, slug, explicitPath string) (string, error) {
+	path := strings.TrimSpace(explicitPath)
+	if path != "" {
+		if !strings.HasPrefix(path, "/") {
+			path = "/" + path
+		}
+		return strings.TrimRight(path, "/"), nil
+	}
+	slug = strings.Trim(strings.TrimSpace(slug), "/")
+	if slug == "" {
+		return "", nil
+	}
+	parentID = strings.TrimSpace(parentID)
+	if parentID == "" {
+		return "/" + slug, nil
+	}
+	var parentPath string
+	if err := r.db.WithContext(ctx).Raw(`
+		SELECT COALESCE(org_path, '/' || slug)
+		FROM teams
+		WHERE id = ?
+		LIMIT 1
+	`, parentID).Row().Scan(&parentPath); err != nil {
+		return "", err
+	}
+	parentPath = strings.TrimRight(strings.TrimSpace(parentPath), "/")
+	if parentPath == "" {
+		parentPath = "/" + parentID
+	}
+	return parentPath + "/" + slug, nil
+}
+
+func (r *Repository) refreshTeamSubtreePaths(ctx context.Context, rootID, rootPath string) error {
+	rootID = strings.TrimSpace(rootID)
+	rootPath = strings.TrimRight(strings.TrimSpace(rootPath), "/")
+	if rootID == "" || rootPath == "" {
+		return nil
+	}
+	return r.db.WithContext(ctx).Exec(`
+		WITH RECURSIVE team_tree AS (
+			SELECT id, parent_id, slug, CAST(? AS TEXT) AS org_path
+			FROM teams
+			WHERE id = ?
+			UNION ALL
+			SELECT child.id, child.parent_id, child.slug, team_tree.org_path || '/' || child.slug
+			FROM teams child
+			JOIN team_tree ON child.parent_id = team_tree.id
+		)
+		UPDATE teams AS target
+		SET org_path = team_tree.org_path
+		FROM team_tree
+		WHERE target.id = team_tree.id
+	`, rootPath, rootID).Error
+}
+
+func nullableString(value string) any {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil
+	}
+	return value
+}
+
+func teamSource(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "local"
+	}
+	return value
 }
 
 func (r *Repository) DeleteTeam(ctx context.Context, teamID string) error {
@@ -844,7 +1163,7 @@ func scanUser(row *sql.Row) (User, error) {
 	var user User
 	var tags []byte
 	var preferences []byte
-	if err := row.Scan(&user.ID, &user.Username, &user.Email, &user.DisplayName, &user.Status, &tags, &preferences); err != nil {
+	if err := row.Scan(&user.ID, &user.Username, &user.Email, &user.DisplayName, &user.Status, &tags, &preferences, &user.AuthzVersion); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return User{}, ErrNotFound
 		}
@@ -855,6 +1174,9 @@ func scanUser(row *sql.Row) (User, error) {
 	}
 	if len(preferences) > 0 {
 		_ = json.Unmarshal(preferences, &user.Preferences)
+	}
+	if user.AuthzVersion < 1 {
+		user.AuthzVersion = 1
 	}
 	return user, nil
 }
@@ -898,7 +1220,7 @@ func scanSession(row *sql.Row) (Session, error) {
 	var session Session
 	var metadata []byte
 	var lastSeenAt sql.NullTime
-	if err := row.Scan(&session.ID, &session.UserID, &session.RefreshTokenID, &session.ProviderType, &session.Status, &session.ExpiresAt, &lastSeenAt, &metadata); err != nil {
+	if err := row.Scan(&session.ID, &session.UserID, &session.RefreshTokenID, &session.ProviderType, &session.Status, &session.ExpiresAt, &lastSeenAt, &metadata, &session.AuthzVersion); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return Session{}, ErrNotFound
 		}
@@ -909,6 +1231,9 @@ func scanSession(row *sql.Row) (Session, error) {
 	}
 	if len(metadata) > 0 {
 		_ = json.Unmarshal(metadata, &session.Metadata)
+	}
+	if session.AuthzVersion < 1 {
+		session.AuthzVersion = 1
 	}
 	return session, nil
 }
@@ -1056,6 +1381,42 @@ func insertUserTeamBindings(tx *gorm.DB, userID string, teamIDs []string, now ti
 	return tx.Exec(builder.String(), args...).Error
 }
 
+func insertExternalUserRoleBindings(tx *gorm.DB, userID, source, providerID string, roleIDs []string, now time.Time) error {
+	var builder strings.Builder
+	args := make([]any, 0, len(roleIDs)*8)
+	builder.WriteString(`
+		INSERT INTO user_role_bindings (id, user_id, role_id, scope, source, provider_id, created_at, updated_at)
+		VALUES
+	`)
+	for i, roleID := range roleIDs {
+		if i > 0 {
+			builder.WriteString(",")
+		}
+		builder.WriteString(" (?, ?, ?, '{}', ?, ?, ?, ?)")
+		args = append(args, fmt.Sprintf("%s:%s:%s:%s", userID, source, providerID, roleID), userID, roleID, source, nullableString(providerID), now, now)
+	}
+	builder.WriteString(" ON CONFLICT (user_id, role_id) DO NOTHING")
+	return tx.Exec(builder.String(), args...).Error
+}
+
+func insertExternalUserTeamBindings(tx *gorm.DB, userID, source, providerID string, teamIDs []string, now time.Time) error {
+	var builder strings.Builder
+	args := make([]any, 0, len(teamIDs)*7)
+	builder.WriteString(`
+		INSERT INTO user_team_bindings (id, user_id, team_id, source, provider_id, created_at, updated_at)
+		VALUES
+	`)
+	for i, teamID := range teamIDs {
+		if i > 0 {
+			builder.WriteString(",")
+		}
+		builder.WriteString(" (?, ?, ?, ?, ?, ?, ?)")
+		args = append(args, fmt.Sprintf("%s:%s:%s:%s", userID, source, providerID, teamID), userID, teamID, source, nullableString(providerID), now, now)
+	}
+	builder.WriteString(" ON CONFLICT (user_id, team_id) DO NOTHING")
+	return tx.Exec(builder.String(), args...).Error
+}
+
 func replaceUserRoleBindingsTx(tx *gorm.DB, userID string, roleIDs []string, now time.Time) error {
 	if err := tx.Exec(`DELETE FROM user_role_bindings WHERE user_id = ?`, userID).Error; err != nil {
 		return err
@@ -1074,6 +1435,41 @@ func replaceUserTeamBindingsTx(tx *gorm.DB, userID string, teamIDs []string, now
 		return nil
 	}
 	return insertUserTeamBindings(tx, userID, teamIDs, now)
+}
+
+func bumpUserAuthzVersionTx(tx *gorm.DB, userID string, now time.Time) error {
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return nil
+	}
+	return tx.Exec(`
+		UPDATE users
+		SET authz_version = GREATEST(authz_version, 1) + 1, updated_at = ?
+		WHERE id = ?
+	`, now, userID).Error
+}
+
+func compactBindingRefs(items []string) []string {
+	if len(items) == 0 {
+		return []string{}
+	}
+	normalized := make([]string, 0, len(items))
+	for _, item := range items {
+		item = strings.TrimSpace(item)
+		if item == "" || item == "<nil>" {
+			continue
+		}
+		normalized = append(normalized, item)
+	}
+	return compactSortedStrings(normalized)
+}
+
+func externalBindingSource(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "external"
+	}
+	return value
 }
 
 func compactSortedStrings(items []string) []string {

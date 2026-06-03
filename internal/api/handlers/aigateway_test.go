@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	domainaigateway "github.com/soha/soha/internal/domain/aigateway"
@@ -15,6 +17,9 @@ import (
 type stubAIGatewayService struct {
 	governanceCalled bool
 	governanceReq    domainaigateway.GovernanceStatusRequest
+	listPATReq       domainaigateway.PersonalAccessTokenListRequest
+	rotatePATID      string
+	rotatePATReq     domainaigateway.TokenRotationInput
 }
 
 func (s *stubAIGatewayService) Capabilities(context.Context, domainidentity.Principal, domainaigateway.ManifestRequest) (domainaigateway.Manifest, error) {
@@ -33,7 +38,8 @@ func (s *stubAIGatewayService) GetPrompt(context.Context, domainidentity.Princip
 	return domainaigateway.PromptGetResult{}, nil
 }
 
-func (s *stubAIGatewayService) ListPersonalAccessTokens(context.Context, domainidentity.Principal) ([]domainaigateway.PersonalAccessToken, error) {
+func (s *stubAIGatewayService) ListPersonalAccessTokens(_ context.Context, _ domainidentity.Principal, req domainaigateway.PersonalAccessTokenListRequest) ([]domainaigateway.PersonalAccessToken, error) {
+	s.listPATReq = req
 	return nil, nil
 }
 
@@ -43,6 +49,12 @@ func (s *stubAIGatewayService) CreatePersonalAccessToken(context.Context, domain
 
 func (s *stubAIGatewayService) RevokePersonalAccessToken(context.Context, domainidentity.Principal, string) error {
 	return nil
+}
+
+func (s *stubAIGatewayService) RotatePersonalAccessToken(_ context.Context, _ domainidentity.Principal, tokenID string, req domainaigateway.TokenRotationInput) (domainaigateway.CreatedPersonalAccessToken, error) {
+	s.rotatePATID = tokenID
+	s.rotatePATReq = req
+	return domainaigateway.CreatedPersonalAccessToken{Token: domainaigateway.PersonalAccessToken{ID: "pat-new", TokenPrefix: "soha_pat_new"}, Value: "soha_pat_secret"}, nil
 }
 
 func (s *stubAIGatewayService) ListServiceAccounts(context.Context, domainidentity.Principal) ([]domainaigateway.ServiceAccount, error) {
@@ -63,6 +75,10 @@ func (s *stubAIGatewayService) CreateServiceAccountToken(context.Context, domain
 
 func (s *stubAIGatewayService) RevokeServiceAccountToken(context.Context, domainidentity.Principal, string) error {
 	return nil
+}
+
+func (s *stubAIGatewayService) RotateServiceAccountToken(context.Context, domainidentity.Principal, string, domainaigateway.TokenRotationInput) (domainaigateway.CreatedServiceAccountToken, error) {
+	return domainaigateway.CreatedServiceAccountToken{}, nil
 }
 
 func (s *stubAIGatewayService) ListAIClients(context.Context, domainidentity.Principal) ([]domainaigateway.AIClient, error) {
@@ -196,5 +212,51 @@ func TestAIGatewayGovernanceStatusBoundsWindowHours(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestListPersonalAccessTokensBindsScopeFilters(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	service := &stubAIGatewayService{}
+	handler := NewAIGatewayHandler(service)
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/api/v1/ai-gateway/personal-access-tokens?scope=all&userId=user-2", nil)
+	ctx.Set("principal", domainidentity.Principal{UserID: "u-1"})
+
+	handler.ListPersonalAccessTokens(ctx)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", recorder.Code, http.StatusOK, recorder.Body.String())
+	}
+	if service.listPATReq.Scope != "all" || service.listPATReq.UserID != "user-2" {
+		t.Fatalf("request = %#v, want scope=all userId=user-2", service.listPATReq)
+	}
+}
+
+func TestRotatePersonalAccessTokenBindsOptionalExpiration(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	expiresAt := time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)
+	service := &stubAIGatewayService{}
+	handler := NewAIGatewayHandler(service)
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/api/v1/ai-gateway/personal-access-tokens/pat-1/rotate", strings.NewReader(`{"expiresAt":"2026-07-01T00:00:00Z"}`))
+	ctx.Request.Header.Set("Content-Type", "application/json")
+	ctx.Params = gin.Params{{Key: "tokenID", Value: "pat-1"}}
+	ctx.Set("principal", domainidentity.Principal{UserID: "u-1"})
+
+	handler.RotatePersonalAccessToken(ctx)
+
+	if recorder.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d, body=%s", recorder.Code, http.StatusCreated, recorder.Body.String())
+	}
+	if service.rotatePATID != "pat-1" {
+		t.Fatalf("tokenID = %q, want pat-1", service.rotatePATID)
+	}
+	if service.rotatePATReq.ExpiresAt == nil || !service.rotatePATReq.ExpiresAt.Equal(expiresAt) {
+		t.Fatalf("expiresAt = %#v, want %v", service.rotatePATReq.ExpiresAt, expiresAt)
 	}
 }

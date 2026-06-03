@@ -82,7 +82,7 @@ type clusterCredentialSeed struct {
 // While the stored version matches this constant, the static seed block is
 // skipped entirely. Config-driven sync (admin user, clusters) runs separately
 // during startup so runtime config updates do not depend on replaying defaults.
-const bootstrapSeedVersion = "2026-06-03-alert-integrations"
+const bootstrapSeedVersion = "2026-06-03-organizations"
 
 const bootstrapSeedVersionKey = "bootstrap.seed_version"
 
@@ -304,7 +304,7 @@ func defaultMenuSeeds() []menuSeed {
 		{ID: "access", Path: "/access", LabelZH: "访问控制", LabelEN: "Access Control", IconKey: "shield", Section: "admin", SortOrder: 240, Enabled: true, Roles: []string{"admin"}},
 		{ID: "access-users", Path: "/access/users", LabelZH: "用户", LabelEN: "Users", IconKey: "user", Section: "admin", SortOrder: 226, Enabled: true, Roles: []string{"admin"}},
 		{ID: "access-roles", Path: "/access/roles", LabelZH: "角色", LabelEN: "Roles", IconKey: "shield", Section: "admin", SortOrder: 227, Enabled: true, Roles: []string{"admin"}},
-		{ID: "access-teams", Path: "/access/teams", LabelZH: "用户组", LabelEN: "User Groups", IconKey: "users", Section: "admin", SortOrder: 228, Enabled: true, Roles: []string{"admin"}},
+		{ID: "access-teams", Path: "/access/teams", LabelZH: "组织", LabelEN: "Organizations", IconKey: "users", Section: "admin", SortOrder: 228, Enabled: true, Roles: []string{"admin"}},
 		{ID: "access-policies", Path: "/access/policies", LabelZH: "策略", LabelEN: "Policies", IconKey: "shield", Section: "admin", SortOrder: 229, Enabled: true, Roles: []string{"admin"}},
 		{ID: "menus", ParentID: "system", Path: "/system/menus", LabelZH: "菜单管理", LabelEN: "Menu Management", IconKey: "menu-square", Section: "admin", SortOrder: 250, Enabled: true, Roles: []string{"admin"}},
 		{ID: "system-online-users", ParentID: "system", Path: "/system/online-users", LabelZH: "在线用户", LabelEN: "Online Users", IconKey: "users", Section: "admin", SortOrder: 256, Enabled: true, Roles: []string{"admin"}},
@@ -436,6 +436,7 @@ func syncBuiltinMenuSeedUpgrades(ctx context.Context, db *gorm.DB) error {
 	}{
 		{id: "operations", oldZH: "操作", oldEN: "Operations", labelZH: "操作日志", labelEN: "Operation Logs"},
 		{id: "audit", oldZH: "审计", oldEN: "Audit", labelZH: "审计日志", labelEN: "Audit Logs"},
+		{id: "access-teams", oldZH: "用户组", oldEN: "User Groups", labelZH: "组织", labelEN: "Organizations"},
 	}
 	for _, item := range labelUpdates {
 		if err := db.WithContext(ctx).Exec(`

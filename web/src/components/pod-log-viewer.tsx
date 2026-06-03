@@ -3,9 +3,9 @@ import { DeleteOutlined, ReloadOutlined } from '@ant-design/icons'
 import { Button, Card, Input, Select, Space, Switch, Tag, Typography } from 'antd'
 import { ManagementState } from '@/components/management-list'
 import './resource-operation-panels.css'
+import { buildSameOriginStreamURL, withStreamTicket } from '@/features/auth/stream-ticket'
 import { useI18n } from '@/i18n'
 import { api } from '@/services/api-client'
-import { useAuthStore } from '@/stores/auth-store'
 import { downloadText } from '@/utils/download'
 import type { ApiResponse, PodLogs } from '@/types'
 
@@ -28,24 +28,17 @@ function buildLogStreamURL({
   namespace,
   podName,
   container,
-  accessToken,
 }: {
   clusterId: string
   namespace: string
   podName: string
   container?: string
-  accessToken?: string | null
 }) {
-  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-  const host = import.meta.env.DEV ? '127.0.0.1:8080' : window.location.host
-  const url = new URL(`${protocol}//${host}/api/v1/clusters/${encodeURIComponent(clusterId)}/workloads/pods/${encodeURIComponent(podName)}/logs/stream`)
+  const url = buildSameOriginStreamURL(`/api/v1/clusters/${encodeURIComponent(clusterId)}/workloads/pods/${encodeURIComponent(podName)}/logs/stream`, 'ws')
   url.searchParams.set('namespace', namespace)
   url.searchParams.set('tailLines', '1')
   if (container) {
     url.searchParams.set('container', container)
-  }
-  if (accessToken) {
-    url.searchParams.set('access_token', accessToken)
   }
   return url.toString()
 }
@@ -161,7 +154,6 @@ export function PodLogViewer({
   onContainerChange?: (value: string) => void
 }) {
   const { t, localeCode } = useI18n()
-  const accessToken = useAuthStore((state) => state.accessToken)
   const [lines, setLines] = useState<string[]>([])
   const [connectionState, setConnectionState] = useState<'idle' | 'connecting' | 'connected' | 'closed' | 'error'>('idle')
   const [keyword, setKeyword] = useState('')
@@ -178,6 +170,7 @@ export function PodLogViewer({
   const restoreScrollRef = useRef<{ previousHeight: number; previousTop: number } | null>(null)
   const clearBoundaryRef = useRef<string[]>([])
   const suppressClearedReplayRef = useRef(false)
+  const connectionRunRef = useRef(0)
 
   const logsPath = useMemo(() => {
     if (!clusterId || !namespace) return ''
@@ -197,11 +190,11 @@ export function PodLogViewer({
       namespace,
       podName,
       container,
-      accessToken,
     })
-  }, [accessToken, clusterId, container, namespace, podName, previous])
+  }, [clusterId, container, namespace, podName, previous])
 
   const disconnect = useCallback(() => {
+    connectionRunRef.current += 1
     if (socketRef.current?.readyState === WebSocket.OPEN) {
       socketRef.current.send(JSON.stringify({ type: 'close' }))
     }
@@ -266,11 +259,24 @@ export function PodLogViewer({
     }, delay)
   }, [active, previous])
 
-  const connect = useCallback(() => {
+  const connect = useCallback(async () => {
     if (!streamURL) return
     disconnect()
+    const runId = connectionRunRef.current + 1
+    connectionRunRef.current = runId
     setConnectionState('connecting')
-    const socket = new WebSocket(streamURL)
+    let ticketedURL = ''
+    try {
+      ticketedURL = await withStreamTicket(streamURL)
+    } catch {
+      if (connectionRunRef.current !== runId) return
+      setConnectionState('error')
+      startPollingSync()
+      scheduleReconnect()
+      return
+    }
+    if (connectionRunRef.current !== runId) return
+    const socket = new WebSocket(ticketedURL)
     socketRef.current = socket
 
     socket.onopen = () => {

@@ -9,6 +9,8 @@ import {
   InputNumber,
   Modal,
   Popconfirm,
+  Col,
+  Row,
   Select,
   Space,
   Spin,
@@ -28,6 +30,7 @@ import {
 } from "@/components/management-list";
 import {
   hasPermission,
+  invalidateAuthz,
   usePermissionSnapshot,
 } from "@/features/auth/permission-snapshot";
 import { api } from "@/services/api-client";
@@ -154,6 +157,12 @@ interface LoginProviderSettings {
   userIdField: string;
   userNameField: string;
   emailField: string;
+  roleField: string;
+  organizationField: string;
+  syncRolesOnLogin: boolean;
+  syncOrgsOnLogin: boolean;
+  roleSyncMode: string;
+  orgSyncMode: string;
   metadataUrl: string;
   entityId: string;
   certificate: string;
@@ -176,6 +185,11 @@ const LOGIN_PROVIDER_TYPE_OPTIONS = [
   { value: "wecom", label: "企业微信 OAuth2" },
   { value: "oauth2", label: "通用 OAuth2" },
   { value: "saml", label: "SAML" },
+];
+
+const LOGIN_SYNC_MODE_OPTIONS = [
+  { value: "append", label: "补充绑定" },
+  { value: "replace_external", label: "替换该登录源绑定" },
 ];
 
 function normalizeLoginProvider(
@@ -204,6 +218,12 @@ function normalizeLoginProvider(
     userIdField: String(item?.userIdField || ""),
     userNameField: String(item?.userNameField || ""),
     emailField: String(item?.emailField || ""),
+    roleField: String(item?.roleField || ""),
+    organizationField: String(item?.organizationField || ""),
+    syncRolesOnLogin: Boolean(item?.syncRolesOnLogin),
+    syncOrgsOnLogin: Boolean(item?.syncOrgsOnLogin),
+    roleSyncMode: String(item?.roleSyncMode || "append"),
+    orgSyncMode: String(item?.orgSyncMode || "append"),
     metadataUrl: String(item?.metadataUrl || ""),
     entityId: String(item?.entityId || ""),
     certificate: String(item?.certificate || ""),
@@ -244,6 +264,8 @@ function applyProviderPreset(
         userIdField: provider.userIdField || "open_id",
         userNameField: provider.userNameField || "name",
         emailField: provider.emailField || "enterprise_email",
+        roleField: provider.roleField || "role_ids",
+        organizationField: provider.organizationField || "department_ids",
       };
     case "dingtalk":
       return {
@@ -261,6 +283,8 @@ function applyProviderPreset(
         userIdField: provider.userIdField || "unionId",
         userNameField: provider.userNameField || "nick",
         emailField: provider.emailField || "email",
+        roleField: provider.roleField || "roleList",
+        organizationField: provider.organizationField || "dept_id_list",
       };
     case "wecom":
       return {
@@ -278,6 +302,8 @@ function applyProviderPreset(
         userIdField: provider.userIdField || "UserId",
         userNameField: provider.userNameField || "UserId",
         emailField: provider.emailField || "email",
+        roleField: provider.roleField || "roles",
+        organizationField: provider.organizationField || "department",
       };
     case "saml":
       return {
@@ -299,6 +325,8 @@ function applyProviderPreset(
         userIdField: provider.userIdField || "sub",
         userNameField: provider.userNameField || "name",
         emailField: provider.emailField || "email",
+        roleField: provider.roleField || "roles",
+        organizationField: provider.organizationField || "groups",
       };
   }
 }
@@ -604,6 +632,7 @@ export function LoginSettingsPage({
     onSuccess: () => {
       void message.success("登陆设置已保存");
       void queryClient.invalidateQueries({ queryKey: ["settings-identity"] });
+      void invalidateAuthz(queryClient);
     },
     onError: (err: Error) => void message.error(err.message),
   });
@@ -642,6 +671,20 @@ export function LoginSettingsPage({
       title: "回调地址",
       dataIndex: "redirectUrl",
       render: (value: string) => value || "-",
+    },
+    {
+      title: "登录映射",
+      dataIndex: "id",
+      render: (_: unknown, record: LoginProviderSettings) => {
+        const items = [];
+        if (record.syncRolesOnLogin) {
+          items.push(<Tag key="roles">角色</Tag>);
+        }
+        if (record.syncOrgsOnLogin) {
+          items.push(<Tag key="orgs">组织</Tag>);
+        }
+        return items.length > 0 ? items : "-";
+      },
     },
     {
       title: "启用",
@@ -921,6 +964,50 @@ export function LoginSettingsPage({
           <Form.Item name="defaultRoles" label="默认角色">
             <TagSelect mode="tags" placeholder="readonly / admin" />
           </Form.Item>
+          <Row gutter={16}>
+            <Col xs={24} md={12}>
+              <Form.Item
+                name="syncRolesOnLogin"
+                label="登录补充角色"
+                valuePropName="checked"
+              >
+                <Switch />
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={12}>
+              <Form.Item
+                name="syncOrgsOnLogin"
+                label="登录补充组织"
+                valuePropName="checked"
+              >
+                <Switch />
+              </Form.Item>
+            </Col>
+          </Row>
+          <Row gutter={16}>
+            <Col xs={24} md={12}>
+              <Form.Item name="roleField" label="角色字段">
+                <Input placeholder="roles / role_ids / realm_access.roles" />
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={12}>
+              <Form.Item name="roleSyncMode" label="角色模式">
+                <Select options={LOGIN_SYNC_MODE_OPTIONS} />
+              </Form.Item>
+            </Col>
+          </Row>
+          <Row gutter={16}>
+            <Col xs={24} md={12}>
+              <Form.Item name="organizationField" label="组织字段">
+                <Input placeholder="groups / department_ids / department" />
+              </Form.Item>
+            </Col>
+            <Col xs={24} md={12}>
+              <Form.Item name="orgSyncMode" label="组织模式">
+                <Select options={LOGIN_SYNC_MODE_OPTIONS} />
+              </Form.Item>
+            </Col>
+          </Row>
           <Form.Item name="userIdField" label="用户ID字段">
             <Input placeholder="sub / open_id / unionId / UserId" />
           </Form.Item>

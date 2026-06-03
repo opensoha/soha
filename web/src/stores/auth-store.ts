@@ -5,9 +5,8 @@ import type { User } from '@/types'
 interface AuthState {
   user: User | null
   accessToken: string | null
-  refreshToken: string | null
   setUser: (user: User) => void
-  setTokens: (accessToken: string, refreshToken: string) => void
+  setTokens: (accessToken: string) => void
   clearAuth: () => void
   isAuthenticated: () => boolean
 }
@@ -17,17 +16,22 @@ export const useAuthStore = create<AuthState>()(
     (set, get) => ({
       user: null,
       accessToken: null,
-      refreshToken: null,
       setUser: (user) => set({ user }),
-      setTokens: (accessToken, refreshToken) => set({ accessToken, refreshToken }),
-      clearAuth: () => set({ user: null, accessToken: null, refreshToken: null }),
+      setTokens: (accessToken) => set({ accessToken }),
+      clearAuth: () => set({ user: null, accessToken: null }),
       isAuthenticated: () => !!get().accessToken,
     }),
     {
       name: 'soha-auth',
+      merge: (persistedState, currentState) => {
+        const persisted = persistedState as Partial<Pick<AuthState, 'user'>>
+        return {
+          ...currentState,
+          accessToken: null,
+          user: persisted.user ?? null,
+        }
+      },
       partialize: (state) => ({
-        accessToken: state.accessToken,
-        refreshToken: state.refreshToken,
         user: state.user,
       }),
     },

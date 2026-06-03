@@ -1,6 +1,8 @@
+import { useEffect, useState } from 'react'
 import { Navigate, Outlet, useLocation } from 'react-router-dom'
 import { Spin } from 'antd'
 import { ManagementState } from '@/components/management-list'
+import { refreshAuthSession } from '@/features/auth/auth-api'
 import { permissionSnapshotQueryKey, usePermissionSnapshot } from '@/features/auth/permission-snapshot'
 import { canAccessRoute, findFirstAccessiblePath, findPreferredWorkspace, getRouteMeta } from '@/routes/meta'
 import { useAuthStore } from '@/stores/auth-store'
@@ -12,12 +14,36 @@ const EMPTY_ROLES: string[] = []
 export function AuthGuard() {
   const location = useLocation()
   const queryClient = useQueryClient()
-  const isAuthenticated = useAuthStore((s) => Boolean(s.accessToken))
+  const accessToken = useAuthStore((s) => s.accessToken)
+  const isAuthenticated = Boolean(accessToken)
   const roles = useAuthStore((s) => s.user?.roles ?? EMPTY_ROLES)
   const currentWorkspace = usePreferencesStore((state) => state.currentWorkspace)
+  const [isRestoringAuth, setIsRestoringAuth] = useState(!isAuthenticated)
   const permissionSnapshotQuery = usePermissionSnapshot()
 
+  useEffect(() => {
+    if (isAuthenticated) {
+      setIsRestoringAuth(false)
+      return undefined
+    }
+
+    let cancelled = false
+    setIsRestoringAuth(true)
+    void refreshAuthSession().finally(() => {
+      if (!cancelled) {
+        setIsRestoringAuth(false)
+      }
+    })
+
+    return () => {
+      cancelled = true
+    }
+  }, [isAuthenticated])
+
   if (!isAuthenticated) {
+    if (isRestoringAuth) {
+      return <div className="flex items-center justify-center h-screen"><Spin size="large" /></div>
+    }
     return <Navigate to="/login" state={{ from: location }} replace />
   }
 

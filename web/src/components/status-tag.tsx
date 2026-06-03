@@ -42,7 +42,7 @@ function pickStatusColor(value?: null | string): TagColor {
 
   if ([
     'error', 'failed', 'disconnected', 'critical', 'crashloopbackoff',
-    'terminating', 'notready', 'lost', 'deny',
+    'terminating', 'notready', 'lost', 'deny', 'expired',
   ].includes(normalized)) {
     return 'error'
   }

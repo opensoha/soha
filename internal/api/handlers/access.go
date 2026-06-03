@@ -212,10 +212,14 @@ func (h *AccessHandler) CreateTeam(c *gin.Context) {
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
 	item, err := h.service.CreateTeam(c.Request.Context(), principal, domainaccess.TeamInput{
-		ID:       req.ID,
-		Name:     req.Name,
-		Slug:     req.Slug,
-		Metadata: req.Metadata,
+		ID:         req.ID,
+		ParentID:   req.ParentID,
+		Name:       req.Name,
+		Slug:       req.Slug,
+		Path:       req.Path,
+		Source:     req.Source,
+		ExternalID: req.ExternalID,
+		Metadata:   req.Metadata,
 	})
 	if err != nil {
 		writeError(c, err)
@@ -232,10 +236,14 @@ func (h *AccessHandler) UpdateTeam(c *gin.Context) {
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
 	item, err := h.service.UpdateTeam(c.Request.Context(), principal, c.Param("teamID"), domainaccess.TeamInput{
-		ID:       req.ID,
-		Name:     req.Name,
-		Slug:     req.Slug,
-		Metadata: req.Metadata,
+		ID:         req.ID,
+		ParentID:   req.ParentID,
+		Name:       req.Name,
+		Slug:       req.Slug,
+		Path:       req.Path,
+		Source:     req.Source,
+		ExternalID: req.ExternalID,
+		Metadata:   req.Metadata,
 	})
 	if err != nil {
 		writeError(c, err)

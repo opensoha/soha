@@ -135,6 +135,13 @@ func (s *ManagementService) CreateTeam(ctx context.Context, principal domainiden
 	}
 	input.ID = normalizeID(input.ID, input.Name)
 	input.Slug = normalizeID(input.Slug, input.Name)
+	input.ParentID = strings.TrimSpace(input.ParentID)
+	input.Path = strings.TrimSpace(input.Path)
+	input.Source = strings.TrimSpace(input.Source)
+	if input.Source == "" {
+		input.Source = "local"
+	}
+	input.ExternalID = strings.TrimSpace(input.ExternalID)
 	if input.Metadata == nil {
 		input.Metadata = map[string]any{}
 	}
@@ -157,6 +164,16 @@ func (s *ManagementService) UpdateTeam(ctx context.Context, principal domainiden
 		return domainaccess.TeamRecord{}, fmt.Errorf("%w: team name is required", apperrors.ErrInvalidArgument)
 	}
 	input.Slug = normalizeID(input.Slug, input.Name)
+	input.ParentID = strings.TrimSpace(input.ParentID)
+	if input.ParentID == strings.TrimSpace(teamID) {
+		return domainaccess.TeamRecord{}, fmt.Errorf("%w: organization parent cannot be itself", apperrors.ErrInvalidArgument)
+	}
+	input.Path = strings.TrimSpace(input.Path)
+	input.Source = strings.TrimSpace(input.Source)
+	if input.Source == "" {
+		input.Source = "local"
+	}
+	input.ExternalID = strings.TrimSpace(input.ExternalID)
 	if input.Metadata == nil {
 		input.Metadata = map[string]any{}
 	}

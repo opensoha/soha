@@ -210,10 +210,13 @@ func (r *memoryGatewayRepository) CreatePersonalAccessToken(_ context.Context, i
 func (r *memoryGatewayRepository) RevokePersonalAccessToken(_ context.Context, userID, tokenID string) error {
 	for index := range r.personalTokens {
 		if r.personalTokens[index].UserID == userID && r.personalTokens[index].ID == tokenID {
+			now := time.Now().UTC()
+			r.personalTokens[index].RevokedAt = &now
+			r.personalTokens[index].UpdatedAt = now
 			return nil
 		}
 	}
-	return nil
+	return apperrors.ErrNotFound
 }
 
 func (r *memoryGatewayRepository) ListServiceAccounts(context.Context) ([]domainaigateway.ServiceAccount, error) {
@@ -245,7 +248,15 @@ func (r *memoryGatewayRepository) ListAllServiceAccountTokens(context.Context) (
 	return append([]domainaigateway.ServiceAccountToken(nil), r.serviceAccountTokens...), nil
 }
 
-func (r *memoryGatewayRepository) RevokeServiceAccountToken(context.Context, string) error {
+func (r *memoryGatewayRepository) RevokeServiceAccountToken(_ context.Context, tokenID string) error {
+	for index := range r.serviceAccountTokens {
+		if r.serviceAccountTokens[index].ID == tokenID {
+			now := time.Now().UTC()
+			r.serviceAccountTokens[index].RevokedAt = &now
+			r.serviceAccountTokens[index].UpdatedAt = now
+			return nil
+		}
+	}
 	return nil
 }
 
@@ -1440,6 +1451,44 @@ func TestCapabilitiesUsesRoleAndAIClientToolGrants(t *testing.T) {
 	}
 }
 
+func TestCapabilitiesUsesOrganizationToolGrants(t *testing.T) {
+	repo := &memoryGatewayRepository{
+		toolGrants: []domainaigateway.ToolGrant{
+			{
+				ID:          "team-allow",
+				SubjectType: "team",
+				SubjectID:   "platform-org",
+				AIClientID:  "codex",
+				ToolName:    "delivery.applications.list",
+				Effect:      "allow",
+			},
+		},
+	}
+	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+		matrix: map[string][]string{
+			"developer": {
+				appaccess.PermAIGatewayView,
+				appaccess.PermAIGatewayInvoke,
+				appaccess.PermDeliveryApplicationsView,
+				appaccess.PermDeliveryBuildsTrigger,
+			},
+		},
+	}), nil, repo)
+	principal := testPrincipal("developer")
+	principal.Teams = []string{"platform-org"}
+
+	manifest, err := service.Capabilities(context.Background(), principal, domainaigateway.ManifestRequest{AIClientID: "codex"})
+	if err != nil {
+		t.Fatalf("Capabilities returned error: %v", err)
+	}
+	if !hasTool(manifest.Tools, "delivery.applications.list") {
+		t.Fatalf("expected organization grant to keep application list tool, got %#v", manifest.Tools)
+	}
+	if hasTool(manifest.Tools, "delivery.actions.trigger") {
+		t.Fatalf("did not expect trigger tool outside organization allow-list grants")
+	}
+}
+
 func TestCapabilitiesFiltersToolsByAccessPolicyAllowList(t *testing.T) {
 	repo := &memoryGatewayRepository{
 		accessPolicies: []domainaigateway.AccessPolicy{
@@ -2086,6 +2135,117 @@ func TestCreatePersonalAccessTokenRejectsPermissionEscalation(t *testing.T) {
 	}
 }
 
+func TestListPersonalAccessTokensDefaultsToOwnerAndAllowsManageScopeAll(t *testing.T) {
+	repo := &memoryGatewayRepository{
+		personalTokens: []domainaigateway.PersonalAccessToken{
+			{ID: "pat-owner", UserID: "user-1", Name: "mine"},
+			{ID: "pat-other", UserID: "user-2", Name: "other"},
+		},
+	}
+	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+		matrix: map[string][]string{
+			"developer": {appaccess.PermAIGatewayView},
+			"admin":     {appaccess.PermAIGatewayManage},
+		},
+	}), nil, repo)
+
+	own, err := service.ListPersonalAccessTokens(context.Background(), testPrincipal("developer"), domainaigateway.PersonalAccessTokenListRequest{})
+	if err != nil {
+		t.Fatalf("ListPersonalAccessTokens returned error: %v", err)
+	}
+	if len(own) != 1 || own[0].ID != "pat-owner" {
+		t.Fatalf("expected only owner token, got %#v", own)
+	}
+
+	all, err := service.ListPersonalAccessTokens(context.Background(), testPrincipal("admin"), domainaigateway.PersonalAccessTokenListRequest{Scope: "all"})
+	if err != nil {
+		t.Fatalf("ListPersonalAccessTokens scope=all returned error: %v", err)
+	}
+	if len(all) != 2 {
+		t.Fatalf("expected all tokens for manager, got %#v", all)
+	}
+
+	filtered, err := service.ListPersonalAccessTokens(context.Background(), testPrincipal("admin"), domainaigateway.PersonalAccessTokenListRequest{UserID: "user-2"})
+	if err != nil {
+		t.Fatalf("ListPersonalAccessTokens user filter returned error: %v", err)
+	}
+	if len(filtered) != 1 || filtered[0].ID != "pat-other" {
+		t.Fatalf("expected filtered user token, got %#v", filtered)
+	}
+
+	if _, err := service.ListPersonalAccessTokens(context.Background(), testPrincipal("developer"), domainaigateway.PersonalAccessTokenListRequest{Scope: "all"}); err == nil {
+		t.Fatalf("expected scope=all to require manage permission")
+	}
+}
+
+func TestManageCanRevokeAnotherUsersPersonalAccessToken(t *testing.T) {
+	repo := &memoryGatewayRepository{
+		personalTokens: []domainaigateway.PersonalAccessToken{
+			{ID: "pat-owner", UserID: "user-1", Name: "mine"},
+			{ID: "pat-other", UserID: "user-2", Name: "other"},
+		},
+	}
+	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+		matrix: map[string][]string{
+			"developer": {appaccess.PermAIGatewayInvoke},
+			"admin":     {appaccess.PermAIGatewayManage},
+		},
+	}), nil, repo)
+
+	if err := service.RevokePersonalAccessToken(context.Background(), testPrincipal("admin"), "pat-other"); err != nil {
+		t.Fatalf("RevokePersonalAccessToken returned error: %v", err)
+	}
+	if repo.personalTokens[1].RevokedAt == nil {
+		t.Fatalf("expected manager to revoke another user's token")
+	}
+
+	if err := service.RevokePersonalAccessToken(context.Background(), testPrincipal("developer"), "pat-other"); err == nil {
+		t.Fatalf("expected non-manager to be unable to revoke another user's token")
+	}
+}
+
+func TestRotatePersonalAccessTokenRevokesPreviousAndReturnsReplacement(t *testing.T) {
+	expiredAt := time.Now().UTC().Add(-time.Hour)
+	repo := &memoryGatewayRepository{
+		personalTokens: []domainaigateway.PersonalAccessToken{{
+			ID:             "pat-old",
+			UserID:         "user-1",
+			Name:           "codex",
+			TokenHash:      "old-hash",
+			TokenPrefix:    "soha_pat_old",
+			Scopes:         []string{"mcp"},
+			PermissionKeys: []string{appaccess.PermAIGatewayInvoke},
+			Metadata:       map[string]any{"client": "codex"},
+			ExpiresAt:      &expiredAt,
+		}},
+	}
+	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+		matrix: map[string][]string{
+			"developer": {appaccess.PermAIGatewayInvoke},
+		},
+	}), nil, repo)
+
+	created, err := service.RotatePersonalAccessToken(context.Background(), testPrincipal("developer"), "pat-old", domainaigateway.TokenRotationInput{})
+	if err != nil {
+		t.Fatalf("RotatePersonalAccessToken returned error: %v", err)
+	}
+	if created.Value == "" || created.Token.ID == "pat-old" || created.Token.TokenHash != domainaigateway.HashToken(created.Value) {
+		t.Fatalf("expected replacement token with returned value, got %#v", created)
+	}
+	if created.Token.ExpiresAt == nil || created.Token.ExpiresAt.Before(time.Now().UTC().Add(89*24*time.Hour)) {
+		t.Fatalf("expected expired token rotation to get default future expiry, got %#v", created.Token.ExpiresAt)
+	}
+	if !slices.Contains(created.Token.PermissionKeys, appaccess.PermAIGatewayInvoke) || !slices.Contains(created.Token.Scopes, "mcp") {
+		t.Fatalf("expected previous scopes and permission keys to be preserved, got %#v", created.Token)
+	}
+	if created.Token.Metadata["client"] != "codex" {
+		t.Fatalf("expected metadata to be copied, got %#v", created.Token.Metadata)
+	}
+	if repo.personalTokens[0].RevokedAt == nil {
+		t.Fatalf("expected previous token to be revoked")
+	}
+}
+
 func TestCreateServiceAccountTokenUsesServiceAccountRolePermissions(t *testing.T) {
 	repo := &memoryGatewayRepository{
 		serviceAccounts: map[string]domainaigateway.ServiceAccount{
@@ -2118,6 +2278,52 @@ func TestCreateServiceAccountTokenUsesServiceAccountRolePermissions(t *testing.T
 	}
 	if created.Value == "" || created.Token.ServiceAccountID != "ci" {
 		t.Fatalf("expected token for service account ci, got %#v", created)
+	}
+}
+
+func TestRotateServiceAccountTokenUsesCurrentServiceAccountPermissions(t *testing.T) {
+	expiresAt := time.Now().UTC().Add(2 * time.Hour)
+	repo := &memoryGatewayRepository{
+		serviceAccounts: map[string]domainaigateway.ServiceAccount{
+			"ci": {
+				ID:      "ci",
+				Name:    "ci",
+				Status:  "active",
+				RoleIDs: []string{"ci-role"},
+			},
+		},
+		serviceAccountTokens: []domainaigateway.ServiceAccountToken{{
+			ID:               "sat-old",
+			ServiceAccountID: "ci",
+			Name:             "runner",
+			TokenHash:        "old-hash",
+			TokenPrefix:      "soha_sat_old",
+			Scopes:           []string{"runner"},
+			PermissionKeys:   []string{appaccess.PermAIGatewayInvoke, appaccess.PermDeliveryBuildsTrigger},
+		}},
+	}
+	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+		matrix: map[string][]string{
+			"admin":   {appaccess.PermAIGatewayManage},
+			"ci-role": {appaccess.PermAIGatewayInvoke, appaccess.PermDeliveryBuildsTrigger},
+		},
+	}), nil, repo)
+
+	created, err := service.RotateServiceAccountToken(context.Background(), testPrincipal("admin"), "sat-old", domainaigateway.TokenRotationInput{ExpiresAt: &expiresAt})
+	if err != nil {
+		t.Fatalf("RotateServiceAccountToken returned error: %v", err)
+	}
+	if created.Value == "" || created.Token.ServiceAccountID != "ci" || created.Token.ID == "sat-old" {
+		t.Fatalf("expected replacement service account token, got %#v", created)
+	}
+	if created.Token.ExpiresAt == nil || !created.Token.ExpiresAt.Equal(expiresAt) {
+		t.Fatalf("expected requested expiry to be used, got %#v", created.Token.ExpiresAt)
+	}
+	if !slices.Contains(created.Token.PermissionKeys, appaccess.PermDeliveryBuildsTrigger) || !slices.Contains(created.Token.Scopes, "runner") {
+		t.Fatalf("expected previous token boundaries to be preserved, got %#v", created.Token)
+	}
+	if repo.serviceAccountTokens[0].RevokedAt == nil {
+		t.Fatalf("expected previous service account token to be revoked")
 	}
 }
 

@@ -60,14 +60,14 @@ export function prettifyOperationType(operationType: string) {
     'access.user.update': '用户更新',
     'access.user.delete': '用户删除',
     'access.user.replace_roles': '用户角色绑定更新',
-    'access.user.replace_teams': '用户组绑定更新',
+    'access.user.replace_teams': '组织绑定更新',
     'access.user.revoke_sessions': '用户会话下线',
     'access.role.create': '角色创建',
     'access.role.update': '角色更新',
     'access.role.delete': '角色删除',
-    'access.team.create': '用户组创建',
-    'access.team.update': '用户组更新',
-    'access.team.delete': '用户组删除',
+    'access.team.create': '组织创建',
+    'access.team.update': '组织更新',
+    'access.team.delete': '组织删除',
     'access.policy.create': '策略创建',
     'access.policy.update': '策略更新',
     'access.policy.delete': '策略删除',
@@ -475,7 +475,7 @@ export function getMenuDerivedPermissionKeys(item: Pick<MenuItem, 'id' | 'path' 
         const routeMenuId = resolveRouteMenuId(route)
         return routeMenuId === item.id || route.path === item.path
       })
-      .map((route) => resolveRoutePermission(route))
+      .flatMap((route) => route.permissionKeysAny?.length ? route.permissionKeysAny : [resolveRoutePermission(route)])
       .filter((value): value is string => Boolean(value)),
   )
 }

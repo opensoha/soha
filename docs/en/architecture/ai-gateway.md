@@ -160,11 +160,15 @@ Credential endpoints:
 GET  /api/v1/ai-gateway/personal-access-tokens
 POST /api/v1/ai-gateway/personal-access-tokens
 POST /api/v1/ai-gateway/personal-access-tokens/:tokenID/revoke
+POST /api/v1/ai-gateway/personal-access-tokens/:tokenID/rotate
 GET  /api/v1/ai-gateway/service-accounts
 POST /api/v1/ai-gateway/service-accounts
 POST /api/v1/ai-gateway/service-accounts/:serviceAccountID/tokens
 POST /api/v1/ai-gateway/service-account-tokens/:tokenID/revoke
+POST /api/v1/ai-gateway/service-account-tokens/:tokenID/rotate
 ```
+
+PAT/SAT rows store only hashes and display prefixes. Create and rotate responses return the plaintext token once. Revocation and expiration are enforced by identity token parsing. Rotation copies the previous token scopes, permission keys, and metadata, revalidates permission keys against the current user or service-account roles, creates the replacement token, and revokes the previous token. The optional request body may provide `expiresAt`; otherwise the replacement keeps the previous future expiration, and an already expired token receives a default 90-day replacement window.
 
 AI client and tool grant management endpoints:
 

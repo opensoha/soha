@@ -33,7 +33,7 @@ import {
   ManagementIconButton,
   ManagementTableToolbar,
 } from '@/components/management-list'
-import { hasPermission, permissionSnapshotQueryKey, usePermissionSnapshot } from '@/features/auth/permission-snapshot'
+import { hasPermission, invalidateAuthz, usePermissionSnapshot } from '@/features/auth/permission-snapshot'
 import { MENU_ICON_OPTIONS, isKnownMenuIcon, resolveMenuIcon } from '@/features/system/menu-icons'
 import { normalizeMenuSection, resolveMenuSectionLabel } from '@/features/system/menu-schema'
 import {
@@ -696,10 +696,10 @@ export function MenusPage() {
   const createMutation = useMutation({
     mutationFn: (values: Record<string, unknown>) => api.post('/menus', values),
     onSuccess: () => {
-      void message.success('菜单创建成功')
-      void queryClient.invalidateQueries({ queryKey: ['menus'] })
-      void queryClient.invalidateQueries({ queryKey: permissionSnapshotQueryKey })
-      form.resetFields()
+	      void message.success('菜单创建成功')
+	      void queryClient.invalidateQueries({ queryKey: ['menus'] })
+	      void invalidateAuthz(queryClient)
+	      form.resetFields()
       setModalVisible(false)
     },
     onError: (err: Error) => void message.error(err.message),
@@ -709,10 +709,10 @@ export function MenusPage() {
     mutationFn: ({ id, values }: { id: string; values: Record<string, unknown> }) =>
       api.put(`/menus/${id}`, values),
     onSuccess: () => {
-      void message.success('菜单更新成功')
-      void queryClient.invalidateQueries({ queryKey: ['menus'] })
-      void queryClient.invalidateQueries({ queryKey: permissionSnapshotQueryKey })
-      form.resetFields()
+	      void message.success('菜单更新成功')
+	      void queryClient.invalidateQueries({ queryKey: ['menus'] })
+	      void invalidateAuthz(queryClient)
+	      form.resetFields()
       setModalVisible(false)
       setEditing(null)
     },
@@ -722,10 +722,10 @@ export function MenusPage() {
   const deleteMutation = useMutation({
     mutationFn: (id: string) => api.delete(`/menus/${id}`),
     onSuccess: () => {
-      void message.success('菜单已删除')
-      void queryClient.invalidateQueries({ queryKey: ['menus'] })
-      void queryClient.invalidateQueries({ queryKey: permissionSnapshotQueryKey })
-    },
+	      void message.success('菜单已删除')
+	      void queryClient.invalidateQueries({ queryKey: ['menus'] })
+	      void invalidateAuthz(queryClient)
+	    },
     onError: (err: Error) => void message.error(err.message),
   })
 

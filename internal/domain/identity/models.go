@@ -61,6 +61,15 @@ type AuthResult struct {
 	Tokens TokenSet  `json:"tokens"`
 }
 
+type StreamTicketRequest struct {
+	Path string `json:"path"`
+}
+
+type StreamTicket struct {
+	Ticket    string    `json:"ticket"`
+	ExpiresAt time.Time `json:"expiresAt"`
+}
+
 type Provider struct {
 	Type     string `json:"type"`
 	ID       string `json:"id,omitempty"`

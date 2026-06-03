@@ -41,6 +41,7 @@ import { ManagementDetailHeader, ManagementIconButton, ManagementState, Manageme
 import { StatusTag } from '@/components/status-tag'
 import { hasPermission, usePermissionSnapshot } from '@/features/auth/permission-snapshot'
 import { api } from '@/services/api-client'
+import { useAuthStore } from '@/stores/auth-store'
 import type { ApiResponse } from '@/types'
 import {
   accessPolicyApprovalPolicyFromValues,
@@ -343,6 +344,15 @@ function governanceTokenTiming(record: GovernanceTokenFindingRow) {
   return compactList(items, 3)
 }
 
+function tokenStatus(record: { expiresAt?: string; revokedAt?: string }) {
+  if (record.revokedAt) return 'revoked'
+  if (record.expiresAt) {
+    const expiresAt = new Date(record.expiresAt).getTime()
+    if (Number.isFinite(expiresAt) && expiresAt <= Date.now()) return 'expired'
+  }
+  return 'active'
+}
+
 
 
 function cardTitle(icon: ReactNode, title: string) {
@@ -546,12 +556,14 @@ export function AIGatewayPage() {
   const [policyFilter, setPolicyFilter] = useState('')
   const [grantFilter, setGrantFilter] = useState('')
   const [governanceWindowHours, setGovernanceWindowHours] = useState('24')
+  const currentUser = useAuthStore((state) => state.user)
   const permissionSnapshot = usePermissionSnapshot()
   const snapshot = permissionSnapshot.data?.data
   const canView = hasPermission(snapshot, 'ai.gateway.view')
   const canManage = hasPermission(snapshot, 'ai.gateway.manage')
   const canInvoke = hasPermission(snapshot, 'ai.gateway.invoke')
   const canUseGateway = canView || canInvoke || canManage
+  const personalTokenScope = canManage ? 'all' : 'mine'
 
   const clientsQuery = useQuery({
     queryKey: ['ai-gateway', 'ai-clients'],
@@ -559,9 +571,9 @@ export function AIGatewayPage() {
     enabled: canManage,
   })
   const personalTokensQuery = useQuery({
-    queryKey: ['ai-gateway', 'personal-access-tokens'],
-    queryFn: () => api.get<ApiResponse<PersonalAccessToken[]>>('/ai-gateway/personal-access-tokens'),
-    enabled: canView,
+    queryKey: ['ai-gateway', 'personal-access-tokens', personalTokenScope],
+    queryFn: () => api.get<ApiResponse<PersonalAccessToken[]>>(canManage ? '/ai-gateway/personal-access-tokens?scope=all' : '/ai-gateway/personal-access-tokens'),
+    enabled: canManage || canView,
   })
   const serviceAccountsQuery = useQuery({
     queryKey: ['ai-gateway', 'service-accounts'],
@@ -842,6 +854,29 @@ export function AIGatewayPage() {
     onError: (error: Error) => message.error(error.message),
   })
 
+  const rotateTokenMutation = useMutation<ApiResponse<CreatedPersonalAccessToken | CreatedServiceAccountToken>, Error, { kind: 'personal-token' | 'service-token'; id: string }>({
+    mutationFn: ({ kind, id }: { kind: 'personal-token' | 'service-token'; id: string }) => {
+      if (kind === 'personal-token') {
+        return api.post<ApiResponse<CreatedPersonalAccessToken>>(`/ai-gateway/personal-access-tokens/${id}/rotate`)
+      }
+      return api.post<ApiResponse<CreatedServiceAccountToken>>(`/ai-gateway/service-account-tokens/${id}/rotate`)
+    },
+    onSuccess: (res: any, variables) => {
+      const value = res?.data?.value
+      const token = res?.data?.token
+      if (value) {
+        setOneTimeToken({
+          title: variables.kind === 'service-token' ? '服务账号 token 已轮换' : 'Personal access token 已轮换',
+          value,
+          prefix: token?.tokenPrefix,
+        })
+      }
+      void refreshAll()
+      message.success('已轮换')
+    },
+    onError: (error: Error) => message.error(error.message),
+  })
+
   const disableClientMutation = useMutation({
     mutationFn: (record: AIClient) => api.put<ApiResponse<AIClient>>(`/ai-gateway/ai-clients/${record.id}`, {
       id: record.id,
@@ -911,21 +946,32 @@ export function AIGatewayPage() {
   ]
 
   const tokenColumns: TableColumnsType<PersonalAccessToken> = [
-    { title: '名称', dataIndex: 'name', width: 200, render: (_, record) => <Space orientation="vertical" size={0}><Text strong>{record.name}</Text><Text type="secondary">{record.tokenPrefix}</Text></Space> },
+    { title: '名称', dataIndex: 'name', width: 220, render: (_, record) => <Space orientation="vertical" size={0}><Text strong>{record.name}</Text><Text type="secondary">{record.tokenPrefix}</Text></Space> },
+    { title: 'Owner', dataIndex: 'userId', width: 180, render: (value) => <Tag>{value}</Tag> },
     { title: '权限', dataIndex: 'permissionKeys', render: (value) => compactList(value, 3) },
     { title: '过期', dataIndex: 'expiresAt', width: 140, render: formatDateTime },
     { title: '最近使用', dataIndex: 'lastUsedAt', width: 140, render: formatDateTime },
-    { title: '状态', dataIndex: 'revokedAt', width: 110, render: (value) => <StatusTag value={value ? 'revoked' : 'active'} /> },
+    { title: '状态', key: 'status', width: 110, render: (_, record) => <StatusTag value={tokenStatus(record)} /> },
     {
       title: '',
       key: 'actions',
       fixed: 'right',
-      width: 80,
-      render: (_, record) => (
-        <Popconfirm title="吊销 personal access token？" description="该操作会立即更新 AI Gateway 控制面。" okButtonProps={{ danger: true, loading: deleteMutation.isPending }} onConfirm={() => deleteMutation.mutate({ kind: 'personal-token', id: record.id })}>
-          <ManagementIconButton size="small" tooltip="吊销" aria-label="吊销 personal access token" danger icon={<StopOutlined />} disabled={!canInvoke || !!record.revokedAt} />
-        </Popconfirm>
-      ),
+      width: 120,
+      render: (_, record) => {
+        const isOwner = record.userId === currentUser?.userId
+        const canRotate = canInvoke && isOwner
+        const canRevoke = canManage || (canInvoke && isOwner)
+        return (
+          <Space className="soha-row-action-icons">
+            <Popconfirm title="轮换 personal login key？" description="旧 key 会被吊销，新明文只展示一次。只有 owner 本人可以轮换。" okButtonProps={{ loading: rotateTokenMutation.isPending }} onConfirm={() => rotateTokenMutation.mutate({ kind: 'personal-token', id: record.id })}>
+              <ManagementIconButton size="small" tooltip="轮换" aria-label="轮换 personal login key" icon={<ReloadOutlined />} loading={rotateTokenMutation.isPending} disabled={!canRotate || !!record.revokedAt} />
+            </Popconfirm>
+            <Popconfirm title="吊销 personal login key？" description="吊销后该 key 将不能再登录或调用 AI Gateway，审计记录会保留。" okButtonProps={{ danger: true, loading: deleteMutation.isPending }} onConfirm={() => deleteMutation.mutate({ kind: 'personal-token', id: record.id })}>
+              <ManagementIconButton size="small" tooltip="吊销" aria-label="吊销 personal login key" danger icon={<StopOutlined />} disabled={!canRevoke || !!record.revokedAt} />
+            </Popconfirm>
+          </Space>
+        )
+      },
     },
   ]
 
@@ -933,7 +979,7 @@ export function AIGatewayPage() {
     { title: '服务账号', dataIndex: 'name', width: 240, render: (_, record) => <Space orientation="vertical" size={0}><Text strong>{record.name}</Text><Text type="secondary">{record.id}</Text></Space> },
     { title: '状态', dataIndex: 'status', width: 110, render: (value) => <StatusTag value={value} /> },
     { title: '角色', dataIndex: 'roleIds', render: (value) => compactList(value, 3) },
-    { title: '用户组', dataIndex: 'teamIds', render: (value) => compactList(value, 2) },
+    { title: '组织', dataIndex: 'teamIds', render: (value) => compactList(value, 2) },
     {
       title: '',
       key: 'actions',
@@ -954,22 +1000,27 @@ export function AIGatewayPage() {
     { title: 'Scopes', dataIndex: 'scopes', render: (value) => compactList(value, 2) },
     { title: '过期', dataIndex: 'expiresAt', width: 140, render: formatDateTime },
     { title: '最近使用', dataIndex: 'lastUsedAt', width: 140, render: formatDateTime },
-    { title: '状态', dataIndex: 'revokedAt', width: 110, render: (value) => <StatusTag value={value ? 'revoked' : 'active'} /> },
+    { title: '状态', key: 'status', width: 110, render: (_, record) => <StatusTag value={tokenStatus(record)} /> },
     {
       title: '',
       key: 'actions',
       fixed: 'right',
-      width: 90,
+      width: 120,
       render: (_, record) => (
-        <ManagementIconButton
-          size="small"
-          tooltip="吊销"
-          aria-label="吊销服务 token"
-          danger
-          icon={<StopOutlined />}
-          disabled={!canManage || !!record.revokedAt}
-          onClick={() => setDrawer({ kind: 'service-token-revoke', initialValues: { tokenId: record.id } })}
-        />
+        <Space className="soha-row-action-icons">
+          <Popconfirm title="轮换服务账号 token？" description="系统会生成新明文并吊销旧 token，新明文只展示一次。" okButtonProps={{ loading: rotateTokenMutation.isPending }} onConfirm={() => rotateTokenMutation.mutate({ kind: 'service-token', id: record.id })}>
+            <ManagementIconButton size="small" tooltip="轮换" aria-label="轮换服务 token" icon={<ReloadOutlined />} loading={rotateTokenMutation.isPending} disabled={!canManage || !!record.revokedAt} />
+          </Popconfirm>
+          <ManagementIconButton
+            size="small"
+            tooltip="吊销"
+            aria-label="吊销服务 token"
+            danger
+            icon={<StopOutlined />}
+            disabled={!canManage || !!record.revokedAt}
+            onClick={() => setDrawer({ kind: 'service-token-revoke', initialValues: { tokenId: record.id } })}
+          />
+        </Space>
       ),
     },
   ]
@@ -1250,7 +1301,7 @@ export function AIGatewayPage() {
     <div className="soha-page">
       <ManagementDetailHeader
         title="企业 AI 运维控制面"
-        description="统一管理 AI client、token、service account、tool grant、access policy、skill binding、审批与调用日志。"
+        description="统一管理 AI client、用户 login key、service account、tool grant、access policy、skill binding、审批与调用日志。"
         actions={(
           <ManagementTableToolbar>
             <Button size="small" icon={<ReloadOutlined />} onClick={() => void refreshAll()}>刷新</Button>
@@ -1267,7 +1318,11 @@ export function AIGatewayPage() {
         <Space orientation="vertical" size={12} style={{ width: '100%' }}>
           <Text type="secondary">{gatewayPanelMeta.description}</Text>
           {section === 'tokens' || section === 'governance' || section === 'call-logs' ? (
-            <Text type="secondary">{gatewayMenuMeta[sectionActiveTab].description}</Text>
+            <Text type="secondary">
+              {sectionActiveTab === 'tokens'
+                ? '用户 login key 在这里聚合展示；管理员可吊销，明文只在生成或轮换后展示一次。'
+                : gatewayMenuMeta[sectionActiveTab].description}
+            </Text>
           ) : null}
           {section === 'overview' ? (
             <Space orientation="vertical" size={12} style={{ width: '100%' }}>
@@ -1275,7 +1330,7 @@ export function AIGatewayPage() {
                 <Descriptions size="small" column={2} bordered items={[
                   { key: 'tools', label: 'Visible tools', children: summary.tools },
                   { key: 'clients', label: 'AI clients', children: summary.clients },
-                  { key: 'tokens', label: 'PAT', children: personalTokens.length },
+                  { key: 'tokens', label: 'Login keys', children: personalTokens.length },
                   { key: 'serviceAccounts', label: 'Service accounts', children: summary.serviceAccounts },
                 ]} />
                 <Descriptions size="small" column={2} bordered items={[
@@ -1363,12 +1418,12 @@ export function AIGatewayPage() {
                   columns={tokenColumns}
                   dataSource={filteredPersonalTokens}
                   loading={personalTokensQuery.isLoading}
-                  scroll={{ x: 900 }}
-                  title="Personal Access Tokens"
+                  scroll={{ x: 1080 }}
+                  title={canManage ? 'User Login Keys' : 'My Login Keys'}
                   headerExtra={(
                     <ManagementTableToolbar>
-                      <Button type="primary" size="small" icon={<PlusOutlined />} disabled={!canInvoke} onClick={() => setDrawer({ kind: 'personal-token' })}>创建 PAT</Button>
-                      <Input allowClear size="small" style={{ width: 240 }} placeholder="过滤 token" value={tokenFilter} onChange={(event) => setTokenFilter(event.target.value)} />
+                      <Button type="primary" size="small" icon={<PlusOutlined />} disabled={!canInvoke} onClick={() => setDrawer({ kind: 'personal-token' })}>生成我的 key</Button>
+                      <Input allowClear size="small" style={{ width: 260 }} placeholder="过滤 key / owner" value={tokenFilter} onChange={(event) => setTokenFilter(event.target.value)} />
                     </ManagementTableToolbar>
                   )}
                 />
@@ -1782,7 +1837,7 @@ function renderDrawerFields(drawer: DrawerState, clients: AIClient[], manifest?:
           <Form.Item name="roleIds" label="角色">
             <Select mode="tags" tokenSeparators={[',', ' ']} />
           </Form.Item>
-          <Form.Item name="teamIds" label="用户组">
+          <Form.Item name="teamIds" label="组织">
             <Select mode="tags" tokenSeparators={[',', ' ']} />
           </Form.Item>
           <Form.Item name="scopeGrantIds" label="Scope grants">
@@ -1896,7 +1951,7 @@ function renderDrawerFields(drawer: DrawerState, clients: AIClient[], manifest?:
                 <Form.Item name="approvalApproverRoles" label="候选角色">
                   <Select mode="tags" tokenSeparators={[',', ' ']} />
                 </Form.Item>
-                <Form.Item name="approvalApproverTeams" label="候选用户组">
+                <Form.Item name="approvalApproverTeams" label="候选组织">
                   <Select mode="tags" tokenSeparators={[',', ' ']} />
                 </Form.Item>
                 <Form.Item name="approvalOnCallRef" label="On-call ref">

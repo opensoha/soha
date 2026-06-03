@@ -140,6 +140,13 @@ Checks:
 - the user-group binding saved successfully
 - if policy depends on `user groups`, do not stop at role binding alone
 
+For users logging in through OIDC, OAuth2, Feishu, DingTalk, or WeCom providers with login-time role or organization enrichment enabled, also confirm:
+
+- `roleField` and `organizationField` match the provider's claim/profile payload
+- external role references resolve to local `roles.id` or `roles.name`
+- external organization references resolve to local organization `id`, `slug`, `org_path`, or `source + externalId`
+- `replace_external` only replaces bindings written by the same login provider and does not remove locally managed bindings from the user page
+
 ### 6. Refresh the permission snapshot
 
 After role, menu, policy, or scope changes, the current session may still hold an outdated permission snapshot.

@@ -653,6 +653,11 @@ type PersonalAccessToken struct {
 	UpdatedAt      time.Time      `json:"updatedAt"`
 }
 
+type PersonalAccessTokenListRequest struct {
+	Scope  string
+	UserID string
+}
+
 type PersonalAccessTokenInput struct {
 	Name           string         `json:"name"`
 	Scopes         []string       `json:"scopes"`
@@ -721,6 +726,10 @@ type ServiceAccountTokenInput struct {
 type CreatedServiceAccountToken struct {
 	Token ServiceAccountToken `json:"token"`
 	Value string              `json:"value"`
+}
+
+type TokenRotationInput struct {
+	ExpiresAt *time.Time `json:"expiresAt,omitempty"`
 }
 
 type AuditLog struct {

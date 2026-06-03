@@ -25,6 +25,7 @@ import {
 import { HeaderPreferenceButton } from '@/components/header-preference-button'
 import { PlatformScopeTrigger } from '@/components/platform-scope-toolbar'
 import { AnnouncementBell } from '@/features/announcements/announcement-center'
+import { logoutAuthSession } from '@/features/auth/auth-api'
 import { usePermissionSnapshot } from '@/features/auth/permission-snapshot'
 import { resolveMenuIcon } from '@/features/system/menu-icons'
 import { resolveMenuSectionLabel } from '@/features/system/menu-schema'
@@ -386,7 +387,7 @@ function WorkbenchSwitcher({
 export function AppLayout() {
   const navigate = useNavigate()
   const location = useLocation()
-  const { user, clearAuth } = useAuthStore()
+  const user = useAuthStore((state) => state.user)
   const permissionSnapshotQuery = usePermissionSnapshot()
   const brandingQuery = useBrandingSettings()
   const localeCode = usePreferencesStore((state) => state.localeCode)
@@ -782,7 +783,7 @@ export function AppLayout() {
                   items: [
                     { key: 'user', label: userDisplayName, disabled: true },
                     { type: 'divider' },
-                    { key: 'profile', icon: <UserOutlined />, label: t('layout.profile', '个人信息') },
+                    { key: 'profile', icon: <UserOutlined />, label: t('layout.profile', '个人中心') },
                     { type: 'divider' },
                     { key: 'logout', icon: <LogoutOutlined />, label: t('layout.logout', 'Sign out') },
                   ],
@@ -792,8 +793,7 @@ export function AppLayout() {
                       return
                     }
                     if (key === 'logout') {
-                      clearAuth()
-                      navigate('/login')
+                      void logoutAuthSession().finally(() => navigate('/login'))
                     }
                   },
                 }}

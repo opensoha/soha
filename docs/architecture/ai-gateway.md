@@ -166,11 +166,15 @@ Kubernetes 工具通过 `internal/application/resource` 读取平台聚合视图
 GET  /api/v1/ai-gateway/personal-access-tokens
 POST /api/v1/ai-gateway/personal-access-tokens
 POST /api/v1/ai-gateway/personal-access-tokens/:tokenID/revoke
+POST /api/v1/ai-gateway/personal-access-tokens/:tokenID/rotate
 GET  /api/v1/ai-gateway/service-accounts
 POST /api/v1/ai-gateway/service-accounts
 POST /api/v1/ai-gateway/service-accounts/:serviceAccountID/tokens
 POST /api/v1/ai-gateway/service-account-tokens/:tokenID/revoke
+POST /api/v1/ai-gateway/service-account-tokens/:tokenID/rotate
 ```
+
+PAT/SAT 只保存 hash 和展示 prefix，创建和轮换只返回一次明文。撤销和过期会在 identity token 解析层生效；轮换会复制旧 token 的 scopes、permissionKeys 和 metadata，重新按当前用户或服务账号角色校验 permissionKeys，生成新 token 后吊销旧 token。请求体可选传 `expiresAt` 覆盖新过期时间；未传时沿用旧 token 的未来过期时间，旧 token 已过期则默认给新 token 90 天窗口。
 
 AI 客户端和工具授权管理入口：
 

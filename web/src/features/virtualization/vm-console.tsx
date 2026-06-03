@@ -5,7 +5,7 @@ import { CopyOutlined, FullscreenOutlined, FullscreenExitOutlined } from '@ant-d
 import RFB from '@novnc/novnc'
 import { virtualizationApi } from './virtualization-api'
 import { ManagementState } from '@/components/management-list'
-import { useAuthStore } from '@/stores/auth-store'
+import { buildSameOriginStreamURL, withStreamTicket } from '@/features/auth/stream-ticket'
 
 const STATUS_BADGE: Record<string, 'success' | 'processing' | 'warning' | 'error' | 'default'> = {
   connecting: 'processing',
@@ -27,7 +27,6 @@ export function VMConsole({ vmId }: { vmId: string }) {
   const [errorMessage, setErrorMessage] = useState<string>('')
   const [isFullscreen, setIsFullscreen] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
-  const accessToken = useAuthStore((state) => state.accessToken)
   const { message } = App.useApp()
 
   const consoleQuery = useQuery({
@@ -41,45 +40,49 @@ export function VMConsole({ vmId }: { vmId: string }) {
       return
     }
 
-    const host = import.meta.env.DEV ? '127.0.0.1:8080' : window.location.host
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const wsUrl = `${protocol}//${host}${consoleData.url}?access_token=${accessToken}`
+    let disposed = false
+    let rfbInstance: RFB | null = null
+    void (async () => {
+      try {
+        const baseURL = buildSameOriginStreamURL(consoleData.url, 'ws')
+        const wsUrl = await withStreamTicket(baseURL)
+        if (disposed || !containerRef.current) return
+        rfbInstance = new RFB(containerRef.current, wsUrl, {
+          credentials: { password: consoleData.token || '' },
+        })
 
-    try {
-      const rfbInstance = new RFB(containerRef.current, wsUrl, {
-        credentials: { password: consoleData.token || '' },
-      })
+        rfbInstance.scaleViewport = true
+        rfbInstance.resizeSession = true
 
-      rfbInstance.scaleViewport = true
-      rfbInstance.resizeSession = true
+        rfbInstance.addEventListener('connect', () => {
+          setStatus('connected')
+          setErrorMessage('')
+        })
 
-      rfbInstance.addEventListener('connect', () => {
-        setStatus('connected')
-        setErrorMessage('')
-      })
+        rfbInstance.addEventListener('disconnect', (e: any) => {
+          setStatus('disconnected')
+          if (e.detail.clean === false) {
+            setErrorMessage(e.detail.reason || 'Connection closed unexpectedly')
+          }
+        })
 
-      rfbInstance.addEventListener('disconnect', (e: any) => {
-        setStatus('disconnected')
-        if (e.detail.clean === false) {
-          setErrorMessage(e.detail.reason || 'Connection closed unexpectedly')
-        }
-      })
+        rfbInstance.addEventListener('securityfailure', (e: any) => {
+          setStatus('error')
+          setErrorMessage(e.detail.reason || 'Security failure')
+        })
 
-      rfbInstance.addEventListener('securityfailure', (e: any) => {
+        setRfb(rfbInstance)
+      } catch (err) {
         setStatus('error')
-        setErrorMessage(e.detail.reason || 'Security failure')
-      })
-
-      setRfb(rfbInstance)
-
-      return () => {
-        rfbInstance.disconnect()
+        setErrorMessage(String(err))
       }
-    } catch (err) {
-      setStatus('error')
-      setErrorMessage(String(err))
+    })()
+
+    return () => {
+      disposed = true
+      rfbInstance?.disconnect()
     }
-  }, [consoleQuery.data, vmId, accessToken])
+  }, [consoleQuery.data, vmId])
 
   useEffect(() => {
     const handler = () => setIsFullscreen(Boolean(document.fullscreenElement))

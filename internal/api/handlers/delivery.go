@@ -6,7 +6,6 @@ import (
 	"errors"
 	"io"
 	"net/http"
-	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/soha/soha/internal/api/dto"
@@ -399,7 +398,7 @@ func (h *DeliveryHandler) RetryExecutionTask(c *gin.Context) {
 }
 
 func (h *DeliveryHandler) GetExecutionTaskRunnerStatus(c *gin.Context) {
-	if !h.authorizeRunner(c.GetHeader("Authorization")) {
+	if !authorizeDeliveryRunner(c, h.runnerToken) {
 		apiresponse.Error(c, http.StatusUnauthorized, "unauthorized", "invalid runner token")
 		return
 	}
@@ -430,7 +429,7 @@ func (h *DeliveryHandler) RecordExecutionCallback(c *gin.Context) {
 }
 
 func (h *DeliveryHandler) ClaimExecutionTask(c *gin.Context) {
-	if !h.authorizeRunner(c.GetHeader("Authorization")) {
+	if !authorizeDeliveryRunner(c, h.runnerToken) {
 		apiresponse.Error(c, http.StatusUnauthorized, "unauthorized", "invalid runner token")
 		return
 	}
@@ -445,16 +444,6 @@ func (h *DeliveryHandler) ClaimExecutionTask(c *gin.Context) {
 		return
 	}
 	apiresponse.Item(c, http.StatusAccepted, item)
-}
-
-func (h *DeliveryHandler) authorizeRunner(header string) bool {
-	if strings.TrimSpace(h.runnerToken) == "" {
-		return false
-	}
-	token := strings.TrimSpace(header)
-	token = strings.TrimPrefix(token, "Bearer ")
-	token = strings.TrimPrefix(token, "bearer ")
-	return strings.TrimSpace(token) == strings.TrimSpace(h.runnerToken)
 }
 
 func decodeDeliveryBlueprintRequest(c *gin.Context) (domaindelivery.DeliveryBlueprintInput, error) {

@@ -180,11 +180,15 @@ type RoleRecord struct {
 }
 
 type TeamRecord struct {
-	ID        string         `json:"id"`
-	Name      string         `json:"name"`
-	Slug      string         `json:"slug"`
-	Metadata  map[string]any `json:"metadata"`
-	UserCount int            `json:"userCount"`
+	ID         string         `json:"id"`
+	ParentID   string         `json:"parentId,omitempty"`
+	Name       string         `json:"name"`
+	Slug       string         `json:"slug"`
+	Path       string         `json:"path,omitempty"`
+	Source     string         `json:"source,omitempty"`
+	ExternalID string         `json:"externalId,omitempty"`
+	Metadata   map[string]any `json:"metadata"`
+	UserCount  int            `json:"userCount"`
 }
 
 type RoleInput struct {
@@ -196,10 +200,14 @@ type RoleInput struct {
 }
 
 type TeamInput struct {
-	ID       string         `json:"id"`
-	Name     string         `json:"name"`
-	Slug     string         `json:"slug"`
-	Metadata map[string]any `json:"metadata"`
+	ID         string         `json:"id"`
+	ParentID   string         `json:"parentId,omitempty"`
+	Name       string         `json:"name"`
+	Slug       string         `json:"slug"`
+	Path       string         `json:"path,omitempty"`
+	Source     string         `json:"source,omitempty"`
+	ExternalID string         `json:"externalId,omitempty"`
+	Metadata   map[string]any `json:"metadata"`
 }
 
 type PolicyInput struct {

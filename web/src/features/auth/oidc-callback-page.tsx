@@ -2,11 +2,10 @@ import { useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { App, Spin, theme, Typography } from "antd";
 import {
-  API_BASE_URL,
-  clearAuthSession,
   commitAuthResult,
   exchangeOIDCCode,
   fetchPermissionSnapshot,
+  logoutAuthSession,
 } from "@/features/auth/auth-api";
 import { findLandingPath } from "@/routes/meta";
 import { usePreferencesStore } from "@/stores/preferences-store";
@@ -74,17 +73,7 @@ export function OIDCCallbackPage() {
     event: React.MouseEvent<HTMLAnchorElement>,
   ) => {
     event.preventDefault();
-    try {
-      await fetch(`${API_BASE_URL}/auth/logout`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-      });
-    } catch {
-      // best-effort
-    }
-    clearAuthSession();
+    await logoutAuthSession();
     navigate("/login", { replace: true });
   };
 

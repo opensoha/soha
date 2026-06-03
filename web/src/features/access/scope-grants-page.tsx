@@ -10,7 +10,7 @@ import {
   ManagementState,
   ManagementTableToolbar,
 } from '@/components/management-list'
-import { hasPermission, usePermissionSnapshot } from '@/features/auth/permission-snapshot'
+import { hasPermission, invalidateAuthz, usePermissionSnapshot } from '@/features/auth/permission-snapshot'
 import { BooleanTag } from '@/components/status-tag'
 import { api } from '@/services/api-client'
 import { formatDateTime } from '@/utils/time'
@@ -66,6 +66,7 @@ export function AccessScopeGrantsPage() {
     onSuccess: () => {
       message.success('授权项创建成功')
       queryClient.invalidateQueries({ queryKey: ['scope-grants'] })
+      void invalidateAuthz(queryClient)
       setModalVisible(false)
     },
     onError: (err: Error) => message.error(err.message),
@@ -75,6 +76,7 @@ export function AccessScopeGrantsPage() {
     onSuccess: () => {
       message.success('授权项更新成功')
       queryClient.invalidateQueries({ queryKey: ['scope-grants'] })
+      void invalidateAuthz(queryClient)
       setModalVisible(false)
       setEditing(null)
     },
@@ -85,12 +87,13 @@ export function AccessScopeGrantsPage() {
     onSuccess: () => {
       message.success('授权项已删除')
       queryClient.invalidateQueries({ queryKey: ['scope-grants'] })
+      void invalidateAuthz(queryClient)
     },
     onError: (err: Error) => message.error(err.message),
   })
 
   const columns: ColumnProps<ScopeGrant>[] = [
-    { title: '主体类型', dataIndex: 'subjectType', render: (value: string) => value === 'team' ? '用户组' : '用户' },
+    { title: '主体类型', dataIndex: 'subjectType', render: (value: string) => value === 'team' ? '组织' : '用户' },
     { title: '主体 ID', dataIndex: 'subjectId' },
     { title: '范围 Key', dataIndex: 'businessLineId', render: (value: string) => value || '-' },
     {
@@ -210,7 +213,7 @@ export function AccessScopeGrantsPage() {
           } : { enabled: true, effect: 'allow', subjectType: 'team' }}
         >
           <Form.Item name="subjectType" label="主体类型">
-            <Select options={[{ value: 'team', label: '用户组' }, { value: 'user', label: '用户' }]} />
+            <Select options={[{ value: 'team', label: '组织' }, { value: 'user', label: '用户' }]} />
           </Form.Item>
           <Form.Item name="subjectId" label="主体 ID" rules={[{ required: true, message: '请输入主体 ID' }]}>
             <Input />

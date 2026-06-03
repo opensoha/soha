@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -36,12 +37,17 @@ type UserRepository interface {
 	FindByLogin(context.Context, string) (userrepo.User, error)
 	FindByEmail(context.Context, string) (userrepo.User, error)
 	GetByID(context.Context, string) (userrepo.User, error)
+	GetAuthzState(context.Context, string) (userrepo.AuthzState, error)
 	UpsertUser(context.Context, userrepo.User) error
 	SetPasswordHash(context.Context, string, string) error
 	GetPasswordHash(context.Context, string) (string, error)
 	ListRoles(context.Context, string) ([]string, error)
 	ReplaceRoleBindings(context.Context, string, []string) error
+	ResolveRoleIDs(context.Context, []string) ([]string, error)
+	SyncExternalRoleBindings(context.Context, string, string, string, []string, bool) error
 	ListTeams(context.Context, string) ([]string, error)
+	ResolveTeamIDsForExternalRefs(context.Context, string, string, []string) ([]string, error)
+	SyncExternalTeamBindings(context.Context, string, string, string, []string, bool) error
 	ListProjects(context.Context, string) ([]string, error)
 	FindIdentity(context.Context, string, string, string) (userrepo.OIDCIdentity, error)
 	ListIdentitiesByUserID(context.Context, string) ([]userrepo.OIDCIdentity, error)
@@ -53,7 +59,7 @@ type UserRepository interface {
 	ListSessionRecords(context.Context, int) ([]domainidentity.SessionRecord, error)
 	ListSessionRecordsByUserID(context.Context, string, int) ([]domainidentity.SessionRecord, error)
 	RevokeSessionByID(context.Context, string) error
-	TouchSession(context.Context, string, time.Time) error
+	TouchSession(context.Context, string, time.Time, int64) error
 	RevokeSession(context.Context, string) error
 	CreateEphemeralToken(context.Context, userrepo.EphemeralToken) error
 	ConsumeEphemeralToken(context.Context, string, string) (userrepo.EphemeralToken, error)
@@ -111,6 +117,12 @@ type oidcExchangePayload struct {
 	Result domainidentity.AuthResult `json:"result"`
 }
 
+type streamTicketPayload struct {
+	UserID    string `json:"userId"`
+	SessionID string `json:"sessionId"`
+	Path      string `json:"path"`
+}
+
 type genericProfile struct {
 	ID       string
 	Email    string
@@ -137,11 +149,12 @@ type accessTokenEnvelope struct {
 }
 
 type oidcProfile struct {
-	Sub               string `json:"sub"`
-	Email             string `json:"email"`
-	Name              string `json:"name"`
-	PreferredUsername string `json:"preferred_username"`
-	Nonce             string `json:"nonce"`
+	Sub               string         `json:"sub"`
+	Email             string         `json:"email"`
+	Name              string         `json:"name"`
+	PreferredUsername string         `json:"preferred_username"`
+	Nonce             string         `json:"nonce"`
+	Raw               map[string]any `json:"-"`
 }
 
 func New(_ context.Context, cfg cfgpkg.AuthConfig, users UserRepository, audit AuditRecorder, operations OperationRecorder, settings SettingsReader, permissions *appaccess.PermissionResolver, gateway GatewayTokenRepository) (*Service, error) {
@@ -235,6 +248,10 @@ func (s *Service) RefreshSession(ctx context.Context, refreshToken string) (doma
 		return domainidentity.AuthResult{}, fmt.Errorf("%w: session expired", apperrors.ErrUnauthorized)
 	}
 
+	authzState, err := s.requireActiveAuthzState(ctx, claims.Subject)
+	if err != nil {
+		return domainidentity.AuthResult{}, err
+	}
 	principal, err := s.loadPrincipal(ctx, claims.Subject)
 	if err != nil {
 		return domainidentity.AuthResult{}, err
@@ -243,7 +260,7 @@ func (s *Service) RefreshSession(ctx context.Context, refreshToken string) (doma
 	if err != nil {
 		return domainidentity.AuthResult{}, err
 	}
-	if err := s.users.TouchSession(ctx, claims.ID, time.Now().UTC()); err != nil {
+	if err := s.users.TouchSession(ctx, claims.ID, time.Now().UTC(), authzState.AuthzVersion); err != nil {
 		return domainidentity.AuthResult{}, fmt.Errorf("touch session: %w", err)
 	}
 	return domainidentity.AuthResult{
@@ -311,8 +328,110 @@ func (s *Service) ParseAccessToken(ctx context.Context, accessToken string) (dom
 	if session.UserID != claims.Subject {
 		return domainidentity.Principal{}, domainidentity.AccessContext{}, fmt.Errorf("%w: session subject mismatch", apperrors.ErrUnauthorized)
 	}
+	authzState, err := s.requireActiveAuthzState(ctx, claims.Subject)
+	if err != nil {
+		return domainidentity.Principal{}, domainidentity.AccessContext{}, err
+	}
+	if session.AuthzVersion < authzState.AuthzVersion {
+		return domainidentity.Principal{}, domainidentity.AccessContext{}, fmt.Errorf("%w: authorization changed, refresh required", apperrors.ErrUnauthorized)
+	}
 	principal := principalFromClaims(claims)
 	return principal, domainidentity.AccessContext{TokenID: claims.ID, TokenKind: "session_access", SessionID: claims.SessionID, SubjectType: "user", SubjectID: principal.UserID, ExpiresAt: claims.ExpiresAt.Time}, nil
+}
+
+func (s *Service) IssueStreamTicket(ctx context.Context, principal domainidentity.Principal, accessCtx domainidentity.AccessContext, req domainidentity.StreamTicketRequest) (domainidentity.StreamTicket, error) {
+	if principal.UserID == "" {
+		return domainidentity.StreamTicket{}, fmt.Errorf("%w: authentication required", apperrors.ErrUnauthorized)
+	}
+	if accessCtx.TokenKind != "session_access" || accessCtx.SessionID == "" {
+		return domainidentity.StreamTicket{}, fmt.Errorf("%w: stream tickets require a browser session", apperrors.ErrUnauthorized)
+	}
+	path := normalizeStreamTicketPath(req.Path)
+	if !isAllowedStreamTicketPath(path) {
+		return domainidentity.StreamTicket{}, fmt.Errorf("%w: stream ticket path is not allowed", apperrors.ErrInvalidArgument)
+	}
+	session, err := s.users.GetAuthSessionByID(ctx, accessCtx.SessionID)
+	if err != nil {
+		return domainidentity.StreamTicket{}, fmt.Errorf("%w: session not found", apperrors.ErrUnauthorized)
+	}
+	if session.Status != "active" || session.ExpiresAt.Before(time.Now().UTC()) {
+		return domainidentity.StreamTicket{}, fmt.Errorf("%w: session revoked", apperrors.ErrUnauthorized)
+	}
+	if session.UserID != principal.UserID {
+		return domainidentity.StreamTicket{}, fmt.Errorf("%w: session subject mismatch", apperrors.ErrUnauthorized)
+	}
+
+	expiresAt := time.Now().UTC().Add(60 * time.Second)
+	ticket := domainidentity.StreamTicket{
+		Ticket:    uuid.NewString(),
+		ExpiresAt: expiresAt,
+	}
+	if err := s.users.CreateEphemeralToken(ctx, userrepo.EphemeralToken{
+		Token: ticket.Ticket,
+		Kind:  streamTicketKind,
+		Payload: map[string]any{
+			"userId":    principal.UserID,
+			"sessionId": accessCtx.SessionID,
+			"path":      path,
+		},
+		ExpiresAt: expiresAt,
+	}); err != nil {
+		return domainidentity.StreamTicket{}, fmt.Errorf("store stream ticket: %w", err)
+	}
+	return ticket, nil
+}
+
+func (s *Service) ParseStreamTicket(ctx context.Context, ticket, requestPath string) (domainidentity.Principal, domainidentity.AccessContext, error) {
+	ticket = strings.TrimSpace(ticket)
+	if ticket == "" {
+		return domainidentity.Principal{}, domainidentity.AccessContext{}, fmt.Errorf("%w: stream ticket is required", apperrors.ErrUnauthorized)
+	}
+	path := normalizeStreamTicketPath(requestPath)
+	if !isAllowedStreamTicketPath(path) {
+		return domainidentity.Principal{}, domainidentity.AccessContext{}, fmt.Errorf("%w: stream ticket path is not allowed", apperrors.ErrUnauthorized)
+	}
+	token, err := s.users.ConsumeEphemeralToken(ctx, ticket, streamTicketKind)
+	if err != nil {
+		return domainidentity.Principal{}, domainidentity.AccessContext{}, fmt.Errorf("%w: stream ticket missing or expired", apperrors.ErrUnauthorized)
+	}
+	var payload streamTicketPayload
+	if rawPayload, marshalErr := json.Marshal(token.Payload); marshalErr != nil {
+		return domainidentity.Principal{}, domainidentity.AccessContext{}, fmt.Errorf("encode stream ticket payload: %w", marshalErr)
+	} else if err := json.Unmarshal(rawPayload, &payload); err != nil {
+		return domainidentity.Principal{}, domainidentity.AccessContext{}, fmt.Errorf("decode stream ticket payload: %w", err)
+	}
+	if payload.UserID == "" || payload.SessionID == "" || normalizeStreamTicketPath(payload.Path) != path {
+		return domainidentity.Principal{}, domainidentity.AccessContext{}, fmt.Errorf("%w: stream ticket does not match request", apperrors.ErrUnauthorized)
+	}
+	session, err := s.users.GetAuthSessionByID(ctx, payload.SessionID)
+	if err != nil {
+		return domainidentity.Principal{}, domainidentity.AccessContext{}, fmt.Errorf("%w: session not found", apperrors.ErrUnauthorized)
+	}
+	if session.Status != "active" || session.ExpiresAt.Before(time.Now().UTC()) {
+		return domainidentity.Principal{}, domainidentity.AccessContext{}, fmt.Errorf("%w: session revoked", apperrors.ErrUnauthorized)
+	}
+	if session.UserID != payload.UserID {
+		return domainidentity.Principal{}, domainidentity.AccessContext{}, fmt.Errorf("%w: session subject mismatch", apperrors.ErrUnauthorized)
+	}
+	authzState, err := s.requireActiveAuthzState(ctx, payload.UserID)
+	if err != nil {
+		return domainidentity.Principal{}, domainidentity.AccessContext{}, err
+	}
+	if session.AuthzVersion < authzState.AuthzVersion {
+		return domainidentity.Principal{}, domainidentity.AccessContext{}, fmt.Errorf("%w: authorization changed, refresh required", apperrors.ErrUnauthorized)
+	}
+	principal, err := s.loadPrincipal(ctx, payload.UserID)
+	if err != nil {
+		return domainidentity.Principal{}, domainidentity.AccessContext{}, err
+	}
+	return principal, domainidentity.AccessContext{
+		TokenID:     token.Token,
+		TokenKind:   "stream_ticket",
+		SessionID:   payload.SessionID,
+		SubjectType: "user",
+		SubjectID:   principal.UserID,
+		ExpiresAt:   token.ExpiresAt,
+	}, nil
 }
 
 func (s *Service) parsePersonalAccessToken(ctx context.Context, token string) (domainidentity.Principal, domainidentity.AccessContext, error) {
@@ -653,10 +772,14 @@ func (s *Service) HandleOIDCCallback(ctx context.Context, state, code string) (s
 	if err := idToken.Claims(&profile); err != nil {
 		return "", fmt.Errorf("decode oidc claims: %w", err)
 	}
+	var rawClaims map[string]any
+	if err := idToken.Claims(&rawClaims); err == nil {
+		profile.Raw = rawClaims
+	}
 	if statePayload.Nonce != "" && profile.Nonce != "" && profile.Nonce != statePayload.Nonce {
 		return "", fmt.Errorf("%w: oidc nonce mismatch", apperrors.ErrUnauthorized)
 	}
-	if profile.Email == "" || profile.Name == "" {
+	if profile.Email == "" || profile.Name == "" || loginProviderNeedsUserInfo(loginProvider) {
 		userInfo, err := provider.UserInfo(ctx, oauth2.StaticTokenSource(oauthToken))
 		if err == nil {
 			var info oidcProfile
@@ -671,9 +794,13 @@ func (s *Service) HandleOIDCCallback(ctx context.Context, state, code string) (s
 					profile.PreferredUsername = info.PreferredUsername
 				}
 			}
+			var rawInfo map[string]any
+			if err := userInfo.Claims(&rawInfo); err == nil {
+				profile.Raw = mergeRawMaps(profile.Raw, rawInfo)
+			}
 		}
 	}
-	principal, err := s.reconcileOIDCUser(ctx, profile, oidcCfg)
+	principal, err := s.reconcileOIDCUser(ctx, profile, oidcCfg, loginProvider)
 	if err != nil {
 		return "", err
 	}
@@ -778,6 +905,10 @@ func (s *Service) HandleProviderCallback(ctx context.Context, providerID, state,
 
 func (s *Service) issueAuthResult(ctx context.Context, principal domainidentity.Principal, providerType string) (domainidentity.AuthResult, error) {
 	meta := requestctx.FromContext(ctx)
+	authzState, err := s.requireActiveAuthzState(ctx, principal.UserID)
+	if err != nil {
+		return domainidentity.AuthResult{}, err
+	}
 	sessionID := uuid.NewString()
 	refreshID := uuid.NewString()
 	accessToken, accessClaims, err := s.signAccessToken(principal, sessionID)
@@ -796,6 +927,7 @@ func (s *Service) issueAuthResult(ctx context.Context, principal domainidentity.
 		Status:         "active",
 		ExpiresAt:      refreshClaims.ExpiresAt.Time,
 		LastSeenAt:     time.Now().UTC(),
+		AuthzVersion:   authzState.AuthzVersion,
 		Metadata: map[string]any{
 			"roles":     principal.Roles,
 			"source":    meta.Source,
@@ -850,7 +982,21 @@ func (s *Service) loadPrincipal(ctx context.Context, userID string) (domainident
 	}, nil
 }
 
-func (s *Service) reconcileOIDCUser(ctx context.Context, profile oidcProfile, oidcCfg cfgpkg.OIDCConfig) (domainidentity.Principal, error) {
+func (s *Service) requireActiveAuthzState(ctx context.Context, userID string) (userrepo.AuthzState, error) {
+	state, err := s.users.GetAuthzState(ctx, userID)
+	if err != nil {
+		return userrepo.AuthzState{}, fmt.Errorf("%w: user not found", apperrors.ErrUnauthorized)
+	}
+	if strings.TrimSpace(state.Status) != "active" {
+		return userrepo.AuthzState{}, fmt.Errorf("%w: account is not active", apperrors.ErrUnauthorized)
+	}
+	if state.AuthzVersion < 1 {
+		state.AuthzVersion = 1
+	}
+	return state, nil
+}
+
+func (s *Service) reconcileOIDCUser(ctx context.Context, profile oidcProfile, oidcCfg cfgpkg.OIDCConfig, provider domainsettings.LoginProviderSettings) (domainidentity.Principal, error) {
 	if profile.Sub == "" {
 		return domainidentity.Principal{}, fmt.Errorf("%w: oidc subject is missing", apperrors.ErrUnauthorized)
 	}
@@ -860,7 +1006,12 @@ func (s *Service) reconcileOIDCUser(ctx context.Context, profile oidcProfile, oi
 	if profile.Name == "" {
 		profile.Name = firstNonEmpty(profile.PreferredUsername, profile.Email, profile.Sub)
 	}
-	identity, err := s.users.FindIdentity(ctx, "oidc", oidcCfg.ProviderName, profile.Sub)
+	providerID := firstNonEmpty(strings.TrimSpace(provider.ID), strings.TrimSpace(oidcCfg.ProviderName))
+	legacyProviderID := strings.TrimSpace(oidcCfg.ProviderName)
+	identity, err := s.users.FindIdentity(ctx, "oidc", providerID, profile.Sub)
+	if errors.Is(err, userrepo.ErrNotFound) && legacyProviderID != "" && legacyProviderID != providerID {
+		identity, err = s.users.FindIdentity(ctx, "oidc", legacyProviderID, profile.Sub)
+	}
 	var user userrepo.User
 	if err == nil {
 		user, err = s.users.GetByID(ctx, identity.UserID)
@@ -892,13 +1043,10 @@ func (s *Service) reconcileOIDCUser(ctx context.Context, profile oidcProfile, oi
 		ID:             uuid.NewString(),
 		UserID:         user.ID,
 		ProviderType:   "oidc",
-		ProviderID:     oidcCfg.ProviderName,
+		ProviderID:     providerID,
 		ProviderUserID: profile.Sub,
-		Profile: map[string]any{
-			"email": profile.Email,
-			"name":  profile.Name,
-		},
-		LastLoginAt: time.Now().UTC(),
+		Profile:        loginProfilePayload(profile.Raw, profile.Email, profile.Name),
+		LastLoginAt:    time.Now().UTC(),
 	}); err != nil {
 		return domainidentity.Principal{}, fmt.Errorf("upsert oidc identity: %w", err)
 	}
@@ -907,10 +1055,13 @@ func (s *Service) reconcileOIDCUser(ctx context.Context, profile oidcProfile, oi
 	if err != nil {
 		return domainidentity.Principal{}, fmt.Errorf("load oidc user roles: %w", err)
 	}
-	if len(roles) == 0 && len(oidcCfg.DefaultRoles) > 0 {
+	if len(roles) == 0 && len(oidcCfg.DefaultRoles) > 0 && !provider.SyncRolesOnLogin {
 		if err := s.users.ReplaceRoleBindings(ctx, user.ID, oidcCfg.DefaultRoles); err != nil {
 			return domainidentity.Principal{}, fmt.Errorf("assign default oidc roles: %w", err)
 		}
+	}
+	if err := s.syncLoginProviderBindings(ctx, user.ID, provider, profile.Raw); err != nil {
+		return domainidentity.Principal{}, err
 	}
 	return s.loadPrincipal(ctx, user.ID)
 }
@@ -969,10 +1120,13 @@ func (s *Service) reconcileExternalUser(ctx context.Context, provider domainsett
 	if err != nil {
 		return domainidentity.Principal{}, fmt.Errorf("load external user roles: %w", err)
 	}
-	if len(roles) == 0 && len(provider.DefaultRoles) > 0 {
+	if len(roles) == 0 && len(provider.DefaultRoles) > 0 && !provider.SyncRolesOnLogin {
 		if err := s.users.ReplaceRoleBindings(ctx, user.ID, provider.DefaultRoles); err != nil {
 			return domainidentity.Principal{}, fmt.Errorf("assign default external login roles: %w", err)
 		}
+	}
+	if err := s.syncLoginProviderBindings(ctx, user.ID, provider, profile.Raw); err != nil {
+		return domainidentity.Principal{}, err
 	}
 	return s.loadPrincipal(ctx, user.ID)
 }
@@ -1484,6 +1638,62 @@ func (s *Service) fetchOAuth2Profile(ctx context.Context, provider domainsetting
 	}, nil
 }
 
+func (s *Service) syncLoginProviderBindings(ctx context.Context, userID string, provider domainsettings.LoginProviderSettings, raw map[string]any) error {
+	source := strings.TrimSpace(provider.Type)
+	providerID := strings.TrimSpace(provider.ID)
+	if provider.SyncRolesOnLogin {
+		roleRefs := append([]string(nil), provider.DefaultRoles...)
+		roleRefs = append(roleRefs, nestedStrings(raw, provider.RoleField)...)
+		roleIDs, err := s.users.ResolveRoleIDs(ctx, roleRefs)
+		if err != nil {
+			return fmt.Errorf("resolve external login roles: %w", err)
+		}
+		if err := s.users.SyncExternalRoleBindings(ctx, userID, source, providerID, roleIDs, provider.RoleSyncMode == "replace_external"); err != nil {
+			return fmt.Errorf("sync external login roles: %w", err)
+		}
+	}
+	if provider.SyncOrgsOnLogin && strings.TrimSpace(provider.OrganizationField) != "" {
+		orgRefs := nestedStrings(raw, provider.OrganizationField)
+		teamIDs, err := s.users.ResolveTeamIDsForExternalRefs(ctx, provider.Type, provider.ID, orgRefs)
+		if err != nil {
+			return fmt.Errorf("resolve external login organizations: %w", err)
+		}
+		if err := s.users.SyncExternalTeamBindings(ctx, userID, source, providerID, teamIDs, provider.OrgSyncMode == "replace_external"); err != nil {
+			return fmt.Errorf("sync external login organizations: %w", err)
+		}
+	}
+	return nil
+}
+
+func loginProviderNeedsUserInfo(provider domainsettings.LoginProviderSettings) bool {
+	return provider.SyncRolesOnLogin && strings.TrimSpace(provider.RoleField) != "" ||
+		provider.SyncOrgsOnLogin && strings.TrimSpace(provider.OrganizationField) != ""
+}
+
+func loginProfilePayload(raw map[string]any, email, name string) map[string]any {
+	payload := mergeRawMaps(nil, raw)
+	if payload == nil {
+		payload = map[string]any{}
+	}
+	payload["email"] = email
+	payload["name"] = name
+	return payload
+}
+
+func mergeRawMaps(left, right map[string]any) map[string]any {
+	if len(left) == 0 && len(right) == 0 {
+		return nil
+	}
+	merged := make(map[string]any, len(left)+len(right))
+	for key, value := range left {
+		merged[key] = value
+	}
+	for key, value := range right {
+		merged[key] = value
+	}
+	return merged
+}
+
 func nestedString(raw map[string]any, field string) string {
 	field = strings.TrimSpace(field)
 	if field == "" {
@@ -1507,6 +1717,87 @@ func nestedString(raw map[string]any, field string) string {
 	return value
 }
 
+func nestedStrings(raw map[string]any, field string) []string {
+	value, ok := nestedValue(raw, field)
+	if !ok {
+		return []string{}
+	}
+	return stringValuesFromAny(value)
+}
+
+func nestedValue(raw map[string]any, field string) (any, bool) {
+	field = strings.TrimSpace(field)
+	if field == "" {
+		return nil, false
+	}
+	current := any(raw)
+	for _, part := range strings.Split(field, ".") {
+		record, ok := current.(map[string]any)
+		if !ok {
+			return nil, false
+		}
+		current, ok = record[part]
+		if !ok {
+			return nil, false
+		}
+	}
+	return current, true
+}
+
+func stringValuesFromAny(value any) []string {
+	switch current := value.(type) {
+	case nil:
+		return []string{}
+	case []string:
+		return normalizeClaimStrings(current)
+	case []any:
+		out := make([]string, 0, len(current))
+		for _, item := range current {
+			out = append(out, stringValuesFromAny(item)...)
+		}
+		return normalizeClaimStrings(out)
+	case string:
+		current = strings.TrimSpace(current)
+		if current == "" {
+			return []string{}
+		}
+		parts := []string{current}
+		if strings.ContainsAny(current, ",;") {
+			parts = strings.FieldsFunc(current, func(r rune) bool {
+				return r == ',' || r == ';'
+			})
+		}
+		return normalizeClaimStrings(parts)
+	default:
+		text := strings.TrimSpace(fmt.Sprint(value))
+		if text == "" || text == "<nil>" {
+			return []string{}
+		}
+		return []string{text}
+	}
+}
+
+func normalizeClaimStrings(items []string) []string {
+	if len(items) == 0 {
+		return []string{}
+	}
+	out := make([]string, 0, len(items))
+	seen := make(map[string]struct{}, len(items))
+	for _, item := range items {
+		item = strings.TrimSpace(item)
+		if item == "" || item == "<nil>" {
+			continue
+		}
+		if _, ok := seen[item]; ok {
+			continue
+		}
+		seen[item] = struct{}{}
+		out = append(out, item)
+	}
+	sort.Strings(out)
+	return out
+}
+
 func timePointerValue(value *time.Time) time.Time {
 	if value == nil {
 		return time.Time{}
@@ -1514,8 +1805,41 @@ func timePointerValue(value *time.Time) time.Time {
 	return *value
 }
 
+func normalizeStreamTicketPath(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	if parsed, err := url.Parse(value); err == nil && parsed.Path != "" {
+		value = parsed.Path
+	}
+	if !strings.HasPrefix(value, "/") {
+		value = "/" + value
+	}
+	return strings.TrimRight(value, "/")
+}
+
+func isAllowedStreamTicketPath(path string) bool {
+	path = normalizeStreamTicketPath(path)
+	switch {
+	case strings.Contains(path, "/clusters/") && strings.Contains(path, "/workloads/pods/") && strings.HasSuffix(path, "/logs/stream"):
+		return true
+	case strings.Contains(path, "/clusters/") && strings.Contains(path, "/workloads/pods/") && strings.HasSuffix(path, "/terminal"):
+		return true
+	case strings.Contains(path, "/virtualization/operations/") && strings.HasSuffix(path, "/stream"):
+		return true
+	case strings.Contains(path, "/virtualization/vms/") && strings.HasSuffix(path, "/console/vnc"):
+		return true
+	case strings.Contains(path, "/virtualization/vms/") && strings.HasSuffix(path, "/console/novnc"):
+		return true
+	default:
+		return false
+	}
+}
+
 const (
 	oidcStateKind    = "oidc_state"
 	oauthStateKind   = "oauth_state"
 	oidcExchangeKind = "oidc_exchange"
+	streamTicketKind = "stream_ticket"
 )

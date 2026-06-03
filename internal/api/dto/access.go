@@ -9,10 +9,14 @@ type UpsertRoleRequest struct {
 }
 
 type UpsertTeamRequest struct {
-	ID       string         `json:"id"`
-	Name     string         `json:"name"`
-	Slug     string         `json:"slug"`
-	Metadata map[string]any `json:"metadata"`
+	ID         string         `json:"id"`
+	ParentID   string         `json:"parentId"`
+	Name       string         `json:"name"`
+	Slug       string         `json:"slug"`
+	Path       string         `json:"path"`
+	Source     string         `json:"source"`
+	ExternalID string         `json:"externalId"`
+	Metadata   map[string]any `json:"metadata"`
 }
 
 type SubjectMatcherRequest struct {

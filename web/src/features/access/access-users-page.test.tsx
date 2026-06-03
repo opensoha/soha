@@ -8,7 +8,7 @@ import { createRoot } from 'react-dom/client'
 import { MemoryRouter } from 'react-router-dom'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { PermissionSnapshot } from '@/types'
-import { AccessUsersPage } from './access-pages'
+import { AccessRolesPage, AccessTeamsPage, AccessUsersPage } from './access-pages'
 
 const testState = vi.hoisted(() => ({
   snapshot: {
@@ -88,6 +88,9 @@ function setDefaultResponses() {
     ],
     '/access/roles': [{ id: 'admin', name: 'admin' }],
     '/access/teams': [],
+    '/settings/identity': {
+      providers: [],
+    },
   }
 }
 
@@ -234,7 +237,7 @@ describe('access users page columns', () => {
     ]
 
     const container = await renderWithProviders(<AccessUsersPage />, '/access/users')
-    const searchInput = container.querySelector('input[placeholder="搜索用户名、显示名、邮箱、角色或用户组"]') as HTMLInputElement | null
+    const searchInput = container.querySelector('input[placeholder="搜索用户名、显示名、邮箱、角色或组织"]') as HTMLInputElement | null
 
     expect(searchInput).not.toBeNull()
 
@@ -246,5 +249,68 @@ describe('access users page columns', () => {
 
     expect(container.querySelector('[data-testid="row-u-admin"]')).toBeNull()
     expect(container.querySelector('[data-testid="row-u-dev"]')).not.toBeNull()
+  })
+
+  it('renders organization source as a concrete login provider application', async () => {
+    testState.snapshot.permissionKeys = [
+      'access.groups.view',
+      'access.groups.manage',
+      'settings.identity.view',
+    ]
+    testState.responses['/access/teams'] = [
+      {
+        id: 'platform-org',
+        name: '平台部',
+        slug: 'platform',
+        path: '/platform',
+        source: 'feishu-main',
+        externalId: 'dept-open-1',
+        metadata: {},
+        userCount: 0,
+      },
+    ]
+    testState.responses['/settings/identity'] = {
+      providers: [
+        {
+          id: 'feishu-main',
+          name: '企业飞书',
+          type: 'feishu',
+          enabled: true,
+        },
+      ],
+    }
+
+    const container = await renderWithProviders(<AccessTeamsPage />, '/access/teams')
+    await waitForRow(container, 'row-platform-org')
+
+    expect(container.textContent).toContain('飞书 · 企业飞书 (feishu-main)')
+  })
+
+  it('collapses long role menu and action permission lists in the role table', async () => {
+    testState.snapshot.permissionKeys = ['access.roles.view']
+    testState.responses['/access/roles'] = [
+      {
+        id: 'ops',
+        name: '运维角色',
+        scope: 'custom',
+        capabilities: ['view'],
+        permissionKeys: [
+          'access.users.view',
+          'access.users.manage',
+          'settings.identity.view',
+          'settings.identity.manage',
+          'ai.gateway.view',
+        ],
+        userCount: 0,
+      },
+    ]
+
+    const container = await renderWithProviders(<AccessRolesPage />, '/access/roles')
+    await waitForRow(container, 'row-ops')
+
+    const permissionCell = container.querySelector('[data-testid="cell-0-3"]')
+    expect(permissionCell?.textContent).toContain('+4')
+    expect(permissionCell?.textContent).toContain('管理用户')
+    expect(permissionCell?.textContent).not.toContain('管理登陆设置')
   })
 })

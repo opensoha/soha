@@ -253,6 +253,29 @@ describe("settings ai page rendering", () => {
     );
   });
 
+  it("exposes login role and organization mapping fields", async () => {
+    const container = await renderWithProviders(
+      <SettingsCenterPage />,
+      "/settings/login",
+    );
+    const addButton = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent?.includes("新增登录源"),
+    ) as HTMLButtonElement | undefined;
+
+    expect(addButton).toBeTruthy();
+
+    await act(async () => {
+      addButton?.click();
+      await Promise.resolve();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(document.body.textContent).toContain("登录补充角色");
+    expect(document.body.textContent).toContain("登录补充组织");
+    expect(document.body.textContent).toContain("角色字段");
+    expect(document.body.textContent).toContain("组织字段");
+  });
+
   it("renders full AI settings content under ai-workbench model settings", async () => {
     const container = await renderWithProviders(
       <AISettingsPage embedded />,

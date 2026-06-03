@@ -114,10 +114,12 @@ PVE credentials are accepted only on create or update payloads and are never ret
 - `GET /api/v1/ai-gateway/personal-access-tokens`
 - `POST /api/v1/ai-gateway/personal-access-tokens`
 - `POST /api/v1/ai-gateway/personal-access-tokens/:tokenID/revoke`
+- `POST /api/v1/ai-gateway/personal-access-tokens/:tokenID/rotate`
 - `GET /api/v1/ai-gateway/service-accounts`
 - `POST /api/v1/ai-gateway/service-accounts`
 - `POST /api/v1/ai-gateway/service-accounts/:serviceAccountID/tokens`
 - `POST /api/v1/ai-gateway/service-account-tokens/:tokenID/revoke`
+- `POST /api/v1/ai-gateway/service-account-tokens/:tokenID/rotate`
 - `GET /api/v1/ai-gateway/ai-clients`
 - `POST /api/v1/ai-gateway/ai-clients`
 - `PUT /api/v1/ai-gateway/ai-clients/:clientID`
@@ -154,7 +156,7 @@ First-version tool names:
 
 Kubernetes tools are read-only and route through the platform resource application service. Gateway applies basic sensitive-field redaction to log outputs before returning them to MCP/CLI callers.
 
-Personal and service-account token create responses return the opaque token value once. The database stores only the hash and prefix; callers must keep the returned value in their local CLI/MCP credential store.
+Personal and service-account token create and rotate responses return the opaque token value once. The database stores only the hash and prefix; callers must keep the returned value in their local CLI/MCP credential store. Rotation revokes the previous token after creating the replacement and revalidates the copied permission keys against the current subject.
 
 AI client, tool-grant, access-policy, and skill-binding endpoints require `ai.gateway.manage`. Tool grants, access policies, and skill bindings support `user`, `service_account`, `role`, and `ai_client` subjects; runtime evaluation combines subject, role, and client records. Deny policies and grants take precedence, allow records form allow-lists, and skill bindings narrow exposed skill/capability refs without granting new permissions.
 

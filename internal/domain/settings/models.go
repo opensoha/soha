@@ -41,6 +41,12 @@ type LoginProviderSettings struct {
 	UserIDField         string   `json:"userIdField,omitempty"`
 	UserNameField       string   `json:"userNameField,omitempty"`
 	EmailField          string   `json:"emailField,omitempty"`
+	RoleField           string   `json:"roleField,omitempty"`
+	OrganizationField   string   `json:"organizationField,omitempty"`
+	SyncRolesOnLogin    bool     `json:"syncRolesOnLogin,omitempty"`
+	SyncOrgsOnLogin     bool     `json:"syncOrgsOnLogin,omitempty"`
+	RoleSyncMode        string   `json:"roleSyncMode,omitempty"`
+	OrgSyncMode         string   `json:"orgSyncMode,omitempty"`
 	MetadataURL         string   `json:"metadataUrl,omitempty"`
 	EntityID            string   `json:"entityId,omitempty"`
 	Certificate         string   `json:"certificate,omitempty"`

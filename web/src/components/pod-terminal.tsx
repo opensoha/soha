@@ -6,8 +6,8 @@ import { FitAddon } from '@xterm/addon-fit'
 import '@xterm/xterm/css/xterm.css'
 import { ManagementState } from '@/components/management-list'
 import './resource-operation-panels.css'
+import { buildSameOriginStreamURL, withStreamTicket } from '@/features/auth/stream-ticket'
 import { useI18n } from '@/i18n'
-import { useAuthStore } from '@/stores/auth-store'
 
 const { Text } = Typography
 
@@ -25,25 +25,18 @@ function buildTerminalWebSocketURL({
   podName,
   container,
   shell,
-  accessToken,
 }: {
   clusterId: string
   namespace: string
   podName: string
   container?: string
   shell: string
-  accessToken?: string | null
 }) {
-  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-  const host = import.meta.env.DEV ? '127.0.0.1:8080' : window.location.host
-  const url = new URL(`${protocol}//${host}/api/v1/clusters/${encodeURIComponent(clusterId)}/workloads/pods/${encodeURIComponent(podName)}/terminal`)
+  const url = buildSameOriginStreamURL(`/api/v1/clusters/${encodeURIComponent(clusterId)}/workloads/pods/${encodeURIComponent(podName)}/terminal`, 'ws')
   url.searchParams.set('namespace', namespace)
   url.searchParams.set('shell', shell)
   if (container) {
     url.searchParams.set('container', container)
-  }
-  if (accessToken) {
-    url.searchParams.set('access_token', accessToken)
   }
   return url.toString()
 }
@@ -62,7 +55,6 @@ export function PodTerminal({
   shell?: string
 }) {
   const { t } = useI18n()
-  const accessToken = useAuthStore((state) => state.accessToken)
   const containerRef = useRef<HTMLDivElement | null>(null)
   const terminalRef = useRef<Terminal | null>(null)
   const fitAddonRef = useRef<FitAddon | null>(null)
@@ -85,9 +77,8 @@ export function PodTerminal({
       podName,
       container,
       shell,
-      accessToken,
     })
-  }, [accessToken, clusterId, container, namespace, podName, shell])
+  }, [clusterId, container, namespace, podName, shell])
 
   const sendResize = useCallback(() => {
     const terminal = terminalRef.current
@@ -115,7 +106,7 @@ export function PodTerminal({
     }
   }, [])
 
-  const connect = useCallback(() => {
+  const connect = useCallback(async () => {
     if (!containerRef.current || !terminalURL) {
       return
     }
@@ -146,7 +137,18 @@ export function PodTerminal({
     terminalRef.current = terminal
     fitAddonRef.current = fitAddon
 
-    const socket = new WebSocket(terminalURL)
+    let ticketedURL = ''
+    try {
+      ticketedURL = await withStreamTicket(terminalURL)
+    } catch {
+      if (sessionRef.current !== sessionId) return
+      setConnectionState('error')
+      setLastMessage(t('podTerminal.failed', 'Terminal connection failed'))
+      terminal.writeln('\r\n[error] terminal authorization failed')
+      return
+    }
+    if (sessionRef.current !== sessionId) return
+    const socket = new WebSocket(ticketedURL)
     socketRef.current = socket
 
     socket.onopen = () => {

@@ -2,8 +2,11 @@ package handlers
 
 import (
 	"context"
+	"errors"
+	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/soha/soha/internal/api/dto"
@@ -29,6 +32,7 @@ type IdentityService interface {
 	ConsumeOIDCExchange(context.Context, string) (domainidentity.AuthResult, error)
 	ListActiveSessions(context.Context, domainidentity.Principal, int) ([]domainidentity.SessionRecord, error)
 	RevokeSessionByID(context.Context, domainidentity.Principal, string) error
+	IssueStreamTicket(context.Context, domainidentity.Principal, domainidentity.AccessContext, domainidentity.StreamTicketRequest) (domainidentity.StreamTicket, error)
 }
 
 type AuthBootstrapAccessService interface {
@@ -97,24 +101,57 @@ type proLoginResponse struct {
 	CurrentAuthority string `json:"currentAuthority"`
 }
 
+const refreshCookieName = "soha_refresh_token"
+
 type AuthHandler struct {
-	identity     IdentityService
-	access       AuthBootstrapAccessService
-	settings     AuthBootstrapSettingsService
-	loginOptions dto.LoginOptionsResponse
+	identity            IdentityService
+	access              AuthBootstrapAccessService
+	settings            AuthBootstrapSettingsService
+	loginOptions        dto.LoginOptionsResponse
+	refreshCookieMaxAge int
 }
 
 func NewAuthHandler(identity IdentityService, access AuthBootstrapAccessService, settings AuthBootstrapSettingsService, authCfg cfgpkg.AuthConfig) *AuthHandler {
+	refreshCookieMaxAge := int(authCfg.JWT.RefreshTTL / time.Second)
+	if refreshCookieMaxAge <= 0 {
+		refreshCookieMaxAge = int((7 * 24 * time.Hour) / time.Second)
+	}
 	return &AuthHandler{
-		identity: identity,
-		access:   access,
-		settings: settings,
+		identity:            identity,
+		access:              access,
+		settings:            settings,
+		refreshCookieMaxAge: refreshCookieMaxAge,
 		loginOptions: dto.LoginOptionsResponse{
 			Verification: dto.LoginVerificationOptions{
 				SliderEnabled: authCfg.LoginVerification.SliderEnabled,
 			},
 		},
 	}
+}
+
+func (h *AuthHandler) setRefreshCookie(c *gin.Context, result domainidentity.AuthResult) {
+	refreshToken := strings.TrimSpace(result.Tokens.RefreshToken)
+	if refreshToken == "" {
+		return
+	}
+	c.SetSameSite(http.SameSiteLaxMode)
+	c.SetCookie(refreshCookieName, refreshToken, h.refreshCookieMaxAge, "/api/v1/auth", "", c.Request.TLS != nil, true)
+}
+
+func (h *AuthHandler) clearRefreshCookie(c *gin.Context) {
+	c.SetSameSite(http.SameSiteLaxMode)
+	c.SetCookie(refreshCookieName, "", -1, "/api/v1/auth", "", c.Request.TLS != nil, true)
+}
+
+func refreshTokenFromRequest(c *gin.Context, bodyValue string) string {
+	refreshToken := strings.TrimSpace(bodyValue)
+	if refreshToken != "" {
+		return refreshToken
+	}
+	if cookieValue, err := c.Cookie(refreshCookieName); err == nil {
+		return strings.TrimSpace(cookieValue)
+	}
+	return ""
 }
 
 func (h *AuthHandler) ListProviders(c *gin.Context) {
@@ -136,6 +173,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		writeError(c, err)
 		return
 	}
+	h.setRefreshCookie(c, result)
 	apiresponse.Item(c, http.StatusOK, result)
 }
 
@@ -154,6 +192,7 @@ func (h *AuthHandler) ProLogin(c *gin.Context) {
 		writeError(c, err)
 		return
 	}
+	h.setRefreshCookie(c, result)
 	authority := "user"
 	for _, role := range result.User.Roles {
 		if role == "admin" {
@@ -170,35 +209,43 @@ func (h *AuthHandler) ProLogin(c *gin.Context) {
 
 func (h *AuthHandler) Refresh(c *gin.Context) {
 	var req dto.RefreshRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
+	if err := c.ShouldBindJSON(&req); err != nil && !errors.Is(err, io.EOF) {
 		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid refresh payload")
 		return
 	}
-	result, err := h.identity.RefreshSession(c.Request.Context(), req.RefreshToken)
+	refreshToken := refreshTokenFromRequest(c, req.RefreshToken)
+	if refreshToken == "" {
+		apiresponse.Error(c, http.StatusUnauthorized, "unauthorized", "refresh token is required")
+		return
+	}
+	result, err := h.identity.RefreshSession(c.Request.Context(), refreshToken)
 	if err != nil {
 		writeError(c, err)
 		return
 	}
+	h.setRefreshCookie(c, result)
 	apiresponse.Item(c, http.StatusOK, result)
 }
 
 func (h *AuthHandler) Logout(c *gin.Context) {
 	var req dto.LogoutRequest
 	_ = c.ShouldBindJSON(&req)
-	if err := h.identity.Logout(c.Request.Context(), apiMiddleware.BearerTokenFromContext(c), req.RefreshToken); err != nil {
+	if err := h.identity.Logout(c.Request.Context(), apiMiddleware.BearerTokenFromContext(c), refreshTokenFromRequest(c, req.RefreshToken)); err != nil {
 		writeError(c, err)
 		return
 	}
+	h.clearRefreshCookie(c)
 	apiresponse.JSON(c, http.StatusOK, gin.H{"status": "ok"})
 }
 
 func (h *AuthHandler) ProLogout(c *gin.Context) {
 	var req dto.LogoutRequest
 	_ = c.ShouldBindJSON(&req)
-	if err := h.identity.Logout(c.Request.Context(), apiMiddleware.BearerTokenFromContext(c), req.RefreshToken); err != nil {
+	if err := h.identity.Logout(c.Request.Context(), apiMiddleware.BearerTokenFromContext(c), refreshTokenFromRequest(c, req.RefreshToken)); err != nil {
 		writeError(c, err)
 		return
 	}
+	h.clearRefreshCookie(c)
 	apiresponse.JSON(c, http.StatusOK, gin.H{"success": true})
 }
 
@@ -270,6 +317,25 @@ func (h *AuthHandler) Bootstrap(c *gin.Context) {
 	})
 }
 
+func (h *AuthHandler) IssueStreamTicket(c *gin.Context) {
+	var req domainidentity.StreamTicketRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid stream ticket payload")
+		return
+	}
+	item, err := h.identity.IssueStreamTicket(
+		c.Request.Context(),
+		apiMiddleware.PrincipalFromContext(c),
+		apiMiddleware.AccessContextFromContext(c),
+		req,
+	)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusCreated, item)
+}
+
 func (h *AuthHandler) OIDCLogin(c *gin.Context) {
 	loginURL, err := h.identity.BeginOIDCLogin(c.Request.Context())
 	if err != nil {
@@ -299,6 +365,7 @@ func (h *AuthHandler) OIDCExchange(c *gin.Context) {
 		writeError(c, err)
 		return
 	}
+	h.setRefreshCookie(c, result)
 	apiresponse.Item(c, http.StatusOK, result)
 }
 

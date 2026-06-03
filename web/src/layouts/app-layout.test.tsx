@@ -319,7 +319,7 @@ describe('app layout workspace navigation', () => {
         { id: 'access', path: '/access', labelZh: '访问控制', labelEn: 'Access Control', iconKey: 'shield', section: 'admin', sortOrder: 240, enabled: true },
         { id: 'access-users', parentId: 'access', path: '/access/users', labelZh: '用户', labelEn: 'Users', iconKey: 'user', section: 'admin', sortOrder: 226, enabled: true },
         { id: 'access-roles', parentId: 'access', path: '/access/roles', labelZh: '角色', labelEn: 'Roles', iconKey: 'shield', section: 'admin', sortOrder: 227, enabled: true },
-        { id: 'access-teams', parentId: 'access', path: '/access/teams', labelZh: '用户组', labelEn: 'User Groups', iconKey: 'users', section: 'admin', sortOrder: 228, enabled: true },
+        { id: 'access-teams', parentId: 'access', path: '/access/teams', labelZh: '组织', labelEn: 'Organizations', iconKey: 'users', section: 'admin', sortOrder: 228, enabled: true },
         { id: 'access-policies', parentId: 'access', path: '/access/policies', labelZh: '策略', labelEn: 'Policies', iconKey: 'shield', section: 'admin', sortOrder: 229, enabled: true },
         { id: 'system', path: '/system', labelZh: '系统', labelEn: 'System', iconKey: 'panels-top-left', section: 'admin', sortOrder: 225, enabled: true },
         { id: 'announcements', parentId: 'system', path: '/system/announcements', labelZh: '通知公告', labelEn: 'Announcements', iconKey: 'megaphone', section: 'admin', sortOrder: 230, enabled: true },
@@ -337,7 +337,7 @@ describe('app layout workspace navigation', () => {
     const menuText = menu?.textContent ?? ''
     expect(menuText).toContain('用户')
     expect(menuText).toContain('角色')
-    expect(menuText).toContain('用户组')
+    expect(menuText).toContain('组织')
     expect(menuText).toContain('策略')
     expect(menuText).toContain('操作日志')
     expect(menuText).toContain('审计日志')
@@ -685,7 +685,7 @@ describe('app layout workspace navigation', () => {
     })
 
     const profileItem = Array.from(document.querySelectorAll('.ant-dropdown-menu-item'))
-      .find((item) => item.textContent?.includes('个人信息')) as HTMLElement | undefined
+      .find((item) => item.textContent?.includes('个人中心')) as HTMLElement | undefined
     expect(profileItem).not.toBeUndefined()
 
     await act(async () => {

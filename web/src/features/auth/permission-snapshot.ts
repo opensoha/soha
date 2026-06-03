@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
+import type { QueryClient } from '@tanstack/react-query'
 import { api } from '@/services/api-client'
 import { useAuthStore } from '@/stores/auth-store'
 import type { ApiResponse, PermissionSnapshot } from '@/types'
@@ -32,4 +33,8 @@ export function hasVisibleMenu(snapshot: PermissionSnapshot | undefined, menuId?
 
 export function hasAllowedAction(allowedActions: string[] | undefined, action: string) {
   return allowedActions?.includes(action) ?? false
+}
+
+export function invalidateAuthz(queryClient: QueryClient) {
+  return queryClient.invalidateQueries({ queryKey: permissionSnapshotQueryKey })
 }

@@ -19,7 +19,7 @@ export const gatewayMenuMeta: Record<GatewayTabKey, { description: string; title
   },
   tokens: {
     title: 'Tokens',
-    description: '个人访问令牌与一次性明文创建流程。',
+    description: '用户 login key、服务账号 token 与一次性明文创建流程。',
   },
   'service-accounts': {
     title: 'Service Accounts',
@@ -66,7 +66,7 @@ export const gatewaySectionMeta: Record<GatewaySectionKey, { description: string
   },
   tokens: {
     title: 'Tokens',
-    description: '管理 personal access tokens、service accounts 与自动化调用 token。',
+    description: '聚合管理用户 login key、service accounts 与自动化调用 token。',
   },
   governance: {
     title: 'Governance',
@@ -611,6 +611,7 @@ export const subjectTypeOptions = [
   { label: '用户', value: 'user' },
   { label: '服务账号', value: 'service_account' },
   { label: '角色', value: 'role' },
+  { label: '组织', value: 'team' },
   { label: 'AI Client', value: 'ai_client' },
 ]
 

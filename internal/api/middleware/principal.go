@@ -21,6 +21,10 @@ type AccessTokenParser interface {
 	ParseAccessToken(context.Context, string) (domainidentity.Principal, domainidentity.AccessContext, error)
 }
 
+type StreamTicketParser interface {
+	ParseStreamTicket(context.Context, string, string) (domainidentity.Principal, domainidentity.AccessContext, error)
+}
+
 func BuildPrincipalMiddleware(cfg cfgpkg.AuthConfig, parser AccessTokenParser) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		token := normalizeBearerToken(c.GetHeader("Authorization"))
@@ -40,6 +44,25 @@ func BuildPrincipalMiddleware(cfg cfgpkg.AuthConfig, parser AccessTokenParser) g
 			}
 			c.Set(principalKey, principal)
 			c.Set(accessTokenKey, token)
+			c.Set(accessContextKey, accessCtx)
+			c.Next()
+			return
+		}
+		if ticket := strings.TrimSpace(c.Query("stream_ticket")); ticket != "" {
+			streamParser, ok := parser.(StreamTicketParser)
+			if !ok {
+				apiresponse.Error(c, http.StatusUnauthorized, "unauthorized", "stream ticket parser is not configured")
+				c.Abort()
+				return
+			}
+			principal, accessCtx, err := streamParser.ParseStreamTicket(c.Request.Context(), ticket, c.Request.URL.Path)
+			if err != nil {
+				apiresponse.Error(c, http.StatusUnauthorized, "unauthorized", err.Error())
+				c.Abort()
+				return
+			}
+			c.Set(principalKey, principal)
+			c.Set(accessTokenKey, ticket)
 			c.Set(accessContextKey, accessCtx)
 			c.Next()
 			return

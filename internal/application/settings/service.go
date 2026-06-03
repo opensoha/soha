@@ -476,27 +476,33 @@ func (s *Service) identitySettings(ctx context.Context) (domainsettings.Identity
 					continue
 				}
 				item.Providers = append(item.Providers, normalizeLoginProvider(domainsettings.LoginProviderSettings{
-					ID:                  strings.TrimSpace(fmt.Sprint(record["id"])),
-					Name:                strings.TrimSpace(fmt.Sprint(record["name"])),
-					Type:                strings.TrimSpace(fmt.Sprint(record["type"])),
+					ID:                  settingStringValue(record["id"]),
+					Name:                settingStringValue(record["name"]),
+					Type:                settingStringValue(record["type"]),
 					Enabled:             boolValue(record["enabled"]),
-					ClientID:            strings.TrimSpace(fmt.Sprint(record["clientId"])),
-					ClientSecret:        strings.TrimSpace(fmt.Sprint(record["clientSecret"])),
-					Issuer:              strings.TrimSpace(fmt.Sprint(record["issuer"])),
-					AuthorizeURL:        strings.TrimSpace(fmt.Sprint(record["authorizeUrl"])),
-					TokenURL:            strings.TrimSpace(fmt.Sprint(record["tokenUrl"])),
-					UserInfoURL:         strings.TrimSpace(fmt.Sprint(record["userInfoUrl"])),
-					ProfileURL:          strings.TrimSpace(fmt.Sprint(record["profileUrl"])),
-					RedirectURL:         strings.TrimSpace(fmt.Sprint(record["redirectUrl"])),
-					FrontendRedirectURL: strings.TrimSpace(fmt.Sprint(record["frontendRedirectUrl"])),
+					ClientID:            settingStringValue(record["clientId"]),
+					ClientSecret:        settingStringValue(record["clientSecret"]),
+					Issuer:              settingStringValue(record["issuer"]),
+					AuthorizeURL:        settingStringValue(record["authorizeUrl"]),
+					TokenURL:            settingStringValue(record["tokenUrl"]),
+					UserInfoURL:         settingStringValue(record["userInfoUrl"]),
+					ProfileURL:          settingStringValue(record["profileUrl"]),
+					RedirectURL:         settingStringValue(record["redirectUrl"]),
+					FrontendRedirectURL: settingStringValue(record["frontendRedirectUrl"]),
 					Scopes:              sliceOfStringsAny(record["scopes"]),
 					DefaultRoles:        sliceOfStringsAny(record["defaultRoles"]),
-					UserIDField:         strings.TrimSpace(fmt.Sprint(record["userIdField"])),
-					UserNameField:       strings.TrimSpace(fmt.Sprint(record["userNameField"])),
-					EmailField:          strings.TrimSpace(fmt.Sprint(record["emailField"])),
-					MetadataURL:         strings.TrimSpace(fmt.Sprint(record["metadataUrl"])),
-					EntityID:            strings.TrimSpace(fmt.Sprint(record["entityId"])),
-					Certificate:         strings.TrimSpace(fmt.Sprint(record["certificate"])),
+					UserIDField:         settingStringValue(record["userIdField"]),
+					UserNameField:       settingStringValue(record["userNameField"]),
+					EmailField:          settingStringValue(record["emailField"]),
+					RoleField:           settingStringValue(record["roleField"]),
+					OrganizationField:   settingStringValue(record["organizationField"]),
+					SyncRolesOnLogin:    boolValue(record["syncRolesOnLogin"]),
+					SyncOrgsOnLogin:     boolValue(record["syncOrgsOnLogin"]),
+					RoleSyncMode:        settingStringValue(record["roleSyncMode"]),
+					OrgSyncMode:         settingStringValue(record["orgSyncMode"]),
+					MetadataURL:         settingStringValue(record["metadataUrl"]),
+					EntityID:            settingStringValue(record["entityId"]),
+					Certificate:         settingStringValue(record["certificate"]),
 				}, index))
 			}
 		}
@@ -786,6 +792,12 @@ func loginProvidersToMaps(items []domainsettings.LoginProviderSettings) []map[st
 			"userIdField":         item.UserIDField,
 			"userNameField":       item.UserNameField,
 			"emailField":          item.EmailField,
+			"roleField":           item.RoleField,
+			"organizationField":   item.OrganizationField,
+			"syncRolesOnLogin":    item.SyncRolesOnLogin,
+			"syncOrgsOnLogin":     item.SyncOrgsOnLogin,
+			"roleSyncMode":        item.RoleSyncMode,
+			"orgSyncMode":         item.OrgSyncMode,
 			"metadataUrl":         item.MetadataURL,
 			"entityId":            item.EntityID,
 			"certificate":         item.Certificate,
@@ -868,6 +880,10 @@ func normalizeLoginProvider(input domainsettings.LoginProviderSettings, index in
 	input.UserIDField = strings.TrimSpace(input.UserIDField)
 	input.UserNameField = strings.TrimSpace(input.UserNameField)
 	input.EmailField = strings.TrimSpace(input.EmailField)
+	input.RoleField = strings.TrimSpace(input.RoleField)
+	input.OrganizationField = strings.TrimSpace(input.OrganizationField)
+	input.RoleSyncMode = normalizeLoginSyncMode(input.RoleSyncMode)
+	input.OrgSyncMode = normalizeLoginSyncMode(input.OrgSyncMode)
 	input.Scopes = uniqueNonEmptyStrings(input.Scopes)
 	input.DefaultRoles = uniqueNonEmptyStrings(input.DefaultRoles)
 	if input.ID == "" {
@@ -894,6 +910,15 @@ func normalizeLoginProvider(input domainsettings.LoginProviderSettings, index in
 		}
 	}
 	return input
+}
+
+func normalizeLoginSyncMode(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "replace_external":
+		return "replace_external"
+	default:
+		return "append"
+	}
 }
 
 func normalizeLoginProviderType(value string) string {
@@ -1375,6 +1400,14 @@ func (s *Service) brandingSettings(ctx context.Context) (domainsettings.Branding
 func boolValue(value any) bool {
 	current, ok := value.(bool)
 	return ok && current
+}
+
+func settingStringValue(value any) string {
+	current := strings.TrimSpace(fmt.Sprint(value))
+	if current == "<nil>" {
+		return ""
+	}
+	return current
 }
 
 func mapValue(value any) map[string]any {

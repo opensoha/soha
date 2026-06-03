@@ -4,6 +4,31 @@
   gap: 12px;
 }
 
+.soha-profile-page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+
+.soha-profile-page-header__main {
+  min-width: 0;
+}
+
+.soha-profile-page-header__main .ant-typography {
+  margin: 0;
+}
+
+.soha-profile-eyebrow {
+  display: block;
+  margin-bottom: 2px;
+  color: var(--soha-text-tertiary);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
 .soha-profile-layout {
   display: grid;
   grid-template-columns: minmax(240px, 300px) minmax(0, 1fr);
@@ -76,11 +101,77 @@
   white-space: nowrap;
 }
 
+.soha-profile-kpi-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+
+.soha-profile-kpi-grid > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--soha-border-color);
+  border-radius: 8px;
+  background: var(--soha-bg-surface-muted);
+}
+
+.soha-profile-kpi-grid strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--soha-text-primary);
+  font-size: 12px;
+  font-weight: 700;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .soha-profile-main .ant-card-body {
   min-width: 0;
 }
 
+.soha-profile-gateway-card .ant-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.soha-profile-gateway-overview {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+
+.soha-profile-gateway-overview > div:first-child {
+  min-width: 0;
+}
+
+.soha-profile-gateway-overview .ant-typography {
+  margin-bottom: 0;
+}
+
+.soha-profile-gateway-overview .ant-typography-secondary {
+  margin-top: 2px;
+}
+
+.soha-profile-secret-value textarea {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
 @media (max-width: 900px) {
+  .soha-profile-page-header,
+  .soha-profile-gateway-overview {
+    flex-direction: column;
+  }
+
   .soha-profile-layout {
     grid-template-columns: 1fr;
   }

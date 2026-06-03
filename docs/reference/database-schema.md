@@ -13,7 +13,14 @@ Suggested JSONB fields:
 
 ### teams
 
-Organizational unit with optional JSONB metadata.
+Organization-unit compatibility table with optional JSONB metadata. New deployments should treat this surface as company/department organization data while legacy `team` subject and binding names remain compatibility aliases.
+
+Suggested relational fields:
+
+- `parent_id`
+- `org_path`
+- `source`
+- `external_id`
 
 ### projects
 
@@ -22,6 +29,14 @@ Project scope bound to teams and environments.
 ### roles
 
 System and custom roles with JSONB capability descriptors.
+
+### user_role_bindings
+
+User-to-role bindings. Local administrator assignments keep `source = local`; login-time role enrichment writes provider-managed bindings with `source` set to the provider type and `provider_id` set to the login provider id. `replace_external` login sync may only replace rows for the same `user_id + source + provider_id`.
+
+### user_team_bindings
+
+User-to-organization bindings. The table name remains `team` for compatibility, but the runtime semantics are organization membership. Local assignments keep `source = local`; OIDC, OAuth2, Feishu, DingTalk, and WeCom login mapping writes provider-managed rows with `source/provider_id` for external-only replacement.
 
 ### policies
 
@@ -94,7 +109,7 @@ AI-native external access is persisted under:
 
 Token tables store only hashes and display prefixes. The clear token value is returned once at creation time and must not be logged or persisted outside a caller-owned credential store.
 
-`mcp_tool_grants` supports `user`, `service_account`, `role`, and `ai_client` subjects. Runtime evaluation combines matching subject, role, and client grants, then applies deny-first and allow-list semantics on top of `permissionKeys`.
+`mcp_tool_grants` supports `user`, `service_account`, `role`, `team`/organization, and `ai_client` subjects. Runtime evaluation combines matching subject, organization, role, and client grants, then applies deny-first and allow-list semantics on top of `permissionKeys`.
 
 `ai_access_policies` and `ai_gateway_skill_bindings` use the same subject model. Access policies narrow tools and skills by tool pattern, skill id, risk level, and effect; skill bindings narrow available Skills and capability refs. Neither table can expand RBAC or scope grants.
 

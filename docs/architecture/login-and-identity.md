@@ -46,6 +46,37 @@
 - `userIdField`
 - `userNameField`
 - `emailField`
+- `roleField`
+- `organizationField`
+- `syncRolesOnLogin`
+- `syncOrgsOnLogin`
+- `roleSyncMode`
+- `orgSyncMode`
+
+## 登录时角色与组织映射
+
+OIDC、OAuth2、飞书、钉钉、企业微信这几类可运行 provider 现在支持“登录时补充绑定”：
+
+- `roleField` 从 id token claims 或 userinfo/profile 响应中读取外部角色引用
+- `organizationField` 从 id token claims 或 userinfo/profile 响应中读取外部组织引用
+- `syncRolesOnLogin` 控制是否在登录成功后补充本地角色绑定
+- `syncOrgsOnLogin` 控制是否在登录成功后补充本地组织绑定
+- `roleSyncMode` 和 `orgSyncMode` 支持 `append` 与 `replace_external`
+
+`append` 只追加本次解析到的本地角色或组织绑定。`replace_external` 会先清理同一 provider 上次写入的外部来源绑定，再写入本次解析结果；它不会删除管理员在用户页面手工维护的本地绑定。
+
+角色解析只匹配本地已存在的 `roles.id` 或 `roles.name`。组织解析只匹配本地已存在的组织：
+
+- `teams.id`
+- `teams.slug`
+- `teams.org_path`
+- `teams.source` 等于 provider type 或 provider id 且 `teams.external_id` 等于外部组织引用
+
+登录回调不会自动创建本地组织或角色。管理员需要先在“组织架构”中建立组织树，并为第三方组织填入对应来源和外部 ID。这样可以把第三方组织目录的实时同步与登录授权映射拆开，避免登录链路变成隐式主数据导入。
+
+飞书、钉钉、企业微信的 App Key、App Secret、CorpID、CorpSecret 等应用凭据属于“登陆设置”的登录源应用配置，不属于组织节点。组织节点只保存映射来源和第三方部门/组织 ID；如果同一种 provider 配了多个应用，组织来源应优先选择具体登录源应用 ID，而不是只选择 `feishu`、`dingtalk` 或 `wecom` 类型。
+
+当前实现不是飞书、钉钉、企业微信通讯录的全量同步或事件订阅。第三方目录同步、组织变更 webhook、离职禁用同步等应作为后续 connector 能力设计；本阶段只在用户成功登录时根据 provider 返回的数据补充本地授权上下文。
 
 针对 SAML 类 provider，目前只保存配置态字段，例如：
 
@@ -71,6 +102,36 @@
 - 允许现有 OIDC 浏览器回调链路继续工作
 
 ## 运行链路
+
+## 浏览器会话与 token 存储
+
+浏览器控制台现在按 BFF 方向收敛：
+
+- `accessToken` 只保存在前端内存态，用于普通 API 请求的 `Authorization: Bearer ...`
+- `refreshToken` 由后端写入 `HttpOnly` cookie，前端不再持久化或读取 refresh token
+- `/api/v1/auth/refresh` 支持空 body，优先从 refresh cookie 读取会话并续写 refresh cookie
+- `/api/v1/auth/logout` 会清除 refresh cookie，前端退出登录必须调用该接口后再清本地状态
+- 开发环境默认通过 Vite `/api` proxy 访问同源 `/api/v1`，避免 refresh cookie 在跨站请求里失效
+
+页面刷新后如果内存态 `accessToken` 不存在，受保护路由会先尝试调用 refresh 接口恢复会话。恢复失败才跳转登录页。
+
+浏览器不能给原生 `WebSocket`、`EventSource` 和 noVNC 连接稳定附加 `Authorization` header。Console 需要打开 Pod logs stream、Pod terminal、虚拟化 operation stream 或 VNC/noVNC 时，必须先用当前 session access token 调用 `POST /api/v1/auth/stream-ticket` 换取短期一次性票据，再把 `stream_ticket` 放到同源 stream URL query。服务端只接受白名单路径，票据 60 秒过期、精确绑定 path，并在第一次校验时从 PostgreSQL 消费删除；票据消费后还会校验 session 状态和 `authz_version`，所以角色、组织和账号状态变更仍能让后续流式连接失效。
+
+## 机器调用与 runner 令牌
+
+浏览器登录和机器调用走不同边界：
+
+- 浏览器控制台使用 Soha session access/refresh token，并通过服务端 session 和 `authz_version` 让角色、组织、账号状态变更可触发刷新
+- API、CI runner、Docker runner、AI agent runner、AI Gateway client 使用 Bearer token
+- 长期机器 token 应收敛到 AI Gateway 已有的 PAT/SAT 形态：token 只保存 hash，主体是用户或 service account，权限通过 `permissionKeys` 和 scope 限制
+
+当前过渡实现保持 `runtime.execution_runner_token` 兼容，同时允许外部 runner 入口接受 `service_account_token`：
+
+- Delivery execution runner 需要 `delivery.execution-tasks.manage`
+- Docker runner 需要 `docker.operations.manage`
+- AI agent runner 需要 `ai.gateway.invoke` 或 `observe.ai.chat`
+
+任务级 callback token 仍然由对应执行任务或 agent run 自己校验。SAT 只替代“谁可以 claim/status/callback 这个 runner 通道”的全局共享入口令牌，不替代任务级防重放和回调归属校验。
 
 ### 1. 登录页展示
 
@@ -222,6 +283,8 @@
 - 没有绑定时按邮箱尝试合并已有用户
 - 再没有时创建新本地用户
 - 若该用户无角色且 provider 配置了 `defaultRoles`，则绑定默认角色
+- 若开启 `syncRolesOnLogin`，则 `defaultRoles` 和 `roleField` 解析结果都会作为该 provider 管理的外部来源角色补充
+- 若开启 `syncOrgsOnLogin`，则 `organizationField` 解析结果会作为该 provider 管理的外部来源组织补充
 
 审计仍由平台统一记录，provider 只负责身份来源，不直接决定授权。
 

@@ -20,14 +20,16 @@ type AIGatewayService interface {
 	InvokeTool(context.Context, domainidentity.Principal, domainaigateway.ToolInvocationRequest) (domainaigateway.ToolInvocationResult, error)
 	ReadResource(context.Context, domainidentity.Principal, domainaigateway.ResourceReadRequest) (domainaigateway.ResourceReadResult, error)
 	GetPrompt(context.Context, domainidentity.Principal, domainaigateway.PromptGetRequest) (domainaigateway.PromptGetResult, error)
-	ListPersonalAccessTokens(context.Context, domainidentity.Principal) ([]domainaigateway.PersonalAccessToken, error)
+	ListPersonalAccessTokens(context.Context, domainidentity.Principal, domainaigateway.PersonalAccessTokenListRequest) ([]domainaigateway.PersonalAccessToken, error)
 	CreatePersonalAccessToken(context.Context, domainidentity.Principal, domainaigateway.PersonalAccessTokenInput) (domainaigateway.CreatedPersonalAccessToken, error)
 	RevokePersonalAccessToken(context.Context, domainidentity.Principal, string) error
+	RotatePersonalAccessToken(context.Context, domainidentity.Principal, string, domainaigateway.TokenRotationInput) (domainaigateway.CreatedPersonalAccessToken, error)
 	ListServiceAccounts(context.Context, domainidentity.Principal) ([]domainaigateway.ServiceAccount, error)
 	CreateServiceAccount(context.Context, domainidentity.Principal, domainaigateway.ServiceAccountInput) (domainaigateway.ServiceAccount, error)
 	ListServiceAccountTokens(context.Context, domainidentity.Principal) ([]domainaigateway.ServiceAccountToken, error)
 	CreateServiceAccountToken(context.Context, domainidentity.Principal, string, domainaigateway.ServiceAccountTokenInput) (domainaigateway.CreatedServiceAccountToken, error)
 	RevokeServiceAccountToken(context.Context, domainidentity.Principal, string) error
+	RotateServiceAccountToken(context.Context, domainidentity.Principal, string, domainaigateway.TokenRotationInput) (domainaigateway.CreatedServiceAccountToken, error)
 	ListAIClients(context.Context, domainidentity.Principal) ([]domainaigateway.AIClient, error)
 	CreateAIClient(context.Context, domainidentity.Principal, domainaigateway.AIClientInput) (domainaigateway.AIClient, error)
 	UpdateAIClient(context.Context, domainidentity.Principal, string, domainaigateway.AIClientInput) (domainaigateway.AIClient, error)
@@ -157,7 +159,10 @@ func (h *AIGatewayHandler) GetPrompt(c *gin.Context) {
 
 func (h *AIGatewayHandler) ListPersonalAccessTokens(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	items, err := h.service.ListPersonalAccessTokens(c.Request.Context(), principal)
+	items, err := h.service.ListPersonalAccessTokens(c.Request.Context(), principal, domainaigateway.PersonalAccessTokenListRequest{
+		Scope:  c.Query("scope"),
+		UserID: c.Query("userId"),
+	})
 	if err != nil {
 		writeError(c, err)
 		return
@@ -187,6 +192,21 @@ func (h *AIGatewayHandler) RevokePersonalAccessToken(c *gin.Context) {
 		return
 	}
 	apiresponse.JSON(c, http.StatusOK, gin.H{"status": "ok"})
+}
+
+func (h *AIGatewayHandler) RotatePersonalAccessToken(c *gin.Context) {
+	var req domainaigateway.TokenRotationInput
+	if err := c.ShouldBindJSON(&req); err != nil && !errors.Is(err, io.EOF) {
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid personal access token rotation payload")
+		return
+	}
+	principal := apiMiddleware.PrincipalFromContext(c)
+	item, err := h.service.RotatePersonalAccessToken(c.Request.Context(), principal, c.Param("tokenID"), req)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusCreated, item)
 }
 
 func (h *AIGatewayHandler) ListServiceAccounts(c *gin.Context) {
@@ -246,6 +266,21 @@ func (h *AIGatewayHandler) RevokeServiceAccountToken(c *gin.Context) {
 		return
 	}
 	apiresponse.JSON(c, http.StatusOK, gin.H{"status": "ok"})
+}
+
+func (h *AIGatewayHandler) RotateServiceAccountToken(c *gin.Context) {
+	var req domainaigateway.TokenRotationInput
+	if err := c.ShouldBindJSON(&req); err != nil && !errors.Is(err, io.EOF) {
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid service account token rotation payload")
+		return
+	}
+	principal := apiMiddleware.PrincipalFromContext(c)
+	item, err := h.service.RotateServiceAccountToken(c.Request.Context(), principal, c.Param("tokenID"), req)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusCreated, item)
 }
 
 func (h *AIGatewayHandler) ListAIClients(c *gin.Context) {

@@ -51,14 +51,22 @@ async function request<T>(
     headers['Authorization'] = `Bearer ${accessToken}`
   }
 
-  let res = await fetch(`${API_BASE_URL}${path}`, { ...options, headers })
+  let res = await fetch(`${API_BASE_URL}${path}`, {
+    ...options,
+    credentials: options.credentials ?? 'include',
+    headers,
+  })
 
   if (res.status === 401 && accessToken) {
     const refreshed = await refreshToken()
     if (refreshed) {
       const { accessToken: newToken } = useAuthStore.getState()
       headers['Authorization'] = `Bearer ${newToken}`
-      res = await fetch(`${API_BASE_URL}${path}`, { ...options, headers })
+      res = await fetch(`${API_BASE_URL}${path}`, {
+        ...options,
+        credentials: options.credentials ?? 'include',
+        headers,
+      })
     }
   }
 
@@ -95,6 +103,7 @@ export const api = {
     }
     return fetch(`${API_BASE_URL}${path}`, {
       method: 'POST',
+      credentials: 'include',
       headers,
       body: formData,
     }).then(async (res) => {

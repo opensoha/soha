@@ -3,7 +3,6 @@ package handlers
 import (
 	"context"
 	"net/http"
-	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/soha/soha/internal/api/dto"
@@ -120,7 +119,7 @@ func (h *CopilotHandler) ListAgentRuns(c *gin.Context) {
 }
 
 func (h *CopilotHandler) ClaimAgentRun(c *gin.Context) {
-	if !h.authorizeRunner(c.GetHeader("Authorization")) {
+	if !authorizeAIAgentRunner(c, h.runnerToken) {
 		apiresponse.Error(c, http.StatusUnauthorized, "unauthorized", "invalid ai agent runner token")
 		return
 	}
@@ -142,7 +141,7 @@ func (h *CopilotHandler) ClaimAgentRun(c *gin.Context) {
 }
 
 func (h *CopilotHandler) RecordAgentRunCallback(c *gin.Context) {
-	if !h.authorizeRunner(c.GetHeader("Authorization")) {
+	if !authorizeAIAgentRunner(c, h.runnerToken) {
 		apiresponse.Error(c, http.StatusUnauthorized, "unauthorized", "invalid ai agent runner token")
 		return
 	}
@@ -170,7 +169,7 @@ func (h *CopilotHandler) RecordAgentRunCallback(c *gin.Context) {
 }
 
 func (h *CopilotHandler) RecordAgentToolCall(c *gin.Context) {
-	if !h.authorizeRunner(c.GetHeader("Authorization")) {
+	if !authorizeAIAgentRunner(c, h.runnerToken) {
 		apiresponse.Error(c, http.StatusUnauthorized, "unauthorized", "invalid ai agent runner token")
 		return
 	}
@@ -193,16 +192,6 @@ func (h *CopilotHandler) RecordAgentToolCall(c *gin.Context) {
 		return
 	}
 	apiresponse.Item(c, http.StatusAccepted, item)
-}
-
-func (h *CopilotHandler) authorizeRunner(header string) bool {
-	if strings.TrimSpace(h.runnerToken) == "" {
-		return false
-	}
-	token := strings.TrimSpace(header)
-	token = strings.TrimPrefix(token, "Bearer ")
-	token = strings.TrimPrefix(token, "bearer ")
-	return strings.TrimSpace(token) == strings.TrimSpace(h.runnerToken)
 }
 
 func (h *CopilotHandler) ListDataSources(c *gin.Context) {

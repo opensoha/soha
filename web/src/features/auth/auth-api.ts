@@ -1,9 +1,9 @@
 import { useAuthStore } from "@/stores/auth-store";
 import type { ApiResponse, AuthResult, PermissionSnapshot } from "@/types";
 
-export const API_BASE_URL = import.meta.env.DEV
-  ? "http://127.0.0.1:8080/api/v1"
-  : "/api/v1";
+export const API_BASE_URL =
+  (import.meta.env.VITE_API_BASE_URL as string | undefined)?.trim() ||
+  "/api/v1";
 
 interface AuthProvider {
   enabled: boolean;
@@ -17,6 +17,11 @@ interface LoginOptions {
   verification: {
     sliderEnabled: boolean;
   };
+}
+
+interface StreamTicket {
+  expiresAt: string;
+  ticket: string;
 }
 
 interface AuthFetchOptions extends RequestInit {
@@ -83,6 +88,7 @@ async function fetchAuthJSON<T>(
 
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...options,
+    credentials: options.credentials ?? "include",
     headers,
   });
 
@@ -107,12 +113,25 @@ export function getStoredAccessToken() {
 
 export function commitAuthResult(authResult: AuthResult) {
   const { setTokens, setUser } = useAuthStore.getState();
-  setTokens(authResult.tokens.accessToken, authResult.tokens.refreshToken);
+  setTokens(authResult.tokens.accessToken);
   setUser(authResult.user);
 }
 
 export function clearAuthSession() {
   useAuthStore.getState().clearAuth();
+}
+
+export async function logoutAuthSession() {
+  try {
+    await fetchAuthJSON<{ status?: string }>("/auth/logout", {
+      method: "POST",
+      accessToken: getStoredAccessToken(),
+    });
+  } catch {
+    // best-effort: local state must be cleared even when the session is already gone.
+  } finally {
+    clearAuthSession();
+  }
 }
 
 export async function fetchAuthProviders() {
@@ -159,17 +178,11 @@ export async function fetchPermissionSnapshot() {
 }
 
 export async function refreshAuthSession(): Promise<boolean> {
-  const { refreshToken } = useAuthStore.getState();
-  if (!refreshToken) {
-    return false;
-  }
-
   try {
     const response = await fetchAuthJSON<ApiResponse<AuthResult>>(
       "/auth/refresh",
       {
         method: "POST",
-        body: JSON.stringify({ refreshToken }),
       },
     );
     commitAuthResult(response.data);
@@ -177,5 +190,31 @@ export async function refreshAuthSession(): Promise<boolean> {
   } catch {
     clearAuthSession();
     return false;
+  }
+}
+
+async function requestStreamTicket(path: string) {
+  const response = await fetchAuthJSON<ApiResponse<StreamTicket>>(
+    "/auth/stream-ticket",
+    {
+      method: "POST",
+      accessToken: getStoredAccessToken(),
+      body: JSON.stringify({ path }),
+    },
+  );
+  return response.data;
+}
+
+export async function issueStreamTicket(path: string) {
+  try {
+    return await requestStreamTicket(path);
+  } catch (error) {
+    if (!(error instanceof AuthApiError) || error.status !== 401) {
+      throw error;
+    }
+    if (!await refreshAuthSession()) {
+      throw error;
+    }
+    return requestStreamTicket(path);
   }
 }
