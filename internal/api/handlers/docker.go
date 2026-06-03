@@ -2,10 +2,15 @@ package handlers
 
 import (
 	"context"
+	"encoding/json"
+	"io"
 	"net/http"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/gorilla/websocket"
 	apiMiddleware "github.com/soha/soha/internal/api/middleware"
 	apiresponse "github.com/soha/soha/internal/api/response"
 	domaindocker "github.com/soha/soha/internal/domain/docker"
@@ -27,6 +32,12 @@ type DockerService interface {
 	DeleteProject(context.Context, domainidentity.Principal, string) error
 	DeployProject(context.Context, domainidentity.Principal, string, string) (domaindocker.Operation, error)
 	StartContainer(context.Context, domainidentity.Principal, domaindocker.ContainerStartInput) (domaindocker.Operation, error)
+	GetProjectLogs(context.Context, domainidentity.Principal, string, string, int) (domaindocker.ProjectRuntimeLogs, error)
+	StreamProjectLogs(context.Context, domainidentity.Principal, string, string, int, io.Writer) error
+	StreamProjectTerminal(context.Context, domainidentity.Principal, string, string, string, io.Reader, io.Writer, io.Writer) error
+	ListProjectVolumes(context.Context, domainidentity.Principal, string, string) ([]domaindocker.ProjectVolume, error)
+	ListProjectVolumeFiles(context.Context, domainidentity.Principal, string, domaindocker.ProjectVolumeFileListInput) (domaindocker.ProjectVolumeFileList, error)
+	ReadProjectVolumeFile(context.Context, domainidentity.Principal, string, domaindocker.ProjectVolumeFileReadInput) (domaindocker.ProjectVolumeFileContent, error)
 	ListServices(context.Context, domainidentity.Principal, domaindocker.ServiceFilter) (domaindocker.Page[domaindocker.Service], error)
 	ServiceAction(context.Context, domainidentity.Principal, string, string) (domaindocker.Operation, error)
 	ListPortMappings(context.Context, domainidentity.Principal, domaindocker.PortMappingFilter) (domaindocker.Page[domaindocker.PortMapping], error)
@@ -71,12 +82,13 @@ func (h *DockerHandler) Overview(c *gin.Context) {
 
 func (h *DockerHandler) ListHosts(c *gin.Context) {
 	page, err := h.service.ListHosts(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), domaindocker.HostFilter{
-		Status:      c.Query("status"),
-		Search:      c.Query("search"),
-		Environment: c.Query("environment"),
-		Page:        queryInt(c, "page", 1),
-		PageSize:    queryInt(c, "pageSize", 50),
-		Limit:       queryLimit(c, 100),
+		Status:       c.Query("status"),
+		Search:       c.Query("search"),
+		Environment:  c.Query("environment"),
+		Architecture: c.Query("architecture"),
+		Page:         queryInt(c, "page", 1),
+		PageSize:     queryInt(c, "pageSize", 50),
+		Limit:        queryLimit(c, 100),
 	})
 	if err != nil {
 		writeError(c, err)
@@ -148,6 +160,7 @@ func (h *DockerHandler) ListProjects(c *gin.Context) {
 	page, err := h.service.ListProjects(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), domaindocker.ProjectFilter{
 		HostID:      c.Query("hostId"),
 		Status:      c.Query("status"),
+		SourceKind:  c.Query("sourceKind"),
 		Search:      c.Query("search"),
 		Environment: c.Query("environment"),
 		Page:        queryInt(c, "page", 1),
@@ -231,6 +244,197 @@ func (h *DockerHandler) StartContainer(c *gin.Context) {
 		return
 	}
 	apiresponse.Item(c, http.StatusAccepted, item)
+}
+
+func (h *DockerHandler) GetProjectLogs(c *gin.Context) {
+	item, err := h.service.GetProjectLogs(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("id"), c.Query("serviceName"), queryInt(c, "tailLines", 200))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
+}
+
+func (h *DockerHandler) StreamProjectLogs(c *gin.Context) {
+	conn, err := podTerminalUpgrader.Upgrade(c.Writer, c.Request, nil)
+	if err != nil {
+		return
+	}
+	defer conn.Close()
+
+	ctx, cancel := context.WithCancel(c.Request.Context())
+	defer cancel()
+
+	var writeMu sync.Mutex
+	go func() {
+		ticker := time.NewTicker(podLogPingInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if err := writeControlMessage(conn, &writeMu, websocket.PingMessage, nil); err != nil {
+					cancel()
+					return
+				}
+			}
+		}
+	}()
+
+	streamErrCh := make(chan error, 1)
+	go func() {
+		streamErrCh <- h.service.StreamProjectLogs(
+			ctx,
+			apiMiddleware.PrincipalFromContext(c),
+			c.Param("id"),
+			c.Query("serviceName"),
+			queryInt(c, "tailLines", 100),
+			&logStreamWriter{conn: conn, writeMu: &writeMu},
+		)
+	}()
+
+	readDone := make(chan struct{})
+	go func() {
+		defer close(readDone)
+		for {
+			_, payload, err := conn.ReadMessage()
+			if err != nil {
+				cancel()
+				return
+			}
+			var message terminalMessage
+			if err := json.Unmarshal(payload, &message); err != nil {
+				continue
+			}
+			if message.Type == "close" {
+				cancel()
+				return
+			}
+		}
+	}()
+
+	select {
+	case err := <-streamErrCh:
+		exitMessage := terminalMessage{Type: "exit", Message: "docker log stream closed"}
+		if err != nil && err != context.Canceled {
+			exitMessage.Message = err.Error()
+		}
+		_ = writeTerminalMessage(conn, &writeMu, exitMessage)
+	case <-readDone:
+		_ = writeTerminalMessage(conn, &writeMu, terminalMessage{Type: "exit", Message: "docker log stream closed"})
+	}
+}
+
+func (h *DockerHandler) StreamProjectTerminal(c *gin.Context) {
+	conn, err := podTerminalUpgrader.Upgrade(c.Writer, c.Request, nil)
+	if err != nil {
+		return
+	}
+	defer conn.Close()
+
+	ctx, cancel := context.WithCancel(c.Request.Context())
+	defer cancel()
+
+	stdinReader, stdinWriter := io.Pipe()
+	defer stdinWriter.Close()
+
+	var writeMu sync.Mutex
+	_ = writeTerminalMessage(conn, &writeMu, terminalMessage{
+		Type:    "status",
+		Message: "docker terminal session connected",
+	})
+
+	streamErrCh := make(chan error, 1)
+	go func() {
+		streamErrCh <- h.service.StreamProjectTerminal(
+			ctx,
+			apiMiddleware.PrincipalFromContext(c),
+			c.Param("id"),
+			c.Query("serviceName"),
+			c.DefaultQuery("shell", "/bin/sh"),
+			stdinReader,
+			terminalStreamWriter{conn: conn, writeMu: &writeMu, channel: "stdout"},
+			terminalStreamWriter{conn: conn, writeMu: &writeMu, channel: "stderr"},
+		)
+	}()
+
+	readDone := make(chan struct{})
+	go func() {
+		defer close(readDone)
+		defer stdinWriter.Close()
+		for {
+			_, payload, err := conn.ReadMessage()
+			if err != nil {
+				cancel()
+				return
+			}
+			var message terminalMessage
+			if err := json.Unmarshal(payload, &message); err != nil {
+				_ = writeTerminalMessage(conn, &writeMu, terminalMessage{Type: "status", Message: "ignored invalid terminal message"})
+				continue
+			}
+			switch message.Type {
+			case "input":
+				if _, err := io.WriteString(stdinWriter, message.Data); err != nil {
+					cancel()
+					return
+				}
+			case "close":
+				cancel()
+				return
+			}
+		}
+	}()
+
+	select {
+	case streamErr := <-streamErrCh:
+		cancel()
+		exitMessage := terminalMessage{Type: "exit", Message: "docker terminal session closed"}
+		if streamErr != nil && streamErr != context.Canceled {
+			exitMessage.Message = streamErr.Error()
+		}
+		_ = writeTerminalMessage(conn, &writeMu, exitMessage)
+	case <-readDone:
+		cancel()
+	}
+}
+
+func (h *DockerHandler) ListProjectVolumes(c *gin.Context) {
+	items, err := h.service.ListProjectVolumes(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("id"), c.Query("serviceName"))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Items(c, http.StatusOK, items)
+}
+
+func (h *DockerHandler) ListProjectVolumeFiles(c *gin.Context) {
+	item, err := h.service.ListProjectVolumeFiles(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("id"), domaindocker.ProjectVolumeFileListInput{
+		ServiceName: c.Query("serviceName"),
+		Target:      c.Query("target"),
+		Path:        c.Query("path"),
+		Limit:       queryInt(c, "limit", 200),
+	})
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
+}
+
+func (h *DockerHandler) ReadProjectVolumeFile(c *gin.Context) {
+	item, err := h.service.ReadProjectVolumeFile(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("id"), domaindocker.ProjectVolumeFileReadInput{
+		ServiceName: c.Query("serviceName"),
+		Target:      c.Query("target"),
+		Path:        c.Query("path"),
+		LimitBytes:  int64(queryInt(c, "limitBytes", 262144)),
+	})
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
 }
 
 func (h *DockerHandler) ListServices(c *gin.Context) {

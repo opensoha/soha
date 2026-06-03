@@ -193,6 +193,9 @@ func BuildKubeVirtVM(input CreateVMInput) *unstructured.Unstructured {
 			},
 		},
 	}
+	if architecture := kubeVirtArchitecture(input.Architecture); architecture != "" {
+		_ = unstructured.SetNestedField(spec, architecture, "template", "spec", "architecture")
+	}
 	storageClass := stringOption(input.ProviderParams, "storageClass")
 	dataVolumeName := firstNonEmpty(stringOption(input.ProviderParams, "dataVolumeName"), input.Name+"-rootdisk")
 	sourceRef := firstNonEmpty(input.SourceRef, input.BootImage)
@@ -396,6 +399,18 @@ func namespaceOrDefault(connection Connection, fallback string) string {
 		return namespace
 	}
 	return fallback
+}
+
+func kubeVirtArchitecture(value string) string {
+	normalized := strings.TrimPrefix(strings.ToLower(strings.TrimSpace(value)), "linux/")
+	switch normalized {
+	case "amd64", "x86_64", "x64", "x86":
+		return "amd64"
+	case "arm64", "aarch64":
+		return "arm64"
+	default:
+		return ""
+	}
 }
 
 func stringOption(options map[string]any, key string) string {

@@ -419,6 +419,10 @@ export const DockerProjectsPage = lazyNamed(
   () => import("@/features/docker/docker-pages"),
   "DockerProjectsPage",
 );
+export const DockerProjectDetailPage = lazyNamed(
+  () => import("@/features/docker/docker-pages"),
+  "DockerProjectDetailPage",
+);
 export const DockerServicesPage = lazyNamed(
   () => import("@/features/docker/docker-pages"),
   "DockerServicesPage",

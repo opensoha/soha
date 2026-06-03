@@ -43,7 +43,7 @@ func (s *Service) List(context.Context) ([]domainmodule.Status, error) {
 			EnabledConfigKey:   "modules.docker.enabled",
 			Dependencies:       []string{"virtualization"},
 			VisiblePermissions: []string{"docker.overview.view", "docker.hosts.view", "docker.projects.view", "docker.services.view", "docker.ports.view", "docker.templates.view", "docker.operations.view"},
-			SeedMenus:          []string{"docker-workbench", "docker-workbench-overview", "docker-workbench-hosts", "docker-workbench-projects", "docker-workbench-services", "docker-workbench-ports", "docker-workbench-templates", "docker-workbench-operations"},
+			SeedMenus:          []string{"docker-workbench", "docker-workbench-overview", "docker-workbench-hosts", "docker-workbench-projects", "docker-workbench-templates", "docker-workbench-operations"},
 		},
 		{
 			ID:                 "delivery",

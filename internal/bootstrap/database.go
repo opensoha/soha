@@ -82,7 +82,7 @@ type clusterCredentialSeed struct {
 // While the stored version matches this constant, the static seed block is
 // skipped entirely. Config-driven sync (admin user, clusters) runs separately
 // during startup so runtime config updates do not depend on replaying defaults.
-const bootstrapSeedVersion = "2026-06-03-alert-integrations"
+const bootstrapSeedVersion = "2026-06-03-docker-container-management"
 
 const bootstrapSeedVersionKey = "bootstrap.seed_version"
 
@@ -282,9 +282,7 @@ func defaultMenuSeeds() []menuSeed {
 		{ID: "docker-workbench", Path: "/docker", LabelZH: "Docker 工作台", LabelEN: "Docker Workbench", IconKey: "docker", Section: "ops", SortOrder: 90, Enabled: true, Roles: []string{"admin", "ops", "developer", "readonly"}},
 		{ID: "docker-workbench-overview", ParentID: "docker-workbench", Path: "/docker/overview", LabelZH: "总览", LabelEN: "Overview", IconKey: "gauge", Section: "ops", SortOrder: 91, Enabled: true, Roles: []string{"admin", "ops", "developer", "readonly"}},
 		{ID: "docker-workbench-hosts", ParentID: "docker-workbench", Path: "/docker/hosts", LabelZH: "Docker 主机", LabelEN: "Docker Hosts", IconKey: "server", Section: "ops", SortOrder: 92, Enabled: true, Roles: []string{"admin", "ops", "developer", "readonly"}},
-		{ID: "docker-workbench-projects", ParentID: "docker-workbench", Path: "/docker/projects", LabelZH: "Compose 项目", LabelEN: "Compose Projects", IconKey: "docker", Section: "ops", SortOrder: 93, Enabled: true, Roles: []string{"admin", "ops", "developer", "readonly"}},
-		{ID: "docker-workbench-services", ParentID: "docker-workbench", Path: "/docker/services", LabelZH: "容器服务", LabelEN: "Container Services", IconKey: "boxes", Section: "ops", SortOrder: 94, Enabled: true, Roles: []string{"admin", "ops", "developer", "readonly"}},
-		{ID: "docker-workbench-ports", ParentID: "docker-workbench", Path: "/docker/ports", LabelZH: "端口映射", LabelEN: "Port Mappings", IconKey: "network", Section: "ops", SortOrder: 95, Enabled: true, Roles: []string{"admin", "ops", "developer", "readonly"}},
+		{ID: "docker-workbench-projects", ParentID: "docker-workbench", Path: "/docker/projects", LabelZH: "容器管理", LabelEN: "Container Management", IconKey: "docker", Section: "ops", SortOrder: 93, Enabled: true, Roles: []string{"admin", "ops", "developer", "readonly"}},
 		{ID: "docker-workbench-templates", ParentID: "docker-workbench", Path: "/docker/templates", LabelZH: "模板", LabelEN: "Templates", IconKey: "code", Section: "ops", SortOrder: 96, Enabled: true, Roles: []string{"admin", "ops", "developer", "readonly"}},
 		{ID: "docker-workbench-operations", ParentID: "docker-workbench", Path: "/docker/operations", LabelZH: "操作记录", LabelEN: "Operations", IconKey: "history", Section: "ops", SortOrder: 97, Enabled: true, Roles: []string{"admin", "ops", "developer", "readonly"}},
 		{ID: "builds", Path: "/applications", LabelZH: "应用中心", LabelEN: "Application Center", IconKey: "blocks", Section: "deliver", SortOrder: 1, Enabled: true, Roles: []string{"admin", "ops", "developer"}},
@@ -337,6 +335,8 @@ func deprecatedMenuIDs() []string {
 		"assistant-operations",
 		"assistant-tools",
 		"ai-workbench-gateway",
+		"docker-workbench-services",
+		"docker-workbench-ports",
 		"events",
 		"business-lines",
 		"delivery-environments",
@@ -436,6 +436,7 @@ func syncBuiltinMenuSeedUpgrades(ctx context.Context, db *gorm.DB) error {
 	}{
 		{id: "operations", oldZH: "操作", oldEN: "Operations", labelZH: "操作日志", labelEN: "Operation Logs"},
 		{id: "audit", oldZH: "审计", oldEN: "Audit", labelZH: "审计日志", labelEN: "Audit Logs"},
+		{id: "docker-workbench-projects", oldZH: "Compose 项目", oldEN: "Compose Projects", labelZH: "容器管理", labelEN: "Container Management"},
 	}
 	for _, item := range labelUpdates {
 		if err := db.WithContext(ctx).Exec(`

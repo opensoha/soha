@@ -167,6 +167,7 @@ func (s *Service) executeVMCreate(ctx context.Context, task domainvirtualization
 	}
 	input := infravirtualization.CreateVMInput{
 		Name:             payloadString(task.Payload, "name"),
+		Architecture:     payloadString(task.Payload, "architecture"),
 		Namespace:        payloadString(task.Payload, "namespace"),
 		Node:             payloadString(task.Payload, "node"),
 		CPU:              payloadInt(task.Payload, "cpu"),
@@ -203,15 +204,17 @@ func (s *Service) executeVMCreate(ctx context.Context, task domainvirtualization
 		IPAddresses:  []string{},
 		Labels:       metadataMap(vm.Metadata),
 		Config: map[string]any{
-			"cpu":        payloadInt(task.Payload, "cpu"),
-			"memoryMiB":  payloadInt(task.Payload, "memoryMiB"),
-			"diskGiB":    payloadInt(task.Payload, "diskGiB"),
-			"network":    payloadString(task.Payload, "network"),
-			"sourceMode": payloadString(task.Payload, "sourceMode"),
-			"sourceRef":  payloadString(task.Payload, "sourceId"),
+			"architecture": payloadString(task.Payload, "architecture"),
+			"cpu":          payloadInt(task.Payload, "cpu"),
+			"memoryMiB":    payloadInt(task.Payload, "memoryMiB"),
+			"diskGiB":      payloadInt(task.Payload, "diskGiB"),
+			"network":      payloadString(task.Payload, "network"),
+			"sourceMode":   payloadString(task.Payload, "sourceMode"),
+			"sourceRef":    payloadString(task.Payload, "sourceId"),
 		},
 		Raw: map[string]any{
 			"providerVmId":   vm.ID,
+			"architecture":   payloadString(task.Payload, "architecture"),
 			"providerParams": task.Payload["providerParams"],
 			"providerExtra":  task.Payload["providerExtra"],
 			"sourceMode":     payloadString(task.Payload, "sourceMode"),
@@ -223,7 +226,7 @@ func (s *Service) executeVMCreate(ctx context.Context, task domainvirtualization
 		return runtimeobs.OutcomeFailed, err
 	}
 	task.VMID = stored.ID
-	task.Result = map[string]any{"vmId": stored.ID, "name": stored.Name, "status": stored.Status}
+	task.Result = map[string]any{"vmId": stored.ID, "name": stored.Name, "status": stored.Status, "architecture": payloadString(task.Payload, "architecture")}
 	s.completeTask(ctx, task)
 	_ = s.repo.CreateTaskLog(ctx, domainvirtualization.TaskLog{TaskID: task.ID, LogLevel: "info", Message: "virtual machine created"})
 	s.recordOperation(ctx, s.workerPrincipal, "virtualization.worker.vm_create", stored.ID, stored.Name, TaskStatusSucceeded, "virtual machine creation completed", map[string]any{"taskId": task.ID})

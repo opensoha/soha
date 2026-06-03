@@ -80,6 +80,38 @@ func TestListReflectsDisabledVirtualizationModule(t *testing.T) {
 	}
 }
 
+func TestListIncludesDockerDescriptorWithoutRemovedDetailMenus(t *testing.T) {
+	service := New(cfgpkg.ModulesConfig{Docker: cfgpkg.ModuleToggleConfig{Enabled: true}})
+
+	items, err := service.List(context.Background())
+	if err != nil {
+		t.Fatalf("List returned error: %v", err)
+	}
+
+	status, ok := moduleStatusByID(items, "docker")
+	if !ok {
+		t.Fatalf("docker module descriptor missing")
+	}
+	if !status.Enabled {
+		t.Fatalf("docker module should be enabled from config")
+	}
+	for _, permission := range []string{"docker.services.view", "docker.ports.view"} {
+		if !slices.Contains(status.Descriptor.VisiblePermissions, permission) {
+			t.Fatalf("docker visible permissions = %v, missing %s", status.Descriptor.VisiblePermissions, permission)
+		}
+	}
+	for _, menuID := range []string{"docker-workbench", "docker-workbench-overview", "docker-workbench-hosts", "docker-workbench-projects", "docker-workbench-templates", "docker-workbench-operations"} {
+		if !slices.Contains(status.Descriptor.SeedMenus, menuID) {
+			t.Fatalf("docker seed menus = %v, missing %s", status.Descriptor.SeedMenus, menuID)
+		}
+	}
+	for _, removedMenuID := range []string{"docker-workbench-services", "docker-workbench-ports"} {
+		if slices.Contains(status.Descriptor.SeedMenus, removedMenuID) {
+			t.Fatalf("docker seed menus should not include removed menu %s: %v", removedMenuID, status.Descriptor.SeedMenus)
+		}
+	}
+}
+
 func TestListIncludesAIGatewayDescriptor(t *testing.T) {
 	service := New(cfgpkg.ModulesConfig{AIGateway: cfgpkg.ModuleToggleConfig{Enabled: true}})
 

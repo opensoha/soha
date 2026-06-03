@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/url"
 	"path"
@@ -175,6 +176,10 @@ func (a *PVEAdapter) CreateVM(ctx context.Context, connection Connection, input 
 		}
 		vmid = nextID
 	}
+	cicustom, err := a.ensurePVECICustom(ctx, connection, node, vmid, input)
+	if err != nil {
+		return VM{}, err
+	}
 	payload := map[string]any{"name": input.Name}
 	if input.CPU > 0 {
 		payload["cores"] = input.CPU
@@ -195,6 +200,12 @@ func (a *PVEAdapter) CreateVM(ctx context.Context, connection Connection, input 
 		if err := a.do(ctx, connection, http.MethodPost, endpoint, payload, nil); err != nil {
 			return VM{}, err
 		}
+		configPayload := pveCloudInitConfigPayload(input, cicustom)
+		if len(configPayload) > 0 {
+			if err := a.do(ctx, connection, http.MethodPost, fmt.Sprintf("/nodes/%s/qemu/%s/config", url.PathEscape(node), url.PathEscape(vmid)), configPayload, nil); err != nil {
+				return VM{}, err
+			}
+		}
 		if input.StartAfterCreate {
 			if err := a.do(ctx, connection, http.MethodPost, fmt.Sprintf("/nodes/%s/qemu/%s/status/start", url.PathEscape(node), url.PathEscape(vmid)), nil, nil); err != nil {
 				return VM{}, err
@@ -203,6 +214,9 @@ func (a *PVEAdapter) CreateVM(ctx context.Context, connection Connection, input 
 		return a.fetchVM(ctx, connection, node, vmid, input.Name)
 	}
 	payload["vmid"] = vmid
+	if arch := pveArchitecture(input.Architecture); arch != "" {
+		payload["arch"] = arch
+	}
 	if input.DiskSize != "" {
 		diskRef := normalizePVEDiskSize(input.DiskSize)
 		if providerStorage != "" {
@@ -226,6 +240,9 @@ func (a *PVEAdapter) CreateVM(ctx context.Context, connection Connection, input 
 	}
 	if sshKeys := stringFromAny(input.ProviderParams["sshkeys"]); sshKeys != "" {
 		payload["sshkeys"] = sshKeys
+	}
+	if cicustom != "" {
+		payload["cicustom"] = cicustom
 	}
 	endpoint := fmt.Sprintf("/nodes/%s/qemu", url.PathEscape(node))
 	if err := a.do(ctx, connection, http.MethodPost, endpoint, payload, nil); err != nil {
@@ -265,6 +282,111 @@ func (a *PVEAdapter) PowerAction(ctx context.Context, connection Connection, vm 
 		return PowerActionResult{}, err
 	}
 	return PowerActionResult{Accepted: true, Action: action}, nil
+}
+
+func (a *PVEAdapter) ensurePVECICustom(ctx context.Context, connection Connection, node string, vmid string, input CreateVMInput) (string, error) {
+	if cicustom := stringFromAny(input.ProviderParams["cicustom"]); cicustom != "" {
+		return cicustom, nil
+	}
+	cloudInit := strings.TrimSpace(input.CloudInit)
+	if cloudInit == "" {
+		return "", nil
+	}
+	if pveCloudInitLooksLikeRef(cloudInit) {
+		return cloudInit, nil
+	}
+	storage := firstNonEmpty(
+		stringFromAny(input.ProviderParams["snippetStorage"]),
+		stringOptionValue(connection.Options, "defaultSnippetStorage"),
+		stringOptionValue(connection.Options, "snippetStorage"),
+	)
+	if storage == "" {
+		return "", invalidf("pve snippet storage is required for raw cloud-init user data")
+	}
+	ref, err := a.uploadPVECloudInit(ctx, connection, node, storage, vmid, cloudInit)
+	if err != nil {
+		return "", err
+	}
+	return "user=" + ref, nil
+}
+
+func pveCloudInitConfigPayload(input CreateVMInput, cicustom string) map[string]any {
+	payload := map[string]any{}
+	if ciuser := stringFromAny(input.ProviderParams["ciuser"]); ciuser != "" {
+		payload["ciuser"] = ciuser
+	}
+	if sshKeys := stringFromAny(input.ProviderParams["sshkeys"]); sshKeys != "" {
+		payload["sshkeys"] = sshKeys
+	}
+	if cicustom != "" {
+		payload["cicustom"] = cicustom
+	}
+	return payload
+}
+
+func pveCloudInitLooksLikeRef(value string) bool {
+	value = strings.TrimSpace(value)
+	if value == "" || strings.Contains(value, "\n") || strings.HasPrefix(value, "#") {
+		return false
+	}
+	return strings.Contains(value, "=") && strings.Contains(value, ":")
+}
+
+func (a *PVEAdapter) uploadPVECloudInit(ctx context.Context, connection Connection, node string, storage string, vmid string, content string) (string, error) {
+	filename := fmt.Sprintf("soha-%s-cloud-init.yaml", sanitizePVESnippetName(vmid))
+	endpoint := fmt.Sprintf("/nodes/%s/storage/%s/upload", url.PathEscape(node), url.PathEscape(storage))
+	base, err := url.Parse(strings.TrimRight(connection.Endpoint, "/"))
+	if err != nil || base.Scheme == "" || base.Host == "" {
+		return "", invalidf("valid pve endpoint is required")
+	}
+	base.Path = path.Join(base.Path, "/api2/json", endpoint)
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	if err := writer.WriteField("content", "snippets"); err != nil {
+		return "", err
+	}
+	part, err := writer.CreateFormFile("filename", filename)
+	if err != nil {
+		return "", err
+	}
+	if _, err := part.Write([]byte(content)); err != nil {
+		return "", err
+	}
+	if err := writer.Close(); err != nil {
+		return "", err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, base.String(), &body)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	applyPVEAuth(req, connection.Credential)
+	resp, err := a.clientFor(connection).Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", fmt.Errorf("pve api returned status %d", resp.StatusCode)
+	}
+	io.Copy(io.Discard, resp.Body)
+	return fmt.Sprintf("%s:snippets/%s", storage, filename), nil
+}
+
+func sanitizePVESnippetName(value string) string {
+	var builder strings.Builder
+	for _, r := range value {
+		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-' || r == '_' || r == '.' {
+			builder.WriteRune(r)
+		} else {
+			builder.WriteByte('-')
+		}
+	}
+	if builder.Len() == 0 {
+		return "vm"
+	}
+	return builder.String()
 }
 
 func (a *PVEAdapter) do(ctx context.Context, connection Connection, method string, endpoint string, payload map[string]any, out any) error {
@@ -405,6 +527,18 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func pveArchitecture(value string) string {
+	normalized := strings.TrimPrefix(strings.ToLower(strings.TrimSpace(value)), "linux/")
+	switch normalized {
+	case "amd64", "x86_64", "x64", "x86":
+		return "x86_64"
+	case "arm64", "aarch64":
+		return "aarch64"
+	default:
+		return ""
+	}
 }
 
 func pveStorageSupportsContent(item map[string]any) bool {

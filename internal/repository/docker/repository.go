@@ -71,12 +71,12 @@ func (r *Repository) CreateHost(ctx context.Context, input domaindocker.HostInpu
 	if err := r.db.WithContext(ctx).Exec(`
 		INSERT INTO docker_hosts (
 			id, name, status, endpoint, agent_id, agent_version, docker_version, compose_version,
-			environment, owner, team, virtualization_connection_id, vm_id, vm_name, ip_address,
+			architecture, environment, owner, team, virtualization_connection_id, vm_id, vm_name, ip_address,
 			cpu_core_count, memory_bytes, disk_bytes, available_port_start, available_port_end,
 			labels, config, last_heartbeat_at, created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?::jsonb, ?, ?, ?)
 	`, item.ID, item.Name, item.Status, nullableString(item.Endpoint), nullableString(item.AgentID), nullableString(item.AgentVersion),
-		nullableString(item.DockerVersion), nullableString(item.ComposeVersion), nullableString(item.Environment), nullableString(item.Owner),
+		nullableString(item.DockerVersion), nullableString(item.ComposeVersion), nullableString(item.Architecture), nullableString(item.Environment), nullableString(item.Owner),
 		nullableString(item.Team), nullableString(item.VirtualizationConnectionID), nullableString(item.VMID), nullableString(item.VMName),
 		nullableString(item.IPAddress), item.CPUCoreCount, item.MemoryBytes, item.DiskBytes, item.AvailablePortStart, item.AvailablePortEnd,
 		string(labels), string(config), item.LastHeartbeatAt, item.CreatedAt, item.UpdatedAt).Error; err != nil {
@@ -100,12 +100,12 @@ func (r *Repository) UpdateHost(ctx context.Context, id string, input domaindock
 	result := r.db.WithContext(ctx).Exec(`
 		UPDATE docker_hosts
 		SET name = ?, status = ?, endpoint = ?, agent_id = ?, agent_version = ?, docker_version = ?,
-			compose_version = ?, environment = ?, owner = ?, team = ?, virtualization_connection_id = ?,
+			compose_version = ?, architecture = ?, environment = ?, owner = ?, team = ?, virtualization_connection_id = ?,
 			vm_id = ?, vm_name = ?, ip_address = ?, cpu_core_count = ?, memory_bytes = ?, disk_bytes = ?,
 			available_port_start = ?, available_port_end = ?, labels = ?::jsonb, config = ?::jsonb, updated_at = ?
 		WHERE id = ?
 	`, item.Name, item.Status, nullableString(item.Endpoint), nullableString(item.AgentID), nullableString(item.AgentVersion),
-		nullableString(item.DockerVersion), nullableString(item.ComposeVersion), nullableString(item.Environment), nullableString(item.Owner),
+		nullableString(item.DockerVersion), nullableString(item.ComposeVersion), nullableString(item.Architecture), nullableString(item.Environment), nullableString(item.Owner),
 		nullableString(item.Team), nullableString(item.VirtualizationConnectionID), nullableString(item.VMID), nullableString(item.VMName),
 		nullableString(item.IPAddress), item.CPUCoreCount, item.MemoryBytes, item.DiskBytes, item.AvailablePortStart, item.AvailablePortEnd,
 		string(labels), string(config), item.UpdatedAt, item.ID)
@@ -141,6 +141,9 @@ func (r *Repository) TouchHostRuntime(ctx context.Context, id string, input doma
 	if value := strings.TrimSpace(input.ComposeVersion); value != "" {
 		item.ComposeVersion = value
 	}
+	if value := strings.TrimSpace(input.Architecture); value != "" {
+		item.Architecture = value
+	}
 	if value := strings.TrimSpace(input.IPAddress); value != "" {
 		item.IPAddress = value
 	}
@@ -167,10 +170,10 @@ func (r *Repository) TouchHostRuntime(ctx context.Context, id string, input doma
 	result := r.db.WithContext(ctx).Exec(`
 		UPDATE docker_hosts
 		SET status = ?, endpoint = ?, agent_id = ?, agent_version = ?, docker_version = ?, compose_version = ?,
-			ip_address = ?, vm_id = ?, vm_name = ?, labels = ?::jsonb, config = ?::jsonb, last_heartbeat_at = ?, updated_at = ?
+			architecture = ?, ip_address = ?, vm_id = ?, vm_name = ?, labels = ?::jsonb, config = ?::jsonb, last_heartbeat_at = ?, updated_at = ?
 		WHERE id = ?
 	`, item.Status, nullableString(item.Endpoint), nullableString(item.AgentID), nullableString(item.AgentVersion),
-		nullableString(item.DockerVersion), nullableString(item.ComposeVersion), nullableString(item.IPAddress),
+		nullableString(item.DockerVersion), nullableString(item.ComposeVersion), nullableString(item.Architecture), nullableString(item.IPAddress),
 		nullableString(item.VMID), nullableString(item.VMName), string(labels), string(config), item.LastHeartbeatAt,
 		item.UpdatedAt, item.ID)
 	if result.Error != nil {
@@ -482,12 +485,22 @@ func (r *Repository) CreateContainerStart(ctx context.Context, input domaindocke
 		if err != nil {
 			return err
 		}
-		portInput := input.PortMapping
-		portInput.ProjectID = project.ID
-		portInput.ServiceID = service.ID
-		port, err := txRepo.CreatePortMapping(ctx, portInput)
-		if err != nil {
-			return err
+		portInputs := append([]domaindocker.PortMappingInput(nil), input.PortMappings...)
+		if len(portInputs) == 0 {
+			portInputs = append(portInputs, input.PortMapping)
+		}
+		ports := make([]domaindocker.PortMapping, 0, len(portInputs))
+		for _, portInput := range portInputs {
+			portInput.ProjectID = project.ID
+			portInput.ServiceID = service.ID
+			if portInput.HostID == "" {
+				portInput.HostID = project.HostID
+			}
+			port, err := txRepo.CreatePortMapping(ctx, portInput)
+			if err != nil {
+				return err
+			}
+			ports = append(ports, port)
 		}
 		operationInput := input.Operation
 		operationInput.ProjectID = project.ID
@@ -500,10 +513,13 @@ func (r *Repository) CreateContainerStart(ctx context.Context, input domaindocke
 			return err
 		}
 		result = domaindocker.ContainerStartCreateResult{
-			Project:     project,
-			Service:     service,
-			PortMapping: port,
-			Operation:   operation,
+			Project:      project,
+			Service:      service,
+			PortMappings: ports,
+			Operation:    operation,
+		}
+		if len(ports) > 0 {
+			result.PortMapping = ports[0]
 		}
 		return nil
 	})
@@ -833,6 +849,7 @@ func hostFromInput(input domaindocker.HostInput) domaindocker.Host {
 		AgentVersion:               strings.TrimSpace(input.AgentVersion),
 		DockerVersion:              strings.TrimSpace(input.DockerVersion),
 		ComposeVersion:             strings.TrimSpace(input.ComposeVersion),
+		Architecture:               strings.TrimSpace(input.Architecture),
 		Environment:                strings.TrimSpace(input.Environment),
 		Owner:                      strings.TrimSpace(input.Owner),
 		Team:                       strings.TrimSpace(input.Team),
@@ -1028,7 +1045,7 @@ func scanHost(rows scanner) (domaindocker.Host, error) {
 	var item domaindocker.Host
 	var labels, config []byte
 	if err := rows.Scan(&item.ID, &item.Name, &item.Status, &item.Endpoint, &item.AgentID, &item.AgentVersion,
-		&item.DockerVersion, &item.ComposeVersion, &item.Environment, &item.Owner, &item.Team,
+		&item.DockerVersion, &item.ComposeVersion, &item.Architecture, &item.Environment, &item.Owner, &item.Team,
 		&item.VirtualizationConnectionID, &item.VMID, &item.VMName, &item.IPAddress, &item.CPUCoreCount,
 		&item.MemoryBytes, &item.DiskBytes, &item.AvailablePortStart, &item.AvailablePortEnd, &labels, &config,
 		&item.LastHeartbeatAt, &item.CreatedAt, &item.UpdatedAt); err != nil {
@@ -1183,7 +1200,7 @@ type scanner interface {
 }
 
 func hostSelect() string {
-	return `SELECT id, name, status, COALESCE(endpoint, ''), COALESCE(agent_id, ''), COALESCE(agent_version, ''), COALESCE(docker_version, ''), COALESCE(compose_version, ''), COALESCE(environment, ''), COALESCE(owner, ''), COALESCE(team, ''), COALESCE(virtualization_connection_id, ''), COALESCE(vm_id, ''), COALESCE(vm_name, ''), COALESCE(ip_address, ''), cpu_core_count, memory_bytes, disk_bytes, available_port_start, available_port_end, labels, config, last_heartbeat_at, created_at, updated_at FROM docker_hosts`
+	return `SELECT id, name, status, COALESCE(endpoint, ''), COALESCE(agent_id, ''), COALESCE(agent_version, ''), COALESCE(docker_version, ''), COALESCE(compose_version, ''), COALESCE(architecture, ''), COALESCE(environment, ''), COALESCE(owner, ''), COALESCE(team, ''), COALESCE(virtualization_connection_id, ''), COALESCE(vm_id, ''), COALESCE(vm_name, ''), COALESCE(ip_address, ''), cpu_core_count, memory_bytes, disk_bytes, available_port_start, available_port_end, labels, config, last_heartbeat_at, created_at, updated_at FROM docker_hosts`
 }
 
 func projectSelect() string {
@@ -1243,6 +1260,10 @@ func hostClauses(filter domaindocker.HostFilter) ([]string, []any) {
 		clauses = append(clauses, "environment = ?")
 		args = append(args, value)
 	}
+	if value := strings.TrimSpace(filter.Architecture); value != "" {
+		clauses = append(clauses, "architecture = ?")
+		args = append(args, value)
+	}
 	if value := strings.TrimSpace(filter.Search); value != "" {
 		search := "%" + strings.ToLower(value) + "%"
 		clauses = append(clauses, "(LOWER(name) LIKE ? OR LOWER(endpoint) LIKE ? OR LOWER(agent_id) LIKE ? OR LOWER(vm_name) LIKE ? OR LOWER(ip_address) LIKE ?)")
@@ -1261,6 +1282,15 @@ func projectClauses(filter domaindocker.ProjectFilter) ([]string, []any) {
 	if value := strings.TrimSpace(filter.Status); value != "" {
 		clauses = append(clauses, "status = ?")
 		args = append(args, value)
+	}
+	if value := strings.TrimSpace(filter.SourceKind); value != "" {
+		if value == "compose" {
+			clauses = append(clauses, "COALESCE(source_kind, '') <> ?")
+			args = append(args, "single_container")
+		} else {
+			clauses = append(clauses, "source_kind = ?")
+			args = append(args, value)
+		}
 	}
 	if value := strings.TrimSpace(filter.Environment); value != "" {
 		clauses = append(clauses, "environment = ?")
