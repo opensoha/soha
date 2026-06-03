@@ -32,6 +32,19 @@ Implement console work inside the active Vite app under `web`. Keep the UI antd-
 7. Clean up stale assets or scripts when they no longer match the active UI baseline; do not leave dead Semi-era static files around once usage is gone.
 8. Validate with `npm run typecheck` in `web`, plus focused `npm run test` when semantics change.
 
+## Module Split Rules
+
+- Keep route page files responsible for composition, hooks, UI state, permission-aware rendering, and event wiring. Move stable DTOs, option constants, payload builders, query-string helpers, status mappers, normalization functions, and other pure helpers into scoped sibling modules such as `*-model.ts`, `*-types.ts`, or `*-api.ts`.
+- Prefer feature-local model modules before promoting code to shared folders. Use examples like `features/settings/ai-settings-model.ts`, `features/copilot/ai-gateway-model.ts`, `features/virtualization/virtualization-model.ts`, `features/platform/workloads-model.ts`, `features/platform/platform-management-model.ts`, and `features/system/system-model.ts` as the baseline pattern.
+- Do not move JSX render helpers, hooks, mutation wiring, or table column factories out of a page file unless the new module has a clear UI-level ownership and the split reduces real complexity. Pure helpers belong in model files; UI components belong in page files or explicit shared component files.
+- Keep compatibility exports when tests or existing imports depend on page-level helper exports. Re-export from the page while moving the implementation into the model module, then update imports only when the owning surface is ready.
+- Split CSS by ownership. Put app-wide tokens and resets in `web/src/styles/globals.css`; put reusable shell/surface rules in `web/src/styles/shared-surfaces.css`; put component rules beside shared components; put feature/workbench rules beside their feature pages. Avoid adding new global selectors for one page or one antd component override.
+- Route registration and route metadata stay separate. `web/src/routes/index.tsx` should keep the route tree; lazy page declarations and compatibility redirect components belong in a sibling route helper when they grow large. `web/src/routes/meta.ts` should own route lookup, permission, workspace, workbench, scope, and sidebar behavior; static route data belongs in a separate data module.
+- Keep `web/src/types/index.ts` as a compatibility barrel only when global DTOs grow. Split global types by domain, for example `core.ts`, `platform.ts`, `delivery.ts`, and `access.ts`, and use type-only imports for cross-domain references.
+- Keep `web/src/i18n/index.tsx` focused on provider, hook, `translate`, and dictionary registration. Locale dictionaries and i18n types belong in separate modules under `web/src/i18n/`.
+- Remove historical naming residue during refactors. Do not leave names such as `Semi*`, legacy theme aliases, or old framework labels in active code when the implementation is native antd.
+- Treat file-size reduction as a maintenance signal, not the goal by itself. A split is worthwhile only when it clarifies ownership, reduces page-bundle responsibility, improves testability, or prevents repeated edits in the same large file.
+
 ## Non-Negotiables
 
 - Work in `web`. Do not treat `old_web` or `web_pro_backup` as active implementation targets.
@@ -56,7 +69,7 @@ Implement console work inside the active Vite app under `web`. Keep the UI antd-
 - Management list pages may use the clusters-page Pro-style pattern when a richer table workflow is needed: one outer operational surface, an independent compact antd query form above the table, a separate table management toolbar with batch/refresh/create/column actions, then the data table. Do not place the query form inside the table header or inside `AdminTable` toolbar when following this pattern.
 - Management query panels must visually align with their paired management table: the first query field should share the table content's left baseline, and the query card should not drift farther right than the table's first column.
 - Query panel fields in the same row should use fixed, intentional gaps instead of relying on leftover flex/grid space. Keep label widths and control widths stable so keyword, select, switch, and action buttons scan as one compact toolbar.
-- The primary shell sidebar menu text baseline is 12px. Icons may be larger for legibility, but `.ant-menu-title-content` and section labels should not silently inherit Ant Design's larger default menu typography.
+- The primary shell sidebar menu text baseline is 12px. Icons may be larger for legibility. Preserve this through shell/sidebar-owned typography and existing theme structure; do not add global `.ant-menu-title-content` overrides for it.
 - Business data tables should follow the clusters-page table treatment: compact `AdminTable`, quiet border-only shell, small pagination, column settings in the toolbar, fixed right-side action column, and no decorative left-header table title. Do not pass `title` to `AdminTable` for ordinary business tables unless the table is one of several sibling tables in the same panel and the label is needed to distinguish them.
 - Table result-count summaries such as `当前 x / y 条` belong on the left side of the table pagination row through `AdminTable.paginationSummary`; do not place them in the query-panel action area beside reset/search buttons.
 - Fixed right-side action columns must be visually opaque over horizontally scrolling content. Cover the current Ant Design fixed-end classes as well as legacy fixed-right classes, including header, hover, selected-row, and shadow states, so underlying cells never show through.
@@ -124,5 +137,7 @@ Implement console work inside the active Vite app under `web`. Keep the UI antd-
 - No new frontend query fan-out or duplicated scope state is introduced.
 - Workbench navigation, module visibility, and compatibility redirects still behave as expected.
 - Affected pages typecheck, and tests are updated when semantics change.
+- Refactors that split route pages, route metadata, global types, i18n, or CSS include focused tests for the touched behavior, `npm run typecheck`, and `npm run build` before completion.
+- Browser checks cover representative workbench routes affected by the split and confirm pages render without login fallback, Vite error overlays, or console errors.
 - Header, breadcrumb, and scope-selector changes are verified at the target browser viewport for wrapping, overlap, truncation, focus/open states, and parity between cluster-only and namespace-plus-cluster modes.
 - Breadcrumb/menu/scope semantics changes include focused layout or route tests, especially around runtime menu labels and detail-route titles.
