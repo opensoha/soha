@@ -243,6 +243,12 @@ describe('app layout workspace navigation', () => {
     expect(container.querySelector('.soha-workspace-switcher-shell')).toBeNull()
   })
 
+  it('renders the global copyright footer', async () => {
+    const container = await renderWithProviders('/')
+
+    expect(container.querySelector('.soha-footer')?.textContent).toBe('© 2026 Soha 版权所有，由项目贡献者设计与开发。')
+  })
+
   it('uses namespace scope in the k8s workbench header for namespaced routes', async () => {
     const container = await renderWithProviders('/workloads/overview', {
       permissionKeys: ['workspace.resource.view', 'platform.workloads.view', 'system.menus.view'],

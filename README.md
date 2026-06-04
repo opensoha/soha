@@ -52,10 +52,10 @@ The project is intentionally broader than a resource viewer. Soha connects clust
 | Application delivery | Applications, services, containers, build templates, workflow templates, release bundles, execution tasks, approvals, releases, registries, and delivery records. |
 | Observability | Monitoring overview, alert inventory, alert events, notification policy, healing policy, on-call routing, schedules, escalations, and event streams. |
 | AI workbench | Session-first chat, root-cause analysis, performance analysis, inspection review, MCP-backed evidence collection, toolsets, skills, and provider execution. |
-| Agent runtime | Remote cluster mode, runner claim/callback APIs, execution heartbeats, task cancellation, Docker operation callbacks, and provider-agnostic AI execution. |
+| Agent runtime | Remote cluster mode, runner claim/callback APIs, execution heartbeats, task cancellation, Docker host runtime proxy endpoints, Docker operation callbacks, and provider-agnostic AI execution. |
 | Virtualization | KubeVirt and Proxmox VE connections, VM lifecycle, image and flavor catalogs, console access, metrics, operations, and sync tasks. |
-| Docker workbench | Docker host inventory, Compose projects, services, port mappings, templates, single-container startup, and token-protected runner operations. |
-| Access and system | Users, roles, groups, policies, scope grants, menus, settings, announcements, audit logs, and operation logs. |
+| Docker workbench | Docker host inventory, Compose projects, container management, services, port mappings, templates, single-container startup, agent-backed runtime logs, Shell access, volume browsing, and token-protected runner operations. |
+| Access and system | Users, roles, organizations, policies, scope grants, menus, settings, announcements, audit logs, and operation logs. |
 
 ## Architecture
 
@@ -183,6 +183,12 @@ The default agent config is [configs/agent.config.yaml](./configs/agent.config.y
 SOHA_AGENT_CONFIG_FILE=/abs/path/to/agent.config.yaml go run ./cmd/agent
 ```
 
+The same agent binary can also expose Docker host runtime APIs used by Docker
+Workbench for project logs, interactive Shell sessions, and volume file browsing.
+Configure host records with the agent runtime endpoint and bearer token. Browser
+WebSocket streams still go through the control plane and use short-lived stream
+tickets instead of query-string access tokens.
+
 ### Deploy the Hermes Agent runner with Docker
 
 When Hermes is used as an external provider, run the derived `soha-agent` image from the unified compose stack: it extends the official `nousresearch/hermes-agent` image, adds the soha `cmd/agent` runner, and connects back to the control plane through the Agent Runtime claim/callback protocol.
@@ -283,4 +289,5 @@ Soha is under active development. The platform, delivery, observability, AI, vir
 
 ## License
 
-This repository does not currently include a top-level `LICENSE` file. Add one before a public release if the project is intended for open-source distribution.
+Soha is licensed under the GNU Affero General Public License v3.0. See
+[LICENSE](./LICENSE) for the full license text.

@@ -112,7 +112,7 @@ const config: Config = {
           ],
         },
       ],
-      copyright: `Copyright © ${new Date().getFullYear()} soha contributors.`,
+      copyright: '© 2026 Soha 版权所有，由项目贡献者设计与开发。',
     },
     prism: {
       theme: prismThemes.github,

@@ -813,6 +813,21 @@ a {
   overflow: auto;
 }
 
+.soha-footer {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 32px;
+  padding: 0 24px !important;
+  border-top: 1px solid transparent;
+  background: var(--soha-bg-surface) !important;
+  color: var(--soha-text-tertiary);
+  font-size: 12px;
+  line-height: 1.4;
+  text-align: center;
+}
+
 .soha-global-scopebar,
 .soha-global-scopebar-summary {
   display: flex;
@@ -1064,6 +1079,11 @@ a {
 
   .soha-content {
     padding: 16px !important;
+  }
+
+  .soha-footer {
+    min-height: 34px;
+    padding: 0 12px !important;
   }
 
   .soha-content-inner {
