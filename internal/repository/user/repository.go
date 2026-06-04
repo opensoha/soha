@@ -695,7 +695,6 @@ func (r *Repository) DeleteUser(ctx context.Context, userID string) error {
 		`DELETE FROM user_project_bindings WHERE user_id = ?`,
 		`DELETE FROM user_team_bindings WHERE user_id = ?`,
 		`DELETE FROM user_role_bindings WHERE user_id = ?`,
-		`DELETE FROM user_preferences WHERE user_id = ?`,
 	} {
 		if err := tx.Exec(query, userID).Error; err != nil {
 			tx.Rollback()

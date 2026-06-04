@@ -56,7 +56,7 @@ The repository now has a real monitoring ingress baseline, not just placeholders
 
 Current persistence behavior:
 
-- normalized alerts are written to `alert_instances`
+- normalized alerts are written to `alert_events`
 - notification channel definitions are written to `notification_channels`
 - silence windows are written to `alert_silences`
 - downstream delivery attempts are written to `alert_delivery_logs`
@@ -95,7 +95,7 @@ The Monitoring Workbench now has a defined boundary with the AI Workbench:
   - Grafana Alerting adapter
   - Prometheus query adapter
 - `internal/repository/alert`
-  - alert instances and notification channels
+  - alert events, notification policies, and notification channels
 - future: `internal/repository/alerts`
   - silences, routing rules, delivery logs
 
@@ -116,9 +116,9 @@ The Monitoring Workbench now has a defined boundary with the AI Workbench:
 
 PostgreSQL should hold:
 
-- alert_instances
+- alert_events
 - alert_rules_shadow
-- alert_routes
+- notification_policies
 - alert_silences
 - alert_delivery_logs
 - notification_channels
@@ -163,7 +163,7 @@ Authorization should reuse existing RBAC + ABAC.
 
 The next increment should add:
 
-- richer route matching from `alert_routes`
+- richer route matching from `notification_policies`
 - deeper silence and acknowledgement workflow
 - delivery retry state
 - escalation policies

@@ -81,6 +81,10 @@ interface AlertEvent {
   updatedAt: string
 }
 
+function eventDisplayStatus(event?: AlertEvent) {
+  return event?.currentState || event?.status || ''
+}
+
 interface AlertDeliveryLog {
   id: string
   alertId: string
@@ -426,8 +430,8 @@ function AlertEventDetailActions({
     <Space wrap>
       {extra}
       <Button onClick={() => navigate(aiWorkbenchPath)}>AI 调查</Button>
-      {canAcknowledge && event?.status !== 'acknowledged' ? <Button loading={acknowledgeMutation.isPending} onClick={() => acknowledgeMutation.mutate()}>确认</Button> : null}
-      {canManageAlerts && event?.status !== 'resolved' ? <Button loading={resolveMutation.isPending} onClick={() => resolveMutation.mutate()}>恢复</Button> : null}
+      {canAcknowledge && eventDisplayStatus(event) !== 'acknowledged' ? <Button loading={acknowledgeMutation.isPending} onClick={() => acknowledgeMutation.mutate()}>确认</Button> : null}
+      {canManageAlerts && eventDisplayStatus(event) !== 'resolved' ? <Button loading={resolveMutation.isPending} onClick={() => resolveMutation.mutate()}>恢复</Button> : null}
       {canHeal && (rule?.healingPolicyIds?.length ?? 0) > 0 ? <Button type="primary" onClick={openHealModal}>发起自愈</Button> : null}
     </Space>
   )

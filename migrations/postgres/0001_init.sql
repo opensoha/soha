@@ -413,35 +413,6 @@ CREATE TABLE public.alert_events (
 );
 
 
--- Name: alert_instances; Type: TABLE; Schema: public; Owner: -
-
-CREATE TABLE public.alert_instances (
-    id text NOT NULL,
-    source text NOT NULL,
-    fingerprint text NOT NULL,
-    title text NOT NULL,
-    summary text NOT NULL,
-    severity text NOT NULL,
-    status text NOT NULL,
-    cluster_id text,
-    namespace text,
-    labels json DEFAULT '{}'::json NOT NULL,
-    annotations json DEFAULT '{}'::json NOT NULL,
-    receiver text,
-    generator_url text,
-    starts_at timestamp without time zone,
-    ends_at timestamp without time zone,
-    last_seen_at timestamp without time zone DEFAULT now() NOT NULL,
-    created_at timestamp without time zone DEFAULT now() NOT NULL,
-    updated_at timestamp without time zone DEFAULT now() NOT NULL,
-    owner_team text,
-    assignee text,
-    acknowledged_at timestamp without time zone,
-    acknowledged_by text,
-    acknowledged_by_name text
-);
-
-
 -- Name: alert_integrations; Type: TABLE; Schema: public; Owner: -
 
 CREATE TABLE public.alert_integrations (
@@ -461,19 +432,6 @@ CREATE TABLE public.alert_integrations (
 );
 
 
--- Name: alert_routes; Type: TABLE; Schema: public; Owner: -
-
-CREATE TABLE public.alert_routes (
-    id text NOT NULL,
-    name text NOT NULL,
-    matchers json DEFAULT '{}'::json NOT NULL,
-    channel_ids json DEFAULT '[]'::json NOT NULL,
-    enabled boolean DEFAULT true NOT NULL,
-    created_at timestamp without time zone DEFAULT now() NOT NULL,
-    updated_at timestamp without time zone DEFAULT now() NOT NULL
-);
-
-
 -- Name: alert_rule_runs; Type: TABLE; Schema: public; Owner: -
 
 CREATE TABLE public.alert_rule_runs (
@@ -487,20 +445,6 @@ CREATE TABLE public.alert_rule_runs (
     matched boolean DEFAULT false NOT NULL,
     duration_ms integer DEFAULT 0 NOT NULL,
     error text
-);
-
-
--- Name: alert_rule_targets; Type: TABLE; Schema: public; Owner: -
-
-CREATE TABLE public.alert_rule_targets (
-    id text NOT NULL,
-    rule_id text NOT NULL,
-    datasource_id text NOT NULL,
-    target_kind text NOT NULL,
-    target_config json DEFAULT '{}'::json NOT NULL,
-    enabled boolean DEFAULT true NOT NULL,
-    created_at timestamp without time zone DEFAULT now() NOT NULL,
-    updated_at timestamp without time zone DEFAULT now() NOT NULL
 );
 
 
@@ -773,21 +717,6 @@ CREATE TABLE public.build_templates (
     enabled boolean DEFAULT true NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL
-);
-
-
--- Name: business_lines; Type: TABLE; Schema: public; Owner: -
-
-CREATE TABLE public.business_lines (
-    id text NOT NULL,
-    business_key text NOT NULL,
-    name text NOT NULL,
-    description text,
-    owners json DEFAULT '[]'::json NOT NULL,
-    sort_order integer DEFAULT 0 NOT NULL,
-    enabled boolean DEFAULT true NOT NULL,
-    created_at timestamp without time zone DEFAULT now() NOT NULL,
-    updated_at timestamp without time zone DEFAULT now() NOT NULL
 );
 
 
@@ -1381,19 +1310,6 @@ CREATE TABLE public.policies (
 );
 
 
--- Name: policy_bindings; Type: TABLE; Schema: public; Owner: -
-
-CREATE TABLE public.policy_bindings (
-    id text NOT NULL,
-    policy_id text NOT NULL,
-    subject_type text NOT NULL,
-    subject_id text NOT NULL,
-    scope json DEFAULT '{}'::json NOT NULL,
-    created_at timestamp without time zone DEFAULT now() NOT NULL,
-    updated_at timestamp without time zone DEFAULT now() NOT NULL
-);
-
-
 -- Name: port_forward_sessions; Type: TABLE; Schema: public; Owner: -
 
 CREATE TABLE public.port_forward_sessions (
@@ -1492,20 +1408,6 @@ CREATE TABLE public.roles (
     scope text DEFAULT 'system'::text NOT NULL,
     capabilities json DEFAULT '[]'::json NOT NULL,
     permission_keys json DEFAULT '[]'::json NOT NULL,
-    created_at timestamp without time zone DEFAULT now() NOT NULL,
-    updated_at timestamp without time zone DEFAULT now() NOT NULL
-);
-
-
--- Name: saved_views; Type: TABLE; Schema: public; Owner: -
-
-CREATE TABLE public.saved_views (
-    id text NOT NULL,
-    owner_type text NOT NULL,
-    owner_id text NOT NULL,
-    name text NOT NULL,
-    view_type text NOT NULL,
-    definition json DEFAULT '{}'::json NOT NULL,
     created_at timestamp without time zone DEFAULT now() NOT NULL,
     updated_at timestamp without time zone DEFAULT now() NOT NULL
 );
@@ -1620,18 +1522,6 @@ CREATE TABLE public.user_password_credentials (
     user_id text NOT NULL,
     password_hash text NOT NULL,
     password_updated_at timestamp without time zone DEFAULT now() NOT NULL,
-    created_at timestamp without time zone DEFAULT now() NOT NULL,
-    updated_at timestamp without time zone DEFAULT now() NOT NULL
-);
-
-
--- Name: user_preferences; Type: TABLE; Schema: public; Owner: -
-
-CREATE TABLE public.user_preferences (
-    id text NOT NULL,
-    user_id text NOT NULL,
-    category text NOT NULL,
-    preferences json DEFAULT '{}'::json NOT NULL,
     created_at timestamp without time zone DEFAULT now() NOT NULL,
     updated_at timestamp without time zone DEFAULT now() NOT NULL
 );
@@ -1966,40 +1856,16 @@ ALTER TABLE ONLY public.alert_events
     ADD CONSTRAINT alert_events_pkey PRIMARY KEY (id);
 
 
--- Name: alert_instances alert_instances_pkey; Type: CONSTRAINT; Schema: public; Owner: -
-
-ALTER TABLE ONLY public.alert_instances
-    ADD CONSTRAINT alert_instances_pkey PRIMARY KEY (id);
-
-
--- Name: alert_instances alert_instances_source_fingerprint_key; Type: CONSTRAINT; Schema: public; Owner: -
-
-ALTER TABLE ONLY public.alert_instances
-    ADD CONSTRAINT alert_instances_source_fingerprint_key UNIQUE (source, fingerprint);
-
-
 -- Name: alert_integrations alert_integrations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 
 ALTER TABLE ONLY public.alert_integrations
     ADD CONSTRAINT alert_integrations_pkey PRIMARY KEY (id);
 
 
--- Name: alert_routes alert_routes_pkey; Type: CONSTRAINT; Schema: public; Owner: -
-
-ALTER TABLE ONLY public.alert_routes
-    ADD CONSTRAINT alert_routes_pkey PRIMARY KEY (id);
-
-
 -- Name: alert_rule_runs alert_rule_runs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 
 ALTER TABLE ONLY public.alert_rule_runs
     ADD CONSTRAINT alert_rule_runs_pkey PRIMARY KEY (id);
-
-
--- Name: alert_rule_targets alert_rule_targets_pkey; Type: CONSTRAINT; Schema: public; Owner: -
-
-ALTER TABLE ONLY public.alert_rule_targets
-    ADD CONSTRAINT alert_rule_targets_pkey PRIMARY KEY (id);
 
 
 -- Name: alert_rules alert_rules_pkey; Type: CONSTRAINT; Schema: public; Owner: -
@@ -2132,18 +1998,6 @@ ALTER TABLE ONLY public.build_templates
 
 ALTER TABLE ONLY public.build_templates
     ADD CONSTRAINT build_templates_template_key_key UNIQUE (template_key);
-
-
--- Name: business_lines business_lines_business_key_key; Type: CONSTRAINT; Schema: public; Owner: -
-
-ALTER TABLE ONLY public.business_lines
-    ADD CONSTRAINT business_lines_business_key_key UNIQUE (business_key);
-
-
--- Name: business_lines business_lines_pkey; Type: CONSTRAINT; Schema: public; Owner: -
-
-ALTER TABLE ONLY public.business_lines
-    ADD CONSTRAINT business_lines_pkey PRIMARY KEY (id);
 
 
 -- Name: cluster_credentials_meta cluster_credentials_meta_pkey; Type: CONSTRAINT; Schema: public; Owner: -
@@ -2374,12 +2228,6 @@ ALTER TABLE ONLY public.policies
     ADD CONSTRAINT policies_pkey PRIMARY KEY (id);
 
 
--- Name: policy_bindings policy_bindings_pkey; Type: CONSTRAINT; Schema: public; Owner: -
-
-ALTER TABLE ONLY public.policy_bindings
-    ADD CONSTRAINT policy_bindings_pkey PRIMARY KEY (id);
-
-
 -- Name: port_forward_sessions port_forward_sessions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 
 ALTER TABLE ONLY public.port_forward_sessions
@@ -2426,12 +2274,6 @@ ALTER TABLE ONLY public.roles
 
 ALTER TABLE ONLY public.roles
     ADD CONSTRAINT roles_pkey PRIMARY KEY (id);
-
-
--- Name: saved_views saved_views_pkey; Type: CONSTRAINT; Schema: public; Owner: -
-
-ALTER TABLE ONLY public.saved_views
-    ADD CONSTRAINT saved_views_pkey PRIMARY KEY (id);
 
 
 -- Name: scope_grants scope_grants_pkey; Type: CONSTRAINT; Schema: public; Owner: -
@@ -2498,18 +2340,6 @@ ALTER TABLE ONLY public.user_identities
 
 ALTER TABLE ONLY public.user_password_credentials
     ADD CONSTRAINT user_password_credentials_pkey PRIMARY KEY (user_id);
-
-
--- Name: user_preferences user_preferences_pkey; Type: CONSTRAINT; Schema: public; Owner: -
-
-ALTER TABLE ONLY public.user_preferences
-    ADD CONSTRAINT user_preferences_pkey PRIMARY KEY (id);
-
-
--- Name: user_preferences user_preferences_user_id_category_key; Type: CONSTRAINT; Schema: public; Owner: -
-
-ALTER TABLE ONLY public.user_preferences
-    ADD CONSTRAINT user_preferences_user_id_category_key UNIQUE (user_id, category);
 
 
 -- Name: user_project_bindings user_project_bindings_pkey; Type: CONSTRAINT; Schema: public; Owner: -
@@ -2858,26 +2688,6 @@ CREATE INDEX idx_alert_delivery_logs_status_created_at ON public.alert_delivery_
 CREATE INDEX idx_alert_events_status_last_seen_at ON public.alert_events USING btree (status, last_seen_at DESC);
 
 
--- Name: idx_alert_instances_acknowledged_at; Type: INDEX; Schema: public; Owner: -
-
-CREATE INDEX idx_alert_instances_acknowledged_at ON public.alert_instances USING btree (acknowledged_at DESC);
-
-
--- Name: idx_alert_instances_cluster_namespace; Type: INDEX; Schema: public; Owner: -
-
-CREATE INDEX idx_alert_instances_cluster_namespace ON public.alert_instances USING btree (cluster_id, namespace);
-
-
--- Name: idx_alert_instances_last_seen_at; Type: INDEX; Schema: public; Owner: -
-
-CREATE INDEX idx_alert_instances_last_seen_at ON public.alert_instances USING btree (last_seen_at DESC);
-
-
--- Name: idx_alert_instances_status; Type: INDEX; Schema: public; Owner: -
-
-CREATE INDEX idx_alert_instances_status ON public.alert_instances USING btree (status);
-
-
 -- Name: idx_alert_integrations_status_updated_at; Type: INDEX; Schema: public; Owner: -
 
 CREATE INDEX idx_alert_integrations_status_updated_at ON public.alert_integrations USING btree (status, updated_at DESC);
@@ -2966,11 +2776,6 @@ CREATE INDEX idx_auth_ephemeral_tokens_kind_expires_at ON public.auth_ephemeral_
 -- Name: idx_build_records_project_created_at; Type: INDEX; Schema: public; Owner: -
 
 CREATE INDEX idx_build_records_project_created_at ON public.build_records USING btree (project_id, created_at DESC);
-
-
--- Name: idx_business_lines_key_enabled; Type: INDEX; Schema: public; Owner: -
-
-CREATE INDEX idx_business_lines_key_enabled ON public.business_lines USING btree (business_key, enabled);
 
 
 -- Name: idx_clusters_environment; Type: INDEX; Schema: public; Owner: -
@@ -3546,12 +3351,6 @@ ALTER TABLE ONLY public.alert_rule_runs
     ADD CONSTRAINT alert_rule_runs_rule_id_fkey FOREIGN KEY (rule_id) REFERENCES public.alert_rules(id) ON DELETE CASCADE;
 
 
--- Name: alert_rule_targets alert_rule_targets_rule_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
-
-ALTER TABLE ONLY public.alert_rule_targets
-    ADD CONSTRAINT alert_rule_targets_rule_id_fkey FOREIGN KEY (rule_id) REFERENCES public.alert_rules(id) ON DELETE CASCADE;
-
-
 -- Name: announcement_receipts announcement_receipts_announcement_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 
 ALTER TABLE ONLY public.announcement_receipts
@@ -3586,12 +3385,6 @@ ALTER TABLE ONLY public.application_service_containers
 
 ALTER TABLE ONLY public.application_services
     ADD CONSTRAINT application_services_application_id_fkey FOREIGN KEY (application_id) REFERENCES public.applications(id) ON DELETE CASCADE;
-
-
--- Name: applications applications_business_line_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
-
-ALTER TABLE ONLY public.applications
-    ADD CONSTRAINT applications_business_line_id_fkey FOREIGN KEY (business_line_id) REFERENCES public.business_lines(id);
 
 
 -- Name: cluster_credentials_meta cluster_credentials_meta_cluster_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
@@ -3756,12 +3549,6 @@ ALTER TABLE ONLY public.personal_access_tokens
     ADD CONSTRAINT personal_access_tokens_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
 
 
--- Name: policy_bindings policy_bindings_policy_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
-
-ALTER TABLE ONLY public.policy_bindings
-    ADD CONSTRAINT policy_bindings_policy_id_fkey FOREIGN KEY (policy_id) REFERENCES public.policies(id);
-
-
 -- Name: projects projects_team_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 
 ALTER TABLE ONLY public.projects
@@ -3790,12 +3577,6 @@ ALTER TABLE ONLY public.release_targets
 
 ALTER TABLE ONLY public.release_targets
     ADD CONSTRAINT release_targets_cluster_id_fkey FOREIGN KEY (cluster_id) REFERENCES public.clusters(id);
-
-
--- Name: scope_grants scope_grants_business_line_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
-
-ALTER TABLE ONLY public.scope_grants
-    ADD CONSTRAINT scope_grants_business_line_id_fkey FOREIGN KEY (business_line_id) REFERENCES public.business_lines(id) ON DELETE CASCADE;
 
 
 -- Name: service_account_tokens service_account_tokens_service_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
@@ -3832,12 +3613,6 @@ ALTER TABLE ONLY public.user_identities
 
 ALTER TABLE ONLY public.user_password_credentials
     ADD CONSTRAINT user_password_credentials_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
-
-
--- Name: user_preferences user_preferences_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
-
-ALTER TABLE ONLY public.user_preferences
-    ADD CONSTRAINT user_preferences_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id);
 
 
 -- Name: user_project_bindings user_project_bindings_project_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -

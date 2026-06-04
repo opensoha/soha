@@ -116,7 +116,6 @@ func (s *Service) AcknowledgeEvent(ctx context.Context, principal domainidentity
 	if err != nil {
 		return domainalert.AlertEvent{}, err
 	}
-	item.Status = "acknowledged"
 	item.CurrentState = "acknowledged"
 	item.UpdatedAt = time.Now().UTC()
 	return s.repo.UpdateEvent(ctx, eventID, toAlertEventInput(item))

@@ -66,7 +66,7 @@ The repository now has a real monitoring ingress baseline, not just placeholders
 Current persistence behavior:
 
 - registered alert sources are written to `alert_integrations`
-- normalized alerts are written to `alert_instances`
+- normalized alerts are written to `alert_events`
 - notification channel definitions are written to `notification_channels`
 - silence windows are written to `alert_silences`
 - downstream delivery attempts are written to `alert_delivery_logs`
@@ -103,7 +103,7 @@ This means the platform now owns:
   - channel dispatch orchestration
   - retry and delivery status
 - `internal/repository/alert`
-  - alert integrations, alert instances, and notification channels
+  - alert integrations, alert events, notification policies, and notification channels
 - future: `internal/repository/alerts`
   - silences, routing rules, delivery logs
 
@@ -126,9 +126,9 @@ This means the platform now owns:
 PostgreSQL should hold:
 
 - alert_integrations
-- alert_instances
+- alert_events
 - alert_rules_shadow
-- alert_routes
+- notification_policies
 - alert_silences
 - alert_delivery_logs
 - notification_channels

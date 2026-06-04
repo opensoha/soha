@@ -91,7 +91,7 @@ func (s *Store) MigrateFromFile(ctx context.Context, path string) error {
 		if err != nil {
 			return fmt.Errorf("read migration file %s: %w", migrationFile, err)
 		}
-		if _, err := s.sqlDB.ExecContext(ctx, string(statement)); err != nil {
+		if err := s.executeMigrationStatement(ctx, string(statement)); err != nil {
 			return fmt.Errorf("execute migration file %s: %w", migrationFile, err)
 		}
 		if err := s.recordMigration(ctx, migrationFile); err != nil {
@@ -110,9 +110,27 @@ func (s *Store) Close() error {
 	return s.sqlDB.Close()
 }
 
+func (s *Store) executeMigrationStatement(ctx context.Context, statement string) error {
+	conn, err := s.sqlDB.Conn(ctx)
+	if err != nil {
+		return fmt.Errorf("get migration connection: %w", err)
+	}
+	defer conn.Close()
+
+	if _, err := conn.ExecContext(ctx, statement); err != nil {
+		_, _ = conn.ExecContext(ctx, `ROLLBACK`)
+		_, _ = conn.ExecContext(ctx, `RESET ALL`)
+		return err
+	}
+	if _, err := conn.ExecContext(ctx, `RESET ALL`); err != nil {
+		return fmt.Errorf("reset migration connection session: %w", err)
+	}
+	return nil
+}
+
 func (s *Store) ensureMigrationTable(ctx context.Context) error {
 	_, err := s.sqlDB.ExecContext(ctx, `
-		CREATE TABLE IF NOT EXISTS schema_migrations (
+		CREATE TABLE IF NOT EXISTS public.schema_migrations (
 			filename TEXT PRIMARY KEY,
 			executed_at TIMESTAMP NOT NULL DEFAULT NOW()
 		)
@@ -125,14 +143,14 @@ func (s *Store) ensureMigrationTable(ctx context.Context) error {
 
 func (s *Store) migrationApplied(ctx context.Context, filename string) (bool, error) {
 	var count int
-	if err := s.sqlDB.QueryRowContext(ctx, `SELECT COUNT(1) FROM schema_migrations WHERE filename = $1`, filename).Scan(&count); err != nil {
+	if err := s.sqlDB.QueryRowContext(ctx, `SELECT COUNT(1) FROM public.schema_migrations WHERE filename = $1`, filename).Scan(&count); err != nil {
 		return false, fmt.Errorf("query schema migrations: %w", err)
 	}
 	return count > 0, nil
 }
 
 func (s *Store) recordMigration(ctx context.Context, filename string) error {
-	if _, err := s.sqlDB.ExecContext(ctx, `INSERT INTO schema_migrations (filename, executed_at) VALUES ($1, $2)`, filename, time.Now().UTC()); err != nil {
+	if _, err := s.sqlDB.ExecContext(ctx, `INSERT INTO public.schema_migrations (filename, executed_at) VALUES ($1, $2)`, filename, time.Now().UTC()); err != nil {
 		return fmt.Errorf("record schema migration %s: %w", filename, err)
 	}
 	return nil
