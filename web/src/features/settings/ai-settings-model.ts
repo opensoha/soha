@@ -1,7 +1,192 @@
+import type {
+  WorkbenchAgentCapability,
+  WorkbenchAgentProvider,
+  WorkbenchAgentRun,
+} from "@/features/copilot/workbench-types";
+
 export const TRACES_BACKEND_OPTIONS: Array<{ value: string; label: string }> = [
   { value: "jaeger", label: "jaeger" },
   { value: "skywalking", label: "skywalking" },
 ];
+
+export type AgentRuntimeState =
+  | "connected"
+  | "disabled"
+  | "error"
+  | "failed"
+  | "healthy"
+  | "idle"
+  | "in-process"
+  | "observed"
+  | "queued"
+  | "ready"
+  | "running"
+  | "unavailable"
+  | "unknown"
+  | "waiting";
+
+export interface AgentRuntimeSummary {
+  queuedRuns: number;
+  runningRuns: number;
+  recentFailures: number;
+  lastRun?: WorkbenchAgentRun;
+  lastAgentId?: string;
+  lastHeartbeatAt?: string;
+  lastCompletedAt?: string;
+}
+
+export type AgentProviderRuntimeRow = WorkbenchAgentProvider & {
+  runtimeState: AgentRuntimeState | string;
+  runtimeSummary: AgentRuntimeSummary;
+};
+
+export const AGENT_RUNTIME_STATE_LABELS: Record<string, string> = {
+  connected: "有心跳",
+  disabled: "已停用",
+  error: "异常",
+  failed: "失败",
+  healthy: "健康",
+  idle: "空闲",
+  "in-process": "内置同步",
+  observed: "有记录",
+  queued: "排队中",
+  ready: "就绪",
+  running: "运行中",
+  unavailable: "不可用",
+  unknown: "未知",
+  waiting: "等待任务",
+};
+
+export function agentRuntimeStateColor(state?: string) {
+  switch ((state || "").toLowerCase()) {
+    case "connected":
+    case "healthy":
+    case "idle":
+    case "in-process":
+    case "observed":
+    case "ready":
+    case "running":
+      return "success";
+    case "queued":
+    case "waiting":
+    case "unknown":
+      return "warning";
+    case "disabled":
+      return "default";
+    case "error":
+    case "failed":
+    case "unavailable":
+      return "error";
+    default:
+      return "default";
+  }
+}
+
+function agentRunTimestamp(run?: WorkbenchAgentRun) {
+  if (!run) return 0;
+  const values = [
+    run.updatedAt,
+    run.completedAt,
+    run.lastHeartbeatAt,
+    run.startedAt,
+    run.queuedAt,
+    run.createdAt,
+  ];
+  return values.reduce((latest, value) => {
+    if (!value) return latest;
+    const timestamp = new Date(value).getTime();
+    return Number.isFinite(timestamp) ? Math.max(latest, timestamp) : latest;
+  }, 0);
+}
+
+function latestAgentRuntimeTime(
+  runs: WorkbenchAgentRun[],
+  field: "lastHeartbeatAt" | "completedAt",
+) {
+  let latest = "";
+  let latestTimestamp = 0;
+  for (const run of runs) {
+    const value = run[field];
+    if (!value) continue;
+    const timestamp = new Date(value).getTime();
+    if (Number.isFinite(timestamp) && timestamp > latestTimestamp) {
+      latest = value;
+      latestTimestamp = timestamp;
+    }
+  }
+  return latest;
+}
+
+function agentRunMatchesProvider(
+  run: WorkbenchAgentRun,
+  provider: WorkbenchAgentProvider,
+) {
+  return (
+    run.providerId === provider.id ||
+    run.providerId === provider.kind ||
+    run.providerKind === provider.kind ||
+    run.providerKind === provider.id
+  );
+}
+
+export function summarizeAgentProviderRuntime(
+  provider: WorkbenchAgentProvider,
+  runs: WorkbenchAgentRun[],
+): AgentRuntimeSummary {
+  const relatedRuns = runs.filter((run) =>
+    agentRunMatchesProvider(run, provider),
+  );
+  const latestRun = relatedRuns.reduce<WorkbenchAgentRun | undefined>(
+    (latest, run) =>
+      agentRunTimestamp(run) > agentRunTimestamp(latest) ? run : latest,
+    undefined,
+  );
+  const runtime = provider.runtimeStatus;
+  return {
+    queuedRuns:
+      runtime?.queuedRuns ??
+      relatedRuns.filter((run) => run.status === "queued").length,
+    runningRuns:
+      runtime?.runningRuns ??
+      relatedRuns.filter((run) => run.status === "running").length,
+    recentFailures:
+      runtime?.recentFailures ??
+      relatedRuns.filter((run) =>
+        ["callback_timeout", "failed"].includes(run.status),
+      ).length,
+    lastRun: latestRun,
+    lastAgentId: runtime?.lastAgentId || latestRun?.claimedByAgentId,
+    lastHeartbeatAt:
+      runtime?.lastHeartbeatAt ||
+      latestAgentRuntimeTime(relatedRuns, "lastHeartbeatAt"),
+    lastCompletedAt:
+      runtime?.lastCompletedAt ||
+      latestAgentRuntimeTime(relatedRuns, "completedAt"),
+  };
+}
+
+export function resolveAgentRuntimeState(
+  provider: WorkbenchAgentProvider,
+  summary: AgentRuntimeSummary,
+): AgentRuntimeState | string {
+  if (!provider.enabled) return "disabled";
+  if (!provider.supportsAsync) return "in-process";
+  const runtimeState = provider.runtimeStatus?.state?.trim();
+  if (runtimeState) return runtimeState;
+  if (summary.runningRuns > 0) return "running";
+  if (summary.queuedRuns > 0) return "queued";
+  if (summary.lastHeartbeatAt) return "connected";
+  if (summary.lastRun) return "observed";
+  return "waiting";
+}
+
+export function agentCapabilityLabels(
+  capabilityIds: string[] | undefined,
+  capabilities: WorkbenchAgentCapability[],
+) {
+  const nameById = new Map(capabilities.map((item) => [item.id, item.name]));
+  return (capabilityIds ?? []).map((id) => nameById.get(id) || id);
+}
 
 export interface AISettings {
   provider?: {

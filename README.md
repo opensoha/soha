@@ -194,16 +194,21 @@ tickets instead of query-string access tokens.
 When Hermes is used as an external provider, run the derived `soha-agent` image from the unified compose stack: it extends the official `nousresearch/hermes-agent` image, adds the soha `cmd/agent` runner, and connects back to the control plane through the Agent Runtime claim/callback protocol.
 
 ```bash
-make deploy-hermes-setup
-make deploy-hermes-runner-up
+make init-hermes
 ```
 
-By default it connects to `http://soha:8080` on the local compose network and uses `demo-execution-runner-token`. Override these in real environments:
+For local `make dev`, it connects from the container to the host API at `http://host.docker.internal:8080` and reports its runtime endpoint as `http://127.0.0.1:18080`. Override these when needed:
 
 ```bash
-SOHA_CONTROL_PLANE_URL=http://host.docker.internal:8080 \
+HERMES_CONTROL_PLANE_URL=http://host.docker.internal:8080 \
 SOHA_EXECUTION_RUNNER_TOKEN=replace-with-runtime-token \
-make deploy-hermes-runner-up
+make init-hermes
+```
+
+If Hermes needs one-time provider setup, run the setup profile directly:
+
+```bash
+docker compose -f deploy/docker-compose.yaml --profile hermes-setup run --rm hermes-agent-setup
 ```
 
 ## Common Commands
@@ -217,14 +222,9 @@ make dev-docs
 make build
 make test-api
 make test-web
-make init-kubevirt-lab
-make init-virtualization-lab
-make pve-docker-up
-make pve-docker-status
+make init-hermes
 make deploy-image
 make deploy-compose-up
-make deploy-hermes-setup
-make deploy-hermes-runner-up
 make deploy-helm-lint
 ```
 
@@ -234,7 +234,7 @@ Soha ships as a single-project runtime by default: one application container ser
 
 - [deploy/Dockerfile](./deploy/Dockerfile): multi-stage image build
 - [deploy/Dockerfile.hermes-agent-runner](./deploy/Dockerfile.hermes-agent-runner): Hermes Agent Runtime runner image
-- [deploy/docker-compose.yaml](./deploy/docker-compose.yaml): local full-stack stack with PostgreSQL and optional Hermes runner services
+- [deploy/docker-compose.yaml](./deploy/docker-compose.yaml): local stack with PostgreSQL, k3s, and optional Hermes runner services
 - [configs/config.yaml](./configs/config.yaml): default application config
 - [configs/config.compose.yaml](./configs/config.compose.yaml): compose app-container config with PostgreSQL service host and no host-local kubeconfig seed
 - [deploy/deployment.yaml](./deploy/deployment.yaml): raw Kubernetes manifest baseline

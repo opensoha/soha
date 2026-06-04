@@ -91,6 +91,60 @@
   line-height: 1.5;
 }
 
+.soha-ai-gradient-tag.ant-tag {
+  margin-inline-end: 0;
+  border: 1px solid color-mix(in srgb, var(--soha-border-color) 68%, var(--soha-primary) 32%);
+  border-radius: 999px;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--soha-primary) 13%, var(--soha-bg-surface) 87%), color-mix(in srgb, #10b981 10%, var(--soha-bg-surface) 90%));
+  color: var(--soha-text-primary);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 18px;
+}
+
+.soha-ai-gradient-tag.is-blue.ant-tag {
+  border-color: color-mix(in srgb, var(--soha-border-color) 62%, #2563eb 38%);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, #2563eb 16%, var(--soha-bg-surface) 84%), color-mix(in srgb, #06b6d4 10%, var(--soha-bg-surface) 90%));
+}
+
+.soha-ai-gradient-tag.is-green.ant-tag {
+  border-color: color-mix(in srgb, var(--soha-border-color) 60%, #059669 40%);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, #059669 16%, var(--soha-bg-surface) 84%), color-mix(in srgb, #84cc16 9%, var(--soha-bg-surface) 91%));
+}
+
+.soha-ai-gradient-tag.is-amber.ant-tag {
+  border-color: color-mix(in srgb, var(--soha-border-color) 58%, #d97706 42%);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, #f59e0b 18%, var(--soha-bg-surface) 82%), color-mix(in srgb, #eab308 10%, var(--soha-bg-surface) 90%));
+}
+
+.soha-ai-gradient-tag.is-violet.ant-tag {
+  border-color: color-mix(in srgb, var(--soha-border-color) 58%, #7c3aed 42%);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, #7c3aed 16%, var(--soha-bg-surface) 84%), color-mix(in srgb, #0ea5e9 10%, var(--soha-bg-surface) 90%));
+}
+
+.soha-ai-gradient-tag.is-slate.ant-tag {
+  border-color: color-mix(in srgb, var(--soha-border-color) 80%, var(--soha-text-tertiary) 20%);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--soha-fill-weak) 74%, var(--soha-bg-surface) 26%), var(--soha-bg-surface));
+}
+
+.soha-ai-settings-subhead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 2px;
+  color: var(--soha-text-primary);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 20px;
+}
+
 @media (max-width: 768px) {
 
   .soha-branding-upload-grid {

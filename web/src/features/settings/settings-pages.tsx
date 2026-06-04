@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { MouseEvent, ReactNode } from "react";
 import {
   Alert,
@@ -42,6 +42,8 @@ import {
   SEVERITY_OPTIONS,
   STATUS_OPTIONS,
   TRACES_BACKEND_OPTIONS,
+  AGENT_RUNTIME_STATE_LABELS,
+  agentCapabilityLabels,
   buildDataSourceFormValues,
   buildDataSourcePayload,
   buildPolicyFormValues,
@@ -49,8 +51,12 @@ import {
   buildProfileFormValues,
   buildProfilePayload,
   normalizeAIProviderConnection,
+  resolveAgentRuntimeState,
+  summarizeAgentProviderRuntime,
 } from "./ai-settings-model";
 import type {
+  AgentProviderRuntimeRow,
+  AgentRuntimeSummary,
   AIProviderConnection,
   AISettings,
   AISkillSetting,
@@ -65,8 +71,13 @@ import {
   CheckCircleOutlined,
   DeleteOutlined,
   EditOutlined,
+  ReloadOutlined,
   StarOutlined,
 } from "@ant-design/icons";
+import type {
+  WorkbenchAgentRun,
+  WorkbenchCatalog,
+} from "@/features/copilot/workbench-types";
 import "./settings-pages.css";
 
 const WIDE_FORM_LAYOUT = {
@@ -1168,11 +1179,75 @@ export function MonitoringSettingsPage() {
 
 /* ─── AI Settings ─── */
 
+type AIGradientTagTone = "amber" | "blue" | "green" | "slate" | "violet";
 
+function AIGradientTag({
+  children,
+  tone = "slate",
+}: {
+  children: ReactNode;
+  tone?: AIGradientTagTone;
+}) {
+  return <Tag className={`soha-ai-gradient-tag is-${tone}`}>{children}</Tag>;
+}
+
+function agentRuntimeStateTone(state?: string): AIGradientTagTone {
+  switch ((state || "").toLowerCase()) {
+    case "connected":
+    case "healthy":
+    case "idle":
+    case "in-process":
+    case "observed":
+    case "ready":
+    case "running":
+      return "green";
+    case "queued":
+    case "waiting":
+    case "unknown":
+      return "amber";
+    case "error":
+    case "failed":
+    case "unavailable":
+      return "violet";
+    default:
+      return "slate";
+  }
+}
+
+function agentRuntimeStateTag(state?: string) {
+  const normalized = (state || "unknown").toLowerCase();
+  return (
+    <AIGradientTag tone={agentRuntimeStateTone(normalized)}>
+      {AGENT_RUNTIME_STATE_LABELS[normalized] || normalized}
+    </AIGradientTag>
+  );
+}
+
+function renderAgentTagList(
+  values?: string[],
+  max = 4,
+  tone: AIGradientTagTone = "slate",
+) {
+  const items = (values ?? []).filter(Boolean);
+  if (items.length === 0) return "-";
+  return (
+    <div className="flex flex-wrap gap-1">
+      {items.slice(0, max).map((item) => (
+        <AIGradientTag key={item} tone={tone}>
+          {item}
+        </AIGradientTag>
+      ))}
+      {items.length > max ? (
+        <AIGradientTag tone={tone}>{`+${items.length - max}`}</AIGradientTag>
+      ) : null}
+    </div>
+  );
+}
 
 export function AISettingsPage({ embedded = false }: SettingsPageProps = {}) {
   const queryClient = useQueryClient();
   const permissionSnapshotQuery = usePermissionSnapshot();
+  const showRuntimeSettings = embedded !== "provider-only";
   const [providerForm] = Form.useForm();
   const [providerModalVisible, setProviderModalVisible] = useState(false);
   const [editingProvider, setEditingProvider] =
@@ -1204,6 +1279,10 @@ export function AISettingsPage({ embedded = false }: SettingsPageProps = {}) {
   const canManageAISettings = hasPermission(
     permissionSnapshotQuery.data?.data,
     "settings.ai.manage",
+  );
+  const canViewAgentRuns = hasPermission(
+    permissionSnapshotQuery.data?.data,
+    "observe.ai.view",
   );
 
   useEffect(() => {
@@ -1272,6 +1351,18 @@ export function AISettingsPage({ embedded = false }: SettingsPageProps = {}) {
           }>
         >
       >("/copilot/data-source-capabilities"),
+  });
+  const workbenchCatalogQuery = useQuery({
+    queryKey: ["copilot-workbench-catalog"],
+    queryFn: () =>
+      api.get<ApiResponse<WorkbenchCatalog>>("/copilot/workbench/catalog"),
+    enabled: canViewAISettings && showRuntimeSettings,
+  });
+  const agentRunsQuery = useQuery({
+    queryKey: ["copilot-agent-runs"],
+    queryFn: () =>
+      api.get<ApiResponse<WorkbenchAgentRun[]>>("/copilot/agent-runs"),
+    enabled: canViewAISettings && canViewAgentRuns && showRuntimeSettings,
   });
 
   const saveMutation = useMutation({
@@ -1404,6 +1495,25 @@ export function AISettingsPage({ embedded = false }: SettingsPageProps = {}) {
   });
 
   const settings = data?.data;
+  const agentProviders = workbenchCatalogQuery.data?.data?.agentProviders ?? [];
+  const agentCapabilities = workbenchCatalogQuery.data?.data?.capabilities ?? [];
+  const agentRuns = agentRunsQuery.data?.data ?? [];
+  const agentProviderRows = useMemo<AgentProviderRuntimeRow[]>(
+    () =>
+      agentProviders.map((provider) => {
+        const runtimeSummary = summarizeAgentProviderRuntime(
+          provider,
+          agentRuns,
+        );
+        return {
+          ...provider,
+          runtimeSummary,
+          runtimeState: resolveAgentRuntimeState(provider, runtimeSummary),
+        };
+      }),
+    [agentProviders, agentRuns],
+  );
+
   useEffect(() => {
     setSkillsRegistryDraft(
       (settings?.skillsRegistry ?? []).map((item) => ({
@@ -1637,7 +1747,13 @@ export function AISettingsPage({ embedded = false }: SettingsPageProps = {}) {
 
   const providerColumns: TableColumnsType<AIProviderConnection> = [
     { title: "名称", dataIndex: "name" },
-    { title: "Provider", dataIndex: "providerKind" },
+    {
+      title: "Provider",
+      dataIndex: "providerKind",
+      render: (value: string) => (
+        <AIGradientTag tone="slate">{value || "-"}</AIGradientTag>
+      ),
+    },
     { title: "模型", dataIndex: "model" },
     {
       title: "Base URL",
@@ -1656,7 +1772,7 @@ export function AISettingsPage({ embedded = false }: SettingsPageProps = {}) {
       dataIndex: "id",
       render: (value: string) =>
         settings?.defaultProviderId === value ? (
-          <Tag color="blue">默认</Tag>
+          <AIGradientTag tone="blue">默认</AIGradientTag>
         ) : (
           "-"
         ),
@@ -1730,9 +1846,170 @@ export function AISettingsPage({ embedded = false }: SettingsPageProps = {}) {
     },
   ];
 
+  const agentProviderColumns: TableColumnsType<AgentProviderRuntimeRow> = [
+    {
+      title: "Provider",
+      dataIndex: "name",
+      width: 220,
+      render: (_: unknown, record) => (
+        <div className="flex flex-col gap-1">
+          <span className="font-medium">{record.name}</span>
+          <span className="text-xs text-[var(--ant-colorTextSecondary)]">
+            {record.id} / {record.kind}
+          </span>
+        </div>
+      ),
+    },
+    {
+      title: "启用",
+      dataIndex: "enabled",
+      width: 92,
+      render: (value: boolean) => (
+        <StatusTag value={value ? "enabled" : "disabled"} />
+      ),
+    },
+    {
+      title: "Runtime",
+      dataIndex: "runtimeState",
+      width: 120,
+      render: (value: string, record) => (
+        <div className="flex flex-col gap-1">
+          <span>{agentRuntimeStateTag(value)}</span>
+          {record.runtimeStatus?.reason ? (
+            <span className="text-xs text-[var(--ant-colorTextSecondary)]">
+              {record.runtimeStatus.reason}
+            </span>
+          ) : null}
+        </div>
+      ),
+    },
+    {
+      title: "队列 / 运行 / 失败",
+      dataIndex: "runtimeSummary",
+      width: 150,
+      render: (summary: AgentRuntimeSummary) =>
+        `${summary.queuedRuns} / ${summary.runningRuns} / ${summary.recentFailures}`,
+    },
+    {
+      title: "Runner",
+      dataIndex: "runtimeSummary",
+      width: 160,
+      render: (summary: AgentRuntimeSummary) =>
+        summary.lastAgentId ? (
+          <AIGradientTag tone="green">{summary.lastAgentId}</AIGradientTag>
+        ) : (
+          "-"
+        ),
+    },
+    {
+      title: "能力",
+      dataIndex: "capabilities",
+      render: (value: string[]) =>
+        renderAgentTagList(
+          agentCapabilityLabels(value, agentCapabilities),
+          5,
+          "blue",
+        ),
+    },
+    {
+      title: "边界",
+      dataIndex: "id",
+      width: 190,
+      render: (_: unknown, record) => (
+        <div className="flex flex-wrap gap-1">
+          <AIGradientTag tone={record.supportsAsync ? "violet" : "slate"}>
+            {record.supportsAsync ? "async" : "sync"}
+          </AIGradientTag>
+          {record.supportsSkills ? (
+            <AIGradientTag tone="blue">skills</AIGradientTag>
+          ) : null}
+          {record.supportsToolsets ? (
+            <AIGradientTag tone="green">toolsets</AIGradientTag>
+          ) : null}
+        </div>
+      ),
+    },
+    {
+      title: "最近活动",
+      dataIndex: "runtimeSummary",
+      width: 210,
+      render: (summary: AgentRuntimeSummary) => {
+        const activity =
+          summary.lastHeartbeatAt ||
+          summary.lastCompletedAt ||
+          summary.lastRun?.updatedAt ||
+          summary.lastRun?.createdAt;
+        return activity ? formatDateTime(activity) : "-";
+      },
+    },
+  ];
+
+  const agentRunColumns: TableColumnsType<WorkbenchAgentRun> = [
+    {
+      title: "Run",
+      dataIndex: "id",
+      width: 190,
+      render: (value: string, record) => (
+        <div className="flex flex-col gap-1">
+          <span className="font-medium">{value}</span>
+          {record.sessionId ? (
+            <span className="text-xs text-[var(--ant-colorTextSecondary)]">
+              session: {record.sessionId}
+            </span>
+          ) : null}
+        </div>
+      ),
+    },
+    {
+      title: "Provider",
+      dataIndex: "providerId",
+      width: 130,
+      render: (value: string, record) => value || record.providerKind || "-",
+    },
+    { title: "能力", dataIndex: "capabilityId", width: 150 },
+    {
+      title: "状态",
+      dataIndex: "status",
+      width: 110,
+      render: (value: string) => <StatusTag value={value} />,
+    },
+    {
+      title: "Runner",
+      dataIndex: "claimedByAgentId",
+      width: 170,
+      render: (value?: string) =>
+        value ? <AIGradientTag tone="green">{value}</AIGradientTag> : "-",
+    },
+    {
+      title: "心跳",
+      dataIndex: "lastHeartbeatAt",
+      width: 180,
+      render: (value?: string) => formatDateTime(value),
+    },
+    {
+      title: "完成",
+      dataIndex: "completedAt",
+      width: 180,
+      render: (value?: string) => formatDateTime(value),
+    },
+    {
+      title: "错误",
+      dataIndex: "errorMessage",
+      render: (value?: string) => value || "-",
+    },
+  ];
+
   const providerCard = (
     <section data-testid="ai-provider-connections-section">
-      <SettingsCard title="Provider Connections">
+      <SettingsCard
+        title={
+          <Space size={8} wrap>
+            <span>Provider Connections</span>
+            <AIGradientTag tone="blue">LLM</AIGradientTag>
+            <AIGradientTag tone="slate">Model API</AIGradientTag>
+          </Space>
+        }
+      >
         <div
           data-testid="ai-provider-connections-actions"
           className="soha-management-table-toolbar-actions"
@@ -1769,6 +2046,102 @@ export function AISettingsPage({ embedded = false }: SettingsPageProps = {}) {
       </SettingsCard>
     </section>
   );
+
+  const agentRuntimeCard = showRuntimeSettings ? (
+    <section data-testid="ai-agent-runtime-section">
+      <SettingsCard
+        title={
+          <Space size={8} wrap>
+            <span>Agent Runtime Providers</span>
+            <AIGradientTag tone="violet">Catalog</AIGradientTag>
+            <AIGradientTag tone="green">Runner</AIGradientTag>
+          </Space>
+        }
+        extra={
+          <Button
+            icon={<ReloadOutlined />}
+            loading={
+              workbenchCatalogQuery.isFetching || agentRunsQuery.isFetching
+            }
+            size="small"
+            onClick={() => {
+              void queryClient.invalidateQueries({
+                queryKey: ["copilot-workbench-catalog"],
+              });
+              void queryClient.invalidateQueries({
+                queryKey: ["copilot-agent-runs"],
+              });
+            }}
+          >
+            刷新
+          </Button>
+        }
+      >
+        <div className="flex flex-col gap-3">
+          <Alert
+            showIcon
+            type="info"
+            title="Agent Runtime 连接由后端 catalog 与 soha-agent runner 共同决定。"
+            description="Hermes 等外部 Agent 会领取 AgentRun，再通过 callback 写回心跳、Runner ID、工具调用和分析产物。这里展示可选择的 Agent Provider 与最近运行证据。"
+          />
+          <AdminTable
+            data-testid="ai-agent-provider-table"
+            shellClassName="soha-management-table-shell"
+            columnSettingIconOnly
+            columnSettingPlacement="header"
+            rowKey="id"
+            tableSize="small"
+            pagination={false}
+            loading={workbenchCatalogQuery.isLoading}
+            dataSource={agentProviderRows}
+            columns={agentProviderColumns}
+            empty={
+              <ManagementState
+                bordered={false}
+                compact
+                title="暂无 Agent Runtime Provider"
+                description="后端 catalog 暂未返回可用于 AI Workbench 的 Agent Provider。"
+              />
+            }
+          />
+          <div className="soha-ai-settings-subhead">
+            <span>Recent AgentRuns</span>
+            <AIGradientTag tone="green">claim / callback</AIGradientTag>
+          </div>
+          {canViewAgentRuns ? (
+            <AdminTable
+              data-testid="ai-agent-run-table"
+              shellClassName="soha-management-table-shell"
+              columnSettingIconOnly
+              columnSettingPlacement="header"
+              rowKey="id"
+              tableSize="small"
+              pageSize={5}
+              loading={agentRunsQuery.isLoading}
+              dataSource={agentRuns}
+              columns={agentRunColumns}
+              empty={
+                <ManagementState
+                  bordered={false}
+                  compact
+                  title="暂无 AgentRun"
+                  description="选择 Hermes 等 Agent Provider 发起显式分析后，Runner claim/callback 记录会出现在这里。"
+                />
+              }
+            />
+          ) : (
+            <ManagementState
+              bordered={false}
+              compact
+              kind="no-permission"
+              title="无法查看 AgentRun 历史"
+              description="当前账号缺少 observe.ai.view 权限，只能查看 Agent Provider catalog。"
+            />
+          )}
+        </div>
+      </SettingsCard>
+    </section>
+  ) : null;
 
   const providerModal = (
     <Modal
@@ -1994,6 +2367,7 @@ export function AISettingsPage({ embedded = false }: SettingsPageProps = {}) {
   const content = (
     <>
       {providerCard}
+      {agentRuntimeCard}
       <SettingsCard
         title="Skills Registry"
         extra={

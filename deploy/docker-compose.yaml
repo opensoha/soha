@@ -104,15 +104,20 @@ services:
     image: soha-hermes-agent-runner:local
     container_name: soha-hermes-agent-runner
     restart: unless-stopped
+    depends_on:
+      soha:
+        condition: service_healthy
     environment:
       SOHA_AGENT_CONFIG_FILE: /app/configs/agent.config.yaml
       SOHA_AGENT_CONTROL_PLANE_ENABLED: "true"
       SOHA_AGENT_CONTROL_PLANE_BASE_URL: ${SOHA_CONTROL_PLANE_URL:-http://soha:8080}
       SOHA_AGENT_CONTROL_PLANE_BEARER_TOKEN: ${SOHA_EXECUTION_RUNNER_TOKEN:-demo-execution-runner-token}
-      SOHA_AGENT_CONTROL_PLANE_AGENT_ID: ${SOHA_HERMES_AGENT_ID:-hermes-docker-runner}
+      SOHA_AGENT_CONTROL_PLANE_AGENT_ID: ${SOHA_HERMES_AGENT_ID:-hermes-agent-runner}
+      SOHA_AGENT_CONTROL_PLANE_PROVIDER_KINDS: agent_runtime_only
       SOHA_AGENT_CONTROL_PLANE_RUNTIME_ENDPOINT: ${SOHA_HERMES_RUNTIME_ENDPOINT:-http://soha-hermes-agent-runner:18080}
+      SOHA_AGENT_CONTROL_PLANE_DOCKER_ENABLED: "false"
       SOHA_AGENT_CONTROL_PLANE_AGENT_RUNTIME_ENABLED: "true"
-      SOHA_AGENT_CONTROL_PLANE_AGENT_RUNTIME_WORKER_ID: ${SOHA_HERMES_WORKER_ID:-hermes-docker-runner}
+      SOHA_AGENT_CONTROL_PLANE_AGENT_RUNTIME_WORKER_ID: ${SOHA_HERMES_WORKER_ID:-hermes-agent-runner}
       SOHA_AGENT_CONTROL_PLANE_AGENT_RUNTIME_PROVIDER_IDS: hermes
       SOHA_AGENT_CONTROL_PLANE_AGENT_RUNTIME_PROVIDER_KINDS: hermes
       SOHA_AGENT_CONTROL_PLANE_AGENT_RUNTIME_HERMES_COMMAND: hermes

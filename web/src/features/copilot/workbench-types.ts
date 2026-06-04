@@ -237,6 +237,19 @@ export interface WorkbenchAgentProvider {
   supportsSkills?: boolean
   supportsToolsets?: boolean
   config?: Record<string, unknown>
+  runtimeStatus?: {
+    state: string
+    reason?: string
+    queuedRuns: number
+    runningRuns: number
+    recentFailures: number
+    lastRunId?: string
+    lastRunStatus?: string
+    lastAgentId?: string
+    lastHeartbeatAt?: string
+    lastCompletedAt?: string
+    observedAt?: string
+  }
 }
 
 export interface WorkbenchAgentCapability {

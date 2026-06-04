@@ -24,46 +24,27 @@ The soha virtualization lab should use two separate runtime planes:
 - Proxmox VE runs as a KubeVirt VM, an independent bare-metal host, an independent Debian host, or another nested VM for lab-only validation.
 - soha server does not host PVE itself. It connects to PVE through the PVE API endpoint, token, node name, and storage pool settings.
 
-Recommended local lab topology:
+Recommended lab topology:
 
 ```text
 soha server + PostgreSQL
         |
-        +-- local-k3s or external k3s cluster with KubeVirt/CDI
+        +-- external Kubernetes cluster with KubeVirt/CDI
         |
         +-- KubeVirt-backed pve-lab VM or external Proxmox VE node API
 ```
 
-### Local Development Quick Paths
+### Local Development Boundary
 
-This repository now provides three local virtualization development paths:
+Docker Desktop for macOS, especially Apple Silicon, is no longer the recommended validation path for KubeVirt or nested PVE. The root `make init-cluster` compose k3s target is only for soha platform connection, resource list, scope, and Kubernetes API-path validation.
 
-| Path | Command | Use case |
-| --- | --- | --- |
-| KubeVirt on k3s | `make init-kubevirt-lab` | Starts local k3s with KubeVirt-friendly mounts/devices, then installs KubeVirt and CDI. |
-| PVE as a KubeVirt VM | `make init-pve-vm` | Boots the real Proxmox VE installer inside KubeVirt for full nested-virtualization experiments. |
-| PVE as a Docker container | `make pve-docker-up` | Starts a containerized PVE endpoint based on `ghcr.io/longqt-sea/proxmox-ve` for adapter and API-flow development. |
+Validate KubeVirt and PVE features against real external servers or dedicated lab hosts:
 
-To start the KubeVirt lab and Docker PVE lab together:
-
-```bash
-make init-virtualization-lab
-```
-
-Docker PVE defaults:
-
-- host-run soha: `https://127.0.0.1:8006`
-- compose-run soha: `https://host.docker.internal:8006`
-- SSH: `127.0.0.1:2222`
-- root password: `soha`
-
-Override ports or the password with make variables:
-
-```bash
-make pve-docker-up PVE_DOCKER_PASSWORD=change-me PVE_DOCKER_UI_PORT=18006
-```
-
-The Docker PVE lab follows the privileged-container approach from [LongQT-sea/containerized-proxmox](https://github.com/LongQT-sea/containerized-proxmox). Use it only on isolated development machines for adapter testing. It is not a replacement for real PVE and must not be used with production VM storage or credentials.
+| Path | Use case |
+| --- | --- |
+| External KubeVirt cluster | Validate VM sync, creation, power operations, DataVolume/DataSource, metrics, and events. |
+| External Proxmox VE node or cluster | Validate PVE connection, templates/ISOs, VM clone/create, power operations, task status, and metrics. |
+| External nested-virtualization lab VM | Isolated demo or adapter testing only; not a production capability signal. |
 
 ### KubeVirt on k3s
 
@@ -76,7 +57,7 @@ k3s can be used as a KubeVirt lab Kubernetes cluster, but the nodes still need t
 - The container runtime is containerd or CRI-O, which are supported by KubeVirt.
 - At least one StorageClass exists. Install CDI when DataVolume, DataSource, upload, or clone flows are required.
 
-The compose-backed k3s started by the root `make init-cluster` target is useful for soha platform connection tests and KubeVirt API-path demos. When it runs on Docker Desktop for macOS or another environment that does not expose Linux KVM into the container, use it only for control-plane or software-emulation tests, not performance or stability validation. KubeVirt `useEmulation` can unblock development without KVM, but VM startup and runtime performance are much slower and do not represent production behavior.
+The compose-backed k3s started by the root `make init-cluster` target is useful for soha platform connection tests and Kubernetes API-path demos. When it runs on Docker Desktop for macOS or another environment that does not expose Linux KVM into the container, do not use it for KubeVirt feature, performance, or stability validation.
 
 ### Can PVE Run Inside k3s?
 
@@ -96,7 +77,6 @@ These PVE lab shapes are acceptable:
 - A full PVE VM started inside KubeVirt, with port 8006 exposed through a Service.
 - Independent PVE bare metal or independent Debian host, with soha connecting through the API.
 - A full PVE VM on an external hypervisor that supports nested virtualization, used only for demos and adapter validation.
-- A containerized PVE endpoint started through `configs/proxmox/docker-compose.pve.yaml`, used only for local API adapter and connection-flow validation.
 
 ### MCP Skills and Virtualization Control
 
@@ -104,58 +84,14 @@ Regular KubeVirt and PVE control must continue to use soha backend APIs, durable
 
 MCP skills are better suited as an AI-assisted troubleshooting layer after AI is configured. They can help combine PVE events, KubeVirt VMI state, pod logs, Prometheus metrics, and operation logs into an investigation context. Without a connected model, MCP must not be a prerequisite for core virtualization functionality.
 
-### Quick Start for a KubeVirt PVE VM
+### External Server Connection Path
 
-This repository provides lab manifests and make targets for starting `pve-lab` inside KubeVirt:
+This repository no longer provides Mac-local KubeVirt/PVE lab make targets. Validate virtualization through external environments:
 
-```bash
-make init-pve-vm
-```
-
-The target:
-
-- Starts local k3s with `/dev/kvm` exposed through `configs/k3s/docker-compose.kubevirt.yaml`.
-- Installs KubeVirt and CDI.
-- Applies `configs/kubevirt/pve-vm.yaml`, creating the `virt-lab/pve-lab` VM, PVE ISO DataVolume, root disk DataVolume, and NodePort Service.
-
-Install flow:
-
-1. Wait for the DataVolumes to import and for the VM/VMI to start.
-2. Open the installer through VNC:
-
-```bash
-KUBECONFIG=.dev/k3s/kubeconfig.yaml virtctl -n virt-lab vnc pve-lab
-```
-
-3. Complete the Proxmox installer.
-4. After installation, switch boot order back to the root disk:
-
-```bash
-make pve-vm-boot-root
-```
-
-5. After PVE boots, access it from the host:
-
-```text
-https://127.0.0.1:8006
-```
-
-Use that endpoint when creating the PVE connection in soha. SSH is forwarded from `127.0.0.1:2222` to VM port 22.
-If soha server runs inside the compose `soha` container, use the compose-network endpoint `https://k3s:30006`.
-
-Status check:
-
-```bash
-make pve-vm-status
-```
-
-If `virt-handler` is stuck with `path "/var/run/kubevirt" is mounted on "/" but it is not a shared mount`, the k3s node container root mount is not shared. Run:
-
-```bash
-make fix-kubevirt-mounts
-```
-
-The target runs `mount --make-rshared /` inside the k3s container and recreates the `virt-handler` pods.
+1. Prepare an external KubeVirt cluster or Proxmox VE node.
+2. Confirm the soha server can reach the target Kubernetes API Server or PVE API.
+3. Register the endpoint, token, node name, and storage pools in soha cluster management or virtualization connection settings.
+4. Use the remaining checklist in this runbook to validate sync, creation, power operations, metrics, and task status.
 
 ## P1 Prerequisites
 

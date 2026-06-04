@@ -53,7 +53,7 @@ import { resolveThemeMode, watchSystemThemeMode } from '@/theme/app-theme'
 import type { BusinessWorkspaceType, PermissionSnapshot, RuntimeMenuNode } from '@/types'
 import { getNormalizedBranding } from '@/features/settings/use-branding-settings'
 
-const { Sider, Header, Content, Footer } = Layout
+const { Sider, Header, Content } = Layout
 const SIDEBAR_WIDTH = 200
 const SIDEBAR_COLLAPSED_WIDTH = 55
 const BREADCRUMB_WORKBENCH_ROOT_ROUTE_IDS: Partial<Record<WorkbenchId, string[]>> = {
@@ -822,7 +822,6 @@ export function AppLayout() {
             <Outlet />
           </div>
         </Content>
-        <Footer className="soha-footer">© 2026 Soha 版权所有，由项目贡献者设计与开发。</Footer>
       </Layout>
     </Layout>
   )

@@ -26,6 +26,7 @@ const testState = vi.hoisted(() => ({
       "settings.branding.view",
       "settings.ai.view",
       "settings.ai.manage",
+      "observe.ai.view",
     ],
     visibleMenuIds: ["settings", "settings-login", "settings-branding"],
     visibleMenus: [
@@ -128,6 +129,51 @@ function setDefaultResponses() {
     "/copilot/analysis-profiles": [],
     "/copilot/automation-policies": [],
     "/copilot/data-source-capabilities": [],
+    "/copilot/workbench/catalog": {
+      agentProviders: [
+        {
+          id: "internal",
+          kind: "internal",
+          name: "soha 内置分析",
+          enabled: true,
+          default: true,
+          capabilities: ["root_cause"],
+          supportsAsync: false,
+          supportsSkills: true,
+          supportsToolsets: true,
+        },
+        {
+          id: "hermes",
+          kind: "hermes",
+          name: "Hermes Agent",
+          description: "通过 soha agent runner 调用 Hermes CLI。",
+          enabled: true,
+          capabilities: ["root_cause", "delivery_failure"],
+          supportsAsync: true,
+          supportsSkills: true,
+          supportsToolsets: true,
+        },
+      ],
+      capabilities: [
+        { id: "root_cause", name: "根因分析" },
+        { id: "delivery_failure", name: "发布失败分析" },
+      ],
+    },
+    "/copilot/agent-runs": [
+      {
+        id: "agent-run-1",
+        providerId: "hermes",
+        providerKind: "hermes",
+        capabilityId: "root_cause",
+        status: "running",
+        claimedByAgentId: "hermes-agent-runner",
+        queuedAt: "2026-06-04T10:00:00Z",
+        startedAt: "2026-06-04T10:01:00Z",
+        lastHeartbeatAt: "2026-06-04T10:02:00Z",
+        createdAt: "2026-06-04T10:00:00Z",
+        updatedAt: "2026-06-04T10:02:00Z",
+      },
+    ],
   };
 }
 
@@ -283,6 +329,7 @@ describe("settings ai page rendering", () => {
     );
 
     expect(container.textContent).toContain("Provider Connections");
+    expect(container.textContent).toContain("Agent Runtime Providers");
     expect(container.textContent).toContain("Skills Registry");
     expect(container.textContent).toContain("Data Sources");
     expect(
@@ -290,6 +337,18 @@ describe("settings ai page rendering", () => {
         '[data-testid="ai-provider-connections-section"]',
       ),
     ).not.toBeNull();
+  });
+
+  it("surfaces Agent Runtime providers and recent Hermes runs in model settings", async () => {
+    const container = await renderWithProviders(
+      <AISettingsPage embedded />,
+      "/ai-workbench/model-settings",
+    );
+
+    expect(container.textContent).toContain("Agent Runtime Providers");
+    expect(container.textContent).toContain("Hermes Agent");
+    expect(container.textContent).toContain("hermes-agent-runner");
+    expect(container.textContent).toContain("agent-run-1");
   });
 
   it("opens the provider modal with stable critical control selectors", async () => {

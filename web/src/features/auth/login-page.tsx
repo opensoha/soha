@@ -35,6 +35,8 @@ import "./login-page.css";
 
 const { Title, Text } = Typography;
 
+const LOGIN_COPYRIGHT_TEXT = "© 2026 Soha 版权所有，由项目贡献者设计与开发。";
+
 interface LoginFormValues {
   password: string;
   username: string;
@@ -646,6 +648,7 @@ export function LoginPage() {
           </div>
         </Card>
       </div>
+      <div className="soha-auth-copyright">{LOGIN_COPYRIGHT_TEXT}</div>
     </div>
   );
 }

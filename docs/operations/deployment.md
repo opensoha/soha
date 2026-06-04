@@ -47,8 +47,7 @@ helm lint deploy/chart
 Run Hermes as the first external Agent Runtime provider:
 
 ```bash
-make deploy-hermes-setup
-make deploy-hermes-runner-up
+make init-hermes
 ```
 
 ## Local Run Assumptions
@@ -60,7 +59,7 @@ make deploy-hermes-runner-up
 
 ## Hermes Agent Runner with Docker
 
-Hermes is deployed as a provider runner, not as a browser-facing dependency of the console. The runner image in [../../deploy/Dockerfile.hermes-agent-runner](../../deploy/Dockerfile.hermes-agent-runner) inherits from the official `nousresearch/hermes-agent` image and adds the soha `cmd/agent` binary. The unified compose file in [../../deploy/docker-compose.yaml](../../deploy/docker-compose.yaml) defines both the local soha stack and the optional Hermes runner services:
+Hermes is deployed as a provider runner, not as a browser-facing dependency of the console. The runner image in [../../deploy/Dockerfile.hermes-agent-runner](../../deploy/Dockerfile.hermes-agent-runner) inherits from the official `nousresearch/hermes-agent` image and adds the soha `cmd/agent` binary. The unified compose file in [../../deploy/docker-compose.yaml](../../deploy/docker-compose.yaml) defines the local soha stack and optional Hermes runner service:
 
 - mounts persistent Hermes state at the `soha-hermes-data` volume (`/opt/data`)
 - mounts provider workspaces at `soha-hermes-runtime` (`/var/lib/soha-agent-runtime`)
@@ -68,25 +67,24 @@ Hermes is deployed as a provider runner, not as a browser-facing dependency of t
 - executes Hermes through `hermes chat -Q -q`
 - callbacks to the soha control plane with status, tool calls, and `AnalysisArtifact` results
 
-Initialize Hermes once before starting the runner:
+Initialize Hermes once if provider credentials or local Hermes state need setup:
 
 ```bash
-make deploy-hermes-setup
+docker compose -f deploy/docker-compose.yaml --profile hermes-setup run --rm hermes-agent-setup
 ```
 
-Start the runner against the local compose stack:
+Start the runner against a host-run local development API:
 
 ```bash
-docker compose -f deploy/docker-compose.yaml up -d postgres soha
-make deploy-hermes-runner-up
+make init-hermes
 ```
 
-The default endpoint is `http://soha:8080` on the `soha_default` Docker network and the default runner token matches `configs/config.yaml` for local development. For a host-run or remote control plane, override both values:
+The default `init-hermes` endpoint is `http://host.docker.internal:8080`, which matches `make dev` when the Go API runs on the host. For a remote control plane, override the control-plane URL and token:
 
 ```bash
-SOHA_CONTROL_PLANE_URL=http://host.docker.internal:8080 \
+HERMES_CONTROL_PLANE_URL=http://host.docker.internal:8080 \
 SOHA_EXECUTION_RUNNER_TOKEN=replace-with-runtime-token \
-make deploy-hermes-runner-up
+make init-hermes
 ```
 
 Operational checks:
@@ -97,16 +95,15 @@ docker compose -f deploy/docker-compose.yaml exec hermes-agent-runner hermes --v
 curl -s http://localhost:8080/api/v1/copilot/agent-runs
 ```
 
-Do not commit real provider keys or runner tokens. Store Hermes model credentials in the mounted Hermes data volume through `make deploy-hermes-setup` or inject them through your runtime secret manager.
+Do not commit real provider keys or runner tokens. Store Hermes model credentials in the mounted Hermes data volume through the `hermes-setup` compose profile or inject them through your runtime secret manager.
 
 ## PostgreSQL 18.4 Upgrade Note
 
 New local volumes and fresh cluster installs use PostgreSQL 18.4. PostgreSQL 18 stores its default `PGDATA` below `/var/lib/postgresql/18/docker`, so compose, raw Kubernetes, and Helm mounts keep the persistent volume at `/var/lib/postgresql`. If an existing environment already has a PostgreSQL 16 data directory, do not point the 18.4 image at the same volume directly. Use `pg_dump`/`pg_restore`, logical backup restore, or a controlled `pg_upgrade` path. For disposable local development data, remove the old PostgreSQL volume and recreate the stack. Current compose pins `soha-postgres-data`.
 
-## Virtualization Lab Notes
+## Virtualization Runtime Notes
 
-- The local k3s cluster started by `make init-cluster` can be used for KubeVirt API-path validation when the underlying Linux node exposes `/dev/kvm` and supports privileged workloads.
-- On Docker Desktop for macOS or other environments without Linux KVM passthrough, use local k3s only for control-plane or software-emulation tests.
-- Proxmox VE can run inside this lab only as a full KubeVirt VM; otherwise it must run as a standalone external host or lab VM. soha connects to it through the PVE API instead of deploying PVE as a Kubernetes Pod.
-- Use `make init-pve-vm` to start a KVM-enabled local k3s profile, install KubeVirt/CDI, and create the `virt-lab/pve-lab` VM. After the ISO installer finishes, run `make pve-vm-boot-root`.
-- See [KubeVirt / PVE 虚拟化实验环境 Runbook](./virtualization-lab-runbook.md) for the full topology and checklist.
+- Docker Desktop for macOS, especially Apple Silicon, is not a reliable validation path for local KubeVirt or nested Proxmox VE labs.
+- Keep local k3s for platform control-plane and Kubernetes API-path testing.
+- Validate KubeVirt and PVE features against real external servers or dedicated lab hosts, then register those endpoints in soha.
+- See [KubeVirt / PVE 虚拟化实验环境 Runbook](./virtualization-lab-runbook.md) for external environment prerequisites and checklist.

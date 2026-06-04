@@ -49,6 +49,7 @@ import {
   Select,
   Space,
   Tag,
+  Tooltip,
   Typography,
 } from 'antd'
 import '@xyflow/react/dist/style.css'
@@ -590,7 +591,6 @@ export function AIWorkbenchPage() {
   const [disabledToolNames, setDisabledToolNames] = useState<string[]>([])
   const [budgetOverrides, setBudgetOverrides] = useState<Record<string, number>>({})
   const [scopeOverrides, setScopeOverrides] = useState<Partial<WorkbenchSessionScope>>({})
-  const [skillsDisclosureExpanded, setSkillsDisclosureExpanded] = useState<Record<string, boolean>>({})
   const [showAllSkills, setShowAllSkills] = useState(false)
   const [selectedArtifactKey, setSelectedArtifactKey] = useState<string>()
   const [selectedGraphNodeId, setSelectedGraphNodeId] = useState<string | null>(null)
@@ -839,19 +839,23 @@ export function AIWorkbenchPage() {
   const queryError = sessionsQuery.error || sessionDetailQuery.error || messagesQuery.error || catalogQuery.error
   const activeMode = isExplicitRouteMode ? pathMode : currentSession?.metadata?.mode || draftMode
   const promptItems = buildPromptItems(activeMode)
-  const conversationItems = useMemo(() => visibleSessions.map((item) => ({
-    key: item.id,
-    icon: modeIcon(item.metadata?.mode),
-    label: (
-      <div className="soha-ai-workbench__conversation-label">
-        <span className="soha-ai-workbench__conversation-label-title">{item.title}</span>
-        <span className="soha-ai-workbench__conversation-label-meta">
-          {modeLabel(item.metadata?.mode)} · {formatSessionTimestamp(item.updatedAt)}
-        </span>
-        <span className="soha-ai-workbench__conversation-label-scope">{buildScopeSummary(item.metadata?.scope)}</span>
-      </div>
-    ),
-  })), [visibleSessions])
+  const conversationItems = useMemo(() => visibleSessions.map((item) => {
+    const scopeSummary = buildScopeSummary(item.metadata?.scope)
+    const modeText = modeLabel(item.metadata?.mode)
+    const timeText = formatSessionTimestamp(item.updatedAt)
+    return {
+      key: item.id,
+      icon: modeIcon(item.metadata?.mode),
+      label: (
+        <div className="soha-ai-workbench__conversation-label" title={`${item.title} · ${modeText} · ${timeText} · ${scopeSummary}`}>
+          <span className="soha-ai-workbench__conversation-label-main">
+            <span className="soha-ai-workbench__conversation-label-title">{item.title}</span>
+            <span className="soha-ai-workbench__conversation-label-meta">{modeText} · {timeText}</span>
+          </span>
+        </div>
+      ),
+    }
+  }), [visibleSessions])
   const artifactSummary = [
     {
       key: 'context' as const,
@@ -1032,6 +1036,74 @@ export function AIWorkbenchPage() {
     setInspectorView(view)
     setInspectorOpen(true)
   }
+  const assemblyItems = [
+    {
+      key: 'adapters',
+      label: '适配器',
+      value: selectedAdapterIds.length || effectiveAdapterIds.length || 'Auto',
+      detail: selectedAdapterIds.length > 0 ? selectedAdapterIds.join(', ') : '自动允许已注册 adapter',
+      icon: <ApiOutlined />,
+    },
+    {
+      key: 'skills',
+      label: '技能',
+      value: selectedSkillNames.length || globalSkills.filter((item) => item.enabled).length,
+      detail: selectedSkillNames.length > 0 ? selectedSkillNames.join(', ') : '沿用全局技能',
+      icon: <RobotOutlined />,
+    },
+    {
+      key: 'sources',
+      label: '数据源',
+      value: enabledDataSources.length,
+      detail: enabledDataSources.length > 0 ? enabledDataSources.map((item) => item.name).join(', ') : '暂无可用数据源',
+      icon: <RadarChartOutlined />,
+    },
+    {
+      key: 'budget',
+      label: '预算',
+      value: `${disabledToolNames.length}/${countObjectKeys(cleanedBudgetOverrides)}`,
+      detail: `${disabledToolNames.length} 个工具屏蔽，${countObjectKeys(cleanedBudgetOverrides)} 项预算覆盖`,
+      icon: <ToolOutlined />,
+    },
+  ]
+  const quickActionItems = [
+    {
+      key: 'context',
+      label: '上下文',
+      detail: buildScopeSummary(currentSession?.metadata?.scope),
+      icon: <EyeOutlined />,
+      disabled: !currentSession,
+      tooltip: currentSession ? '查看当前会话上下文' : '先选择会话',
+      onClick: () => openInspector('context'),
+    },
+    {
+      key: 'analysis',
+      label: '显式分析',
+      detail: activeMode === 'general' ? '结构化输出' : modeLabel(activeMode),
+      icon: <ThunderboltOutlined />,
+      disabled: !currentSession || !canRunExplicitAnalysis,
+      tooltip: !currentSession ? '先选择会话' : explicitAnalysisTitle || '运行显式分析',
+      onClick: openExplicitAnalysis,
+    },
+    {
+      key: 'inspection',
+      label: '生成巡检',
+      detail: '巡检任务',
+      icon: <PlayCircleOutlined />,
+      disabled: !currentSession || !canCreateInspectionTask,
+      tooltip: !currentSession ? '先选择会话' : createInspectionTitle || '生成巡检任务',
+      onClick: () => createInspectionFromSessionMutation.mutate(),
+    },
+    {
+      key: 'trace',
+      label: '分析链路',
+      detail: `${toolCalls.length} 步`,
+      icon: <BranchesOutlined />,
+      disabled: false,
+      tooltip: '查看分析链路',
+      onClick: () => setThinkingOpen(true),
+    },
+  ]
   const setBudgetOverrideValue = (key: string, value: number | string | null) => {
     setBudgetOverrides((current) => {
       const next = { ...current }
@@ -1221,9 +1293,16 @@ export function AIWorkbenchPage() {
                   <Text type="secondary">{visibleSessions.length > 0 ? `${visibleSessions.length} 个调查会话` : '从这里切换当前调查'}</Text>
                 </span>
               </div>
-              <Button size="small" type="text" onClick={() => navigate(getAIModelSettingsPath(location.search))}>
-                模型设置
-              </Button>
+              <Tooltip title="模型设置">
+                <Button
+                  aria-label="模型设置"
+                  className="soha-ai-workbench__header-menu-button"
+                  icon={<RobotOutlined />}
+                  size="small"
+                  type="text"
+                  onClick={() => navigate(getAIModelSettingsPath(location.search))}
+                />
+              </Tooltip>
             </div>
 
             <Conversations
@@ -1238,15 +1317,6 @@ export function AIWorkbenchPage() {
                 disabled: !canUseChat || createSessionMutation.isPending,
               }}
             />
-
-            <div className="soha-ai-workbench-sidebar__footer">
-              <Button block onClick={() => navigate(getAIOperationsPath(location.search))}>
-                巡检与自动化
-              </Button>
-              <Button block onClick={() => setToolsetOpen(true)}>
-                工具装配
-              </Button>
-            </div>
           </aside>
 
           <main className="soha-ai-workbench__canvas">
@@ -1266,10 +1336,10 @@ export function AIWorkbenchPage() {
                 />
               </div>
               <Space wrap className="soha-ai-workbench__function-tabs">
-                <Button icon={<ToolOutlined />} onClick={() => setToolsetOpen(true)}>
+                <Button className="soha-ai-workbench__function-tab" icon={<ToolOutlined />} onClick={() => setToolsetOpen(true)}>
                   工具装配
                 </Button>
-                <Button icon={<PlayCircleOutlined />} onClick={() => navigate(getAIModelSettingsPath(location.search))}>
+                <Button className="soha-ai-workbench__function-tab" icon={<PlayCircleOutlined />} onClick={() => navigate(getAIModelSettingsPath(location.search))}>
                   模型设置
                 </Button>
                 <Button type="primary" icon={<EditOutlined />} loading={createSessionMutation.isPending} onClick={() => createSessionMutation.mutate({ scope: draftScope })} disabled={!canUseChat}>
@@ -1598,158 +1668,110 @@ export function AIWorkbenchPage() {
                 <span className="soha-ai-workbench__tools-icon"><BranchesOutlined /></span>
                 <span>
                   <Text strong>调查焦点</Text>
-                  <Text type="secondary">把上下文、证据和下一步动作收在右侧。</Text>
+                  <Text type="secondary">证据、假设、建议</Text>
                 </span>
               </div>
-              <Button size="small" type="text" onClick={() => setThinkingOpen(true)}>
-                分析链路
-              </Button>
+              <Tooltip title="分析链路">
+                <Button
+                  aria-label="分析链路"
+                  icon={<BranchesOutlined />}
+                  size="small"
+                  type="text"
+                  onClick={() => setThinkingOpen(true)}
+                />
+              </Tooltip>
             </div>
 
-            <div className="soha-ai-workbench__insight-list">
+            <div className="soha-ai-workbench__focus-grid">
               {artifactSummary.map((item) => (
-                <button key={item.key} className="soha-ai-workbench__insight-item" type="button" onClick={() => openInspector(item.key)}>
-                  <span className="soha-ai-workbench__insight-icon">{item.icon}</span>
-                  <span className="soha-ai-workbench__insight-copy">
-                    <span className="soha-ai-workbench__insight-title">{item.label} · {item.value}</span>
-                    <span className="soha-ai-workbench__insight-detail">{item.description}</span>
-                  </span>
-                </button>
+                <Tooltip key={item.key} title={item.description}>
+                  <button className="soha-ai-workbench__focus-tile" type="button" onClick={() => openInspector(item.key)}>
+                    <span className="soha-ai-workbench__insight-icon">{item.icon}</span>
+                    <span className="soha-ai-workbench__focus-value">{item.value}</span>
+                    <span className="soha-ai-workbench__focus-label">{item.label}</span>
+                  </button>
+                </Tooltip>
               ))}
             </div>
 
-                    <div className="soha-ai-workbench__tool-section">
-                      <div className="soha-ai-workbench__tool-section-title">
-                        <Text strong>会话装配</Text>
-                        <Button size="small" type="text" onClick={() => setToolsetOpen(true)}>
-                          调整
+            <div className="soha-ai-workbench__tool-section soha-ai-workbench__tool-section--compact">
+              <div className="soha-ai-workbench__tool-section-title">
+                <Text strong>会话装配</Text>
+                <Button size="small" type="text" icon={<ToolOutlined />} onClick={() => setToolsetOpen(true)}>
+                  调整
                 </Button>
               </div>
-              <div className="soha-ai-workbench__tool-stack">
-                <div className="soha-ai-workbench__tool-row">
-                  <span>
-                    <Text strong>有效适配器</Text>
-                    <Text type="secondary">{selectedAdapterIds.length > 0 ? selectedAdapterIds.join(', ') : '自动允许已注册 adapter'}</Text>
-                  </span>
-                  <Tag>{selectedAdapterIds.length || effectiveAdapterIds.length || 'Auto'}</Tag>
-                </div>
-                <div className="soha-ai-workbench__tool-row">
-                  <span>
-                    <Text strong>会话技能</Text>
-                    <Text type="secondary">{selectedSkillNames.length > 0 ? selectedSkillNames.join(', ') : '沿用全局技能'}</Text>
-                  </span>
-                  <Tag>{selectedSkillNames.length || globalSkills.filter((item) => item.enabled).length}</Tag>
-                </div>
-                <div className="soha-ai-workbench__tool-row">
-                  <span>
-                    <Text strong>活跃数据源</Text>
-                    <Text type="secondary">{enabledDataSources.length > 0 ? enabledDataSources.map((item) => item.name).join(', ') : '暂无可用数据源'}</Text>
-                  </span>
-                  <Tag>{enabledDataSources.length}</Tag>
-                </div>
-                <div className="soha-ai-workbench__tool-row">
-                  <span>
-                    <Text strong>预算 / 屏蔽</Text>
-                    <Text type="secondary">{disabledToolNames.length} 个工具屏蔽，{countObjectKeys(cleanedBudgetOverrides)} 项预算覆盖</Text>
-                  </span>
-                  <Button size="small" onClick={() => setToolsetOpen(true)}>调整</Button>
-                </div>
-                        </div>
-                      </div>
+              <div className="soha-ai-workbench__assembly-grid">
+                {assemblyItems.map((item) => (
+                  <Tooltip key={item.key} title={item.detail}>
+                    <button className="soha-ai-workbench__assembly-tile" type="button" onClick={() => setToolsetOpen(true)}>
+                      <span className="soha-ai-workbench__assembly-icon">{item.icon}</span>
+                      <span className="soha-ai-workbench__assembly-main">
+                        <span>{item.label}</span>
+                        <strong>{item.value}</strong>
+                      </span>
+                    </button>
+                  </Tooltip>
+                ))}
+              </div>
+            </div>
 
-                      <div className="soha-ai-workbench__tool-section">
-                        <div className="soha-ai-workbench__tool-section-title">
-                          <Text strong>Skills 渐进式披露</Text>
-                          {hiddenSkillCount > 0 ? (
-                            <Button size="small" type="text" onClick={() => setShowAllSkills((current) => !current)}>
-                              {showAllSkills ? '收起扩展' : `展开更多 (${hiddenSkillCount})`}
-                            </Button>
-                          ) : null}
-                        </div>
-                        <Paragraph type="secondary" style={{ marginBottom: 0 }}>
-                          先展示当前模式最相关、或本会话已经启用的 skills；只有继续展开时才披露能力引用、范围规则和附加技能。
-                        </Paragraph>
-                        <div className="soha-ai-workbench__tool-stack">
-                          {primarySkills.length === 0 ? (
-                            <ManagementState bordered={false} compact title="暂无启用 Skills" description="当前会话和全局配置没有可用 skills。" />
-                          ) : primarySkills.map((skill) => {
-                            const expanded = Boolean(skillsDisclosureExpanded[skill.id])
-                            const selected = selectedSkillIds.includes(skill.id)
-                            return (
-                              <div key={skill.id} className="soha-ai-workbench__tool-row is-skill">
-                                <span>
-                                  <Space size={[6, 6]} wrap>
-                                    <Text strong>{skill.name}</Text>
-                                    {selected ? <StatusTag value="enabled" /> : null}
-                                    {skill.category ? <Tag>{skill.category}</Tag> : null}
-                                  </Space>
-                                  <Text type="secondary">{skill.description || (skill.scopes ?? []).join(', ') || '未填写说明'}</Text>
-                                  {expanded ? (
-                                    <div className="soha-ai-workbench__tool-chip-list" style={{ marginTop: 8 }}>
-                                      {(skill.capabilityRefs ?? []).map((item) => <Tag key={`${skill.id}-cap-${item}`}>{item}</Tag>)}
-                                      {(skill.scopeRules ?? []).map((item) => <Tag key={`${skill.id}-scope-${item}`}>{item}</Tag>)}
-                                      {(skill.scopes ?? []).map((item) => <Tag key={`${skill.id}-grant-${item}`}>{item}</Tag>)}
-                                    </div>
-                                  ) : null}
-                                </span>
-                                <Button
-                                  size="small"
-                                  onClick={() => setSkillsDisclosureExpanded((current) => ({ ...current, [skill.id]: !expanded }))}
-                                >
-                                  {expanded ? '收起能力' : '展开能力'}
-                                </Button>
-                              </div>
-                            )
-                          })}
-                        </div>
-                      </div>
-
-                      <div className="soha-ai-workbench__tool-section">
-                        <div className="soha-ai-workbench__tool-section-title">
-                          <Text strong>快捷动作</Text>
+            <div className="soha-ai-workbench__tool-section soha-ai-workbench__tool-section--compact">
+              <div className="soha-ai-workbench__tool-section-title">
+                <Text strong>快捷动作</Text>
                 <Button size="small" type="text" onClick={() => navigate(getAIToolsPath(location.search))}>
                   工具与技能
                 </Button>
               </div>
-              <div className="soha-ai-workbench__tool-stack">
-                <div className="soha-ai-workbench__tool-row">
-                  <span>
-                    <Text strong>当前范围</Text>
-                    <Text type="secondary">{buildScopeSummary(currentSession?.metadata?.scope)}</Text>
-                  </span>
-                  <Button size="small" onClick={() => openInspector('context')}>查看</Button>
-                </div>
-                <div className="soha-ai-workbench__tool-row">
-                  <span>
-                    <Text strong>显式分析</Text>
-                    <Text type="secondary">把当前会话转成一轮结构化分析输出。</Text>
-                  </span>
-                  <Button
-                    size="small"
-                    loading={analyzeSessionMutation.isPending}
-                    onClick={openExplicitAnalysis}
-                    disabled={!currentSession || !canRunExplicitAnalysis}
-                    title={explicitAnalysisTitle}
-                  >
-                    运行
-                  </Button>
-                </div>
-                <div className="soha-ai-workbench__tool-row">
-                  <span>
-                    <Text strong>生成巡检任务</Text>
-                    <Text type="secondary">把会话结论转成后续巡检与自动化入口。</Text>
-                  </span>
-                  <Button
-                    size="small"
-                    loading={createInspectionFromSessionMutation.isPending}
-                    onClick={() => createInspectionFromSessionMutation.mutate()}
-                    disabled={!currentSession || !canCreateInspectionTask}
-                    title={createInspectionTitle}
-                  >
-                    生成
-                  </Button>
-                </div>
+              <div className="soha-ai-workbench__quick-grid">
+                {quickActionItems.map((item) => (
+                  <Tooltip key={item.key} title={item.tooltip}>
+                    <button
+                      aria-disabled={item.disabled || undefined}
+                      className={`soha-ai-workbench__quick-action ${item.disabled ? 'is-disabled' : ''}`}
+                      type="button"
+                      onClick={() => {
+                        if (item.disabled) return
+                        item.onClick()
+                      }}
+                    >
+                      <span className="soha-ai-workbench__assembly-icon">{item.icon}</span>
+                      <span>
+                        <strong>{item.label}</strong>
+                        <small>{item.detail}</small>
+                      </span>
+                    </button>
+                  </Tooltip>
+                ))}
               </div>
+            </div>
+
+            <div className="soha-ai-workbench__tool-section soha-ai-workbench__tool-section--compact">
+              <div className="soha-ai-workbench__tool-section-title">
+                <Text strong>Skills</Text>
+                {hiddenSkillCount > 0 ? (
+                  <Button size="small" type="text" onClick={() => setShowAllSkills((current) => !current)}>
+                    {showAllSkills ? '收起' : `更多 ${hiddenSkillCount}`}
+                  </Button>
+                ) : null}
+              </div>
+              {primarySkills.length === 0 ? (
+                <div className="soha-ai-workbench__skill-empty">暂无启用 Skills</div>
+              ) : (
+                <div className="soha-ai-workbench__skill-chip-grid">
+                  {primarySkills.map((skill) => {
+                    const selected = selectedSkillIds.includes(skill.id)
+                    return (
+                      <Tooltip key={skill.id} title={skill.description || (skill.scopes ?? []).join(', ') || '未填写说明'}>
+                        <button className={`soha-ai-workbench__skill-chip ${selected ? 'is-selected' : ''}`} type="button" onClick={() => setToolsetOpen(true)}>
+                          <span>{skill.name}</span>
+                          {selected ? <StatusTag value="enabled" /> : skill.category ? <Tag>{skill.category}</Tag> : null}
+                        </button>
+                      </Tooltip>
+                    )
+                  })}
+                </div>
+              )}
             </div>
           </aside>
         </section>
