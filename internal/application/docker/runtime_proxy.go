@@ -32,6 +32,21 @@ const (
 
 var runtimeServiceNamePattern = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 
+var (
+	dockerRuntimeHTTPTransport = newDockerRuntimeHTTPTransport()
+	dockerRuntimeStreamClient  = &http.Client{Transport: dockerRuntimeHTTPTransport}
+	dockerRuntimeRequestClient = &http.Client{Transport: dockerRuntimeHTTPTransport, Timeout: 30 * time.Second}
+)
+
+func newDockerRuntimeHTTPTransport() *http.Transport {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.ResponseHeaderTimeout = 15 * time.Second
+	transport.MaxIdleConns = 100
+	transport.MaxIdleConnsPerHost = 20
+	transport.IdleConnTimeout = 90 * time.Second
+	return transport
+}
+
 type dockerRuntimeRequest struct {
 	ProjectID      string         `json:"projectId"`
 	ProjectName    string         `json:"projectName"`
@@ -89,7 +104,7 @@ func (s *Service) StreamProjectLogs(ctx context.Context, principal domainidentit
 	if s.runtimeBearerToken != "" {
 		httpReq.Header.Set("Authorization", "Bearer "+s.runtimeBearerToken)
 	}
-	resp, err := (&http.Client{}).Do(httpReq)
+	resp, err := dockerRuntimeStreamClient.Do(httpReq)
 	if err != nil {
 		return fmt.Errorf("%w: docker agent log stream unavailable: %v", apperrors.ErrClusterUnready, err)
 	}
@@ -278,8 +293,7 @@ func postDockerRuntime[T any](ctx context.Context, endpoint string, token string
 	if token != "" {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
-	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Do(req)
+	resp, err := dockerRuntimeRequestClient.Do(req)
 	if err != nil {
 		return zero, fmt.Errorf("%w: docker agent runtime unavailable: %v", apperrors.ErrClusterUnready, err)
 	}

@@ -25,7 +25,7 @@ func (s *Service) List(context.Context) ([]domainmodule.Status, error) {
 			EnabledConfigKey:   "",
 			Dependencies:       []string{},
 			VisiblePermissions: []string{"workspace.resource.view"},
-			SeedMenus:          []string{"dashboard", "clusters", "workloads", "configuration", "network", "network-gateway-api", "network-gateway-api-gatewayclasses", "network-gateway-api-gateways", "network-gateway-api-httproutes", "network-gateway-api-backendtlspolicies", "network-gateway-api-grpcroutes", "network-gateway-api-referencegrants", "storage", "platform-access-control", "extensions", "helm"},
+			SeedMenus:          []string{"dashboard", "clusters", "workloads", "configuration", "network", "network-gateway-api", "network-gateway-api-gatewayclasses", "network-gateway-api-gateways", "storage", "platform-access-control", "extensions", "helm"},
 		},
 		{
 			ID:                 "virtualization",

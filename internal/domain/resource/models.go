@@ -501,6 +501,52 @@ type ReferenceGrantView struct {
 	AllowedActions []string `json:"allowedActions,omitempty"`
 }
 
+type NetworkTopologySummaryView struct {
+	EntryCount          int `json:"entryCount"`
+	RouteCount          int `json:"routeCount"`
+	ServiceCount        int `json:"serviceCount"`
+	MissingServiceCount int `json:"missingServiceCount"`
+	BackendPodCount     int `json:"backendPodCount"`
+	PendingRouteCount   int `json:"pendingRouteCount"`
+}
+
+type NetworkTopologyNodeView struct {
+	ID           string `json:"id"`
+	Name         string `json:"name"`
+	Kind         string `json:"kind"`
+	State        string `json:"state"`
+	Namespace    string `json:"namespace,omitempty"`
+	ResourceName string `json:"resourceName,omitempty"`
+	Subtitle     string `json:"subtitle,omitempty"`
+	Badge        string `json:"badge,omitempty"`
+}
+
+type NetworkTopologyTraceView struct {
+	ID          string                    `json:"id"`
+	SourceType  string                    `json:"sourceType"`
+	State       string                    `json:"state"`
+	Entry       NetworkTopologyNodeView   `json:"entry"`
+	Route       NetworkTopologyNodeView   `json:"route"`
+	Service     *NetworkTopologyNodeView  `json:"service,omitempty"`
+	BackendPods []NetworkTopologyNodeView `json:"backendPods,omitempty"`
+	Note        string                    `json:"note,omitempty"`
+}
+
+type NetworkTopologyView struct {
+	ClusterID   string                     `json:"clusterId"`
+	Namespace   string                     `json:"namespace,omitempty"`
+	Source      string                     `json:"source"`
+	GeneratedAt string                     `json:"generatedAt"`
+	Summary     NetworkTopologySummaryView `json:"summary"`
+	Traces      []NetworkTopologyTraceView `json:"traces,omitempty"`
+	Services    []ServiceView              `json:"services"`
+	Ingresses   []IngressView              `json:"ingresses"`
+	HTTPRoutes  []HTTPRouteView            `json:"httpRoutes"`
+	Gateways    []GatewayView              `json:"gateways"`
+	Pods        []PodView                  `json:"pods"`
+	Warnings    []string                   `json:"warnings,omitempty"`
+}
+
 type NodeView struct {
 	Name           string                  `json:"name"`
 	Status         string                  `json:"status"`

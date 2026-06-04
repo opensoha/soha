@@ -1355,7 +1355,12 @@ func applyTaskResultToBundle(bundle *domaindelivery.ReleaseBundle, task domainde
 			bundle.ArtifactDigest = artifactDigest
 		}
 	default:
-		bundle.Status = firstNonEmpty(task.Status, bundle.Status)
+		switch strings.TrimSpace(task.Status) {
+		case "failed", "callback_timeout", "canceled":
+			bundle.Status = "failed"
+		default:
+			bundle.Status = firstNonEmpty(task.Status, bundle.Status)
+		}
 	}
 	bundle.UpdatedAt = now
 }

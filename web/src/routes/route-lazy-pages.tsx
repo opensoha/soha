@@ -231,22 +231,6 @@ export const NetworkGatewaysPage = lazyNamed(
   () => import("@/features/platform/network-storage-pages"),
   "NetworkGatewaysPage",
 );
-export const NetworkHTTPRoutesPage = lazyNamed(
-  () => import("@/features/platform/network-storage-pages"),
-  "NetworkHTTPRoutesPage",
-);
-export const NetworkBackendTLSPoliciesPage = lazyNamed(
-  () => import("@/features/platform/network-storage-pages"),
-  "NetworkBackendTLSPoliciesPage",
-);
-export const NetworkGRPCRoutesPage = lazyNamed(
-  () => import("@/features/platform/network-storage-pages"),
-  "NetworkGRPCRoutesPage",
-);
-export const NetworkReferenceGrantsPage = lazyNamed(
-  () => import("@/features/platform/network-storage-pages"),
-  "NetworkReferenceGrantsPage",
-);
 export const NetworkTopologyPage = lazyNamed(
   () => import("@/features/platform/network-topology-page"),
   "NetworkTopologyPage",

@@ -83,12 +83,15 @@ PostgreSQL + Kubernetes 集群
 
 - `cmd/server`: API 服务入口
 - `cmd/agent`: 远程集群 agent 与 runner 入口
-- `internal/api`: 路由、处理器、中间件、请求解析与响应封装
+- 未来 `cmd/**` 入口：同仓库内用于安全上报、worker 等专门负载的子服务入口
+- `internal/api`: 领域路由注册文件、处理器、中间件、请求解析与响应封装
 - `internal/application`: 用例编排、授权、作用域处理、审计与视图模型
 - `internal/policy`: RBAC、ABAC 与作用域计算
 - `internal/infrastructure`: 配置、数据库、Kubernetes、informer、agent、日志、Swagger、MCP
 - `internal/repository`: 持久化访问层
-- `internal/bootstrap`: 依赖装配、迁移、初始化与启动流程
+- `internal/bootstrap`: 依赖装配、迁移、初始化与启动生命周期
+
+当前路由、bootstrap、多 `cmd` 入口和预留安全 ingest 边界约定见 [后端结构](./docs/development/backend-structure.md)。
 
 ### 前端
 
@@ -118,7 +121,7 @@ PostgreSQL + Kubernetes 集群
 
 ```text
 .
-├── cmd/                 # server 与 agent 入口
+├── cmd/                 # server、agent 与未来同仓库服务入口
 ├── configs/             # 后端与 agent 配置
 ├── docs/                # Docusaurus 文档站点
 ├── internal/            # 后端分层与领域模块
@@ -253,7 +256,10 @@ helm lint deploy/chart
 ## 开发原则
 
 - 后端 handler 保持轻量。应用服务负责业务编排、授权、作用域语义、审计、操作日志与前端视图模型。
+- 保持中心启动和路由文件轻量。新增领域路由放在 `internal/api/routes` 的领域文件中，新增启动职责放在 `internal/bootstrap` 的关注点文件中，避免继续膨胀单个大文件。
+- Go 大文件先按稳定行为域拆分。平台 handler、平台资源 service 和 AI Gateway 已按同包聚焦文件组织，并用单元测试保护执行任务状态流转。
 - 长耗时工作必须任务化。构建、发布、Docker、Compose、虚拟机控制和 provider 执行都通过持久化任务与 callback 路径完成。
+- 未来内网安全工作台 API 需要区分管理面、客户端和 ingest 边界：`/api/v1/security/**`、`/api/client/v1/**` 和 `/api/ingest/v1/**`。
 - 前端实现只进入 `web`。路由、元数据、权限、后端菜单和测试需要保持一致。
 - 平台 API 返回 Soha DTO，不直接返回原始 Kubernetes 对象，YAML 或明确透传接口除外。
 - 模块可见性、菜单可见性和后端授权是不同边界。

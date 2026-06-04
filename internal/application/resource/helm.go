@@ -886,11 +886,10 @@ func (s *Service) getDirectHelmReleaseRecord(ctx context.Context, clusterID, nam
 }
 
 func (s *Service) listDirectHelmReleaseRecords(ctx context.Context, clusterID, namespace string) ([]helmReleaseRecord, error) {
-	bundle, err := s.clusters.Bundle(ctx, clusterID)
+	bundle, queryCtx, cancel, err := s.directKubeQueryContext(ctx, clusterID, 5*time.Second)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
+		return nil, err
 	}
-	queryCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	secrets, err := bundle.Typed.CoreV1().Secrets(namespace).List(queryCtx, metav1.ListOptions{LabelSelector: "owner=helm"})
 	if err != nil {
