@@ -68,11 +68,11 @@ func upsertAlertBatch(tx *gorm.DB, batch []domainalert.Instance) error {
 	}
 
 	var builder strings.Builder
-	args := make([]any, 0, len(batch)*18)
+	args := make([]any, 0, len(batch)*22)
 	builder.WriteString(`
-		INSERT INTO alert_instances (
-			id, source, fingerprint, title, summary, severity, status, cluster_id, namespace,
-			labels, annotations, receiver, generator_url, starts_at, ends_at, last_seen_at, created_at, updated_at
+		INSERT INTO alert_events (
+			id, rule_id, source_type, source_system, fingerprint, title, summary, severity, status, cluster_id, namespace,
+			labels, annotations, receiver, generator_url, current_state, last_notification_at, starts_at, ends_at, last_seen_at, created_at, updated_at
 		) VALUES
 	`)
 	for index, instance := range batch {
@@ -88,23 +88,27 @@ func upsertAlertBatch(tx *gorm.DB, batch []domainalert.Instance) error {
 			return fmt.Errorf("marshal alert annotations: %w", err)
 		}
 		builder.WriteString(`
-			(?, ?, ?, ?, ?, ?, ?, ?, ?,
-			 ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+			 ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		`)
 		args = append(args,
 			instance.ID,
-			instance.Source,
+			nil,
+			"external_webhook",
+			nullableString(instance.Source),
 			instance.Fingerprint,
 			instance.Title,
 			instance.Summary,
 			instance.Severity,
 			instance.Status,
-			instance.ClusterID,
-			instance.Namespace,
+			nullableString(instance.ClusterID),
+			nullableString(instance.Namespace),
 			string(labels),
 			string(annotations),
-			instance.Receiver,
-			instance.GeneratorURL,
+			nullableString(instance.Receiver),
+			nullableString(instance.GeneratorURL),
+			nullableString(instance.Status),
+			nil,
 			nullableTime(instance.StartsAt),
 			nullableTime(instance.EndsAt),
 			instance.LastSeenAt,
@@ -113,7 +117,10 @@ func upsertAlertBatch(tx *gorm.DB, batch []domainalert.Instance) error {
 		)
 	}
 	builder.WriteString(`
-		ON CONFLICT (source, fingerprint) DO UPDATE SET
+		ON CONFLICT (id) DO UPDATE SET
+			source_type = EXCLUDED.source_type,
+			source_system = EXCLUDED.source_system,
+			fingerprint = EXCLUDED.fingerprint,
 			title = EXCLUDED.title,
 			summary = EXCLUDED.summary,
 			severity = EXCLUDED.severity,
@@ -121,9 +128,23 @@ func upsertAlertBatch(tx *gorm.DB, batch []domainalert.Instance) error {
 			cluster_id = EXCLUDED.cluster_id,
 			namespace = EXCLUDED.namespace,
 			labels = EXCLUDED.labels,
-			annotations = EXCLUDED.annotations,
+			annotations = (
+				EXCLUDED.annotations::jsonb ||
+				jsonb_strip_nulls(jsonb_build_object(
+					'ownerTeam', alert_events.annotations::jsonb->>'ownerTeam',
+					'assignee', alert_events.annotations::jsonb->>'assignee',
+					'acknowledgedAt', alert_events.annotations::jsonb->>'acknowledgedAt',
+					'acknowledgedBy', alert_events.annotations::jsonb->>'acknowledgedBy',
+					'acknowledgedByName', alert_events.annotations::jsonb->>'acknowledgedByName'
+				))
+			)::json,
 			receiver = EXCLUDED.receiver,
 			generator_url = EXCLUDED.generator_url,
+			current_state = CASE
+				WHEN EXCLUDED.status = 'resolved' THEN 'resolved'
+				WHEN COALESCE(NULLIF(alert_events.current_state, ''), alert_events.status) = 'acknowledged' AND EXCLUDED.status = 'firing' THEN 'acknowledged'
+				ELSE EXCLUDED.current_state
+			END,
 			starts_at = EXCLUDED.starts_at,
 			ends_at = EXCLUDED.ends_at,
 			last_seen_at = EXCLUDED.last_seen_at,
@@ -151,9 +172,9 @@ func (r *Repository) List(ctx context.Context, filter domainalert.Filter) ([]dom
 		args = append(args, strings.TrimSpace(filter.ClusterID))
 	}
 	query := `
-		SELECT id, source, fingerprint, title, summary, severity, status, cluster_id, namespace,
-			labels, annotations, receiver, generator_url, starts_at, ends_at, last_seen_at, owner_team, assignee, acknowledged_at, acknowledged_by, acknowledged_by_name, created_at, updated_at
-		FROM alert_instances
+		SELECT id, COALESCE(source_system, source_type, ''), fingerprint, title, summary, severity, status, COALESCE(cluster_id, ''), COALESCE(namespace, ''),
+			labels, annotations, COALESCE(receiver, ''), COALESCE(generator_url, ''), starts_at, ends_at, last_seen_at, current_state, created_at, updated_at
+		FROM alert_events
 	`
 	if len(conditions) > 0 {
 		query += " WHERE " + strings.Join(conditions, " AND ")
@@ -181,9 +202,9 @@ func (r *Repository) List(ctx context.Context, filter domainalert.Filter) ([]dom
 func (r *Repository) Get(ctx context.Context, alertID string) (domainalert.Instance, error) {
 	alertID = strings.TrimSpace(alertID)
 	row := r.db.WithContext(ctx).Raw(`
-		SELECT id, source, fingerprint, title, summary, severity, status, cluster_id, namespace,
-			labels, annotations, receiver, generator_url, starts_at, ends_at, last_seen_at, owner_team, assignee, acknowledged_at, acknowledged_by, acknowledged_by_name, created_at, updated_at
-		FROM alert_instances
+		SELECT id, COALESCE(source_system, source_type, ''), fingerprint, title, summary, severity, status, COALESCE(cluster_id, ''), COALESCE(namespace, ''),
+			labels, annotations, COALESCE(receiver, ''), COALESCE(generator_url, ''), starts_at, ends_at, last_seen_at, current_state, created_at, updated_at
+		FROM alert_events
 		WHERE id = ?
 		LIMIT 1
 	`, alertID).Row()
@@ -192,10 +213,11 @@ func (r *Repository) Get(ctx context.Context, alertID string) (domainalert.Insta
 
 func (r *Repository) UpdateOwnership(ctx context.Context, alertID string, input domainalert.OwnershipInput) (domainalert.Instance, error) {
 	result := r.db.WithContext(ctx).Exec(`
-		UPDATE alert_instances
-		SET owner_team = ?, assignee = ?, updated_at = ?
+		UPDATE alert_events
+		SET annotations = (COALESCE(annotations, '{}'::json)::jsonb || ?::jsonb)::json,
+			updated_at = ?
 		WHERE id = ?
-	`, nullableString(strings.TrimSpace(input.OwnerTeam)), nullableString(strings.TrimSpace(input.Assignee)), time.Now().UTC(), strings.TrimSpace(alertID))
+	`, ownershipAnnotationPatch(input), time.Now().UTC(), strings.TrimSpace(alertID))
 	if result.Error != nil {
 		return domainalert.Instance{}, fmt.Errorf("update alert ownership: %w", result.Error)
 	}
@@ -208,10 +230,12 @@ func (r *Repository) UpdateOwnership(ctx context.Context, alertID string, input 
 func (r *Repository) Acknowledge(ctx context.Context, alertID, acknowledgedBy, acknowledgedByName string) (domainalert.Instance, error) {
 	now := time.Now().UTC()
 	result := r.db.WithContext(ctx).Exec(`
-		UPDATE alert_instances
-		SET acknowledged_at = ?, acknowledged_by = ?, acknowledged_by_name = ?, updated_at = ?
+		UPDATE alert_events
+		SET current_state = 'acknowledged',
+			annotations = (COALESCE(annotations, '{}'::json)::jsonb || ?::jsonb)::json,
+			updated_at = ?
 		WHERE id = ?
-	`, now, nullableString(strings.TrimSpace(acknowledgedBy)), nullableString(strings.TrimSpace(acknowledgedByName)), now, strings.TrimSpace(alertID))
+	`, acknowledgeAnnotationPatch(now, acknowledgedBy, acknowledgedByName), now, strings.TrimSpace(alertID))
 	if result.Error != nil {
 		return domainalert.Instance{}, fmt.Errorf("acknowledge alert: %w", result.Error)
 	}
@@ -231,7 +255,7 @@ func (r *Repository) Summary(ctx context.Context) (domainalert.Summary, error) {
 			COALESCE(SUM(CASE WHEN status = 'firing' AND severity = 'warning' THEN 1 ELSE 0 END), 0) AS warning_count,
 			COALESCE(SUM(CASE WHEN status = 'firing' AND severity = 'info' THEN 1 ELSE 0 END), 0) AS info_count,
 			MAX(last_seen_at) AS last_received_at
-		FROM alert_instances
+		FROM alert_events
 	`).Row()
 
 	var summary domainalert.Summary
@@ -322,8 +346,8 @@ func (r *Repository) UpdateChannel(ctx context.Context, channelID string, input 
 
 func (r *Repository) ListRoutes(ctx context.Context) ([]domainalert.AlertRoute, error) {
 	rows, err := r.db.WithContext(ctx).Raw(`
-		SELECT id, name, matchers, channel_ids, enabled, created_at, updated_at
-		FROM alert_routes
+		SELECT id, name, matchers, channel_refs, enabled, created_at, updated_at
+		FROM notification_policies
 		ORDER BY name ASC, id ASC
 	`).Rows()
 	if err != nil {
@@ -361,8 +385,8 @@ func (r *Repository) CreateRoute(ctx context.Context, input domainalert.RouteInp
 		return domainalert.AlertRoute{}, fmt.Errorf("marshal route channel ids: %w", err)
 	}
 	if err := r.db.WithContext(ctx).Exec(`
-		INSERT INTO alert_routes (id, name, matchers, channel_ids, enabled, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO notification_policies (id, name, matchers, processor_chain, channel_refs, oncall_ref, send_resolved, cooldown_seconds, enabled, created_at, updated_at)
+		VALUES (?, ?, ?, '["webhook_update"]', ?, NULL, FALSE, 0, ?, ?, ?)
 	`, route.ID, route.Name, string(matchers), string(channelIDs), route.Enabled, route.CreatedAt, route.UpdatedAt).Error; err != nil {
 		return domainalert.AlertRoute{}, fmt.Errorf("create alert route: %w", err)
 	}
@@ -382,8 +406,8 @@ func (r *Repository) UpdateRoute(ctx context.Context, routeID string, input doma
 		return domainalert.AlertRoute{}, fmt.Errorf("marshal route channel ids: %w", err)
 	}
 	result := r.db.WithContext(ctx).Exec(`
-		UPDATE alert_routes
-		SET name = ?, matchers = ?, channel_ids = ?, enabled = ?, updated_at = ?
+		UPDATE notification_policies
+		SET name = ?, matchers = ?, channel_refs = ?, enabled = ?, updated_at = ?
 		WHERE id = ?
 	`, route.Name, string(matchers), string(channelIDs), route.Enabled, route.UpdatedAt, route.ID)
 	if result.Error != nil {
@@ -580,11 +604,7 @@ func scanInstance(rows *sql.Rows) (domainalert.Instance, error) {
 	var annotations []byte
 	var startsAt sql.NullTime
 	var endsAt sql.NullTime
-	var ownerTeam sql.NullString
-	var assignee sql.NullString
-	var acknowledgedAt sql.NullTime
-	var acknowledgedBy sql.NullString
-	var acknowledgedByName sql.NullString
+	var currentState sql.NullString
 	if err := rows.Scan(
 		&item.ID,
 		&item.Source,
@@ -602,11 +622,7 @@ func scanInstance(rows *sql.Rows) (domainalert.Instance, error) {
 		&startsAt,
 		&endsAt,
 		&item.LastSeenAt,
-		&ownerTeam,
-		&assignee,
-		&acknowledgedAt,
-		&acknowledgedBy,
-		&acknowledgedByName,
+		&currentState,
 		&item.CreatedAt,
 		&item.UpdatedAt,
 	); err != nil {
@@ -618,26 +634,12 @@ func scanInstance(rows *sql.Rows) (domainalert.Instance, error) {
 	if len(annotations) > 0 {
 		_ = json.Unmarshal(annotations, &item.Annotations)
 	}
+	hydrateInstanceCompatFields(&item, currentState)
 	if startsAt.Valid {
 		item.StartsAt = startsAt.Time
 	}
 	if endsAt.Valid {
 		item.EndsAt = endsAt.Time
-	}
-	if ownerTeam.Valid {
-		item.OwnerTeam = ownerTeam.String
-	}
-	if assignee.Valid {
-		item.Assignee = assignee.String
-	}
-	if acknowledgedAt.Valid {
-		item.AcknowledgedAt = acknowledgedAt.Time
-	}
-	if acknowledgedBy.Valid {
-		item.AcknowledgedBy = acknowledgedBy.String
-	}
-	if acknowledgedByName.Valid {
-		item.AcknowledgedByName = acknowledgedByName.String
 	}
 	return item, nil
 }
@@ -648,11 +650,7 @@ func scanInstanceRowWithID(row *sql.Row, alertID string) (domainalert.Instance, 
 	var annotations []byte
 	var startsAt sql.NullTime
 	var endsAt sql.NullTime
-	var ownerTeam sql.NullString
-	var assignee sql.NullString
-	var acknowledgedAt sql.NullTime
-	var acknowledgedBy sql.NullString
-	var acknowledgedByName sql.NullString
+	var currentState sql.NullString
 	if err := row.Scan(
 		&item.ID,
 		&item.Source,
@@ -670,11 +668,7 @@ func scanInstanceRowWithID(row *sql.Row, alertID string) (domainalert.Instance, 
 		&startsAt,
 		&endsAt,
 		&item.LastSeenAt,
-		&ownerTeam,
-		&assignee,
-		&acknowledgedAt,
-		&acknowledgedBy,
-		&acknowledgedByName,
+		&currentState,
 		&item.CreatedAt,
 		&item.UpdatedAt,
 	); err != nil {
@@ -689,28 +683,52 @@ func scanInstanceRowWithID(row *sql.Row, alertID string) (domainalert.Instance, 
 	if len(annotations) > 0 {
 		_ = json.Unmarshal(annotations, &item.Annotations)
 	}
+	hydrateInstanceCompatFields(&item, currentState)
 	if startsAt.Valid {
 		item.StartsAt = startsAt.Time
 	}
 	if endsAt.Valid {
 		item.EndsAt = endsAt.Time
 	}
-	if ownerTeam.Valid {
-		item.OwnerTeam = ownerTeam.String
-	}
-	if assignee.Valid {
-		item.Assignee = assignee.String
-	}
-	if acknowledgedAt.Valid {
-		item.AcknowledgedAt = acknowledgedAt.Time
-	}
-	if acknowledgedBy.Valid {
-		item.AcknowledgedBy = acknowledgedBy.String
-	}
-	if acknowledgedByName.Valid {
-		item.AcknowledgedByName = acknowledgedByName.String
-	}
 	return item, nil
+}
+
+func hydrateInstanceCompatFields(item *domainalert.Instance, currentState sql.NullString) {
+	if item.Labels == nil {
+		item.Labels = map[string]string{}
+	}
+	if item.Annotations == nil {
+		item.Annotations = map[string]string{}
+	}
+	item.OwnerTeam = item.Annotations["ownerTeam"]
+	item.Assignee = item.Annotations["assignee"]
+	item.AcknowledgedBy = item.Annotations["acknowledgedBy"]
+	item.AcknowledgedByName = item.Annotations["acknowledgedByName"]
+	if raw := strings.TrimSpace(item.Annotations["acknowledgedAt"]); raw != "" {
+		if value, err := time.Parse(time.RFC3339Nano, raw); err == nil {
+			item.AcknowledgedAt = value
+		}
+	}
+	if currentState.Valid && strings.TrimSpace(currentState.String) != "" {
+		item.Status = currentState.String
+	}
+}
+
+func ownershipAnnotationPatch(input domainalert.OwnershipInput) string {
+	payload, _ := json.Marshal(map[string]string{
+		"ownerTeam": strings.TrimSpace(input.OwnerTeam),
+		"assignee":  strings.TrimSpace(input.Assignee),
+	})
+	return string(payload)
+}
+
+func acknowledgeAnnotationPatch(at time.Time, acknowledgedBy, acknowledgedByName string) string {
+	payload, _ := json.Marshal(map[string]string{
+		"acknowledgedAt":     at.UTC().Format(time.RFC3339Nano),
+		"acknowledgedBy":     strings.TrimSpace(acknowledgedBy),
+		"acknowledgedByName": strings.TrimSpace(acknowledgedByName),
+	})
+	return string(payload)
 }
 
 func normalizeChannelInput(input domainalert.ChannelInput, now time.Time) domainalert.NotificationChannel {
@@ -793,7 +811,7 @@ func fetchCreatedAt(ctx context.Context, db *gorm.DB, channelID string) time.Tim
 
 func fetchRouteCreatedAt(ctx context.Context, db *gorm.DB, routeID string) time.Time {
 	var createdAt time.Time
-	if err := db.WithContext(ctx).Raw(`SELECT created_at FROM alert_routes WHERE id = ?`, routeID).Row().Scan(&createdAt); err != nil {
+	if err := db.WithContext(ctx).Raw(`SELECT created_at FROM notification_policies WHERE id = ?`, routeID).Row().Scan(&createdAt); err != nil {
 		return time.Time{}
 	}
 	return createdAt

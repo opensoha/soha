@@ -29,6 +29,8 @@ type stubMonitoringCompatRepository struct {
 	onCallAssignmentRules      []domainalert.OnCallAssignmentRule
 	alertEvents                map[string]domainalert.AlertEvent
 	alertIntegrations          map[string]domainalert.AlertIntegration
+	updatedEventID             string
+	updatedEventInput          domainalert.AlertEventInput
 	upsertSource               string
 	upsertAlerts               []domainalert.IngestAlert
 }
@@ -199,8 +201,36 @@ func (s *stubMonitoringCompatRepository) CreateEvent(_ context.Context, input do
 	return event, nil
 }
 
-func (s *stubMonitoringCompatRepository) UpdateEvent(context.Context, string, domainalert.AlertEventInput) (domainalert.AlertEvent, error) {
-	return domainalert.AlertEvent{}, nil
+func (s *stubMonitoringCompatRepository) UpdateEvent(_ context.Context, eventID string, input domainalert.AlertEventInput) (domainalert.AlertEvent, error) {
+	s.updatedEventID = eventID
+	s.updatedEventInput = input
+	event := domainalert.AlertEvent{
+		ID:                 input.ID,
+		RuleID:             input.RuleID,
+		SourceType:         input.SourceType,
+		SourceSystem:       input.SourceSystem,
+		Fingerprint:        input.Fingerprint,
+		Title:              input.Title,
+		Summary:            input.Summary,
+		Severity:           input.Severity,
+		Status:             input.Status,
+		ClusterID:          input.ClusterID,
+		Namespace:          input.Namespace,
+		Labels:             input.Labels,
+		Annotations:        input.Annotations,
+		Receiver:           input.Receiver,
+		GeneratorURL:       input.GeneratorURL,
+		CurrentState:       input.CurrentState,
+		LastNotificationAt: input.LastNotificationAt,
+		StartsAt:           input.StartsAt,
+		EndsAt:             input.EndsAt,
+		LastSeenAt:         input.LastSeenAt,
+		UpdatedAt:          time.Now().UTC(),
+	}
+	if s.alertEvents != nil {
+		s.alertEvents[eventID] = event
+	}
+	return event, nil
 }
 
 func (s *stubMonitoringCompatRepository) ListNotificationPolicies(ctx context.Context) ([]domainalert.NotificationPolicy, error) {
@@ -408,6 +438,49 @@ func monitoringCompatPrincipal() domainidentity.Principal {
 	return domainidentity.Principal{
 		UserID: "user-1",
 		Roles:  []string{"ops"},
+	}
+}
+
+func TestServiceAcknowledgeEventPreservesSourceStatus(t *testing.T) {
+	now := time.Now().UTC()
+	repo := &stubMonitoringCompatRepository{
+		alertEvents: map[string]domainalert.AlertEvent{
+			"evt-1": {
+				ID:           "evt-1",
+				SourceType:   "prometheus",
+				SourceSystem: "prom-main",
+				Fingerprint:  "cpu-high",
+				Title:        "CPU high",
+				Summary:      "CPU above threshold",
+				Severity:     "critical",
+				Status:       "firing",
+				CurrentState: "firing",
+				LastSeenAt:   now,
+				CreatedAt:    now,
+				UpdatedAt:    now,
+			},
+		},
+	}
+	service := &Service{
+		repo:        repo,
+		permissions: monitoringCompatPermissions(appaccess.PermObserveAlertsAcknowledge),
+	}
+
+	result, err := service.AcknowledgeEvent(context.Background(), monitoringCompatPrincipal(), "evt-1")
+	if err != nil {
+		t.Fatalf("AcknowledgeEvent returned error: %v", err)
+	}
+	if repo.updatedEventID != "evt-1" {
+		t.Fatalf("updatedEventID = %q, want evt-1", repo.updatedEventID)
+	}
+	if repo.updatedEventInput.Status != "firing" {
+		t.Fatalf("updated status = %q, want firing", repo.updatedEventInput.Status)
+	}
+	if repo.updatedEventInput.CurrentState != "acknowledged" {
+		t.Fatalf("updated current state = %q, want acknowledged", repo.updatedEventInput.CurrentState)
+	}
+	if result.Status != "firing" || result.CurrentState != "acknowledged" {
+		t.Fatalf("result status/currentState = %q/%q, want firing/acknowledged", result.Status, result.CurrentState)
 	}
 }
 

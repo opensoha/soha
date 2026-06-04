@@ -467,38 +467,6 @@ export function AppRouter() {
             }
           />
           <Route
-            path="/network/gateway-api/httproutes"
-            element={
-              <RoutePages.LazyPage>
-                <RoutePages.NetworkHTTPRoutesPage />
-              </RoutePages.LazyPage>
-            }
-          />
-          <Route
-            path="/network/gateway-api/backendtlspolicies"
-            element={
-              <RoutePages.LazyPage>
-                <RoutePages.NetworkBackendTLSPoliciesPage />
-              </RoutePages.LazyPage>
-            }
-          />
-          <Route
-            path="/network/gateway-api/grpcroutes"
-            element={
-              <RoutePages.LazyPage>
-                <RoutePages.NetworkGRPCRoutesPage />
-              </RoutePages.LazyPage>
-            }
-          />
-          <Route
-            path="/network/gateway-api/referencegrants"
-            element={
-              <RoutePages.LazyPage>
-                <RoutePages.NetworkReferenceGrantsPage />
-              </RoutePages.LazyPage>
-            }
-          />
-          <Route
             path="/network/endpointslices"
             element={
               <RoutePages.LazyPage>

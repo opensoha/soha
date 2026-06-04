@@ -44,50 +44,45 @@ type TopologyNodeKind =
   | 'empty-backend'
   | 'pod'
 
-interface ServiceView {
-  name: string
-  namespace: string
-  selector?: Record<string, string>
+interface NetworkTopologySummaryView {
+  entryCount: number
+  routeCount: number
+  serviceCount: number
+  missingServiceCount: number
+  backendPodCount: number
+  pendingRouteCount: number
 }
 
-interface IngressView {
-  name: string
-  namespace: string
-  className?: string
-  hosts?: string[]
-  address?: string
-  backendServices?: string[]
-}
-
-interface HTTPRouteView {
-  name: string
-  namespace: string
-  hostnames?: string[]
-  parentRefs?: string[]
-  backendServices?: string[]
-}
-
-interface GatewayView {
-  name: string
-  namespace: string
-  gatewayClass?: string
-  addresses?: string[]
-  listenerCount?: number
-}
-
-interface PodView {
-  name: string
-  namespace: string
-  labels?: Record<string, string>
-}
-
-interface GatewayIndexItem {
+interface NetworkTopologyNodeView {
   id: string
   name: string
-  namespace: string
-  addressSummary: string
-  gatewayClass: string
-  listenerCount: number
+  kind: string
+  state: string
+  namespace?: string
+  resourceName?: string
+  subtitle?: string
+  badge?: string
+}
+
+interface NetworkTopologyTraceView {
+  id: string
+  sourceType: string
+  state: string
+  entry: NetworkTopologyNodeView
+  route: NetworkTopologyNodeView
+  service?: NetworkTopologyNodeView
+  backendPods?: NetworkTopologyNodeView[]
+  note?: string
+}
+
+interface NetworkTopologyView {
+  clusterId: string
+  namespace?: string
+  source: string
+  generatedAt: string
+  summary: NetworkTopologySummaryView
+  traces?: NetworkTopologyTraceView[]
+  warnings?: string[]
 }
 
 interface TopologyNode {
@@ -317,12 +312,6 @@ function buildPodDetailPath(name: string, selectedNamespace: string | null, rowN
   return query ? `/workloads/pods/${name}?${query}` : `/workloads/pods/${name}`
 }
 
-function selectorMatchesLabels(selector?: Record<string, string>, labels?: Record<string, string>) {
-  const entries = Object.entries(selector ?? {})
-  if (entries.length === 0) return false
-  return entries.every(([key, value]) => (labels ?? {})[key] === value)
-}
-
 function formatBackendSubtitle(pods: TopologyNode[], localeCode: LocaleCode) {
   if (pods.length === 0) {
     return localeCode === 'zh_CN'
@@ -342,396 +331,61 @@ function formatBackendSubtitle(pods: TopologyNode[], localeCode: LocaleCode) {
   return previewNames.join(' · ')
 }
 
-function inferControllerFamily(value?: string) {
-  const normalized = value?.trim().toLowerCase() ?? ''
-  if (!normalized) {
-    return 'generic'
+function normalizeTopologyState(state?: string): TopologyDataState {
+  if (state === 'live' || state === 'pending' || state === 'demo') {
+    return state
   }
-  if (normalized.includes('kong')) {
-    return 'kong'
-  }
-  if (normalized.includes('apisix')) {
-    return 'apisix'
-  }
-  if (normalized.includes('traefik')) {
-    return 'traefik'
-  }
-  return 'generic'
+  return 'pending'
 }
 
-function formatIngressControllerLabel(className: string | undefined, localeCode: LocaleCode) {
-  const family = inferControllerFamily(className)
-  switch (family) {
-    case 'kong':
-      return 'Kong Ingress'
-    case 'apisix':
-      return 'APISIX Ingress'
-    case 'traefik':
-      return 'Traefik Ingress'
+function normalizeTopologySourceType(sourceType?: string): TopologySourceType {
+  if (sourceType === 'ingress' || sourceType === 'httproute' || sourceType === 'gateway' || sourceType === 'demo') {
+    return sourceType
+  }
+  return 'demo'
+}
+
+function normalizeTopologyNodeKind(kind?: string): TopologyNodeKind {
+  switch (kind) {
+    case 'entry':
+    case 'ingress-route':
+    case 'http-route':
+    case 'pending-route':
+    case 'service':
+    case 'missing-service':
+    case 'backend-group':
+    case 'empty-backend':
+    case 'pod':
+      return kind
     default:
-      if (className && className.trim() !== '') {
-        return localeCode === 'zh_CN' ? `IngressClass: ${className}` : `IngressClass: ${className}`
-      }
-      return 'Ingress'
+      return 'entry'
   }
 }
 
-function formatGatewayClassLabel(gatewayClass: string | undefined, localeCode: LocaleCode) {
-  const family = inferControllerFamily(gatewayClass)
-  switch (family) {
-    case 'kong':
-      return 'Kong Gateway'
-    case 'apisix':
-      return 'APISIX Gateway'
-    case 'traefik':
-      return 'Traefik Gateway'
-    default:
-      if (gatewayClass && gatewayClass.trim() !== '') {
-        return localeCode === 'zh_CN' ? `GatewayClass: ${gatewayClass}` : `GatewayClass: ${gatewayClass}`
-      }
-      return localeCode === 'zh_CN' ? 'Gateway API' : 'Gateway API'
-  }
-}
-
-function makeNode(
-  id: string,
-  name: string,
-  kind: TopologyNodeKind,
-  state: TopologyDataState,
-  namespace?: string,
-  resourceName?: string,
-  subtitle?: string,
-  badge?: string,
-): TopologyNode {
+function normalizeTopologyNode(node: NetworkTopologyNodeView): TopologyNode {
   return {
-    id,
-    name,
-    kind,
-    state,
-    namespace,
-    resourceName,
-    subtitle,
-    badge,
+    id: node.id,
+    name: node.name,
+    kind: normalizeTopologyNodeKind(node.kind),
+    state: normalizeTopologyState(node.state),
+    namespace: node.namespace,
+    resourceName: node.resourceName,
+    subtitle: node.subtitle,
+    badge: node.badge,
   }
 }
 
-function buildGatewayIndexItems(gateways: GatewayView[]): GatewayIndexItem[] {
-  return gateways.map((gateway) => ({
-    id: `${gateway.namespace}/${gateway.name}`,
-    name: gateway.name,
-    namespace: gateway.namespace,
-    addressSummary: gateway.addresses?.join(', ') || '-',
-    gatewayClass: gateway.gatewayClass || '-',
-    listenerCount: gateway.listenerCount ?? 0,
+function normalizeBackendTraces(traces: NetworkTopologyTraceView[] | undefined): TopologyTrace[] {
+  return (traces ?? []).map((trace) => ({
+    id: trace.id,
+    entry: normalizeTopologyNode(trace.entry),
+    route: normalizeTopologyNode(trace.route),
+    service: trace.service ? normalizeTopologyNode(trace.service) : undefined,
+    terminals: (trace.backendPods ?? []).map(normalizeTopologyNode),
+    sourceType: normalizeTopologySourceType(trace.sourceType),
+    state: normalizeTopologyState(trace.state),
+    notes: trace.note ?? '',
   }))
-}
-
-function buildServiceLookup(services: ServiceView[]) {
-  return new Map(services.map((service) => [`${service.namespace}/${service.name}`, service]))
-}
-
-function buildPodsByNamespace(pods: PodView[]) {
-  const podsByNamespace = new Map<string, PodView[]>()
-  pods.forEach((pod) => {
-    const items = podsByNamespace.get(pod.namespace) ?? []
-    items.push(pod)
-    podsByNamespace.set(pod.namespace, items)
-  })
-  return podsByNamespace
-}
-
-function resolveServiceNode(
-  routeNamespace: string,
-  serviceName: string,
-  services: Map<string, ServiceView>,
-  podsByNamespace: Map<string, PodView[]>,
-  localeCode: LocaleCode,
-  missingNote: string,
-  noPodNote: string,
-) {
-  const serviceKey = `${routeNamespace}/${serviceName}`
-  const service = services.get(serviceKey)
-  const serviceNode = service
-    ? makeNode(`service:${serviceKey}`, service.name, 'service', 'live', service.namespace, service.name, service.namespace, 'Service')
-    : makeNode(`missing-service:${serviceKey}`, serviceName, 'missing-service', 'pending', routeNamespace, serviceName, routeNamespace, localeCode === 'zh_CN' ? '当前 scope 不可见' : 'Out of current scope')
-
-  const matchedPods = service
-    ? (podsByNamespace.get(service.namespace) ?? []).filter((pod) => selectorMatchesLabels(service.selector, pod.labels))
-    : []
-  const terminalPods = matchedPods.map((pod) =>
-    makeNode(`pod:${pod.namespace}/${pod.name}`, pod.name, 'pod', 'live', pod.namespace, pod.name),
-  )
-
-  const note = service
-    ? terminalPods.length > 0
-      ? localeCode === 'zh_CN'
-        ? `已解析 ${terminalPods.length} 个 Pod 后端。`
-        : `${terminalPods.length} backend pods resolved.`
-      : noPodNote
-    : missingNote
-
-  return {
-    note,
-    serviceNode,
-    state: service ? 'live' as const : 'pending' as const,
-    terminals: terminalPods,
-  }
-}
-
-function buildIngressTraces(
-  ingresses: IngressView[],
-  services: Map<string, ServiceView>,
-  podsByNamespace: Map<string, PodView[]>,
-  localeCode: LocaleCode,
-) {
-  return ingresses.flatMap((ingress) => {
-    const routeNode = makeNode(
-      `ingress-route:${ingress.namespace}/${ingress.name}`,
-      ingress.name,
-      'ingress-route',
-      'live',
-      ingress.namespace,
-      ingress.name,
-      ingress.namespace,
-      formatIngressControllerLabel(ingress.className, localeCode),
-    )
-    const entries = ingress.hosts && ingress.hosts.length > 0
-      ? ingress.hosts
-      : ingress.address && ingress.address.trim() !== ''
-        ? ingress.address.split(',').map((item) => item.trim()).filter(Boolean)
-        : [ingress.name]
-    const backendServices = Array.from(new Set(ingress.backendServices?.filter(Boolean) ?? []))
-
-    return entries.flatMap((entryLabel) => {
-      const entryNode = makeNode(
-        `entry:ingress:${ingress.namespace}/${ingress.name}/${entryLabel}`,
-        entryLabel,
-        'entry',
-        'live',
-        ingress.namespace,
-        ingress.name,
-        ingress.namespace,
-        formatIngressControllerLabel(ingress.className, localeCode),
-      )
-
-      if (backendServices.length === 0) {
-        return [{
-          id: `${entryNode.id}:no-backend`,
-          entry: entryNode,
-          route: routeNode,
-          service: makeNode(
-            `missing-service:${ingress.namespace}/${ingress.name}:no-backend`,
-            localeCode === 'zh_CN' ? '未声明后端 Service' : 'No backend service',
-            'missing-service',
-            'pending',
-            ingress.namespace,
-            undefined,
-            ingress.namespace,
-            localeCode === 'zh_CN' ? '后端待补齐' : 'Backend pending',
-          ),
-          terminals: [],
-          sourceType: 'ingress' as const,
-          state: 'pending' as const,
-          notes: localeCode === 'zh_CN'
-            ? 'Ingress 当前没有可解析的 backendServices 字段。'
-            : 'The ingress does not expose a resolved backendServices list yet.',
-        }]
-      }
-
-      return backendServices.map((serviceName) => {
-        const resolved = resolveServiceNode(
-          ingress.namespace,
-          serviceName,
-          services,
-          podsByNamespace,
-          localeCode,
-          localeCode === 'zh_CN'
-            ? 'Ingress 指向的 Service 当前在 scope 内不可见。'
-            : 'The service referenced by this ingress is not visible in the current scope.',
-          localeCode === 'zh_CN'
-            ? 'Service 已解析，但当前没有匹配到 Pod。'
-            : 'Service resolved, but no matching pods were found.',
-        )
-
-        return {
-          id: `${entryNode.id}:${routeNode.id}:${serviceName}`,
-          entry: entryNode,
-          route: routeNode,
-          service: resolved.serviceNode,
-          terminals: resolved.terminals,
-          sourceType: 'ingress' as const,
-          state: resolved.state,
-          notes: resolved.note,
-        }
-      })
-    })
-  })
-}
-
-function buildHTTPRouteTraces(
-  httpRoutes: HTTPRouteView[],
-  gateways: Map<string, GatewayIndexItem>,
-  services: Map<string, ServiceView>,
-  podsByNamespace: Map<string, PodView[]>,
-  localeCode: LocaleCode,
-) {
-  return httpRoutes.flatMap((route) => {
-    const parentRefs = route.parentRefs?.filter(Boolean) ?? []
-    const resolvedParents = parentRefs.length > 0
-      ? parentRefs.map((ref) => gateways.get(ref) ?? {
-        id: ref,
-        name: ref.split('/').pop() || ref,
-        namespace: ref.split('/')[0] || route.namespace,
-        addressSummary: '-',
-        gatewayClass: '-',
-        listenerCount: 0,
-        source: 'live' as const,
-      })
-      : [{
-        id: `unbound:${route.namespace}/${route.name}`,
-        name: localeCode === 'zh_CN' ? '未绑定 Gateway' : 'Unbound gateway',
-        namespace: route.namespace,
-        addressSummary: '-',
-        gatewayClass: '-',
-        listenerCount: 0,
-        source: 'live' as const,
-      }]
-
-    const gatewayLabels = uniqueStrings(resolvedParents.map((item) => item.name))
-    const routeBadge = uniqueStrings(resolvedParents.map((item) => formatGatewayClassLabel(item.gatewayClass, localeCode))).join(' · ') || 'HTTPRoute'
-    const routeSubtitle = route.hostnames && route.hostnames.length > 0
-      ? route.hostnames.join(' · ')
-      : gatewayLabels.join(' · ') || route.namespace
-    const routeNode = makeNode(
-      `http-route:${route.namespace}/${route.name}`,
-      route.name,
-      'http-route',
-      'live',
-      route.namespace,
-      route.name,
-      routeSubtitle || route.namespace,
-      `HTTPRoute · ${routeBadge}`,
-    )
-    const backendServices = Array.from(new Set(route.backendServices?.filter(Boolean) ?? []))
-
-    return resolvedParents.flatMap((parent) => {
-      const entries = route.hostnames && route.hostnames.length > 0
-        ? route.hostnames
-        : parent.addressSummary !== '-' && parent.addressSummary.trim() !== ''
-          ? parent.addressSummary.split(',').map((item) => item.trim()).filter(Boolean)
-          : [parent.name]
-
-      return entries.flatMap((entryLabel) => {
-        const entryNode = makeNode(
-          `entry:gateway:${parent.id}:${entryLabel}`,
-          entryLabel,
-          'entry',
-          parent.name.startsWith('未绑定') || parent.name.startsWith('Unbound') ? 'pending' : 'live',
-          parent.namespace,
-          parent.name,
-          parent.namespace,
-          formatGatewayClassLabel(parent.gatewayClass, localeCode),
-        )
-
-        if (backendServices.length === 0) {
-          return [{
-            id: `${entryNode.id}:${routeNode.id}:no-backend`,
-            entry: entryNode,
-            route: routeNode,
-            service: makeNode(
-              `missing-service:${route.namespace}/${route.name}:no-backend`,
-              localeCode === 'zh_CN' ? '未声明后端 Service' : 'No backend service',
-              'missing-service',
-              'pending',
-              route.namespace,
-              undefined,
-              route.namespace,
-              localeCode === 'zh_CN' ? '后端待补齐' : 'Backend pending',
-            ),
-            terminals: [],
-            sourceType: 'httproute' as const,
-            state: 'pending' as const,
-            notes: localeCode === 'zh_CN'
-              ? 'HTTPRoute 当前没有可解析的 backendRefs。'
-              : 'The HTTPRoute does not expose resolved backendRefs yet.',
-          }]
-        }
-
-        return backendServices.map((serviceName) => {
-          const resolved = resolveServiceNode(
-            route.namespace,
-            serviceName,
-            services,
-            podsByNamespace,
-            localeCode,
-            localeCode === 'zh_CN'
-              ? 'HTTPRoute 指向的 Service 当前在 scope 内不可见。'
-              : 'The service referenced by this HTTPRoute is not visible in the current scope.',
-            localeCode === 'zh_CN'
-              ? 'Service 已解析，但当前没有匹配到 Pod。'
-              : 'Service resolved, but no matching pods were found.',
-          )
-
-          return {
-            id: `${entryNode.id}:${routeNode.id}:${serviceName}`,
-            entry: entryNode,
-            route: routeNode,
-            service: resolved.serviceNode,
-            terminals: resolved.terminals,
-            sourceType: 'httproute' as const,
-            state: resolved.state,
-            notes: parent.name.startsWith('未绑定') || parent.name.startsWith('Unbound')
-              ? localeCode === 'zh_CN'
-                ? `${resolved.note} 当前 HTTPRoute 没有关联到可见的 Gateway。`
-                : `${resolved.note} The HTTPRoute is not bound to a visible gateway yet.`
-              : resolved.note,
-          }
-        })
-      })
-    })
-  })
-}
-
-function buildPendingGatewayTraces(
-  gateways: GatewayIndexItem[],
-  referencedParents: Set<string>,
-  localeCode: LocaleCode,
-) {
-  return gateways
-    .filter((gateway) => !referencedParents.has(gateway.id))
-    .map((gateway) => {
-      const entryName = gateway.addressSummary !== '-' ? gateway.addressSummary : gateway.name
-      return {
-        id: `pending-gateway:${gateway.id}`,
-        entry: makeNode(
-          `entry:pending-gateway:${gateway.id}`,
-          entryName,
-          'entry',
-          'pending',
-          gateway.namespace,
-          gateway.name,
-          gateway.namespace,
-          formatGatewayClassLabel(gateway.gatewayClass, localeCode),
-        ),
-        route: makeNode(
-          `pending-route:${gateway.id}`,
-          localeCode === 'zh_CN' ? 'HTTPRoute 待接入' : 'HTTPRoute pending',
-          'pending-route',
-          'pending',
-          gateway.namespace,
-          gateway.name,
-          gateway.name,
-          formatGatewayClassLabel(gateway.gatewayClass, localeCode),
-        ),
-        service: undefined,
-        terminals: [],
-        sourceType: 'gateway' as const,
-        state: 'pending' as const,
-        notes: localeCode === 'zh_CN'
-          ? '当前 Gateway 还没有关联到可见的 HTTPRoute。'
-          : 'This gateway is not associated with any visible HTTPRoute yet.',
-      }
-    })
 }
 
 function filterTraces(traces: TopologyTrace[], keyword: string) {
@@ -1175,88 +829,18 @@ export function NetworkTopologyPage() {
   const [selectedNodeID, setSelectedNodeID] = useState<string | null>(null)
   const deferredSearchKeyword = useDeferredValue(searchKeyword.trim().toLowerCase())
 
-  const servicesQuery = useQuery({
-    queryKey: ['network-topology-services', clusterId, namespace],
-    queryFn: () => api.get<ApiResponse<ServiceView[]>>(buildClusterScopedPath(clusterId!, 'network/services', namespace)),
+  const topologyQuery = useQuery({
+    queryKey: ['network-topology', clusterId, namespace],
+    queryFn: () => api.get<ApiResponse<NetworkTopologyView>>(buildClusterScopedPath(clusterId!, 'network/topology', namespace)),
     enabled: !!clusterId,
   })
-
-  const ingressesQuery = useQuery({
-    queryKey: ['network-topology-ingresses', clusterId, namespace],
-    queryFn: () => api.get<ApiResponse<IngressView[]>>(buildClusterScopedPath(clusterId!, 'network/ingresses', namespace)),
-    enabled: !!clusterId,
-  })
-
-  const httpRoutesQuery = useQuery({
-    queryKey: ['network-topology-httproutes', clusterId, namespace],
-    queryFn: () => api.get<ApiResponse<HTTPRouteView[]>>(buildClusterScopedPath(clusterId!, 'network/httproutes', namespace)),
-    enabled: !!clusterId,
-  })
-
-  const gatewaysQuery = useQuery({
-    queryKey: ['network-topology-gateways', clusterId, namespace],
-    queryFn: () => api.get<ApiResponse<GatewayView[]>>(buildClusterScopedPath(clusterId!, 'network/gateways', namespace)),
-    enabled: !!clusterId,
-  })
-
-  const podsQuery = useQuery({
-    queryKey: ['network-topology-pods', clusterId, namespace],
-    queryFn: () => api.get<ApiResponse<PodView[]>>(buildClusterScopedPath(clusterId!, 'workloads/pods', namespace)),
-    enabled: !!clusterId,
-  })
-
-  const serviceLookup = useMemo(
-    () => buildServiceLookup(servicesQuery.data?.data ?? []),
-    [servicesQuery.data],
-  )
-  const podsByNamespace = useMemo(
-    () => buildPodsByNamespace(podsQuery.data?.data ?? []),
-    [podsQuery.data],
-  )
-  const gatewayItems = useMemo(
-    () => buildGatewayIndexItems(gatewaysQuery.data?.data ?? []),
-    [gatewaysQuery.data],
-  )
-  const gatewayMap = useMemo(
-    () => new Map(gatewayItems.map((gateway) => [gateway.id, gateway])),
-    [gatewayItems],
-  )
-
-  const ingressTraces = useMemo(
-    () => buildIngressTraces(
-      ingressesQuery.data?.data ?? [],
-      serviceLookup,
-      podsByNamespace,
-      localeCode,
-    ),
-    [ingressesQuery.data, localeCode, podsByNamespace, serviceLookup],
-  )
-
-  const httpRouteTraces = useMemo(
-    () => buildHTTPRouteTraces(
-      httpRoutesQuery.data?.data ?? [],
-      gatewayMap,
-      serviceLookup,
-      podsByNamespace,
-      localeCode,
-    ),
-    [gatewayMap, httpRoutesQuery.data, localeCode, podsByNamespace, serviceLookup],
-  )
-
-  const referencedGatewayParents = useMemo(
-    () => new Set((httpRoutesQuery.data?.data ?? []).flatMap((route) => route.parentRefs?.filter(Boolean) ?? [])),
-    [httpRoutesQuery.data],
-  )
-
-  const pendingGatewayTraces = useMemo(
-    () => buildPendingGatewayTraces(gatewayItems, referencedGatewayParents, localeCode),
-    [gatewayItems, localeCode, referencedGatewayParents],
-  )
+  const topologyData = topologyQuery.data?.data
 
   const liveTraces = useMemo(
-    () => [...ingressTraces, ...httpRouteTraces, ...pendingGatewayTraces],
-    [httpRouteTraces, ingressTraces, pendingGatewayTraces],
+    () => normalizeBackendTraces(topologyData?.traces),
+    [topologyData?.traces],
   )
+  const topologySummary = topologyData?.summary
 
   const hasLiveTopology = liveTraces.length > 0
 
@@ -1319,13 +903,10 @@ export function NetworkTopologyPage() {
   }, [selectedNodeID, topologyGraph.nodeMap])
 
   const liveErrors = [
-    getErrorMessage(servicesQuery.error),
-    getErrorMessage(ingressesQuery.error),
-    getErrorMessage(httpRoutesQuery.error),
-    getErrorMessage(gatewaysQuery.error),
-    getErrorMessage(podsQuery.error),
+    getErrorMessage(topologyQuery.error),
+    ...(topologyData?.warnings ?? []),
   ].filter(Boolean)
-  const liveLoading = clusterId && (servicesQuery.isLoading || ingressesQuery.isLoading || httpRoutesQuery.isLoading || gatewaysQuery.isLoading || podsQuery.isLoading)
+  const liveLoading = clusterId && topologyQuery.isLoading
   const topologyViewState = !clusterId
     ? 'cluster-required'
     : liveLoading
@@ -1542,10 +1123,10 @@ export function NetworkTopologyPage() {
 
       <StatGrid
         items={[
-          { label: localeCode === 'zh_CN' ? '入口节点' : 'Entry nodes', value: topologyGraph.entryCount },
-          { label: localeCode === 'zh_CN' ? '路由节点' : 'Route nodes', value: topologyGraph.routeCount },
-          { label: localeCode === 'zh_CN' ? 'Service 节点' : 'Service nodes', value: topologyGraph.serviceCount },
-          { label: localeCode === 'zh_CN' ? '后端 Pods' : 'Backend pods', value: topologyGraph.podCount },
+          { label: localeCode === 'zh_CN' ? '入口节点' : 'Entry nodes', value: topologySummary?.entryCount ?? topologyGraph.entryCount },
+          { label: localeCode === 'zh_CN' ? '路由节点' : 'Route nodes', value: topologySummary?.routeCount ?? topologyGraph.routeCount },
+          { label: localeCode === 'zh_CN' ? 'Service 节点' : 'Service nodes', value: topologySummary ? topologySummary.serviceCount + topologySummary.missingServiceCount : topologyGraph.serviceCount },
+          { label: localeCode === 'zh_CN' ? '后端 Pods' : 'Backend pods', value: topologySummary?.backendPodCount ?? topologyGraph.podCount },
         ]}
       />
 

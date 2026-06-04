@@ -295,11 +295,10 @@ func (s *Service) listDirectReferenceGrants(ctx context.Context, clusterID, name
 }
 
 func (s *Service) listDynamicClusterResources(ctx context.Context, clusterID, group string, versions []string, resource string) ([]unstructured.Unstructured, error) {
-	bundle, err := s.clusters.Bundle(ctx, clusterID)
+	bundle, queryCtx, cancel, err := s.directKubeQueryContext(ctx, clusterID, 5*time.Second)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
+		return nil, err
 	}
-	queryCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	for _, version := range versions {
 		gvr := schema.GroupVersionResource{Group: group, Version: version, Resource: resource}
@@ -316,11 +315,10 @@ func (s *Service) listDynamicClusterResources(ctx context.Context, clusterID, gr
 }
 
 func (s *Service) listDynamicNamespacedResources(ctx context.Context, clusterID, namespace, group string, versions []string, resource string) ([]unstructured.Unstructured, error) {
-	bundle, err := s.clusters.Bundle(ctx, clusterID)
+	bundle, queryCtx, cancel, err := s.directKubeQueryContext(ctx, clusterID, 5*time.Second)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
+		return nil, err
 	}
-	queryCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	for _, version := range versions {
 		gvr := schema.GroupVersionResource{Group: group, Version: version, Resource: resource}

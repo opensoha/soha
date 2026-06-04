@@ -227,10 +227,6 @@ func (r *Repository) DeletePolicy(ctx context.Context, policyID string) error {
 	if tx.Error != nil {
 		return tx.Error
 	}
-	if err := tx.Exec(`DELETE FROM policy_bindings WHERE policy_id = ?`, strings.TrimSpace(policyID)).Error; err != nil {
-		tx.Rollback()
-		return err
-	}
 	result := tx.Exec(`DELETE FROM policies WHERE id = ?`, strings.TrimSpace(policyID))
 	if result.Error != nil {
 		tx.Rollback()

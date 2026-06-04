@@ -83,12 +83,15 @@ PostgreSQL + Kubernetes clusters
 
 - `cmd/server`: API server entrypoint
 - `cmd/agent`: remote cluster agent and runner entrypoint
-- `internal/api`: routes, handlers, middleware, request parsing, response shaping
+- future `cmd/**` entries: same-repo subservice entrypoints for specialized workloads such as security ingest or workers
+- `internal/api`: domain route registration files, handlers, middleware, request parsing, response shaping
 - `internal/application`: use-case orchestration, authorization, scope handling, audit, and view models
 - `internal/policy`: RBAC, ABAC, and scope evaluation
 - `internal/infrastructure`: config, database, Kubernetes, informer, agent, logger, Swagger, MCP
 - `internal/repository`: durable persistence
-- `internal/bootstrap`: dependency graph, migration, seed, and startup wiring
+- `internal/bootstrap`: dependency graph, migration, seed, and startup lifecycle wiring
+
+See [Backend Structure](./docs/development/backend-structure.md) for the current route, bootstrap, multi-`cmd`, and reserved security-ingest boundary conventions.
 
 ### Frontend
 
@@ -118,7 +121,7 @@ PostgreSQL + Kubernetes clusters
 
 ```text
 .
-├── cmd/                 # server and agent entrypoints
+├── cmd/                 # server, agent, and future same-repo service entrypoints
 ├── configs/             # backend and agent configuration
 ├── docs/                # Docusaurus documentation
 ├── internal/            # backend layers and domain modules
@@ -253,7 +256,10 @@ helm lint deploy/chart
 ## Development Principles
 
 - Backend handlers stay thin. Application services own orchestration, authorization, scope semantics, audit, operation logs, and frontend-facing view models.
+- Keep central startup and route files thin. Add domain route files under `internal/api/routes` and concern-specific bootstrap files under `internal/bootstrap` instead of growing one monolithic file.
+- Split oversized Go files by stable behavior domains first. Platform handlers, platform resource services, and AI Gateway are organized into focused same-package files; protect execution-plane state transitions with unit tests.
 - Long-running work is task-backed. Build, release, Docker, Compose, VM control, and provider execution run through durable tasks and callback paths.
+- Future security workbench APIs should keep management, client, and ingest boundaries separate: `/api/v1/security/**`, `/api/client/v1/**`, and `/api/ingest/v1/**`.
 - Frontend work belongs in `web`. Routes, metadata, permissions, backend menus, and tests should stay aligned.
 - Platform APIs return Soha DTOs, not raw Kubernetes objects, except YAML or explicit passthrough routes.
 - Module visibility, menu visibility, and backend authorization are separate gates.

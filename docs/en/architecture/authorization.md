@@ -153,8 +153,9 @@ RBAC answers one question first: does the principal's role set ever permit this 
 
 - `roles`
 - `policies`
-- `policy_bindings`
 - `user_role_bindings`
+- `role_permission_bindings`
+- `scope_grants`
 - durable user, team, and project attributes
 - `sessions`
 - audit trail of allow, deny, and operation outcomes
@@ -177,15 +178,7 @@ Short-lived login and policy-evaluation state should use signed tokens, request 
 - `created_at`
 - `updated_at`
 
-### `policy_bindings`
-
-- `id`
-- `policy_id`
-- `subject_type`
-- `subject_id`
-- `scope` JSONB
-- `created_at`
-- `updated_at`
+Role permission keys live in `role_permission_bindings`; scoped access grants live in `scope_grants`.
 
 ## Responsibility Split
 

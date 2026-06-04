@@ -40,6 +40,29 @@ Implement backend changes through the repository's layered Go architecture. Keep
 - Prefer domain or platform view models for API output. Do not return raw Kubernetes schema objects unless the route is explicitly a YAML or passthrough surface.
 - Runtime shell work does not belong in handlers. Build, release, Docker Compose, Docker Engine, and VM-control execution must go through application services plus durable task/operation records and runner callbacks.
 
+## Modularity Ground Rules
+
+- Keep the backend a single-repository, single-`go.mod`, multi-`cmd` modular monolith. `cmd/server` is the management control-plane server, and `cmd/agent` is the remote cluster agent/runner. Future specialized runtimes, such as security device ingest or security workers, should be added as same-repo `cmd/**` entries that reuse internal packages.
+- Keep `internal/api/routes/router.go` thin. It should assemble the Gin engine, global middleware, compatibility paths, static assets, and top-level groups only. Add or change business routes in same-package route files such as `routes_platform.go`, `routes_delivery.go`, `routes_monitoring.go`, `routes_runtime.go`, or `routes_governance.go`.
+- Public, runner, and callback routes belong in `routes_public.go` unless they require user-session authentication. Authenticated routes should be connected from `registerProtectedRoutes`; module-gated domains should keep their `cfg.Modules.*.Enabled` checks inside their domain registration function.
+- Keep `internal/bootstrap/app.go` focused on dependency graph assembly. Put lifecycle methods in `lifecycle.go`, narrow cross-module adapters in dedicated files, and seed concerns in focused files such as `database_menus.go` instead of growing `database.go`.
+- When adding menus or permissions, update the domain seed file, role permission keys, visible-menu behavior, frontend route metadata, and docs together. Menu seed filtering by disabled modules must remain backend-owned.
+- Do not implement future internal-security business behavior as part of groundwork refactors. Reserve boundaries without implying runtime parity:
+  - `/api/v1/security/**` for Soha web-admin security management APIs.
+  - `/api/client/v1/**` for future Wails desktop and Flutter mobile client APIs.
+  - `/api/ingest/v1/**` for future device reporting, heartbeats, audit evidence, and telemetry ingest, ideally owned by a future `cmd/security-ingest` entrypoint.
+- FreeRADIUS, Fleet, mihomo, and similar systems are managed or integrated execution-side systems. Soha should own software catalog, device inventory/reporting, policy, audit, and control-plane records, but those external tools should not become runtime cores inside `cmd/server`.
+
+## Go Hotspot Refactor Rules
+
+- Split oversized files by stable behavior domains before changing logic. Prefer same-package file moves first so method receivers, private helpers, tests, and API contracts stay intact.
+- Platform handler REST methods are split by resource domain: `platform_inventory.go`, `platform_workloads.go`, `platform_configuration.go`, `platform_network.go`, `platform_storage.go`, `platform_rbac.go`, `platform_crd_helm.go`, `platform_generic.go`, and `platform_observability.go`. WebSocket stream behavior belongs in `platform_streams.go`; keep the shared `websocketStreamSession` lifecycle helper there.
+- Platform resource application methods are split by resource family: `pods.go`/`pods_helpers.go`, `workloads.go`, `configuration.go`, `rbac.go`, `network.go`, `storage.go`, `crd.go`, `events.go`, and `resource_yaml.go`. Shared authorization/audit helpers belong in `common.go`; shared direct Kubernetes bundle and timeout helpers belong in `direct_query.go`.
+- When changing resource-service behavior, keep the existing family file boundaries and run at least `go test ./internal/application/resource`. Avoid changing agent/direct behavior in the same patch as a mechanical move.
+- AI Gateway is split by behavior domain: `manifest.go`, `tools.go`, `policies.go`, `rate_limit_budget.go`, `redaction.go`, `approval.go`, `tokens.go`, `audit.go`, and `governance.go`; keep `service.go` for wiring, interfaces, and constructor/setter methods.
+- Execution-plane changes must include focused tests around status transitions, callback tokens, late callbacks, retry, cancel, timeout, artifact persistence, and build/release backfill. The execution service started with explicit state-machine coverage; do not let it regress to untested callback behavior.
+- Handler coverage is currently low, so new transport behavior should add handler tests. Pure file moves may rely on package compile plus route-registration comparison, but stream behavior changes need websocket or writer lifecycle tests.
+
 ## Platform and Authorization Rules
 
 - List endpoints must respect cluster scope and namespace scope. Empty namespace means all namespaces for namespaced resources.

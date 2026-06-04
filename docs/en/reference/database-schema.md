@@ -32,10 +32,6 @@ ABAC policy definitions. JSONB fits:
 - conditions
 - action list
 
-### policy_bindings
-
-Maps policies to users, teams, projects, or roles.
-
 ### clusters
 
 Cluster registry metadata and health snapshot.
@@ -192,14 +188,6 @@ Reusable approval configuration for multi-step delivery governance.
 ### notification_channels
 
 Reserved for email, webhook, chat, or incident channel settings.
-
-### saved_views
-
-User or team saved filters, tables, and dashboards.
-
-### user_preferences
-
-Persistent UI preferences and defaults.
 
 ## PostgreSQL Storage Boundary
 

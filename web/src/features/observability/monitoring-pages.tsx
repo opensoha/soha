@@ -81,6 +81,10 @@ function isTerminalStatus(status?: string) {
   return ['completed', 'resolved', 'rejected', 'failed', 'canceled', 'cancelled'].includes(String(status || '').toLowerCase())
 }
 
+function alertDisplayStatus(alert: { status?: string; currentState?: string }) {
+  return alert.currentState || alert.status || ''
+}
+
 function formatSilenceStatus(item: Silence) {
   if (!item.enabled) return 'disabled'
   const now = Date.now()
@@ -828,7 +832,7 @@ export function AlertsPage() {
       ...tableColumnPresets.status,
       title: '状态',
       dataIndex: 'status',
-      render: (s: string) => <StatusTag value={s} />,
+      render: (_: string, record: Alert) => <StatusTag value={alertDisplayStatus(record)} />,
     },
     { title: '来源', dataIndex: 'sourceSystem', render: (value: string, record: Alert) => value || record.sourceType || '-' },
     { title: '范围', dataIndex: 'namespace', render: (value: string, record: Alert) => [record.clusterId, value].filter(Boolean).join(' / ') || '-' },
@@ -871,7 +875,7 @@ export function AlertsPage() {
               onClick={() => { setSelectedAlertId(record.id); setHealingPolicyId(''); setHealOpen(true) }}
             />
           ) : null}
-          {canAcknowledge && record.status !== 'acknowledged' ? (
+          {canAcknowledge && alertDisplayStatus(record) !== 'acknowledged' ? (
             <ManagementIconButton
               aria-label="确认告警"
               icon={<BellOutlined />}
@@ -880,7 +884,7 @@ export function AlertsPage() {
               onClick={() => ackMutation.mutate(record.id)}
             />
           ) : null}
-          {canResolve && record.status !== 'resolved' ? (
+          {canResolve && alertDisplayStatus(record) !== 'resolved' ? (
             <ManagementIconButton
               aria-label="恢复告警"
               icon={<ReloadOutlined />}

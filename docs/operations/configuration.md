@@ -153,7 +153,7 @@ monitoring:
 
 Current persistence layout:
 
-- `alert_instances`: normalized inbound alert inventory
+- `alert_events`: normalized inbound alert inventory
 - `notification_channels`: downstream channel definitions
 - `event_stream`: normalized alert activity for the unified event center
 

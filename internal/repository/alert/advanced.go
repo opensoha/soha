@@ -274,10 +274,23 @@ func (r *Repository) CreateEvent(ctx context.Context, input domainalert.AlertEve
 			cluster_id = EXCLUDED.cluster_id,
 			namespace = EXCLUDED.namespace,
 			labels = EXCLUDED.labels,
-			annotations = EXCLUDED.annotations,
+			annotations = (
+				EXCLUDED.annotations::jsonb ||
+				jsonb_strip_nulls(jsonb_build_object(
+					'ownerTeam', alert_events.annotations::jsonb->>'ownerTeam',
+					'assignee', alert_events.annotations::jsonb->>'assignee',
+					'acknowledgedAt', alert_events.annotations::jsonb->>'acknowledgedAt',
+					'acknowledgedBy', alert_events.annotations::jsonb->>'acknowledgedBy',
+					'acknowledgedByName', alert_events.annotations::jsonb->>'acknowledgedByName'
+				))
+			)::json,
 			receiver = EXCLUDED.receiver,
 			generator_url = EXCLUDED.generator_url,
-			current_state = EXCLUDED.current_state,
+			current_state = CASE
+				WHEN EXCLUDED.status = 'resolved' THEN 'resolved'
+				WHEN COALESCE(NULLIF(alert_events.current_state, ''), alert_events.status) = 'acknowledged' AND EXCLUDED.status = 'firing' THEN 'acknowledged'
+				ELSE EXCLUDED.current_state
+			END,
 			last_notification_at = EXCLUDED.last_notification_at,
 			starts_at = EXCLUDED.starts_at,
 			ends_at = EXCLUDED.ends_at,
