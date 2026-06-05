@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -130,6 +131,24 @@ type AISettingsResolver interface {
 	ResolveAISettings(context.Context) (domainsettings.AISettings, error)
 }
 
+type chatReply struct {
+	Content      string
+	Source       string
+	Model        string
+	ProviderID   string
+	ProviderKind string
+	Error        string
+}
+
+type chatProviderMessage struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
+
+type recentMessageRepository interface {
+	ListRecentMessages(context.Context, string, int) ([]domaincopilot.Message, error)
+}
+
 type Service struct {
 	repo                  Repository
 	clusters              ClusterReader
@@ -238,7 +257,7 @@ func (s *Service) CreateSession(ctx context.Context, principal domainidentity.Pr
 		return domaincopilot.Session{}, err
 	}
 	if strings.TrimSpace(title) == "" {
-		title = localize(locale, "新的调查会话", "New Investigation")
+		title = localize(locale, "新的会话", "New Chat")
 	}
 	metadata := sessionMetadataMap(domaincopilot.SessionMetadata{
 		Mode:            normalizeSessionMode(mode),
@@ -316,7 +335,11 @@ func (s *Service) ListMessages(ctx context.Context, principal domainidentity.Pri
 	if _, err := s.repo.GetSession(ctx, principal.UserID, trimmedSessionID); err != nil {
 		return nil, err
 	}
-	return s.repo.ListMessages(ctx, trimmedSessionID, 100)
+	messages, err := s.repo.ListMessages(ctx, trimmedSessionID, 100)
+	if err != nil {
+		return nil, err
+	}
+	return markLegacyPlatformContextMessages(messages), nil
 }
 
 func (s *Service) SendMessage(ctx context.Context, principal domainidentity.Principal, sessionID, content, locale string) (domaincopilot.SessionMessageEnvelope, error) {
@@ -340,17 +363,46 @@ func (s *Service) SendMessage(ctx context.Context, principal domainidentity.Prin
 	if err != nil {
 		return domaincopilot.SessionMessageEnvelope{}, err
 	}
-	toolCalls, artifacts, sessionPatch := s.analyzeConversation(ctx, principal, session, content, locale)
-	reply := s.generateReply(ctx, principal, content, locale)
+	toolCalls := make([]domaincopilot.ToolExecution, 0)
+	artifacts := make([]domaincopilot.AnalysisArtifact, 0)
+	sessionPatch := map[string]any{}
+	if normalizeSessionMode(sessionMeta.Mode) != "general" {
+		toolCalls, artifacts, sessionPatch = s.analyzeConversation(ctx, principal, session, content, locale)
+	}
+	reply := chatReply{}
 	if len(artifacts) > 0 {
-		reply = artifacts[0].Summary
+		reply = chatReply{Content: artifacts[0].Summary, Source: "analysis-artifact"}
+	} else {
+		priorMessages, _ := s.listRecentMessages(ctx, session.ID, 20)
+		reply = s.generateReply(ctx, buildProviderChatMessages(priorMessages, userMessage, locale), locale)
+	}
+	assistantMetadata := map[string]any{
+		"mode":              sessionMeta.Mode,
+		"source":            reply.Source,
+		"locale":            locale,
+		"analysisArtifacts": []domaincopilot.AnalysisArtifact{},
+	}
+	if reply.Model != "" {
+		assistantMetadata["model"] = reply.Model
+	}
+	if reply.ProviderID != "" {
+		assistantMetadata["providerId"] = reply.ProviderID
+	}
+	if reply.ProviderKind != "" {
+		assistantMetadata["providerKind"] = reply.ProviderKind
+	}
+	if reply.Error != "" {
+		assistantMetadata["error"] = reply.Error
+	}
+	if len(artifacts) > 0 {
+		assistantMetadata["analysisArtifacts"] = artifacts
 	}
 	assistantMessage, err := s.repo.CreateMessage(ctx, domaincopilot.Message{
 		ID:        uuid.NewString(),
 		SessionID: sessionID,
 		Role:      "assistant",
-		Content:   reply,
-		Metadata:  map[string]any{"mode": sessionMeta.Mode, "source": "platform-context", "locale": locale, "analysisArtifacts": artifacts},
+		Content:   reply.Content,
+		Metadata:  assistantMetadata,
 		CreatedAt: time.Now().UTC(),
 	})
 	if err != nil {
@@ -796,15 +848,6 @@ func (s *Service) composeReply(ctx context.Context, principal domainidentity.Pri
 	)
 }
 
-func (s *Service) generateReply(ctx context.Context, principal domainidentity.Principal, prompt, locale string) string {
-	if settings, err := s.resolveAISettings(ctx); err == nil && settings.Provider.Enabled && strings.TrimSpace(settings.Provider.BaseURL) != "" && strings.TrimSpace(settings.Provider.APIKey) != "" {
-		if reply, err := s.externalAIReply(ctx, settings.Provider, prompt, locale); err == nil && strings.TrimSpace(reply) != "" {
-			return strings.TrimSpace(reply)
-		}
-	}
-	return s.composeReply(ctx, principal, prompt, locale)
-}
-
 func (s *Service) resolveAISettings(ctx context.Context) (domainsettings.AISettings, error) {
 	if s.settings == nil {
 		return domainsettings.AISettings{}, fmt.Errorf("ai settings unavailable")
@@ -812,17 +855,99 @@ func (s *Service) resolveAISettings(ctx context.Context) (domainsettings.AISetti
 	return s.settings.ResolveAISettings(ctx)
 }
 
-func (s *Service) externalAIReply(ctx context.Context, settings domainsettings.AIProviderSettings, prompt, locale string) (string, error) {
+func (s *Service) listRecentMessages(ctx context.Context, sessionID string, limit int) ([]domaincopilot.Message, error) {
+	if repo, ok := s.repo.(recentMessageRepository); ok {
+		return repo.ListRecentMessages(ctx, sessionID, limit)
+	}
+	messages, err := s.repo.ListMessages(ctx, sessionID, 100)
+	if err != nil {
+		return nil, err
+	}
+	if limit <= 0 || len(messages) <= limit {
+		return messages, nil
+	}
+	return messages[len(messages)-limit:], nil
+}
+
+func (s *Service) generateReply(ctx context.Context, messages []chatProviderMessage, locale string) chatReply {
+	settings, err := s.resolveAISettings(ctx)
+	if err != nil {
+		return chatReply{
+			Content: localize(locale,
+				"当前 AI 模型设置不可用。请先在 AI 设置中配置并启用模型提供方。",
+				"AI model settings are unavailable. Configure and enable a model provider first.",
+			),
+			Source: "model-unconfigured",
+			Error:  err.Error(),
+		}
+	}
+	provider := settings.Provider
+	if !provider.Enabled || strings.TrimSpace(provider.BaseURL) == "" || strings.TrimSpace(provider.APIKey) == "" {
+		return chatReply{
+			Content: localize(locale,
+				"当前没有启用可用的大模型提供方。请在 AI 设置中启用提供方并填写 Base URL、API Key 和模型名称。",
+				"No enabled model provider is available. Enable a provider and set its Base URL, API key, and model name in AI settings.",
+			),
+			Source:       "model-unconfigured",
+			Model:        provider.Model,
+			ProviderID:   provider.ID,
+			ProviderKind: provider.ProviderKind,
+		}
+	}
+	reply, err := s.externalAIReply(ctx, provider, messages, locale)
+	if err != nil {
+		return chatReply{
+			Content: localize(locale,
+				fmt.Sprintf("大模型调用失败：%s。请检查 AI 设置中的 Base URL、API Key、模型名称和提供方类型。", err.Error()),
+				fmt.Sprintf("Model call failed: %s. Check the Base URL, API key, model name, and provider kind in AI settings.", err.Error()),
+			),
+			Source:       "model-error",
+			Model:        provider.Model,
+			ProviderID:   provider.ID,
+			ProviderKind: provider.ProviderKind,
+			Error:        err.Error(),
+		}
+	}
+	if strings.TrimSpace(reply) == "" {
+		return chatReply{
+			Content: localize(locale,
+				"大模型调用已完成，但没有返回可显示内容。请重试，或检查当前模型是否兼容 Chat Completions。",
+				"The model call completed but returned no displayable content. Retry or check whether the selected model is compatible.",
+			),
+			Source:       "model-empty",
+			Model:        provider.Model,
+			ProviderID:   provider.ID,
+			ProviderKind: provider.ProviderKind,
+		}
+	}
+	return chatReply{
+		Content:      strings.TrimSpace(reply),
+		Source:       "model-provider",
+		Model:        provider.Model,
+		ProviderID:   provider.ID,
+		ProviderKind: provider.ProviderKind,
+	}
+}
+
+func (s *Service) externalAIReply(ctx context.Context, settings domainsettings.AIProviderSettings, messages []chatProviderMessage, locale string) (string, error) {
+	switch strings.TrimSpace(settings.ProviderKind) {
+	case "anthropic":
+		return s.anthropicAIReply(ctx, settings, messages, locale)
+	case "gemini":
+		return s.geminiAIReply(ctx, settings, messages, locale)
+	default:
+		return s.openAICompatibleAIReply(ctx, settings, messages, locale)
+	}
+}
+
+func (s *Service) openAICompatibleAIReply(ctx context.Context, settings domainsettings.AIProviderSettings, messages []chatProviderMessage, locale string) (string, error) {
 	endpoint := strings.TrimRight(strings.TrimSpace(settings.BaseURL), "/")
 	if !strings.HasSuffix(endpoint, "/chat/completions") {
 		endpoint += "/chat/completions"
 	}
 	payload := map[string]any{
-		"model": settings.Model,
-		"messages": []map[string]string{
-			{"role": "system", "content": systemPrompt(locale)},
-			{"role": "user", "content": strings.TrimSpace(prompt)},
-		},
+		"model":       settings.Model,
+		"messages":    messages,
 		"temperature": 0.2,
 	}
 	encoded, err := json.Marshal(payload)
@@ -843,27 +968,318 @@ func (s *Service) externalAIReply(ctx context.Context, settings domainsettings.A
 	if resp.StatusCode >= http.StatusBadRequest {
 		return "", fmt.Errorf("ai provider returned %s", resp.Status)
 	}
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return "", err
+	}
+	return openAICompatibleChatReplyFromBody(raw)
+}
+
+func (s *Service) anthropicAIReply(ctx context.Context, settings domainsettings.AIProviderSettings, messages []chatProviderMessage, locale string) (string, error) {
+	endpoint := strings.TrimRight(strings.TrimSpace(settings.BaseURL), "/")
+	if !strings.HasSuffix(endpoint, "/messages") {
+		endpoint += "/messages"
+	}
+	payload := map[string]any{
+		"model":       settings.Model,
+		"system":      systemPrompt(locale),
+		"messages":    anthropicMessages(messages),
+		"temperature": 0.2,
+		"max_tokens":  1024,
+	}
+	encoded, err := json.Marshal(payload)
+	if err != nil {
+		return "", err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(encoded))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("x-api-key", strings.TrimSpace(settings.APIKey))
+	req.Header.Set("anthropic-version", "2023-06-01")
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := s.http.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= http.StatusBadRequest {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return "", fmt.Errorf("ai provider returned %s: %s", resp.Status, strings.TrimSpace(string(body)))
+	}
+	var body struct {
+		Content []struct {
+			Type string `json:"type"`
+			Text string `json:"text"`
+		} `json:"content"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return "", err
+	}
+	parts := make([]string, 0, len(body.Content))
+	for _, item := range body.Content {
+		if strings.TrimSpace(item.Text) != "" {
+			parts = append(parts, strings.TrimSpace(item.Text))
+		}
+	}
+	return strings.Join(parts, "\n"), nil
+}
+
+func (s *Service) geminiAIReply(ctx context.Context, settings domainsettings.AIProviderSettings, messages []chatProviderMessage, locale string) (string, error) {
+	endpoint := strings.TrimRight(strings.TrimSpace(settings.BaseURL), "/")
+	if !strings.Contains(endpoint, ":generateContent") {
+		if !strings.Contains(endpoint, "/models/") {
+			endpoint = strings.TrimRight(endpoint, "/") + "/models/" + strings.TrimSpace(settings.Model)
+		}
+		endpoint = strings.TrimRight(endpoint, "/") + ":generateContent"
+	}
+	payload := map[string]any{
+		"systemInstruction": map[string]any{
+			"parts": []map[string]string{{"text": systemPrompt(locale)}},
+		},
+		"contents":         geminiMessages(messages),
+		"generationConfig": map[string]any{"temperature": 0.2},
+	}
+	encoded, err := json.Marshal(payload)
+	if err != nil {
+		return "", err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(encoded))
+	if err != nil {
+		return "", err
+	}
+	query := req.URL.Query()
+	query.Set("key", strings.TrimSpace(settings.APIKey))
+	req.URL.RawQuery = query.Encode()
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := s.http.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= http.StatusBadRequest {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return "", fmt.Errorf("ai provider returned %s: %s", resp.Status, strings.TrimSpace(string(body)))
+	}
+	var body struct {
+		Candidates []struct {
+			Content struct {
+				Parts []struct {
+					Text string `json:"text"`
+				} `json:"parts"`
+			} `json:"content"`
+		} `json:"candidates"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return "", err
+	}
+	parts := []string{}
+	for _, candidate := range body.Candidates {
+		for _, part := range candidate.Content.Parts {
+			if strings.TrimSpace(part.Text) != "" {
+				parts = append(parts, strings.TrimSpace(part.Text))
+			}
+		}
+		if len(parts) > 0 {
+			break
+		}
+	}
+	return strings.Join(parts, "\n"), nil
+}
+
+func systemPrompt(locale string) string {
+	if locale == "zh-CN" {
+		return "你是 soha 的通用 AI 聊天助手。直接回答用户问题，保持简洁、自然、可执行。不要声称已经读取平台上下文、数据库、告警、集群或工具结果，除非用户消息或系统显式提供了这些内容。"
+	}
+	return "You are soha's general AI chat assistant. Answer the user's question directly, concisely, and naturally. Do not claim access to platform context, databases, alerts, clusters, or tool results unless they were explicitly provided in the conversation."
+}
+
+func buildProviderChatMessages(history []domaincopilot.Message, current domaincopilot.Message, locale string) []chatProviderMessage {
+	messages := []chatProviderMessage{{Role: "system", Content: systemPrompt(locale)}}
+	for _, item := range history {
+		if current.ID != "" && item.ID == current.ID {
+			continue
+		}
+		if isLegacyPlatformContextMessage(item) {
+			continue
+		}
+		role := strings.TrimSpace(item.Role)
+		if role != "assistant" && role != "user" {
+			continue
+		}
+		content := strings.TrimSpace(item.Content)
+		if content == "" {
+			continue
+		}
+		messages = append(messages, chatProviderMessage{Role: role, Content: content})
+	}
+	if strings.TrimSpace(current.Content) != "" {
+		messages = append(messages, chatProviderMessage{Role: "user", Content: strings.TrimSpace(current.Content)})
+	}
+	return messages
+}
+
+func anthropicMessages(messages []chatProviderMessage) []map[string]string {
+	out := make([]map[string]string, 0, len(messages))
+	for _, item := range messages {
+		if item.Role == "system" {
+			continue
+		}
+		role := item.Role
+		if role != "assistant" {
+			role = "user"
+		}
+		out = append(out, map[string]string{"role": role, "content": item.Content})
+	}
+	return out
+}
+
+func geminiMessages(messages []chatProviderMessage) []map[string]any {
+	out := make([]map[string]any, 0, len(messages))
+	for _, item := range messages {
+		if item.Role == "system" {
+			continue
+		}
+		role := "user"
+		if item.Role == "assistant" {
+			role = "model"
+		}
+		out = append(out, map[string]any{
+			"role":  role,
+			"parts": []map[string]string{{"text": item.Content}},
+		})
+	}
+	return out
+}
+
+func markLegacyPlatformContextMessages(messages []domaincopilot.Message) []domaincopilot.Message {
+	out := append([]domaincopilot.Message(nil), messages...)
+	for index := range out {
+		if !isLegacyPlatformContextMessage(out[index]) {
+			continue
+		}
+		metadata := copyMessageMetadata(out[index].Metadata)
+		metadata["source"] = "legacy-platform-context"
+		metadata["legacyFallback"] = true
+		metadata["hiddenInGeneralChat"] = true
+		out[index].Metadata = metadata
+	}
+	return out
+}
+
+func copyMessageMetadata(input map[string]any) map[string]any {
+	out := make(map[string]any, len(input)+3)
+	for key, value := range input {
+		out[key] = value
+	}
+	return out
+}
+
+func isLegacyPlatformContextMessage(message domaincopilot.Message) bool {
+	if message.Role != "assistant" {
+		return false
+	}
+	if messageHasAnalysisArtifacts(message.Metadata) {
+		return false
+	}
+	source := strings.TrimSpace(fmt.Sprint(message.Metadata["source"]))
+	content := strings.TrimSpace(message.Content)
+	return source == "platform-context" ||
+		strings.HasPrefix(content, "当前平台上下文：") ||
+		strings.HasPrefix(content, "当前集群上下文：") ||
+		strings.HasPrefix(content, "当前构建上下文：") ||
+		strings.HasPrefix(content, "当前告警上下文：") ||
+		strings.HasPrefix(content, "当前审计上下文：") ||
+		strings.HasPrefix(content, "Current platform context:") ||
+		strings.HasPrefix(content, "Current clusters context:") ||
+		strings.HasPrefix(content, "Current builds context:") ||
+		strings.HasPrefix(content, "Current alerts context:") ||
+		strings.HasPrefix(content, "Current audit context:")
+}
+
+func messageHasAnalysisArtifacts(metadata map[string]any) bool {
+	raw, ok := metadata["analysisArtifacts"]
+	if !ok || raw == nil {
+		return false
+	}
+	switch value := raw.(type) {
+	case []domaincopilot.AnalysisArtifact:
+		return len(value) > 0
+	case []any:
+		return len(value) > 0
+	case json.RawMessage:
+		return len(value) > 2 && string(value) != "null"
+	case string:
+		trimmed := strings.TrimSpace(value)
+		return trimmed != "" && trimmed != "[]" && trimmed != "null"
+	default:
+		return fmt.Sprint(value) != "" && fmt.Sprint(value) != "[]"
+	}
+}
+
+func openAICompatibleChatReplyFromBody(raw []byte) (string, error) {
+	body := strings.TrimSpace(string(raw))
+	if body == "" {
+		return "", nil
+	}
+	if strings.HasPrefix(body, "data:") {
+		var builder strings.Builder
+		for _, line := range strings.Split(body, "\n") {
+			line = strings.TrimSpace(line)
+			if !strings.HasPrefix(line, "data:") {
+				continue
+			}
+			payload := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+			if payload == "" || payload == "[DONE]" {
+				continue
+			}
+			reply, err := openAICompatibleChatReplyPartFromJSON([]byte(payload))
+			if err != nil {
+				return "", err
+			}
+			if reply != "" {
+				builder.WriteString(reply)
+			}
+		}
+		return strings.TrimSpace(builder.String()), nil
+	}
+	return openAICompatibleChatReplyFromJSON([]byte(body))
+}
+
+func openAICompatibleChatReplyFromJSON(raw []byte) (string, error) {
+	reply, err := openAICompatibleChatReplyPartFromJSON(raw)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(reply), nil
+}
+
+func openAICompatibleChatReplyPartFromJSON(raw []byte) (string, error) {
 	var body struct {
 		Choices []struct {
 			Message struct {
 				Content string `json:"content"`
 			} `json:"message"`
+			Delta struct {
+				Content string `json:"content"`
+			} `json:"delta"`
+			Text string `json:"text"`
 		} `json:"choices"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+	if err := json.Unmarshal(raw, &body); err != nil {
 		return "", err
 	}
-	if len(body.Choices) == 0 {
-		return "", nil
+	for _, choice := range body.Choices {
+		switch {
+		case strings.TrimSpace(choice.Message.Content) != "":
+			return choice.Message.Content, nil
+		case strings.TrimSpace(choice.Delta.Content) != "":
+			return choice.Delta.Content, nil
+		case strings.TrimSpace(choice.Text) != "":
+			return choice.Text, nil
+		}
 	}
-	return body.Choices[0].Message.Content, nil
-}
-
-func systemPrompt(locale string) string {
-	if locale == "zh-CN" {
-		return "你是 soha 的平台 AI 助手。回答时尽量简洁、可执行，优先根据平台上下文给出排查建议和结论。"
-	}
-	return "You are the soha platform AI assistant. Keep answers concise and actionable, and prioritize investigation guidance grounded in platform context."
+	return "", nil
 }
 
 func ternarySeverity(condition bool, truthy, falsy string) string {

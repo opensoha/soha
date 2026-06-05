@@ -40,7 +40,26 @@ const testState = vi.hoisted(() => ({
     ],
   } as PermissionSnapshot,
   responses: {} as Record<string, unknown>,
+  providerModels: ["gpt-5.5", "gpt-5.4-mini"],
 }));
+
+const apiGetMock = vi.hoisted(() =>
+  vi.fn((path: string) =>
+    Promise.resolve({ data: testState.responses[path] ?? {} }),
+  ),
+);
+const apiPostMock = vi.hoisted(() =>
+  vi.fn((path: string) => {
+    if (path === "/settings/ai/provider/models") {
+      return Promise.resolve({ data: { models: testState.providerModels } });
+    }
+    if (path === "/settings/ai/provider/test") {
+      return Promise.resolve({ data: { ok: true, reply: "ok" } });
+    }
+    return Promise.resolve({ data: {} });
+  }),
+);
+const apiPutMock = vi.hoisted(() => vi.fn(() => Promise.resolve({ data: {} })));
 
 vi.mock("@/features/auth/permission-snapshot", async () => {
   const actual = await vi.importActual<
@@ -57,11 +76,9 @@ vi.mock("@/features/auth/permission-snapshot", async () => {
 
 vi.mock("@/services/api-client", () => ({
   api: {
-    get: vi.fn((path: string) =>
-      Promise.resolve({ data: testState.responses[path] ?? {} }),
-    ),
-    put: vi.fn(),
-    post: vi.fn(),
+    get: apiGetMock,
+    put: apiPutMock,
+    post: apiPostMock,
     delete: vi.fn(),
     upload: vi.fn(),
   },
@@ -220,6 +237,23 @@ async function renderWithProviders(node: ReactNode, route: string) {
   return container;
 }
 
+async function fillInput(selector: string, value: string) {
+  const input = document.body.querySelector(selector) as HTMLInputElement | null;
+  expect(input).not.toBeNull();
+
+  await act(async () => {
+    const valueSetter = Object.getOwnPropertyDescriptor(
+      window.HTMLInputElement.prototype,
+      "value",
+    )?.set;
+    valueSetter?.call(input, value);
+    input?.dispatchEvent(new Event("input", { bubbles: true }));
+    input?.dispatchEvent(new Event("change", { bubbles: true }));
+    await Promise.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+}
+
 describe("settings ai page rendering", () => {
   beforeAll(() => {
     class ResizeObserverMock {
@@ -257,6 +291,7 @@ describe("settings ai page rendering", () => {
 
   beforeEach(() => {
     setDefaultResponses();
+    testState.providerModels = ["gpt-5.5", "gpt-5.4-mini"];
   });
 
   afterEach(async () => {
@@ -390,6 +425,9 @@ describe("settings ai page rendering", () => {
       document.body.querySelector('[data-testid="ai-provider-model"]'),
     ).not.toBeNull();
     expect(
+      document.body.querySelector('[data-testid="ai-provider-model-options"]'),
+    ).toBeNull();
+    expect(
       document.body.querySelector('[data-testid="ai-provider-enabled"]'),
     ).not.toBeNull();
     expect(
@@ -401,6 +439,150 @@ describe("settings ai page rendering", () => {
     expect(
       document.body.querySelector('[data-testid="ai-provider-test"]'),
     ).not.toBeNull();
+  });
+
+  it("fetches provider models while keeping manual model entry available", async () => {
+    const container = await renderWithProviders(
+      <AISettingsPage embedded />,
+      "/ai-workbench/model-settings",
+    );
+    const addButton = container.querySelector(
+      '[data-testid="ai-provider-add"]',
+    ) as HTMLButtonElement | null;
+
+    await act(async () => {
+      addButton?.click();
+      await Promise.resolve();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    const modelInput = document.body.querySelector(
+      '[data-testid="ai-provider-model"] input, input[data-testid="ai-provider-model"]',
+    ) as HTMLInputElement | null;
+    expect(modelInput).not.toBeNull();
+    expect(modelInput?.disabled).toBe(false);
+    expect(
+      document.body.querySelector('[data-testid="ai-provider-model-options"]'),
+    ).toBeNull();
+
+    await fillInput('[data-testid="ai-provider-base-url"]', "https://api.ctsn.cc/v1");
+    await fillInput('[data-testid="ai-provider-api-key"]', "secret");
+
+    const fetchButton = document.body.querySelector(
+      '[data-testid="ai-provider-fetch-models"]',
+    ) as HTMLButtonElement | null;
+
+    await act(async () => {
+      fetchButton?.click();
+      await Promise.resolve();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(apiPostMock).toHaveBeenCalledWith("/settings/ai/provider/models", {
+      provider: expect.objectContaining({
+        providerKind: "openai-compatible",
+        baseUrl: "https://api.ctsn.cc/v1",
+        apiKey: "secret",
+        model: "",
+      }),
+    });
+    const selectedModelInput = document.body.querySelector(
+      '[data-testid="ai-provider-model"] input, input[data-testid="ai-provider-model"]',
+    ) as HTMLInputElement | null;
+    expect(selectedModelInput?.value).toBe("gpt-5.5");
+  });
+
+  it("tests provider connectivity with a manually entered model", async () => {
+    const container = await renderWithProviders(
+      <AISettingsPage embedded />,
+      "/ai-workbench/model-settings",
+    );
+    const addButton = container.querySelector(
+      '[data-testid="ai-provider-add"]',
+    ) as HTMLButtonElement | null;
+
+    await act(async () => {
+      addButton?.click();
+      await Promise.resolve();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    await fillInput('[data-testid="ai-provider-name"]', "private-gateway");
+    await fillInput('[data-testid="ai-provider-base-url"]', "https://gateway.example.com/v1");
+    await fillInput('[data-testid="ai-provider-api-key"]', "secret");
+    await fillInput(
+      '[data-testid="ai-provider-model"] input, input[data-testid="ai-provider-model"]',
+      "custom-chat-model",
+    );
+
+    const testButton = document.body.querySelector(
+      '[data-testid="ai-provider-test"]',
+    ) as HTMLButtonElement | null;
+    await act(async () => {
+      testButton?.click();
+      await Promise.resolve();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(apiPostMock).toHaveBeenCalledWith("/settings/ai/provider/test", {
+      provider: expect.objectContaining({
+        name: "private-gateway",
+        providerKind: "openai-compatible",
+        baseUrl: "https://gateway.example.com/v1",
+        apiKey: "secret",
+        model: "custom-chat-model",
+      }),
+      prompt: "hello",
+    });
+  });
+
+  it("tests provider connectivity with the selected fetched model", async () => {
+    const container = await renderWithProviders(
+      <AISettingsPage embedded />,
+      "/ai-workbench/model-settings",
+    );
+    const addButton = container.querySelector(
+      '[data-testid="ai-provider-add"]',
+    ) as HTMLButtonElement | null;
+
+    await act(async () => {
+      addButton?.click();
+      await Promise.resolve();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    await fillInput('[data-testid="ai-provider-name"]', "ctsn");
+    await fillInput('[data-testid="ai-provider-base-url"]', "https://api.ctsn.cc/v1");
+    await fillInput('[data-testid="ai-provider-api-key"]', "secret");
+
+    const fetchButton = document.body.querySelector(
+      '[data-testid="ai-provider-fetch-models"]',
+    ) as HTMLButtonElement | null;
+    await act(async () => {
+      fetchButton?.click();
+      await Promise.resolve();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    const testButton = document.body.querySelector(
+      '[data-testid="ai-provider-test"]',
+    ) as HTMLButtonElement | null;
+    await act(async () => {
+      testButton?.click();
+      await Promise.resolve();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(apiPostMock).toHaveBeenCalledWith("/settings/ai/provider/test", {
+      provider: expect.objectContaining({
+        name: "ctsn",
+        providerKind: "openai-compatible",
+        baseUrl: "https://api.ctsn.cc/v1",
+        apiKey: "secret",
+        model: "gpt-5.5",
+      }),
+      prompt: "hello",
+    });
   });
 
   it("keeps the provider modal available in provider-only embedded mode", async () => {

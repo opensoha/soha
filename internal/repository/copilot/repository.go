@@ -132,6 +132,36 @@ func (r *Repository) ListMessages(ctx context.Context, sessionID string, limit i
 	return items, rows.Err()
 }
 
+func (r *Repository) ListRecentMessages(ctx context.Context, sessionID string, limit int) ([]domaincopilot.Message, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	rows, err := r.db.WithContext(ctx).Raw(`
+		SELECT id, session_id, role, content, metadata, created_at
+		FROM (
+			SELECT id, session_id, role, content, metadata, created_at
+			FROM ai_messages
+			WHERE session_id = ?
+			ORDER BY created_at DESC
+			LIMIT ?
+		) recent_messages
+		ORDER BY created_at ASC
+	`, sessionID, limit).Rows()
+	if err != nil {
+		return nil, fmt.Errorf("query recent ai messages: %w", err)
+	}
+	defer rows.Close()
+	items := make([]domaincopilot.Message, 0, limit)
+	for rows.Next() {
+		item, err := scanMessage(rows)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
 func (r *Repository) CreateMessage(ctx context.Context, message domaincopilot.Message) (domaincopilot.Message, error) {
 	metadata, err := json.Marshal(message.Metadata)
 	if err != nil {

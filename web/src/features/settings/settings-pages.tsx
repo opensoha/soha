@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { MouseEvent, ReactNode } from "react";
 import {
   Alert,
+  AutoComplete,
   Button,
   Card,
   Form,
@@ -1244,6 +1245,17 @@ function renderAgentTagList(
   );
 }
 
+function uniqueProviderModelOptions(models: string[], currentModel?: string) {
+  const values = new Set<string>();
+  [...models, currentModel || ""].forEach((item) => {
+    const value = String(item || "").trim();
+    if (value) {
+      values.add(value);
+    }
+  });
+  return [...values].map((item) => ({ value: item, label: item }));
+}
+
 export function AISettingsPage({ embedded = false }: SettingsPageProps = {}) {
   const queryClient = useQueryClient();
   const permissionSnapshotQuery = usePermissionSnapshot();
@@ -1472,7 +1484,23 @@ export function AISettingsPage({ embedded = false }: SettingsPageProps = {}) {
         { provider },
       ),
     onSuccess: (response) => {
-      setProviderModels(response.data.models ?? []);
+      const models = [
+        ...new Set(
+          (response.data.models ?? [])
+            .map((item) => String(item || "").trim())
+            .filter(Boolean),
+        ),
+      ];
+      setProviderModels(models);
+      const currentModel = String(
+        providerForm.getFieldValue("model") || "",
+      ).trim();
+      if (models.length > 0 && !models.includes(currentModel)) {
+        providerForm.setFieldValue("model", models[0]);
+      }
+      if (models.length === 0) {
+        providerForm.setFieldValue("model", undefined);
+      }
       void message.success("已获取模型列表");
     },
     onError: (err: Error) => void message.error(err.message),
@@ -1495,6 +1523,10 @@ export function AISettingsPage({ embedded = false }: SettingsPageProps = {}) {
   });
 
   const settings = data?.data;
+  const providerModelOptions = uniqueProviderModelOptions(
+    providerModels,
+    editingProvider?.model,
+  );
   const agentProviders = workbenchCatalogQuery.data?.data?.agentProviders ?? [];
   const agentCapabilities = workbenchCatalogQuery.data?.data?.capabilities ?? [];
   const agentRuns = agentRunsQuery.data?.data ?? [];
@@ -2250,25 +2282,26 @@ export function AISettingsPage({ embedded = false }: SettingsPageProps = {}) {
         >
           <Input.Password data-testid="ai-provider-api-key" />
         </Form.Item>
-        <Form.Item name="model" label="模型">
-          <Input
+        <Form.Item
+          name="model"
+          label="模型"
+          rules={[{ required: true, message: "请选择或输入模型" }]}
+        >
+          <AutoComplete
             data-testid="ai-provider-model"
-            placeholder="手动填写模型，或先获取模型列表再选择"
+            options={providerModelOptions}
+            filterOption={(inputValue, option) =>
+              String(option?.value ?? "")
+                .toLowerCase()
+                .includes(inputValue.toLowerCase())
+            }
+            placeholder={
+              providerModelOptions.length > 0
+                ? "选择模型，或手动输入"
+                : "可手动输入模型，或先获取模型列表"
+            }
           />
         </Form.Item>
-        {providerModels.length > 0 ? (
-          <Form.Item label="模型列表">
-            <Select
-              data-testid="ai-provider-model-options"
-              showSearch
-              options={providerModels.map((item) => ({
-                value: item,
-                label: item,
-              }))}
-              onChange={(value) => providerForm.setFieldValue("model", value)}
-            />
-          </Form.Item>
-        ) : null}
         <Form.Item name="enabled" label="启用" valuePropName="checked">
           <Switch data-testid="ai-provider-enabled" />
         </Form.Item>
@@ -2280,20 +2313,18 @@ export function AISettingsPage({ embedded = false }: SettingsPageProps = {}) {
                 "providerKind",
                 "baseUrl",
                 "apiKey",
-                "model",
-                "name",
-                "enabled",
               ]);
+              const currentValues = providerForm.getFieldsValue();
               fetchModelsMutation.mutate({
-                id: String(values.id || editingProvider?.id || ""),
-                name: String(values.name || ""),
+                id: String(currentValues.id || editingProvider?.id || ""),
+                name: String(currentValues.name || ""),
                 providerKind: String(
                   values.providerKind || "openai-compatible",
                 ),
-                enabled: Boolean(values.enabled),
+                enabled: Boolean(currentValues.enabled),
                 baseUrl: String(values.baseUrl || ""),
                 apiKey: String(values.apiKey || ""),
-                model: String(values.model || ""),
+                model: String(currentValues.model || ""),
               });
             }}
             loading={fetchModelsMutation.isPending}
@@ -2311,14 +2342,15 @@ export function AISettingsPage({ embedded = false }: SettingsPageProps = {}) {
                 "name",
                 "enabled",
               ]);
+              const currentValues = providerForm.getFieldsValue();
               testProviderMutation.mutate({
                 provider: {
-                  id: String(values.id || editingProvider?.id || ""),
-                  name: String(values.name || ""),
+                  id: String(currentValues.id || editingProvider?.id || ""),
+                  name: String(values.name || currentValues.name || ""),
                   providerKind: String(
                     values.providerKind || "openai-compatible",
                   ),
-                  enabled: Boolean(values.enabled),
+                  enabled: Boolean(values.enabled ?? currentValues.enabled),
                   baseUrl: String(values.baseUrl || ""),
                   apiKey: String(values.apiKey || ""),
                   model: String(values.model || ""),

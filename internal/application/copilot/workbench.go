@@ -1173,7 +1173,7 @@ func graphRootNodeID(scope domaincopilot.SessionScope) string {
 }
 
 func graphRootTitle(scope domaincopilot.SessionScope) string {
-	return firstNonEmpty(scope.Workload, scope.Service, scope.AlertID, scope.Namespace, scope.ClusterID, "当前调查")
+	return firstNonEmpty(scope.Workload, scope.Service, scope.AlertID, scope.Namespace, scope.ClusterID, "当前上下文")
 }
 
 func graphRootSubtitle(scope domaincopilot.SessionScope) string {

@@ -264,7 +264,7 @@ describe('AIOperationsPage delete actions', () => {
     })
     await flush()
 
-    const createSessionButton = findButtonByLabel(container, '创建调查会话')
+    const createSessionButton = findButtonByLabel(container, '创建 AI 会话')
     expect(createSessionButton).toBeTruthy()
     expect(createSessionButton?.disabled).toBe(true)
     expect(createSessionButton?.getAttribute('title')).toBe('缺少 observe.ai.view 权限')

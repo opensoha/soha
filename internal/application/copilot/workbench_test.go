@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -125,6 +127,67 @@ func TestWithinAgentRunWindowsMirrorAutomationRunWindows(t *testing.T) {
 	}
 	if withinAgentRunCooldownWindow(recentRuns, 0) {
 		t.Fatalf("expected zero cooldown to disable external agent policy cooldown")
+	}
+}
+
+func TestExternalAIReplyParsesDataPrefixedOpenAICompatibleChunks(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/chat/completions" {
+			t.Fatalf("unexpected chat completion path: %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"我先按当前会话梳理问题。\"}}]}\n"))
+		_, _ = w.Write([]byte("data: [DONE]\n"))
+	}))
+	defer server.Close()
+
+	service := &Service{http: server.Client()}
+	reply, err := service.externalAIReply(context.Background(), domainsettings.AIProviderSettings{
+		BaseURL: server.URL,
+		APIKey:  "test-key",
+		Model:   "provider-model",
+	}, []chatProviderMessage{
+		{Role: "system", Content: systemPrompt("zh-CN")},
+		{Role: "user", Content: "帮我梳理当前问题"},
+	}, "zh-CN")
+	if err != nil {
+		t.Fatalf("external AI reply: %v", err)
+	}
+	if reply != "我先按当前会话梳理问题。" {
+		t.Fatalf("expected data-prefixed reply, got %q", reply)
+	}
+}
+
+func TestOpenAICompatibleChatReplyFromBodyAccumulatesSSEChunks(t *testing.T) {
+	reply, err := openAICompatibleChatReplyFromBody([]byte(
+		"data: {\"choices\":[{\"delta\":{\"content\":\"Hello\"}}]}\n" +
+			"data: {\"choices\":[{\"delta\":{\"content\":\" world\"}}]}\n" +
+			"data: {\"choices\":[{\"delta\":{\"content\":\".\"}}]}\n" +
+			"data: [DONE]\n",
+	))
+	if err != nil {
+		t.Fatalf("parse streamed reply: %v", err)
+	}
+	if reply != "Hello world." {
+		t.Fatalf("expected accumulated streamed reply, got %q", reply)
+	}
+}
+
+func TestLegacyPlatformContextPredicatePreservesAnalysisArtifacts(t *testing.T) {
+	message := domaincopilot.Message{
+		Role:    "assistant",
+		Content: "发现数据库连接异常",
+		Metadata: map[string]any{
+			"source": "platform-context",
+			"analysisArtifacts": []domaincopilot.AnalysisArtifact{{
+				Kind:    "root_cause",
+				RunID:   "run-1",
+				Summary: "发现数据库连接异常",
+			}},
+		},
+	}
+	if isLegacyPlatformContextMessage(message) {
+		t.Fatalf("analysis artifacts persisted with old platform-context source must stay visible")
 	}
 }
 
@@ -310,6 +373,175 @@ func TestWorkbenchCatalogRejectsUsersWithoutAIWorkbenchPermissions(t *testing.T)
 	}
 	if repo.listDataSourcesCalled {
 		t.Fatalf("expected catalog to fail before reading data sources")
+	}
+}
+
+func TestSendMessageGeneralModeUsesModelProviderWithoutAutoAnalysis(t *testing.T) {
+	defer appaccess.SetRolePermissionMatrix(nil)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/chat/completions" {
+			t.Fatalf("unexpected chat completion path: %s", r.URL.Path)
+		}
+		var payload struct {
+			Messages []struct {
+				Role    string `json:"role"`
+				Content string `json:"content"`
+			} `json:"messages"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatalf("decode provider payload: %v", err)
+		}
+		if len(payload.Messages) != 2 || payload.Messages[1].Content != "hi" {
+			t.Fatalf("expected system + user provider messages, got %#v", payload.Messages)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"Hello from the model."}}]}`))
+	}))
+	defer server.Close()
+
+	service, repo := newInspectionAuthzTestService(map[string][]string{
+		"chat": {appaccess.PermObserveAIChatUse},
+	})
+	service.http = server.Client()
+	service.settings = inspectionAuthzSettingsResolver{settings: domainsettings.AISettings{
+		Provider: domainsettings.AIProviderSettings{
+			ID:           "provider-1",
+			ProviderKind: "openai-compatible",
+			Enabled:      true,
+			BaseURL:      server.URL,
+			APIKey:       "secret-key",
+			Model:        "test-model",
+		},
+	}}
+	repo.session = domaincopilot.Session{
+		ID:        "session-1",
+		Title:     "General chat",
+		CreatedBy: "user-1",
+		Metadata:  sessionMetadataMap(domaincopilot.SessionMetadata{Mode: "general"}),
+		CreatedAt: time.Now().UTC(),
+		UpdatedAt: time.Now().UTC(),
+	}
+
+	envelope, err := service.SendMessage(context.Background(), domainidentity.Principal{
+		UserID: "user-1",
+		Roles:  []string{"chat"},
+	}, "session-1", "hi", "en-US")
+	if err != nil {
+		t.Fatalf("send general chat message: %v", err)
+	}
+	if len(envelope.ToolCalls) != 0 || len(envelope.AnalysisArtifacts) != 0 || len(envelope.SessionPatch) != 0 {
+		t.Fatalf("expected general chat to skip automatic analysis, got toolCalls=%#v artifacts=%#v patch=%#v", envelope.ToolCalls, envelope.AnalysisArtifacts, envelope.SessionPatch)
+	}
+	if len(envelope.Messages) != 2 || envelope.Messages[1].Content != "Hello from the model." {
+		t.Fatalf("expected model reply envelope, got %#v", envelope.Messages)
+	}
+	metadata := envelope.Messages[1].Metadata
+	if metadata["source"] != "model-provider" || metadata["model"] != "test-model" || metadata["providerKind"] != "openai-compatible" {
+		t.Fatalf("expected model-provider metadata, got %#v", metadata)
+	}
+	if len(repo.createdMessages) != 2 {
+		t.Fatalf("expected user and assistant messages to be persisted, got %#v", repo.createdMessages)
+	}
+}
+
+func TestSendMessageGeneralModeUsesRecentConversationWindow(t *testing.T) {
+	defer appaccess.SetRolePermissionMatrix(nil)
+	var providerMessages []chatProviderMessage
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload struct {
+			Messages []chatProviderMessage `json:"messages"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatalf("decode provider payload: %v", err)
+		}
+		providerMessages = payload.Messages
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"recent reply"}}]}`))
+	}))
+	defer server.Close()
+
+	service, repo := newInspectionAuthzTestService(map[string][]string{
+		"chat": {appaccess.PermObserveAIChatUse},
+	})
+	service.http = server.Client()
+	service.settings = inspectionAuthzSettingsResolver{settings: domainsettings.AISettings{
+		Provider: domainsettings.AIProviderSettings{
+			ID:           "provider-1",
+			ProviderKind: "openai-compatible",
+			Enabled:      true,
+			BaseURL:      server.URL,
+			APIKey:       "secret-key",
+			Model:        "test-model",
+		},
+	}}
+	repo.session = domaincopilot.Session{
+		ID:        "session-1",
+		Title:     "General chat",
+		CreatedBy: "user-1",
+		Metadata:  sessionMetadataMap(domaincopilot.SessionMetadata{Mode: "general"}),
+		CreatedAt: time.Now().UTC(),
+		UpdatedAt: time.Now().UTC(),
+	}
+	for index := 1; index <= 25; index++ {
+		repo.messages = append(repo.messages, domaincopilot.Message{
+			ID:        fmt.Sprintf("history-%02d", index),
+			SessionID: "session-1",
+			Role:      "user",
+			Content:   fmt.Sprintf("history message %02d", index),
+			CreatedAt: time.Now().UTC().Add(time.Duration(index) * time.Second),
+		})
+	}
+
+	_, err := service.SendMessage(context.Background(), domainidentity.Principal{
+		UserID: "user-1",
+		Roles:  []string{"chat"},
+	}, "session-1", "current question", "en-US")
+	if err != nil {
+		t.Fatalf("send general chat message: %v", err)
+	}
+	serialized := fmt.Sprint(providerMessages)
+	if strings.Contains(serialized, "history message 01") {
+		t.Fatalf("provider payload should not include oldest history: %#v", providerMessages)
+	}
+	if !strings.Contains(serialized, "history message 25") || !strings.Contains(serialized, "current question") {
+		t.Fatalf("provider payload should include recent history and current question: %#v", providerMessages)
+	}
+}
+
+func TestSendMessageGeneralModeReportsMissingModelProvider(t *testing.T) {
+	defer appaccess.SetRolePermissionMatrix(nil)
+	service, repo := newInspectionAuthzTestService(map[string][]string{
+		"chat": {appaccess.PermObserveAIChatUse},
+	})
+	service.settings = inspectionAuthzSettingsResolver{settings: domainsettings.AISettings{}}
+	repo.session = domaincopilot.Session{
+		ID:        "session-1",
+		Title:     "General chat",
+		CreatedBy: "user-1",
+		Metadata:  sessionMetadataMap(domaincopilot.SessionMetadata{Mode: "general"}),
+		CreatedAt: time.Now().UTC(),
+		UpdatedAt: time.Now().UTC(),
+	}
+
+	envelope, err := service.SendMessage(context.Background(), domainidentity.Principal{
+		UserID: "user-1",
+		Roles:  []string{"chat"},
+	}, "session-1", "hi", "zh-CN")
+	if err != nil {
+		t.Fatalf("send general chat message without provider: %v", err)
+	}
+	if len(envelope.Messages) != 2 {
+		t.Fatalf("expected user and assistant messages, got %#v", envelope.Messages)
+	}
+	assistant := envelope.Messages[1]
+	if !strings.Contains(assistant.Content, "没有启用可用的大模型提供方") {
+		t.Fatalf("expected explicit missing provider message, got %q", assistant.Content)
+	}
+	if assistant.Metadata["source"] != "model-unconfigured" {
+		t.Fatalf("expected model-unconfigured metadata, got %#v", assistant.Metadata)
+	}
+	if strings.Contains(assistant.Content, "当前平台上下文") {
+		t.Fatalf("general chat should not fall back to platform summary, got %q", assistant.Content)
 	}
 }
 
@@ -1899,7 +2131,9 @@ type inspectionAuthzTestRepository struct {
 	getSessionCalled         bool
 	listDataSourcesCalled    bool
 	session                  domaincopilot.Session
+	messages                 []domaincopilot.Message
 	createdMessage           domaincopilot.Message
+	createdMessages          []domaincopilot.Message
 	createdRootCauseRun      domaincopilot.RootCauseRun
 	createdAgentRun          domaincopilot.AgentRun
 }
@@ -2219,12 +2453,13 @@ func (r *inspectionAuthzTestRepository) DeleteSession(context.Context, string, s
 }
 
 func (r *inspectionAuthzTestRepository) ListMessages(context.Context, string, int) ([]domaincopilot.Message, error) {
-	return nil, nil
+	return append([]domaincopilot.Message(nil), r.messages...), nil
 }
 
 func (r *inspectionAuthzTestRepository) CreateMessage(_ context.Context, message domaincopilot.Message) (domaincopilot.Message, error) {
 	if r.session.ID != "" {
 		r.createdMessage = message
+		r.createdMessages = append(r.createdMessages, message)
 		return r.createdMessage, nil
 	}
 	return domaincopilot.Message{}, errors.New("unexpected message create")

@@ -24,6 +24,7 @@ import {
   getAIWorkbenchPathForMode,
   getAIWorkbenchPathForSession,
 } from './workbench-navigation'
+import { displayWorkbenchSessionTitle } from './workbench-model'
 import {
   TOOLSET_BUDGET_FIELDS,
   buildDisabledToolOptions,
@@ -324,11 +325,11 @@ export function AIObserveOverviewPage() {
     <div className="soha-page">
       <ManagementDetailHeader
         title="AI工作台"
-        description="面向 k8s工作台的 AIOps 入口，统一承接调查、巡检、性能与工具链能力。"
+        description="面向全员的 AI 会话入口，统一承接通用问答、巡检复盘、根因、性能与工具链能力。"
         actions={
           <ManagementTableToolbar>
             <Button icon={<ToolOutlined />} onClick={() => navigate(getAIToolsPath())}>工具与技能</Button>
-            <Button type="primary" icon={<RobotOutlined />} onClick={() => navigate(getAIWorkbenchPathForMode('general'))}>进入调查工作台</Button>
+            <Button type="primary" icon={<RobotOutlined />} onClick={() => navigate(getAIWorkbenchPathForMode('general'))}>进入通用聊天</Button>
           </ManagementTableToolbar>
         }
       />
@@ -346,7 +347,7 @@ export function AIObserveOverviewPage() {
           ))}
         </div>
         <div className="soha-ai-overview-metrics">
-          <Statistic title="调查会话" value={sessions.length} prefix={<RobotOutlined />} />
+          <Statistic title="AI 会话" value={sessions.length} prefix={<RobotOutlined />} />
           <Statistic title="根因运行" value={runs.length} prefix={<RadarChartOutlined />} />
           <Statistic title="巡检运行" value={inspectionRuns.length} prefix={<AppstoreOutlined />} />
           <Statistic title="AI 洞察" value={insights.length} prefix={<ToolOutlined />} />
@@ -355,15 +356,15 @@ export function AIObserveOverviewPage() {
 
       <Row gutter={[12, 12]}>
         <Col xs={24} xl={8}>
-          <Card size="small" variant="outlined" className="soha-compact-note-card" title="最近调查">
+          <Card size="small" variant="outlined" className="soha-compact-note-card" title="最近会话">
             {sessions.length === 0 ? (
-              <ManagementState bordered={false} compact title="暂无会话" description="创建或进入调查工作台后，这里会展示最近会话。" />
+              <ManagementState bordered={false} compact title="暂无会话" description="创建或进入 AI 工作台后，这里会展示最近会话。" />
             ) : (
               <List
                 dataSource={sessions.slice(0, 5)}
                 renderItem={(item) => (
                   <List.Item actions={[<Link key="open" to={getAIWorkbenchPathForSession(item)}>打开</Link>]}>
-                    <List.Item.Meta title={item.title} description={item.metadata?.summary || item.updatedAt} />
+                    <List.Item.Meta title={displayWorkbenchSessionTitle(item.title)} description={item.metadata?.summary || item.updatedAt} />
                     {item.metadata?.mode ? <Tag>{item.metadata.mode}</Tag> : null}
                   </List.Item>
                 )}
@@ -454,7 +455,7 @@ export function AIOperationsPage() {
   const createSessionMutation = useMutation({
     mutationFn: (runId: string) => api.post<ApiResponse<WorkbenchSession>>(`/copilot/inspection-runs/${runId}/session`),
     onSuccess: (response) => {
-      void message.success('已从巡检运行创建调查会话')
+      void message.success('已从巡检运行创建 AI 会话')
       void queryClient.invalidateQueries({ queryKey: ['ai-observe-overview-sessions'] })
       navigate(getAIWorkbenchPathForSession(response.data))
     },
@@ -620,14 +621,14 @@ export function AIOperationsPage() {
     <div className="soha-page">
       <ManagementDetailHeader
         title="巡检与自动化"
-        description="统一查看巡检任务、巡检运行、自动化策略，并把发现结果送入调查工作台。"
+        description="统一查看巡检任务、巡检运行、自动化策略，并把发现结果送入 AI 会话。"
         actions={
           <ManagementTableToolbar>
             <Button onClick={() => navigate(getAIWorkbenchPathForMode('inspection_review'))} disabled={!canUseChat}>进入巡检复盘工作台</Button>
             <Button icon={<PlusOutlined />} onClick={openCreateTask} disabled={!canManageInspection} title={canManageInspection ? undefined : '缺少 observe.ai.inspection.manage 权限'}>
               新建巡检任务
             </Button>
-            <Button type="primary" onClick={() => navigate(getAIWorkbenchPathForMode('general'))} disabled={!canUseChat}>新建调查</Button>
+            <Button type="primary" onClick={() => navigate(getAIWorkbenchPathForMode('general'))} disabled={!canUseChat}>新建会话</Button>
           </ManagementTableToolbar>
         }
       />
@@ -815,9 +816,9 @@ export function AIOperationsPage() {
                 dataIndex: 'id',
                 render: (value: string) => (
                   <ManagementIconButton
-                    aria-label="创建调查会话"
+                    aria-label="创建 AI 会话"
                     size="small"
-                    tooltip="创建调查会话"
+                    tooltip="创建 AI 会话"
                     icon={<RobotOutlined />}
                     onClick={() => createSessionMutation.mutate(value)}
                     disabled={!canCreateSessionFromRun}
@@ -843,7 +844,7 @@ export function AIOperationsPage() {
           )}
         >
           <Paragraph type="secondary">
-            自动化策略只负责触发和分析范围，不应隐式替代会话级 toolset 选择。需要深入排查时，优先把结果送回调查工作台。
+            自动化策略只负责触发和分析范围，不应隐式替代会话级 toolset 选择。需要深入分析时，优先把结果送回 AI 工作台。
           </Paragraph>
           {!canManageAISettings ? (
             <Alert
@@ -1182,7 +1183,7 @@ export function AIToolsPage() {
               <Space orientation="vertical" size={16} style={{ width: '100%' }}>
                 <Flex justify="space-between" align="start" gap={12} wrap="wrap">
                   <Space size={[8, 8]} wrap>
-                    <Tag color="blue">{currentSession.title}</Tag>
+                    <Tag color="blue">{displayWorkbenchSessionTitle(currentSession.title)}</Tag>
                     <Tag>{currentSession.metadata?.mode || 'general'}</Tag>
                     <Tag>{buildScopeSummary(currentSession.metadata?.scope)}</Tag>
                     <Tag>{selectedAdapterIds.length > 0 ? `${selectedAdapterIds.length} adapters` : 'auto adapters'}</Tag>
@@ -1310,7 +1311,7 @@ export function AIToolsPage() {
             />
             <Space style={{ marginTop: 16 }}>
               <Button onClick={() => navigate(getAIModelSettingsPath(searchParams))}>前往 AI 设置</Button>
-              <Button type="primary" onClick={() => navigate(getAIWorkbenchPathForMode(currentSession?.metadata?.mode, searchParams))}>回到调查工作台</Button>
+              <Button type="primary" onClick={() => navigate(getAIWorkbenchPathForMode(currentSession?.metadata?.mode, searchParams))}>回到 AI 工作台</Button>
             </Space>
           </Card>
         </Col>

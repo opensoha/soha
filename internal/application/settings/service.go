@@ -1119,7 +1119,7 @@ func defaultEmailFieldForProviderType(providerType string) string {
 func (s *Service) fetchProviderModels(ctx context.Context, provider domainsettings.AIProviderSettings) ([]string, error) {
 	switch provider.ProviderKind {
 	case "anthropic":
-		return []string{provider.Model}, nil
+		return s.fetchAnthropicModels(ctx, provider)
 	case "gemini":
 		return s.fetchGeminiModels(ctx, provider)
 	default:
@@ -1140,6 +1140,49 @@ func (s *Service) fetchOpenAICompatibleModels(ctx context.Context, provider doma
 		return nil, err
 	}
 	req.Header.Set("Authorization", "Bearer "+provider.APIKey)
+	resp, err := s.http.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= http.StatusBadRequest {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return nil, fmt.Errorf("provider returned %s: %s", resp.Status, strings.TrimSpace(string(body)))
+	}
+	var payload struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return nil, err
+	}
+	models := make([]string, 0, len(payload.Data))
+	for _, item := range payload.Data {
+		if strings.TrimSpace(item.ID) != "" {
+			models = append(models, strings.TrimSpace(item.ID))
+		}
+	}
+	if len(models) == 0 && provider.Model != "" {
+		models = append(models, provider.Model)
+	}
+	return models, nil
+}
+
+func (s *Service) fetchAnthropicModels(ctx context.Context, provider domainsettings.AIProviderSettings) ([]string, error) {
+	endpoint := strings.TrimRight(provider.BaseURL, "/")
+	if strings.HasSuffix(endpoint, "/messages") {
+		endpoint = strings.TrimSuffix(endpoint, "/messages")
+	}
+	if !strings.HasSuffix(endpoint, "/models") {
+		endpoint += "/models"
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("x-api-key", provider.APIKey)
+	req.Header.Set("anthropic-version", "2023-06-01")
 	resp, err := s.http.Do(req)
 	if err != nil {
 		return nil, err
@@ -1258,20 +1301,76 @@ func (s *Service) openAICompatibleHello(ctx context.Context, provider domainsett
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 		return "", fmt.Errorf("provider returned %s: %s", resp.Status, strings.TrimSpace(string(body)))
 	}
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return "", err
+	}
+	return openAICompatibleReplyFromBody(raw)
+}
+
+func openAICompatibleReplyFromBody(raw []byte) (string, error) {
+	body := strings.TrimSpace(string(raw))
+	if body == "" {
+		return "", nil
+	}
+	if strings.HasPrefix(body, "data:") {
+		var builder strings.Builder
+		for _, line := range strings.Split(body, "\n") {
+			line = strings.TrimSpace(line)
+			if !strings.HasPrefix(line, "data:") {
+				continue
+			}
+			payload := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+			if payload == "" || payload == "[DONE]" {
+				continue
+			}
+			reply, err := openAICompatibleReplyPartFromJSON([]byte(payload))
+			if err != nil {
+				return "", err
+			}
+			if reply != "" {
+				builder.WriteString(reply)
+			}
+		}
+		return strings.TrimSpace(builder.String()), nil
+	}
+	return openAICompatibleReplyFromJSON([]byte(body))
+}
+
+func openAICompatibleReplyFromJSON(raw []byte) (string, error) {
+	reply, err := openAICompatibleReplyPartFromJSON(raw)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(reply), nil
+}
+
+func openAICompatibleReplyPartFromJSON(raw []byte) (string, error) {
 	var body struct {
 		Choices []struct {
 			Message struct {
 				Content string `json:"content"`
 			} `json:"message"`
+			Delta struct {
+				Content string `json:"content"`
+			} `json:"delta"`
+			Text string `json:"text"`
 		} `json:"choices"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+	if err := json.Unmarshal(raw, &body); err != nil {
 		return "", err
 	}
-	if len(body.Choices) == 0 {
-		return "", nil
+	for _, choice := range body.Choices {
+		switch {
+		case strings.TrimSpace(choice.Message.Content) != "":
+			return choice.Message.Content, nil
+		case strings.TrimSpace(choice.Delta.Content) != "":
+			return choice.Delta.Content, nil
+		case strings.TrimSpace(choice.Text) != "":
+			return choice.Text, nil
+		}
 	}
-	return strings.TrimSpace(body.Choices[0].Message.Content), nil
+	return "", nil
 }
 
 func (s *Service) anthropicHello(ctx context.Context, provider domainsettings.AIProviderSettings, prompt string) (string, error) {

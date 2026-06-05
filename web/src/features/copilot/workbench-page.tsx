@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
   ApiOutlined,
   BranchesOutlined,
@@ -21,6 +21,7 @@ import {
   ThoughtChain,
   Welcome,
 } from '@ant-design/x'
+import type { SenderRef } from '@ant-design/x/es/sender'
 import {
   Background,
   Controls,
@@ -68,6 +69,7 @@ import {
   getAIWorkbenchPathForSession,
   normalizeAIWorkbenchMode,
 } from './workbench-navigation'
+import { displayWorkbenchSessionTitle } from './workbench-model'
 import {
   TOOLSET_BUDGET_FIELDS,
   buildDisabledToolOptions,
@@ -89,17 +91,27 @@ import type {
   WorkbenchSessionScope,
 } from './workbench-types'
 
-const { Paragraph, Text, Title } = Typography
+const { Paragraph, Text } = Typography
 
 type InspectorView = 'context' | 'evidence' | 'hypotheses' | 'actions'
 type WorkbenchMode = NonNullable<NonNullable<WorkbenchSession['metadata']>['mode']>
 type WorkbenchFlowNode = Node<WorkbenchGraphNode & Record<string, unknown>, 'workbenchGraphNode'>
 type WorkbenchFlowEdge = Edge<{ relation: string; severity?: string }, 'smoothstep'>
 type ThoughtChainStatus = 'loading' | 'success' | 'error' | 'abort'
+type WorkbenchBubbleStatus = 'local' | 'loading' | 'updating' | 'success' | 'error' | 'abort'
+type ConversationMessage = WorkbenchMessage & { deliveryStatus?: WorkbenchBubbleStatus }
+type GeneralChatStatusItem = {
+  key: string
+  label: string
+  value: string | number
+  detail: string
+  icon: ReactNode
+  action?: () => void
+}
 type WorkbenchArtifactEntry = {
   key: string
   artifact: WorkbenchArtifact
-  message: WorkbenchMessage
+  message: ConversationMessage
   index: number
 }
 type ArtifactLinkKind = 'session' | 'root_cause' | 'inspection' | 'agent'
@@ -152,7 +164,7 @@ function modeDescription(mode?: string) {
     case 'inspection_review':
       return '把巡检发现整理成后续动作和交接结论。'
     default:
-      return '沉淀一轮完整问答、证据和下一步排障动作。'
+      return '用于日常问答、知识查询和任务协作；需要时沉淀证据与下一步动作。'
   }
 }
 
@@ -210,14 +222,119 @@ function formatSessionTimestamp(value?: string) {
   }).format(date)
 }
 
-function bubbleItems(messages: WorkbenchMessage[]) {
+function bubbleItems(messages: ConversationMessage[]) {
   return messages.map((item) => ({
     key: item.id,
     role: item.role === 'assistant' ? 'ai' : item.role === 'system' ? 'system' : 'user',
     content: item.content,
-    status: 'success' as const,
-    extraInfo: { createdAt: item.createdAt },
+    status: item.deliveryStatus ?? 'success' as const,
+    extraInfo: { createdAt: item.createdAt, source: item.metadata?.source },
   }))
+}
+
+function messageMetadataSource(item: WorkbenchMessage | ConversationMessage) {
+  return typeof item.metadata?.source === 'string' ? item.metadata.source : ''
+}
+
+function isLegacyPlatformContextMessage(item: WorkbenchMessage | ConversationMessage) {
+  const content = item.content.trim()
+  if (Array.isArray(item.metadata?.analysisArtifacts) && item.metadata.analysisArtifacts.length > 0) {
+    return false
+  }
+  return item.role === 'assistant' && (
+    messageMetadataSource(item) === 'platform-context'
+    || messageMetadataSource(item) === 'legacy-platform-context'
+    || item.metadata?.legacyFallback === true
+    || content.startsWith('当前平台上下文：')
+    || content.startsWith('当前集群上下文：')
+    || content.startsWith('当前构建上下文：')
+    || content.startsWith('当前告警上下文：')
+    || content.startsWith('当前审计上下文：')
+    || content.startsWith('Current platform context:')
+    || content.startsWith('Current clusters context:')
+    || content.startsWith('Current builds context:')
+    || content.startsWith('Current alerts context:')
+    || content.startsWith('Current audit context:')
+  )
+}
+
+function modelStatusValue(message: ConversationMessage | undefined, pending: boolean) {
+  if (pending) return '调用中'
+  const source = message ? messageMetadataSource(message) : ''
+  switch (source) {
+    case 'model-provider':
+      return '已响应'
+    case 'model-unconfigured':
+      return '未配置'
+    case 'model-error':
+      return '失败'
+    case 'model-empty':
+      return '空返回'
+    default:
+      return message ? '已记录' : '待开始'
+  }
+}
+
+function modelStatusDetail(message: ConversationMessage | undefined, pending: boolean) {
+  if (pending) return '正在等待后端模型调用返回。'
+  if (!message) return '发送第一条消息后，这里会显示最近一次模型调用状态。'
+  const source = messageMetadataSource(message)
+  if (source === 'model-provider') {
+    const model = typeof message.metadata?.model === 'string' ? message.metadata.model : ''
+    return model ? `最近回复来自模型 ${model}` : '最近回复来自已配置的大模型提供方。'
+  }
+  if (source === 'model-unconfigured') return '后端没有可用的大模型提供方，请到 AI 设置完成配置。'
+  if (source === 'model-error') {
+    return typeof message.metadata?.error === 'string' ? message.metadata.error : '大模型调用失败，请检查 AI 设置。'
+  }
+  if (source === 'model-empty') return '模型接口返回成功，但没有可显示内容。'
+  return '最近回复来自历史消息或兼容数据。'
+}
+
+function sortConversationMessages(items: ConversationMessage[]) {
+  return [...items].sort((left, right) => {
+    const leftTime = new Date(left.createdAt).getTime()
+    const rightTime = new Date(right.createdAt).getTime()
+    if (Number.isNaN(leftTime) || Number.isNaN(rightTime) || leftTime === rightTime) {
+      return left.id.localeCompare(right.id)
+    }
+    return leftTime - rightTime
+  })
+}
+
+function mergeConversationMessages(serverMessages: WorkbenchMessage[], localMessages: ConversationMessage[], sessionId?: string) {
+  const serverIds = new Set(serverMessages.map((item) => item.id))
+  return sortConversationMessages([
+    ...serverMessages
+      .filter((item) => !isLegacyPlatformContextMessage(item))
+      .map((item) => ({ ...item, deliveryStatus: 'success' as WorkbenchBubbleStatus })),
+    ...localMessages.filter((item) => item.sessionId === sessionId && !serverIds.has(item.id)),
+  ])
+}
+
+function pendingConversationMessages(sessionId: string, content: string): { user: ConversationMessage; assistant: ConversationMessage } {
+  const now = Date.now()
+  const createdAt = new Date(now).toISOString()
+  return {
+    user: {
+      id: `local:user:${sessionId}:${now}`,
+      sessionId,
+      role: 'user',
+      content,
+      metadata: { source: 'local-pending' },
+      createdAt,
+      deliveryStatus: 'loading',
+    },
+    assistant: {
+      id: `local:assistant:${sessionId}:${now}`,
+      sessionId,
+      role: 'assistant',
+      content: '正在思考...',
+      metadata: { source: 'model-thinking' },
+      createdAt: new Date(now + 1).toISOString(),
+      deliveryStatus: 'loading',
+    },
+  }
 }
 
 function artifactTitle(entry: WorkbenchArtifactEntry) {
@@ -372,14 +489,18 @@ function buildPromptItems(mode: NonNullable<WorkbenchSession['metadata']>['mode'
     return [
       { key: 'review', icon: <PlayCircleOutlined />, label: '复盘最近一次巡检异常' },
       { key: 'policy', icon: <ToolOutlined />, label: '根据巡检结果生成自动化建议' },
-      { key: 'handoff', icon: <RobotOutlined />, label: '把巡检发现转成调查任务' },
+      { key: 'handoff', icon: <RobotOutlined />, label: '把巡检发现转成后续分析' },
     ]
   }
   return [
-    { key: 'incident', icon: <ThunderboltOutlined />, label: '汇总当前异常的调查重点' },
-    { key: 'logs', icon: <ToolOutlined />, label: '汇总错误签名与日志上下文' },
-    { key: 'next', icon: <RobotOutlined />, label: '给出下一轮排查建议' },
+    { key: 'summary', icon: <ThunderboltOutlined />, label: '帮我梳理当前问题' },
+    { key: 'context', icon: <ToolOutlined />, label: '整理相关上下文和证据' },
+    { key: 'next', icon: <RobotOutlined />, label: '生成下一步行动建议' },
   ]
+}
+
+function envelopeHasVisibleToolSteps(envelope?: WorkbenchMessageEnvelope) {
+  return (envelope?.analysisArtifacts ?? []).some((artifact) => (artifact.toolExecutions ?? []).length > 0)
 }
 
 function layoutWorkbenchGraph(nodes: WorkbenchFlowNode[], edges: WorkbenchFlowEdge[]) {
@@ -550,6 +671,7 @@ export function AIWorkbenchPage() {
   const canRunRootCause = hasPermission(permissionSnapshotQuery.data?.data, 'observe.ai.root-cause.run')
   const autoSessionScopeKeyRef = useRef<string>('')
   const routeModePatchKeyRef = useRef<string>('')
+  const senderRef = useRef<SenderRef>(null)
 
   const requestedSessionId = searchParams.get('session') || undefined
   const searchMode = normalizeAIWorkbenchMode(searchParams.get('mode')) || 'general'
@@ -594,6 +716,9 @@ export function AIWorkbenchPage() {
   const [showAllSkills, setShowAllSkills] = useState(false)
   const [selectedArtifactKey, setSelectedArtifactKey] = useState<string>()
   const [selectedGraphNodeId, setSelectedGraphNodeId] = useState<string | null>(null)
+  const [senderValue, setSenderValue] = useState('')
+  const [senderResetVersion, setSenderResetVersion] = useState(0)
+  const [localMessages, setLocalMessages] = useState<ConversationMessage[]>([])
 
   const updateSearchParams = (patch: Record<string, string | undefined>) => {
     const next = new URLSearchParams(searchParams)
@@ -629,7 +754,16 @@ export function AIWorkbenchPage() {
   const visibleSessions = useMemo(() => (sessionsQuery.data?.data ?? []).filter((item) => !isSyntheticSession(item)), [sessionsQuery.data?.data])
   const currentSession = (sessionDetailQuery.data?.data && !isSyntheticSession(sessionDetailQuery.data.data) ? sessionDetailQuery.data.data : undefined)
     ?? visibleSessions.find((item) => item.id === requestedSessionId)
-  const messages = messagesQuery.data?.data ?? []
+  const currentSessionTitle = displayWorkbenchSessionTitle(currentSession?.title)
+  const serverMessages = messagesQuery.data?.data ?? []
+  const legacyPlatformMessages = useMemo(
+    () => serverMessages.filter(isLegacyPlatformContextMessage),
+    [serverMessages],
+  )
+  const messages = useMemo(
+    () => mergeConversationMessages(serverMessages, localMessages, requestedSessionId),
+    [localMessages, requestedSessionId, serverMessages],
+  )
   const adapters = useMemo(() => catalogQuery.data?.data?.adapters ?? [], [catalogQuery.data?.data?.adapters])
   const dataSources = useMemo(() => catalogQuery.data?.data?.dataSources ?? [], [catalogQuery.data?.data?.dataSources])
   const globalSkills = useMemo(() => catalogQuery.data?.data?.skillsRegistry ?? [], [catalogQuery.data?.data?.skillsRegistry])
@@ -696,7 +830,7 @@ export function AIWorkbenchPage() {
     onSuccess: async (response) => {
       await queryClient.invalidateQueries({ queryKey: ['copilot-workbench-sessions'] })
       navigate(getAIWorkbenchPathForMode(draftMode, new URLSearchParams({ session: response.data.id })))
-      void message.success('已创建调查会话')
+      void message.success('已创建会话')
     },
     onError: (err: Error) => void message.error(err.message),
   })
@@ -709,7 +843,7 @@ export function AIWorkbenchPage() {
     }
     autoSessionScopeKeyRef.current = scopeKey
     createSessionMutation.mutate({
-      title: draftScope.alertId ? `Alert ${draftScope.alertId}` : draftScope.workload ? `${draftScope.workload} 调查` : '新的调查会话',
+      title: draftScope.alertId ? `Alert ${draftScope.alertId}` : draftScope.workload ? `${draftScope.workload} 分析` : '新的会话',
       scope: draftScope,
     })
   }, [canUseChat, createSessionMutation, draftScope, requestedSessionId])
@@ -727,16 +861,61 @@ export function AIWorkbenchPage() {
   })
 
   const sendMessageMutation = useMutation({
-    mutationFn: (content: string) =>
-      api.post<ApiResponse<WorkbenchMessageEnvelope>>(`/copilot/sessions/${requestedSessionId}/messages`, { content }),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ['copilot-workbench-messages', requestedSessionId] })
-      await queryClient.invalidateQueries({ queryKey: ['copilot-workbench-sessions'] })
-      await queryClient.invalidateQueries({ queryKey: ['copilot-workbench-session-detail', requestedSessionId] })
-      setThinkingOpen(true)
+    mutationFn: (payload: { sessionId: string; content: string }) =>
+      api.post<ApiResponse<WorkbenchMessageEnvelope>>(`/copilot/sessions/${payload.sessionId}/messages`, { content: payload.content }),
+    onMutate: (payload) => {
+      const pendingMessages = pendingConversationMessages(payload.sessionId, payload.content)
+      setLocalMessages((items) => [...items, pendingMessages.user, pendingMessages.assistant])
+      return pendingMessages
     },
-    onError: (err: Error) => void message.error(err.message),
+    onSuccess: async (response, payload, context) => {
+      const returnedMessages = (response.data.messages ?? []).map((item) => ({
+        ...item,
+        deliveryStatus: 'success' as WorkbenchBubbleStatus,
+      }))
+      setLocalMessages((items) => {
+        const returnedIds = new Set(returnedMessages.map((item) => item.id))
+        const localIds = new Set([context?.user.id, context?.assistant.id].filter(Boolean))
+        const next = items.filter((item) => !localIds.has(item.id) && !returnedIds.has(item.id))
+        if (returnedMessages.length > 0) {
+          return [...next, ...returnedMessages]
+        }
+        if (context?.user) {
+          return [...next, { ...context.user, deliveryStatus: 'success' }]
+        }
+        return next
+      })
+      await queryClient.invalidateQueries({ queryKey: ['copilot-workbench-messages', payload.sessionId] })
+      await queryClient.invalidateQueries({ queryKey: ['copilot-workbench-sessions'] })
+      await queryClient.invalidateQueries({ queryKey: ['copilot-workbench-session-detail', payload.sessionId] })
+      if (envelopeHasVisibleToolSteps(response.data)) {
+        setThinkingOpen(true)
+      }
+    },
+    onError: (err: Error, _payload, context) => {
+      if (context?.user || context?.assistant) {
+        setLocalMessages((items) => items.map((item) => (
+          item.id === context?.user.id
+            ? { ...item, deliveryStatus: 'error', metadata: { ...(item.metadata ?? {}), error: err.message } }
+            : item.id === context?.assistant.id
+              ? { ...item, content: `发送失败：${err.message}`, deliveryStatus: 'error', metadata: { ...(item.metadata ?? {}), error: err.message } }
+            : item
+        )))
+      }
+      void message.error(err.message)
+    },
   })
+
+  const submitMessage = (value: string) => {
+    const content = value.trim()
+    if (!content || !canUseChat || !currentSession || !requestedSessionId || sendMessageMutation.isPending) {
+      return
+    }
+    setSenderValue('')
+    senderRef.current?.clear()
+    setSenderResetVersion((version) => version + 1)
+    sendMessageMutation.mutate({ sessionId: requestedSessionId, content })
+  }
 
   const analyzeSessionMutation = useMutation({
     mutationFn: (payload: { sessionId: string; mode: WorkbenchMode; question: string; scope: WorkbenchSessionScope; agentProviderId: string; analysisProfileId?: string }) =>
@@ -764,7 +943,7 @@ export function AIWorkbenchPage() {
 
   const createInspectionFromSessionMutation = useMutation({
     mutationFn: () => api.post(`/copilot/sessions/${requestedSessionId}/inspection-task`, {
-      title: `${currentSession?.title || '调查'} 巡检模板`,
+      title: `${currentSessionTitle || '会话'} 巡检模板`,
       scopeType: currentSession?.metadata?.scope?.namespace ? 'namespace' : currentSession?.metadata?.scope?.clusterId ? 'cluster' : 'platform',
       clusterId: currentSession?.metadata?.scope?.clusterId,
       namespace: currentSession?.metadata?.scope?.namespace,
@@ -834,28 +1013,77 @@ export function AIWorkbenchPage() {
   const activeArtifactEntry = artifactEntries.find((item) => item.key === selectedArtifactKey) ?? artifactEntries[0]
   const activeArtifact = activeArtifactEntry?.artifact
   const activeArtifactLinks = activeArtifactEntry ? artifactContextLinks(activeArtifactEntry, currentSession) : []
-  const toolCalls = activeArtifact?.toolExecutions ?? []
+  const activeArtifactToolCalls = activeArtifact?.toolExecutions ?? []
+  const latestToolArtifactEntry = artifactEntries.find((item) => (item.artifact.toolExecutions ?? []).length > 0)
+  const chainArtifactEntry = activeArtifactToolCalls.length > 0 ? activeArtifactEntry : latestToolArtifactEntry
+  const toolCalls = chainArtifactEntry?.artifact.toolExecutions ?? []
+  const hasToolCalls = toolCalls.length > 0
   const activeGraph = activeArtifact?.graph
   const queryError = sessionsQuery.error || sessionDetailQuery.error || messagesQuery.error || catalogQuery.error
   const activeMode = isExplicitRouteMode ? pathMode : currentSession?.metadata?.mode || draftMode
+  const isGeneralChatMode = activeMode === 'general'
+  const visibleUserMessageCount = messages.filter((item) => item.role === 'user').length
+  const visibleAssistantMessageCount = messages.filter((item) => item.role === 'assistant').length
+  const latestAssistantMessage = [...messages].reverse().find((item) => item.role === 'assistant')
   const promptItems = buildPromptItems(activeMode)
-  const conversationItems = useMemo(() => visibleSessions.map((item) => {
+  const conversationItems = visibleSessions.map((item) => {
+    const title = displayWorkbenchSessionTitle(item.title)
     const scopeSummary = buildScopeSummary(item.metadata?.scope)
     const modeText = modeLabel(item.metadata?.mode)
     const timeText = formatSessionTimestamp(item.updatedAt)
+    const isArchiving = deleteSessionMutation.isPending && deleteSessionMutation.variables === item.id
     return {
       key: item.id,
       icon: modeIcon(item.metadata?.mode),
       label: (
-        <div className="soha-ai-workbench__conversation-label" title={`${item.title} · ${modeText} · ${timeText} · ${scopeSummary}`}>
+        <div className="soha-ai-workbench__conversation-label" title={`${title} · ${modeText} · ${timeText} · ${scopeSummary}`}>
           <span className="soha-ai-workbench__conversation-label-main">
-            <span className="soha-ai-workbench__conversation-label-title">{item.title}</span>
+            <span className="soha-ai-workbench__conversation-label-title">{title}</span>
             <span className="soha-ai-workbench__conversation-label-meta">{modeText} · {timeText}</span>
+          </span>
+          <span className="soha-ai-workbench__conversation-label-actions">
+            <Tooltip title="重命名">
+              <Button
+                aria-label={`重命名 ${title}`}
+                className="soha-ai-workbench__conversation-action"
+                icon={<EditOutlined />}
+                size="small"
+                type="text"
+                onClick={(event) => {
+                  event.preventDefault()
+                  event.stopPropagation()
+                  setRenameTargetId(item.id)
+                  setRenameValue(title)
+                  setRenameOpen(true)
+                }}
+              />
+            </Tooltip>
+            <span onClick={(event) => event.stopPropagation()}>
+              <Popconfirm
+                title="确认归档此会话？"
+                description="归档后会话将从当前工作台列表移除。"
+                okText="归档"
+                cancelText="取消"
+                okButtonProps={{ danger: true, loading: isArchiving }}
+                onConfirm={() => deleteSessionMutation.mutate(item.id)}
+              >
+                <Button
+                  aria-label={`归档 ${title}`}
+                  className="soha-ai-workbench__conversation-action soha-ai-workbench__conversation-action--danger"
+                  danger
+                  disabled={deleteSessionMutation.isPending && !isArchiving}
+                  icon={<DeleteOutlined />}
+                  loading={isArchiving}
+                  size="small"
+                  type="text"
+                />
+              </Popconfirm>
+            </span>
           </span>
         </div>
       ),
     }
-  }), [visibleSessions])
+  })
   const artifactSummary = [
     {
       key: 'context' as const,
@@ -899,6 +1127,7 @@ export function AIWorkbenchPage() {
   const activeAgentProvider = agentProviders.find((item) => item.id === selectedAgentProviderId)
     ?? agentProviders.find((item) => item.id === currentSession?.metadata?.agentProviderId)
     ?? agentProviders.find((item) => item.id === defaultAgentProviderId)
+  const currentAlertId = currentSession?.metadata?.scope?.alertId
   const activeCapability = agentCapabilities.find((item) => (item.analysisKinds ?? []).includes(activeMode) || item.id === activeMode)
   const analysisCapability = agentCapabilities.find((item) => (item.analysisKinds ?? []).includes(analysisMode) || item.id === analysisMode)
   const disabledToolOptions = useMemo(() => buildDisabledToolOptions(adapters), [adapters])
@@ -993,13 +1222,20 @@ export function AIWorkbenchPage() {
   }, [activeGraph?.focusNodeId, activeGraph?.nodes])
 
   const canSubmitExplicitAnalysis = canUseChat && (analysisMode !== 'root_cause' || canRunRootCause)
-  const handleModeChange = (value: string | number) => {
-    const next = value as WorkbenchMode
+  const handleModeChange = (next: WorkbenchMode) => {
     setDraftMode(next)
     navigate(getAIWorkbenchPathForMode(next, searchParams))
     if (currentSession && currentSession.metadata?.mode !== next) {
       patchSessionMutation.mutate({ sessionId: currentSession.id, body: { mode: next } })
     }
+  }
+  const handleSessionChange = (sessionId: string) => {
+    const selected = visibleSessions.find((item) => item.id === sessionId)
+    if (selected) {
+      navigate(getAIWorkbenchPathForSession(selected, searchParams))
+      return
+    }
+    updateSearchParams({ session: sessionId })
   }
   const openArtifactLink = (link: ArtifactContextLink) => {
     navigate(link.path)
@@ -1036,6 +1272,38 @@ export function AIWorkbenchPage() {
     setInspectorView(view)
     setInspectorOpen(true)
   }
+  const generalChatStatusItems: GeneralChatStatusItem[] = [
+    {
+      key: 'messages',
+      label: '消息',
+      value: `${visibleUserMessageCount}/${visibleAssistantMessageCount}`,
+      detail: '用户消息 / AI 回复',
+      icon: <RobotOutlined />,
+    },
+    {
+      key: 'model',
+      label: '模型',
+      value: modelStatusValue(latestAssistantMessage, sendMessageMutation.isPending),
+      detail: modelStatusDetail(latestAssistantMessage, sendMessageMutation.isPending),
+      icon: <ApiOutlined />,
+      action: () => navigate(getAIModelSettingsPath(location.search)),
+    },
+    {
+      key: 'legacy',
+      label: '旧回复',
+      value: legacyPlatformMessages.length,
+      detail: legacyPlatformMessages.length > 0 ? '已隐藏旧版平台上下文兜底回复' : '当前会话没有旧版兜底回复',
+      icon: <EyeOutlined />,
+    },
+    {
+      key: 'analysis',
+      label: '分析',
+      value: artifactEntries.length,
+      detail: artifactEntries.length > 0 ? '当前会话已有显式分析工件' : '普通聊天不会自动运行工具',
+      icon: <BranchesOutlined />,
+      action: artifactEntries.length > 0 ? () => openInspector('context') : openExplicitAnalysis,
+    },
+  ]
   const assemblyItems = [
     {
       key: 'adapters',
@@ -1067,6 +1335,15 @@ export function AIWorkbenchPage() {
     },
   ]
   const quickActionItems = [
+    ...(currentAlertId ? [{
+      key: 'alert',
+      label: '原告警',
+      detail: currentAlertId,
+      icon: <LinkOutlined />,
+      disabled: false,
+      tooltip: '回到原告警',
+      onClick: () => navigate(`/monitoring-workbench/alerts/${currentAlertId}`),
+    }] : []),
     {
       key: 'context',
       label: '上下文',
@@ -1087,8 +1364,8 @@ export function AIWorkbenchPage() {
     },
     {
       key: 'inspection',
-      label: '生成巡检',
-      detail: '巡检任务',
+      label: '生成巡检任务',
+      detail: '自动化任务',
       icon: <PlayCircleOutlined />,
       disabled: !currentSession || !canCreateInspectionTask,
       tooltip: !currentSession ? '先选择会话' : createInspectionTitle || '生成巡检任务',
@@ -1099,8 +1376,8 @@ export function AIWorkbenchPage() {
       label: '分析链路',
       detail: `${toolCalls.length} 步`,
       icon: <BranchesOutlined />,
-      disabled: false,
-      tooltip: '查看分析链路',
+      disabled: !hasToolCalls,
+      tooltip: hasToolCalls ? '查看分析链路' : '当前会话还没有工具调用步骤',
       onClick: () => setThinkingOpen(true),
     },
   ]
@@ -1176,13 +1453,13 @@ export function AIWorkbenchPage() {
 
   const renderInspectorBody = () => {
     if (!currentSession && inspectorView === 'context') {
-      return <ManagementState bordered={false} compact kind="select-scope" title="未选择会话" description="选择一个 AI 会话后查看调查范围、证据和建议。" />
+      return <ManagementState bordered={false} compact kind="select-scope" title="未选择会话" description="选择一个 AI 会话后查看上下文范围、证据和建议。" />
     }
 
     if (inspectorView === 'context') {
       return currentSession ? (
         <Space orientation="vertical" size={12} style={{ width: '100%' }}>
-          <Card size="small" title="调查范围">
+          <Card size="small" title="上下文范围">
             <Paragraph style={{ marginBottom: 0 }}>{buildScopeSummary(currentSession.metadata?.scope)}</Paragraph>
             {currentSession.metadata?.scope?.alertId ? (
               <Button style={{ marginTop: 12 }} size="small" onClick={() => navigate(`/monitoring-workbench/alerts/${currentSession.metadata?.scope?.alertId}`)}>
@@ -1290,7 +1567,7 @@ export function AIWorkbenchPage() {
                 <span className="soha-ai-workbench__tools-icon">{modeIcon(activeMode)}</span>
                 <span>
                   <Text strong>会话记录</Text>
-                  <Text type="secondary">{visibleSessions.length > 0 ? `${visibleSessions.length} 个调查会话` : '从这里切换当前调查'}</Text>
+                  <Text type="secondary">{visibleSessions.length > 0 ? `${visibleSessions.length} 个会话` : '从这里切换当前会话'}</Text>
                 </span>
               </div>
               <Tooltip title="模型设置">
@@ -1305,10 +1582,35 @@ export function AIWorkbenchPage() {
               </Tooltip>
             </div>
 
+            <div className="soha-ai-workbench__session-mode">
+              <Text type="secondary">对话类型</Text>
+              <Select<WorkbenchMode>
+                className="soha-ai-workbench__mode-select"
+                size="small"
+                value={activeMode}
+                prefix={modeIcon(activeMode)}
+                optionFilterProp="label"
+                options={WORKBENCH_MODE_OPTIONS.map((item) => ({ value: item.value, label: item.label }))}
+                onChange={handleModeChange}
+                optionRender={(option) => {
+                  const mode = option.value as WorkbenchMode
+                  return (
+                    <div className="soha-ai-workbench__mode-option">
+                      <span>{modeLabel(mode)}</span>
+                      <small>{modeDescription(mode)}</small>
+                    </div>
+                  )
+                }}
+              />
+              <Paragraph className="soha-ai-workbench__mode-description">
+                {modeDescription(activeMode)}
+              </Paragraph>
+            </div>
+
             <Conversations
               items={conversationItems}
               activeKey={currentSession?.id}
-              onActiveChange={(value) => updateSearchParams({ session: String(value) })}
+              onActiveChange={(value) => handleSessionChange(String(value))}
               className="soha-ai-workbench__conversations"
               creation={{
                 icon: <EditOutlined />,
@@ -1320,41 +1622,13 @@ export function AIWorkbenchPage() {
           </aside>
 
           <main className="soha-ai-workbench__canvas">
-            <div className="soha-ai-workbench__function-bar">
-              <div className="soha-ai-workbench__function-main">
-                <div className="soha-ai-workbench__function-copy">
-                  <Text type="secondary">调查模式</Text>
-                  <Title level={5} style={{ margin: 0 }}>{modeLabel(activeMode)}</Title>
-                  <Paragraph style={{ marginBottom: 0 }} type="secondary">
-                    {modeDescription(activeMode)}
-                  </Paragraph>
-                </div>
-                <Segmented
-                  value={activeMode}
-                  options={WORKBENCH_MODE_OPTIONS.map((item) => ({ value: item.value, label: item.label }))}
-                  onChange={handleModeChange}
-                />
-              </div>
-              <Space wrap className="soha-ai-workbench__function-tabs">
-                <Button className="soha-ai-workbench__function-tab" icon={<ToolOutlined />} onClick={() => setToolsetOpen(true)}>
-                  工具装配
-                </Button>
-                <Button className="soha-ai-workbench__function-tab" icon={<PlayCircleOutlined />} onClick={() => navigate(getAIModelSettingsPath(location.search))}>
-                  模型设置
-                </Button>
-                <Button type="primary" icon={<EditOutlined />} loading={createSessionMutation.isPending} onClick={() => createSessionMutation.mutate({ scope: draftScope })} disabled={!canUseChat}>
-                  新建会话
-                </Button>
-              </Space>
-            </div>
-
             <div className="soha-ai-workbench__dialog-shell">
               {!currentSession ? (
                 <div className="soha-ai-workbench__empty-state">
                   <Welcome
                     icon={<ExperimentOutlined />}
-                    title={visibleSessions.length > 0 ? '正在准备会话' : '开始一轮调查'}
-                    description={visibleSessions.length > 0 ? '正在同步当前会话，请稍候。' : '从左侧菜单的会话记录选择既有调查，或直接新建一个会话开始排障。'}
+                    title={visibleSessions.length > 0 ? '正在准备会话' : '开始新的对话'}
+                    description={visibleSessions.length > 0 ? '正在同步当前会话，请稍候。' : '从左侧会话记录选择已有会话，或直接新建一个会话开始聊天和分析。'}
                     extra={
                       <Space wrap>
                         <Button type="primary" loading={createSessionMutation.isPending} onClick={() => createSessionMutation.mutate({ scope: draftScope })} disabled={!canUseChat}>
@@ -1367,89 +1641,7 @@ export function AIWorkbenchPage() {
                   />
                 </div>
               ) : (
-                <>
-                  <div className="soha-ai-workbench__session-card">
-                    <Flex justify="space-between" align="start" gap={16} wrap="wrap">
-                      <div className="soha-ai-workbench__session-copy">
-                        <div className="soha-ai-workbench__session-title-row">
-                          <Title level={4} style={{ margin: 0 }}>{currentSession.title}</Title>
-                          <Button
-                            type="text"
-                            size="small"
-                            icon={<EditOutlined />}
-                            onClick={() => {
-                              setRenameTargetId(currentSession.id)
-                              setRenameValue(currentSession.title)
-                              setRenameOpen(true)
-                            }}
-                          />
-                        </div>
-                        <Paragraph className="soha-ai-workbench__session-description">
-                          {currentSession.metadata?.summary || modeDescription(currentSession.metadata?.mode)}
-                        </Paragraph>
-                        <Space size={[8, 8]} wrap>
-                          <Tag color="blue">{modeLabel(currentSession.metadata?.mode)}</Tag>
-                          <Tag color={activeAgentProvider?.supportsAsync ? 'purple' : 'default'}>{activeAgentProvider?.name || currentSession.metadata?.agentProviderId || '内置分析'}</Tag>
-                          <Tag>{buildScopeSummary(currentSession.metadata?.scope)}</Tag>
-                          {currentSession.metadata?.analysisRunRefs?.[0]?.status ? <StatusTag value={currentSession.metadata.analysisRunRefs[0].status} /> : null}
-                          {(currentSession.metadata?.tags ?? []).map((item) => <Tag key={item}>{item}</Tag>)}
-                        </Space>
-                      </div>
-                      <Space wrap>
-                        {currentSession.metadata?.scope?.alertId ? (
-                          <Button onClick={() => navigate(`/monitoring-workbench/alerts/${currentSession.metadata?.scope?.alertId}`)}>
-                            回到原告警
-                          </Button>
-                        ) : null}
-                        <Button onClick={() => openInspector('context')}>查看上下文</Button>
-                        <Button
-                          loading={analyzeSessionMutation.isPending}
-                          onClick={openExplicitAnalysis}
-                          disabled={!canRunExplicitAnalysis}
-                          title={explicitAnalysisTitle}
-                        >
-                          显式分析
-                        </Button>
-                        <Button
-                          loading={createInspectionFromSessionMutation.isPending}
-                          onClick={() => createInspectionFromSessionMutation.mutate()}
-                          disabled={!canCreateInspectionTask}
-                          title={createInspectionTitle}
-                        >
-                          生成巡检任务
-                        </Button>
-                        <Button icon={<BranchesOutlined />} onClick={() => setThinkingOpen(true)}>
-                          分析链路
-                        </Button>
-                        <Popconfirm
-                          title="确认归档当前会话？"
-                          description="归档后会话将从当前工作台列表移除。"
-                          okButtonProps={{ danger: true, loading: deleteSessionMutation.isPending }}
-                          onConfirm={() => deleteSessionMutation.mutate(currentSession.id)}
-                        >
-                          <Button danger icon={<DeleteOutlined />} loading={deleteSessionMutation.isPending}>
-                            归档
-                          </Button>
-                        </Popconfirm>
-                      </Space>
-                    </Flex>
-                  </div>
-
-                  <div className="soha-ai-workbench__conversation-card">
-                    <div className="soha-ai-workbench__conversation-topbar">
-                      <div>
-                        <Text strong>对话流程</Text>
-                        <Paragraph className="soha-ai-workbench__conversation-subtitle">
-                          {buildScopeSummary(currentSession.metadata?.scope)} · {messages.length} 条消息
-                        </Paragraph>
-                      </div>
-                      <Space wrap>
-                        <Button size="small" onClick={() => openInspector('evidence')}>证据</Button>
-                        <Button size="small" onClick={() => openInspector('hypotheses')}>假设</Button>
-                        <Button size="small" onClick={() => openInspector('actions')}>建议</Button>
-                      </Space>
-                    </div>
-
+                <div className="soha-ai-workbench__conversation-card">
                     {artifactEntries.length > 0 ? (
                       <div className="soha-ai-workbench__artifact-strip">
                         <div className="soha-ai-workbench__artifact-strip-head">
@@ -1606,8 +1798,8 @@ export function AIWorkbenchPage() {
                       {messages.length === 0 ? (
                         <Welcome
                           icon={<ExperimentOutlined />}
-                          title="开始一轮调查"
-                          description="围绕当前模式发起提问，AI 会把工具调用、证据和建议回流到当前会话。"
+                          title="开始新的对话"
+                          description="围绕当前会话发起提问，AI 会把工具调用、证据和建议回流到这里。"
                           extra={
                             <Prompts
                               title="建议起手问题"
@@ -1618,8 +1810,7 @@ export function AIWorkbenchPage() {
                                 description: item.label,
                               }))}
                               onItemClick={({ data }) => {
-                                if (!canUseChat || !currentSession) return
-                                sendMessageMutation.mutate(String(data.label))
+                                submitMessage(String(data.label))
                               }}
                             />
                           }
@@ -1639,140 +1830,217 @@ export function AIWorkbenchPage() {
                     </div>
 
                     <Sender
-                      placeholder="输入排障问题、分析目标或进一步追问"
+                      key={senderResetVersion}
+                      ref={senderRef}
+                      placeholder="输入问题、分析目标或进一步追问"
                       loading={sendMessageMutation.isPending}
                       disabled={!canUseChat || !currentSession}
-                      onSubmit={(value) => {
-                        if (!value?.trim()) return
-                        sendMessageMutation.mutate(value)
-                      }}
+                      value={senderValue}
+                      onChange={setSenderValue}
+                      onSubmit={submitMessage}
                       header={
                         <Prompts
                           wrap
                           items={promptItems}
                           onItemClick={({ data }) => {
-                            if (!canUseChat || !currentSession) return
-                            sendMessageMutation.mutate(String(data.label))
+                            submitMessage(String(data.label))
                           }}
                         />
                       }
                     />
                   </div>
-                </>
               )}
             </div>
           </main>
           <aside className="soha-ai-workbench__tools-pane">
-            <div className="soha-ai-workbench__tools-header">
-              <div className="soha-ai-workbench__tools-title">
-                <span className="soha-ai-workbench__tools-icon"><BranchesOutlined /></span>
-                <span>
-                  <Text strong>调查焦点</Text>
-                  <Text type="secondary">证据、假设、建议</Text>
-                </span>
-              </div>
-              <Tooltip title="分析链路">
-                <Button
-                  aria-label="分析链路"
-                  icon={<BranchesOutlined />}
-                  size="small"
-                  type="text"
-                  onClick={() => setThinkingOpen(true)}
-                />
-              </Tooltip>
-            </div>
-
-            <div className="soha-ai-workbench__focus-grid">
-              {artifactSummary.map((item) => (
-                <Tooltip key={item.key} title={item.description}>
-                  <button className="soha-ai-workbench__focus-tile" type="button" onClick={() => openInspector(item.key)}>
-                    <span className="soha-ai-workbench__insight-icon">{item.icon}</span>
-                    <span className="soha-ai-workbench__focus-value">{item.value}</span>
-                    <span className="soha-ai-workbench__focus-label">{item.label}</span>
-                  </button>
-                </Tooltip>
-              ))}
-            </div>
-
-            <div className="soha-ai-workbench__tool-section soha-ai-workbench__tool-section--compact">
-              <div className="soha-ai-workbench__tool-section-title">
-                <Text strong>会话装配</Text>
-                <Button size="small" type="text" icon={<ToolOutlined />} onClick={() => setToolsetOpen(true)}>
-                  调整
-                </Button>
-              </div>
-              <div className="soha-ai-workbench__assembly-grid">
-                {assemblyItems.map((item) => (
-                  <Tooltip key={item.key} title={item.detail}>
-                    <button className="soha-ai-workbench__assembly-tile" type="button" onClick={() => setToolsetOpen(true)}>
-                      <span className="soha-ai-workbench__assembly-icon">{item.icon}</span>
-                      <span className="soha-ai-workbench__assembly-main">
-                        <span>{item.label}</span>
-                        <strong>{item.value}</strong>
-                      </span>
-                    </button>
+            {isGeneralChatMode ? (
+              <>
+                <div className="soha-ai-workbench__tools-header">
+                  <div className="soha-ai-workbench__tools-title">
+                    <span className="soha-ai-workbench__tools-icon"><RobotOutlined /></span>
+                    <span>
+                      <Text strong>聊天状态</Text>
+                      <Text type="secondary">模型调用、消息状态</Text>
+                    </span>
+                  </div>
+                  <Tooltip title="模型设置">
+                    <Button
+                      aria-label="模型设置"
+                      icon={<ApiOutlined />}
+                      size="small"
+                      type="text"
+                      onClick={() => navigate(getAIModelSettingsPath(location.search))}
+                    />
                   </Tooltip>
-                ))}
-              </div>
-            </div>
+                </div>
 
-            <div className="soha-ai-workbench__tool-section soha-ai-workbench__tool-section--compact">
-              <div className="soha-ai-workbench__tool-section-title">
-                <Text strong>快捷动作</Text>
-                <Button size="small" type="text" onClick={() => navigate(getAIToolsPath(location.search))}>
-                  工具与技能
-                </Button>
-              </div>
-              <div className="soha-ai-workbench__quick-grid">
-                {quickActionItems.map((item) => (
-                  <Tooltip key={item.key} title={item.tooltip}>
-                    <button
-                      aria-disabled={item.disabled || undefined}
-                      className={`soha-ai-workbench__quick-action ${item.disabled ? 'is-disabled' : ''}`}
-                      type="button"
-                      onClick={() => {
-                        if (item.disabled) return
-                        item.onClick()
-                      }}
-                    >
-                      <span className="soha-ai-workbench__assembly-icon">{item.icon}</span>
-                      <span>
-                        <strong>{item.label}</strong>
-                        <small>{item.detail}</small>
-                      </span>
-                    </button>
-                  </Tooltip>
-                ))}
-              </div>
-            </div>
+                <div className="soha-ai-workbench__focus-grid">
+                  {generalChatStatusItems.map((item) => (
+                    <Tooltip key={item.key} title={item.detail}>
+                      <button
+                        className="soha-ai-workbench__focus-tile"
+                        type="button"
+                        onClick={() => item.action?.()}
+                      >
+                        <span className="soha-ai-workbench__insight-icon">{item.icon}</span>
+                        <span className="soha-ai-workbench__focus-value">{item.value}</span>
+                        <span className="soha-ai-workbench__focus-label">{item.label}</span>
+                      </button>
+                    </Tooltip>
+                  ))}
+                </div>
 
-            <div className="soha-ai-workbench__tool-section soha-ai-workbench__tool-section--compact">
-              <div className="soha-ai-workbench__tool-section-title">
-                <Text strong>Skills</Text>
-                {hiddenSkillCount > 0 ? (
-                  <Button size="small" type="text" onClick={() => setShowAllSkills((current) => !current)}>
-                    {showAllSkills ? '收起' : `更多 ${hiddenSkillCount}`}
-                  </Button>
+                {legacyPlatformMessages.length > 0 ? (
+                  <Alert
+                    type="warning"
+                    showIcon
+                    className="soha-ai-workbench__legacy-chat-alert"
+                    message="已隐藏旧版平台上下文回复"
+                    description="这些历史回复来自早期兜底逻辑，不是大模型输出；后续普通聊天只展示真实用户消息、模型回复和明确错误状态。"
+                  />
                 ) : null}
-              </div>
-              {primarySkills.length === 0 ? (
-                <div className="soha-ai-workbench__skill-empty">暂无启用 Skills</div>
-              ) : (
-                <div className="soha-ai-workbench__skill-chip-grid">
-                  {primarySkills.map((skill) => {
-                    const selected = selectedSkillIds.includes(skill.id)
-                    return (
-                      <Tooltip key={skill.id} title={skill.description || (skill.scopes ?? []).join(', ') || '未填写说明'}>
-                        <button className={`soha-ai-workbench__skill-chip ${selected ? 'is-selected' : ''}`} type="button" onClick={() => setToolsetOpen(true)}>
-                          <span>{skill.name}</span>
-                          {selected ? <StatusTag value="enabled" /> : skill.category ? <Tag>{skill.category}</Tag> : null}
+
+                <div className="soha-ai-workbench__tool-section soha-ai-workbench__tool-section--compact">
+                  <div className="soha-ai-workbench__tool-section-title">
+                    <Text strong>快捷入口</Text>
+                    <Button size="small" type="text" onClick={openExplicitAnalysis} disabled={!currentSession || !canRunExplicitAnalysis}>
+                      显式分析
+                    </Button>
+                  </div>
+                  <div className="soha-ai-workbench__quick-grid">
+                    <button className="soha-ai-workbench__quick-action" type="button" onClick={() => navigate(getAIModelSettingsPath(location.search))}>
+                      <span className="soha-ai-workbench__assembly-icon"><ApiOutlined /></span>
+                      <span>
+                        <strong>模型设置</strong>
+                        <small>配置 Base URL、API Key 和模型</small>
+                      </span>
+                    </button>
+                    <button className="soha-ai-workbench__quick-action" type="button" onClick={openExplicitAnalysis} disabled={!currentSession || !canRunExplicitAnalysis}>
+                      <span className="soha-ai-workbench__assembly-icon"><ThunderboltOutlined /></span>
+                      <span>
+                        <strong>显式分析</strong>
+                        <small>需要工具和证据时手动触发</small>
+                      </span>
+                    </button>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="soha-ai-workbench__tools-header">
+                  <div className="soha-ai-workbench__tools-title">
+                    <span className="soha-ai-workbench__tools-icon"><BranchesOutlined /></span>
+                    <span>
+                      <Text strong>会话洞察</Text>
+                      <Text type="secondary">证据、假设、建议</Text>
+                    </span>
+                  </div>
+                  <Tooltip title={hasToolCalls ? '分析链路' : '当前会话还没有工具调用步骤'}>
+                    <Button
+                      aria-label="分析链路"
+                      disabled={!hasToolCalls}
+                      icon={<BranchesOutlined />}
+                      size="small"
+                      type="text"
+                      onClick={() => setThinkingOpen(true)}
+                    />
+                  </Tooltip>
+                </div>
+
+                <div className="soha-ai-workbench__focus-grid">
+                  {artifactSummary.map((item) => (
+                    <Tooltip key={item.key} title={item.description}>
+                      <button className="soha-ai-workbench__focus-tile" type="button" onClick={() => openInspector(item.key)}>
+                        <span className="soha-ai-workbench__insight-icon">{item.icon}</span>
+                        <span className="soha-ai-workbench__focus-value">{item.value}</span>
+                        <span className="soha-ai-workbench__focus-label">{item.label}</span>
+                      </button>
+                    </Tooltip>
+                  ))}
+                </div>
+
+                <div className="soha-ai-workbench__tool-section soha-ai-workbench__tool-section--compact">
+                  <div className="soha-ai-workbench__tool-section-title">
+                    <Text strong>会话装配</Text>
+                    <Button size="small" icon={<ToolOutlined />} onClick={() => setToolsetOpen(true)}>
+                      工具装配
+                    </Button>
+                  </div>
+                  <div className="soha-ai-workbench__assembly-grid">
+                    {assemblyItems.map((item) => (
+                      <Tooltip key={item.key} title={item.detail}>
+                        <button className="soha-ai-workbench__assembly-tile" type="button" onClick={() => setToolsetOpen(true)}>
+                          <span className="soha-ai-workbench__assembly-icon">{item.icon}</span>
+                          <span className="soha-ai-workbench__assembly-main">
+                            <span>{item.label}</span>
+                            <strong>{item.value}</strong>
+                          </span>
                         </button>
                       </Tooltip>
-                    )
-                  })}
+                    ))}
+                  </div>
                 </div>
-              )}
-            </div>
+
+                <div className="soha-ai-workbench__tool-section soha-ai-workbench__tool-section--compact">
+                  <div className="soha-ai-workbench__tool-section-title">
+                    <Text strong>快捷动作</Text>
+                    <Button size="small" type="text" onClick={() => navigate(getAIToolsPath(location.search))}>
+                      工具与技能
+                    </Button>
+                  </div>
+                  <div className="soha-ai-workbench__quick-grid">
+                    {quickActionItems.map((item) => (
+                      <Tooltip key={item.key} title={item.tooltip}>
+                        <button
+                          className={`soha-ai-workbench__quick-action ${item.disabled ? 'is-disabled' : ''}`}
+                          disabled={item.disabled}
+                          title={item.tooltip}
+                          type="button"
+                          onClick={() => {
+                            if (item.disabled) return
+                            item.onClick()
+                          }}
+                        >
+                          <span className="soha-ai-workbench__assembly-icon">{item.icon}</span>
+                          <span>
+                            <strong>{item.label}</strong>
+                            <small>{item.detail}</small>
+                          </span>
+                        </button>
+                      </Tooltip>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="soha-ai-workbench__tool-section soha-ai-workbench__tool-section--compact">
+                  <div className="soha-ai-workbench__tool-section-title">
+                    <Text strong>Skills</Text>
+                    {hiddenSkillCount > 0 ? (
+                      <Button size="small" type="text" onClick={() => setShowAllSkills((current) => !current)}>
+                        {showAllSkills ? '收起' : `更多 ${hiddenSkillCount}`}
+                      </Button>
+                    ) : null}
+                  </div>
+                  {primarySkills.length === 0 ? (
+                    <div className="soha-ai-workbench__skill-empty">暂无启用 Skills</div>
+                  ) : (
+                    <div className="soha-ai-workbench__skill-chip-grid">
+                      {primarySkills.map((skill) => {
+                        const selected = selectedSkillIds.includes(skill.id)
+                        return (
+                          <Tooltip key={skill.id} title={skill.description || (skill.scopes ?? []).join(', ') || '未填写说明'}>
+                            <button className={`soha-ai-workbench__skill-chip ${selected ? 'is-selected' : ''}`} type="button" onClick={() => setToolsetOpen(true)}>
+                              <span>{skill.name}</span>
+                              {selected ? <StatusTag value="enabled" /> : skill.category ? <Tag>{skill.category}</Tag> : null}
+                            </button>
+                          </Tooltip>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
           </aside>
         </section>
       </div>
@@ -1780,7 +2048,7 @@ export function AIWorkbenchPage() {
       <Drawer title="分析链路" placement="right" open={thinkingOpen} onClose={() => setThinkingOpen(false)} size="large">
         <ThoughtChain
           items={toolCalls.length === 0 ? [
-            { key: 'idle', title: '尚未执行工具', description: '发送消息后，这里会展示工具调用与分析步骤。', status: 'loading' satisfies ThoughtChainStatus },
+            { key: 'idle', title: '暂无分析链路', description: '通用聊天不会自动执行工具；执行显式分析或产生工具调用后，这里会显示步骤。', status: 'abort' satisfies ThoughtChainStatus },
           ] : toolCalls.map((item) => ({
             key: item.id,
             title: item.toolName,
@@ -1792,7 +2060,7 @@ export function AIWorkbenchPage() {
       </Drawer>
 
       <Drawer
-        title="调查上下文"
+        title="会话上下文"
         placement="right"
         open={inspectorOpen}
         onClose={() => setInspectorOpen(false)}
@@ -1820,7 +2088,7 @@ export function AIWorkbenchPage() {
         open={toolsetOpen}
         onClose={() => setToolsetOpen(false)}
         size="large"
-        extra={<Tag color={currentSession ? 'blue' : 'default'}>{currentSession ? currentSession.title : '未选择会话'}</Tag>}
+        extra={<Tag color={currentSession ? 'blue' : 'default'}>{currentSession ? currentSessionTitle : '未选择会话'}</Tag>}
         footer={(
           <Flex justify="space-between" gap={12} wrap="wrap">
             <Space wrap>

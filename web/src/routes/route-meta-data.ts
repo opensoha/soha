@@ -1931,7 +1931,7 @@ export const routeMeta: RouteMeta[] = [
   {
     id: "ai-workbench-investigation",
     path: "/ai-workbench/investigation",
-    title: "调查工作台",
+    title: "AI 会话入口",
     description: "兼容旧入口，跳转到通用聊天",
     icon: "IconComment",
     group: "observe",
@@ -2031,7 +2031,7 @@ export const routeMeta: RouteMeta[] = [
     id: "ai-chat",
     path: "/ai-observe/chat",
     title: "AI Chat",
-    description: "兼容旧入口，跳转到调查工作台",
+    description: "兼容旧入口，跳转到通用聊天",
     icon: "IconComment",
     group: "observe",
     requiresAuth: true,

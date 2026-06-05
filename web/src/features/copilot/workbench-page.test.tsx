@@ -8,6 +8,10 @@ import { MemoryRouter, useLocation } from 'react-router-dom'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AIWorkbenchPage, RUNNABLE_ANALYSIS_MODE_OPTIONS } from './workbench-page'
 import type { PermissionSnapshot } from '@/types'
+import type { WorkbenchMessage, WorkbenchMessageEnvelope, WorkbenchSession } from './workbench-types'
+
+type TestWorkbenchMode = NonNullable<NonNullable<WorkbenchSession['metadata']>['mode']>
+type MessageScenario = 'default' | 'tool-artifact' | 'legacy-platform'
 
 const testState = vi.hoisted(() => ({
   snapshot: {
@@ -16,6 +20,13 @@ const testState = vi.hoisted(() => ({
     visibleMenus: [],
   } as PermissionSnapshot,
   sessionAgentProviderId: undefined as string | undefined,
+  sessionMode: 'root_cause' as TestWorkbenchMode,
+  messageScenario: 'default' as MessageScenario,
+  sendMessageGate: undefined as Promise<void> | undefined,
+  sendMessageEnvelope: {
+    messages: [],
+    analysisArtifacts: [],
+  } as WorkbenchMessageEnvelope,
   agentProviders: [
     {
       id: 'internal',
@@ -50,13 +61,13 @@ const apiGetMock = vi.hoisted(() => vi.fn(async (path: string) => {
           title: '支付告警调查',
           updatedAt: '2026-05-12T10:00:00Z',
           metadata: {
-            mode: 'root_cause',
             summary: '确认异常来源与影响面',
             scope: {
               clusterId: 'local-k3s',
               namespace: 'payments',
               workload: 'payment-api',
             },
+            mode: testState.sessionMode,
             analysisRunRefs: [{ id: 'run-1', kind: 'root_cause', status: 'completed' }],
             tags: ['P1'],
             ...(testState.sessionAgentProviderId ? { agentProviderId: testState.sessionAgentProviderId } : {}),
@@ -79,13 +90,13 @@ const apiGetMock = vi.hoisted(() => vi.fn(async (path: string) => {
         title: '支付告警调查',
         updatedAt: '2026-05-12T10:00:00Z',
         metadata: {
-          mode: 'root_cause',
           summary: '确认异常来源与影响面',
           scope: {
             clusterId: 'local-k3s',
             namespace: 'payments',
             workload: 'payment-api',
           },
+          mode: testState.sessionMode,
           analysisRunRefs: [{ id: 'run-1', kind: 'root_cause', status: 'completed' }],
           tags: ['P1'],
           ...(testState.sessionAgentProviderId ? { agentProviderId: testState.sessionAgentProviderId } : {}),
@@ -101,80 +112,123 @@ const apiGetMock = vi.hoisted(() => vi.fn(async (path: string) => {
     }
   }
   if (path === '/copilot/sessions/session-1/messages') {
+    const baseMessages: WorkbenchMessage[] = [
+      {
+        id: 'msg-0',
+        sessionId: 'session-1',
+        role: 'assistant',
+        content: '已从巡检运行创建复盘。',
+        createdAt: '2026-05-12T09:58:00Z',
+        metadata: {
+          analysisArtifacts: [{
+            kind: 'inspection_review',
+            runId: 'inspection-run-1',
+            title: '巡检复盘',
+            summary: '巡检完成，发现一项配置风险。',
+            dataSourceSnapshot: {
+              sessionId: 'session-1',
+              inspectionRunId: 'inspection-run-1',
+              analysisKind: 'inspection_review',
+            },
+            evidence: [{ id: 'inspection-e1', kind: 'inspection.finding', title: '巡检发现', summary: '发布窗口内存在异常告警' }],
+            recommendations: ['先确认发布窗口内的告警是否已经恢复'],
+            graph: {
+              layout: 'LR',
+              focusNodeId: 'scope:workload:payment-api',
+              nodes: [
+                { id: 'scope:workload:payment-api', kind: 'scope', title: 'payment-api', subtitle: 'local-k3s / payments' },
+                { id: 'inspection-finding:inspection-e1', kind: 'inspection_finding', title: '巡检发现', subtitle: '发布窗口内存在异常告警', severity: 'warning', evidenceIds: ['inspection-e1'] },
+              ],
+              edges: [
+                { id: 'scope:workload:payment-api->inspection-finding:inspection-e1', source: 'scope:workload:payment-api', target: 'inspection-finding:inspection-e1', relation: 'finds', severity: 'warning', evidenceIds: ['inspection-e1'] },
+              ],
+            },
+          }],
+        },
+      },
+      { id: 'msg-1', sessionId: 'session-1', role: 'user', content: '最近告警为什么爆发？', createdAt: '2026-05-12T10:01:00Z' },
+      {
+        id: 'msg-2',
+        sessionId: 'session-1',
+        role: 'assistant',
+        content: '初步判断与数据库连接耗尽有关。',
+        createdAt: '2026-05-12T10:02:00Z',
+        metadata: {
+          source: 'platform-context',
+          analysisArtifacts: [{
+            kind: 'root_cause',
+            runId: 'run-1',
+            title: '根因分析',
+            summary: '发现数据库连接异常',
+            dataSourceSnapshot: {
+              sessionId: 'session-1',
+              rootCauseRunId: 'run-1',
+              agentRunId: 'agent-run-1',
+              analysisKind: 'root_cause',
+            },
+            evidence: [{ id: 'e1', kind: 'metric', title: '连接数升高', summary: '连接池在 5 分钟内升高到上限' }],
+            hypotheses: [{ id: 'h1', title: '连接池泄漏', summary: '连接未及时释放', confidence: 81, evidenceIds: ['e1'] }],
+            recommendations: ['先限制新流量并检查连接归还链路'],
+            graph: {
+              layout: 'LR',
+              focusNodeId: 'scope:workload:payment-api',
+              nodes: [
+                { id: 'scope:workload:payment-api', kind: 'scope', title: 'payment-api', subtitle: 'local-k3s / payments' },
+                { id: 'metric:db-connections', kind: 'metric_signal', title: '数据库连接数', subtitle: 'latest=92 avg=35 trend=spike', severity: 'warning', evidenceIds: ['e1'] },
+                { id: 'hypothesis:h1', kind: 'hypothesis', title: '连接池泄漏', subtitle: '连接未及时释放', severity: 'critical', evidenceIds: ['e1'] },
+              ],
+              edges: [
+                { id: 'scope:workload:payment-api->metric:db-connections', source: 'scope:workload:payment-api', target: 'metric:db-connections', relation: 'measures', severity: 'warning', evidenceIds: ['e1'] },
+                { id: 'metric:db-connections->hypothesis:h1', source: 'metric:db-connections', target: 'hypothesis:h1', relation: 'supports', evidenceIds: ['e1'] },
+              ],
+            },
+          }],
+        },
+      },
+    ]
+    if (testState.messageScenario === 'legacy-platform') {
+      baseMessages.push(
+        { id: 'msg-hi', sessionId: 'session-1', role: 'user', content: 'hi', createdAt: '2026-05-12T10:03:00Z' },
+        {
+          id: 'msg-legacy-platform',
+          sessionId: 'session-1',
+          role: 'assistant',
+          content: '当前平台上下文：平台可见 1 个集群，其中 0 个处于异常状态。',
+          createdAt: '2026-05-12T10:03:01Z',
+          metadata: { source: 'platform-context' },
+        },
+      )
+    }
+    if (testState.messageScenario === 'tool-artifact') {
+      baseMessages.push({
+        id: 'msg-tool',
+        sessionId: 'session-1',
+        role: 'assistant',
+        content: '已完成工具分析。',
+        createdAt: '2026-05-12T10:03:00Z',
+        metadata: {
+          analysisArtifacts: [{
+            kind: 'root_cause',
+            runId: 'run-tool',
+            title: '工具分析',
+            summary: '执行指标异常分析。',
+            toolExecutions: [{
+              id: 'tool-1',
+              adapterId: 'metrics.v1',
+              toolName: 'metrics.anomaly_summary',
+              status: 'success',
+              summary: '发现错误率突增。',
+              input: { namespace: 'payments' },
+              output: { errorRate: '12%' },
+              startedAt: '2026-05-12T10:03:00Z',
+              completedAt: '2026-05-12T10:03:03Z',
+            }],
+          }],
+        },
+      })
+    }
     return {
-      data: [
-        {
-          id: 'msg-0',
-          sessionId: 'session-1',
-          role: 'assistant',
-          content: '已从巡检运行创建复盘。',
-          createdAt: '2026-05-12T09:58:00Z',
-          metadata: {
-            analysisArtifacts: [{
-              kind: 'inspection_review',
-              runId: 'inspection-run-1',
-              title: '巡检复盘',
-              summary: '巡检完成，发现一项配置风险。',
-              dataSourceSnapshot: {
-                sessionId: 'session-1',
-                inspectionRunId: 'inspection-run-1',
-                analysisKind: 'inspection_review',
-              },
-              evidence: [{ id: 'inspection-e1', kind: 'inspection.finding', title: '巡检发现', summary: '发布窗口内存在异常告警' }],
-              recommendations: ['先确认发布窗口内的告警是否已经恢复'],
-              graph: {
-                layout: 'LR',
-                focusNodeId: 'scope:workload:payment-api',
-                nodes: [
-                  { id: 'scope:workload:payment-api', kind: 'scope', title: 'payment-api', subtitle: 'local-k3s / payments' },
-                  { id: 'inspection-finding:inspection-e1', kind: 'inspection_finding', title: '巡检发现', subtitle: '发布窗口内存在异常告警', severity: 'warning', evidenceIds: ['inspection-e1'] },
-                ],
-                edges: [
-                  { id: 'scope:workload:payment-api->inspection-finding:inspection-e1', source: 'scope:workload:payment-api', target: 'inspection-finding:inspection-e1', relation: 'finds', severity: 'warning', evidenceIds: ['inspection-e1'] },
-                ],
-              },
-            }],
-          },
-        },
-        { id: 'msg-1', sessionId: 'session-1', role: 'user', content: '最近告警为什么爆发？', createdAt: '2026-05-12T10:01:00Z' },
-        {
-          id: 'msg-2',
-          sessionId: 'session-1',
-          role: 'assistant',
-          content: '初步判断与数据库连接耗尽有关。',
-          createdAt: '2026-05-12T10:02:00Z',
-          metadata: {
-            analysisArtifacts: [{
-              kind: 'root_cause',
-              runId: 'run-1',
-              title: '根因分析',
-              summary: '发现数据库连接异常',
-              dataSourceSnapshot: {
-                sessionId: 'session-1',
-                rootCauseRunId: 'run-1',
-                agentRunId: 'agent-run-1',
-                analysisKind: 'root_cause',
-              },
-              evidence: [{ id: 'e1', kind: 'metric', title: '连接数升高', summary: '连接池在 5 分钟内升高到上限' }],
-              hypotheses: [{ id: 'h1', title: '连接池泄漏', summary: '连接未及时释放', confidence: 81, evidenceIds: ['e1'] }],
-              recommendations: ['先限制新流量并检查连接归还链路'],
-              graph: {
-                layout: 'LR',
-                focusNodeId: 'scope:workload:payment-api',
-                nodes: [
-                  { id: 'scope:workload:payment-api', kind: 'scope', title: 'payment-api', subtitle: 'local-k3s / payments' },
-                  { id: 'metric:db-connections', kind: 'metric_signal', title: '数据库连接数', subtitle: 'latest=92 avg=35 trend=spike', severity: 'warning', evidenceIds: ['e1'] },
-                  { id: 'hypothesis:h1', kind: 'hypothesis', title: '连接池泄漏', subtitle: '连接未及时释放', severity: 'critical', evidenceIds: ['e1'] },
-                ],
-                edges: [
-                  { id: 'scope:workload:payment-api->metric:db-connections', source: 'scope:workload:payment-api', target: 'metric:db-connections', relation: 'measures', severity: 'warning', evidenceIds: ['e1'] },
-                  { id: 'metric:db-connections->hypothesis:h1', source: 'metric:db-connections', target: 'hypothesis:h1', relation: 'supports', evidenceIds: ['e1'] },
-                ],
-              },
-            }],
-          },
-        },
-      ],
+      data: baseMessages,
     }
   }
   if (path === '/copilot/workbench/catalog') {
@@ -193,6 +247,15 @@ const apiGetMock = vi.hoisted(() => vi.fn(async (path: string) => {
 }))
 
 const apiPostMock = vi.hoisted(() => vi.fn(async (path: string, body?: Record<string, unknown>) => {
+  if (path === '/copilot/sessions/session-1/messages') {
+    if (testState.sendMessageGate) {
+      await testState.sendMessageGate
+    }
+    if ((testState.sendMessageEnvelope.analysisArtifacts ?? []).some((artifact) => (artifact.toolExecutions ?? []).length > 0)) {
+      testState.messageScenario = 'tool-artifact'
+    }
+    return { data: testState.sendMessageEnvelope }
+  }
   if (path === '/copilot/sessions/session-1/analyze') {
     return {
       data: {
@@ -276,6 +339,43 @@ async function renderPage(route = '/ai-workbench?session=session-1&mode=root_cau
   return container
 }
 
+async function flushAsyncWork() {
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  await new Promise((resolve) => setTimeout(resolve, 0))
+}
+
+function senderInput(container: HTMLElement) {
+  return container.querySelector('textarea[placeholder="输入问题、分析目标或进一步追问"]') as HTMLTextAreaElement | null
+}
+
+async function typeSenderMessage(container: HTMLElement, value: string) {
+  const input = container.querySelector('textarea[placeholder="输入问题、分析目标或进一步追问"]') as HTMLTextAreaElement | null
+  expect(input).toBeTruthy()
+
+  await act(async () => {
+    const valueSetter = Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')?.set
+    valueSetter?.call(input, value)
+    input?.dispatchEvent(new Event('input', { bubbles: true }))
+    input?.dispatchEvent(new Event('change', { bubbles: true }))
+    await flushAsyncWork()
+  })
+}
+
+async function pressSenderEnter(container: HTMLElement) {
+  const input = senderInput(container)
+  expect(input).toBeTruthy()
+
+  await act(async () => {
+    input?.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, cancelable: true, key: 'Enter', code: 'Enter' }))
+    await flushAsyncWork()
+  })
+}
+
+async function submitSenderMessage(container: HTMLElement, value: string) {
+  await typeSenderMessage(container, value)
+  await pressSenderEnter(container)
+}
+
 describe('AIWorkbenchPage', () => {
   beforeAll(() => {
     class ResizeObserverMock {
@@ -325,6 +425,13 @@ describe('AIWorkbenchPage', () => {
       visibleMenus: [],
     } as PermissionSnapshot
     testState.sessionAgentProviderId = undefined
+    testState.sessionMode = 'root_cause'
+    testState.messageScenario = 'default'
+    testState.sendMessageGate = undefined
+    testState.sendMessageEnvelope = {
+      messages: [],
+      analysisArtifacts: [],
+    }
     apiGetMock.mockClear()
     apiPostMock.mockClear()
     apiPatchMock.mockClear()
@@ -356,7 +463,10 @@ describe('AIWorkbenchPage', () => {
   it('renders the conversation canvas without duplicated mode navigation', async () => {
     const container = await renderPage()
 
-    expect(container.textContent).toContain('对话流程')
+    expect(container.querySelector('.soha-ai-workbench__function-bar')).toBeNull()
+    expect(container.querySelector('.soha-ai-workbench__session-card')).toBeNull()
+    expect(container.querySelector('.soha-ai-workbench__conversation-topbar')).toBeNull()
+    expect(container.textContent).not.toContain('当前对话类型')
     expect(container.textContent).toContain('支付告警调查')
     expect(container.textContent).toContain('巡检')
     expect(container.textContent).toContain('分析工件历史')
@@ -369,14 +479,14 @@ describe('AIWorkbenchPage', () => {
   it('lets explicit performance routes override and persist the selected session mode', async () => {
     const container = await renderPage('/ai-workbench/performance?session=session-1')
 
-    expect(container.querySelector('.soha-ai-workbench__function-copy h5')?.textContent).toBe('性能分析')
+    expect(container.querySelector('.soha-ai-workbench__session-mode')?.textContent).toContain('性能分析')
     expect(apiPatchMock).toHaveBeenCalledWith('/copilot/sessions/session-1', { mode: 'performance' })
   })
 
   it('keeps legacy investigation mode redirects authoritative for the selected session', async () => {
     const container = await renderPage('/ai-workbench/chat?session=session-1&mode=trace')
 
-    expect(container.querySelector('.soha-ai-workbench__function-copy h5')?.textContent).toBe('链路分析')
+    expect(container.querySelector('.soha-ai-workbench__session-mode')?.textContent).toContain('链路分析')
     expect(apiPatchMock).toHaveBeenCalledWith('/copilot/sessions/session-1', { mode: 'trace' })
   })
 
@@ -447,6 +557,163 @@ describe('AIWorkbenchPage', () => {
     expect(document.body.textContent).toContain('metrics.v1.metrics.anomaly_summary')
     expect(document.body.textContent).toContain('timeoutSeconds=45')
     expect(document.body.textContent).toContain('payments-shadow')
+  })
+
+  it('does not open the analysis chain drawer after an ordinary general chat message', async () => {
+    testState.sessionMode = 'general'
+    testState.sendMessageEnvelope = {
+      messages: [],
+      analysisArtifacts: [],
+    }
+    const container = await renderPage('/ai-workbench/chat?session=session-1')
+
+    expect(container.querySelector('.soha-ai-workbench__session-mode')?.textContent).toContain('通用聊天')
+
+    await submitSenderMessage(container, '只是问个普通问题')
+
+    expect(apiPostMock).toHaveBeenCalledWith('/copilot/sessions/session-1/messages', { content: '只是问个普通问题' })
+    expect(document.body.textContent).not.toContain('暂无分析链路')
+    expect(document.body.textContent).not.toContain('通用聊天不会自动执行工具')
+  })
+
+  it('hides legacy platform-context fallback replies in general chat', async () => {
+    testState.sessionMode = 'general'
+    testState.messageScenario = 'legacy-platform'
+
+    const container = await renderPage('/ai-workbench/chat?session=session-1')
+
+    expect(container.textContent).toContain('聊天状态')
+    expect(container.textContent).toContain('hi')
+    expect(container.textContent).toContain('已隐藏旧版平台上下文回复')
+    expect(container.textContent).not.toContain('当前平台上下文：平台可见 1 个集群')
+  })
+
+  it('shows submitted chat messages immediately and clears the sender while the reply is pending', async () => {
+    testState.sessionMode = 'general'
+    let releaseReply = () => {}
+    testState.sendMessageGate = new Promise<void>((resolve) => {
+      releaseReply = resolve
+    })
+    testState.sendMessageEnvelope = {
+      messages: [
+        {
+          id: 'msg-sent-user',
+          sessionId: 'session-1',
+          role: 'user',
+          content: '帮我梳理当前问题',
+          createdAt: '2026-05-12T10:04:00Z',
+        },
+        {
+          id: 'msg-sent-assistant',
+          sessionId: 'session-1',
+          role: 'assistant',
+          content: '我先按当前会话把问题拆成现象、上下文和下一步动作。',
+          createdAt: '2026-05-12T10:04:03Z',
+          metadata: { source: 'provider' },
+        },
+      ],
+      analysisArtifacts: [],
+    }
+    const container = await renderPage('/ai-workbench/chat?session=session-1')
+    const input = senderInput(container)
+    expect(input).toBeTruthy()
+
+    await typeSenderMessage(container, '帮我梳理当前问题')
+
+    await act(async () => {
+      input?.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true, cancelable: true, key: 'Enter', code: 'Enter' }))
+      await flushAsyncWork()
+    })
+
+    expect(apiPostMock).toHaveBeenCalledWith('/copilot/sessions/session-1/messages', { content: '帮我梳理当前问题' })
+    expect(container.textContent).toContain('帮我梳理当前问题')
+    expect(container.textContent).toContain('正在思考...')
+
+    await act(async () => {
+      releaseReply()
+      await flushAsyncWork()
+    })
+
+    expect(senderInput(container)?.value).toBe('')
+    expect(container.textContent).not.toContain('正在思考...')
+    expect(container.textContent).toContain('我先按当前会话把问题拆成现象、上下文和下一步动作。')
+  })
+
+  it('keeps the analysis chain action disabled when the active artifact has no tool steps', async () => {
+    const container = await renderPage()
+
+    const headerAction = container.querySelector('button[aria-label="分析链路"]') as HTMLButtonElement | null
+    expect(headerAction).toBeTruthy()
+    expect(headerAction?.disabled).toBe(true)
+
+    const quickAction = Array.from(container.querySelectorAll<HTMLButtonElement>('.soha-ai-workbench__quick-action'))
+      .find((button) => button.textContent?.includes('分析链路'))
+    expect(quickAction).toBeTruthy()
+    expect(quickAction?.disabled).toBe(true)
+
+    await act(async () => {
+      headerAction?.click()
+      quickAction?.click()
+      await flushAsyncWork()
+    })
+
+    expect(document.body.textContent).not.toContain('暂无分析链路')
+  })
+
+  it('opens the analysis chain drawer when a sent message returns visible tool steps', async () => {
+    testState.sendMessageEnvelope = {
+      messages: [],
+      analysisArtifacts: [{
+        kind: 'root_cause',
+        runId: 'run-tool',
+        title: '工具分析',
+        summary: '执行指标异常分析。',
+        toolExecutions: [{
+          id: 'tool-1',
+          adapterId: 'metrics.v1',
+          toolName: 'metrics.anomaly_summary',
+          status: 'success',
+          summary: '发现错误率突增。',
+          input: { namespace: 'payments' },
+          output: { errorRate: '12%' },
+          startedAt: '2026-05-12T10:03:00Z',
+          completedAt: '2026-05-12T10:03:03Z',
+        }],
+      }],
+    }
+    const container = await renderPage()
+
+    await submitSenderMessage(container, '请执行一次指标分析')
+
+    expect(apiPostMock).toHaveBeenCalledWith('/copilot/sessions/session-1/messages', { content: '请执行一次指标分析' })
+    expect(document.body.textContent).toContain('metrics.anomaly_summary')
+    expect(document.body.textContent).toContain('发现错误率突增。')
+  })
+
+  it('archives sessions from the left session list', async () => {
+    const container = await renderPage()
+
+    const archiveButton = container.querySelector('button[aria-label="归档 支付告警调查"]') as HTMLButtonElement | null
+    expect(archiveButton).toBeTruthy()
+
+    await act(async () => {
+      archiveButton?.click()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    expect(document.body.textContent).toContain('确认归档此会话？')
+
+    const popover = document.body.querySelector('.ant-popover')
+    expect(popover?.innerHTML).toContain('归档')
+    const confirmButton = popover?.querySelector<HTMLButtonElement>('.ant-btn-primary')
+    expect(confirmButton).toBeTruthy()
+
+    await act(async () => {
+      confirmButton?.click()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    expect(apiDeleteMock).toHaveBeenCalledWith('/copilot/sessions/session-1')
   })
 
   it('persists the session agent provider together with the toolset contract', async () => {

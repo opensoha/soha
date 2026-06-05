@@ -205,7 +205,7 @@ func (s *Service) CreateSessionFromInspectionRun(ctx context.Context, principal 
 			scope["namespace"] = task.Namespace
 		}
 	}
-	title := localize(locale, "巡检结果调查", "Inspection Investigation")
+	title := localize(locale, "巡检复盘会话", "Inspection Review")
 	session, err := s.CreateSession(ctx, principal, title, "inspection_review", "", scope, []string{"inspection", "generated"}, locale)
 	if err != nil {
 		return domaincopilot.Session{}, err
@@ -717,7 +717,7 @@ func evaluateAlertPressure(summary domainalert.Summary, alerts []domainalert.Ins
 		Title:          localize(locale, "告警压力升高", "Alert pressure is elevated"),
 		Severity:       severity,
 		Summary:        localize(locale, fmt.Sprintf("当前巡检范围 %s 下有 %d 条触发中的告警，其中 %d 条为严重信号。", localizedScopeLabel(scope, locale), summary.FiringCount, count), fmt.Sprintf("Inspection scope %s currently sees %d firing alerts and %d critical signals.", scope, summary.FiringCount, count)),
-		Recommendation: localize(locale, "打开告警中心确认这些事件是否应该阻断发布或触发调查会话。", "Open Alerts and validate whether current incidents should block releases or trigger investigation sessions."),
+		Recommendation: localize(locale, "打开告警中心确认这些事件是否应该阻断发布或进入 AI 会话继续分析。", "Open Alerts and validate whether current incidents should block releases or require follow-up AI analysis."),
 		Source:         "alerts",
 		Data:           map[string]any{"criticalAlerts": criticalAlerts},
 	}}
