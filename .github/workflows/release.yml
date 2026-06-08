@@ -1,0 +1,85 @@
+name: soha-release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      web_ref:
+        description: "soha-web release tag to embed"
+        required: true
+        default: "v0.1.0"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      WEB_REF: ${{ inputs.web_ref || github.ref_name }}
+    steps:
+      - name: Checkout soha
+        uses: actions/checkout@v4
+        with:
+          path: soha
+      - name: Checkout contracts
+        uses: actions/checkout@v4
+        with:
+          repository: opensoha/soha-contracts
+          path: soha-contracts
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.23.x"
+          cache: true
+          cache-dependency-path: soha/go.sum
+      - name: Prepare Go workspace
+        working-directory: soha
+        run: |
+          cat > go.work <<'EOF'
+          go 1.23.0
+
+          use (
+            .
+            ../soha-contracts
+          )
+
+          replace github.com/opensoha/soha-contracts v0.0.0 => ../soha-contracts
+          EOF
+      - name: Download web artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p /tmp/soha-web-dist
+          gh release download "${WEB_REF}" \
+            --repo opensoha/soha-web \
+            --pattern "soha-web-dist-${WEB_REF}.tar.gz" \
+            --dir /tmp/soha-web-dist
+          rm -rf soha/internal/staticassets/web/dist
+          mkdir -p soha/internal/staticassets/web/dist
+          tar -xzf "/tmp/soha-web-dist/soha-web-dist-${WEB_REF}.tar.gz" -C soha/internal/staticassets/web/dist
+          test -f soha/internal/staticassets/web/dist/index.html
+      - name: Test
+        working-directory: soha
+        run: go test ./...
+      - name: Build linux amd64 binary
+        working-directory: soha
+        run: CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -tags embedassets -trimpath -ldflags="-s -w" -o ../soha-linux-amd64 ./cmd/server
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: soha-linux-amd64-${{ github.ref_name }}
+          path: soha-linux-amd64
+          if-no-files-found: error
+      - name: Publish GitHub release asset
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          asset="soha-linux-amd64"
+          if gh release view "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            gh release upload "${GITHUB_REF_NAME}" "${asset}" --repo "${GITHUB_REPOSITORY}" --clobber
+          else
+            gh release create "${GITHUB_REF_NAME}" "${asset}" --repo "${GITHUB_REPOSITORY}" --title "soha ${GITHUB_REF_NAME}" --generate-notes
+          fi
