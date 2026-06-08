@@ -19,11 +19,13 @@ jobs:
         with:
           repository: opensoha/soha-contracts
           path: soha-contracts
+          token: ${{ secrets.OPENSOHA_CI_TOKEN || github.token }}
       - name: Checkout web
         uses: actions/checkout@v4
         with:
           repository: opensoha/soha-web
           path: soha-web
+          token: ${{ secrets.OPENSOHA_CI_TOKEN || github.token }}
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
