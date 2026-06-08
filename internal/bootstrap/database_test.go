@@ -5,11 +5,11 @@ import (
 	"slices"
 	"testing"
 
-	appdocker "github.com/soha/soha/internal/application/docker"
-	appvirtualization "github.com/soha/soha/internal/application/virtualization"
-	domainidentity "github.com/soha/soha/internal/domain/identity"
-	domainvirtualization "github.com/soha/soha/internal/domain/virtualization"
-	cfgpkg "github.com/soha/soha/internal/infrastructure/config"
+	appdocker "github.com/opensoha/soha/internal/application/docker"
+	appvirtualization "github.com/opensoha/soha/internal/application/virtualization"
+	domainidentity "github.com/opensoha/soha/internal/domain/identity"
+	domainvirtualization "github.com/opensoha/soha/internal/domain/virtualization"
+	cfgpkg "github.com/opensoha/soha/internal/infrastructure/config"
 )
 
 func TestDefaultMenuSeedsValidate(t *testing.T) {
@@ -158,6 +158,14 @@ func TestDefaultMenuSeedsIncludeAIGatewayWorkbench(t *testing.T) {
 		"ai-gateway-tokens":     "/ai-gateway/tokens",
 		"ai-gateway-governance": "/ai-gateway/governance",
 		"ai-gateway-call-logs":  "/ai-gateway/call-logs",
+		"plugins":               "/plugins",
+		"plugins-marketplace":   "/plugins/marketplace",
+		"plugins-installed":     "/plugins/installed",
+	}
+	expectedParents := map[string]string{
+		"plugins":             "ai-gateway",
+		"plugins-marketplace": "plugins",
+		"plugins-installed":   "plugins",
 	}
 	for i := range items {
 		if items[i].ID == "ai-gateway" {
@@ -165,8 +173,12 @@ func TestDefaultMenuSeedsIncludeAIGatewayWorkbench(t *testing.T) {
 			continue
 		}
 		if wantPath, ok := children[items[i].ID]; ok {
-			if items[i].ParentID != "ai-gateway" {
-				t.Fatalf("%s parent = %q, want ai-gateway", items[i].ID, items[i].ParentID)
+			wantParent := expectedParents[items[i].ID]
+			if wantParent == "" {
+				wantParent = "ai-gateway"
+			}
+			if items[i].ParentID != wantParent {
+				t.Fatalf("%s parent = %q, want %s", items[i].ID, items[i].ParentID, wantParent)
 			}
 			if items[i].Path != wantPath {
 				t.Fatalf("%s path = %q, want %s", items[i].ID, items[i].Path, wantPath)
@@ -348,6 +360,9 @@ func TestDisabledModuleMenuIDsIncludesAIGatewayWhenSeedVersionIsCurrent(t *testi
 		"ai-gateway-tokens",
 		"ai-gateway-governance",
 		"ai-gateway-call-logs",
+		"plugins",
+		"plugins-marketplace",
+		"plugins-installed",
 	} {
 		if !slices.Contains(menuIDs, id) {
 			t.Fatalf("disabled module menu IDs = %v, missing %s", menuIDs, id)

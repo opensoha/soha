@@ -5,16 +5,16 @@ import (
 	"net/http"
 	"time"
 
-	appaccess "github.com/soha/soha/internal/application/access"
-	domainaccess "github.com/soha/soha/internal/domain/access"
-	domainaudit "github.com/soha/soha/internal/domain/audit"
-	domaincluster "github.com/soha/soha/internal/domain/cluster"
-	domainoperation "github.com/soha/soha/internal/domain/operation"
-	domainsettings "github.com/soha/soha/internal/domain/settings"
-	agentinfra "github.com/soha/soha/internal/infrastructure/agent"
-	informerinfra "github.com/soha/soha/internal/infrastructure/informer"
-	k8sinfra "github.com/soha/soha/internal/infrastructure/kubernetes"
-	portforwardrepo "github.com/soha/soha/internal/repository/portforward"
+	appaccess "github.com/opensoha/soha/internal/application/access"
+	domainaccess "github.com/opensoha/soha/internal/domain/access"
+	domainaudit "github.com/opensoha/soha/internal/domain/audit"
+	domaincluster "github.com/opensoha/soha/internal/domain/cluster"
+	domainoperation "github.com/opensoha/soha/internal/domain/operation"
+	domainsettings "github.com/opensoha/soha/internal/domain/settings"
+	agentinfra "github.com/opensoha/soha/internal/infrastructure/agent"
+	informerinfra "github.com/opensoha/soha/internal/infrastructure/informer"
+	k8sinfra "github.com/opensoha/soha/internal/infrastructure/kubernetes"
+	portforwardrepo "github.com/opensoha/soha/internal/repository/portforward"
 )
 
 type AuditRecorder interface {

@@ -1,43 +1,19 @@
-FROM node:20-bookworm-slim AS web-build
-WORKDIR /src/web
-COPY web/package.json web/package-lock.json ./
-RUN for attempt in 1 2 3; do \
-      npm ci && exit 0; \
-      echo "npm ci failed on attempt ${attempt}, retrying..." >&2; \
-      sleep 2; \
-    done; \
-    exit 1
-COPY web/ ./
-RUN npm run build
-
-FROM node:20-bookworm-slim AS docs-build
-WORKDIR /src/docs
-ENV DOCS_SHOW_LAST_UPDATE_TIME=false
-COPY docs/package.json docs/package-lock.json ./
-RUN for attempt in 1 2 3; do \
-      npm ci && exit 0; \
-      echo "npm ci failed on attempt ${attempt}, retrying..." >&2; \
-      sleep 2; \
-    done; \
-    exit 1
-COPY docs/ ./
-COPY deploy/ ../deploy/
-RUN npm run build
-
 FROM golang:1.23-alpine AS go-build
 WORKDIR /src
 RUN apk add --no-cache git ca-certificates
-COPY go.mod go.sum ./
+COPY go.mod go.sum ./soha/
+COPY --from=contracts go.mod ./soha-contracts/go.mod
 RUN for attempt in 1 2 3; do \
-      go mod download && exit 0; \
+      printf 'go 1.23.0\n\nuse (\n\t./soha\n\t./soha-contracts\n)\n\nreplace github.com/opensoha/soha-contracts v0.0.0 => ./soha-contracts\n' > go.work; \
+      cd soha && go mod download && exit 0; \
       echo "go mod download failed on attempt ${attempt}, retrying..." >&2; \
       sleep 2; \
     done; \
     exit 1
-COPY . .
-COPY --from=web-build /src/web/dist ./web/dist
-COPY --from=docs-build /src/docs/build ./docs/build
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -tags embedassets -trimpath -ldflags="-s -w" -o /out/soha ./cmd/server
+COPY --from=contracts . ./soha-contracts
+COPY . ./soha
+RUN test -f soha/internal/staticassets/web/dist/index.html
+RUN cd soha && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -tags embedassets -trimpath -ldflags="-s -w" -o /out/soha ./cmd/server
 
 FROM alpine:3.20
 RUN addgroup -S soha && adduser -S -G soha soha && apk add --no-cache ca-certificates tzdata

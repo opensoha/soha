@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	domainaigateway "github.com/soha/soha/internal/domain/aigateway"
-	"github.com/soha/soha/internal/platform/apperrors"
+	domainaigateway "github.com/opensoha/soha/internal/domain/aigateway"
+	"github.com/opensoha/soha/internal/platform/apperrors"
 )
 
 func enforceGatewayRedactionPolicyCondition(policy domainaigateway.AccessPolicy, tool domainaigateway.ToolCapability, toolInput map[string]any) (map[string]any, gatewayRedactionAuditSummary, error) {

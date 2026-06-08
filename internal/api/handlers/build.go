@@ -5,11 +5,11 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	"github.com/soha/soha/internal/api/dto"
-	apiMiddleware "github.com/soha/soha/internal/api/middleware"
-	apiresponse "github.com/soha/soha/internal/api/response"
-	domainbuild "github.com/soha/soha/internal/domain/build"
-	domainidentity "github.com/soha/soha/internal/domain/identity"
+	"github.com/opensoha/soha/internal/api/dto"
+	apiMiddleware "github.com/opensoha/soha/internal/api/middleware"
+	apiresponse "github.com/opensoha/soha/internal/api/response"
+	domainbuild "github.com/opensoha/soha/internal/domain/build"
+	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 )
 
 type BuildService interface {

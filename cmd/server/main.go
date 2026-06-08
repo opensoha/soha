@@ -8,7 +8,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/soha/soha/internal/bootstrap"
+	"github.com/opensoha/soha/internal/bootstrap"
 	"go.uber.org/zap"
 )
 

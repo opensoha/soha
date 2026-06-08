@@ -11,10 +11,10 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	appaccess "github.com/soha/soha/internal/application/access"
-	domainaigateway "github.com/soha/soha/internal/domain/aigateway"
-	domainidentity "github.com/soha/soha/internal/domain/identity"
-	"github.com/soha/soha/internal/platform/apperrors"
+	appaccess "github.com/opensoha/soha/internal/application/access"
+	domainaigateway "github.com/opensoha/soha/internal/domain/aigateway"
+	domainidentity "github.com/opensoha/soha/internal/domain/identity"
+	"github.com/opensoha/soha/internal/platform/apperrors"
 )
 
 func (s *Service) hasRuntimePermission(ctx context.Context, principal domainidentity.Principal, permissionKey string) (bool, error) {

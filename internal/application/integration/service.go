@@ -3,7 +3,7 @@ package integration
 import (
 	"context"
 
-	domainmcp "github.com/soha/soha/internal/domain/mcp"
+	domainmcp "github.com/opensoha/soha/internal/domain/mcp"
 )
 
 type Registry interface {

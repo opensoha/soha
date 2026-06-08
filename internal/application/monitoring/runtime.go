@@ -12,11 +12,11 @@ import (
 	"text/template"
 	"time"
 
-	appaccess "github.com/soha/soha/internal/application/access"
-	domainalert "github.com/soha/soha/internal/domain/alert"
-	domainidentity "github.com/soha/soha/internal/domain/identity"
-	domainworkflow "github.com/soha/soha/internal/domain/workflow"
-	"github.com/soha/soha/internal/platform/apperrors"
+	appaccess "github.com/opensoha/soha/internal/application/access"
+	domainalert "github.com/opensoha/soha/internal/domain/alert"
+	domainidentity "github.com/opensoha/soha/internal/domain/identity"
+	domainworkflow "github.com/opensoha/soha/internal/domain/workflow"
+	"github.com/opensoha/soha/internal/platform/apperrors"
 )
 
 type WorkflowExecutor interface {

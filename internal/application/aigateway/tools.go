@@ -8,15 +8,15 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	appaccess "github.com/soha/soha/internal/application/access"
-	domainaigateway "github.com/soha/soha/internal/domain/aigateway"
-	domainapp "github.com/soha/soha/internal/domain/application"
-	domaincatalog "github.com/soha/soha/internal/domain/catalog"
-	domaincopilot "github.com/soha/soha/internal/domain/copilot"
-	domaindelivery "github.com/soha/soha/internal/domain/delivery"
-	domainidentity "github.com/soha/soha/internal/domain/identity"
-	domainresource "github.com/soha/soha/internal/domain/resource"
-	"github.com/soha/soha/internal/platform/apperrors"
+	appaccess "github.com/opensoha/soha/internal/application/access"
+	domainaigateway "github.com/opensoha/soha/internal/domain/aigateway"
+	domainapp "github.com/opensoha/soha/internal/domain/application"
+	domaincatalog "github.com/opensoha/soha/internal/domain/catalog"
+	domaincopilot "github.com/opensoha/soha/internal/domain/copilot"
+	domaindelivery "github.com/opensoha/soha/internal/domain/delivery"
+	domainidentity "github.com/opensoha/soha/internal/domain/identity"
+	domainresource "github.com/opensoha/soha/internal/domain/resource"
+	"github.com/opensoha/soha/internal/platform/apperrors"
 )
 
 func (s *Service) InvokeTool(ctx context.Context, principal domainidentity.Principal, input domainaigateway.ToolInvocationRequest) (domainaigateway.ToolInvocationResult, error) {

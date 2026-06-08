@@ -5,7 +5,7 @@ import (
 	"slices"
 	"sort"
 
-	domainaccess "github.com/soha/soha/internal/domain/access"
+	domainaccess "github.com/opensoha/soha/internal/domain/access"
 )
 
 type Engine struct{}

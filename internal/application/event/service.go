@@ -3,7 +3,7 @@ package event
 import (
 	"context"
 
-	domainevent "github.com/soha/soha/internal/domain/event"
+	domainevent "github.com/opensoha/soha/internal/domain/event"
 )
 
 type Repository interface {

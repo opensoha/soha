@@ -11,12 +11,12 @@ import (
 	rbacv1 "k8s.io/api/rbac/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	domainaccess "github.com/soha/soha/internal/domain/access"
-	domaincluster "github.com/soha/soha/internal/domain/cluster"
-	domainidentity "github.com/soha/soha/internal/domain/identity"
-	domainresource "github.com/soha/soha/internal/domain/resource"
-	k8sinfra "github.com/soha/soha/internal/infrastructure/kubernetes"
-	"github.com/soha/soha/internal/platform/apperrors"
+	domainaccess "github.com/opensoha/soha/internal/domain/access"
+	domaincluster "github.com/opensoha/soha/internal/domain/cluster"
+	domainidentity "github.com/opensoha/soha/internal/domain/identity"
+	domainresource "github.com/opensoha/soha/internal/domain/resource"
+	k8sinfra "github.com/opensoha/soha/internal/infrastructure/kubernetes"
+	"github.com/opensoha/soha/internal/platform/apperrors"
 )
 
 func (s *Service) ListServiceAccounts(ctx context.Context, principal domainidentity.Principal, clusterID, namespace string) ([]domainresource.ServiceAccountView, error) {

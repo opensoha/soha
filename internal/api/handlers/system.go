@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	apiresponse "github.com/soha/soha/internal/api/response"
-	"github.com/soha/soha/internal/platform/runtimeobs"
+	apiresponse "github.com/opensoha/soha/internal/api/response"
+	"github.com/opensoha/soha/internal/platform/runtimeobs"
 )
 
 func NewSystemHandler(postgres ReadinessProbe, metrics RuntimeMetricsProvider) *SystemHandler {

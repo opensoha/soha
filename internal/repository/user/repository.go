@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	domainaccess "github.com/soha/soha/internal/domain/access"
-	domainidentity "github.com/soha/soha/internal/domain/identity"
+	domainaccess "github.com/opensoha/soha/internal/domain/access"
+	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )

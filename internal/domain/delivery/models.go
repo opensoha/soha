@@ -4,12 +4,12 @@ import (
 	"context"
 	"time"
 
-	domainapp "github.com/soha/soha/internal/domain/application"
-	domainbuild "github.com/soha/soha/internal/domain/build"
-	domaincatalog "github.com/soha/soha/internal/domain/catalog"
-	domainrelease "github.com/soha/soha/internal/domain/release"
-	domainresource "github.com/soha/soha/internal/domain/resource"
-	domainworkflow "github.com/soha/soha/internal/domain/workflow"
+	domainapp "github.com/opensoha/soha/internal/domain/application"
+	domainbuild "github.com/opensoha/soha/internal/domain/build"
+	domaincatalog "github.com/opensoha/soha/internal/domain/catalog"
+	domainrelease "github.com/opensoha/soha/internal/domain/release"
+	domainresource "github.com/opensoha/soha/internal/domain/resource"
+	domainworkflow "github.com/opensoha/soha/internal/domain/workflow"
 )
 
 type ReleaseBundle struct {

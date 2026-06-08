@@ -5,11 +5,11 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	apiMiddleware "github.com/soha/soha/internal/api/middleware"
-	apiresponse "github.com/soha/soha/internal/api/response"
-	domainaudit "github.com/soha/soha/internal/domain/audit"
-	domainoperation "github.com/soha/soha/internal/domain/operation"
-	"github.com/soha/soha/internal/platform/runtimeobs"
+	apiMiddleware "github.com/opensoha/soha/internal/api/middleware"
+	apiresponse "github.com/opensoha/soha/internal/api/response"
+	domainaudit "github.com/opensoha/soha/internal/domain/audit"
+	domainoperation "github.com/opensoha/soha/internal/domain/operation"
+	"github.com/opensoha/soha/internal/platform/runtimeobs"
 )
 
 func (h *PlatformHandler) ListClusterEvents(c *gin.Context) {

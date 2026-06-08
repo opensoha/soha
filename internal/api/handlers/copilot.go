@@ -5,12 +5,12 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	"github.com/soha/soha/internal/api/dto"
-	apiMiddleware "github.com/soha/soha/internal/api/middleware"
-	apiresponse "github.com/soha/soha/internal/api/response"
-	domaincopilot "github.com/soha/soha/internal/domain/copilot"
-	domainidentity "github.com/soha/soha/internal/domain/identity"
-	domainmcp "github.com/soha/soha/internal/domain/mcp"
+	"github.com/opensoha/soha/internal/api/dto"
+	apiMiddleware "github.com/opensoha/soha/internal/api/middleware"
+	apiresponse "github.com/opensoha/soha/internal/api/response"
+	domaincopilot "github.com/opensoha/soha/internal/domain/copilot"
+	domainidentity "github.com/opensoha/soha/internal/domain/identity"
+	domainmcp "github.com/opensoha/soha/internal/domain/mcp"
 )
 
 type CopilotService interface {

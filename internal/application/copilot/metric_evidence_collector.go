@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	domaincopilot "github.com/soha/soha/internal/domain/copilot"
-	mcpmetrics "github.com/soha/soha/internal/infrastructure/mcp/metrics"
+	domaincopilot "github.com/opensoha/soha/internal/domain/copilot"
+	mcpmetrics "github.com/opensoha/soha/internal/infrastructure/mcp/metrics"
 )
 
 type metricEvidenceAnalysis struct {

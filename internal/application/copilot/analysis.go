@@ -8,16 +8,16 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	appaccess "github.com/soha/soha/internal/application/access"
-	domainalert "github.com/soha/soha/internal/domain/alert"
-	domainaudit "github.com/soha/soha/internal/domain/audit"
-	domainbuild "github.com/soha/soha/internal/domain/build"
-	domaincluster "github.com/soha/soha/internal/domain/cluster"
-	domaincopilot "github.com/soha/soha/internal/domain/copilot"
-	domainevent "github.com/soha/soha/internal/domain/event"
-	domainidentity "github.com/soha/soha/internal/domain/identity"
-	domainrelease "github.com/soha/soha/internal/domain/release"
-	aperrors "github.com/soha/soha/internal/platform/apperrors"
+	appaccess "github.com/opensoha/soha/internal/application/access"
+	domainalert "github.com/opensoha/soha/internal/domain/alert"
+	domainaudit "github.com/opensoha/soha/internal/domain/audit"
+	domainbuild "github.com/opensoha/soha/internal/domain/build"
+	domaincluster "github.com/opensoha/soha/internal/domain/cluster"
+	domaincopilot "github.com/opensoha/soha/internal/domain/copilot"
+	domainevent "github.com/opensoha/soha/internal/domain/event"
+	domainidentity "github.com/opensoha/soha/internal/domain/identity"
+	domainrelease "github.com/opensoha/soha/internal/domain/release"
+	aperrors "github.com/opensoha/soha/internal/platform/apperrors"
 )
 
 func (s *Service) ListRootCauseRuns(ctx context.Context, principal domainidentity.Principal, filter domaincopilot.RootCauseRunFilter) ([]domaincopilot.RootCauseRun, error) {

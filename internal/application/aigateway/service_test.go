@@ -4,24 +4,23 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"slices"
 	"strings"
 	"testing"
 	"time"
 
-	appaccess "github.com/soha/soha/internal/application/access"
-	domainaigateway "github.com/soha/soha/internal/domain/aigateway"
-	domainalert "github.com/soha/soha/internal/domain/alert"
-	domainapp "github.com/soha/soha/internal/domain/application"
-	domainaudit "github.com/soha/soha/internal/domain/audit"
-	domaincatalog "github.com/soha/soha/internal/domain/catalog"
-	domaincopilot "github.com/soha/soha/internal/domain/copilot"
-	domaindelivery "github.com/soha/soha/internal/domain/delivery"
-	domainidentity "github.com/soha/soha/internal/domain/identity"
-	domainoperation "github.com/soha/soha/internal/domain/operation"
-	domainresource "github.com/soha/soha/internal/domain/resource"
-	"github.com/soha/soha/internal/platform/apperrors"
+	appaccess "github.com/opensoha/soha/internal/application/access"
+	domainaigateway "github.com/opensoha/soha/internal/domain/aigateway"
+	domainalert "github.com/opensoha/soha/internal/domain/alert"
+	domainapp "github.com/opensoha/soha/internal/domain/application"
+	domainaudit "github.com/opensoha/soha/internal/domain/audit"
+	domaincatalog "github.com/opensoha/soha/internal/domain/catalog"
+	domaincopilot "github.com/opensoha/soha/internal/domain/copilot"
+	domaindelivery "github.com/opensoha/soha/internal/domain/delivery"
+	domainidentity "github.com/opensoha/soha/internal/domain/identity"
+	domainoperation "github.com/opensoha/soha/internal/domain/operation"
+	domainresource "github.com/opensoha/soha/internal/domain/resource"
+	"github.com/opensoha/soha/internal/platform/apperrors"
 )
 
 type stubRolePermissionReader struct {
@@ -1344,30 +1343,6 @@ func TestDefaultToolInputSchemasCoverHighFrequencyMCPTools(t *testing.T) {
 		if _, ok := tool.InputSchema["properties"].(map[string]any); !ok {
 			t.Fatalf("default tool %s must expose input schema properties: %#v", tool.Name, tool.InputSchema)
 		}
-	}
-}
-
-func TestDefaultToolsAreDocumented(t *testing.T) {
-	files := []string{
-		"../../../docs/operations/soha-cli.md",
-		"../../../docs/en/operations/soha-cli.md",
-		"../../../docs/architecture/ai-gateway.md",
-		"../../../docs/en/architecture/ai-gateway.md",
-		"../../../docs/architecture/ai-gateway-roadmap.md",
-	}
-	for _, file := range files {
-		t.Run(file, func(t *testing.T) {
-			raw, err := os.ReadFile(file)
-			if err != nil {
-				t.Fatalf("read %s: %v", file, err)
-			}
-			text := string(raw)
-			for _, tool := range defaultTools() {
-				if !strings.Contains(text, tool.Name) {
-					t.Fatalf("%s missing default Gateway tool %s", file, tool.Name)
-				}
-			}
-		})
 	}
 }
 

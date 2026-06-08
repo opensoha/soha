@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	domainapp "github.com/soha/soha/internal/domain/application"
-	domaindelivery "github.com/soha/soha/internal/domain/delivery"
+	domainapp "github.com/opensoha/soha/internal/domain/application"
+	domaindelivery "github.com/opensoha/soha/internal/domain/delivery"
 	"gorm.io/gorm"
 )
 

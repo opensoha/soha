@@ -6,8 +6,8 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-	appaccess "github.com/soha/soha/internal/application/access"
-	domainidentity "github.com/soha/soha/internal/domain/identity"
+	appaccess "github.com/opensoha/soha/internal/application/access"
+	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 )
 
 func TestAuthorizeExternalRunnerAcceptsStaticBearerToken(t *testing.T) {

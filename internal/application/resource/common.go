@@ -6,15 +6,15 @@ import (
 	"strings"
 	"time"
 
-	appaccess "github.com/soha/soha/internal/application/access"
-	domainaccess "github.com/soha/soha/internal/domain/access"
-	domainaudit "github.com/soha/soha/internal/domain/audit"
-	domaincluster "github.com/soha/soha/internal/domain/cluster"
-	domainidentity "github.com/soha/soha/internal/domain/identity"
-	agentinfra "github.com/soha/soha/internal/infrastructure/agent"
-	"github.com/soha/soha/internal/platform/apperrors"
-	"github.com/soha/soha/internal/platform/operationentry"
-	"github.com/soha/soha/internal/platform/requestctx"
+	appaccess "github.com/opensoha/soha/internal/application/access"
+	domainaccess "github.com/opensoha/soha/internal/domain/access"
+	domainaudit "github.com/opensoha/soha/internal/domain/audit"
+	domaincluster "github.com/opensoha/soha/internal/domain/cluster"
+	domainidentity "github.com/opensoha/soha/internal/domain/identity"
+	agentinfra "github.com/opensoha/soha/internal/infrastructure/agent"
+	"github.com/opensoha/soha/internal/platform/apperrors"
+	"github.com/opensoha/soha/internal/platform/operationentry"
+	"github.com/opensoha/soha/internal/platform/requestctx"
 )
 
 func (s *Service) agentClient(connection domaincluster.Connection) (*agentinfra.Client, error) {

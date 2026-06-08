@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	domaincopilot "github.com/soha/soha/internal/domain/copilot"
-	mcplogs "github.com/soha/soha/internal/infrastructure/mcp/logs"
+	domaincopilot "github.com/opensoha/soha/internal/domain/copilot"
+	mcplogs "github.com/opensoha/soha/internal/infrastructure/mcp/logs"
 )
 
 type logEvidenceAnalysis struct {

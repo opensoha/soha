@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"time"
 
-	domainworkflow "github.com/soha/soha/internal/domain/workflow"
+	domainworkflow "github.com/opensoha/soha/internal/domain/workflow"
 	"gorm.io/gorm"
 )
 

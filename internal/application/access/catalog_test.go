@@ -4,9 +4,9 @@ import (
 	"context"
 	"testing"
 
-	domainaccess "github.com/soha/soha/internal/domain/access"
-	domainidentity "github.com/soha/soha/internal/domain/identity"
-	domainmenu "github.com/soha/soha/internal/domain/menu"
+	domainaccess "github.com/opensoha/soha/internal/domain/access"
+	domainidentity "github.com/opensoha/soha/internal/domain/identity"
+	domainmenu "github.com/opensoha/soha/internal/domain/menu"
 )
 
 type stubPolicyCatalogReader struct {
@@ -145,6 +145,31 @@ func TestDefaultRolePermissionsAIGateway(t *testing.T) {
 	for _, permission := range []string{PermAIGatewayView, PermAIGatewayInvoke, PermAIGatewayManage} {
 		if HasPermission([]string{"auditor"}, permission) {
 			t.Fatalf("auditor role should not include %s", permission)
+		}
+	}
+}
+
+func TestDefaultRolePermissionsPlugins(t *testing.T) {
+	SetRolePermissionMatrix(nil)
+
+	for _, permission := range []string{PermPluginView, PermPluginInstall, PermPluginManage, PermPluginConfigureSecrets} {
+		if !HasPermission([]string{"admin"}, permission) {
+			t.Fatalf("admin role should include %s", permission)
+		}
+	}
+	for _, permission := range []string{PermPluginView, PermPluginInstall, PermPluginManage, PermPluginConfigureSecrets} {
+		if !HasPermission([]string{"ops"}, permission) {
+			t.Fatalf("ops role should include %s", permission)
+		}
+	}
+	for _, role := range []string{"developer", "readonly", "auditor"} {
+		if !HasPermission([]string{role}, PermPluginView) {
+			t.Fatalf("%s role should include %s", role, PermPluginView)
+		}
+		for _, permission := range []string{PermPluginInstall, PermPluginManage, PermPluginConfigureSecrets} {
+			if HasPermission([]string{role}, permission) {
+				t.Fatalf("%s role should not include %s", role, permission)
+			}
 		}
 	}
 }

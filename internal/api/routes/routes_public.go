@@ -2,7 +2,7 @@ package routes
 
 import (
 	"github.com/gin-gonic/gin"
-	cfgpkg "github.com/soha/soha/internal/infrastructure/config"
+	cfgpkg "github.com/opensoha/soha/internal/infrastructure/config"
 )
 
 func registerPublicRoutes(v1 gin.IRoutes, cfg cfgpkg.Config, deps Dependencies) {

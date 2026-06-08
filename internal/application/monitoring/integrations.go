@@ -10,10 +10,10 @@ import (
 	"strings"
 	"time"
 
-	appaccess "github.com/soha/soha/internal/application/access"
-	domainalert "github.com/soha/soha/internal/domain/alert"
-	domainidentity "github.com/soha/soha/internal/domain/identity"
-	"github.com/soha/soha/internal/platform/apperrors"
+	appaccess "github.com/opensoha/soha/internal/application/access"
+	domainalert "github.com/opensoha/soha/internal/domain/alert"
+	domainidentity "github.com/opensoha/soha/internal/domain/identity"
+	"github.com/opensoha/soha/internal/platform/apperrors"
 )
 
 func (s *Service) ListAlertIntegrations(ctx context.Context, principal domainidentity.Principal) ([]domainalert.AlertIntegration, error) {

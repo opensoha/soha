@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"strings"
 
-	appdocker "github.com/soha/soha/internal/application/docker"
-	appvirtualization "github.com/soha/soha/internal/application/virtualization"
-	domainidentity "github.com/soha/soha/internal/domain/identity"
-	domainvirtualization "github.com/soha/soha/internal/domain/virtualization"
+	appdocker "github.com/opensoha/soha/internal/application/docker"
+	appvirtualization "github.com/opensoha/soha/internal/application/virtualization"
+	domainidentity "github.com/opensoha/soha/internal/domain/identity"
+	domainvirtualization "github.com/opensoha/soha/internal/domain/virtualization"
 )
 
 type dockerHostProvisioner struct {

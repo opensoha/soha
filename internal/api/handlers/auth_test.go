@@ -11,11 +11,11 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	apiMiddleware "github.com/soha/soha/internal/api/middleware"
-	domainaccess "github.com/soha/soha/internal/domain/access"
-	domainidentity "github.com/soha/soha/internal/domain/identity"
-	domainsettings "github.com/soha/soha/internal/domain/settings"
-	cfgpkg "github.com/soha/soha/internal/infrastructure/config"
+	apiMiddleware "github.com/opensoha/soha/internal/api/middleware"
+	domainaccess "github.com/opensoha/soha/internal/domain/access"
+	domainidentity "github.com/opensoha/soha/internal/domain/identity"
+	domainsettings "github.com/opensoha/soha/internal/domain/settings"
+	cfgpkg "github.com/opensoha/soha/internal/infrastructure/config"
 )
 
 type stubIdentityService struct {

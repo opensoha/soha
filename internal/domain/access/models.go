@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/soha/soha/internal/domain/identity"
+	"github.com/opensoha/soha/internal/domain/identity"
 )
 
 type Action string

@@ -3,7 +3,7 @@ package resource
 import (
 	"testing"
 
-	domainaccess "github.com/soha/soha/internal/domain/access"
+	domainaccess "github.com/opensoha/soha/internal/domain/access"
 	corev1 "k8s.io/api/core/v1"
 	apiresource "k8s.io/apimachinery/pkg/api/resource"
 )

@@ -4,9 +4,9 @@ import (
 	"context"
 	"testing"
 
-	appaccess "github.com/soha/soha/internal/application/access"
-	domainidentity "github.com/soha/soha/internal/domain/identity"
-	domainscopegrant "github.com/soha/soha/internal/domain/scopegrant"
+	appaccess "github.com/opensoha/soha/internal/application/access"
+	domainidentity "github.com/opensoha/soha/internal/domain/identity"
+	domainscopegrant "github.com/opensoha/soha/internal/domain/scopegrant"
 )
 
 type stubScopeGrantRepository struct {

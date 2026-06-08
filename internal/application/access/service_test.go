@@ -4,11 +4,11 @@ import (
 	"context"
 	"testing"
 
-	domainaccess "github.com/soha/soha/internal/domain/access"
-	domaincatalog "github.com/soha/soha/internal/domain/catalog"
-	domainidentity "github.com/soha/soha/internal/domain/identity"
-	domainscopegrant "github.com/soha/soha/internal/domain/scopegrant"
-	"github.com/soha/soha/internal/policy"
+	domainaccess "github.com/opensoha/soha/internal/domain/access"
+	domaincatalog "github.com/opensoha/soha/internal/domain/catalog"
+	domainidentity "github.com/opensoha/soha/internal/domain/identity"
+	domainscopegrant "github.com/opensoha/soha/internal/domain/scopegrant"
+	"github.com/opensoha/soha/internal/policy"
 )
 
 type stubScopeGrantReader struct {

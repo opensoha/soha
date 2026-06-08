@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	domainresource "github.com/soha/soha/internal/domain/resource"
-	"github.com/soha/soha/internal/platform/apperrors"
-	sohahelmrelease "github.com/soha/soha/internal/platform/helmrelease"
+	domainresource "github.com/opensoha/soha/internal/domain/resource"
+	"github.com/opensoha/soha/internal/platform/apperrors"
+	sohahelmrelease "github.com/opensoha/soha/internal/platform/helmrelease"
 	helmchartpkg "helm.sh/helm/v3/pkg/chart"
 	helmreleasepkg "helm.sh/helm/v3/pkg/release"
 )

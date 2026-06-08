@@ -24,8 +24,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 
-	domainaccess "github.com/soha/soha/internal/domain/access"
-	k8sinfra "github.com/soha/soha/internal/infrastructure/kubernetes"
+	domainaccess "github.com/opensoha/soha/internal/domain/access"
+	k8sinfra "github.com/opensoha/soha/internal/infrastructure/kubernetes"
 )
 
 func TestListAcrossNamespaceNamesPreservesInputOrderAndLimitsConcurrency(t *testing.T) {

@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
-	domaincluster "github.com/soha/soha/internal/domain/cluster"
-	cfgpkg "github.com/soha/soha/internal/infrastructure/config"
+	domaincluster "github.com/opensoha/soha/internal/domain/cluster"
+	cfgpkg "github.com/opensoha/soha/internal/infrastructure/config"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"

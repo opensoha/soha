@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	domainaigateway "github.com/soha/soha/internal/domain/aigateway"
-	domainidentity "github.com/soha/soha/internal/domain/identity"
+	domainaigateway "github.com/opensoha/soha/internal/domain/aigateway"
+	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 )
 
 type stubAIGatewayService struct {

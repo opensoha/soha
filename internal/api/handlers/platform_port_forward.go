@@ -4,9 +4,9 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	apiMiddleware "github.com/soha/soha/internal/api/middleware"
-	apiresponse "github.com/soha/soha/internal/api/response"
-	domainresource "github.com/soha/soha/internal/domain/resource"
+	apiMiddleware "github.com/opensoha/soha/internal/api/middleware"
+	apiresponse "github.com/opensoha/soha/internal/api/response"
+	domainresource "github.com/opensoha/soha/internal/domain/resource"
 )
 
 func (h *PlatformHandler) ListPortForwards(c *gin.Context) {

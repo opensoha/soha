@@ -1,6 +1,6 @@
 package abac
 
-import legacy "github.com/soha/soha/internal/policy"
+import legacy "github.com/opensoha/soha/internal/policy"
 
 type Evaluator = legacy.Engine
 

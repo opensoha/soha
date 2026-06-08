@@ -4,11 +4,11 @@ import (
 	"context"
 	"net/http"
 
-	appvirtualization "github.com/soha/soha/internal/application/virtualization"
-	appworkflow "github.com/soha/soha/internal/application/workflow"
-	cfgpkg "github.com/soha/soha/internal/infrastructure/config"
-	dbinfra "github.com/soha/soha/internal/infrastructure/db"
-	informerinfra "github.com/soha/soha/internal/infrastructure/informer"
+	appvirtualization "github.com/opensoha/soha/internal/application/virtualization"
+	appworkflow "github.com/opensoha/soha/internal/application/workflow"
+	cfgpkg "github.com/opensoha/soha/internal/infrastructure/config"
+	dbinfra "github.com/opensoha/soha/internal/infrastructure/db"
+	informerinfra "github.com/opensoha/soha/internal/infrastructure/informer"
 	"go.uber.org/zap"
 )
 

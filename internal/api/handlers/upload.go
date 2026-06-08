@@ -9,9 +9,9 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	apiMiddleware "github.com/soha/soha/internal/api/middleware"
-	apiresponse "github.com/soha/soha/internal/api/response"
-	appaccess "github.com/soha/soha/internal/application/access"
+	apiMiddleware "github.com/opensoha/soha/internal/api/middleware"
+	apiresponse "github.com/opensoha/soha/internal/api/response"
+	appaccess "github.com/opensoha/soha/internal/application/access"
 )
 
 const (

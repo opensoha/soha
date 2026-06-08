@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	domaincopilot "github.com/soha/soha/internal/domain/copilot"
-	"github.com/soha/soha/internal/platform/apperrors"
+	domaincopilot "github.com/opensoha/soha/internal/domain/copilot"
+	"github.com/opensoha/soha/internal/platform/apperrors"
 	"gorm.io/gorm"
 )
 

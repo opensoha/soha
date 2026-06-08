@@ -8,10 +8,10 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	domaincopilot "github.com/soha/soha/internal/domain/copilot"
-	domainidentity "github.com/soha/soha/internal/domain/identity"
-	mcpmetrics "github.com/soha/soha/internal/infrastructure/mcp/metrics"
-	mcptraces "github.com/soha/soha/internal/infrastructure/mcp/traces"
+	domaincopilot "github.com/opensoha/soha/internal/domain/copilot"
+	domainidentity "github.com/opensoha/soha/internal/domain/identity"
+	mcpmetrics "github.com/opensoha/soha/internal/infrastructure/mcp/metrics"
+	mcptraces "github.com/opensoha/soha/internal/infrastructure/mcp/traces"
 )
 
 func normalizeSessionMode(mode string) string {

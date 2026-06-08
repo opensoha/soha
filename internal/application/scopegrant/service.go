@@ -6,15 +6,15 @@ import (
 	"fmt"
 	"strings"
 
-	appaccess "github.com/soha/soha/internal/application/access"
-	domainaudit "github.com/soha/soha/internal/domain/audit"
-	domainidentity "github.com/soha/soha/internal/domain/identity"
-	domainoperation "github.com/soha/soha/internal/domain/operation"
-	domainscopegrant "github.com/soha/soha/internal/domain/scopegrant"
-	"github.com/soha/soha/internal/platform/apperrors"
-	"github.com/soha/soha/internal/platform/operationentry"
-	"github.com/soha/soha/internal/platform/requestctx"
-	scopegrantrepo "github.com/soha/soha/internal/repository/scopegrant"
+	appaccess "github.com/opensoha/soha/internal/application/access"
+	domainaudit "github.com/opensoha/soha/internal/domain/audit"
+	domainidentity "github.com/opensoha/soha/internal/domain/identity"
+	domainoperation "github.com/opensoha/soha/internal/domain/operation"
+	domainscopegrant "github.com/opensoha/soha/internal/domain/scopegrant"
+	"github.com/opensoha/soha/internal/platform/apperrors"
+	"github.com/opensoha/soha/internal/platform/operationentry"
+	"github.com/opensoha/soha/internal/platform/requestctx"
+	scopegrantrepo "github.com/opensoha/soha/internal/repository/scopegrant"
 )
 
 type AuditRecorder interface {

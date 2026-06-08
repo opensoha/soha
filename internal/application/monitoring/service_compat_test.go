@@ -6,10 +6,10 @@ import (
 	"testing"
 	"time"
 
-	appaccess "github.com/soha/soha/internal/application/access"
-	domainalert "github.com/soha/soha/internal/domain/alert"
-	domainevent "github.com/soha/soha/internal/domain/event"
-	domainidentity "github.com/soha/soha/internal/domain/identity"
+	appaccess "github.com/opensoha/soha/internal/application/access"
+	domainalert "github.com/opensoha/soha/internal/domain/alert"
+	domainevent "github.com/opensoha/soha/internal/domain/event"
+	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 )
 
 type stubMonitoringRolePermissionReader struct {

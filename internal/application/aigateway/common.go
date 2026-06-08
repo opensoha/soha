@@ -1,7 +1,7 @@
 package aigateway
 
 import (
-	domaindelivery "github.com/soha/soha/internal/domain/delivery"
+	domaindelivery "github.com/opensoha/soha/internal/domain/delivery"
 )
 
 func optionalExecutionTaskID(item *domaindelivery.ExecutionTask) string {

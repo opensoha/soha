@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"time"
 
-	domaincluster "github.com/soha/soha/internal/domain/cluster"
+	domaincluster "github.com/opensoha/soha/internal/domain/cluster"
 	"gorm.io/gorm"
 )
 

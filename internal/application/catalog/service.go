@@ -7,17 +7,17 @@ import (
 	"strings"
 	"time"
 
-	appaccess "github.com/soha/soha/internal/application/access"
-	domainaccess "github.com/soha/soha/internal/domain/access"
-	domainapp "github.com/soha/soha/internal/domain/application"
-	domainaudit "github.com/soha/soha/internal/domain/audit"
-	domaincatalog "github.com/soha/soha/internal/domain/catalog"
-	domainidentity "github.com/soha/soha/internal/domain/identity"
-	domainoperation "github.com/soha/soha/internal/domain/operation"
-	"github.com/soha/soha/internal/platform/apperrors"
-	"github.com/soha/soha/internal/platform/operationentry"
-	"github.com/soha/soha/internal/platform/requestctx"
-	catalogrepo "github.com/soha/soha/internal/repository/catalog"
+	appaccess "github.com/opensoha/soha/internal/application/access"
+	domainaccess "github.com/opensoha/soha/internal/domain/access"
+	domainapp "github.com/opensoha/soha/internal/domain/application"
+	domainaudit "github.com/opensoha/soha/internal/domain/audit"
+	domaincatalog "github.com/opensoha/soha/internal/domain/catalog"
+	domainidentity "github.com/opensoha/soha/internal/domain/identity"
+	domainoperation "github.com/opensoha/soha/internal/domain/operation"
+	"github.com/opensoha/soha/internal/platform/apperrors"
+	"github.com/opensoha/soha/internal/platform/operationentry"
+	"github.com/opensoha/soha/internal/platform/requestctx"
+	catalogrepo "github.com/opensoha/soha/internal/repository/catalog"
 )
 
 type AuditRecorder interface {

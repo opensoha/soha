@@ -1,0 +1,69 @@
+name: soha-ci
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout soha
+        uses: actions/checkout@v4
+        with:
+          path: soha
+      - name: Checkout contracts
+        uses: actions/checkout@v4
+        with:
+          repository: opensoha/soha-contracts
+          path: soha-contracts
+      - name: Checkout web
+        uses: actions/checkout@v4
+        with:
+          repository: opensoha/soha-web
+          path: soha-web
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: soha-web/package-lock.json
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.23.x"
+          cache: true
+          cache-dependency-path: soha/go.sum
+      - name: Prepare Go workspace
+        working-directory: soha
+        run: |
+          cat > go.work <<'EOF'
+          go 1.23.0
+
+          use (
+            .
+            ../soha-contracts
+          )
+
+          replace github.com/opensoha/soha-contracts v0.0.0 => ../soha-contracts
+          EOF
+      - name: Build web artifact
+        working-directory: soha-web
+        run: |
+          npm ci
+          npm run build
+      - name: Stage embedded web artifact
+        working-directory: soha
+        run: |
+          rm -rf internal/staticassets/web/dist
+          mkdir -p internal/staticassets/web/dist
+          cp -R ../soha-web/dist/. internal/staticassets/web/dist/
+      - name: Test
+        working-directory: soha
+        run: go test ./...
+      - name: Build embedded server
+        working-directory: soha
+        run: CGO_ENABLED=0 go build -tags embedassets -o /tmp/soha ./cmd/server
+      - name: Docker build
+        working-directory: soha
+        run: docker build --build-context contracts=../soha-contracts -f deploy/Dockerfile -t soha:test .

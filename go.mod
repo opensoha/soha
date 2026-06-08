@@ -1,4 +1,4 @@
-module github.com/soha/soha
+module github.com/opensoha/soha
 
 go 1.23.0
 
@@ -10,6 +10,7 @@ require (
 	github.com/golang-jwt/jwt/v5 v5.2.1
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.0
+	github.com/opensoha/soha-contracts v0.0.0
 	github.com/redis/go-redis/v9 v9.7.0
 	github.com/spf13/viper v1.20.1
 	go.uber.org/zap v1.27.0
@@ -23,6 +24,8 @@ require (
 	k8s.io/client-go v0.32.2
 	sigs.k8s.io/yaml v1.4.0
 )
+
+replace github.com/opensoha/soha-contracts v0.0.0 => ../soha-contracts
 
 require (
 	dario.cat/mergo v1.0.1 // indirect

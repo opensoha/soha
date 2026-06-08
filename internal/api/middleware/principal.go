@@ -6,9 +6,9 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	apiresponse "github.com/soha/soha/internal/api/response"
-	domainidentity "github.com/soha/soha/internal/domain/identity"
-	cfgpkg "github.com/soha/soha/internal/infrastructure/config"
+	apiresponse "github.com/opensoha/soha/internal/api/response"
+	domainidentity "github.com/opensoha/soha/internal/domain/identity"
+	cfgpkg "github.com/opensoha/soha/internal/infrastructure/config"
 )
 
 const (

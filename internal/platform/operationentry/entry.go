@@ -4,9 +4,9 @@ import (
 	"context"
 	"time"
 
-	domainidentity "github.com/soha/soha/internal/domain/identity"
-	domainoperation "github.com/soha/soha/internal/domain/operation"
-	"github.com/soha/soha/internal/platform/requestctx"
+	domainidentity "github.com/opensoha/soha/internal/domain/identity"
+	domainoperation "github.com/opensoha/soha/internal/domain/operation"
+	"github.com/opensoha/soha/internal/platform/requestctx"
 )
 
 func New(

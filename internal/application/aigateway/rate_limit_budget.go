@@ -11,9 +11,9 @@ import (
 	"strings"
 	"time"
 
-	domainaigateway "github.com/soha/soha/internal/domain/aigateway"
-	domainidentity "github.com/soha/soha/internal/domain/identity"
-	"github.com/soha/soha/internal/platform/apperrors"
+	domainaigateway "github.com/opensoha/soha/internal/domain/aigateway"
+	domainidentity "github.com/opensoha/soha/internal/domain/identity"
+	"github.com/opensoha/soha/internal/platform/apperrors"
 )
 
 func gatewayRateLimitRules(conditions map[string]any, policyID string) []gatewayInvocationLimit {

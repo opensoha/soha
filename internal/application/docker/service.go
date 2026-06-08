@@ -11,12 +11,12 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	appaccess "github.com/soha/soha/internal/application/access"
-	domaindocker "github.com/soha/soha/internal/domain/docker"
-	domainidentity "github.com/soha/soha/internal/domain/identity"
-	domainoperation "github.com/soha/soha/internal/domain/operation"
-	"github.com/soha/soha/internal/platform/apperrors"
-	"github.com/soha/soha/internal/platform/operationentry"
+	appaccess "github.com/opensoha/soha/internal/application/access"
+	domaindocker "github.com/opensoha/soha/internal/domain/docker"
+	domainidentity "github.com/opensoha/soha/internal/domain/identity"
+	domainoperation "github.com/opensoha/soha/internal/domain/operation"
+	"github.com/opensoha/soha/internal/platform/apperrors"
+	"github.com/opensoha/soha/internal/platform/operationentry"
 	"sigs.k8s.io/yaml"
 )
 

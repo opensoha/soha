@@ -7,15 +7,15 @@ import (
 	"strings"
 	"time"
 
-	appaccess "github.com/soha/soha/internal/application/access"
-	domainalert "github.com/soha/soha/internal/domain/alert"
-	domaincopilot "github.com/soha/soha/internal/domain/copilot"
-	domainidentity "github.com/soha/soha/internal/domain/identity"
-	domainworkflow "github.com/soha/soha/internal/domain/workflow"
-	mcplogs "github.com/soha/soha/internal/infrastructure/mcp/logs"
-	mcpmetrics "github.com/soha/soha/internal/infrastructure/mcp/metrics"
-	mcptraces "github.com/soha/soha/internal/infrastructure/mcp/traces"
-	"github.com/soha/soha/internal/platform/apperrors"
+	appaccess "github.com/opensoha/soha/internal/application/access"
+	domainalert "github.com/opensoha/soha/internal/domain/alert"
+	domaincopilot "github.com/opensoha/soha/internal/domain/copilot"
+	domainidentity "github.com/opensoha/soha/internal/domain/identity"
+	domainworkflow "github.com/opensoha/soha/internal/domain/workflow"
+	mcplogs "github.com/opensoha/soha/internal/infrastructure/mcp/logs"
+	mcpmetrics "github.com/opensoha/soha/internal/infrastructure/mcp/metrics"
+	mcptraces "github.com/opensoha/soha/internal/infrastructure/mcp/traces"
+	"github.com/opensoha/soha/internal/platform/apperrors"
 )
 
 type DataSourceRepository interface {

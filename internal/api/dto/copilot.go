@@ -1,6 +1,6 @@
 package dto
 
-import domaincopilot "github.com/soha/soha/internal/domain/copilot"
+import domaincopilot "github.com/opensoha/soha/internal/domain/copilot"
 
 type CreateCopilotSessionRequest struct {
 	Title           string         `json:"title"`

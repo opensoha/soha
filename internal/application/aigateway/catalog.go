@@ -1,8 +1,8 @@
 package aigateway
 
 import (
-	appaccess "github.com/soha/soha/internal/application/access"
-	domainaigateway "github.com/soha/soha/internal/domain/aigateway"
+	appaccess "github.com/opensoha/soha/internal/application/access"
+	domainaigateway "github.com/opensoha/soha/internal/domain/aigateway"
 )
 
 func defaultTools() []domainaigateway.ToolCapability {

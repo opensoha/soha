@@ -6,9 +6,9 @@ import (
 	"slices"
 	"strings"
 
-	domainaccess "github.com/soha/soha/internal/domain/access"
-	domaincatalog "github.com/soha/soha/internal/domain/catalog"
-	domainscopegrant "github.com/soha/soha/internal/domain/scopegrant"
+	domainaccess "github.com/opensoha/soha/internal/domain/access"
+	domaincatalog "github.com/opensoha/soha/internal/domain/catalog"
+	domainscopegrant "github.com/opensoha/soha/internal/domain/scopegrant"
 )
 
 type Repository interface {

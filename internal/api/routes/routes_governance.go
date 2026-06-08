@@ -99,6 +99,24 @@ func registerAIGatewayRoutes(protected gin.IRoutes, deps Dependencies) {
 	protected.POST("/ai-gateway/approval-requests/:requestID/cancel", deps.AIGateway.CancelApprovalRequest)
 }
 
+func registerPluginRoutes(protected gin.IRoutes, deps Dependencies) {
+	if deps.Plugins == nil {
+		return
+	}
+
+	protected.GET("/plugins/marketplace", deps.Plugins.ListMarketplace)
+	protected.GET("/plugins/marketplace/:pluginID", deps.Plugins.GetMarketplace)
+	protected.GET("/plugins/installed", deps.Plugins.ListInstalled)
+	protected.POST("/plugins/install", deps.Plugins.Install)
+	protected.GET("/plugins/:pluginID", deps.Plugins.GetInstalled)
+	protected.DELETE("/plugins/:pluginID", deps.Plugins.Remove)
+	protected.GET("/plugins/:pluginID/manifest", deps.Plugins.GetManifest)
+	protected.POST("/plugins/:pluginID/enable", deps.Plugins.Enable)
+	protected.POST("/plugins/:pluginID/disable", deps.Plugins.Disable)
+	protected.POST("/plugins/:pluginID/upgrade", deps.Plugins.Upgrade)
+	protected.PUT("/plugins/:pluginID/config", deps.Plugins.Configure)
+}
+
 func registerSettingsRoutes(protected gin.IRoutes, deps Dependencies) {
 	protected.GET("/settings/identity", deps.Settings.GetIdentitySettings)
 	protected.PUT("/settings/identity/oidc", deps.Settings.UpdateOIDCSettings)

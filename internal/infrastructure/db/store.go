@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	cfgpkg "github.com/soha/soha/internal/infrastructure/config"
+	cfgpkg "github.com/opensoha/soha/internal/infrastructure/config"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )

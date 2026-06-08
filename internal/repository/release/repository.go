@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	domainrelease "github.com/soha/soha/internal/domain/release"
+	domainrelease "github.com/opensoha/soha/internal/domain/release"
 	"gorm.io/gorm"
 )
 

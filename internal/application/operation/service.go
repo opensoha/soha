@@ -5,9 +5,9 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	appaccess "github.com/soha/soha/internal/application/access"
-	domainidentity "github.com/soha/soha/internal/domain/identity"
-	domainoperation "github.com/soha/soha/internal/domain/operation"
+	appaccess "github.com/opensoha/soha/internal/application/access"
+	domainidentity "github.com/opensoha/soha/internal/domain/identity"
+	domainoperation "github.com/opensoha/soha/internal/domain/operation"
 )
 
 type Service struct {

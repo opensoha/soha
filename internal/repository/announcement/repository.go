@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	domainannouncement "github.com/soha/soha/internal/domain/announcement"
+	domainannouncement "github.com/opensoha/soha/internal/domain/announcement"
 	"gorm.io/gorm"
 )
 

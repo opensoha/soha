@@ -7,13 +7,13 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	domainaudit "github.com/soha/soha/internal/domain/audit"
-	domaincluster "github.com/soha/soha/internal/domain/cluster"
-	domainevent "github.com/soha/soha/internal/domain/event"
-	domainidentity "github.com/soha/soha/internal/domain/identity"
-	domainmcp "github.com/soha/soha/internal/domain/mcp"
-	domainoperation "github.com/soha/soha/internal/domain/operation"
-	domainresource "github.com/soha/soha/internal/domain/resource"
+	domainaudit "github.com/opensoha/soha/internal/domain/audit"
+	domaincluster "github.com/opensoha/soha/internal/domain/cluster"
+	domainevent "github.com/opensoha/soha/internal/domain/event"
+	domainidentity "github.com/opensoha/soha/internal/domain/identity"
+	domainmcp "github.com/opensoha/soha/internal/domain/mcp"
+	domainoperation "github.com/opensoha/soha/internal/domain/operation"
+	domainresource "github.com/opensoha/soha/internal/domain/resource"
 	"k8s.io/client-go/tools/remotecommand"
 )
 

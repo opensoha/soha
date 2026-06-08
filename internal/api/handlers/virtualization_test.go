@@ -4,7 +4,7 @@ import (
 	"crypto/tls"
 	"testing"
 
-	infravirtualization "github.com/soha/soha/internal/infrastructure/virtualization"
+	infravirtualization "github.com/opensoha/soha/internal/infrastructure/virtualization"
 )
 
 func TestBackendWebSocketDialerUsesConsoleTLSOptions(t *testing.T) {

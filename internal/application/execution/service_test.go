@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	domainbuild "github.com/soha/soha/internal/domain/build"
-	domaindelivery "github.com/soha/soha/internal/domain/delivery"
-	domainrelease "github.com/soha/soha/internal/domain/release"
+	domainbuild "github.com/opensoha/soha/internal/domain/build"
+	domaindelivery "github.com/opensoha/soha/internal/domain/delivery"
+	domainrelease "github.com/opensoha/soha/internal/domain/release"
 )
 
 func TestTaskHeartbeatExpiredUsesHeartbeatStartedAndCreatedAt(t *testing.T) {

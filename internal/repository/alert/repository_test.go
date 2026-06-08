@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
-	domainalert "github.com/soha/soha/internal/domain/alert"
+	domainalert "github.com/opensoha/soha/internal/domain/alert"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )

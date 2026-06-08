@@ -72,6 +72,10 @@ const (
 	PermAIGatewayView                     = "ai.gateway.view"
 	PermAIGatewayInvoke                   = "ai.gateway.invoke"
 	PermAIGatewayManage                   = "ai.gateway.manage"
+	PermPluginView                        = "plugin.view"
+	PermPluginInstall                     = "plugin.install"
+	PermPluginManage                      = "plugin.manage"
+	PermPluginConfigureSecrets            = "plugin.configure_secrets"
 	PermVirtualizationOverviewView        = "virtualization.overview.view"
 	PermVirtualizationVMsView             = "virtualization.vms.view"
 	PermVirtualizationVMsManage           = "virtualization.vms.manage"
@@ -200,6 +204,10 @@ func allPermissionKeys() []string {
 		PermAIGatewayView,
 		PermAIGatewayInvoke,
 		PermAIGatewayManage,
+		PermPluginView,
+		PermPluginInstall,
+		PermPluginManage,
+		PermPluginConfigureSecrets,
 		PermVirtualizationOverviewView,
 		PermVirtualizationVMsView,
 		PermVirtualizationVMsManage,
@@ -324,6 +332,10 @@ func defaultRolePermissions() map[string][]string {
 		PermAIGatewayView,
 		PermAIGatewayInvoke,
 		PermAIGatewayManage,
+		PermPluginView,
+		PermPluginInstall,
+		PermPluginManage,
+		PermPluginConfigureSecrets,
 		PermVirtualizationOverviewView,
 		PermVirtualizationVMsView,
 		PermVirtualizationVMsManage,
@@ -392,6 +404,7 @@ func defaultRolePermissions() map[string][]string {
 		PermObserveAIInspectionRun,
 		PermAIGatewayView,
 		PermAIGatewayInvoke,
+		PermPluginView,
 		PermDeliveryApplicationsView,
 		PermDeliveryApplicationServicesView,
 		PermDeliveryApplicationEnvView,
@@ -442,6 +455,7 @@ func defaultRolePermissions() map[string][]string {
 		PermObserveEventsView,
 		PermObserveAIView,
 		PermAIGatewayView,
+		PermPluginView,
 		PermDockerOverviewView,
 		PermDockerHostsView,
 		PermDockerProjectsView,
@@ -460,6 +474,7 @@ func defaultRolePermissions() map[string][]string {
 		PermObserveEventsView,
 		PermSystemAuditView,
 		PermSystemOperationsView,
+		PermPluginView,
 	}
 	return map[string][]string{
 		"admin":     admin,

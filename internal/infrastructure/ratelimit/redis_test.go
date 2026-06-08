@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	cfgpkg "github.com/soha/soha/internal/infrastructure/config"
+	cfgpkg "github.com/opensoha/soha/internal/infrastructure/config"
 )
 
 func TestNewRedisBackendRequiresAddress(t *testing.T) {

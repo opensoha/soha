@@ -4,9 +4,9 @@ import (
 	"context"
 	"slices"
 
-	domainaccess "github.com/soha/soha/internal/domain/access"
-	domainidentity "github.com/soha/soha/internal/domain/identity"
-	domainmenu "github.com/soha/soha/internal/domain/menu"
+	domainaccess "github.com/opensoha/soha/internal/domain/access"
+	domainidentity "github.com/opensoha/soha/internal/domain/identity"
+	domainmenu "github.com/opensoha/soha/internal/domain/menu"
 )
 
 type UserReader interface {

@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-	apiHandlers "github.com/soha/soha/internal/api/handlers"
+	apiHandlers "github.com/opensoha/soha/internal/api/handlers"
 )
 
 func TestRegisterPlatformRoutesKeepsCoreOperationalSurface(t *testing.T) {

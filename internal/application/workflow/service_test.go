@@ -7,16 +7,16 @@ import (
 	"testing"
 	"time"
 
-	appaccess "github.com/soha/soha/internal/application/access"
-	domainapp "github.com/soha/soha/internal/domain/application"
-	domainbuild "github.com/soha/soha/internal/domain/build"
-	domaincatalog "github.com/soha/soha/internal/domain/catalog"
-	domainidentity "github.com/soha/soha/internal/domain/identity"
-	domainrelease "github.com/soha/soha/internal/domain/release"
-	domainresource "github.com/soha/soha/internal/domain/resource"
-	domainworkflow "github.com/soha/soha/internal/domain/workflow"
-	"github.com/soha/soha/internal/platform/apperrors"
-	apprepo "github.com/soha/soha/internal/repository/application"
+	appaccess "github.com/opensoha/soha/internal/application/access"
+	domainapp "github.com/opensoha/soha/internal/domain/application"
+	domainbuild "github.com/opensoha/soha/internal/domain/build"
+	domaincatalog "github.com/opensoha/soha/internal/domain/catalog"
+	domainidentity "github.com/opensoha/soha/internal/domain/identity"
+	domainrelease "github.com/opensoha/soha/internal/domain/release"
+	domainresource "github.com/opensoha/soha/internal/domain/resource"
+	domainworkflow "github.com/opensoha/soha/internal/domain/workflow"
+	"github.com/opensoha/soha/internal/platform/apperrors"
+	apprepo "github.com/opensoha/soha/internal/repository/application"
 )
 
 type stubWorkflowRepository struct {

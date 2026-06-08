@@ -5,11 +5,11 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	"github.com/soha/soha/internal/api/dto"
-	apiMiddleware "github.com/soha/soha/internal/api/middleware"
-	apiresponse "github.com/soha/soha/internal/api/response"
-	domainannouncement "github.com/soha/soha/internal/domain/announcement"
-	domainidentity "github.com/soha/soha/internal/domain/identity"
+	"github.com/opensoha/soha/internal/api/dto"
+	apiMiddleware "github.com/opensoha/soha/internal/api/middleware"
+	apiresponse "github.com/opensoha/soha/internal/api/response"
+	domainannouncement "github.com/opensoha/soha/internal/domain/announcement"
+	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 )
 
 type AnnouncementService interface {

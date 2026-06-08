@@ -4,7 +4,7 @@ import (
 	"slices"
 	"testing"
 
-	domainvirtualization "github.com/soha/soha/internal/domain/virtualization"
+	domainvirtualization "github.com/opensoha/soha/internal/domain/virtualization"
 )
 
 func TestVMExtraClausesExcludeDeletedByDefault(t *testing.T) {

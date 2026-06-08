@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
-	accessapp "github.com/soha/soha/internal/application/access"
-	cfgpkg "github.com/soha/soha/internal/infrastructure/config"
-	dbinfra "github.com/soha/soha/internal/infrastructure/db"
+	accessapp "github.com/opensoha/soha/internal/application/access"
+	cfgpkg "github.com/opensoha/soha/internal/infrastructure/config"
+	dbinfra "github.com/opensoha/soha/internal/infrastructure/db"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
@@ -69,7 +69,7 @@ type clusterCredentialSeed struct {
 // While the stored version matches this constant, the static seed block is
 // skipped entirely. Config-driven sync (admin user, clusters) runs separately
 // during startup so runtime config updates do not depend on replaying defaults.
-const bootstrapSeedVersion = "2026-06-04-gateway-api-navigation-convergence"
+const bootstrapSeedVersion = "2026-06-08-plugin-marketplace-navigation"
 
 const bootstrapSeedVersionKey = "bootstrap.seed_version"
 

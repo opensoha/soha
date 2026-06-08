@@ -1,11 +1,10 @@
 .git
 .claude
 bin
-docs/build
-docs/.docusaurus
-docs/node_modules
-web/dist
-web/node_modules
 node_modules
 tmp
 *.log
+go.work
+go.work.sum
+soha-contracts
+soha-web

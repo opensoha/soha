@@ -4,11 +4,11 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	"github.com/soha/soha/internal/api/dto"
-	apiMiddleware "github.com/soha/soha/internal/api/middleware"
-	apiresponse "github.com/soha/soha/internal/api/response"
-	domaincluster "github.com/soha/soha/internal/domain/cluster"
-	domainresource "github.com/soha/soha/internal/domain/resource"
+	"github.com/opensoha/soha/internal/api/dto"
+	apiMiddleware "github.com/opensoha/soha/internal/api/middleware"
+	apiresponse "github.com/opensoha/soha/internal/api/response"
+	domaincluster "github.com/opensoha/soha/internal/domain/cluster"
+	domainresource "github.com/opensoha/soha/internal/domain/resource"
 )
 
 func (h *PlatformHandler) ListClusters(c *gin.Context) {

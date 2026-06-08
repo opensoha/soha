@@ -10,13 +10,13 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	appaccess "github.com/soha/soha/internal/application/access"
-	domainaigateway "github.com/soha/soha/internal/domain/aigateway"
-	domainalert "github.com/soha/soha/internal/domain/alert"
-	domaindelivery "github.com/soha/soha/internal/domain/delivery"
-	domainidentity "github.com/soha/soha/internal/domain/identity"
-	"github.com/soha/soha/internal/platform/apperrors"
-	"github.com/soha/soha/internal/platform/requestctx"
+	appaccess "github.com/opensoha/soha/internal/application/access"
+	domainaigateway "github.com/opensoha/soha/internal/domain/aigateway"
+	domainalert "github.com/opensoha/soha/internal/domain/alert"
+	domaindelivery "github.com/opensoha/soha/internal/domain/delivery"
+	domainidentity "github.com/opensoha/soha/internal/domain/identity"
+	"github.com/opensoha/soha/internal/platform/apperrors"
+	"github.com/opensoha/soha/internal/platform/requestctx"
 )
 
 func (s *Service) holdToolInvocation(ctx context.Context, principal domainidentity.Principal, input domainaigateway.ToolInvocationRequest, tool domainaigateway.ToolCapability, decision gatewayRiskDecision, redactionSummary gatewayRedactionAuditSummary) (domainaigateway.ToolInvocationResult, error) {

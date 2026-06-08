@@ -2,7 +2,7 @@ package routes
 
 import (
 	"github.com/gin-gonic/gin"
-	cfgpkg "github.com/soha/soha/internal/infrastructure/config"
+	cfgpkg "github.com/opensoha/soha/internal/infrastructure/config"
 )
 
 func registerProtectedRoutes(protected gin.IRoutes, cfg cfgpkg.Config, deps Dependencies) {
@@ -17,6 +17,7 @@ func registerProtectedRoutes(protected gin.IRoutes, cfg cfgpkg.Config, deps Depe
 	registerOperationalAuditRoutes(protected, deps)
 	registerAccessRoutes(protected, deps)
 	registerAIGatewayRoutes(protected, deps)
+	registerPluginRoutes(protected, deps)
 	registerSettingsRoutes(protected, deps)
 }
 

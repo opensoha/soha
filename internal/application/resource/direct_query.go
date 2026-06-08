@@ -9,8 +9,8 @@ import (
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
-	k8sinfra "github.com/soha/soha/internal/infrastructure/kubernetes"
-	"github.com/soha/soha/internal/platform/apperrors"
+	k8sinfra "github.com/opensoha/soha/internal/infrastructure/kubernetes"
+	"github.com/opensoha/soha/internal/platform/apperrors"
 )
 
 const allNamespaceListParallelism = 8

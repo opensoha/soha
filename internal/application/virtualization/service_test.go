@@ -8,11 +8,11 @@ import (
 	"testing"
 	"time"
 
-	appaccess "github.com/soha/soha/internal/application/access"
-	domainidentity "github.com/soha/soha/internal/domain/identity"
-	domainoperation "github.com/soha/soha/internal/domain/operation"
-	domainvirtualization "github.com/soha/soha/internal/domain/virtualization"
-	infravirtualization "github.com/soha/soha/internal/infrastructure/virtualization"
+	appaccess "github.com/opensoha/soha/internal/application/access"
+	domainidentity "github.com/opensoha/soha/internal/domain/identity"
+	domainoperation "github.com/opensoha/soha/internal/domain/operation"
+	domainvirtualization "github.com/opensoha/soha/internal/domain/virtualization"
+	infravirtualization "github.com/opensoha/soha/internal/infrastructure/virtualization"
 )
 
 func TestWorkerAssetSyncUpdatesTaskAndRecordsOperation(t *testing.T) {

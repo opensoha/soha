@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"time"
 
-	domainaudit "github.com/soha/soha/internal/domain/audit"
+	domainaudit "github.com/opensoha/soha/internal/domain/audit"
 	"gorm.io/gorm"
 )
 

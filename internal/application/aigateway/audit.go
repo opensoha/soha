@@ -7,15 +7,15 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	appaccess "github.com/soha/soha/internal/application/access"
-	domainaigateway "github.com/soha/soha/internal/domain/aigateway"
-	domainaudit "github.com/soha/soha/internal/domain/audit"
-	domaindelivery "github.com/soha/soha/internal/domain/delivery"
-	domainidentity "github.com/soha/soha/internal/domain/identity"
-	domainresource "github.com/soha/soha/internal/domain/resource"
-	"github.com/soha/soha/internal/platform/apperrors"
-	"github.com/soha/soha/internal/platform/operationentry"
-	"github.com/soha/soha/internal/platform/requestctx"
+	appaccess "github.com/opensoha/soha/internal/application/access"
+	domainaigateway "github.com/opensoha/soha/internal/domain/aigateway"
+	domainaudit "github.com/opensoha/soha/internal/domain/audit"
+	domaindelivery "github.com/opensoha/soha/internal/domain/delivery"
+	domainidentity "github.com/opensoha/soha/internal/domain/identity"
+	domainresource "github.com/opensoha/soha/internal/domain/resource"
+	"github.com/opensoha/soha/internal/platform/apperrors"
+	"github.com/opensoha/soha/internal/platform/operationentry"
+	"github.com/opensoha/soha/internal/platform/requestctx"
 )
 
 func (s *Service) ListAuditLogs(ctx context.Context, principal domainidentity.Principal, filter domainaigateway.AuditLogFilter) ([]domainaigateway.AuditLog, error) {

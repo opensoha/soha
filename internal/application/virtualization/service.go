@@ -11,14 +11,14 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	appaccess "github.com/soha/soha/internal/application/access"
-	domainidentity "github.com/soha/soha/internal/domain/identity"
-	domainoperation "github.com/soha/soha/internal/domain/operation"
-	domainvirtualization "github.com/soha/soha/internal/domain/virtualization"
-	infravirtualization "github.com/soha/soha/internal/infrastructure/virtualization"
-	"github.com/soha/soha/internal/platform/apperrors"
-	"github.com/soha/soha/internal/platform/operationentry"
-	"github.com/soha/soha/internal/platform/runtimeobs"
+	appaccess "github.com/opensoha/soha/internal/application/access"
+	domainidentity "github.com/opensoha/soha/internal/domain/identity"
+	domainoperation "github.com/opensoha/soha/internal/domain/operation"
+	domainvirtualization "github.com/opensoha/soha/internal/domain/virtualization"
+	infravirtualization "github.com/opensoha/soha/internal/infrastructure/virtualization"
+	"github.com/opensoha/soha/internal/platform/apperrors"
+	"github.com/opensoha/soha/internal/platform/operationentry"
+	"github.com/opensoha/soha/internal/platform/runtimeobs"
 )
 
 const (

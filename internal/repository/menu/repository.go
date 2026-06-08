@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	domainmenu "github.com/soha/soha/internal/domain/menu"
+	domainmenu "github.com/opensoha/soha/internal/domain/menu"
 	"gorm.io/gorm"
 )
 

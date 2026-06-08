@@ -5,69 +5,71 @@ import (
 	"fmt"
 	"strings"
 
-	apiHandlers "github.com/soha/soha/internal/api/handlers"
-	apiRoutes "github.com/soha/soha/internal/api/routes"
-	appaccess "github.com/soha/soha/internal/application/access"
-	appaigateway "github.com/soha/soha/internal/application/aigateway"
-	appannouncement "github.com/soha/soha/internal/application/announcement"
-	appregistry "github.com/soha/soha/internal/application/app"
-	appaudit "github.com/soha/soha/internal/application/audit"
-	appbuild "github.com/soha/soha/internal/application/build"
-	appcatalog "github.com/soha/soha/internal/application/catalog"
-	appcluster "github.com/soha/soha/internal/application/cluster"
-	appcopilot "github.com/soha/soha/internal/application/copilot"
-	appdelivery "github.com/soha/soha/internal/application/delivery"
-	appdocker "github.com/soha/soha/internal/application/docker"
-	appevent "github.com/soha/soha/internal/application/event"
-	appexecution "github.com/soha/soha/internal/application/execution"
-	appidentity "github.com/soha/soha/internal/application/identity"
-	appintegration "github.com/soha/soha/internal/application/integration"
-	appmenu "github.com/soha/soha/internal/application/menu"
-	appmodule "github.com/soha/soha/internal/application/module"
-	appmonitoring "github.com/soha/soha/internal/application/monitoring"
-	appoperation "github.com/soha/soha/internal/application/operation"
-	appregistryconn "github.com/soha/soha/internal/application/registry"
-	apprelease "github.com/soha/soha/internal/application/release"
-	appresource "github.com/soha/soha/internal/application/resource"
-	appscopegrant "github.com/soha/soha/internal/application/scopegrant"
-	appsettings "github.com/soha/soha/internal/application/settings"
-	appvirtualization "github.com/soha/soha/internal/application/virtualization"
-	appworkflow "github.com/soha/soha/internal/application/workflow"
-	agentinfra "github.com/soha/soha/internal/infrastructure/agent"
-	cfgpkg "github.com/soha/soha/internal/infrastructure/config"
-	dbinfra "github.com/soha/soha/internal/infrastructure/db"
-	gitlabinfra "github.com/soha/soha/internal/infrastructure/gitlab"
-	informerinfra "github.com/soha/soha/internal/infrastructure/informer"
-	k8sinfra "github.com/soha/soha/internal/infrastructure/kubernetes"
-	loggerinfra "github.com/soha/soha/internal/infrastructure/logger"
-	mcpinfra "github.com/soha/soha/internal/infrastructure/mcp"
-	ratelimitinfra "github.com/soha/soha/internal/infrastructure/ratelimit"
-	virtualizationinfra "github.com/soha/soha/internal/infrastructure/virtualization"
-	"github.com/soha/soha/internal/platform/runtimeobs"
-	"github.com/soha/soha/internal/policy"
-	aigatewayrepo "github.com/soha/soha/internal/repository/aigateway"
-	alertrepo "github.com/soha/soha/internal/repository/alert"
-	announcementrepo "github.com/soha/soha/internal/repository/announcement"
-	applicationrepo "github.com/soha/soha/internal/repository/application"
-	auditrepo "github.com/soha/soha/internal/repository/auditlog"
-	buildrepo "github.com/soha/soha/internal/repository/build"
-	catalogrepo "github.com/soha/soha/internal/repository/catalog"
-	clusterrepo "github.com/soha/soha/internal/repository/cluster"
-	copilotrepo "github.com/soha/soha/internal/repository/copilot"
-	deliveryrepo "github.com/soha/soha/internal/repository/delivery"
-	dockerrepo "github.com/soha/soha/internal/repository/docker"
-	eventrepo "github.com/soha/soha/internal/repository/eventstream"
-	menurepo "github.com/soha/soha/internal/repository/menu"
-	operationrepo "github.com/soha/soha/internal/repository/operationlog"
-	policyrepo "github.com/soha/soha/internal/repository/policy"
-	portforwardrepo "github.com/soha/soha/internal/repository/portforward"
-	registryrepo "github.com/soha/soha/internal/repository/registry"
-	releaserepo "github.com/soha/soha/internal/repository/release"
-	scopegrantrepo "github.com/soha/soha/internal/repository/scopegrant"
-	settingsrepo "github.com/soha/soha/internal/repository/settings"
-	userrepo "github.com/soha/soha/internal/repository/user"
-	virtualizationrepo "github.com/soha/soha/internal/repository/virtualization"
-	workflowrepo "github.com/soha/soha/internal/repository/workflow"
+	apiHandlers "github.com/opensoha/soha/internal/api/handlers"
+	apiRoutes "github.com/opensoha/soha/internal/api/routes"
+	appaccess "github.com/opensoha/soha/internal/application/access"
+	appaigateway "github.com/opensoha/soha/internal/application/aigateway"
+	appannouncement "github.com/opensoha/soha/internal/application/announcement"
+	appregistry "github.com/opensoha/soha/internal/application/app"
+	appaudit "github.com/opensoha/soha/internal/application/audit"
+	appbuild "github.com/opensoha/soha/internal/application/build"
+	appcatalog "github.com/opensoha/soha/internal/application/catalog"
+	appcluster "github.com/opensoha/soha/internal/application/cluster"
+	appcopilot "github.com/opensoha/soha/internal/application/copilot"
+	appdelivery "github.com/opensoha/soha/internal/application/delivery"
+	appdocker "github.com/opensoha/soha/internal/application/docker"
+	appevent "github.com/opensoha/soha/internal/application/event"
+	appexecution "github.com/opensoha/soha/internal/application/execution"
+	appidentity "github.com/opensoha/soha/internal/application/identity"
+	appintegration "github.com/opensoha/soha/internal/application/integration"
+	appmenu "github.com/opensoha/soha/internal/application/menu"
+	appmodule "github.com/opensoha/soha/internal/application/module"
+	appmonitoring "github.com/opensoha/soha/internal/application/monitoring"
+	appoperation "github.com/opensoha/soha/internal/application/operation"
+	appplugin "github.com/opensoha/soha/internal/application/plugin"
+	appregistryconn "github.com/opensoha/soha/internal/application/registry"
+	apprelease "github.com/opensoha/soha/internal/application/release"
+	appresource "github.com/opensoha/soha/internal/application/resource"
+	appscopegrant "github.com/opensoha/soha/internal/application/scopegrant"
+	appsettings "github.com/opensoha/soha/internal/application/settings"
+	appvirtualization "github.com/opensoha/soha/internal/application/virtualization"
+	appworkflow "github.com/opensoha/soha/internal/application/workflow"
+	agentinfra "github.com/opensoha/soha/internal/infrastructure/agent"
+	cfgpkg "github.com/opensoha/soha/internal/infrastructure/config"
+	dbinfra "github.com/opensoha/soha/internal/infrastructure/db"
+	gitlabinfra "github.com/opensoha/soha/internal/infrastructure/gitlab"
+	informerinfra "github.com/opensoha/soha/internal/infrastructure/informer"
+	k8sinfra "github.com/opensoha/soha/internal/infrastructure/kubernetes"
+	loggerinfra "github.com/opensoha/soha/internal/infrastructure/logger"
+	mcpinfra "github.com/opensoha/soha/internal/infrastructure/mcp"
+	ratelimitinfra "github.com/opensoha/soha/internal/infrastructure/ratelimit"
+	virtualizationinfra "github.com/opensoha/soha/internal/infrastructure/virtualization"
+	"github.com/opensoha/soha/internal/platform/runtimeobs"
+	"github.com/opensoha/soha/internal/policy"
+	aigatewayrepo "github.com/opensoha/soha/internal/repository/aigateway"
+	alertrepo "github.com/opensoha/soha/internal/repository/alert"
+	announcementrepo "github.com/opensoha/soha/internal/repository/announcement"
+	applicationrepo "github.com/opensoha/soha/internal/repository/application"
+	auditrepo "github.com/opensoha/soha/internal/repository/auditlog"
+	buildrepo "github.com/opensoha/soha/internal/repository/build"
+	catalogrepo "github.com/opensoha/soha/internal/repository/catalog"
+	clusterrepo "github.com/opensoha/soha/internal/repository/cluster"
+	copilotrepo "github.com/opensoha/soha/internal/repository/copilot"
+	deliveryrepo "github.com/opensoha/soha/internal/repository/delivery"
+	dockerrepo "github.com/opensoha/soha/internal/repository/docker"
+	eventrepo "github.com/opensoha/soha/internal/repository/eventstream"
+	menurepo "github.com/opensoha/soha/internal/repository/menu"
+	operationrepo "github.com/opensoha/soha/internal/repository/operationlog"
+	pluginrepo "github.com/opensoha/soha/internal/repository/plugin"
+	policyrepo "github.com/opensoha/soha/internal/repository/policy"
+	portforwardrepo "github.com/opensoha/soha/internal/repository/portforward"
+	registryrepo "github.com/opensoha/soha/internal/repository/registry"
+	releaserepo "github.com/opensoha/soha/internal/repository/release"
+	scopegrantrepo "github.com/opensoha/soha/internal/repository/scopegrant"
+	settingsrepo "github.com/opensoha/soha/internal/repository/settings"
+	userrepo "github.com/opensoha/soha/internal/repository/user"
+	virtualizationrepo "github.com/opensoha/soha/internal/repository/virtualization"
+	workflowrepo "github.com/opensoha/soha/internal/repository/workflow"
 	"go.uber.org/zap"
 )
 
@@ -143,6 +145,7 @@ func New(ctx context.Context) (*App, error) {
 	virtualizationRepository := virtualizationrepo.New(databaseStore.DB())
 	dockerRepository := dockerrepo.New(databaseStore.DB())
 	aiGatewayRepository := aigatewayrepo.New(databaseStore.DB())
+	pluginRepository := pluginrepo.New(databaseStore.DB())
 	permissionResolver := appaccess.NewPermissionResolver(policyRepository)
 	auditService := appaudit.New(auditRepository, permissionResolver)
 	operationService := appoperation.New(operationRepository, permissionResolver)
@@ -259,10 +262,12 @@ func New(ctx context.Context) (*App, error) {
 	aiGatewayService.SetAnalysisArtifactRecorder(copilotService)
 	aiGatewayService.SetOperationRecorder(operationService)
 	aiGatewayService.SetOnCallResolver(monitoringService)
+	pluginService := appplugin.New(pluginRepository, permissionResolver, auditService)
 
 	systemHandler := apiHandlers.NewSystemHandler(databaseStore, runtimeMetrics)
 	authHandler := apiHandlers.NewAuthHandler(identityService, accessConsoleService, settingsService, cfg.Auth)
 	aiGatewayHandler := apiHandlers.NewAIGatewayHandler(aiGatewayService)
+	pluginHandler := apiHandlers.NewPluginHandler(pluginService)
 	announcementHandler := apiHandlers.NewAnnouncementHandler(announcementService)
 	menuHandler := apiHandlers.NewMenuHandler(menuService)
 	moduleHandler := apiHandlers.NewModuleHandler(moduleService)
@@ -297,6 +302,7 @@ func New(ctx context.Context) (*App, error) {
 		Releases:       releaseHandler,
 		Copilot:        copilotHandler,
 		AIGateway:      aiGatewayHandler,
+		Plugins:        pluginHandler,
 		Virtualization: virtualizationHandler,
 		Docker:         dockerHandler,
 		Access:         accessHandler,

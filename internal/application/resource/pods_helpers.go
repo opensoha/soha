@@ -17,13 +17,13 @@ import (
 	"k8s.io/client-go/tools/remotecommand"
 	"sigs.k8s.io/yaml"
 
-	domainaccess "github.com/soha/soha/internal/domain/access"
-	domaincluster "github.com/soha/soha/internal/domain/cluster"
-	domainresource "github.com/soha/soha/internal/domain/resource"
-	informerinfra "github.com/soha/soha/internal/infrastructure/informer"
-	k8sinfra "github.com/soha/soha/internal/infrastructure/kubernetes"
-	"github.com/soha/soha/internal/platform/apperrors"
-	"github.com/soha/soha/internal/platform/streamlimit"
+	domainaccess "github.com/opensoha/soha/internal/domain/access"
+	domaincluster "github.com/opensoha/soha/internal/domain/cluster"
+	domainresource "github.com/opensoha/soha/internal/domain/resource"
+	informerinfra "github.com/opensoha/soha/internal/infrastructure/informer"
+	k8sinfra "github.com/opensoha/soha/internal/infrastructure/kubernetes"
+	"github.com/opensoha/soha/internal/platform/apperrors"
+	"github.com/opensoha/soha/internal/platform/streamlimit"
 )
 
 func (s *Service) listDirectPods(ctx context.Context, clusterID, namespace string) ([]corev1.Pod, string, error) {

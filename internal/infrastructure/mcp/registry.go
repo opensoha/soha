@@ -3,7 +3,7 @@ package mcp
 import (
 	"time"
 
-	domainmcp "github.com/soha/soha/internal/domain/mcp"
+	domainmcp "github.com/opensoha/soha/internal/domain/mcp"
 )
 
 type Adapter = domainmcp.Adapter

@@ -7,14 +7,14 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	appaccess "github.com/soha/soha/internal/application/access"
-	domainannouncement "github.com/soha/soha/internal/domain/announcement"
-	domainaudit "github.com/soha/soha/internal/domain/audit"
-	domainidentity "github.com/soha/soha/internal/domain/identity"
-	domainoperation "github.com/soha/soha/internal/domain/operation"
-	"github.com/soha/soha/internal/platform/apperrors"
-	"github.com/soha/soha/internal/platform/operationentry"
-	"github.com/soha/soha/internal/platform/requestctx"
+	appaccess "github.com/opensoha/soha/internal/application/access"
+	domainannouncement "github.com/opensoha/soha/internal/domain/announcement"
+	domainaudit "github.com/opensoha/soha/internal/domain/audit"
+	domainidentity "github.com/opensoha/soha/internal/domain/identity"
+	domainoperation "github.com/opensoha/soha/internal/domain/operation"
+	"github.com/opensoha/soha/internal/platform/apperrors"
+	"github.com/opensoha/soha/internal/platform/operationentry"
+	"github.com/opensoha/soha/internal/platform/requestctx"
 	"gorm.io/gorm"
 )
 

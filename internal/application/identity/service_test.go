@@ -7,11 +7,11 @@ import (
 	"testing"
 	"time"
 
-	domainaigateway "github.com/soha/soha/internal/domain/aigateway"
-	domainidentity "github.com/soha/soha/internal/domain/identity"
-	domainsettings "github.com/soha/soha/internal/domain/settings"
-	cfgpkg "github.com/soha/soha/internal/infrastructure/config"
-	userrepo "github.com/soha/soha/internal/repository/user"
+	domainaigateway "github.com/opensoha/soha/internal/domain/aigateway"
+	domainidentity "github.com/opensoha/soha/internal/domain/identity"
+	domainsettings "github.com/opensoha/soha/internal/domain/settings"
+	cfgpkg "github.com/opensoha/soha/internal/infrastructure/config"
+	userrepo "github.com/opensoha/soha/internal/repository/user"
 )
 
 func TestReconcileExternalUserSyncsLoginRolesAndOrganizations(t *testing.T) {

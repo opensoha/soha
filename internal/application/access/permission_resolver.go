@@ -6,8 +6,8 @@ import (
 	"slices"
 	"strings"
 
-	domainidentity "github.com/soha/soha/internal/domain/identity"
-	"github.com/soha/soha/internal/platform/apperrors"
+	domainidentity "github.com/opensoha/soha/internal/domain/identity"
+	"github.com/opensoha/soha/internal/platform/apperrors"
 )
 
 type RolePermissionReader interface {

@@ -16,12 +16,12 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
-	apiMiddleware "github.com/soha/soha/internal/api/middleware"
-	apiresponse "github.com/soha/soha/internal/api/response"
-	appvirtualization "github.com/soha/soha/internal/application/virtualization"
-	domainidentity "github.com/soha/soha/internal/domain/identity"
-	domainvirtualization "github.com/soha/soha/internal/domain/virtualization"
-	infravirtualization "github.com/soha/soha/internal/infrastructure/virtualization"
+	apiMiddleware "github.com/opensoha/soha/internal/api/middleware"
+	apiresponse "github.com/opensoha/soha/internal/api/response"
+	appvirtualization "github.com/opensoha/soha/internal/application/virtualization"
+	domainidentity "github.com/opensoha/soha/internal/domain/identity"
+	domainvirtualization "github.com/opensoha/soha/internal/domain/virtualization"
+	infravirtualization "github.com/opensoha/soha/internal/infrastructure/virtualization"
 )
 
 type VirtualizationService interface {

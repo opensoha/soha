@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	domainresource "github.com/soha/soha/internal/domain/resource"
+	domainresource "github.com/opensoha/soha/internal/domain/resource"
 )
 
 func TestBuildNetworkTopologyTracesAggregatesRoutesServicesAndBackends(t *testing.T) {

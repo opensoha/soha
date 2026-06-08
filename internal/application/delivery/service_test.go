@@ -5,15 +5,15 @@ import (
 	"errors"
 	"testing"
 
-	appaccess "github.com/soha/soha/internal/application/access"
-	domainapp "github.com/soha/soha/internal/domain/application"
-	domainbuild "github.com/soha/soha/internal/domain/build"
-	domaincatalog "github.com/soha/soha/internal/domain/catalog"
-	domaindelivery "github.com/soha/soha/internal/domain/delivery"
-	domainidentity "github.com/soha/soha/internal/domain/identity"
-	domainrelease "github.com/soha/soha/internal/domain/release"
-	domainworkflow "github.com/soha/soha/internal/domain/workflow"
-	"github.com/soha/soha/internal/platform/apperrors"
+	appaccess "github.com/opensoha/soha/internal/application/access"
+	domainapp "github.com/opensoha/soha/internal/domain/application"
+	domainbuild "github.com/opensoha/soha/internal/domain/build"
+	domaincatalog "github.com/opensoha/soha/internal/domain/catalog"
+	domaindelivery "github.com/opensoha/soha/internal/domain/delivery"
+	domainidentity "github.com/opensoha/soha/internal/domain/identity"
+	domainrelease "github.com/opensoha/soha/internal/domain/release"
+	domainworkflow "github.com/opensoha/soha/internal/domain/workflow"
+	"github.com/opensoha/soha/internal/platform/apperrors"
 )
 
 type stubApplicationReader struct {

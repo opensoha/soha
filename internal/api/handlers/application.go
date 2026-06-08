@@ -5,11 +5,11 @@ import (
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	"github.com/soha/soha/internal/api/dto"
-	apiMiddleware "github.com/soha/soha/internal/api/middleware"
-	apiresponse "github.com/soha/soha/internal/api/response"
-	domainapp "github.com/soha/soha/internal/domain/application"
-	domainidentity "github.com/soha/soha/internal/domain/identity"
+	"github.com/opensoha/soha/internal/api/dto"
+	apiMiddleware "github.com/opensoha/soha/internal/api/middleware"
+	apiresponse "github.com/opensoha/soha/internal/api/response"
+	domainapp "github.com/opensoha/soha/internal/domain/application"
+	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 )
 
 type ApplicationService interface {

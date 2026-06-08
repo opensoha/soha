@@ -4,8 +4,8 @@ import (
 	"context"
 	"strings"
 
-	domainmodule "github.com/soha/soha/internal/domain/module"
-	cfgpkg "github.com/soha/soha/internal/infrastructure/config"
+	domainmodule "github.com/opensoha/soha/internal/domain/module"
+	cfgpkg "github.com/opensoha/soha/internal/infrastructure/config"
 )
 
 type Service struct {

@@ -14,7 +14,7 @@
   <a href="https://ant.design/"><img alt="Ant Design" src="https://img.shields.io/badge/Ant%20Design-6-1677FF?logo=antdesign&logoColor=white"></a>
   <a href="https://kubernetes.io/"><img alt="Kubernetes" src="https://img.shields.io/badge/Kubernetes-client--go-326CE5?logo=kubernetes&logoColor=white"></a>
   <a href="https://www.postgresql.org/"><img alt="PostgreSQL" src="https://img.shields.io/badge/PostgreSQL-18.4-4169E1?logo=postgresql&logoColor=white"></a>
-  <a href="./docs/"><img alt="Docs" src="https://img.shields.io/badge/Docs-Docusaurus-3ECC5F?logo=docusaurus&logoColor=white"></a>
+  <a href="https://docs.opensoha.dev/"><img alt="Docs" src="https://img.shields.io/badge/Docs-Docusaurus-3ECC5F?logo=docusaurus&logoColor=white"></a>
 </p>
 
 <p align="center">
@@ -32,13 +32,13 @@
 
 ## Overview
 
-Soha is a full-stack control plane for platform teams operating Kubernetes and adjacent runtime infrastructure. It brings a Go API server, a React + Ant Design console, and in-repo Docusaurus documentation together as one deployable project.
+Soha is a control plane for platform teams operating Kubernetes and adjacent runtime infrastructure. This repository owns the open-source Go core/server and consumes the web console as a versioned build artifact.
 
 The project is intentionally broader than a resource viewer. Soha connects cluster operations, application delivery, observability, runtime evidence, access control, AI investigation, virtualization, and Docker operations into one cohesive console.
 
 ## Why soha
 
-- **One project, one runtime**: ship the API, console, and docs as a single application container when you want a compact deployment.
+- **One runtime**: ship the API and embedded console as a single application container when you want a compact deployment.
 - **Operator-first workflows**: list-first resource pages, scoped actions, YAML, events, metrics, logs, and long-running operation records are treated as first-class surfaces.
 - **Permission-aware by design**: menus, routes, buttons, API authorization, audit logs, and scope grants are modeled as separate but aligned control points.
 - **Agent-ready architecture**: remote clusters, AI providers, Docker operations, and durable execution tasks can run through token-protected runner claim/callback paths.
@@ -82,7 +82,6 @@ PostgreSQL + Kubernetes clusters
 ### Backend
 
 - `cmd/server`: API server entrypoint
-- `cmd/agent`: remote cluster agent and runner entrypoint
 - future `cmd/**` entries: same-repo subservice entrypoints for specialized workloads such as security ingest or workers
 - `internal/api`: domain route registration files, handlers, middleware, request parsing, response shaping
 - `internal/application`: use-case orchestration, authorization, scope handling, audit, and view models
@@ -91,22 +90,26 @@ PostgreSQL + Kubernetes clusters
 - `internal/repository`: durable persistence
 - `internal/bootstrap`: dependency graph, migration, seed, and startup lifecycle wiring
 
-See [Backend Structure](./docs/development/backend-structure.md) for the current route, bootstrap, multi-`cmd`, and reserved security-ingest boundary conventions.
+See the published docs for the current route, bootstrap, multi-`cmd`, and reserved security-ingest boundary conventions.
 
 ### Frontend
 
-- `web`: React 18 + TypeScript 5 + Vite console
-- `web/src/routes`: route registry and metadata
-- `web/src/layouts`: console shell
-- `web/src/features`: route-level business modules
-- `web/src/components`: shared UI primitives and widgets
-- `web/src/services`: API helpers
-- `web/src/stores`: auth, preferences, and platform scope state
-- `web/src/theme/app-theme.ts`: Ant Design theme tokens and shared CSS variables
+- Source repository: `github.com/opensoha/soha-web`
+- Build artifact: `dist`
+- `soha` release staging path: `internal/staticassets/web/dist`
+- Runtime modes: `embed`, `dir`, and `proxy`
 
 ### Documentation
 
-- `docs`: Docusaurus site for architecture, development, API, and operations guidance
+- Source repository: `github.com/opensoha/soha-docs`
+- Published docs URL: `https://docs.opensoha.dev/`
+- `soha` redirects `/docs/` to the configured external docs URL by default
+
+### Agent And CLI
+
+- Agent repository: `github.com/opensoha/soha-agent`
+- CLI repository: `github.com/opensoha/soha-cli`
+- `soha` core exposes the control-plane APIs; agent and CLI clients consume those APIs through contracts and HTTP boundaries.
 
 ## Tech Stack
 
@@ -123,10 +126,9 @@ See [Backend Structure](./docs/development/backend-structure.md) for the current
 .
 ├── cmd/                 # server, agent, and future same-repo service entrypoints
 ├── configs/             # backend and agent configuration
-├── docs/                # Docusaurus documentation
 ├── internal/            # backend layers and domain modules
+├── internal/staticassets # staged web artifacts for embedded release builds
 ├── migrations/          # PostgreSQL bootstrap and schema migrations
-├── web/                 # active frontend app
 ├── deploy/              # Docker, Compose, raw Kubernetes, and Helm assets
 ├── Makefile             # common dev/build/deploy commands
 └── agents.md            # engineering spec and project memory
@@ -147,7 +149,7 @@ See [Backend Structure](./docs/development/backend-structure.md) for the current
 make init
 ```
 
-This installs Go, frontend, and docs dependencies, then starts the local PostgreSQL service from `deploy/docker-compose.yaml`. The development helper can also start a local k3s debug cluster and write its kubeconfig under `./.dev/k3s/kubeconfig.yaml`.
+This installs Go dependencies, then starts the local PostgreSQL service from `deploy/docker-compose.yaml`. The development helper can also start a local k3s debug cluster and write its kubeconfig under `./.dev/k3s/kubeconfig.yaml`. Frontend and docs dependencies live in `../soha-web` and `../soha-docs`; use `make init-web` or `make init-docs` when those sibling repositories are present.
 
 The compose stack uses `postgres:18.4` and mounts the named volume at `/var/lib/postgresql`, which is required for PostgreSQL 18's default data directory layout. Existing local volumes created by PostgreSQL 16 cannot be reused by changing only the image tag; recreate disposable volumes or migrate data with `pg_dump`/`pg_restore` or `pg_upgrade`.
 
@@ -174,10 +176,11 @@ make dev-docs
 ### Start the agent runtime
 
 ```bash
+cd ../soha-agent
 go run ./cmd/agent
 ```
 
-The default agent config is [configs/agent.config.yaml](./configs/agent.config.yaml). Override it with:
+The default agent config is in the sibling `soha-agent` repository at `configs/agent.config.yaml`. Override it with:
 
 ```bash
 SOHA_AGENT_CONFIG_FILE=/abs/path/to/agent.config.yaml go run ./cmd/agent
@@ -191,7 +194,7 @@ tickets instead of query-string access tokens.
 
 ### Deploy the Hermes Agent runner with Docker
 
-When Hermes is used as an external provider, run the derived `soha-agent` image from the unified compose stack: it extends the official `nousresearch/hermes-agent` image, adds the soha `cmd/agent` runner, and connects back to the control plane through the Agent Runtime claim/callback protocol.
+When Hermes is used as an external provider, run the derived `soha-agent` image from the unified compose stack. The image is built from sibling repository `../soha-agent`, extends the official `nousresearch/hermes-agent` image, adds the `soha-agent` runner, and connects back to the control plane through the Agent Runtime claim/callback protocol.
 
 ```bash
 make init-hermes
@@ -230,10 +233,10 @@ make deploy-helm-lint
 
 ## Deployment
 
-Soha ships as a single-project runtime by default: one application container serves the API, embedded SPA, and docs.
+Soha ships as a single-binary runtime by default: one application container serves the API and embedded SPA. Documentation is published from `soha-docs` and linked through the configured docs URL.
 
 - [deploy/Dockerfile](./deploy/Dockerfile): multi-stage image build
-- [deploy/Dockerfile.hermes-agent-runner](./deploy/Dockerfile.hermes-agent-runner): Hermes Agent Runtime runner image
+- `../soha-agent/deploy/Dockerfile.hermes-agent-runner`: Hermes Agent Runtime runner image
 - [deploy/docker-compose.yaml](./deploy/docker-compose.yaml): local stack with PostgreSQL, k3s, and optional Hermes runner services
 - [configs/config.yaml](./configs/config.yaml): default application config
 - [configs/config.compose.yaml](./configs/config.compose.yaml): compose app-container config with PostgreSQL service host and no host-local kubeconfig seed
@@ -241,7 +244,7 @@ Soha ships as a single-project runtime by default: one application container ser
 - [deploy/chart](./deploy/chart): Helm chart
 
 ```bash
-docker build -f deploy/Dockerfile -t soha:single-project .
+make deploy-image
 docker compose -f deploy/docker-compose.yaml up -d --build
 helm lint deploy/chart
 ```
@@ -249,15 +252,8 @@ helm lint deploy/chart
 ## Documentation
 
 - [Engineering Spec](./agents.md)
-- [Architecture Overview](./docs/architecture/index.md)
-- [Application Delivery](./docs/architecture/application-delivery.md)
-- [AI Copilot](./docs/architecture/ai-copilot.md)
-- [Authorization](./docs/architecture/authorization.md)
-- [Monitoring and Alerting](./docs/architecture/monitoring-and-alerting.md)
-- [Configuration](./docs/operations/configuration.md)
-- [Deployment](./docs/operations/deployment.md)
-- [Agent Runtime](./docs/operations/agent-runtime.md)
-- [MCP](./docs/operations/mcp.md)
+- [Published Docs](https://docs.opensoha.dev/)
+- [Docs Source](https://github.com/opensoha/soha-docs)
 
 ## Development Principles
 
@@ -266,7 +262,7 @@ helm lint deploy/chart
 - Split oversized Go files by stable behavior domains first. Platform handlers, platform resource services, and AI Gateway are organized into focused same-package files; protect execution-plane state transitions with unit tests.
 - Long-running work is task-backed. Build, release, Docker, Compose, VM control, and provider execution run through durable tasks and callback paths.
 - Future security workbench APIs should keep management, client, and ingest boundaries separate: `/api/v1/security/**`, `/api/client/v1/**`, and `/api/ingest/v1/**`.
-- Frontend work belongs in `web`. Routes, metadata, permissions, backend menus, and tests should stay aligned.
+- Frontend work belongs in `github.com/opensoha/soha-web`. Routes, metadata, permissions, backend menus, and tests should stay aligned across the artifact boundary.
 - Platform APIs return Soha DTOs, not raw Kubernetes objects, except YAML or explicit passthrough routes.
 - Module visibility, menu visibility, and backend authorization are separate gates.
 - Generated artifacts should not be hand-edited. Update source files and rebuild instead.
@@ -279,8 +275,8 @@ Useful validation commands:
 
 ```bash
 go test ./...
-cd web && npm run typecheck && npm run build
-cd docs && npm run build
+cd ../soha-web && npm run typecheck && npm run build
+cd ../soha-docs && npm test && npm run build
 ```
 
 ## Project Status
@@ -289,5 +285,5 @@ Soha is under active development. The platform, delivery, observability, AI, vir
 
 ## License
 
-Soha is licensed under the GNU Affero General Public License v3.0. See
+Soha is licensed under the Apache License 2.0. See
 [LICENSE](./LICENSE) for the full license text.

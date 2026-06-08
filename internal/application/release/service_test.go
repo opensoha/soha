@@ -7,14 +7,14 @@ import (
 	"testing"
 	"time"
 
-	appaccess "github.com/soha/soha/internal/application/access"
-	domainapp "github.com/soha/soha/internal/domain/application"
-	domaincluster "github.com/soha/soha/internal/domain/cluster"
-	domainidentity "github.com/soha/soha/internal/domain/identity"
-	domainrelease "github.com/soha/soha/internal/domain/release"
-	"github.com/soha/soha/internal/platform/apperrors"
-	apprepo "github.com/soha/soha/internal/repository/application"
-	clusterrepo "github.com/soha/soha/internal/repository/cluster"
+	appaccess "github.com/opensoha/soha/internal/application/access"
+	domainapp "github.com/opensoha/soha/internal/domain/application"
+	domaincluster "github.com/opensoha/soha/internal/domain/cluster"
+	domainidentity "github.com/opensoha/soha/internal/domain/identity"
+	domainrelease "github.com/opensoha/soha/internal/domain/release"
+	"github.com/opensoha/soha/internal/platform/apperrors"
+	apprepo "github.com/opensoha/soha/internal/repository/application"
+	clusterrepo "github.com/opensoha/soha/internal/repository/cluster"
 )
 
 type stubReleaseRepository struct {

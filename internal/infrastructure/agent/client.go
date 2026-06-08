@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	domaincluster "github.com/soha/soha/internal/domain/cluster"
-	domainresource "github.com/soha/soha/internal/domain/resource"
+	domaincluster "github.com/opensoha/soha/internal/domain/cluster"
+	domainresource "github.com/opensoha/soha/internal/domain/resource"
 )
 
 type Registry struct {

@@ -7,14 +7,14 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
-	domainaccess "github.com/soha/soha/internal/domain/access"
-	domainaudit "github.com/soha/soha/internal/domain/audit"
-	domainidentity "github.com/soha/soha/internal/domain/identity"
-	domainoperation "github.com/soha/soha/internal/domain/operation"
-	"github.com/soha/soha/internal/platform/apperrors"
-	"github.com/soha/soha/internal/platform/operationentry"
-	"github.com/soha/soha/internal/platform/requestctx"
-	userrepo "github.com/soha/soha/internal/repository/user"
+	domainaccess "github.com/opensoha/soha/internal/domain/access"
+	domainaudit "github.com/opensoha/soha/internal/domain/audit"
+	domainidentity "github.com/opensoha/soha/internal/domain/identity"
+	domainoperation "github.com/opensoha/soha/internal/domain/operation"
+	"github.com/opensoha/soha/internal/platform/apperrors"
+	"github.com/opensoha/soha/internal/platform/operationentry"
+	"github.com/opensoha/soha/internal/platform/requestctx"
+	userrepo "github.com/opensoha/soha/internal/repository/user"
 	"gorm.io/gorm"
 )
 

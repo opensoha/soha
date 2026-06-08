@@ -6,8 +6,8 @@ import (
 	"strconv"
 
 	"github.com/gin-gonic/gin"
-	aperrors "github.com/soha/soha/internal/api/errors"
-	apiresponse "github.com/soha/soha/internal/api/response"
+	aperrors "github.com/opensoha/soha/internal/api/errors"
+	apiresponse "github.com/opensoha/soha/internal/api/response"
 )
 
 func parseLimit(value string, fallback int) int {

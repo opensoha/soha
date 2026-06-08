@@ -5,8 +5,8 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	apiMiddleware "github.com/soha/soha/internal/api/middleware"
-	appaccess "github.com/soha/soha/internal/application/access"
+	apiMiddleware "github.com/opensoha/soha/internal/api/middleware"
+	appaccess "github.com/opensoha/soha/internal/application/access"
 )
 
 func authorizeDeliveryRunner(c *gin.Context, staticToken string) bool {

@@ -6,10 +6,10 @@ import (
 	"strings"
 	"testing"
 
-	domainaccess "github.com/soha/soha/internal/domain/access"
-	domaincluster "github.com/soha/soha/internal/domain/cluster"
-	domainidentity "github.com/soha/soha/internal/domain/identity"
-	k8sinfra "github.com/soha/soha/internal/infrastructure/kubernetes"
+	domainaccess "github.com/opensoha/soha/internal/domain/access"
+	domaincluster "github.com/opensoha/soha/internal/domain/cluster"
+	domainidentity "github.com/opensoha/soha/internal/domain/identity"
+	k8sinfra "github.com/opensoha/soha/internal/infrastructure/kubernetes"
 )
 
 var errStubNotFound = errors.New("not found")

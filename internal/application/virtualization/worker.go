@@ -7,10 +7,10 @@ import (
 	"strings"
 	"time"
 
-	domainidentity "github.com/soha/soha/internal/domain/identity"
-	domainvirtualization "github.com/soha/soha/internal/domain/virtualization"
-	infravirtualization "github.com/soha/soha/internal/infrastructure/virtualization"
-	"github.com/soha/soha/internal/platform/runtimeobs"
+	domainidentity "github.com/opensoha/soha/internal/domain/identity"
+	domainvirtualization "github.com/opensoha/soha/internal/domain/virtualization"
+	infravirtualization "github.com/opensoha/soha/internal/infrastructure/virtualization"
+	"github.com/opensoha/soha/internal/platform/runtimeobs"
 	"k8s.io/apimachinery/pkg/api/resource"
 )
 

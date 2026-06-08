@@ -133,6 +133,17 @@ modules:
   cmdb:
     enabled: false
 
+assets:
+  web:
+    mode: embed
+    dir: internal/staticassets/web/dist
+    proxy_url: http://localhost:5173
+  docs:
+    mode: external
+    dir: ../soha-docs/build
+    proxy_url: http://localhost:3000
+    external_url: https://docs.opensoha.dev/
+
 security:
   credential_encryption_key: ${SOHA_SECURITY_CREDENTIAL_ENCRYPTION_KEY}
   secret_provider: ${SOHA_SECURITY_SECRET_PROVIDER}

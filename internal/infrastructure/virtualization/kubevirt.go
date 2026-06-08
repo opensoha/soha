@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	kubeinfra "github.com/soha/soha/internal/infrastructure/kubernetes"
+	kubeinfra "github.com/opensoha/soha/internal/infrastructure/kubernetes"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"

@@ -3,7 +3,7 @@ package logger
 import (
 	"strings"
 
-	cfgpkg "github.com/soha/soha/internal/infrastructure/config"
+	cfgpkg "github.com/opensoha/soha/internal/infrastructure/config"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )

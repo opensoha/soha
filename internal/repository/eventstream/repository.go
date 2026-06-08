@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"time"
 
-	domainevent "github.com/soha/soha/internal/domain/event"
+	domainevent "github.com/opensoha/soha/internal/domain/event"
 	"gorm.io/gorm"
 )
 

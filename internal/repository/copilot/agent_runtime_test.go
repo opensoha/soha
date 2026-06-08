@@ -3,7 +3,7 @@ package copilot
 import (
 	"testing"
 
-	domaincopilot "github.com/soha/soha/internal/domain/copilot"
+	domaincopilot "github.com/opensoha/soha/internal/domain/copilot"
 )
 
 func TestMergeAgentRunToolExecutionsAppendsAndReplacesByID(t *testing.T) {

@@ -10,9 +10,9 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
-	domainidentity "github.com/soha/soha/internal/domain/identity"
-	domainresource "github.com/soha/soha/internal/domain/resource"
-	"github.com/soha/soha/internal/platform/apperrors"
+	domainidentity "github.com/opensoha/soha/internal/domain/identity"
+	domainresource "github.com/opensoha/soha/internal/domain/resource"
+	"github.com/opensoha/soha/internal/platform/apperrors"
 )
 
 type stubPlatformResourceService struct {

@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
-	domainaigateway "github.com/soha/soha/internal/domain/aigateway"
-	cfgpkg "github.com/soha/soha/internal/infrastructure/config"
+	domainaigateway "github.com/opensoha/soha/internal/domain/aigateway"
+	cfgpkg "github.com/opensoha/soha/internal/infrastructure/config"
 )
 
 const defaultRedisRateLimitPrefix = "soha:ai-gateway:rate-limit"

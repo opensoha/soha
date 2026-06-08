@@ -18,7 +18,7 @@ import (
 	networkinglisters "k8s.io/client-go/listers/networking/v1"
 	"k8s.io/client-go/tools/cache"
 
-	k8sinfra "github.com/soha/soha/internal/infrastructure/kubernetes"
+	k8sinfra "github.com/opensoha/soha/internal/infrastructure/kubernetes"
 )
 
 var ErrCacheNotReady = errors.New("informer cache not ready")

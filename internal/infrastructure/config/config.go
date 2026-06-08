@@ -24,6 +24,7 @@ type Config struct {
 	MCP        MCPConfig        `mapstructure:"mcp"`
 	AIGateway  AIGatewayConfig  `mapstructure:"ai_gateway"`
 	Modules    ModulesConfig    `mapstructure:"modules"`
+	Assets     AssetsConfig     `mapstructure:"assets"`
 	Security   SecurityConfig   `mapstructure:"security"`
 	Bootstrap  BootstrapConfig  `mapstructure:"bootstrap"`
 	Kubernetes KubernetesConfig `mapstructure:"kubernetes"`
@@ -179,6 +180,24 @@ type ModulesConfig struct {
 	Docker         ModuleToggleConfig `mapstructure:"docker"`
 	Security       ModuleToggleConfig `mapstructure:"security"`
 	CMDB           ModuleToggleConfig `mapstructure:"cmdb"`
+}
+
+type AssetsConfig struct {
+	Web  WebAssetsConfig  `mapstructure:"web"`
+	Docs DocsAssetsConfig `mapstructure:"docs"`
+}
+
+type WebAssetsConfig struct {
+	Mode     string `mapstructure:"mode"`
+	Dir      string `mapstructure:"dir"`
+	ProxyURL string `mapstructure:"proxy_url"`
+}
+
+type DocsAssetsConfig struct {
+	Mode        string `mapstructure:"mode"`
+	Dir         string `mapstructure:"dir"`
+	ProxyURL    string `mapstructure:"proxy_url"`
+	ExternalURL string `mapstructure:"external_url"`
 }
 
 type SecurityConfig struct {
@@ -362,6 +381,13 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("modules.docker.enabled", true)
 	v.SetDefault("modules.security.enabled", false)
 	v.SetDefault("modules.cmdb.enabled", false)
+	v.SetDefault("assets.web.mode", "embed")
+	v.SetDefault("assets.web.dir", "internal/staticassets/web/dist")
+	v.SetDefault("assets.web.proxy_url", "http://localhost:5173")
+	v.SetDefault("assets.docs.mode", "external")
+	v.SetDefault("assets.docs.dir", "../soha-docs/build")
+	v.SetDefault("assets.docs.proxy_url", "http://localhost:3000")
+	v.SetDefault("assets.docs.external_url", "https://docs.opensoha.dev/")
 	v.SetDefault("security.credential_encryption_key", "")
 	v.SetDefault("security.secret_provider", "")
 	v.SetDefault("bootstrap.seed_defaults", true)

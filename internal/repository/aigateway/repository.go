@@ -8,8 +8,8 @@ import (
 	"fmt"
 	"time"
 
-	domainaigateway "github.com/soha/soha/internal/domain/aigateway"
-	"github.com/soha/soha/internal/platform/apperrors"
+	domainaigateway "github.com/opensoha/soha/internal/domain/aigateway"
+	"github.com/opensoha/soha/internal/platform/apperrors"
 	"gorm.io/gorm"
 )
 

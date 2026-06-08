@@ -3,8 +3,8 @@ package menu
 import (
 	"testing"
 
-	appaccess "github.com/soha/soha/internal/application/access"
-	domainmenu "github.com/soha/soha/internal/domain/menu"
+	appaccess "github.com/opensoha/soha/internal/application/access"
+	domainmenu "github.com/opensoha/soha/internal/domain/menu"
 )
 
 func TestApplicationMenusRequireWorkspaceApplicationPermission(t *testing.T) {
@@ -100,6 +100,24 @@ func TestAIGatewayChildMenusUseSpecificPermissions(t *testing.T) {
 	}
 	if !isVisibleByPermissions(callLogs, []string{appaccess.PermWorkspaceResourceView, appaccess.PermAIGatewayManage}) {
 		t.Fatalf("AI Gateway call logs should be visible with manage permission")
+	}
+}
+
+func TestPluginMenusRequireWorkspaceAndPluginViewPermission(t *testing.T) {
+	for _, item := range []domainmenu.Record{
+		{ID: "plugins", Path: "/plugins"},
+		{ID: "plugins-marketplace", Path: "/plugins/marketplace"},
+		{ID: "plugins-installed", Path: "/plugins/installed"},
+	} {
+		if isVisibleByPermissions(item, []string{appaccess.PermWorkspaceResourceView}) {
+			t.Fatalf("%s should require %s", item.ID, appaccess.PermPluginView)
+		}
+		if isVisibleByPermissions(item, []string{appaccess.PermPluginView}) {
+			t.Fatalf("%s should require %s", item.ID, appaccess.PermWorkspaceResourceView)
+		}
+		if !isVisibleByPermissions(item, []string{appaccess.PermWorkspaceResourceView, appaccess.PermPluginView}) {
+			t.Fatalf("%s should be visible with workspace and plugin view permissions", item.ID)
+		}
 	}
 }
 

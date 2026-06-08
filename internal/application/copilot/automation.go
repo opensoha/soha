@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	domainalert "github.com/soha/soha/internal/domain/alert"
-	domaincopilot "github.com/soha/soha/internal/domain/copilot"
+	domainalert "github.com/opensoha/soha/internal/domain/alert"
+	domaincopilot "github.com/opensoha/soha/internal/domain/copilot"
 )
 
 const automationRootCauseCreatedBy = "system:automation"

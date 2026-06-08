@@ -3,7 +3,7 @@ package resource
 import (
 	"testing"
 
-	domainresource "github.com/soha/soha/internal/domain/resource"
+	domainresource "github.com/opensoha/soha/internal/domain/resource"
 )
 
 func TestBuildWorkloadOverviewAggregatesPodRiskByScope(t *testing.T) {

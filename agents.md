@@ -65,8 +65,8 @@ Project summary:
 
 ### Docs
 
-- in-repo docs site: Docusaurus
-- architecture documents under `docs/architecture`
+- docs source repository: `github.com/opensoha/soha-docs`
+- architecture documents live in the docs repository under `architecture/`
 - this file is the top-level execution memory
 
 ### Deployment
@@ -81,8 +81,9 @@ Project summary:
 The system is organized as a modular monolith with clear layers.
 
 1. Presentation layer
-   - `web` frontend console
-   - `docs` documentation site
+   - `github.com/opensoha/soha-web` frontend console source
+   - `github.com/opensoha/soha-docs` documentation site source
+   - `internal/staticassets/web/dist` embedded web artifact staging path
 2. API layer
    - `internal/api`
    - routing, middleware, DTO parsing, response shaping
@@ -167,46 +168,43 @@ Two runtime modes are supported:
 
 ### 6.1 Frontend Structure
 
-The frontend active baseline has been reset to the Vite application.
+The frontend active baseline is the Vite application in `github.com/opensoha/soha-web`. The `soha` repository consumes only the built `dist` artifact.
 
-- active target: `web`
-- backup directory: `web_pro_backup`
-- migration reference: `old_web`
-- `web/src/App.tsx`
+- active source repository: `github.com/opensoha/soha-web`
+- `src/App.tsx`
   - app bootstrap and theme application
-- `web/src/layouts`
+- `src/layouts`
   - shared shell layout and navigation chrome
-- `web/src/routes`
+- `src/routes`
   - React Router route registration and route metadata
-- `web/src/features`
+- `src/features`
   - soha business logic and route-level feature implementations
-- `web/src/components`
+- `src/components`
   - shared antd primitives and complex reusable widgets
-- `web/src/services`
+- `src/services`
   - API clients and auth/runtime helpers
-- `web/src/stores`
+- `src/stores`
   - auth, preference, platform scope state
-- `web/src/utils`
+- `src/utils`
   - cross-page helpers and theme/branding helpers
 
 Current structure summary:
 
 - `deploy/Dockerfile`, `deploy/docker-compose.yaml`, `deploy/deployment.yaml`, and `deploy/chart/` are the canonical repo-local deployment assets
-- `web` is the only active frontend target
-- `web_pro_backup` preserves the previous frontend backup and must not be treated as the active shell
-- `old_web` remains as migration/reference material only after the reset
-- `web/src/routes/**` defines the active route surface for the Vite app
-- `web/src/features/**` provides soha business logic behind that route surface
+- `github.com/opensoha/soha-web` is the only active frontend source target
+- `internal/staticassets/web/dist` is the only web artifact path embedded by `soha`
+- `src/routes/**` defines the active route surface for the Vite app
+- `src/features/**` provides soha business logic behind that route surface
 - `internal/api`, `internal/application`, `internal/policy`, `internal/infrastructure`, and `internal/repository` keep strict backend layer responsibilities
-- `docs/architecture` is the public architecture document set
+- `github.com/opensoha/soha-docs` owns the public architecture document set
 
 ### 6.2 UI and State Rules
 
 - Ant Design is the primary component system
-- custom theme tokens under `web/src/theme/app-theme.ts` remain the single source for light/dark/system mode and shared CSS variables
+- custom theme tokens under `soha-web/src/theme/app-theme.ts` remain the single source for light/dark/system mode and shared CSS variables
 - Zustand stores lightweight local UI/runtime preferences
 - TanStack Query owns server data lifecycle
-- route metadata in `web/src/routes/meta.ts` drives navigation, breadcrumb, and permission-aware route behavior
+- route metadata in `soha-web/src/routes/meta.ts` drives navigation, breadcrumb, and permission-aware route behavior
 - platform pages must share persisted cluster/namespace scope
 
 #### 6.2.1 Ant Design LLM Context
@@ -467,7 +465,7 @@ The repository has already converged on these rules:
 - AI investigation is now session-first: `ai_sessions.metadata` carries mode, scope, toolset, tags, summary, archive status, and analysis run references, and the workbench must treat a session as the primary investigation object
 - AI workbench message flows now return structured envelopes with messages, tool calls, analysis artifacts, and session patch hints instead of plain assistant text only
 - MCP capability control is now dual-entry: Settings > AI remains the global control plane for provider, adapters, data sources, profiles, and policies, while the AIOps workbench exposes session-level temporary toolset assembly
-- soha AI Gateway is the external AI-native operations entry point for soha-cli, MCP clients, and AI coding agents; it must expose caller-specific capabilities through `/api/v1/ai-gateway/capabilities` while keeping real actions inside backend application services, permission checks, scope grants, risk policy, and audit logging
+- soha AI Gateway is the external AI-native operations entry point for the standalone `soha` CLI, MCP clients, and AI coding agents; it must expose caller-specific capabilities through `/api/v1/ai-gateway/capabilities` while keeping real actions inside backend application services, permission checks, scope grants, risk policy, and audit logging
 - AI Gateway is a standalone workbench at `/ai-gateway` with module id `aiGateway` and menu id `ai-gateway`; `/ai-workbench/gateway` may exist only as a hidden compatibility redirect and must not be reintroduced as a formal AI工作台 child route, seed menu, doc path, or test expectation
 - AI Gateway console navigation is route/menu driven under its own workbench: `/ai-gateway` redirects to `/ai-gateway/overview`, and `overview`, `manifest`, `clients`, `tokens`, and `governance` are child menus seeded by the backend and rendered by the shared antd sidebar instead of page-local top-level Tabs
 - AI工作台 remains focused on investigation, chat, root-cause/performance analysis, inspection, tools/skills, and AI settings; Gateway-oriented external clients, MCP access, tokens, service accounts, grants, policies, approvals, governance, and audit belong to the standalone AI Gateway workbench
@@ -478,9 +476,10 @@ The repository has already converged on these rules:
 - AI Gateway tool-grant management must support `user`, `service_account`, `role`, `team`/organization, and `ai_client` subjects; runtime evaluation combines current subject grants, organization grants, role grants, and AI-client grants before exposing manifest tools or invoking a tool
 - AI Gateway access policies and `ai_gateway_skill_bindings` are now runtime controls, not only schema placeholders: access policies can deny or allow-list tools/skills by subject, organization, role, AI client, tool pattern, skill id, and risk level, while skill bindings narrow exposed skills and capability refs without granting new `permissionKeys`
 - AI Gateway personal and service-account tokens are opaque `soha_pat_` / `soha_sat_` credentials; only hashes and display prefixes may be persisted, token values are returned once, and parsed token permission caps must intersect with current role-derived `permissionKeys`
-- `soha-cli` lives under `cmd/soha-cli` and `internal/cli/sohacli`; it may handle login, local profile/context config, Gateway capability inspection, and MCP stdio proxying, but it must not call PostgreSQL, Kubernetes, Docker, execution runners, or delivery internals directly
-- `soha-cli` local profiles must keep token files private (`0600` config file, `0700` config directory), never print full access/refresh/service tokens, and route MCP `tools/call` only through `/api/v1/ai-gateway/tools/:toolName/invoke` so backend permission checks, tool grants, risk policy, and audit stay authoritative
-- soha AI Gateway product Skills live under `skills/ai-gateway`; they are AI-readable workflows only, may be installed by `soha-cli skill install`, and must never be treated as permission grants or a way to bypass Gateway manifest/tool authorization
+- The standalone `github.com/opensoha/soha-cli` repository owns the `soha` CLI. It may handle login, local profile/context config, Gateway capability inspection, and MCP stdio proxying, but it must not import `soha/internal/...` or call PostgreSQL, Kubernetes, Docker, execution runners, or delivery internals directly
+- `soha` CLI local profiles must keep token files private (`0600` config file, `0700` config directory), never print full access/refresh/service tokens, and route MCP `tools/call` only through `/api/v1/ai-gateway/tools/:toolName/invoke` so backend permission checks, tool grants, risk policy, and audit stay authoritative
+- soha AI Gateway product Skills live in the standalone `github.com/opensoha/soha-skills` repository; they are AI-readable workflows only, may be installed by `soha skill install`, and must never be treated as permission grants or a way to bypass Gateway manifest/tool authorization
+- The standalone `github.com/opensoha/soha-agent` repository owns the remote cluster agent and Agent Runtime runner binary. It must consume control-plane behavior through HTTP, Agent protocol contracts, generated SDKs, or released artifacts, and must not import `soha/internal/...`
 - AI Gateway k8s tools (`k8s.pods.*`, `k8s.deployments.list`, `k8s.services.list`, `k8s.events.list`) must stay read-only and route through `internal/application/resource`; release-failure diagnosis may aggregate delivery execution and runtime context, but Gateway must keep basic log redaction before returning MCP/CLI outputs
 - AI Gateway tool invocations must dual-write generic audit logs and `ai_gateway_audit_logs`; the dedicated row should include actor, service-account or user identity, AI client, skill, tool, risk level, scope IDs, result, and related IDs, but not full tool input, raw logs, kubeconfig, environment variables, or token values
 - AI Agent Runtime is now the stable abstraction for external agent execution: pages, automation policy, and business modules must depend on soha `AgentProvider`, `AgentRun`, `AgentCapability`, `AgentToolBinding`, `AgentSkillBinding`, toolset, analysis profile, and `AnalysisArtifact` contracts instead of calling Hermes or another provider directly
@@ -513,13 +512,13 @@ The repository has already converged on these rules:
 - SAML is currently configuration-visible but runtime-incomplete: the settings model and menu/login entry may expose it, but the server must not imply that ACS/assertion handling is already implemented
 - branding settings remain a dedicated console-level child menu under settings; they are distinct from cluster-level monitoring settings and should be applied globally in the web shell
 - the console shell theme keeps a fixed soha theme variant with brand overrides, while the header may expose a light/dark mode toggle as a user preference; theme-brand switching should still stay disabled unless it is intentionally restored end-to-end
-- frontend theme customization now uses `web/src/theme/app-theme.ts` as the single source for both antd `ThemeConfig` and shared `--soha-*` CSS variables; avoid duplicating theme tokens in `main.tsx` or standalone style files
+- frontend theme customization now uses `soha-web/src/theme/app-theme.ts` as the single source for both antd `ThemeConfig` and shared `--soha-*` CSS variables; avoid duplicating theme tokens in `main.tsx` or standalone style files
 - the console visual baseline has shifted from the older purple brand palette to a neutral shadcn-like grayscale palette, while still preserving light/dark mode support and shared CSS variable contracts for non-antd surfaces
 - shared platform filters such as resource scope and workload search bars should use compact, square-edged controls rather than pill-shaped fields
 - frontend migration baseline is now antd-first: new or migrated pages must import directly from `antd` and `@ant-design/icons`
 - native antd migration is complete. Do not reintroduce the retired UI system's packages, compat layers, legacy token names, or wrapper APIs into the active `web` application.
 - antd-first is the stable frontend baseline; `platform`, `access`, `delivery`, `observability`, `copilot`, `system`, `settings`, docs-facing web modules, plus the remaining shared/auth/routes tail files have all converged on native `antd` and `@ant-design/icons`
-- active `web/src` code should stay free of retired design-system naming and semantics; keep any remaining history confined to cleanup work only
+- active `soha-web/src` code should stay free of retired design-system naming and semantics; keep any remaining history confined to cleanup work only
 - docs migration baseline is Docusaurus-first; new docs-site work must target Docusaurus config, sidebars, and MDX component conventions instead of VitePress
 - virtualization lab environments should treat KubeVirt and PVE as separate runtime planes: KubeVirt may run on k3s when Linux nodes expose KVM and support privileged workloads, while PVE may run only as a full KubeVirt VM or as an external bare-metal host, Debian host, or nested lab VM connected through the PVE API
 - PVE-in-k3s is supported only through the KubeVirt VM lab path; privileged Pod experiments that mutate k3s node kernel, networking, storage, or systemd behavior must not be documented as a valid runtime path
@@ -546,7 +545,7 @@ For this repository, that means:
 ### Mandatory
 
 - update `agents.md` when architecture, technical方案, module boundary, delivery rule, performance rule, or feature scope changes
-- update `docs/architecture/*` when the public architecture description changes materially
+- update `github.com/opensoha/soha-docs` `architecture/*` when the public architecture description changes materially
 - update route metadata when navigation or page ownership changes
 - update tests when semantics or contracts change
 - when frontend theme or design-system tasks land, record whether any legacy naming or compatibility residue was removed and keep active code free of Semi Design references
@@ -607,10 +606,10 @@ Current focus remains:
 Primary supporting documents:
 
 - `README.md`
-- `docs/architecture/index.md`
-- `docs/architecture/application-delivery.md`
-- `docs/architecture/authorization.md`
-- `docs/architecture/monitoring-and-alerting.md`
+- `github.com/opensoha/soha-docs` `architecture/index.md`
+- `github.com/opensoha/soha-docs` `architecture/application-delivery.md`
+- `github.com/opensoha/soha-docs` `architecture/authorization.md`
+- `github.com/opensoha/soha-docs` `architecture/monitoring-and-alerting.md`
 
 ## 15. Codex Collaboration Baseline
 

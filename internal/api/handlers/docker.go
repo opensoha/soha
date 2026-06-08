@@ -11,10 +11,10 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
-	apiMiddleware "github.com/soha/soha/internal/api/middleware"
-	apiresponse "github.com/soha/soha/internal/api/response"
-	domaindocker "github.com/soha/soha/internal/domain/docker"
-	domainidentity "github.com/soha/soha/internal/domain/identity"
+	apiMiddleware "github.com/opensoha/soha/internal/api/middleware"
+	apiresponse "github.com/opensoha/soha/internal/api/response"
+	domaindocker "github.com/opensoha/soha/internal/domain/docker"
+	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 )
 
 type DockerService interface {

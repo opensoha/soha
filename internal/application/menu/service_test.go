@@ -4,9 +4,9 @@ import (
 	"context"
 	"testing"
 
-	appaccess "github.com/soha/soha/internal/application/access"
-	domainidentity "github.com/soha/soha/internal/domain/identity"
-	domainmenu "github.com/soha/soha/internal/domain/menu"
+	appaccess "github.com/opensoha/soha/internal/application/access"
+	domainidentity "github.com/opensoha/soha/internal/domain/identity"
+	domainmenu "github.com/opensoha/soha/internal/domain/menu"
 )
 
 type stubRepository struct {

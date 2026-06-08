@@ -1,6 +1,6 @@
 package rbac
 
-import domainaccess "github.com/soha/soha/internal/domain/access"
+import domainaccess "github.com/opensoha/soha/internal/domain/access"
 
 var RoleMatrix = map[string][]domainaccess.Action{
 	"admin":     {domainaccess.ActionView, domainaccess.ActionList, domainaccess.ActionWatch, domainaccess.ActionCreate, domainaccess.ActionUpdate, domainaccess.ActionDelete, domainaccess.ActionRestart, domainaccess.ActionRollback, domainaccess.ActionScale, domainaccess.ActionTrigger, domainaccess.ActionLogs, domainaccess.ActionExec},

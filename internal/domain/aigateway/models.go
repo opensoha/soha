@@ -5,7 +5,7 @@ import (
 	"encoding/hex"
 	"time"
 
-	domainidentity "github.com/soha/soha/internal/domain/identity"
+	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 )
 
 const (

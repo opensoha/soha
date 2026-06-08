@@ -12,11 +12,11 @@ import (
 	"strings"
 	"time"
 
-	appaccess "github.com/soha/soha/internal/application/access"
-	domainidentity "github.com/soha/soha/internal/domain/identity"
-	domainsettings "github.com/soha/soha/internal/domain/settings"
-	cfgpkg "github.com/soha/soha/internal/infrastructure/config"
-	"github.com/soha/soha/internal/platform/apperrors"
+	appaccess "github.com/opensoha/soha/internal/application/access"
+	domainidentity "github.com/opensoha/soha/internal/domain/identity"
+	domainsettings "github.com/opensoha/soha/internal/domain/settings"
+	cfgpkg "github.com/opensoha/soha/internal/infrastructure/config"
+	"github.com/opensoha/soha/internal/platform/apperrors"
 )
 
 type Service struct {

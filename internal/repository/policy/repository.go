@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	domainaccess "github.com/soha/soha/internal/domain/access"
+	domainaccess "github.com/opensoha/soha/internal/domain/access"
 	"gorm.io/gorm"
 )
 

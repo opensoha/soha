@@ -15,10 +15,10 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	appaccess "github.com/soha/soha/internal/application/access"
-	domaindocker "github.com/soha/soha/internal/domain/docker"
-	domainidentity "github.com/soha/soha/internal/domain/identity"
-	"github.com/soha/soha/internal/platform/apperrors"
+	appaccess "github.com/opensoha/soha/internal/application/access"
+	domaindocker "github.com/opensoha/soha/internal/domain/docker"
+	domainidentity "github.com/opensoha/soha/internal/domain/identity"
+	"github.com/opensoha/soha/internal/platform/apperrors"
 )
 
 const (

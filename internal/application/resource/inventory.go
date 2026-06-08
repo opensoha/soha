@@ -12,12 +12,12 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/yaml"
 
-	domainaccess "github.com/soha/soha/internal/domain/access"
-	domaincluster "github.com/soha/soha/internal/domain/cluster"
-	domainidentity "github.com/soha/soha/internal/domain/identity"
-	domainresource "github.com/soha/soha/internal/domain/resource"
-	informerinfra "github.com/soha/soha/internal/infrastructure/informer"
-	"github.com/soha/soha/internal/platform/apperrors"
+	domainaccess "github.com/opensoha/soha/internal/domain/access"
+	domaincluster "github.com/opensoha/soha/internal/domain/cluster"
+	domainidentity "github.com/opensoha/soha/internal/domain/identity"
+	domainresource "github.com/opensoha/soha/internal/domain/resource"
+	informerinfra "github.com/opensoha/soha/internal/infrastructure/informer"
+	"github.com/opensoha/soha/internal/platform/apperrors"
 )
 
 func (s *Service) ListNamespaces(ctx context.Context, principal domainidentity.Principal, clusterID string) ([]domainresource.NamespaceView, error) {

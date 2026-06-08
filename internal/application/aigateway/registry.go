@@ -4,8 +4,8 @@ import (
 	"context"
 	"strings"
 
-	domainaigateway "github.com/soha/soha/internal/domain/aigateway"
-	domainidentity "github.com/soha/soha/internal/domain/identity"
+	domainaigateway "github.com/opensoha/soha/internal/domain/aigateway"
+	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 )
 
 type CapabilityProvider interface {

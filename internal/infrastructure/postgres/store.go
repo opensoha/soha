@@ -1,8 +1,8 @@
 package postgres
 
 import (
-	cfgpkg "github.com/soha/soha/internal/infrastructure/config"
-	dbinfra "github.com/soha/soha/internal/infrastructure/db"
+	cfgpkg "github.com/opensoha/soha/internal/infrastructure/config"
+	dbinfra "github.com/opensoha/soha/internal/infrastructure/db"
 )
 
 // Store is kept as a compatibility alias for legacy imports.

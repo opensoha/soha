@@ -4,8 +4,8 @@ import (
 	"slices"
 	"strings"
 
-	appaccess "github.com/soha/soha/internal/application/access"
-	domainmenu "github.com/soha/soha/internal/domain/menu"
+	appaccess "github.com/opensoha/soha/internal/application/access"
+	domainmenu "github.com/opensoha/soha/internal/domain/menu"
 )
 
 type visibilityRule struct {
@@ -27,6 +27,7 @@ func workspacePermissionForMenu(item domainmenu.Record) string {
 		strings.HasPrefix(path, "/clusters") ||
 		strings.HasPrefix(path, "/monitoring-workbench") ||
 		strings.HasPrefix(path, "/ai-gateway") ||
+		strings.HasPrefix(path, "/plugins") ||
 		strings.HasPrefix(path, "/ai-workbench") ||
 		strings.HasPrefix(path, "/virtualization") ||
 		strings.HasPrefix(path, "/observability") ||
@@ -127,6 +128,8 @@ func permissionRuleForMenu(item domainmenu.Record) (visibilityRule, bool) {
 		return visibilityRule{permissions: []string{appaccess.PermAIGatewayView, appaccess.PermAIGatewayInvoke, appaccess.PermAIGatewayManage}}, true
 	case item.ID == "ai-gateway-clients", item.ID == "ai-gateway-governance", item.ID == "ai-gateway-call-logs":
 		return visibilityRule{permissions: []string{appaccess.PermAIGatewayManage}}, true
+	case item.ID == "plugins", item.ID == "plugins-marketplace", item.ID == "plugins-installed":
+		return visibilityRule{permissions: []string{appaccess.PermPluginView}}, true
 	case item.ID == "virtualization-workbench":
 		return visibilityRule{permissions: []string{
 			appaccess.PermVirtualizationOverviewView,
