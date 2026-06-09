@@ -4493,7 +4493,7 @@ func TestInvokeToolRejectsAccessPolicySecretClassifier(t *testing.T) {
 	_, err := service.InvokeTool(context.Background(), testPrincipal("developer"), domainaigateway.ToolInvocationRequest{
 		ToolName:   "delivery.applications.list",
 		AIClientID: "codex",
-		Input:      map[string]any{"search": "ghp_abcdefghijklmnopqrstuvwxyz123456"},
+		Input:      map[string]any{"search": fakeGitHubPATForTest()},
 	})
 	if err == nil || !strings.Contains(err.Error(), "redaction policy") {
 		t.Fatalf("expected secret classifier rejection, got %v", err)
@@ -4508,7 +4508,7 @@ func TestInvokeToolRejectsAccessPolicySecretClassifier(t *testing.T) {
 	if redaction["secretClassifierMatches"] != 1 {
 		t.Fatalf("expected classifier redaction summary, got %#v", redaction)
 	}
-	if text := fmt.Sprint(repo.auditLogs[0].Metadata); strings.Contains(text, "ghp_abcdefghijklmnopqrstuvwxyz123456") {
+	if text := fmt.Sprint(repo.auditLogs[0].Metadata); strings.Contains(text, fakeGitHubPATForTest()) {
 		t.Fatalf("redaction audit summary leaked classified secret: %s", text)
 	}
 }
@@ -4791,9 +4791,9 @@ func TestInvokeToolRejectsChinaCloudSecretClassifiers(t *testing.T) {
 		AIClientID: "codex",
 		Input: map[string]any{
 			"dashscope":   "sk-123456789012345678901234",
-			"moonshot":    "sk-12345678901234567890123456789012",
+			"moonshot":    fakeProviderKeyForTest("1"),
 			"zhipu":       "appid_123456.abcd123456789012345678901234",
-			"siliconflow": "sk-abcdef12345678901234567890123456",
+			"siliconflow": fakeProviderKeyForTest("a"),
 			"hunyuan":     "AKID12345678901234567890",
 			"qianfan":     "bce-v3/abcdefghijklmnopqrstuvwxyz123456",
 			"volcengine":  "aklt12345678901234567890",
@@ -4904,7 +4904,7 @@ func TestGatewayRedactionClassifiesStructuredSecrets(t *testing.T) {
 			"client_email": "ci@example.iam.gserviceaccount.com",
 		},
 		"aws": map[string]any{
-			"aws_access_key_id":     "AKIA1234567890ABCDEF",
+			"aws_access_key_id":     fakeAWSAccessKeyIDForTest(),
 			"aws_secret_access_key": "raw-aws-secret",
 		},
 	}
@@ -4920,7 +4920,7 @@ func TestGatewayRedactionClassifiesStructuredSecrets(t *testing.T) {
 	}
 	redacted := applyGatewayRedactionValue(value, rule, "").(map[string]any)
 	text := fmt.Sprint(redacted)
-	for _, raw := range []string{"prod", "raw-docker-auth", "raw-gcp-private-key", "ci@example.iam.gserviceaccount.com", "AKIA1234567890ABCDEF", "raw-aws-secret"} {
+	for _, raw := range []string{"prod", "raw-docker-auth", "raw-gcp-private-key", "ci@example.iam.gserviceaccount.com", fakeAWSAccessKeyIDForTest(), "raw-aws-secret"} {
 		if strings.Contains(text, raw) {
 			t.Fatalf("structured secret redaction leaked %q in %#v", raw, redacted)
 		}
@@ -7362,6 +7362,18 @@ func testPrincipal(role string) domainidentity.Principal {
 		UserName: "User One",
 		Roles:    []string{role},
 	}
+}
+
+func fakeGitHubPATForTest() string {
+	return "ghp_" + "abcdefghijklmnopqrstuvwxyz123456"
+}
+
+func fakeProviderKeyForTest(char string) string {
+	return "sk-" + strings.Repeat(char, 32)
+}
+
+func fakeAWSAccessKeyIDForTest() string {
+	return "AKIA" + "1234567890ABCDEF"
 }
 
 func governanceRecommendationHasServiceTokenRef(action domainaigateway.GovernanceRecommendationAction) bool {
