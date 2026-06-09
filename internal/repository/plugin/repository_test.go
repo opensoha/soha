@@ -2,6 +2,9 @@ package plugin
 
 import (
 	"context"
+	"database/sql/driver"
+	"encoding/json"
+	"reflect"
 	"testing"
 	"time"
 
@@ -59,17 +62,17 @@ func TestRepositoryUpsertInstalledPersistsManifestSnapshot(t *testing.T) {
 			item.Type,
 			item.Status,
 			item.Source,
-			`{"id":"opensoha.k8s-sre-pack","name":"K8s SRE Pack","version":"0.1.0","publisher":"opensoha","type":"skill-pack"}`,
+			jsonEqualArg(`{"id":"opensoha.k8s-sre-pack","name":"K8s SRE Pack","version":"0.1.0","publisher":"opensoha","type":"skill-pack"}`),
 			item.ChecksumStatus,
 			item.SignatureStatus,
-			`{"required":["ai.gateway.view","ai.gateway.invoke"],"domain":["workspace.resource.view"]}`,
-			`{"kubeconfig":"secret://k8s/default"}`,
+			jsonEqualArg(`{"required":["ai.gateway.view","ai.gateway.invoke"],"domain":["workspace.resource.view"]}`),
+			jsonEqualArg(`{"kubeconfig":"secret://k8s/default"}`),
 			item.InstalledBy,
 			item.InstalledAt,
 			item.UpdatedAt,
 			item.EnabledAt,
 			item.DisabledAt,
-			`{"permissionModel":"requested-only"}`,
+			jsonEqualArg(`{"permissionModel":"requested-only"}`),
 		).
 		WillReturnResult(sqlmock.NewResult(0, 1))
 	mock.ExpectQuery(`(?s)SELECT id, name, version, publisher, type, status, source, manifest, checksum_status, signature_status,\s+requested_permissions, configured_secret_refs, installed_by, installed_at, updated_at,\s+enabled_at, disabled_at, metadata\s+FROM installed_plugins\s+WHERE id = .*LIMIT 1`).
@@ -134,4 +137,22 @@ func TestRepositoryUpsertInstalledPersistsManifestSnapshot(t *testing.T) {
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatalf("sql expectations: %v", err)
 	}
+}
+
+type jsonEqualArg string
+
+func (expected jsonEqualArg) Match(actual driver.Value) bool {
+	actualText, ok := actual.(string)
+	if !ok {
+		return false
+	}
+	var expectedValue any
+	if err := json.Unmarshal([]byte(expected), &expectedValue); err != nil {
+		return false
+	}
+	var actualValue any
+	if err := json.Unmarshal([]byte(actualText), &actualValue); err != nil {
+		return false
+	}
+	return reflect.DeepEqual(expectedValue, actualValue)
 }
