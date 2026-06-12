@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -31,6 +33,12 @@ type portForwardSession struct {
 	stopCh  chan struct{}
 	doneCh  chan struct{}
 	lastErr string
+	once    sync.Once
+	cancel  context.CancelFunc
+}
+
+type portForwardTunnelClient interface {
+	StreamPortForward(context.Context, string, net.Conn) error
 }
 
 var (
@@ -75,8 +83,8 @@ func fromSessionView(view domainresource.PortForwardSessionView, connectionMode,
 }
 
 // RestorePortForwards reads persisted sessions from the repository and best-effort
-// re-establishes direct-mode forwards. Agent-mode sessions are marked pending
-// until the agent tunnel protocol re-attaches them.
+// re-establishes direct-mode forwards. Agent-mode sessions are recreated on the
+// agent and rebound to their original Core local ports.
 func (s *Service) RestorePortForwards(ctx context.Context) error {
 	if s.portForwards == nil {
 		return nil
@@ -87,7 +95,13 @@ func (s *Service) RestorePortForwards(ctx context.Context) error {
 	}
 	for _, rec := range records {
 		if rec.ConnectionMode != "direct" {
-			_ = s.portForwards.MarkStatus(ctx, rec.SessionID, "pending", "awaiting agent tunnel reattach")
+			if rec.ConnectionMode == "agent" {
+				if err := s.restoreAgentPortForward(ctx, rec); err != nil {
+					_ = s.portForwards.MarkStatus(ctx, rec.SessionID, "error", fmt.Sprintf("restore: %v", err))
+				}
+				continue
+			}
+			_ = s.portForwards.MarkStatus(ctx, rec.SessionID, "pending", "unsupported connection mode")
 			continue
 		}
 		bundle, err := s.clusters.Bundle(ctx, rec.ClusterID)
@@ -105,19 +119,85 @@ func (s *Service) RestorePortForwards(ctx context.Context) error {
 		session.view.CreatedBy = rec.CreatedBy
 		session.view.CreatedAt = rec.CreatedAt.UTC().Format(time.RFC3339)
 
-		portForwardRegistryMu.Lock()
-		portForwardRegistry[session.view.SessionID] = session
-		portForwardRegistryMu.Unlock()
+		registerPortForwardSession(session)
 		_ = s.portForwards.MarkStatus(ctx, rec.SessionID, "active", "")
 	}
 	return nil
 }
 
+func (s *Service) restoreAgentPortForward(ctx context.Context, rec portforwardrepo.Record) error {
+	if s.resolver == nil {
+		return fmt.Errorf("connection resolver unavailable")
+	}
+	connection, err := s.resolver.GetConnection(ctx, rec.ClusterID)
+	if err != nil {
+		return fmt.Errorf("connection unavailable: %w", err)
+	}
+	if connection.Summary.ConnectionMode != domaincluster.ConnectionModeAgent {
+		return fmt.Errorf("connection mode is %s, want agent", connection.Summary.ConnectionMode)
+	}
+	client, err := s.agentClient(connection)
+	if err != nil {
+		return err
+	}
+	view, err := client.RegisterPortForward(ctx, domainresource.PortForwardRegisterInput{
+		Namespace:  rec.Namespace,
+		TargetKind: rec.TargetKind,
+		TargetName: rec.TargetName,
+		LocalPort:  rec.LocalPort,
+		RemotePort: rec.RemotePort,
+	})
+	if err != nil {
+		return fmt.Errorf("register agent session: %w", err)
+	}
+	if view.ClusterID == "" {
+		view.ClusterID = rec.ClusterID
+	}
+	if view.CreatedBy == "" {
+		view.CreatedBy = rec.CreatedBy
+	}
+	session, err := startAgentPortForwardTunnel(client, view)
+	if err != nil {
+		_ = client.StopPortForward(context.Background(), view.SessionID)
+		return err
+	}
+	registerPortForwardSession(session)
+	if rec.SessionID != session.view.SessionID {
+		if err := s.portForwards.Delete(ctx, rec.SessionID); err != nil {
+			cleanupRegisteredPortForwardSession(session)
+			_ = client.StopPortForward(context.Background(), view.SessionID)
+			return err
+		}
+	}
+	if err := persistRegisteredPortForwardSession(ctx, s.portForwards, session, "agent"); err != nil {
+		_ = client.StopPortForward(context.Background(), view.SessionID)
+		return err
+	}
+	return nil
+}
+
 func (s *Service) ListPortForwards(ctx context.Context, principal domainidentity.Principal, clusterID string) ([]domainresource.PortForwardSessionView, error) {
-	if _, _, err := s.authorize(ctx, principal, clusterID, "", "PortForward", domainaccess.ActionList); err != nil {
+	connection, _, err := s.authorize(ctx, principal, clusterID, "", "PortForward", domainaccess.ActionList)
+	if err != nil {
 		return nil, err
 	}
 	seen := map[string]domainresource.PortForwardSessionView{}
+	if connection.Summary.ConnectionMode == domaincluster.ConnectionModeAgent {
+		client, err := s.agentClient(connection)
+		if err != nil {
+			return nil, err
+		}
+		items, err := client.ListPortForwards(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
+		}
+		for _, item := range items {
+			if item.ClusterID == "" {
+				item.ClusterID = clusterID
+			}
+			seen[item.SessionID] = item
+		}
+	}
 	portForwardRegistryMu.Lock()
 	for _, session := range portForwardRegistry {
 		if session.view.ClusterID == clusterID {
@@ -172,24 +252,39 @@ func (s *Service) RegisterPortForward(ctx context.Context, principal domainident
 	}
 
 	if connectionMode == "agent" {
-		view := domainresource.PortForwardSessionView{
-			SessionID:  uuid.NewString(),
-			ClusterID:  clusterID,
+		client, err := s.agentClient(connection)
+		if err != nil {
+			return domainresource.PortForwardSessionView{}, err
+		}
+		view, err := client.RegisterPortForward(ctx, domainresource.PortForwardRegisterInput{
 			Namespace:  namespace,
 			TargetKind: kind,
 			TargetName: strings.TrimSpace(input.TargetName),
 			LocalPort:  input.LocalPort,
 			RemotePort: input.RemotePort,
-			Status:     "pending",
-			CreatedBy:  principal.UserID,
-			CreatedAt:  time.Now().UTC().Format(time.RFC3339),
+		})
+		if err != nil {
+			return domainresource.PortForwardSessionView{}, fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
 		}
+		if view.ClusterID == "" {
+			view.ClusterID = clusterID
+		}
+		if view.CreatedBy == "" {
+			view.CreatedBy = principal.UserID
+		}
+		session, err := startAgentPortForwardTunnel(client, view)
+		if err != nil {
+			_ = client.StopPortForward(context.Background(), view.SessionID)
+			return domainresource.PortForwardSessionView{}, err
+		}
+		registerPortForwardSession(session)
 		if s.portForwards != nil {
-			if err := s.portForwards.Upsert(ctx, fromSessionView(view, "agent", "awaiting agent tunnel")); err != nil {
+			if err := persistRegisteredPortForwardSession(ctx, s.portForwards, session, "agent"); err != nil {
+				_ = client.StopPortForward(context.Background(), view.SessionID)
 				return domainresource.PortForwardSessionView{}, err
 			}
 		}
-		return view, nil
+		return session.view, nil
 	}
 
 	bundle, err := s.clusters.Bundle(ctx, clusterID)
@@ -205,12 +300,10 @@ func (s *Service) RegisterPortForward(ctx context.Context, principal domainident
 	session.view.CreatedBy = principal.UserID
 	session.view.CreatedAt = time.Now().UTC().Format(time.RFC3339)
 
-	portForwardRegistryMu.Lock()
-	portForwardRegistry[session.view.SessionID] = session
-	portForwardRegistryMu.Unlock()
+	registerPortForwardSession(session)
 
 	if s.portForwards != nil {
-		if err := s.portForwards.Upsert(ctx, fromSessionView(session.view, "direct", "")); err != nil {
+		if err := persistRegisteredPortForwardSession(ctx, s.portForwards, session, "direct"); err != nil {
 			return domainresource.PortForwardSessionView{}, err
 		}
 	}
@@ -218,8 +311,37 @@ func (s *Service) RegisterPortForward(ctx context.Context, principal domainident
 }
 
 func (s *Service) StopPortForward(ctx context.Context, principal domainidentity.Principal, clusterID, sessionID string) error {
-	if _, _, err := s.authorize(ctx, principal, clusterID, "", "PortForward", domainaccess.ActionDelete); err != nil {
+	connection, _, err := s.authorize(ctx, principal, clusterID, "", "PortForward", domainaccess.ActionDelete)
+	if err != nil {
 		return err
+	}
+	if connection.Summary.ConnectionMode == domaincluster.ConnectionModeAgent {
+		client, err := s.agentClient(connection)
+		if err != nil {
+			return err
+		}
+		portForwardRegistryMu.Lock()
+		session, ok := portForwardRegistry[sessionID]
+		if ok && session.view.ClusterID != clusterID {
+			portForwardRegistryMu.Unlock()
+			return fmt.Errorf("%w: port forward session not found", apperrors.ErrNotFound)
+		}
+		if ok {
+			delete(portForwardRegistry, sessionID)
+		}
+		portForwardRegistryMu.Unlock()
+		if ok {
+			stopPortForwardSession(session)
+		}
+		if err := client.StopPortForward(ctx, sessionID); err != nil {
+			return fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
+		}
+		if s.portForwards != nil {
+			if err := s.portForwards.Delete(ctx, sessionID); err != nil {
+				return err
+			}
+		}
+		return nil
 	}
 	portForwardRegistryMu.Lock()
 	session, ok := portForwardRegistry[sessionID]
@@ -232,11 +354,7 @@ func (s *Service) StopPortForward(ctx context.Context, principal domainidentity.
 	}
 	portForwardRegistryMu.Unlock()
 	if ok {
-		close(session.stopCh)
-		select {
-		case <-session.doneCh:
-		case <-time.After(5 * time.Second):
-		}
+		stopPortForwardSession(session)
 	}
 	if s.portForwards != nil {
 		if err := s.portForwards.Delete(ctx, sessionID); err != nil {
@@ -246,6 +364,113 @@ func (s *Service) StopPortForward(ctx context.Context, principal domainidentity.
 		return fmt.Errorf("%w: port forward session not found", apperrors.ErrNotFound)
 	}
 	return nil
+}
+
+func stopPortForwardSession(session *portForwardSession) {
+	if session == nil {
+		return
+	}
+	session.once.Do(func() {
+		if session.cancel != nil {
+			session.cancel()
+		}
+		close(session.stopCh)
+		select {
+		case <-session.doneCh:
+		case <-time.After(5 * time.Second):
+		}
+	})
+}
+
+func registerPortForwardSession(session *portForwardSession) {
+	if session == nil {
+		return
+	}
+	portForwardRegistryMu.Lock()
+	portForwardRegistry[session.view.SessionID] = session
+	portForwardRegistryMu.Unlock()
+}
+
+func cleanupRegisteredPortForwardSession(session *portForwardSession) {
+	if session == nil {
+		return
+	}
+	portForwardRegistryMu.Lock()
+	delete(portForwardRegistry, session.view.SessionID)
+	portForwardRegistryMu.Unlock()
+	stopPortForwardSession(session)
+}
+
+func persistRegisteredPortForwardSession(ctx context.Context, repo PortForwardRepository, session *portForwardSession, connectionMode string) error {
+	if repo == nil {
+		return nil
+	}
+	if err := repo.Upsert(ctx, fromSessionView(session.view, connectionMode, "")); err != nil {
+		cleanupRegisteredPortForwardSession(session)
+		return err
+	}
+	return nil
+}
+
+func startAgentPortForwardTunnel(client portForwardTunnelClient, view domainresource.PortForwardSessionView) (*portForwardSession, error) {
+	if client == nil {
+		return nil, fmt.Errorf("agent port-forward client unavailable")
+	}
+	if strings.TrimSpace(view.SessionID) == "" {
+		return nil, fmt.Errorf("agent port-forward session id is missing")
+	}
+	listener, err := net.Listen("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(view.LocalPort)))
+	if err != nil {
+		return nil, fmt.Errorf("listen on 127.0.0.1:%d: %w", view.LocalPort, err)
+	}
+	stopCh := make(chan struct{})
+	doneCh := make(chan struct{})
+	sessionCtx, cancel := context.WithCancel(context.Background())
+	if view.Status == "" || view.Status == "registered" {
+		view.Status = "active"
+	}
+	session := &portForwardSession{
+		view:   view,
+		stopCh: stopCh,
+		doneCh: doneCh,
+		cancel: cancel,
+	}
+	go runAgentPortForwardListener(sessionCtx, listener, client, session)
+	return session, nil
+}
+
+func runAgentPortForwardListener(ctx context.Context, listener net.Listener, client portForwardTunnelClient, session *portForwardSession) {
+	defer close(session.doneCh)
+	defer listener.Close()
+	go func() {
+		select {
+		case <-session.stopCh:
+			_ = listener.Close()
+		case <-ctx.Done():
+			_ = listener.Close()
+		}
+	}()
+	for {
+		conn, err := listener.Accept()
+		if err != nil {
+			select {
+			case <-session.stopCh:
+				return
+			case <-ctx.Done():
+				return
+			default:
+				session.view.Status = "error"
+				session.lastErr = err.Error()
+				return
+			}
+		}
+		go func(conn net.Conn) {
+			defer conn.Close()
+			if err := client.StreamPortForward(ctx, session.view.SessionID, conn); err != nil {
+				session.lastErr = err.Error()
+			}
+		}(conn)
+	}
 }
 
 func startDirectPortForward(ctx context.Context, bundle *k8sinfra.Bundle, namespace, kind, name string, localPort, remotePort int) (*portForwardSession, error) {
