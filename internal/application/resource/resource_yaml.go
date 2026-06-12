@@ -34,7 +34,18 @@ func (s *Service) applyResourceYAML(ctx context.Context, principal domainidentit
 	}
 	switch connection.Summary.ConnectionMode {
 	case domaincluster.ConnectionModeAgent:
-		return domainresource.ResourceYAMLView{}, fmt.Errorf("%w: yaml apply is not supported for agent-connected clusters yet", apperrors.ErrInvalidArgument)
+		client, err := s.agentClient(connection)
+		if err != nil {
+			return domainresource.ResourceYAMLView{}, err
+		}
+		item, err := client.ApplyResourceYAML(ctx, namespace, kind, name, content)
+		if err != nil {
+			_ = s.recordAudit(ctx, principal, clusterID, namespace, kind, name, string(domainaccess.ActionUpdate), "failure", err.Error())
+			return domainresource.ResourceYAMLView{}, fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
+		}
+		_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, kind, name, string(domainaccess.ActionUpdate), "success", "applied resource yaml via agent")
+		s.recordOperation(ctx, principal, "platform.resource.apply", connection.Summary.ID, namespace, kind, name, "applied resource yaml via agent", nil)
+		return item, nil
 	default:
 		item, err := s.applyDirectResourceYAML(ctx, clusterID, namespace, kind, name, content)
 		if err != nil {
@@ -57,7 +68,16 @@ func (s *Service) GetResourceYAML(ctx context.Context, principal domainidentity.
 	}
 	switch connection.Summary.ConnectionMode {
 	case domaincluster.ConnectionModeAgent:
-		return domainresource.ResourceYAMLView{}, fmt.Errorf("%w: yaml view is not supported for agent-connected clusters yet", apperrors.ErrInvalidArgument)
+		client, err := s.agentClient(connection)
+		if err != nil {
+			return domainresource.ResourceYAMLView{}, err
+		}
+		item, err := client.GetResourceYAML(ctx, namespace, kind, name)
+		if err != nil {
+			return domainresource.ResourceYAMLView{}, fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
+		}
+		_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, kind, name, string(domainaccess.ActionView), "success", "viewed resource yaml via agent")
+		return item, nil
 	default:
 		item, err := s.getDirectResourceYAMLByKind(ctx, clusterID, namespace, kind, name)
 		if err != nil {
@@ -76,7 +96,17 @@ func (s *Service) DeleteResourceByKind(ctx context.Context, principal domainiden
 	}
 	switch connection.Summary.ConnectionMode {
 	case domaincluster.ConnectionModeAgent:
-		return fmt.Errorf("%w: delete is not supported for agent-connected clusters yet", apperrors.ErrInvalidArgument)
+		client, err := s.agentClient(connection)
+		if err != nil {
+			return err
+		}
+		if err := client.DeleteResource(ctx, namespace, kind, name); err != nil {
+			_ = s.recordAudit(ctx, principal, clusterID, namespace, kind, name, string(domainaccess.ActionDelete), "failure", err.Error())
+			return fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
+		}
+		_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, kind, name, string(domainaccess.ActionDelete), "success", "deleted resource via agent")
+		s.recordOperation(ctx, principal, "platform.resource.delete", connection.Summary.ID, namespace, kind, name, "deleted resource via agent", nil)
+		return nil
 	default:
 		if err := s.deleteDirectResourceByKind(ctx, clusterID, namespace, kind, name); err != nil {
 			_ = s.recordAudit(ctx, principal, clusterID, namespace, kind, name, string(domainaccess.ActionDelete), "failure", err.Error())

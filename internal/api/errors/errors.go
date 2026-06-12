@@ -8,15 +8,18 @@ import (
 )
 
 var (
-	ErrUnauthorized    = legacy.ErrUnauthorized
-	ErrAccessDenied    = legacy.ErrAccessDenied
-	ErrNotFound        = legacy.ErrNotFound
-	ErrClusterUnready  = legacy.ErrClusterUnready
-	ErrInvalidArgument = legacy.ErrInvalidArgument
+	ErrUnauthorized         = legacy.ErrUnauthorized
+	ErrAccessDenied         = legacy.ErrAccessDenied
+	ErrNotFound             = legacy.ErrNotFound
+	ErrClusterUnready       = legacy.ErrClusterUnready
+	ErrInvalidArgument      = legacy.ErrInvalidArgument
+	ErrUnsupportedOperation = legacy.ErrUnsupportedOperation
 )
 
 func StatusCode(err error) int {
 	switch {
+	case errors.Is(err, ErrUnsupportedOperation):
+		return http.StatusNotImplemented
 	case errors.Is(err, ErrInvalidArgument):
 		return http.StatusBadRequest
 	case errors.Is(err, ErrUnauthorized):
@@ -34,6 +37,8 @@ func StatusCode(err error) int {
 
 func Code(err error) string {
 	switch {
+	case errors.Is(err, ErrUnsupportedOperation):
+		return "unsupported_operation"
 	case errors.Is(err, ErrInvalidArgument):
 		return "invalid_argument"
 	case errors.Is(err, ErrUnauthorized):

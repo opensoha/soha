@@ -4,14 +4,20 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
+	"github.com/gorilla/websocket"
 	domaincluster "github.com/opensoha/soha/internal/domain/cluster"
 	domainresource "github.com/opensoha/soha/internal/domain/resource"
+	"k8s.io/client-go/tools/remotecommand"
 )
 
 type Registry struct {
@@ -76,6 +82,43 @@ type rollbackDeploymentRequest struct {
 	Namespace string `json:"namespace"`
 	Name      string `json:"name"`
 	Revision  string `json:"revision"`
+}
+
+type resourceYAMLRequest struct {
+	Namespace string `json:"namespace"`
+	Kind      string `json:"kind"`
+	Name      string `json:"name"`
+	Content   string `json:"content"`
+}
+
+type deleteResourceRequest struct {
+	Namespace string `json:"namespace"`
+	Kind      string `json:"kind"`
+	Name      string `json:"name"`
+}
+
+type customResourceListRequest struct {
+	Definition domainresource.CRDResourceDefinition `json:"definition"`
+	Namespace  string                               `json:"namespace"`
+}
+
+type customResourceYAMLRequest struct {
+	Definition domainresource.CRDResourceDefinition `json:"definition"`
+	Namespace  string                               `json:"namespace"`
+	Name       string                               `json:"name,omitempty"`
+	Content    string                               `json:"content,omitempty"`
+}
+
+type helmReleaseValuesRequest struct {
+	Content string `json:"content"`
+}
+
+type terminalMessage struct {
+	Type    string `json:"type"`
+	Data    string `json:"data,omitempty"`
+	Message string `json:"message,omitempty"`
+	Cols    int    `json:"cols,omitempty"`
+	Rows    int    `json:"rows,omitempty"`
 }
 
 type cancelRuntimeTaskRequest struct {
@@ -196,6 +239,40 @@ func (c *Client) GetPodYAML(ctx context.Context, namespace, name string) (domain
 	return payload.Data, nil
 }
 
+func (c *Client) StreamPodLogs(ctx context.Context, namespace, name, container string, tailLines, sinceSeconds int64, stdout io.Writer) error {
+	values := url.Values{}
+	values.Set("namespace", namespace)
+	if container != "" {
+		values.Set("container", container)
+	}
+	if tailLines > 0 {
+		values.Set("tailLines", fmt.Sprintf("%d", tailLines))
+	}
+	if sinceSeconds > 0 {
+		values.Set("sinceSeconds", fmt.Sprintf("%d", sinceSeconds))
+	}
+	path := fmt.Sprintf("/api/v1/platform/workloads/pods/%s/logs/stream?%s", url.PathEscape(name), values.Encode())
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+path, nil)
+	if err != nil {
+		return fmt.Errorf("build agent stream request: %w", err)
+	}
+	if c.token != "" {
+		req.Header.Set("Authorization", "Bearer "+c.token)
+	}
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("execute agent stream request: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= http.StatusBadRequest {
+		return fmt.Errorf("agent stream request failed with status %d", resp.StatusCode)
+	}
+	if _, err := io.Copy(stdout, resp.Body); err != nil {
+		return fmt.Errorf("copy agent stream response: %w", err)
+	}
+	return nil
+}
+
 func (c *Client) ExecPod(ctx context.Context, namespace, name, container, command string, timeoutSeconds int64) (domainresource.PodExecView, error) {
 	var payload struct {
 		Data domainresource.PodExecView `json:"data"`
@@ -210,6 +287,123 @@ func (c *Client) ExecPod(ctx context.Context, namespace, name, container, comman
 		return domainresource.PodExecView{}, err
 	}
 	return payload.Data, nil
+}
+
+func (c *Client) StreamPodTerminal(ctx context.Context, namespace, name, container, shell string, stdin io.Reader, stdout, stderr io.Writer, sizeQueue remotecommand.TerminalSizeQueue) error {
+	values := url.Values{}
+	values.Set("namespace", namespace)
+	if container != "" {
+		values.Set("container", container)
+	}
+	if shell != "" {
+		values.Set("shell", shell)
+	}
+	path := fmt.Sprintf("/api/v1/platform/workloads/pods/%s/terminal?%s", url.PathEscape(name), values.Encode())
+	endpoint, err := c.websocketEndpoint(path)
+	if err != nil {
+		return err
+	}
+	headers := http.Header{}
+	if c.token != "" {
+		headers.Set("Authorization", "Bearer "+c.token)
+	}
+	conn, resp, err := websocket.DefaultDialer.DialContext(ctx, endpoint, headers)
+	if err != nil {
+		if resp != nil {
+			return fmt.Errorf("agent terminal websocket failed with status %d", resp.StatusCode)
+		}
+		return fmt.Errorf("connect agent terminal websocket: %w", err)
+	}
+	defer conn.Close()
+
+	var writeMu sync.Mutex
+	errCh := make(chan error, 1)
+	go c.readAgentTerminalMessages(ctx, conn, stdout, stderr, errCh)
+	go c.copyAgentTerminalInput(ctx, conn, &writeMu, stdin)
+	if sizeQueue != nil {
+		go c.forwardAgentTerminalResizes(ctx, conn, &writeMu, sizeQueue)
+	}
+
+	select {
+	case err := <-errCh:
+		return err
+	case <-ctx.Done():
+		_ = writeAgentTerminalMessage(conn, &writeMu, terminalMessage{Type: "close"})
+		return ctx.Err()
+	}
+}
+
+func (c *Client) readAgentTerminalMessages(ctx context.Context, conn *websocket.Conn, stdout, stderr io.Writer, errCh chan<- error) {
+	for {
+		var message terminalMessage
+		if err := conn.ReadJSON(&message); err != nil {
+			if ctx.Err() != nil {
+				errCh <- ctx.Err()
+				return
+			}
+			errCh <- err
+			return
+		}
+		switch message.Type {
+		case "stdout":
+			if _, err := io.WriteString(stdout, message.Data); err != nil {
+				errCh <- err
+				return
+			}
+		case "stderr":
+			if _, err := io.WriteString(stderr, message.Data); err != nil {
+				errCh <- err
+				return
+			}
+		case "error":
+			errCh <- fmt.Errorf("agent terminal error: %s", strings.TrimSpace(message.Message))
+			return
+		case "exit":
+			errCh <- nil
+			return
+		}
+	}
+}
+
+func (c *Client) copyAgentTerminalInput(ctx context.Context, conn *websocket.Conn, writeMu *sync.Mutex, stdin io.Reader) {
+	buffer := make([]byte, 4096)
+	for {
+		n, err := stdin.Read(buffer)
+		if n > 0 {
+			if writeAgentTerminalMessage(conn, writeMu, terminalMessage{Type: "input", Data: string(buffer[:n])}) != nil {
+				return
+			}
+		}
+		if err != nil {
+			_ = writeAgentTerminalMessage(conn, writeMu, terminalMessage{Type: "close"})
+			return
+		}
+		if ctx.Err() != nil {
+			return
+		}
+	}
+}
+
+func (c *Client) forwardAgentTerminalResizes(ctx context.Context, conn *websocket.Conn, writeMu *sync.Mutex, sizeQueue remotecommand.TerminalSizeQueue) {
+	for {
+		size := sizeQueue.Next()
+		if size == nil || ctx.Err() != nil {
+			return
+		}
+		if writeAgentTerminalMessage(conn, writeMu, terminalMessage{
+			Type: "resize",
+			Cols: int(size.Width),
+			Rows: int(size.Height),
+		}) != nil {
+			return
+		}
+	}
+}
+
+func writeAgentTerminalMessage(conn *websocket.Conn, writeMu *sync.Mutex, message terminalMessage) error {
+	writeMu.Lock()
+	defer writeMu.Unlock()
+	return conn.WriteJSON(message)
 }
 
 func (c *Client) ListDeployments(ctx context.Context, namespace string) ([]domainresource.DeploymentView, error) {
@@ -587,6 +781,32 @@ func (c *Client) GetHelmReleaseValues(ctx context.Context, namespace, name, revi
 	return payload.Data, nil
 }
 
+func (c *Client) InstallHelmChart(ctx context.Context, input domainresource.HelmChartInstallInput) (domainresource.HelmChartInstallResult, error) {
+	var payload struct {
+		Data domainresource.HelmChartInstallResult `json:"data"`
+	}
+	if err := c.request(ctx, http.MethodPost, "/api/v1/platform/helm/charts/install", input, &payload); err != nil {
+		return domainresource.HelmChartInstallResult{}, err
+	}
+	return payload.Data, nil
+}
+
+func (c *Client) UpdateHelmReleaseValues(ctx context.Context, namespace, name, content string) (domainresource.HelmValuesView, error) {
+	var payload struct {
+		Data domainresource.HelmValuesView `json:"data"`
+	}
+	path := fmt.Sprintf("/api/v1/platform/helm/releases/%s/values?namespace=%s", url.PathEscape(name), url.QueryEscape(namespace))
+	if err := c.request(ctx, http.MethodPut, path, helmReleaseValuesRequest{Content: content}, &payload); err != nil {
+		return domainresource.HelmValuesView{}, err
+	}
+	return payload.Data, nil
+}
+
+func (c *Client) DeleteHelmRelease(ctx context.Context, namespace, name string) error {
+	path := fmt.Sprintf("/api/v1/platform/helm/releases/%s?namespace=%s", url.PathEscape(name), url.QueryEscape(namespace))
+	return c.request(ctx, http.MethodDelete, path, nil, nil)
+}
+
 func (c *Client) ListServices(ctx context.Context, namespace string) ([]domainresource.ServiceView, error) {
 	var payload struct {
 		Items []domainresource.ServiceView `json:"items"`
@@ -912,6 +1132,238 @@ func (c *Client) ListClusterEvents(ctx context.Context, namespace string, limit 
 	return payload.Items, nil
 }
 
+func (c *Client) GetResourceYAML(ctx context.Context, namespace, kind, name string) (domainresource.ResourceYAMLView, error) {
+	var payload struct {
+		Data domainresource.ResourceYAMLView `json:"data"`
+	}
+	values := url.Values{}
+	values.Set("kind", kind)
+	values.Set("name", name)
+	if strings.TrimSpace(namespace) != "" {
+		values.Set("namespace", namespace)
+	}
+	path := "/api/v1/platform/resources/yaml"
+	if encoded := values.Encode(); encoded != "" {
+		path += "?" + encoded
+	}
+	if err := c.request(ctx, http.MethodGet, path, nil, &payload); err != nil {
+		return domainresource.ResourceYAMLView{}, err
+	}
+	return payload.Data, nil
+}
+
+func (c *Client) ApplyResourceYAML(ctx context.Context, namespace, kind, name, content string) (domainresource.ResourceYAMLView, error) {
+	var payload struct {
+		Data domainresource.ResourceYAMLView `json:"data"`
+	}
+	err := c.request(ctx, http.MethodPut, "/api/v1/platform/resources/yaml", resourceYAMLRequest{
+		Namespace: namespace,
+		Kind:      kind,
+		Name:      name,
+		Content:   content,
+	}, &payload)
+	if err != nil {
+		return domainresource.ResourceYAMLView{}, err
+	}
+	return payload.Data, nil
+}
+
+func (c *Client) DeleteResource(ctx context.Context, namespace, kind, name string) error {
+	return c.request(ctx, http.MethodDelete, "/api/v1/platform/resources", deleteResourceRequest{
+		Namespace: namespace,
+		Kind:      kind,
+		Name:      name,
+	}, nil)
+}
+
+func (c *Client) ListCustomResources(ctx context.Context, definition domainresource.CRDResourceDefinition, namespace string) ([]domainresource.CustomResourceView, error) {
+	var payload struct {
+		Items []domainresource.CustomResourceView `json:"items"`
+	}
+	err := c.request(ctx, http.MethodPost, "/api/v1/platform/extensions/custom-resources/list", customResourceListRequest{
+		Definition: definition,
+		Namespace:  namespace,
+	}, &payload)
+	if err != nil {
+		return nil, err
+	}
+	return payload.Items, nil
+}
+
+func (c *Client) CreateCustomResourceYAML(ctx context.Context, definition domainresource.CRDResourceDefinition, namespace, content string) (domainresource.ResourceYAMLView, error) {
+	var payload struct {
+		Data domainresource.ResourceYAMLView `json:"data"`
+	}
+	err := c.request(ctx, http.MethodPost, "/api/v1/platform/extensions/custom-resources", customResourceYAMLRequest{
+		Definition: definition,
+		Namespace:  namespace,
+		Content:    content,
+	}, &payload)
+	if err != nil {
+		return domainresource.ResourceYAMLView{}, err
+	}
+	return payload.Data, nil
+}
+
+func (c *Client) GetCustomResourceYAML(ctx context.Context, definition domainresource.CRDResourceDefinition, namespace, name string) (domainresource.ResourceYAMLView, error) {
+	var payload struct {
+		Data domainresource.ResourceYAMLView `json:"data"`
+	}
+	err := c.request(ctx, http.MethodPost, "/api/v1/platform/extensions/custom-resources/yaml", customResourceYAMLRequest{
+		Definition: definition,
+		Namespace:  namespace,
+		Name:       name,
+	}, &payload)
+	if err != nil {
+		return domainresource.ResourceYAMLView{}, err
+	}
+	return payload.Data, nil
+}
+
+func (c *Client) ApplyCustomResourceYAML(ctx context.Context, definition domainresource.CRDResourceDefinition, namespace, name, content string) (domainresource.ResourceYAMLView, error) {
+	var payload struct {
+		Data domainresource.ResourceYAMLView `json:"data"`
+	}
+	err := c.request(ctx, http.MethodPut, "/api/v1/platform/extensions/custom-resources/yaml", customResourceYAMLRequest{
+		Definition: definition,
+		Namespace:  namespace,
+		Name:       name,
+		Content:    content,
+	}, &payload)
+	if err != nil {
+		return domainresource.ResourceYAMLView{}, err
+	}
+	return payload.Data, nil
+}
+
+func (c *Client) DeleteCustomResource(ctx context.Context, definition domainresource.CRDResourceDefinition, namespace, name string) error {
+	return c.request(ctx, http.MethodDelete, "/api/v1/platform/extensions/custom-resources", customResourceYAMLRequest{
+		Definition: definition,
+		Namespace:  namespace,
+		Name:       name,
+	}, nil)
+}
+
+func (c *Client) ListPortForwards(ctx context.Context) ([]domainresource.PortForwardSessionView, error) {
+	var payload struct {
+		Items []domainresource.PortForwardSessionView `json:"items"`
+	}
+	if err := c.request(ctx, http.MethodGet, "/api/v1/platform/network/port-forwards", nil, &payload); err != nil {
+		return nil, err
+	}
+	return payload.Items, nil
+}
+
+func (c *Client) RegisterPortForward(ctx context.Context, input domainresource.PortForwardRegisterInput) (domainresource.PortForwardSessionView, error) {
+	var payload struct {
+		Data domainresource.PortForwardSessionView `json:"data"`
+	}
+	if err := c.request(ctx, http.MethodPost, "/api/v1/platform/network/port-forwards", input, &payload); err != nil {
+		return domainresource.PortForwardSessionView{}, err
+	}
+	return payload.Data, nil
+}
+
+func (c *Client) StopPortForward(ctx context.Context, sessionID string) error {
+	path := fmt.Sprintf("/api/v1/platform/network/port-forwards/%s", url.PathEscape(strings.TrimSpace(sessionID)))
+	return c.request(ctx, http.MethodDelete, path, nil, nil)
+}
+
+func (c *Client) StreamPortForward(ctx context.Context, sessionID string, local net.Conn) error {
+	path := fmt.Sprintf("/api/v1/platform/network/port-forwards/%s/tunnel", url.PathEscape(strings.TrimSpace(sessionID)))
+	endpoint, err := c.websocketEndpoint(path)
+	if err != nil {
+		return err
+	}
+	headers := http.Header{}
+	if c.token != "" {
+		headers.Set("Authorization", "Bearer "+c.token)
+	}
+	conn, resp, err := websocket.DefaultDialer.DialContext(ctx, endpoint, headers)
+	if err != nil {
+		if resp != nil {
+			return fmt.Errorf("agent port-forward tunnel failed with status %d", resp.StatusCode)
+		}
+		return fmt.Errorf("connect agent port-forward tunnel: %w", err)
+	}
+	defer conn.Close()
+	return bridgeAgentPortForwardTunnel(ctx, conn, local)
+}
+
+func bridgeAgentPortForwardTunnel(ctx context.Context, ws *websocket.Conn, local net.Conn) error {
+	errCh := make(chan error, 2)
+	go func() {
+		errCh <- copyAgentPortForwardWebSocketToTCP(ctx, ws, local)
+	}()
+	go func() {
+		errCh <- copyAgentPortForwardTCPToWebSocket(ctx, ws, local)
+	}()
+
+	select {
+	case err := <-errCh:
+		_ = local.Close()
+		_ = ws.Close()
+		if agentPortForwardTunnelClosed(err) {
+			return nil
+		}
+		return err
+	case <-ctx.Done():
+		_ = local.Close()
+		_ = ws.Close()
+		return ctx.Err()
+	}
+}
+
+func copyAgentPortForwardWebSocketToTCP(ctx context.Context, ws *websocket.Conn, local net.Conn) error {
+	for {
+		messageType, payload, err := ws.ReadMessage()
+		if err != nil {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			return err
+		}
+		if messageType != websocket.BinaryMessage && messageType != websocket.TextMessage {
+			continue
+		}
+		if len(payload) == 0 {
+			continue
+		}
+		if _, err := local.Write(payload); err != nil {
+			return err
+		}
+	}
+}
+
+func copyAgentPortForwardTCPToWebSocket(ctx context.Context, ws *websocket.Conn, local net.Conn) error {
+	buffer := make([]byte, 32*1024)
+	for {
+		n, err := local.Read(buffer)
+		if n > 0 {
+			if writeErr := ws.WriteMessage(websocket.BinaryMessage, buffer[:n]); writeErr != nil {
+				return writeErr
+			}
+		}
+		if err != nil {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			return err
+		}
+	}
+}
+
+func agentPortForwardTunnelClosed(err error) bool {
+	if err == nil {
+		return true
+	}
+	if errors.Is(err, io.EOF) || errors.Is(err, net.ErrClosed) {
+		return true
+	}
+	return websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) ||
+		errors.Is(err, websocket.ErrCloseSent)
+}
+
 func (c *Client) RestartDeployment(ctx context.Context, namespace, name string) error {
 	return c.request(ctx, http.MethodPost, "/api/v1/platform/actions/deployments/restart", restartDeploymentRequest{Namespace: namespace, Name: name}, nil)
 }
@@ -981,6 +1433,22 @@ func (c *Client) request(ctx context.Context, method, path string, body any, out
 		return fmt.Errorf("decode agent response: %w", err)
 	}
 	return nil
+}
+
+func (c *Client) websocketEndpoint(path string) (string, error) {
+	endpoint, err := url.Parse(c.baseURL + path)
+	if err != nil {
+		return "", fmt.Errorf("build agent websocket endpoint: %w", err)
+	}
+	switch endpoint.Scheme {
+	case "http":
+		endpoint.Scheme = "ws"
+	case "https":
+		endpoint.Scheme = "wss"
+	default:
+		return "", fmt.Errorf("unsupported agent websocket scheme %q", endpoint.Scheme)
+	}
+	return endpoint.String(), nil
 }
 
 func withNamespace(path, namespace string) string {

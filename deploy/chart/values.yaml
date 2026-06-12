@@ -21,7 +21,9 @@ postgres:
   image: postgres:18.4
   database: soha
   username: pgsql
-  password: change-me
+  # Generated on first install when empty, then reused from the live Secret
+  # during upgrades. Set an explicit stable value for disaster recovery.
+  password: ""
   storageSize: 10Gi
 
 config:
@@ -38,18 +40,23 @@ config:
     clusterSyncParallelism: 4
     copilotInspectionParallelism: 2
     alertUpsertBatchSize: 100
+    # Static bearer token accepted by runner/agent callback endpoints.
+    # Generated on first install when empty, then reused from the live Secret during upgrades.
+    executionRunnerToken: ""
   auth:
     enableDevAuth: false
     adminUserId: admin
     adminName: Admin
     adminEmail: admin@soha.local
-    adminPassword: change-me
+    # Generated on first install when empty, then reused from the live Secret during upgrades.
+    adminPassword: ""
     adminRoles:
       - admin
       - ops
       - auditor
     jwtIssuer: soha
-    jwtSecret: change-me
+    # Generated on first install when empty, then reused from the live Secret during upgrades.
+    jwtSecret: ""
     accessTTL: 15m
     refreshTTL: 168h
     oidc:
@@ -68,7 +75,8 @@ config:
         - readonly
   monitoring:
     enabled: true
-    webhookToken: change-me
+    # Generated on first install when empty, then reused from the live Secret during upgrades.
+    webhookToken: ""
     prometheusUrl: ""
     prometheusBearerToken: ""
     prometheusDefaultRangeMinutes: 60
@@ -83,6 +91,12 @@ config:
     ai:
       enabled: true
     aiGateway:
+      enabled: true
+    virtualization:
+      # Enable only after setting config.security.credentialEncryptionKey to a
+      # stable value. PVE credentials cannot be decrypted if this key rotates.
+      enabled: false
+    docker:
       enabled: true
     security:
       enabled: false
@@ -102,3 +116,7 @@ config:
         keyPrefix: soha:ai-gateway:rate-limit
         timeout: 500ms
   seedDefaults: true
+  security:
+    # Required when config.modules.virtualization.enabled=true.
+    credentialEncryptionKey: ""
+    secretProvider: ""

@@ -104,7 +104,7 @@ func (s *Service) GetConfigMapDetail(ctx context.Context, principal domainidenti
 		return domainresource.ConfigMapDetailView{}, err
 	}
 	if connection.Summary.ConnectionMode == domaincluster.ConnectionModeAgent {
-		return domainresource.ConfigMapDetailView{}, fmt.Errorf("%w: configmap detail is not supported for agent-connected clusters yet", apperrors.ErrInvalidArgument)
+		return domainresource.ConfigMapDetailView{}, unsupportedAgentOperation("configmap detail is not supported for agent-connected clusters yet")
 	}
 	bundle, queryCtx, cancel, err := s.directKubeQueryContext(ctx, clusterID, 5*time.Second)
 	if err != nil {
@@ -139,7 +139,7 @@ func (s *Service) GetSecretDetail(ctx context.Context, principal domainidentity.
 		return domainresource.SecretDetailView{}, err
 	}
 	if connection.Summary.ConnectionMode == domaincluster.ConnectionModeAgent {
-		return domainresource.SecretDetailView{}, fmt.Errorf("%w: secret detail is not supported for agent-connected clusters yet", apperrors.ErrInvalidArgument)
+		return domainresource.SecretDetailView{}, unsupportedAgentOperation("secret detail is not supported for agent-connected clusters yet")
 	}
 	bundle, queryCtx, cancel, err := s.directKubeQueryContext(ctx, clusterID, 5*time.Second)
 	if err != nil {
@@ -181,7 +181,7 @@ func (s *Service) CreateResourceFromYAML(ctx context.Context, principal domainid
 		return domainresource.ResourceYAMLView{}, fmt.Errorf("%w: yaml content is required", apperrors.ErrInvalidArgument)
 	}
 	if connection.Summary.ConnectionMode == domaincluster.ConnectionModeAgent {
-		return domainresource.ResourceYAMLView{}, fmt.Errorf("%w: yaml create is not supported for agent-connected clusters yet", apperrors.ErrInvalidArgument)
+		return domainresource.ResourceYAMLView{}, unsupportedAgentOperation("yaml create is not supported for agent-connected clusters yet")
 	}
 	bundle, err := s.clusters.Bundle(ctx, clusterID)
 	if err != nil {

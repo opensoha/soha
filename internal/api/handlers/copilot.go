@@ -42,6 +42,7 @@ type CopilotService interface {
 	RunSessionAnalysis(context.Context, domainidentity.Principal, string, domaincopilot.RootCauseRunInput, string) (domaincopilot.SessionMessageEnvelope, error)
 	ListAgentProviders(context.Context, domainidentity.Principal) ([]domaincopilot.AgentProvider, error)
 	ListAgentRuns(context.Context, domainidentity.Principal) ([]domaincopilot.AgentRun, error)
+	CancelAgentRun(context.Context, domainidentity.Principal, string) (domaincopilot.AgentRun, error)
 	ClaimAgentRun(context.Context, domaincopilot.AgentRunClaimInput) (domaincopilot.AgentRun, error)
 	RecordAgentRunCallback(context.Context, domaincopilot.AgentRunCallbackInput) (domaincopilot.AgentRun, error)
 	RecordAgentToolCall(context.Context, domaincopilot.AgentToolCallInput) (domaincopilot.AgentToolCallResult, error)
@@ -116,6 +117,16 @@ func (h *CopilotHandler) ListAgentRuns(c *gin.Context) {
 		return
 	}
 	apiresponse.Items(c, http.StatusOK, items)
+}
+
+func (h *CopilotHandler) CancelAgentRun(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	item, err := h.service.CancelAgentRun(c.Request.Context(), principal, c.Param("runID"))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusAccepted, item)
 }
 
 func (h *CopilotHandler) ClaimAgentRun(c *gin.Context) {

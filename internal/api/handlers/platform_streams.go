@@ -121,6 +121,7 @@ func (h *PlatformHandler) StreamPodTerminal(c *gin.Context) {
 	stdinReader, stdinWriter := io.Pipe()
 	defer stdinWriter.Close()
 	sizeQueue := newTerminalSizeQueue()
+	defer sizeQueue.Close()
 
 	_ = session.WriteMessage(terminalMessage{
 		Type:    "status",
@@ -164,15 +165,15 @@ func (h *PlatformHandler) StreamPodTerminal(c *gin.Context) {
 		_ = stdinWriter.Close()
 	}()
 
-	streamErr := <-streamErrCh
-	session.Cancel()
-	<-readDone
-
 	exitMessage := terminalMessage{Type: "exit", Message: "terminal session closed"}
+	streamErr := <-streamErrCh
 	if streamErr != nil && !errors.Is(streamErr, context.Canceled) {
 		exitMessage.Message = streamErr.Error()
 	}
 	_ = session.WriteMessage(exitMessage)
+	session.Cancel()
+	_ = session.conn.Close()
+	<-readDone
 }
 
 type terminalMessage struct {
@@ -325,7 +326,8 @@ func (w *logStreamWriter) Write(p []byte) (int, error) {
 }
 
 type terminalSizeQueue struct {
-	ch chan remotecommand.TerminalSize
+	ch   chan remotecommand.TerminalSize
+	once sync.Once
 }
 
 func newTerminalSizeQueue() *terminalSizeQueue {
@@ -354,6 +356,12 @@ func (q *terminalSizeQueue) Push(cols, rows int) {
 		}
 		q.ch <- size
 	}
+}
+
+func (q *terminalSizeQueue) Close() {
+	q.once.Do(func() {
+		close(q.ch)
+	})
 }
 
 func writeTerminalMessage(conn *websocket.Conn, writeMu *sync.Mutex, message terminalMessage) error {

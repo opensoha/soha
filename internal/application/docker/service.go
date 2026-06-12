@@ -349,7 +349,7 @@ func (s *Service) QuickCreateHost(ctx context.Context, principal domainidentity.
 		})
 	}
 	s.recordOperation(ctx, principal, "docker.host.provision.enqueue", host.ID, host.Name, "success", "enqueued docker host provisioning", map[string]any{"operationId": task.ID})
-	return task, nil
+	return domaindocker.WithOperationState(task, time.Now().UTC()), nil
 }
 
 func (s *Service) ListProjects(ctx context.Context, principal domainidentity.Principal, filter domaindocker.ProjectFilter) (domaindocker.Page[domaindocker.Project], error) {
@@ -450,7 +450,7 @@ func (s *Service) DeployProject(ctx context.Context, principal domainidentity.Pr
 		return domaindocker.Operation{}, err
 	}
 	s.recordOperation(ctx, principal, "docker.project.deploy.enqueue", project.ID, project.Name, "success", "enqueued docker compose action", map[string]any{"operationId": task.ID, "action": normalizedAction})
-	return task, nil
+	return domaindocker.WithOperationState(task, time.Now().UTC()), nil
 }
 
 func (s *Service) StartContainer(ctx context.Context, principal domainidentity.Principal, input domaindocker.ContainerStartInput) (domaindocker.Operation, error) {
@@ -627,7 +627,7 @@ func (s *Service) StartContainer(ctx context.Context, principal domainidentity.P
 		CreatedAt:   time.Now().UTC(),
 	})
 	s.recordOperation(ctx, principal, "docker.container.start.enqueue", created.Project.ID, created.Project.Name, "success", "enqueued single container start", map[string]any{"operationId": created.Operation.ID, "serviceId": created.Service.ID, "portMappingId": created.PortMapping.ID, "portMappingCount": len(created.PortMappings), "domainName": created.PortMapping.DomainName})
-	return created.Operation, nil
+	return domaindocker.WithOperationState(created.Operation, time.Now().UTC()), nil
 }
 
 func (s *Service) ListServices(ctx context.Context, principal domainidentity.Principal, filter domaindocker.ServiceFilter) (domaindocker.Page[domaindocker.Service], error) {
@@ -668,7 +668,7 @@ func (s *Service) ServiceAction(ctx context.Context, principal domainidentity.Pr
 		return domaindocker.Operation{}, err
 	}
 	s.recordOperation(ctx, principal, "docker.service.action.enqueue", service.ID, service.Name, "success", "enqueued docker service action", map[string]any{"operationId": task.ID, "action": normalizedAction})
-	return task, nil
+	return domaindocker.WithOperationState(task, time.Now().UTC()), nil
 }
 
 func (s *Service) ListPortMappings(ctx context.Context, principal domainidentity.Principal, filter domaindocker.PortMappingFilter) (domaindocker.Page[domaindocker.PortMapping], error) {
@@ -806,6 +806,7 @@ func (s *Service) ListOperations(ctx context.Context, principal domainidentity.P
 	if err != nil {
 		return domaindocker.Page[domaindocker.Operation]{}, err
 	}
+	items = domaindocker.WithOperationStates(items, time.Now().UTC())
 	return pageOf(items, total, filter.Page, filter.PageSize), nil
 }
 
@@ -814,7 +815,11 @@ func (s *Service) GetOperation(ctx context.Context, principal domainidentity.Pri
 		return domaindocker.Operation{}, err
 	}
 	s.reconcileHostProvisionOperations(ctx)
-	return s.repo.GetOperation(ctx, id)
+	item, err := s.repo.GetOperation(ctx, id)
+	if err != nil {
+		return domaindocker.Operation{}, err
+	}
+	return domaindocker.WithOperationState(item, time.Now().UTC()), nil
 }
 
 func (s *Service) ListOperationLogs(ctx context.Context, principal domainidentity.Principal, id string, limit int) ([]domaindocker.OperationLog, error) {
@@ -846,7 +851,7 @@ func (s *Service) CancelOperation(ctx context.Context, principal domainidentity.
 	updated = s.cancelLinkedHostProvisionTask(ctx, principal, updated)
 	_ = s.repo.CreateOperationLog(ctx, domaindocker.OperationLog{ID: uuid.NewString(), OperationID: updated.ID, LogLevel: "warn", Message: "operation canceled by control plane", Payload: map[string]any{"userId": principal.UserID}})
 	s.recordOperation(ctx, principal, "docker.operation.cancel", updated.ID, updated.OperationKind, "success", "canceled docker operation", map[string]any{"operationId": updated.ID})
-	return updated, nil
+	return domaindocker.WithOperationState(updated, time.Now().UTC()), nil
 }
 
 func (s *Service) RetryOperation(ctx context.Context, principal domainidentity.Principal, id string) (domaindocker.Operation, error) {
@@ -874,7 +879,7 @@ func (s *Service) RetryOperation(ctx context.Context, principal domainidentity.P
 	updated = s.retryLinkedHostProvisionTask(ctx, principal, updated)
 	_ = s.repo.CreateOperationLog(ctx, domaindocker.OperationLog{ID: uuid.NewString(), OperationID: updated.ID, LogLevel: "info", Message: "operation retry queued", Payload: map[string]any{"userId": principal.UserID}})
 	s.recordOperation(ctx, principal, "docker.operation.retry", updated.ID, updated.OperationKind, "success", "queued docker operation retry", map[string]any{"operationId": updated.ID})
-	return updated, nil
+	return domaindocker.WithOperationState(updated, time.Now().UTC()), nil
 }
 
 func (s *Service) ClaimOperation(ctx context.Context, input domaindocker.OperationClaimInput) (domaindocker.Operation, error) {
@@ -904,12 +909,16 @@ func (s *Service) ClaimOperation(ctx context.Context, input domaindocker.Operati
 			Config:  map[string]any{"lastClaimedOperationId": item.ID, "lastClaimedAt": time.Now().UTC().Format(time.RFC3339)},
 		})
 	}
-	return item, nil
+	return domaindocker.WithOperationState(item, time.Now().UTC()), nil
 }
 
 func (s *Service) GetOperationForRunner(ctx context.Context, id string) (domaindocker.Operation, error) {
 	s.reconcileHostProvisionOperations(ctx)
-	return s.repo.GetOperation(ctx, id)
+	item, err := s.repo.GetOperation(ctx, id)
+	if err != nil {
+		return domaindocker.Operation{}, err
+	}
+	return domaindocker.WithOperationState(item, time.Now().UTC()), nil
 }
 
 func (s *Service) RecordOperationCallback(ctx context.Context, input domaindocker.OperationCallbackInput) (domaindocker.Operation, error) {
@@ -932,7 +941,7 @@ func (s *Service) RecordOperationCallback(ctx context.Context, input domaindocke
 		return domaindocker.Operation{}, fmt.Errorf("%w: unsupported docker callback status %s", apperrors.ErrInvalidArgument, status)
 	}
 	if operationTerminal(item.Status) {
-		return item, nil
+		return domaindocker.WithOperationState(item, time.Now().UTC()), nil
 	}
 	now := time.Now().UTC()
 	item.ClaimedByWorkerID = workerID
@@ -953,7 +962,7 @@ func (s *Service) RecordOperationCallback(ctx context.Context, input domaindocke
 		s.touchHostFromCallback(ctx, updated.HostID, workerID, status, input.Payload)
 	}
 	s.applyCallbackRuntimeState(ctx, updated, status, input.Payload)
-	return updated, nil
+	return domaindocker.WithOperationState(updated, time.Now().UTC()), nil
 }
 
 func (s *Service) enqueueOperation(ctx context.Context, principal domainidentity.Principal, kind, hostID, projectID, serviceID string, payload map[string]any) (domaindocker.Operation, error) {

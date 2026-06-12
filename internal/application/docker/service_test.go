@@ -88,6 +88,9 @@ func TestRunnerClaimAndCallbackCompletesOperation(t *testing.T) {
 	if claimed.ID != operation.ID || claimed.Status != OperationStatusRunning || claimed.ClaimedByWorkerID != "worker-1" {
 		t.Fatalf("claimed operation = %#v, want id=%s running worker-1", claimed, operation.ID)
 	}
+	if claimed.OperationState == nil || claimed.OperationState.Phase != "running" || !claimed.OperationState.Cancelable || claimed.OperationState.ClaimedByWorkerID != "worker-1" {
+		t.Fatalf("claimed operation state = %#v", claimed.OperationState)
+	}
 
 	updated, err := service.RecordOperationCallback(context.Background(), domaindocker.OperationCallbackInput{
 		OperationID: claimed.ID,
@@ -106,6 +109,12 @@ func TestRunnerClaimAndCallbackCompletesOperation(t *testing.T) {
 	if updated.Status != OperationStatusCompleted || updated.FinishedAt == nil {
 		t.Fatalf("updated operation status = %s finishedAt=%v, want completed with finishedAt", updated.Status, updated.FinishedAt)
 	}
+	if updated.OperationState == nil || !updated.OperationState.Terminal || updated.OperationState.Phase != "succeeded" || updated.OperationState.Retryable {
+		t.Fatalf("updated operation state = %#v", updated.OperationState)
+	}
+	if repo.operations[operation.ID].OperationState != nil {
+		t.Fatalf("stored operation should not keep derived operation state: %#v", repo.operations[operation.ID].OperationState)
+	}
 	if repo.projects["project-1"].Status != "running" {
 		t.Fatalf("project status = %s, want running", repo.projects["project-1"].Status)
 	}
@@ -114,6 +123,41 @@ func TestRunnerClaimAndCallbackCompletesOperation(t *testing.T) {
 	}
 	if len(repo.logs[operation.ID]) == 0 {
 		t.Fatalf("callback did not append operation logs")
+	}
+}
+
+func TestListAndGetOperationsAttachOperationState(t *testing.T) {
+	repo := newMemoryDockerRepo()
+	finishedAt := time.Date(2026, 6, 12, 9, 0, 0, 0, time.UTC)
+	repo.operations["operation-1"] = domaindocker.Operation{
+		ID:             "operation-1",
+		OperationKind:  OperationKindProjectDeploy,
+		Status:         OperationStatusFailed,
+		TimeoutSeconds: 300,
+		Result:         map[string]any{"error": "docker compose failed"},
+		FinishedAt:     &finishedAt,
+		CreatedAt:      finishedAt.Add(-time.Minute),
+		UpdatedAt:      finishedAt,
+	}
+	service := New(repo, dockerTestPermissions(), nil)
+
+	page, err := service.ListOperations(context.Background(), dockerTestPrincipal(), domaindocker.OperationFilter{})
+	if err != nil {
+		t.Fatalf("ListOperations() error = %v", err)
+	}
+	if len(page.Items) != 1 || page.Items[0].OperationState == nil || page.Items[0].OperationState.Phase != "failed" || !page.Items[0].OperationState.Retryable {
+		t.Fatalf("listed operation missing operation state: %#v", page.Items)
+	}
+
+	got, err := service.GetOperation(context.Background(), dockerTestPrincipal(), "operation-1")
+	if err != nil {
+		t.Fatalf("GetOperation() error = %v", err)
+	}
+	if got.OperationState == nil || got.OperationState.FailureMessage != "docker compose failed" {
+		t.Fatalf("got operation missing failure state: %#v", got.OperationState)
+	}
+	if repo.operations["operation-1"].OperationState != nil {
+		t.Fatalf("stored operation should not keep derived operation state: %#v", repo.operations["operation-1"].OperationState)
 	}
 }
 

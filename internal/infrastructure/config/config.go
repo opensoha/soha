@@ -149,7 +149,10 @@ type MCPConfig struct {
 }
 
 type AIGatewayConfig struct {
-	RateLimit AIGatewayRateLimitConfig `mapstructure:"rate_limit"`
+	RateLimit          AIGatewayRateLimitConfig          `mapstructure:"rate_limit"`
+	ConnectorRuntime   AIGatewayConnectorRuntimeConfig   `mapstructure:"connector_runtime"`
+	ConnectorRuntimes  []AIGatewayConnectorRuntimeConfig `mapstructure:"connector_runtimes"`
+	ConnectorEventSink AIGatewayConnectorEventSinkConfig `mapstructure:"connector_event_sink"`
 }
 
 type AIGatewayRateLimitConfig struct {
@@ -165,6 +168,40 @@ type AIGatewayRateLimitRedisConfig struct {
 	TLS       bool          `mapstructure:"tls"`
 	KeyPrefix string        `mapstructure:"key_prefix"`
 	Timeout   time.Duration `mapstructure:"timeout"`
+}
+
+type AIGatewayConnectorRuntimeConfig struct {
+	Endpoint    string `mapstructure:"endpoint"`
+	Token       string `mapstructure:"token"`
+	PluginID    string `mapstructure:"plugin_id"`
+	ConnectorID string `mapstructure:"connector_id"`
+}
+
+type AIGatewayConnectorEventSinkConfig struct {
+	Token string `mapstructure:"token"`
+}
+
+func (c AIGatewayConfig) ConnectorRuntimeConfigs() []AIGatewayConnectorRuntimeConfig {
+	out := make([]AIGatewayConnectorRuntimeConfig, 0, 1+len(c.ConnectorRuntimes))
+	if strings.TrimSpace(c.ConnectorRuntime.Endpoint) != "" {
+		out = append(out, c.ConnectorRuntime.normalized())
+	}
+	for _, runtime := range c.ConnectorRuntimes {
+		if strings.TrimSpace(runtime.Endpoint) == "" {
+			continue
+		}
+		out = append(out, runtime.normalized())
+	}
+	return out
+}
+
+func (c AIGatewayConnectorRuntimeConfig) normalized() AIGatewayConnectorRuntimeConfig {
+	return AIGatewayConnectorRuntimeConfig{
+		Endpoint:    strings.TrimSpace(c.Endpoint),
+		Token:       strings.TrimSpace(c.Token),
+		PluginID:    strings.TrimSpace(c.PluginID),
+		ConnectorID: strings.TrimSpace(c.ConnectorID),
+	}
 }
 
 type ModuleToggleConfig struct {
@@ -258,11 +295,125 @@ func Load() (Config, error) {
 		return Config{}, fmt.Errorf("unmarshal config: %w", err)
 	}
 
-	cfg.Database.MigrationFile = os.ExpandEnv(cfg.Database.MigrationFile)
-	for i := range cfg.Kubernetes.Clusters {
-		cfg.Kubernetes.Clusters[i].Kubeconfig = os.ExpandEnv(cfg.Kubernetes.Clusters[i].Kubeconfig)
+	cfg.expandEnv()
+	if err := cfg.Validate(); err != nil {
+		return Config{}, err
 	}
 	return cfg, nil
+}
+
+func (c *Config) expandEnv() {
+	c.Database.Password = os.ExpandEnv(c.Database.Password)
+	c.Database.MigrationFile = os.ExpandEnv(c.Database.MigrationFile)
+	c.Runtime.ExecutionRunnerToken = os.ExpandEnv(c.Runtime.ExecutionRunnerToken)
+	c.Auth.DevPrincipal.Password = os.ExpandEnv(c.Auth.DevPrincipal.Password)
+	c.Auth.JWT.Secret = os.ExpandEnv(c.Auth.JWT.Secret)
+	c.Auth.OIDC.ClientSecret = os.ExpandEnv(c.Auth.OIDC.ClientSecret)
+	c.GitLab.Token = os.ExpandEnv(c.GitLab.Token)
+	c.Monitoring.WebhookToken = os.ExpandEnv(c.Monitoring.WebhookToken)
+	c.Monitoring.PrometheusBearerToken = os.ExpandEnv(c.Monitoring.PrometheusBearerToken)
+	c.AIGateway.RateLimit.Redis.Password = os.ExpandEnv(c.AIGateway.RateLimit.Redis.Password)
+	c.AIGateway.ConnectorRuntime.expandEnv()
+	for i := range c.AIGateway.ConnectorRuntimes {
+		c.AIGateway.ConnectorRuntimes[i].expandEnv()
+	}
+	c.AIGateway.ConnectorEventSink.Token = os.ExpandEnv(c.AIGateway.ConnectorEventSink.Token)
+	c.Security.CredentialEncryptionKey = os.ExpandEnv(c.Security.CredentialEncryptionKey)
+	for i := range c.Kubernetes.Clusters {
+		c.Kubernetes.Clusters[i].Kubeconfig = os.ExpandEnv(c.Kubernetes.Clusters[i].Kubeconfig)
+		c.Kubernetes.Clusters[i].KubeconfigData = os.ExpandEnv(c.Kubernetes.Clusters[i].KubeconfigData)
+		c.Kubernetes.Clusters[i].PrometheusBearerToken = os.ExpandEnv(c.Kubernetes.Clusters[i].PrometheusBearerToken)
+	}
+}
+
+func (c *AIGatewayConnectorRuntimeConfig) expandEnv() {
+	c.Endpoint = os.ExpandEnv(c.Endpoint)
+	c.Token = os.ExpandEnv(c.Token)
+	c.PluginID = os.ExpandEnv(c.PluginID)
+	c.ConnectorID = os.ExpandEnv(c.ConnectorID)
+}
+
+func (c Config) Validate() error {
+	if !isProductionEnv(c.App.Env) {
+		return nil
+	}
+
+	var problems []string
+	if c.Auth.EnableDevAuth {
+		problems = append(problems, "auth.enable_dev_auth must be false in production")
+	}
+	problems = appendSecretProblem(problems, "database.password", c.Database.Password, true, 12)
+	problems = appendSecretProblem(problems, "auth.jwt.secret", c.Auth.JWT.Secret, true, 32)
+	if c.Bootstrap.SeedDefaults && strings.TrimSpace(c.Auth.DevPrincipal.UserID) != "" {
+		problems = appendSecretProblem(problems, "auth.dev_principal.password", c.Auth.DevPrincipal.Password, true, 12)
+	}
+	problems = appendSecretProblem(problems, "runtime.execution_runner_token", c.Runtime.ExecutionRunnerToken, true, 32)
+	if c.Monitoring.Enabled || c.Modules.Monitoring.Enabled {
+		problems = appendSecretProblem(problems, "monitoring.webhook_token", c.Monitoring.WebhookToken, true, 32)
+	}
+	if c.Modules.Virtualization.Enabled {
+		problems = appendSecretProblem(problems, "security.credential_encryption_key", c.Security.CredentialEncryptionKey, true, 32)
+	}
+	if c.GitLab.Enabled {
+		problems = appendSecretProblem(problems, "gitlab.token", c.GitLab.Token, true, 20)
+	}
+	if c.Auth.OIDC.Enabled {
+		if strings.TrimSpace(c.Auth.OIDC.Issuer) == "" {
+			problems = append(problems, "auth.oidc.issuer is required when OIDC is enabled in production")
+		}
+		if strings.TrimSpace(c.Auth.OIDC.ClientID) == "" {
+			problems = append(problems, "auth.oidc.client_id is required when OIDC is enabled in production")
+		}
+		if strings.TrimSpace(c.Auth.OIDC.ClientSecret) != "" {
+			problems = appendSecretProblem(problems, "auth.oidc.client_secret", c.Auth.OIDC.ClientSecret, false, 20)
+		}
+	}
+
+	if len(problems) > 0 {
+		return fmt.Errorf("production config validation failed: %s", strings.Join(problems, "; "))
+	}
+	return nil
+}
+
+func appendSecretProblem(problems []string, name, value string, required bool, minLength int) []string {
+	secret := strings.TrimSpace(value)
+	switch {
+	case secret == "" && required:
+		return append(problems, fmt.Sprintf("%s is required", name))
+	case secret == "":
+		return problems
+	case isDemoSecret(secret):
+		return append(problems, fmt.Sprintf("%s must not use a demo or placeholder value", name))
+	case minLength > 0 && len(secret) < minLength:
+		return append(problems, fmt.Sprintf("%s must be at least %d characters", name, minLength))
+	default:
+		return problems
+	}
+}
+
+func isProductionEnv(env string) bool {
+	return strings.EqualFold(strings.TrimSpace(env), "production") || strings.EqualFold(strings.TrimSpace(env), "prod")
+}
+
+func isDemoSecret(value string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(value))
+	normalized = strings.NewReplacer("_", "-", " ", "-", ".", "-").Replace(normalized)
+	switch normalized {
+	case "change-me", "changeme", "changeit", "password", "secret", "token", "admin",
+		"soha", "pgsql", "postgres", "dev-only-change-me", "demo-execution-runner-token",
+		"dev-alert-webhook-token", "test-secret", "example-secret":
+		return true
+	}
+	return strings.HasPrefix(normalized, "demo-") ||
+		strings.HasPrefix(normalized, "dev-") ||
+		strings.HasPrefix(normalized, "test-") ||
+		strings.HasPrefix(normalized, "example-") ||
+		strings.HasPrefix(normalized, "replace-") ||
+		strings.HasPrefix(normalized, "replace-with-") ||
+		strings.HasPrefix(normalized, "placeholder-") ||
+		strings.Contains(normalized, "replace-with") ||
+		strings.Contains(normalized, "placeholder") ||
+		strings.Contains(normalized, "change-me")
 }
 
 func (c DatabaseConfig) DSN() string {
@@ -373,6 +524,12 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("ai_gateway.rate_limit.redis.tls", false)
 	v.SetDefault("ai_gateway.rate_limit.redis.key_prefix", "soha:ai-gateway:rate-limit")
 	v.SetDefault("ai_gateway.rate_limit.redis.timeout", "500ms")
+	v.SetDefault("ai_gateway.connector_runtime.endpoint", "")
+	v.SetDefault("ai_gateway.connector_runtime.token", "")
+	v.SetDefault("ai_gateway.connector_runtime.plugin_id", "")
+	v.SetDefault("ai_gateway.connector_runtime.connector_id", "")
+	v.SetDefault("ai_gateway.connector_runtimes", []map[string]any{})
+	v.SetDefault("ai_gateway.connector_event_sink.token", "")
 	v.SetDefault("modules.delivery.enabled", true)
 	v.SetDefault("modules.monitoring.enabled", true)
 	v.SetDefault("modules.ai.enabled", true)

@@ -4,6 +4,7 @@ import "github.com/gin-gonic/gin"
 
 func registerPlatformRoutes(protected gin.IRoutes, deps Dependencies) {
 	protected.GET("/clusters", deps.Platform.ListClusters)
+	protected.GET("/clusters/capabilities", deps.Platform.ClusterCapabilityMatrix)
 	protected.POST("/clusters", deps.Platform.CreateCluster)
 	protected.PUT("/clusters/:clusterID", deps.Platform.UpdateCluster)
 	protected.DELETE("/clusters/:clusterID", deps.Platform.DeleteCluster)

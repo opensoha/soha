@@ -24,7 +24,11 @@ func registerSystemRoutes(protected gin.IRoutes, deps Dependencies) {
 
 func registerOperationalAuditRoutes(protected gin.IRoutes, deps Dependencies) {
 	protected.GET("/audit/logs", deps.Platform.ListAuditLogs)
+	protected.GET("/audit/logs/export", deps.Platform.ExportAuditLogs)
+	protected.GET("/audit/summary", deps.Platform.AuditSummary)
 	protected.GET("/operations/logs", deps.Platform.ListOperationLogs)
+	protected.GET("/operations/logs/export", deps.Platform.ExportOperationLogs)
+	protected.GET("/operations/summary", deps.Platform.OperationSummary)
 	protected.GET("/events", deps.Platform.ListEvents)
 	protected.GET("/events/:eventID", deps.Platform.GetEvent)
 	protected.GET("/mcp/capabilities", deps.Platform.ListMCPCapabilities)

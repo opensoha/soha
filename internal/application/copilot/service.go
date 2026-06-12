@@ -62,6 +62,7 @@ type Repository interface {
 	CreateAgentRun(context.Context, domaincopilot.AgentRun) (domaincopilot.AgentRun, error)
 	ClaimAgentRun(context.Context, domaincopilot.AgentRunClaimInput) (domaincopilot.AgentRun, error)
 	UpdateAgentRunCallback(context.Context, domaincopilot.AgentRunCallbackInput) (domaincopilot.AgentRun, error)
+	CancelAgentRun(context.Context, domaincopilot.AgentRunCancelInput) (domaincopilot.AgentRun, error)
 	ListInspectionTasks(context.Context, string, int) ([]domaincopilot.InspectionTask, error)
 	GetInspectionTask(context.Context, string, string) (domaincopilot.InspectionTask, error)
 	ListDueInspectionTasks(context.Context, time.Time, int) ([]domaincopilot.InspectionTask, error)

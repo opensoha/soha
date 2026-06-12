@@ -71,7 +71,21 @@ func (s *Service) ListCRDResources(ctx context.Context, principal domainidentity
 	)
 	switch connection.Summary.ConnectionMode {
 	case domaincluster.ConnectionModeAgent:
-		return nil, fmt.Errorf("%w: custom-resource listing is not supported for agent-connected clusters yet", apperrors.ErrInvalidArgument)
+		client, err := s.agentClient(connection)
+		if err != nil {
+			return nil, err
+		}
+		items, err = client.ListCustomResources(ctx, definition.AgentDefinition(), namespace)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
+		}
+		for index := range items {
+			items[index].AllowedActions = stringifyActions(decision.AllowedActions)
+		}
+		if definition.Namespaced {
+			items = filterScopedNamespaceItems(items, decision, func(item domainresource.CustomResourceView) string { return item.Namespace })
+		}
+		source = "agent"
 	default:
 		items, err = s.listDirectCRDResources(ctx, clusterID, definition, namespace, decision)
 		if err != nil {
@@ -100,7 +114,18 @@ func (s *Service) CreateCRDResourceFromYAML(ctx context.Context, principal domai
 	}
 	switch connection.Summary.ConnectionMode {
 	case domaincluster.ConnectionModeAgent:
-		return domainresource.ResourceYAMLView{}, fmt.Errorf("%w: custom-resource create is not supported for agent-connected clusters yet", apperrors.ErrInvalidArgument)
+		client, err := s.agentClient(connection)
+		if err != nil {
+			return domainresource.ResourceYAMLView{}, err
+		}
+		created, err := client.CreateCustomResourceYAML(ctx, definition.AgentDefinition(), effectiveNamespace, content)
+		if err != nil {
+			_ = s.recordAudit(ctx, principal, clusterID, effectiveNamespace, definition.Kind, item.GetName(), string(domainaccess.ActionCreate), "failure", err.Error())
+			return domainresource.ResourceYAMLView{}, fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
+		}
+		_ = s.recordAudit(ctx, principal, connection.Summary.ID, effectiveNamespace, definition.Kind, created.Name, string(domainaccess.ActionCreate), "success", "created custom resource from yaml via agent")
+		s.recordOperation(ctx, principal, "platform.custom_resource.create", connection.Summary.ID, effectiveNamespace, definition.Kind, created.Name, "created custom resource from yaml via agent", map[string]any{"crdName": crdName})
+		return created, nil
 	default:
 		created, err := s.createDirectCustomResource(ctx, clusterID, definition, item, effectiveNamespace)
 		if err != nil {
@@ -130,7 +155,16 @@ func (s *Service) GetCRDResourceYAML(ctx context.Context, principal domainidenti
 	}
 	switch connection.Summary.ConnectionMode {
 	case domaincluster.ConnectionModeAgent:
-		return domainresource.ResourceYAMLView{}, fmt.Errorf("%w: custom-resource yaml view is not supported for agent-connected clusters yet", apperrors.ErrInvalidArgument)
+		client, err := s.agentClient(connection)
+		if err != nil {
+			return domainresource.ResourceYAMLView{}, err
+		}
+		item, err := client.GetCustomResourceYAML(ctx, definition.AgentDefinition(), effectiveNamespace, name)
+		if err != nil {
+			return domainresource.ResourceYAMLView{}, fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
+		}
+		_ = s.recordAudit(ctx, principal, connection.Summary.ID, effectiveNamespace, definition.Kind, name, string(domainaccess.ActionView), "success", "viewed custom resource yaml via agent")
+		return item, nil
 	default:
 		item, err := s.getDirectCustomResourceYAML(ctx, clusterID, definition, effectiveNamespace, name)
 		if err != nil {
@@ -158,7 +192,18 @@ func (s *Service) ApplyCRDResourceYAML(ctx context.Context, principal domainiden
 	}
 	switch connection.Summary.ConnectionMode {
 	case domaincluster.ConnectionModeAgent:
-		return domainresource.ResourceYAMLView{}, fmt.Errorf("%w: custom-resource yaml apply is not supported for agent-connected clusters yet", apperrors.ErrInvalidArgument)
+		client, err := s.agentClient(connection)
+		if err != nil {
+			return domainresource.ResourceYAMLView{}, err
+		}
+		updated, err := client.ApplyCustomResourceYAML(ctx, definition.AgentDefinition(), effectiveNamespace, name, content)
+		if err != nil {
+			_ = s.recordAudit(ctx, principal, clusterID, effectiveNamespace, definition.Kind, name, string(domainaccess.ActionUpdate), "failure", err.Error())
+			return domainresource.ResourceYAMLView{}, fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
+		}
+		_ = s.recordAudit(ctx, principal, connection.Summary.ID, effectiveNamespace, definition.Kind, name, string(domainaccess.ActionUpdate), "success", "applied custom resource yaml via agent")
+		s.recordOperation(ctx, principal, "platform.custom_resource.apply", connection.Summary.ID, effectiveNamespace, definition.Kind, name, "applied custom resource yaml via agent", map[string]any{"crdName": crdName})
+		return updated, nil
 	default:
 		updated, err := s.applyDirectCustomResourceYAML(ctx, clusterID, definition, item, effectiveNamespace, name)
 		if err != nil {
@@ -188,7 +233,17 @@ func (s *Service) DeleteCRDResource(ctx context.Context, principal domainidentit
 	}
 	switch connection.Summary.ConnectionMode {
 	case domaincluster.ConnectionModeAgent:
-		return fmt.Errorf("%w: custom-resource delete is not supported for agent-connected clusters yet", apperrors.ErrInvalidArgument)
+		client, err := s.agentClient(connection)
+		if err != nil {
+			return err
+		}
+		if err := client.DeleteCustomResource(ctx, definition.AgentDefinition(), effectiveNamespace, name); err != nil {
+			_ = s.recordAudit(ctx, principal, clusterID, effectiveNamespace, definition.Kind, name, string(domainaccess.ActionDelete), "failure", err.Error())
+			return fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
+		}
+		_ = s.recordAudit(ctx, principal, connection.Summary.ID, effectiveNamespace, definition.Kind, name, string(domainaccess.ActionDelete), "success", "deleted custom resource via agent")
+		s.recordOperation(ctx, principal, "platform.custom_resource.delete", connection.Summary.ID, effectiveNamespace, definition.Kind, name, "deleted custom resource via agent", map[string]any{"crdName": crdName})
+		return nil
 	default:
 		if err := s.deleteDirectCustomResource(ctx, clusterID, definition, effectiveNamespace, name); err != nil {
 			_ = s.recordAudit(ctx, principal, clusterID, effectiveNamespace, definition.Kind, name, string(domainaccess.ActionDelete), "failure", err.Error())
@@ -368,6 +423,23 @@ func (s *Service) listDirectCRDResources(ctx context.Context, clusterID string, 
 	return views, nil
 }
 func (s *Service) resolveCRDResourceDefinition(ctx context.Context, clusterID, crdName string) (crdResourceDefinition, error) {
+	connection, err := s.loadConnection(ctx, clusterID)
+	if err == nil && connection.Summary.ConnectionMode == domaincluster.ConnectionModeAgent {
+		client, err := s.agentClient(connection)
+		if err != nil {
+			return crdResourceDefinition{}, err
+		}
+		items, err := client.ListCRDs(ctx)
+		if err != nil {
+			return crdResourceDefinition{}, fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
+		}
+		for _, item := range items {
+			if item.Name == crdName {
+				return crdResourceDefinitionFromView(item)
+			}
+		}
+		return crdResourceDefinition{}, fmt.Errorf("%w: crd %s", apperrors.ErrNotFound, crdName)
+	}
 	bundle, queryCtx, cancel, err := s.directKubeQueryContext(ctx, clusterID, 5*time.Second)
 	if err != nil {
 		return crdResourceDefinition{}, err
@@ -435,6 +507,16 @@ func populateAllowedActionsCRDs(items []domainresource.CRDView, decision domaina
 func (d crdResourceDefinition) GroupVersionResource() schema.GroupVersionResource {
 	return schema.GroupVersionResource{Group: d.Group, Version: d.Version, Resource: d.Resource}
 }
+func (d crdResourceDefinition) AgentDefinition() domainresource.CRDResourceDefinition {
+	return domainresource.CRDResourceDefinition{
+		CRDName:    d.CRDName,
+		Kind:       d.Kind,
+		Group:      d.Group,
+		Version:    d.Version,
+		Resource:   d.Resource,
+		Namespaced: d.Namespaced,
+	}
+}
 func parseCRDResourceDefinition(item unstructured.Unstructured) (crdResourceDefinition, error) {
 	group, _, _ := unstructured.NestedString(item.Object, "spec", "group")
 	kind, _, _ := unstructured.NestedString(item.Object, "spec", "names", "kind")
@@ -457,6 +539,27 @@ func parseCRDResourceDefinition(item unstructured.Unstructured) (crdResourceDefi
 		Group:      group,
 		Version:    version,
 		Resource:   resource,
+		Namespaced: namespaced,
+	}, nil
+}
+func crdResourceDefinitionFromView(item domainresource.CRDView) (crdResourceDefinition, error) {
+	version := strings.TrimSpace(item.Version)
+	if version == "" && len(item.Versions) > 0 {
+		version = item.Versions[0]
+	}
+	if strings.TrimSpace(item.Group) == "" || strings.TrimSpace(item.Kind) == "" || strings.TrimSpace(item.Plural) == "" || version == "" {
+		return crdResourceDefinition{}, fmt.Errorf("%w: crd %s is missing required group, kind, plural, or version metadata", apperrors.ErrInvalidArgument, item.Name)
+	}
+	namespaced, err := namespacedFromCRDScope(item.Scope, item.Name)
+	if err != nil {
+		return crdResourceDefinition{}, err
+	}
+	return crdResourceDefinition{
+		CRDName:    item.Name,
+		Kind:       item.Kind,
+		Group:      item.Group,
+		Version:    version,
+		Resource:   item.Plural,
 		Namespaced: namespaced,
 	}, nil
 }

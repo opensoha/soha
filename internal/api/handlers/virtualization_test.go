@@ -4,6 +4,7 @@ import (
 	"crypto/tls"
 	"testing"
 
+	domainvirtualization "github.com/opensoha/soha/internal/domain/virtualization"
 	infravirtualization "github.com/opensoha/soha/internal/infrastructure/virtualization"
 )
 
@@ -25,5 +26,19 @@ func TestBackendWebSocketDialerUsesConsoleTLSOptions(t *testing.T) {
 	}
 	if !dialer.TLSClientConfig.InsecureSkipVerify {
 		t.Fatalf("InsecureSkipVerify = false, want true")
+	}
+}
+
+func TestMapOperationIncludesDerivedOperationState(t *testing.T) {
+	state := &domainvirtualization.OperationState{Phase: "failed", Retryable: true}
+	mapped := mapOperation(domainvirtualization.Task{
+		ID:             "task-1",
+		TaskKind:       "vm_action",
+		Status:         "failed",
+		OperationState: state,
+	})
+
+	if mapped["operationState"] != state {
+		t.Fatalf("operationState = %#v, want %#v", mapped["operationState"], state)
 	}
 }

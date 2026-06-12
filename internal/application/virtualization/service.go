@@ -288,10 +288,12 @@ func (s *Service) Overview(ctx context.Context, principal domainidentity.Princip
 	if err != nil {
 		return Overview{}, err
 	}
+	recentTasks = domainvirtualization.WithOperationStates(recentTasks, time.Now().UTC())
 	attentionTasks, err := s.repo.ListTasks(ctx, domainvirtualization.TaskFilter{Limit: 100})
 	if err != nil {
 		return Overview{}, err
 	}
+	attentionTasks = domainvirtualization.WithOperationStates(attentionTasks, time.Now().UTC())
 	out := Overview{RecentOperations: recentTasks}
 	providerSummaries := map[string]*OverviewProviderSummary{}
 	out.Stats.Connections.Total = len(connections)
@@ -503,9 +505,9 @@ func (s *Service) TestConnection(ctx context.Context, principal domainidentity.P
 	_ = s.repo.CreateTaskLog(ctx, domainvirtualization.TaskLog{TaskID: task.ID, LogLevel: level, Message: firstNonEmpty(message, "connection test completed")})
 	s.recordOperation(ctx, principal, "virtualization.connection.test", connection.ID, connection.Name, status, "tested virtualization connection", map[string]any{"taskId": task.ID})
 	if err != nil {
-		return task, nil
+		return domainvirtualization.WithOperationState(task, time.Now().UTC()), nil
 	}
-	return task, nil
+	return domainvirtualization.WithOperationState(task, time.Now().UTC()), nil
 }
 
 func (s *Service) SyncConnection(ctx context.Context, principal domainidentity.Principal, id string) (domainvirtualization.Task, error) {
@@ -521,7 +523,7 @@ func (s *Service) SyncConnection(ctx context.Context, principal domainidentity.P
 		return domainvirtualization.Task{}, err
 	}
 	s.recordOperation(ctx, principal, "virtualization.sync.enqueue", connection.ID, connection.Name, "success", "enqueued virtualization asset sync", map[string]any{"taskId": task.ID})
-	return task, nil
+	return domainvirtualization.WithOperationState(task, time.Now().UTC()), nil
 }
 
 func (s *Service) SyncAll(ctx context.Context, principal domainidentity.Principal) (domainvirtualization.Task, error) {
@@ -536,7 +538,7 @@ func (s *Service) SyncAll(ctx context.Context, principal domainidentity.Principa
 		return domainvirtualization.Task{}, fmt.Errorf("%w: no enabled virtualization connections to sync", apperrors.ErrInvalidArgument)
 	}
 	s.recordOperation(ctx, principal, "virtualization.sync.global", "", "all connections", "success", "enqueued global virtualization asset sync", map[string]any{"taskCount": len(tasks)})
-	return tasks[0], nil
+	return domainvirtualization.WithOperationState(tasks[0], time.Now().UTC()), nil
 }
 
 func (s *Service) ListVMs(ctx context.Context, principal domainidentity.Principal, filter domainvirtualization.VMFilter) ([]domainvirtualization.VM, error) {
@@ -594,6 +596,7 @@ func (s *Service) GetVMDetail(ctx context.Context, principal domainidentity.Prin
 	if err != nil {
 		return VMDetail{}, err
 	}
+	tasks = domainvirtualization.WithOperationStates(tasks, time.Now().UTC())
 	detail.Operations = make([]OperationWithLogs, 0, len(tasks))
 	for index, task := range tasks {
 		logs, _ := s.repo.ListTaskLogs(ctx, task.ID, 100)
@@ -686,7 +689,7 @@ func (s *Service) CreateVM(ctx context.Context, principal domainidentity.Princip
 		return domainvirtualization.Task{}, err
 	}
 	s.recordOperation(ctx, principal, "virtualization.vm.create.enqueue", connection.ID, input.Name, "success", "enqueued virtual machine creation", map[string]any{"taskId": task.ID})
-	return task, nil
+	return domainvirtualization.WithOperationState(task, time.Now().UTC()), nil
 }
 
 func (s *Service) VMAction(ctx context.Context, principal domainidentity.Principal, id string, input VMActionInput) (domainvirtualization.Task, error) {
@@ -719,7 +722,7 @@ func (s *Service) VMAction(ctx context.Context, principal domainidentity.Princip
 		return domainvirtualization.Task{}, err
 	}
 	s.recordOperation(ctx, principal, "virtualization.vm.action.enqueue", vm.ID, vm.Name, "success", "enqueued virtual machine action", map[string]any{"taskId": task.ID, "action": string(action)})
-	return task, nil
+	return domainvirtualization.WithOperationState(task, time.Now().UTC()), nil
 }
 
 func (s *Service) ListImages(ctx context.Context, principal domainidentity.Principal, filter domainvirtualization.ImageFilter) ([]domainvirtualization.Image, error) {
@@ -861,7 +864,8 @@ func (s *Service) ListOperations(ctx context.Context, principal domainidentity.P
 	if err := s.authorizeAny(ctx, principal, appaccess.PermVirtualizationOperationsView, appaccess.PermVirtualizationSyncView); err != nil {
 		return nil, err
 	}
-	return s.repo.ListTasks(ctx, filter)
+	items, err := s.repo.ListTasks(ctx, filter)
+	return domainvirtualization.WithOperationStates(items, time.Now().UTC()), err
 }
 
 func (s *Service) ListOperationsPage(ctx context.Context, principal domainidentity.Principal, filter domainvirtualization.TaskFilter) (domainvirtualization.Page[domainvirtualization.Task], error) {
@@ -873,6 +877,7 @@ func (s *Service) ListOperationsPage(ctx context.Context, principal domainidenti
 	if err != nil {
 		return domainvirtualization.Page[domainvirtualization.Task]{}, err
 	}
+	items = domainvirtualization.WithOperationStates(items, time.Now().UTC())
 	total, err := s.repo.CountTasks(ctx, filter)
 	if err != nil {
 		return domainvirtualization.Page[domainvirtualization.Task]{}, err
@@ -885,7 +890,10 @@ func (s *Service) GetOperation(ctx context.Context, principal domainidentity.Pri
 		return domainvirtualization.Task{}, err
 	}
 	item, err := s.repo.GetTask(ctx, strings.TrimSpace(taskID))
-	return item, mapNotFound(err)
+	if err != nil {
+		return domainvirtualization.Task{}, mapNotFound(err)
+	}
+	return domainvirtualization.WithOperationState(item, time.Now().UTC()), nil
 }
 
 func (s *Service) ListOperationLogs(ctx context.Context, principal domainidentity.Principal, taskID string, limit int) ([]domainvirtualization.TaskLog, error) {
@@ -920,7 +928,7 @@ func (s *Service) CancelOperation(ctx context.Context, principal domainidentity.
 	}
 	_ = s.repo.CreateTaskLog(ctx, domainvirtualization.TaskLog{TaskID: updated.ID, LogLevel: "warn", Message: "operation canceled", Payload: map[string]any{"actor": principal.UserID}})
 	s.recordOperation(ctx, principal, "virtualization.operation.cancel", updated.ID, updated.TaskKind, "success", "canceled virtualization operation", map[string]any{"taskId": updated.ID})
-	return updated, nil
+	return domainvirtualization.WithOperationState(updated, time.Now().UTC()), nil
 }
 
 func (s *Service) RetryOperation(ctx context.Context, principal domainidentity.Principal, taskID string) (domainvirtualization.Task, error) {
@@ -956,7 +964,7 @@ func (s *Service) RetryOperation(ctx context.Context, principal domainidentity.P
 	}
 	_ = s.repo.CreateTaskLog(ctx, domainvirtualization.TaskLog{TaskID: updated.ID, LogLevel: "info", Message: "operation queued for retry", Payload: map[string]any{"actor": principal.UserID}})
 	s.recordOperation(ctx, principal, "virtualization.operation.retry", updated.ID, updated.TaskKind, "success", "queued virtualization operation retry", map[string]any{"taskId": updated.ID})
-	return updated, nil
+	return domainvirtualization.WithOperationState(updated, time.Now().UTC()), nil
 }
 
 func (s *Service) GetVMMetrics(ctx context.Context, principal domainidentity.Principal, vmID string, rangeMinutes, stepSeconds int) (infravirtualization.VMMetricsResult, error) {

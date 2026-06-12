@@ -65,7 +65,7 @@ func (s *Service) CreateNamespace(ctx context.Context, principal domainidentity.
 
 	switch connection.Summary.ConnectionMode {
 	case domaincluster.ConnectionModeAgent:
-		return domainresource.NamespaceView{}, fmt.Errorf("%w: namespace mutation is not supported for agent-connected clusters yet", apperrors.ErrInvalidArgument)
+		return domainresource.NamespaceView{}, unsupportedAgentOperation("namespace mutation is not supported for agent-connected clusters yet")
 	default:
 		item, err := s.createDirectNamespace(ctx, clusterID, input)
 		if err != nil {
@@ -86,7 +86,7 @@ func (s *Service) UpdateNamespace(ctx context.Context, principal domainidentity.
 
 	switch connection.Summary.ConnectionMode {
 	case domaincluster.ConnectionModeAgent:
-		return domainresource.NamespaceView{}, fmt.Errorf("%w: namespace mutation is not supported for agent-connected clusters yet", apperrors.ErrInvalidArgument)
+		return domainresource.NamespaceView{}, unsupportedAgentOperation("namespace mutation is not supported for agent-connected clusters yet")
 	default:
 		item, err := s.updateDirectNamespace(ctx, clusterID, namespace, input)
 		if err != nil {
@@ -107,7 +107,7 @@ func (s *Service) DeleteNamespace(ctx context.Context, principal domainidentity.
 
 	switch connection.Summary.ConnectionMode {
 	case domaincluster.ConnectionModeAgent:
-		return fmt.Errorf("%w: namespace mutation is not supported for agent-connected clusters yet", apperrors.ErrInvalidArgument)
+		return unsupportedAgentOperation("namespace mutation is not supported for agent-connected clusters yet")
 	default:
 		if err := s.deleteDirectNamespace(ctx, clusterID, namespace); err != nil {
 			_ = s.recordAudit(ctx, principal, clusterID, namespace, "Namespace", namespace, string(domainaccess.ActionDelete), "failure", err.Error())
@@ -162,7 +162,7 @@ func (s *Service) UpdateNode(ctx context.Context, principal domainidentity.Princ
 
 	switch connection.Summary.ConnectionMode {
 	case domaincluster.ConnectionModeAgent:
-		return domainresource.NodeDetailView{}, fmt.Errorf("%w: node mutation is not supported for agent-connected clusters yet", apperrors.ErrInvalidArgument)
+		return domainresource.NodeDetailView{}, unsupportedAgentOperation("node mutation is not supported for agent-connected clusters yet")
 	default:
 		item, err := s.updateDirectNode(ctx, clusterID, nodeName, input)
 		if err != nil {
@@ -186,7 +186,7 @@ func (s *Service) GetNodeYAML(ctx context.Context, principal domainidentity.Prin
 	)
 	switch connection.Summary.ConnectionMode {
 	case domaincluster.ConnectionModeAgent:
-		return domainresource.ResourceYAMLView{}, fmt.Errorf("%w: node yaml is not supported for agent-connected clusters yet", apperrors.ErrInvalidArgument)
+		return domainresource.ResourceYAMLView{}, unsupportedAgentOperation("node yaml is not supported for agent-connected clusters yet")
 	default:
 		item, err = s.getDirectNodeYAML(ctx, clusterID, name)
 		if err != nil {
@@ -208,7 +208,7 @@ func (s *Service) DeleteNode(ctx context.Context, principal domainidentity.Princ
 
 	switch connection.Summary.ConnectionMode {
 	case domaincluster.ConnectionModeAgent:
-		return fmt.Errorf("%w: node deletion is not supported for agent-connected clusters yet", apperrors.ErrInvalidArgument)
+		return unsupportedAgentOperation("node deletion is not supported for agent-connected clusters yet")
 	default:
 		if err := s.deleteDirectNode(ctx, clusterID, nodeName); err != nil {
 			_ = s.recordAudit(ctx, principal, clusterID, "", "Node", nodeName, string(domainaccess.ActionDelete), "failure", err.Error())

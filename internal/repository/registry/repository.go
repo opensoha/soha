@@ -59,6 +59,19 @@ func (r *Repository) Create(ctx context.Context, item domainregistry.Connection)
 }
 
 func (r *Repository) Update(ctx context.Context, id string, item domainregistry.Connection) (domainregistry.Connection, error) {
+	if item.Secret == "" {
+		var existingSecret sql.NullString
+		err := r.db.WithContext(ctx).Raw(`SELECT secret FROM registry_connections WHERE id = ?`, id).Row().Scan(&existingSecret)
+		if err != nil {
+			if err == sql.ErrNoRows {
+				return domainregistry.Connection{}, gorm.ErrRecordNotFound
+			}
+			return domainregistry.Connection{}, fmt.Errorf("query registry connection secret: %w", err)
+		}
+		if existingSecret.Valid {
+			item.Secret = existingSecret.String
+		}
+	}
 	metadata, err := json.Marshal(item.Metadata)
 	if err != nil {
 		return domainregistry.Connection{}, fmt.Errorf("marshal registry metadata: %w", err)

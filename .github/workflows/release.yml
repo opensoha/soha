@@ -10,6 +10,14 @@ on:
         description: "soha-web release tag to embed"
         required: true
         default: "v0.1.0"
+      contracts_ref:
+        description: "soha-contracts tag or commit to consume as the release module"
+        required: true
+        default: "v0.1.0"
+      web_sha256:
+        description: "Optional expected sha256 for the soha-web dist tarball; checked against the release checksum asset when provided"
+        required: false
+        default: ""
 
 permissions:
   contents: write
@@ -19,59 +27,103 @@ jobs:
     runs-on: ubuntu-latest
     env:
       WEB_REF: ${{ inputs.web_ref || github.ref_name }}
+      CONTRACTS_REF: ${{ inputs.contracts_ref || github.ref_name }}
+      WEB_SHA256: ${{ inputs.web_sha256 }}
     steps:
       - name: Checkout soha
         uses: actions/checkout@v4
         with:
           path: soha
-      - name: Checkout contracts
-        uses: actions/checkout@v4
-        with:
-          repository: opensoha/soha-contracts
-          path: soha-contracts
-          token: ${{ secrets.OPENSOHA_CI_TOKEN || github.token }}
       - uses: actions/setup-go@v5
         with:
           go-version: "1.23.x"
           cache: true
           cache-dependency-path: soha/go.sum
-      - name: Prepare Go workspace
+      - name: Configure private module access
+        env:
+          GH_TOKEN: ${{ secrets.OPENSOHA_CI_TOKEN || github.token }}
+        run: |
+          git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
+          go env -w GOPRIVATE=github.com/opensoha/*
+      - name: Pin contracts module
         working-directory: soha
         run: |
-          cat > go.work <<'EOF'
-          go 1.23.0
-
-          use (
-            .
-            ../soha-contracts
-          )
-
-          replace github.com/opensoha/soha-contracts v0.0.0 => ../soha-contracts
-          EOF
+          test -n "${CONTRACTS_REF}"
+          go mod edit -dropreplace=github.com/opensoha/soha-contracts@v0.0.0
+          go get "github.com/opensoha/soha-contracts@${CONTRACTS_REF}"
+          go mod tidy
+          go list -m github.com/opensoha/soha-contracts | tee ../soha-contracts-module.txt
       - name: Download web artifact
         env:
           GH_TOKEN: ${{ secrets.OPENSOHA_CI_TOKEN || github.token }}
         run: |
+          set -euo pipefail
           mkdir -p /tmp/soha-web-dist
           gh release download "${WEB_REF}" \
             --repo opensoha/soha-web \
             --pattern "soha-web-dist-${WEB_REF}.tar.gz" \
+            --pattern "soha-web-dist-${WEB_REF}.tar.gz.sha256" \
             --dir /tmp/soha-web-dist
+          tarball="/tmp/soha-web-dist/soha-web-dist-${WEB_REF}.tar.gz"
+          checksum_file="${tarball}.sha256"
+          checksum="$(grep -Eo '[A-Fa-f0-9]{64}' "${checksum_file}" | head -n1)"
+          if [ -z "${checksum}" ]; then
+            echo "No sha256 digest found in ${checksum_file}" >&2
+            exit 1
+          fi
+          if [ -n "${WEB_SHA256}" ] && [ "${WEB_SHA256}" != "${checksum}" ]; then
+            echo "Input web_sha256 does not match ${checksum_file}" >&2
+            exit 1
+          fi
+          printf '%s\n' "${checksum}" > soha-web-dist.sha256
+          printf '%s  %s\n' "${checksum}" "${tarball}" | sha256sum -c -
           rm -rf soha/internal/staticassets/web/dist
           mkdir -p soha/internal/staticassets/web/dist
-          tar -xzf "/tmp/soha-web-dist/soha-web-dist-${WEB_REF}.tar.gz" -C soha/internal/staticassets/web/dist
+          tar -xzf "${tarball}" -C soha/internal/staticassets/web/dist
           test -f soha/internal/staticassets/web/dist/index.html
       - name: Test
         working-directory: soha
         run: go test ./...
       - name: Build linux amd64 binary
         working-directory: soha
-        run: CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -tags embedassets -trimpath -ldflags="-s -w" -o ../soha-linux-amd64 ./cmd/server
+        run: |
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -tags embedassets -trimpath -ldflags="-s -w" -o ../soha-linux-amd64 ./cmd/server
+          cd ..
+          sha256sum soha-linux-amd64 > soha-linux-amd64.sha256
+      - name: Generate release manifest
+        run: |
+          set -euo pipefail
+          binary_sha256="$(cut -d ' ' -f1 soha-linux-amd64.sha256)"
+          contracts_module="$(cat soha-contracts-module.txt)"
+          web_sha256="$(cat soha-web-dist.sha256)"
+          generated_at="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+          cat > soha-release-manifest.json <<EOF
+          {
+            "version": "${GITHUB_REF_NAME}",
+            "commit": "${GITHUB_SHA}",
+            "generatedAt": "${generated_at}",
+            "contractsRef": "${CONTRACTS_REF}",
+            "contractsModule": "${contracts_module}",
+            "webRef": "${WEB_REF}",
+            "webSha256": "${web_sha256}",
+            "binary": {
+              "name": "soha-linux-amd64",
+              "goos": "linux",
+              "goarch": "amd64",
+              "sha256": "${binary_sha256}"
+            }
+          }
+          EOF
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
         with:
           name: soha-linux-amd64-${{ github.ref_name }}
-          path: soha-linux-amd64
+          path: |
+            soha-linux-amd64
+            soha-linux-amd64.sha256
+            soha-contracts-module.txt
+            soha-release-manifest.json
+            soha-web-dist.sha256
           if-no-files-found: error
       - name: Publish GitHub release asset
         if: startsWith(github.ref, 'refs/tags/v')
@@ -79,8 +131,30 @@ jobs:
           GH_TOKEN: ${{ secrets.OPENSOHA_CI_TOKEN || github.token }}
         run: |
           asset="soha-linux-amd64"
+          checksum_asset="soha-linux-amd64.sha256"
+          manifest_asset="soha-release-manifest.json"
           if gh release view "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
-            gh release upload "${GITHUB_REF_NAME}" "${asset}" --repo "${GITHUB_REPOSITORY}" --clobber
+            gh release upload "${GITHUB_REF_NAME}" "${asset}" "${checksum_asset}" "${manifest_asset}" --repo "${GITHUB_REPOSITORY}" --clobber
           else
-            gh release create "${GITHUB_REF_NAME}" "${asset}" --repo "${GITHUB_REPOSITORY}" --title "soha ${GITHUB_REF_NAME}" --generate-notes
+            gh release create "${GITHUB_REF_NAME}" "${asset}" "${checksum_asset}" "${manifest_asset}" --repo "${GITHUB_REPOSITORY}" --title "soha ${GITHUB_REF_NAME}" --generate-notes
           fi
+      - name: Download published release assets and verify
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ secrets.OPENSOHA_CI_TOKEN || github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p downloaded-release
+          gh release download "${GITHUB_REF_NAME}" \
+            --repo "${GITHUB_REPOSITORY}" \
+            --pattern "soha-linux-amd64" \
+            --pattern "soha-linux-amd64.sha256" \
+            --pattern "soha-release-manifest.json" \
+            --dir downloaded-release \
+            --clobber
+          test -s downloaded-release/soha-linux-amd64
+          test -s downloaded-release/soha-linux-amd64.sha256
+          test -s downloaded-release/soha-release-manifest.json
+          (cd downloaded-release && sha256sum -c soha-linux-amd64.sha256)
+          grep -q '"webSha256"' downloaded-release/soha-release-manifest.json
+          grep -q '"contractsModule"' downloaded-release/soha-release-manifest.json

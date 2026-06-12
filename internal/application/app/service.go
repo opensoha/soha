@@ -99,14 +99,14 @@ func (s *Service) Create(ctx context.Context, principal domainidentity.Principal
 	if err := validateInput(input); err != nil {
 		return domainapp.App{}, err
 	}
-	if err := s.authorize(ctx, principal, domainaccess.ActionUpdate, "Application", input.Name, input.Key, input.BusinessLineID, input.Group, input.ID); err != nil {
+	if err := s.authorize(ctx, principal, domainaccess.ActionCreate, "Application", input.Name, input.Key, input.BusinessLineID, input.Group, input.ID); err != nil {
 		return domainapp.App{}, err
 	}
 	item, err := s.repo.Create(ctx, input)
 	if err != nil {
 		return domainapp.App{}, normalizeRepoError(err)
 	}
-	_ = s.recordAudit(ctx, principal, "", "Application", item.Name, string(domainaccess.ActionUpdate), "success", "created application")
+	_ = s.recordAudit(ctx, principal, "", "Application", item.Name, string(domainaccess.ActionCreate), "success", "created application")
 	s.recordOperation(ctx, principal, "delivery.application.create", item.ID, item.Name, "created application")
 	return item, nil
 }

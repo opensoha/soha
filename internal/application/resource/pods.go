@@ -87,7 +87,7 @@ func (s *Service) DeletePod(ctx context.Context, principal domainidentity.Princi
 
 	switch connection.Summary.ConnectionMode {
 	case domaincluster.ConnectionModeAgent:
-		return fmt.Errorf("%w: pod deletion is not supported for agent-connected clusters yet", apperrors.ErrInvalidArgument)
+		return unsupportedAgentOperation("pod deletion is not supported for agent-connected clusters yet")
 	default:
 		if err := s.deleteDirectPod(ctx, clusterID, namespace, name); err != nil {
 			_ = s.recordAudit(ctx, principal, clusterID, namespace, "Pod", name, string(domainaccess.ActionDelete), "failure", err.Error())
@@ -139,7 +139,15 @@ func (s *Service) StreamPodLogs(ctx context.Context, principal domainidentity.Pr
 
 	switch connection.Summary.ConnectionMode {
 	case domaincluster.ConnectionModeAgent:
-		return fmt.Errorf("%w: streaming pod logs are not supported for agent-connected clusters yet", apperrors.ErrInvalidArgument)
+		client, err := s.agentClient(connection)
+		if err != nil {
+			_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, "Pod", name, string(domainaccess.ActionLogs), "failure", err.Error())
+			return err
+		}
+		if err := client.StreamPodLogs(ctx, namespace, name, container, tailLines, sinceSeconds, stdout); err != nil {
+			_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, "Pod", name, string(domainaccess.ActionLogs), "failure", err.Error())
+			return fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
+		}
 	default:
 		if err := s.streamDirectPodLogs(ctx, clusterID, namespace, name, container, tailLines, sinceSeconds, stdout); err != nil {
 			_ = s.recordAudit(ctx, principal, clusterID, namespace, "Pod", name, string(domainaccess.ActionLogs), "failure", err.Error())
@@ -198,7 +206,15 @@ func (s *Service) StreamPodTerminal(ctx context.Context, principal domainidentit
 
 	switch connection.Summary.ConnectionMode {
 	case domaincluster.ConnectionModeAgent:
-		err = fmt.Errorf("%w: interactive terminal is not supported for agent-connected clusters yet", apperrors.ErrInvalidArgument)
+		client, clientErr := s.agentClient(connection)
+		if clientErr != nil {
+			err = clientErr
+		} else {
+			err = client.StreamPodTerminal(ctx, namespace, name, container, shell, stdin, stdout, stderr, sizeQueue)
+			if err != nil {
+				err = fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
+			}
+		}
 	default:
 		err = s.streamDirectPodTerminal(ctx, clusterID, namespace, name, container, shell, stdin, stdout, stderr, sizeQueue)
 	}

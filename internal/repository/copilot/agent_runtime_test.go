@@ -1,9 +1,15 @@
 package copilot
 
 import (
+	"context"
+	"encoding/json"
 	"testing"
+	"time"
 
+	"github.com/DATA-DOG/go-sqlmock"
 	domaincopilot "github.com/opensoha/soha/internal/domain/copilot"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
 )
 
 func TestMergeAgentRunToolExecutionsAppendsAndReplacesByID(t *testing.T) {
@@ -85,4 +91,208 @@ func TestMergeAgentRunAnalysisArtifactsAppendsAndReplacesByStableKey(t *testing.
 	if merged[3].Title != "Mitigation plan" || merged[3].Summary != "new mitigation" {
 		t.Fatalf("expected new artifact to be appended, got %#v", merged)
 	}
+}
+
+func TestCancelAgentRunUpdatesNonTerminalRun(t *testing.T) {
+	repo, mock := newAgentRunRepository(t)
+	queuedAt := time.Date(2026, 6, 12, 10, 0, 0, 0, time.UTC)
+	expectGetAgentRun(mock, domaincopilot.AgentRun{
+		ID:             "agent:cancel",
+		ProviderID:     "hermes",
+		ProviderKind:   "hermes",
+		CapabilityID:   "delivery_failure",
+		CreatedBy:      "user-1",
+		Status:         domaincopilot.AgentRunStatusRunning,
+		CallbackToken:  "callback-token",
+		TimeoutSeconds: 600,
+		QueuedAt:       queuedAt,
+		CreatedAt:      queuedAt,
+		UpdatedAt:      queuedAt,
+	})
+	mock.ExpectExec(`(?s)UPDATE ai_agent_runs\s+SET status = \$1, output = \$2, error_message = \$3, completed_at = \$4, updated_at = \$5\s+WHERE id = \$6 AND status NOT IN \(\$7, \$8, \$9, \$10\)`).
+		WithArgs(
+			domaincopilot.AgentRunStatusCanceled,
+			sqlmock.AnyArg(),
+			"operator canceled",
+			sqlmock.AnyArg(),
+			sqlmock.AnyArg(),
+			"agent:cancel",
+			domaincopilot.AgentRunStatusCompleted,
+			domaincopilot.AgentRunStatusFailed,
+			domaincopilot.AgentRunStatusCanceled,
+			domaincopilot.AgentRunStatusCallbackTimeout,
+		).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+	expectGetAgentRun(mock, domaincopilot.AgentRun{
+		ID:             "agent:cancel",
+		ProviderID:     "hermes",
+		ProviderKind:   "hermes",
+		CapabilityID:   "delivery_failure",
+		CreatedBy:      "user-1",
+		Status:         domaincopilot.AgentRunStatusCanceled,
+		Output:         map[string]any{"cancelReason": "operator canceled"},
+		CallbackToken:  "callback-token",
+		ErrorMessage:   "operator canceled",
+		TimeoutSeconds: 600,
+		QueuedAt:       queuedAt,
+		CompletedAt:    &queuedAt,
+		CreatedAt:      queuedAt,
+		UpdatedAt:      queuedAt,
+	})
+
+	run, err := repo.CancelAgentRun(context.Background(), domaincopilot.AgentRunCancelInput{
+		RunID:       "agent:cancel",
+		RequestedBy: "user-1",
+		Reason:      "operator canceled",
+	})
+	if err != nil {
+		t.Fatalf("cancel agent run: %v", err)
+	}
+	if run.Status != domaincopilot.AgentRunStatusCanceled || run.ErrorMessage != "operator canceled" {
+		t.Fatalf("unexpected canceled run: %#v", run)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet sql expectations: %v", err)
+	}
+}
+
+func TestUpdateAgentRunCallbackIgnoresLateCallbackForTerminalRun(t *testing.T) {
+	repo, mock := newAgentRunRepository(t)
+	completedAt := time.Date(2026, 6, 12, 10, 3, 0, 0, time.UTC)
+	expectGetAgentRun(mock, domaincopilot.AgentRun{
+		ID:             "agent:late",
+		ProviderID:     "hermes",
+		ProviderKind:   "hermes",
+		CapabilityID:   "delivery_failure",
+		CreatedBy:      "user-1",
+		Status:         domaincopilot.AgentRunStatusCanceled,
+		Output:         map[string]any{"cancelReason": "operator canceled"},
+		CallbackToken:  "callback-token",
+		ErrorMessage:   "operator canceled",
+		TimeoutSeconds: 600,
+		QueuedAt:       completedAt.Add(-3 * time.Minute),
+		CompletedAt:    &completedAt,
+		CreatedAt:      completedAt.Add(-3 * time.Minute),
+		UpdatedAt:      completedAt,
+	})
+
+	run, err := repo.UpdateAgentRunCallback(context.Background(), domaincopilot.AgentRunCallbackInput{
+		RunID:         "agent:late",
+		CallbackToken: "callback-token",
+		Status:        domaincopilot.AgentRunStatusCompleted,
+		Payload:       map[string]any{"summary": "late result"},
+	})
+	if err != nil {
+		t.Fatalf("late callback: %v", err)
+	}
+	if run.Status != domaincopilot.AgentRunStatusCanceled || run.Output["summary"] != nil {
+		t.Fatalf("late callback should not override terminal state, got %#v", run)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet sql expectations: %v", err)
+	}
+}
+
+func newAgentRunRepository(t *testing.T) (*Repository, sqlmock.Sqlmock) {
+	t.Helper()
+	sqlDB, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("new sqlmock: %v", err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	db, err := gorm.Open(postgres.New(postgres.Config{Conn: sqlDB}), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open gorm postgres mock: %v", err)
+	}
+	return New(db), mock
+}
+
+func expectGetAgentRun(mock sqlmock.Sqlmock, run domaincopilot.AgentRun) {
+	rows := sqlmock.NewRows([]string{
+		"id",
+		"provider_id",
+		"provider_kind",
+		"capability_id",
+		"skill_ids",
+		"session_id",
+		"root_cause_run_id",
+		"created_by",
+		"status",
+		"scope",
+		"toolset",
+		"tool_bindings",
+		"skill_bindings",
+		"input",
+		"output",
+		"tool_executions",
+		"analysis_artifacts",
+		"callback_token",
+		"claimed_by_agent_id",
+		"external_run_id",
+		"error_message",
+		"timeout_seconds",
+		"queued_at",
+		"started_at",
+		"last_heartbeat_at",
+		"completed_at",
+		"created_at",
+		"updated_at",
+	}).AddRow(
+		run.ID,
+		run.ProviderID,
+		run.ProviderKind,
+		run.CapabilityID,
+		`[]`,
+		nullableSQLString(run.SessionID),
+		nullableSQLString(run.RootCauseRunID),
+		run.CreatedBy,
+		run.Status,
+		`{}`,
+		`{}`,
+		`[]`,
+		`[]`,
+		mustJSON(run.Input),
+		mustJSON(run.Output),
+		`[]`,
+		`[]`,
+		run.CallbackToken,
+		nullableSQLString(run.ClaimedByAgentID),
+		nullableSQLString(run.ExternalRunID),
+		nullableSQLString(run.ErrorMessage),
+		run.TimeoutSeconds,
+		run.QueuedAt,
+		nullableSQLTime(run.StartedAt),
+		nullableSQLTime(run.LastHeartbeatAt),
+		nullableSQLTime(run.CompletedAt),
+		run.CreatedAt,
+		run.UpdatedAt,
+	)
+	mock.ExpectQuery(`(?s)SELECT id, provider_id, provider_kind, capability_id, skill_ids, session_id, root_cause_run_id, created_by, status, scope, toolset, tool_bindings, skill_bindings, input, output,\s+tool_executions, analysis_artifacts, callback_token, claimed_by_agent_id, external_run_id, error_message, timeout_seconds,\s+queued_at, started_at, last_heartbeat_at, completed_at, created_at, updated_at\s+FROM ai_agent_runs\s+WHERE id = \$1 LIMIT 1`).
+		WithArgs(run.ID).
+		WillReturnRows(rows)
+}
+
+func nullableSQLString(value string) any {
+	if value == "" {
+		return nil
+	}
+	return value
+}
+
+func nullableSQLTime(value *time.Time) any {
+	if value == nil || value.IsZero() {
+		return nil
+	}
+	return *value
+}
+
+func mustJSON(value map[string]any) string {
+	if value == nil {
+		return `{}`
+	}
+	bytes, err := json.Marshal(value)
+	if err != nil {
+		panic(err)
+	}
+	return string(bytes)
 }

@@ -891,6 +891,48 @@ func (r *Repository) UpdateAgentRunCallback(ctx context.Context, input domaincop
 	return r.GetAgentRun(ctx, "", input.RunID)
 }
 
+func (r *Repository) CancelAgentRun(ctx context.Context, input domaincopilot.AgentRunCancelInput) (domaincopilot.AgentRun, error) {
+	current, err := r.GetAgentRun(ctx, "", input.RunID)
+	if err != nil {
+		return domaincopilot.AgentRun{}, err
+	}
+	if agentRunTerminal(current.Status) {
+		return current, nil
+	}
+	now := time.Now().UTC()
+	reason := strings.TrimSpace(input.Reason)
+	if reason == "" {
+		reason = "canceled by user"
+	}
+	requestedBy := strings.TrimSpace(input.RequestedBy)
+	output := mergeAgentRunOutput(current.Output, map[string]any{
+		"agentRunStatus": domaincopilot.AgentRunStatusCanceled,
+		"cancelReason":   reason,
+		"canceledBy":     requestedBy,
+		"canceledAt":     now.Format(time.RFC3339),
+	})
+	outputBytes, err := json.Marshal(output)
+	if err != nil {
+		return domaincopilot.AgentRun{}, fmt.Errorf("marshal canceled agent run output: %w", err)
+	}
+	errorMessage := strings.TrimSpace(current.ErrorMessage)
+	if errorMessage == "" {
+		errorMessage = reason
+	}
+	result := r.db.WithContext(ctx).Exec(`
+		UPDATE ai_agent_runs
+		SET status = ?, output = ?, error_message = ?, completed_at = ?, updated_at = ?
+		WHERE id = ? AND status NOT IN (?, ?, ?, ?)
+	`, domaincopilot.AgentRunStatusCanceled, string(outputBytes), errorMessage, now, now, strings.TrimSpace(input.RunID), domaincopilot.AgentRunStatusCompleted, domaincopilot.AgentRunStatusFailed, domaincopilot.AgentRunStatusCanceled, domaincopilot.AgentRunStatusCallbackTimeout)
+	if result.Error != nil {
+		return domaincopilot.AgentRun{}, fmt.Errorf("cancel ai agent run: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return r.GetAgentRun(ctx, "", input.RunID)
+	}
+	return r.GetAgentRun(ctx, "", input.RunID)
+}
+
 func (r *Repository) GetAnalysisProfile(ctx context.Context, profileID string) (domaincopilot.AnalysisProfile, error) {
 	return r.getAnalysisProfile(ctx, profileID)
 }

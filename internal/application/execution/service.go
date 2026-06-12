@@ -117,7 +117,8 @@ func (s *Service) ClaimExecutionTask(ctx context.Context, providerKinds []string
 	if strings.TrimSpace(agentID) == "" {
 		return domaindelivery.ExecutionTask{}, fmt.Errorf("%w: agentID is required", apperrors.ErrInvalidArgument)
 	}
-	return s.repo.ClaimExecutionTask(ctx, providerKinds, strings.TrimSpace(agentID), strings.TrimSpace(runtimeEndpoint))
+	task, err := s.repo.ClaimExecutionTask(ctx, providerKinds, strings.TrimSpace(agentID), strings.TrimSpace(runtimeEndpoint))
+	return domaindelivery.WithOperationState(task, time.Now().UTC()), err
 }
 
 func (s *Service) ListReleaseBundles(ctx context.Context, principal domainidentity.Principal, filter domaindelivery.ReleaseBundleFilter) ([]domaindelivery.ReleaseBundle, error) {
@@ -138,14 +139,16 @@ func (s *Service) ListExecutionTasks(ctx context.Context, principal domainidenti
 	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermDeliveryWorkflowsView); err != nil {
 		return nil, err
 	}
-	return s.repo.ListExecutionTasks(ctx, filter)
+	items, err := s.repo.ListExecutionTasks(ctx, filter)
+	return domaindelivery.WithOperationStates(items, time.Now().UTC()), err
 }
 
 func (s *Service) GetExecutionTask(ctx context.Context, principal domainidentity.Principal, taskID string) (domaindelivery.ExecutionTask, error) {
 	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermDeliveryWorkflowsView); err != nil {
 		return domaindelivery.ExecutionTask{}, err
 	}
-	return s.repo.GetExecutionTask(ctx, strings.TrimSpace(taskID))
+	task, err := s.repo.GetExecutionTask(ctx, strings.TrimSpace(taskID))
+	return domaindelivery.WithOperationState(task, time.Now().UTC()), err
 }
 
 func (s *Service) ListExecutionLogs(ctx context.Context, principal domainidentity.Principal, taskID string, limit int) ([]domaindelivery.ExecutionLog, error) {
@@ -228,7 +231,7 @@ func (s *Service) CancelExecutionTask(ctx context.Context, taskID string, input 
 	case "release":
 		_ = s.syncReleaseRecord(ctx, updated)
 	}
-	return updated, nil
+	return domaindelivery.WithOperationState(updated, time.Now().UTC()), nil
 }
 
 func (s *Service) RetryExecutionTask(ctx context.Context, taskID string, input domaindelivery.ExecutionTaskActionInput) (domaindelivery.ExecutionTask, error) {
@@ -293,7 +296,7 @@ func (s *Service) RetryExecutionTask(ctx context.Context, taskID string, input d
 	case "release":
 		_ = s.syncReleaseRecord(ctx, updated)
 	}
-	return updated, nil
+	return domaindelivery.WithOperationState(updated, time.Now().UTC()), nil
 }
 
 func (s *Service) CreateApprovalPolicy(ctx context.Context, principal domainidentity.Principal, input domaindelivery.ApprovalPolicyInput) (domaindelivery.ApprovalPolicy, error) {
@@ -366,7 +369,7 @@ func (s *Service) StartBuildExecution(ctx context.Context, plan BuildPlan) (doma
 	if dispatchErr == nil {
 		task = dispatched
 	}
-	return bundle, task, nil
+	return bundle, domaindelivery.WithOperationState(task, time.Now().UTC()), nil
 }
 
 func (s *Service) CompleteBuildExecution(ctx context.Context, bundleID, taskID, artifactRef, artifactDigest string, result map[string]any) error {
@@ -454,7 +457,7 @@ func (s *Service) StartReleaseExecution(ctx context.Context, plan ReleasePlan) (
 	if dispatchErr == nil {
 		task = dispatched
 	}
-	return bundle, task, nil
+	return bundle, domaindelivery.WithOperationState(task, time.Now().UTC()), nil
 }
 
 func (s *Service) CompleteReleaseExecution(ctx context.Context, bundleID, taskID, status string, result map[string]any) error {
@@ -515,7 +518,7 @@ func (s *Service) RecordCallback(ctx context.Context, input domaindelivery.Execu
 			},
 			CreatedAt: now,
 		})
-		return task, nil
+		return domaindelivery.WithOperationState(task, time.Now().UTC()), nil
 	}
 	if logs, ok := input.Payload["logs"].([]any); ok {
 		for _, item := range logs {
@@ -563,7 +566,7 @@ func (s *Service) RecordCallback(ctx context.Context, input domaindelivery.Execu
 	case "release":
 		_ = s.syncReleaseRecord(ctx, updated)
 	}
-	return updated, nil
+	return domaindelivery.WithOperationState(updated, time.Now().UTC()), nil
 }
 
 func (s *Service) monitorLoop(ctx context.Context) {
@@ -797,29 +800,77 @@ func (s *Service) dispatchExecutionTask(ctx context.Context, task domaindelivery
 		})
 		return task, nil
 	case "k8s_job_runner":
+		if reason := s.k8sJobRunnerDisabledReason(task); reason != "" {
+			return s.markTaskProviderDisabled(ctx, task, now, reason)
+		}
 		if handled, updated, err := s.dispatchK8sJobExecution(ctx, task, now); handled {
 			return updated, err
 		}
-		fallthrough
+		return s.markTaskProviderDisabled(ctx, task, now, "k8s_job_runner provider is disabled: no executable Kubernetes Job could be created")
 	default:
-		task.Status = "running"
-		task.StartedAt = &now
-		task.LastHeartbeatAt = &now
-		task.UpdatedAt = now
-		updated, err := s.repo.UpdateExecutionTask(ctx, task)
-		if err != nil {
-			return domaindelivery.ExecutionTask{}, err
+		providerKind := strings.TrimSpace(task.ProviderKind)
+		if providerKind == "" {
+			return s.markTaskProviderDisabled(ctx, task, now, "execution provider is disabled: providerKind is required")
 		}
-		_ = s.repo.CreateExecutionLog(ctx, domaindelivery.ExecutionLog{
-			ID:              uuid.NewString(),
-			ExecutionTaskID: updated.ID,
-			LogLevel:        "info",
-			Message:         "task accepted by k8s_job_runner",
-			Metadata:        map[string]any{"providerKind": updated.ProviderKind},
-			CreatedAt:       now,
-		})
-		return updated, nil
+		return s.markTaskProviderDisabled(ctx, task, now, fmt.Sprintf("execution provider %q is not configured", providerKind))
 	}
+}
+
+func (s *Service) k8sJobRunnerDisabledReason(task domaindelivery.ExecutionTask) string {
+	if s.clusters == nil {
+		return "k8s_job_runner provider is disabled: Kubernetes cluster manager is not configured"
+	}
+	if len(valueAsStringSlice(task.Payload["commands"])) == 0 {
+		return "k8s_job_runner provider is disabled: execution commands are required"
+	}
+	if s.resolveExecutionJobClusterID(task) == "" {
+		return "k8s_job_runner provider is disabled: execution job cluster is not configured"
+	}
+	return ""
+}
+
+func (s *Service) markTaskProviderDisabled(ctx context.Context, task domaindelivery.ExecutionTask, now time.Time, message string) (domaindelivery.ExecutionTask, error) {
+	task.Status = "failed"
+	task.AttemptCount = maxInt(task.AttemptCount, 1)
+	task.LastHeartbeatAt = &now
+	task.FinishedAt = &now
+	task.UpdatedAt = now
+	task.Result = mergeMaps(task.Result, map[string]any{
+		"executionTaskStatus": "failed",
+		"failureReason":       "provider_disabled",
+		"providerDisabled":    true,
+		"providerKind":        strings.TrimSpace(task.ProviderKind),
+		"error":               message,
+	})
+	updated, err := s.repo.UpdateExecutionTask(ctx, task)
+	if err != nil {
+		return domaindelivery.ExecutionTask{}, err
+	}
+	if strings.TrimSpace(updated.ReleaseBundleID) != "" {
+		bundleItem, bundleErr := s.repo.GetReleaseBundle(ctx, updated.ReleaseBundleID)
+		if bundleErr == nil {
+			applyTaskResultToBundle(&bundleItem, updated, now)
+			_, _ = s.repo.UpdateReleaseBundle(ctx, bundleItem)
+		}
+	}
+	_ = s.repo.CreateExecutionLog(ctx, domaindelivery.ExecutionLog{
+		ID:              uuid.NewString(),
+		ExecutionTaskID: updated.ID,
+		LogLevel:        "error",
+		Message:         message,
+		Metadata: map[string]any{
+			"providerKind":  updated.ProviderKind,
+			"failureReason": "provider_disabled",
+		},
+		CreatedAt: now,
+	})
+	switch updated.TaskKind {
+	case "build":
+		_ = s.syncBuildRecord(ctx, updated)
+	case "release":
+		_ = s.syncReleaseRecord(ctx, updated)
+	}
+	return updated, nil
 }
 
 func (s *Service) dispatchK8sJobExecution(ctx context.Context, task domaindelivery.ExecutionTask, now time.Time) (bool, domaindelivery.ExecutionTask, error) {

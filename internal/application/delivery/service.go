@@ -323,6 +323,7 @@ func (s *Service) ListReleaseBoard(ctx context.Context, principal domainidentity
 		}
 		bundles, _ := s.repository.ListReleaseBundles(ctx, domaindelivery.ReleaseBundleFilter{ApplicationID: app.ID, Limit: 20})
 		tasks, _ := s.repository.ListExecutionTasks(ctx, domaindelivery.ExecutionTaskFilter{ApplicationID: app.ID, Limit: 20})
+		tasks = domaindelivery.WithOperationStates(tasks, time.Now().UTC())
 		builds, _ := s.builds.List(ctx, principal, domainbuild.Filter{ApplicationID: app.ID, Limit: 20})
 		workflows, _ := s.workflows.List(ctx, principal, app.ID, 20)
 		releases, _ := s.releases.List(ctx, principal, domainrelease.Filter{ApplicationID: app.ID, Limit: 20})
@@ -404,14 +405,16 @@ func (s *Service) ListExecutionTasks(ctx context.Context, principal domainidenti
 	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermDeliveryExecutionTasksView); err != nil {
 		return nil, err
 	}
-	return s.repository.ListExecutionTasks(ctx, filter)
+	items, err := s.repository.ListExecutionTasks(ctx, filter)
+	return domaindelivery.WithOperationStates(items, time.Now().UTC()), err
 }
 
 func (s *Service) GetExecutionTask(ctx context.Context, principal domainidentity.Principal, taskID string) (domaindelivery.ExecutionTask, error) {
 	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermDeliveryExecutionTasksView); err != nil {
 		return domaindelivery.ExecutionTask{}, err
 	}
-	return s.repository.GetExecutionTask(ctx, strings.TrimSpace(taskID))
+	task, err := s.repository.GetExecutionTask(ctx, strings.TrimSpace(taskID))
+	return domaindelivery.WithOperationState(task, time.Now().UTC()), err
 }
 
 func (s *Service) ListExecutionLogs(ctx context.Context, principal domainidentity.Principal, taskID string, limit int) ([]domaindelivery.ExecutionLog, error) {
@@ -854,7 +857,8 @@ func (s *Service) ClaimExecutionTask(ctx context.Context, providerKinds []string
 	if s.execution != nil {
 		return s.execution.ClaimExecutionTask(ctx, providerKinds, strings.TrimSpace(agentID), strings.TrimSpace(runtimeEndpoint))
 	}
-	return s.repository.ClaimExecutionTask(ctx, providerKinds, strings.TrimSpace(agentID), strings.TrimSpace(runtimeEndpoint))
+	task, err := s.repository.ClaimExecutionTask(ctx, providerKinds, strings.TrimSpace(agentID), strings.TrimSpace(runtimeEndpoint))
+	return domaindelivery.WithOperationState(task, time.Now().UTC()), err
 }
 
 func (s *Service) RecordCallback(ctx context.Context, input domaindelivery.ExecutionCallbackInput) (domaindelivery.ExecutionTask, error) {
@@ -900,14 +904,12 @@ func (s *Service) RecordCallback(ctx context.Context, input domaindelivery.Execu
 			_, _ = s.repository.UpdateReleaseBundle(ctx, bundle)
 		}
 	}
-	return updated, nil
+	return domaindelivery.WithOperationState(updated, time.Now().UTC()), nil
 }
 
 func (s *Service) GetExecutionTaskForRunner(ctx context.Context, taskID string) (domaindelivery.ExecutionTask, error) {
-	if s.execution != nil {
-		return s.repository.GetExecutionTask(ctx, strings.TrimSpace(taskID))
-	}
-	return s.repository.GetExecutionTask(ctx, strings.TrimSpace(taskID))
+	task, err := s.repository.GetExecutionTask(ctx, strings.TrimSpace(taskID))
+	return domaindelivery.WithOperationState(task, time.Now().UTC()), err
 }
 
 func (s *Service) CancelExecutionTask(ctx context.Context, principal domainidentity.Principal, taskID string, input domaindelivery.ExecutionTaskActionInput) (domaindelivery.ExecutionTask, error) {
@@ -1032,6 +1034,7 @@ func (s *Service) loadDeliveryContext(ctx context.Context, principal domainident
 	if err != nil {
 		return nil, nil, nil, nil, nil, nil, nil, err
 	}
+	tasks = domaindelivery.WithOperationStates(tasks, time.Now().UTC())
 	builds, err := s.builds.List(ctx, principal, domainbuild.Filter{ApplicationID: applicationID, Limit: 20})
 	if err != nil {
 		return nil, nil, nil, nil, nil, nil, nil, err

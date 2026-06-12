@@ -2,6 +2,8 @@ package virtualization
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"time"
 )
 
@@ -141,24 +143,174 @@ type FlavorFilter struct {
 }
 
 type Task struct {
-	ID                string         `json:"id"`
-	Provider          string         `json:"provider"`
-	ConnectionID      string         `json:"connectionId,omitempty"`
-	VMID              string         `json:"vmId,omitempty"`
-	TaskKind          string         `json:"taskKind"`
-	Status            string         `json:"status"`
-	RequestedBy       string         `json:"requestedBy,omitempty"`
-	ClaimedByWorkerID string         `json:"claimedByWorkerId,omitempty"`
-	AttemptCount      int            `json:"attemptCount"`
-	MaxRetries        int            `json:"maxRetries"`
-	TimeoutSeconds    int            `json:"timeoutSeconds"`
-	Payload           map[string]any `json:"payload,omitempty"`
-	Result            map[string]any `json:"result,omitempty"`
-	StartedAt         *time.Time     `json:"startedAt,omitempty"`
-	LastHeartbeatAt   *time.Time     `json:"lastHeartbeatAt,omitempty"`
-	FinishedAt        *time.Time     `json:"finishedAt,omitempty"`
-	CreatedAt         time.Time      `json:"createdAt"`
-	UpdatedAt         time.Time      `json:"updatedAt"`
+	ID                string          `json:"id"`
+	Provider          string          `json:"provider"`
+	ConnectionID      string          `json:"connectionId,omitempty"`
+	VMID              string          `json:"vmId,omitempty"`
+	TaskKind          string          `json:"taskKind"`
+	Status            string          `json:"status"`
+	RequestedBy       string          `json:"requestedBy,omitempty"`
+	ClaimedByWorkerID string          `json:"claimedByWorkerId,omitempty"`
+	AttemptCount      int             `json:"attemptCount"`
+	MaxRetries        int             `json:"maxRetries"`
+	TimeoutSeconds    int             `json:"timeoutSeconds"`
+	Payload           map[string]any  `json:"payload,omitempty"`
+	Result            map[string]any  `json:"result,omitempty"`
+	OperationState    *OperationState `json:"operationState,omitempty" gorm:"-"`
+	StartedAt         *time.Time      `json:"startedAt,omitempty"`
+	LastHeartbeatAt   *time.Time      `json:"lastHeartbeatAt,omitempty"`
+	FinishedAt        *time.Time      `json:"finishedAt,omitempty"`
+	CreatedAt         time.Time       `json:"createdAt"`
+	UpdatedAt         time.Time       `json:"updatedAt"`
+}
+
+type OperationState struct {
+	Phase                 string    `json:"phase"`
+	Status                string    `json:"status"`
+	Terminal              bool      `json:"terminal"`
+	Cancelable            bool      `json:"cancelable"`
+	Retryable             bool      `json:"retryable"`
+	HeartbeatRequired     bool      `json:"heartbeatRequired"`
+	TimeoutSeconds        int       `json:"timeoutSeconds"`
+	HeartbeatStale        bool      `json:"heartbeatStale"`
+	LastHeartbeatAt       time.Time `json:"lastHeartbeatAt,omitempty"`
+	NextHeartbeatDeadline time.Time `json:"nextHeartbeatDeadline,omitempty"`
+	FailureReason         string    `json:"failureReason,omitempty"`
+	FailureMessage        string    `json:"failureMessage,omitempty"`
+	FinalStateRecordedAt  time.Time `json:"finalStateRecordedAt,omitempty"`
+	ClaimedByWorkerID     string    `json:"claimedByWorkerId,omitempty"`
+	RecommendedNextAction string    `json:"recommendedNextAction,omitempty"`
+}
+
+const defaultOperationStateTimeoutSeconds = 1800
+
+func WithOperationState(task Task, now time.Time) Task {
+	task.OperationState = BuildOperationState(task, now)
+	return task
+}
+
+func WithOperationStates(tasks []Task, now time.Time) []Task {
+	out := make([]Task, len(tasks))
+	for index, task := range tasks {
+		out[index] = WithOperationState(task, now)
+	}
+	return out
+}
+
+func BuildOperationState(task Task, now time.Time) *OperationState {
+	status := strings.TrimSpace(task.Status)
+	timeoutSeconds := task.TimeoutSeconds
+	if timeoutSeconds <= 0 {
+		timeoutSeconds = defaultOperationStateTimeoutSeconds
+	}
+	terminal := operationStatusTerminal(status)
+	heartbeatRequired := status == "running"
+	heartbeatReference := operationHeartbeatReference(task)
+	nextDeadline := time.Time{}
+	heartbeatStale := false
+	if heartbeatRequired {
+		nextDeadline = heartbeatReference.Add(time.Duration(timeoutSeconds) * time.Second)
+		heartbeatStale = now.After(nextDeadline)
+	}
+	state := &OperationState{
+		Phase:                 operationPhase(status),
+		Status:                status,
+		Terminal:              terminal,
+		Cancelable:            status == "queued" || status == "running",
+		Retryable:             status == "failed" || status == "callback_timeout" || status == "canceled",
+		HeartbeatRequired:     heartbeatRequired,
+		TimeoutSeconds:        timeoutSeconds,
+		HeartbeatStale:        heartbeatStale,
+		ClaimedByWorkerID:     strings.TrimSpace(task.ClaimedByWorkerID),
+		RecommendedNextAction: operationRecommendedNextAction(status, heartbeatStale),
+	}
+	if task.LastHeartbeatAt != nil && !task.LastHeartbeatAt.IsZero() {
+		state.LastHeartbeatAt = task.LastHeartbeatAt.UTC()
+	}
+	if !nextDeadline.IsZero() {
+		state.NextHeartbeatDeadline = nextDeadline.UTC()
+	}
+	if task.FinishedAt != nil && !task.FinishedAt.IsZero() {
+		state.FinalStateRecordedAt = task.FinishedAt.UTC()
+	}
+	if terminal && status != "completed" {
+		state.FailureReason = firstNonEmptyTaskResultString(task.Result, "failureReason", "reason", "errorCode")
+		if state.FailureReason == "" {
+			state.FailureReason = status
+		}
+		state.FailureMessage = firstNonEmptyTaskResultString(task.Result, "error", "message", "cancelReason")
+	}
+	return state
+}
+
+func operationHeartbeatReference(task Task) time.Time {
+	if task.LastHeartbeatAt != nil && !task.LastHeartbeatAt.IsZero() {
+		return task.LastHeartbeatAt.UTC()
+	}
+	if task.StartedAt != nil && !task.StartedAt.IsZero() {
+		return task.StartedAt.UTC()
+	}
+	return task.CreatedAt.UTC()
+}
+
+func operationStatusTerminal(status string) bool {
+	switch strings.TrimSpace(status) {
+	case "completed", "failed", "canceled", "callback_timeout":
+		return true
+	default:
+		return false
+	}
+}
+
+func operationPhase(status string) string {
+	switch strings.TrimSpace(status) {
+	case "queued":
+		return "pending"
+	case "running":
+		return "running"
+	case "completed":
+		return "succeeded"
+	case "failed", "callback_timeout":
+		return "failed"
+	case "canceled":
+		return "canceled"
+	default:
+		return "unknown"
+	}
+}
+
+func operationRecommendedNextAction(status string, heartbeatStale bool) string {
+	switch strings.TrimSpace(status) {
+	case "queued":
+		return "wait_for_worker_claim"
+	case "running":
+		if heartbeatStale {
+			return "inspect_worker_or_cancel"
+		}
+		return "wait_for_heartbeat"
+	case "failed", "callback_timeout":
+		return "inspect_failure_or_retry"
+	case "canceled":
+		return "retry_or_close"
+	case "completed":
+		return "inspect_result"
+	default:
+		return "inspect_status"
+	}
+}
+
+func firstNonEmptyTaskResultString(result map[string]any, keys ...string) string {
+	for _, key := range keys {
+		value, ok := result[key]
+		if !ok {
+			continue
+		}
+		text := strings.TrimSpace(fmt.Sprint(value))
+		if text != "" && text != "<nil>" {
+			return text
+		}
+	}
+	return ""
 }
 
 type TaskFilter struct {

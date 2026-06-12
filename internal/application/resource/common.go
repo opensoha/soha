@@ -27,6 +27,15 @@ func (s *Service) agentClient(connection domaincluster.Connection) (*agentinfra.
 	}
 	return client, nil
 }
+
+func unsupportedAgentOperation(message string) error {
+	message = strings.TrimSpace(message)
+	if message == "" {
+		message = "operation is not supported for agent-connected clusters yet"
+	}
+	return fmt.Errorf("%w: %s", apperrors.ErrUnsupportedOperation, message)
+}
+
 func (s *Service) loadConnection(ctx context.Context, clusterID string) (domaincluster.Connection, error) {
 	if s.resolver != nil {
 		connection, err := s.resolver.GetConnection(ctx, clusterID)

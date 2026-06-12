@@ -15,7 +15,7 @@ WEB_DIST_DIR ?= internal/staticassets/web/dist
 
 ROOT_COMPOSE = $(COMPOSE) -f $(ROOT_COMPOSE_FILE)
 
-.PHONY: help init init-go init-web init-docs init-db init-cluster init-hermes dev dev-api dev-web dev-docs build build-web build-docs clean deploy-image deploy-compose-up deploy-compose-down deploy-compose-config deploy-helm-lint test-api test-web
+.PHONY: help init init-go init-web init-docs init-db init-cluster init-hermes dev dev-api dev-web dev-docs build build-web build-docs clean deploy-image deploy-compose-up deploy-compose-down deploy-compose-config deploy-compose-smoke deploy-helm-lint test-api test-web
 
 help: ## Show available make targets.
 	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make <target>\n\nTargets:\n"} /^[a-zA-Z0-9_.-]+:.*##/ {printf "  %-28s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -50,6 +50,9 @@ init-db: ## Start local PostgreSQL from deploy/docker-compose.yaml.
 init-cluster: ## Start local k3s and write .dev/k3s/kubeconfig.yaml.
 	@mkdir -p .dev/k3s
 	@echo "Starting local K3s..."
+	@if ! docker container inspect soha-k3s >/dev/null 2>&1; then \
+		docker network disconnect -f soha_default soha-k3s >/dev/null 2>&1 || true; \
+	fi
 	@$(ROOT_COMPOSE) up -d k3s
 	@printf "Waiting for K3s"; \
 	until $(ROOT_COMPOSE) exec -T k3s kubectl get nodes >/dev/null 2>&1; do \
@@ -114,6 +117,9 @@ deploy-compose-down: ## Stop the local single-project compose stack.
 
 deploy-compose-config: ## Render the local single-project compose config.
 	$(ROOT_COMPOSE) config
+
+deploy-compose-smoke: build-web ## Run the app-container cold-start smoke against PostgreSQL and embedded web assets.
+	./scripts/smoke-compose.sh
 
 deploy-helm-lint: ## Lint the Helm chart.
 	helm lint $(HELM_CHART)

@@ -145,6 +145,8 @@ func allowsExternalBearerToken(path string) bool {
 		return true
 	case strings.HasSuffix(path, "/copilot/agent-runs/tool-call"):
 		return true
+	case strings.HasSuffix(path, "/connectors/events"):
+		return true
 	default:
 		return false
 	}

@@ -2,6 +2,8 @@ package docker
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"time"
 )
 
@@ -331,24 +333,174 @@ type TemplateFilter struct {
 }
 
 type Operation struct {
-	ID                string         `json:"id"`
-	HostID            string         `json:"hostId,omitempty"`
-	ProjectID         string         `json:"projectId,omitempty"`
-	ServiceID         string         `json:"serviceId,omitempty"`
-	OperationKind     string         `json:"operationKind"`
-	Status            string         `json:"status"`
-	RequestedBy       string         `json:"requestedBy,omitempty"`
-	ClaimedByWorkerID string         `json:"claimedByWorkerId,omitempty"`
-	AttemptCount      int            `json:"attemptCount"`
-	MaxRetries        int            `json:"maxRetries"`
-	TimeoutSeconds    int            `json:"timeoutSeconds"`
-	Payload           map[string]any `json:"payload,omitempty"`
-	Result            map[string]any `json:"result,omitempty"`
-	StartedAt         *time.Time     `json:"startedAt,omitempty"`
-	LastHeartbeatAt   *time.Time     `json:"lastHeartbeatAt,omitempty"`
-	FinishedAt        *time.Time     `json:"finishedAt,omitempty"`
-	CreatedAt         time.Time      `json:"createdAt"`
-	UpdatedAt         time.Time      `json:"updatedAt"`
+	ID                string          `json:"id"`
+	HostID            string          `json:"hostId,omitempty"`
+	ProjectID         string          `json:"projectId,omitempty"`
+	ServiceID         string          `json:"serviceId,omitempty"`
+	OperationKind     string          `json:"operationKind"`
+	Status            string          `json:"status"`
+	RequestedBy       string          `json:"requestedBy,omitempty"`
+	ClaimedByWorkerID string          `json:"claimedByWorkerId,omitempty"`
+	AttemptCount      int             `json:"attemptCount"`
+	MaxRetries        int             `json:"maxRetries"`
+	TimeoutSeconds    int             `json:"timeoutSeconds"`
+	Payload           map[string]any  `json:"payload,omitempty"`
+	Result            map[string]any  `json:"result,omitempty"`
+	OperationState    *OperationState `json:"operationState,omitempty" gorm:"-"`
+	StartedAt         *time.Time      `json:"startedAt,omitempty"`
+	LastHeartbeatAt   *time.Time      `json:"lastHeartbeatAt,omitempty"`
+	FinishedAt        *time.Time      `json:"finishedAt,omitempty"`
+	CreatedAt         time.Time       `json:"createdAt"`
+	UpdatedAt         time.Time       `json:"updatedAt"`
+}
+
+type OperationState struct {
+	Phase                 string    `json:"phase"`
+	Status                string    `json:"status"`
+	Terminal              bool      `json:"terminal"`
+	Cancelable            bool      `json:"cancelable"`
+	Retryable             bool      `json:"retryable"`
+	HeartbeatRequired     bool      `json:"heartbeatRequired"`
+	TimeoutSeconds        int       `json:"timeoutSeconds"`
+	HeartbeatStale        bool      `json:"heartbeatStale"`
+	LastHeartbeatAt       time.Time `json:"lastHeartbeatAt,omitempty"`
+	NextHeartbeatDeadline time.Time `json:"nextHeartbeatDeadline,omitempty"`
+	FailureReason         string    `json:"failureReason,omitempty"`
+	FailureMessage        string    `json:"failureMessage,omitempty"`
+	FinalStateRecordedAt  time.Time `json:"finalStateRecordedAt,omitempty"`
+	ClaimedByWorkerID     string    `json:"claimedByWorkerId,omitempty"`
+	RecommendedNextAction string    `json:"recommendedNextAction,omitempty"`
+}
+
+const defaultOperationStateTimeoutSeconds = 1800
+
+func WithOperationState(operation Operation, now time.Time) Operation {
+	operation.OperationState = BuildOperationState(operation, now)
+	return operation
+}
+
+func WithOperationStates(operations []Operation, now time.Time) []Operation {
+	out := make([]Operation, len(operations))
+	for index, operation := range operations {
+		out[index] = WithOperationState(operation, now)
+	}
+	return out
+}
+
+func BuildOperationState(operation Operation, now time.Time) *OperationState {
+	status := strings.TrimSpace(operation.Status)
+	timeoutSeconds := operation.TimeoutSeconds
+	if timeoutSeconds <= 0 {
+		timeoutSeconds = defaultOperationStateTimeoutSeconds
+	}
+	terminal := operationStatusTerminal(status)
+	heartbeatRequired := status == "running"
+	heartbeatReference := operationHeartbeatReference(operation)
+	nextDeadline := time.Time{}
+	heartbeatStale := false
+	if heartbeatRequired {
+		nextDeadline = heartbeatReference.Add(time.Duration(timeoutSeconds) * time.Second)
+		heartbeatStale = now.After(nextDeadline)
+	}
+	state := &OperationState{
+		Phase:                 operationPhase(status),
+		Status:                status,
+		Terminal:              terminal,
+		Cancelable:            status == "queued" || status == "running",
+		Retryable:             status == "failed" || status == "callback_timeout" || status == "canceled",
+		HeartbeatRequired:     heartbeatRequired,
+		TimeoutSeconds:        timeoutSeconds,
+		HeartbeatStale:        heartbeatStale,
+		ClaimedByWorkerID:     strings.TrimSpace(operation.ClaimedByWorkerID),
+		RecommendedNextAction: operationRecommendedNextAction(status, heartbeatStale),
+	}
+	if operation.LastHeartbeatAt != nil && !operation.LastHeartbeatAt.IsZero() {
+		state.LastHeartbeatAt = operation.LastHeartbeatAt.UTC()
+	}
+	if !nextDeadline.IsZero() {
+		state.NextHeartbeatDeadline = nextDeadline.UTC()
+	}
+	if operation.FinishedAt != nil && !operation.FinishedAt.IsZero() {
+		state.FinalStateRecordedAt = operation.FinishedAt.UTC()
+	}
+	if terminal && status != "completed" {
+		state.FailureReason = firstNonEmptyOperationResultString(operation.Result, "failureReason", "reason", "errorCode")
+		if state.FailureReason == "" {
+			state.FailureReason = status
+		}
+		state.FailureMessage = firstNonEmptyOperationResultString(operation.Result, "error", "message", "cancelReason")
+	}
+	return state
+}
+
+func operationHeartbeatReference(operation Operation) time.Time {
+	if operation.LastHeartbeatAt != nil && !operation.LastHeartbeatAt.IsZero() {
+		return operation.LastHeartbeatAt.UTC()
+	}
+	if operation.StartedAt != nil && !operation.StartedAt.IsZero() {
+		return operation.StartedAt.UTC()
+	}
+	return operation.CreatedAt.UTC()
+}
+
+func operationStatusTerminal(status string) bool {
+	switch strings.TrimSpace(status) {
+	case "completed", "failed", "canceled", "callback_timeout":
+		return true
+	default:
+		return false
+	}
+}
+
+func operationPhase(status string) string {
+	switch strings.TrimSpace(status) {
+	case "queued":
+		return "pending"
+	case "running":
+		return "running"
+	case "completed":
+		return "succeeded"
+	case "failed", "callback_timeout":
+		return "failed"
+	case "canceled":
+		return "canceled"
+	default:
+		return "unknown"
+	}
+}
+
+func operationRecommendedNextAction(status string, heartbeatStale bool) string {
+	switch strings.TrimSpace(status) {
+	case "queued":
+		return "wait_for_worker_claim"
+	case "running":
+		if heartbeatStale {
+			return "inspect_worker_or_cancel"
+		}
+		return "wait_for_heartbeat"
+	case "failed", "callback_timeout":
+		return "inspect_failure_or_retry"
+	case "canceled":
+		return "retry_or_close"
+	case "completed":
+		return "inspect_result"
+	default:
+		return "inspect_status"
+	}
+}
+
+func firstNonEmptyOperationResultString(result map[string]any, keys ...string) string {
+	for _, key := range keys {
+		value, ok := result[key]
+		if !ok {
+			continue
+		}
+		text := strings.TrimSpace(fmt.Sprint(value))
+		if text != "" && text != "<nil>" {
+			return text
+		}
+	}
+	return ""
 }
 
 type OperationInput struct {

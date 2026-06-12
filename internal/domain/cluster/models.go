@@ -31,10 +31,47 @@ type Summary struct {
 }
 
 type Detail struct {
-	Summary     Summary          `json:"summary"`
-	Diagnostics Diagnostics      `json:"diagnostics"`
-	Connection  ConnectionDetail `json:"connection"`
-	Monitoring  MonitoringDetail `json:"monitoring"`
+	Summary          Summary                 `json:"summary"`
+	Diagnostics      Diagnostics             `json:"diagnostics"`
+	Connection       ConnectionDetail        `json:"connection"`
+	Monitoring       MonitoringDetail        `json:"monitoring"`
+	CapabilityMatrix []CapabilityMatrixEntry `json:"capabilityMatrix"`
+}
+
+type CapabilityStatus string
+
+const (
+	CapabilityStatusAvailable   CapabilityStatus = "available"
+	CapabilityStatusPartial     CapabilityStatus = "partial"
+	CapabilityStatusUnsupported CapabilityStatus = "unsupported"
+)
+
+type CapabilityRiskLevel string
+
+const (
+	CapabilityRiskRead    CapabilityRiskLevel = "read"
+	CapabilityRiskAnalyze CapabilityRiskLevel = "analyze"
+	CapabilityRiskMutate  CapabilityRiskLevel = "mutate"
+	CapabilityRiskExecute CapabilityRiskLevel = "execute"
+	CapabilityRiskHigh    CapabilityRiskLevel = "high"
+)
+
+type CapabilityModeSupport struct {
+	Status CapabilityStatus `json:"status"`
+	Reason string           `json:"reason,omitempty"`
+	Notes  []string         `json:"notes,omitempty"`
+}
+
+type CapabilityMatrixEntry struct {
+	Key              string                `json:"key"`
+	Label            string                `json:"label"`
+	Category         string                `json:"category"`
+	RequiredScopes   []string              `json:"requiredScopes,omitempty"`
+	RiskLevel        CapabilityRiskLevel   `json:"riskLevel"`
+	RequiresApproval bool                  `json:"requiresApproval"`
+	DocsURL          string                `json:"docsUrl,omitempty"`
+	Direct           CapabilityModeSupport `json:"direct"`
+	Agent            CapabilityModeSupport `json:"agent"`
 }
 
 type Diagnostics struct {

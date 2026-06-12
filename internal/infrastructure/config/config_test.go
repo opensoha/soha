@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/spf13/viper"
@@ -70,7 +71,193 @@ func TestDefaultsConfigurePostgresGatewayRateLimitBackend(t *testing.T) {
 	if !cfg.Modules.AIGateway.Enabled {
 		t.Fatalf("AI Gateway module should be enabled by default")
 	}
+	if got := cfg.AIGateway.ConnectorRuntimeConfigs(); len(got) != 0 {
+		t.Fatalf("AI Gateway connector runtime should be disabled by default, got %#v", got)
+	}
+	if cfg.AIGateway.ConnectorEventSink.Token != "" {
+		t.Fatalf("connector event sink token default = %q, want empty", cfg.AIGateway.ConnectorEventSink.Token)
+	}
 	if cfg.Auth.LoginVerification.SliderEnabled {
 		t.Fatal("login slider verification should be disabled by default")
+	}
+}
+
+func TestAIGatewayConnectorRuntimeConfigsNormalizeConfiguredEntries(t *testing.T) {
+	cfg := AIGatewayConfig{
+		ConnectorRuntime: AIGatewayConnectorRuntimeConfig{
+			Endpoint:    " https://runtime.local ",
+			Token:       " runtime-token ",
+			PluginID:    " opensoha.feishu ",
+			ConnectorID: " feishu ",
+		},
+		ConnectorRuntimes: []AIGatewayConnectorRuntimeConfig{
+			{Endpoint: " "},
+			{Endpoint: " https://runtime-2.local ", ConnectorID: " custom "},
+		},
+	}
+
+	runtimes := cfg.ConnectorRuntimeConfigs()
+	if len(runtimes) != 2 {
+		t.Fatalf("ConnectorRuntimeConfigs() length = %d, want 2: %#v", len(runtimes), runtimes)
+	}
+	if runtimes[0].Endpoint != "https://runtime.local" || runtimes[0].Token != "runtime-token" || runtimes[0].PluginID != "opensoha.feishu" || runtimes[0].ConnectorID != "feishu" {
+		t.Fatalf("unexpected normalized singular runtime: %#v", runtimes[0])
+	}
+	if runtimes[1].Endpoint != "https://runtime-2.local" || runtimes[1].ConnectorID != "custom" {
+		t.Fatalf("unexpected normalized list runtime: %#v", runtimes[1])
+	}
+}
+
+func TestAIGatewayConnectorRuntimeConfigExpandsEnv(t *testing.T) {
+	t.Setenv("SOHA_TEST_CONNECTOR_ENDPOINT", "https://runtime.local")
+	t.Setenv("SOHA_TEST_CONNECTOR_TOKEN", "runtime-token")
+	t.Setenv("SOHA_TEST_CONNECTOR_PLUGIN_ID", "opensoha.feishu")
+	t.Setenv("SOHA_TEST_CONNECTOR_ID", "feishu")
+	t.Setenv("SOHA_TEST_CONNECTOR_EVENT_SINK_TOKEN", "sink-token")
+
+	cfg := Config{
+		AIGateway: AIGatewayConfig{
+			ConnectorRuntime: AIGatewayConnectorRuntimeConfig{
+				Endpoint: "${SOHA_TEST_CONNECTOR_ENDPOINT}",
+				Token:    "${SOHA_TEST_CONNECTOR_TOKEN}",
+			},
+			ConnectorRuntimes: []AIGatewayConnectorRuntimeConfig{
+				{
+					Endpoint:    "${SOHA_TEST_CONNECTOR_ENDPOINT}",
+					PluginID:    "${SOHA_TEST_CONNECTOR_PLUGIN_ID}",
+					ConnectorID: "${SOHA_TEST_CONNECTOR_ID}",
+				},
+			},
+			ConnectorEventSink: AIGatewayConnectorEventSinkConfig{
+				Token: "${SOHA_TEST_CONNECTOR_EVENT_SINK_TOKEN}",
+			},
+		},
+	}
+
+	cfg.expandEnv()
+	if cfg.AIGateway.ConnectorRuntime.Endpoint != "https://runtime.local" || cfg.AIGateway.ConnectorRuntime.Token != "runtime-token" {
+		t.Fatalf("singular connector runtime env expansion failed: %#v", cfg.AIGateway.ConnectorRuntime)
+	}
+	runtime := cfg.AIGateway.ConnectorRuntimes[0]
+	if runtime.Endpoint != "https://runtime.local" || runtime.PluginID != "opensoha.feishu" || runtime.ConnectorID != "feishu" {
+		t.Fatalf("list connector runtime env expansion failed: %#v", runtime)
+	}
+	if cfg.AIGateway.ConnectorEventSink.Token != "sink-token" {
+		t.Fatalf("connector event sink token = %q, want expanded env", cfg.AIGateway.ConnectorEventSink.Token)
+	}
+}
+
+func TestProductionConfigRejectsDemoSecrets(t *testing.T) {
+	cfg := validProductionConfig()
+	cfg.Database.Password = "change-me"
+	cfg.Auth.JWT.Secret = "dev-only-change-me"
+	cfg.Runtime.ExecutionRunnerToken = "demo-execution-runner-token"
+	cfg.Monitoring.WebhookToken = ""
+	cfg.Security.CredentialEncryptionKey = "REPLACE_WITH_STABLE_CREDENTIAL_ENCRYPTION_KEY"
+
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("Validate() error = nil, want production config validation failure")
+	}
+	message := err.Error()
+	for _, want := range []string{
+		"database.password",
+		"auth.jwt.secret",
+		"runtime.execution_runner_token",
+		"monitoring.webhook_token",
+		"security.credential_encryption_key",
+	} {
+		if !strings.Contains(message, want) {
+			t.Fatalf("Validate() error %q missing %q", message, want)
+		}
+	}
+}
+
+func TestProductionConfigRejectsDevAuth(t *testing.T) {
+	cfg := validProductionConfig()
+	cfg.Auth.EnableDevAuth = true
+
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("Validate() error = nil, want dev auth rejection")
+	}
+	if !strings.Contains(err.Error(), "auth.enable_dev_auth") {
+		t.Fatalf("Validate() error %q missing auth.enable_dev_auth", err)
+	}
+}
+
+func TestProductionConfigAllowsStrongSecrets(t *testing.T) {
+	cfg := validProductionConfig()
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+}
+
+func TestNonProductionConfigAllowsDemoSecrets(t *testing.T) {
+	cfg := validProductionConfig()
+	cfg.App.Env = "development"
+	cfg.Database.Password = "change-me"
+	cfg.Auth.JWT.Secret = "dev-only-change-me"
+	cfg.Runtime.ExecutionRunnerToken = "demo-execution-runner-token"
+	cfg.Monitoring.WebhookToken = ""
+	cfg.Security.CredentialEncryptionKey = ""
+	cfg.Auth.EnableDevAuth = true
+
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+}
+
+func TestExpandEnvExpandsSensitiveConfig(t *testing.T) {
+	t.Setenv("SOHA_TEST_JWT_SECRET", "jwt-secret-from-env-12345678901234567890")
+	t.Setenv("SOHA_TEST_KUBECONFIG", "/tmp/kubeconfig")
+	cfg := Config{
+		Auth: AuthConfig{JWT: JWTConfig{Secret: "${SOHA_TEST_JWT_SECRET}"}},
+		Kubernetes: KubernetesConfig{Clusters: []ClusterConfig{{
+			Kubeconfig: "${SOHA_TEST_KUBECONFIG}",
+		}}},
+	}
+
+	cfg.expandEnv()
+
+	if cfg.Auth.JWT.Secret != "jwt-secret-from-env-12345678901234567890" {
+		t.Fatalf("jwt secret = %q, want expanded env", cfg.Auth.JWT.Secret)
+	}
+	if cfg.Kubernetes.Clusters[0].Kubeconfig != "/tmp/kubeconfig" {
+		t.Fatalf("kubeconfig = %q, want expanded env", cfg.Kubernetes.Clusters[0].Kubeconfig)
+	}
+}
+
+func validProductionConfig() Config {
+	return Config{
+		App: AppConfig{Env: "production"},
+		Runtime: RuntimeConfig{
+			ExecutionRunnerToken: "runner-token-123456789012345678901234",
+		},
+		Database: DatabaseConfig{
+			Password: "postgres-password-123456",
+		},
+		Auth: AuthConfig{
+			EnableDevAuth: false,
+			DevPrincipal: DevPrincipalConfig{
+				UserID:   "admin",
+				Password: "admin-password-123456",
+			},
+			JWT: JWTConfig{
+				Secret: "jwt-secret-123456789012345678901234567890",
+			},
+		},
+		Monitoring: MonitoringConfig{
+			Enabled:      true,
+			WebhookToken: "webhook-token-123456789012345678901234",
+		},
+		Modules: ModulesConfig{
+			Monitoring:     ModuleToggleConfig{Enabled: true},
+			Virtualization: ModuleToggleConfig{Enabled: true},
+		},
+		Security: SecurityConfig{
+			CredentialEncryptionKey: "credential-key-123456789012345678901234",
+		},
+		Bootstrap: BootstrapConfig{SeedDefaults: true},
 	}
 }

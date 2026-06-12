@@ -21,6 +21,7 @@ type ClusterService interface {
 	List(context.Context) ([]domaincluster.Summary, error)
 	ListAccessible(context.Context, domainidentity.Principal) ([]domaincluster.Summary, error)
 	Describe(context.Context, domainidentity.Principal, string) (domaincluster.Detail, error)
+	CapabilityMatrix(context.Context, domainidentity.Principal) ([]domaincluster.CapabilityMatrixEntry, error)
 	Register(context.Context, domainidentity.Principal, domaincluster.RegisterInput) (domaincluster.Summary, error)
 	Update(context.Context, domainidentity.Principal, string, domaincluster.UpdateInput) (domaincluster.Summary, error)
 	Delete(context.Context, domainidentity.Principal, string) error
@@ -142,15 +143,21 @@ type ResourceService interface {
 
 type AuditService interface {
 	ListAuthorized(context.Context, domainidentity.Principal, domainaudit.Filter) ([]domainaudit.Entry, error)
+	SummaryAuthorized(context.Context, domainidentity.Principal, domainaudit.Filter) (domainaudit.Summary, error)
+	ExportCSVAuthorized(context.Context, domainidentity.Principal, domainaudit.Filter) (domainaudit.Export, error)
 }
 
 type EventService interface {
 	List(context.Context, int) ([]domainevent.Envelope, error)
 	Get(context.Context, string) (domainevent.Envelope, error)
+	ValidateConnectorEventSinkToken(string) error
+	IngestConnectorEvents(context.Context, domainevent.ConnectorEventIngestInput) (int, error)
 }
 
 type OperationService interface {
 	ListAuthorized(context.Context, domainidentity.Principal, domainoperation.Filter) ([]domainoperation.Entry, error)
+	SummaryAuthorized(context.Context, domainidentity.Principal, domainoperation.Filter) (domainoperation.Summary, error)
+	ExportCSVAuthorized(context.Context, domainidentity.Principal, domainoperation.Filter) (domainoperation.Export, error)
 }
 
 type IntegrationService interface {

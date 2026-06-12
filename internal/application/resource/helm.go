@@ -273,9 +273,30 @@ func (s *Service) UpdateHelmReleaseValues(ctx context.Context, principal domaini
 		return domainresource.HelmValuesView{}, err
 	}
 	if connection.Summary.ConnectionMode == domaincluster.ConnectionModeAgent {
-		err := fmt.Errorf("%w: helm release values update is not supported for agent-connected clusters yet", apperrors.ErrInvalidArgument)
-		_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, "HelmRelease", name, string(domainaccess.ActionUpdate), "failure", err.Error())
-		return domainresource.HelmValuesView{}, err
+		normalizedContent := normalizeHelmValuesContent(content)
+		if _, err := parseHelmInstallValues(normalizedContent); err != nil {
+			_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, "HelmRelease", name, string(domainaccess.ActionUpdate), "failure", err.Error())
+			return domainresource.HelmValuesView{}, err
+		}
+		client, err := s.agentClient(connection)
+		if err != nil {
+			_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, "HelmRelease", name, string(domainaccess.ActionUpdate), "failure", err.Error())
+			return domainresource.HelmValuesView{}, err
+		}
+		item, err := client.UpdateHelmReleaseValues(ctx, namespace, name, normalizedContent)
+		if err != nil {
+			_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, "HelmRelease", name, string(domainaccess.ActionUpdate), "failure", err.Error())
+			return domainresource.HelmValuesView{}, err
+		}
+		item.AllowedActions = stringifyActions(decision.AllowedActions)
+		item.Editable = helmReleaseValuesEditable(connection, decision)
+		item.DiffEnabled = true
+		_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, "HelmRelease", name, string(domainaccess.ActionUpdate), "success", "updated helm release values via agent")
+		s.recordOperation(ctx, principal, "platform.helm_release.values_update", connection.Summary.ID, namespace, "HelmRelease", name, "updated helm release values via agent", map[string]any{
+			"revision": item.Revision,
+			"source":   "agent",
+		})
+		return item, nil
 	}
 
 	normalizedContent := normalizeHelmValuesContent(content)
@@ -310,9 +331,18 @@ func (s *Service) DeleteHelmRelease(ctx context.Context, principal domainidentit
 		return err
 	}
 	if connection.Summary.ConnectionMode == domaincluster.ConnectionModeAgent {
-		err := fmt.Errorf("%w: helm release deletion is not supported for agent-connected clusters yet", apperrors.ErrInvalidArgument)
-		_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, "HelmRelease", name, string(domainaccess.ActionDelete), "failure", err.Error())
-		return err
+		client, err := s.agentClient(connection)
+		if err != nil {
+			_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, "HelmRelease", name, string(domainaccess.ActionDelete), "failure", err.Error())
+			return err
+		}
+		if err := client.DeleteHelmRelease(ctx, namespace, name); err != nil {
+			_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, "HelmRelease", name, string(domainaccess.ActionDelete), "failure", err.Error())
+			return err
+		}
+		_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, "HelmRelease", name, string(domainaccess.ActionDelete), "success", "deleted helm release via agent")
+		s.recordOperation(ctx, principal, "platform.helm_release.delete", connection.Summary.ID, namespace, "HelmRelease", name, "deleted helm release via agent", map[string]any{"source": "agent"})
+		return nil
 	}
 	if err := s.deleteDirectHelmRelease(ctx, clusterID, namespace, name); err != nil {
 		_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, "HelmRelease", name, string(domainaccess.ActionDelete), "failure", err.Error())
@@ -831,7 +861,7 @@ func (s *Service) directHelmActionConfig(ctx context.Context, clusterID, namespa
 }
 
 func helmReleaseValuesEditable(connection domaincluster.Connection, decision domainaccess.Decision) bool {
-	return connection.Summary.ConnectionMode != domaincluster.ConnectionModeAgent && decisionAllowsAction(decision, domainaccess.ActionUpdate)
+	return decisionAllowsAction(decision, domainaccess.ActionUpdate)
 }
 
 func decisionAllowsAction(decision domainaccess.Decision, action domainaccess.Action) bool {

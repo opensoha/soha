@@ -42,13 +42,20 @@ func newDefaultCapabilityRegistry() *capabilityRegistry {
 
 func newCapabilityRegistry(providers ...CapabilityProvider) *capabilityRegistry {
 	out := &capabilityRegistry{}
+	out.AddProviders(providers...)
+	return out
+}
+
+func (r *capabilityRegistry) AddProviders(providers ...CapabilityProvider) {
+	if r == nil {
+		return
+	}
 	for _, provider := range providers {
 		if provider == nil {
 			continue
 		}
-		out.providers = append(out.providers, provider)
+		r.providers = append(r.providers, provider)
 	}
-	return out
 }
 
 func (r *capabilityRegistry) Tools() []domainaigateway.ToolCapability {

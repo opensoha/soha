@@ -7,6 +7,7 @@ import (
 	"time"
 
 	appaccess "github.com/opensoha/soha/internal/application/access"
+	domainaudit "github.com/opensoha/soha/internal/domain/audit"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainplugin "github.com/opensoha/soha/internal/domain/plugin"
 	"github.com/opensoha/soha/internal/platform/apperrors"
@@ -59,6 +60,24 @@ func boolPtr(value bool) *bool {
 	return &value
 }
 
+func containsString(items []string, target string) bool {
+	for _, item := range items {
+		if item == target {
+			return true
+		}
+	}
+	return false
+}
+
+type capturePluginAuditRecorder struct {
+	entries []domainaudit.Entry
+}
+
+func (r *capturePluginAuditRecorder) Record(_ context.Context, entry domainaudit.Entry) error {
+	r.entries = append(r.entries, entry)
+	return nil
+}
+
 func TestInstallRequiresPluginInstallPermission(t *testing.T) {
 	service := New(newMemoryPluginRepo(), appaccess.NewPermissionResolver(stubRolePermissions{
 		"viewer": {appaccess.PermPluginView},
@@ -96,6 +115,73 @@ func TestInstallStoresManifestSnapshotWithoutGrantingPermissions(t *testing.T) {
 	}
 	if item.ConfiguredSecretRefs == nil {
 		t.Fatalf("configured secret refs should be initialized")
+	}
+}
+
+func TestInstallConnectorMarketplaceManifestRecordsSnapshotAndAudit(t *testing.T) {
+	repo := newMemoryPluginRepo()
+	audit := &capturePluginAuditRecorder{}
+	service := New(repo, appaccess.NewPermissionResolver(stubRolePermissions{
+		"installer": {appaccess.PermPluginView, appaccess.PermPluginInstall},
+	}), audit)
+
+	item, err := service.Install(context.Background(), domainidentity.Principal{
+		UserID:   "admin",
+		UserName: "Admin",
+		Roles:    []string{"installer"},
+	}, domainplugin.PluginInstallRequest{
+		PluginID: "opensoha.feishu",
+		Enable:   true,
+	})
+	if err != nil {
+		t.Fatalf("Install returned error: %v", err)
+	}
+	if item.ID != "opensoha.feishu" || item.Type != "connector" || item.Status != statusEnabled {
+		t.Fatalf("unexpected installed connector identity/status: %#v", item)
+	}
+	if item.Source != "marketplace:opensoha/feishu" {
+		t.Fatalf("source = %q, want marketplace source", item.Source)
+	}
+	if item.SignatureStatus != "catalog" || item.ChecksumStatus != "not_provided" {
+		t.Fatalf("integrity statuses not recorded from catalog manifest: checksum=%q signature=%q", item.ChecksumStatus, item.SignatureStatus)
+	}
+	if item.Manifest.Assets == nil || len(item.Manifest.Assets.Connectors) != 1 || item.Manifest.Assets.Connectors[0] != "connectors/feishu/connector.manifest.json" {
+		t.Fatalf("connector asset snapshot not recorded: %#v", item.Manifest.Assets)
+	}
+	if item.Manifest.Capabilities == nil || len(item.Manifest.Capabilities.Tools) != 1 || item.Manifest.Capabilities.Tools[0] != "feishu.message.send_text" {
+		t.Fatalf("connector capability snapshot not recorded: %#v", item.Manifest.Capabilities)
+	}
+	if item.RequestedPermissions == nil {
+		t.Fatalf("requested permissions were not snapshotted")
+	}
+	if !containsString(item.RequestedPermissions.Required, appaccess.PermAIGatewayView) || !containsString(item.RequestedPermissions.Required, appaccess.PermAIGatewayInvoke) {
+		t.Fatalf("requested AI Gateway permissions missing: %#v", item.RequestedPermissions.Required)
+	}
+	if item.Metadata["permissionModel"] != "requested-only" || item.Metadata["manifestChecksum"] == "" {
+		t.Fatalf("install metadata missing permission/checksum evidence: %#v", item.Metadata)
+	}
+	if len(audit.entries) != 1 {
+		t.Fatalf("audit entries = %d, want 1", len(audit.entries))
+	}
+	entry := audit.entries[0]
+	if entry.Action != "plugin.install" || entry.Result != "success" {
+		t.Fatalf("unexpected audit action/result: %#v", entry)
+	}
+	if entry.Metadata["pluginId"] != "opensoha.feishu" || entry.Metadata["pluginType"] != "connector" {
+		t.Fatalf("audit connector identity missing: %#v", entry.Metadata)
+	}
+	if entry.Metadata["checksumStatus"] != "not_provided" || entry.Metadata["signatureStatus"] != "catalog" {
+		t.Fatalf("audit integrity status missing: %#v", entry.Metadata)
+	}
+	snapshot, ok := entry.Metadata["manifestSnapshot"].(domainplugin.PluginManifest)
+	if !ok {
+		t.Fatalf("audit manifest snapshot has unexpected type: %#v", entry.Metadata["manifestSnapshot"])
+	}
+	if snapshot.ID != "opensoha.feishu" || snapshot.Type != "connector" || snapshot.Assets == nil || snapshot.Capabilities == nil {
+		t.Fatalf("audit manifest snapshot incomplete: %#v", snapshot)
+	}
+	if snapshot.Assets.Connectors[0] != "connectors/feishu/connector.manifest.json" || snapshot.Capabilities.Tools[0] != "feishu.message.send_text" {
+		t.Fatalf("audit manifest snapshot drifted: %#v", snapshot)
 	}
 }
 

@@ -37,4 +37,7 @@ func registerPublicRoutes(v1 gin.IRoutes, cfg cfgpkg.Config, deps Dependencies) 
 		v1.POST("/copilot/agent-runs/callback", deps.Copilot.RecordAgentRunCallback)
 		v1.POST("/copilot/agent-runs/tool-call", deps.Copilot.RecordAgentToolCall)
 	}
+	if cfg.Modules.AIGateway.Enabled && deps.Platform != nil {
+		v1.POST("/connectors/events", deps.Platform.IngestConnectorEvents)
+	}
 }

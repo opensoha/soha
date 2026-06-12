@@ -11,23 +11,41 @@ import (
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainregistry "github.com/opensoha/soha/internal/domain/registry"
 	"github.com/opensoha/soha/internal/platform/apperrors"
+	"github.com/opensoha/soha/internal/platform/secretcrypto"
 	"gorm.io/gorm"
 )
 
 type Service struct {
-	repo        domainregistry.Repository
-	permissions *appaccess.PermissionResolver
+	repo          domainregistry.Repository
+	permissions   *appaccess.PermissionResolver
+	credentialKey string
 }
 
-func New(repo domainregistry.Repository, permissions *appaccess.PermissionResolver) *Service {
-	return &Service{repo: repo, permissions: permissions}
+type Option func(*Service)
+
+func WithCredentialEncryptionKey(key string) Option {
+	return func(s *Service) {
+		s.credentialKey = strings.TrimSpace(key)
+	}
+}
+
+func New(repo domainregistry.Repository, permissions *appaccess.PermissionResolver, opts ...Option) *Service {
+	service := &Service{repo: repo, permissions: permissions}
+	for _, opt := range opts {
+		opt(service)
+	}
+	return service
 }
 
 func (s *Service) List(ctx context.Context, principal domainidentity.Principal, limit int) ([]domainregistry.Connection, error) {
 	if err := s.authorize(ctx, principal, appaccess.PermDeliveryRegistriesView); err != nil {
 		return nil, err
 	}
-	return s.repo.List(ctx, limit)
+	items, err := s.repo.List(ctx, limit)
+	if err != nil {
+		return nil, err
+	}
+	return scrubConnections(items), nil
 }
 
 func (s *Service) Create(ctx context.Context, principal domainidentity.Principal, input domainregistry.Input) (domainregistry.Connection, error) {
@@ -42,7 +60,14 @@ func (s *Service) Create(ctx context.Context, principal domainidentity.Principal
 	item.ID = normalizeID(item.ID, item.Name)
 	item.CreatedAt = now
 	item.UpdatedAt = now
-	return s.repo.Create(ctx, item)
+	if err := s.encryptSecret(&item); err != nil {
+		return domainregistry.Connection{}, err
+	}
+	created, err := s.repo.Create(ctx, item)
+	if err != nil {
+		return domainregistry.Connection{}, err
+	}
+	return scrubConnection(created), nil
 }
 
 func (s *Service) Update(ctx context.Context, principal domainidentity.Principal, id string, input domainregistry.Input) (domainregistry.Connection, error) {
@@ -54,6 +79,9 @@ func (s *Service) Update(ctx context.Context, principal domainidentity.Principal
 		return domainregistry.Connection{}, err
 	}
 	item.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+	if err := s.encryptSecret(&item); err != nil {
+		return domainregistry.Connection{}, err
+	}
 	updated, err := s.repo.Update(ctx, strings.TrimSpace(id), item)
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
@@ -61,7 +89,7 @@ func (s *Service) Update(ctx context.Context, principal domainidentity.Principal
 		}
 		return domainregistry.Connection{}, err
 	}
-	return updated, nil
+	return scrubConnection(updated), nil
 }
 
 func (s *Service) Delete(ctx context.Context, principal domainidentity.Principal, id string) error {
@@ -108,6 +136,51 @@ func normalizeInput(input domainregistry.Input) (domainregistry.Connection, erro
 		Insecure:     input.Insecure,
 		Metadata:     metadata,
 	}, nil
+}
+
+func (s *Service) encryptSecret(item *domainregistry.Connection) error {
+	if item == nil || strings.TrimSpace(item.Secret) == "" || secretcrypto.Encrypted(item.Secret) {
+		return nil
+	}
+	if strings.TrimSpace(s.credentialKey) == "" {
+		return fmt.Errorf("%w: security.credential_encryption_key is required for registry secrets", apperrors.ErrInvalidArgument)
+	}
+	encrypted, err := secretcrypto.EncryptString(s.credentialKey, item.Secret)
+	if err != nil {
+		return fmt.Errorf("%w: encrypt registry secret: %v", apperrors.ErrInvalidArgument, err)
+	}
+	item.Secret = encrypted
+	return nil
+}
+
+func scrubConnections(items []domainregistry.Connection) []domainregistry.Connection {
+	out := make([]domainregistry.Connection, len(items))
+	for index, item := range items {
+		out[index] = scrubConnection(item)
+	}
+	return out
+}
+
+func scrubConnection(item domainregistry.Connection) domainregistry.Connection {
+	secret := strings.TrimSpace(item.Secret)
+	secretConfigured := secret != ""
+	item.Secret = ""
+	if item.Metadata == nil {
+		item.Metadata = map[string]any{}
+	}
+	item.Metadata["secretConfigured"] = secretConfigured
+	item.Metadata["secretStorage"] = secretStorageLabel(secret)
+	return item
+}
+
+func secretStorageLabel(secret string) string {
+	if strings.TrimSpace(secret) == "" {
+		return "none"
+	}
+	if !secretcrypto.Encrypted(secret) {
+		return "legacy_plaintext"
+	}
+	return "encrypted"
 }
 
 func normalizeID(value, fallback string) string {

@@ -222,12 +222,60 @@ func TestCancelAndRetryOperation(t *testing.T) {
 	if canceled.Status != TaskStatusCanceled {
 		t.Fatalf("canceled status = %q", canceled.Status)
 	}
+	if canceled.OperationState == nil || !canceled.OperationState.Terminal || !canceled.OperationState.Retryable {
+		t.Fatalf("canceled operation state = %#v", canceled.OperationState)
+	}
+	if repo.tasks[task.ID].OperationState != nil {
+		t.Fatalf("stored task should not keep derived operation state: %#v", repo.tasks[task.ID].OperationState)
+	}
 	retried, err := service.RetryOperation(context.Background(), testPrincipal(), task.ID)
 	if err != nil {
 		t.Fatalf("RetryOperation() error = %v", err)
 	}
 	if retried.Status != TaskStatusQueued || retried.StartedAt != nil || retried.FinishedAt != nil {
 		t.Fatalf("retry did not reset task: %#v", retried)
+	}
+	if retried.OperationState == nil || retried.OperationState.Phase != "pending" || !retried.OperationState.Cancelable {
+		t.Fatalf("retried operation state = %#v", retried.OperationState)
+	}
+}
+
+func TestListAndGetOperationsAttachOperationState(t *testing.T) {
+	repo := newMemoryRepo()
+	service := newTestService(repo, &captureOperations{}, fakeAdapter{})
+	finishedAt := time.Date(2026, 6, 12, 9, 0, 0, 0, time.UTC)
+	task, err := repo.CreateTask(context.Background(), domainvirtualization.Task{
+		Provider:       ProviderPVE,
+		ConnectionID:   "conn-1",
+		TaskKind:       TaskKindVMAction,
+		Status:         TaskStatusFailed,
+		TimeoutSeconds: 300,
+		Result:         map[string]any{"error": "pve action failed"},
+		FinishedAt:     &finishedAt,
+		CreatedAt:      finishedAt.Add(-time.Minute),
+		UpdatedAt:      finishedAt,
+	})
+	if err != nil {
+		t.Fatalf("CreateTask() error = %v", err)
+	}
+
+	items, err := service.ListOperations(context.Background(), testPrincipal(), domainvirtualization.TaskFilter{})
+	if err != nil {
+		t.Fatalf("ListOperations() error = %v", err)
+	}
+	if len(items) != 1 || items[0].OperationState == nil || items[0].OperationState.Phase != "failed" || !items[0].OperationState.Retryable {
+		t.Fatalf("listed task missing operation state: %#v", items)
+	}
+
+	got, err := service.GetOperation(context.Background(), testPrincipal(), task.ID)
+	if err != nil {
+		t.Fatalf("GetOperation() error = %v", err)
+	}
+	if got.OperationState == nil || got.OperationState.FailureMessage != "pve action failed" {
+		t.Fatalf("got task missing failure state: %#v", got.OperationState)
+	}
+	if repo.tasks[task.ID].OperationState != nil {
+		t.Fatalf("stored task should not keep derived operation state: %#v", repo.tasks[task.ID].OperationState)
 	}
 }
 

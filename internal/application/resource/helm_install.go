@@ -49,9 +49,28 @@ func (s *Service) InstallHelmChart(ctx context.Context, principal domainidentity
 		return domainresource.HelmChartInstallResult{}, err
 	}
 	if connection.Summary.ConnectionMode == domaincluster.ConnectionModeAgent {
-		err := fmt.Errorf("%w: helm chart install is not supported for agent-connected clusters yet", apperrors.ErrInvalidArgument)
-		_ = s.recordAudit(ctx, principal, connection.Summary.ID, input.Namespace, "HelmRelease", input.ReleaseName, string(domainaccess.ActionCreate), "failure", err.Error())
-		return domainresource.HelmChartInstallResult{}, err
+		client, err := s.agentClient(connection)
+		if err != nil {
+			_ = s.recordAudit(ctx, principal, connection.Summary.ID, input.Namespace, "HelmRelease", input.ReleaseName, string(domainaccess.ActionCreate), "failure", err.Error())
+			return domainresource.HelmChartInstallResult{}, err
+		}
+		result, err := client.InstallHelmChart(ctx, input)
+		if err != nil {
+			_ = s.recordAudit(ctx, principal, connection.Summary.ID, input.Namespace, "HelmRelease", input.ReleaseName, string(domainaccess.ActionCreate), "failure", err.Error())
+			return domainresource.HelmChartInstallResult{}, err
+		}
+		_ = s.recordAudit(ctx, principal, connection.Summary.ID, input.Namespace, "HelmRelease", result.Name, string(domainaccess.ActionCreate), "success", fmt.Sprintf("installed helm chart %s %s via agent", input.ChartName, input.Version))
+		s.recordOperation(ctx, principal, "platform.helm_release.install", connection.Summary.ID, input.Namespace, "HelmRelease", result.Name, "installed helm chart via agent", map[string]any{
+			"repositoryName":  input.RepositoryName,
+			"repositoryUrl":   input.RepositoryURL,
+			"chartName":       input.ChartName,
+			"version":         input.Version,
+			"createNamespace": input.CreateNamespace,
+			"wait":            input.Wait,
+			"timeoutSeconds":  input.TimeoutSeconds,
+			"source":          "agent",
+		})
+		return result, nil
 	}
 
 	result, err := s.installDirectHelmChart(ctx, clusterID, input)

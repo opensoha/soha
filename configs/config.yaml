@@ -114,6 +114,14 @@ ai_gateway:
       tls: false
       key_prefix: soha:ai-gateway:rate-limit
       timeout: 500ms
+  connector_runtime:
+    endpoint: ""
+    token: ""
+    plugin_id: ""
+    connector_id: ""
+  connector_runtimes: []
+  connector_event_sink:
+    token: ""
 
 modules:
   delivery:

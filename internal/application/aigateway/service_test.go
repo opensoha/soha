@@ -1188,6 +1188,43 @@ func TestCapabilitiesUsesInjectedCapabilityProvider(t *testing.T) {
 	}
 }
 
+func TestCapabilitiesAddProviderPreservesDefaultCapabilities(t *testing.T) {
+	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+		matrix: map[string][]string{
+			"developer": {
+				appaccess.PermAIGatewayView,
+				appaccess.PermAIGatewayInvoke,
+				appaccess.PermDeliveryApplicationsView,
+			},
+		},
+	}), nil)
+	service.AddCapabilityProviders(testCapabilityProvider{
+		tools: []domainaigateway.ToolCapability{
+			{
+				Name:           "custom.echo",
+				Title:          "Custom Echo",
+				Description:    "Custom provider echo tool.",
+				Domain:         "custom",
+				Action:         "read",
+				RiskLevel:      domainaigateway.RiskLevelRead,
+				PermissionKeys: []string{appaccess.PermAIGatewayInvoke},
+				InputSchema:    map[string]any{"type": "object"},
+			},
+		},
+	})
+
+	manifest, err := service.Capabilities(context.Background(), testPrincipal("developer"), domainaigateway.ManifestRequest{})
+	if err != nil {
+		t.Fatalf("Capabilities returned error: %v", err)
+	}
+	if !hasTool(manifest.Tools, "custom.echo") {
+		t.Fatalf("expected added custom tool, got %#v", manifest.Tools)
+	}
+	if !hasTool(manifest.Tools, "delivery.applications.list") {
+		t.Fatalf("expected default tools to remain, got %#v", manifest.Tools)
+	}
+}
+
 func TestCapabilitiesExposeExecuteToolWithTriggerPermissions(t *testing.T) {
 	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
@@ -1856,6 +1893,71 @@ func TestInvokeToolUsesInjectedProviderInvoker(t *testing.T) {
 	_, err = service.InvokeTool(context.Background(), testPrincipal("developer"), domainaigateway.ToolInvocationRequest{ToolName: "delivery.applications.list"})
 	if err == nil || !strings.Contains(err.Error(), "unknown AI Gateway tool") {
 		t.Fatalf("expected replaced default tool to be unknown, got %v", err)
+	}
+}
+
+func TestInvokeToolRecordsFailedHighRiskProviderAuditAndOperation(t *testing.T) {
+	secret := fakeGitHubPATForTest()
+	audit := &captureAuditRecorder{}
+	operations := &captureOperationRecorder{}
+	repo := &memoryGatewayRepository{}
+	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+		matrix: map[string][]string{
+			"developer": {appaccess.PermAIGatewayInvoke},
+		},
+	}), audit, repo)
+	service.SetOperationRecorder(operations)
+	service.SetCapabilityProviders(testCapabilityProvider{
+		tools: []domainaigateway.ToolCapability{
+			{Name: "custom.mutate", RiskLevel: domainaigateway.RiskLevelHigh, PermissionKeys: []string{appaccess.PermAIGatewayInvoke}},
+		},
+		invoke: func(context.Context, domainidentity.Principal, domainaigateway.ToolCapability, map[string]any) (any, map[string]any, error) {
+			return nil, map[string]any{"providerRequestId": "provider-1"}, fmt.Errorf("provider rejected token %s", secret)
+		},
+	})
+
+	_, err := service.InvokeTool(context.Background(), testPrincipal("developer"), domainaigateway.ToolInvocationRequest{
+		ToolName: "custom.mutate",
+		Input: map[string]any{
+			"clusterId": "cluster-a",
+			"namespace": "prod",
+			"action":    "restart",
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), secret) {
+		t.Fatalf("expected raw provider error to be returned to caller, got %v", err)
+	}
+	if len(audit.entries) != 1 || audit.entries[0].Result != "failure" {
+		t.Fatalf("expected failed generic audit entry, got %#v", audit.entries)
+	}
+	if len(repo.auditLogs) != 1 {
+		t.Fatalf("expected failed Gateway audit log, got %#v", repo.auditLogs)
+	}
+	gatewayAudit := repo.auditLogs[0]
+	if gatewayAudit.Result != "failure" || gatewayAudit.RiskLevel != domainaigateway.RiskLevelHigh {
+		t.Fatalf("expected failed high-risk Gateway audit log, got %#v", gatewayAudit)
+	}
+	if gatewayAudit.ResourceScope["clusterId"] != "cluster-a" || gatewayAudit.ResourceScope["namespace"] != "prod" {
+		t.Fatalf("expected Gateway audit scope, got %#v", gatewayAudit.ResourceScope)
+	}
+	if len(operations.entries) != 1 {
+		t.Fatalf("expected failed operation log, got %#v", operations.entries)
+	}
+	operation := operations.entries[0]
+	if operation.OperationType != "ai_gateway.tool.invoke" || operation.Result != "failure" {
+		t.Fatalf("expected failed AI Gateway operation log, got %#v", operation)
+	}
+	if operation.TargetScope["riskLevel"] != domainaigateway.RiskLevelHigh || operation.TargetScope["clusterId"] != "cluster-a" || operation.TargetScope["namespace"] != "prod" {
+		t.Fatalf("expected operation target scope, got %#v", operation.TargetScope)
+	}
+	for name, value := range map[string]any{
+		"generic audit": audit.entries,
+		"Gateway audit": repo.auditLogs,
+		"operation log": operations.entries,
+	} {
+		if text := fmt.Sprint(value); strings.Contains(text, secret) {
+			t.Fatalf("%s leaked raw provider secret: %s", name, text)
+		}
 	}
 }
 
@@ -5770,6 +5872,15 @@ func TestInvokeToolHoldsDeliveryActionWhenApprovalRequired(t *testing.T) {
 	if len(operations.entries) != 1 || operations.entries[0].Result != "pending_approval" {
 		t.Fatalf("expected pending approval operation log, got %#v", operations.entries)
 	}
+	if repo.auditLogs[0].Metadata["approvalRequestId"] != request.ID || repo.auditLogs[0].Metadata["approvalId"] != request.ID {
+		t.Fatalf("expected pending gateway audit to expose approval linkage, got %#v", repo.auditLogs[0].Metadata)
+	}
+	if operations.entries[0].Metadata["approvalRequestId"] != request.ID || operations.entries[0].Metadata["approvalId"] != request.ID {
+		t.Fatalf("expected pending operation log to expose approval linkage, got %#v", operations.entries[0].Metadata)
+	}
+	if operations.entries[0].Metadata["strategy"] != "require_approval" || operations.entries[0].Metadata["toolName"] != "delivery.actions.trigger" {
+		t.Fatalf("expected pending operation metadata to include approval context, got %#v", operations.entries[0].Metadata)
+	}
 }
 
 func TestApproveApprovalRequestExecutesThroughOwningService(t *testing.T) {
@@ -5830,6 +5941,33 @@ func TestApproveApprovalRequestExecutesThroughOwningService(t *testing.T) {
 	}
 	if len(operations.entries) < 4 {
 		t.Fatalf("expected pending, approve, tool execution, and execute operation logs, got %#v", operations.entries)
+	}
+	operationsByType := map[string]domainoperation.Entry{}
+	for _, entry := range operations.entries {
+		operationsByType[entry.OperationType+":"+entry.Result] = entry
+	}
+	for key, entry := range operationsByType {
+		if entry.Metadata["approvalRequestId"] != requestID || entry.Metadata["approvalId"] != requestID {
+			t.Fatalf("expected operation %s to expose approval linkage, got %#v", key, entry.Metadata)
+		}
+	}
+	if operationsByType["ai_gateway.approval.approve:approved"].TargetScope["approvalRequestId"] != requestID {
+		t.Fatalf("expected approval operation target scope linkage, got %#v", operationsByType["ai_gateway.approval.approve:approved"].TargetScope)
+	}
+	if operationsByType["ai_gateway.tool.invoke:success"].Metadata["workflowRunId"] != "workflow-1" || operationsByType["ai_gateway.approval.execute:executed"].Metadata["workflowRunId"] != "workflow-1" {
+		t.Fatalf("expected replay operation metadata to include workflow linkage, got %#v", operations.entries)
+	}
+	gatewayAuditsByAction := map[string]domainaigateway.AuditLog{}
+	for _, entry := range repo.auditLogs {
+		gatewayAuditsByAction[entry.Action+":"+entry.Result] = entry
+	}
+	for key, entry := range gatewayAuditsByAction {
+		if entry.Metadata["approvalRequestId"] != requestID || entry.Metadata["approvalId"] != requestID {
+			t.Fatalf("expected gateway audit %s to expose approval linkage, got %#v", key, entry.Metadata)
+		}
+	}
+	if gatewayAuditsByAction["ai_gateway.tool.invoke:success"].Metadata["workflowRunId"] != "workflow-1" || gatewayAuditsByAction["ai_gateway.approval.execute:executed"].Metadata["workflowRunId"] != "workflow-1" {
+		t.Fatalf("expected replay gateway audit metadata to include workflow linkage, got %#v", repo.auditLogs)
 	}
 }
 

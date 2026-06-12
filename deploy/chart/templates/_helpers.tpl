@@ -25,3 +25,31 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- define "soha.postgresServiceName" -}}
 {{- printf "%s-postgres" (include "soha.fullname" .) -}}
 {{- end -}}
+
+{{- define "soha.secretValue" -}}
+{{- $name := .name -}}
+{{- $value := trim (default "" .value) -}}
+{{- $existing := trim (default "" .existing) -}}
+{{- $candidate := $value -}}
+{{- if not $candidate -}}
+{{- $candidate = $existing -}}
+{{- end -}}
+{{- $lower := lower $candidate -}}
+{{- if or (eq $lower "change-me") (eq $lower "changeme") (eq $lower "dev-only-change-me") (eq $lower "demo-execution-runner-token") (eq $lower "dev-alert-webhook-token") (eq $lower "soha") (eq $lower "pgsql") (contains "replace-with" $lower) (contains "replace_with" $lower) (contains "placeholder" $lower) -}}
+{{- fail (printf "%s must not use a demo or placeholder value" $name) -}}
+{{- end -}}
+{{- if $candidate -}}
+{{- $candidate -}}
+{{- else -}}
+{{- randAlphaNum (default 48 .length) -}}
+{{- end -}}
+{{- end -}}
+
+{{- define "soha.requiredSecretValue" -}}
+{{- $name := .name -}}
+{{- $value := include "soha.secretValue" . -}}
+{{- if not (trim $value) -}}
+{{- fail (printf "%s is required" $name) -}}
+{{- end -}}
+{{- $value -}}
+{{- end -}}

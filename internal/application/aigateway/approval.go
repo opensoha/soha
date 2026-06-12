@@ -29,6 +29,9 @@ func (s *Service) holdToolInvocation(ctx context.Context, principal domainidenti
 	if decision.PolicyID != "" {
 		relatedIDs["policyId"] = decision.PolicyID
 	}
+	if decision.ApprovalPolicyRef != "" {
+		relatedIDs["approvalPolicyRef"] = decision.ApprovalPolicyRef
+	}
 	switch decision.Strategy {
 	case gatewayRiskRequireApproval:
 		relatedIDs["approvalRequestId"] = trackingID

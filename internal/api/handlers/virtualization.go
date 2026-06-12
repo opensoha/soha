@@ -770,6 +770,7 @@ func mapOperation(item domainvirtualization.Task) gin.H {
 		"completedAt":     item.FinishedAt,
 		"createdAt":       item.CreatedAt,
 		"updatedAt":       item.UpdatedAt,
+		"operationState":  item.OperationState,
 		"allowedActions":  operationAllowedActions(item),
 	}
 }

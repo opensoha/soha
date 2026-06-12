@@ -56,15 +56,83 @@ func (r *Repository) List(ctx context.Context, filter domainoperation.Filter) ([
 	if filter.Limit <= 0 {
 		filter.Limit = 50
 	}
+	var fromArg any
+	if filter.From != nil {
+		fromArg = *filter.From
+	}
+	var toArg any
+	if filter.To != nil {
+		toArg = *filter.To
+	}
 	rows, err := r.db.WithContext(ctx).Raw(`
 		SELECT id, actor_id, actor_name, operation_type, target_scope, result, summary, request_path,
 		       request_method, request_id, source_ip, metadata, created_at
 		FROM operation_logs
-		WHERE (? = '' OR operation_type = ?)
+		WHERE (? = '' OR actor_id = ?)
+		  AND (? = '' OR operation_type = ?)
+		  AND (? = '' OR target_scope::jsonb ->> 'clusterId' = ? OR target_scope::jsonb ->> 'clusterID' = ? OR target_scope::jsonb ->> 'cluster' = ?)
+		  AND (? = '' OR target_scope::jsonb ->> 'namespace' = ?)
+		  AND (? = '' OR target_scope::jsonb ->> 'resourceKind' = ? OR target_scope::jsonb ->> 'kind' = ?)
+		  AND (? = '' OR target_scope::jsonb ->> 'resourceName' = ? OR target_scope::jsonb ->> 'name' = ?)
 		  AND (? = '' OR result = ?)
+		  AND (? = '' OR request_id = ?)
+		  AND (? = '' OR request_path = ?)
+		  AND (? = '' OR request_method = ?)
+		  AND (? = '' OR source_ip = ?)
+		  AND (? = '' OR metadata::jsonb ->> 'approvalRequestId' = ? OR metadata::jsonb ->> 'approvalId' = ?)
+		  AND (? = '' OR metadata::jsonb ->> 'agentRunId' = ? OR metadata::jsonb ->> 'runId' = ? OR metadata::jsonb ->> 'externalRunId' = ?)
+		  AND (? = '' OR metadata::jsonb ->> 'rootCauseRunId' = ? OR metadata::jsonb ->> 'rootCauseId' = ?)
+		  AND (? = '' OR metadata::jsonb ->> ? = ?)
+		  AND (? IS NULL OR created_at >= ?)
+		  AND (? IS NULL OR created_at <= ?)
 		ORDER BY created_at DESC
 		LIMIT ?
-	`, filter.OperationType, filter.OperationType, filter.Result, filter.Result, filter.Limit).Rows()
+	`,
+		filter.ActorID,
+		filter.ActorID,
+		filter.OperationType,
+		filter.OperationType,
+		filter.ClusterID,
+		filter.ClusterID,
+		filter.ClusterID,
+		filter.ClusterID,
+		filter.Namespace,
+		filter.Namespace,
+		filter.ResourceKind,
+		filter.ResourceKind,
+		filter.ResourceKind,
+		filter.ResourceName,
+		filter.ResourceName,
+		filter.ResourceName,
+		filter.Result,
+		filter.Result,
+		filter.RequestID,
+		filter.RequestID,
+		filter.RequestPath,
+		filter.RequestPath,
+		filter.RequestMethod,
+		filter.RequestMethod,
+		filter.SourceIP,
+		filter.SourceIP,
+		filter.ApprovalRequestID,
+		filter.ApprovalRequestID,
+		filter.ApprovalRequestID,
+		filter.AgentRunID,
+		filter.AgentRunID,
+		filter.AgentRunID,
+		filter.AgentRunID,
+		filter.RootCauseRunID,
+		filter.RootCauseRunID,
+		filter.RootCauseRunID,
+		filter.MetadataKey,
+		filter.MetadataKey,
+		filter.MetadataValue,
+		fromArg,
+		fromArg,
+		toArg,
+		toArg,
+		filter.Limit,
+	).Rows()
 	if err != nil {
 		return nil, fmt.Errorf("query operation logs: %w", err)
 	}
@@ -79,6 +147,114 @@ func (r *Repository) List(ctx context.Context, filter domainoperation.Filter) ([
 		items = append(items, item)
 	}
 	return items, rows.Err()
+}
+
+func (r *Repository) Summary(ctx context.Context, filter domainoperation.Filter, retentionDays int) (domainoperation.Summary, error) {
+	if retentionDays <= 0 {
+		retentionDays = 90
+	}
+	cutoff := time.Now().UTC().AddDate(0, 0, -retentionDays)
+	var fromArg any
+	if filter.From != nil {
+		fromArg = *filter.From
+	}
+	var toArg any
+	if filter.To != nil {
+		toArg = *filter.To
+	}
+	row := r.db.WithContext(ctx).Raw(`
+		SELECT COUNT(*), MIN(created_at), MAX(created_at),
+			COUNT(*) FILTER (WHERE created_at < ?),
+			COUNT(*) FILTER (WHERE result = 'failure')
+		FROM operation_logs
+		WHERE (? = '' OR actor_id = ?)
+		  AND (? = '' OR operation_type = ?)
+		  AND (? = '' OR target_scope::jsonb ->> 'clusterId' = ? OR target_scope::jsonb ->> 'clusterID' = ? OR target_scope::jsonb ->> 'cluster' = ?)
+		  AND (? = '' OR target_scope::jsonb ->> 'namespace' = ?)
+		  AND (? = '' OR target_scope::jsonb ->> 'resourceKind' = ? OR target_scope::jsonb ->> 'kind' = ?)
+		  AND (? = '' OR target_scope::jsonb ->> 'resourceName' = ? OR target_scope::jsonb ->> 'name' = ?)
+		  AND (? = '' OR result = ?)
+		  AND (? = '' OR request_id = ?)
+		  AND (? = '' OR request_path = ?)
+		  AND (? = '' OR request_method = ?)
+		  AND (? = '' OR source_ip = ?)
+		  AND (? = '' OR metadata::jsonb ->> 'approvalRequestId' = ? OR metadata::jsonb ->> 'approvalId' = ?)
+		  AND (? = '' OR metadata::jsonb ->> 'agentRunId' = ? OR metadata::jsonb ->> 'runId' = ? OR metadata::jsonb ->> 'externalRunId' = ?)
+		  AND (? = '' OR metadata::jsonb ->> 'rootCauseRunId' = ? OR metadata::jsonb ->> 'rootCauseId' = ?)
+		  AND (? = '' OR metadata::jsonb ->> ? = ?)
+		  AND (? IS NULL OR created_at >= ?)
+		  AND (? IS NULL OR created_at <= ?)
+	`,
+		cutoff,
+		filter.ActorID,
+		filter.ActorID,
+		filter.OperationType,
+		filter.OperationType,
+		filter.ClusterID,
+		filter.ClusterID,
+		filter.ClusterID,
+		filter.ClusterID,
+		filter.Namespace,
+		filter.Namespace,
+		filter.ResourceKind,
+		filter.ResourceKind,
+		filter.ResourceKind,
+		filter.ResourceName,
+		filter.ResourceName,
+		filter.ResourceName,
+		filter.Result,
+		filter.Result,
+		filter.RequestID,
+		filter.RequestID,
+		filter.RequestPath,
+		filter.RequestPath,
+		filter.RequestMethod,
+		filter.RequestMethod,
+		filter.SourceIP,
+		filter.SourceIP,
+		filter.ApprovalRequestID,
+		filter.ApprovalRequestID,
+		filter.ApprovalRequestID,
+		filter.AgentRunID,
+		filter.AgentRunID,
+		filter.AgentRunID,
+		filter.AgentRunID,
+		filter.RootCauseRunID,
+		filter.RootCauseRunID,
+		filter.RootCauseRunID,
+		filter.MetadataKey,
+		filter.MetadataKey,
+		filter.MetadataValue,
+		fromArg,
+		fromArg,
+		toArg,
+		toArg,
+	).Row()
+	var summary domainoperation.Summary
+	var oldest sql.NullTime
+	var newest sql.NullTime
+	if err := row.Scan(&summary.Total, &oldest, &newest, &summary.ExpiredEntryCount, &summary.FailureCount); err != nil {
+		return domainoperation.Summary{}, fmt.Errorf("summarize operation logs: %w", err)
+	}
+	summary.RetentionDays = retentionDays
+	summary.RetentionCutoff = &cutoff
+	if oldest.Valid {
+		value := oldest.Time.UTC()
+		summary.OldestEntryAt = &value
+	}
+	if newest.Valid {
+		value := newest.Time.UTC()
+		summary.NewestEntryAt = &value
+	}
+	summary.ExportRecommended = summary.ExpiredEntryCount > 0 || summary.FailureCount > 0
+	if summary.ExpiredEntryCount > 0 {
+		summary.RecommendedNextAction = "export_then_purge_expired_operation_logs"
+	} else if summary.FailureCount > 0 {
+		summary.RecommendedNextAction = "inspect_failed_operations"
+	} else {
+		summary.RecommendedNextAction = "monitor_operation_window"
+	}
+	return summary, nil
 }
 
 func scanEntry(rows *sql.Rows) (domainoperation.Entry, error) {

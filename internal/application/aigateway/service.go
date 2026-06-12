@@ -159,6 +159,13 @@ func (s *Service) SetCapabilityProviders(providers ...CapabilityProvider) {
 	s.registry = newCapabilityRegistry(providers...)
 }
 
+func (s *Service) AddCapabilityProviders(providers ...CapabilityProvider) {
+	if s.registry == nil {
+		s.registry = newDefaultCapabilityRegistry()
+	}
+	s.registry.AddProviders(providers...)
+}
+
 func (s *Service) SetDeliveryServices(apps ApplicationService, delivery DeliveryService) {
 	s.apps = apps
 	s.delivery = delivery

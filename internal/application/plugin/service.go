@@ -463,7 +463,7 @@ func firstNonEmpty(values ...string) string {
 }
 
 func defaultMarketplace() []domainplugin.MarketplacePlugin {
-	manifest := domainplugin.PluginManifest{
+	k8sManifest := domainplugin.PluginManifest{
 		ID:          "opensoha.k8s-sre-pack",
 		Name:        "K8s SRE Pack",
 		Version:     "0.1.0",
@@ -483,15 +483,47 @@ func defaultMarketplace() []domainplugin.MarketplacePlugin {
 		},
 		Integrity: &domainplugin.PluginIntegrity{Status: "catalog"},
 	}
-	return []domainplugin.MarketplacePlugin{{
-		ID:        manifest.ID,
-		Name:      manifest.Name,
-		Version:   manifest.Version,
-		Publisher: manifest.Publisher,
-		Type:      manifest.Type,
-		Summary:   manifest.Description,
-		Source:    "marketplace:opensoha/k8s-sre-pack",
-		RiskLevel: "read",
-		Manifest:  manifest,
-	}}
+	feishuManifest := domainplugin.PluginManifest{
+		ID:          "opensoha.feishu",
+		Name:        "Feishu Connector",
+		Version:     "0.1.0",
+		Publisher:   "opensoha",
+		Type:        "connector",
+		Description: "Feishu connector runtime capability bundle for AI Gateway actions.",
+		Assets: &domainplugin.PluginAssetSnapshot{
+			Connectors: []string{"connectors/feishu/connector.manifest.json"},
+		},
+		Capabilities: &domainplugin.PluginCapabilityRequest{
+			Tools: []string{"feishu.message.send_text"},
+		},
+		Permissions: &domainplugin.PluginPermissionRequest{
+			Required: []string{appaccess.PermAIGatewayView, appaccess.PermAIGatewayInvoke},
+			Domain:   []string{"connector"},
+		},
+		Integrity: &domainplugin.PluginIntegrity{Status: "catalog"},
+	}
+	return []domainplugin.MarketplacePlugin{
+		{
+			ID:        k8sManifest.ID,
+			Name:      k8sManifest.Name,
+			Version:   k8sManifest.Version,
+			Publisher: k8sManifest.Publisher,
+			Type:      k8sManifest.Type,
+			Summary:   k8sManifest.Description,
+			Source:    "marketplace:opensoha/k8s-sre-pack",
+			RiskLevel: "read",
+			Manifest:  k8sManifest,
+		},
+		{
+			ID:        feishuManifest.ID,
+			Name:      feishuManifest.Name,
+			Version:   feishuManifest.Version,
+			Publisher: feishuManifest.Publisher,
+			Type:      feishuManifest.Type,
+			Summary:   feishuManifest.Description,
+			Source:    "marketplace:opensoha/feishu",
+			RiskLevel: "mutate",
+			Manifest:  feishuManifest,
+		},
+	}
 }

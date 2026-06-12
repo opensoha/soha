@@ -96,29 +96,9 @@ func (s *Service) recordApprovalDecisionAudit(ctx context.Context, principal dom
 		return nil
 	}
 	meta := requestctx.FromContext(ctx)
-	metadata := map[string]any{
-		"approvalRequestId": request.ID,
-		"toolName":          request.ToolName,
-		"riskLevel":         request.RiskLevel,
-		"strategy":          request.Strategy,
-		"policyId":          request.PolicyID,
-		"approvalPolicyRef": request.ApprovalPolicyRef,
-		"aiClientId":        request.AIClientID,
-		"skillId":           request.SkillID,
-		"relatedIds":        request.RelatedIDs,
-	}
+	metadata := gatewayApprovalRequestMetadata(request)
 	if s.operations != nil {
-		targetScope := map[string]any{
-			"module":            "ai-gateway",
-			"resourceKind":      "AIGatewayApprovalRequest",
-			"resourceName":      request.ID,
-			"approvalRequestId": request.ID,
-			"toolName":          request.ToolName,
-			"riskLevel":         request.RiskLevel,
-		}
-		for key, value := range request.ResourceScope {
-			targetScope[key] = value
-		}
+		targetScope := gatewayApprovalRequestTargetScope(request)
 		_ = s.operations.Record(ctx, operationentry.New(ctx, principal, action, targetScope, result, summary, metadata))
 	}
 	_ = s.recordGatewayApprovalAuditLog(ctx, principal, request, action, result, summary, meta)
@@ -142,6 +122,51 @@ func (s *Service) recordApprovalDecisionAudit(ctx context.Context, principal dom
 		Metadata:      metadata,
 	})
 }
+func gatewayApprovalRequestMetadata(request domainaigateway.ApprovalRequest) map[string]any {
+	metadata := map[string]any{
+		"approvalRequestId": request.ID,
+		"approvalId":        request.ID,
+		"approvalStatus":    request.Status,
+		"approvalStrategy":  request.Strategy,
+		"strategy":          request.Strategy,
+		"toolName":          request.ToolName,
+		"riskLevel":         request.RiskLevel,
+		"policyId":          request.PolicyID,
+		"approvalPolicyRef": request.ApprovalPolicyRef,
+		"aiClientId":        request.AIClientID,
+		"skillId":           request.SkillID,
+		"relatedIds":        request.RelatedIDs,
+	}
+	for key, value := range standardGatewayScope(request.ResourceScope, request.RelatedIDs) {
+		metadata[key] = value
+	}
+	for key, value := range standardGatewayScope(request.ToolInput, request.RelatedIDs) {
+		metadata[key] = value
+	}
+	for _, key := range []string{"workflowRunId", "workflowApprovalRequestId", "aiGatewayApprovalRequestId", "executionTaskId", "releaseBundleId"} {
+		if value := gatewayApprovalRelatedID(request.RelatedIDs, key); value != "" {
+			metadata[key] = value
+		}
+	}
+	return metadata
+}
+func gatewayApprovalRequestTargetScope(request domainaigateway.ApprovalRequest) map[string]any {
+	targetScope := map[string]any{
+		"module":            "ai-gateway",
+		"resourceKind":      "AIGatewayApprovalRequest",
+		"resourceName":      request.ID,
+		"approvalRequestId": request.ID,
+		"toolName":          request.ToolName,
+		"riskLevel":         request.RiskLevel,
+	}
+	for key, value := range request.ResourceScope {
+		targetScope[key] = value
+	}
+	for key, value := range standardGatewayScope(request.ToolInput, request.RelatedIDs) {
+		targetScope[key] = value
+	}
+	return targetScope
+}
 func (s *Service) recordGatewayApprovalAuditLog(ctx context.Context, principal domainidentity.Principal, request domainaigateway.ApprovalRequest, action, result, summary string, meta requestctx.Metadata) error {
 	if s == nil || s.repo == nil {
 		return nil
@@ -163,14 +188,8 @@ func (s *Service) recordGatewayApprovalAuditLog(ctx context.Context, principal d
 		Summary:       summary,
 		RequestID:     firstNonEmpty(request.RequestID, meta.RequestID),
 		SourceIP:      firstNonEmpty(request.SourceIP, meta.SourceIP),
-		Metadata: map[string]any{
-			"approvalRequestId": request.ID,
-			"strategy":          request.Strategy,
-			"policyId":          request.PolicyID,
-			"approvalPolicyRef": request.ApprovalPolicyRef,
-			"relatedIds":        request.RelatedIDs,
-		},
-		CreatedAt: time.Now().UTC(),
+		Metadata:      gatewayApprovalRequestMetadata(request),
+		CreatedAt:     time.Now().UTC(),
 	})
 }
 func (s *Service) recordApprovalTimeoutAudit(ctx context.Context, request domainaigateway.ApprovalRequest) error {
@@ -316,6 +335,7 @@ func (s *Service) recordToolAuditWithMetadata(ctx context.Context, principal dom
 	if s == nil {
 		return nil
 	}
+	summary = sanitizeGatewayAuditSummary(summary)
 	meta := requestctx.FromContext(ctx)
 	_ = s.recordGatewayToolAuditLog(ctx, principal, input, tool, result, summary, relatedIDs, meta, redactionSummary, usageSummary)
 	_ = s.recordToolOperation(ctx, principal, input, tool, result, summary, relatedIDs, redactionSummary, usageSummary)
@@ -333,6 +353,7 @@ func (s *Service) recordToolAuditWithMetadata(ctx context.Context, principal dom
 		"requiresApproval": tool.RequiresApproval,
 		"relatedIds":       relatedIDs,
 	}
+	addGatewayApprovalLinkMetadata(metadata, relatedIDs)
 	addGatewayRedactionAuditMetadata(metadata, redactionSummary)
 	addGatewayUsageAuditMetadata(metadata, usageSummary)
 	return s.audit.Record(ctx, domainaudit.Entry{
@@ -350,6 +371,15 @@ func (s *Service) recordToolAuditWithMetadata(ctx context.Context, principal dom
 		RequestID:     firstNonEmpty(input.RequestID, meta.RequestID),
 		SourceIP:      meta.SourceIP,
 		Metadata:      metadata,
+	})
+}
+func sanitizeGatewayAuditSummary(summary string) string {
+	if strings.TrimSpace(summary) == "" {
+		return summary
+	}
+	return gatewayRedactSensitiveTextWithRule(summary, gatewayRedactionRule{
+		SecretTypes: []string{"default"},
+		Replacement: "[REDACTED]",
 	})
 }
 func (s *Service) recordToolOperation(ctx context.Context, principal domainidentity.Principal, input domainaigateway.ToolInvocationRequest, tool domainaigateway.ToolCapability, result, summary string, relatedIDs map[string]any, redactionSummary gatewayRedactionAuditSummary, usageSummary map[string]any) error {
@@ -374,6 +404,7 @@ func (s *Service) recordToolOperation(ctx context.Context, principal domainident
 		"requiresApproval": tool.RequiresApproval,
 		"relatedIds":       relatedIDs,
 	}
+	addGatewayApprovalLinkMetadata(metadata, relatedIDs)
 	addGatewayRedactionAuditMetadata(metadata, redactionSummary)
 	addGatewayUsageAuditMetadata(metadata, usageSummary)
 	return s.operations.Record(ctx, operationentry.New(
@@ -409,6 +440,7 @@ func (s *Service) recordGatewayToolAuditLog(ctx context.Context, principal domai
 		"requiresApproval": tool.RequiresApproval,
 		"relatedIds":       relatedIDs,
 	}
+	addGatewayApprovalLinkMetadata(metadata, relatedIDs)
 	addGatewayRedactionAuditMetadata(metadata, redactionSummary)
 	addGatewayUsageAuditMetadata(metadata, usageSummary)
 	item := domainaigateway.AuditLog{
@@ -444,6 +476,37 @@ func addGatewayUsageAuditMetadata(metadata map[string]any, usage map[string]any)
 	}
 	metadata["providerUsage"] = usage
 	metadata["usage"] = usage
+}
+func addGatewayApprovalLinkMetadata(metadata map[string]any, relatedIDs map[string]any) {
+	if metadata == nil || len(relatedIDs) == 0 {
+		return
+	}
+	for _, key := range []string{
+		"approvalRequestId",
+		"approvalId",
+		"policyId",
+		"approvalPolicyRef",
+		"strategy",
+		"workflowRunId",
+		"workflowApprovalRequestId",
+		"aiGatewayApprovalRequestId",
+		"executionTaskId",
+		"releaseBundleId",
+	} {
+		if value := firstMapString(relatedIDs, key); value != "" {
+			metadata[key] = value
+		}
+	}
+	if value := firstMapString(mapValue(relatedIDs["relatedIds"]), "approvalRequestId", "approvalId"); value != "" {
+		if _, exists := metadata["approvalRequestId"]; !exists {
+			metadata["approvalRequestId"] = value
+		}
+	}
+	if value := firstMapString(metadata, "approvalRequestId"); value != "" {
+		if _, exists := metadata["approvalId"]; !exists {
+			metadata["approvalId"] = value
+		}
+	}
 }
 func gatewayAuditScope(input map[string]any, relatedIDs map[string]any) map[string]any {
 	scope := map[string]any{}

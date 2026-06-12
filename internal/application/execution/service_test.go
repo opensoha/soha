@@ -7,8 +7,10 @@ import (
 	"testing"
 	"time"
 
+	appaccess "github.com/opensoha/soha/internal/application/access"
 	domainbuild "github.com/opensoha/soha/internal/domain/build"
 	domaindelivery "github.com/opensoha/soha/internal/domain/delivery"
+	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainrelease "github.com/opensoha/soha/internal/domain/release"
 )
 
@@ -136,6 +138,9 @@ func TestRecordCallbackRefreshesHeartbeatAndPersistsLogs(t *testing.T) {
 	}
 	if updated.Status != "running" {
 		t.Fatalf("status = %q, want running", updated.Status)
+	}
+	if updated.OperationState == nil || updated.OperationState.Phase != "running" || !updated.OperationState.Cancelable {
+		t.Fatalf("operation state was not attached to running callback: %#v", updated.OperationState)
 	}
 	if updated.StartedAt == nil {
 		t.Fatalf("started timestamp was not set")
@@ -327,6 +332,9 @@ func TestCancelExecutionTaskBackfillsBuildAndRejectsLateCallback(t *testing.T) {
 	if canceled.Status != "canceled" {
 		t.Fatalf("status = %q, want canceled", canceled.Status)
 	}
+	if canceled.OperationState == nil || !canceled.OperationState.Terminal || !canceled.OperationState.Retryable || canceled.OperationState.FailureMessage != "operator stopped it" {
+		t.Fatalf("unexpected canceled operation state: %#v", canceled.OperationState)
+	}
 	if repo.bundles["bundle-1"].Status != "failed" {
 		t.Fatalf("bundle status = %q, want failed", repo.bundles["bundle-1"].Status)
 	}
@@ -403,6 +411,9 @@ func TestRecoverStaleTasksTimesOutAndBackfillsRelease(t *testing.T) {
 	if task.FinishedAt == nil {
 		t.Fatalf("timeout did not set finished timestamp")
 	}
+	if task.OperationState != nil {
+		t.Fatalf("stored repository task should not keep derived operation state: %#v", task.OperationState)
+	}
 	if repo.bundles["bundle-1"].Status != "failed" {
 		t.Fatalf("bundle status = %q, want failed", repo.bundles["bundle-1"].Status)
 	}
@@ -415,6 +426,45 @@ func TestRecoverStaleTasksTimesOutAndBackfillsRelease(t *testing.T) {
 	}
 	if !repo.hasLogContaining("timed out") {
 		t.Fatalf("timeout log was not recorded")
+	}
+}
+
+func TestListAndGetExecutionTasksAttachOperationState(t *testing.T) {
+	repo := newExecutionRepoFake()
+	now := time.Date(2026, 6, 4, 10, 30, 0, 0, time.UTC)
+	repo.tasks["task-1"] = domaindelivery.ExecutionTask{
+		ID:             "task-1",
+		ApplicationID:  "app-1",
+		TaskKind:       "build",
+		ProviderKind:   "ci_agent_runner",
+		Status:         "failed",
+		TimeoutSeconds: 300,
+		Result:         map[string]any{"error": "build failed"},
+		CreatedAt:      now.Add(-time.Minute),
+		UpdatedAt:      now,
+	}
+	permissions := appaccess.NewPermissionResolver(stubRolePermissionReader{
+		matrix: map[string][]string{
+			"developer": {appaccess.PermDeliveryWorkflowsView},
+		},
+	})
+	service := New(repo, nil, nil, nil, "", "", "", "", 0, "", permissions)
+	principal := domainidentity.Principal{Roles: []string{"developer"}}
+
+	listed, err := service.ListExecutionTasks(context.Background(), principal, domaindelivery.ExecutionTaskFilter{})
+	if err != nil {
+		t.Fatalf("ListExecutionTasks() error = %v", err)
+	}
+	if len(listed) != 1 || listed[0].OperationState == nil || listed[0].OperationState.Phase != "failed" || !listed[0].OperationState.Retryable {
+		t.Fatalf("listed task missing operation state: %#v", listed)
+	}
+
+	got, err := service.GetExecutionTask(context.Background(), principal, "task-1")
+	if err != nil {
+		t.Fatalf("GetExecutionTask() error = %v", err)
+	}
+	if got.OperationState == nil || got.OperationState.FailureMessage != "build failed" {
+		t.Fatalf("got task missing failure operation state: %#v", got.OperationState)
 	}
 }
 
@@ -460,6 +510,39 @@ func TestRetryExecutionTaskRotatesCallbackTokenAndQueuesRunnerTask(t *testing.T)
 	}
 	if !repo.hasLogContaining("waiting for runner claim") {
 		t.Fatalf("runner queue log was not recorded")
+	}
+}
+
+func TestStartBuildExecutionMarksDisabledK8sJobRunnerFailed(t *testing.T) {
+	repo := newExecutionRepoFake()
+	service := New(repo, nil, nil, nil, "", "", "", "", 0, "", nil)
+
+	bundle, task, err := service.StartBuildExecution(context.Background(), BuildPlan{
+		ApplicationID:            "app-1",
+		ApplicationEnvironmentID: "env-1",
+		Version:                  "v1",
+		ProviderKind:             "k8s_job_runner",
+		Metadata: map[string]any{
+			"commands": []string{"echo build"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("StartBuildExecution() error = %v", err)
+	}
+	if task.Status != "failed" {
+		t.Fatalf("task status = %q, want failed", task.Status)
+	}
+	if task.Result["failureReason"] != "provider_disabled" || task.Result["providerDisabled"] != true {
+		t.Fatalf("task disabled metadata = %#v", task.Result)
+	}
+	if !strings.Contains(fmt.Sprint(task.Result["error"]), "Kubernetes cluster manager is not configured") {
+		t.Fatalf("task error = %#v", task.Result["error"])
+	}
+	if repo.bundles[bundle.ID].Status != "failed" {
+		t.Fatalf("bundle status = %q, want failed", repo.bundles[bundle.ID].Status)
+	}
+	if !repo.hasLogContaining("provider is disabled") {
+		t.Fatalf("provider disabled log was not recorded: %#v", repo.logs)
 	}
 }
 
@@ -681,4 +764,12 @@ func (r *releaseRecordRepoFake) Update(_ context.Context, item domainrelease.Rec
 	}
 	r.updates = append(r.updates, item)
 	return item, nil
+}
+
+type stubRolePermissionReader struct {
+	matrix map[string][]string
+}
+
+func (s stubRolePermissionReader) ListRolePermissions(context.Context) (map[string][]string, error) {
+	return s.matrix, nil
 }

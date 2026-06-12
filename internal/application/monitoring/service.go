@@ -12,6 +12,7 @@ import (
 	appaccess "github.com/opensoha/soha/internal/application/access"
 	domainalert "github.com/opensoha/soha/internal/domain/alert"
 	domainevent "github.com/opensoha/soha/internal/domain/event"
+	domaingovernance "github.com/opensoha/soha/internal/domain/governance"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 )
@@ -123,6 +124,19 @@ func (s *Service) SetDataSourceRepository(dataSources DataSourceRepository) {
 
 func (s *Service) SetWorkflowExecutor(workflow WorkflowExecutor) {
 	s.workflow = workflow
+}
+
+func (s *Service) RecordGovernanceAlert(ctx context.Context, input domaingovernance.AlertInput) error {
+	if s.repo == nil {
+		return nil
+	}
+	event := governanceAlertEventInput(input)
+	item, err := s.repo.CreateEvent(ctx, event)
+	if err != nil {
+		return err
+	}
+	_, _ = s.fanOutEvent(ctx, item)
+	return nil
 }
 
 func (s *Service) Summary(ctx context.Context, principal domainidentity.Principal) (domainalert.Summary, error) {

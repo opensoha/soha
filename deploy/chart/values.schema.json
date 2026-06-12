@@ -1,0 +1,201 @@
+{
+  "$schema": "http://json-schema.org/schema#",
+  "type": "object",
+  "properties": {
+    "postgres": {
+      "type": "object",
+      "properties": {
+        "password": {
+          "$ref": "#/definitions/generatedSecret"
+        }
+      }
+    },
+    "config": {
+      "type": "object",
+      "properties": {
+        "runtime": {
+          "type": "object",
+          "properties": {
+            "executionRunnerToken": {
+              "$ref": "#/definitions/generatedLongSecret"
+            }
+          }
+        },
+        "auth": {
+          "type": "object",
+          "properties": {
+            "adminPassword": {
+              "$ref": "#/definitions/generatedSecret"
+            },
+            "jwtSecret": {
+              "$ref": "#/definitions/generatedLongSecret"
+            }
+          }
+        },
+        "monitoring": {
+          "type": "object",
+          "properties": {
+            "webhookToken": {
+              "$ref": "#/definitions/generatedLongSecret"
+            }
+          }
+        },
+        "modules": {
+          "type": "object",
+          "properties": {
+            "virtualization": {
+              "type": "object",
+              "properties": {
+                "enabled": {
+                  "type": "boolean"
+                }
+              }
+            }
+          }
+        },
+        "security": {
+          "type": "object",
+          "properties": {
+            "credentialEncryptionKey": {
+              "$ref": "#/definitions/optionalCredentialKey"
+            }
+          }
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "config": {
+            "properties": {
+              "modules": {
+                "properties": {
+                  "virtualization": {
+                    "properties": {
+                      "enabled": {
+                        "const": true
+                      }
+                    },
+                    "required": ["enabled"]
+                  }
+                },
+                "required": ["virtualization"]
+              }
+            },
+            "required": ["modules"]
+          }
+        },
+        "required": ["config"]
+      },
+      "then": {
+        "properties": {
+          "config": {
+            "properties": {
+              "security": {
+                "properties": {
+                  "credentialEncryptionKey": {
+                    "$ref": "#/definitions/requiredCredentialKey"
+                  }
+                },
+                "required": ["credentialEncryptionKey"]
+              }
+            },
+            "required": ["security"]
+          }
+        }
+      }
+    }
+  ],
+  "definitions": {
+    "generatedSecret": {
+      "type": "string",
+      "oneOf": [
+        {
+          "const": ""
+        },
+        {
+          "allOf": [
+            {
+              "minLength": 12
+            },
+            {
+              "$ref": "#/definitions/notPlaceholder"
+            }
+          ]
+        }
+      ]
+    },
+    "generatedLongSecret": {
+      "type": "string",
+      "oneOf": [
+        {
+          "const": ""
+        },
+        {
+          "allOf": [
+            {
+              "minLength": 32
+            },
+            {
+              "$ref": "#/definitions/notPlaceholder"
+            }
+          ]
+        }
+      ]
+    },
+    "optionalCredentialKey": {
+      "type": "string",
+      "oneOf": [
+        {
+          "const": ""
+        },
+        {
+          "allOf": [
+            {
+              "minLength": 32
+            },
+            {
+              "$ref": "#/definitions/notPlaceholder"
+            }
+          ]
+        }
+      ]
+    },
+    "requiredCredentialKey": {
+      "type": "string",
+      "allOf": [
+        {
+          "minLength": 32
+        },
+        {
+          "$ref": "#/definitions/notPlaceholder"
+        }
+      ]
+    },
+    "notPlaceholder": {
+      "not": {
+        "anyOf": [
+          {
+            "enum": [
+              "change-me",
+              "changeme",
+              "dev-only-change-me",
+              "demo-execution-runner-token",
+              "dev-alert-webhook-token",
+              "soha",
+              "pgsql"
+            ]
+          },
+          {
+            "pattern": "(?i)replace[-_]?with"
+          },
+          {
+            "pattern": "(?i)placeholder"
+          }
+        ]
+      }
+    }
+  }
+}

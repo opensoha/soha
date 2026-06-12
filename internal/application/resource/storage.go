@@ -62,7 +62,7 @@ func (s *Service) GetPersistentVolumeClaimDetail(ctx context.Context, principal 
 		return domainresource.PersistentVolumeClaimDetailView{}, err
 	}
 	if connection.Summary.ConnectionMode == domaincluster.ConnectionModeAgent {
-		return domainresource.PersistentVolumeClaimDetailView{}, fmt.Errorf("%w: persistentvolumeclaim detail is not supported for agent-connected clusters yet", apperrors.ErrInvalidArgument)
+		return domainresource.PersistentVolumeClaimDetailView{}, unsupportedAgentOperation("persistentvolumeclaim detail is not supported for agent-connected clusters yet")
 	}
 	rawItem, err := s.getDirectPersistentVolumeClaim(ctx, clusterID, namespace, name)
 	if err != nil {
@@ -114,7 +114,7 @@ func (s *Service) GetPersistentVolumeDetail(ctx context.Context, principal domai
 		return domainresource.PersistentVolumeDetailView{}, err
 	}
 	if connection.Summary.ConnectionMode == domaincluster.ConnectionModeAgent {
-		return domainresource.PersistentVolumeDetailView{}, fmt.Errorf("%w: persistentvolume detail is not supported for agent-connected clusters yet", apperrors.ErrInvalidArgument)
+		return domainresource.PersistentVolumeDetailView{}, unsupportedAgentOperation("persistentvolume detail is not supported for agent-connected clusters yet")
 	}
 	rawItem, err := s.getDirectPersistentVolume(ctx, clusterID, name)
 	if err != nil {
@@ -166,7 +166,7 @@ func (s *Service) GetStorageClassDetail(ctx context.Context, principal domainide
 		return domainresource.StorageClassDetailView{}, err
 	}
 	if connection.Summary.ConnectionMode == domaincluster.ConnectionModeAgent {
-		return domainresource.StorageClassDetailView{}, fmt.Errorf("%w: storageclass detail is not supported for agent-connected clusters yet", apperrors.ErrInvalidArgument)
+		return domainresource.StorageClassDetailView{}, unsupportedAgentOperation("storageclass detail is not supported for agent-connected clusters yet")
 	}
 	rawItem, err := s.getDirectStorageClass(ctx, clusterID, name)
 	if err != nil {

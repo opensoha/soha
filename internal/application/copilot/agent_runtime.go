@@ -52,7 +52,7 @@ func (s *Service) ListAgentRuns(ctx context.Context, principal domainidentity.Pr
 	for index := range items {
 		items[index].CallbackToken = ""
 	}
-	return items, nil
+	return domaincopilot.WithOperationStates(items, time.Now().UTC()), nil
 }
 
 func (s *Service) ClaimAgentRun(ctx context.Context, input domaincopilot.AgentRunClaimInput) (domaincopilot.AgentRun, error) {
@@ -63,7 +63,11 @@ func (s *Service) ClaimAgentRun(ctx context.Context, input domaincopilot.AgentRu
 		input.ProviderIDs = []string{agentProviderHermes}
 		input.Kinds = []string{agentProviderHermes}
 	}
-	return s.repo.ClaimAgentRun(ctx, input)
+	run, err := s.repo.ClaimAgentRun(ctx, input)
+	if err != nil {
+		return domaincopilot.AgentRun{}, err
+	}
+	return domaincopilot.WithOperationState(run, time.Now().UTC()), nil
 }
 
 func (s *Service) RecordAgentRunCallback(ctx context.Context, input domaincopilot.AgentRunCallbackInput) (domaincopilot.AgentRun, error) {
@@ -103,7 +107,32 @@ func (s *Service) RecordAgentRunCallback(ctx context.Context, input domaincopilo
 			_ = s.persistAgentRunMessage(ctx, updated)
 		}
 	}
-	return updated, nil
+	return domaincopilot.WithOperationState(updated, time.Now().UTC()), nil
+}
+
+func (s *Service) CancelAgentRun(ctx context.Context, principal domainidentity.Principal, runID string) (domaincopilot.AgentRun, error) {
+	if err := s.authorizePrincipal(ctx, principal, appaccess.PermObserveAIChatUse); err != nil {
+		return domaincopilot.AgentRun{}, err
+	}
+	runID = strings.TrimSpace(runID)
+	if runID == "" {
+		return domaincopilot.AgentRun{}, fmt.Errorf("%w: runId is required", aperrors.ErrInvalidArgument)
+	}
+	canceled, err := s.repo.CancelAgentRun(ctx, domaincopilot.AgentRunCancelInput{
+		RunID:       runID,
+		RequestedBy: firstNonEmpty(principal.UserID, principal.UserName, "unknown"),
+		Reason:      "canceled by user",
+	})
+	if err != nil {
+		return domaincopilot.AgentRun{}, err
+	}
+	if strings.TrimSpace(canceled.RootCauseRunID) != "" {
+		_ = s.persistAgentRunRootCauseResult(ctx, canceled)
+	}
+	if strings.TrimSpace(canceled.SessionID) != "" {
+		_ = s.persistAgentRunMessage(ctx, canceled)
+	}
+	return domaincopilot.WithOperationState(canceled, time.Now().UTC()), nil
 }
 
 func (s *Service) RecordAgentToolCall(ctx context.Context, input domaincopilot.AgentToolCallInput) (domaincopilot.AgentToolCallResult, error) {
@@ -235,7 +264,7 @@ func agentRunCallbackProducesArtifact(status string) bool {
 
 func agentRunCallbackShouldPersistMessage(status string) bool {
 	switch strings.ToLower(strings.TrimSpace(status)) {
-	case domaincopilot.AgentRunStatusCompleted, domaincopilot.AgentRunStatusFailed, domaincopilot.AgentRunStatusCallbackTimeout:
+	case domaincopilot.AgentRunStatusCompleted, domaincopilot.AgentRunStatusFailed, domaincopilot.AgentRunStatusCanceled, domaincopilot.AgentRunStatusCallbackTimeout:
 		return true
 	default:
 		return false
@@ -1757,7 +1786,11 @@ func (s *Service) createAgentRun(ctx context.Context, principal domainidentity.P
 	if run.CreatedBy == "" {
 		run.CreatedBy = automationRootCauseCreatedBy
 	}
-	return s.repo.CreateAgentRun(ctx, run)
+	created, err := s.repo.CreateAgentRun(ctx, run)
+	if err != nil {
+		return domaincopilot.AgentRun{}, err
+	}
+	return domaincopilot.WithOperationState(created, time.Now().UTC()), nil
 }
 
 func (s *Service) RecordGatewayAnalysisArtifact(ctx context.Context, principal domainidentity.Principal, input domaincopilot.GatewayAnalysisArtifactInput) (domaincopilot.AgentRun, error) {
@@ -1820,7 +1853,11 @@ func (s *Service) RecordGatewayAnalysisArtifact(ctx context.Context, principal d
 		CreatedAt:         now,
 		UpdatedAt:         now,
 	}
-	return s.repo.CreateAgentRun(ctx, run)
+	created, err := s.repo.CreateAgentRun(ctx, run)
+	if err != nil {
+		return domaincopilot.AgentRun{}, err
+	}
+	return domaincopilot.WithOperationState(created, time.Now().UTC()), nil
 }
 
 func (s *Service) QueueGatewayAnalysisAgentRun(ctx context.Context, principal domainidentity.Principal, input domaincopilot.GatewayAnalysisAgentRunInput) (domaincopilot.AgentRun, error) {

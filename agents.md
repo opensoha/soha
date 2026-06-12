@@ -399,6 +399,7 @@ The repository has already converged on these rules:
 - identity bootstrap baseline is a single `admin / soha` seed from `auth.dev_principal`; legacy bootstrap migration and login fallback are removed
 - PostgreSQL bootstrap schema is now consolidated into `migrations/postgres/0001_init.sql`; duplicate legacy root migration mirrors are migration debt and should stay removed
 - deployment assets pin PostgreSQL 18.4; compose, raw Kubernetes, and Helm must mount persistent data at `/var/lib/postgresql` because the official image stores the default `PGDATA` below `/var/lib/postgresql/18/docker`
+- local `make init-cluster`/`make dev` startup must tolerate stale Docker network endpoints left after interrupted k3s container creation; clean only the orphaned `soha-k3s` endpoint when the container itself is absent
 - built-in bootstrap defaults should be version-gated: first-time initialization and seed-version upgrades replay static roles/menus/policies/templates, while config-driven admin user and cluster sync stay as separate startup work
 - pod detail is now expected to be an operational workspace, not only a static detail page
 - workload list pages should support search/filter first, then batch action surfaces where backend capability already exists

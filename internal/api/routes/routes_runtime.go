@@ -95,6 +95,7 @@ func registerCopilotRoutes(protected gin.IRoutes, cfg cfgpkg.Config, deps Depend
 	protected.GET("/copilot/workbench/catalog", deps.Copilot.GetWorkbenchCatalog)
 	protected.GET("/copilot/agent-providers", deps.Copilot.ListAgentProviders)
 	protected.GET("/copilot/agent-runs", deps.Copilot.ListAgentRuns)
+	protected.POST("/copilot/agent-runs/:runID/cancel", deps.Copilot.CancelAgentRun)
 	protected.GET("/copilot/data-source-capabilities", deps.Copilot.ListDataSourceCapabilities)
 	protected.GET("/copilot/data-sources", deps.Copilot.ListDataSources)
 	protected.POST("/copilot/data-sources", deps.Copilot.CreateDataSource)

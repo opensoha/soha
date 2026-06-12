@@ -2,6 +2,8 @@ package delivery
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"time"
 
 	domainapp "github.com/opensoha/soha/internal/domain/application"
@@ -160,6 +162,7 @@ type ExecutionTask struct {
 	StopTransport            string              `json:"stopTransport,omitempty"`
 	Payload                  map[string]any      `json:"payload,omitempty"`
 	Result                   map[string]any      `json:"result,omitempty"`
+	OperationState           *OperationState     `json:"operationState,omitempty" gorm:"-"`
 	Artifacts                []ExecutionArtifact `json:"artifacts,omitempty"`
 	StartedAt                *time.Time          `json:"startedAt,omitempty"`
 	LastHeartbeatAt          *time.Time          `json:"lastHeartbeatAt,omitempty"`
@@ -169,6 +172,26 @@ type ExecutionTask struct {
 	UpdatedAt                time.Time           `json:"updatedAt"`
 }
 
+type OperationState struct {
+	Phase                  string    `json:"phase"`
+	Status                 string    `json:"status"`
+	Terminal               bool      `json:"terminal"`
+	Cancelable             bool      `json:"cancelable"`
+	Retryable              bool      `json:"retryable"`
+	HeartbeatRequired      bool      `json:"heartbeatRequired"`
+	TimeoutSeconds         int       `json:"timeoutSeconds"`
+	HeartbeatStale         bool      `json:"heartbeatStale"`
+	LastHeartbeatAt        time.Time `json:"lastHeartbeatAt,omitempty"`
+	NextHeartbeatDeadline  time.Time `json:"nextHeartbeatDeadline,omitempty"`
+	FailureReason          string    `json:"failureReason,omitempty"`
+	FailureMessage         string    `json:"failureMessage,omitempty"`
+	FinalStateRecordedAt   time.Time `json:"finalStateRecordedAt,omitempty"`
+	LastRuntimeSeenAt      time.Time `json:"lastRuntimeSeenAt,omitempty"`
+	ClaimedByAgentID       string    `json:"claimedByAgentId,omitempty"`
+	RuntimeEndpointPresent bool      `json:"runtimeEndpointPresent"`
+	RecommendedNextAction  string    `json:"recommendedNextAction,omitempty"`
+}
+
 type ExecutionTaskFilter struct {
 	ApplicationID            string
 	ApplicationEnvironmentID string
@@ -176,6 +199,146 @@ type ExecutionTaskFilter struct {
 	Status                   string
 	ProviderKind             string
 	Limit                    int
+}
+
+const defaultOperationTimeoutSeconds = 300
+
+func WithOperationState(task ExecutionTask, now time.Time) ExecutionTask {
+	task.OperationState = BuildOperationState(task, now)
+	return task
+}
+
+func WithOperationStates(tasks []ExecutionTask, now time.Time) []ExecutionTask {
+	out := make([]ExecutionTask, len(tasks))
+	for index, task := range tasks {
+		out[index] = WithOperationState(task, now)
+	}
+	return out
+}
+
+func BuildOperationState(task ExecutionTask, now time.Time) *OperationState {
+	status := strings.TrimSpace(task.Status)
+	timeoutSeconds := task.TimeoutSeconds
+	if timeoutSeconds <= 0 {
+		timeoutSeconds = defaultOperationTimeoutSeconds
+	}
+	terminal := operationStatusTerminal(status)
+	heartbeatRequired := status == "dispatching" || status == "running"
+	heartbeatReference := operationHeartbeatReference(task)
+	nextDeadline := time.Time{}
+	heartbeatStale := false
+	if heartbeatRequired {
+		nextDeadline = heartbeatReference.Add(time.Duration(timeoutSeconds) * time.Second)
+		heartbeatStale = now.After(nextDeadline)
+	}
+
+	state := &OperationState{
+		Phase:                 operationPhase(status),
+		Status:                status,
+		Terminal:              terminal,
+		Cancelable:            status == "queued" || status == "dispatching" || status == "running",
+		Retryable:             status == "failed" || status == "callback_timeout" || status == "canceled",
+		HeartbeatRequired:     heartbeatRequired,
+		TimeoutSeconds:        timeoutSeconds,
+		HeartbeatStale:        heartbeatStale,
+		RecommendedNextAction: operationRecommendedNextAction(status, heartbeatStale),
+	}
+	state.RuntimeEndpointPresent = strings.TrimSpace(task.RuntimeEndpoint) != ""
+	if !state.RuntimeEndpointPresent {
+		if value, ok := task.Result["runtimeEndpoint"]; ok {
+			runtimeEndpoint := strings.TrimSpace(fmt.Sprint(value))
+			state.RuntimeEndpointPresent = runtimeEndpoint != "" && runtimeEndpoint != "<nil>"
+		}
+	}
+	if task.LastHeartbeatAt != nil && !task.LastHeartbeatAt.IsZero() {
+		state.LastHeartbeatAt = task.LastHeartbeatAt.UTC()
+	}
+	if !nextDeadline.IsZero() {
+		state.NextHeartbeatDeadline = nextDeadline.UTC()
+	}
+	if task.FinishedAt != nil && !task.FinishedAt.IsZero() {
+		state.FinalStateRecordedAt = task.FinishedAt.UTC()
+	}
+	if task.LastRuntimeSeenAt != nil && !task.LastRuntimeSeenAt.IsZero() {
+		state.LastRuntimeSeenAt = task.LastRuntimeSeenAt.UTC()
+	}
+	state.ClaimedByAgentID = strings.TrimSpace(task.ClaimedByAgentID)
+	if terminal && status != "completed" {
+		state.FailureReason = firstNonEmptyResultString(task.Result, "failureReason", "reason")
+		if state.FailureReason == "" {
+			state.FailureReason = status
+		}
+		state.FailureMessage = firstNonEmptyResultString(task.Result, "error", "message", "cancelReason")
+	}
+	return state
+}
+
+func operationHeartbeatReference(task ExecutionTask) time.Time {
+	if task.LastHeartbeatAt != nil && !task.LastHeartbeatAt.IsZero() {
+		return task.LastHeartbeatAt.UTC()
+	}
+	if task.StartedAt != nil && !task.StartedAt.IsZero() {
+		return task.StartedAt.UTC()
+	}
+	return task.CreatedAt.UTC()
+}
+
+func operationStatusTerminal(status string) bool {
+	switch strings.TrimSpace(status) {
+	case "completed", "failed", "canceled", "callback_timeout":
+		return true
+	default:
+		return false
+	}
+}
+
+func operationPhase(status string) string {
+	switch strings.TrimSpace(status) {
+	case "queued":
+		return "pending"
+	case "dispatching":
+		return "dispatching"
+	case "running":
+		return "running"
+	case "completed":
+		return "succeeded"
+	case "failed", "callback_timeout":
+		return "failed"
+	case "canceled":
+		return "canceled"
+	default:
+		return "unknown"
+	}
+}
+
+func operationRecommendedNextAction(status string, heartbeatStale bool) string {
+	switch strings.TrimSpace(status) {
+	case "queued":
+		return "wait_for_runner_claim"
+	case "dispatching", "running":
+		if heartbeatStale {
+			return "inspect_runtime_or_cancel"
+		}
+		return "wait_for_heartbeat"
+	case "failed", "callback_timeout":
+		return "inspect_failure_or_retry"
+	case "canceled":
+		return "retry_or_close"
+	case "completed":
+		return "inspect_artifacts"
+	default:
+		return "inspect_status"
+	}
+}
+
+func firstNonEmptyResultString(result map[string]any, keys ...string) string {
+	for _, key := range keys {
+		value := strings.TrimSpace(fmt.Sprint(result[key]))
+		if value != "" && value != "<nil>" {
+			return value
+		}
+	}
+	return ""
 }
 
 type ExecutionLog struct {

@@ -58,6 +58,15 @@ func (h *PlatformHandler) DescribeCluster(c *gin.Context) {
 	}
 	apiresponse.Item(c, http.StatusOK, item)
 }
+func (h *PlatformHandler) ClusterCapabilityMatrix(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	items, err := h.clusters.CapabilityMatrix(c.Request.Context(), principal)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Items(c, http.StatusOK, items)
+}
 func (h *PlatformHandler) UpdateCluster(c *gin.Context) {
 	var req dto.UpdateClusterRequest
 	if err := c.ShouldBindJSON(&req); err != nil {

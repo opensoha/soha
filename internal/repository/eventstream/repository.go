@@ -23,13 +23,18 @@ func (r *Repository) Create(ctx context.Context, event domainevent.Envelope) err
 	if err != nil {
 		return fmt.Errorf("marshal event payload: %w", err)
 	}
+	now := time.Now().UTC()
+	occurredAt := event.OccurredAt
+	if occurredAt.IsZero() {
+		occurredAt = now
+	}
 	return r.db.WithContext(ctx).Exec(`
 		INSERT INTO event_stream (
 			id, source, category, severity, cluster_id, namespace, resource_ref, summary, payload, correlation_id, occurred_at, created_at
 		) VALUES (
 			?, ?, ?, ?, ?, ?, '{}', ?, ?, ?, ?, ?
-		)
-	`, event.ID, event.Source, event.Category, event.Severity, event.ClusterID, event.Namespace, event.Summary, string(payload), event.ID, time.Now().UTC(), time.Now().UTC()).Error
+		) ON CONFLICT (id) DO NOTHING
+	`, event.ID, event.Source, event.Category, event.Severity, event.ClusterID, event.Namespace, event.Summary, string(payload), event.ID, occurredAt, now).Error
 }
 
 func (r *Repository) List(ctx context.Context, limit int) ([]domainevent.Envelope, error) {
@@ -37,7 +42,7 @@ func (r *Repository) List(ctx context.Context, limit int) ([]domainevent.Envelop
 		limit = 50
 	}
 	rows, err := r.db.WithContext(ctx).Raw(`
-		SELECT id, source, category, severity, cluster_id, namespace, summary, payload
+		SELECT id, source, category, severity, cluster_id, namespace, summary, payload, occurred_at
 		FROM event_stream
 		ORDER BY occurred_at DESC, created_at DESC
 		LIMIT ?
@@ -51,7 +56,7 @@ func (r *Repository) List(ctx context.Context, limit int) ([]domainevent.Envelop
 	for rows.Next() {
 		var item domainevent.Envelope
 		var payload []byte
-		if err := rows.Scan(&item.ID, &item.Source, &item.Category, &item.Severity, &item.ClusterID, &item.Namespace, &item.Summary, &payload); err != nil {
+		if err := rows.Scan(&item.ID, &item.Source, &item.Category, &item.Severity, &item.ClusterID, &item.Namespace, &item.Summary, &payload, &item.OccurredAt); err != nil {
 			return nil, fmt.Errorf("scan event envelope: %w", err)
 		}
 		if len(payload) > 0 {
@@ -64,7 +69,7 @@ func (r *Repository) List(ctx context.Context, limit int) ([]domainevent.Envelop
 
 func (r *Repository) Get(ctx context.Context, eventID string) (domainevent.Envelope, error) {
 	row := r.db.WithContext(ctx).Raw(`
-		SELECT id, source, category, severity, cluster_id, namespace, summary, payload
+		SELECT id, source, category, severity, cluster_id, namespace, summary, payload, occurred_at
 		FROM event_stream
 		WHERE id = ?
 		LIMIT 1
@@ -72,7 +77,7 @@ func (r *Repository) Get(ctx context.Context, eventID string) (domainevent.Envel
 
 	var item domainevent.Envelope
 	var payload []byte
-	if err := row.Scan(&item.ID, &item.Source, &item.Category, &item.Severity, &item.ClusterID, &item.Namespace, &item.Summary, &payload); err != nil {
+	if err := row.Scan(&item.ID, &item.Source, &item.Category, &item.Severity, &item.ClusterID, &item.Namespace, &item.Summary, &payload, &item.OccurredAt); err != nil {
 		return domainevent.Envelope{}, err
 	}
 	if len(payload) > 0 {

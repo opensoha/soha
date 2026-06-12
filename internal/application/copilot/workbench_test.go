@@ -1545,6 +1545,127 @@ func TestQueueGatewayAnalysisAgentRunDefaultsExternalProvider(t *testing.T) {
 	}
 }
 
+func TestAgentRunReturnPathsIncludeOperationState(t *testing.T) {
+	queuedAt := time.Now().UTC().Add(-2 * time.Minute)
+	service, repo := newInspectionAuthzTestService(map[string][]string{
+		"viewer": {appaccess.PermObserveAIView, appaccess.PermObserveAIChatUse},
+	})
+	repo.agentRuns = []domaincopilot.AgentRun{{
+		ID:             "agent:queued",
+		ProviderID:     "hermes",
+		ProviderKind:   "hermes",
+		CapabilityID:   "root_cause",
+		CreatedBy:      "user-1",
+		Status:         domaincopilot.AgentRunStatusQueued,
+		CallbackToken:  "callback-token",
+		TimeoutSeconds: 60,
+		QueuedAt:       queuedAt,
+		CreatedAt:      queuedAt,
+		UpdatedAt:      queuedAt,
+	}}
+
+	listed, err := service.ListAgentRuns(context.Background(), domainidentity.Principal{UserID: "user-1", Roles: []string{"viewer"}})
+	if err != nil {
+		t.Fatalf("list agent runs: %v", err)
+	}
+	if len(listed) != 1 || listed[0].OperationState == nil || listed[0].OperationState.Phase != "pending" || !listed[0].OperationState.TimeoutStale {
+		t.Fatalf("expected listed run operation state, got %#v", listed)
+	}
+	if listed[0].CallbackToken != "" {
+		t.Fatalf("expected list response to hide callback token")
+	}
+
+	claimed, err := service.ClaimAgentRun(context.Background(), domaincopilot.AgentRunClaimInput{AgentID: "runner-1"})
+	if err != nil {
+		t.Fatalf("claim agent run: %v", err)
+	}
+	if claimed.OperationState == nil || claimed.OperationState.Phase != "running" || claimed.OperationState.ClaimedByAgentID != "runner-1" {
+		t.Fatalf("expected claimed run operation state, got %#v", claimed)
+	}
+
+	callback, err := service.RecordAgentRunCallback(context.Background(), domaincopilot.AgentRunCallbackInput{
+		RunID:         claimed.ID,
+		CallbackToken: "callback-token",
+		AgentID:       "runner-1",
+		Status:        domaincopilot.AgentRunStatusFailed,
+		Payload:       map[string]any{"failureReason": "provider_error", "message": "Hermes failed"},
+		ErrorMessage:  "Hermes failed",
+	})
+	if err != nil {
+		t.Fatalf("record agent callback: %v", err)
+	}
+	if callback.OperationState == nil || callback.OperationState.Phase != "failed" || callback.OperationState.FailureReason != "provider_error" {
+		t.Fatalf("expected callback operation state, got %#v", callback.OperationState)
+	}
+}
+
+func TestCancelAgentRunRecordsOperationState(t *testing.T) {
+	queuedAt := time.Now().UTC().Add(-time.Minute)
+	service, repo := newInspectionAuthzTestService(map[string][]string{
+		"chat": {appaccess.PermObserveAIChatUse},
+	})
+	repo.agentRuns = []domaincopilot.AgentRun{{
+		ID:             "agent:cancel-me",
+		ProviderID:     "hermes",
+		ProviderKind:   "hermes",
+		CapabilityID:   "delivery_failure",
+		CreatedBy:      "user-1",
+		Status:         domaincopilot.AgentRunStatusQueued,
+		CallbackToken:  "callback-token",
+		TimeoutSeconds: 600,
+		QueuedAt:       queuedAt,
+		CreatedAt:      queuedAt,
+		UpdatedAt:      queuedAt,
+	}}
+
+	canceled, err := service.CancelAgentRun(context.Background(), domainidentity.Principal{UserID: "user-1", Roles: []string{"chat"}}, "agent:cancel-me")
+	if err != nil {
+		t.Fatalf("cancel agent run: %v", err)
+	}
+	if canceled.Status != domaincopilot.AgentRunStatusCanceled || canceled.OperationState == nil {
+		t.Fatalf("expected canceled run with operation state, got %#v", canceled)
+	}
+	if canceled.OperationState.Phase != "canceled" || !canceled.OperationState.Terminal || canceled.OperationState.FailureMessage != "canceled by user" {
+		t.Fatalf("unexpected canceled operation state: %#v", canceled.OperationState)
+	}
+}
+
+func TestGatewayAnalysisAgentRunsReturnOperationState(t *testing.T) {
+	service, _ := newInspectionAuthzTestService(map[string][]string{
+		"gateway": {appaccess.PermObserveAIChatUse},
+	})
+
+	completed, err := service.RecordGatewayAnalysisArtifact(context.Background(), domainidentity.Principal{
+		UserID: "user-1",
+		Roles:  []string{"gateway"},
+	}, domaincopilot.GatewayAnalysisArtifactInput{
+		CapabilityID: "delivery_failure",
+		Summary:      "Gateway completed inline analysis.",
+	})
+	if err != nil {
+		t.Fatalf("record gateway analysis artifact: %v", err)
+	}
+	if completed.OperationState == nil || completed.OperationState.Phase != "succeeded" || !completed.OperationState.Terminal {
+		t.Fatalf("expected completed gateway operation state, got %#v", completed.OperationState)
+	}
+
+	queued, err := service.QueueGatewayAnalysisAgentRun(context.Background(), domainidentity.Principal{
+		UserID: "user-1",
+		Roles:  []string{"gateway"},
+	}, domaincopilot.GatewayAnalysisAgentRunInput{
+		GatewayAnalysisArtifactInput: domaincopilot.GatewayAnalysisArtifactInput{
+			CapabilityID: "delivery_failure",
+			Summary:      "Gateway queued external analysis.",
+		},
+	})
+	if err != nil {
+		t.Fatalf("queue gateway agent run: %v", err)
+	}
+	if queued.OperationState == nil || queued.OperationState.Phase != "pending" || !queued.OperationState.RunnerClaimRequired {
+		t.Fatalf("expected queued gateway operation state, got %#v", queued.OperationState)
+	}
+}
+
 func TestRunSessionAnalysisQueuesExternalRootCauseBusinessRun(t *testing.T) {
 	defer appaccess.SetRolePermissionMatrix(nil)
 	service, repo := newInspectionAuthzTestService(map[string][]string{
@@ -2136,6 +2257,7 @@ type inspectionAuthzTestRepository struct {
 	createdMessages          []domaincopilot.Message
 	createdRootCauseRun      domaincopilot.RootCauseRun
 	createdAgentRun          domaincopilot.AgentRun
+	agentRuns                []domaincopilot.AgentRun
 }
 
 type agentRuntimeCallbackTestRepository struct {
@@ -2178,6 +2300,18 @@ func (r *agentRuntimeCallbackTestRepository) UpdateAgentRunCallback(_ context.Co
 	r.agentRun.AnalysisArtifacts = input.AnalysisArtifacts
 	r.agentRun.ClaimedByAgentID = input.AgentID
 	r.agentRun.ExternalRunID = input.ExternalRunID
+	return r.agentRun, nil
+}
+
+func (r *agentRuntimeCallbackTestRepository) CancelAgentRun(_ context.Context, input domaincopilot.AgentRunCancelInput) (domaincopilot.AgentRun, error) {
+	if r.agentRun.ID != input.RunID {
+		return domaincopilot.AgentRun{}, apperrors.ErrNotFound
+	}
+	r.agentRun.Status = domaincopilot.AgentRunStatusCanceled
+	r.agentRun.Output = mergeAgentRunCallbackPayload(r.agentRun.Output, map[string]any{"cancelReason": input.Reason, "canceledBy": input.RequestedBy})
+	r.agentRun.ErrorMessage = input.Reason
+	now := time.Now().UTC()
+	r.agentRun.CompletedAt = &now
 	return r.agentRun, nil
 }
 
@@ -2576,24 +2710,84 @@ func (r *inspectionAuthzTestRepository) UpdateRootCauseRun(_ context.Context, ru
 }
 
 func (r *inspectionAuthzTestRepository) ListAgentRuns(context.Context, domaincopilot.AgentRunFilter) ([]domaincopilot.AgentRun, error) {
-	return nil, nil
+	return append([]domaincopilot.AgentRun(nil), r.agentRuns...), nil
 }
 
-func (r *inspectionAuthzTestRepository) GetAgentRun(context.Context, string, string) (domaincopilot.AgentRun, error) {
+func (r *inspectionAuthzTestRepository) GetAgentRun(_ context.Context, _ string, runID string) (domaincopilot.AgentRun, error) {
+	for _, run := range r.agentRuns {
+		if run.ID == runID {
+			return run, nil
+		}
+	}
 	return domaincopilot.AgentRun{}, nil
 }
 
 func (r *inspectionAuthzTestRepository) CreateAgentRun(_ context.Context, run domaincopilot.AgentRun) (domaincopilot.AgentRun, error) {
 	r.createdAgentRun = run
+	r.agentRuns = append(r.agentRuns, run)
 	return run, nil
 }
 
-func (r *inspectionAuthzTestRepository) ClaimAgentRun(context.Context, domaincopilot.AgentRunClaimInput) (domaincopilot.AgentRun, error) {
-	return domaincopilot.AgentRun{}, nil
+func (r *inspectionAuthzTestRepository) ClaimAgentRun(_ context.Context, input domaincopilot.AgentRunClaimInput) (domaincopilot.AgentRun, error) {
+	now := time.Now().UTC()
+	for index := range r.agentRuns {
+		if r.agentRuns[index].Status != domaincopilot.AgentRunStatusQueued {
+			continue
+		}
+		r.agentRuns[index].Status = domaincopilot.AgentRunStatusRunning
+		r.agentRuns[index].ClaimedByAgentID = input.AgentID
+		r.agentRuns[index].StartedAt = &now
+		r.agentRuns[index].LastHeartbeatAt = &now
+		r.agentRuns[index].UpdatedAt = now
+		return r.agentRuns[index], nil
+	}
+	return domaincopilot.AgentRun{}, apperrors.ErrNotFound
 }
 
-func (r *inspectionAuthzTestRepository) UpdateAgentRunCallback(context.Context, domaincopilot.AgentRunCallbackInput) (domaincopilot.AgentRun, error) {
-	return domaincopilot.AgentRun{}, nil
+func (r *inspectionAuthzTestRepository) UpdateAgentRunCallback(_ context.Context, input domaincopilot.AgentRunCallbackInput) (domaincopilot.AgentRun, error) {
+	now := time.Now().UTC()
+	status := strings.TrimSpace(input.Status)
+	if status == "" {
+		status = domaincopilot.AgentRunStatusRunning
+	}
+	for index := range r.agentRuns {
+		if r.agentRuns[index].ID != input.RunID {
+			continue
+		}
+		r.agentRuns[index].Status = status
+		r.agentRuns[index].Output = mergeAgentRunCallbackPayload(r.agentRuns[index].Output, input.Payload)
+		r.agentRuns[index].ToolExecutions = input.ToolExecutions
+		r.agentRuns[index].AnalysisArtifacts = input.AnalysisArtifacts
+		r.agentRuns[index].ClaimedByAgentID = input.AgentID
+		r.agentRuns[index].ExternalRunID = input.ExternalRunID
+		r.agentRuns[index].ErrorMessage = input.ErrorMessage
+		r.agentRuns[index].LastHeartbeatAt = &now
+		if agentRunStatusTerminal(status) {
+			r.agentRuns[index].CompletedAt = &now
+		}
+		r.agentRuns[index].UpdatedAt = now
+		return r.agentRuns[index], nil
+	}
+	return domaincopilot.AgentRun{}, apperrors.ErrNotFound
+}
+
+func (r *inspectionAuthzTestRepository) CancelAgentRun(_ context.Context, input domaincopilot.AgentRunCancelInput) (domaincopilot.AgentRun, error) {
+	now := time.Now().UTC()
+	for index := range r.agentRuns {
+		if r.agentRuns[index].ID != input.RunID {
+			continue
+		}
+		r.agentRuns[index].Status = domaincopilot.AgentRunStatusCanceled
+		r.agentRuns[index].Output = mergeAgentRunCallbackPayload(r.agentRuns[index].Output, map[string]any{
+			"cancelReason": input.Reason,
+			"canceledBy":   input.RequestedBy,
+		})
+		r.agentRuns[index].ErrorMessage = input.Reason
+		r.agentRuns[index].CompletedAt = &now
+		r.agentRuns[index].UpdatedAt = now
+		return r.agentRuns[index], nil
+	}
+	return domaincopilot.AgentRun{}, apperrors.ErrNotFound
 }
 
 func (r *inspectionAuthzTestRepository) ListInspectionTasks(context.Context, string, int) ([]domaincopilot.InspectionTask, error) {

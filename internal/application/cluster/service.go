@@ -184,7 +184,8 @@ func (s *Service) Describe(ctx context.Context, principal domainidentity.Princip
 			return domaincluster.Detail{}, err
 		}
 		return domaincluster.Detail{
-			Summary: summary,
+			Summary:          summary,
+			CapabilityMatrix: domaincluster.DefaultCapabilityMatrix(),
 			Diagnostics: domaincluster.Diagnostics{
 				Transport:       "client-go",
 				SyncStrategy:    "informer_cache_then_live_fallback",
@@ -214,7 +215,8 @@ func (s *Service) Describe(ctx context.Context, principal domainidentity.Princip
 	}
 
 	detail := domaincluster.Detail{
-		Summary: summary,
+		Summary:          summary,
+		CapabilityMatrix: domaincluster.DefaultCapabilityMatrix(),
 		Connection: domaincluster.ConnectionDetail{
 			Mode:           connection.Summary.ConnectionMode,
 			CredentialType: connection.CredentialType,
@@ -272,6 +274,10 @@ func (s *Service) Describe(ctx context.Context, principal domainidentity.Princip
 	}
 
 	return detail, nil
+}
+
+func (s *Service) CapabilityMatrix(context.Context, domainidentity.Principal) ([]domaincluster.CapabilityMatrixEntry, error) {
+	return domaincluster.DefaultCapabilityMatrix(), nil
 }
 
 func (s *Service) Register(ctx context.Context, principal domainidentity.Principal, input domaincluster.RegisterInput) (domaincluster.Summary, error) {

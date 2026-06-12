@@ -68,4 +68,15 @@ jobs:
         run: CGO_ENABLED=0 go build -tags embedassets -o /tmp/soha ./cmd/server
       - name: Docker build
         working-directory: soha
-        run: docker build --build-context contracts=../soha-contracts -f deploy/Dockerfile -t soha:test .
+        run: docker build --build-context contracts=../soha-contracts -f deploy/Dockerfile -t soha:test -t soha:local .
+      - name: Docker compose smoke
+        working-directory: soha
+        run: SOHA_SMOKE_BUILD=0 SOHA_SMOKE_PROJECT=soha-ci-${{ github.run_id }} ./scripts/smoke-compose.sh
+      - uses: azure/setup-helm@v4
+        with:
+          version: v4.2.0
+      - name: Helm lint and template
+        working-directory: soha
+        run: |
+          helm lint deploy/chart
+          helm template soha deploy/chart >/tmp/soha-chart.yaml

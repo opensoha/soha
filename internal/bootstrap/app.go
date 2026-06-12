@@ -175,7 +175,11 @@ func New(ctx context.Context) (*App, error) {
 		logger.Warn("restore port forwards failed", zap.Error(err))
 	}
 	eventService := appevent.New(eventRepository)
+	eventService.SetAuditRecorder(auditService)
+	eventService.SetConnectorEventSinkToken(cfg.AIGateway.ConnectorEventSink.Token)
 	monitoringService := appmonitoring.New(alertRepository, eventRepository, copilotRepository, permissionResolver, cfg.Monitoring.Enabled, cfg.Monitoring.WebhookToken)
+	auditService.SetAlertSink(monitoringService)
+	operationService.SetAlertSink(monitoringService)
 	applicationService := appregistry.New(applicationRepository, gitlabClient, accessService, auditService, operationService)
 	applicationService.SetPermissionResolver(permissionResolver)
 	executionService := appexecution.New(
@@ -197,7 +201,7 @@ func New(ctx context.Context) (*App, error) {
 	buildService := appbuild.New(buildRepository, applicationRepository, catalogRepository, executionService, accessService, eventRepository, auditService, operationService)
 	catalogService := appcatalog.New(catalogRepository, accessService, applicationRepository, permissionResolver, auditService, operationService)
 	scopeGrantService := appscopegrant.New(scopeGrantRepository, permissionResolver, auditService, operationService)
-	registryService := appregistryconn.New(registryRepository, permissionResolver)
+	registryService := appregistryconn.New(registryRepository, permissionResolver, appregistryconn.WithCredentialEncryptionKey(cfg.Security.CredentialEncryptionKey))
 	releaseService := apprelease.New(releaseRepository, applicationRepository, catalogRepository, clusterRepository, executionService, accessService, permissionResolver, eventRepository, auditService, operationService, clusterManager, agentRegistry)
 	workflowService := appworkflow.New(workflowRepository, applicationRepository, accessService, permissionResolver, catalogRepository, buildService, releaseService, resourceService)
 	workflowService.SetRuntimeOptions(cfg.Runtime.WorkflowWorkers, cfg.Runtime.WorkflowQueueSize, cfg.Runtime.WorkflowNodeParallelism)
@@ -262,6 +266,10 @@ func New(ctx context.Context) (*App, error) {
 	aiGatewayService.SetAnalysisArtifactRecorder(copilotService)
 	aiGatewayService.SetOperationRecorder(operationService)
 	aiGatewayService.SetOnCallResolver(monitoringService)
+	if err := registerAIGatewayConnectorRuntimes(ctx, aiGatewayService, cfg.AIGateway); err != nil {
+		cancel()
+		return nil, err
+	}
 	pluginService := appplugin.New(pluginRepository, permissionResolver, auditService)
 
 	systemHandler := apiHandlers.NewSystemHandler(databaseStore, runtimeMetrics)
