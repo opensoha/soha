@@ -31,10 +31,6 @@ type DeliveryService interface {
 	ListExecutionLogs(context.Context, domainidentity.Principal, string, int) ([]domaindelivery.ExecutionLog, error)
 	ListExecutionArtifacts(context.Context, domainidentity.Principal, string) ([]domaindelivery.ExecutionArtifact, error)
 	ListReleaseBundleArtifacts(context.Context, domainidentity.Principal, string) ([]domaindelivery.ExecutionArtifact, error)
-	ListApprovalPolicies(context.Context, domainidentity.Principal) ([]domaindelivery.ApprovalPolicy, error)
-	CreateApprovalPolicy(context.Context, domainidentity.Principal, domaindelivery.ApprovalPolicyInput) (domaindelivery.ApprovalPolicy, error)
-	UpdateApprovalPolicy(context.Context, domainidentity.Principal, string, domaindelivery.ApprovalPolicyInput) (domaindelivery.ApprovalPolicy, error)
-	DeleteApprovalPolicy(context.Context, domainidentity.Principal, string) error
 	ListDeliveryBlueprints(context.Context, domainidentity.Principal) ([]domaindelivery.DeliveryBlueprint, error)
 	CreateDeliveryBlueprint(context.Context, domainidentity.Principal, domaindelivery.DeliveryBlueprintInput) (domaindelivery.DeliveryBlueprint, error)
 	UpdateDeliveryBlueprint(context.Context, domainidentity.Principal, string, domaindelivery.DeliveryBlueprintInput) (domaindelivery.DeliveryBlueprint, error)
@@ -228,79 +224,6 @@ func (h *DeliveryHandler) ListReleaseBundleArtifacts(c *gin.Context) {
 		return
 	}
 	apiresponse.Items(c, http.StatusOK, items)
-}
-
-func (h *DeliveryHandler) ListApprovalPolicies(c *gin.Context) {
-	principal := apiMiddleware.PrincipalFromContext(c)
-	items, err := h.service.ListApprovalPolicies(c.Request.Context(), principal)
-	if err != nil {
-		writeError(c, err)
-		return
-	}
-	apiresponse.Items(c, http.StatusOK, items)
-}
-
-func (h *DeliveryHandler) CreateApprovalPolicy(c *gin.Context) {
-	var req dto.ApprovalPolicyRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid approval policy payload")
-		return
-	}
-	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.service.CreateApprovalPolicy(c.Request.Context(), principal, domaindelivery.ApprovalPolicyInput{
-		ID:                req.ID,
-		Key:               req.Key,
-		Name:              req.Name,
-		Description:       req.Description,
-		Mode:              req.Mode,
-		RequiredApprovals: req.RequiredApprovals,
-		SLAMinutes:        req.SLAMinutes,
-		ApproverRoles:     req.ApproverRoles,
-		ChangeWindow:      req.ChangeWindow,
-		Enabled:           req.Enabled,
-		Metadata:          req.Metadata,
-	})
-	if err != nil {
-		writeError(c, err)
-		return
-	}
-	apiresponse.Item(c, http.StatusCreated, item)
-}
-
-func (h *DeliveryHandler) UpdateApprovalPolicy(c *gin.Context) {
-	var req dto.ApprovalPolicyRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid approval policy payload")
-		return
-	}
-	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.service.UpdateApprovalPolicy(c.Request.Context(), principal, c.Param("approvalPolicyID"), domaindelivery.ApprovalPolicyInput{
-		ID:                req.ID,
-		Key:               req.Key,
-		Name:              req.Name,
-		Description:       req.Description,
-		Mode:              req.Mode,
-		RequiredApprovals: req.RequiredApprovals,
-		SLAMinutes:        req.SLAMinutes,
-		ApproverRoles:     req.ApproverRoles,
-		ChangeWindow:      req.ChangeWindow,
-		Enabled:           req.Enabled,
-		Metadata:          req.Metadata,
-	})
-	if err != nil {
-		writeError(c, err)
-		return
-	}
-	apiresponse.Item(c, http.StatusOK, item)
-}
-
-func (h *DeliveryHandler) DeleteApprovalPolicy(c *gin.Context) {
-	principal := apiMiddleware.PrincipalFromContext(c)
-	if err := h.service.DeleteApprovalPolicy(c.Request.Context(), principal, c.Param("approvalPolicyID")); err != nil {
-		writeError(c, err)
-		return
-	}
-	c.Status(http.StatusNoContent)
 }
 
 func (h *DeliveryHandler) ListDeliveryBlueprints(c *gin.Context) {

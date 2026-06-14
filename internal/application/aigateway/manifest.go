@@ -345,7 +345,7 @@ func gatewayPromptInstruction(name string) string {
 	case "soha.delivery.plan_release":
 		return strings.Join([]string{
 			"Release planning workflow:",
-			"1. Read application detail, environment bindings, build sources, release targets, workflow templates, approval policies, recent bundles, and execution tasks before proposing an action.",
+			"1. Read application detail, environment bindings, build sources, release targets, workflow templates, approval nodes, recent bundles, and execution tasks before proposing an action.",
 			"2. Prefer delivery.release_context.diff for candidate promotion evidence and delivery.rollback.context for rollback evidence.",
 			"3. Summarize readiness, blockers, blast radius, required approvals, rollback criteria, and exact next tool call inputs.",
 			"4. Do not trigger build, deploy, workflow, verify, or rollback actions unless the user explicitly asks and the Gateway response permits it.",
@@ -356,7 +356,7 @@ func gatewayPromptInstruction(name string) string {
 			"1. Stay read-only. Use scoped cluster and namespace context and do not request raw kubeconfig or raw Kubernetes objects.",
 			"2. Collect pod detail, pod logs, deployment rollout status, deployment events, service backends, route context, storage context, node detail, and cluster events as needed.",
 			"3. Separate observed evidence from hypotheses and include capabilityWarnings when Gateway API or agent-backed data is unavailable.",
-			"4. Return likely causes, confidence, immediate checks, and safe remediation options, but leave mutations to explicit soha tools and approval policy.",
+			"4. Return likely causes, confidence, immediate checks, and safe remediation options, but leave mutations to explicit soha tools and Gateway approval guardrails.",
 		}, "\n")
 	default:
 		return "Use the visible Gateway manifest to gather evidence first, keep outputs redacted, and state any missing scope or permission before suggesting a next action."

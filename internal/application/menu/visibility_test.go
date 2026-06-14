@@ -18,6 +18,24 @@ func TestApplicationMenusRequireWorkspaceApplicationPermission(t *testing.T) {
 	}
 }
 
+func TestDeliveryWorkbenchTaskMenusUseAnyEvidencePermission(t *testing.T) {
+	testingMenu := domainmenu.Record{ID: "delivery-testing", Path: "/delivery/testing"}
+	analysisMenu := domainmenu.Record{ID: "delivery-analysis", Path: "/delivery/analysis"}
+
+	if isVisibleByPermissions(testingMenu, []string{appaccess.PermDeliveryReleaseBundlesView}) {
+		t.Fatalf("delivery testing menu should require %s", appaccess.PermWorkspaceApplicationView)
+	}
+	if !isVisibleByPermissions(testingMenu, []string{appaccess.PermWorkspaceApplicationView, appaccess.PermDeliveryReleaseBundlesView}) {
+		t.Fatalf("delivery testing menu should be visible with release bundle evidence permission")
+	}
+	if !isVisibleByPermissions(testingMenu, []string{appaccess.PermWorkspaceApplicationView, appaccess.PermDeliveryExecutionTasksView}) {
+		t.Fatalf("delivery testing menu should be visible with execution task evidence permission")
+	}
+	if !isVisibleByPermissions(analysisMenu, []string{appaccess.PermWorkspaceApplicationView, appaccess.PermDeliveryReleaseBoardView}) {
+		t.Fatalf("delivery analysis menu should be visible with release board evidence permission")
+	}
+}
+
 func TestResourceMenusRequireWorkspaceResourcePermission(t *testing.T) {
 	item := domainmenu.Record{ID: "workloads", Path: "/workloads"}
 

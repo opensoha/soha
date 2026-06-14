@@ -111,8 +111,6 @@ func deliveryMutationSecuritySurface(method, path string) (nonPlatformMutationSe
 		return nonPlatformMutationEntry("ExecutionTask", "cancel", appaccess.PermDeliveryExecutionTasksManage, scopeRequired), true
 	case strings.HasPrefix(path, "/api/v1/delivery/execution-tasks/") && strings.HasSuffix(path, "/retry"):
 		return nonPlatformMutationEntry("ExecutionTask", "retry", appaccess.PermDeliveryExecutionTasksManage, scopeRequired), true
-	case strings.HasPrefix(path, "/api/v1/delivery/approval-policies"):
-		return nonPlatformMutationEntry("ApprovalPolicy", nonPlatformMutationAction(method, path), appaccess.PermDeliveryApprovalPoliciesManage, false), true
 	case strings.HasPrefix(path, "/api/v1/delivery/blueprints") && strings.Contains(path, "/render-spec"):
 		return nonPlatformMutationEntry("DeliveryBlueprint", "render", appaccess.PermDeliveryApplicationsCreate, scopeRequired), true
 	case strings.HasPrefix(path, "/api/v1/delivery/blueprints") && strings.Contains(path, "/bootstrap-application"):

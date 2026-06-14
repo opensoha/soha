@@ -39,8 +39,6 @@ const (
 	PermDeliveryReleaseBundlesView        = "delivery.release-bundles.view"
 	PermDeliveryExecutionTasksView        = "delivery.execution-tasks.view"
 	PermDeliveryExecutionTasksManage      = "delivery.execution-tasks.manage"
-	PermDeliveryApprovalPoliciesView      = "delivery.approval-policies.view"
-	PermDeliveryApprovalPoliciesManage    = "delivery.approval-policies.manage"
 	PermDeliveryReleaseBoardView          = "delivery.release-board.view"
 	PermDeliveryWorkflowsView             = "delivery.workflows.view"
 	PermDeliveryWorkflowsTrigger          = "delivery.workflows.trigger"
@@ -171,8 +169,6 @@ func allPermissionKeys() []string {
 		PermDeliveryReleaseBundlesView,
 		PermDeliveryExecutionTasksView,
 		PermDeliveryExecutionTasksManage,
-		PermDeliveryApprovalPoliciesView,
-		PermDeliveryApprovalPoliciesManage,
 		PermDeliveryReleaseBoardView,
 		PermDeliveryWorkflowsView,
 		PermDeliveryWorkflowsTrigger,
@@ -299,8 +295,6 @@ func defaultRolePermissions() map[string][]string {
 		PermDeliveryReleaseBundlesView,
 		PermDeliveryExecutionTasksView,
 		PermDeliveryExecutionTasksManage,
-		PermDeliveryApprovalPoliciesView,
-		PermDeliveryApprovalPoliciesManage,
 		PermDeliveryReleaseBoardView,
 		PermDeliveryWorkflowsView,
 		PermDeliveryWorkflowsTrigger,
@@ -413,7 +407,6 @@ func defaultRolePermissions() map[string][]string {
 		PermDeliveryBuildsTrigger,
 		PermDeliveryReleaseBundlesView,
 		PermDeliveryExecutionTasksView,
-		PermDeliveryApprovalPoliciesView,
 		PermDeliveryReleaseBoardView,
 		PermDeliveryWorkflowsView,
 		PermDeliveryWorkflowsTrigger,

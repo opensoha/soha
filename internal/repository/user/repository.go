@@ -951,10 +951,13 @@ func (r *Repository) ListTeamsDetailed(ctx context.Context) ([]domainaccess.Team
 			COALESCE(t.source, 'local') AS source,
 			COALESCE(t.external_id, '') AS external_id,
 			t.metadata,
-			COUNT(DISTINCT utb.user_id) AS user_count
+			COALESCE(user_counts.user_count, 0) AS user_count
 		FROM teams t
-		LEFT JOIN user_team_bindings utb ON utb.team_id = t.id
-		GROUP BY t.id, t.parent_id, t.name, t.slug, t.org_path, t.source, t.external_id, t.metadata
+		LEFT JOIN (
+			SELECT team_id, COUNT(DISTINCT user_id) AS user_count
+			FROM user_team_bindings
+			GROUP BY team_id
+		) user_counts ON user_counts.team_id = t.id
 		ORDER BY COALESCE(t.org_path, '/' || t.slug) ASC, t.name ASC, t.id ASC
 	`).Rows()
 	if err != nil {

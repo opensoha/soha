@@ -427,102 +427,6 @@ func (r *Repository) UpsertExecutionArtifact(ctx context.Context, item domaindel
 	return item, nil
 }
 
-func (r *Repository) ListApprovalPolicies(ctx context.Context) ([]domaindelivery.ApprovalPolicy, error) {
-	rows, err := r.db.WithContext(ctx).Raw(`
-		SELECT id, policy_key, name, description, mode, required_approvals, sla_minutes, approver_roles, change_window, enabled, metadata, created_at, updated_at
-		FROM approval_policies
-		ORDER BY created_at DESC
-	`).Rows()
-	if err != nil {
-		return nil, fmt.Errorf("query approval policies: %w", err)
-	}
-	defer rows.Close()
-
-	items := make([]domaindelivery.ApprovalPolicy, 0)
-	for rows.Next() {
-		item, scanErr := scanApprovalPolicy(rows)
-		if scanErr != nil {
-			return nil, scanErr
-		}
-		items = append(items, item)
-	}
-	return items, rows.Err()
-}
-
-func (r *Repository) GetApprovalPolicy(ctx context.Context, id string) (domaindelivery.ApprovalPolicy, error) {
-	row := r.db.WithContext(ctx).Raw(`
-		SELECT id, policy_key, name, description, mode, required_approvals, sla_minutes, approver_roles, change_window, enabled, metadata, created_at, updated_at
-		FROM approval_policies
-		WHERE id = ? OR policy_key = ?
-		LIMIT 1
-	`, strings.TrimSpace(id), strings.TrimSpace(id)).Row()
-	return scanApprovalPolicyRow(row)
-}
-
-func (r *Repository) CreateApprovalPolicy(ctx context.Context, input domaindelivery.ApprovalPolicyInput) (domaindelivery.ApprovalPolicy, error) {
-	item := normalizeApprovalPolicyInput(input)
-	roles, err := json.Marshal(item.ApproverRoles)
-	if err != nil {
-		return domaindelivery.ApprovalPolicy{}, fmt.Errorf("marshal approval policy approver roles: %w", err)
-	}
-	window, err := json.Marshal(item.ChangeWindow)
-	if err != nil {
-		return domaindelivery.ApprovalPolicy{}, fmt.Errorf("marshal approval policy change window: %w", err)
-	}
-	metadata, err := json.Marshal(item.Metadata)
-	if err != nil {
-		return domaindelivery.ApprovalPolicy{}, fmt.Errorf("marshal approval policy metadata: %w", err)
-	}
-	if err := r.db.WithContext(ctx).Exec(`
-		INSERT INTO approval_policies (id, policy_key, name, description, mode, required_approvals, sla_minutes, approver_roles, change_window, enabled, metadata, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, item.ID, item.Key, item.Name, nullableString(item.Description), item.Mode, item.RequiredApprovals, item.SLAMinutes, string(roles), string(window), item.Enabled, string(metadata), item.CreatedAt, item.UpdatedAt).Error; err != nil {
-		return domaindelivery.ApprovalPolicy{}, fmt.Errorf("create approval policy: %w", err)
-	}
-	return item, nil
-}
-
-func (r *Repository) UpdateApprovalPolicy(ctx context.Context, id string, input domaindelivery.ApprovalPolicyInput) (domaindelivery.ApprovalPolicy, error) {
-	item := normalizeApprovalPolicyInput(input)
-	item.ID = strings.TrimSpace(id)
-	roles, err := json.Marshal(item.ApproverRoles)
-	if err != nil {
-		return domaindelivery.ApprovalPolicy{}, fmt.Errorf("marshal approval policy approver roles: %w", err)
-	}
-	window, err := json.Marshal(item.ChangeWindow)
-	if err != nil {
-		return domaindelivery.ApprovalPolicy{}, fmt.Errorf("marshal approval policy change window: %w", err)
-	}
-	metadata, err := json.Marshal(item.Metadata)
-	if err != nil {
-		return domaindelivery.ApprovalPolicy{}, fmt.Errorf("marshal approval policy metadata: %w", err)
-	}
-	result := r.db.WithContext(ctx).Exec(`
-		UPDATE approval_policies
-		SET policy_key = ?, name = ?, description = ?, mode = ?, required_approvals = ?, sla_minutes = ?, approver_roles = ?, change_window = ?, enabled = ?, metadata = ?, updated_at = ?
-		WHERE id = ?
-	`, item.Key, item.Name, nullableString(item.Description), item.Mode, item.RequiredApprovals, item.SLAMinutes, string(roles), string(window), item.Enabled, string(metadata), item.UpdatedAt, item.ID)
-	if result.Error != nil {
-		return domaindelivery.ApprovalPolicy{}, fmt.Errorf("update approval policy: %w", result.Error)
-	}
-	if result.RowsAffected == 0 {
-		return domaindelivery.ApprovalPolicy{}, ErrNotFound
-	}
-	item.CreatedAt = fetchCreatedAt(ctx, r.db, "approval_policies", item.ID)
-	return item, nil
-}
-
-func (r *Repository) DeleteApprovalPolicy(ctx context.Context, id string) error {
-	result := r.db.WithContext(ctx).Exec(`DELETE FROM approval_policies WHERE id = ?`, strings.TrimSpace(id))
-	if result.Error != nil {
-		return fmt.Errorf("delete approval policy: %w", result.Error)
-	}
-	if result.RowsAffected == 0 {
-		return ErrNotFound
-	}
-	return nil
-}
-
 func (r *Repository) ListDeliveryBlueprints(ctx context.Context) ([]domaindelivery.DeliveryBlueprint, error) {
 	rows, err := r.db.WithContext(ctx).Raw(`
 		SELECT id, blueprint_key, name, description, application_draft, build_sources, environment_bindings, file_templates, execution_hints, post_create_actions, enabled, created_at, updated_at
@@ -827,94 +731,6 @@ func scanExecutionArtifact(rows *sql.Rows) (domaindelivery.ExecutionArtifact, er
 	return item, nil
 }
 
-func scanApprovalPolicy(rows *sql.Rows) (domaindelivery.ApprovalPolicy, error) {
-	var item domaindelivery.ApprovalPolicy
-	var description sql.NullString
-	var roles []byte
-	var changeWindow []byte
-	var metadata []byte
-	if err := rows.Scan(&item.ID, &item.Key, &item.Name, &description, &item.Mode, &item.RequiredApprovals, &item.SLAMinutes, &roles, &changeWindow, &item.Enabled, &metadata, &item.CreatedAt, &item.UpdatedAt); err != nil {
-		return domaindelivery.ApprovalPolicy{}, fmt.Errorf("scan approval policy: %w", err)
-	}
-	item.Description = description.String
-	_ = json.Unmarshal(roles, &item.ApproverRoles)
-	_ = json.Unmarshal(changeWindow, &item.ChangeWindow)
-	_ = json.Unmarshal(metadata, &item.Metadata)
-	if item.ChangeWindow == nil {
-		item.ChangeWindow = map[string]any{}
-	}
-	if item.Metadata == nil {
-		item.Metadata = map[string]any{}
-	}
-	return item, nil
-}
-
-func scanApprovalPolicyRow(row *sql.Row) (domaindelivery.ApprovalPolicy, error) {
-	var item domaindelivery.ApprovalPolicy
-	var description sql.NullString
-	var roles []byte
-	var changeWindow []byte
-	var metadata []byte
-	if err := row.Scan(&item.ID, &item.Key, &item.Name, &description, &item.Mode, &item.RequiredApprovals, &item.SLAMinutes, &roles, &changeWindow, &item.Enabled, &metadata, &item.CreatedAt, &item.UpdatedAt); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return domaindelivery.ApprovalPolicy{}, ErrNotFound
-		}
-		return domaindelivery.ApprovalPolicy{}, fmt.Errorf("scan approval policy row: %w", err)
-	}
-	item.Description = description.String
-	_ = json.Unmarshal(roles, &item.ApproverRoles)
-	_ = json.Unmarshal(changeWindow, &item.ChangeWindow)
-	_ = json.Unmarshal(metadata, &item.Metadata)
-	if item.ChangeWindow == nil {
-		item.ChangeWindow = map[string]any{}
-	}
-	if item.Metadata == nil {
-		item.Metadata = map[string]any{}
-	}
-	return item, nil
-}
-
-func normalizeApprovalPolicyInput(input domaindelivery.ApprovalPolicyInput) domaindelivery.ApprovalPolicy {
-	now := time.Now().UTC()
-	id := strings.TrimSpace(input.ID)
-	if id == "" {
-		id = uuid.NewString()
-	}
-	if input.ChangeWindow == nil {
-		input.ChangeWindow = map[string]any{}
-	}
-	if input.Metadata == nil {
-		input.Metadata = map[string]any{}
-	}
-	mode := strings.TrimSpace(input.Mode)
-	if mode == "" {
-		mode = "single"
-	}
-	required := input.RequiredApprovals
-	if required <= 0 {
-		required = 1
-	}
-	sla := input.SLAMinutes
-	if sla <= 0 {
-		sla = 60
-	}
-	return domaindelivery.ApprovalPolicy{
-		ID:                id,
-		Key:               strings.TrimSpace(input.Key),
-		Name:              strings.TrimSpace(input.Name),
-		Description:       strings.TrimSpace(input.Description),
-		Mode:              mode,
-		RequiredApprovals: required,
-		SLAMinutes:        sla,
-		ApproverRoles:     input.ApproverRoles,
-		ChangeWindow:      input.ChangeWindow,
-		Enabled:           input.Enabled,
-		Metadata:          input.Metadata,
-		CreatedAt:         now,
-		UpdatedAt:         now,
-	}
-}
-
 func scanDeliveryBlueprint(rows *sql.Rows) (domaindelivery.DeliveryBlueprint, error) {
 	var item domaindelivery.DeliveryBlueprint
 	var description sql.NullString
@@ -1026,7 +842,6 @@ func normalizeDeliveryBlueprintInput(input domaindelivery.DeliveryBlueprintInput
 			BusinessLineID:     strings.TrimSpace(binding.BusinessLineID),
 			StrategyProfileID:  strings.TrimSpace(binding.StrategyProfileID),
 			PromotionPolicyID:  strings.TrimSpace(binding.PromotionPolicyID),
-			ApprovalPolicyID:   strings.TrimSpace(binding.ApprovalPolicyID),
 			ArtifactPolicyID:   strings.TrimSpace(binding.ArtifactPolicyID),
 			WorkflowTemplateID: strings.TrimSpace(binding.WorkflowTemplateID),
 			BuildPolicy:        binding.BuildPolicy,

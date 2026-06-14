@@ -444,44 +444,6 @@ func (s *Service) ListReleaseBundleArtifacts(ctx context.Context, principal doma
 	return s.repository.ListExecutionArtifactsByBundle(ctx, strings.TrimSpace(bundleID))
 }
 
-func (s *Service) ListApprovalPolicies(ctx context.Context, principal domainidentity.Principal) ([]domaindelivery.ApprovalPolicy, error) {
-	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermDeliveryApprovalPoliciesView); err != nil {
-		return nil, err
-	}
-	return s.repository.ListApprovalPolicies(ctx)
-}
-
-func (s *Service) GetApprovalPolicy(ctx context.Context, policyID string) (domaindelivery.ApprovalPolicy, error) {
-	return s.repository.GetApprovalPolicy(ctx, strings.TrimSpace(policyID))
-}
-
-func (s *Service) CreateApprovalPolicy(ctx context.Context, principal domainidentity.Principal, input domaindelivery.ApprovalPolicyInput) (domaindelivery.ApprovalPolicy, error) {
-	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermDeliveryApprovalPoliciesManage); err != nil {
-		return domaindelivery.ApprovalPolicy{}, err
-	}
-	if strings.TrimSpace(input.Key) == "" || strings.TrimSpace(input.Name) == "" {
-		return domaindelivery.ApprovalPolicy{}, fmt.Errorf("approval policy key and name are required")
-	}
-	return s.repository.CreateApprovalPolicy(ctx, input)
-}
-
-func (s *Service) UpdateApprovalPolicy(ctx context.Context, principal domainidentity.Principal, policyID string, input domaindelivery.ApprovalPolicyInput) (domaindelivery.ApprovalPolicy, error) {
-	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermDeliveryApprovalPoliciesManage); err != nil {
-		return domaindelivery.ApprovalPolicy{}, err
-	}
-	if strings.TrimSpace(input.Key) == "" || strings.TrimSpace(input.Name) == "" {
-		return domaindelivery.ApprovalPolicy{}, fmt.Errorf("approval policy key and name are required")
-	}
-	return s.repository.UpdateApprovalPolicy(ctx, strings.TrimSpace(policyID), input)
-}
-
-func (s *Service) DeleteApprovalPolicy(ctx context.Context, principal domainidentity.Principal, policyID string) error {
-	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermDeliveryApprovalPoliciesManage); err != nil {
-		return err
-	}
-	return s.repository.DeleteApprovalPolicy(ctx, strings.TrimSpace(policyID))
-}
-
 func (s *Service) ListDeliveryBlueprints(ctx context.Context, principal domainidentity.Principal) ([]domaindelivery.DeliveryBlueprint, error) {
 	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermDeliveryApplicationsView); err != nil {
 		return nil, err
@@ -565,7 +527,6 @@ func (s *Service) BootstrapApplicationFromBlueprint(ctx context.Context, princip
 			EnvironmentID:      environmentID,
 			StrategyProfileID:  binding.StrategyProfileID,
 			PromotionPolicyID:  binding.PromotionPolicyID,
-			ApprovalPolicyID:   binding.ApprovalPolicyID,
 			ArtifactPolicyID:   binding.ArtifactPolicyID,
 			WorkflowTemplateID: binding.WorkflowTemplateID,
 			BuildPolicy:        binding.BuildPolicy,

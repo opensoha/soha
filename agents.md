@@ -317,7 +317,7 @@ Design expectation:
 
 - delivery remains platform-native
 - application delivery now centers on four stable objects: applications, build templates, application-environment bindings, and execution records
-- the next enterprise execution-plane baseline is now started in code: `release_bundles`, `execution_tasks`, `execution_logs`, `execution_callbacks`, and `approval_policies` exist as first-class delivery control-plane objects
+- the next enterprise execution-plane baseline is now started in code: `release_bundles`, `execution_tasks`, `execution_logs`, and `execution_callbacks` exist as first-class delivery control-plane objects; approvals are modeled as workflow template `manual_approval` nodes and `workflow_approvals`
 - applications may own multiple build sources (`repo_dockerfile`, `platform_build_template`, `external_pipeline`), while each application-environment binding selects one concrete build source plus one workflow template and one or more explicit release targets
 - the developer/tester-facing DevOps workbench design is now application-centered: applications contain service components, services contain container definitions, environments carry per-service runtime bindings, and CI/CD DAGs produce immutable release bundles plus service/container-level artifacts
 - development flows prioritize self-service branch or commit build, single-service deploy, logs, events, retry, rollback, and dev/test environment feedback from the application detail workspace
@@ -334,7 +334,7 @@ Design expectation:
 - the application detail workspace now has a P1 self-service delivery action entrypoint backed by `POST /api/v1/applications/:applicationID/delivery-actions`; build, deploy, build_deploy, workflow, and verify actions are orchestrated in the delivery application service, while verify runs through workflow validation mode that filters the bound DAG to validation/check nodes only
 - workflow `manual_approval` now pauses runs with status `waiting_approval`, and approve/reject decisions persist to `workflow_approvals`
 - build and release entrypoints now begin dual-writing `releaseBundleId` and `executionTaskId`, so the execution plane can evolve independently from the current synchronous delivery path
-- the active delivery web surface now exposes minimal enterprise control-plane pages for release bundles, execution tasks, execution logs, and approval policies so the new execution-plane objects are inspectable from the console instead of remaining backend-only
+- the active delivery web surface now exposes minimal enterprise control-plane pages for release bundles, execution tasks, and execution logs so the new execution-plane objects are inspectable from the console instead of remaining backend-only
 - the first runnable `ci_agent_runner` chain now exists: control plane task claim + callback APIs, agent-side polling, local shell execution, and callback-driven task/bundle state advancement are all in place for command-driven build/release tasks
 - execution-task claim and callback handling must stay routed through `internal/application/execution`; delivery HTTP handlers must not bypass that orchestration path because heartbeat persistence, release-bundle updates, and build/deploy record backfill now depend on it
 - execution tasks now persist `last_heartbeat_at`, and callback-driven task updates must keep `build_records` and `deploy_records` synchronized with execution-plane status instead of leaving business records stranded at `queued`

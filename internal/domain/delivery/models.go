@@ -81,7 +81,6 @@ type BlueprintEnvironmentBindingTemplate struct {
 	BusinessLineID     string                             `json:"businessLineId,omitempty"`
 	StrategyProfileID  string                             `json:"strategyProfileId,omitempty"`
 	PromotionPolicyID  string                             `json:"promotionPolicyId,omitempty"`
-	ApprovalPolicyID   string                             `json:"approvalPolicyId,omitempty"`
 	ArtifactPolicyID   string                             `json:"artifactPolicyId,omitempty"`
 	WorkflowTemplateID string                             `json:"workflowTemplateId,omitempty"`
 	BuildPolicy        domaincatalog.BuildPolicy          `json:"buildPolicy,omitempty"`
@@ -412,36 +411,6 @@ type ApplicationDeliveryActionResult struct {
 	RelatedIDs               ApplicationDeliveryActionRelatedIDs `json:"relatedIds,omitempty"`
 }
 
-type ApprovalPolicy struct {
-	ID                string         `json:"id"`
-	Key               string         `json:"key"`
-	Name              string         `json:"name"`
-	Description       string         `json:"description,omitempty"`
-	Mode              string         `json:"mode,omitempty"`
-	RequiredApprovals int            `json:"requiredApprovals"`
-	SLAMinutes        int            `json:"slaMinutes"`
-	ApproverRoles     []string       `json:"approverRoles,omitempty"`
-	ChangeWindow      map[string]any `json:"changeWindow,omitempty"`
-	Enabled           bool           `json:"enabled"`
-	Metadata          map[string]any `json:"metadata,omitempty"`
-	CreatedAt         time.Time      `json:"createdAt"`
-	UpdatedAt         time.Time      `json:"updatedAt"`
-}
-
-type ApprovalPolicyInput struct {
-	ID                string         `json:"id"`
-	Key               string         `json:"key"`
-	Name              string         `json:"name"`
-	Description       string         `json:"description,omitempty"`
-	Mode              string         `json:"mode,omitempty"`
-	RequiredApprovals int            `json:"requiredApprovals"`
-	SLAMinutes        int            `json:"slaMinutes"`
-	ApproverRoles     []string       `json:"approverRoles,omitempty"`
-	ChangeWindow      map[string]any `json:"changeWindow,omitempty"`
-	Enabled           bool           `json:"enabled"`
-	Metadata          map[string]any `json:"metadata,omitempty"`
-}
-
 type ApplicationBindingSummary struct {
 	ApplicationEnvironmentID string                          `json:"applicationEnvironmentId"`
 	EnvironmentID            string                          `json:"environmentId"`
@@ -577,12 +546,6 @@ type Repository interface {
 	ListExecutionArtifacts(context.Context, string) ([]ExecutionArtifact, error)
 	ListExecutionArtifactsByBundle(context.Context, string) ([]ExecutionArtifact, error)
 	UpsertExecutionArtifact(context.Context, ExecutionArtifact) (ExecutionArtifact, error)
-
-	ListApprovalPolicies(context.Context) ([]ApprovalPolicy, error)
-	GetApprovalPolicy(context.Context, string) (ApprovalPolicy, error)
-	CreateApprovalPolicy(context.Context, ApprovalPolicyInput) (ApprovalPolicy, error)
-	UpdateApprovalPolicy(context.Context, string, ApprovalPolicyInput) (ApprovalPolicy, error)
-	DeleteApprovalPolicy(context.Context, string) error
 
 	ListDeliveryBlueprints(context.Context) ([]DeliveryBlueprint, error)
 	GetDeliveryBlueprint(context.Context, string) (DeliveryBlueprint, error)

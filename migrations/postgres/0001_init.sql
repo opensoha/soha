@@ -559,7 +559,6 @@ CREATE TABLE public.application_environments (
     updated_at timestamp without time zone DEFAULT now() NOT NULL,
     strategy_profile_id text,
     promotion_policy_id text,
-    approval_policy_id text,
     artifact_policy_id text,
     resource_selector jsonb DEFAULT '{}'::jsonb NOT NULL
 );
@@ -630,25 +629,6 @@ CREATE TABLE public.applications (
     created_at timestamp without time zone DEFAULT now() NOT NULL,
     updated_at timestamp without time zone DEFAULT now() NOT NULL,
     business_line_id text
-);
-
-
--- Name: approval_policies; Type: TABLE; Schema: public; Owner: -
-
-CREATE TABLE public.approval_policies (
-    id text NOT NULL,
-    policy_key text NOT NULL,
-    name text NOT NULL,
-    description text,
-    mode text DEFAULT 'single'::text NOT NULL,
-    required_approvals integer DEFAULT 1 NOT NULL,
-    sla_minutes integer DEFAULT 60 NOT NULL,
-    approver_roles jsonb DEFAULT '[]'::jsonb NOT NULL,
-    change_window jsonb DEFAULT '{}'::jsonb NOT NULL,
-    enabled boolean DEFAULT true NOT NULL,
-    metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
 
@@ -1956,18 +1936,6 @@ ALTER TABLE ONLY public.applications
 
 ALTER TABLE ONLY public.applications
     ADD CONSTRAINT applications_pkey PRIMARY KEY (id);
-
-
--- Name: approval_policies approval_policies_pkey; Type: CONSTRAINT; Schema: public; Owner: -
-
-ALTER TABLE ONLY public.approval_policies
-    ADD CONSTRAINT approval_policies_pkey PRIMARY KEY (id);
-
-
--- Name: approval_policies approval_policies_policy_key_key; Type: CONSTRAINT; Schema: public; Owner: -
-
-ALTER TABLE ONLY public.approval_policies
-    ADD CONSTRAINT approval_policies_policy_key_key UNIQUE (policy_key);
 
 
 -- Name: audit_logs audit_logs_pkey; Type: CONSTRAINT; Schema: public; Owner: -

@@ -172,13 +172,6 @@ func (s *Service) ListReleaseBundleArtifacts(ctx context.Context, principal doma
 	return s.repo.ListExecutionArtifactsByBundle(ctx, strings.TrimSpace(bundleID))
 }
 
-func (s *Service) ListApprovalPolicies(ctx context.Context, principal domainidentity.Principal) ([]domaindelivery.ApprovalPolicy, error) {
-	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermDeliveryWorkflowTemplatesView); err != nil {
-		return nil, err
-	}
-	return s.repo.ListApprovalPolicies(ctx)
-}
-
 func (s *Service) CancelExecutionTask(ctx context.Context, taskID string, input domaindelivery.ExecutionTaskActionInput) (domaindelivery.ExecutionTask, error) {
 	task, err := s.repo.GetExecutionTask(ctx, strings.TrimSpace(taskID))
 	if err != nil {
@@ -297,33 +290,6 @@ func (s *Service) RetryExecutionTask(ctx context.Context, taskID string, input d
 		_ = s.syncReleaseRecord(ctx, updated)
 	}
 	return domaindelivery.WithOperationState(updated, time.Now().UTC()), nil
-}
-
-func (s *Service) CreateApprovalPolicy(ctx context.Context, principal domainidentity.Principal, input domaindelivery.ApprovalPolicyInput) (domaindelivery.ApprovalPolicy, error) {
-	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermDeliveryWorkflowTemplatesManage); err != nil {
-		return domaindelivery.ApprovalPolicy{}, err
-	}
-	if strings.TrimSpace(input.Key) == "" || strings.TrimSpace(input.Name) == "" {
-		return domaindelivery.ApprovalPolicy{}, fmt.Errorf("%w: key and name are required", apperrors.ErrInvalidArgument)
-	}
-	return s.repo.CreateApprovalPolicy(ctx, input)
-}
-
-func (s *Service) UpdateApprovalPolicy(ctx context.Context, principal domainidentity.Principal, policyID string, input domaindelivery.ApprovalPolicyInput) (domaindelivery.ApprovalPolicy, error) {
-	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermDeliveryWorkflowTemplatesManage); err != nil {
-		return domaindelivery.ApprovalPolicy{}, err
-	}
-	if strings.TrimSpace(input.Key) == "" || strings.TrimSpace(input.Name) == "" {
-		return domaindelivery.ApprovalPolicy{}, fmt.Errorf("%w: key and name are required", apperrors.ErrInvalidArgument)
-	}
-	return s.repo.UpdateApprovalPolicy(ctx, strings.TrimSpace(policyID), input)
-}
-
-func (s *Service) DeleteApprovalPolicy(ctx context.Context, principal domainidentity.Principal, policyID string) error {
-	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermDeliveryWorkflowTemplatesManage); err != nil {
-		return err
-	}
-	return s.repo.DeleteApprovalPolicy(ctx, strings.TrimSpace(policyID))
 }
 
 func (s *Service) StartBuildExecution(ctx context.Context, plan BuildPlan) (domaindelivery.ReleaseBundle, domaindelivery.ExecutionTask, error) {

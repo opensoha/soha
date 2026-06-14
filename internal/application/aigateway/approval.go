@@ -13,7 +13,6 @@ import (
 	appaccess "github.com/opensoha/soha/internal/application/access"
 	domainaigateway "github.com/opensoha/soha/internal/domain/aigateway"
 	domainalert "github.com/opensoha/soha/internal/domain/alert"
-	domaindelivery "github.com/opensoha/soha/internal/domain/delivery"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 	"github.com/opensoha/soha/internal/platform/requestctx"
@@ -49,11 +48,10 @@ func (s *Service) holdToolInvocation(ctx context.Context, principal domainidenti
 			return domainaigateway.ToolInvocationResult{}, err
 		}
 		now := time.Now().UTC()
-		deliveryApprovalPolicy, hasDeliveryApprovalPolicy := s.gatewayDeliveryApprovalPolicy(ctx, decision)
-		expiresAt = gatewayApprovalExpiresAt(decision, deliveryApprovalPolicy, hasDeliveryApprovalPolicy, now)
+		expiresAt = gatewayApprovalExpiresAt(decision, now)
 		actorType, actorID := gatewaySubject(principal)
 		meta := requestctx.FromContext(ctx)
-		approvalRouting := gatewayApprovalRoutingFromDecision(decision, deliveryApprovalPolicy, hasDeliveryApprovalPolicy)
+		approvalRouting := gatewayApprovalRoutingFromDecision(decision)
 		approvalRouting = s.resolveGatewayApprovalOnCall(ctx, input, approvalRouting)
 		if len(approvalRouting) > 0 {
 			relatedIDs["approvalRouting"] = approvalRouting
@@ -632,23 +630,14 @@ func (d gatewayRiskDecision) result() string {
 		return "success"
 	}
 }
-func (s *Service) gatewayDeliveryApprovalPolicy(ctx context.Context, decision gatewayRiskDecision) (domaindelivery.ApprovalPolicy, bool) {
-	if s == nil || s.delivery == nil || strings.TrimSpace(decision.ApprovalPolicyRef) == "" {
-		return domaindelivery.ApprovalPolicy{}, false
-	}
-	policy, err := s.delivery.GetApprovalPolicy(ctx, strings.TrimSpace(decision.ApprovalPolicyRef))
-	if err != nil || !policy.Enabled {
-		return domaindelivery.ApprovalPolicy{}, false
-	}
-	return policy, true
-}
-func gatewayApprovalExpiresAt(decision gatewayRiskDecision, deliveryPolicy domaindelivery.ApprovalPolicy, hasDeliveryPolicy bool, now time.Time) *time.Time {
+func gatewayApprovalExpiresAt(decision gatewayRiskDecision, now time.Time) *time.Time {
 	if !decision.requiresApproval() {
 		return nil
 	}
 	duration := 24 * time.Hour
-	if hasDeliveryPolicy && deliveryPolicy.SLAMinutes > 0 {
-		duration = time.Duration(deliveryPolicy.SLAMinutes) * time.Minute
+	values := gatewayApprovalPolicyValues(decision.ApprovalPolicy)
+	if minutes, ok := gatewayFirstPositiveInt(values, "slaMinutes", "approvalSlaMinutes", "timeoutMinutes", "expiresInMinutes", "ttlMinutes"); ok {
+		duration = time.Duration(minutes) * time.Minute
 	}
 	expiresAt := now.Add(duration)
 	return &expiresAt
@@ -669,11 +658,8 @@ func accessPolicyRiskDecision(policy domainaigateway.AccessPolicy) gatewayRiskDe
 func accessPolicyRequiresApproval(policy domainaigateway.AccessPolicy) bool {
 	return accessPolicyRiskDecision(policy).requiresApproval()
 }
-func gatewayApprovalRoutingFromDecision(decision gatewayRiskDecision, deliveryPolicy domaindelivery.ApprovalPolicy, hasDeliveryPolicy bool) map[string]any {
+func gatewayApprovalRoutingFromDecision(decision gatewayRiskDecision) map[string]any {
 	routing := map[string]any{}
-	if hasDeliveryPolicy {
-		routing = mergeAnyMaps(routing, gatewayApprovalRoutingFromDeliveryPolicy(deliveryPolicy))
-	}
 	inline := gatewayApprovalRoutingFromPolicy(decision.ApprovalPolicy)
 	if len(inline) > 0 {
 		routing = gatewayMergeApprovalRouting(routing, inline)
@@ -682,46 +668,6 @@ func gatewayApprovalRoutingFromDecision(decision gatewayRiskDecision, deliveryPo
 		return nil
 	}
 	return routing
-}
-func gatewayApprovalRoutingFromDeliveryPolicy(policy domaindelivery.ApprovalPolicy) map[string]any {
-	if strings.TrimSpace(policy.ID) == "" {
-		return nil
-	}
-	routing := map[string]any{
-		"deliveryApprovalPolicyId":   strings.TrimSpace(policy.ID),
-		"deliveryApprovalPolicyKey":  strings.TrimSpace(policy.Key),
-		"deliveryApprovalPolicyName": strings.TrimSpace(policy.Name),
-	}
-	if mode := gatewayDeliveryApprovalMode(policy.Mode); mode != "" {
-		routing["approvalMode"] = mode
-	}
-	if policy.RequiredApprovals > 0 {
-		routing["requiredApprovals"] = policy.RequiredApprovals
-	}
-	if roles := normalizeStringSlice(policy.ApproverRoles); len(roles) > 0 {
-		routing["candidateRoles"] = roles
-	}
-	if len(policy.ChangeWindow) > 0 {
-		if window := gatewayApprovalChangeWindow(policy.ChangeWindow); len(window) > 0 {
-			routing["changeWindow"] = window
-		} else {
-			routing["changeWindow"] = sanitizeGatewayMap(policy.ChangeWindow)
-		}
-	}
-	if metadataRouting := gatewayApprovalRoutingFromPolicy(policy.Metadata); len(metadataRouting) > 0 {
-		routing = gatewayMergeApprovalRouting(routing, metadataRouting)
-	}
-	return routing
-}
-func gatewayDeliveryApprovalMode(mode string) string {
-	switch strings.ToLower(strings.TrimSpace(mode)) {
-	case "multi", "all", "joint", "joint_approval", "quorum":
-		return "all"
-	case "any", "single", "one", "or":
-		return "any"
-	default:
-		return ""
-	}
 }
 func gatewayApprovalRoutingFromPolicy(policy map[string]any) map[string]any {
 	if len(policy) == 0 {
@@ -1889,7 +1835,7 @@ func approvalPolicyRiskStrategy(policy map[string]any) (gatewayRiskStrategy, boo
 	return "", false
 }
 func approvalPolicyRef(policy map[string]any) string {
-	for _, key := range []string{"approvalPolicyRef", "approvalPolicyId", "deliveryApprovalPolicyId", "policyRef", "policyKey"} {
+	for _, key := range []string{"approvalPolicyRef", "policyRef", "policyKey"} {
 		if value := strings.TrimSpace(fmt.Sprint(policy[key])); value != "" && value != "<nil>" {
 			return value
 		}

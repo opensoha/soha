@@ -259,7 +259,6 @@ func mapApplicationEnvironmentInput(req dto.ApplicationEnvironmentRequest) domai
 		EnvironmentID:      req.EnvironmentID,
 		StrategyProfileID:  req.StrategyProfileID,
 		PromotionPolicyID:  req.PromotionPolicyID,
-		ApprovalPolicyID:   req.ApprovalPolicyID,
 		ArtifactPolicyID:   req.ArtifactPolicyID,
 		WorkflowTemplateID: req.WorkflowTemplateID,
 		BuildPolicy: domaincatalog.BuildPolicy{

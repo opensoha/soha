@@ -744,7 +744,6 @@ func (s *fakeApplicationService) ListServices(_ context.Context, _ domainidentit
 
 type fakeDeliveryService struct {
 	triggered       bool
-	approvalPolicy  domaindelivery.ApprovalPolicy
 	lastActionInput domaindelivery.ApplicationDeliveryActionInput
 	workflowRunID   string
 }
@@ -836,17 +835,6 @@ func (s *fakeDeliveryService) TriggerApplicationDeliveryAction(_ context.Context
 		ApplicationEnvironmentID: input.ApplicationEnvironmentID,
 		RelatedIDs:               relatedIDs,
 	}, nil
-}
-
-func (s *fakeDeliveryService) GetApprovalPolicy(_ context.Context, id string) (domaindelivery.ApprovalPolicy, error) {
-	if s.approvalPolicy.ID != "" {
-		return s.approvalPolicy, nil
-	}
-	return domaindelivery.ApprovalPolicy{ID: id, SLAMinutes: 60}, nil
-}
-
-func (s *fakeDeliveryService) ListApprovalPolicies(context.Context, domainidentity.Principal) ([]domaindelivery.ApprovalPolicy, error) {
-	return []domaindelivery.ApprovalPolicy{{ID: "policy-1", Key: "standard", Name: "Standard", RequiredApprovals: 1, SLAMinutes: 60, Enabled: true}}, nil
 }
 
 func (s *fakeDeliveryService) ListReleaseBundles(context.Context, domainidentity.Principal, domaindelivery.ReleaseBundleFilter) ([]domaindelivery.ReleaseBundle, error) {
@@ -1334,7 +1322,6 @@ func TestDefaultToolInputSchemasCoverHighFrequencyMCPTools(t *testing.T) {
 		{tool: "delivery.release_bundles.list"},
 		{tool: "delivery.execution_tasks.list"},
 		{tool: "delivery.execution_logs.list", required: []string{"taskId"}},
-		{tool: "delivery.approval_policies.list"},
 		{tool: "delivery.workflow_templates.list"},
 		{tool: "delivery.release_context.diff", required: []string{"applicationId"}},
 		{tool: "delivery.rollback.context", required: []string{"applicationId"}},
@@ -3297,7 +3284,6 @@ func TestInvokeDeliveryP1ReadToolsUseOwningServices(t *testing.T) {
 				appaccess.PermDeliveryApplicationsView,
 				appaccess.PermDeliveryApplicationServicesView,
 				appaccess.PermDeliveryApplicationEnvView,
-				appaccess.PermDeliveryApprovalPoliciesView,
 				appaccess.PermDeliveryWorkflowTemplatesView,
 			},
 		},
@@ -3345,16 +3331,6 @@ func TestInvokeDeliveryP1ReadToolsUseOwningServices(t *testing.T) {
 	}
 	if targetsResult.RelatedIDs["count"] != 1 {
 		t.Fatalf("expected one release target, got %#v", targetsResult)
-	}
-
-	policiesResult, err := service.InvokeTool(context.Background(), testPrincipal("developer"), domainaigateway.ToolInvocationRequest{
-		ToolName: "delivery.approval_policies.list",
-	})
-	if err != nil {
-		t.Fatalf("approval policies tool returned error: %v", err)
-	}
-	if policiesResult.RelatedIDs["count"] != 1 {
-		t.Fatalf("expected one approval policy, got %#v", policiesResult)
 	}
 
 	templatesResult, err := service.InvokeTool(context.Background(), testPrincipal("developer"), domainaigateway.ToolInvocationRequest{
@@ -6153,7 +6129,7 @@ func TestListApprovalRequestsFiltersByID(t *testing.T) {
 	}
 }
 
-func TestApprovalRequestUsesDeliveryApprovalPolicySLA(t *testing.T) {
+func TestApprovalRequestUsesInlineApprovalPolicySLAAndRouting(t *testing.T) {
 	now := time.Now().UTC()
 	apps := &fakeApplicationService{}
 	repo := &memoryGatewayRepository{
@@ -6167,9 +6143,18 @@ func TestApprovalRequestUsesDeliveryApprovalPolicySLA(t *testing.T) {
 				ToolPatterns: []string{"delivery.applications.create"},
 				ApprovalPolicy: map[string]any{
 					"strategy":          "require_approval",
-					"approvalPolicyRef": "delivery-fast",
-					"approverRoles":     []any{"security-reviewer"},
-					"requiredApprovals": 1,
+					"approvalPolicyRef": "gateway-fast",
+					"approvalMode":      "all",
+					"approverRoles":     []any{"release-manager", "security-reviewer"},
+					"requiredApprovals": 2,
+					"slaMinutes":        15,
+					"requiredTeamApprovals": map[string]any{
+						"platform-ops": 1,
+					},
+					"changeWindow": map[string]any{
+						"startsAt": now.Add(-time.Hour).Format(time.RFC3339),
+						"endsAt":   now.Add(time.Hour).Format(time.RFC3339),
+					},
 				},
 			},
 		},
@@ -6192,23 +6177,7 @@ func TestApprovalRequestUsesDeliveryApprovalPolicySLA(t *testing.T) {
 			},
 		},
 	}), nil, repo)
-	service.SetDeliveryServices(apps, &fakeDeliveryService{approvalPolicy: domaindelivery.ApprovalPolicy{
-		ID:                "delivery-fast",
-		Key:               "fast",
-		Name:              "Fast Approval",
-		Mode:              "multi",
-		RequiredApprovals: 2,
-		SLAMinutes:        15,
-		ApproverRoles:     []string{"release-manager"},
-		ChangeWindow: map[string]any{
-			"startsAt": now.Add(-time.Hour).Format(time.RFC3339),
-			"endsAt":   now.Add(time.Hour).Format(time.RFC3339),
-		},
-		Enabled: true,
-		Metadata: map[string]any{
-			"requiredTeamApprovals": map[string]any{"platform-ops": 1},
-		},
-	}})
+	service.SetDeliveryServices(apps, &fakeDeliveryService{})
 
 	held, err := service.InvokeTool(context.Background(), testPrincipal("developer"), domainaigateway.ToolInvocationRequest{
 		ToolName: "delivery.applications.create",
@@ -6221,21 +6190,21 @@ func TestApprovalRequestUsesDeliveryApprovalPolicySLA(t *testing.T) {
 		t.Fatalf("expected approval request, got %#v", repo.approvalRequests)
 	}
 	request := repo.approvalRequests[0]
-	if request.ApprovalPolicyRef != "delivery-fast" {
+	if request.ApprovalPolicyRef != "gateway-fast" {
 		t.Fatalf("expected approval policy ref, got %#v", request)
 	}
 	if request.ExpiresAt == nil || request.ExpiresAt.Before(now.Add(14*time.Minute)) || request.ExpiresAt.After(now.Add(16*time.Minute)) {
-		t.Fatalf("expected SLA-based expiry around 15m, got %#v", request.ExpiresAt)
+		t.Fatalf("expected inline SLA-based expiry around 15m, got %#v", request.ExpiresAt)
 	}
 	routing := mapValue(request.RelatedIDs["approvalRouting"])
-	if routing["deliveryApprovalPolicyId"] != "delivery-fast" || routing["approvalMode"] != "all" || routing["requiredApprovals"] != 2 {
-		t.Fatalf("expected delivery approval policy routing, got %#v", routing)
+	if routing["approvalMode"] != "all" || routing["requiredApprovals"] != 2 {
+		t.Fatalf("expected inline approval routing, got %#v", routing)
 	}
 	if fmt.Sprint(routing["candidateRoles"]) != "[release-manager security-reviewer]" {
-		t.Fatalf("expected delivery and Gateway policy roles to merge, got %#v", routing["candidateRoles"])
+		t.Fatalf("expected Gateway policy roles, got %#v", routing["candidateRoles"])
 	}
 	if fmt.Sprint(routing["requiredTeamApprovals"]) != "map[platform-ops:1]" || len(mapValue(routing["changeWindow"])) == 0 {
-		t.Fatalf("expected delivery policy team quota and change window, got %#v", routing)
+		t.Fatalf("expected inline team quota and change window, got %#v", routing)
 	}
 
 	releaseApprover := testPrincipal("release-manager")
@@ -6246,7 +6215,7 @@ func TestApprovalRequestUsesDeliveryApprovalPolicySLA(t *testing.T) {
 		t.Fatalf("release approval returned error: %v", err)
 	}
 	if first.Request.Status != "pending" || apps.created {
-		t.Fatalf("expected delivery policy quorum to keep request pending, request=%#v apps=%#v", first.Request, apps)
+		t.Fatalf("expected inline policy quorum to keep request pending, request=%#v apps=%#v", first.Request, apps)
 	}
 	securityApprover := testPrincipal("security-reviewer")
 	securityApprover.UserID = "security-1"
@@ -6255,7 +6224,7 @@ func TestApprovalRequestUsesDeliveryApprovalPolicySLA(t *testing.T) {
 		t.Fatalf("security approval returned error: %v", err)
 	}
 	if final.Request.Status != "executed" || !apps.created {
-		t.Fatalf("expected delivery policy quorum to execute after second approval, request=%#v apps=%#v", final.Request, apps)
+		t.Fatalf("expected inline policy quorum to execute after second approval, request=%#v apps=%#v", final.Request, apps)
 	}
 }
 

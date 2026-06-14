@@ -421,9 +421,6 @@ func (s *Service) invokeDeliveryTool(ctx context.Context, principal domainidenti
 		items, err := s.delivery.ListExecutionLogs(ctx, principal, req.TaskID, req.Limit)
 		items = redactExecutionLogs(items)
 		return items, map[string]any{"executionTaskId": req.TaskID, "count": len(items)}, err
-	case "delivery.approval_policies.list":
-		items, err := s.delivery.ListApprovalPolicies(ctx, principal)
-		return items, map[string]any{"count": len(items)}, err
 	case "delivery.workflow_templates.list":
 		if s.catalog == nil {
 			return nil, nil, fmt.Errorf("%w: catalog gateway services are not configured", apperrors.ErrInvalidArgument)
@@ -643,7 +640,7 @@ func (s *Service) buildReleaseContextDiff(ctx context.Context, principal domaini
 		"executionTasks": redactedExecutionTasks(tasks),
 		"comparison":     compareReleaseBundles(sourceBundle, targetBundle),
 		"nextChecks": []string{
-			"Verify target binding release policy, approval policy, and enabled release targets before triggering a promotion.",
+			"Verify target binding release policy, workflow approval nodes, and enabled release targets before triggering a promotion.",
 			"Inspect execution task logs for the candidate bundle if recent tasks are not successful.",
 		},
 	}

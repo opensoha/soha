@@ -278,12 +278,45 @@ func TestDefaultMenuSeedsPlaceApplicationCenterFirstInDelivery(t *testing.T) {
 	}
 
 	for _, item := range items {
-		if item.Section != "deliver" || item.ID == applicationCenter.ID {
+		if item.Section != "delivery" || item.ID == applicationCenter.ID {
 			continue
 		}
 		if item.SortOrder <= applicationCenter.SortOrder {
 			t.Fatalf("application center sort order = %d, delivery menu %q sort order = %d", applicationCenter.SortOrder, item.ID, item.SortOrder)
 		}
+	}
+}
+
+func TestDefaultMenuSeedsGroupDeliveryWorkbenchByUserTask(t *testing.T) {
+	items := defaultMenuSeeds()
+	expected := map[string]string{
+		"builds":                   "delivery",
+		"delivery-onboarding":      "delivery",
+		"release-board":            "delivery",
+		"delivery-testing":         "delivery",
+		"delivery-analysis":        "delivery",
+		"release-bundles":          "delivery-records",
+		"execution-tasks":          "delivery-records",
+		"workflows":                "delivery-records",
+		"releases":                 "delivery-records",
+		"delivery-blueprints":      "delivery-platform",
+		"build-templates":          "delivery-platform",
+		"workflow-templates":       "delivery-platform",
+		"application-environments": "delivery-platform",
+		"registries":               "delivery-platform",
+	}
+	for _, item := range items {
+		section, ok := expected[item.ID]
+		if !ok {
+			continue
+		}
+		if item.Section != section {
+			t.Fatalf("menu seed %q section = %q, want %q", item.ID, item.Section, section)
+		}
+		delete(expected, item.ID)
+	}
+	if len(expected) > 0 {
+		t.Fatalf("default menu seeds missing delivery menus: %v", expected)
 	}
 }
 

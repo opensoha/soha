@@ -258,26 +258,6 @@ func (stubRepository) UpsertExecutionArtifact(context.Context, domaindelivery.Ex
 	return domaindelivery.ExecutionArtifact{}, nil
 }
 
-func (stubRepository) ListApprovalPolicies(context.Context) ([]domaindelivery.ApprovalPolicy, error) {
-	return nil, nil
-}
-
-func (stubRepository) GetApprovalPolicy(context.Context, string) (domaindelivery.ApprovalPolicy, error) {
-	return domaindelivery.ApprovalPolicy{}, nil
-}
-
-func (stubRepository) CreateApprovalPolicy(context.Context, domaindelivery.ApprovalPolicyInput) (domaindelivery.ApprovalPolicy, error) {
-	return domaindelivery.ApprovalPolicy{}, nil
-}
-
-func (stubRepository) UpdateApprovalPolicy(context.Context, string, domaindelivery.ApprovalPolicyInput) (domaindelivery.ApprovalPolicy, error) {
-	return domaindelivery.ApprovalPolicy{}, nil
-}
-
-func (stubRepository) DeleteApprovalPolicy(context.Context, string) error {
-	return nil
-}
-
 func (stubRepository) ListDeliveryBlueprints(context.Context) ([]domaindelivery.DeliveryBlueprint, error) {
 	return nil, nil
 }

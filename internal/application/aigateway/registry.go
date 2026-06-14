@@ -226,7 +226,6 @@ func defaultResourceCapabilityRefs() []ResourceCapabilityRefs {
 				"delivery.release_bundles.list",
 				"delivery.execution_tasks.list",
 				"delivery.execution_logs.list",
-				"delivery.approval_policies.list",
 				"delivery.workflow_templates.list",
 				"delivery.release_context.diff",
 				"delivery.rollback.context",

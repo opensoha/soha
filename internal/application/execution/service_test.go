@@ -665,26 +665,6 @@ func (r *executionRepoFake) UpsertExecutionArtifact(_ context.Context, item doma
 	return item, nil
 }
 
-func (r *executionRepoFake) ListApprovalPolicies(context.Context) ([]domaindelivery.ApprovalPolicy, error) {
-	return nil, nil
-}
-
-func (r *executionRepoFake) GetApprovalPolicy(context.Context, string) (domaindelivery.ApprovalPolicy, error) {
-	return domaindelivery.ApprovalPolicy{}, fmt.Errorf("approval policy not found")
-}
-
-func (r *executionRepoFake) CreateApprovalPolicy(_ context.Context, input domaindelivery.ApprovalPolicyInput) (domaindelivery.ApprovalPolicy, error) {
-	return domaindelivery.ApprovalPolicy{ID: input.ID, Key: input.Key, Name: input.Name}, nil
-}
-
-func (r *executionRepoFake) UpdateApprovalPolicy(_ context.Context, id string, input domaindelivery.ApprovalPolicyInput) (domaindelivery.ApprovalPolicy, error) {
-	return domaindelivery.ApprovalPolicy{ID: strings.TrimSpace(id), Key: input.Key, Name: input.Name}, nil
-}
-
-func (r *executionRepoFake) DeleteApprovalPolicy(context.Context, string) error {
-	return nil
-}
-
 func (r *executionRepoFake) ListDeliveryBlueprints(context.Context) ([]domaindelivery.DeliveryBlueprint, error) {
 	return nil, nil
 }

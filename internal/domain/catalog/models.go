@@ -88,7 +88,6 @@ type ApplicationEnvironment struct {
 	EnvironmentKey     string            `json:"environmentKey,omitempty"`
 	StrategyProfileID  string            `json:"strategyProfileId,omitempty"`
 	PromotionPolicyID  string            `json:"promotionPolicyId,omitempty"`
-	ApprovalPolicyID   string            `json:"approvalPolicyId,omitempty"`
 	ArtifactPolicyID   string            `json:"artifactPolicyId,omitempty"`
 	WorkflowTemplateID string            `json:"workflowTemplateId,omitempty"`
 	WorkflowTemplate   *WorkflowTemplate `json:"workflowTemplate,omitempty"`
@@ -106,7 +105,6 @@ type ApplicationEnvironmentInput struct {
 	EnvironmentID      string               `json:"environmentId"`
 	StrategyProfileID  string               `json:"strategyProfileId,omitempty"`
 	PromotionPolicyID  string               `json:"promotionPolicyId,omitempty"`
-	ApprovalPolicyID   string               `json:"approvalPolicyId,omitempty"`
 	ArtifactPolicyID   string               `json:"artifactPolicyId,omitempty"`
 	WorkflowTemplateID string               `json:"workflowTemplateId,omitempty"`
 	BuildPolicy        BuildPolicy          `json:"buildPolicy,omitempty"`

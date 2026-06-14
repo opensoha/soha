@@ -113,18 +113,19 @@ func defaultMenuSeeds() []menuSeed {
 		{ID: "docker-workbench-projects", ParentID: "docker-workbench", Path: "/docker/projects", LabelZH: "容器管理", LabelEN: "Container Management", IconKey: "docker", Section: "ops", SortOrder: 93, Enabled: true, Roles: []string{"admin", "ops", "developer", "readonly"}},
 		{ID: "docker-workbench-templates", ParentID: "docker-workbench", Path: "/docker/templates", LabelZH: "模板", LabelEN: "Templates", IconKey: "code", Section: "ops", SortOrder: 96, Enabled: true, Roles: []string{"admin", "ops", "developer", "readonly"}},
 		{ID: "docker-workbench-operations", ParentID: "docker-workbench", Path: "/docker/operations", LabelZH: "操作记录", LabelEN: "Operations", IconKey: "history", Section: "ops", SortOrder: 97, Enabled: true, Roles: []string{"admin", "ops", "developer", "readonly"}},
-		{ID: "builds", Path: "/applications", LabelZH: "应用中心", LabelEN: "Application Center", IconKey: "blocks", Section: "deliver", SortOrder: 1, Enabled: true, Roles: []string{"admin", "ops", "developer"}},
-		{ID: "application-management", Path: "/application-management", LabelZH: "应用管理", LabelEN: "Application Management", IconKey: "blocks", Section: "deliver", SortOrder: 111, Enabled: true, Roles: []string{"admin", "ops", "developer"}},
-		{ID: "build-templates", Path: "/build-templates", LabelZH: "构建模板", LabelEN: "Build Templates", IconKey: "code", Section: "deliver", SortOrder: 112, Enabled: true, Roles: []string{"admin", "ops"}},
-		{ID: "delivery-blueprints", Path: "/delivery/blueprints", LabelZH: "交付蓝图", LabelEN: "Delivery Blueprints", IconKey: "code", Section: "deliver", SortOrder: 112, Enabled: true, Roles: []string{"admin", "ops", "developer"}},
-		{ID: "release-bundles", Path: "/delivery/release-bundles", LabelZH: "版本包", LabelEN: "Release Bundles", IconKey: "blocks", Section: "deliver", SortOrder: 113, Enabled: true, Roles: []string{"admin", "ops", "developer"}},
-		{ID: "execution-tasks", Path: "/delivery/execution-tasks", LabelZH: "执行任务", LabelEN: "Execution Tasks", IconKey: "activity", Section: "deliver", SortOrder: 114, Enabled: true, Roles: []string{"admin", "ops", "developer"}},
-		{ID: "approval-policies", Path: "/delivery/approval-policies", LabelZH: "审批策略", LabelEN: "Approval Policies", IconKey: "shield", Section: "deliver", SortOrder: 115, Enabled: true, Roles: []string{"admin", "ops"}},
-		{ID: "workflow-templates", Path: "/workflow-templates", LabelZH: "发布流程模板", LabelEN: "Workflow Templates", IconKey: "activity", Section: "deliver", SortOrder: 116, Enabled: true, Roles: []string{"admin", "ops"}},
-		{ID: "release-board", Path: "/release-board", LabelZH: "发布看板", LabelEN: "Release Board", IconKey: "activity", Section: "deliver", SortOrder: 117, Enabled: true, Roles: []string{"admin", "ops", "developer"}},
-		{ID: "application-environments", Path: "/application-environments", LabelZH: "应用环境绑定", LabelEN: "Application Environment Bindings", IconKey: "blocks", Section: "deliver", SortOrder: 111, Enabled: true, Roles: []string{"admin", "ops", "developer"}},
-		{ID: "workflows", Path: "/workflows", LabelZH: "工作流", LabelEN: "Workflows", IconKey: "activity", Section: "deliver", SortOrder: 118, Enabled: true, Roles: []string{"admin", "ops", "developer"}},
-		{ID: "releases", Path: "/releases", LabelZH: "发布", LabelEN: "Releases", IconKey: "activity", Section: "deliver", SortOrder: 120, Enabled: true, Roles: []string{"admin", "ops", "developer"}},
+		{ID: "builds", Path: "/applications", LabelZH: "应用中心", LabelEN: "Application Center", IconKey: "blocks", Section: "delivery", SortOrder: 10, Enabled: true, Roles: []string{"admin", "ops", "developer"}},
+		{ID: "delivery-onboarding", Path: "/delivery/onboarding", LabelZH: "应用接入", LabelEN: "Application Onboarding", IconKey: "code", Section: "delivery", SortOrder: 20, Enabled: true, Roles: []string{"admin", "ops", "developer"}},
+		{ID: "release-board", Path: "/release-board", LabelZH: "构建发布", LabelEN: "Build & Release", IconKey: "activity", Section: "delivery", SortOrder: 30, Enabled: true, Roles: []string{"admin", "ops", "developer"}},
+		{ID: "delivery-testing", Path: "/delivery/testing", LabelZH: "测试验证", LabelEN: "Testing & Verification", IconKey: "shield", Section: "delivery", SortOrder: 40, Enabled: true, Roles: []string{"admin", "ops", "developer"}},
+		{ID: "delivery-analysis", Path: "/delivery/analysis", LabelZH: "问题分析", LabelEN: "Issue Analysis", IconKey: "activity", Section: "delivery", SortOrder: 50, Enabled: true, Roles: []string{"admin", "ops", "developer"}},
+		{ID: "release-bundles", Path: "/delivery/release-bundles", LabelZH: "版本包", LabelEN: "Release Bundles", IconKey: "blocks", Section: "delivery-records", SortOrder: 10, Enabled: true, Roles: []string{"admin", "ops", "developer"}},
+		{ID: "execution-tasks", Path: "/delivery/execution-tasks", LabelZH: "执行任务", LabelEN: "Execution Tasks", IconKey: "activity", Section: "delivery-records", SortOrder: 20, Enabled: true, Roles: []string{"admin", "ops", "developer"}},
+		{ID: "workflows", Path: "/workflows", LabelZH: "工作流", LabelEN: "Workflows", IconKey: "activity", Section: "delivery-records", SortOrder: 30, Enabled: true, Roles: []string{"admin", "ops", "developer"}},
+		{ID: "releases", Path: "/releases", LabelZH: "发布记录", LabelEN: "Release Records", IconKey: "activity", Section: "delivery-records", SortOrder: 40, Enabled: true, Roles: []string{"admin", "ops", "developer"}},
+		{ID: "delivery-blueprints", Path: "/delivery/blueprints", LabelZH: "应用接入模板", LabelEN: "Onboarding Templates", IconKey: "code", Section: "delivery-platform", SortOrder: 10, Enabled: true, Roles: []string{"admin", "ops"}},
+		{ID: "build-templates", Path: "/build-templates", LabelZH: "构建模板", LabelEN: "Build Templates", IconKey: "code", Section: "delivery-platform", SortOrder: 20, Enabled: true, Roles: []string{"admin", "ops"}},
+		{ID: "workflow-templates", Path: "/workflow-templates", LabelZH: "发布流程模板", LabelEN: "Workflow Templates", IconKey: "activity", Section: "delivery-platform", SortOrder: 30, Enabled: true, Roles: []string{"admin", "ops"}},
+		{ID: "application-environments", Path: "/application-environments", LabelZH: "环境绑定", LabelEN: "Environment Bindings", IconKey: "blocks", Section: "delivery-platform", SortOrder: 50, Enabled: true, Roles: []string{"admin", "ops"}},
 		{ID: "system", Path: "/system", LabelZH: "系统", LabelEN: "System", IconKey: "panels-top-left", Section: "admin", SortOrder: 225, Enabled: true},
 		{ID: "announcements", ParentID: "system", Path: "/system/announcements", LabelZH: "通知公告", LabelEN: "Announcements", IconKey: "megaphone", Section: "admin", SortOrder: 230, Enabled: true, Roles: []string{"admin"}},
 		{ID: "access", Path: "/access", LabelZH: "访问控制", LabelEN: "Access Control", IconKey: "shield", Section: "admin", SortOrder: 240, Enabled: true, Roles: []string{"admin"}},
@@ -136,7 +137,7 @@ func defaultMenuSeeds() []menuSeed {
 		{ID: "system-online-users", ParentID: "system", Path: "/system/online-users", LabelZH: "在线用户", LabelEN: "Online Users", IconKey: "users", Section: "admin", SortOrder: 256, Enabled: true, Roles: []string{"admin"}},
 		{ID: "operations", ParentID: "system", Path: "/system/operations", LabelZH: "操作日志", LabelEN: "Operation Logs", IconKey: "clipboard-list", Section: "admin", SortOrder: 257, Enabled: true},
 		{ID: "audit", ParentID: "system", Path: "/system/audit", LabelZH: "审计日志", LabelEN: "Audit Logs", IconKey: "file-clock", Section: "admin", SortOrder: 258, Enabled: true},
-		{ID: "registries", Path: "/registries", LabelZH: "镜像仓库", LabelEN: "Registry Connections", IconKey: "menu-square", Section: "deliver", SortOrder: 121, Enabled: true, Roles: []string{"admin", "ops"}},
+		{ID: "registries", Path: "/registries", LabelZH: "镜像仓库", LabelEN: "Registry Connections", IconKey: "menu-square", Section: "delivery-platform", SortOrder: 70, Enabled: true, Roles: []string{"admin", "ops"}},
 		{ID: "settings", Path: "/settings", LabelZH: "设置中心", LabelEN: "Settings Center", IconKey: "cog", Section: "admin", SortOrder: 260, Enabled: true, Roles: []string{"admin"}},
 		{ID: "settings-login", ParentID: "settings", Path: "/settings/login", LabelZH: "登陆设置", LabelEN: "Login Settings", IconKey: "shield", Section: "admin", SortOrder: 261, Enabled: true, Roles: []string{"admin"}},
 		{ID: "settings-branding", ParentID: "settings", Path: "/settings/branding", LabelZH: "品牌设置", LabelEN: "Branding Settings", IconKey: "palette", Section: "admin", SortOrder: 262, Enabled: true, Roles: []string{"admin"}},
@@ -172,6 +173,7 @@ func deprecatedMenuIDs() []string {
 		"events",
 		"business-lines",
 		"delivery-environments",
+		"application-management",
 	}
 }
 
@@ -282,6 +284,44 @@ func syncBuiltinMenuSeedUpgrades(ctx context.Context, db *gorm.DB) error {
 			return err
 		}
 	}
+
+	deliveryItems := []struct {
+		id        string
+		section   string
+		sortOrder int
+		labelZH   string
+		labelEN   string
+		oldZH     string
+		oldEN     string
+	}{
+		{id: "builds", section: "delivery", sortOrder: 10, labelZH: "应用中心", labelEN: "Application Center", oldZH: "应用中心", oldEN: "Applications"},
+		{id: "delivery-onboarding", section: "delivery", sortOrder: 20, labelZH: "应用接入", labelEN: "Application Onboarding", oldZH: "应用接入", oldEN: "Application Onboarding"},
+		{id: "release-board", section: "delivery", sortOrder: 30, labelZH: "构建发布", labelEN: "Build & Release", oldZH: "发布看板", oldEN: "Release Board"},
+		{id: "delivery-testing", section: "delivery", sortOrder: 40, labelZH: "测试验证", labelEN: "Testing & Verification", oldZH: "测试验证", oldEN: "Testing & Verification"},
+		{id: "delivery-analysis", section: "delivery", sortOrder: 50, labelZH: "问题分析", labelEN: "Issue Analysis", oldZH: "问题分析", oldEN: "Issue Analysis"},
+		{id: "release-bundles", section: "delivery-records", sortOrder: 10, labelZH: "版本包", labelEN: "Release Bundles", oldZH: "版本包", oldEN: "Release Bundles"},
+		{id: "execution-tasks", section: "delivery-records", sortOrder: 20, labelZH: "执行任务", labelEN: "Execution Tasks", oldZH: "执行任务", oldEN: "Execution Tasks"},
+		{id: "workflows", section: "delivery-records", sortOrder: 30, labelZH: "工作流", labelEN: "Workflows", oldZH: "工作流", oldEN: "Workflows"},
+		{id: "releases", section: "delivery-records", sortOrder: 40, labelZH: "发布记录", labelEN: "Release Records", oldZH: "发布", oldEN: "Releases"},
+		{id: "delivery-blueprints", section: "delivery-platform", sortOrder: 10, labelZH: "应用接入模板", labelEN: "Onboarding Templates", oldZH: "交付蓝图", oldEN: "Delivery Blueprints"},
+		{id: "build-templates", section: "delivery-platform", sortOrder: 20, labelZH: "构建模板", labelEN: "Build Templates", oldZH: "构建模板", oldEN: "Build Templates"},
+		{id: "workflow-templates", section: "delivery-platform", sortOrder: 30, labelZH: "发布流程模板", labelEN: "Workflow Templates", oldZH: "发布流程模板", oldEN: "Workflow Templates"},
+		{id: "application-environments", section: "delivery-platform", sortOrder: 50, labelZH: "环境绑定", labelEN: "Environment Bindings", oldZH: "应用环境绑定", oldEN: "Application Environment Bindings"},
+		{id: "registries", section: "delivery-platform", sortOrder: 70, labelZH: "镜像仓库", labelEN: "Registry Connections", oldZH: "镜像仓库", oldEN: "Registry Connections"},
+	}
+	for _, item := range deliveryItems {
+		if err := db.WithContext(ctx).Exec(`
+			UPDATE menus
+			SET section = ?,
+				sort_order = ?,
+				label_zh = CASE WHEN label_zh = ? THEN ? ELSE label_zh END,
+				label_en = CASE WHEN label_en = ? THEN ? ELSE label_en END,
+				updated_at = ?
+			WHERE id = ? AND section IN ('deliver', 'delivery', 'delivery-records', 'delivery-platform')
+		`, item.section, item.sortOrder, item.oldZH, item.labelZH, item.oldEN, item.labelEN, now, item.id).Error; err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -349,13 +389,14 @@ func disabledModuleMenuIDs(items []menuSeed, modules cfgpkg.ModulesConfig) []str
 
 func isDeliveryMenuSeed(item menuSeed) bool {
 	return strings.HasPrefix(item.Path, "/applications") ||
-		strings.HasPrefix(item.Path, "/application-management") ||
 		strings.HasPrefix(item.Path, "/application-environments") ||
 		strings.HasPrefix(item.Path, "/build-templates") ||
+		strings.HasPrefix(item.Path, "/delivery/onboarding") ||
+		strings.HasPrefix(item.Path, "/delivery/testing") ||
+		strings.HasPrefix(item.Path, "/delivery/analysis") ||
 		strings.HasPrefix(item.Path, "/delivery/blueprints") ||
 		strings.HasPrefix(item.Path, "/delivery/release-bundles") ||
 		strings.HasPrefix(item.Path, "/delivery/execution-tasks") ||
-		strings.HasPrefix(item.Path, "/delivery/approval-policies") ||
 		strings.HasPrefix(item.Path, "/workflow-templates") ||
 		strings.HasPrefix(item.Path, "/release-board") ||
 		strings.HasPrefix(item.Path, "/workflows") ||

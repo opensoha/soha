@@ -37,10 +37,12 @@ func workspacePermissionForMenu(item domainmenu.Record) string {
 	case strings.HasPrefix(path, "/applications") ||
 		strings.HasPrefix(path, "/application-environments") ||
 		strings.HasPrefix(path, "/build-templates") ||
+		strings.HasPrefix(path, "/delivery/onboarding") ||
+		strings.HasPrefix(path, "/delivery/testing") ||
+		strings.HasPrefix(path, "/delivery/analysis") ||
 		strings.HasPrefix(path, "/delivery/blueprints") ||
 		strings.HasPrefix(path, "/delivery/release-bundles") ||
 		strings.HasPrefix(path, "/delivery/execution-tasks") ||
-		strings.HasPrefix(path, "/delivery/approval-policies") ||
 		strings.HasPrefix(path, "/workflow-templates") ||
 		strings.HasPrefix(path, "/release-board") ||
 		strings.HasPrefix(path, "/workflows") ||
@@ -68,14 +70,18 @@ func permissionRuleForMenu(item domainmenu.Record) (visibilityRule, bool) {
 		return visibilityRule{permissions: []string{appaccess.PermDeliveryApplicationsView}}, true
 	case item.ID == "delivery-blueprints":
 		return visibilityRule{permissions: []string{appaccess.PermDeliveryApplicationsView}}, true
+	case item.ID == "delivery-onboarding":
+		return visibilityRule{permissions: []string{appaccess.PermDeliveryApplicationsView}}, true
+	case item.ID == "delivery-testing":
+		return visibilityRule{permissions: []string{appaccess.PermDeliveryReleaseBundlesView, appaccess.PermDeliveryExecutionTasksView, appaccess.PermDeliveryReleaseBoardView}}, true
+	case item.ID == "delivery-analysis":
+		return visibilityRule{permissions: []string{appaccess.PermDeliveryExecutionTasksView, appaccess.PermDeliveryReleaseBoardView, appaccess.PermDeliveryReleaseBundlesView}}, true
 	case item.ID == "build-templates":
 		return visibilityRule{permissions: []string{appaccess.PermDeliveryBuildTemplatesView}}, true
 	case item.ID == "release-bundles":
 		return visibilityRule{permissions: []string{appaccess.PermDeliveryReleaseBundlesView}}, true
 	case item.ID == "execution-tasks":
 		return visibilityRule{permissions: []string{appaccess.PermDeliveryExecutionTasksView}}, true
-	case item.ID == "approval-policies":
-		return visibilityRule{permissions: []string{appaccess.PermDeliveryApprovalPoliciesView}}, true
 	case item.ID == "workflow-templates":
 		return visibilityRule{permissions: []string{appaccess.PermDeliveryWorkflowTemplatesView}}, true
 	case item.ID == "release-board":
