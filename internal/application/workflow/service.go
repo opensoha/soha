@@ -16,6 +16,7 @@ import (
 	domainapp "github.com/opensoha/soha/internal/domain/application"
 	domainbuild "github.com/opensoha/soha/internal/domain/build"
 	domaincatalog "github.com/opensoha/soha/internal/domain/catalog"
+	domaindelivery "github.com/opensoha/soha/internal/domain/delivery"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainrelease "github.com/opensoha/soha/internal/domain/release"
 	domainresource "github.com/opensoha/soha/internal/domain/resource"
@@ -53,6 +54,7 @@ type Repository interface {
 
 type ApplicationReader interface {
 	Get(context.Context, string) (domainapp.App, error)
+	ListServices(context.Context, string) ([]domainapp.Service, error)
 }
 
 type CatalogReader interface {
@@ -82,6 +84,10 @@ type AlertMutator interface {
 	CreateWorkflowSilence(context.Context, domainidentity.Principal, domainalert.SilenceInput) (domainalert.AlertSilence, error)
 }
 
+type ArtifactStore interface {
+	UpsertExecutionArtifact(context.Context, domaindelivery.ExecutionArtifact) (domaindelivery.ExecutionArtifact, error)
+}
+
 type Service struct {
 	repo        Repository
 	apps        ApplicationReader
@@ -92,6 +98,7 @@ type Service struct {
 	releases    ReleaseExecutor
 	resources   ResourceExecutor
 	alerts      AlertMutator
+	artifacts   ArtifactStore
 	httpClient  *http.Client
 	logger      *zap.Logger
 	metrics     *runtimeobs.Registry
@@ -146,6 +153,10 @@ func (s *Service) SetInstrumentation(logger *zap.Logger, metrics *runtimeobs.Reg
 
 func (s *Service) SetAlertMutator(alerts AlertMutator) {
 	s.alerts = alerts
+}
+
+func (s *Service) SetArtifactStore(artifacts ArtifactStore) {
+	s.artifacts = artifacts
 }
 
 func (s *Service) SetRuntimeOptions(workerCount, queueSize, nodeParallelism int) {
@@ -319,6 +330,27 @@ func (s *Service) List(ctx context.Context, principal domainidentity.Principal, 
 	return allowed, nil
 }
 
+func (s *Service) Get(ctx context.Context, principal domainidentity.Principal, workflowRunID string) (domainworkflow.Run, error) {
+	if err := s.authorizePermission(ctx, principal, appaccess.PermDeliveryWorkflowsView); err != nil {
+		return domainworkflow.Run{}, err
+	}
+	item, err := s.repo.Get(ctx, strings.TrimSpace(workflowRunID))
+	if err != nil {
+		return domainworkflow.Run{}, err
+	}
+	app, err := s.apps.Get(ctx, item.ApplicationID)
+	if err != nil {
+		if isApplicationMissing(err) {
+			return domainworkflow.Run{}, fmt.Errorf("%w: %v", apperrors.ErrNotFound, err)
+		}
+		return domainworkflow.Run{}, err
+	}
+	if err := s.authorize(ctx, principal, domainaccess.ActionView, app, item.ApplicationID); err != nil {
+		return domainworkflow.Run{}, err
+	}
+	return item, nil
+}
+
 func (s *Service) Trigger(ctx context.Context, principal domainidentity.Principal, input domainworkflow.Input) (domainworkflow.Run, error) {
 	if err := s.authorizePermission(ctx, principal, appaccess.PermDeliveryWorkflowsTrigger); err != nil {
 		return domainworkflow.Run{}, err
@@ -479,7 +511,6 @@ func (s *Service) ExecuteSystemDAG(ctx context.Context, principal domainidentity
 	if !ok {
 		return domainworkflow.Run{}, fmt.Errorf("%w: workflow definition is not a supported DAG", apperrors.ErrInvalidArgument)
 	}
-	nodeRuns := initializeNodeRuns(parsed)
 	now := time.Now().UTC().Format(time.RFC3339)
 	if strings.TrimSpace(applicationID) == "" {
 		applicationID = "healing:" + firstNonEmpty(strings.TrimSpace(workflowTemplateID), "adhoc")
@@ -498,9 +529,14 @@ func (s *Service) ExecuteSystemDAG(ctx context.Context, principal domainidentity
 			Definition: definition,
 		},
 	}
+	if err := validateDAGExecutionDefinition(parsed, syntheticBinding, domainapp.App{ID: applicationID, Name: workflowName}, input); err != nil {
+		return domainworkflow.Run{}, err
+	}
+	nodeRuns := initializeNodeRuns(parsed)
 	runMetadata := map[string]any{
 		"applicationName":      workflowName,
-		"mode":                 "release_dag",
+		"mode":                 parsed.Mode,
+		"executionMode":        "release_dag",
 		"schemaVersion":        parsed.SchemaVersion,
 		"workflowTemplateId":   syntheticBinding.WorkflowTemplateID,
 		"workflowTemplateKey":  syntheticBinding.WorkflowTemplate.Key,
@@ -671,12 +707,24 @@ func (s *Service) resolveApproval(ctx context.Context, principal domainidentity.
 }
 
 type dagWorkflowNode struct {
-	ID                string
-	Name              string
-	Type              string
-	TimeoutSeconds    int
-	ContinueOnFailure bool
-	Config            map[string]any
+	ID                  string
+	Name                string
+	Type                string
+	TimeoutSeconds      int
+	ContinueOnFailure   bool
+	Config              map[string]any
+	Inputs              []string
+	Outputs             []string
+	ServiceSelector     map[string]any
+	EnvironmentSelector map[string]any
+	TargetSelector      map[string]any
+	ArtifactOutputs     []map[string]any
+	RunCondition        string
+	FailurePolicy       string
+	FanOutStrategy      string
+	FanOutBatchSize     int
+	FanOutFailurePolicy string
+	Observability       map[string]any
 }
 
 type dagWorkflowEdge struct {
@@ -694,11 +742,15 @@ type dagWorkflowDefinition struct {
 }
 
 type dagExecutionResult struct {
-	nodeID  string
-	step    domainworkflow.Step
-	status  string
-	summary string
-	outputs map[string]any
+	nodeID    string
+	step      domainworkflow.Step
+	status    string
+	summary   string
+	inputs    map[string]any
+	outputs   map[string]any
+	artifacts map[string]any
+	selectors map[string]any
+	events    []map[string]any
 }
 
 type dagNodeRun = domainworkflow.NodeRun
@@ -714,6 +766,9 @@ func (s *Service) prepareBoundDAGRun(ctx context.Context, app domainapp.App, inp
 	definition, ok := parseDAGWorkflowDefinition(binding.WorkflowTemplate.Definition)
 	if !ok {
 		return domainworkflow.Run{}, nil, dagWorkflowDefinition{}, false, nil
+	}
+	if err := validateDAGExecutionDefinition(definition, *binding, app, input); err != nil {
+		return domainworkflow.Run{}, nil, dagWorkflowDefinition{}, false, err
 	}
 	nodeRuns := initializeNodeRuns(definition)
 	now := time.Now().UTC().Format(time.RFC3339)
@@ -732,7 +787,8 @@ func (s *Service) prepareBoundDAGRun(ctx context.Context, app domainapp.App, inp
 		"applicationName":      app.Name,
 		"triggerBuild":         input.TriggerBuild,
 		"triggerRelease":       input.TriggerRelease,
-		"mode":                 "release_dag",
+		"mode":                 definition.Mode,
+		"executionMode":        "release_dag",
 		"schemaVersion":        definition.SchemaVersion,
 		"workflowTemplateId":   binding.WorkflowTemplateID,
 		"workflowTemplateKey":  binding.WorkflowTemplate.Key,
@@ -778,6 +834,9 @@ func (s *Service) prepareValidationDAGRun(ctx context.Context, app domainapp.App
 	if len(definition.Nodes) == 0 {
 		return domainworkflow.Run{}, nil, dagWorkflowDefinition{}, fmt.Errorf("%w: workflow template has no validation nodes", apperrors.ErrInvalidArgument)
 	}
+	if err := validateDAGExecutionDefinition(definition, *binding, app, input); err != nil {
+		return domainworkflow.Run{}, nil, dagWorkflowDefinition{}, err
+	}
 	nodeRuns := initializeNodeRuns(definition)
 	now := time.Now().UTC().Format(time.RFC3339)
 	workflowName := strings.TrimSpace(input.WorkflowName)
@@ -792,7 +851,8 @@ func (s *Service) prepareValidationDAGRun(ctx context.Context, app domainapp.App
 		"applicationName":      app.Name,
 		"triggerBuild":         false,
 		"triggerRelease":       false,
-		"mode":                 "release_dag",
+		"mode":                 definition.Mode,
+		"executionMode":        "release_dag",
 		"runMode":              "validation",
 		"schemaVersion":        definition.SchemaVersion,
 		"workflowTemplateId":   binding.WorkflowTemplateID,
@@ -841,6 +901,9 @@ func (s *Service) prepareRollbackDAGRun(ctx context.Context, app domainapp.App, 
 	if len(definition.Nodes) == 0 {
 		return domainworkflow.Run{}, nil, dagWorkflowDefinition{}, fmt.Errorf("%w: workflow template has no rollback nodes", apperrors.ErrInvalidArgument)
 	}
+	if err := validateDAGExecutionDefinition(definition, *binding, app, input); err != nil {
+		return domainworkflow.Run{}, nil, dagWorkflowDefinition{}, err
+	}
 	nodeRuns := initializeNodeRuns(definition)
 	now := time.Now().UTC().Format(time.RFC3339)
 	workflowName := strings.TrimSpace(input.WorkflowName)
@@ -856,7 +919,8 @@ func (s *Service) prepareRollbackDAGRun(ctx context.Context, app domainapp.App, 
 		"triggerBuild":         false,
 		"triggerRelease":       false,
 		"rollbackOnly":         true,
-		"mode":                 "release_dag",
+		"mode":                 definition.Mode,
+		"executionMode":        "release_dag",
 		"runMode":              "rollback",
 		"schemaVersion":        definition.SchemaVersion,
 		"workflowTemplateId":   binding.WorkflowTemplateID,
@@ -898,9 +962,16 @@ func (s *Service) runDAGAsync(ctx context.Context, principal domainidentity.Prin
 	nodeRuns := restoreNodeRuns(definition, run.NodeRuns)
 	statuses := collectNodeStatuses(nodeRuns)
 	artifactState := make(map[string]any)
+	stopFailureSources := make(map[string]struct{})
 
 	run.Status = "running"
 	run.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+	ensureDAGExecutionMetadata(&run)
+	appendDAGRunEvent(&run, map[string]any{
+		"type":   "workflow_started",
+		"status": run.Status,
+		"mode":   definition.Mode,
+	})
 	run = syncRunNodeState(run, definition, nodeRuns)
 	run = s.updateRun(ctx, run)
 
@@ -920,7 +991,7 @@ func (s *Service) runDAGAsync(ctx context.Context, principal domainidentity.Prin
 			if statuses[node.ID] != "" {
 				continue
 			}
-			isReady, skipped := resolveDAGNodeReadiness(node, incomingEdgesForNode(definition, node.ID), statuses)
+			isReady, skipped := resolveDAGNodeReadiness(definition, node, incomingEdgesForNode(definition, node.ID), statuses)
 			switch {
 			case skipped:
 				entry := nodeRuns[node.ID]
@@ -929,8 +1000,39 @@ func (s *Service) runDAGAsync(ctx context.Context, principal domainidentity.Prin
 				entry.FinishedAt = time.Now().UTC().Format(time.RFC3339)
 				nodeRuns[node.ID] = entry
 				statuses[node.ID] = entry.Status
+				appendDAGNodeEvent(&run, node.ID, "node_skipped", entry.Status, entry.Summary, map[string]any{"reason": "dependency_condition"})
 				progressed = true
 			case isReady:
+				if shouldStopDAGNodeAfterFailure(definition, node.ID, stopFailureSources) {
+					entry := nodeRuns[node.ID]
+					entry.Status = "skipped"
+					entry.Summary = "stopped after failure policy"
+					entry.FinishedAt = time.Now().UTC().Format(time.RFC3339)
+					nodeRuns[node.ID] = entry
+					statuses[node.ID] = entry.Status
+					appendDAGNodeEvent(&run, node.ID, "node_skipped", entry.Status, entry.Summary, map[string]any{"reason": "failure_policy_stop"})
+					progressed = true
+					continue
+				}
+				runConditionMatched, runConditionReason := evaluateDAGRunCondition(node.RunCondition, app, input, binding, artifactState)
+				if !runConditionMatched {
+					entry := nodeRuns[node.ID]
+					entry.Status = "skipped"
+					entry.Summary = runConditionReason
+					entry.FinishedAt = time.Now().UTC().Format(time.RFC3339)
+					nodeRuns[node.ID] = entry
+					statuses[node.ID] = entry.Status
+					appendDAGNodeEvent(&run, node.ID, "node_skipped", entry.Status, entry.Summary, map[string]any{"reason": "run_condition", "runCondition": node.RunCondition})
+					recordDAGNodeOutputs(&run, node.ID, map[string]any{
+						"runCondition": map[string]any{
+							"expression": node.RunCondition,
+							"matched":    false,
+							"reason":     runConditionReason,
+						},
+					})
+					progressed = true
+					continue
+				}
 				ready = append(ready, node)
 			}
 		}
@@ -958,6 +1060,7 @@ func (s *Service) runDAGAsync(ctx context.Context, principal domainidentity.Prin
 			entry.Status = "running"
 			entry.StartedAt = time.Now().UTC().Format(time.RFC3339)
 			nodeRuns[node.ID] = entry
+			appendDAGNodeEvent(&run, node.ID, "node_started", entry.Status, "", nil)
 		}
 		run.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
 		run = syncRunNodeState(run, definition, nodeRuns)
@@ -970,14 +1073,28 @@ func (s *Service) runDAGAsync(ctx context.Context, principal domainidentity.Prin
 			entry.FinishedAt = time.Now().UTC().Format(time.RFC3339)
 			nodeRuns[result.nodeID] = entry
 			statuses[result.nodeID] = result.status
+			recordDAGNodeOutputs(&run, result.nodeID, metadataDAGExecutionResult(result))
+			for _, event := range result.events {
+				appendDAGNodeEvent(&run, result.nodeID, mapString(event, "type"), result.status, result.summary, event)
+			}
 			for key, value := range result.outputs {
 				artifactState[key] = value
 			}
-			if len(result.outputs) > 0 {
+			for key, value := range result.artifacts {
+				artifactState[key] = value
+			}
+			if len(result.outputs) > 0 || len(result.artifacts) > 0 {
 				if run.Metadata == nil {
 					run.Metadata = map[string]any{}
 				}
-				run.Metadata["artifacts"] = artifactState
+				run.Metadata["artifacts"] = metadataDAGArtifactState(artifactState)
+			}
+			if result.status == "failed" {
+				policy := effectiveDAGFailurePolicy(definition, nodeByID(definition, result.nodeID))
+				if policy == "stop" {
+					stopFailureSources[result.nodeID] = struct{}{}
+				}
+				recordDAGFailurePolicy(&run, result.nodeID, policy, result.summary)
 			}
 		}
 		run.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
@@ -988,7 +1105,7 @@ func (s *Service) runDAGAsync(ctx context.Context, principal domainidentity.Prin
 	finalStatus := "completed"
 	for _, node := range definition.Nodes {
 		status := statuses[node.ID]
-		if status == "failed" {
+		if status == "failed" && dagFailureCountsAsWorkflowFailure(definition, node) {
 			finalStatus = "failed"
 			break
 		}
@@ -1032,6 +1149,9 @@ func (s *Service) executeBoundDAGWorkflow(ctx context.Context, principal domaini
 	definition, ok := parseDAGWorkflowDefinition(binding.WorkflowTemplate.Definition)
 	if !ok {
 		return domainworkflow.Run{}, false, nil
+	}
+	if err := validateDAGExecutionDefinition(definition, *binding, app, input); err != nil {
+		return domainworkflow.Run{}, true, err
 	}
 
 	steps, metadata, status, err := s.executeDAGWorkflow(ctx, principal, app, input, *binding, definition)
@@ -1092,7 +1212,11 @@ func (s *Service) findApplicationEnvironmentBinding(ctx context.Context, input d
 
 func parseDAGWorkflowDefinition(definition map[string]any) (dagWorkflowDefinition, bool) {
 	mode, _ := definition["mode"].(string)
-	if mode != "release_dag" {
+	mode = strings.TrimSpace(mode)
+	if mode == "" {
+		mode = "release_dag"
+	}
+	if mode != "release_dag" && mode != "delivery_dag" {
 		return dagWorkflowDefinition{}, false
 	}
 	nodeItems, ok := toMapSlice(definition["nodes"])
@@ -1102,13 +1226,26 @@ func parseDAGWorkflowDefinition(definition map[string]any) (dagWorkflowDefinitio
 	edgeItems, _ := toMapSlice(definition["edges"])
 	nodes := make([]dagWorkflowNode, 0, len(nodeItems))
 	for _, item := range nodeItems {
+		fanOut := toConfigMap(item["fanOut"])
 		nodes = append(nodes, dagWorkflowNode{
-			ID:                strings.TrimSpace(fmt.Sprint(item["id"])),
-			Name:              strings.TrimSpace(fmt.Sprint(item["name"])),
-			Type:              strings.TrimSpace(fmt.Sprint(item["type"])),
-			TimeoutSeconds:    toInt(item["timeoutSeconds"], 300),
-			ContinueOnFailure: toBool(item["continueOnFailure"]),
-			Config:            toConfigMap(item["config"]),
+			ID:                  strings.TrimSpace(fmt.Sprint(item["id"])),
+			Name:                strings.TrimSpace(fmt.Sprint(item["name"])),
+			Type:                strings.TrimSpace(fmt.Sprint(item["type"])),
+			TimeoutSeconds:      toInt(item["timeoutSeconds"], 300),
+			ContinueOnFailure:   toBool(item["continueOnFailure"]),
+			Config:              toConfigMap(item["config"]),
+			Inputs:              toStringSlice(item["inputs"]),
+			Outputs:             toStringSlice(item["outputs"]),
+			ServiceSelector:     toConfigMap(item["serviceSelector"]),
+			EnvironmentSelector: toConfigMap(item["environmentSelector"]),
+			TargetSelector:      toConfigMap(item["targetSelector"]),
+			ArtifactOutputs:     toMapSliceOrEmpty(item["artifactOutputs"]),
+			RunCondition:        mapString(item, "runCondition"),
+			FailurePolicy:       mapString(item, "failurePolicy"),
+			FanOutStrategy:      firstNonEmpty(mapString(item, "fanOutStrategy"), mapString(fanOut, "strategy")),
+			FanOutBatchSize:     firstPositiveInt(toInt(item["fanOutBatchSize"], 0), toInt(fanOut["batchSize"], 0)),
+			FanOutFailurePolicy: firstNonEmpty(mapString(item, "fanOutFailurePolicy"), mapString(fanOut, "failurePolicy")),
+			Observability:       toConfigMap(item["observability"]),
 		})
 	}
 	edges := make([]dagWorkflowEdge, 0, len(edgeItems))
@@ -1164,6 +1301,958 @@ func filterDAGDefinition(definition dagWorkflowDefinition, keep func(string) boo
 	}
 }
 
+func workflowMetadataMode(metadata map[string]any) string {
+	mode := strings.TrimSpace(fmt.Sprint(metadata["mode"]))
+	if mode == "delivery_dag" {
+		return mode
+	}
+	return "release_dag"
+}
+
+func mapString(values map[string]any, key string) string {
+	if len(values) == 0 {
+		return ""
+	}
+	value, ok := values[key]
+	if !ok || value == nil {
+		return ""
+	}
+	text := strings.TrimSpace(fmt.Sprint(value))
+	if text == "<nil>" {
+		return ""
+	}
+	return text
+}
+
+func validateDAGExecutionDefinition(definition dagWorkflowDefinition, binding domaincatalog.ApplicationEnvironment, app domainapp.App, input domainworkflow.Input) error {
+	nodeIDs := make(map[string]struct{}, len(definition.Nodes))
+	availableRefs := initialDAGInputReferences(app, input, binding)
+	producersByRef := map[string][]string{}
+	for _, node := range definition.Nodes {
+		if strings.TrimSpace(node.ID) == "" {
+			return fmt.Errorf("%w: workflow node id is required", apperrors.ErrInvalidArgument)
+		}
+		if _, exists := nodeIDs[node.ID]; exists {
+			return fmt.Errorf("%w: duplicate workflow node id %s", apperrors.ErrInvalidArgument, node.ID)
+		}
+		nodeIDs[node.ID] = struct{}{}
+		for _, output := range node.Outputs {
+			output = strings.TrimSpace(output)
+			if output == "" {
+				continue
+			}
+			dagRegisterProducedRef(producersByRef, output, node.ID)
+			dagRegisterProducedRef(producersByRef, node.ID+"."+output, node.ID)
+		}
+		for _, artifact := range node.ArtifactOutputs {
+			name := strings.TrimSpace(fmt.Sprint(artifact["name"]))
+			kind := strings.TrimSpace(fmt.Sprint(artifact["kind"]))
+			if name != "" {
+				dagRegisterProducedRef(producersByRef, name, node.ID)
+				dagRegisterProducedRef(producersByRef, node.ID+"."+name, node.ID)
+			}
+			if kind != "" {
+				dagRegisterProducedRef(producersByRef, kind, node.ID)
+				dagRegisterProducedRef(producersByRef, node.ID+"."+kind, node.ID)
+			}
+		}
+	}
+	for _, edge := range definition.Edges {
+		if _, ok := nodeIDs[edge.Source]; !ok {
+			return fmt.Errorf("%w: edge source %s not found", apperrors.ErrInvalidArgument, edge.Source)
+		}
+		if _, ok := nodeIDs[edge.Target]; !ok {
+			return fmt.Errorf("%w: edge target %s not found", apperrors.ErrInvalidArgument, edge.Target)
+		}
+	}
+	for _, node := range definition.Nodes {
+		for _, inputRef := range node.Inputs {
+			if dagInputReferenceDeclared(inputRef, availableRefs) {
+				continue
+			}
+			producers := dagProducedRefProducers(inputRef, producersByRef)
+			if len(producers) == 0 {
+				return fmt.Errorf("%w: delivery_dag node %s input reference %s not found", apperrors.ErrInvalidArgument, node.ID, inputRef)
+			}
+			if !dagProducedRefHasUpstreamProducer(definition, node.ID, producers) {
+				return fmt.Errorf("%w: delivery_dag node %s input reference %s must come from an upstream node", apperrors.ErrInvalidArgument, node.ID, inputRef)
+			}
+		}
+		for _, artifact := range node.ArtifactOutputs {
+			name := strings.TrimSpace(fmt.Sprint(artifact["name"]))
+			if name == "" {
+				return fmt.Errorf("%w: delivery_dag node %s artifact output requires name", apperrors.ErrInvalidArgument, node.ID)
+			}
+			kind := strings.TrimSpace(fmt.Sprint(artifact["kind"]))
+			if !isAllowedDeliveryArtifactKind(kind) {
+				return fmt.Errorf("%w: unsupported delivery_dag artifact output kind %s", apperrors.ErrInvalidArgument, kind)
+			}
+		}
+		if strategy := normalizeDAGFanOutStrategy(node.FanOutStrategy); strings.TrimSpace(node.FanOutStrategy) != "" && strategy == "" {
+			return fmt.Errorf("%w: delivery_dag node %s fanOut strategy %s is not supported", apperrors.ErrInvalidArgument, node.ID, node.FanOutStrategy)
+		}
+		if _, err := resolveDAGNodeSelectors(app, input, binding, node); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func dagRegisterProducedRef(producersByRef map[string][]string, ref, producerNodeID string) {
+	ref = strings.TrimSpace(ref)
+	if ref == "" || producerNodeID == "" {
+		return
+	}
+	producersByRef[ref] = append(producersByRef[ref], producerNodeID)
+}
+
+func dagProducedRefProducers(inputRef string, producersByRef map[string][]string) []string {
+	ref := strings.TrimSpace(inputRef)
+	if ref == "" {
+		return nil
+	}
+	if producers := producersByRef[ref]; len(producers) > 0 {
+		return producers
+	}
+	return nil
+}
+
+func dagProducedRefHasUpstreamProducer(definition dagWorkflowDefinition, nodeID string, producers []string) bool {
+	for _, producerNodeID := range producers {
+		if dagNodeHasUpstreamPath(definition, nodeID, producerNodeID, map[string]bool{}) {
+			return true
+		}
+	}
+	return false
+}
+
+func dagNodeHasUpstreamPath(definition dagWorkflowDefinition, nodeID, upstreamNodeID string, seen map[string]bool) bool {
+	if nodeID == upstreamNodeID {
+		return false
+	}
+	if seen[nodeID] {
+		return false
+	}
+	seen[nodeID] = true
+	for _, edge := range incomingEdgesForNode(definition, nodeID) {
+		if edge.Source == upstreamNodeID {
+			return true
+		}
+		if dagNodeHasUpstreamPath(definition, edge.Source, upstreamNodeID, seen) {
+			return true
+		}
+	}
+	return false
+}
+
+func initialDAGInputReferences(app domainapp.App, input domainworkflow.Input, binding domaincatalog.ApplicationEnvironment) map[string]struct{} {
+	refs := map[string]struct{}{
+		"source":                   {},
+		"application":              {},
+		"app":                      {},
+		"applicationId":            {},
+		"application.id":           {},
+		"branch":                   {},
+		"ref":                      {},
+		"refName":                  {},
+		"commit":                   {},
+		"image":                    {},
+		"imageTag":                 {},
+		"environment":              {},
+		"environmentId":            {},
+		"environmentKey":           {},
+		"target":                   {},
+		"cluster":                  {},
+		"clusterId":                {},
+		"namespace":                {},
+		"deployment":               {},
+		"deploymentName":           {},
+		"applicationEnvironment":   {},
+		"applicationEnvironmentId": {},
+	}
+	if app.ID != "" {
+		refs[app.ID] = struct{}{}
+	}
+	if app.Key != "" {
+		refs[app.Key] = struct{}{}
+	}
+	if input.BuildSourceID != "" {
+		refs["buildSource"] = struct{}{}
+		refs["buildSourceId"] = struct{}{}
+	}
+	if binding.ID != "" {
+		refs[binding.ID] = struct{}{}
+	}
+	return refs
+}
+
+func dagInputReferenceDeclared(inputRef string, declared map[string]struct{}) bool {
+	ref := strings.TrimSpace(inputRef)
+	if ref == "" {
+		return false
+	}
+	_, ok := declared[ref]
+	return ok
+}
+
+func dagInputReferenceNodeID(inputRef string) (string, bool) {
+	ref := strings.TrimSpace(inputRef)
+	if ref == "" {
+		return "", false
+	}
+	parts := strings.Split(ref, ".")
+	if len(parts) < 2 {
+		return "", false
+	}
+	nodeID := strings.TrimSpace(parts[0])
+	if nodeID == "" {
+		return "", false
+	}
+	return nodeID, true
+}
+
+func isAllowedDeliveryArtifactKind(kind string) bool {
+	switch strings.TrimSpace(kind) {
+	case "image", "test_report", "scan_report", "sbom":
+		return true
+	default:
+		return false
+	}
+}
+
+func evaluateDAGRunCondition(condition string, app domainapp.App, input domainworkflow.Input, binding domaincatalog.ApplicationEnvironment, artifactState map[string]any) (bool, string) {
+	expr := strings.TrimSpace(condition)
+	if expr == "" || strings.EqualFold(expr, "always") || strings.EqualFold(expr, "true") {
+		return true, ""
+	}
+	if strings.EqualFold(expr, "never") || strings.EqualFold(expr, "false") {
+		return false, fmt.Sprintf("runCondition %q is false", condition)
+	}
+	for _, operator := range []string{"==", "!="} {
+		if !strings.Contains(expr, operator) {
+			continue
+		}
+		parts := strings.SplitN(expr, operator, 2)
+		left := strings.TrimSpace(parts[0])
+		right := trimDAGConditionLiteral(parts[1])
+		actual := dagConditionValue(left, app, input, binding, artifactState)
+		matched := actual == right
+		if operator == "!=" {
+			matched = actual != right
+		}
+		if matched {
+			return true, ""
+		}
+		return false, fmt.Sprintf("runCondition %q not met: %s is %q", condition, left, actual)
+	}
+	actual := dagConditionValue(expr, app, input, binding, artifactState)
+	if actual == "" || strings.EqualFold(actual, "false") || actual == "0" {
+		return false, fmt.Sprintf("runCondition %q not met", condition)
+	}
+	return true, ""
+}
+
+func trimDAGConditionLiteral(value string) string {
+	value = strings.TrimSpace(value)
+	value = strings.Trim(value, `"'`)
+	return value
+}
+
+func dagConditionValue(key string, app domainapp.App, input domainworkflow.Input, binding domaincatalog.ApplicationEnvironment, artifactState map[string]any) string {
+	key = strings.TrimSpace(key)
+	switch key {
+	case "branch", "ref", "refName":
+		return firstNonEmpty(input.RefName, binding.BuildPolicy.RefValue, app.DefaultBranch, "main")
+	case "refType":
+		return firstNonEmpty(input.RefType, binding.BuildPolicy.RefType)
+	case "applicationId", "app.id", "application.id":
+		return app.ID
+	case "application", "app", "app.key", "application.key":
+		return firstNonEmpty(app.Key, app.Name, app.ID)
+	case "environment", "environmentKey":
+		return binding.EnvironmentKey
+	case "environmentId":
+		return binding.EnvironmentID
+	case "image", "artifact.image":
+		return dagArtifactRuntimeString(artifactState["image"])
+	case "namespace":
+		return input.Namespace
+	case "cluster", "clusterId":
+		return input.ClusterID
+	case "deployment", "deploymentName":
+		return input.DeploymentName
+	default:
+		if strings.HasPrefix(key, "variables.") {
+			return workflowMetadataString(input.Variables, strings.TrimPrefix(key, "variables."))
+		}
+		if value, ok := artifactState[key]; ok {
+			return dagArtifactRuntimeString(value)
+		}
+		return workflowMetadataString(input.Variables, key)
+	}
+}
+
+func resolveDAGNodeInputs(node dagWorkflowNode, app domainapp.App, input domainworkflow.Input, binding domaincatalog.ApplicationEnvironment, artifactState map[string]any) map[string]any {
+	if len(node.Inputs) == 0 {
+		return nil
+	}
+	resolved := make(map[string]any, len(node.Inputs))
+	for _, ref := range node.Inputs {
+		ref = strings.TrimSpace(ref)
+		if ref == "" {
+			continue
+		}
+		if value, ok := resolveDAGInputReference(ref, app, input, binding, artifactState); ok {
+			resolved[ref] = value
+		}
+	}
+	return resolved
+}
+
+func resolveDAGInputReference(ref string, app domainapp.App, input domainworkflow.Input, binding domaincatalog.ApplicationEnvironment, artifactState map[string]any) (any, bool) {
+	if value, ok := artifactState[ref]; ok {
+		return value, true
+	}
+	parts := strings.Split(ref, ".")
+	for _, part := range parts {
+		if value, ok := artifactState[strings.TrimSpace(part)]; ok {
+			return value, true
+		}
+	}
+	switch ref {
+	case "source":
+		return map[string]any{
+			"refType":       firstNonEmpty(input.RefType, binding.BuildPolicy.RefType, "branch"),
+			"refName":       firstNonEmpty(input.RefName, binding.BuildPolicy.RefValue, app.DefaultBranch, "main"),
+			"buildSourceId": firstNonEmpty(input.BuildSourceID, binding.BuildPolicy.SourceID),
+		}, true
+	case "application", "app":
+		return map[string]any{"id": app.ID, "key": app.Key, "name": app.Name}, true
+	case "applicationId", "application.id", "app.id":
+		return app.ID, true
+	case "branch", "ref", "refName":
+		return firstNonEmpty(input.RefName, binding.BuildPolicy.RefValue, app.DefaultBranch, "main"), true
+	case "image", "imageTag":
+		return input.ImageTag, true
+	case "environment", "applicationEnvironment":
+		return map[string]any{"id": binding.ID, "environmentId": binding.EnvironmentID, "environmentKey": binding.EnvironmentKey}, true
+	case "environmentId":
+		return binding.EnvironmentID, true
+	case "environmentKey":
+		return binding.EnvironmentKey, true
+	case "target":
+		return map[string]any{"clusterId": input.ClusterID, "namespace": input.Namespace, "workloadName": input.DeploymentName}, true
+	case "cluster", "clusterId":
+		return input.ClusterID, true
+	case "namespace":
+		return input.Namespace, true
+	case "deployment", "deploymentName":
+		return input.DeploymentName, true
+	default:
+		if strings.HasPrefix(ref, "variables.") {
+			key := strings.TrimPrefix(ref, "variables.")
+			if value, ok := input.Variables[key]; ok {
+				return value, true
+			}
+		}
+		if value, ok := input.Variables[ref]; ok {
+			return value, true
+		}
+		return nil, false
+	}
+}
+
+func resolveDAGNodeSelectors(app domainapp.App, input domainworkflow.Input, binding domaincatalog.ApplicationEnvironment, node dagWorkflowNode) (map[string]any, error) {
+	return resolveDAGNodeSelectorsWithServices(app, input, binding, node, nil)
+}
+
+func (s *Service) resolveDAGNodeSelectors(ctx context.Context, app domainapp.App, input domainworkflow.Input, binding domaincatalog.ApplicationEnvironment, node dagWorkflowNode) (map[string]any, error) {
+	return resolveDAGNodeSelectorsWithServices(app, input, binding, node, s.applicationServicesForSelectors(ctx, app.ID))
+}
+
+func resolveDAGNodeSelectorsWithServices(app domainapp.App, input domainworkflow.Input, binding domaincatalog.ApplicationEnvironment, node dagWorkflowNode, services []domainapp.Service) (map[string]any, error) {
+	resolved := map[string]any{}
+	if len(node.ServiceSelector) > 0 {
+		service, err := resolveDAGServiceSelector(app, binding, services, node.ServiceSelector)
+		if err != nil {
+			return nil, fmt.Errorf("%w: delivery_dag node %s serviceSelector cannot be resolved: %v", apperrors.ErrInvalidArgument, node.ID, err)
+		}
+		resolved["service"] = service
+	}
+	if len(node.EnvironmentSelector) > 0 {
+		environment, err := resolveDAGEnvironmentSelector(binding, node.EnvironmentSelector)
+		if err != nil {
+			return nil, fmt.Errorf("%w: delivery_dag node %s environmentSelector cannot be resolved: %v", apperrors.ErrInvalidArgument, node.ID, err)
+		}
+		resolved["environment"] = environment
+	}
+	targets, err := resolveDAGTargets(binding, input, node.TargetSelector, normalizeDAGFanOutStrategy(node.FanOutStrategy) != "")
+	if err != nil {
+		return nil, fmt.Errorf("%w: delivery_dag node %s targetSelector cannot be resolved: %v", apperrors.ErrInvalidArgument, node.ID, err)
+	}
+	if len(targets) > 1 {
+		strategy := normalizeDAGFanOutStrategy(node.FanOutStrategy)
+		if strategy == "" {
+			return nil, fmt.Errorf("%w: targetSelector matched %d targets but fanOut strategy is not declared", apperrors.ErrInvalidArgument, len(targets))
+		}
+		targetMetadata := make([]map[string]any, 0, len(targets))
+		for _, target := range targets {
+			targetMetadata = append(targetMetadata, releaseTargetMetadata(target))
+		}
+		resolved["target"] = targetMetadata[0]
+		resolved["targets"] = targetMetadata
+		resolved["fanOut"] = map[string]any{
+			"strategy":      strategy,
+			"batchSize":     node.FanOutBatchSize,
+			"failurePolicy": firstNonEmpty(normalizeDAGFanOutFailurePolicy(node.FanOutFailurePolicy), effectiveDAGFailurePolicy(dagWorkflowDefinition{}, node)),
+			"targetCount":   len(targetMetadata),
+		}
+	} else if len(targets) == 1 {
+		resolved["target"] = releaseTargetMetadata(targets[0])
+	}
+	if len(resolved) == 0 {
+		return nil, nil
+	}
+	return resolved, nil
+}
+
+func resolveDAGServiceSelector(app domainapp.App, binding domaincatalog.ApplicationEnvironment, services []domainapp.Service, selector map[string]any) (map[string]any, error) {
+	labels := dagAppLabels(app, binding)
+	if match, ok := selector["matchLabels"]; ok {
+		matchLabels := stringMapFromAny(match)
+		if len(matchLabels) == 0 {
+			return nil, fmt.Errorf("matchLabels is empty")
+		}
+		if serviceMatches := matchDAGApplicationServices(services, matchLabels, "matchLabels"); len(serviceMatches) > 0 {
+			return serviceDiscoveryMetadata(app, serviceMatches, "application.services"), nil
+		}
+		if serviceKey := firstNonEmpty(matchLabels["service"], matchLabels["serviceKey"], matchLabels["app"], matchLabels["application"]); serviceKey != "" {
+			return map[string]any{"serviceKey": serviceKey, "applicationId": app.ID, "source": "matchLabels"}, nil
+		}
+		if !labelsMatch(labels, matchLabels) {
+			return nil, fmt.Errorf("matchLabels did not match application labels")
+		}
+	}
+	key := selectorString(selector, "service", "serviceKey", "key", "name")
+	if key != "" {
+		if serviceMatches := matchDAGApplicationServicesByKey(services, key); len(serviceMatches) > 0 {
+			return serviceDiscoveryMetadata(app, serviceMatches, "application.services"), nil
+		}
+		if key != app.ID && key != app.Key && key != app.Name && key != labels["service"] {
+			return map[string]any{"serviceKey": key, "applicationId": app.ID, "source": "selector"}, nil
+		}
+	}
+	if id := selectorString(selector, "id", "applicationId"); id != "" && id != app.ID {
+		return nil, fmt.Errorf("application id %s does not match %s", id, app.ID)
+	}
+	return map[string]any{
+		"applicationId": app.ID,
+		"serviceKey":    firstNonEmpty(key, app.Key, app.Name, app.ID),
+		"serviceName":   firstNonEmpty(app.Name, app.Key, app.ID),
+	}, nil
+}
+
+func resolveDAGEnvironmentSelector(binding domaincatalog.ApplicationEnvironment, selector map[string]any) (map[string]any, error) {
+	if id := selectorString(selector, "id", "applicationEnvironmentId", "bindingId"); id != "" && id != binding.ID {
+		return nil, fmt.Errorf("binding id %s does not match %s", id, binding.ID)
+	}
+	if environmentID := selectorString(selector, "environmentId"); environmentID != "" && environmentID != binding.EnvironmentID {
+		return nil, fmt.Errorf("environment id %s does not match %s", environmentID, binding.EnvironmentID)
+	}
+	if key := selectorString(selector, "key", "environmentKey", "environment"); key != "" && key != binding.EnvironmentKey && key != binding.EnvironmentID {
+		return nil, fmt.Errorf("environment key %s does not match %s", key, firstNonEmpty(binding.EnvironmentKey, binding.EnvironmentID))
+	}
+	if match, ok := selector["matchLabels"]; ok {
+		matchLabels := stringMapFromAny(match)
+		if len(matchLabels) == 0 {
+			return nil, fmt.Errorf("matchLabels is empty")
+		}
+		if !labelsMatch(dagBindingLabels(binding), matchLabels) {
+			return nil, fmt.Errorf("matchLabels did not match environment labels")
+		}
+	}
+	return map[string]any{
+		"bindingId":      binding.ID,
+		"environmentId":  binding.EnvironmentID,
+		"environmentKey": binding.EnvironmentKey,
+		"applicationId":  binding.ApplicationID,
+	}, nil
+}
+
+func selectDAGTarget(binding domaincatalog.ApplicationEnvironment, input domainworkflow.Input, selector map[string]any) (*domaincatalog.ReleaseTarget, error) {
+	targets, err := resolveDAGTargets(binding, input, selector, false)
+	if err != nil {
+		return nil, err
+	}
+	if len(targets) == 0 {
+		return nil, nil
+	}
+	copyTarget := targets[0]
+	return &copyTarget, nil
+}
+
+func resolveDAGTargets(binding domaincatalog.ApplicationEnvironment, input domainworkflow.Input, selector map[string]any, fanOut bool) ([]domaincatalog.ReleaseTarget, error) {
+	if len(selector) == 0 {
+		if fanOut {
+			targets := make([]domaincatalog.ReleaseTarget, 0, len(binding.Targets))
+			for _, target := range binding.Targets {
+				if target.Enabled {
+					targets = append(targets, target)
+				}
+			}
+			if len(targets) > 0 {
+				return targets, nil
+			}
+		}
+		if target := matchBindingTarget(binding, input); target != nil {
+			return []domaincatalog.ReleaseTarget{*target}, nil
+		}
+		return nil, nil
+	}
+	matched := make([]domaincatalog.ReleaseTarget, 0)
+	for _, target := range binding.Targets {
+		if !target.Enabled {
+			continue
+		}
+		if dagTargetMatchesSelector(target, binding, selector) {
+			matched = append(matched, target)
+		}
+	}
+	if len(matched) > 0 {
+		return matched, nil
+	}
+	if input.ClusterID != "" || input.Namespace != "" || input.DeploymentName != "" {
+		inputTarget := domaincatalog.ReleaseTarget{
+			ID:            "input",
+			ClusterID:     input.ClusterID,
+			Namespace:     input.Namespace,
+			WorkloadName:  input.DeploymentName,
+			ContainerName: input.ContainerName,
+			Enabled:       true,
+		}
+		if dagTargetMatchesSelector(inputTarget, binding, selector) {
+			return []domaincatalog.ReleaseTarget{inputTarget}, nil
+		}
+	}
+	return nil, fmt.Errorf("no enabled target matched selector")
+}
+
+func dagTargetMatchesSelector(target domaincatalog.ReleaseTarget, binding domaincatalog.ApplicationEnvironment, selector map[string]any) bool {
+	for _, key := range []string{"id", "targetId"} {
+		if value := selectorString(selector, key); value != "" && value != target.ID {
+			return false
+		}
+	}
+	if key := selectorString(selector, "key"); key != "" {
+		if key != target.ID && key != target.GroupKey && key != target.WaveKey && key != target.RegionKey && key != binding.EnvironmentKey && key != strings.TrimSpace(fmt.Sprint(target.Metadata["key"])) {
+			return false
+		}
+	}
+	for selectorKey, targetValue := range map[string]string{
+		"clusterId":    target.ClusterID,
+		"namespace":    target.Namespace,
+		"workloadName": target.WorkloadName,
+		"deployment":   target.WorkloadName,
+		"groupKey":     target.GroupKey,
+		"waveKey":      target.WaveKey,
+		"regionKey":    target.RegionKey,
+	} {
+		if value := selectorString(selector, selectorKey); value != "" && value != targetValue {
+			return false
+		}
+	}
+	if match, ok := selector["matchLabels"]; ok {
+		matchLabels := stringMapFromAny(match)
+		if len(matchLabels) == 0 || !labelsMatch(dagTargetLabels(target, binding), matchLabels) {
+			return false
+		}
+	}
+	return true
+}
+
+func releaseTargetMetadata(target domaincatalog.ReleaseTarget) map[string]any {
+	return map[string]any{
+		"id":             target.ID,
+		"clusterId":      target.ClusterID,
+		"namespace":      target.Namespace,
+		"targetKind":     target.TargetKind,
+		"executorKind":   target.ExecutorKind,
+		"groupKey":       target.GroupKey,
+		"waveKey":        target.WaveKey,
+		"regionKey":      target.RegionKey,
+		"workloadKind":   target.WorkloadKind,
+		"workloadName":   target.WorkloadName,
+		"containerName":  target.ContainerName,
+		"configRef":      target.ConfigRef,
+		"metadata":       target.Metadata,
+		"resolvedSource": "applicationEnvironment.targets",
+	}
+}
+
+func (s *Service) applicationServicesForSelectors(ctx context.Context, applicationID string) []domainapp.Service {
+	if s == nil || s.apps == nil || strings.TrimSpace(applicationID) == "" {
+		return nil
+	}
+	items, err := s.apps.ListServices(ctx, strings.TrimSpace(applicationID))
+	if err != nil {
+		return nil
+	}
+	return items
+}
+
+func matchDAGApplicationServicesByKey(services []domainapp.Service, key string) []domainapp.Service {
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return nil
+	}
+	matches := make([]domainapp.Service, 0)
+	for _, service := range services {
+		if !service.Enabled {
+			continue
+		}
+		if key == service.ID || key == service.Key || key == service.Name || key == strings.TrimSpace(fmt.Sprint(service.Metadata["service"])) || key == strings.TrimSpace(fmt.Sprint(service.Metadata["serviceKey"])) {
+			matches = append(matches, service)
+		}
+	}
+	return matches
+}
+
+func matchDAGApplicationServices(services []domainapp.Service, labels map[string]string, source string) []domainapp.Service {
+	if len(services) == 0 || len(labels) == 0 {
+		return nil
+	}
+	matches := make([]domainapp.Service, 0)
+	for _, service := range services {
+		if !service.Enabled {
+			continue
+		}
+		if labelsMatch(dagServiceLabels(service), labels) {
+			matches = append(matches, service)
+		}
+	}
+	_ = source
+	return matches
+}
+
+func serviceDiscoveryMetadata(app domainapp.App, services []domainapp.Service, source string) map[string]any {
+	items := make([]map[string]any, 0, len(services))
+	for _, service := range services {
+		containers := make([]map[string]any, 0, len(service.Containers))
+		for _, container := range service.Containers {
+			containers = append(containers, map[string]any{
+				"id":              container.ID,
+				"name":            container.Name,
+				"imageRepository": container.ImageRepository,
+				"runtimePorts":    container.RuntimePorts,
+			})
+		}
+		items = append(items, map[string]any{
+			"id":            service.ID,
+			"key":           service.Key,
+			"name":          service.Name,
+			"serviceKind":   service.ServiceKind,
+			"buildSourceId": service.BuildSourceID,
+			"metadata":      service.Metadata,
+			"containers":    containers,
+		})
+	}
+	result := map[string]any{
+		"applicationId": app.ID,
+		"source":        source,
+		"services":      items,
+		"serviceCount":  len(items),
+	}
+	if len(items) > 0 {
+		result["serviceKey"] = items[0]["key"]
+		result["serviceName"] = items[0]["name"]
+	}
+	return result
+}
+
+func dagServiceLabels(service domainapp.Service) map[string]string {
+	labels := map[string]string{
+		"serviceId":   service.ID,
+		"serviceKey":  service.Key,
+		"service":     service.Key,
+		"key":         service.Key,
+		"name":        service.Name,
+		"serviceKind": string(service.ServiceKind),
+	}
+	for key, value := range service.Metadata {
+		if text := strings.TrimSpace(fmt.Sprint(value)); text != "" {
+			labels[key] = text
+		}
+	}
+	return labels
+}
+
+func dagAppLabels(app domainapp.App, binding domaincatalog.ApplicationEnvironment) map[string]string {
+	labels := map[string]string{
+		"applicationId":   app.ID,
+		"applicationKey":  app.Key,
+		"app":             app.Key,
+		"service":         app.Key,
+		"name":            app.Name,
+		"group":           app.Group,
+		"businessLineId":  app.BusinessLineID,
+		"environmentKey":  binding.EnvironmentKey,
+		"environmentId":   binding.EnvironmentID,
+		"applicationName": app.Name,
+	}
+	for key, value := range app.Metadata {
+		labels[key] = strings.TrimSpace(fmt.Sprint(value))
+	}
+	return labels
+}
+
+func dagBindingLabels(binding domaincatalog.ApplicationEnvironment) map[string]string {
+	labels := map[string]string{
+		"bindingId":        binding.ID,
+		"applicationId":    binding.ApplicationID,
+		"environmentId":    binding.EnvironmentID,
+		"environmentKey":   binding.EnvironmentKey,
+		"businessLineId":   binding.BusinessLineID,
+		"applicationGroup": binding.ApplicationGroup,
+	}
+	for key, value := range binding.ResourceSelector.MatchLabels {
+		labels[key] = value
+	}
+	return labels
+}
+
+func dagTargetLabels(target domaincatalog.ReleaseTarget, binding domaincatalog.ApplicationEnvironment) map[string]string {
+	labels := dagBindingLabels(binding)
+	labels["targetId"] = target.ID
+	labels["clusterId"] = target.ClusterID
+	labels["namespace"] = target.Namespace
+	labels["workloadKind"] = target.WorkloadKind
+	labels["workloadName"] = target.WorkloadName
+	labels["deployment"] = target.WorkloadName
+	labels["groupKey"] = target.GroupKey
+	labels["waveKey"] = target.WaveKey
+	labels["regionKey"] = target.RegionKey
+	for key, value := range target.Metadata {
+		labels[key] = strings.TrimSpace(fmt.Sprint(value))
+	}
+	return labels
+}
+
+func labelsMatch(labels, matchLabels map[string]string) bool {
+	for key, expected := range matchLabels {
+		if strings.TrimSpace(expected) == "" {
+			return false
+		}
+		if labels[key] != expected {
+			return false
+		}
+	}
+	return true
+}
+
+func selectorString(selector map[string]any, keys ...string) string {
+	for _, key := range keys {
+		if value := mapString(selector, key); value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func stringMapFromAny(value any) map[string]string {
+	out := map[string]string{}
+	switch current := value.(type) {
+	case map[string]string:
+		for key, item := range current {
+			if text := strings.TrimSpace(item); text != "" {
+				out[key] = text
+			}
+		}
+	case map[string]any:
+		for key, item := range current {
+			if text := strings.TrimSpace(fmt.Sprint(item)); text != "" {
+				out[key] = text
+			}
+		}
+	}
+	return out
+}
+
+func ensureDAGExecutionMetadata(run *domainworkflow.Run) {
+	if run.Metadata == nil {
+		run.Metadata = map[string]any{}
+	}
+	if _, ok := run.Metadata["events"]; !ok {
+		run.Metadata["events"] = []map[string]any{}
+	}
+	if _, ok := run.Metadata["nodeOutputs"]; !ok {
+		run.Metadata["nodeOutputs"] = map[string]any{}
+	}
+}
+
+func appendDAGRunEvent(run *domainworkflow.Run, event map[string]any) {
+	if event == nil {
+		return
+	}
+	ensureDAGExecutionMetadata(run)
+	if _, ok := event["occurredAt"]; !ok {
+		event["occurredAt"] = time.Now().UTC().Format(time.RFC3339)
+	}
+	items := metadataMapSlice(run.Metadata["events"])
+	items = append(items, event)
+	run.Metadata["events"] = items
+}
+
+func appendDAGNodeEvent(run *domainworkflow.Run, nodeID, eventType, status, summary string, details map[string]any) {
+	if strings.TrimSpace(eventType) == "" {
+		eventType = "node_event"
+	}
+	event := map[string]any{
+		"type":   eventType,
+		"nodeId": nodeID,
+		"status": status,
+	}
+	if summary != "" {
+		event["summary"] = summary
+	}
+	for key, value := range details {
+		if key == "type" || key == "nodeId" || key == "occurredAt" {
+			continue
+		}
+		event[key] = value
+	}
+	appendDAGRunEvent(run, event)
+}
+
+func recordDAGNodeOutputs(run *domainworkflow.Run, nodeID string, values map[string]any) {
+	if len(values) == 0 {
+		return
+	}
+	ensureDAGExecutionMetadata(run)
+	nodeOutputs := metadataMap(run.Metadata["nodeOutputs"])
+	existing := metadataMap(nodeOutputs[nodeID])
+	for key, value := range values {
+		if value == nil {
+			continue
+		}
+		if mapped, ok := value.(map[string]any); ok && len(mapped) == 0 {
+			continue
+		}
+		existing[key] = value
+	}
+	nodeOutputs[nodeID] = existing
+	run.Metadata["nodeOutputs"] = nodeOutputs
+}
+
+func recordDAGFailurePolicy(run *domainworkflow.Run, nodeID, policy, summary string) {
+	ensureDAGExecutionMetadata(run)
+	policies := metadataMap(run.Metadata["failurePolicies"])
+	effect := "workflow_failed"
+	switch policy {
+	case "continue":
+		effect = "workflow_continues"
+	case "rollback":
+		effect = "failure_branch_can_rollback"
+	case "notify":
+		effect = "failure_branch_can_notify"
+	case "stop":
+		effect = "stop_successors"
+	}
+	policies[nodeID] = map[string]any{
+		"policy":  policy,
+		"effect":  effect,
+		"summary": summary,
+	}
+	run.Metadata["failurePolicies"] = policies
+	appendDAGNodeEvent(run, nodeID, "failure_policy_applied", "failed", summary, map[string]any{"failurePolicy": policy, "effect": effect})
+}
+
+func metadataMap(value any) map[string]any {
+	if typed, ok := value.(map[string]any); ok {
+		return typed
+	}
+	return map[string]any{}
+}
+
+func metadataMapSlice(value any) []map[string]any {
+	if typed, ok := value.([]map[string]any); ok {
+		return typed
+	}
+	if items, ok := value.([]any); ok {
+		out := make([]map[string]any, 0, len(items))
+		for _, item := range items {
+			if mapped, ok := item.(map[string]any); ok {
+				out = append(out, mapped)
+			}
+		}
+		return out
+	}
+	return []map[string]any{}
+}
+
+func nodeByID(definition dagWorkflowDefinition, nodeID string) dagWorkflowNode {
+	for _, node := range definition.Nodes {
+		if node.ID == nodeID {
+			return node
+		}
+	}
+	return dagWorkflowNode{ID: nodeID}
+}
+
+func effectiveDAGFailurePolicy(definition dagWorkflowDefinition, node dagWorkflowNode) string {
+	if node.ContinueOnFailure {
+		return "continue"
+	}
+	policy := strings.ToLower(strings.TrimSpace(node.FailurePolicy))
+	switch policy {
+	case "continue", "rollback", "notify", "stop":
+		return policy
+	default:
+		return "stop"
+	}
+}
+
+func shouldStopDAGNodeAfterFailure(definition dagWorkflowDefinition, nodeID string, stoppedSources map[string]struct{}) bool {
+	if len(stoppedSources) == 0 {
+		return false
+	}
+	if _, failed := stoppedSources[nodeID]; failed {
+		return false
+	}
+	return !hasFailureBranchPath(definition, nodeID, stoppedSources, map[string]bool{})
+}
+
+func hasFailureBranchPath(definition dagWorkflowDefinition, nodeID string, stoppedSources map[string]struct{}, seen map[string]bool) bool {
+	if seen[nodeID] {
+		return false
+	}
+	seen[nodeID] = true
+	for _, edge := range definition.Edges {
+		if edge.Target != nodeID || !dagEdgeAllowsFailureBranch(edge.Condition) {
+			continue
+		}
+		if _, ok := stoppedSources[edge.Source]; ok {
+			return true
+		}
+		if hasFailureBranchPath(definition, edge.Source, stoppedSources, seen) {
+			return true
+		}
+	}
+	return false
+}
+
+func dagEdgeAllowsFailureBranch(condition string) bool {
+	switch strings.TrimSpace(condition) {
+	case "failure", "always":
+		return true
+	default:
+		return false
+	}
+}
+
+func dagFailureCountsAsWorkflowFailure(definition dagWorkflowDefinition, node dagWorkflowNode) bool {
+	return effectiveDAGFailurePolicy(definition, node) != "continue"
+}
+
 func isValidationDAGNode(nodeType string) bool {
 	switch strings.TrimSpace(nodeType) {
 	case "check_http", "check_k8s_event", "smoke_test", "verify", "check":
@@ -1208,8 +2297,10 @@ func (s *Service) executeDAGWorkflow(
 	statuses := make(map[string]string, len(definition.Nodes))
 	steps := make([]domainworkflow.Step, 0, len(definition.Nodes))
 	artifactState := make(map[string]any)
+	stopFailureSources := make(map[string]struct{})
 	metadata := map[string]any{
-		"mode":                 "release_dag",
+		"mode":                 definition.Mode,
+		"executionMode":        "release_dag",
 		"schemaVersion":        definition.SchemaVersion,
 		"workflowTemplateId":   binding.WorkflowTemplateID,
 		"workflowTemplateKey":  binding.WorkflowTemplate.Key,
@@ -1219,6 +2310,14 @@ func (s *Service) executeDAGWorkflow(
 		"edges":                definition.Edges,
 	}
 	metadata = withGatewayApprovalWorkflowMetadata(metadata, input)
+	runForMetadata := domainworkflow.Run{Metadata: metadata}
+	ensureDAGExecutionMetadata(&runForMetadata)
+	appendDAGRunEvent(&runForMetadata, map[string]any{
+		"type":   "workflow_started",
+		"status": "running",
+		"mode":   definition.Mode,
+	})
+	metadata = runForMetadata.Metadata
 
 	for len(statuses) < len(definition.Nodes) {
 		ready := make([]dagWorkflowNode, 0)
@@ -1227,13 +2326,42 @@ func (s *Service) executeDAGWorkflow(
 			if statuses[node.ID] != "" {
 				continue
 			}
-			readyState, skipped := resolveDAGNodeReadiness(node, incoming[node.ID], statuses)
+			readyState, skipped := resolveDAGNodeReadiness(definition, node, incoming[node.ID], statuses)
 			switch {
 			case skipped:
 				statuses[node.ID] = "skipped"
 				steps = append(steps, domainworkflow.Step{Name: node.Name, Status: "skipped", Summary: "conditions not met"})
+				runForMetadata.Metadata = metadata
+				appendDAGNodeEvent(&runForMetadata, node.ID, "node_skipped", "skipped", "conditions not met", map[string]any{"reason": "dependency_condition"})
+				metadata = runForMetadata.Metadata
 				progressed = true
 			case readyState:
+				if shouldStopDAGNodeAfterFailure(definition, node.ID, stopFailureSources) {
+					statuses[node.ID] = "skipped"
+					steps = append(steps, domainworkflow.Step{Name: node.Name, Status: "skipped", Summary: "stopped after failure policy"})
+					runForMetadata.Metadata = metadata
+					appendDAGNodeEvent(&runForMetadata, node.ID, "node_skipped", "skipped", "stopped after failure policy", map[string]any{"reason": "failure_policy_stop"})
+					metadata = runForMetadata.Metadata
+					progressed = true
+					continue
+				}
+				runConditionMatched, runConditionReason := evaluateDAGRunCondition(node.RunCondition, app, input, binding, artifactState)
+				if !runConditionMatched {
+					statuses[node.ID] = "skipped"
+					steps = append(steps, domainworkflow.Step{Name: node.Name, Status: "skipped", Summary: runConditionReason})
+					runForMetadata.Metadata = metadata
+					appendDAGNodeEvent(&runForMetadata, node.ID, "node_skipped", "skipped", runConditionReason, map[string]any{"reason": "run_condition", "runCondition": node.RunCondition})
+					recordDAGNodeOutputs(&runForMetadata, node.ID, map[string]any{
+						"runCondition": map[string]any{
+							"expression": node.RunCondition,
+							"matched":    false,
+							"reason":     runConditionReason,
+						},
+					})
+					metadata = runForMetadata.Metadata
+					progressed = true
+					continue
+				}
 				ready = append(ready, node)
 			}
 		}
@@ -1255,16 +2383,36 @@ func (s *Service) executeDAGWorkflow(
 		for _, result := range s.executeReadyDAGNodes(ctx, principal, app, input, binding, ready, run, artifactState) {
 			statuses[result.nodeID] = result.status
 			steps = append(steps, result.step)
+			runForMetadata.Metadata = metadata
+			recordDAGNodeOutputs(&runForMetadata, result.nodeID, metadataDAGExecutionResult(result))
+			for _, event := range result.events {
+				appendDAGNodeEvent(&runForMetadata, result.nodeID, mapString(event, "type"), result.status, result.summary, event)
+			}
 			for key, value := range result.outputs {
 				artifactState[key] = value
 			}
+			for key, value := range result.artifacts {
+				artifactState[key] = value
+			}
+			if len(result.outputs) > 0 || len(result.artifacts) > 0 {
+				runForMetadata.Metadata["artifacts"] = metadataDAGArtifactState(artifactState)
+			}
+			if result.status == "failed" {
+				node := nodeByID(definition, result.nodeID)
+				policy := effectiveDAGFailurePolicy(definition, node)
+				if policy == "stop" {
+					stopFailureSources[result.nodeID] = struct{}{}
+				}
+				recordDAGFailurePolicy(&runForMetadata, result.nodeID, policy, result.summary)
+			}
+			metadata = runForMetadata.Metadata
 		}
 	}
 
 	finalStatus := "completed"
 	for _, node := range definition.Nodes {
 		status := statuses[node.ID]
-		if status == "failed" {
+		if status == "failed" && dagFailureCountsAsWorkflowFailure(definition, node) {
 			finalStatus = "failed"
 			break
 		}
@@ -1274,7 +2422,7 @@ func (s *Service) executeDAGWorkflow(
 	}
 	metadata["nodeStatus"] = statuses
 	if len(artifactState) > 0 {
-		metadata["artifacts"] = artifactState
+		metadata["artifacts"] = metadataDAGArtifactState(artifactState)
 	}
 	return steps, metadata, finalStatus, nil
 }
@@ -1343,7 +2491,7 @@ func (s *Service) executeReadyDAGNodes(
 	return ordered
 }
 
-func resolveDAGNodeReadiness(node dagWorkflowNode, incoming []dagWorkflowEdge, statuses map[string]string) (ready bool, skipped bool) {
+func resolveDAGNodeReadiness(definition dagWorkflowDefinition, node dagWorkflowNode, incoming []dagWorkflowEdge, statuses map[string]string) (ready bool, skipped bool) {
 	if len(incoming) == 0 {
 		return true, false
 	}
@@ -1355,7 +2503,7 @@ func resolveDAGNodeReadiness(node dagWorkflowNode, incoming []dagWorkflowEdge, s
 			allPredicatesResolved = false
 			continue
 		}
-		if dagEdgeSatisfied(edge.Condition, predStatus) {
+		if dagEdgeSatisfied(definition, edge, predStatus) {
 			anySatisfied = true
 		}
 	}
@@ -1365,14 +2513,17 @@ func resolveDAGNodeReadiness(node dagWorkflowNode, incoming []dagWorkflowEdge, s
 	return allPredicatesResolved && anySatisfied, false
 }
 
-func dagEdgeSatisfied(condition, status string) bool {
-	switch strings.TrimSpace(condition) {
+func dagEdgeSatisfied(definition dagWorkflowDefinition, edge dagWorkflowEdge, status string) bool {
+	switch strings.TrimSpace(edge.Condition) {
 	case "failure":
 		return status == "failed"
 	case "always":
 		return status == "completed" || status == "failed" || status == "skipped"
 	default:
-		return status == "completed"
+		if status == "completed" {
+			return true
+		}
+		return status == "failed" && effectiveDAGFailurePolicy(definition, nodeByID(definition, edge.Source)) == "continue"
 	}
 }
 
@@ -1614,6 +2765,40 @@ func (s *Service) executeDAGNode(
 	status := "completed"
 	summary := ""
 	outputs := map[string]any{}
+	artifactOutputs := map[string]any{}
+	resolvedInputs := resolveDAGNodeInputs(node, app, input, binding, artifactState)
+	resolvedSelectors, selectorErr := s.resolveDAGNodeSelectors(ctx, app, input, binding, node)
+	events := []map[string]any{
+		{"type": "node_inputs_resolved", "inputs": metadataDAGInputState(resolvedInputs)},
+	}
+	if len(resolvedSelectors) > 0 {
+		events = append(events, map[string]any{"type": "node_selectors_resolved", "selectors": resolvedSelectors})
+	}
+	if selectorErr != nil {
+		status = "failed"
+		summary = selectorErr.Error()
+		events = append(events, map[string]any{"type": "node_selector_resolution_failed", "error": summary})
+		return dagExecutionResult{
+			nodeID:    node.ID,
+			status:    status,
+			summary:   summary,
+			inputs:    resolvedInputs,
+			outputs:   outputs,
+			artifacts: artifactOutputs,
+			selectors: resolvedSelectors,
+			events:    events,
+			step: domainworkflow.Step{
+				Name:    node.Name,
+				Status:  status,
+				Summary: summary,
+			},
+		}
+	}
+	selectedTargets := selectedDAGTargetsFromSelectors(resolvedSelectors)
+	var selectedTarget *domaincatalog.ReleaseTarget
+	if len(selectedTargets) > 0 {
+		selectedTarget = &selectedTargets[0]
+	}
 	switch node.Type {
 	case "manual_approval":
 		status = workflowStatusWaitingApproval
@@ -1629,10 +2814,15 @@ func (s *Service) executeDAGNode(
 			summary = "release executor is not configured"
 			break
 		}
-		target := matchBindingTarget(binding, input)
+		targets := selectedTargets
+		if len(targets) == 0 {
+			if target := matchBindingTarget(binding, input); target != nil {
+				targets = append(targets, *target)
+			}
+		}
 		containerName := configString(node.Config, "containerName")
-		if containerName == "" && target != nil {
-			containerName = target.ContainerName
+		if containerName == "" && len(targets) > 0 {
+			containerName = targets[0].ContainerName
 		}
 		actionKind := strings.TrimSpace(binding.ReleasePolicy.ActionKind)
 		if actionKind == "" {
@@ -1641,7 +2831,7 @@ func (s *Service) executeDAGNode(
 		if actionKind == "" {
 			actionKind = "deploy"
 		}
-		resolvedImage := strings.TrimSpace(fmt.Sprint(artifactState["image"]))
+		resolvedImage := dagArtifactRuntimeString(artifactState["image"])
 		imageTag := configString(node.Config, "imageTag")
 		imageTagSource := configString(node.Config, "imageTagSource")
 		if imageTagSource == "build_artifact" && resolvedImage == "" {
@@ -1649,25 +2839,74 @@ func (s *Service) executeDAGNode(
 			summary = "build artifact image is not available"
 			break
 		}
-		record, err := s.releases.Trigger(ctx, principal, domainrelease.TriggerInput{
-			ApplicationID:            app.ID,
-			ApplicationEnvironmentID: binding.ID,
-			ClusterID:                input.ClusterID,
-			Namespace:                input.Namespace,
-			DeploymentName:           input.DeploymentName,
-			ContainerName:            firstNonEmpty(input.ContainerName, containerName),
-			Image:                    resolvedImage,
-			ImageTag:                 firstNonEmpty(input.ImageTag, imageTag),
-			ReleaseName:              input.ReleaseName,
-			ActionKind:               actionKind,
-			WorkflowRunID:            run.ID,
-		})
-		if err != nil {
+		if len(targets) == 0 {
+			targets = append(targets, domaincatalog.ReleaseTarget{
+				ID:            "input",
+				ClusterID:     input.ClusterID,
+				Namespace:     input.Namespace,
+				WorkloadName:  input.DeploymentName,
+				ContainerName: input.ContainerName,
+				Enabled:       true,
+			})
+		}
+		fanOutItems := make([]map[string]any, 0, len(targets))
+		failedTargets := 0
+		for index, target := range targets {
+			record, err := s.releases.Trigger(ctx, principal, domainrelease.TriggerInput{
+				ApplicationID:            app.ID,
+				ApplicationEnvironmentID: binding.ID,
+				ClusterID:                targetClusterID(&target, input),
+				Namespace:                targetNamespace(&target, input),
+				DeploymentName:           targetWorkloadName(&target, input),
+				ContainerName:            firstNonEmpty(input.ContainerName, containerName, target.ContainerName),
+				Image:                    resolvedImage,
+				ImageTag:                 firstNonEmpty(input.ImageTag, imageTag),
+				ReleaseName:              input.ReleaseName,
+				ActionKind:               actionKind,
+				WorkflowRunID:            run.ID,
+			})
+			targetStatus := "completed"
+			targetSummary := ""
+			releaseID := ""
+			if err != nil {
+				targetStatus = "failed"
+				targetSummary = err.Error()
+				failedTargets++
+			} else {
+				releaseID = record.ID
+				targetStatus = record.Status
+				targetSummary = fmt.Sprintf("release %s finished with status %s", record.ID, record.Status)
+			}
+			fanOutItems = append(fanOutItems, map[string]any{
+				"index":     index,
+				"target":    releaseTargetMetadata(target),
+				"status":    targetStatus,
+				"summary":   targetSummary,
+				"releaseId": releaseID,
+			})
+			if err != nil && normalizeDAGFanOutFailurePolicy(node.FanOutFailurePolicy) != "continue" && effectiveDAGFailurePolicy(dagWorkflowDefinition{}, node) != "continue" {
+				break
+			}
+		}
+		if len(targets) > 1 {
+			outputs["fanOut"] = map[string]any{
+				"strategy":      firstNonEmpty(normalizeDAGFanOutStrategy(node.FanOutStrategy), "parallel"),
+				"targetCount":   len(targets),
+				"failurePolicy": firstNonEmpty(normalizeDAGFanOutFailurePolicy(node.FanOutFailurePolicy), effectiveDAGFailurePolicy(dagWorkflowDefinition{}, node)),
+				"targets":       fanOutItems,
+			}
+			events = append(events, map[string]any{"type": "node_fan_out_completed", "fanOut": outputs["fanOut"]})
+		}
+		if failedTargets > 0 {
 			status = "failed"
-			summary = err.Error()
+			summary = fmt.Sprintf("release fan-out failed on %d/%d targets", failedTargets, len(targets))
 			break
 		}
-		summary = fmt.Sprintf("release %s finished with status %s", record.ID, record.Status)
+		if len(fanOutItems) == 1 {
+			summary = strings.TrimSpace(fmt.Sprint(fanOutItems[0]["summary"]))
+		} else {
+			summary = fmt.Sprintf("release fan-out completed on %d targets", len(fanOutItems))
+		}
 	case "build":
 		if input.ValidationOnly {
 			status = "skipped"
@@ -1716,7 +2955,7 @@ func (s *Service) executeDAGNode(
 		if configured := toInt(node.Config["timeoutSeconds"], 0); configured > 0 {
 			timeoutSeconds = configured
 		}
-		waitSummary, err := s.waitForRollout(ctx, principal, input.ClusterID, input.Namespace, input.DeploymentName, timeoutSeconds)
+		waitSummary, err := s.waitForRollout(ctx, principal, targetClusterID(selectedTarget, input), targetNamespace(selectedTarget, input), targetWorkloadName(selectedTarget, input), timeoutSeconds)
 		if err != nil {
 			status = "failed"
 			summary = err.Error()
@@ -1758,7 +2997,7 @@ func (s *Service) executeDAGNode(
 			summary = "resource executor is not configured"
 			break
 		}
-		result, err := s.rollbackToPreviousRevision(ctx, principal, input.ClusterID, input.Namespace, input.DeploymentName)
+		result, err := s.rollbackToPreviousRevision(ctx, principal, targetClusterID(selectedTarget, input), targetNamespace(selectedTarget, input), targetWorkloadName(selectedTarget, input))
 		if err != nil {
 			status = "failed"
 			summary = err.Error()
@@ -1771,13 +3010,13 @@ func (s *Service) executeDAGNode(
 			summary = "resource executor is not configured"
 			break
 		}
-		deploymentName := firstNonEmpty(strings.TrimSpace(fmt.Sprint(node.Config["deploymentName"])), strings.TrimSpace(input.DeploymentName))
+		deploymentName := firstNonEmpty(strings.TrimSpace(fmt.Sprint(node.Config["deploymentName"])), selectedTargetWorkloadName(selectedTarget), strings.TrimSpace(input.DeploymentName))
 		if deploymentName == "" {
 			status = "failed"
 			summary = "restart workload requires deploymentName"
 			break
 		}
-		if err := s.resources.RestartDeployment(ctx, principal, input.ClusterID, input.Namespace, deploymentName); err != nil {
+		if err := s.resources.RestartDeployment(ctx, principal, targetClusterID(selectedTarget, input), targetNamespace(selectedTarget, input), deploymentName); err != nil {
 			status = "failed"
 			summary = err.Error()
 			break
@@ -1789,14 +3028,14 @@ func (s *Service) executeDAGNode(
 			summary = "resource executor is not configured"
 			break
 		}
-		deploymentName := firstNonEmpty(strings.TrimSpace(fmt.Sprint(node.Config["deploymentName"])), strings.TrimSpace(input.DeploymentName))
+		deploymentName := firstNonEmpty(strings.TrimSpace(fmt.Sprint(node.Config["deploymentName"])), selectedTargetWorkloadName(selectedTarget), strings.TrimSpace(input.DeploymentName))
 		if deploymentName == "" {
 			status = "failed"
 			summary = "scale workload requires deploymentName"
 			break
 		}
 		replicas := int32(toInt(node.Config["replicas"], 1))
-		if err := s.resources.ScaleDeployment(ctx, principal, input.ClusterID, input.Namespace, deploymentName, replicas); err != nil {
+		if err := s.resources.ScaleDeployment(ctx, principal, targetClusterID(selectedTarget, input), targetNamespace(selectedTarget, input), deploymentName, replicas); err != nil {
 			status = "failed"
 			summary = err.Error()
 			break
@@ -1814,7 +3053,7 @@ func (s *Service) executeDAGNode(
 			summary = "delete pod requires podName"
 			break
 		}
-		if err := s.resources.DeletePod(ctx, principal, input.ClusterID, input.Namespace, podName); err != nil {
+		if err := s.resources.DeletePod(ctx, principal, targetClusterID(selectedTarget, input), targetNamespace(selectedTarget, input), podName); err != nil {
 			status = "failed"
 			summary = err.Error()
 			break
@@ -1888,12 +3127,53 @@ func (s *Service) executeDAGNode(
 		summary = fmt.Sprintf("continued after failure: %s", summary)
 		status = "completed"
 	}
+	if status == "failed" && effectiveDAGFailurePolicy(dagWorkflowDefinition{}, node) == "continue" {
+		events = append(events, map[string]any{"type": "node_failure_continued", "originalStatus": "failed", "summary": summary})
+	}
+	if len(node.ArtifactOutputs) > 0 {
+		resolvedArtifactOutputs, artifactErr := materializeDAGArtifactOutputs(node, outputs, artifactState, status)
+		if artifactErr != nil {
+			status = "failed"
+			summary = artifactErr.Error()
+			artifactOutputs = map[string]any{}
+			outputs = map[string]any{}
+			events = append(events, map[string]any{"type": "artifact_outputs_missing", "error": summary})
+		} else {
+			artifactOutputs = resolvedArtifactOutputs
+		}
+		for key, value := range artifactOutputs {
+			outputs[key] = value
+		}
+		if len(artifactOutputs) > 0 {
+			events = append(events, map[string]any{"type": "artifact_outputs_recorded", "artifacts": metadataDAGArtifactState(artifactOutputs)})
+			if references := s.persistDAGArtifactOutputs(ctx, app, binding, node, run, artifactOutputs, status); len(references) > 0 {
+				outputs["artifactReferences"] = references
+				events = append(events, map[string]any{"type": "artifact_outputs_persisted", "artifacts": references})
+			}
+		}
+	}
+	for _, outputName := range node.Outputs {
+		outputName = strings.TrimSpace(outputName)
+		if outputName == "" {
+			continue
+		}
+		if _, ok := outputs[outputName]; !ok {
+			if value, ok := artifactState[outputName]; ok {
+				outputs[outputName] = value
+			}
+		}
+	}
+	events = append(events, map[string]any{"type": "node_finished", "status": status, "summary": summary})
 
 	return dagExecutionResult{
-		nodeID:  node.ID,
-		status:  status,
-		summary: summary,
-		outputs: outputs,
+		nodeID:    node.ID,
+		status:    status,
+		summary:   summary,
+		inputs:    resolvedInputs,
+		outputs:   outputs,
+		artifacts: artifactOutputs,
+		selectors: resolvedSelectors,
+		events:    events,
 		step: domainworkflow.Step{
 			Name:    node.Name,
 			Status:  status,
@@ -2048,6 +3328,453 @@ func matchBindingTarget(binding domaincatalog.ApplicationEnvironment, input doma
 	return nil
 }
 
+func selectedDAGTargetFromSelectors(selectors map[string]any) *domaincatalog.ReleaseTarget {
+	targets := selectedDAGTargetsFromSelectors(selectors)
+	if len(targets) == 0 {
+		return nil
+	}
+	return &targets[0]
+}
+
+func selectedDAGTargetsFromSelectors(selectors map[string]any) []domaincatalog.ReleaseTarget {
+	if len(selectors) == 0 {
+		return nil
+	}
+	if rawTargets, ok := selectors["targets"].([]map[string]any); ok {
+		targets := make([]domaincatalog.ReleaseTarget, 0, len(rawTargets))
+		for _, item := range rawTargets {
+			targets = append(targets, dagTargetFromMetadata(item))
+		}
+		return targets
+	}
+	if rawTargets, ok := selectors["targets"].([]any); ok {
+		targets := make([]domaincatalog.ReleaseTarget, 0, len(rawTargets))
+		for _, item := range rawTargets {
+			if mapped, ok := item.(map[string]any); ok {
+				targets = append(targets, dagTargetFromMetadata(mapped))
+			}
+		}
+		if len(targets) > 0 {
+			return targets
+		}
+	}
+	targetMap, ok := selectors["target"].(map[string]any)
+	if !ok || len(targetMap) == 0 {
+		return nil
+	}
+	return []domaincatalog.ReleaseTarget{dagTargetFromMetadata(targetMap)}
+}
+
+func dagTargetFromMetadata(targetMap map[string]any) domaincatalog.ReleaseTarget {
+	target := domaincatalog.ReleaseTarget{
+		ID:            workflowMetadataString(targetMap, "id"),
+		ClusterID:     workflowMetadataString(targetMap, "clusterId"),
+		Namespace:     workflowMetadataString(targetMap, "namespace"),
+		TargetKind:    workflowMetadataString(targetMap, "targetKind"),
+		ExecutorKind:  workflowMetadataString(targetMap, "executorKind"),
+		GroupKey:      workflowMetadataString(targetMap, "groupKey"),
+		WaveKey:       workflowMetadataString(targetMap, "waveKey"),
+		RegionKey:     workflowMetadataString(targetMap, "regionKey"),
+		ConfigRef:     workflowMetadataString(targetMap, "configRef"),
+		WorkloadKind:  workflowMetadataString(targetMap, "workloadKind"),
+		WorkloadName:  workflowMetadataString(targetMap, "workloadName"),
+		ContainerName: workflowMetadataString(targetMap, "containerName"),
+		Enabled:       true,
+	}
+	if metadata, ok := targetMap["metadata"].(map[string]any); ok {
+		target.Metadata = metadata
+	}
+	return target
+}
+
+func selectedTargetWorkloadName(target *domaincatalog.ReleaseTarget) string {
+	if target == nil {
+		return ""
+	}
+	return strings.TrimSpace(target.WorkloadName)
+}
+
+func targetClusterID(target *domaincatalog.ReleaseTarget, input domainworkflow.Input) string {
+	if target == nil {
+		return strings.TrimSpace(input.ClusterID)
+	}
+	return firstNonEmpty(target.ClusterID, input.ClusterID)
+}
+
+func targetNamespace(target *domaincatalog.ReleaseTarget, input domainworkflow.Input) string {
+	if target == nil {
+		return strings.TrimSpace(input.Namespace)
+	}
+	return firstNonEmpty(target.Namespace, input.Namespace)
+}
+
+func targetWorkloadName(target *domaincatalog.ReleaseTarget, input domainworkflow.Input) string {
+	if target == nil {
+		return strings.TrimSpace(input.DeploymentName)
+	}
+	return firstNonEmpty(target.WorkloadName, input.DeploymentName)
+}
+
+func normalizeDAGFanOutStrategy(strategy string) string {
+	switch strings.ToLower(strings.TrimSpace(strategy)) {
+	case "":
+		return ""
+	case "parallel", "serial", "batch":
+		return strings.ToLower(strings.TrimSpace(strategy))
+	default:
+		return ""
+	}
+}
+
+func normalizeDAGFanOutFailurePolicy(policy string) string {
+	switch strings.ToLower(strings.TrimSpace(policy)) {
+	case "continue", "stop", "rollback":
+		return strings.ToLower(strings.TrimSpace(policy))
+	default:
+		return ""
+	}
+}
+
+func materializeDAGArtifactOutputs(node dagWorkflowNode, outputs map[string]any, artifactState map[string]any, status string) (map[string]any, error) {
+	if len(node.ArtifactOutputs) == 0 {
+		return nil, nil
+	}
+	artifacts := make(map[string]any, len(node.ArtifactOutputs))
+	for _, artifact := range node.ArtifactOutputs {
+		name := strings.TrimSpace(fmt.Sprint(artifact["name"]))
+		kind := strings.TrimSpace(fmt.Sprint(artifact["kind"]))
+		if name == "" || !isAllowedDeliveryArtifactKind(kind) {
+			continue
+		}
+		value := firstArtifactValue(name, kind, outputs, artifactState)
+		if value == nil && toBool(artifact["required"]) && status == "completed" {
+			return nil, fmt.Errorf("required artifact output %s (%s) is missing", name, kind)
+		}
+		if value == nil {
+			continue
+		}
+		artifactRecord := map[string]any{
+			"name":   name,
+			"kind":   kind,
+			"value":  value,
+			"nodeId": node.ID,
+		}
+		for _, key := range []string{"ref", "digest", "path", "retentionUntil", "retention"} {
+			if raw, ok := artifact[key]; ok && raw != nil {
+				artifactRecord[key] = raw
+			}
+		}
+		if status != "" {
+			artifactRecord["status"] = status
+		}
+		artifacts[name] = artifactRecord
+		if kind != name {
+			artifacts[kind] = artifactRecord
+		}
+	}
+	return artifacts, nil
+}
+
+func (s *Service) persistDAGArtifactOutputs(ctx context.Context, app domainapp.App, binding domaincatalog.ApplicationEnvironment, node dagWorkflowNode, run domainworkflow.Run, artifacts map[string]any, status string) map[string]any {
+	if s == nil || s.artifacts == nil || len(artifacts) == 0 || strings.TrimSpace(run.ID) == "" {
+		return nil
+	}
+	references := map[string]any{}
+	seen := map[string]struct{}{}
+	for key, raw := range artifacts {
+		recordMap, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		name := firstNonEmpty(workflowMetadataString(recordMap, "name"), key)
+		kind := workflowMetadataString(recordMap, "kind")
+		if name == "" || kind == "" {
+			continue
+		}
+		dedupeKey := kind + ":" + name
+		if _, exists := seen[dedupeKey]; exists {
+			continue
+		}
+		seen[dedupeKey] = struct{}{}
+		item := dagArtifactStoreItem(app, binding, node, run, recordMap, status)
+		stored, err := s.artifacts.UpsertExecutionArtifact(ctx, item)
+		if err != nil {
+			continue
+		}
+		references[name] = map[string]any{
+			"id":             stored.ID,
+			"kind":           stored.Kind,
+			"name":           stored.Name,
+			"ref":            stored.Ref,
+			"digest":         stored.Digest,
+			"path":           stored.Path,
+			"status":         stored.Status,
+			"workflowRunId":  stored.WorkflowRunID,
+			"workflowNodeId": stored.WorkflowNodeID,
+		}
+	}
+	if len(references) == 0 {
+		return nil
+	}
+	return references
+}
+
+func metadataDAGExecutionResult(result dagExecutionResult) map[string]any {
+	outputs := metadataDAGOutputState(result.outputs)
+	artifacts := metadataDAGArtifactState(result.artifacts)
+	if references := metadataDAGArtifactReferences(result.outputs); len(references) > 0 {
+		for key, value := range references {
+			if outputs == nil {
+				outputs = map[string]any{}
+			}
+			outputs[key] = value
+			if artifacts == nil {
+				artifacts = map[string]any{}
+			}
+			artifacts[key] = value
+		}
+	}
+	return map[string]any{
+		"inputs":    metadataDAGInputState(result.inputs),
+		"outputs":   outputs,
+		"artifacts": artifacts,
+		"selectors": result.selectors,
+		"status":    result.status,
+		"summary":   result.summary,
+	}
+}
+
+func metadataDAGInputState(inputs map[string]any) map[string]any {
+	if len(inputs) == 0 {
+		return nil
+	}
+	metadata := make(map[string]any, len(inputs))
+	for key, value := range inputs {
+		metadata[key] = metadataDAGArtifactValue(key, value)
+	}
+	return metadata
+}
+
+func metadataDAGOutputState(outputs map[string]any) map[string]any {
+	if len(outputs) == 0 {
+		return nil
+	}
+	metadata := make(map[string]any, len(outputs))
+	for key, value := range outputs {
+		if key == "artifactReferences" {
+			metadata[key] = value
+			continue
+		}
+		metadata[key] = metadataDAGArtifactValue(key, value)
+	}
+	return metadata
+}
+
+func metadataDAGArtifactReferences(outputs map[string]any) map[string]any {
+	if len(outputs) == 0 {
+		return nil
+	}
+	references, ok := outputs["artifactReferences"].(map[string]any)
+	if !ok || len(references) == 0 {
+		return nil
+	}
+	metadata := make(map[string]any, len(references))
+	for key, value := range references {
+		metadata[key] = metadataDAGArtifactValue(key, value)
+	}
+	return metadata
+}
+
+func metadataDAGArtifactState(artifactState map[string]any) map[string]any {
+	if len(artifactState) == 0 {
+		return nil
+	}
+	metadata := make(map[string]any, len(artifactState))
+	for key, value := range artifactState {
+		if key == "artifactReferences" {
+			continue
+		}
+		metadata[key] = metadataDAGArtifactValue(key, value)
+	}
+	if references, ok := artifactState["artifactReferences"].(map[string]any); ok {
+		for key, value := range references {
+			metadata[key] = metadataDAGArtifactValue(key, value)
+		}
+	}
+	if len(metadata) == 0 {
+		return nil
+	}
+	return metadata
+}
+
+func metadataDAGArtifactValue(key string, value any) any {
+	recordMap, ok := value.(map[string]any)
+	if !ok {
+		return value
+	}
+	if references, ok := recordMap["artifactReferences"].(map[string]any); ok {
+		for refKey, refValue := range references {
+			if strings.TrimSpace(refKey) == strings.TrimSpace(key) {
+				return metadataDAGArtifactValue(refKey, refValue)
+			}
+		}
+	}
+	lightweight := map[string]any{}
+	for _, field := range []string{"id", "kind", "name", "ref", "digest", "path", "status", "workflowRunId", "workflowNodeId", "nodeId", "retentionUntil", "retention"} {
+		if raw, ok := recordMap[field]; ok && raw != nil {
+			lightweight[field] = raw
+		}
+	}
+	if raw, ok := recordMap["value"]; ok {
+		if lightweight["ref"] == nil {
+			if ref := artifactValueString(raw, "ref"); ref != "" {
+				lightweight["ref"] = ref
+			} else if text := strings.TrimSpace(fmt.Sprint(raw)); text != "" && text != "<nil>" {
+				lightweight["ref"] = text
+			}
+		}
+		if lightweight["digest"] == nil {
+			if digest := artifactValueString(raw, "digest"); digest != "" {
+				lightweight["digest"] = digest
+			}
+		}
+		if lightweight["path"] == nil {
+			if path := artifactValueString(raw, "path"); path != "" {
+				lightweight["path"] = path
+			}
+		}
+	}
+	if len(lightweight) == 0 {
+		return value
+	}
+	if lightweight["name"] == nil && strings.TrimSpace(key) != "" {
+		lightweight["name"] = strings.TrimSpace(key)
+	}
+	return lightweight
+}
+
+func dagArtifactStoreItem(app domainapp.App, binding domaincatalog.ApplicationEnvironment, node dagWorkflowNode, run domainworkflow.Run, artifact map[string]any, status string) domaindelivery.ExecutionArtifact {
+	name := workflowMetadataString(artifact, "name")
+	kind := workflowMetadataString(artifact, "kind")
+	value := artifact["value"]
+	ref := firstNonEmpty(workflowMetadataString(artifact, "ref"), artifactValueString(value, "ref"))
+	digest := firstNonEmpty(workflowMetadataString(artifact, "digest"), artifactValueString(value, "digest"))
+	path := firstNonEmpty(workflowMetadataString(artifact, "path"), artifactValueString(value, "path"))
+	if ref == "" && path == "" {
+		if text := strings.TrimSpace(fmt.Sprint(value)); text != "" && text != "<nil>" {
+			ref = text
+		}
+	}
+	metadata := map[string]any{
+		"value":              value,
+		"workflowName":       run.WorkflowName,
+		"nodeName":           node.Name,
+		"nodeType":           node.Type,
+		"environmentKey":     binding.EnvironmentKey,
+		"workflowTemplateId": binding.WorkflowTemplateID,
+	}
+	retentionUntil := artifactTimeValue(artifact["retentionUntil"])
+	if retentionUntil == nil {
+		retentionUntil = artifactRetentionDeadline(artifact["retention"])
+	}
+	return domaindelivery.ExecutionArtifact{
+		ID:                       "artifact:" + run.ID + ":" + node.ID + ":" + name,
+		WorkflowRunID:            run.ID,
+		WorkflowNodeID:           node.ID,
+		ApplicationID:            app.ID,
+		ApplicationEnvironmentID: binding.ID,
+		Kind:                     kind,
+		Name:                     name,
+		Ref:                      ref,
+		Digest:                   digest,
+		Path:                     path,
+		Status:                   firstNonEmpty(workflowMetadataString(artifact, "status"), status),
+		SizeBytes:                int64(toInt(firstNonNil(artifact["sizeBytes"], artifactValue(value, "sizeBytes")), 0)),
+		Metadata:                 metadata,
+		RetentionUntil:           retentionUntil,
+	}
+}
+
+func artifactValue(value any, key string) any {
+	if mapped, ok := value.(map[string]any); ok {
+		return mapped[key]
+	}
+	return nil
+}
+
+func artifactValueString(value any, key string) string {
+	raw := artifactValue(value, key)
+	if raw == nil {
+		return ""
+	}
+	text := strings.TrimSpace(fmt.Sprint(raw))
+	if text == "<nil>" {
+		return ""
+	}
+	return text
+}
+
+func dagArtifactRuntimeString(value any) string {
+	if mapped, ok := value.(map[string]any); ok {
+		for _, key := range []string{"ref", "digest", "path"} {
+			if text := workflowMetadataString(mapped, key); text != "" {
+				return text
+			}
+		}
+		if raw, ok := mapped["value"]; ok {
+			if text := dagArtifactRuntimeString(raw); text != "" {
+				return text
+			}
+		}
+	}
+	text := strings.TrimSpace(fmt.Sprint(value))
+	if text == "<nil>" {
+		return ""
+	}
+	return text
+}
+
+func artifactTimeValue(value any) *time.Time {
+	switch typed := value.(type) {
+	case time.Time:
+		copyValue := typed.UTC()
+		return &copyValue
+	case string:
+		if parsed, err := time.Parse(time.RFC3339, strings.TrimSpace(typed)); err == nil {
+			parsed = parsed.UTC()
+			return &parsed
+		}
+	}
+	return nil
+}
+
+func artifactRetentionDeadline(value any) *time.Time {
+	text := strings.TrimSpace(fmt.Sprint(value))
+	if text == "" || text == "<nil>" {
+		return nil
+	}
+	if duration, err := time.ParseDuration(text); err == nil {
+		deadline := time.Now().UTC().Add(duration)
+		return &deadline
+	}
+	return artifactTimeValue(text)
+}
+
+func firstArtifactValue(name, kind string, outputs map[string]any, artifactState map[string]any) any {
+	for _, key := range []string{name, kind} {
+		if key == "" {
+			continue
+		}
+		if value, ok := outputs[key]; ok {
+			return value
+		}
+		if value, ok := artifactState[key]; ok {
+			return value
+		}
+	}
+	return nil
+}
+
 func definitionFromRunMetadata(run domainworkflow.Run) (dagWorkflowDefinition, bool) {
 	if len(run.Metadata) == 0 {
 		return dagWorkflowDefinition{}, false
@@ -2055,7 +3782,7 @@ func definitionFromRunMetadata(run domainworkflow.Run) (dagWorkflowDefinition, b
 	if nodes, ok := run.Metadata["nodes"].([]dagWorkflowNode); ok && len(nodes) > 0 {
 		definition := dagWorkflowDefinition{
 			SchemaVersion: toInt(run.Metadata["schemaVersion"], 2),
-			Mode:          "release_dag",
+			Mode:          workflowMetadataMode(run.Metadata),
 			Nodes:         nodes,
 		}
 		if edges, edgeOK := run.Metadata["edges"].([]dagWorkflowEdge); edgeOK {
@@ -2064,7 +3791,7 @@ func definitionFromRunMetadata(run domainworkflow.Run) (dagWorkflowDefinition, b
 		return definition, true
 	}
 	return parseDAGWorkflowDefinition(map[string]any{
-		"mode":          "release_dag",
+		"mode":          workflowMetadataMode(run.Metadata),
 		"schemaVersion": run.Metadata["schemaVersion"],
 		"nodes":         run.Metadata["nodes"],
 		"edges":         run.Metadata["edges"],
@@ -2095,11 +3822,42 @@ func toMapSlice(value any) ([]map[string]any, bool) {
 	return out, true
 }
 
+func toMapSliceOrEmpty(value any) []map[string]any {
+	items, ok := toMapSlice(value)
+	if !ok {
+		return nil
+	}
+	return items
+}
+
 func toConfigMap(value any) map[string]any {
 	if valueMap, ok := value.(map[string]any); ok {
 		return valueMap
 	}
 	return map[string]any{}
+}
+
+func toStringSlice(value any) []string {
+	items, ok := value.([]any)
+	if !ok {
+		if typed, ok := value.([]string); ok {
+			out := make([]string, 0, len(typed))
+			for _, item := range typed {
+				if text := strings.TrimSpace(item); text != "" {
+					out = append(out, text)
+				}
+			}
+			return out
+		}
+		return nil
+	}
+	out := make([]string, 0, len(items))
+	for _, item := range items {
+		if text := strings.TrimSpace(fmt.Sprint(item)); text != "" {
+			out = append(out, text)
+		}
+	}
+	return out
 }
 
 func configString(config map[string]any, key string) string {
@@ -2120,6 +3878,24 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func firstPositiveInt(values ...int) int {
+	for _, value := range values {
+		if value > 0 {
+			return value
+		}
+	}
+	return 0
+}
+
+func firstNonNil(values ...any) any {
+	for _, value := range values {
+		if value != nil {
+			return value
+		}
+	}
+	return nil
 }
 
 func mergeDAGMaps(base, override map[string]any) map[string]any {

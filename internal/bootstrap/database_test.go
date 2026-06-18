@@ -320,6 +320,56 @@ func TestDefaultMenuSeedsGroupDeliveryWorkbenchByUserTask(t *testing.T) {
 	}
 }
 
+func TestDefaultMenuSeedsBindDeliveryMenusByResponsibility(t *testing.T) {
+	items := defaultMenuSeeds()
+	byID := make(map[string]menuSeed, len(items))
+	for _, item := range items {
+		byID[item.ID] = item
+	}
+
+	expectedRoles := map[string][]string{
+		"builds":            {"admin", "ops", "developer", "tester", "readonly"},
+		"delivery-testing":  {"admin", "ops", "developer", "tester", "readonly"},
+		"delivery-analysis": {"admin", "ops", "developer", "tester", "readonly"},
+		"release-bundles":   {"admin", "ops", "developer", "tester", "readonly"},
+		"execution-tasks":   {"admin", "ops", "developer", "tester", "readonly"},
+		"workflows":         {"admin", "ops", "developer", "readonly"},
+		"releases":          {"admin", "ops", "developer", "readonly"},
+	}
+	for menuID, roles := range expectedRoles {
+		item, ok := byID[menuID]
+		if !ok {
+			t.Fatalf("default menu seeds missing %s", menuID)
+		}
+		for _, role := range roles {
+			if !slices.Contains(item.Roles, role) {
+				t.Fatalf("menu %s roles = %v, missing %s", menuID, item.Roles, role)
+			}
+		}
+	}
+
+	restrictedMenus := []string{
+		"delivery-onboarding",
+		"release-board",
+		"delivery-blueprints",
+		"build-templates",
+		"workflow-templates",
+		"application-environments",
+		"registries",
+	}
+	for _, menuID := range restrictedMenus {
+		item, ok := byID[menuID]
+		if !ok {
+			t.Fatalf("default menu seeds missing %s", menuID)
+		}
+		for _, role := range []string{"tester", "readonly"} {
+			if slices.Contains(item.Roles, role) {
+				t.Fatalf("menu %s roles = %v, should not include %s", menuID, item.Roles, role)
+			}
+		}
+	}
+}
+
 func TestFilterSeedMenusByModulesRemovesVirtualizationWhenDisabled(t *testing.T) {
 	items := filterSeedMenusByModules(defaultMenuSeeds(), cfgpkg.ModulesConfig{
 		Delivery:       cfgpkg.ModuleToggleConfig{Enabled: true},

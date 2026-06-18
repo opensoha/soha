@@ -281,7 +281,7 @@ func TestPlatformListAuditLogsBindsExpandedFilter(t *testing.T) {
 
 	audit := &stubPlatformAuditService{}
 	handler := NewPlatformHandler(nil, nil, audit, nil, nil, nil)
-	ctx, recorder := newPlatformTestContext(http.MethodGet, "/api/v1/audit/logs?actorId=user-1&actorName=Operator&clusterId=cluster-a&namespace=prod&resourceKind=Deployment&resourceName=api&action=platform.deployment.restart&result=success&requestID=req-1&requestPath=/api/v1/restart&method=post&sourceIP=127.0.0.1&approvalRequestId=approval-1&agentRunId=agent-run-1&rootCauseRunId=root-cause-1&metadataKey=connectorId&metadataValue=feishu&from=2026-06-12T08:00:00Z&to=2026-06-12T09:00:00Z&limit=25", "", nil)
+	ctx, recorder := newPlatformTestContext(http.MethodGet, "/api/v1/audit/logs?actorId=user-1&actorName=Operator&clusterId=cluster-a&namespace=prod&resourceKind=Deployment&resourceName=api&action=platform.deployment.restart&result=success&requestID=req-1&requestPath=/api/v1/restart&method=post&sourceIP=127.0.0.1&approvalRequestId=approval-1&agentRunId=agent-run-1&rootCauseRunId=root-cause-1&metadataKey=usageSnapshot.templateId&metadataValue=tpl-1&from=2026-06-12T08:00:00Z&to=2026-06-12T09:00:00Z&limit=25", "", nil)
 
 	handler.ListAuditLogs(ctx)
 
@@ -300,7 +300,7 @@ func TestPlatformListAuditLogsBindsExpandedFilter(t *testing.T) {
 	if audit.filter.ApprovalRequestID != "approval-1" || audit.filter.AgentRunID != "agent-run-1" || audit.filter.RootCauseRunID != "root-cause-1" {
 		t.Fatalf("audit correlation filter = %#v", audit.filter)
 	}
-	if audit.filter.MetadataKey != "connectorId" || audit.filter.MetadataValue != "feishu" {
+	if audit.filter.MetadataKey != "usageSnapshot.templateId" || audit.filter.MetadataValue != "tpl-1" {
 		t.Fatalf("audit metadata filter = %#v", audit.filter)
 	}
 	from := time.Date(2026, 6, 12, 8, 0, 0, 0, time.UTC)
@@ -364,7 +364,7 @@ func TestPlatformListOperationLogsBindsExpandedFilter(t *testing.T) {
 
 	operations := &stubPlatformOperationService{}
 	handler := NewPlatformHandler(nil, nil, nil, nil, operations, nil)
-	ctx, recorder := newPlatformTestContext(http.MethodGet, "/api/v1/operations/logs?type=ai_gateway.tool.invoke&actor=user-1&clusterId=cluster-a&namespace=prod&resourceKind=Pod&resourceName=api-0&result=failure&requestId=req-1&requestPath=/api/v1/invoke&requestMethod=POST&sourceIp=127.0.0.1&approvalRequestId=approval-1&agentRunId=agent-run-1&rootCauseRunId=root-cause-1&metadataKey=connectorId&metadataValue=feishu&createdAtFrom=2026-06-12T08:00:00Z&createdAtTo=2026-06-12T09:00:00Z&limit=25", "", nil)
+	ctx, recorder := newPlatformTestContext(http.MethodGet, "/api/v1/operations/logs?type=ai_gateway.tool.invoke&actor=user-1&clusterId=cluster-a&namespace=prod&resourceKind=Pod&resourceName=api-0&result=failure&requestId=req-1&requestPath=/api/v1/invoke&requestMethod=POST&sourceIp=127.0.0.1&approvalRequestId=approval-1&agentRunId=agent-run-1&rootCauseRunId=root-cause-1&metadataKey=usageSnapshot.riskLevel&metadataValue=high&createdAtFrom=2026-06-12T08:00:00Z&createdAtTo=2026-06-12T09:00:00Z&limit=25", "", nil)
 
 	handler.ListOperationLogs(ctx)
 
@@ -383,7 +383,7 @@ func TestPlatformListOperationLogsBindsExpandedFilter(t *testing.T) {
 	if operations.filter.ApprovalRequestID != "approval-1" || operations.filter.AgentRunID != "agent-run-1" || operations.filter.RootCauseRunID != "root-cause-1" {
 		t.Fatalf("operation correlation filter = %#v", operations.filter)
 	}
-	if operations.filter.MetadataKey != "connectorId" || operations.filter.MetadataValue != "feishu" {
+	if operations.filter.MetadataKey != "usageSnapshot.riskLevel" || operations.filter.MetadataValue != "high" {
 		t.Fatalf("operation metadata filter = %#v", operations.filter)
 	}
 	from := time.Date(2026, 6, 12, 8, 0, 0, 0, time.UTC)

@@ -24,6 +24,7 @@ import (
 
 type BuildRepository interface {
 	List(context.Context, domainbuild.Filter) ([]domainbuild.Record, error)
+	Get(context.Context, string) (domainbuild.Record, error)
 	Create(context.Context, domainbuild.TriggerInput, map[string]any) (domainbuild.Record, error)
 	Update(context.Context, domainbuild.Record) (domainbuild.Record, error)
 }
@@ -77,6 +78,17 @@ func (s *Service) List(ctx context.Context, principal domainidentity.Principal, 
 		return nil, err
 	}
 	return items, nil
+}
+
+func (s *Service) Get(ctx context.Context, principal domainidentity.Principal, buildID string) (domainbuild.Record, error) {
+	record, err := s.repo.Get(ctx, strings.TrimSpace(buildID))
+	if err != nil {
+		return domainbuild.Record{}, err
+	}
+	if err := s.authorize(ctx, principal, domainaccess.ActionView, record.ApplicationID); err != nil {
+		return domainbuild.Record{}, err
+	}
+	return record, nil
 }
 
 func (s *Service) Trigger(ctx context.Context, principal domainidentity.Principal, input domainbuild.TriggerInput) (domainbuild.Record, error) {

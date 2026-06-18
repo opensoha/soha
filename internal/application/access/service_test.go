@@ -2,6 +2,7 @@ package access
 
 import (
 	"context"
+	"slices"
 	"testing"
 
 	domainaccess "github.com/opensoha/soha/internal/domain/access"
@@ -30,6 +31,51 @@ func (s stubCatalogReader) ListEnvironments(context.Context) ([]domaincatalog.En
 
 func (s stubCatalogReader) ListApplicationEnvironments(context.Context) ([]domaincatalog.ApplicationEnvironment, error) {
 	return s.applicationEnvironments, nil
+}
+
+func TestRoleMatrixIncludesTesterAsViewOnlyRole(t *testing.T) {
+	matrix := RoleMatrix()
+	actions := matrix["tester"]
+	if len(actions) == 0 {
+		t.Fatal("RoleMatrix missing tester role")
+	}
+	for _, action := range []domainaccess.Action{
+		domainaccess.ActionView,
+		domainaccess.ActionList,
+		domainaccess.ActionWatch,
+		domainaccess.ActionLogs,
+	} {
+		if !slices.Contains(actions, action) {
+			t.Fatalf("tester role actions = %v, missing %s", actions, action)
+		}
+	}
+	for _, action := range []domainaccess.Action{
+		domainaccess.ActionCreate,
+		domainaccess.ActionUpdate,
+		domainaccess.ActionDelete,
+		domainaccess.ActionTrigger,
+		domainaccess.ActionRollback,
+	} {
+		if slices.Contains(actions, action) {
+			t.Fatalf("tester role actions = %v, should not include %s", actions, action)
+		}
+	}
+}
+
+func TestDefaultPoliciesIncludeTesterViewPolicy(t *testing.T) {
+	for _, policy := range DefaultPolicies() {
+		if policy.ID != "tester-view" {
+			continue
+		}
+		if !slices.Contains(policy.Subjects.Roles, "tester") {
+			t.Fatalf("tester-view subjects = %v, want tester role", policy.Subjects.Roles)
+		}
+		if slices.Contains(policy.Actions, domainaccess.ActionTrigger) || slices.Contains(policy.Actions, domainaccess.ActionUpdate) {
+			t.Fatalf("tester-view actions should stay view-only: %v", policy.Actions)
+		}
+		return
+	}
+	t.Fatal("DefaultPolicies missing tester-view")
 }
 
 func TestAuthorizeAppliesScopeGrantToPlatformNamespaces(t *testing.T) {

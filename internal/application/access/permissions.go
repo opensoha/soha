@@ -424,6 +424,15 @@ func defaultRolePermissions() map[string][]string {
 		PermDockerTemplatesView,
 		PermDockerOperationsView,
 	}
+	tester := []string{
+		PermWorkspaceApplicationView,
+		PermOverviewView,
+		PermDeliveryApplicationsView,
+		PermDeliveryApplicationServicesView,
+		PermDeliveryApplicationEnvView,
+		PermDeliveryReleaseBundlesView,
+		PermDeliveryExecutionTasksView,
+	}
 	readonly := []string{
 		PermWorkspaceApplicationView,
 		PermWorkspaceResourceView,
@@ -439,6 +448,9 @@ func defaultRolePermissions() map[string][]string {
 		PermPlatformClustersView,
 		PermDeliveryApplicationsView,
 		PermDeliveryApplicationServicesView,
+		PermDeliveryApplicationEnvView,
+		PermDeliveryReleaseBundlesView,
+		PermDeliveryExecutionTasksView,
 		PermDeliveryReleaseBoardView,
 		PermDeliveryWorkflowsView,
 		PermDeliveryReleasesView,
@@ -473,6 +485,7 @@ func defaultRolePermissions() map[string][]string {
 		"admin":     admin,
 		"ops":       ops,
 		"developer": developer,
+		"tester":    tester,
 		"readonly":  readonly,
 		"auditor":   auditor,
 	}

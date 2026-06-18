@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	domainoperation "github.com/opensoha/soha/internal/domain/operation"
@@ -56,15 +57,7 @@ func (r *Repository) List(ctx context.Context, filter domainoperation.Filter) ([
 	if filter.Limit <= 0 {
 		filter.Limit = 50
 	}
-	var fromArg any
-	if filter.From != nil {
-		fromArg = *filter.From
-	}
-	var toArg any
-	if filter.To != nil {
-		toArg = *filter.To
-	}
-	rows, err := r.db.WithContext(ctx).Raw(`
+	query := strings.TrimSpace(`
 		SELECT id, actor_id, actor_name, operation_type, target_scope, result, summary, request_path,
 		       request_method, request_id, source_ip, metadata, created_at
 		FROM operation_logs
@@ -82,12 +75,9 @@ func (r *Repository) List(ctx context.Context, filter domainoperation.Filter) ([
 		  AND (? = '' OR metadata::jsonb ->> 'approvalRequestId' = ? OR metadata::jsonb ->> 'approvalId' = ?)
 		  AND (? = '' OR metadata::jsonb ->> 'agentRunId' = ? OR metadata::jsonb ->> 'runId' = ? OR metadata::jsonb ->> 'externalRunId' = ?)
 		  AND (? = '' OR metadata::jsonb ->> 'rootCauseRunId' = ? OR metadata::jsonb ->> 'rootCauseId' = ?)
-		  AND (? = '' OR metadata::jsonb ->> ? = ?)
-		  AND (? IS NULL OR created_at >= ?)
-		  AND (? IS NULL OR created_at <= ?)
-		ORDER BY created_at DESC
-		LIMIT ?
-	`,
+		  AND (? = '' OR metadata::jsonb #>> string_to_array(?, '.') = ?)
+	`)
+	args := []any{
 		filter.ActorID,
 		filter.ActorID,
 		filter.OperationType,
@@ -127,12 +117,19 @@ func (r *Repository) List(ctx context.Context, filter domainoperation.Filter) ([
 		filter.MetadataKey,
 		filter.MetadataKey,
 		filter.MetadataValue,
-		fromArg,
-		fromArg,
-		toArg,
-		toArg,
-		filter.Limit,
-	).Rows()
+	}
+	if filter.From != nil {
+		query += "\n\t\t  AND created_at >= ?"
+		args = append(args, *filter.From)
+	}
+	if filter.To != nil {
+		query += "\n\t\t  AND created_at <= ?"
+		args = append(args, *filter.To)
+	}
+	query += "\n\t\tORDER BY created_at DESC\n\t\tLIMIT ?"
+	args = append(args, filter.Limit)
+
+	rows, err := r.db.WithContext(ctx).Raw(query, args...).Rows()
 	if err != nil {
 		return nil, fmt.Errorf("query operation logs: %w", err)
 	}
@@ -154,15 +151,7 @@ func (r *Repository) Summary(ctx context.Context, filter domainoperation.Filter,
 		retentionDays = 90
 	}
 	cutoff := time.Now().UTC().AddDate(0, 0, -retentionDays)
-	var fromArg any
-	if filter.From != nil {
-		fromArg = *filter.From
-	}
-	var toArg any
-	if filter.To != nil {
-		toArg = *filter.To
-	}
-	row := r.db.WithContext(ctx).Raw(`
+	query := strings.TrimSpace(`
 		SELECT COUNT(*), MIN(created_at), MAX(created_at),
 			COUNT(*) FILTER (WHERE created_at < ?),
 			COUNT(*) FILTER (WHERE result = 'failure')
@@ -181,10 +170,9 @@ func (r *Repository) Summary(ctx context.Context, filter domainoperation.Filter,
 		  AND (? = '' OR metadata::jsonb ->> 'approvalRequestId' = ? OR metadata::jsonb ->> 'approvalId' = ?)
 		  AND (? = '' OR metadata::jsonb ->> 'agentRunId' = ? OR metadata::jsonb ->> 'runId' = ? OR metadata::jsonb ->> 'externalRunId' = ?)
 		  AND (? = '' OR metadata::jsonb ->> 'rootCauseRunId' = ? OR metadata::jsonb ->> 'rootCauseId' = ?)
-		  AND (? = '' OR metadata::jsonb ->> ? = ?)
-		  AND (? IS NULL OR created_at >= ?)
-		  AND (? IS NULL OR created_at <= ?)
-	`,
+		  AND (? = '' OR metadata::jsonb #>> string_to_array(?, '.') = ?)
+	`)
+	args := []any{
 		cutoff,
 		filter.ActorID,
 		filter.ActorID,
@@ -225,11 +213,17 @@ func (r *Repository) Summary(ctx context.Context, filter domainoperation.Filter,
 		filter.MetadataKey,
 		filter.MetadataKey,
 		filter.MetadataValue,
-		fromArg,
-		fromArg,
-		toArg,
-		toArg,
-	).Row()
+	}
+	if filter.From != nil {
+		query += "\n\t\t  AND created_at >= ?"
+		args = append(args, *filter.From)
+	}
+	if filter.To != nil {
+		query += "\n\t\t  AND created_at <= ?"
+		args = append(args, *filter.To)
+	}
+
+	row := r.db.WithContext(ctx).Raw(query, args...).Row()
 	var summary domainoperation.Summary
 	var oldest sql.NullTime
 	var newest sql.NullTime

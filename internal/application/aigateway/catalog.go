@@ -208,6 +208,110 @@ func defaultTools() []domainaigateway.ToolCapability {
 			InputSchema:    gatewayObjectSchema(nil, map[string]any{}),
 		},
 		{
+			Name:           "delivery.onboarding.analyze_repo",
+			Title:          "Analyze Repository For Onboarding",
+			Description:    "Analyze credential-free repository metadata and return a DeliveryDraft-shaped onboarding suggestion without creating platform objects.",
+			Domain:         "delivery",
+			Action:         "analyze",
+			RiskLevel:      domainaigateway.RiskLevelAnalyze,
+			PermissionKeys: []string{appaccess.PermAIGatewayInvoke, appaccess.PermDeliveryApplicationsView},
+			RequiredScopes: []string{"businessLine", "repository"},
+			MCPAdapterID:   "delivery.v1",
+			MCPToolName:    "delivery.onboarding.analyze_repo",
+			InputSchema:    gatewayObjectSchema([]string{"repositoryPath"}, gatewayOnboardingAnalyzeRepoProperties()),
+		},
+		{
+			Name:           "delivery.standards.dockerfile.generate",
+			Title:          "Generate Dockerfile Draft",
+			Description:    "Generate a platform-standard Dockerfile draft from credential-free runtime and build metadata.",
+			Domain:         "delivery",
+			Action:         "generate",
+			RiskLevel:      domainaigateway.RiskLevelAnalyze,
+			PermissionKeys: []string{appaccess.PermAIGatewayInvoke, appaccess.PermDeliveryApplicationsView},
+			RequiredScopes: []string{"businessLine", "repository"},
+			MCPAdapterID:   "delivery.v1",
+			MCPToolName:    "delivery.standards.dockerfile.generate",
+			InputSchema:    gatewayObjectSchema([]string{"language"}, gatewayDockerfileGenerateProperties()),
+		},
+		{
+			Name:           "delivery.standards.dockerfile.validate",
+			Title:          "Validate Dockerfile Draft",
+			Description:    "Validate Dockerfile content against platform baseline checks and return findings only.",
+			Domain:         "delivery",
+			Action:         "validate",
+			RiskLevel:      domainaigateway.RiskLevelAnalyze,
+			PermissionKeys: []string{appaccess.PermAIGatewayInvoke, appaccess.PermDeliveryApplicationsView},
+			RequiredScopes: []string{"businessLine", "repository"},
+			MCPAdapterID:   "delivery.v1",
+			MCPToolName:    "delivery.standards.dockerfile.validate",
+			InputSchema:    gatewayObjectSchema([]string{"content"}, gatewayDockerfileValidateProperties()),
+		},
+		{
+			Name:           "delivery.standards.helm.generate",
+			Title:          "Generate Helm Draft",
+			Description:    "Generate Helm chart and values drafts for preview, without writing repository files.",
+			Domain:         "delivery",
+			Action:         "generate",
+			RiskLevel:      domainaigateway.RiskLevelAnalyze,
+			PermissionKeys: []string{appaccess.PermAIGatewayInvoke, appaccess.PermDeliveryApplicationsView},
+			RequiredScopes: []string{"businessLine", "repository", "environment"},
+			MCPAdapterID:   "delivery.v1",
+			MCPToolName:    "delivery.standards.helm.generate",
+			InputSchema:    gatewayObjectSchema([]string{"serviceName", "imageRepository"}, gatewayHelmGenerateProperties()),
+		},
+		{
+			Name:           "delivery.standards.k8s.validate",
+			Title:          "Validate Kubernetes Manifests",
+			Description:    "Validate Kubernetes manifest drafts for probes, resource limits, selectors, and security context.",
+			Domain:         "delivery",
+			Action:         "validate",
+			RiskLevel:      domainaigateway.RiskLevelAnalyze,
+			PermissionKeys: []string{appaccess.PermAIGatewayInvoke, appaccess.PermDeliveryApplicationsView},
+			RequiredScopes: []string{"application", "environment"},
+			MCPAdapterID:   "delivery.v1",
+			MCPToolName:    "delivery.standards.k8s.validate",
+			InputSchema:    gatewayObjectSchema([]string{"manifests"}, gatewayKubernetesValidateProperties()),
+		},
+		{
+			Name:           "delivery.spec.render",
+			Title:          "Render Delivery Spec",
+			Description:    "Render user input and AI suggestions into a DeliveryDraft-compatible delivery spec for preview.",
+			Domain:         "delivery",
+			Action:         "render",
+			RiskLevel:      domainaigateway.RiskLevelAnalyze,
+			PermissionKeys: []string{appaccess.PermAIGatewayInvoke, appaccess.PermDeliveryApplicationsView},
+			RequiredScopes: []string{"businessLine", "application", "environment"},
+			MCPAdapterID:   "delivery.v1",
+			MCPToolName:    "delivery.spec.render",
+			InputSchema:    gatewayObjectSchema([]string{"applicationDraft"}, gatewayDeliverySpecRenderProperties()),
+		},
+		{
+			Name:           "delivery.application.bootstrap",
+			Title:          "Prepare Application Bootstrap",
+			Description:    "Prepare a DeliveryDraft bootstrap payload and confirm API handoff; this tool never creates or updates platform objects directly.",
+			Domain:         "delivery",
+			Action:         "plan",
+			RiskLevel:      domainaigateway.RiskLevelAnalyze,
+			PermissionKeys: []string{appaccess.PermAIGatewayInvoke, appaccess.PermDeliveryApplicationsView},
+			RequiredScopes: []string{"businessLine", "application", "environment"},
+			MCPAdapterID:   "delivery.v1",
+			MCPToolName:    "delivery.application.bootstrap",
+			InputSchema:    gatewayObjectSchema(nil, gatewayDeliveryApplicationBootstrapProperties()),
+		},
+		{
+			Name:           "delivery.release.plan",
+			Title:          "Plan Delivery Release",
+			Description:    "Build a DeliveryPlan-compatible release plan from user intent and delivery context without triggering execution.",
+			Domain:         "delivery",
+			Action:         "plan",
+			RiskLevel:      domainaigateway.RiskLevelAnalyze,
+			PermissionKeys: []string{appaccess.PermAIGatewayInvoke, appaccess.PermDeliveryApplicationsView, appaccess.PermDeliveryApplicationEnvView},
+			RequiredScopes: []string{"application", "environment"},
+			MCPAdapterID:   "delivery.v1",
+			MCPToolName:    "delivery.release.plan",
+			InputSchema:    gatewayObjectSchema([]string{"applicationId", "applicationEnvironmentId", "action"}, gatewayDeliveryReleasePlanProperties()),
+		},
+		{
 			Name:           "delivery.release_context.diff",
 			Title:          "Build Release Diff Context",
 			Description:    "Collect read-only candidate promotion context and compare release bundles, bindings, targets, and recent execution state.",
@@ -650,6 +754,134 @@ func gatewayExecutionTaskListProperties() map[string]any {
 	}
 }
 
+func gatewayOnboardingAnalyzeRepoProperties() map[string]any {
+	return map[string]any{
+		"repositoryPath":  gatewayStringSchema("Repository path, such as org/service."),
+		"repositoryUrl":   gatewayStringSchema("Optional repository URL without credentials."),
+		"businessLineId":  gatewayStringSchema("Optional business line id for the draft."),
+		"applicationName": gatewayStringSchema("Optional application display name override."),
+		"applicationKey":  gatewayStringSchema("Optional stable application key override."),
+		"ownerTeam":       gatewayStringSchema("Optional owning team."),
+		"language":        gatewayStringSchema("Optional detected or requested language."),
+		"framework":       gatewayStringSchema("Optional framework, such as React, Gin, Spring Boot, or FastAPI."),
+		"entrypoint":      gatewayStringSchema("Optional process entrypoint or main module."),
+		"packageManager":  gatewayStringSchema("Optional package manager or build tool."),
+		"buildCommand":    gatewayStringSchema("Optional credential-free build command."),
+		"startCommand":    gatewayStringSchema("Optional credential-free start command."),
+		"defaultBranch":   gatewayStringSchema("Default branch for onboarding."),
+		"dockerfilePath":  gatewayStringSchema("Dockerfile path."),
+		"buildContextDir": gatewayStringSchema("Build context directory."),
+		"serviceKey":      gatewayStringSchema("Optional service key override."),
+		"serviceName":     gatewayStringSchema("Optional service display name override."),
+		"environmentKey":  gatewayStringSchema("Optional environment key for a suggested binding."),
+		"environmentId":   gatewayStringSchema("Optional environment id for a suggested binding."),
+		"clusterId":       gatewayStringSchema("Optional cluster id for a suggested release target."),
+		"namespace":       gatewayStringSchema("Optional namespace for a suggested release target."),
+		"workloadName":    gatewayStringSchema("Optional workload name for a suggested release target."),
+		"containerName":   gatewayStringSchema("Optional container name."),
+		"port":            gatewayIntegerSchema("Primary service port."),
+		"files":           gatewayArraySchema("Optional repository file list used as sanitized evidence."),
+		"hints":           gatewayFreeformObjectSchema("Optional credential-free analysis hints."),
+	}
+}
+
+func gatewayDockerfileGenerateProperties() map[string]any {
+	return map[string]any{
+		"language":        gatewayStringSchema("Application language or runtime."),
+		"framework":       gatewayStringSchema("Optional framework hint."),
+		"packageManager":  gatewayStringSchema("Optional package manager or build tool."),
+		"buildCommand":    gatewayStringSchema("Optional build command."),
+		"startCommand":    gatewayStringSchema("Optional start command."),
+		"entrypoint":      gatewayStringSchema("Optional entrypoint or binary path."),
+		"port":            gatewayIntegerSchema("Optional exposed port."),
+		"contextDir":      gatewayStringSchema("Build context directory."),
+		"dockerfilePath":  gatewayStringSchema("Output Dockerfile path."),
+		"runtimeImage":    gatewayStringSchema("Optional runtime base image."),
+		"builderImage":    gatewayStringSchema("Optional builder base image."),
+		"nonRootUser":     gatewayStringSchema("Optional non-root user name."),
+		"includeHealth":   gatewayBooleanSchema("Include a HEALTHCHECK instruction when true."),
+		"healthcheckPath": gatewayStringSchema("HTTP path for generated healthcheck."),
+	}
+}
+
+func gatewayDockerfileValidateProperties() map[string]any {
+	return map[string]any{
+		"content":         gatewayStringSchema("Dockerfile content to validate."),
+		"path":            gatewayStringSchema("Optional file path for reporting."),
+		"language":        gatewayStringSchema("Optional language hint."),
+		"expectedPort":    gatewayIntegerSchema("Optional expected exposed port."),
+		"buildContextDir": gatewayStringSchema("Optional build context directory."),
+	}
+}
+
+func gatewayHelmGenerateProperties() map[string]any {
+	return map[string]any{
+		"applicationName": gatewayStringSchema("Optional application display name."),
+		"serviceName":     gatewayStringSchema("Service name."),
+		"chartName":       gatewayStringSchema("Optional Helm chart name override."),
+		"imageRepository": gatewayStringSchema("Container image repository without credentials."),
+		"imageTag":        gatewayStringSchema("Container image tag template."),
+		"namespace":       gatewayStringSchema("Optional target namespace."),
+		"port":            gatewayIntegerSchema("Container and service port."),
+		"replicas":        gatewayIntegerSchema("Desired replica count."),
+		"serviceAccount":  gatewayStringSchema("Optional service account name."),
+		"healthcheckPath": gatewayStringSchema("HTTP probe path."),
+		"resourceProfile": gatewayFreeformObjectSchema("Optional credential-free resource requests and limits."),
+		"labels":          gatewayFreeformObjectSchema("Optional workload labels."),
+	}
+}
+
+func gatewayKubernetesValidateProperties() map[string]any {
+	return map[string]any{
+		"manifests":    gatewayArraySchema("Kubernetes manifest contents to validate."),
+		"content":      gatewayStringSchema("Single Kubernetes manifest content to validate."),
+		"expectedKind": gatewayStringSchema("Optional expected workload kind."),
+		"namespace":    gatewayStringSchema("Optional expected namespace."),
+	}
+}
+
+func gatewayDeliverySpecRenderProperties() map[string]any {
+	return map[string]any{
+		"source":              gatewayStringSchema("Draft source, normally manual, ai, or blueprint."),
+		"applicationDraft":    gatewayFreeformObjectSchema("Delivery draft application profile."),
+		"services":            gatewayArraySchema("Service component drafts."),
+		"buildSources":        gatewayArraySchema("Build source drafts."),
+		"environmentBindings": gatewayArraySchema("Environment binding drafts."),
+		"files":               gatewayArraySchema("Specification file drafts."),
+		"executionHints":      gatewayFreeformObjectSchema("Credential-free workflow and approval hints."),
+		"postCreateActions":   gatewayArraySchema("Suggested post-create actions."),
+	}
+}
+
+func gatewayDeliveryApplicationBootstrapProperties() map[string]any {
+	props := gatewayDeliverySpecRenderProperties()
+	props["draftId"] = gatewayStringSchema("Existing DeliveryDraft id to hand off for confirmation.")
+	props["spec"] = gatewayFreeformObjectSchema("Rendered delivery spec to convert into a DeliveryDraft payload.")
+	return props
+}
+
+func gatewayDeliveryReleasePlanProperties() map[string]any {
+	return map[string]any{
+		"source":                   gatewayStringSchema("Plan source, normally manual or ai."),
+		"applicationId":            gatewayStringSchema("Delivery application id."),
+		"applicationEnvironmentId": gatewayStringSchema("Application environment binding id."),
+		"environmentKey":           gatewayStringSchema("Optional environment key."),
+		"action":                   gatewayStringSchema("Delivery action: build, deploy, build_deploy, workflow, verify, or rollback."),
+		"targetId":                 gatewayStringSchema("Optional release target id."),
+		"buildSourceId":            gatewayStringSchema("Optional build source id."),
+		"releaseBundleId":          gatewayStringSchema("Release bundle id for deploy or rollback."),
+		"refType":                  gatewayStringSchema("Source ref type, such as branch, tag, or commit."),
+		"refName":                  gatewayStringSchema("Source branch, tag, or commit."),
+		"imageTag":                 gatewayStringSchema("Optional image tag."),
+		"releaseName":              gatewayStringSchema("Optional release name."),
+		"containerName":            gatewayStringSchema("Optional target container."),
+		"reason":                   gatewayStringSchema("Human-readable release reason."),
+		"variables":                gatewayFreeformObjectSchema("Credential-free workflow variables."),
+		"buildArgs":                gatewayFreeformObjectSchema("Credential-free build arguments."),
+		"intent":                   gatewayStringSchema("Natural-language user intent used as planning context."),
+	}
+}
+
 func gatewayClusterNamespaceProperties(namespaceDescription string) map[string]any {
 	return map[string]any{
 		"clusterId": gatewayStringSchema("Cluster id."),
@@ -664,7 +896,7 @@ func defaultSkills() []domainaigateway.SkillCapability {
 			Name:           "Delivery Developer",
 			Category:       "delivery",
 			Description:    "Application onboarding, delivery context review, and self-service build/deploy/rollback workflow for AI coding tools.",
-			CapabilityRefs: []string{"delivery.applications.list", "delivery.applications.detail", "delivery.applications.create", "delivery.application_environments.list", "delivery.application_services.list", "delivery.build_sources.list", "delivery.release_targets.list", "delivery.release_bundles.list", "delivery.execution_tasks.list", "delivery.execution_logs.list", "delivery.release_context.diff", "delivery.rollback.context", "delivery.actions.trigger"},
+			CapabilityRefs: []string{"delivery.applications.list", "delivery.applications.detail", "delivery.applications.create", "delivery.onboarding.analyze_repo", "delivery.standards.dockerfile.generate", "delivery.standards.dockerfile.validate", "delivery.standards.helm.generate", "delivery.standards.k8s.validate", "delivery.spec.render", "delivery.application.bootstrap", "delivery.application_environments.list", "delivery.application_services.list", "delivery.build_sources.list", "delivery.release_targets.list", "delivery.release_bundles.list", "delivery.execution_tasks.list", "delivery.execution_logs.list", "delivery.release.plan", "delivery.release_context.diff", "delivery.rollback.context", "delivery.actions.trigger"},
 			PermissionKeys: []string{appaccess.PermAIGatewayInvoke, appaccess.PermDeliveryApplicationsView},
 			RequiredScopes: []string{"businessLine", "application", "environment"},
 		},
@@ -673,7 +905,7 @@ func defaultSkills() []domainaigateway.SkillCapability {
 			Name:           "Delivery Tester",
 			Category:       "delivery",
 			Description:    "Test environment release verification, execution task review, and promotion evidence collection.",
-			CapabilityRefs: []string{"delivery.application_environments.list", "delivery.release_targets.list", "delivery.release_bundles.list", "delivery.execution_tasks.list", "delivery.execution_logs.list", "delivery.release_context.diff", "diagnosis.release_failure.analyze"},
+			CapabilityRefs: []string{"delivery.application_environments.list", "delivery.release_targets.list", "delivery.release_bundles.list", "delivery.execution_tasks.list", "delivery.execution_logs.list", "delivery.release.plan", "delivery.release_context.diff", "diagnosis.release_failure.analyze"},
 			PermissionKeys: []string{appaccess.PermAIGatewayInvoke, appaccess.PermDeliveryExecutionTasksView},
 			RequiredScopes: []string{"application", "environment"},
 		},

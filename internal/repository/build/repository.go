@@ -8,6 +8,7 @@ import (
 	"time"
 
 	domainbuild "github.com/opensoha/soha/internal/domain/build"
+	"github.com/opensoha/soha/internal/platform/apperrors"
 	"gorm.io/gorm"
 )
 
@@ -77,6 +78,16 @@ func (r *Repository) Create(ctx context.Context, input domainbuild.TriggerInput,
 	return record, nil
 }
 
+func (r *Repository) Get(ctx context.Context, id string) (domainbuild.Record, error) {
+	row := r.db.WithContext(ctx).Raw(`
+		SELECT id, project_id, source_system, status, metadata, started_at, finished_at, created_at
+		FROM build_records
+		WHERE id = ?
+		LIMIT 1
+	`, id).Row()
+	return scanRecordRow(row)
+}
+
 func (r *Repository) GetByExecutionTaskID(ctx context.Context, executionTaskID string) (domainbuild.Record, error) {
 	row := r.db.WithContext(ctx).Raw(`
 		SELECT id, project_id, source_system, status, metadata, started_at, finished_at, created_at
@@ -132,7 +143,7 @@ func scanRecordRow(row *sql.Row) (domainbuild.Record, error) {
 	var finishedAt sql.NullTime
 	if err := row.Scan(&item.ID, &item.ApplicationID, &item.SourceSystem, &item.Status, &payload, &startedAt, &finishedAt, &item.CreatedAt); err != nil {
 		if err == sql.ErrNoRows {
-			return domainbuild.Record{}, fmt.Errorf("build record not found")
+			return domainbuild.Record{}, fmt.Errorf("%w: build record not found", apperrors.ErrNotFound)
 		}
 		return domainbuild.Record{}, fmt.Errorf("scan build record row: %w", err)
 	}

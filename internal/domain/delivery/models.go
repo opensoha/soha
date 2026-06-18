@@ -33,6 +33,8 @@ type ExecutionArtifact struct {
 	ID                       string         `json:"id"`
 	ExecutionTaskID          string         `json:"executionTaskId,omitempty"`
 	ReleaseBundleID          string         `json:"releaseBundleId,omitempty"`
+	WorkflowRunID            string         `json:"workflowRunId,omitempty"`
+	WorkflowNodeID           string         `json:"workflowNodeId,omitempty"`
 	ApplicationID            string         `json:"applicationId,omitempty"`
 	ApplicationEnvironmentID string         `json:"applicationEnvironmentId,omitempty"`
 	Kind                     string         `json:"kind"`
@@ -43,6 +45,9 @@ type ExecutionArtifact struct {
 	Status                   string         `json:"status,omitempty"`
 	SizeBytes                int64          `json:"sizeBytes,omitempty"`
 	Metadata                 map[string]any `json:"metadata,omitempty"`
+	RetentionUntil           *time.Time     `json:"retentionUntil,omitempty"`
+	CreatedAt                time.Time      `json:"createdAt,omitempty"`
+	UpdatedAt                time.Time      `json:"updatedAt,omitempty"`
 	ModifiedAt               *time.Time     `json:"modifiedAt,omitempty"`
 }
 
@@ -119,8 +124,65 @@ type DeliveryBlueprintInput struct {
 	Enabled             bool                                  `json:"enabled"`
 }
 
+const (
+	DeliveryDraftSourceManual    = "manual"
+	DeliveryDraftSourceAI        = "ai"
+	DeliveryDraftSourceBlueprint = "blueprint"
+
+	DeliveryDraftStatusDraft      = "draft"
+	DeliveryDraftStatusConfirming = "confirming"
+	DeliveryDraftStatusConfirmed  = "confirmed"
+)
+
+type DeliveryDraftService struct {
+	ID                  string                            `json:"id,omitempty"`
+	Key                 string                            `json:"key"`
+	Name                string                            `json:"name"`
+	Description         string                            `json:"description,omitempty"`
+	ServiceKind         domainapp.ServiceKind             `json:"serviceKind"`
+	OwnerTeam           string                            `json:"ownerTeam,omitempty"`
+	RepositoryProvider  string                            `json:"repositoryProvider,omitempty"`
+	RepositoryProjectID string                            `json:"repositoryProjectId,omitempty"`
+	RepositoryPath      string                            `json:"repositoryPath,omitempty"`
+	DefaultBranch       string                            `json:"defaultBranch,omitempty"`
+	BuildSourceID       string                            `json:"buildSourceId,omitempty"`
+	Enabled             bool                              `json:"enabled"`
+	Metadata            map[string]any                    `json:"metadata,omitempty"`
+	Containers          []domainapp.ServiceContainerInput `json:"containers,omitempty"`
+}
+
+type DeliveryDraft struct {
+	ID                  string                                `json:"id"`
+	Source              string                                `json:"source"`
+	Status              string                                `json:"status"`
+	ApplicationDraft    BlueprintApplicationDraft             `json:"applicationDraft"`
+	Services            []DeliveryDraftService                `json:"services,omitempty"`
+	BuildSources        []domainapp.BuildSourceInput          `json:"buildSources,omitempty"`
+	EnvironmentBindings []BlueprintEnvironmentBindingTemplate `json:"environmentBindings,omitempty"`
+	Files               []BlueprintFileTemplate               `json:"files,omitempty"`
+	ExecutionHints      map[string]any                        `json:"executionHints,omitempty"`
+	PostCreateActions   []string                              `json:"postCreateActions,omitempty"`
+	CreatedBy           string                                `json:"createdBy,omitempty"`
+	ConfirmedAt         *time.Time                            `json:"confirmedAt,omitempty"`
+	CreatedAt           time.Time                             `json:"createdAt"`
+	UpdatedAt           time.Time                             `json:"updatedAt"`
+}
+
+type DeliveryDraftInput struct {
+	ID                  string                                `json:"id"`
+	Source              string                                `json:"source"`
+	ApplicationDraft    BlueprintApplicationDraft             `json:"applicationDraft"`
+	Services            []DeliveryDraftService                `json:"services,omitempty"`
+	BuildSources        []domainapp.BuildSourceInput          `json:"buildSources,omitempty"`
+	EnvironmentBindings []BlueprintEnvironmentBindingTemplate `json:"environmentBindings,omitempty"`
+	Files               []BlueprintFileTemplate               `json:"files,omitempty"`
+	ExecutionHints      map[string]any                        `json:"executionHints,omitempty"`
+	PostCreateActions   []string                              `json:"postCreateActions,omitempty"`
+}
+
 type RenderedDeliverySpec struct {
 	ApplicationDraft    BlueprintApplicationDraft             `json:"applicationDraft"`
+	Services            []DeliveryDraftService                `json:"services,omitempty"`
 	BuildSources        []domainapp.BuildSourceInput          `json:"buildSources,omitempty"`
 	EnvironmentBindings []BlueprintEnvironmentBindingTemplate `json:"environmentBindings,omitempty"`
 	Files               []BlueprintFileTemplate               `json:"files,omitempty"`
@@ -130,6 +192,15 @@ type RenderedDeliverySpec struct {
 
 type BlueprintBootstrapResult struct {
 	Application         domainapp.App                          `json:"application"`
+	Services            []domainapp.Service                    `json:"services,omitempty"`
+	EnvironmentBindings []domaincatalog.ApplicationEnvironment `json:"environmentBindings,omitempty"`
+	Spec                RenderedDeliverySpec                   `json:"spec"`
+}
+
+type DeliveryDraftConfirmResult struct {
+	Draft               DeliveryDraft                          `json:"draft"`
+	Application         domainapp.App                          `json:"application"`
+	Services            []domainapp.Service                    `json:"services,omitempty"`
 	EnvironmentBindings []domaincatalog.ApplicationEnvironment `json:"environmentBindings,omitempty"`
 	Spec                RenderedDeliverySpec                   `json:"spec"`
 }
@@ -197,6 +268,18 @@ type ExecutionTaskFilter struct {
 	ReleaseBundleID          string
 	Status                   string
 	ProviderKind             string
+	Limit                    int
+}
+
+type ArtifactFilter struct {
+	ApplicationID            string
+	ApplicationEnvironmentID string
+	WorkflowRunID            string
+	WorkflowNodeID           string
+	ReleaseBundleID          string
+	ExecutionTaskID          string
+	Kind                     string
+	Status                   string
 	Limit                    int
 }
 
@@ -411,6 +494,77 @@ type ApplicationDeliveryActionResult struct {
 	RelatedIDs               ApplicationDeliveryActionRelatedIDs `json:"relatedIds,omitempty"`
 }
 
+const (
+	DeliveryPlanSourceManual = "manual"
+	DeliveryPlanSourceAI     = "ai"
+
+	DeliveryPlanStatusDraft      = "draft"
+	DeliveryPlanStatusConfirming = "confirming"
+	DeliveryPlanStatusConfirmed  = "confirmed"
+)
+
+type DeliveryPlan struct {
+	ID                       string                        `json:"id"`
+	Source                   string                        `json:"source"`
+	Status                   string                        `json:"status"`
+	ApplicationID            string                        `json:"applicationId"`
+	ApplicationName          string                        `json:"applicationName,omitempty"`
+	ApplicationEnvironmentID string                        `json:"applicationEnvironmentId"`
+	EnvironmentKey           string                        `json:"environmentKey,omitempty"`
+	Action                   ApplicationDeliveryActionKind `json:"action"`
+	TargetID                 string                        `json:"targetId,omitempty"`
+	TargetSummary            string                        `json:"targetSummary,omitempty"`
+	BuildSourceID            string                        `json:"buildSourceId,omitempty"`
+	ReleaseBundleID          string                        `json:"releaseBundleId,omitempty"`
+	RefType                  string                        `json:"refType,omitempty"`
+	RefName                  string                        `json:"refName,omitempty"`
+	ImageTag                 string                        `json:"imageTag,omitempty"`
+	ReleaseName              string                        `json:"releaseName,omitempty"`
+	ContainerName            string                        `json:"containerName,omitempty"`
+	Reason                   string                        `json:"reason,omitempty"`
+	RiskLevel                string                        `json:"riskLevel,omitempty"`
+	RequiresApproval         bool                          `json:"requiresApproval"`
+	Impact                   map[string]any                `json:"impact,omitempty"`
+	RollbackStrategy         string                        `json:"rollbackStrategy,omitempty"`
+	Variables                map[string]any                `json:"variables,omitempty"`
+	BuildArgs                map[string]any                `json:"buildArgs,omitempty"`
+	CreatedBy                string                        `json:"createdBy,omitempty"`
+	ConfirmedAt              *time.Time                    `json:"confirmedAt,omitempty"`
+	CreatedAt                time.Time                     `json:"createdAt"`
+	UpdatedAt                time.Time                     `json:"updatedAt"`
+}
+
+type DeliveryPlanInput struct {
+	ID                       string                        `json:"id"`
+	Source                   string                        `json:"source"`
+	ApplicationID            string                        `json:"applicationId"`
+	ApplicationName          string                        `json:"applicationName,omitempty"`
+	ApplicationEnvironmentID string                        `json:"applicationEnvironmentId"`
+	EnvironmentKey           string                        `json:"environmentKey,omitempty"`
+	Action                   ApplicationDeliveryActionKind `json:"action"`
+	TargetID                 string                        `json:"targetId,omitempty"`
+	TargetSummary            string                        `json:"targetSummary,omitempty"`
+	BuildSourceID            string                        `json:"buildSourceId,omitempty"`
+	ReleaseBundleID          string                        `json:"releaseBundleId,omitempty"`
+	RefType                  string                        `json:"refType,omitempty"`
+	RefName                  string                        `json:"refName,omitempty"`
+	ImageTag                 string                        `json:"imageTag,omitempty"`
+	ReleaseName              string                        `json:"releaseName,omitempty"`
+	ContainerName            string                        `json:"containerName,omitempty"`
+	Reason                   string                        `json:"reason,omitempty"`
+	RiskLevel                string                        `json:"riskLevel,omitempty"`
+	RequiresApproval         bool                          `json:"requiresApproval"`
+	Impact                   map[string]any                `json:"impact,omitempty"`
+	RollbackStrategy         string                        `json:"rollbackStrategy,omitempty"`
+	Variables                map[string]any                `json:"variables,omitempty"`
+	BuildArgs                map[string]any                `json:"buildArgs,omitempty"`
+}
+
+type DeliveryPlanConfirmResult struct {
+	Plan   DeliveryPlan                    `json:"plan"`
+	Result ApplicationDeliveryActionResult `json:"result"`
+}
+
 type ApplicationBindingSummary struct {
 	ApplicationEnvironmentID string                          `json:"applicationEnvironmentId"`
 	EnvironmentID            string                          `json:"environmentId"`
@@ -505,6 +659,36 @@ type ApplicationEnvironmentDetail struct {
 	LatestRelease       *domainrelease.Record                `json:"latestRelease,omitempty"`
 }
 
+type RuntimeObjectLinks struct {
+	Application string `json:"application,omitempty"`
+	Audit       string `json:"audit,omitempty"`
+	Operations  string `json:"operations,omitempty"`
+	Artifacts   string `json:"artifacts,omitempty"`
+}
+
+type RuntimeObjectPermissions struct {
+	CanViewArtifacts bool `json:"canViewArtifacts"`
+	CanViewAudit     bool `json:"canViewAudit"`
+	CanViewOperations bool `json:"canViewOperations"`
+	CanRetry         bool `json:"canRetry,omitempty"`
+	CanCancel        bool `json:"canCancel,omitempty"`
+}
+
+type RuntimeObjectDetail struct {
+	Kind             string                                `json:"kind"`
+	ID               string                                `json:"id"`
+	Object           any                                   `json:"object"`
+	Application      *domainapp.App                        `json:"application,omitempty"`
+	Binding          *domaincatalog.ApplicationEnvironment `json:"binding,omitempty"`
+	Environment      *domaincatalog.Environment            `json:"environment,omitempty"`
+	BuildSource      *domainapp.BuildSource                `json:"buildSource,omitempty"`
+	WorkflowTemplate *domaincatalog.WorkflowTemplate       `json:"workflowTemplate,omitempty"`
+	Evidence         map[string]any                        `json:"evidence,omitempty"`
+	Artifacts        []ExecutionArtifact                   `json:"artifacts,omitempty"`
+	Links            RuntimeObjectLinks                    `json:"links"`
+	Permissions      RuntimeObjectPermissions              `json:"permissions"`
+}
+
 type ReleaseBoardEntry struct {
 	ApplicationEnvironmentID string                        `json:"applicationEnvironmentId"`
 	ApplicationID            string                        `json:"applicationId"`
@@ -545,12 +729,21 @@ type Repository interface {
 	CreateExecutionCallback(context.Context, ExecutionCallback) error
 	ListExecutionArtifacts(context.Context, string) ([]ExecutionArtifact, error)
 	ListExecutionArtifactsByBundle(context.Context, string) ([]ExecutionArtifact, error)
+	ListArtifacts(context.Context, ArtifactFilter) ([]ExecutionArtifact, error)
 	UpsertExecutionArtifact(context.Context, ExecutionArtifact) (ExecutionArtifact, error)
 
 	ListDeliveryBlueprints(context.Context) ([]DeliveryBlueprint, error)
 	GetDeliveryBlueprint(context.Context, string) (DeliveryBlueprint, error)
 	CreateDeliveryBlueprint(context.Context, DeliveryBlueprintInput) (DeliveryBlueprint, error)
 	UpdateDeliveryBlueprint(context.Context, string, DeliveryBlueprintInput) (DeliveryBlueprint, error)
+
+	CreateDeliveryDraft(context.Context, DeliveryDraftInput, string) (DeliveryDraft, error)
+	GetDeliveryDraft(context.Context, string) (DeliveryDraft, error)
+	UpdateDeliveryDraft(context.Context, DeliveryDraft) (DeliveryDraft, error)
+
+	CreateDeliveryPlan(context.Context, DeliveryPlanInput, string) (DeliveryPlan, error)
+	GetDeliveryPlan(context.Context, string) (DeliveryPlan, error)
+	UpdateDeliveryPlan(context.Context, DeliveryPlan) (DeliveryPlan, error)
 }
 
 type TargetCandidate struct {

@@ -654,6 +654,10 @@ func (r *executionRepoFake) ListExecutionArtifactsByBundle(context.Context, stri
 	return append([]domaindelivery.ExecutionArtifact(nil), r.artifacts...), nil
 }
 
+func (r *executionRepoFake) ListArtifacts(context.Context, domaindelivery.ArtifactFilter) ([]domaindelivery.ExecutionArtifact, error) {
+	return append([]domaindelivery.ExecutionArtifact(nil), r.artifacts...), nil
+}
+
 func (r *executionRepoFake) UpsertExecutionArtifact(_ context.Context, item domaindelivery.ExecutionArtifact) (domaindelivery.ExecutionArtifact, error) {
 	for index := range r.artifacts {
 		if r.artifacts[index].ID == item.ID {
@@ -679,6 +683,30 @@ func (r *executionRepoFake) CreateDeliveryBlueprint(_ context.Context, input dom
 
 func (r *executionRepoFake) UpdateDeliveryBlueprint(_ context.Context, id string, input domaindelivery.DeliveryBlueprintInput) (domaindelivery.DeliveryBlueprint, error) {
 	return domaindelivery.DeliveryBlueprint{ID: strings.TrimSpace(id), Key: input.Key, Name: input.Name}, nil
+}
+
+func (r *executionRepoFake) CreateDeliveryDraft(context.Context, domaindelivery.DeliveryDraftInput, string) (domaindelivery.DeliveryDraft, error) {
+	return domaindelivery.DeliveryDraft{}, fmt.Errorf("not implemented")
+}
+
+func (r *executionRepoFake) GetDeliveryDraft(context.Context, string) (domaindelivery.DeliveryDraft, error) {
+	return domaindelivery.DeliveryDraft{}, fmt.Errorf("not implemented")
+}
+
+func (r *executionRepoFake) UpdateDeliveryDraft(context.Context, domaindelivery.DeliveryDraft) (domaindelivery.DeliveryDraft, error) {
+	return domaindelivery.DeliveryDraft{}, fmt.Errorf("not implemented")
+}
+
+func (r *executionRepoFake) CreateDeliveryPlan(context.Context, domaindelivery.DeliveryPlanInput, string) (domaindelivery.DeliveryPlan, error) {
+	return domaindelivery.DeliveryPlan{}, fmt.Errorf("not implemented")
+}
+
+func (r *executionRepoFake) GetDeliveryPlan(context.Context, string) (domaindelivery.DeliveryPlan, error) {
+	return domaindelivery.DeliveryPlan{}, fmt.Errorf("not implemented")
+}
+
+func (r *executionRepoFake) UpdateDeliveryPlan(context.Context, domaindelivery.DeliveryPlan) (domaindelivery.DeliveryPlan, error) {
+	return domaindelivery.DeliveryPlan{}, fmt.Errorf("not implemented")
 }
 
 func (r *executionRepoFake) hasLogContaining(fragment string) bool {

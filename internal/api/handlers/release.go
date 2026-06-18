@@ -14,6 +14,7 @@ import (
 
 type ReleaseService interface {
 	List(context.Context, domainidentity.Principal, domainrelease.Filter) ([]domainrelease.Record, error)
+	Get(context.Context, domainidentity.Principal, string) (domainrelease.Record, error)
 	Trigger(context.Context, domainidentity.Principal, domainrelease.TriggerInput) (domainrelease.Record, error)
 }
 
@@ -37,6 +38,16 @@ func (h *ReleaseHandler) ListReleases(c *gin.Context) {
 		return
 	}
 	apiresponse.Items(c, http.StatusOK, items)
+}
+
+func (h *ReleaseHandler) GetRelease(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	item, err := h.service.Get(c.Request.Context(), principal, c.Param("releaseID"))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
 }
 
 func (h *ReleaseHandler) TriggerRelease(c *gin.Context) {

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	domainworkflow "github.com/opensoha/soha/internal/domain/workflow"
+	"github.com/opensoha/soha/internal/platform/apperrors"
 	"gorm.io/gorm"
 )
 
@@ -171,7 +172,7 @@ func scanWorkflowRow(row *sql.Row) (domainworkflow.Run, error) {
 	var updatedAt time.Time
 	if err := row.Scan(&item.ID, &item.ApplicationID, &item.WorkflowName, &clusterID, &namespace, &deploymentName, &item.Status, &steps, &metadata, &createdAt, &updatedAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return domainworkflow.Run{}, fmt.Errorf("workflow run not found")
+			return domainworkflow.Run{}, fmt.Errorf("%w: workflow run not found", apperrors.ErrNotFound)
 		}
 		return domainworkflow.Run{}, fmt.Errorf("scan workflow run row: %w", err)
 	}

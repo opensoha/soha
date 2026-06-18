@@ -4,13 +4,18 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	appaccess "github.com/opensoha/soha/internal/application/access"
 	domainaccess "github.com/opensoha/soha/internal/domain/access"
 	domainapp "github.com/opensoha/soha/internal/domain/application"
+	domainbuild "github.com/opensoha/soha/internal/domain/build"
 	domaincatalog "github.com/opensoha/soha/internal/domain/catalog"
+	domaindelivery "github.com/opensoha/soha/internal/domain/delivery"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
+	domainrelease "github.com/opensoha/soha/internal/domain/release"
 	domainscopegrant "github.com/opensoha/soha/internal/domain/scopegrant"
+	domainworkflow "github.com/opensoha/soha/internal/domain/workflow"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 	"github.com/opensoha/soha/internal/policy"
 	apprepo "github.com/opensoha/soha/internal/repository/application"
@@ -20,10 +25,11 @@ type stubCatalogRepository struct {
 	lastWorkflowTemplate    domaincatalog.WorkflowTemplateInput
 	lastBuildTemplate       domaincatalog.BuildTemplateInput
 	applicationEnvironments map[string]domaincatalog.ApplicationEnvironment
+	environments            []domaincatalog.Environment
 }
 
 func (s *stubCatalogRepository) ListEnvironments(context.Context) ([]domaincatalog.Environment, error) {
-	return nil, nil
+	return s.environments, nil
 }
 
 func (s *stubCatalogRepository) ListApplicationEnvironments(context.Context) ([]domaincatalog.ApplicationEnvironment, error) {
@@ -104,6 +110,14 @@ type stubCatalogApps struct {
 	items map[string]domainapp.App
 }
 
+func (s stubCatalogApps) List(context.Context, domainapp.Filter) ([]domainapp.App, error) {
+	items := make([]domainapp.App, 0, len(s.items))
+	for _, item := range s.items {
+		items = append(items, item)
+	}
+	return items, nil
+}
+
 func (s stubCatalogApps) Get(_ context.Context, id string) (domainapp.App, error) {
 	if item, ok := s.items[id]; ok {
 		return item, nil
@@ -146,6 +160,43 @@ func catalogPermissions(keys ...string) *appaccess.PermissionResolver {
 			"admin": keys,
 		},
 	})
+}
+
+type stubCatalogBuildRuntimeReader struct {
+	items []domainbuild.Record
+}
+
+func (s stubCatalogBuildRuntimeReader) List(context.Context, domainidentity.Principal, domainbuild.Filter) ([]domainbuild.Record, error) {
+	return s.items, nil
+}
+
+type stubCatalogWorkflowRuntimeReader struct {
+	items []domainworkflow.Run
+}
+
+func (s stubCatalogWorkflowRuntimeReader) List(context.Context, domainidentity.Principal, string, int) ([]domainworkflow.Run, error) {
+	return s.items, nil
+}
+
+type stubCatalogReleaseRuntimeReader struct {
+	items []domainrelease.Record
+}
+
+func (s stubCatalogReleaseRuntimeReader) List(context.Context, domainidentity.Principal, domainrelease.Filter) ([]domainrelease.Record, error) {
+	return s.items, nil
+}
+
+type stubCatalogDeliveryRuntimeReader struct {
+	bundles []domaindelivery.ReleaseBundle
+	tasks   []domaindelivery.ExecutionTask
+}
+
+func (s stubCatalogDeliveryRuntimeReader) ListReleaseBundles(context.Context, domaindelivery.ReleaseBundleFilter) ([]domaindelivery.ReleaseBundle, error) {
+	return s.bundles, nil
+}
+
+func (s stubCatalogDeliveryRuntimeReader) ListExecutionTasks(context.Context, domaindelivery.ExecutionTaskFilter) ([]domaindelivery.ExecutionTask, error) {
+	return s.tasks, nil
 }
 
 func TestCreateWorkflowTemplateRejectsUnsupportedStepType(t *testing.T) {
@@ -217,6 +268,44 @@ func TestCreateWorkflowTemplateRejectsGraphCycle(t *testing.T) {
 	}
 }
 
+func TestCreateWorkflowTemplateAcceptsDeliveryDAGPreviewFields(t *testing.T) {
+	repo := &stubCatalogRepository{}
+	service := New(repo, nil, nil, catalogPermissions(appaccess.PermDeliveryWorkflowTemplatesManage), nil, nil)
+	principal := domainidentity.Principal{Roles: []string{"admin"}}
+
+	_, err := service.CreateWorkflowTemplate(context.Background(), principal, domaincatalog.WorkflowTemplateInput{
+		Key:  "delivery-flow",
+		Name: "delivery-flow",
+		Definition: map[string]any{
+			"mode": "delivery_dag",
+			"nodes": []map[string]any{
+				{
+					"id":              "build",
+					"name":            "Build",
+					"type":            "build",
+					"inputs":          []any{"source"},
+					"outputs":         []any{"image"},
+					"serviceSelector": map[string]any{"matchLabels": map[string]any{"service": "checkout"}},
+					"artifactOutputs": []any{map[string]any{"name": "image", "kind": "image", "required": true}},
+					"runCondition":    "branch == main",
+					"failurePolicy":   "rollback",
+					"observability":   map[string]any{"events": []any{"started", "completed"}},
+				},
+				{"id": "deploy", "name": "Deploy", "type": "deploy_update_image", "targetSelector": map[string]any{"key": "prod"}},
+			},
+			"edges": []map[string]any{
+				{"id": "e1", "source": "build", "target": "deploy", "condition": "success"},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("CreateWorkflowTemplate returned error: %v", err)
+	}
+	if repo.lastWorkflowTemplate.Definition["mode"] != "delivery_dag" {
+		t.Fatalf("mode = %v, want delivery_dag", repo.lastWorkflowTemplate.Definition["mode"])
+	}
+}
+
 func TestUpdateApplicationEnvironmentDeniesOutsideScopeGrant(t *testing.T) {
 	repo := &stubCatalogRepository{
 		applicationEnvironments: map[string]domaincatalog.ApplicationEnvironment{
@@ -272,6 +361,149 @@ func TestCreateWorkflowTemplateAllowsDelegatedManagePermission(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("CreateWorkflowTemplate returned error: %v", err)
+	}
+}
+
+func TestWorkflowTemplateUsageSummarizesProductionRisk(t *testing.T) {
+	repo := &stubCatalogRepository{
+		environments: []domaincatalog.Environment{
+			{ID: "env-prod", Key: "prod", Name: "Production", IsProduction: true, RequiresApproval: true},
+		},
+		applicationEnvironments: map[string]domaincatalog.ApplicationEnvironment{
+			"binding-1": {
+				ID:                 "binding-1",
+				ApplicationID:      "app-1",
+				EnvironmentID:      "env-prod",
+				EnvironmentKey:     "prod",
+				WorkflowTemplateID: "wf-1",
+				ReleasePolicy:      domaincatalog.ReleasePolicy{RequiresApproval: true},
+				Targets:            []domaincatalog.ReleaseTarget{{ID: "target-1"}, {ID: "target-2"}},
+			},
+		},
+	}
+	service := New(repo, nil, stubCatalogApps{items: map[string]domainapp.App{
+		"app-1": {ID: "app-1", Name: "Payments", Key: "payments", BusinessLineID: "bl-core"},
+	}}, catalogPermissions(appaccess.PermDeliveryWorkflowTemplatesView), nil, nil)
+	service.SetTemplateUsageRuntimeReaders(TemplateUsageRuntimeReaders{
+		Workflows: stubCatalogWorkflowRuntimeReader{items: []domainworkflow.Run{
+			{
+				ID:            "workflow-1",
+				ApplicationID: "app-1",
+				WorkflowName:  "release-prod",
+				Status:        "running",
+				Metadata: map[string]any{
+					"bindingId":          "binding-1",
+					"workflowTemplateId": "wf-1",
+				},
+				CreatedAt: "2026-05-08T10:00:00Z",
+				UpdatedAt: "2026-05-08T10:30:00Z",
+			},
+		}},
+		Releases: stubCatalogReleaseRuntimeReader{items: []domainrelease.Record{
+			{
+				ID:             "release-1",
+				ApplicationID:  "app-1",
+				ClusterID:      "cluster-a",
+				Namespace:      "prod",
+				DeploymentName: "payments",
+				Status:         "failed",
+				Metadata:       map[string]any{"applicationEnvironmentId": "binding-1", "executionTaskId": "task-1"},
+				CreatedAt:      time.Date(2026, 5, 8, 10, 45, 0, 0, time.UTC),
+			},
+		}},
+		Delivery: stubCatalogDeliveryRuntimeReader{tasks: []domaindelivery.ExecutionTask{
+			{
+				ID:                       "task-1",
+				ApplicationID:            "app-1",
+				ApplicationEnvironmentID: "binding-1",
+				TaskKind:                 "release",
+				Status:                   "failed",
+				UpdatedAt:                time.Date(2026, 5, 8, 11, 0, 0, 0, time.UTC),
+			},
+		}},
+	})
+
+	usage, err := service.GetWorkflowTemplateUsage(context.Background(), domainidentity.Principal{Roles: []string{"admin"}}, "wf-1")
+	if err != nil {
+		t.Fatalf("GetWorkflowTemplateUsage returned error: %v", err)
+	}
+	if usage.UsageCount != 1 || usage.ApplicationCount != 1 || usage.TargetCount != 2 {
+		t.Fatalf("unexpected workflow usage counts: %#v", usage)
+	}
+	if usage.RiskLevel != domaincatalog.TemplateUsageRiskHigh || usage.RecommendedAction != "copy_template_before_editing" {
+		t.Fatalf("expected high-risk recommendation, got %#v", usage)
+	}
+	states := usage.LastExecutionSummary["stateCounts"].(map[string]int)
+	if states["running"] != 1 || states["failed"] != 2 {
+		t.Fatalf("unexpected workflow runtime state counts: %#v", usage.LastExecutionSummary)
+	}
+}
+
+func TestBuildTemplateUsageFindsApplicationBuildSources(t *testing.T) {
+	repo := &stubCatalogRepository{
+		environments: []domaincatalog.Environment{{ID: "env-dev", Key: "dev", Name: "Development"}},
+		applicationEnvironments: map[string]domaincatalog.ApplicationEnvironment{
+			"binding-1": {ID: "binding-1", ApplicationID: "app-1", EnvironmentID: "env-dev", Targets: []domaincatalog.ReleaseTarget{{ID: "target-1"}}},
+		},
+	}
+	service := New(repo, nil, stubCatalogApps{items: map[string]domainapp.App{
+		"app-1": {
+			ID:   "app-1",
+			Name: "Payments",
+			Key:  "payments",
+			BuildSources: []domainapp.BuildSource{
+				{ID: "source-1", Name: "Platform Build", Type: domainapp.BuildSourceTypePlatformTemplate, Config: map[string]any{"buildTemplateId": "bt-1"}},
+			},
+		},
+	}}, catalogPermissions(appaccess.PermDeliveryBuildTemplatesView), nil, nil)
+	service.SetTemplateUsageRuntimeReaders(TemplateUsageRuntimeReaders{
+		Builds: stubCatalogBuildRuntimeReader{items: []domainbuild.Record{
+			{
+				ID:            "build-1",
+				ApplicationID: "app-1",
+				SourceSystem:  "manual",
+				Status:        "completed",
+				Metadata:      map[string]any{"buildSourceId": "source-1", "executionTaskId": "task-1"},
+				CreatedAt:     time.Date(2026, 5, 8, 10, 0, 0, 0, time.UTC),
+			},
+		}},
+		Delivery: stubCatalogDeliveryRuntimeReader{
+			bundles: []domaindelivery.ReleaseBundle{
+				{
+					ID:            "bundle-1",
+					ApplicationID: "app-1",
+					SourceType:    "build",
+					Status:        "building",
+					Metadata:      map[string]any{"buildSourceId": "source-1"},
+					UpdatedAt:     time.Date(2026, 5, 8, 10, 30, 0, 0, time.UTC),
+				},
+			},
+			tasks: []domaindelivery.ExecutionTask{
+				{
+					ID:            "task-1",
+					ApplicationID: "app-1",
+					TaskKind:      "build",
+					Status:        "running",
+					Payload:       map[string]any{"buildSourceId": "source-1"},
+					UpdatedAt:     time.Date(2026, 5, 8, 10, 45, 0, 0, time.UTC),
+				},
+			},
+		},
+	})
+
+	usage, err := service.GetBuildTemplateUsage(context.Background(), domainidentity.Principal{Roles: []string{"admin"}}, "bt-1")
+	if err != nil {
+		t.Fatalf("GetBuildTemplateUsage returned error: %v", err)
+	}
+	if usage.UsageCount != 1 || usage.ApplicationCount != 1 || len(usage.BuildSources) != 1 {
+		t.Fatalf("unexpected build template usage: %#v", usage)
+	}
+	if usage.RiskLevel != domaincatalog.TemplateUsageRiskLow {
+		t.Fatalf("expected low-risk dev usage, got %#v", usage)
+	}
+	states := usage.LastExecutionSummary["stateCounts"].(map[string]int)
+	if states["succeeded"] != 1 || states["running"] != 2 {
+		t.Fatalf("unexpected build runtime state counts: %#v", usage.LastExecutionSummary)
 	}
 }
 

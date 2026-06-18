@@ -27,6 +27,15 @@ func (r *stubReleaseRepository) List(context.Context, domainrelease.Filter) ([]d
 	return append([]domainrelease.Record(nil), r.items...), nil
 }
 
+func (r *stubReleaseRepository) Get(_ context.Context, id string) (domainrelease.Record, error) {
+	for _, item := range r.items {
+		if item.ID == id {
+			return item, nil
+		}
+	}
+	return domainrelease.Record{}, apperrors.ErrNotFound
+}
+
 func (r *stubReleaseRepository) Create(context.Context, domainrelease.Record) (domainrelease.Record, error) {
 	r.createCalls++
 	return domainrelease.Record{}, nil

@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	domainrelease "github.com/opensoha/soha/internal/domain/release"
+	"github.com/opensoha/soha/internal/platform/apperrors"
 	"gorm.io/gorm"
 )
 
@@ -77,6 +78,16 @@ func (r *Repository) Create(ctx context.Context, record domainrelease.Record) (d
 	return record, nil
 }
 
+func (r *Repository) Get(ctx context.Context, id string) (domainrelease.Record, error) {
+	row := r.db.WithContext(ctx).Raw(`
+		SELECT id, project_id, cluster_id, namespace, release_name, status, metadata, deployed_at, created_at
+		FROM deploy_records
+		WHERE id = ?
+		LIMIT 1
+	`, id).Row()
+	return scanRecordRow(row)
+}
+
 func (r *Repository) GetByExecutionTaskID(ctx context.Context, executionTaskID string) (domainrelease.Record, error) {
 	row := r.db.WithContext(ctx).Raw(`
 		SELECT id, project_id, cluster_id, namespace, release_name, status, metadata, deployed_at, created_at
@@ -136,7 +147,7 @@ func scanRecordRow(row *sql.Row) (domainrelease.Record, error) {
 	var deployedAt sql.NullTime
 	if err := row.Scan(&item.ID, &item.ApplicationID, &item.ClusterID, &item.Namespace, &item.DeploymentName, &item.Status, &payload, &deployedAt, &item.CreatedAt); err != nil {
 		if err == sql.ErrNoRows {
-			return domainrelease.Record{}, fmt.Errorf("release record not found")
+			return domainrelease.Record{}, fmt.Errorf("%w: release record not found", apperrors.ErrNotFound)
 		}
 		return domainrelease.Record{}, fmt.Errorf("scan release record row: %w", err)
 	}

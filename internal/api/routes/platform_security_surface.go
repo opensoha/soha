@@ -117,6 +117,14 @@ func deliveryMutationSecuritySurface(method, path string) (nonPlatformMutationSe
 		return nonPlatformMutationEntry("DeliveryBlueprint", "bootstrap", appaccess.PermDeliveryApplicationsCreate, scopeRequired), true
 	case strings.HasPrefix(path, "/api/v1/delivery/blueprints"):
 		return nonPlatformMutationEntry("DeliveryBlueprint", nonPlatformMutationAction(method, path), appaccess.PermDeliveryApplicationsCreate, scopeRequired), true
+	case strings.HasPrefix(path, "/api/v1/delivery/drafts") && strings.HasSuffix(path, "/confirm"):
+		return nonPlatformMutationEntry("DeliveryDraft", "confirm", appaccess.PermDeliveryApplicationsUpdate, scopeRequired), true
+	case strings.HasPrefix(path, "/api/v1/delivery/drafts"):
+		return nonPlatformMutationEntry("DeliveryDraft", nonPlatformMutationAction(method, path), appaccess.PermDeliveryApplicationsUpdate, scopeRequired), true
+	case strings.HasPrefix(path, "/api/v1/delivery/plans") && strings.HasSuffix(path, "/confirm"):
+		return nonPlatformMutationEntry("DeliveryPlan", "confirm", appaccess.PermDeliveryWorkflowsTrigger, scopeRequired), true
+	case strings.HasPrefix(path, "/api/v1/delivery/plans"):
+		return nonPlatformMutationEntry("DeliveryPlan", nonPlatformMutationAction(method, path), appaccess.PermDeliveryApplicationsView, scopeRequired), true
 	}
 	return nonPlatformMutationSecuritySurfaceEntry{}, false
 }

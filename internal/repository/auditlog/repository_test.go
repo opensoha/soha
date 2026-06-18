@@ -2,6 +2,7 @@ package auditlog
 
 import (
 	"context"
+	"database/sql/driver"
 	"testing"
 	"time"
 
@@ -31,8 +32,8 @@ func TestRepositoryListAppliesExpandedFilters(t *testing.T) {
 		ApprovalRequestID: "approval-1",
 		AgentRunID:        "agent-run-1",
 		RootCauseRunID:    "root-cause-1",
-		MetadataKey:       "connectorId",
-		MetadataValue:     "feishu",
+		MetadataKey:       "usageSnapshot.templateId",
+		MetadataValue:     "tpl-1",
 		From:              &from,
 		To:                &to,
 		Limit:             10,
@@ -80,8 +81,8 @@ func TestRepositoryListAppliesExpandedFilters(t *testing.T) {
 			filter.AgentRunID, filter.AgentRunID, filter.AgentRunID, filter.AgentRunID,
 			filter.RootCauseRunID, filter.RootCauseRunID, filter.RootCauseRunID,
 			filter.MetadataKey, filter.MetadataKey, filter.MetadataValue,
-			from, from,
-			to, to,
+			from,
+			to,
 			filter.Limit,
 		).
 		WillReturnRows(rows)
@@ -123,8 +124,8 @@ func TestRepositorySummaryAppliesFiltersAndRetention(t *testing.T) {
 		ApprovalRequestID: "approval-1",
 		AgentRunID:        "agent-run-1",
 		RootCauseRunID:    "root-cause-1",
-		MetadataKey:       "connectorId",
-		MetadataValue:     "feishu",
+		MetadataKey:       "usageSnapshot.riskLevel",
+		MetadataValue:     "high",
 		From:              &from,
 		To:                &to,
 	}
@@ -147,8 +148,8 @@ func TestRepositorySummaryAppliesFiltersAndRetention(t *testing.T) {
 			filter.AgentRunID, filter.AgentRunID, filter.AgentRunID, filter.AgentRunID,
 			filter.RootCauseRunID, filter.RootCauseRunID, filter.RootCauseRunID,
 			filter.MetadataKey, filter.MetadataKey, filter.MetadataValue,
-			from, from,
-			to, to,
+			from,
+			to,
 		).
 		WillReturnRows(sqlmock.NewRows([]string{"count", "min", "max", "expired"}).AddRow(int64(2), oldest, newest, int64(1)))
 
@@ -168,6 +169,38 @@ func TestRepositorySummaryAppliesFiltersAndRetention(t *testing.T) {
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatalf("unmet sql expectations: %v", err)
 	}
+}
+
+func TestRepositoryListAllowsEmptyRangeFilters(t *testing.T) {
+	repo, mock := newAuditLogRepository(t)
+	filter := domainaudit.Filter{Limit: 10}
+
+	mock.ExpectQuery("SELECT id, actor_id, actor_name, roles, teams, cluster_id, namespace, resource_kind").
+		WithArgs(emptyAuditListArgs(filter.Limit)...).
+		WillReturnRows(sqlmock.NewRows([]string{
+			"id", "actor_id", "actor_name", "roles", "teams", "cluster_id", "namespace", "resource_kind",
+			"resource_name", "action", "result", "summary", "request_path", "request_method",
+			"request_id", "source_ip", "metadata", "created_at",
+		}))
+
+	items, err := repo.List(context.Background(), filter)
+	if err != nil {
+		t.Fatalf("List returned error: %v", err)
+	}
+	if len(items) != 0 {
+		t.Fatalf("items = %#v, want no rows", items)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet sql expectations: %v", err)
+	}
+}
+
+func emptyAuditListArgs(limit int) []driver.Value {
+	args := make([]driver.Value, 0, 38)
+	for range 37 {
+		args = append(args, "")
+	}
+	return append(args, limit)
 }
 
 func newAuditLogRepository(t *testing.T) (*Repository, sqlmock.Sqlmock) {

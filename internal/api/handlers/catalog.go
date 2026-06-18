@@ -20,11 +20,13 @@ type CatalogService interface {
 	DeleteApplicationEnvironment(context.Context, domainidentity.Principal, string) error
 
 	ListBuildTemplates(context.Context, domainidentity.Principal) ([]domaincatalog.BuildTemplate, error)
+	GetBuildTemplateUsage(context.Context, domainidentity.Principal, string) (domaincatalog.TemplateUsageSummary, error)
 	CreateBuildTemplate(context.Context, domainidentity.Principal, domaincatalog.BuildTemplateInput) (domaincatalog.BuildTemplate, error)
 	UpdateBuildTemplate(context.Context, domainidentity.Principal, string, domaincatalog.BuildTemplateInput) (domaincatalog.BuildTemplate, error)
 	DeleteBuildTemplate(context.Context, domainidentity.Principal, string) error
 
 	ListWorkflowTemplates(context.Context, domainidentity.Principal) ([]domaincatalog.WorkflowTemplate, error)
+	GetWorkflowTemplateUsage(context.Context, domainidentity.Principal, string) (domaincatalog.TemplateUsageSummary, error)
 	CreateWorkflowTemplate(context.Context, domainidentity.Principal, domaincatalog.WorkflowTemplateInput) (domaincatalog.WorkflowTemplate, error)
 	UpdateWorkflowTemplate(context.Context, domainidentity.Principal, string, domaincatalog.WorkflowTemplateInput) (domaincatalog.WorkflowTemplate, error)
 	DeleteWorkflowTemplate(context.Context, domainidentity.Principal, string) error
@@ -107,6 +109,16 @@ func (h *CatalogHandler) ListBuildTemplates(c *gin.Context) {
 	apiresponse.Items(c, http.StatusOK, items)
 }
 
+func (h *CatalogHandler) GetBuildTemplateUsage(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	item, err := h.service.GetBuildTemplateUsage(c.Request.Context(), principal, c.Param("buildTemplateID"))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
+}
+
 func (h *CatalogHandler) CreateBuildTemplate(c *gin.Context) {
 	var req dto.BuildTemplateRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -176,6 +188,16 @@ func (h *CatalogHandler) ListWorkflowTemplates(c *gin.Context) {
 		return
 	}
 	apiresponse.Items(c, http.StatusOK, items)
+}
+
+func (h *CatalogHandler) GetWorkflowTemplateUsage(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	item, err := h.service.GetWorkflowTemplateUsage(c.Request.Context(), principal, c.Param("workflowTemplateID"))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
 }
 
 func (h *CatalogHandler) CreateWorkflowTemplate(c *gin.Context) {

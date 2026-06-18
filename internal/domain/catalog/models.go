@@ -163,6 +163,78 @@ type WorkflowTemplateInput struct {
 	Enabled     bool           `json:"enabled"`
 }
 
+type TemplateUsageKind string
+
+const (
+	TemplateUsageKindWorkflow  TemplateUsageKind = "workflow"
+	TemplateUsageKindBuild     TemplateUsageKind = "build"
+	TemplateUsageKindBlueprint TemplateUsageKind = "blueprint"
+)
+
+type TemplateUsageRiskLevel string
+
+const (
+	TemplateUsageRiskLow    TemplateUsageRiskLevel = "low"
+	TemplateUsageRiskMedium TemplateUsageRiskLevel = "medium"
+	TemplateUsageRiskHigh   TemplateUsageRiskLevel = "high"
+)
+
+type TemplateUsageApplication struct {
+	ID             string `json:"id"`
+	Name           string `json:"name,omitempty"`
+	Key            string `json:"key,omitempty"`
+	BusinessLineID string `json:"businessLineId,omitempty"`
+	Group          string `json:"group,omitempty"`
+}
+
+type TemplateUsageEnvironment struct {
+	ID               string `json:"id,omitempty"`
+	Key              string `json:"key,omitempty"`
+	Name             string `json:"name,omitempty"`
+	IsProduction     bool   `json:"isProduction"`
+	RequiresApproval bool   `json:"requiresApproval"`
+}
+
+type TemplateUsageBinding struct {
+	ID               string                   `json:"id,omitempty"`
+	ApplicationID    string                   `json:"applicationId,omitempty"`
+	EnvironmentID    string                   `json:"environmentId,omitempty"`
+	EnvironmentKey   string                   `json:"environmentKey,omitempty"`
+	RequiresApproval bool                     `json:"requiresApproval"`
+	TargetCount      int                      `json:"targetCount"`
+	RiskLevel        TemplateUsageRiskLevel   `json:"riskLevel"`
+	Application      TemplateUsageApplication `json:"application,omitempty"`
+	Environment      TemplateUsageEnvironment `json:"environment,omitempty"`
+}
+
+type TemplateUsageBuildSource struct {
+	ApplicationID   string                   `json:"applicationId"`
+	BuildSourceID   string                   `json:"buildSourceId"`
+	BuildSourceName string                   `json:"buildSourceName,omitempty"`
+	Application     TemplateUsageApplication `json:"application,omitempty"`
+	BindingCount    int                      `json:"bindingCount"`
+	RiskLevel       TemplateUsageRiskLevel   `json:"riskLevel"`
+}
+
+type TemplateUsageSummary struct {
+	TemplateKind               TemplateUsageKind          `json:"templateKind"`
+	TemplateID                 string                     `json:"templateId"`
+	UsageCount                 int                        `json:"usageCount"`
+	ApplicationCount           int                        `json:"applicationCount"`
+	EnvironmentCount           int                        `json:"environmentCount"`
+	ProductionEnvironmentCount int                        `json:"productionEnvironmentCount"`
+	ApprovalBindingCount       int                        `json:"approvalBindingCount"`
+	TargetCount                int                        `json:"targetCount"`
+	RiskLevel                  TemplateUsageRiskLevel     `json:"riskLevel"`
+	RiskReasons                []string                   `json:"riskReasons,omitempty"`
+	RecommendedAction          string                     `json:"recommendedAction,omitempty"`
+	Applications               []TemplateUsageApplication `json:"applications,omitempty"`
+	Bindings                   []TemplateUsageBinding     `json:"bindings,omitempty"`
+	BuildSources               []TemplateUsageBuildSource `json:"buildSources,omitempty"`
+	FileKindCounts             map[string]int             `json:"fileKindCounts,omitempty"`
+	LastExecutionSummary       map[string]any             `json:"lastExecutionSummary,omitempty"`
+}
+
 type Repository interface {
 	ListEnvironments(context.Context) ([]Environment, error)
 

@@ -14,6 +14,7 @@ import (
 
 type WorkflowService interface {
 	List(context.Context, domainidentity.Principal, string, int) ([]domainworkflow.Run, error)
+	Get(context.Context, domainidentity.Principal, string) (domainworkflow.Run, error)
 	Trigger(context.Context, domainidentity.Principal, domainworkflow.Input) (domainworkflow.Run, error)
 	Approve(context.Context, domainidentity.Principal, string, string) (domainworkflow.Run, error)
 	Reject(context.Context, domainidentity.Principal, string, string) (domainworkflow.Run, error)
@@ -35,6 +36,16 @@ func (h *WorkflowHandler) List(c *gin.Context) {
 		return
 	}
 	apiresponse.Items(c, http.StatusOK, items)
+}
+
+func (h *WorkflowHandler) Get(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	item, err := h.service.Get(c.Request.Context(), principal, c.Param("workflowRunID"))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
 }
 
 func (h *WorkflowHandler) Trigger(c *gin.Context) {

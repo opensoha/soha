@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	appaccess "github.com/opensoha/soha/internal/application/access"
 	domainapp "github.com/opensoha/soha/internal/domain/application"
@@ -17,10 +18,20 @@ import (
 )
 
 type stubApplicationReader struct {
-	app domainapp.App
+	app                domainapp.App
+	apps               []domainapp.App
+	services           []domainapp.Service
+	createErr          error
+	createCount        *int
+	updateCount        *int
+	createServiceCount *int
+	updateServiceCount *int
 }
 
 func (s stubApplicationReader) List(context.Context, domainidentity.Principal, domainapp.Filter) ([]domainapp.App, error) {
+	if len(s.apps) > 0 {
+		return s.apps, nil
+	}
 	return []domainapp.App{s.app}, nil
 }
 
@@ -29,16 +40,60 @@ func (s stubApplicationReader) Get(context.Context, domainidentity.Principal, st
 }
 
 func (s stubApplicationReader) Create(context.Context, domainidentity.Principal, domainapp.UpsertInput) (domainapp.App, error) {
+	if s.createCount != nil {
+		*s.createCount = *s.createCount + 1
+	}
+	if s.createErr != nil {
+		return domainapp.App{}, s.createErr
+	}
 	return s.app, nil
 }
 
 func (s stubApplicationReader) Update(context.Context, domainidentity.Principal, string, domainapp.UpsertInput) (domainapp.App, error) {
+	if s.updateCount != nil {
+		*s.updateCount = *s.updateCount + 1
+	}
 	return s.app, nil
 }
 
+func (s stubApplicationReader) ListServices(context.Context, domainidentity.Principal, string) ([]domainapp.Service, error) {
+	return s.services, nil
+}
+
+func (s stubApplicationReader) CreateService(_ context.Context, _ domainidentity.Principal, applicationID string, input domainapp.ServiceInput) (domainapp.Service, error) {
+	if s.createServiceCount != nil {
+		*s.createServiceCount = *s.createServiceCount + 1
+	}
+	return domainapp.Service{
+		ID:            firstNonEmpty(input.ID, "service-created"),
+		ApplicationID: applicationID,
+		Key:           input.Key,
+		Name:          input.Name,
+		ServiceKind:   input.ServiceKind,
+		Containers:    nil,
+		Enabled:       input.Enabled,
+	}, nil
+}
+
+func (s stubApplicationReader) UpdateService(_ context.Context, _ domainidentity.Principal, applicationID, serviceID string, input domainapp.ServiceInput) (domainapp.Service, error) {
+	if s.updateServiceCount != nil {
+		*s.updateServiceCount = *s.updateServiceCount + 1
+	}
+	return domainapp.Service{
+		ID:            serviceID,
+		ApplicationID: applicationID,
+		Key:           input.Key,
+		Name:          input.Name,
+		ServiceKind:   input.ServiceKind,
+		Enabled:       input.Enabled,
+	}, nil
+}
+
 type stubCatalogReader struct {
-	bindings []domaincatalog.ApplicationEnvironment
-	envs     []domaincatalog.Environment
+	bindings    []domaincatalog.ApplicationEnvironment
+	envs        []domaincatalog.Environment
+	createCount *int
+	updateCount *int
 }
 
 func (s stubCatalogReader) ListEnvironments(context.Context, domainidentity.Principal) ([]domaincatalog.Environment, error) {
@@ -62,6 +117,9 @@ func (s stubCatalogReader) GetApplicationEnvironment(_ context.Context, _ domain
 }
 
 func (s stubCatalogReader) CreateApplicationEnvironment(context.Context, domainidentity.Principal, domaincatalog.ApplicationEnvironmentInput) (domaincatalog.ApplicationEnvironment, error) {
+	if s.createCount != nil {
+		*s.createCount = *s.createCount + 1
+	}
 	if len(s.bindings) == 0 {
 		return domaincatalog.ApplicationEnvironment{}, nil
 	}
@@ -69,6 +127,9 @@ func (s stubCatalogReader) CreateApplicationEnvironment(context.Context, domaini
 }
 
 func (s stubCatalogReader) UpdateApplicationEnvironment(context.Context, domainidentity.Principal, string, domaincatalog.ApplicationEnvironmentInput) (domaincatalog.ApplicationEnvironment, error) {
+	if s.updateCount != nil {
+		*s.updateCount = *s.updateCount + 1
+	}
 	if len(s.bindings) == 0 {
 		return domaincatalog.ApplicationEnvironment{}, nil
 	}
@@ -77,12 +138,24 @@ func (s stubCatalogReader) UpdateApplicationEnvironment(context.Context, domaini
 
 type stubBuildReader struct {
 	record       domainbuild.Record
+	listItems    []domainbuild.Record
 	triggerInput *domainbuild.TriggerInput
 	triggerCount *int
+	triggerErr   error
 }
 
-func (stubBuildReader) List(context.Context, domainidentity.Principal, domainbuild.Filter) ([]domainbuild.Record, error) {
-	return nil, nil
+func (s stubBuildReader) List(context.Context, domainidentity.Principal, domainbuild.Filter) ([]domainbuild.Record, error) {
+	return s.listItems, nil
+}
+
+func (s stubBuildReader) Get(context.Context, domainidentity.Principal, string) (domainbuild.Record, error) {
+	if s.record.ID != "" || s.record.Metadata != nil {
+		return s.record, nil
+	}
+	if len(s.listItems) > 0 {
+		return s.listItems[0], nil
+	}
+	return domainbuild.Record{}, nil
 }
 
 func (s stubBuildReader) Trigger(_ context.Context, _ domainidentity.Principal, input domainbuild.TriggerInput) (domainbuild.Record, error) {
@@ -92,6 +165,9 @@ func (s stubBuildReader) Trigger(_ context.Context, _ domainidentity.Principal, 
 	if s.triggerCount != nil {
 		*s.triggerCount = *s.triggerCount + 1
 	}
+	if s.triggerErr != nil {
+		return domainbuild.Record{}, s.triggerErr
+	}
 	if s.record.ID != "" || s.record.Metadata != nil {
 		return s.record, nil
 	}
@@ -100,12 +176,23 @@ func (s stubBuildReader) Trigger(_ context.Context, _ domainidentity.Principal, 
 
 type stubWorkflowReader struct {
 	record       domainworkflow.Run
+	listItems    []domainworkflow.Run
 	triggerInput *domainworkflow.Input
 	triggerCount *int
 }
 
-func (stubWorkflowReader) List(context.Context, domainidentity.Principal, string, int) ([]domainworkflow.Run, error) {
-	return nil, nil
+func (s stubWorkflowReader) List(context.Context, domainidentity.Principal, string, int) ([]domainworkflow.Run, error) {
+	return s.listItems, nil
+}
+
+func (s stubWorkflowReader) Get(context.Context, domainidentity.Principal, string) (domainworkflow.Run, error) {
+	if s.record.ID != "" || s.record.Metadata != nil {
+		return s.record, nil
+	}
+	if len(s.listItems) > 0 {
+		return s.listItems[0], nil
+	}
+	return domainworkflow.Run{}, nil
 }
 
 func (s stubWorkflowReader) Trigger(_ context.Context, _ domainidentity.Principal, input domainworkflow.Input) (domainworkflow.Run, error) {
@@ -149,13 +236,24 @@ func (s stubWorkflowReader) TriggerRollback(_ context.Context, _ domainidentity.
 
 type stubReleaseReader struct {
 	record       domainrelease.Record
+	listItems    []domainrelease.Record
 	triggerInput *domainrelease.TriggerInput
 	triggerCount *int
 	trigger      func(domainrelease.TriggerInput) domainrelease.Record
 }
 
-func (stubReleaseReader) List(context.Context, domainidentity.Principal, domainrelease.Filter) ([]domainrelease.Record, error) {
-	return nil, nil
+func (s stubReleaseReader) List(context.Context, domainidentity.Principal, domainrelease.Filter) ([]domainrelease.Record, error) {
+	return s.listItems, nil
+}
+
+func (s stubReleaseReader) Get(context.Context, domainidentity.Principal, string) (domainrelease.Record, error) {
+	if s.record.ID != "" || s.record.Metadata != nil {
+		return s.record, nil
+	}
+	if len(s.listItems) > 0 {
+		return s.listItems[0], nil
+	}
+	return domainrelease.Record{}, nil
 }
 
 func (s stubReleaseReader) Trigger(_ context.Context, _ domainidentity.Principal, input domainrelease.TriggerInput) (domainrelease.Record, error) {
@@ -192,10 +290,14 @@ func deliveryActionPrincipal() domainidentity.Principal {
 	return domainidentity.Principal{UserID: "dev-1", UserName: "developer", Roles: []string{"developer"}}
 }
 
-type stubRepository struct{}
+type stubRepository struct {
+	blueprint domaindelivery.DeliveryBlueprint
+	bundles   []domaindelivery.ReleaseBundle
+	tasks     []domaindelivery.ExecutionTask
+}
 
-func (stubRepository) ListReleaseBundles(context.Context, domaindelivery.ReleaseBundleFilter) ([]domaindelivery.ReleaseBundle, error) {
-	return nil, nil
+func (s stubRepository) ListReleaseBundles(context.Context, domaindelivery.ReleaseBundleFilter) ([]domaindelivery.ReleaseBundle, error) {
+	return s.bundles, nil
 }
 
 func (stubRepository) GetReleaseBundle(context.Context, string) (domaindelivery.ReleaseBundle, error) {
@@ -210,8 +312,8 @@ func (stubRepository) UpdateReleaseBundle(context.Context, domaindelivery.Releas
 	return domaindelivery.ReleaseBundle{}, nil
 }
 
-func (stubRepository) ListExecutionTasks(context.Context, domaindelivery.ExecutionTaskFilter) ([]domaindelivery.ExecutionTask, error) {
-	return nil, nil
+func (s stubRepository) ListExecutionTasks(context.Context, domaindelivery.ExecutionTaskFilter) ([]domaindelivery.ExecutionTask, error) {
+	return s.tasks, nil
 }
 
 func (stubRepository) GetExecutionTask(context.Context, string) (domaindelivery.ExecutionTask, error) {
@@ -254,15 +356,25 @@ func (stubRepository) ListExecutionArtifactsByBundle(context.Context, string) ([
 	return nil, nil
 }
 
+func (stubRepository) ListArtifacts(context.Context, domaindelivery.ArtifactFilter) ([]domaindelivery.ExecutionArtifact, error) {
+	return nil, nil
+}
+
 func (stubRepository) UpsertExecutionArtifact(context.Context, domaindelivery.ExecutionArtifact) (domaindelivery.ExecutionArtifact, error) {
 	return domaindelivery.ExecutionArtifact{}, nil
 }
 
-func (stubRepository) ListDeliveryBlueprints(context.Context) ([]domaindelivery.DeliveryBlueprint, error) {
+func (s stubRepository) ListDeliveryBlueprints(context.Context) ([]domaindelivery.DeliveryBlueprint, error) {
+	if s.blueprint.ID != "" {
+		return []domaindelivery.DeliveryBlueprint{s.blueprint}, nil
+	}
 	return nil, nil
 }
 
-func (stubRepository) GetDeliveryBlueprint(context.Context, string) (domaindelivery.DeliveryBlueprint, error) {
+func (s stubRepository) GetDeliveryBlueprint(context.Context, string) (domaindelivery.DeliveryBlueprint, error) {
+	if s.blueprint.ID != "" {
+		return s.blueprint, nil
+	}
 	return domaindelivery.DeliveryBlueprint{}, nil
 }
 
@@ -272,6 +384,783 @@ func (stubRepository) CreateDeliveryBlueprint(context.Context, domaindelivery.De
 
 func (stubRepository) UpdateDeliveryBlueprint(context.Context, string, domaindelivery.DeliveryBlueprintInput) (domaindelivery.DeliveryBlueprint, error) {
 	return domaindelivery.DeliveryBlueprint{}, nil
+}
+
+func (stubRepository) CreateDeliveryDraft(context.Context, domaindelivery.DeliveryDraftInput, string) (domaindelivery.DeliveryDraft, error) {
+	return domaindelivery.DeliveryDraft{}, nil
+}
+
+func (stubRepository) GetDeliveryDraft(context.Context, string) (domaindelivery.DeliveryDraft, error) {
+	return domaindelivery.DeliveryDraft{}, nil
+}
+
+func (stubRepository) UpdateDeliveryDraft(context.Context, domaindelivery.DeliveryDraft) (domaindelivery.DeliveryDraft, error) {
+	return domaindelivery.DeliveryDraft{}, nil
+}
+
+func (stubRepository) CreateDeliveryPlan(context.Context, domaindelivery.DeliveryPlanInput, string) (domaindelivery.DeliveryPlan, error) {
+	return domaindelivery.DeliveryPlan{}, nil
+}
+
+func (stubRepository) GetDeliveryPlan(context.Context, string) (domaindelivery.DeliveryPlan, error) {
+	return domaindelivery.DeliveryPlan{}, nil
+}
+
+func (stubRepository) UpdateDeliveryPlan(context.Context, domaindelivery.DeliveryPlan) (domaindelivery.DeliveryPlan, error) {
+	return domaindelivery.DeliveryPlan{}, nil
+}
+
+type draftRepository struct {
+	stubRepository
+	draft       domaindelivery.DeliveryDraft
+	createInput *domaindelivery.DeliveryDraftInput
+	createCount int
+	updateCount int
+	updateErr   error
+}
+
+func (r *draftRepository) CreateDeliveryDraft(_ context.Context, input domaindelivery.DeliveryDraftInput, createdBy string) (domaindelivery.DeliveryDraft, error) {
+	r.createCount++
+	r.createInput = &input
+	draft := domaindelivery.DeliveryDraft{
+		ID:                  firstNonEmpty(input.ID, "draft-created"),
+		Source:              firstNonEmpty(input.Source, domaindelivery.DeliveryDraftSourceManual),
+		Status:              domaindelivery.DeliveryDraftStatusDraft,
+		ApplicationDraft:    input.ApplicationDraft,
+		Services:            input.Services,
+		BuildSources:        input.BuildSources,
+		EnvironmentBindings: input.EnvironmentBindings,
+		Files:               input.Files,
+		ExecutionHints:      input.ExecutionHints,
+		PostCreateActions:   input.PostCreateActions,
+		CreatedBy:           createdBy,
+	}
+	r.draft = draft
+	return draft, nil
+}
+
+func (r *draftRepository) GetDeliveryDraft(context.Context, string) (domaindelivery.DeliveryDraft, error) {
+	return r.draft, nil
+}
+
+func (r *draftRepository) UpdateDeliveryDraft(_ context.Context, draft domaindelivery.DeliveryDraft) (domaindelivery.DeliveryDraft, error) {
+	r.updateCount++
+	if r.updateErr != nil {
+		return domaindelivery.DeliveryDraft{}, r.updateErr
+	}
+	r.draft = draft
+	return draft, nil
+}
+
+type planRepository struct {
+	stubRepository
+	plan        domaindelivery.DeliveryPlan
+	createInput *domaindelivery.DeliveryPlanInput
+	createCount int
+	updateCount int
+	updateErr   error
+}
+
+func (r *planRepository) CreateDeliveryPlan(_ context.Context, input domaindelivery.DeliveryPlanInput, createdBy string) (domaindelivery.DeliveryPlan, error) {
+	r.createCount++
+	r.createInput = &input
+	plan := domaindelivery.DeliveryPlan{
+		ID:                       firstNonEmpty(input.ID, "plan-created"),
+		Source:                   firstNonEmpty(input.Source, domaindelivery.DeliveryPlanSourceManual),
+		Status:                   domaindelivery.DeliveryPlanStatusDraft,
+		ApplicationID:            input.ApplicationID,
+		ApplicationName:          input.ApplicationName,
+		ApplicationEnvironmentID: input.ApplicationEnvironmentID,
+		EnvironmentKey:           input.EnvironmentKey,
+		Action:                   input.Action,
+		TargetID:                 input.TargetID,
+		TargetSummary:            input.TargetSummary,
+		BuildSourceID:            input.BuildSourceID,
+		RefType:                  input.RefType,
+		RefName:                  input.RefName,
+		ImageTag:                 input.ImageTag,
+		Reason:                   input.Reason,
+		RiskLevel:                input.RiskLevel,
+		RequiresApproval:         input.RequiresApproval,
+		Impact:                   input.Impact,
+		RollbackStrategy:         input.RollbackStrategy,
+		Variables:                input.Variables,
+		BuildArgs:                input.BuildArgs,
+		CreatedBy:                createdBy,
+	}
+	r.plan = plan
+	return plan, nil
+}
+
+func (r *planRepository) GetDeliveryPlan(context.Context, string) (domaindelivery.DeliveryPlan, error) {
+	return r.plan, nil
+}
+
+func (r *planRepository) UpdateDeliveryPlan(_ context.Context, plan domaindelivery.DeliveryPlan) (domaindelivery.DeliveryPlan, error) {
+	r.updateCount++
+	if r.updateErr != nil {
+		return domaindelivery.DeliveryPlan{}, r.updateErr
+	}
+	r.plan = plan
+	return plan, nil
+}
+
+func TestGetDeliveryBlueprintUsageSummarizesCreatedApplicationRisk(t *testing.T) {
+	repo := stubRepository{blueprint: domaindelivery.DeliveryBlueprint{
+		ID:   "blueprint-1",
+		Key:  "payments-standard",
+		Name: "Payments Standard",
+		ApplicationDraft: domaindelivery.BlueprintApplicationDraft{
+			Key:  "payments-api",
+			Name: "Payments API",
+		},
+		EnvironmentBindings: []domaindelivery.BlueprintEnvironmentBindingTemplate{
+			{EnvironmentKey: "dev"},
+			{EnvironmentKey: "prod", ReleasePolicy: domaincatalog.ReleasePolicy{RequiresApproval: true}},
+		},
+		Files: []domaindelivery.BlueprintFileTemplate{
+			{Path: "Dockerfile", Kind: "dockerfile", Required: true},
+			{Path: "deploy/values.yaml", Kind: "helm_values", Required: true},
+		},
+	}, bundles: []domaindelivery.ReleaseBundle{
+		{
+			ID:                       "bundle-1",
+			ApplicationID:            "app-1",
+			ApplicationEnvironmentID: "binding-prod",
+			Version:                  "1.2.3",
+			SourceType:               "build",
+			Status:                   "building",
+			UpdatedAt:                time.Date(2026, 5, 8, 10, 30, 0, 0, time.UTC),
+		},
+	}, tasks: []domaindelivery.ExecutionTask{
+		{
+			ID:                       "task-1",
+			ApplicationID:            "app-1",
+			ApplicationEnvironmentID: "binding-prod",
+			TaskKind:                 "release",
+			Status:                   "running",
+			UpdatedAt:                time.Date(2026, 5, 8, 10, 45, 0, 0, time.UTC),
+		},
+	}}
+	service := New(
+		stubApplicationReader{apps: []domainapp.App{
+			{
+				ID:             "app-1",
+				Name:           "Payments API",
+				Key:            "payments-api",
+				Group:          "payments",
+				BusinessLineID: "core",
+				BuildSources: []domainapp.BuildSource{
+					{ID: "source-1", Name: "Platform Build", Type: domainapp.BuildSourceTypePlatformTemplate},
+				},
+			},
+			{ID: "app-2", Name: "Other", Key: "other"},
+		}},
+		stubCatalogReader{
+			envs: []domaincatalog.Environment{
+				{ID: "env-prod", Key: "prod", Name: "Production", IsProduction: true, RequiresApproval: true},
+			},
+			bindings: []domaincatalog.ApplicationEnvironment{
+				{
+					ID:             "binding-prod",
+					ApplicationID:  "app-1",
+					EnvironmentID:  "env-prod",
+					EnvironmentKey: "prod",
+					ReleasePolicy:  domaincatalog.ReleasePolicy{RequiresApproval: true},
+					Targets:        []domaincatalog.ReleaseTarget{{ID: "target-1"}, {ID: "target-2"}},
+				},
+			},
+		},
+		stubBuildReader{listItems: []domainbuild.Record{
+			{
+				ID:            "build-1",
+				ApplicationID: "app-1",
+				SourceSystem:  "manual",
+				Status:        "completed",
+				Metadata:      map[string]any{"buildSourceId": "source-1"},
+				CreatedAt:     time.Date(2026, 5, 8, 10, 0, 0, 0, time.UTC),
+			},
+		}},
+		stubWorkflowReader{listItems: []domainworkflow.Run{
+			{
+				ID:            "workflow-1",
+				ApplicationID: "app-1",
+				WorkflowName:  "release",
+				Status:        "running",
+				Metadata:      map[string]any{"bindingId": "binding-prod"},
+				CreatedAt:     "2026-05-08T10:10:00Z",
+				UpdatedAt:     "2026-05-08T10:40:00Z",
+			},
+		}},
+		stubReleaseReader{listItems: []domainrelease.Record{
+			{
+				ID:             "release-1",
+				ApplicationID:  "app-1",
+				ClusterID:      "cluster-a",
+				Namespace:      "prod",
+				DeploymentName: "payments",
+				Status:         "failed",
+				Metadata:       map[string]any{"applicationEnvironmentId": "binding-prod"},
+				CreatedAt:      time.Date(2026, 5, 8, 10, 20, 0, 0, time.UTC),
+			},
+		}},
+		repo,
+		nil,
+		nil,
+		deliveryActionPermissions(appaccess.PermDeliveryApplicationsView),
+	)
+
+	usage, err := service.GetDeliveryBlueprintUsage(context.Background(), deliveryActionPrincipal(), "blueprint-1")
+	if err != nil {
+		t.Fatalf("GetDeliveryBlueprintUsage returned error: %v", err)
+	}
+	if usage.TemplateKind != domaincatalog.TemplateUsageKindBlueprint || usage.UsageCount != 1 || usage.ApplicationCount != 1 {
+		t.Fatalf("unexpected blueprint usage counts: %#v", usage)
+	}
+	if usage.ProductionEnvironmentCount != 1 || usage.ApprovalBindingCount != 1 || usage.TargetCount != 2 {
+		t.Fatalf("unexpected blueprint risk inputs: %#v", usage)
+	}
+	if usage.RiskLevel != domaincatalog.TemplateUsageRiskHigh || usage.RecommendedAction != "copy_template_before_editing" {
+		t.Fatalf("expected high-risk recommendation, got %#v", usage)
+	}
+	if usage.FileKindCounts["dockerfile"] != 1 || usage.FileKindCounts["helm_values"] != 1 {
+		t.Fatalf("unexpected file kind counts: %#v", usage.FileKindCounts)
+	}
+	states := usage.LastExecutionSummary["stateCounts"].(map[string]int)
+	if states["succeeded"] != 1 || states["running"] != 3 || states["failed"] != 1 {
+		t.Fatalf("unexpected blueprint runtime state counts: %#v", usage.LastExecutionSummary)
+	}
+}
+
+func TestCreateDeliveryDraftDoesNotCreatePlatformObjects(t *testing.T) {
+	appCreateCount := 0
+	bindingCreateCount := 0
+	repo := &draftRepository{}
+	service := New(
+		stubApplicationReader{createCount: &appCreateCount},
+		stubCatalogReader{createCount: &bindingCreateCount},
+		stubBuildReader{},
+		stubWorkflowReader{},
+		stubReleaseReader{},
+		repo,
+		nil,
+		nil,
+		deliveryActionPermissions(appaccess.PermDeliveryApplicationsUpdate),
+	)
+
+	result, err := service.CreateDeliveryDraft(context.Background(), deliveryActionPrincipal(), domaindelivery.DeliveryDraftInput{
+		Source: domaindelivery.DeliveryDraftSourceManual,
+		ApplicationDraft: domaindelivery.BlueprintApplicationDraft{
+			Name:     "Demo API",
+			Key:      "demo-api",
+			Group:    "demo",
+			Language: "go",
+			Enabled:  true,
+		},
+		BuildSources: []domainapp.BuildSourceInput{
+			{ID: "source-1", Name: "Repo Dockerfile", Type: domainapp.BuildSourceTypeRepoDockerfile, Enabled: true, IsDefault: true},
+		},
+	})
+	if err != nil {
+		t.Fatalf("CreateDeliveryDraft returned error: %v", err)
+	}
+	if result.Status != domaindelivery.DeliveryDraftStatusDraft {
+		t.Fatalf("draft status = %q, want draft", result.Status)
+	}
+	if repo.createCount != 1 {
+		t.Fatalf("draft create count = %d, want 1", repo.createCount)
+	}
+	if appCreateCount != 0 {
+		t.Fatalf("application create count = %d, want 0 before confirmation", appCreateCount)
+	}
+	if bindingCreateCount != 0 {
+		t.Fatalf("binding create count = %d, want 0 before confirmation", bindingCreateCount)
+	}
+}
+
+func TestConfirmDeliveryDraftCreatesApplicationServicesAndBindings(t *testing.T) {
+	appCreateCount := 0
+	serviceCreateCount := 0
+	bindingCreateCount := 0
+	repo := &draftRepository{
+		draft: domaindelivery.DeliveryDraft{
+			ID:     "draft-1",
+			Source: domaindelivery.DeliveryDraftSourceManual,
+			Status: domaindelivery.DeliveryDraftStatusDraft,
+			ApplicationDraft: domaindelivery.BlueprintApplicationDraft{
+				Name:          "Demo API",
+				Key:           "demo-api",
+				Group:         "demo",
+				Language:      "go",
+				DefaultBranch: "main",
+				Enabled:       true,
+			},
+			Services: []domaindelivery.DeliveryDraftService{
+				{
+					Key:           "api",
+					Name:          "API",
+					ServiceKind:   domainapp.ServiceKindKubernetesWorkload,
+					BuildSourceID: "source-1",
+					Enabled:       true,
+					Containers: []domainapp.ServiceContainerInput{
+						{Name: "api", ImageRepository: "registry.local/demo-api", DockerfilePath: "Dockerfile", BuildContextDir: "."},
+					},
+				},
+			},
+			BuildSources: []domainapp.BuildSourceInput{
+				{ID: "source-1", Name: "Repo Dockerfile", Type: domainapp.BuildSourceTypeRepoDockerfile, Enabled: true, IsDefault: true},
+			},
+			EnvironmentBindings: []domaindelivery.BlueprintEnvironmentBindingTemplate{
+				{EnvironmentKey: "dev"},
+			},
+		},
+	}
+	service := New(
+		stubApplicationReader{
+			app:                domainapp.App{ID: "app-created", Key: "other"},
+			createCount:        &appCreateCount,
+			createServiceCount: &serviceCreateCount,
+		},
+		stubCatalogReader{
+			envs: []domaincatalog.Environment{
+				{ID: "env-dev", Key: "dev", Name: "Development"},
+			},
+			createCount: &bindingCreateCount,
+		},
+		stubBuildReader{},
+		stubWorkflowReader{},
+		stubReleaseReader{},
+		repo,
+		nil,
+		nil,
+		deliveryActionPermissions(appaccess.PermDeliveryApplicationsUpdate),
+	)
+
+	result, err := service.ConfirmDeliveryDraft(context.Background(), deliveryActionPrincipal(), "draft-1")
+	if err != nil {
+		t.Fatalf("ConfirmDeliveryDraft returned error: %v", err)
+	}
+	if result.Draft.Status != domaindelivery.DeliveryDraftStatusConfirmed {
+		t.Fatalf("draft status = %q, want confirmed", result.Draft.Status)
+	}
+	if result.Draft.ConfirmedAt == nil {
+		t.Fatal("draft confirmedAt is nil")
+	}
+	if appCreateCount != 1 {
+		t.Fatalf("application create count = %d, want 1", appCreateCount)
+	}
+	if serviceCreateCount != 1 {
+		t.Fatalf("service create count = %d, want 1", serviceCreateCount)
+	}
+	if bindingCreateCount != 1 {
+		t.Fatalf("binding create count = %d, want 1", bindingCreateCount)
+	}
+	if repo.updateCount != 2 {
+		t.Fatalf("draft update count = %d, want 2", repo.updateCount)
+	}
+	if len(result.Spec.Services) != 1 {
+		t.Fatalf("spec services length = %d, want 1", len(result.Spec.Services))
+	}
+
+	if _, err := service.ConfirmDeliveryDraft(context.Background(), deliveryActionPrincipal(), "draft-1"); err == nil {
+		t.Fatal("ConfirmDeliveryDraft second call returned nil error, want already-confirmed error")
+	}
+}
+
+func TestConfirmDeliveryDraftStopsWhenClaimUpdateFails(t *testing.T) {
+	appCreateCount := 0
+	serviceCreateCount := 0
+	bindingCreateCount := 0
+	repo := &draftRepository{
+		draft: domaindelivery.DeliveryDraft{
+			ID:     "draft-1",
+			Source: domaindelivery.DeliveryDraftSourceManual,
+			Status: domaindelivery.DeliveryDraftStatusDraft,
+			ApplicationDraft: domaindelivery.BlueprintApplicationDraft{
+				Name:          "Demo API",
+				Key:           "demo-api",
+				Group:         "demo",
+				Language:      "go",
+				DefaultBranch: "main",
+				Enabled:       true,
+			},
+			Services: []domaindelivery.DeliveryDraftService{
+				{
+					Key:         "api",
+					Name:        "API",
+					ServiceKind: domainapp.ServiceKindKubernetesWorkload,
+					Enabled:     true,
+				},
+			},
+			EnvironmentBindings: []domaindelivery.BlueprintEnvironmentBindingTemplate{
+				{EnvironmentKey: "dev"},
+			},
+		},
+		updateErr: errors.New("claim update failed"),
+	}
+	service := New(
+		stubApplicationReader{
+			app:                domainapp.App{ID: "app-created", Key: "other"},
+			createCount:        &appCreateCount,
+			createServiceCount: &serviceCreateCount,
+		},
+		stubCatalogReader{
+			envs: []domaincatalog.Environment{
+				{ID: "env-dev", Key: "dev", Name: "Development"},
+			},
+			createCount: &bindingCreateCount,
+		},
+		stubBuildReader{},
+		stubWorkflowReader{},
+		stubReleaseReader{},
+		repo,
+		nil,
+		nil,
+		deliveryActionPermissions(appaccess.PermDeliveryApplicationsUpdate),
+	)
+
+	if _, err := service.ConfirmDeliveryDraft(context.Background(), deliveryActionPrincipal(), "draft-1"); err == nil {
+		t.Fatal("ConfirmDeliveryDraft returned nil error, want claim update failure")
+	}
+	if repo.updateCount != 1 {
+		t.Fatalf("draft update count = %d, want 1", repo.updateCount)
+	}
+	if appCreateCount != 0 {
+		t.Fatalf("application create count = %d, want 0", appCreateCount)
+	}
+	if serviceCreateCount != 0 {
+		t.Fatalf("service create count = %d, want 0", serviceCreateCount)
+	}
+	if bindingCreateCount != 0 {
+		t.Fatalf("binding create count = %d, want 0", bindingCreateCount)
+	}
+}
+
+func TestConfirmDeliveryDraftRestoresDraftStatusWhenApplyFails(t *testing.T) {
+	createErr := errors.New("create application failed")
+	appCreateCount := 0
+	repo := &draftRepository{
+		draft: domaindelivery.DeliveryDraft{
+			ID:     "draft-1",
+			Source: domaindelivery.DeliveryDraftSourceManual,
+			Status: domaindelivery.DeliveryDraftStatusDraft,
+			ApplicationDraft: domaindelivery.BlueprintApplicationDraft{
+				Name:          "Demo API",
+				Key:           "demo-api",
+				Group:         "demo",
+				Language:      "go",
+				DefaultBranch: "main",
+				Enabled:       true,
+			},
+		},
+	}
+	failingService := New(
+		stubApplicationReader{
+			app:         domainapp.App{ID: "app-created", Key: "other"},
+			createErr:   createErr,
+			createCount: &appCreateCount,
+		},
+		stubCatalogReader{},
+		stubBuildReader{},
+		stubWorkflowReader{},
+		stubReleaseReader{},
+		repo,
+		nil,
+		nil,
+		deliveryActionPermissions(appaccess.PermDeliveryApplicationsUpdate),
+	)
+
+	if _, err := failingService.ConfirmDeliveryDraft(context.Background(), deliveryActionPrincipal(), "draft-1"); !errors.Is(err, createErr) {
+		t.Fatalf("ConfirmDeliveryDraft error = %v, want create error", err)
+	}
+	if repo.draft.Status != domaindelivery.DeliveryDraftStatusDraft {
+		t.Fatalf("draft status after failed confirm = %q, want draft", repo.draft.Status)
+	}
+	if repo.updateCount != 2 {
+		t.Fatalf("draft update count after failed confirm = %d, want claim and restore updates", repo.updateCount)
+	}
+	if appCreateCount != 1 {
+		t.Fatalf("application create count = %d, want 1", appCreateCount)
+	}
+
+	retryService := New(
+		stubApplicationReader{app: domainapp.App{ID: "app-created", Key: "other"}},
+		stubCatalogReader{},
+		stubBuildReader{},
+		stubWorkflowReader{},
+		stubReleaseReader{},
+		repo,
+		nil,
+		nil,
+		deliveryActionPermissions(appaccess.PermDeliveryApplicationsUpdate),
+	)
+	result, err := retryService.ConfirmDeliveryDraft(context.Background(), deliveryActionPrincipal(), "draft-1")
+	if err != nil {
+		t.Fatalf("ConfirmDeliveryDraft retry returned error: %v", err)
+	}
+	if result.Draft.Status != domaindelivery.DeliveryDraftStatusConfirmed {
+		t.Fatalf("draft status after retry = %q, want confirmed", result.Draft.Status)
+	}
+	if repo.updateCount != 4 {
+		t.Fatalf("draft update count after retry = %d, want 4", repo.updateCount)
+	}
+}
+
+func TestCreateDeliveryPlanRecordsRiskWithoutTriggeringAction(t *testing.T) {
+	buildCount := 0
+	repo := &planRepository{}
+	service := New(
+		stubApplicationReader{
+			app: domainapp.App{ID: "app-1", Name: "Payments API", Key: "payments-api"},
+		},
+		stubCatalogReader{
+			envs: []domaincatalog.Environment{
+				{ID: "env-prod", Key: "prod", Name: "Production", IsProduction: true, RequiresApproval: true},
+			},
+			bindings: []domaincatalog.ApplicationEnvironment{
+				{
+					ID:             "binding-prod",
+					ApplicationID:  "app-1",
+					EnvironmentID:  "env-prod",
+					EnvironmentKey: "prod",
+					ReleasePolicy:  domaincatalog.ReleasePolicy{RequiresApproval: true, AutoRollback: true},
+					Targets: []domaincatalog.ReleaseTarget{
+						{ID: "target-1", ClusterID: "cluster-prod", Namespace: "payments", WorkloadKind: "Deployment", WorkloadName: "payments-api", Enabled: true},
+					},
+				},
+			},
+		},
+		stubBuildReader{triggerCount: &buildCount},
+		stubWorkflowReader{},
+		stubReleaseReader{},
+		repo,
+		nil,
+		nil,
+		deliveryActionPermissions(appaccess.PermDeliveryApplicationsView),
+	)
+
+	plan, err := service.CreateDeliveryPlan(context.Background(), deliveryActionPrincipal(), domaindelivery.DeliveryPlanInput{
+		ApplicationID:            "app-1",
+		ApplicationEnvironmentID: "binding-prod",
+		Action:                   domaindelivery.ApplicationDeliveryActionDeploy,
+		TargetID:                 "target-1",
+		RefType:                  "branch",
+		RefName:                  "release/2026-06",
+		Reason:                   "manual release plan",
+	})
+	if err != nil {
+		t.Fatalf("CreateDeliveryPlan returned error: %v", err)
+	}
+	if repo.createCount != 1 {
+		t.Fatalf("plan create count = %d, want 1", repo.createCount)
+	}
+	if buildCount != 0 {
+		t.Fatalf("build trigger count = %d, want 0 before confirmation", buildCount)
+	}
+	if plan.RiskLevel != "high" {
+		t.Fatalf("risk level = %q, want high", plan.RiskLevel)
+	}
+	if !plan.RequiresApproval {
+		t.Fatal("requiresApproval = false, want true")
+	}
+	if plan.TargetSummary != "cluster-prod / payments / payments-api" {
+		t.Fatalf("target summary = %q, want cluster/namespace/workload", plan.TargetSummary)
+	}
+}
+
+func TestConfirmDeliveryPlanTriggersExistingAction(t *testing.T) {
+	buildCount := 0
+	repo := &planRepository{
+		plan: domaindelivery.DeliveryPlan{
+			ID:                       "plan-1",
+			Source:                   domaindelivery.DeliveryPlanSourceManual,
+			Status:                   domaindelivery.DeliveryPlanStatusDraft,
+			ApplicationID:            "app-1",
+			ApplicationEnvironmentID: "binding-1",
+			Action:                   domaindelivery.ApplicationDeliveryActionBuild,
+			BuildSourceID:            "source-1",
+			RefType:                  "branch",
+			RefName:                  "main",
+			ImageTag:                 "candidate",
+		},
+	}
+	service := New(
+		stubApplicationReader{
+			app: domainapp.App{
+				ID:            "app-1",
+				Name:          "Payments API",
+				Key:           "payments-api",
+				DefaultBranch: "main",
+				BuildSources:  []domainapp.BuildSource{{ID: "source-1", Name: "Repo Dockerfile", IsDefault: true, DefaultTag: "candidate"}},
+			},
+		},
+		stubCatalogReader{
+			bindings: []domaincatalog.ApplicationEnvironment{
+				{ID: "binding-1", ApplicationID: "app-1", EnvironmentID: "env-dev", EnvironmentKey: "dev", BuildPolicy: domaincatalog.BuildPolicy{SourceID: "source-1"}},
+			},
+		},
+		stubBuildReader{triggerCount: &buildCount},
+		stubWorkflowReader{},
+		stubReleaseReader{},
+		repo,
+		nil,
+		nil,
+		deliveryActionPermissions(appaccess.PermDeliveryBuildsTrigger),
+	)
+
+	result, err := service.ConfirmDeliveryPlan(context.Background(), deliveryActionPrincipal(), "plan-1")
+	if err != nil {
+		t.Fatalf("ConfirmDeliveryPlan returned error: %v", err)
+	}
+	if buildCount != 1 {
+		t.Fatalf("build trigger count = %d, want 1", buildCount)
+	}
+	if result.Plan.Status != domaindelivery.DeliveryPlanStatusConfirmed {
+		t.Fatalf("plan status = %q, want confirmed", result.Plan.Status)
+	}
+	if result.Plan.ConfirmedAt == nil {
+		t.Fatal("plan confirmedAt is nil")
+	}
+	if repo.updateCount != 2 {
+		t.Fatalf("plan update count = %d, want 2", repo.updateCount)
+	}
+	if _, err := service.ConfirmDeliveryPlan(context.Background(), deliveryActionPrincipal(), "plan-1"); err == nil {
+		t.Fatal("ConfirmDeliveryPlan second call returned nil error, want already-confirmed error")
+	}
+}
+
+func TestConfirmDeliveryPlanStopsWhenClaimUpdateFails(t *testing.T) {
+	buildCount := 0
+	repo := &planRepository{
+		plan: domaindelivery.DeliveryPlan{
+			ID:                       "plan-1",
+			Source:                   domaindelivery.DeliveryPlanSourceManual,
+			Status:                   domaindelivery.DeliveryPlanStatusDraft,
+			ApplicationID:            "app-1",
+			ApplicationEnvironmentID: "binding-1",
+			Action:                   domaindelivery.ApplicationDeliveryActionBuild,
+			BuildSourceID:            "source-1",
+			RefType:                  "branch",
+			RefName:                  "main",
+			ImageTag:                 "candidate",
+		},
+		updateErr: errors.New("claim update failed"),
+	}
+	service := New(
+		stubApplicationReader{
+			app: domainapp.App{
+				ID:            "app-1",
+				Name:          "Payments API",
+				Key:           "payments-api",
+				DefaultBranch: "main",
+				BuildSources:  []domainapp.BuildSource{{ID: "source-1", Name: "Repo Dockerfile", IsDefault: true, DefaultTag: "candidate"}},
+			},
+		},
+		stubCatalogReader{
+			bindings: []domaincatalog.ApplicationEnvironment{
+				{ID: "binding-1", ApplicationID: "app-1", EnvironmentID: "env-dev", EnvironmentKey: "dev", BuildPolicy: domaincatalog.BuildPolicy{SourceID: "source-1"}},
+			},
+		},
+		stubBuildReader{triggerCount: &buildCount},
+		stubWorkflowReader{},
+		stubReleaseReader{},
+		repo,
+		nil,
+		nil,
+		deliveryActionPermissions(appaccess.PermDeliveryBuildsTrigger),
+	)
+
+	if _, err := service.ConfirmDeliveryPlan(context.Background(), deliveryActionPrincipal(), "plan-1"); err == nil {
+		t.Fatal("ConfirmDeliveryPlan returned nil error, want claim update failure")
+	}
+	if repo.updateCount != 1 {
+		t.Fatalf("plan update count = %d, want 1", repo.updateCount)
+	}
+	if buildCount != 0 {
+		t.Fatalf("build trigger count = %d, want 0", buildCount)
+	}
+}
+
+func TestConfirmDeliveryPlanRestoresDraftStatusWhenTriggerFails(t *testing.T) {
+	triggerErr := errors.New("trigger build failed")
+	buildCount := 0
+	repo := &planRepository{
+		plan: domaindelivery.DeliveryPlan{
+			ID:                       "plan-1",
+			Source:                   domaindelivery.DeliveryPlanSourceManual,
+			Status:                   domaindelivery.DeliveryPlanStatusDraft,
+			ApplicationID:            "app-1",
+			ApplicationEnvironmentID: "binding-1",
+			Action:                   domaindelivery.ApplicationDeliveryActionBuild,
+			BuildSourceID:            "source-1",
+			RefType:                  "branch",
+			RefName:                  "main",
+			ImageTag:                 "candidate",
+		},
+	}
+	appReader := stubApplicationReader{
+		app: domainapp.App{
+			ID:            "app-1",
+			Name:          "Payments API",
+			Key:           "payments-api",
+			DefaultBranch: "main",
+			BuildSources:  []domainapp.BuildSource{{ID: "source-1", Name: "Repo Dockerfile", IsDefault: true, DefaultTag: "candidate"}},
+		},
+	}
+	catalogReader := stubCatalogReader{
+		bindings: []domaincatalog.ApplicationEnvironment{
+			{ID: "binding-1", ApplicationID: "app-1", EnvironmentID: "env-dev", EnvironmentKey: "dev", BuildPolicy: domaincatalog.BuildPolicy{SourceID: "source-1"}},
+		},
+	}
+	failingService := New(
+		appReader,
+		catalogReader,
+		stubBuildReader{triggerCount: &buildCount, triggerErr: triggerErr},
+		stubWorkflowReader{},
+		stubReleaseReader{},
+		repo,
+		nil,
+		nil,
+		deliveryActionPermissions(appaccess.PermDeliveryBuildsTrigger),
+	)
+
+	if _, err := failingService.ConfirmDeliveryPlan(context.Background(), deliveryActionPrincipal(), "plan-1"); !errors.Is(err, triggerErr) {
+		t.Fatalf("ConfirmDeliveryPlan error = %v, want trigger error", err)
+	}
+	if repo.plan.Status != domaindelivery.DeliveryPlanStatusDraft {
+		t.Fatalf("plan status after failed confirm = %q, want draft", repo.plan.Status)
+	}
+	if repo.updateCount != 2 {
+		t.Fatalf("plan update count after failed confirm = %d, want claim and restore updates", repo.updateCount)
+	}
+	if buildCount != 1 {
+		t.Fatalf("build trigger count after failed confirm = %d, want 1", buildCount)
+	}
+
+	retryService := New(
+		appReader,
+		catalogReader,
+		stubBuildReader{triggerCount: &buildCount},
+		stubWorkflowReader{},
+		stubReleaseReader{},
+		repo,
+		nil,
+		nil,
+		deliveryActionPermissions(appaccess.PermDeliveryBuildsTrigger),
+	)
+	result, err := retryService.ConfirmDeliveryPlan(context.Background(), deliveryActionPrincipal(), "plan-1")
+	if err != nil {
+		t.Fatalf("ConfirmDeliveryPlan retry returned error: %v", err)
+	}
+	if result.Plan.Status != domaindelivery.DeliveryPlanStatusConfirmed {
+		t.Fatalf("plan status after retry = %q, want confirmed", result.Plan.Status)
+	}
+	if repo.updateCount != 4 {
+		t.Fatalf("plan update count after retry = %d, want 4", repo.updateCount)
+	}
+	if buildCount != 2 {
+		t.Fatalf("build trigger count after retry = %d, want 2", buildCount)
+	}
 }
 
 func TestGetApplicationDetailIncludesBindingTargets(t *testing.T) {

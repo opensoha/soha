@@ -204,6 +204,7 @@ func New(ctx context.Context) (*App, error) {
 	registryService := appregistryconn.New(registryRepository, permissionResolver, appregistryconn.WithCredentialEncryptionKey(cfg.Security.CredentialEncryptionKey))
 	releaseService := apprelease.New(releaseRepository, applicationRepository, catalogRepository, clusterRepository, executionService, accessService, permissionResolver, eventRepository, auditService, operationService, clusterManager, agentRegistry)
 	workflowService := appworkflow.New(workflowRepository, applicationRepository, accessService, permissionResolver, catalogRepository, buildService, releaseService, resourceService)
+	workflowService.SetArtifactStore(deliveryRepository)
 	workflowService.SetRuntimeOptions(cfg.Runtime.WorkflowWorkers, cfg.Runtime.WorkflowQueueSize, cfg.Runtime.WorkflowNodeParallelism)
 	workflowService.SetInstrumentation(logger, runtimeMetrics)
 	workflowService.SetAlertMutator(monitoringService)
@@ -215,6 +216,13 @@ func New(ctx context.Context) (*App, error) {
 		monitoringService.Start(lifecycleCtx)
 	}
 	deliveryService := appdelivery.New(applicationService, catalogService, buildService, workflowService, releaseService, deliveryRepository, executionService, resourceService, permissionResolver)
+	deliveryService.SetRecorders(auditService, operationService)
+	catalogService.SetTemplateUsageRuntimeReaders(appcatalog.TemplateUsageRuntimeReaders{
+		Builds:    buildService,
+		Workflows: workflowService,
+		Releases:  releaseService,
+		Delivery:  deliveryRepository,
+	})
 	copilotService := appcopilot.New(copilotRepository, clusterService, monitoringService, eventService, auditService, applicationRepository, buildRepository, releaseRepository, settingsService, permissionResolver)
 	copilotService.SetMCPRegistry(mcpRegistry)
 	copilotService.SetInspectionParallelism(cfg.Runtime.CopilotInspectionParallelism)

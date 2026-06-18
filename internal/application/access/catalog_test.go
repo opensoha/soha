@@ -116,6 +116,60 @@ func TestDefaultRolePermissionsIncludeWorkspaceEntryPermissions(t *testing.T) {
 	}
 }
 
+func TestDefaultRolePermissionsDeliveryWorkbenchRoles(t *testing.T) {
+	SetRolePermissionMatrix(nil)
+
+	for _, permission := range []string{
+		PermWorkspaceApplicationView,
+		PermDeliveryApplicationsView,
+		PermDeliveryApplicationServicesView,
+		PermDeliveryApplicationEnvView,
+		PermDeliveryReleaseBundlesView,
+		PermDeliveryExecutionTasksView,
+	} {
+		if !HasPermission([]string{"tester"}, permission) {
+			t.Fatalf("tester role should include %s", permission)
+		}
+	}
+
+	for _, permission := range []string{
+		PermWorkspaceApplicationView,
+		PermDeliveryApplicationsView,
+		PermDeliveryApplicationServicesView,
+		PermDeliveryApplicationEnvView,
+		PermDeliveryReleaseBundlesView,
+		PermDeliveryExecutionTasksView,
+		PermDeliveryReleaseBoardView,
+		PermDeliveryWorkflowsView,
+		PermDeliveryReleasesView,
+	} {
+		if !HasPermission([]string{"readonly"}, permission) {
+			t.Fatalf("readonly role should include %s", permission)
+		}
+	}
+
+	for _, role := range []string{"tester", "readonly"} {
+		for _, permission := range []string{
+			PermDeliveryApplicationsCreate,
+			PermDeliveryApplicationsUpdate,
+			PermDeliveryApplicationsDelete,
+			PermDeliveryApplicationServicesManage,
+			PermDeliveryApplicationEnvManage,
+			PermDeliveryBuildTemplatesManage,
+			PermDeliveryWorkflowTemplatesManage,
+			PermDeliveryRegistriesManage,
+			PermDeliveryBuildsTrigger,
+			PermDeliveryWorkflowsTrigger,
+			PermDeliveryReleasesTrigger,
+			PermPlatformDeploymentRollback,
+		} {
+			if HasPermission([]string{role}, permission) {
+				t.Fatalf("%s role should not include %s", role, permission)
+			}
+		}
+	}
+}
+
 func TestDefaultRolePermissionsAIGateway(t *testing.T) {
 	SetRolePermissionMatrix(nil)
 

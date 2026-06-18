@@ -239,6 +239,24 @@ func (s *Service) invokeDeliveryTool(ctx context.Context, principal domainidenti
 	if !strings.HasPrefix(tool.Name, "delivery.") {
 		return nil, nil, fmt.Errorf("%w: tool %s is not implemented yet", apperrors.ErrInvalidArgument, tool.Name)
 	}
+	switch tool.Name {
+	case "delivery.onboarding.analyze_repo":
+		return s.buildOnboardingRepositoryAnalysis(input)
+	case "delivery.standards.dockerfile.generate":
+		return buildDockerfileDraft(input)
+	case "delivery.standards.dockerfile.validate":
+		return validateDockerfileDraft(input)
+	case "delivery.standards.helm.generate":
+		return buildHelmDraft(input)
+	case "delivery.standards.k8s.validate":
+		return validateKubernetesDraft(input)
+	case "delivery.spec.render":
+		return renderDeliverySpecDraft(input)
+	case "delivery.application.bootstrap":
+		return prepareApplicationBootstrap(input)
+	case "delivery.release.plan":
+		return s.buildDeliveryReleasePlan(ctx, principal, input)
+	}
 	if s.apps == nil || s.delivery == nil {
 		return nil, nil, fmt.Errorf("%w: delivery gateway services are not configured", apperrors.ErrInvalidArgument)
 	}
@@ -761,6 +779,563 @@ func (s *Service) buildRollbackContext(ctx context.Context, principal domainiden
 	}
 	return output, related, nil
 }
+
+type onboardingAnalyzeRepoRequest struct {
+	RepositoryPath  string         `json:"repositoryPath"`
+	RepositoryURL   string         `json:"repositoryUrl"`
+	BusinessLineID  string         `json:"businessLineId"`
+	ApplicationName string         `json:"applicationName"`
+	ApplicationKey  string         `json:"applicationKey"`
+	OwnerTeam       string         `json:"ownerTeam"`
+	Language        string         `json:"language"`
+	Framework       string         `json:"framework"`
+	Entrypoint      string         `json:"entrypoint"`
+	PackageManager  string         `json:"packageManager"`
+	BuildCommand    string         `json:"buildCommand"`
+	StartCommand    string         `json:"startCommand"`
+	DefaultBranch   string         `json:"defaultBranch"`
+	DockerfilePath  string         `json:"dockerfilePath"`
+	BuildContextDir string         `json:"buildContextDir"`
+	ServiceKey      string         `json:"serviceKey"`
+	ServiceName     string         `json:"serviceName"`
+	EnvironmentKey  string         `json:"environmentKey"`
+	EnvironmentID   string         `json:"environmentId"`
+	ClusterID       string         `json:"clusterId"`
+	Namespace       string         `json:"namespace"`
+	WorkloadName    string         `json:"workloadName"`
+	ContainerName   string         `json:"containerName"`
+	Port            int            `json:"port"`
+	Files           []string       `json:"files"`
+	Hints           map[string]any `json:"hints"`
+}
+
+func (s *Service) buildOnboardingRepositoryAnalysis(input map[string]any) (any, map[string]any, error) {
+	var req onboardingAnalyzeRepoRequest
+	if err := mapInput(input, &req); err != nil {
+		return nil, nil, err
+	}
+	req.RepositoryPath = strings.TrimSpace(req.RepositoryPath)
+	if req.RepositoryPath == "" {
+		return nil, nil, fmt.Errorf("%w: repositoryPath is required", apperrors.ErrInvalidArgument)
+	}
+	language := firstNonEmpty(strings.TrimSpace(req.Language), inferDeliveryLanguage(req.Files))
+	framework := firstNonEmpty(strings.TrimSpace(req.Framework), inferDeliveryFramework(req.Files, language))
+	packageManager := firstNonEmpty(strings.TrimSpace(req.PackageManager), inferDeliveryPackageManager(req.Files, language))
+	appName := firstNonEmpty(strings.TrimSpace(req.ApplicationName), deliveryNameFromRepository(req.RepositoryPath))
+	appKey := firstNonEmpty(strings.TrimSpace(req.ApplicationKey), deliveryKeyFromText(appName))
+	serviceKey := firstNonEmpty(strings.TrimSpace(req.ServiceKey), "api")
+	serviceName := firstNonEmpty(strings.TrimSpace(req.ServiceName), appName)
+	defaultBranch := firstNonEmpty(strings.TrimSpace(req.DefaultBranch), "main")
+	buildContextDir := firstNonEmpty(strings.TrimSpace(req.BuildContextDir), ".")
+	dockerfilePath := firstNonEmpty(strings.TrimSpace(req.DockerfilePath), "Dockerfile")
+	port := req.Port
+	if port <= 0 {
+		port = defaultPortForLanguage(language)
+	}
+	buildSourceID := "default"
+	draft := domaindelivery.DeliveryDraftInput{
+		Source: domaindelivery.DeliveryDraftSourceAI,
+		ApplicationDraft: domaindelivery.BlueprintApplicationDraft{
+			Name:               appName,
+			Key:                appKey,
+			BusinessLineID:     strings.TrimSpace(req.BusinessLineID),
+			Language:           language,
+			Description:        "AI suggested onboarding draft from repository analysis.",
+			OwnerTeam:          strings.TrimSpace(req.OwnerTeam),
+			RepositoryProvider: repositoryProviderFromPath(req.RepositoryPath, req.RepositoryURL),
+			RepositoryPath:     req.RepositoryPath,
+			DefaultBranch:      defaultBranch,
+			BuildContextDir:    buildContextDir,
+			DockerfilePath:     dockerfilePath,
+			Enabled:            true,
+			Metadata: map[string]any{
+				"framework":        framework,
+				"packageManager":   packageManager,
+				"repositoryUrlSet": strings.TrimSpace(req.RepositoryURL) != "",
+			},
+		},
+		BuildSources: []domainapp.BuildSourceInput{
+			{
+				ID:        buildSourceID,
+				Name:      "Repository Dockerfile",
+				Type:      domainapp.BuildSourceTypeRepoDockerfile,
+				Enabled:   true,
+				IsDefault: true,
+				Config: map[string]any{
+					"repositoryPath":  req.RepositoryPath,
+					"contextDir":      buildContextDir,
+					"dockerfilePath":  dockerfilePath,
+					"buildCommand":    strings.TrimSpace(req.BuildCommand),
+					"startCommand":    strings.TrimSpace(req.StartCommand),
+					"packageManager":  packageManager,
+					"detectedFromAI":  true,
+					"credentialState": "not_collected",
+				},
+			},
+		},
+		Services: []domaindelivery.DeliveryDraftService{
+			{
+				Key:                 serviceKey,
+				Name:                serviceName,
+				ServiceKind:         domainapp.ServiceKindKubernetesWorkload,
+				OwnerTeam:           strings.TrimSpace(req.OwnerTeam),
+				RepositoryPath:      req.RepositoryPath,
+				DefaultBranch:       defaultBranch,
+				BuildSourceID:       buildSourceID,
+				Enabled:             true,
+				RepositoryProvider:  repositoryProviderFromPath(req.RepositoryPath, req.RepositoryURL),
+				RepositoryProjectID: "",
+				Metadata: map[string]any{
+					"entrypoint": strings.TrimSpace(req.Entrypoint),
+					"framework":  framework,
+				},
+				Containers: []domainapp.ServiceContainerInput{
+					{
+						Name:               firstNonEmpty(strings.TrimSpace(req.ContainerName), serviceKey),
+						DockerfilePath:     dockerfilePath,
+						BuildContextDir:    buildContextDir,
+						DefaultTagTemplate: "{{branch}}-{{shortSha}}",
+						RuntimePorts:       []int{port},
+						HealthCheck:        defaultHealthCheckForLanguage(language),
+						Metadata: map[string]any{
+							"startCommand": strings.TrimSpace(req.StartCommand),
+						},
+					},
+				},
+			},
+		},
+		ExecutionHints: map[string]any{
+			"analysis": map[string]any{
+				"language":       language,
+				"framework":      framework,
+				"packageManager": packageManager,
+				"evidenceFiles":  req.Files,
+				"hints":          sanitizeGatewayMap(req.Hints),
+			},
+			"confirmationRequired": true,
+		},
+	}
+	if binding := suggestedEnvironmentBindingFromRepoInput(req, buildSourceID, serviceKey, port); binding != nil {
+		draft.EnvironmentBindings = []domaindelivery.BlueprintEnvironmentBindingTemplate{*binding}
+	}
+	dockerfileContent := dockerfileDraftContent(dockerfileDraftRequest{
+		Language:       language,
+		Framework:      framework,
+		PackageManager: packageManager,
+		BuildCommand:   strings.TrimSpace(req.BuildCommand),
+		StartCommand:   strings.TrimSpace(req.StartCommand),
+		Entrypoint:     strings.TrimSpace(req.Entrypoint),
+		Port:           port,
+		DockerfilePath: dockerfilePath,
+		ContextDir:     buildContextDir,
+	})
+	draft.Files = []domaindelivery.BlueprintFileTemplate{
+		{Path: dockerfilePath, Kind: "dockerfile", Content: dockerfileContent, Required: true, Purpose: "Build image draft for human review before repository changes."},
+	}
+	output := map[string]any{
+		"summary": "generated DeliveryDraft onboarding suggestion from repository metadata",
+		"repository": map[string]any{
+			"path": req.RepositoryPath,
+			"url":  strings.TrimSpace(req.RepositoryURL),
+		},
+		"detected": map[string]any{
+			"language":       language,
+			"framework":      framework,
+			"packageManager": packageManager,
+			"defaultBranch":  defaultBranch,
+			"port":           port,
+		},
+		"deliveryDraftInput": draft,
+		"mutationBoundary": map[string]any{
+			"createsPlatformObjects": false,
+			"requiresHumanConfirm":   true,
+			"createEndpoint":         "/delivery/drafts",
+			"confirmEndpoint":        "/delivery/drafts/{draftId}/confirm",
+		},
+		"nextChecks": []string{
+			"Review generated Dockerfile and release target fields before creating the draft.",
+			"Submit the DeliveryDraft to /delivery/drafts, then confirm only after human preview approval.",
+		},
+	}
+	return output, map[string]any{
+		"repositoryPath": req.RepositoryPath,
+		"applicationKey": appKey,
+		"serviceKey":     serviceKey,
+		"fileCount":      len(draft.Files),
+	}, nil
+}
+
+type dockerfileDraftRequest struct {
+	Language        string `json:"language"`
+	Framework       string `json:"framework"`
+	PackageManager  string `json:"packageManager"`
+	BuildCommand    string `json:"buildCommand"`
+	StartCommand    string `json:"startCommand"`
+	Entrypoint      string `json:"entrypoint"`
+	Port            int    `json:"port"`
+	ContextDir      string `json:"contextDir"`
+	DockerfilePath  string `json:"dockerfilePath"`
+	RuntimeImage    string `json:"runtimeImage"`
+	BuilderImage    string `json:"builderImage"`
+	NonRootUser     string `json:"nonRootUser"`
+	IncludeHealth   bool   `json:"includeHealth"`
+	HealthcheckPath string `json:"healthcheckPath"`
+}
+
+func buildDockerfileDraft(input map[string]any) (any, map[string]any, error) {
+	var req dockerfileDraftRequest
+	if err := mapInput(input, &req); err != nil {
+		return nil, nil, err
+	}
+	req.Language = strings.TrimSpace(req.Language)
+	if req.Language == "" {
+		return nil, nil, fmt.Errorf("%w: language is required", apperrors.ErrInvalidArgument)
+	}
+	if req.Port <= 0 {
+		req.Port = defaultPortForLanguage(req.Language)
+	}
+	if strings.TrimSpace(req.DockerfilePath) == "" {
+		req.DockerfilePath = "Dockerfile"
+	}
+	content := dockerfileDraftContent(req)
+	validation := dockerfileValidationResult(content, req.DockerfilePath, req.Language, req.Port)
+	output := map[string]any{
+		"summary": "generated Dockerfile draft for preview",
+		"file": domaindelivery.BlueprintFileTemplate{
+			Path:     req.DockerfilePath,
+			Kind:     "dockerfile",
+			Content:  content,
+			Required: true,
+			Purpose:  "Platform-standard Dockerfile draft; review before committing to source control.",
+		},
+		"validation": validation,
+		"mutationBoundary": map[string]any{
+			"writesRepository":    false,
+			"requiresHumanReview": true,
+		},
+	}
+	return output, map[string]any{"path": req.DockerfilePath, "language": req.Language}, nil
+}
+
+func validateDockerfileDraft(input map[string]any) (any, map[string]any, error) {
+	var req struct {
+		Content         string `json:"content"`
+		Path            string `json:"path"`
+		Language        string `json:"language"`
+		ExpectedPort    int    `json:"expectedPort"`
+		BuildContextDir string `json:"buildContextDir"`
+	}
+	if err := mapInput(input, &req); err != nil {
+		return nil, nil, err
+	}
+	if strings.TrimSpace(req.Content) == "" {
+		return nil, nil, fmt.Errorf("%w: content is required", apperrors.ErrInvalidArgument)
+	}
+	path := firstNonEmpty(strings.TrimSpace(req.Path), "Dockerfile")
+	validation := dockerfileValidationResult(req.Content, path, req.Language, req.ExpectedPort)
+	output := map[string]any{
+		"summary":    "validated Dockerfile draft against platform baseline checks",
+		"validation": validation,
+		"mutationBoundary": map[string]any{
+			"writesRepository":       false,
+			"createsPlatformObjects": false,
+		},
+	}
+	return output, map[string]any{"path": path, "issueCount": len(validation["issues"].([]map[string]any))}, nil
+}
+
+func buildHelmDraft(input map[string]any) (any, map[string]any, error) {
+	var req struct {
+		ApplicationName string         `json:"applicationName"`
+		ServiceName     string         `json:"serviceName"`
+		ChartName       string         `json:"chartName"`
+		ImageRepository string         `json:"imageRepository"`
+		ImageTag        string         `json:"imageTag"`
+		Namespace       string         `json:"namespace"`
+		Port            int            `json:"port"`
+		Replicas        int            `json:"replicas"`
+		ServiceAccount  string         `json:"serviceAccount"`
+		HealthcheckPath string         `json:"healthcheckPath"`
+		ResourceProfile map[string]any `json:"resourceProfile"`
+		Labels          map[string]any `json:"labels"`
+	}
+	if err := mapInput(input, &req); err != nil {
+		return nil, nil, err
+	}
+	serviceName := deliveryKeyFromText(req.ServiceName)
+	if serviceName == "" || serviceName == "app" {
+		return nil, nil, fmt.Errorf("%w: serviceName is required", apperrors.ErrInvalidArgument)
+	}
+	imageRepository := strings.TrimSpace(req.ImageRepository)
+	if imageRepository == "" {
+		return nil, nil, fmt.Errorf("%w: imageRepository is required", apperrors.ErrInvalidArgument)
+	}
+	chartName := firstNonEmpty(deliveryKeyFromText(req.ChartName), serviceName)
+	port := req.Port
+	if port <= 0 {
+		port = 8080
+	}
+	replicas := req.Replicas
+	if replicas <= 0 {
+		replicas = 2
+	}
+	imageTag := firstNonEmpty(strings.TrimSpace(req.ImageTag), "{{ .Chart.AppVersion }}")
+	healthPath := firstNonEmpty(strings.TrimSpace(req.HealthcheckPath), "/healthz")
+	files := []domaindelivery.BlueprintFileTemplate{
+		{Path: fmt.Sprintf("charts/%s/Chart.yaml", chartName), Kind: "helm_chart", Required: true, Purpose: "Helm chart metadata.", Content: fmt.Sprintf("apiVersion: v2\nname: %s\ndescription: %s delivery chart\ntype: application\nversion: 0.1.0\nappVersion: \"0.1.0\"\n", chartName, firstNonEmpty(strings.TrimSpace(req.ApplicationName), serviceName))},
+		{Path: fmt.Sprintf("charts/%s/values.yaml", chartName), Kind: "helm_values", Required: true, Purpose: "Default credential-free Helm values.", Content: fmt.Sprintf("replicaCount: %d\nimage:\n  repository: %s\n  tag: \"%s\"\n  pullPolicy: IfNotPresent\nservice:\n  type: ClusterIP\n  port: %d\ncontainerPort: %d\nprobes:\n  path: %s\nresources:\n  requests:\n    cpu: 100m\n    memory: 128Mi\n  limits:\n    cpu: 500m\n    memory: 512Mi\n", replicas, imageRepository, imageTag, port, port, healthPath)},
+		{Path: fmt.Sprintf("charts/%s/templates/deployment.yaml", chartName), Kind: "helm_template", Required: true, Purpose: "Deployment template with baseline probes and resource limits.", Content: helmDeploymentTemplateContent(chartName, strings.TrimSpace(req.ServiceAccount))},
+		{Path: fmt.Sprintf("charts/%s/templates/service.yaml", chartName), Kind: "helm_template", Required: true, Purpose: "ClusterIP service template.", Content: helmServiceTemplateContent(chartName)},
+	}
+	output := map[string]any{
+		"summary": "generated Helm chart draft for preview",
+		"files":   files,
+		"defaults": map[string]any{
+			"chartName":       chartName,
+			"serviceName":     serviceName,
+			"imageRepository": imageRepository,
+			"port":            port,
+			"replicas":        replicas,
+			"namespace":       strings.TrimSpace(req.Namespace),
+		},
+		"mutationBoundary": map[string]any{
+			"writesRepository":    false,
+			"requiresHumanReview": true,
+		},
+	}
+	return output, map[string]any{"chartName": chartName, "fileCount": len(files)}, nil
+}
+
+func validateKubernetesDraft(input map[string]any) (any, map[string]any, error) {
+	var req struct {
+		Manifests    []string `json:"manifests"`
+		Content      string   `json:"content"`
+		ExpectedKind string   `json:"expectedKind"`
+		Namespace    string   `json:"namespace"`
+	}
+	if err := mapInput(input, &req); err != nil {
+		return nil, nil, err
+	}
+	manifests := append([]string(nil), req.Manifests...)
+	if text := strings.TrimSpace(req.Content); text != "" {
+		manifests = append(manifests, text)
+	}
+	if len(manifests) == 0 {
+		return nil, nil, fmt.Errorf("%w: manifests is required", apperrors.ErrInvalidArgument)
+	}
+	issues := make([]map[string]any, 0)
+	kinds := make([]string, 0)
+	for index, manifest := range manifests {
+		normalized := strings.ToLower(manifest)
+		kind := manifestKind(manifest)
+		if kind != "" {
+			kinds = append(kinds, kind)
+		}
+		if !strings.Contains(normalized, "apiversion:") {
+			issues = append(issues, deliveryValidationIssue("error", "missing_api_version", index, "Manifest must include apiVersion."))
+		}
+		if !strings.Contains(normalized, "kind:") {
+			issues = append(issues, deliveryValidationIssue("error", "missing_kind", index, "Manifest must include kind."))
+		}
+		if strings.EqualFold(kind, "Deployment") {
+			if !strings.Contains(normalized, "readinessprobe:") {
+				issues = append(issues, deliveryValidationIssue("warning", "missing_readiness_probe", index, "Deployment should define readinessProbe."))
+			}
+			if !strings.Contains(normalized, "livenessprobe:") {
+				issues = append(issues, deliveryValidationIssue("warning", "missing_liveness_probe", index, "Deployment should define livenessProbe."))
+			}
+			if !strings.Contains(normalized, "resources:") || !strings.Contains(normalized, "limits:") || !strings.Contains(normalized, "requests:") {
+				issues = append(issues, deliveryValidationIssue("warning", "missing_resource_bounds", index, "Deployment should define resource requests and limits."))
+			}
+			if !strings.Contains(normalized, "securitycontext:") || !strings.Contains(normalized, "runasnonroot: true") {
+				issues = append(issues, deliveryValidationIssue("warning", "missing_non_root_security_context", index, "Deployment should set a non-root security context."))
+			}
+		}
+	}
+	if expected := strings.TrimSpace(req.ExpectedKind); expected != "" && !slices.ContainsFunc(kinds, func(kind string) bool { return strings.EqualFold(kind, expected) }) {
+		issues = append(issues, deliveryValidationIssue("warning", "expected_kind_missing", -1, "Expected kind "+expected+" was not present in supplied manifests."))
+	}
+	errorCount := countDeliveryValidationIssues(issues, "error")
+	output := map[string]any{
+		"summary": "validated Kubernetes manifest drafts",
+		"validation": map[string]any{
+			"isCompliant":  errorCount == 0,
+			"errorCount":   errorCount,
+			"warningCount": countDeliveryValidationIssues(issues, "warning"),
+			"kinds":        kinds,
+			"issues":       issues,
+		},
+		"mutationBoundary": map[string]any{
+			"appliesManifests": false,
+			"createsResources": false,
+		},
+	}
+	return output, map[string]any{"manifestCount": len(manifests), "issueCount": len(issues)}, nil
+}
+
+func renderDeliverySpecDraft(input map[string]any) (any, map[string]any, error) {
+	req, err := deliveryDraftInputFromGateway(input)
+	if err != nil {
+		return nil, nil, err
+	}
+	if strings.TrimSpace(req.ApplicationDraft.Name) == "" || strings.TrimSpace(req.ApplicationDraft.Key) == "" {
+		return nil, nil, fmt.Errorf("%w: applicationDraft.name and applicationDraft.key are required", apperrors.ErrInvalidArgument)
+	}
+	if strings.TrimSpace(req.Source) == "" {
+		req.Source = domaindelivery.DeliveryDraftSourceAI
+	}
+	spec := domaindelivery.RenderedDeliverySpec{
+		ApplicationDraft:    req.ApplicationDraft,
+		Services:            req.Services,
+		BuildSources:        req.BuildSources,
+		EnvironmentBindings: req.EnvironmentBindings,
+		Files:               req.Files,
+		ExecutionHints:      req.ExecutionHints,
+		PostCreateActions:   req.PostCreateActions,
+	}
+	output := map[string]any{
+		"summary":            "rendered DeliveryDraft-compatible delivery spec",
+		"spec":               spec,
+		"deliveryDraftInput": req,
+		"preview": map[string]any{
+			"application":       req.ApplicationDraft,
+			"serviceCount":      len(req.Services),
+			"buildSourceCount":  len(req.BuildSources),
+			"bindingCount":      len(req.EnvironmentBindings),
+			"fileCount":         len(req.Files),
+			"postCreateActions": req.PostCreateActions,
+		},
+		"mutationBoundary": map[string]any{
+			"createsPlatformObjects": false,
+			"createEndpoint":         "/delivery/drafts",
+			"confirmEndpoint":        "/delivery/drafts/{draftId}/confirm",
+			"requiresHumanConfirm":   true,
+		},
+	}
+	return output, map[string]any{
+		"applicationKey": req.ApplicationDraft.Key,
+		"serviceCount":   len(req.Services),
+		"bindingCount":   len(req.EnvironmentBindings),
+		"fileCount":      len(req.Files),
+	}, nil
+}
+
+func prepareApplicationBootstrap(input map[string]any) (any, map[string]any, error) {
+	draftID := stringInput(input, "draftId")
+	output := map[string]any{
+		"summary": "prepared application bootstrap confirmation handoff",
+		"status":  "confirmation_required",
+		"mutationBoundary": map[string]any{
+			"createsPlatformObjects": false,
+			"requiresHumanConfirm":   true,
+			"confirmEndpoint":        "/delivery/drafts/{draftId}/confirm",
+		},
+		"forbiddenActions": []string{
+			"Do not create application, service, environment binding, or repository files from AI output directly.",
+			"Create or confirm a DeliveryDraft only after human preview approval.",
+		},
+	}
+	related := map[string]any{}
+	if draftID != "" {
+		output["draftId"] = draftID
+		output["confirmEndpoint"] = fmt.Sprintf("/delivery/drafts/%s/confirm", draftID)
+		related["draftId"] = draftID
+		return output, related, nil
+	}
+	rendered, renderedRelated, err := renderDeliverySpecDraft(input)
+	if err != nil {
+		return nil, nil, err
+	}
+	renderedMap := mapValue(rendered)
+	output["deliveryDraftInput"] = renderedMap["deliveryDraftInput"]
+	output["spec"] = renderedMap["spec"]
+	output["createEndpoint"] = "/delivery/drafts"
+	for key, value := range renderedRelated {
+		related[key] = value
+	}
+	return output, related, nil
+}
+
+func (s *Service) buildDeliveryReleasePlan(ctx context.Context, principal domainidentity.Principal, input map[string]any) (any, map[string]any, error) {
+	var req struct {
+		domaindelivery.DeliveryPlanInput
+		Intent string `json:"intent"`
+	}
+	if err := mapInput(input, &req); err != nil {
+		return nil, nil, err
+	}
+	plan := req.DeliveryPlanInput
+	plan.Source = firstNonEmpty(strings.TrimSpace(plan.Source), domaindelivery.DeliveryPlanSourceAI)
+	plan.ApplicationID = strings.TrimSpace(plan.ApplicationID)
+	plan.ApplicationEnvironmentID = strings.TrimSpace(plan.ApplicationEnvironmentID)
+	plan.Action = domaindelivery.ApplicationDeliveryActionKind(strings.TrimSpace(string(plan.Action)))
+	if plan.ApplicationID == "" || plan.ApplicationEnvironmentID == "" || strings.TrimSpace(string(plan.Action)) == "" {
+		return nil, nil, fmt.Errorf("%w: applicationId, applicationEnvironmentId, and action are required", apperrors.ErrInvalidArgument)
+	}
+	var selectedBinding *domaindelivery.ApplicationBindingSummary
+	if s.delivery != nil {
+		detail, err := s.delivery.GetApplicationDetail(ctx, principal, plan.ApplicationID)
+		if err != nil {
+			return nil, nil, err
+		}
+		plan.ApplicationName = firstNonEmpty(strings.TrimSpace(plan.ApplicationName), detail.Application.Name)
+		for index := range detail.Bindings {
+			if detail.Bindings[index].ApplicationEnvironmentID == plan.ApplicationEnvironmentID {
+				selectedBinding = &detail.Bindings[index]
+				break
+			}
+		}
+		if selectedBinding != nil {
+			plan.EnvironmentKey = firstNonEmpty(strings.TrimSpace(plan.EnvironmentKey), selectedBinding.EnvironmentKey)
+			plan.BuildSourceID = firstNonEmpty(strings.TrimSpace(plan.BuildSourceID), selectedBinding.BuildSourceID)
+			if plan.TargetID == "" && len(selectedBinding.Targets) > 0 {
+				plan.TargetID = selectedBinding.Targets[0].ID
+			}
+			if target := gatewayReleaseTargetForPlan(selectedBinding.Targets, plan.TargetID); target != nil {
+				plan.TargetSummary = gatewayReleaseTargetSummary(*target)
+				plan.ContainerName = firstNonEmpty(strings.TrimSpace(plan.ContainerName), target.ContainerName)
+			}
+			plan.RequiresApproval = selectedBinding.RequiresApproval || plan.RequiresApproval
+		}
+	}
+	plan.RiskLevel = firstNonEmpty(strings.TrimSpace(plan.RiskLevel), gatewayReleasePlanRiskLevel(plan, selectedBinding))
+	plan.RequiresApproval = plan.RequiresApproval || plan.RiskLevel == "high"
+	if strings.TrimSpace(plan.Reason) == "" {
+		plan.Reason = firstNonEmpty(strings.TrimSpace(req.Intent), "AI-assisted delivery plan draft for human confirmation.")
+	}
+	if plan.Impact == nil {
+		plan.Impact = gatewayReleasePlanImpact(plan, selectedBinding)
+	}
+	if strings.TrimSpace(plan.RollbackStrategy) == "" {
+		plan.RollbackStrategy = gatewayReleasePlanRollbackStrategy(plan)
+	}
+	output := map[string]any{
+		"summary":           "generated DeliveryPlan-compatible release plan draft",
+		"deliveryPlanInput": plan,
+		"risk": map[string]any{
+			"riskLevel":        plan.RiskLevel,
+			"requiresApproval": plan.RequiresApproval,
+			"rollbackStrategy": plan.RollbackStrategy,
+		},
+		"mutationBoundary": map[string]any{
+			"triggersDeliveryAction": false,
+			"createEndpoint":         "/delivery/plans",
+			"confirmEndpoint":        "/delivery/plans/{planId}/confirm",
+			"requiresHumanConfirm":   true,
+		},
+		"nextChecks": []string{
+			"Create the DeliveryPlan through /delivery/plans to persist the preview.",
+			"Confirm /delivery/plans/{planId}/confirm only after the human operator reviews target, risk, approval, and rollback fields.",
+		},
+	}
+	return output, map[string]any{
+		"applicationId":            plan.ApplicationID,
+		"applicationEnvironmentId": plan.ApplicationEnvironmentID,
+		"action":                   string(plan.Action),
+		"riskLevel":                plan.RiskLevel,
+	}, nil
+}
+
 func (s *Service) invokeReleaseFailureDiagnosis(ctx context.Context, principal domainidentity.Principal, input map[string]any) (any, map[string]any, error) {
 	var req struct {
 		ApplicationID            string `json:"applicationId"`
@@ -1828,6 +2403,428 @@ func executionTaskSucceeded(status string) bool {
 		return true
 	default:
 		return false
+	}
+}
+func inferDeliveryLanguage(files []string) string {
+	lower := make([]string, 0, len(files))
+	for _, file := range files {
+		lower = append(lower, strings.ToLower(strings.TrimSpace(file)))
+	}
+	if slices.Contains(lower, "go.mod") || hasFileSuffix(lower, ".go") {
+		return "go"
+	}
+	if slices.Contains(lower, "package.json") {
+		return "node"
+	}
+	if slices.Contains(lower, "pyproject.toml") || slices.Contains(lower, "requirements.txt") || hasFileSuffix(lower, ".py") {
+		return "python"
+	}
+	if slices.Contains(lower, "pom.xml") || slices.Contains(lower, "build.gradle") || slices.Contains(lower, "build.gradle.kts") {
+		return "java"
+	}
+	if slices.Contains(lower, "cargo.toml") || hasFileSuffix(lower, ".rs") {
+		return "rust"
+	}
+	return "unknown"
+}
+func inferDeliveryFramework(files []string, language string) string {
+	language = strings.ToLower(strings.TrimSpace(language))
+	lower := make([]string, 0, len(files))
+	for _, file := range files {
+		lower = append(lower, strings.ToLower(strings.TrimSpace(file)))
+	}
+	switch {
+	case language == "node" && slices.Contains(lower, "next.config.js"):
+		return "nextjs"
+	case language == "node" && slices.Contains(lower, "vite.config.ts"):
+		return "vite"
+	case language == "go":
+		return "go-http"
+	case language == "python" && slices.Contains(lower, "manage.py"):
+		return "django"
+	case language == "python":
+		return "python-web"
+	case language == "java" && slices.Contains(lower, "pom.xml"):
+		return "spring-boot"
+	default:
+		return ""
+	}
+}
+func inferDeliveryPackageManager(files []string, language string) string {
+	lower := make([]string, 0, len(files))
+	for _, file := range files {
+		lower = append(lower, strings.ToLower(strings.TrimSpace(file)))
+	}
+	switch {
+	case slices.Contains(lower, "pnpm-lock.yaml"):
+		return "pnpm"
+	case slices.Contains(lower, "yarn.lock"):
+		return "yarn"
+	case slices.Contains(lower, "package-lock.json") || strings.EqualFold(language, "node"):
+		return "npm"
+	case slices.Contains(lower, "go.mod") || strings.EqualFold(language, "go"):
+		return "go"
+	case slices.Contains(lower, "poetry.lock"):
+		return "poetry"
+	case slices.Contains(lower, "requirements.txt") || strings.EqualFold(language, "python"):
+		return "pip"
+	case slices.Contains(lower, "pom.xml"):
+		return "maven"
+	case slices.Contains(lower, "build.gradle") || slices.Contains(lower, "build.gradle.kts"):
+		return "gradle"
+	default:
+		return ""
+	}
+}
+func hasFileSuffix(files []string, suffix string) bool {
+	for _, file := range files {
+		if strings.HasSuffix(strings.ToLower(strings.TrimSpace(file)), suffix) {
+			return true
+		}
+	}
+	return false
+}
+func deliveryNameFromRepository(repositoryPath string) string {
+	repositoryPath = strings.Trim(strings.TrimSpace(repositoryPath), "/")
+	if repositoryPath == "" {
+		return "Application"
+	}
+	parts := strings.Split(repositoryPath, "/")
+	name := strings.TrimSpace(parts[len(parts)-1])
+	name = strings.TrimSuffix(name, ".git")
+	if name == "" {
+		return "Application"
+	}
+	words := strings.FieldsFunc(name, func(r rune) bool {
+		return r == '-' || r == '_' || r == '.'
+	})
+	for index, word := range words {
+		if word == "" {
+			continue
+		}
+		words[index] = strings.ToUpper(word[:1]) + word[1:]
+	}
+	return strings.Join(words, " ")
+}
+func deliveryKeyFromText(text string) string {
+	text = strings.ToLower(strings.TrimSpace(text))
+	var builder strings.Builder
+	previousDash := false
+	for _, r := range text {
+		isAlphaNum := (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9')
+		if isAlphaNum {
+			builder.WriteRune(r)
+			previousDash = false
+			continue
+		}
+		if !previousDash {
+			builder.WriteByte('-')
+			previousDash = true
+		}
+	}
+	key := strings.Trim(builder.String(), "-")
+	if key == "" {
+		return "app"
+	}
+	return key
+}
+func repositoryProviderFromPath(repositoryPath, repositoryURL string) string {
+	text := strings.ToLower(firstNonEmpty(strings.TrimSpace(repositoryURL), strings.TrimSpace(repositoryPath)))
+	switch {
+	case strings.Contains(text, "github"):
+		return "github"
+	case strings.Contains(text, "gitlab"):
+		return "gitlab"
+	case strings.Contains(text, "bitbucket"):
+		return "bitbucket"
+	case strings.Contains(text, "gitee"):
+		return "gitee"
+	default:
+		return "git"
+	}
+}
+func defaultPortForLanguage(language string) int {
+	switch strings.ToLower(strings.TrimSpace(language)) {
+	case "node":
+		return 3000
+	case "python":
+		return 8000
+	case "java":
+		return 8080
+	case "go", "rust":
+		return 8080
+	default:
+		return 8080
+	}
+}
+func defaultHealthCheckForLanguage(language string) map[string]any {
+	return map[string]any{
+		"type": "http",
+		"path": "/healthz",
+		"port": defaultPortForLanguage(language),
+	}
+}
+func suggestedEnvironmentBindingFromRepoInput(req onboardingAnalyzeRepoRequest, buildSourceID, serviceKey string, port int) *domaindelivery.BlueprintEnvironmentBindingTemplate {
+	if strings.TrimSpace(req.EnvironmentID) == "" && strings.TrimSpace(req.EnvironmentKey) == "" && strings.TrimSpace(req.ClusterID) == "" && strings.TrimSpace(req.Namespace) == "" {
+		return nil
+	}
+	binding := domaindelivery.BlueprintEnvironmentBindingTemplate{
+		EnvironmentID:  strings.TrimSpace(req.EnvironmentID),
+		EnvironmentKey: firstNonEmpty(strings.TrimSpace(req.EnvironmentKey), "dev"),
+		BuildPolicy: domaincatalog.BuildPolicy{
+			SourceID:         buildSourceID,
+			RefType:          "branch",
+			RefValue:         firstNonEmpty(strings.TrimSpace(req.DefaultBranch), "main"),
+			ImageTagMode:     "template",
+			ImageTagTemplate: "{{branch}}-{{shortSha}}",
+		},
+		ReleasePolicy: domaincatalog.ReleasePolicy{
+			ActionKind:            string(domaindelivery.ApplicationDeliveryActionBuildDeploy),
+			RequiresApproval:      false,
+			AutoRollback:          true,
+			RolloutTimeoutSeconds: 300,
+			VerificationMode:      "manual",
+		},
+		ResourceSelector: domaincatalog.ResourceSelector{MatchLabels: map[string]string{"app": serviceKey}},
+	}
+	if strings.TrimSpace(req.ClusterID) != "" || strings.TrimSpace(req.Namespace) != "" {
+		binding.Targets = []domaincatalog.ReleaseTargetInput{
+			{
+				ClusterID:     strings.TrimSpace(req.ClusterID),
+				Namespace:     firstNonEmpty(strings.TrimSpace(req.Namespace), serviceKey),
+				TargetKind:    "kubernetes",
+				ExecutorKind:  "workflow",
+				WorkloadKind:  "Deployment",
+				WorkloadName:  firstNonEmpty(strings.TrimSpace(req.WorkloadName), serviceKey),
+				ContainerName: firstNonEmpty(strings.TrimSpace(req.ContainerName), serviceKey),
+				Enabled:       true,
+				Metadata:      map[string]any{"port": port},
+			},
+		}
+	}
+	return &binding
+}
+func dockerfileDraftContent(req dockerfileDraftRequest) string {
+	language := strings.ToLower(strings.TrimSpace(req.Language))
+	port := req.Port
+	if port <= 0 {
+		port = defaultPortForLanguage(language)
+	}
+	healthPath := firstNonEmpty(strings.TrimSpace(req.HealthcheckPath), "/healthz")
+	healthcheck := ""
+	if req.IncludeHealth {
+		healthcheck = fmt.Sprintf("HEALTHCHECK --interval=30s --timeout=3s --start-period=20s --retries=3 CMD wget -qO- http://127.0.0.1:%d%s || exit 1\n", port, healthPath)
+	}
+	switch language {
+	case "node", "javascript", "typescript":
+		packageManager := firstNonEmpty(strings.TrimSpace(req.PackageManager), "npm")
+		install := "npm ci"
+		runBuild := firstNonEmpty(strings.TrimSpace(req.BuildCommand), "npm run build --if-present")
+		start := firstNonEmpty(strings.TrimSpace(req.StartCommand), "npm start")
+		if packageManager == "pnpm" {
+			install = "corepack enable && pnpm install --frozen-lockfile"
+			runBuild = firstNonEmpty(strings.TrimSpace(req.BuildCommand), "pnpm build")
+			start = firstNonEmpty(strings.TrimSpace(req.StartCommand), "pnpm start")
+		}
+		return fmt.Sprintf("FROM node:22-alpine AS build\nWORKDIR /app\nCOPY package*.json pnpm-lock.yaml* yarn.lock* ./\nRUN %s\nCOPY . .\nRUN %s\n\nFROM node:22-alpine AS runtime\nWORKDIR /app\nRUN addgroup -S app && adduser -S app -G app\nENV NODE_ENV=production\nCOPY --from=build /app /app\nUSER app\nEXPOSE %d\n%sCMD [\"sh\", \"-c\", %q]\n", install, runBuild, port, healthcheck, start)
+	case "go", "golang":
+		builder := firstNonEmpty(strings.TrimSpace(req.BuilderImage), "golang:1.24-alpine")
+		runtime := firstNonEmpty(strings.TrimSpace(req.RuntimeImage), "alpine:3.21")
+		buildCommand := firstNonEmpty(strings.TrimSpace(req.BuildCommand), "go build -o /out/app ./...")
+		return fmt.Sprintf("FROM %s AS build\nWORKDIR /src\nCOPY go.mod go.sum* ./\nRUN go mod download\nCOPY . .\nRUN %s\n\nFROM %s AS runtime\nWORKDIR /app\nRUN addgroup -S app && adduser -S app -G app\nCOPY --from=build /out/app /app/app\nUSER app\nEXPOSE %d\n%sCMD [\"/app/app\"]\n", builder, buildCommand, runtime, port, healthcheck)
+	case "python":
+		start := firstNonEmpty(strings.TrimSpace(req.StartCommand), firstNonEmpty(strings.TrimSpace(req.Entrypoint), "python app.py"))
+		return fmt.Sprintf("FROM python:3.13-slim\nWORKDIR /app\nRUN useradd --create-home --uid 10001 app\nCOPY requirements.txt* ./\nRUN if [ -f requirements.txt ]; then pip install --no-cache-dir -r requirements.txt; fi\nCOPY . .\nUSER app\nEXPOSE %d\n%sCMD [\"sh\", \"-c\", %q]\n", port, healthcheck, start)
+	case "java":
+		builder := firstNonEmpty(strings.TrimSpace(req.BuilderImage), "maven:3.9-eclipse-temurin-21")
+		runtime := firstNonEmpty(strings.TrimSpace(req.RuntimeImage), "eclipse-temurin:21-jre")
+		buildCommand := firstNonEmpty(strings.TrimSpace(req.BuildCommand), "mvn -B -DskipTests package")
+		start := firstNonEmpty(strings.TrimSpace(req.StartCommand), "java -jar /app/app.jar")
+		return fmt.Sprintf("FROM %s AS build\nWORKDIR /src\nCOPY pom.xml ./\nRUN mvn -B -DskipTests dependency:go-offline\nCOPY . .\nRUN %s\n\nFROM %s AS runtime\nWORKDIR /app\nRUN useradd --create-home --uid 10001 app\nCOPY --from=build /src/target/*.jar /app/app.jar\nUSER app\nEXPOSE %d\n%sCMD [\"sh\", \"-c\", %q]\n", builder, buildCommand, runtime, port, healthcheck, start)
+	default:
+		start := firstNonEmpty(strings.TrimSpace(req.StartCommand), "./app")
+		return fmt.Sprintf("FROM alpine:3.21\nWORKDIR /app\nRUN addgroup -S app && adduser -S app -G app\nCOPY . .\nUSER app\nEXPOSE %d\n%sCMD [\"sh\", \"-c\", %q]\n", port, healthcheck, start)
+	}
+}
+func dockerfileValidationResult(content, path, language string, expectedPort int) map[string]any {
+	normalized := strings.ToLower(content)
+	issues := make([]map[string]any, 0)
+	if !strings.Contains(normalized, "from ") {
+		issues = append(issues, deliveryValidationIssue("error", "missing_from", -1, "Dockerfile must declare a base image with FROM."))
+	}
+	if !strings.Contains(normalized, "workdir ") {
+		issues = append(issues, deliveryValidationIssue("warning", "missing_workdir", -1, "Dockerfile should set WORKDIR."))
+	}
+	if !strings.Contains(normalized, "copy ") && !strings.Contains(normalized, "add ") {
+		issues = append(issues, deliveryValidationIssue("warning", "missing_copy", -1, "Dockerfile should copy application sources explicitly."))
+	}
+	if !strings.Contains(normalized, "user ") {
+		issues = append(issues, deliveryValidationIssue("warning", "missing_non_root_user", -1, "Dockerfile should switch to a non-root USER."))
+	}
+	if expectedPort > 0 && !strings.Contains(normalized, fmt.Sprintf("expose %d", expectedPort)) {
+		issues = append(issues, deliveryValidationIssue("warning", "missing_expected_expose", -1, fmt.Sprintf("Dockerfile should EXPOSE expected port %d.", expectedPort)))
+	}
+	if strings.Contains(normalized, "latest") {
+		issues = append(issues, deliveryValidationIssue("warning", "floating_latest_tag", -1, "Avoid floating latest tags for reproducible builds."))
+	}
+	if gatewaySensitiveValuePattern.MatchString(content) {
+		issues = append(issues, deliveryValidationIssue("error", "possible_sensitive_literal", -1, "Dockerfile appears to contain credential-like literal values."))
+	}
+	errorCount := countDeliveryValidationIssues(issues, "error")
+	return map[string]any{
+		"path":         path,
+		"language":     strings.TrimSpace(language),
+		"isCompliant":  errorCount == 0,
+		"errorCount":   errorCount,
+		"warningCount": countDeliveryValidationIssues(issues, "warning"),
+		"issues":       issues,
+	}
+}
+func deliveryValidationIssue(severity, code string, index int, message string) map[string]any {
+	issue := map[string]any{
+		"severity": severity,
+		"code":     code,
+		"message":  message,
+	}
+	if index >= 0 {
+		issue["manifestIndex"] = index
+	}
+	return issue
+}
+func countDeliveryValidationIssues(issues []map[string]any, severity string) int {
+	count := 0
+	for _, issue := range issues {
+		if issue["severity"] == severity {
+			count++
+		}
+	}
+	return count
+}
+func helmDeploymentTemplateContent(chartName, serviceAccount string) string {
+	serviceAccountLine := ""
+	if serviceAccount != "" {
+		serviceAccountLine = fmt.Sprintf("      serviceAccountName: %s\n", serviceAccount)
+	}
+	return fmt.Sprintf("apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: {{ include \"%s.fullname\" . }}\n  labels:\n    app.kubernetes.io/name: {{ include \"%s.name\" . }}\nspec:\n  replicas: {{ .Values.replicaCount }}\n  selector:\n    matchLabels:\n      app.kubernetes.io/name: {{ include \"%s.name\" . }}\n  template:\n    metadata:\n      labels:\n        app.kubernetes.io/name: {{ include \"%s.name\" . }}\n    spec:\n%s      securityContext:\n        runAsNonRoot: true\n      containers:\n        - name: %s\n          image: \"{{ .Values.image.repository }}:{{ .Values.image.tag }}\"\n          imagePullPolicy: {{ .Values.image.pullPolicy }}\n          ports:\n            - name: http\n              containerPort: {{ .Values.containerPort }}\n          readinessProbe:\n            httpGet:\n              path: {{ .Values.probes.path }}\n              port: http\n          livenessProbe:\n            httpGet:\n              path: {{ .Values.probes.path }}\n              port: http\n          resources:\n            {{- toYaml .Values.resources | nindent 12 }}\n", chartName, chartName, chartName, chartName, serviceAccountLine, chartName)
+}
+func helmServiceTemplateContent(chartName string) string {
+	return fmt.Sprintf("apiVersion: v1\nkind: Service\nmetadata:\n  name: {{ include \"%s.fullname\" . }}\nspec:\n  type: {{ .Values.service.type }}\n  selector:\n    app.kubernetes.io/name: {{ include \"%s.name\" . }}\n  ports:\n    - name: http\n      port: {{ .Values.service.port }}\n      targetPort: http\n", chartName, chartName)
+}
+func manifestKind(content string) string {
+	for _, line := range strings.Split(content, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(strings.ToLower(line), "kind:") {
+			return strings.TrimSpace(strings.TrimPrefix(line, "kind:"))
+		}
+	}
+	return ""
+}
+func deliveryDraftInputFromGateway(input map[string]any) (domaindelivery.DeliveryDraftInput, error) {
+	source := strings.TrimSpace(stringInput(input, "source"))
+	spec := mapValue(input["spec"])
+	if len(spec) > 0 {
+		if _, ok := spec["source"]; !ok && source != "" {
+			spec["source"] = source
+		}
+		var req domaindelivery.DeliveryDraftInput
+		if err := mapInput(spec, &req); err != nil {
+			return domaindelivery.DeliveryDraftInput{}, err
+		}
+		if req.Source == "" {
+			req.Source = source
+		}
+		return req, nil
+	}
+	var req domaindelivery.DeliveryDraftInput
+	if err := mapInput(input, &req); err != nil {
+		return domaindelivery.DeliveryDraftInput{}, err
+	}
+	return req, nil
+}
+func gatewayReleaseTargetForPlan(targets []domaincatalog.ReleaseTarget, targetID string) *domaincatalog.ReleaseTarget {
+	targetID = strings.TrimSpace(targetID)
+	for index := range targets {
+		if targetID != "" && targets[index].ID != targetID {
+			continue
+		}
+		if targets[index].Enabled || targetID != "" {
+			return &targets[index]
+		}
+	}
+	if len(targets) > 0 && targetID == "" {
+		return &targets[0]
+	}
+	return nil
+}
+func gatewayReleaseTargetSummary(target domaincatalog.ReleaseTarget) string {
+	parts := []string{
+		firstNonEmpty(target.TargetKind, "kubernetes"),
+		target.ClusterID,
+		target.Namespace,
+		firstNonEmpty(target.WorkloadKind, "Workload") + "/" + target.WorkloadName,
+	}
+	if target.ContainerName != "" {
+		parts = append(parts, "container="+target.ContainerName)
+	}
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if strings.TrimSpace(part) != "" && !strings.HasSuffix(part, "/") {
+			out = append(out, part)
+		}
+	}
+	return strings.Join(out, " / ")
+}
+func gatewayReleasePlanRiskLevel(plan domaindelivery.DeliveryPlanInput, binding *domaindelivery.ApplicationBindingSummary) string {
+	action := strings.TrimSpace(string(plan.Action))
+	if action == string(domaindelivery.ApplicationDeliveryActionRollback) {
+		return "high"
+	}
+	if binding != nil {
+		env := strings.ToLower(binding.EnvironmentKey + " " + binding.EnvironmentName)
+		if binding.RequiresApproval || strings.Contains(env, "prod") || strings.Contains(env, "production") {
+			return "high"
+		}
+	}
+	switch action {
+	case string(domaindelivery.ApplicationDeliveryActionDeploy), string(domaindelivery.ApplicationDeliveryActionBuildDeploy), string(domaindelivery.ApplicationDeliveryActionWorkflow):
+		return "medium"
+	default:
+		return "low"
+	}
+}
+func gatewayReleasePlanImpact(plan domaindelivery.DeliveryPlanInput, binding *domaindelivery.ApplicationBindingSummary) map[string]any {
+	impact := map[string]any{
+		"applicationId":            plan.ApplicationID,
+		"applicationEnvironmentId": plan.ApplicationEnvironmentID,
+		"environmentKey":           plan.EnvironmentKey,
+		"action":                   string(plan.Action),
+		"targetId":                 plan.TargetID,
+		"buildSourceId":            plan.BuildSourceID,
+		"releaseBundleId":          plan.ReleaseBundleID,
+	}
+	if binding != nil {
+		impact["targetCount"] = binding.TargetCount
+		impact["workflowTemplateId"] = binding.WorkflowTemplateID
+		impact["requiresApproval"] = binding.RequiresApproval
+		if binding.LatestBundle != nil {
+			impact["currentReleaseBundleId"] = binding.LatestBundle.ID
+			impact["currentReleaseBundleStatus"] = binding.LatestBundle.Status
+		}
+		if binding.LatestExecutionTask != nil {
+			impact["latestExecutionTaskId"] = binding.LatestExecutionTask.ID
+			impact["latestExecutionTaskStatus"] = binding.LatestExecutionTask.Status
+		}
+	}
+	return impact
+}
+func gatewayReleasePlanRollbackStrategy(plan domaindelivery.DeliveryPlanInput) string {
+	switch plan.Action {
+	case domaindelivery.ApplicationDeliveryActionRollback:
+		return "Confirm the target previous release bundle, execute rollback through DeliveryPlan confirmation, then verify runtime health and logs."
+	case domaindelivery.ApplicationDeliveryActionDeploy, domaindelivery.ApplicationDeliveryActionBuildDeploy, domaindelivery.ApplicationDeliveryActionWorkflow:
+		return "Keep the latest successful release bundle visible; if verification fails, create a separate rollback DeliveryPlan for human confirmation."
+	default:
+		return "No runtime rollback is expected for build-only actions; rebuild or close the execution task based on artifacts."
 	}
 }
 func totalContainerRestarts(items []domainresource.WorkloadContainerView) int32 {

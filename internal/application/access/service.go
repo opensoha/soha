@@ -466,6 +466,7 @@ func RoleMatrix() map[string][]domainaccess.Action {
 		"admin":     allActions(),
 		"ops":       {domainaccess.ActionView, domainaccess.ActionList, domainaccess.ActionWatch, domainaccess.ActionLogs, domainaccess.ActionRestart, domainaccess.ActionRollback, domainaccess.ActionScale, domainaccess.ActionTrigger, domainaccess.ActionCreate, domainaccess.ActionUpdate},
 		"developer": {domainaccess.ActionView, domainaccess.ActionList, domainaccess.ActionWatch, domainaccess.ActionLogs, domainaccess.ActionRestart, domainaccess.ActionRollback, domainaccess.ActionScale, domainaccess.ActionTrigger},
+		"tester":    {domainaccess.ActionView, domainaccess.ActionList, domainaccess.ActionWatch, domainaccess.ActionLogs},
 		"readonly":  {domainaccess.ActionView, domainaccess.ActionList, domainaccess.ActionWatch, domainaccess.ActionLogs},
 		"auditor":   {domainaccess.ActionView, domainaccess.ActionList, domainaccess.ActionWatch},
 	}
@@ -518,6 +519,15 @@ func DefaultPolicies() []domainaccess.Policy {
 			Subjects: domainaccess.Matcher{Roles: []string{"readonly"}},
 			Actions:  []domainaccess.Action{domainaccess.ActionView, domainaccess.ActionList, domainaccess.ActionWatch, domainaccess.ActionLogs},
 			Reason:   "role readonly matched",
+		},
+		{
+			ID:       "tester-view",
+			Name:     "Tester Delivery Evidence Access",
+			Effect:   domainaccess.EffectAllow,
+			Priority: 50,
+			Subjects: domainaccess.Matcher{Roles: []string{"tester"}},
+			Actions:  []domainaccess.Action{domainaccess.ActionView, domainaccess.ActionList, domainaccess.ActionWatch, domainaccess.ActionLogs},
+			Reason:   "role tester matched delivery evidence scope",
 		},
 		{
 			ID:       "auditor-view",

@@ -2,6 +2,7 @@ package operationlog
 
 import (
 	"context"
+	"database/sql/driver"
 	"testing"
 	"time"
 
@@ -30,8 +31,8 @@ func TestRepositoryListAppliesExpandedFilters(t *testing.T) {
 		ApprovalRequestID: "approval-1",
 		AgentRunID:        "agent-run-1",
 		RootCauseRunID:    "root-cause-1",
-		MetadataKey:       "connectorId",
-		MetadataValue:     "feishu",
+		MetadataKey:       "usageSnapshot.templateId",
+		MetadataValue:     "tpl-1",
 		From:              &from,
 		To:                &to,
 		Limit:             10,
@@ -72,8 +73,8 @@ func TestRepositoryListAppliesExpandedFilters(t *testing.T) {
 			filter.AgentRunID, filter.AgentRunID, filter.AgentRunID, filter.AgentRunID,
 			filter.RootCauseRunID, filter.RootCauseRunID, filter.RootCauseRunID,
 			filter.MetadataKey, filter.MetadataKey, filter.MetadataValue,
-			from, from,
-			to, to,
+			from,
+			to,
 			filter.Limit,
 		).
 		WillReturnRows(rows)
@@ -114,8 +115,8 @@ func TestRepositorySummaryAppliesFiltersAndRetention(t *testing.T) {
 		ApprovalRequestID: "approval-1",
 		AgentRunID:        "agent-run-1",
 		RootCauseRunID:    "root-cause-1",
-		MetadataKey:       "connectorId",
-		MetadataValue:     "feishu",
+		MetadataKey:       "usageSnapshot.riskLevel",
+		MetadataValue:     "high",
 		From:              &from,
 		To:                &to,
 	}
@@ -137,8 +138,8 @@ func TestRepositorySummaryAppliesFiltersAndRetention(t *testing.T) {
 			filter.AgentRunID, filter.AgentRunID, filter.AgentRunID, filter.AgentRunID,
 			filter.RootCauseRunID, filter.RootCauseRunID, filter.RootCauseRunID,
 			filter.MetadataKey, filter.MetadataKey, filter.MetadataValue,
-			from, from,
-			to, to,
+			from,
+			to,
 		).
 		WillReturnRows(sqlmock.NewRows([]string{"count", "min", "max", "expired", "failure"}).AddRow(int64(3), oldest, newest, int64(1), int64(2)))
 
@@ -158,6 +159,37 @@ func TestRepositorySummaryAppliesFiltersAndRetention(t *testing.T) {
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatalf("unmet sql expectations: %v", err)
 	}
+}
+
+func TestRepositoryListAllowsEmptyRangeFilters(t *testing.T) {
+	repo, mock := newOperationLogRepository(t)
+	filter := domainoperation.Filter{Limit: 10}
+
+	mock.ExpectQuery("SELECT id, actor_id, actor_name, operation_type, target_scope, result, summary").
+		WithArgs(emptyOperationListArgs(filter.Limit)...).
+		WillReturnRows(sqlmock.NewRows([]string{
+			"id", "actor_id", "actor_name", "operation_type", "target_scope", "result", "summary",
+			"request_path", "request_method", "request_id", "source_ip", "metadata", "created_at",
+		}))
+
+	items, err := repo.List(context.Background(), filter)
+	if err != nil {
+		t.Fatalf("List returned error: %v", err)
+	}
+	if len(items) != 0 {
+		t.Fatalf("items = %#v, want no rows", items)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet sql expectations: %v", err)
+	}
+}
+
+func emptyOperationListArgs(limit int) []driver.Value {
+	args := make([]driver.Value, 0, 40)
+	for range 39 {
+		args = append(args, "")
+	}
+	return append(args, limit)
 }
 
 func newOperationLogRepository(t *testing.T) (*Repository, sqlmock.Sqlmock) {

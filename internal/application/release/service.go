@@ -34,6 +34,7 @@ import (
 
 type ReleaseRepository interface {
 	List(context.Context, domainrelease.Filter) ([]domainrelease.Record, error)
+	Get(context.Context, string) (domainrelease.Record, error)
 	Create(context.Context, domainrelease.Record) (domainrelease.Record, error)
 }
 
@@ -137,6 +138,24 @@ func (s *Service) List(ctx context.Context, principal domainidentity.Principal, 
 	}
 	s.pruneReleaseRecords(ctx, staleIDs)
 	return allowed, nil
+}
+
+func (s *Service) Get(ctx context.Context, principal domainidentity.Principal, releaseID string) (domainrelease.Record, error) {
+	if err := s.authorizePermission(ctx, principal, appaccess.PermDeliveryReleasesView); err != nil {
+		return domainrelease.Record{}, err
+	}
+	item, err := s.repo.Get(ctx, strings.TrimSpace(releaseID))
+	if err != nil {
+		return domainrelease.Record{}, err
+	}
+	app, appErr := s.apps.Get(ctx, item.ApplicationID)
+	if appErr != nil {
+		return domainrelease.Record{}, normalizeApplicationError(appErr)
+	}
+	if err := s.authorize(ctx, principal, item.ClusterID, item.Namespace, "Release", item.DeploymentName, app.BusinessLineID, app.Group, item.ApplicationID, domainaccess.ActionView); err != nil {
+		return domainrelease.Record{}, err
+	}
+	return item, nil
 }
 
 func (s *Service) Trigger(ctx context.Context, principal domainidentity.Principal, input domainrelease.TriggerInput) (domainrelease.Record, error) {

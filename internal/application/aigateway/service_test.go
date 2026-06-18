@@ -1323,6 +1323,14 @@ func TestDefaultToolInputSchemasCoverHighFrequencyMCPTools(t *testing.T) {
 		{tool: "delivery.execution_tasks.list"},
 		{tool: "delivery.execution_logs.list", required: []string{"taskId"}},
 		{tool: "delivery.workflow_templates.list"},
+		{tool: "delivery.onboarding.analyze_repo", required: []string{"repositoryPath"}},
+		{tool: "delivery.standards.dockerfile.generate", required: []string{"language"}},
+		{tool: "delivery.standards.dockerfile.validate", required: []string{"content"}},
+		{tool: "delivery.standards.helm.generate", required: []string{"serviceName", "imageRepository"}},
+		{tool: "delivery.standards.k8s.validate", required: []string{"manifests"}},
+		{tool: "delivery.spec.render", required: []string{"applicationDraft"}},
+		{tool: "delivery.application.bootstrap"},
+		{tool: "delivery.release.plan", required: []string{"applicationId", "applicationEnvironmentId", "action"}},
 		{tool: "delivery.release_context.diff", required: []string{"applicationId"}},
 		{tool: "delivery.rollback.context", required: []string{"applicationId"}},
 		{tool: "k8s.pods.list", required: []string{"clusterId"}},
@@ -3425,6 +3433,83 @@ func TestInvokeDeliveryReleaseAndRollbackContextAreReadOnly(t *testing.T) {
 	suggestions := rollbackOutput["suggestions"].([]map[string]any)
 	if len(suggestions) == 0 {
 		t.Fatalf("expected rollback suggestions, got %#v", rollbackOutput)
+	}
+}
+
+func TestInvokeDeliveryAICapabilitiesReturnDraftsWithoutExecution(t *testing.T) {
+	delivery := &fakeDeliveryService{}
+	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+		matrix: map[string][]string{
+			"developer": {
+				appaccess.PermAIGatewayInvoke,
+				appaccess.PermDeliveryApplicationsView,
+				appaccess.PermDeliveryApplicationEnvView,
+			},
+		},
+	}), nil, &memoryGatewayRepository{})
+	service.SetDeliveryServices(&fakeApplicationService{}, delivery)
+
+	onboardingResult, err := service.InvokeTool(context.Background(), testPrincipal("developer"), domainaigateway.ToolInvocationRequest{
+		ToolName: "delivery.onboarding.analyze_repo",
+		Input: map[string]any{
+			"repositoryPath": "platform/payments-api",
+			"files":          []string{"go.mod", "cmd/api/main.go"},
+			"environmentKey": "dev",
+			"clusterId":      "cluster-a",
+			"namespace":      "payments",
+		},
+	})
+	if err != nil {
+		t.Fatalf("onboarding analysis returned error: %v", err)
+	}
+	onboardingOutput := onboardingResult.Output.(map[string]any)
+	draft := onboardingOutput["deliveryDraftInput"].(domaindelivery.DeliveryDraftInput)
+	if draft.Source != domaindelivery.DeliveryDraftSourceAI || draft.ApplicationDraft.Key != "payments-api" || len(draft.Files) == 0 {
+		t.Fatalf("expected AI DeliveryDraft suggestion, got %#v", draft)
+	}
+
+	specResult, err := service.InvokeTool(context.Background(), testPrincipal("developer"), domainaigateway.ToolInvocationRequest{
+		ToolName: "delivery.spec.render",
+		Input: map[string]any{
+			"source": "ai",
+			"applicationDraft": map[string]any{
+				"name":     "Payments API",
+				"key":      "payments-api",
+				"language": "go",
+				"enabled":  true,
+			},
+			"services": []map[string]any{{"key": "api", "name": "API", "serviceKind": "kubernetes_workload", "enabled": true}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("spec render returned error: %v", err)
+	}
+	specOutput := specResult.Output.(map[string]any)
+	renderedDraft := specOutput["deliveryDraftInput"].(domaindelivery.DeliveryDraftInput)
+	if renderedDraft.ApplicationDraft.Key != "payments-api" || len(renderedDraft.Services) != 1 {
+		t.Fatalf("expected rendered draft payload, got %#v", renderedDraft)
+	}
+
+	planResult, err := service.InvokeTool(context.Background(), testPrincipal("developer"), domainaigateway.ToolInvocationRequest{
+		ToolName: "delivery.release.plan",
+		Input: map[string]any{
+			"applicationId":            "app-1",
+			"applicationEnvironmentId": "binding-1",
+			"action":                   "deploy",
+			"releaseBundleId":          "bundle-1",
+			"intent":                   "deploy candidate bundle after QA signoff",
+		},
+	})
+	if err != nil {
+		t.Fatalf("release plan returned error: %v", err)
+	}
+	planOutput := planResult.Output.(map[string]any)
+	plan := planOutput["deliveryPlanInput"].(domaindelivery.DeliveryPlanInput)
+	if plan.Source != domaindelivery.DeliveryPlanSourceAI || plan.RiskLevel != "high" || !plan.RequiresApproval {
+		t.Fatalf("expected high-risk AI plan draft, got %#v", plan)
+	}
+	if delivery.triggered {
+		t.Fatalf("AI planning capability must not trigger delivery execution")
 	}
 }
 

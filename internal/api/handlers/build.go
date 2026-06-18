@@ -14,6 +14,7 @@ import (
 
 type BuildService interface {
 	List(context.Context, domainidentity.Principal, domainbuild.Filter) ([]domainbuild.Record, error)
+	Get(context.Context, domainidentity.Principal, string) (domainbuild.Record, error)
 	Trigger(context.Context, domainidentity.Principal, domainbuild.TriggerInput) (domainbuild.Record, error)
 }
 
@@ -36,6 +37,16 @@ func (h *BuildHandler) ListBuilds(c *gin.Context) {
 		return
 	}
 	apiresponse.Items(c, http.StatusOK, items)
+}
+
+func (h *BuildHandler) GetBuild(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	item, err := h.service.Get(c.Request.Context(), principal, c.Param("buildID"))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
 }
 
 func (h *BuildHandler) TriggerBuild(c *gin.Context) {

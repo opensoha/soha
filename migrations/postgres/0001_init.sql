@@ -750,6 +750,60 @@ CREATE TABLE public.delivery_blueprints (
 );
 
 
+-- Name: delivery_drafts; Type: TABLE; Schema: public; Owner: -
+
+CREATE TABLE public.delivery_drafts (
+    id text NOT NULL,
+    source text DEFAULT 'manual'::text NOT NULL,
+    status text DEFAULT 'draft'::text NOT NULL,
+    application_draft jsonb DEFAULT '{}'::jsonb NOT NULL,
+    services jsonb DEFAULT '[]'::jsonb NOT NULL,
+    build_sources jsonb DEFAULT '[]'::jsonb NOT NULL,
+    environment_bindings jsonb DEFAULT '[]'::jsonb NOT NULL,
+    file_templates jsonb DEFAULT '[]'::jsonb NOT NULL,
+    execution_hints jsonb DEFAULT '{}'::jsonb NOT NULL,
+    post_create_actions jsonb DEFAULT '[]'::jsonb NOT NULL,
+    created_by text,
+    confirmed_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+-- Name: delivery_plans; Type: TABLE; Schema: public; Owner: -
+
+CREATE TABLE public.delivery_plans (
+    id text NOT NULL,
+    source text DEFAULT 'manual'::text NOT NULL,
+    status text DEFAULT 'draft'::text NOT NULL,
+    application_id text NOT NULL,
+    application_name text,
+    application_environment_id text NOT NULL,
+    environment_key text,
+    action text NOT NULL,
+    target_id text,
+    target_summary text,
+    build_source_id text,
+    release_bundle_id text,
+    ref_type text,
+    ref_name text,
+    image_tag text,
+    release_name text,
+    container_name text,
+    reason text,
+    risk_level text,
+    requires_approval boolean DEFAULT false NOT NULL,
+    impact jsonb DEFAULT '{}'::jsonb NOT NULL,
+    rollback_strategy text,
+    variables jsonb DEFAULT '{}'::jsonb NOT NULL,
+    build_args jsonb DEFAULT '{}'::jsonb NOT NULL,
+    created_by text,
+    confirmed_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
 -- Name: delivery_environments; Type: TABLE; Schema: public; Owner: -
 
 CREATE TABLE public.delivery_environments (
@@ -964,8 +1018,10 @@ CREATE TABLE public.event_stream (
 
 CREATE TABLE public.execution_artifacts (
     id text NOT NULL,
-    execution_task_id text NOT NULL,
+    execution_task_id text,
     release_bundle_id text,
+    workflow_run_id text,
+    workflow_node_id text,
     application_id text NOT NULL,
     application_environment_id text,
     artifact_kind text NOT NULL,
@@ -976,6 +1032,7 @@ CREATE TABLE public.execution_artifacts (
     status text,
     size_bytes bigint DEFAULT 0 NOT NULL,
     metadata jsonb DEFAULT '{}'::jsonb NOT NULL,
+    retention_until timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL
 );
@@ -1992,6 +2049,18 @@ ALTER TABLE ONLY public.delivery_blueprints
     ADD CONSTRAINT delivery_blueprints_pkey PRIMARY KEY (id);
 
 
+-- Name: delivery_drafts delivery_drafts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+
+ALTER TABLE ONLY public.delivery_drafts
+    ADD CONSTRAINT delivery_drafts_pkey PRIMARY KEY (id);
+
+
+-- Name: delivery_plans delivery_plans_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+
+ALTER TABLE ONLY public.delivery_plans
+    ADD CONSTRAINT delivery_plans_pkey PRIMARY KEY (id);
+
+
 -- Name: delivery_environments delivery_environments_environment_key_key; Type: CONSTRAINT; Schema: public; Owner: -
 
 ALTER TABLE ONLY public.delivery_environments
@@ -2756,6 +2825,26 @@ CREATE INDEX idx_clusters_environment ON public.clusters USING btree (environmen
 CREATE INDEX idx_delivery_blueprints_enabled_updated_at ON public.delivery_blueprints USING btree (enabled, updated_at DESC);
 
 
+-- Name: idx_delivery_drafts_source_status_updated_at; Type: INDEX; Schema: public; Owner: -
+
+CREATE INDEX idx_delivery_drafts_source_status_updated_at ON public.delivery_drafts USING btree (source, status, updated_at DESC);
+
+
+-- Name: idx_delivery_plans_application_environment_id; Type: INDEX; Schema: public; Owner: -
+
+CREATE INDEX idx_delivery_plans_application_environment_id ON public.delivery_plans USING btree (application_environment_id);
+
+
+-- Name: idx_delivery_plans_application_id; Type: INDEX; Schema: public; Owner: -
+
+CREATE INDEX idx_delivery_plans_application_id ON public.delivery_plans USING btree (application_id);
+
+
+-- Name: idx_delivery_plans_source_status_updated_at; Type: INDEX; Schema: public; Owner: -
+
+CREATE INDEX idx_delivery_plans_source_status_updated_at ON public.delivery_plans USING btree (source, status, updated_at DESC);
+
+
 -- Name: idx_delivery_environments_key_enabled; Type: INDEX; Schema: public; Owner: -
 
 CREATE INDEX idx_delivery_environments_key_enabled ON public.delivery_environments USING btree (environment_key, enabled);
@@ -2929,6 +3018,16 @@ CREATE INDEX idx_execution_artifacts_bundle_id ON public.execution_artifacts USI
 -- Name: idx_execution_artifacts_task_id; Type: INDEX; Schema: public; Owner: -
 
 CREATE INDEX idx_execution_artifacts_task_id ON public.execution_artifacts USING btree (execution_task_id);
+
+
+-- Name: idx_execution_artifacts_workflow_node_id; Type: INDEX; Schema: public; Owner: -
+
+CREATE INDEX idx_execution_artifacts_workflow_node_id ON public.execution_artifacts USING btree (workflow_run_id, workflow_node_id);
+
+
+-- Name: idx_execution_artifacts_workflow_run_id; Type: INDEX; Schema: public; Owner: -
+
+CREATE INDEX idx_execution_artifacts_workflow_run_id ON public.execution_artifacts USING btree (workflow_run_id);
 
 
 -- Name: idx_execution_callbacks_execution_task_id; Type: INDEX; Schema: public; Owner: -
@@ -3443,6 +3542,12 @@ ALTER TABLE ONLY public.execution_artifacts
 
 ALTER TABLE ONLY public.execution_artifacts
     ADD CONSTRAINT execution_artifacts_release_bundle_id_fkey FOREIGN KEY (release_bundle_id) REFERENCES public.release_bundles(id) ON DELETE SET NULL;
+
+
+-- Name: execution_artifacts execution_artifacts_workflow_run_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+
+ALTER TABLE ONLY public.execution_artifacts
+    ADD CONSTRAINT execution_artifacts_workflow_run_id_fkey FOREIGN KEY (workflow_run_id) REFERENCES public.workflow_runs(id) ON DELETE SET NULL;
 
 
 -- Name: execution_callbacks execution_callbacks_execution_task_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
