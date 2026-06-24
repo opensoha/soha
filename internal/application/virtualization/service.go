@@ -2,6 +2,7 @@ package virtualization
 
 import (
 	"context"
+	"database/sql"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -19,6 +20,7 @@ import (
 	"github.com/opensoha/soha/internal/platform/apperrors"
 	"github.com/opensoha/soha/internal/platform/operationentry"
 	"github.com/opensoha/soha/internal/platform/runtimeobs"
+	"gorm.io/gorm"
 )
 
 const (
@@ -55,10 +57,12 @@ type Service struct {
 	operations         OperationRecorder
 	credentialKey      string
 	workerInterval     time.Duration
+	syncConcurrency    int
 	startupSyncEnabled bool
 	workerOnce         sync.Once
 	workerCancel       context.CancelFunc
 	workerDone         chan struct{}
+	workerWG           sync.WaitGroup
 	workerID           string
 	workerPrincipal    domainidentity.Principal
 	metrics            *runtimeobs.Registry
@@ -69,6 +73,7 @@ type Options struct {
 	CredentialEncryptionKey string
 	StartupSyncEnabled      bool
 	WorkerInterval          time.Duration
+	SyncConcurrency         int
 	CredentialProvider      CredentialProvider
 }
 
@@ -111,6 +116,10 @@ type CreateVMInput struct {
 	TemplateID        string         `json:"templateId,omitempty"`
 	ProviderParams    map[string]any `json:"providerParams,omitempty"`
 	ProviderExtraJSON map[string]any
+}
+
+type DeleteConnectionOptions struct {
+	Force bool `json:"force,omitempty"`
 }
 
 type VMActionInput struct {
@@ -242,6 +251,10 @@ func New(repo Repository, adapters map[string]Adapter, permissions *appaccess.Pe
 	if interval <= 0 {
 		interval = 2 * time.Second
 	}
+	syncConcurrency := opts.SyncConcurrency
+	if syncConcurrency <= 0 {
+		syncConcurrency = 1
+	}
 	return &Service{
 		repo:               repo,
 		adapters:           normalized,
@@ -249,6 +262,7 @@ func New(repo Repository, adapters map[string]Adapter, permissions *appaccess.Pe
 		operations:         operations,
 		credentialKey:      strings.TrimSpace(opts.CredentialEncryptionKey),
 		workerInterval:     interval,
+		syncConcurrency:    syncConcurrency,
 		startupSyncEnabled: opts.StartupSyncEnabled,
 		secretProvider:     opts.CredentialProvider,
 		workerID:           "virtualization-worker-" + uuid.NewString(),
@@ -434,15 +448,60 @@ func (s *Service) UpdateConnection(ctx context.Context, principal domainidentity
 	return sanitizeConnection(item), nil
 }
 
-func (s *Service) DeleteConnection(ctx context.Context, principal domainidentity.Principal, id string) error {
+func (s *Service) GetConnectionDeleteDependencies(ctx context.Context, principal domainidentity.Principal, id string) (domainvirtualization.ConnectionDeleteDependencies, error) {
+	if err := s.authorize(ctx, principal, appaccess.PermVirtualizationClustersManage); err != nil {
+		return domainvirtualization.ConnectionDeleteDependencies{}, err
+	}
+	current, err := s.repo.GetConnection(ctx, strings.TrimSpace(id))
+	if err != nil {
+		return domainvirtualization.ConnectionDeleteDependencies{}, mapNotFound(err)
+	}
+	deps, err := s.connectionDeleteDependencies(ctx, current)
+	if err != nil {
+		return domainvirtualization.ConnectionDeleteDependencies{}, err
+	}
+	deps.Connection = sanitizeConnection(deps.Connection)
+	return deps, nil
+}
+
+func (s *Service) DeleteConnection(ctx context.Context, principal domainidentity.Principal, id string, opts DeleteConnectionOptions) error {
 	if err := s.authorize(ctx, principal, appaccess.PermVirtualizationClustersManage); err != nil {
 		return err
 	}
-	current, _ := s.repo.GetConnection(ctx, strings.TrimSpace(id))
-	if err := s.repo.DeleteConnection(ctx, id); err != nil {
+	current, err := s.repo.GetConnection(ctx, strings.TrimSpace(id))
+	if err != nil {
 		return mapNotFound(err)
 	}
-	s.recordOperation(ctx, principal, "virtualization.connection.delete", id, firstNonEmpty(current.Name, id), "success", "deleted virtualization connection", nil)
+	deps, err := s.connectionDeleteDependencies(ctx, current)
+	if err != nil {
+		return err
+	}
+	if !opts.Force && deps.ForceRequired {
+		return fmt.Errorf("%w: virtualization connection %q has dependent resources; review delete dependencies before confirming force delete", apperrors.ErrInvalidArgument, current.Name)
+	}
+	if opts.Force && deps.PendingTaskCount > 0 {
+		return fmt.Errorf("%w: virtualization connection %q has queued or running tasks and cannot be force deleted", apperrors.ErrInvalidArgument, current.Name)
+	}
+	if opts.Force {
+		if err := s.snapshotConnectionDeleteTasks(ctx, current, principal); err != nil {
+			return err
+		}
+		if err := s.repo.MarkDockerHostsUnavailableByConnection(ctx, current.ID); err != nil {
+			return err
+		}
+	}
+	if err := s.repo.DeleteConnection(ctx, current.ID); err != nil {
+		return mapNotFound(err)
+	}
+	s.recordOperation(ctx, principal, "virtualization.connection.delete", current.ID, firstNonEmpty(current.Name, current.ID), "success", "deleted virtualization connection", map[string]any{
+		"force":                opts.Force,
+		"vmCount":              deps.VMCount,
+		"imageCount":           deps.ImageCount,
+		"flavorCount":          deps.FlavorCount,
+		"taskCount":            deps.TaskCount,
+		"dockerHostCount":      deps.DockerHostCount,
+		"taskSnapshotsWritten": opts.Force,
+	})
 	return nil
 }
 
@@ -471,10 +530,13 @@ func (s *Service) TestConnection(ctx context.Context, principal domainidentity.P
 	}
 	now := time.Now().UTC()
 	health := map[string]any{
-		"status":    firstNonEmpty(result.Status, status),
-		"healthy":   result.Healthy,
-		"message":   message,
-		"checkedAt": now.Format(time.RFC3339),
+		"status":     firstNonEmpty(result.Status, status),
+		"healthy":    result.Healthy,
+		"message":    message,
+		"reason":     result.Reason,
+		"nextAction": result.NextAction,
+		"httpStatus": result.HTTPStatus,
+		"checkedAt":  now.Format(time.RFC3339),
 	}
 	if err != nil {
 		health["status"] = "unavailable"
@@ -488,9 +550,12 @@ func (s *Service) TestConnection(ctx context.Context, principal domainidentity.P
 		RequestedBy:  principal.UserID,
 		Payload:      map[string]any{"connectionId": connection.ID},
 		Result: map[string]any{
-			"healthy": result.Healthy,
-			"status":  firstNonEmpty(result.Status, status),
-			"message": message,
+			"healthy":    result.Healthy,
+			"status":     firstNonEmpty(result.Status, status),
+			"message":    message,
+			"reason":     result.Reason,
+			"nextAction": result.NextAction,
+			"httpStatus": result.HTTPStatus,
 		},
 		StartedAt:  &now,
 		FinishedAt: &now,
@@ -968,7 +1033,7 @@ func (s *Service) RetryOperation(ctx context.Context, principal domainidentity.P
 }
 
 func (s *Service) GetVMMetrics(ctx context.Context, principal domainidentity.Principal, vmID string, rangeMinutes, stepSeconds int) (infravirtualization.VMMetricsResult, error) {
-	if err := s.authorizeAny(ctx, principal, appaccess.PermVirtualizationVMsMetrics, appaccess.PermVirtualizationVMsView); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.PermVirtualizationVMsMetrics); err != nil {
 		return infravirtualization.VMMetricsResult{}, err
 	}
 
@@ -1005,7 +1070,7 @@ func (s *Service) GetVMMetrics(ctx context.Context, principal domainidentity.Pri
 }
 
 func (s *Service) GetConsoleURL(ctx context.Context, principal domainidentity.Principal, vmID string) (infravirtualization.ConsoleURLResult, error) {
-	if err := s.authorizeAny(ctx, principal, appaccess.PermVirtualizationVMsConsole, appaccess.PermVirtualizationVMsView); err != nil {
+	if err := s.authorize(ctx, principal, appaccess.PermVirtualizationVMsConsole); err != nil {
 		return infravirtualization.ConsoleURLResult{}, err
 	}
 
@@ -1046,7 +1111,17 @@ func (s *Service) Start(ctx context.Context) {
 		workerCtx, cancel := context.WithCancel(ctx)
 		s.workerCancel = cancel
 		s.workerDone = make(chan struct{})
-		go s.runWorker(workerCtx)
+		for i := 0; i < s.syncConcurrency; i++ {
+			s.workerWG.Add(1)
+			go func() {
+				defer s.workerWG.Done()
+				s.runWorker(workerCtx)
+			}()
+		}
+		go func() {
+			s.workerWG.Wait()
+			close(s.workerDone)
+		}()
 		if s.startupSyncEnabled {
 			_, _ = s.enqueueStartupSync(ctx, s.workerPrincipal, map[string]any{"source": "startup"})
 		}
@@ -1105,6 +1180,16 @@ func (s *Service) connectionInput(input ConnectionInput, current *domainvirtuali
 	if input.Description != "" {
 		config["description"] = input.Description
 	}
+	credentialInput := compactCredential(cloneMap(input.Credential))
+	if provider == ProviderKubeVirt {
+		if token := strings.TrimSpace(stringValue(config, "prometheusBearerToken")); token != "" {
+			if credentialInput == nil {
+				credentialInput = map[string]any{}
+			}
+			credentialInput["prometheusBearerToken"] = token
+		}
+		delete(config, "prometheusBearerToken")
+	}
 	enabled := true
 	if current != nil {
 		enabled = current.Enabled
@@ -1123,14 +1208,14 @@ func (s *Service) connectionInput(input ConnectionInput, current *domainvirtuali
 	if current != nil {
 		encrypted = cloneMap(current.EncryptedCredential)
 	}
-	if len(input.Credential) > 0 {
-		if provider == ProviderPVE && strings.TrimSpace(s.credentialKey) == "" {
-			return domainvirtualization.ConnectionInput{}, fmt.Errorf("%w: security.credential_encryption_key is required for PVE credentials", apperrors.ErrInvalidArgument)
-		}
-		if provider == ProviderPVE {
-			sealed, err := infravirtualization.EncryptCredentialJSON(s.credentialKey, input.Credential)
+	if len(credentialInput) > 0 {
+		if provider == ProviderPVE || provider == ProviderKubeVirt {
+			if strings.TrimSpace(s.credentialKey) == "" {
+				return domainvirtualization.ConnectionInput{}, fmt.Errorf("%w: security.credential_encryption_key is required for %s credentials", apperrors.ErrInvalidArgument, provider)
+			}
+			sealed, err := infravirtualization.EncryptCredentialJSON(s.credentialKey, credentialInput)
 			if err != nil {
-				return domainvirtualization.ConnectionInput{}, fmt.Errorf("%w: encrypt pve credential: %v", apperrors.ErrInvalidArgument, err)
+				return domainvirtualization.ConnectionInput{}, fmt.Errorf("%w: encrypt %s credential: %v", apperrors.ErrInvalidArgument, provider, err)
 			}
 			encrypted = map[string]any{"ciphertext": base64.StdEncoding.EncodeToString(sealed)}
 		}
@@ -1174,21 +1259,21 @@ func (s *Service) adapterConnection(connection domainvirtualization.Connection) 
 	} else if secretRef != "" {
 		return infravirtualization.Connection{}, fmt.Errorf("%w: credential secret provider is not configured for %s", apperrors.ErrInvalidArgument, secretRef)
 	}
-	if connection.Provider == ProviderPVE && len(connection.EncryptedCredential) > 0 {
+	if len(connection.EncryptedCredential) > 0 {
 		if strings.TrimSpace(s.credentialKey) == "" {
-			return infravirtualization.Connection{}, fmt.Errorf("%w: security.credential_encryption_key is required for PVE credentials", apperrors.ErrInvalidArgument)
+			return infravirtualization.Connection{}, fmt.Errorf("%w: security.credential_encryption_key is required for %s credentials", apperrors.ErrInvalidArgument, connection.Provider)
 		}
 		encoded := stringValue(connection.EncryptedCredential, "ciphertext")
 		if encoded == "" {
-			return infravirtualization.Connection{}, fmt.Errorf("%w: encrypted PVE credential payload is invalid", apperrors.ErrInvalidArgument)
+			return infravirtualization.Connection{}, fmt.Errorf("%w: encrypted virtualization credential payload is invalid", apperrors.ErrInvalidArgument)
 		}
 		sealed, err := base64.StdEncoding.DecodeString(encoded)
 		if err != nil {
-			return infravirtualization.Connection{}, fmt.Errorf("%w: encrypted PVE credential payload is invalid", apperrors.ErrInvalidArgument)
+			return infravirtualization.Connection{}, fmt.Errorf("%w: encrypted virtualization credential payload is invalid", apperrors.ErrInvalidArgument)
 		}
 		decrypted, err := infravirtualization.DecryptCredentialJSON(s.credentialKey, sealed)
 		if err != nil {
-			return infravirtualization.Connection{}, fmt.Errorf("%w: decrypt PVE credential: %v", apperrors.ErrInvalidArgument, err)
+			return infravirtualization.Connection{}, fmt.Errorf("%w: decrypt %s credential: %v", apperrors.ErrInvalidArgument, connection.Provider, err)
 		}
 		credential = mergeMaps(credential, decrypted)
 	}
@@ -1239,9 +1324,257 @@ func sanitizeConnections(items []domainvirtualization.Connection) []domainvirtua
 }
 
 func sanitizeConnection(item domainvirtualization.Connection) domainvirtualization.Connection {
-	item.CredentialConfigured = len(item.EncryptedCredential) > 0
+	tokenConfigured := false
+	if item.Provider == ProviderKubeVirt {
+		tokenConfigured = item.CredentialConfigured ||
+			len(item.EncryptedCredential) > 0 ||
+			strings.TrimSpace(stringValue(item.Config, "prometheusBearerToken")) != "" ||
+			boolValue(item.Config, "prometheusBearerTokenConfigured")
+	}
+	item.CredentialConfigured = item.CredentialConfigured || len(item.EncryptedCredential) > 0
 	item.EncryptedCredential = nil
+	item.Config = sanitizeConnectionConfig(item.Provider, item.Config, tokenConfigured)
 	return item
+}
+
+func sanitizeConnectionConfig(provider string, config map[string]any, prometheusTokenConfigured bool) map[string]any {
+	out := cloneMap(config)
+	if out == nil {
+		return nil
+	}
+	delete(out, "prometheusBearerToken")
+	if normalizeProvider(provider) == ProviderKubeVirt && prometheusTokenConfigured {
+		out["prometheusBearerTokenConfigured"] = true
+	}
+	return out
+}
+
+func (s *Service) connectionDeleteDependencies(ctx context.Context, connection domainvirtualization.Connection) (domainvirtualization.ConnectionDeleteDependencies, error) {
+	connectionID := strings.TrimSpace(connection.ID)
+	deps := domainvirtualization.ConnectionDeleteDependencies{
+		Connection: sanitizeConnection(connection),
+	}
+
+	var err error
+	if deps.VMCount, err = s.repo.CountVMs(ctx, domainvirtualization.VMFilter{ConnectionID: connectionID}); err != nil {
+		return domainvirtualization.ConnectionDeleteDependencies{}, fmt.Errorf("count virtualization vms for connection delete: %w", err)
+	}
+	if deps.ImageCount, err = s.repo.CountImages(ctx, domainvirtualization.ImageFilter{ConnectionID: connectionID}); err != nil {
+		return domainvirtualization.ConnectionDeleteDependencies{}, fmt.Errorf("count virtualization images for connection delete: %w", err)
+	}
+	if deps.FlavorCount, err = s.repo.CountFlavors(ctx, domainvirtualization.FlavorFilter{ConnectionID: connectionID}); err != nil {
+		return domainvirtualization.ConnectionDeleteDependencies{}, fmt.Errorf("count virtualization flavors for connection delete: %w", err)
+	}
+	if deps.TaskCount, err = s.repo.CountTasks(ctx, domainvirtualization.TaskFilter{ConnectionID: connectionID}); err != nil {
+		return domainvirtualization.ConnectionDeleteDependencies{}, fmt.Errorf("count virtualization tasks for connection delete: %w", err)
+	}
+	if deps.PendingTaskCount, err = s.repo.CountTasks(ctx, domainvirtualization.TaskFilter{ConnectionID: connectionID, Pending: true}); err != nil {
+		return domainvirtualization.ConnectionDeleteDependencies{}, fmt.Errorf("count pending virtualization tasks for connection delete: %w", err)
+	}
+	if deps.DockerHostCount, err = s.repo.CountDockerHostsByConnection(ctx, connectionID); err != nil {
+		return domainvirtualization.ConnectionDeleteDependencies{}, fmt.Errorf("count docker hosts for connection delete: %w", err)
+	}
+
+	if vms, listErr := s.repo.ListVMs(ctx, domainvirtualization.VMFilter{ConnectionID: connectionID, Limit: 5}); listErr != nil {
+		return domainvirtualization.ConnectionDeleteDependencies{}, fmt.Errorf("list virtualization vm delete samples: %w", listErr)
+	} else {
+		deps.VMSamples = vmDeleteSamples(vms)
+	}
+	if images, listErr := s.repo.ListImages(ctx, domainvirtualization.ImageFilter{ConnectionID: connectionID, Limit: 5}); listErr != nil {
+		return domainvirtualization.ConnectionDeleteDependencies{}, fmt.Errorf("list virtualization image delete samples: %w", listErr)
+	} else {
+		deps.ImageSamples = imageDeleteSamples(images)
+	}
+	if flavors, listErr := s.repo.ListFlavors(ctx, domainvirtualization.FlavorFilter{ConnectionID: connectionID, Limit: 5}); listErr != nil {
+		return domainvirtualization.ConnectionDeleteDependencies{}, fmt.Errorf("list virtualization flavor delete samples: %w", listErr)
+	} else {
+		deps.FlavorSamples = flavorDeleteSamples(flavors)
+	}
+	if tasks, listErr := s.repo.ListTasks(ctx, domainvirtualization.TaskFilter{ConnectionID: connectionID, Limit: 5}); listErr != nil {
+		return domainvirtualization.ConnectionDeleteDependencies{}, fmt.Errorf("list virtualization task delete samples: %w", listErr)
+	} else {
+		deps.TaskSamples = taskDeleteSamples(tasks)
+	}
+
+	if deps.VMCount > 0 {
+		deps.BlockingReasons = append(deps.BlockingReasons, "virtual_machines")
+	}
+	if deps.ImageCount > 0 {
+		deps.BlockingReasons = append(deps.BlockingReasons, "images")
+	}
+	if deps.FlavorCount > 0 {
+		deps.BlockingReasons = append(deps.BlockingReasons, "flavors")
+	}
+	if deps.TaskCount > 0 {
+		deps.BlockingReasons = append(deps.BlockingReasons, "tasks")
+	}
+	if deps.DockerHostCount > 0 {
+		deps.BlockingReasons = append(deps.BlockingReasons, "docker_hosts")
+	}
+	if deps.PendingTaskCount > 0 {
+		deps.BlockingReasons = append(deps.BlockingReasons, "pending_tasks")
+	}
+	deps.ForceRequired = deps.VMCount > 0 || deps.ImageCount > 0 || deps.FlavorCount > 0 || deps.TaskCount > 0 || deps.DockerHostCount > 0
+	deps.Blocking = deps.ForceRequired || deps.PendingTaskCount > 0
+	return deps, nil
+}
+
+func (s *Service) snapshotConnectionDeleteTasks(ctx context.Context, connection domainvirtualization.Connection, principal domainidentity.Principal) error {
+	tasks, err := s.listAllConnectionTasks(ctx, connection.ID)
+	if err != nil {
+		return err
+	}
+	vms, err := s.listAllConnectionVMs(ctx, connection.ID)
+	if err != nil {
+		return err
+	}
+	vmByID := make(map[string]domainvirtualization.VM, len(vms))
+	for _, vm := range vms {
+		vmByID[vm.ID] = vm
+	}
+	connectionSnapshot := connectionDeleteSnapshot(connection)
+	now := time.Now().UTC().Format(time.RFC3339)
+	for _, task := range tasks {
+		if task.Status == TaskStatusQueued || task.Status == TaskStatusRunning {
+			return fmt.Errorf("%w: virtualization connection %q has queued or running tasks and cannot be force deleted", apperrors.ErrInvalidArgument, connection.Name)
+		}
+		result := cloneMap(task.Result)
+		if result == nil {
+			result = map[string]any{}
+		}
+		result["connectionSnapshot"] = connectionSnapshot
+		result["connectionDeletedAt"] = now
+		result["connectionDeletedBy"] = principal.UserID
+		if vmID := firstNonEmpty(task.VMID, stringValue(task.Payload, "vmId")); vmID != "" {
+			if vm, ok := vmByID[vmID]; ok {
+				result["vmSnapshot"] = vmDeleteSnapshot(vm)
+			}
+		}
+		task.Result = result
+		if _, err := s.repo.UpdateTask(ctx, task); err != nil {
+			return fmt.Errorf("snapshot virtualization task %s before connection delete: %w", task.ID, err)
+		}
+	}
+	return nil
+}
+
+func (s *Service) listAllConnectionTasks(ctx context.Context, connectionID string) ([]domainvirtualization.Task, error) {
+	var out []domainvirtualization.Task
+	for page := 1; ; page++ {
+		items, err := s.repo.ListTasks(ctx, domainvirtualization.TaskFilter{ConnectionID: connectionID, Page: page, PageSize: 500})
+		if err != nil {
+			return nil, fmt.Errorf("list virtualization tasks for connection delete snapshot: %w", err)
+		}
+		out = append(out, items...)
+		if len(items) < 500 {
+			return out, nil
+		}
+	}
+}
+
+func (s *Service) listAllConnectionVMs(ctx context.Context, connectionID string) ([]domainvirtualization.VM, error) {
+	var out []domainvirtualization.VM
+	for page := 1; ; page++ {
+		items, err := s.repo.ListVMs(ctx, domainvirtualization.VMFilter{ConnectionID: connectionID, Page: page, PageSize: 500})
+		if err != nil {
+			return nil, fmt.Errorf("list virtualization vms for connection delete snapshot: %w", err)
+		}
+		out = append(out, items...)
+		if len(items) < 500 {
+			return out, nil
+		}
+	}
+}
+
+func connectionDeleteSnapshot(connection domainvirtualization.Connection) map[string]any {
+	sanitized := sanitizeConnection(connection)
+	return map[string]any{
+		"id":                  connection.ID,
+		"provider":            connection.Provider,
+		"name":                connection.Name,
+		"endpoint":            connection.Endpoint,
+		"kubernetesClusterId": connection.KubernetesClusterID,
+		"defaultNamespace":    connection.DefaultNamespace,
+		"enabled":             connection.Enabled,
+		"verifyTls":           connection.VerifyTLS,
+		"config":              cloneMap(sanitized.Config),
+		"health":              cloneMap(connection.Health),
+		"lastSyncedAt":        connection.LastSyncedAt,
+	}
+}
+
+func vmDeleteSnapshot(vm domainvirtualization.VM) map[string]any {
+	return map[string]any{
+		"id":          vm.ID,
+		"provider":    vm.Provider,
+		"externalId":  vm.ExternalID,
+		"name":        vm.Name,
+		"namespace":   vm.Namespace,
+		"status":      vm.Status,
+		"powerState":  vm.PowerState,
+		"nodeName":    vm.NodeName,
+		"ipAddresses": slices.Clone(vm.IPAddresses),
+		"config":      cloneMap(vm.Config),
+		"raw":         cloneMap(vm.Raw),
+	}
+}
+
+func vmDeleteSamples(items []domainvirtualization.VM) []domainvirtualization.ConnectionDeleteDependencySample {
+	out := make([]domainvirtualization.ConnectionDeleteDependencySample, 0, len(items))
+	for _, item := range items {
+		out = append(out, domainvirtualization.ConnectionDeleteDependencySample{
+			ID:         item.ID,
+			Kind:       "vm",
+			Name:       item.Name,
+			ExternalID: item.ExternalID,
+			Status:     firstNonEmpty(item.PowerState, item.Status),
+			NodeName:   item.NodeName,
+		})
+	}
+	return out
+}
+
+func imageDeleteSamples(items []domainvirtualization.Image) []domainvirtualization.ConnectionDeleteDependencySample {
+	out := make([]domainvirtualization.ConnectionDeleteDependencySample, 0, len(items))
+	for _, item := range items {
+		out = append(out, domainvirtualization.ConnectionDeleteDependencySample{
+			ID:         item.ID,
+			Kind:       firstNonEmpty(stringValue(item.Config, "assetKind"), stringValue(item.Config, "sourceKind"), "image"),
+			Name:       item.Name,
+			ExternalID: item.ExternalID,
+			Status:     item.Status,
+		})
+	}
+	return out
+}
+
+func flavorDeleteSamples(items []domainvirtualization.Flavor) []domainvirtualization.ConnectionDeleteDependencySample {
+	out := make([]domainvirtualization.ConnectionDeleteDependencySample, 0, len(items))
+	for _, item := range items {
+		out = append(out, domainvirtualization.ConnectionDeleteDependencySample{
+			ID:         item.ID,
+			Kind:       "flavor",
+			Name:       item.Name,
+			ExternalID: item.ExternalID,
+			Status:     item.Status,
+		})
+	}
+	return out
+}
+
+func taskDeleteSamples(items []domainvirtualization.Task) []domainvirtualization.ConnectionDeleteDependencySample {
+	out := make([]domainvirtualization.ConnectionDeleteDependencySample, 0, len(items))
+	for _, item := range items {
+		out = append(out, domainvirtualization.ConnectionDeleteDependencySample{
+			ID:       item.ID,
+			Kind:     "task",
+			Name:     item.TaskKind,
+			Status:   item.Status,
+			TaskKind: item.TaskKind,
+			VMID:     item.VMID,
+		})
+	}
+	return out
 }
 
 func normalizeProvider(provider string) string {
@@ -1267,7 +1600,14 @@ func mapNotFound(err error) error {
 	if err == nil {
 		return nil
 	}
-	if strings.Contains(strings.ToLower(err.Error()), "not found") || strings.Contains(strings.ToLower(err.Error()), "no rows") {
+	if errors.Is(err, apperrors.ErrNotFound) {
+		return err
+	}
+	if errors.Is(err, sql.ErrNoRows) || errors.Is(err, gorm.ErrRecordNotFound) {
+		return fmt.Errorf("%w: %v", apperrors.ErrNotFound, err)
+	}
+	lowered := strings.ToLower(err.Error())
+	if strings.Contains(lowered, "not found") || strings.Contains(lowered, "no rows") {
 		return fmt.Errorf("%w: %v", apperrors.ErrNotFound, err)
 	}
 	return err
@@ -1309,6 +1649,29 @@ func cloneMap(values map[string]any) map[string]any {
 	out := make(map[string]any, len(values))
 	for key, value := range values {
 		out[key] = value
+	}
+	return out
+}
+
+func compactCredential(values map[string]any) map[string]any {
+	if len(values) == 0 {
+		return nil
+	}
+	out := map[string]any{}
+	for key, value := range values {
+		switch typed := value.(type) {
+		case string:
+			if strings.TrimSpace(typed) != "" {
+				out[key] = typed
+			}
+		case nil:
+			continue
+		default:
+			out[key] = value
+		}
+	}
+	if len(out) == 0 {
+		return nil
 	}
 	return out
 }

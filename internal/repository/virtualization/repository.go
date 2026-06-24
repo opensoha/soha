@@ -11,10 +11,19 @@ import (
 
 	"github.com/google/uuid"
 	domainvirtualization "github.com/opensoha/soha/internal/domain/virtualization"
+	"github.com/opensoha/soha/internal/platform/apperrors"
 	"gorm.io/gorm"
 )
 
-var ErrNotFound = errors.New("virtualization record not found")
+var ErrNotFound = fmt.Errorf("%w: virtualization record not found", apperrors.ErrNotFound)
+
+var allowedTableNames = map[string]bool{
+	"virtualization_connections": true,
+	"virtualization_vms":         true,
+	"virtualization_images":      true,
+	"virtualization_flavors":     true,
+	"virtualization_tasks":       true,
+}
 
 type Repository struct {
 	db *gorm.DB
@@ -105,6 +114,113 @@ func (r *Repository) CountConnections(ctx context.Context, filter domainvirtuali
 	return r.count(ctx, "virtualization_connections", clauses, args)
 }
 
+func (r *Repository) CountDockerHostsByConnection(ctx context.Context, connectionID string) (int, error) {
+	var total int
+	if err := r.db.WithContext(ctx).Raw(`
+		SELECT COUNT(*)
+		FROM docker_hosts
+		WHERE virtualization_connection_id = ?
+	`, strings.TrimSpace(connectionID)).Row().Scan(&total); err != nil {
+		return 0, fmt.Errorf("count docker hosts by virtualization connection: %w", err)
+	}
+	return total, nil
+}
+
+func (r *Repository) MarkDockerHostsUnavailableByConnection(ctx context.Context, connectionID string) error {
+	connectionID = strings.TrimSpace(connectionID)
+	if connectionID == "" {
+		return nil
+	}
+	now := time.Now().UTC()
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Exec(`
+			UPDATE docker_operations
+			SET status = 'canceled',
+				result = COALESCE(result, '{}'::jsonb) || jsonb_build_object(
+					'message', 'linked virtualization connection deleted',
+					'hostProvisionStatus', 'connection_deleted',
+					'hostProvisionStage', 'connection_deleted',
+					'connectionDeletedAt', ?::text
+				),
+				last_heartbeat_at = ?,
+				finished_at = ?,
+				updated_at = ?
+			WHERE operation_kind = 'host_provision'
+				AND status IN ('queued', 'running')
+				AND host_id IN (SELECT id FROM docker_hosts WHERE virtualization_connection_id = ?)
+		`, now.Format(time.RFC3339), now, now, now, connectionID).Error; err != nil {
+			return fmt.Errorf("mark docker host provision operations canceled by connection: %w", err)
+		}
+		if err := tx.Exec(`
+			UPDATE docker_hosts
+			SET status = 'unavailable',
+				endpoint = NULL,
+				agent_id = NULL,
+				ip_address = NULL,
+				virtualization_connection_id = NULL,
+				vm_id = NULL,
+				vm_name = NULL,
+				config = COALESCE(config, '{}'::jsonb) || jsonb_build_object(
+					'hostProvisionStatus', 'connection_deleted',
+					'hostProvisionStage', 'connection_deleted',
+					'connectionDeletedAt', ?::text
+				),
+				updated_at = ?
+			WHERE virtualization_connection_id = ?
+		`, now.Format(time.RFC3339), now, connectionID).Error; err != nil {
+			return fmt.Errorf("mark docker hosts unavailable by connection: %w", err)
+		}
+		return nil
+	})
+}
+
+func (r *Repository) MarkDockerHostsUnavailableByVM(ctx context.Context, vmID string) error {
+	vmID = strings.TrimSpace(vmID)
+	if vmID == "" {
+		return nil
+	}
+	now := time.Now().UTC()
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Exec(`
+			UPDATE docker_operations
+			SET status = 'canceled',
+				result = COALESCE(result, '{}'::jsonb) || jsonb_build_object(
+					'message', 'linked virtualization VM deleted',
+					'hostProvisionStatus', 'vm_deleted',
+					'hostProvisionStage', 'vm_deleted',
+					'vmDeletedAt', ?::text
+				),
+				last_heartbeat_at = ?,
+				finished_at = ?,
+				updated_at = ?
+			WHERE operation_kind = 'host_provision'
+				AND status IN ('queued', 'running')
+				AND host_id IN (SELECT id FROM docker_hosts WHERE vm_id = ?)
+		`, now.Format(time.RFC3339), now, now, now, vmID).Error; err != nil {
+			return fmt.Errorf("mark docker host provision operations canceled by vm: %w", err)
+		}
+		if err := tx.Exec(`
+			UPDATE docker_hosts
+			SET status = 'unavailable',
+				endpoint = NULL,
+				agent_id = NULL,
+				ip_address = NULL,
+				vm_id = NULL,
+				vm_name = NULL,
+				config = COALESCE(config, '{}'::jsonb) || jsonb_build_object(
+					'hostProvisionStatus', 'vm_deleted',
+					'hostProvisionStage', 'vm_deleted',
+					'vmDeletedAt', ?::text
+				),
+				updated_at = ?
+			WHERE vm_id = ?
+		`, now.Format(time.RFC3339), now, vmID).Error; err != nil {
+			return fmt.Errorf("mark docker hosts unavailable by vm: %w", err)
+		}
+		return nil
+	})
+}
+
 func (r *Repository) UpsertVM(ctx context.Context, item domainvirtualization.VM) (domainvirtualization.VM, error) {
 	if item.ID == "" {
 		item.ID = uuid.NewString()
@@ -182,7 +298,10 @@ func (r *Repository) GetVM(ctx context.Context, id string) (domainvirtualization
 }
 
 func (r *Repository) ListVMs(ctx context.Context, filter domainvirtualization.VMFilter) ([]domainvirtualization.VM, error) {
-	query, args, limit := buildAssetListQuery(vmSelect(), "virtualization_vms", filter.Provider, filter.ConnectionID, filter.Status, filter.Search, []string{"name", "external_id", "namespace", "node_name"}, filter.Limit, filter.Page, filter.PageSize)
+	query, args, limit, err := buildAssetListQuery(vmSelect(), "virtualization_vms", filter.Provider, filter.ConnectionID, filter.Status, filter.Search, []string{"name", "external_id", "namespace", "node_name"}, filter.Limit, filter.Page, filter.PageSize)
+	if err != nil {
+		return nil, err
+	}
 	clauses, extraArgs := vmExtraClauses(filter)
 	query, args = injectExtraClauses(query, args, clauses, extraArgs)
 	rows, err := r.db.WithContext(ctx).Raw(query, args...).Rows()
@@ -240,7 +359,10 @@ func (r *Repository) UpsertImage(ctx context.Context, item domainvirtualization.
 }
 
 func (r *Repository) ListImages(ctx context.Context, filter domainvirtualization.ImageFilter) ([]domainvirtualization.Image, error) {
-	query, args, limit := buildAssetListQuery(imageSelect(), "virtualization_images", filter.Provider, filter.ConnectionID, filter.Status, filter.Search, []string{"name", "external_id", "os_type", "architecture"}, filter.Limit, filter.Page, filter.PageSize)
+	query, args, limit, err := buildAssetListQuery(imageSelect(), "virtualization_images", filter.Provider, filter.ConnectionID, filter.Status, filter.Search, []string{"name", "external_id", "os_type", "architecture"}, filter.Limit, filter.Page, filter.PageSize)
+	if err != nil {
+		return nil, err
+	}
 	rows, err := r.db.WithContext(ctx).Raw(query, args...).Rows()
 	if err != nil {
 		return nil, fmt.Errorf("query virtualization images: %w", err)
@@ -335,7 +457,10 @@ func (r *Repository) GetFlavor(ctx context.Context, id string) (domainvirtualiza
 }
 
 func (r *Repository) ListFlavors(ctx context.Context, filter domainvirtualization.FlavorFilter) ([]domainvirtualization.Flavor, error) {
-	query, args, limit := buildAssetListQuery(flavorSelect(), "virtualization_flavors", filter.Provider, filter.ConnectionID, filter.Status, filter.Search, []string{"name", "external_id"}, filter.Limit, filter.Page, filter.PageSize)
+	query, args, limit, err := buildAssetListQuery(flavorSelect(), "virtualization_flavors", filter.Provider, filter.ConnectionID, filter.Status, filter.Search, []string{"name", "external_id"}, filter.Limit, filter.Page, filter.PageSize)
+	if err != nil {
+		return nil, err
+	}
 	rows, err := r.db.WithContext(ctx).Raw(query, args...).Rows()
 	if err != nil {
 		return nil, fmt.Errorf("query virtualization flavors: %w", err)
@@ -671,6 +796,10 @@ func (r *Repository) MarkFlavorsStale(ctx context.Context, provider, connectionI
 }
 
 func (r *Repository) markAssetsStale(ctx context.Context, tableName, provider, connectionID string, seenBefore time.Time) error {
+	tableName, err := safeTableName(tableName)
+	if err != nil {
+		return err
+	}
 	query := fmt.Sprintf(`
 		UPDATE %s
 		SET status = 'stale', updated_at = ?
@@ -999,7 +1128,11 @@ func scanTaskLog(rows *sql.Rows) (domainvirtualization.TaskLog, error) {
 	return item, nil
 }
 
-func buildAssetListQuery(selectSQL, tableName, provider, connectionID, status, search string, searchColumns []string, rawLimit, page, pageSize int) (string, []any, int) {
+func buildAssetListQuery(selectSQL, tableName, provider, connectionID, status, search string, searchColumns []string, rawLimit, page, pageSize int) (string, []any, int, error) {
+	tableName, err := safeTableName(tableName)
+	if err != nil {
+		return "", nil, 0, err
+	}
 	limit, offset := limitOffset(rawLimit, page, pageSize)
 	query := selectSQL
 	clauses, args := assetClauses(provider, connectionID, status, search, searchColumns)
@@ -1008,7 +1141,7 @@ func buildAssetListQuery(selectSQL, tableName, provider, connectionID, status, s
 	}
 	query += fmt.Sprintf(" ORDER BY %s.updated_at DESC LIMIT ? OFFSET ?", tableName)
 	args = append(args, limit, offset)
-	return query, args, limit
+	return query, args, limit, nil
 }
 
 func assetClauses(provider, connectionID, status, search string, searchColumns []string) ([]string, []any) {
@@ -1157,6 +1290,10 @@ func injectExtraClauses(query string, args []any, clauses []string, extraArgs []
 }
 
 func (r *Repository) count(ctx context.Context, tableName string, clauses []string, args []any) (int, error) {
+	tableName, err := safeTableName(tableName)
+	if err != nil {
+		return 0, err
+	}
 	query := fmt.Sprintf("SELECT COUNT(*) FROM %s", tableName)
 	if len(clauses) > 0 {
 		query += " WHERE " + strings.Join(clauses, " AND ")
@@ -1166,6 +1303,14 @@ func (r *Repository) count(ctx context.Context, tableName string, clauses []stri
 		return 0, fmt.Errorf("count %s: %w", tableName, err)
 	}
 	return total, nil
+}
+
+func safeTableName(tableName string) (string, error) {
+	tableName = strings.TrimSpace(tableName)
+	if allowedTableNames[tableName] {
+		return tableName, nil
+	}
+	return "", fmt.Errorf("unsupported virtualization repository table %q", tableName)
 }
 
 func marshalJSON(value any) ([]byte, error) {

@@ -33,22 +33,17 @@ jobs:
           cache-dependency-path: soha-web/package-lock.json
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.23.x"
+          go-version: "1.25.x"
           cache: true
           cache-dependency-path: soha/go.sum
-      - name: Prepare Go workspace
+      - name: Check Go module state
         working-directory: soha
         run: |
-          cat > go.work <<'EOF'
-          go 1.23.0
-
-          use (
-            .
-            ../soha-contracts
-          )
-
-          replace github.com/opensoha/soha-contracts v0.0.0 => ../soha-contracts
-          EOF
+          GOWORK=off go mod tidy
+          git diff --exit-code -- go.mod go.sum
+      - name: Verify Go module checksums
+        working-directory: soha
+        run: GOWORK=off go mod verify
       - name: Build web artifact
         working-directory: soha-web
         run: |
@@ -62,10 +57,26 @@ jobs:
           cp -R ../soha-web/dist/. internal/staticassets/web/dist/
       - name: Test
         working-directory: soha
-        run: go test ./...
+        run: GOWORK=off go test ./...
+      - name: Race test
+        working-directory: soha
+        run: GOWORK=off go test -race ./...
+      - name: Vet
+        working-directory: soha
+        run: GOWORK=off go vet ./...
+      - name: Govulncheck
+        working-directory: soha
+        run: GOWORK=off go run golang.org/x/vuln/cmd/govulncheck@v1.3.0 ./...
+      - name: Golangci-lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.9.0
+          working-directory: soha
+          only-new-issues: true
+          args: --timeout=5m
       - name: Build embedded server
         working-directory: soha
-        run: CGO_ENABLED=0 go build -tags embedassets -o /tmp/soha ./cmd/server
+        run: GOWORK=off CGO_ENABLED=0 go build -tags embedassets -o /tmp/soha ./cmd/server
       - name: Docker build
         working-directory: soha
         run: docker build --build-context contracts=../soha-contracts -f deploy/Dockerfile -t soha:test -t soha:local .

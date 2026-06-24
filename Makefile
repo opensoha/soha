@@ -68,7 +68,9 @@ init-cluster: ## Start local k3s and write .dev/k3s/kubeconfig.yaml.
 init-hermes: ## Start Hermes Agent Runtime runner for local AI workbench testing.
 	@echo "Starting Hermes Agent Runtime runner..."
 	@test -d "$(SOHA_AGENT_DIR)" || (echo "Missing $(SOHA_AGENT_DIR). Clone github.com/opensoha/soha-agent or set SOHA_AGENT_DIR." >&2; exit 1)
+	@test -d "$(SOHA_CONTRACTS_DIR)" || (echo "Missing $(SOHA_CONTRACTS_DIR). Clone github.com/opensoha/soha-contracts or set SOHA_CONTRACTS_DIR." >&2; exit 1)
 	@SOHA_AGENT_DIR="$(SOHA_AGENT_DIR)" \
+		SOHA_CONTRACTS_DIR="$(SOHA_CONTRACTS_DIR)" \
 		SOHA_CONTROL_PLANE_URL="$(HERMES_CONTROL_PLANE_URL)" \
 		SOHA_HERMES_RUNTIME_ENDPOINT="$(HERMES_RUNTIME_ENDPOINT)" \
 		$(ROOT_COMPOSE) up -d --no-deps --build hermes-agent-runner

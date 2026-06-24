@@ -29,7 +29,8 @@ type VirtualizationService interface {
 	ListConnections(context.Context, domainidentity.Principal, domainvirtualization.ConnectionFilter) ([]domainvirtualization.Connection, error)
 	CreateConnection(context.Context, domainidentity.Principal, appvirtualization.ConnectionInput) (domainvirtualization.Connection, error)
 	UpdateConnection(context.Context, domainidentity.Principal, string, appvirtualization.ConnectionInput) (domainvirtualization.Connection, error)
-	DeleteConnection(context.Context, domainidentity.Principal, string) error
+	GetConnectionDeleteDependencies(context.Context, domainidentity.Principal, string) (domainvirtualization.ConnectionDeleteDependencies, error)
+	DeleteConnection(context.Context, domainidentity.Principal, string, appvirtualization.DeleteConnectionOptions) error
 	TestConnection(context.Context, domainidentity.Principal, string) (domainvirtualization.Task, error)
 	SyncConnection(context.Context, domainidentity.Principal, string) (domainvirtualization.Task, error)
 	SyncAll(context.Context, domainidentity.Principal) (domainvirtualization.Task, error)
@@ -118,11 +119,21 @@ func (h *VirtualizationHandler) UpdateConnection(c *gin.Context) {
 }
 
 func (h *VirtualizationHandler) DeleteConnection(c *gin.Context) {
-	if err := h.service.DeleteConnection(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("id")); err != nil {
+	opts := appvirtualization.DeleteConnectionOptions{Force: strings.EqualFold(c.Query("force"), "true") || c.Query("force") == "1"}
+	if err := h.service.DeleteConnection(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("id"), opts); err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.JSON(c, http.StatusOK, gin.H{"status": "ok"})
+}
+
+func (h *VirtualizationHandler) GetConnectionDeleteDependencies(c *gin.Context) {
+	deps, err := h.service.GetConnectionDeleteDependencies(c.Request.Context(), apiMiddleware.PrincipalFromContext(c), c.Param("id"))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, mapConnectionDeleteDependencies(deps))
 }
 
 func (h *VirtualizationHandler) TestConnection(c *gin.Context) {
@@ -542,7 +553,7 @@ func mapConnection(item domainvirtualization.Connection) gin.H {
 		"enabled":              item.Enabled,
 		"verifyTls":            item.VerifyTLS,
 		"credentialConfigured": item.CredentialConfigured,
-		"config":               item.Config,
+		"config":               sanitizeVirtualizationConnectionConfig(item.Provider, item.Config),
 		"health":               stringValue(item.Health, "status"),
 		"status":               stringValue(item.Health, "status"),
 		"region":               stringValue(item.Config, "region"),
@@ -552,6 +563,52 @@ func mapConnection(item domainvirtualization.Connection) gin.H {
 		"lastSyncedAt":         item.LastSyncedAt,
 		"createdAt":            item.CreatedAt,
 		"updatedAt":            item.UpdatedAt,
+	}
+}
+
+func sanitizeVirtualizationConnectionConfig(provider string, config map[string]any) map[string]any {
+	out := cloneVirtualizationMap(config)
+	if out == nil {
+		return nil
+	}
+	tokenConfigured := false
+	if strings.TrimSpace(stringValue(out, "prometheusBearerToken")) != "" {
+		tokenConfigured = true
+	}
+	delete(out, "prometheusBearerToken")
+	if strings.EqualFold(provider, "kubevirt") && tokenConfigured {
+		out["prometheusBearerTokenConfigured"] = true
+	}
+	return out
+}
+
+func cloneVirtualizationMap(values map[string]any) map[string]any {
+	if values == nil {
+		return nil
+	}
+	out := make(map[string]any, len(values))
+	for key, value := range values {
+		out[key] = value
+	}
+	return out
+}
+
+func mapConnectionDeleteDependencies(item domainvirtualization.ConnectionDeleteDependencies) gin.H {
+	return gin.H{
+		"connection":       mapConnection(item.Connection),
+		"vmCount":          item.VMCount,
+		"imageCount":       item.ImageCount,
+		"flavorCount":      item.FlavorCount,
+		"taskCount":        item.TaskCount,
+		"pendingTaskCount": item.PendingTaskCount,
+		"dockerHostCount":  item.DockerHostCount,
+		"vmSamples":        item.VMSamples,
+		"imageSamples":     item.ImageSamples,
+		"flavorSamples":    item.FlavorSamples,
+		"taskSamples":      item.TaskSamples,
+		"forceRequired":    item.ForceRequired,
+		"blocking":         item.Blocking,
+		"blockingReasons":  item.BlockingReasons,
 	}
 }
 
@@ -613,6 +670,7 @@ func mapVM(item domainvirtualization.VM) gin.H {
 		"network":      firstNonEmpty(stringValue(item.Config, "network"), stringValue(item.Raw, "network")),
 		"ipAddresses":  item.IPAddresses,
 		"labels":       item.Labels,
+		"orphanHint":   virtualizationOrphanHint(item.Config),
 		"config":       item.Config,
 		"createdAt":    item.CreatedAt,
 		"updatedAt":    item.UpdatedAt,
@@ -696,11 +754,22 @@ func mapImage(item domainvirtualization.Image) gin.H {
 		"storageClass":   stringValue(item.Config, "storageClass"),
 		"ready":          item.Status != "stale" && item.Status != "deleted",
 		"description":    stringValue(item.Config, "description"),
+		"orphanHint":     virtualizationOrphanHint(item.Config),
 		"config":         item.Config,
 		"createdAt":      item.CreatedAt,
 		"updatedAt":      item.UpdatedAt,
 		"allowedActions": []string{"update", "delete"},
 	}
+}
+
+func virtualizationOrphanHint(config map[string]any) string {
+	if hint := stringValue(config, "orphanHint"); hint != "" {
+		return hint
+	}
+	if strings.EqualFold(stringValue(config, "source"), "sync") {
+		return "provider_discovered"
+	}
+	return ""
 }
 
 func mapFlavors(items []domainvirtualization.Flavor) []gin.H {
@@ -763,8 +832,8 @@ func mapOperation(item domainvirtualization.Task) gin.H {
 		"connectionId":    item.ConnectionID,
 		"vmId":            item.VMID,
 		"actor":           item.RequestedBy,
-		"payload":         item.Payload,
-		"result":          item.Result,
+		"payload":         sanitizeVirtualizationTaskMap(item.Payload),
+		"result":          sanitizeVirtualizationTaskMap(item.Result),
 		"startedAt":       item.StartedAt,
 		"lastHeartbeatAt": item.LastHeartbeatAt,
 		"completedAt":     item.FinishedAt,
@@ -773,6 +842,46 @@ func mapOperation(item domainvirtualization.Task) gin.H {
 		"operationState":  item.OperationState,
 		"allowedActions":  operationAllowedActions(item),
 	}
+}
+
+func sanitizeVirtualizationTaskMap(values map[string]any) map[string]any {
+	if values == nil {
+		return nil
+	}
+	out := make(map[string]any, len(values))
+	for key, value := range values {
+		if virtualizationConfiguredFlag(key, value) {
+			out[key] = value
+			continue
+		}
+		if virtualizationSensitiveKey(key) {
+			out[key+"Configured"] = value != nil && strings.TrimSpace(fmt.Sprint(value)) != ""
+			continue
+		}
+		if nested, ok := value.(map[string]any); ok {
+			out[key] = sanitizeVirtualizationTaskMap(nested)
+			continue
+		}
+		out[key] = value
+	}
+	return out
+}
+
+func virtualizationSensitiveKey(key string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(key))
+	return normalized == "cloudinit" ||
+		strings.Contains(normalized, "token") ||
+		strings.Contains(normalized, "password") ||
+		strings.Contains(normalized, "secret") ||
+		strings.Contains(normalized, "credential") ||
+		strings.Contains(normalized, "authorization")
+}
+
+func virtualizationConfiguredFlag(key string, value any) bool {
+	if _, ok := value.(bool); !ok {
+		return false
+	}
+	return strings.HasSuffix(strings.ToLower(strings.TrimSpace(key)), "configured")
 }
 
 func operationAllowedActions(item domainvirtualization.Task) []string {
@@ -867,7 +976,7 @@ func (h *VirtualizationHandler) StreamTaskUpdates(c *gin.Context) {
 		case <-ticker.C:
 			task, err := h.service.GetOperation(c.Request.Context(), principal, taskID)
 			if err != nil {
-				data, _ := json.Marshal(gin.H{"error": err.Error()})
+				data, _ := json.Marshal(gin.H{"error": streamExitMessage(streamExitKindTaskUpdates)})
 				fmt.Fprintf(c.Writer, "event: error\ndata: %s\n\n", data)
 				c.Writer.Flush()
 				return
@@ -976,18 +1085,18 @@ func (h *VirtualizationHandler) StreamVMConsole(c *gin.Context) {
 	defer conn.Close()
 
 	if consoleResult.Type == "novnc" && consoleResult.Token != "" {
-		proxyPVEVNC(conn, firstNonEmpty(consoleResult.BackendURL, consoleResult.URL), consoleResult.Token, consoleResult)
+		proxyPVEVNC(c.Request.Context(), conn, firstNonEmpty(consoleResult.BackendURL, consoleResult.URL), consoleResult.Token, consoleResult)
 	} else if consoleResult.Type == "vnc" {
-		proxyKubeVirtVNC(conn, firstNonEmpty(consoleResult.BackendURL, consoleResult.URL), consoleResult)
+		proxyKubeVirtVNC(c.Request.Context(), conn, firstNonEmpty(consoleResult.BackendURL, consoleResult.URL), consoleResult)
 	} else {
 		conn.WriteMessage(websocket.TextMessage, []byte(`{"error":"VNC proxy not fully implemented for this provider"}`))
 	}
 }
 
-func proxyPVEVNC(clientConn *websocket.Conn, backendURL, ticket string, consoleResult infravirtualization.ConsoleURLResult) {
+func proxyPVEVNC(ctx context.Context, clientConn *websocket.Conn, backendURL, ticket string, consoleResult infravirtualization.ConsoleURLResult) {
 	parsedURL, err := url.Parse(backendURL)
 	if err != nil {
-		clientConn.WriteMessage(websocket.TextMessage, []byte(fmt.Sprintf(`{"error":"invalid backend URL: %v"}`, err)))
+		writeWebsocketProxyError(clientConn, "invalid backend url")
 		return
 	}
 
@@ -995,24 +1104,29 @@ func proxyPVEVNC(clientConn *websocket.Conn, backendURL, ticket string, consoleR
 	if strings.HasPrefix(backendURL, "http://") {
 		parsedURL.Scheme = "ws"
 	}
+	if ticket != "" && parsedURL.Query().Get("vncticket") == "" {
+		query := parsedURL.Query()
+		query.Set("vncticket", ticket)
+		parsedURL.RawQuery = query.Encode()
+	}
 
 	header := http.Header{}
 	header.Set("Cookie", "PVEAuthCookie="+ticket)
 
-	backendConn, _, err := backendWebSocketDialer(consoleResult).Dial(parsedURL.String(), header)
+	backendConn, _, err := backendWebSocketDialer(consoleResult).DialContext(ctx, parsedURL.String(), header)
 	if err != nil {
-		clientConn.WriteMessage(websocket.TextMessage, []byte(fmt.Sprintf(`{"error":"failed to connect to backend: %v"}`, err)))
+		writeWebsocketProxyError(clientConn, "backend connection failed")
 		return
 	}
 	defer backendConn.Close()
 
-	proxyWebsocket(clientConn, backendConn)
+	proxyWebsocket(ctx, clientConn, backendConn)
 }
 
-func proxyKubeVirtVNC(clientConn *websocket.Conn, backendURL string, consoleResult infravirtualization.ConsoleURLResult) {
+func proxyKubeVirtVNC(ctx context.Context, clientConn *websocket.Conn, backendURL string, consoleResult infravirtualization.ConsoleURLResult) {
 	parsedURL, err := url.Parse(backendURL)
 	if err != nil {
-		clientConn.WriteMessage(websocket.TextMessage, []byte(fmt.Sprintf(`{"error":"invalid backend URL: %v"}`, err)))
+		writeWebsocketProxyError(clientConn, "invalid backend url")
 		return
 	}
 	parsedURL.Scheme = "wss"
@@ -1020,13 +1134,18 @@ func proxyKubeVirtVNC(clientConn *websocket.Conn, backendURL string, consoleResu
 		parsedURL.Scheme = "ws"
 	}
 	headers := consoleResult.BackendHeaders.Clone()
-	backendConn, _, err := backendWebSocketDialer(consoleResult).Dial(parsedURL.String(), headers)
+	backendConn, _, err := backendWebSocketDialer(consoleResult).DialContext(ctx, parsedURL.String(), headers)
 	if err != nil {
-		clientConn.WriteMessage(websocket.TextMessage, []byte(fmt.Sprintf(`{"error":"failed to connect to kubevirt backend: %v"}`, err)))
+		writeWebsocketProxyError(clientConn, "kubevirt backend connection failed")
 		return
 	}
 	defer backendConn.Close()
-	proxyWebsocket(clientConn, backendConn)
+	proxyWebsocket(ctx, clientConn, backendConn)
+}
+
+func writeWebsocketProxyError(conn *websocket.Conn, message string) {
+	payload, _ := json.Marshal(gin.H{"error": message})
+	_ = conn.WriteMessage(websocket.TextMessage, payload)
 }
 
 func backendWebSocketDialer(consoleResult infravirtualization.ConsoleURLResult) *websocket.Dialer {
@@ -1043,47 +1162,63 @@ func backendWebSocketDialer(consoleResult infravirtualization.ConsoleURLResult) 
 	return &dialer
 }
 
-func proxyWebsocket(clientConn, backendConn *websocket.Conn) {
-	var wg sync.WaitGroup
-	wg.Add(2)
-
-	go func() {
-		defer wg.Done()
-		io.Copy(&wsWriter{conn: clientConn}, &wsReader{conn: backendConn})
-	}()
-
-	go func() {
-		defer wg.Done()
-		io.Copy(&wsWriter{conn: backendConn}, &wsReader{conn: clientConn})
-	}()
-
-	wg.Wait()
-}
-
-type wsReader struct {
-	conn *websocket.Conn
-}
-
-func (r *wsReader) Read(p []byte) (int, error) {
-	_, data, err := r.conn.ReadMessage()
-	if err != nil {
-		return 0, err
+func proxyWebsocket(ctx context.Context, clientConn, backendConn *websocket.Conn) {
+	if ctx == nil {
+		ctx = context.Background()
 	}
-	n := copy(p, data)
-	return n, nil
-}
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 
-type wsWriter struct {
-	conn *websocket.Conn
-	mu   sync.Mutex
-}
-
-func (w *wsWriter) Write(p []byte) (int, error) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	err := w.conn.WriteMessage(websocket.BinaryMessage, p)
-	if err != nil {
-		return 0, err
+	done := make(chan struct{}, 2)
+	var closeOnce sync.Once
+	closeBoth := func() {
+		closeOnce.Do(func() {
+			clientConn.Close()
+			backendConn.Close()
+		})
 	}
-	return len(p), nil
+
+	pipe := func(dst, src *websocket.Conn) {
+		defer func() {
+			cancel()
+			closeBoth()
+			done <- struct{}{}
+		}()
+		copyWebsocketMessages(dst, src)
+	}
+
+	go pipe(clientConn, backendConn)
+	go pipe(backendConn, clientConn)
+
+	ctxDone := ctx.Done()
+	for completed := 0; completed < 2; {
+		select {
+		case <-ctxDone:
+			closeBoth()
+			ctxDone = nil
+		case <-done:
+			completed++
+		}
+	}
+}
+
+func copyWebsocketMessages(dst, src *websocket.Conn) error {
+	for {
+		messageType, reader, err := src.NextReader()
+		if err != nil {
+			return err
+		}
+		writer, err := dst.NextWriter(messageType)
+		if err != nil {
+			return err
+		}
+		_, copyErr := io.Copy(writer, reader)
+		closeErr := writer.Close()
+		if copyErr != nil {
+			return copyErr
+		}
+		if closeErr != nil {
+			return closeErr
+		}
+	}
 }
