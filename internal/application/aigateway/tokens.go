@@ -24,7 +24,8 @@ func (s *Service) hasRuntimePermission(ctx context.Context, principal domainiden
 	return s.permissions.HasPermission(ctx, principal, permissionKey)
 }
 func (s *Service) ListPersonalAccessTokens(ctx context.Context, principal domainidentity.Principal, req domainaigateway.PersonalAccessTokenListRequest) ([]domainaigateway.PersonalAccessToken, error) {
-	if s.repo == nil {
+	repo := s.personalTokenRepository()
+	if repo == nil {
 		return nil, fmt.Errorf("%w: AI Gateway repository is not configured", apperrors.ErrInvalidArgument)
 	}
 	scope := strings.ToLower(strings.TrimSpace(req.Scope))
@@ -33,7 +34,7 @@ func (s *Service) ListPersonalAccessTokens(ctx context.Context, principal domain
 		if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermAIGatewayManage); err != nil {
 			return nil, err
 		}
-		items, err := s.repo.ListAllPersonalAccessTokens(ctx)
+		items, err := repo.ListAllPersonalAccessTokens(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -51,13 +52,14 @@ func (s *Service) ListPersonalAccessTokens(ctx context.Context, principal domain
 	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermAIGatewayView); err != nil {
 		return nil, err
 	}
-	return s.repo.ListPersonalAccessTokens(ctx, principal.UserID)
+	return repo.ListPersonalAccessTokens(ctx, principal.UserID)
 }
 func (s *Service) CreatePersonalAccessToken(ctx context.Context, principal domainidentity.Principal, input domainaigateway.PersonalAccessTokenInput) (domainaigateway.CreatedPersonalAccessToken, error) {
 	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermAIGatewayInvoke); err != nil {
 		return domainaigateway.CreatedPersonalAccessToken{}, err
 	}
-	if s.repo == nil {
+	repo := s.personalTokenRepository()
+	if repo == nil {
 		return domainaigateway.CreatedPersonalAccessToken{}, fmt.Errorf("%w: AI Gateway repository is not configured", apperrors.ErrInvalidArgument)
 	}
 	name := strings.TrimSpace(input.Name)
@@ -87,7 +89,7 @@ func (s *Service) CreatePersonalAccessToken(ctx context.Context, principal domai
 		CreatedAt:      now,
 		UpdatedAt:      now,
 	}
-	created, err := s.repo.CreatePersonalAccessToken(ctx, item)
+	created, err := repo.CreatePersonalAccessToken(ctx, item)
 	if err != nil {
 		return domainaigateway.CreatedPersonalAccessToken{}, err
 	}
@@ -100,7 +102,8 @@ func (s *Service) CreatePersonalAccessToken(ctx context.Context, principal domai
 	return domainaigateway.CreatedPersonalAccessToken{Token: created, Value: value}, nil
 }
 func (s *Service) RevokePersonalAccessToken(ctx context.Context, principal domainidentity.Principal, tokenID string) error {
-	if s.repo == nil {
+	repo := s.personalTokenRepository()
+	if repo == nil {
 		return fmt.Errorf("%w: AI Gateway repository is not configured", apperrors.ErrInvalidArgument)
 	}
 	tokenID = strings.TrimSpace(tokenID)
@@ -113,7 +116,7 @@ func (s *Service) RevokePersonalAccessToken(ctx context.Context, principal domai
 	}
 	ownerID := principal.UserID
 	if hasManage {
-		items, listErr := s.repo.ListAllPersonalAccessTokens(ctx)
+		items, listErr := repo.ListAllPersonalAccessTokens(ctx)
 		if listErr != nil {
 			return listErr
 		}
@@ -130,7 +133,7 @@ func (s *Service) RevokePersonalAccessToken(ctx context.Context, principal domai
 	} else if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermAIGatewayInvoke); err != nil {
 		return err
 	}
-	if err := s.repo.RevokePersonalAccessToken(ctx, ownerID, tokenID); err != nil {
+	if err := repo.RevokePersonalAccessToken(ctx, ownerID, tokenID); err != nil {
 		return err
 	}
 	_ = s.recordTokenAudit(ctx, principal, "ai_gateway.personal_token.revoke", "success", "revoked personal access token", map[string]any{
@@ -143,14 +146,15 @@ func (s *Service) RotatePersonalAccessToken(ctx context.Context, principal domai
 	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermAIGatewayInvoke); err != nil {
 		return domainaigateway.CreatedPersonalAccessToken{}, err
 	}
-	if s.repo == nil {
+	repo := s.personalTokenRepository()
+	if repo == nil {
 		return domainaigateway.CreatedPersonalAccessToken{}, fmt.Errorf("%w: AI Gateway repository is not configured", apperrors.ErrInvalidArgument)
 	}
 	tokenID = strings.TrimSpace(tokenID)
 	if tokenID == "" {
 		return domainaigateway.CreatedPersonalAccessToken{}, fmt.Errorf("%w: token ID is required", apperrors.ErrInvalidArgument)
 	}
-	items, err := s.repo.ListPersonalAccessTokens(ctx, principal.UserID)
+	items, err := repo.ListPersonalAccessTokens(ctx, principal.UserID)
 	if err != nil {
 		return domainaigateway.CreatedPersonalAccessToken{}, err
 	}
@@ -197,11 +201,11 @@ func (s *Service) RotatePersonalAccessToken(ctx context.Context, principal domai
 		CreatedAt:      now,
 		UpdatedAt:      now,
 	}
-	created, err := s.repo.CreatePersonalAccessToken(ctx, replacement)
+	created, err := repo.CreatePersonalAccessToken(ctx, replacement)
 	if err != nil {
 		return domainaigateway.CreatedPersonalAccessToken{}, err
 	}
-	if err := s.repo.RevokePersonalAccessToken(ctx, principal.UserID, previous.ID); err != nil {
+	if err := repo.RevokePersonalAccessToken(ctx, principal.UserID, previous.ID); err != nil {
 		return domainaigateway.CreatedPersonalAccessToken{}, err
 	}
 	_ = s.recordTokenAudit(ctx, principal, "ai_gateway.personal_token.rotate", "success", "rotated personal access token", map[string]any{
@@ -217,16 +221,18 @@ func (s *Service) ListServiceAccounts(ctx context.Context, principal domainident
 	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermAIGatewayManage); err != nil {
 		return nil, err
 	}
-	if s.repo == nil {
+	repo := s.serviceAccountRepository()
+	if repo == nil {
 		return nil, fmt.Errorf("%w: AI Gateway repository is not configured", apperrors.ErrInvalidArgument)
 	}
-	return s.repo.ListServiceAccounts(ctx)
+	return repo.ListServiceAccounts(ctx)
 }
 func (s *Service) CreateServiceAccount(ctx context.Context, principal domainidentity.Principal, input domainaigateway.ServiceAccountInput) (domainaigateway.ServiceAccount, error) {
 	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermAIGatewayManage); err != nil {
 		return domainaigateway.ServiceAccount{}, err
 	}
-	if s.repo == nil {
+	repo := s.serviceAccountRepository()
+	if repo == nil {
 		return domainaigateway.ServiceAccount{}, fmt.Errorf("%w: AI Gateway repository is not configured", apperrors.ErrInvalidArgument)
 	}
 	name := strings.TrimSpace(input.Name)
@@ -256,7 +262,7 @@ func (s *Service) CreateServiceAccount(ctx context.Context, principal domainiden
 		CreatedAt:     now,
 		UpdatedAt:     now,
 	}
-	created, err := s.repo.CreateServiceAccount(ctx, item)
+	created, err := repo.CreateServiceAccount(ctx, item)
 	if err != nil {
 		return domainaigateway.ServiceAccount{}, err
 	}
@@ -267,19 +273,21 @@ func (s *Service) ListServiceAccountTokens(ctx context.Context, principal domain
 	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermAIGatewayManage); err != nil {
 		return nil, err
 	}
-	if s.repo == nil {
+	repo := s.serviceAccountRepository()
+	if repo == nil {
 		return nil, fmt.Errorf("%w: AI Gateway repository is not configured", apperrors.ErrInvalidArgument)
 	}
-	return s.repo.ListAllServiceAccountTokens(ctx)
+	return repo.ListAllServiceAccountTokens(ctx)
 }
 func (s *Service) CreateServiceAccountToken(ctx context.Context, principal domainidentity.Principal, serviceAccountID string, input domainaigateway.ServiceAccountTokenInput) (domainaigateway.CreatedServiceAccountToken, error) {
 	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermAIGatewayManage); err != nil {
 		return domainaigateway.CreatedServiceAccountToken{}, err
 	}
-	if s.repo == nil {
+	repo := s.serviceAccountRepository()
+	if repo == nil {
 		return domainaigateway.CreatedServiceAccountToken{}, fmt.Errorf("%w: AI Gateway repository is not configured", apperrors.ErrInvalidArgument)
 	}
-	account, err := s.repo.GetServiceAccount(ctx, strings.TrimSpace(serviceAccountID))
+	account, err := repo.GetServiceAccount(ctx, strings.TrimSpace(serviceAccountID))
 	if err != nil {
 		return domainaigateway.CreatedServiceAccountToken{}, err
 	}
@@ -314,7 +322,7 @@ func (s *Service) CreateServiceAccountToken(ctx context.Context, principal domai
 		CreatedAt:        now,
 		UpdatedAt:        now,
 	}
-	created, err := s.repo.CreateServiceAccountToken(ctx, item)
+	created, err := repo.CreateServiceAccountToken(ctx, item)
 	if err != nil {
 		return domainaigateway.CreatedServiceAccountToken{}, err
 	}
@@ -330,10 +338,11 @@ func (s *Service) RevokeServiceAccountToken(ctx context.Context, principal domai
 	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermAIGatewayManage); err != nil {
 		return err
 	}
-	if s.repo == nil {
+	repo := s.serviceAccountRepository()
+	if repo == nil {
 		return fmt.Errorf("%w: AI Gateway repository is not configured", apperrors.ErrInvalidArgument)
 	}
-	if err := s.repo.RevokeServiceAccountToken(ctx, strings.TrimSpace(tokenID)); err != nil {
+	if err := repo.RevokeServiceAccountToken(ctx, strings.TrimSpace(tokenID)); err != nil {
 		return err
 	}
 	_ = s.recordTokenAudit(ctx, principal, "ai_gateway.service_token.revoke", "success", "revoked service account token", map[string]any{"tokenId": strings.TrimSpace(tokenID)})
@@ -343,14 +352,15 @@ func (s *Service) RotateServiceAccountToken(ctx context.Context, principal domai
 	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermAIGatewayManage); err != nil {
 		return domainaigateway.CreatedServiceAccountToken{}, err
 	}
-	if s.repo == nil {
+	repo := s.serviceAccountRepository()
+	if repo == nil {
 		return domainaigateway.CreatedServiceAccountToken{}, fmt.Errorf("%w: AI Gateway repository is not configured", apperrors.ErrInvalidArgument)
 	}
 	tokenID = strings.TrimSpace(tokenID)
 	if tokenID == "" {
 		return domainaigateway.CreatedServiceAccountToken{}, fmt.Errorf("%w: token ID is required", apperrors.ErrInvalidArgument)
 	}
-	items, err := s.repo.ListAllServiceAccountTokens(ctx)
+	items, err := repo.ListAllServiceAccountTokens(ctx)
 	if err != nil {
 		return domainaigateway.CreatedServiceAccountToken{}, err
 	}
@@ -367,7 +377,7 @@ func (s *Service) RotateServiceAccountToken(ctx context.Context, principal domai
 	if previous.RevokedAt != nil {
 		return domainaigateway.CreatedServiceAccountToken{}, fmt.Errorf("%w: token is revoked", apperrors.ErrInvalidArgument)
 	}
-	account, err := s.repo.GetServiceAccount(ctx, previous.ServiceAccountID)
+	account, err := repo.GetServiceAccount(ctx, previous.ServiceAccountID)
 	if err != nil {
 		return domainaigateway.CreatedServiceAccountToken{}, err
 	}
@@ -405,11 +415,11 @@ func (s *Service) RotateServiceAccountToken(ctx context.Context, principal domai
 		CreatedAt:        now,
 		UpdatedAt:        now,
 	}
-	created, err := s.repo.CreateServiceAccountToken(ctx, replacement)
+	created, err := repo.CreateServiceAccountToken(ctx, replacement)
 	if err != nil {
 		return domainaigateway.CreatedServiceAccountToken{}, err
 	}
-	if err := s.repo.RevokeServiceAccountToken(ctx, previous.ID); err != nil {
+	if err := repo.RevokeServiceAccountToken(ctx, previous.ID); err != nil {
 		return domainaigateway.CreatedServiceAccountToken{}, err
 	}
 	_ = s.recordTokenAudit(ctx, principal, "ai_gateway.service_token.rotate", "success", "rotated service account token", map[string]any{

@@ -8,12 +8,14 @@ import (
 	"testing"
 
 	kubeinfra "github.com/opensoha/soha/internal/infrastructure/kubernetes"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic/fake"
+	typedfake "k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/rest"
 	ktesting "k8s.io/client-go/testing"
 )
@@ -25,6 +27,19 @@ type stubBundleProvider struct {
 
 func (s stubBundleProvider) Bundle(context.Context, string) (*kubeinfra.Bundle, error) {
 	return s.bundle, s.err
+}
+
+func kubeVirtTestListKinds() map[schema.GroupVersionResource]string {
+	return map[schema.GroupVersionResource]string{
+		kubeVirtVMGVR:                  "VirtualMachineList",
+		kubeVirtVMIGVR:                 "VirtualMachineInstanceList",
+		kubeVirtInstancetypeGVR:        "VirtualMachineInstancetypeList",
+		kubeVirtClusterInstancetypeGVR: "VirtualMachineClusterInstancetypeList",
+		kubeVirtDataSourceGVR:          "DataSourceList",
+		kubeVirtDataVolumeGVR:          "DataVolumeList",
+		kubeVirtNADGVR:                 "NetworkAttachmentDefinitionList",
+		pvcGVR:                         "PersistentVolumeClaimList",
+	}
 }
 
 func TestBuildKubeVirtVMUsesDataSourceClone(t *testing.T) {
@@ -41,9 +56,23 @@ func TestBuildKubeVirtVMUsesDataSourceClone(t *testing.T) {
 			"dataVolumeName": "demo-rootdisk",
 		},
 	})
-	dataVolumes, _, _ := unstructured.NestedSlice(vm.Object, "spec", "dataVolumeTemplates")
+	dataVolumes, _, err := unstructured.NestedSlice(vm.Object, "spec", "dataVolumeTemplates")
+	if err != nil {
+		t.Fatalf("dataVolumeTemplates error = %v", err)
+	}
 	if len(dataVolumes) != 1 {
 		t.Fatalf("dataVolumeTemplates len = %d, want 1", len(dataVolumes))
+	}
+	dataVolume, ok := dataVolumes[0].(map[string]any)
+	if !ok {
+		t.Fatalf("dataVolumeTemplates[0] = %#v, want map", dataVolumes[0])
+	}
+	accessModes, _, err := unstructured.NestedStringSlice(dataVolume, "spec", "storage", "accessModes")
+	if err != nil {
+		t.Fatalf("accessModes error = %v", err)
+	}
+	if len(accessModes) != 1 || accessModes[0] != "ReadWriteOnce" {
+		t.Fatalf("accessModes = %#v, want ReadWriteOnce", accessModes)
 	}
 	volumes, _, _ := unstructured.NestedSlice(vm.Object, "spec", "template", "spec", "volumes")
 	if len(volumes) == 0 {
@@ -52,6 +81,57 @@ func TestBuildKubeVirtVMUsesDataSourceClone(t *testing.T) {
 	root := volumes[0].(map[string]any)
 	if _, ok := root["dataVolume"]; !ok {
 		t.Fatalf("root volume = %#v, want dataVolume", root)
+	}
+}
+
+func TestBuildKubeVirtVMUsesDataSourceCloneStorageOptions(t *testing.T) {
+	vm := BuildKubeVirtVM(CreateVMInput{
+		Name:       "demo",
+		Namespace:  "apps",
+		DiskSize:   "20Gi",
+		SourceMode: "datasource_clone",
+		SourceRef:  "ubuntu-ds",
+		ProviderParams: map[string]any{
+			"accessModes": []any{"ReadWriteMany", "ReadOnlyMany"},
+			"volumeMode":  "Block",
+		},
+	})
+	dataVolumes, _, err := unstructured.NestedSlice(vm.Object, "spec", "dataVolumeTemplates")
+	if err != nil {
+		t.Fatalf("dataVolumeTemplates error = %v", err)
+	}
+	if len(dataVolumes) != 1 {
+		t.Fatalf("dataVolumeTemplates len = %d, want 1", len(dataVolumes))
+	}
+	dataVolume, ok := dataVolumes[0].(map[string]any)
+	if !ok {
+		t.Fatalf("dataVolumeTemplates[0] = %#v, want map", dataVolumes[0])
+	}
+	accessModes, _, err := unstructured.NestedStringSlice(dataVolume, "spec", "storage", "accessModes")
+	if err != nil {
+		t.Fatalf("accessModes error = %v", err)
+	}
+	if strings.Join(accessModes, ",") != "ReadWriteMany,ReadOnlyMany" {
+		t.Fatalf("accessModes = %#v", accessModes)
+	}
+	volumeMode, _, err := unstructured.NestedString(dataVolume, "spec", "storage", "volumeMode")
+	if err != nil {
+		t.Fatalf("volumeMode error = %v", err)
+	}
+	if volumeMode != "Block" {
+		t.Fatalf("volumeMode = %q, want Block", volumeMode)
+	}
+}
+
+func TestKubeVirtVMIQueriesMatchExportedNamespace(t *testing.T) {
+	memory := kubeVirtVMIInstantQuery("kubevirt_vmi_memory_resident_bytes", "testvm-cirros", "virt-lab")
+	if !strings.Contains(memory, `namespace="virt-lab"`) || !strings.Contains(memory, `exported_namespace="virt-lab"`) {
+		t.Fatalf("memory query = %s", memory)
+	}
+	cpu := kubeVirtVMISumRateQuery("kubevirt_vmi_cpu_usage_seconds_total", "testvm-cirros", "virt-lab", "5m")
+	if !strings.Contains(cpu, `sum(rate(kubevirt_vmi_cpu_usage_seconds_total{name="testvm-cirros",namespace="virt-lab"}[5m]))`) ||
+		!strings.Contains(cpu, `sum(rate(kubevirt_vmi_cpu_usage_seconds_total{name="testvm-cirros",exported_namespace="virt-lab"}[5m]))`) {
+		t.Fatalf("cpu query = %s", cpu)
 	}
 }
 
@@ -109,6 +189,43 @@ func TestBuildKubeVirtVM(t *testing.T) {
 	}
 }
 
+func TestBuildKubeVirtVMUsesMultusNetwork(t *testing.T) {
+	vm := BuildKubeVirtVM(CreateVMInput{
+		Name:      "demo",
+		Namespace: "apps",
+		CPU:       2,
+		Memory:    "4Gi",
+		Network:   "apps/docker-build-net",
+		ProviderParams: map[string]any{
+			"networkType":    "multus",
+			"interfaceModel": "virtio",
+		},
+	})
+
+	networks, _, _ := unstructured.NestedSlice(vm.Object, "spec", "template", "spec", "networks")
+	if len(networks) != 1 {
+		t.Fatalf("networks len = %d, want 1", len(networks))
+	}
+	multus, ok := networks[0].(map[string]any)["multus"].(map[string]any)
+	if !ok || multus["networkName"] != "apps/docker-build-net" {
+		t.Fatalf("multus network = %#v", networks[0])
+	}
+	interfaces, _, _ := unstructured.NestedSlice(vm.Object, "spec", "template", "spec", "domain", "devices", "interfaces")
+	if len(interfaces) != 1 {
+		t.Fatalf("interfaces len = %d, want 1", len(interfaces))
+	}
+	iface, ok := interfaces[0].(map[string]any)
+	if !ok {
+		t.Fatalf("interfaces[0] = %#v, want map", interfaces[0])
+	}
+	if iface["model"] != "virtio" {
+		t.Fatalf("interface model = %#v, want virtio", iface["model"])
+	}
+	if _, ok := iface["bridge"]; !ok {
+		t.Fatalf("interface = %#v, want bridge binding", iface)
+	}
+}
+
 func TestBuildKubeVirtVMUsesSourceRefForContainerDisk(t *testing.T) {
 	vm := BuildKubeVirtVM(CreateVMInput{
 		Name:       "demo",
@@ -138,16 +255,20 @@ func TestKubeVirtAdapterRejectsAgentMode(t *testing.T) {
 	}
 }
 
+func TestKubeVirtAdapterTestConnectionReportsAgentModeUnsupported(t *testing.T) {
+	adapter := NewKubeVirtAdapter(stubBundleProvider{})
+	result, err := adapter.TestConnection(context.Background(), Connection{Mode: "agent", ClusterID: "c1"})
+	if err != nil {
+		t.Fatalf("TestConnection() error = %v, want nil", err)
+	}
+	if result.Status != "unsupported" || result.Reason != "agent_mode_unsupported" || result.NextAction == "" {
+		t.Fatalf("result = %#v, want structured agent unsupported", result)
+	}
+}
+
 func TestKubeVirtAdapterSyncAssetsDegradesWhenCRDMissing(t *testing.T) {
 	scheme := runtime.NewScheme()
-	client := fake.NewSimpleDynamicClientWithCustomListKinds(scheme, map[schema.GroupVersionResource]string{
-		kubeVirtVMGVR:                  "VirtualMachineList",
-		kubeVirtVMIGVR:                 "VirtualMachineInstanceList",
-		kubeVirtInstancetypeGVR:        "VirtualMachineInstancetypeList",
-		kubeVirtClusterInstancetypeGVR: "VirtualMachineClusterInstancetypeList",
-		kubeVirtDataSourceGVR:          "DataSourceList",
-		pvcGVR:                         "PersistentVolumeClaimList",
-	}, &unstructured.Unstructured{
+	client := fake.NewSimpleDynamicClientWithCustomListKinds(scheme, kubeVirtTestListKinds(), &unstructured.Unstructured{
 		Object: map[string]any{
 			"apiVersion": "v1",
 			"kind":       "PersistentVolumeClaim",
@@ -180,16 +301,51 @@ func TestKubeVirtAdapterSyncAssetsDegradesWhenCRDMissing(t *testing.T) {
 	}
 }
 
+func TestKubeVirtAdapterSyncAssetsKeepsHealthyWhenOptionalCRDMissing(t *testing.T) {
+	scheme := runtime.NewScheme()
+	client := fake.NewSimpleDynamicClientWithCustomListKinds(scheme, kubeVirtTestListKinds(), &unstructured.Unstructured{
+		Object: map[string]any{
+			"apiVersion": "kubevirt.io/v1",
+			"kind":       "VirtualMachine",
+			"metadata": map[string]any{
+				"name":      "demo",
+				"namespace": "apps",
+				"uid":       "vm-uid",
+			},
+			"status": map[string]any{"printableStatus": "Running"},
+		},
+	}, &unstructured.Unstructured{
+		Object: map[string]any{
+			"apiVersion": "kubevirt.io/v1",
+			"kind":       "VirtualMachineInstance",
+			"metadata": map[string]any{
+				"name":      "demo",
+				"namespace": "apps",
+				"uid":       "vmi-uid",
+			},
+			"status": map[string]any{"phase": "Running"},
+		},
+	})
+	client.PrependReactor("list", "network-attachment-definitions", func(action ktesting.Action) (bool, runtime.Object, error) {
+		return true, nil, apierrors.NewNotFound(kubeVirtNADGVR.GroupResource(), "")
+	})
+	adapter := NewKubeVirtAdapter(stubBundleProvider{bundle: &kubeinfra.Bundle{Dynamic: client}})
+
+	result, err := adapter.SyncAssets(context.Background(), Connection{ClusterID: "c1", Options: map[string]any{"namespace": "apps"}})
+	if err != nil {
+		t.Fatalf("SyncAssets() error = %v", err)
+	}
+	if result.Health.Status != "healthy" {
+		t.Fatalf("health status = %q, want healthy", result.Health.Status)
+	}
+	if !strings.Contains(result.Health.Message, "networkattachmentdefinition resource is not available") {
+		t.Fatalf("health message = %q, want optional missing resource warning", result.Health.Message)
+	}
+}
+
 func TestKubeVirtAdapterSyncAssetsUsesOwnerUIDForVMInstance(t *testing.T) {
 	scheme := runtime.NewScheme()
-	client := fake.NewSimpleDynamicClientWithCustomListKinds(scheme, map[schema.GroupVersionResource]string{
-		kubeVirtVMGVR:                  "VirtualMachineList",
-		kubeVirtVMIGVR:                 "VirtualMachineInstanceList",
-		kubeVirtInstancetypeGVR:        "VirtualMachineInstancetypeList",
-		kubeVirtClusterInstancetypeGVR: "VirtualMachineClusterInstancetypeList",
-		kubeVirtDataSourceGVR:          "DataSourceList",
-		pvcGVR:                         "PersistentVolumeClaimList",
-	}, &unstructured.Unstructured{
+	client := fake.NewSimpleDynamicClientWithCustomListKinds(scheme, kubeVirtTestListKinds(), &unstructured.Unstructured{
 		Object: map[string]any{
 			"apiVersion": "kubevirt.io/v1",
 			"kind":       "VirtualMachine",
@@ -240,14 +396,7 @@ func TestKubeVirtAdapterSyncAssetsUsesOwnerUIDForVMInstance(t *testing.T) {
 
 func TestKubeVirtAdapterSyncAssetsIncludesClusterInstancetypeFlavors(t *testing.T) {
 	scheme := runtime.NewScheme()
-	client := fake.NewSimpleDynamicClientWithCustomListKinds(scheme, map[schema.GroupVersionResource]string{
-		kubeVirtVMGVR:                  "VirtualMachineList",
-		kubeVirtVMIGVR:                 "VirtualMachineInstanceList",
-		kubeVirtInstancetypeGVR:        "VirtualMachineInstancetypeList",
-		kubeVirtClusterInstancetypeGVR: "VirtualMachineClusterInstancetypeList",
-		kubeVirtDataSourceGVR:          "DataSourceList",
-		pvcGVR:                         "PersistentVolumeClaimList",
-	}, &unstructured.Unstructured{
+	client := fake.NewSimpleDynamicClientWithCustomListKinds(scheme, kubeVirtTestListKinds(), &unstructured.Unstructured{
 		Object: map[string]any{
 			"apiVersion": "instancetype.kubevirt.io/v1beta1",
 			"kind":       "VirtualMachineClusterInstancetype",
@@ -280,9 +429,7 @@ func TestKubeVirtAdapterSyncAssetsIncludesClusterInstancetypeFlavors(t *testing.
 
 func TestKubeVirtAdapterTestConnection(t *testing.T) {
 	scheme := runtime.NewScheme()
-	client := fake.NewSimpleDynamicClientWithCustomListKinds(scheme, map[schema.GroupVersionResource]string{
-		kubeVirtVMGVR: "VirtualMachineList",
-	}, &unstructured.Unstructured{
+	client := fake.NewSimpleDynamicClientWithCustomListKinds(scheme, kubeVirtTestListKinds(), &unstructured.Unstructured{
 		Object: map[string]any{
 			"apiVersion": "kubevirt.io/v1",
 			"kind":       "VirtualMachine",
@@ -306,11 +453,27 @@ func TestKubeVirtAdapterTestConnection(t *testing.T) {
 	}
 }
 
+func TestKubeVirtAdapterTestConnectionDegradesWhenNamespaceMissing(t *testing.T) {
+	scheme := runtime.NewScheme()
+	dynamicClient := fake.NewSimpleDynamicClientWithCustomListKinds(scheme, kubeVirtTestListKinds())
+	typedClient := typedfake.NewSimpleClientset(&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "default"}})
+	adapter := NewKubeVirtAdapter(stubBundleProvider{bundle: &kubeinfra.Bundle{Typed: typedClient, Dynamic: dynamicClient}})
+
+	result, err := adapter.TestConnection(context.Background(), Connection{
+		ClusterID: "c1",
+		Options:   map[string]any{"namespace": "missing"},
+	})
+	if err != nil {
+		t.Fatalf("TestConnection() error = %v", err)
+	}
+	if result.Healthy || result.Status != "degraded" || result.Reason != "namespace_not_found" {
+		t.Fatalf("result = %#v, want namespace_not_found degraded", result)
+	}
+}
+
 func TestKubeVirtAdapterTestConnectionDegradesWhenCRDMissing(t *testing.T) {
 	scheme := runtime.NewScheme()
-	client := fake.NewSimpleDynamicClientWithCustomListKinds(scheme, map[schema.GroupVersionResource]string{
-		kubeVirtVMGVR: "VirtualMachineList",
-	})
+	client := fake.NewSimpleDynamicClientWithCustomListKinds(scheme, kubeVirtTestListKinds())
 	client.PrependReactor("list", "virtualmachines", func(action ktesting.Action) (bool, runtime.Object, error) {
 		return true, nil, apierrors.NewNotFound(kubeVirtVMGVR.GroupResource(), "")
 	})
@@ -327,9 +490,7 @@ func TestKubeVirtAdapterTestConnectionDegradesWhenCRDMissing(t *testing.T) {
 
 func TestKubeVirtAdapterGetConsoleURLReturnsBackendURL(t *testing.T) {
 	scheme := runtime.NewScheme()
-	client := fake.NewSimpleDynamicClientWithCustomListKinds(scheme, map[schema.GroupVersionResource]string{
-		kubeVirtVMIGVR: "VirtualMachineInstanceList",
-	}, &unstructured.Unstructured{
+	client := fake.NewSimpleDynamicClientWithCustomListKinds(scheme, kubeVirtTestListKinds(), &unstructured.Unstructured{
 		Object: map[string]any{
 			"apiVersion": "kubevirt.io/v1",
 			"kind":       "VirtualMachineInstance",
@@ -376,9 +537,7 @@ func TestKubeVirtAdapterGetConsoleURLReturnsBackendURL(t *testing.T) {
 
 func TestKubeVirtAdapterCreateAndPowerAction(t *testing.T) {
 	scheme := runtime.NewScheme()
-	client := fake.NewSimpleDynamicClientWithCustomListKinds(scheme, map[schema.GroupVersionResource]string{
-		kubeVirtVMGVR: "VirtualMachineList",
-	})
+	client := fake.NewSimpleDynamicClientWithCustomListKinds(scheme, kubeVirtTestListKinds())
 	adapter := NewKubeVirtAdapter(stubBundleProvider{bundle: &kubeinfra.Bundle{Dynamic: client}})
 	vm, err := adapter.CreateVM(context.Background(), Connection{ClusterID: "c1"}, CreateVMInput{Name: "demo", Namespace: "apps"})
 	if err != nil {
@@ -400,6 +559,85 @@ func TestKubeVirtAdapterCreateAndPowerAction(t *testing.T) {
 	}
 }
 
+func TestKubeVirtAdapterCreateVMReturnsProvisioningMetadata(t *testing.T) {
+	scheme := runtime.NewScheme()
+	client := fake.NewSimpleDynamicClientWithCustomListKinds(scheme, kubeVirtTestListKinds(), &unstructured.Unstructured{
+		Object: map[string]any{
+			"apiVersion": "cdi.kubevirt.io/v1beta1",
+			"kind":       "DataVolume",
+			"metadata": map[string]any{
+				"name":      "demo-rootdisk",
+				"namespace": "apps",
+				"uid":       "dv-uid",
+			},
+			"spec": map[string]any{
+				"sourceRef": map[string]any{"kind": "DataSource", "name": "ubuntu", "namespace": "apps"},
+				"storage":   map[string]any{"storageClassName": "fast-ssd"},
+			},
+			"status": map[string]any{
+				"phase":    "ImportInProgress",
+				"progress": "45.0%",
+				"conditions": []any{
+					map[string]any{"type": "Ready", "status": "False", "reason": "Importing", "message": "copying image"},
+				},
+			},
+		},
+	}, &unstructured.Unstructured{
+		Object: map[string]any{
+			"apiVersion": "v1",
+			"kind":       "PersistentVolumeClaim",
+			"metadata": map[string]any{
+				"name":      "demo-rootdisk",
+				"namespace": "apps",
+				"uid":       "pvc-uid",
+			},
+			"spec":   map[string]any{"storageClassName": "fast-ssd"},
+			"status": map[string]any{"phase": "Bound"},
+		},
+	}, &unstructured.Unstructured{
+		Object: map[string]any{
+			"apiVersion": "kubevirt.io/v1",
+			"kind":       "VirtualMachineInstance",
+			"metadata": map[string]any{
+				"name":      "demo",
+				"namespace": "apps",
+				"uid":       "vmi-uid",
+			},
+			"status": map[string]any{
+				"phase":    "Running",
+				"nodeName": "node-a",
+				"interfaces": []any{
+					map[string]any{"name": "default", "ipAddress": "10.1.2.3"},
+				},
+			},
+		},
+	})
+	adapter := NewKubeVirtAdapter(stubBundleProvider{bundle: &kubeinfra.Bundle{Dynamic: client}})
+
+	vm, err := adapter.CreateVM(context.Background(), Connection{ClusterID: "c1"}, CreateVMInput{
+		Name:       "demo",
+		Namespace:  "apps",
+		SourceMode: "datasource_clone",
+		SourceRef:  "ubuntu",
+		ProviderParams: map[string]any{
+			"storageClass":   "fast-ssd",
+			"dataVolumeName": "demo-rootdisk",
+		},
+	})
+	if err != nil {
+		t.Fatalf("CreateVM() error = %v", err)
+	}
+	if vm.Metadata["dataVolumeName"] != "demo-rootdisk" || vm.Metadata["dataVolumePhase"] != "ImportInProgress" || vm.Metadata["dataVolumeProgress"] != "45.0%" {
+		t.Fatalf("dataVolume metadata = %#v", vm.Metadata)
+	}
+	if vm.Metadata["pvcPhase"] != "Bound" || vm.Metadata["vmiStatus"] != "Running" {
+		t.Fatalf("pvc/vmi metadata = %#v", vm.Metadata)
+	}
+	if len(vm.IPAddresses) != 1 || vm.IPAddresses[0] != "10.1.2.3" {
+		t.Fatalf("IPAddresses = %#v", vm.IPAddresses)
+	}
+}
+
 func TestKubeVirtAdapterPowerActionsUpdateRunStrategyAndDelete(t *testing.T) {
 	tests := []struct {
 		name            string
@@ -416,9 +654,7 @@ func TestKubeVirtAdapterPowerActionsUpdateRunStrategyAndDelete(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			scheme := runtime.NewScheme()
-			client := fake.NewSimpleDynamicClientWithCustomListKinds(scheme, map[schema.GroupVersionResource]string{
-				kubeVirtVMGVR: "VirtualMachineList",
-			}, &unstructured.Unstructured{
+			client := fake.NewSimpleDynamicClientWithCustomListKinds(scheme, kubeVirtTestListKinds(), &unstructured.Unstructured{
 				Object: map[string]any{
 					"apiVersion": "kubevirt.io/v1",
 					"kind":       "VirtualMachine",

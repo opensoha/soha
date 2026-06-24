@@ -513,6 +513,7 @@ func (s *Service) identitySettings(ctx context.Context) (domainsettings.Identity
 		if item.DefaultProviderID == "" {
 			item.DefaultProviderID = legacyProvider.ID
 		}
+		s.migrateLegacyLoginProviders(ctx, legacyProvider)
 	}
 	if item.DefaultProviderID == "" && len(item.Providers) > 0 {
 		item.DefaultProviderID = item.Providers[0].ID
@@ -812,6 +813,13 @@ func (s *Service) persistLoginProvidersSettings(ctx context.Context, updatedBy s
 		"providers":         loginProvidersToMaps(providers),
 	}
 	return s.store.Upsert(ctx, domainsettings.IdentityLoginProvidersSettingKey, "identity", value, updatedBy)
+}
+
+func (s *Service) migrateLegacyLoginProviders(ctx context.Context, provider domainsettings.LoginProviderSettings) {
+	if s.store == nil {
+		return
+	}
+	_ = s.persistLoginProvidersSettings(ctx, "system", []domainsettings.LoginProviderSettings{provider}, provider.ID)
 }
 
 func (s *Service) syncLegacyOIDCSettings(ctx context.Context, updatedBy string, providers []domainsettings.LoginProviderSettings, defaultProviderID string) error {

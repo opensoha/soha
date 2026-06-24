@@ -5,6 +5,8 @@ import (
 	"errors"
 	"sort"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -22,6 +24,7 @@ import (
 )
 
 type stubWorkflowRepository struct {
+	mu          sync.Mutex
 	items       []domainworkflow.Run
 	deletedIDs  []string
 	createCalls int
@@ -30,36 +33,133 @@ type stubWorkflowRepository struct {
 }
 
 func (r *stubWorkflowRepository) List(context.Context, string, int) ([]domainworkflow.Run, error) {
-	return append([]domainworkflow.Run(nil), r.items...), nil
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return cloneWorkflowRuns(r.items), nil
 }
 
 func (r *stubWorkflowRepository) Create(_ context.Context, item domainworkflow.Run) (domainworkflow.Run, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	r.createCalls++
-	return item, nil
+	return cloneWorkflowRun(item), nil
 }
 
 func (r *stubWorkflowRepository) Get(_ context.Context, runID string) (domainworkflow.Run, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	for _, item := range r.items {
 		if item.ID == runID {
-			return item, nil
+			return cloneWorkflowRun(item), nil
 		}
 	}
 	return domainworkflow.Run{}, errors.New("workflow run not found")
 }
 
 func (r *stubWorkflowRepository) Update(_ context.Context, item domainworkflow.Run) (domainworkflow.Run, error) {
-	r.updated = append(r.updated, item)
-	return item, nil
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	cloned := cloneWorkflowRun(item)
+	r.updated = append(r.updated, cloned)
+	return cloneWorkflowRun(cloned), nil
 }
 
 func (r *stubWorkflowRepository) CreateApproval(_ context.Context, item domainworkflow.Approval) error {
-	r.approvals = append(r.approvals, item)
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.approvals = append(r.approvals, cloneWorkflowApproval(item))
 	return nil
 }
 
 func (r *stubWorkflowRepository) DeleteByIDs(_ context.Context, ids []string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 	r.deletedIDs = append(r.deletedIDs, ids...)
 	return nil
+}
+
+func (r *stubWorkflowRepository) setItems(items []domainworkflow.Run) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.items = cloneWorkflowRuns(items)
+}
+
+func (r *stubWorkflowRepository) createCallCount() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.createCalls
+}
+
+func (r *stubWorkflowRepository) deletedIDsSnapshot() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]string(nil), r.deletedIDs...)
+}
+
+func (r *stubWorkflowRepository) approvalsSnapshot() []domainworkflow.Approval {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	items := make([]domainworkflow.Approval, 0, len(r.approvals))
+	for _, item := range r.approvals {
+		items = append(items, cloneWorkflowApproval(item))
+	}
+	return items
+}
+
+func cloneWorkflowRuns(items []domainworkflow.Run) []domainworkflow.Run {
+	out := make([]domainworkflow.Run, 0, len(items))
+	for _, item := range items {
+		out = append(out, cloneWorkflowRun(item))
+	}
+	return out
+}
+
+func cloneWorkflowRun(item domainworkflow.Run) domainworkflow.Run {
+	item.Steps = append([]domainworkflow.Step(nil), item.Steps...)
+	item.NodeRuns = append([]domainworkflow.NodeRun(nil), item.NodeRuns...)
+	item.Metadata = cloneWorkflowMetadata(item.Metadata)
+	return item
+}
+
+func cloneWorkflowApproval(item domainworkflow.Approval) domainworkflow.Approval {
+	item.Metadata = cloneWorkflowMetadata(item.Metadata)
+	return item
+}
+
+func cloneWorkflowMetadata(metadata map[string]any) map[string]any {
+	if metadata == nil {
+		return nil
+	}
+	out := make(map[string]any, len(metadata))
+	for key, value := range metadata {
+		out[key] = cloneWorkflowMetadataValue(value)
+	}
+	return out
+}
+
+func cloneWorkflowMetadataValue(value any) any {
+	switch typed := value.(type) {
+	case map[string]any:
+		return cloneWorkflowMetadata(typed)
+	case []map[string]any:
+		out := make([]map[string]any, 0, len(typed))
+		for _, item := range typed {
+			out = append(out, cloneWorkflowMetadata(item))
+		}
+		return out
+	case []domainworkflow.NodeRun:
+		return append([]domainworkflow.NodeRun(nil), typed...)
+	case []domainworkflow.Step:
+		return append([]domainworkflow.Step(nil), typed...)
+	case []any:
+		out := make([]any, 0, len(typed))
+		for _, item := range typed {
+			out = append(out, cloneWorkflowMetadataValue(item))
+		}
+		return out
+	default:
+		return value
+	}
 }
 
 type stubWorkflowApps struct {
@@ -94,23 +194,32 @@ func (stubWorkflowReleaseExecutor) Trigger(_ context.Context, _ domainidentity.P
 }
 
 type countingWorkflowReleaseExecutor struct {
-	count *int
+	count *atomic.Int64
 }
 
 func (s countingWorkflowReleaseExecutor) Trigger(_ context.Context, _ domainidentity.Principal, input domainrelease.TriggerInput) (domainrelease.Record, error) {
 	if s.count != nil {
-		*s.count = *s.count + 1
+		s.count.Add(1)
 	}
 	return domainrelease.Record{ID: "release-1", Status: "deployed", ApplicationID: input.ApplicationID}, nil
 }
 
 type recordingWorkflowReleaseExecutor struct {
+	mu     sync.Mutex
 	inputs []domainrelease.TriggerInput
 }
 
 func (s *recordingWorkflowReleaseExecutor) Trigger(_ context.Context, _ domainidentity.Principal, input domainrelease.TriggerInput) (domainrelease.Record, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.inputs = append(s.inputs, input)
 	return domainrelease.Record{ID: "release-" + input.DeploymentName, Status: "deployed", ApplicationID: input.ApplicationID}, nil
+}
+
+func (s *recordingWorkflowReleaseExecutor) inputsSnapshot() []domainrelease.TriggerInput {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]domainrelease.TriggerInput(nil), s.inputs...)
 }
 
 type stubWorkflowResourceExecutor struct{}
@@ -144,7 +253,7 @@ func (stubWorkflowResourceExecutor) DeletePod(context.Context, domainidentity.Pr
 }
 
 type countingWorkflowResourceExecutor struct {
-	rollbackCount *int
+	rollbackCount *atomic.Int64
 }
 
 func (s countingWorkflowResourceExecutor) GetDeploymentRolloutStatus(context.Context, domainidentity.Principal, string, string, string) (domainresource.DeploymentRolloutStatusView, error) {
@@ -157,7 +266,7 @@ func (s countingWorkflowResourceExecutor) ListDeploymentRolloutHistory(context.C
 
 func (s countingWorkflowResourceExecutor) RollbackDeployment(context.Context, domainidentity.Principal, string, string, string, string) (domainresource.DeploymentRollbackView, error) {
 	if s.rollbackCount != nil {
-		*s.rollbackCount = *s.rollbackCount + 1
+		s.rollbackCount.Add(1)
 	}
 	return domainresource.DeploymentRollbackView{Message: "rollback requested"}, nil
 }
@@ -189,19 +298,19 @@ func (stubWorkflowBuildExecutor) Execute(context.Context, domainidentity.Princip
 }
 
 type countingWorkflowBuildExecutor struct {
-	count *int
+	count *atomic.Int64
 }
 
 func (s countingWorkflowBuildExecutor) Trigger(context.Context, domainidentity.Principal, domainbuild.TriggerInput) (domainbuild.Record, error) {
 	if s.count != nil {
-		*s.count = *s.count + 1
+		s.count.Add(1)
 	}
 	return domainbuild.Record{ID: "build-1", Status: "queued"}, nil
 }
 
 func (s countingWorkflowBuildExecutor) Execute(context.Context, domainidentity.Principal, domainbuild.TriggerInput) (domainbuild.Record, error) {
 	if s.count != nil {
-		*s.count = *s.count + 1
+		s.count.Add(1)
 	}
 	return domainbuild.Record{ID: "build-1", Status: "completed", Metadata: map[string]any{"image": "repo/demo:latest", "artifact": map[string]any{"ref": "repo/demo:latest"}}}, nil
 }
@@ -217,12 +326,21 @@ func (stubWorkflowBuildExecutorWithoutArtifacts) Execute(context.Context, domain
 }
 
 type recordingWorkflowArtifactStore struct {
+	mu    sync.Mutex
 	items []domaindelivery.ExecutionArtifact
 }
 
 func (s *recordingWorkflowArtifactStore) UpsertExecutionArtifact(_ context.Context, item domaindelivery.ExecutionArtifact) (domaindelivery.ExecutionArtifact, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.items = append(s.items, item)
 	return item, nil
+}
+
+func (s *recordingWorkflowArtifactStore) itemsSnapshot() []domaindelivery.ExecutionArtifact {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]domaindelivery.ExecutionArtifact(nil), s.items...)
 }
 
 type stubWorkflowRolePermissionReader struct {
@@ -233,20 +351,18 @@ func (s stubWorkflowRolePermissionReader) ListRolePermissions(context.Context) (
 	return s.matrix, nil
 }
 
-func waitForWorkflowStatus(t *testing.T, repo *stubWorkflowRepository, status string) domainworkflow.Run {
+func waitForWorkflowStatus(t *testing.T, service *Service, runID string, status string) domainworkflow.Run {
 	t.Helper()
-	deadline := time.Now().Add(500 * time.Millisecond)
-	for time.Now().Before(deadline) {
-		if len(repo.updated) > 0 && repo.updated[len(repo.updated)-1].Status == status {
-			return repo.updated[len(repo.updated)-1]
-		}
-		time.Sleep(10 * time.Millisecond)
+	waitCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	run, err := service.waitForRunStatus(waitCtx, runID, status)
+	if err != nil {
+		t.Fatalf("waitForRunStatus(%q) error = %v", status, err)
 	}
-	if len(repo.updated) == 0 {
-		t.Fatalf("expected workflow runner to persist status %q, got no updates", status)
+	if run.Status != status {
+		t.Fatalf("waitForRunStatus(%q) = %q", status, run.Status)
 	}
-	t.Fatalf("latest workflow status = %q, want %q", repo.updated[len(repo.updated)-1].Status, status)
-	return domainworkflow.Run{}
+	return run
 }
 
 func TestListPrunesStaleApplications(t *testing.T) {
@@ -271,15 +387,16 @@ func TestListPrunesStaleApplications(t *testing.T) {
 		t.Fatalf("List() items = %+v, want only keep", items)
 	}
 
-	sort.Strings(repo.deletedIDs)
+	deletedIDs := repo.deletedIDsSnapshot()
+	sort.Strings(deletedIDs)
 	expected := []string{"stale-empty-app", "stale-missing-app"}
 	sort.Strings(expected)
-	if len(repo.deletedIDs) != len(expected) {
-		t.Fatalf("deletedIDs len = %d, want %d (%v)", len(repo.deletedIDs), len(expected), repo.deletedIDs)
+	if len(deletedIDs) != len(expected) {
+		t.Fatalf("deletedIDs len = %d, want %d (%v)", len(deletedIDs), len(expected), deletedIDs)
 	}
 	for i := range expected {
-		if repo.deletedIDs[i] != expected[i] {
-			t.Fatalf("deletedIDs = %v, want %v", repo.deletedIDs, expected)
+		if deletedIDs[i] != expected[i] {
+			t.Fatalf("deletedIDs = %v, want %v", deletedIDs, expected)
 		}
 	}
 }
@@ -301,8 +418,8 @@ func TestTriggerReturnsNotFoundWhenApplicationMissing(t *testing.T) {
 	if !errors.Is(err, apperrors.ErrNotFound) {
 		t.Fatalf("Trigger() error = %v, want ErrNotFound", err)
 	}
-	if repo.createCalls != 0 {
-		t.Fatalf("Create() called %d times, want 0", repo.createCalls)
+	if got := repo.createCallCount(); got != 0 {
+		t.Fatalf("Create() called %d times, want 0", got)
 	}
 }
 
@@ -323,8 +440,8 @@ func TestTriggerRequiresWorkflowTriggerPermission(t *testing.T) {
 	if !errors.Is(err, apperrors.ErrAccessDenied) {
 		t.Fatalf("Trigger() error = %v, want ErrAccessDenied", err)
 	}
-	if repo.createCalls != 0 {
-		t.Fatalf("Create() called %d times, want 0", repo.createCalls)
+	if got := repo.createCallCount(); got != 0 {
+		t.Fatalf("Create() called %d times, want 0", got)
 	}
 }
 
@@ -393,35 +510,24 @@ func TestTriggerExecutesDAGWorkflowTemplate(t *testing.T) {
 	if len(run.Steps) != 3 {
 		t.Fatalf("run.Steps = %+v, want 3 queued steps", run.Steps)
 	}
-	deadline := time.Now().Add(300 * time.Millisecond)
-	for (len(repo.updated) == 0 || repo.updated[len(repo.updated)-1].Status == "running") && time.Now().Before(deadline) {
-		time.Sleep(10 * time.Millisecond)
+	waitingRun := waitForWorkflowStatus(t, service, run.ID, workflowStatusWaitingApproval)
+	if waitingRun.Metadata["aiGatewayApprovalRequestId"] != "approval-1" {
+		t.Fatalf("expected workflow run metadata to keep gateway approval id, got %#v", waitingRun.Metadata)
 	}
-	if len(repo.updated) == 0 {
-		t.Fatalf("expected async workflow runner to persist updates")
-	}
-	if repo.updated[len(repo.updated)-1].Status != workflowStatusWaitingApproval {
-		t.Fatalf("final updated status = %q, want waiting_approval", repo.updated[len(repo.updated)-1].Status)
-	}
-	if repo.updated[len(repo.updated)-1].Metadata["aiGatewayApprovalRequestId"] != "approval-1" {
-		t.Fatalf("expected workflow run metadata to keep gateway approval id, got %#v", repo.updated[len(repo.updated)-1].Metadata)
-	}
-	repo.items = []domainworkflow.Run{repo.updated[len(repo.updated)-1]}
+	repo.setItems([]domainworkflow.Run{waitingRun})
 	if _, err := service.Approve(context.Background(), domainidentity.Principal{UserID: "u-1", UserName: "approver", Roles: []string{"developer"}}, run.ID, "approved"); err != nil {
 		t.Fatalf("Approve() error = %v", err)
 	}
-	if len(repo.approvals) != 1 {
-		t.Fatalf("approvals len = %d, want 1", len(repo.approvals))
+	approvals := repo.approvalsSnapshot()
+	if len(approvals) != 1 {
+		t.Fatalf("approvals len = %d, want 1", len(approvals))
 	}
-	if repo.approvals[0].Metadata["aiGatewayApprovalRequestId"] != "approval-1" || repo.approvals[0].Metadata["aiGatewayToolName"] != "delivery.actions.trigger" {
-		t.Fatalf("expected workflow approval metadata to keep gateway linkage, got %#v", repo.approvals[0].Metadata)
+	if approvals[0].Metadata["aiGatewayApprovalRequestId"] != "approval-1" || approvals[0].Metadata["aiGatewayToolName"] != "delivery.actions.trigger" {
+		t.Fatalf("expected workflow approval metadata to keep gateway linkage, got %#v", approvals[0].Metadata)
 	}
-	deadline = time.Now().Add(300 * time.Millisecond)
-	for repo.updated[len(repo.updated)-1].Status != "completed" && time.Now().Before(deadline) {
-		time.Sleep(10 * time.Millisecond)
-	}
-	if repo.updated[len(repo.updated)-1].Status != "completed" {
-		t.Fatalf("approved workflow final status = %q, want completed", repo.updated[len(repo.updated)-1].Status)
+	completedRun := waitForWorkflowStatus(t, service, run.ID, "completed")
+	if completedRun.Status != "completed" {
+		t.Fatalf("approved workflow final status = %q, want completed", completedRun.Status)
 	}
 }
 
@@ -550,8 +656,8 @@ func TestTriggerRejectsDeliveryDAGInputReferenceFromNonUpstreamNode(t *testing.T
 	if !strings.Contains(err.Error(), "must come from an upstream node") {
 		t.Fatalf("Trigger() error = %v, want upstream-node validation", err)
 	}
-	if repo.createCalls != 0 {
-		t.Fatalf("Create() called %d times, want 0", repo.createCalls)
+	if got := repo.createCallCount(); got != 0 {
+		t.Fatalf("Create() called %d times, want 0", got)
 	}
 }
 
@@ -620,7 +726,7 @@ func TestTriggerExecutesDeliveryDAGNativeMetadata(t *testing.T) {
 		_ = service.Shutdown(context.Background())
 	}()
 
-	_, err := service.Trigger(context.Background(), domainidentity.Principal{UserName: "tester", Roles: []string{"developer"}}, domainworkflow.Input{
+	run, err := service.Trigger(context.Background(), domainidentity.Principal{UserName: "tester", Roles: []string{"developer"}}, domainworkflow.Input{
 		ApplicationID:  "app-1",
 		WorkflowName:   "delivery-dag",
 		ClusterID:      "cluster-1",
@@ -631,7 +737,7 @@ func TestTriggerExecutesDeliveryDAGNativeMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Trigger() error = %v", err)
 	}
-	finalRun := waitForWorkflowStatus(t, repo, "completed")
+	finalRun := waitForWorkflowStatus(t, service, run.ID, "completed")
 	artifacts := finalRun.Metadata["artifacts"].(map[string]any)
 	imageArtifact, ok := artifacts["image"].(map[string]any)
 	if !ok {
@@ -643,11 +749,13 @@ func TestTriggerExecutesDeliveryDAGNativeMetadata(t *testing.T) {
 	if _, ok := imageArtifact["value"]; ok {
 		t.Fatalf("image artifact metadata = %#v, want lightweight reference without value", imageArtifact)
 	}
-	if len(artifactStore.items) != 1 || artifactStore.items[0].Metadata["value"] == nil {
-		t.Fatalf("stored artifacts = %#v, want independently stored artifact value", artifactStore.items)
+	storedArtifacts := artifactStore.itemsSnapshot()
+	if len(storedArtifacts) != 1 || storedArtifacts[0].Metadata["value"] == nil {
+		t.Fatalf("stored artifacts = %#v, want independently stored artifact value", storedArtifacts)
 	}
-	if len(releases.inputs) != 1 || releases.inputs[0].Image != "repo/demo:latest" {
-		t.Fatalf("release inputs = %+v, want image ref from artifact state", releases.inputs)
+	releaseInputs := releases.inputsSnapshot()
+	if len(releaseInputs) != 1 || releaseInputs[0].Image != "repo/demo:latest" {
+		t.Fatalf("release inputs = %+v, want image ref from artifact state", releaseInputs)
 	}
 	nodeOutputs := finalRun.Metadata["nodeOutputs"].(map[string]any)
 	buildOutput := nodeOutputs["build"].(map[string]any)
@@ -747,7 +855,7 @@ func TestTriggerDeliveryDAGRequiredArtifactOutputMissingFailsNodeAndWorkflow(t *
 		_ = service.Shutdown(context.Background())
 	}()
 
-	_, err := service.Trigger(context.Background(), domainidentity.Principal{UserName: "tester", Roles: []string{"developer"}}, domainworkflow.Input{
+	run, err := service.Trigger(context.Background(), domainidentity.Principal{UserName: "tester", Roles: []string{"developer"}}, domainworkflow.Input{
 		ApplicationID:  "app-1",
 		WorkflowName:   "delivery-dag",
 		ClusterID:      "cluster-1",
@@ -757,7 +865,7 @@ func TestTriggerDeliveryDAGRequiredArtifactOutputMissingFailsNodeAndWorkflow(t *
 	if err != nil {
 		t.Fatalf("Trigger() error = %v", err)
 	}
-	finalRun := waitForWorkflowStatus(t, repo, "failed")
+	finalRun := waitForWorkflowStatus(t, service, run.ID, "failed")
 	if len(finalRun.NodeRuns) != 1 || finalRun.NodeRuns[0].Status != "failed" {
 		t.Fatalf("NodeRuns = %+v, want build failed", finalRun.NodeRuns)
 	}
@@ -809,7 +917,7 @@ func TestTriggerDeliveryDAGRunConditionSkipsNode(t *testing.T) {
 		_ = service.Shutdown(context.Background())
 	}()
 
-	_, err := service.Trigger(context.Background(), domainidentity.Principal{UserName: "tester", Roles: []string{"developer"}}, domainworkflow.Input{
+	run, err := service.Trigger(context.Background(), domainidentity.Principal{UserName: "tester", Roles: []string{"developer"}}, domainworkflow.Input{
 		ApplicationID:  "app-1",
 		WorkflowName:   "delivery-dag",
 		ClusterID:      "cluster-1",
@@ -820,7 +928,7 @@ func TestTriggerDeliveryDAGRunConditionSkipsNode(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Trigger() error = %v", err)
 	}
-	finalRun := waitForWorkflowStatus(t, repo, "completed")
+	finalRun := waitForWorkflowStatus(t, service, run.ID, "completed")
 	if finalRun.NodeRuns[0].Status != "skipped" || finalRun.NodeRuns[1].Status != "completed" {
 		t.Fatalf("node runs = %+v, want build skipped and notify completed", finalRun.NodeRuns)
 	}
@@ -860,7 +968,7 @@ func TestTriggerDeliveryDAGFailurePolicyAndFailureBranch(t *testing.T) {
 		WorkflowTemplate:   template,
 		Targets:            []domaincatalog.ReleaseTarget{{ClusterID: "cluster-1", Namespace: "default", WorkloadName: "demo", Enabled: true}},
 	}
-	rollbackCount := 0
+	var rollbackCount atomic.Int64
 	service := &Service{
 		repo:        repo,
 		apps:        &stubWorkflowApps{},
@@ -876,7 +984,7 @@ func TestTriggerDeliveryDAGFailurePolicyAndFailureBranch(t *testing.T) {
 		_ = service.Shutdown(context.Background())
 	}()
 
-	_, err := service.Trigger(context.Background(), domainidentity.Principal{UserName: "tester", Roles: []string{"developer"}}, domainworkflow.Input{
+	run, err := service.Trigger(context.Background(), domainidentity.Principal{UserName: "tester", Roles: []string{"developer"}}, domainworkflow.Input{
 		ApplicationID:  "app-1",
 		WorkflowName:   "delivery-dag",
 		ClusterID:      "cluster-1",
@@ -886,9 +994,9 @@ func TestTriggerDeliveryDAGFailurePolicyAndFailureBranch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Trigger() error = %v", err)
 	}
-	finalRun := waitForWorkflowStatus(t, repo, "failed")
-	if rollbackCount != 1 {
-		t.Fatalf("rollbackCount = %d, want 1", rollbackCount)
+	finalRun := waitForWorkflowStatus(t, service, run.ID, "failed")
+	if got := rollbackCount.Load(); got != 1 {
+		t.Fatalf("rollbackCount = %d, want 1", got)
 	}
 	statuses := map[string]string{}
 	for _, nodeRun := range finalRun.NodeRuns {
@@ -951,7 +1059,7 @@ func TestTriggerDeliveryDAGReleaseFanOutTargets(t *testing.T) {
 		_ = service.Shutdown(context.Background())
 	}()
 
-	_, err := service.Trigger(context.Background(), domainidentity.Principal{UserName: "tester", Roles: []string{"developer"}}, domainworkflow.Input{
+	run, err := service.Trigger(context.Background(), domainidentity.Principal{UserName: "tester", Roles: []string{"developer"}}, domainworkflow.Input{
 		ApplicationID:  "app-1",
 		WorkflowName:   "delivery-dag",
 		ClusterID:      "cluster-1",
@@ -961,11 +1069,12 @@ func TestTriggerDeliveryDAGReleaseFanOutTargets(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Trigger() error = %v", err)
 	}
-	finalRun := waitForWorkflowStatus(t, repo, "completed")
-	if len(releases.inputs) != 2 {
-		t.Fatalf("release triggers = %+v, want 2 fan-out targets", releases.inputs)
+	finalRun := waitForWorkflowStatus(t, service, run.ID, "completed")
+	releaseInputs := releases.inputsSnapshot()
+	if len(releaseInputs) != 2 {
+		t.Fatalf("release triggers = %+v, want 2 fan-out targets", releaseInputs)
 	}
-	namespaces := []string{releases.inputs[0].Namespace, releases.inputs[1].Namespace}
+	namespaces := []string{releaseInputs[0].Namespace, releaseInputs[1].Namespace}
 	sort.Strings(namespaces)
 	if strings.Join(namespaces, ",") != "blue-a,blue-b" {
 		t.Fatalf("release namespaces = %#v, want blue-a and blue-b", namespaces)
@@ -1044,8 +1153,8 @@ func TestTriggerDeliveryDAGRejectsInvalidExecutionSemantics(t *testing.T) {
 			if !errors.Is(err, apperrors.ErrInvalidArgument) {
 				t.Fatalf("Trigger() error = %v, want ErrInvalidArgument", err)
 			}
-			if repo.createCalls != 0 {
-				t.Fatalf("Create() called %d times, want 0", repo.createCalls)
+			if got := repo.createCallCount(); got != 0 {
+				t.Fatalf("Create() called %d times, want 0", got)
 			}
 		})
 	}
@@ -1053,8 +1162,8 @@ func TestTriggerDeliveryDAGRejectsInvalidExecutionSemantics(t *testing.T) {
 
 func TestTriggerValidationExecutesOnlyValidationNodes(t *testing.T) {
 	repo := &stubWorkflowRepository{}
-	buildCount := 0
-	releaseCount := 0
+	var buildCount atomic.Int64
+	var releaseCount atomic.Int64
 	template := &domaincatalog.WorkflowTemplate{
 		ID:   "wf-verify",
 		Key:  "release-dag",
@@ -1115,18 +1224,12 @@ func TestTriggerValidationExecutesOnlyValidationNodes(t *testing.T) {
 	if len(run.NodeRuns) != 1 || run.NodeRuns[0].Type != "check" {
 		t.Fatalf("NodeRuns = %+v, want only check validation node", run.NodeRuns)
 	}
-	deadline := time.Now().Add(300 * time.Millisecond)
-	for len(repo.updated) == 0 && time.Now().Before(deadline) {
-		time.Sleep(10 * time.Millisecond)
+	finalRun := waitForWorkflowStatus(t, service, run.ID, "completed")
+	if gotBuild, gotRelease := buildCount.Load(), releaseCount.Load(); gotBuild != 0 || gotRelease != 0 {
+		t.Fatalf("build/release counts = %d/%d, want 0/0 for validation run", gotBuild, gotRelease)
 	}
-	if buildCount != 0 || releaseCount != 0 {
-		t.Fatalf("build/release counts = %d/%d, want 0/0 for validation run", buildCount, releaseCount)
-	}
-	if len(repo.updated) == 0 {
-		t.Fatalf("expected validation workflow runner to persist updates")
-	}
-	if repo.updated[len(repo.updated)-1].Status != "completed" {
-		t.Fatalf("validation final status = %q, nodeRuns = %+v, want completed", repo.updated[len(repo.updated)-1].Status, repo.updated[len(repo.updated)-1].NodeRuns)
+	if finalRun.Status != "completed" {
+		t.Fatalf("validation final status = %q, nodeRuns = %+v, want completed", finalRun.Status, finalRun.NodeRuns)
 	}
 }
 
@@ -1170,16 +1273,16 @@ func TestTriggerValidationRequiresValidationNodes(t *testing.T) {
 	if !errors.Is(err, apperrors.ErrInvalidArgument) {
 		t.Fatalf("TriggerValidation() error = %v, want invalid argument", err)
 	}
-	if repo.createCalls != 0 {
-		t.Fatalf("Create() called %d times, want 0", repo.createCalls)
+	if got := repo.createCallCount(); got != 0 {
+		t.Fatalf("Create() called %d times, want 0", got)
 	}
 }
 
 func TestTriggerRollbackExecutesOnlyRollbackNodes(t *testing.T) {
 	repo := &stubWorkflowRepository{}
-	buildCount := 0
-	releaseCount := 0
-	rollbackCount := 0
+	var buildCount atomic.Int64
+	var releaseCount atomic.Int64
+	var rollbackCount atomic.Int64
 	template := &domaincatalog.WorkflowTemplate{
 		ID:   "wf-rollback",
 		Key:  "release-dag",
@@ -1241,18 +1344,13 @@ func TestTriggerRollbackExecutesOnlyRollbackNodes(t *testing.T) {
 	if len(run.NodeRuns) != 1 || run.NodeRuns[0].Type != "rollback_to_previous" {
 		t.Fatalf("NodeRuns = %+v, want only rollback node", run.NodeRuns)
 	}
-	deadline := time.Now().Add(300 * time.Millisecond)
-	for len(repo.updated) == 0 && time.Now().Before(deadline) {
-		time.Sleep(10 * time.Millisecond)
+	finalRun := waitForWorkflowStatus(t, service, run.ID, "completed")
+	gotBuild, gotRelease, gotRollback := buildCount.Load(), releaseCount.Load(), rollbackCount.Load()
+	if gotBuild != 0 || gotRelease != 0 || gotRollback != 1 {
+		t.Fatalf("build/release/rollback counts = %d/%d/%d, want 0/0/1", gotBuild, gotRelease, gotRollback)
 	}
-	if buildCount != 0 || releaseCount != 0 || rollbackCount != 1 {
-		t.Fatalf("build/release/rollback counts = %d/%d/%d, want 0/0/1", buildCount, releaseCount, rollbackCount)
-	}
-	if len(repo.updated) == 0 {
-		t.Fatalf("expected rollback workflow runner to persist updates")
-	}
-	if repo.updated[len(repo.updated)-1].Status != "completed" {
-		t.Fatalf("rollback final status = %q, nodeRuns = %+v, want completed", repo.updated[len(repo.updated)-1].Status, repo.updated[len(repo.updated)-1].NodeRuns)
+	if finalRun.Status != "completed" {
+		t.Fatalf("rollback final status = %q, nodeRuns = %+v, want completed", finalRun.Status, finalRun.NodeRuns)
 	}
 }
 
@@ -1296,7 +1394,7 @@ func TestTriggerRollbackRequiresRollbackNodes(t *testing.T) {
 	if !errors.Is(err, apperrors.ErrInvalidArgument) {
 		t.Fatalf("TriggerRollback() error = %v, want invalid argument", err)
 	}
-	if repo.createCalls != 0 {
-		t.Fatalf("Create() called %d times, want 0", repo.createCalls)
+	if got := repo.createCallCount(); got != 0 {
+		t.Fatalf("Create() called %d times, want 0", got)
 	}
 }

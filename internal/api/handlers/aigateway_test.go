@@ -168,8 +168,6 @@ func (s *stubAIGatewayService) CancelApprovalRequest(context.Context, domainiden
 }
 
 func TestAIGatewayGovernanceStatusBoundsWindowHours(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
 	for _, tc := range []struct {
 		name        string
 		query       string
@@ -216,8 +214,6 @@ func TestAIGatewayGovernanceStatusBoundsWindowHours(t *testing.T) {
 }
 
 func TestListPersonalAccessTokensBindsScopeFilters(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
 	service := &stubAIGatewayService{}
 	handler := NewAIGatewayHandler(service)
 	recorder := httptest.NewRecorder()
@@ -236,8 +232,6 @@ func TestListPersonalAccessTokensBindsScopeFilters(t *testing.T) {
 }
 
 func TestRotatePersonalAccessTokenBindsOptionalExpiration(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
 	expiresAt := time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)
 	service := &stubAIGatewayService{}
 	handler := NewAIGatewayHandler(service)

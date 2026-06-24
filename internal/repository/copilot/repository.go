@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -55,7 +56,7 @@ func (r *Repository) GetSession(ctx context.Context, createdBy, sessionID string
 		WHERE created_by = ? AND id = ? AND deleted_at IS NULL
 		LIMIT 1
 	`, createdBy, sessionID).Row()
-	return scanSessionRow(row)
+	return scanSessionRow(row, sessionID)
 }
 
 func (r *Repository) CreateSession(ctx context.Context, session domaincopilot.Session) (domaincopilot.Session, error) {
@@ -86,7 +87,7 @@ func (r *Repository) UpdateSession(ctx context.Context, createdBy, sessionID str
 		return domaincopilot.Session{}, fmt.Errorf("update ai session: %w", result.Error)
 	}
 	if result.RowsAffected == 0 {
-		return domaincopilot.Session{}, fmt.Errorf("ai session not found: %s", sessionID)
+		return domaincopilot.Session{}, copilotNotFound("ai session", sessionID)
 	}
 	return r.GetSession(ctx, createdBy, sessionID)
 }
@@ -101,7 +102,7 @@ func (r *Repository) DeleteSession(ctx context.Context, createdBy, sessionID str
 		return fmt.Errorf("delete ai session: %w", result.Error)
 	}
 	if result.RowsAffected == 0 {
-		return fmt.Errorf("ai session not found: %s", sessionID)
+		return copilotNotFound("ai session", sessionID)
 	}
 	return nil
 }
@@ -132,6 +133,25 @@ func (r *Repository) ListMessages(ctx context.Context, sessionID string, limit i
 	return items, rows.Err()
 }
 
+func (r *Repository) UpdateMessageMetadata(ctx context.Context, sessionID, messageID string, metadata map[string]any) (domaincopilot.Message, error) {
+	payload, err := json.Marshal(metadata)
+	if err != nil {
+		return domaincopilot.Message{}, fmt.Errorf("marshal ai message metadata: %w", err)
+	}
+	result := r.db.WithContext(ctx).Exec(`
+		UPDATE ai_messages
+		SET metadata = ?
+		WHERE session_id = ? AND id = ?
+	`, string(payload), sessionID, messageID)
+	if result.Error != nil {
+		return domaincopilot.Message{}, fmt.Errorf("update ai message metadata: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return domaincopilot.Message{}, copilotNotFound("ai message", messageID)
+	}
+	return r.GetMessage(ctx, sessionID, messageID)
+}
+
 func (r *Repository) ListRecentMessages(ctx context.Context, sessionID string, limit int) ([]domaincopilot.Message, error) {
 	if limit <= 0 {
 		limit = 20
@@ -160,6 +180,27 @@ func (r *Repository) ListRecentMessages(ctx context.Context, sessionID string, l
 		items = append(items, item)
 	}
 	return items, rows.Err()
+}
+
+func (r *Repository) GetMessage(ctx context.Context, sessionID, messageID string) (domaincopilot.Message, error) {
+	row := r.db.WithContext(ctx).Raw(`
+		SELECT id, session_id, role, content, metadata, created_at
+		FROM ai_messages
+		WHERE session_id = ? AND id = ?
+		LIMIT 1
+	`, sessionID, messageID).Row()
+	var item domaincopilot.Message
+	var metadata []byte
+	if err := row.Scan(&item.ID, &item.SessionID, &item.Role, &item.Content, &metadata, &item.CreatedAt); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return domaincopilot.Message{}, copilotNotFound("ai message", messageID)
+		}
+		return domaincopilot.Message{}, fmt.Errorf("scan ai message row: %w", err)
+	}
+	if len(metadata) > 0 {
+		_ = json.Unmarshal(metadata, &item.Metadata)
+	}
+	return item, nil
 }
 
 func (r *Repository) CreateMessage(ctx context.Context, message domaincopilot.Message) (domaincopilot.Message, error) {
@@ -209,7 +250,7 @@ func (r *Repository) GetDataSource(ctx context.Context, dataSourceID string) (do
 		WHERE id = ?
 		LIMIT 1
 	`, dataSourceID).Row()
-	return scanDataSourceRow(row)
+	return scanDataSourceRow(row, dataSourceID)
 }
 
 func (r *Repository) CreateDataSource(ctx context.Context, item domaincopilot.DataSource) (domaincopilot.DataSource, error) {
@@ -268,7 +309,7 @@ func (r *Repository) UpdateDataSource(ctx context.Context, dataSourceID string, 
 		return domaincopilot.DataSource{}, fmt.Errorf("update data source: %w", result.Error)
 	}
 	if result.RowsAffected == 0 {
-		return domaincopilot.DataSource{}, fmt.Errorf("data source not found: %s", dataSourceID)
+		return domaincopilot.DataSource{}, copilotNotFound("data source", dataSourceID)
 	}
 	return r.GetDataSource(ctx, dataSourceID)
 }
@@ -283,7 +324,7 @@ func (r *Repository) UpdateDataSourceValidation(ctx context.Context, dataSourceI
 		return domaincopilot.DataSource{}, fmt.Errorf("update data source validation: %w", result.Error)
 	}
 	if result.RowsAffected == 0 {
-		return domaincopilot.DataSource{}, fmt.Errorf("data source not found: %s", dataSourceID)
+		return domaincopilot.DataSource{}, copilotNotFound("data source", dataSourceID)
 	}
 	return r.GetDataSource(ctx, dataSourceID)
 }
@@ -361,7 +402,7 @@ func (r *Repository) UpdateAnalysisProfile(ctx context.Context, profileID string
 		return domaincopilot.AnalysisProfile{}, fmt.Errorf("update analysis profile: %w", result.Error)
 	}
 	if result.RowsAffected == 0 {
-		return domaincopilot.AnalysisProfile{}, fmt.Errorf("analysis profile not found: %s", profileID)
+		return domaincopilot.AnalysisProfile{}, copilotNotFound("analysis profile", profileID)
 	}
 	return r.getAnalysisProfile(ctx, profileID)
 }
@@ -431,7 +472,7 @@ func (r *Repository) UpdateAutomationPolicy(ctx context.Context, policyID string
 		return domaincopilot.AutomationPolicy{}, fmt.Errorf("update automation policy: %w", result.Error)
 	}
 	if result.RowsAffected == 0 {
-		return domaincopilot.AutomationPolicy{}, fmt.Errorf("automation policy not found: %s", policyID)
+		return domaincopilot.AutomationPolicy{}, copilotNotFound("automation policy", policyID)
 	}
 	return r.getAutomationPolicy(ctx, policyID)
 }
@@ -445,7 +486,7 @@ func (r *Repository) DeleteAutomationPolicy(ctx context.Context, policyID string
 		return fmt.Errorf("delete automation policy: %w", result.Error)
 	}
 	if result.RowsAffected == 0 {
-		return fmt.Errorf("%w: automation policy %s", apperrors.ErrNotFound, policyID)
+		return copilotNotFound("automation policy", policyID)
 	}
 	return nil
 }
@@ -508,7 +549,7 @@ func (r *Repository) GetRootCauseRun(ctx context.Context, createdBy, runID strin
 		WHERE created_by = ? AND id = ?
 		LIMIT 1
 	`, createdBy, runID).Row()
-	return scanRootCauseRunRow(row)
+	return scanRootCauseRunRow(row, runID)
 }
 
 func (r *Repository) CreateRootCauseRun(ctx context.Context, run domaincopilot.RootCauseRun) (domaincopilot.RootCauseRun, error) {
@@ -622,7 +663,7 @@ func (r *Repository) UpdateRootCauseRun(ctx context.Context, run domaincopilot.R
 		return domaincopilot.RootCauseRun{}, fmt.Errorf("update root cause run: %w", result.Error)
 	}
 	if result.RowsAffected == 0 {
-		return domaincopilot.RootCauseRun{}, fmt.Errorf("%w: root cause run %s", apperrors.ErrNotFound, run.ID)
+		return domaincopilot.RootCauseRun{}, copilotNotFound("root cause run", run.ID)
 	}
 	return r.GetRootCauseRun(ctx, run.CreatedBy, run.ID)
 }
@@ -696,7 +737,7 @@ func (r *Repository) GetAgentRun(ctx context.Context, createdBy, runID string) (
 	}
 	query += ` LIMIT 1`
 	row := r.db.WithContext(ctx).Raw(query, args...).Row()
-	return scanAgentRunRow(row)
+	return scanAgentRunRow(row, runID)
 }
 
 func (r *Repository) CreateAgentRun(ctx context.Context, run domaincopilot.AgentRun) (domaincopilot.AgentRun, error) {
@@ -780,7 +821,7 @@ func (r *Repository) CreateAgentRun(ctx context.Context, run domaincopilot.Agent
 func (r *Repository) ClaimAgentRun(ctx context.Context, input domaincopilot.AgentRunClaimInput) (domaincopilot.AgentRun, error) {
 	agentID := strings.TrimSpace(input.AgentID)
 	if agentID == "" {
-		return domaincopilot.AgentRun{}, apperrors.ErrNotFound
+		return domaincopilot.AgentRun{}, fmt.Errorf("%w: agentId is required", apperrors.ErrInvalidArgument)
 	}
 	now := time.Now().UTC()
 	var claimed domaincopilot.AgentRun
@@ -886,7 +927,7 @@ func (r *Repository) UpdateAgentRunCallback(ctx context.Context, input domaincop
 		return domaincopilot.AgentRun{}, fmt.Errorf("update ai agent run callback: %w", result.Error)
 	}
 	if result.RowsAffected == 0 {
-		return domaincopilot.AgentRun{}, fmt.Errorf("%w: ai agent run %s", apperrors.ErrNotFound, input.RunID)
+		return domaincopilot.AgentRun{}, copilotNotFound("ai agent run", input.RunID)
 	}
 	return r.GetAgentRun(ctx, "", input.RunID)
 }
@@ -970,7 +1011,7 @@ func (r *Repository) GetInspectionTask(ctx context.Context, createdBy, taskID st
 		WHERE created_by = ? AND id = ?
 		LIMIT 1
 	`, createdBy, taskID).Row()
-	return scanInspectionTaskRow(row)
+	return scanInspectionTaskRow(row, taskID)
 }
 
 func (r *Repository) ListDueInspectionTasks(ctx context.Context, now time.Time, limit int) ([]domaincopilot.InspectionTask, error) {
@@ -1060,7 +1101,7 @@ func (r *Repository) UpdateInspectionTask(ctx context.Context, createdBy, taskID
 		return domaincopilot.InspectionTask{}, fmt.Errorf("update inspection task: %w", result.Error)
 	}
 	if result.RowsAffected == 0 {
-		return domaincopilot.InspectionTask{}, fmt.Errorf("inspection task not found: %s", taskID)
+		return domaincopilot.InspectionTask{}, copilotNotFound("inspection task", taskID)
 	}
 	return r.GetInspectionTask(ctx, createdBy, taskID)
 }
@@ -1074,7 +1115,7 @@ func (r *Repository) DeleteInspectionTask(ctx context.Context, createdBy, taskID
 		return fmt.Errorf("delete inspection task: %w", result.Error)
 	}
 	if result.RowsAffected == 0 {
-		return fmt.Errorf("%w: inspection task %s", apperrors.ErrNotFound, taskID)
+		return copilotNotFound("inspection task", taskID)
 	}
 	return nil
 }
@@ -1165,10 +1206,13 @@ func scanSession(rows *sql.Rows) (domaincopilot.Session, error) {
 	return item, nil
 }
 
-func scanSessionRow(row *sql.Row) (domaincopilot.Session, error) {
+func scanSessionRow(row *sql.Row, sessionID string) (domaincopilot.Session, error) {
 	var item domaincopilot.Session
 	var metadata []byte
 	if err := row.Scan(&item.ID, &item.Title, &item.CreatedBy, &metadata, &item.CreatedAt, &item.UpdatedAt); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return domaincopilot.Session{}, copilotNotFound("ai session", sessionID)
+		}
 		return domaincopilot.Session{}, fmt.Errorf("scan ai session row: %w", err)
 	}
 	if len(metadata) > 0 {
@@ -1232,7 +1276,7 @@ func scanDataSource(rows *sql.Rows) (domaincopilot.DataSource, error) {
 	return item, nil
 }
 
-func scanDataSourceRow(row *sql.Row) (domaincopilot.DataSource, error) {
+func scanDataSourceRow(row *sql.Row, dataSourceID string) (domaincopilot.DataSource, error) {
 	var item domaincopilot.DataSource
 	var backendType string
 	var credentialRef sql.NullString
@@ -1244,6 +1288,9 @@ func scanDataSourceRow(row *sql.Row) (domaincopilot.DataSource, error) {
 	var validationMessage sql.NullString
 	var lastValidatedAt sql.NullTime
 	if err := row.Scan(&item.ID, &item.Name, &item.SourceKind, &backendType, &item.Enabled, &credentialRef, &scope, &queryBudget, &redactionPolicy, &item.MCPAdapter, &config, &validationStatus, &validationMessage, &lastValidatedAt, &item.CreatedAt, &item.UpdatedAt); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return domaincopilot.DataSource{}, copilotNotFound("data source", dataSourceID)
+		}
 		return domaincopilot.DataSource{}, fmt.Errorf("scan data source: %w", err)
 	}
 	item.BackendType = backendType
@@ -1299,13 +1346,16 @@ func scanAnalysisProfile(rows *sql.Rows) (domaincopilot.AnalysisProfile, error) 
 	return item, nil
 }
 
-func scanAnalysisProfileRow(row *sql.Row) (domaincopilot.AnalysisProfile, error) {
+func scanAnalysisProfileRow(row *sql.Row, profileID string) (domaincopilot.AnalysisProfile, error) {
 	var item domaincopilot.AnalysisProfile
 	var enabledSources []byte
 	var enabledPlaybooks []byte
 	var queryBudgets []byte
 	var outputStyle []byte
 	if err := row.Scan(&item.ID, &item.Name, &item.Mode, &enabledSources, &enabledPlaybooks, &queryBudgets, &outputStyle, &item.RemediationPolicy, &item.DefaultTimeRangeMinutes, &item.TimeoutSeconds, &item.Enabled, &item.CreatedAt, &item.UpdatedAt); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return domaincopilot.AnalysisProfile{}, copilotNotFound("analysis profile", profileID)
+		}
 		return domaincopilot.AnalysisProfile{}, fmt.Errorf("scan analysis profile: %w", err)
 	}
 	if len(enabledSources) > 0 {
@@ -1348,13 +1398,16 @@ func scanAutomationPolicy(rows *sql.Rows) (domaincopilot.AutomationPolicy, error
 	return item, nil
 }
 
-func scanAutomationPolicyRow(row *sql.Row) (domaincopilot.AutomationPolicy, error) {
+func scanAutomationPolicyRow(row *sql.Row, policyID string) (domaincopilot.AutomationPolicy, error) {
 	var item domaincopilot.AutomationPolicy
 	var triggerConditions []byte
 	var approvalPolicy []byte
 	var analysisKinds []byte
 	var agentProviderID sql.NullString
 	if err := row.Scan(&item.ID, &item.Name, &item.Enabled, &item.TriggerType, &analysisKinds, &agentProviderID, &triggerConditions, &item.DedupWindowSeconds, &item.AnalysisProfileID, &item.RemediationPolicy, &approvalPolicy, &item.CooldownSeconds, &item.CreatedAt, &item.UpdatedAt); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return domaincopilot.AutomationPolicy{}, copilotNotFound("automation policy", policyID)
+		}
 		return domaincopilot.AutomationPolicy{}, fmt.Errorf("scan automation policy: %w", err)
 	}
 	item.AgentProviderID = "internal"
@@ -1380,7 +1433,7 @@ func (r *Repository) getAnalysisProfile(ctx context.Context, profileID string) (
 		WHERE id = ?
 		LIMIT 1
 	`, profileID).Row()
-	return scanAnalysisProfileRow(row)
+	return scanAnalysisProfileRow(row, profileID)
 }
 
 func (r *Repository) getAutomationPolicy(ctx context.Context, policyID string) (domaincopilot.AutomationPolicy, error) {
@@ -1390,7 +1443,7 @@ func (r *Repository) getAutomationPolicy(ctx context.Context, policyID string) (
 		WHERE id = ?
 		LIMIT 1
 	`, policyID).Row()
-	return scanAutomationPolicyRow(row)
+	return scanAutomationPolicyRow(row, policyID)
 }
 
 func scanRootCauseRun(rows *sql.Rows) (domaincopilot.RootCauseRun, error) {
@@ -1499,7 +1552,7 @@ func scanRootCauseRun(rows *sql.Rows) (domaincopilot.RootCauseRun, error) {
 	return item, nil
 }
 
-func scanRootCauseRunRow(row *sql.Row) (domaincopilot.RootCauseRun, error) {
+func scanRootCauseRunRow(row *sql.Row, runID string) (domaincopilot.RootCauseRun, error) {
 	var item domaincopilot.RootCauseRun
 	var kind string
 	var sessionID sql.NullString
@@ -1548,6 +1601,9 @@ func scanRootCauseRunRow(row *sql.Row) (domaincopilot.RootCauseRun, error) {
 		&item.CreatedAt,
 		&item.UpdatedAt,
 	); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return domaincopilot.RootCauseRun{}, copilotNotFound("root cause run", runID)
+		}
 		return domaincopilot.RootCauseRun{}, fmt.Errorf("scan root cause run: %w", err)
 	}
 	item.Kind = kind
@@ -1669,7 +1725,7 @@ func scanAgentRun(rows *sql.Rows) (domaincopilot.AgentRun, error) {
 	return item, nil
 }
 
-func scanAgentRunRow(row *sql.Row) (domaincopilot.AgentRun, error) {
+func scanAgentRunRow(row *sql.Row, runID string) (domaincopilot.AgentRun, error) {
 	var item domaincopilot.AgentRun
 	var skillIDs []byte
 	var sessionID sql.NullString
@@ -1718,6 +1774,9 @@ func scanAgentRunRow(row *sql.Row) (domaincopilot.AgentRun, error) {
 		&item.CreatedAt,
 		&item.UpdatedAt,
 	); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return domaincopilot.AgentRun{}, copilotNotFound("ai agent run", runID)
+		}
 		return domaincopilot.AgentRun{}, fmt.Errorf("scan ai agent run row: %w", err)
 	}
 	decodeAgentRunFields(&item, skillIDs, sessionID, rootCauseRunID, scope, toolset, toolBindings, skillBindings, input, output, toolExecutions, analysisArtifacts, claimedByAgentID, externalRunID, errorMessage, startedAt, lastHeartbeatAt, completedAt)
@@ -1810,7 +1869,7 @@ func scanInspectionTask(rows *sql.Rows) (domaincopilot.InspectionTask, error) {
 	return item, nil
 }
 
-func scanInspectionTaskRow(row *sql.Row) (domaincopilot.InspectionTask, error) {
+func scanInspectionTaskRow(row *sql.Row, taskID string) (domaincopilot.InspectionTask, error) {
 	var item domaincopilot.InspectionTask
 	var checks []byte
 	var metadata []byte
@@ -1818,6 +1877,9 @@ func scanInspectionTaskRow(row *sql.Row) (domaincopilot.InspectionTask, error) {
 	var namespace sql.NullString
 	var lastRunAt sql.NullTime
 	if err := row.Scan(&item.ID, &item.Title, &item.ScopeType, &clusterID, &namespace, &checks, &item.Enabled, &item.IntervalMinutes, &metadata, &item.CreatedBy, &lastRunAt, &item.CreatedAt, &item.UpdatedAt); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return domaincopilot.InspectionTask{}, copilotNotFound("inspection task", taskID)
+		}
 		return domaincopilot.InspectionTask{}, fmt.Errorf("scan inspection task row: %w", err)
 	}
 	if clusterID.Valid {

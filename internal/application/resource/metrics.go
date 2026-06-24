@@ -3,6 +3,7 @@ package resource
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -773,7 +774,7 @@ func (s *Service) queryPrometheusInstantByPod(ctx context.Context, baseURL, bear
 	}
 	if payload.Status != "success" {
 		if strings.TrimSpace(payload.Error) != "" {
-			return nil, fmt.Errorf(payload.Error)
+			return nil, errors.New(payload.Error)
 		}
 		return nil, fmt.Errorf("prometheus instant query failed")
 	}

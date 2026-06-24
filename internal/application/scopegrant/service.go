@@ -14,7 +14,6 @@ import (
 	"github.com/opensoha/soha/internal/platform/apperrors"
 	"github.com/opensoha/soha/internal/platform/operationentry"
 	"github.com/opensoha/soha/internal/platform/requestctx"
-	scopegrantrepo "github.com/opensoha/soha/internal/repository/scopegrant"
 )
 
 type AuditRecorder interface {
@@ -99,8 +98,8 @@ func normalizeRepoError(err error) error {
 	if err == nil {
 		return nil
 	}
-	if errors.Is(err, scopegrantrepo.ErrNotFound) {
-		return fmt.Errorf("%w: %v", apperrors.ErrNotFound, err)
+	if errors.Is(err, apperrors.ErrNotFound) {
+		return err
 	}
 	return err
 }

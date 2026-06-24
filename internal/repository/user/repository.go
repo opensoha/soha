@@ -12,11 +12,12 @@ import (
 
 	domainaccess "github.com/opensoha/soha/internal/domain/access"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
+	"github.com/opensoha/soha/internal/platform/apperrors"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
 
-var ErrNotFound = errors.New("user not found")
+var ErrNotFound = fmt.Errorf("%w: user not found", apperrors.ErrNotFound)
 
 type User struct {
 	ID           string
@@ -446,6 +447,32 @@ func (r *Repository) FindIdentity(ctx context.Context, providerType, providerID,
 		LIMIT 1
 	`, providerType, providerID, providerUserID).Row()
 	return scanIdentity(row)
+}
+
+func (r *Repository) MigrateOIDCIdentity(ctx context.Context, identity OIDCIdentity, providerID string) error {
+	providerID = strings.TrimSpace(providerID)
+	if providerID == "" {
+		return fmt.Errorf("%w: provider id is required", apperrors.ErrInvalidArgument)
+	}
+	if strings.TrimSpace(identity.ProviderID) == providerID {
+		return nil
+	}
+	profile, err := json.Marshal(identity.Profile)
+	if err != nil {
+		return fmt.Errorf("marshal oidc profile: %w", err)
+	}
+	result := r.db.WithContext(ctx).Exec(`
+		UPDATE user_identities
+		SET provider_id = ?, profile = ?, last_login_at = ?, updated_at = ?
+		WHERE provider_type = ? AND provider_id = ? AND provider_user_id = ?
+	`, providerID, string(profile), identity.LastLoginAt, time.Now().UTC(), identity.ProviderType, identity.ProviderID, identity.ProviderUserID)
+	if result.Error != nil {
+		return fmt.Errorf("migrate oidc identity: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 func (r *Repository) ListIdentitiesByUserID(ctx context.Context, userID string) ([]OIDCIdentity, error) {

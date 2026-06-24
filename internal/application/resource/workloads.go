@@ -815,6 +815,105 @@ func (s *Service) ScaleDeployment(ctx context.Context, principal domainidentity.
 	s.recordOperation(ctx, principal, "platform.deployment.scale", clusterID, namespace, "Deployment", name, fmt.Sprintf("scaled deployment to %d via %s", replicas, source), map[string]any{"replicas": replicas})
 	return nil
 }
+func (s *Service) RestartStatefulSet(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, name string) error {
+	if err := s.authorizeDeploymentPermission(ctx, principal, appaccess.PermPlatformDeploymentRestart); err != nil {
+		return err
+	}
+	connection, _, err := s.authorize(ctx, principal, clusterID, namespace, "StatefulSet", domainaccess.ActionRestart)
+	if err != nil {
+		return err
+	}
+
+	source := "direct"
+	switch connection.Summary.ConnectionMode {
+	case domaincluster.ConnectionModeAgent:
+		client, err := s.agentClient(connection)
+		if err != nil {
+			return err
+		}
+		if err := client.RestartStatefulSet(ctx, namespace, name); err != nil {
+			_ = s.recordAudit(ctx, principal, clusterID, namespace, "StatefulSet", name, string(domainaccess.ActionRestart), "failure", err.Error())
+			return fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
+		}
+		source = "agent"
+	default:
+		if err := s.restartDirectStatefulSet(ctx, clusterID, namespace, name); err != nil {
+			_ = s.recordAudit(ctx, principal, clusterID, namespace, "StatefulSet", name, string(domainaccess.ActionRestart), "failure", err.Error())
+			return err
+		}
+	}
+	if err := s.recordAudit(ctx, principal, clusterID, namespace, "StatefulSet", name, string(domainaccess.ActionRestart), "success", fmt.Sprintf("restarted statefulset via %s", source)); err != nil {
+		return fmt.Errorf("record restart statefulset audit: %w", err)
+	}
+	s.recordOperation(ctx, principal, "platform.statefulset.restart", clusterID, namespace, "StatefulSet", name, fmt.Sprintf("restarted statefulset via %s", source), nil)
+	return nil
+}
+func (s *Service) ScaleStatefulSet(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, name string, replicas int32) error {
+	if err := s.authorizeDeploymentPermission(ctx, principal, appaccess.PermPlatformDeploymentScale); err != nil {
+		return err
+	}
+	connection, _, err := s.authorize(ctx, principal, clusterID, namespace, "StatefulSet", domainaccess.ActionScale)
+	if err != nil {
+		return err
+	}
+
+	source := "direct"
+	switch connection.Summary.ConnectionMode {
+	case domaincluster.ConnectionModeAgent:
+		client, err := s.agentClient(connection)
+		if err != nil {
+			return err
+		}
+		if err := client.ScaleStatefulSet(ctx, namespace, name, replicas); err != nil {
+			_ = s.recordAudit(ctx, principal, clusterID, namespace, "StatefulSet", name, string(domainaccess.ActionScale), "failure", err.Error())
+			return fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
+		}
+		source = "agent"
+	default:
+		if err := s.scaleDirectStatefulSet(ctx, clusterID, namespace, name, replicas); err != nil {
+			_ = s.recordAudit(ctx, principal, clusterID, namespace, "StatefulSet", name, string(domainaccess.ActionScale), "failure", err.Error())
+			return err
+		}
+	}
+	if err := s.recordAudit(ctx, principal, clusterID, namespace, "StatefulSet", name, string(domainaccess.ActionScale), "success", fmt.Sprintf("scaled statefulset to %d via %s", replicas, source)); err != nil {
+		return fmt.Errorf("record scale statefulset audit: %w", err)
+	}
+	s.recordOperation(ctx, principal, "platform.statefulset.scale", clusterID, namespace, "StatefulSet", name, fmt.Sprintf("scaled statefulset to %d via %s", replicas, source), map[string]any{"replicas": replicas})
+	return nil
+}
+func (s *Service) RestartDaemonSet(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, name string) error {
+	if err := s.authorizeDeploymentPermission(ctx, principal, appaccess.PermPlatformDeploymentRestart); err != nil {
+		return err
+	}
+	connection, _, err := s.authorize(ctx, principal, clusterID, namespace, "DaemonSet", domainaccess.ActionRestart)
+	if err != nil {
+		return err
+	}
+
+	source := "direct"
+	switch connection.Summary.ConnectionMode {
+	case domaincluster.ConnectionModeAgent:
+		client, err := s.agentClient(connection)
+		if err != nil {
+			return err
+		}
+		if err := client.RestartDaemonSet(ctx, namespace, name); err != nil {
+			_ = s.recordAudit(ctx, principal, clusterID, namespace, "DaemonSet", name, string(domainaccess.ActionRestart), "failure", err.Error())
+			return fmt.Errorf("%w: %v", apperrors.ErrClusterUnready, err)
+		}
+		source = "agent"
+	default:
+		if err := s.restartDirectDaemonSet(ctx, clusterID, namespace, name); err != nil {
+			_ = s.recordAudit(ctx, principal, clusterID, namespace, "DaemonSet", name, string(domainaccess.ActionRestart), "failure", err.Error())
+			return err
+		}
+	}
+	if err := s.recordAudit(ctx, principal, clusterID, namespace, "DaemonSet", name, string(domainaccess.ActionRestart), "success", fmt.Sprintf("restarted daemonset via %s", source)); err != nil {
+		return fmt.Errorf("record restart daemonset audit: %w", err)
+	}
+	s.recordOperation(ctx, principal, "platform.daemonset.restart", clusterID, namespace, "DaemonSet", name, fmt.Sprintf("restarted daemonset via %s", source), nil)
+	return nil
+}
 func (s *Service) listDirectDeployments(ctx context.Context, clusterID, namespace string) ([]appsv1.Deployment, string, error) {
 	if strings.TrimSpace(namespace) == "" {
 		items, err := s.listDeploymentsAcrossNamespaces(ctx, clusterID)
@@ -1306,6 +1405,54 @@ func (s *Service) scaleDirectDeployment(ctx context.Context, clusterID, namespac
 	}
 	deployment.Spec.Replicas = &replicas
 	_, err = bundle.Typed.AppsV1().Deployments(namespace).Update(queryCtx, deployment, metav1.UpdateOptions{})
+	return err
+}
+func (s *Service) restartDirectStatefulSet(ctx context.Context, clusterID, namespace, name string) error {
+	bundle, queryCtx, cancel, err := s.directKubeQueryContext(ctx, clusterID, 4*time.Second)
+	if err != nil {
+		return err
+	}
+	defer cancel()
+	statefulSet, err := bundle.Typed.AppsV1().StatefulSets(namespace).Get(queryCtx, name, metav1.GetOptions{})
+	if err != nil {
+		return err
+	}
+	if statefulSet.Spec.Template.Annotations == nil {
+		statefulSet.Spec.Template.Annotations = map[string]string{}
+	}
+	statefulSet.Spec.Template.Annotations["kubectl.kubernetes.io/restartedAt"] = time.Now().UTC().Format(time.RFC3339)
+	_, err = bundle.Typed.AppsV1().StatefulSets(namespace).Update(queryCtx, statefulSet, metav1.UpdateOptions{})
+	return err
+}
+func (s *Service) scaleDirectStatefulSet(ctx context.Context, clusterID, namespace, name string, replicas int32) error {
+	bundle, queryCtx, cancel, err := s.directKubeQueryContext(ctx, clusterID, 4*time.Second)
+	if err != nil {
+		return err
+	}
+	defer cancel()
+	statefulSet, err := bundle.Typed.AppsV1().StatefulSets(namespace).Get(queryCtx, name, metav1.GetOptions{})
+	if err != nil {
+		return err
+	}
+	statefulSet.Spec.Replicas = &replicas
+	_, err = bundle.Typed.AppsV1().StatefulSets(namespace).Update(queryCtx, statefulSet, metav1.UpdateOptions{})
+	return err
+}
+func (s *Service) restartDirectDaemonSet(ctx context.Context, clusterID, namespace, name string) error {
+	bundle, queryCtx, cancel, err := s.directKubeQueryContext(ctx, clusterID, 4*time.Second)
+	if err != nil {
+		return err
+	}
+	defer cancel()
+	daemonSet, err := bundle.Typed.AppsV1().DaemonSets(namespace).Get(queryCtx, name, metav1.GetOptions{})
+	if err != nil {
+		return err
+	}
+	if daemonSet.Spec.Template.Annotations == nil {
+		daemonSet.Spec.Template.Annotations = map[string]string{}
+	}
+	daemonSet.Spec.Template.Annotations["kubectl.kubernetes.io/restartedAt"] = time.Now().UTC().Format(time.RFC3339)
+	_, err = bundle.Typed.AppsV1().DaemonSets(namespace).Update(queryCtx, daemonSet, metav1.UpdateOptions{})
 	return err
 }
 func mapDeployment(item appsv1.Deployment, decision domainaccess.Decision) domainresource.DeploymentView {

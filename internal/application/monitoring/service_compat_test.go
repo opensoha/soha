@@ -2,6 +2,7 @@ package monitoring
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -10,6 +11,7 @@ import (
 	domainalert "github.com/opensoha/soha/internal/domain/alert"
 	domainevent "github.com/opensoha/soha/internal/domain/event"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
+	"github.com/opensoha/soha/internal/platform/apperrors"
 )
 
 type stubMonitoringRolePermissionReader struct {
@@ -360,7 +362,7 @@ func (s *stubMonitoringCompatRepository) GetAlertIntegration(_ context.Context, 
 			return item, nil
 		}
 	}
-	return domainalert.AlertIntegration{}, fmt.Errorf("alert integration not found: %s", integrationID)
+	return domainalert.AlertIntegration{}, fmt.Errorf("%w: %s", apperrors.ErrNotFound, integrationID)
 }
 
 func (s *stubMonitoringCompatRepository) CreateAlertIntegration(_ context.Context, input domainalert.AlertIntegrationInput) (domainalert.AlertIntegration, error) {
@@ -438,6 +440,73 @@ func monitoringCompatPrincipal() domainidentity.Principal {
 	return domainidentity.Principal{
 		UserID: "user-1",
 		Roles:  []string{"ops"},
+	}
+}
+
+func TestServiceValidateWebhookToken(t *testing.T) {
+	tests := []struct {
+		name        string
+		enabled     bool
+		configToken string
+		inputToken  string
+		wantErr     error
+	}{
+		{
+			name:        "disabled",
+			enabled:     false,
+			configToken: "secret-token",
+			inputToken:  "secret-token",
+			wantErr:     apperrors.ErrAccessDenied,
+		},
+		{
+			name:    "no configured token allows request",
+			enabled: true,
+		},
+		{
+			name:        "matching token",
+			enabled:     true,
+			configToken: "secret-token",
+			inputToken:  "secret-token",
+		},
+		{
+			name:        "trims whitespace before constant time comparison",
+			enabled:     true,
+			configToken: " secret-token ",
+			inputToken:  " secret-token ",
+		},
+		{
+			name:        "empty input token",
+			enabled:     true,
+			configToken: "secret-token",
+			wantErr:     apperrors.ErrUnauthorized,
+		},
+		{
+			name:        "wrong token",
+			enabled:     true,
+			configToken: "secret-token",
+			inputToken:  "wrong-token",
+			wantErr:     apperrors.ErrUnauthorized,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			service := &Service{
+				enabled:      tt.enabled,
+				webhookToken: tt.configToken,
+			}
+
+			err := service.ValidateWebhookToken(tt.inputToken)
+			if tt.wantErr == nil {
+				if err != nil {
+					t.Fatalf("ValidateWebhookToken() error = %v, want nil", err)
+				}
+				return
+			}
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("ValidateWebhookToken() error = %v, want %v", err, tt.wantErr)
+			}
+		})
 	}
 }
 
@@ -793,6 +862,41 @@ func TestServiceUpdateRouteMapsToCompatibilityNotificationPolicy(t *testing.T) {
 	}
 	if len(item.ChannelIDs) != 1 || item.ChannelIDs[0] != "channel-feishu" {
 		t.Fatalf("item.ChannelIDs = %#v, want [channel-feishu]", item.ChannelIDs)
+	}
+}
+
+func TestServiceGetAlertIntegrationMapsNotFoundSentinel(t *testing.T) {
+	repo := &stubMonitoringCompatRepository{}
+	service := &Service{
+		repo:        repo,
+		events:      &stubMonitoringEventWriter{},
+		permissions: monitoringCompatPermissions(appaccess.PermObserveAlertIntegrationsView),
+	}
+
+	_, err := service.GetAlertIntegration(context.Background(), monitoringCompatPrincipal(), "integration-missing")
+	if err == nil {
+		t.Fatal("GetAlertIntegration returned nil error, want ErrNotFound")
+	}
+	if !errors.Is(err, apperrors.ErrNotFound) {
+		t.Fatalf("GetAlertIntegration error = %v, want ErrNotFound", err)
+	}
+}
+
+func TestServiceIngestAlertIntegrationMapsNotFoundSentinel(t *testing.T) {
+	repo := &stubMonitoringCompatRepository{}
+	service := &Service{
+		repo:        repo,
+		events:      &stubMonitoringEventWriter{},
+		permissions: monitoringCompatPermissions(appaccess.PermObserveAlertIntegrationsView),
+		enabled:     true,
+	}
+
+	_, err := service.IngestAlertIntegration(context.Background(), "integration-missing", "token", map[string]any{"kind": "alertmanager"})
+	if err == nil {
+		t.Fatal("IngestAlertIntegration returned nil error, want ErrNotFound")
+	}
+	if !errors.Is(err, apperrors.ErrNotFound) {
+		t.Fatalf("IngestAlertIntegration error = %v, want ErrNotFound", err)
 	}
 }
 

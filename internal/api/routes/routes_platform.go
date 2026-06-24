@@ -60,6 +60,9 @@ func registerPlatformRoutes(protected gin.IRoutes, deps Dependencies) {
 	protected.POST("/clusters/:clusterID/workloads/deployments/restart", deps.Platform.RestartDeployment)
 	protected.POST("/clusters/:clusterID/workloads/deployments/rollback", deps.Platform.RollbackDeployment)
 	protected.POST("/clusters/:clusterID/workloads/deployments/scale", deps.Platform.ScaleDeployment)
+	protected.POST("/clusters/:clusterID/workloads/statefulsets/restart", deps.Platform.RestartStatefulSet)
+	protected.POST("/clusters/:clusterID/workloads/statefulsets/scale", deps.Platform.ScaleStatefulSet)
+	protected.POST("/clusters/:clusterID/workloads/daemonsets/restart", deps.Platform.RestartDaemonSet)
 
 	protected.GET("/clusters/:clusterID/configuration/configmaps", deps.Platform.ListConfigMaps)
 	protected.POST("/clusters/:clusterID/configuration/configmaps", deps.Platform.CreateConfigMap)

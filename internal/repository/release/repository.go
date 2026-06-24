@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 
 	domainrelease "github.com/opensoha/soha/internal/domain/release"
@@ -146,7 +147,7 @@ func scanRecordRow(row *sql.Row) (domainrelease.Record, error) {
 	var payload []byte
 	var deployedAt sql.NullTime
 	if err := row.Scan(&item.ID, &item.ApplicationID, &item.ClusterID, &item.Namespace, &item.DeploymentName, &item.Status, &payload, &deployedAt, &item.CreatedAt); err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return domainrelease.Record{}, fmt.Errorf("%w: release record not found", apperrors.ErrNotFound)
 		}
 		return domainrelease.Record{}, fmt.Errorf("scan release record row: %w", err)

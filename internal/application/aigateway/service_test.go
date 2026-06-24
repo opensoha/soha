@@ -65,6 +65,26 @@ type memoryGatewayRepository struct {
 	rateLimitStateErr    error
 }
 
+func newTestService(permissions *appaccess.PermissionResolver, audit AuditRecorder, repos ...*memoryGatewayRepository) *Service {
+	deps := ServiceDeps{
+		Permissions: permissions,
+		Audit:       audit,
+	}
+	if len(repos) > 0 && repos[0] != nil {
+		repo := repos[0]
+		deps.PersonalTokens = repo
+		deps.ServiceAccounts = repo
+		deps.Clients = repo
+		deps.ToolGrants = repo
+		deps.AccessPolicies = repo
+		deps.SkillBindings = repo
+		deps.AuditLogs = repo
+		deps.RateLimits = repo
+		deps.Approvals = repo
+	}
+	return NewWithDeps(deps)
+}
+
 type fakeRateLimitBackend struct {
 	counterCalls int
 	stateCalls   int
@@ -1063,7 +1083,7 @@ func (s *fakeResourceService) ListClusterEvents(_ context.Context, _ domainident
 
 func TestCapabilitiesRequiresAIGatewayView(t *testing.T) {
 	audit := &captureAuditRecorder{}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"developer": {appaccess.PermDeliveryApplicationsView},
 		},
@@ -1080,7 +1100,7 @@ func TestCapabilitiesRequiresAIGatewayView(t *testing.T) {
 
 func TestCapabilitiesFiltersToolsByBusinessPermissions(t *testing.T) {
 	audit := &captureAuditRecorder{}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"developer": {
 				appaccess.PermAIGatewayView,
@@ -1109,7 +1129,7 @@ func TestCapabilitiesFiltersToolsByBusinessPermissions(t *testing.T) {
 }
 
 func TestCapabilitiesUsesInjectedCapabilityProvider(t *testing.T) {
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"developer": {appaccess.PermAIGatewayView, appaccess.PermAIGatewayInvoke},
 		},
@@ -1177,7 +1197,7 @@ func TestCapabilitiesUsesInjectedCapabilityProvider(t *testing.T) {
 }
 
 func TestCapabilitiesAddProviderPreservesDefaultCapabilities(t *testing.T) {
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"developer": {
 				appaccess.PermAIGatewayView,
@@ -1214,7 +1234,7 @@ func TestCapabilitiesAddProviderPreservesDefaultCapabilities(t *testing.T) {
 }
 
 func TestCapabilitiesExposeExecuteToolWithTriggerPermissions(t *testing.T) {
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"developer": {
 				appaccess.PermAIGatewayView,
@@ -1235,7 +1255,7 @@ func TestCapabilitiesExposeExecuteToolWithTriggerPermissions(t *testing.T) {
 }
 
 func TestCapabilitiesExposeSecurityChangeSkillWithGatewayInvoke(t *testing.T) {
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"developer": {
 				appaccess.PermAIGatewayView,
@@ -1254,7 +1274,7 @@ func TestCapabilitiesExposeSecurityChangeSkillWithGatewayInvoke(t *testing.T) {
 }
 
 func TestCapabilitiesDeliveryDeveloperSkillIncludesDeliveryContextTools(t *testing.T) {
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"developer": {
 				appaccess.PermAIGatewayView,
@@ -1391,7 +1411,7 @@ func TestCapabilitiesFiltersToolsByToolGrantAllowList(t *testing.T) {
 			},
 		},
 	}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"developer": {
 				appaccess.PermAIGatewayView,
@@ -1434,7 +1454,7 @@ func TestCapabilitiesUsesRoleAndAIClientToolGrants(t *testing.T) {
 			},
 		},
 	}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"developer": {
 				appaccess.PermAIGatewayView,
@@ -1471,7 +1491,7 @@ func TestCapabilitiesUsesOrganizationToolGrants(t *testing.T) {
 			},
 		},
 	}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"developer": {
 				appaccess.PermAIGatewayView,
@@ -1510,7 +1530,7 @@ func TestCapabilitiesFiltersToolsByAccessPolicyAllowList(t *testing.T) {
 			},
 		},
 	}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"developer": {
 				appaccess.PermAIGatewayView,
@@ -1548,7 +1568,7 @@ func TestCapabilitiesMarksApprovalFromAccessPolicy(t *testing.T) {
 			},
 		},
 	}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"developer": {
 				appaccess.PermAIGatewayView,
@@ -1577,6 +1597,109 @@ func TestCapabilitiesMarksApprovalFromAccessPolicy(t *testing.T) {
 	}
 }
 
+func TestEvaluateToolAccessPoliciesUsesEvaluationContext(t *testing.T) {
+	tool := domainaigateway.ToolCapability{
+		Name:      "delivery.actions.trigger",
+		RiskLevel: domainaigateway.RiskLevelHigh,
+	}
+	knownSkills := []domainaigateway.SkillCapability{
+		{
+			ID:             "delivery-skill",
+			CapabilityRefs: []string{"delivery.actions.trigger"},
+		},
+	}
+
+	tests := []struct {
+		name       string
+		ctx        policyEvaluationContext
+		policies   []domainaigateway.AccessPolicy
+		wantAllow  bool
+		wantReason string
+		wantHold   bool
+	}{
+		{
+			name: "allow policy uses explicit skill and scope",
+			ctx: policyEvaluationContext{
+				Tool:            tool,
+				SkillID:         "delivery-skill",
+				InvocationScope: map[string]string{"applicationId": "app-1"},
+				KnownSkills:     knownSkills,
+			},
+			policies: []domainaigateway.AccessPolicy{
+				{
+					ID:             "policy-allow",
+					Effect:         "allow",
+					SkillIDs:       []string{"delivery-skill"},
+					ResourceScopes: map[string]any{"applicationId": "app-1"},
+				},
+			},
+			wantAllow: true,
+		},
+		{
+			name: "deny policy wins before allow",
+			ctx: policyEvaluationContext{
+				Tool:            tool,
+				InvocationScope: map[string]string{"applicationId": "app-1"},
+				KnownSkills:     knownSkills,
+			},
+			policies: []domainaigateway.AccessPolicy{
+				{ID: "policy-deny", Effect: "deny", ToolPatterns: []string{"delivery.*"}},
+				{ID: "policy-allow", Effect: "allow", ToolPatterns: []string{"delivery.*"}},
+			},
+			wantReason: "matched deny policy policy-deny",
+		},
+		{
+			name: "scope mismatch reports scoped allow reason",
+			ctx: policyEvaluationContext{
+				Tool:            tool,
+				InvocationScope: map[string]string{"applicationId": "app-2"},
+				KnownSkills:     knownSkills,
+			},
+			policies: []domainaigateway.AccessPolicy{
+				{
+					ID:             "policy-scoped",
+					Effect:         "allow",
+					ToolPatterns:   []string{"delivery.*"},
+					ResourceScopes: map[string]any{"applicationId": "app-1"},
+				},
+			},
+			wantReason: "matching allow policy does not allow the requested resource scope",
+		},
+		{
+			name: "approval policy returns hold decision",
+			ctx: policyEvaluationContext{
+				Tool:        tool,
+				KnownSkills: knownSkills,
+			},
+			policies: []domainaigateway.AccessPolicy{
+				{
+					ID:             "policy-approval",
+					Effect:         "allow",
+					ToolPatterns:   []string{"delivery.*"},
+					ApprovalPolicy: map[string]any{"requiresApproval": true},
+				},
+			},
+			wantAllow: true,
+			wantHold:  true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			allowed, decision, reason := evaluateToolAccessPolicies(tt.ctx, tt.policies)
+			if allowed != tt.wantAllow {
+				t.Fatalf("allowed = %v, want %v (reason %q)", allowed, tt.wantAllow, reason)
+			}
+			if reason != tt.wantReason {
+				t.Fatalf("reason = %q, want %q", reason, tt.wantReason)
+			}
+			if decision.shouldHoldExecution() != tt.wantHold {
+				t.Fatalf("decision.shouldHoldExecution() = %v, want %v (decision %#v)", decision.shouldHoldExecution(), tt.wantHold, decision)
+			}
+		})
+	}
+}
+
 func TestCapabilitiesAccessPolicySkillIDsUseInjectedSkills(t *testing.T) {
 	repo := &memoryGatewayRepository{
 		accessPolicies: []domainaigateway.AccessPolicy{
@@ -1590,7 +1713,7 @@ func TestCapabilitiesAccessPolicySkillIDsUseInjectedSkills(t *testing.T) {
 			},
 		},
 	}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"developer": {appaccess.PermAIGatewayView, appaccess.PermAIGatewayInvoke},
 		},
@@ -1637,7 +1760,7 @@ func TestCapabilitiesSkillBindingsNarrowSkillsAndTools(t *testing.T) {
 			},
 		},
 	}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"developer": {
 				appaccess.PermAIGatewayView,
@@ -1688,7 +1811,7 @@ func TestCapabilitiesSkillBindingsUseInjectedSkillDefaults(t *testing.T) {
 			},
 		},
 	}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"developer": {appaccess.PermAIGatewayView, appaccess.PermAIGatewayInvoke},
 		},
@@ -1728,7 +1851,7 @@ func TestCapabilitiesSkillBindingsUseInjectedSkillDefaults(t *testing.T) {
 func TestReadResourceUsesGatewayPermissionAndAudit(t *testing.T) {
 	audit := &captureAuditRecorder{}
 	repo := &memoryGatewayRepository{}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"developer": {
 				appaccess.PermAIGatewayInvoke,
@@ -1764,7 +1887,7 @@ func TestReadResourceUsesGatewayPermissionAndAudit(t *testing.T) {
 }
 
 func TestReadResourceUsesInjectedCapabilityMetadata(t *testing.T) {
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"developer": {appaccess.PermAIGatewayInvoke},
 		},
@@ -1818,7 +1941,7 @@ func TestReadResourceRejectsSkillBindingCapabilityMismatch(t *testing.T) {
 			},
 		},
 	}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"developer": {
 				appaccess.PermAIGatewayInvoke,
@@ -1854,7 +1977,7 @@ func TestReadResourceRejectsSkillBindingCapabilityMismatch(t *testing.T) {
 func TestInvokeToolUsesInjectedProviderInvoker(t *testing.T) {
 	invoked := false
 	repo := &memoryGatewayRepository{}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"developer": {appaccess.PermAIGatewayInvoke},
 		},
@@ -1896,7 +2019,7 @@ func TestInvokeToolRecordsFailedHighRiskProviderAuditAndOperation(t *testing.T) 
 	audit := &captureAuditRecorder{}
 	operations := &captureOperationRecorder{}
 	repo := &memoryGatewayRepository{}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"developer": {appaccess.PermAIGatewayInvoke},
 		},
@@ -1957,7 +2080,7 @@ func TestInvokeToolRecordsFailedHighRiskProviderAuditAndOperation(t *testing.T) 
 }
 
 func TestInvokeToolRejectsInjectedProviderWithoutInvoker(t *testing.T) {
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"developer": {appaccess.PermAIGatewayInvoke},
 		},
@@ -1989,7 +2112,7 @@ func TestInvokeToolAppliesRiskPolicyBeforeInjectedProviderInvoker(t *testing.T) 
 			},
 		},
 	}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"developer": {appaccess.PermAIGatewayInvoke},
 		},
@@ -2025,7 +2148,7 @@ func TestInvokeToolAppliesRiskPolicyBeforeInjectedProviderInvoker(t *testing.T) 
 func TestGetPromptCombinesSkillContextAndAudit(t *testing.T) {
 	audit := &captureAuditRecorder{}
 	repo := &memoryGatewayRepository{}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"developer": {
 				appaccess.PermAIGatewayInvoke,
@@ -2073,7 +2196,7 @@ func TestGetPromptRejectsSkillBindingCapabilityMismatch(t *testing.T) {
 			},
 		},
 	}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"developer": {
 				appaccess.PermAIGatewayInvoke,
@@ -2116,7 +2239,7 @@ func TestGetPromptUsesInjectedResourceCapabilityRefs(t *testing.T) {
 			},
 		},
 	}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"developer": {appaccess.PermAIGatewayInvoke},
 		},
@@ -2162,7 +2285,7 @@ func TestGetPromptUsesInjectedResourceCapabilityRefs(t *testing.T) {
 
 func TestCreatePersonalAccessTokenCapsPermissionsToRequest(t *testing.T) {
 	repo := &memoryGatewayRepository{}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"developer": {
 				appaccess.PermAIGatewayView,
@@ -2192,7 +2315,7 @@ func TestCreatePersonalAccessTokenCapsPermissionsToRequest(t *testing.T) {
 }
 
 func TestCreatePersonalAccessTokenRejectsPermissionEscalation(t *testing.T) {
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"developer": {appaccess.PermAIGatewayInvoke},
 		},
@@ -2214,7 +2337,7 @@ func TestListPersonalAccessTokensDefaultsToOwnerAndAllowsManageScopeAll(t *testi
 			{ID: "pat-other", UserID: "user-2", Name: "other"},
 		},
 	}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"developer": {appaccess.PermAIGatewayView},
 			"admin":     {appaccess.PermAIGatewayManage},
@@ -2257,7 +2380,7 @@ func TestManageCanRevokeAnotherUsersPersonalAccessToken(t *testing.T) {
 			{ID: "pat-other", UserID: "user-2", Name: "other"},
 		},
 	}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"developer": {appaccess.PermAIGatewayInvoke},
 			"admin":     {appaccess.PermAIGatewayManage},
@@ -2291,7 +2414,7 @@ func TestRotatePersonalAccessTokenRevokesPreviousAndReturnsReplacement(t *testin
 			ExpiresAt:      &expiredAt,
 		}},
 	}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"developer": {appaccess.PermAIGatewayInvoke},
 		},
@@ -2329,7 +2452,7 @@ func TestCreateServiceAccountTokenUsesServiceAccountRolePermissions(t *testing.T
 			},
 		},
 	}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"admin": {
 				appaccess.PermAIGatewayManage,
@@ -2374,7 +2497,7 @@ func TestRotateServiceAccountTokenUsesCurrentServiceAccountPermissions(t *testin
 			PermissionKeys:   []string{appaccess.PermAIGatewayInvoke, appaccess.PermDeliveryBuildsTrigger},
 		}},
 	}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"admin":   {appaccess.PermAIGatewayManage},
 			"ci-role": {appaccess.PermAIGatewayInvoke, appaccess.PermDeliveryBuildsTrigger},
@@ -2410,7 +2533,7 @@ func TestListServiceAccountTokensRequiresManageAndHidesHashFromJSON(t *testing.T
 			PermissionKeys:   []string{appaccess.PermAIGatewayInvoke},
 		}},
 	}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"admin":     {appaccess.PermAIGatewayManage},
 			"developer": {appaccess.PermAIGatewayView},
@@ -2439,7 +2562,7 @@ func TestListServiceAccountTokensRequiresManageAndHidesHashFromJSON(t *testing.T
 
 func TestCreateAIClientRequiresManageAndPersistsClient(t *testing.T) {
 	repo := &memoryGatewayRepository{}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"admin": {appaccess.PermAIGatewayManage},
 		},
@@ -2461,7 +2584,7 @@ func TestCreateAIClientRequiresManageAndPersistsClient(t *testing.T) {
 
 func TestCreateAIClientPendingCreatesRegistrationApprovalRequest(t *testing.T) {
 	repo := &memoryGatewayRepository{}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"admin": {appaccess.PermAIGatewayManage},
 		},
@@ -2493,7 +2616,7 @@ func TestCreateAIClientPendingCreatesRegistrationApprovalRequest(t *testing.T) {
 
 func TestApproveAIClientRegistrationActivatesClient(t *testing.T) {
 	repo := &memoryGatewayRepository{}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"admin": {appaccess.PermAIGatewayManage},
 		},
@@ -2530,7 +2653,7 @@ func TestApproveAIClientRegistrationActivatesClient(t *testing.T) {
 
 func TestCreateToolGrantDefaultsRiskFromKnownTool(t *testing.T) {
 	repo := &memoryGatewayRepository{}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"admin": {appaccess.PermAIGatewayManage},
 		},
@@ -2552,7 +2675,7 @@ func TestCreateToolGrantDefaultsRiskFromKnownTool(t *testing.T) {
 
 func TestCreateToolGrantDefaultsRiskFromInjectedProvider(t *testing.T) {
 	repo := &memoryGatewayRepository{}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"admin": {appaccess.PermAIGatewayManage},
 		},
@@ -2579,7 +2702,7 @@ func TestCreateToolGrantDefaultsRiskFromInjectedProvider(t *testing.T) {
 
 func TestCreateAccessPolicyAndSkillBindingRequireManage(t *testing.T) {
 	repo := &memoryGatewayRepository{}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"admin": {appaccess.PermAIGatewayManage},
 		},
@@ -2616,7 +2739,7 @@ func TestCreateAccessPolicyAndSkillBindingRequireManage(t *testing.T) {
 
 func TestCreateSkillBindingUsesInjectedProvider(t *testing.T) {
 	repo := &memoryGatewayRepository{}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"admin": {appaccess.PermAIGatewayManage},
 		},
@@ -2690,7 +2813,7 @@ func TestGovernanceStatusSummarizesTokensAuditAndPolicyCoverage(t *testing.T) {
 			{ID: "approval-stale", Status: "pending", ActorType: "user", ActorID: "user-1", ToolName: "delivery.actions.trigger", RiskLevel: domainaigateway.RiskLevelExecute, CreatedAt: now.Add(-26 * time.Hour)},
 		},
 	}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"admin": {appaccess.PermAIGatewayManage},
 		},
@@ -2885,7 +3008,7 @@ func TestGovernanceStatusReportsResourceScopeCoverageHealth(t *testing.T) {
 				},
 			},
 		}
-		return New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+		return newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 			matrix: map[string][]string{
 				"admin": {appaccess.PermAIGatewayManage},
 			},
@@ -2995,7 +3118,7 @@ func TestGovernanceStatusFlagsUnguardedHighRiskAllows(t *testing.T) {
 			{ID: "grant-expired", SubjectType: "role", SubjectID: "developer", ToolName: "delivery.*", Effect: "allow", ExpiresAt: &expiredAt},
 		},
 	}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"admin": {appaccess.PermAIGatewayManage},
 		},
@@ -3075,7 +3198,7 @@ func TestGovernanceStatusUsesInjectedCapabilityProvider(t *testing.T) {
 			{ID: "grant-custom-open", SubjectType: "role", SubjectID: "developer", ToolName: "custom.*", Effect: "allow"},
 		},
 	}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"admin": {appaccess.PermAIGatewayManage},
 		},
@@ -3170,7 +3293,7 @@ func TestGovernanceStatusFlagsUnscopedHighRiskAllows(t *testing.T) {
 			{ID: "grant-expired", SubjectType: "role", SubjectID: "developer", ToolName: "delivery.*", Effect: "allow", ExpiresAt: &expiredAt, RequiresApproval: true},
 		},
 	}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"admin": {appaccess.PermAIGatewayManage},
 		},
@@ -3242,7 +3365,7 @@ func TestInvokeToolRoutesDeliveryListThroughApplicationService(t *testing.T) {
 	audit := &captureAuditRecorder{}
 	apps := &fakeApplicationService{}
 	repo := &memoryGatewayRepository{}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"developer": {
 				appaccess.PermAIGatewayInvoke,
@@ -3285,7 +3408,7 @@ func TestInvokeToolRoutesDeliveryListThroughApplicationService(t *testing.T) {
 func TestInvokeDeliveryP1ReadToolsUseOwningServices(t *testing.T) {
 	apps := &fakeApplicationService{}
 	catalog := &fakeCatalogService{}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"developer": {
 				appaccess.PermAIGatewayInvoke,
@@ -3353,7 +3476,7 @@ func TestInvokeDeliveryP1ReadToolsUseOwningServices(t *testing.T) {
 }
 
 func TestInvokeDeliveryExecutionLogsStandaloneToolRedacts(t *testing.T) {
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"developer": {
 				appaccess.PermAIGatewayInvoke,
@@ -3381,7 +3504,7 @@ func TestInvokeDeliveryExecutionLogsStandaloneToolRedacts(t *testing.T) {
 
 func TestInvokeDeliveryReleaseAndRollbackContextAreReadOnly(t *testing.T) {
 	delivery := &fakeDeliveryService{}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"developer": {
 				appaccess.PermAIGatewayInvoke,
@@ -3438,7 +3561,7 @@ func TestInvokeDeliveryReleaseAndRollbackContextAreReadOnly(t *testing.T) {
 
 func TestInvokeDeliveryAICapabilitiesReturnDraftsWithoutExecution(t *testing.T) {
 	delivery := &fakeDeliveryService{}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"developer": {
 				appaccess.PermAIGatewayInvoke,
@@ -3516,7 +3639,7 @@ func TestInvokeDeliveryAICapabilitiesReturnDraftsWithoutExecution(t *testing.T) 
 func TestInvokeToolRejectsMissingBusinessPermission(t *testing.T) {
 	audit := &captureAuditRecorder{}
 	apps := &fakeApplicationService{}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"developer": {
 				appaccess.PermAIGatewayInvoke,
@@ -3554,7 +3677,7 @@ func TestInvokeToolRejectsToolGrantDeny(t *testing.T) {
 			},
 		},
 	}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"developer": {
 				appaccess.PermAIGatewayInvoke,
@@ -3593,7 +3716,7 @@ func TestInvokeToolRejectsToolGrantResourceScopeMismatch(t *testing.T) {
 			},
 		},
 	}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"developer": {
 				appaccess.PermAIGatewayInvoke,
@@ -3634,7 +3757,7 @@ func TestInvokeToolRejectsAccessPolicyDeny(t *testing.T) {
 			},
 		},
 	}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"developer": {
 				appaccess.PermAIGatewayInvoke,
@@ -3674,7 +3797,7 @@ func TestInvokeToolRejectsAccessPolicyResourceScopeMismatch(t *testing.T) {
 			},
 		},
 	}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"developer": {
 				appaccess.PermAIGatewayInvoke,
@@ -3713,7 +3836,7 @@ func TestInvokeToolRejectsAccessPolicyRateLimitCondition(t *testing.T) {
 			},
 		},
 	}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"developer": {
 				appaccess.PermAIGatewayInvoke,
@@ -3774,7 +3897,7 @@ func TestInvokeToolKeepsFixedWindowRateLimitBucketsSeparate(t *testing.T) {
 			},
 		},
 	}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"developer": {
 				appaccess.PermAIGatewayInvoke,
@@ -3845,7 +3968,7 @@ func TestInvokeToolUsesExternalRateLimitCounterBackend(t *testing.T) {
 		},
 	}
 	backend := &fakeRateLimitBackend{}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"developer": {
 				appaccess.PermAIGatewayInvoke,
@@ -3900,7 +4023,7 @@ func TestInvokeToolFallsBackWhenExternalRateLimitCounterBackendUnavailable(t *te
 		},
 	}
 	backend := &fakeRateLimitBackend{counterErr: fmt.Errorf("redis unavailable")}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"developer": {
 				appaccess.PermAIGatewayInvoke,
@@ -3947,7 +4070,7 @@ func TestInvokeToolFallsBackToAuditWindowWhenRateLimitCounterUnavailable(t *test
 			{ID: "audit-1", ActorType: "user", ActorID: "user-1", AIClientID: "codex", ToolName: "delivery.applications.list", Action: "ai_gateway.tool.invoke", Result: "success", CreatedAt: now.Add(-10 * time.Second)},
 		},
 	}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"developer": {
 				appaccess.PermAIGatewayInvoke,
@@ -3997,7 +4120,7 @@ func TestInvokeToolRejectsSlidingWindowRateLimitCondition(t *testing.T) {
 		},
 	}
 	backend := &fakeRateLimitBackend{}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"developer": {
 				appaccess.PermAIGatewayInvoke,
@@ -4047,7 +4170,7 @@ func TestInvokeToolRejectsGCRARateLimitCondition(t *testing.T) {
 			},
 		},
 	}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"developer": {
 				appaccess.PermAIGatewayInvoke,
@@ -4117,7 +4240,7 @@ func TestInvokeToolKeepsGCRARateLimitStatesSeparate(t *testing.T) {
 			},
 		},
 	}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"developer": {
 				appaccess.PermAIGatewayInvoke,
@@ -4191,7 +4314,7 @@ func TestInvokeToolUsesExternalGCRARateLimitBackend(t *testing.T) {
 		},
 	}
 	backend := &fakeRateLimitBackend{}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"developer": {
 				appaccess.PermAIGatewayInvoke,
@@ -4249,7 +4372,7 @@ func TestInvokeToolFallsBackToAuditWindowWhenGCRARateLimitStateUnavailable(t *te
 			{ID: "audit-1", ActorType: "user", ActorID: "user-1", AIClientID: "codex", ToolName: "delivery.applications.list", Action: "ai_gateway.tool.invoke", Result: "success", CreatedAt: now.Add(-10 * time.Second)},
 		},
 	}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"developer": {
 				appaccess.PermAIGatewayInvoke,
@@ -4292,7 +4415,7 @@ func TestInvokeToolDoesNotIncrementRateLimitCounterAfterRedactionRejection(t *te
 			},
 		},
 	}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"developer": {
 				appaccess.PermAIGatewayInvoke,
@@ -4336,7 +4459,7 @@ func TestInvokeToolRejectsAccessPolicyBudgetCondition(t *testing.T) {
 			{ID: "audit-1", ActorType: "user", ActorID: "user-1", AIClientID: "codex", ToolName: "delivery.applications.list", Action: "ai_gateway.tool.invoke", Result: "success", CreatedAt: now.Add(-10 * time.Minute)},
 		},
 	}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"developer": {
 				appaccess.PermAIGatewayInvoke,
@@ -4394,7 +4517,7 @@ func TestInvokeToolRejectsAccessPolicyTokenBudgetCondition(t *testing.T) {
 			},
 		},
 	}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"developer": {
 				appaccess.PermAIGatewayInvoke,
@@ -4452,7 +4575,7 @@ func TestInvokeToolRejectsAccessPolicyCostBudgetCondition(t *testing.T) {
 			},
 		},
 	}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"developer": {
 				appaccess.PermAIGatewayInvoke,
@@ -4494,7 +4617,7 @@ func TestInvokeToolRejectsAccessPolicyStrictRedactionCondition(t *testing.T) {
 			},
 		},
 	}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"developer": {
 				appaccess.PermAIGatewayInvoke,
@@ -4540,7 +4663,7 @@ func TestInvokeToolSanitizesAccessPolicyRedactionCondition(t *testing.T) {
 			},
 		},
 	}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"developer": {
 				appaccess.PermAIGatewayInvoke,
@@ -4590,7 +4713,7 @@ func TestInvokeToolSanitizesAccessPolicyValuePattern(t *testing.T) {
 			},
 		},
 	}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"developer": {
 				appaccess.PermAIGatewayInvoke,
@@ -4643,7 +4766,7 @@ func TestInvokeToolRejectsAccessPolicySecretClassifier(t *testing.T) {
 			},
 		},
 	}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"developer": {
 				appaccess.PermAIGatewayInvoke,
@@ -4696,7 +4819,7 @@ func TestInvokeToolRejectsAdditionalProviderSecretClassifiers(t *testing.T) {
 			},
 		},
 	}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"developer": {
 				appaccess.PermAIGatewayInvoke,
@@ -4751,7 +4874,7 @@ func TestInvokeToolRejectsAdditionalAIToolSecretClassifiers(t *testing.T) {
 			},
 		},
 	}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"developer": {
 				appaccess.PermAIGatewayInvoke,
@@ -4813,7 +4936,7 @@ func TestInvokeToolRejectsNewProviderSecretClassifiers(t *testing.T) {
 			},
 		},
 	}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"developer": {
 				appaccess.PermAIGatewayInvoke,
@@ -4877,7 +5000,7 @@ func TestInvokeToolRejectsAgentToolingSecretClassifiers(t *testing.T) {
 			},
 		},
 	}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"developer": {
 				appaccess.PermAIGatewayInvoke,
@@ -4939,7 +5062,7 @@ func TestInvokeToolRejectsChinaCloudSecretClassifiers(t *testing.T) {
 			},
 		},
 	}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"developer": {
 				appaccess.PermAIGatewayInvoke,
@@ -5000,7 +5123,7 @@ func TestInvokeToolRejectsObservabilitySecretClassifiers(t *testing.T) {
 			},
 		},
 	}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"developer": {
 				appaccess.PermAIGatewayInvoke,
@@ -5111,7 +5234,7 @@ func TestInvokeToolAppliesFieldLevelRedactionPolicy(t *testing.T) {
 			},
 		},
 	}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"developer": {
 				appaccess.PermAIGatewayInvoke,
@@ -5154,7 +5277,7 @@ func TestInvokeToolPreservesAllowedRedactionFields(t *testing.T) {
 			},
 		},
 	}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"developer": {
 				appaccess.PermAIGatewayInvoke,
@@ -5209,7 +5332,7 @@ func TestInvokeToolAppliesToolSpecificRedactionRule(t *testing.T) {
 			},
 		},
 	}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"developer": {
 				appaccess.PermAIGatewayInvoke,
@@ -5266,7 +5389,7 @@ func TestInvokeToolAppliesOutputRedactionPolicy(t *testing.T) {
 			},
 		},
 	}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"developer": {
 				appaccess.PermAIGatewayInvoke,
@@ -5299,7 +5422,7 @@ func TestInvokeToolAppliesOutputRedactionPolicy(t *testing.T) {
 func TestInvokeToolWritesProviderUsageSummaryToAudit(t *testing.T) {
 	delivery := &fakeDeliveryService{}
 	repo := &memoryGatewayRepository{}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"developer": {
 				appaccess.PermAIGatewayInvoke,
@@ -5728,7 +5851,7 @@ func TestApproveApprovalRequestAppliesOutputRedactionPolicy(t *testing.T) {
 			},
 		},
 	}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"admin": {
 				appaccess.PermAIGatewayManage,
@@ -5794,7 +5917,7 @@ func TestApproveApprovalRequestWritesProviderUsageSummaryToAudit(t *testing.T) {
 			},
 		},
 	}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"admin": {
 				appaccess.PermAIGatewayManage,
@@ -5859,7 +5982,7 @@ func TestInvokeToolRejectsSkillBindingCapabilityMismatch(t *testing.T) {
 			},
 		},
 	}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"developer": {
 				appaccess.PermAIGatewayInvoke,
@@ -5885,7 +6008,7 @@ func TestInvokeToolHoldsDeliveryActionWhenApprovalRequired(t *testing.T) {
 	delivery := &fakeDeliveryService{}
 	operations := &captureOperationRecorder{}
 	repo := &memoryGatewayRepository{}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"developer": {
 				appaccess.PermAIGatewayInvoke,
@@ -5948,7 +6071,7 @@ func TestApproveApprovalRequestExecutesThroughOwningService(t *testing.T) {
 	delivery := &fakeDeliveryService{workflowRunID: "workflow-1"}
 	operations := &captureOperationRecorder{}
 	repo := &memoryGatewayRepository{}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"admin": {
 				appaccess.PermAIGatewayManage,
@@ -6035,7 +6158,7 @@ func TestApproveApprovalRequestExecutesThroughOwningService(t *testing.T) {
 func TestApproveApprovalRequestCanTriggerRollbackDeliveryAction(t *testing.T) {
 	delivery := &fakeDeliveryService{workflowRunID: "workflow-rollback-1"}
 	repo := &memoryGatewayRepository{}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"admin": {
 				appaccess.PermAIGatewayManage,
@@ -6090,7 +6213,7 @@ func TestApproveApprovalRequestCanTriggerRollbackDeliveryAction(t *testing.T) {
 func TestRejectAndCancelApprovalRequestTransitionWithoutMutation(t *testing.T) {
 	delivery := &fakeDeliveryService{}
 	repo := &memoryGatewayRepository{}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"admin": {
 				appaccess.PermAIGatewayManage,
@@ -6154,7 +6277,7 @@ func TestListApprovalRequestsExpiresTimedOutRequests(t *testing.T) {
 			},
 		},
 	}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"admin": {appaccess.PermAIGatewayManage},
 		},
@@ -6199,7 +6322,7 @@ func TestListApprovalRequestsFiltersByID(t *testing.T) {
 			},
 		},
 	}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"admin": {appaccess.PermAIGatewayManage},
 		},
@@ -6244,7 +6367,7 @@ func TestApprovalRequestUsesInlineApprovalPolicySLAAndRouting(t *testing.T) {
 			},
 		},
 	}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"developer": {
 				appaccess.PermAIGatewayInvoke,
@@ -6339,7 +6462,7 @@ func TestApprovalRequestStoresRoutingAndRestrictsDecisionCandidates(t *testing.T
 			},
 		},
 	}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"admin": {
 				appaccess.PermAIGatewayManage,
@@ -6406,7 +6529,7 @@ func TestApprovalRequestResolvesOnCallCandidate(t *testing.T) {
 			},
 		},
 	}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"developer": {
 				appaccess.PermAIGatewayInvoke,
@@ -6494,7 +6617,7 @@ func TestApprovalRequestRequiresMultipleApprovalsBeforeReplay(t *testing.T) {
 			},
 		},
 	}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"developer": {
 				appaccess.PermAIGatewayInvoke,
@@ -6588,7 +6711,7 @@ func TestApprovalRequestRequiresRoleAndTeamQuotasBeforeReplay(t *testing.T) {
 			},
 		},
 	}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"developer": {
 				appaccess.PermAIGatewayInvoke,
@@ -6698,7 +6821,7 @@ func TestApprovalRequestAnyModeReplaysWhenAnyQuotaMatches(t *testing.T) {
 			},
 		},
 	}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"developer": {
 				appaccess.PermAIGatewayInvoke,
@@ -6770,7 +6893,7 @@ func TestApprovalRequestAdvancesApprovalStagesBeforeReplay(t *testing.T) {
 			},
 		},
 	}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"developer": {
 				appaccess.PermAIGatewayInvoke,
@@ -6925,7 +7048,7 @@ func TestGetApprovalTimelineAggregatesTraceAndAuditEvents(t *testing.T) {
 			},
 		},
 	}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"admin": {appaccess.PermAIGatewayManage},
 		},
@@ -6984,7 +7107,7 @@ func TestApprovalRequestRejectsApproveOutsideChangeWindow(t *testing.T) {
 			},
 		},
 	}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"developer": {
 				appaccess.PermAIGatewayInvoke,
@@ -7031,7 +7154,7 @@ func TestInvokeToolCanTriggerDeliveryActionWhenRiskPolicyAllows(t *testing.T) {
 			},
 		},
 	}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"developer": {
 				appaccess.PermAIGatewayInvoke,
@@ -7076,7 +7199,7 @@ func TestInvokeToolDryRunOnlyPolicyDoesNotMutate(t *testing.T) {
 			},
 		},
 	}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"developer": {
 				appaccess.PermAIGatewayInvoke,
@@ -7122,7 +7245,7 @@ func TestInvokeToolHumanConfirmPolicyDoesNotMutate(t *testing.T) {
 			},
 		},
 	}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"developer": {
 				appaccess.PermAIGatewayInvoke,
@@ -7162,7 +7285,7 @@ func TestInvokeToolDenyStrategyRejects(t *testing.T) {
 			},
 		},
 	}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"developer": {
 				appaccess.PermAIGatewayInvoke,
@@ -7186,7 +7309,7 @@ func TestInvokeToolDenyStrategyRejects(t *testing.T) {
 
 func TestInvokeKubernetesPodLogsRoutesThroughResourceServiceAndRedacts(t *testing.T) {
 	resources := &fakeResourceService{}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"sre": {
 				appaccess.PermAIGatewayInvoke,
@@ -7236,7 +7359,7 @@ func TestInvokeKubernetesP1DiagnosticsUseResourceService(t *testing.T) {
 			{Name: "event-2", Namespace: "prod", Type: "Normal", Reason: "Scheduled", InvolvedKind: "Pod", InvolvedName: "worker-6c4d", Message: "scheduled"},
 		},
 	}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"sre": {
 				appaccess.PermAIGatewayInvoke,
@@ -7335,7 +7458,7 @@ func TestInvokeKubernetesP1DiagnosticsUseResourceService(t *testing.T) {
 }
 
 func TestInvokeKubernetesListRequiresResourceService(t *testing.T) {
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"sre": {
 				appaccess.PermAIGatewayInvoke,
@@ -7358,7 +7481,7 @@ func TestInvokeReleaseFailureDiagnosisCollectsDeliveryAndRuntimeEvidence(t *test
 	resources := &fakeResourceService{}
 	delivery := &fakeDeliveryService{}
 	recorder := &fakeAnalysisArtifactRecorder{}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"sre": {
 				appaccess.PermAIGatewayInvoke,
@@ -7438,7 +7561,7 @@ func TestInvokeReleaseFailureDiagnosisQueuesExternalAgentRuntime(t *testing.T) {
 	resources := &fakeResourceService{}
 	delivery := &fakeDeliveryService{}
 	recorder := &fakeAnalysisArtifactRecorder{}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"sre": {
 				appaccess.PermAIGatewayInvoke,
@@ -7524,7 +7647,7 @@ func TestListAuditLogsRequiresManageAndFilters(t *testing.T) {
 			},
 		},
 	}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"admin":     {appaccess.PermAIGatewayManage},
 			"developer": {appaccess.PermAIGatewayView},

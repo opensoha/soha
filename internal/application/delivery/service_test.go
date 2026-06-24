@@ -13,6 +13,7 @@ import (
 	domaindelivery "github.com/opensoha/soha/internal/domain/delivery"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainrelease "github.com/opensoha/soha/internal/domain/release"
+	domainresource "github.com/opensoha/soha/internal/domain/resource"
 	domainworkflow "github.com/opensoha/soha/internal/domain/workflow"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 )
@@ -270,6 +271,30 @@ func (s stubReleaseReader) Trigger(_ context.Context, _ domainidentity.Principal
 		return s.record, nil
 	}
 	return domainrelease.Record{}, nil
+}
+
+type stubTargetReader struct {
+	deployments map[string][]domainresource.DeploymentView
+}
+
+func (s stubTargetReader) ListPods(context.Context, domainidentity.Principal, string, string) ([]domainresource.PodView, error) {
+	return nil, nil
+}
+
+func (s stubTargetReader) ListDeployments(_ context.Context, _ domainidentity.Principal, clusterID, namespace string) ([]domainresource.DeploymentView, error) {
+	return s.deployments[clusterID+"/"+namespace], nil
+}
+
+func (s stubTargetReader) GetDeploymentDetail(context.Context, domainidentity.Principal, string, string, string) (domainresource.DeploymentDetailView, error) {
+	return domainresource.DeploymentDetailView{}, nil
+}
+
+func (s stubTargetReader) ListServices(context.Context, domainidentity.Principal, string, string) ([]domainresource.ServiceView, error) {
+	return nil, nil
+}
+
+func (s stubTargetReader) ListIngresses(context.Context, domainidentity.Principal, string, string) ([]domainresource.IngressView, error) {
+	return nil, nil
 }
 
 type stubDeliveryRolePermissionReader struct {
@@ -1223,6 +1248,57 @@ func TestGetApplicationDetailIncludesBindingTargets(t *testing.T) {
 	target := result.Bindings[0].Targets[0]
 	if target.ClusterID != "cluster-a" || target.Namespace != "namespace-a" || target.WorkloadName != "demo-api" {
 		t.Fatalf("Targets = %+v, want cluster/namespace/workload summary", target)
+	}
+}
+
+func TestGetApplicationWorkloadRuntimeDetailReturnsNotFoundWhenWorkloadMissing(t *testing.T) {
+	service := New(
+		stubApplicationReader{
+			app: domainapp.App{
+				ID:   "app-1",
+				Name: "demo",
+			},
+		},
+		stubCatalogReader{
+			bindings: []domaincatalog.ApplicationEnvironment{
+				{
+					ID:             "binding-1",
+					ApplicationID:  "app-1",
+					EnvironmentID:  "env-1",
+					EnvironmentKey: "prod",
+					Targets: []domaincatalog.ReleaseTarget{
+						{
+							ID:           "target-1",
+							ClusterID:    "cluster-a",
+							Namespace:    "namespace-a",
+							WorkloadKind: "Deployment",
+							WorkloadName: "expected-workload",
+							Enabled:      true,
+						},
+					},
+				},
+			},
+		},
+		stubBuildReader{},
+		stubWorkflowReader{},
+		stubReleaseReader{},
+		stubRepository{},
+		nil,
+		stubTargetReader{
+			deployments: map[string][]domainresource.DeploymentView{
+				"cluster-a/namespace-a": {
+					{
+						Name: "different-workload",
+					},
+				},
+			},
+		},
+		deliveryActionPermissions(appaccess.PermDeliveryApplicationsView),
+	)
+
+	_, err := service.GetApplicationWorkloadRuntimeDetail(context.Background(), domainidentity.Principal{}, "app-1", "binding-1", "expected-workload")
+	if !errors.Is(err, apperrors.ErrNotFound) {
+		t.Fatalf("GetApplicationWorkloadRuntimeDetail error = %v, want ErrNotFound", err)
 	}
 }
 

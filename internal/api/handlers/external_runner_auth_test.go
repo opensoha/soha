@@ -61,7 +61,6 @@ func TestAuthorizeExternalRunnerRejectsServiceAccountWithoutPermission(t *testin
 }
 
 func newRunnerAuthTestContext(headers http.Header) *gin.Context {
-	gin.SetMode(gin.TestMode)
 	recorder := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(recorder)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/delivery/execution-tasks/claim", nil)

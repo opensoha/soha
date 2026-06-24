@@ -17,6 +17,15 @@ import (
 
 var ErrNotFound = fmt.Errorf("%w: docker record not found", apperrors.ErrNotFound)
 
+var allowedTableNames = map[string]bool{
+	"docker_hosts":         true,
+	"docker_projects":      true,
+	"docker_services":      true,
+	"docker_port_mappings": true,
+	"docker_templates":     true,
+	"docker_operations":    true,
+}
+
 type Repository struct {
 	db *gorm.DB
 }
@@ -670,7 +679,7 @@ func (r *Repository) ClaimOperation(ctx context.Context, workerID string, agentI
 	}
 	var task domaindocker.Operation
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		clauses := []string{"status = 'queued'"}
+		clauses := []string{claimableOperationClause()}
 		args := []any{}
 		if values := compactStrings(hostIDs); len(values) > 0 {
 			clauses = append(clauses, fmt.Sprintf("host_id IN (%s)", placeholders(len(values))))
@@ -728,7 +737,7 @@ func (r *Repository) ClaimOperation(ctx context.Context, workerID string, agentI
 			UPDATE docker_operations
 			SET status = ?, claimed_by_worker_id = ?, attempt_count = ?, max_retries = ?, timeout_seconds = ?,
 				payload = ?::jsonb, result = ?::jsonb, started_at = ?, last_heartbeat_at = ?, finished_at = ?, updated_at = ?
-			WHERE id = ? AND status = 'queued'
+			WHERE id = ? AND `+claimableOperationClause()+`
 		`, item.Status, nullableString(item.ClaimedByWorkerID), item.AttemptCount, item.MaxRetries, item.TimeoutSeconds,
 			string(payload), string(resultPayload), item.StartedAt, item.LastHeartbeatAt, item.FinishedAt, item.UpdatedAt, item.ID)
 		if update.Error != nil {
@@ -1059,7 +1068,7 @@ func scanHost(rows scanner) (domaindocker.Host, error) {
 func scanHostRow(row *sql.Row) (domaindocker.Host, error) {
 	item, err := scanHost(row)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) || strings.Contains(err.Error(), "no rows") {
+		if rowNoRowsErr(err) {
 			return domaindocker.Host{}, ErrNotFound
 		}
 		return domaindocker.Host{}, err
@@ -1084,7 +1093,7 @@ func scanProject(rows scanner) (domaindocker.Project, error) {
 func scanProjectRow(row *sql.Row) (domaindocker.Project, error) {
 	item, err := scanProject(row)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) || strings.Contains(err.Error(), "no rows") {
+		if rowNoRowsErr(err) {
 			return domaindocker.Project{}, ErrNotFound
 		}
 		return domaindocker.Project{}, err
@@ -1107,7 +1116,7 @@ func scanService(rows scanner) (domaindocker.Service, error) {
 func scanServiceRow(row *sql.Row) (domaindocker.Service, error) {
 	item, err := scanService(row)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) || strings.Contains(err.Error(), "no rows") {
+		if rowNoRowsErr(err) {
 			return domaindocker.Service{}, ErrNotFound
 		}
 		return domaindocker.Service{}, err
@@ -1131,7 +1140,7 @@ func scanPortMapping(rows scanner) (domaindocker.PortMapping, error) {
 func scanPortMappingRow(row *sql.Row) (domaindocker.PortMapping, error) {
 	item, err := scanPortMapping(row)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) || strings.Contains(err.Error(), "no rows") {
+		if rowNoRowsErr(err) {
 			return domaindocker.PortMapping{}, ErrNotFound
 		}
 		return domaindocker.PortMapping{}, err
@@ -1153,7 +1162,7 @@ func scanTemplate(rows scanner) (domaindocker.Template, error) {
 func scanTemplateRow(row *sql.Row) (domaindocker.Template, error) {
 	item, err := scanTemplate(row)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) || strings.Contains(err.Error(), "no rows") {
+		if rowNoRowsErr(err) {
 			return domaindocker.Template{}, ErrNotFound
 		}
 		return domaindocker.Template{}, err
@@ -1177,12 +1186,16 @@ func scanOperation(rows scanner) (domaindocker.Operation, error) {
 func scanOperationRow(row *sql.Row) (domaindocker.Operation, error) {
 	item, err := scanOperation(row)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) || strings.Contains(err.Error(), "no rows") {
+		if rowNoRowsErr(err) {
 			return domaindocker.Operation{}, ErrNotFound
 		}
 		return domaindocker.Operation{}, err
 	}
 	return item, nil
+}
+
+func rowNoRowsErr(err error) bool {
+	return errors.Is(err, sql.ErrNoRows)
 }
 
 func scanOperationLog(rows scanner) (domaindocker.OperationLog, error) {
@@ -1223,12 +1236,20 @@ func operationSelect() string {
 	return `SELECT id, COALESCE(host_id, ''), COALESCE(project_id, ''), COALESCE(service_id, ''), operation_kind, status, COALESCE(requested_by, ''), COALESCE(claimed_by_worker_id, ''), attempt_count, max_retries, timeout_seconds, payload, result, started_at, last_heartbeat_at, finished_at, created_at, updated_at FROM docker_operations`
 }
 
+func claimableOperationClause() string {
+	return `(status = 'queued' OR (status = 'running' AND operation_kind = 'host_provision' AND COALESCE(claimed_by_worker_id, '') = '' AND result->>'hostProvisionStage' = 'vm_created'))`
+}
+
 func (r *Repository) getServiceByProjectName(ctx context.Context, projectID, name string) (domaindocker.Service, error) {
 	row := r.db.WithContext(ctx).Raw(serviceSelect()+" WHERE project_id = ? AND name = ? LIMIT 1", strings.TrimSpace(projectID), strings.TrimSpace(name)).Row()
 	return scanServiceRow(row)
 }
 
 func (r *Repository) deleteByID(ctx context.Context, tableName, id, label string) error {
+	tableName, err := safeTableName(tableName)
+	if err != nil {
+		return fmt.Errorf("%s: %w", label, err)
+	}
 	result := r.db.WithContext(ctx).Exec(fmt.Sprintf("DELETE FROM %s WHERE id = ?", tableName), strings.TrimSpace(id))
 	if result.Error != nil {
 		return fmt.Errorf("%s: %w", label, result.Error)
@@ -1240,6 +1261,10 @@ func (r *Repository) deleteByID(ctx context.Context, tableName, id, label string
 }
 
 func (r *Repository) count(ctx context.Context, tableName string, clauses []string, args []any) (int, error) {
+	tableName, err := safeTableName(tableName)
+	if err != nil {
+		return 0, err
+	}
 	query := fmt.Sprintf("SELECT COUNT(*) FROM %s", tableName)
 	query = appendWhere(query, clauses)
 	var total int
@@ -1453,11 +1478,23 @@ func appendWhere(query string, clauses []string) string {
 }
 
 func fetchCreatedAt(ctx context.Context, db *gorm.DB, tableName, id string) time.Time {
+	tableName, err := safeTableName(tableName)
+	if err != nil {
+		return time.Now().UTC()
+	}
 	var createdAt time.Time
 	if err := db.WithContext(ctx).Raw(fmt.Sprintf("SELECT created_at FROM %s WHERE id = ?", tableName), strings.TrimSpace(id)).Row().Scan(&createdAt); err != nil {
 		return time.Now().UTC()
 	}
 	return createdAt
+}
+
+func safeTableName(tableName string) (string, error) {
+	tableName = strings.TrimSpace(tableName)
+	if allowedTableNames[tableName] {
+		return tableName, nil
+	}
+	return "", fmt.Errorf("%w: unsupported docker repository table %q", apperrors.ErrInvalidArgument, tableName)
 }
 
 func marshalJSON(value any) ([]byte, error) {

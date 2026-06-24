@@ -238,3 +238,29 @@ func TestListAccessibleFiltersUnauthorizedClusters(t *testing.T) {
 		t.Fatalf("ListAccessible = %v, want empty result", items)
 	}
 }
+
+func TestSyncConnectionUsesFixedHealthMessageForInvalidClusterConfig(t *testing.T) {
+	repo := &stubRepository{
+		connection: domaincluster.Connection{
+			Summary: domaincluster.Summary{
+				ID:             "cluster-1",
+				Name:           "cluster-1",
+				ConnectionMode: domaincluster.ConnectionModeDirectKubeconfig,
+			},
+		},
+	}
+	service := &Service{
+		manager: k8sinfra.NewManager(nil),
+		repo:    repo,
+	}
+
+	if err := service.syncConnection(context.Background(), repo.connection); err != nil {
+		t.Fatalf("syncConnection returned error: %v", err)
+	}
+	if got := repo.connection.Summary.Health.Message; got != "cluster configuration unavailable" {
+		t.Fatalf("health message = %q, want fixed fallback", got)
+	}
+	if strings.Contains(repo.connection.Summary.Health.Message, "has no kubeconfig metadata") {
+		t.Fatalf("health message leaked underlying config error: %q", repo.connection.Summary.Health.Message)
+	}
+}

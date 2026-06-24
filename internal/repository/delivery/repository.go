@@ -1415,19 +1415,19 @@ func buildExecutionArtifacts(task domaindelivery.ExecutionTask) []domaindelivery
 
 func executionArtifactFromMap(raw map[string]any) domaindelivery.ExecutionArtifact {
 	item := domaindelivery.ExecutionArtifact{
-		ID:             strings.TrimSpace(fmt.Sprint(raw["id"])),
+		ID:              strings.TrimSpace(fmt.Sprint(raw["id"])),
 		ExecutionTaskID: strings.TrimSpace(fmt.Sprint(raw["executionTaskId"])),
 		ReleaseBundleID: strings.TrimSpace(fmt.Sprint(raw["releaseBundleId"])),
 		WorkflowRunID:   strings.TrimSpace(fmt.Sprint(raw["workflowRunId"])),
 		WorkflowNodeID:  strings.TrimSpace(fmt.Sprint(raw["workflowNodeId"])),
-		Kind:           strings.TrimSpace(fmt.Sprint(raw["kind"])),
-		Name:           strings.TrimSpace(fmt.Sprint(raw["name"])),
-		Ref:            strings.TrimSpace(fmt.Sprint(raw["ref"])),
-		Digest:         strings.TrimSpace(fmt.Sprint(raw["digest"])),
-		Path:           strings.TrimSpace(fmt.Sprint(raw["path"])),
-		Status:         strings.TrimSpace(fmt.Sprint(raw["status"])),
-		SizeBytes:      toInt64(raw["sizeBytes"]),
-		Metadata:       map[string]any{},
+		Kind:            strings.TrimSpace(fmt.Sprint(raw["kind"])),
+		Name:            strings.TrimSpace(fmt.Sprint(raw["name"])),
+		Ref:             strings.TrimSpace(fmt.Sprint(raw["ref"])),
+		Digest:          strings.TrimSpace(fmt.Sprint(raw["digest"])),
+		Path:            strings.TrimSpace(fmt.Sprint(raw["path"])),
+		Status:          strings.TrimSpace(fmt.Sprint(raw["status"])),
+		SizeBytes:       toInt64(raw["sizeBytes"]),
+		Metadata:        map[string]any{},
 	}
 	if createdAt := parseRFC3339(raw["createdAt"]); createdAt != nil {
 		item.CreatedAt = *createdAt

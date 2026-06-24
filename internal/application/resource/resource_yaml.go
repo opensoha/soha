@@ -245,6 +245,8 @@ func resourceGVRForKind(kind string) (schema.GroupVersionResource, bool, error) 
 		return schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "statefulsets"}, true, nil
 	case "daemonset":
 		return schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "daemonsets"}, true, nil
+	case "replicaset":
+		return schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "replicasets"}, true, nil
 	case "job":
 		return schema.GroupVersionResource{Group: "batch", Version: "v1", Resource: "jobs"}, true, nil
 	case "cronjob":

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -142,7 +143,7 @@ func scanRecordRow(row *sql.Row) (domainbuild.Record, error) {
 	var startedAt sql.NullTime
 	var finishedAt sql.NullTime
 	if err := row.Scan(&item.ID, &item.ApplicationID, &item.SourceSystem, &item.Status, &payload, &startedAt, &finishedAt, &item.CreatedAt); err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return domainbuild.Record{}, fmt.Errorf("%w: build record not found", apperrors.ErrNotFound)
 		}
 		return domainbuild.Record{}, fmt.Errorf("scan build record row: %w", err)

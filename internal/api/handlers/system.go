@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"time"
 
@@ -21,7 +20,7 @@ func (h *SystemHandler) Healthz(c *gin.Context) {
 	httpStatus := http.StatusOK
 	if err := h.postgres.Ping(ctx); err != nil {
 		status["status"] = "degraded"
-		status["postgres"] = err.Error()
+		status["postgres"] = "unavailable"
 		httpStatus = http.StatusServiceUnavailable
 	}
 	apiresponse.JSON(c, httpStatus, status)
@@ -30,7 +29,7 @@ func (h *SystemHandler) Readyz(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 2*time.Second)
 	defer cancel()
 	if err := h.postgres.Ping(ctx); err != nil {
-		apiresponse.Error(c, http.StatusServiceUnavailable, "postgres_unavailable", fmt.Sprintf("postgres not ready: %v", err))
+		apiresponse.Error(c, http.StatusServiceUnavailable, "postgres_unavailable", "postgres unavailable")
 		return
 	}
 	apiresponse.JSON(c, http.StatusOK, gin.H{"status": "ready"})

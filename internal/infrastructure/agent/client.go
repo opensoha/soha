@@ -65,6 +65,22 @@ type restartDeploymentRequest struct {
 	Name      string `json:"name"`
 }
 
+type restartStatefulSetRequest struct {
+	Namespace string `json:"namespace"`
+	Name      string `json:"name"`
+}
+
+type scaleStatefulSetRequest struct {
+	Namespace string `json:"namespace"`
+	Name      string `json:"name"`
+	Replicas  int32  `json:"replicas"`
+}
+
+type restartDaemonSetRequest struct {
+	Namespace string `json:"namespace"`
+	Name      string `json:"name"`
+}
+
 type updateDeploymentImageRequest struct {
 	Namespace     string `json:"namespace"`
 	Name          string `json:"name"`
@@ -1370,6 +1386,18 @@ func (c *Client) RestartDeployment(ctx context.Context, namespace, name string) 
 
 func (c *Client) ScaleDeployment(ctx context.Context, namespace, name string, replicas int32) error {
 	return c.request(ctx, http.MethodPost, "/api/v1/platform/actions/deployments/scale", scaleDeploymentRequest{Namespace: namespace, Name: name, Replicas: replicas}, nil)
+}
+
+func (c *Client) RestartStatefulSet(ctx context.Context, namespace, name string) error {
+	return c.request(ctx, http.MethodPost, "/api/v1/platform/actions/statefulsets/restart", restartStatefulSetRequest{Namespace: namespace, Name: name}, nil)
+}
+
+func (c *Client) ScaleStatefulSet(ctx context.Context, namespace, name string, replicas int32) error {
+	return c.request(ctx, http.MethodPost, "/api/v1/platform/actions/statefulsets/scale", scaleStatefulSetRequest{Namespace: namespace, Name: name, Replicas: replicas}, nil)
+}
+
+func (c *Client) RestartDaemonSet(ctx context.Context, namespace, name string) error {
+	return c.request(ctx, http.MethodPost, "/api/v1/platform/actions/daemonsets/restart", restartDaemonSetRequest{Namespace: namespace, Name: name}, nil)
 }
 
 func (c *Client) UpdateDeploymentImage(ctx context.Context, namespace, name, containerName, image string) (string, string, error) {

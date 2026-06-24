@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"fmt"
 	"net/http"
 	"strconv"
 
@@ -32,7 +31,7 @@ func writeError(c *gin.Context, err error) {
 	code := aperrors.Code(err)
 	message := err.Error()
 	if status == http.StatusInternalServerError {
-		message = fmt.Sprintf("request failed: %v", err)
+		message = "internal server error"
 	}
 	apiresponse.Error(c, status, code, message)
 }

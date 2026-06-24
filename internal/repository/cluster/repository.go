@@ -9,10 +9,11 @@ import (
 	"time"
 
 	domaincluster "github.com/opensoha/soha/internal/domain/cluster"
+	"github.com/opensoha/soha/internal/platform/apperrors"
 	"gorm.io/gorm"
 )
 
-var ErrNotFound = errors.New("cluster not found")
+var ErrNotFound = fmt.Errorf("%w: cluster not found", apperrors.ErrNotFound)
 
 type Repository struct {
 	db *gorm.DB

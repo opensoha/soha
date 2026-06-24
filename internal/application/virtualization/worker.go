@@ -15,7 +15,6 @@ import (
 )
 
 func (s *Service) runWorker(ctx context.Context) {
-	defer close(s.workerDone)
 	ticker := time.NewTicker(s.workerInterval)
 	defer ticker.Stop()
 	for {
@@ -110,7 +109,7 @@ func (s *Service) executeAssetSync(ctx context.Context, task domainvirtualizatio
 				continue
 			}
 			vmCount++
-		case "datasource", "storage_content", "image":
+		case "datasource", "datavolume", "persistentvolumeclaim", "networkattachmentdefinition", "storage_content", "image", "template", "iso", "storage", "network", "lxc_template":
 			if _, err := s.repo.UpsertImage(ctx, imageFromAsset(connection, asset)); err != nil {
 				_ = s.repo.CreateTaskLog(ctx, domainvirtualization.TaskLog{TaskID: task.ID, LogLevel: "error", Message: err.Error()})
 				continue
@@ -130,6 +129,9 @@ func (s *Service) executeAssetSync(ctx context.Context, task domainvirtualizatio
 	_, _ = s.repo.UpdateConnectionHealth(ctx, connection.ID, map[string]any{
 		"status":      status,
 		"message":     result.Health.Message,
+		"reason":      result.Health.Reason,
+		"nextAction":  result.Health.NextAction,
+		"httpStatus":  result.Health.HTTPStatus,
 		"taskId":      task.ID,
 		"assetCount":  len(result.Assets),
 		"vmCount":     vmCount,
@@ -140,6 +142,9 @@ func (s *Service) executeAssetSync(ctx context.Context, task domainvirtualizatio
 	task.Result = map[string]any{
 		"health":      status,
 		"message":     result.Health.Message,
+		"reason":      result.Health.Reason,
+		"nextAction":  result.Health.NextAction,
+		"httpStatus":  result.Health.HTTPStatus,
 		"assetCount":  len(result.Assets),
 		"vmCount":     vmCount,
 		"imageCount":  imageCount,
@@ -190,6 +195,45 @@ func (s *Service) executeVMCreate(ctx context.Context, task domainvirtualization
 	if s.taskCanceled(ctx, task.ID) {
 		return runtimeobs.OutcomeCanceled, nil
 	}
+	ipAddresses := uniqueNonEmptyStrings(vm.IPAddresses)
+	if ipAddress := firstNonEmpty(vm.Metadata["ipAddress"], vm.Metadata["ip"]); ipAddress != "" {
+		ipAddresses = uniqueNonEmptyStrings(append([]string{ipAddress}, ipAddresses...))
+	}
+	endpoint := firstNonEmpty(vm.Endpoint, vm.Metadata["endpoint"], vm.Metadata["accessUrl"])
+	config := map[string]any{
+		"architecture": payloadString(task.Payload, "architecture"),
+		"cpu":          payloadInt(task.Payload, "cpu"),
+		"memoryMiB":    payloadInt(task.Payload, "memoryMiB"),
+		"diskGiB":      payloadInt(task.Payload, "diskGiB"),
+		"network":      payloadString(task.Payload, "network"),
+		"sourceMode":   payloadString(task.Payload, "sourceMode"),
+		"sourceRef":    payloadString(task.Payload, "sourceId"),
+	}
+	if len(ipAddresses) > 0 {
+		config["ipAddress"] = ipAddresses[0]
+		config["ipAddresses"] = ipAddresses
+	}
+	if endpoint != "" {
+		config["endpoint"] = endpoint
+	}
+	for _, key := range []string{"dataVolumeName", "dataVolumePhase", "dataVolumeProgress", "dataVolumeFailureReason", "dataVolumeFailureMessage", "pvcName", "pvcPhase", "pvcStorageClass", "vmiStatus", "printableStatus"} {
+		if value := strings.TrimSpace(vm.Metadata[key]); value != "" {
+			config[key] = value
+		}
+	}
+	raw := map[string]any{
+		"providerVmId":   vm.ID,
+		"architecture":   payloadString(task.Payload, "architecture"),
+		"providerParams": task.Payload["providerParams"],
+		"providerExtra":  task.Payload["providerExtra"],
+		"sourceMode":     payloadString(task.Payload, "sourceMode"),
+		"sourceRef":      payloadString(task.Payload, "sourceId"),
+	}
+	for _, key := range []string{"pveCreateUpid", "pveConfigUpid", "pveStartUpid"} {
+		if value := strings.TrimSpace(vm.Metadata[key]); value != "" {
+			raw[key] = value
+		}
+	}
 	stored, err := s.repo.UpsertVM(ctx, domainvirtualization.VM{
 		Provider:     connection.Provider,
 		ConnectionID: connection.ID,
@@ -201,32 +245,37 @@ func (s *Service) executeVMCreate(ctx context.Context, task domainvirtualization
 		NodeName:     vm.Node,
 		ImageID:      firstNonEmpty(payloadString(task.Payload, "imageId"), payloadString(task.Payload, "bootImageId")),
 		FlavorID:     payloadString(task.Payload, "flavorId"),
-		IPAddresses:  []string{},
+		IPAddresses:  ipAddresses,
 		Labels:       metadataMap(vm.Metadata),
-		Config: map[string]any{
-			"architecture": payloadString(task.Payload, "architecture"),
-			"cpu":          payloadInt(task.Payload, "cpu"),
-			"memoryMiB":    payloadInt(task.Payload, "memoryMiB"),
-			"diskGiB":      payloadInt(task.Payload, "diskGiB"),
-			"network":      payloadString(task.Payload, "network"),
-			"sourceMode":   payloadString(task.Payload, "sourceMode"),
-			"sourceRef":    payloadString(task.Payload, "sourceId"),
-		},
-		Raw: map[string]any{
-			"providerVmId":   vm.ID,
-			"architecture":   payloadString(task.Payload, "architecture"),
-			"providerParams": task.Payload["providerParams"],
-			"providerExtra":  task.Payload["providerExtra"],
-			"sourceMode":     payloadString(task.Payload, "sourceMode"),
-			"sourceRef":      payloadString(task.Payload, "sourceId"),
-		},
+		Config:       config,
+		Raw:          raw,
 	})
 	if err != nil {
 		s.failTask(ctx, task, err)
 		return runtimeobs.OutcomeFailed, err
 	}
 	task.VMID = stored.ID
-	task.Result = map[string]any{"vmId": stored.ID, "name": stored.Name, "status": stored.Status, "architecture": payloadString(task.Payload, "architecture")}
+	task.Result = map[string]any{
+		"vmId":         stored.ID,
+		"name":         stored.Name,
+		"status":       stored.Status,
+		"architecture": payloadString(task.Payload, "architecture"),
+		"providerVmId": vm.ID,
+	}
+	if len(ipAddresses) > 0 {
+		task.Result["ipAddress"] = ipAddresses[0]
+		task.Result["ip"] = ipAddresses[0]
+		task.Result["ipAddresses"] = ipAddresses
+	}
+	if endpoint != "" {
+		task.Result["endpoint"] = endpoint
+		task.Result["accessUrl"] = endpoint
+	}
+	for _, key := range []string{"pveCreateUpid", "pveConfigUpid", "pveStartUpid", "dataVolumeName", "dataVolumePhase", "dataVolumeProgress", "dataVolumeFailureReason", "dataVolumeFailureMessage", "pvcName", "pvcPhase", "vmiStatus", "printableStatus"} {
+		if value := strings.TrimSpace(vm.Metadata[key]); value != "" {
+			task.Result[key] = value
+		}
+	}
 	s.completeTask(ctx, task)
 	_ = s.repo.CreateTaskLog(ctx, domainvirtualization.TaskLog{TaskID: task.ID, LogLevel: "info", Message: "virtual machine created"})
 	s.recordOperation(ctx, s.workerPrincipal, "virtualization.worker.vm_create", stored.ID, stored.Name, TaskStatusSucceeded, "virtual machine creation completed", map[string]any{"taskId": task.ID})
@@ -282,11 +331,20 @@ func (s *Service) executeVMAction(ctx context.Context, task domainvirtualization
 		s.failTask(ctx, task, err)
 		return runtimeobs.OutcomeFailed, err
 	}
+	if action == infravirtualization.PowerActionDelete {
+		if err := s.repo.MarkDockerHostsUnavailableByVM(ctx, stored.ID); err != nil {
+			s.failTask(ctx, task, err)
+			return runtimeobs.OutcomeFailed, err
+		}
+	}
 	task.Result = map[string]any{
 		"accepted": result.Accepted,
 		"action":   string(result.Action),
 		"message":  result.Message,
 		"vmId":     stored.ID,
+	}
+	if result.UPID != "" {
+		task.Result["pveUpid"] = result.UPID
 	}
 	s.completeTask(ctx, task)
 	_ = s.repo.CreateTaskLog(ctx, domainvirtualization.TaskLog{TaskID: task.ID, LogLevel: "info", Message: "virtual machine action completed"})
@@ -346,6 +404,19 @@ func (s *Service) failTask(ctx context.Context, task domainvirtualization.Task, 
 	task.Status = TaskStatusFailed
 	task.FinishedAt = &now
 	task.Result = map[string]any{"error": message}
+	if details, ok := infravirtualization.AdapterErrorDetails(err); ok {
+		task.Result["failureReason"] = details.Reason
+		task.Result["reason"] = details.Reason
+		task.Result["errorCode"] = details.Reason
+		task.Result["providerErrorClass"] = details.Reason
+		if details.HTTPStatus > 0 {
+			task.Result["lastHttpStatus"] = details.HTTPStatus
+			task.Result["httpStatus"] = details.HTTPStatus
+		}
+		if details.NextAction != "" {
+			task.Result["nextAction"] = details.NextAction
+		}
+	}
 	_, _ = s.repo.UpdateTask(ctx, task)
 	_ = s.repo.CreateTaskLog(ctx, domainvirtualization.TaskLog{TaskID: task.ID, LogLevel: "error", Message: message})
 	result := TaskStatusFailed
@@ -447,11 +518,17 @@ func (s *Service) adapterForConnection(connection domainvirtualization.Connectio
 func vmFromAsset(connection domainvirtualization.Connection, asset infravirtualization.Asset) domainvirtualization.VM {
 	externalID := firstNonEmpty(asset.Metadata["uid"], asset.Metadata["vmid"], asset.Name)
 	config := metadataMap(asset.Metadata)
+	config["source"] = "sync"
+	config["orphanHint"] = "provider_discovered"
 	if cpu := metadataInt(asset.Metadata, "cpu"); cpu > 0 {
 		config["cpu"] = cpu
 	}
 	if memoryMiB := metadataMemoryMiB(asset.Metadata, "memory"); memoryMiB > 0 {
 		config["memoryMiB"] = memoryMiB
+	}
+	ipAddresses := uniqueNonEmptyStrings(commaSeparatedValues(asset.Metadata["ipAddresses"]))
+	if ipAddress := strings.TrimSpace(asset.Metadata["ipAddress"]); ipAddress != "" {
+		ipAddresses = uniqueNonEmptyStrings(append([]string{ipAddress}, ipAddresses...))
 	}
 	return domainvirtualization.VM{
 		Provider:     connection.Provider,
@@ -462,6 +539,7 @@ func vmFromAsset(connection domainvirtualization.Connection, asset infravirtuali
 		Status:       firstNonEmpty(asset.Status, "active"),
 		PowerState:   powerStateFromStatus(asset.Status),
 		NodeName:     asset.Node,
+		IPAddresses:  ipAddresses,
 		Labels:       metadataMap(asset.Metadata),
 		Config:       config,
 		Raw:          map[string]any{"assetType": asset.Type},
@@ -470,8 +548,13 @@ func vmFromAsset(connection domainvirtualization.Connection, asset infravirtuali
 
 func imageFromAsset(connection domainvirtualization.Connection, asset infravirtualization.Asset) domainvirtualization.Image {
 	config := metadataMap(asset.Metadata)
+	config["source"] = "sync"
+	config["orphanHint"] = "provider_discovered"
 	if asset.Node != "" {
 		config["node"] = asset.Node
+	}
+	if asset.Namespace != "" {
+		config["namespace"] = asset.Namespace
 	}
 	sourceKind := asset.Type
 	switch asset.Type {
@@ -571,6 +654,30 @@ func metadataMap(values map[string]string) map[string]any {
 		out[key] = value
 	}
 	return out
+}
+
+func uniqueNonEmptyStrings(items []string) []string {
+	seen := map[string]struct{}{}
+	out := make([]string, 0, len(items))
+	for _, item := range items {
+		value := strings.TrimSpace(item)
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
+	}
+	return out
+}
+
+func commaSeparatedValues(value string) []string {
+	if strings.TrimSpace(value) == "" {
+		return nil
+	}
+	return strings.Split(value, ",")
 }
 
 func powerStateFromStatus(status string) string {

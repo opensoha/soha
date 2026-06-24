@@ -667,11 +667,11 @@ type RuntimeObjectLinks struct {
 }
 
 type RuntimeObjectPermissions struct {
-	CanViewArtifacts bool `json:"canViewArtifacts"`
-	CanViewAudit     bool `json:"canViewAudit"`
+	CanViewArtifacts  bool `json:"canViewArtifacts"`
+	CanViewAudit      bool `json:"canViewAudit"`
 	CanViewOperations bool `json:"canViewOperations"`
-	CanRetry         bool `json:"canRetry,omitempty"`
-	CanCancel        bool `json:"canCancel,omitempty"`
+	CanRetry          bool `json:"canRetry,omitempty"`
+	CanCancel         bool `json:"canCancel,omitempty"`
 }
 
 type RuntimeObjectDetail struct {

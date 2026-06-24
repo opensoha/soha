@@ -17,7 +17,15 @@ func (s *Service) GovernanceStatus(ctx context.Context, principal domainidentity
 	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermAIGatewayManage); err != nil {
 		return domainaigateway.GovernanceStatus{}, err
 	}
-	if s.repo == nil {
+	personalTokenRepo := s.personalTokenRepository()
+	serviceAccountRepo := s.serviceAccountRepository()
+	clientRepo := s.clientRepository()
+	accessPolicyRepo := s.accessPolicyRepository()
+	toolGrantRepo := s.toolGrantRepository()
+	skillBindingRepo := s.skillBindingRepository()
+	auditRepo := s.auditLogRepository()
+	approvalRepo := s.approvalRepository()
+	if personalTokenRepo == nil || serviceAccountRepo == nil || clientRepo == nil || accessPolicyRepo == nil || toolGrantRepo == nil || skillBindingRepo == nil || auditRepo == nil || approvalRepo == nil {
 		return domainaigateway.GovernanceStatus{}, fmt.Errorf("%w: AI Gateway repository is not configured", apperrors.ErrInvalidArgument)
 	}
 	if err := s.expirePendingApprovalRequests(ctx); err != nil {
@@ -32,35 +40,35 @@ func (s *Service) GovernanceStatus(ctx context.Context, principal domainidentity
 	}
 	now := time.Now().UTC()
 	from := now.Add(-time.Duration(windowHours) * time.Hour)
-	personalTokens, err := s.repo.ListAllPersonalAccessTokens(ctx)
+	personalTokens, err := personalTokenRepo.ListAllPersonalAccessTokens(ctx)
 	if err != nil {
 		return domainaigateway.GovernanceStatus{}, err
 	}
-	serviceTokens, err := s.repo.ListAllServiceAccountTokens(ctx)
+	serviceTokens, err := serviceAccountRepo.ListAllServiceAccountTokens(ctx)
 	if err != nil {
 		return domainaigateway.GovernanceStatus{}, err
 	}
-	clients, err := s.repo.ListAIClients(ctx)
+	clients, err := clientRepo.ListAIClients(ctx)
 	if err != nil {
 		return domainaigateway.GovernanceStatus{}, err
 	}
-	accessPolicies, err := s.repo.ListAccessPolicies(ctx, domainaigateway.AccessPolicyFilter{IncludeDisabled: true})
+	accessPolicies, err := accessPolicyRepo.ListAccessPolicies(ctx, domainaigateway.AccessPolicyFilter{IncludeDisabled: true})
 	if err != nil {
 		return domainaigateway.GovernanceStatus{}, err
 	}
-	toolGrants, err := s.repo.ListToolGrants(ctx, domainaigateway.ToolGrantFilter{IncludeExpired: true})
+	toolGrants, err := toolGrantRepo.ListToolGrants(ctx, domainaigateway.ToolGrantFilter{IncludeExpired: true})
 	if err != nil {
 		return domainaigateway.GovernanceStatus{}, err
 	}
-	skillBindings, err := s.repo.ListSkillBindings(ctx, domainaigateway.SkillBindingFilter{IncludeDisabled: true})
+	skillBindings, err := skillBindingRepo.ListSkillBindings(ctx, domainaigateway.SkillBindingFilter{IncludeDisabled: true})
 	if err != nil {
 		return domainaigateway.GovernanceStatus{}, err
 	}
-	audits, err := s.repo.ListAuditLogs(ctx, domainaigateway.AuditLogFilter{From: &from, To: &now, Limit: 500})
+	audits, err := auditRepo.ListAuditLogs(ctx, domainaigateway.AuditLogFilter{From: &from, To: &now, Limit: 500})
 	if err != nil {
 		return domainaigateway.GovernanceStatus{}, err
 	}
-	pendingApprovals, err := s.repo.ListApprovalRequests(ctx, domainaigateway.ApprovalRequestFilter{Status: "pending", Limit: 500})
+	pendingApprovals, err := approvalRepo.ListApprovalRequests(ctx, domainaigateway.ApprovalRequestFilter{Status: "pending", Limit: 500})
 	if err != nil {
 		return domainaigateway.GovernanceStatus{}, err
 	}

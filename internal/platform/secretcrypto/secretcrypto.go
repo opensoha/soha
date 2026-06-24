@@ -14,6 +14,14 @@ import (
 
 const Prefix = "soha:v1:"
 
+type SecretStorage string
+
+const (
+	SecretStorageNone            SecretStorage = "none"
+	SecretStorageLegacyPlaintext SecretStorage = "legacy_plaintext"
+	SecretStorageEncrypted       SecretStorage = "encrypted"
+)
+
 var ErrKeyRequired = errors.New("secret crypto key is required")
 
 func EncryptString(key, value string) (string, error) {
@@ -41,42 +49,19 @@ func EncryptString(key, value string) (string, error) {
 	return Prefix + base64.StdEncoding.EncodeToString(payload), nil
 }
 
-func DecryptString(key, value string) (string, error) {
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return "", nil
-	}
-	if !Encrypted(value) {
-		return value, nil
-	}
-	normalized, err := NormalizeKey(key)
-	if err != nil {
-		return "", err
-	}
-	raw, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(value, Prefix))
-	if err != nil {
-		return "", fmt.Errorf("decode encrypted secret: %w", err)
-	}
-	block, err := aes.NewCipher(normalized)
-	if err != nil {
-		return "", fmt.Errorf("build secret cipher: %w", err)
-	}
-	gcm, err := cipher.NewGCM(block)
-	if err != nil {
-		return "", fmt.Errorf("build secret gcm: %w", err)
-	}
-	if len(raw) <= gcm.NonceSize() {
-		return "", errors.New("encrypted secret payload is too short")
-	}
-	plain, err := gcm.Open(nil, raw[:gcm.NonceSize()], raw[gcm.NonceSize():], nil)
-	if err != nil {
-		return "", errors.New("decrypt secret")
-	}
-	return string(plain), nil
+func Encrypted(value string) bool {
+	return SecretStorageLabel(value) == SecretStorageEncrypted
 }
 
-func Encrypted(value string) bool {
-	return strings.HasPrefix(strings.TrimSpace(value), Prefix)
+func SecretStorageLabel(value string) SecretStorage {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return SecretStorageNone
+	}
+	if strings.HasPrefix(value, Prefix) {
+		return SecretStorageEncrypted
+	}
+	return SecretStorageLegacyPlaintext
 }
 
 func NormalizeKey(key string) ([]byte, error) {

@@ -32,46 +32,6 @@ type OperationRecorder interface {
 	Record(context.Context, domainoperation.Entry) error
 }
 
-type Repository interface {
-	ListPersonalAccessTokens(context.Context, string) ([]domainaigateway.PersonalAccessToken, error)
-	ListAllPersonalAccessTokens(context.Context) ([]domainaigateway.PersonalAccessToken, error)
-	CreatePersonalAccessToken(context.Context, domainaigateway.PersonalAccessToken) (domainaigateway.PersonalAccessToken, error)
-	RevokePersonalAccessToken(context.Context, string, string) error
-	ListServiceAccounts(context.Context) ([]domainaigateway.ServiceAccount, error)
-	CreateServiceAccount(context.Context, domainaigateway.ServiceAccount) (domainaigateway.ServiceAccount, error)
-	GetServiceAccount(context.Context, string) (domainaigateway.ServiceAccount, error)
-	ListAllServiceAccountTokens(context.Context) ([]domainaigateway.ServiceAccountToken, error)
-	CreateServiceAccountToken(context.Context, domainaigateway.ServiceAccountToken) (domainaigateway.ServiceAccountToken, error)
-	RevokeServiceAccountToken(context.Context, string) error
-	ListAIClients(context.Context) ([]domainaigateway.AIClient, error)
-	GetAIClient(context.Context, string) (domainaigateway.AIClient, error)
-	CreateAIClient(context.Context, domainaigateway.AIClient) (domainaigateway.AIClient, error)
-	UpdateAIClient(context.Context, domainaigateway.AIClient) (domainaigateway.AIClient, error)
-	ListToolGrants(context.Context, domainaigateway.ToolGrantFilter) ([]domainaigateway.ToolGrant, error)
-	CreateToolGrant(context.Context, domainaigateway.ToolGrant) (domainaigateway.ToolGrant, error)
-	DeleteToolGrant(context.Context, string) error
-	ListActiveToolGrants(context.Context, string, string, string, time.Time) ([]domainaigateway.ToolGrant, error)
-	ListAccessPolicies(context.Context, domainaigateway.AccessPolicyFilter) ([]domainaigateway.AccessPolicy, error)
-	CreateAccessPolicy(context.Context, domainaigateway.AccessPolicy) (domainaigateway.AccessPolicy, error)
-	UpdateAccessPolicy(context.Context, domainaigateway.AccessPolicy) (domainaigateway.AccessPolicy, error)
-	DeleteAccessPolicy(context.Context, string) error
-	ListActiveAccessPolicies(context.Context, string, string, string) ([]domainaigateway.AccessPolicy, error)
-	ListSkillBindings(context.Context, domainaigateway.SkillBindingFilter) ([]domainaigateway.SkillBinding, error)
-	CreateSkillBinding(context.Context, domainaigateway.SkillBinding) (domainaigateway.SkillBinding, error)
-	UpdateSkillBinding(context.Context, domainaigateway.SkillBinding) (domainaigateway.SkillBinding, error)
-	DeleteSkillBinding(context.Context, string) error
-	ListActiveSkillBindings(context.Context, string, string, string) ([]domainaigateway.SkillBinding, error)
-	ListAuditLogs(context.Context, domainaigateway.AuditLogFilter) ([]domainaigateway.AuditLog, error)
-	CreateAuditLog(context.Context, domainaigateway.AuditLog) error
-	IncrementRateLimitCounter(context.Context, domainaigateway.RateLimitCounter) (domainaigateway.RateLimitCounter, error)
-	ApplyRateLimitState(context.Context, domainaigateway.RateLimitState) (domainaigateway.RateLimitState, error)
-	CreateApprovalRequest(context.Context, domainaigateway.ApprovalRequest) (domainaigateway.ApprovalRequest, error)
-	GetApprovalRequest(context.Context, string) (domainaigateway.ApprovalRequest, error)
-	ListApprovalRequests(context.Context, domainaigateway.ApprovalRequestFilter) ([]domainaigateway.ApprovalRequest, error)
-	UpdateApprovalRequest(context.Context, string, domainaigateway.ApprovalRequestUpdate) (domainaigateway.ApprovalRequest, error)
-	ExpirePendingApprovalRequests(context.Context, time.Time) ([]domainaigateway.ApprovalRequest, error)
-}
-
 type RateLimitBackend interface {
 	IncrementRateLimitCounter(context.Context, domainaigateway.RateLimitCounter) (domainaigateway.RateLimitCounter, error)
 	ApplyRateLimitState(context.Context, domainaigateway.RateLimitState) (domainaigateway.RateLimitState, error)
@@ -134,23 +94,43 @@ type Service struct {
 	permissions *appaccess.PermissionResolver
 	audit       AuditRecorder
 	operations  OperationRecorder
-	repo        Repository
-	rateLimits  RateLimitBackend
-	apps        ApplicationService
-	delivery    DeliveryService
-	catalog     CatalogService
-	resources   ResourceService
-	copilot     AnalysisArtifactRecorder
-	oncall      OnCallResolver
-	registry    *capabilityRegistry
+
+	personalTokens  PersonalAccessTokenRepository
+	serviceAccounts ServiceAccountRepository
+	clients         AIClientRepository
+	toolGrants      ToolGrantRepository
+	accessPolicies  AccessPolicyRepository
+	skillBindings   SkillBindingRepository
+	auditLogs       AuditLogRepository
+	approvals       ApprovalRepository
+	rateLimitRepo   RateLimitRepository
+
+	rateLimits RateLimitBackend
+	apps       ApplicationService
+	delivery   DeliveryService
+	catalog    CatalogService
+	resources  ResourceService
+	copilot    AnalysisArtifactRecorder
+	oncall     OnCallResolver
+	registry   *capabilityRegistry
 }
 
-func New(permissions *appaccess.PermissionResolver, audit AuditRecorder, repos ...Repository) *Service {
-	var repo Repository
-	if len(repos) > 0 {
-		repo = repos[0]
+func NewWithDeps(deps ServiceDeps) *Service {
+	return &Service{
+		permissions:     deps.Permissions,
+		audit:           deps.Audit,
+		personalTokens:  deps.PersonalTokens,
+		serviceAccounts: deps.ServiceAccounts,
+		clients:         deps.Clients,
+		toolGrants:      deps.ToolGrants,
+		accessPolicies:  deps.AccessPolicies,
+		skillBindings:   deps.SkillBindings,
+		auditLogs:       deps.AuditLogs,
+		approvals:       deps.Approvals,
+		rateLimitRepo:   deps.RateLimits,
+		rateLimits:      deps.RateLimitBackend,
+		registry:        newDefaultCapabilityRegistry(),
 	}
-	return &Service{permissions: permissions, audit: audit, repo: repo, registry: newDefaultCapabilityRegistry()}
 }
 
 func (s *Service) SetCapabilityProviders(providers ...CapabilityProvider) {
@@ -191,4 +171,67 @@ func (s *Service) SetRateLimitBackend(rateLimits RateLimitBackend) {
 
 func (s *Service) SetOnCallResolver(oncall OnCallResolver) {
 	s.oncall = oncall
+}
+
+func (s *Service) personalTokenRepository() PersonalAccessTokenRepository {
+	if s != nil && s.personalTokens != nil {
+		return s.personalTokens
+	}
+	return nil
+}
+
+func (s *Service) serviceAccountRepository() ServiceAccountRepository {
+	if s != nil && s.serviceAccounts != nil {
+		return s.serviceAccounts
+	}
+	return nil
+}
+
+func (s *Service) clientRepository() AIClientRepository {
+	if s != nil && s.clients != nil {
+		return s.clients
+	}
+	return nil
+}
+
+func (s *Service) toolGrantRepository() ToolGrantRepository {
+	if s != nil && s.toolGrants != nil {
+		return s.toolGrants
+	}
+	return nil
+}
+
+func (s *Service) accessPolicyRepository() AccessPolicyRepository {
+	if s != nil && s.accessPolicies != nil {
+		return s.accessPolicies
+	}
+	return nil
+}
+
+func (s *Service) skillBindingRepository() SkillBindingRepository {
+	if s != nil && s.skillBindings != nil {
+		return s.skillBindings
+	}
+	return nil
+}
+
+func (s *Service) auditLogRepository() AuditLogRepository {
+	if s != nil && s.auditLogs != nil {
+		return s.auditLogs
+	}
+	return nil
+}
+
+func (s *Service) approvalRepository() ApprovalRepository {
+	if s != nil && s.approvals != nil {
+		return s.approvals
+	}
+	return nil
+}
+
+func (s *Service) rateLimitRepository() RateLimitRepository {
+	if s != nil && s.rateLimitRepo != nil {
+		return s.rateLimitRepo
+	}
+	return nil
 }

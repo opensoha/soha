@@ -110,8 +110,6 @@ func (s stubAuthBootstrapSettingsService) GetBrandingSettings(context.Context, d
 func TestAuthBootstrapReturnsCurrentUserSnapshotAndBranding(t *testing.T) {
 	t.Parallel()
 
-	gin.SetMode(gin.TestMode)
-
 	current := domainidentity.Principal{
 		UserID:   "u-1",
 		UserName: "admin",
@@ -170,8 +168,6 @@ func TestAuthBootstrapReturnsCurrentUserSnapshotAndBranding(t *testing.T) {
 
 func TestAuthProfileReturnsCurrentUserProfile(t *testing.T) {
 	t.Parallel()
-
-	gin.SetMode(gin.TestMode)
 
 	lastLoginAt := time.Date(2026, 6, 3, 2, 20, 0, 0, time.UTC)
 	profile := domainidentity.UserProfile{
@@ -242,8 +238,6 @@ func TestAuthProfileReturnsCurrentUserProfile(t *testing.T) {
 func TestLoginOptionsReturnSliderVerificationConfig(t *testing.T) {
 	t.Parallel()
 
-	gin.SetMode(gin.TestMode)
-
 	handler := NewAuthHandler(stubIdentityService{}, nil, nil, cfgpkg.AuthConfig{
 		LoginVerification: cfgpkg.LoginVerificationConfig{SliderEnabled: true},
 	})
@@ -303,8 +297,6 @@ func (s *recordingIdentityService) IssueStreamTicket(_ context.Context, _ domain
 func TestProLoginUsesUsernameAndReturnsAuthorityShape(t *testing.T) {
 	t.Parallel()
 
-	gin.SetMode(gin.TestMode)
-
 	identity := &recordingIdentityService{
 		stubIdentityService: stubIdentityService{
 			loginResult: domainidentity.AuthResult{
@@ -349,8 +341,6 @@ func TestProLoginUsesUsernameAndReturnsAuthorityShape(t *testing.T) {
 
 func TestLoginSetsHttpOnlyRefreshCookie(t *testing.T) {
 	t.Parallel()
-
-	gin.SetMode(gin.TestMode)
 
 	identity := &recordingIdentityService{
 		stubIdentityService: stubIdentityService{
@@ -404,8 +394,6 @@ func TestLoginSetsHttpOnlyRefreshCookie(t *testing.T) {
 func TestRefreshUsesRefreshCookieWhenBodyIsEmpty(t *testing.T) {
 	t.Parallel()
 
-	gin.SetMode(gin.TestMode)
-
 	identity := &recordingIdentityService{
 		stubIdentityService: stubIdentityService{
 			refreshResult: domainidentity.AuthResult{
@@ -452,8 +440,6 @@ func TestRefreshUsesRefreshCookieWhenBodyIsEmpty(t *testing.T) {
 
 func TestProCurrentUserMapsPrincipalToProShape(t *testing.T) {
 	t.Parallel()
-
-	gin.SetMode(gin.TestMode)
 
 	current := domainidentity.Principal{
 		UserID:   "u-1",
@@ -502,8 +488,6 @@ func TestProCurrentUserMapsPrincipalToProShape(t *testing.T) {
 func TestProLogoutUsesNormalizedBearerToken(t *testing.T) {
 	t.Parallel()
 
-	gin.SetMode(gin.TestMode)
-
 	identity := &recordingIdentityService{}
 	handler := NewAuthHandler(identity, nil, nil, cfgpkg.AuthConfig{})
 
@@ -525,8 +509,6 @@ func TestProLogoutUsesNormalizedBearerToken(t *testing.T) {
 
 func TestLogoutUsesRefreshCookieAndClearsCookie(t *testing.T) {
 	t.Parallel()
-
-	gin.SetMode(gin.TestMode)
 
 	identity := &recordingIdentityService{}
 	handler := NewAuthHandler(identity, nil, nil, cfgpkg.AuthConfig{})
@@ -556,8 +538,6 @@ func TestLogoutUsesRefreshCookieAndClearsCookie(t *testing.T) {
 
 func TestIssueStreamTicketPassesPrincipalAccessContextAndPath(t *testing.T) {
 	t.Parallel()
-
-	gin.SetMode(gin.TestMode)
 
 	expiresAt := time.Now().UTC().Add(time.Minute)
 	identity := &recordingIdentityService{
@@ -614,8 +594,6 @@ func (s *streamTicketParserStub) ParseStreamTicket(_ context.Context, ticket, pa
 func TestBuildPrincipalMiddlewareAcceptsStreamTicket(t *testing.T) {
 	t.Parallel()
 
-	gin.SetMode(gin.TestMode)
-
 	parser := &streamTicketParserStub{}
 	middleware := apiMiddleware.BuildPrincipalMiddleware(cfgpkg.AuthConfig{}, parser)
 
@@ -662,8 +640,6 @@ func TestNormalizeBearerTokenTrimsHeaderPrefix(t *testing.T) {
 func TestBuildPrincipalMiddlewareStripsBearerPrefix(t *testing.T) {
 	t.Parallel()
 
-	gin.SetMode(gin.TestMode)
-
 	type parser struct {
 		token string
 	}
@@ -693,8 +669,6 @@ func TestBuildPrincipalMiddlewareStripsBearerPrefix(t *testing.T) {
 
 func TestBuildPrincipalMiddlewareAllowsRunnerBearerToken(t *testing.T) {
 	t.Parallel()
-
-	gin.SetMode(gin.TestMode)
 
 	called := false
 	middleware := apiMiddleware.BuildPrincipalMiddleware(

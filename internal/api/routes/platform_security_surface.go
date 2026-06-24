@@ -439,7 +439,10 @@ func platformMutationCapabilityKey(path string) string {
 		return "pod.exec"
 	case strings.Contains(path, "/workloads/deployments/restart"),
 		strings.Contains(path, "/workloads/deployments/rollback"),
-		strings.Contains(path, "/workloads/deployments/scale"):
+		strings.Contains(path, "/workloads/deployments/scale"),
+		strings.Contains(path, "/workloads/statefulsets/restart"),
+		strings.Contains(path, "/workloads/statefulsets/scale"),
+		strings.Contains(path, "/workloads/daemonsets/restart"):
 		return "workload.mutations"
 	case strings.Contains(path, "/workloads/") && strings.Contains(path, "/yaml"):
 		return "resource.yaml.apply"
@@ -480,6 +483,8 @@ func platformMutationResourceKind(path string) string {
 		return "StatefulSet"
 	case strings.Contains(path, "/workloads/daemonsets"):
 		return "DaemonSet"
+	case strings.Contains(path, "/workloads/replicasets"):
+		return "ReplicaSet"
 	case strings.Contains(path, "/workloads/jobs"):
 		return "Job"
 	case strings.Contains(path, "/workloads/cronjobs"):

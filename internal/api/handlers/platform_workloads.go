@@ -418,6 +418,7 @@ func (h *PlatformHandler) RegisterWorkloadDeleteRoutes(group gin.IRoutes) {
 		{"/clusters/:clusterID/workloads/daemonsets/:daemonSetName", "daemonSetName", "DaemonSet"},
 		{"/clusters/:clusterID/workloads/jobs/:jobName", "jobName", "Job"},
 		{"/clusters/:clusterID/workloads/cronjobs/:cronJobName", "cronJobName", "CronJob"},
+		{"/clusters/:clusterID/workloads/replicasets/:replicaSetName", "replicaSetName", "ReplicaSet"},
 	}
 	for _, entry := range entries {
 		kind := entry.kind
@@ -466,6 +467,61 @@ func (h *PlatformHandler) ScaleDeployment(c *gin.Context) {
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
 	if err := h.resources.ScaleDeployment(c.Request.Context(), principal, c.Param("clusterID"), req.Namespace, req.Name, req.Replicas); err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.JSON(c, http.StatusOK, gin.H{"status": "ok"})
+}
+func (h *PlatformHandler) RestartStatefulSet(c *gin.Context) {
+	var req dto.RestartStatefulSetRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid restart statefulset payload")
+		return
+	}
+	if req.Namespace == "" || req.Name == "" {
+		writeError(c, fmt.Errorf("%w: namespace and name are required", apperrors.ErrInvalidArgument))
+		return
+	}
+	principal := apiMiddleware.PrincipalFromContext(c)
+	if err := h.resources.RestartStatefulSet(c.Request.Context(), principal, c.Param("clusterID"), req.Namespace, req.Name); err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.JSON(c, http.StatusOK, gin.H{"status": "ok"})
+}
+func (h *PlatformHandler) ScaleStatefulSet(c *gin.Context) {
+	var req dto.ScaleStatefulSetRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid scale statefulset payload")
+		return
+	}
+	if req.Namespace == "" || req.Name == "" {
+		writeError(c, fmt.Errorf("%w: namespace and name are required", apperrors.ErrInvalidArgument))
+		return
+	}
+	if req.Replicas < 0 {
+		writeError(c, fmt.Errorf("%w: replicas must be greater than or equal to zero", apperrors.ErrInvalidArgument))
+		return
+	}
+	principal := apiMiddleware.PrincipalFromContext(c)
+	if err := h.resources.ScaleStatefulSet(c.Request.Context(), principal, c.Param("clusterID"), req.Namespace, req.Name, req.Replicas); err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.JSON(c, http.StatusOK, gin.H{"status": "ok"})
+}
+func (h *PlatformHandler) RestartDaemonSet(c *gin.Context) {
+	var req dto.RestartDaemonSetRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid restart daemonset payload")
+		return
+	}
+	if req.Namespace == "" || req.Name == "" {
+		writeError(c, fmt.Errorf("%w: namespace and name are required", apperrors.ErrInvalidArgument))
+		return
+	}
+	principal := apiMiddleware.PrincipalFromContext(c)
+	if err := h.resources.RestartDaemonSet(c.Request.Context(), principal, c.Param("clusterID"), req.Namespace, req.Name); err != nil {
 		writeError(c, err)
 		return
 	}

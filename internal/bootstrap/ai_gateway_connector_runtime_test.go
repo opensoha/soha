@@ -45,7 +45,7 @@ func TestRegisterAIGatewayConnectorRuntimesAppendsConfiguredProvider(t *testing.
 	}))
 	defer server.Close()
 
-	service := appaigateway.New(appaccess.NewPermissionResolver(connectorRuntimeRoleReader{
+	service := newBootstrapGatewayService(appaccess.NewPermissionResolver(connectorRuntimeRoleReader{
 		matrix: map[string][]string{
 			"developer": {
 				appaccess.PermAIGatewayView,
@@ -53,7 +53,7 @@ func TestRegisterAIGatewayConnectorRuntimesAppendsConfiguredProvider(t *testing.
 				appaccess.PermDeliveryApplicationsView,
 			},
 		},
-	}), nil)
+	}))
 	err := registerAIGatewayConnectorRuntimes(context.Background(), service, cfgpkg.AIGatewayConfig{
 		ConnectorRuntime: cfgpkg.AIGatewayConnectorRuntimeConfig{
 			Endpoint: server.URL,
@@ -83,7 +83,7 @@ func TestRegisterAIGatewayConnectorRuntimesReturnsDiscoveryError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	service := appaigateway.New(appaccess.NewPermissionResolver(connectorRuntimeRoleReader{}), nil)
+	service := newBootstrapGatewayService(appaccess.NewPermissionResolver(connectorRuntimeRoleReader{}))
 	err := registerAIGatewayConnectorRuntimes(context.Background(), service, cfgpkg.AIGatewayConfig{
 		ConnectorRuntimes: []cfgpkg.AIGatewayConnectorRuntimeConfig{
 			{Endpoint: server.URL},
@@ -92,6 +92,12 @@ func TestRegisterAIGatewayConnectorRuntimesReturnsDiscoveryError(t *testing.T) {
 	if err == nil {
 		t.Fatal("registerAIGatewayConnectorRuntimes error = nil, want discovery error")
 	}
+}
+
+func newBootstrapGatewayService(permissions *appaccess.PermissionResolver) *appaigateway.Service {
+	return appaigateway.NewWithDeps(appaigateway.ServiceDeps{
+		Permissions: permissions,
+	})
 }
 
 func connectorRuntimePrincipal(role string) domainidentity.Principal {

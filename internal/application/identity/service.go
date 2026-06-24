@@ -50,6 +50,7 @@ type UserRepository interface {
 	SyncExternalTeamBindings(context.Context, string, string, string, []string, bool) error
 	ListProjects(context.Context, string) ([]string, error)
 	FindIdentity(context.Context, string, string, string) (userrepo.OIDCIdentity, error)
+	MigrateOIDCIdentity(context.Context, userrepo.OIDCIdentity, string) error
 	ListIdentitiesByUserID(context.Context, string) ([]userrepo.OIDCIdentity, error)
 	UpsertOIDCIdentity(context.Context, userrepo.OIDCIdentity) error
 	CreateSession(context.Context, userrepo.Session) error
@@ -1009,8 +1010,22 @@ func (s *Service) reconcileOIDCUser(ctx context.Context, profile oidcProfile, oi
 	providerID := firstNonEmpty(strings.TrimSpace(provider.ID), strings.TrimSpace(oidcCfg.ProviderName))
 	legacyProviderID := strings.TrimSpace(oidcCfg.ProviderName)
 	identity, err := s.users.FindIdentity(ctx, "oidc", providerID, profile.Sub)
+	migratedLegacyIdentity := false
 	if errors.Is(err, userrepo.ErrNotFound) && legacyProviderID != "" && legacyProviderID != providerID {
-		identity, err = s.users.FindIdentity(ctx, "oidc", legacyProviderID, profile.Sub)
+		legacyIdentity, legacyErr := s.users.FindIdentity(ctx, "oidc", legacyProviderID, profile.Sub)
+		if legacyErr == nil {
+			legacyIdentity.Profile = loginProfilePayload(profile.Raw, profile.Email, profile.Name)
+			legacyIdentity.LastLoginAt = time.Now().UTC()
+			if migrateErr := s.users.MigrateOIDCIdentity(ctx, legacyIdentity, providerID); migrateErr != nil {
+				return domainidentity.Principal{}, fmt.Errorf("migrate oidc identity: %w", migrateErr)
+			}
+			legacyIdentity.ProviderID = providerID
+			identity = legacyIdentity
+			err = nil
+			migratedLegacyIdentity = true
+		} else {
+			err = legacyErr
+		}
 	}
 	var user userrepo.User
 	if err == nil {
@@ -1039,16 +1054,18 @@ func (s *Service) reconcileOIDCUser(ctx context.Context, profile oidcProfile, oi
 		return domainidentity.Principal{}, fmt.Errorf("find oidc identity: %w", err)
 	}
 
-	if err := s.users.UpsertOIDCIdentity(ctx, userrepo.OIDCIdentity{
-		ID:             uuid.NewString(),
-		UserID:         user.ID,
-		ProviderType:   "oidc",
-		ProviderID:     providerID,
-		ProviderUserID: profile.Sub,
-		Profile:        loginProfilePayload(profile.Raw, profile.Email, profile.Name),
-		LastLoginAt:    time.Now().UTC(),
-	}); err != nil {
-		return domainidentity.Principal{}, fmt.Errorf("upsert oidc identity: %w", err)
+	if !migratedLegacyIdentity {
+		if err := s.users.UpsertOIDCIdentity(ctx, userrepo.OIDCIdentity{
+			ID:             uuid.NewString(),
+			UserID:         user.ID,
+			ProviderType:   "oidc",
+			ProviderID:     providerID,
+			ProviderUserID: profile.Sub,
+			Profile:        loginProfilePayload(profile.Raw, profile.Email, profile.Name),
+			LastLoginAt:    time.Now().UTC(),
+		}); err != nil {
+			return domainidentity.Principal{}, fmt.Errorf("upsert oidc identity: %w", err)
+		}
 	}
 
 	roles, err := s.users.ListRoles(ctx, user.ID)

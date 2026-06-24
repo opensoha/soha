@@ -252,7 +252,7 @@ func (s *Service) GetApplicationWorkloadRuntimeDetail(ctx context.Context, princ
 		}
 	}
 	if selected == nil {
-		return domaindelivery.ApplicationWorkloadRuntimeDetail{}, fmt.Errorf("workload not found")
+		return domaindelivery.ApplicationWorkloadRuntimeDetail{}, fmt.Errorf("%w: workload not found", apperrors.ErrNotFound)
 	}
 	deployment, err := s.targets.GetDeploymentDetail(ctx, principal, selected.ClusterID, selected.Namespace, selected.WorkloadName)
 	if err != nil {

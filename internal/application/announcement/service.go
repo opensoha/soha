@@ -2,6 +2,7 @@ package announcement
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -15,7 +16,6 @@ import (
 	"github.com/opensoha/soha/internal/platform/apperrors"
 	"github.com/opensoha/soha/internal/platform/operationentry"
 	"github.com/opensoha/soha/internal/platform/requestctx"
-	"gorm.io/gorm"
 )
 
 type AuditRecorder interface {
@@ -132,7 +132,7 @@ func (s *Service) Update(ctx context.Context, principal domainidentity.Principal
 	item.UpdatedAt = now
 	updated, err := s.repo.Update(ctx, strings.TrimSpace(announcementID), item)
 	if err != nil {
-		if err == gorm.ErrRecordNotFound {
+		if errors.Is(err, apperrors.ErrNotFound) {
 			return domainannouncement.Record{}, fmt.Errorf("%w: announcement not found", apperrors.ErrNotFound)
 		}
 		return domainannouncement.Record{}, err
@@ -151,7 +151,7 @@ func (s *Service) Publish(ctx context.Context, principal domainidentity.Principa
 	}
 	published, err := s.repo.Publish(ctx, announcementID, time.Now().UTC(), principal.UserID)
 	if err != nil {
-		if err == gorm.ErrRecordNotFound {
+		if errors.Is(err, apperrors.ErrNotFound) {
 			return domainannouncement.Record{}, fmt.Errorf("%w: announcement not found", apperrors.ErrNotFound)
 		}
 		return domainannouncement.Record{}, err
@@ -170,7 +170,7 @@ func (s *Service) Withdraw(ctx context.Context, principal domainidentity.Princip
 	}
 	withdrawn, err := s.repo.Withdraw(ctx, announcementID, time.Now().UTC(), principal.UserID)
 	if err != nil {
-		if err == gorm.ErrRecordNotFound {
+		if errors.Is(err, apperrors.ErrNotFound) {
 			return domainannouncement.Record{}, fmt.Errorf("%w: announcement not found", apperrors.ErrNotFound)
 		}
 		return domainannouncement.Record{}, err
@@ -188,7 +188,7 @@ func (s *Service) Delete(ctx context.Context, principal domainidentity.Principal
 		return err
 	}
 	if err := s.repo.Delete(ctx, item.ID); err != nil {
-		if err == gorm.ErrRecordNotFound {
+		if errors.Is(err, apperrors.ErrNotFound) {
 			return fmt.Errorf("%w: announcement not found", apperrors.ErrNotFound)
 		}
 		return err
@@ -266,7 +266,7 @@ func isActiveInboxAnnouncement(item domainannouncement.Record, now time.Time) bo
 func (s *Service) getAnnouncement(ctx context.Context, announcementID string) (domainannouncement.Record, error) {
 	item, err := s.repo.Get(ctx, strings.TrimSpace(announcementID))
 	if err != nil {
-		if err == gorm.ErrRecordNotFound {
+		if errors.Is(err, apperrors.ErrNotFound) {
 			return domainannouncement.Record{}, fmt.Errorf("%w: announcement not found", apperrors.ErrNotFound)
 		}
 		return domainannouncement.Record{}, err

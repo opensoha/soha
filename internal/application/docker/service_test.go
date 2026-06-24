@@ -16,6 +16,8 @@ import (
 	"github.com/opensoha/soha/internal/platform/apperrors"
 )
 
+const dockerQuickCreateTestCloudInit = "#cloud-config\npackages:\n  - docker.io"
+
 func TestCreateProjectUpsertsServicesFromCompose(t *testing.T) {
 	repo := newMemoryDockerRepo()
 	repo.hosts["host-1"] = domaindocker.Host{ID: "host-1", Name: "dev-docker", Status: "online"}
@@ -393,11 +395,12 @@ func TestQuickCreateHostEnqueuesVirtualizationVMWhenConnectionProvided(t *testin
 		VirtualizationConnectionID: "pve-1",
 		ImageID:                    "image-1",
 		FlavorID:                   "flavor-1",
-		CloudInit:                  "#cloud-config\npackages:\n  - docker.io",
+		CloudInit:                  "#cloud-config\nwrite_files:\n  - path: /etc/soha-agent.yaml\n    content: |\n      host_ids:\n        - ${SOHA_DOCKER_HOST_ID}\npackages:\n  - docker.io",
 		CPUCoreCount:               2,
 		MemoryBytes:                4 * 1024 * 1024 * 1024,
 		DiskBytes:                  40 * 1024 * 1024 * 1024,
 		Network:                    "vmbr0",
+		Config:                     map[string]any{"providerParams": map[string]any{"snippetStorage": "local"}},
 	})
 	if err != nil {
 		t.Fatalf("QuickCreateHost() error = %v", err)
@@ -407,6 +410,12 @@ func TestQuickCreateHostEnqueuesVirtualizationVMWhenConnectionProvided(t *testin
 	}
 	if provisioner.input.CloudInit == "" {
 		t.Fatalf("provisioner cloud-init was not propagated")
+	}
+	if !strings.Contains(provisioner.input.CloudInit, "host-1") || strings.Contains(provisioner.input.CloudInit, "${SOHA_DOCKER_HOST_ID}") {
+		t.Fatalf("provisioner cloud-init host id was not rendered: %s", provisioner.input.CloudInit)
+	}
+	if provisioner.input.ProviderParams["dockerHostId"] != "host-1" || provisioner.input.ProviderParams["snippetStorage"] != "local" {
+		t.Fatalf("provisioner provider params = %#v", provisioner.input.ProviderParams)
 	}
 	if host := repo.hosts["host-1"]; host.Architecture != "arm64" {
 		t.Fatalf("created docker host architecture = %q, want arm64", host.Architecture)
@@ -425,6 +434,62 @@ func TestQuickCreateHostEnqueuesVirtualizationVMWhenConnectionProvided(t *testin
 	}
 }
 
+func TestQuickCreateHostBuildsDefaultDockerReadyCloudInit(t *testing.T) {
+	repo := newMemoryDockerRepo()
+	provisioner := &captureHostProvisioner{}
+	service := New(repo, dockerTestPermissions(), nil, WithHostProvisioner(provisioner), WithRuntimeBearerToken("runner-token-32-characters-minimum"))
+
+	operation, err := service.QuickCreateHost(context.Background(), dockerTestPrincipal(), domaindocker.QuickCreateHostInput{
+		Name:                       "docker-dev-1",
+		VirtualizationConnectionID: "pve-1",
+		ImageID:                    "image-1",
+		Config: map[string]any{"providerParams": map[string]any{
+			"controlPlaneBaseURL": "http://soha.internal:8080/",
+			"snippetStorage":      "local",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("QuickCreateHost() error = %v", err)
+	}
+	cloudInit := provisioner.input.CloudInit
+	if !strings.Contains(cloudInit, "base_url: http://soha.internal:8080") ||
+		!strings.Contains(cloudInit, "host-1") ||
+		!strings.Contains(cloudInit, "host_provision") ||
+		!strings.Contains(cloudInit, "project_action") ||
+		!strings.Contains(cloudInit, "runtime_endpoint: http://__SOHA_VM_IP__:18080") ||
+		strings.Contains(cloudInit, "${SOHA_DOCKER_HOST_ID}") {
+		t.Fatalf("default cloud-init = %s", cloudInit)
+	}
+	if strings.Contains(cloudInit, "\npackages:") || strings.Contains(cloudInit, "\npackage_update:") {
+		t.Fatalf("default cloud-init blocks agent startup with top-level package install: %s", cloudInit)
+	}
+	dockerInstall := strings.Index(cloudInit, "apt-get update")
+	agentStart := strings.Index(cloudInit, "systemctl enable --now soha-agent")
+	if dockerInstall < 0 || agentStart < 0 || dockerInstall > agentStart {
+		t.Fatalf("default cloud-init should attempt docker install before starting agent: %s", cloudInit)
+	}
+	if operation.Payload["cloudInitConfigured"] != true {
+		t.Fatalf("operation payload = %#v", operation.Payload)
+	}
+}
+
+func TestQuickCreateHostRejectsVirtualizationWithoutBootstrap(t *testing.T) {
+	repo := newMemoryDockerRepo()
+	service := New(repo, dockerTestPermissions(), nil, WithHostProvisioner(&captureHostProvisioner{}))
+
+	_, err := service.QuickCreateHost(context.Background(), dockerTestPrincipal(), domaindocker.QuickCreateHostInput{
+		Name:                       "docker-dev-empty",
+		VirtualizationConnectionID: "pve-1",
+		ImageID:                    "image-1",
+	})
+	if !errors.Is(err, apperrors.ErrInvalidArgument) {
+		t.Fatalf("QuickCreateHost() error = %v, want ErrInvalidArgument", err)
+	}
+	if len(repo.hosts) != 0 {
+		t.Fatalf("host created despite missing bootstrap: %#v", repo.hosts)
+	}
+}
+
 func TestQuickCreateHostReconcilesCompletedVirtualizationTask(t *testing.T) {
 	repo := newMemoryDockerRepo()
 	provisioner := &captureHostProvisioner{}
@@ -434,6 +499,7 @@ func TestQuickCreateHostReconcilesCompletedVirtualizationTask(t *testing.T) {
 		Name:                       "docker-dev-1",
 		VirtualizationConnectionID: "pve-1",
 		ImageID:                    "image-1",
+		CloudInit:                  dockerQuickCreateTestCloudInit,
 		CPUCoreCount:               2,
 		MemoryBytes:                4 * 1024 * 1024 * 1024,
 		DiskBytes:                  40 * 1024 * 1024 * 1024,
@@ -459,15 +525,121 @@ func TestQuickCreateHostReconcilesCompletedVirtualizationTask(t *testing.T) {
 		t.Fatalf("hosts total = %d, want 1", hosts.Total)
 	}
 	host := hosts.Items[0]
-	if host.Status != "ready" || host.VMID != "vm-1" || host.VMName != "docker-dev-1" || host.IPAddress != "10.0.0.21" || host.Architecture != "arm64" {
+	if host.Status != "provisioned_waiting_agent" || host.VMID != "vm-1" || host.VMName != "docker-dev-1" || host.IPAddress != "10.0.0.21" || host.Architecture != "arm64" {
 		t.Fatalf("host after reconcile = %#v", host)
 	}
 	updated := repo.operations[operation.ID]
-	if updated.Status != OperationStatusCompleted || updated.FinishedAt == nil {
-		t.Fatalf("operation after reconcile = %#v", updated)
+	if updated.Status != OperationStatusRunning || updated.FinishedAt != nil {
+		t.Fatalf("operation after reconcile = %#v, want running without finishedAt", updated)
 	}
-	if updated.Result["virtualizationTaskStatus"] != OperationStatusCompleted || updated.Result["vmId"] != "vm-1" {
+	if updated.Result["virtualizationTaskStatus"] != OperationStatusCompleted || updated.Result["vmId"] != "vm-1" || updated.Result["hostProvisionStage"] != "vm_created" {
 		t.Fatalf("operation result after reconcile = %#v", updated.Result)
+	}
+	if host.Config["hostProvisionStage"] != "vm_created" {
+		t.Fatalf("host config after reconcile = %#v", host.Config)
+	}
+}
+
+func TestQuickCreateHostClaimReconcilesCompletedVirtualizationTask(t *testing.T) {
+	repo := newMemoryDockerRepo()
+	provisioner := &captureHostProvisioner{}
+	service := New(repo, dockerTestPermissions(), nil, WithHostProvisioner(provisioner))
+
+	operation, err := service.QuickCreateHost(context.Background(), dockerTestPrincipal(), domaindocker.QuickCreateHostInput{
+		Name:                       "docker-dev-claim",
+		VirtualizationConnectionID: "pve-1",
+		ImageID:                    "image-1",
+		CloudInit:                  dockerQuickCreateTestCloudInit,
+	})
+	if err != nil {
+		t.Fatalf("QuickCreateHost() error = %v", err)
+	}
+	provisioner.tasks["vm-task-1"] = HostProvisionTask{
+		ID:           "vm-task-1",
+		Provider:     "pve",
+		ConnectionID: "pve-1",
+		Status:       OperationStatusCompleted,
+		VMID:         "vm-1",
+		VMName:       "docker-dev-claim",
+		Result:       map[string]any{"vmId": "vm-1", "name": "docker-dev-claim", "ipAddress": "10.0.0.22"},
+	}
+
+	claimed, err := service.ClaimOperation(context.Background(), domaindocker.OperationClaimInput{
+		WorkerID:       "worker-1",
+		AgentID:        "agent-1",
+		OperationKinds: []string{OperationKindHostProvision},
+	})
+	if err != nil {
+		t.Fatalf("ClaimOperation() error = %v", err)
+	}
+	if claimed.ID != operation.ID || claimed.Status != OperationStatusRunning || claimed.ClaimedByWorkerID != "worker-1" {
+		t.Fatalf("claimed operation = %#v, want running operation %s claimed by worker-1", claimed, operation.ID)
+	}
+	if claimed.Result["hostProvisionStage"] != "vm_created" || claimed.Result["vmId"] != "vm-1" {
+		t.Fatalf("claimed operation result = %#v", claimed.Result)
+	}
+	host := repo.hosts["host-1"]
+	if host.Status != HostStatusAgentRegistered || host.AgentID != "agent-1" || host.VMID != "vm-1" || host.IPAddress != "10.0.0.22" {
+		t.Fatalf("host after claim = %#v", host)
+	}
+}
+
+func TestHostProvisionRunnerClaimAndCallbackTracksAgentStages(t *testing.T) {
+	repo := newMemoryDockerRepo()
+	repo.hosts["host-1"] = domaindocker.Host{ID: "host-1", Name: "docker-dev-1", Status: "provisioned_waiting_agent", Config: map[string]any{"hostProvisionStage": "vm_created"}}
+	service := New(repo, dockerTestPermissions(), nil)
+	operation, err := service.enqueueOperation(context.Background(), dockerTestPrincipal(), OperationKindHostProvision, "host-1", "", "", map[string]any{"hostProvisionStage": "vm_created"})
+	if err != nil {
+		t.Fatalf("enqueueOperation() error = %v", err)
+	}
+
+	claimed, err := service.ClaimOperation(context.Background(), domaindocker.OperationClaimInput{
+		WorkerID:       "worker-1",
+		AgentID:        "agent-1",
+		HostIDs:        []string{"host-1"},
+		OperationKinds: []string{OperationKindHostProvision},
+	})
+	if err != nil {
+		t.Fatalf("ClaimOperation() error = %v", err)
+	}
+	if claimed.ID != operation.ID || repo.hosts["host-1"].Status != HostStatusAgentRegistered || repo.hosts["host-1"].Config["hostProvisionStage"] != HostStatusAgentRegistered {
+		t.Fatalf("claimed operation=%#v host=%#v", claimed, repo.hosts["host-1"])
+	}
+
+	running, err := service.RecordOperationCallback(context.Background(), domaindocker.OperationCallbackInput{
+		OperationID: claimed.ID,
+		WorkerID:    "worker-1",
+		Status:      OperationStatusRunning,
+		Payload:     map[string]any{"agentId": "agent-1", "agentVersion": "0.1.0", "endpoint": "http://10.0.0.21:2375", "ipAddress": "10.0.0.21"},
+		Logs:        []string{"installing docker runtime"},
+	})
+	if err != nil {
+		t.Fatalf("RecordOperationCallback(running) error = %v", err)
+	}
+	if running.Status != OperationStatusRunning || running.Result["hostProvisionStage"] != HostStatusAgentBootstrap {
+		t.Fatalf("running callback operation = %#v", running)
+	}
+	host := repo.hosts["host-1"]
+	if host.Status != HostStatusAgentBootstrap || host.Config["hostProvisionStage"] != HostStatusAgentBootstrap || host.Config["hostProvisionStatus"] != HostStatusAgentBootstrap {
+		t.Fatalf("host after running callback = %#v", host)
+	}
+
+	completed, err := service.RecordOperationCallback(context.Background(), domaindocker.OperationCallbackInput{
+		OperationID: claimed.ID,
+		WorkerID:    "worker-1",
+		Status:      OperationStatusCompleted,
+		Payload:     map[string]any{"agentId": "agent-1", "dockerVersion": "26.1.0", "composeVersion": "v2.27.0", "architecture": "arm64"},
+		Logs:        []string{"docker runtime ready"},
+	})
+	if err != nil {
+		t.Fatalf("RecordOperationCallback(completed) error = %v", err)
+	}
+	if completed.Status != OperationStatusCompleted || completed.Result["hostProvisionStage"] != HostStatusDockerReady {
+		t.Fatalf("completed callback operation = %#v", completed)
+	}
+	host = repo.hosts["host-1"]
+	if host.Status != HostStatusDockerReady || host.Config["hostProvisionStage"] != HostStatusDockerReady || host.Config["hostProvisionStatus"] != HostStatusDockerReady || host.DockerVersion != "26.1.0" {
+		t.Fatalf("host after completed callback = %#v", host)
 	}
 }
 
@@ -480,6 +652,7 @@ func TestQuickCreateHostReconcilesFailedVirtualizationTask(t *testing.T) {
 		Name:                       "docker-dev-failed",
 		VirtualizationConnectionID: "pve-1",
 		ImageID:                    "image-1",
+		CloudInit:                  dockerQuickCreateTestCloudInit,
 	})
 	if err != nil {
 		t.Fatalf("QuickCreateHost() error = %v", err)
@@ -518,6 +691,7 @@ func TestCancelHostProvisionCancelsVirtualizationTask(t *testing.T) {
 		Name:                       "docker-dev-cancel",
 		VirtualizationConnectionID: "pve-1",
 		ImageID:                    "image-1",
+		CloudInit:                  dockerQuickCreateTestCloudInit,
 	})
 	if err != nil {
 		t.Fatalf("QuickCreateHost() error = %v", err)
@@ -550,6 +724,7 @@ func TestRetryHostProvisionRetriesVirtualizationTask(t *testing.T) {
 		Name:                       "docker-dev-retry",
 		VirtualizationConnectionID: "pve-1",
 		ImageID:                    "image-1",
+		CloudInit:                  dockerQuickCreateTestCloudInit,
 	})
 	if err != nil {
 		t.Fatalf("QuickCreateHost() error = %v", err)
@@ -1125,9 +1300,12 @@ func (r *memoryDockerRepo) UpdateOperation(_ context.Context, item domaindocker.
 	return item, nil
 }
 
-func (r *memoryDockerRepo) ClaimOperation(_ context.Context, workerID string, agentID string, _ []string, _ []string, now time.Time) (domaindocker.Operation, error) {
+func (r *memoryDockerRepo) ClaimOperation(_ context.Context, workerID string, agentID string, hostIDs []string, operationKinds []string, now time.Time) (domaindocker.Operation, error) {
 	for id, item := range r.operations {
-		if item.Status != OperationStatusQueued {
+		if !containsOrEmpty(hostIDs, item.HostID) || !containsOrEmpty(operationKinds, item.OperationKind) {
+			continue
+		}
+		if !memoryOperationClaimable(item) {
 			continue
 		}
 		item.Status = OperationStatusRunning
@@ -1135,10 +1313,37 @@ func (r *memoryDockerRepo) ClaimOperation(_ context.Context, workerID string, ag
 		item.AttemptCount++
 		item.StartedAt = &now
 		item.LastHeartbeatAt = &now
+		item.Result = mergeMap(item.Result, map[string]any{
+			"claimedByWorkerId": workerID,
+			"claimedByAgentId":  agentID,
+			"claimedAt":         now.Format(time.RFC3339),
+		})
 		r.operations[id] = item
 		return item, nil
 	}
 	return domaindocker.Operation{}, apperrors.ErrNotFound
+}
+
+func memoryOperationClaimable(item domaindocker.Operation) bool {
+	if item.Status == OperationStatusQueued {
+		return true
+	}
+	return item.Status == OperationStatusRunning &&
+		item.OperationKind == OperationKindHostProvision &&
+		item.ClaimedByWorkerID == "" &&
+		stringValue(item.Result, "hostProvisionStage") == "vm_created"
+}
+
+func containsOrEmpty(values []string, value string) bool {
+	if len(values) == 0 {
+		return true
+	}
+	for _, candidate := range values {
+		if strings.TrimSpace(candidate) == value {
+			return true
+		}
+	}
+	return false
 }
 
 func (r *memoryDockerRepo) GetOperation(_ context.Context, id string) (domaindocker.Operation, error) {

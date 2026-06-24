@@ -3,6 +3,7 @@ package menu
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"sort"
 	"time"
@@ -84,6 +85,9 @@ func (r *Repository) Get(ctx context.Context, menuID string) (domainmenu.Record,
 	var parentID sql.NullString
 	var section sql.NullString
 	if err := row.Scan(&item.ID, &parentID, &item.Path, &item.LabelZH, &item.LabelEN, &item.IconKey, &section, &item.SortOrder, &item.Enabled); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return domainmenu.Record{}, menuNotFound(menuID)
+		}
 		return domainmenu.Record{}, err
 	}
 	if parentID.Valid {
@@ -140,7 +144,7 @@ func (r *Repository) Update(ctx context.Context, menuID string, item domainmenu.
 	}
 	if result.RowsAffected == 0 {
 		tx.Rollback()
-		return domainmenu.Record{}, gorm.ErrRecordNotFound
+		return domainmenu.Record{}, menuNotFound(menuID)
 	}
 	if err := replaceBindings(tx, menuID, item.RoleIDs, now); err != nil {
 		tx.Rollback()
@@ -158,7 +162,7 @@ func (r *Repository) Delete(ctx context.Context, menuID string) error {
 		return result.Error
 	}
 	if result.RowsAffected == 0 {
-		return gorm.ErrRecordNotFound
+		return menuNotFound(menuID)
 	}
 	return nil
 }

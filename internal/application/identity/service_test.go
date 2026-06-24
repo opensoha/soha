@@ -265,6 +265,57 @@ func TestStreamTicketRejectsMismatchedPath(t *testing.T) {
 	}
 }
 
+func TestReconcileOIDCUserMigratesLegacyProviderIdentity(t *testing.T) {
+	ctx := context.Background()
+	repo := newLoginMappingUserRepo()
+	repo.usersByID["u1"] = userrepo.User{
+		ID:          "u1",
+		Username:    "user1",
+		Email:       "user@example.com",
+		DisplayName: "User One",
+		Status:      "active",
+	}
+	repo.identities["oidc|legacy-provider|sub-1"] = userrepo.OIDCIdentity{
+		ID:             "identity-1",
+		UserID:         "u1",
+		ProviderType:   "oidc",
+		ProviderID:     "legacy-provider",
+		ProviderUserID: "sub-1",
+		Profile:        map[string]any{"email": "user@example.com", "name": "User One"},
+		LastLoginAt:    time.Date(2026, 6, 20, 10, 0, 0, 0, time.UTC),
+	}
+	service := &Service{users: repo}
+
+	principal, err := service.reconcileOIDCUser(ctx, oidcProfile{
+		Sub:   "sub-1",
+		Email: "user@example.com",
+		Name:  "User One",
+		Raw:   map[string]any{"sub": "sub-1"},
+	}, cfgpkg.OIDCConfig{
+		Enabled:      true,
+		ProviderName: "legacy-provider",
+	}, domainsettings.LoginProviderSettings{
+		ID:   "new-provider",
+		Type: "oidc",
+	})
+	if err != nil {
+		t.Fatalf("reconcile oidc user: %v", err)
+	}
+	if principal.UserID != "u1" {
+		t.Fatalf("expected existing user to be reused, got %#v", principal)
+	}
+	if _, ok := repo.identities["oidc|legacy-provider|sub-1"]; ok {
+		t.Fatalf("expected legacy oidc identity key to be removed")
+	}
+	migrated, ok := repo.identities["oidc|new-provider|sub-1"]
+	if !ok {
+		t.Fatalf("expected migrated identity under new provider id")
+	}
+	if migrated.ProviderID != "new-provider" || len(repo.migrations) != 1 {
+		t.Fatalf("expected migrated identity to be recorded, got %#v %#v", migrated, repo.migrations)
+	}
+}
+
 type loginMappingBinding struct {
 	source     string
 	providerID string
@@ -274,6 +325,7 @@ type loginMappingUserRepo struct {
 	usersByID    map[string]userrepo.User
 	emailToID    map[string]string
 	identities   map[string]userrepo.OIDCIdentity
+	migrations   []userrepo.OIDCIdentity
 	roleRefs     map[string]string
 	teamRefs     map[string]string
 	roleBindings map[string]map[string]loginMappingBinding
@@ -434,6 +486,15 @@ func (r *loginMappingUserRepo) FindIdentity(_ context.Context, providerType, pro
 		return identity, nil
 	}
 	return userrepo.OIDCIdentity{}, userrepo.ErrNotFound
+}
+
+func (r *loginMappingUserRepo) MigrateOIDCIdentity(_ context.Context, identity userrepo.OIDCIdentity, providerID string) error {
+	key := identity.ProviderType + "|" + identity.ProviderID + "|" + identity.ProviderUserID
+	delete(r.identities, key)
+	identity.ProviderID = providerID
+	r.identities[identity.ProviderType+"|"+identity.ProviderID+"|"+identity.ProviderUserID] = identity
+	r.migrations = append(r.migrations, identity)
+	return nil
 }
 
 func (r *loginMappingUserRepo) ListIdentitiesByUserID(context.Context, string) ([]userrepo.OIDCIdentity, error) {

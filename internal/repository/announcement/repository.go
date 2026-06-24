@@ -3,6 +3,7 @@ package announcement
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 
@@ -54,7 +55,14 @@ func (r *Repository) Get(ctx context.Context, id string) (domainannouncement.Rec
 		WHERE id = ?
 		LIMIT 1
 	`, id).Row()
-	return scanAnnouncementRow(row)
+	item, err := scanAnnouncementRow(row)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return domainannouncement.Record{}, announcementNotFound(id)
+		}
+		return domainannouncement.Record{}, err
+	}
+	return item, nil
 }
 
 func (r *Repository) Create(ctx context.Context, item domainannouncement.Record) (domainannouncement.Record, error) {
@@ -84,7 +92,7 @@ func (r *Repository) Update(ctx context.Context, id string, item domainannouncem
 		return domainannouncement.Record{}, result.Error
 	}
 	if result.RowsAffected == 0 {
-		return domainannouncement.Record{}, gorm.ErrRecordNotFound
+		return domainannouncement.Record{}, announcementNotFound(id)
 	}
 	return r.Get(ctx, id)
 }
@@ -95,7 +103,7 @@ func (r *Repository) Delete(ctx context.Context, id string) error {
 		return result.Error
 	}
 	if result.RowsAffected == 0 {
-		return gorm.ErrRecordNotFound
+		return announcementNotFound(id)
 	}
 	return nil
 }
@@ -111,7 +119,7 @@ func (r *Repository) Publish(ctx context.Context, id string, publishedAt time.Ti
 			return result.Error
 		}
 		if result.RowsAffected == 0 {
-			return gorm.ErrRecordNotFound
+			return announcementNotFound(id)
 		}
 		if err := tx.Exec(`DELETE FROM announcement_receipts WHERE announcement_id = ?`, id).Error; err != nil {
 			return err
@@ -134,7 +142,7 @@ func (r *Repository) Withdraw(ctx context.Context, id string, updatedAt time.Tim
 		return domainannouncement.Record{}, result.Error
 	}
 	if result.RowsAffected == 0 {
-		return domainannouncement.Record{}, gorm.ErrRecordNotFound
+		return domainannouncement.Record{}, announcementNotFound(id)
 	}
 	return r.Get(ctx, id)
 }

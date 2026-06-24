@@ -2,7 +2,9 @@ package bootstrap
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -120,7 +122,10 @@ func syncDisabledModuleMenus(ctx context.Context, db *gorm.DB, modules cfgpkg.Mo
 	if err := validateMenuSeeds(items); err != nil {
 		return err
 	}
-	return deleteDisabledModuleMenus(ctx, db, items, modules)
+	if err := deleteDisabledModuleMenus(ctx, db, items, modules); err != nil {
+		return err
+	}
+	return cleanupDeprecatedMenus(ctx, db, deprecatedMenuIDs())
 }
 
 func syncBootstrapRuntime(ctx context.Context, store *dbinfra.Store, cfg cfgpkg.Config) error {
@@ -145,7 +150,7 @@ func readBootstrapSeedVersion(ctx context.Context, db *gorm.DB) (string, error) 
 		bootstrapSeedVersionKey,
 	).Row()
 	if err := row.Scan(&value); err != nil {
-		if strings.Contains(err.Error(), "no rows") {
+		if errors.Is(err, sql.ErrNoRows) {
 			return "", nil
 		}
 		return "", err

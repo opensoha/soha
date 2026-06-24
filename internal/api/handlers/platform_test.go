@@ -212,8 +212,6 @@ func newPlatformTestContext(method, target, body string, params gin.Params) (*gi
 }
 
 func TestPlatformListPodsPassesScopeAndPrincipal(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
 	resources := &stubPlatformResourceService{}
 	handler := NewPlatformHandler(nil, resources, nil, nil, nil, nil)
 	ctx, recorder := newPlatformTestContext(http.MethodGet, "/api/v1/clusters/cluster-a/workloads/pods?namespace=team-a", "", gin.Params{{Key: "clusterID", Value: "cluster-a"}})
@@ -245,8 +243,6 @@ func TestPlatformListPodsPassesScopeAndPrincipal(t *testing.T) {
 }
 
 func TestPlatformClusterCapabilityMatrixReturnsItems(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
 	clusters := &stubPlatformClusterService{}
 	handler := NewPlatformHandler(clusters, nil, nil, nil, nil, nil)
 	ctx, recorder := newPlatformTestContext(http.MethodGet, "/api/v1/clusters/capabilities", "", nil)
@@ -277,8 +273,6 @@ func TestPlatformClusterCapabilityMatrixReturnsItems(t *testing.T) {
 }
 
 func TestPlatformListAuditLogsBindsExpandedFilter(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
 	audit := &stubPlatformAuditService{}
 	handler := NewPlatformHandler(nil, nil, audit, nil, nil, nil)
 	ctx, recorder := newPlatformTestContext(http.MethodGet, "/api/v1/audit/logs?actorId=user-1&actorName=Operator&clusterId=cluster-a&namespace=prod&resourceKind=Deployment&resourceName=api&action=platform.deployment.restart&result=success&requestID=req-1&requestPath=/api/v1/restart&method=post&sourceIP=127.0.0.1&approvalRequestId=approval-1&agentRunId=agent-run-1&rootCauseRunId=root-cause-1&metadataKey=usageSnapshot.templateId&metadataValue=tpl-1&from=2026-06-12T08:00:00Z&to=2026-06-12T09:00:00Z&limit=25", "", nil)
@@ -311,8 +305,6 @@ func TestPlatformListAuditLogsBindsExpandedFilter(t *testing.T) {
 }
 
 func TestPlatformAuditSummaryBindsFilter(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
 	audit := &stubPlatformAuditService{}
 	handler := NewPlatformHandler(nil, nil, audit, nil, nil, nil)
 	ctx, recorder := newPlatformTestContext(http.MethodGet, "/api/v1/audit/summary?actorId=user-1&result=success&limit=25", "", nil)
@@ -331,8 +323,6 @@ func TestPlatformAuditSummaryBindsFilter(t *testing.T) {
 }
 
 func TestPlatformExportAuditLogsReturnsCSV(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
 	audit := &stubPlatformAuditService{}
 	handler := NewPlatformHandler(nil, nil, audit, nil, nil, nil)
 	ctx, recorder := newPlatformTestContext(http.MethodGet, "/api/v1/audit/logs/export?actorId=user-1&limit=25", "", nil)
@@ -360,8 +350,6 @@ func TestPlatformExportAuditLogsReturnsCSV(t *testing.T) {
 }
 
 func TestPlatformListOperationLogsBindsExpandedFilter(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
 	operations := &stubPlatformOperationService{}
 	handler := NewPlatformHandler(nil, nil, nil, nil, operations, nil)
 	ctx, recorder := newPlatformTestContext(http.MethodGet, "/api/v1/operations/logs?type=ai_gateway.tool.invoke&actor=user-1&clusterId=cluster-a&namespace=prod&resourceKind=Pod&resourceName=api-0&result=failure&requestId=req-1&requestPath=/api/v1/invoke&requestMethod=POST&sourceIp=127.0.0.1&approvalRequestId=approval-1&agentRunId=agent-run-1&rootCauseRunId=root-cause-1&metadataKey=usageSnapshot.riskLevel&metadataValue=high&createdAtFrom=2026-06-12T08:00:00Z&createdAtTo=2026-06-12T09:00:00Z&limit=25", "", nil)
@@ -394,8 +382,6 @@ func TestPlatformListOperationLogsBindsExpandedFilter(t *testing.T) {
 }
 
 func TestPlatformOperationSummaryBindsFilter(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
 	operations := &stubPlatformOperationService{}
 	handler := NewPlatformHandler(nil, nil, nil, nil, operations, nil)
 	ctx, recorder := newPlatformTestContext(http.MethodGet, "/api/v1/operations/summary?type=ai_gateway.tool.invoke&actor=user-1&result=failure&limit=25", "", nil)
@@ -414,8 +400,6 @@ func TestPlatformOperationSummaryBindsFilter(t *testing.T) {
 }
 
 func TestPlatformExportOperationLogsReturnsCSV(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
 	operations := &stubPlatformOperationService{}
 	handler := NewPlatformHandler(nil, nil, nil, nil, operations, nil)
 	ctx, recorder := newPlatformTestContext(http.MethodGet, "/api/v1/operations/logs/export?actor=user-1&limit=25", "", nil)
@@ -443,8 +427,6 @@ func TestPlatformExportOperationLogsReturnsCSV(t *testing.T) {
 }
 
 func TestPlatformGetPodLogsBindsDefaultsAndQuery(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
 	resources := &stubPlatformResourceService{}
 	handler := NewPlatformHandler(nil, resources, nil, nil, nil, nil)
 	ctx, recorder := newPlatformTestContext(http.MethodGet, "/api/v1/clusters/cluster-a/workloads/pods/api-0/logs?tailLines=50&sinceSeconds=300&previous=true&container=api", "", gin.Params{{Key: "clusterID", Value: "cluster-a"}, {Key: "podName", Value: "api-0"}})
@@ -463,8 +445,6 @@ func TestPlatformGetPodLogsBindsDefaultsAndQuery(t *testing.T) {
 }
 
 func TestPlatformApplyPodYAMLRejectsInvalidPayload(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
 	resources := &stubPlatformResourceService{}
 	handler := NewPlatformHandler(nil, resources, nil, nil, nil, nil)
 	ctx, recorder := newPlatformTestContext(http.MethodPut, "/api/v1/clusters/cluster-a/workloads/pods/api-0/yaml", "{", gin.Params{{Key: "clusterID", Value: "cluster-a"}, {Key: "podName", Value: "api-0"}})
@@ -480,8 +460,6 @@ func TestPlatformApplyPodYAMLRejectsInvalidPayload(t *testing.T) {
 }
 
 func TestPlatformCreateCRDResourcePrefersBodyNamespace(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
 	resources := &stubPlatformResourceService{}
 	handler := NewPlatformHandler(nil, resources, nil, nil, nil, nil)
 	body := `{"namespace":"team-b","content":"apiVersion: example.io/v1\nkind: Widget\nmetadata:\n  name: sample\n"}`
@@ -501,8 +479,6 @@ func TestPlatformCreateCRDResourcePrefersBodyNamespace(t *testing.T) {
 }
 
 func TestPlatformInstallHelmChartBindsPayload(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
 	resources := &stubPlatformResourceService{}
 	handler := NewPlatformHandler(nil, resources, nil, nil, nil, nil)
 	body := `{"packageId":"pkg-1","name":"nginx","version":"1.2.3","namespace":"apps","releaseName":"edge","values":"replicaCount: 2\n"}`
@@ -519,8 +495,6 @@ func TestPlatformInstallHelmChartBindsPayload(t *testing.T) {
 }
 
 func TestPlatformHandlerMapsApplicationErrors(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
 	resources := &stubPlatformResourceService{serviceListErr: fmt.Errorf("%w: no access", apperrors.ErrAccessDenied)}
 	handler := NewPlatformHandler(nil, resources, nil, nil, nil, nil)
 	ctx, recorder := newPlatformTestContext(http.MethodGet, "/api/v1/clusters/cluster-a/network/services", "", gin.Params{{Key: "clusterID", Value: "cluster-a"}})
@@ -544,8 +518,6 @@ func TestPlatformHandlerMapsApplicationErrors(t *testing.T) {
 }
 
 func TestPlatformHandlerMapsUnsupportedOperations(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
 	resources := &stubPlatformResourceService{serviceListErr: fmt.Errorf("%w: streaming pod logs are not supported for agent-connected clusters yet", apperrors.ErrUnsupportedOperation)}
 	handler := NewPlatformHandler(nil, resources, nil, nil, nil, nil)
 	ctx, recorder := newPlatformTestContext(http.MethodGet, "/api/v1/clusters/cluster-a/network/services", "", gin.Params{{Key: "clusterID", Value: "cluster-a"}})
@@ -569,8 +541,6 @@ func TestPlatformHandlerMapsUnsupportedOperations(t *testing.T) {
 }
 
 func TestPlatformIngestConnectorEventsAcceptsStaticBearerToken(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
 	events := &stubPlatformEventService{}
 	recorder := postConnectorEventSinkRequest(NewPlatformHandler(nil, nil, nil, events, nil, nil), `{
 		"connectorId":"feishu",
@@ -605,8 +575,6 @@ func TestPlatformIngestConnectorEventsAcceptsStaticBearerToken(t *testing.T) {
 }
 
 func TestPlatformIngestConnectorEventsAcceptsServiceAccountWithGatewayInvoke(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
 	events := &stubPlatformEventService{validateErr: fmt.Errorf("%w: static token should not be used", apperrors.ErrUnauthorized)}
 	recorder := postConnectorEventSinkRequest(NewPlatformHandler(nil, nil, nil, events, nil, nil), `{
 		"connectorId":"feishu",
@@ -641,8 +609,6 @@ func TestPlatformIngestConnectorEventsAcceptsServiceAccountWithGatewayInvoke(t *
 }
 
 func TestPlatformIngestConnectorEventsRejectsUnauthenticatedRequest(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-
 	events := &stubPlatformEventService{validateErr: fmt.Errorf("%w: invalid connector event sink token", apperrors.ErrUnauthorized)}
 	recorder := postConnectorEventSinkRequest(NewPlatformHandler(nil, nil, nil, events, nil, nil), `{
 		"connectorId":"feishu",

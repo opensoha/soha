@@ -11,10 +11,11 @@ import (
 
 	"github.com/google/uuid"
 	domainapp "github.com/opensoha/soha/internal/domain/application"
+	"github.com/opensoha/soha/internal/platform/apperrors"
 	"gorm.io/gorm"
 )
 
-var ErrNotFound = errors.New("application not found")
+var ErrNotFound = fmt.Errorf("%w: application not found", apperrors.ErrNotFound)
 
 type Repository struct {
 	db *gorm.DB
@@ -310,6 +311,7 @@ func (r *Repository) listBuildSources(ctx context.Context, applicationID string,
 		return items, rows.Err()
 	}
 	if legacy := legacyBuildSource(app); legacy != nil {
+		r.migrateLegacyBuildSource(ctx, applicationID, *legacy)
 		return []domainapp.BuildSource{*legacy}, nil
 	}
 	return items, rows.Err()
@@ -622,6 +624,22 @@ func legacyBuildSource(app domainapp.App) *domainapp.BuildSource {
 		CreatedAt: now,
 		UpdatedAt: now,
 	}
+}
+
+func (r *Repository) migrateLegacyBuildSource(ctx context.Context, applicationID string, source domainapp.BuildSource) {
+	if r == nil || strings.TrimSpace(applicationID) == "" || strings.TrimSpace(source.ID) == "" {
+		return
+	}
+	config, err := json.Marshal(source.Config)
+	if err != nil {
+		return
+	}
+	_ = r.db.WithContext(ctx).Exec(`
+		INSERT INTO application_build_sources (
+			id, application_id, source_name, source_type, enabled, is_default, build_image, default_tag, config, created_at, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT (id) DO NOTHING
+	`, source.ID, strings.TrimSpace(applicationID), source.Name, string(source.Type), source.Enabled, source.IsDefault, nullableString(source.BuildImage), nullableString(source.DefaultTag), string(config), source.CreatedAt, source.UpdatedAt).Error
 }
 
 func replaceBuildSourcesTx(tx *gorm.DB, applicationID string, items []domainapp.BuildSource, now time.Time) error {

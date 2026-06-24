@@ -39,7 +39,9 @@ type Repository interface {
 	UpdateSession(context.Context, string, string, domaincopilot.Session) (domaincopilot.Session, error)
 	DeleteSession(context.Context, string, string) error
 	ListMessages(context.Context, string, int) ([]domaincopilot.Message, error)
+	GetMessage(context.Context, string, string) (domaincopilot.Message, error)
 	CreateMessage(context.Context, domaincopilot.Message) (domaincopilot.Message, error)
+	UpdateMessageMetadata(context.Context, string, string, map[string]any) (domaincopilot.Message, error)
 	ListDataSources(context.Context) ([]domaincopilot.DataSource, error)
 	GetDataSource(context.Context, string) (domaincopilot.DataSource, error)
 	CreateDataSource(context.Context, domaincopilot.DataSource) (domaincopilot.DataSource, error)
@@ -340,7 +342,8 @@ func (s *Service) ListMessages(ctx context.Context, principal domainidentity.Pri
 	if err != nil {
 		return nil, err
 	}
-	return markLegacyPlatformContextMessages(messages), nil
+	messages = s.migrateLegacyPlatformContextMessages(ctx, trimmedSessionID, messages)
+	return messages, nil
 }
 
 func (s *Service) SendMessage(ctx context.Context, principal domainidentity.Principal, sessionID, content, locale string) (domaincopilot.SessionMessageEnvelope, error) {
@@ -1101,7 +1104,7 @@ func buildProviderChatMessages(history []domaincopilot.Message, current domainco
 		if current.ID != "" && item.ID == current.ID {
 			continue
 		}
-		if isLegacyPlatformContextMessage(item) {
+		if isLegacyPlatformContextMessage(item) || messageHasLegacyPlatformContextMarkers(item.Metadata) {
 			continue
 		}
 		role := strings.TrimSpace(item.Role)
@@ -1168,12 +1171,49 @@ func markLegacyPlatformContextMessages(messages []domaincopilot.Message) []domai
 	return out
 }
 
+func (s *Service) migrateLegacyPlatformContextMessages(ctx context.Context, sessionID string, messages []domaincopilot.Message) []domaincopilot.Message {
+	out := append([]domaincopilot.Message(nil), messages...)
+	if s == nil || s.repo == nil || strings.TrimSpace(sessionID) == "" {
+		return markLegacyPlatformContextMessages(out)
+	}
+	for index := range out {
+		if messageHasLegacyPlatformContextMarkers(out[index].Metadata) {
+			continue
+		}
+		if !isLegacyPlatformContextMessage(out[index]) {
+			continue
+		}
+		metadata := copyMessageMetadata(out[index].Metadata)
+		metadata["source"] = "legacy-platform-context"
+		metadata["legacyFallback"] = true
+		metadata["hiddenInGeneralChat"] = true
+		if _, err := s.repo.UpdateMessageMetadata(ctx, sessionID, out[index].ID, metadata); err != nil {
+			continue
+		}
+		out[index].Metadata = metadata
+	}
+	return markLegacyPlatformContextMessages(out)
+}
+
 func copyMessageMetadata(input map[string]any) map[string]any {
 	out := make(map[string]any, len(input)+3)
 	for key, value := range input {
 		out[key] = value
 	}
 	return out
+}
+
+func messageHasLegacyPlatformContextMarkers(metadata map[string]any) bool {
+	if metadata == nil {
+		return false
+	}
+	if legacyFallback, ok := metadata["legacyFallback"].(bool); ok && legacyFallback {
+		return true
+	}
+	if hiddenInGeneralChat, ok := metadata["hiddenInGeneralChat"].(bool); ok && hiddenInGeneralChat {
+		return true
+	}
+	return false
 }
 
 func isLegacyPlatformContextMessage(message domaincopilot.Message) bool {

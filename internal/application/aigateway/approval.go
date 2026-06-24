@@ -42,7 +42,8 @@ func (s *Service) holdToolInvocation(ctx context.Context, principal domainidenti
 	summary := gatewayHoldSummary(tool, decision)
 	var expiresAt *time.Time
 	if decision.requiresApproval() {
-		if s.repo == nil {
+		repo := s.approvalRepository()
+		if repo == nil {
 			err := fmt.Errorf("%w: AI Gateway approval repository is not configured", apperrors.ErrInvalidArgument)
 			_ = s.recordToolAuditWithRedaction(ctx, principal, input, tool, "failure", err.Error(), relatedIDs, redactionSummary)
 			return domainaigateway.ToolInvocationResult{}, err
@@ -84,7 +85,7 @@ func (s *Service) holdToolInvocation(ctx context.Context, principal domainidenti
 			CreatedAt:         now,
 			UpdatedAt:         now,
 		}
-		created, err := s.repo.CreateApprovalRequest(ctx, request)
+		created, err := repo.CreateApprovalRequest(ctx, request)
 		if err != nil {
 			_ = s.recordToolAuditWithRedaction(ctx, principal, input, tool, "failure", err.Error(), relatedIDs, redactionSummary)
 			return domainaigateway.ToolInvocationResult{}, err
@@ -149,7 +150,8 @@ func gatewayHoldNextAction(decision gatewayRiskDecision) string {
 	}
 }
 func (s *Service) createAIClientRegistrationApprovalRequest(ctx context.Context, principal domainidentity.Principal, client domainaigateway.AIClient) (domainaigateway.ApprovalRequest, error) {
-	if s == nil || s.repo == nil || !aiClientRegistrationApprovalPending(client) {
+	repo := s.approvalRepository()
+	if s == nil || repo == nil || !aiClientRegistrationApprovalPending(client) {
 		return domainaigateway.ApprovalRequest{}, nil
 	}
 	existingID := strings.TrimSpace(firstMapString(client.Metadata, "registrationApprovalRequestId", "approvalRequestId"))
@@ -191,7 +193,7 @@ func (s *Service) createAIClientRegistrationApprovalRequest(ctx context.Context,
 		CreatedAt: now,
 		UpdatedAt: now,
 	}
-	created, err := s.repo.CreateApprovalRequest(ctx, request)
+	created, err := repo.CreateApprovalRequest(ctx, request)
 	if err != nil {
 		return domainaigateway.ApprovalRequest{}, err
 	}
@@ -202,7 +204,8 @@ func (s *Service) ListApprovalRequests(ctx context.Context, principal domainiden
 	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermAIGatewayManage); err != nil {
 		return nil, err
 	}
-	if s.repo == nil {
+	repo := s.approvalRepository()
+	if repo == nil {
 		return nil, fmt.Errorf("%w: AI Gateway repository is not configured", apperrors.ErrInvalidArgument)
 	}
 	if err := s.expirePendingApprovalRequests(ctx); err != nil {
@@ -236,7 +239,7 @@ func (s *Service) ListApprovalRequests(ctx context.Context, principal domainiden
 	if filter.Limit <= 0 || filter.Limit > 500 {
 		filter.Limit = 100
 	}
-	items, err := s.repo.ListApprovalRequests(ctx, filter)
+	items, err := repo.ListApprovalRequests(ctx, filter)
 	if err != nil {
 		return nil, err
 	}
@@ -246,7 +249,8 @@ func (s *Service) GetApprovalTimeline(ctx context.Context, principal domainident
 	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermAIGatewayManage); err != nil {
 		return domainaigateway.ApprovalTimeline{}, err
 	}
-	if s.repo == nil {
+	repo := s.approvalRepository()
+	if repo == nil {
 		return domainaigateway.ApprovalTimeline{}, fmt.Errorf("%w: AI Gateway repository is not configured", apperrors.ErrInvalidArgument)
 	}
 	if err := s.expirePendingApprovalRequests(ctx); err != nil {
@@ -256,12 +260,13 @@ func (s *Service) GetApprovalTimeline(ctx context.Context, principal domainident
 	if requestID == "" {
 		return domainaigateway.ApprovalTimeline{}, fmt.Errorf("%w: approval request id is required", apperrors.ErrInvalidArgument)
 	}
-	request, err := s.repo.GetApprovalRequest(ctx, requestID)
+	request, err := repo.GetApprovalRequest(ctx, requestID)
 	if err != nil {
 		return domainaigateway.ApprovalTimeline{}, err
 	}
 	request = enrichApprovalRequest(request)
-	audits, err := s.repo.ListAuditLogs(ctx, domainaigateway.AuditLogFilter{
+	auditRepo := s.auditLogRepository()
+	audits, err := auditRepo.ListAuditLogs(ctx, domainaigateway.AuditLogFilter{
 		ApprovalRequestID: request.ID,
 		Limit:             500,
 	})
@@ -287,7 +292,8 @@ func (s *Service) resolveApprovalRequest(ctx context.Context, principal domainid
 	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermAIGatewayManage); err != nil {
 		return domainaigateway.ApprovalDecisionResult{}, err
 	}
-	if s.repo == nil {
+	repo := s.approvalRepository()
+	if repo == nil {
 		return domainaigateway.ApprovalDecisionResult{}, fmt.Errorf("%w: AI Gateway repository is not configured", apperrors.ErrInvalidArgument)
 	}
 	if err := s.expirePendingApprovalRequests(ctx); err != nil {
@@ -297,7 +303,7 @@ func (s *Service) resolveApprovalRequest(ctx context.Context, principal domainid
 	if requestID == "" {
 		return domainaigateway.ApprovalDecisionResult{}, fmt.Errorf("%w: approval request id is required", apperrors.ErrInvalidArgument)
 	}
-	request, err := s.repo.GetApprovalRequest(ctx, requestID)
+	request, err := repo.GetApprovalRequest(ctx, requestID)
 	if err != nil {
 		return domainaigateway.ApprovalDecisionResult{}, err
 	}
@@ -424,7 +430,8 @@ func (s *Service) approveApprovalRequest(ctx context.Context, principal domainid
 	return domainaigateway.ApprovalDecisionResult{Request: updated, Invocation: &invocation}, nil
 }
 func (s *Service) approveAIClientRegistrationApproval(ctx context.Context, principal domainidentity.Principal, request domainaigateway.ApprovalRequest, input domainaigateway.ApprovalDecisionInput) (domainaigateway.ApprovalDecisionResult, error) {
-	client, err := s.repo.GetAIClient(ctx, request.AIClientID)
+	clientRepo := s.clientRepository()
+	client, err := clientRepo.GetAIClient(ctx, request.AIClientID)
 	if err != nil {
 		return domainaigateway.ApprovalDecisionResult{}, err
 	}
@@ -435,7 +442,7 @@ func (s *Service) approveAIClientRegistrationApproval(ctx context.Context, princ
 		"registrationApprovedBy":        principal.UserID,
 		"registrationApprovedAt":        time.Now().UTC().Format(time.RFC3339),
 	})
-	if _, err := s.repo.UpdateAIClient(ctx, client); err != nil {
+	if _, err := clientRepo.UpdateAIClient(ctx, client); err != nil {
 		return domainaigateway.ApprovalDecisionResult{}, err
 	}
 	approved, err := s.transitionApprovalRequest(ctx, principal, request, "approved", "AI client registration approved", input.Comment, request.RelatedIDs, map[string]any{"aiClientId": client.ID, "status": "active"})
@@ -464,7 +471,8 @@ func (s *Service) rejectOrCancelAIClientRegistrationApproval(ctx context.Context
 		summary = "AI client registration canceled"
 		clientStatus = "disabled"
 	}
-	if client, err := s.repo.GetAIClient(ctx, request.AIClientID); err == nil && client.ID != "" {
+	clientRepo := s.clientRepository()
+	if client, err := clientRepo.GetAIClient(ctx, request.AIClientID); err == nil && client.ID != "" {
 		client.Status = clientStatus
 		client.Metadata = mergeAnyMaps(client.Metadata, map[string]any{
 			"registrationApproval":          status,
@@ -472,7 +480,7 @@ func (s *Service) rejectOrCancelAIClientRegistrationApproval(ctx context.Context
 			"registrationDecidedBy":         principal.UserID,
 			"registrationDecidedAt":         time.Now().UTC().Format(time.RFC3339),
 		})
-		_, _ = s.repo.UpdateAIClient(ctx, client)
+		_, _ = clientRepo.UpdateAIClient(ctx, client)
 		_ = s.recordConfigAudit(ctx, principal, "AIGatewayAIClient", client.ID, "ai_gateway.ai_client.registration."+status, status, summary, map[string]any{
 			"aiClientId":        client.ID,
 			"approvalRequestId": request.ID,
@@ -499,7 +507,8 @@ func (s *Service) failApprovedApprovalRequest(ctx context.Context, principal dom
 }
 func (s *Service) transitionApprovalRequest(ctx context.Context, principal domainidentity.Principal, request domainaigateway.ApprovalRequest, status, summary, comment string, relatedIDs map[string]any, output any) (domainaigateway.ApprovalRequest, error) {
 	now := time.Now().UTC()
-	return s.repo.UpdateApprovalRequest(ctx, request.ID, domainaigateway.ApprovalRequestUpdate{
+	repo := s.approvalRepository()
+	return repo.UpdateApprovalRequest(ctx, request.ID, domainaigateway.ApprovalRequestUpdate{
 		ExpectedStatus:  "pending",
 		Status:          status,
 		Summary:         summary,
@@ -514,7 +523,8 @@ func (s *Service) transitionApprovalRequest(ctx context.Context, principal domai
 }
 func (s *Service) finalizeApprovedApprovalRequest(ctx context.Context, principal domainidentity.Principal, request domainaigateway.ApprovalRequest, status, summary string, relatedIDs map[string]any, output any) (domainaigateway.ApprovalRequest, error) {
 	now := time.Now().UTC()
-	return s.repo.UpdateApprovalRequest(ctx, request.ID, domainaigateway.ApprovalRequestUpdate{
+	repo := s.approvalRepository()
+	return repo.UpdateApprovalRequest(ctx, request.ID, domainaigateway.ApprovalRequestUpdate{
 		ExpectedStatus:  "approved",
 		Status:          status,
 		Summary:         summary,
@@ -528,10 +538,11 @@ func (s *Service) finalizeApprovedApprovalRequest(ctx context.Context, principal
 	})
 }
 func (s *Service) expirePendingApprovalRequests(ctx context.Context) error {
-	if s.repo == nil {
+	repo := s.approvalRepository()
+	if repo == nil {
 		return nil
 	}
-	expired, err := s.repo.ExpirePendingApprovalRequests(ctx, time.Now().UTC())
+	expired, err := repo.ExpirePendingApprovalRequests(ctx, time.Now().UTC())
 	if err != nil {
 		return err
 	}
@@ -541,10 +552,11 @@ func (s *Service) expirePendingApprovalRequests(ctx context.Context) error {
 	return nil
 }
 func (s *Service) expireApprovalRequest(ctx context.Context, request domainaigateway.ApprovalRequest) error {
-	if s.repo == nil || request.Status != "pending" {
+	repo := s.approvalRepository()
+	if repo == nil || request.Status != "pending" {
 		return nil
 	}
-	updated, err := s.repo.UpdateApprovalRequest(ctx, request.ID, domainaigateway.ApprovalRequestUpdate{
+	updated, err := repo.UpdateApprovalRequest(ctx, request.ID, domainaigateway.ApprovalRequestUpdate{
 		ExpectedStatus: "pending",
 		Status:         "timeout",
 		Summary:        "AI Gateway approval request timed out",
@@ -1215,13 +1227,17 @@ func intPointer(value int) *int {
 	return &value
 }
 func (s *Service) recordGatewayApprovalVote(ctx context.Context, principal domainidentity.Principal, request domainaigateway.ApprovalRequest, input domainaigateway.ApprovalDecisionInput) (domainaigateway.ApprovalDecisionResult, bool, error) {
+	repo := s.approvalRepository()
+	if repo == nil {
+		return domainaigateway.ApprovalDecisionResult{}, false, fmt.Errorf("%w: AI Gateway repository is not configured", apperrors.ErrInvalidArgument)
+	}
 	relatedIDs, routing := gatewayApprovalRoutingWithVote(request.RelatedIDs, principal, input.Comment, time.Now().UTC())
 	status := gatewayApprovalQuorumStatusFromRouting(routing)
 	if status.Ready {
 		if gatewayApprovalHasNextStage(routing, status) {
 			relatedIDs, status = gatewayApprovalAdvanceStage(relatedIDs, status, time.Now().UTC())
 			summary := gatewayApprovalStagePendingSummary(status)
-			updated, err := s.repo.UpdateApprovalRequest(ctx, request.ID, domainaigateway.ApprovalRequestUpdate{
+			updated, err := repo.UpdateApprovalRequest(ctx, request.ID, domainaigateway.ApprovalRequestUpdate{
 				ExpectedStatus: "pending",
 				Status:         "pending",
 				Summary:        summary,
@@ -1240,7 +1256,7 @@ func (s *Service) recordGatewayApprovalVote(ctx context.Context, principal domai
 		return domainaigateway.ApprovalDecisionResult{Request: ready}, true, nil
 	}
 	summary := gatewayApprovalPendingSummary(status)
-	updated, err := s.repo.UpdateApprovalRequest(ctx, request.ID, domainaigateway.ApprovalRequestUpdate{
+	updated, err := repo.UpdateApprovalRequest(ctx, request.ID, domainaigateway.ApprovalRequestUpdate{
 		ExpectedStatus: "pending",
 		Status:         "pending",
 		Summary:        summary,

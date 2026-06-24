@@ -139,6 +139,9 @@ type ResourceService interface {
 	RestartDeployment(context.Context, domainidentity.Principal, string, string, string) error
 	RollbackDeployment(context.Context, domainidentity.Principal, string, string, string, string) (domainresource.DeploymentRollbackView, error)
 	ScaleDeployment(context.Context, domainidentity.Principal, string, string, string, int32) error
+	RestartStatefulSet(context.Context, domainidentity.Principal, string, string, string) error
+	ScaleStatefulSet(context.Context, domainidentity.Principal, string, string, string, int32) error
+	RestartDaemonSet(context.Context, domainidentity.Principal, string, string, string) error
 }
 
 type AuditService interface {

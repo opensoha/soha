@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -132,7 +133,7 @@ func (r *Repository) UpdateRule(ctx context.Context, ruleID string, input domain
 		return domainalert.AlertRule{}, fmt.Errorf("update alert rule: %w", result.Error)
 	}
 	if result.RowsAffected == 0 {
-		return domainalert.AlertRule{}, fmt.Errorf("alert rule not found: %s", item.ID)
+		return domainalert.AlertRule{}, alertNotFound("alert rule", item.ID)
 	}
 	item.CreatedAt = fetchTableCreatedAt(ctx, r.db, "alert_rules", item.ID)
 	return item, nil
@@ -328,7 +329,7 @@ func (r *Repository) UpdateEvent(ctx context.Context, eventID string, input doma
 		return domainalert.AlertEvent{}, fmt.Errorf("update alert event: %w", result.Error)
 	}
 	if result.RowsAffected == 0 {
-		return domainalert.AlertEvent{}, fmt.Errorf("alert event not found: %s", item.ID)
+		return domainalert.AlertEvent{}, alertNotFound("alert event", item.ID)
 	}
 	item.CreatedAt = fetchTableCreatedAt(ctx, r.db, "alert_events", item.ID)
 	return item, nil
@@ -405,7 +406,7 @@ func (r *Repository) UpdateNotificationPolicy(ctx context.Context, policyID stri
 		return domainalert.NotificationPolicy{}, fmt.Errorf("update notification policy: %w", result.Error)
 	}
 	if result.RowsAffected == 0 {
-		return domainalert.NotificationPolicy{}, fmt.Errorf("notification policy not found: %s", item.ID)
+		return domainalert.NotificationPolicy{}, alertNotFound("notification policy", item.ID)
 	}
 	item.CreatedAt = fetchTableCreatedAt(ctx, r.db, "notification_policies", item.ID)
 	return item, nil
@@ -482,7 +483,7 @@ func (r *Repository) UpdateNotificationTemplate(ctx context.Context, templateID 
 		return domainalert.NotificationTemplate{}, fmt.Errorf("update notification template: %w", result.Error)
 	}
 	if result.RowsAffected == 0 {
-		return domainalert.NotificationTemplate{}, fmt.Errorf("notification template not found: %s", item.ID)
+		return domainalert.NotificationTemplate{}, alertNotFound("notification template", item.ID)
 	}
 	item.CreatedAt = fetchTableCreatedAt(ctx, r.db, "notification_templates", item.ID)
 	return item, nil
@@ -511,20 +512,13 @@ func (r *Repository) ListHealingPolicies(ctx context.Context) ([]domainalert.Hea
 }
 
 func (r *Repository) GetHealingPolicy(ctx context.Context, policyID string) (domainalert.HealingPolicy, error) {
-	rows, err := r.db.WithContext(ctx).Raw(`
+	row := r.db.WithContext(ctx).Raw(`
 		SELECT id, name, trigger_mode, workflow_template_id, approval_policy_ref, cooldown_seconds, concurrency_key, safety_window_seconds, definition, enabled, created_at, updated_at
 		FROM healing_policies
 		WHERE id = ?
 		LIMIT 1
-	`, strings.TrimSpace(policyID)).Rows()
-	if err != nil {
-		return domainalert.HealingPolicy{}, fmt.Errorf("query healing policy: %w", err)
-	}
-	defer rows.Close()
-	if !rows.Next() {
-		return domainalert.HealingPolicy{}, fmt.Errorf("healing policy not found: %s", strings.TrimSpace(policyID))
-	}
-	return scanHealingPolicy(rows)
+	`, strings.TrimSpace(policyID)).Row()
+	return scanHealingPolicyRow(row, policyID)
 }
 
 func (r *Repository) CreateHealingPolicy(ctx context.Context, input domainalert.HealingPolicyInput) (domainalert.HealingPolicy, error) {
@@ -560,7 +554,7 @@ func (r *Repository) UpdateHealingPolicy(ctx context.Context, policyID string, i
 		return domainalert.HealingPolicy{}, fmt.Errorf("update healing policy: %w", result.Error)
 	}
 	if result.RowsAffected == 0 {
-		return domainalert.HealingPolicy{}, fmt.Errorf("healing policy not found: %s", item.ID)
+		return domainalert.HealingPolicy{}, alertNotFound("healing policy", item.ID)
 	}
 	item.CreatedAt = fetchTableCreatedAt(ctx, r.db, "healing_policies", item.ID)
 	return item, nil
@@ -654,7 +648,7 @@ func (r *Repository) UpdateHealingRun(ctx context.Context, runID string, input d
 		return domainalert.HealingRun{}, fmt.Errorf("update healing run: %w", updated.Error)
 	}
 	if updated.RowsAffected == 0 {
-		return domainalert.HealingRun{}, fmt.Errorf("healing run not found: %s", item.ID)
+		return domainalert.HealingRun{}, alertNotFound("healing run", item.ID)
 	}
 	item.CreatedAt = fetchTableCreatedAt(ctx, r.db, "healing_runs", item.ID)
 	return item, nil
@@ -712,7 +706,7 @@ func (r *Repository) UpdateOnCallSchedule(ctx context.Context, scheduleID string
 		return domainalert.OnCallSchedule{}, fmt.Errorf("update oncall schedule: %w", result.Error)
 	}
 	if result.RowsAffected == 0 {
-		return domainalert.OnCallSchedule{}, fmt.Errorf("oncall schedule not found: %s", item.ID)
+		return domainalert.OnCallSchedule{}, alertNotFound("oncall schedule", item.ID)
 	}
 	item.CreatedAt = fetchTableCreatedAt(ctx, r.db, "oncall_schedules", item.ID)
 	return item, nil
@@ -783,7 +777,7 @@ func (r *Repository) UpdateOnCallRotation(ctx context.Context, rotationID string
 		return domainalert.OnCallRotation{}, fmt.Errorf("update oncall rotation: %w", result.Error)
 	}
 	if result.RowsAffected == 0 {
-		return domainalert.OnCallRotation{}, fmt.Errorf("oncall rotation not found: %s", item.ID)
+		return domainalert.OnCallRotation{}, alertNotFound("oncall rotation", item.ID)
 	}
 	item.CreatedAt = fetchTableCreatedAt(ctx, r.db, "oncall_rotations", item.ID)
 	return item, nil
@@ -844,7 +838,7 @@ func (r *Repository) UpdateOnCallEscalationPolicy(ctx context.Context, policyID 
 		return domainalert.OnCallEscalationPolicy{}, fmt.Errorf("update oncall escalation policy: %w", result.Error)
 	}
 	if result.RowsAffected == 0 {
-		return domainalert.OnCallEscalationPolicy{}, fmt.Errorf("oncall escalation policy not found: %s", item.ID)
+		return domainalert.OnCallEscalationPolicy{}, alertNotFound("oncall escalation policy", item.ID)
 	}
 	item.CreatedAt = fetchTableCreatedAt(ctx, r.db, "oncall_escalation_policies", item.ID)
 	return item, nil
@@ -913,7 +907,7 @@ func (r *Repository) UpdateOnCallAssignmentRule(ctx context.Context, ruleID stri
 		return domainalert.OnCallAssignmentRule{}, fmt.Errorf("update oncall assignment rule: %w", result.Error)
 	}
 	if result.RowsAffected == 0 {
-		return domainalert.OnCallAssignmentRule{}, fmt.Errorf("oncall assignment rule not found: %s", item.ID)
+		return domainalert.OnCallAssignmentRule{}, alertNotFound("oncall assignment rule", item.ID)
 	}
 	item.CreatedAt = fetchTableCreatedAt(ctx, r.db, "oncall_assignment_rules", item.ID)
 	return item, nil
@@ -964,8 +958,8 @@ func scanAlertRuleRow(row *sql.Row, ruleID string) (domainalert.AlertRule, error
 	var notificationPolicyID sql.NullString
 	var healingPolicyIDs []byte
 	if err := row.Scan(&item.ID, &item.Name, &item.RuleType, &datasourceSelector, &querySpec, &thresholdSpec, &item.ForSeconds, &groupBy, &labels, &annotations, &notificationPolicyID, &healingPolicyIDs, &item.Enabled, &item.CreatedAt, &item.UpdatedAt); err != nil {
-		if err == sql.ErrNoRows {
-			return domainalert.AlertRule{}, fmt.Errorf("alert rule not found: %s", ruleID)
+		if errors.Is(err, sql.ErrNoRows) {
+			return domainalert.AlertRule{}, alertNotFound("alert rule", ruleID)
 		}
 		return domainalert.AlertRule{}, fmt.Errorf("scan alert rule row: %w", err)
 	}
@@ -1051,8 +1045,8 @@ func scanAlertEventRow(row *sql.Row, eventID string) (domainalert.AlertEvent, er
 	var endsAt sql.NullTime
 	if err := row.Scan(&item.ID, &ruleID, &item.SourceType, &sourceSystem, &item.Fingerprint, &item.Title, &item.Summary, &item.Severity, &item.Status, &clusterID, &namespace,
 		&labels, &annotations, &receiver, &generatorURL, &currentState, &lastNotificationAt, &startsAt, &endsAt, &item.LastSeenAt, &item.CreatedAt, &item.UpdatedAt); err != nil {
-		if err == sql.ErrNoRows {
-			return domainalert.AlertEvent{}, fmt.Errorf("alert event not found: %s", eventID)
+		if errors.Is(err, sql.ErrNoRows) {
+			return domainalert.AlertEvent{}, alertNotFound("alert event", eventID)
 		}
 		return domainalert.AlertEvent{}, fmt.Errorf("scan alert event row: %w", err)
 	}
@@ -1236,6 +1230,27 @@ func scanNotificationTemplate(rows *sql.Rows) (domainalert.NotificationTemplate,
 	return item, nil
 }
 
+func scanHealingPolicyRow(row *sql.Row, policyID string) (domainalert.HealingPolicy, error) {
+	var item domainalert.HealingPolicy
+	var approvalPolicyRef sql.NullString
+	var concurrencyKey sql.NullString
+	var definition []byte
+	if err := row.Scan(&item.ID, &item.Name, &item.TriggerMode, &item.WorkflowTemplateID, &approvalPolicyRef, &item.CooldownSeconds, &concurrencyKey, &item.SafetyWindowSeconds, &definition, &item.Enabled, &item.CreatedAt, &item.UpdatedAt); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return domainalert.HealingPolicy{}, alertNotFound("healing policy", policyID)
+		}
+		return domainalert.HealingPolicy{}, fmt.Errorf("scan healing policy row: %w", err)
+	}
+	if approvalPolicyRef.Valid {
+		item.ApprovalPolicyRef = approvalPolicyRef.String
+	}
+	if concurrencyKey.Valid {
+		item.ConcurrencyKey = concurrencyKey.String
+	}
+	_ = json.Unmarshal(definition, &item.Definition)
+	return item, nil
+}
+
 func scanHealingPolicy(rows *sql.Rows) (domainalert.HealingPolicy, error) {
 	var item domainalert.HealingPolicy
 	var approvalPolicyRef sql.NullString
@@ -1308,8 +1323,8 @@ func scanHealingRunRow(row *sql.Row, runID string) (domainalert.HealingRun, erro
 	var startedAt sql.NullTime
 	var completedAt sql.NullTime
 	if err := row.Scan(&item.ID, &item.PolicyID, &eventID, &item.Status, &approvalStatus, &approvalComment, &requestedBy, &approvedBy, &workflowRunID, &result, &startedAt, &completedAt, &item.CreatedAt, &item.UpdatedAt); err != nil {
-		if err == sql.ErrNoRows {
-			return domainalert.HealingRun{}, fmt.Errorf("healing run not found: %s", runID)
+		if errors.Is(err, sql.ErrNoRows) {
+			return domainalert.HealingRun{}, alertNotFound("healing run", runID)
 		}
 		return domainalert.HealingRun{}, fmt.Errorf("scan healing run row: %w", err)
 	}

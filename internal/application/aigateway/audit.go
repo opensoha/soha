@@ -22,7 +22,8 @@ func (s *Service) ListAuditLogs(ctx context.Context, principal domainidentity.Pr
 	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermAIGatewayManage); err != nil {
 		return nil, err
 	}
-	if s.repo == nil {
+	repo := s.auditLogRepository()
+	if repo == nil {
 		return nil, fmt.Errorf("%w: AI Gateway repository is not configured", apperrors.ErrInvalidArgument)
 	}
 	filter.ActorType = normalizeSubjectType(filter.ActorType)
@@ -46,7 +47,7 @@ func (s *Service) ListAuditLogs(ctx context.Context, principal domainidentity.Pr
 	if filter.Limit <= 0 || filter.Limit > 500 {
 		filter.Limit = 100
 	}
-	return s.repo.ListAuditLogs(ctx, filter)
+	return repo.ListAuditLogs(ctx, filter)
 }
 func (s *Service) recordTokenAudit(ctx context.Context, principal domainidentity.Principal, action, result, summary string, metadata map[string]any) error {
 	if s == nil || s.audit == nil {
@@ -168,11 +169,12 @@ func gatewayApprovalRequestTargetScope(request domainaigateway.ApprovalRequest) 
 	return targetScope
 }
 func (s *Service) recordGatewayApprovalAuditLog(ctx context.Context, principal domainidentity.Principal, request domainaigateway.ApprovalRequest, action, result, summary string, meta requestctx.Metadata) error {
-	if s == nil || s.repo == nil {
+	repo := s.auditLogRepository()
+	if s == nil || repo == nil {
 		return nil
 	}
 	actorType, actorID := gatewaySubject(principal)
-	return s.repo.CreateAuditLog(ctx, domainaigateway.AuditLog{
+	return repo.CreateAuditLog(ctx, domainaigateway.AuditLog{
 		ID:            uuid.NewString(),
 		ActorType:     actorType,
 		ActorID:       actorID,
@@ -231,11 +233,12 @@ func (s *Service) recordResourceAudit(ctx context.Context, principal domainident
 	})
 }
 func (s *Service) recordGatewayResourceAuditLog(ctx context.Context, principal domainidentity.Principal, input domainaigateway.ResourceReadRequest, resource domainaigateway.ResourceCapability, result, summary string, relatedIDs map[string]any, meta requestctx.Metadata) error {
-	if s == nil || s.repo == nil {
+	repo := s.auditLogRepository()
+	if s == nil || repo == nil {
 		return nil
 	}
 	actorType, actorID := gatewaySubject(principal)
-	return s.repo.CreateAuditLog(ctx, domainaigateway.AuditLog{
+	return repo.CreateAuditLog(ctx, domainaigateway.AuditLog{
 		ID:            uuid.NewString(),
 		ActorType:     actorType,
 		ActorID:       actorID,
@@ -295,12 +298,13 @@ func (s *Service) recordPromptAudit(ctx context.Context, principal domainidentit
 	})
 }
 func (s *Service) recordGatewayPromptAuditLog(ctx context.Context, principal domainidentity.Principal, input domainaigateway.PromptGetRequest, prompt domainaigateway.PromptCapability, result, summary string, relatedIDs map[string]any, meta requestctx.Metadata) error {
-	if s == nil || s.repo == nil {
+	repo := s.auditLogRepository()
+	if s == nil || repo == nil {
 		return nil
 	}
 	actorType, actorID := gatewaySubject(principal)
 	scope := mergeAnyMaps(input.Context, input.Arguments)
-	return s.repo.CreateAuditLog(ctx, domainaigateway.AuditLog{
+	return repo.CreateAuditLog(ctx, domainaigateway.AuditLog{
 		ID:            uuid.NewString(),
 		ActorType:     actorType,
 		ActorID:       actorID,
@@ -430,7 +434,8 @@ func shouldRecordGatewayToolOperation(tool domainaigateway.ToolCapability, resul
 	}
 }
 func (s *Service) recordGatewayToolAuditLog(ctx context.Context, principal domainidentity.Principal, input domainaigateway.ToolInvocationRequest, tool domainaigateway.ToolCapability, result, summary string, relatedIDs map[string]any, meta requestctx.Metadata, redactionSummary gatewayRedactionAuditSummary, usageSummary map[string]any) error {
-	if s == nil || s.repo == nil {
+	repo := s.auditLogRepository()
+	if s == nil || repo == nil {
 		return nil
 	}
 	actorType, actorID := gatewaySubject(principal)
@@ -462,7 +467,7 @@ func (s *Service) recordGatewayToolAuditLog(ctx context.Context, principal domai
 		Metadata:      metadata,
 		CreatedAt:     time.Now().UTC(),
 	}
-	return s.repo.CreateAuditLog(ctx, item)
+	return repo.CreateAuditLog(ctx, item)
 }
 func addGatewayRedactionAuditMetadata(metadata map[string]any, summary gatewayRedactionAuditSummary) {
 	if metadata == nil || summary.empty() {

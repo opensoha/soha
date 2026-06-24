@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -222,7 +223,7 @@ func (r *Repository) UpdateOwnership(ctx context.Context, alertID string, input 
 		return domainalert.Instance{}, fmt.Errorf("update alert ownership: %w", result.Error)
 	}
 	if result.RowsAffected == 0 {
-		return domainalert.Instance{}, fmt.Errorf("alert not found: %s", strings.TrimSpace(alertID))
+		return domainalert.Instance{}, alertNotFound("alert", alertID)
 	}
 	return r.Get(ctx, alertID)
 }
@@ -240,7 +241,7 @@ func (r *Repository) Acknowledge(ctx context.Context, alertID, acknowledgedBy, a
 		return domainalert.Instance{}, fmt.Errorf("acknowledge alert: %w", result.Error)
 	}
 	if result.RowsAffected == 0 {
-		return domainalert.Instance{}, fmt.Errorf("alert not found: %s", strings.TrimSpace(alertID))
+		return domainalert.Instance{}, alertNotFound("alert", alertID)
 	}
 	return r.Get(ctx, alertID)
 }
@@ -338,7 +339,7 @@ func (r *Repository) UpdateChannel(ctx context.Context, channelID string, input 
 		return domainalert.NotificationChannel{}, fmt.Errorf("update notification channel: %w", result.Error)
 	}
 	if result.RowsAffected == 0 {
-		return domainalert.NotificationChannel{}, fmt.Errorf("notification channel not found: %s", channel.ID)
+		return domainalert.NotificationChannel{}, alertNotFound("notification channel", channel.ID)
 	}
 	channel.CreatedAt = fetchCreatedAt(ctx, r.db, channel.ID)
 	return channel, nil
@@ -414,7 +415,7 @@ func (r *Repository) UpdateRoute(ctx context.Context, routeID string, input doma
 		return domainalert.AlertRoute{}, fmt.Errorf("update alert route: %w", result.Error)
 	}
 	if result.RowsAffected == 0 {
-		return domainalert.AlertRoute{}, fmt.Errorf("alert route not found: %s", route.ID)
+		return domainalert.AlertRoute{}, alertNotFound("alert route", route.ID)
 	}
 	route.CreatedAt = fetchRouteCreatedAt(ctx, r.db, route.ID)
 	return route, nil
@@ -545,7 +546,7 @@ func (r *Repository) UpdateSilence(ctx context.Context, silenceID string, input 
 		return domainalert.AlertSilence{}, fmt.Errorf("update alert silence: %w", result.Error)
 	}
 	if result.RowsAffected == 0 {
-		return domainalert.AlertSilence{}, fmt.Errorf("alert silence not found: %s", item.ID)
+		return domainalert.AlertSilence{}, alertNotFound("alert silence", item.ID)
 	}
 	item.CreatedAt = fetchSilenceCreatedAt(ctx, r.db, item.ID)
 	return item, nil
@@ -672,8 +673,8 @@ func scanInstanceRowWithID(row *sql.Row, alertID string) (domainalert.Instance, 
 		&item.CreatedAt,
 		&item.UpdatedAt,
 	); err != nil {
-		if err == sql.ErrNoRows {
-			return domainalert.Instance{}, fmt.Errorf("alert not found: %s", alertID)
+		if errors.Is(err, sql.ErrNoRows) {
+			return domainalert.Instance{}, alertNotFound("alert", alertID)
 		}
 		return domainalert.Instance{}, fmt.Errorf("scan alert instance row: %w", err)
 	}

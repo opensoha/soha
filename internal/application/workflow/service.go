@@ -113,6 +113,10 @@ type Service struct {
 	runnerQueueSize   int
 	nodeParallelism   int
 	runnerWG          sync.WaitGroup
+
+	runStateMu   sync.Mutex
+	runSnapshots map[string]domainworkflow.Run
+	runWaiters   map[string]map[chan struct{}]struct{}
 }
 
 type workflowPruner interface {
@@ -250,7 +254,10 @@ func (s *Service) runAsyncWorker(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			return
-		case task := <-s.runnerQueue:
+		case task, ok := <-s.runnerQueue:
+			if !ok {
+				return
+			}
 			taskCtx := requestctx.WithMetadata(ctx, task.requestMeta)
 			s.runDAGAsync(taskCtx, task.principal, task.app, task.input, task.binding, task.definition, task.run)
 		}
@@ -954,6 +961,8 @@ func (s *Service) prepareRollbackDAGRun(ctx context.Context, app domainapp.App, 
 }
 
 func (s *Service) runDAGAsync(ctx context.Context, principal domainidentity.Principal, app domainapp.App, input domainworkflow.Input, binding domaincatalog.ApplicationEnvironment, definition dagWorkflowDefinition, run domainworkflow.Run) {
+	run = cloneRunForAsyncWorker(run)
+
 	startedAt := time.Now()
 	if s.metrics != nil {
 		s.metrics.RecordStart(runtimeobs.ComponentWorkflowRunner, run.ID, s.queueDepth(), len(definition.Nodes))
@@ -2661,6 +2670,53 @@ func syncRunNodeState(run domainworkflow.Run, definition dagWorkflowDefinition, 
 	return run
 }
 
+func cloneRunForAsyncWorker(run domainworkflow.Run) domainworkflow.Run {
+	run.Steps = append([]domainworkflow.Step(nil), run.Steps...)
+	run.NodeRuns = append([]domainworkflow.NodeRun(nil), run.NodeRuns...)
+	run.Metadata = cloneRunMetadataForAsyncWorker(run.Metadata)
+	return run
+}
+
+func cloneRunMetadataForAsyncWorker(metadata map[string]any) map[string]any {
+	if metadata == nil {
+		return nil
+	}
+	out := make(map[string]any, len(metadata))
+	for key, value := range metadata {
+		out[key] = cloneRunMetadataValueForAsyncWorker(value)
+	}
+	return out
+}
+
+func cloneRunMetadataValueForAsyncWorker(value any) any {
+	switch typed := value.(type) {
+	case map[string]any:
+		return cloneRunMetadataForAsyncWorker(typed)
+	case []map[string]any:
+		out := make([]map[string]any, 0, len(typed))
+		for _, item := range typed {
+			out = append(out, cloneRunMetadataForAsyncWorker(item))
+		}
+		return out
+	case []domainworkflow.NodeRun:
+		return append([]domainworkflow.NodeRun(nil), typed...)
+	case []domainworkflow.Step:
+		return append([]domainworkflow.Step(nil), typed...)
+	case []dagWorkflowNode:
+		return append([]dagWorkflowNode(nil), typed...)
+	case []dagWorkflowEdge:
+		return append([]dagWorkflowEdge(nil), typed...)
+	case []any:
+		out := make([]any, 0, len(typed))
+		for _, item := range typed {
+			out = append(out, cloneRunMetadataValueForAsyncWorker(item))
+		}
+		return out
+	default:
+		return value
+	}
+}
+
 func (s *Service) finalizeRunCancellation(ctx context.Context, run domainworkflow.Run, definition dagWorkflowDefinition, nodeRuns map[string]dagNodeRun, statuses map[string]string, err error) {
 	reason := "workflow execution canceled"
 	if err != nil {
@@ -2718,7 +2774,95 @@ func (s *Service) updateRun(ctx context.Context, run domainworkflow.Run) domainw
 	if err != nil {
 		return run
 	}
+	s.publishRunUpdate(updated)
 	return updated
+}
+
+func (s *Service) publishRunUpdate(run domainworkflow.Run) {
+	snapshot := cloneRunForAsyncWorker(run)
+
+	s.runStateMu.Lock()
+	if s.runSnapshots == nil {
+		s.runSnapshots = make(map[string]domainworkflow.Run)
+	}
+	s.runSnapshots[run.ID] = snapshot
+	for watcher := range s.runWaiters[run.ID] {
+		select {
+		case watcher <- struct{}{}:
+		default:
+		}
+	}
+	s.runStateMu.Unlock()
+}
+
+func (s *Service) latestRunSnapshot(runID string) (domainworkflow.Run, bool) {
+	s.runStateMu.Lock()
+	defer s.runStateMu.Unlock()
+	if s.runSnapshots == nil {
+		return domainworkflow.Run{}, false
+	}
+	run, ok := s.runSnapshots[runID]
+	if !ok {
+		return domainworkflow.Run{}, false
+	}
+	return cloneRunForAsyncWorker(run), true
+}
+
+func (s *Service) registerRunWatcher(runID string) chan struct{} {
+	watcher := make(chan struct{}, 1)
+	s.runStateMu.Lock()
+	if s.runWaiters == nil {
+		s.runWaiters = make(map[string]map[chan struct{}]struct{})
+	}
+	if s.runWaiters[runID] == nil {
+		s.runWaiters[runID] = make(map[chan struct{}]struct{})
+	}
+	s.runWaiters[runID][watcher] = struct{}{}
+	s.runStateMu.Unlock()
+	return watcher
+}
+
+func (s *Service) unregisterRunWatcher(runID string, watcher chan struct{}) {
+	s.runStateMu.Lock()
+	defer s.runStateMu.Unlock()
+	waiters := s.runWaiters[runID]
+	if waiters == nil {
+		return
+	}
+	delete(waiters, watcher)
+	if len(waiters) == 0 {
+		delete(s.runWaiters, runID)
+	}
+}
+
+func (s *Service) waitForRunStatus(ctx context.Context, runID string, statuses ...string) (domainworkflow.Run, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	allowed := make(map[string]struct{}, len(statuses))
+	for _, status := range statuses {
+		allowed[status] = struct{}{}
+	}
+	watcher := s.registerRunWatcher(runID)
+	defer s.unregisterRunWatcher(runID, watcher)
+
+	for {
+		run, ok := s.latestRunSnapshot(runID)
+		if ok {
+			if len(allowed) == 0 {
+				return run, nil
+			}
+			if _, matched := allowed[run.Status]; matched {
+				return run, nil
+			}
+		}
+
+		select {
+		case <-watcher:
+		case <-ctx.Done():
+			return domainworkflow.Run{}, ctx.Err()
+		}
+	}
 }
 
 func (s *Service) queueDepth() int {

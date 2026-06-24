@@ -2,6 +2,7 @@ package monitoring
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -168,7 +169,7 @@ func (s *Service) GetAlert(ctx context.Context, principal domainidentity.Princip
 	}
 	item, err := s.repo.Get(ctx, strings.TrimSpace(alertID))
 	if err != nil {
-		if strings.Contains(err.Error(), "not found") {
+		if errors.Is(err, apperrors.ErrNotFound) {
 			return domainalert.Instance{}, fmt.Errorf("%w: %s", apperrors.ErrNotFound, strings.TrimSpace(alertID))
 		}
 		return domainalert.Instance{}, err
@@ -188,7 +189,7 @@ func (s *Service) UpdateOwnership(ctx context.Context, principal domainidentity.
 	}
 	item, err := s.repo.UpdateOwnership(ctx, alertID, input)
 	if err != nil {
-		if strings.Contains(err.Error(), "not found") {
+		if errors.Is(err, apperrors.ErrNotFound) {
 			return domainalert.Instance{}, fmt.Errorf("%w: %s", apperrors.ErrNotFound, strings.TrimSpace(alertID))
 		}
 		return domainalert.Instance{}, err
@@ -208,7 +209,7 @@ func (s *Service) Acknowledge(ctx context.Context, principal domainidentity.Prin
 	}
 	item, err := s.repo.Acknowledge(ctx, alertID, userID, userName)
 	if err != nil {
-		if strings.Contains(err.Error(), "not found") {
+		if errors.Is(err, apperrors.ErrNotFound) {
 			return domainalert.Instance{}, fmt.Errorf("%w: %s", apperrors.ErrNotFound, strings.TrimSpace(alertID))
 		}
 		return domainalert.Instance{}, err
@@ -254,7 +255,7 @@ func (s *Service) UpdateChannel(ctx context.Context, principal domainidentity.Pr
 	}
 	item, err := s.repo.UpdateChannel(ctx, channelID, input)
 	if err != nil {
-		if strings.Contains(err.Error(), "not found") {
+		if errors.Is(err, apperrors.ErrNotFound) {
 			return domainalert.NotificationChannel{}, fmt.Errorf("%w: %s", apperrors.ErrNotFound, strings.TrimSpace(channelID))
 		}
 		return domainalert.NotificationChannel{}, err
@@ -314,7 +315,7 @@ func (s *Service) UpdateSilence(ctx context.Context, principal domainidentity.Pr
 	}
 	item, err := s.repo.UpdateSilence(ctx, silenceID, input)
 	if err != nil {
-		if strings.Contains(err.Error(), "not found") {
+		if errors.Is(err, apperrors.ErrNotFound) {
 			return domainalert.AlertSilence{}, fmt.Errorf("%w: %s", apperrors.ErrNotFound, strings.TrimSpace(silenceID))
 		}
 		return domainalert.AlertSilence{}, err
@@ -364,7 +365,7 @@ func (s *Service) UpdateRoute(ctx context.Context, principal domainidentity.Prin
 	}
 	item, err := s.repo.UpdateNotificationPolicy(ctx, routeID, compatNotificationPolicyInput(input))
 	if err != nil {
-		if strings.Contains(err.Error(), "not found") {
+		if errors.Is(err, apperrors.ErrNotFound) {
 			return domainalert.AlertRoute{}, fmt.Errorf("%w: %s", apperrors.ErrNotFound, strings.TrimSpace(routeID))
 		}
 		return domainalert.AlertRoute{}, err
@@ -379,7 +380,7 @@ func (s *Service) ValidateWebhookToken(token string) error {
 	if strings.TrimSpace(s.webhookToken) == "" {
 		return nil
 	}
-	if strings.TrimSpace(token) != strings.TrimSpace(s.webhookToken) {
+	if !alertIntegrationTokenMatches(s.webhookToken, token) {
 		return fmt.Errorf("%w: invalid monitoring webhook token", apperrors.ErrUnauthorized)
 	}
 	return nil

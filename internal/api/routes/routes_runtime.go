@@ -14,6 +14,7 @@ func registerVirtualizationRoutes(protected gin.IRoutes, cfg cfgpkg.Config, deps
 	protected.GET("/virtualization/clusters", deps.Virtualization.ListConnections)
 	protected.POST("/virtualization/clusters", deps.Virtualization.CreateConnection)
 	protected.PUT("/virtualization/clusters/:id", deps.Virtualization.UpdateConnection)
+	protected.GET("/virtualization/clusters/:id/delete-dependencies", deps.Virtualization.GetConnectionDeleteDependencies)
 	protected.DELETE("/virtualization/clusters/:id", deps.Virtualization.DeleteConnection)
 	protected.POST("/virtualization/clusters/:id/test", deps.Virtualization.TestConnection)
 	protected.POST("/virtualization/clusters/:id/sync", deps.Virtualization.SyncConnection)

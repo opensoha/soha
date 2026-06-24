@@ -543,12 +543,12 @@ func (s *Service) syncConnection(ctx context.Context, connection domaincluster.C
 		}
 		client, err := s.agents.ClientFor(connection)
 		if err != nil {
-			summary.Health = domaincluster.Health{Status: "degraded", Message: err.Error(), LastChecked: time.Now().UTC()}
+			summary.Health = domaincluster.Health{Status: "degraded", Message: clusterHealthMessage(err, "agent client unavailable"), LastChecked: time.Now().UTC()}
 			break
 		}
 		observed, err := client.GetSummary(inspectCtx)
 		if err != nil {
-			summary.Health = domaincluster.Health{Status: "degraded", Message: err.Error(), LastChecked: time.Now().UTC()}
+			summary.Health = domaincluster.Health{Status: "degraded", Message: clusterHealthMessage(err, "agent summary unavailable"), LastChecked: time.Now().UTC()}
 			break
 		}
 		summary.Version = observed.Version
@@ -561,7 +561,7 @@ func (s *Service) syncConnection(ctx context.Context, connection domaincluster.C
 	case domaincluster.ConnectionModeDirectKubeconfig, "":
 		cfg, cfgErr := runtimeClusterConfig(connection)
 		if cfgErr != nil {
-			summary.Health = domaincluster.Health{Status: "degraded", Message: cfgErr.Error(), LastChecked: time.Now().UTC()}
+			summary.Health = domaincluster.Health{Status: "degraded", Message: clusterHealthMessage(cfgErr, "cluster configuration unavailable"), LastChecked: time.Now().UTC()}
 			break
 		}
 		s.manager.RegisterCluster(*cfg)
@@ -570,7 +570,7 @@ func (s *Service) syncConnection(ctx context.Context, connection domaincluster.C
 		}
 		observed, err := s.manager.GetCluster(inspectCtx, connection.Summary.ID)
 		if err != nil {
-			summary.Health = domaincluster.Health{Status: "degraded", Message: err.Error(), LastChecked: time.Now().UTC()}
+			summary.Health = domaincluster.Health{Status: "degraded", Message: clusterHealthMessage(err, "cluster summary unavailable"), LastChecked: time.Now().UTC()}
 			break
 		}
 		summary = observed
@@ -594,6 +594,16 @@ func (s *Service) syncConnection(ctx context.Context, connection domaincluster.C
 		summary.Labels = connection.Summary.Labels
 	}
 	return s.repo.UpsertSnapshot(ctx, summary)
+}
+
+func clusterHealthMessage(err error, fallback string) string {
+	if err == nil {
+		return fallback
+	}
+	if strings.TrimSpace(err.Error()) == "" {
+		return fallback
+	}
+	return fallback
 }
 
 func runtimeClusterConfig(connection domaincluster.Connection) (*cfgpkg.ClusterConfig, error) {

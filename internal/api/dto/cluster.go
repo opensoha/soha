@@ -61,6 +61,22 @@ type ScaleDeploymentRequest struct {
 	Replicas  int32  `json:"replicas"`
 }
 
+type RestartStatefulSetRequest struct {
+	Namespace string `json:"namespace"`
+	Name      string `json:"name"`
+}
+
+type ScaleStatefulSetRequest struct {
+	Namespace string `json:"namespace"`
+	Name      string `json:"name"`
+	Replicas  int32  `json:"replicas"`
+}
+
+type RestartDaemonSetRequest struct {
+	Namespace string `json:"namespace"`
+	Name      string `json:"name"`
+}
+
 type ExecPodRequest struct {
 	Command        string `json:"command"`
 	Container      string `json:"container"`

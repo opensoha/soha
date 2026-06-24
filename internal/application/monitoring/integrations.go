@@ -6,6 +6,7 @@ import (
 	"crypto/subtle"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -42,7 +43,7 @@ func (s *Service) GetAlertIntegration(ctx context.Context, principal domainident
 	}
 	item, err := s.repo.GetAlertIntegration(ctx, strings.TrimSpace(integrationID))
 	if err != nil {
-		if strings.Contains(err.Error(), "not found") {
+		if errors.Is(err, apperrors.ErrNotFound) {
 			return domainalert.AlertIntegration{}, fmt.Errorf("%w: %s", apperrors.ErrNotFound, strings.TrimSpace(integrationID))
 		}
 		return domainalert.AlertIntegration{}, err
@@ -79,7 +80,7 @@ func (s *Service) UpdateAlertIntegration(ctx context.Context, principal domainid
 	}
 	item, err := s.repo.UpdateAlertIntegration(ctx, strings.TrimSpace(integrationID), input)
 	if err != nil {
-		if strings.Contains(err.Error(), "not found") {
+		if errors.Is(err, apperrors.ErrNotFound) {
 			return domainalert.AlertIntegration{}, fmt.Errorf("%w: %s", apperrors.ErrNotFound, strings.TrimSpace(integrationID))
 		}
 		return domainalert.AlertIntegration{}, err
@@ -130,7 +131,7 @@ func (s *Service) IngestAlertIntegration(ctx context.Context, integrationID stri
 	}
 	integration, err := s.repo.GetAlertIntegration(ctx, strings.TrimSpace(integrationID))
 	if err != nil {
-		if strings.Contains(err.Error(), "not found") {
+		if errors.Is(err, apperrors.ErrNotFound) {
 			return 0, fmt.Errorf("%w: %s", apperrors.ErrNotFound, strings.TrimSpace(integrationID))
 		}
 		return 0, err

@@ -2,6 +2,7 @@ package menu
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -15,7 +16,6 @@ import (
 	"github.com/opensoha/soha/internal/platform/apperrors"
 	"github.com/opensoha/soha/internal/platform/operationentry"
 	"github.com/opensoha/soha/internal/platform/requestctx"
-	"gorm.io/gorm"
 )
 
 type AuditRecorder interface {
@@ -54,7 +54,7 @@ func (s *Service) Get(ctx context.Context, principal domainidentity.Principal, m
 	}
 	item, err := s.repo.Get(ctx, strings.TrimSpace(menuID))
 	if err != nil {
-		if err == gorm.ErrRecordNotFound {
+		if errors.Is(err, apperrors.ErrNotFound) {
 			return domainmenu.Record{}, fmt.Errorf("%w: menu not found", apperrors.ErrNotFound)
 		}
 		return domainmenu.Record{}, err
@@ -145,7 +145,7 @@ func (s *Service) Update(ctx context.Context, principal domainidentity.Principal
 	item.ID = strings.TrimSpace(menuID)
 	updated, err := s.repo.Update(ctx, menuID, item)
 	if err != nil {
-		if err == gorm.ErrRecordNotFound {
+		if errors.Is(err, apperrors.ErrNotFound) {
 			return domainmenu.Record{}, fmt.Errorf("%w: menu not found", apperrors.ErrNotFound)
 		}
 		return domainmenu.Record{}, err
@@ -162,7 +162,7 @@ func (s *Service) Delete(ctx context.Context, principal domainidentity.Principal
 		return fmt.Errorf("%w: menu id is required", apperrors.ErrInvalidArgument)
 	}
 	if err := s.repo.Delete(ctx, menuID); err != nil {
-		if err == gorm.ErrRecordNotFound {
+		if errors.Is(err, apperrors.ErrNotFound) {
 			return fmt.Errorf("%w: menu not found", apperrors.ErrNotFound)
 		}
 		return err

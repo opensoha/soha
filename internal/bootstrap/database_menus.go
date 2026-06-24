@@ -221,19 +221,22 @@ func seedMenus(ctx context.Context, db *gorm.DB, modules cfgpkg.ModulesConfig) e
 	if err := db.WithContext(ctx).Exec(`DELETE FROM menu_role_bindings WHERE menu_id IN ?`, menuIDs).Error; err != nil {
 		return err
 	}
-	deprecatedIDs := deprecatedMenuIDs()
-	if err := db.WithContext(ctx).Exec(`DELETE FROM menu_role_bindings WHERE menu_id IN ?`, deprecatedIDs).Error; err != nil {
-		return err
-	}
-	if err := db.WithContext(ctx).Exec(`DELETE FROM menus WHERE id IN ?`, deprecatedIDs).Error; err != nil {
-		return err
-	}
 	if len(roleBindingValues) > 0 {
 		if err := insertMenuRoleBindings(ctx, db, roleBindingValues, now); err != nil {
 			return err
 		}
 	}
-	return nil
+	return cleanupDeprecatedMenus(ctx, db, deprecatedMenuIDs())
+}
+
+func cleanupDeprecatedMenus(ctx context.Context, db *gorm.DB, deprecatedIDs []string) error {
+	if len(deprecatedIDs) == 0 {
+		return nil
+	}
+	if err := db.WithContext(ctx).Exec(`DELETE FROM menu_role_bindings WHERE menu_id IN ?`, deprecatedIDs).Error; err != nil {
+		return err
+	}
+	return db.WithContext(ctx).Exec(`DELETE FROM menus WHERE id IN ?`, deprecatedIDs).Error
 }
 
 func syncBuiltinMenuSeedUpgrades(ctx context.Context, db *gorm.DB) error {

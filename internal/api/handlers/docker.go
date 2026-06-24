@@ -316,13 +316,10 @@ func (h *DockerHandler) StreamProjectLogs(c *gin.Context) {
 
 	select {
 	case err := <-streamErrCh:
-		exitMessage := terminalMessage{Type: "exit", Message: "docker log stream closed"}
-		if err != nil && err != context.Canceled {
-			exitMessage.Message = err.Error()
-		}
-		_ = writeTerminalMessage(conn, &writeMu, exitMessage)
+		_ = err
+		_ = writeTerminalMessage(conn, &writeMu, terminalMessage{Type: "exit", Message: streamExitMessage(streamExitKindDockerLogs)})
 	case <-readDone:
-		_ = writeTerminalMessage(conn, &writeMu, terminalMessage{Type: "exit", Message: "docker log stream closed"})
+		_ = writeTerminalMessage(conn, &writeMu, terminalMessage{Type: "exit", Message: streamExitMessage(streamExitKindDockerLogs)})
 	}
 }
 
@@ -390,11 +387,8 @@ func (h *DockerHandler) StreamProjectTerminal(c *gin.Context) {
 	select {
 	case streamErr := <-streamErrCh:
 		cancel()
-		exitMessage := terminalMessage{Type: "exit", Message: "docker terminal session closed"}
-		if streamErr != nil && streamErr != context.Canceled {
-			exitMessage.Message = streamErr.Error()
-		}
-		_ = writeTerminalMessage(conn, &writeMu, exitMessage)
+		_ = streamErr
+		_ = writeTerminalMessage(conn, &writeMu, terminalMessage{Type: "exit", Message: streamExitMessage(streamExitKindDockerTerminal)})
 	case <-readDone:
 		cancel()
 	}

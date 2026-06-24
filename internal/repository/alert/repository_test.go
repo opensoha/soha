@@ -2,11 +2,14 @@ package alert
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"testing"
 	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
 	domainalert "github.com/opensoha/soha/internal/domain/alert"
+	"github.com/opensoha/soha/internal/platform/apperrors"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -16,7 +19,7 @@ func TestRepositoryUpsertWritesAlertEvents(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create sql mock: %v", err)
 	}
-	defer sqlDB.Close()
+	defer func() { _ = sqlDB.Close() }()
 
 	db, err := gorm.Open(postgres.New(postgres.Config{
 		Conn:                 sqlDB,
@@ -94,7 +97,7 @@ func TestRepositoryAcknowledgePreservesAlertStatus(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create sql mock: %v", err)
 	}
-	defer sqlDB.Close()
+	defer func() { _ = sqlDB.Close() }()
 
 	db, err := gorm.Open(postgres.New(postgres.Config{
 		Conn:                 sqlDB,
@@ -165,5 +168,95 @@ func TestRepositoryAcknowledgePreservesAlertStatus(t *testing.T) {
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatalf("sql expectations: %v", err)
+	}
+}
+
+func TestRepositoryGetWrapsErrNotFound(t *testing.T) {
+	sqlDB, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("create sql mock: %v", err)
+	}
+	defer func() { _ = sqlDB.Close() }()
+
+	db, err := gorm.Open(postgres.New(postgres.Config{
+		Conn:                 sqlDB,
+		PreferSimpleProtocol: true,
+	}), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open gorm: %v", err)
+	}
+
+	mock.ExpectQuery(`(?s)SELECT id, COALESCE\(source_system, source_type, ''\), fingerprint, title, summary, severity, status, COALESCE\(cluster_id, ''\), COALESCE\(namespace, ''\),\s+labels, annotations, COALESCE\(receiver, ''\), COALESCE\(generator_url, ''\), starts_at, ends_at, last_seen_at, current_state, created_at, updated_at\s+FROM alert_events\s+WHERE id = \$1\s+LIMIT 1`).
+		WithArgs("missing-alert").
+		WillReturnError(sql.ErrNoRows)
+
+	_, err = New(db).Get(context.Background(), "missing-alert")
+	if err == nil {
+		t.Fatal("Get() error = nil, want ErrNotFound")
+	}
+	if !errors.Is(err, apperrors.ErrNotFound) {
+		t.Fatalf("Get() error = %v, want ErrNotFound", err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("sql expectations: %v", err)
+	}
+}
+
+func TestRepositoryUpdateRuleWrapsErrNotFound(t *testing.T) {
+	sqlDB, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("create sql mock: %v", err)
+	}
+	defer func() { _ = sqlDB.Close() }()
+
+	db, err := gorm.Open(postgres.New(postgres.Config{
+		Conn:                 sqlDB,
+		PreferSimpleProtocol: true,
+	}), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open gorm: %v", err)
+	}
+
+	mock.ExpectExec(`(?s)UPDATE alert_rules\s+SET name = \$1, rule_type = \$2, datasource_selector = \$3, query_spec = \$4, threshold_spec = \$5, for_seconds = \$6, group_by = \$7,\s+labels = \$8, annotations = \$9, notification_policy_id = \$10, healing_policy_ids = \$11, enabled = \$12, updated_at = \$13\s+WHERE id = \$14`).
+		WithArgs(
+			"rule-one",
+			"metrics",
+			`{}`,
+			`{}`,
+			`{}`,
+			60,
+			`[]`,
+			`{"severity":"critical"}`,
+			`{"summary":"updated"}`,
+			nil,
+			`[]`,
+			true,
+			sqlmock.AnyArg(),
+			"rule-one",
+		).
+		WillReturnResult(sqlmock.NewResult(0, 0))
+
+	_, err = New(db).UpdateRule(context.Background(), "rule-one", domainalert.AlertRuleInput{
+		Name:        "rule-one",
+		RuleType:    "metrics",
+		ForSeconds:  60,
+		Labels:      map[string]string{"severity": "critical"},
+		Annotations: map[string]string{"summary": "updated"},
+		Enabled:     true,
+	})
+	if err == nil {
+		t.Fatal("UpdateRule() error = nil, want ErrNotFound")
+	}
+	if !errors.Is(err, apperrors.ErrNotFound) {
+		t.Fatalf("UpdateRule() error = %v, want ErrNotFound", err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("sql expectations: %v", err)
+	}
+}
+
+func TestAlertNotFoundWrapsAppErrorSentinel(t *testing.T) {
+	if !errors.Is(alertNotFound("alert", "abc"), apperrors.ErrNotFound) {
+		t.Fatal("alertNotFound should wrap apperrors.ErrNotFound")
 	}
 }

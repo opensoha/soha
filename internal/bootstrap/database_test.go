@@ -2,14 +2,18 @@ package bootstrap
 
 import (
 	"context"
+	"database/sql/driver"
 	"slices"
 	"testing"
 
+	"github.com/DATA-DOG/go-sqlmock"
 	appdocker "github.com/opensoha/soha/internal/application/docker"
 	appvirtualization "github.com/opensoha/soha/internal/application/virtualization"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainvirtualization "github.com/opensoha/soha/internal/domain/virtualization"
 	cfgpkg "github.com/opensoha/soha/internal/infrastructure/config"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
 )
 
 func TestDefaultMenuSeedsValidate(t *testing.T) {
@@ -77,6 +81,46 @@ func TestDefaultMenuSeedsExcludeDeprecatedIDs(t *testing.T) {
 		if _, exists := deprecated[item.ID]; exists {
 			t.Fatalf("default menu seed %q is marked deprecated and must not be reintroduced", item.ID)
 		}
+	}
+}
+
+func TestSyncDisabledModuleMenusCleansDeprecatedMenus(t *testing.T) {
+	sqlDB, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("new sqlmock: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = sqlDB.Close()
+	})
+
+	db, err := gorm.Open(postgres.New(postgres.Config{Conn: sqlDB}), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open gorm postgres mock: %v", err)
+	}
+
+	deprecatedIDs := deprecatedMenuIDs()
+	deprecatedArgs := make([]driver.Value, 0, len(deprecatedIDs))
+	for _, id := range deprecatedIDs {
+		deprecatedArgs = append(deprecatedArgs, id)
+	}
+
+	mock.ExpectExec(`DELETE FROM menu_role_bindings WHERE menu_id IN`).WithArgs(deprecatedArgs...).WillReturnResult(sqlmock.NewResult(0, 0))
+	mock.ExpectExec(`DELETE FROM menus WHERE id IN`).WithArgs(deprecatedArgs...).WillReturnResult(sqlmock.NewResult(0, 0))
+
+	modules := cfgpkg.ModulesConfig{
+		Delivery:       cfgpkg.ModuleToggleConfig{Enabled: true},
+		Monitoring:     cfgpkg.ModuleToggleConfig{Enabled: true},
+		AI:             cfgpkg.ModuleToggleConfig{Enabled: true},
+		AIGateway:      cfgpkg.ModuleToggleConfig{Enabled: true},
+		Virtualization: cfgpkg.ModuleToggleConfig{Enabled: true},
+		Docker:         cfgpkg.ModuleToggleConfig{Enabled: true},
+	}
+
+	if err := syncDisabledModuleMenus(context.Background(), db, modules); err != nil {
+		t.Fatalf("syncDisabledModuleMenus returned error: %v", err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet sql expectations: %v", err)
 	}
 }
 

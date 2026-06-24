@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/spf13/viper"
 )
@@ -15,10 +16,10 @@ func TestResolveMigrationPathUsesDriverDirectoryForMigrationRoot(t *testing.T) {
 	if err := os.MkdirAll(postgresDir, 0o755); err != nil {
 		t.Fatalf("mkdir postgres dir: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(postgresDir, "0001_init.sql"), []byte("-- init"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(postgresDir, "0001_init.sql"), []byte("-- init"), 0o600); err != nil {
 		t.Fatalf("write migration: %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(postgresDir, "0011_application_services.sql"), []byte("-- app services"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(postgresDir, "0011_application_services.sql"), []byte("-- app services"), 0o600); err != nil {
 		t.Fatalf("write migration: %v", err)
 	}
 
@@ -38,11 +39,11 @@ func TestResolveMigrationPathKeepsLegacySingleFileRedirect(t *testing.T) {
 	if err := os.MkdirAll(postgresDir, 0o755); err != nil {
 		t.Fatalf("mkdir postgres dir: %v", err)
 	}
-	if err := os.WriteFile(legacyPath, []byte("-- legacy"), 0o644); err != nil {
+	if err := os.WriteFile(legacyPath, []byte("-- legacy"), 0o600); err != nil {
 		t.Fatalf("write legacy migration: %v", err)
 	}
 	driverInit := filepath.Join(postgresDir, "0001_init.sql")
-	if err := os.WriteFile(driverInit, []byte("-- driver"), 0o644); err != nil {
+	if err := os.WriteFile(driverInit, []byte("-- driver"), 0o600); err != nil {
 		t.Fatalf("write driver migration: %v", err)
 	}
 
@@ -79,6 +80,59 @@ func TestDefaultsConfigurePostgresGatewayRateLimitBackend(t *testing.T) {
 	}
 	if cfg.Auth.LoginVerification.SliderEnabled {
 		t.Fatal("login slider verification should be disabled by default")
+	}
+	if !cfg.Runtime.VirtualizationStartupSync {
+		t.Fatal("virtualization startup sync should be enabled by default")
+	}
+	if cfg.Runtime.VirtualizationWorkerInterval != 2*time.Second {
+		t.Fatalf("virtualization worker interval default = %s, want 2s", cfg.Runtime.VirtualizationWorkerInterval)
+	}
+	if cfg.Runtime.VirtualizationSyncConcurrency != 1 {
+		t.Fatalf("virtualization sync concurrency default = %d, want 1", cfg.Runtime.VirtualizationSyncConcurrency)
+	}
+}
+
+func TestLoadUsesDefaultConfigWhenFileMissing(t *testing.T) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	dir := t.TempDir()
+	if err := os.Chdir(dir); err != nil {
+		t.Fatalf("chdir temp dir: %v", err)
+	}
+	defer func() {
+		if err := os.Chdir(cwd); err != nil {
+			t.Fatalf("restore working dir: %v", err)
+		}
+	}()
+	t.Setenv("SOHA_CONFIG_FILE", "")
+	t.Setenv("SOHA_APP_ENV", "")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.App.Name != "soha" {
+		t.Fatalf("App.Name = %q, want soha", cfg.App.Name)
+	}
+	if cfg.Database.Driver != "postgres" {
+		t.Fatalf("Database.Driver = %q, want postgres", cfg.Database.Driver)
+	}
+}
+
+func TestLoadUsesExplicitConfigFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(path, []byte("app:\n  name: custom-soha\n"), 0o600); err != nil {
+		t.Fatalf("write config file: %v", err)
+	}
+	t.Setenv("SOHA_CONFIG_FILE", path)
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.App.Name != "custom-soha" {
+		t.Fatalf("App.Name = %q, want custom-soha", cfg.App.Name)
 	}
 }
 

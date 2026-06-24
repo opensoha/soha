@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-func TestEncryptDecryptString(t *testing.T) {
+func TestEncryptStringProducesEncryptedPayload(t *testing.T) {
 	encrypted, err := EncryptString("stable-test-key-32-bytes-or-more", "registry-token")
 	if err != nil {
 		t.Fatalf("EncryptString returned error: %v", err)
@@ -13,27 +13,22 @@ func TestEncryptDecryptString(t *testing.T) {
 	if encrypted == "registry-token" || !Encrypted(encrypted) {
 		t.Fatalf("expected encrypted payload, got %q", encrypted)
 	}
-	decrypted, err := DecryptString("stable-test-key-32-bytes-or-more", encrypted)
-	if err != nil {
-		t.Fatalf("DecryptString returned error: %v", err)
-	}
-	if decrypted != "registry-token" {
-		t.Fatalf("decrypted = %q, want registry-token", decrypted)
-	}
-}
-
-func TestDecryptStringReturnsPlaintextForLegacyValues(t *testing.T) {
-	value, err := DecryptString("", "legacy-token")
-	if err != nil {
-		t.Fatalf("DecryptString returned error for legacy value: %v", err)
-	}
-	if value != "legacy-token" {
-		t.Fatalf("value = %q, want legacy-token", value)
-	}
 }
 
 func TestEncryptStringRequiresKey(t *testing.T) {
 	if _, err := EncryptString("", "registry-token"); !errors.Is(err, ErrKeyRequired) {
 		t.Fatalf("EncryptString error = %v, want ErrKeyRequired", err)
+	}
+}
+
+func TestSecretStorageLabel(t *testing.T) {
+	if got := SecretStorageLabel(""); got != SecretStorageNone {
+		t.Fatalf("SecretStorageLabel(\"\") = %q, want %q", got, SecretStorageNone)
+	}
+	if got := SecretStorageLabel("legacy-token"); got != SecretStorageLegacyPlaintext {
+		t.Fatalf("SecretStorageLabel(legacy-token) = %q, want %q", got, SecretStorageLegacyPlaintext)
+	}
+	if got := SecretStorageLabel(Prefix + "payload"); got != SecretStorageEncrypted {
+		t.Fatalf("SecretStorageLabel(encrypted) = %q, want %q", got, SecretStorageEncrypted)
 	}
 }

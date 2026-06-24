@@ -34,6 +34,12 @@ const (
 	OperationStatusFailed       = "failed"
 	OperationStatusCanceled     = "canceled"
 	OperationStatusTimeout      = "callback_timeout"
+	HostStatusVMReady           = "vm_ready"
+	HostStatusWaitingAgent      = "provisioned_waiting_agent"
+	HostStatusAgentBootstrap    = "agent_bootstrapping"
+	HostStatusAgentRegistered   = "agent_registered"
+	HostStatusDockerReady       = "docker_ready"
+	HostStatusAgentFailed       = "agent_failed"
 	defaultOperationMaxRetries  = 1
 	defaultOperationTimeout     = 1800
 )
@@ -251,42 +257,10 @@ func (s *Service) QuickCreateHost(ctx context.Context, principal domainidentity.
 	if err != nil {
 		return domaindocker.Operation{}, err
 	}
-	cloudInit := quickCreateCloudInit(input)
-	var vmTask *HostProvisionTask
-	if s.hostProvisioner != nil && strings.TrimSpace(input.VirtualizationConnectionID) != "" {
-		task, err := s.hostProvisioner.ProvisionDockerHost(ctx, principal, HostProvisionInput{
-			ConnectionID:     strings.TrimSpace(input.VirtualizationConnectionID),
-			Name:             strings.TrimSpace(input.Name),
-			Architecture:     architecture,
-			CPU:              input.CPUCoreCount,
-			MemoryMiB:        bytesToMiB(input.MemoryBytes),
-			DiskGiB:          bytesToGiB(input.DiskBytes),
-			BootImageID:      strings.TrimSpace(input.ImageID),
-			ImageID:          strings.TrimSpace(input.ImageID),
-			FlavorID:         strings.TrimSpace(input.FlavorID),
-			Network:          strings.TrimSpace(input.Network),
-			CloudInit:        cloudInit,
-			StartAfterCreate: true,
-			TemplateID:       strings.TrimSpace(input.VMTemplateID),
-			ProviderParams:   mapValueAny(input.Config["providerParams"]),
-			ProviderExtraJSON: mapValueAny(firstNonNil(
-				input.Config["providerExtra"],
-				input.Config["providerExtraJSON"],
-			)),
-		})
-		if err != nil {
-			return domaindocker.Operation{}, err
-		}
-		vmTask = &task
+	if s.hostProvisioner != nil && strings.TrimSpace(input.VirtualizationConnectionID) != "" && strings.TrimSpace(s.quickCreateCloudInitRaw(input)) == "" {
+		return domaindocker.Operation{}, fmt.Errorf("%w: docker quick-create requires cloudInit or config.providerParams.controlPlaneBaseURL with a runner token", apperrors.ErrInvalidArgument)
 	}
 	hostConfig := mergeMap(input.Config, map[string]any{})
-	if vmTask != nil {
-		hostConfig = mergeMap(hostConfig, map[string]any{
-			"virtualizationTaskId":     vmTask.ID,
-			"virtualizationTaskStatus": vmTask.Status,
-			"virtualizationProvider":   vmTask.Provider,
-		})
-	}
 	host, err := s.repo.CreateHost(ctx, domaindocker.HostInput{
 		Name:                       input.Name,
 		Status:                     "provisioning",
@@ -305,6 +279,64 @@ func (s *Service) QuickCreateHost(ctx context.Context, principal domainidentity.
 	})
 	if err != nil {
 		return domaindocker.Operation{}, err
+	}
+	cloudInit := s.quickCreateCloudInit(input, host.ID)
+	var vmTask *HostProvisionTask
+	if s.hostProvisioner != nil && strings.TrimSpace(input.VirtualizationConnectionID) != "" {
+		providerParams := mapValueAny(input.Config["providerParams"])
+		if _, exists := providerParams["dockerHostId"]; !exists && strings.TrimSpace(host.ID) != "" {
+			providerParams["dockerHostId"] = host.ID
+		}
+		task, err := s.hostProvisioner.ProvisionDockerHost(ctx, principal, HostProvisionInput{
+			ConnectionID:     strings.TrimSpace(input.VirtualizationConnectionID),
+			Name:             strings.TrimSpace(input.Name),
+			Architecture:     architecture,
+			CPU:              input.CPUCoreCount,
+			MemoryMiB:        bytesToMiB(input.MemoryBytes),
+			DiskGiB:          bytesToGiB(input.DiskBytes),
+			BootImageID:      strings.TrimSpace(input.ImageID),
+			ImageID:          strings.TrimSpace(input.ImageID),
+			FlavorID:         strings.TrimSpace(input.FlavorID),
+			Network:          strings.TrimSpace(input.Network),
+			CloudInit:        cloudInit,
+			StartAfterCreate: true,
+			TemplateID:       strings.TrimSpace(input.VMTemplateID),
+			ProviderParams:   providerParams,
+			ProviderExtraJSON: mapValueAny(firstNonNil(
+				input.Config["providerExtra"],
+				input.Config["providerExtraJSON"],
+			)),
+		})
+		if err != nil {
+			_ = s.repo.DeleteHost(ctx, host.ID)
+			return domaindocker.Operation{}, err
+		}
+		vmTask = &task
+	}
+	if vmTask != nil {
+		hostConfig = mergeMap(hostConfig, map[string]any{
+			"virtualizationTaskId":     vmTask.ID,
+			"virtualizationTaskStatus": vmTask.Status,
+			"virtualizationProvider":   vmTask.Provider,
+		})
+		if updatedHost, updateErr := s.repo.UpdateHost(ctx, host.ID, domaindocker.HostInput{
+			Name:                       host.Name,
+			Status:                     host.Status,
+			Environment:                host.Environment,
+			Owner:                      host.Owner,
+			Team:                       host.Team,
+			VirtualizationConnectionID: host.VirtualizationConnectionID,
+			Architecture:               host.Architecture,
+			CPUCoreCount:               host.CPUCoreCount,
+			MemoryBytes:                host.MemoryBytes,
+			DiskBytes:                  host.DiskBytes,
+			AvailablePortStart:         host.AvailablePortStart,
+			AvailablePortEnd:           host.AvailablePortEnd,
+			Labels:                     host.Labels,
+			Config:                     hostConfig,
+		}); updateErr == nil {
+			host = updatedHost
+		}
 	}
 	payload := map[string]any{
 		"hostId":                     host.ID,
@@ -883,6 +915,7 @@ func (s *Service) RetryOperation(ctx context.Context, principal domainidentity.P
 }
 
 func (s *Service) ClaimOperation(ctx context.Context, input domaindocker.OperationClaimInput) (domaindocker.Operation, error) {
+	s.reconcileHostProvisionOperations(ctx)
 	workerID := firstNonEmpty(input.WorkerID, input.AgentID)
 	if workerID == "" {
 		return domaindocker.Operation{}, fmt.Errorf("%w: docker worker id is required", apperrors.ErrInvalidArgument)
@@ -903,10 +936,16 @@ func (s *Service) ClaimOperation(ctx context.Context, input domaindocker.Operati
 		Payload:     map[string]any{"workerId": workerID, "agentId": input.AgentID},
 	})
 	if item.HostID != "" {
+		hostStatus := "online"
+		config := map[string]any{"lastClaimedOperationId": item.ID, "lastClaimedAt": time.Now().UTC().Format(time.RFC3339)}
+		if item.OperationKind == OperationKindHostProvision {
+			hostStatus = HostStatusAgentRegistered
+			config["hostProvisionStage"] = HostStatusAgentRegistered
+		}
 		_, _ = s.repo.TouchHostRuntime(ctx, item.HostID, domaindocker.HostInput{
-			Status:  "online",
+			Status:  hostStatus,
 			AgentID: input.AgentID,
-			Config:  map[string]any{"lastClaimedOperationId": item.ID, "lastClaimedAt": time.Now().UTC().Format(time.RFC3339)},
+			Config:  config,
 		})
 	}
 	return domaindocker.WithOperationState(item, time.Now().UTC()), nil
@@ -946,7 +985,11 @@ func (s *Service) RecordOperationCallback(ctx context.Context, input domaindocke
 	now := time.Now().UTC()
 	item.ClaimedByWorkerID = workerID
 	item.LastHeartbeatAt = &now
-	item.Result = mergeMap(item.Result, sanitizeMetadata(input.Payload))
+	callbackPayload := sanitizeMetadata(input.Payload)
+	if item.OperationKind == OperationKindHostProvision {
+		callbackPayload["hostProvisionStage"] = hostProvisionStageForCallbackStatus(status)
+	}
+	item.Result = mergeMap(item.Result, callbackPayload)
 	if status == OperationStatusRunning {
 		item.Status = OperationStatusRunning
 	} else {
@@ -959,7 +1002,7 @@ func (s *Service) RecordOperationCallback(ctx context.Context, input domaindocke
 	}
 	s.appendCallbackLogs(ctx, updated.ID, status, input)
 	if updated.HostID != "" {
-		s.touchHostFromCallback(ctx, updated.HostID, workerID, status, input.Payload)
+		s.touchHostFromCallback(ctx, updated.HostID, workerID, updated.OperationKind, status, input.Payload)
 	}
 	s.applyCallbackRuntimeState(ctx, updated, status, input.Payload)
 	return domaindocker.WithOperationState(updated, time.Now().UTC()), nil
@@ -1018,10 +1061,19 @@ func (s *Service) appendCallbackLogs(ctx context.Context, operationID, status st
 	}
 }
 
-func (s *Service) touchHostFromCallback(ctx context.Context, hostID, workerID, status string, payload map[string]any) {
+func (s *Service) touchHostFromCallback(ctx context.Context, hostID, workerID, operationKind, status string, payload map[string]any) {
 	hostStatus := "online"
 	if status == OperationStatusFailed || status == OperationStatusTimeout {
 		hostStatus = "degraded"
+	}
+	config := map[string]any{
+		"lastDockerOperationStatus": status,
+		"lastDockerOperationAt":     time.Now().UTC().Format(time.RFC3339),
+	}
+	if operationKind == OperationKindHostProvision {
+		hostStatus = hostProvisionStatusForCallbackStatus(status)
+		config["hostProvisionStage"] = hostProvisionStageForCallbackStatus(status)
+		config["hostProvisionStatus"] = hostStatus
 	}
 	_, _ = s.repo.TouchHostRuntime(ctx, hostID, domaindocker.HostInput{
 		Status:         hostStatus,
@@ -1032,10 +1084,7 @@ func (s *Service) touchHostFromCallback(ctx context.Context, hostID, workerID, s
 		Architecture:   firstNonEmpty(stringValue(payload, "architecture"), stringValue(payload, "dockerArchitecture"), stringValue(payload, "hostArchitecture")),
 		Endpoint:       stringValue(payload, "endpoint"),
 		IPAddress:      stringValue(payload, "ipAddress"),
-		Config: map[string]any{
-			"lastDockerOperationStatus": status,
-			"lastDockerOperationAt":     time.Now().UTC().Format(time.RFC3339),
-		},
+		Config:         config,
 	})
 }
 
@@ -1243,28 +1292,38 @@ func (s *Service) reconcileHostProvisionOperation(ctx context.Context, reader Ho
 	if item.StartedAt == nil {
 		item.StartedAt = &now
 	}
-	item.LastHeartbeatAt = &now
 	switch status {
 	case OperationStatusCompleted:
-		item.Status = OperationStatusCompleted
-		item.FinishedAt = &now
-		item.Result = mergeMap(item.Result, map[string]any{"message": "virtualization VM provision completed"})
+		alreadyVMCreated := stringValue(item.Result, "hostProvisionStage") == "vm_created"
+		item.Status = OperationStatusRunning
+		item.FinishedAt = nil
+		if !alreadyVMCreated {
+			item.LastHeartbeatAt = &now
+		}
+		item.Result = mergeMap(item.Result, map[string]any{
+			"message":            "virtualization VM created; waiting for docker agent registration",
+			"hostProvisionStage": "vm_created",
+		})
 		if updated, err := s.repo.UpdateOperation(ctx, item); err == nil {
 			item = updated
 		}
-		s.touchProvisionedDockerHost(ctx, item, task, "ready")
-		_ = s.repo.CreateOperationLog(ctx, domaindocker.OperationLog{
-			ID:          uuid.NewString(),
-			OperationID: item.ID,
-			LogLevel:    "info",
-			Message:     "virtualization VM provision completed",
-			Payload:     map[string]any{"virtualizationTaskId": task.ID, "vmId": firstNonEmpty(task.VMID, stringValue(task.Result, "vmId"))},
-		})
+		s.touchProvisionedDockerHost(ctx, item, task, HostStatusWaitingAgent)
+		if !alreadyVMCreated {
+			_ = s.repo.CreateOperationLog(ctx, domaindocker.OperationLog{
+				ID:          uuid.NewString(),
+				OperationID: item.ID,
+				LogLevel:    "info",
+				Message:     "virtualization VM created; waiting for docker agent registration",
+				Payload:     map[string]any{"virtualizationTaskId": task.ID, "vmId": firstNonEmpty(task.VMID, stringValue(task.Result, "vmId")), "hostProvisionStage": "vm_created"},
+			})
+		}
 	case OperationStatusFailed, OperationStatusTimeout, OperationStatusCanceled:
 		item.Status = status
 		item.FinishedAt = &now
+		item.LastHeartbeatAt = &now
 		item.Result = mergeMap(item.Result, map[string]any{
-			"message": firstNonEmpty(stringValue(task.Result, "error"), stringValue(task.Result, "message"), "virtualization VM provision failed"),
+			"message":            firstNonEmpty(stringValue(task.Result, "error"), stringValue(task.Result, "message"), "virtualization VM provision failed"),
+			"hostProvisionStage": "vm_failed",
 		})
 		if updated, err := s.repo.UpdateOperation(ctx, item); err == nil {
 			item = updated
@@ -1279,7 +1338,8 @@ func (s *Service) reconcileHostProvisionOperation(ctx context.Context, reader Ho
 		})
 	default:
 		item.Status = OperationStatusRunning
-		item.Result = mergeMap(item.Result, map[string]any{"message": "waiting for virtualization VM provision"})
+		item.LastHeartbeatAt = &now
+		item.Result = mergeMap(item.Result, map[string]any{"message": "waiting for virtualization VM provision", "hostProvisionStage": "vm_creating"})
 		_, _ = s.repo.UpdateOperation(ctx, item)
 	}
 }
@@ -1305,9 +1365,53 @@ func (s *Service) touchProvisionedDockerHost(ctx context.Context, item domaindoc
 			"vmName":                   vmName,
 			"architecture":             firstNonEmpty(stringValue(task.Result, "architecture"), stringValue(item.Payload, "architecture")),
 			"hostProvisionStatus":      status,
+			"hostProvisionStage":       hostProvisionStageForStatus(status),
 			"hostProvisionUpdatedAt":   time.Now().UTC().Format(time.RFC3339),
 		},
 	})
+}
+
+func hostProvisionStageForStatus(status string) string {
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case HostStatusWaitingAgent, HostStatusVMReady:
+		return "vm_created"
+	case HostStatusAgentBootstrap:
+		return HostStatusAgentBootstrap
+	case HostStatusAgentRegistered:
+		return HostStatusAgentRegistered
+	case "online", "ready", HostStatusDockerReady:
+		return "docker_ready"
+	case "degraded", OperationStatusFailed, OperationStatusTimeout, OperationStatusCanceled:
+		return "vm_failed"
+	default:
+		return strings.TrimSpace(status)
+	}
+}
+
+func hostProvisionStageForCallbackStatus(status string) string {
+	switch strings.TrimSpace(status) {
+	case OperationStatusRunning:
+		return HostStatusAgentBootstrap
+	case OperationStatusCompleted:
+		return HostStatusDockerReady
+	case OperationStatusFailed, OperationStatusTimeout, OperationStatusCanceled:
+		return HostStatusAgentFailed
+	default:
+		return strings.TrimSpace(status)
+	}
+}
+
+func hostProvisionStatusForCallbackStatus(status string) string {
+	switch strings.TrimSpace(status) {
+	case OperationStatusRunning:
+		return HostStatusAgentBootstrap
+	case OperationStatusCompleted:
+		return HostStatusDockerReady
+	case OperationStatusFailed, OperationStatusTimeout, OperationStatusCanceled:
+		return "degraded"
+	default:
+		return strings.TrimSpace(status)
+	}
 }
 
 func (s *Service) upsertServicesFromCompose(ctx context.Context, project domaindocker.Project) error {
@@ -1965,13 +2069,13 @@ func summarizeHosts(items []domaindocker.Host) domaindocker.HostSummary {
 	out := domaindocker.HostSummary{Total: len(items)}
 	for _, item := range items {
 		switch strings.ToLower(item.Status) {
-		case "online", "ready", "healthy":
+		case "online", "ready", "healthy", HostStatusDockerReady:
 			out.Online++
 		case "degraded":
 			out.Degraded++
 		case "offline", "unavailable":
 			out.Offline++
-		case "provisioning", "pending":
+		case "provisioning", "pending", HostStatusVMReady, HostStatusWaitingAgent, HostStatusAgentBootstrap, HostStatusAgentRegistered:
 			out.Provisioning++
 		}
 	}
@@ -2015,11 +2119,11 @@ func summarizePorts(items []domaindocker.PortMapping) domaindocker.PortSummary {
 
 func countStatus(out *domaindocker.StatusSummary, status string) {
 	switch strings.ToLower(status) {
-	case "running", "online", "ready", "active":
+	case "running", "online", "ready", "active", HostStatusDockerReady:
 		out.Running++
-	case "pending", "queued", "provisioning", "defined", "draft":
+	case "pending", "queued", "provisioning", "defined", "draft", HostStatusVMReady, HostStatusWaitingAgent, HostStatusAgentBootstrap, HostStatusAgentRegistered:
 		out.Pending++
-	case "failed", "error", "callback_timeout":
+	case "failed", "error", "callback_timeout", HostStatusAgentFailed:
 		out.Failed++
 	case "stopped", "exited", "disabled":
 		out.Stopped++
@@ -2304,7 +2408,14 @@ func mapValueAny(raw any) map[string]any {
 	return mapped
 }
 
-func quickCreateCloudInit(input domaindocker.QuickCreateHostInput) string {
+func (s *Service) quickCreateCloudInit(input domaindocker.QuickCreateHostInput, hostID string) string {
+	return renderQuickCreateCloudInit(s.quickCreateCloudInitRaw(input), map[string]string{
+		"SOHA_DOCKER_HOST_ID":   hostID,
+		"SOHA_DOCKER_HOST_NAME": strings.TrimSpace(input.Name),
+	})
+}
+
+func (s *Service) quickCreateCloudInitRaw(input domaindocker.QuickCreateHostInput) string {
 	if value := strings.TrimSpace(input.CloudInit); value != "" {
 		return value
 	}
@@ -2312,7 +2423,107 @@ func quickCreateCloudInit(input domaindocker.QuickCreateHostInput) string {
 		return value
 	}
 	providerParams := mapValueAny(input.Config["providerParams"])
-	return stringValue(providerParams, "cloudInit")
+	if value := stringValue(providerParams, "cloudInit"); value != "" {
+		return value
+	}
+	return s.defaultQuickCreateCloudInit(input, providerParams)
+}
+
+func (s *Service) defaultQuickCreateCloudInit(input domaindocker.QuickCreateHostInput, providerParams map[string]any) string {
+	controlPlaneURL := firstNonEmpty(
+		stringValue(providerParams, "controlPlaneBaseURL"),
+		stringValue(providerParams, "controlPlaneBaseUrl"),
+		stringValue(providerParams, "baseURL"),
+		stringValue(providerParams, "baseUrl"),
+		stringValue(input.Config, "controlPlaneBaseURL"),
+		stringValue(input.Config, "controlPlaneBaseUrl"),
+	)
+	token := firstNonEmpty(
+		stringValue(providerParams, "runnerToken"),
+		stringValue(providerParams, "bearerToken"),
+		s.runtimeBearerToken,
+	)
+	if controlPlaneURL == "" || token == "" {
+		return ""
+	}
+	runtimeEndpoint := firstNonEmpty(
+		stringValue(providerParams, "runtimeEndpoint"),
+		stringValue(input.Config, "runtimeEndpoint"),
+		"http://__SOHA_VM_IP__:18080",
+	)
+	installScript := firstNonEmpty(
+		stringValue(providerParams, "agentInstallScript"),
+		stringValue(input.Config, "agentInstallScript"),
+	)
+	return renderDefaultQuickCreateCloudInit(controlPlaneURL, token, runtimeEndpoint, installScript)
+}
+
+func renderDefaultQuickCreateCloudInit(controlPlaneURL, token, runtimeEndpoint, installScript string) string {
+	agentConfig := map[string]any{
+		"http": map[string]any{
+			"addr":      ":18080",
+			"base_path": "/api/v1",
+		},
+		"auth": map[string]any{"bearer_token": token},
+		"control_plane": map[string]any{
+			"enabled":          true,
+			"base_url":         strings.TrimRight(controlPlaneURL, "/"),
+			"bearer_token":     token,
+			"agent_id":         "${SOHA_DOCKER_HOST_ID}",
+			"runtime_endpoint": runtimeEndpoint,
+			"provider_kinds":   []string{"ci_agent_runner"},
+			"docker": map[string]any{
+				"enabled":   true,
+				"worker_id": "${SOHA_DOCKER_HOST_ID}",
+				"host_ids":  []string{"${SOHA_DOCKER_HOST_ID}"},
+				"operation_kinds": []string{
+					OperationKindHostProvision,
+					OperationKindContainerStart,
+					OperationKindProjectDeploy,
+					OperationKindProjectAction,
+					OperationKindServiceAction,
+					OperationKindPortReserve,
+					OperationKindHostSync,
+				},
+			},
+		},
+	}
+	rawAgentConfig, err := yaml.Marshal(agentConfig)
+	if err != nil {
+		return ""
+	}
+	lines := []string{
+		"#cloud-config",
+		"write_files:",
+		"  - path: /etc/soha-agent.yaml",
+		"    permissions: '0600'",
+		"    content: |",
+	}
+	for _, line := range strings.Split(strings.TrimRight(string(rawAgentConfig), "\n"), "\n") {
+		lines = append(lines, "      "+line)
+	}
+	lines = append(lines,
+		"runcmd:",
+		"  - [bash, -lc, \"ip route get 1.1.1.1 | awk '{print $7; exit}' | xargs -I{} sed -i 's#__SOHA_VM_IP__#{}#g' /etc/soha-agent.yaml\"]",
+	)
+	if installScript != "" {
+		lines = append(lines, "  - [bash, -lc, "+strconv.Quote(installScript)+"]")
+	}
+	lines = append(lines,
+		"  - [bash, -lc, "+strconv.Quote("export DEBIAN_FRONTEND=noninteractive; timeout 600 bash -lc 'apt-get update && (apt-get install -y docker.io docker-compose-v2 || apt-get install -y docker.io docker-compose-plugin || apt-get install -y docker.io)' >>/var/log/soha-docker-bootstrap.log 2>&1 || true")+"]",
+		"  - [bash, -lc, 'systemctl enable --now docker >>/var/log/soha-docker-bootstrap.log 2>&1 || true']",
+	)
+	lines = append(lines, "  - [bash, -lc, 'command -v soha-agent >/dev/null 2>&1 && systemctl enable --now soha-agent || true']")
+	return strings.Join(lines, "\n") + "\n"
+}
+
+func renderQuickCreateCloudInit(content string, values map[string]string) string {
+	rendered := content
+	for key, value := range values {
+		rendered = strings.ReplaceAll(rendered, "${"+key+"}", value)
+		rendered = strings.ReplaceAll(rendered, "{{"+key+"}}", value)
+	}
+	return rendered
 }
 
 func firstNonNil(values ...any) any {

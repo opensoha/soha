@@ -12,9 +12,10 @@ import (
 )
 
 type captureRegistryRepository struct {
-	items   []domainregistry.Connection
-	created domainregistry.Connection
-	updated domainregistry.Connection
+	items       []domainregistry.Connection
+	created     domainregistry.Connection
+	updated     domainregistry.Connection
+	updateCalls int
 }
 
 func (r *captureRegistryRepository) List(context.Context, int) ([]domainregistry.Connection, error) {
@@ -27,6 +28,7 @@ func (r *captureRegistryRepository) Create(_ context.Context, item domainregistr
 }
 
 func (r *captureRegistryRepository) Update(_ context.Context, _ string, item domainregistry.Connection) (domainregistry.Connection, error) {
+	r.updateCalls++
 	r.updated = item
 	return item, nil
 }
@@ -104,5 +106,33 @@ func TestListScrubsRegistrySecrets(t *testing.T) {
 	}
 	if items[1].Secret != "" || items[1].Metadata["secretStorage"] != "legacy_plaintext" {
 		t.Fatalf("legacy item not marked correctly: %#v", items[1])
+	}
+}
+
+func TestListMigratesLegacyRegistrySecrets(t *testing.T) {
+	repo := &captureRegistryRepository{
+		items: []domainregistry.Connection{
+			{ID: "legacy", Name: "Legacy", RegistryType: "docker", Endpoint: "https://legacy.example.com", Secret: "legacy-token"},
+		},
+	}
+	service := New(repo, appaccess.NewPermissionResolver(registryRoleReader{
+		"viewer": {appaccess.PermDeliveryRegistriesView},
+	}), WithCredentialEncryptionKey("stable-test-key-32-bytes-or-more"))
+
+	items, err := service.List(context.Background(), domainidentity.Principal{Roles: []string{"viewer"}}, 10)
+	if err != nil {
+		t.Fatalf("List returned error: %v", err)
+	}
+	if repo.updateCalls != 1 {
+		t.Fatalf("updateCalls = %d, want 1", repo.updateCalls)
+	}
+	if len(items) != 1 {
+		t.Fatalf("len(items) = %d, want 1", len(items))
+	}
+	if items[0].Secret != "" || items[0].Metadata["secretStorage"] != "legacy_plaintext" {
+		t.Fatalf("response should remain scrubbed while migrating: %#v", items[0])
+	}
+	if !secretcrypto.Encrypted(repo.updated.Secret) {
+		t.Fatalf("stored secret should be encrypted, got %q", repo.updated.Secret)
 	}
 }

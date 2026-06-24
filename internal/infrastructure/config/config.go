@@ -49,18 +49,21 @@ type LoggerConfig struct {
 }
 
 type RuntimeConfig struct {
-	WorkflowWorkers              int    `mapstructure:"workflow_workers"`
-	WorkflowQueueSize            int    `mapstructure:"workflow_queue_size"`
-	WorkflowNodeParallelism      int    `mapstructure:"workflow_node_parallelism"`
-	ClusterSyncParallelism       int    `mapstructure:"cluster_sync_parallelism"`
-	CopilotInspectionParallelism int    `mapstructure:"copilot_inspection_parallelism"`
-	AlertUpsertBatchSize         int    `mapstructure:"alert_upsert_batch_size"`
-	ExecutionRunnerToken         string `mapstructure:"execution_runner_token"`
-	ExecutionJobClusterID        string `mapstructure:"execution_job_cluster_id"`
-	ExecutionJobNamespace        string `mapstructure:"execution_job_namespace"`
-	ExecutionJobImage            string `mapstructure:"execution_job_image"`
-	ExecutionJobGitImage         string `mapstructure:"execution_job_git_image"`
-	ExecutionJobTTLSeconds       int    `mapstructure:"execution_job_ttl_seconds"`
+	WorkflowWorkers               int           `mapstructure:"workflow_workers"`
+	WorkflowQueueSize             int           `mapstructure:"workflow_queue_size"`
+	WorkflowNodeParallelism       int           `mapstructure:"workflow_node_parallelism"`
+	ClusterSyncParallelism        int           `mapstructure:"cluster_sync_parallelism"`
+	CopilotInspectionParallelism  int           `mapstructure:"copilot_inspection_parallelism"`
+	AlertUpsertBatchSize          int           `mapstructure:"alert_upsert_batch_size"`
+	VirtualizationStartupSync     bool          `mapstructure:"virtualization_startup_sync_enabled"`
+	VirtualizationWorkerInterval  time.Duration `mapstructure:"virtualization_worker_interval"`
+	VirtualizationSyncConcurrency int           `mapstructure:"virtualization_sync_concurrency"`
+	ExecutionRunnerToken          string        `mapstructure:"execution_runner_token"`
+	ExecutionJobClusterID         string        `mapstructure:"execution_job_cluster_id"`
+	ExecutionJobNamespace         string        `mapstructure:"execution_job_namespace"`
+	ExecutionJobImage             string        `mapstructure:"execution_job_image"`
+	ExecutionJobGitImage          string        `mapstructure:"execution_job_git_image"`
+	ExecutionJobTTLSeconds        int           `mapstructure:"execution_job_ttl_seconds"`
 }
 
 type DatabaseConfig struct {
@@ -266,27 +269,11 @@ type ClusterConfig struct {
 }
 
 func Load() (Config, error) {
-	v := viper.New()
-	v.SetConfigType("yaml")
-	v.SetEnvPrefix("SOHA")
-	v.SetEnvKeyReplacer(stringsReplacer())
+	v := newConfigViper("SOHA", "SOHA_CONFIG_FILE", "config", "configs", ".")
 	setDefaults(v)
-
-	configFile := os.Getenv("SOHA_CONFIG_FILE")
-	if configFile != "" {
-		v.SetConfigFile(configFile)
-	} else {
-		v.SetConfigName("config")
-		v.AddConfigPath("configs")
-		v.AddConfigPath(".")
+	if err := readConfig(v); err != nil {
+		return Config{}, err
 	}
-
-	if err := v.ReadInConfig(); err != nil {
-		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
-			return Config{}, fmt.Errorf("read config file: %w", err)
-		}
-	}
-	v.AutomaticEnv()
 
 	var cfg Config
 	if err := v.Unmarshal(&cfg, viper.DecodeHook(mapstructure.ComposeDecodeHookFunc(
@@ -300,6 +287,38 @@ func Load() (Config, error) {
 		return Config{}, err
 	}
 	return cfg, nil
+}
+
+func newConfigViper(envPrefix, configFileEnv, configName string, configPaths ...string) *viper.Viper {
+	v := viper.New()
+	v.SetConfigType("yaml")
+	v.SetEnvPrefix(envPrefix)
+	v.SetEnvKeyReplacer(stringsReplacer())
+
+	configFile := strings.TrimSpace(os.Getenv(configFileEnv))
+	if configFile != "" {
+		v.SetConfigFile(configFile)
+		return v
+	}
+
+	v.SetConfigName(configName)
+	for _, path := range configPaths {
+		if strings.TrimSpace(path) == "" {
+			continue
+		}
+		v.AddConfigPath(path)
+	}
+	return v
+}
+
+func readConfig(v *viper.Viper) error {
+	if err := v.ReadInConfig(); err != nil {
+		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
+			return fmt.Errorf("read config file: %w", err)
+		}
+	}
+	v.AutomaticEnv()
+	return nil
 }
 
 func (c *Config) expandEnv() {
@@ -466,6 +485,9 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("runtime.cluster_sync_parallelism", 4)
 	v.SetDefault("runtime.copilot_inspection_parallelism", 2)
 	v.SetDefault("runtime.alert_upsert_batch_size", 100)
+	v.SetDefault("runtime.virtualization_startup_sync_enabled", true)
+	v.SetDefault("runtime.virtualization_worker_interval", "2s")
+	v.SetDefault("runtime.virtualization_sync_concurrency", 1)
 	v.SetDefault("runtime.execution_runner_token", "")
 	v.SetDefault("runtime.execution_job_cluster_id", "")
 	v.SetDefault("runtime.execution_job_namespace", "soha-system")

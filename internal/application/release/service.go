@@ -28,8 +28,6 @@ import (
 	"github.com/opensoha/soha/internal/platform/apperrors"
 	"github.com/opensoha/soha/internal/platform/operationentry"
 	"github.com/opensoha/soha/internal/platform/requestctx"
-	apprepo "github.com/opensoha/soha/internal/repository/application"
-	clusterrepo "github.com/opensoha/soha/internal/repository/cluster"
 )
 
 type ReleaseRepository interface {
@@ -773,8 +771,8 @@ func normalizeApplicationError(err error) error {
 	if err == nil {
 		return nil
 	}
-	if errors.Is(err, apperrors.ErrNotFound) || errors.Is(err, apprepo.ErrNotFound) {
-		return fmt.Errorf("%w: %v", apperrors.ErrNotFound, err)
+	if errors.Is(err, apperrors.ErrNotFound) {
+		return err
 	}
 	return err
 }
@@ -783,8 +781,8 @@ func normalizeClusterError(err error) error {
 	if err == nil {
 		return nil
 	}
-	if errors.Is(err, apperrors.ErrNotFound) || errors.Is(err, clusterrepo.ErrNotFound) {
-		return fmt.Errorf("%w: %v", apperrors.ErrNotFound, err)
+	if errors.Is(err, apperrors.ErrNotFound) {
+		return err
 	}
 	return err
 }

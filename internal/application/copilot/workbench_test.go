@@ -191,6 +191,92 @@ func TestLegacyPlatformContextPredicatePreservesAnalysisArtifacts(t *testing.T) 
 	}
 }
 
+func TestListMessagesMigratesLegacyPlatformContextMessagesOnce(t *testing.T) {
+	defer appaccess.SetRolePermissionMatrix(nil)
+	service, repo := newInspectionAuthzTestService(map[string][]string{
+		"chat": {appaccess.PermObserveAIChatUse},
+	})
+	repo.session = domaincopilot.Session{ID: "session-1", CreatedBy: "user-1"}
+	repo.messages = []domaincopilot.Message{{
+		ID:        "msg-1",
+		SessionID: "session-1",
+		Role:      "assistant",
+		Content:   "当前平台上下文：服务已出现 1 个 critical 告警。",
+		Metadata:  map[string]any{"source": "platform-context"},
+		CreatedAt: time.Now().UTC(),
+	}}
+
+	messages, err := service.ListMessages(context.Background(), domainidentity.Principal{
+		UserID: "user-1",
+		Roles:  []string{"chat"},
+	}, "session-1")
+	if err != nil {
+		t.Fatalf("list messages: %v", err)
+	}
+	if repo.updateMessageMetadataCalls != 1 {
+		t.Fatalf("expected one legacy migration update, got %d", repo.updateMessageMetadataCalls)
+	}
+	if len(messages) != 1 {
+		t.Fatalf("expected one message, got %#v", messages)
+	}
+	metadata := messages[0].Metadata
+	if metadata["source"] != "legacy-platform-context" || metadata["legacyFallback"] != true || metadata["hiddenInGeneralChat"] != true {
+		t.Fatalf("expected migrated metadata, got %#v", metadata)
+	}
+
+	messages, err = service.ListMessages(context.Background(), domainidentity.Principal{
+		UserID: "user-1",
+		Roles:  []string{"chat"},
+	}, "session-1")
+	if err != nil {
+		t.Fatalf("list messages second time: %v", err)
+	}
+	if repo.updateMessageMetadataCalls != 1 {
+		t.Fatalf("expected migration to be idempotent, got %d updates", repo.updateMessageMetadataCalls)
+	}
+	metadata = messages[0].Metadata
+	if metadata["source"] != "legacy-platform-context" || metadata["legacyFallback"] != true || metadata["hiddenInGeneralChat"] != true {
+		t.Fatalf("expected migrated metadata on second read, got %#v", metadata)
+	}
+}
+
+func TestListMessagesSkipsLegacyMarkerMigrationWhenArtifactsExist(t *testing.T) {
+	defer appaccess.SetRolePermissionMatrix(nil)
+	service, repo := newInspectionAuthzTestService(map[string][]string{
+		"chat": {appaccess.PermObserveAIChatUse},
+	})
+	repo.session = domaincopilot.Session{ID: "session-1", CreatedBy: "user-1"}
+	repo.messages = []domaincopilot.Message{{
+		ID:        "msg-1",
+		SessionID: "session-1",
+		Role:      "assistant",
+		Content:   "当前平台上下文：服务已出现 1 个 critical 告警。",
+		Metadata: map[string]any{
+			"source": "platform-context",
+			"analysisArtifacts": []domaincopilot.AnalysisArtifact{{
+				Kind:    "root_cause",
+				RunID:   "run-1",
+				Summary: "发现数据库连接异常",
+			}},
+		},
+		CreatedAt: time.Now().UTC(),
+	}}
+
+	messages, err := service.ListMessages(context.Background(), domainidentity.Principal{
+		UserID: "user-1",
+		Roles:  []string{"chat"},
+	}, "session-1")
+	if err != nil {
+		t.Fatalf("list messages: %v", err)
+	}
+	if repo.updateMessageMetadataCalls != 0 {
+		t.Fatalf("expected analysis artifact messages to skip migration, got %d updates", repo.updateMessageMetadataCalls)
+	}
+	if metadata := messages[0].Metadata; metadata["source"] != "platform-context" {
+		t.Fatalf("expected legacy message with artifacts to remain unchanged, got %#v", metadata)
+	}
+}
+
 func TestAutomationAgentSkillIDsPreservePlaybooksAndAddProviderSkill(t *testing.T) {
 	skills := automationAgentSkillIDs("root_cause", []string{"release-correlation", "cluster-health"})
 	if !containsString(skills, "release-correlation") || !containsString(skills, "cluster-health") {
@@ -288,6 +374,25 @@ func TestInspectionSessionHandoffRequiresChatAndViewPermissions(t *testing.T) {
 	}
 	if repo.listInspectionRunsCalled {
 		t.Fatalf("expected handoff to fail before reading inspection runs")
+	}
+}
+
+func TestInspectionSessionHandoffMissingRunWrapsErrNotFound(t *testing.T) {
+	defer appaccess.SetRolePermissionMatrix(nil)
+	service, _ := newInspectionAuthzTestService(map[string][]string{
+		"chat": {appaccess.PermObserveAIChatUse, appaccess.PermObserveAIView},
+	})
+
+	_, err := service.CreateSessionFromInspectionRun(context.Background(), domainidentity.Principal{
+		UserID: "user-1",
+		Roles:  []string{"chat"},
+	}, "missing-run", "en-US")
+
+	if !errors.Is(err, apperrors.ErrNotFound) {
+		t.Fatalf("expected not found for missing inspection run, got %v", err)
+	}
+	if got := err.Error(); !strings.Contains(got, "inspection run not found") {
+		t.Fatalf("expected inspection run context in error, got %q", got)
 	}
 }
 
@@ -2248,16 +2353,18 @@ func (r inspectionAuthzRoleReader) ListRolePermissions(context.Context) (map[str
 }
 
 type inspectionAuthzTestRepository struct {
-	listInspectionRunsCalled bool
-	getSessionCalled         bool
-	listDataSourcesCalled    bool
-	session                  domaincopilot.Session
-	messages                 []domaincopilot.Message
-	createdMessage           domaincopilot.Message
-	createdMessages          []domaincopilot.Message
-	createdRootCauseRun      domaincopilot.RootCauseRun
-	createdAgentRun          domaincopilot.AgentRun
-	agentRuns                []domaincopilot.AgentRun
+	listInspectionRunsCalled   bool
+	getSessionCalled           bool
+	listDataSourcesCalled      bool
+	updateMessageMetadataCalls int
+	session                    domaincopilot.Session
+	messages                   []domaincopilot.Message
+	createdMessage             domaincopilot.Message
+	createdMessages            []domaincopilot.Message
+	createdRootCauseRun        domaincopilot.RootCauseRun
+	createdAgentRun            domaincopilot.AgentRun
+	agentRuns                  []domaincopilot.AgentRun
+	inspectionRuns             []domaincopilot.InspectionRun
 }
 
 type agentRuntimeCallbackTestRepository struct {
@@ -2590,13 +2697,35 @@ func (r *inspectionAuthzTestRepository) ListMessages(context.Context, string, in
 	return append([]domaincopilot.Message(nil), r.messages...), nil
 }
 
+func (r *inspectionAuthzTestRepository) GetMessage(_ context.Context, sessionID, messageID string) (domaincopilot.Message, error) {
+	for _, item := range r.messages {
+		if item.SessionID == sessionID && item.ID == messageID {
+			return item, nil
+		}
+	}
+	return domaincopilot.Message{}, apperrors.ErrNotFound
+}
+
 func (r *inspectionAuthzTestRepository) CreateMessage(_ context.Context, message domaincopilot.Message) (domaincopilot.Message, error) {
 	if r.session.ID != "" {
 		r.createdMessage = message
 		r.createdMessages = append(r.createdMessages, message)
+		r.messages = append(r.messages, message)
 		return r.createdMessage, nil
 	}
 	return domaincopilot.Message{}, errors.New("unexpected message create")
+}
+
+func (r *inspectionAuthzTestRepository) UpdateMessageMetadata(_ context.Context, sessionID, messageID string, metadata map[string]any) (domaincopilot.Message, error) {
+	r.updateMessageMetadataCalls++
+	for index := range r.messages {
+		if r.messages[index].SessionID != sessionID || r.messages[index].ID != messageID {
+			continue
+		}
+		r.messages[index].Metadata = copyMessageMetadata(metadata)
+		return r.messages[index], nil
+	}
+	return domaincopilot.Message{}, apperrors.ErrNotFound
 }
 
 func (r *inspectionAuthzTestRepository) ListDataSources(context.Context) ([]domaincopilot.DataSource, error) {
@@ -2820,7 +2949,7 @@ func (r *inspectionAuthzTestRepository) TouchInspectionTaskRun(context.Context, 
 
 func (r *inspectionAuthzTestRepository) ListInspectionRuns(context.Context, string, domaincopilot.InspectionRunFilter) ([]domaincopilot.InspectionRun, error) {
 	r.listInspectionRunsCalled = true
-	return nil, errors.New("unexpected inspection run list")
+	return append([]domaincopilot.InspectionRun(nil), r.inspectionRuns...), nil
 }
 
 func (r *inspectionAuthzTestRepository) CreateInspectionRun(context.Context, domaincopilot.InspectionRun) (domaincopilot.InspectionRun, error) {

@@ -106,7 +106,8 @@ func (s *Service) filterToolsByGrants(ctx context.Context, principal domainident
 	return out, denied, nil
 }
 func (s *Service) activeToolGrants(ctx context.Context, principal domainidentity.Principal, aiClientID string) ([]domainaigateway.ToolGrant, error) {
-	if s.repo == nil {
+	repo := s.toolGrantRepository()
+	if repo == nil {
 		return nil, nil
 	}
 	aiClientID = strings.TrimSpace(aiClientID)
@@ -119,7 +120,7 @@ func (s *Service) activeToolGrants(ctx context.Context, principal domainidentity
 		if subjectType == "" || subjectID == "" {
 			return nil
 		}
-		items, err := s.repo.ListActiveToolGrants(ctx, subjectType, subjectID, aiClientID, now)
+		items, err := repo.ListActiveToolGrants(ctx, subjectType, subjectID, aiClientID, now)
 		if err != nil {
 			return err
 		}
@@ -314,7 +315,8 @@ func (s *Service) filterSkillsByAccessPolicies(ctx context.Context, principal do
 	return out, denied, nil
 }
 func (s *Service) activeAccessPolicies(ctx context.Context, principal domainidentity.Principal, aiClientID string) ([]domainaigateway.AccessPolicy, error) {
-	if s.repo == nil {
+	repo := s.accessPolicyRepository()
+	if repo == nil {
 		return nil, nil
 	}
 	aiClientID = strings.TrimSpace(aiClientID)
@@ -326,7 +328,7 @@ func (s *Service) activeAccessPolicies(ctx context.Context, principal domainiden
 		if subjectType == "" || subjectID == "" {
 			return nil
 		}
-		items, err := s.repo.ListActiveAccessPolicies(ctx, subjectType, subjectID, aiClientID)
+		items, err := repo.ListActiveAccessPolicies(ctx, subjectType, subjectID, aiClientID)
 		if err != nil {
 			return err
 		}
@@ -375,7 +377,8 @@ func (s *Service) authorizeSkillBinding(ctx context.Context, principal domainide
 	return fmt.Errorf("%w: AI Gateway skill binding rejected %s: %s", apperrors.ErrAccessDenied, tool.Name, reason)
 }
 func (s *Service) activeSkillBindings(ctx context.Context, principal domainidentity.Principal, aiClientID string) ([]domainaigateway.SkillBinding, error) {
-	if s.repo == nil {
+	repo := s.skillBindingRepository()
+	if repo == nil {
 		return nil, nil
 	}
 	aiClientID = strings.TrimSpace(aiClientID)
@@ -387,7 +390,7 @@ func (s *Service) activeSkillBindings(ctx context.Context, principal domainident
 		if subjectType == "" || subjectID == "" {
 			return nil
 		}
-		items, err := s.repo.ListActiveSkillBindings(ctx, subjectType, subjectID, aiClientID)
+		items, err := repo.ListActiveSkillBindings(ctx, subjectType, subjectID, aiClientID)
 		if err != nil {
 			return err
 		}
@@ -425,23 +428,25 @@ func (s *Service) ListAIClients(ctx context.Context, principal domainidentity.Pr
 	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermAIGatewayManage); err != nil {
 		return nil, err
 	}
-	if s.repo == nil {
+	repo := s.clientRepository()
+	if repo == nil {
 		return nil, fmt.Errorf("%w: AI Gateway repository is not configured", apperrors.ErrInvalidArgument)
 	}
-	return s.repo.ListAIClients(ctx)
+	return repo.ListAIClients(ctx)
 }
 func (s *Service) CreateAIClient(ctx context.Context, principal domainidentity.Principal, input domainaigateway.AIClientInput) (domainaigateway.AIClient, error) {
 	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermAIGatewayManage); err != nil {
 		return domainaigateway.AIClient{}, err
 	}
-	if s.repo == nil {
+	repo := s.clientRepository()
+	if repo == nil {
 		return domainaigateway.AIClient{}, fmt.Errorf("%w: AI Gateway repository is not configured", apperrors.ErrInvalidArgument)
 	}
 	item, err := buildAIClient(principal, input, "")
 	if err != nil {
 		return domainaigateway.AIClient{}, err
 	}
-	created, err := s.repo.CreateAIClient(ctx, item)
+	created, err := repo.CreateAIClient(ctx, item)
 	if err != nil {
 		return domainaigateway.AIClient{}, err
 	}
@@ -451,7 +456,7 @@ func (s *Service) CreateAIClient(ctx context.Context, principal domainidentity.P
 	}
 	if approval.ID != "" {
 		created.Metadata = mergeAnyMaps(created.Metadata, map[string]any{"registrationApprovalRequestId": approval.ID})
-		if updated, err := s.repo.UpdateAIClient(ctx, created); err == nil {
+		if updated, err := repo.UpdateAIClient(ctx, created); err == nil {
 			created = updated
 		}
 	}
@@ -467,14 +472,15 @@ func (s *Service) UpdateAIClient(ctx context.Context, principal domainidentity.P
 	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermAIGatewayManage); err != nil {
 		return domainaigateway.AIClient{}, err
 	}
-	if s.repo == nil {
+	repo := s.clientRepository()
+	if repo == nil {
 		return domainaigateway.AIClient{}, fmt.Errorf("%w: AI Gateway repository is not configured", apperrors.ErrInvalidArgument)
 	}
 	item, err := buildAIClient(principal, input, strings.TrimSpace(clientID))
 	if err != nil {
 		return domainaigateway.AIClient{}, err
 	}
-	updated, err := s.repo.UpdateAIClient(ctx, item)
+	updated, err := repo.UpdateAIClient(ctx, item)
 	if err != nil {
 		return domainaigateway.AIClient{}, err
 	}
@@ -484,7 +490,7 @@ func (s *Service) UpdateAIClient(ctx context.Context, principal domainidentity.P
 	}
 	if approval.ID != "" {
 		updated.Metadata = mergeAnyMaps(updated.Metadata, map[string]any{"registrationApprovalRequestId": approval.ID})
-		if next, err := s.repo.UpdateAIClient(ctx, updated); err == nil {
+		if next, err := repo.UpdateAIClient(ctx, updated); err == nil {
 			updated = next
 		}
 	}
@@ -500,27 +506,29 @@ func (s *Service) ListToolGrants(ctx context.Context, principal domainidentity.P
 	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermAIGatewayManage); err != nil {
 		return nil, err
 	}
-	if s.repo == nil {
+	repo := s.toolGrantRepository()
+	if repo == nil {
 		return nil, fmt.Errorf("%w: AI Gateway repository is not configured", apperrors.ErrInvalidArgument)
 	}
 	filter.SubjectType = normalizeSubjectType(filter.SubjectType)
 	filter.SubjectID = strings.TrimSpace(filter.SubjectID)
 	filter.AIClientID = strings.TrimSpace(filter.AIClientID)
 	filter.ToolName = strings.TrimSpace(filter.ToolName)
-	return s.repo.ListToolGrants(ctx, filter)
+	return repo.ListToolGrants(ctx, filter)
 }
 func (s *Service) CreateToolGrant(ctx context.Context, principal domainidentity.Principal, input domainaigateway.ToolGrantInput) (domainaigateway.ToolGrant, error) {
 	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermAIGatewayManage); err != nil {
 		return domainaigateway.ToolGrant{}, err
 	}
-	if s.repo == nil {
+	repo := s.toolGrantRepository()
+	if repo == nil {
 		return domainaigateway.ToolGrant{}, fmt.Errorf("%w: AI Gateway repository is not configured", apperrors.ErrInvalidArgument)
 	}
 	item, err := s.buildToolGrant(principal, input)
 	if err != nil {
 		return domainaigateway.ToolGrant{}, err
 	}
-	created, err := s.repo.CreateToolGrant(ctx, item)
+	created, err := repo.CreateToolGrant(ctx, item)
 	if err != nil {
 		return domainaigateway.ToolGrant{}, err
 	}
@@ -539,14 +547,15 @@ func (s *Service) DeleteToolGrant(ctx context.Context, principal domainidentity.
 	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermAIGatewayManage); err != nil {
 		return err
 	}
-	if s.repo == nil {
+	repo := s.toolGrantRepository()
+	if repo == nil {
 		return fmt.Errorf("%w: AI Gateway repository is not configured", apperrors.ErrInvalidArgument)
 	}
 	grantID = strings.TrimSpace(grantID)
 	if grantID == "" {
 		return fmt.Errorf("%w: grant id is required", apperrors.ErrInvalidArgument)
 	}
-	if err := s.repo.DeleteToolGrant(ctx, grantID); err != nil {
+	if err := repo.DeleteToolGrant(ctx, grantID); err != nil {
 		return err
 	}
 	_ = s.recordConfigAudit(ctx, principal, "AIGatewayToolGrant", grantID, "ai_gateway.tool_grant.delete", "success", "deleted MCP tool grant", map[string]any{"grantId": grantID})
@@ -556,7 +565,8 @@ func (s *Service) ListAccessPolicies(ctx context.Context, principal domainidenti
 	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermAIGatewayManage); err != nil {
 		return nil, err
 	}
-	if s.repo == nil {
+	repo := s.accessPolicyRepository()
+	if repo == nil {
 		return nil, fmt.Errorf("%w: AI Gateway repository is not configured", apperrors.ErrInvalidArgument)
 	}
 	filter.SubjectType = normalizeSubjectType(filter.SubjectType)
@@ -566,20 +576,21 @@ func (s *Service) ListAccessPolicies(ctx context.Context, principal domainidenti
 	if filter.Effect != "" && !validStatus(filter.Effect, "allow", "deny") {
 		return nil, fmt.Errorf("%w: effect must be allow or deny", apperrors.ErrInvalidArgument)
 	}
-	return s.repo.ListAccessPolicies(ctx, filter)
+	return repo.ListAccessPolicies(ctx, filter)
 }
 func (s *Service) CreateAccessPolicy(ctx context.Context, principal domainidentity.Principal, input domainaigateway.AccessPolicyInput) (domainaigateway.AccessPolicy, error) {
 	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermAIGatewayManage); err != nil {
 		return domainaigateway.AccessPolicy{}, err
 	}
-	if s.repo == nil {
+	repo := s.accessPolicyRepository()
+	if repo == nil {
 		return domainaigateway.AccessPolicy{}, fmt.Errorf("%w: AI Gateway repository is not configured", apperrors.ErrInvalidArgument)
 	}
 	item, err := buildAccessPolicy(principal, input, "")
 	if err != nil {
 		return domainaigateway.AccessPolicy{}, err
 	}
-	created, err := s.repo.CreateAccessPolicy(ctx, item)
+	created, err := repo.CreateAccessPolicy(ctx, item)
 	if err != nil {
 		return domainaigateway.AccessPolicy{}, err
 	}
@@ -599,14 +610,15 @@ func (s *Service) UpdateAccessPolicy(ctx context.Context, principal domainidenti
 	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermAIGatewayManage); err != nil {
 		return domainaigateway.AccessPolicy{}, err
 	}
-	if s.repo == nil {
+	repo := s.accessPolicyRepository()
+	if repo == nil {
 		return domainaigateway.AccessPolicy{}, fmt.Errorf("%w: AI Gateway repository is not configured", apperrors.ErrInvalidArgument)
 	}
 	item, err := buildAccessPolicy(principal, input, strings.TrimSpace(policyID))
 	if err != nil {
 		return domainaigateway.AccessPolicy{}, err
 	}
-	updated, err := s.repo.UpdateAccessPolicy(ctx, item)
+	updated, err := repo.UpdateAccessPolicy(ctx, item)
 	if err != nil {
 		return domainaigateway.AccessPolicy{}, err
 	}
@@ -626,14 +638,15 @@ func (s *Service) DeleteAccessPolicy(ctx context.Context, principal domainidenti
 	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermAIGatewayManage); err != nil {
 		return err
 	}
-	if s.repo == nil {
+	repo := s.accessPolicyRepository()
+	if repo == nil {
 		return fmt.Errorf("%w: AI Gateway repository is not configured", apperrors.ErrInvalidArgument)
 	}
 	policyID = strings.TrimSpace(policyID)
 	if policyID == "" {
 		return fmt.Errorf("%w: policy id is required", apperrors.ErrInvalidArgument)
 	}
-	if err := s.repo.DeleteAccessPolicy(ctx, policyID); err != nil {
+	if err := repo.DeleteAccessPolicy(ctx, policyID); err != nil {
 		return err
 	}
 	_ = s.recordConfigAudit(ctx, principal, "AIGatewayAccessPolicy", policyID, "ai_gateway.access_policy.delete", "success", "deleted AI Gateway access policy", map[string]any{"policyId": policyID})
@@ -643,27 +656,29 @@ func (s *Service) ListSkillBindings(ctx context.Context, principal domainidentit
 	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermAIGatewayManage); err != nil {
 		return nil, err
 	}
-	if s.repo == nil {
+	repo := s.skillBindingRepository()
+	if repo == nil {
 		return nil, fmt.Errorf("%w: AI Gateway repository is not configured", apperrors.ErrInvalidArgument)
 	}
 	filter.SubjectType = normalizeSubjectType(filter.SubjectType)
 	filter.SubjectID = strings.TrimSpace(filter.SubjectID)
 	filter.AIClientID = strings.TrimSpace(filter.AIClientID)
 	filter.SkillID = strings.TrimSpace(filter.SkillID)
-	return s.repo.ListSkillBindings(ctx, filter)
+	return repo.ListSkillBindings(ctx, filter)
 }
 func (s *Service) CreateSkillBinding(ctx context.Context, principal domainidentity.Principal, input domainaigateway.SkillBindingInput) (domainaigateway.SkillBinding, error) {
 	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermAIGatewayManage); err != nil {
 		return domainaigateway.SkillBinding{}, err
 	}
-	if s.repo == nil {
+	repo := s.skillBindingRepository()
+	if repo == nil {
 		return domainaigateway.SkillBinding{}, fmt.Errorf("%w: AI Gateway repository is not configured", apperrors.ErrInvalidArgument)
 	}
 	item, err := s.buildSkillBinding(principal, input, "")
 	if err != nil {
 		return domainaigateway.SkillBinding{}, err
 	}
-	created, err := s.repo.CreateSkillBinding(ctx, item)
+	created, err := repo.CreateSkillBinding(ctx, item)
 	if err != nil {
 		return domainaigateway.SkillBinding{}, err
 	}
@@ -681,14 +696,15 @@ func (s *Service) UpdateSkillBinding(ctx context.Context, principal domainidenti
 	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermAIGatewayManage); err != nil {
 		return domainaigateway.SkillBinding{}, err
 	}
-	if s.repo == nil {
+	repo := s.skillBindingRepository()
+	if repo == nil {
 		return domainaigateway.SkillBinding{}, fmt.Errorf("%w: AI Gateway repository is not configured", apperrors.ErrInvalidArgument)
 	}
 	item, err := s.buildSkillBinding(principal, input, strings.TrimSpace(bindingID))
 	if err != nil {
 		return domainaigateway.SkillBinding{}, err
 	}
-	updated, err := s.repo.UpdateSkillBinding(ctx, item)
+	updated, err := repo.UpdateSkillBinding(ctx, item)
 	if err != nil {
 		return domainaigateway.SkillBinding{}, err
 	}
@@ -706,14 +722,15 @@ func (s *Service) DeleteSkillBinding(ctx context.Context, principal domainidenti
 	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermAIGatewayManage); err != nil {
 		return err
 	}
-	if s.repo == nil {
+	repo := s.skillBindingRepository()
+	if repo == nil {
 		return fmt.Errorf("%w: AI Gateway repository is not configured", apperrors.ErrInvalidArgument)
 	}
 	bindingID = strings.TrimSpace(bindingID)
 	if bindingID == "" {
 		return fmt.Errorf("%w: binding id is required", apperrors.ErrInvalidArgument)
 	}
-	if err := s.repo.DeleteSkillBinding(ctx, bindingID); err != nil {
+	if err := repo.DeleteSkillBinding(ctx, bindingID); err != nil {
 		return err
 	}
 	_ = s.recordConfigAudit(ctx, principal, "AIGatewaySkillBinding", bindingID, "ai_gateway.skill_binding.delete", "success", "deleted AI Gateway skill binding", map[string]any{"bindingId": bindingID})
@@ -1207,63 +1224,76 @@ func toolAllowedByGrantsForInvocation(tool domainaigateway.ToolCapability, grant
 	}
 	return true, requiresApproval, ""
 }
+
+type policyEvaluationContext struct {
+	Tool            domainaigateway.ToolCapability
+	SkillID         string
+	InvocationScope map[string]string
+	KnownSkills     []domainaigateway.SkillCapability
+}
+
+func (ctx policyEvaluationContext) skills() []domainaigateway.SkillCapability {
+	if ctx.KnownSkills == nil {
+		return defaultSkills()
+	}
+	return ctx.KnownSkills
+}
+
+func (ctx policyEvaluationContext) hasInvocationScope() bool {
+	return ctx.InvocationScope != nil
+}
+
 func toolAllowedByAccessPolicies(tool domainaigateway.ToolCapability, policies []domainaigateway.AccessPolicy, skillID string) (bool, gatewayRiskDecision, string) {
-	return toolAllowedByAccessPoliciesWithSkills(tool, policies, skillID, defaultSkills())
+	return evaluateToolAccessPolicies(policyEvaluationContext{
+		Tool:    tool,
+		SkillID: skillID,
+	}, policies)
 }
 func toolAllowedByAccessPoliciesWithSkills(tool domainaigateway.ToolCapability, policies []domainaigateway.AccessPolicy, skillID string, knownSkills []domainaigateway.SkillCapability) (bool, gatewayRiskDecision, string) {
-	hasAllowPolicy := false
-	matchedAllowPolicy := false
-	decision := gatewayRiskDecision{}
-	for _, policy := range policies {
-		if grantEffect(policy.Effect) == "allow" {
-			hasAllowPolicy = true
-		}
-		if grantEffect(policy.Effect) != "deny" || !accessPolicyMatchesToolWithSkills(policy, tool, skillID, knownSkills) {
-			continue
-		}
-		return false, decision, "matched deny policy " + policy.ID
-	}
-	for _, policy := range policies {
-		if grantEffect(policy.Effect) != "allow" || !accessPolicyMatchesToolWithSkills(policy, tool, skillID, knownSkills) {
-			continue
-		}
-		matchedAllowPolicy = true
-		policyDecision := accessPolicyRiskDecision(policy)
-		if policyDecision.Strategy == gatewayRiskDeny {
-			return false, decision, "matched deny strategy policy " + policy.ID
-		}
-		decision = mergeGatewayRiskDecision(decision, policyDecision)
-	}
-	if hasAllowPolicy && !matchedAllowPolicy {
-		return false, decision, "no matching allow policy"
-	}
-	return true, decision, ""
+	return evaluateToolAccessPolicies(policyEvaluationContext{
+		Tool:        tool,
+		SkillID:     skillID,
+		KnownSkills: knownSkills,
+	}, policies)
 }
 func toolAllowedByAccessPoliciesForInvocation(tool domainaigateway.ToolCapability, policies []domainaigateway.AccessPolicy, skillID string, invocationScope map[string]string) (bool, gatewayRiskDecision, string) {
-	return toolAllowedByAccessPoliciesForInvocationWithSkills(tool, policies, skillID, invocationScope, defaultSkills())
+	return evaluateToolAccessPolicies(policyEvaluationContext{
+		Tool:            tool,
+		SkillID:         skillID,
+		InvocationScope: invocationScope,
+	}, policies)
 }
 func toolAllowedByAccessPoliciesForInvocationWithSkills(tool domainaigateway.ToolCapability, policies []domainaigateway.AccessPolicy, skillID string, invocationScope map[string]string, knownSkills []domainaigateway.SkillCapability) (bool, gatewayRiskDecision, string) {
+	return evaluateToolAccessPolicies(policyEvaluationContext{
+		Tool:            tool,
+		SkillID:         skillID,
+		InvocationScope: invocationScope,
+		KnownSkills:     knownSkills,
+	}, policies)
+}
+func evaluateToolAccessPolicies(ctx policyEvaluationContext, policies []domainaigateway.AccessPolicy) (bool, gatewayRiskDecision, string) {
 	hasAllowPolicy := false
 	matchedAllowPolicy := false
 	matchedAllowScopeMismatch := false
 	decision := gatewayRiskDecision{}
+	knownSkills := ctx.skills()
 	for _, policy := range policies {
 		if grantEffect(policy.Effect) == "allow" {
 			hasAllowPolicy = true
 		}
-		if grantEffect(policy.Effect) != "deny" || !accessPolicyToolSelectorsMatchWithSkills(policy, tool, skillID, knownSkills) {
+		if grantEffect(policy.Effect) != "deny" || !accessPolicyToolSelectorsMatchWithSkills(policy, ctx.Tool, ctx.SkillID, knownSkills) {
 			continue
 		}
-		if !gatewayResourceScopeMatches(policy.ResourceScopes, invocationScope) {
+		if ctx.hasInvocationScope() && !gatewayResourceScopeMatches(policy.ResourceScopes, ctx.InvocationScope) {
 			continue
 		}
 		return false, decision, "matched deny policy " + policy.ID
 	}
 	for _, policy := range policies {
-		if grantEffect(policy.Effect) != "allow" || !accessPolicyToolSelectorsMatchWithSkills(policy, tool, skillID, knownSkills) {
+		if grantEffect(policy.Effect) != "allow" || !accessPolicyToolSelectorsMatchWithSkills(policy, ctx.Tool, ctx.SkillID, knownSkills) {
 			continue
 		}
-		if !gatewayResourceScopeMatches(policy.ResourceScopes, invocationScope) {
+		if ctx.hasInvocationScope() && !gatewayResourceScopeMatches(policy.ResourceScopes, ctx.InvocationScope) {
 			matchedAllowScopeMismatch = true
 			continue
 		}
@@ -1275,7 +1305,7 @@ func toolAllowedByAccessPoliciesForInvocationWithSkills(tool domainaigateway.Too
 		decision = mergeGatewayRiskDecision(decision, policyDecision)
 	}
 	if hasAllowPolicy && !matchedAllowPolicy {
-		if matchedAllowScopeMismatch {
+		if ctx.hasInvocationScope() && matchedAllowScopeMismatch {
 			return false, decision, "matching allow policy does not allow the requested resource scope"
 		}
 		return false, decision, "no matching allow policy"

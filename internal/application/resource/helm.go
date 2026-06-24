@@ -3,6 +3,7 @@ package resource
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -14,15 +15,16 @@ import (
 
 	"helm.sh/helm/v3/pkg/action"
 	helmreleasepkg "helm.sh/helm/v3/pkg/release"
+	"helm.sh/helm/v3/pkg/storage/driver"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/yaml"
 
+	helmrelease "github.com/opensoha/soha-contracts/helmrelease"
 	domainaccess "github.com/opensoha/soha/internal/domain/access"
 	domaincluster "github.com/opensoha/soha/internal/domain/cluster"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainresource "github.com/opensoha/soha/internal/domain/resource"
 	"github.com/opensoha/soha/internal/platform/apperrors"
-	helmrelease "github.com/opensoha/soha/internal/platform/helmrelease"
 )
 
 const (
@@ -890,6 +892,9 @@ func mapHelmReleaseSDKError(name, operation string, err error) error {
 func isHelmReleaseNotFoundError(err error) bool {
 	if err == nil {
 		return false
+	}
+	if errors.Is(err, driver.ErrReleaseNotFound) || errors.Is(err, driver.ErrNoDeployedReleases) {
+		return true
 	}
 	normalized := strings.ToLower(err.Error())
 	return strings.Contains(normalized, "release: not found") || strings.Contains(normalized, "not found")

@@ -189,7 +189,7 @@ func (r *Repository) UpdateRole(ctx context.Context, roleID string, input domain
 		return domainaccess.RoleRecord{}, result.Error
 	}
 	if result.RowsAffected == 0 {
-		return domainaccess.RoleRecord{}, gorm.ErrRecordNotFound
+		return domainaccess.RoleRecord{}, policyNotFound("role", roleID)
 	}
 	items, err := r.ListRoles(ctx)
 	if err != nil {
@@ -200,7 +200,7 @@ func (r *Repository) UpdateRole(ctx context.Context, roleID string, input domain
 			return item, nil
 		}
 	}
-	return domainaccess.RoleRecord{}, gorm.ErrRecordNotFound
+	return domainaccess.RoleRecord{}, policyNotFound("role", roleID)
 }
 
 func (r *Repository) DeleteRole(ctx context.Context, roleID string) error {
@@ -209,7 +209,7 @@ func (r *Repository) DeleteRole(ctx context.Context, roleID string) error {
 		return result.Error
 	}
 	if result.RowsAffected == 0 {
-		return gorm.ErrRecordNotFound
+		return policyNotFound("role", roleID)
 	}
 	return nil
 }
@@ -234,7 +234,7 @@ func (r *Repository) DeletePolicy(ctx context.Context, policyID string) error {
 	}
 	if result.RowsAffected == 0 {
 		tx.Rollback()
-		return gorm.ErrRecordNotFound
+		return policyNotFound("policy", policyID)
 	}
 	return tx.Commit().Error
 }
@@ -279,7 +279,7 @@ func (r *Repository) upsertPolicy(ctx context.Context, policyID string, input do
 			return domainaccess.Policy{}, result.Error
 		}
 		if result.RowsAffected == 0 {
-			return domainaccess.Policy{}, gorm.ErrRecordNotFound
+			return domainaccess.Policy{}, policyNotFound("policy", policyID)
 		}
 	}
 
@@ -292,7 +292,7 @@ func (r *Repository) upsertPolicy(ctx context.Context, policyID string, input do
 			return item, nil
 		}
 	}
-	return domainaccess.Policy{}, gorm.ErrRecordNotFound
+	return domainaccess.Policy{}, policyNotFound("policy", policyID)
 }
 
 func scanPolicy(rows *sql.Rows) (domainaccess.Policy, error) {

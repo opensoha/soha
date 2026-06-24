@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 )
 
 var (
@@ -37,9 +38,12 @@ type Connection struct {
 }
 
 type ConnectionTestResult struct {
-	Healthy bool
-	Status  string
-	Message string
+	Healthy    bool
+	Status     string
+	Message    string
+	Reason     string
+	HTTPStatus int
+	NextAction string
 }
 
 type AssetSyncResult struct {
@@ -48,8 +52,11 @@ type AssetSyncResult struct {
 }
 
 type AssetHealth struct {
-	Status  string
-	Message string
+	Status     string
+	Message    string
+	Reason     string
+	HTTPStatus int
+	NextAction string
 }
 
 type Asset struct {
@@ -80,12 +87,14 @@ type CreateVMInput struct {
 }
 
 type VM struct {
-	ID        string
-	Name      string
-	Namespace string
-	Node      string
-	Status    string
-	Metadata  map[string]string
+	ID          string
+	Name        string
+	Namespace   string
+	Node        string
+	Status      string
+	IPAddresses []string
+	Endpoint    string
+	Metadata    map[string]string
 }
 
 type PowerAction string
@@ -101,6 +110,49 @@ type PowerActionResult struct {
 	Accepted bool
 	Action   PowerAction
 	Message  string
+	UPID     string
+}
+
+type AdapterError struct {
+	Cause      error
+	Reason     string
+	Message    string
+	HTTPStatus int
+	NextAction string
+}
+
+func (e *AdapterError) Error() string {
+	if e == nil {
+		return ""
+	}
+	if strings.TrimSpace(e.Message) != "" {
+		return e.Message
+	}
+	if e.HTTPStatus > 0 && strings.TrimSpace(e.Reason) != "" {
+		return fmt.Sprintf("virtualization adapter failed: %s (status %d)", e.Reason, e.HTTPStatus)
+	}
+	if e.HTTPStatus > 0 {
+		return fmt.Sprintf("virtualization adapter failed with status %d", e.HTTPStatus)
+	}
+	if strings.TrimSpace(e.Reason) != "" {
+		return "virtualization adapter failed: " + e.Reason
+	}
+	return "virtualization adapter failed"
+}
+
+func (e *AdapterError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.Cause
+}
+
+func AdapterErrorDetails(err error) (AdapterError, bool) {
+	var adapterErr *AdapterError
+	if !errors.As(err, &adapterErr) || adapterErr == nil {
+		return AdapterError{}, false
+	}
+	return *adapterErr, true
 }
 
 func invalidf(format string, args ...any) error {

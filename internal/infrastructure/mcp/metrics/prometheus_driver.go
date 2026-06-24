@@ -3,6 +3,7 @@ package metrics
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -157,7 +158,7 @@ func (d prometheusDriver) queryRangeSeries(ctx context.Context, endpoint, bearer
 		return nil, 0, err
 	}
 	if payload.Error != "" {
-		return nil, 0, fmt.Errorf(payload.Error)
+		return nil, 0, errors.New(payload.Error)
 	}
 	points := make([]Point, 0)
 	latest := 0.0

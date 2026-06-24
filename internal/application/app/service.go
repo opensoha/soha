@@ -17,7 +17,6 @@ import (
 	"github.com/opensoha/soha/internal/platform/apperrors"
 	"github.com/opensoha/soha/internal/platform/operationentry"
 	"github.com/opensoha/soha/internal/platform/requestctx"
-	applicationrepo "github.com/opensoha/soha/internal/repository/application"
 )
 
 type Repository interface {
@@ -245,8 +244,11 @@ func (s *Service) DeleteService(ctx context.Context, principal domainidentity.Pr
 }
 
 func normalizeRepoError(err error) error {
-	if errors.Is(err, applicationrepo.ErrNotFound) {
-		return fmt.Errorf("%w: %v", apperrors.ErrNotFound, err)
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, apperrors.ErrNotFound) {
+		return err
 	}
 	return err
 }

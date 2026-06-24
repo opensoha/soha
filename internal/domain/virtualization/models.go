@@ -56,6 +56,34 @@ type ConnectionFilter struct {
 	Limit               int
 }
 
+type ConnectionDeleteDependencies struct {
+	Connection       Connection                         `json:"connection"`
+	VMCount          int                                `json:"vmCount"`
+	ImageCount       int                                `json:"imageCount"`
+	FlavorCount      int                                `json:"flavorCount"`
+	TaskCount        int                                `json:"taskCount"`
+	PendingTaskCount int                                `json:"pendingTaskCount"`
+	DockerHostCount  int                                `json:"dockerHostCount"`
+	VMSamples        []ConnectionDeleteDependencySample `json:"vmSamples,omitempty"`
+	ImageSamples     []ConnectionDeleteDependencySample `json:"imageSamples,omitempty"`
+	FlavorSamples    []ConnectionDeleteDependencySample `json:"flavorSamples,omitempty"`
+	TaskSamples      []ConnectionDeleteDependencySample `json:"taskSamples,omitempty"`
+	ForceRequired    bool                               `json:"forceRequired"`
+	Blocking         bool                               `json:"blocking"`
+	BlockingReasons  []string                           `json:"blockingReasons,omitempty"`
+}
+
+type ConnectionDeleteDependencySample struct {
+	ID         string `json:"id"`
+	Kind       string `json:"kind,omitempty"`
+	Name       string `json:"name,omitempty"`
+	ExternalID string `json:"externalId,omitempty"`
+	Status     string `json:"status,omitempty"`
+	NodeName   string `json:"nodeName,omitempty"`
+	TaskKind   string `json:"taskKind,omitempty"`
+	VMID       string `json:"vmId,omitempty"`
+}
+
 type VM struct {
 	ID           string         `json:"id"`
 	Provider     string         `json:"provider"`
@@ -344,6 +372,9 @@ type Repository interface {
 	GetConnection(context.Context, string) (Connection, error)
 	ListConnections(context.Context, ConnectionFilter) ([]Connection, error)
 	CountConnections(context.Context, ConnectionFilter) (int, error)
+	CountDockerHostsByConnection(context.Context, string) (int, error)
+	MarkDockerHostsUnavailableByConnection(context.Context, string) error
+	MarkDockerHostsUnavailableByVM(context.Context, string) error
 	UpsertVM(context.Context, VM) (VM, error)
 	GetVM(context.Context, string) (VM, error)
 	ListVMs(context.Context, VMFilter) ([]VM, error)

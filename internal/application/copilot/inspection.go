@@ -19,6 +19,7 @@ import (
 	domaincopilot "github.com/opensoha/soha/internal/domain/copilot"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainrelease "github.com/opensoha/soha/internal/domain/release"
+	aperrors "github.com/opensoha/soha/internal/platform/apperrors"
 	"github.com/opensoha/soha/internal/platform/runtimeobs"
 	"go.uber.org/zap"
 )
@@ -193,7 +194,7 @@ func (s *Service) CreateSessionFromInspectionRun(ctx context.Context, principal 
 		}
 	}
 	if target == nil {
-		return domaincopilot.Session{}, fmt.Errorf("inspection run not found: %s", runID)
+		return domaincopilot.Session{}, fmt.Errorf("%w: inspection run not found: %s", aperrors.ErrNotFound, strings.TrimSpace(runID))
 	}
 	scope := map[string]any{}
 	task, taskErr := s.repo.GetInspectionTask(ctx, principal.UserID, target.TaskID)

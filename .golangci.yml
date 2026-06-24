@@ -1,0 +1,34 @@
+version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 50
+
+linters:
+  enable:
+    - govet
+    - staticcheck
+    - unused
+    - errcheck
+    - bodyclose
+    - sqlclosecheck
+    - gosec
+    - ineffassign
+    - revive
+    - testifylint
+  exclusions:
+    paths:
+      - vendor$
+      - third_party$
+      - internal/staticassets/web/dist$
+  settings:
+    errcheck:
+      check-type-assertions: true
+    revive:
+      rules:
+        - name: exported
+          disabled: true

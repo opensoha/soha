@@ -5,11 +5,13 @@ import (
 	"fmt"
 	"reflect"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
 	domaincluster "github.com/opensoha/soha/internal/domain/cluster"
 	cfgpkg "github.com/opensoha/soha/internal/infrastructure/config"
+	"github.com/opensoha/soha/internal/platform/apperrors"
 	"k8s.io/client-go/discovery"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
@@ -136,7 +138,7 @@ func (m *Manager) Metadata(id string) (domaincluster.Summary, error) {
 	cfg, ok := m.clusters[id]
 	m.mu.RUnlock()
 	if !ok {
-		return domaincluster.Summary{}, fmt.Errorf("cluster %s not found", id)
+		return domaincluster.Summary{}, fmt.Errorf("%w: cluster not found: %s", apperrors.ErrNotFound, strings.TrimSpace(id))
 	}
 	return domaincluster.Summary{
 		ID:             cfg.ID,
@@ -167,7 +169,7 @@ func (m *Manager) Bundle(_ context.Context, id string) (*Bundle, error) {
 	}
 	cfg, ok := m.clusters[id]
 	if !ok {
-		return nil, fmt.Errorf("cluster %s not found", id)
+		return nil, fmt.Errorf("%w: cluster not found: %s", apperrors.ErrNotFound, strings.TrimSpace(id))
 	}
 	created, err := createBundle(cfg)
 	if err != nil {

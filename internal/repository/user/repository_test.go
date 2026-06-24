@@ -2,11 +2,15 @@ package user
 
 import (
 	"context"
+	"errors"
 	"testing"
+	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
+
+	"github.com/opensoha/soha/internal/platform/apperrors"
 )
 
 func TestRepositoryListTeamsDetailedAggregatesUserCountsWithoutGroupingJSON(t *testing.T) {
@@ -65,4 +69,43 @@ func newUserRepository(t *testing.T) (*Repository, sqlmock.Sqlmock) {
 		t.Fatalf("open gorm postgres mock: %v", err)
 	}
 	return New(db), mock
+}
+
+func TestErrNotFoundWrapsAppErrorSentinel(t *testing.T) {
+	if !errors.Is(ErrNotFound, apperrors.ErrNotFound) {
+		t.Fatalf("ErrNotFound should wrap apperrors.ErrNotFound")
+	}
+}
+
+func TestRepositoryMigrateOIDCIdentityMovesProviderKey(t *testing.T) {
+	repo, mock := newUserRepository(t)
+	lastLoginAt := time.Date(2026, 6, 21, 10, 0, 0, 0, time.UTC)
+
+	mock.ExpectExec(`(?s)UPDATE user_identities\s+SET provider_id = \$1, profile = \$2, last_login_at = \$3, updated_at = \$4\s+WHERE provider_type = \$5 AND provider_id = \$6 AND provider_user_id = \$7`).
+		WithArgs(
+			"new-provider",
+			sqlmock.AnyArg(),
+			lastLoginAt,
+			sqlmock.AnyArg(),
+			"oidc",
+			"legacy-provider",
+			"sub-1",
+		).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+
+	err := repo.MigrateOIDCIdentity(context.Background(), OIDCIdentity{
+		ID:             "identity-1",
+		UserID:         "u1",
+		ProviderType:   "oidc",
+		ProviderID:     "legacy-provider",
+		ProviderUserID: "sub-1",
+		Profile:        map[string]any{"email": "user@example.com"},
+		LastLoginAt:    lastLoginAt,
+	}, "new-provider")
+	if err != nil {
+		t.Fatalf("MigrateOIDCIdentity returned error: %v", err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet sql expectations: %v", err)
+	}
 }

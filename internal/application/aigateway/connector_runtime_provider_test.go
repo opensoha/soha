@@ -77,7 +77,7 @@ func TestConnectorRuntimeProviderDiscoversManifestAndInvokesThroughGateway(t *te
 
 	repo := &memoryGatewayRepository{}
 	audit := &captureAuditRecorder{}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"developer": {appaccess.PermAIGatewayView, appaccess.PermAIGatewayInvoke},
 		},
@@ -161,7 +161,7 @@ func TestConnectorRuntimeProviderRejectsRuntimeActionErrors(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DiscoverConnectorRuntime returned error: %v", err)
 	}
-	service := New(appaccess.NewPermissionResolver(stubRolePermissionReader{
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
 		matrix: map[string][]string{
 			"developer": {appaccess.PermAIGatewayInvoke},
 		},

@@ -56,13 +56,10 @@ func (h *PlatformHandler) StreamPodLogs(c *gin.Context) {
 
 	select {
 	case err := <-streamErrCh:
-		message := "log stream closed"
-		if err != nil && !errors.Is(err, context.Canceled) {
-			message = err.Error()
-		}
-		writeExit(message)
+		_ = err
+		writeExit(streamExitMessage(streamExitKindPodLogs))
 	case <-readDone:
-		writeExit("log stream closed")
+		writeExit(streamExitMessage(streamExitKindPodLogs))
 	}
 }
 
@@ -165,11 +162,8 @@ func (h *PlatformHandler) StreamPodTerminal(c *gin.Context) {
 		_ = stdinWriter.Close()
 	}()
 
-	exitMessage := terminalMessage{Type: "exit", Message: "terminal session closed"}
-	streamErr := <-streamErrCh
-	if streamErr != nil && !errors.Is(streamErr, context.Canceled) {
-		exitMessage.Message = streamErr.Error()
-	}
+	exitMessage := terminalMessage{Type: "exit", Message: streamExitMessage(streamExitKindPodTerminal)}
+	<-streamErrCh
 	_ = session.WriteMessage(exitMessage)
 	session.Cancel()
 	_ = session.conn.Close()

@@ -2,6 +2,7 @@ package registry
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -12,7 +13,6 @@ import (
 	domainregistry "github.com/opensoha/soha/internal/domain/registry"
 	"github.com/opensoha/soha/internal/platform/apperrors"
 	"github.com/opensoha/soha/internal/platform/secretcrypto"
-	"gorm.io/gorm"
 )
 
 type Service struct {
@@ -45,6 +45,7 @@ func (s *Service) List(ctx context.Context, principal domainidentity.Principal, 
 	if err != nil {
 		return nil, err
 	}
+	s.migrateLegacySecrets(ctx, items)
 	return scrubConnections(items), nil
 }
 
@@ -84,7 +85,7 @@ func (s *Service) Update(ctx context.Context, principal domainidentity.Principal
 	}
 	updated, err := s.repo.Update(ctx, strings.TrimSpace(id), item)
 	if err != nil {
-		if err == gorm.ErrRecordNotFound {
+		if errors.Is(err, apperrors.ErrNotFound) {
 			return domainregistry.Connection{}, fmt.Errorf("%w: registry connection not found", apperrors.ErrNotFound)
 		}
 		return domainregistry.Connection{}, err
@@ -100,7 +101,7 @@ func (s *Service) Delete(ctx context.Context, principal domainidentity.Principal
 		return fmt.Errorf("%w: registry connection id is required", apperrors.ErrInvalidArgument)
 	}
 	if err := s.repo.Delete(ctx, strings.TrimSpace(id)); err != nil {
-		if err == gorm.ErrRecordNotFound {
+		if errors.Is(err, apperrors.ErrNotFound) {
 			return fmt.Errorf("%w: registry connection not found", apperrors.ErrNotFound)
 		}
 		return err
@@ -169,18 +170,29 @@ func scrubConnection(item domainregistry.Connection) domainregistry.Connection {
 		item.Metadata = map[string]any{}
 	}
 	item.Metadata["secretConfigured"] = secretConfigured
-	item.Metadata["secretStorage"] = secretStorageLabel(secret)
+	item.Metadata["secretStorage"] = string(secretcrypto.SecretStorageLabel(secret))
 	return item
 }
 
-func secretStorageLabel(secret string) string {
-	if strings.TrimSpace(secret) == "" {
-		return "none"
+func (s *Service) migrateLegacySecrets(ctx context.Context, items []domainregistry.Connection) {
+	if s == nil || strings.TrimSpace(s.credentialKey) == "" || len(items) == 0 {
+		return
 	}
-	if !secretcrypto.Encrypted(secret) {
-		return "legacy_plaintext"
+	for index := range items {
+		secret := strings.TrimSpace(items[index].Secret)
+		if secret == "" || secretcrypto.Encrypted(secret) {
+			continue
+		}
+		encrypted, err := secretcrypto.EncryptString(s.credentialKey, secret)
+		if err != nil {
+			continue
+		}
+		updated := items[index]
+		updated.Secret = encrypted
+		if _, err = s.repo.Update(ctx, updated.ID, updated); err != nil {
+			continue
+		}
 	}
-	return "encrypted"
 }
 
 func normalizeID(value, fallback string) string {

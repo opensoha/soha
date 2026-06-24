@@ -111,7 +111,8 @@ func gatewayUsageBudgetRules(conditions map[string]any, policyID string) []gatew
 	return out
 }
 func (s *Service) enforceGatewayInvocationLimit(ctx context.Context, principal domainidentity.Principal, aiClientID, toolName string, limit gatewayInvocationLimit) error {
-	if limit.Limit <= 0 || limit.Window <= 0 || s == nil || s.repo == nil {
+	repo := s.rateLimitRepository()
+	if limit.Limit <= 0 || limit.Window <= 0 || s == nil || repo == nil {
 		return nil
 	}
 	if strings.EqualFold(limit.Kind, "rate limit") && limit.Mode == "gcra" {
@@ -148,6 +149,7 @@ func (s *Service) enforceGatewayInvocationLimit(ctx context.Context, principal d
 	return fmt.Errorf("%w: AI Gateway %s policy %s exceeded for %s (%d/%d accepted calls in %s)", apperrors.ErrAccessDenied, limit.Kind, strings.TrimSpace(limit.PolicyID), toolName, count, limit.Limit, limit.WindowLabel)
 }
 func (s *Service) incrementGatewayRateLimitCounter(ctx context.Context, principal domainidentity.Principal, aiClientID, toolName string, limit gatewayInvocationLimit) (domainaigateway.RateLimitCounter, error) {
+	repo := s.rateLimitRepository()
 	actorType, actorID := gatewaySubject(principal)
 	windowStart, windowEnd := gatewayRateLimitWindow(time.Now().UTC(), limit.Window)
 	key := gatewayRateLimitCounterKey(actorType, actorID, aiClientID, toolName, limit, windowStart)
@@ -179,12 +181,13 @@ func (s *Service) incrementGatewayRateLimitCounter(ctx context.Context, principa
 			return domainaigateway.RateLimitCounter{}, err
 		}
 	}
-	if s.repo == nil {
+	if repo == nil {
 		return counter, nil
 	}
-	return s.repo.IncrementRateLimitCounter(ctx, counter)
+	return repo.IncrementRateLimitCounter(ctx, counter)
 }
 func (s *Service) applyGatewayRateLimitState(ctx context.Context, principal domainidentity.Principal, aiClientID, toolName string, limit gatewayInvocationLimit) (domainaigateway.RateLimitState, error) {
+	repo := s.rateLimitRepository()
 	burst := limit.Burst
 	if burst <= 0 {
 		burst = 1
@@ -220,10 +223,10 @@ func (s *Service) applyGatewayRateLimitState(ctx context.Context, principal doma
 			return domainaigateway.RateLimitState{}, err
 		}
 	}
-	if s.repo == nil {
+	if repo == nil {
 		return state, nil
 	}
-	return s.repo.ApplyRateLimitState(ctx, state)
+	return repo.ApplyRateLimitState(ctx, state)
 }
 func gatewayExternalRateLimitFallbackAllowed(err error) bool {
 	if err == nil {
@@ -255,7 +258,7 @@ func formatGatewayRateLimitRetryAfter(value time.Duration) string {
 	return value.Round(time.Second).String()
 }
 func (s *Service) enforceGatewayUsageBudget(ctx context.Context, principal domainidentity.Principal, aiClientID, toolName string, budget gatewayUsageBudget) error {
-	if budget.Limit <= 0 || budget.Window <= 0 || s == nil || s.repo == nil {
+	if budget.Limit <= 0 || budget.Window <= 0 || s == nil || s.auditLogRepository() == nil {
 		return nil
 	}
 	used, err := s.gatewayUsageBudgetConsumed(ctx, principal, aiClientID, toolName, budget)
@@ -268,6 +271,10 @@ func (s *Service) enforceGatewayUsageBudget(ctx context.Context, principal domai
 	return fmt.Errorf("%w: AI Gateway %s policy %s exceeded for %s (%s/%s in %s)", apperrors.ErrAccessDenied, budget.Kind, strings.TrimSpace(budget.PolicyID), toolName, formatGatewayBudgetValue(used), formatGatewayBudgetValue(budget.Limit), budget.WindowLabel)
 }
 func (s *Service) gatewayAcceptedInvocationCount(ctx context.Context, principal domainidentity.Principal, aiClientID, toolName string, limit gatewayInvocationLimit) (int, error) {
+	repo := s.auditLogRepository()
+	if repo == nil {
+		return 0, nil
+	}
 	now := time.Now().UTC()
 	from := now.Add(-limit.Window)
 	filter := gatewayLimitAuditFilter(principal, aiClientID, toolName, limit.Scope)
@@ -278,7 +285,7 @@ func (s *Service) gatewayAcceptedInvocationCount(ctx context.Context, principal 
 	if filter.Limit <= 0 || filter.Limit > 500 {
 		filter.Limit = 500
 	}
-	items, err := s.repo.ListAuditLogs(ctx, filter)
+	items, err := repo.ListAuditLogs(ctx, filter)
 	if err != nil {
 		return 0, err
 	}
@@ -291,6 +298,10 @@ func (s *Service) gatewayAcceptedInvocationCount(ctx context.Context, principal 
 	return count, nil
 }
 func (s *Service) gatewayUsageBudgetConsumed(ctx context.Context, principal domainidentity.Principal, aiClientID, toolName string, budget gatewayUsageBudget) (float64, error) {
+	repo := s.auditLogRepository()
+	if repo == nil {
+		return 0, nil
+	}
 	now := time.Now().UTC()
 	from := now.Add(-budget.Window)
 	filter := gatewayLimitAuditFilter(principal, aiClientID, toolName, budget.Scope)
@@ -298,7 +309,7 @@ func (s *Service) gatewayUsageBudgetConsumed(ctx context.Context, principal doma
 	filter.From = &from
 	filter.To = &now
 	filter.Limit = 500
-	items, err := s.repo.ListAuditLogs(ctx, filter)
+	items, err := repo.ListAuditLogs(ctx, filter)
 	if err != nil {
 		return 0, err
 	}

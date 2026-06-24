@@ -2,6 +2,7 @@ package access
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -15,7 +16,6 @@ import (
 	"github.com/opensoha/soha/internal/platform/operationentry"
 	"github.com/opensoha/soha/internal/platform/requestctx"
 	userrepo "github.com/opensoha/soha/internal/repository/user"
-	"gorm.io/gorm"
 )
 
 type UserManager interface {
@@ -412,8 +412,8 @@ func normalizeWriteError(err error) error {
 	if err == nil {
 		return nil
 	}
-	if err == userrepo.ErrNotFound || err == gorm.ErrRecordNotFound {
-		return fmt.Errorf("%w: %v", apperrors.ErrNotFound, err)
+	if errors.Is(err, apperrors.ErrNotFound) || errors.Is(err, userrepo.ErrNotFound) {
+		return fmt.Errorf("%w", apperrors.ErrNotFound)
 	}
 	return err
 }

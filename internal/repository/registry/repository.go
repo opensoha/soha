@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -63,8 +64,8 @@ func (r *Repository) Update(ctx context.Context, id string, item domainregistry.
 		var existingSecret sql.NullString
 		err := r.db.WithContext(ctx).Raw(`SELECT secret FROM registry_connections WHERE id = ?`, id).Row().Scan(&existingSecret)
 		if err != nil {
-			if err == sql.ErrNoRows {
-				return domainregistry.Connection{}, gorm.ErrRecordNotFound
+			if errors.Is(err, sql.ErrNoRows) {
+				return domainregistry.Connection{}, registryNotFound(id)
 			}
 			return domainregistry.Connection{}, fmt.Errorf("query registry connection secret: %w", err)
 		}
@@ -85,7 +86,7 @@ func (r *Repository) Update(ctx context.Context, id string, item domainregistry.
 		return domainregistry.Connection{}, result.Error
 	}
 	if result.RowsAffected == 0 {
-		return domainregistry.Connection{}, gorm.ErrRecordNotFound
+		return domainregistry.Connection{}, registryNotFound(id)
 	}
 	item.ID = id
 	return item, nil
@@ -97,7 +98,7 @@ func (r *Repository) Delete(ctx context.Context, id string) error {
 		return result.Error
 	}
 	if result.RowsAffected == 0 {
-		return gorm.ErrRecordNotFound
+		return registryNotFound(id)
 	}
 	return nil
 }

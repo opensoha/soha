@@ -11,10 +11,11 @@ import (
 
 	"github.com/google/uuid"
 	domainscopegrant "github.com/opensoha/soha/internal/domain/scopegrant"
+	"github.com/opensoha/soha/internal/platform/apperrors"
 	"gorm.io/gorm"
 )
 
-var ErrNotFound = errors.New("scope grant not found")
+var ErrNotFound = fmt.Errorf("%w: scope grant not found", apperrors.ErrNotFound)
 
 type Repository struct {
 	db *gorm.DB

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -100,7 +101,7 @@ func (r *Repository) UpdateAlertIntegration(ctx context.Context, integrationID s
 		return domainalert.AlertIntegration{}, fmt.Errorf("update alert integration: %w", result.Error)
 	}
 	if result.RowsAffected == 0 {
-		return domainalert.AlertIntegration{}, fmt.Errorf("alert integration not found: %s", item.ID)
+		return domainalert.AlertIntegration{}, alertNotFound("alert integration", item.ID)
 	}
 	return withAlertIntegrationRuntimeFields(item), nil
 }
@@ -121,7 +122,7 @@ func (r *Repository) UpdateAlertIntegrationStatus(ctx context.Context, integrati
 		return domainalert.AlertIntegration{}, fmt.Errorf("update alert integration status: %w", result.Error)
 	}
 	if result.RowsAffected == 0 {
-		return domainalert.AlertIntegration{}, fmt.Errorf("alert integration not found: %s", integrationID)
+		return domainalert.AlertIntegration{}, alertNotFound("alert integration", integrationID)
 	}
 	return r.GetAlertIntegration(ctx, integrationID)
 }
@@ -198,8 +199,8 @@ func scanAlertIntegrationRow(row *sql.Row, integrationID string) (domainalert.Al
 	var lastError sql.NullString
 	var lastReceivedAt sql.NullTime
 	if err := row.Scan(&item.ID, &item.Name, &item.IntegrationType, &description, &item.Token, &labelMapping, &dedupeConfig, &item.Enabled, &item.Status, &lastError, &lastReceivedAt, &item.CreatedAt, &item.UpdatedAt); err != nil {
-		if err == sql.ErrNoRows {
-			return domainalert.AlertIntegration{}, fmt.Errorf("alert integration not found: %s", strings.TrimSpace(integrationID))
+		if errors.Is(err, sql.ErrNoRows) {
+			return domainalert.AlertIntegration{}, alertNotFound("alert integration", integrationID)
 		}
 		return domainalert.AlertIntegration{}, fmt.Errorf("scan alert integration row: %w", err)
 	}
