@@ -269,7 +269,7 @@ make deploy-image IMAGE_TAG=v0.1.0 GOPROXY=https://goproxy.cn,direct
 Install with Helm:
 
 ```bash
-helm repo add opensoha https://raw.githubusercontent.com/opensoha/soha-helm/main
+helm repo add opensoha https://raw.githubusercontent.com/opensoha/soha-helm/gh-pages
 helm repo update
 helm install soha opensoha/soha --namespace soha --create-namespace
 helm install soha-agent opensoha/soha-agent \
