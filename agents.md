@@ -75,7 +75,7 @@ Project summary:
 - `deploy/docker-compose.yaml` owns local app-plus-PostgreSQL startup and optional Hermes runner services
 - `deploy/deployment.yaml` owns the raw Kubernetes manifest baseline
 - `deploy/kustomization.yaml` owns the lightweight Kustomize entrypoint for raw manifest customization
-- `deploy/chart/` owns repeatable Helm installation assets
+- Helm chart sources live in `opensoha/soha-helm`
 
 ## 4. System Architecture
 
@@ -191,7 +191,7 @@ The frontend active baseline is the Vite application in `github.com/opensoha/soh
 
 Current structure summary:
 
-- `deploy/Dockerfile`, `deploy/docker-compose.yaml`, `deploy/deployment.yaml`, `deploy/kustomization.yaml`, and `deploy/chart/` are the canonical repo-local deployment assets
+- `deploy/Dockerfile`, `deploy/docker-compose.yaml`, `deploy/deployment.yaml`, and `deploy/kustomization.yaml` are the canonical repo-local deployment assets
 - `github.com/opensoha/soha-web` is the only active frontend source target
 - `internal/staticassets/web/dist` is the only web artifact path embedded by `soha`
 - `src/routes/**` defines the active route surface for the Vite app

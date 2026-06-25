@@ -84,11 +84,3 @@ jobs:
       - name: Docker compose smoke
         working-directory: soha
         run: SOHA_SMOKE_BUILD=0 SOHA_SMOKE_PROJECT=soha-ci-${{ github.run_id }} ./scripts/smoke-compose.sh
-      - uses: azure/setup-helm@v5
-        with:
-          version: v4.2.0
-      - name: Helm lint and template
-        working-directory: soha
-        run: |
-          helm lint deploy/chart
-          helm template soha deploy/chart >/tmp/soha-chart.yaml

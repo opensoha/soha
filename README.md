@@ -228,7 +228,6 @@ make test-web
 make init-hermes
 make deploy-image
 make deploy-compose-up
-make deploy-helm-lint
 ```
 
 ## Deployment
@@ -242,12 +241,10 @@ Soha ships as a single-binary runtime by default: one application container serv
 - [configs/config.compose.yaml](./configs/config.compose.yaml): compose app-container config with PostgreSQL service host and no host-local kubeconfig seed
 - [deploy/deployment.yaml](./deploy/deployment.yaml): raw Kubernetes manifest baseline
 - [deploy/kustomization.yaml](./deploy/kustomization.yaml): Kustomize entrypoint for image tag, namespace, and patch overrides without Helm
-- [deploy/chart](./deploy/chart): Helm chart
 
 ```bash
 make deploy-image
 docker compose -f deploy/docker-compose.yaml up -d --build
-helm lint deploy/chart
 ```
 
 Recommended boundaries:
@@ -269,13 +266,10 @@ make deploy-image-push IMAGE_TAG=v0.1.0 PUSH_LATEST=1
 make deploy-image IMAGE_TAG=v0.1.0 GOPROXY=https://goproxy.cn,direct
 ```
 
-Install the Helm chart:
+Install with Helm:
 
 ```bash
-helm install soha ./deploy/chart --namespace soha --create-namespace
-
-# After publishing the Helm repo:
-helm repo add opensoha https://opensoha.github.io/soha-helm
+helm repo add opensoha https://raw.githubusercontent.com/opensoha/soha-helm/main
 helm repo update
 helm install soha opensoha/soha --namespace soha --create-namespace
 helm install soha-agent opensoha/soha-agent \
@@ -297,13 +291,7 @@ To copy the CLI into another image, use the tool image directly:
 COPY --from=yshanchui/soha-cli:v0.1.0 /usr/local/bin/soha /usr/local/bin/soha
 ```
 
-Build a static Helm repository:
-
-```bash
-make deploy-helm-repo HELM_REPO_URL=https://opensoha.github.io/soha-helm
-```
-
-This writes `index.yaml` and chart tarballs under `dist/helm-repo/` for `soha`, `soha-agent`, and `soha-hermes-agent`. Publish that directory to the dedicated `opensoha/soha-helm` repository through GitHub Pages, for example the root of its `gh-pages` branch. Artifact Hub does not host chart archives; it indexes this Helm repo URL. Add `https://opensoha.github.io/soha-helm` as a Helm repository in Artifact Hub. To claim ownership, copy [deploy/chart/artifacthub-repo.yml.example](./deploy/chart/artifacthub-repo.yml.example) to `deploy/chart/artifacthub-repo.yml`, fill in the maintainer email, then regenerate and publish the Helm repo.
+Helm chart sources and Artifact Hub publishing live in `opensoha/soha-helm`.
 
 Render with Kustomize:
 

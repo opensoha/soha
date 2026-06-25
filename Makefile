@@ -4,21 +4,12 @@ COMPOSE ?= docker compose
 DEPLOY_DIR ?= deploy
 ROOT_COMPOSE_FILE ?= $(DEPLOY_DIR)/docker-compose.yaml
 APP_DOCKERFILE ?= $(DEPLOY_DIR)/Dockerfile
-HELM_CHART ?= $(DEPLOY_DIR)/chart
-SOHA_AGENT_CHART ?= $(SOHA_AGENT_DIR)/deploy/charts/soha-agent
-SOHA_HERMES_AGENT_CHART ?= $(SOHA_AGENT_DIR)/deploy/charts/soha-hermes-agent
-HELM_CHARTS ?= $(HELM_CHART) $(SOHA_AGENT_CHART) $(SOHA_HERMES_AGENT_CHART)
 KUSTOMIZE_DIR ?= $(DEPLOY_DIR)
 IMAGE_REPOSITORY ?= yshanchui/soha
 IMAGE_TAG ?= local
 IMAGE_PLATFORMS ?= linux/amd64,linux/arm64
 GOPROXY ?= https://proxy.golang.org,direct
 PUSH_LATEST ?= 0
-HELM_PACKAGE_DIR ?= dist/helm-packages
-HELM_REPO_DIR ?= dist/helm-repo
-HELM_REPO_URL ?= https://opensoha.github.io/soha-helm
-HELM_LINT_AGENT_TOKEN ?= test-agent-token-123456
-HELM_LINT_RUNNER_TOKEN ?= test-runner-token-123456
 HERMES_CONTROL_PLANE_URL ?= http://host.docker.internal:8080
 HERMES_RUNTIME_ENDPOINT ?= http://127.0.0.1:18080
 SOHA_WEB_DIR ?= ../soha-web
@@ -33,7 +24,7 @@ ifeq ($(PUSH_LATEST),1)
 IMAGE_BUILD_TAGS += -t $(IMAGE_REPOSITORY):latest
 endif
 
-.PHONY: help init init-go init-web init-docs init-db init-cluster init-hermes dev dev-api dev-web dev-docs build build-web build-docs clean deploy-image deploy-image-push deploy-compose-up deploy-compose-down deploy-compose-config deploy-compose-smoke deploy-kustomize-render deploy-helm-lint deploy-helm-template deploy-helm-template-all deploy-helm-package deploy-helm-repo test-api test-web
+.PHONY: help init init-go init-web init-docs init-db init-cluster init-hermes dev dev-api dev-web dev-docs build build-web build-docs clean deploy-image deploy-image-push deploy-compose-up deploy-compose-down deploy-compose-config deploy-compose-smoke deploy-kustomize-render test-api test-web
 
 help: ## Show available make targets.
 	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make <target>\n\nTargets:\n"} /^[a-zA-Z0-9_.-]+:.*##/ {printf "  %-28s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -147,47 +138,6 @@ deploy-compose-smoke: build-web ## Run the app-container cold-start smoke agains
 
 deploy-kustomize-render: ## Render the raw Kubernetes baseline through Kustomize.
 	kubectl kustomize $(KUSTOMIZE_DIR)
-
-deploy-helm-lint: ## Lint the Helm chart.
-	@test -d "$(HELM_CHART)" || (echo "Missing Helm chart: $(HELM_CHART)" >&2; exit 1)
-	@test -d "$(SOHA_AGENT_CHART)" || (echo "Missing Helm chart: $(SOHA_AGENT_CHART)" >&2; exit 1)
-	@test -d "$(SOHA_HERMES_AGENT_CHART)" || (echo "Missing Helm chart: $(SOHA_HERMES_AGENT_CHART)" >&2; exit 1)
-	helm lint "$(HELM_CHART)"
-	helm lint "$(SOHA_AGENT_CHART)" \
-		--set-string secrets.agentBearerToken="$(HELM_LINT_AGENT_TOKEN)" \
-		--set-string secrets.controlPlaneBearerToken="$(HELM_LINT_RUNNER_TOKEN)"
-	helm lint "$(SOHA_HERMES_AGENT_CHART)" \
-		--set-string secrets.controlPlaneBearerToken="$(HELM_LINT_RUNNER_TOKEN)"
-
-deploy-helm-template: ## Render the Helm chart locally.
-	helm template soha $(HELM_CHART)
-
-deploy-helm-template-all: ## Render all publishable Helm charts locally with non-secret test values.
-	helm template soha "$(HELM_CHART)" >/tmp/soha-chart.yaml
-	helm template soha-agent "$(SOHA_AGENT_CHART)" \
-		--set-string secrets.agentBearerToken="$(HELM_LINT_AGENT_TOKEN)" \
-		--set-string secrets.controlPlaneBearerToken="$(HELM_LINT_RUNNER_TOKEN)" \
-		>/tmp/soha-agent-chart.yaml
-	helm template soha-hermes-agent "$(SOHA_HERMES_AGENT_CHART)" \
-		--set-string secrets.controlPlaneBearerToken="$(HELM_LINT_RUNNER_TOKEN)" \
-		>/tmp/soha-hermes-agent-chart.yaml
-
-deploy-helm-package: ## Package the Helm chart into dist/helm-packages.
-	mkdir -p $(HELM_PACKAGE_DIR)
-	@for chart in $(HELM_CHARTS); do \
-		test -d "$$chart" || (echo "Missing Helm chart: $$chart" >&2; exit 1); \
-		helm package "$$chart" --destination $(HELM_PACKAGE_DIR); \
-	done
-
-deploy-helm-repo: deploy-helm-package ## Build a static Helm repository index under dist/helm-repo.
-	mkdir -p $(HELM_REPO_DIR)
-	cp $(HELM_PACKAGE_DIR)/*.tgz $(HELM_REPO_DIR)/
-	@if [ -f "$(HELM_CHART)/artifacthub-repo.yml" ]; then cp "$(HELM_CHART)/artifacthub-repo.yml" "$(HELM_REPO_DIR)/artifacthub-repo.yml"; fi
-	@if [ -f "$(HELM_REPO_DIR)/index.yaml" ]; then \
-		helm repo index $(HELM_REPO_DIR) --url $(HELM_REPO_URL) --merge $(HELM_REPO_DIR)/index.yaml; \
-	else \
-		helm repo index $(HELM_REPO_DIR) --url $(HELM_REPO_URL); \
-	fi
 
 # Test
 test-api: ## Run Go tests.
