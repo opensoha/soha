@@ -1,7 +1,12 @@
 image:
-  repository: ghcr.io/example/soha
-  tag: latest
+  repository: yshanchui/soha
+  tag: ""
   pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+replicaCount: 1
 
 service:
   type: ClusterIP
@@ -16,11 +21,14 @@ ingress:
   tlsSecretName: ""
 
 postgres:
+  enabled: true
   # PostgreSQL 18 stores PGDATA below /var/lib/postgresql/18/docker.
   # Keep the persistent volume mounted at /var/lib/postgresql in templates.
   image: postgres:18.4
   database: soha
   username: pgsql
+  host: ""
+  port: 5432
   # Generated on first install when empty, then reused from the live Secret
   # during upgrades. Set an explicit stable value for disaster recovery.
   password: ""
@@ -120,3 +128,24 @@ config:
     # Required when config.modules.virtualization.enabled=true.
     credentialEncryptionKey: ""
     secretProvider: ""
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 1
+    memory: 1Gi
+
+podSecurityContext:
+  runAsUser: 10001
+  runAsGroup: 10001
+  runAsNonRoot: true
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL

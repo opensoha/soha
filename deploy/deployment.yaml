@@ -215,7 +215,7 @@ spec:
     spec:
       containers:
         - name: soha
-          image: ghcr.io/example/soha:latest
+          image: yshanchui/soha:latest
           imagePullPolicy: IfNotPresent
           env:
             - name: SOHA_CONFIG_FILE

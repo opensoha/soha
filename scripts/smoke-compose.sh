@@ -2,13 +2,27 @@
 set -eu
 
 COMPOSE_BIN="${COMPOSE:-docker compose}"
-COMPOSE_FILE="${SOHA_SMOKE_COMPOSE_FILE:-deploy/docker-compose.smoke.yaml}"
+COMPOSE_FILE="${SOHA_SMOKE_COMPOSE_FILE:-deploy/docker-compose.yaml}"
 PROJECT_NAME="${SOHA_SMOKE_PROJECT:-soha-smoke}"
 SOHA_SMOKE_HTTP_PORT="${SOHA_SMOKE_HTTP_PORT:-28080}"
 BASE_URL="${SOHA_SMOKE_BASE_URL:-http://127.0.0.1:${SOHA_SMOKE_HTTP_PORT}}"
 TIMEOUT_SECONDS="${SOHA_SMOKE_TIMEOUT_SECONDS:-180}"
 KEEP_STACK="${SOHA_SMOKE_KEEP:-0}"
 BUILD_IMAGE="${SOHA_SMOKE_BUILD:-1}"
+export SOHA_IMAGE="${SOHA_SMOKE_IMAGE:-${SOHA_IMAGE:-yshanchui/soha:local}}"
+export SOHA_HTTP_BIND="${SOHA_SMOKE_HTTP_BIND:-127.0.0.1}"
+export SOHA_HTTP_PORT="$SOHA_SMOKE_HTTP_PORT"
+export SOHA_POSTGRES_BIND="${SOHA_SMOKE_POSTGRES_BIND:-127.0.0.1}"
+export SOHA_POSTGRES_PORT="${SOHA_SMOKE_POSTGRES_PORT:-28081}"
+export SOHA_CONTAINER_NAME="${PROJECT_NAME}-soha"
+export SOHA_POSTGRES_CONTAINER_NAME="${PROJECT_NAME}-postgres"
+export SOHA_REDIS_CONTAINER_NAME="${PROJECT_NAME}-redis"
+export SOHA_K3S_CONTAINER_NAME="${PROJECT_NAME}-k3s"
+export SOHA_HERMES_CONTAINER_NAME="${PROJECT_NAME}-hermes-agent-runner"
+export SOHA_POSTGRES_VOLUME="${PROJECT_NAME}-postgres-data"
+export SOHA_K3S_VOLUME="${PROJECT_NAME}-k3s-data"
+export SOHA_HERMES_DATA_VOLUME="${PROJECT_NAME}-hermes-data"
+export SOHA_HERMES_RUNTIME_VOLUME="${PROJECT_NAME}-hermes-runtime"
 export SOHA_SMOKE_HTTP_PORT
 
 compose() {
@@ -81,7 +95,7 @@ compose down -v --remove-orphans >/dev/null 2>&1 || true
 if [ "$BUILD_IMAGE" = "1" ]; then
 	compose up -d --build postgres soha
 else
-	compose up -d --no-build postgres soha
+	compose up -d --no-build --pull never postgres soha
 fi
 
 wait_for_ready

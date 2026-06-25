@@ -5,13 +5,13 @@ services:
     # PostgreSQL 18 stores PGDATA below /var/lib/postgresql/18/docker.
     # Mount the parent directory so the named volume owns the real data path.
     image: postgres:18.4
-    container_name: pgsql
+    container_name: ${SOHA_POSTGRES_CONTAINER_NAME:-pgsql}
     environment:
       POSTGRES_DB: soha
       POSTGRES_USER: pgsql
       POSTGRES_PASSWORD: pgsql
     ports:
-      - "5432:5432"
+      - "${SOHA_POSTGRES_BIND:-0.0.0.0}:${SOHA_POSTGRES_PORT:-5432}:5432"
     volumes:
       - soha-postgres-data:/var/lib/postgresql
     healthcheck:
@@ -22,11 +22,11 @@ services:
 
   redis:
     image: redis:7.4-alpine
-    container_name: soha-redis
+    container_name: ${SOHA_REDIS_CONTAINER_NAME:-soha-redis}
     profiles:
       - redis-rate-limit
     ports:
-      - "6379:6379"
+      - "${SOHA_REDIS_BIND:-0.0.0.0}:${SOHA_REDIS_PORT:-6379}:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -35,7 +35,7 @@ services:
 
   k3s:
     image: rancher/k3s:v1.36.0-k3s1
-    container_name: soha-k3s
+    container_name: ${SOHA_K3S_CONTAINER_NAME:-soha-k3s}
     privileged: true
     command:
       - server
@@ -44,7 +44,7 @@ services:
       - --disable=servicelb
       - --tls-san=127.0.0.1
     ports:
-      - "6443:6443"
+      - "${SOHA_K3S_BIND:-0.0.0.0}:${SOHA_K3S_PORT:-6443}:6443"
     volumes:
       - soha-k3s-data:/var/lib/rancher/k3s
       - ../configs/k3s/registries.yaml:/etc/rancher/k3s/registries.yaml:ro
@@ -55,13 +55,13 @@ services:
       retries: 30
 
   soha:
-    container_name: soha
+    container_name: ${SOHA_CONTAINER_NAME:-soha}
     build:
       context: ..
       dockerfile: deploy/Dockerfile
       additional_contexts:
         contracts: ${SOHA_CONTRACTS_DIR:-../../soha-contracts}
-    image: soha:local
+    image: ${SOHA_IMAGE:-yshanchui/soha:local}
     depends_on:
       postgres:
         condition: service_healthy
@@ -76,7 +76,7 @@ services:
       SOHA_AI_GATEWAY_RATE_LIMIT_BACKEND: ${SOHA_AI_GATEWAY_RATE_LIMIT_BACKEND:-postgres}
       SOHA_AI_GATEWAY_RATE_LIMIT_REDIS_ADDR: ${SOHA_AI_GATEWAY_RATE_LIMIT_REDIS_ADDR:-redis:6379}
     ports:
-      - "8080:8080"
+      - "${SOHA_HTTP_BIND:-0.0.0.0}:${SOHA_HTTP_PORT:-8080}:8080"
     volumes:
       - ../configs/config.compose.yaml:/app/configs/config.compose.yaml:ro
     extra_hosts:
@@ -105,8 +105,8 @@ services:
       dockerfile: deploy/Dockerfile.hermes-agent-runner
       additional_contexts:
         contracts: ${SOHA_CONTRACTS_DIR:-../../soha-contracts}
-    image: soha-hermes-agent-runner:local
-    container_name: soha-hermes-agent-runner
+    image: ${SOHA_HERMES_IMAGE:-yshanchui/soha-hermes-agent:local}
+    container_name: ${SOHA_HERMES_CONTAINER_NAME:-soha-hermes-agent-runner}
     restart: unless-stopped
     depends_on:
       soha:
@@ -128,7 +128,7 @@ services:
       SOHA_AGENT_CONTROL_PLANE_AGENT_RUNTIME_WORKSPACE_ROOT: /var/lib/soha-agent-runtime
       SOHA_AGENT_KUBERNETES_ENABLED: "false"
     ports:
-      - "18080:18080"
+      - "${SOHA_HERMES_BIND:-0.0.0.0}:${SOHA_HERMES_PORT:-18080}:18080"
     volumes:
       - soha-hermes-data:/opt/data
       - soha-hermes-runtime:/var/lib/soha-agent-runtime
@@ -137,10 +137,10 @@ services:
 
 volumes:
   soha-postgres-data:
-    name: soha-postgres-data
+    name: ${SOHA_POSTGRES_VOLUME:-soha-postgres-data}
   soha-k3s-data:
-    name: soha-k3s-data
+    name: ${SOHA_K3S_VOLUME:-soha-k3s-data}
   soha-hermes-data:
-    name: soha-hermes-data
+    name: ${SOHA_HERMES_DATA_VOLUME:-soha-hermes-data}
   soha-hermes-runtime:
-    name: soha-hermes-runtime
+    name: ${SOHA_HERMES_RUNTIME_VOLUME:-soha-hermes-runtime}

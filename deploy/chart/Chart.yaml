@@ -1,6 +1,29 @@
 apiVersion: v2
 name: soha
-description: Single-project Helm chart for soha with embedded SPA and docs plus PostgreSQL.
+description: OpenSoha control plane with embedded web console and optional PostgreSQL.
 type: application
 version: 0.1.0
 appVersion: "0.1.0"
+home: https://github.com/opensoha/soha
+sources:
+  - https://github.com/opensoha/soha
+maintainers:
+  - name: OpenSoha
+    url: https://github.com/opensoha
+keywords:
+  - opensoha
+  - soha
+  - ai-gateway
+  - delivery
+  - kubernetes
+annotations:
+  artifacthub.io/category: integration-delivery
+  artifacthub.io/license: Apache-2.0
+  artifacthub.io/links: |
+    - name: source
+      url: https://github.com/opensoha/soha
+    - name: docs
+      url: https://docs.opensoha.dev/
+  artifacthub.io/changes: |
+    - kind: added
+      description: Initial public Helm chart.

@@ -1,0 +1,4 @@
+.helmignore
+*.tgz
+artifacthub-repo.yml
+artifacthub-repo.yml.example

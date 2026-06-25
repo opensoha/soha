@@ -2,9 +2,40 @@
   "$schema": "http://json-schema.org/schema#",
   "type": "object",
   "properties": {
+    "replicaCount": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "image": {
+      "type": "object",
+      "properties": {
+        "repository": {
+          "type": "string",
+          "minLength": 1
+        },
+        "tag": {
+          "type": "string"
+        },
+        "pullPolicy": {
+          "type": "string",
+          "enum": ["Always", "IfNotPresent", "Never"]
+        }
+      }
+    },
     "postgres": {
       "type": "object",
       "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "host": {
+          "type": "string"
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
         "password": {
           "$ref": "#/definitions/generatedSecret"
         }
@@ -65,6 +96,34 @@
     }
   },
   "allOf": [
+    {
+      "if": {
+        "properties": {
+          "postgres": {
+            "properties": {
+              "enabled": {
+                "const": false
+              }
+            },
+            "required": ["enabled"]
+          }
+        },
+        "required": ["postgres"]
+      },
+      "then": {
+        "properties": {
+          "postgres": {
+            "properties": {
+              "host": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": ["host"]
+          }
+        }
+      }
+    },
     {
       "if": {
         "properties": {

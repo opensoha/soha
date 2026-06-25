@@ -26,6 +26,19 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- printf "%s-postgres" (include "soha.fullname" .) -}}
 {{- end -}}
 
+{{- define "soha.postgresHost" -}}
+{{- if .Values.postgres.enabled -}}
+{{- include "soha.postgresServiceName" . -}}
+{{- else -}}
+{{- required "postgres.host is required when postgres.enabled=false" .Values.postgres.host -}}
+{{- end -}}
+{{- end -}}
+
+{{- define "soha.image" -}}
+{{- $tag := default .Chart.AppVersion .Values.image.tag -}}
+{{- printf "%s:%s" .Values.image.repository $tag -}}
+{{- end -}}
+
 {{- define "soha.secretValue" -}}
 {{- $name := .name -}}
 {{- $value := trim (default "" .value) -}}

@@ -5,7 +5,7 @@ metadata:
   labels:
     {{- include "soha.labels" . | nindent 4 }}
 spec:
-  replicas: 1
+  replicas: {{ .Values.replicaCount }}
   selector:
     matchLabels:
       app.kubernetes.io/component: app
@@ -16,10 +16,18 @@ spec:
         app.kubernetes.io/component: app
         {{- include "soha.selectorLabels" . | nindent 8 }}
     spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
       containers:
         - name: soha
-          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          image: {{ include "soha.image" . | quote }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
           env:
             - name: SOHA_CONFIG_FILE
               value: /app/configs/config.yaml
@@ -34,6 +42,8 @@ spec:
             httpGet:
               path: /healthz
               port: http
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
           volumeMounts:
             - name: app-config
               mountPath: /app/configs/config.yaml

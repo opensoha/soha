@@ -241,12 +241,75 @@ Soha ships as a single-binary runtime by default: one application container serv
 - [configs/config.yaml](./configs/config.yaml): default application config
 - [configs/config.compose.yaml](./configs/config.compose.yaml): compose app-container config with PostgreSQL service host and no host-local kubeconfig seed
 - [deploy/deployment.yaml](./deploy/deployment.yaml): raw Kubernetes manifest baseline
+- [deploy/kustomization.yaml](./deploy/kustomization.yaml): Kustomize entrypoint for image tag, namespace, and patch overrides without Helm
 - [deploy/chart](./deploy/chart): Helm chart
 
 ```bash
 make deploy-image
 docker compose -f deploy/docker-compose.yaml up -d --build
 helm lint deploy/chart
+```
+
+Recommended boundaries:
+
+- Docker image: publish to Docker Hub as `yshanchui/soha`; local builds default to the `local` tag.
+- Agent images: publish `yshanchui/soha-agent` and `yshanchui/soha-hermes-agent` from the sibling `soha-agent` repository.
+- CLI tool image: publish `yshanchui/soha-cli` from the sibling `soha-cli` repository for multi-stage builds and operational containers. It is an image artifact, not a Helm workload.
+- Docker Compose: use for local development, smoke tests, and single-node trials, not as the primary production orchestrator.
+- Helm: use as the primary Kubernetes delivery path. `soha-helm` publishes `soha`, `soha-agent`, and `soha-hermes-agent` charts.
+- Kustomize: keep as a lightweight raw YAML customization entrypoint, avoiding a second full Kubernetes template set.
+
+Build and push the image:
+
+```bash
+make deploy-image IMAGE_TAG=v0.1.0
+make deploy-image-push IMAGE_TAG=v0.1.0 PUSH_LATEST=1
+
+# When proxy.golang.org is unstable:
+make deploy-image IMAGE_TAG=v0.1.0 GOPROXY=https://goproxy.cn,direct
+```
+
+Install the Helm chart:
+
+```bash
+helm install soha ./deploy/chart --namespace soha --create-namespace
+
+# After publishing the Helm repo:
+helm repo add opensoha https://opensoha.github.io/soha-helm
+helm repo update
+helm install soha opensoha/soha --namespace soha --create-namespace
+helm install soha-agent opensoha/soha-agent \
+  --namespace soha-agent \
+  --create-namespace \
+  --set-string secrets.agentBearerToken="$SOHA_AGENT_BEARER_TOKEN" \
+  --set-string secrets.controlPlaneBearerToken="$SOHA_EXECUTION_RUNNER_TOKEN" \
+  --set-string config.controlPlane.baseUrl="https://soha.example.com"
+helm install soha-hermes-agent opensoha/soha-hermes-agent \
+  --namespace soha-agent \
+  --create-namespace \
+  --set-string secrets.controlPlaneBearerToken="$SOHA_EXECUTION_RUNNER_TOKEN" \
+  --set-string controlPlane.baseUrl="https://soha.example.com"
+```
+
+To copy the CLI into another image, use the tool image directly:
+
+```Dockerfile
+COPY --from=yshanchui/soha-cli:v0.1.0 /usr/local/bin/soha /usr/local/bin/soha
+```
+
+Build a static Helm repository:
+
+```bash
+make deploy-helm-repo HELM_REPO_URL=https://opensoha.github.io/soha-helm
+```
+
+This writes `index.yaml` and chart tarballs under `dist/helm-repo/` for `soha`, `soha-agent`, and `soha-hermes-agent`. Publish that directory to the dedicated `opensoha/soha-helm` repository through GitHub Pages, for example the root of its `gh-pages` branch. Artifact Hub does not host chart archives; it indexes this Helm repo URL. Add `https://opensoha.github.io/soha-helm` as a Helm repository in Artifact Hub. To claim ownership, copy [deploy/chart/artifacthub-repo.yml.example](./deploy/chart/artifacthub-repo.yml.example) to `deploy/chart/artifacthub-repo.yml`, fill in the maintainer email, then regenerate and publish the Helm repo.
+
+Render with Kustomize:
+
+```bash
+kubectl kustomize deploy
+kubectl apply -k deploy
 ```
 
 ## Documentation

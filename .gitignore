@@ -6,6 +6,7 @@ dist/
 internal/staticassets/web/dist/
 bin/
 tmp/
+dist/
 .dev/
 .soha/
 .claude/
