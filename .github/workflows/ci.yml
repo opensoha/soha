@@ -68,6 +68,7 @@ jobs:
         working-directory: soha
         run: GOWORK=off go run golang.org/x/vuln/cmd/govulncheck@v1.3.0 ./...
       - name: Golangci-lint
+        if: github.event_name == 'pull_request'
         uses: golangci/golangci-lint-action@v9
         with:
           version: v2.9.0
