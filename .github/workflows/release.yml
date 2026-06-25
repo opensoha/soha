@@ -31,10 +31,10 @@ jobs:
       WEB_SHA256: ${{ inputs.web_sha256 }}
     steps:
       - name: Checkout soha
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           path: soha
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version: "1.25.x"
           cache: true
@@ -115,7 +115,7 @@ jobs:
           }
           EOF
       - name: Upload workflow artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: soha-linux-amd64-${{ github.ref_name }}
           path: |
