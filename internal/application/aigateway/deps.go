@@ -2,6 +2,7 @@ package aigateway
 
 import (
 	"context"
+	"net/http"
 	"time"
 
 	appaccess "github.com/opensoha/soha/internal/application/access"
@@ -72,6 +73,42 @@ type ApprovalRepository interface {
 	ExpirePendingApprovalRequests(context.Context, time.Time) ([]domainaigateway.ApprovalRequest, error)
 }
 
+type LLMRelayRepository interface {
+	ListLLMUpstreams(context.Context, domainaigateway.LLMUpstreamFilter) ([]domainaigateway.LLMUpstream, error)
+	GetLLMUpstream(context.Context, string) (domainaigateway.LLMUpstream, error)
+	CreateLLMUpstream(context.Context, domainaigateway.LLMUpstream) (domainaigateway.LLMUpstream, error)
+	UpdateLLMUpstream(context.Context, domainaigateway.LLMUpstream) (domainaigateway.LLMUpstream, error)
+	ListLLMModelRoutes(context.Context, domainaigateway.LLMModelRouteFilter) ([]domainaigateway.LLMModelRoute, error)
+	GetLLMModelRoute(context.Context, string) (domainaigateway.LLMModelRoute, error)
+	CreateLLMModelRoute(context.Context, domainaigateway.LLMModelRoute) (domainaigateway.LLMModelRoute, error)
+	UpdateLLMModelRoute(context.Context, domainaigateway.LLMModelRoute) (domainaigateway.LLMModelRoute, error)
+	DeleteLLMModelRoute(context.Context, string) error
+	ListLLMCallLogs(context.Context, domainaigateway.LLMCallLogFilter) ([]domainaigateway.LLMCallLog, error)
+	LLMRelayCallLogMetrics(context.Context, domainaigateway.LLMCallLogFilter) (domainaigateway.LLMRelayCallLogMetrics, error)
+	SumLLMCallTokens(context.Context, domainaigateway.LLMCallLogFilter) (int, error)
+	LLMRelayCacheLogStats(context.Context, domainaigateway.LLMCallLogFilter) (domainaigateway.LLMRelayCacheLogStats, error)
+	CreateLLMCallLog(context.Context, domainaigateway.LLMCallLog) error
+	GetLLMCacheEntryByKey(context.Context, string) (domainaigateway.LLMCacheEntry, error)
+	CountLLMCacheEntries(context.Context, domainaigateway.LLMCacheEntryFilter) (int, error)
+	CreateLLMCacheEntry(context.Context, domainaigateway.LLMCacheEntry) (domainaigateway.LLMCacheEntry, error)
+	UpdateLLMCacheEntry(context.Context, domainaigateway.LLMCacheEntry) (domainaigateway.LLMCacheEntry, error)
+	DeleteLLMCacheEntries(context.Context, domainaigateway.LLMCacheEntryFilter) (int, error)
+	CreateLLMHealthEvent(context.Context, domainaigateway.LLMHealthEvent) error
+}
+
+type LLMRelayConfig struct {
+	Enabled                     bool
+	DefaultTimeout              time.Duration
+	StreamTimeout               time.Duration
+	HealthCheckEnabled          bool
+	HealthCheckInterval         time.Duration
+	MaxRequestBodyBytes         int64
+	AllowInsecureUpstreamHTTP   bool
+	AllowPrivateUpstreamHosts   bool
+	IncludeUsageForOpenAIStream bool
+	CredentialEncryptionKey     string
+}
+
 type ServiceDeps struct {
 	Permissions *appaccess.PermissionResolver
 	Audit       AuditRecorder
@@ -85,6 +122,9 @@ type ServiceDeps struct {
 	AuditLogs       AuditLogRepository
 	RateLimits      RateLimitRepository
 	Approvals       ApprovalRepository
+	LLMRelay        LLMRelayRepository
 
 	RateLimitBackend RateLimitBackend
+	RelayConfig      LLMRelayConfig
+	HTTPClient       *http.Client
 }

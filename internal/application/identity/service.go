@@ -458,8 +458,11 @@ func (s *Service) parsePersonalAccessToken(ctx context.Context, token string) (d
 	return principal, domainidentity.AccessContext{
 		TokenID:     item.ID,
 		TokenKind:   "personal_access_token",
+		TokenPrefix: item.TokenPrefix,
 		SubjectType: "user",
 		SubjectID:   principal.UserID,
+		Scopes:      append([]string(nil), item.Scopes...),
+		Metadata:    copyGatewayMetadata(item.Metadata),
 		ExpiresAt:   timePointerValue(item.ExpiresAt),
 	}, nil
 }
@@ -496,10 +499,24 @@ func (s *Service) parseServiceAccountToken(ctx context.Context, token string) (d
 	return principal, domainidentity.AccessContext{
 		TokenID:     item.ID,
 		TokenKind:   "service_account_token",
+		TokenPrefix: item.TokenPrefix,
 		SubjectType: "service_account",
 		SubjectID:   account.ID,
+		Scopes:      append([]string(nil), item.Scopes...),
+		Metadata:    copyGatewayMetadata(item.Metadata),
 		ExpiresAt:   timePointerValue(item.ExpiresAt),
 	}, nil
+}
+
+func copyGatewayMetadata(metadata map[string]any) map[string]any {
+	if len(metadata) == 0 {
+		return nil
+	}
+	out := make(map[string]any, len(metadata))
+	for key, value := range metadata {
+		out[key] = value
+	}
+	return out
 }
 
 func (s *Service) ListActiveSessions(ctx context.Context, principal domainidentity.Principal, limit int) ([]domainidentity.SessionRecord, error) {

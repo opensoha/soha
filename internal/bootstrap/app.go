@@ -25,7 +25,7 @@ func New(ctx context.Context) (*App, error) {
 		return nil, err
 	}
 	delivery := newDeliveryServices(infra.lifecycleCtx, cfg, infra, repos, core)
-	gateway, err := newGatewayServices(ctx, cfg, repos, core, delivery)
+	gateway, err := newGatewayServices(infra.lifecycleCtx, cfg, repos, core, delivery)
 	if err != nil {
 		infra.cancel()
 		return nil, err

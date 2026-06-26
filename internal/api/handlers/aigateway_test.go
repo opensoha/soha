@@ -10,8 +10,10 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	appaigateway "github.com/opensoha/soha/internal/application/aigateway"
 	domainaigateway "github.com/opensoha/soha/internal/domain/aigateway"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
+	"github.com/opensoha/soha/internal/platform/apperrors"
 )
 
 type stubAIGatewayService struct {
@@ -20,6 +22,11 @@ type stubAIGatewayService struct {
 	listPATReq       domainaigateway.PersonalAccessTokenListRequest
 	rotatePATID      string
 	rotatePATReq     domainaigateway.TokenRotationInput
+	cacheStatsReq    domainaigateway.LLMRelayCacheStatsRequest
+	cachePurgeReq    domainaigateway.LLMRelayCachePurgeRequest
+	maxRelayBodySize int64
+	relayErr         error
+	relayReq         appaigateway.LLMRelayHTTPRequest
 }
 
 func (s *stubAIGatewayService) Capabilities(context.Context, domainidentity.Principal, domainaigateway.ManifestRequest) (domainaigateway.Manifest, error) {
@@ -167,6 +174,77 @@ func (s *stubAIGatewayService) CancelApprovalRequest(context.Context, domainiden
 	return domainaigateway.ApprovalDecisionResult{}, nil
 }
 
+func (s *stubAIGatewayService) ListLLMUpstreams(context.Context, domainidentity.Principal, domainaigateway.LLMUpstreamFilter) ([]domainaigateway.LLMUpstream, error) {
+	return nil, nil
+}
+
+func (s *stubAIGatewayService) CreateLLMUpstream(context.Context, domainidentity.Principal, domainaigateway.LLMUpstreamInput) (domainaigateway.LLMUpstream, error) {
+	return domainaigateway.LLMUpstream{}, nil
+}
+
+func (s *stubAIGatewayService) UpdateLLMUpstream(context.Context, domainidentity.Principal, string, domainaigateway.LLMUpstreamInput) (domainaigateway.LLMUpstream, error) {
+	return domainaigateway.LLMUpstream{}, nil
+}
+
+func (s *stubAIGatewayService) TestLLMUpstream(context.Context, domainidentity.Principal, string) (domainaigateway.LLMUpstreamTestResult, error) {
+	return domainaigateway.LLMUpstreamTestResult{}, nil
+}
+
+func (s *stubAIGatewayService) RunLLMRelayHealthChecks(context.Context, domainidentity.Principal) (domainaigateway.LLMRelayHealthCheckRun, error) {
+	return domainaigateway.LLMRelayHealthCheckRun{}, nil
+}
+
+func (s *stubAIGatewayService) ListLLMModelRoutes(context.Context, domainidentity.Principal, domainaigateway.LLMModelRouteFilter) ([]domainaigateway.LLMModelRoute, error) {
+	return nil, nil
+}
+
+func (s *stubAIGatewayService) CreateLLMModelRoute(context.Context, domainidentity.Principal, domainaigateway.LLMModelRouteInput) (domainaigateway.LLMModelRoute, error) {
+	return domainaigateway.LLMModelRoute{}, nil
+}
+
+func (s *stubAIGatewayService) UpdateLLMModelRoute(context.Context, domainidentity.Principal, string, domainaigateway.LLMModelRouteInput) (domainaigateway.LLMModelRoute, error) {
+	return domainaigateway.LLMModelRoute{}, nil
+}
+
+func (s *stubAIGatewayService) DeleteLLMModelRoute(context.Context, domainidentity.Principal, string) error {
+	return nil
+}
+
+func (s *stubAIGatewayService) ListLLMCallLogs(context.Context, domainidentity.Principal, domainaigateway.LLMCallLogFilter) ([]domainaigateway.LLMCallLog, error) {
+	return nil, nil
+}
+
+func (s *stubAIGatewayService) LLMRelayMetrics(context.Context, domainidentity.Principal) (domainaigateway.LLMRelayMetrics, error) {
+	return domainaigateway.LLMRelayMetrics{}, nil
+}
+
+func (s *stubAIGatewayService) LLMRelayCacheStats(_ context.Context, _ domainidentity.Principal, req domainaigateway.LLMRelayCacheStatsRequest) (domainaigateway.LLMRelayCacheStats, error) {
+	s.cacheStatsReq = req
+	return domainaigateway.LLMRelayCacheStats{GeneratedAt: time.Date(2026, 6, 25, 0, 0, 0, 0, time.UTC), WindowHours: req.WindowHours, ResponseCacheEnabled: true, ResponseCacheHits: 2}, nil
+}
+
+func (s *stubAIGatewayService) PurgeLLMRelayCache(_ context.Context, _ domainidentity.Principal, req domainaigateway.LLMRelayCachePurgeRequest) (domainaigateway.LLMRelayCachePurgeResult, error) {
+	s.cachePurgeReq = req
+	return domainaigateway.LLMRelayCachePurgeResult{Status: "dry_run", PurgedCount: 3, DryRun: req.DryRun}, nil
+}
+
+func (s *stubAIGatewayService) LLMRelayMaxRequestBodyBytes() int64 {
+	if s.maxRelayBodySize > 0 {
+		return s.maxRelayBodySize
+	}
+	return 32 << 20
+}
+
+func (s *stubAIGatewayService) RelayLLMHTTP(_ context.Context, _ domainidentity.Principal, _ domainidentity.AccessContext, req appaigateway.LLMRelayHTTPRequest, _ http.ResponseWriter) error {
+	s.relayReq = req
+	return s.relayErr
+}
+
+func (s *stubAIGatewayService) RelayLLMWebSocket(_ context.Context, _ domainidentity.Principal, _ domainidentity.AccessContext, req appaigateway.LLMRelayHTTPRequest, _ http.ResponseWriter, _ *http.Request) error {
+	s.relayReq = req
+	return s.relayErr
+}
+
 func TestAIGatewayGovernanceStatusBoundsWindowHours(t *testing.T) {
 	for _, tc := range []struct {
 		name        string
@@ -210,6 +288,760 @@ func TestAIGatewayGovernanceStatusBoundsWindowHours(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestLLMRelayCacheStatsBindsQuery(t *testing.T) {
+	service := &stubAIGatewayService{}
+	handler := NewAIGatewayHandler(service)
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/api/v1/ai-gateway/relay/cache/stats?windowHours=12&publicModel=gpt-public&upstreamId=upstream-1", nil)
+	ctx.Set("principal", domainidentity.Principal{UserID: "u-1"})
+
+	handler.LLMRelayCacheStats(ctx)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", recorder.Code, http.StatusOK, recorder.Body.String())
+	}
+	if service.cacheStatsReq.WindowHours != 12 || service.cacheStatsReq.PublicModel != "gpt-public" || service.cacheStatsReq.UpstreamID != "upstream-1" {
+		t.Fatalf("cache stats request = %#v", service.cacheStatsReq)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	data, ok := payload["data"].(map[string]any)
+	if !ok || data["responseCacheHits"] != float64(2) {
+		t.Fatalf("unexpected response payload: %s", recorder.Body.String())
+	}
+}
+
+func TestLLMRelayCacheStatsRejectsInvalidWindow(t *testing.T) {
+	service := &stubAIGatewayService{}
+	handler := NewAIGatewayHandler(service)
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/api/v1/ai-gateway/relay/cache/stats?windowHours=169", nil)
+	ctx.Set("principal", domainidentity.Principal{UserID: "u-1"})
+
+	handler.LLMRelayCacheStats(ctx)
+
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d, body=%s", recorder.Code, http.StatusBadRequest, recorder.Body.String())
+	}
+	if service.cacheStatsReq.WindowHours != 0 {
+		t.Fatalf("service should not be called, got request %#v", service.cacheStatsReq)
+	}
+}
+
+func TestPurgeLLMRelayCacheBindsBody(t *testing.T) {
+	olderThan := "2026-06-25T00:00:00Z"
+	service := &stubAIGatewayService{}
+	handler := NewAIGatewayHandler(service)
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/api/v1/ai-gateway/relay/cache/purge", strings.NewReader(`{"publicModel":"gpt-public","upstreamId":"upstream-1","routeGroup":"prod","olderThan":"`+olderThan+`","dryRun":true}`))
+	ctx.Request.Header.Set("Content-Type", "application/json")
+	ctx.Set("principal", domainidentity.Principal{UserID: "u-1"})
+
+	handler.PurgeLLMRelayCache(ctx)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", recorder.Code, http.StatusOK, recorder.Body.String())
+	}
+	if service.cachePurgeReq.PublicModel != "gpt-public" || service.cachePurgeReq.UpstreamID != "upstream-1" || service.cachePurgeReq.RouteGroup != "prod" || !service.cachePurgeReq.DryRun {
+		t.Fatalf("purge request = %#v", service.cachePurgeReq)
+	}
+	if service.cachePurgeReq.OlderThan == nil || service.cachePurgeReq.OlderThan.Format(time.RFC3339) != olderThan {
+		t.Fatalf("olderThan = %#v, want %s", service.cachePurgeReq.OlderThan, olderThan)
+	}
+}
+
+func TestRelayOpenAIChatCompletionsReturnsNativeError(t *testing.T) {
+	service := &stubAIGatewayService{
+		relayErr: apperrors.ErrAccessDenied,
+	}
+	handler := NewAIGatewayHandler(service)
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/api/v1/ai-gateway/llm/openai/v1/chat/completions", strings.NewReader(`{"model":"gpt-4.1"}`))
+	ctx.Request.Header.Set("Content-Type", "application/json")
+	ctx.Set("principal", domainidentity.Principal{UserID: "u-1"})
+
+	handler.RelayOpenAIChatCompletions(ctx)
+
+	if recorder.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d, body=%s", recorder.Code, http.StatusForbidden, recorder.Body.String())
+	}
+	if service.relayReq.ProviderKind != "openai" || service.relayReq.Endpoint != "chat/completions" {
+		t.Fatalf("relay request = %#v", service.relayReq)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode relay error: %v", err)
+	}
+	if _, hasData := payload["data"]; hasData {
+		t.Fatalf("relay error should not use OpenSoha envelope: %s", recorder.Body.String())
+	}
+	errorPayload, ok := payload["error"].(map[string]any)
+	if !ok || errorPayload["code"] != "access_denied" {
+		t.Fatalf("relay error payload = %#v", payload)
+	}
+}
+
+func TestRelayOpenAIChatCompletionsForwardsDebugHeaders(t *testing.T) {
+	service := &stubAIGatewayService{}
+	handler := NewAIGatewayHandler(service)
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/api/v1/ai-gateway/llm/openai/v1/chat/completions", strings.NewReader(`{"model":"gpt-4.1"}`))
+	ctx.Request.Header.Set("Content-Type", "application/json")
+	ctx.Request.Header.Set("X-Soha-Upstream-ID", "upstream-debug")
+	ctx.Request.Header.Set("X-Soha-Route-Trace", "true")
+	ctx.Set("principal", domainidentity.Principal{UserID: "u-1"})
+
+	handler.RelayOpenAIChatCompletions(ctx)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", recorder.Code, http.StatusOK, recorder.Body.String())
+	}
+	if service.relayReq.Headers.Get("X-Soha-Upstream-ID") != "upstream-debug" || service.relayReq.Headers.Get("X-Soha-Route-Trace") != "true" {
+		t.Fatalf("debug headers not forwarded: %#v", service.relayReq.Headers)
+	}
+}
+
+func TestRelayOpenAIEmbeddingsForwardsNativeRelayRequest(t *testing.T) {
+	service := &stubAIGatewayService{}
+	handler := NewAIGatewayHandler(service)
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/api/v1/ai-gateway/llm/openai/v1/embeddings", strings.NewReader(`{"model":"text-embedding-3-small","input":"hello"}`))
+	ctx.Request.Header.Set("Content-Type", "application/json")
+	ctx.Set("principal", domainidentity.Principal{UserID: "u-1"})
+
+	handler.RelayOpenAIEmbeddings(ctx)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", recorder.Code, http.StatusOK, recorder.Body.String())
+	}
+	if service.relayReq.ProviderKind != "openai" || service.relayReq.Endpoint != "embeddings" || service.relayReq.Method != http.MethodPost {
+		t.Fatalf("relay request = %#v", service.relayReq)
+	}
+	if string(service.relayReq.Body) != `{"model":"text-embedding-3-small","input":"hello"}` {
+		t.Fatalf("relay body = %s", service.relayReq.Body)
+	}
+}
+
+func TestRelayOpenAIImageGenerationsForwardsNativeRelayRequest(t *testing.T) {
+	service := &stubAIGatewayService{}
+	handler := NewAIGatewayHandler(service)
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/api/v1/ai-gateway/llm/openai/v1/images/generations", strings.NewReader(`{"model":"gpt-image-1","prompt":"draw a badge"}`))
+	ctx.Request.Header.Set("Content-Type", "application/json")
+	ctx.Set("principal", domainidentity.Principal{UserID: "u-1"})
+
+	handler.RelayOpenAIImageGenerations(ctx)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", recorder.Code, http.StatusOK, recorder.Body.String())
+	}
+	if service.relayReq.ProviderKind != "openai" || service.relayReq.Endpoint != "images/generations" || service.relayReq.Method != http.MethodPost {
+		t.Fatalf("relay request = %#v", service.relayReq)
+	}
+	if string(service.relayReq.Body) != `{"model":"gpt-image-1","prompt":"draw a badge"}` {
+		t.Fatalf("relay body = %s", service.relayReq.Body)
+	}
+}
+
+func TestRelayOpenAIImageMultipartForwardsNativeRelayRequest(t *testing.T) {
+	for _, tt := range []struct {
+		name     string
+		path     string
+		endpoint string
+		handler  func(*AIGatewayHandler, *gin.Context)
+	}{
+		{
+			name:     "edits",
+			path:     "/api/v1/ai-gateway/llm/openai/v1/images/edits",
+			endpoint: "images/edits",
+			handler:  (*AIGatewayHandler).RelayOpenAIImageEdits,
+		},
+		{
+			name:     "variations",
+			path:     "/api/v1/ai-gateway/llm/openai/v1/images/variations",
+			endpoint: "images/variations",
+			handler:  (*AIGatewayHandler).RelayOpenAIImageVariations,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			service := &stubAIGatewayService{}
+			handler := NewAIGatewayHandler(service)
+			recorder := httptest.NewRecorder()
+			ctx, _ := gin.CreateTestContext(recorder)
+			ctx.Request = httptest.NewRequest(http.MethodPost, tt.path, strings.NewReader("multipart-body"))
+			ctx.Request.Header.Set("Content-Type", "multipart/form-data; boundary=test")
+			ctx.Set("principal", domainidentity.Principal{UserID: "u-1"})
+
+			tt.handler(handler, ctx)
+
+			if recorder.Code != http.StatusOK {
+				t.Fatalf("status = %d, want %d, body=%s", recorder.Code, http.StatusOK, recorder.Body.String())
+			}
+			if service.relayReq.ProviderKind != "openai" || service.relayReq.Endpoint != tt.endpoint || service.relayReq.Method != http.MethodPost {
+				t.Fatalf("relay request = %#v", service.relayReq)
+			}
+			if string(service.relayReq.Body) != "multipart-body" {
+				t.Fatalf("relay body = %s", service.relayReq.Body)
+			}
+			if service.relayReq.Headers.Get("Content-Type") != "multipart/form-data; boundary=test" {
+				t.Fatalf("relay content type = %q", service.relayReq.Headers.Get("Content-Type"))
+			}
+		})
+	}
+}
+
+func TestRelayOpenAIAudioSpeechForwardsNativeRelayRequest(t *testing.T) {
+	service := &stubAIGatewayService{}
+	handler := NewAIGatewayHandler(service)
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/api/v1/ai-gateway/llm/openai/v1/audio/speech", strings.NewReader(`{"model":"tts-1","input":"hello","voice":"alloy"}`))
+	ctx.Request.Header.Set("Content-Type", "application/json")
+	ctx.Set("principal", domainidentity.Principal{UserID: "u-1"})
+
+	handler.RelayOpenAIAudioSpeech(ctx)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", recorder.Code, http.StatusOK, recorder.Body.String())
+	}
+	if service.relayReq.ProviderKind != "openai" || service.relayReq.Endpoint != "audio/speech" || service.relayReq.Method != http.MethodPost {
+		t.Fatalf("relay request = %#v", service.relayReq)
+	}
+	if string(service.relayReq.Body) != `{"model":"tts-1","input":"hello","voice":"alloy"}` {
+		t.Fatalf("relay body = %s", service.relayReq.Body)
+	}
+}
+
+func TestRelayOpenAIRealtimeForwardsWebSocketRelayRequest(t *testing.T) {
+	service := &stubAIGatewayService{}
+	handler := NewAIGatewayHandler(service)
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/api/v1/ai-gateway/llm/openai/v1/realtime?model=gpt-realtime", nil)
+	ctx.Request.Header.Set("OpenAI-Organization", "org-1")
+	ctx.Set("principal", domainidentity.Principal{UserID: "u-1"})
+
+	handler.RelayOpenAIRealtime(ctx)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", recorder.Code, http.StatusOK, recorder.Body.String())
+	}
+	if service.relayReq.ProviderKind != "openai" || service.relayReq.Endpoint != "realtime" || service.relayReq.Method != http.MethodGet {
+		t.Fatalf("relay request = %#v", service.relayReq)
+	}
+	if service.relayReq.QueryModel != "gpt-realtime" {
+		t.Fatalf("query model = %q", service.relayReq.QueryModel)
+	}
+	if service.relayReq.Headers.Get("OpenAI-Organization") != "org-1" {
+		t.Fatalf("headers = %#v", service.relayReq.Headers)
+	}
+}
+
+func TestRelayOpenAIAudioMultipartForwardsNativeRelayRequest(t *testing.T) {
+	for _, tt := range []struct {
+		name     string
+		path     string
+		endpoint string
+		handler  func(*AIGatewayHandler, *gin.Context)
+	}{
+		{
+			name:     "transcriptions",
+			path:     "/api/v1/ai-gateway/llm/openai/v1/audio/transcriptions",
+			endpoint: "audio/transcriptions",
+			handler:  (*AIGatewayHandler).RelayOpenAIAudioTranscriptions,
+		},
+		{
+			name:     "translations",
+			path:     "/api/v1/ai-gateway/llm/openai/v1/audio/translations",
+			endpoint: "audio/translations",
+			handler:  (*AIGatewayHandler).RelayOpenAIAudioTranslations,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			service := &stubAIGatewayService{}
+			handler := NewAIGatewayHandler(service)
+			recorder := httptest.NewRecorder()
+			ctx, _ := gin.CreateTestContext(recorder)
+			ctx.Request = httptest.NewRequest(http.MethodPost, tt.path, strings.NewReader("multipart-body"))
+			ctx.Request.Header.Set("Content-Type", "multipart/form-data; boundary=test")
+			ctx.Set("principal", domainidentity.Principal{UserID: "u-1"})
+
+			tt.handler(handler, ctx)
+
+			if recorder.Code != http.StatusOK {
+				t.Fatalf("status = %d, want %d, body=%s", recorder.Code, http.StatusOK, recorder.Body.String())
+			}
+			if service.relayReq.ProviderKind != "openai" || service.relayReq.Endpoint != tt.endpoint || service.relayReq.Method != http.MethodPost {
+				t.Fatalf("relay request = %#v", service.relayReq)
+			}
+			if string(service.relayReq.Body) != "multipart-body" {
+				t.Fatalf("relay body = %s", service.relayReq.Body)
+			}
+			if service.relayReq.Headers.Get("Content-Type") != "multipart/form-data; boundary=test" {
+				t.Fatalf("relay content type = %q", service.relayReq.Headers.Get("Content-Type"))
+			}
+		})
+	}
+}
+
+func TestRelayFirstClassOpenAICompatibleChatCompletionsForwardNativeRelayRequest(t *testing.T) {
+	for _, tt := range []struct {
+		name         string
+		path         string
+		providerKind string
+		handler      func(*AIGatewayHandler, *gin.Context)
+	}{
+		{
+			name:         "deepseek",
+			path:         "/api/v1/ai-gateway/llm/deepseek/v1/chat/completions",
+			providerKind: "deepseek",
+			handler:      (*AIGatewayHandler).RelayDeepSeekChatCompletions,
+		},
+		{
+			name:         "qwen",
+			path:         "/api/v1/ai-gateway/llm/qwen/v1/chat/completions",
+			providerKind: "qwen",
+			handler:      (*AIGatewayHandler).RelayQwenChatCompletions,
+		},
+		{
+			name:         "openrouter",
+			path:         "/api/v1/ai-gateway/llm/openrouter/v1/chat/completions",
+			providerKind: "openrouter",
+			handler:      (*AIGatewayHandler).RelayOpenRouterChatCompletions,
+		},
+		{
+			name:         "azure-openai",
+			path:         "/api/v1/ai-gateway/llm/azure-openai/v1/chat/completions",
+			providerKind: "azure-openai",
+			handler:      (*AIGatewayHandler).RelayAzureOpenAIChatCompletions,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			service := &stubAIGatewayService{}
+			handler := NewAIGatewayHandler(service)
+			recorder := httptest.NewRecorder()
+			ctx, _ := gin.CreateTestContext(recorder)
+			ctx.Request = httptest.NewRequest(http.MethodPost, tt.path, strings.NewReader(`{"model":"provider-model"}`))
+			ctx.Request.Header.Set("Content-Type", "application/json")
+			ctx.Set("principal", domainidentity.Principal{UserID: "u-1"})
+
+			tt.handler(handler, ctx)
+
+			if recorder.Code != http.StatusOK {
+				t.Fatalf("status = %d, want %d, body=%s", recorder.Code, http.StatusOK, recorder.Body.String())
+			}
+			if service.relayReq.ProviderKind != tt.providerKind || service.relayReq.Endpoint != "chat/completions" || service.relayReq.Method != http.MethodPost {
+				t.Fatalf("relay request = %#v", service.relayReq)
+			}
+			if string(service.relayReq.Body) != `{"model":"provider-model"}` {
+				t.Fatalf("relay body = %s", service.relayReq.Body)
+			}
+		})
+	}
+}
+
+func TestRelayFirstClassOpenAICompatibleImageGenerationsForwardNativeRelayRequest(t *testing.T) {
+	for _, tt := range []struct {
+		name         string
+		path         string
+		providerKind string
+		handler      func(*AIGatewayHandler, *gin.Context)
+	}{
+		{
+			name:         "deepseek",
+			path:         "/api/v1/ai-gateway/llm/deepseek/v1/images/generations",
+			providerKind: "deepseek",
+			handler:      (*AIGatewayHandler).RelayDeepSeekImageGenerations,
+		},
+		{
+			name:         "qwen",
+			path:         "/api/v1/ai-gateway/llm/qwen/v1/images/generations",
+			providerKind: "qwen",
+			handler:      (*AIGatewayHandler).RelayQwenImageGenerations,
+		},
+		{
+			name:         "openrouter",
+			path:         "/api/v1/ai-gateway/llm/openrouter/v1/images/generations",
+			providerKind: "openrouter",
+			handler:      (*AIGatewayHandler).RelayOpenRouterImageGenerations,
+		},
+		{
+			name:         "azure-openai",
+			path:         "/api/v1/ai-gateway/llm/azure-openai/v1/images/generations",
+			providerKind: "azure-openai",
+			handler:      (*AIGatewayHandler).RelayAzureOpenAIImageGenerations,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			service := &stubAIGatewayService{}
+			handler := NewAIGatewayHandler(service)
+			recorder := httptest.NewRecorder()
+			ctx, _ := gin.CreateTestContext(recorder)
+			ctx.Request = httptest.NewRequest(http.MethodPost, tt.path, strings.NewReader(`{"model":"provider-image","prompt":"draw"}`))
+			ctx.Request.Header.Set("Content-Type", "application/json")
+			ctx.Set("principal", domainidentity.Principal{UserID: "u-1"})
+
+			tt.handler(handler, ctx)
+
+			if recorder.Code != http.StatusOK {
+				t.Fatalf("status = %d, want %d, body=%s", recorder.Code, http.StatusOK, recorder.Body.String())
+			}
+			if service.relayReq.ProviderKind != tt.providerKind || service.relayReq.Endpoint != "images/generations" || service.relayReq.Method != http.MethodPost {
+				t.Fatalf("relay request = %#v", service.relayReq)
+			}
+			if string(service.relayReq.Body) != `{"model":"provider-image","prompt":"draw"}` {
+				t.Fatalf("relay body = %s", service.relayReq.Body)
+			}
+		})
+	}
+}
+
+func TestRelayFirstClassOpenAICompatibleImageMultipartForwardNativeRelayRequest(t *testing.T) {
+	for _, tt := range []struct {
+		name         string
+		path         string
+		providerKind string
+		endpoint     string
+		handler      func(*AIGatewayHandler, *gin.Context)
+	}{
+		{
+			name:         "deepseek edits",
+			path:         "/api/v1/ai-gateway/llm/deepseek/v1/images/edits",
+			providerKind: "deepseek",
+			endpoint:     "images/edits",
+			handler:      (*AIGatewayHandler).RelayDeepSeekImageEdits,
+		},
+		{
+			name:         "deepseek variations",
+			path:         "/api/v1/ai-gateway/llm/deepseek/v1/images/variations",
+			providerKind: "deepseek",
+			endpoint:     "images/variations",
+			handler:      (*AIGatewayHandler).RelayDeepSeekImageVariations,
+		},
+		{
+			name:         "qwen edits",
+			path:         "/api/v1/ai-gateway/llm/qwen/v1/images/edits",
+			providerKind: "qwen",
+			endpoint:     "images/edits",
+			handler:      (*AIGatewayHandler).RelayQwenImageEdits,
+		},
+		{
+			name:         "qwen variations",
+			path:         "/api/v1/ai-gateway/llm/qwen/v1/images/variations",
+			providerKind: "qwen",
+			endpoint:     "images/variations",
+			handler:      (*AIGatewayHandler).RelayQwenImageVariations,
+		},
+		{
+			name:         "openrouter edits",
+			path:         "/api/v1/ai-gateway/llm/openrouter/v1/images/edits",
+			providerKind: "openrouter",
+			endpoint:     "images/edits",
+			handler:      (*AIGatewayHandler).RelayOpenRouterImageEdits,
+		},
+		{
+			name:         "openrouter variations",
+			path:         "/api/v1/ai-gateway/llm/openrouter/v1/images/variations",
+			providerKind: "openrouter",
+			endpoint:     "images/variations",
+			handler:      (*AIGatewayHandler).RelayOpenRouterImageVariations,
+		},
+		{
+			name:         "azure-openai edits",
+			path:         "/api/v1/ai-gateway/llm/azure-openai/v1/images/edits",
+			providerKind: "azure-openai",
+			endpoint:     "images/edits",
+			handler:      (*AIGatewayHandler).RelayAzureOpenAIImageEdits,
+		},
+		{
+			name:         "azure-openai variations",
+			path:         "/api/v1/ai-gateway/llm/azure-openai/v1/images/variations",
+			providerKind: "azure-openai",
+			endpoint:     "images/variations",
+			handler:      (*AIGatewayHandler).RelayAzureOpenAIImageVariations,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			service := &stubAIGatewayService{}
+			handler := NewAIGatewayHandler(service)
+			recorder := httptest.NewRecorder()
+			ctx, _ := gin.CreateTestContext(recorder)
+			ctx.Request = httptest.NewRequest(http.MethodPost, tt.path, strings.NewReader("multipart-body"))
+			ctx.Request.Header.Set("Content-Type", "multipart/form-data; boundary=test")
+			ctx.Set("principal", domainidentity.Principal{UserID: "u-1"})
+
+			tt.handler(handler, ctx)
+
+			if recorder.Code != http.StatusOK {
+				t.Fatalf("status = %d, want %d, body=%s", recorder.Code, http.StatusOK, recorder.Body.String())
+			}
+			if service.relayReq.ProviderKind != tt.providerKind || service.relayReq.Endpoint != tt.endpoint || service.relayReq.Method != http.MethodPost {
+				t.Fatalf("relay request = %#v", service.relayReq)
+			}
+			if string(service.relayReq.Body) != "multipart-body" {
+				t.Fatalf("relay body = %s", service.relayReq.Body)
+			}
+			if service.relayReq.Headers.Get("Content-Type") != "multipart/form-data; boundary=test" {
+				t.Fatalf("relay content type = %q", service.relayReq.Headers.Get("Content-Type"))
+			}
+		})
+	}
+}
+
+func TestRelayFirstClassOpenAICompatibleAudioSpeechForwardNativeRelayRequest(t *testing.T) {
+	for _, tt := range []struct {
+		name         string
+		path         string
+		providerKind string
+		handler      func(*AIGatewayHandler, *gin.Context)
+	}{
+		{
+			name:         "deepseek",
+			path:         "/api/v1/ai-gateway/llm/deepseek/v1/audio/speech",
+			providerKind: "deepseek",
+			handler:      (*AIGatewayHandler).RelayDeepSeekAudioSpeech,
+		},
+		{
+			name:         "qwen",
+			path:         "/api/v1/ai-gateway/llm/qwen/v1/audio/speech",
+			providerKind: "qwen",
+			handler:      (*AIGatewayHandler).RelayQwenAudioSpeech,
+		},
+		{
+			name:         "openrouter",
+			path:         "/api/v1/ai-gateway/llm/openrouter/v1/audio/speech",
+			providerKind: "openrouter",
+			handler:      (*AIGatewayHandler).RelayOpenRouterAudioSpeech,
+		},
+		{
+			name:         "azure-openai",
+			path:         "/api/v1/ai-gateway/llm/azure-openai/v1/audio/speech",
+			providerKind: "azure-openai",
+			handler:      (*AIGatewayHandler).RelayAzureOpenAIAudioSpeech,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			service := &stubAIGatewayService{}
+			handler := NewAIGatewayHandler(service)
+			recorder := httptest.NewRecorder()
+			ctx, _ := gin.CreateTestContext(recorder)
+			ctx.Request = httptest.NewRequest(http.MethodPost, tt.path, strings.NewReader(`{"model":"provider-tts","input":"hello","voice":"alloy"}`))
+			ctx.Request.Header.Set("Content-Type", "application/json")
+			ctx.Set("principal", domainidentity.Principal{UserID: "u-1"})
+
+			tt.handler(handler, ctx)
+
+			if recorder.Code != http.StatusOK {
+				t.Fatalf("status = %d, want %d, body=%s", recorder.Code, http.StatusOK, recorder.Body.String())
+			}
+			if service.relayReq.ProviderKind != tt.providerKind || service.relayReq.Endpoint != "audio/speech" || service.relayReq.Method != http.MethodPost {
+				t.Fatalf("relay request = %#v", service.relayReq)
+			}
+			if string(service.relayReq.Body) != `{"model":"provider-tts","input":"hello","voice":"alloy"}` {
+				t.Fatalf("relay body = %s", service.relayReq.Body)
+			}
+		})
+	}
+}
+
+func TestRelayFirstClassOpenAICompatibleAudioMultipartForwardNativeRelayRequest(t *testing.T) {
+	for _, tt := range []struct {
+		name         string
+		path         string
+		providerKind string
+		endpoint     string
+		handler      func(*AIGatewayHandler, *gin.Context)
+	}{
+		{
+			name:         "deepseek transcriptions",
+			path:         "/api/v1/ai-gateway/llm/deepseek/v1/audio/transcriptions",
+			providerKind: "deepseek",
+			endpoint:     "audio/transcriptions",
+			handler:      (*AIGatewayHandler).RelayDeepSeekAudioTranscriptions,
+		},
+		{
+			name:         "deepseek translations",
+			path:         "/api/v1/ai-gateway/llm/deepseek/v1/audio/translations",
+			providerKind: "deepseek",
+			endpoint:     "audio/translations",
+			handler:      (*AIGatewayHandler).RelayDeepSeekAudioTranslations,
+		},
+		{
+			name:         "qwen transcriptions",
+			path:         "/api/v1/ai-gateway/llm/qwen/v1/audio/transcriptions",
+			providerKind: "qwen",
+			endpoint:     "audio/transcriptions",
+			handler:      (*AIGatewayHandler).RelayQwenAudioTranscriptions,
+		},
+		{
+			name:         "qwen translations",
+			path:         "/api/v1/ai-gateway/llm/qwen/v1/audio/translations",
+			providerKind: "qwen",
+			endpoint:     "audio/translations",
+			handler:      (*AIGatewayHandler).RelayQwenAudioTranslations,
+		},
+		{
+			name:         "openrouter transcriptions",
+			path:         "/api/v1/ai-gateway/llm/openrouter/v1/audio/transcriptions",
+			providerKind: "openrouter",
+			endpoint:     "audio/transcriptions",
+			handler:      (*AIGatewayHandler).RelayOpenRouterAudioTranscriptions,
+		},
+		{
+			name:         "openrouter translations",
+			path:         "/api/v1/ai-gateway/llm/openrouter/v1/audio/translations",
+			providerKind: "openrouter",
+			endpoint:     "audio/translations",
+			handler:      (*AIGatewayHandler).RelayOpenRouterAudioTranslations,
+		},
+		{
+			name:         "azure-openai transcriptions",
+			path:         "/api/v1/ai-gateway/llm/azure-openai/v1/audio/transcriptions",
+			providerKind: "azure-openai",
+			endpoint:     "audio/transcriptions",
+			handler:      (*AIGatewayHandler).RelayAzureOpenAIAudioTranscriptions,
+		},
+		{
+			name:         "azure-openai translations",
+			path:         "/api/v1/ai-gateway/llm/azure-openai/v1/audio/translations",
+			providerKind: "azure-openai",
+			endpoint:     "audio/translations",
+			handler:      (*AIGatewayHandler).RelayAzureOpenAIAudioTranslations,
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			service := &stubAIGatewayService{}
+			handler := NewAIGatewayHandler(service)
+			recorder := httptest.NewRecorder()
+			ctx, _ := gin.CreateTestContext(recorder)
+			ctx.Request = httptest.NewRequest(http.MethodPost, tt.path, strings.NewReader("multipart-body"))
+			ctx.Request.Header.Set("Content-Type", "multipart/form-data; boundary=test")
+			ctx.Set("principal", domainidentity.Principal{UserID: "u-1"})
+
+			tt.handler(handler, ctx)
+
+			if recorder.Code != http.StatusOK {
+				t.Fatalf("status = %d, want %d, body=%s", recorder.Code, http.StatusOK, recorder.Body.String())
+			}
+			if service.relayReq.ProviderKind != tt.providerKind || service.relayReq.Endpoint != tt.endpoint || service.relayReq.Method != http.MethodPost {
+				t.Fatalf("relay request = %#v", service.relayReq)
+			}
+			if string(service.relayReq.Body) != "multipart-body" {
+				t.Fatalf("relay body = %s", service.relayReq.Body)
+			}
+			if service.relayReq.Headers.Get("Content-Type") != "multipart/form-data; boundary=test" {
+				t.Fatalf("relay content type = %q", service.relayReq.Headers.Get("Content-Type"))
+			}
+		})
+	}
+}
+
+func TestRelayGeminiGenerateContentForwardsNativeRelayRequest(t *testing.T) {
+	for _, tt := range []struct {
+		name     string
+		action   string
+		endpoint string
+	}{
+		{name: "generate content", action: "generateContent", endpoint: "generateContent"},
+		{name: "stream generate content", action: "streamGenerateContent", endpoint: "streamGenerateContent"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			service := &stubAIGatewayService{}
+			handler := NewAIGatewayHandler(service)
+			recorder := httptest.NewRecorder()
+			ctx, _ := gin.CreateTestContext(recorder)
+			ctx.Request = httptest.NewRequest(http.MethodPost, "/api/v1/ai-gateway/llm/gemini/v1beta/models/gemini-public:"+tt.action, strings.NewReader(`{"contents":[{"parts":[{"text":"hi"}]}]}`))
+			ctx.Request.Header.Set("Content-Type", "application/json")
+			ctx.Params = gin.Params{{Key: "modelAction", Value: "/gemini-public:" + tt.action}}
+			ctx.Set("principal", domainidentity.Principal{UserID: "u-1"})
+
+			handler.RelayGeminiModelAction(ctx)
+
+			if recorder.Code != http.StatusOK {
+				t.Fatalf("status = %d, want %d, body=%s", recorder.Code, http.StatusOK, recorder.Body.String())
+			}
+			if service.relayReq.ProviderKind != "gemini" || service.relayReq.Endpoint != tt.endpoint || service.relayReq.PathModel != "gemini-public" || service.relayReq.Method != http.MethodPost {
+				t.Fatalf("relay request = %#v", service.relayReq)
+			}
+			if string(service.relayReq.Body) != `{"contents":[{"parts":[{"text":"hi"}]}]}` {
+				t.Fatalf("relay body = %s", service.relayReq.Body)
+			}
+		})
+	}
+}
+
+func TestRelayGeminiInteractionsForwardsNativeRelayRequest(t *testing.T) {
+	service := &stubAIGatewayService{}
+	handler := NewAIGatewayHandler(service)
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/api/v1/ai-gateway/llm/gemini/v1beta/interactions", strings.NewReader(`{"model":"gemini-image-public","input":"draw"}`))
+	ctx.Request.Header.Set("Content-Type", "application/json")
+	ctx.Set("principal", domainidentity.Principal{UserID: "u-1"})
+
+	handler.RelayGeminiInteractions(ctx)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", recorder.Code, http.StatusOK, recorder.Body.String())
+	}
+	if service.relayReq.ProviderKind != "gemini" || service.relayReq.Endpoint != "interactions" || service.relayReq.Method != http.MethodPost {
+		t.Fatalf("relay request = %#v", service.relayReq)
+	}
+	if string(service.relayReq.Body) != `{"model":"gemini-image-public","input":"draw"}` {
+		t.Fatalf("relay body = %s", service.relayReq.Body)
+	}
+}
+
+func TestRelayCohereRerankForwardsNativeRelayRequest(t *testing.T) {
+	service := &stubAIGatewayService{}
+	handler := NewAIGatewayHandler(service)
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/api/v1/ai-gateway/llm/cohere/v2/rerank", strings.NewReader(`{"model":"rerank-public","query":"q","documents":["a"]}`))
+	ctx.Request.Header.Set("Content-Type", "application/json")
+	ctx.Set("principal", domainidentity.Principal{UserID: "u-1"})
+
+	handler.RelayCohereRerank(ctx)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", recorder.Code, http.StatusOK, recorder.Body.String())
+	}
+	if service.relayReq.ProviderKind != "cohere" || service.relayReq.Endpoint != "rerank" || service.relayReq.Method != http.MethodPost {
+		t.Fatalf("relay request = %#v", service.relayReq)
+	}
+	if string(service.relayReq.Body) != `{"model":"rerank-public","query":"q","documents":["a"]}` {
+		t.Fatalf("relay body = %s", service.relayReq.Body)
+	}
+}
+
+func TestRelayLLMUsesConfiguredRequestBodyLimit(t *testing.T) {
+	service := &stubAIGatewayService{maxRelayBodySize: 1}
+	handler := NewAIGatewayHandler(service)
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/api/v1/ai-gateway/llm/openai/v1/chat/completions", strings.NewReader(`{"model":"gpt-public"}`))
+	ctx.Request.Header.Set("Content-Type", "application/json")
+	ctx.Set("principal", domainidentity.Principal{UserID: "u-1"})
+
+	handler.RelayOpenAIChatCompletions(ctx)
+
+	if recorder.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("status = %d, want %d, body=%s", recorder.Code, http.StatusRequestEntityTooLarge, recorder.Body.String())
+	}
+	if len(service.relayReq.Body) != 0 {
+		t.Fatalf("relay service should not receive oversized body, got %q", service.relayReq.Body)
 	}
 }
 

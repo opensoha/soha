@@ -49,6 +49,42 @@ func EncryptString(key, value string) (string, error) {
 	return Prefix + base64.StdEncoding.EncodeToString(payload), nil
 }
 
+func DecryptString(key, value string) (string, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "", nil
+	}
+	if !strings.HasPrefix(value, Prefix) {
+		return value, nil
+	}
+	normalized, err := NormalizeKey(key)
+	if err != nil {
+		return "", err
+	}
+	payload, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(value, Prefix))
+	if err != nil {
+		return "", fmt.Errorf("decode encrypted secret: %w", err)
+	}
+	block, err := aes.NewCipher(normalized)
+	if err != nil {
+		return "", fmt.Errorf("build secret cipher: %w", err)
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return "", fmt.Errorf("build secret gcm: %w", err)
+	}
+	if len(payload) <= gcm.NonceSize() {
+		return "", errors.New("encrypted secret payload is invalid")
+	}
+	nonce := payload[:gcm.NonceSize()]
+	ciphertext := payload[gcm.NonceSize():]
+	plaintext, err := gcm.Open(nil, nonce, ciphertext, nil)
+	if err != nil {
+		return "", fmt.Errorf("decrypt secret: %w", err)
+	}
+	return string(plaintext), nil
+}
+
 func Encrypted(value string) bool {
 	return SecretStorageLabel(value) == SecretStorageEncrypted
 }

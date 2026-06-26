@@ -27,10 +27,7 @@ type StreamTicketParser interface {
 
 func BuildPrincipalMiddleware(cfg cfgpkg.AuthConfig, parser AccessTokenParser) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		token := normalizeBearerToken(c.GetHeader("Authorization"))
-		if token == "" {
-			token = strings.TrimSpace(c.Query("access_token"))
-		}
+		token := accessTokenFromRequest(c)
 		if token != "" {
 			principal, accessCtx, err := parser.ParseAccessToken(c.Request.Context(), token)
 			if err != nil {
@@ -81,6 +78,21 @@ func BuildPrincipalMiddleware(cfg cfgpkg.AuthConfig, parser AccessTokenParser) g
 	}
 }
 
+func accessTokenFromRequest(c *gin.Context) string {
+	token := normalizeBearerToken(c.GetHeader("Authorization"))
+	if token != "" {
+		return token
+	}
+	token = strings.TrimSpace(c.Query("access_token"))
+	if token != "" {
+		return token
+	}
+	if isAIGatewayLLMRelayPath(c.Request.URL.Path) {
+		return strings.TrimSpace(c.GetHeader("x-api-key"))
+	}
+	return ""
+}
+
 func RequireAuth() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		principal := PrincipalFromContext(c)
@@ -120,6 +132,11 @@ func normalizeBearerToken(value string) string {
 		return strings.TrimSpace(value[7:])
 	}
 	return value
+}
+
+func isAIGatewayLLMRelayPath(path string) bool {
+	path = strings.TrimSpace(path)
+	return strings.HasPrefix(path, "/api/v1/ai-gateway/llm/")
 }
 
 func allowsExternalBearerToken(path string) bool {

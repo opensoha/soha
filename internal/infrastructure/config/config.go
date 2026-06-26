@@ -153,9 +153,22 @@ type MCPConfig struct {
 
 type AIGatewayConfig struct {
 	RateLimit          AIGatewayRateLimitConfig          `mapstructure:"rate_limit"`
+	Relay              AIGatewayRelayConfig              `mapstructure:"relay"`
 	ConnectorRuntime   AIGatewayConnectorRuntimeConfig   `mapstructure:"connector_runtime"`
 	ConnectorRuntimes  []AIGatewayConnectorRuntimeConfig `mapstructure:"connector_runtimes"`
 	ConnectorEventSink AIGatewayConnectorEventSinkConfig `mapstructure:"connector_event_sink"`
+}
+
+type AIGatewayRelayConfig struct {
+	Enabled                     bool          `mapstructure:"enabled"`
+	DefaultTimeout              time.Duration `mapstructure:"default_timeout"`
+	StreamTimeout               time.Duration `mapstructure:"stream_timeout"`
+	HealthCheckEnabled          bool          `mapstructure:"health_check_enabled"`
+	HealthCheckInterval         time.Duration `mapstructure:"health_check_interval"`
+	MaxRequestBodyMB            int           `mapstructure:"max_request_body_mb"`
+	AllowInsecureUpstreamHTTP   bool          `mapstructure:"allow_insecure_upstream_http"`
+	AllowPrivateUpstreamHosts   bool          `mapstructure:"allow_private_upstream_hosts"`
+	IncludeUsageForOpenAIStream bool          `mapstructure:"include_usage_for_openai_stream"`
 }
 
 type AIGatewayRateLimitConfig struct {
@@ -546,6 +559,15 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("ai_gateway.rate_limit.redis.tls", false)
 	v.SetDefault("ai_gateway.rate_limit.redis.key_prefix", "soha:ai-gateway:rate-limit")
 	v.SetDefault("ai_gateway.rate_limit.redis.timeout", "500ms")
+	v.SetDefault("ai_gateway.relay.enabled", true)
+	v.SetDefault("ai_gateway.relay.default_timeout", "120s")
+	v.SetDefault("ai_gateway.relay.stream_timeout", "300s")
+	v.SetDefault("ai_gateway.relay.health_check_enabled", false)
+	v.SetDefault("ai_gateway.relay.health_check_interval", "1m")
+	v.SetDefault("ai_gateway.relay.max_request_body_mb", 32)
+	v.SetDefault("ai_gateway.relay.allow_insecure_upstream_http", false)
+	v.SetDefault("ai_gateway.relay.allow_private_upstream_hosts", false)
+	v.SetDefault("ai_gateway.relay.include_usage_for_openai_stream", true)
 	v.SetDefault("ai_gateway.connector_runtime.endpoint", "")
 	v.SetDefault("ai_gateway.connector_runtime.token", "")
 	v.SetDefault("ai_gateway.connector_runtime.plugin_id", "")

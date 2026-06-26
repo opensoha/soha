@@ -70,6 +70,9 @@ const (
 	PermAIGatewayView                     = "ai.gateway.view"
 	PermAIGatewayInvoke                   = "ai.gateway.invoke"
 	PermAIGatewayManage                   = "ai.gateway.manage"
+	PermAIGatewayRelayView                = "ai.gateway.relay.view"
+	PermAIGatewayRelayInvoke              = "ai.gateway.relay.invoke"
+	PermAIGatewayRelayManage              = "ai.gateway.relay.manage"
 	PermPluginView                        = "plugin.view"
 	PermPluginInstall                     = "plugin.install"
 	PermPluginManage                      = "plugin.manage"
@@ -200,6 +203,9 @@ func allPermissionKeys() []string {
 		PermAIGatewayView,
 		PermAIGatewayInvoke,
 		PermAIGatewayManage,
+		PermAIGatewayRelayView,
+		PermAIGatewayRelayInvoke,
+		PermAIGatewayRelayManage,
 		PermPluginView,
 		PermPluginInstall,
 		PermPluginManage,
@@ -326,6 +332,9 @@ func defaultRolePermissions() map[string][]string {
 		PermAIGatewayView,
 		PermAIGatewayInvoke,
 		PermAIGatewayManage,
+		PermAIGatewayRelayView,
+		PermAIGatewayRelayInvoke,
+		PermAIGatewayRelayManage,
 		PermPluginView,
 		PermPluginInstall,
 		PermPluginManage,
@@ -398,6 +407,8 @@ func defaultRolePermissions() map[string][]string {
 		PermObserveAIInspectionRun,
 		PermAIGatewayView,
 		PermAIGatewayInvoke,
+		PermAIGatewayRelayView,
+		PermAIGatewayRelayInvoke,
 		PermPluginView,
 		PermDeliveryApplicationsView,
 		PermDeliveryApplicationServicesView,
@@ -460,6 +471,7 @@ func defaultRolePermissions() map[string][]string {
 		PermObserveEventsView,
 		PermObserveAIView,
 		PermAIGatewayView,
+		PermAIGatewayRelayView,
 		PermPluginView,
 		PermDockerOverviewView,
 		PermDockerHostsView,

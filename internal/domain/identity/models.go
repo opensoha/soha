@@ -40,12 +40,15 @@ type UserProfile struct {
 }
 
 type AccessContext struct {
-	TokenID     string    `json:"tokenId"`
-	TokenKind   string    `json:"tokenKind,omitempty"`
-	SessionID   string    `json:"sessionId,omitempty"`
-	SubjectType string    `json:"subjectType,omitempty"`
-	SubjectID   string    `json:"subjectId,omitempty"`
-	ExpiresAt   time.Time `json:"expiresAt"`
+	TokenID     string         `json:"tokenId"`
+	TokenKind   string         `json:"tokenKind,omitempty"`
+	TokenPrefix string         `json:"tokenPrefix,omitempty"`
+	SessionID   string         `json:"sessionId,omitempty"`
+	SubjectType string         `json:"subjectType,omitempty"`
+	SubjectID   string         `json:"subjectId,omitempty"`
+	Scopes      []string       `json:"scopes,omitempty"`
+	Metadata    map[string]any `json:"metadata,omitempty"`
+	ExpiresAt   time.Time      `json:"expiresAt"`
 }
 
 type TokenSet struct {

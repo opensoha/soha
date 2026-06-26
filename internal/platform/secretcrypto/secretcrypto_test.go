@@ -15,6 +15,30 @@ func TestEncryptStringProducesEncryptedPayload(t *testing.T) {
 	}
 }
 
+func TestDecryptStringReturnsPlaintext(t *testing.T) {
+	encrypted, err := EncryptString("stable-test-key-32-bytes-or-more", "registry-token")
+	if err != nil {
+		t.Fatalf("EncryptString returned error: %v", err)
+	}
+	plaintext, err := DecryptString("stable-test-key-32-bytes-or-more", encrypted)
+	if err != nil {
+		t.Fatalf("DecryptString returned error: %v", err)
+	}
+	if plaintext != "registry-token" {
+		t.Fatalf("DecryptString() = %q, want registry-token", plaintext)
+	}
+}
+
+func TestDecryptStringKeepsLegacyPlaintext(t *testing.T) {
+	plaintext, err := DecryptString("stable-test-key-32-bytes-or-more", "legacy-token")
+	if err != nil {
+		t.Fatalf("DecryptString returned error: %v", err)
+	}
+	if plaintext != "legacy-token" {
+		t.Fatalf("DecryptString() = %q, want legacy-token", plaintext)
+	}
+}
+
 func TestEncryptStringRequiresKey(t *testing.T) {
 	if _, err := EncryptString("", "registry-token"); !errors.Is(err, ErrKeyRequired) {
 		t.Fatalf("EncryptString error = %v, want ErrKeyRequired", err)

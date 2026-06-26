@@ -429,6 +429,19 @@ func newGatewayServices(ctx context.Context, cfg cfgpkg.Config, repos *repositor
 		AuditLogs:       repos.aiGatewayRepository,
 		RateLimits:      repos.aiGatewayRepository,
 		Approvals:       repos.aiGatewayRepository,
+		LLMRelay:        repos.aiGatewayRepository,
+		RelayConfig: appaigateway.LLMRelayConfig{
+			Enabled:                     cfg.AIGateway.Relay.Enabled,
+			DefaultTimeout:              cfg.AIGateway.Relay.DefaultTimeout,
+			StreamTimeout:               cfg.AIGateway.Relay.StreamTimeout,
+			HealthCheckEnabled:          cfg.AIGateway.Relay.HealthCheckEnabled,
+			HealthCheckInterval:         cfg.AIGateway.Relay.HealthCheckInterval,
+			MaxRequestBodyBytes:         int64(cfg.AIGateway.Relay.MaxRequestBodyMB) << 20,
+			AllowInsecureUpstreamHTTP:   cfg.AIGateway.Relay.AllowInsecureUpstreamHTTP,
+			AllowPrivateUpstreamHosts:   cfg.AIGateway.Relay.AllowPrivateUpstreamHosts,
+			IncludeUsageForOpenAIStream: cfg.AIGateway.Relay.IncludeUsageForOpenAIStream,
+			CredentialEncryptionKey:     cfg.Security.CredentialEncryptionKey,
+		},
 	})
 	var rateLimitBackend interface{ Close() error }
 	if strings.EqualFold(strings.TrimSpace(cfg.AIGateway.RateLimit.Backend), "redis") {
@@ -445,6 +458,7 @@ func newGatewayServices(ctx context.Context, cfg cfgpkg.Config, repos *repositor
 	aiGatewayService.SetAnalysisArtifactRecorder(delivery.copilotService)
 	aiGatewayService.SetOperationRecorder(core.operationService)
 	aiGatewayService.SetOnCallResolver(core.monitoringService)
+	aiGatewayService.StartRelayHealthChecks(ctx)
 	if err := registerAIGatewayConnectorRuntimes(ctx, aiGatewayService, cfg.AIGateway); err != nil {
 		if rateLimitBackend != nil {
 			_ = rateLimitBackend.Close()

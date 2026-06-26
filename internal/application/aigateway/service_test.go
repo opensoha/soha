@@ -3,6 +3,7 @@ package aigateway
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -66,12 +67,20 @@ type memoryGatewayRepository struct {
 }
 
 func newTestService(permissions *appaccess.PermissionResolver, audit AuditRecorder, repos ...*memoryGatewayRepository) *Service {
+	var repo *memoryGatewayRepository
+	if len(repos) > 0 {
+		repo = repos[0]
+	}
+	return newTestServiceWithRelay(permissions, audit, repo, nil)
+}
+
+func newTestServiceWithRelay(permissions *appaccess.PermissionResolver, audit AuditRecorder, repo *memoryGatewayRepository, relayRepo LLMRelayRepository) *Service {
 	deps := ServiceDeps{
 		Permissions: permissions,
 		Audit:       audit,
+		LLMRelay:    relayRepo,
 	}
-	if len(repos) > 0 && repos[0] != nil {
-		repo := repos[0]
+	if repo != nil {
 		deps.PersonalTokens = repo
 		deps.ServiceAccounts = repo
 		deps.Clients = repo
@@ -2330,6 +2339,367 @@ func TestCreatePersonalAccessTokenRejectsPermissionEscalation(t *testing.T) {
 	}
 }
 
+func TestCreatePersonalAccessTokenNormalizesLLMRelayMetadata(t *testing.T) {
+	repo := &memoryGatewayRepository{}
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
+		matrix: map[string][]string{
+			"developer": {
+				appaccess.PermAIGatewayInvoke,
+				appaccess.PermAIGatewayRelayInvoke,
+			},
+		},
+	}), nil, repo)
+
+	created, err := service.CreatePersonalAccessToken(context.Background(), testPrincipal("developer"), domainaigateway.PersonalAccessTokenInput{
+		Name:           "relay",
+		Scopes:         []string{"relay"},
+		PermissionKeys: []string{appaccess.PermAIGatewayRelayInvoke},
+		Metadata: map[string]any{
+			"purpose":              " LLM-Relay ",
+			"allowedModels":        []any{"gpt-4.1", "claude-sonnet-4-5", "gpt-4.1"},
+			"allowedProviderKinds": []string{"OpenAI", "anthropic", "DeepSeek", "QWEN", "openrouter", "azure_openai", "Gemini", "Cohere"},
+			"allowedUpstreamIds":   "upstream-b, upstream-a",
+			"allowedIPCIDRs":       []any{"10.0.0.8/32", "10.0.0.0/24"},
+			"allowedTeams":         []any{"platform", "ml", "platform"},
+			"deniedTeams":          "suspended, blocked",
+			"rateLimitProfileId":   " developer-default ",
+			"owner":                "platform",
+		},
+	})
+	if err != nil {
+		t.Fatalf("CreatePersonalAccessToken returned error: %v", err)
+	}
+	if created.Token.Metadata["purpose"] != LLMRelayTokenPurpose {
+		t.Fatalf("purpose = %#v, want %s", created.Token.Metadata["purpose"], LLMRelayTokenPurpose)
+	}
+	if created.Token.Metadata["owner"] != "platform" {
+		t.Fatalf("unknown metadata should be preserved, got %#v", created.Token.Metadata)
+	}
+	allowedModels, ok := created.Token.Metadata["allowedModels"].([]string)
+	if !ok || !slices.Equal(allowedModels, []string{"claude-sonnet-4-5", "gpt-4.1"}) {
+		t.Fatalf("allowedModels = %#v", created.Token.Metadata["allowedModels"])
+	}
+	allowedProviderKinds, ok := created.Token.Metadata["allowedProviderKinds"].([]string)
+	if !ok || !slices.Equal(allowedProviderKinds, []string{"anthropic", "azure-openai", "cohere", "deepseek", "gemini", "openai", "openrouter", "qwen"}) {
+		t.Fatalf("allowedProviderKinds = %#v", created.Token.Metadata["allowedProviderKinds"])
+	}
+	allowedUpstreamIDs, ok := created.Token.Metadata["allowedUpstreamIds"].([]string)
+	if !ok || !slices.Equal(allowedUpstreamIDs, []string{"upstream-a", "upstream-b"}) {
+		t.Fatalf("allowedUpstreamIds = %#v", created.Token.Metadata["allowedUpstreamIds"])
+	}
+	allowedIPCIDRs, ok := created.Token.Metadata["allowedIPCIDRs"].([]string)
+	if !ok || !slices.Equal(allowedIPCIDRs, []string{"10.0.0.0/24", "10.0.0.8/32"}) {
+		t.Fatalf("allowedIPCIDRs = %#v", created.Token.Metadata["allowedIPCIDRs"])
+	}
+	allowedTeams, ok := created.Token.Metadata["allowedTeams"].([]string)
+	if !ok || !slices.Equal(allowedTeams, []string{"ml", "platform"}) {
+		t.Fatalf("allowedTeams = %#v", created.Token.Metadata["allowedTeams"])
+	}
+	deniedTeams, ok := created.Token.Metadata["deniedTeams"].([]string)
+	if !ok || !slices.Equal(deniedTeams, []string{"blocked", "suspended"}) {
+		t.Fatalf("deniedTeams = %#v", created.Token.Metadata["deniedTeams"])
+	}
+	if created.Token.Metadata["rateLimitProfileId"] != "developer-default" {
+		t.Fatalf("rateLimitProfileId = %#v", created.Token.Metadata["rateLimitProfileId"])
+	}
+}
+
+func TestCreatePersonalAccessTokenRejectsRelayDebugMetadataWithoutManage(t *testing.T) {
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
+		matrix: map[string][]string{
+			"developer": {
+				appaccess.PermAIGatewayInvoke,
+				appaccess.PermAIGatewayRelayInvoke,
+			},
+		},
+	}), nil, &memoryGatewayRepository{})
+
+	_, err := service.CreatePersonalAccessToken(context.Background(), testPrincipal("developer"), domainaigateway.PersonalAccessTokenInput{
+		Name:           "relay-debug",
+		Scopes:         []string{"relay"},
+		PermissionKeys: []string{appaccess.PermAIGatewayRelayInvoke},
+		Metadata: map[string]any{
+			"purpose":                LLMRelayTokenPurpose,
+			"allowRouteTrace":        true,
+			"allowUpstreamSelection": true,
+		},
+	})
+	if err == nil {
+		t.Fatalf("expected relay debug metadata without manage permission to be rejected")
+	}
+}
+
+func TestCreatePersonalAccessTokenAllowsRelayDebugMetadataForManager(t *testing.T) {
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
+		matrix: map[string][]string{
+			"admin": {
+				appaccess.PermAIGatewayInvoke,
+				appaccess.PermAIGatewayRelayInvoke,
+				appaccess.PermAIGatewayRelayManage,
+			},
+		},
+	}), nil, &memoryGatewayRepository{})
+
+	principal := testPrincipal("admin")
+	principal.PermissionKeys = []string{
+		appaccess.PermAIGatewayInvoke,
+		appaccess.PermAIGatewayRelayInvoke,
+		appaccess.PermAIGatewayRelayManage,
+	}
+	created, err := service.CreatePersonalAccessToken(context.Background(), principal, domainaigateway.PersonalAccessTokenInput{
+		Name:           "relay-debug",
+		Scopes:         []string{"relay"},
+		PermissionKeys: []string{appaccess.PermAIGatewayRelayInvoke},
+		Metadata: map[string]any{
+			"purpose":                LLMRelayTokenPurpose,
+			"allowRouteTrace":        "true",
+			"allowUpstreamSelection": true,
+		},
+	})
+	if err != nil {
+		t.Fatalf("CreatePersonalAccessToken returned error: %v", err)
+	}
+	if created.Token.Metadata["allowRouteTrace"] != true || created.Token.Metadata["allowUpstreamSelection"] != true {
+		t.Fatalf("expected relay debug metadata to be preserved as booleans, got %#v", created.Token.Metadata)
+	}
+}
+
+func TestAuthorizeLLMRelayTokenRejectsLegacyInvokeOnlyToken(t *testing.T) {
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
+		matrix: map[string][]string{
+			"developer": {
+				appaccess.PermAIGatewayInvoke,
+				appaccess.PermAIGatewayRelayInvoke,
+			},
+		},
+	}), nil, &memoryGatewayRepository{})
+	principal := testPrincipal("developer")
+	principal.PermissionKeys = []string{appaccess.PermAIGatewayInvoke}
+
+	_, err := service.AuthorizeLLMRelayToken(context.Background(), principal, domainidentity.AccessContext{
+		TokenKind: "personal_access_token",
+		Scopes:    []string{"relay"},
+		Metadata:  map[string]any{"purpose": LLMRelayTokenPurpose},
+	}, LLMRelayAccessRequest{Model: "gpt-4.1"})
+	if err == nil {
+		t.Fatalf("expected legacy invoke-only token to be rejected")
+	}
+}
+
+func TestAuthorizeLLMRelayTokenRejectsMissingPurposeOrScope(t *testing.T) {
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
+		matrix: map[string][]string{
+			"developer": {appaccess.PermAIGatewayRelayInvoke},
+		},
+	}), nil, &memoryGatewayRepository{})
+	principal := testPrincipal("developer")
+	principal.PermissionKeys = []string{appaccess.PermAIGatewayRelayInvoke}
+
+	_, err := service.AuthorizeLLMRelayToken(context.Background(), principal, domainidentity.AccessContext{
+		TokenKind: "personal_access_token",
+		Metadata:  map[string]any{"allowedModels": []string{"gpt-4.1"}},
+	}, LLMRelayAccessRequest{Model: "gpt-4.1"})
+	if err == nil {
+		t.Fatalf("expected missing relay purpose/scope to be rejected")
+	}
+}
+
+func TestAuthorizeLLMRelayTokenParsesAndEnforcesMetadata(t *testing.T) {
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
+		matrix: map[string][]string{
+			"developer": {appaccess.PermAIGatewayRelayInvoke},
+		},
+	}), nil, &memoryGatewayRepository{})
+	principal := testPrincipal("developer")
+	principal.PermissionKeys = []string{appaccess.PermAIGatewayRelayInvoke}
+	accessCtx := domainidentity.AccessContext{
+		TokenKind: "service_account_token",
+		Scopes:    []string{"relay"},
+		Metadata: map[string]any{
+			"allowedModels":        []any{"gpt-4.1"},
+			"allowedProviderKinds": []any{"DeepSeek"},
+			"allowedUpstreamIds":   []string{"upstream-a"},
+			"allowedIPCIDRs":       []string{"10.0.0.0/24"},
+			"rateLimitProfileId":   "relay-dev",
+		},
+	}
+
+	metadata, err := service.AuthorizeLLMRelayToken(context.Background(), principal, accessCtx, LLMRelayAccessRequest{
+		Model:        "gpt-4.1",
+		ProviderKind: "deepseek",
+		UpstreamID:   "upstream-a",
+		SourceIP:     "10.0.0.8:1234",
+	})
+	if err != nil {
+		t.Fatalf("AuthorizeLLMRelayToken returned error: %v", err)
+	}
+	if metadata.RateLimitProfileID != "relay-dev" || !slices.Equal(metadata.AllowedProviderKinds, []string{"deepseek"}) {
+		t.Fatalf("metadata = %#v", metadata)
+	}
+
+	_, err = service.AuthorizeLLMRelayToken(context.Background(), principal, accessCtx, LLMRelayAccessRequest{
+		Model:        "claude-sonnet-4-5",
+		ProviderKind: "openai",
+		UpstreamID:   "upstream-a",
+		SourceIP:     "10.0.0.8",
+	})
+	if err == nil {
+		t.Fatalf("expected disallowed model to be rejected")
+	}
+
+	_, err = service.AuthorizeLLMRelayToken(context.Background(), principal, accessCtx, LLMRelayAccessRequest{
+		Model:        "gpt-4.1",
+		ProviderKind: "openai",
+		UpstreamID:   "upstream-a",
+		SourceIP:     "192.168.1.8",
+	})
+	if err == nil {
+		t.Fatalf("expected disallowed source IP to be rejected")
+	}
+}
+
+func TestAuthorizeLLMRelayTokenAllowsAzureOpenAIProviderAlias(t *testing.T) {
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
+		matrix: map[string][]string{
+			"developer": {appaccess.PermAIGatewayRelayInvoke},
+		},
+	}), nil, &memoryGatewayRepository{})
+	principal := testPrincipal("developer")
+	principal.PermissionKeys = []string{appaccess.PermAIGatewayRelayInvoke}
+
+	for _, tt := range []struct {
+		name            string
+		allowedProvider string
+		requestProvider string
+	}{
+		{
+			name:            "metadata underscore request hyphen",
+			allowedProvider: "azure_openai",
+			requestProvider: "azure-openai",
+		},
+		{
+			name:            "metadata hyphen request underscore",
+			allowedProvider: "azure-openai",
+			requestProvider: "azure_openai",
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			metadata, err := service.AuthorizeLLMRelayToken(context.Background(), principal, domainidentity.AccessContext{
+				TokenKind: "service_account_token",
+				Scopes:    []string{"relay"},
+				Metadata: map[string]any{
+					"allowedProviderKinds": []string{tt.allowedProvider},
+				},
+			}, LLMRelayAccessRequest{
+				ProviderKind: tt.requestProvider,
+			})
+			if err != nil {
+				t.Fatalf("AuthorizeLLMRelayToken returned error: %v", err)
+			}
+			if !slices.Equal(metadata.AllowedProviderKinds, []string{"azure-openai"}) {
+				t.Fatalf("allowed provider kinds = %#v", metadata.AllowedProviderKinds)
+			}
+		})
+	}
+}
+
+func TestAuthorizeLLMRelayTokenAllowsGeminiProviderKind(t *testing.T) {
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
+		matrix: map[string][]string{
+			"developer": {appaccess.PermAIGatewayRelayInvoke},
+		},
+	}), nil, &memoryGatewayRepository{})
+	principal := testPrincipal("developer")
+	principal.PermissionKeys = []string{appaccess.PermAIGatewayRelayInvoke}
+
+	metadata, err := service.AuthorizeLLMRelayToken(context.Background(), principal, domainidentity.AccessContext{
+		TokenKind: "service_account_token",
+		Scopes:    []string{"relay"},
+		Metadata: map[string]any{
+			"allowedProviderKinds": []string{"Gemini"},
+		},
+	}, LLMRelayAccessRequest{
+		ProviderKind: "gemini",
+	})
+	if err != nil {
+		t.Fatalf("AuthorizeLLMRelayToken returned error: %v", err)
+	}
+	if !slices.Equal(metadata.AllowedProviderKinds, []string{"gemini"}) {
+		t.Fatalf("allowed provider kinds = %#v", metadata.AllowedProviderKinds)
+	}
+}
+
+func TestAuthorizeLLMRelayTokenAllowsCohereProviderKind(t *testing.T) {
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
+		matrix: map[string][]string{
+			"developer": {appaccess.PermAIGatewayRelayInvoke},
+		},
+	}), nil, &memoryGatewayRepository{})
+	principal := testPrincipal("developer")
+	principal.PermissionKeys = []string{appaccess.PermAIGatewayRelayInvoke}
+
+	metadata, err := service.AuthorizeLLMRelayToken(context.Background(), principal, domainidentity.AccessContext{
+		TokenKind: "service_account_token",
+		Scopes:    []string{"relay"},
+		Metadata: map[string]any{
+			"allowedProviderKinds": []string{"Cohere"},
+		},
+	}, LLMRelayAccessRequest{
+		ProviderKind: "cohere",
+	})
+	if err != nil {
+		t.Fatalf("AuthorizeLLMRelayToken returned error: %v", err)
+	}
+	if !slices.Equal(metadata.AllowedProviderKinds, []string{"cohere"}) {
+		t.Fatalf("allowed provider kinds = %#v", metadata.AllowedProviderKinds)
+	}
+}
+
+func TestAuthorizeLLMRelayTokenEnforcesTeamMetadata(t *testing.T) {
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
+		matrix: map[string][]string{
+			"developer": {appaccess.PermAIGatewayRelayInvoke},
+		},
+	}), nil, &memoryGatewayRepository{})
+	principal := testPrincipal("developer")
+	principal.PermissionKeys = []string{appaccess.PermAIGatewayRelayInvoke}
+	principal.Teams = []string{"platform"}
+	accessCtx := domainidentity.AccessContext{
+		TokenKind: "service_account_token",
+		Scopes:    []string{"relay"},
+		Metadata: map[string]any{
+			"allowedTeams": []string{"platform", "ml"},
+			"deniedTeams":  []string{"suspended"},
+		},
+	}
+
+	metadata, err := service.AuthorizeLLMRelayToken(context.Background(), principal, accessCtx, LLMRelayAccessRequest{
+		Model: "gpt-4.1",
+	})
+	if err != nil {
+		t.Fatalf("AuthorizeLLMRelayToken returned error: %v", err)
+	}
+	if !slices.Equal(metadata.AllowedTeams, []string{"ml", "platform"}) || !slices.Equal(metadata.DeniedTeams, []string{"suspended"}) {
+		t.Fatalf("team metadata = %#v", metadata)
+	}
+
+	principal.Teams = []string{"finance"}
+	_, err = service.AuthorizeLLMRelayToken(context.Background(), principal, accessCtx, LLMRelayAccessRequest{
+		Model: "gpt-4.1",
+	})
+	if !errors.Is(err, apperrors.ErrAccessDenied) {
+		t.Fatalf("nonmatching team error = %v, want access denied", err)
+	}
+
+	principal.Teams = []string{"platform", "suspended"}
+	_, err = service.AuthorizeLLMRelayToken(context.Background(), principal, accessCtx, LLMRelayAccessRequest{
+		Model: "gpt-4.1",
+	})
+	if !errors.Is(err, apperrors.ErrAccessDenied) {
+		t.Fatalf("denied team error = %v, want access denied", err)
+	}
+}
+
 func TestListPersonalAccessTokensDefaultsToOwnerAndAllowsManageScopeAll(t *testing.T) {
 	repo := &memoryGatewayRepository{
 		personalTokens: []domainaigateway.PersonalAccessToken{
@@ -3060,6 +3430,149 @@ func TestGovernanceStatusReportsResourceScopeCoverageHealth(t *testing.T) {
 	if scopedStatus.PolicyCoverage.ResourceScopeState != "configured" || scopedStatus.PolicyCoverage.ResourceScopedAccessPolicies != 1 {
 		t.Fatalf("expected configured resource scope coverage, got %#v", scopedStatus.PolicyCoverage)
 	}
+}
+
+func TestGovernanceStatusMergesRelayHealthChecks(t *testing.T) {
+	now := time.Now().UTC()
+	baseStatus, err := newTestServiceWithRelay(governanceAdminPermissions(), nil, governanceHealthyControlRepo(), nil).GovernanceStatus(context.Background(), testPrincipal("admin"), domainaigateway.GovernanceStatusRequest{WindowHours: 24})
+	if err != nil {
+		t.Fatalf("baseline GovernanceStatus returned error: %v", err)
+	}
+	if baseStatus.Health.Status != "healthy" {
+		t.Fatalf("expected healthy baseline governance status, got %#v", baseStatus.Health)
+	}
+	if slices.ContainsFunc(baseStatus.Health.Checks, func(check domainaigateway.GovernanceHealthCheck) bool {
+		return strings.HasPrefix(check.Name, "relay_")
+	}) {
+		t.Fatalf("expected governance status without relay repo to omit relay checks, got %#v", baseStatus.Health.Checks)
+	}
+	if _, ok := baseStatus.Metadata["relayHealthMerged"]; ok {
+		t.Fatalf("expected governance status without relay repo to omit relay metadata, got %#v", baseStatus.Metadata)
+	}
+	relayRepo := &relayTestRepository{
+		upstreams: []domainaigateway.LLMUpstream{
+			{ID: "upstream-ok", Name: "OpenAI primary", ProviderKind: "openai", Status: "active"},
+			{ID: "upstream-open", Name: "OpenAI fallback", ProviderKind: "openai", Status: "active", Health: map[string]any{"circuitOpenUntil": now.Add(time.Hour).Format(time.RFC3339)}},
+			{ID: "upstream-degraded", Name: "Anthropic degraded", ProviderKind: "anthropic", Status: "degraded"},
+		},
+		callLogs: []domainaigateway.LLMCallLog{
+			{ID: "call-success", Status: "success", PublicModel: "gpt-public", UpstreamID: "upstream-ok", CreatedAt: now.Add(-2 * time.Minute)},
+			{ID: "call-failure", Status: "failure", ErrorCode: "upstream_5xx", PublicModel: "gpt-public", UpstreamID: "upstream-open", CreatedAt: now.Add(-time.Minute)},
+		},
+	}
+	status, err := newTestServiceWithRelay(governanceAdminPermissions(), nil, governanceHealthyControlRepo(), relayRepo).GovernanceStatus(context.Background(), testPrincipal("admin"), domainaigateway.GovernanceStatusRequest{WindowHours: 24})
+	if err != nil {
+		t.Fatalf("GovernanceStatus returned error: %v", err)
+	}
+	if status.Health.Status != "degraded" {
+		t.Fatalf("expected relay warnings to degrade governance health, got %#v", status.Health)
+	}
+	if status.Metadata["relayHealthMerged"] != true || status.Metadata["relayHealthSampleLimit"] != 500 {
+		t.Fatalf("expected relay health metadata, got %#v", status.Metadata)
+	}
+	upstreamCheck := governanceHealthCheckByName(t, status.Health.Checks, "relay_upstreams")
+	if upstreamCheck.Status != "degraded" || upstreamCheck.Count != 3 {
+		t.Fatalf("unexpected relay upstream health check: %#v", upstreamCheck)
+	}
+	circuitCheck := governanceHealthCheckByName(t, status.Health.Checks, "relay_circuit_breakers")
+	if circuitCheck.Status != "degraded" || circuitCheck.Count != 1 {
+		t.Fatalf("unexpected relay circuit health check: %#v", circuitCheck)
+	}
+	modelCallsCheck := governanceHealthCheckByName(t, status.Health.Checks, "relay_model_calls")
+	if modelCallsCheck.Status != "degraded" || modelCallsCheck.Count != 1 {
+		t.Fatalf("unexpected relay model call health check: %#v", modelCallsCheck)
+	}
+}
+
+func TestGovernanceStatusReportsCriticalRelayAvailability(t *testing.T) {
+	relayRepo := &relayTestRepository{
+		upstreams: []domainaigateway.LLMUpstream{
+			{ID: "upstream-disabled", Name: "disabled", ProviderKind: "openai", Status: "disabled"},
+		},
+	}
+	status, err := newTestServiceWithRelay(governanceAdminPermissions(), nil, governanceHealthyControlRepo(), relayRepo).GovernanceStatus(context.Background(), testPrincipal("admin"), domainaigateway.GovernanceStatusRequest{WindowHours: 24})
+	if err != nil {
+		t.Fatalf("GovernanceStatus returned error: %v", err)
+	}
+	if status.Health.Status != "critical" {
+		t.Fatalf("expected unavailable relay upstreams to make governance critical, got %#v", status.Health)
+	}
+	upstreamCheck := governanceHealthCheckByName(t, status.Health.Checks, "relay_upstreams")
+	if upstreamCheck.Status != "critical" || upstreamCheck.Count != 1 {
+		t.Fatalf("unexpected relay upstream health check: %#v", upstreamCheck)
+	}
+	modelCallsCheck := governanceHealthCheckByName(t, status.Health.Checks, "relay_model_calls")
+	if modelCallsCheck.Status != "healthy" {
+		t.Fatalf("expected empty relay call sample to remain healthy, got %#v", modelCallsCheck)
+	}
+}
+
+func TestGovernanceStatusRelayHealthUsesWindow(t *testing.T) {
+	now := time.Now().UTC()
+	relayRepo := &relayTestRepository{
+		upstreams: []domainaigateway.LLMUpstream{
+			{ID: "upstream-ok", Name: "OpenAI primary", ProviderKind: "openai", Status: "active"},
+		},
+		callLogs: []domainaigateway.LLMCallLog{
+			{ID: "old-failure", Status: "failure", ErrorCode: "upstream_5xx", PublicModel: "gpt-public", UpstreamID: "upstream-ok", CreatedAt: now.Add(-48 * time.Hour)},
+			{ID: "recent-success", Status: "success", PublicModel: "gpt-public", UpstreamID: "upstream-ok", CreatedAt: now.Add(-time.Minute)},
+		},
+	}
+	status, err := newTestServiceWithRelay(governanceAdminPermissions(), nil, governanceHealthyControlRepo(), relayRepo).GovernanceStatus(context.Background(), testPrincipal("admin"), domainaigateway.GovernanceStatusRequest{WindowHours: 24})
+	if err != nil {
+		t.Fatalf("GovernanceStatus returned error: %v", err)
+	}
+	if status.Health.Status != "healthy" {
+		t.Fatalf("expected old relay failure outside window to be ignored, got %#v", status.Health)
+	}
+	modelCallsCheck := governanceHealthCheckByName(t, status.Health.Checks, "relay_model_calls")
+	if modelCallsCheck.Status != "healthy" || modelCallsCheck.Count != 0 {
+		t.Fatalf("unexpected relay model call health check: %#v", modelCallsCheck)
+	}
+}
+
+func governanceHealthyControlRepo() *memoryGatewayRepository {
+	return &memoryGatewayRepository{
+		aiClients: map[string]domainaigateway.AIClient{
+			"codex": {ID: "codex", Name: "Codex", Status: "active", Metadata: map[string]any{"registrationApprovalRequired": true}},
+		},
+		accessPolicies: []domainaigateway.AccessPolicy{
+			{
+				ID:             "policy-read",
+				Enabled:        true,
+				SubjectType:    "role",
+				SubjectID:      "developer",
+				AIClientID:     "codex",
+				Effect:         "allow",
+				ToolPatterns:   []string{"k8s.pods.logs"},
+				ResourceScopes: map[string]any{"applicationId": "app-1"},
+				Conditions: map[string]any{
+					"budget":          map[string]any{"dailyInvocations": 100},
+					"rateLimit":       map[string]any{"maxCallsPerMinute": 10},
+					"redactionPolicy": map[string]any{"mode": "sanitize"},
+				},
+			},
+		},
+	}
+}
+
+func governanceAdminPermissions() *appaccess.PermissionResolver {
+	return appaccess.NewPermissionResolver(stubRolePermissionReader{
+		matrix: map[string][]string{
+			"admin": {appaccess.PermAIGatewayManage},
+		},
+	})
+}
+
+func governanceHealthCheckByName(t *testing.T, checks []domainaigateway.GovernanceHealthCheck, name string) domainaigateway.GovernanceHealthCheck {
+	t.Helper()
+	for _, check := range checks {
+		if check.Name == name {
+			return check
+		}
+	}
+	t.Fatalf("missing governance health check %s in %#v", name, checks)
+	return domainaigateway.GovernanceHealthCheck{}
 }
 
 func TestGovernanceStatusFlagsUnguardedHighRiskAllows(t *testing.T) {

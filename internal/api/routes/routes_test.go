@@ -84,6 +84,76 @@ func TestRegisterCopilotRoutesExposesAgentRunCancel(t *testing.T) {
 	}
 }
 
+func TestRegisterProtectedRoutesExposesFirstClassOpenAICompatibleRelayRoutes(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	router := gin.New()
+	group := router.Group("/api/v1")
+	registerProtectedRoutes(group, allRoutesEnabledConfig(), routeTestDependencies())
+
+	registered := make(map[string]struct{})
+	for _, route := range router.Routes() {
+		registered[route.Method+" "+route.Path] = struct{}{}
+	}
+	for _, route := range []string{
+		"POST /api/v1/ai-gateway/llm/openai/v1/images/generations",
+		"POST /api/v1/ai-gateway/llm/openai/v1/images/edits",
+		"POST /api/v1/ai-gateway/llm/openai/v1/images/variations",
+		"POST /api/v1/ai-gateway/llm/openai/v1/audio/speech",
+		"POST /api/v1/ai-gateway/llm/openai/v1/audio/transcriptions",
+		"POST /api/v1/ai-gateway/llm/openai/v1/audio/translations",
+		"GET /api/v1/ai-gateway/llm/openai/v1/realtime",
+		"GET /api/v1/ai-gateway/llm/deepseek/v1/models",
+		"POST /api/v1/ai-gateway/llm/deepseek/v1/chat/completions",
+		"POST /api/v1/ai-gateway/llm/deepseek/v1/responses",
+		"POST /api/v1/ai-gateway/llm/deepseek/v1/embeddings",
+		"POST /api/v1/ai-gateway/llm/deepseek/v1/images/generations",
+		"POST /api/v1/ai-gateway/llm/deepseek/v1/images/edits",
+		"POST /api/v1/ai-gateway/llm/deepseek/v1/images/variations",
+		"POST /api/v1/ai-gateway/llm/deepseek/v1/audio/speech",
+		"POST /api/v1/ai-gateway/llm/deepseek/v1/audio/transcriptions",
+		"POST /api/v1/ai-gateway/llm/deepseek/v1/audio/translations",
+		"GET /api/v1/ai-gateway/llm/qwen/v1/models",
+		"POST /api/v1/ai-gateway/llm/qwen/v1/chat/completions",
+		"POST /api/v1/ai-gateway/llm/qwen/v1/responses",
+		"POST /api/v1/ai-gateway/llm/qwen/v1/embeddings",
+		"POST /api/v1/ai-gateway/llm/qwen/v1/images/generations",
+		"POST /api/v1/ai-gateway/llm/qwen/v1/images/edits",
+		"POST /api/v1/ai-gateway/llm/qwen/v1/images/variations",
+		"POST /api/v1/ai-gateway/llm/qwen/v1/audio/speech",
+		"POST /api/v1/ai-gateway/llm/qwen/v1/audio/transcriptions",
+		"POST /api/v1/ai-gateway/llm/qwen/v1/audio/translations",
+		"GET /api/v1/ai-gateway/llm/openrouter/v1/models",
+		"POST /api/v1/ai-gateway/llm/openrouter/v1/chat/completions",
+		"POST /api/v1/ai-gateway/llm/openrouter/v1/responses",
+		"POST /api/v1/ai-gateway/llm/openrouter/v1/embeddings",
+		"POST /api/v1/ai-gateway/llm/openrouter/v1/images/generations",
+		"POST /api/v1/ai-gateway/llm/openrouter/v1/images/edits",
+		"POST /api/v1/ai-gateway/llm/openrouter/v1/images/variations",
+		"POST /api/v1/ai-gateway/llm/openrouter/v1/audio/speech",
+		"POST /api/v1/ai-gateway/llm/openrouter/v1/audio/transcriptions",
+		"POST /api/v1/ai-gateway/llm/openrouter/v1/audio/translations",
+		"GET /api/v1/ai-gateway/llm/azure-openai/v1/models",
+		"POST /api/v1/ai-gateway/llm/azure-openai/v1/chat/completions",
+		"POST /api/v1/ai-gateway/llm/azure-openai/v1/responses",
+		"POST /api/v1/ai-gateway/llm/azure-openai/v1/embeddings",
+		"POST /api/v1/ai-gateway/llm/azure-openai/v1/images/generations",
+		"POST /api/v1/ai-gateway/llm/azure-openai/v1/images/edits",
+		"POST /api/v1/ai-gateway/llm/azure-openai/v1/images/variations",
+		"POST /api/v1/ai-gateway/llm/azure-openai/v1/audio/speech",
+		"POST /api/v1/ai-gateway/llm/azure-openai/v1/audio/transcriptions",
+		"POST /api/v1/ai-gateway/llm/azure-openai/v1/audio/translations",
+		"GET /api/v1/ai-gateway/llm/gemini/v1beta/models",
+		"POST /api/v1/ai-gateway/llm/gemini/v1beta/interactions",
+		"POST /api/v1/ai-gateway/llm/gemini/v1beta/models/*modelAction",
+		"POST /api/v1/ai-gateway/llm/cohere/v2/rerank",
+	} {
+		if _, ok := registered[route]; !ok {
+			t.Fatalf("missing route %s", route)
+		}
+	}
+}
+
 func TestRegisterOperationalAuditRoutesExposeAuditOperations(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -175,6 +245,27 @@ func TestNonPlatformMutatingRoutesHaveSecuritySurface(t *testing.T) {
 	}
 	if checked == 0 {
 		t.Fatal("expected at least one mutating non-platform route")
+	}
+}
+
+func TestRegisterProtectedRoutesExposeAIGatewayRelayCacheManagement(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	router := gin.New()
+	group := router.Group("/api/v1")
+	registerProtectedRoutes(group, allRoutesEnabledConfig(), routeTestDependencies())
+
+	registered := make(map[string]struct{})
+	for _, route := range router.Routes() {
+		registered[route.Method+" "+route.Path] = struct{}{}
+	}
+	for _, route := range []string{
+		"GET /api/v1/ai-gateway/relay/cache/stats",
+		"POST /api/v1/ai-gateway/relay/cache/purge",
+	} {
+		if _, ok := registered[route]; !ok {
+			t.Fatalf("missing route %s", route)
+		}
 	}
 }
 
@@ -308,6 +399,42 @@ func TestNonPlatformMutationSecuritySurfaceClassifiesScopedRoutes(t *testing.T) 
 			action:       "approve",
 			permission:   appaccess.PermAIGatewayInvoke,
 			scoped:       true,
+		},
+		{
+			name:         "gateway llm relay invoke",
+			method:       "POST",
+			path:         "/api/v1/ai-gateway/llm/openai/v1/chat/completions",
+			resourceKind: "AIGatewayLLMRelayInvocation",
+			action:       "invoke",
+			permission:   appaccess.PermAIGatewayRelayInvoke,
+			scoped:       true,
+		},
+		{
+			name:         "gateway llm relay embeddings invoke",
+			method:       "POST",
+			path:         "/api/v1/ai-gateway/llm/openai/v1/embeddings",
+			resourceKind: "AIGatewayLLMRelayInvocation",
+			action:       "invoke",
+			permission:   appaccess.PermAIGatewayRelayInvoke,
+			scoped:       true,
+		},
+		{
+			name:         "gateway llm relay manage",
+			method:       "POST",
+			path:         "/api/v1/ai-gateway/relay/upstreams",
+			resourceKind: "AIGatewayLLMRelay",
+			action:       "create",
+			permission:   appaccess.PermAIGatewayRelayManage,
+			scoped:       false,
+		},
+		{
+			name:         "gateway llm relay cache purge",
+			method:       "POST",
+			path:         "/api/v1/ai-gateway/relay/cache/purge",
+			resourceKind: "AIGatewayLLMRelay",
+			action:       "create",
+			permission:   appaccess.PermAIGatewayRelayManage,
+			scoped:       false,
 		},
 		{
 			name:         "docker project deploy",

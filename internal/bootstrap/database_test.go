@@ -197,6 +197,7 @@ func TestDefaultMenuSeedsIncludeAIGatewayWorkbench(t *testing.T) {
 	var gateway *menuSeed
 	children := map[string]string{
 		"ai-gateway-overview":   "/ai-gateway/overview",
+		"ai-gateway-relay":      "/ai-gateway/relay",
 		"ai-gateway-manifest":   "/ai-gateway/manifest",
 		"ai-gateway-clients":    "/ai-gateway/clients",
 		"ai-gateway-tokens":     "/ai-gateway/tokens",
@@ -482,6 +483,7 @@ func TestDisabledModuleMenuIDsIncludesAIGatewayWhenSeedVersionIsCurrent(t *testi
 	for _, id := range []string{
 		"ai-gateway",
 		"ai-gateway-overview",
+		"ai-gateway-relay",
 		"ai-gateway-manifest",
 		"ai-gateway-clients",
 		"ai-gateway-tokens",
@@ -513,6 +515,7 @@ func TestFilterSeedMenusByModulesKeepsAIGatewayWhenAIModuleDisabled(t *testing.T
 	foundGatewayIDs := map[string]bool{
 		"ai-gateway":            false,
 		"ai-gateway-overview":   false,
+		"ai-gateway-relay":      false,
 		"ai-gateway-manifest":   false,
 		"ai-gateway-clients":    false,
 		"ai-gateway-tokens":     false,

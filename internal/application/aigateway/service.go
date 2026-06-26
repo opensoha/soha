@@ -2,7 +2,9 @@ package aigateway
 
 import (
 	"context"
+	"net/http"
 	"regexp"
+	"sync"
 	"time"
 
 	appaccess "github.com/opensoha/soha/internal/application/access"
@@ -21,6 +23,12 @@ import (
 const manifestVersion = "v1alpha1"
 
 const rotatedTokenDefaultTTL = 90 * 24 * time.Hour
+
+const (
+	defaultRelayTimeout         = 120 * time.Second
+	defaultRelayStreamTimeout   = 300 * time.Second
+	defaultRelayMaxRequestBytes = 32 << 20
+)
 
 var gatewaySensitiveValuePattern = regexp.MustCompile(`(?i)(token|password|passwd|secret|api[_-]?key|authorization|credential)(\s*[:=]\s*)([^\s,;]+)`)
 
@@ -104,15 +112,21 @@ type Service struct {
 	auditLogs       AuditLogRepository
 	approvals       ApprovalRepository
 	rateLimitRepo   RateLimitRepository
+	llmRelayRepo    LLMRelayRepository
 
-	rateLimits RateLimitBackend
-	apps       ApplicationService
-	delivery   DeliveryService
-	catalog    CatalogService
-	resources  ResourceService
-	copilot    AnalysisArtifactRecorder
-	oncall     OnCallResolver
-	registry   *capabilityRegistry
+	rateLimits         RateLimitBackend
+	relayConfig        LLMRelayConfig
+	httpClient         *http.Client
+	relayConcurrencyMu sync.Mutex
+	relayConcurrency   map[string]int
+	relayHealthOnce    sync.Once
+	apps               ApplicationService
+	delivery           DeliveryService
+	catalog            CatalogService
+	resources          ResourceService
+	copilot            AnalysisArtifactRecorder
+	oncall             OnCallResolver
+	registry           *capabilityRegistry
 }
 
 func NewWithDeps(deps ServiceDeps) *Service {
@@ -128,7 +142,10 @@ func NewWithDeps(deps ServiceDeps) *Service {
 		auditLogs:       deps.AuditLogs,
 		approvals:       deps.Approvals,
 		rateLimitRepo:   deps.RateLimits,
+		llmRelayRepo:    deps.LLMRelay,
 		rateLimits:      deps.RateLimitBackend,
+		relayConfig:     normalizedRelayConfig(deps.RelayConfig),
+		httpClient:      normalizedHTTPClient(deps.HTTPClient),
 		registry:        newDefaultCapabilityRegistry(),
 	}
 }
@@ -234,4 +251,34 @@ func (s *Service) rateLimitRepository() RateLimitRepository {
 		return s.rateLimitRepo
 	}
 	return nil
+}
+
+func (s *Service) llmRelayRepository() LLMRelayRepository {
+	if s != nil && s.llmRelayRepo != nil {
+		return s.llmRelayRepo
+	}
+	return nil
+}
+
+func normalizedRelayConfig(cfg LLMRelayConfig) LLMRelayConfig {
+	if cfg.DefaultTimeout <= 0 {
+		cfg.DefaultTimeout = defaultRelayTimeout
+	}
+	if cfg.StreamTimeout <= 0 {
+		cfg.StreamTimeout = defaultRelayStreamTimeout
+	}
+	if cfg.HealthCheckInterval <= 0 {
+		cfg.HealthCheckInterval = time.Minute
+	}
+	if cfg.MaxRequestBodyBytes <= 0 {
+		cfg.MaxRequestBodyBytes = defaultRelayMaxRequestBytes
+	}
+	return cfg
+}
+
+func normalizedHTTPClient(client *http.Client) *http.Client {
+	if client != nil {
+		return client
+	}
+	return &http.Client{Timeout: defaultRelayTimeout}
 }

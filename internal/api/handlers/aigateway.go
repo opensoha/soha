@@ -6,11 +6,14 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	apierrors "github.com/opensoha/soha/internal/api/errors"
 	apiMiddleware "github.com/opensoha/soha/internal/api/middleware"
 	apiresponse "github.com/opensoha/soha/internal/api/response"
+	appaigateway "github.com/opensoha/soha/internal/application/aigateway"
 	domainaigateway "github.com/opensoha/soha/internal/domain/aigateway"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 )
@@ -51,6 +54,22 @@ type AIGatewayService interface {
 	ApproveApprovalRequest(context.Context, domainidentity.Principal, string, domainaigateway.ApprovalDecisionInput) (domainaigateway.ApprovalDecisionResult, error)
 	RejectApprovalRequest(context.Context, domainidentity.Principal, string, domainaigateway.ApprovalDecisionInput) (domainaigateway.ApprovalDecisionResult, error)
 	CancelApprovalRequest(context.Context, domainidentity.Principal, string, domainaigateway.ApprovalDecisionInput) (domainaigateway.ApprovalDecisionResult, error)
+	ListLLMUpstreams(context.Context, domainidentity.Principal, domainaigateway.LLMUpstreamFilter) ([]domainaigateway.LLMUpstream, error)
+	CreateLLMUpstream(context.Context, domainidentity.Principal, domainaigateway.LLMUpstreamInput) (domainaigateway.LLMUpstream, error)
+	UpdateLLMUpstream(context.Context, domainidentity.Principal, string, domainaigateway.LLMUpstreamInput) (domainaigateway.LLMUpstream, error)
+	TestLLMUpstream(context.Context, domainidentity.Principal, string) (domainaigateway.LLMUpstreamTestResult, error)
+	RunLLMRelayHealthChecks(context.Context, domainidentity.Principal) (domainaigateway.LLMRelayHealthCheckRun, error)
+	ListLLMModelRoutes(context.Context, domainidentity.Principal, domainaigateway.LLMModelRouteFilter) ([]domainaigateway.LLMModelRoute, error)
+	CreateLLMModelRoute(context.Context, domainidentity.Principal, domainaigateway.LLMModelRouteInput) (domainaigateway.LLMModelRoute, error)
+	UpdateLLMModelRoute(context.Context, domainidentity.Principal, string, domainaigateway.LLMModelRouteInput) (domainaigateway.LLMModelRoute, error)
+	DeleteLLMModelRoute(context.Context, domainidentity.Principal, string) error
+	ListLLMCallLogs(context.Context, domainidentity.Principal, domainaigateway.LLMCallLogFilter) ([]domainaigateway.LLMCallLog, error)
+	LLMRelayMetrics(context.Context, domainidentity.Principal) (domainaigateway.LLMRelayMetrics, error)
+	LLMRelayCacheStats(context.Context, domainidentity.Principal, domainaigateway.LLMRelayCacheStatsRequest) (domainaigateway.LLMRelayCacheStats, error)
+	PurgeLLMRelayCache(context.Context, domainidentity.Principal, domainaigateway.LLMRelayCachePurgeRequest) (domainaigateway.LLMRelayCachePurgeResult, error)
+	LLMRelayMaxRequestBodyBytes() int64
+	RelayLLMHTTP(context.Context, domainidentity.Principal, domainidentity.AccessContext, appaigateway.LLMRelayHTTPRequest, http.ResponseWriter) error
+	RelayLLMWebSocket(context.Context, domainidentity.Principal, domainidentity.AccessContext, appaigateway.LLMRelayHTTPRequest, http.ResponseWriter, *http.Request) error
 }
 
 type AIGatewayHandler struct {
@@ -419,18 +438,10 @@ func (h *AIGatewayHandler) DeleteAccessPolicy(c *gin.Context) {
 }
 
 func (h *AIGatewayHandler) GovernanceStatus(c *gin.Context) {
-	windowHours := 0
-	if raw := c.Query("windowHours"); raw != "" {
-		parsed, err := strconv.Atoi(raw)
-		if err != nil {
-			apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "windowHours must be an integer")
-			return
-		}
-		if parsed != 0 && (parsed < 1 || parsed > maxAIGatewayGovernanceWindowHours) {
-			apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "windowHours must be 0 or between 1 and 168")
-			return
-		}
-		windowHours = parsed
+	windowHours, err := parseAIGatewayWindowHours(c.Query("windowHours"), 0)
+	if err != nil {
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", err.Error())
+		return
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
 	item, err := h.service.GovernanceStatus(c.Request.Context(), principal, domainaigateway.GovernanceStatusRequest{WindowHours: windowHours})
@@ -548,6 +559,484 @@ func (h *AIGatewayHandler) CancelApprovalRequest(c *gin.Context) {
 	h.decideApprovalRequest(c, "cancel")
 }
 
+func (h *AIGatewayHandler) ListLLMUpstreams(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	items, err := h.service.ListLLMUpstreams(c.Request.Context(), principal, domainaigateway.LLMUpstreamFilter{
+		ProviderKind: c.Query("providerKind"),
+		Status:       c.Query("status"),
+		IncludeAll:   parseBoolQuery(c.Query("includeAll")),
+	})
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Items(c, http.StatusOK, items)
+}
+
+func (h *AIGatewayHandler) CreateLLMUpstream(c *gin.Context) {
+	var req domainaigateway.LLMUpstreamInput
+	if err := c.ShouldBindJSON(&req); err != nil {
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid LLM upstream payload")
+		return
+	}
+	principal := apiMiddleware.PrincipalFromContext(c)
+	item, err := h.service.CreateLLMUpstream(c.Request.Context(), principal, req)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusCreated, item)
+}
+
+func (h *AIGatewayHandler) UpdateLLMUpstream(c *gin.Context) {
+	var req domainaigateway.LLMUpstreamInput
+	if err := c.ShouldBindJSON(&req); err != nil {
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid LLM upstream payload")
+		return
+	}
+	principal := apiMiddleware.PrincipalFromContext(c)
+	item, err := h.service.UpdateLLMUpstream(c.Request.Context(), principal, c.Param("upstreamID"), req)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
+}
+
+func (h *AIGatewayHandler) TestLLMUpstream(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	item, err := h.service.TestLLMUpstream(c.Request.Context(), principal, c.Param("upstreamID"))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
+}
+
+func (h *AIGatewayHandler) RunLLMRelayHealthChecks(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	item, err := h.service.RunLLMRelayHealthChecks(c.Request.Context(), principal)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
+}
+
+func (h *AIGatewayHandler) ListLLMModelRoutes(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	items, err := h.service.ListLLMModelRoutes(c.Request.Context(), principal, domainaigateway.LLMModelRouteFilter{
+		PublicModel:     c.Query("publicModel"),
+		ProviderKind:    c.Query("providerKind"),
+		UpstreamID:      c.Query("upstreamId"),
+		RouteGroup:      c.Query("routeGroup"),
+		IncludeDisabled: parseBoolQuery(c.Query("includeDisabled")),
+	})
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Items(c, http.StatusOK, items)
+}
+
+func (h *AIGatewayHandler) CreateLLMModelRoute(c *gin.Context) {
+	var req domainaigateway.LLMModelRouteInput
+	if err := c.ShouldBindJSON(&req); err != nil {
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid LLM model route payload")
+		return
+	}
+	principal := apiMiddleware.PrincipalFromContext(c)
+	item, err := h.service.CreateLLMModelRoute(c.Request.Context(), principal, req)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusCreated, item)
+}
+
+func (h *AIGatewayHandler) UpdateLLMModelRoute(c *gin.Context) {
+	var req domainaigateway.LLMModelRouteInput
+	if err := c.ShouldBindJSON(&req); err != nil {
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid LLM model route payload")
+		return
+	}
+	principal := apiMiddleware.PrincipalFromContext(c)
+	item, err := h.service.UpdateLLMModelRoute(c.Request.Context(), principal, c.Param("routeID"), req)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
+}
+
+func (h *AIGatewayHandler) DeleteLLMModelRoute(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	if err := h.service.DeleteLLMModelRoute(c.Request.Context(), principal, c.Param("routeID")); err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.JSON(c, http.StatusOK, gin.H{"status": "ok"})
+}
+
+func (h *AIGatewayHandler) ListLLMCallLogs(c *gin.Context) {
+	filter, err := parseLLMCallLogFilter(c)
+	if err != nil {
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", err.Error())
+		return
+	}
+	principal := apiMiddleware.PrincipalFromContext(c)
+	items, err := h.service.ListLLMCallLogs(c.Request.Context(), principal, filter)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Items(c, http.StatusOK, items)
+}
+
+func (h *AIGatewayHandler) LLMRelayMetrics(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	item, err := h.service.LLMRelayMetrics(c.Request.Context(), principal)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
+}
+
+func (h *AIGatewayHandler) LLMRelayCacheStats(c *gin.Context) {
+	windowHours, err := parseAIGatewayWindowHours(c.Query("windowHours"), 24)
+	if err != nil {
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", err.Error())
+		return
+	}
+	principal := apiMiddleware.PrincipalFromContext(c)
+	item, err := h.service.LLMRelayCacheStats(c.Request.Context(), principal, domainaigateway.LLMRelayCacheStatsRequest{
+		WindowHours: windowHours,
+		PublicModel: c.Query("publicModel"),
+		UpstreamID:  c.Query("upstreamId"),
+	})
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
+}
+
+func (h *AIGatewayHandler) PurgeLLMRelayCache(c *gin.Context) {
+	var req domainaigateway.LLMRelayCachePurgeRequest
+	if err := c.ShouldBindJSON(&req); err != nil && !errors.Is(err, io.EOF) {
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid LLM relay cache purge payload")
+		return
+	}
+	principal := apiMiddleware.PrincipalFromContext(c)
+	item, err := h.service.PurgeLLMRelayCache(c.Request.Context(), principal, req)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
+}
+
+func (h *AIGatewayHandler) RelayOpenAIModels(c *gin.Context) {
+	h.relayLLM(c, "openai", "models")
+}
+
+func (h *AIGatewayHandler) RelayOpenAIChatCompletions(c *gin.Context) {
+	h.relayLLM(c, "openai", "chat/completions")
+}
+
+func (h *AIGatewayHandler) RelayOpenAIResponses(c *gin.Context) {
+	h.relayLLM(c, "openai", "responses")
+}
+
+func (h *AIGatewayHandler) RelayOpenAIEmbeddings(c *gin.Context) {
+	h.relayLLM(c, "openai", "embeddings")
+}
+
+func (h *AIGatewayHandler) RelayOpenAIImageGenerations(c *gin.Context) {
+	h.relayLLM(c, "openai", "images/generations")
+}
+
+func (h *AIGatewayHandler) RelayOpenAIImageEdits(c *gin.Context) {
+	h.relayLLM(c, "openai", "images/edits")
+}
+
+func (h *AIGatewayHandler) RelayOpenAIImageVariations(c *gin.Context) {
+	h.relayLLM(c, "openai", "images/variations")
+}
+
+func (h *AIGatewayHandler) RelayOpenAIAudioSpeech(c *gin.Context) {
+	h.relayLLM(c, "openai", "audio/speech")
+}
+
+func (h *AIGatewayHandler) RelayOpenAIAudioTranscriptions(c *gin.Context) {
+	h.relayLLM(c, "openai", "audio/transcriptions")
+}
+
+func (h *AIGatewayHandler) RelayOpenAIAudioTranslations(c *gin.Context) {
+	h.relayLLM(c, "openai", "audio/translations")
+}
+
+func (h *AIGatewayHandler) RelayOpenAIRealtime(c *gin.Context) {
+	h.relayLLMWebSocket(c, "openai", "realtime")
+}
+
+func (h *AIGatewayHandler) RelayDeepSeekModels(c *gin.Context) {
+	h.relayLLM(c, "deepseek", "models")
+}
+
+func (h *AIGatewayHandler) RelayDeepSeekChatCompletions(c *gin.Context) {
+	h.relayLLM(c, "deepseek", "chat/completions")
+}
+
+func (h *AIGatewayHandler) RelayDeepSeekResponses(c *gin.Context) {
+	h.relayLLM(c, "deepseek", "responses")
+}
+
+func (h *AIGatewayHandler) RelayDeepSeekEmbeddings(c *gin.Context) {
+	h.relayLLM(c, "deepseek", "embeddings")
+}
+
+func (h *AIGatewayHandler) RelayDeepSeekImageGenerations(c *gin.Context) {
+	h.relayLLM(c, "deepseek", "images/generations")
+}
+
+func (h *AIGatewayHandler) RelayDeepSeekImageEdits(c *gin.Context) {
+	h.relayLLM(c, "deepseek", "images/edits")
+}
+
+func (h *AIGatewayHandler) RelayDeepSeekImageVariations(c *gin.Context) {
+	h.relayLLM(c, "deepseek", "images/variations")
+}
+
+func (h *AIGatewayHandler) RelayDeepSeekAudioSpeech(c *gin.Context) {
+	h.relayLLM(c, "deepseek", "audio/speech")
+}
+
+func (h *AIGatewayHandler) RelayDeepSeekAudioTranscriptions(c *gin.Context) {
+	h.relayLLM(c, "deepseek", "audio/transcriptions")
+}
+
+func (h *AIGatewayHandler) RelayDeepSeekAudioTranslations(c *gin.Context) {
+	h.relayLLM(c, "deepseek", "audio/translations")
+}
+
+func (h *AIGatewayHandler) RelayQwenModels(c *gin.Context) {
+	h.relayLLM(c, "qwen", "models")
+}
+
+func (h *AIGatewayHandler) RelayQwenChatCompletions(c *gin.Context) {
+	h.relayLLM(c, "qwen", "chat/completions")
+}
+
+func (h *AIGatewayHandler) RelayQwenResponses(c *gin.Context) {
+	h.relayLLM(c, "qwen", "responses")
+}
+
+func (h *AIGatewayHandler) RelayQwenEmbeddings(c *gin.Context) {
+	h.relayLLM(c, "qwen", "embeddings")
+}
+
+func (h *AIGatewayHandler) RelayQwenImageGenerations(c *gin.Context) {
+	h.relayLLM(c, "qwen", "images/generations")
+}
+
+func (h *AIGatewayHandler) RelayQwenImageEdits(c *gin.Context) {
+	h.relayLLM(c, "qwen", "images/edits")
+}
+
+func (h *AIGatewayHandler) RelayQwenImageVariations(c *gin.Context) {
+	h.relayLLM(c, "qwen", "images/variations")
+}
+
+func (h *AIGatewayHandler) RelayQwenAudioSpeech(c *gin.Context) {
+	h.relayLLM(c, "qwen", "audio/speech")
+}
+
+func (h *AIGatewayHandler) RelayQwenAudioTranscriptions(c *gin.Context) {
+	h.relayLLM(c, "qwen", "audio/transcriptions")
+}
+
+func (h *AIGatewayHandler) RelayQwenAudioTranslations(c *gin.Context) {
+	h.relayLLM(c, "qwen", "audio/translations")
+}
+
+func (h *AIGatewayHandler) RelayOpenRouterModels(c *gin.Context) {
+	h.relayLLM(c, "openrouter", "models")
+}
+
+func (h *AIGatewayHandler) RelayOpenRouterChatCompletions(c *gin.Context) {
+	h.relayLLM(c, "openrouter", "chat/completions")
+}
+
+func (h *AIGatewayHandler) RelayOpenRouterResponses(c *gin.Context) {
+	h.relayLLM(c, "openrouter", "responses")
+}
+
+func (h *AIGatewayHandler) RelayOpenRouterEmbeddings(c *gin.Context) {
+	h.relayLLM(c, "openrouter", "embeddings")
+}
+
+func (h *AIGatewayHandler) RelayOpenRouterImageGenerations(c *gin.Context) {
+	h.relayLLM(c, "openrouter", "images/generations")
+}
+
+func (h *AIGatewayHandler) RelayOpenRouterImageEdits(c *gin.Context) {
+	h.relayLLM(c, "openrouter", "images/edits")
+}
+
+func (h *AIGatewayHandler) RelayOpenRouterImageVariations(c *gin.Context) {
+	h.relayLLM(c, "openrouter", "images/variations")
+}
+
+func (h *AIGatewayHandler) RelayOpenRouterAudioSpeech(c *gin.Context) {
+	h.relayLLM(c, "openrouter", "audio/speech")
+}
+
+func (h *AIGatewayHandler) RelayOpenRouterAudioTranscriptions(c *gin.Context) {
+	h.relayLLM(c, "openrouter", "audio/transcriptions")
+}
+
+func (h *AIGatewayHandler) RelayOpenRouterAudioTranslations(c *gin.Context) {
+	h.relayLLM(c, "openrouter", "audio/translations")
+}
+
+func (h *AIGatewayHandler) RelayAzureOpenAIModels(c *gin.Context) {
+	h.relayLLM(c, "azure-openai", "models")
+}
+
+func (h *AIGatewayHandler) RelayAzureOpenAIChatCompletions(c *gin.Context) {
+	h.relayLLM(c, "azure-openai", "chat/completions")
+}
+
+func (h *AIGatewayHandler) RelayAzureOpenAIResponses(c *gin.Context) {
+	h.relayLLM(c, "azure-openai", "responses")
+}
+
+func (h *AIGatewayHandler) RelayAzureOpenAIEmbeddings(c *gin.Context) {
+	h.relayLLM(c, "azure-openai", "embeddings")
+}
+
+func (h *AIGatewayHandler) RelayAzureOpenAIImageGenerations(c *gin.Context) {
+	h.relayLLM(c, "azure-openai", "images/generations")
+}
+
+func (h *AIGatewayHandler) RelayAzureOpenAIImageEdits(c *gin.Context) {
+	h.relayLLM(c, "azure-openai", "images/edits")
+}
+
+func (h *AIGatewayHandler) RelayAzureOpenAIImageVariations(c *gin.Context) {
+	h.relayLLM(c, "azure-openai", "images/variations")
+}
+
+func (h *AIGatewayHandler) RelayAzureOpenAIAudioSpeech(c *gin.Context) {
+	h.relayLLM(c, "azure-openai", "audio/speech")
+}
+
+func (h *AIGatewayHandler) RelayAzureOpenAIAudioTranscriptions(c *gin.Context) {
+	h.relayLLM(c, "azure-openai", "audio/transcriptions")
+}
+
+func (h *AIGatewayHandler) RelayAzureOpenAIAudioTranslations(c *gin.Context) {
+	h.relayLLM(c, "azure-openai", "audio/translations")
+}
+
+func (h *AIGatewayHandler) RelayGeminiModels(c *gin.Context) {
+	h.relayLLM(c, "gemini", "models")
+}
+
+func (h *AIGatewayHandler) RelayGeminiInteractions(c *gin.Context) {
+	h.relayLLM(c, "gemini", "interactions")
+}
+
+func (h *AIGatewayHandler) RelayGeminiModelAction(c *gin.Context) {
+	pathModel, endpoint, ok := parseGeminiRelayModelAction(c.Param("modelAction"))
+	if !ok {
+		relayNativeError(c, http.StatusBadRequest, "invalid_argument", "unsupported Gemini relay model action")
+		return
+	}
+	h.relayLLMWithPathModel(c, "gemini", endpoint, pathModel)
+}
+
+func (h *AIGatewayHandler) RelayCohereRerank(c *gin.Context) {
+	h.relayLLM(c, "cohere", "rerank")
+}
+
+func (h *AIGatewayHandler) RelayAnthropicModels(c *gin.Context) {
+	h.relayLLM(c, "anthropic", "models")
+}
+
+func (h *AIGatewayHandler) RelayAnthropicMessages(c *gin.Context) {
+	h.relayLLM(c, "anthropic", "messages")
+}
+
+func (h *AIGatewayHandler) relayLLM(c *gin.Context, providerKind, endpoint string) {
+	h.relayLLMWithPathModel(c, providerKind, endpoint, "")
+}
+
+func (h *AIGatewayHandler) relayLLMWebSocket(c *gin.Context, providerKind, endpoint string) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	accessCtx := apiMiddleware.AccessContextFromContext(c)
+	err := h.service.RelayLLMWebSocket(c.Request.Context(), principal, accessCtx, appaigateway.LLMRelayHTTPRequest{
+		ProviderKind: providerKind,
+		Endpoint:     endpoint,
+		QueryModel:   c.Query("model"),
+		Method:       c.Request.Method,
+		Headers:      c.Request.Header.Clone(),
+		RequestID:    c.GetString("request_id"),
+		SourceIP:     c.ClientIP(),
+		UserAgent:    c.Request.UserAgent(),
+	}, c.Writer, c.Request)
+	if err != nil {
+		relayNativeError(c, apiStatusCode(err), apiErrorCode(err), err.Error())
+	}
+}
+
+func (h *AIGatewayHandler) relayLLMWithPathModel(c *gin.Context, providerKind, endpoint, pathModel string) {
+	var body []byte
+	if c.Request.Body != nil {
+		limited := http.MaxBytesReader(c.Writer, c.Request.Body, h.service.LLMRelayMaxRequestBodyBytes())
+		var err error
+		body, err = io.ReadAll(limited)
+		if err != nil {
+			relayNativeError(c, http.StatusRequestEntityTooLarge, "request_too_large", "relay request body is too large")
+			return
+		}
+	}
+	principal := apiMiddleware.PrincipalFromContext(c)
+	accessCtx := apiMiddleware.AccessContextFromContext(c)
+	err := h.service.RelayLLMHTTP(c.Request.Context(), principal, accessCtx, appaigateway.LLMRelayHTTPRequest{
+		ProviderKind: providerKind,
+		Endpoint:     endpoint,
+		PathModel:    pathModel,
+		Method:       c.Request.Method,
+		Headers:      c.Request.Header.Clone(),
+		Body:         body,
+		RequestID:    c.GetString("request_id"),
+		SourceIP:     c.ClientIP(),
+		UserAgent:    c.Request.UserAgent(),
+	}, c.Writer)
+	if err != nil {
+		relayNativeError(c, apiStatusCode(err), apiErrorCode(err), err.Error())
+	}
+}
+
+func parseGeminiRelayModelAction(modelAction string) (string, string, bool) {
+	modelAction = strings.TrimPrefix(strings.TrimSpace(modelAction), "/")
+	separator := strings.LastIndex(modelAction, ":")
+	if separator <= 0 || separator == len(modelAction)-1 {
+		return "", "", false
+	}
+	model := strings.TrimSpace(modelAction[:separator])
+	action := strings.TrimSpace(modelAction[separator+1:])
+	switch action {
+	case "generateContent", "streamGenerateContent":
+		return model, action, true
+	default:
+		return "", "", false
+	}
+}
+
 func (h *AIGatewayHandler) decideApprovalRequest(c *gin.Context, action string) {
 	var req domainaigateway.ApprovalDecisionInput
 	if err := c.ShouldBindJSON(&req); err != nil && !errors.Is(err, io.EOF) {
@@ -653,6 +1142,91 @@ func parseAIGatewayAuditTime(value string) (*time.Time, error) {
 		return nil, errors.New("invalid audit time; use RFC3339")
 	}
 	return &parsed, nil
+}
+
+func parseAIGatewayWindowHours(raw string, defaultValue int) (int, error) {
+	if raw == "" {
+		return defaultValue, nil
+	}
+	parsed, err := strconv.Atoi(raw)
+	if err != nil {
+		return 0, errors.New("windowHours must be an integer")
+	}
+	if parsed != 0 && (parsed < 1 || parsed > maxAIGatewayGovernanceWindowHours) {
+		return 0, errors.New("windowHours must be 0 or between 1 and 168")
+	}
+	return parsed, nil
+}
+
+func parseLLMCallLogFilter(c *gin.Context) (domainaigateway.LLMCallLogFilter, error) {
+	limit := 100
+	if raw := c.Query("limit"); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil {
+			return domainaigateway.LLMCallLogFilter{}, errors.New("invalid model call log limit")
+		}
+		limit = parsed
+	}
+	from, err := parseAIGatewayAuditTime(firstNonEmpty(c.Query("from"), c.Query("startTime"), c.Query("createdAtFrom")))
+	if err != nil {
+		return domainaigateway.LLMCallLogFilter{}, err
+	}
+	to, err := parseAIGatewayAuditTime(firstNonEmpty(c.Query("to"), c.Query("endTime"), c.Query("createdAtTo")))
+	if err != nil {
+		return domainaigateway.LLMCallLogFilter{}, err
+	}
+	return domainaigateway.LLMCallLogFilter{
+		ActorType:    c.Query("actorType"),
+		ActorID:      firstNonEmpty(c.Query("actorId"), c.Query("actor")),
+		TokenID:      firstNonEmpty(c.Query("tokenId"), c.Query("tokenID")),
+		TokenKind:    c.Query("tokenKind"),
+		AIClientID:   c.Query("aiClientId"),
+		PublicModel:  c.Query("publicModel"),
+		UpstreamID:   c.Query("upstreamId"),
+		ProviderKind: c.Query("providerKind"),
+		Status:       c.Query("status"),
+		Endpoint:     c.Query("endpoint"),
+		CacheStatus:  c.Query("cacheStatus"),
+		From:         from,
+		To:           to,
+		Limit:        limit,
+	}, nil
+}
+
+func parseBoolQuery(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "1", "true", "t", "yes", "y", "on":
+		return true
+	default:
+		return false
+	}
+}
+
+func apiStatusCode(err error) int {
+	return apierrors.StatusCode(err)
+}
+
+func apiErrorCode(err error) string {
+	return apierrors.Code(err)
+}
+
+func relayNativeError(c *gin.Context, status int, code, message string) {
+	if status == http.StatusInternalServerError {
+		message = "internal server error"
+	}
+	if strings.TrimSpace(code) == "" {
+		code = "error"
+	}
+	if strings.TrimSpace(message) == "" {
+		message = code
+	}
+	c.AbortWithStatusJSON(status, gin.H{
+		"error": gin.H{
+			"message": message,
+			"type":    code,
+			"code":    code,
+		},
+	})
 }
 
 func firstHeaderValue(c *gin.Context, names ...string) string {

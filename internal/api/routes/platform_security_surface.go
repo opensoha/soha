@@ -255,6 +255,10 @@ func accessMutationSecuritySurface(method, path string) (nonPlatformMutationSecu
 
 func aiGatewayMutationSecuritySurface(method, path string) (nonPlatformMutationSecuritySurfaceEntry, bool) {
 	switch {
+	case strings.HasPrefix(path, "/api/v1/ai-gateway/llm/"):
+		return nonPlatformMutationEntry("AIGatewayLLMRelayInvocation", "invoke", appaccess.PermAIGatewayRelayInvoke, true), true
+	case strings.HasPrefix(path, "/api/v1/ai-gateway/relay/"):
+		return nonPlatformMutationEntry("AIGatewayLLMRelay", nonPlatformMutationAction(method, path), appaccess.PermAIGatewayRelayManage, false), true
 	case strings.HasPrefix(path, "/api/v1/ai-gateway/tools/"):
 		return nonPlatformMutationEntry("AIGatewayToolInvocation", "invoke", appaccess.PermAIGatewayInvoke, true), true
 	case strings.HasPrefix(path, "/api/v1/ai-gateway/resources/read"):

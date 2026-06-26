@@ -3,6 +3,7 @@ package aigateway
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"sort"
 	"strings"
 	"time"
@@ -72,8 +73,37 @@ func (s *Service) GovernanceStatus(ctx context.Context, principal domainidentity
 	if err != nil {
 		return domainaigateway.GovernanceStatus{}, err
 	}
-	return s.buildGovernanceStatus(now, windowHours, personalTokens, serviceTokens, clients, accessPolicies, toolGrants, skillBindings, audits, pendingApprovals), nil
+	status := s.buildGovernanceStatus(now, windowHours, personalTokens, serviceTokens, clients, accessPolicies, toolGrants, skillBindings, audits, pendingApprovals)
+	return s.mergeGovernanceRelayHealth(ctx, status, from, now)
 }
+
+func (s *Service) mergeGovernanceRelayHealth(ctx context.Context, status domainaigateway.GovernanceStatus, from, now time.Time) (domainaigateway.GovernanceStatus, error) {
+	repo := s.llmRelayRepository()
+	if repo == nil {
+		return status, nil
+	}
+	upstreams, err := repo.ListLLMUpstreams(ctx, domainaigateway.LLMUpstreamFilter{IncludeAll: true})
+	if err != nil {
+		return domainaigateway.GovernanceStatus{}, err
+	}
+	logs, err := repo.ListLLMCallLogs(ctx, domainaigateway.LLMCallLogFilter{From: &from, To: &now, Limit: 500})
+	if err != nil {
+		return domainaigateway.GovernanceStatus{}, err
+	}
+	checks := governanceRelayHealthChecks(upstreams, logs, now)
+	status.Health.Checks = append(status.Health.Checks, checks...)
+	for _, check := range checks {
+		status.Health.Status = worseGovernanceStatus(status.Health.Status, check.Status)
+	}
+	status.Health.Message = governanceHealthMessage(status.Health.Status)
+	if status.Metadata == nil {
+		status.Metadata = map[string]any{}
+	}
+	status.Metadata["relayHealthMerged"] = true
+	status.Metadata["relayHealthSampleLimit"] = 500
+	return status, nil
+}
+
 func buildGovernanceStatus(now time.Time, windowHours int, personalTokens []domainaigateway.PersonalAccessToken, serviceTokens []domainaigateway.ServiceAccountToken, clients []domainaigateway.AIClient, accessPolicies []domainaigateway.AccessPolicy, toolGrants []domainaigateway.ToolGrant, skillBindings []domainaigateway.SkillBinding, audits []domainaigateway.AuditLog, pendingApprovals []domainaigateway.ApprovalRequest) domainaigateway.GovernanceStatus {
 	return buildGovernanceStatusWithCapabilities(now, windowHours, personalTokens, serviceTokens, clients, accessPolicies, toolGrants, skillBindings, audits, pendingApprovals, defaultTools(), defaultSkills())
 }
@@ -1077,6 +1107,88 @@ func governanceHealth(tokens domainaigateway.GovernanceTokenSummary, metrics dom
 			status = worseGovernanceStatus(status, "degraded")
 		}
 	}
+	message := governanceHealthMessage(status)
+	return domainaigateway.GovernanceHealth{Status: status, Message: message, Checks: checks}
+}
+
+func governanceRelayHealthChecks(upstreams []domainaigateway.LLMUpstream, logs []domainaigateway.LLMCallLog, now time.Time) []domainaigateway.GovernanceHealthCheck {
+	totalUpstreams, activeUpstreams, availableUpstreams, degradedUpstreams, disabledUpstreams, circuitOpenUpstreams := governanceRelayUpstreamCounts(upstreams, now)
+	totalCalls, successCalls, unhealthyCalls, failureLikeCalls := governanceRelayCallCounts(logs)
+	return []domainaigateway.GovernanceHealthCheck{
+		{
+			Name:    "relay_upstreams",
+			Status:  governanceCheckStatus(availableUpstreams > 0, degradedUpstreams == 0 && disabledUpstreams == 0 && circuitOpenUpstreams == 0),
+			Message: fmt.Sprintf("tracks relay upstream availability; available=%d active=%d total=%d", availableUpstreams, activeUpstreams, totalUpstreams),
+			Count:   totalUpstreams,
+		},
+		{
+			Name:    "relay_circuit_breakers",
+			Status:  governanceCheckStatus(activeUpstreams == 0 || circuitOpenUpstreams < activeUpstreams, circuitOpenUpstreams == 0),
+			Message: fmt.Sprintf("tracks relay upstream circuit-open metadata; open=%d active=%d", circuitOpenUpstreams, activeUpstreams),
+			Count:   circuitOpenUpstreams,
+		},
+		{
+			Name:    "relay_model_calls",
+			Status:  governanceCheckStatus(totalCalls == 0 || successCalls > 0 || failureLikeCalls == 0, unhealthyCalls == 0),
+			Message: fmt.Sprintf("summarizes recent relay model calls; non_success=%d total=%d", unhealthyCalls, totalCalls),
+			Count:   unhealthyCalls,
+		},
+	}
+}
+
+func governanceRelayUpstreamCounts(upstreams []domainaigateway.LLMUpstream, now time.Time) (total, active, available, degraded, disabled, circuitOpen int) {
+	total = len(upstreams)
+	for _, upstream := range upstreams {
+		status := strings.ToLower(strings.TrimSpace(upstream.Status))
+		if relayUpstreamCircuitOpen(upstream, now) {
+			circuitOpen++
+		}
+		switch status {
+		case "active":
+			active++
+			if !relayUpstreamCircuitOpen(upstream, now) {
+				available++
+			}
+		case "degraded":
+			degraded++
+		default:
+			disabled++
+		}
+	}
+	return total, active, available, degraded, disabled, circuitOpen
+}
+
+func governanceRelayCallCounts(logs []domainaigateway.LLMCallLog) (total, success, unhealthy, failureLike int) {
+	total = len(logs)
+	for _, log := range logs {
+		status := strings.ToLower(strings.TrimSpace(log.Status))
+		if status == "" || status == "success" {
+			success++
+			continue
+		}
+		unhealthy++
+		if governanceRelayCallFailureLike(log, status) {
+			failureLike++
+		}
+	}
+	return total, success, unhealthy, failureLike
+}
+
+func governanceRelayCallFailureLike(log domainaigateway.LLMCallLog, status string) bool {
+	switch status {
+	case "failure", "failed", "rate_limited", "policy_denied", "auth_failed":
+		return true
+	case "cancelled", "canceled", "client_cancelled":
+		return false
+	}
+	errorCode := strings.ToLower(strings.TrimSpace(log.ErrorCode))
+	if strings.Contains(errorCode, "timeout") || strings.Contains(errorCode, "upstream_5xx") || strings.Contains(errorCode, "upstream_429") || strings.Contains(errorCode, "rate_limit") {
+		return true
+	}
+	return log.UpstreamStatus == http.StatusTooManyRequests || log.UpstreamStatus >= 500
+}
+
+func governanceHealthMessage(status string) string {
 	message := "AI Gateway governance controls are healthy"
 	if status == "degraded" {
 		message = "AI Gateway governance has warnings to review"
@@ -1084,7 +1196,7 @@ func governanceHealth(tokens domainaigateway.GovernanceTokenSummary, metrics dom
 	if status == "critical" {
 		message = "AI Gateway governance has critical findings"
 	}
-	return domainaigateway.GovernanceHealth{Status: status, Message: message, Checks: checks}
+	return message
 }
 func governanceFindingTypeCount(findings []domainaigateway.GovernanceFinding, types ...string) int {
 	out := 0

@@ -203,6 +203,39 @@ func TestDefaultRolePermissionsAIGateway(t *testing.T) {
 	}
 }
 
+func TestDefaultRolePermissionsAIGatewayRelay(t *testing.T) {
+	SetRolePermissionMatrix(nil)
+
+	for _, permission := range []string{PermAIGatewayRelayView, PermAIGatewayRelayInvoke, PermAIGatewayRelayManage} {
+		for _, role := range []string{"admin", "ops"} {
+			if !HasPermission([]string{role}, permission) {
+				t.Fatalf("%s role should include %s", role, permission)
+			}
+		}
+	}
+	for _, permission := range []string{PermAIGatewayRelayView, PermAIGatewayRelayInvoke} {
+		if !HasPermission([]string{"developer"}, permission) {
+			t.Fatalf("developer role should include %s", permission)
+		}
+	}
+	if HasPermission([]string{"developer"}, PermAIGatewayRelayManage) {
+		t.Fatalf("developer role should not include %s", PermAIGatewayRelayManage)
+	}
+	if !HasPermission([]string{"readonly"}, PermAIGatewayRelayView) {
+		t.Fatalf("readonly role should include %s", PermAIGatewayRelayView)
+	}
+	for _, permission := range []string{PermAIGatewayRelayInvoke, PermAIGatewayRelayManage} {
+		if HasPermission([]string{"readonly"}, permission) {
+			t.Fatalf("readonly role should not include %s", permission)
+		}
+	}
+	for _, permission := range []string{PermAIGatewayRelayView, PermAIGatewayRelayInvoke, PermAIGatewayRelayManage} {
+		if HasPermission([]string{"auditor"}, permission) {
+			t.Fatalf("auditor role should not include %s", permission)
+		}
+	}
+}
+
 func TestDefaultRolePermissionsPlugins(t *testing.T) {
 	SetRolePermissionMatrix(nil)
 

@@ -732,6 +732,329 @@ type TokenRotationInput struct {
 	ExpiresAt *time.Time `json:"expiresAt,omitempty"`
 }
 
+type LLMTokenMetadata struct {
+	Purpose                string   `json:"purpose,omitempty"`
+	AllowedModels          []string `json:"allowedModels,omitempty"`
+	AllowedProviderKinds   []string `json:"allowedProviderKinds,omitempty"`
+	AllowedUpstreamIDs     []string `json:"allowedUpstreamIds,omitempty"`
+	AllowedIPCIDRs         []string `json:"allowedIPCIDRs,omitempty"`
+	AllowedTeams           []string `json:"allowedTeams,omitempty"`
+	DeniedTeams            []string `json:"deniedTeams,omitempty"`
+	RateLimitProfileID     string   `json:"rateLimitProfileId,omitempty"`
+	AllowRouteTrace        bool     `json:"allowRouteTrace,omitempty"`
+	AllowUpstreamSelection bool     `json:"allowUpstreamSelection,omitempty"`
+}
+
+type LLMUpstream struct {
+	ID                   string         `json:"id"`
+	Name                 string         `json:"name"`
+	ProviderKind         string         `json:"providerKind"`
+	BaseURL              string         `json:"baseUrl"`
+	APIKeyCiphertext     string         `json:"-"`
+	APIKeyPrefix         string         `json:"apiKeyPrefix,omitempty"`
+	Status               string         `json:"status"`
+	Priority             int            `json:"priority"`
+	Weight               int            `json:"weight"`
+	TimeoutSeconds       int            `json:"timeoutSeconds"`
+	StreamTimeoutSeconds int            `json:"streamTimeoutSeconds"`
+	MaxConcurrency       int            `json:"maxConcurrency"`
+	SupportedModels      []string       `json:"supportedModels"`
+	DefaultHeaders       map[string]any `json:"defaultHeaders,omitempty"`
+	ProxyURL             string         `json:"proxyUrl,omitempty"`
+	Health               map[string]any `json:"health,omitempty"`
+	Metadata             map[string]any `json:"metadata,omitempty"`
+	CreatedBy            string         `json:"createdBy"`
+	CreatedAt            time.Time      `json:"createdAt"`
+	UpdatedAt            time.Time      `json:"updatedAt"`
+}
+
+type LLMUpstreamInput struct {
+	ID                   string         `json:"id,omitempty"`
+	Name                 string         `json:"name"`
+	ProviderKind         string         `json:"providerKind"`
+	BaseURL              string         `json:"baseUrl"`
+	APIKey               string         `json:"apiKey,omitempty"`
+	Status               string         `json:"status,omitempty"`
+	Priority             int            `json:"priority,omitempty"`
+	Weight               int            `json:"weight,omitempty"`
+	TimeoutSeconds       int            `json:"timeoutSeconds,omitempty"`
+	StreamTimeoutSeconds int            `json:"streamTimeoutSeconds,omitempty"`
+	MaxConcurrency       int            `json:"maxConcurrency,omitempty"`
+	SupportedModels      []string       `json:"supportedModels,omitempty"`
+	DefaultHeaders       map[string]any `json:"defaultHeaders,omitempty"`
+	ProxyURL             string         `json:"proxyUrl,omitempty"`
+	Health               map[string]any `json:"health,omitempty"`
+	Metadata             map[string]any `json:"metadata,omitempty"`
+}
+
+type LLMUpstreamFilter struct {
+	ProviderKind string
+	Status       string
+	IncludeAll   bool
+}
+
+type LLMModelRoute struct {
+	ID                 string         `json:"id"`
+	PublicModel        string         `json:"publicModel"`
+	ProviderKind       string         `json:"providerKind,omitempty"`
+	UpstreamID         string         `json:"upstreamId,omitempty"`
+	UpstreamModel      string         `json:"upstreamModel"`
+	RouteGroup         string         `json:"routeGroup,omitempty"`
+	Priority           int            `json:"priority"`
+	Weight             int            `json:"weight"`
+	Enabled            bool           `json:"enabled"`
+	TransformPolicy    map[string]any `json:"transformPolicy,omitempty"`
+	FallbackPolicy     map[string]any `json:"fallbackPolicy,omitempty"`
+	CachePolicy        map[string]any `json:"cachePolicy,omitempty"`
+	RateLimitProfileID string         `json:"rateLimitProfileId,omitempty"`
+	Metadata           map[string]any `json:"metadata,omitempty"`
+	CreatedAt          time.Time      `json:"createdAt"`
+	UpdatedAt          time.Time      `json:"updatedAt"`
+}
+
+type LLMModelRouteInput struct {
+	ID                 string         `json:"id,omitempty"`
+	PublicModel        string         `json:"publicModel"`
+	ProviderKind       string         `json:"providerKind,omitempty"`
+	UpstreamID         string         `json:"upstreamId,omitempty"`
+	UpstreamModel      string         `json:"upstreamModel"`
+	RouteGroup         string         `json:"routeGroup,omitempty"`
+	Priority           int            `json:"priority,omitempty"`
+	Weight             int            `json:"weight,omitempty"`
+	Enabled            *bool          `json:"enabled,omitempty"`
+	TransformPolicy    map[string]any `json:"transformPolicy,omitempty"`
+	FallbackPolicy     map[string]any `json:"fallbackPolicy,omitempty"`
+	CachePolicy        map[string]any `json:"cachePolicy,omitempty"`
+	RateLimitProfileID string         `json:"rateLimitProfileId,omitempty"`
+	Metadata           map[string]any `json:"metadata,omitempty"`
+}
+
+type LLMModelRouteFilter struct {
+	PublicModel     string
+	ProviderKind    string
+	UpstreamID      string
+	RouteGroup      string
+	IncludeDisabled bool
+}
+
+type LLMCallLog struct {
+	ID                   string         `json:"id"`
+	RequestID            string         `json:"requestId,omitempty"`
+	ActorType            string         `json:"actorType,omitempty"`
+	ActorID              string         `json:"actorId,omitempty"`
+	ActorName            string         `json:"actorName,omitempty"`
+	TokenID              string         `json:"tokenId,omitempty"`
+	TokenPrefix          string         `json:"tokenPrefix,omitempty"`
+	TokenKind            string         `json:"tokenKind,omitempty"`
+	AIClientID           string         `json:"aiClientId,omitempty"`
+	PublicModel          string         `json:"publicModel,omitempty"`
+	UpstreamID           string         `json:"upstreamId,omitempty"`
+	UpstreamName         string         `json:"upstreamName,omitempty"`
+	ProviderKind         string         `json:"providerKind,omitempty"`
+	UpstreamModel        string         `json:"upstreamModel,omitempty"`
+	Endpoint             string         `json:"endpoint,omitempty"`
+	Stream               bool           `json:"stream"`
+	Status               string         `json:"status"`
+	HTTPStatus           int            `json:"httpStatus,omitempty"`
+	UpstreamStatus       int            `json:"upstreamStatus,omitempty"`
+	ErrorCode            string         `json:"errorCode,omitempty"`
+	ErrorMessage         string         `json:"errorMessage,omitempty"`
+	PromptTokens         int            `json:"promptTokens,omitempty"`
+	CompletionTokens     int            `json:"completionTokens,omitempty"`
+	TotalTokens          int            `json:"totalTokens,omitempty"`
+	ReasoningTokens      int            `json:"reasoningTokens,omitempty"`
+	CachedReadTokens     int            `json:"cachedReadTokens,omitempty"`
+	CachedWriteTokens    int            `json:"cachedWriteTokens,omitempty"`
+	EstimatedTokens      bool           `json:"estimatedTokens"`
+	TTFBMilliseconds     int64          `json:"ttfbMs,omitempty"`
+	TTFTMilliseconds     int64          `json:"ttftMs,omitempty"`
+	DurationMilliseconds int64          `json:"durationMs,omitempty"`
+	InputBytes           int64          `json:"inputBytes,omitempty"`
+	OutputBytes          int64          `json:"outputBytes,omitempty"`
+	CacheStatus          string         `json:"cacheStatus,omitempty"`
+	RouteTrace           map[string]any `json:"routeTrace,omitempty"`
+	SourceIP             string         `json:"sourceIp,omitempty"`
+	UserAgent            string         `json:"userAgent,omitempty"`
+	Metadata             map[string]any `json:"metadata,omitempty"`
+	CreatedAt            time.Time      `json:"createdAt"`
+}
+
+type LLMCallLogFilter struct {
+	ActorType    string
+	ActorID      string
+	TokenID      string
+	TokenPrefix  string
+	TokenKind    string
+	AIClientID   string
+	PublicModel  string
+	UpstreamID   string
+	ProviderKind string
+	Status       string
+	Endpoint     string
+	CacheStatus  string
+	From         *time.Time
+	To           *time.Time
+	Limit        int
+}
+
+type LLMRelayMetrics struct {
+	RequestsToday     int                     `json:"requestsToday"`
+	TotalCalls        int                     `json:"totalCalls"`
+	SuccessRate       float64                 `json:"successRate"`
+	SuccessCount      int                     `json:"successCount"`
+	FailureCount      int                     `json:"failureCount"`
+	AverageTTFBMs     float64                 `json:"averageTTFBMs"`
+	AverageTTFTMs     float64                 `json:"averageTTFTMs"`
+	AverageDurationMs float64                 `json:"averageDurationMs"`
+	TokensPerSecond   float64                 `json:"tokensPerSecond"`
+	CacheHitCount     int                     `json:"cacheHitCount"`
+	CacheReadTokens   int                     `json:"cacheReadTokens"`
+	CacheWriteTokens  int                     `json:"cacheWriteTokens"`
+	ModelRanking      []GovernanceMetricCount `json:"modelRanking,omitempty"`
+	TopModels         []GovernanceMetricCount `json:"topModels,omitempty"`
+	UpstreamHealth    []GovernanceMetricCount `json:"upstreamHealth,omitempty"`
+	RecentErrors      []LLMCallLog            `json:"recentErrors,omitempty"`
+	GeneratedAt       time.Time               `json:"generatedAt"`
+}
+
+type LLMRelayCallLogMetrics struct {
+	TotalCalls        int
+	SuccessCount      int
+	FailureCount      int
+	AverageTTFBMs     float64
+	AverageTTFTMs     float64
+	AverageDurationMs float64
+	TokensPerSecond   float64
+	CacheHitCount     int
+	CacheReadTokens   int
+	CacheWriteTokens  int
+	ModelRanking      []GovernanceMetricCount
+	RecentErrors      []LLMCallLog
+}
+
+type LLMRelayCacheStatsRequest struct {
+	WindowHours int
+	PublicModel string
+	UpstreamID  string
+}
+
+type LLMRelayCacheLogStats struct {
+	ResponseCacheHits         int
+	ResponseCacheMisses       int
+	ResponseCacheWrites       int
+	ResponseCacheBypasses     int
+	ProviderCachedReadTokens  int
+	ProviderCachedWriteTokens int
+	ByModel                   []map[string]any
+	ByUpstream                []map[string]any
+}
+
+type LLMRelayCacheStats struct {
+	GeneratedAt               time.Time        `json:"generatedAt"`
+	WindowHours               int              `json:"windowHours"`
+	ResponseCacheEnabled      bool             `json:"responseCacheEnabled"`
+	ResponseCacheHits         int              `json:"responseCacheHits,omitempty"`
+	ResponseCacheMisses       int              `json:"responseCacheMisses,omitempty"`
+	ResponseCacheWrites       int              `json:"responseCacheWrites,omitempty"`
+	ResponseCacheBypasses     int              `json:"responseCacheBypasses,omitempty"`
+	ProviderCachedReadTokens  int              `json:"providerCachedReadTokens,omitempty"`
+	ProviderCachedWriteTokens int              `json:"providerCachedWriteTokens,omitempty"`
+	ByModel                   []map[string]any `json:"byModel,omitempty"`
+	ByUpstream                []map[string]any `json:"byUpstream,omitempty"`
+}
+
+type LLMRelayCachePurgeRequest struct {
+	PublicModel string     `json:"publicModel,omitempty"`
+	UpstreamID  string     `json:"upstreamId,omitempty"`
+	RouteGroup  string     `json:"routeGroup,omitempty"`
+	OlderThan   *time.Time `json:"olderThan,omitempty"`
+	DryRun      bool       `json:"dryRun,omitempty"`
+}
+
+type LLMRelayCachePurgeResult struct {
+	Status      string `json:"status"`
+	PurgedCount int    `json:"purgedCount"`
+	DryRun      bool   `json:"dryRun"`
+}
+
+type LLMUpstreamTestResult struct {
+	UpstreamID   string    `json:"upstreamId"`
+	ProviderKind string    `json:"providerKind"`
+	Status       string    `json:"status"`
+	HTTPStatus   int       `json:"httpStatus,omitempty"`
+	DurationMs   int64     `json:"durationMs,omitempty"`
+	CheckedAt    time.Time `json:"checkedAt"`
+}
+
+type LLMRelayHealthCheckRun struct {
+	CheckedAt time.Time               `json:"checkedAt"`
+	Total     int                     `json:"total"`
+	Checked   int                     `json:"checked"`
+	Skipped   int                     `json:"skipped"`
+	Healthy   int                     `json:"healthy"`
+	Degraded  int                     `json:"degraded"`
+	Recovered int                     `json:"recovered"`
+	Failed    int                     `json:"failed"`
+	Results   []LLMUpstreamTestResult `json:"results,omitempty"`
+}
+
+type LLMCacheEntry struct {
+	ID                     string         `json:"id"`
+	CacheKey               string         `json:"cacheKey"`
+	ScopeKey               string         `json:"scopeKey"`
+	PublicModel            string         `json:"publicModel"`
+	UpstreamID             string         `json:"upstreamId,omitempty"`
+	UpstreamModel          string         `json:"upstreamModel,omitempty"`
+	RequestHash            string         `json:"requestHash"`
+	ResponseBodyCiphertext string         `json:"-"`
+	ResponseHeaders        map[string]any `json:"responseHeaders,omitempty"`
+	Status                 string         `json:"status"`
+	HitCount               int            `json:"hitCount"`
+	ExpiresAt              *time.Time     `json:"expiresAt,omitempty"`
+	LastHitAt              *time.Time     `json:"lastHitAt,omitempty"`
+	Metadata               map[string]any `json:"metadata,omitempty"`
+	CreatedAt              time.Time      `json:"createdAt"`
+	UpdatedAt              time.Time      `json:"updatedAt"`
+}
+
+type LLMCacheEntryFilter struct {
+	CacheKey      string
+	ScopeKey      string
+	PublicModel   string
+	UpstreamID    string
+	Status        string
+	ExpiresAfter  *time.Time
+	ExpiresBefore *time.Time
+	UpdatedBefore *time.Time
+	Limit         int
+}
+
+type LLMHealthEvent struct {
+	ID                  string         `json:"id"`
+	UpstreamID          string         `json:"upstreamId,omitempty"`
+	UpstreamName        string         `json:"upstreamName,omitempty"`
+	ProviderKind        string         `json:"providerKind,omitempty"`
+	EventType           string         `json:"eventType"`
+	Status              string         `json:"status"`
+	HTTPStatus          int            `json:"httpStatus,omitempty"`
+	LatencyMilliseconds int64          `json:"latencyMs,omitempty"`
+	ErrorCode           string         `json:"errorCode,omitempty"`
+	ErrorMessage        string         `json:"errorMessage,omitempty"`
+	Message             string         `json:"message,omitempty"`
+	Metadata            map[string]any `json:"metadata,omitempty"`
+	CreatedAt           time.Time      `json:"createdAt"`
+}
+
+type LLMHealthEventFilter struct {
+	UpstreamID   string
+	ProviderKind string
+	EventType    string
+	Status       string
+	From         *time.Time
+	To           *time.Time
+	Limit        int
+}
+
 type AuditLog struct {
 	ID            string         `json:"id"`
 	ActorType     string         `json:"actorType"`
