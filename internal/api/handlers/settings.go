@@ -20,10 +20,8 @@ type SettingsService interface {
 	GetMonitoringSettings(context.Context, domainidentity.Principal) (domainsettings.MonitoringSettings, error)
 	UpdatePrometheusSettings(context.Context, domainidentity.Principal, domainsettings.PrometheusSettings) (domainsettings.MonitoringSettings, error)
 	GetAISettings(context.Context, domainidentity.Principal) (domainsettings.AISettings, error)
-	UpdateAISettings(context.Context, domainidentity.Principal, domainsettings.AISettings) (domainsettings.AISettings, error)
-	UpdateAIProviderConnections(context.Context, domainidentity.Principal, []domainsettings.AIProviderSettings, string) (domainsettings.AISettings, error)
-	ListAIProviderModels(context.Context, domainidentity.Principal, domainsettings.AIProviderSettings) ([]string, error)
-	TestAIProviderConnectivity(context.Context, domainidentity.Principal, domainsettings.AIProviderSettings, string) (domainsettings.AIProviderTestResult, error)
+	UpdateAIWorkbenchModelSettings(context.Context, domainidentity.Principal, domainsettings.AIWorkbenchModelSettings) (domainsettings.AISettings, error)
+	UpdateAISkillsRegistry(context.Context, domainidentity.Principal, []domainsettings.AISkillSettings) (domainsettings.AISettings, error)
 	GetBrandingSettings(context.Context, domainidentity.Principal) (domainsettings.BrandingSettings, error)
 	UpdateBrandingSettings(context.Context, domainidentity.Principal, domainsettings.BrandingSettings) (domainsettings.BrandingSettings, error)
 }
@@ -127,93 +125,37 @@ func (h *SettingsHandler) GetAISettings(c *gin.Context) {
 		writeError(c, err)
 		return
 	}
-	apiresponse.Item(c, http.StatusOK, item)
+	apiresponse.Item(c, http.StatusOK, mapAISettingsResponse(item))
 }
 
-func (h *SettingsHandler) UpdateAISettings(c *gin.Context) {
-	var req dto.UpdateAISettingsRequest
+func (h *SettingsHandler) UpdateAIWorkbenchModelSettings(c *gin.Context) {
+	var req dto.UpdateAIWorkbenchModelRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid ai settings payload")
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid ai workbench model payload")
 		return
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.service.UpdateAISettings(c.Request.Context(), principal, domainsettings.AISettings{
-		Provider: domainsettings.AIProviderSettings{
-			Enabled: req.Enabled,
-			BaseURL: req.BaseURL,
-			APIKey:  req.APIKey,
-			Model:   req.Model,
-		},
-		DefaultProviderID: req.DefaultProviderID,
-		Providers:         mapAIProviders(req.Providers),
-		SkillsRegistry:    mapAISkills(req.SkillsRegistry),
-	})
+	item, err := h.service.UpdateAIWorkbenchModelSettings(c.Request.Context(), principal, mapAIWorkbenchModel(req.WorkbenchModel))
 	if err != nil {
 		writeError(c, err)
 		return
 	}
-	apiresponse.Item(c, http.StatusOK, item)
+	apiresponse.Item(c, http.StatusOK, mapAISettingsResponse(item))
 }
 
-func (h *SettingsHandler) UpdateAIProviderConnections(c *gin.Context) {
-	var req dto.UpdateAIProviderConnectionsRequest
+func (h *SettingsHandler) UpdateAISkills(c *gin.Context) {
+	var req dto.UpdateAISkillsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid ai provider connections payload")
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid ai skills payload")
 		return
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.service.UpdateAIProviderConnections(c.Request.Context(), principal, mapAIProviders(req.Providers), req.DefaultProviderID)
+	item, err := h.service.UpdateAISkillsRegistry(c.Request.Context(), principal, mapAISkills(req.SkillsRegistry))
 	if err != nil {
 		writeError(c, err)
 		return
 	}
-	apiresponse.Item(c, http.StatusOK, item)
-}
-
-func (h *SettingsHandler) ListAIProviderModels(c *gin.Context) {
-	var req dto.AIProviderModelsRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid ai provider payload")
-		return
-	}
-	principal := apiMiddleware.PrincipalFromContext(c)
-	items, err := h.service.ListAIProviderModels(c.Request.Context(), principal, domainsettings.AIProviderSettings{
-		ID:           req.Provider.ID,
-		Name:         req.Provider.Name,
-		ProviderKind: req.Provider.ProviderKind,
-		Enabled:      req.Provider.Enabled,
-		BaseURL:      req.Provider.BaseURL,
-		APIKey:       req.Provider.APIKey,
-		Model:        req.Provider.Model,
-	})
-	if err != nil {
-		writeError(c, err)
-		return
-	}
-	apiresponse.Item(c, http.StatusOK, map[string]any{"models": items})
-}
-
-func (h *SettingsHandler) TestAIProviderConnectivity(c *gin.Context) {
-	var req dto.AIProviderTestRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid ai provider test payload")
-		return
-	}
-	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.service.TestAIProviderConnectivity(c.Request.Context(), principal, domainsettings.AIProviderSettings{
-		ID:           req.Provider.ID,
-		Name:         req.Provider.Name,
-		ProviderKind: req.Provider.ProviderKind,
-		Enabled:      req.Provider.Enabled,
-		BaseURL:      req.Provider.BaseURL,
-		APIKey:       req.Provider.APIKey,
-		Model:        req.Provider.Model,
-	}, req.Prompt)
-	if err != nil {
-		writeError(c, err)
-		return
-	}
-	apiresponse.Item(c, http.StatusOK, item)
+	apiresponse.Item(c, http.StatusOK, mapAISettingsResponse(item))
 }
 
 func (h *SettingsHandler) GetBrandingSettings(c *gin.Context) {
@@ -224,6 +166,27 @@ func (h *SettingsHandler) GetBrandingSettings(c *gin.Context) {
 		return
 	}
 	apiresponse.Item(c, http.StatusOK, item)
+}
+
+func mapAISettingsResponse(item domainsettings.AISettings) map[string]any {
+	return map[string]any{
+		"workbenchModel": map[string]any{
+			"defaultPublicModel": item.WorkbenchModel.DefaultPublicModel,
+			"defaultRouteId":     item.WorkbenchModel.DefaultRouteID,
+			"defaultEndpoint":    item.WorkbenchModel.DefaultEndpoint,
+			"enabled":            item.WorkbenchModel.Enabled,
+		},
+		"skillsRegistry": item.SkillsRegistry,
+	}
+}
+
+func mapAIWorkbenchModel(item dto.AIWorkbenchModelSettings) domainsettings.AIWorkbenchModelSettings {
+	return domainsettings.AIWorkbenchModelSettings{
+		DefaultPublicModel: item.DefaultPublicModel,
+		DefaultRouteID:     item.DefaultRouteID,
+		DefaultEndpoint:    item.DefaultEndpoint,
+		Enabled:            item.Enabled,
+	}
 }
 
 func mapAISkills(items []dto.AISkillSettings) []domainsettings.AISkillSettings {
@@ -242,22 +205,6 @@ func mapAISkills(items []dto.AISkillSettings) []domainsettings.AISkillSettings {
 			ScopeRules:     item.ScopeRules,
 			Enabled:        item.Enabled,
 			Scopes:         item.Scopes,
-		})
-	}
-	return out
-}
-
-func mapAIProviders(items []dto.AIProviderSettings) []domainsettings.AIProviderSettings {
-	out := make([]domainsettings.AIProviderSettings, 0, len(items))
-	for _, item := range items {
-		out = append(out, domainsettings.AIProviderSettings{
-			ID:           item.ID,
-			Name:         item.Name,
-			ProviderKind: item.ProviderKind,
-			Enabled:      item.Enabled,
-			BaseURL:      item.BaseURL,
-			APIKey:       item.APIKey,
-			Model:        item.Model,
 		})
 	}
 	return out

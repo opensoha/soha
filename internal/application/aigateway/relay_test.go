@@ -604,6 +604,177 @@ func TestRelayLLMHTTPProxiesOpenAIChatCompletionAndRecordsUsage(t *testing.T) {
 	}
 }
 
+func TestInvokeWorkbenchModelUsesRelayRouteAndRecordsWorkbenchMetadata(t *testing.T) {
+	const upstreamKey = "sk-workbench-upstream-test"
+	requests := make(chan map[string]any, 1)
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/chat/completions" {
+			t.Errorf("path = %s, want /v1/chat/completions", r.URL.Path)
+		}
+		payload := decodeRelayTestJSON(t, r.Body)
+		requests <- payload
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"id":"chatcmpl-workbench","object":"chat.completion","choices":[{"message":{"role":"assistant","content":"workbench answer"}}],"usage":{"prompt_tokens":3,"completion_tokens":5,"total_tokens":8}}`)
+	}))
+	defer upstream.Close()
+
+	repo := relayRepoForUpstream(t, upstream.URL, "openai", upstreamKey)
+	repo.routes[0].ID = "route-workbench"
+	service := newRelayRuntimeTestService(repo, upstream.Client())
+	principal := relayWorkbenchTestPrincipal()
+	principal.Teams = []string{"platform"}
+	resp, err := service.InvokeWorkbenchModel(context.Background(), principal, WorkbenchRelayRequest{
+		PublicModel: "gpt-public",
+		RouteID:     "route-workbench",
+		Endpoint:    "chat/completions",
+		SessionID:   "session-1",
+		Mode:        "general",
+		Messages: []WorkbenchRelayMessage{
+			{Role: "system", Content: "be concise"},
+			{Role: "user", Content: "hi"},
+		},
+	})
+
+	if err != nil {
+		t.Fatalf("InvokeWorkbenchModel returned error: %v", err)
+	}
+	if resp.Content != "workbench answer" || resp.PublicModel != "gpt-public" || resp.RouteID != "route-workbench" {
+		t.Fatalf("unexpected workbench response: %#v", resp)
+	}
+	upstreamPayload := <-requests
+	if upstreamPayload["model"] != "gpt-upstream" {
+		t.Fatalf("upstream model = %#v, want gpt-upstream", upstreamPayload["model"])
+	}
+	messages, _ := upstreamPayload["messages"].([]any)
+	if len(messages) != 2 {
+		t.Fatalf("expected system and user messages, got %#v", upstreamPayload["messages"])
+	}
+	log := singleRelayLog(t, repo)
+	if log.TokenKind != workbenchRelayTokenKind || log.ActorID != "user-1" || log.RouteTrace["routeId"] != "route-workbench" {
+		t.Fatalf("unexpected workbench call log identity/route fields: %#v", log)
+	}
+	if log.Metadata["source"] != workbenchRelaySource || log.Metadata["sessionId"] != "session-1" || log.Metadata["workbenchMode"] != "general" || log.Metadata["internal"] != true {
+		t.Fatalf("expected workbench metadata, got %#v", log.Metadata)
+	}
+	if _, ok := log.Metadata["prompt"]; ok {
+		t.Fatalf("call log must not store prompt text: %#v", log.Metadata)
+	}
+}
+
+func TestInvokeWorkbenchModelFiltersByRouteID(t *testing.T) {
+	const upstreamKey = "sk-workbench-route-test"
+	first := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "wrong route", http.StatusInternalServerError)
+	}))
+	defer first.Close()
+	second := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"id":"chatcmpl-workbench-route","object":"chat.completion","choices":[{"message":{"role":"assistant","content":"selected route"}}]}`)
+	}))
+	defer second.Close()
+
+	repo := relayRepoForTwoUpstreams(t, first.URL, second.URL, upstreamKey)
+	repo.routes[0].ID = "route-wrong"
+	repo.routes[1].ID = "route-selected"
+	service := newRelayRuntimeTestService(repo, first.Client())
+	resp, err := service.InvokeWorkbenchModel(context.Background(), relayWorkbenchTestPrincipal(), WorkbenchRelayRequest{
+		PublicModel: "gpt-public",
+		RouteID:     "route-selected",
+		Endpoint:    "chat/completions",
+		Messages:    []WorkbenchRelayMessage{{Role: "user", Content: "hi"}},
+	})
+
+	if err != nil {
+		t.Fatalf("InvokeWorkbenchModel returned error: %v", err)
+	}
+	if resp.Content != "selected route" || resp.RouteID != "route-selected" || resp.UpstreamID != "upstream-second" {
+		t.Fatalf("unexpected selected route response: %#v", resp)
+	}
+}
+
+func TestInvokeWorkbenchModelUsesFirstClassOpenAICompatibleRouteProvider(t *testing.T) {
+	const upstreamKey = "sk-workbench-deepseek-test"
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/chat/completions" {
+			t.Errorf("path = %s, want /v1/chat/completions", r.URL.Path)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer "+upstreamKey {
+			t.Errorf("Authorization = %q", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"id":"chatcmpl-workbench-deepseek","object":"chat.completion","choices":[{"message":{"role":"assistant","content":"deepseek route"}}]}`)
+	}))
+	defer upstream.Close()
+
+	repo := relayRepoForUpstream(t, upstream.URL, "deepseek", upstreamKey)
+	repo.routes[0].ID = "route-deepseek"
+	service := newRelayRuntimeTestService(repo, upstream.Client())
+	resp, err := service.InvokeWorkbenchModel(context.Background(), relayWorkbenchTestPrincipal(), WorkbenchRelayRequest{
+		PublicModel: "gpt-public",
+		RouteID:     "route-deepseek",
+		Endpoint:    "chat/completions",
+		Messages:    []WorkbenchRelayMessage{{Role: "user", Content: "hi"}},
+	})
+
+	if err != nil {
+		t.Fatalf("InvokeWorkbenchModel returned error: %v", err)
+	}
+	if resp.Content != "deepseek route" || resp.RouteID != "route-deepseek" || resp.ProviderKind != "deepseek" {
+		t.Fatalf("unexpected workbench response: %#v", resp)
+	}
+	log := singleRelayLog(t, repo)
+	if log.ProviderKind != "deepseek" || log.Endpoint != "chat/completions" {
+		t.Fatalf("unexpected workbench call log provider fields: %#v", log)
+	}
+}
+
+func TestInvokeWorkbenchModelPreservesOpenAIToAnthropicTransformRoute(t *testing.T) {
+	const upstreamKey = "sk-workbench-anthropic-transform-test"
+	requests := make(chan map[string]any, 1)
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/messages" {
+			t.Errorf("path = %s, want /v1/messages", r.URL.Path)
+		}
+		if got := r.Header.Get("x-api-key"); got != upstreamKey {
+			t.Errorf("x-api-key = %q", got)
+		}
+		requests <- decodeRelayTestJSON(t, r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"id":"msg-workbench-transform","type":"message","role":"assistant","content":[{"type":"text","text":"converted route"}],"stop_reason":"end_turn","usage":{"input_tokens":4,"output_tokens":6}}`)
+	}))
+	defer upstream.Close()
+
+	repo := relayRepoForUpstream(t, upstream.URL, "anthropic", upstreamKey)
+	repo.routes[0].ID = "route-anthropic-transform"
+	repo.routes[0].ProviderKind = "anthropic"
+	repo.routes[0].TransformPolicy = map[string]any{"mode": "convert", "targetProviderKind": "anthropic"}
+	service := newRelayRuntimeTestService(repo, upstream.Client())
+	resp, err := service.InvokeWorkbenchModel(context.Background(), relayWorkbenchTestPrincipal(), WorkbenchRelayRequest{
+		PublicModel: "gpt-public",
+		RouteID:     "route-anthropic-transform",
+		Endpoint:    "chat/completions",
+		Messages: []WorkbenchRelayMessage{
+			{Role: "system", Content: "be concise"},
+			{Role: "user", Content: "hi"},
+		},
+	})
+
+	if err != nil {
+		t.Fatalf("InvokeWorkbenchModel returned error: %v", err)
+	}
+	if resp.Content != "converted route" || resp.RouteID != "route-anthropic-transform" || resp.ProviderKind != "anthropic" {
+		t.Fatalf("unexpected workbench response: %#v", resp)
+	}
+	upstreamPayload := <-requests
+	if upstreamPayload["system"] != "be concise" || upstreamPayload["model"] != "gpt-upstream" {
+		t.Fatalf("upstream payload = %#v", upstreamPayload)
+	}
+	log := singleRelayLog(t, repo)
+	if log.ProviderKind != "openai" || log.Metadata["upstreamProviderKind"] != "anthropic" {
+		t.Fatalf("unexpected workbench transform log fields: %#v", log)
+	}
+}
+
 func TestRelayLLMWebSocketProxiesOpenAIRealtimeAndRecordsCall(t *testing.T) {
 	const upstreamKey = "sk-realtime-upstream-test"
 	seen := make(chan *http.Request, 1)
@@ -5280,7 +5451,7 @@ func newRelayRuntimeTestServiceWithAudit(repo *relayTestRepository, client *http
 	rateLimits := &fakeRateLimitBackend{}
 	return NewWithDeps(ServiceDeps{
 		Permissions: appaccess.NewPermissionResolver(stubRolePermissionReader{matrix: map[string][]string{
-			"developer": {appaccess.PermAIGatewayRelayView, appaccess.PermAIGatewayRelayInvoke, appaccess.PermAIGatewayRelayManage},
+			"developer": {appaccess.PermAIGatewayRelayView, appaccess.PermAIGatewayRelayInvoke, appaccess.PermAIGatewayRelayManage, appaccess.PermObserveAIChatUse},
 		}}),
 		Audit:            audit,
 		AuditLogs:        auditRepo,
@@ -5378,6 +5549,12 @@ func stubRelayRandomIntn(fn func(int) int) func() {
 func relayTestPrincipal() domainidentity.Principal {
 	principal := testPrincipal("developer")
 	principal.PermissionKeys = []string{appaccess.PermAIGatewayRelayInvoke}
+	return principal
+}
+
+func relayWorkbenchTestPrincipal() domainidentity.Principal {
+	principal := testPrincipal("developer")
+	principal.PermissionKeys = []string{appaccess.PermObserveAIChatUse}
 	return principal
 }
 

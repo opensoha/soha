@@ -1,16 +1,10 @@
 package settings
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
-	"net/url"
 	"slices"
 	"strings"
-	"time"
 
 	appaccess "github.com/opensoha/soha/internal/application/access"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
@@ -24,11 +18,10 @@ type Service struct {
 	auth        cfgpkg.AuthConfig
 	monitoring  cfgpkg.MonitoringConfig
 	permissions *appaccess.PermissionResolver
-	http        *http.Client
 }
 
 func New(store domainsettings.Store, auth cfgpkg.AuthConfig, monitoring cfgpkg.MonitoringConfig, permissions *appaccess.PermissionResolver) *Service {
-	return &Service{store: store, auth: auth, monitoring: monitoring, permissions: permissions, http: &http.Client{Timeout: 20 * time.Second}}
+	return &Service{store: store, auth: auth, monitoring: monitoring, permissions: permissions}
 }
 
 func (s *Service) GetIdentitySettings(ctx context.Context, principal domainidentity.Principal) (domainsettings.IdentitySettings, error) {
@@ -182,135 +175,27 @@ func (s *Service) UpdateBrandingSettings(ctx context.Context, principal domainid
 	return s.brandingSettings(ctx)
 }
 
-func (s *Service) UpdateAISettings(ctx context.Context, principal domainidentity.Principal, input domainsettings.AISettings) (domainsettings.AISettings, error) {
+func (s *Service) UpdateAIWorkbenchModelSettings(ctx context.Context, principal domainidentity.Principal, input domainsettings.AIWorkbenchModelSettings) (domainsettings.AISettings, error) {
 	if err := s.authorize(ctx, principal, appaccess.PermSettingsAIManage); err != nil {
-		return domainsettings.AISettings{}, err
-	}
-	input.Provider = normalizeAIProvider(input.Provider)
-	for index := range input.Providers {
-		input.Providers[index] = normalizeAIProvider(input.Providers[index])
-		if input.Providers[index].ID == "" {
-			input.Providers[index].ID = fmt.Sprintf("provider-%d", index+1)
-		}
-		if input.Providers[index].Name == "" {
-			input.Providers[index].Name = input.Providers[index].ProviderKind
-		}
-		if input.Providers[index].Enabled {
-			if input.Providers[index].BaseURL == "" {
-				return domainsettings.AISettings{}, fmt.Errorf("%w: ai provider base url is required", apperrors.ErrInvalidArgument)
-			}
-			if input.Providers[index].APIKey == "" {
-				return domainsettings.AISettings{}, fmt.Errorf("%w: ai provider api key is required", apperrors.ErrInvalidArgument)
-			}
-		}
-	}
-	if input.DefaultProviderID == "" && len(input.Providers) > 0 {
-		input.DefaultProviderID = input.Providers[0].ID
-	}
-	if len(input.Providers) == 0 && input.Provider.BaseURL != "" {
-		input.Provider.ID = "default"
-		input.Provider.Name = "default"
-		input.Provider.ProviderKind = defaultProviderKind(input.Provider.ProviderKind)
-		input.Providers = []domainsettings.AIProviderSettings{input.Provider}
-		input.DefaultProviderID = input.Provider.ID
-	}
-	input.Provider = resolveDefaultProvider(input)
-	skills := make([]map[string]any, 0, len(input.SkillsRegistry))
-	for _, item := range input.SkillsRegistry {
-		skills = append(skills, map[string]any{
-			"id":             strings.TrimSpace(item.ID),
-			"name":           strings.TrimSpace(item.Name),
-			"category":       strings.TrimSpace(item.Category),
-			"ownerModule":    strings.TrimSpace(item.OwnerModule),
-			"description":    strings.TrimSpace(item.Description),
-			"capabilityRefs": item.CapabilityRefs,
-			"blueprintRefs":  item.BlueprintRefs,
-			"inputSchema":    item.InputSchema,
-			"outputSchema":   item.OutputSchema,
-			"scopeRules":     item.ScopeRules,
-			"enabled":        item.Enabled,
-			"scopes":         item.Scopes,
-		})
-	}
-	return s.persistAISettings(ctx, principal.UserID, input.Provider, input.Providers, input.DefaultProviderID, skills)
-}
-
-func (s *Service) UpdateAIProviderConnections(ctx context.Context, principal domainidentity.Principal, providers []domainsettings.AIProviderSettings, defaultProviderID string) (domainsettings.AISettings, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermObserveAIView); err != nil {
 		return domainsettings.AISettings{}, err
 	}
 	current, err := s.aiSettings(ctx)
 	if err != nil {
 		return domainsettings.AISettings{}, err
 	}
-	for index := range providers {
-		providers[index] = normalizeAIProvider(providers[index])
-		if providers[index].ID == "" {
-			providers[index].ID = fmt.Sprintf("provider-%d", index+1)
-		}
-		if providers[index].Name == "" {
-			providers[index].Name = providers[index].ProviderKind
-		}
-	}
-	next := domainsettings.AISettings{
-		Provider:          current.Provider,
-		Providers:         providers,
-		DefaultProviderID: strings.TrimSpace(defaultProviderID),
-		SkillsRegistry:    current.SkillsRegistry,
-	}
-	if next.DefaultProviderID == "" && len(next.Providers) > 0 {
-		next.DefaultProviderID = next.Providers[0].ID
-	}
-	next.Provider = resolveDefaultProvider(next)
-	skills := make([]map[string]any, 0, len(current.SkillsRegistry))
-	for _, item := range current.SkillsRegistry {
-		skills = append(skills, map[string]any{
-			"id":             strings.TrimSpace(item.ID),
-			"name":           strings.TrimSpace(item.Name),
-			"category":       strings.TrimSpace(item.Category),
-			"ownerModule":    strings.TrimSpace(item.OwnerModule),
-			"description":    strings.TrimSpace(item.Description),
-			"capabilityRefs": item.CapabilityRefs,
-			"blueprintRefs":  item.BlueprintRefs,
-			"inputSchema":    item.InputSchema,
-			"outputSchema":   item.OutputSchema,
-			"scopeRules":     item.ScopeRules,
-			"enabled":        item.Enabled,
-			"scopes":         item.Scopes,
-		})
-	}
-	return s.persistAISettings(ctx, principal.UserID, next.Provider, next.Providers, next.DefaultProviderID, skills)
+	current.WorkbenchModel = normalizeAIWorkbenchModel(input)
+	return s.persistAISettings(ctx, principal.UserID, current.WorkbenchModel, skillsToMaps(current.SkillsRegistry))
 }
 
-func (s *Service) ListAIProviderModels(ctx context.Context, principal domainidentity.Principal, provider domainsettings.AIProviderSettings) ([]string, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermSettingsAIView); err != nil {
-		return nil, err
+func (s *Service) UpdateAISkillsRegistry(ctx context.Context, principal domainidentity.Principal, skills []domainsettings.AISkillSettings) (domainsettings.AISettings, error) {
+	if err := s.authorize(ctx, principal, appaccess.PermSettingsAIManage); err != nil {
+		return domainsettings.AISettings{}, err
 	}
-	provider = normalizeAIProvider(provider)
-	if provider.BaseURL == "" || provider.APIKey == "" {
-		return nil, fmt.Errorf("%w: provider base url and api key are required", apperrors.ErrInvalidArgument)
-	}
-	return s.fetchProviderModels(ctx, provider)
-}
-
-func (s *Service) TestAIProviderConnectivity(ctx context.Context, principal domainidentity.Principal, provider domainsettings.AIProviderSettings, prompt string) (domainsettings.AIProviderTestResult, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermSettingsAIView); err != nil {
-		return domainsettings.AIProviderTestResult{}, err
-	}
-	provider = normalizeAIProvider(provider)
-	if provider.BaseURL == "" || provider.APIKey == "" {
-		return domainsettings.AIProviderTestResult{}, fmt.Errorf("%w: provider base url and api key are required", apperrors.ErrInvalidArgument)
-	}
-	reply, err := s.providerHello(ctx, provider, strings.TrimSpace(prompt))
+	current, err := s.aiSettings(ctx)
 	if err != nil {
-		return domainsettings.AIProviderTestResult{}, err
+		return domainsettings.AISettings{}, err
 	}
-	return domainsettings.AIProviderTestResult{
-		OK:      true,
-		Model:   provider.Model,
-		Message: "connectivity verified",
-		Reply:   reply,
-	}, nil
+	return s.persistAISettings(ctx, principal.UserID, current.WorkbenchModel, skillsToMaps(skills))
 }
 
 func (s *Service) UpdatePrometheusSettings(ctx context.Context, principal domainidentity.Principal, input domainsettings.PrometheusSettings) (domainsettings.MonitoringSettings, error) {
@@ -372,6 +257,22 @@ func (s *Service) ResolveMonitoringSettings(ctx context.Context) (domainsettings
 
 func (s *Service) ResolveAISettings(ctx context.Context) (domainsettings.AISettings, error) {
 	return s.aiSettings(ctx)
+}
+
+func (s *Service) ResolveAIWorkbenchSettings(ctx context.Context) (domainsettings.AIWorkbenchModelSettings, error) {
+	settings, err := s.aiSettings(ctx)
+	if err != nil {
+		return domainsettings.AIWorkbenchModelSettings{}, err
+	}
+	return settings.WorkbenchModel, nil
+}
+
+func (s *Service) ResolveAISkillsRegistry(ctx context.Context) ([]domainsettings.AISkillSettings, error) {
+	settings, err := s.aiSettings(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return append([]domainsettings.AISkillSettings(nil), settings.SkillsRegistry...), nil
 }
 
 func (s *Service) ResolveBrandingSettings(ctx context.Context) (domainsettings.BrandingSettings, error) {
@@ -572,50 +473,30 @@ func (s *Service) monitoringSettings(ctx context.Context) (domainsettings.Monito
 
 func (s *Service) aiSettings(ctx context.Context) (domainsettings.AISettings, error) {
 	item := domainsettings.AISettings{
-		Provider: domainsettings.AIProviderSettings{
-			Enabled:      false,
-			Model:        "gpt-4.1-mini",
-			ProviderKind: "openai-compatible",
+		WorkbenchModel: domainsettings.AIWorkbenchModelSettings{
+			DefaultEndpoint: "chat/completions",
+			Enabled:         true,
 		},
 	}
 	if s.store == nil {
 		return item, nil
 	}
-	raw, ok, err := s.store.Get(ctx, domainsettings.AIProviderSettingKey)
+	raw, ok, err := s.store.Get(ctx, domainsettings.AISettingsKey)
 	if err != nil || !ok {
 		return item, err
 	}
-	if value, ok := raw["enabled"].(bool); ok {
-		item.Provider.Enabled = value
-	}
-	if value, ok := raw["baseUrl"].(string); ok {
-		item.Provider.BaseURL = strings.TrimSpace(value)
-	}
-	if value, ok := raw["apiKey"].(string); ok {
-		item.Provider.APIKey = strings.TrimSpace(value)
-	}
-	if value, ok := raw["model"].(string); ok && strings.TrimSpace(value) != "" {
-		item.Provider.Model = strings.TrimSpace(value)
-	}
-	if value, ok := raw["defaultProviderId"].(string); ok && strings.TrimSpace(value) != "" {
-		item.DefaultProviderID = strings.TrimSpace(value)
-	}
-	if values, ok := raw["providers"].([]any); ok {
-		item.Providers = make([]domainsettings.AIProviderSettings, 0, len(values))
-		for _, current := range values {
-			record, ok := current.(map[string]any)
-			if !ok {
-				continue
-			}
-			item.Providers = append(item.Providers, domainsettings.AIProviderSettings{
-				ID:           strings.TrimSpace(fmt.Sprint(record["id"])),
-				Name:         strings.TrimSpace(fmt.Sprint(record["name"])),
-				ProviderKind: defaultProviderKind(strings.TrimSpace(fmt.Sprint(record["providerKind"]))),
-				Enabled:      boolValue(record["enabled"]),
-				BaseURL:      strings.TrimSpace(fmt.Sprint(record["baseUrl"])),
-				APIKey:       strings.TrimSpace(fmt.Sprint(record["apiKey"])),
-				Model:        strings.TrimSpace(fmt.Sprint(record["model"])),
-			})
+	if values, ok := raw["workbenchModel"].(map[string]any); ok {
+		if value, ok := values["defaultPublicModel"].(string); ok {
+			item.WorkbenchModel.DefaultPublicModel = strings.TrimSpace(value)
+		}
+		if value, ok := values["defaultRouteId"].(string); ok {
+			item.WorkbenchModel.DefaultRouteID = strings.TrimSpace(value)
+		}
+		if value, ok := values["defaultEndpoint"].(string); ok {
+			item.WorkbenchModel.DefaultEndpoint = strings.TrimSpace(value)
+		}
+		if value, ok := values["enabled"].(bool); ok {
+			item.WorkbenchModel.Enabled = value
 		}
 	}
 	if values, ok := raw["skillsRegistry"].([]any); ok {
@@ -665,37 +546,39 @@ func (s *Service) aiSettings(ctx context.Context) (domainsettings.AISettings, er
 			})
 		}
 	}
-	if len(item.Providers) == 0 && (item.Provider.BaseURL != "" || item.Provider.APIKey != "" || item.Provider.Model != "") {
-		item.Provider.ID = "default"
-		item.Provider.Name = "default"
-		item.Provider.ProviderKind = defaultProviderKind(item.Provider.ProviderKind)
-		item.Providers = []domainsettings.AIProviderSettings{item.Provider}
-		if item.DefaultProviderID == "" {
-			item.DefaultProviderID = item.Provider.ID
-		}
-	}
-	item.Provider = resolveDefaultProvider(item)
+	item.WorkbenchModel = normalizeAIWorkbenchModel(item.WorkbenchModel)
 	return item, nil
 }
 
-func normalizeAIProvider(input domainsettings.AIProviderSettings) domainsettings.AIProviderSettings {
-	input.ID = strings.TrimSpace(input.ID)
-	input.Name = strings.TrimSpace(input.Name)
-	input.ProviderKind = defaultProviderKind(strings.TrimSpace(input.ProviderKind))
-	input.BaseURL = strings.TrimSpace(input.BaseURL)
-	input.APIKey = strings.TrimSpace(input.APIKey)
-	input.Model = strings.TrimSpace(input.Model)
-	if input.Model == "" {
-		input.Model = "gpt-4.1-mini"
+func normalizeAIWorkbenchModel(input domainsettings.AIWorkbenchModelSettings) domainsettings.AIWorkbenchModelSettings {
+	input.DefaultPublicModel = strings.TrimSpace(input.DefaultPublicModel)
+	input.DefaultRouteID = strings.TrimSpace(input.DefaultRouteID)
+	input.DefaultEndpoint = strings.TrimSpace(input.DefaultEndpoint)
+	if input.DefaultEndpoint == "" {
+		input.DefaultEndpoint = "chat/completions"
 	}
 	return input
 }
 
-func defaultProviderKind(value string) string {
-	if strings.TrimSpace(value) == "" {
-		return "openai-compatible"
+func skillsToMaps(items []domainsettings.AISkillSettings) []map[string]any {
+	skills := make([]map[string]any, 0, len(items))
+	for _, item := range items {
+		skills = append(skills, map[string]any{
+			"id":             strings.TrimSpace(item.ID),
+			"name":           strings.TrimSpace(item.Name),
+			"category":       strings.TrimSpace(item.Category),
+			"ownerModule":    strings.TrimSpace(item.OwnerModule),
+			"description":    strings.TrimSpace(item.Description),
+			"capabilityRefs": item.CapabilityRefs,
+			"blueprintRefs":  item.BlueprintRefs,
+			"inputSchema":    item.InputSchema,
+			"outputSchema":   item.OutputSchema,
+			"scopeRules":     item.ScopeRules,
+			"enabled":        item.Enabled,
+			"scopes":         item.Scopes,
+		})
 	}
-	return strings.TrimSpace(value)
+	return skills
 }
 
 func firstNonEmptyTrimmed(values ...string) string {
@@ -737,36 +620,6 @@ func sliceOfStringsAny(raw any) []string {
 			continue
 		}
 		out = append(out, item)
-	}
-	return out
-}
-
-func resolveDefaultProvider(input domainsettings.AISettings) domainsettings.AIProviderSettings {
-	if input.DefaultProviderID != "" {
-		for _, item := range input.Providers {
-			if item.ID == input.DefaultProviderID {
-				return item
-			}
-		}
-	}
-	if len(input.Providers) > 0 {
-		return input.Providers[0]
-	}
-	return normalizeAIProvider(input.Provider)
-}
-
-func providersToMaps(items []domainsettings.AIProviderSettings) []map[string]any {
-	out := make([]map[string]any, 0, len(items))
-	for _, item := range items {
-		out = append(out, map[string]any{
-			"id":           item.ID,
-			"name":         item.Name,
-			"providerKind": item.ProviderKind,
-			"enabled":      item.Enabled,
-			"baseUrl":      item.BaseURL,
-			"apiKey":       item.APIKey,
-			"model":        item.Model,
-		})
 	}
 	return out
 }
@@ -853,17 +706,18 @@ func (s *Service) syncLegacyOIDCSettings(ctx context.Context, updatedBy string, 
 	return s.store.Upsert(ctx, domainsettings.IdentityOIDCSettingKey, "identity", value, updatedBy)
 }
 
-func (s *Service) persistAISettings(ctx context.Context, updatedBy string, provider domainsettings.AIProviderSettings, providers []domainsettings.AIProviderSettings, defaultProviderID string, skills []map[string]any) (domainsettings.AISettings, error) {
+func (s *Service) persistAISettings(ctx context.Context, updatedBy string, workbenchModel domainsettings.AIWorkbenchModelSettings, skills []map[string]any) (domainsettings.AISettings, error) {
+	workbenchModel = normalizeAIWorkbenchModel(workbenchModel)
 	value := map[string]any{
-		"enabled":           provider.Enabled,
-		"baseUrl":           provider.BaseURL,
-		"apiKey":            provider.APIKey,
-		"model":             provider.Model,
-		"defaultProviderId": defaultProviderID,
-		"providers":         providersToMaps(providers),
-		"skillsRegistry":    skills,
+		"workbenchModel": map[string]any{
+			"defaultPublicModel": workbenchModel.DefaultPublicModel,
+			"defaultRouteId":     workbenchModel.DefaultRouteID,
+			"defaultEndpoint":    workbenchModel.DefaultEndpoint,
+			"enabled":            workbenchModel.Enabled,
+		},
+		"skillsRegistry": skills,
 	}
-	if err := s.store.Upsert(ctx, domainsettings.AIProviderSettingKey, "ai", value, updatedBy); err != nil {
+	if err := s.store.Upsert(ctx, domainsettings.AISettingsKey, "ai", value, updatedBy); err != nil {
 		return domainsettings.AISettings{}, err
 	}
 	return s.aiSettings(ctx)
@@ -1122,353 +976,6 @@ func defaultEmailFieldForProviderType(providerType string) string {
 	default:
 		return "email"
 	}
-}
-
-func (s *Service) fetchProviderModels(ctx context.Context, provider domainsettings.AIProviderSettings) ([]string, error) {
-	switch provider.ProviderKind {
-	case "anthropic":
-		return s.fetchAnthropicModels(ctx, provider)
-	case "gemini":
-		return s.fetchGeminiModels(ctx, provider)
-	default:
-		return s.fetchOpenAICompatibleModels(ctx, provider)
-	}
-}
-
-func (s *Service) fetchOpenAICompatibleModels(ctx context.Context, provider domainsettings.AIProviderSettings) ([]string, error) {
-	endpoint := strings.TrimRight(provider.BaseURL, "/")
-	if strings.HasSuffix(endpoint, "/chat/completions") {
-		endpoint = strings.TrimSuffix(endpoint, "/chat/completions")
-	}
-	if !strings.HasSuffix(endpoint, "/models") {
-		endpoint += "/models"
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Authorization", "Bearer "+provider.APIKey)
-	resp, err := s.http.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= http.StatusBadRequest {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return nil, fmt.Errorf("provider returned %s: %s", resp.Status, strings.TrimSpace(string(body)))
-	}
-	var payload struct {
-		Data []struct {
-			ID string `json:"id"`
-		} `json:"data"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
-		return nil, err
-	}
-	models := make([]string, 0, len(payload.Data))
-	for _, item := range payload.Data {
-		if strings.TrimSpace(item.ID) != "" {
-			models = append(models, strings.TrimSpace(item.ID))
-		}
-	}
-	if len(models) == 0 && provider.Model != "" {
-		models = append(models, provider.Model)
-	}
-	return models, nil
-}
-
-func (s *Service) fetchAnthropicModels(ctx context.Context, provider domainsettings.AIProviderSettings) ([]string, error) {
-	endpoint := strings.TrimRight(provider.BaseURL, "/")
-	if strings.HasSuffix(endpoint, "/messages") {
-		endpoint = strings.TrimSuffix(endpoint, "/messages")
-	}
-	if !strings.HasSuffix(endpoint, "/models") {
-		endpoint += "/models"
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("x-api-key", provider.APIKey)
-	req.Header.Set("anthropic-version", "2023-06-01")
-	resp, err := s.http.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= http.StatusBadRequest {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return nil, fmt.Errorf("provider returned %s: %s", resp.Status, strings.TrimSpace(string(body)))
-	}
-	var payload struct {
-		Data []struct {
-			ID string `json:"id"`
-		} `json:"data"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
-		return nil, err
-	}
-	models := make([]string, 0, len(payload.Data))
-	for _, item := range payload.Data {
-		if strings.TrimSpace(item.ID) != "" {
-			models = append(models, strings.TrimSpace(item.ID))
-		}
-	}
-	if len(models) == 0 && provider.Model != "" {
-		models = append(models, provider.Model)
-	}
-	return models, nil
-}
-
-func (s *Service) fetchGeminiModels(ctx context.Context, provider domainsettings.AIProviderSettings) ([]string, error) {
-	endpoint := strings.TrimRight(provider.BaseURL, "/")
-	if strings.HasSuffix(endpoint, "/v1beta") || strings.HasSuffix(endpoint, "/v1beta/") {
-		endpoint += "/models"
-	} else if !strings.Contains(endpoint, "/models") {
-		endpoint += "/models"
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
-	if err != nil {
-		return nil, err
-	}
-	query := req.URL.Query()
-	query.Set("key", provider.APIKey)
-	req.URL.RawQuery = query.Encode()
-	resp, err := s.http.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= http.StatusBadRequest {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return nil, fmt.Errorf("provider returned %s: %s", resp.Status, strings.TrimSpace(string(body)))
-	}
-	var payload struct {
-		Models []struct {
-			Name string `json:"name"`
-		} `json:"models"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
-		return nil, err
-	}
-	models := make([]string, 0, len(payload.Models))
-	for _, item := range payload.Models {
-		name := strings.TrimPrefix(strings.TrimSpace(item.Name), "models/")
-		if name != "" {
-			models = append(models, name)
-		}
-	}
-	if len(models) == 0 && provider.Model != "" {
-		models = append(models, provider.Model)
-	}
-	return models, nil
-}
-
-func (s *Service) providerHello(ctx context.Context, provider domainsettings.AIProviderSettings, prompt string) (string, error) {
-	if prompt == "" {
-		prompt = "hello"
-	}
-	switch provider.ProviderKind {
-	case "anthropic":
-		return s.anthropicHello(ctx, provider, prompt)
-	case "gemini":
-		return s.geminiHello(ctx, provider, prompt)
-	default:
-		return s.openAICompatibleHello(ctx, provider, prompt)
-	}
-}
-
-func (s *Service) openAICompatibleHello(ctx context.Context, provider domainsettings.AIProviderSettings, prompt string) (string, error) {
-	endpoint := strings.TrimRight(provider.BaseURL, "/")
-	if !strings.HasSuffix(endpoint, "/chat/completions") {
-		endpoint += "/chat/completions"
-	}
-	payload := map[string]any{
-		"model": provider.Model,
-		"messages": []map[string]string{
-			{"role": "user", "content": prompt},
-		},
-		"temperature": 0,
-	}
-	encoded, err := json.Marshal(payload)
-	if err != nil {
-		return "", err
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(encoded))
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("Authorization", "Bearer "+provider.APIKey)
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := s.http.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= http.StatusBadRequest {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return "", fmt.Errorf("provider returned %s: %s", resp.Status, strings.TrimSpace(string(body)))
-	}
-	raw, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-	if err != nil {
-		return "", err
-	}
-	return openAICompatibleReplyFromBody(raw)
-}
-
-func openAICompatibleReplyFromBody(raw []byte) (string, error) {
-	body := strings.TrimSpace(string(raw))
-	if body == "" {
-		return "", nil
-	}
-	if strings.HasPrefix(body, "data:") {
-		var builder strings.Builder
-		for _, line := range strings.Split(body, "\n") {
-			line = strings.TrimSpace(line)
-			if !strings.HasPrefix(line, "data:") {
-				continue
-			}
-			payload := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
-			if payload == "" || payload == "[DONE]" {
-				continue
-			}
-			reply, err := openAICompatibleReplyPartFromJSON([]byte(payload))
-			if err != nil {
-				return "", err
-			}
-			if reply != "" {
-				builder.WriteString(reply)
-			}
-		}
-		return strings.TrimSpace(builder.String()), nil
-	}
-	return openAICompatibleReplyFromJSON([]byte(body))
-}
-
-func openAICompatibleReplyFromJSON(raw []byte) (string, error) {
-	reply, err := openAICompatibleReplyPartFromJSON(raw)
-	if err != nil {
-		return "", err
-	}
-	return strings.TrimSpace(reply), nil
-}
-
-func openAICompatibleReplyPartFromJSON(raw []byte) (string, error) {
-	var body struct {
-		Choices []struct {
-			Message struct {
-				Content string `json:"content"`
-			} `json:"message"`
-			Delta struct {
-				Content string `json:"content"`
-			} `json:"delta"`
-			Text string `json:"text"`
-		} `json:"choices"`
-	}
-	if err := json.Unmarshal(raw, &body); err != nil {
-		return "", err
-	}
-	for _, choice := range body.Choices {
-		switch {
-		case strings.TrimSpace(choice.Message.Content) != "":
-			return choice.Message.Content, nil
-		case strings.TrimSpace(choice.Delta.Content) != "":
-			return choice.Delta.Content, nil
-		case strings.TrimSpace(choice.Text) != "":
-			return choice.Text, nil
-		}
-	}
-	return "", nil
-}
-
-func (s *Service) anthropicHello(ctx context.Context, provider domainsettings.AIProviderSettings, prompt string) (string, error) {
-	endpoint := strings.TrimRight(provider.BaseURL, "/")
-	if !strings.HasSuffix(endpoint, "/messages") {
-		endpoint += "/messages"
-	}
-	payload := map[string]any{
-		"model":      provider.Model,
-		"max_tokens": 64,
-		"messages": []map[string]string{
-			{"role": "user", "content": prompt},
-		},
-	}
-	encoded, err := json.Marshal(payload)
-	if err != nil {
-		return "", err
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(encoded))
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("x-api-key", provider.APIKey)
-	req.Header.Set("anthropic-version", "2023-06-01")
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := s.http.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= http.StatusBadRequest {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return "", fmt.Errorf("provider returned %s: %s", resp.Status, strings.TrimSpace(string(body)))
-	}
-	var body struct {
-		Content []struct {
-			Text string `json:"text"`
-		} `json:"content"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
-		return "", err
-	}
-	if len(body.Content) == 0 {
-		return "", nil
-	}
-	return strings.TrimSpace(body.Content[0].Text), nil
-}
-
-func (s *Service) geminiHello(ctx context.Context, provider domainsettings.AIProviderSettings, prompt string) (string, error) {
-	endpoint := strings.TrimRight(provider.BaseURL, "/")
-	if !strings.Contains(endpoint, ":generateContent") {
-		base := strings.TrimRight(endpoint, "/")
-		if !strings.Contains(base, "/models/") {
-			base = strings.TrimRight(base, "/") + "/models/" + url.PathEscape(provider.Model)
-		}
-		endpoint = base + ":generateContent"
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(fmt.Sprintf(`{"contents":[{"parts":[{"text":%q}]}]}`, prompt)))
-	if err != nil {
-		return "", err
-	}
-	query := req.URL.Query()
-	query.Set("key", provider.APIKey)
-	req.URL.RawQuery = query.Encode()
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := s.http.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= http.StatusBadRequest {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return "", fmt.Errorf("provider returned %s: %s", resp.Status, strings.TrimSpace(string(body)))
-	}
-	var body struct {
-		Candidates []struct {
-			Content struct {
-				Parts []struct {
-					Text string `json:"text"`
-				} `json:"parts"`
-			} `json:"content"`
-		} `json:"candidates"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
-		return "", err
-	}
-	if len(body.Candidates) == 0 || len(body.Candidates[0].Content.Parts) == 0 {
-		return "", nil
-	}
-	return strings.TrimSpace(body.Candidates[0].Content.Parts[0].Text), nil
 }
 
 func (s *Service) brandingSettings(ctx context.Context) (domainsettings.BrandingSettings, error) {

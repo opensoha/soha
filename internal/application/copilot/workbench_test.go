@@ -5,13 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
 	appaccess "github.com/opensoha/soha/internal/application/access"
+	appaigateway "github.com/opensoha/soha/internal/application/aigateway"
 	domainalert "github.com/opensoha/soha/internal/domain/alert"
 	domainbuild "github.com/opensoha/soha/internal/domain/build"
 	domaincopilot "github.com/opensoha/soha/internal/domain/copilot"
@@ -127,49 +126,6 @@ func TestWithinAgentRunWindowsMirrorAutomationRunWindows(t *testing.T) {
 	}
 	if withinAgentRunCooldownWindow(recentRuns, 0) {
 		t.Fatalf("expected zero cooldown to disable external agent policy cooldown")
-	}
-}
-
-func TestExternalAIReplyParsesDataPrefixedOpenAICompatibleChunks(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/chat/completions" {
-			t.Fatalf("unexpected chat completion path: %s", r.URL.Path)
-		}
-		w.Header().Set("Content-Type", "text/event-stream")
-		_, _ = w.Write([]byte("data: {\"choices\":[{\"delta\":{\"content\":\"我先按当前会话梳理问题。\"}}]}\n"))
-		_, _ = w.Write([]byte("data: [DONE]\n"))
-	}))
-	defer server.Close()
-
-	service := &Service{http: server.Client()}
-	reply, err := service.externalAIReply(context.Background(), domainsettings.AIProviderSettings{
-		BaseURL: server.URL,
-		APIKey:  "test-key",
-		Model:   "provider-model",
-	}, []chatProviderMessage{
-		{Role: "system", Content: systemPrompt("zh-CN")},
-		{Role: "user", Content: "帮我梳理当前问题"},
-	}, "zh-CN")
-	if err != nil {
-		t.Fatalf("external AI reply: %v", err)
-	}
-	if reply != "我先按当前会话梳理问题。" {
-		t.Fatalf("expected data-prefixed reply, got %q", reply)
-	}
-}
-
-func TestOpenAICompatibleChatReplyFromBodyAccumulatesSSEChunks(t *testing.T) {
-	reply, err := openAICompatibleChatReplyFromBody([]byte(
-		"data: {\"choices\":[{\"delta\":{\"content\":\"Hello\"}}]}\n" +
-			"data: {\"choices\":[{\"delta\":{\"content\":\" world\"}}]}\n" +
-			"data: {\"choices\":[{\"delta\":{\"content\":\".\"}}]}\n" +
-			"data: [DONE]\n",
-	))
-	if err != nil {
-		t.Fatalf("parse streamed reply: %v", err)
-	}
-	if reply != "Hello world." {
-		t.Fatalf("expected accumulated streamed reply, got %q", reply)
 	}
 }
 
@@ -421,9 +377,11 @@ func TestWorkbenchCatalogAllowsChatUsersWithoutExposingProviderSettings(t *testi
 		"chat": {appaccess.PermObserveAIChatUse},
 	})
 	service.settings = inspectionAuthzSettingsResolver{settings: domainsettings.AISettings{
-		Provider: domainsettings.AIProviderSettings{
-			APIKey: "secret-key",
-			Model:  "gpt-test",
+		WorkbenchModel: domainsettings.AIWorkbenchModelSettings{
+			DefaultPublicModel: "gpt-public",
+			DefaultRouteID:     "route-openai",
+			DefaultEndpoint:    "chat/completions",
+			Enabled:            true,
 		},
 		SkillsRegistry: []domainsettings.SkillDefinition{{
 			ID:             "skill-1",
@@ -481,43 +439,25 @@ func TestWorkbenchCatalogRejectsUsersWithoutAIWorkbenchPermissions(t *testing.T)
 	}
 }
 
-func TestSendMessageGeneralModeUsesModelProviderWithoutAutoAnalysis(t *testing.T) {
+func TestSendMessageGeneralModeRequiresGatewayRouteWithoutAutoAnalysis(t *testing.T) {
 	defer appaccess.SetRolePermissionMatrix(nil)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/chat/completions" {
-			t.Fatalf("unexpected chat completion path: %s", r.URL.Path)
-		}
-		var payload struct {
-			Messages []struct {
-				Role    string `json:"role"`
-				Content string `json:"content"`
-			} `json:"messages"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-			t.Fatalf("decode provider payload: %v", err)
-		}
-		if len(payload.Messages) != 2 || payload.Messages[1].Content != "hi" {
-			t.Fatalf("expected system + user provider messages, got %#v", payload.Messages)
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"Hello from the model."}}]}`))
-	}))
-	defer server.Close()
-
 	service, repo := newInspectionAuthzTestService(map[string][]string{
 		"chat": {appaccess.PermObserveAIChatUse},
 	})
-	service.http = server.Client()
 	service.settings = inspectionAuthzSettingsResolver{settings: domainsettings.AISettings{
-		Provider: domainsettings.AIProviderSettings{
-			ID:           "provider-1",
-			ProviderKind: "openai-compatible",
-			Enabled:      true,
-			BaseURL:      server.URL,
-			APIKey:       "secret-key",
-			Model:        "test-model",
+		WorkbenchModel: domainsettings.AIWorkbenchModelSettings{
+			DefaultPublicModel: "gpt-public",
+			DefaultRouteID:     "route-openai",
+			DefaultEndpoint:    "chat/completions",
+			Enabled:            true,
 		},
 	}}
+	invoker := &fakeWorkbenchModelInvoker{response: appaigateway.WorkbenchRelayResponse{
+		Content:     "hello from gateway",
+		PublicModel: "gpt-public",
+		RouteID:     "route-openai",
+	}}
+	service.SetWorkbenchModelInvoker(invoker)
 	repo.session = domaincopilot.Session{
 		ID:        "session-1",
 		Title:     "General chat",
@@ -537,48 +477,42 @@ func TestSendMessageGeneralModeUsesModelProviderWithoutAutoAnalysis(t *testing.T
 	if len(envelope.ToolCalls) != 0 || len(envelope.AnalysisArtifacts) != 0 || len(envelope.SessionPatch) != 0 {
 		t.Fatalf("expected general chat to skip automatic analysis, got toolCalls=%#v artifacts=%#v patch=%#v", envelope.ToolCalls, envelope.AnalysisArtifacts, envelope.SessionPatch)
 	}
-	if len(envelope.Messages) != 2 || envelope.Messages[1].Content != "Hello from the model." {
-		t.Fatalf("expected model reply envelope, got %#v", envelope.Messages)
+	if len(envelope.Messages) != 2 {
+		t.Fatalf("expected user and assistant messages, got %#v", envelope.Messages)
+	}
+	if envelope.Messages[1].Content != "hello from gateway" {
+		t.Fatalf("assistant content = %q, want gateway reply", envelope.Messages[1].Content)
 	}
 	metadata := envelope.Messages[1].Metadata
-	if metadata["source"] != "model-provider" || metadata["model"] != "test-model" || metadata["providerKind"] != "openai-compatible" {
-		t.Fatalf("expected model-provider metadata, got %#v", metadata)
+	if metadata["source"] != "gateway-model-route" || metadata["model"] != "gpt-public" {
+		t.Fatalf("expected gateway route metadata, got %#v", metadata)
+	}
+	if _, ok := metadata["providerKind"]; ok {
+		t.Fatalf("general chat metadata must not expose settings provider kind, got %#v", metadata)
+	}
+	if _, ok := metadata["providerId"]; ok {
+		t.Fatalf("general chat metadata must not expose settings provider id, got %#v", metadata)
 	}
 	if len(repo.createdMessages) != 2 {
 		t.Fatalf("expected user and assistant messages to be persisted, got %#v", repo.createdMessages)
 	}
+	if invoker.request.PublicModel != "gpt-public" || invoker.request.RouteID != "route-openai" || invoker.request.Endpoint != "chat/completions" {
+		t.Fatalf("unexpected workbench invoker request: %#v", invoker.request)
+	}
+	if invoker.request.SessionID != "session-1" || invoker.request.Mode != "general" {
+		t.Fatalf("expected session correlation in invoker request, got %#v", invoker.request)
+	}
+	if len(invoker.request.Messages) == 0 || invoker.request.Messages[len(invoker.request.Messages)-1].Content != "hi" {
+		t.Fatalf("expected current user message to be sent to invoker, got %#v", invoker.request.Messages)
+	}
 }
 
-func TestSendMessageGeneralModeUsesRecentConversationWindow(t *testing.T) {
+func TestSendMessageGeneralModeIgnoresLegacyProviderConfig(t *testing.T) {
 	defer appaccess.SetRolePermissionMatrix(nil)
-	var providerMessages []chatProviderMessage
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var payload struct {
-			Messages []chatProviderMessage `json:"messages"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-			t.Fatalf("decode provider payload: %v", err)
-		}
-		providerMessages = payload.Messages
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"recent reply"}}]}`))
-	}))
-	defer server.Close()
-
 	service, repo := newInspectionAuthzTestService(map[string][]string{
 		"chat": {appaccess.PermObserveAIChatUse},
 	})
-	service.http = server.Client()
-	service.settings = inspectionAuthzSettingsResolver{settings: domainsettings.AISettings{
-		Provider: domainsettings.AIProviderSettings{
-			ID:           "provider-1",
-			ProviderKind: "openai-compatible",
-			Enabled:      true,
-			BaseURL:      server.URL,
-			APIKey:       "secret-key",
-			Model:        "test-model",
-		},
-	}}
+	service.settings = inspectionAuthzSettingsResolver{settings: domainsettings.AISettings{}}
 	repo.session = domaincopilot.Session{
 		ID:        "session-1",
 		Title:     "General chat",
@@ -604,12 +538,15 @@ func TestSendMessageGeneralModeUsesRecentConversationWindow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("send general chat message: %v", err)
 	}
-	serialized := fmt.Sprint(providerMessages)
-	if strings.Contains(serialized, "history message 01") {
-		t.Fatalf("provider payload should not include oldest history: %#v", providerMessages)
+	if len(repo.createdMessages) != 2 {
+		t.Fatalf("expected user and assistant messages to be persisted, got %#v", repo.createdMessages)
 	}
-	if !strings.Contains(serialized, "history message 25") || !strings.Contains(serialized, "current question") {
-		t.Fatalf("provider payload should include recent history and current question: %#v", providerMessages)
+	assistant := repo.createdMessages[1]
+	if assistant.Metadata["source"] != "model-unconfigured" {
+		t.Fatalf("legacy settings provider must not be used, got metadata %#v", assistant.Metadata)
+	}
+	if strings.Contains(assistant.Content, "secret-key") || strings.Contains(assistant.Content, "api.example.com") {
+		t.Fatalf("assistant response must not leak legacy provider config, got %q", assistant.Content)
 	}
 }
 
@@ -639,8 +576,8 @@ func TestSendMessageGeneralModeReportsMissingModelProvider(t *testing.T) {
 		t.Fatalf("expected user and assistant messages, got %#v", envelope.Messages)
 	}
 	assistant := envelope.Messages[1]
-	if !strings.Contains(assistant.Content, "没有启用可用的大模型提供方") {
-		t.Fatalf("expected explicit missing provider message, got %q", assistant.Content)
+	if !strings.Contains(assistant.Content, "没有可用的 AI Workbench 默认模型") {
+		t.Fatalf("expected explicit missing workbench model message, got %q", assistant.Content)
 	}
 	if assistant.Metadata["source"] != "model-unconfigured" {
 		t.Fatalf("expected model-unconfigured metadata, got %#v", assistant.Metadata)
@@ -2960,8 +2897,26 @@ type inspectionAuthzSettingsResolver struct {
 	settings domainsettings.AISettings
 }
 
-func (r inspectionAuthzSettingsResolver) ResolveAISettings(context.Context) (domainsettings.AISettings, error) {
-	return r.settings, nil
+func (r inspectionAuthzSettingsResolver) ResolveAIWorkbenchSettings(context.Context) (domainsettings.AIWorkbenchModelSettings, error) {
+	return r.settings.WorkbenchModel, nil
+}
+
+func (r inspectionAuthzSettingsResolver) ResolveAISkillsRegistry(context.Context) ([]domainsettings.AISkillSettings, error) {
+	return r.settings.SkillsRegistry, nil
+}
+
+type fakeWorkbenchModelInvoker struct {
+	request  appaigateway.WorkbenchRelayRequest
+	response appaigateway.WorkbenchRelayResponse
+	err      error
+}
+
+func (f *fakeWorkbenchModelInvoker) InvokeWorkbenchModel(_ context.Context, _ domainidentity.Principal, request appaigateway.WorkbenchRelayRequest) (appaigateway.WorkbenchRelayResponse, error) {
+	f.request = request
+	if f.err != nil {
+		return appaigateway.WorkbenchRelayResponse{}, f.err
+	}
+	return f.response, nil
 }
 
 func graphHasNode(graph *domaincopilot.AnalysisGraph, nodeID string) bool {

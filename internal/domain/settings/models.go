@@ -6,7 +6,7 @@ const (
 	IdentityOIDCSettingKey           = "identity.oidc"
 	IdentityLoginProvidersSettingKey = "identity.login_providers"
 	MonitoringPrometheusSettingKey   = "monitoring.prometheus"
-	AIProviderSettingKey             = "ai.provider"
+	AISettingsKey                    = "ai.workbench"
 	BrandingSettingKey               = "branding.console"
 )
 
@@ -72,21 +72,11 @@ type MonitoringSettings struct {
 	Prometheus PrometheusSettings `json:"prometheus"`
 }
 
-type AIProviderSettings struct {
-	ID           string `json:"id,omitempty"`
-	Name         string `json:"name,omitempty"`
-	ProviderKind string `json:"providerKind,omitempty"`
-	Enabled      bool   `json:"enabled"`
-	BaseURL      string `json:"baseUrl"`
-	APIKey       string `json:"apiKey"`
-	Model        string `json:"model"`
-}
-
-type AIProviderTestResult struct {
-	OK      bool   `json:"ok"`
-	Model   string `json:"model,omitempty"`
-	Message string `json:"message,omitempty"`
-	Reply   string `json:"reply,omitempty"`
+type AIWorkbenchModelSettings struct {
+	DefaultPublicModel string `json:"defaultPublicModel,omitempty"`
+	DefaultRouteID     string `json:"defaultRouteId,omitempty"`
+	DefaultEndpoint    string `json:"defaultEndpoint,omitempty"`
+	Enabled            bool   `json:"enabled"`
 }
 
 type SkillDefinition struct {
@@ -107,10 +97,8 @@ type SkillDefinition struct {
 type AISkillSettings = SkillDefinition
 
 type AISettings struct {
-	Provider          AIProviderSettings   `json:"provider"`
-	Providers         []AIProviderSettings `json:"providers,omitempty"`
-	DefaultProviderID string               `json:"defaultProviderId,omitempty"`
-	SkillsRegistry    []SkillDefinition    `json:"skillsRegistry,omitempty"`
+	WorkbenchModel AIWorkbenchModelSettings `json:"workbenchModel,omitempty"`
+	SkillsRegistry []SkillDefinition        `json:"skillsRegistry,omitempty"`
 }
 
 type BrandingSettings struct {

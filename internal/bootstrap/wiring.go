@@ -458,6 +458,7 @@ func newGatewayServices(ctx context.Context, cfg cfgpkg.Config, repos *repositor
 	aiGatewayService.SetAnalysisArtifactRecorder(delivery.copilotService)
 	aiGatewayService.SetOperationRecorder(core.operationService)
 	aiGatewayService.SetOnCallResolver(core.monitoringService)
+	delivery.copilotService.SetWorkbenchModelInvoker(aiGatewayService)
 	aiGatewayService.StartRelayHealthChecks(ctx)
 	if err := registerAIGatewayConnectorRuntimes(ctx, aiGatewayService, cfg.AIGateway); err != nil {
 		if rateLimitBackend != nil {

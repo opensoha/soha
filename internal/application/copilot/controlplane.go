@@ -72,11 +72,11 @@ func (s *Service) GetWorkbenchCatalog(ctx context.Context, principal domainident
 		})
 	}
 	if s.settings != nil {
-		settings, err := s.settings.ResolveAISettings(ctx)
+		skills, err := s.settings.ResolveAISkillsRegistry(ctx)
 		if err != nil {
 			return domaincopilot.WorkbenchCatalog{}, err
 		}
-		for _, item := range settings.SkillsRegistry {
+		for _, item := range skills {
 			catalog.SkillsRegistry = append(catalog.SkillsRegistry, domaincopilot.WorkbenchSkill{
 				ID:             item.ID,
 				Name:           item.Name,

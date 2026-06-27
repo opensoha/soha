@@ -57,38 +57,19 @@ type UpdatePrometheusSettingsRequest struct {
 	GrafanaBaseURL      string `json:"grafanaBaseUrl"`
 }
 
-type UpdateAISettingsRequest struct {
-	Enabled           bool                 `json:"enabled"`
-	BaseURL           string               `json:"baseUrl"`
-	APIKey            string               `json:"apiKey"`
-	Model             string               `json:"model"`
-	DefaultProviderID string               `json:"defaultProviderId"`
-	Providers         []AIProviderSettings `json:"providers"`
-	SkillsRegistry    []AISkillSettings    `json:"skillsRegistry"`
+type UpdateAIWorkbenchModelRequest struct {
+	WorkbenchModel AIWorkbenchModelSettings `json:"workbenchModel"`
 }
 
-type UpdateAIProviderConnectionsRequest struct {
-	DefaultProviderID string               `json:"defaultProviderId"`
-	Providers         []AIProviderSettings `json:"providers"`
+type UpdateAISkillsRequest struct {
+	SkillsRegistry []AISkillSettings `json:"skillsRegistry"`
 }
 
-type AIProviderSettings struct {
-	ID           string `json:"id"`
-	Name         string `json:"name"`
-	ProviderKind string `json:"providerKind"`
-	Enabled      bool   `json:"enabled"`
-	BaseURL      string `json:"baseUrl"`
-	APIKey       string `json:"apiKey"`
-	Model        string `json:"model"`
-}
-
-type AIProviderModelsRequest struct {
-	Provider AIProviderSettings `json:"provider"`
-}
-
-type AIProviderTestRequest struct {
-	Provider AIProviderSettings `json:"provider"`
-	Prompt   string             `json:"prompt"`
+type AIWorkbenchModelSettings struct {
+	DefaultPublicModel string `json:"defaultPublicModel"`
+	DefaultRouteID     string `json:"defaultRouteId"`
+	DefaultEndpoint    string `json:"defaultEndpoint"`
+	Enabled            bool   `json:"enabled"`
 }
 
 type AISkillSettings struct {

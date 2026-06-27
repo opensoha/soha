@@ -4779,6 +4779,14 @@ func (s *Service) recordRelayCall(ctx context.Context, principal domainidentity.
 	if item.Metadata == nil {
 		item.Metadata = map[string]any{}
 	}
+	for _, key := range []string{"source", "sessionId", "agentRunId", "analysisRunId", "workbenchMode"} {
+		if value := strings.TrimSpace(fmt.Sprint(accessCtx.Metadata[key])); value != "" && value != "<nil>" {
+			item.Metadata[key] = value
+		}
+	}
+	if boolFromAny(accessCtx.Metadata["internal"]) {
+		item.Metadata["internal"] = true
+	}
 	item.Metadata["upstreamProviderKind"] = selection.upstreamProviderKind()
 	plan := relayTransformPlanForRoute(selection.route, req.ProviderKind)
 	if plan.enabled {

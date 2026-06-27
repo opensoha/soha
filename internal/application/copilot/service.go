@@ -1,17 +1,15 @@
 package copilot
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	appaccess "github.com/opensoha/soha/internal/application/access"
+	appaigateway "github.com/opensoha/soha/internal/application/aigateway"
 	domainalert "github.com/opensoha/soha/internal/domain/alert"
 	domainapp "github.com/opensoha/soha/internal/domain/application"
 	domainaudit "github.com/opensoha/soha/internal/domain/audit"
@@ -131,7 +129,12 @@ type OnCallResolver interface {
 }
 
 type AISettingsResolver interface {
-	ResolveAISettings(context.Context) (domainsettings.AISettings, error)
+	ResolveAIWorkbenchSettings(context.Context) (domainsettings.AIWorkbenchModelSettings, error)
+	ResolveAISkillsRegistry(context.Context) ([]domainsettings.AISkillSettings, error)
+}
+
+type WorkbenchModelInvoker interface {
+	InvokeWorkbenchModel(context.Context, domainidentity.Principal, appaigateway.WorkbenchRelayRequest) (appaigateway.WorkbenchRelayResponse, error)
 }
 
 type chatReply struct {
@@ -167,8 +170,8 @@ type Service struct {
 	virtualization        VirtualizationReader
 	oncall                OnCallResolver
 	settings              AISettingsResolver
+	workbenchInvoker      WorkbenchModelInvoker
 	permissions           *appaccess.PermissionResolver
-	http                  *http.Client
 	logger                *zap.Logger
 	metrics               *runtimeobs.Registry
 	inspectionParallelism int
@@ -193,7 +196,6 @@ func New(repo Repository, clusters ClusterReader, alerts AlertReader, events Eve
 		releases:              releases,
 		settings:              settings,
 		permissions:           permissions,
-		http:                  &http.Client{Timeout: 30 * time.Second},
 		inspectionParallelism: 2,
 	}
 }
@@ -215,6 +217,10 @@ func (s *Service) SetMCPRegistry(registry MCPRegistry) {
 
 func (s *Service) SetAgentProviders(providers []domaincopilot.AgentProvider) {
 	s.agentProviders = append([]domaincopilot.AgentProvider(nil), providers...)
+}
+
+func (s *Service) SetWorkbenchModelInvoker(invoker WorkbenchModelInvoker) {
+	s.workbenchInvoker = invoker
 }
 
 func (s *Service) SetAgentRuntimeReaders(execution ExecutionTaskReader, resources PlatformResourceReader, docker DockerReader, virtualization VirtualizationReader, oncall OnCallResolver) {
@@ -378,7 +384,7 @@ func (s *Service) SendMessage(ctx context.Context, principal domainidentity.Prin
 		reply = chatReply{Content: artifacts[0].Summary, Source: "analysis-artifact"}
 	} else {
 		priorMessages, _ := s.listRecentMessages(ctx, session.ID, 20)
-		reply = s.generateReply(ctx, buildProviderChatMessages(priorMessages, userMessage, locale), locale)
+		reply = s.generateReply(ctx, principal, session.ID, sessionMeta.Mode, buildProviderChatMessages(priorMessages, userMessage, locale), locale)
 	}
 	assistantMetadata := map[string]any{
 		"mode":              sessionMeta.Mode,
@@ -852,11 +858,11 @@ func (s *Service) composeReply(ctx context.Context, principal domainidentity.Pri
 	)
 }
 
-func (s *Service) resolveAISettings(ctx context.Context) (domainsettings.AISettings, error) {
+func (s *Service) resolveAIWorkbenchSettings(ctx context.Context) (domainsettings.AIWorkbenchModelSettings, error) {
 	if s.settings == nil {
-		return domainsettings.AISettings{}, fmt.Errorf("ai settings unavailable")
+		return domainsettings.AIWorkbenchModelSettings{}, fmt.Errorf("ai workbench model settings unavailable")
 	}
-	return s.settings.ResolveAISettings(ctx)
+	return s.settings.ResolveAIWorkbenchSettings(ctx)
 }
 
 func (s *Service) listRecentMessages(ctx context.Context, sessionID string, limit int) ([]domaincopilot.Message, error) {
@@ -873,222 +879,77 @@ func (s *Service) listRecentMessages(ctx context.Context, sessionID string, limi
 	return messages[len(messages)-limit:], nil
 }
 
-func (s *Service) generateReply(ctx context.Context, messages []chatProviderMessage, locale string) chatReply {
-	settings, err := s.resolveAISettings(ctx)
+func (s *Service) generateReply(ctx context.Context, principal domainidentity.Principal, sessionID, mode string, messages []chatProviderMessage, locale string) chatReply {
+	workbenchModel, err := s.resolveAIWorkbenchSettings(ctx)
 	if err != nil {
 		return chatReply{
 			Content: localize(locale,
-				"当前 AI 模型设置不可用。请先在 AI 设置中配置并启用模型提供方。",
-				"AI model settings are unavailable. Configure and enable a model provider first.",
+				"当前 AI Workbench 模型设置不可用。请先在 AI Gateway 中配置模型路由，并在 AI 设置中选择默认模型。",
+				"AI Workbench model settings are unavailable. Configure a model route in AI Gateway and select the default model in AI settings.",
 			),
 			Source: "model-unconfigured",
 			Error:  err.Error(),
 		}
 	}
-	provider := settings.Provider
-	if !provider.Enabled || strings.TrimSpace(provider.BaseURL) == "" || strings.TrimSpace(provider.APIKey) == "" {
+	if !workbenchModel.Enabled || (strings.TrimSpace(workbenchModel.DefaultPublicModel) == "" && strings.TrimSpace(workbenchModel.DefaultRouteID) == "") {
 		return chatReply{
 			Content: localize(locale,
-				"当前没有启用可用的大模型提供方。请在 AI 设置中启用提供方并填写 Base URL、API Key 和模型名称。",
-				"No enabled model provider is available. Enable a provider and set its Base URL, API key, and model name in AI settings.",
+				"当前没有可用的 AI Workbench 默认模型。请在 AI Gateway 的模型路由中接入 Provider，并在 AI 设置里选择默认模型或路由。",
+				"No AI Workbench default model is available. Add the provider through AI Gateway model routes and select a default model or route in AI settings.",
 			),
-			Source:       "model-unconfigured",
-			Model:        provider.Model,
-			ProviderID:   provider.ID,
-			ProviderKind: provider.ProviderKind,
+			Source: "model-unconfigured",
+			Model:  workbenchModel.DefaultPublicModel,
 		}
 	}
-	reply, err := s.externalAIReply(ctx, provider, messages, locale)
+	if s.workbenchInvoker == nil {
+		return chatReply{
+			Content: localize(locale,
+				"AI Workbench 默认模型已选择，但内部 Gateway relay invoker 尚未接入。请检查服务启动接线。",
+				"AI Workbench default model is selected, but the internal Gateway relay invoker is not wired. Check service wiring.",
+			),
+			Source: "model-unconfigured",
+			Model:  workbenchModel.DefaultPublicModel,
+		}
+	}
+	resp, err := s.workbenchInvoker.InvokeWorkbenchModel(ctx, principal, appaigateway.WorkbenchRelayRequest{
+		PublicModel: workbenchModel.DefaultPublicModel,
+		RouteID:     workbenchModel.DefaultRouteID,
+		Endpoint:    workbenchModel.DefaultEndpoint,
+		Messages:    mapWorkbenchRelayMessages(messages),
+		SessionID:   sessionID,
+		Mode:        normalizeSessionMode(mode),
+	})
 	if err != nil {
 		return chatReply{
 			Content: localize(locale,
-				fmt.Sprintf("大模型调用失败：%s。请检查 AI 设置中的 Base URL、API Key、模型名称和提供方类型。", err.Error()),
-				fmt.Sprintf("Model call failed: %s. Check the Base URL, API key, model name, and provider kind in AI settings.", err.Error()),
+				"AI Workbench 模型调用失败。请检查 AI Gateway 的模型路由、上游状态、权限和限流配置。",
+				"AI Workbench model call failed. Check AI Gateway model routes, upstream health, permissions, and rate limits.",
 			),
-			Source:       "model-error",
-			Model:        provider.Model,
-			ProviderID:   provider.ID,
-			ProviderKind: provider.ProviderKind,
-			Error:        err.Error(),
-		}
-	}
-	if strings.TrimSpace(reply) == "" {
-		return chatReply{
-			Content: localize(locale,
-				"大模型调用已完成，但没有返回可显示内容。请重试，或检查当前模型是否兼容 Chat Completions。",
-				"The model call completed but returned no displayable content. Retry or check whether the selected model is compatible.",
-			),
-			Source:       "model-empty",
-			Model:        provider.Model,
-			ProviderID:   provider.ID,
-			ProviderKind: provider.ProviderKind,
+			Source: "model-error",
+			Model:  workbenchModel.DefaultPublicModel,
+			Error:  err.Error(),
 		}
 	}
 	return chatReply{
-		Content:      strings.TrimSpace(reply),
-		Source:       "model-provider",
-		Model:        provider.Model,
-		ProviderID:   provider.ID,
-		ProviderKind: provider.ProviderKind,
+		Content: resp.Content,
+		Source:  "gateway-model-route",
+		Model:   firstNonEmpty(resp.PublicModel, workbenchModel.DefaultPublicModel),
 	}
 }
 
-func (s *Service) externalAIReply(ctx context.Context, settings domainsettings.AIProviderSettings, messages []chatProviderMessage, locale string) (string, error) {
-	switch strings.TrimSpace(settings.ProviderKind) {
-	case "anthropic":
-		return s.anthropicAIReply(ctx, settings, messages, locale)
-	case "gemini":
-		return s.geminiAIReply(ctx, settings, messages, locale)
-	default:
-		return s.openAICompatibleAIReply(ctx, settings, messages, locale)
-	}
-}
-
-func (s *Service) openAICompatibleAIReply(ctx context.Context, settings domainsettings.AIProviderSettings, messages []chatProviderMessage, locale string) (string, error) {
-	endpoint := strings.TrimRight(strings.TrimSpace(settings.BaseURL), "/")
-	if !strings.HasSuffix(endpoint, "/chat/completions") {
-		endpoint += "/chat/completions"
-	}
-	payload := map[string]any{
-		"model":       settings.Model,
-		"messages":    messages,
-		"temperature": 0.2,
-	}
-	encoded, err := json.Marshal(payload)
-	if err != nil {
-		return "", err
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(encoded))
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(settings.APIKey))
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := s.http.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= http.StatusBadRequest {
-		return "", fmt.Errorf("ai provider returned %s", resp.Status)
-	}
-	raw, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-	if err != nil {
-		return "", err
-	}
-	return openAICompatibleChatReplyFromBody(raw)
-}
-
-func (s *Service) anthropicAIReply(ctx context.Context, settings domainsettings.AIProviderSettings, messages []chatProviderMessage, locale string) (string, error) {
-	endpoint := strings.TrimRight(strings.TrimSpace(settings.BaseURL), "/")
-	if !strings.HasSuffix(endpoint, "/messages") {
-		endpoint += "/messages"
-	}
-	payload := map[string]any{
-		"model":       settings.Model,
-		"system":      systemPrompt(locale),
-		"messages":    anthropicMessages(messages),
-		"temperature": 0.2,
-		"max_tokens":  1024,
-	}
-	encoded, err := json.Marshal(payload)
-	if err != nil {
-		return "", err
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(encoded))
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("x-api-key", strings.TrimSpace(settings.APIKey))
-	req.Header.Set("anthropic-version", "2023-06-01")
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := s.http.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= http.StatusBadRequest {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return "", fmt.Errorf("ai provider returned %s: %s", resp.Status, strings.TrimSpace(string(body)))
-	}
-	var body struct {
-		Content []struct {
-			Type string `json:"type"`
-			Text string `json:"text"`
-		} `json:"content"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
-		return "", err
-	}
-	parts := make([]string, 0, len(body.Content))
-	for _, item := range body.Content {
-		if strings.TrimSpace(item.Text) != "" {
-			parts = append(parts, strings.TrimSpace(item.Text))
+func mapWorkbenchRelayMessages(messages []chatProviderMessage) []appaigateway.WorkbenchRelayMessage {
+	out := make([]appaigateway.WorkbenchRelayMessage, 0, len(messages))
+	for _, message := range messages {
+		role := strings.ToLower(strings.TrimSpace(message.Role))
+		if role != "system" && role != "user" && role != "assistant" {
+			continue
 		}
+		out = append(out, appaigateway.WorkbenchRelayMessage{
+			Role:    role,
+			Content: strings.TrimSpace(message.Content),
+		})
 	}
-	return strings.Join(parts, "\n"), nil
-}
-
-func (s *Service) geminiAIReply(ctx context.Context, settings domainsettings.AIProviderSettings, messages []chatProviderMessage, locale string) (string, error) {
-	endpoint := strings.TrimRight(strings.TrimSpace(settings.BaseURL), "/")
-	if !strings.Contains(endpoint, ":generateContent") {
-		if !strings.Contains(endpoint, "/models/") {
-			endpoint = strings.TrimRight(endpoint, "/") + "/models/" + strings.TrimSpace(settings.Model)
-		}
-		endpoint = strings.TrimRight(endpoint, "/") + ":generateContent"
-	}
-	payload := map[string]any{
-		"systemInstruction": map[string]any{
-			"parts": []map[string]string{{"text": systemPrompt(locale)}},
-		},
-		"contents":         geminiMessages(messages),
-		"generationConfig": map[string]any{"temperature": 0.2},
-	}
-	encoded, err := json.Marshal(payload)
-	if err != nil {
-		return "", err
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(encoded))
-	if err != nil {
-		return "", err
-	}
-	query := req.URL.Query()
-	query.Set("key", strings.TrimSpace(settings.APIKey))
-	req.URL.RawQuery = query.Encode()
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := s.http.Do(req)
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= http.StatusBadRequest {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return "", fmt.Errorf("ai provider returned %s: %s", resp.Status, strings.TrimSpace(string(body)))
-	}
-	var body struct {
-		Candidates []struct {
-			Content struct {
-				Parts []struct {
-					Text string `json:"text"`
-				} `json:"parts"`
-			} `json:"content"`
-		} `json:"candidates"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
-		return "", err
-	}
-	parts := []string{}
-	for _, candidate := range body.Candidates {
-		for _, part := range candidate.Content.Parts {
-			if strings.TrimSpace(part.Text) != "" {
-				parts = append(parts, strings.TrimSpace(part.Text))
-			}
-		}
-		if len(parts) > 0 {
-			break
-		}
-	}
-	return strings.Join(parts, "\n"), nil
+	return out
 }
 
 func systemPrompt(locale string) string {
@@ -1121,39 +982,6 @@ func buildProviderChatMessages(history []domaincopilot.Message, current domainco
 		messages = append(messages, chatProviderMessage{Role: "user", Content: strings.TrimSpace(current.Content)})
 	}
 	return messages
-}
-
-func anthropicMessages(messages []chatProviderMessage) []map[string]string {
-	out := make([]map[string]string, 0, len(messages))
-	for _, item := range messages {
-		if item.Role == "system" {
-			continue
-		}
-		role := item.Role
-		if role != "assistant" {
-			role = "user"
-		}
-		out = append(out, map[string]string{"role": role, "content": item.Content})
-	}
-	return out
-}
-
-func geminiMessages(messages []chatProviderMessage) []map[string]any {
-	out := make([]map[string]any, 0, len(messages))
-	for _, item := range messages {
-		if item.Role == "system" {
-			continue
-		}
-		role := "user"
-		if item.Role == "assistant" {
-			role = "model"
-		}
-		out = append(out, map[string]any{
-			"role":  role,
-			"parts": []map[string]string{{"text": item.Content}},
-		})
-	}
-	return out
 }
 
 func markLegacyPlatformContextMessages(messages []domaincopilot.Message) []domaincopilot.Message {
@@ -1256,71 +1084,6 @@ func messageHasAnalysisArtifacts(metadata map[string]any) bool {
 	default:
 		return fmt.Sprint(value) != "" && fmt.Sprint(value) != "[]"
 	}
-}
-
-func openAICompatibleChatReplyFromBody(raw []byte) (string, error) {
-	body := strings.TrimSpace(string(raw))
-	if body == "" {
-		return "", nil
-	}
-	if strings.HasPrefix(body, "data:") {
-		var builder strings.Builder
-		for _, line := range strings.Split(body, "\n") {
-			line = strings.TrimSpace(line)
-			if !strings.HasPrefix(line, "data:") {
-				continue
-			}
-			payload := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
-			if payload == "" || payload == "[DONE]" {
-				continue
-			}
-			reply, err := openAICompatibleChatReplyPartFromJSON([]byte(payload))
-			if err != nil {
-				return "", err
-			}
-			if reply != "" {
-				builder.WriteString(reply)
-			}
-		}
-		return strings.TrimSpace(builder.String()), nil
-	}
-	return openAICompatibleChatReplyFromJSON([]byte(body))
-}
-
-func openAICompatibleChatReplyFromJSON(raw []byte) (string, error) {
-	reply, err := openAICompatibleChatReplyPartFromJSON(raw)
-	if err != nil {
-		return "", err
-	}
-	return strings.TrimSpace(reply), nil
-}
-
-func openAICompatibleChatReplyPartFromJSON(raw []byte) (string, error) {
-	var body struct {
-		Choices []struct {
-			Message struct {
-				Content string `json:"content"`
-			} `json:"message"`
-			Delta struct {
-				Content string `json:"content"`
-			} `json:"delta"`
-			Text string `json:"text"`
-		} `json:"choices"`
-	}
-	if err := json.Unmarshal(raw, &body); err != nil {
-		return "", err
-	}
-	for _, choice := range body.Choices {
-		switch {
-		case strings.TrimSpace(choice.Message.Content) != "":
-			return choice.Message.Content, nil
-		case strings.TrimSpace(choice.Delta.Content) != "":
-			return choice.Delta.Content, nil
-		case strings.TrimSpace(choice.Text) != "":
-			return choice.Text, nil
-		}
-	}
-	return "", nil
 }
 
 func ternarySeverity(condition bool, truthy, falsy string) string {
