@@ -3741,6 +3741,673 @@ func TestGovernanceStatusUsesInjectedCapabilityProvider(t *testing.T) {
 	}
 }
 
+func TestGatewayGovernanceStatusRuntimeTool(t *testing.T) {
+	repo := governanceHealthyControlRepo()
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
+		matrix: map[string][]string{
+			"admin": {appaccess.PermAIGatewayView, appaccess.PermAIGatewayInvoke, appaccess.PermAIGatewayManage},
+		},
+	}), nil, repo)
+	principal := testPrincipal("admin")
+
+	manifest, err := service.Capabilities(context.Background(), principal, domainaigateway.ManifestRequest{})
+	if err != nil {
+		t.Fatalf("Capabilities returned error: %v", err)
+	}
+	if !slices.ContainsFunc(manifest.Tools, func(item domainaigateway.ToolCapability) bool {
+		return item.Name == "gateway.governance.status" &&
+			item.RiskLevel == domainaigateway.RiskLevelRead &&
+			slices.Contains(item.PermissionKeys, appaccess.PermAIGatewayInvoke) &&
+			slices.Contains(item.PermissionKeys, appaccess.PermAIGatewayManage)
+	}) {
+		t.Fatalf("expected gateway.governance.status runtime tool in manifest, got %#v", manifest.Tools)
+	}
+
+	result, err := service.InvokeTool(context.Background(), principal, domainaigateway.ToolInvocationRequest{
+		ToolName: "gateway.governance.status",
+		Input:    map[string]any{"windowHours": 12},
+	})
+	if err != nil {
+		t.Fatalf("InvokeTool returned error: %v", err)
+	}
+	status, ok := result.Output.(domainaigateway.GovernanceStatus)
+	if !ok {
+		t.Fatalf("expected GovernanceStatus output, got %T", result.Output)
+	}
+	if status.WindowHours != 12 {
+		t.Fatalf("WindowHours = %d, want 12", status.WindowHours)
+	}
+	if result.RelatedIDs["windowHours"] != 12 || result.RelatedIDs["healthStatus"] != status.Health.Status {
+		t.Fatalf("unexpected related ids: %#v", result.RelatedIDs)
+	}
+	if result.RiskLevel != domainaigateway.RiskLevelRead || result.RequiresApproval {
+		t.Fatalf("unexpected invocation posture: %#v", result)
+	}
+}
+
+func TestGatewayGovernanceListRuntimeTools(t *testing.T) {
+	now := time.Now().UTC()
+	serviceAccountTokenLastUsed := now.Add(-time.Hour)
+	repo := &memoryGatewayRepository{
+		personalTokens: []domainaigateway.PersonalAccessToken{
+			{
+				ID:          "pat-1",
+				UserID:      "user-2",
+				Name:        "other user",
+				TokenHash:   "hash-should-not-leak",
+				TokenPrefix: "soha_pat_abcd",
+				Metadata:    map[string]any{"token": "secret", "purpose": "automation"},
+				CreatedAt:   now,
+				UpdatedAt:   now,
+			},
+		},
+		serviceAccounts: map[string]domainaigateway.ServiceAccount{
+			"svc-1": {
+				ID:          "svc-1",
+				Name:        "Deploy Bot",
+				Status:      "active",
+				OwnerUserID: "owner-1",
+				RoleIDs:     []string{"deployer"},
+				CreatedAt:   now,
+				UpdatedAt:   now,
+			},
+		},
+		serviceAccountTokens: []domainaigateway.ServiceAccountToken{
+			{
+				ID:               "sat-1",
+				ServiceAccountID: "svc-1",
+				Name:             "deploy",
+				TokenHash:        "service-hash-should-not-leak",
+				TokenPrefix:      "soha_sat_abcd",
+				Metadata:         map[string]any{"apiKey": "secret", "purpose": "deploy"},
+				LastUsedAt:       &serviceAccountTokenLastUsed,
+				CreatedAt:        now,
+				UpdatedAt:        now,
+			},
+		},
+		aiClients: map[string]domainaigateway.AIClient{
+			"codex": {
+				ID:        "codex",
+				Name:      "Codex",
+				Kind:      "mcp",
+				Status:    "active",
+				CreatedAt: now,
+				UpdatedAt: now,
+			},
+			"disabled": {
+				ID:        "disabled",
+				Name:      "Disabled",
+				Kind:      "mcp",
+				Status:    "disabled",
+				CreatedAt: now,
+				UpdatedAt: now,
+			},
+		},
+		toolGrants: []domainaigateway.ToolGrant{
+			{
+				ID:          "grant-1",
+				SubjectType: "role",
+				SubjectID:   "auditor",
+				AIClientID:  "codex",
+				ToolName:    "k8s.pods.logs",
+				Effect:      "allow",
+				RiskLevel:   domainaigateway.RiskLevelRead,
+				CreatedAt:   now,
+				UpdatedAt:   now,
+			},
+		},
+		accessPolicies: []domainaigateway.AccessPolicy{
+			{
+				ID:           "policy-1",
+				Name:         "allow audit",
+				Enabled:      true,
+				SubjectType:  "role",
+				SubjectID:    "auditor",
+				AIClientID:   "codex",
+				Effect:       "allow",
+				ToolPatterns: []string{"k8s.*"},
+				CreatedAt:    now,
+				UpdatedAt:    now,
+			},
+		},
+		skillBindings: []domainaigateway.SkillBinding{
+			{
+				ID:             "binding-1",
+				SubjectType:    "role",
+				SubjectID:      "auditor",
+				AIClientID:     "codex",
+				SkillID:        "k8s-sre",
+				CapabilityRefs: []string{"k8s.*"},
+				Enabled:        true,
+				CreatedAt:      now,
+				UpdatedAt:      now,
+			},
+		},
+		approvalRequests: []domainaigateway.ApprovalRequest{
+			{
+				ID:         "approval-1",
+				Status:     "pending",
+				Strategy:   "require_approval",
+				ActorType:  "user",
+				ActorID:    "user-2",
+				AIClientID: "codex",
+				SkillID:    "delivery-tester",
+				ToolName:   "delivery.actions.trigger",
+				RiskLevel:  domainaigateway.RiskLevelExecute,
+				ToolInput:  map[string]any{"token": "secret-token", "applicationId": "app-1"},
+				RelatedIDs: map[string]any{
+					"approvalRouting": map[string]any{
+						"approvalMode":      "all",
+						"requiredApprovals": 1,
+						"decisions": []any{
+							map[string]any{"userId": "approver-1", "comment": "token=secret"},
+						},
+					},
+				},
+				Summary:   "pending token=secret",
+				CreatedAt: now,
+				UpdatedAt: now,
+			},
+		},
+		auditLogs: []domainaigateway.AuditLog{
+			{
+				ID:         "audit-1",
+				ActorType:  "user",
+				ActorID:    "user-2",
+				AIClientID: "codex",
+				SkillID:    "delivery-tester",
+				ToolName:   "delivery.actions.trigger",
+				RiskLevel:  domainaigateway.RiskLevelExecute,
+				Action:     "ai_gateway.tool.invoke",
+				Result:     "pending",
+				Summary:    "held token=secret",
+				Metadata: map[string]any{
+					"approvalRequestId": "approval-1",
+					"token":             "secret-token",
+				},
+				CreatedAt: now,
+			},
+		},
+	}
+	service := newTestService(appaccess.NewPermissionResolver(stubRolePermissionReader{
+		matrix: map[string][]string{
+			"admin": {
+				appaccess.PermAIGatewayView,
+				appaccess.PermAIGatewayInvoke,
+				appaccess.PermAIGatewayManage,
+			},
+		},
+	}), &captureAuditRecorder{}, repo)
+	principal := testPrincipal("admin")
+
+	manifest, err := service.Capabilities(context.Background(), principal, domainaigateway.ManifestRequest{})
+	if err != nil {
+		t.Fatalf("Capabilities returned error: %v", err)
+	}
+	for _, toolName := range []string{
+		"gateway.clients.list",
+		"gateway.tokens.list",
+		"gateway.service_accounts.list",
+		"gateway.tool_grants.list",
+		"gateway.access_policies.list",
+		"gateway.skill_bindings.list",
+		"gateway.approvals.list",
+		"gateway.audit_logs.list",
+	} {
+		tool, ok := toolByNameFrom(toolName, manifest.Tools)
+		if !ok {
+			t.Fatalf("expected %s in manifest", toolName)
+		}
+		if tool.RiskLevel != domainaigateway.RiskLevelRead || !slices.Contains(tool.PermissionKeys, appaccess.PermAIGatewayInvoke) || !slices.Contains(tool.PermissionKeys, appaccess.PermAIGatewayManage) {
+			t.Fatalf("unexpected manifest posture for %s: %#v", toolName, tool)
+		}
+	}
+
+	tests := []struct {
+		name     string
+		toolName string
+		input    map[string]any
+		check    func(t *testing.T, result domainaigateway.ToolInvocationResult)
+	}{
+		{
+			name:     "clients list",
+			toolName: "gateway.clients.list",
+			input:    map[string]any{"status": "active"},
+			check: func(t *testing.T, result domainaigateway.ToolInvocationResult) {
+				items := result.Output.([]domainaigateway.AIClient)
+				if len(items) != 1 || items[0].ID != "codex" || result.RelatedIDs["count"] != 1 {
+					t.Fatalf("expected active codex client, got %#v", result)
+				}
+			},
+		},
+		{
+			name:     "tokens list redacts hashes",
+			toolName: "gateway.tokens.list",
+			input:    map[string]any{"userId": "user-2"},
+			check: func(t *testing.T, result domainaigateway.ToolInvocationResult) {
+				output := result.Output.(map[string]any)
+				personalTokens := output["personalAccessTokens"].([]domainaigateway.PersonalAccessToken)
+				serviceTokens := output["serviceAccountTokens"].([]domainaigateway.ServiceAccountToken)
+				if len(personalTokens) != 1 || personalTokens[0].TokenHash != "" || personalTokens[0].Metadata["token"] != "[REDACTED]" {
+					t.Fatalf("expected redacted personal token metadata, got %#v", personalTokens)
+				}
+				if len(serviceTokens) != 1 || serviceTokens[0].TokenHash != "" || serviceTokens[0].Metadata["apiKey"] != "[REDACTED]" {
+					t.Fatalf("expected redacted service token metadata, got %#v", serviceTokens)
+				}
+				if result.RelatedIDs["personalAccessTokenCount"] != 1 || result.RelatedIDs["serviceAccountTokenCount"] != 1 {
+					t.Fatalf("unexpected token related ids: %#v", result.RelatedIDs)
+				}
+			},
+		},
+		{
+			name:     "service accounts list",
+			toolName: "gateway.service_accounts.list",
+			input:    map[string]any{"status": "active"},
+			check: func(t *testing.T, result domainaigateway.ToolInvocationResult) {
+				items := result.Output.([]domainaigateway.ServiceAccount)
+				if len(items) != 1 || items[0].ID != "svc-1" || result.RelatedIDs["count"] != 1 {
+					t.Fatalf("expected active service account, got %#v", result)
+				}
+			},
+		},
+		{
+			name:     "tool grants list",
+			toolName: "gateway.tool_grants.list",
+			input:    map[string]any{"subjectType": "role", "subjectId": "auditor"},
+			check: func(t *testing.T, result domainaigateway.ToolInvocationResult) {
+				items := result.Output.([]domainaigateway.ToolGrant)
+				if len(items) != 1 || items[0].ID != "grant-1" || result.RelatedIDs["subjectId"] != "auditor" {
+					t.Fatalf("expected grant-1, got %#v", result)
+				}
+			},
+		},
+		{
+			name:     "access policies list",
+			toolName: "gateway.access_policies.list",
+			input:    map[string]any{"subjectType": "role", "subjectId": "auditor"},
+			check: func(t *testing.T, result domainaigateway.ToolInvocationResult) {
+				items := result.Output.([]domainaigateway.AccessPolicy)
+				if len(items) != 1 || items[0].ID != "policy-1" {
+					t.Fatalf("expected policy-1, got %#v", result)
+				}
+			},
+		},
+		{
+			name:     "skill bindings list",
+			toolName: "gateway.skill_bindings.list",
+			input:    map[string]any{"skillId": "k8s-sre"},
+			check: func(t *testing.T, result domainaigateway.ToolInvocationResult) {
+				items := result.Output.([]domainaigateway.SkillBinding)
+				if len(items) != 1 || items[0].ID != "binding-1" || result.RelatedIDs["skillId"] != "k8s-sre" {
+					t.Fatalf("expected binding-1, got %#v", result)
+				}
+			},
+		},
+		{
+			name:     "approvals list redacts input",
+			toolName: "gateway.approvals.list",
+			input:    map[string]any{"status": "pending"},
+			check: func(t *testing.T, result domainaigateway.ToolInvocationResult) {
+				items := result.Output.([]domainaigateway.ApprovalRequest)
+				if len(items) != 1 || items[0].ID != "approval-1" {
+					t.Fatalf("expected approval-1, got %#v", result)
+				}
+				if items[0].ToolInput["token"] != "[REDACTED]" || strings.Contains(items[0].Summary, "secret") {
+					t.Fatalf("expected redacted approval payload, got %#v", items[0])
+				}
+				if items[0].ApprovalTrace == nil || len(items[0].ApprovalTrace.Decisions) != 1 || strings.Contains(items[0].ApprovalTrace.Decisions[0].Comment, "secret") {
+					t.Fatalf("expected redacted approval trace, got %#v", items[0].ApprovalTrace)
+				}
+			},
+		},
+		{
+			name:     "audit logs list redacts metadata",
+			toolName: "gateway.audit_logs.list",
+			input:    map[string]any{"approvalRequestId": "approval-1", "limit": 10},
+			check: func(t *testing.T, result domainaigateway.ToolInvocationResult) {
+				items := result.Output.([]domainaigateway.AuditLog)
+				if len(items) != 1 || items[0].ID != "audit-1" {
+					t.Fatalf("expected audit-1, got %#v", result)
+				}
+				if items[0].Metadata["token"] != "[REDACTED]" || strings.Contains(items[0].Summary, "secret") {
+					t.Fatalf("expected redacted audit log, got %#v", items[0])
+				}
+				if result.RelatedIDs["approvalRequestId"] != "approval-1" || result.RelatedIDs["limit"] != 10 {
+					t.Fatalf("unexpected audit related ids: %#v", result.RelatedIDs)
+				}
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := service.InvokeTool(context.Background(), principal, domainaigateway.ToolInvocationRequest{
+				ToolName: tt.toolName,
+				Input:    tt.input,
+			})
+			if err != nil {
+				t.Fatalf("InvokeTool returned error: %v", err)
+			}
+			if result.RiskLevel != domainaigateway.RiskLevelRead || result.RequiresApproval {
+				t.Fatalf("unexpected invocation posture: %#v", result)
+			}
+			tt.check(t, result)
+		})
+	}
+}
+
+func TestGatewayManifestAndRelayRuntimeTools(t *testing.T) {
+	now := time.Now().UTC()
+	repo := &memoryGatewayRepository{}
+	relayRepo := &relayTestRepository{
+		upstreams: []domainaigateway.LLMUpstream{
+			{
+				ID:               "upstream-openai",
+				Name:             "OpenAI",
+				ProviderKind:     "openai",
+				BaseURL:          "https://user:password@example.com/v1?token=secret",
+				APIKeyCiphertext: "ciphertext-should-not-leak",
+				APIKeyPrefix:     "sk-live",
+				Status:           "active",
+				DefaultHeaders:   map[string]any{"Authorization": "Bearer secret", "X-Trace": "trace"},
+				Metadata:         map[string]any{"credential": "secret", "region": "us"},
+				CreatedAt:        now,
+				UpdatedAt:        now,
+			},
+			{
+				ID:           "upstream-disabled",
+				Name:         "Disabled",
+				ProviderKind: "openai",
+				BaseURL:      "https://disabled.example/v1",
+				Status:       "disabled",
+				CreatedAt:    now,
+				UpdatedAt:    now,
+			},
+		},
+		routes: []domainaigateway.LLMModelRoute{
+			{
+				ID:              "route-gpt",
+				PublicModel:     "gpt-4.1",
+				ProviderKind:    "openai",
+				UpstreamID:      "upstream-openai",
+				UpstreamModel:   "gpt-4.1",
+				RouteGroup:      "primary",
+				Priority:        1,
+				Weight:          100,
+				Enabled:         true,
+				TransformPolicy: map[string]any{"apiKey": "secret", "mode": "openai"},
+				Metadata:        map[string]any{"token": "secret", "tier": "prod"},
+				CreatedAt:       now,
+				UpdatedAt:       now,
+			},
+			{
+				ID:            "route-disabled",
+				PublicModel:   "gpt-disabled",
+				ProviderKind:  "openai",
+				UpstreamID:    "upstream-disabled",
+				UpstreamModel: "gpt-disabled",
+				RouteGroup:    "backup",
+				Enabled:       false,
+				CreatedAt:     now,
+				UpdatedAt:     now,
+			},
+		},
+	}
+	service := newTestServiceWithRelay(appaccess.NewPermissionResolver(stubRolePermissionReader{
+		matrix: map[string][]string{
+			"admin": {
+				appaccess.PermAIGatewayView,
+				appaccess.PermAIGatewayInvoke,
+				appaccess.PermAIGatewayRelayView,
+			},
+		},
+	}), &captureAuditRecorder{}, repo, relayRepo)
+	principal := testPrincipal("admin")
+
+	manifest, err := service.Capabilities(context.Background(), principal, domainaigateway.ManifestRequest{})
+	if err != nil {
+		t.Fatalf("Capabilities returned error: %v", err)
+	}
+	for _, toolName := range []string{
+		"gateway.manifest.read",
+		"gateway.relay.upstreams.list",
+		"gateway.relay.model_routes.list",
+	} {
+		tool, ok := toolByNameFrom(toolName, manifest.Tools)
+		if !ok {
+			t.Fatalf("expected %s in manifest", toolName)
+		}
+		if tool.RiskLevel != domainaigateway.RiskLevelRead || !slices.Contains(tool.PermissionKeys, appaccess.PermAIGatewayInvoke) {
+			t.Fatalf("unexpected manifest posture for %s: %#v", toolName, tool)
+		}
+	}
+
+	manifestResult, err := service.InvokeTool(context.Background(), principal, domainaigateway.ToolInvocationRequest{
+		ToolName: "gateway.manifest.read",
+		Input:    map[string]any{"aiClientId": "codex", "skillId": "k8s-sre"},
+	})
+	if err != nil {
+		t.Fatalf("gateway.manifest.read returned error: %v", err)
+	}
+	manifestOutput := manifestResult.Output.(domainaigateway.Manifest)
+	if manifestOutput.Caller.AIClientID != "codex" || manifestOutput.Caller.SkillID != "k8s-sre" {
+		t.Fatalf("expected caller context to be preserved, got %#v", manifestOutput.Caller)
+	}
+	if manifestResult.RelatedIDs["toolCount"] != manifestOutput.Summary.ToolCount || manifestResult.RelatedIDs["skillId"] != "k8s-sre" {
+		t.Fatalf("unexpected manifest related ids: %#v", manifestResult.RelatedIDs)
+	}
+
+	upstreamsResult, err := service.InvokeTool(context.Background(), principal, domainaigateway.ToolInvocationRequest{
+		ToolName: "gateway.relay.upstreams.list",
+		Input:    map[string]any{"providerKind": "openai"},
+	})
+	if err != nil {
+		t.Fatalf("gateway.relay.upstreams.list returned error: %v", err)
+	}
+	upstreams := upstreamsResult.Output.([]domainaigateway.LLMUpstream)
+	if len(upstreams) != 1 || upstreams[0].ID != "upstream-openai" {
+		t.Fatalf("expected active openai upstream, got %#v", upstreamsResult)
+	}
+	if strings.Contains(upstreams[0].BaseURL, "password") || strings.Contains(upstreams[0].BaseURL, "secret") || upstreams[0].APIKeyCiphertext != "" {
+		t.Fatalf("expected relay upstream credentials to be redacted, got %#v", upstreams[0])
+	}
+	if upstreams[0].DefaultHeaders["Authorization"] != "[REDACTED]" || upstreams[0].Metadata["credential"] != "[REDACTED]" {
+		t.Fatalf("expected relay upstream metadata to be redacted, got %#v", upstreams[0])
+	}
+
+	routesResult, err := service.InvokeTool(context.Background(), principal, domainaigateway.ToolInvocationRequest{
+		ToolName: "gateway.relay.model_routes.list",
+		Input:    map[string]any{"publicModel": "gpt-4.1"},
+	})
+	if err != nil {
+		t.Fatalf("gateway.relay.model_routes.list returned error: %v", err)
+	}
+	routes := routesResult.Output.([]domainaigateway.LLMModelRoute)
+	if len(routes) != 1 || routes[0].ID != "route-gpt" || routesResult.RelatedIDs["publicModel"] != "gpt-4.1" {
+		t.Fatalf("expected route-gpt, got %#v", routesResult)
+	}
+	if routes[0].TransformPolicy["apiKey"] != "[REDACTED]" || routes[0].Metadata["token"] != "[REDACTED]" {
+		t.Fatalf("expected route policy metadata to be redacted, got %#v", routes[0])
+	}
+}
+
+func TestGatewayApprovalRelayCallAndCacheRuntimeTools(t *testing.T) {
+	now := time.Now().UTC()
+	old := now.Add(-2 * time.Hour)
+	repo := &memoryGatewayRepository{
+		approvalRequests: []domainaigateway.ApprovalRequest{
+			{
+				ID:         "approval-reject",
+				Status:     "pending",
+				Strategy:   "require_approval",
+				ActorType:  "user",
+				ActorID:    "user-2",
+				AIClientID: "codex",
+				SkillID:    "delivery-tester",
+				ToolName:   "delivery.actions.trigger",
+				RiskLevel:  domainaigateway.RiskLevelExecute,
+				ToolInput:  map[string]any{"token": "secret-token", "applicationId": "app-1"},
+				RelatedIDs: map[string]any{"approvalRequestId": "approval-reject"},
+				Summary:    "pending token=secret",
+				CreatedAt:  now,
+				UpdatedAt:  now,
+			},
+		},
+	}
+	relayRepo := &relayTestRepository{
+		callLogs: []domainaigateway.LLMCallLog{
+			{
+				ID:             "call-1",
+				ActorType:      "user",
+				ActorID:        "user-2",
+				TokenID:        "pat-1",
+				TokenPrefix:    "soha_pat_secret",
+				TokenKind:      "personal_access_token",
+				AIClientID:     "codex",
+				PublicModel:    "gpt-4.1",
+				UpstreamID:     "upstream-openai",
+				ProviderKind:   "openai",
+				Status:         "success",
+				CacheStatus:    "hit",
+				ErrorMessage:   "token=secret",
+				RouteTrace:     map[string]any{"Authorization": "Bearer secret", "route": "primary"},
+				SourceIP:       "203.0.113.10",
+				UserAgent:      "secret-agent",
+				Metadata:       map[string]any{"apiKey": "secret", "region": "us"},
+				TotalTokens:    42,
+				CreatedAt:      now,
+			},
+			{
+				ID:           "call-other",
+				PublicModel:  "gpt-other",
+				ProviderKind: "openai",
+				Status:       "failure",
+				CreatedAt:    now,
+			},
+		},
+		caches: []domainaigateway.LLMCacheEntry{
+			{ID: "cache-1", CacheKey: "cache-1", PublicModel: "gpt-4.1", UpstreamID: "upstream-openai", UpdatedAt: old},
+			{ID: "cache-2", CacheKey: "cache-2", PublicModel: "gpt-other", UpstreamID: "upstream-openai", UpdatedAt: old},
+		},
+	}
+	repo.approvalRequests = append(repo.approvalRequests, domainaigateway.ApprovalRequest{
+		ID:         "approval-cache-purge",
+		Status:     "pending",
+		Strategy:   "require_approval",
+		ActorType:  "user",
+		ActorID:    "relay-user",
+		ActorRoles: []string{"admin"},
+		AIClientID: "codex",
+		ToolName:   "gateway.relay.cache.purge",
+		RiskLevel:  domainaigateway.RiskLevelExecute,
+		ToolInput:  map[string]any{"publicModel": "gpt-4.1"},
+		RelatedIDs: map[string]any{"approvalRequestId": "approval-cache-purge"},
+		Summary:    "purge relay cache",
+		CreatedAt:  now,
+		UpdatedAt:  now,
+	})
+	service := newTestServiceWithRelay(appaccess.NewPermissionResolver(stubRolePermissionReader{
+		matrix: map[string][]string{
+			"admin": {
+				appaccess.PermAIGatewayView,
+				appaccess.PermAIGatewayInvoke,
+				appaccess.PermAIGatewayManage,
+				appaccess.PermAIGatewayRelayView,
+				appaccess.PermAIGatewayRelayManage,
+			},
+			"relay-viewer": {
+				appaccess.PermAIGatewayInvoke,
+				appaccess.PermAIGatewayRelayView,
+			},
+		},
+	}), &captureAuditRecorder{}, repo, relayRepo)
+
+	manifest, err := service.Capabilities(context.Background(), testPrincipal("admin"), domainaigateway.ManifestRequest{})
+	if err != nil {
+		t.Fatalf("Capabilities returned error: %v", err)
+	}
+	for _, expected := range []struct {
+		name       string
+		risk       domainaigateway.RiskLevel
+		permission string
+		approval   bool
+	}{
+		{name: "gateway.approvals.decide", risk: domainaigateway.RiskLevelExecute, permission: appaccess.PermAIGatewayManage},
+		{name: "gateway.relay.model_calls.list", risk: domainaigateway.RiskLevelRead, permission: appaccess.PermAIGatewayRelayView},
+		{name: "gateway.relay.cache.purge", risk: domainaigateway.RiskLevelExecute, permission: appaccess.PermAIGatewayRelayManage, approval: true},
+	} {
+		tool, ok := toolByNameFrom(expected.name, manifest.Tools)
+		if !ok {
+			t.Fatalf("expected %s in manifest", expected.name)
+		}
+		if tool.RiskLevel != expected.risk || tool.RequiresApproval != expected.approval || !slices.Contains(tool.PermissionKeys, appaccess.PermAIGatewayInvoke) || !slices.Contains(tool.PermissionKeys, expected.permission) {
+			t.Fatalf("unexpected manifest posture for %s: %#v", expected.name, tool)
+		}
+	}
+
+	callsResult, err := service.InvokeTool(context.Background(), testPrincipal("relay-viewer"), domainaigateway.ToolInvocationRequest{
+		ToolName: "gateway.relay.model_calls.list",
+		Input:    map[string]any{"publicModel": "gpt-4.1", "limit": 10},
+	})
+	if err != nil {
+		t.Fatalf("gateway.relay.model_calls.list returned error: %v", err)
+	}
+	calls := callsResult.Output.([]domainaigateway.LLMCallLog)
+	if len(calls) != 1 || calls[0].ID != "call-1" || callsResult.RelatedIDs["publicModel"] != "gpt-4.1" {
+		t.Fatalf("expected filtered call-1, got %#v", callsResult)
+	}
+	if calls[0].TokenID != "" || calls[0].TokenPrefix != "" || calls[0].SourceIP != "" || calls[0].UserAgent != "" {
+		t.Fatalf("expected relay call identity fields to be redacted, got %#v", calls[0])
+	}
+	if calls[0].RouteTrace["Authorization"] != "[REDACTED]" || calls[0].Metadata["apiKey"] != "[REDACTED]" || strings.Contains(calls[0].ErrorMessage, "secret") {
+		t.Fatalf("expected relay call metadata to be redacted, got %#v", calls[0])
+	}
+	if _, err := service.ListLLMCallLogs(context.Background(), testPrincipal("relay-viewer"), domainaigateway.LLMCallLogFilter{PublicModel: "gpt-4.1"}); err == nil {
+		t.Fatalf("expected raw relay call log API to require relay manage permission")
+	}
+
+	dryRunResult, err := service.InvokeTool(context.Background(), testPrincipal("admin"), domainaigateway.ToolInvocationRequest{
+		ToolName: "gateway.relay.cache.purge",
+		Input:    map[string]any{"publicModel": "gpt-4.1", "dryRun": true},
+	})
+	if err != nil {
+		t.Fatalf("gateway.relay.cache.purge dry run returned error: %v", err)
+	}
+	if dryRunResult.Result != "pending_approval" || dryRunResult.RelatedIDs["approvalRequestId"] == "" || len(relayRepo.cacheEntries()) != 2 {
+		t.Fatalf("expected direct cache purge to require approval without deleting, result=%#v caches=%#v", dryRunResult, relayRepo.cacheEntries())
+	}
+
+	decisionResult, err := service.InvokeTool(context.Background(), testPrincipal("admin"), domainaigateway.ToolInvocationRequest{
+		ToolName: "gateway.approvals.decide",
+		Input:    map[string]any{"approvalRequestId": "approval-reject", "decision": "reject", "comment": "no token=secret"},
+	})
+	if err != nil {
+		t.Fatalf("gateway.approvals.decide returned error: %v", err)
+	}
+	decision := decisionResult.Output.(domainaigateway.ApprovalDecisionResult)
+	if decision.Request.Status != "rejected" || decision.Invocation != nil || decisionResult.RelatedIDs["decision"] != "reject" {
+		t.Fatalf("expected rejected approval decision, got %#v", decisionResult)
+	}
+	if strings.Contains(decision.Request.DecisionComment, "secret") || decision.Request.ToolInput["token"] != "[REDACTED]" {
+		t.Fatalf("expected redacted approval decision output, got %#v", decision.Request)
+	}
+
+	cacheDecisionResult, err := service.InvokeTool(context.Background(), testPrincipal("admin"), domainaigateway.ToolInvocationRequest{
+		ToolName: "gateway.approvals.decide",
+		Input:    map[string]any{"approvalRequestId": "approval-cache-purge", "decision": "approve", "comment": "purge ok"},
+	})
+	if err != nil {
+		t.Fatalf("gateway.approvals.decide approve cache purge returned error: %v", err)
+	}
+	cacheDecision := cacheDecisionResult.Output.(domainaigateway.ApprovalDecisionResult)
+	if cacheDecision.Request.Status != "executed" || cacheDecision.Invocation == nil || len(relayRepo.cacheEntries()) != 1 {
+		t.Fatalf("expected cache purge approval to execute, result=%#v caches=%#v", cacheDecisionResult, relayRepo.cacheEntries())
+	}
+	purge := cacheDecision.Invocation.Output.(domainaigateway.LLMRelayCachePurgeResult)
+	if purge.Status != "purged" || purge.PurgedCount != 1 {
+		t.Fatalf("expected approved purge to delete one entry, got %#v", purge)
+	}
+}
+
 func TestGovernanceStatusFlagsUnscopedHighRiskAllows(t *testing.T) {
 	now := time.Now().UTC()
 	expiredAt := now.Add(-time.Hour)

@@ -575,6 +575,204 @@ func defaultTools() []domainaigateway.ToolCapability {
 				"timeoutSeconds":           gatewayIntegerSchema("Agent Runtime timeout for external deep analysis."),
 			}),
 		},
+		{
+			Name:           "gateway.manifest.read",
+			Title:          "Read Gateway Manifest",
+			Description:    "Read the caller-filtered AI Gateway manifest for governance and client compatibility review.",
+			Domain:         "gateway",
+			Action:         "read",
+			RiskLevel:      domainaigateway.RiskLevelRead,
+			PermissionKeys: []string{appaccess.PermAIGatewayInvoke, appaccess.PermAIGatewayView},
+			RequiredScopes: []string{"aiClient", "skill"},
+			MCPAdapterID:   "gateway-governance.v1",
+			MCPToolName:    "gateway.manifest.read",
+			InputSchema:    gatewayObjectSchema(nil, gatewayManifestReadProperties()),
+		},
+		{
+			Name:           "gateway.clients.list",
+			Title:          "List AI Gateway Clients",
+			Description:    "List AI Gateway clients and registration posture for governance review.",
+			Domain:         "gateway",
+			Action:         "list",
+			RiskLevel:      domainaigateway.RiskLevelRead,
+			PermissionKeys: []string{appaccess.PermAIGatewayInvoke, appaccess.PermAIGatewayManage},
+			RequiredScopes: []string{"aiClient"},
+			MCPAdapterID:   "gateway-governance.v1",
+			MCPToolName:    "gateway.clients.list",
+			InputSchema:    gatewayObjectSchema(nil, gatewayAIClientListProperties()),
+		},
+		{
+			Name:           "gateway.tokens.list",
+			Title:          "List AI Gateway Tokens",
+			Description:    "List redacted personal and service account token metadata for Gateway governance review.",
+			Domain:         "gateway",
+			Action:         "list",
+			RiskLevel:      domainaigateway.RiskLevelRead,
+			PermissionKeys: []string{appaccess.PermAIGatewayInvoke, appaccess.PermAIGatewayManage},
+			RequiredScopes: []string{"token"},
+			MCPAdapterID:   "gateway-governance.v1",
+			MCPToolName:    "gateway.tokens.list",
+			InputSchema:    gatewayObjectSchema(nil, gatewayTokenListProperties()),
+		},
+		{
+			Name:           "gateway.service_accounts.list",
+			Title:          "List AI Gateway Service Accounts",
+			Description:    "List AI Gateway service accounts without token values for governance review.",
+			Domain:         "gateway",
+			Action:         "list",
+			RiskLevel:      domainaigateway.RiskLevelRead,
+			PermissionKeys: []string{appaccess.PermAIGatewayInvoke, appaccess.PermAIGatewayManage},
+			RequiredScopes: []string{"serviceAccount"},
+			MCPAdapterID:   "gateway-governance.v1",
+			MCPToolName:    "gateway.service_accounts.list",
+			InputSchema:    gatewayObjectSchema(nil, gatewayServiceAccountListProperties()),
+		},
+		{
+			Name:           "gateway.tool_grants.list",
+			Title:          "List Tool Grants",
+			Description:    "List AI Gateway tool grants by subject, client, and tool.",
+			Domain:         "gateway",
+			Action:         "list",
+			RiskLevel:      domainaigateway.RiskLevelRead,
+			PermissionKeys: []string{appaccess.PermAIGatewayInvoke, appaccess.PermAIGatewayManage},
+			RequiredScopes: []string{"subject", "aiClient", "tool"},
+			MCPAdapterID:   "gateway-governance.v1",
+			MCPToolName:    "gateway.tool_grants.list",
+			InputSchema:    gatewayObjectSchema(nil, gatewayToolGrantListProperties()),
+		},
+		{
+			Name:           "gateway.access_policies.list",
+			Title:          "List Gateway Access Policies",
+			Description:    "List AI Gateway access policies by subject, client, and effect.",
+			Domain:         "gateway",
+			Action:         "list",
+			RiskLevel:      domainaigateway.RiskLevelRead,
+			PermissionKeys: []string{appaccess.PermAIGatewayInvoke, appaccess.PermAIGatewayManage},
+			RequiredScopes: []string{"subject", "aiClient", "policy"},
+			MCPAdapterID:   "gateway-governance.v1",
+			MCPToolName:    "gateway.access_policies.list",
+			InputSchema:    gatewayObjectSchema(nil, gatewayAccessPolicyListProperties()),
+		},
+		{
+			Name:           "gateway.skill_bindings.list",
+			Title:          "List Skill Bindings",
+			Description:    "List AI Gateway skill bindings by subject, client, and skill.",
+			Domain:         "gateway",
+			Action:         "list",
+			RiskLevel:      domainaigateway.RiskLevelRead,
+			PermissionKeys: []string{appaccess.PermAIGatewayInvoke, appaccess.PermAIGatewayManage},
+			RequiredScopes: []string{"aiClient", "skill"},
+			MCPAdapterID:   "gateway-governance.v1",
+			MCPToolName:    "gateway.skill_bindings.list",
+			InputSchema:    gatewayObjectSchema(nil, gatewaySkillBindingListProperties()),
+		},
+		{
+			Name:           "gateway.approvals.list",
+			Title:          "List Gateway Approvals",
+			Description:    "List redacted AI Gateway approval requests and decision metadata.",
+			Domain:         "gateway",
+			Action:         "list",
+			RiskLevel:      domainaigateway.RiskLevelRead,
+			PermissionKeys: []string{appaccess.PermAIGatewayInvoke, appaccess.PermAIGatewayManage},
+			RequiredScopes: []string{"approval"},
+			MCPAdapterID:   "gateway-governance.v1",
+			MCPToolName:    "gateway.approvals.list",
+			InputSchema:    gatewayObjectSchema(nil, gatewayApprovalListProperties()),
+		},
+		{
+			Name:             "gateway.approvals.decide",
+			Title:            "Decide Gateway Approval",
+			Description:      "Approve, reject, or cancel a pending AI Gateway approval request.",
+			Domain:           "gateway",
+			Action:           "execute",
+			RiskLevel:        domainaigateway.RiskLevelExecute,
+			PermissionKeys:   []string{appaccess.PermAIGatewayInvoke, appaccess.PermAIGatewayManage},
+			RequiredScopes:   []string{"approval"},
+			MCPAdapterID:     "gateway-governance.v1",
+			MCPToolName:      "gateway.approvals.decide",
+			InputSchema:      gatewayObjectSchema([]string{"approvalRequestId", "decision"}, gatewayApprovalDecideProperties()),
+		},
+		{
+			Name:           "gateway.audit_logs.list",
+			Title:          "List Gateway Audit Logs",
+			Description:    "List redacted AI Gateway audit logs by actor, client, skill, tool, approval, and result.",
+			Domain:         "gateway",
+			Action:         "list",
+			RiskLevel:      domainaigateway.RiskLevelRead,
+			PermissionKeys: []string{appaccess.PermAIGatewayInvoke, appaccess.PermAIGatewayManage},
+			RequiredScopes: []string{"audit"},
+			MCPAdapterID:   "gateway-governance.v1",
+			MCPToolName:    "gateway.audit_logs.list",
+			InputSchema:    gatewayObjectSchema(nil, gatewayAuditLogListProperties()),
+		},
+		{
+			Name:           "gateway.governance.status",
+			Title:          "Read Gateway Governance Status",
+			Description:    "Read redacted AI Gateway governance health, policy coverage, approval, audit, token, client, and relay summaries.",
+			Domain:         "gateway",
+			Action:         "read",
+			RiskLevel:      domainaigateway.RiskLevelRead,
+			PermissionKeys: []string{appaccess.PermAIGatewayInvoke, appaccess.PermAIGatewayManage},
+			RequiredScopes: []string{"aiClient", "policy", "tool"},
+			MCPAdapterID:   "gateway-governance.v1",
+			MCPToolName:    "gateway.governance.status",
+			InputSchema: gatewayObjectSchema(nil, map[string]any{
+				"windowHours": gatewayIntegerSchema("Governance lookback window in hours. Defaults to 24 and is capped at 168."),
+			}),
+		},
+		{
+			Name:           "gateway.relay.upstreams.list",
+			Title:          "List Relay Upstreams",
+			Description:    "List redacted AI Gateway relay upstream metadata for routing and health governance.",
+			Domain:         "gateway",
+			Action:         "list",
+			RiskLevel:      domainaigateway.RiskLevelRead,
+			PermissionKeys: []string{appaccess.PermAIGatewayInvoke, appaccess.PermAIGatewayRelayView},
+			RequiredScopes: []string{"relayUpstream"},
+			MCPAdapterID:   "gateway-governance.v1",
+			MCPToolName:    "gateway.relay.upstreams.list",
+			InputSchema:    gatewayObjectSchema(nil, gatewayRelayUpstreamListProperties()),
+		},
+		{
+			Name:           "gateway.relay.model_routes.list",
+			Title:          "List Relay Model Routes",
+			Description:    "List AI Gateway relay model routes by public model, provider, upstream, and route group.",
+			Domain:         "gateway",
+			Action:         "list",
+			RiskLevel:      domainaigateway.RiskLevelRead,
+			PermissionKeys: []string{appaccess.PermAIGatewayInvoke, appaccess.PermAIGatewayRelayView},
+			RequiredScopes: []string{"relayRoute"},
+			MCPAdapterID:   "gateway-governance.v1",
+			MCPToolName:    "gateway.relay.model_routes.list",
+			InputSchema:    gatewayObjectSchema(nil, gatewayRelayModelRouteListProperties()),
+		},
+		{
+			Name:           "gateway.relay.model_calls.list",
+			Title:          "List Relay Model Calls",
+			Description:    "List redacted AI Gateway relay model call logs by actor, client, model, upstream, status, cache status, and time window.",
+			Domain:         "gateway",
+			Action:         "list",
+			RiskLevel:      domainaigateway.RiskLevelRead,
+			PermissionKeys: []string{appaccess.PermAIGatewayInvoke, appaccess.PermAIGatewayRelayView},
+			RequiredScopes: []string{"relayCall"},
+			MCPAdapterID:   "gateway-governance.v1",
+			MCPToolName:    "gateway.relay.model_calls.list",
+			InputSchema:    gatewayObjectSchema(nil, gatewayRelayModelCallListProperties()),
+		},
+		{
+			Name:             "gateway.relay.cache.purge",
+			Title:            "Purge Relay Cache",
+			Description:      "Purge or dry-run purge AI Gateway relay response cache entries by model, upstream, route group, and age.",
+			Domain:           "gateway",
+			Action:           "execute",
+			RiskLevel:        domainaigateway.RiskLevelExecute,
+			PermissionKeys:   []string{appaccess.PermAIGatewayInvoke, appaccess.PermAIGatewayRelayManage},
+			RequiredScopes:   []string{"relayCache"},
+			RequiresApproval: true,
+			MCPAdapterID:     "gateway-governance.v1",
+			MCPToolName:      "gateway.relay.cache.purge",
+			InputSchema:      gatewayObjectSchema(nil, gatewayRelayCachePurgeProperties()),
+		},
 	}
 }
 
@@ -751,6 +949,158 @@ func gatewayExecutionTaskListProperties() map[string]any {
 		"logs":                     gatewayBooleanSchema("Return logs for taskId instead of listing tasks."),
 		"limit":                    gatewayIntegerSchema("Maximum execution task records to return."),
 		"logLimit":                 gatewayIntegerSchema("Maximum log records to return when logs=true."),
+	}
+}
+
+func gatewayAIClientListProperties() map[string]any {
+	return map[string]any{
+		"status": gatewayStringSchema("Optional AI client status filter."),
+		"kind":   gatewayStringSchema("Optional AI client kind filter."),
+	}
+}
+
+func gatewayManifestReadProperties() map[string]any {
+	return map[string]any{
+		"aiClientId":   gatewayStringSchema("Optional AI client id used for grant and policy filtering."),
+		"aiClientName": gatewayStringSchema("Optional AI client display name for caller context."),
+		"skillId":      gatewayStringSchema("Optional skill id used for skill binding filtering."),
+		"tokenId":      gatewayStringSchema("Optional token id for caller context."),
+		"tokenKind":    gatewayStringSchema("Optional token kind for caller context."),
+		"sessionId":    gatewayStringSchema("Optional session id for caller context."),
+		"subjectType":  gatewayStringSchema("Optional subject type for caller context."),
+		"subjectId":    gatewayStringSchema("Optional subject id for caller context."),
+		"source":       gatewayStringSchema("Optional source label for caller context."),
+	}
+}
+
+func gatewayTokenListProperties() map[string]any {
+	return map[string]any{
+		"userId":                 gatewayStringSchema("Optional personal access token owner user id filter."),
+		"includeServiceAccounts": gatewayBooleanSchema("Include service account token metadata. Defaults to true."),
+	}
+}
+
+func gatewayServiceAccountListProperties() map[string]any {
+	return map[string]any{
+		"status": gatewayStringSchema("Optional service account status filter."),
+	}
+}
+
+func gatewayToolGrantListProperties() map[string]any {
+	return map[string]any{
+		"subjectType":    gatewayStringSchema("Optional subject type filter."),
+		"subjectId":      gatewayStringSchema("Optional subject id filter."),
+		"aiClientId":     gatewayStringSchema("Optional AI client id filter."),
+		"toolName":       gatewayStringSchema("Optional Gateway tool name filter."),
+		"includeExpired": gatewayBooleanSchema("Include expired grants."),
+	}
+}
+
+func gatewayAccessPolicyListProperties() map[string]any {
+	return map[string]any{
+		"subjectType":     gatewayStringSchema("Optional subject type filter."),
+		"subjectId":       gatewayStringSchema("Optional subject id filter."),
+		"aiClientId":      gatewayStringSchema("Optional AI client id filter."),
+		"effect":          gatewayStringSchema("Optional policy effect filter, allow or deny."),
+		"includeDisabled": gatewayBooleanSchema("Include disabled policies."),
+	}
+}
+
+func gatewaySkillBindingListProperties() map[string]any {
+	return map[string]any{
+		"subjectType":     gatewayStringSchema("Optional subject type filter."),
+		"subjectId":       gatewayStringSchema("Optional subject id filter."),
+		"aiClientId":      gatewayStringSchema("Optional AI client id filter."),
+		"skillId":         gatewayStringSchema("Optional skill id filter."),
+		"includeDisabled": gatewayBooleanSchema("Include disabled bindings."),
+	}
+}
+
+func gatewayApprovalListProperties() map[string]any {
+	return map[string]any{
+		"id":         gatewayStringSchema("Optional approval request id filter."),
+		"status":     gatewayStringSchema("Optional approval request status filter."),
+		"actorType":  gatewayStringSchema("Optional actor type filter."),
+		"actorId":    gatewayStringSchema("Optional actor id filter."),
+		"aiClientId": gatewayStringSchema("Optional AI client id filter."),
+		"skillId":    gatewayStringSchema("Optional skill id filter."),
+		"toolName":   gatewayStringSchema("Optional Gateway tool name filter."),
+		"riskLevel":  gatewayStringSchema("Optional risk level filter."),
+		"strategy":   gatewayStringSchema("Optional approval strategy filter."),
+		"limit":      gatewayIntegerSchema("Maximum approval requests to return."),
+	}
+}
+
+func gatewayApprovalDecideProperties() map[string]any {
+	return map[string]any{
+		"approvalRequestId": gatewayStringSchema("Approval request id."),
+		"id":                gatewayStringSchema("Alias for approvalRequestId."),
+		"decision":          gatewayStringSchema("Decision action: approve, reject, or cancel."),
+		"action":            gatewayStringSchema("Alias for decision."),
+		"comment":           gatewayStringSchema("Human decision comment. Sensitive text is redacted in returned traces."),
+	}
+}
+
+func gatewayAuditLogListProperties() map[string]any {
+	return map[string]any{
+		"actorType":         gatewayStringSchema("Optional actor type filter."),
+		"actorId":           gatewayStringSchema("Optional actor id filter."),
+		"aiClientId":        gatewayStringSchema("Optional AI client id filter."),
+		"skillId":           gatewayStringSchema("Optional skill id filter."),
+		"toolName":          gatewayStringSchema("Optional Gateway tool name filter."),
+		"approvalRequestId": gatewayStringSchema("Optional approval request id filter."),
+		"riskLevel":         gatewayStringSchema("Optional risk level filter."),
+		"result":            gatewayStringSchema("Optional audit result filter."),
+		"action":            gatewayStringSchema("Optional audit action filter."),
+		"limit":             gatewayIntegerSchema("Maximum audit logs to return."),
+	}
+}
+
+func gatewayRelayUpstreamListProperties() map[string]any {
+	return map[string]any{
+		"providerKind": gatewayStringSchema("Optional relay provider kind filter."),
+		"status":       gatewayStringSchema("Optional relay upstream status filter."),
+		"includeAll":   gatewayBooleanSchema("Include inactive upstreams."),
+	}
+}
+
+func gatewayRelayModelRouteListProperties() map[string]any {
+	return map[string]any{
+		"publicModel":     gatewayStringSchema("Optional public model filter."),
+		"providerKind":    gatewayStringSchema("Optional provider kind filter."),
+		"upstreamId":      gatewayStringSchema("Optional upstream id filter."),
+		"routeGroup":      gatewayStringSchema("Optional route group filter."),
+		"includeDisabled": gatewayBooleanSchema("Include disabled routes."),
+	}
+}
+
+func gatewayRelayModelCallListProperties() map[string]any {
+	return map[string]any{
+		"actorType":    gatewayStringSchema("Optional actor type filter."),
+		"actorId":      gatewayStringSchema("Optional actor id filter."),
+		"tokenId":      gatewayStringSchema("Optional token id filter."),
+		"tokenPrefix":  gatewayStringSchema("Optional token prefix filter."),
+		"tokenKind":    gatewayStringSchema("Optional token kind filter."),
+		"aiClientId":   gatewayStringSchema("Optional AI client id filter."),
+		"publicModel":  gatewayStringSchema("Optional public model filter."),
+		"upstreamId":   gatewayStringSchema("Optional upstream id filter."),
+		"providerKind": gatewayStringSchema("Optional provider kind filter."),
+		"status":       gatewayStringSchema("Optional relay call status filter."),
+		"endpoint":     gatewayStringSchema("Optional relay endpoint filter."),
+		"cacheStatus":  gatewayStringSchema("Optional relay cache status filter."),
+		"from":         gatewayStringSchema("Optional RFC3339 lower time bound."),
+		"to":           gatewayStringSchema("Optional RFC3339 upper time bound."),
+		"limit":        gatewayIntegerSchema("Maximum relay call logs to return."),
+	}
+}
+
+func gatewayRelayCachePurgeProperties() map[string]any {
+	return map[string]any{
+		"publicModel": gatewayStringSchema("Optional public model filter."),
+		"upstreamId":  gatewayStringSchema("Optional upstream id filter."),
+		"routeGroup":  gatewayStringSchema("Optional route group filter. Expands to matching route model/upstream pairs."),
+		"olderThan":   gatewayStringSchema("Optional RFC3339 timestamp. Only cache entries updated before this time are purged."),
+		"dryRun":      gatewayBooleanSchema("Count matching cache entries without deleting them."),
 	}
 }
 

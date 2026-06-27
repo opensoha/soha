@@ -3,6 +3,7 @@ package aigateway
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"slices"
 	"strings"
 	"time"
@@ -227,6 +228,8 @@ func (s *Service) invokeGatewayTool(ctx context.Context, principal domainidentit
 		return s.invokeKubernetesTool(ctx, principal, tool, input)
 	case tool.Name == "diagnosis.release_failure.analyze":
 		return s.invokeReleaseFailureDiagnosis(ctx, principal, input)
+	case strings.HasPrefix(tool.Name, "gateway."):
+		return s.invokeGatewayGovernanceTool(ctx, principal, tool, input)
 	default:
 		output, relatedIDs, handled, err := s.gatewayRegistry().InvokeTool(ctx, principal, tool, input)
 		if handled {
@@ -575,6 +578,596 @@ func (s *Service) invokeKubernetesTool(ctx context.Context, principal domainiden
 	default:
 		return nil, related, fmt.Errorf("%w: tool %s is not implemented yet", apperrors.ErrInvalidArgument, tool.Name)
 	}
+}
+func (s *Service) invokeGatewayGovernanceTool(ctx context.Context, principal domainidentity.Principal, tool domainaigateway.ToolCapability, input map[string]any) (any, map[string]any, error) {
+	switch tool.Name {
+	case "gateway.manifest.read":
+		req := gatewayManifestRequest(input)
+		item, err := s.Capabilities(ctx, principal, req)
+		return item, gatewayFilterRelatedIDs(map[string]any{
+			"toolCount":     item.Summary.ToolCount,
+			"resourceCount": item.Summary.ResourceCount,
+			"promptCount":   item.Summary.PromptCount,
+			"skillCount":    item.Summary.SkillCount,
+			"deniedCount":   item.Summary.DeniedCount,
+			"aiClientId":    req.AIClientID,
+			"skillId":       req.SkillID,
+		}), err
+	case "gateway.clients.list":
+		items, err := s.ListAIClients(ctx, principal)
+		items = filterGatewayAIClients(items, input)
+		items = redactedAIClients(items)
+		return items, map[string]any{"count": len(items)}, err
+	case "gateway.tokens.list":
+		req := domainaigateway.PersonalAccessTokenListRequest{
+			Scope:  "all",
+			UserID: stringInput(input, "userId"),
+		}
+		personalTokens, err := s.ListPersonalAccessTokens(ctx, principal, req)
+		if err != nil {
+			return nil, nil, err
+		}
+		personalTokens = redactedPersonalAccessTokens(personalTokens)
+		includeServiceAccounts := true
+		if _, ok := input["includeServiceAccounts"]; ok {
+			includeServiceAccounts = boolFromAny(input["includeServiceAccounts"])
+		}
+		serviceTokens := []domainaigateway.ServiceAccountToken{}
+		if includeServiceAccounts {
+			serviceTokens, err = s.ListServiceAccountTokens(ctx, principal)
+			if err != nil {
+				return nil, nil, err
+			}
+			serviceTokens = redactedServiceAccountTokens(serviceTokens)
+		}
+		output := map[string]any{
+			"personalAccessTokens": personalTokens,
+			"serviceAccountTokens": serviceTokens,
+		}
+		return output, map[string]any{
+			"count":                    len(personalTokens) + len(serviceTokens),
+			"personalAccessTokenCount": len(personalTokens),
+			"serviceAccountTokenCount": len(serviceTokens),
+			"userId":                   req.UserID,
+		}, nil
+	case "gateway.service_accounts.list":
+		items, err := s.ListServiceAccounts(ctx, principal)
+		items = filterGatewayServiceAccounts(items, input)
+		items = redactedServiceAccounts(items)
+		return items, map[string]any{"count": len(items)}, err
+	case "gateway.tool_grants.list":
+		filter := gatewayToolGrantFilter(input)
+		items, err := s.ListToolGrants(ctx, principal, filter)
+		items = redactedToolGrants(items)
+		return items, gatewayFilterRelatedIDs(map[string]any{
+			"count":          len(items),
+			"subjectType":    filter.SubjectType,
+			"subjectId":      filter.SubjectID,
+			"aiClientId":     filter.AIClientID,
+			"toolName":       filter.ToolName,
+			"includeExpired": filter.IncludeExpired,
+		}), err
+	case "gateway.access_policies.list":
+		filter := gatewayAccessPolicyFilter(input)
+		items, err := s.ListAccessPolicies(ctx, principal, filter)
+		items = redactedAccessPolicies(items)
+		return items, gatewayFilterRelatedIDs(map[string]any{
+			"count":           len(items),
+			"subjectType":     filter.SubjectType,
+			"subjectId":       filter.SubjectID,
+			"aiClientId":      filter.AIClientID,
+			"effect":          filter.Effect,
+			"includeDisabled": filter.IncludeDisabled,
+		}), err
+	case "gateway.skill_bindings.list":
+		filter := gatewaySkillBindingFilter(input)
+		items, err := s.ListSkillBindings(ctx, principal, filter)
+		items = redactedSkillBindings(items)
+		return items, gatewayFilterRelatedIDs(map[string]any{
+			"count":           len(items),
+			"subjectType":     filter.SubjectType,
+			"subjectId":       filter.SubjectID,
+			"aiClientId":      filter.AIClientID,
+			"skillId":         filter.SkillID,
+			"includeDisabled": filter.IncludeDisabled,
+		}), err
+	case "gateway.approvals.list":
+		filter := gatewayApprovalRequestFilter(input)
+		items, err := s.ListApprovalRequests(ctx, principal, filter)
+		items = redactedApprovalRequests(items)
+		return items, gatewayFilterRelatedIDs(map[string]any{
+			"count":      len(items),
+			"approvalId": filter.ID,
+			"status":     filter.Status,
+			"actorType":  filter.ActorType,
+			"actorId":    filter.ActorID,
+			"aiClientId": filter.AIClientID,
+			"skillId":    filter.SkillID,
+			"toolName":   filter.ToolName,
+			"riskLevel":  string(filter.RiskLevel),
+			"strategy":   filter.Strategy,
+			"limit":      filter.Limit,
+		}), err
+	case "gateway.approvals.decide":
+		requestID, decision, comment := gatewayApprovalDecisionInput(input)
+		decisionInput := domainaigateway.ApprovalDecisionInput{Comment: comment}
+		var item domainaigateway.ApprovalDecisionResult
+		var err error
+		switch decision {
+		case "approve":
+			item, err = s.ApproveApprovalRequest(ctx, principal, requestID, decisionInput)
+		case "reject":
+			item, err = s.RejectApprovalRequest(ctx, principal, requestID, decisionInput)
+		case "cancel":
+			item, err = s.CancelApprovalRequest(ctx, principal, requestID, decisionInput)
+		default:
+			return nil, nil, fmt.Errorf("%w: decision must be approve, reject, or cancel", apperrors.ErrInvalidArgument)
+		}
+		if err != nil {
+			return nil, gatewayFilterRelatedIDs(map[string]any{"approvalRequestId": requestID, "decision": decision}), err
+		}
+		item = redactedApprovalDecisionResult(item)
+		return item, gatewayFilterRelatedIDs(map[string]any{
+			"approvalRequestId": item.Request.ID,
+			"decision":          decision,
+			"status":            item.Request.Status,
+			"toolName":          item.Request.ToolName,
+		}), nil
+	case "gateway.audit_logs.list":
+		filter := gatewayAuditLogFilterFromInput(input)
+		items, err := s.ListAuditLogs(ctx, principal, filter)
+		items = redactedGatewayAuditLogs(items)
+		return items, gatewayFilterRelatedIDs(map[string]any{
+			"count":             len(items),
+			"actorType":         filter.ActorType,
+			"actorId":           filter.ActorID,
+			"aiClientId":        filter.AIClientID,
+			"skillId":           filter.SkillID,
+			"toolName":          filter.ToolName,
+			"approvalRequestId": filter.ApprovalRequestID,
+			"riskLevel":         string(filter.RiskLevel),
+			"result":            filter.Result,
+			"action":            filter.Action,
+			"limit":             filter.Limit,
+		}), err
+	case "gateway.governance.status":
+		var req domainaigateway.GovernanceStatusRequest
+		if err := mapInput(input, &req); err != nil {
+			return nil, nil, err
+		}
+		item, err := s.GovernanceStatus(ctx, principal, req)
+		return item, map[string]any{
+			"windowHours":         item.WindowHours,
+			"healthStatus":        item.Health.Status,
+			"healthCheckCount":    len(item.Health.Checks),
+			"recommendationCount": len(item.Recommendations),
+			"anomalyCount":        len(item.Anomalies),
+		}, err
+	case "gateway.relay.upstreams.list":
+		filter := gatewayRelayUpstreamFilter(input)
+		items, err := s.ListLLMUpstreams(ctx, principal, filter)
+		items = redactedLLMUpstreams(items)
+		return items, gatewayFilterRelatedIDs(map[string]any{
+			"count":        len(items),
+			"providerKind": filter.ProviderKind,
+			"status":       filter.Status,
+			"includeAll":   filter.IncludeAll,
+		}), err
+	case "gateway.relay.model_routes.list":
+		filter := gatewayRelayModelRouteFilter(input)
+		items, err := s.ListLLMModelRoutes(ctx, principal, filter)
+		items = redactedLLMModelRoutes(items)
+		return items, gatewayFilterRelatedIDs(map[string]any{
+			"count":           len(items),
+			"publicModel":     filter.PublicModel,
+			"providerKind":    filter.ProviderKind,
+			"upstreamId":      filter.UpstreamID,
+			"routeGroup":      filter.RouteGroup,
+			"includeDisabled": filter.IncludeDisabled,
+		}), err
+	case "gateway.relay.model_calls.list":
+		filter, err := gatewayRelayModelCallFilter(input)
+		if err != nil {
+			return nil, nil, err
+		}
+		items, err := s.listLLMCallLogsForGatewayRuntimeTool(ctx, principal, filter)
+		items = redactedLLMCallLogs(items)
+		return items, gatewayFilterRelatedIDs(map[string]any{
+			"count":        len(items),
+			"actorType":    filter.ActorType,
+			"actorId":      filter.ActorID,
+			"tokenKind":    filter.TokenKind,
+			"aiClientId":   filter.AIClientID,
+			"publicModel":  filter.PublicModel,
+			"upstreamId":   filter.UpstreamID,
+			"providerKind": filter.ProviderKind,
+			"status":       filter.Status,
+			"endpoint":     filter.Endpoint,
+			"cacheStatus":  filter.CacheStatus,
+			"limit":        filter.Limit,
+		}), err
+	case "gateway.relay.cache.purge":
+		req, err := gatewayRelayCachePurgeRequest(input)
+		if err != nil {
+			return nil, nil, err
+		}
+		item, err := s.PurgeLLMRelayCache(ctx, principal, req)
+		return item, gatewayFilterRelatedIDs(map[string]any{
+			"publicModel": req.PublicModel,
+			"upstreamId":  req.UpstreamID,
+			"routeGroup":  req.RouteGroup,
+			"dryRun":      req.DryRun,
+			"purgedCount": item.PurgedCount,
+		}), err
+	default:
+		return nil, nil, fmt.Errorf("%w: tool %s is not implemented yet", apperrors.ErrInvalidArgument, tool.Name)
+	}
+}
+
+func gatewayManifestRequest(input map[string]any) domainaigateway.ManifestRequest {
+	return domainaigateway.ManifestRequest{
+		AIClientID:   stringInput(input, "aiClientId"),
+		AIClientName: stringInput(input, "aiClientName"),
+		SkillID:      stringInput(input, "skillId"),
+		TokenID:      stringInput(input, "tokenId"),
+		TokenKind:    stringInput(input, "tokenKind"),
+		SessionID:    stringInput(input, "sessionId"),
+		SubjectType:  stringInput(input, "subjectType"),
+		SubjectID:    stringInput(input, "subjectId"),
+		Source:       stringInput(input, "source"),
+	}
+}
+
+func gatewayToolGrantFilter(input map[string]any) domainaigateway.ToolGrantFilter {
+	return domainaigateway.ToolGrantFilter{
+		SubjectType:    stringInput(input, "subjectType"),
+		SubjectID:      stringInput(input, "subjectId"),
+		AIClientID:     stringInput(input, "aiClientId"),
+		ToolName:       stringInput(input, "toolName"),
+		IncludeExpired: boolFromAny(input["includeExpired"]),
+	}
+}
+
+func gatewayAccessPolicyFilter(input map[string]any) domainaigateway.AccessPolicyFilter {
+	return domainaigateway.AccessPolicyFilter{
+		SubjectType:     stringInput(input, "subjectType"),
+		SubjectID:       stringInput(input, "subjectId"),
+		AIClientID:      stringInput(input, "aiClientId"),
+		Effect:          stringInput(input, "effect"),
+		IncludeDisabled: boolFromAny(input["includeDisabled"]),
+	}
+}
+
+func gatewaySkillBindingFilter(input map[string]any) domainaigateway.SkillBindingFilter {
+	return domainaigateway.SkillBindingFilter{
+		SubjectType:     stringInput(input, "subjectType"),
+		SubjectID:       stringInput(input, "subjectId"),
+		AIClientID:      stringInput(input, "aiClientId"),
+		SkillID:         stringInput(input, "skillId"),
+		IncludeDisabled: boolFromAny(input["includeDisabled"]),
+	}
+}
+
+func gatewayApprovalRequestFilter(input map[string]any) domainaigateway.ApprovalRequestFilter {
+	return domainaigateway.ApprovalRequestFilter{
+		ID:         stringInput(input, "id"),
+		Status:     stringInput(input, "status"),
+		ActorType:  stringInput(input, "actorType"),
+		ActorID:    stringInput(input, "actorId"),
+		AIClientID: stringInput(input, "aiClientId"),
+		SkillID:    stringInput(input, "skillId"),
+		ToolName:   stringInput(input, "toolName"),
+		RiskLevel:  domainaigateway.RiskLevel(stringInput(input, "riskLevel")),
+		Strategy:   stringInput(input, "strategy"),
+		Limit:      intFromAny(input["limit"]),
+	}
+}
+
+func gatewayApprovalDecisionInput(input map[string]any) (requestID, decision, comment string) {
+	requestID = firstNonEmpty(stringInput(input, "approvalRequestId"), stringInput(input, "id"), stringInput(input, "requestId"))
+	decision = strings.ToLower(strings.TrimSpace(firstNonEmpty(stringInput(input, "decision"), stringInput(input, "action"))))
+	comment = stringInput(input, "comment")
+	return requestID, decision, comment
+}
+
+func gatewayAuditLogFilterFromInput(input map[string]any) domainaigateway.AuditLogFilter {
+	return domainaigateway.AuditLogFilter{
+		ActorType:         stringInput(input, "actorType"),
+		ActorID:           stringInput(input, "actorId"),
+		AIClientID:        stringInput(input, "aiClientId"),
+		SkillID:           stringInput(input, "skillId"),
+		ToolName:          stringInput(input, "toolName"),
+		ApprovalRequestID: stringInput(input, "approvalRequestId"),
+		RiskLevel:         domainaigateway.RiskLevel(stringInput(input, "riskLevel")),
+		Result:            stringInput(input, "result"),
+		Action:            stringInput(input, "action"),
+		Limit:             intFromAny(input["limit"]),
+	}
+}
+
+func gatewayRelayUpstreamFilter(input map[string]any) domainaigateway.LLMUpstreamFilter {
+	return domainaigateway.LLMUpstreamFilter{
+		ProviderKind: stringInput(input, "providerKind"),
+		Status:       stringInput(input, "status"),
+		IncludeAll:   boolFromAny(input["includeAll"]),
+	}
+}
+
+func gatewayRelayModelRouteFilter(input map[string]any) domainaigateway.LLMModelRouteFilter {
+	return domainaigateway.LLMModelRouteFilter{
+		PublicModel:     stringInput(input, "publicModel"),
+		ProviderKind:    stringInput(input, "providerKind"),
+		UpstreamID:      stringInput(input, "upstreamId"),
+		RouteGroup:      stringInput(input, "routeGroup"),
+		IncludeDisabled: boolFromAny(input["includeDisabled"]),
+	}
+}
+
+func gatewayRelayModelCallFilter(input map[string]any) (domainaigateway.LLMCallLogFilter, error) {
+	from, err := optionalGatewayTimeInput(input, "from")
+	if err != nil {
+		return domainaigateway.LLMCallLogFilter{}, err
+	}
+	to, err := optionalGatewayTimeInput(input, "to")
+	if err != nil {
+		return domainaigateway.LLMCallLogFilter{}, err
+	}
+	return domainaigateway.LLMCallLogFilter{
+		ActorType:    stringInput(input, "actorType"),
+		ActorID:      stringInput(input, "actorId"),
+		TokenID:      stringInput(input, "tokenId"),
+		TokenPrefix:  stringInput(input, "tokenPrefix"),
+		TokenKind:    stringInput(input, "tokenKind"),
+		AIClientID:   stringInput(input, "aiClientId"),
+		PublicModel:  stringInput(input, "publicModel"),
+		UpstreamID:   stringInput(input, "upstreamId"),
+		ProviderKind: stringInput(input, "providerKind"),
+		Status:       stringInput(input, "status"),
+		Endpoint:     stringInput(input, "endpoint"),
+		CacheStatus:  stringInput(input, "cacheStatus"),
+		From:         from,
+		To:           to,
+		Limit:        intFromAny(input["limit"]),
+	}, nil
+}
+
+func gatewayRelayCachePurgeRequest(input map[string]any) (domainaigateway.LLMRelayCachePurgeRequest, error) {
+	olderThan, err := optionalGatewayTimeInput(input, "olderThan")
+	if err != nil {
+		return domainaigateway.LLMRelayCachePurgeRequest{}, err
+	}
+	return domainaigateway.LLMRelayCachePurgeRequest{
+		PublicModel: stringInput(input, "publicModel"),
+		UpstreamID:  stringInput(input, "upstreamId"),
+		RouteGroup:  stringInput(input, "routeGroup"),
+		OlderThan:   olderThan,
+		DryRun:      boolFromAny(input["dryRun"]),
+	}, nil
+}
+
+func optionalGatewayTimeInput(input map[string]any, key string) (*time.Time, error) {
+	value := strings.TrimSpace(stringInput(input, key))
+	if value == "" {
+		return nil, nil
+	}
+	parsed, err := time.Parse(time.RFC3339Nano, value)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %s must be RFC3339", apperrors.ErrInvalidArgument, key)
+	}
+	parsed = parsed.UTC()
+	return &parsed, nil
+}
+
+func gatewayFilterRelatedIDs(values map[string]any) map[string]any {
+	out := make(map[string]any, len(values))
+	for key, value := range values {
+		switch typed := value.(type) {
+		case string:
+			if strings.TrimSpace(typed) == "" {
+				continue
+			}
+		case int:
+			if typed == 0 && key != "count" && key != "purgedCount" {
+				continue
+			}
+		case bool:
+			if !typed {
+				continue
+			}
+		}
+		out[key] = value
+	}
+	return out
+}
+
+func redactedLLMUpstreams(items []domainaigateway.LLMUpstream) []domainaigateway.LLMUpstream {
+	out := make([]domainaigateway.LLMUpstream, len(items))
+	copy(out, items)
+	for index := range out {
+		out[index].BaseURL = redactedRelayURL(out[index].BaseURL)
+		out[index].ProxyURL = redactedRelayURL(out[index].ProxyURL)
+		out[index].APIKeyCiphertext = ""
+		out[index].DefaultHeaders = sanitizeGatewayMap(out[index].DefaultHeaders)
+		out[index].Health = sanitizeGatewayMap(out[index].Health)
+		out[index].Metadata = sanitizeGatewayMap(out[index].Metadata)
+	}
+	return out
+}
+
+func redactedLLMModelRoutes(items []domainaigateway.LLMModelRoute) []domainaigateway.LLMModelRoute {
+	out := make([]domainaigateway.LLMModelRoute, len(items))
+	copy(out, items)
+	for index := range out {
+		out[index].TransformPolicy = sanitizeGatewayMap(out[index].TransformPolicy)
+		out[index].FallbackPolicy = sanitizeGatewayMap(out[index].FallbackPolicy)
+		out[index].CachePolicy = sanitizeGatewayMap(out[index].CachePolicy)
+		out[index].Metadata = sanitizeGatewayMap(out[index].Metadata)
+	}
+	return out
+}
+
+func redactedLLMCallLogs(items []domainaigateway.LLMCallLog) []domainaigateway.LLMCallLog {
+	out := make([]domainaigateway.LLMCallLog, len(items))
+	copy(out, items)
+	for index := range out {
+		out[index].TokenID = ""
+		out[index].TokenPrefix = ""
+		out[index].ErrorMessage = redactSensitiveText(out[index].ErrorMessage)
+		out[index].RouteTrace = sanitizeGatewayMap(out[index].RouteTrace)
+		out[index].SourceIP = ""
+		out[index].UserAgent = ""
+		out[index].Metadata = sanitizeGatewayMap(out[index].Metadata)
+	}
+	return out
+}
+
+func redactedRelayURL(value string) string {
+	parsed, err := url.Parse(value)
+	if err != nil || parsed.User == nil {
+		return redactSensitiveText(value)
+	}
+	parsed.User = nil
+	return redactSensitiveText(parsed.String())
+}
+
+func filterGatewayAIClients(items []domainaigateway.AIClient, input map[string]any) []domainaigateway.AIClient {
+	status := strings.TrimSpace(stringInput(input, "status"))
+	kind := strings.TrimSpace(stringInput(input, "kind"))
+	if status == "" && kind == "" {
+		return items
+	}
+	out := make([]domainaigateway.AIClient, 0, len(items))
+	for _, item := range items {
+		if status != "" && !strings.EqualFold(item.Status, status) {
+			continue
+		}
+		if kind != "" && !strings.EqualFold(item.Kind, kind) {
+			continue
+		}
+		out = append(out, item)
+	}
+	return out
+}
+
+func filterGatewayServiceAccounts(items []domainaigateway.ServiceAccount, input map[string]any) []domainaigateway.ServiceAccount {
+	status := strings.TrimSpace(stringInput(input, "status"))
+	if status == "" {
+		return items
+	}
+	out := make([]domainaigateway.ServiceAccount, 0, len(items))
+	for _, item := range items {
+		if strings.EqualFold(item.Status, status) {
+			out = append(out, item)
+		}
+	}
+	return out
+}
+
+func redactedAIClients(items []domainaigateway.AIClient) []domainaigateway.AIClient {
+	out := make([]domainaigateway.AIClient, len(items))
+	copy(out, items)
+	for index := range out {
+		out[index].Metadata = sanitizeGatewayMap(out[index].Metadata)
+	}
+	return out
+}
+
+func redactedServiceAccounts(items []domainaigateway.ServiceAccount) []domainaigateway.ServiceAccount {
+	out := make([]domainaigateway.ServiceAccount, len(items))
+	copy(out, items)
+	for index := range out {
+		out[index].Metadata = sanitizeGatewayMap(out[index].Metadata)
+	}
+	return out
+}
+
+func redactedPersonalAccessTokens(items []domainaigateway.PersonalAccessToken) []domainaigateway.PersonalAccessToken {
+	out := make([]domainaigateway.PersonalAccessToken, len(items))
+	copy(out, items)
+	for index := range out {
+		out[index].TokenHash = ""
+		out[index].Metadata = sanitizeGatewayMap(out[index].Metadata)
+	}
+	return out
+}
+
+func redactedServiceAccountTokens(items []domainaigateway.ServiceAccountToken) []domainaigateway.ServiceAccountToken {
+	out := make([]domainaigateway.ServiceAccountToken, len(items))
+	copy(out, items)
+	for index := range out {
+		out[index].TokenHash = ""
+		out[index].Metadata = sanitizeGatewayMap(out[index].Metadata)
+	}
+	return out
+}
+
+func redactedToolGrants(items []domainaigateway.ToolGrant) []domainaigateway.ToolGrant {
+	out := make([]domainaigateway.ToolGrant, len(items))
+	copy(out, items)
+	for index := range out {
+		out[index].ResourceScopes = sanitizeGatewayMap(out[index].ResourceScopes)
+	}
+	return out
+}
+
+func redactedAccessPolicies(items []domainaigateway.AccessPolicy) []domainaigateway.AccessPolicy {
+	out := make([]domainaigateway.AccessPolicy, len(items))
+	copy(out, items)
+	for index := range out {
+		out[index].ResourceScopes = sanitizeGatewayMap(out[index].ResourceScopes)
+		out[index].ApprovalPolicy = sanitizeGatewayMap(out[index].ApprovalPolicy)
+		out[index].Conditions = sanitizeGatewayMap(out[index].Conditions)
+	}
+	return out
+}
+
+func redactedSkillBindings(items []domainaigateway.SkillBinding) []domainaigateway.SkillBinding {
+	out := make([]domainaigateway.SkillBinding, len(items))
+	copy(out, items)
+	for index := range out {
+		out[index].Metadata = sanitizeGatewayMap(out[index].Metadata)
+	}
+	return out
+}
+
+func redactedApprovalRequests(items []domainaigateway.ApprovalRequest) []domainaigateway.ApprovalRequest {
+	out := make([]domainaigateway.ApprovalRequest, len(items))
+	copy(out, items)
+	for index := range out {
+		out[index].ToolInput = sanitizeGatewayMap(out[index].ToolInput)
+		out[index].ResourceScope = sanitizeGatewayMap(out[index].ResourceScope)
+		out[index].RelatedIDs = sanitizeGatewayMap(out[index].RelatedIDs)
+		out[index].Output = sanitizeGatewayValue(out[index].Output)
+		out[index].Summary = redactSensitiveText(out[index].Summary)
+		out[index].DecisionComment = redactSensitiveText(out[index].DecisionComment)
+		if trace := gatewayApprovalTrace(out[index]); trace != nil {
+			out[index].ApprovalTrace = trace
+		}
+	}
+	return out
+}
+
+func redactedApprovalDecisionResult(item domainaigateway.ApprovalDecisionResult) domainaigateway.ApprovalDecisionResult {
+	item.Request = redactedApprovalRequests([]domainaigateway.ApprovalRequest{item.Request})[0]
+	if item.Invocation != nil {
+		invocation := *item.Invocation
+		invocation.Output = sanitizeGatewayValue(invocation.Output)
+		invocation.RelatedIDs = sanitizeGatewayMap(invocation.RelatedIDs)
+		invocation.Audit = sanitizeGatewayMap(invocation.Audit)
+		item.Invocation = &invocation
+	}
+	return item
+}
+
+func redactedGatewayAuditLogs(items []domainaigateway.AuditLog) []domainaigateway.AuditLog {
+	out := make([]domainaigateway.AuditLog, len(items))
+	copy(out, items)
+	for index := range out {
+		out[index].ResourceScope = sanitizeGatewayMap(out[index].ResourceScope)
+		out[index].Metadata = sanitizeGatewayMap(out[index].Metadata)
+		out[index].Summary = redactSensitiveText(out[index].Summary)
+	}
+	return out
 }
 func (s *Service) buildReleaseContextDiff(ctx context.Context, principal domainidentity.Principal, input map[string]any) (any, map[string]any, error) {
 	var req struct {

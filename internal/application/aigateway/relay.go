@@ -517,6 +517,17 @@ func (s *Service) ListLLMCallLogs(ctx context.Context, principal domainidentity.
 	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermAIGatewayRelayManage); err != nil {
 		return nil, err
 	}
+	return s.listLLMCallLogs(ctx, filter)
+}
+
+func (s *Service) listLLMCallLogsForGatewayRuntimeTool(ctx context.Context, principal domainidentity.Principal, filter domainaigateway.LLMCallLogFilter) ([]domainaigateway.LLMCallLog, error) {
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermAIGatewayRelayView); err != nil {
+		return nil, err
+	}
+	return s.listLLMCallLogs(ctx, filter)
+}
+
+func (s *Service) listLLMCallLogs(ctx context.Context, filter domainaigateway.LLMCallLogFilter) ([]domainaigateway.LLMCallLog, error) {
 	repo := s.llmRelayRepository()
 	if repo == nil {
 		return nil, fmt.Errorf("%w: AI Gateway relay repository is not configured", apperrors.ErrInvalidArgument)
