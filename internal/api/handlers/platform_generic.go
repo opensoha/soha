@@ -87,6 +87,8 @@ func (h *PlatformHandler) RegisterGenericResourceRoutes(group gin.IRoutes) {
 		{path: "/clusters/:clusterID/configuration/resourcequotas/:name", kind: "ResourceQuota"},
 		{path: "/clusters/:clusterID/configuration/limitranges/:name", kind: "LimitRange"},
 		{path: "/clusters/:clusterID/configuration/leases/:name", kind: "Lease"},
+		{path: "/clusters/:clusterID/configuration/hpas/:name", kind: "HorizontalPodAutoscaler"},
+		{path: "/clusters/:clusterID/configuration/poddisruptionbudgets/:name", kind: "PodDisruptionBudget"},
 		{path: "/clusters/:clusterID/workloads/replicationcontrollers/:name", kind: "ReplicationController"},
 		{path: "/clusters/:clusterID/configuration/configmaps/:name", kind: "ConfigMap"},
 		{path: "/clusters/:clusterID/configuration/secrets/:name", kind: "Secret"},

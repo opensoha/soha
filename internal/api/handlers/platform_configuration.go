@@ -28,6 +28,34 @@ func (h *PlatformHandler) GetConfigMapDetail(c *gin.Context) {
 	}
 	apiresponse.Item(c, http.StatusOK, item)
 }
+func (h *PlatformHandler) UpdateConfigMapData(c *gin.Context) {
+	var payload struct {
+		Data       map[string]string `json:"data"`
+		BinaryData map[string]string `json:"binaryData"`
+	}
+	if err := c.ShouldBindJSON(&payload); err != nil {
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid configmap data payload")
+		return
+	}
+	principal := apiMiddleware.PrincipalFromContext(c)
+	namespace := c.Query("namespace")
+	item, err := h.resources.UpdateConfigMapData(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("name"), payload.Data, payload.BinaryData)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
+}
+func (h *PlatformHandler) ListConfigMapReferences(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	namespace := c.Query("namespace")
+	items, err := h.resources.ListConfigMapReferences(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("name"))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Items(c, http.StatusOK, items)
+}
 func (h *PlatformHandler) GetSecretDetail(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.Query("namespace")
@@ -37,6 +65,33 @@ func (h *PlatformHandler) GetSecretDetail(c *gin.Context) {
 		return
 	}
 	apiresponse.Item(c, http.StatusOK, item)
+}
+func (h *PlatformHandler) UpdateSecretData(c *gin.Context) {
+	var payload struct {
+		Data map[string]string `json:"data"`
+	}
+	if err := c.ShouldBindJSON(&payload); err != nil {
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid secret data payload")
+		return
+	}
+	principal := apiMiddleware.PrincipalFromContext(c)
+	namespace := c.Query("namespace")
+	item, err := h.resources.UpdateSecretData(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("name"), payload.Data)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
+}
+func (h *PlatformHandler) ListSecretReferences(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	namespace := c.Query("namespace")
+	items, err := h.resources.ListSecretReferences(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("name"))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Items(c, http.StatusOK, items)
 }
 func (h *PlatformHandler) CreateConfigMap(c *gin.Context) {
 	h.createResourceFromYAML(c, "ConfigMap")

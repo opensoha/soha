@@ -63,9 +63,12 @@ func defaultMenuSeeds() []menuSeed {
 		{ID: "network-topology", ParentID: "network", Path: "/network/topology", LabelZH: "网络拓扑", LabelEN: "Network Topology", IconKey: "network", SortOrder: 40, Enabled: true},
 		{ID: "network-services", ParentID: "network", Path: "/network/services", LabelZH: "Services", LabelEN: "Services", IconKey: "network", SortOrder: 41, Enabled: true},
 		{ID: "network-ingresses", ParentID: "network", Path: "/network/ingresses", LabelZH: "Ingresses", LabelEN: "Ingresses", IconKey: "network", SortOrder: 42, Enabled: true},
-		{ID: "network-gateway-api", ParentID: "network", Path: "/network/gateway-api", LabelZH: "Gateway API", LabelEN: "Gateway API", IconKey: "network", SortOrder: 43, Enabled: true},
-		{ID: "network-gateway-api-gatewayclasses", ParentID: "network-gateway-api", Path: "/network/gateway-api/gatewayclasses", LabelZH: "GatewayClasses", LabelEN: "GatewayClasses", IconKey: "network", SortOrder: 44, Enabled: true},
-		{ID: "network-gateway-api-gateways", ParentID: "network-gateway-api", Path: "/network/gateway-api/gateways", LabelZH: "Gateways", LabelEN: "Gateways", IconKey: "network", SortOrder: 45, Enabled: true},
+		{ID: "network-gateway-api-gatewayclasses", ParentID: "network", Path: "/network/gateway-api/gatewayclasses", LabelZH: "GatewayClasses", LabelEN: "GatewayClasses", IconKey: "network", SortOrder: 43, Enabled: true},
+		{ID: "network-gateway-api-gateways", ParentID: "network", Path: "/network/gateway-api/gateways", LabelZH: "Gateways", LabelEN: "Gateways", IconKey: "network", SortOrder: 44, Enabled: true},
+		{ID: "network-gateway-api-httproutes", ParentID: "network", Path: "/network/gateway-api/httproutes", LabelZH: "HTTPRoutes", LabelEN: "HTTPRoutes", IconKey: "network", SortOrder: 45, Enabled: true},
+		{ID: "network-gateway-api-backendtlspolicies", ParentID: "network", Path: "/network/gateway-api/backendtlspolicies", LabelZH: "BackendTLSPolicies", LabelEN: "BackendTLSPolicies", IconKey: "network", SortOrder: 46, Enabled: true},
+		{ID: "network-gateway-api-grpcroutes", ParentID: "network", Path: "/network/gateway-api/grpcroutes", LabelZH: "GRPCRoutes", LabelEN: "GRPCRoutes", IconKey: "network", SortOrder: 47, Enabled: true},
+		{ID: "network-gateway-api-referencegrants", ParentID: "network", Path: "/network/gateway-api/referencegrants", LabelZH: "ReferenceGrants", LabelEN: "ReferenceGrants", IconKey: "network", SortOrder: 48, Enabled: true},
 		{ID: "network-endpointslices", ParentID: "network", Path: "/network/endpointslices", LabelZH: "EndpointSlices", LabelEN: "EndpointSlices", IconKey: "network", SortOrder: 53, Enabled: true},
 		{ID: "network-ingressclasses", ParentID: "network", Path: "/network/ingressclasses", LabelZH: "IngressClasses", LabelEN: "IngressClasses", IconKey: "network", SortOrder: 54, Enabled: true},
 		{ID: "network-networkpolicies", ParentID: "network", Path: "/network/networkpolicies", LabelZH: "NetworkPolicies", LabelEN: "NetworkPolicies", IconKey: "network", SortOrder: 55, Enabled: true},
@@ -153,10 +156,6 @@ func deprecatedMenuIDs() []string {
 		"assistant-inspection",
 		"network-gateways",
 		"network-http-routes",
-		"network-gateway-api-httproutes",
-		"network-gateway-api-backendtlspolicies",
-		"network-gateway-api-grpcroutes",
-		"network-gateway-api-referencegrants",
 		"observability",
 		"monitoring",
 		"rules",
@@ -325,6 +324,36 @@ func syncBuiltinMenuSeedUpgrades(ctx context.Context, db *gorm.DB) error {
 		`, item.section, item.sortOrder, item.oldZH, item.labelZH, item.oldEN, item.labelEN, now, item.id).Error; err != nil {
 			return err
 		}
+	}
+	gatewayItems := []struct {
+		id        string
+		path      string
+		sortOrder int
+	}{
+		{id: "network-gateway-api-gatewayclasses", path: "/network/gateway-api/gatewayclasses", sortOrder: 43},
+		{id: "network-gateway-api-gateways", path: "/network/gateway-api/gateways", sortOrder: 44},
+		{id: "network-gateway-api-httproutes", path: "/network/gateway-api/httproutes", sortOrder: 45},
+		{id: "network-gateway-api-backendtlspolicies", path: "/network/gateway-api/backendtlspolicies", sortOrder: 46},
+		{id: "network-gateway-api-grpcroutes", path: "/network/gateway-api/grpcroutes", sortOrder: 47},
+		{id: "network-gateway-api-referencegrants", path: "/network/gateway-api/referencegrants", sortOrder: 48},
+	}
+	for _, item := range gatewayItems {
+		if err := db.WithContext(ctx).Exec(`
+			UPDATE menus
+			SET parent_id = 'network',
+				path = ?,
+				sort_order = ?,
+				updated_at = ?
+			WHERE id = ? AND (parent_id = 'network-gateway-api' OR parent_id = 'network' OR parent_id IS NULL)
+		`, item.path, item.sortOrder, now, item.id).Error; err != nil {
+			return err
+		}
+	}
+	if err := db.WithContext(ctx).Exec(`DELETE FROM menu_role_bindings WHERE menu_id = 'network-gateway-api'`).Error; err != nil {
+		return err
+	}
+	if err := db.WithContext(ctx).Exec(`DELETE FROM menus WHERE id = 'network-gateway-api'`).Error; err != nil {
+		return err
 	}
 	return nil
 }

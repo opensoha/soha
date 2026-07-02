@@ -499,6 +499,10 @@ func platformMutationResourceKind(path string) string {
 		return "ConfigMap"
 	case strings.Contains(path, "/configuration/secrets"):
 		return "Secret"
+	case strings.Contains(path, "/configuration/hpas"):
+		return "HorizontalPodAutoscaler"
+	case strings.Contains(path, "/configuration/poddisruptionbudgets"):
+		return "PodDisruptionBudget"
 	case strings.Contains(path, "/configuration/priorityclasses"):
 		return "PriorityClass"
 	case strings.Contains(path, "/configuration/runtimeclasses"):

@@ -30,6 +30,21 @@ func New(
 			metadata["source"] = meta.Source
 		}
 	}
+	if meta.RequestID != "" {
+		if _, exists := metadata["requestId"]; !exists {
+			metadata["requestId"] = meta.RequestID
+		}
+	}
+	if meta.TraceID != "" {
+		if _, exists := metadata["traceId"]; !exists {
+			metadata["traceId"] = meta.TraceID
+		}
+	}
+	if meta.SpanID != "" {
+		if _, exists := metadata["spanId"]; !exists {
+			metadata["spanId"] = meta.SpanID
+		}
+	}
 	return domainoperation.Entry{
 		ActorID:       principal.UserID,
 		ActorName:     principal.UserName,

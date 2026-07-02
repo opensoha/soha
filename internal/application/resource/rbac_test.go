@@ -24,6 +24,9 @@ func TestResourceGVRForKindSupportsRBACKinds(t *testing.T) {
 		{kind: "ClusterRole", resource: "clusterroles", namespaceScoped: false},
 		{kind: "ClusterRoleBinding", resource: "clusterrolebindings", namespaceScoped: false},
 		{kind: "ReplicaSet", resource: "replicasets", namespaceScoped: true},
+		{kind: "PersistentVolumeClaim", resource: "persistentvolumeclaims", namespaceScoped: true},
+		{kind: "PersistentVolume", resource: "persistentvolumes", namespaceScoped: false},
+		{kind: "StorageClass", resource: "storageclasses", namespaceScoped: false},
 	}
 
 	for _, tc := range cases {

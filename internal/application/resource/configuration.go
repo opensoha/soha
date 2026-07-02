@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -115,23 +116,47 @@ func (s *Service) GetConfigMapDetail(ctx context.Context, principal domainidenti
 	if err != nil {
 		return domainresource.ConfigMapDetailView{}, err
 	}
-	binaryData := make(map[string]string, len(item.BinaryData))
-	for k, v := range item.BinaryData {
-		binaryData[k] = base64.StdEncoding.EncodeToString(v)
-	}
-	immutable := item.Immutable != nil && *item.Immutable
 	_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, "ConfigMap", name, string(domainaccess.ActionView), "success", "viewed configmap detail")
-	return domainresource.ConfigMapDetailView{
-		Name:        item.Name,
-		Namespace:   item.Namespace,
-		Labels:      item.Labels,
-		Annotations: item.Annotations,
-		Data:        item.Data,
-		BinaryData:  binaryData,
-		Immutable:   immutable,
-		CreatedAt:   item.CreationTimestamp.Time.Format(time.RFC3339),
-		AgeSeconds:  secondsSince(item.CreationTimestamp.Time),
-	}, nil
+	return mapConfigMapDetail(*item), nil
+}
+func (s *Service) UpdateConfigMapData(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, name string, data, binaryData map[string]string) (domainresource.ConfigMapDetailView, error) {
+	connection, _, err := s.authorize(ctx, principal, clusterID, namespace, "ConfigMap", domainaccess.ActionUpdate)
+	if err != nil {
+		return domainresource.ConfigMapDetailView{}, err
+	}
+	if connection.Summary.ConnectionMode == domaincluster.ConnectionModeAgent {
+		return domainresource.ConfigMapDetailView{}, unsupportedAgentOperation("configmap data update is not supported for agent-connected clusters yet")
+	}
+	bundle, queryCtx, cancel, err := s.directKubeQueryContext(ctx, clusterID, 5*time.Second)
+	if err != nil {
+		return domainresource.ConfigMapDetailView{}, err
+	}
+	defer cancel()
+	item, err := bundle.Typed.CoreV1().ConfigMaps(namespace).Get(queryCtx, name, metav1.GetOptions{})
+	if err != nil {
+		_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, "ConfigMap", name, string(domainaccess.ActionUpdate), "failure", err.Error())
+		return domainresource.ConfigMapDetailView{}, err
+	}
+	decodedBinaryData := make(map[string][]byte, len(binaryData))
+	for key, value := range binaryData {
+		raw, err := base64.StdEncoding.DecodeString(value)
+		if err != nil {
+			wrapped := fmt.Errorf("%w: invalid binaryData.%s: %v", apperrors.ErrInvalidArgument, key, err)
+			_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, "ConfigMap", name, string(domainaccess.ActionUpdate), "failure", wrapped.Error())
+			return domainresource.ConfigMapDetailView{}, wrapped
+		}
+		decodedBinaryData[key] = raw
+	}
+	item.Data = data
+	item.BinaryData = decodedBinaryData
+	updated, err := bundle.Typed.CoreV1().ConfigMaps(namespace).Update(queryCtx, item, metav1.UpdateOptions{})
+	if err != nil {
+		_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, "ConfigMap", name, string(domainaccess.ActionUpdate), "failure", err.Error())
+		return domainresource.ConfigMapDetailView{}, err
+	}
+	_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, "ConfigMap", name, string(domainaccess.ActionUpdate), "success", "updated configmap data")
+	s.recordOperation(ctx, principal, "platform.configmap.data.update", connection.Summary.ID, namespace, "ConfigMap", name, "updated configmap data", nil)
+	return mapConfigMapDetail(*updated), nil
 }
 func (s *Service) GetSecretDetail(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, name string) (domainresource.SecretDetailView, error) {
 	connection, _, err := s.authorize(ctx, principal, clusterID, namespace, "Secret", domainaccess.ActionView)
@@ -150,12 +175,259 @@ func (s *Service) GetSecretDetail(ctx context.Context, principal domainidentity.
 	if err != nil {
 		return domainresource.SecretDetailView{}, err
 	}
+	_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, "Secret", name, string(domainaccess.ActionView), "success", "viewed secret detail")
+	return mapSecretDetail(*item), nil
+}
+func (s *Service) UpdateSecretData(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, name string, data map[string]string) (domainresource.SecretDetailView, error) {
+	connection, _, err := s.authorize(ctx, principal, clusterID, namespace, "Secret", domainaccess.ActionUpdate)
+	if err != nil {
+		return domainresource.SecretDetailView{}, err
+	}
+	if connection.Summary.ConnectionMode == domaincluster.ConnectionModeAgent {
+		return domainresource.SecretDetailView{}, unsupportedAgentOperation("secret data update is not supported for agent-connected clusters yet")
+	}
+	bundle, queryCtx, cancel, err := s.directKubeQueryContext(ctx, clusterID, 5*time.Second)
+	if err != nil {
+		return domainresource.SecretDetailView{}, err
+	}
+	defer cancel()
+	item, err := bundle.Typed.CoreV1().Secrets(namespace).Get(queryCtx, name, metav1.GetOptions{})
+	if err != nil {
+		_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, "Secret", name, string(domainaccess.ActionUpdate), "failure", err.Error())
+		return domainresource.SecretDetailView{}, err
+	}
+	item.Data = nil
+	item.StringData = data
+	updated, err := bundle.Typed.CoreV1().Secrets(namespace).Update(queryCtx, item, metav1.UpdateOptions{})
+	if err != nil {
+		_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, "Secret", name, string(domainaccess.ActionUpdate), "failure", err.Error())
+		return domainresource.SecretDetailView{}, err
+	}
+	_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, "Secret", name, string(domainaccess.ActionUpdate), "success", "updated secret data")
+	s.recordOperation(ctx, principal, "platform.secret.data.update", connection.Summary.ID, namespace, "Secret", name, "updated secret data", nil)
+	return mapSecretDetail(*updated), nil
+}
+
+func (s *Service) ListConfigMapReferences(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, name string) ([]domainresource.ConfigReferenceView, error) {
+	connection, _, err := s.authorize(ctx, principal, clusterID, namespace, "ConfigMap", domainaccess.ActionView)
+	if err != nil {
+		return nil, err
+	}
+	if connection.Summary.ConnectionMode == domaincluster.ConnectionModeAgent {
+		return nil, unsupportedAgentOperation("configmap references are not supported for agent-connected clusters yet")
+	}
+	refs, err := s.listDirectConfigReferences(ctx, clusterID, namespace, name, true)
+	if err != nil {
+		return nil, err
+	}
+	_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, "ConfigMap", name, string(domainaccess.ActionView), "success", "viewed configmap references")
+	return refs, nil
+}
+
+func (s *Service) ListSecretReferences(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, name string) ([]domainresource.ConfigReferenceView, error) {
+	connection, _, err := s.authorize(ctx, principal, clusterID, namespace, "Secret", domainaccess.ActionView)
+	if err != nil {
+		return nil, err
+	}
+	if connection.Summary.ConnectionMode == domaincluster.ConnectionModeAgent {
+		return nil, unsupportedAgentOperation("secret references are not supported for agent-connected clusters yet")
+	}
+	refs, err := s.listDirectConfigReferences(ctx, clusterID, namespace, name, false)
+	if err != nil {
+		return nil, err
+	}
+	_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, "Secret", name, string(domainaccess.ActionView), "success", "viewed secret references")
+	return refs, nil
+}
+
+func (s *Service) listDirectConfigReferences(ctx context.Context, clusterID, namespace, name string, configMap bool) ([]domainresource.ConfigReferenceView, error) {
+	bundle, queryCtx, cancel, err := s.directKubeQueryContext(ctx, clusterID, 5*time.Second)
+	if err != nil {
+		return nil, err
+	}
+	defer cancel()
+	var refs []domainresource.ConfigReferenceView
+	appendIfUsed := func(kind, itemName string, spec corev1.PodSpec) {
+		for _, path := range collectPodSpecConfigReferencePaths(spec, name, configMap) {
+			refs = append(refs, domainresource.ConfigReferenceView{
+				Kind:      kind,
+				Name:      itemName,
+				Namespace: namespace,
+				Path:      path,
+			})
+		}
+	}
+	pods, err := bundle.Typed.CoreV1().Pods(namespace).List(queryCtx, metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	for _, item := range pods.Items {
+		appendIfUsed("Pod", item.Name, item.Spec)
+	}
+	deployments, err := bundle.Typed.AppsV1().Deployments(namespace).List(queryCtx, metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	for _, item := range deployments.Items {
+		appendIfUsed("Deployment", item.Name, item.Spec.Template.Spec)
+	}
+	statefulSets, err := bundle.Typed.AppsV1().StatefulSets(namespace).List(queryCtx, metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	for _, item := range statefulSets.Items {
+		appendIfUsed("StatefulSet", item.Name, item.Spec.Template.Spec)
+	}
+	daemonSets, err := bundle.Typed.AppsV1().DaemonSets(namespace).List(queryCtx, metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	for _, item := range daemonSets.Items {
+		appendIfUsed("DaemonSet", item.Name, item.Spec.Template.Spec)
+	}
+	replicaSets, err := bundle.Typed.AppsV1().ReplicaSets(namespace).List(queryCtx, metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	for _, item := range replicaSets.Items {
+		appendIfUsed("ReplicaSet", item.Name, item.Spec.Template.Spec)
+	}
+	replicationControllers, err := bundle.Typed.CoreV1().ReplicationControllers(namespace).List(queryCtx, metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	for _, item := range replicationControllers.Items {
+		appendIfUsed("ReplicationController", item.Name, item.Spec.Template.Spec)
+	}
+	jobs, err := bundle.Typed.BatchV1().Jobs(namespace).List(queryCtx, metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	for _, item := range jobs.Items {
+		appendIfUsed("Job", item.Name, item.Spec.Template.Spec)
+	}
+	cronJobs, err := bundle.Typed.BatchV1().CronJobs(namespace).List(queryCtx, metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	for _, item := range cronJobs.Items {
+		appendIfUsed("CronJob", item.Name, item.Spec.JobTemplate.Spec.Template.Spec)
+	}
+	sortConfigReferences(refs)
+	return refs, nil
+}
+
+func collectPodSpecConfigReferencePaths(spec corev1.PodSpec, name string, configMap bool) []string {
+	paths := map[string]struct{}{}
+	add := func(path string) {
+		if strings.TrimSpace(path) != "" {
+			paths[path] = struct{}{}
+		}
+	}
+	for _, volume := range spec.Volumes {
+		if configMap {
+			if volume.ConfigMap != nil && volume.ConfigMap.Name == name {
+				add(fmt.Sprintf("volume/%s/configMap", volume.Name))
+			}
+		} else if volume.Secret != nil && volume.Secret.SecretName == name {
+			add(fmt.Sprintf("volume/%s/secret", volume.Name))
+		}
+		if volume.Projected != nil {
+			for _, source := range volume.Projected.Sources {
+				if configMap && source.ConfigMap != nil && source.ConfigMap.Name == name {
+					add(fmt.Sprintf("volume/%s/projected/configMap", volume.Name))
+				}
+				if !configMap && source.Secret != nil && source.Secret.Name == name {
+					add(fmt.Sprintf("volume/%s/projected/secret", volume.Name))
+				}
+			}
+		}
+	}
+	if !configMap {
+		for _, secret := range spec.ImagePullSecrets {
+			if secret.Name == name {
+				add("imagePullSecrets")
+			}
+		}
+	}
+	collectContainerConfigReferencePaths(spec.InitContainers, name, configMap, add)
+	collectContainerConfigReferencePaths(spec.Containers, name, configMap, add)
+	return sortedReferencePaths(paths)
+}
+
+func collectContainerConfigReferencePaths(containers []corev1.Container, name string, configMap bool, add func(string)) {
+	for _, container := range containers {
+		for _, env := range container.Env {
+			if env.ValueFrom == nil {
+				continue
+			}
+			if configMap && env.ValueFrom.ConfigMapKeyRef != nil && env.ValueFrom.ConfigMapKeyRef.Name == name {
+				add(fmt.Sprintf("container/%s/env/%s/configMapKeyRef", container.Name, env.Name))
+			}
+			if !configMap && env.ValueFrom.SecretKeyRef != nil && env.ValueFrom.SecretKeyRef.Name == name {
+				add(fmt.Sprintf("container/%s/env/%s/secretKeyRef", container.Name, env.Name))
+			}
+		}
+		for _, envFrom := range container.EnvFrom {
+			if configMap && envFrom.ConfigMapRef != nil && envFrom.ConfigMapRef.Name == name {
+				add(fmt.Sprintf("container/%s/envFrom/configMapRef", container.Name))
+			}
+			if !configMap && envFrom.SecretRef != nil && envFrom.SecretRef.Name == name {
+				add(fmt.Sprintf("container/%s/envFrom/secretRef", container.Name))
+			}
+		}
+	}
+}
+
+func sortedReferencePaths(paths map[string]struct{}) []string {
+	items := make([]string, 0, len(paths))
+	for path := range paths {
+		items = append(items, path)
+	}
+	sort.Strings(items)
+	return items
+}
+
+func sortConfigReferences(refs []domainresource.ConfigReferenceView) {
+	sort.SliceStable(refs, func(i, j int) bool {
+		if refs[i].Namespace != refs[j].Namespace {
+			return refs[i].Namespace < refs[j].Namespace
+		}
+		if refs[i].Kind != refs[j].Kind {
+			return refs[i].Kind < refs[j].Kind
+		}
+		if refs[i].Name != refs[j].Name {
+			return refs[i].Name < refs[j].Name
+		}
+		return refs[i].Path < refs[j].Path
+	})
+}
+
+func mapConfigMapDetail(item corev1.ConfigMap) domainresource.ConfigMapDetailView {
+	binaryData := make(map[string]string, len(item.BinaryData))
+	for k, v := range item.BinaryData {
+		binaryData[k] = base64.StdEncoding.EncodeToString(v)
+	}
+	immutable := item.Immutable != nil && *item.Immutable
+	return domainresource.ConfigMapDetailView{
+		Name:        item.Name,
+		Namespace:   item.Namespace,
+		Labels:      item.Labels,
+		Annotations: item.Annotations,
+		Data:        item.Data,
+		BinaryData:  binaryData,
+		Immutable:   immutable,
+		CreatedAt:   item.CreationTimestamp.Time.Format(time.RFC3339),
+		AgeSeconds:  secondsSince(item.CreationTimestamp.Time),
+	}
+}
+
+func mapSecretDetail(item corev1.Secret) domainresource.SecretDetailView {
 	data := make(map[string]string, len(item.Data))
 	for k, v := range item.Data {
 		data[k] = base64.StdEncoding.EncodeToString(v)
 	}
 	immutable := item.Immutable != nil && *item.Immutable
-	_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, "Secret", name, string(domainaccess.ActionView), "success", "viewed secret detail")
 	return domainresource.SecretDetailView{
 		Name:        item.Name,
 		Namespace:   item.Namespace,
@@ -166,7 +438,7 @@ func (s *Service) GetSecretDetail(ctx context.Context, principal domainidentity.
 		Immutable:   immutable,
 		CreatedAt:   item.CreationTimestamp.Time.Format(time.RFC3339),
 		AgeSeconds:  secondsSince(item.CreationTimestamp.Time),
-	}, nil
+	}
 }
 
 // CreateResourceFromYAML creates a new resource in the cluster from YAML content

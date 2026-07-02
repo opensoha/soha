@@ -89,3 +89,43 @@ func (h *PlatformHandler) ListGateways(c *gin.Context) {
 	}
 	apiresponse.Items(c, http.StatusOK, items)
 }
+func (h *PlatformHandler) ListHTTPRoutes(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	namespace := c.Query("namespace")
+	items, err := h.resources.ListHTTPRoutes(c.Request.Context(), principal, c.Param("clusterID"), namespace)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Items(c, http.StatusOK, items)
+}
+func (h *PlatformHandler) ListBackendTLSPolicies(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	namespace := c.Query("namespace")
+	items, err := h.resources.ListBackendTLSPolicies(c.Request.Context(), principal, c.Param("clusterID"), namespace)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Items(c, http.StatusOK, items)
+}
+func (h *PlatformHandler) ListGRPCRoutes(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	namespace := c.Query("namespace")
+	items, err := h.resources.ListGRPCRoutes(c.Request.Context(), principal, c.Param("clusterID"), namespace)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Items(c, http.StatusOK, items)
+}
+func (h *PlatformHandler) ListReferenceGrants(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	namespace := c.Query("namespace")
+	items, err := h.resources.ListReferenceGrants(c.Request.Context(), principal, c.Param("clusterID"), namespace)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Items(c, http.StatusOK, items)
+}

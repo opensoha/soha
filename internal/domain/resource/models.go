@@ -126,3 +126,10 @@ type (
 	PortForwardSessionView   = contractsresource.PortForwardSessionView
 	PortForwardRegisterInput = contractsresource.PortForwardRegisterInput
 )
+
+type ConfigReferenceView struct {
+	Kind      string `json:"kind"`
+	Name      string `json:"name"`
+	Namespace string `json:"namespace"`
+	Path      string `json:"path"`
+}

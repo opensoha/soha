@@ -90,9 +90,12 @@ func TestDefaultsConfigurePostgresGatewayRateLimitBackend(t *testing.T) {
 	if cfg.Runtime.VirtualizationSyncConcurrency != 1 {
 		t.Fatalf("virtualization sync concurrency default = %d, want 1", cfg.Runtime.VirtualizationSyncConcurrency)
 	}
+	if cfg.Logger.Level != "info" {
+		t.Fatalf("logger level default = %q, want info", cfg.Logger.Level)
+	}
 }
 
-func TestLoadUsesDefaultConfigWhenFileMissing(t *testing.T) {
+func TestLoadRejectsDefaultConfigWhenFileMissing(t *testing.T) {
 	cwd, err := os.Getwd()
 	if err != nil {
 		t.Fatalf("getwd: %v", err)
@@ -107,23 +110,38 @@ func TestLoadUsesDefaultConfigWhenFileMissing(t *testing.T) {
 		}
 	}()
 	t.Setenv("SOHA_CONFIG_FILE", "")
-	t.Setenv("SOHA_APP_ENV", "")
-	cfg, err := Load()
-	if err != nil {
-		t.Fatalf("Load() error = %v", err)
-	}
-	if cfg.App.Name != "soha" {
-		t.Fatalf("App.Name = %q, want soha", cfg.App.Name)
-	}
-	if cfg.Database.Driver != "postgres" {
-		t.Fatalf("Database.Driver = %q, want postgres", cfg.Database.Driver)
+	if _, err := Load(); err == nil {
+		t.Fatal("Load() error = nil, want default config validation failure")
 	}
 }
 
 func TestLoadUsesExplicitConfigFile(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
-	if err := os.WriteFile(path, []byte("app:\n  name: custom-soha\n"), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte(`
+app:
+  name: custom-soha
+runtime:
+  execution_runner_token: runner-token-123456789012345678901234
+database:
+  password: postgres-password-123456
+auth:
+  enable_dev_auth: false
+  dev_principal:
+    password: admin-password-123456
+  jwt:
+    secret: jwt-secret-123456789012345678901234567890
+monitoring:
+  enabled: true
+  webhook_token: webhook-token-123456789012345678901234
+modules:
+  monitoring:
+    enabled: true
+  virtualization:
+    enabled: true
+security:
+  credential_encryption_key: credential-key-123456789012345678901234
+`), 0o600); err != nil {
 		t.Fatalf("write config file: %v", err)
 	}
 	t.Setenv("SOHA_CONFIG_FILE", path)
@@ -201,8 +219,30 @@ func TestAIGatewayConnectorRuntimeConfigExpandsEnv(t *testing.T) {
 	}
 }
 
-func TestProductionConfigRejectsDemoSecrets(t *testing.T) {
-	cfg := validProductionConfig()
+func TestConfigValidateRequiresOIDCFieldsWhenEnabled(t *testing.T) {
+	cfg := Config{
+		Auth: AuthConfig{
+			OIDC: OIDCConfig{Enabled: true},
+		},
+	}
+
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("Validate() error = nil, want OIDC validation failure")
+	}
+	message := err.Error()
+	for _, want := range []string{
+		"auth.oidc.issuer",
+		"auth.oidc.client_id",
+	} {
+		if !strings.Contains(message, want) {
+			t.Fatalf("Validate() error %q missing %q", message, want)
+		}
+	}
+}
+
+func TestConfigValidateRejectsDemoSecrets(t *testing.T) {
+	cfg := validSecureConfig()
 	cfg.Database.Password = "change-me"
 	cfg.Auth.JWT.Secret = "dev-only-change-me"
 	cfg.Runtime.ExecutionRunnerToken = "demo-execution-runner-token"
@@ -211,7 +251,7 @@ func TestProductionConfigRejectsDemoSecrets(t *testing.T) {
 
 	err := cfg.Validate()
 	if err == nil {
-		t.Fatal("Validate() error = nil, want production config validation failure")
+		t.Fatal("Validate() error = nil, want config validation failure")
 	}
 	message := err.Error()
 	for _, want := range []string{
@@ -227,8 +267,8 @@ func TestProductionConfigRejectsDemoSecrets(t *testing.T) {
 	}
 }
 
-func TestProductionConfigRejectsDevAuth(t *testing.T) {
-	cfg := validProductionConfig()
+func TestConfigValidateRejectsDevAuth(t *testing.T) {
+	cfg := validSecureConfig()
 	cfg.Auth.EnableDevAuth = true
 
 	err := cfg.Validate()
@@ -240,23 +280,8 @@ func TestProductionConfigRejectsDevAuth(t *testing.T) {
 	}
 }
 
-func TestProductionConfigAllowsStrongSecrets(t *testing.T) {
-	cfg := validProductionConfig()
-	if err := cfg.Validate(); err != nil {
-		t.Fatalf("Validate() error = %v", err)
-	}
-}
-
-func TestNonProductionConfigAllowsDemoSecrets(t *testing.T) {
-	cfg := validProductionConfig()
-	cfg.App.Env = "development"
-	cfg.Database.Password = "change-me"
-	cfg.Auth.JWT.Secret = "dev-only-change-me"
-	cfg.Runtime.ExecutionRunnerToken = "demo-execution-runner-token"
-	cfg.Monitoring.WebhookToken = ""
-	cfg.Security.CredentialEncryptionKey = ""
-	cfg.Auth.EnableDevAuth = true
-
+func TestConfigValidateAllowsStrongSecrets(t *testing.T) {
+	cfg := validSecureConfig()
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("Validate() error = %v", err)
 	}
@@ -282,9 +307,8 @@ func TestExpandEnvExpandsSensitiveConfig(t *testing.T) {
 	}
 }
 
-func validProductionConfig() Config {
+func validSecureConfig() Config {
 	return Config{
-		App: AppConfig{Env: "production"},
 		Runtime: RuntimeConfig{
 			ExecutionRunnerToken: "runner-token-123456789012345678901234",
 		},

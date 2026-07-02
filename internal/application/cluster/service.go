@@ -105,7 +105,7 @@ func (s *Service) Start(ctx context.Context) {
 func (s *Service) restoreRuntimeRegistrations(ctx context.Context) {
 	connections, err := s.repo.ListConnections(ctx)
 	if err != nil {
-		s.logWarn("cluster restore registrations failed", zap.Error(err))
+		s.logWarnCtx(ctx, "cluster restore registrations failed", zap.Error(err))
 		return
 	}
 	for _, connection := range connections {
@@ -114,13 +114,13 @@ func (s *Service) restoreRuntimeRegistrations(ctx context.Context) {
 		}
 		cfg, err := runtimeClusterConfig(connection)
 		if err != nil {
-			s.logWarn("cluster runtime config invalid", zap.String("clusterID", connection.Summary.ID), zap.Error(err))
+			s.logWarnCtx(ctx, "cluster runtime config invalid", zap.String("clusterID", connection.Summary.ID), zap.Error(err))
 			continue
 		}
 		s.manager.RegisterCluster(*cfg)
 		if s.cache != nil {
 			if err := s.cache.RegisterCluster(ctx, connection.Summary.ID); err != nil {
-				s.logWarn("cluster informer registration failed", zap.String("clusterID", connection.Summary.ID), zap.Error(err))
+				s.logWarnCtx(ctx, "cluster informer registration failed", zap.String("clusterID", connection.Summary.ID), zap.Error(err))
 			}
 		}
 	}
@@ -441,10 +441,10 @@ func (s *Service) runSyncCycle(ctx context.Context, operationID string) {
 		s.metrics.RecordFinish(runtimeobs.ComponentClusterSync, operationID, time.Since(startedAt), 0, itemCount, outcome, err)
 	}
 	if err != nil {
-		s.logWarn("cluster sync failed", zap.String("operation", operationID), zap.Int("items", itemCount), zap.Duration("duration", time.Since(startedAt)), zap.Error(err))
+		s.logWarnCtx(ctx, "cluster sync failed", zap.String("operation", operationID), zap.Int("items", itemCount), zap.Duration("duration", time.Since(startedAt)), zap.Error(err))
 		return
 	}
-	s.logDebug("cluster sync completed", zap.String("operation", operationID), zap.Int("items", itemCount), zap.Duration("duration", time.Since(startedAt)))
+	s.logDebugCtx(ctx, "cluster sync completed", zap.String("operation", operationID), zap.Int("items", itemCount), zap.Duration("duration", time.Since(startedAt)))
 }
 
 func (s *Service) runSyncJobs(ctx context.Context, total int, run func(jobIndex int) error) error {
@@ -505,15 +505,15 @@ func (s *Service) runSyncJobs(ctx context.Context, total int, run func(jobIndex 
 	return firstErr
 }
 
-func (s *Service) logWarn(message string, fields ...zap.Field) {
+func (s *Service) logWarnCtx(ctx context.Context, message string, fields ...zap.Field) {
 	if s.logger != nil {
-		s.logger.Warn(message, fields...)
+		s.logger.Warn(message, append(requestctx.LoggerFields(requestctx.FromContext(ctx)), fields...)...)
 	}
 }
 
-func (s *Service) logDebug(message string, fields ...zap.Field) {
+func (s *Service) logDebugCtx(ctx context.Context, message string, fields ...zap.Field) {
 	if s.logger != nil {
-		s.logger.Debug(message, fields...)
+		s.logger.Debug(message, append(requestctx.LoggerFields(requestctx.FromContext(ctx)), fields...)...)
 	}
 }
 

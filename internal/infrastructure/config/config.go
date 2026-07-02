@@ -32,7 +32,6 @@ type Config struct {
 
 type AppConfig struct {
 	Name string `mapstructure:"name"`
-	Env  string `mapstructure:"env"`
 }
 
 type HTTPConfig struct {
@@ -366,13 +365,9 @@ func (c *AIGatewayConnectorRuntimeConfig) expandEnv() {
 }
 
 func (c Config) Validate() error {
-	if !isProductionEnv(c.App.Env) {
-		return nil
-	}
-
 	var problems []string
 	if c.Auth.EnableDevAuth {
-		problems = append(problems, "auth.enable_dev_auth must be false in production")
+		problems = append(problems, "auth.enable_dev_auth must be false")
 	}
 	problems = appendSecretProblem(problems, "database.password", c.Database.Password, true, 12)
 	problems = appendSecretProblem(problems, "auth.jwt.secret", c.Auth.JWT.Secret, true, 32)
@@ -389,22 +384,31 @@ func (c Config) Validate() error {
 	if c.GitLab.Enabled {
 		problems = appendSecretProblem(problems, "gitlab.token", c.GitLab.Token, true, 20)
 	}
+	problems = append(problems, validateSharedConfigProblems(c)...)
+
+	if len(problems) > 0 {
+		return fmt.Errorf("config validation failed: %s", strings.Join(problems, "; "))
+	}
+	return nil
+}
+
+func validateSharedConfigProblems(c Config) []string {
+	var problems []string
 	if c.Auth.OIDC.Enabled {
-		if strings.TrimSpace(c.Auth.OIDC.Issuer) == "" {
-			problems = append(problems, "auth.oidc.issuer is required when OIDC is enabled in production")
-		}
-		if strings.TrimSpace(c.Auth.OIDC.ClientID) == "" {
-			problems = append(problems, "auth.oidc.client_id is required when OIDC is enabled in production")
-		}
+		problems = appendRequiredFieldProblem(problems, "auth.oidc.issuer", c.Auth.OIDC.Issuer)
+		problems = appendRequiredFieldProblem(problems, "auth.oidc.client_id", c.Auth.OIDC.ClientID)
 		if strings.TrimSpace(c.Auth.OIDC.ClientSecret) != "" {
 			problems = appendSecretProblem(problems, "auth.oidc.client_secret", c.Auth.OIDC.ClientSecret, false, 20)
 		}
 	}
+	return problems
+}
 
-	if len(problems) > 0 {
-		return fmt.Errorf("production config validation failed: %s", strings.Join(problems, "; "))
+func appendRequiredFieldProblem(problems []string, name, value string) []string {
+	if strings.TrimSpace(value) == "" {
+		return append(problems, fmt.Sprintf("%s is required", name))
 	}
-	return nil
+	return problems
 }
 
 func appendSecretProblem(problems []string, name, value string, required bool, minLength int) []string {
@@ -421,10 +425,6 @@ func appendSecretProblem(problems []string, name, value string, required bool, m
 	default:
 		return problems
 	}
-}
-
-func isProductionEnv(env string) bool {
-	return strings.EqualFold(strings.TrimSpace(env), "production") || strings.EqualFold(strings.TrimSpace(env), "prod")
 }
 
 func isDemoSecret(value string) bool {
@@ -484,13 +484,12 @@ func (c DatabaseConfig) ResolveMigrationPath() string {
 
 func setDefaults(v *viper.Viper) {
 	v.SetDefault("app.name", "soha")
-	v.SetDefault("app.env", "development")
 	v.SetDefault("http.addr", ":8080")
 	v.SetDefault("http.read_timeout", "15s")
 	v.SetDefault("http.write_timeout", "15s")
 	v.SetDefault("http.base_path", "/api/v1")
 	v.SetDefault("http.cors_allowed_origins", []string{"http://localhost:*", "http://127.0.0.1:*"})
-	v.SetDefault("logger.level", "debug")
+	v.SetDefault("logger.level", "info")
 	v.SetDefault("logger.format", "console")
 	v.SetDefault("runtime.workflow_workers", 4)
 	v.SetDefault("runtime.workflow_queue_size", 64)

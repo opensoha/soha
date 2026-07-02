@@ -261,6 +261,12 @@ func resourceGVRForKind(kind string) (schema.GroupVersionResource, bool, error) 
 		return schema.GroupVersionResource{Group: "", Version: "v1", Resource: "replicationcontrollers"}, true, nil
 	case "service":
 		return schema.GroupVersionResource{Group: "", Version: "v1", Resource: "services"}, true, nil
+	case "persistentvolumeclaim":
+		return schema.GroupVersionResource{Group: "", Version: "v1", Resource: "persistentvolumeclaims"}, true, nil
+	case "persistentvolume":
+		return schema.GroupVersionResource{Group: "", Version: "v1", Resource: "persistentvolumes"}, false, nil
+	case "storageclass":
+		return schema.GroupVersionResource{Group: "storage.k8s.io", Version: "v1", Resource: "storageclasses"}, false, nil
 	case "role":
 		return schema.GroupVersionResource{Group: "rbac.authorization.k8s.io", Version: "v1", Resource: "roles"}, true, nil
 	case "rolebinding":
@@ -271,6 +277,10 @@ func resourceGVRForKind(kind string) (schema.GroupVersionResource, bool, error) 
 		return schema.GroupVersionResource{Group: "", Version: "v1", Resource: "limitranges"}, true, nil
 	case "lease":
 		return schema.GroupVersionResource{Group: "coordination.k8s.io", Version: "v1", Resource: "leases"}, true, nil
+	case "horizontalpodautoscaler":
+		return schema.GroupVersionResource{Group: "autoscaling", Version: "v2", Resource: "horizontalpodautoscalers"}, true, nil
+	case "poddisruptionbudget":
+		return schema.GroupVersionResource{Group: "policy", Version: "v1", Resource: "poddisruptionbudgets"}, true, nil
 	case "ingress":
 		return schema.GroupVersionResource{Group: "networking.k8s.io", Version: "v1", Resource: "ingresses"}, true, nil
 	case "endpointslice":

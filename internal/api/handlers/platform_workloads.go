@@ -238,6 +238,18 @@ func (h *PlatformHandler) ApplyStatefulSetYAML(c *gin.Context) {
 	}
 	apiresponse.Item(c, http.StatusOK, item)
 }
+func (h *PlatformHandler) GetStatefulSetMetrics(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	namespace := c.DefaultQuery("namespace", "default")
+	rangeMinutes := parseLimit(c.Query("rangeMinutes"), 60)
+	stepSeconds := parseLimit(c.Query("stepSeconds"), 60)
+	item, err := h.resources.GetStatefulSetMetrics(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("statefulSetName"), rangeMinutes, stepSeconds)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
+}
 func (h *PlatformHandler) ListDaemonSets(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.Query("namespace")
@@ -277,6 +289,18 @@ func (h *PlatformHandler) ApplyDaemonSetYAML(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.Query("namespace")
 	item, err := h.resources.ApplyDaemonSetYAML(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("daemonSetName"), req.Content)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
+}
+func (h *PlatformHandler) GetDaemonSetMetrics(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	namespace := c.DefaultQuery("namespace", "default")
+	rangeMinutes := parseLimit(c.Query("rangeMinutes"), 60)
+	stepSeconds := parseLimit(c.Query("stepSeconds"), 60)
+	item, err := h.resources.GetDaemonSetMetrics(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("daemonSetName"), rangeMinutes, stepSeconds)
 	if err != nil {
 		writeError(c, err)
 		return
@@ -373,6 +397,23 @@ func (h *PlatformHandler) ApplyCronJobYAML(c *gin.Context) {
 	}
 	apiresponse.Item(c, http.StatusOK, item)
 }
+func (h *PlatformHandler) SetCronJobSuspend(c *gin.Context) {
+	var req struct {
+		Suspend bool `json:"suspend"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid cronjob suspend payload")
+		return
+	}
+	principal := apiMiddleware.PrincipalFromContext(c)
+	namespace := c.DefaultQuery("namespace", "default")
+	item, err := h.resources.SetCronJobSuspend(c.Request.Context(), principal, c.Param("clusterID"), namespace, c.Param("cronJobName"), req.Suspend)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
+}
 func (h *PlatformHandler) ListReplicaSets(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	namespace := c.Query("namespace")
@@ -382,6 +423,31 @@ func (h *PlatformHandler) ListReplicaSets(c *gin.Context) {
 		return
 	}
 	apiresponse.Items(c, http.StatusOK, items)
+}
+func (h *PlatformHandler) GetReplicaSetYAML(c *gin.Context) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	namespace := c.Query("namespace")
+	item, err := h.resources.GetResourceYAML(c.Request.Context(), principal, c.Param("clusterID"), namespace, "ReplicaSet", c.Param("replicaSetName"))
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
+}
+func (h *PlatformHandler) ApplyReplicaSetYAML(c *gin.Context) {
+	var req dto.ApplyResourceYAMLRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid replicaset yaml payload")
+		return
+	}
+	principal := apiMiddleware.PrincipalFromContext(c)
+	namespace := c.Query("namespace")
+	item, err := h.resources.ApplyResourceYAMLByKind(c.Request.Context(), principal, c.Param("clusterID"), namespace, "ReplicaSet", c.Param("replicaSetName"), req.Content)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, item)
 }
 func (h *PlatformHandler) ListHorizontalPodAutoscalers(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)

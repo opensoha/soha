@@ -14,7 +14,6 @@ stringData:
   config.yaml: |
     app:
       name: soha
-      env: production
     http:
       addr: :8080
       base_path: /api/v1

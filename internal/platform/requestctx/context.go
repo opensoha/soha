@@ -4,6 +4,8 @@ import "context"
 
 type Metadata struct {
 	RequestID string
+	TraceID   string
+	SpanID    string
 	Path      string
 	Method    string
 	SourceIP  string
@@ -20,6 +22,9 @@ func WithMetadata(ctx context.Context, metadata Metadata) context.Context {
 }
 
 func FromContext(ctx context.Context) Metadata {
+	if ctx == nil {
+		return Metadata{}
+	}
 	metadata, ok := ctx.Value(metadataKey).(Metadata)
 	if !ok {
 		return Metadata{}

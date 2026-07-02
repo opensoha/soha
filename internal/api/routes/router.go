@@ -54,9 +54,7 @@ type Dependencies struct {
 }
 
 func New(cfg cfgpkg.Config, logger *zap.Logger, deps Dependencies) *http.Server {
-	if cfg.App.Env == "production" {
-		gin.SetMode(gin.ReleaseMode)
-	}
+	gin.SetMode(gin.ReleaseMode)
 
 	router := gin.New()
 	router.Use(gin.Recovery())

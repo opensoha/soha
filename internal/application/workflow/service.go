@@ -285,7 +285,7 @@ func (s *Service) enqueueDAGRun(ctx context.Context, task dagRunTask) error {
 		if s.metrics != nil {
 			s.metrics.SetQueueDepth(runtimeobs.ComponentWorkflowRunner, len(queue))
 		}
-		s.logDebug("workflow queued", zap.String("runID", task.run.ID), zap.String("applicationID", task.run.ApplicationID), zap.Int("queueDepth", len(queue)))
+		s.logDebugCtx(ctx, "workflow queued", zap.String("runID", task.run.ID), zap.String("applicationID", task.run.ApplicationID), zap.Int("queueDepth", len(queue)))
 		return nil
 	case <-runnerCtx.Done():
 		if s.metrics != nil {
@@ -967,7 +967,7 @@ func (s *Service) runDAGAsync(ctx context.Context, principal domainidentity.Prin
 	if s.metrics != nil {
 		s.metrics.RecordStart(runtimeobs.ComponentWorkflowRunner, run.ID, s.queueDepth(), len(definition.Nodes))
 	}
-	s.logDebug("workflow execution started", zap.String("runID", run.ID), zap.String("applicationID", run.ApplicationID))
+	s.logDebugCtx(ctx, "workflow execution started", zap.String("runID", run.ID), zap.String("applicationID", run.ApplicationID))
 	nodeRuns := restoreNodeRuns(definition, run.NodeRuns)
 	statuses := collectNodeStatuses(nodeRuns)
 	artifactState := make(map[string]any)
@@ -990,7 +990,7 @@ func (s *Service) runDAGAsync(ctx context.Context, principal domainidentity.Prin
 			if s.metrics != nil {
 				s.metrics.RecordFinish(runtimeobs.ComponentWorkflowRunner, run.ID, time.Since(startedAt), s.queueDepth(), len(definition.Nodes), runtimeobs.OutcomeCanceled, err)
 			}
-			s.logWarn("workflow execution canceled", zap.String("runID", run.ID), zap.Error(err))
+			s.logWarnCtx(ctx, "workflow execution canceled", zap.String("runID", run.ID), zap.Error(err))
 			return
 		}
 
@@ -1141,10 +1141,10 @@ func (s *Service) runDAGAsync(ctx context.Context, principal domainidentity.Prin
 		s.metrics.RecordFinish(runtimeobs.ComponentWorkflowRunner, run.ID, time.Since(startedAt), s.queueDepth(), len(definition.Nodes), outcome, err)
 	}
 	if finalStatus == "failed" {
-		s.logWarn("workflow execution failed", zap.String("runID", run.ID), zap.String("applicationID", run.ApplicationID), zap.Duration("duration", time.Since(startedAt)))
+		s.logWarnCtx(ctx, "workflow execution failed", zap.String("runID", run.ID), zap.String("applicationID", run.ApplicationID), zap.Duration("duration", time.Since(startedAt)))
 		return
 	}
-	s.logDebug("workflow execution completed", zap.String("runID", run.ID), zap.String("applicationID", run.ApplicationID), zap.Duration("duration", time.Since(startedAt)))
+	s.logDebugCtx(ctx, "workflow execution completed", zap.String("runID", run.ID), zap.String("applicationID", run.ApplicationID), zap.Duration("duration", time.Since(startedAt)))
 }
 
 func (s *Service) executeBoundDAGWorkflow(ctx context.Context, principal domainidentity.Principal, app domainapp.App, input domainworkflow.Input) (domainworkflow.Run, bool, error) {
@@ -2874,15 +2874,15 @@ func (s *Service) queueDepth() int {
 	return len(s.runnerQueue)
 }
 
-func (s *Service) logWarn(message string, fields ...zap.Field) {
+func (s *Service) logWarnCtx(ctx context.Context, message string, fields ...zap.Field) {
 	if s.logger != nil {
-		s.logger.Warn(message, fields...)
+		s.logger.Warn(message, append(requestctx.LoggerFields(requestctx.FromContext(ctx)), fields...)...)
 	}
 }
 
-func (s *Service) logDebug(message string, fields ...zap.Field) {
+func (s *Service) logDebugCtx(ctx context.Context, message string, fields ...zap.Field) {
 	if s.logger != nil {
-		s.logger.Debug(message, fields...)
+		s.logger.Debug(message, append(requestctx.LoggerFields(requestctx.FromContext(ctx)), fields...)...)
 	}
 }
 

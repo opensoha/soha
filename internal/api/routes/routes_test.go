@@ -31,10 +31,16 @@ func TestRegisterPlatformRoutesKeepsCoreOperationalSurface(t *testing.T) {
 		"POST /api/v1/clusters/:clusterID/workloads/statefulsets/scale",
 		"POST /api/v1/clusters/:clusterID/workloads/daemonsets/restart",
 		"DELETE /api/v1/clusters/:clusterID/workloads/replicasets/:replicaSetName",
+		"GET /api/v1/clusters/:clusterID/workloads/replicasets/:replicaSetName/yaml",
+		"PUT /api/v1/clusters/:clusterID/workloads/replicasets/:replicaSetName/yaml",
 		"GET /api/v1/clusters/:clusterID/network/services",
 		"GET /api/v1/clusters/:clusterID/network/topology",
 		"GET /api/v1/clusters/:clusterID/network/gatewayclasses",
 		"GET /api/v1/clusters/:clusterID/network/gateways",
+		"GET /api/v1/clusters/:clusterID/network/httproutes",
+		"GET /api/v1/clusters/:clusterID/network/backendtlspolicies",
+		"GET /api/v1/clusters/:clusterID/network/grpcroutes",
+		"GET /api/v1/clusters/:clusterID/network/referencegrants",
 		"GET /api/v1/clusters/:clusterID/helm/releases/:releaseName/values",
 		"POST /api/v1/clusters/:clusterID/helm/charts/install",
 		"GET /api/v1/clusters/:clusterID/extensions/crds/:crdName/resources",
@@ -45,10 +51,6 @@ func TestRegisterPlatformRoutesKeepsCoreOperationalSurface(t *testing.T) {
 	}
 
 	for _, route := range []string{
-		"GET /api/v1/clusters/:clusterID/network/httproutes",
-		"GET /api/v1/clusters/:clusterID/network/backendtlspolicies",
-		"GET /api/v1/clusters/:clusterID/network/grpcroutes",
-		"GET /api/v1/clusters/:clusterID/network/referencegrants",
 		"GET /api/v1/clusters/:clusterID/network/httproutes/:name/yaml",
 		"PUT /api/v1/clusters/:clusterID/network/httproutes/:name/yaml",
 		"DELETE /api/v1/clusters/:clusterID/network/httproutes/:name",
@@ -341,6 +343,14 @@ func TestPlatformMutationSecuritySurfaceClassifiesHighRiskRoutes(t *testing.T) {
 			resourceKind:  "CustomResource",
 			action:        "update",
 			capabilityKey: "custom.resources",
+		},
+		{
+			name:          "horizontal pod autoscaler apply",
+			method:        "PUT",
+			path:          "/api/v1/clusters/:clusterID/configuration/hpas/:name/yaml",
+			resourceKind:  "HorizontalPodAutoscaler",
+			action:        "update",
+			capabilityKey: "resource.yaml.apply",
 		},
 		{
 			name:          "helm install",

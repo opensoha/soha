@@ -24,22 +24,34 @@ import (
 type stubPlatformResourceService struct {
 	ResourceService
 
-	listPodsClusterID  string
-	listPodsNamespace  string
-	listPodsPrincipal  domainidentity.Principal
-	listPodsCalled     bool
-	listPodsErr        error
-	podLogsNamespace   string
-	podLogsContainer   string
-	podLogsTailLines   int64
-	podLogsSince       int64
-	podLogsPrevious    bool
-	applyPodYAMLCalled bool
-	applyPodYAMLBody   string
-	serviceListErr     error
-	crdCreateNamespace string
-	crdCreateContent   string
-	helmInstallInput   domainresource.HelmChartInstallInput
+	listPodsClusterID              string
+	listPodsNamespace              string
+	listPodsPrincipal              domainidentity.Principal
+	listPodsCalled                 bool
+	listPodsErr                    error
+	podLogsNamespace               string
+	podLogsContainer               string
+	podLogsTailLines               int64
+	podLogsSince                   int64
+	podLogsPrevious                bool
+	applyPodYAMLCalled             bool
+	applyPodYAMLBody               string
+	serviceListErr                 error
+	statefulSetMetricsCalled       bool
+	statefulSetMetricsClusterID    string
+	statefulSetMetricsNamespace    string
+	statefulSetMetricsName         string
+	statefulSetMetricsRangeMinutes int
+	statefulSetMetricsStepSeconds  int
+	daemonSetMetricsCalled         bool
+	daemonSetMetricsClusterID      string
+	daemonSetMetricsNamespace      string
+	daemonSetMetricsName           string
+	daemonSetMetricsRangeMinutes   int
+	daemonSetMetricsStepSeconds    int
+	crdCreateNamespace             string
+	crdCreateContent               string
+	helmInstallInput               domainresource.HelmChartInstallInput
 }
 
 type stubPlatformClusterService struct {
@@ -190,6 +202,38 @@ func (s *stubPlatformResourceService) ListServices(context.Context, domainidenti
 	return nil, s.serviceListErr
 }
 
+func (s *stubPlatformResourceService) GetStatefulSetMetrics(_ context.Context, _ domainidentity.Principal, clusterID, namespace, statefulSetName string, rangeMinutes, stepSeconds int) (domainresource.ResourceMetricsView, error) {
+	s.statefulSetMetricsCalled = true
+	s.statefulSetMetricsClusterID = clusterID
+	s.statefulSetMetricsNamespace = namespace
+	s.statefulSetMetricsName = statefulSetName
+	s.statefulSetMetricsRangeMinutes = rangeMinutes
+	s.statefulSetMetricsStepSeconds = stepSeconds
+	return domainresource.ResourceMetricsView{
+		ResourceKind: "StatefulSet",
+		ResourceName: statefulSetName,
+		Namespace:    namespace,
+		RangeMinutes: rangeMinutes,
+		StepSeconds:  stepSeconds,
+	}, nil
+}
+
+func (s *stubPlatformResourceService) GetDaemonSetMetrics(_ context.Context, _ domainidentity.Principal, clusterID, namespace, daemonSetName string, rangeMinutes, stepSeconds int) (domainresource.ResourceMetricsView, error) {
+	s.daemonSetMetricsCalled = true
+	s.daemonSetMetricsClusterID = clusterID
+	s.daemonSetMetricsNamespace = namespace
+	s.daemonSetMetricsName = daemonSetName
+	s.daemonSetMetricsRangeMinutes = rangeMinutes
+	s.daemonSetMetricsStepSeconds = stepSeconds
+	return domainresource.ResourceMetricsView{
+		ResourceKind: "DaemonSet",
+		ResourceName: daemonSetName,
+		Namespace:    namespace,
+		RangeMinutes: rangeMinutes,
+		StepSeconds:  stepSeconds,
+	}, nil
+}
+
 func (s *stubPlatformResourceService) CreateCRDResourceFromYAML(_ context.Context, _ domainidentity.Principal, _, _, namespace, content string) (domainresource.ResourceYAMLView, error) {
 	s.crdCreateNamespace = namespace
 	s.crdCreateContent = content
@@ -239,6 +283,54 @@ func TestPlatformListPodsPassesScopeAndPrincipal(t *testing.T) {
 	}
 	if len(payload.Items) != 1 || payload.Items[0].Name != "api-0" {
 		t.Fatalf("items = %#v", payload.Items)
+	}
+}
+
+func TestPlatformGetStatefulSetMetricsBindsQuery(t *testing.T) {
+	resources := &stubPlatformResourceService{}
+	handler := NewPlatformHandler(nil, resources, nil, nil, nil, nil)
+	ctx, recorder := newPlatformTestContext(http.MethodGet, "/api/v1/clusters/cluster-a/workloads/statefulsets/web/metrics?namespace=team-a&rangeMinutes=30&stepSeconds=15", "", gin.Params{
+		{Key: "clusterID", Value: "cluster-a"},
+		{Key: "statefulSetName", Value: "web"},
+	})
+
+	handler.GetStatefulSetMetrics(ctx)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", recorder.Code, http.StatusOK, recorder.Body.String())
+	}
+	if !resources.statefulSetMetricsCalled {
+		t.Fatal("GetStatefulSetMetrics was not called")
+	}
+	if resources.statefulSetMetricsClusterID != "cluster-a" || resources.statefulSetMetricsNamespace != "team-a" || resources.statefulSetMetricsName != "web" {
+		t.Fatalf("scope = %#v/%#v/%#v, want cluster-a/team-a/web", resources.statefulSetMetricsClusterID, resources.statefulSetMetricsNamespace, resources.statefulSetMetricsName)
+	}
+	if resources.statefulSetMetricsRangeMinutes != 30 || resources.statefulSetMetricsStepSeconds != 15 {
+		t.Fatalf("metrics window = %d/%d, want 30/15", resources.statefulSetMetricsRangeMinutes, resources.statefulSetMetricsStepSeconds)
+	}
+}
+
+func TestPlatformGetDaemonSetMetricsBindsQuery(t *testing.T) {
+	resources := &stubPlatformResourceService{}
+	handler := NewPlatformHandler(nil, resources, nil, nil, nil, nil)
+	ctx, recorder := newPlatformTestContext(http.MethodGet, "/api/v1/clusters/cluster-a/workloads/daemonsets/node-agent/metrics?namespace=team-a&rangeMinutes=30&stepSeconds=15", "", gin.Params{
+		{Key: "clusterID", Value: "cluster-a"},
+		{Key: "daemonSetName", Value: "node-agent"},
+	})
+
+	handler.GetDaemonSetMetrics(ctx)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", recorder.Code, http.StatusOK, recorder.Body.String())
+	}
+	if !resources.daemonSetMetricsCalled {
+		t.Fatal("GetDaemonSetMetrics was not called")
+	}
+	if resources.daemonSetMetricsClusterID != "cluster-a" || resources.daemonSetMetricsNamespace != "team-a" || resources.daemonSetMetricsName != "node-agent" {
+		t.Fatalf("scope = %#v/%#v/%#v, want cluster-a/team-a/node-agent", resources.daemonSetMetricsClusterID, resources.daemonSetMetricsNamespace, resources.daemonSetMetricsName)
+	}
+	if resources.daemonSetMetricsRangeMinutes != 30 || resources.daemonSetMetricsStepSeconds != 15 {
+		t.Fatalf("metrics window = %d/%d, want 30/15", resources.daemonSetMetricsRangeMinutes, resources.daemonSetMetricsStepSeconds)
 	}
 }
 

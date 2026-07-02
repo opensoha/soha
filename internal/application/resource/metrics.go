@@ -161,6 +161,58 @@ func (s *Service) GetDeploymentMetrics(ctx context.Context, principal domainiden
 	return s.queryResourceMetrics(ctx, principal, connection.Summary.ID, namespace, "Deployment", deploymentName, names, rangeMinutes, stepSeconds)
 }
 
+func (s *Service) GetStatefulSetMetrics(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, statefulSetName string, rangeMinutes, stepSeconds int) (domainresource.ResourceMetricsView, error) {
+	view := domainresource.ResourceMetricsView{
+		ResourceKind: "StatefulSet",
+		ResourceName: statefulSetName,
+		Namespace:    namespace,
+		Source:       "prometheus",
+		GeneratedAt:  time.Now().UTC().Format(time.RFC3339),
+		RangeMinutes: rangeMinutes,
+		StepSeconds:  stepSeconds,
+	}
+	connection, _, err := s.authorize(ctx, principal, clusterID, namespace, "StatefulSet", domainaccess.ActionList)
+	if err != nil {
+		return view, err
+	}
+	detail, err := s.GetStatefulSetDetail(ctx, principal, clusterID, namespace, statefulSetName)
+	if err != nil {
+		return view, err
+	}
+	pods, err := s.ListPods(ctx, principal, clusterID, namespace)
+	if err != nil {
+		return view, err
+	}
+	names := selectPodsBySelector(pods, detail.Selector)
+	return s.queryResourceMetrics(ctx, principal, connection.Summary.ID, namespace, "StatefulSet", statefulSetName, names, rangeMinutes, stepSeconds)
+}
+
+func (s *Service) GetDaemonSetMetrics(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, daemonSetName string, rangeMinutes, stepSeconds int) (domainresource.ResourceMetricsView, error) {
+	view := domainresource.ResourceMetricsView{
+		ResourceKind: "DaemonSet",
+		ResourceName: daemonSetName,
+		Namespace:    namespace,
+		Source:       "prometheus",
+		GeneratedAt:  time.Now().UTC().Format(time.RFC3339),
+		RangeMinutes: rangeMinutes,
+		StepSeconds:  stepSeconds,
+	}
+	connection, _, err := s.authorize(ctx, principal, clusterID, namespace, "DaemonSet", domainaccess.ActionList)
+	if err != nil {
+		return view, err
+	}
+	detail, err := s.GetDaemonSetDetail(ctx, principal, clusterID, namespace, daemonSetName)
+	if err != nil {
+		return view, err
+	}
+	pods, err := s.ListPods(ctx, principal, clusterID, namespace)
+	if err != nil {
+		return view, err
+	}
+	names := selectPodsBySelector(pods, detail.Selector)
+	return s.queryResourceMetrics(ctx, principal, connection.Summary.ID, namespace, "DaemonSet", daemonSetName, names, rangeMinutes, stepSeconds)
+}
+
 func (s *Service) GetServiceMetrics(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, serviceName string, rangeMinutes, stepSeconds int) (domainresource.ResourceMetricsView, error) {
 	view := domainresource.ResourceMetricsView{
 		ResourceKind: "Service",

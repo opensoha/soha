@@ -391,6 +391,33 @@ func (s *Service) GetCronJobYAML(ctx context.Context, principal domainidentity.P
 func (s *Service) ApplyCronJobYAML(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, name, content string) (domainresource.ResourceYAMLView, error) {
 	return s.applyResourceYAML(ctx, principal, clusterID, namespace, "CronJob", name, content)
 }
+func (s *Service) SetCronJobSuspend(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, name string, suspend bool) (domainresource.CronJobDetailView, error) {
+	connection, decision, err := s.authorize(ctx, principal, clusterID, namespace, "CronJob", domainaccess.ActionUpdate)
+	if err != nil {
+		return domainresource.CronJobDetailView{}, err
+	}
+	if connection.Summary.ConnectionMode == domaincluster.ConnectionModeAgent {
+		return domainresource.CronJobDetailView{}, fmt.Errorf("%w: cronjob suspend is not supported for agent-connected clusters yet", apperrors.ErrUnsupportedOperation)
+	}
+	bundle, queryCtx, cancel, err := s.directKubeQueryContext(ctx, clusterID, 4*time.Second)
+	if err != nil {
+		return domainresource.CronJobDetailView{}, err
+	}
+	defer cancel()
+	item, err := bundle.Typed.BatchV1().CronJobs(namespace).Get(queryCtx, name, metav1.GetOptions{})
+	if err != nil {
+		_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, "CronJob", name, string(domainaccess.ActionUpdate), "failure", err.Error())
+		return domainresource.CronJobDetailView{}, err
+	}
+	item.Spec.Suspend = &suspend
+	updated, err := bundle.Typed.BatchV1().CronJobs(namespace).Update(queryCtx, item, metav1.UpdateOptions{})
+	if err != nil {
+		_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, "CronJob", name, string(domainaccess.ActionUpdate), "failure", err.Error())
+		return domainresource.CronJobDetailView{}, err
+	}
+	_ = s.recordAudit(ctx, principal, connection.Summary.ID, namespace, "CronJob", name, string(domainaccess.ActionUpdate), "success", fmt.Sprintf("set cronjob suspend=%t", suspend))
+	return mapCronJobDetail(*updated, decision), nil
+}
 func (s *Service) GetDeploymentRolloutStatus(ctx context.Context, principal domainidentity.Principal, clusterID, namespace, name string) (domainresource.DeploymentRolloutStatusView, error) {
 	connection, _, err := s.authorize(ctx, principal, clusterID, namespace, "Deployment", domainaccess.ActionView)
 	if err != nil {
