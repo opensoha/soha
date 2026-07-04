@@ -122,6 +122,63 @@ type SessionMessageEnvelope struct {
 	SessionPatch      map[string]any     `json:"sessionPatch,omitempty"`
 }
 
+type WorkbenchToolCall struct {
+	ID            string     `json:"id"`
+	AdapterID     string     `json:"adapterId"`
+	ToolName      string     `json:"toolName"`
+	SkillID       string     `json:"skillId,omitempty"`
+	SkillName     string     `json:"skillName,omitempty"`
+	CapabilityID  string     `json:"capabilityId,omitempty"`
+	Status        string     `json:"status"`
+	InputPreview  any        `json:"inputPreview,omitempty"`
+	OutputPreview any        `json:"outputPreview,omitempty"`
+	Summary       string     `json:"summary,omitempty"`
+	EvidenceRefs  []string   `json:"evidenceRefs,omitempty"`
+	ArtifactRefs  []string   `json:"artifactRefs,omitempty"`
+	StartedAt     *time.Time `json:"startedAt,omitempty"`
+	CompletedAt   *time.Time `json:"completedAt,omitempty"`
+	DurationMs    int64      `json:"durationMs,omitempty"`
+}
+
+type WorkbenchSource struct {
+	ID      string `json:"id"`
+	Kind    string `json:"kind"`
+	Title   string `json:"title"`
+	URL     string `json:"url,omitempty"`
+	Summary string `json:"summary,omitempty"`
+}
+
+type WorkbenchStreamEvent struct {
+	ID           string             `json:"id"`
+	Type         string             `json:"type"`
+	SessionID    string             `json:"sessionId"`
+	RunID        string             `json:"runId,omitempty"`
+	MessageID    string             `json:"messageId,omitempty"`
+	Sequence     int                `json:"sequence"`
+	CreatedAt    time.Time          `json:"createdAt"`
+	Role         string             `json:"role,omitempty"`
+	ContentDelta string             `json:"contentDelta,omitempty"`
+	Content      string             `json:"content,omitempty"`
+	Metadata     map[string]any     `json:"metadata,omitempty"`
+	TextDelta    string             `json:"textDelta,omitempty"`
+	Summary      string             `json:"summary,omitempty"`
+	Collapsed    bool               `json:"collapsed,omitempty"`
+	ProviderID   string             `json:"providerId,omitempty"`
+	ProviderKind string             `json:"providerKind,omitempty"`
+	Status       string             `json:"status,omitempty"`
+	ToolCall     *WorkbenchToolCall `json:"toolCall,omitempty"`
+	ToolCallID   string             `json:"toolCallId,omitempty"`
+	OutputDelta  string             `json:"outputDelta,omitempty"`
+	LogDelta     string             `json:"logDelta,omitempty"`
+	Artifact     any                `json:"artifact,omitempty"`
+	Source       *WorkbenchSource   `json:"source,omitempty"`
+	SurfaceID    string             `json:"surfaceId,omitempty"`
+	Command      any                `json:"command,omitempty"`
+	Message      string             `json:"message,omitempty"`
+	Code         string             `json:"code,omitempty"`
+	Retryable    *bool              `json:"retryable,omitempty"`
+}
+
 type Insight struct {
 	Title       string   `json:"title"`
 	Description string   `json:"description"`

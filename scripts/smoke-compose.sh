@@ -15,15 +15,18 @@ export SOHA_HTTP_PORT="$SOHA_SMOKE_HTTP_PORT"
 export SOHA_POSTGRES_BIND="${SOHA_SMOKE_POSTGRES_BIND:-127.0.0.1}"
 export SOHA_POSTGRES_PORT="${SOHA_SMOKE_POSTGRES_PORT:-28081}"
 export SOHA_CONTAINER_NAME="${PROJECT_NAME}-soha"
+export SOHA_SECRETS_CONTAINER_NAME="${PROJECT_NAME}-secrets"
 export SOHA_POSTGRES_CONTAINER_NAME="${PROJECT_NAME}-postgres"
 export SOHA_REDIS_CONTAINER_NAME="${PROJECT_NAME}-redis"
 export SOHA_K3S_CONTAINER_NAME="${PROJECT_NAME}-k3s"
 export SOHA_HERMES_CONTAINER_NAME="${PROJECT_NAME}-hermes-agent-runner"
 export SOHA_POSTGRES_VOLUME="${PROJECT_NAME}-postgres-data"
+export SOHA_SECRETS_VOLUME="${PROJECT_NAME}-secrets"
 export SOHA_K3S_VOLUME="${PROJECT_NAME}-k3s-data"
 export SOHA_HERMES_DATA_VOLUME="${PROJECT_NAME}-hermes-data"
 export SOHA_HERMES_RUNTIME_VOLUME="${PROJECT_NAME}-hermes-runtime"
 export SOHA_SMOKE_HTTP_PORT
+export SOHA_ENV_FILE="${SOHA_SMOKE_ENV_FILE:-.dev/soha.env}"
 
 compose() {
 	# shellcheck disable=SC2086
@@ -88,8 +91,14 @@ assert_sql_nonzero() {
 trap on_exit EXIT INT TERM
 
 require_file "$COMPOSE_FILE"
+require_file "scripts/soha-env.sh"
 require_file "internal/staticassets/web/dist/index.html"
 require_file "migrations/postgres/0001_init.sql"
+
+./scripts/soha-env.sh ensure
+set -a
+. "$SOHA_ENV_FILE"
+set +a
 
 compose down -v --remove-orphans >/dev/null 2>&1 || true
 if [ "$BUILD_IMAGE" = "1" ]; then
@@ -102,8 +111,8 @@ wait_for_ready
 curl -fsS "$BASE_URL/healthz" >/tmp/soha-smoke-health.json
 
 assert_sql_nonzero "schema migration baseline" "SELECT COUNT(*) FROM public.schema_migrations WHERE filename LIKE '%0001_init.sql'"
-assert_sql_nonzero "seeded admin user" "SELECT COUNT(*) FROM public.users WHERE id = 'admin'"
-assert_sql_nonzero "seeded admin password" "SELECT COUNT(*) FROM public.user_password_credentials WHERE user_id = 'admin'"
+assert_sql_nonzero "seeded opensoha user" "SELECT COUNT(*) FROM public.users WHERE id = 'opensoha'"
+assert_sql_nonzero "seeded opensoha password" "SELECT COUNT(*) FROM public.user_password_credentials WHERE user_id = 'opensoha'"
 assert_sql_nonzero "seeded roles" "SELECT COUNT(*) FROM public.roles WHERE id IN ('admin', 'ops', 'auditor')"
 assert_sql_nonzero "seeded menus" "SELECT COUNT(*) FROM public.menus"
 assert_sql_nonzero "seeded policies" "SELECT COUNT(*) FROM public.policies"
@@ -118,7 +127,7 @@ fi
 login_file="$(mktemp)"
 curl -fsS \
 	-H "Content-Type: application/json" \
-	-d '{"login":"admin","password":"soha"}' \
+	-d "{\"login\":\"opensoha\",\"password\":\"$SOHA_AUTH_DEV_PRINCIPAL_PASSWORD\"}" \
 	"$BASE_URL/api/v1/auth/login" \
 	-o "$login_file"
 
@@ -153,8 +162,8 @@ curl -fsS \
 	-H "Authorization: Bearer $refreshed_access_token" \
 	"$BASE_URL/api/v1/auth/me" \
 	-o "$me_file"
-if ! grep -q '"userId"[[:space:]]*:[[:space:]]*"admin"' "$me_file"; then
-	echo "Authenticated API smoke did not return the seeded admin principal" >&2
+if ! grep -q '"userId"[[:space:]]*:[[:space:]]*"opensoha"' "$me_file"; then
+	echo "Authenticated API smoke did not return the seeded opensoha principal" >&2
 	cat "$me_file" >&2
 	exit 1
 fi

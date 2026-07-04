@@ -37,6 +37,7 @@ type Service struct {
 	jobTTLSeconds int
 	runnerToken   string
 	permissions   *appaccess.PermissionResolver
+	workflowSink  WorkflowExecutionTaskSink
 }
 
 type BuildRecordRepository interface {
@@ -47,6 +48,10 @@ type BuildRecordRepository interface {
 type ReleaseRecordRepository interface {
 	GetByExecutionTaskID(context.Context, string) (domainrelease.Record, error)
 	Update(context.Context, domainrelease.Record) (domainrelease.Record, error)
+}
+
+type WorkflowExecutionTaskSink interface {
+	RecordExecutionTaskResult(context.Context, domaindelivery.ExecutionTask) error
 }
 
 const executionMonitorInterval = 15 * time.Second
@@ -88,6 +93,13 @@ func (s *Service) Start(ctx context.Context) {
 		return
 	}
 	go s.monitorLoop(ctx)
+}
+
+func (s *Service) SetWorkflowExecutionTaskSink(sink WorkflowExecutionTaskSink) {
+	if s == nil {
+		return
+	}
+	s.workflowSink = sink
 }
 
 type BuildPlan struct {
@@ -223,6 +235,9 @@ func (s *Service) CancelExecutionTask(ctx context.Context, taskID string, input 
 		_ = s.syncBuildRecord(ctx, updated)
 	case "release":
 		_ = s.syncReleaseRecord(ctx, updated)
+	}
+	if err := s.notifyWorkflowExecutionTaskResult(ctx, updated); err != nil {
+		return domaindelivery.ExecutionTask{}, err
 	}
 	return domaindelivery.WithOperationState(updated, time.Now().UTC()), nil
 }
@@ -484,6 +499,9 @@ func (s *Service) RecordCallback(ctx context.Context, input domaindelivery.Execu
 			},
 			CreatedAt: now,
 		})
+		if err := s.notifyWorkflowExecutionTaskResult(ctx, task); err != nil {
+			return domaindelivery.ExecutionTask{}, err
+		}
 		return domaindelivery.WithOperationState(task, time.Now().UTC()), nil
 	}
 	if logs, ok := input.Payload["logs"].([]any); ok {
@@ -531,6 +549,9 @@ func (s *Service) RecordCallback(ctx context.Context, input domaindelivery.Execu
 		_ = s.syncBuildRecord(ctx, updated)
 	case "release":
 		_ = s.syncReleaseRecord(ctx, updated)
+	}
+	if err := s.notifyWorkflowExecutionTaskResult(ctx, updated); err != nil {
+		return domaindelivery.ExecutionTask{}, err
 	}
 	return domaindelivery.WithOperationState(updated, time.Now().UTC()), nil
 }
@@ -619,6 +640,13 @@ func isStrictTerminalTaskStatus(status string) bool {
 	}
 }
 
+func (s *Service) notifyWorkflowExecutionTaskResult(ctx context.Context, task domaindelivery.ExecutionTask) error {
+	if s == nil || s.workflowSink == nil || !isStrictTerminalTaskStatus(task.Status) {
+		return nil
+	}
+	return s.workflowSink.RecordExecutionTaskResult(ctx, task)
+}
+
 func (s *Service) markTaskTimedOut(ctx context.Context, task domaindelivery.ExecutionTask, now time.Time) error {
 	timeoutPayload := map[string]any{
 		"error":               fmt.Sprintf("execution task timed out after %d seconds without heartbeat", effectiveTimeoutSeconds(task)),
@@ -662,7 +690,7 @@ func (s *Service) markTaskTimedOut(ctx context.Context, task domaindelivery.Exec
 	case "release":
 		_ = s.syncReleaseRecord(ctx, updated)
 	}
-	return nil
+	return s.notifyWorkflowExecutionTaskResult(ctx, updated)
 }
 
 func (s *Service) stopRemoteRuntimeTask(ctx context.Context, taskID string, result map[string]any, reason string) error {
@@ -836,6 +864,9 @@ func (s *Service) markTaskProviderDisabled(ctx context.Context, task domaindeliv
 	case "release":
 		_ = s.syncReleaseRecord(ctx, updated)
 	}
+	if err := s.notifyWorkflowExecutionTaskResult(ctx, updated); err != nil {
+		return domaindelivery.ExecutionTask{}, err
+	}
 	return updated, nil
 }
 
@@ -945,6 +976,9 @@ func (s *Service) reconcileK8sJobExecution(ctx context.Context, task domaindeliv
 		})
 		_ = s.captureK8sJobLogs(ctx, bundle, namespace, jobName, updated.ID, "info", now)
 		_ = s.syncBuildRecord(ctx, updated)
+		if err := s.notifyWorkflowExecutionTaskResult(ctx, updated); err != nil {
+			return true, err
+		}
 		return true, nil
 	}
 	if job.Status.Failed > 0 {
@@ -1138,7 +1172,7 @@ func (s *Service) markTaskFailed(ctx context.Context, task domaindelivery.Execut
 	case "release":
 		_ = s.syncReleaseRecord(ctx, updated)
 	}
-	return nil
+	return s.notifyWorkflowExecutionTaskResult(ctx, updated)
 }
 
 func (s *Service) stopK8sJobExecution(ctx context.Context, task domaindelivery.ExecutionTask, reason string) error {

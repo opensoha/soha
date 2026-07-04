@@ -120,6 +120,7 @@ func registerCopilotRoutes(protected gin.IRoutes, cfg cfgpkg.Config, deps Depend
 	protected.DELETE("/copilot/sessions/:sessionID", deps.Copilot.DeleteSession)
 	protected.GET("/copilot/sessions/:sessionID/messages", deps.Copilot.ListMessages)
 	protected.POST("/copilot/sessions/:sessionID/messages", deps.Copilot.SendMessage)
+	protected.POST("/copilot/sessions/:sessionID/messages/stream", deps.Copilot.StreamMessage)
 	protected.POST("/copilot/sessions/:sessionID/analyze", deps.Copilot.AnalyzeSession)
 	protected.GET("/copilot/inspection-tasks", deps.Copilot.ListInspectionTasks)
 	protected.POST("/copilot/inspection-tasks", deps.Copilot.CreateInspectionTask)

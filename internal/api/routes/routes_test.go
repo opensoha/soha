@@ -81,8 +81,13 @@ func TestRegisterCopilotRoutesExposesAgentRunCancel(t *testing.T) {
 	for _, route := range router.Routes() {
 		registered[route.Method+" "+route.Path] = struct{}{}
 	}
-	if _, ok := registered["POST /api/v1/copilot/agent-runs/:runID/cancel"]; !ok {
-		t.Fatal("missing copilot agent run cancel route")
+	for _, route := range []string{
+		"POST /api/v1/copilot/agent-runs/:runID/cancel",
+		"POST /api/v1/copilot/sessions/:sessionID/messages/stream",
+	} {
+		if _, ok := registered[route]; !ok {
+			t.Fatalf("missing route %s", route)
+		}
 	}
 }
 

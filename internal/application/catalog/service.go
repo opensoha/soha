@@ -1390,10 +1390,27 @@ func validateDeliveryDAGNode(node map[string]any) error {
 			}
 		}
 	}
-	for _, key := range []string{"serviceSelector", "environmentSelector", "targetSelector", "observability"} {
+	for _, key := range []string{"serviceSelector", "environmentSelector", "targetSelector", "inputMapping", "observability"} {
 		if value, ok := node[key]; ok && value != nil {
 			if _, ok := value.(map[string]any); !ok {
 				return fmt.Errorf("%w: delivery_dag node.%s must be an object", apperrors.ErrInvalidArgument, key)
+			}
+		}
+	}
+	for _, key := range []string{"artifactKinds"} {
+		if value, ok := node[key]; ok {
+			items, ok := toSliceAny(value)
+			if !ok {
+				return fmt.Errorf("%w: delivery_dag node.%s must be an array", apperrors.ErrInvalidArgument, key)
+			}
+			for _, item := range items {
+				kind := strings.TrimSpace(fmt.Sprint(item))
+				if kind == "" {
+					return fmt.Errorf("%w: delivery_dag node.%s cannot contain empty values", apperrors.ErrInvalidArgument, key)
+				}
+				if !isAllowedDeliveryDAGArtifactKind(kind) {
+					return fmt.Errorf("%w: unsupported delivery_dag artifact kind %s", apperrors.ErrInvalidArgument, kind)
+				}
 			}
 		}
 	}
@@ -1411,13 +1428,22 @@ func validateDeliveryDAGNode(node map[string]any) error {
 				return fmt.Errorf("%w: delivery_dag artifact output requires name", apperrors.ErrInvalidArgument)
 			}
 			switch strings.TrimSpace(fmt.Sprint(output["kind"])) {
-			case "image", "test_report", "scan_report", "sbom":
+			case "image", "test_report", "scan_report", "sbom", "screenshot", "video", "junit", "log":
 			default:
 				return fmt.Errorf("%w: unsupported delivery_dag artifact output kind %s", apperrors.ErrInvalidArgument, output["kind"])
 			}
 		}
 	}
 	return nil
+}
+
+func isAllowedDeliveryDAGArtifactKind(kind string) bool {
+	switch strings.TrimSpace(kind) {
+	case "image", "test_report", "scan_report", "sbom", "screenshot", "video", "junit", "log":
+		return true
+	default:
+		return false
+	}
 }
 
 func toSliceAny(value any) ([]any, bool) {

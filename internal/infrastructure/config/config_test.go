@@ -318,7 +318,7 @@ func validSecureConfig() Config {
 		Auth: AuthConfig{
 			EnableDevAuth: false,
 			DevPrincipal: DevPrincipalConfig{
-				UserID:   "admin",
+				UserID:   "opensoha",
 				Password: "admin-password-123456",
 			},
 			JWT: JWTConfig{

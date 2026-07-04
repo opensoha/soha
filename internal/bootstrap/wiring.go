@@ -352,6 +352,7 @@ func newDeliveryServices(lifecycleCtx context.Context, cfg cfgpkg.Config, infra 
 	workflowService.SetRuntimeOptions(cfg.Runtime.WorkflowWorkers, cfg.Runtime.WorkflowQueueSize, cfg.Runtime.WorkflowNodeParallelism)
 	workflowService.SetInstrumentation(infra.logger, infra.runtimeMetrics)
 	workflowService.SetAlertMutator(core.monitoringService)
+	core.executionService.SetWorkflowExecutionTaskSink(workflowService)
 	if cfg.Modules.Delivery.Enabled {
 		workflowService.Start(lifecycleCtx)
 	}

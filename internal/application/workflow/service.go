@@ -29,10 +29,11 @@ import (
 )
 
 const (
-	defaultAsyncWorkflowWorkers   = 4
-	defaultAsyncWorkflowQueueSize = 64
-	defaultDAGNodeConcurrency     = 4
-	workflowStatusWaitingApproval = "waiting_approval"
+	defaultAsyncWorkflowWorkers    = 4
+	defaultAsyncWorkflowQueueSize  = 64
+	defaultDAGNodeConcurrency      = 4
+	workflowStatusWaitingApproval  = "waiting_approval"
+	workflowStatusWaitingExecution = "waiting_execution"
 )
 
 var gatewayApprovalWorkflowMetadataKeys = []string{
@@ -88,6 +89,11 @@ type ArtifactStore interface {
 	UpsertExecutionArtifact(context.Context, domaindelivery.ExecutionArtifact) (domaindelivery.ExecutionArtifact, error)
 }
 
+type ExecutionTaskStore interface {
+	CreateExecutionTask(context.Context, domaindelivery.ExecutionTask) (domaindelivery.ExecutionTask, error)
+	CreateExecutionLog(context.Context, domaindelivery.ExecutionLog) error
+}
+
 type Service struct {
 	repo        Repository
 	apps        ApplicationReader
@@ -99,6 +105,7 @@ type Service struct {
 	resources   ResourceExecutor
 	alerts      AlertMutator
 	artifacts   ArtifactStore
+	taskStore   ExecutionTaskStore
 	httpClient  *http.Client
 	logger      *zap.Logger
 	metrics     *runtimeobs.Registry
@@ -161,6 +168,13 @@ func (s *Service) SetAlertMutator(alerts AlertMutator) {
 
 func (s *Service) SetArtifactStore(artifacts ArtifactStore) {
 	s.artifacts = artifacts
+	if store, ok := artifacts.(ExecutionTaskStore); ok {
+		s.taskStore = store
+	}
+}
+
+func (s *Service) SetExecutionTaskStore(store ExecutionTaskStore) {
+	s.taskStore = store
 }
 
 func (s *Service) SetRuntimeOptions(workerCount, queueSize, nodeParallelism int) {
@@ -603,6 +617,106 @@ func (s *Service) Reject(ctx context.Context, principal domainidentity.Principal
 	return s.resolveApproval(ctx, principal, workflowRunID, "rejected", comment)
 }
 
+func (s *Service) RecordExecutionTaskResult(ctx context.Context, task domaindelivery.ExecutionTask) error {
+	runID := workflowMetadataString(task.Payload, "workflowRunId")
+	nodeID := workflowMetadataString(task.Payload, "workflowNodeId")
+	if runID == "" || nodeID == "" {
+		return nil
+	}
+	nextStatus, ok := workflowStatusFromExecutionTask(task.Status)
+	if !ok {
+		return nil
+	}
+	run, err := s.repo.Get(ctx, runID)
+	if err != nil {
+		return err
+	}
+	definition, ok := definitionFromRunMetadata(run)
+	if !ok {
+		return fmt.Errorf("%w: workflow definition is missing", apperrors.ErrInvalidArgument)
+	}
+	nodeExists := false
+	for _, node := range definition.Nodes {
+		if node.ID == nodeID {
+			nodeExists = true
+			break
+		}
+	}
+	if !nodeExists {
+		return nil
+	}
+	nodeRuns := restoreNodeRuns(definition, run.NodeRuns)
+	entry := nodeRuns[nodeID]
+	if entry.Status == nextStatus && (nextStatus == "completed" || nextStatus == "failed") {
+		return nil
+	}
+	now := time.Now().UTC().Format(time.RFC3339)
+	if entry.StartedAt == "" {
+		entry.StartedAt = now
+	}
+	entry.Status = nextStatus
+	entry.Summary = executionTaskWorkflowSummary(task)
+	entry.FinishedAt = now
+	nodeRuns[nodeID] = entry
+
+	executionOutputs := map[string]any{
+		"executionTaskId":     task.ID,
+		"executionTaskStatus": strings.TrimSpace(task.Status),
+		"executionTaskResult": task.Result,
+	}
+	recordDAGNodeOutputs(&run, nodeID, map[string]any{"outputs": executionOutputs})
+	artifactState := restoredDAGArtifactState(run.Metadata)
+	for key, value := range executionOutputs {
+		artifactState[key] = value
+	}
+	run.Metadata["artifacts"] = metadataDAGArtifactState(artifactState)
+	appendDAGNodeEvent(&run, nodeID, "execution_task_callback", nextStatus, entry.Summary, map[string]any{
+		"executionTaskId":     task.ID,
+		"executionTaskStatus": strings.TrimSpace(task.Status),
+	})
+	run.Status = "queued"
+	run.UpdatedAt = now
+	run = syncRunNodeState(run, definition, nodeRuns)
+	updated := s.updateRun(ctx, run)
+
+	app, err := s.apps.Get(ctx, updated.ApplicationID)
+	if err != nil {
+		return err
+	}
+	appInput := domainworkflow.Input{
+		ApplicationID:            updated.ApplicationID,
+		ApplicationEnvironmentID: strings.TrimSpace(task.ApplicationEnvironmentID),
+		WorkflowName:             updated.WorkflowName,
+		ClusterID:                updated.ClusterID,
+		Namespace:                updated.Namespace,
+		DeploymentName:           updated.DeploymentName,
+		Variables:                map[string]any{},
+	}
+	if releaseBundleID := firstNonEmpty(task.ReleaseBundleID, workflowMetadataString(updated.Metadata, "releaseBundleId")); releaseBundleID != "" {
+		appInput.Variables["releaseBundleId"] = releaseBundleID
+	}
+	appBinding, err := s.findApplicationEnvironmentBinding(ctx, appInput)
+	if err != nil {
+		return err
+	}
+	if appBinding == nil {
+		return fmt.Errorf("%w: application environment binding is missing", apperrors.ErrInvalidArgument)
+	}
+	if err := s.enqueueDAGRun(ctx, dagRunTask{
+		principal:   workflowSystemPrincipal(),
+		app:         app,
+		input:       appInput,
+		binding:     *appBinding,
+		definition:  definition,
+		run:         updated,
+		requestMeta: requestctx.FromContext(ctx),
+	}); err != nil {
+		s.failRun(context.Background(), updated, definition, fmt.Sprintf("workflow runner enqueue failed after execution task callback: %v", err))
+		return err
+	}
+	return nil
+}
+
 func (s *Service) resolveApproval(ctx context.Context, principal domainidentity.Principal, workflowRunID, action, comment string) (domainworkflow.Run, error) {
 	if err := s.authorizePermission(ctx, principal, appaccess.PermDeliveryWorkflowsTrigger); err != nil {
 		return domainworkflow.Run{}, err
@@ -717,6 +831,10 @@ type dagWorkflowNode struct {
 	ID                  string
 	Name                string
 	Type                string
+	ExecutorKind        string
+	TargetKind          string
+	CapabilityRef       string
+	ProviderRef         string
 	TimeoutSeconds      int
 	ContinueOnFailure   bool
 	Config              map[string]any
@@ -725,7 +843,9 @@ type dagWorkflowNode struct {
 	ServiceSelector     map[string]any
 	EnvironmentSelector map[string]any
 	TargetSelector      map[string]any
+	InputMapping        map[string]any
 	ArtifactOutputs     []map[string]any
+	ArtifactKinds       []string
 	RunCondition        string
 	FailurePolicy       string
 	FanOutStrategy      string
@@ -970,8 +1090,8 @@ func (s *Service) runDAGAsync(ctx context.Context, principal domainidentity.Prin
 	s.logDebugCtx(ctx, "workflow execution started", zap.String("runID", run.ID), zap.String("applicationID", run.ApplicationID))
 	nodeRuns := restoreNodeRuns(definition, run.NodeRuns)
 	statuses := collectNodeStatuses(nodeRuns)
-	artifactState := make(map[string]any)
-	stopFailureSources := make(map[string]struct{})
+	artifactState := restoredDAGArtifactState(run.Metadata)
+	stopFailureSources := dagStopFailureSourcesFromNodeRuns(definition, nodeRuns)
 
 	run.Status = "running"
 	run.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
@@ -1058,6 +1178,13 @@ func (s *Service) runDAGAsync(ctx context.Context, principal domainidentity.Prin
 				s.updateRun(ctx, run)
 				return
 			}
+			if hasWaitingExecution(nodeRuns) {
+				run.Status = workflowStatusWaitingExecution
+				run.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+				run = syncRunNodeState(run, definition, nodeRuns)
+				s.updateRun(ctx, run)
+				return
+			}
 			if !progressed {
 				break
 			}
@@ -1114,6 +1241,10 @@ func (s *Service) runDAGAsync(ctx context.Context, principal domainidentity.Prin
 	finalStatus := "completed"
 	for _, node := range definition.Nodes {
 		status := statuses[node.ID]
+		if status == workflowStatusWaitingApproval || status == workflowStatusWaitingExecution {
+			finalStatus = status
+			break
+		}
 		if status == "failed" && dagFailureCountsAsWorkflowFailure(definition, node) {
 			finalStatus = "failed"
 			break
@@ -1131,6 +1262,10 @@ func (s *Service) runDAGAsync(ctx context.Context, principal domainidentity.Prin
 	run.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
 	run = syncRunNodeState(run, definition, nodeRuns)
 	s.updateRun(ctx, run)
+	if finalStatus == workflowStatusWaitingApproval || finalStatus == workflowStatusWaitingExecution {
+		s.logDebugCtx(ctx, "workflow execution paused", zap.String("runID", run.ID), zap.String("applicationID", run.ApplicationID), zap.String("status", finalStatus), zap.Duration("duration", time.Since(startedAt)))
+		return
+	}
 	if s.metrics != nil {
 		outcome := runtimeobs.OutcomeSucceeded
 		var err error
@@ -1240,6 +1375,10 @@ func parseDAGWorkflowDefinition(definition map[string]any) (dagWorkflowDefinitio
 			ID:                  strings.TrimSpace(fmt.Sprint(item["id"])),
 			Name:                strings.TrimSpace(fmt.Sprint(item["name"])),
 			Type:                strings.TrimSpace(fmt.Sprint(item["type"])),
+			ExecutorKind:        mapString(item, "executorKind"),
+			TargetKind:          mapString(item, "targetKind"),
+			CapabilityRef:       mapString(item, "capabilityRef"),
+			ProviderRef:         mapString(item, "providerRef"),
 			TimeoutSeconds:      toInt(item["timeoutSeconds"], 300),
 			ContinueOnFailure:   toBool(item["continueOnFailure"]),
 			Config:              toConfigMap(item["config"]),
@@ -1248,7 +1387,9 @@ func parseDAGWorkflowDefinition(definition map[string]any) (dagWorkflowDefinitio
 			ServiceSelector:     toConfigMap(item["serviceSelector"]),
 			EnvironmentSelector: toConfigMap(item["environmentSelector"]),
 			TargetSelector:      toConfigMap(item["targetSelector"]),
+			InputMapping:        toConfigMap(item["inputMapping"]),
 			ArtifactOutputs:     toMapSliceOrEmpty(item["artifactOutputs"]),
+			ArtifactKinds:       toStringSlice(item["artifactKinds"]),
 			RunCondition:        mapString(item, "runCondition"),
 			FailurePolicy:       mapString(item, "failurePolicy"),
 			FanOutStrategy:      firstNonEmpty(mapString(item, "fanOutStrategy"), mapString(fanOut, "strategy")),
@@ -1522,7 +1663,7 @@ func dagInputReferenceNodeID(inputRef string) (string, bool) {
 
 func isAllowedDeliveryArtifactKind(kind string) bool {
 	switch strings.TrimSpace(kind) {
-	case "image", "test_report", "scan_report", "sbom":
+	case "image", "test_report", "scan_report", "sbom", "screenshot", "video", "junit", "log":
 		return true
 	default:
 		return false
@@ -2230,6 +2371,20 @@ func shouldStopDAGNodeAfterFailure(definition dagWorkflowDefinition, nodeID stri
 	return !hasFailureBranchPath(definition, nodeID, stoppedSources, map[string]bool{})
 }
 
+func dagStopFailureSourcesFromNodeRuns(definition dagWorkflowDefinition, nodeRuns map[string]dagNodeRun) map[string]struct{} {
+	out := make(map[string]struct{})
+	for _, node := range definition.Nodes {
+		entry := nodeRuns[node.ID]
+		if entry.Status != "failed" {
+			continue
+		}
+		if effectiveDAGFailurePolicy(definition, node) == "stop" {
+			out[node.ID] = struct{}{}
+		}
+	}
+	return out
+}
+
 func hasFailureBranchPath(definition dagWorkflowDefinition, nodeID string, stoppedSources map[string]struct{}, seen map[string]bool) bool {
 	if seen[nodeID] {
 		return false
@@ -2508,7 +2663,7 @@ func resolveDAGNodeReadiness(definition dagWorkflowDefinition, node dagWorkflowN
 	anySatisfied := false
 	for _, edge := range incoming {
 		predStatus := statuses[edge.Source]
-		if predStatus == "" || predStatus == "pending" || predStatus == "running" || predStatus == workflowStatusWaitingApproval {
+		if predStatus == "" || predStatus == "pending" || predStatus == "running" || predStatus == workflowStatusWaitingApproval || predStatus == workflowStatusWaitingExecution {
 			allPredicatesResolved = false
 			continue
 		}
@@ -2578,6 +2733,23 @@ func hasWaitingApproval(items map[string]dagNodeRun) bool {
 		}
 	}
 	return false
+}
+
+func hasWaitingExecution(items map[string]dagNodeRun) bool {
+	for _, item := range items {
+		if item.Status == workflowStatusWaitingExecution {
+			return true
+		}
+	}
+	return false
+}
+
+func restoredDAGArtifactState(metadata map[string]any) map[string]any {
+	out := map[string]any{}
+	for key, value := range metadataMap(metadata["artifacts"]) {
+		out[key] = value
+	}
+	return out
 }
 
 func buildStepsFromNodeRuns(definition dagWorkflowDefinition, nodeRuns map[string]dagNodeRun) []domainworkflow.Step {
@@ -2661,6 +2833,38 @@ func workflowMetadataString(metadata map[string]any, key string) string {
 		return ""
 	}
 	return text
+}
+
+func workflowStatusFromExecutionTask(status string) (string, bool) {
+	switch strings.TrimSpace(status) {
+	case "completed":
+		return "completed", true
+	case "failed", "canceled", "callback_timeout":
+		return "failed", true
+	default:
+		return "", false
+	}
+}
+
+func executionTaskWorkflowSummary(task domaindelivery.ExecutionTask) string {
+	status := strings.TrimSpace(task.Status)
+	if status == "" {
+		status = "completed"
+	}
+	for _, key := range []string{"error", "message", "summary"} {
+		if text := mapString(task.Result, key); text != "" {
+			return text
+		}
+	}
+	return fmt.Sprintf("execution task %s %s", task.ID, status)
+}
+
+func workflowSystemPrincipal() domainidentity.Principal {
+	return domainidentity.Principal{
+		UserID:   "system",
+		UserName: "Soha Workflow",
+		Roles:    []string{"admin"},
+	}
 }
 
 func syncRunNodeState(run domainworkflow.Run, definition dagWorkflowDefinition, nodeRuns map[string]dagNodeRun) domainworkflow.Run {
@@ -2944,6 +3148,16 @@ func (s *Service) executeDAGNode(
 		selectedTarget = &selectedTargets[0]
 	}
 	switch node.Type {
+	case "external":
+		task, err := s.createExternalDAGExecutionTask(ctx, app, input, binding, node, run, resolvedInputs, resolvedSelectors)
+		if err != nil {
+			status = "failed"
+			summary = err.Error()
+			break
+		}
+		status = workflowStatusWaitingExecution
+		outputs["executionTaskId"] = task.ID
+		summary = fmt.Sprintf("execution task %s queued for %s", task.ID, task.ProviderKind)
 	case "manual_approval":
 		status = workflowStatusWaitingApproval
 		summary = "waiting for approval"
@@ -3107,6 +3321,18 @@ func (s *Service) executeDAGNode(
 		}
 		summary = waitSummary
 	case "check_http", "smoke_test", "verify", "check":
+		if isExternalDAGExecutionNode(node) {
+			task, err := s.createExternalDAGExecutionTask(ctx, app, input, binding, node, run, resolvedInputs, resolvedSelectors)
+			if err != nil {
+				status = "failed"
+				summary = err.Error()
+				break
+			}
+			status = workflowStatusWaitingExecution
+			outputs["executionTaskId"] = task.ID
+			summary = fmt.Sprintf("execution task %s queued for %s", task.ID, task.ProviderKind)
+			break
+		}
 		checkURL := configString(node.Config, "url")
 		if checkURL == "" {
 			checkURL = configString(node.Config, "endpoint")
@@ -3323,6 +3549,83 @@ func (s *Service) executeDAGNode(
 			Status:  status,
 			Summary: summary,
 		},
+	}
+}
+
+func (s *Service) createExternalDAGExecutionTask(ctx context.Context, app domainapp.App, input domainworkflow.Input, binding domaincatalog.ApplicationEnvironment, node dagWorkflowNode, run domainworkflow.Run, resolvedInputs, selectors map[string]any) (domaindelivery.ExecutionTask, error) {
+	if s == nil || s.taskStore == nil {
+		return domaindelivery.ExecutionTask{}, fmt.Errorf("execution task store is not configured")
+	}
+	providerKind := firstNonEmpty(node.ExecutorKind, configString(node.Config, "executorKind"), "webhook_callback")
+	taskKind := firstNonEmpty(configString(node.Config, "taskKind"), node.Type)
+	if taskKind == "external" {
+		taskKind = "verify"
+	}
+	releaseBundleID := firstNonEmpty(workflowMetadataString(input.Variables, "releaseBundleId"), configString(node.Config, "releaseBundleId"))
+	now := time.Now().UTC()
+	payload := map[string]any{
+		"workflowRunId":    run.ID,
+		"workflowNodeId":   node.ID,
+		"workflowNodeName": node.Name,
+		"executorKind":     providerKind,
+		"targetKind":       firstNonEmpty(node.TargetKind, configString(node.Config, "targetKind"), "external_service"),
+		"capabilityRef":    node.CapabilityRef,
+		"providerRef":      node.ProviderRef,
+		"inputMapping":     node.InputMapping,
+		"inputs":           resolvedInputs,
+		"selectors":        selectors,
+		"artifactKinds":    node.ArtifactKinds,
+		"applicationId":    app.ID,
+		"environmentKey":   binding.EnvironmentKey,
+		"clusterId":        input.ClusterID,
+		"namespace":        input.Namespace,
+		"deploymentName":   input.DeploymentName,
+	}
+	task, err := s.taskStore.CreateExecutionTask(ctx, domaindelivery.ExecutionTask{
+		ID:                       "task:" + uuid.NewString(),
+		ReleaseBundleID:          releaseBundleID,
+		ApplicationID:            app.ID,
+		ApplicationEnvironmentID: binding.ID,
+		TaskKind:                 taskKind,
+		ProviderKind:             providerKind,
+		TargetKind:               firstNonEmpty(node.TargetKind, configString(node.Config, "targetKind"), "external_service"),
+		Status:                   "queued",
+		QueueKey:                 app.ID,
+		LockKey:                  app.ID + ":" + taskKind,
+		MaxRetries:               1,
+		AttemptCount:             0,
+		TimeoutSeconds:           node.TimeoutSeconds,
+		CallbackToken:            uuid.NewString(),
+		Payload:                  payload,
+		Result:                   map[string]any{},
+		CreatedAt:                now,
+		UpdatedAt:                now,
+	})
+	if err != nil {
+		return domaindelivery.ExecutionTask{}, err
+	}
+	_ = s.taskStore.CreateExecutionLog(ctx, domaindelivery.ExecutionLog{
+		ID:              uuid.NewString(),
+		ExecutionTaskID: task.ID,
+		LogLevel:        "info",
+		Message:         fmt.Sprintf("workflow node %s queued external execution task", node.ID),
+		Metadata: map[string]any{
+			"workflowRunId":  run.ID,
+			"workflowNodeId": node.ID,
+			"providerKind":   providerKind,
+			"capabilityRef":  node.CapabilityRef,
+		},
+		CreatedAt: now,
+	})
+	return domaindelivery.WithOperationState(task, now), nil
+}
+
+func isExternalDAGExecutionNode(node dagWorkflowNode) bool {
+	switch strings.TrimSpace(firstNonEmpty(node.ExecutorKind, configString(node.Config, "executorKind"))) {
+	case "mcp", "webhook_callback", "external_pipeline", "external_pipeline_adapter", "ci_agent_runner":
+		return true
+	default:
+		return false
 	}
 }
 

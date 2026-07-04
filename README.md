@@ -164,6 +164,7 @@ The default target starts the Go API and the Vite frontend together.
 - Console: `http://localhost:5173`
 - API: `http://localhost:8080`
 - Config override: `SOHA_CONFIG_FILE=/abs/path/to/config.yaml`
+- Runtime secrets are generated under `.dev/soha.env` when missing.
 
 ### Run services separately
 
@@ -171,6 +172,12 @@ The default target starts the Go API and the Vite frontend together.
 make dev-api
 make dev-web
 make dev-docs
+```
+
+For a direct server run without Make, keep the same generated startup env:
+
+```bash
+./scripts/soha-env.sh run go run ./cmd/server
 ```
 
 ### Start the agent runtime
@@ -203,9 +210,7 @@ make init-hermes
 For local `make dev`, it connects from the container to the host API at `http://host.docker.internal:8080` and reports its runtime endpoint as `http://127.0.0.1:18080`. Override these when needed:
 
 ```bash
-HERMES_CONTROL_PLANE_URL=http://host.docker.internal:8080 \
-SOHA_EXECUTION_RUNNER_TOKEN=replace-with-runtime-token \
-make init-hermes
+HERMES_CONTROL_PLANE_URL=http://host.docker.internal:8080 make init-hermes
 ```
 
 If Hermes needs one-time provider setup, run the setup profile directly:
@@ -293,11 +298,10 @@ COPY --from=yshanchui/soha-cli:v0.1.0 /usr/local/bin/soha /usr/local/bin/soha
 
 Helm chart sources and Artifact Hub publishing live in `opensoha/soha-helm`.
 
-Render with Kustomize:
+Apply the raw Kubernetes baseline:
 
 ```bash
-kubectl kustomize deploy
-kubectl apply -k deploy
+make deploy-k8s-apply
 ```
 
 ## Documentation

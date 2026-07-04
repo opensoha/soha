@@ -164,6 +164,7 @@ make
 - 控制台：`http://localhost:5173`
 - API：`http://localhost:8080`
 - 配置覆盖：`SOHA_CONFIG_FILE=/abs/path/to/config.yaml`
+- 运行时密钥缺失时会生成到 `.dev/soha.env`。
 
 ### 分别启动服务
 
@@ -171,6 +172,12 @@ make
 make dev-api
 make dev-web
 make dev-docs
+```
+
+如果不通过 Make 直接启动 server，用同一个启动 env 包一层：
+
+```bash
+./scripts/soha-env.sh run go run ./cmd/server
 ```
 
 ### 启动 Agent Runtime
@@ -199,9 +206,7 @@ make init-hermes
 本地 `make dev` 时，runner 容器默认连接宿主机 API `http://host.docker.internal:8080`，并把自己的 runtime endpoint 报告为 `http://127.0.0.1:18080`。需要时可以覆盖：
 
 ```bash
-HERMES_CONTROL_PLANE_URL=http://host.docker.internal:8080 \
-SOHA_EXECUTION_RUNNER_TOKEN=replace-with-runtime-token \
-make init-hermes
+HERMES_CONTROL_PLANE_URL=http://host.docker.internal:8080 make init-hermes
 ```
 
 如果 Hermes 需要一次性 provider 初始化，直接运行 setup profile：
@@ -289,11 +294,10 @@ COPY --from=yshanchui/soha-cli:v0.1.0 /usr/local/bin/soha /usr/local/bin/soha
 
 Helm Chart 源码与 Artifact Hub 发布流程在 `opensoha/soha-helm` 仓库维护。
 
-Kustomize 渲染：
+应用 raw Kubernetes 基线：
 
 ```bash
-kubectl kustomize deploy
-kubectl apply -k deploy
+make deploy-k8s-apply
 ```
 
 ## 文档

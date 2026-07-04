@@ -28,6 +28,14 @@ type SendCopilotMessageRequest struct {
 	Content string `json:"content"`
 }
 
+type WorkbenchSendMessageStreamRequest struct {
+	Content         string         `json:"content"`
+	Mode            string         `json:"mode"`
+	AgentProviderID string         `json:"agentProviderId"`
+	Toolset         map[string]any `json:"toolset"`
+	ScopeOverrides  map[string]any `json:"scopeOverrides"`
+}
+
 type CreateRootCauseRunRequest struct {
 	Title             string `json:"title"`
 	Kind              string `json:"kind"`

@@ -17,6 +17,7 @@ SOHA_DOCS_DIR ?= ../soha-docs
 SOHA_AGENT_DIR ?= $(abspath ../soha-agent)
 SOHA_CONTRACTS_DIR ?= $(abspath ../soha-contracts)
 WEB_DIST_DIR ?= internal/staticassets/web/dist
+SOHA_ENV_FILE ?= .dev/soha.env
 
 ROOT_COMPOSE = $(COMPOSE) -f $(ROOT_COMPOSE_FILE)
 IMAGE_BUILD_TAGS = -t $(IMAGE_REPOSITORY):$(IMAGE_TAG)
@@ -24,12 +25,15 @@ ifeq ($(PUSH_LATEST),1)
 IMAGE_BUILD_TAGS += -t $(IMAGE_REPOSITORY):latest
 endif
 
-.PHONY: help init init-go init-web init-docs init-db init-cluster init-hermes dev dev-api dev-web dev-docs build build-web build-docs clean deploy-image deploy-image-push deploy-compose-up deploy-compose-down deploy-compose-config deploy-compose-smoke deploy-kustomize-render test-api test-web
+.PHONY: help ensure-secrets init init-go init-web init-docs init-db init-cluster init-hermes dev dev-api dev-web dev-docs build build-web build-docs clean deploy-image deploy-image-push deploy-compose-up deploy-compose-down deploy-compose-config deploy-compose-smoke deploy-kustomize-render deploy-k8s-apply test-api test-web
 
 help: ## Show available make targets.
 	@awk 'BEGIN {FS = ":.*##"; printf "\nUsage:\n  make <target>\n\nTargets:\n"} /^[a-zA-Z0-9_.-]+:.*##/ {printf "  %-28s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
 # Development
+ensure-secrets: ## Generate local runtime secrets under .dev/soha.env when missing.
+	SOHA_ENV_FILE=$(SOHA_ENV_FILE) ./scripts/soha-env.sh ensure
+
 init: init-go init-db init-cluster ## Install core dependencies and start local database plus k3s.
 
 init-go: ## Tidy Go modules.
@@ -46,15 +50,17 @@ init-docs: ## Install docs dependencies.
 	@test -d "$(SOHA_DOCS_DIR)" || (echo "Missing $(SOHA_DOCS_DIR). Clone github.com/opensoha/soha-docs or set SOHA_DOCS_DIR." >&2; exit 1)
 	cd $(SOHA_DOCS_DIR) && npm install
 
-init-db: ## Start local PostgreSQL from deploy/docker-compose.yaml.
+init-db: ensure-secrets ## Start local PostgreSQL from deploy/docker-compose.yaml.
 	@echo "Starting PostgreSQL..."
-	@$(ROOT_COMPOSE) up -d postgres
-	@printf "Waiting for PostgreSQL"; \
-	until $(ROOT_COMPOSE) exec -T postgres pg_isready -U pgsql -d soha >/dev/null 2>&1; do \
-		printf "."; \
-		sleep 2; \
-	done; \
-	printf " done\n"
+	@set -a; . $(SOHA_ENV_FILE); set +a; \
+		$(ROOT_COMPOSE) up -d postgres; \
+		printf "Waiting for PostgreSQL"; \
+		until $(ROOT_COMPOSE) exec -T postgres pg_isready -U pgsql -d soha >/dev/null 2>&1; do \
+			printf "."; \
+			sleep 2; \
+		done; \
+		printf " done\n"; \
+		$(ROOT_COMPOSE) exec -T -e SOHA_DATABASE_PASSWORD="$$SOHA_DATABASE_PASSWORD" postgres sh -lc 'printf "%s\n" "ALTER USER pgsql WITH PASSWORD :'\''soha_password'\'';" | psql -v soha_password="$$SOHA_DATABASE_PASSWORD" -U pgsql -d soha >/dev/null'
 
 init-cluster: ## Start local k3s and write .dev/k3s/kubeconfig.yaml.
 	@mkdir -p .dev/k3s
@@ -74,18 +80,20 @@ init-cluster: ## Start local k3s and write .dev/k3s/kubeconfig.yaml.
 	@chmod 644 .dev/k3s/kubeconfig.yaml
 	@echo "K3s kubeconfig written to .dev/k3s/kubeconfig.yaml"
 
-init-hermes: ## Start Hermes Agent Runtime runner for local AI workbench testing.
+init-hermes: ensure-secrets ## Start Hermes Agent Runtime runner for local AI workbench testing.
 	@echo "Starting Hermes Agent Runtime runner..."
 	@test -d "$(SOHA_AGENT_DIR)" || (echo "Missing $(SOHA_AGENT_DIR). Clone github.com/opensoha/soha-agent or set SOHA_AGENT_DIR." >&2; exit 1)
 	@test -d "$(SOHA_CONTRACTS_DIR)" || (echo "Missing $(SOHA_CONTRACTS_DIR). Clone github.com/opensoha/soha-contracts or set SOHA_CONTRACTS_DIR." >&2; exit 1)
-	@SOHA_AGENT_DIR="$(SOHA_AGENT_DIR)" \
+	@set -a; . $(SOHA_ENV_FILE); set +a; \
+		$(ROOT_COMPOSE) up soha-secrets; \
+		SOHA_AGENT_DIR="$(SOHA_AGENT_DIR)" \
 		SOHA_CONTRACTS_DIR="$(SOHA_CONTRACTS_DIR)" \
 		SOHA_CONTROL_PLANE_URL="$(HERMES_CONTROL_PLANE_URL)" \
 		SOHA_HERMES_RUNTIME_ENDPOINT="$(HERMES_RUNTIME_ENDPOINT)" \
 		$(ROOT_COMPOSE) up -d --no-deps --build hermes-agent-runner
 
-dev-api: ## Run the Go API server locally.
-	go run ./cmd/server
+dev-api: ensure-secrets ## Run the Go API server locally.
+	SOHA_ENV_FILE=$(SOHA_ENV_FILE) ./scripts/soha-env.sh run go run ./cmd/server
 
 dev-web: ## Run the Vite frontend locally.
 	@test -d "$(SOHA_WEB_DIR)" || (echo "Missing $(SOHA_WEB_DIR). Clone github.com/opensoha/soha-web or set SOHA_WEB_DIR." >&2; exit 1)
@@ -124,8 +132,8 @@ deploy-image-push: build-web ## Build and push the multi-arch application image 
 	@test "$(IMAGE_TAG)" != "local" || (echo "Set IMAGE_TAG to a release version before pushing." >&2; exit 1)
 	docker buildx build --platform $(IMAGE_PLATFORMS) --build-arg GOPROXY=$(GOPROXY) --build-context contracts=$(SOHA_CONTRACTS_DIR) -f $(APP_DOCKERFILE) $(IMAGE_BUILD_TAGS) --push .
 
-deploy-compose-up: build-web ## Start the local single-project compose stack.
-	$(ROOT_COMPOSE) up -d --build
+deploy-compose-up: ensure-secrets build-web ## Start the local single-project compose stack.
+	set -a; . $(SOHA_ENV_FILE); set +a; $(ROOT_COMPOSE) up -d --build
 
 deploy-compose-down: ## Stop the local single-project compose stack.
 	$(ROOT_COMPOSE) down
@@ -138,6 +146,10 @@ deploy-compose-smoke: build-web ## Run the app-container cold-start smoke agains
 
 deploy-kustomize-render: ## Render the raw Kubernetes baseline through Kustomize.
 	kubectl kustomize $(KUSTOMIZE_DIR)
+
+deploy-k8s-apply: ensure-secrets ## Apply raw Kubernetes manifests with generated app Secret.
+	SOHA_ENV_FILE=$(SOHA_ENV_FILE) ./scripts/soha-env.sh k8s-secret | kubectl apply -f -
+	kubectl apply -k $(KUSTOMIZE_DIR)
 
 # Test
 test-api: ## Run Go tests.

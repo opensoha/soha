@@ -328,6 +328,8 @@ func (stubWorkflowBuildExecutorWithoutArtifacts) Execute(context.Context, domain
 type recordingWorkflowArtifactStore struct {
 	mu    sync.Mutex
 	items []domaindelivery.ExecutionArtifact
+	tasks []domaindelivery.ExecutionTask
+	logs  []domaindelivery.ExecutionLog
 }
 
 func (s *recordingWorkflowArtifactStore) UpsertExecutionArtifact(_ context.Context, item domaindelivery.ExecutionArtifact) (domaindelivery.ExecutionArtifact, error) {
@@ -341,6 +343,26 @@ func (s *recordingWorkflowArtifactStore) itemsSnapshot() []domaindelivery.Execut
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return append([]domaindelivery.ExecutionArtifact(nil), s.items...)
+}
+
+func (s *recordingWorkflowArtifactStore) CreateExecutionTask(_ context.Context, item domaindelivery.ExecutionTask) (domaindelivery.ExecutionTask, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.tasks = append(s.tasks, item)
+	return item, nil
+}
+
+func (s *recordingWorkflowArtifactStore) CreateExecutionLog(_ context.Context, item domaindelivery.ExecutionLog) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.logs = append(s.logs, item)
+	return nil
+}
+
+func (s *recordingWorkflowArtifactStore) tasksSnapshot() []domaindelivery.ExecutionTask {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]domaindelivery.ExecutionTask(nil), s.tasks...)
 }
 
 type stubWorkflowRolePermissionReader struct {
@@ -810,6 +832,220 @@ func TestTriggerExecutesDeliveryDAGNativeMetadata(t *testing.T) {
 	}
 	if !hasSelectorEvent || !hasArtifactEvent || !hasInputEvent {
 		t.Fatalf("events = %#v, want selector, input, and artifact events", events)
+	}
+}
+
+func TestTriggerDeliveryDAGExternalVerifyCreatesExecutionTask(t *testing.T) {
+	repo := &stubWorkflowRepository{}
+	taskStore := &recordingWorkflowArtifactStore{}
+	template := &domaincatalog.WorkflowTemplate{
+		ID:   "wf-delivery",
+		Key:  "delivery-dag",
+		Name: "delivery-dag",
+		Definition: map[string]any{
+			"mode": "delivery_dag",
+			"nodes": []map[string]any{
+				{
+					"id":                  "external-ui-test",
+					"name":                "External UI Test",
+					"type":                "verify",
+					"executorKind":        "mcp",
+					"targetKind":          "ai_test",
+					"capabilityRef":       "testing.ui.run",
+					"providerRef":         "external-test-platform",
+					"serviceSelector":     map[string]any{"matchLabels": map[string]any{"service": "checkout"}},
+					"environmentSelector": map[string]any{"environmentKey": "staging"},
+					"inputMapping": map[string]any{
+						"baseUrl":         "${environment.url}",
+						"releaseBundleId": "${releaseBundle.id}",
+					},
+					"artifactKinds": []any{"test_report", "screenshot", "video", "junit"},
+				},
+			},
+		},
+	}
+	binding := domaincatalog.ApplicationEnvironment{
+		ID:                 "binding-1",
+		ApplicationID:      "app-1",
+		EnvironmentID:      "env-staging",
+		EnvironmentKey:     "staging",
+		WorkflowTemplateID: "wf-delivery",
+		WorkflowTemplate:   template,
+		Targets: []domaincatalog.ReleaseTarget{
+			{ID: "target-1", ClusterID: "cluster-1", Namespace: "default", WorkloadKind: "Deployment", WorkloadName: "demo", Enabled: true},
+		},
+	}
+	service := &Service{
+		repo:        repo,
+		apps:        &stubWorkflowApps{},
+		catalog:     &stubWorkflowCatalog{items: []domaincatalog.ApplicationEnvironment{binding}},
+		permissions: appaccess.NewPermissionResolver(stubWorkflowRolePermissionReader{matrix: map[string][]string{"developer": {appaccess.PermDeliveryWorkflowsTrigger}}}),
+	}
+	service.SetArtifactStore(taskStore)
+	service.SetRuntimeOptions(1, 8, 1)
+	runnerCtx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	service.Start(runnerCtx)
+	defer func() {
+		_ = service.Shutdown(context.Background())
+	}()
+
+	run, err := service.Trigger(context.Background(), domainidentity.Principal{UserName: "tester", Roles: []string{"developer"}}, domainworkflow.Input{
+		ApplicationID:            "app-1",
+		ApplicationEnvironmentID: "binding-1",
+		WorkflowName:             "delivery-dag",
+		ClusterID:                "cluster-1",
+		Namespace:                "default",
+		DeploymentName:           "demo",
+		Variables:                map[string]any{"releaseBundleId": "bundle-1"},
+	})
+	if err != nil {
+		t.Fatalf("Trigger() error = %v", err)
+	}
+	waitingRun := waitForWorkflowStatus(t, service, run.ID, workflowStatusWaitingExecution)
+	tasks := taskStore.tasksSnapshot()
+	if len(tasks) != 1 {
+		t.Fatalf("tasks len = %d, want 1", len(tasks))
+	}
+	task := tasks[0]
+	if task.ProviderKind != "mcp" || task.TargetKind != "ai_test" || task.TaskKind != "verify" {
+		t.Fatalf("task = %+v, want mcp ai_test verify", task)
+	}
+	if task.ReleaseBundleID != "bundle-1" || task.Payload["capabilityRef"] != "testing.ui.run" || task.Payload["providerRef"] != "external-test-platform" {
+		t.Fatalf("task payload = %#v, releaseBundleID=%q", task.Payload, task.ReleaseBundleID)
+	}
+	nodeOutputs := waitingRun.Metadata["nodeOutputs"].(map[string]any)
+	verifyOutput := nodeOutputs["external-ui-test"].(map[string]any)
+	outputs := verifyOutput["outputs"].(map[string]any)
+	if outputs["executionTaskId"] != task.ID {
+		t.Fatalf("node outputs = %#v, want execution task id %s", outputs, task.ID)
+	}
+	if _, ok := outputs["callbackToken"]; ok {
+		t.Fatalf("node outputs leaked callback token: %#v", outputs)
+	}
+	repo.setItems([]domainworkflow.Run{waitingRun})
+	task.Status = "completed"
+	task.Result = map[string]any{"summary": "external verification passed"}
+	now := time.Now().UTC()
+	task.FinishedAt = &now
+	if err := service.RecordExecutionTaskResult(context.Background(), task); err != nil {
+		t.Fatalf("RecordExecutionTaskResult() error = %v", err)
+	}
+	finalRun := waitForWorkflowStatus(t, service, run.ID, "completed")
+	if finalRun.Status != "completed" {
+		t.Fatalf("workflow status = %q, want completed", finalRun.Status)
+	}
+	finalNodeOutputs := finalRun.Metadata["nodeOutputs"].(map[string]any)
+	finalVerifyOutput := finalNodeOutputs["external-ui-test"].(map[string]any)
+	finalOutputs := finalVerifyOutput["outputs"].(map[string]any)
+	if finalOutputs["executionTaskStatus"] != "completed" {
+		t.Fatalf("final node outputs = %#v, want completed execution task status", finalOutputs)
+	}
+	if _, ok := finalOutputs["callbackToken"]; ok {
+		t.Fatalf("final node outputs leaked callback token: %#v", finalOutputs)
+	}
+}
+
+func TestExternalExecutionFailureResumeHonorsStopFailurePolicy(t *testing.T) {
+	repo := &stubWorkflowRepository{}
+	taskStore := &recordingWorkflowArtifactStore{}
+	rollbackCount := &atomic.Int64{}
+	releaseCount := &atomic.Int64{}
+	template := &domaincatalog.WorkflowTemplate{
+		ID:   "wf-delivery",
+		Key:  "delivery-dag",
+		Name: "delivery-dag",
+		Definition: map[string]any{
+			"mode": "delivery_dag",
+			"nodes": []map[string]any{
+				{
+					"id":            "external-ui-test",
+					"name":          "External UI Test",
+					"type":          "verify",
+					"executorKind":  "mcp",
+					"failurePolicy": "stop",
+				},
+				{
+					"id":   "rollback",
+					"name": "Rollback",
+					"type": "rollback_to_previous",
+				},
+				{
+					"id":   "release",
+					"name": "Release",
+					"type": "release",
+				},
+			},
+			"edges": []map[string]any{
+				{"id": "e1", "source": "external-ui-test", "target": "rollback", "condition": "failure"},
+				{"id": "e2", "source": "rollback", "target": "release", "condition": "success"},
+			},
+		},
+	}
+	binding := domaincatalog.ApplicationEnvironment{
+		ID:                 "binding-1",
+		ApplicationID:      "app-1",
+		EnvironmentID:      "env-staging",
+		EnvironmentKey:     "staging",
+		WorkflowTemplateID: "wf-delivery",
+		WorkflowTemplate:   template,
+		Targets: []domaincatalog.ReleaseTarget{
+			{ID: "target-1", ClusterID: "cluster-1", Namespace: "default", WorkloadKind: "Deployment", WorkloadName: "demo", Enabled: true},
+		},
+	}
+	service := &Service{
+		repo:        repo,
+		apps:        &stubWorkflowApps{},
+		catalog:     &stubWorkflowCatalog{items: []domaincatalog.ApplicationEnvironment{binding}},
+		releases:    countingWorkflowReleaseExecutor{count: releaseCount},
+		resources:   countingWorkflowResourceExecutor{rollbackCount: rollbackCount},
+		permissions: appaccess.NewPermissionResolver(stubWorkflowRolePermissionReader{matrix: map[string][]string{"developer": {appaccess.PermDeliveryWorkflowsTrigger}}}),
+	}
+	service.SetArtifactStore(taskStore)
+	service.SetRuntimeOptions(1, 8, 1)
+	runnerCtx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	service.Start(runnerCtx)
+	defer func() {
+		_ = service.Shutdown(context.Background())
+	}()
+
+	run, err := service.Trigger(context.Background(), domainidentity.Principal{UserName: "tester", Roles: []string{"developer"}}, domainworkflow.Input{
+		ApplicationID:            "app-1",
+		ApplicationEnvironmentID: "binding-1",
+		WorkflowName:             "delivery-dag",
+		ClusterID:                "cluster-1",
+		Namespace:                "default",
+		DeploymentName:           "demo",
+	})
+	if err != nil {
+		t.Fatalf("Trigger() error = %v", err)
+	}
+	waitingRun := waitForWorkflowStatus(t, service, run.ID, workflowStatusWaitingExecution)
+	tasks := taskStore.tasksSnapshot()
+	if len(tasks) != 1 {
+		t.Fatalf("tasks len = %d, want 1", len(tasks))
+	}
+	repo.setItems([]domainworkflow.Run{waitingRun})
+	task := tasks[0]
+	task.Status = "failed"
+	task.Result = map[string]any{"error": "external verification failed"}
+	now := time.Now().UTC()
+	task.FinishedAt = &now
+	if err := service.RecordExecutionTaskResult(context.Background(), task); err != nil {
+		t.Fatalf("RecordExecutionTaskResult() error = %v", err)
+	}
+
+	finalRun := waitForWorkflowStatus(t, service, run.ID, "failed")
+	if rollbackCount.Load() != 1 {
+		t.Fatalf("rollback count = %d, want 1", rollbackCount.Load())
+	}
+	if releaseCount.Load() != 0 {
+		t.Fatalf("release count = %d, want 0", releaseCount.Load())
+	}
+	nodeStatus := finalRun.Metadata["nodeStatus"].(map[string]string)
+	if nodeStatus["rollback"] != "completed" || nodeStatus["release"] != "skipped" {
+		t.Fatalf("node status = %#v, want rollback completed and release skipped", nodeStatus)
 	}
 }
 

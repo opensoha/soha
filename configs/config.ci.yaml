@@ -24,7 +24,7 @@ runtime:
   virtualization_startup_sync_enabled: true
   virtualization_worker_interval: 2s
   virtualization_sync_concurrency: 1
-  execution_runner_token: demo-execution-runner-token
+  execution_runner_token: ${SOHA_RUNTIME_EXECUTION_RUNNER_TOKEN}
   execution_job_cluster_id: ""
   execution_job_namespace: soha-system
   execution_job_image: alpine:3.20
@@ -37,7 +37,7 @@ database:
   port: 5432
   name: soha
   user: pgsql
-  password: pgsql
+  password: ${SOHA_DATABASE_PASSWORD}
   sslmode: disable
   max_open_conns: 20
   max_idle_conns: 10
@@ -50,17 +50,17 @@ auth:
   login_verification:
     slider_enabled: false
   dev_principal:
-    user_id: admin
-    name: Admin
-    email: admin@soha.local
-    password: soha
+    user_id: opensoha
+    name: OpenSoha
+    email: opensoha@soha.local
+    password: ${SOHA_AUTH_DEV_PRINCIPAL_PASSWORD}
     roles:
       - admin
       - ops
       - auditor
   jwt:
     issuer: soha
-    secret: dev-only-change-me
+    secret: ${SOHA_AUTH_JWT_SECRET}
     access_ttl: 15m
     refresh_ttl: 168h
   oidc:
@@ -88,7 +88,7 @@ gitlab:
 
 monitoring:
   enabled: true
-  webhook_token: dev-alert-webhook-token
+  webhook_token: ${SOHA_MONITORING_WEBHOOK_TOKEN}
   prometheus_url: ""
   prometheus_bearer_token: ""
   prometheus_default_range_minutes: 60
