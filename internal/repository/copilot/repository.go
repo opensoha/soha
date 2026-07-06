@@ -19,6 +19,8 @@ type Repository struct {
 	db *gorm.DB
 }
 
+const maxAgentRunWorkbenchEvents = 200
+
 func New(db *gorm.DB) *Repository {
 	return &Repository{db: db}
 }
@@ -882,6 +884,7 @@ func (r *Repository) ClaimAgentRun(ctx context.Context, input domaincopilot.Agen
 }
 
 func (r *Repository) UpdateAgentRunCallback(ctx context.Context, input domaincopilot.AgentRunCallbackInput) (domaincopilot.AgentRun, error) {
+	input = domaincopilot.SanitizeAgentRunCallbackInput(input)
 	current, err := r.GetAgentRun(ctx, "", input.RunID)
 	if err != nil {
 		return domaincopilot.AgentRun{}, err
@@ -890,6 +893,7 @@ func (r *Repository) UpdateAgentRunCallback(ctx context.Context, input domaincop
 		return domaincopilot.AgentRun{}, fmt.Errorf("%w: invalid ai agent callback token", apperrors.ErrAccessDenied)
 	}
 	if agentRunTerminal(current.Status) {
+		current.CallbackTransition = domaincopilot.AgentRunCallbackTransitionNoopTerminal
 		return current, nil
 	}
 	status := normalizeAgentRunStatus(input.Status)
@@ -898,6 +902,11 @@ func (r *Repository) UpdateAgentRunCallback(ctx context.Context, input domaincop
 	}
 	now := time.Now().UTC()
 	output := mergeAgentRunOutput(current.Output, input.Payload)
+	callbackEvents := append([]domaincopilot.WorkbenchStreamEvent{}, input.Events...)
+	callbackEvents = append(callbackEvents, agentRunCallbackPayloadWorkbenchEvents(input.Payload)...)
+	if events := normalizeAgentRunCallbackEvents(current, callbackEvents, now); len(events) > 0 {
+		output["workbenchEvents"] = mergeAgentRunWorkbenchEventSnapshot(output["workbenchEvents"], events, maxAgentRunWorkbenchEvents)
+	}
 	toolExecutions := mergeAgentRunToolExecutions(current.ToolExecutions, input.ToolExecutions)
 	analysisArtifacts := mergeAgentRunAnalysisArtifacts(current.AnalysisArtifacts, input.AnalysisArtifacts)
 	outputBytes, err := json.Marshal(output)
@@ -913,23 +922,38 @@ func (r *Repository) UpdateAgentRunCallback(ctx context.Context, input domaincop
 		return domaincopilot.AgentRun{}, fmt.Errorf("marshal agent run callback artifacts: %w", err)
 	}
 	completedAt := current.CompletedAt
+	transition := domaincopilot.AgentRunCallbackTransitionApplied
 	if agentRunTerminal(status) {
 		completedAt = &now
+		transition = domaincopilot.AgentRunCallbackTransitionTerminal
 	}
 	result := r.db.WithContext(ctx).Exec(`
 		UPDATE ai_agent_runs
 		SET status = ?, output = ?, tool_executions = ?, analysis_artifacts = ?, claimed_by_agent_id = COALESCE(NULLIF(?, ''), claimed_by_agent_id),
 			external_run_id = COALESCE(NULLIF(?, ''), external_run_id), error_message = COALESCE(NULLIF(?, ''), error_message),
 			last_heartbeat_at = ?, completed_at = ?, updated_at = ?
-		WHERE id = ? AND callback_token = ?
-	`, status, string(outputBytes), string(toolBytes), string(artifactBytes), strings.TrimSpace(input.AgentID), strings.TrimSpace(input.ExternalRunID), strings.TrimSpace(input.ErrorMessage), now, completedAt, now, strings.TrimSpace(input.RunID), strings.TrimSpace(input.CallbackToken))
+		WHERE id = ? AND callback_token = ? AND status NOT IN (?, ?, ?, ?)
+	`, status, string(outputBytes), string(toolBytes), string(artifactBytes), strings.TrimSpace(input.AgentID), strings.TrimSpace(input.ExternalRunID), strings.TrimSpace(input.ErrorMessage), now, completedAt, now, strings.TrimSpace(input.RunID), strings.TrimSpace(input.CallbackToken), domaincopilot.AgentRunStatusCompleted, domaincopilot.AgentRunStatusFailed, domaincopilot.AgentRunStatusCanceled, domaincopilot.AgentRunStatusCallbackTimeout)
 	if result.Error != nil {
 		return domaincopilot.AgentRun{}, fmt.Errorf("update ai agent run callback: %w", result.Error)
 	}
 	if result.RowsAffected == 0 {
+		latest, latestErr := r.GetAgentRun(ctx, "", input.RunID)
+		if latestErr == nil && agentRunTerminal(latest.Status) {
+			latest.CallbackTransition = domaincopilot.AgentRunCallbackTransitionNoopTerminal
+			return latest, nil
+		}
+		if latestErr != nil {
+			return domaincopilot.AgentRun{}, latestErr
+		}
 		return domaincopilot.AgentRun{}, copilotNotFound("ai agent run", input.RunID)
 	}
-	return r.GetAgentRun(ctx, "", input.RunID)
+	updated, err := r.GetAgentRun(ctx, "", input.RunID)
+	if err != nil {
+		return domaincopilot.AgentRun{}, err
+	}
+	updated.CallbackTransition = transition
+	return updated, nil
 }
 
 func (r *Repository) CancelAgentRun(ctx context.Context, input domaincopilot.AgentRunCancelInput) (domaincopilot.AgentRun, error) {
@@ -2036,9 +2060,108 @@ func mergeAgentRunOutput(current map[string]any, patch map[string]any) map[strin
 		merged[key] = value
 	}
 	for key, value := range patch {
+		if strings.EqualFold(strings.TrimSpace(key), "workbenchEvents") {
+			continue
+		}
 		merged[key] = value
 	}
 	return merged
+}
+
+func agentRunCallbackPayloadWorkbenchEvents(payload map[string]any) []domaincopilot.WorkbenchStreamEvent {
+	if payload == nil {
+		return nil
+	}
+	return workbenchEventsFromRepositoryValue(payload["workbenchEvents"])
+}
+
+func normalizeAgentRunCallbackEvents(run domaincopilot.AgentRun, events []domaincopilot.WorkbenchStreamEvent, now time.Time) []domaincopilot.WorkbenchStreamEvent {
+	events = domaincopilot.SanitizeWorkbenchStreamEvents(events)
+	if len(events) == 0 {
+		return nil
+	}
+	sessionID := strings.TrimSpace(run.SessionID)
+	allowedRunIDs := map[string]struct{}{strings.TrimSpace(run.ID): {}}
+	if rootRunID := strings.TrimSpace(run.RootCauseRunID); rootRunID != "" && rootRunID != sessionID && strings.TrimSpace(run.CapabilityID) == "root_cause" {
+		allowedRunIDs[rootRunID] = struct{}{}
+	}
+	out := make([]domaincopilot.WorkbenchStreamEvent, 0, len(events))
+	for _, event := range events {
+		eventRunID := strings.TrimSpace(event.RunID)
+		if eventRunID != "" {
+			if _, ok := allowedRunIDs[eventRunID]; !ok {
+				continue
+			}
+		} else {
+			eventRunID = strings.TrimSpace(run.ID)
+		}
+		event.ID = ""
+		event.SessionID = sessionID
+		event.RunID = eventRunID
+		event.Sequence = 0
+		event.CreatedAt = now
+		if strings.TrimSpace(event.ProviderID) == "" {
+			event.ProviderID = run.ProviderID
+		}
+		if strings.TrimSpace(event.ProviderKind) == "" {
+			event.ProviderKind = run.ProviderKind
+		}
+		if strings.TrimSpace(event.Type) == "agent.status" {
+			event.Status = domaincopilot.AgentRunStatusToWorkbenchStatus(event.Status)
+		}
+		if strings.TrimSpace(event.Type) == "" {
+			continue
+		}
+		out = append(out, event)
+	}
+	return out
+}
+
+func mergeAgentRunWorkbenchEventSnapshot(current any, patch []domaincopilot.WorkbenchStreamEvent, limit int) []domaincopilot.WorkbenchStreamEvent {
+	merged := workbenchEventsFromRepositoryValue(current)
+	merged = append(merged, patch...)
+	if limit <= 0 {
+		limit = maxAgentRunWorkbenchEvents
+	}
+	if len(merged) > limit {
+		merged = merged[len(merged)-limit:]
+	}
+	for index := range merged {
+		sequence := index + 1
+		merged[index].Sequence = sequence
+		if strings.TrimSpace(merged[index].ID) == "" {
+			anchor := firstNonEmptyRepositoryString(merged[index].SessionID, merged[index].RunID, "agent-run")
+			merged[index].ID = fmt.Sprintf("evt:%s:%06d", anchor, sequence)
+		}
+		if merged[index].CreatedAt.IsZero() {
+			merged[index].CreatedAt = time.Now().UTC()
+		}
+	}
+	return merged
+}
+
+func workbenchEventsFromRepositoryValue(value any) []domaincopilot.WorkbenchStreamEvent {
+	var out []domaincopilot.WorkbenchStreamEvent
+	if value == nil {
+		return nil
+	}
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return nil
+	}
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return nil
+	}
+	return out
+}
+
+func firstNonEmptyRepositoryString(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
 }
 
 func mergeAgentRunToolExecutions(current []domaincopilot.ToolExecution, patch []domaincopilot.ToolExecution) []domaincopilot.ToolExecution {

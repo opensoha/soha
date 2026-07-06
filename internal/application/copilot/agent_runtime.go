@@ -74,6 +74,7 @@ func (s *Service) RecordAgentRunCallback(ctx context.Context, input domaincopilo
 	if strings.TrimSpace(input.RunID) == "" || strings.TrimSpace(input.CallbackToken) == "" {
 		return domaincopilot.AgentRun{}, fmt.Errorf("%w: runId and callbackToken are required", aperrors.ErrInvalidArgument)
 	}
+	input = domaincopilot.SanitizeAgentRunCallbackInput(input)
 	input.Payload = normalizeAgentRunCallbackProviderUsage(input.Payload)
 	input.AnalysisArtifacts = normalizeAgentRunCallbackProviderUsageArtifacts(input.AnalysisArtifacts, input.Payload)
 	if agentRunCallbackProducesArtifact(input.Status) && len(input.AnalysisArtifacts) == 0 {
@@ -96,7 +97,7 @@ func (s *Service) RecordAgentRunCallback(ctx context.Context, input domaincopilo
 	if err != nil {
 		return domaincopilot.AgentRun{}, err
 	}
-	if agentRunCallbackShouldPersistMessage(updated.Status) {
+	if agentRunCallbackShouldPersistMessage(updated) {
 		if len(updated.AnalysisArtifacts) == 0 {
 			updated.AnalysisArtifacts = []domaincopilot.AnalysisArtifact{s.synthesizeAgentArtifact(updated)}
 		}
@@ -262,8 +263,12 @@ func agentRunCallbackProducesArtifact(status string) bool {
 	}
 }
 
-func agentRunCallbackShouldPersistMessage(status string) bool {
-	switch strings.ToLower(strings.TrimSpace(status)) {
+func agentRunCallbackShouldPersistMessage(run domaincopilot.AgentRun) bool {
+	switch run.CallbackTransition {
+	case domaincopilot.AgentRunCallbackTransitionNoopTerminal:
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(run.Status)) {
 	case domaincopilot.AgentRunStatusCompleted, domaincopilot.AgentRunStatusFailed, domaincopilot.AgentRunStatusCanceled, domaincopilot.AgentRunStatusCallbackTimeout:
 		return true
 	default:
@@ -2478,14 +2483,22 @@ func (s *Service) persistAgentRunMessage(ctx context.Context, run domaincopilot.
 		SessionID: run.SessionID,
 		Role:      "assistant",
 		Content:   reply,
-		Metadata: map[string]any{
+		Metadata: finalWorkbenchMessageMetadata(map[string]any{
 			"mode":              run.CapabilityID,
 			"source":            "agent-runtime",
 			"agentRunId":        run.ID,
 			"agentProviderId":   run.ProviderID,
 			"analysisArtifacts": artifacts,
 			"toolCalls":         run.ToolExecutions,
-		},
+			"workbenchEvents":   workbenchEventsFromValue(run.Output["workbenchEvents"]),
+		}, run.ToolExecutions, artifacts, map[string]any{
+			"status":        run.Status,
+			"providerId":    run.ProviderID,
+			"providerKind":  run.ProviderKind,
+			"runId":         firstNonEmpty(run.RootCauseRunID, run.ID),
+			"agentRunId":    run.ID,
+			"externalRunId": run.ExternalRunID,
+		}),
 		CreatedAt: time.Now().UTC(),
 	})
 	if err != nil {

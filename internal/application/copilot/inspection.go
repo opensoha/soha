@@ -207,7 +207,7 @@ func (s *Service) CreateSessionFromInspectionRun(ctx context.Context, principal 
 		}
 	}
 	title := localize(locale, "巡检复盘会话", "Inspection Review")
-	session, err := s.CreateSession(ctx, principal, title, "inspection_review", "", scope, []string{"inspection", "generated"}, locale)
+	session, err := s.CreateSession(ctx, principal, title, "inspection_review", "", scope, nil, "inspection", []string{"inspection", "generated"}, locale)
 	if err != nil {
 		return domaincopilot.Session{}, err
 	}
@@ -239,12 +239,17 @@ func (s *Service) CreateSessionFromInspectionRun(ctx context.Context, principal 
 		SessionID: updatedSession.ID,
 		Role:      "assistant",
 		Content:   inspectionReviewInitialMessage(*target, locale),
-		Metadata: map[string]any{
+		Metadata: finalWorkbenchMessageMetadata(map[string]any{
 			"mode":              "inspection_review",
 			"source":            "inspection-run",
 			"locale":            normalizeLocale(locale),
 			"analysisArtifacts": []domaincopilot.AnalysisArtifact{artifact},
-		},
+		}, artifact.ToolExecutions, []domaincopilot.AnalysisArtifact{artifact}, map[string]any{
+			"status":       inspectionRunAgentStatus(target.Status),
+			"providerId":   agentProviderInternal,
+			"providerKind": "internal",
+			"runId":        artifact.RunID,
+		}),
 		CreatedAt: time.Now().UTC(),
 	}); err != nil {
 		return domaincopilot.Session{}, err
@@ -921,20 +926,41 @@ func (s *Service) syncInspectionSuggestionSession(ctx context.Context, task doma
 	if err != nil {
 		return err
 	}
+	metadata := parseSessionMetadata(session.Metadata)
+	artifact := buildInspectionReviewArtifact(metadata.Scope, run, locale)
 	_, err = s.repo.CreateMessage(ctx, domaincopilot.Message{
 		ID:        uuid.NewString(),
 		SessionID: session.ID,
 		Role:      "assistant",
 		Content:   formatInspectionSuggestionMessage(task, run, locale),
-		Metadata: map[string]any{
-			"mode":             "inspection",
-			"inspectionTaskId": task.ID,
-			"inspectionRunId":  run.ID,
-			"source":           "inspection-engine",
-		},
+		Metadata: finalWorkbenchMessageMetadata(map[string]any{
+			"mode":              "inspection",
+			"inspectionTaskId":  task.ID,
+			"inspectionRunId":   run.ID,
+			"source":            "inspection-engine",
+			"analysisArtifacts": []domaincopilot.AnalysisArtifact{artifact},
+		}, artifact.ToolExecutions, []domaincopilot.AnalysisArtifact{artifact}, map[string]any{
+			"status":       inspectionRunAgentStatus(run.Status),
+			"providerId":   agentProviderInternal,
+			"providerKind": "internal",
+			"runId":        artifact.RunID,
+		}),
 		CreatedAt: time.Now().UTC(),
 	})
 	return err
+}
+
+func inspectionRunAgentStatus(status string) string {
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case "completed", "success", "succeeded":
+		return "succeeded"
+	case "failed", "error":
+		return "failed"
+	case "running", "queued":
+		return strings.ToLower(strings.TrimSpace(status))
+	default:
+		return firstNonEmpty(strings.TrimSpace(status), "succeeded")
+	}
 }
 
 func (s *Service) findOrCreateInspectionSession(ctx context.Context, task domaincopilot.InspectionTask) (domaincopilot.Session, error) {

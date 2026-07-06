@@ -7,6 +7,8 @@ type CreateCopilotSessionRequest struct {
 	Mode            string         `json:"mode"`
 	AgentProviderID string         `json:"agentProviderId"`
 	Scope           map[string]any `json:"scope"`
+	PinnedContext   map[string]any `json:"pinnedContext"`
+	Source          string         `json:"source"`
 	Tags            []string       `json:"tags"`
 	AlertID         string         `json:"alertId"`
 	Workload        string         `json:"workload"`
@@ -18,6 +20,8 @@ type UpdateCopilotSessionRequest struct {
 	AgentProviderID string         `json:"agentProviderId"`
 	Status          string         `json:"status"`
 	Scope           map[string]any `json:"scope"`
+	PinnedContext   map[string]any `json:"pinnedContext"`
+	Source          string         `json:"source"`
 	Toolset         map[string]any `json:"toolset"`
 	Tags            []string       `json:"tags"`
 	Summary         string         `json:"summary"`
@@ -29,11 +33,24 @@ type SendCopilotMessageRequest struct {
 }
 
 type WorkbenchSendMessageStreamRequest struct {
-	Content         string         `json:"content"`
-	Mode            string         `json:"mode"`
-	AgentProviderID string         `json:"agentProviderId"`
-	Toolset         map[string]any `json:"toolset"`
-	ScopeOverrides  map[string]any `json:"scopeOverrides"`
+	Content          string                                   `json:"content"`
+	Mode             string                                   `json:"mode"`
+	AgentProviderID  string                                   `json:"agentProviderId"`
+	Toolset          map[string]any                           `json:"toolset"`
+	ScopeOverrides   map[string]any                           `json:"scopeOverrides"`
+	Source           string                                   `json:"source"`
+	LaunchContext    *domaincopilot.WorkbenchLaunchContext    `json:"launchContext"`
+	SelectionContext *domaincopilot.WorkbenchSelectionContext `json:"selectionContext"`
+	PinnedContext    map[string]any                           `json:"pinnedContext"`
+}
+
+type WorkbenchGlobalAssistantOpenRequest struct {
+	Action           string                                   `json:"action"`
+	LaunchContext    *domaincopilot.WorkbenchLaunchContext    `json:"launchContext"`
+	SelectionContext *domaincopilot.WorkbenchSelectionContext `json:"selectionContext"`
+	Prompt           string                                   `json:"prompt"`
+	SessionID        string                                   `json:"sessionId"`
+	Source           string                                   `json:"source"`
 }
 
 type CreateRootCauseRunRequest struct {
@@ -68,15 +85,16 @@ type AgentRunClaimRequest struct {
 }
 
 type AgentRunCallbackRequest struct {
-	RunID             string                           `json:"runId"`
-	CallbackToken     string                           `json:"callbackToken"`
-	AgentID           string                           `json:"agentId"`
-	Status            string                           `json:"status"`
-	Payload           map[string]any                   `json:"payload"`
-	ToolExecutions    []domaincopilot.ToolExecution    `json:"toolExecutions"`
-	AnalysisArtifacts []domaincopilot.AnalysisArtifact `json:"analysisArtifacts"`
-	ExternalRunID     string                           `json:"externalRunId"`
-	ErrorMessage      string                           `json:"errorMessage"`
+	RunID             string                               `json:"runId"`
+	CallbackToken     string                               `json:"callbackToken"`
+	AgentID           string                               `json:"agentId"`
+	Status            string                               `json:"status"`
+	Payload           map[string]any                       `json:"payload"`
+	Events            []domaincopilot.WorkbenchStreamEvent `json:"events"`
+	ToolExecutions    []domaincopilot.ToolExecution        `json:"toolExecutions"`
+	AnalysisArtifacts []domaincopilot.AnalysisArtifact     `json:"analysisArtifacts"`
+	ExternalRunID     string                               `json:"externalRunId"`
+	ErrorMessage      string                               `json:"errorMessage"`
 }
 
 type AgentToolCallRequest struct {

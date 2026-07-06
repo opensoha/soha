@@ -16,6 +16,14 @@ const (
 	AgentRunStatusCallbackTimeout = "callback_timeout"
 )
 
+type AgentRunCallbackTransition string
+
+const (
+	AgentRunCallbackTransitionApplied      AgentRunCallbackTransition = "applied"
+	AgentRunCallbackTransitionTerminal     AgentRunCallbackTransition = "terminal"
+	AgentRunCallbackTransitionNoopTerminal AgentRunCallbackTransition = "noop_terminal"
+)
+
 type AgentProvider struct {
 	ID               string                      `json:"id"`
 	Kind             string                      `json:"kind"`
@@ -82,35 +90,36 @@ type AgentCapability struct {
 }
 
 type AgentRun struct {
-	ID                string              `json:"id"`
-	ProviderID        string              `json:"providerId"`
-	ProviderKind      string              `json:"providerKind"`
-	CapabilityID      string              `json:"capabilityId"`
-	SkillIDs          []string            `json:"skillIds,omitempty"`
-	SessionID         string              `json:"sessionId,omitempty"`
-	RootCauseRunID    string              `json:"rootCauseRunId,omitempty"`
-	CreatedBy         string              `json:"createdBy"`
-	Status            string              `json:"status"`
-	Scope             SessionScope        `json:"scope,omitempty"`
-	Toolset           SessionToolset      `json:"toolset,omitempty"`
-	ToolBindings      []AgentToolBinding  `json:"toolBindings,omitempty"`
-	SkillBindings     []AgentSkillBinding `json:"skillBindings,omitempty"`
-	Input             map[string]any      `json:"input,omitempty"`
-	Output            map[string]any      `json:"output,omitempty"`
-	ToolExecutions    []ToolExecution     `json:"toolExecutions,omitempty"`
-	AnalysisArtifacts []AnalysisArtifact  `json:"analysisArtifacts,omitempty"`
-	OperationState    *OperationState     `json:"operationState,omitempty" gorm:"-"`
-	CallbackToken     string              `json:"callbackToken,omitempty"`
-	ClaimedByAgentID  string              `json:"claimedByAgentId,omitempty"`
-	ExternalRunID     string              `json:"externalRunId,omitempty"`
-	ErrorMessage      string              `json:"errorMessage,omitempty"`
-	TimeoutSeconds    int                 `json:"timeoutSeconds"`
-	QueuedAt          time.Time           `json:"queuedAt"`
-	StartedAt         *time.Time          `json:"startedAt,omitempty"`
-	LastHeartbeatAt   *time.Time          `json:"lastHeartbeatAt,omitempty"`
-	CompletedAt       *time.Time          `json:"completedAt,omitempty"`
-	CreatedAt         time.Time           `json:"createdAt"`
-	UpdatedAt         time.Time           `json:"updatedAt"`
+	ID                 string                     `json:"id"`
+	ProviderID         string                     `json:"providerId"`
+	ProviderKind       string                     `json:"providerKind"`
+	CapabilityID       string                     `json:"capabilityId"`
+	SkillIDs           []string                   `json:"skillIds,omitempty"`
+	SessionID          string                     `json:"sessionId,omitempty"`
+	RootCauseRunID     string                     `json:"rootCauseRunId,omitempty"`
+	CreatedBy          string                     `json:"createdBy"`
+	Status             string                     `json:"status"`
+	Scope              SessionScope               `json:"scope,omitempty"`
+	Toolset            SessionToolset             `json:"toolset,omitempty"`
+	ToolBindings       []AgentToolBinding         `json:"toolBindings,omitempty"`
+	SkillBindings      []AgentSkillBinding        `json:"skillBindings,omitempty"`
+	Input              map[string]any             `json:"input,omitempty"`
+	Output             map[string]any             `json:"output,omitempty"`
+	ToolExecutions     []ToolExecution            `json:"toolExecutions,omitempty"`
+	AnalysisArtifacts  []AnalysisArtifact         `json:"analysisArtifacts,omitempty"`
+	OperationState     *OperationState            `json:"operationState,omitempty" gorm:"-"`
+	CallbackToken      string                     `json:"callbackToken,omitempty"`
+	ClaimedByAgentID   string                     `json:"claimedByAgentId,omitempty"`
+	ExternalRunID      string                     `json:"externalRunId,omitempty"`
+	ErrorMessage       string                     `json:"errorMessage,omitempty"`
+	TimeoutSeconds     int                        `json:"timeoutSeconds"`
+	QueuedAt           time.Time                  `json:"queuedAt"`
+	StartedAt          *time.Time                 `json:"startedAt,omitempty"`
+	LastHeartbeatAt    *time.Time                 `json:"lastHeartbeatAt,omitempty"`
+	CompletedAt        *time.Time                 `json:"completedAt,omitempty"`
+	CreatedAt          time.Time                  `json:"createdAt"`
+	UpdatedAt          time.Time                  `json:"updatedAt"`
+	CallbackTransition AgentRunCallbackTransition `json:"-" gorm:"-"`
 }
 
 type OperationState struct {
@@ -151,7 +160,121 @@ type FailureEvidence struct {
 
 const defaultAgentRunOperationTimeoutSeconds = 600
 
-var agentRunEvidenceSensitiveValuePattern = regexp.MustCompile(`(?i)(token|password|passwd|secret|api[_-]?key|authorization|credential|kubeconfig)(\s*[:=]\s*)([^\s,;]+)`)
+var agentRunSensitiveValuePattern = regexp.MustCompile(`(?i)\b(token|password|passwd|secret|api[_-]?key|authorization|credential|kubeconfig)\b(\s*[:=]\s*)([^,;\n]+)`)
+var agentRunBearerCredentialPattern = regexp.MustCompile(`(?i)\bBearer\s+[A-Za-z0-9._~+/=-]+`)
+
+func AgentRunStatusToWorkbenchStatus(status string) string {
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case AgentRunStatusQueued:
+		return "queued"
+	case AgentRunStatusRunning, "":
+		return "running"
+	case AgentRunStatusCompleted, "success", "succeeded":
+		return "succeeded"
+	case AgentRunStatusCanceled, "cancelled":
+		return "cancelled"
+	case AgentRunStatusFailed, AgentRunStatusCallbackTimeout, "error", "timeout", "timed_out":
+		return "failed"
+	default:
+		return "failed"
+	}
+}
+
+func SanitizeAgentRunCallbackInput(input AgentRunCallbackInput) AgentRunCallbackInput {
+	input.Payload = SanitizeAgentRunCallbackMap(input.Payload)
+	input.ToolExecutions = SanitizeToolExecutions(input.ToolExecutions)
+	input.AnalysisArtifacts = SanitizeAnalysisArtifacts(input.AnalysisArtifacts)
+	input.Events = SanitizeWorkbenchStreamEvents(input.Events)
+	input.ErrorMessage = redactAgentRunSensitiveText(input.ErrorMessage)
+	return input
+}
+
+func SanitizeAgentRunCallbackMap(values map[string]any) map[string]any {
+	if values == nil {
+		return nil
+	}
+	out := make(map[string]any, len(values))
+	for key, value := range values {
+		if agentRunSensitiveKey(key) {
+			out[key] = "[REDACTED]"
+			continue
+		}
+		out[key] = sanitizeAgentRunCallbackValue(value)
+	}
+	return out
+}
+
+func SanitizeToolExecutions(items []ToolExecution) []ToolExecution {
+	if len(items) == 0 {
+		return items
+	}
+	out := append([]ToolExecution(nil), items...)
+	for index := range out {
+		out[index].Summary = redactAgentRunSensitiveText(out[index].Summary)
+		out[index].Input = SanitizeAgentRunCallbackMap(out[index].Input)
+		out[index].Output = SanitizeAgentRunCallbackMap(out[index].Output)
+	}
+	return out
+}
+
+func SanitizeAnalysisArtifacts(items []AnalysisArtifact) []AnalysisArtifact {
+	if len(items) == 0 {
+		return items
+	}
+	out := append([]AnalysisArtifact(nil), items...)
+	for index := range out {
+		out[index].Title = redactAgentRunSensitiveText(out[index].Title)
+		out[index].Summary = redactAgentRunSensitiveText(out[index].Summary)
+		out[index].Recommendations = sanitizeAgentRunStringList(out[index].Recommendations)
+		out[index].ToolExecutions = SanitizeToolExecutions(out[index].ToolExecutions)
+		out[index].DataSourceSnapshot = SanitizeAgentRunCallbackMap(out[index].DataSourceSnapshot)
+		out[index].Evidence = sanitizeRootCauseEvidence(out[index].Evidence)
+		out[index].Hypotheses = sanitizeRootCauseHypotheses(out[index].Hypotheses)
+		if out[index].Graph != nil {
+			graph := *out[index].Graph
+			graph.Nodes = sanitizeAnalysisGraphNodes(graph.Nodes)
+			graph.Edges = sanitizeAnalysisGraphEdges(graph.Edges)
+			out[index].Graph = &graph
+		}
+	}
+	return out
+}
+
+func SanitizeWorkbenchStreamEvents(events []WorkbenchStreamEvent) []WorkbenchStreamEvent {
+	if len(events) == 0 {
+		return events
+	}
+	out := append([]WorkbenchStreamEvent(nil), events...)
+	for index := range out {
+		out[index].ContentDelta = redactAgentRunSensitiveText(out[index].ContentDelta)
+		out[index].Content = redactAgentRunSensitiveText(out[index].Content)
+		out[index].TextDelta = redactAgentRunSensitiveText(out[index].TextDelta)
+		out[index].Summary = redactAgentRunSensitiveText(out[index].Summary)
+		out[index].OutputDelta = redactAgentRunSensitiveText(out[index].OutputDelta)
+		out[index].LogDelta = redactAgentRunSensitiveText(out[index].LogDelta)
+		out[index].Message = redactAgentRunSensitiveText(out[index].Message)
+		out[index].Metadata = SanitizeAgentRunCallbackMap(out[index].Metadata)
+		out[index].Artifact = sanitizeAgentRunCallbackValue(out[index].Artifact)
+		out[index].Command = sanitizeAgentRunCallbackValue(out[index].Command)
+		if strings.TrimSpace(out[index].Type) == "agent.status" {
+			out[index].Status = AgentRunStatusToWorkbenchStatus(out[index].Status)
+		}
+		if out[index].ToolCall != nil {
+			toolCall := *out[index].ToolCall
+			toolCall.Summary = redactAgentRunSensitiveText(toolCall.Summary)
+			toolCall.InputPreview = sanitizeAgentRunCallbackValue(toolCall.InputPreview)
+			toolCall.OutputPreview = sanitizeAgentRunCallbackValue(toolCall.OutputPreview)
+			out[index].ToolCall = &toolCall
+		}
+		if out[index].Source != nil {
+			source := *out[index].Source
+			source.Title = redactAgentRunSensitiveText(source.Title)
+			source.Summary = redactAgentRunSensitiveText(source.Summary)
+			out[index].Source = &source
+		}
+	}
+	return out
+}
 
 func WithOperationState(run AgentRun, now time.Time) AgentRun {
 	run.OperationState = BuildOperationState(run, now)
@@ -482,12 +605,12 @@ func compactAgentRunEvidenceMetadata(values map[string]any) map[string]any {
 }
 
 func redactAgentRunEvidenceValue(key string, value any) any {
-	if agentRunEvidenceSensitiveKey(key) {
+	if agentRunSensitiveKey(key) {
 		return "[REDACTED]"
 	}
 	switch typed := value.(type) {
 	case string:
-		return redactAgentRunEvidenceText(typed)
+		return redactAgentRunSensitiveText(typed)
 	case map[string]any:
 		return compactAgentRunEvidenceMetadata(typed)
 	case []any:
@@ -502,17 +625,149 @@ func redactAgentRunEvidenceValue(key string, value any) any {
 }
 
 func redactAgentRunEvidenceText(value string) string {
-	return agentRunEvidenceSensitiveValuePattern.ReplaceAllString(value, "$1$2[REDACTED]")
+	return redactAgentRunSensitiveText(value)
 }
 
-func agentRunEvidenceSensitiveKey(key string) bool {
-	normalized := strings.NewReplacer("_", "", "-", "", " ", "", ".", "").Replace(strings.ToLower(strings.TrimSpace(key)))
-	for _, needle := range []string{"token", "password", "passwd", "secret", "credential", "apikey", "authorization", "kubeconfig"} {
+func redactAgentRunSensitiveText(text string) string {
+	if text == "" {
+		return ""
+	}
+	redacted := agentRunSensitiveValuePattern.ReplaceAllString(text, "$1$2[REDACTED]")
+	return agentRunBearerCredentialPattern.ReplaceAllString(redacted, "Bearer [REDACTED]")
+}
+
+func sanitizeAgentRunCallbackValue(value any) any {
+	switch typed := value.(type) {
+	case map[string]any:
+		return SanitizeAgentRunCallbackMap(typed)
+	case WorkbenchStreamEvent:
+		events := SanitizeWorkbenchStreamEvents([]WorkbenchStreamEvent{typed})
+		if len(events) == 1 {
+			return events[0]
+		}
+		return typed
+	case []WorkbenchStreamEvent:
+		return SanitizeWorkbenchStreamEvents(typed)
+	case ToolExecution:
+		tools := SanitizeToolExecutions([]ToolExecution{typed})
+		if len(tools) == 1 {
+			return tools[0]
+		}
+		return typed
+	case []ToolExecution:
+		return SanitizeToolExecutions(typed)
+	case AnalysisArtifact:
+		artifacts := SanitizeAnalysisArtifacts([]AnalysisArtifact{typed})
+		if len(artifacts) == 1 {
+			return artifacts[0]
+		}
+		return typed
+	case []AnalysisArtifact:
+		return SanitizeAnalysisArtifacts(typed)
+	case []any:
+		out := make([]any, len(typed))
+		for index, item := range typed {
+			out[index] = sanitizeAgentRunCallbackValue(item)
+		}
+		return out
+	case []map[string]any:
+		out := make([]map[string]any, len(typed))
+		for index, item := range typed {
+			out[index] = SanitizeAgentRunCallbackMap(item)
+		}
+		return out
+	case string:
+		return redactAgentRunSensitiveText(typed)
+	default:
+		return typed
+	}
+}
+
+func agentRunSensitiveKey(key string) bool {
+	normalized := normalizeAgentRunSensitiveKey(key)
+	if normalized == "" {
+		return false
+	}
+	if normalized == "token" || strings.HasSuffix(normalized, "token") {
+		return true
+	}
+	for _, needle := range []string{"password", "passwd", "secret", "apikey", "authorization", "credential", "kubeconfig"} {
 		if strings.Contains(normalized, needle) {
 			return true
 		}
 	}
 	return false
+}
+
+func normalizeAgentRunSensitiveKey(key string) string {
+	var builder strings.Builder
+	for _, r := range strings.ToLower(strings.TrimSpace(key)) {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			builder.WriteRune(r)
+		}
+	}
+	return builder.String()
+}
+
+func sanitizeAgentRunStringList(items []string) []string {
+	if len(items) == 0 {
+		return items
+	}
+	out := append([]string(nil), items...)
+	for index := range out {
+		out[index] = redactAgentRunSensitiveText(out[index])
+	}
+	return out
+}
+
+func sanitizeRootCauseEvidence(items []RootCauseEvidence) []RootCauseEvidence {
+	if len(items) == 0 {
+		return items
+	}
+	out := append([]RootCauseEvidence(nil), items...)
+	for index := range out {
+		out[index].Title = redactAgentRunSensitiveText(out[index].Title)
+		out[index].Summary = redactAgentRunSensitiveText(out[index].Summary)
+		out[index].Attributes = SanitizeAgentRunCallbackMap(out[index].Attributes)
+	}
+	return out
+}
+
+func sanitizeRootCauseHypotheses(items []RootCauseHypothesis) []RootCauseHypothesis {
+	if len(items) == 0 {
+		return items
+	}
+	out := append([]RootCauseHypothesis(nil), items...)
+	for index := range out {
+		out[index].Title = redactAgentRunSensitiveText(out[index].Title)
+		out[index].Summary = redactAgentRunSensitiveText(out[index].Summary)
+		out[index].Recommendations = sanitizeAgentRunStringList(out[index].Recommendations)
+	}
+	return out
+}
+
+func sanitizeAnalysisGraphNodes(items []AnalysisGraphNode) []AnalysisGraphNode {
+	if len(items) == 0 {
+		return items
+	}
+	out := append([]AnalysisGraphNode(nil), items...)
+	for index := range out {
+		out[index].Title = redactAgentRunSensitiveText(out[index].Title)
+		out[index].Subtitle = redactAgentRunSensitiveText(out[index].Subtitle)
+		out[index].Attributes = SanitizeAgentRunCallbackMap(out[index].Attributes)
+	}
+	return out
+}
+
+func sanitizeAnalysisGraphEdges(items []AnalysisGraphEdge) []AnalysisGraphEdge {
+	if len(items) == 0 {
+		return items
+	}
+	out := append([]AnalysisGraphEdge(nil), items...)
+	for index := range out {
+		out[index].Attributes = SanitizeAgentRunCallbackMap(out[index].Attributes)
+	}
+	return out
 }
 
 func firstNonEmptyString(values ...string) string {
@@ -580,15 +835,16 @@ type AgentRunClaimInput struct {
 }
 
 type AgentRunCallbackInput struct {
-	RunID             string             `json:"runId"`
-	CallbackToken     string             `json:"callbackToken"`
-	AgentID           string             `json:"agentId,omitempty"`
-	Status            string             `json:"status"`
-	Payload           map[string]any     `json:"payload,omitempty"`
-	ToolExecutions    []ToolExecution    `json:"toolExecutions,omitempty"`
-	AnalysisArtifacts []AnalysisArtifact `json:"analysisArtifacts,omitempty"`
-	ExternalRunID     string             `json:"externalRunId,omitempty"`
-	ErrorMessage      string             `json:"errorMessage,omitempty"`
+	RunID             string                 `json:"runId"`
+	CallbackToken     string                 `json:"callbackToken"`
+	AgentID           string                 `json:"agentId,omitempty"`
+	Status            string                 `json:"status"`
+	Payload           map[string]any         `json:"payload,omitempty"`
+	Events            []WorkbenchStreamEvent `json:"events,omitempty"`
+	ToolExecutions    []ToolExecution        `json:"toolExecutions,omitempty"`
+	AnalysisArtifacts []AnalysisArtifact     `json:"analysisArtifacts,omitempty"`
+	ExternalRunID     string                 `json:"externalRunId,omitempty"`
+	ErrorMessage      string                 `json:"errorMessage,omitempty"`
 }
 
 type AgentRunCancelInput struct {

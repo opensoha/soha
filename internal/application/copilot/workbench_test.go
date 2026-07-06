@@ -12,6 +12,7 @@ import (
 	appaccess "github.com/opensoha/soha/internal/application/access"
 	appaigateway "github.com/opensoha/soha/internal/application/aigateway"
 	domainalert "github.com/opensoha/soha/internal/domain/alert"
+	domainaudit "github.com/opensoha/soha/internal/domain/audit"
 	domainbuild "github.com/opensoha/soha/internal/domain/build"
 	domaincopilot "github.com/opensoha/soha/internal/domain/copilot"
 	domaindelivery "github.com/opensoha/soha/internal/domain/delivery"
@@ -352,6 +353,111 @@ func TestInspectionSessionHandoffMissingRunWrapsErrNotFound(t *testing.T) {
 	}
 }
 
+func TestInspectionSessionHandoffPersistsFinalWorkbenchMetadata(t *testing.T) {
+	defer appaccess.SetRolePermissionMatrix(nil)
+	service, repo := newInspectionAuthzTestService(map[string][]string{
+		"chat": {appaccess.PermObserveAIChatUse, appaccess.PermObserveAIView},
+	})
+	startedAt := time.Date(2026, 5, 24, 10, 30, 0, 0, time.UTC)
+	repo.inspectionRuns = []domaincopilot.InspectionRun{{
+		ID:        "run-1",
+		TaskID:    "task-1",
+		Status:    "completed",
+		Severity:  "critical",
+		Summary:   "Inspection completed with 1 finding.",
+		StartedAt: startedAt,
+		Findings: []domaincopilot.InspectionFinding{{
+			ID:       "finding-1",
+			Title:    "Alert pressure is elevated",
+			Severity: "critical",
+			Summary:  "There are critical firing alerts.",
+			Source:   "alerts",
+		}},
+	}}
+
+	_, err := service.CreateSessionFromInspectionRun(context.Background(), domainidentity.Principal{
+		UserID: "user-1",
+		Roles:  []string{"chat"},
+	}, "run-1", "en-US")
+	if err != nil {
+		t.Fatalf("create session from inspection run: %v", err)
+	}
+	if len(repo.createdMessages) != 1 {
+		t.Fatalf("expected assistant message, got %#v", repo.createdMessages)
+	}
+	assertFinalWorkbenchMetadata(t, repo.createdMessages[0].Metadata)
+}
+
+func TestInspectionSuggestionSessionPersistsFinalWorkbenchMetadata(t *testing.T) {
+	service, repo := newInspectionAuthzTestService(nil)
+	startedAt := time.Date(2026, 5, 24, 10, 30, 0, 0, time.UTC)
+
+	err := service.syncInspectionSuggestionSession(context.Background(), domaincopilot.InspectionTask{
+		ID:        "task-1",
+		Title:     "Nightly inspection",
+		CreatedBy: "user-1",
+		Metadata:  map[string]any{"locale": "en-US"},
+	}, domaincopilot.InspectionRun{
+		ID:        "run-1",
+		TaskID:    "task-1",
+		Status:    "completed",
+		Severity:  "warning",
+		Summary:   "Inspection completed with 1 finding.",
+		StartedAt: startedAt,
+		Findings: []domaincopilot.InspectionFinding{{
+			ID:       "finding-1",
+			Title:    "Config drift",
+			Severity: "warning",
+			Summary:  "Deployment config drifted.",
+			Source:   "resource",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("sync inspection suggestion session: %v", err)
+	}
+	if len(repo.createdMessages) != 1 {
+		t.Fatalf("expected suggestion assistant message, got %#v", repo.createdMessages)
+	}
+	assertFinalWorkbenchMetadata(t, repo.createdMessages[0].Metadata)
+}
+
+func assertFinalWorkbenchMetadata(t *testing.T, metadata map[string]any) {
+	t.Helper()
+	if metadata["thinkingSummary"] == "" || metadata["toolExecutions"] == nil || metadata["sources"] == nil || metadata["analysisArtifacts"] == nil || metadata["agentStatus"] == nil {
+		t.Fatalf("message missing final workbench replay metadata: %#v", metadata)
+	}
+	var artifacts []domaincopilot.AnalysisArtifact
+	if !decodeStructuredValue(metadata["analysisArtifacts"], &artifacts) || len(artifacts) == 0 {
+		t.Fatalf("expected final analysis artifact snapshot, got %#v", metadata["analysisArtifacts"])
+	}
+}
+
+func TestFinalWorkbenchMetadataMapsAgentRunStatusToWorkbenchStatus(t *testing.T) {
+	cases := []struct {
+		input string
+		want  string
+	}{
+		{input: domaincopilot.AgentRunStatusQueued, want: "queued"},
+		{input: domaincopilot.AgentRunStatusRunning, want: "running"},
+		{input: domaincopilot.AgentRunStatusCompleted, want: "succeeded"},
+		{input: "completed", want: "succeeded"},
+		{input: "success", want: "succeeded"},
+		{input: "succeeded", want: "succeeded"},
+		{input: domaincopilot.AgentRunStatusFailed, want: "failed"},
+		{input: domaincopilot.AgentRunStatusCallbackTimeout, want: "failed"},
+		{input: domaincopilot.AgentRunStatusCanceled, want: "cancelled"},
+		{input: "cancelled", want: "cancelled"},
+	}
+
+	for _, tc := range cases {
+		metadata := finalWorkbenchMessageMetadata(map[string]any{"source": "test"}, nil, nil, map[string]any{"status": tc.input})
+		status := metadata["agentStatus"].(map[string]any)
+		if status["status"] != tc.want {
+			t.Fatalf("status %q mapped to %q, want %q", tc.input, status["status"], tc.want)
+		}
+	}
+}
+
 func TestSessionToInspectionHandoffRequiresChatAndManagePermissions(t *testing.T) {
 	defer appaccess.SetRolePermissionMatrix(nil)
 	service, repo := newInspectionAuthzTestService(map[string][]string{
@@ -439,6 +545,111 @@ func TestWorkbenchCatalogRejectsUsersWithoutAIWorkbenchPermissions(t *testing.T)
 	}
 }
 
+func TestCreateSessionStoresGlobalAssistantMetadata(t *testing.T) {
+	defer appaccess.SetRolePermissionMatrix(nil)
+	service, _ := newInspectionAuthzTestService(map[string][]string{
+		"chat": {appaccess.PermObserveAIChatUse},
+	})
+	audit := &captureCopilotAuditRecorder{}
+	service.audits = audit
+
+	session, err := service.CreateSession(context.Background(), domainidentity.Principal{
+		UserID:   "user-1",
+		UserName: "Ada",
+		Roles:    []string{"chat"},
+	}, "Service diagnosis", "root_cause", "", map[string]any{
+		"clusterId":        "prod",
+		"namespace":        "payments",
+		"service":          "payment-api",
+		"timeRangeMinutes": 30,
+	}, map[string]any{
+		"sourceWorkbench": "platform",
+		"sourceRoute":     "/platform/services/payments/payment-api",
+		"entityKind":      "kubernetes.service",
+		"entityName":      "payment-api",
+	}, "global-assistant", []string{"global-assistant"}, "zh-CN")
+	if err != nil {
+		t.Fatalf("create global assistant session: %v", err)
+	}
+	metadata := parseSessionMetadata(session.Metadata)
+	if metadata.Source != "global-assistant" {
+		t.Fatalf("source = %q, want global-assistant", metadata.Source)
+	}
+	if metadata.Scope.Service != "payment-api" || metadata.Scope.TimeRangeMinutes != 30 {
+		t.Fatalf("unexpected scope: %#v", metadata.Scope)
+	}
+	if metadata.PinnedContext["entityName"] != "payment-api" || metadata.PinnedContext["sourceWorkbench"] != "platform" {
+		t.Fatalf("unexpected pinned context: %#v", metadata.PinnedContext)
+	}
+	if len(audit.entries) != 1 || audit.entries[0].Action != "global_assistant.open" {
+		t.Fatalf("expected global assistant open audit, got %#v", audit.entries)
+	}
+}
+
+func TestStreamMessagePersistsGlobalAssistantContextAndAuditsSend(t *testing.T) {
+	defer appaccess.SetRolePermissionMatrix(nil)
+	service, repo := newInspectionAuthzTestService(map[string][]string{
+		"chat": {appaccess.PermObserveAIChatUse},
+	})
+	audit := &captureCopilotAuditRecorder{}
+	service.audits = audit
+	repo.session = domaincopilot.Session{
+		ID:        "session-1",
+		Title:     "Global assistant",
+		CreatedBy: "user-1",
+		Metadata:  sessionMetadataMap(domaincopilot.SessionMetadata{Mode: "general", Status: "active"}),
+		CreatedAt: time.Now().UTC(),
+		UpdatedAt: time.Now().UTC(),
+	}
+
+	_, err := service.StreamMessage(context.Background(), domainidentity.Principal{
+		UserID:   "user-1",
+		UserName: "Ada",
+		Roles:    []string{"chat"},
+	}, "session-1", domaincopilot.WorkbenchSendMessageInput{
+		Content: "help me diagnose this service",
+		Mode:    "general",
+		Source:  "global-assistant",
+		LaunchContext: &domaincopilot.WorkbenchLaunchContext{
+			SourceWorkbench:  "docker",
+			SourceRoute:      "/docker/services/payment-api",
+			EntityKind:       "docker.service",
+			EntityName:       "payment-api",
+			DockerServiceID:  "svc-1",
+			TimeRangeMinutes: 15,
+			VisibleFilters:   map[string]any{"status": "unhealthy"},
+			PinnedData:       map[string]any{"replicas": 2},
+		},
+		SelectionContext: &domaincopilot.WorkbenchSelectionContext{
+			Text: "ERROR connection refused",
+			Kind: "log",
+		},
+		EventSink: func(domaincopilot.WorkbenchStreamEvent) bool { return true },
+	}, "en-US")
+	if err != nil {
+		t.Fatalf("stream global assistant message: %v", err)
+	}
+	metadata := parseSessionMetadata(repo.session.Metadata)
+	if metadata.Source != "global-assistant" {
+		t.Fatalf("source = %q, want global-assistant", metadata.Source)
+	}
+	if metadata.Scope.Service != "" || metadata.Scope.TimeRangeMinutes != 15 {
+		t.Fatalf("unexpected launch scope merge: %#v", metadata.Scope)
+	}
+	if metadata.PinnedContext["dockerServiceId"] != "svc-1" || metadata.PinnedContext["entityName"] != "payment-api" {
+		t.Fatalf("unexpected pinned context: %#v", metadata.PinnedContext)
+	}
+	if len(audit.entries) != 1 || audit.entries[0].Action != "global_assistant.send" {
+		t.Fatalf("expected global assistant send audit, got %#v", audit.entries)
+	}
+	if audit.entries[0].Metadata["promptLength"] == 0 || audit.entries[0].Metadata["selectionLength"] == 0 {
+		t.Fatalf("expected prompt/selection length metadata, got %#v", audit.entries[0].Metadata)
+	}
+	if _, ok := audit.entries[0].Metadata["prompt"]; ok {
+		t.Fatalf("audit metadata must not include raw prompt: %#v", audit.entries[0].Metadata)
+	}
+}
+
 func TestSendMessageGeneralModeRequiresGatewayRouteWithoutAutoAnalysis(t *testing.T) {
 	defer appaccess.SetRolePermissionMatrix(nil)
 	service, repo := newInspectionAuthzTestService(map[string][]string{
@@ -486,6 +697,12 @@ func TestSendMessageGeneralModeRequiresGatewayRouteWithoutAutoAnalysis(t *testin
 	metadata := envelope.Messages[1].Metadata
 	if metadata["source"] != "gateway-model-route" || metadata["model"] != "gpt-public" {
 		t.Fatalf("expected gateway route metadata, got %#v", metadata)
+	}
+	if metadata["thinkingSummary"] == "" || metadata["agentStatus"] == nil {
+		t.Fatalf("expected final replay metadata snapshot, got %#v", metadata)
+	}
+	if artifacts, ok := metadata["analysisArtifacts"].([]domaincopilot.AnalysisArtifact); !ok || len(artifacts) != 0 {
+		t.Fatalf("expected empty analysis artifact snapshot for general chat, got %#v", metadata["analysisArtifacts"])
 	}
 	if _, ok := metadata["providerKind"]; ok {
 		t.Fatalf("general chat metadata must not expose settings provider kind, got %#v", metadata)
@@ -584,6 +801,380 @@ func TestSendMessageGeneralModeReportsMissingModelProvider(t *testing.T) {
 	}
 	if strings.Contains(assistant.Content, "当前平台上下文") {
 		t.Fatalf("general chat should not fall back to platform summary, got %q", assistant.Content)
+	}
+}
+
+func TestStreamMessageRequestModeOverridesSessionAndNarrowsToolset(t *testing.T) {
+	defer appaccess.SetRolePermissionMatrix(nil)
+	service, repo := newInspectionAuthzTestService(map[string][]string{
+		"chat": {appaccess.PermObserveAIChatUse},
+	})
+	repo.session = domaincopilot.Session{
+		ID:        "session-1",
+		Title:     "General chat",
+		CreatedBy: "user-1",
+		Metadata: sessionMetadataMap(domaincopilot.SessionMetadata{
+			Mode: "general",
+			Scope: domaincopilot.SessionScope{
+				ClusterID:        "cluster-a",
+				TimeRangeMinutes: 60,
+			},
+			Toolset: domaincopilot.SessionToolset{
+				EnabledAdapterIDs: []string{"logs.v1", "metrics.v1"},
+				EnabledSkillIDs:   []string{"root-cause-investigation", "inspection-review"},
+				DisabledToolNames: []string{"logs.v1.logs.raw"},
+				BudgetOverrides:   map[string]any{"timeoutSeconds": 120, "maxEvidenceItems": 10},
+			},
+		}),
+		CreatedAt: time.Now().UTC(),
+		UpdatedAt: time.Now().UTC(),
+	}
+
+	result, err := service.StreamMessage(context.Background(), domainidentity.Principal{
+		UserID: "user-1",
+		Roles:  []string{"chat"},
+	}, "session-1", domaincopilot.WorkbenchSendMessageInput{
+		Content:         "review payments",
+		Mode:            "inspection_review",
+		AgentProviderID: "internal",
+		Toolset: domaincopilot.SessionToolset{
+			EnabledAdapterIDs: []string{"metrics.v1", "traces.v1"},
+			EnabledSkillIDs:   []string{"inspection-review", "unapproved-skill"},
+			DisabledToolNames: []string{"metrics.v1.metrics.raw"},
+			BudgetOverrides:   map[string]any{"timeoutSeconds": 60, "maxEvidenceItems": 20, "maxIterations": 3},
+		},
+		ScopeOverrides: map[string]any{"clusterId": "cluster-b", "namespace": "payments", "timeRangeMinutes": 30},
+	}, "en-US")
+	if err != nil {
+		t.Fatalf("stream message: %v", err)
+	}
+	if len(result.Envelope.AnalysisArtifacts) != 1 {
+		t.Fatalf("expected inspection artifact, got %#v", result.Envelope.AnalysisArtifacts)
+	}
+	artifact := result.Envelope.AnalysisArtifacts[0]
+	if artifact.Scope.ClusterID != "cluster-a" || artifact.Scope.Namespace != "payments" || artifact.Scope.TimeRangeMinutes != 30 {
+		t.Fatalf("unexpected narrowed scope: %#v", artifact.Scope)
+	}
+	if got := artifact.DataSourceSnapshot["enabledAdapterIds"].([]string); len(got) != 1 || got[0] != "metrics.v1" {
+		t.Fatalf("adapter allowlist should be intersection/subset, got %#v", got)
+	}
+	if got := artifact.DataSourceSnapshot["enabledSkillIds"].([]string); len(got) != 1 || got[0] != "inspection-review" {
+		t.Fatalf("skill allowlist should be intersection/subset, got %#v", got)
+	}
+	if got := artifact.DataSourceSnapshot["disabledToolNames"].([]string); !containsString(got, "logs.v1.logs.raw") || !containsString(got, "metrics.v1.metrics.raw") {
+		t.Fatalf("disabled tools should be union, got %#v", got)
+	}
+	budget := artifact.ToolExecutions[0].Output["budgetOverrides"].(map[string]any)
+	if budget["timeoutSeconds"] != 60 || budget["maxEvidenceItems"] != 10 {
+		t.Fatalf("budget overrides were not conservative, got %#v", budget)
+	}
+	if _, ok := budget["maxIterations"]; ok {
+		t.Fatalf("request-only unknown budget key should not be accepted, got %#v", budget)
+	}
+	if !containsStreamEvent(result.Events, "thinking.delta") || !containsStreamEvent(result.Events, "tool.completed") || !containsStreamEvent(result.Events, "artifact.updated") {
+		t.Fatalf("analysis stream missing expected events: %#v", result.Events)
+	}
+	assistant := result.Envelope.Messages[len(result.Envelope.Messages)-1]
+	if assistant.Metadata["thinkingSummary"] == "" || assistant.Metadata["toolExecutions"] == nil || assistant.Metadata["sources"] == nil || assistant.Metadata["agentStatus"] == nil {
+		t.Fatalf("assistant metadata missing replay snapshot: %#v", assistant.Metadata)
+	}
+}
+
+func TestStreamMessageInternalAnalysisCallsLiveEventSink(t *testing.T) {
+	defer appaccess.SetRolePermissionMatrix(nil)
+	service, repo := newInspectionAuthzTestService(map[string][]string{
+		"chat": {appaccess.PermObserveAIChatUse},
+	})
+	repo.session = domaincopilot.Session{
+		ID:        "session-1",
+		Title:     "Inspection",
+		CreatedBy: "user-1",
+		Metadata: sessionMetadataMap(domaincopilot.SessionMetadata{
+			Mode: "general",
+			Toolset: domaincopilot.SessionToolset{
+				EnabledAdapterIDs: []string{"platform-native.v1"},
+			},
+		}),
+		CreatedAt: time.Now().UTC(),
+		UpdatedAt: time.Now().UTC(),
+	}
+	liveEvents := make([]domaincopilot.WorkbenchStreamEvent, 0)
+	result, err := service.StreamMessage(context.Background(), domainidentity.Principal{
+		UserID: "user-1",
+		Roles:  []string{"chat"},
+	}, "session-1", domaincopilot.WorkbenchSendMessageInput{
+		Content: "review inspection",
+		Mode:    "inspection_review",
+		EventSink: func(event domaincopilot.WorkbenchStreamEvent) bool {
+			liveEvents = append(liveEvents, event)
+			return true
+		},
+	}, "en-US")
+	if err != nil {
+		t.Fatalf("stream message with live sink: %v", err)
+	}
+	if len(result.Events) != 0 {
+		t.Fatalf("live sink path should not return duplicate events, got %#v", result.Events)
+	}
+	wantTypes := []string{"agent.status", "thinking.delta", "tool.started", "tool.completed", "source.updated", "artifact.updated", "thinking.done", "message.done"}
+	for _, want := range wantTypes {
+		if !containsStreamEvent(liveEvents, want) {
+			t.Fatalf("live events missing %s: %#v", want, liveEvents)
+		}
+	}
+	if liveEvents[0].Type != "agent.status" || liveEvents[0].ProviderID != agentProviderInternal || liveEvents[0].Status != "running" {
+		t.Fatalf("expected internal running status before analysis events, got %#v", liveEvents[0])
+	}
+	if liveEvents[1].Type != "thinking.delta" || liveEvents[2].Type != "tool.started" {
+		t.Fatalf("expected thinking and tool start after initial status, got %#v", liveEvents[:3])
+	}
+	if liveEvents[2].ToolCall == nil || liveEvents[2].ToolCall.Status != "running" {
+		t.Fatalf("expected running tool start, got %#v", liveEvents[2])
+	}
+	completed := firstStreamEvent(liveEvents, "tool.completed")
+	if completed.ToolCall == nil || completed.ToolCall.ID != liveEvents[2].ToolCall.ID || completed.ToolCall.Status != "success" {
+		t.Fatalf("expected completed live tool to match started tool, got started=%#v completed=%#v", liveEvents[2], completed)
+	}
+}
+
+func TestNarrowWorkbenchToolsetCapsKnownBudgetsWhenSessionHasNoOverride(t *testing.T) {
+	toolset := narrowWorkbenchToolset(domaincopilot.SessionToolset{}, domaincopilot.SessionToolset{
+		BudgetOverrides: map[string]any{
+			"timeoutSeconds":   1200,
+			"maxEvidenceItems": 200,
+			"maxIterations":    5,
+		},
+	}, nil, domaincopilot.SessionScope{})
+
+	if toolset.BudgetOverrides["timeoutSeconds"] != float64(600) || toolset.BudgetOverrides["maxEvidenceItems"] != float64(100) {
+		t.Fatalf("expected known budget caps, got %#v", toolset.BudgetOverrides)
+	}
+	if _, ok := toolset.BudgetOverrides["maxIterations"]; ok {
+		t.Fatalf("request-only unknown budget key should not be accepted, got %#v", toolset.BudgetOverrides)
+	}
+}
+
+func TestNarrowWorkbenchToolsetKeepsAuthorizedAdapterSelectorWhenRequestUsesAlias(t *testing.T) {
+	toolset := narrowWorkbenchToolset(domaincopilot.SessionToolset{
+		EnabledAdapterIDs: []string{"logs.v1"},
+	}, domaincopilot.SessionToolset{
+		EnabledAdapterIDs: []string{"logs"},
+	}, nil, domaincopilot.SessionScope{})
+
+	if len(toolset.EnabledAdapterIDs) != 1 || toolset.EnabledAdapterIDs[0] != "logs.v1" {
+		t.Fatalf("request alias should not broaden authorized adapter selector, got %#v", toolset.EnabledAdapterIDs)
+	}
+}
+
+func TestStreamMessageGeneralUsesGatewayTokenStream(t *testing.T) {
+	defer appaccess.SetRolePermissionMatrix(nil)
+	service, repo := newInspectionAuthzTestService(map[string][]string{
+		"chat": {appaccess.PermObserveAIChatUse},
+	})
+	service.settings = inspectionAuthzSettingsResolver{settings: domainsettings.AISettings{
+		WorkbenchModel: domainsettings.AIWorkbenchModelSettings{
+			DefaultPublicModel: "gpt-public",
+			DefaultRouteID:     "route-openai",
+			DefaultEndpoint:    "chat/completions",
+			Enabled:            true,
+		},
+	}}
+	invoker := &fakeWorkbenchModelInvoker{
+		streamDeltas: []string{"hello", " ", "stream"},
+		streamResponse: appaigateway.WorkbenchRelayResponse{
+			Content:      "hello stream",
+			PublicModel:  "gpt-public",
+			RouteID:      "route-openai",
+			ProviderKind: "openai",
+		},
+	}
+	service.SetWorkbenchModelInvoker(invoker)
+	repo.session = domaincopilot.Session{
+		ID:        "session-1",
+		Title:     "General chat",
+		CreatedBy: "user-1",
+		Metadata:  sessionMetadataMap(domaincopilot.SessionMetadata{Mode: "general"}),
+		CreatedAt: time.Now().UTC(),
+		UpdatedAt: time.Now().UTC(),
+	}
+
+	liveEvents := make([]domaincopilot.WorkbenchStreamEvent, 0)
+	result, err := service.StreamMessage(context.Background(), domainidentity.Principal{
+		UserID: "user-1",
+		Roles:  []string{"chat"},
+	}, "session-1", domaincopilot.WorkbenchSendMessageInput{
+		Content: "hi",
+		Mode:    "general",
+		EventSink: func(event domaincopilot.WorkbenchStreamEvent) bool {
+			liveEvents = append(liveEvents, event)
+			return true
+		},
+	}, "en-US")
+	if err != nil {
+		t.Fatalf("stream general message: %v", err)
+	}
+	if len(result.Events) != 0 {
+		t.Fatalf("live stream path should not return duplicate events, got %#v", result.Events)
+	}
+	if len(result.Envelope.Messages) != 2 || result.Envelope.Messages[1].Content != "hello stream" {
+		t.Fatalf("unexpected stream envelope: %#v", result.Envelope)
+	}
+	if invoker.request.RouteID != "route-openai" || invoker.request.Endpoint != "chat/completions" {
+		t.Fatalf("unexpected stream invoker request: %#v", invoker.request)
+	}
+	deltaContent := ""
+	for _, event := range liveEvents {
+		if event.Type == "message.delta" {
+			deltaContent += event.ContentDelta
+		}
+	}
+	if deltaContent != "hello stream" {
+		t.Fatalf("unexpected live deltas %q from events %#v", deltaContent, liveEvents)
+	}
+	if liveEvents[0].Type != "agent.status" || liveEvents[0].ProviderID != agentProviderInternal || liveEvents[0].ProviderKind != "openai" || liveEvents[0].Status != "running" {
+		t.Fatalf("expected provider-aware initial running status, got %#v", liveEvents[0])
+	}
+	if !containsStreamEvent(liveEvents, "message.done") || liveEvents[len(liveEvents)-1].Type != "agent.status" {
+		t.Fatalf("expected message.done and final agent.status, got %#v", liveEvents)
+	}
+	finalStatus := liveEvents[len(liveEvents)-1]
+	if finalStatus.ProviderID != agentProviderInternal || finalStatus.ProviderKind != "openai" || finalStatus.Status != "succeeded" {
+		t.Fatalf("expected provider-aware final status, got %#v", finalStatus)
+	}
+	assistant := result.Envelope.Messages[1]
+	if assistant.Metadata["source"] != "gateway-model-route-stream" || assistant.Metadata["thinkingSummary"] == "" || assistant.Metadata["agentStatus"] == nil {
+		t.Fatalf("assistant metadata missing stream replay snapshot: %#v", assistant.Metadata)
+	}
+	status := assistant.Metadata["agentStatus"].(map[string]any)
+	if status["providerId"] != agentProviderInternal || status["providerKind"] != "openai" {
+		t.Fatalf("assistant metadata should keep gateway provider status, got %#v", status)
+	}
+}
+
+func TestStreamMessageGeneralDoesNotPersistPartialAssistantWhenStreamStops(t *testing.T) {
+	defer appaccess.SetRolePermissionMatrix(nil)
+	service, repo := newInspectionAuthzTestService(map[string][]string{
+		"chat": {appaccess.PermObserveAIChatUse},
+	})
+	service.settings = inspectionAuthzSettingsResolver{settings: domainsettings.AISettings{
+		WorkbenchModel: domainsettings.AIWorkbenchModelSettings{
+			DefaultPublicModel: "gpt-public",
+			DefaultRouteID:     "route-openai",
+			DefaultEndpoint:    "chat/completions",
+			Enabled:            true,
+		},
+	}}
+	service.SetWorkbenchModelInvoker(&fakeWorkbenchModelInvoker{
+		streamDeltas: []string{"partial", " should not persist"},
+		streamResponse: appaigateway.WorkbenchRelayResponse{
+			Content:      "partial should not persist",
+			PublicModel:  "gpt-public",
+			RouteID:      "route-openai",
+			ProviderKind: "openai",
+		},
+	})
+	repo.session = domaincopilot.Session{
+		ID:        "session-1",
+		Title:     "General chat",
+		CreatedBy: "user-1",
+		Metadata:  sessionMetadataMap(domaincopilot.SessionMetadata{Mode: "general"}),
+		CreatedAt: time.Now().UTC(),
+		UpdatedAt: time.Now().UTC(),
+	}
+
+	liveEvents := make([]domaincopilot.WorkbenchStreamEvent, 0)
+	result, err := service.StreamMessage(context.Background(), domainidentity.Principal{
+		UserID: "user-1",
+		Roles:  []string{"chat"},
+	}, "session-1", domaincopilot.WorkbenchSendMessageInput{
+		Content: "hi",
+		Mode:    "general",
+		EventSink: func(event domaincopilot.WorkbenchStreamEvent) bool {
+			liveEvents = append(liveEvents, event)
+			return event.Type != "message.delta"
+		},
+	}, "en-US")
+	if err != nil {
+		t.Fatalf("stream general message: %v", err)
+	}
+	if len(result.Envelope.Messages) != 1 || result.Envelope.Messages[0].Role != "user" {
+		t.Fatalf("stopped stream should only return the persisted user message, got %#v", result.Envelope.Messages)
+	}
+	if len(repo.createdMessages) != 1 || repo.createdMessages[0].Role != "user" {
+		t.Fatalf("stopped stream must not persist a partial assistant message, got %#v", repo.createdMessages)
+	}
+	if containsStreamEvent(liveEvents, "message.done") {
+		t.Fatalf("stopped stream must not emit message.done for partial content: %#v", liveEvents)
+	}
+	finalStatus := liveEvents[len(liveEvents)-1]
+	if finalStatus.Type != "agent.status" || finalStatus.Status != "cancelled" {
+		t.Fatalf("expected final cancelled status, got %#v", liveEvents)
+	}
+}
+
+func TestStreamMessageInternalAnalysisToolFailureReturnsFailedEvents(t *testing.T) {
+	defer appaccess.SetRolePermissionMatrix(nil)
+	service, repo := newInspectionAuthzTestService(map[string][]string{
+		"chat": {appaccess.PermObserveAIChatUse},
+	})
+	repo.session = domaincopilot.Session{
+		ID:        "session-1",
+		Title:     "Performance",
+		CreatedBy: "user-1",
+		Metadata: sessionMetadataMap(domaincopilot.SessionMetadata{
+			Mode: "general",
+			Toolset: domaincopilot.SessionToolset{
+				DisabledToolNames: []string{"metrics.v1.metrics.anomaly_summary"},
+			},
+		}),
+		CreatedAt: time.Now().UTC(),
+		UpdatedAt: time.Now().UTC(),
+	}
+
+	result, err := service.StreamMessage(context.Background(), domainidentity.Principal{
+		UserID: "user-1",
+		Roles:  []string{"chat"},
+	}, "session-1", domaincopilot.WorkbenchSendMessageInput{
+		Content: "why is it slow",
+		Mode:    "performance",
+	}, "en-US")
+	if err != nil {
+		t.Fatalf("stream failed analysis should return event result, got %v", err)
+	}
+	if !containsStreamEvent(result.Events, "tool.started") || !containsStreamEvent(result.Events, "tool.completed") {
+		t.Fatalf("expected failed tool lifecycle events, got %#v", result.Events)
+	}
+	finalStatus := result.Events[len(result.Events)-1]
+	if finalStatus.Type != "agent.status" || finalStatus.Status != "failed" {
+		t.Fatalf("expected final failed status, got %#v", finalStatus)
+	}
+	completed := firstStreamEvent(result.Events, "tool.completed")
+	if completed.ToolCall == nil || completed.ToolCall.Status != "error" {
+		t.Fatalf("expected failed tool completion, got %#v", completed.ToolCall)
+	}
+	assistant := result.Envelope.Messages[len(result.Envelope.Messages)-1]
+	status := assistant.Metadata["agentStatus"].(map[string]any)
+	if status["status"] != "failed" {
+		t.Fatalf("expected failed final metadata status, got %#v", status)
+	}
+}
+
+func TestStreamEventsFromEnvelopeWithoutArtifactStillCompletesMessage(t *testing.T) {
+	events := streamEventsFromEnvelope("session-1", domaincopilot.SessionMessageEnvelope{
+		Messages: []domaincopilot.Message{{
+			ID:        "msg-1",
+			SessionID: "session-1",
+			Role:      "assistant",
+			Content:   "No artifact was produced.",
+			Metadata:  map[string]any{"mode": "performance"},
+		}},
+	}, time.Now().UTC(), "succeeded")
+
+	if containsStreamEvent(events, "artifact.updated") || containsStreamEvent(events, "tool.completed") {
+		t.Fatalf("no-artifact envelope should not synthesize tool/artifact events, got %#v", events)
+	}
+	if !containsStreamEvent(events, "message.done") || events[len(events)-1].Type != "agent.status" {
+		t.Fatalf("expected message completion and final status, got %#v", events)
 	}
 }
 
@@ -1765,6 +2356,112 @@ func TestRunSessionAnalysisQueuesExternalRootCauseBusinessRun(t *testing.T) {
 	if envelope.SessionPatch["rootCauseRunId"] != repo.createdRootCauseRun.ID || envelope.SessionPatch["agentRunId"] != repo.createdAgentRun.ID {
 		t.Fatalf("expected session patch to expose both run ids, got %#v", envelope.SessionPatch)
 	}
+	if len(envelope.Messages) != 1 {
+		t.Fatalf("expected one external queue placeholder message, got %#v", envelope.Messages)
+	}
+	metadata := envelope.Messages[0].Metadata
+	if metadata["thinkingSummary"] == "" || metadata["analysisArtifacts"] == nil || metadata["agentStatus"] == nil {
+		t.Fatalf("expected external queue placeholder replay metadata, got %#v", metadata)
+	}
+	status := metadata["agentStatus"].(map[string]any)
+	if status["status"] != domaincopilot.AgentRunStatusQueued || status["agentRunId"] != repo.createdAgentRun.ID {
+		t.Fatalf("unexpected external queue agent status: %#v", status)
+	}
+}
+
+func TestStreamMessageExternalAgentEmitsProviderAwareQueuedStatus(t *testing.T) {
+	defer appaccess.SetRolePermissionMatrix(nil)
+	service, repo := newInspectionAuthzTestService(map[string][]string{
+		"chat": {appaccess.PermObserveAIChatUse},
+	})
+	repo.session = domaincopilot.Session{
+		ID:        "session-1",
+		Title:     "Payment incident",
+		CreatedBy: "user-1",
+		Metadata: sessionMetadataMap(domaincopilot.SessionMetadata{
+			Mode:            "root_cause",
+			AgentProviderID: "hermes",
+			Scope: domaincopilot.SessionScope{
+				ClusterID:        "cluster-a",
+				Namespace:        "payments",
+				Workload:         "payment-api",
+				TimeRangeMinutes: 30,
+			},
+		}),
+		CreatedAt: time.Now().UTC(),
+		UpdatedAt: time.Now().UTC(),
+	}
+
+	liveEvents := make([]domaincopilot.WorkbenchStreamEvent, 0)
+	result, err := service.StreamMessage(context.Background(), domainidentity.Principal{
+		UserID: "user-1",
+		Roles:  []string{"chat"},
+	}, "session-1", domaincopilot.WorkbenchSendMessageInput{
+		Content:         "Investigate payment-api errors",
+		Mode:            "root_cause",
+		AgentProviderID: "hermes",
+		EventSink: func(event domaincopilot.WorkbenchStreamEvent) bool {
+			liveEvents = append(liveEvents, event)
+			return true
+		},
+	}, "en-US")
+	if err != nil {
+		t.Fatalf("stream external agent analysis: %v", err)
+	}
+	if len(liveEvents) == 0 || liveEvents[0].Type != "agent.status" || liveEvents[0].ProviderID != "hermes" || liveEvents[0].ProviderKind != "hermes" || liveEvents[0].Status != domaincopilot.AgentRunStatusQueued {
+		t.Fatalf("expected provider-aware queued status, got %#v", liveEvents)
+	}
+	if len(result.Events) == 0 || result.Events[len(result.Events)-1].ProviderID != "hermes" || result.Events[len(result.Events)-1].ProviderKind != "hermes" {
+		t.Fatalf("expected replay events to keep external provider identity, got %#v", result.Events)
+	}
+	if repo.createdAgentRun.ProviderID != "hermes" || repo.createdAgentRun.SessionID != "session-1" {
+		t.Fatalf("expected queued hermes agent run, got %#v", repo.createdAgentRun)
+	}
+}
+
+func TestRunSessionAnalysisQueuesNonRootCauseAgentWithoutSessionAsRootRun(t *testing.T) {
+	defer appaccess.SetRolePermissionMatrix(nil)
+	service, repo := newInspectionAuthzTestService(map[string][]string{
+		"chat": {appaccess.PermObserveAIChatUse},
+	})
+	repo.session = domaincopilot.Session{
+		ID:        "session-1",
+		Title:     "Performance analysis",
+		CreatedBy: "user-1",
+		Metadata: sessionMetadataMap(domaincopilot.SessionMetadata{
+			Mode:            "performance",
+			AgentProviderID: "hermes",
+			Scope: domaincopilot.SessionScope{
+				ClusterID:        "cluster-a",
+				Namespace:        "payments",
+				Workload:         "payment-api",
+				TimeRangeMinutes: 30,
+			},
+			Toolset: domaincopilot.SessionToolset{
+				EnabledAdapterIDs: []string{"metrics.v1"},
+				EnabledSkillIDs:   []string{"root-cause-investigation"},
+			},
+		}),
+		CreatedAt: time.Now().UTC(),
+		UpdatedAt: time.Now().UTC(),
+	}
+
+	_, err := service.RunSessionAnalysis(context.Background(), domainidentity.Principal{
+		UserID: "user-1",
+		Roles:  []string{"chat"},
+	}, "session-1", domaincopilot.RootCauseRunInput{
+		Kind:     "performance",
+		Question: "Check latency",
+	}, "en-US")
+	if err != nil {
+		t.Fatalf("queue non-root agent analysis: %v", err)
+	}
+	if repo.createdAgentRun.RootCauseRunID != "" {
+		t.Fatalf("non-root external analysis must not use session id as root run id, got %#v", repo.createdAgentRun)
+	}
+	if repo.createdAgentRun.SessionID != "session-1" || repo.createdAgentRun.CapabilityID != "performance" {
+		t.Fatalf("unexpected non-root agent run: %#v", repo.createdAgentRun)
+	}
 }
 
 func TestRecordAgentRunCallbackBackfillsRootCauseRun(t *testing.T) {
@@ -1872,6 +2569,112 @@ func TestRecordAgentRunCallbackBackfillsSessionOwnedRootCauseRun(t *testing.T) {
 	}
 	if repo.rootCauseRun.Status != "completed" || repo.rootCauseRun.Summary != "Session-owned RCA backfilled." {
 		t.Fatalf("expected session-owned root cause run to be backfilled, got %#v", repo.rootCauseRun)
+	}
+}
+
+func TestRecordAgentRunCallbackPersistsFinalMessageReplayMetadata(t *testing.T) {
+	createdAt := time.Date(2026, 5, 27, 10, 0, 0, 0, time.UTC)
+	completedAt := createdAt.Add(5 * time.Second)
+	repo := &agentRuntimeCallbackTestRepository{
+		agentRun: domaincopilot.AgentRun{
+			ID:            "agent:run-message",
+			ProviderID:    "hermes",
+			ProviderKind:  "hermes",
+			CapabilityID:  "root_cause",
+			SessionID:     "session-1",
+			CreatedBy:     "user-1",
+			Status:        domaincopilot.AgentRunStatusRunning,
+			Output:        map[string]any{},
+			CallbackToken: "callback-token",
+			ToolExecutions: []domaincopilot.ToolExecution{{
+				ID:          "tool:logs",
+				AdapterID:   "logs.v1",
+				ToolName:    "logs.query",
+				Status:      "completed",
+				Summary:     "logs reviewed",
+				StartedAt:   createdAt,
+				CompletedAt: &completedAt,
+			}},
+			CreatedAt: createdAt,
+			UpdatedAt: createdAt,
+		},
+	}
+	repo.session = domaincopilot.Session{ID: "session-1", CreatedBy: "user-1", Metadata: sessionMetadataMap(domaincopilot.SessionMetadata{Mode: "root_cause"})}
+	service := &Service{repo: repo}
+
+	_, err := service.RecordAgentRunCallback(context.Background(), domaincopilot.AgentRunCallbackInput{
+		RunID:         "agent:run-message",
+		CallbackToken: "callback-token",
+		Status:        domaincopilot.AgentRunStatusCompleted,
+		Payload:       map[string]any{"summary": "Hermes completed final analysis."},
+		Events: []domaincopilot.WorkbenchStreamEvent{{
+			Type:      "thinking.delta",
+			TextDelta: "checking logs",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("record terminal callback: %v", err)
+	}
+	if len(repo.createdMessages) != 1 {
+		t.Fatalf("expected terminal callback to persist assistant message, got %#v", repo.createdMessages)
+	}
+	metadata := repo.createdMessages[0].Metadata
+	if metadata["thinkingSummary"] == "" || metadata["toolExecutions"] == nil || metadata["sources"] == nil || metadata["analysisArtifacts"] == nil || metadata["agentStatus"] == nil {
+		t.Fatalf("final callback message missing replay metadata: %#v", metadata)
+	}
+	status := metadata["agentStatus"].(map[string]any)
+	if status["status"] != "succeeded" || status["agentRunId"] != "agent:run-message" {
+		t.Fatalf("unexpected final callback agent status: %#v", status)
+	}
+	if events := workbenchEventsFromValue(metadata["workbenchEvents"]); len(events) != 1 {
+		t.Fatalf("expected persisted workbench events in metadata, got %#v", metadata["workbenchEvents"])
+	}
+}
+
+func TestRecordAgentRunCallbackLateTerminalDoesNotDuplicateMessageOrSessionRef(t *testing.T) {
+	createdAt := time.Date(2026, 5, 27, 10, 0, 0, 0, time.UTC)
+	repo := &agentRuntimeCallbackTestRepository{
+		agentRun: domaincopilot.AgentRun{
+			ID:            "agent:late-terminal",
+			ProviderID:    "hermes",
+			ProviderKind:  "hermes",
+			CapabilityID:  "root_cause",
+			SessionID:     "session-1",
+			CreatedBy:     "user-1",
+			Status:        domaincopilot.AgentRunStatusRunning,
+			Output:        map[string]any{},
+			CallbackToken: "callback-token",
+			CreatedAt:     createdAt,
+			UpdatedAt:     createdAt,
+		},
+	}
+	repo.session = domaincopilot.Session{
+		ID:        "session-1",
+		CreatedBy: "user-1",
+		Metadata:  sessionMetadataMap(domaincopilot.SessionMetadata{Mode: "root_cause"}),
+		CreatedAt: createdAt,
+		UpdatedAt: createdAt,
+	}
+	service := &Service{repo: repo}
+	input := domaincopilot.AgentRunCallbackInput{
+		RunID:         "agent:late-terminal",
+		CallbackToken: "callback-token",
+		Status:        domaincopilot.AgentRunStatusCompleted,
+		Payload:       map[string]any{"summary": "Hermes completed final analysis."},
+	}
+
+	if _, err := service.RecordAgentRunCallback(context.Background(), input); err != nil {
+		t.Fatalf("record first terminal callback: %v", err)
+	}
+	if _, err := service.RecordAgentRunCallback(context.Background(), input); err != nil {
+		t.Fatalf("record late terminal callback: %v", err)
+	}
+	if len(repo.createdMessages) != 1 {
+		t.Fatalf("late terminal callback duplicated assistant messages: %#v", repo.createdMessages)
+	}
+	metadata := parseSessionMetadata(repo.session.Metadata)
+	if len(metadata.AnalysisRunRefs) != 1 {
+		t.Fatalf("late terminal callback duplicated session analysisRunRefs: %#v", metadata.AnalysisRunRefs)
 	}
 }
 
@@ -2246,6 +3049,255 @@ func TestRecordAgentRunCallbackPreservesPriorToolCalls(t *testing.T) {
 	}
 }
 
+func TestRecordAgentRunCallbackMergesAndFiltersWorkbenchEvents(t *testing.T) {
+	createdAt := time.Date(2026, 5, 27, 10, 0, 0, 0, time.UTC)
+	repo := &agentRuntimeCallbackTestRepository{
+		agentRun: domaincopilot.AgentRun{
+			ID:             "agent:run-events",
+			ProviderID:     "hermes",
+			ProviderKind:   "hermes",
+			CapabilityID:   "root_cause",
+			SessionID:      "session-1",
+			RootCauseRunID: "rca:run-1",
+			Status:         domaincopilot.AgentRunStatusRunning,
+			Output: map[string]any{
+				"workbenchEvents": []domaincopilot.WorkbenchStreamEvent{{
+					ID:        "evt:old",
+					Type:      "thinking.delta",
+					SessionID: "session-1",
+					RunID:     "agent:run-events",
+					Sequence:  1,
+					CreatedAt: createdAt,
+					TextDelta: "old",
+				}},
+			},
+			CallbackToken: "callback-token",
+			CreatedAt:     createdAt,
+			UpdatedAt:     createdAt,
+		},
+	}
+	service := &Service{repo: repo}
+
+	updated, err := service.RecordAgentRunCallback(context.Background(), domaincopilot.AgentRunCallbackInput{
+		RunID:         "agent:run-events",
+		CallbackToken: "callback-token",
+		Status:        domaincopilot.AgentRunStatusRunning,
+		Events: []domaincopilot.WorkbenchStreamEvent{{
+			Type:      "thinking.delta",
+			TextDelta: "runner is thinking",
+		}, {
+			Type:    "message.done",
+			RunID:   "rca:run-1",
+			Content: "root cause found",
+		}, {
+			Type:    "message.done",
+			RunID:   "other-run",
+			Content: "must be filtered",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("record callback events: %v", err)
+	}
+	events := workbenchEventsFromValue(updated.Output["workbenchEvents"])
+	if len(events) != 3 {
+		t.Fatalf("expected old + two valid events, got %#v", events)
+	}
+	for index, event := range events {
+		if event.Sequence != index+1 || event.ID == "" || event.SessionID != "session-1" {
+			t.Fatalf("event[%d] was not normalized: %#v", index, event)
+		}
+		if event.RunID == "other-run" {
+			t.Fatalf("invalid run event was not filtered: %#v", events)
+		}
+	}
+}
+
+func TestRecordAgentRunCallbackPayloadWorkbenchEventsAreReservedNormalizedAndCapped(t *testing.T) {
+	createdAt := time.Date(2026, 5, 27, 10, 0, 0, 0, time.UTC)
+	repo := &agentRuntimeCallbackTestRepository{
+		agentRun: domaincopilot.AgentRun{
+			ID:             "agent:payload-events",
+			ProviderID:     "hermes",
+			ProviderKind:   "hermes",
+			CapabilityID:   "performance",
+			SessionID:      "session-1",
+			RootCauseRunID: "session-1",
+			Status:         domaincopilot.AgentRunStatusRunning,
+			Output:         map[string]any{},
+			CallbackToken:  "callback-token",
+			CreatedAt:      createdAt,
+			UpdatedAt:      createdAt,
+		},
+	}
+	service := &Service{repo: repo}
+	payloadEvents := []domaincopilot.WorkbenchStreamEvent{{
+		ID:       "runner-foreign",
+		Type:     "message.done",
+		RunID:    "session-1",
+		Sequence: 99,
+		Content:  "must be filtered",
+	}}
+	for index := 0; index < maxAgentRunWorkbenchEvents+5; index++ {
+		payloadEvents = append(payloadEvents, domaincopilot.WorkbenchStreamEvent{
+			ID:        fmt.Sprintf("runner-custom-%d", index),
+			Type:      "thinking.delta",
+			RunID:     "agent:payload-events",
+			Sequence:  index + 50,
+			CreatedAt: createdAt.Add(-time.Duration(index) * time.Minute),
+			TextDelta: fmt.Sprintf("valid-%d", index),
+		})
+	}
+
+	updated, err := service.RecordAgentRunCallback(context.Background(), domaincopilot.AgentRunCallbackInput{
+		RunID:         "agent:payload-events",
+		CallbackToken: "callback-token",
+		Status:        domaincopilot.AgentRunStatusRunning,
+		Payload: map[string]any{
+			"summary":         "payload events normalized",
+			"workbenchEvents": payloadEvents,
+		},
+	})
+	if err != nil {
+		t.Fatalf("record callback payload events: %v", err)
+	}
+	if updated.Output["summary"] != "payload events normalized" {
+		t.Fatalf("non-reserved payload fields should be preserved, got %#v", updated.Output)
+	}
+	events := workbenchEventsFromValue(updated.Output["workbenchEvents"])
+	if len(events) != maxAgentRunWorkbenchEvents {
+		t.Fatalf("expected event snapshot cap %d, got %d", maxAgentRunWorkbenchEvents, len(events))
+	}
+	for index, event := range events {
+		if event.RunID == "session-1" {
+			t.Fatalf("session id run event was not filtered: %#v", events)
+		}
+		if strings.HasPrefix(event.ID, "runner-custom") || event.Sequence != index+1 || event.SessionID != "session-1" {
+			t.Fatalf("event[%d] was not rewritten/normalized: %#v", index, event)
+		}
+	}
+	if events[0].TextDelta != "valid-5" {
+		t.Fatalf("expected oldest payload events to be capped, got first event %#v", events[0])
+	}
+}
+
+func TestRecordAgentRunCallbackSanitizesRunnerToolsAndEvents(t *testing.T) {
+	createdAt := time.Date(2026, 5, 27, 10, 0, 0, 0, time.UTC)
+	repo := &agentRuntimeCallbackTestRepository{
+		agentRun: domaincopilot.AgentRun{
+			ID:            "agent:sanitize",
+			ProviderID:    "hermes",
+			ProviderKind:  "hermes",
+			CapabilityID:  "root_cause",
+			SessionID:     "session-1",
+			CreatedBy:     "user-1",
+			Status:        domaincopilot.AgentRunStatusRunning,
+			Output:        map[string]any{},
+			CallbackToken: "callback-token",
+			CreatedAt:     createdAt,
+			UpdatedAt:     createdAt,
+		},
+	}
+	repo.session = domaincopilot.Session{
+		ID:        "session-1",
+		CreatedBy: "user-1",
+		Metadata:  sessionMetadataMap(domaincopilot.SessionMetadata{Mode: "root_cause"}),
+		CreatedAt: createdAt,
+		UpdatedAt: createdAt,
+	}
+	service := &Service{repo: repo}
+
+	_, err := service.RecordAgentRunCallback(context.Background(), domaincopilot.AgentRunCallbackInput{
+		RunID:         "agent:sanitize",
+		CallbackToken: "callback-token",
+		Status:        domaincopilot.AgentRunStatusCompleted,
+		Payload: map[string]any{
+			"summary": "Sanitized final analysis.",
+			"workbenchEvents": []domaincopilot.WorkbenchStreamEvent{{
+				Type:    "error",
+				Message: "payload event authorization: Bearer raw-payload-auth",
+			}},
+		},
+		Events: []domaincopilot.WorkbenchStreamEvent{{
+			Type:    "error",
+			Message: "runner error password=raw-event-password",
+		}, {
+			Type: "tool.completed",
+			ToolCall: &domaincopilot.WorkbenchToolCall{
+				ID:            "tool:preview",
+				AdapterID:     "logs.v1",
+				ToolName:      "logs.query",
+				Status:        "error",
+				Summary:       "failed with kubeconfig=raw-kubeconfig",
+				InputPreview:  map[string]any{"authorization": "Bearer raw-preview-auth"},
+				OutputPreview: map[string]any{"error": "secret=raw-preview-secret"},
+			},
+		}},
+		ToolExecutions: []domaincopilot.ToolExecution{{
+			ID:        "tool:runner",
+			AdapterID: "logs.v1",
+			ToolName:  "logs.query",
+			Status:    "failed",
+			Summary:   "tool failed token=raw-tool-token",
+			Input:     map[string]any{"api_key": "raw-api-key", "query": "status=500"},
+			Output:    map[string]any{"message": "password=raw-tool-password"},
+			StartedAt: createdAt,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("record sanitize callback: %v", err)
+	}
+
+	for label, value := range map[string]any{
+		"callback tools": repo.callback.ToolExecutions,
+		"stored events":  repo.agentRun.Output["workbenchEvents"],
+		"final metadata": repo.createdMessages[0].Metadata,
+	} {
+		text := fmt.Sprint(value)
+		for _, leaked := range []string{"raw-payload-auth", "raw-event-password", "raw-kubeconfig", "raw-preview-auth", "raw-preview-secret", "raw-tool-token", "raw-api-key", "raw-tool-password"} {
+			if strings.Contains(text, leaked) {
+				t.Fatalf("%s leaked sensitive value %q: %s", label, leaked, text)
+			}
+		}
+	}
+	if got := repo.callback.ToolExecutions[0].Input["api_key"]; got != "[REDACTED]" {
+		t.Fatalf("expected tool input api_key to be redacted, got %#v", got)
+	}
+}
+
+func TestRecordAgentRunCallbackWithoutEventsKeepsLegacyRunnerPath(t *testing.T) {
+	createdAt := time.Date(2026, 5, 27, 10, 0, 0, 0, time.UTC)
+	repo := &agentRuntimeCallbackTestRepository{
+		agentRun: domaincopilot.AgentRun{
+			ID:            "agent:legacy-runner",
+			ProviderID:    "hermes",
+			ProviderKind:  "hermes",
+			CapabilityID:  "root_cause",
+			Status:        domaincopilot.AgentRunStatusRunning,
+			Output:        map[string]any{},
+			CallbackToken: "callback-token",
+			CreatedAt:     createdAt,
+			UpdatedAt:     createdAt,
+		},
+	}
+	service := &Service{repo: repo}
+
+	updated, err := service.RecordAgentRunCallback(context.Background(), domaincopilot.AgentRunCallbackInput{
+		RunID:         "agent:legacy-runner",
+		CallbackToken: "callback-token",
+		Status:        domaincopilot.AgentRunStatusRunning,
+		Payload:       map[string]any{"summary": "legacy still works"},
+	})
+	if err != nil {
+		t.Fatalf("record legacy callback: %v", err)
+	}
+	if updated.Output["summary"] != "legacy still works" {
+		t.Fatalf("legacy payload was not preserved: %#v", updated.Output)
+	}
+	if _, ok := updated.Output["workbenchEvents"]; ok {
+		t.Fatalf("legacy runner without events should not create event snapshot, got %#v", updated.Output)
+	}
+}
+
 func TestAgentRunHeartbeatExpiredUsesQueuedStartedAndHeartbeatTimes(t *testing.T) {
 	now := time.Date(2026, 5, 27, 12, 0, 0, 0, time.UTC)
 	startedAt := now.Add(-11 * time.Minute)
@@ -2287,6 +3339,19 @@ type inspectionAuthzRoleReader struct {
 
 func (r inspectionAuthzRoleReader) ListRolePermissions(context.Context) (map[string][]string, error) {
 	return r.matrix, nil
+}
+
+type captureCopilotAuditRecorder struct {
+	entries []domainaudit.Entry
+}
+
+func (r *captureCopilotAuditRecorder) Record(_ context.Context, entry domainaudit.Entry) error {
+	r.entries = append(r.entries, entry)
+	return nil
+}
+
+func (r *captureCopilotAuditRecorder) List(context.Context, domainaudit.Filter) ([]domainaudit.Entry, error) {
+	return append([]domainaudit.Entry(nil), r.entries...), nil
 }
 
 type inspectionAuthzTestRepository struct {
@@ -2333,18 +3398,102 @@ func (r *agentRuntimeCallbackTestRepository) UpdateRootCauseRun(_ context.Contex
 }
 
 func (r *agentRuntimeCallbackTestRepository) UpdateAgentRunCallback(_ context.Context, input domaincopilot.AgentRunCallbackInput) (domaincopilot.AgentRun, error) {
+	input = domaincopilot.SanitizeAgentRunCallbackInput(input)
 	r.callback = input
+	if agentRunStatusTerminal(r.agentRun.Status) {
+		r.agentRun.CallbackTransition = domaincopilot.AgentRunCallbackTransitionNoopTerminal
+		return r.agentRun, nil
+	}
 	status := strings.TrimSpace(input.Status)
 	if status == "" {
 		status = domaincopilot.AgentRunStatusRunning
 	}
 	r.agentRun.Status = status
-	r.agentRun.Output = input.Payload
+	r.agentRun.Output = mergeAgentRuntimeTestCallbackPayload(r.agentRun.Output, input.Payload)
+	callbackEvents := append([]domaincopilot.WorkbenchStreamEvent{}, input.Events...)
+	callbackEvents = append(callbackEvents, workbenchEventsFromValue(input.Payload["workbenchEvents"])...)
+	if events := normalizeAgentRuntimeTestCallbackEvents(r.agentRun, callbackEvents); len(events) > 0 {
+		r.agentRun.Output["workbenchEvents"] = mergeAgentRuntimeTestWorkbenchEvents(r.agentRun.Output["workbenchEvents"], events)
+	}
 	r.agentRun.ToolExecutions = mergeAgentRuntimeTestToolExecutions(r.agentRun.ToolExecutions, input.ToolExecutions)
 	r.agentRun.AnalysisArtifacts = input.AnalysisArtifacts
 	r.agentRun.ClaimedByAgentID = input.AgentID
 	r.agentRun.ExternalRunID = input.ExternalRunID
+	r.agentRun.ErrorMessage = input.ErrorMessage
+	r.agentRun.CallbackTransition = domaincopilot.AgentRunCallbackTransitionApplied
+	if agentRunStatusTerminal(status) {
+		now := time.Now().UTC()
+		r.agentRun.CompletedAt = &now
+		r.agentRun.CallbackTransition = domaincopilot.AgentRunCallbackTransitionTerminal
+	}
 	return r.agentRun, nil
+}
+
+func mergeAgentRuntimeTestCallbackPayload(current map[string]any, patch map[string]any) map[string]any {
+	merged := map[string]any{}
+	for key, value := range current {
+		merged[key] = value
+	}
+	for key, value := range patch {
+		if strings.EqualFold(strings.TrimSpace(key), "workbenchEvents") {
+			continue
+		}
+		merged[key] = value
+	}
+	return merged
+}
+
+func normalizeAgentRuntimeTestCallbackEvents(run domaincopilot.AgentRun, events []domaincopilot.WorkbenchStreamEvent) []domaincopilot.WorkbenchStreamEvent {
+	now := time.Now().UTC()
+	allowed := map[string]struct{}{run.ID: {}}
+	if strings.TrimSpace(run.RootCauseRunID) != "" && strings.TrimSpace(run.RootCauseRunID) != strings.TrimSpace(run.SessionID) && strings.TrimSpace(run.CapabilityID) == "root_cause" {
+		allowed[run.RootCauseRunID] = struct{}{}
+	}
+	out := make([]domaincopilot.WorkbenchStreamEvent, 0, len(events))
+	for _, event := range events {
+		runID := strings.TrimSpace(event.RunID)
+		if runID != "" {
+			if _, ok := allowed[runID]; !ok {
+				continue
+			}
+		} else {
+			runID = run.ID
+		}
+		event.ID = ""
+		event.SessionID = run.SessionID
+		event.RunID = runID
+		event.Sequence = 0
+		event.CreatedAt = now
+		if event.ProviderID == "" {
+			event.ProviderID = run.ProviderID
+		}
+		if event.ProviderKind == "" {
+			event.ProviderKind = run.ProviderKind
+		}
+		if strings.TrimSpace(event.Type) == "agent.status" {
+			event.Status = domaincopilot.AgentRunStatusToWorkbenchStatus(event.Status)
+		}
+		if strings.TrimSpace(event.Type) == "" {
+			continue
+		}
+		out = append(out, event)
+	}
+	return out
+}
+
+func mergeAgentRuntimeTestWorkbenchEvents(current any, patch []domaincopilot.WorkbenchStreamEvent) []domaincopilot.WorkbenchStreamEvent {
+	merged := workbenchEventsFromValue(current)
+	merged = append(merged, patch...)
+	if len(merged) > maxAgentRunWorkbenchEvents {
+		merged = merged[len(merged)-maxAgentRunWorkbenchEvents:]
+	}
+	for index := range merged {
+		merged[index].Sequence = index + 1
+		if merged[index].ID == "" {
+			merged[index].ID = fmt.Sprintf("evt:%s:%06d", firstNonEmpty(merged[index].SessionID, merged[index].RunID, "agent-run"), index+1)
+		}
+	}
+	return merged
 }
 
 func (r *agentRuntimeCallbackTestRepository) CancelAgentRun(_ context.Context, input domaincopilot.AgentRunCancelInput) (domaincopilot.AgentRun, error) {
@@ -2614,8 +3763,9 @@ func (r *inspectionAuthzTestRepository) GetSession(context.Context, string, stri
 	return domaincopilot.Session{}, errors.New("unexpected session read")
 }
 
-func (r *inspectionAuthzTestRepository) CreateSession(context.Context, domaincopilot.Session) (domaincopilot.Session, error) {
-	return domaincopilot.Session{}, errors.New("unexpected session create")
+func (r *inspectionAuthzTestRepository) CreateSession(_ context.Context, session domaincopilot.Session) (domaincopilot.Session, error) {
+	r.session = session
+	return session, nil
 }
 
 func (r *inspectionAuthzTestRepository) UpdateSession(_ context.Context, _, _ string, session domaincopilot.Session) (domaincopilot.Session, error) {
@@ -2811,6 +3961,7 @@ func (r *inspectionAuthzTestRepository) ClaimAgentRun(_ context.Context, input d
 }
 
 func (r *inspectionAuthzTestRepository) UpdateAgentRunCallback(_ context.Context, input domaincopilot.AgentRunCallbackInput) (domaincopilot.AgentRun, error) {
+	input = domaincopilot.SanitizeAgentRunCallbackInput(input)
 	now := time.Now().UTC()
 	status := strings.TrimSpace(input.Status)
 	if status == "" {
@@ -2820,6 +3971,10 @@ func (r *inspectionAuthzTestRepository) UpdateAgentRunCallback(_ context.Context
 		if r.agentRuns[index].ID != input.RunID {
 			continue
 		}
+		if agentRunStatusTerminal(r.agentRuns[index].Status) {
+			r.agentRuns[index].CallbackTransition = domaincopilot.AgentRunCallbackTransitionNoopTerminal
+			return r.agentRuns[index], nil
+		}
 		r.agentRuns[index].Status = status
 		r.agentRuns[index].Output = mergeAgentRunCallbackPayload(r.agentRuns[index].Output, input.Payload)
 		r.agentRuns[index].ToolExecutions = input.ToolExecutions
@@ -2828,8 +3983,10 @@ func (r *inspectionAuthzTestRepository) UpdateAgentRunCallback(_ context.Context
 		r.agentRuns[index].ExternalRunID = input.ExternalRunID
 		r.agentRuns[index].ErrorMessage = input.ErrorMessage
 		r.agentRuns[index].LastHeartbeatAt = &now
+		r.agentRuns[index].CallbackTransition = domaincopilot.AgentRunCallbackTransitionApplied
 		if agentRunStatusTerminal(status) {
 			r.agentRuns[index].CompletedAt = &now
+			r.agentRuns[index].CallbackTransition = domaincopilot.AgentRunCallbackTransitionTerminal
 		}
 		r.agentRuns[index].UpdatedAt = now
 		return r.agentRuns[index], nil
@@ -2906,9 +4063,12 @@ func (r inspectionAuthzSettingsResolver) ResolveAISkillsRegistry(context.Context
 }
 
 type fakeWorkbenchModelInvoker struct {
-	request  appaigateway.WorkbenchRelayRequest
-	response appaigateway.WorkbenchRelayResponse
-	err      error
+	request        appaigateway.WorkbenchRelayRequest
+	response       appaigateway.WorkbenchRelayResponse
+	err            error
+	streamDeltas   []string
+	streamResponse appaigateway.WorkbenchRelayResponse
+	streamErr      error
 }
 
 func (f *fakeWorkbenchModelInvoker) InvokeWorkbenchModel(_ context.Context, _ domainidentity.Principal, request appaigateway.WorkbenchRelayRequest) (appaigateway.WorkbenchRelayResponse, error) {
@@ -2919,6 +4079,25 @@ func (f *fakeWorkbenchModelInvoker) InvokeWorkbenchModel(_ context.Context, _ do
 	return f.response, nil
 }
 
+func (f *fakeWorkbenchModelInvoker) InvokeWorkbenchModelStream(_ context.Context, _ domainidentity.Principal, request appaigateway.WorkbenchRelayRequest, onDelta func(appaigateway.WorkbenchRelayStreamDelta) bool) (appaigateway.WorkbenchRelayResponse, error) {
+	f.request = request
+	if f.streamErr != nil {
+		return appaigateway.WorkbenchRelayResponse{}, f.streamErr
+	}
+	var content strings.Builder
+	for _, delta := range f.streamDeltas {
+		content.WriteString(delta)
+		if onDelta != nil && !onDelta(appaigateway.WorkbenchRelayStreamDelta{ContentDelta: delta}) {
+			return appaigateway.WorkbenchRelayResponse{}, appaigateway.ErrWorkbenchRelayStreamStopped
+		}
+	}
+	resp := f.streamResponse
+	if resp.Content == "" {
+		resp.Content = content.String()
+	}
+	return resp, nil
+}
+
 func graphHasNode(graph *domaincopilot.AnalysisGraph, nodeID string) bool {
 	for _, node := range graph.Nodes {
 		if node.ID == nodeID {
@@ -2926,6 +4105,19 @@ func graphHasNode(graph *domaincopilot.AnalysisGraph, nodeID string) bool {
 		}
 	}
 	return false
+}
+
+func containsStreamEvent(events []domaincopilot.WorkbenchStreamEvent, eventType string) bool {
+	return firstStreamEvent(events, eventType).Type != ""
+}
+
+func firstStreamEvent(events []domaincopilot.WorkbenchStreamEvent, eventType string) domaincopilot.WorkbenchStreamEvent {
+	for _, event := range events {
+		if event.Type == eventType {
+			return event
+		}
+	}
+	return domaincopilot.WorkbenchStreamEvent{}
 }
 
 func floatNear(value any, expected float64) bool {

@@ -16,11 +16,13 @@ import (
 type CopilotService interface {
 	ListSessions(context.Context, domainidentity.Principal) ([]domaincopilot.Session, error)
 	GetSession(context.Context, domainidentity.Principal, string) (domaincopilot.Session, error)
-	CreateSession(context.Context, domainidentity.Principal, string, string, string, map[string]any, []string, string) (domaincopilot.Session, error)
-	UpdateSession(context.Context, domainidentity.Principal, string, string, string, string, string, string, map[string]any, map[string]any, []string, bool) (domaincopilot.Session, error)
+	CreateSession(context.Context, domainidentity.Principal, string, string, string, map[string]any, map[string]any, string, []string, string) (domaincopilot.Session, error)
+	UpdateSession(context.Context, domainidentity.Principal, string, string, string, string, string, string, map[string]any, map[string]any, string, map[string]any, []string, bool) (domaincopilot.Session, error)
 	DeleteSession(context.Context, domainidentity.Principal, string) error
 	ListMessages(context.Context, domainidentity.Principal, string) ([]domaincopilot.Message, error)
 	SendMessage(context.Context, domainidentity.Principal, string, string, string) (domaincopilot.SessionMessageEnvelope, error)
+	StreamMessage(context.Context, domainidentity.Principal, string, domaincopilot.WorkbenchSendMessageInput, string) (domaincopilot.WorkbenchStreamResult, error)
+	RecordGlobalAssistantEvent(context.Context, domainidentity.Principal, domaincopilot.WorkbenchGlobalAssistantEventInput) error
 	Insights(context.Context, domainidentity.Principal, string) ([]domaincopilot.Insight, error)
 	ListDataSourceCapabilities(context.Context, domainidentity.Principal) ([]domainmcp.Adapter, error)
 	GetWorkbenchCatalog(context.Context, domainidentity.Principal) (domaincopilot.WorkbenchCatalog, error)
@@ -167,6 +169,7 @@ func (h *CopilotHandler) RecordAgentRunCallback(c *gin.Context) {
 		AgentID:           req.AgentID,
 		Status:            req.Status,
 		Payload:           req.Payload,
+		Events:            req.Events,
 		ToolExecutions:    req.ToolExecutions,
 		AnalysisArtifacts: req.AnalysisArtifacts,
 		ExternalRunID:     req.ExternalRunID,
@@ -455,7 +458,7 @@ func (h *CopilotHandler) CreateSession(c *gin.Context) {
 	if req.Workload != "" {
 		scope["workload"] = req.Workload
 	}
-	item, err := h.service.CreateSession(c.Request.Context(), principal, req.Title, req.Mode, req.AgentProviderID, scope, req.Tags, localeFromRequest(c.GetHeader("Accept-Language")))
+	item, err := h.service.CreateSession(c.Request.Context(), principal, req.Title, req.Mode, req.AgentProviderID, scope, req.PinnedContext, req.Source, req.Tags, localeFromRequest(c.GetHeader("Accept-Language")))
 	if err != nil {
 		writeError(c, err)
 		return
@@ -470,12 +473,33 @@ func (h *CopilotHandler) UpdateSession(c *gin.Context) {
 		return
 	}
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.service.UpdateSession(c.Request.Context(), principal, c.Param("sessionID"), req.Title, req.Mode, req.AgentProviderID, req.Status, req.Summary, req.Scope, req.Toolset, req.Tags, req.Archived)
+	item, err := h.service.UpdateSession(c.Request.Context(), principal, c.Param("sessionID"), req.Title, req.Mode, req.AgentProviderID, req.Status, req.Summary, req.Scope, req.PinnedContext, req.Source, req.Toolset, req.Tags, req.Archived)
 	if err != nil {
 		writeError(c, err)
 		return
 	}
 	apiresponse.Item(c, http.StatusOK, item)
+}
+
+func (h *CopilotHandler) RecordGlobalAssistantEvent(c *gin.Context) {
+	var req dto.WorkbenchGlobalAssistantOpenRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid global assistant event payload")
+		return
+	}
+	principal := apiMiddleware.PrincipalFromContext(c)
+	if err := h.service.RecordGlobalAssistantEvent(c.Request.Context(), principal, domaincopilot.WorkbenchGlobalAssistantEventInput{
+		Action:           req.Action,
+		LaunchContext:    req.LaunchContext,
+		SelectionContext: req.SelectionContext,
+		Prompt:           req.Prompt,
+		SessionID:        req.SessionID,
+		Source:           req.Source,
+	}); err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.JSON(c, http.StatusAccepted, map[string]any{"ok": true})
 }
 
 func (h *CopilotHandler) DeleteSession(c *gin.Context) {

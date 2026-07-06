@@ -122,6 +122,7 @@ func registerCopilotRoutes(protected gin.IRoutes, cfg cfgpkg.Config, deps Depend
 	protected.POST("/copilot/sessions/:sessionID/messages", deps.Copilot.SendMessage)
 	protected.POST("/copilot/sessions/:sessionID/messages/stream", deps.Copilot.StreamMessage)
 	protected.POST("/copilot/sessions/:sessionID/analyze", deps.Copilot.AnalyzeSession)
+	protected.POST("/copilot/global-assistant/events", deps.Copilot.RecordGlobalAssistantEvent)
 	protected.GET("/copilot/inspection-tasks", deps.Copilot.ListInspectionTasks)
 	protected.POST("/copilot/inspection-tasks", deps.Copilot.CreateInspectionTask)
 	protected.PUT("/copilot/inspection-tasks/:taskID", deps.Copilot.UpdateInspectionTask)
