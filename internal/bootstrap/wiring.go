@@ -22,12 +22,14 @@ import (
 	appevent "github.com/opensoha/soha/internal/application/event"
 	appexecution "github.com/opensoha/soha/internal/application/execution"
 	appidentity "github.com/opensoha/soha/internal/application/identity"
+	appidentityprovider "github.com/opensoha/soha/internal/application/identityprovider"
 	appintegration "github.com/opensoha/soha/internal/application/integration"
 	appmenu "github.com/opensoha/soha/internal/application/menu"
 	appmodule "github.com/opensoha/soha/internal/application/module"
 	appmonitoring "github.com/opensoha/soha/internal/application/monitoring"
 	appoperation "github.com/opensoha/soha/internal/application/operation"
 	appplugin "github.com/opensoha/soha/internal/application/plugin"
+	appproviderportal "github.com/opensoha/soha/internal/application/providerportal"
 	appregistryconn "github.com/opensoha/soha/internal/application/registry"
 	apprelease "github.com/opensoha/soha/internal/application/release"
 	appresource "github.com/opensoha/soha/internal/application/resource"
@@ -59,11 +61,13 @@ import (
 	deliveryrepo "github.com/opensoha/soha/internal/repository/delivery"
 	dockerrepo "github.com/opensoha/soha/internal/repository/docker"
 	eventrepo "github.com/opensoha/soha/internal/repository/eventstream"
+	identityproviderrepo "github.com/opensoha/soha/internal/repository/identityprovider"
 	menurepo "github.com/opensoha/soha/internal/repository/menu"
 	operationrepo "github.com/opensoha/soha/internal/repository/operationlog"
 	pluginrepo "github.com/opensoha/soha/internal/repository/plugin"
 	policyrepo "github.com/opensoha/soha/internal/repository/policy"
 	portforwardrepo "github.com/opensoha/soha/internal/repository/portforward"
+	providerportalrepo "github.com/opensoha/soha/internal/repository/providerportal"
 	registryrepo "github.com/opensoha/soha/internal/repository/registry"
 	releaserepo "github.com/opensoha/soha/internal/repository/release"
 	scopegrantrepo "github.com/opensoha/soha/internal/repository/scopegrant"
@@ -87,30 +91,32 @@ type infrastructure struct {
 }
 
 type repositories struct {
-	auditRepository          *auditrepo.Repository
-	announcementRepository   *announcementrepo.Repository
-	eventRepository          *eventrepo.Repository
-	menuRepository           *menurepo.Repository
-	operationRepository      *operationrepo.Repository
-	alertRepository          *alertrepo.Repository
-	applicationRepository    *applicationrepo.Repository
-	buildRepository          *buildrepo.Repository
-	catalogRepository        *catalogrepo.Repository
-	workflowRepository       *workflowrepo.Repository
-	deliveryRepository       *deliveryrepo.Repository
-	registryRepository       *registryrepo.Repository
-	releaseRepository        *releaserepo.Repository
-	copilotRepository        *copilotrepo.Repository
-	identityRepository       *userrepo.Repository
-	settingsRepository       *settingsrepo.Repository
-	scopeGrantRepository     *scopegrantrepo.Repository
-	policyRepository         *policyrepo.Repository
-	clusterRepository        *clusterrepo.Repository
-	virtualizationRepository *virtualizationrepo.Repository
-	dockerRepository         *dockerrepo.Repository
-	aiGatewayRepository      *aigatewayrepo.Repository
-	pluginRepository         *pluginrepo.Repository
-	portForwardRepository    *portforwardrepo.Repository
+	auditRepository            *auditrepo.Repository
+	announcementRepository     *announcementrepo.Repository
+	eventRepository            *eventrepo.Repository
+	menuRepository             *menurepo.Repository
+	operationRepository        *operationrepo.Repository
+	alertRepository            *alertrepo.Repository
+	applicationRepository      *applicationrepo.Repository
+	buildRepository            *buildrepo.Repository
+	catalogRepository          *catalogrepo.Repository
+	workflowRepository         *workflowrepo.Repository
+	deliveryRepository         *deliveryrepo.Repository
+	registryRepository         *registryrepo.Repository
+	releaseRepository          *releaserepo.Repository
+	copilotRepository          *copilotrepo.Repository
+	identityRepository         *userrepo.Repository
+	settingsRepository         *settingsrepo.Repository
+	scopeGrantRepository       *scopegrantrepo.Repository
+	policyRepository           *policyrepo.Repository
+	clusterRepository          *clusterrepo.Repository
+	virtualizationRepository   *virtualizationrepo.Repository
+	dockerRepository           *dockerrepo.Repository
+	aiGatewayRepository        *aigatewayrepo.Repository
+	pluginRepository           *pluginrepo.Repository
+	identityProviderRepository *identityproviderrepo.Repository
+	providerPortalRepository   *providerportalrepo.Repository
+	portForwardRepository      *portforwardrepo.Repository
 }
 
 type coreServices struct {
@@ -141,6 +147,8 @@ type coreServices struct {
 	releaseService          *apprelease.Service
 	integrationService      *appintegration.Service
 	pluginService           *appplugin.Service
+	identityProviderService *appidentityprovider.Service
+	providerPortalService   *appproviderportal.Service
 }
 
 type deliveryServices struct {
@@ -220,30 +228,32 @@ func newRepositories(cfg cfgpkg.Config, databaseStore *dbinfra.Store) *repositor
 	alertRepository := alertrepo.New(db)
 	alertRepository.SetUpsertBatchSize(cfg.Runtime.AlertUpsertBatchSize)
 	return &repositories{
-		auditRepository:          auditrepo.New(db),
-		announcementRepository:   announcementrepo.New(db),
-		eventRepository:          eventrepo.New(db),
-		menuRepository:           menurepo.New(db),
-		operationRepository:      operationrepo.New(db),
-		alertRepository:          alertRepository,
-		applicationRepository:    applicationrepo.New(db),
-		buildRepository:          buildrepo.New(db),
-		catalogRepository:        catalogrepo.New(db),
-		workflowRepository:       workflowrepo.New(db),
-		deliveryRepository:       deliveryrepo.New(db),
-		registryRepository:       registryrepo.New(db),
-		releaseRepository:        releaserepo.New(db),
-		copilotRepository:        copilotrepo.New(db),
-		identityRepository:       userrepo.New(db),
-		settingsRepository:       settingsrepo.New(db),
-		scopeGrantRepository:     scopegrantrepo.New(db),
-		policyRepository:         policyrepo.New(db),
-		clusterRepository:        clusterrepo.New(db),
-		virtualizationRepository: virtualizationrepo.New(db),
-		dockerRepository:         dockerrepo.New(db),
-		aiGatewayRepository:      aigatewayrepo.New(db),
-		pluginRepository:         pluginrepo.New(db),
-		portForwardRepository:    portforwardrepo.New(db),
+		auditRepository:            auditrepo.New(db),
+		announcementRepository:     announcementrepo.New(db),
+		eventRepository:            eventrepo.New(db),
+		menuRepository:             menurepo.New(db),
+		operationRepository:        operationrepo.New(db),
+		alertRepository:            alertRepository,
+		applicationRepository:      applicationrepo.New(db),
+		buildRepository:            buildrepo.New(db),
+		catalogRepository:          catalogrepo.New(db),
+		workflowRepository:         workflowrepo.New(db),
+		deliveryRepository:         deliveryrepo.New(db),
+		registryRepository:         registryrepo.New(db),
+		releaseRepository:          releaserepo.New(db),
+		copilotRepository:          copilotrepo.New(db),
+		identityRepository:         userrepo.New(db),
+		settingsRepository:         settingsrepo.New(db),
+		scopeGrantRepository:       scopegrantrepo.New(db),
+		policyRepository:           policyrepo.New(db),
+		clusterRepository:          clusterrepo.New(db),
+		virtualizationRepository:   virtualizationrepo.New(db),
+		dockerRepository:           dockerrepo.New(db),
+		aiGatewayRepository:        aigatewayrepo.New(db),
+		pluginRepository:           pluginrepo.New(db),
+		identityProviderRepository: identityproviderrepo.New(db),
+		providerPortalRepository:   providerportalrepo.New(db),
+		portForwardRepository:      portforwardrepo.New(db),
 	}
 }
 
@@ -313,7 +323,27 @@ func newCoreServices(ctx context.Context, cfg cfgpkg.Config, infra *infrastructu
 	registryService := appregistryconn.New(repos.registryRepository, permissionResolver, appregistryconn.WithCredentialEncryptionKey(cfg.Security.CredentialEncryptionKey))
 	releaseService := apprelease.New(repos.releaseRepository, repos.applicationRepository, repos.catalogRepository, repos.clusterRepository, executionService, accessService, permissionResolver, repos.eventRepository, auditService, operationService, infra.clusterManager, infra.agentRegistry)
 	integrationService := appintegration.New(infra.mcpRegistry)
-	pluginService := appplugin.New(repos.pluginRepository, permissionResolver, auditService)
+	marketplaceProvider, err := newMarketplaceProvider(cfg)
+	if err != nil {
+		return nil, err
+	}
+	pluginService := appplugin.NewWithOptions(
+		repos.pluginRepository,
+		permissionResolver,
+		auditService,
+		appplugin.WithMarketplaceProvider(marketplaceProvider),
+	)
+	if err := pluginService.Reconcile(infra.lifecycleCtx); err != nil {
+		return nil, err
+	}
+	identityProviderEncryptionKey := strings.TrimSpace(cfg.Security.CredentialEncryptionKey)
+	if identityProviderEncryptionKey == "" {
+		identityProviderEncryptionKey = strings.TrimSpace(cfg.Auth.JWT.Secret)
+	}
+	identityProviderService := appidentityprovider.New(repos.identityProviderRepository, repos.identityRepository, permissionResolver, auditService, identityProviderEncryptionKey)
+	providerPortalService := appproviderportal.New(repos.providerPortalRepository, permissionResolver, auditService)
+	providerPortalService.SetOIDCLaunchResolver(identityProviderService)
+	providerPortalService.SetProfileReader(identityService)
 
 	return &coreServices{
 		permissionResolver:      permissionResolver,
@@ -343,7 +373,45 @@ func newCoreServices(ctx context.Context, cfg cfgpkg.Config, infra *infrastructu
 		releaseService:          releaseService,
 		integrationService:      integrationService,
 		pluginService:           pluginService,
+		identityProviderService: identityProviderService,
+		providerPortalService:   providerPortalService,
 	}, nil
+}
+
+func newMarketplaceProvider(cfg cfgpkg.Config) (appplugin.MarketplaceProvider, error) {
+	providers := []appplugin.MarketplaceProvider{appplugin.NewDefaultMarketplaceProvider()}
+	addRemote := func(id, rawURL string) error {
+		if strings.TrimSpace(rawURL) == "" {
+			return nil
+		}
+		provider, err := appplugin.NewRemoteMarketplaceProvider(appplugin.MarketplaceSource{
+			ID:  firstNonEmpty(id, cfg.Plugins.Marketplace.SourceID, "opensoha-official"),
+			URL: rawURL,
+		}, nil)
+		if err != nil {
+			return err
+		}
+		providers = append(providers, provider)
+		return nil
+	}
+	if err := addRemote(cfg.Plugins.Marketplace.SourceID, cfg.Plugins.Marketplace.URL); err != nil {
+		return nil, err
+	}
+	for _, source := range cfg.Plugins.Marketplace.Sources {
+		if err := addRemote(source.ID, source.URL); err != nil {
+			return nil, err
+		}
+	}
+	return appplugin.NewCompositeMarketplaceProvider(providers...), nil
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
 }
 
 func newDeliveryServices(lifecycleCtx context.Context, cfg cfgpkg.Config, infra *infrastructure, repos *repositories, core *coreServices) *deliveryServices {
@@ -498,6 +566,7 @@ func newHandlers(cfg cfgpkg.Config, infra *infrastructure, core *coreServices, d
 			ScopeGrants:    apiHandlers.NewScopeGrantHandler(core.scopeGrantService),
 			Settings:       apiHandlers.NewSettingsHandler(core.settingsService, core.permissionResolver),
 			Auth:           apiHandlers.NewAuthHandler(core.identityService, core.accessConsoleService, core.settingsService, cfg.Auth),
+			ProviderPortal: apiHandlers.NewProviderPortalHandler(core.providerPortalService, core.identityProviderService),
 			Authn:          core.identityService,
 		},
 	}

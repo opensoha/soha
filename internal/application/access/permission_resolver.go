@@ -37,6 +37,13 @@ func AuthorizeRuntimePermission(ctx context.Context, resolver *PermissionResolve
 	return resolver.Authorize(ctx, principal, permissionKey)
 }
 
+func AuthorizeAnyRuntimePermission(ctx context.Context, resolver *PermissionResolver, principal domainidentity.Principal, permissionKeys ...string) error {
+	if resolver == nil || resolver.roles == nil {
+		return runtimeResolverUnavailable(strings.Join(permissionKeys, ","))
+	}
+	return resolver.AuthorizeAny(ctx, principal, permissionKeys...)
+}
+
 func RuntimePermissionKeys(ctx context.Context, resolver *PermissionResolver, principal domainidentity.Principal) ([]string, error) {
 	if resolver == nil || resolver.roles == nil {
 		return nil, runtimeResolverUnavailable("")
@@ -98,4 +105,18 @@ func (r *PermissionResolver) Authorize(ctx context.Context, principal domainiden
 		return nil
 	}
 	return fmt.Errorf("%w: missing permission %s", apperrors.ErrAccessDenied, strings.TrimSpace(permissionKey))
+}
+
+func (r *PermissionResolver) AuthorizeAny(ctx context.Context, principal domainidentity.Principal, permissionKeys ...string) error {
+	keys, err := r.PermissionKeys(ctx, principal)
+	if err != nil {
+		return err
+	}
+	for _, permissionKey := range permissionKeys {
+		permissionKey = strings.TrimSpace(permissionKey)
+		if permissionKey == "" || slices.Contains(keys, permissionKey) {
+			return nil
+		}
+	}
+	return fmt.Errorf("%w: missing any permission %s", apperrors.ErrAccessDenied, strings.Join(permissionKeys, ","))
 }

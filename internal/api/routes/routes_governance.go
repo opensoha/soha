@@ -189,6 +189,15 @@ func registerPluginRoutes(protected gin.IRoutes, deps Dependencies) {
 	protected.POST("/plugins/:pluginID/disable", deps.Plugins.Disable)
 	protected.POST("/plugins/:pluginID/upgrade", deps.Plugins.Upgrade)
 	protected.PUT("/plugins/:pluginID/config", deps.Plugins.Configure)
+
+	protected.GET("/extensions/runtime", deps.Plugins.ListRuntimeExtensions)
+	protected.GET("/extensions/resource", deps.Plugins.ListResourceExtensions)
+	protected.GET("/extensions/metrics", deps.Plugins.ListMetricExtensions)
+	protected.GET("/extensions/alerts", deps.Plugins.ListAlertExtensions)
+	protected.GET("/extensions/ai", deps.Plugins.ListAIExtensions)
+	protected.GET("/extensions/auth", deps.Plugins.ListAuthExtensions)
+	protected.GET("/extensions/identity", deps.Plugins.ListIdentityExtensions)
+	protected.GET("/extensions/ui", deps.Plugins.ListUIExtensions)
 }
 
 func registerSettingsRoutes(protected gin.IRoutes, deps Dependencies) {

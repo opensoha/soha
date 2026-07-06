@@ -34,6 +34,17 @@ func TestAllowsExternalBearerTokenIncludesConnectorEvents(t *testing.T) {
 	}
 }
 
+func TestAllowsExternalBearerTokenIncludesProviderOutposts(t *testing.T) {
+	t.Parallel()
+
+	if !allowsExternalBearerToken("/api/v1/provider/outposts/claim") {
+		t.Fatal("outpost claim should allow handler-level bearer fallback")
+	}
+	if !allowsExternalBearerToken("/api/v1/provider/outposts/outpost-1/heartbeat") {
+		t.Fatal("outpost heartbeat should allow handler-level bearer fallback")
+	}
+}
+
 func TestBuildPrincipalMiddlewareAcceptsXAPIKeyOnlyForLLMRelayPath(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	parser := &stubAccessTokenParser{}
@@ -80,5 +91,51 @@ func TestBuildPrincipalMiddlewareIgnoresXAPIKeyForAIGatewayManagementPath(t *tes
 	}
 	if parser.calls != 0 {
 		t.Fatalf("parser calls=%d, want x-api-key ignored", parser.calls)
+	}
+}
+
+func TestBuildPrincipalMiddlewareIgnoresBasicAuthForOIDCTokenEndpoint(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	parser := &stubAccessTokenParser{}
+	router := gin.New()
+	router.Use(BuildPrincipalMiddleware(cfgpkg.AuthConfig{}, parser))
+	router.POST("/oauth2/token", func(c *gin.Context) {
+		c.Status(http.StatusOK)
+	})
+
+	request := httptest.NewRequest(http.MethodPost, "/oauth2/token", nil)
+	request.Header.Set("Authorization", "Basic Y2xpZW50OnNlY3JldA==")
+	recorder := httptest.NewRecorder()
+
+	router.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusOK)
+	}
+	if parser.calls != 0 {
+		t.Fatalf("parser calls=%d, want Basic auth ignored by principal middleware", parser.calls)
+	}
+}
+
+func TestBuildPrincipalMiddlewareAllowsOIDCUserInfoBearerTokenFallback(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	parser := &stubAccessTokenParser{}
+	router := gin.New()
+	router.Use(BuildPrincipalMiddleware(cfgpkg.AuthConfig{}, parser))
+	router.GET("/oauth2/userinfo", func(c *gin.Context) {
+		c.Status(http.StatusOK)
+	})
+
+	request := httptest.NewRequest(http.MethodGet, "/oauth2/userinfo", nil)
+	request.Header.Set("Authorization", "Bearer oidc-access-token")
+	recorder := httptest.NewRecorder()
+
+	router.ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", recorder.Code, http.StatusOK, recorder.Body.String())
+	}
+	if parser.calls != 1 || parser.token != "oidc-access-token" {
+		t.Fatalf("parser calls=%d token=%q, want attempted bearer fallback", parser.calls, parser.token)
 	}
 }

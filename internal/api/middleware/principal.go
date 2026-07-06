@@ -79,7 +79,7 @@ func BuildPrincipalMiddleware(cfg cfgpkg.AuthConfig, parser AccessTokenParser) g
 }
 
 func accessTokenFromRequest(c *gin.Context) string {
-	token := normalizeBearerToken(c.GetHeader("Authorization"))
+	token := bearerToken(c.GetHeader("Authorization"))
 	if token != "" {
 		return token
 	}
@@ -134,6 +134,14 @@ func normalizeBearerToken(value string) string {
 	return value
 }
 
+func bearerToken(value string) string {
+	value = strings.TrimSpace(value)
+	if len(value) >= 7 && strings.EqualFold(value[:7], "Bearer ") {
+		return strings.TrimSpace(value[7:])
+	}
+	return ""
+}
+
 func isAIGatewayLLMRelayPath(path string) bool {
 	path = strings.TrimSpace(path)
 	return strings.HasPrefix(path, "/api/v1/ai-gateway/llm/")
@@ -163,6 +171,10 @@ func allowsExternalBearerToken(path string) bool {
 	case strings.HasSuffix(path, "/copilot/agent-runs/tool-call"):
 		return true
 	case strings.HasSuffix(path, "/connectors/events"):
+		return true
+	case strings.HasPrefix(path, "/api/v1/provider/outposts"):
+		return true
+	case path == "/oauth2/userinfo" || path == "/api/v1/provider/oidc/userinfo":
 		return true
 	default:
 		return false

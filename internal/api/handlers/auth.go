@@ -25,8 +25,8 @@ type IdentityService interface {
 	Logout(context.Context, string, string) error
 	CurrentPrincipal(context.Context, string) (domainidentity.Principal, error)
 	CurrentProfile(context.Context, domainidentity.Principal) (domainidentity.UserProfile, error)
-	BeginOIDCLogin(context.Context) (string, error)
-	BeginProviderLogin(context.Context, string) (string, error)
+	BeginOIDCLogin(context.Context, string) (string, error)
+	BeginProviderLogin(context.Context, string, string) (string, error)
 	HandleOIDCCallback(context.Context, string, string) (string, error)
 	HandleProviderCallback(context.Context, string, string, string) (string, error)
 	ConsumeOIDCExchange(context.Context, string) (domainidentity.AuthResult, error)
@@ -337,7 +337,7 @@ func (h *AuthHandler) IssueStreamTicket(c *gin.Context) {
 }
 
 func (h *AuthHandler) OIDCLogin(c *gin.Context) {
-	loginURL, err := h.identity.BeginOIDCLogin(c.Request.Context())
+	loginURL, err := h.identity.BeginOIDCLogin(c.Request.Context(), c.Query("return_to"))
 	if err != nil {
 		writeError(c, err)
 		return
@@ -370,7 +370,7 @@ func (h *AuthHandler) OIDCExchange(c *gin.Context) {
 }
 
 func (h *AuthHandler) ProviderLogin(c *gin.Context) {
-	loginURL, err := h.identity.BeginProviderLogin(c.Request.Context(), c.Param("providerID"))
+	loginURL, err := h.identity.BeginProviderLogin(c.Request.Context(), c.Param("providerID"), c.Query("return_to"))
 	if err != nil {
 		writeError(c, err)
 		return

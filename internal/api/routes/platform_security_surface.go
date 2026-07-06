@@ -79,6 +79,7 @@ var nonPlatformMutationSecurityClassifiers = []func(string, string) (nonPlatform
 	accessMutationSecuritySurface,
 	aiGatewayMutationSecuritySurface,
 	pluginMutationSecuritySurface,
+	identityMutationSecuritySurface,
 	settingsMutationSecuritySurface,
 }
 
@@ -293,6 +294,30 @@ func pluginMutationSecuritySurface(method, path string) (nonPlatformMutationSecu
 		return nonPlatformMutationEntry("PluginConfig", "update", appaccess.PermPluginConfigureSecrets, false), true
 	case strings.HasPrefix(path, "/api/v1/plugins/"):
 		return nonPlatformMutationEntry("Plugin", nonPlatformMutationAction(method, path), appaccess.PermPluginManage, false), true
+	}
+	return nonPlatformMutationSecuritySurfaceEntry{}, false
+}
+
+func identityMutationSecuritySurface(method, path string) (nonPlatformMutationSecuritySurfaceEntry, bool) {
+	switch {
+	case strings.HasPrefix(path, "/api/v1/portal/applications/") && strings.HasSuffix(path, "/launch"):
+		return nonPlatformMutationEntry("IdentityApplicationLaunch", "launch", appaccess.PermIdentityPortalView, false), true
+	case strings.HasPrefix(path, "/api/v1/portal/applications/") && strings.HasSuffix(path, "/favorite"):
+		return nonPlatformMutationEntry("IdentityApplicationFavorite", nonPlatformMutationAction(method, path), appaccess.PermIdentityPortalView, false), true
+	case strings.HasPrefix(path, "/api/v1/identity/applications"):
+		return nonPlatformMutationEntry("IdentityApplication", nonPlatformMutationAction(method, path), appaccess.PermIdentityApplicationsManage, false), true
+	case strings.HasPrefix(path, "/api/v1/identity/policies"):
+		return nonPlatformMutationEntry("IdentityPolicy", nonPlatformMutationAction(method, path), appaccess.PermIdentityPoliciesManage, false), true
+	case strings.HasPrefix(path, "/api/v1/identity/sessions/") && strings.HasSuffix(path, "/revoke"):
+		return nonPlatformMutationEntry("IdentitySession", "revoke", appaccess.PermIdentitySessionsManage, false), true
+	case strings.HasPrefix(path, "/api/v1/identity/outposts"):
+		return nonPlatformMutationEntry("IdentityOutpost", nonPlatformMutationAction(method, path), appaccess.PermIdentityOutpostsManage, false), true
+	case strings.HasPrefix(path, "/api/v1/identity/providers") && strings.Contains(path, "/oidc-clients"):
+		return nonPlatformMutationEntry("IdentityOIDCClient", nonPlatformMutationAction(method, path), appaccess.PermIdentityProvidersManage, false), true
+	case strings.HasPrefix(path, "/api/v1/identity/providers"):
+		return nonPlatformMutationEntry("IdentityProvider", nonPlatformMutationAction(method, path), appaccess.PermIdentityProvidersManage, false), true
+	case strings.HasPrefix(path, "/api/v1/identity/oidc-clients"):
+		return nonPlatformMutationEntry("IdentityOIDCClient", nonPlatformMutationAction(method, path), appaccess.PermIdentityProvidersManage, false), true
 	}
 	return nonPlatformMutationSecuritySurfaceEntry{}, false
 }

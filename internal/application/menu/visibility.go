@@ -185,6 +185,36 @@ func permissionRuleForMenu(item domainmenu.Record) (visibilityRule, bool) {
 			appaccess.PermSystemAuditView,
 			appaccess.PermSystemOperationsView,
 		}}, true
+	case item.ID == "identity":
+		return visibilityRule{permissions: []string{
+			appaccess.PermIdentityApplicationsView,
+			appaccess.PermIdentityProvidersView,
+			appaccess.PermIdentityOutpostsView,
+			appaccess.PermIdentityPoliciesView,
+			appaccess.PermIdentitySessionsView,
+			appaccess.PermIdentityAuditView,
+		}}, true
+	case item.ID == "identity-overview":
+		return visibilityRule{permissions: []string{
+			appaccess.PermIdentityApplicationsView,
+			appaccess.PermIdentityProvidersView,
+			appaccess.PermIdentityOutpostsView,
+			appaccess.PermIdentityPoliciesView,
+			appaccess.PermIdentitySessionsView,
+			appaccess.PermIdentityAuditView,
+		}}, true
+	case item.ID == "identity-applications":
+		return visibilityRule{permissions: []string{appaccess.PermIdentityApplicationsView}}, true
+	case item.ID == "identity-providers":
+		return visibilityRule{permissions: []string{appaccess.PermIdentityProvidersView}}, true
+	case item.ID == "identity-outposts":
+		return visibilityRule{permissions: []string{appaccess.PermIdentityOutpostsView}}, true
+	case item.ID == "identity-policies":
+		return visibilityRule{permissions: []string{appaccess.PermIdentityPoliciesView}}, true
+	case item.ID == "identity-sessions":
+		return visibilityRule{permissions: []string{appaccess.PermIdentitySessionsView}}, true
+	case item.ID == "identity-audit":
+		return visibilityRule{permissions: []string{appaccess.PermIdentityAuditView}}, true
 	case item.ID == "system-online-users":
 		return visibilityRule{permissions: []string{appaccess.PermSystemOnlineUsersView}}, true
 	case item.ID == "announcements":

@@ -23,6 +23,7 @@ type Config struct {
 	Swagger    SwaggerConfig    `mapstructure:"swagger"`
 	MCP        MCPConfig        `mapstructure:"mcp"`
 	AIGateway  AIGatewayConfig  `mapstructure:"ai_gateway"`
+	Plugins    PluginsConfig    `mapstructure:"plugins"`
 	Modules    ModulesConfig    `mapstructure:"modules"`
 	Assets     AssetsConfig     `mapstructure:"assets"`
 	Security   SecurityConfig   `mapstructure:"security"`
@@ -196,6 +197,21 @@ type AIGatewayConnectorEventSinkConfig struct {
 	Token string `mapstructure:"token"`
 }
 
+type PluginsConfig struct {
+	Marketplace PluginMarketplaceConfig `mapstructure:"marketplace"`
+}
+
+type PluginMarketplaceConfig struct {
+	URL      string                    `mapstructure:"url"`
+	SourceID string                    `mapstructure:"source_id"`
+	Sources  []PluginMarketplaceSource `mapstructure:"sources"`
+}
+
+type PluginMarketplaceSource struct {
+	ID  string `mapstructure:"id"`
+	URL string `mapstructure:"url"`
+}
+
 func (c AIGatewayConfig) ConnectorRuntimeConfigs() []AIGatewayConnectorRuntimeConfig {
 	out := make([]AIGatewayConnectorRuntimeConfig, 0, 1+len(c.ConnectorRuntimes))
 	if strings.TrimSpace(c.ConnectorRuntime.Endpoint) != "" {
@@ -349,6 +365,10 @@ func (c *Config) expandEnv() {
 		c.AIGateway.ConnectorRuntimes[i].expandEnv()
 	}
 	c.AIGateway.ConnectorEventSink.Token = os.ExpandEnv(c.AIGateway.ConnectorEventSink.Token)
+	c.Plugins.Marketplace.URL = os.ExpandEnv(c.Plugins.Marketplace.URL)
+	for i := range c.Plugins.Marketplace.Sources {
+		c.Plugins.Marketplace.Sources[i].URL = os.ExpandEnv(c.Plugins.Marketplace.Sources[i].URL)
+	}
 	c.Security.CredentialEncryptionKey = os.ExpandEnv(c.Security.CredentialEncryptionKey)
 	for i := range c.Kubernetes.Clusters {
 		c.Kubernetes.Clusters[i].Kubeconfig = os.ExpandEnv(c.Kubernetes.Clusters[i].Kubeconfig)
@@ -573,6 +593,9 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("ai_gateway.connector_runtime.connector_id", "")
 	v.SetDefault("ai_gateway.connector_runtimes", []map[string]any{})
 	v.SetDefault("ai_gateway.connector_event_sink.token", "")
+	v.SetDefault("plugins.marketplace.url", "")
+	v.SetDefault("plugins.marketplace.source_id", "opensoha-official")
+	v.SetDefault("plugins.marketplace.sources", []map[string]any{})
 	v.SetDefault("modules.delivery.enabled", true)
 	v.SetDefault("modules.monitoring.enabled", true)
 	v.SetDefault("modules.ai.enabled", true)

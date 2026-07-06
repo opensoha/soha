@@ -16,6 +16,7 @@ func registerProtectedRoutes(protected gin.IRoutes, cfg cfgpkg.Config, deps Depe
 	registerCopilotRoutes(protected, cfg, deps)
 	registerOperationalAuditRoutes(protected, deps)
 	registerAccessRoutes(protected, deps)
+	registerProviderPortalRoutes(protected, deps)
 	registerAIGatewayRoutes(protected, deps)
 	registerPluginRoutes(protected, deps)
 	registerSettingsRoutes(protected, deps)

@@ -14,9 +14,11 @@ func registerPublicRoutes(v1 gin.IRoutes, cfg cfgpkg.Config, deps Dependencies) 
 	v1.POST("/auth/refresh", deps.Auth.Refresh)
 	v1.GET("/auth/oidc/login", deps.Auth.OIDCLogin)
 	v1.GET("/auth/oidc/callback", deps.Auth.OIDCCallback)
+	v1.GET("/auth/providers/:providerID/login", deps.Auth.ProviderLogin)
 	v1.GET("/auth/login/:providerID/start", deps.Auth.ProviderLogin)
 	v1.GET("/auth/login/:providerID/callback", deps.Auth.ProviderCallback)
 	v1.POST("/auth/oidc/exchange", deps.Auth.OIDCExchange)
+	registerProviderProtocolRoutes(v1, deps)
 
 	if cfg.Modules.Monitoring.Enabled {
 		v1.POST("/integrations/alerts/webhook", deps.Monitoring.IngestWebhook)

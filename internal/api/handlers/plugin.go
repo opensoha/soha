@@ -15,7 +15,7 @@ import (
 
 type PluginService interface {
 	ListMarketplace(context.Context, domainidentity.Principal, domainplugin.MarketplaceFilter) ([]domainplugin.MarketplacePlugin, error)
-	GetMarketplace(context.Context, domainidentity.Principal, string) (domainplugin.MarketplacePlugin, error)
+	GetMarketplace(context.Context, domainidentity.Principal, domainplugin.PluginVersionRef) (domainplugin.MarketplacePlugin, error)
 	ListInstalled(context.Context, domainidentity.Principal) ([]domainplugin.InstalledPlugin, error)
 	GetInstalled(context.Context, domainidentity.Principal, string) (domainplugin.InstalledPlugin, error)
 	GetManifest(context.Context, domainidentity.Principal, string) (domainplugin.PluginManifest, error)
@@ -25,6 +25,7 @@ type PluginService interface {
 	Upgrade(context.Context, domainidentity.Principal, string, domainplugin.PluginInstallRequest) (domainplugin.InstalledPlugin, error)
 	Configure(context.Context, domainidentity.Principal, string, domainplugin.PluginConfigRequest) (domainplugin.InstalledPlugin, error)
 	Remove(context.Context, domainidentity.Principal, string) error
+	ListExtensions(context.Context, domainidentity.Principal, string) ([]domainplugin.ExtensionRecord, error)
 }
 
 type PluginHandler struct {
@@ -38,9 +39,12 @@ func NewPluginHandler(service PluginService) *PluginHandler {
 func (h *PluginHandler) ListMarketplace(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	items, err := h.service.ListMarketplace(c.Request.Context(), principal, domainplugin.MarketplaceFilter{
-		Query:     c.Query("q"),
-		Type:      c.Query("type"),
-		Publisher: c.Query("publisher"),
+		Query:          c.Query("q"),
+		Type:           c.Query("type"),
+		Publisher:      c.Query("publisher"),
+		SourceID:       c.Query("sourceId"),
+		MarketplaceURL: c.Query("marketplaceUrl"),
+		Version:        c.Query("version"),
 	})
 	if err != nil {
 		writeError(c, err)
@@ -51,7 +55,12 @@ func (h *PluginHandler) ListMarketplace(c *gin.Context) {
 
 func (h *PluginHandler) GetMarketplace(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.service.GetMarketplace(c.Request.Context(), principal, c.Param("pluginID"))
+	item, err := h.service.GetMarketplace(c.Request.Context(), principal, domainplugin.PluginVersionRef{
+		PluginID:       c.Param("pluginID"),
+		Version:        c.Query("version"),
+		SourceID:       c.Query("sourceId"),
+		MarketplaceURL: c.Query("marketplaceUrl"),
+	})
 	if err != nil {
 		writeError(c, err)
 		return
@@ -161,4 +170,46 @@ func (h *PluginHandler) Remove(c *gin.Context) {
 		return
 	}
 	apiresponse.JSON(c, http.StatusOK, gin.H{"status": "ok"})
+}
+
+func (h *PluginHandler) ListRuntimeExtensions(c *gin.Context) {
+	h.listExtensions(c, "runtime")
+}
+
+func (h *PluginHandler) ListResourceExtensions(c *gin.Context) {
+	h.listExtensions(c, "resource")
+}
+
+func (h *PluginHandler) ListMetricExtensions(c *gin.Context) {
+	h.listExtensions(c, "metrics")
+}
+
+func (h *PluginHandler) ListAlertExtensions(c *gin.Context) {
+	h.listExtensions(c, "alerts")
+}
+
+func (h *PluginHandler) ListAIExtensions(c *gin.Context) {
+	h.listExtensions(c, "ai")
+}
+
+func (h *PluginHandler) ListAuthExtensions(c *gin.Context) {
+	h.listExtensions(c, "auth")
+}
+
+func (h *PluginHandler) ListIdentityExtensions(c *gin.Context) {
+	h.listExtensions(c, "identity")
+}
+
+func (h *PluginHandler) ListUIExtensions(c *gin.Context) {
+	h.listExtensions(c, "ui")
+}
+
+func (h *PluginHandler) listExtensions(c *gin.Context, scope string) {
+	principal := apiMiddleware.PrincipalFromContext(c)
+	items, err := h.service.ListExtensions(c.Request.Context(), principal, scope)
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Items(c, http.StatusOK, items)
 }

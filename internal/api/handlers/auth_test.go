@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -19,20 +20,23 @@ import (
 )
 
 type stubIdentityService struct {
-	current       domainidentity.Principal
-	profile       domainidentity.UserProfile
-	loginResult   domainidentity.AuthResult
-	refreshResult domainidentity.AuthResult
-	loginLogin    string
-	loginPassword string
-	logoutAccess  string
-	logoutRefresh string
-	streamReq     domainidentity.StreamTicketRequest
-	streamTicket  domainidentity.StreamTicket
-	loginErr      error
-	refreshErr    error
-	logoutErr     error
-	streamErr     error
+	current          domainidentity.Principal
+	profile          domainidentity.UserProfile
+	loginResult      domainidentity.AuthResult
+	refreshResult    domainidentity.AuthResult
+	loginLogin       string
+	loginPassword    string
+	logoutAccess     string
+	logoutRefresh    string
+	streamReq        domainidentity.StreamTicketRequest
+	streamTicket     domainidentity.StreamTicket
+	providerID       string
+	providerReturnTo string
+	oidcReturnTo     string
+	loginErr         error
+	refreshErr       error
+	logoutErr        error
+	streamErr        error
 }
 
 func (s stubIdentityService) ListProviders(context.Context) []domainidentity.Provider {
@@ -59,11 +63,11 @@ func (s stubIdentityService) CurrentProfile(context.Context, domainidentity.Prin
 	return s.profile, nil
 }
 
-func (s stubIdentityService) BeginOIDCLogin(context.Context) (string, error) {
+func (s stubIdentityService) BeginOIDCLogin(context.Context, string) (string, error) {
 	return "", nil
 }
 
-func (s stubIdentityService) BeginProviderLogin(context.Context, string) (string, error) {
+func (s stubIdentityService) BeginProviderLogin(context.Context, string, string) (string, error) {
 	return "", nil
 }
 
@@ -267,6 +271,55 @@ func TestLoginOptionsReturnSliderVerificationConfig(t *testing.T) {
 	}
 }
 
+func TestProviderLoginPassesReturnToAndRedirects(t *testing.T) {
+	t.Parallel()
+
+	identity := &recordingIdentityService{}
+	handler := NewAuthHandler(identity, nil, nil, cfgpkg.AuthConfig{})
+	returnTo := "/oauth2/authorize?client_id=portal&redirect_uri=/portal"
+
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/api/v1/auth/providers/oidc-main/login?return_to="+url.QueryEscape(returnTo), nil)
+	ctx.Params = gin.Params{{Key: "providerID", Value: "oidc-main"}}
+
+	handler.ProviderLogin(ctx)
+
+	if recorder.Code != http.StatusTemporaryRedirect {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusTemporaryRedirect)
+	}
+	if location := recorder.Header().Get("Location"); location != "/provider-login" {
+		t.Fatalf("Location = %q, want /provider-login", location)
+	}
+	if identity.providerID != "oidc-main" || identity.providerReturnTo != returnTo {
+		t.Fatalf("provider login call = (%q, %q), want (oidc-main, %q)", identity.providerID, identity.providerReturnTo, returnTo)
+	}
+}
+
+func TestOIDCLoginPassesReturnToAndRedirects(t *testing.T) {
+	t.Parallel()
+
+	identity := &recordingIdentityService{}
+	handler := NewAuthHandler(identity, nil, nil, cfgpkg.AuthConfig{})
+	returnTo := "/portal/applications/app-1"
+
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodGet, "/api/v1/auth/oidc/login?return_to="+url.QueryEscape(returnTo), nil)
+
+	handler.OIDCLogin(ctx)
+
+	if recorder.Code != http.StatusTemporaryRedirect {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusTemporaryRedirect)
+	}
+	if location := recorder.Header().Get("Location"); location != "/oidc-login" {
+		t.Fatalf("Location = %q, want /oidc-login", location)
+	}
+	if identity.oidcReturnTo != returnTo {
+		t.Fatalf("oidc return_to = %q, want %q", identity.oidcReturnTo, returnTo)
+	}
+}
+
 type recordingIdentityService struct {
 	stubIdentityService
 	refreshToken string
@@ -287,6 +340,17 @@ func (s *recordingIdentityService) Logout(_ context.Context, accessToken, refres
 func (s *recordingIdentityService) RefreshSession(_ context.Context, refreshToken string) (domainidentity.AuthResult, error) {
 	s.refreshToken = refreshToken
 	return s.refreshResult, s.refreshErr
+}
+
+func (s *recordingIdentityService) BeginOIDCLogin(_ context.Context, returnTo string) (string, error) {
+	s.oidcReturnTo = returnTo
+	return "/oidc-login", nil
+}
+
+func (s *recordingIdentityService) BeginProviderLogin(_ context.Context, providerID, returnTo string) (string, error) {
+	s.providerID = providerID
+	s.providerReturnTo = returnTo
+	return "/provider-login", nil
 }
 
 func (s *recordingIdentityService) IssueStreamTicket(_ context.Context, _ domainidentity.Principal, _ domainidentity.AccessContext, req domainidentity.StreamTicketRequest) (domainidentity.StreamTicket, error) {

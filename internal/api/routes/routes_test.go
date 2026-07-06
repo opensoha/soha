@@ -186,6 +186,34 @@ func TestRegisterOperationalAuditRoutesExposeAuditOperations(t *testing.T) {
 	}
 }
 
+func TestRegisterProviderProtocolRoutesExposeProxyLogout(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	router := gin.New()
+	group := router.Group("/api/v1")
+	registerProviderProtocolRoutes(group, Dependencies{ProviderPortal: &apiHandlers.ProviderPortalHandler{}})
+
+	registered := make(map[string]struct{})
+	for _, route := range router.Routes() {
+		registered[route.Method+" "+route.Path] = struct{}{}
+	}
+	for _, route := range []string{
+		"GET /api/v1/provider/proxy/auth",
+		"POST /api/v1/provider/proxy/auth",
+		"GET /api/v1/provider/proxy/start",
+		"GET /api/v1/provider/proxy/callback",
+		"POST /api/v1/provider/proxy/logout",
+		"POST /api/v1/provider/outposts/claim",
+		"POST /api/v1/provider/outposts/:outpostID/heartbeat",
+		"POST /api/v1/provider/outposts/:outpostID/check",
+		"POST /api/v1/provider/outposts/:outpostID/events",
+	} {
+		if _, ok := registered[route]; !ok {
+			t.Fatalf("missing route %s", route)
+		}
+	}
+}
+
 func TestPlatformMutatingRoutesHaveSecuritySurface(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -269,6 +297,55 @@ func TestRegisterProtectedRoutesExposeAIGatewayRelayCacheManagement(t *testing.T
 	for _, route := range []string{
 		"GET /api/v1/ai-gateway/relay/cache/stats",
 		"POST /api/v1/ai-gateway/relay/cache/purge",
+	} {
+		if _, ok := registered[route]; !ok {
+			t.Fatalf("missing route %s", route)
+		}
+	}
+}
+
+func TestRegisterProviderPortalRoutesExposeIdentityProviderWorkbenchAndOIDCProtocol(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	router := gin.New()
+	v1 := router.Group("/api/v1")
+	registerProviderPortalRoutes(v1, routeTestDependencies())
+	registerProviderProtocolRoutes(v1, routeTestDependencies())
+	registerStandardProviderProtocolRoutes(router, routeTestDependencies())
+
+	registered := make(map[string]struct{})
+	for _, route := range router.Routes() {
+		registered[route.Method+" "+route.Path] = struct{}{}
+	}
+	for _, route := range []string{
+		"GET /api/v1/identity/providers",
+		"POST /api/v1/identity/providers",
+		"PATCH /api/v1/identity/providers/:providerID",
+		"GET /api/v1/identity/policies",
+		"GET /api/v1/identity/policies/:applicationID",
+		"PATCH /api/v1/identity/policies/:applicationID",
+		"GET /api/v1/identity/providers/:providerID/oidc-clients",
+		"POST /api/v1/identity/providers/:providerID/oidc-clients",
+		"PATCH /api/v1/identity/oidc-clients/:clientID",
+		"DELETE /api/v1/identity/oidc-clients/:clientID",
+		"GET /api/v1/identity/outposts",
+		"POST /api/v1/identity/outposts",
+		"PATCH /api/v1/identity/outposts/:outpostID",
+		"DELETE /api/v1/identity/outposts/:outpostID",
+		"GET /api/v1/identity/sessions",
+		"POST /api/v1/identity/sessions/:sessionID/revoke",
+		"GET /api/v1/identity/audit/events",
+		"GET /.well-known/openid-configuration",
+		"GET /oauth2/authorize",
+		"POST /oauth2/token",
+		"GET /oauth2/userinfo",
+		"POST /oauth2/userinfo",
+		"GET /oauth2/jwks",
+		"POST /oauth2/introspect",
+		"POST /oauth2/revoke",
+		"POST /api/v1/provider/oidc/userinfo",
+		"POST /api/v1/provider/oidc/introspect",
+		"POST /api/v1/provider/oidc/revoke",
 	} {
 		if _, ok := registered[route]; !ok {
 			t.Fatalf("missing route %s", route)
@@ -469,6 +546,33 @@ func TestNonPlatformMutationSecuritySurfaceClassifiesScopedRoutes(t *testing.T) 
 			permission:   appaccess.PermAccessScopeGrantsManage,
 			scoped:       false,
 		},
+		{
+			name:         "identity policy update",
+			method:       "PATCH",
+			path:         "/api/v1/identity/policies/:applicationID",
+			resourceKind: "IdentityPolicy",
+			action:       "update",
+			permission:   appaccess.PermIdentityPoliciesManage,
+			scoped:       false,
+		},
+		{
+			name:         "identity session revoke",
+			method:       "POST",
+			path:         "/api/v1/identity/sessions/:sessionID/revoke",
+			resourceKind: "IdentitySession",
+			action:       "revoke",
+			permission:   appaccess.PermIdentitySessionsManage,
+			scoped:       false,
+		},
+		{
+			name:         "identity outpost update",
+			method:       "PATCH",
+			path:         "/api/v1/identity/outposts/:outpostID",
+			resourceKind: "IdentityOutpost",
+			action:       "update",
+			permission:   appaccess.PermIdentityOutpostsManage,
+			scoped:       false,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			entry, ok := nonPlatformMutationSecuritySurface(tc.method, tc.path)
@@ -500,6 +604,9 @@ func TestRegisterPublicRoutesIncludesConnectorEventSinkWhenAIGatewayEnabled(t *t
 	registered := make(map[string]struct{})
 	for _, route := range router.Routes() {
 		registered[route.Method+" "+route.Path] = struct{}{}
+	}
+	if _, ok := registered["GET /api/v1/auth/providers/:providerID/login"]; !ok {
+		t.Fatal("missing GET /api/v1/auth/providers/:providerID/login")
 	}
 	if _, ok := registered["POST /api/v1/connectors/events"]; !ok {
 		t.Fatal("missing POST /api/v1/connectors/events")
@@ -569,5 +676,6 @@ func routeTestDependencies() Dependencies {
 		Menu:           &apiHandlers.MenuHandler{},
 		Settings:       &apiHandlers.SettingsHandler{},
 		Auth:           &apiHandlers.AuthHandler{},
+		ProviderPortal: &apiHandlers.ProviderPortalHandler{},
 	}
 }

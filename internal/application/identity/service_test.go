@@ -2,6 +2,7 @@ package identity
 
 import (
 	"context"
+	"net/url"
 	"sort"
 	"strings"
 	"testing"
@@ -152,6 +153,99 @@ func TestAccessTokenRequiresFreshAuthzVersion(t *testing.T) {
 	}
 	if principal.UserID != "u1" || !hasString(principal.Roles, "readonly") {
 		t.Fatalf("unexpected refreshed principal: %#v", principal)
+	}
+}
+
+func TestBeginProviderLoginStoresSafeReturnToInState(t *testing.T) {
+	ctx := context.Background()
+	repo := newLoginMappingUserRepo()
+	provider := domainsettings.LoginProviderSettings{
+		ID:           "oauth-main",
+		Name:         "OAuth Main",
+		Type:         "oauth2",
+		Enabled:      true,
+		ClientID:     "client-1",
+		ClientSecret: "secret-1",
+		AuthorizeURL: "https://idp.example/authorize",
+		TokenURL:     "https://idp.example/token",
+		RedirectURL:  "https://soha.example/api/v1/auth/login/oauth-main/callback",
+		Scopes:       []string{"profile"},
+	}
+	service := &Service{
+		users:    repo,
+		settings: loginProviderSettingsStub{providers: map[string]domainsettings.LoginProviderSettings{provider.ID: provider}},
+	}
+	returnTo := "/oauth2/authorize?client_id=portal#resume"
+
+	loginURL, err := service.BeginProviderLogin(ctx, provider.ID, returnTo)
+	if err != nil {
+		t.Fatalf("BeginProviderLogin returned error: %v", err)
+	}
+	parsed, err := url.Parse(loginURL)
+	if err != nil {
+		t.Fatalf("parse login url: %v", err)
+	}
+	state := parsed.Query().Get("state")
+	if state == "" {
+		t.Fatalf("login URL missing state: %s", loginURL)
+	}
+	stateToken, ok := repo.ephemeral[oauthStateKind+"|"+state]
+	if !ok {
+		t.Fatalf("state token %q was not stored", state)
+	}
+	if got := stateToken.Payload["returnTo"]; got != returnTo {
+		t.Fatalf("returnTo payload = %#v, want %q", got, returnTo)
+	}
+}
+
+func TestBeginProviderLoginRejectsUnsafeReturnTo(t *testing.T) {
+	ctx := context.Background()
+	repo := newLoginMappingUserRepo()
+	provider := domainsettings.LoginProviderSettings{
+		ID:           "oauth-main",
+		Type:         "oauth2",
+		Enabled:      true,
+		ClientID:     "client-1",
+		AuthorizeURL: "https://idp.example/authorize",
+		RedirectURL:  "https://soha.example/api/v1/auth/login/oauth-main/callback",
+	}
+	service := &Service{
+		users:    repo,
+		settings: loginProviderSettingsStub{providers: map[string]domainsettings.LoginProviderSettings{provider.ID: provider}},
+	}
+
+	for _, value := range []string{
+		"//evil.example/path",
+		"https://evil.example/path",
+		"/portal\nnext",
+		"/portal?next=%0A",
+		"/\\evil",
+		"/%5Cevil",
+	} {
+		t.Run(value, func(t *testing.T) {
+			if _, err := service.BeginProviderLogin(ctx, provider.ID, value); err == nil {
+				t.Fatalf("BeginProviderLogin return_to %q error = nil, want rejection", value)
+			}
+		})
+	}
+}
+
+func TestAddReturnToQueryPreservesCallbackCode(t *testing.T) {
+	returnTo := "/api/v1/provider/proxy/callback?state=resume"
+
+	redirectURL, err := addReturnToQuery("http://ui.example/login/callback?code=exchange-1", returnTo)
+	if err != nil {
+		t.Fatalf("addReturnToQuery returned error: %v", err)
+	}
+	parsed, err := url.Parse(redirectURL)
+	if err != nil {
+		t.Fatalf("parse redirect url: %v", err)
+	}
+	if got := parsed.Query().Get("code"); got != "exchange-1" {
+		t.Fatalf("code = %q, want exchange-1", got)
+	}
+	if got := parsed.Query().Get("return_to"); got != returnTo {
+		t.Fatalf("return_to = %q, want %q", got, returnTo)
 	}
 }
 
@@ -319,6 +413,30 @@ func TestReconcileOIDCUserMigratesLegacyProviderIdentity(t *testing.T) {
 type loginMappingBinding struct {
 	source     string
 	providerID string
+}
+
+type loginProviderSettingsStub struct {
+	providers map[string]domainsettings.LoginProviderSettings
+	oidc      cfgpkg.OIDCConfig
+}
+
+func (s loginProviderSettingsStub) ResolveOIDCSettings(context.Context) (cfgpkg.OIDCConfig, error) {
+	return s.oidc, nil
+}
+
+func (s loginProviderSettingsStub) ResolveLoginProviders(context.Context) ([]domainsettings.LoginProviderSettings, string, error) {
+	items := make([]domainsettings.LoginProviderSettings, 0, len(s.providers))
+	for _, provider := range s.providers {
+		items = append(items, provider)
+	}
+	return items, "", nil
+}
+
+func (s loginProviderSettingsStub) ResolveLoginProvider(_ context.Context, providerID string) (domainsettings.LoginProviderSettings, error) {
+	if provider, ok := s.providers[strings.TrimSpace(providerID)]; ok {
+		return provider, nil
+	}
+	return domainsettings.LoginProviderSettings{}, userrepo.ErrNotFound
 }
 
 type loginMappingUserRepo struct {

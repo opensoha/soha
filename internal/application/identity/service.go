@@ -111,7 +111,8 @@ type tokenClaims struct {
 }
 
 type oidcStatePayload struct {
-	Nonce string `json:"nonce"`
+	Nonce    string `json:"nonce"`
+	ReturnTo string `json:"returnTo,omitempty"`
 }
 
 type oidcExchangePayload struct {
@@ -520,7 +521,7 @@ func copyGatewayMetadata(metadata map[string]any) map[string]any {
 }
 
 func (s *Service) ListActiveSessions(ctx context.Context, principal domainidentity.Principal, limit int) ([]domainidentity.SessionRecord, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermSystemOnlineUsersView); err != nil {
+	if err := appaccess.AuthorizeAnyRuntimePermission(ctx, s.permissions, principal, appaccess.PermSystemOnlineUsersView, appaccess.PermIdentitySessionsView); err != nil {
 		return nil, err
 	}
 	if limit <= 0 {
@@ -541,7 +542,7 @@ func (s *Service) ListActiveSessions(ctx context.Context, principal domainidenti
 }
 
 func (s *Service) RevokeSessionByID(ctx context.Context, principal domainidentity.Principal, sessionID string) error {
-	if err := s.authorize(ctx, principal, appaccess.PermSystemOnlineUsersManage); err != nil {
+	if err := appaccess.AuthorizeAnyRuntimePermission(ctx, s.permissions, principal, appaccess.PermSystemOnlineUsersManage, appaccess.PermIdentitySessionsManage); err != nil {
 		return err
 	}
 	session, err := s.users.GetSessionByID(ctx, strings.TrimSpace(sessionID))
@@ -692,11 +693,15 @@ func (s *Service) authorize(ctx context.Context, principal domainidentity.Princi
 	return appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, permissionKey)
 }
 
-func (s *Service) BeginOIDCLogin(ctx context.Context) (string, error) {
-	return s.BeginProviderLogin(ctx, "")
+func (s *Service) BeginOIDCLogin(ctx context.Context, returnTo string) (string, error) {
+	return s.BeginProviderLogin(ctx, "", returnTo)
 }
 
-func (s *Service) BeginProviderLogin(ctx context.Context, providerID string) (string, error) {
+func (s *Service) BeginProviderLogin(ctx context.Context, providerID, returnTo string) (string, error) {
+	returnTo, err := normalizeLocalReturnTo(returnTo)
+	if err != nil {
+		return "", err
+	}
 	provider, err := s.resolveLoginProvider(ctx, providerID)
 	if err != nil {
 		return "", err
@@ -715,11 +720,11 @@ func (s *Service) BeginProviderLogin(ctx context.Context, providerID string) (st
 		if err := s.users.CreateEphemeralToken(ctx, userrepo.EphemeralToken{
 			Token: state,
 			Kind:  oidcStateKind,
-			Payload: map[string]any{
+			Payload: loginStatePayload(map[string]any{
 				"nonce":      nonce,
 				"providerId": provider.ID,
 				"type":       provider.Type,
-			},
+			}, returnTo),
 			ExpiresAt: time.Now().UTC().Add(10 * time.Minute),
 		}); err != nil {
 			return "", fmt.Errorf("store oidc state: %w", err)
@@ -730,10 +735,10 @@ func (s *Service) BeginProviderLogin(ctx context.Context, providerID string) (st
 		if err := s.users.CreateEphemeralToken(ctx, userrepo.EphemeralToken{
 			Token: state,
 			Kind:  oauthStateKind,
-			Payload: map[string]any{
+			Payload: loginStatePayload(map[string]any{
 				"providerId": provider.ID,
 				"type":       provider.Type,
-			},
+			}, returnTo),
 			ExpiresAt: time.Now().UTC().Add(10 * time.Minute),
 		}); err != nil {
 			return "", fmt.Errorf("store oauth state: %w", err)
@@ -844,6 +849,10 @@ func (s *Service) HandleOIDCCallback(ctx context.Context, state, code string) (s
 		return "", fmt.Errorf("store oidc exchange payload: %w", err)
 	}
 	redirectURL, err := addQueryValue(oidcCfg.FrontendRedirectURL, "code", exchangeCode)
+	if err != nil {
+		return "", err
+	}
+	redirectURL, err = addReturnToQuery(redirectURL, statePayload.ReturnTo)
 	if err != nil {
 		return "", err
 	}
@@ -1372,6 +1381,70 @@ func addQueryValue(rawURL, key, value string) (string, error) {
 	return parsed.String(), nil
 }
 
+func addReturnToQuery(rawURL, returnTo string) (string, error) {
+	returnTo, err := normalizeLocalReturnTo(returnTo)
+	if err != nil {
+		return "", err
+	}
+	if returnTo == "" {
+		return rawURL, nil
+	}
+	return addQueryValue(rawURL, "return_to", returnTo)
+}
+
+func loginStatePayload(payload map[string]any, returnTo string) map[string]any {
+	if returnTo != "" {
+		payload["returnTo"] = returnTo
+	}
+	return payload
+}
+
+func stateReturnTo(payload map[string]any) (string, error) {
+	returnTo, _ := payload["returnTo"].(string)
+	return normalizeLocalReturnTo(returnTo)
+}
+
+func normalizeLocalReturnTo(value string) (string, error) {
+	if value == "" {
+		return "", nil
+	}
+	if value != strings.TrimSpace(value) ||
+		hasControlCharacter(value) ||
+		strings.Contains(value, "\\") ||
+		!strings.HasPrefix(value, "/") ||
+		strings.HasPrefix(value, "//") {
+		return "", fmt.Errorf("%w: return_to must be a local absolute path", apperrors.ErrInvalidArgument)
+	}
+
+	parsed, err := url.Parse(value)
+	if err != nil {
+		return "", fmt.Errorf("%w: return_to must be a local absolute path", apperrors.ErrInvalidArgument)
+	}
+	decodedQuery, queryErr := url.QueryUnescape(parsed.RawQuery)
+	if queryErr != nil ||
+		parsed.IsAbs() ||
+		parsed.Host != "" ||
+		parsed.Path == "" ||
+		!strings.HasPrefix(parsed.Path, "/") ||
+		strings.HasPrefix(parsed.Path, "//") ||
+		strings.Contains(parsed.Path, "\\") ||
+		hasControlCharacter(parsed.Path) ||
+		hasControlCharacter(decodedQuery) ||
+		hasControlCharacter(parsed.Fragment) {
+		return "", fmt.Errorf("%w: return_to must be a local absolute path", apperrors.ErrInvalidArgument)
+	}
+	return parsed.String(), nil
+}
+
+func hasControlCharacter(value string) bool {
+	for _, item := range value {
+		if item < 0x20 || item == 0x7f {
+			return true
+		}
+	}
+	return false
+}
+
 func oauth2ConfigFromProvider(provider domainsettings.LoginProviderSettings) *oauth2.Config {
 	return &oauth2.Config{
 		ClientID:     provider.ClientID,
@@ -1564,6 +1637,10 @@ func (s *Service) handleOAuth2Callback(ctx context.Context, provider domainsetti
 	if payloadProviderID, _ := stateToken.Payload["providerId"].(string); payloadProviderID != "" && payloadProviderID != provider.ID {
 		return "", fmt.Errorf("%w: oauth provider mismatch", apperrors.ErrUnauthorized)
 	}
+	returnTo, err := stateReturnTo(stateToken.Payload)
+	if err != nil {
+		return "", err
+	}
 	oauthToken, err := s.exchangeOAuth2Code(ctx, provider, code)
 	if err != nil {
 		return "", fmt.Errorf("exchange oauth2 code: %w", err)
@@ -1598,6 +1675,10 @@ func (s *Service) handleOAuth2Callback(ctx context.Context, provider domainsetti
 		return "", fmt.Errorf("store oauth exchange payload: %w", err)
 	}
 	redirectURL, err := addQueryValue(provider.FrontendRedirectURL, "code", exchangeCode)
+	if err != nil {
+		return "", err
+	}
+	redirectURL, err = addReturnToQuery(redirectURL, returnTo)
 	if err != nil {
 		return "", err
 	}

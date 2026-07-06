@@ -50,6 +50,7 @@ type Dependencies struct {
 	Menu           *apiHandlers.MenuHandler
 	Settings       *apiHandlers.SettingsHandler
 	Auth           *apiHandlers.AuthHandler
+	ProviderPortal *apiHandlers.ProviderPortalHandler
 	Authn          apiMiddleware.AccessTokenParser
 }
 
@@ -81,6 +82,7 @@ func New(cfg cfgpkg.Config, logger *zap.Logger, deps Dependencies) *http.Server 
 	protected := router.Group(cfg.HTTP.BasePath)
 	protected.Use(apiMiddleware.RequireAuth())
 	registerProtectedRoutes(protected, cfg, deps)
+	registerStandardProviderProtocolRoutes(router, deps)
 
 	// Serve uploaded branding assets
 	router.Static("/branding-assets", "data/branding")

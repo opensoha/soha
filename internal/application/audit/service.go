@@ -71,7 +71,7 @@ func (s *Service) List(ctx context.Context, filter domainaudit.Filter) ([]domain
 }
 
 func (s *Service) ListAuthorized(ctx context.Context, principal domainidentity.Principal, filter domainaudit.Filter) ([]domainaudit.Entry, error) {
-	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermSystemAuditView); err != nil {
+	if err := appaccess.AuthorizeAnyRuntimePermission(ctx, s.permissions, principal, appaccess.PermSystemAuditView, appaccess.PermIdentityAuditView); err != nil {
 		return nil, err
 	}
 	return s.List(ctx, filter)
@@ -83,7 +83,7 @@ func (s *Service) Summary(ctx context.Context, filter domainaudit.Filter) (domai
 }
 
 func (s *Service) SummaryAuthorized(ctx context.Context, principal domainidentity.Principal, filter domainaudit.Filter) (domainaudit.Summary, error) {
-	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermSystemAuditView); err != nil {
+	if err := appaccess.AuthorizeAnyRuntimePermission(ctx, s.permissions, principal, appaccess.PermSystemAuditView, appaccess.PermIdentityAuditView); err != nil {
 		return domainaudit.Summary{}, err
 	}
 	return s.Summary(ctx, filter)
@@ -253,7 +253,7 @@ func compactStringMap(values map[string]string) map[string]string {
 }
 
 func (s *Service) ExportCSVAuthorized(ctx context.Context, principal domainidentity.Principal, filter domainaudit.Filter) (domainaudit.Export, error) {
-	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermSystemAuditView); err != nil {
+	if err := appaccess.AuthorizeAnyRuntimePermission(ctx, s.permissions, principal, appaccess.PermSystemAuditView, appaccess.PermIdentityAuditView); err != nil {
 		return domainaudit.Export{}, err
 	}
 	return s.ExportCSV(ctx, filter)

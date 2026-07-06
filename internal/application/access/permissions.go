@@ -77,6 +77,18 @@ const (
 	PermPluginInstall                     = "plugin.install"
 	PermPluginManage                      = "plugin.manage"
 	PermPluginConfigureSecrets            = "plugin.configure_secrets"
+	PermIdentityPortalView                = "identity.portal.view"
+	PermIdentityApplicationsView          = "identity.applications.view"
+	PermIdentityApplicationsManage        = "identity.applications.manage"
+	PermIdentityProvidersView             = "identity.providers.view"
+	PermIdentityProvidersManage           = "identity.providers.manage"
+	PermIdentityOutpostsView              = "identity.outposts.view"
+	PermIdentityOutpostsManage            = "identity.outposts.manage"
+	PermIdentityPoliciesView              = "identity.policies.view"
+	PermIdentityPoliciesManage            = "identity.policies.manage"
+	PermIdentitySessionsView              = "identity.sessions.view"
+	PermIdentitySessionsManage            = "identity.sessions.manage"
+	PermIdentityAuditView                 = "identity.audit.view"
 	PermVirtualizationOverviewView        = "virtualization.overview.view"
 	PermVirtualizationVMsView             = "virtualization.vms.view"
 	PermVirtualizationVMsManage           = "virtualization.vms.manage"
@@ -210,6 +222,18 @@ func allPermissionKeys() []string {
 		PermPluginInstall,
 		PermPluginManage,
 		PermPluginConfigureSecrets,
+		PermIdentityPortalView,
+		PermIdentityApplicationsView,
+		PermIdentityApplicationsManage,
+		PermIdentityProvidersView,
+		PermIdentityProvidersManage,
+		PermIdentityOutpostsView,
+		PermIdentityOutpostsManage,
+		PermIdentityPoliciesView,
+		PermIdentityPoliciesManage,
+		PermIdentitySessionsView,
+		PermIdentitySessionsManage,
+		PermIdentityAuditView,
 		PermVirtualizationOverviewView,
 		PermVirtualizationVMsView,
 		PermVirtualizationVMsManage,
@@ -339,6 +363,9 @@ func defaultRolePermissions() map[string][]string {
 		PermPluginInstall,
 		PermPluginManage,
 		PermPluginConfigureSecrets,
+		PermIdentityPortalView,
+		PermIdentitySessionsView,
+		PermIdentityAuditView,
 		PermVirtualizationOverviewView,
 		PermVirtualizationVMsView,
 		PermVirtualizationVMsManage,
@@ -410,6 +437,7 @@ func defaultRolePermissions() map[string][]string {
 		PermAIGatewayRelayView,
 		PermAIGatewayRelayInvoke,
 		PermPluginView,
+		PermIdentityPortalView,
 		PermDeliveryApplicationsView,
 		PermDeliveryApplicationServicesView,
 		PermDeliveryApplicationEnvView,
@@ -443,6 +471,7 @@ func defaultRolePermissions() map[string][]string {
 		PermDeliveryApplicationEnvView,
 		PermDeliveryReleaseBundlesView,
 		PermDeliveryExecutionTasksView,
+		PermIdentityPortalView,
 	}
 	readonly := []string{
 		PermWorkspaceApplicationView,
@@ -473,6 +502,7 @@ func defaultRolePermissions() map[string][]string {
 		PermAIGatewayView,
 		PermAIGatewayRelayView,
 		PermPluginView,
+		PermIdentityPortalView,
 		PermDockerOverviewView,
 		PermDockerHostsView,
 		PermDockerProjectsView,
@@ -492,6 +522,8 @@ func defaultRolePermissions() map[string][]string {
 		PermSystemAuditView,
 		PermSystemOperationsView,
 		PermPluginView,
+		PermIdentityPortalView,
+		PermIdentityAuditView,
 	}
 	return map[string][]string{
 		"admin":     admin,
