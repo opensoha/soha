@@ -139,3 +139,54 @@ func TestBuildPrincipalMiddlewareAllowsOIDCUserInfoBearerTokenFallback(t *testin
 		t.Fatalf("parser calls=%d token=%q, want attempted bearer fallback", parser.calls, parser.token)
 	}
 }
+
+func TestBuildPrincipalMiddlewareAcceptsProtocolCookieOnlyOnProtocolReturnPaths(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	t.Run("oauth authorize", func(t *testing.T) {
+		parser := &stubAccessTokenParser{}
+		router := gin.New()
+		router.Use(BuildPrincipalMiddleware(cfgpkg.AuthConfig{}, parser), RequireAuth())
+		router.GET("/oauth2/authorize", func(c *gin.Context) {
+			c.String(http.StatusOK, PrincipalFromContext(c).UserID)
+		})
+
+		request := httptest.NewRequest(http.MethodGet, "/oauth2/authorize", nil)
+		request.AddCookie(&http.Cookie{Name: ProtocolAccessCookieName, Value: "valid-key"})
+		recorder := httptest.NewRecorder()
+
+		router.ServeHTTP(recorder, request)
+
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("status = %d, want %d, body=%s", recorder.Code, http.StatusOK, recorder.Body.String())
+		}
+		if parser.calls != 1 || parser.token != "valid-key" {
+			t.Fatalf("parser calls=%d token=%q, want protocol cookie", parser.calls, parser.token)
+		}
+		if recorder.Body.String() != "user-1" {
+			t.Fatalf("body = %q, want user-1", recorder.Body.String())
+		}
+	})
+
+	t.Run("management api", func(t *testing.T) {
+		parser := &stubAccessTokenParser{}
+		router := gin.New()
+		router.Use(BuildPrincipalMiddleware(cfgpkg.AuthConfig{}, parser), RequireAuth())
+		router.GET("/api/v1/auth/me", func(c *gin.Context) {
+			c.Status(http.StatusOK)
+		})
+
+		request := httptest.NewRequest(http.MethodGet, "/api/v1/auth/me", nil)
+		request.AddCookie(&http.Cookie{Name: ProtocolAccessCookieName, Value: "valid-key"})
+		recorder := httptest.NewRecorder()
+
+		router.ServeHTTP(recorder, request)
+
+		if recorder.Code != http.StatusUnauthorized {
+			t.Fatalf("status = %d, want %d", recorder.Code, http.StatusUnauthorized)
+		}
+		if parser.calls != 0 {
+			t.Fatalf("parser calls=%d, want protocol cookie ignored", parser.calls)
+		}
+	})
+}

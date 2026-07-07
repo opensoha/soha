@@ -219,6 +219,27 @@ func TestServiceCreateApplicationRejectsLinkProviderBinding(t *testing.T) {
 	}
 }
 
+func TestServiceCreateApplicationRejectsProviderBindingBeforeApplicationExists(t *testing.T) {
+	service := New(&memoryPortalRepo{
+		providerBindings: map[string]providerBinding{
+			"provider-1": {applicationID: "app-1", providerType: domainportal.ProviderTypeOIDC},
+		},
+	}, portalApplicationManagePermissions(), nil)
+
+	_, err := service.CreateApplication(context.Background(), domainidentity.Principal{
+		UserID: "admin-1",
+		Roles:  []string{"admin"},
+	}, domainportal.ApplicationInput{
+		Name:         "Grafana",
+		ProviderID:   "provider-1",
+		ProviderType: domainportal.ProviderTypeOIDC,
+		Status:       domainportal.ApplicationStatusEnabled,
+	})
+	if !errors.Is(err, apperrors.ErrInvalidArgument) {
+		t.Fatalf("CreateApplication error = %v, want invalid argument", err)
+	}
+}
+
 func TestServiceUpdateApplicationRejectsMismatchedProviderBinding(t *testing.T) {
 	repo := &memoryPortalRepo{
 		applications: map[string]domainportal.Application{
@@ -329,12 +350,40 @@ func (r *memoryPortalRepo) CreateApplication(_ context.Context, item domainporta
 	return item, nil
 }
 
+func (r *memoryPortalRepo) CreateApplicationWithAssignments(ctx context.Context, item domainportal.Application, assignments []domainportal.ApplicationAssignment) (domainportal.Application, error) {
+	if r.applications == nil {
+		r.applications = map[string]domainportal.Application{}
+	}
+	if _, ok := r.applications[item.ID]; ok {
+		return domainportal.Application{}, fmt.Errorf("%w: application already exists", apperrors.ErrInvalidArgument)
+	}
+	r.applications[item.ID] = item
+	if err := r.ReplaceAssignments(ctx, item.ID, assignments); err != nil {
+		delete(r.applications, item.ID)
+		return domainportal.Application{}, err
+	}
+	return r.GetApplication(ctx, item.ID)
+}
+
 func (r *memoryPortalRepo) UpdateApplication(_ context.Context, item domainportal.Application) (domainportal.Application, error) {
 	if _, ok := r.applications[item.ID]; !ok {
 		return domainportal.Application{}, fmt.Errorf("%w: application not found", apperrors.ErrNotFound)
 	}
 	r.applications[item.ID] = item
 	return item, nil
+}
+
+func (r *memoryPortalRepo) UpdateApplicationWithAssignments(ctx context.Context, item domainportal.Application, assignments []domainportal.ApplicationAssignment) (domainportal.Application, error) {
+	current, ok := r.applications[item.ID]
+	if !ok {
+		return domainportal.Application{}, fmt.Errorf("%w: application not found", apperrors.ErrNotFound)
+	}
+	r.applications[item.ID] = item
+	if err := r.ReplaceAssignments(ctx, item.ID, assignments); err != nil {
+		r.applications[item.ID] = current
+		return domainportal.Application{}, err
+	}
+	return r.GetApplication(ctx, item.ID)
 }
 
 func (r *memoryPortalRepo) DeleteApplication(context.Context, string) error {

@@ -12,10 +12,26 @@ import (
 )
 
 const (
+	ProtocolAccessCookieName = "soha_protocol_access_token"
+
 	principalKey     = "principal"
 	accessTokenKey   = "access_token"
 	accessContextKey = "access_context"
 )
+
+type accessTokenSource string
+
+const (
+	accessTokenSourceHeader         accessTokenSource = "header"
+	accessTokenSourceQuery          accessTokenSource = "query"
+	accessTokenSourceProtocolCookie accessTokenSource = "protocol_cookie"
+	accessTokenSourceAPIKey         accessTokenSource = "api_key"
+)
+
+type requestAccessToken struct {
+	value  string
+	source accessTokenSource
+}
 
 type AccessTokenParser interface {
 	ParseAccessToken(context.Context, string) (domainidentity.Principal, domainidentity.AccessContext, error)
@@ -28,9 +44,13 @@ type StreamTicketParser interface {
 func BuildPrincipalMiddleware(cfg cfgpkg.AuthConfig, parser AccessTokenParser) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		token := accessTokenFromRequest(c)
-		if token != "" {
-			principal, accessCtx, err := parser.ParseAccessToken(c.Request.Context(), token)
+		if token.value != "" {
+			principal, accessCtx, err := parser.ParseAccessToken(c.Request.Context(), token.value)
 			if err != nil {
+				if token.source == accessTokenSourceProtocolCookie {
+					c.Next()
+					return
+				}
 				if allowsExternalBearerToken(c.Request.URL.Path) {
 					c.Next()
 					return
@@ -40,7 +60,7 @@ func BuildPrincipalMiddleware(cfg cfgpkg.AuthConfig, parser AccessTokenParser) g
 				return
 			}
 			c.Set(principalKey, principal)
-			c.Set(accessTokenKey, token)
+			c.Set(accessTokenKey, token.value)
 			c.Set(accessContextKey, accessCtx)
 			c.Next()
 			return
@@ -78,19 +98,28 @@ func BuildPrincipalMiddleware(cfg cfgpkg.AuthConfig, parser AccessTokenParser) g
 	}
 }
 
-func accessTokenFromRequest(c *gin.Context) string {
+func accessTokenFromRequest(c *gin.Context) requestAccessToken {
 	token := bearerToken(c.GetHeader("Authorization"))
 	if token != "" {
-		return token
+		return requestAccessToken{value: token, source: accessTokenSourceHeader}
 	}
 	token = strings.TrimSpace(c.Query("access_token"))
 	if token != "" {
-		return token
+		return requestAccessToken{value: token, source: accessTokenSourceQuery}
+	}
+	if allowsProtocolAccessCookie(c.Request.URL.Path) {
+		if value, err := c.Cookie(ProtocolAccessCookieName); err == nil {
+			if token = strings.TrimSpace(value); token != "" {
+				return requestAccessToken{value: token, source: accessTokenSourceProtocolCookie}
+			}
+		}
 	}
 	if isAIGatewayLLMRelayPath(c.Request.URL.Path) {
-		return strings.TrimSpace(c.GetHeader("x-api-key"))
+		if token = strings.TrimSpace(c.GetHeader("x-api-key")); token != "" {
+			return requestAccessToken{value: token, source: accessTokenSourceAPIKey}
+		}
 	}
-	return ""
+	return requestAccessToken{}
 }
 
 func RequireAuth() gin.HandlerFunc {
@@ -145,6 +174,16 @@ func bearerToken(value string) string {
 func isAIGatewayLLMRelayPath(path string) bool {
 	path = strings.TrimSpace(path)
 	return strings.HasPrefix(path, "/api/v1/ai-gateway/llm/")
+}
+
+func allowsProtocolAccessCookie(path string) bool {
+	path = strings.TrimSpace(path)
+	switch path {
+	case "/oauth2/authorize", "/api/v1/provider/oidc/authorize", "/api/v1/provider/proxy/callback":
+		return true
+	default:
+		return false
+	}
 }
 
 func allowsExternalBearerToken(path string) bool {

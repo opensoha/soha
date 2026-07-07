@@ -138,9 +138,40 @@ func (h *AuthHandler) setRefreshCookie(c *gin.Context, result domainidentity.Aut
 	c.SetCookie(refreshCookieName, refreshToken, h.refreshCookieMaxAge, "/api/v1/auth", "", c.Request.TLS != nil, true)
 }
 
+func (h *AuthHandler) setProtocolAccessCookie(c *gin.Context, result domainidentity.AuthResult) {
+	accessToken := strings.TrimSpace(result.Tokens.AccessToken)
+	if accessToken == "" {
+		return
+	}
+	maxAge := int(result.Tokens.ExpiresIn)
+	if maxAge <= 0 && !result.Tokens.ExpiresAt.IsZero() {
+		maxAge = int(time.Until(result.Tokens.ExpiresAt) / time.Second)
+	}
+	if maxAge <= 0 {
+		return
+	}
+	c.SetSameSite(http.SameSiteLaxMode)
+	c.SetCookie(apiMiddleware.ProtocolAccessCookieName, accessToken, maxAge, "/", "", requestIsHTTPS(c), true)
+}
+
+func (h *AuthHandler) setAuthCookies(c *gin.Context, result domainidentity.AuthResult) {
+	h.setRefreshCookie(c, result)
+	h.setProtocolAccessCookie(c, result)
+}
+
 func (h *AuthHandler) clearRefreshCookie(c *gin.Context) {
 	c.SetSameSite(http.SameSiteLaxMode)
 	c.SetCookie(refreshCookieName, "", -1, "/api/v1/auth", "", c.Request.TLS != nil, true)
+}
+
+func (h *AuthHandler) clearProtocolAccessCookie(c *gin.Context) {
+	c.SetSameSite(http.SameSiteLaxMode)
+	c.SetCookie(apiMiddleware.ProtocolAccessCookieName, "", -1, "/", "", requestIsHTTPS(c), true)
+}
+
+func (h *AuthHandler) clearAuthCookies(c *gin.Context) {
+	h.clearRefreshCookie(c)
+	h.clearProtocolAccessCookie(c)
 }
 
 func refreshTokenFromRequest(c *gin.Context, bodyValue string) string {
@@ -173,7 +204,7 @@ func (h *AuthHandler) Login(c *gin.Context) {
 		writeError(c, err)
 		return
 	}
-	h.setRefreshCookie(c, result)
+	h.setAuthCookies(c, result)
 	apiresponse.Item(c, http.StatusOK, result)
 }
 
@@ -192,7 +223,7 @@ func (h *AuthHandler) ProLogin(c *gin.Context) {
 		writeError(c, err)
 		return
 	}
-	h.setRefreshCookie(c, result)
+	h.setAuthCookies(c, result)
 	authority := "user"
 	for _, role := range result.User.Roles {
 		if role == "admin" {
@@ -223,7 +254,7 @@ func (h *AuthHandler) Refresh(c *gin.Context) {
 		writeError(c, err)
 		return
 	}
-	h.setRefreshCookie(c, result)
+	h.setAuthCookies(c, result)
 	apiresponse.Item(c, http.StatusOK, result)
 }
 
@@ -234,7 +265,7 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 		writeError(c, err)
 		return
 	}
-	h.clearRefreshCookie(c)
+	h.clearAuthCookies(c)
 	apiresponse.JSON(c, http.StatusOK, gin.H{"status": "ok"})
 }
 
@@ -245,7 +276,7 @@ func (h *AuthHandler) ProLogout(c *gin.Context) {
 		writeError(c, err)
 		return
 	}
-	h.clearRefreshCookie(c)
+	h.clearAuthCookies(c)
 	apiresponse.JSON(c, http.StatusOK, gin.H{"success": true})
 }
 
@@ -365,7 +396,7 @@ func (h *AuthHandler) OIDCExchange(c *gin.Context) {
 		writeError(c, err)
 		return
 	}
-	h.setRefreshCookie(c, result)
+	h.setAuthCookies(c, result)
 	apiresponse.Item(c, http.StatusOK, result)
 }
 

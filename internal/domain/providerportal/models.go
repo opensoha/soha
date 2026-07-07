@@ -159,7 +159,9 @@ type Repository interface {
 	ListPortalApplications(context.Context) ([]Application, error)
 	GetApplication(context.Context, string) (Application, error)
 	CreateApplication(context.Context, Application) (Application, error)
+	CreateApplicationWithAssignments(context.Context, Application, []ApplicationAssignment) (Application, error)
 	UpdateApplication(context.Context, Application) (Application, error)
+	UpdateApplicationWithAssignments(context.Context, Application, []ApplicationAssignment) (Application, error)
 	DeleteApplication(context.Context, string) error
 	ValidateProviderBinding(context.Context, string, string, string) error
 	ReplaceAssignments(context.Context, string, []ApplicationAssignment) error

@@ -453,6 +453,22 @@ func TestLoginSetsHttpOnlyRefreshCookie(t *testing.T) {
 	if cookie.MaxAge != int(time.Hour/time.Second) {
 		t.Fatalf("refresh cookie maxAge = %d, want %d", cookie.MaxAge, int(time.Hour/time.Second))
 	}
+	protocolCookie := responseCookie(recorder, apiMiddleware.ProtocolAccessCookieName)
+	if protocolCookie == nil {
+		t.Fatalf("missing %s cookie", apiMiddleware.ProtocolAccessCookieName)
+	}
+	if protocolCookie.Value != "access-1" {
+		t.Fatalf("protocol access cookie = %q, want access-1", protocolCookie.Value)
+	}
+	if !protocolCookie.HttpOnly {
+		t.Fatal("protocol access cookie should be HttpOnly")
+	}
+	if protocolCookie.Path != "/" {
+		t.Fatalf("protocol access cookie path = %q, want /", protocolCookie.Path)
+	}
+	if protocolCookie.MaxAge != 3600 {
+		t.Fatalf("protocol access cookie maxAge = %d, want 3600", protocolCookie.MaxAge)
+	}
 }
 
 func TestRefreshUsesRefreshCookieWhenBodyIsEmpty(t *testing.T) {
@@ -499,6 +515,13 @@ func TestRefreshUsesRefreshCookieWhenBodyIsEmpty(t *testing.T) {
 	}
 	if !cookie.HttpOnly {
 		t.Fatal("rotated refresh cookie should be HttpOnly")
+	}
+	protocolCookie := responseCookie(recorder, apiMiddleware.ProtocolAccessCookieName)
+	if protocolCookie == nil {
+		t.Fatalf("missing %s cookie", apiMiddleware.ProtocolAccessCookieName)
+	}
+	if protocolCookie.Value != "access-2" {
+		t.Fatalf("rotated protocol access cookie = %q, want access-2", protocolCookie.Value)
 	}
 }
 
@@ -597,6 +620,13 @@ func TestLogoutUsesRefreshCookieAndClearsCookie(t *testing.T) {
 	}
 	if cookie.MaxAge >= 0 {
 		t.Fatalf("clear cookie maxAge = %d, want negative", cookie.MaxAge)
+	}
+	protocolCookie := responseCookie(recorder, apiMiddleware.ProtocolAccessCookieName)
+	if protocolCookie == nil {
+		t.Fatalf("missing %s cookie clear header", apiMiddleware.ProtocolAccessCookieName)
+	}
+	if protocolCookie.MaxAge >= 0 {
+		t.Fatalf("protocol clear cookie maxAge = %d, want negative", protocolCookie.MaxAge)
 	}
 }
 

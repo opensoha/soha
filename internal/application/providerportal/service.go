@@ -227,14 +227,11 @@ func (s *Service) CreateApplication(ctx context.Context, principal domainidentit
 	item.UpdatedAt = now
 	item.CreatedBy = actorID(principal)
 	item.UpdatedBy = actorID(principal)
-	if err := s.validateApplicationProviderBinding(ctx, item); err != nil {
+	if err := s.validateApplicationProviderBinding(ctx, item, false); err != nil {
 		return domainportal.Application{}, err
 	}
-	item, err = s.repo.CreateApplication(ctx, item)
+	item, err = s.repo.CreateApplicationWithAssignments(ctx, item, assignmentsForApplication(item.ID, assignments))
 	if err != nil {
-		return domainportal.Application{}, err
-	}
-	if err := s.repo.ReplaceAssignments(ctx, item.ID, assignmentsForApplication(item.ID, assignments)); err != nil {
 		return domainportal.Application{}, err
 	}
 	item, err = s.repo.GetApplication(ctx, item.ID)
@@ -262,14 +259,11 @@ func (s *Service) UpdateApplication(ctx context.Context, principal domainidentit
 	item.CreatedBy = current.CreatedBy
 	item.UpdatedAt = now
 	item.UpdatedBy = actorID(principal)
-	if err := s.validateApplicationProviderBinding(ctx, item); err != nil {
+	if err := s.validateApplicationProviderBinding(ctx, item, true); err != nil {
 		return domainportal.Application{}, err
 	}
-	item, err = s.repo.UpdateApplication(ctx, item)
+	item, err = s.repo.UpdateApplicationWithAssignments(ctx, item, assignmentsForApplication(item.ID, assignments))
 	if err != nil {
-		return domainportal.Application{}, err
-	}
-	if err := s.repo.ReplaceAssignments(ctx, item.ID, assignmentsForApplication(item.ID, assignments)); err != nil {
 		return domainportal.Application{}, err
 	}
 	item, err = s.repo.GetApplication(ctx, item.ID)
@@ -364,7 +358,7 @@ func (s *Service) ProviderCapabilities() []domainportal.ProviderCapability {
 	}
 }
 
-func (s *Service) validateApplicationProviderBinding(ctx context.Context, item domainportal.Application) error {
+func (s *Service) validateApplicationProviderBinding(ctx context.Context, item domainportal.Application, existingApplication bool) error {
 	providerID := strings.TrimSpace(item.ProviderID)
 	if item.ProviderType == domainportal.ProviderTypeLink {
 		if providerID != "" {
@@ -374,6 +368,9 @@ func (s *Service) validateApplicationProviderBinding(ctx context.Context, item d
 	}
 	if providerID == "" {
 		return nil
+	}
+	if !existingApplication {
+		return fmt.Errorf("%w: identity provider can only be attached after the application is created", apperrors.ErrInvalidArgument)
 	}
 	return s.repo.ValidateProviderBinding(ctx, providerID, item.ID, item.ProviderType)
 }

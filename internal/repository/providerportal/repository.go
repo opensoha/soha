@@ -99,54 +99,89 @@ func (r *Repository) GetApplication(ctx context.Context, applicationID string) (
 }
 
 func (r *Repository) CreateApplication(ctx context.Context, item domainportal.Application) (domainportal.Application, error) {
-	tags, err := marshalJSON(item.Tags)
-	if err != nil {
-		return domainportal.Application{}, fmt.Errorf("marshal application tags: %w", err)
-	}
-	metadata, err := marshalJSON(item.Metadata)
-	if err != nil {
-		return domainportal.Application{}, fmt.Errorf("marshal application metadata: %w", err)
-	}
-	if err := r.db.WithContext(ctx).Exec(`
-		INSERT INTO identity_applications (
-			id, slug, name, description, icon_url, category, tags, launch_url, provider_id,
-			provider_type, portal_visible, featured, sort_order, status, metadata,
-			created_by, updated_by, created_at, updated_at
-		)
-		VALUES (?, ?, ?, ?, ?, ?, ?::jsonb, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?, ?, ?, ?)
-	`, item.ID, item.Slug, item.Name, item.Description, nullableString(item.IconURL), item.Category, tags,
-		item.LaunchURL, nullableString(item.ProviderID), item.ProviderType, item.PortalVisible, item.Featured,
-		item.SortOrder, item.Status, metadata, item.CreatedBy, item.UpdatedBy, item.CreatedAt, item.UpdatedAt).Error; err != nil {
+	if err := r.insertApplication(r.db.WithContext(ctx), item); err != nil {
 		return domainportal.Application{}, err
 	}
 	return r.GetApplication(ctx, item.ID)
 }
 
-func (r *Repository) UpdateApplication(ctx context.Context, item domainportal.Application) (domainportal.Application, error) {
+func (r *Repository) CreateApplicationWithAssignments(ctx context.Context, item domainportal.Application, assignments []domainportal.ApplicationAssignment) (domainportal.Application, error) {
+	if err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := r.insertApplication(tx, item); err != nil {
+			return err
+		}
+		return replaceAssignmentsTx(tx, item.ID, assignments)
+	}); err != nil {
+		return domainportal.Application{}, err
+	}
+	return r.GetApplication(ctx, item.ID)
+}
+
+func (r *Repository) insertApplication(tx *gorm.DB, item domainportal.Application) error {
 	tags, err := marshalJSON(item.Tags)
 	if err != nil {
-		return domainportal.Application{}, fmt.Errorf("marshal application tags: %w", err)
+		return fmt.Errorf("marshal application tags: %w", err)
 	}
 	metadata, err := marshalJSON(item.Metadata)
 	if err != nil {
-		return domainportal.Application{}, fmt.Errorf("marshal application metadata: %w", err)
+		return fmt.Errorf("marshal application metadata: %w", err)
 	}
-	result := r.db.WithContext(ctx).Exec(`
-		UPDATE identity_applications
-		SET slug = ?, name = ?, description = ?, icon_url = ?, category = ?, tags = ?::jsonb,
-		    launch_url = ?, provider_id = ?, provider_type = ?, portal_visible = ?, featured = ?,
+	return tx.Exec(`
+			INSERT INTO identity_applications (
+				id, slug, name, description, icon_url, category, tags, launch_url, provider_id,
+				provider_type, portal_visible, featured, sort_order, status, metadata,
+			created_by, updated_by, created_at, updated_at
+		)
+		VALUES (?, ?, ?, ?, ?, ?, ?::jsonb, ?, ?, ?, ?, ?, ?, ?, ?::jsonb, ?, ?, ?, ?)
+		`, item.ID, item.Slug, item.Name, item.Description, nullableString(item.IconURL), item.Category, tags,
+		item.LaunchURL, nullableString(item.ProviderID), item.ProviderType, item.PortalVisible, item.Featured,
+		item.SortOrder, item.Status, metadata, item.CreatedBy, item.UpdatedBy, item.CreatedAt, item.UpdatedAt).Error
+}
+
+func (r *Repository) UpdateApplication(ctx context.Context, item domainportal.Application) (domainportal.Application, error) {
+	if err := r.updateApplication(r.db.WithContext(ctx), item); err != nil {
+		return domainportal.Application{}, err
+	}
+	return r.GetApplication(ctx, item.ID)
+}
+
+func (r *Repository) UpdateApplicationWithAssignments(ctx context.Context, item domainportal.Application, assignments []domainportal.ApplicationAssignment) (domainportal.Application, error) {
+	if err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := r.updateApplication(tx, item); err != nil {
+			return err
+		}
+		return replaceAssignmentsTx(tx, item.ID, assignments)
+	}); err != nil {
+		return domainportal.Application{}, err
+	}
+	return r.GetApplication(ctx, item.ID)
+}
+
+func (r *Repository) updateApplication(tx *gorm.DB, item domainportal.Application) error {
+	tags, err := marshalJSON(item.Tags)
+	if err != nil {
+		return fmt.Errorf("marshal application tags: %w", err)
+	}
+	metadata, err := marshalJSON(item.Metadata)
+	if err != nil {
+		return fmt.Errorf("marshal application metadata: %w", err)
+	}
+	result := tx.Exec(`
+			UPDATE identity_applications
+			SET slug = ?, name = ?, description = ?, icon_url = ?, category = ?, tags = ?::jsonb,
+			    launch_url = ?, provider_id = ?, provider_type = ?, portal_visible = ?, featured = ?,
 		    sort_order = ?, status = ?, metadata = ?::jsonb, updated_by = ?, updated_at = ?
 		WHERE id = ?
 	`, item.Slug, item.Name, item.Description, nullableString(item.IconURL), item.Category, tags,
 		item.LaunchURL, nullableString(item.ProviderID), item.ProviderType, item.PortalVisible, item.Featured,
 		item.SortOrder, item.Status, metadata, item.UpdatedBy, item.UpdatedAt, item.ID)
 	if result.Error != nil {
-		return domainportal.Application{}, result.Error
+		return result.Error
 	}
 	if result.RowsAffected == 0 {
-		return domainportal.Application{}, fmt.Errorf("%w: identity application not found", apperrors.ErrNotFound)
+		return fmt.Errorf("%w: identity application not found", apperrors.ErrNotFound)
 	}
-	return r.GetApplication(ctx, item.ID)
+	return nil
 }
 
 func (r *Repository) DeleteApplication(ctx context.Context, applicationID string) error {
@@ -179,34 +214,38 @@ func (r *Repository) ValidateProviderBinding(ctx context.Context, providerID, ap
 
 func (r *Repository) ReplaceAssignments(ctx context.Context, applicationID string, assignments []domainportal.ApplicationAssignment) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Exec(`DELETE FROM identity_application_assignments WHERE application_id = ?`, applicationID).Error; err != nil {
-			return err
-		}
-		if len(assignments) == 0 {
-			return nil
-		}
-		var builder strings.Builder
-		args := make([]any, 0, len(assignments)*7)
-		builder.WriteString(`
-			INSERT INTO identity_application_assignments (
-				id, application_id, subject_type, subject_id, effect, created_by, created_at
-			)
-			VALUES
-		`)
-		for index, item := range assignments {
-			if index > 0 {
-				builder.WriteString(",")
-			}
-			builder.WriteString(" (?, ?, ?, ?, ?, ?, ?)")
-			args = append(args, item.ID, applicationID, item.SubjectType, item.SubjectID, item.Effect, item.CreatedBy, item.CreatedAt)
-		}
-		builder.WriteString(`
-			ON CONFLICT (application_id, subject_type, subject_id, effect) DO UPDATE SET
-				created_by = EXCLUDED.created_by,
-				created_at = EXCLUDED.created_at
-		`)
-		return tx.Exec(builder.String(), args...).Error
+		return replaceAssignmentsTx(tx, applicationID, assignments)
 	})
+}
+
+func replaceAssignmentsTx(tx *gorm.DB, applicationID string, assignments []domainportal.ApplicationAssignment) error {
+	if err := tx.Exec(`DELETE FROM identity_application_assignments WHERE application_id = ?`, applicationID).Error; err != nil {
+		return err
+	}
+	if len(assignments) == 0 {
+		return nil
+	}
+	var builder strings.Builder
+	args := make([]any, 0, len(assignments)*7)
+	builder.WriteString(`
+		INSERT INTO identity_application_assignments (
+			id, application_id, subject_type, subject_id, effect, created_by, created_at
+		)
+		VALUES
+	`)
+	for index, item := range assignments {
+		if index > 0 {
+			builder.WriteString(",")
+		}
+		builder.WriteString(" (?, ?, ?, ?, ?, ?, ?)")
+		args = append(args, item.ID, applicationID, item.SubjectType, item.SubjectID, item.Effect, item.CreatedBy, item.CreatedAt)
+	}
+	builder.WriteString(`
+		ON CONFLICT (application_id, subject_type, subject_id, effect) DO UPDATE SET
+			created_by = EXCLUDED.created_by,
+			created_at = EXCLUDED.created_at
+	`)
+	return tx.Exec(builder.String(), args...).Error
 }
 
 func (r *Repository) ListAssignments(ctx context.Context, applicationIDs []string) (map[string][]domainportal.ApplicationAssignment, error) {
