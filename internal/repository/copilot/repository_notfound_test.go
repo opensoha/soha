@@ -46,7 +46,7 @@ func TestRepositoryUpdateAgentRunCallbackWrapsErrNotFound(t *testing.T) {
 		CreatedAt:     now,
 		UpdatedAt:     now,
 	})
-	mock.ExpectExec(`(?s)UPDATE ai_agent_runs\s+SET status = \$1, output = \$2, tool_executions = \$3, analysis_artifacts = \$4, claimed_by_agent_id = COALESCE\(NULLIF\(\$5, ''\), claimed_by_agent_id\),\s+external_run_id = COALESCE\(NULLIF\(\$6, ''\), external_run_id\), error_message = COALESCE\(NULLIF\(\$7, ''\), error_message\),\s+last_heartbeat_at = \$8, completed_at = \$9, updated_at = \$10\s+WHERE id = \$11 AND callback_token = \$12`).
+	mock.ExpectExec(`(?s)UPDATE ai_agent_runs\s+SET status = \$1, output = \$2, tool_executions = \$3, analysis_artifacts = \$4, claimed_by_agent_id = COALESCE\(NULLIF\(\$5, ''\), claimed_by_agent_id\),\s+external_run_id = COALESCE\(NULLIF\(\$6, ''\), external_run_id\), error_message = COALESCE\(NULLIF\(\$7, ''\), error_message\),\s+last_heartbeat_at = \$8, completed_at = \$9, updated_at = \$10\s+WHERE id = \$11 AND callback_token = \$12 AND status NOT IN \(\$13, \$14, \$15, \$16\)`).
 		WithArgs(
 			domaincopilot.AgentRunStatusRunning,
 			sqlmock.AnyArg(),
@@ -60,8 +60,23 @@ func TestRepositoryUpdateAgentRunCallbackWrapsErrNotFound(t *testing.T) {
 			sqlmock.AnyArg(),
 			"missing-run",
 			"callback-token",
+			domaincopilot.AgentRunStatusCompleted,
+			domaincopilot.AgentRunStatusFailed,
+			domaincopilot.AgentRunStatusCanceled,
+			domaincopilot.AgentRunStatusCallbackTimeout,
 		).
 		WillReturnResult(sqlmock.NewResult(0, 0))
+	expectGetAgentRun(mock, domaincopilot.AgentRun{
+		ID:            "missing-run",
+		ProviderID:    "hermes",
+		ProviderKind:  "hermes",
+		CapabilityID:  "delivery_failure",
+		CreatedBy:     "user-1",
+		Status:        domaincopilot.AgentRunStatusRunning,
+		CallbackToken: "callback-token",
+		CreatedAt:     now,
+		UpdatedAt:     now,
+	})
 
 	_, err := repo.UpdateAgentRunCallback(context.Background(), domaincopilot.AgentRunCallbackInput{
 		RunID:         "missing-run",

@@ -661,6 +661,98 @@ func TestInvokeWorkbenchModelUsesRelayRouteAndRecordsWorkbenchMetadata(t *testin
 	}
 }
 
+func TestInvokeWorkbenchModelStreamParsesOpenAIDeltasAndRecordsStreamCall(t *testing.T) {
+	const upstreamKey = "sk-workbench-stream-upstream-test"
+	requests := make(chan map[string]any, 1)
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/chat/completions" {
+			t.Errorf("path = %s, want /v1/chat/completions", r.URL.Path)
+		}
+		payload := decodeRelayTestJSON(t, r.Body)
+		requests <- payload
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"content\":\"hello\"}}]}\n\n")
+		_, _ = io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"content\":\" stream\"}}],\"usage\":{\"prompt_tokens\":3,\"completion_tokens\":2,\"total_tokens\":5}}\n\n")
+		_, _ = io.WriteString(w, "data: [DONE]\n\n")
+	}))
+	defer upstream.Close()
+
+	repo := relayRepoForUpstream(t, upstream.URL, "openai", upstreamKey)
+	repo.routes[0].ID = "route-workbench-stream"
+	service := newRelayRuntimeTestService(repo, upstream.Client())
+	deltas := []string{}
+	resp, err := service.InvokeWorkbenchModelStream(context.Background(), relayWorkbenchTestPrincipal(), WorkbenchRelayRequest{
+		PublicModel: "gpt-public",
+		RouteID:     "route-workbench-stream",
+		Endpoint:    "chat/completions",
+		SessionID:   "session-1",
+		Mode:        "general",
+		Messages:    []WorkbenchRelayMessage{{Role: "user", Content: "hi"}},
+	}, func(delta WorkbenchRelayStreamDelta) bool {
+		deltas = append(deltas, delta.ContentDelta)
+		return true
+	})
+
+	if err != nil {
+		t.Fatalf("InvokeWorkbenchModelStream returned error: %v", err)
+	}
+	if resp.Content != "hello stream" || resp.RouteID != "route-workbench-stream" {
+		t.Fatalf("unexpected stream response: %#v", resp)
+	}
+	if strings.Join(deltas, "") != "hello stream" || len(deltas) != 2 {
+		t.Fatalf("unexpected stream deltas: %#v", deltas)
+	}
+	upstreamPayload := <-requests
+	if upstreamPayload["stream"] != true || upstreamPayload["model"] != "gpt-upstream" {
+		t.Fatalf("upstream stream payload = %#v", upstreamPayload)
+	}
+	log := singleRelayLog(t, repo)
+	if !log.Stream || log.Status != "success" || log.PromptTokens != 3 || log.CompletionTokens != 2 || log.TotalTokens != 5 {
+		t.Fatalf("unexpected workbench stream log: %#v", log)
+	}
+}
+
+func TestInvokeWorkbenchModelStreamReturnsStoppedWhenDeltaSinkStops(t *testing.T) {
+	const upstreamKey = "sk-workbench-stream-stop-test"
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"content\":\"partial\"}}]}\n\n")
+		_, _ = io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"content\":\" should not persist\"}}]}\n\n")
+		_, _ = io.WriteString(w, "data: [DONE]\n\n")
+	}))
+	defer upstream.Close()
+
+	repo := relayRepoForUpstream(t, upstream.URL, "openai", upstreamKey)
+	repo.routes[0].ID = "route-workbench-stream-stop"
+	service := newRelayRuntimeTestService(repo, upstream.Client())
+	deltas := []string{}
+	resp, err := service.InvokeWorkbenchModelStream(context.Background(), relayWorkbenchTestPrincipal(), WorkbenchRelayRequest{
+		PublicModel: "gpt-public",
+		RouteID:     "route-workbench-stream-stop",
+		Endpoint:    "chat/completions",
+		SessionID:   "session-1",
+		Mode:        "general",
+		Messages:    []WorkbenchRelayMessage{{Role: "user", Content: "hi"}},
+	}, func(delta WorkbenchRelayStreamDelta) bool {
+		deltas = append(deltas, delta.ContentDelta)
+		return false
+	})
+
+	if !errors.Is(err, ErrWorkbenchRelayStreamStopped) {
+		t.Fatalf("InvokeWorkbenchModelStream error = %v, want ErrWorkbenchRelayStreamStopped", err)
+	}
+	if resp.Content != "" {
+		t.Fatalf("stopped stream must not return partial content: %#v", resp)
+	}
+	if strings.Join(deltas, "") != "partial" {
+		t.Fatalf("unexpected deltas before stop: %#v", deltas)
+	}
+	log := singleRelayLog(t, repo)
+	if log.Status != "client_cancelled" || log.ErrorCode != "client_cancelled" {
+		t.Fatalf("expected client_cancelled relay log, got %#v", log)
+	}
+}
+
 func TestInvokeWorkbenchModelFiltersByRouteID(t *testing.T) {
 	const upstreamKey = "sk-workbench-route-test"
 	first := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

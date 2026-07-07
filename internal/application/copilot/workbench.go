@@ -158,6 +158,8 @@ func scopeFromMap(scope map[string]any) domaincopilot.SessionScope {
 		Namespace:        stringValue(scope["namespace"]),
 		Workload:         stringValue(scope["workload"]),
 		Service:          stringValue(scope["service"]),
+		Pod:              stringValue(scope["pod"]),
+		Node:             stringValue(scope["node"]),
 		AlertID:          stringValue(scope["alertId"]),
 		TimeRangeMinutes: intValue(scope["timeRangeMinutes"], 60),
 	}
@@ -179,6 +181,12 @@ func mergeSessionScope(base domaincopilot.SessionScope, overrides map[string]any
 	if value := strings.TrimSpace(stringValue(overrides["service"])); value != "" {
 		base.Service = value
 	}
+	if value := strings.TrimSpace(stringValue(overrides["pod"])); value != "" {
+		base.Pod = value
+	}
+	if value := strings.TrimSpace(stringValue(overrides["node"])); value != "" {
+		base.Node = value
+	}
 	if value := strings.TrimSpace(stringValue(overrides["alertId"])); value != "" {
 		base.AlertID = value
 	}
@@ -186,6 +194,41 @@ func mergeSessionScope(base domaincopilot.SessionScope, overrides map[string]any
 		base.TimeRangeMinutes = value
 	}
 	return base
+}
+
+func normalizeSessionSource(source string) string {
+	switch strings.TrimSpace(source) {
+	case "global-assistant", "ai-workbench", "inspection", "automation", "ai-gateway":
+		return strings.TrimSpace(source)
+	default:
+		return "manual"
+	}
+}
+
+func compactMetadataMap(input map[string]any) map[string]any {
+	if input == nil {
+		return nil
+	}
+	out := make(map[string]any, len(input))
+	for key, value := range input {
+		key = strings.TrimSpace(key)
+		if key == "" || value == nil {
+			continue
+		}
+		if text, ok := value.(string); ok {
+			text = strings.TrimSpace(text)
+			if text == "" {
+				continue
+			}
+			out[key] = text
+			continue
+		}
+		out[key] = value
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func toolsetFromMap(toolset map[string]any) domaincopilot.SessionToolset {

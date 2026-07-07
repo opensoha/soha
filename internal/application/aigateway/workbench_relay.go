@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -19,6 +20,8 @@ const (
 	workbenchRelaySource    = "ai-workbench"
 	workbenchRelayTokenKind = "internal_workbench"
 )
+
+var ErrWorkbenchRelayStreamStopped = errors.New("workbench relay stream stopped")
 
 type WorkbenchRelayMessage struct {
 	Role    string
@@ -48,6 +51,10 @@ type WorkbenchRelayResponse struct {
 	RequestID    string
 }
 
+type WorkbenchRelayStreamDelta struct {
+	ContentDelta string
+}
+
 func (s *Service) InvokeWorkbenchModel(ctx context.Context, principal domainidentity.Principal, input WorkbenchRelayRequest) (WorkbenchRelayResponse, error) {
 	if s == nil {
 		return WorkbenchRelayResponse{}, fmt.Errorf("%w: AI Gateway service is not configured", apperrors.ErrInvalidArgument)
@@ -67,7 +74,7 @@ func (s *Service) InvokeWorkbenchModel(ctx context.Context, principal domainiden
 	if err != nil {
 		return WorkbenchRelayResponse{}, err
 	}
-	body, err := workbenchRelayRequestBody(endpoint, publicModel, input.Messages)
+	body, err := workbenchRelayRequestBody(endpoint, publicModel, input.Messages, false)
 	if err != nil {
 		return WorkbenchRelayResponse{}, err
 	}
@@ -95,6 +102,73 @@ func (s *Service) InvokeWorkbenchModel(ctx context.Context, principal domainiden
 	content, err := workbenchRelayResponseText(endpoint, writer.body.Bytes())
 	if err != nil {
 		return WorkbenchRelayResponse{}, err
+	}
+	return WorkbenchRelayResponse{
+		Content:      content,
+		PublicModel:  publicModel,
+		RouteID:      selections[0].route.ID,
+		UpstreamID:   selections[0].upstream.ID,
+		ProviderKind: selections[0].upstreamProviderKind(),
+		Endpoint:     endpoint,
+		Status:       status,
+		RequestID:    req.RequestID,
+	}, nil
+}
+
+func (s *Service) InvokeWorkbenchModelStream(ctx context.Context, principal domainidentity.Principal, input WorkbenchRelayRequest, onDelta func(WorkbenchRelayStreamDelta) bool) (WorkbenchRelayResponse, error) {
+	if s == nil {
+		return WorkbenchRelayResponse{}, fmt.Errorf("%w: AI Gateway service is not configured", apperrors.ErrInvalidArgument)
+	}
+	if !s.relayConfig.Enabled {
+		return WorkbenchRelayResponse{}, fmt.Errorf("%w: AI Gateway LLM relay is disabled", apperrors.ErrNotFound)
+	}
+	if err := appaccess.AuthorizeRuntimePermission(ctx, s.permissions, principal, appaccess.PermObserveAIChatUse); err != nil {
+		return WorkbenchRelayResponse{}, err
+	}
+	publicModel, routeID, err := s.resolveWorkbenchRelayModel(ctx, input)
+	if err != nil {
+		return WorkbenchRelayResponse{}, err
+	}
+	endpoint := normalizeWorkbenchRelayEndpoint(input.Endpoint)
+	providerKind, selections, err := s.workbenchRelaySelections(ctx, principal, publicModel, routeID, endpoint)
+	if err != nil {
+		return WorkbenchRelayResponse{}, err
+	}
+	body, err := workbenchRelayRequestBody(endpoint, publicModel, input.Messages, true)
+	if err != nil {
+		return WorkbenchRelayResponse{}, err
+	}
+	accessCtx := workbenchRelayAccessContext(principal, input)
+	req := LLMRelayHTTPRequest{
+		ProviderKind: providerKind,
+		Endpoint:     endpoint,
+		Method:       http.MethodPost,
+		Headers:      http.Header{"Accept": []string{"text/event-stream"}, "Content-Type": []string{"application/json"}},
+		Body:         body,
+		RequestID:    workbenchRelayRequestID(accessCtx.Metadata),
+		UserAgent:    "opensoha-ai-workbench",
+	}
+	writer := newWorkbenchRelayStreamWriter(endpoint, onDelta)
+	if err := s.proxyRelayRequestWithFallback(ctx, principal, accessCtx, req, selections, publicModel, true, writer); err != nil {
+		return WorkbenchRelayResponse{}, err
+	}
+	if writer.stopped {
+		return WorkbenchRelayResponse{}, ErrWorkbenchRelayStreamStopped
+	}
+	writer.finish()
+	if writer.stopped {
+		return WorkbenchRelayResponse{}, ErrWorkbenchRelayStreamStopped
+	}
+	status := writer.status
+	if status == 0 {
+		status = http.StatusOK
+	}
+	if status >= http.StatusBadRequest {
+		return WorkbenchRelayResponse{}, fmt.Errorf("%w: workbench relay returned status %d", apperrors.ErrClusterUnready, status)
+	}
+	content := strings.TrimSpace(writer.content.String())
+	if content == "" {
+		return WorkbenchRelayResponse{}, fmt.Errorf("%w: workbench relay stream content is empty", apperrors.ErrClusterUnready)
 	}
 	return WorkbenchRelayResponse{
 		Content:      content,
@@ -254,21 +328,21 @@ func workbenchRelayAccessContext(principal domainidentity.Principal, input Workb
 	}
 }
 
-func workbenchRelayRequestBody(endpoint, publicModel string, messages []WorkbenchRelayMessage) ([]byte, error) {
+func workbenchRelayRequestBody(endpoint, publicModel string, messages []WorkbenchRelayMessage, stream bool) ([]byte, error) {
 	switch endpoint {
 	case "chat/completions":
 		return json.Marshal(map[string]any{
 			"model":       publicModel,
 			"messages":    workbenchOpenAIMessages(messages),
 			"temperature": 0.2,
-			"stream":      false,
+			"stream":      stream,
 		})
 	case "responses":
 		return json.Marshal(map[string]any{
 			"model":       publicModel,
 			"input":       workbenchResponsesInput(messages),
 			"temperature": 0.2,
-			"stream":      false,
+			"stream":      stream,
 		})
 	case "messages":
 		system, chatMessages := workbenchAnthropicMessages(messages)
@@ -277,7 +351,7 @@ func workbenchRelayRequestBody(endpoint, publicModel string, messages []Workbenc
 			"messages":    chatMessages,
 			"max_tokens":  1024,
 			"temperature": 0.2,
-			"stream":      false,
+			"stream":      stream,
 		}
 		if system != "" {
 			payload["system"] = system
@@ -360,6 +434,132 @@ type workbenchRelayResponseWriter struct {
 	header http.Header
 	status int
 	body   bytes.Buffer
+}
+
+type workbenchRelayStreamWriter struct {
+	header  http.Header
+	status  int
+	body    bytes.Buffer
+	rest    string
+	content strings.Builder
+	stopped bool
+	onDelta func(WorkbenchRelayStreamDelta) bool
+}
+
+func newWorkbenchRelayStreamWriter(endpoint string, onDelta func(WorkbenchRelayStreamDelta) bool) *workbenchRelayStreamWriter {
+	return &workbenchRelayStreamWriter{header: http.Header{}, onDelta: onDelta}
+}
+
+func (w *workbenchRelayStreamWriter) Header() http.Header {
+	return w.header
+}
+
+func (w *workbenchRelayStreamWriter) WriteHeader(status int) {
+	if w.status == 0 {
+		w.status = status
+	}
+}
+
+func (w *workbenchRelayStreamWriter) Write(data []byte) (int, error) {
+	if w.status == 0 {
+		w.status = http.StatusOK
+	}
+	if len(data) == 0 {
+		return 0, nil
+	}
+	w.body.Write(data)
+	if !w.consume(string(data)) {
+		return 0, ErrWorkbenchRelayStreamStopped
+	}
+	return len(data), nil
+}
+
+func (w *workbenchRelayStreamWriter) finish() {
+	if w.stopped {
+		return
+	}
+	if strings.TrimSpace(w.rest) != "" {
+		w.consume("\n\n")
+	}
+}
+
+func (w *workbenchRelayStreamWriter) consume(chunk string) bool {
+	if w.stopped {
+		return false
+	}
+	buffer := strings.ReplaceAll(w.rest+chunk, "\r\n", "\n")
+	frames := strings.Split(buffer, "\n\n")
+	w.rest = frames[len(frames)-1]
+	for _, frame := range frames[:len(frames)-1] {
+		delta := workbenchRelayStreamFrameDelta(frame)
+		if delta == "" {
+			continue
+		}
+		w.content.WriteString(delta)
+		if w.onDelta != nil && !w.onDelta(WorkbenchRelayStreamDelta{ContentDelta: delta}) {
+			w.stopped = true
+			return false
+		}
+	}
+	return true
+}
+
+func workbenchRelayStreamFrameDelta(frame string) string {
+	lines := strings.Split(frame, "\n")
+	data := make([]string, 0, len(lines))
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "data:") {
+			continue
+		}
+		value := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+		if value == "" || value == "[DONE]" {
+			continue
+		}
+		data = append(data, value)
+	}
+	if len(data) == 0 {
+		return ""
+	}
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(strings.Join(data, "\n")), &payload); err != nil {
+		return ""
+	}
+	return workbenchRelayStreamPayloadDelta(payload)
+}
+
+func workbenchRelayStreamPayloadDelta(payload map[string]any) string {
+	if delta, ok := payload["delta"].(string); ok {
+		return delta
+	}
+	if delta, ok := payload["delta"].(map[string]any); ok {
+		if text, ok := delta["text"].(string); ok {
+			return text
+		}
+		if text, ok := delta["content"].(string); ok {
+			return text
+		}
+	}
+	choices, _ := payload["choices"].([]any)
+	for _, raw := range choices {
+		choice, _ := raw.(map[string]any)
+		if delta, ok := choice["delta"].(map[string]any); ok {
+			if text, ok := relayTextFromContent(delta["content"]); ok {
+				return text
+			}
+		}
+		if text, ok := relayTextFromContent(choice["text"]); ok {
+			return text
+		}
+	}
+	if strings.Contains(strings.TrimSpace(fmt.Sprint(payload["type"])), "content_block_delta") {
+		if delta, ok := payload["delta"].(map[string]any); ok {
+			if text, ok := delta["text"].(string); ok {
+				return text
+			}
+		}
+	}
+	return ""
 }
 
 func (w *workbenchRelayResponseWriter) Header() http.Header {

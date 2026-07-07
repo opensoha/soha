@@ -3,6 +3,7 @@ package copilot
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -90,6 +91,7 @@ type EventReader interface {
 
 type AuditReader interface {
 	List(context.Context, domainaudit.Filter) ([]domainaudit.Entry, error)
+	Record(context.Context, domainaudit.Entry) error
 }
 
 type ApplicationReader interface {
@@ -135,6 +137,10 @@ type AISettingsResolver interface {
 
 type WorkbenchModelInvoker interface {
 	InvokeWorkbenchModel(context.Context, domainidentity.Principal, appaigateway.WorkbenchRelayRequest) (appaigateway.WorkbenchRelayResponse, error)
+}
+
+type WorkbenchModelStreamInvoker interface {
+	InvokeWorkbenchModelStream(context.Context, domainidentity.Principal, appaigateway.WorkbenchRelayRequest, func(appaigateway.WorkbenchRelayStreamDelta) bool) (appaigateway.WorkbenchRelayResponse, error)
 }
 
 type chatReply struct {
@@ -261,7 +267,7 @@ func (s *Service) GetSession(ctx context.Context, principal domainidentity.Princ
 	return s.repo.GetSession(ctx, principal.UserID, strings.TrimSpace(sessionID))
 }
 
-func (s *Service) CreateSession(ctx context.Context, principal domainidentity.Principal, title, mode, agentProviderID string, scope map[string]any, tags []string, locale string) (domaincopilot.Session, error) {
+func (s *Service) CreateSession(ctx context.Context, principal domainidentity.Principal, title, mode, agentProviderID string, scope, pinnedContext map[string]any, source string, tags []string, locale string) (domaincopilot.Session, error) {
 	if err := s.authorizePrincipal(ctx, principal, appaccess.PermObserveAIChatUse); err != nil {
 		return domaincopilot.Session{}, err
 	}
@@ -273,11 +279,12 @@ func (s *Service) CreateSession(ctx context.Context, principal domainidentity.Pr
 		Status:          "active",
 		AgentProviderID: normalizeAgentProviderID(agentProviderID),
 		Scope:           scopeFromMap(scope),
+		PinnedContext:   compactMetadataMap(pinnedContext),
 		Tags:            normalizeStringList(tags),
-		Source:          "manual",
+		Source:          normalizeSessionSource(source),
 	})
 	metadata["locale"] = normalizeLocale(locale)
-	return s.repo.CreateSession(ctx, domaincopilot.Session{
+	session, err := s.repo.CreateSession(ctx, domaincopilot.Session{
 		ID:        uuid.NewString(),
 		Title:     strings.TrimSpace(title),
 		CreatedBy: principal.UserID,
@@ -285,9 +292,18 @@ func (s *Service) CreateSession(ctx context.Context, principal domainidentity.Pr
 		CreatedAt: time.Now().UTC(),
 		UpdatedAt: time.Now().UTC(),
 	})
+	if err != nil {
+		return domaincopilot.Session{}, err
+	}
+	s.recordGlobalAssistantAudit(ctx, principal, domaincopilot.WorkbenchGlobalAssistantEventInput{
+		Action:    "open",
+		SessionID: session.ID,
+		Source:    stringValue(metadata["source"]),
+	}, parseSessionMetadata(session.Metadata), "success")
+	return session, nil
 }
 
-func (s *Service) UpdateSession(ctx context.Context, principal domainidentity.Principal, sessionID string, title, mode, agentProviderID, status, summary string, scope, toolset map[string]any, tags []string, archived bool) (domaincopilot.Session, error) {
+func (s *Service) UpdateSession(ctx context.Context, principal domainidentity.Principal, sessionID string, title, mode, agentProviderID, status, summary string, scope, pinnedContext map[string]any, source string, toolset map[string]any, tags []string, archived bool) (domaincopilot.Session, error) {
 	if err := s.authorizePrincipal(ctx, principal, appaccess.PermObserveAIChatUse); err != nil {
 		return domaincopilot.Session{}, err
 	}
@@ -313,6 +329,12 @@ func (s *Service) UpdateSession(ctx context.Context, principal domainidentity.Pr
 	}
 	if scope != nil {
 		metadata.Scope = scopeFromMap(scope)
+	}
+	if pinnedContext != nil {
+		metadata.PinnedContext = compactMetadataMap(pinnedContext)
+	}
+	if strings.TrimSpace(source) != "" {
+		metadata.Source = normalizeSessionSource(source)
 	}
 	if toolset != nil {
 		metadata.Toolset = toolsetFromMap(toolset)
@@ -361,10 +383,14 @@ func (s *Service) SendMessage(ctx context.Context, principal domainidentity.Prin
 		return domaincopilot.SessionMessageEnvelope{}, err
 	}
 	sessionMeta := parseSessionMetadata(session.Metadata)
+	return s.sendMessageWithSessionConfig(ctx, principal, session, sessionMeta, content, locale)
+}
+
+func (s *Service) sendMessageWithSessionConfig(ctx context.Context, principal domainidentity.Principal, session domaincopilot.Session, sessionMeta domaincopilot.SessionMetadata, content, locale string) (domaincopilot.SessionMessageEnvelope, error) {
 	locale = detectMessageLocale(content, locale)
 	userMessage, err := s.repo.CreateMessage(ctx, domaincopilot.Message{
 		ID:        uuid.NewString(),
-		SessionID: sessionID,
+		SessionID: session.ID,
 		Role:      "user",
 		Content:   strings.TrimSpace(content),
 		Metadata:  map[string]any{"userId": principal.UserID, "locale": locale, "mode": sessionMeta.Mode},
@@ -395,21 +421,21 @@ func (s *Service) SendMessage(ctx context.Context, principal domainidentity.Prin
 	if reply.Model != "" {
 		assistantMetadata["model"] = reply.Model
 	}
-	if reply.ProviderID != "" {
-		assistantMetadata["providerId"] = reply.ProviderID
-	}
-	if reply.ProviderKind != "" {
-		assistantMetadata["providerKind"] = reply.ProviderKind
-	}
 	if reply.Error != "" {
 		assistantMetadata["error"] = reply.Error
 	}
 	if len(artifacts) > 0 {
 		assistantMetadata["analysisArtifacts"] = artifacts
 	}
+	agentStatus := map[string]any{
+		"status":       replyAgentStatus(reply),
+		"providerId":   firstNonEmpty(reply.ProviderID, agentProviderInternal),
+		"providerKind": firstNonEmpty(reply.ProviderKind, "internal"),
+	}
+	assistantMetadata = finalWorkbenchMessageMetadata(assistantMetadata, toolCalls, artifacts, agentStatus)
 	assistantMessage, err := s.repo.CreateMessage(ctx, domaincopilot.Message{
 		ID:        uuid.NewString(),
-		SessionID: sessionID,
+		SessionID: session.ID,
 		Role:      "assistant",
 		Content:   reply.Content,
 		Metadata:  assistantMetadata,
@@ -430,12 +456,19 @@ func (s *Service) SendMessage(ctx context.Context, principal domainidentity.Prin
 		session.UpdatedAt = time.Now().UTC()
 		_, _ = s.repo.UpdateSession(ctx, principal.UserID, session.ID, session)
 	}
-	return domaincopilot.SessionMessageEnvelope{
+	envelope := domaincopilot.SessionMessageEnvelope{
 		Messages:          []domaincopilot.Message{userMessage, assistantMessage},
 		ToolCalls:         toolCalls,
 		AnalysisArtifacts: artifacts,
 		SessionPatch:      sessionPatch,
-	}, nil
+	}
+	s.recordGlobalAssistantAudit(ctx, principal, domaincopilot.WorkbenchGlobalAssistantEventInput{
+		Action:    "send",
+		SessionID: session.ID,
+		Source:    sessionMeta.Source,
+		Prompt:    content,
+	}, sessionMeta, "success")
+	return envelope, nil
 }
 
 func (s *Service) RunSessionAnalysis(ctx context.Context, principal domainidentity.Principal, sessionID string, input domaincopilot.RootCauseRunInput, locale string) (domaincopilot.SessionMessageEnvelope, error) {
@@ -525,7 +558,17 @@ func (s *Service) RunSessionAnalysis(ctx context.Context, principal domainidenti
 		SessionID: sessionID,
 		Role:      "assistant",
 		Content:   reply,
-		Metadata:  map[string]any{"mode": mode, "source": "explicit-analysis", "locale": locale, "analysisArtifacts": artifacts},
+		Metadata: finalWorkbenchMessageMetadata(map[string]any{
+			"mode":              mode,
+			"source":            "explicit-analysis",
+			"locale":            locale,
+			"analysisArtifacts": artifacts,
+		}, toolCalls, artifacts, map[string]any{
+			"status":       "succeeded",
+			"providerId":   firstNonEmpty(input.AgentProviderID, metadata.AgentProviderID, agentProviderInternal),
+			"providerKind": providerKindOrInternalApp(firstNonEmpty(input.AgentProviderID, metadata.AgentProviderID, agentProviderInternal)),
+			"runId":        firstStreamArtifactRunID(artifacts),
+		}),
 		CreatedAt: time.Now().UTC(),
 	})
 	if err != nil {
@@ -554,14 +597,13 @@ func (s *Service) queueSessionAgentAnalysis(ctx context.Context, principal domai
 		capabilityID = mode
 	}
 	run, err := s.createAgentRun(ctx, principal, domaincopilot.AgentRunInput{
-		ProviderID:     providerID,
-		CapabilityID:   capabilityID,
-		SkillIDs:       toolset.EnabledSkillIDs,
-		SessionID:      session.ID,
-		RootCauseRunID: strings.TrimSpace(input.SessionID),
-		CreatedBy:      principal.UserID,
-		Scope:          scope,
-		Toolset:        toolset,
+		ProviderID:   providerID,
+		CapabilityID: capabilityID,
+		SkillIDs:     toolset.EnabledSkillIDs,
+		SessionID:    session.ID,
+		CreatedBy:    principal.UserID,
+		Scope:        scope,
+		Toolset:      toolset,
 		Input: map[string]any{
 			"question":          input.Question,
 			"mode":              mode,
@@ -601,14 +643,20 @@ func (s *Service) queueSessionAgentAnalysis(ctx context.Context, principal domai
 		SessionID: session.ID,
 		Role:      "assistant",
 		Content:   artifact.Summary,
-		Metadata: map[string]any{
+		Metadata: finalWorkbenchMessageMetadata(map[string]any{
 			"mode":              mode,
 			"source":            "agent-runtime",
 			"locale":            normalizeLocale(locale),
 			"agentRunId":        run.ID,
 			"agentProviderId":   run.ProviderID,
 			"analysisArtifacts": []domaincopilot.AnalysisArtifact{artifact},
-		},
+		}, nil, []domaincopilot.AnalysisArtifact{artifact}, map[string]any{
+			"status":       run.Status,
+			"providerId":   run.ProviderID,
+			"providerKind": run.ProviderKind,
+			"runId":        run.ID,
+			"agentRunId":   run.ID,
+		}),
 		CreatedAt: time.Now().UTC(),
 	})
 	if err != nil {
@@ -679,7 +727,7 @@ func (s *Service) queueSessionRootCauseAgentAnalysis(ctx context.Context, princi
 		SessionID: session.ID,
 		Role:      "assistant",
 		Content:   artifact.Summary,
-		Metadata: map[string]any{
+		Metadata: finalWorkbenchMessageMetadata(map[string]any{
 			"mode":              "root_cause",
 			"source":            "agent-runtime",
 			"locale":            normalizeLocale(locale),
@@ -687,7 +735,14 @@ func (s *Service) queueSessionRootCauseAgentAnalysis(ctx context.Context, princi
 			"rootCauseRunId":    rootRun.ID,
 			"agentProviderId":   run.ProviderID,
 			"analysisArtifacts": []domaincopilot.AnalysisArtifact{artifact},
-		},
+		}, rootRun.ToolExecutions, []domaincopilot.AnalysisArtifact{artifact}, map[string]any{
+			"status":         run.Status,
+			"providerId":     run.ProviderID,
+			"providerKind":   run.ProviderKind,
+			"runId":          rootRun.ID,
+			"agentRunId":     run.ID,
+			"rootCauseRunId": rootRun.ID,
+		}),
 		CreatedAt: time.Now().UTC(),
 	})
 	if err != nil {
@@ -931,9 +986,82 @@ func (s *Service) generateReply(ctx context.Context, principal domainidentity.Pr
 		}
 	}
 	return chatReply{
-		Content: resp.Content,
-		Source:  "gateway-model-route",
-		Model:   firstNonEmpty(resp.PublicModel, workbenchModel.DefaultPublicModel),
+		Content:      resp.Content,
+		Source:       "gateway-model-route",
+		Model:        firstNonEmpty(resp.PublicModel, workbenchModel.DefaultPublicModel),
+		ProviderID:   agentProviderInternal,
+		ProviderKind: firstNonEmpty(resp.ProviderKind, workbenchModelProviderKindFromEndpoint(workbenchModel.DefaultEndpoint)),
+	}
+}
+
+func (s *Service) generateReplyStream(ctx context.Context, principal domainidentity.Principal, sessionID, mode string, messages []chatProviderMessage, locale string, onDelta func(string) bool) chatReply {
+	workbenchModel, err := s.resolveAIWorkbenchSettings(ctx)
+	if err != nil {
+		return chatReply{
+			Content: localize(locale,
+				"当前 AI Workbench 模型设置不可用。请先在 AI Gateway 中配置模型路由，并在 AI 设置中选择默认模型。",
+				"AI Workbench model settings are unavailable. Configure a model route in AI Gateway and select a default model in AI settings.",
+			),
+			Source: "model-unconfigured",
+			Error:  err.Error(),
+		}
+	}
+	if !workbenchModel.Enabled || (strings.TrimSpace(workbenchModel.DefaultPublicModel) == "" && strings.TrimSpace(workbenchModel.DefaultRouteID) == "") {
+		return chatReply{
+			Content: localize(locale,
+				"当前没有可用的 AI Workbench 默认模型。请在 AI Gateway 的模型路由中接入 Provider，并在 AI 设置里选择默认模型或路由。",
+				"No AI Workbench default model is available. Add the provider through AI Gateway model routes and select a default model or route in AI settings.",
+			),
+			Source: "model-unconfigured",
+			Model:  workbenchModel.DefaultPublicModel,
+		}
+	}
+	streamInvoker, ok := s.workbenchInvoker.(WorkbenchModelStreamInvoker)
+	if !ok || streamInvoker == nil {
+		return s.generateReply(ctx, principal, sessionID, mode, messages, locale)
+	}
+	resp, err := streamInvoker.InvokeWorkbenchModelStream(ctx, principal, appaigateway.WorkbenchRelayRequest{
+		PublicModel: workbenchModel.DefaultPublicModel,
+		RouteID:     workbenchModel.DefaultRouteID,
+		Endpoint:    workbenchModel.DefaultEndpoint,
+		Messages:    mapWorkbenchRelayMessages(messages),
+		SessionID:   sessionID,
+		Mode:        normalizeSessionMode(mode),
+	}, func(delta appaigateway.WorkbenchRelayStreamDelta) bool {
+		if delta.ContentDelta == "" {
+			return true
+		}
+		if onDelta == nil {
+			return true
+		}
+		return onDelta(delta.ContentDelta)
+	})
+	if err != nil {
+		if errors.Is(err, appaigateway.ErrWorkbenchRelayStreamStopped) || ctx.Err() != nil {
+			return chatReply{
+				Source:       "model-cancelled",
+				Model:        workbenchModel.DefaultPublicModel,
+				ProviderID:   agentProviderInternal,
+				ProviderKind: workbenchModelProviderKindFromEndpoint(workbenchModel.DefaultEndpoint),
+				Error:        err.Error(),
+			}
+		}
+		return chatReply{
+			Content: localize(locale,
+				"AI Workbench 模型调用失败。请检查 AI Gateway 的模型路由、上游状态、权限和限流配置。",
+				"AI Workbench model call failed. Check AI Gateway model routes, upstream health, permissions, and rate limits.",
+			),
+			Source: "model-error",
+			Model:  workbenchModel.DefaultPublicModel,
+			Error:  err.Error(),
+		}
+	}
+	return chatReply{
+		Content:      resp.Content,
+		Source:       "gateway-model-route-stream",
+		Model:        firstNonEmpty(resp.PublicModel, workbenchModel.DefaultPublicModel),
+		ProviderID:   agentProviderInternal,
+		ProviderKind: firstNonEmpty(resp.ProviderKind, workbenchModelProviderKindFromEndpoint(workbenchModel.DefaultEndpoint)),
 	}
 }
 

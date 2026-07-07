@@ -93,6 +93,117 @@ func TestMergeAgentRunAnalysisArtifactsAppendsAndReplacesByStableKey(t *testing.
 	}
 }
 
+func TestMergeAgentRunWorkbenchEventsNormalizesFiltersAndLimits(t *testing.T) {
+	now := time.Date(2026, 6, 12, 10, 0, 0, 0, time.UTC)
+	run := domaincopilot.AgentRun{
+		ID:             "agent:run-events",
+		ProviderID:     "hermes",
+		ProviderKind:   "hermes",
+		CapabilityID:   "root_cause",
+		SessionID:      "session-1",
+		RootCauseRunID: "rca:run-1",
+	}
+	normalized := normalizeAgentRunCallbackEvents(run, []domaincopilot.WorkbenchStreamEvent{{
+		Type:      "thinking.delta",
+		TextDelta: "valid agent event",
+	}, {
+		Type:    "message.done",
+		RunID:   "rca:run-1",
+		Content: "valid root cause event",
+	}, {
+		Type:    "message.done",
+		RunID:   "other-run",
+		Content: "filtered",
+	}}, now)
+	if len(normalized) != 2 {
+		t.Fatalf("expected invalid run event to be filtered, got %#v", normalized)
+	}
+	merged := mergeAgentRunWorkbenchEventSnapshot([]domaincopilot.WorkbenchStreamEvent{{
+		ID:        "evt:old-1",
+		Type:      "thinking.delta",
+		SessionID: "session-1",
+		RunID:     "agent:run-events",
+		Sequence:  7,
+		CreatedAt: now.Add(-2 * time.Minute),
+	}, {
+		ID:        "evt:old-2",
+		Type:      "tool.completed",
+		SessionID: "session-1",
+		RunID:     "agent:run-events",
+		Sequence:  8,
+		CreatedAt: now.Add(-time.Minute),
+	}}, normalized, 3)
+
+	if len(merged) != 3 {
+		t.Fatalf("expected recent 3 event snapshot, got %#v", merged)
+	}
+	if merged[0].ID != "evt:old-2" {
+		t.Fatalf("expected oldest event to be trimmed, got %#v", merged)
+	}
+	for index, event := range merged {
+		if event.Sequence != index+1 || event.SessionID != "session-1" || event.ID == "" || event.CreatedAt.IsZero() {
+			t.Fatalf("event[%d] not normalized: %#v", index, event)
+		}
+		if event.RunID == "other-run" {
+			t.Fatalf("filtered run leaked into snapshot: %#v", merged)
+		}
+	}
+}
+
+func TestAgentRunCallbackPayloadWorkbenchEventsAreReservedAndNormalized(t *testing.T) {
+	now := time.Date(2026, 6, 12, 10, 0, 0, 0, time.UTC)
+	run := domaincopilot.AgentRun{
+		ID:             "agent:run-events",
+		ProviderID:     "hermes",
+		ProviderKind:   "hermes",
+		CapabilityID:   "performance",
+		SessionID:      "session-1",
+		RootCauseRunID: "session-1",
+	}
+	payload := map[string]any{
+		"summary": "ok",
+		"workbenchEvents": []domaincopilot.WorkbenchStreamEvent{{
+			ID:        "runner-custom-id",
+			Type:      "message.done",
+			RunID:     "agent:run-events",
+			Sequence:  99,
+			CreatedAt: now.Add(-time.Hour),
+			Content:   "valid agent event",
+		}, {
+			Type:    "message.done",
+			RunID:   "session-1",
+			Content: "session id must not be allowed",
+		}, {
+			Type:    "thinking.delta",
+			RunID:   "foreign-run",
+			Content: "foreign run must be filtered",
+		}},
+	}
+
+	output := mergeAgentRunOutput(map[string]any{}, payload)
+	if _, ok := output["workbenchEvents"]; ok {
+		t.Fatalf("payload workbenchEvents should be reserved, got %#v", output)
+	}
+	normalized := normalizeAgentRunCallbackEvents(run, agentRunCallbackPayloadWorkbenchEvents(payload), now)
+	if len(normalized) != 1 {
+		t.Fatalf("expected only the agent run event to survive, got %#v", normalized)
+	}
+	if normalized[0].ID != "" || normalized[0].Sequence != 0 || !normalized[0].CreatedAt.Equal(now) || normalized[0].SessionID != "session-1" {
+		t.Fatalf("payload event was not normalized before snapshot merge: %#v", normalized[0])
+	}
+	merged := mergeAgentRunWorkbenchEventSnapshot([]domaincopilot.WorkbenchStreamEvent{{
+		ID:        "evt:old",
+		Type:      "thinking.delta",
+		SessionID: "session-1",
+		RunID:     "agent:run-events",
+		Sequence:  7,
+		CreatedAt: now.Add(-time.Minute),
+	}}, normalized, 1)
+	if len(merged) != 1 || merged[0].ID == "runner-custom-id" || merged[0].Sequence != 1 || merged[0].Content != "valid agent event" {
+		t.Fatalf("snapshot did not rewrite/cap payload events: %#v", merged)
+	}
+}
+
 func TestCancelAgentRunUpdatesNonTerminalRun(t *testing.T) {
 	repo, mock := newAgentRunRepository(t)
 	queuedAt := time.Date(2026, 6, 12, 10, 0, 0, 0, time.UTC)
@@ -187,6 +298,9 @@ func TestUpdateAgentRunCallbackIgnoresLateCallbackForTerminalRun(t *testing.T) {
 	}
 	if run.Status != domaincopilot.AgentRunStatusCanceled || run.Output["summary"] != nil {
 		t.Fatalf("late callback should not override terminal state, got %#v", run)
+	}
+	if run.CallbackTransition != domaincopilot.AgentRunCallbackTransitionNoopTerminal {
+		t.Fatalf("expected late callback noop transition, got %#v", run.CallbackTransition)
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatalf("unmet sql expectations: %v", err)

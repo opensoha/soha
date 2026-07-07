@@ -10,8 +10,40 @@ type SessionScope struct {
 	Namespace        string `json:"namespace,omitempty"`
 	Workload         string `json:"workload,omitempty"`
 	Service          string `json:"service,omitempty"`
+	Pod              string `json:"pod,omitempty"`
+	Node             string `json:"node,omitempty"`
 	AlertID          string `json:"alertId,omitempty"`
 	TimeRangeMinutes int    `json:"timeRangeMinutes,omitempty"`
+}
+
+type WorkbenchLaunchContext struct {
+	SourceWorkbench            string         `json:"sourceWorkbench,omitempty"`
+	SourceRoute                string         `json:"sourceRoute,omitempty"`
+	SourceTitle                string         `json:"sourceTitle,omitempty"`
+	EntityKind                 string         `json:"entityKind,omitempty"`
+	EntityName                 string         `json:"entityName,omitempty"`
+	ClusterID                  string         `json:"clusterId,omitempty"`
+	Namespace                  string         `json:"namespace,omitempty"`
+	Workload                   string         `json:"workload,omitempty"`
+	Service                    string         `json:"service,omitempty"`
+	Pod                        string         `json:"pod,omitempty"`
+	Node                       string         `json:"node,omitempty"`
+	AlertID                    string         `json:"alertId,omitempty"`
+	ApplicationID              string         `json:"applicationId,omitempty"`
+	ReleaseBundleID            string         `json:"releaseBundleId,omitempty"`
+	DockerHostID               string         `json:"dockerHostId,omitempty"`
+	DockerServiceID            string         `json:"dockerServiceId,omitempty"`
+	VirtualizationConnectionID string         `json:"virtualizationConnectionId,omitempty"`
+	VMID                       string         `json:"vmId,omitempty"`
+	TimeRangeMinutes           int            `json:"timeRangeMinutes,omitempty"`
+	VisibleFilters             map[string]any `json:"visibleFilters,omitempty"`
+	PinnedData                 map[string]any `json:"pinnedData,omitempty"`
+}
+
+type WorkbenchSelectionContext struct {
+	Text               string `json:"text,omitempty"`
+	Kind               string `json:"kind,omitempty"`
+	SourceElementLabel string `json:"sourceElementLabel,omitempty"`
 }
 
 type SessionToolset struct {
@@ -120,6 +152,35 @@ type SessionMessageEnvelope struct {
 	ToolCalls         []ToolExecution    `json:"toolCalls,omitempty"`
 	AnalysisArtifacts []AnalysisArtifact `json:"analysisArtifacts,omitempty"`
 	SessionPatch      map[string]any     `json:"sessionPatch,omitempty"`
+}
+
+type WorkbenchSendMessageInput struct {
+	Content          string                     `json:"content"`
+	Mode             string                     `json:"mode,omitempty"`
+	AgentProviderID  string                     `json:"agentProviderId,omitempty"`
+	Toolset          SessionToolset             `json:"toolset,omitempty"`
+	ScopeOverrides   map[string]any             `json:"scopeOverrides,omitempty"`
+	Source           string                     `json:"source,omitempty"`
+	LaunchContext    *WorkbenchLaunchContext    `json:"launchContext,omitempty"`
+	SelectionContext *WorkbenchSelectionContext `json:"selectionContext,omitempty"`
+	PinnedContext    map[string]any             `json:"pinnedContext,omitempty"`
+	EventSink        WorkbenchStreamEventSink   `json:"-"`
+}
+
+type WorkbenchStreamEventSink func(WorkbenchStreamEvent) bool
+
+type WorkbenchStreamResult struct {
+	Envelope SessionMessageEnvelope `json:"envelope"`
+	Events   []WorkbenchStreamEvent `json:"events,omitempty"`
+}
+
+type WorkbenchGlobalAssistantEventInput struct {
+	Action           string                     `json:"action"`
+	LaunchContext    *WorkbenchLaunchContext    `json:"launchContext,omitempty"`
+	SelectionContext *WorkbenchSelectionContext `json:"selectionContext,omitempty"`
+	Prompt           string                     `json:"prompt,omitempty"`
+	SessionID        string                     `json:"sessionId,omitempty"`
+	Source           string                     `json:"source,omitempty"`
 }
 
 type WorkbenchToolCall struct {

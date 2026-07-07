@@ -208,6 +208,8 @@ func copilotMutationSecuritySurface(method, path string) (nonPlatformMutationSec
 		return nonPlatformMutationEntry("CopilotAutomationPolicy", nonPlatformMutationAction(method, path), appaccess.PermObserveAIInspectionManage, false), true
 	case strings.HasPrefix(path, "/api/v1/copilot/root-cause/runs"):
 		return nonPlatformMutationEntry("RootCauseRun", "run", appaccess.PermObserveAIRootCauseRun, false), true
+	case strings.HasPrefix(path, "/api/v1/copilot/global-assistant/events"):
+		return nonPlatformMutationEntry("AIWorkbenchGlobalAssistant", "record-event", appaccess.PermObserveAIChatUse, false), true
 	case strings.HasPrefix(path, "/api/v1/copilot/sessions") && strings.Contains(path, "/inspection-task"):
 		return nonPlatformMutationEntry("InspectionTask", "create", appaccess.PermObserveAIInspectionManage, false), true
 	case strings.HasPrefix(path, "/api/v1/copilot/sessions") && strings.Contains(path, "/analyze"):
