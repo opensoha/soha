@@ -15,7 +15,6 @@ import (
 
 type SettingsService interface {
 	GetIdentitySettings(context.Context, domainidentity.Principal) (domainsettings.IdentitySettings, error)
-	UpdateOIDCSettings(context.Context, domainidentity.Principal, domainsettings.OIDCSettings) (domainsettings.IdentitySettings, error)
 	UpdateLoginProvidersSettings(context.Context, domainidentity.Principal, []domainsettings.LoginProviderSettings, string) (domainsettings.IdentitySettings, error)
 	GetMonitoringSettings(context.Context, domainidentity.Principal) (domainsettings.MonitoringSettings, error)
 	UpdatePrometheusSettings(context.Context, domainidentity.Principal, domainsettings.PrometheusSettings) (domainsettings.MonitoringSettings, error)
@@ -38,31 +37,6 @@ func NewSettingsHandler(service SettingsService, permissions *appaccess.Permissi
 func (h *SettingsHandler) GetIdentitySettings(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	item, err := h.service.GetIdentitySettings(c.Request.Context(), principal)
-	if err != nil {
-		writeError(c, err)
-		return
-	}
-	apiresponse.Item(c, http.StatusOK, item)
-}
-
-func (h *SettingsHandler) UpdateOIDCSettings(c *gin.Context) {
-	var req dto.UpdateOIDCSettingsRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid oidc settings payload")
-		return
-	}
-	principal := apiMiddleware.PrincipalFromContext(c)
-	item, err := h.service.UpdateOIDCSettings(c.Request.Context(), principal, domainsettings.OIDCSettings{
-		Enabled:             req.Enabled,
-		ProviderName:        req.ProviderName,
-		Issuer:              req.Issuer,
-		ClientID:            req.ClientID,
-		ClientSecret:        req.ClientSecret,
-		RedirectURL:         req.RedirectURL,
-		FrontendRedirectURL: req.FrontendRedirectURL,
-		Scopes:              req.Scopes,
-		DefaultRoles:        req.DefaultRoles,
-	})
 	if err != nil {
 		writeError(c, err)
 		return

@@ -3,24 +3,11 @@ package settings
 import "context"
 
 const (
-	IdentityOIDCSettingKey           = "identity.oidc"
 	IdentityLoginProvidersSettingKey = "identity.login_providers"
 	MonitoringPrometheusSettingKey   = "monitoring.prometheus"
 	AISettingsKey                    = "ai.workbench"
 	BrandingSettingKey               = "branding.console"
 )
-
-type OIDCSettings struct {
-	Enabled             bool     `json:"enabled"`
-	ProviderName        string   `json:"providerName"`
-	Issuer              string   `json:"issuer"`
-	ClientID            string   `json:"clientId"`
-	ClientSecret        string   `json:"clientSecret"`
-	RedirectURL         string   `json:"redirectUrl"`
-	FrontendRedirectURL string   `json:"frontendRedirectUrl"`
-	Scopes              []string `json:"scopes"`
-	DefaultRoles        []string `json:"defaultRoles"`
-}
 
 type LoginProviderSettings struct {
 	ID                  string   `json:"id"`
@@ -53,7 +40,6 @@ type LoginProviderSettings struct {
 }
 
 type IdentitySettings struct {
-	OIDC              OIDCSettings            `json:"oidc"`
 	Providers         []LoginProviderSettings `json:"providers,omitempty"`
 	DefaultProviderID string                  `json:"defaultProviderId,omitempty"`
 }

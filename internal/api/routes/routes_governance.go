@@ -202,7 +202,6 @@ func registerPluginRoutes(protected gin.IRoutes, deps Dependencies) {
 
 func registerSettingsRoutes(protected gin.IRoutes, deps Dependencies) {
 	protected.GET("/settings/identity", deps.Settings.GetIdentitySettings)
-	protected.PUT("/settings/identity/oidc", deps.Settings.UpdateOIDCSettings)
 	protected.PUT("/settings/identity/providers", deps.Settings.UpdateLoginProvidersSettings)
 	protected.GET("/settings/monitoring", deps.Settings.GetMonitoringSettings)
 	protected.PUT("/settings/monitoring/prometheus", deps.Settings.UpdatePrometheusSettings)

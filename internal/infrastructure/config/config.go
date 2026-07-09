@@ -529,7 +529,6 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("auth.jwt.access_ttl", "15m")
 	v.SetDefault("auth.jwt.refresh_ttl", "168h")
 	v.SetDefault("auth.oidc.enabled", false)
-	v.SetDefault("auth.oidc.provider_name", "default")
 	v.SetDefault("auth.oidc.scopes", []string{"openid", "profile", "email"})
 	v.SetDefault("auth.oidc.default_roles", []string{"readonly"})
 	v.SetDefault("gitlab.enabled", false)

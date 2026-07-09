@@ -91,7 +91,6 @@ type OperationRecorder interface {
 }
 
 type SettingsReader interface {
-	ResolveOIDCSettings(context.Context) (cfgpkg.OIDCConfig, error)
 	ResolveLoginProviders(context.Context) ([]domainsettings.LoginProviderSettings, string, error)
 	ResolveLoginProvider(context.Context, string) (domainsettings.LoginProviderSettings, error)
 }
@@ -191,14 +190,12 @@ func (s *Service) ListProviders(ctx context.Context) []domainidentity.Provider {
 				LoginURL: loginURL,
 			})
 		}
-		if len(loginProviders) > 0 {
-			return providers
-		}
+		return providers
 	}
 	oidcCfg, err := s.oidcConfig(ctx)
 	if err == nil && oidcCfg.Enabled {
 		providers = append(providers, domainidentity.Provider{
-			ID:       firstNonEmpty(strings.TrimSpace(oidcCfg.ProviderName), "oidc-default"),
+			ID:       firstNonEmpty(strings.TrimSpace(oidcCfg.ProviderName), "oidc"),
 			Type:     "oidc",
 			Name:     oidcCfg.ProviderName,
 			Enabled:  true,
@@ -1003,7 +1000,7 @@ func (s *Service) resolveLoginProvider(ctx context.Context, providerID string) (
 		return domainsettings.LoginProviderSettings{}, fmt.Errorf("%w: login provider not found", apperrors.ErrNotFound)
 	}
 	return domainsettings.LoginProviderSettings{
-		ID:                  firstNonEmpty(strings.TrimSpace(providerID), strings.TrimSpace(oidcCfg.ProviderName), "oidc-default"),
+		ID:                  firstNonEmpty(strings.TrimSpace(providerID), strings.TrimSpace(oidcCfg.ProviderName), "oidc"),
 		Name:                firstNonEmpty(oidcCfg.ProviderName, "OIDC"),
 		Type:                "oidc",
 		Enabled:             oidcCfg.Enabled,
@@ -1284,11 +1281,6 @@ func (s *Service) reconcileExternalUser(ctx context.Context, provider domainsett
 }
 
 func (s *Service) oidcConfig(ctx context.Context) (cfgpkg.OIDCConfig, error) {
-	if s.settings != nil {
-		if item, err := s.settings.ResolveOIDCSettings(ctx); err == nil {
-			return item, nil
-		}
-	}
 	return s.cfg.OIDC, nil
 }
 

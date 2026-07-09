@@ -264,7 +264,7 @@ func newCoreServices(ctx context.Context, cfg cfgpkg.Config, infra *infrastructu
 	announcementService := appannouncement.New(repos.announcementRepository, permissionResolver, auditService, operationService)
 	menuService := appmenu.New(repos.menuRepository, permissionResolver, auditService, operationService)
 	moduleService := appmodule.New(cfg.Modules)
-	settingsService := appsettings.New(repos.settingsRepository, cfg.Auth, cfg.Monitoring, permissionResolver)
+	settingsService := appsettings.New(repos.settingsRepository, cfg.Monitoring, permissionResolver)
 
 	identityService, err := appidentity.New(ctx, cfg.Auth, repos.identityRepository, auditService, operationService, settingsService, permissionResolver, repos.aiGatewayRepository)
 	if err != nil {

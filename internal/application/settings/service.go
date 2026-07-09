@@ -15,78 +15,16 @@ import (
 
 type Service struct {
 	store       domainsettings.Store
-	auth        cfgpkg.AuthConfig
 	monitoring  cfgpkg.MonitoringConfig
 	permissions *appaccess.PermissionResolver
 }
 
-func New(store domainsettings.Store, auth cfgpkg.AuthConfig, monitoring cfgpkg.MonitoringConfig, permissions *appaccess.PermissionResolver) *Service {
-	return &Service{store: store, auth: auth, monitoring: monitoring, permissions: permissions}
+func New(store domainsettings.Store, monitoring cfgpkg.MonitoringConfig, permissions *appaccess.PermissionResolver) *Service {
+	return &Service{store: store, monitoring: monitoring, permissions: permissions}
 }
 
 func (s *Service) GetIdentitySettings(ctx context.Context, principal domainidentity.Principal) (domainsettings.IdentitySettings, error) {
 	if err := s.authorize(ctx, principal, appaccess.PermSettingsIdentityView); err != nil {
-		return domainsettings.IdentitySettings{}, err
-	}
-	return s.identitySettings(ctx)
-}
-
-func (s *Service) UpdateOIDCSettings(ctx context.Context, principal domainidentity.Principal, input domainsettings.OIDCSettings) (domainsettings.IdentitySettings, error) {
-	if err := s.authorize(ctx, principal, appaccess.PermSettingsIdentityManage); err != nil {
-		return domainsettings.IdentitySettings{}, err
-	}
-	input.ProviderName = strings.TrimSpace(input.ProviderName)
-	input.Issuer = strings.TrimSpace(input.Issuer)
-	input.ClientID = strings.TrimSpace(input.ClientID)
-	input.ClientSecret = strings.TrimSpace(input.ClientSecret)
-	input.RedirectURL = strings.TrimSpace(input.RedirectURL)
-	input.FrontendRedirectURL = strings.TrimSpace(input.FrontendRedirectURL)
-	if len(input.Scopes) == 0 {
-		input.Scopes = []string{"openid", "profile", "email"}
-	}
-	if input.Enabled {
-		switch {
-		case input.ProviderName == "":
-			return domainsettings.IdentitySettings{}, fmt.Errorf("%w: oidc provider name is required", apperrors.ErrInvalidArgument)
-		case input.Issuer == "":
-			return domainsettings.IdentitySettings{}, fmt.Errorf("%w: oidc issuer is required", apperrors.ErrInvalidArgument)
-		case input.ClientID == "":
-			return domainsettings.IdentitySettings{}, fmt.Errorf("%w: oidc client id is required", apperrors.ErrInvalidArgument)
-		case input.ClientSecret == "":
-			return domainsettings.IdentitySettings{}, fmt.Errorf("%w: oidc client secret is required", apperrors.ErrInvalidArgument)
-		case input.RedirectURL == "":
-			return domainsettings.IdentitySettings{}, fmt.Errorf("%w: oidc redirect url is required", apperrors.ErrInvalidArgument)
-		case input.FrontendRedirectURL == "":
-			return domainsettings.IdentitySettings{}, fmt.Errorf("%w: oidc frontend redirect url is required", apperrors.ErrInvalidArgument)
-		}
-	}
-	value := map[string]any{
-		"enabled":             input.Enabled,
-		"providerName":        input.ProviderName,
-		"issuer":              input.Issuer,
-		"clientId":            input.ClientID,
-		"clientSecret":        input.ClientSecret,
-		"redirectUrl":         input.RedirectURL,
-		"frontendRedirectUrl": input.FrontendRedirectURL,
-		"scopes":              input.Scopes,
-		"defaultRoles":        input.DefaultRoles,
-	}
-	if err := s.store.Upsert(ctx, domainsettings.IdentityOIDCSettingKey, "identity", value, principal.UserID); err != nil {
-		return domainsettings.IdentitySettings{}, err
-	}
-	current, err := s.identitySettings(ctx)
-	if err != nil {
-		return domainsettings.IdentitySettings{}, err
-	}
-	legacyProvider := loginProviderFromOIDC(input)
-	providers := upsertLoginProvider(current.Providers, legacyProvider)
-	defaultProviderID := strings.TrimSpace(current.DefaultProviderID)
-	if defaultProviderID == "" || !slices.ContainsFunc(providers, func(item domainsettings.LoginProviderSettings) bool {
-		return item.ID == defaultProviderID
-	}) {
-		defaultProviderID = legacyProvider.ID
-	}
-	if err := s.persistLoginProvidersSettings(ctx, principal.UserID, providers, defaultProviderID); err != nil {
 		return domainsettings.IdentitySettings{}, err
 	}
 	return s.identitySettings(ctx)
@@ -122,9 +60,6 @@ func (s *Service) UpdateLoginProvidersSettings(ctx context.Context, principal do
 		defaultProviderID = ""
 	}
 	if err := s.persistLoginProvidersSettings(ctx, principal.UserID, normalized, defaultProviderID); err != nil {
-		return domainsettings.IdentitySettings{}, err
-	}
-	if err := s.syncLegacyOIDCSettings(ctx, principal.UserID, normalized, defaultProviderID); err != nil {
 		return domainsettings.IdentitySettings{}, err
 	}
 	return s.identitySettings(ctx)
@@ -230,27 +165,6 @@ func (s *Service) UpdatePrometheusSettings(ctx context.Context, principal domain
 	return s.monitoringSettings(ctx)
 }
 
-func (s *Service) ResolveOIDCSettings(ctx context.Context) (cfgpkg.OIDCConfig, error) {
-	settings, err := s.identitySettings(ctx)
-	if err != nil {
-		return cfgpkg.OIDCConfig{}, err
-	}
-	if provider, ok := resolvePreferredOIDCProvider(settings.Providers, settings.DefaultProviderID); ok {
-		return oidcConfigFromProvider(provider), nil
-	}
-	return cfgpkg.OIDCConfig{
-		Enabled:             settings.OIDC.Enabled,
-		ProviderName:        settings.OIDC.ProviderName,
-		Issuer:              settings.OIDC.Issuer,
-		ClientID:            settings.OIDC.ClientID,
-		ClientSecret:        settings.OIDC.ClientSecret,
-		RedirectURL:         settings.OIDC.RedirectURL,
-		FrontendRedirectURL: settings.OIDC.FrontendRedirectURL,
-		Scopes:              settings.OIDC.Scopes,
-		DefaultRoles:        settings.OIDC.DefaultRoles,
-	}, nil
-}
-
 func (s *Service) ResolveMonitoringSettings(ctx context.Context) (domainsettings.MonitoringSettings, error) {
 	return s.monitoringSettings(ctx)
 }
@@ -314,52 +228,9 @@ func (s *Service) ResolveLoginProvider(ctx context.Context, providerID string) (
 }
 
 func (s *Service) identitySettings(ctx context.Context) (domainsettings.IdentitySettings, error) {
-	item := domainsettings.IdentitySettings{
-		OIDC: domainsettings.OIDCSettings{
-			Enabled:             s.auth.OIDC.Enabled,
-			ProviderName:        s.auth.OIDC.ProviderName,
-			Issuer:              s.auth.OIDC.Issuer,
-			ClientID:            s.auth.OIDC.ClientID,
-			ClientSecret:        s.auth.OIDC.ClientSecret,
-			RedirectURL:         s.auth.OIDC.RedirectURL,
-			FrontendRedirectURL: s.auth.OIDC.FrontendRedirectURL,
-			Scopes:              append([]string(nil), s.auth.OIDC.Scopes...),
-			DefaultRoles:        append([]string(nil), s.auth.OIDC.DefaultRoles...),
-		},
-	}
+	item := domainsettings.IdentitySettings{}
 	if s.store == nil {
 		return item, nil
-	}
-	raw, ok, err := s.store.Get(ctx, domainsettings.IdentityOIDCSettingKey)
-	if err != nil || !ok {
-		return item, err
-	}
-	if value, ok := raw["providerName"].(string); ok && strings.TrimSpace(value) != "" {
-		item.OIDC.ProviderName = value
-	}
-	if value, ok := raw["issuer"].(string); ok && strings.TrimSpace(value) != "" {
-		item.OIDC.Issuer = value
-	}
-	if value, ok := raw["clientId"].(string); ok && strings.TrimSpace(value) != "" {
-		item.OIDC.ClientID = value
-	}
-	if value, ok := raw["clientSecret"].(string); ok && strings.TrimSpace(value) != "" {
-		item.OIDC.ClientSecret = value
-	}
-	if value, ok := raw["redirectUrl"].(string); ok && strings.TrimSpace(value) != "" {
-		item.OIDC.RedirectURL = value
-	}
-	if value, ok := raw["frontendRedirectUrl"].(string); ok && strings.TrimSpace(value) != "" {
-		item.OIDC.FrontendRedirectURL = value
-	}
-	if value, ok := raw["scopes"].([]any); ok && len(value) > 0 {
-		item.OIDC.Scopes = sliceOfStrings(value)
-	}
-	if value, ok := raw["defaultRoles"].([]any); ok && len(value) > 0 {
-		item.OIDC.DefaultRoles = sliceOfStrings(value)
-	}
-	if value, ok := raw["enabled"].(bool); ok {
-		item.OIDC.Enabled = value
 	}
 	rawProviders, ok, err := s.store.Get(ctx, domainsettings.IdentityLoginProvidersSettingKey)
 	if err != nil {
@@ -407,14 +278,6 @@ func (s *Service) identitySettings(ctx context.Context) (domainsettings.Identity
 				}, index))
 			}
 		}
-	}
-	if len(item.Providers) == 0 && hasLegacyOIDCConfig(item.OIDC) {
-		legacyProvider := loginProviderFromOIDC(item.OIDC)
-		item.Providers = []domainsettings.LoginProviderSettings{legacyProvider}
-		if item.DefaultProviderID == "" {
-			item.DefaultProviderID = legacyProvider.ID
-		}
-		s.migrateLegacyLoginProviders(ctx, legacyProvider)
 	}
 	if item.DefaultProviderID == "" && len(item.Providers) > 0 {
 		item.DefaultProviderID = item.Providers[0].ID
@@ -581,16 +444,6 @@ func skillsToMaps(items []domainsettings.AISkillSettings) []map[string]any {
 	return skills
 }
 
-func firstNonEmptyTrimmed(values ...string) string {
-	for _, value := range values {
-		value = strings.TrimSpace(value)
-		if value != "" {
-			return value
-		}
-	}
-	return ""
-}
-
 func uniqueNonEmptyStrings(items []string) []string {
 	out := make([]string, 0, len(items))
 	seen := make(map[string]struct{}, len(items))
@@ -609,19 +462,22 @@ func uniqueNonEmptyStrings(items []string) []string {
 }
 
 func sliceOfStringsAny(raw any) []string {
-	values, ok := raw.([]any)
-	if !ok || len(values) == 0 {
+	switch values := raw.(type) {
+	case []string:
+		return uniqueNonEmptyStrings(values)
+	case []any:
+		out := make([]string, 0, len(values))
+		for _, value := range values {
+			item := strings.TrimSpace(fmt.Sprint(value))
+			if item == "" {
+				continue
+			}
+			out = append(out, item)
+		}
+		return out
+	default:
 		return []string{}
 	}
-	out := make([]string, 0, len(values))
-	for _, value := range values {
-		item := strings.TrimSpace(fmt.Sprint(value))
-		if item == "" {
-			continue
-		}
-		out = append(out, item)
-	}
-	return out
 }
 
 func loginProvidersToMaps(items []domainsettings.LoginProviderSettings) []map[string]any {
@@ -666,44 +522,6 @@ func (s *Service) persistLoginProvidersSettings(ctx context.Context, updatedBy s
 		"providers":         loginProvidersToMaps(providers),
 	}
 	return s.store.Upsert(ctx, domainsettings.IdentityLoginProvidersSettingKey, "identity", value, updatedBy)
-}
-
-func (s *Service) migrateLegacyLoginProviders(ctx context.Context, provider domainsettings.LoginProviderSettings) {
-	if s.store == nil {
-		return
-	}
-	_ = s.persistLoginProvidersSettings(ctx, "system", []domainsettings.LoginProviderSettings{provider}, provider.ID)
-}
-
-func (s *Service) syncLegacyOIDCSettings(ctx context.Context, updatedBy string, providers []domainsettings.LoginProviderSettings, defaultProviderID string) error {
-	provider, ok := resolvePreferredOIDCProvider(providers, defaultProviderID)
-	if !ok {
-		value := map[string]any{
-			"enabled":             false,
-			"providerName":        "",
-			"issuer":              "",
-			"clientId":            "",
-			"clientSecret":        "",
-			"redirectUrl":         "",
-			"frontendRedirectUrl": "",
-			"scopes":              []string{"openid", "profile", "email"},
-			"defaultRoles":        []string{},
-		}
-		return s.store.Upsert(ctx, domainsettings.IdentityOIDCSettingKey, "identity", value, updatedBy)
-	}
-	cfg := oidcConfigFromProvider(provider)
-	value := map[string]any{
-		"enabled":             cfg.Enabled,
-		"providerName":        cfg.ProviderName,
-		"issuer":              cfg.Issuer,
-		"clientId":            cfg.ClientID,
-		"clientSecret":        cfg.ClientSecret,
-		"redirectUrl":         cfg.RedirectURL,
-		"frontendRedirectUrl": cfg.FrontendRedirectURL,
-		"scopes":              cfg.Scopes,
-		"defaultRoles":        cfg.DefaultRoles,
-	}
-	return s.store.Upsert(ctx, domainsettings.IdentityOIDCSettingKey, "identity", value, updatedBy)
 }
 
 func (s *Service) persistAISettings(ctx context.Context, updatedBy string, workbenchModel domainsettings.AIWorkbenchModelSettings, skills []map[string]any) (domainsettings.AISettings, error) {
@@ -853,77 +671,6 @@ func validateLoginProvider(input domainsettings.LoginProviderSettings) error {
 	return nil
 }
 
-func upsertLoginProvider(items []domainsettings.LoginProviderSettings, provider domainsettings.LoginProviderSettings) []domainsettings.LoginProviderSettings {
-	out := append([]domainsettings.LoginProviderSettings(nil), items...)
-	for index := range out {
-		if out[index].ID == provider.ID {
-			out[index] = provider
-			return out
-		}
-	}
-	return append(out, provider)
-}
-
-func hasLegacyOIDCConfig(input domainsettings.OIDCSettings) bool {
-	return input.Enabled || input.Issuer != "" || input.ClientID != "" || input.ClientSecret != "" || input.RedirectURL != "" || input.FrontendRedirectURL != ""
-}
-
-func loginProviderFromOIDC(input domainsettings.OIDCSettings) domainsettings.LoginProviderSettings {
-	id := strings.TrimSpace(input.ProviderName)
-	if id == "" {
-		id = "oidc-default"
-	}
-	return normalizeLoginProvider(domainsettings.LoginProviderSettings{
-		ID:                  id,
-		Name:                firstNonEmptyTrimmed(input.ProviderName, "OIDC"),
-		Type:                "oidc",
-		Enabled:             input.Enabled,
-		ClientID:            input.ClientID,
-		ClientSecret:        input.ClientSecret,
-		Issuer:              input.Issuer,
-		RedirectURL:         input.RedirectURL,
-		FrontendRedirectURL: input.FrontendRedirectURL,
-		Scopes:              input.Scopes,
-		DefaultRoles:        input.DefaultRoles,
-	}, 0)
-}
-
-func resolvePreferredOIDCProvider(items []domainsettings.LoginProviderSettings, defaultProviderID string) (domainsettings.LoginProviderSettings, bool) {
-	targetID := strings.TrimSpace(defaultProviderID)
-	if targetID != "" {
-		for _, item := range items {
-			if item.ID == targetID && item.Type == "oidc" {
-				return item, true
-			}
-		}
-	}
-	for _, item := range items {
-		if item.Type == "oidc" && item.Enabled {
-			return item, true
-		}
-	}
-	for _, item := range items {
-		if item.Type == "oidc" {
-			return item, true
-		}
-	}
-	return domainsettings.LoginProviderSettings{}, false
-}
-
-func oidcConfigFromProvider(item domainsettings.LoginProviderSettings) cfgpkg.OIDCConfig {
-	return cfgpkg.OIDCConfig{
-		Enabled:             item.Enabled,
-		ProviderName:        item.Name,
-		Issuer:              item.Issuer,
-		ClientID:            item.ClientID,
-		ClientSecret:        item.ClientSecret,
-		RedirectURL:         item.RedirectURL,
-		FrontendRedirectURL: item.FrontendRedirectURL,
-		Scopes:              append([]string(nil), item.Scopes...),
-		DefaultRoles:        append([]string(nil), item.DefaultRoles...),
-	}
-}
-
 func defaultScopesForProviderType(providerType string) []string {
 	switch providerType {
 	case "oidc":
@@ -1030,16 +777,6 @@ func mapValue(value any) map[string]any {
 		return map[string]any{}
 	}
 	return current
-}
-
-func sliceOfStrings(items []any) []string {
-	result := make([]string, 0, len(items))
-	for _, item := range items {
-		if value, ok := item.(string); ok && strings.TrimSpace(value) != "" {
-			result = append(result, value)
-		}
-	}
-	return result
 }
 
 func intValue(value any) (int, bool) {

@@ -1,17 +1,5 @@
 package dto
 
-type UpdateOIDCSettingsRequest struct {
-	Enabled             bool     `json:"enabled"`
-	ProviderName        string   `json:"providerName"`
-	Issuer              string   `json:"issuer"`
-	ClientID            string   `json:"clientId"`
-	ClientSecret        string   `json:"clientSecret"`
-	RedirectURL         string   `json:"redirectUrl"`
-	FrontendRedirectURL string   `json:"frontendRedirectUrl"`
-	Scopes              []string `json:"scopes"`
-	DefaultRoles        []string `json:"defaultRoles"`
-}
-
 type UpdateLoginProvidersSettingsRequest struct {
 	DefaultProviderID string                  `json:"defaultProviderId"`
 	Providers         []LoginProviderSettings `json:"providers"`

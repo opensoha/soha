@@ -20,10 +20,6 @@ func (s stubSettingsService) GetIdentitySettings(context.Context, domainidentity
 	return domainsettings.IdentitySettings{}, nil
 }
 
-func (s stubSettingsService) UpdateOIDCSettings(context.Context, domainidentity.Principal, domainsettings.OIDCSettings) (domainsettings.IdentitySettings, error) {
-	return domainsettings.IdentitySettings{}, nil
-}
-
 func (s stubSettingsService) UpdateLoginProvidersSettings(context.Context, domainidentity.Principal, []domainsettings.LoginProviderSettings, string) (domainsettings.IdentitySettings, error) {
 	return domainsettings.IdentitySettings{}, nil
 }

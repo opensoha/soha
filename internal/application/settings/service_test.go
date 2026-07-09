@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"strings"
 	"testing"
 
@@ -50,20 +49,14 @@ func (s *captureSettingsStore) Upsert(_ context.Context, key, category string, v
 	return nil
 }
 
-func TestIdentitySettingsMigratesLegacyOIDCToLoginProviders(t *testing.T) {
+func TestIdentitySettingsKeepsDeletedLoginProvidersDeleted(t *testing.T) {
 	store := &captureSettingsStore{
 		values: map[string]capturedSetting{
-			domainsettings.IdentityOIDCSettingKey: {
+			domainsettings.IdentityLoginProvidersSettingKey: {
 				category: "identity",
 				value: map[string]any{
-					"enabled":      true,
-					"providerName": "Legacy OIDC",
-					"issuer":       "https://issuer.example.com",
-					"clientId":     "client-id",
-					"clientSecret": "client-secret",
-					"redirectUrl":  "https://soha.example.com/auth/callback",
-					"scopes":       []any{"openid", "profile"},
-					"defaultRoles": []any{"admin"},
+					"defaultProviderId": "",
+					"providers":         []any{},
 				},
 			},
 		},
@@ -77,21 +70,11 @@ func TestIdentitySettingsMigratesLegacyOIDCToLoginProviders(t *testing.T) {
 	if err != nil {
 		t.Fatalf("identitySettings returned error: %v", err)
 	}
-	if len(item.Providers) != 1 {
-		t.Fatalf("providers len = %d, want 1", len(item.Providers))
+	if len(item.Providers) != 0 {
+		t.Fatalf("providers len = %d, want 0: %#v", len(item.Providers), item.Providers)
 	}
-	if item.Providers[0].ID != "Legacy OIDC" && item.Providers[0].ID != "oidc-default" {
-		t.Fatalf("unexpected provider id: %#v", item.Providers[0])
-	}
-	upserted, ok := store.values[domainsettings.IdentityLoginProvidersSettingKey]
-	if !ok {
-		t.Fatal("expected identity.login_providers to be migrated")
-	}
-	if upserted.updatedBy != "system" {
-		t.Fatalf("updatedBy = %q, want system", upserted.updatedBy)
-	}
-	if got := fmt.Sprint(upserted.value["defaultProviderId"]); got == "" {
-		t.Fatal("expected defaultProviderId to be written")
+	if item.DefaultProviderID != "" {
+		t.Fatalf("defaultProviderID = %q, want empty", item.DefaultProviderID)
 	}
 }
 

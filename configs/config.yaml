@@ -64,7 +64,7 @@ auth:
     refresh_ttl: 168h
   oidc:
     enabled: false
-    provider_name: default
+    provider_name: ""
     issuer: ""
     client_id: ""
     client_secret: ""

@@ -62,6 +62,23 @@ func TestReconcileExternalUserSyncsLoginRolesAndOrganizations(t *testing.T) {
 	}
 }
 
+func TestListProvidersDoesNotFallbackToConfiguredOIDCWhenSettingsProvidersAreEmpty(t *testing.T) {
+	service := &Service{
+		cfg: cfgpkg.AuthConfig{
+			OIDC: cfgpkg.OIDCConfig{
+				Enabled:      true,
+				ProviderName: "default",
+			},
+		},
+		settings: loginProviderSettingsStub{providers: map[string]domainsettings.LoginProviderSettings{}},
+	}
+
+	providers := service.ListProviders(context.Background())
+	if len(providers) != 1 || providers[0].Type != "password" {
+		t.Fatalf("providers = %#v, want password only", providers)
+	}
+}
+
 func TestUpdateCurrentProfileStoresAvatarPreferences(t *testing.T) {
 	ctx := context.Background()
 	repo := newLoginMappingUserRepo()
@@ -473,7 +490,7 @@ func TestReconcileOIDCUserMigratesLegacyProviderIdentity(t *testing.T) {
 		t.Fatalf("expected existing user to be reused, got %#v", principal)
 	}
 	if _, ok := repo.identities["oidc|legacy-provider|sub-1"]; ok {
-		t.Fatalf("expected legacy oidc identity key to be removed")
+		t.Fatalf("expected old provider identity key to be removed")
 	}
 	migrated, ok := repo.identities["oidc|new-provider|sub-1"]
 	if !ok {
@@ -491,11 +508,6 @@ type loginMappingBinding struct {
 
 type loginProviderSettingsStub struct {
 	providers map[string]domainsettings.LoginProviderSettings
-	oidc      cfgpkg.OIDCConfig
-}
-
-func (s loginProviderSettingsStub) ResolveOIDCSettings(context.Context) (cfgpkg.OIDCConfig, error) {
-	return s.oidc, nil
 }
 
 func (s loginProviderSettingsStub) ResolveLoginProviders(context.Context) ([]domainsettings.LoginProviderSettings, string, error) {
