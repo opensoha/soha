@@ -153,7 +153,7 @@ func (r *Repository) UpsertUser(ctx context.Context, user User) error {
 	if authzVersion < 1 {
 		authzVersion = 1
 	}
-	return r.db.WithContext(ctx).Exec(`
+	err = r.db.WithContext(ctx).Exec(`
 		INSERT INTO users (id, username, email, display_name, status, tags, preferences, authz_version, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT (id) DO UPDATE SET
@@ -165,6 +165,13 @@ func (r *Repository) UpsertUser(ctx context.Context, user User) error {
 			preferences = EXCLUDED.preferences,
 			updated_at = EXCLUDED.updated_at
 	`, user.ID, user.Username, strings.ToLower(user.Email), user.DisplayName, user.Status, string(tags), string(preferences), authzVersion, now, now).Error
+	if err != nil {
+		if isUniqueViolation(err) {
+			return fmt.Errorf("%w: user email or username already exists", apperrors.ErrConflict)
+		}
+		return err
+	}
+	return nil
 }
 
 func (r *Repository) SetPasswordHash(ctx context.Context, userID, passwordHash string) error {
@@ -194,6 +201,18 @@ func (r *Repository) GetPasswordHash(ctx context.Context, userID string) (string
 		return "", err
 	}
 	return passwordHash, nil
+}
+
+type sqlStateError interface {
+	SQLState() string
+}
+
+func isUniqueViolation(err error) bool {
+	if errors.Is(err, gorm.ErrDuplicatedKey) {
+		return true
+	}
+	var stateErr sqlStateError
+	return errors.As(err, &stateErr) && stateErr.SQLState() == "23505"
 }
 
 func (r *Repository) ListRoles(ctx context.Context, userID string) ([]string, error) {

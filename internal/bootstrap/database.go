@@ -71,7 +71,7 @@ type clusterCredentialSeed struct {
 // While the stored version matches this constant, the static seed block is
 // skipped entirely. Config-driven sync (admin user, clusters) runs separately
 // during startup so runtime config updates do not depend on replaying defaults.
-const bootstrapSeedVersion = "2026-07-05-provider-portal"
+const bootstrapSeedVersion = "2026-07-08-settings-groups"
 
 const bootstrapSeedVersionKey = "bootstrap.seed_version"
 
@@ -358,9 +358,12 @@ func upsertClusterCredentials(ctx context.Context, db *gorm.DB, items []clusterC
 }
 
 func seedUser(ctx context.Context, db *gorm.DB, cfg cfgpkg.Config) error {
-	if strings.TrimSpace(cfg.Auth.DevPrincipal.UserID) == "" {
+	userID := strings.TrimSpace(cfg.Auth.DevPrincipal.UserID)
+	if userID == "" {
 		return nil
 	}
+	username := devPrincipalUsername(cfg)
+	email := strings.TrimSpace(cfg.Auth.DevPrincipal.Email)
 	now := time.Now().UTC()
 	if err := db.WithContext(ctx).Exec(`
 		INSERT INTO users (id, username, email, display_name, status, tags, preferences, created_at, updated_at)
@@ -371,9 +374,9 @@ func seedUser(ctx context.Context, db *gorm.DB, cfg cfgpkg.Config) error {
 			display_name = EXCLUDED.display_name,
 			updated_at = EXCLUDED.updated_at
 	`,
-		cfg.Auth.DevPrincipal.UserID,
-		cfg.Auth.DevPrincipal.UserID,
-		cfg.Auth.DevPrincipal.Email,
+		userID,
+		username,
+		email,
 		cfg.Auth.DevPrincipal.Name,
 		`[]`,
 		`{}`,
@@ -395,7 +398,7 @@ func seedUser(ctx context.Context, db *gorm.DB, cfg cfgpkg.Config) error {
 				password_hash = EXCLUDED.password_hash,
 				password_updated_at = EXCLUDED.password_updated_at,
 				updated_at = EXCLUDED.updated_at
-		`, cfg.Auth.DevPrincipal.UserID, string(hash), now, now, now).Error; err != nil {
+		`, userID, string(hash), now, now, now).Error; err != nil {
 			return err
 		}
 	}
@@ -404,8 +407,8 @@ func seedUser(ctx context.Context, db *gorm.DB, cfg cfgpkg.Config) error {
 		roleBindingValues := make([][]string, 0, len(cfg.Auth.DevPrincipal.Roles))
 		for _, roleID := range cfg.Auth.DevPrincipal.Roles {
 			roleBindingValues = append(roleBindingValues, []string{
-				fmt.Sprintf("%s:%s", cfg.Auth.DevPrincipal.UserID, roleID),
-				cfg.Auth.DevPrincipal.UserID,
+				fmt.Sprintf("%s:%s", userID, roleID),
+				userID,
 				roleID,
 			})
 		}
@@ -414,6 +417,14 @@ func seedUser(ctx context.Context, db *gorm.DB, cfg cfgpkg.Config) error {
 		}
 	}
 	return nil
+}
+
+func devPrincipalUsername(cfg cfgpkg.Config) string {
+	email := strings.TrimSpace(cfg.Auth.DevPrincipal.Email)
+	if local, _, ok := strings.Cut(email, "@"); ok && strings.TrimSpace(local) != "" {
+		return strings.TrimSpace(local)
+	}
+	return strings.TrimSpace(cfg.Auth.DevPrincipal.UserID)
 }
 
 func seedRoles(ctx context.Context, db *gorm.DB) error {

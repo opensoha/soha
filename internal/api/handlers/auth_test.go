@@ -33,6 +33,7 @@ type stubIdentityService struct {
 	providerID       string
 	providerReturnTo string
 	oidcReturnTo     string
+	updateProfile    func(domainidentity.ProfileUpdate) domainidentity.UserProfile
 	loginErr         error
 	refreshErr       error
 	logoutErr        error
@@ -61,6 +62,17 @@ func (s stubIdentityService) CurrentPrincipal(context.Context, string) (domainid
 
 func (s stubIdentityService) CurrentProfile(context.Context, domainidentity.Principal) (domainidentity.UserProfile, error) {
 	return s.profile, nil
+}
+
+func (s stubIdentityService) UpdateCurrentProfile(_ context.Context, _ domainidentity.Principal, input domainidentity.ProfileUpdate) (domainidentity.UserProfile, error) {
+	if s.updateProfile != nil {
+		return s.updateProfile(input), nil
+	}
+	return s.profile, nil
+}
+
+func (s stubIdentityService) ChangeCurrentPassword(context.Context, domainidentity.Principal, domainidentity.PasswordChange) error {
+	return nil
 }
 
 func (s stubIdentityService) BeginOIDCLogin(context.Context, string) (string, error) {
@@ -236,6 +248,59 @@ func TestAuthProfileReturnsCurrentUserProfile(t *testing.T) {
 	}
 	if len(payload.Data.Sessions) != 1 || payload.Data.Sessions[0].ID != "s-1" {
 		t.Fatalf("sessions = %#v", payload.Data.Sessions)
+	}
+}
+
+func TestAuthUpdateProfilePassesAvatarFields(t *testing.T) {
+	t.Parallel()
+
+	var got domainidentity.ProfileUpdate
+	handler := NewAuthHandler(
+		stubIdentityService{
+			updateProfile: func(input domainidentity.ProfileUpdate) domainidentity.UserProfile {
+				got = input
+				return domainidentity.UserProfile{
+					UserID:    "u-1",
+					Username:  "opensoha",
+					Email:     input.Email,
+					AvatarURL: input.AvatarURL,
+					AvatarFit: input.AvatarFit,
+				}
+			},
+		},
+		nil,
+		nil,
+		cfgpkg.AuthConfig{},
+	)
+
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodPatch, "/api/v1/auth/profile", strings.NewReader(`{
+		"displayName":"OpenSoha",
+		"email":"opensoha@soha.local",
+		"phone":"123",
+		"avatarUrl":"data:image/png;base64,abc",
+		"avatarFit":"cover"
+	}`))
+	ctx.Request.Header.Set("Content-Type", "application/json")
+	ctx.Set("principal", domainidentity.Principal{UserID: "u-1"})
+
+	handler.UpdateProfile(ctx)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d: %s", recorder.Code, http.StatusOK, recorder.Body.String())
+	}
+	if got.AvatarURL != "data:image/png;base64,abc" || got.AvatarFit != "cover" {
+		t.Fatalf("avatar update = %q/%q, want payload values", got.AvatarURL, got.AvatarFit)
+	}
+	var payload struct {
+		Data domainidentity.UserProfile `json:"data"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if payload.Data.AvatarURL != got.AvatarURL {
+		t.Fatalf("response avatar = %q, want %q", payload.Data.AvatarURL, got.AvatarURL)
 	}
 }
 

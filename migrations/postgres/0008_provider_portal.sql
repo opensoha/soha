@@ -1,4 +1,6 @@
-CREATE TABLE IF NOT EXISTS identity_applications (
+SELECT pg_catalog.set_config('search_path', '', false);
+
+CREATE TABLE IF NOT EXISTS public.identity_applications (
     id text PRIMARY KEY,
     slug text NOT NULL UNIQUE,
     name text NOT NULL,
@@ -23,14 +25,14 @@ CREATE TABLE IF NOT EXISTS identity_applications (
 );
 
 CREATE INDEX IF NOT EXISTS idx_identity_applications_portal_status
-    ON identity_applications (portal_visible, status, featured, sort_order);
+    ON public.identity_applications (portal_visible, status, featured, sort_order);
 
 CREATE INDEX IF NOT EXISTS idx_identity_applications_category
-    ON identity_applications (category);
+    ON public.identity_applications (category);
 
-CREATE TABLE IF NOT EXISTS identity_application_assignments (
+CREATE TABLE IF NOT EXISTS public.identity_application_assignments (
     id text PRIMARY KEY,
-    application_id text NOT NULL REFERENCES identity_applications(id) ON DELETE CASCADE,
+    application_id text NOT NULL REFERENCES public.identity_applications(id) ON DELETE CASCADE,
     subject_type text NOT NULL,
     subject_id text NOT NULL,
     effect text NOT NULL DEFAULT 'allow',
@@ -42,22 +44,22 @@ CREATE TABLE IF NOT EXISTS identity_application_assignments (
 );
 
 CREATE INDEX IF NOT EXISTS idx_identity_application_assignments_subject
-    ON identity_application_assignments (subject_type, subject_id);
+    ON public.identity_application_assignments (subject_type, subject_id);
 
-CREATE TABLE IF NOT EXISTS identity_application_favorites (
-    user_id text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    application_id text NOT NULL REFERENCES identity_applications(id) ON DELETE CASCADE,
+CREATE TABLE IF NOT EXISTS public.identity_application_favorites (
+    user_id uuid NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+    application_id text NOT NULL REFERENCES public.identity_applications(id) ON DELETE CASCADE,
     created_at timestamp without time zone NOT NULL DEFAULT now(),
     PRIMARY KEY (user_id, application_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_identity_application_favorites_application
-    ON identity_application_favorites (application_id);
+    ON public.identity_application_favorites (application_id);
 
-CREATE TABLE IF NOT EXISTS identity_application_launches (
+CREATE TABLE IF NOT EXISTS public.identity_application_launches (
     id text PRIMARY KEY,
-    application_id text NOT NULL REFERENCES identity_applications(id) ON DELETE CASCADE,
-    user_id text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    application_id text NOT NULL REFERENCES public.identity_applications(id) ON DELETE CASCADE,
+    user_id uuid NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
     provider_id text,
     provider_type text NOT NULL DEFAULT 'link',
     result text NOT NULL,
@@ -71,14 +73,14 @@ CREATE TABLE IF NOT EXISTS identity_application_launches (
 );
 
 CREATE INDEX IF NOT EXISTS idx_identity_application_launches_user_created
-    ON identity_application_launches (user_id, created_at DESC);
+    ON public.identity_application_launches (user_id, created_at DESC);
 
 CREATE INDEX IF NOT EXISTS idx_identity_application_launches_application_created
-    ON identity_application_launches (application_id, created_at DESC);
+    ON public.identity_application_launches (application_id, created_at DESC);
 
-CREATE TABLE IF NOT EXISTS identity_providers (
+CREATE TABLE IF NOT EXISTS public.identity_providers (
     id text PRIMARY KEY,
-    application_id text NOT NULL REFERENCES identity_applications(id) ON DELETE CASCADE,
+    application_id text NOT NULL REFERENCES public.identity_applications(id) ON DELETE CASCADE,
     name text NOT NULL,
     type text NOT NULL,
     enabled boolean NOT NULL DEFAULT false,
@@ -94,12 +96,12 @@ CREATE TABLE IF NOT EXISTS identity_providers (
 );
 
 CREATE INDEX IF NOT EXISTS idx_identity_providers_application
-    ON identity_providers (application_id);
+    ON public.identity_providers (application_id);
 
 CREATE INDEX IF NOT EXISTS idx_identity_providers_type_status
-    ON identity_providers (type, status, enabled);
+    ON public.identity_providers (type, status, enabled);
 
-CREATE TABLE IF NOT EXISTS identity_outposts (
+CREATE TABLE IF NOT EXISTS public.identity_outposts (
     id text PRIMARY KEY,
     name text NOT NULL,
     mode text NOT NULL DEFAULT 'embedded',
@@ -118,14 +120,14 @@ CREATE TABLE IF NOT EXISTS identity_outposts (
 );
 
 CREATE INDEX IF NOT EXISTS idx_identity_outposts_mode_status
-    ON identity_outposts (mode, status);
+    ON public.identity_outposts (mode, status);
 
 CREATE INDEX IF NOT EXISTS idx_identity_outposts_last_seen
-    ON identity_outposts (last_seen_at DESC);
+    ON public.identity_outposts (last_seen_at DESC);
 
-CREATE TABLE IF NOT EXISTS identity_oidc_clients (
+CREATE TABLE IF NOT EXISTS public.identity_oidc_clients (
     id text PRIMARY KEY,
-    provider_id text NOT NULL REFERENCES identity_providers(id) ON DELETE CASCADE,
+    provider_id text NOT NULL REFERENCES public.identity_providers(id) ON DELETE CASCADE,
     client_id text NOT NULL UNIQUE,
     client_secret_hash text NOT NULL DEFAULT '',
     redirect_uris jsonb NOT NULL DEFAULT '[]'::jsonb,
@@ -144,11 +146,11 @@ CREATE TABLE IF NOT EXISTS identity_oidc_clients (
 );
 
 CREATE INDEX IF NOT EXISTS idx_identity_oidc_clients_provider
-    ON identity_oidc_clients (provider_id);
+    ON public.identity_oidc_clients (provider_id);
 
-CREATE TABLE IF NOT EXISTS identity_provider_signing_keys (
+CREATE TABLE IF NOT EXISTS public.identity_provider_signing_keys (
     id text PRIMARY KEY,
-    provider_id text NOT NULL REFERENCES identity_providers(id) ON DELETE CASCADE,
+    provider_id text NOT NULL REFERENCES public.identity_providers(id) ON DELETE CASCADE,
     key_id text NOT NULL UNIQUE,
     algorithm text NOT NULL DEFAULT 'ES256',
     encrypted_private_key text NOT NULL,
@@ -160,13 +162,13 @@ CREATE TABLE IF NOT EXISTS identity_provider_signing_keys (
 );
 
 CREATE INDEX IF NOT EXISTS idx_identity_provider_signing_keys_provider_active
-    ON identity_provider_signing_keys (provider_id, active, created_at DESC);
+    ON public.identity_provider_signing_keys (provider_id, active, created_at DESC);
 
-CREATE TABLE IF NOT EXISTS identity_authorization_codes (
+CREATE TABLE IF NOT EXISTS public.identity_authorization_codes (
     id text PRIMARY KEY,
-    provider_id text NOT NULL REFERENCES identity_providers(id) ON DELETE CASCADE,
-    client_id text NOT NULL REFERENCES identity_oidc_clients(client_id) ON DELETE CASCADE,
-    user_id text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    provider_id text NOT NULL REFERENCES public.identity_providers(id) ON DELETE CASCADE,
+    client_id text NOT NULL REFERENCES public.identity_oidc_clients(client_id) ON DELETE CASCADE,
+    user_id uuid NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
     code_hash text NOT NULL UNIQUE,
     redirect_uri text NOT NULL,
     scopes jsonb NOT NULL DEFAULT '[]'::jsonb,
@@ -181,12 +183,12 @@ CREATE TABLE IF NOT EXISTS identity_authorization_codes (
 );
 
 CREATE INDEX IF NOT EXISTS idx_identity_authorization_codes_client_created
-    ON identity_authorization_codes (client_id, created_at DESC);
+    ON public.identity_authorization_codes (client_id, created_at DESC);
 
 CREATE INDEX IF NOT EXISTS idx_identity_authorization_codes_expiry
-    ON identity_authorization_codes (expires_at, consumed_at);
+    ON public.identity_authorization_codes (expires_at, consumed_at);
 
-INSERT INTO identity_applications (
+INSERT INTO public.identity_applications AS ia (
     id, slug, name, description, icon_url, category, tags, launch_url, provider_id,
     provider_type, portal_visible, featured, sort_order, status, metadata,
     created_by, updated_by, created_at, updated_at
@@ -223,6 +225,6 @@ ON CONFLICT (id) DO UPDATE SET
     featured = EXCLUDED.featured,
     sort_order = EXCLUDED.sort_order,
     status = EXCLUDED.status,
-    metadata = identity_applications.metadata || EXCLUDED.metadata,
+    metadata = ia.metadata || EXCLUDED.metadata,
     updated_by = 'system',
     updated_at = now();

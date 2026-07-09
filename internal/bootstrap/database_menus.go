@@ -24,6 +24,7 @@ type menuSeed struct {
 }
 
 func defaultMenuSeeds() []menuSeed {
+	defaultUserRoles := []string{"admin", "ops", "developer", "tester", "readonly", "auditor"}
 	return []menuSeed{
 		{ID: "dashboard", Path: "/", LabelZH: "总览", LabelEN: "Dashboard", IconKey: "gauge", SortOrder: 10, Enabled: true},
 		{ID: "cluster-resources-nodes", Path: "/cluster-resources/nodes", LabelZH: "节点", LabelEN: "Nodes", IconKey: "server", SortOrder: 20, Enabled: true},
@@ -131,28 +132,30 @@ func defaultMenuSeeds() []menuSeed {
 		{ID: "workflow-templates", Path: "/workflow-templates", LabelZH: "发布流程模板", LabelEN: "Workflow Templates", IconKey: "activity", Section: "delivery-platform", SortOrder: 30, Enabled: true, Roles: []string{"admin", "ops"}},
 		{ID: "application-environments", Path: "/application-environments", LabelZH: "环境绑定", LabelEN: "Environment Bindings", IconKey: "blocks", Section: "delivery-platform", SortOrder: 50, Enabled: true, Roles: []string{"admin", "ops"}},
 		{ID: "identity", Path: "/identity", LabelZH: "身份", LabelEN: "Identity", IconKey: "shield", Section: "admin", SortOrder: 220, Enabled: true, Roles: []string{"admin"}},
-		{ID: "identity-overview", ParentID: "identity", Path: "/identity/overview", LabelZH: "总览", LabelEN: "Overview", IconKey: "gauge", Section: "admin", SortOrder: 220, Enabled: true, Roles: []string{"admin"}},
-		{ID: "identity-applications", ParentID: "identity", Path: "/identity/applications", LabelZH: "应用目录", LabelEN: "Applications", IconKey: "blocks", Section: "admin", SortOrder: 221, Enabled: true, Roles: []string{"admin"}},
-		{ID: "identity-providers", ParentID: "identity", Path: "/identity/providers", LabelZH: "Provider", LabelEN: "Providers", IconKey: "shield", Section: "admin", SortOrder: 222, Enabled: true, Roles: []string{"admin"}},
-		{ID: "identity-outposts", ParentID: "identity", Path: "/identity/outposts", LabelZH: "Outpost", LabelEN: "Outposts", IconKey: "radio-tower", Section: "admin", SortOrder: 223, Enabled: true, Roles: []string{"admin"}},
-		{ID: "identity-policies", ParentID: "identity", Path: "/identity/policies", LabelZH: "访问策略", LabelEN: "Policies", IconKey: "shield", Section: "admin", SortOrder: 224, Enabled: true, Roles: []string{"admin"}},
-		{ID: "identity-sessions", ParentID: "identity", Path: "/identity/sessions", LabelZH: "会话", LabelEN: "Sessions", IconKey: "users", Section: "admin", SortOrder: 225, Enabled: true, Roles: []string{"admin"}},
-		{ID: "identity-audit", ParentID: "identity", Path: "/identity/audit", LabelZH: "审计", LabelEN: "Audit", IconKey: "file-clock", Section: "admin", SortOrder: 226, Enabled: true, Roles: []string{"admin"}},
+		{ID: "identity-overview", ParentID: "identity", Path: "/identity/overview", LabelZH: "总览", LabelEN: "Overview", IconKey: "gauge", SortOrder: 1, Enabled: true, Roles: []string{"admin"}},
+		{ID: "identity-applications", ParentID: "identity", Path: "/identity/applications", LabelZH: "应用目录", LabelEN: "Applications", IconKey: "blocks", Section: "provider", SortOrder: 10, Enabled: true, Roles: []string{"admin"}},
+		{ID: "identity-providers", ParentID: "identity", Path: "/identity/providers", LabelZH: "Provider", LabelEN: "Providers", IconKey: "shield", Section: "provider", SortOrder: 20, Enabled: true, Roles: []string{"admin"}},
+		{ID: "identity-outposts", ParentID: "identity", Path: "/identity/outposts", LabelZH: "Outpost", LabelEN: "Outposts", IconKey: "radio-tower", Section: "provider", SortOrder: 30, Enabled: true, Roles: []string{"admin"}},
+		{ID: "identity-policies", ParentID: "identity", Path: "/identity/policies", LabelZH: "访问策略", LabelEN: "Policies", IconKey: "shield", Section: "provider", SortOrder: 40, Enabled: true, Roles: []string{"admin"}},
+		{ID: "identity-sessions", ParentID: "identity", Path: "/identity/sessions", LabelZH: "会话", LabelEN: "Sessions", IconKey: "users", Section: "operations", SortOrder: 10, Enabled: true, Roles: []string{"admin"}},
+		{ID: "identity-audit", ParentID: "identity", Path: "/identity/audit", LabelZH: "审计", LabelEN: "Audit", IconKey: "file-clock", Section: "operations", SortOrder: 20, Enabled: true, Roles: []string{"admin"}},
 		{ID: "system", Path: "/system", LabelZH: "系统", LabelEN: "System", IconKey: "panels-top-left", Section: "admin", SortOrder: 227, Enabled: true},
-		{ID: "announcements", ParentID: "system", Path: "/system/announcements", LabelZH: "通知公告", LabelEN: "Announcements", IconKey: "megaphone", Section: "admin", SortOrder: 230, Enabled: true, Roles: []string{"admin"}},
+		{ID: "announcements", ParentID: "system", Path: "/system/announcements", LabelZH: "通知公告", LabelEN: "Announcements", IconKey: "megaphone", Section: "operations", SortOrder: 30, Enabled: true, Roles: []string{"admin"}},
 		{ID: "access", Path: "/access", LabelZH: "访问控制", LabelEN: "Access Control", IconKey: "shield", Section: "admin", SortOrder: 240, Enabled: true, Roles: []string{"admin"}},
-		{ID: "access-users", Path: "/access/users", LabelZH: "用户", LabelEN: "Users", IconKey: "user", Section: "admin", SortOrder: 226, Enabled: true, Roles: []string{"admin"}},
-		{ID: "access-roles", Path: "/access/roles", LabelZH: "角色", LabelEN: "Roles", IconKey: "shield", Section: "admin", SortOrder: 227, Enabled: true, Roles: []string{"admin"}},
-		{ID: "access-teams", Path: "/access/teams", LabelZH: "组织", LabelEN: "Organizations", IconKey: "users", Section: "admin", SortOrder: 228, Enabled: true, Roles: []string{"admin"}},
-		{ID: "access-policies", Path: "/access/policies", LabelZH: "策略", LabelEN: "Policies", IconKey: "shield", Section: "admin", SortOrder: 229, Enabled: true, Roles: []string{"admin"}},
-		{ID: "menus", ParentID: "system", Path: "/system/menus", LabelZH: "菜单管理", LabelEN: "Menu Management", IconKey: "menu-square", Section: "admin", SortOrder: 250, Enabled: true, Roles: []string{"admin"}},
-		{ID: "system-online-users", ParentID: "system", Path: "/system/online-users", LabelZH: "在线用户", LabelEN: "Online Users", IconKey: "users", Section: "admin", SortOrder: 256, Enabled: true, Roles: []string{"admin"}},
-		{ID: "operations", ParentID: "system", Path: "/system/operations", LabelZH: "操作日志", LabelEN: "Operation Logs", IconKey: "clipboard-list", Section: "admin", SortOrder: 257, Enabled: true},
-		{ID: "audit", ParentID: "system", Path: "/system/audit", LabelZH: "审计日志", LabelEN: "Audit Logs", IconKey: "file-clock", Section: "admin", SortOrder: 258, Enabled: true},
+		{ID: "access-users", Path: "/access/users", LabelZH: "用户", LabelEN: "Users", IconKey: "user", Section: "users", SortOrder: 10, Enabled: true, Roles: []string{"admin"}},
+		{ID: "access-roles", Path: "/access/roles", LabelZH: "角色", LabelEN: "Roles", IconKey: "shield", Section: "users", SortOrder: 20, Enabled: true, Roles: []string{"admin"}},
+		{ID: "access-teams", Path: "/access/teams", LabelZH: "组织", LabelEN: "Organizations", IconKey: "users", Section: "users", SortOrder: 30, Enabled: true, Roles: []string{"admin"}},
+		{ID: "access-policies", Path: "/access/policies", LabelZH: "策略", LabelEN: "Policies", IconKey: "shield", Section: "users", SortOrder: 40, Enabled: true, Roles: []string{"admin"}},
+		{ID: "menus", ParentID: "system", Path: "/system/menus", LabelZH: "菜单管理", LabelEN: "Menu Management", IconKey: "menu-square", Section: "users", SortOrder: 50, Enabled: true, Roles: []string{"admin"}},
+		{ID: "system-online-users", ParentID: "system", Path: "/system/online-users", LabelZH: "在线用户", LabelEN: "Online Users", IconKey: "users", Section: "operations", SortOrder: 40, Enabled: true, Roles: []string{"admin"}},
+		{ID: "operations", ParentID: "system", Path: "/system/operations", LabelZH: "操作日志", LabelEN: "Operation Logs", IconKey: "clipboard-list", Section: "operations", SortOrder: 50, Enabled: true},
+		{ID: "audit", ParentID: "system", Path: "/system/audit", LabelZH: "审计日志", LabelEN: "Audit Logs", IconKey: "file-clock", Section: "operations", SortOrder: 60, Enabled: true},
 		{ID: "registries", Path: "/registries", LabelZH: "镜像仓库", LabelEN: "Registry Connections", IconKey: "menu-square", Section: "delivery-platform", SortOrder: 70, Enabled: true, Roles: []string{"admin", "ops"}},
 		{ID: "settings", Path: "/settings", LabelZH: "设置中心", LabelEN: "Settings Center", IconKey: "cog", Section: "admin", SortOrder: 260, Enabled: true, Roles: []string{"admin"}},
-		{ID: "settings-login", ParentID: "settings", Path: "/settings/login", LabelZH: "登陆设置", LabelEN: "Login Settings", IconKey: "shield", Section: "admin", SortOrder: 261, Enabled: true, Roles: []string{"admin"}},
-		{ID: "settings-branding", ParentID: "settings", Path: "/settings/branding", LabelZH: "品牌设置", LabelEN: "Branding Settings", IconKey: "palette", Section: "admin", SortOrder: 262, Enabled: true, Roles: []string{"admin"}},
+		{ID: "account-profile", ParentID: "settings", Path: "/account/profile", LabelZH: "个人中心", LabelEN: "Profile", IconKey: "user", Section: "account", SortOrder: 10, Enabled: true, Roles: defaultUserRoles},
+		{ID: "settings-about", ParentID: "settings", Path: "/settings/about", LabelZH: "关于", LabelEN: "About", IconKey: "info", Section: "account", SortOrder: 20, Enabled: true, Roles: defaultUserRoles},
+		{ID: "settings-login", ParentID: "settings", Path: "/settings/login", LabelZH: "登陆设置", LabelEN: "Login Settings", IconKey: "shield", Section: "users", SortOrder: 60, Enabled: true, Roles: []string{"admin"}},
+		{ID: "settings-branding", ParentID: "settings", Path: "/settings/branding", LabelZH: "品牌设置", LabelEN: "Branding Settings", IconKey: "palette", Section: "operations", SortOrder: 70, Enabled: true, Roles: []string{"admin"}},
 	}
 }
 
@@ -268,6 +271,42 @@ func syncBuiltinMenuSeedUpgrades(ctx context.Context, db *gorm.DB) error {
 				updated_at = ?
 			WHERE id = ? AND parent_id = 'access'
 		`, item.iconKey, item.sortOrder, now, item.id).Error; err != nil {
+			return err
+		}
+	}
+
+	settingsItems := []struct {
+		id        string
+		section   string
+		sortOrder int
+	}{
+		{id: "identity-overview", section: "", sortOrder: 1},
+		{id: "identity-applications", section: "provider", sortOrder: 10},
+		{id: "identity-providers", section: "provider", sortOrder: 20},
+		{id: "identity-outposts", section: "provider", sortOrder: 30},
+		{id: "identity-policies", section: "provider", sortOrder: 40},
+		{id: "access-users", section: "users", sortOrder: 10},
+		{id: "access-roles", section: "users", sortOrder: 20},
+		{id: "access-teams", section: "users", sortOrder: 30},
+		{id: "access-policies", section: "users", sortOrder: 40},
+		{id: "menus", section: "users", sortOrder: 50},
+		{id: "settings-login", section: "users", sortOrder: 60},
+		{id: "identity-sessions", section: "operations", sortOrder: 10},
+		{id: "identity-audit", section: "operations", sortOrder: 20},
+		{id: "announcements", section: "operations", sortOrder: 30},
+		{id: "system-online-users", section: "operations", sortOrder: 40},
+		{id: "operations", section: "operations", sortOrder: 50},
+		{id: "audit", section: "operations", sortOrder: 60},
+		{id: "settings-branding", section: "operations", sortOrder: 70},
+	}
+	for _, item := range settingsItems {
+		if err := db.WithContext(ctx).Exec(`
+			UPDATE menus
+			SET section = ?,
+				sort_order = ?,
+				updated_at = ?
+			WHERE id = ?
+		`, item.section, item.sortOrder, now, item.id).Error; err != nil {
 			return err
 		}
 	}

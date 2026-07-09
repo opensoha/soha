@@ -2,6 +2,7 @@ package identity
 
 import (
 	"context"
+	"errors"
 	"net/url"
 	"sort"
 	"strings"
@@ -12,6 +13,7 @@ import (
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
 	domainsettings "github.com/opensoha/soha/internal/domain/settings"
 	cfgpkg "github.com/opensoha/soha/internal/infrastructure/config"
+	"github.com/opensoha/soha/internal/platform/apperrors"
 	userrepo "github.com/opensoha/soha/internal/repository/user"
 )
 
@@ -57,6 +59,78 @@ func TestReconcileExternalUserSyncsLoginRolesAndOrganizations(t *testing.T) {
 	}
 	if binding := repo.teamBindings[principal.UserID]["platform-org"]; binding.source != "feishu" || binding.providerID != "feishu-main" {
 		t.Fatalf("expected provider-managed team binding, got %#v", binding)
+	}
+}
+
+func TestUpdateCurrentProfileStoresAvatarPreferences(t *testing.T) {
+	ctx := context.Background()
+	repo := newLoginMappingUserRepo()
+	repo.usersByID["u-1"] = userrepo.User{
+		ID:          "u-1",
+		Username:    "opensoha",
+		Email:       "old@example.com",
+		DisplayName: "Old",
+		Status:      "active",
+		Preferences: map[string]any{},
+	}
+	repo.emailToID["old@example.com"] = "u-1"
+	service := &Service{users: repo}
+
+	profile, err := service.UpdateCurrentProfile(ctx, domainidentity.Principal{UserID: "u-1"}, domainidentity.ProfileUpdate{
+		DisplayName: "OpenSoha",
+		Email:       "opensoha@soha.local",
+		Phone:       "13800000000",
+		AvatarURL:   "https://example.com/avatar.png",
+		AvatarFit:   "contain",
+	})
+	if err != nil {
+		t.Fatalf("UpdateCurrentProfile returned error: %v", err)
+	}
+	if profile.AvatarURL != "https://example.com/avatar.png" || profile.AvatarFit != "contain" {
+		t.Fatalf("profile avatar = %q/%q, want stored avatar", profile.AvatarURL, profile.AvatarFit)
+	}
+	stored := repo.usersByID["u-1"].Preferences
+	if stored[avatarURLPreferenceKey] != "https://example.com/avatar.png" || stored[avatarFitPreferenceKey] != "contain" {
+		t.Fatalf("stored avatar preferences = %#v", stored)
+	}
+}
+
+func TestUpdateCurrentProfileRejectsDuplicateEmail(t *testing.T) {
+	ctx := context.Background()
+	repo := newLoginMappingUserRepo()
+	repo.usersByID["u-1"] = userrepo.User{
+		ID:          "u-1",
+		Username:    "opensoha",
+		Email:       "old@example.com",
+		DisplayName: "OpenSoha",
+		Status:      "active",
+	}
+	repo.usersByID["u-2"] = userrepo.User{
+		ID:          "u-2",
+		Username:    "taken",
+		Email:       "taken@example.com",
+		DisplayName: "Taken",
+		Status:      "active",
+	}
+	repo.emailToID["old@example.com"] = "u-1"
+	repo.emailToID["taken@example.com"] = "u-2"
+	service := &Service{users: repo}
+
+	_, err := service.UpdateCurrentProfile(ctx, domainidentity.Principal{UserID: "u-1"}, domainidentity.ProfileUpdate{
+		DisplayName: "OpenSoha",
+		Email:       "taken@example.com",
+	})
+	if !errors.Is(err, apperrors.ErrConflict) {
+		t.Fatalf("UpdateCurrentProfile error = %v, want conflict", err)
+	}
+	if got := repo.usersByID["u-1"].Email; got != "old@example.com" {
+		t.Fatalf("stored email = %q, want unchanged old@example.com", got)
+	}
+}
+
+func TestNormalizeAvatarURLRejectsUnsafeScheme(t *testing.T) {
+	if _, err := normalizeAvatarURL("javascript:alert(1)"); err == nil {
+		t.Fatalf("normalizeAvatarURL accepted javascript scheme")
 	}
 }
 

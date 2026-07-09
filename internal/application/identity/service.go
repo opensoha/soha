@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/mail"
 	"net/url"
 	"regexp"
 	"sort"
@@ -32,6 +33,13 @@ import (
 )
 
 var usernameSanitizer = regexp.MustCompile(`[^a-z0-9._-]+`)
+
+const (
+	avatarURLPreferenceKey = "avatarUrl"
+	avatarFitPreferenceKey = "avatarFit"
+	defaultAvatarFit       = "cover"
+	maxAvatarURLLength     = 700000
+)
 
 type UserRepository interface {
 	FindByLogin(context.Context, string) (userrepo.User, error)
@@ -643,6 +651,9 @@ func (s *Service) CurrentProfile(ctx context.Context, principal domainidentity.P
 		Username:    user.Username,
 		DisplayName: firstNonEmpty(user.DisplayName, user.Username),
 		Email:       user.Email,
+		Phone:       stringPreference(user.Preferences, "phone"),
+		AvatarURL:   stringPreference(user.Preferences, avatarURLPreferenceKey),
+		AvatarFit:   avatarFitPreference(user.Preferences),
 		Status:      user.Status,
 		Roles:       roles,
 		Teams:       teams,
@@ -652,6 +663,102 @@ func (s *Service) CurrentProfile(ctx context.Context, principal domainidentity.P
 		Sessions:    activeSessions,
 		LastLoginAt: latestLoginAt(linkedIdentities, activeSessions),
 	}, nil
+}
+
+func (s *Service) UpdateCurrentProfile(ctx context.Context, principal domainidentity.Principal, input domainidentity.ProfileUpdate) (domainidentity.UserProfile, error) {
+	userID := strings.TrimSpace(principal.UserID)
+	if userID == "" {
+		return domainidentity.UserProfile{}, fmt.Errorf("%w: current user is required", apperrors.ErrUnauthorized)
+	}
+	user, err := s.users.GetByID(ctx, userID)
+	if err != nil {
+		return domainidentity.UserProfile{}, fmt.Errorf("%w: user not found", apperrors.ErrUnauthorized)
+	}
+	email := strings.ToLower(strings.TrimSpace(input.Email))
+	if email == "" {
+		return domainidentity.UserProfile{}, fmt.Errorf("%w: email is required", apperrors.ErrInvalidArgument)
+	}
+	address, err := mail.ParseAddress(email)
+	if err != nil || address.Address != email {
+		return domainidentity.UserProfile{}, fmt.Errorf("%w: email is invalid", apperrors.ErrInvalidArgument)
+	}
+	if email != strings.ToLower(strings.TrimSpace(user.Email)) {
+		existing, err := s.users.FindByEmail(ctx, email)
+		if err == nil && existing.ID != user.ID {
+			return domainidentity.UserProfile{}, fmt.Errorf("%w: email already exists", apperrors.ErrConflict)
+		}
+		if err != nil && !errors.Is(err, userrepo.ErrNotFound) {
+			return domainidentity.UserProfile{}, fmt.Errorf("find profile email: %w", err)
+		}
+	}
+
+	preferences := clonePreferences(user.Preferences)
+	phone := strings.TrimSpace(input.Phone)
+	if phone == "" {
+		delete(preferences, "phone")
+	} else {
+		preferences["phone"] = phone
+	}
+	avatarURL, err := normalizeAvatarURL(input.AvatarURL)
+	if err != nil {
+		return domainidentity.UserProfile{}, err
+	}
+	avatarFit, err := normalizeAvatarFit(input.AvatarFit)
+	if err != nil {
+		return domainidentity.UserProfile{}, err
+	}
+	if avatarURL == "" {
+		delete(preferences, avatarURLPreferenceKey)
+		delete(preferences, avatarFitPreferenceKey)
+	} else {
+		preferences[avatarURLPreferenceKey] = avatarURL
+		preferences[avatarFitPreferenceKey] = avatarFit
+	}
+	user.DisplayName = strings.TrimSpace(input.DisplayName)
+	user.Email = email
+	user.Preferences = preferences
+	if err := s.users.UpsertUser(ctx, user); err != nil {
+		return domainidentity.UserProfile{}, fmt.Errorf("update current profile: %w", err)
+	}
+	_ = s.recordAudit(ctx, domainidentity.Principal{
+		UserID:   user.ID,
+		UserName: firstNonEmpty(user.DisplayName, user.Username),
+		Email:    user.Email,
+		Roles:    principal.Roles,
+		Teams:    principal.Teams,
+		Projects: principal.Projects,
+		Tags:     principal.Tags,
+	}, "profile_update", "success", "current user updated profile", map[string]any{"userId": user.ID})
+	return s.CurrentProfile(ctx, domainidentity.Principal{UserID: user.ID})
+}
+
+func (s *Service) ChangeCurrentPassword(ctx context.Context, principal domainidentity.Principal, input domainidentity.PasswordChange) error {
+	userID := strings.TrimSpace(principal.UserID)
+	if userID == "" {
+		return fmt.Errorf("%w: current user is required", apperrors.ErrUnauthorized)
+	}
+	hash, err := s.users.GetPasswordHash(ctx, userID)
+	if err != nil {
+		if errors.Is(err, userrepo.ErrNotFound) {
+			return fmt.Errorf("%w: current user has no local password", apperrors.ErrInvalidArgument)
+		}
+		return fmt.Errorf("load current password: %w", err)
+	}
+	if err := bcrypt.CompareHashAndPassword([]byte(hash), []byte(input.CurrentPassword)); err != nil {
+		return fmt.Errorf("%w: current password is incorrect", apperrors.ErrUnauthorized)
+	}
+	if len(input.NewPassword) < 8 {
+		return fmt.Errorf("%w: new password must be at least 8 characters", apperrors.ErrInvalidArgument)
+	}
+	nextHash, err := bcrypt.GenerateFromPassword([]byte(input.NewPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return fmt.Errorf("hash new password: %w", err)
+	}
+	if err := s.users.SetPasswordHash(ctx, userID, string(nextHash)); err != nil {
+		return fmt.Errorf("update password: %w", err)
+	}
+	_ = s.recordAudit(ctx, principal, "password_change", "success", "current user changed password", map[string]any{"userId": userID})
+	return nil
 }
 
 func toLinkedIdentity(identity userrepo.OIDCIdentity) domainidentity.LinkedIdentity {
@@ -999,13 +1106,15 @@ func (s *Service) loadPrincipal(ctx context.Context, userID string) (domainident
 		userName = user.Username
 	}
 	return domainidentity.Principal{
-		UserID:   user.ID,
-		UserName: userName,
-		Email:    user.Email,
-		Roles:    roles,
-		Teams:    teams,
-		Projects: projects,
-		Tags:     append([]string(nil), user.Tags...),
+		UserID:    user.ID,
+		UserName:  userName,
+		Email:     user.Email,
+		AvatarURL: stringPreference(user.Preferences, avatarURLPreferenceKey),
+		AvatarFit: avatarFitPreference(user.Preferences),
+		Roles:     roles,
+		Teams:     teams,
+		Projects:  projects,
+		Tags:      append([]string(nil), user.Tags...),
 	}, nil
 }
 
@@ -1368,6 +1477,71 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func stringPreference(preferences map[string]any, key string) string {
+	if preferences == nil {
+		return ""
+	}
+	value, ok := preferences[key].(string)
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(value)
+}
+
+func avatarFitPreference(preferences map[string]any) string {
+	value, err := normalizeAvatarFit(stringPreference(preferences, avatarFitPreferenceKey))
+	if err != nil {
+		return defaultAvatarFit
+	}
+	return value
+}
+
+func normalizeAvatarFit(value string) (string, error) {
+	value = strings.ToLower(strings.TrimSpace(value))
+	if value == "" {
+		return defaultAvatarFit, nil
+	}
+	switch value {
+	case "cover", "contain", "fill":
+		return value, nil
+	default:
+		return "", fmt.Errorf("%w: avatar fit is invalid", apperrors.ErrInvalidArgument)
+	}
+}
+
+func normalizeAvatarURL(value string) (string, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "", nil
+	}
+	if len(value) > maxAvatarURLLength {
+		return "", fmt.Errorf("%w: avatar image is too large", apperrors.ErrInvalidArgument)
+	}
+	lower := strings.ToLower(value)
+	if strings.HasPrefix(lower, "data:image/") {
+		if !strings.Contains(lower, ";base64,") {
+			return "", fmt.Errorf("%w: avatar data url must be base64 image data", apperrors.ErrInvalidArgument)
+		}
+		return value, nil
+	}
+	parsed, err := url.Parse(value)
+	if err != nil || parsed.Host == "" {
+		return "", fmt.Errorf("%w: avatar url is invalid", apperrors.ErrInvalidArgument)
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return "", fmt.Errorf("%w: avatar url must use http or https", apperrors.ErrInvalidArgument)
+	}
+	return value, nil
+}
+
+func clonePreferences(preferences map[string]any) map[string]any {
+	out := make(map[string]any, len(preferences))
+	for key, value := range preferences {
+		out[key] = value
+	}
+	return out
 }
 
 func addQueryValue(rawURL, key, value string) (string, error) {

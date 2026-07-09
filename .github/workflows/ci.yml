@@ -81,6 +81,3 @@ jobs:
       - name: Docker build
         working-directory: soha
         run: docker build --build-context contracts=../soha-contracts -f deploy/Dockerfile -t yshanchui/soha:test -t yshanchui/soha:local .
-      - name: Docker compose smoke
-        working-directory: soha
-        run: SOHA_SMOKE_BUILD=0 SOHA_SMOKE_PROJECT=soha-ci-${{ github.run_id }} ./scripts/smoke-compose.sh

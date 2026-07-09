@@ -84,9 +84,6 @@ func New(cfg cfgpkg.Config, logger *zap.Logger, deps Dependencies) *http.Server 
 	registerProtectedRoutes(protected, cfg, deps)
 	registerStandardProviderProtocolRoutes(router, deps)
 
-	// Serve uploaded branding assets
-	router.Static("/branding-assets", "data/branding")
-
 	registerDocs(router, logger, cfg.Assets.Docs)
 
 	registerSPA(router, logger, cfg.Assets.Web)

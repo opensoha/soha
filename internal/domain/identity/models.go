@@ -6,6 +6,8 @@ type Principal struct {
 	UserID         string   `json:"userId"`
 	UserName       string   `json:"userName"`
 	Email          string   `json:"email"`
+	AvatarURL      string   `json:"avatarUrl,omitempty"`
+	AvatarFit      string   `json:"avatarFit,omitempty"`
 	Roles          []string `json:"roles"`
 	Teams          []string `json:"teams"`
 	Projects       []string `json:"projects"`
@@ -29,6 +31,8 @@ type UserProfile struct {
 	DisplayName string           `json:"displayName"`
 	Email       string           `json:"email"`
 	Phone       string           `json:"phone,omitempty"`
+	AvatarURL   string           `json:"avatarUrl,omitempty"`
+	AvatarFit   string           `json:"avatarFit,omitempty"`
 	Status      string           `json:"status"`
 	Roles       []string         `json:"roles"`
 	Teams       []string         `json:"teams"`
@@ -37,6 +41,19 @@ type UserProfile struct {
 	Identities  []LinkedIdentity `json:"identities"`
 	Sessions    []SessionRecord  `json:"sessions"`
 	LastLoginAt *time.Time       `json:"lastLoginAt,omitempty"`
+}
+
+type ProfileUpdate struct {
+	DisplayName string `json:"displayName"`
+	Email       string `json:"email"`
+	Phone       string `json:"phone,omitempty"`
+	AvatarURL   string `json:"avatarUrl,omitempty"`
+	AvatarFit   string `json:"avatarFit,omitempty"`
+}
+
+type PasswordChange struct {
+	CurrentPassword string `json:"currentPassword"`
+	NewPassword     string `json:"newPassword"`
 }
 
 type AccessContext struct {

@@ -2,15 +2,13 @@
 
 ## Why Single-Project Works Here
 
-- `internal/api/routes/router.go` serves the embedded SPA and docs when those assets are present.
-- `web/embed.go` embeds `web/dist`.
-- `docs/embed.go` embeds `docs/build`.
+- `internal/api/routes/router.go` serves the embedded SPA when the artifact is present.
+- `internal/staticassets` embeds `internal/staticassets/web/dist`.
 
 That means a production-style image can build the frontend and docs first, then compile one Go binary that serves:
 
 - `/api/v1/*`
 - `/`
-- `/docs/`
 
 ## Choose the Right Asset
 
@@ -34,21 +32,10 @@ Use for:
 
 Start from `deploy/deployment.yaml`.
 
-### Helm
-
-Use for:
-
-- repeated installs
-- multiple clusters or environments
-- overrides through values files
-
-Start from `deploy/chart/`.
-
 ## Scope of the Starter Assets
 
 - one soha application container
 - one PostgreSQL dependency
 - same-origin console and API
-- docs served from the same container
 
-These assets are intentionally conservative. If the user later wants external PostgreSQL, separate web hosting, additional runtime dependencies, or ingress-controller-specific annotations, extend the templates instead of rebuilding deployment logic from scratch.
+These assets are intentionally conservative. If the user later wants external PostgreSQL, separate web hosting, Helm packaging, additional runtime dependencies, or ingress-controller-specific annotations, extend the templates or use the dedicated `soha-helm` repo instead of rebuilding deployment logic from scratch.

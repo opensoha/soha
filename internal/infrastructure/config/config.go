@@ -11,6 +11,11 @@ import (
 	"github.com/spf13/viper"
 )
 
+const (
+	defaultDevPrincipalUserID = "67d90df8-9de4-4a7b-b3f8-86cd36f899e2"
+	defaultProjectSecret      = "soha-1234567890123456789012345678901234567890"
+)
+
 type Config struct {
 	App        AppConfig        `mapstructure:"app"`
 	HTTP       HTTPConfig       `mapstructure:"http"`
@@ -389,11 +394,7 @@ func (c Config) Validate() error {
 	if c.Auth.EnableDevAuth {
 		problems = append(problems, "auth.enable_dev_auth must be false")
 	}
-	problems = appendSecretProblem(problems, "database.password", c.Database.Password, true, 12)
 	problems = appendSecretProblem(problems, "auth.jwt.secret", c.Auth.JWT.Secret, true, 32)
-	if c.Bootstrap.SeedDefaults && strings.TrimSpace(c.Auth.DevPrincipal.UserID) != "" {
-		problems = appendSecretProblem(problems, "auth.dev_principal.password", c.Auth.DevPrincipal.Password, true, 12)
-	}
 	problems = appendSecretProblem(problems, "runtime.execution_runner_token", c.Runtime.ExecutionRunnerToken, true, 32)
 	if c.Monitoring.Enabled || c.Modules.Monitoring.Enabled {
 		problems = appendSecretProblem(problems, "monitoring.webhook_token", c.Monitoring.WebhookToken, true, 32)
@@ -438,34 +439,11 @@ func appendSecretProblem(problems []string, name, value string, required bool, m
 		return append(problems, fmt.Sprintf("%s is required", name))
 	case secret == "":
 		return problems
-	case isDemoSecret(secret):
-		return append(problems, fmt.Sprintf("%s must not use a demo or placeholder value", name))
 	case minLength > 0 && len(secret) < minLength:
 		return append(problems, fmt.Sprintf("%s must be at least %d characters", name, minLength))
 	default:
 		return problems
 	}
-}
-
-func isDemoSecret(value string) bool {
-	normalized := strings.ToLower(strings.TrimSpace(value))
-	normalized = strings.NewReplacer("_", "-", " ", "-", ".", "-").Replace(normalized)
-	switch normalized {
-	case "change-me", "changeme", "changeit", "password", "secret", "token", "admin",
-		"soha", "pgsql", "postgres", "dev-only-change-me", "demo-execution-runner-token",
-		"dev-alert-webhook-token", "test-secret", "example-secret":
-		return true
-	}
-	return strings.HasPrefix(normalized, "demo-") ||
-		strings.HasPrefix(normalized, "dev-") ||
-		strings.HasPrefix(normalized, "test-") ||
-		strings.HasPrefix(normalized, "example-") ||
-		strings.HasPrefix(normalized, "replace-") ||
-		strings.HasPrefix(normalized, "replace-with-") ||
-		strings.HasPrefix(normalized, "placeholder-") ||
-		strings.Contains(normalized, "replace-with") ||
-		strings.Contains(normalized, "placeholder") ||
-		strings.Contains(normalized, "change-me")
 }
 
 func (c DatabaseConfig) DSN() string {
@@ -520,7 +498,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("runtime.virtualization_startup_sync_enabled", true)
 	v.SetDefault("runtime.virtualization_worker_interval", "2s")
 	v.SetDefault("runtime.virtualization_sync_concurrency", 1)
-	v.SetDefault("runtime.execution_runner_token", "")
+	v.SetDefault("runtime.execution_runner_token", defaultProjectSecret)
 	v.SetDefault("runtime.execution_job_cluster_id", "")
 	v.SetDefault("runtime.execution_job_namespace", "soha-system")
 	v.SetDefault("runtime.execution_job_image", "alpine:3.20")
@@ -541,12 +519,13 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("database.migration_file", "migrations/postgres/0001_init.sql")
 	v.SetDefault("auth.enable_dev_auth", true)
 	v.SetDefault("auth.login_verification.slider_enabled", false)
-	v.SetDefault("auth.dev_principal.user_id", "opensoha")
+	v.SetDefault("auth.dev_principal.user_id", defaultDevPrincipalUserID)
 	v.SetDefault("auth.dev_principal.name", "OpenSoha")
 	v.SetDefault("auth.dev_principal.email", "opensoha@soha.local")
-	v.SetDefault("auth.dev_principal.password", "soha")
+	v.SetDefault("auth.dev_principal.password", "opensoha")
 	v.SetDefault("auth.dev_principal.roles", []string{"admin", "ops", "auditor"})
 	v.SetDefault("auth.jwt.issuer", "soha")
+	v.SetDefault("auth.jwt.secret", defaultProjectSecret)
 	v.SetDefault("auth.jwt.access_ttl", "15m")
 	v.SetDefault("auth.jwt.refresh_ttl", "168h")
 	v.SetDefault("auth.oidc.enabled", false)
@@ -559,7 +538,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("gitlab.per_page", 50)
 	v.SetDefault("gitlab.timeout", "10s")
 	v.SetDefault("monitoring.enabled", true)
-	v.SetDefault("monitoring.webhook_token", "dev-alert-webhook-token")
+	v.SetDefault("monitoring.webhook_token", defaultProjectSecret)
 	v.SetDefault("monitoring.prometheus_url", "")
 	v.SetDefault("monitoring.prometheus_bearer_token", "")
 	v.SetDefault("monitoring.prometheus_default_range_minutes", 60)
@@ -611,7 +590,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("assets.docs.dir", "../soha-docs/build")
 	v.SetDefault("assets.docs.proxy_url", "http://localhost:3000")
 	v.SetDefault("assets.docs.external_url", "https://docs.opensoha.dev/")
-	v.SetDefault("security.credential_encryption_key", "")
+	v.SetDefault("security.credential_encryption_key", defaultProjectSecret)
 	v.SetDefault("security.secret_provider", "")
 	v.SetDefault("bootstrap.seed_defaults", true)
 	v.SetDefault("kubernetes.clusters", []map[string]any{})

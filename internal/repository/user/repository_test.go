@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/DATA-DOG/go-sqlmock"
+	"github.com/jackc/pgx/v5/pgconn"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 
@@ -74,6 +75,38 @@ func newUserRepository(t *testing.T) (*Repository, sqlmock.Sqlmock) {
 func TestErrNotFoundWrapsAppErrorSentinel(t *testing.T) {
 	if !errors.Is(ErrNotFound, apperrors.ErrNotFound) {
 		t.Fatalf("ErrNotFound should wrap apperrors.ErrNotFound")
+	}
+}
+
+func TestRepositoryUpsertUserMapsUniqueViolationToConflict(t *testing.T) {
+	repo, mock := newUserRepository(t)
+	mock.ExpectExec(`(?s)INSERT INTO users`).
+		WithArgs(
+			"u-1",
+			"opensoha",
+			"taken@example.com",
+			"OpenSoha",
+			"active",
+			"null",
+			"null",
+			int64(1),
+			sqlmock.AnyArg(),
+			sqlmock.AnyArg(),
+		).
+		WillReturnError(&pgconn.PgError{Code: "23505", ConstraintName: "users_email_key"})
+
+	err := repo.UpsertUser(context.Background(), User{
+		ID:          "u-1",
+		Username:    "opensoha",
+		Email:       "Taken@Example.com",
+		DisplayName: "OpenSoha",
+		Status:      "active",
+	})
+	if !errors.Is(err, apperrors.ErrConflict) {
+		t.Fatalf("UpsertUser error = %v, want conflict", err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet sql expectations: %v", err)
 	}
 }
 

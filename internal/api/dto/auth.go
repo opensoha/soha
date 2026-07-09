@@ -31,3 +31,16 @@ type LogoutRequest struct {
 type OIDCExchangeRequest struct {
 	Code string `json:"code"`
 }
+
+type UpdateProfileRequest struct {
+	DisplayName string `json:"displayName"`
+	Email       string `json:"email"`
+	Phone       string `json:"phone"`
+	AvatarURL   string `json:"avatarUrl"`
+	AvatarFit   string `json:"avatarFit"`
+}
+
+type ChangePasswordRequest struct {
+	CurrentPassword string `json:"currentPassword"`
+	NewPassword     string `json:"newPassword"`
+}

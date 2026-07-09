@@ -290,7 +290,11 @@ func (s *ManagementService) CreateUser(ctx context.Context, principal domainiden
 	if err := s.ensurePermission(ctx, principal, PermAccessUsersManage); err != nil {
 		return domainaccess.UserRecord{}, err
 	}
-	input.ID = normalizeID(input.ID, input.Username)
+	userID, err := normalizeUserID(input.ID)
+	if err != nil {
+		return domainaccess.UserRecord{}, err
+	}
+	input.ID = userID
 	input.Username = strings.TrimSpace(input.Username)
 	input.Email = strings.TrimSpace(input.Email)
 	input.DisplayName = strings.TrimSpace(input.DisplayName)
@@ -391,6 +395,18 @@ func normalizeID(value string, fallback string) string {
 		return uuid.NewString()
 	}
 	return strings.ToLower(strings.ReplaceAll(strings.ReplaceAll(fallback, " ", "-"), "_", "-"))
+}
+
+func normalizeUserID(value string) (string, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return uuid.NewString(), nil
+	}
+	parsed, err := uuid.Parse(value)
+	if err != nil {
+		return "", fmt.Errorf("%w: user id must be a UUID", apperrors.ErrInvalidArgument)
+	}
+	return parsed.String(), nil
 }
 
 func uniqueTrimmedStrings(items []string) []string {

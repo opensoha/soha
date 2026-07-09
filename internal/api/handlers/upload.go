@@ -1,12 +1,10 @@
 package handlers
 
 import (
-	"crypto/rand"
-	"encoding/hex"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -18,11 +16,9 @@ import (
 
 const (
 	brandingMaxFileSize = 2 << 20 // 2MB
-	brandingURLPathBase = "/branding-assets/"
 )
 
 var (
-	brandingUploadDir = "data/branding"
 	allowedExtensions = map[string]string{
 		".jpg":  "image/jpeg",
 		".jpeg": "image/jpeg",
@@ -47,7 +43,7 @@ type readSeeker interface {
 	io.Seeker
 }
 
-// UploadBrandingAsset handles branding image upload, saves to disk and returns the served URL.
+// UploadBrandingAsset handles branding image upload and returns a data URL for settings storage.
 func (h *SettingsHandler) UploadBrandingAsset(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	if err := appaccess.AuthorizeRuntimePermission(c.Request.Context(), h.permissions, principal, appaccess.PermSettingsBrandingManage); err != nil {
@@ -89,28 +85,18 @@ func (h *SettingsHandler) UploadBrandingAsset(c *gin.Context) {
 		return
 	}
 
-	if err := os.MkdirAll(brandingUploadDir, 0o755); err != nil {
-		apiresponse.Error(c, http.StatusInternalServerError, "internal", "failed to prepare upload directory")
-		return
-	}
-
-	filename, err := randomBrandingFilename(ext)
+	content, err := io.ReadAll(io.LimitReader(file, brandingMaxFileSize+1))
 	if err != nil {
-		apiresponse.Error(c, http.StatusInternalServerError, "internal", "failed to generate upload filename")
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid branding asset content")
 		return
 	}
-	savePath := filepath.Join(brandingUploadDir, filename)
-
-	if err := c.SaveUploadedFile(header, savePath); err != nil {
-		apiresponse.Error(c, http.StatusInternalServerError, "internal", "failed to save uploaded file")
+	if len(content) > brandingMaxFileSize {
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "file size exceeds 2MB limit")
 		return
 	}
 
-	// Return the URL path that will be served by the static file server
-	urlPath := brandingURLPathBase + filename
 	apiresponse.Item(c, http.StatusOK, map[string]string{
-		"url":      urlPath,
-		"filename": filename,
+		"url": "data:" + expectedContentType + ";base64," + base64.StdEncoding.EncodeToString(content),
 	})
 }
 
@@ -139,12 +125,4 @@ func brandingContentTypeAllowed(ext string, expected string, actual string) bool
 		return true
 	}
 	return alternateContentTypes[ext][actual]
-}
-
-func randomBrandingFilename(ext string) (string, error) {
-	var token [16]byte
-	if _, err := rand.Read(token[:]); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(token[:]) + ext, nil
 }

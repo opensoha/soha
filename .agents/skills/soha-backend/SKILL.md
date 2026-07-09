@@ -7,7 +7,8 @@ description: >-
   routes, handlers, application services, repositories, policy checks,
   bootstrap wiring, cluster or resource aggregation, or delivery,
   observability, AI workbench, virtualization, Docker workbench, and
-  control-plane APIs. This skill enforces the modular-monolith layers,
+  control-plane APIs. Frontend changes belong in the sibling `soha-web`
+  repository. This skill enforces the modular-monolith layers,
   platform view-model APIs instead of raw provider objects, explicit cluster
   and namespace scope semantics, permission-key aligned authorization, audit
   and operation logging for important actions, direct-versus-agent cluster
@@ -42,11 +43,11 @@ Implement backend changes through the repository's layered Go architecture. Keep
 
 ## Modularity Ground Rules
 
-- Keep the backend a single-repository, single-`go.mod`, multi-`cmd` modular monolith. `cmd/server` is the management control-plane server, and `cmd/agent` is the remote cluster agent/runner. Future specialized runtimes, such as security device ingest or security workers, should be added as same-repo `cmd/**` entries that reuse internal packages.
+- Keep the backend a single-repository, single-`go.mod` modular monolith. `cmd/server` is the management control-plane server. Remote agent and frontend runtime work belongs in sibling repos unless the task explicitly changes this repository boundary.
 - Keep `internal/api/routes/router.go` thin. It should assemble the Gin engine, global middleware, compatibility paths, static assets, and top-level groups only. Add or change business routes in same-package route files such as `routes_platform.go`, `routes_delivery.go`, `routes_monitoring.go`, `routes_runtime.go`, or `routes_governance.go`.
 - Public, runner, and callback routes belong in `routes_public.go` unless they require user-session authentication. Authenticated routes should be connected from `registerProtectedRoutes`; module-gated domains should keep their `cfg.Modules.*.Enabled` checks inside their domain registration function.
 - Keep `internal/bootstrap/app.go` focused on dependency graph assembly. Put lifecycle methods in `lifecycle.go`, narrow cross-module adapters in dedicated files, and seed concerns in focused files such as `database_menus.go` instead of growing `database.go`.
-- When adding menus or permissions, update the domain seed file, role permission keys, visible-menu behavior, frontend route metadata, and docs together. Menu seed filtering by disabled modules must remain backend-owned.
+- When adding menus or permissions, update the domain seed file, role permission keys, visible-menu behavior, and docs together. Frontend route metadata lives in `soha-web`.
 - Do not implement future internal-security business behavior as part of groundwork refactors. Reserve boundaries without implying runtime parity:
   - `/api/v1/security/**` for Soha web-admin security management APIs.
   - `/api/client/v1/**` for future Wails desktop and Flutter mobile client APIs.
@@ -112,7 +113,7 @@ Implement backend changes through the repository's layered Go architecture. Keep
 - If a provider type is only configuration-visible and not runtime-complete, make that explicit in API behavior and docs rather than implying parity.
 - When adding a module or workbench, update `internal/application/module/service.go`, route metadata/menu seeds, permission keys, bootstrap defaults, and frontend visibility tests together.
 - When adding a migration after the consolidated baseline, add an incremental file under `migrations/postgres/` and keep bootstrap tests aligned; do not recreate removed root-level legacy migration mirrors.
-- Keep generated `docs/build` and `.docusaurus` artifacts out of hand-written source changes unless the task explicitly asks to publish built docs.
+- Keep generated frontend artifacts out of hand-written source changes unless the task explicitly asks to publish built output.
 
 ## Done Criteria
 

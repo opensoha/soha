@@ -25,6 +25,8 @@ func registerProtectedRoutes(protected gin.IRoutes, cfg cfgpkg.Config, deps Depe
 func registerProtectedAuthRoutes(protected gin.IRoutes, deps Dependencies) {
 	protected.GET("/auth/me", deps.Auth.Me)
 	protected.GET("/auth/profile", deps.Auth.Profile)
+	protected.PATCH("/auth/profile", deps.Auth.UpdateProfile)
+	protected.POST("/auth/profile/password", deps.Auth.ChangePassword)
 	protected.GET("/auth/bootstrap", deps.Auth.Bootstrap)
 	protected.POST("/auth/logout", deps.Auth.Logout)
 	protected.POST("/auth/stream-ticket", deps.Auth.IssueStreamTicket)

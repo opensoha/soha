@@ -4,6 +4,20 @@ metadata:
   name: soha
 ---
 apiVersion: v1
+kind: Secret
+metadata:
+  name: soha-app-config
+  namespace: soha
+type: Opaque
+stringData:
+  postgres-password: pgsql
+  auth-dev-principal-password: opensoha
+  auth-jwt-secret: soha-1234567890123456789012345678901234567890
+  runtime-execution-runner-token: soha-1234567890123456789012345678901234567890
+  monitoring-webhook-token: soha-1234567890123456789012345678901234567890
+  security-credential-encryption-key: soha-1234567890123456789012345678901234567890
+---
+apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: soha-postgres-data
@@ -89,6 +103,38 @@ spec:
           env:
             - name: SOHA_CONFIG_FILE
               value: /app/configs/config.yaml
+            - name: SOHA_DATABASE_HOST
+              value: soha-postgres
+            - name: SOHA_DATABASE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: soha-app-config
+                  key: postgres-password
+            - name: SOHA_AUTH_DEV_PRINCIPAL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: soha-app-config
+                  key: auth-dev-principal-password
+            - name: SOHA_AUTH_JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: soha-app-config
+                  key: auth-jwt-secret
+            - name: SOHA_RUNTIME_EXECUTION_RUNNER_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: soha-app-config
+                  key: runtime-execution-runner-token
+            - name: SOHA_MONITORING_WEBHOOK_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: soha-app-config
+                  key: monitoring-webhook-token
+            - name: SOHA_SECURITY_CREDENTIAL_ENCRYPTION_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: soha-app-config
+                  key: security-credential-encryption-key
           ports:
             - containerPort: 8080
               name: http
@@ -100,15 +146,6 @@ spec:
             httpGet:
               path: /healthz
               port: http
-          volumeMounts:
-            - name: app-config
-              mountPath: /app/configs/config.yaml
-              subPath: config.yaml
-              readOnly: true
-      volumes:
-        - name: app-config
-          secret:
-            secretName: soha-app-config
 ---
 apiVersion: v1
 kind: Service

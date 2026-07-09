@@ -3,12 +3,12 @@ package handlers
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -24,14 +24,12 @@ func (s stubUploadRolePermissionReader) ListRolePermissions(context.Context) (ma
 	return s.matrix, nil
 }
 
-func TestUploadBrandingAssetAcceptsPNGAndUsesRandomFilename(t *testing.T) {
-	dir := t.TempDir()
-	withBrandingUploadDir(t, dir)
-
-	recorder := postBrandingUpload(t, "logo.png", []byte{
+func TestUploadBrandingAssetAcceptsPNGAndReturnsDataURL(t *testing.T) {
+	content := []byte{
 		0x89, 'P', 'N', 'G', 0x0d, 0x0a, 0x1a, 0x0a,
 		0x00, 0x00, 0x00, 0x0d, 'I', 'H', 'D', 'R',
-	})
+	}
+	recorder := postBrandingUpload(t, "logo.png", content)
 
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d, body=%s", recorder.Code, http.StatusOK, recorder.Body.String())
@@ -39,31 +37,26 @@ func TestUploadBrandingAssetAcceptsPNGAndUsesRandomFilename(t *testing.T) {
 
 	var payload struct {
 		Data struct {
-			URL      string `json:"url"`
-			Filename string `json:"filename"`
+			URL string `json:"url"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if filepath.Ext(payload.Data.Filename) != ".png" {
-		t.Fatalf("filename = %q, want .png extension", payload.Data.Filename)
+	raw, ok := strings.CutPrefix(payload.Data.URL, "data:image/png;base64,")
+	if !ok {
+		t.Fatalf("url = %q, want png data URL", payload.Data.URL)
 	}
-	if payload.Data.Filename == "logo.png" {
-		t.Fatalf("filename reused user-provided name")
+	decoded, err := base64.StdEncoding.DecodeString(raw)
+	if err != nil {
+		t.Fatalf("decode data URL: %v", err)
 	}
-	if payload.Data.URL != brandingURLPathBase+payload.Data.Filename {
-		t.Fatalf("url = %q, want branding asset URL", payload.Data.URL)
-	}
-	if _, err := os.Stat(filepath.Join(dir, payload.Data.Filename)); err != nil {
-		t.Fatalf("uploaded file not saved: %v", err)
+	if !bytes.Equal(decoded, content) {
+		t.Fatalf("decoded content = %v, want %v", decoded, content)
 	}
 }
 
 func TestUploadBrandingAssetRejectsSVG(t *testing.T) {
-	dir := t.TempDir()
-	withBrandingUploadDir(t, dir)
-
 	recorder := postBrandingUpload(t, "logo.svg", []byte(`<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>`))
 
 	if recorder.Code != http.StatusBadRequest {
@@ -72,23 +65,11 @@ func TestUploadBrandingAssetRejectsSVG(t *testing.T) {
 }
 
 func TestUploadBrandingAssetRejectsExtensionSpoofing(t *testing.T) {
-	dir := t.TempDir()
-	withBrandingUploadDir(t, dir)
-
 	recorder := postBrandingUpload(t, "logo.png", []byte(`<html>not an image</html>`))
 
 	if recorder.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d, body=%s", recorder.Code, http.StatusBadRequest, recorder.Body.String())
 	}
-}
-
-func withBrandingUploadDir(t *testing.T, dir string) {
-	t.Helper()
-	previous := brandingUploadDir
-	brandingUploadDir = dir
-	t.Cleanup(func() {
-		brandingUploadDir = previous
-	})
 }
 
 func postBrandingUpload(t *testing.T, filename string, content []byte) *httptest.ResponseRecorder {

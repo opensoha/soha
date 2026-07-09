@@ -24,7 +24,7 @@ runtime:
   virtualization_startup_sync_enabled: true
   virtualization_worker_interval: 2s
   virtualization_sync_concurrency: 1
-  execution_runner_token: ${SOHA_RUNTIME_EXECUTION_RUNNER_TOKEN}
+  execution_runner_token: soha-1234567890123456789012345678901234567890
   execution_job_cluster_id: ""
   execution_job_namespace: soha-system
   execution_job_image: alpine:3.20
@@ -37,7 +37,7 @@ database:
   port: 5432
   name: soha
   user: pgsql
-  password: ${SOHA_DATABASE_PASSWORD}
+  password: pgsql
   sslmode: disable
   max_open_conns: 20
   max_idle_conns: 10
@@ -50,17 +50,16 @@ auth:
   login_verification:
     slider_enabled: true
   dev_principal:
-    user_id: opensoha
     name: OpenSoha
     email: opensoha@soha.local
-    password: ${SOHA_AUTH_DEV_PRINCIPAL_PASSWORD}
+    password: opensoha
     roles:
       - admin
       - ops
       - auditor
   jwt:
     issuer: soha
-    secret: ${SOHA_AUTH_JWT_SECRET}
+    secret: soha-1234567890123456789012345678901234567890
     access_ttl: 15m
     refresh_ttl: 168h
   oidc:
@@ -88,7 +87,7 @@ gitlab:
 
 monitoring:
   enabled: true
-  webhook_token: ${SOHA_MONITORING_WEBHOOK_TOKEN}
+  webhook_token: soha-1234567890123456789012345678901234567890
   prometheus_url: ""
   prometheus_bearer_token: ""
   prometheus_default_range_minutes: 60
@@ -155,19 +154,11 @@ assets:
     external_url: https://docs.opensoha.dev/
 
 security:
-  credential_encryption_key: ${SOHA_SECURITY_CREDENTIAL_ENCRYPTION_KEY}
-  secret_provider: ${SOHA_SECURITY_SECRET_PROVIDER}
+  credential_encryption_key: soha-1234567890123456789012345678901234567890
+  secret_provider: ""
 
 bootstrap:
   seed_defaults: true
 
 kubernetes:
-  clusters:
-    - id: local-k3s
-      name: Local K3s
-      kubeconfig: ./.dev/k3s/kubeconfig.yaml
-      region: local
-      environment: development
-      labels:
-        provider: k3s
-        purpose: debug
+  clusters: []

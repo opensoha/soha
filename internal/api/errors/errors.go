@@ -10,6 +10,7 @@ import (
 var (
 	ErrUnauthorized         = legacy.ErrUnauthorized
 	ErrAccessDenied         = legacy.ErrAccessDenied
+	ErrConflict             = legacy.ErrConflict
 	ErrNotFound             = legacy.ErrNotFound
 	ErrClusterUnready       = legacy.ErrClusterUnready
 	ErrInvalidArgument      = legacy.ErrInvalidArgument
@@ -26,6 +27,8 @@ func StatusCode(err error) int {
 		return http.StatusUnauthorized
 	case errors.Is(err, ErrAccessDenied):
 		return http.StatusForbidden
+	case errors.Is(err, ErrConflict):
+		return http.StatusConflict
 	case errors.Is(err, ErrNotFound):
 		return http.StatusNotFound
 	case errors.Is(err, ErrClusterUnready):
@@ -45,6 +48,8 @@ func Code(err error) string {
 		return "unauthorized"
 	case errors.Is(err, ErrAccessDenied):
 		return "access_denied"
+	case errors.Is(err, ErrConflict):
+		return "conflict"
 	case errors.Is(err, ErrNotFound):
 		return "not_found"
 	case errors.Is(err, ErrClusterUnready):

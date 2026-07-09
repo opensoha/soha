@@ -1,26 +1,6 @@
 name: soha
 
 services:
-  soha-secrets:
-    image: alpine:3.20
-    container_name: ${SOHA_SECRETS_CONTAINER_NAME:-soha-secrets}
-    environment:
-      SOHA_ENV_FILE: /var/lib/soha/soha.env
-      SOHA_SECRET_DIR: /var/lib/soha
-      SOHA_ENV_FILE_MODE: "0644"
-      SOHA_SECRET_FILE_MODE: "0644"
-      SOHA_DATABASE_PASSWORD: ${SOHA_DATABASE_PASSWORD:-}
-      SOHA_AUTH_DEV_PRINCIPAL_PASSWORD: ${SOHA_AUTH_DEV_PRINCIPAL_PASSWORD:-}
-      SOHA_AUTH_JWT_SECRET: ${SOHA_AUTH_JWT_SECRET:-}
-      SOHA_RUNTIME_EXECUTION_RUNNER_TOKEN: ${SOHA_RUNTIME_EXECUTION_RUNNER_TOKEN:-}
-      SOHA_EXECUTION_RUNNER_TOKEN: ${SOHA_EXECUTION_RUNNER_TOKEN:-}
-      SOHA_MONITORING_WEBHOOK_TOKEN: ${SOHA_MONITORING_WEBHOOK_TOKEN:-}
-      SOHA_SECURITY_CREDENTIAL_ENCRYPTION_KEY: ${SOHA_SECURITY_CREDENTIAL_ENCRYPTION_KEY:-}
-    volumes:
-      - ../scripts/soha-env.sh:/usr/local/bin/soha-env.sh:ro
-      - soha-secrets:/var/lib/soha
-    command: ["sh", "/usr/local/bin/soha-env.sh", "ensure"]
-
   postgres:
     # PostgreSQL 18 stores PGDATA below /var/lib/postgresql/18/docker.
     # Mount the parent directory so the named volume owns the real data path.
@@ -29,15 +9,11 @@ services:
     environment:
       POSTGRES_DB: soha
       POSTGRES_USER: pgsql
-      POSTGRES_PASSWORD_FILE: /run/soha-secrets/database-password
-    depends_on:
-      soha-secrets:
-        condition: service_completed_successfully
+      POSTGRES_PASSWORD: ${SOHA_DATABASE_PASSWORD:-pgsql}
     ports:
       - "${SOHA_POSTGRES_BIND:-0.0.0.0}:${SOHA_POSTGRES_PORT:-5432}:5432"
     volumes:
       - soha-postgres-data:/var/lib/postgresql
-      - soha-secrets:/run/soha-secrets:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U pgsql -d soha"]
       interval: 5s
@@ -57,27 +33,6 @@ services:
       timeout: 3s
       retries: 20
 
-  k3s:
-    image: rancher/k3s:v1.36.0-k3s1
-    container_name: ${SOHA_K3S_CONTAINER_NAME:-soha-k3s}
-    privileged: true
-    command:
-      - server
-      - --node-name=local-k3s
-      - --disable=traefik
-      - --disable=servicelb
-      - --tls-san=127.0.0.1
-    ports:
-      - "${SOHA_K3S_BIND:-0.0.0.0}:${SOHA_K3S_PORT:-6443}:6443"
-    volumes:
-      - soha-k3s-data:/var/lib/rancher/k3s
-      - ../configs/k3s/registries.yaml:/etc/rancher/k3s/registries.yaml:ro
-    healthcheck:
-      test: ["CMD-SHELL", "kubectl get nodes >/dev/null 2>&1"]
-      interval: 10s
-      timeout: 10s
-      retries: 30
-
   soha:
     container_name: ${SOHA_CONTAINER_NAME:-soha}
     build:
@@ -87,24 +42,21 @@ services:
         contracts: ${SOHA_CONTRACTS_DIR:-../../soha-contracts}
     image: ${SOHA_IMAGE:-yshanchui/soha:local}
     depends_on:
-      soha-secrets:
-        condition: service_completed_successfully
       postgres:
         condition: service_healthy
     environment:
-      SOHA_CONFIG_FILE: /app/configs/config.compose.yaml
+      SOHA_CONFIG_FILE: /app/configs/config.yaml
       SOHA_DATABASE_HOST: postgres
-      SOHA_DATABASE_PORT: "5432"
-      SOHA_DATABASE_NAME: soha
-      SOHA_DATABASE_USER: pgsql
-      SOHA_DATABASE_SSLMODE: disable
-      SOHA_AI_GATEWAY_RATE_LIMIT_BACKEND: ${SOHA_AI_GATEWAY_RATE_LIMIT_BACKEND:-postgres}
-      SOHA_AI_GATEWAY_RATE_LIMIT_REDIS_ADDR: ${SOHA_AI_GATEWAY_RATE_LIMIT_REDIS_ADDR:-redis:6379}
+      SOHA_DATABASE_PASSWORD: ${SOHA_DATABASE_PASSWORD:-pgsql}
+      SOHA_AUTH_DEV_PRINCIPAL_PASSWORD: ${SOHA_AUTH_DEV_PRINCIPAL_PASSWORD:-opensoha}
+      SOHA_AUTH_JWT_SECRET: ${SOHA_AUTH_JWT_SECRET:-soha-1234567890123456789012345678901234567890}
+      SOHA_RUNTIME_EXECUTION_RUNNER_TOKEN: ${SOHA_RUNTIME_EXECUTION_RUNNER_TOKEN:-soha-1234567890123456789012345678901234567890}
+      SOHA_MONITORING_WEBHOOK_TOKEN: ${SOHA_MONITORING_WEBHOOK_TOKEN:-soha-1234567890123456789012345678901234567890}
+      SOHA_SECURITY_CREDENTIAL_ENCRYPTION_KEY: ${SOHA_SECURITY_CREDENTIAL_ENCRYPTION_KEY:-soha-1234567890123456789012345678901234567890}
     ports:
       - "${SOHA_HTTP_BIND:-0.0.0.0}:${SOHA_HTTP_PORT:-8080}:8080"
     volumes:
-      - ../configs/config.compose.yaml:/app/configs/config.compose.yaml:ro
-      - soha-secrets:/var/lib/soha:ro
+      - ../configs/config.yaml:/app/configs/config.yaml:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
     healthcheck:
@@ -135,14 +87,13 @@ services:
     container_name: ${SOHA_HERMES_CONTAINER_NAME:-soha-hermes-agent-runner}
     restart: unless-stopped
     depends_on:
-      soha-secrets:
-        condition: service_completed_successfully
       soha:
         condition: service_healthy
     environment:
       SOHA_AGENT_CONFIG_FILE: /app/configs/agent.config.yaml
       SOHA_AGENT_CONTROL_PLANE_ENABLED: "true"
       SOHA_AGENT_CONTROL_PLANE_BASE_URL: ${SOHA_CONTROL_PLANE_URL:-http://soha:8080}
+      SOHA_AGENT_CONTROL_PLANE_BEARER_TOKEN: ${SOHA_RUNTIME_EXECUTION_RUNNER_TOKEN:-soha-1234567890123456789012345678901234567890}
       SOHA_AGENT_CONTROL_PLANE_AGENT_ID: ${SOHA_HERMES_AGENT_ID:-hermes-agent-runner}
       SOHA_AGENT_CONTROL_PLANE_PROVIDER_KINDS: agent_runtime_only
       SOHA_AGENT_CONTROL_PLANE_RUNTIME_ENDPOINT: ${SOHA_HERMES_RUNTIME_ENDPOINT:-http://soha-hermes-agent-runner:18080}
@@ -154,31 +105,17 @@ services:
       SOHA_AGENT_CONTROL_PLANE_AGENT_RUNTIME_HERMES_COMMAND: hermes
       SOHA_AGENT_CONTROL_PLANE_AGENT_RUNTIME_WORKSPACE_ROOT: /var/lib/soha-agent-runtime
       SOHA_AGENT_KUBERNETES_ENABLED: "false"
-    entrypoint: ["/bin/sh", "-c"]
-    command:
-      - |
-        set -eu
-        set -a
-        . /run/soha-secrets/soha.env
-        set +a
-        export SOHA_AGENT_CONTROL_PLANE_BEARER_TOKEN="$$SOHA_RUNTIME_EXECUTION_RUNNER_TOKEN"
-        exec /app/soha-agent
     ports:
       - "${SOHA_HERMES_BIND:-0.0.0.0}:${SOHA_HERMES_PORT:-18080}:18080"
     volumes:
-      - soha-secrets:/run/soha-secrets:ro
       - soha-hermes-data:/opt/data
       - soha-hermes-runtime:/var/lib/soha-agent-runtime
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
 volumes:
-  soha-secrets:
-    name: ${SOHA_SECRETS_VOLUME:-soha-secrets}
   soha-postgres-data:
     name: ${SOHA_POSTGRES_VOLUME:-soha-postgres-data}
-  soha-k3s-data:
-    name: ${SOHA_K3S_VOLUME:-soha-k3s-data}
   soha-hermes-data:
     name: ${SOHA_HERMES_DATA_VOLUME:-soha-hermes-data}
   soha-hermes-runtime:

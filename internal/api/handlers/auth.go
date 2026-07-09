@@ -25,6 +25,8 @@ type IdentityService interface {
 	Logout(context.Context, string, string) error
 	CurrentPrincipal(context.Context, string) (domainidentity.Principal, error)
 	CurrentProfile(context.Context, domainidentity.Principal) (domainidentity.UserProfile, error)
+	UpdateCurrentProfile(context.Context, domainidentity.Principal, domainidentity.ProfileUpdate) (domainidentity.UserProfile, error)
+	ChangeCurrentPassword(context.Context, domainidentity.Principal, domainidentity.PasswordChange) error
 	BeginOIDCLogin(context.Context, string) (string, error)
 	BeginProviderLogin(context.Context, string, string) (string, error)
 	HandleOIDCCallback(context.Context, string, string) (string, error)
@@ -300,6 +302,44 @@ func (h *AuthHandler) Profile(c *gin.Context) {
 	apiresponse.Item(c, http.StatusOK, profile)
 }
 
+func (h *AuthHandler) UpdateProfile(c *gin.Context) {
+	var req dto.UpdateProfileRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid profile payload")
+		return
+	}
+	principal := apiMiddleware.PrincipalFromContext(c)
+	profile, err := h.identity.UpdateCurrentProfile(c.Request.Context(), principal, domainidentity.ProfileUpdate{
+		DisplayName: req.DisplayName,
+		Email:       req.Email,
+		Phone:       req.Phone,
+		AvatarURL:   req.AvatarURL,
+		AvatarFit:   req.AvatarFit,
+	})
+	if err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.Item(c, http.StatusOK, profile)
+}
+
+func (h *AuthHandler) ChangePassword(c *gin.Context) {
+	var req dto.ChangePasswordRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		apiresponse.Error(c, http.StatusBadRequest, "invalid_argument", "invalid password payload")
+		return
+	}
+	principal := apiMiddleware.PrincipalFromContext(c)
+	if err := h.identity.ChangeCurrentPassword(c.Request.Context(), principal, domainidentity.PasswordChange{
+		CurrentPassword: req.CurrentPassword,
+		NewPassword:     req.NewPassword,
+	}); err != nil {
+		writeError(c, err)
+		return
+	}
+	apiresponse.JSON(c, http.StatusOK, gin.H{"status": "ok"})
+}
+
 func (h *AuthHandler) ProCurrentUser(c *gin.Context) {
 	principal := apiMiddleware.PrincipalFromContext(c)
 	current, err := h.identity.CurrentPrincipal(c.Request.Context(), principal.UserID)
@@ -467,6 +507,7 @@ func toProCurrentUser(principal domainidentity.Principal) proCurrentUser {
 	}
 	return proCurrentUser{
 		Name:      name,
+		Avatar:    principal.AvatarURL,
 		UserID:    principal.UserID,
 		Email:     principal.Email,
 		Signature: "Soha operator",

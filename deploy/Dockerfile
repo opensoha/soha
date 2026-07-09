@@ -23,15 +23,14 @@ RUN if [ -z "$TARGETARCH" ]; then TARGETARCH="$(go env GOARCH)"; fi; \
 FROM alpine:3.20
 RUN addgroup -S -g 10001 soha && adduser -S -D -H -u 10001 -G soha soha && apk add --no-cache ca-certificates tzdata
 WORKDIR /app
-RUN mkdir -p /app/scripts /var/lib/soha \
+RUN mkdir -p /var/lib/soha \
     && chown -R 10001:10001 /var/lib/soha
 COPY --from=go-build /out/soha /app/soha
 COPY configs /app/configs
 COPY migrations /app/migrations
-COPY scripts/soha-env.sh /app/scripts/soha-env.sh
 COPY deploy/entrypoint.sh /app/entrypoint.sh
 ENV SOHA_CONFIG_FILE=/app/configs/config.yaml
-RUN chmod 0755 /app/scripts/soha-env.sh /app/entrypoint.sh
+RUN chmod 0755 /app/entrypoint.sh
 USER 10001:10001
 EXPOSE 8080
 ENTRYPOINT ["/app/entrypoint.sh"]

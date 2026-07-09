@@ -118,7 +118,7 @@ See the published docs for the current route, bootstrap, multi-`cmd`, and reserv
 | Backend | Go 1.23, Gin, PostgreSQL, Kubernetes `client-go` |
 | Frontend | React 18, TypeScript 5, Vite 6, React Router 6, TanStack Query 5, Zustand 5, Ant Design 6, Tailwind CSS 4 |
 | Docs | Docusaurus 3 |
-| Packaging | Docker, Docker Compose, raw Kubernetes YAML, Helm |
+| Packaging | Docker, Docker Compose, raw Kubernetes YAML; Helm charts live in `soha-helm` |
 
 ## Project Layout
 
@@ -129,8 +129,8 @@ See the published docs for the current route, bootstrap, multi-`cmd`, and reserv
 ├── internal/            # backend layers and domain modules
 ├── internal/staticassets # staged web artifacts for embedded release builds
 ├── migrations/          # PostgreSQL bootstrap and schema migrations
-├── deploy/              # Docker, Compose, raw Kubernetes, and Helm assets
-├── Makefile             # common dev/build/deploy commands
+├── deploy/              # Docker, Compose, and raw Kubernetes assets
+├── Makefile             # minimal local dev/build commands
 └── agents.md            # engineering spec and project memory
 ```
 
@@ -149,7 +149,7 @@ See the published docs for the current route, bootstrap, multi-`cmd`, and reserv
 make init
 ```
 
-This installs Go dependencies, then starts the local PostgreSQL service from `deploy/docker-compose.yaml`. The development helper can also start a local k3s debug cluster and write its kubeconfig under `./.dev/k3s/kubeconfig.yaml`. Frontend and docs dependencies live in `../soha-web` and `../soha-docs`; use `make init-web` or `make init-docs` when those sibling repositories are present.
+This installs Go dependencies, then starts the local PostgreSQL service from `deploy/docker-compose.yaml`. Frontend dependencies are managed in the sibling `../soha-web` repository.
 
 The compose stack uses `postgres:18.4` and mounts the named volume at `/var/lib/postgresql`, which is required for PostgreSQL 18's default data directory layout. Existing local volumes created by PostgreSQL 16 cannot be reused by changing only the image tag; recreate disposable volumes or migrate data with `pg_dump`/`pg_restore` or `pg_upgrade`.
 
@@ -164,20 +164,19 @@ The default target starts the Go API and the Vite frontend together.
 - Console: `http://localhost:5173`
 - API: `http://localhost:8080`
 - Config override: `SOHA_CONFIG_FILE=/abs/path/to/config.yaml`
-- Runtime secrets are generated under `.dev/soha.env` when missing.
+- Local defaults live in `configs/config.yaml`; override them with environment variables or `SOHA_CONFIG_FILE`.
 
 ### Run services separately
 
 ```bash
 make dev-api
 make dev-web
-make dev-docs
 ```
 
-For a direct server run without Make, keep the same generated startup env:
+For a direct server run without Make:
 
 ```bash
-./scripts/soha-env.sh run go run ./cmd/server
+go run ./cmd/server
 ```
 
 ### Start the agent runtime
@@ -199,26 +198,6 @@ Configure host records with the agent runtime endpoint and bearer token. Browser
 WebSocket streams still go through the control plane and use short-lived stream
 tickets instead of query-string access tokens.
 
-### Deploy the Hermes Agent runner with Docker
-
-When Hermes is used as an external provider, run the derived `soha-agent` image from the unified compose stack. The image is built from sibling repository `../soha-agent`, extends the official `nousresearch/hermes-agent` image, adds the `soha-agent` runner, and connects back to the control plane through the Agent Runtime claim/callback protocol.
-
-```bash
-make init-hermes
-```
-
-For local `make dev`, it connects from the container to the host API at `http://host.docker.internal:8080` and reports its runtime endpoint as `http://127.0.0.1:18080`. Override these when needed:
-
-```bash
-HERMES_CONTROL_PLANE_URL=http://host.docker.internal:8080 make init-hermes
-```
-
-If Hermes needs one-time provider setup, run the setup profile directly:
-
-```bash
-docker compose -f deploy/docker-compose.yaml --profile hermes-setup run --rm hermes-agent-setup
-```
-
 ## Common Commands
 
 ```bash
@@ -226,13 +205,9 @@ make
 make init
 make dev-api
 make dev-web
-make dev-docs
 make build
-make test-api
-make test-web
-make init-hermes
+make test
 make deploy-image
-make deploy-compose-up
 ```
 
 ## Deployment
@@ -240,10 +215,8 @@ make deploy-compose-up
 Soha ships as a single-binary runtime by default: one application container serves the API and embedded SPA. Documentation is published from `soha-docs` and linked through the configured docs URL.
 
 - [deploy/Dockerfile](./deploy/Dockerfile): multi-stage image build
-- `../soha-agent/deploy/Dockerfile.hermes-agent-runner`: Hermes Agent Runtime runner image
-- [deploy/docker-compose.yaml](./deploy/docker-compose.yaml): local stack with PostgreSQL, k3s, and optional Hermes runner services
+- [deploy/docker-compose.yaml](./deploy/docker-compose.yaml): local stack with PostgreSQL and optional Hermes runner services
 - [configs/config.yaml](./configs/config.yaml): default application config
-- [configs/config.compose.yaml](./configs/config.compose.yaml): compose app-container config with PostgreSQL service host and no host-local kubeconfig seed
 - [deploy/deployment.yaml](./deploy/deployment.yaml): raw Kubernetes manifest baseline
 - [deploy/kustomization.yaml](./deploy/kustomization.yaml): Kustomize entrypoint for image tag, namespace, and patch overrides without Helm
 
@@ -257,15 +230,14 @@ Recommended boundaries:
 - Docker image: publish to Docker Hub as `yshanchui/soha`; local builds default to the `local` tag.
 - Agent images: publish `yshanchui/soha-agent` and `yshanchui/soha-hermes-agent` from the sibling `soha-agent` repository.
 - CLI tool image: publish `yshanchui/soha-cli` from the sibling `soha-cli` repository for multi-stage builds and operational containers. It is an image artifact, not a Helm workload.
-- Docker Compose: use for local development, smoke tests, and single-node trials, not as the primary production orchestrator.
+- Docker Compose: use for local development and single-node trials, not as the primary production orchestrator.
 - Helm: use as the primary Kubernetes delivery path. `soha-helm` publishes `soha`, `soha-agent`, and `soha-hermes-agent` charts.
 - Kustomize: keep as a lightweight raw YAML customization entrypoint, avoiding a second full Kubernetes template set.
 
-Build and push the image:
+Build the image:
 
 ```bash
 make deploy-image IMAGE_TAG=v0.1.0
-make deploy-image-push IMAGE_TAG=v0.1.0 PUSH_LATEST=1
 
 # When proxy.golang.org is unstable:
 make deploy-image IMAGE_TAG=v0.1.0 GOPROXY=https://goproxy.cn,direct
@@ -301,7 +273,7 @@ Helm chart sources and Artifact Hub publishing live in `opensoha/soha-helm`.
 Apply the raw Kubernetes baseline:
 
 ```bash
-make deploy-k8s-apply
+kubectl apply -k deploy
 ```
 
 ## Documentation
@@ -329,9 +301,8 @@ Issues and pull requests are welcome. For larger changes, read [agents.md](./age
 Useful validation commands:
 
 ```bash
-go test ./...
+make test
 cd ../soha-web && npm run typecheck && npm run build
-cd ../soha-docs && npm test && npm run build
 ```
 
 ## Project Status

@@ -117,6 +117,31 @@ func TestListVisibleFallsBackToExplicitBindingsForMappedMenus(t *testing.T) {
 	}
 }
 
+func TestListVisibleIncludesBasicSettingsMenusWithoutAdminRole(t *testing.T) {
+	service := New(stubRepository{
+		items: []domainmenu.Record{
+			{ID: "settings", Path: "/settings", Enabled: true, RoleIDs: []string{"admin"}},
+			{ID: "account-profile", ParentID: "settings", Path: "/account/profile", Enabled: true, RoleIDs: []string{"readonly"}},
+			{ID: "settings-about", ParentID: "settings", Path: "/settings/about", Enabled: true, RoleIDs: []string{"readonly"}},
+			{ID: "settings-login", ParentID: "settings", Path: "/settings/login", Enabled: true, RoleIDs: []string{"admin"}},
+		},
+	}, appaccess.NewPermissionResolver(stubRolePermissionReader{
+		matrix: map[string][]string{"readonly": {}},
+	}), nil, nil)
+
+	items, err := service.ListVisible(context.Background(), domainidentity.Principal{Roles: []string{"readonly"}})
+	if err != nil {
+		t.Fatalf("ListVisible returned error: %v", err)
+	}
+	settings := findMenu(items, "settings")
+	if settings == nil {
+		t.Fatalf("settings menu not found: %#v", items)
+	}
+	if len(settings.Children) != 2 || settings.Children[0].ID != "account-profile" || settings.Children[1].ID != "settings-about" {
+		t.Fatalf("settings children = %#v, want basic settings menus", settings.Children)
+	}
+}
+
 func TestListVisibleIncludesNetworkTopologyUnderNetwork(t *testing.T) {
 	service := New(stubRepository{
 		items: []domainmenu.Record{

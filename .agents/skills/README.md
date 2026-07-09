@@ -5,8 +5,9 @@ This directory stores repo-local Codex skills that define repeatable execution r
 Current skill families:
 
 - `soha-backend`
-- `soha-frontend`
 - `soha-deploy`
+
+Frontend guidance lives in the `soha-web` repository under its own `.agents/skills/soha-frontend` skill.
 
 ## Scope
 

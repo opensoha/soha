@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/spf13/viper"
 )
 
@@ -93,6 +94,15 @@ func TestDefaultsConfigurePostgresGatewayRateLimitBackend(t *testing.T) {
 	if cfg.Logger.Level != "info" {
 		t.Fatalf("logger level default = %q, want info", cfg.Logger.Level)
 	}
+	if cfg.Auth.DevPrincipal.UserID == "opensoha" {
+		t.Fatalf("dev principal user id default should not be username-derived")
+	}
+	if cfg.Auth.DevPrincipal.UserID != defaultDevPrincipalUserID {
+		t.Fatalf("dev principal user id default = %q, want %q", cfg.Auth.DevPrincipal.UserID, defaultDevPrincipalUserID)
+	}
+	if _, err := uuid.Parse(cfg.Auth.DevPrincipal.UserID); err != nil {
+		t.Fatalf("dev principal user id default should be a UUID: %v", err)
+	}
 }
 
 func TestLoadRejectsDefaultConfigWhenFileMissing(t *testing.T) {
@@ -151,6 +161,40 @@ security:
 	}
 	if cfg.App.Name != "custom-soha" {
 		t.Fatalf("App.Name = %q, want custom-soha", cfg.App.Name)
+	}
+}
+
+func TestLoadRepoDefaultConfigWithoutGeneratedEnv(t *testing.T) {
+	t.Setenv("SOHA_CONFIG_FILE", filepath.Join("..", "..", "..", "configs", "config.yaml"))
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.Database.Password != "pgsql" {
+		t.Fatalf("database password = %q, want pgsql", cfg.Database.Password)
+	}
+	if cfg.Auth.DevPrincipal.Password != "opensoha" {
+		t.Fatalf("dev principal password = %q, want opensoha", cfg.Auth.DevPrincipal.Password)
+	}
+	if cfg.Auth.DevPrincipal.UserID != defaultDevPrincipalUserID {
+		t.Fatalf("dev principal user id = %q, want %q", cfg.Auth.DevPrincipal.UserID, defaultDevPrincipalUserID)
+	}
+	if len(cfg.Auth.JWT.Secret) < 32 || len(cfg.Runtime.ExecutionRunnerToken) < 32 || len(cfg.Monitoring.WebhookToken) < 32 || len(cfg.Security.CredentialEncryptionKey) < 32 {
+		t.Fatalf("repo default config secrets should satisfy minimum lengths")
+	}
+}
+
+func TestLoadRepoDefaultConfigAllowsEnvOverride(t *testing.T) {
+	t.Setenv("SOHA_CONFIG_FILE", filepath.Join("..", "..", "..", "configs", "config.yaml"))
+	t.Setenv("SOHA_DATABASE_HOST", "postgres")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.Database.Host != "postgres" {
+		t.Fatalf("database host = %q, want postgres", cfg.Database.Host)
 	}
 }
 
@@ -241,13 +285,12 @@ func TestConfigValidateRequiresOIDCFieldsWhenEnabled(t *testing.T) {
 	}
 }
 
-func TestConfigValidateRejectsDemoSecrets(t *testing.T) {
+func TestConfigValidateRejectsMissingOrShortSecrets(t *testing.T) {
 	cfg := validSecureConfig()
-	cfg.Database.Password = "change-me"
-	cfg.Auth.JWT.Secret = "dev-only-change-me"
-	cfg.Runtime.ExecutionRunnerToken = "demo-execution-runner-token"
+	cfg.Auth.JWT.Secret = "short"
+	cfg.Runtime.ExecutionRunnerToken = "short"
 	cfg.Monitoring.WebhookToken = ""
-	cfg.Security.CredentialEncryptionKey = "REPLACE_WITH_STABLE_CREDENTIAL_ENCRYPTION_KEY"
+	cfg.Security.CredentialEncryptionKey = "short"
 
 	err := cfg.Validate()
 	if err == nil {
@@ -255,7 +298,6 @@ func TestConfigValidateRejectsDemoSecrets(t *testing.T) {
 	}
 	message := err.Error()
 	for _, want := range []string{
-		"database.password",
 		"auth.jwt.secret",
 		"runtime.execution_runner_token",
 		"monitoring.webhook_token",
@@ -264,6 +306,16 @@ func TestConfigValidateRejectsDemoSecrets(t *testing.T) {
 		if !strings.Contains(message, want) {
 			t.Fatalf("Validate() error %q missing %q", message, want)
 		}
+	}
+}
+
+func TestConfigValidateAllowsEmptyOrSimpleDatabaseAndBootstrapPasswords(t *testing.T) {
+	cfg := validSecureConfig()
+	cfg.Database.Password = ""
+	cfg.Auth.DevPrincipal.Password = ""
+
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
 	}
 }
 
@@ -318,7 +370,7 @@ func validSecureConfig() Config {
 		Auth: AuthConfig{
 			EnableDevAuth: false,
 			DevPrincipal: DevPrincipalConfig{
-				UserID:   "opensoha",
+				UserID:   defaultDevPrincipalUserID,
 				Password: "admin-password-123456",
 			},
 			JWT: JWTConfig{

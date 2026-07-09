@@ -5,8 +5,10 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/google/uuid"
 	domainaccess "github.com/opensoha/soha/internal/domain/access"
 	domainidentity "github.com/opensoha/soha/internal/domain/identity"
+	"github.com/opensoha/soha/internal/platform/apperrors"
 	userrepo "github.com/opensoha/soha/internal/repository/user"
 )
 
@@ -32,6 +34,24 @@ func (stubUserManager) UpdateTeam(context.Context, string, domainaccess.TeamInpu
 	return domainaccess.TeamRecord{}, nil
 }
 func (stubUserManager) DeleteTeam(context.Context, string) error { return nil }
+
+type captureUserManager struct {
+	stubUserManager
+	lastCreateUserInput domainaccess.UserInput
+}
+
+func (s *captureUserManager) CreateUser(_ context.Context, input domainaccess.UserInput) (domainaccess.UserRecord, error) {
+	s.lastCreateUserInput = input
+	return domainaccess.UserRecord{
+		ID:          input.ID,
+		Username:    input.Username,
+		Email:       input.Email,
+		DisplayName: input.DisplayName,
+		Status:      input.Status,
+		Roles:       input.RoleIDs,
+		Teams:       input.TeamIDs,
+	}, nil
+}
 
 type stubPolicyManager struct {
 	createdRole domainaccess.RoleInput
@@ -133,6 +153,62 @@ func TestManagementCreateRoleFailsClosedWithoutRuntimeResolver(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatalf("CreateRole error = nil, want runtime resolver failure")
+	}
+}
+
+func TestManagementCreateUserGeneratesUUIDWhenIDMissing(t *testing.T) {
+	SetRolePermissionMatrix(nil)
+	users := &captureUserManager{}
+	service := NewManagement(users, &capturePolicyManager{}, NewPermissionResolver(stubRolePermissionReader{
+		matrix: map[string][]string{
+			"delegated": {PermAccessUsersManage},
+		},
+	}), nil, nil)
+
+	item, err := service.CreateUser(context.Background(), domainidentity.Principal{Roles: []string{"delegated"}}, domainaccess.UserInput{
+		Username:    " opensoha ",
+		Email:       " opensoha@soha.local ",
+		DisplayName: " OpenSoha ",
+	})
+	if err != nil {
+		t.Fatalf("CreateUser returned error: %v", err)
+	}
+	if users.lastCreateUserInput.ID == "" {
+		t.Fatalf("CreateUser input ID = empty, want generated UUID")
+	}
+	if users.lastCreateUserInput.ID == "opensoha" {
+		t.Fatalf("CreateUser input ID = opensoha, want generated UUID")
+	}
+	if _, err := uuid.Parse(users.lastCreateUserInput.ID); err != nil {
+		t.Fatalf("CreateUser input ID should be a UUID: %v", err)
+	}
+	if item.ID != users.lastCreateUserInput.ID {
+		t.Fatalf("CreateUser item ID = %q, want %q", item.ID, users.lastCreateUserInput.ID)
+	}
+	if users.lastCreateUserInput.Username != "opensoha" {
+		t.Fatalf("CreateUser username = %q, want trimmed username", users.lastCreateUserInput.Username)
+	}
+}
+
+func TestManagementCreateUserRejectsNonUUIDID(t *testing.T) {
+	SetRolePermissionMatrix(nil)
+	users := &captureUserManager{}
+	service := NewManagement(users, &capturePolicyManager{}, NewPermissionResolver(stubRolePermissionReader{
+		matrix: map[string][]string{
+			"delegated": {PermAccessUsersManage},
+		},
+	}), nil, nil)
+
+	_, err := service.CreateUser(context.Background(), domainidentity.Principal{Roles: []string{"delegated"}}, domainaccess.UserInput{
+		ID:       "opensoha",
+		Username: "opensoha",
+		Email:    "opensoha@soha.local",
+	})
+	if !errors.Is(err, apperrors.ErrInvalidArgument) {
+		t.Fatalf("CreateUser error = %v, want invalid argument", err)
+	}
+	if users.lastCreateUserInput.ID != "" {
+		t.Fatalf("CreateUser reached repository with ID %q", users.lastCreateUserInput.ID)
 	}
 }
 

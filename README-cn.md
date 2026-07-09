@@ -118,7 +118,7 @@ PostgreSQL + Kubernetes 集群
 | 后端 | Go 1.23、Gin、PostgreSQL、Kubernetes `client-go` |
 | 前端 | React 18、TypeScript 5、Vite 6、React Router 6、TanStack Query 5、Zustand 5、Ant Design 6、Tailwind CSS 4 |
 | 文档 | Docusaurus 3 |
-| 打包部署 | Docker、Docker Compose、原生 Kubernetes YAML、Helm |
+| 打包部署 | Docker、Docker Compose、原生 Kubernetes YAML；Helm Chart 在 `soha-helm` 维护 |
 
 ## 目录结构
 
@@ -129,8 +129,8 @@ PostgreSQL + Kubernetes 集群
 ├── internal/            # 后端分层与领域模块
 ├── internal/staticassets # 用于内嵌 release 构建的 Web artifact
 ├── migrations/          # PostgreSQL 初始化与迁移
-├── deploy/              # Docker、Compose、原生 Kubernetes 与 Helm 部署资产
-├── Makefile             # 常用开发、构建、部署命令
+├── deploy/              # Docker、Compose 与原生 Kubernetes 部署资产
+├── Makefile             # 最小本地开发、构建命令
 └── agents.md            # 工程规范与项目记忆
 ```
 
@@ -149,7 +149,7 @@ PostgreSQL + Kubernetes 集群
 make init
 ```
 
-该命令会安装 Go 依赖，并从 `deploy/docker-compose.yaml` 启动本地 PostgreSQL 服务。开发辅助流程也可以启动本地 k3s 调试集群，并把 kubeconfig 写入 `./.dev/k3s/kubeconfig.yaml`。前端和文档依赖分别位于 sibling 仓库 `../soha-web` 与 `../soha-docs`；这些仓库存在时可使用 `make init-web` 或 `make init-docs`。
+该命令会安装 Go 依赖，并从 `deploy/docker-compose.yaml` 启动本地 PostgreSQL 服务。前端依赖由 sibling 仓库 `../soha-web` 自己管理。
 
 Compose 栈使用 `postgres:18.4`，并把命名卷挂载到 `/var/lib/postgresql`，以匹配 PostgreSQL 18 的默认数据目录布局。由 PostgreSQL 16 创建的本地数据卷不能只改镜像标签后直接复用；可丢弃的本地数据卷请重建，需要保留的数据请通过 `pg_dump`/`pg_restore` 或 `pg_upgrade` 迁移。
 
@@ -164,20 +164,19 @@ make
 - 控制台：`http://localhost:5173`
 - API：`http://localhost:8080`
 - 配置覆盖：`SOHA_CONFIG_FILE=/abs/path/to/config.yaml`
-- 运行时密钥缺失时会生成到 `.dev/soha.env`。
+- 本地默认值在 `configs/config.yaml`，可通过环境变量或 `SOHA_CONFIG_FILE` 覆盖。
 
 ### 分别启动服务
 
 ```bash
 make dev-api
 make dev-web
-make dev-docs
 ```
 
-如果不通过 Make 直接启动 server，用同一个启动 env 包一层：
+如果不通过 Make 直接启动 server：
 
 ```bash
-./scripts/soha-env.sh run go run ./cmd/server
+go run ./cmd/server
 ```
 
 ### 启动 Agent Runtime
@@ -195,26 +194,6 @@ SOHA_AGENT_CONFIG_FILE=/abs/path/to/agent.config.yaml go run ./cmd/agent
 
 同一个 agent 二进制也可以暴露 Docker 主机运行时 API，供 Docker 工作台读取项目日志、打开交互式 Shell、浏览卷文件。Docker 主机记录需要配置 agent runtime endpoint 与 bearer token；浏览器侧 WebSocket 流仍先经过控制面，并使用短期 stream ticket，而不是在 query 中暴露 access token。
 
-### 通过 Docker 部署 Hermes Agent Runner
-
-Hermes 作为外部 provider 时，推荐从统一 compose 栈运行 `soha-agent` 派生镜像：镜像从 sibling 仓库 `../soha-agent` 构建，继承官方 `nousresearch/hermes-agent`，并内置 `soha-agent` runner，通过 Agent Runtime claim/callback 协议连接控制面。
-
-```bash
-make init-hermes
-```
-
-本地 `make dev` 时，runner 容器默认连接宿主机 API `http://host.docker.internal:8080`，并把自己的 runtime endpoint 报告为 `http://127.0.0.1:18080`。需要时可以覆盖：
-
-```bash
-HERMES_CONTROL_PLANE_URL=http://host.docker.internal:8080 make init-hermes
-```
-
-如果 Hermes 需要一次性 provider 初始化，直接运行 setup profile：
-
-```bash
-docker compose -f deploy/docker-compose.yaml --profile hermes-setup run --rm hermes-agent-setup
-```
-
 ## 常用命令
 
 ```bash
@@ -222,13 +201,9 @@ make
 make init
 make dev-api
 make dev-web
-make dev-docs
 make build
-make test-api
-make test-web
-make init-hermes
+make test
 make deploy-image
-make deploy-compose-up
 ```
 
 ## 部署
@@ -236,10 +211,8 @@ make deploy-compose-up
 Soha 默认按单二进制运行时交付：一个应用容器提供 API 和内嵌 SPA。文档由 `soha-docs` 独立发布，并通过配置的文档 URL 链接。
 
 - [deploy/Dockerfile](./deploy/Dockerfile): 多阶段镜像构建
-- `../soha-agent/deploy/Dockerfile.hermes-agent-runner`: Hermes Agent Runtime runner 镜像
-- [deploy/docker-compose.yaml](./deploy/docker-compose.yaml): 包含 PostgreSQL、k3s 与可选 Hermes runner 服务的本地栈
+- [deploy/docker-compose.yaml](./deploy/docker-compose.yaml): 包含 PostgreSQL 与可选 Hermes runner 服务的本地栈
 - [configs/config.yaml](./configs/config.yaml): 默认应用配置
-- [configs/config.compose.yaml](./configs/config.compose.yaml): compose 应用容器配置，使用 PostgreSQL service host 且不注入宿主机本地 kubeconfig
 - [deploy/deployment.yaml](./deploy/deployment.yaml): 原生 Kubernetes 清单基线
 - [deploy/kustomization.yaml](./deploy/kustomization.yaml): Kustomize 入口，用于在不引入 Helm 时覆盖镜像 tag、namespace 或补丁
 
@@ -253,15 +226,14 @@ docker compose -f deploy/docker-compose.yaml up -d --build
 - Docker 镜像：发布到 Docker Hub `yshanchui/soha`，本地默认 tag 为 `local`。
 - Agent 镜像：从 sibling `soha-agent` 仓库发布 `yshanchui/soha-agent` 与 `yshanchui/soha-hermes-agent`。
 - CLI 工具镜像：从 sibling `soha-cli` 仓库发布 `yshanchui/soha-cli`，用于多阶段构建和运维容器。它是镜像制品，不作为 Helm workload 发布。
-- Docker Compose：面向本地开发、冒烟验证和单机试跑，不作为生产编排主路径。
+- Docker Compose：面向本地开发和单机试跑，不作为生产编排主路径。
 - Helm：面向线上 Kubernetes 的主交付方式；`soha-helm` 发布 `soha`、`soha-agent`、`soha-hermes-agent` 三个 chart。
 - Kustomize：保留轻量 raw YAML 定制入口，避免维护第二套完整 Kubernetes 模板。
 
-构建并推送镜像：
+构建镜像：
 
 ```bash
 make deploy-image IMAGE_TAG=v0.1.0
-make deploy-image-push IMAGE_TAG=v0.1.0 PUSH_LATEST=1
 
 # 网络访问 proxy.golang.org 不稳定时：
 make deploy-image IMAGE_TAG=v0.1.0 GOPROXY=https://goproxy.cn,direct
@@ -297,7 +269,7 @@ Helm Chart 源码与 Artifact Hub 发布流程在 `opensoha/soha-helm` 仓库维
 应用 raw Kubernetes 基线：
 
 ```bash
-make deploy-k8s-apply
+kubectl apply -k deploy
 ```
 
 ## 文档
@@ -325,9 +297,8 @@ make deploy-k8s-apply
 常用验证命令：
 
 ```bash
-go test ./...
+make test
 cd ../soha-web && npm run typecheck && npm run build
-cd ../soha-docs && npm test && npm run build
 ```
 
 ## 项目状态

@@ -3,7 +3,6 @@
 ## Primary Structure
 
 - `cmd/server`: main API entrypoint.
-- `cmd/agent`: remote agent runtime entrypoint.
 - `internal/api`: routes, handlers, DTOs, middleware, HTTP error and response shaping.
 - `internal/application`: business orchestration and view-model assembly.
 - `internal/domain`: shared contracts and domain-level types.
@@ -42,10 +41,10 @@
 ## Existing Runtime Notes
 
 - Config is file-first through `configs/config.yaml`.
-- `internal/api/routes/router.go` already serves embedded SPA and docs assets when `web/dist` and `docs/build` exist at build time.
+- `internal/api/routes/router.go` serves the embedded SPA from `internal/staticassets/web/dist` when the artifact is staged for embed builds.
 - `internal/bootstrap/app.go` is the canonical dependency graph. Add new repositories, services, or handlers there instead of creating hidden singletons.
 - `modules.*.enabled` controls module availability reporting, not authorization. Keep it aligned with module descriptors and frontend workbench defaults.
-- The local agent config can claim delivery execution tasks and Docker operations. Keep `control_plane.runtime_endpoint`, runner status polling, and operation callback behavior compatible when editing runner APIs.
+- Agent runners live in sibling repos and call back into this control plane. Keep runner claim/status/callback behavior compatible when editing runner APIs.
 
 ## Verification
 

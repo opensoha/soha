@@ -330,12 +330,13 @@ func (r *Repository) ListRecentLaunches(ctx context.Context, userID string, limi
 	items := make([]domainportal.ApplicationLaunch, 0)
 	for rows.Next() {
 		var item domainportal.ApplicationLaunch
+		var providerID sql.NullString
 		if err := rows.Scan(
 			&item.ID,
 			&item.ApplicationID,
 			&item.ApplicationName,
 			&item.UserID,
-			&item.ProviderID,
+			&providerID,
 			&item.ProviderType,
 			&item.Result,
 			&item.Reason,
@@ -345,6 +346,9 @@ func (r *Repository) ListRecentLaunches(ctx context.Context, userID string, limi
 			&item.CreatedAt,
 		); err != nil {
 			return nil, err
+		}
+		if providerID.Valid {
+			item.ProviderID = providerID.String
 		}
 		items = append(items, item)
 	}

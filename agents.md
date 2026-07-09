@@ -400,7 +400,7 @@ The repository has already converged on these rules:
 - identity bootstrap baseline is a single `admin / soha` seed from `auth.dev_principal`; legacy bootstrap migration and login fallback are removed
 - PostgreSQL bootstrap schema is now consolidated into `migrations/postgres/0001_init.sql`; duplicate legacy root migration mirrors are migration debt and should stay removed
 - deployment assets pin PostgreSQL 18.4; compose, raw Kubernetes, and Helm must mount persistent data at `/var/lib/postgresql` because the official image stores the default `PGDATA` below `/var/lib/postgresql/18/docker`
-- local `make init-cluster`/`make dev` startup must tolerate stale Docker network endpoints left after interrupted k3s container creation; clean only the orphaned `soha-k3s` endpoint when the container itself is absent
+- local `make dev` startup no longer creates or manages Kubernetes clusters; users provide their own cluster and register it explicitly when needed
 - built-in bootstrap defaults should be version-gated: first-time initialization and seed-version upgrades replay static roles/menus/policies/templates, while config-driven admin user and cluster sync stay as separate startup work
 - pod detail is now expected to be an operational workspace, not only a static detail page
 - workload list pages should support search/filter first, then batch action surfaces where backend capability already exists
@@ -522,8 +522,8 @@ The repository has already converged on these rules:
 - antd-first is the stable frontend baseline; `platform`, `access`, `delivery`, `observability`, `copilot`, `system`, `settings`, docs-facing web modules, plus the remaining shared/auth/routes tail files have all converged on native `antd` and `@ant-design/icons`
 - active `soha-web/src` code should stay free of retired design-system naming and semantics; keep any remaining history confined to cleanup work only
 - docs migration baseline is Docusaurus-first; new docs-site work must target Docusaurus config, sidebars, and MDX component conventions instead of VitePress
-- virtualization lab environments should treat KubeVirt and PVE as separate runtime planes: KubeVirt may run on k3s when Linux nodes expose KVM and support privileged workloads, while PVE may run only as a full KubeVirt VM or as an external bare-metal host, Debian host, or nested lab VM connected through the PVE API
-- PVE-in-k3s is supported only through the KubeVirt VM lab path; privileged Pod experiments that mutate k3s node kernel, networking, storage, or systemd behavior must not be documented as a valid runtime path
+- virtualization lab environments should treat KubeVirt and PVE as separate runtime planes: KubeVirt requires a user-provided Kubernetes cluster with KubeVirt/CDI installed, while PVE may run only as a full KubeVirt VM or as an external bare-metal host, Debian host, or nested lab VM connected through the PVE API
+- PVE-in-Kubernetes is supported only through the KubeVirt VM lab path; privileged Pod experiments that mutate node kernel, networking, storage, or systemd behavior must not be documented as a valid runtime path
 - local virtualization development no longer ships Mac-local KubeVirt/PVE make targets; Docker Desktop for macOS, especially Apple Silicon, is not a reliable validation path for nested virtualization, so KubeVirt and PVE functional validation should connect to real external servers or dedicated lab hosts
 - KubeVirt and PVE control flows must remain regular backend operations that work without an AI provider; MCP skills are allowed only as an optional AI-assisted troubleshooting layer after model integration is configured
 
@@ -617,14 +617,14 @@ Primary supporting documents:
 
 This repository may use repo-local collaboration files under `.codex/` for isolated Codex threads or agents.
 `agents.md` remains the engineering baseline; `.codex/` carries task execution context.
-Reusable repo-specific Codex skills may also live under `.agents/skills/` when the repository wants frontend, backend, or deployment guidance versioned alongside the codebase.
+Reusable repo-specific Codex skills may also live under `.agents/skills/` when the repository wants backend or deployment guidance versioned alongside the codebase. Frontend guidance belongs in the sibling `soha-web` repository.
 
 - `.codex/state/current_task.md` is the canonical task snapshot for any spawned thread
 - `.codex/state/queue.md` tracks subtask ownership, priority, status, and dependencies
 - `.codex/state/results/` stores concise role outputs instead of full transcripts or raw long logs
 - `.codex/handoffs/` stores explicit handoff notes between `main`, `coder`, `tester`, and `reviewer`
 - `.codex/prompts/` stores reusable role prompt templates for child threads
-- `.agents/skills/` stores repo-local skill definitions and bundled references or assets for soha-specific workflows such as frontend, backend, and deployment work
+- `.agents/skills/` stores repo-local skill definitions and bundled references or assets for soha-specific backend and deployment workflows
 - `.agents/` should not duplicate `.codex/` task snapshots, handoffs, queues, or prompt templates; subagent execution state belongs under `.codex/` only
 - multi-track migrations should assign disjoint write ownership by directory or module family in `queue.md`; shared foundation ownership must be resolved before compat-file deletion or docs migration begins
 - child threads must not assume access to the full parent-thread conversation; they should rely on `current_task`, relevant handoff files, result files, and the referenced code files

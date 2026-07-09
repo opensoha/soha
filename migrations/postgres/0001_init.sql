@@ -623,7 +623,7 @@ CREATE TABLE public.alert_silences (
 CREATE TABLE public.announcement_receipts (
     id text NOT NULL,
     announcement_id text NOT NULL,
-    user_id text NOT NULL,
+    user_id uuid NOT NULL,
     read_at timestamp without time zone NOT NULL,
     created_at timestamp without time zone DEFAULT now() NOT NULL,
     updated_at timestamp without time zone DEFAULT now() NOT NULL
@@ -1448,7 +1448,7 @@ CREATE TABLE public.operation_logs (
 
 CREATE TABLE public.personal_access_tokens (
     id text NOT NULL,
-    user_id text NOT NULL,
+    user_id uuid NOT NULL,
     name text NOT NULL,
     token_hash text NOT NULL,
     token_prefix text NOT NULL,
@@ -1628,7 +1628,7 @@ CREATE TABLE public.service_accounts (
     name text NOT NULL,
     description text,
     status text DEFAULT 'active'::text NOT NULL,
-    owner_user_id text,
+    owner_user_id uuid,
     role_ids json DEFAULT '[]'::json NOT NULL,
     team_ids json DEFAULT '[]'::json NOT NULL,
     scope_grant_ids json DEFAULT '[]'::json NOT NULL,
@@ -1643,7 +1643,7 @@ CREATE TABLE public.service_accounts (
 
 CREATE TABLE public.sessions (
     id text NOT NULL,
-    user_id text NOT NULL,
+    user_id uuid NOT NULL,
     refresh_token_id text NOT NULL,
     provider_type text NOT NULL,
     status text DEFAULT 'active'::text NOT NULL,
@@ -1676,7 +1676,7 @@ CREATE TABLE public.teams (
 
 CREATE TABLE public.user_identities (
     id text NOT NULL,
-    user_id text NOT NULL,
+    user_id uuid NOT NULL,
     provider_type text NOT NULL,
     provider_id text NOT NULL,
     provider_user_id text NOT NULL,
@@ -1690,7 +1690,7 @@ CREATE TABLE public.user_identities (
 -- Name: user_password_credentials; Type: TABLE; Schema: public; Owner: -
 
 CREATE TABLE public.user_password_credentials (
-    user_id text NOT NULL,
+    user_id uuid NOT NULL,
     password_hash text NOT NULL,
     password_updated_at timestamp without time zone DEFAULT now() NOT NULL,
     created_at timestamp without time zone DEFAULT now() NOT NULL,
@@ -1702,7 +1702,7 @@ CREATE TABLE public.user_password_credentials (
 
 CREATE TABLE public.user_project_bindings (
     id text NOT NULL,
-    user_id text NOT NULL,
+    user_id uuid NOT NULL,
     project_id text NOT NULL,
     created_at timestamp without time zone DEFAULT now() NOT NULL,
     updated_at timestamp without time zone DEFAULT now() NOT NULL
@@ -1713,7 +1713,7 @@ CREATE TABLE public.user_project_bindings (
 
 CREATE TABLE public.user_role_bindings (
     id text NOT NULL,
-    user_id text NOT NULL,
+    user_id uuid NOT NULL,
     role_id text NOT NULL,
     scope json DEFAULT '{}'::json NOT NULL,
     created_at timestamp without time zone DEFAULT now() NOT NULL,
@@ -1727,7 +1727,7 @@ CREATE TABLE public.user_role_bindings (
 
 CREATE TABLE public.user_team_bindings (
     id text NOT NULL,
-    user_id text NOT NULL,
+    user_id uuid NOT NULL,
     team_id text NOT NULL,
     created_at timestamp without time zone DEFAULT now() NOT NULL,
     updated_at timestamp without time zone DEFAULT now() NOT NULL,
@@ -1739,7 +1739,7 @@ CREATE TABLE public.user_team_bindings (
 -- Name: users; Type: TABLE; Schema: public; Owner: -
 
 CREATE TABLE public.users (
-    id text NOT NULL,
+    id uuid NOT NULL,
     username text NOT NULL,
     email text NOT NULL,
     display_name text,

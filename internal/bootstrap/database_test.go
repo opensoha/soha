@@ -124,6 +124,42 @@ func TestSyncDisabledModuleMenusCleansDeprecatedMenus(t *testing.T) {
 	}
 }
 
+func TestSeedUserUsesConfiguredUserID(t *testing.T) {
+	sqlDB, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("new sqlmock: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = sqlDB.Close()
+	})
+
+	db, err := gorm.Open(postgres.New(postgres.Config{Conn: sqlDB}), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open gorm postgres mock: %v", err)
+	}
+
+	cfg := cfgpkg.Config{
+		Auth: cfgpkg.AuthConfig{
+			DevPrincipal: cfgpkg.DevPrincipalConfig{
+				UserID: "67d90df8-9de4-4a7b-b3f8-86cd36f899e2",
+				Name:   "OpenSoha",
+				Email:  "opensoha@soha.local",
+			},
+		},
+	}
+
+	mock.ExpectExec(`(?s)INSERT INTO users .*ON CONFLICT \(id\) DO UPDATE SET`).
+		WithArgs(cfg.Auth.DevPrincipal.UserID, "opensoha", "opensoha@soha.local", "OpenSoha", `[]`, `{}`, sqlmock.AnyArg(), sqlmock.AnyArg()).
+		WillReturnResult(sqlmock.NewResult(0, 1))
+
+	if err := seedUser(context.Background(), db, cfg); err != nil {
+		t.Fatalf("seedUser returned error: %v", err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("unmet sql expectations: %v", err)
+	}
+}
+
 func TestDefaultMenuSeedsIncludeVirtualizationWorkbench(t *testing.T) {
 	items := defaultMenuSeeds()
 	for _, id := range []string{
@@ -257,10 +293,10 @@ func TestDeprecatedMenusIncludeOldAIGatewayWorkbenchID(t *testing.T) {
 func TestDefaultMenuSeedsExposeAccessPagesAsDirectMenus(t *testing.T) {
 	items := defaultMenuSeeds()
 	expected := map[string]int{
-		"access-users":    226,
-		"access-roles":    227,
-		"access-teams":    228,
-		"access-policies": 229,
+		"access-users":    10,
+		"access-roles":    20,
+		"access-teams":    30,
+		"access-policies": 40,
 	}
 
 	for _, item := range items {
@@ -271,8 +307,8 @@ func TestDefaultMenuSeedsExposeAccessPagesAsDirectMenus(t *testing.T) {
 		if item.ParentID != "" {
 			t.Fatalf("access seed menu %q parent = %q, want direct menu", item.ID, item.ParentID)
 		}
-		if item.Section != "admin" {
-			t.Fatalf("access seed menu %q section = %q, want admin", item.ID, item.Section)
+		if item.Section != "users" {
+			t.Fatalf("access seed menu %q section = %q, want users", item.ID, item.Section)
 		}
 		if item.SortOrder != sortOrder {
 			t.Fatalf("access seed menu %q sort order = %d, want %d", item.ID, item.SortOrder, sortOrder)
@@ -281,6 +317,43 @@ func TestDefaultMenuSeedsExposeAccessPagesAsDirectMenus(t *testing.T) {
 	}
 	if len(expected) > 0 {
 		t.Fatalf("default menu seeds missing direct access menus: %v", expected)
+	}
+}
+
+func TestDefaultMenuSeedsGroupSettingsCenterMenus(t *testing.T) {
+	items := defaultMenuSeeds()
+	expected := map[string]struct {
+		section   string
+		sortOrder int
+	}{
+		"identity-overview":     {section: "", sortOrder: 1},
+		"identity-applications": {section: "provider", sortOrder: 10},
+		"identity-providers":    {section: "provider", sortOrder: 20},
+		"identity-outposts":     {section: "provider", sortOrder: 30},
+		"identity-policies":     {section: "provider", sortOrder: 40},
+		"menus":                 {section: "users", sortOrder: 50},
+		"settings-login":        {section: "users", sortOrder: 60},
+		"identity-sessions":     {section: "operations", sortOrder: 10},
+		"identity-audit":        {section: "operations", sortOrder: 20},
+		"announcements":         {section: "operations", sortOrder: 30},
+		"system-online-users":   {section: "operations", sortOrder: 40},
+		"operations":            {section: "operations", sortOrder: 50},
+		"audit":                 {section: "operations", sortOrder: 60},
+		"settings-branding":     {section: "operations", sortOrder: 70},
+	}
+
+	for _, item := range items {
+		want, ok := expected[item.ID]
+		if !ok {
+			continue
+		}
+		if item.Section != want.section || item.SortOrder != want.sortOrder {
+			t.Fatalf("settings menu %q section/sort = %q/%d, want %q/%d", item.ID, item.Section, item.SortOrder, want.section, want.sortOrder)
+		}
+		delete(expected, item.ID)
+	}
+	if len(expected) > 0 {
+		t.Fatalf("default menu seeds missing grouped settings menus: %v", expected)
 	}
 }
 
@@ -306,6 +379,38 @@ func TestDefaultMenuSeedsUseFullSystemLogLabels(t *testing.T) {
 	}
 	if len(expected) > 0 {
 		t.Fatalf("default menu seeds missing system log menus: %v", expected)
+	}
+}
+
+func TestDefaultMenuSeedsExposeBasicSettingsMenus(t *testing.T) {
+	items := defaultMenuSeeds()
+	expected := map[string]int{
+		"account-profile": 10,
+		"settings-about":  20,
+	}
+	expectedRoles := []string{"admin", "ops", "developer", "tester", "readonly", "auditor"}
+
+	for _, item := range items {
+		sortOrder, ok := expected[item.ID]
+		if !ok {
+			continue
+		}
+		if item.ParentID != "settings" {
+			t.Fatalf("basic settings menu %q parent = %q, want settings", item.ID, item.ParentID)
+		}
+		if item.Section != "account" {
+			t.Fatalf("basic settings menu %q section = %q, want account", item.ID, item.Section)
+		}
+		if item.SortOrder != sortOrder {
+			t.Fatalf("basic settings menu %q sort order = %d, want %d", item.ID, item.SortOrder, sortOrder)
+		}
+		if !slices.Equal(item.Roles, expectedRoles) {
+			t.Fatalf("basic settings menu %q roles = %v, want default user roles", item.ID, item.Roles)
+		}
+		delete(expected, item.ID)
+	}
+	if len(expected) > 0 {
+		t.Fatalf("default menu seeds missing basic settings menus: %v", expected)
 	}
 }
 
